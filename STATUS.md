@@ -46,6 +46,9 @@ flag, and `tests/integration/windows-arm-qemu-args-cli-smoke.sh`. See
 - Compat (QEMU) suspend: `bridgevm suspend` does a QMP `snapshot-save` internal qcow2 snapshot (`bridgevm-suspend`). **Compat resume is not supported on Apple Silicon under HVF** — QEMU aborts in `cpu_pre_load` restoring an HVF arm64 guest; resume reports this honestly and preserves the snapshot. Fast Mode is the supported suspend/resume path.
 - Follow-ups: pause an already-running Fast VM via IPC (current model boots→saves); Compat live resume (needs a non-HVF path or a future QEMU fix).
 
+## Networking
+Compatibility Mode (QEMU) NAT + port forwarding works at launch: manifest `network.forwards` become QEMU `hostfwd=tcp::HOST-:GUEST` in the launch command, so the host port is actually bound when the VM runs (verified: host port LISTENs). `bridgevm port add/remove` edit the forwards. Bridged networking still needs the `com.apple.vm.networking` entitlement (user resource).
+
 ## Verification lanes
 - **Safe app lane:** `tests/integration/local-release-readiness-suite.sh --app-only --locally-usable-app`
 - **Rust:** `cargo test --workspace`

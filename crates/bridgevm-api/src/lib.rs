@@ -6388,8 +6388,12 @@ fn lifecycle_plan(
             )
         }
         VmMode::Fast => {
-            blockers.push("fast-mode-suspend-resume-backend-unimplemented".to_string());
-            notes.push("Fast Mode Apple VZ suspend/resume control is not wired yet".to_string());
+            notes.push(
+                "Fast Mode suspend/resume is wired through the runner via Apple VZ \
+                 saveMachineState/restoreMachineState (not QMP); a real suspend/resume \
+                 requires a signed AppleVzRunner (BRIDGEVM_APPLE_VZ_RUNNER)"
+                    .to_string(),
+            );
             ("apple-vz".to_string(), None, None, false)
         }
     };
@@ -10341,8 +10345,11 @@ mod tests {
         };
         assert_eq!(plan.backend, "apple-vz");
         assert!(plan.metadata_only);
+        // Not executable here because Stopped -> Suspended is an invalid direct
+        // transition (the suspend backend itself goes Stopped -> Running ->
+        // Suspended). Fast suspend/resume is no longer reported as unimplemented.
         assert!(!plan.executable);
-        assert!(plan
+        assert!(!plan
             .blockers
             .contains(&"fast-mode-suspend-resume-backend-unimplemented".to_string()));
         assert!(plan
