@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use bridgevm_agent_protocol::{AgentEnvelope, AgentMessage};
 use bridgevm_api::{
     accept_guest_tools_hello, add_fast_spawn_blocker, add_port, add_share,
+    apple_vz_runner_configured, cold_start_fast_backend,
     compatibility_launch_readiness_metadata, create_diagnostic_bundle, create_performance_baseline,
     create_performance_sample, download_boot_media, fast_spawn_not_implemented_error,
     guest_tools_linux_command, guest_tools_token, import_boot_media, inspect_boot_media_status,
@@ -2144,6 +2145,14 @@ fn build_runner_metadata(
         .prepare_active_disk(name)
         .context("failed to prepare active disk")?;
     if manifest.mode == VmMode::Fast {
+        // Gated REAL cold-start launch: when `BRIDGEVM_APPLE_VZ_RUNNER` is set
+        // and the caller asked to spawn, boot a real Apple VZ VM. When unset,
+        // preserve the legacy dry-run + not-implemented behavior.
+        if spawn && apple_vz_runner_configured() {
+            return cold_start_fast_backend(store, name)
+                .map_err(anyhow::Error::msg)
+                .with_context(|| format!("failed to launch Fast Mode VM '{name}'"));
+        }
         let plan = build_fast_plan(&manifest, &bundle).context("failed to build Fast Mode plan")?;
         let launch_spec_path = write_launch_spec_artifact(&bundle, plan.launch_spec())
             .context("failed to write Fast Mode launch spec")?;

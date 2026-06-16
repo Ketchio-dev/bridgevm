@@ -36,8 +36,8 @@ as usb-storage cdrom (bootindex 0) + virtio-rng. Covered by unit tests, the CLI
 flag, and `tests/integration/windows-arm-qemu-args-cli-smoke.sh`. See
 [docs/compatibility-mode/README.md](docs/compatibility-mode/README.md).
 
-## Suspend/Resume (Fast Mode, product feature)
-`bridgevm suspend <vm>` / `bridgevm resume <vm>` work end-to-end for Fast Mode (Apple VZ) Linux VMs, wired runner → `lightvm-runner` → `bridgevm-api`/daemon/CLI → macOS app:
+## Fast Mode lifecycle: run / suspend / resume (product feature)
+`bridgevm run <vm> --spawn` now **really boots** a Fast Mode (Apple VZ) Linux VM (was dry-run only) when `BRIDGEVM_APPLE_VZ_RUNNER` is set — records a real pid, `dry_run:false`, state `running`; without the env it preserves the legacy dry-run/not-implemented behavior (back-compat). `bridgevm suspend <vm>` / `bridgevm resume <vm>` work end-to-end, wired runner → `lightvm-runner` → `bridgevm-api`/daemon/CLI → macOS app:
 - AppleVzRunner does VZ `saveMachineState`/`restoreMachineState` (`--save-state`/`--restore-state`); machine identifier + NAT MAC persisted per bundle (required for restore to match).
 - `suspend` boots the Fast VM, pauses, saves to `metadata/suspend-images/<vm>.bin`, marks `suspended`; `resume` restores + runs detached, marks `running`. Needs `BRIDGEVM_APPLE_VZ_RUNNER` (path to a signed AppleVzRunner).
 - macOS app pause/resume send `suspend_backend`/`resume_backend` daemon requests.

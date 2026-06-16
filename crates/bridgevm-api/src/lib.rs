@@ -5312,6 +5312,14 @@ fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadat
     }
 
     if manifest.mode == VmMode::Fast {
+        // Gated REAL cold-start launch: when `BRIDGEVM_APPLE_VZ_RUNNER` is set
+        // and the caller asked to spawn, boot a real Apple VZ VM via
+        // `lightvm-runner` (fresh boot, no saved-state restore). When the env
+        // is unset, preserve the legacy dry-run + not-implemented behavior so
+        // all existing metadata-safe smokes/tests stay green.
+        if spawn && apple_vz_runner_configured() {
+            return spawn_fast_backend(store, name, &bundle, &manifest, None);
+        }
         let plan = build_fast_plan(&manifest, &bundle).map_err(|error| error.to_string())?;
         let launch_spec_path = write_launch_spec_artifact(&bundle, plan.launch_spec())
             .map_err(|error| error.to_string())?;
@@ -5694,6 +5702,135 @@ fn require_apple_vz_runner() -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// Whether `BRIDGEVM_APPLE_VZ_RUNNER` is set to a non-empty path.
+///
+/// This gates the REAL Fast Mode cold-start launch: when unset, the Fast spawn
+/// path stays on the legacy dry-run + not-implemented behavior for backward
+/// compatibility. When set, `run_backend` (and `resume_backend`) launch a real
+/// Apple VZ VM via `lightvm-runner`.
+pub fn apple_vz_runner_configured() -> bool {
+    std::env::var_os("BRIDGEVM_APPLE_VZ_RUNNER")
+        .map(|value| !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// Build the `lightvm-runner` argv used to launch a Fast Mode Apple VZ VM.
+///
+/// Shared by the Fast cold-start (`run_backend`) and resume (`resume_backend`)
+/// paths. The only difference is the optional saved-state restore: a cold start
+/// passes `restore_state == None` (fresh boot), while resume passes the saved
+/// state file so the runner appends `--apple-vz-restore-state <file>`.
+pub fn fast_runner_args(
+    launch_spec_path: &Path,
+    apple_vz_runner: &Path,
+    restore_state: Option<&Path>,
+) -> Vec<String> {
+    let mut args: Vec<String> = vec![
+        "--launch-spec".to_string(),
+        launch_spec_path.display().to_string(),
+        "--require-ready".to_string(),
+        "--launch".to_string(),
+        "--apple-vz-runner".to_string(),
+        apple_vz_runner.display().to_string(),
+        "--apple-vz-allow-real-start".to_string(),
+    ];
+    if let Some(state_path) = restore_state {
+        args.push("--apple-vz-restore-state".to_string());
+        args.push(state_path.display().to_string());
+    }
+    args
+}
+
+/// Launch a Fast Mode Apple VZ VM via `lightvm-runner` (DETACHED).
+///
+/// Shared spawn path for the Fast cold-start (`restore_state == None`) and
+/// resume (`restore_state == Some(state_file)`). Resolves the signed
+/// AppleVzRunner, builds the launch spec, spawns the runner without waiting,
+/// records the child pid with `dry_run:false`, and transitions the VM Running.
+fn spawn_fast_backend(
+    store: &VmStore,
+    name: &str,
+    bundle: &Path,
+    manifest: &VmManifest,
+    restore_state: Option<&Path>,
+) -> Result<RunnerMetadata, String> {
+    let apple_vz_runner = require_apple_vz_runner()?;
+    let lightvm_runner = find_lightvm_runner();
+
+    let (disk, active_disk) = store
+        .prepare_active_disk(name)
+        .map_err(|error| error.to_string())?;
+
+    let plan = build_fast_plan(manifest, bundle).map_err(|error| error.to_string())?;
+    let launch_spec_path = write_launch_spec_artifact(bundle, plan.launch_spec())
+        .map_err(|error| error.to_string())?;
+    let readiness = launch_readiness_metadata(&plan.launch_spec().readiness);
+    if !readiness.ready {
+        return Err(format!(
+            "Fast Mode launch readiness failed: {}",
+            launch_readiness_blocker_summary(&readiness)
+        ));
+    }
+
+    fs::create_dir_all(bundle.join("logs")).map_err(|error| error.to_string())?;
+    let log_path: PathBuf = plan.launch_spec().logs.runner_log_path.clone().into();
+    let stdout = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|error| error.to_string())?;
+    let stderr = stdout.try_clone().map_err(|error| error.to_string())?;
+
+    let args = fast_runner_args(&launch_spec_path, &apple_vz_runner, restore_state);
+
+    let child = Command::new(&lightvm_runner)
+        .args(&args)
+        .env("BRIDGEVM_APPLE_VZ_ALLOW_REAL_START", "1")
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
+        .spawn()
+        .map_err(|error| format!("failed to spawn {}: {error}", lightvm_runner.display()))?;
+
+    let mut command = vec![lightvm_runner.display().to_string()];
+    command.extend(args);
+    let metadata = RunnerMetadata {
+        engine: "lightvm".to_string(),
+        pid: Some(child.id()),
+        command,
+        log_path,
+        started_at_unix: now_unix(),
+        dry_run: false,
+        launch_spec_path: Some(launch_spec_path),
+        guest_tools: None,
+        disk: Some(disk),
+        active_disk: Some(active_disk),
+        launch_readiness: Some(readiness),
+    };
+    store
+        .write_runner_metadata(name, &metadata)
+        .map_err(|error| error.to_string())?;
+    store
+        .transition_state(name, VmRuntimeState::Running)
+        .map_err(|error| error.to_string())?;
+
+    Ok(metadata)
+}
+
+/// Boot a Fast Mode VM from cold (fresh boot, no saved-state restore).
+///
+/// Public entry point shared by the daemon-less CLI run path. Requires
+/// `BRIDGEVM_APPLE_VZ_RUNNER` to be set (see [`apple_vz_runner_configured`]);
+/// callers gate on that and fall back to dry-run planning when it is unset.
+pub fn cold_start_fast_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, String> {
+    let (bundle, manifest, _) = store
+        .get_vm_with_active_disk(name)
+        .map_err(|error| error.to_string())?;
+    if manifest.mode != VmMode::Fast {
+        return Err("cold-start launch is only implemented for Fast Mode VMs".to_string());
+    }
+    spawn_fast_backend(store, name, &bundle, &manifest, None)
+}
+
 /// Suspend a Fast Mode VM end-to-end.
 ///
 /// Boots the Fast VM via `lightvm-runner`, lets it run briefly, pauses, saves
@@ -5847,81 +5984,9 @@ pub fn resume_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, Str
         ));
     }
 
-    let apple_vz_runner = require_apple_vz_runner()?;
-    let lightvm_runner = find_lightvm_runner();
-
-    let (disk, active_disk) = store
-        .prepare_active_disk(name)
-        .map_err(|error| error.to_string())?;
-
-    let plan = build_fast_plan(&manifest, &bundle).map_err(|error| error.to_string())?;
-    let launch_spec_path = write_launch_spec_artifact(&bundle, plan.launch_spec())
-        .map_err(|error| error.to_string())?;
-    let readiness = launch_readiness_metadata(&plan.launch_spec().readiness);
-    if !readiness.ready {
-        return Err(format!(
-            "Fast Mode launch readiness failed: {}",
-            launch_readiness_blocker_summary(&readiness)
-        ));
-    }
-
-    fs::create_dir_all(bundle.join("logs")).map_err(|error| error.to_string())?;
-    let log_path: PathBuf = plan.launch_spec().logs.runner_log_path.clone().into();
-    let stdout = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-        .map_err(|error| error.to_string())?;
-    let stderr = stdout.try_clone().map_err(|error| error.to_string())?;
-
-    let args: Vec<String> = vec![
-        "--launch-spec".to_string(),
-        launch_spec_path.display().to_string(),
-        "--require-ready".to_string(),
-        "--launch".to_string(),
-        "--apple-vz-runner".to_string(),
-        apple_vz_runner.display().to_string(),
-        "--apple-vz-allow-real-start".to_string(),
-        "--apple-vz-restore-state".to_string(),
-        state_path.display().to_string(),
-    ];
-
-    let child = Command::new(&lightvm_runner)
-        .args(&args)
-        .env("BRIDGEVM_APPLE_VZ_ALLOW_REAL_START", "1")
-        .stdout(Stdio::from(stdout))
-        .stderr(Stdio::from(stderr))
-        .spawn()
-        .map_err(|error| {
-            format!(
-                "failed to spawn {}: {error}",
-                lightvm_runner.display()
-            )
-        })?;
-
-    let mut command = vec![lightvm_runner.display().to_string()];
-    command.extend(args);
-    let metadata = RunnerMetadata {
-        engine: "lightvm".to_string(),
-        pid: Some(child.id()),
-        command,
-        log_path,
-        started_at_unix: now_unix(),
-        dry_run: false,
-        launch_spec_path: Some(launch_spec_path),
-        guest_tools: None,
-        disk: Some(disk),
-        active_disk: Some(active_disk),
-        launch_readiness: Some(readiness),
-    };
-    store
-        .write_runner_metadata(name, &metadata)
-        .map_err(|error| error.to_string())?;
-    store
-        .transition_state(name, VmRuntimeState::Running)
-        .map_err(|error| error.to_string())?;
-
-    Ok(metadata)
+    // Resume is identical to a Fast cold start except it restores the saved VZ
+    // machine state instead of booting fresh.
+    spawn_fast_backend(store, name, &bundle, &manifest, Some(&state_path))
 }
 
 fn lifecycle_plan(
@@ -10594,6 +10659,136 @@ mod tests {
             error.contains("import input conflicts with the destination store"),
             "unexpected import error: {error}"
         );
+    }
+
+    // Serialize tests that mutate the process-global BRIDGEVM_APPLE_VZ_RUNNER
+    // env var so parallel test execution does not race on the gate.
+    static APPLE_VZ_RUNNER_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn fast_test_store(test: &str) -> (VmStore, String) {
+        let mut root = std::env::temp_dir();
+        root.push(format!(
+            "bridgevm-api-{test}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = VmStore::new(root);
+        let name = "fast-cold".to_string();
+        let manifest = VmManifest::new(
+            &name,
+            VmMode::Fast,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "arm64".to_string(),
+            },
+            "80GiB",
+        );
+        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+            .into_result()
+            .unwrap();
+        (store, name)
+    }
+
+    #[test]
+    fn fast_runner_args_cold_start_omits_restore_state() {
+        let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
+        let runner = Path::new("/helpers/AppleVzRunner");
+        let args = fast_runner_args(launch_spec, runner, None);
+        assert_eq!(
+            args,
+            vec![
+                "--launch-spec".to_string(),
+                "/bundle/metadata/launch-spec.json".to_string(),
+                "--require-ready".to_string(),
+                "--launch".to_string(),
+                "--apple-vz-runner".to_string(),
+                "/helpers/AppleVzRunner".to_string(),
+                "--apple-vz-allow-real-start".to_string(),
+            ]
+        );
+        // A cold start never restores saved state.
+        assert!(!args.iter().any(|arg| arg == "--apple-vz-restore-state"));
+    }
+
+    #[test]
+    fn fast_runner_args_resume_appends_restore_state() {
+        let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
+        let runner = Path::new("/helpers/AppleVzRunner");
+        let state = Path::new("/bundle/metadata/suspend-images/fast.bin");
+        let args = fast_runner_args(launch_spec, runner, Some(state));
+        assert_eq!(
+            args,
+            vec![
+                "--launch-spec".to_string(),
+                "/bundle/metadata/launch-spec.json".to_string(),
+                "--require-ready".to_string(),
+                "--launch".to_string(),
+                "--apple-vz-runner".to_string(),
+                "/helpers/AppleVzRunner".to_string(),
+                "--apple-vz-allow-real-start".to_string(),
+                "--apple-vz-restore-state".to_string(),
+                "/bundle/metadata/suspend-images/fast.bin".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn fast_spawn_without_runner_env_returns_not_implemented_error() {
+        let _guard = APPLE_VZ_RUNNER_ENV_LOCK.lock().unwrap();
+        let previous = std::env::var_os("BRIDGEVM_APPLE_VZ_RUNNER");
+        std::env::remove_var("BRIDGEVM_APPLE_VZ_RUNNER");
+
+        let (store, name) = fast_test_store("fast-spawn-no-env");
+        assert!(!apple_vz_runner_configured());
+
+        let error = run_backend(&store, &name, true)
+            .expect_err("Fast spawn without BRIDGEVM_APPLE_VZ_RUNNER must stay not-implemented");
+        assert!(
+            error.contains("Fast Mode spawn is not implemented yet"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            error.contains("fast-mode-spawn-unimplemented"),
+            "unexpected error: {error}"
+        );
+
+        // Back-compat: dry-run runner metadata is still written.
+        let metadata = store
+            .runner_metadata(&name)
+            .unwrap()
+            .expect("dry-run runner metadata is written when the env is unset");
+        assert!(metadata.dry_run);
+        assert!(metadata.pid.is_none());
+        assert_eq!(metadata.engine, "lightvm");
+
+        if let Some(value) = previous {
+            std::env::set_var("BRIDGEVM_APPLE_VZ_RUNNER", value);
+        }
+        let _ = std::fs::remove_dir_all(store.root());
+    }
+
+    #[test]
+    fn apple_vz_runner_configured_reflects_env() {
+        let _guard = APPLE_VZ_RUNNER_ENV_LOCK.lock().unwrap();
+        let previous = std::env::var_os("BRIDGEVM_APPLE_VZ_RUNNER");
+
+        std::env::remove_var("BRIDGEVM_APPLE_VZ_RUNNER");
+        assert!(!apple_vz_runner_configured());
+
+        std::env::set_var("BRIDGEVM_APPLE_VZ_RUNNER", "/helpers/AppleVzRunner");
+        assert!(apple_vz_runner_configured());
+
+        // An empty value does not count as configured.
+        std::env::set_var("BRIDGEVM_APPLE_VZ_RUNNER", "");
+        assert!(!apple_vz_runner_configured());
+
+        match previous {
+            Some(value) => std::env::set_var("BRIDGEVM_APPLE_VZ_RUNNER", value),
+            None => std::env::remove_var("BRIDGEVM_APPLE_VZ_RUNNER"),
+        }
     }
 
     fn valid_guest_hello(token: &str, capabilities: &[&str]) -> AgentMessage {
