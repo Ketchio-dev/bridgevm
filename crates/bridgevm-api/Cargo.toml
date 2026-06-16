@@ -1,0 +1,19 @@
+[package]
+name = "bridgevm-api"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bridgevm-agent-protocol = { path = "../bridgevm-agent-protocol" }
+bridgevm-agentd = { path = "../bridgevm-agentd" }
+bridgevm-apple-vz = { path = "../bridgevm-apple-vz" }
+bridgevm-config = { path = "../bridgevm-config" }
+bridgevm-core = { path = "../bridgevm-core" }
+bridgevm-network = { path = "../bridgevm-network" }
+bridgevm-qemu = { path = "../bridgevm-qemu" }
+bridgevm-storage = { path = "../bridgevm-storage" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true

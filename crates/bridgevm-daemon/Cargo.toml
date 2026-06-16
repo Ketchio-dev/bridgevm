@@ -1,0 +1,22 @@
+[package]
+name = "bridgevm-daemon"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "bridgevmd"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+bridgevm-agent-protocol = { path = "../bridgevm-agent-protocol" }
+bridgevm-agentd = { path = "../bridgevm-agentd" }
+bridgevm-api = { path = "../bridgevm-api" }
+bridgevm-apple-vz = { path = "../bridgevm-apple-vz" }
+bridgevm-config = { path = "../bridgevm-config" }
+bridgevm-qemu = { path = "../bridgevm-qemu" }
+bridgevm-storage = { path = "../bridgevm-storage" }
+clap.workspace = true
+serde_json.workspace = true

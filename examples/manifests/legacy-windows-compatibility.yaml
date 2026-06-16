@@ -1,0 +1,41 @@
+schemaVersion: bridgevm.io/v1
+name: legacy-windows
+mode: compatibility
+guest:
+  os: windows
+  version: "7"
+  arch: x86_64
+backend:
+  engine: qemu
+  fallback: tcg
+  accelerator: hvf
+resources:
+  profile: automatic
+  memory: auto
+  cpu: auto
+display:
+  renderer: spice
+  framePolicy: adaptive
+  retina: true
+storage:
+  primary:
+    path: disks/root.qcow2
+    size: 64GiB
+    format: qcow2
+    discard: false
+network:
+  mode: nat
+  hostname: legacy-windows.bridgevm.local
+  forwards: []
+integration:
+  tools: optional
+  clipboard: true
+  dragDrop: false
+  dynamicResolution: true
+  sharedFolders: true
+  applications: true
+  windows: true
+security:
+  sharedFolderApproval: required
+  guestCommandExecution: false
+  signedAgentUpdates: true

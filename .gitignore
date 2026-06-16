@@ -1,0 +1,10 @@
+/target/
+/.bridgevm/
+*.log
+.DS_Store
+
+# Swift Package Manager build artifacts
+.build/
+
+# Claude Code local runtime/state
+.claude/

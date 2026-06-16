@@ -1,0 +1,44 @@
+schemaVersion: bridgevm.io/v1
+name: ubuntu-dev
+mode: fast
+guest:
+  os: ubuntu
+  arch: arm64
+backend:
+  engine: lightvm
+  preferred: apple-vz
+  fallback: qemu-hvf-restricted
+  accelerator: hvf
+resources:
+  profile: automatic
+  memory: auto
+  cpu: auto
+display:
+  renderer: metal
+  framePolicy: adaptive
+  retina: true
+storage:
+  primary:
+    path: disks/root.qcow2
+    size: 80GiB
+    format: qcow2
+    discard: true
+boot:
+  mode: linux-installer
+  installerImage: installers/ubuntu-arm64.iso
+network:
+  mode: nat
+  hostname: ubuntu-dev.bridgevm.local
+  forwards: []
+integration:
+  tools: required
+  clipboard: true
+  dragDrop: true
+  dynamicResolution: true
+  sharedFolders: true
+  applications: true
+  windows: true
+security:
+  sharedFolderApproval: required
+  guestCommandExecution: false
+  signedAgentUpdates: true

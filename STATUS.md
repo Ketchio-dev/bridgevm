@@ -1,0 +1,54 @@
+# BridgeVM — Current Status
+
+Concise "where are we" snapshot. Full plan/roadmap/scaffold log lives in
+[PLAN.md](PLAN.md); this file is the fast scan.
+
+_Last updated: 2026-06-16._
+
+## What this is
+Open-source, Parallels-class Mac virtualization app with two engines:
+- **Fast Mode (`LightVM`)** = Apple Virtualization.framework (NOT QEMU) — lightweight path for modern guests.
+- **Compatibility Mode (`FullVM`)** = QEMU + HVF — runs everything else (Windows, older/x86 guests).
+
+## Phase 0 live-boot evidence (the headline milestone)
+All three "live boot proof" criteria are now demonstrated on Apple Silicon:
+
+| Criterion | Status | Evidence |
+| --- | --- | --- |
+| QEMU/HVF Linux Arm64 (Compatibility) | ✅ proven + recorded | `~/bridgevm-live-evidence/qemu-arm64-2026-06-16/` |
+| Apple VZ Linux Arm64 (Fast) | ✅ proven + recorded | `~/bridgevm-live-evidence/apple-vz-arm64-2026-06-16/` |
+| Windows 11 Arm installer reachability | ✅ proven (graphical) | `~/bridgevm-live-evidence/windows-arm64-2026-06-16/` |
+
+Live evidence is captured via opt-in smokes (`tests/integration/qemu-live-boot-opt-in-smoke.sh`,
+`apple-vz-live-boot-opt-in-smoke.sh`) and recorded with `bridgevm readiness --record-live-evidence`.
+
+## Windows installer support (product feature)
+`bridgevm` can build and launch the Windows 11 Arm installer in Compatibility Mode:
+```sh
+bridgevm create win11 --os windows --version 11 --arch arm64 \
+  --mode compatibility --boot-mode windows-installer \
+  --installer-image /path/to/Win11_Arm64.iso
+bridgevm run win11 --spawn   # boots to Windows Setup
+```
+Wiring: `BootMode::WindowsInstaller` (bridgevm-config) + installer media in
+`build_compatibility_command` (bridgevm-qemu): edk2 + ramfb + qemu-xhci/usb-kbd + ISO
+as usb-storage cdrom (bootindex 0) + virtio-rng. Covered by unit tests, the CLI
+flag, and `tests/integration/windows-arm-qemu-args-cli-smoke.sh`. See
+[docs/compatibility-mode/README.md](docs/compatibility-mode/README.md).
+
+## Verification lanes
+- **Safe app lane:** `tests/integration/local-release-readiness-suite.sh --app-only --locally-usable-app`
+- **Rust:** `cargo test --workspace`
+- **Live boot (opt-in, heavy):** the `*-live-boot-opt-in-smoke.sh` scripts (need a real disk/ISO + `*_ALLOW_REAL_START=1`).
+
+## Open blockers / follow-ups
+- **Developer ID / notarization** — needs the user's paid Apple Developer account + Developer ID cert + notarytool profile. Only blocks public/signed distribution; all local dev works with ad-hoc signing.
+- **Readiness recorder is serial-only for `live-boot`** — `live_boot_progress_proven` (bridgevm-api) checks the serial sentinel only, so Windows GUI Setup (no serial) can't be formally recorded as `live-boot proven`. Console dimension already accepts graphical viewer evidence. Enhancement = accept a verified graphical frame as boot-progress proof (changes release-gate semantics — needs sign-off).
+- **Full Windows install** (beyond reaching Setup) — needs NVMe target + TPM 2.0 (swtpm) + Secure Boot emulation.
+
+## Where to look
+- `PLAN.md` — full plan, roadmap, §20 "Current scaffold progress" running log.
+- `crates/` — Rust engine (config, qemu, apple-vz, api, daemon, cli, …).
+- `apps/macos/` — SwiftUI app + AppleVzRunner.
+- `tests/integration/` — smokes (the de-facto behavior record; see its README).
+- `docs/` — per-mode/feature docs.
