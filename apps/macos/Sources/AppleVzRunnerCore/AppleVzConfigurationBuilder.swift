@@ -28,7 +28,11 @@ public enum AppleVzConfigurationBuilder {
 
     let configuration = VZVirtualMachineConfiguration()
     let platform = VZGenericPlatformConfiguration()
-    platform.machineIdentifier = VZGenericMachineIdentifier()
+    // Persist a stable machine identifier per VM bundle. Apple VZ save/restore
+    // (suspend/resume) rejects a restore whose configuration identity differs
+    // from the saved state, so a fresh random identifier on every build would
+    // make restore fail with VZErrorDomain "invalid argument".
+    platform.machineIdentifier = loadOrCreateMachineIdentifier(bundlePath: spec.bundlePath)
     configuration.platform = platform
 
     let bootLoader = VZLinuxBootLoader(kernelURL: URL(fileURLWithPath: kernel.path))
@@ -52,6 +56,11 @@ public enum AppleVzConfigurationBuilder {
     ]
 
     let networkDevice = VZVirtioNetworkDeviceConfiguration()
+    // Persist a stable MAC per VM bundle. Like the machine identifier, an
+    // unstable (randomly generated) MAC makes the save-time and restore-time
+    // configurations differ, so VZ save/restore (suspend/resume) rejects the
+    // restore with VZErrorRestore "invalid argument".
+    networkDevice.macAddress = loadOrCreateMACAddress(bundlePath: spec.bundlePath)
     networkDevice.attachment = VZNATNetworkDeviceAttachment()
     configuration.networkDevices = [networkDevice]
 
@@ -76,6 +85,59 @@ public enum AppleVzConfigurationBuilder {
   public static func validateLinuxKernelConfiguration(spec: AppleVzLaunchSpec) throws {
     let configuration = try buildLinuxKernelConfiguration(spec: spec)
     try configuration.validate()
+  }
+
+  private static func loadOrCreateMachineIdentifier(
+    bundlePath: String
+  ) -> VZGenericMachineIdentifier {
+    guard !bundlePath.isEmpty else {
+      return VZGenericMachineIdentifier()
+    }
+    let metadataDir = URL(fileURLWithPath: bundlePath).appendingPathComponent("metadata")
+    let identifierFile = metadataDir.appendingPathComponent("machine-identifier.bin")
+    if let data = try? Data(contentsOf: identifierFile),
+      let identifier = VZGenericMachineIdentifier(dataRepresentation: data)
+    {
+      return identifier
+    }
+    let identifier = VZGenericMachineIdentifier()
+    persistStableIdentity(
+      identifier.dataRepresentation, to: identifierFile, label: "machine identifier")
+    return identifier
+  }
+
+  private static func loadOrCreateMACAddress(bundlePath: String) -> VZMACAddress {
+    guard !bundlePath.isEmpty else {
+      return VZMACAddress.randomLocallyAdministered()
+    }
+    let macFile = URL(fileURLWithPath: bundlePath)
+      .appendingPathComponent("metadata")
+      .appendingPathComponent("network-mac-address.txt")
+    if let stored = try? String(contentsOf: macFile, encoding: .utf8)
+      .trimmingCharacters(in: .whitespacesAndNewlines),
+      let mac = VZMACAddress(string: stored)
+    {
+      return mac
+    }
+    let mac = VZMACAddress.randomLocallyAdministered()
+    persistStableIdentity(Data(mac.string.utf8), to: macFile, label: "network MAC address")
+    return mac
+  }
+
+  /// Persist a stable-identity artifact (machine identifier, MAC) atomically.
+  /// These must survive across processes for Apple VZ save/restore to match the
+  /// saved state, so a write failure is a loud warning, not silent.
+  private static func persistStableIdentity(_ data: Data, to file: URL, label: String) {
+    do {
+      try FileManager.default.createDirectory(
+        at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try data.write(to: file, options: .atomic)
+    } catch {
+      FileHandle.standardError.write(
+        Data(
+          "AppleVzRunner: WARNING failed to persist \(label) at \(file.path): \(error). Suspend/resume restore will fail because the VM configuration identity will not be stable.\n"
+            .utf8))
+    }
   }
 
   private static func parsePositiveUInt64(_ value: String) throws -> UInt64 {

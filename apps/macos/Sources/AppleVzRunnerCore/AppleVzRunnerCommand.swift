@@ -42,10 +42,30 @@ public enum AppleVzRunnerCommand {
         },
         launchVirtualMachine: { spec, launchOptions in
           #if canImport(Virtualization)
-          try AppleVzVirtualMachineLauncher.launchLinuxKernelVirtualMachine(
-            spec: spec,
-            options: launchOptions
-          )
+          if let restorePath = launchOptions.restoreStatePath {
+            guard #available(macOS 14.0, *) else {
+              throw AppleVzRunnerCommandError.saveRestoreRequiresMacOS14
+            }
+            try AppleVzVirtualMachineLauncher.restoreLinuxKernelVirtualMachine(
+              spec: spec,
+              fromStatePath: restorePath,
+              options: launchOptions
+            )
+          } else if let savePath = launchOptions.saveStatePath {
+            guard #available(macOS 14.0, *) else {
+              throw AppleVzRunnerCommandError.saveRestoreRequiresMacOS14
+            }
+            try AppleVzVirtualMachineLauncher.suspendLinuxKernelVirtualMachine(
+              spec: spec,
+              afterSeconds: launchOptions.stopAfterSeconds ?? 30,
+              toStatePath: savePath
+            )
+          } else {
+            try AppleVzVirtualMachineLauncher.launchLinuxKernelVirtualMachine(
+              spec: spec,
+              options: launchOptions
+            )
+          }
           #else
           throw AppleVzRunnerCommandError.virtualizationFrameworkUnavailable
           #endif
@@ -105,7 +125,7 @@ public enum AppleVzRunnerCommand {
     }
   }
 
-  fileprivate static let usage = "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N]"
+  fileprivate static let usage = "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH]"
 
   private static func isHelpRequested(_ arguments: [String]) -> Bool {
     arguments.contains { argument in
@@ -172,6 +192,8 @@ public enum AppleVzRunnerCommand {
     var allowRealVzStart = false
     var stopAfterSeconds: UInt64?
     var forceStopGraceSeconds: UInt64?
+    var saveStatePath: String?
+    var restoreStatePath: String?
     var index = 0
 
     while index < arguments.count {
@@ -222,6 +244,20 @@ public enum AppleVzRunnerCommand {
         }
         forceStopGraceSeconds = parsed
         index += 2
+      case "--save-state":
+        let valueIndex = index + 1
+        guard valueIndex < arguments.count else {
+          throw AppleVzRunnerCommandError.missingValue(argument)
+        }
+        saveStatePath = arguments[valueIndex]
+        index += 2
+      case "--restore-state":
+        let valueIndex = index + 1
+        guard valueIndex < arguments.count else {
+          throw AppleVzRunnerCommandError.missingValue(argument)
+        }
+        restoreStatePath = arguments[valueIndex]
+        index += 2
       case "--help", "-h":
         throw AppleVzRunnerCommandError.help
       default:
@@ -239,7 +275,9 @@ public enum AppleVzRunnerCommand {
         stopAfterSeconds: stopAfterSeconds,
         forceStopGraceSeconds: forceStopGraceSeconds ?? defaultForceStopGraceSeconds(
           stopAfterSeconds: stopAfterSeconds
-        )
+        ),
+        saveStatePath: saveStatePath,
+        restoreStatePath: restoreStatePath
       )
     )
   }
@@ -361,6 +399,7 @@ public enum AppleVzRunnerCommandError: Error, LocalizedError, Equatable {
   case missingLaunchSpecPath
   case virtualizationFrameworkUnavailable
   case realStartRequiresOptIn
+  case saveRestoreRequiresMacOS14
 
   public var errorDescription: String? {
     switch self {
@@ -378,6 +417,8 @@ public enum AppleVzRunnerCommandError: Error, LocalizedError, Equatable {
       return "--validate-vz-config requires Virtualization.framework"
     case .realStartRequiresOptIn:
       return "real Apple VZ start requires --allow-real-vz-start"
+    case .saveRestoreRequiresMacOS14:
+      return "Apple VZ suspend/resume (--save-state/--restore-state) requires macOS 14 or later"
     }
   }
 }

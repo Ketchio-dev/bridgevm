@@ -16,10 +16,23 @@ public enum AppleVzVirtualMachineLaunchResult: Equatable {
 public struct AppleVzLaunchOptions: Equatable {
   public var stopAfterSeconds: UInt64?
   public var forceStopGraceSeconds: UInt64?
+  /// When set, the VM is paused and its full machine state is written to this
+  /// path after `stopAfterSeconds`, instead of being stopped (suspend).
+  public var saveStatePath: String?
+  /// When set, the VM is restored from this saved state and resumed instead of
+  /// performing a fresh boot (resume).
+  public var restoreStatePath: String?
 
-  public init(stopAfterSeconds: UInt64? = nil, forceStopGraceSeconds: UInt64? = nil) {
+  public init(
+    stopAfterSeconds: UInt64? = nil,
+    forceStopGraceSeconds: UInt64? = nil,
+    saveStatePath: String? = nil,
+    restoreStatePath: String? = nil
+  ) {
     self.stopAfterSeconds = stopAfterSeconds
     self.forceStopGraceSeconds = forceStopGraceSeconds
+    self.saveStatePath = saveStatePath
+    self.restoreStatePath = restoreStatePath
   }
 }
 
@@ -48,6 +61,7 @@ public final class AppleVzVirtualMachineLauncher {
   }
 
   public func startAndWaitForStop(
+    startMachine: Bool = true,
     interruptionSignals: AsyncStream<Void> = AppleVzSignalSource.sigint(),
     forceStopGraceSeconds: UInt64? = nil
   ) async throws -> AppleVzVirtualMachineLaunchResult {
@@ -66,12 +80,14 @@ public final class AppleVzVirtualMachineLauncher {
         continuation.finish()
       }
 
-      log("VM start requested")
-      machine.start { result in
-        log("VM start completion: \(result)")
-        continuation.yield(.started(result))
-        if case .failure = result {
-          continuation.finish()
+      if startMachine {
+        log("VM start requested")
+        machine.start { result in
+          log("VM start completion: \(result)")
+          continuation.yield(.started(result))
+          if case .failure = result {
+            continuation.finish()
+          }
         }
       }
 
@@ -333,6 +349,122 @@ public extension AppleVzVirtualMachineLauncher {
     let result = try launchResult?.get()
     print("AppleVzRunner VM finished: \(spec.vmName) (\(result ?? .stopped))")
   }
+
+  /// Boot the Linux VM, run for `afterSeconds`, then pause and write the full
+  /// machine state (memory + devices) to `statePath` for later resume.
+  @available(macOS 14.0, *)
+  static func suspendLinuxKernelVirtualMachine(
+    spec: AppleVzLaunchSpec,
+    afterSeconds: UInt64,
+    toStatePath statePath: String
+  ) throws {
+    let configuration = try AppleVzConfigurationBuilder.buildLinuxKernelConfiguration(spec: spec)
+    try configuration.validate()
+    try assertSaveRestoreSupported(configuration)
+
+    print("AppleVzRunner starting VM to suspend: \(spec.vmName)")
+    let machine = AppleVzVirtualMachineAdapter(configuration: configuration)
+    let semaphore = DispatchSemaphore(value: 0)
+    var flowResult: Result<Void, Error>?
+
+    Task {
+      do {
+        try await awaitVZVoid { machine.start(completionHandler: $0) }
+        print("AppleVzRunner VM running; will suspend after \(afterSeconds)s")
+        try? await Task.sleep(for: .seconds(afterSeconds))
+        try await awaitVZVoid { machine.pause(completionHandler: $0) }
+        print("AppleVzRunner VM paused; saving machine state to \(statePath)")
+        try await awaitVZVoid {
+          machine.saveState(to: URL(fileURLWithPath: statePath), completionHandler: $0)
+        }
+        print("AppleVzRunner saved machine state: \(statePath)")
+        try? await awaitVZVoid { machine.stop(completionHandler: $0) }
+        flowResult = .success(())
+      } catch {
+        // Best-effort cleanup: stop the still-running VM and remove any partial
+        // state file so a later --restore-state cannot consume a corrupt save.
+        try? await awaitVZVoid { machine.stop(completionHandler: $0) }
+        try? FileManager.default.removeItem(at: URL(fileURLWithPath: statePath))
+        flowResult = .failure(error)
+      }
+      semaphore.signal()
+    }
+
+    semaphore.wait()
+    try flowResult?.get()
+    print("AppleVzRunner suspend complete: \(spec.vmName)")
+  }
+
+  /// Restore the Linux VM from a previously saved state file and resume it,
+  /// running until `options.stopAfterSeconds` elapses (or SIGINT).
+  @available(macOS 14.0, *)
+  static func restoreLinuxKernelVirtualMachine(
+    spec: AppleVzLaunchSpec,
+    fromStatePath statePath: String,
+    options: AppleVzLaunchOptions = AppleVzLaunchOptions()
+  ) throws {
+    let configuration = try AppleVzConfigurationBuilder.buildLinuxKernelConfiguration(spec: spec)
+    try configuration.validate()
+    try assertSaveRestoreSupported(configuration)
+
+    print("AppleVzRunner restoring VM: \(spec.vmName) from \(statePath)")
+    let machine = AppleVzVirtualMachineAdapter(configuration: configuration)
+    let launcher = AppleVzVirtualMachineLauncher(machine: machine)
+    let semaphore = DispatchSemaphore(value: 0)
+    var flowResult: Result<Void, Error>?
+
+    Task {
+      do {
+        try await awaitVZVoid {
+          machine.restoreState(from: URL(fileURLWithPath: statePath), completionHandler: $0)
+        }
+        print("AppleVzRunner restored machine state; resuming")
+        try await awaitVZVoid { machine.resume(completionHandler: $0) }
+        print("AppleVzRunner VM resumed: \(spec.vmName)")
+        // Reuse the robust wait loop (guest-stop handler + interruption + force
+        // stop grace) without re-starting the already-resumed machine.
+        _ = try await launcher.startAndWaitForStop(
+          startMachine: false,
+          interruptionSignals: AppleVzSignalSource.merged([
+            AppleVzSignalSource.sigint(),
+            AppleVzSignalSource.timer(afterSeconds: options.stopAfterSeconds),
+          ]),
+          forceStopGraceSeconds: options.forceStopGraceSeconds
+        )
+        flowResult = .success(())
+      } catch {
+        try? await awaitVZVoid { machine.stop(completionHandler: $0) }
+        flowResult = .failure(error)
+      }
+      semaphore.signal()
+    }
+
+    semaphore.wait()
+    try flowResult?.get()
+    print("AppleVzRunner restore complete: \(spec.vmName)")
+  }
+}
+
+@available(macOS 12.0, *)
+fileprivate func awaitVZVoid(
+  _ body: (@escaping (Result<Void, Error>) -> Void) -> Void
+) async throws {
+  try await withCheckedThrowingContinuation { continuation in
+    body { result in continuation.resume(with: result) }
+  }
+}
+
+@available(macOS 14.0, *)
+fileprivate func assertSaveRestoreSupported(
+  _ configuration: VZVirtualMachineConfiguration
+) throws {
+  do {
+    try configuration.validateSaveRestoreSupport()
+    print("AppleVzRunner save/restore support: OK")
+  } catch {
+    print("AppleVzRunner save/restore support unavailable: \(error)")
+    throw error
+  }
 }
 
 @available(macOS 12.0, *)
@@ -392,6 +524,44 @@ public final class AppleVzVirtualMachineAdapter: NSObject, AppleVzVirtualMachine
   public func setStopHandler(_ handler: @escaping (Result<Void, Error>) -> Void) {
     onQueue {
       stopHandler = handler
+    }
+  }
+
+  public var canPause: Bool {
+    onQueue { virtualMachine.canPause }
+  }
+
+  public var canResume: Bool {
+    onQueue { virtualMachine.canResume }
+  }
+
+  public func pause(completionHandler: @escaping (Result<Void, Error>) -> Void) {
+    queue.async { [virtualMachine] in
+      virtualMachine.pause(completionHandler: completionHandler)
+    }
+  }
+
+  public func resume(completionHandler: @escaping (Result<Void, Error>) -> Void) {
+    queue.async { [virtualMachine] in
+      virtualMachine.resume(completionHandler: completionHandler)
+    }
+  }
+
+  @available(macOS 14.0, *)
+  public func saveState(to url: URL, completionHandler: @escaping (Result<Void, Error>) -> Void) {
+    queue.async { [virtualMachine] in
+      virtualMachine.saveMachineStateTo(url: url) { error in
+        completionHandler(error.map { .failure($0) } ?? .success(()))
+      }
+    }
+  }
+
+  @available(macOS 14.0, *)
+  public func restoreState(from url: URL, completionHandler: @escaping (Result<Void, Error>) -> Void) {
+    queue.async { [virtualMachine] in
+      virtualMachine.restoreMachineStateFrom(url: url) { error in
+        completionHandler(error.map { .failure($0) } ?? .success(()))
+      }
     }
   }
 

@@ -295,10 +295,11 @@ pub fn build_compatibility_command(
         ]);
     }
 
-    if manifest
-        .boot
-        .as_ref()
-        .is_some_and(|boot| boot.mode == BootMode::WindowsInstaller)
+    if (arch == "arm64" || arch == "aarch64")
+        && manifest
+            .boot
+            .as_ref()
+            .is_some_and(|boot| boot.mode == BootMode::WindowsInstaller)
     {
         let boot = manifest.boot.as_ref().expect("windows-installer boot present");
         let installer = boot

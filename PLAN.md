@@ -1479,7 +1479,7 @@ Fast Mode template boot-media readiness and resource-profile launch-spec handoff
 Aggregate readiness-report CLI coverage and the Apple VZ live opt-in default-skip smoke now lock the pre-launch report contract and default no-live-start boundary without treating either path as live E2E proof.
 Windows 11 Arm restricted backend planning has CLI/socket smoke coverage for `qemu-args` selection of QEMU aarch64, `virt`, `hvf`, `cpu host`, restricted display defaults, explicit VNC preservation, and the restricted-profile RNG device without spawning QEMU or claiming that Windows booted.
 Performance baseline/sample CLI/socket smoke coverage records metadata-only baselines and bounded host-side sample artifacts, with dashboard-facing artifact/card metadata, without booting, resuming, or benchmarking a guest.
-Real suspend memory serialization/restoration and guest-agent application consistency remain future work.
+Real suspend memory serialization/restoration now works at the Fast Mode runner level: AppleVzRunner implements Apple VZ `saveMachineState`/`restoreMachineState` (CLI `--save-state`/`--restore-state`), persisting the machine identifier and network MAC per bundle so the restore configuration matches the saved state. A real Debian arm64 VZ guest was suspended (memory+device state written to a file) and restored/resumed (verified via the runner). Wiring this through the daemon/CLI `suspend`/`resume` commands and the macOS app, plus guest-agent application consistency, remains future work.
 ```
 
 ---
