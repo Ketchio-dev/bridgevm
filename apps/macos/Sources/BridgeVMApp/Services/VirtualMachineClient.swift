@@ -1172,9 +1172,9 @@ final class DaemonVirtualMachineClient: VirtualMachineClient, VirtualMachineClie
     case .start:
       try await runBackend(name: name, spawn: true)
     case .resume:
-      try await transition(name: name, state: .running)
+      try await resume(name: name)
     case .pause:
-      try await transition(name: name, state: .suspended)
+      try await suspend(name: name)
     case .stop:
       try await stop(name: name)
     case .restart:
@@ -1209,6 +1209,20 @@ final class DaemonVirtualMachineClient: VirtualMachineClient, VirtualMachineClie
   private func runBackend(name: String, spawn: Bool) async throws {
     _ = try await transport.send(
       DaemonRunBackendRequest(name: name, spawn: spawn),
+      responseType: DaemonRunnerStatusResponse.self
+    )
+  }
+
+  private func suspend(name: String) async throws {
+    _ = try await transport.send(
+      DaemonSuspendBackendRequest(name: name),
+      responseType: DaemonRunnerStatusResponse.self
+    )
+  }
+
+  private func resume(name: String) async throws {
+    _ = try await transport.send(
+      DaemonResumeBackendRequest(name: name),
       responseType: DaemonRunnerStatusResponse.self
     )
   }
@@ -2481,6 +2495,16 @@ struct DaemonRunBackendRequest: Encodable {
   var spawn: Bool
 }
 
+struct DaemonSuspendBackendRequest: Encodable {
+  let type = "suspend_backend"
+  var name: String
+}
+
+struct DaemonResumeBackendRequest: Encodable {
+  let type = "resume_backend"
+  var name: String
+}
+
 struct DaemonLifecyclePlanRequest: Encodable {
   let type = "lifecycle_plan"
   var name: String
@@ -2818,6 +2842,17 @@ extension DaemonPrepareRunRequest: DaemonRequestTimeoutProviding {
 }
 
 extension DaemonRunBackendRequest: DaemonRequestTimeoutProviding {
+  var daemonRequestTimeoutCategory: DaemonRequestTimeoutCategory { .lifecycleAction }
+}
+
+extension DaemonSuspendBackendRequest: DaemonRequestTimeoutProviding {
+  // Suspend is synchronous: the daemon boots the Fast VM, runs it briefly,
+  // pauses, and saves machine state before responding, so it needs a longer
+  // budget than a metadata-only lifecycle action.
+  var daemonRequestTimeoutCategory: DaemonRequestTimeoutCategory { .snapshotOperation }
+}
+
+extension DaemonResumeBackendRequest: DaemonRequestTimeoutProviding {
   var daemonRequestTimeoutCategory: DaemonRequestTimeoutCategory { .lifecycleAction }
 }
 

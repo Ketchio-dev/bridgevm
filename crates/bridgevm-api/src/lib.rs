@@ -315,6 +315,12 @@ pub enum BridgeVmRequest {
         name: String,
         spawn: bool,
     },
+    SuspendBackend {
+        name: String,
+    },
+    ResumeBackend {
+        name: String,
+    },
     LifecyclePlan {
         name: String,
         action: LifecycleAction,
@@ -1387,6 +1393,18 @@ fn handle_request_result(
         }),
         BridgeVmRequest::RunBackend { name, spawn } => Ok(BridgeVmResponse::RunnerStatus {
             metadata: Some(run_backend(store, &name, spawn)?),
+            qmp_supervisor: store
+                .qmp_supervisor_metadata(&name)
+                .map_err(|error| error.to_string())?,
+        }),
+        BridgeVmRequest::SuspendBackend { name } => Ok(BridgeVmResponse::RunnerStatus {
+            metadata: Some(suspend_backend(store, &name)?),
+            qmp_supervisor: store
+                .qmp_supervisor_metadata(&name)
+                .map_err(|error| error.to_string())?,
+        }),
+        BridgeVmRequest::ResumeBackend { name } => Ok(BridgeVmResponse::RunnerStatus {
+            metadata: Some(resume_backend(store, &name)?),
             qmp_supervisor: store
                 .qmp_supervisor_metadata(&name)
                 .map_err(|error| error.to_string())?,
@@ -5597,6 +5615,315 @@ pub fn restart_vm(store: &VmStore, name: &str) -> Result<VmRuntimeMetadata, Stri
         .map_err(|error| error.to_string())
 }
 
+/// Default number of seconds the Fast Mode runner lets the guest run before it
+/// pauses and saves machine state during a suspend.
+const FAST_SUSPEND_RUN_SECONDS: u64 = 20;
+
+/// Compute the Apple VZ saved-state file path for a VM.
+///
+/// Contract: `<bundle>/metadata/suspend-images/<slug(name)>.bin`.
+fn fast_suspend_state_path(bundle: &Path, name: &str) -> PathBuf {
+    bundle
+        .join("metadata")
+        .join("suspend-images")
+        .join(format!("{}.bin", bridgevm_config::slug(name)))
+}
+
+/// Locate the `lightvm-runner` executable.
+///
+/// Honours `BRIDGEVM_LIGHTVM_RUNNER` (absolute path), then looks next to the
+/// current executable, then falls back to `PATH` (mirrors the CLI's
+/// executable-finding helper semantics).
+fn find_lightvm_runner() -> PathBuf {
+    if let Some(path) = std::env::var_os("BRIDGEVM_LIGHTVM_RUNNER") {
+        return PathBuf::from(path);
+    }
+    if let Some(path) = bundled_executable_path("lightvm-runner") {
+        return path;
+    }
+    if let Some(path) = path_executable("lightvm-runner") {
+        return path;
+    }
+    PathBuf::from("lightvm-runner")
+}
+
+fn bundled_executable_path(name: &str) -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let candidate = exe.parent()?.join(name);
+    is_executable_file(&candidate).then_some(candidate)
+}
+
+fn path_executable(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(name))
+        .find(|candidate| is_executable_file(candidate))
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        path.is_file()
+            && path
+                .metadata()
+                .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+                .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        path.is_file()
+    }
+}
+
+/// Resolve the signed AppleVzRunner from `BRIDGEVM_APPLE_VZ_RUNNER`.
+fn require_apple_vz_runner() -> Result<PathBuf, String> {
+    let path = std::env::var_os("BRIDGEVM_APPLE_VZ_RUNNER")
+        .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+        .ok_or_else(|| {
+            "set BRIDGEVM_APPLE_VZ_RUNNER to a signed AppleVzRunner before suspending or resuming a Fast Mode VM"
+                .to_string()
+        })?;
+    if !path.exists() {
+        return Err(format!(
+            "set BRIDGEVM_APPLE_VZ_RUNNER to a signed AppleVzRunner; {} does not exist",
+            path.display()
+        ));
+    }
+    Ok(path)
+}
+
+/// Suspend a Fast Mode VM end-to-end.
+///
+/// Boots the Fast VM via `lightvm-runner`, lets it run briefly, pauses, saves
+/// the VZ machine state to `<bundle>/metadata/suspend-images/<slug>.bin`, and
+/// exits. This call is SYNCHRONOUS: it waits for the runner to finish before
+/// marking the VM suspended.
+pub fn suspend_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, String> {
+    let (bundle, manifest, _) = store
+        .get_vm_with_active_disk(name)
+        .map_err(|error| error.to_string())?;
+    if manifest.mode != VmMode::Fast {
+        return Err(
+            "suspend is only implemented for Fast Mode VMs; Compatibility Mode suspend is not wired yet"
+                .to_string(),
+        );
+    }
+
+    let apple_vz_runner = require_apple_vz_runner()?;
+    let lightvm_runner = find_lightvm_runner();
+
+    let (disk, active_disk) = store
+        .prepare_active_disk(name)
+        .map_err(|error| error.to_string())?;
+
+    let plan = build_fast_plan(&manifest, &bundle).map_err(|error| error.to_string())?;
+    let launch_spec_path = write_launch_spec_artifact(&bundle, plan.launch_spec())
+        .map_err(|error| error.to_string())?;
+    let readiness = launch_readiness_metadata(&plan.launch_spec().readiness);
+    if !readiness.ready {
+        return Err(format!(
+            "Fast Mode launch readiness failed: {}",
+            launch_readiness_blocker_summary(&readiness)
+        ));
+    }
+
+    let state_path = fast_suspend_state_path(&bundle, name);
+    if let Some(parent) = state_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+
+    fs::create_dir_all(bundle.join("logs")).map_err(|error| error.to_string())?;
+    let log_path: PathBuf = plan.launch_spec().logs.runner_log_path.clone().into();
+    let stdout = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|error| error.to_string())?;
+    let stderr = stdout.try_clone().map_err(|error| error.to_string())?;
+
+    let args: Vec<String> = vec![
+        "--launch-spec".to_string(),
+        launch_spec_path.display().to_string(),
+        "--require-ready".to_string(),
+        "--launch".to_string(),
+        "--apple-vz-runner".to_string(),
+        apple_vz_runner.display().to_string(),
+        "--apple-vz-allow-real-start".to_string(),
+        "--apple-vz-stop-after-seconds".to_string(),
+        FAST_SUSPEND_RUN_SECONDS.to_string(),
+        "--apple-vz-save-state".to_string(),
+        state_path.display().to_string(),
+    ];
+
+    let status = Command::new(&lightvm_runner)
+        .args(&args)
+        .env("BRIDGEVM_APPLE_VZ_ALLOW_REAL_START", "1")
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
+        .status()
+        .map_err(|error| {
+            format!(
+                "failed to run {}: {error}",
+                lightvm_runner.display()
+            )
+        })?;
+    if !status.success() {
+        return Err(format!(
+            "Fast Mode suspend runner exited with status {status}; see {}",
+            log_path.display()
+        ));
+    }
+    if !state_path.exists() {
+        return Err(format!(
+            "Fast Mode suspend runner finished but no saved state was written to {}",
+            state_path.display()
+        ));
+    }
+
+    let mut command = vec![lightvm_runner.display().to_string()];
+    command.extend(args);
+    let metadata = RunnerMetadata {
+        engine: "lightvm".to_string(),
+        pid: None,
+        command,
+        log_path,
+        started_at_unix: now_unix(),
+        dry_run: false,
+        launch_spec_path: Some(launch_spec_path),
+        guest_tools: None,
+        disk: Some(disk),
+        active_disk: Some(active_disk),
+        launch_readiness: Some(readiness),
+    };
+    store
+        .write_runner_metadata(name, &metadata)
+        .map_err(|error| error.to_string())?;
+
+    // Mark the suspend-image metadata so the saved state is discoverable
+    // (image_exists=true after a successful suspend).
+    store
+        .mark_fast_suspend_image_exists(name, &state_path)
+        .map_err(|error| error.to_string())?;
+
+    // The runner ran the guest before pausing, so the VM was effectively
+    // Running; transition Stopped -> Running -> Suspended to satisfy the
+    // state-machine validation.
+    let current = store.state(name).map_err(|error| error.to_string())?.state;
+    if current == VmRuntimeState::Stopped {
+        store
+            .transition_state(name, VmRuntimeState::Running)
+            .map_err(|error| error.to_string())?;
+    }
+    store
+        .transition_state(name, VmRuntimeState::Suspended)
+        .map_err(|error| error.to_string())?;
+
+    Ok(metadata)
+}
+
+/// Resume a previously suspended Fast Mode VM end-to-end.
+///
+/// Spawns `lightvm-runner` DETACHED (does not wait), restoring the saved VZ
+/// machine state from `<bundle>/metadata/suspend-images/<slug>.bin`, records
+/// the runner pid, and marks the VM running.
+pub fn resume_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, String> {
+    let (bundle, manifest, _) = store
+        .get_vm_with_active_disk(name)
+        .map_err(|error| error.to_string())?;
+    if manifest.mode != VmMode::Fast {
+        return Err(
+            "resume is only implemented for Fast Mode VMs; Compatibility Mode resume is not wired yet"
+                .to_string(),
+        );
+    }
+
+    let state_path = fast_suspend_state_path(&bundle, name);
+    if !state_path.exists() {
+        return Err(format!(
+            "no saved Fast Mode state to resume from at {}; suspend the VM first",
+            state_path.display()
+        ));
+    }
+
+    let apple_vz_runner = require_apple_vz_runner()?;
+    let lightvm_runner = find_lightvm_runner();
+
+    let (disk, active_disk) = store
+        .prepare_active_disk(name)
+        .map_err(|error| error.to_string())?;
+
+    let plan = build_fast_plan(&manifest, &bundle).map_err(|error| error.to_string())?;
+    let launch_spec_path = write_launch_spec_artifact(&bundle, plan.launch_spec())
+        .map_err(|error| error.to_string())?;
+    let readiness = launch_readiness_metadata(&plan.launch_spec().readiness);
+    if !readiness.ready {
+        return Err(format!(
+            "Fast Mode launch readiness failed: {}",
+            launch_readiness_blocker_summary(&readiness)
+        ));
+    }
+
+    fs::create_dir_all(bundle.join("logs")).map_err(|error| error.to_string())?;
+    let log_path: PathBuf = plan.launch_spec().logs.runner_log_path.clone().into();
+    let stdout = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|error| error.to_string())?;
+    let stderr = stdout.try_clone().map_err(|error| error.to_string())?;
+
+    let args: Vec<String> = vec![
+        "--launch-spec".to_string(),
+        launch_spec_path.display().to_string(),
+        "--require-ready".to_string(),
+        "--launch".to_string(),
+        "--apple-vz-runner".to_string(),
+        apple_vz_runner.display().to_string(),
+        "--apple-vz-allow-real-start".to_string(),
+        "--apple-vz-restore-state".to_string(),
+        state_path.display().to_string(),
+    ];
+
+    let child = Command::new(&lightvm_runner)
+        .args(&args)
+        .env("BRIDGEVM_APPLE_VZ_ALLOW_REAL_START", "1")
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
+        .spawn()
+        .map_err(|error| {
+            format!(
+                "failed to spawn {}: {error}",
+                lightvm_runner.display()
+            )
+        })?;
+
+    let mut command = vec![lightvm_runner.display().to_string()];
+    command.extend(args);
+    let metadata = RunnerMetadata {
+        engine: "lightvm".to_string(),
+        pid: Some(child.id()),
+        command,
+        log_path,
+        started_at_unix: now_unix(),
+        dry_run: false,
+        launch_spec_path: Some(launch_spec_path),
+        guest_tools: None,
+        disk: Some(disk),
+        active_disk: Some(active_disk),
+        launch_readiness: Some(readiness),
+    };
+    store
+        .write_runner_metadata(name, &metadata)
+        .map_err(|error| error.to_string())?;
+    store
+        .transition_state(name, VmRuntimeState::Running)
+        .map_err(|error| error.to_string())?;
+
+    Ok(metadata)
+}
+
 fn lifecycle_plan(
     store: &VmStore,
     name: &str,
@@ -5949,6 +6276,28 @@ mod tests {
             spawn: false,
         };
         let json = serde_json::to_string(&request).unwrap();
+        let decoded: BridgeVmRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(request, decoded);
+    }
+
+    #[test]
+    fn suspend_backend_request_round_trips_as_json() {
+        let request = BridgeVmRequest::SuspendBackend {
+            name: "legacy".to_string(),
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        assert_eq!(json, r#"{"type":"suspend_backend","name":"legacy"}"#);
+        let decoded: BridgeVmRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(request, decoded);
+    }
+
+    #[test]
+    fn resume_backend_request_round_trips_as_json() {
+        let request = BridgeVmRequest::ResumeBackend {
+            name: "legacy".to_string(),
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        assert_eq!(json, r#"{"type":"resume_backend","name":"legacy"}"#);
         let decoded: BridgeVmRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(request, decoded);
     }

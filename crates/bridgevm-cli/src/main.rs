@@ -6,7 +6,8 @@ use bridgevm_api::{
     create_performance_sample, download_boot_media, fast_spawn_not_implemented_error,
     guest_tools_linux_command, guest_tools_token, import_boot_media, inspect_boot_media_status,
     inspect_guest_tools_status, launch_readiness_metadata, list_ports, list_shares, open_port_plan,
-    plan_boot_media_download, remove_port, remove_share, verify_boot_media, view_vm_log,
+    plan_boot_media_download, remove_port, remove_share, resume_backend, suspend_backend,
+    verify_boot_media, view_vm_log,
     ApplicationConsistentSnapshotExecutionRecord, BootMediaDownloadPlanMetadata,
     BootMediaDownloadResultMetadata, BootMediaImportMetadata, BootMediaKind, BootMediaStatus,
     BootMediaVerificationMetadata, BridgeVmRequest, BridgeVmResponse, DiagnosticBundleMetadata,
@@ -760,18 +761,8 @@ fn main() -> Result<()> {
         ),
         Command::Stop(args) => stop_backend_local(&store, args),
         Command::Restart(args) => restart_local(&store, args),
-        Command::Suspend(args) => transition(
-            &store,
-            args,
-            VmRuntimeState::Suspended,
-            "Metadata state recorded for",
-        ),
-        Command::Resume(args) => transition(
-            &store,
-            args,
-            VmRuntimeState::Running,
-            "Metadata state recorded for",
-        ),
+        Command::Suspend(args) => suspend_backend_local(&store, args),
+        Command::Resume(args) => resume_backend_local(&store, args),
         Command::Delete(args) => delete(&store, args),
         Command::Export(args) => export_vm(&store, args),
         Command::Import(args) => import_vm(&store, args),
@@ -827,14 +818,8 @@ fn request_for(command: Command) -> Result<BridgeVmRequest> {
         }),
         Command::Stop(args) => Ok(BridgeVmRequest::StopBackend { name: args.name }),
         Command::Restart(args) => Ok(BridgeVmRequest::RestartVm { name: args.name }),
-        Command::Suspend(args) => Ok(BridgeVmRequest::TransitionVm {
-            name: args.name,
-            state: VmRuntimeState::Suspended,
-        }),
-        Command::Resume(args) => Ok(BridgeVmRequest::TransitionVm {
-            name: args.name,
-            state: VmRuntimeState::Running,
-        }),
+        Command::Suspend(args) => Ok(BridgeVmRequest::SuspendBackend { name: args.name }),
+        Command::Resume(args) => Ok(BridgeVmRequest::ResumeBackend { name: args.name }),
         Command::Delete(args) => Ok(BridgeVmRequest::DeleteVm {
             name: args.name,
             metadata_only: args.metadata_only,
@@ -2118,6 +2103,30 @@ fn run_backend_local(store: &VmStore, args: RunArgs) -> Result<()> {
     let qmp_supervisor = store
         .qmp_supervisor_metadata(&args.name)
         .context("failed to read QMP supervisor metadata")?;
+    print_runner_status(Some(metadata), qmp_supervisor.as_ref());
+    Ok(())
+}
+
+fn suspend_backend_local(store: &VmStore, args: VmNameArgs) -> Result<()> {
+    let metadata = suspend_backend(store, &args.name)
+        .map_err(anyhow::Error::msg)
+        .with_context(|| format!("failed to suspend VM '{}'", args.name))?;
+    let qmp_supervisor = store
+        .qmp_supervisor_metadata(&args.name)
+        .context("failed to read QMP supervisor metadata")?;
+    println!("Suspended {}", args.name);
+    print_runner_status(Some(metadata), qmp_supervisor.as_ref());
+    Ok(())
+}
+
+fn resume_backend_local(store: &VmStore, args: VmNameArgs) -> Result<()> {
+    let metadata = resume_backend(store, &args.name)
+        .map_err(anyhow::Error::msg)
+        .with_context(|| format!("failed to resume VM '{}'", args.name))?;
+    let qmp_supervisor = store
+        .qmp_supervisor_metadata(&args.name)
+        .context("failed to read QMP supervisor metadata")?;
+    println!("Resumed {}", args.name);
     print_runner_status(Some(metadata), qmp_supervisor.as_ref());
     Ok(())
 }

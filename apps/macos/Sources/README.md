@@ -25,8 +25,10 @@ The first app milestone should be a native dashboard that calls the Rust daemon 
   result when available, without treating command/status UI as proof of live
   guest-side effects
 - basic lifecycle controls wired through a `VirtualMachineClient` protocol,
-  including suspend/resume plan readiness surfaces that must stay
-  metadata-only until a backend-specific control path is explicitly wired
+  including Fast Mode Apple VZ suspend/resume that sends the daemon
+  `suspend_backend`/`resume_backend` requests (suspend saves machine state to
+  disk synchronously; resume restores it and runs the VM detached), alongside
+  suspend/resume plan readiness surfaces for inspecting control before sending
 - `MockVirtualMachineClient` sample data for UI development
 - `DaemonVirtualMachineClient` with a newline-delimited JSON Unix socket
   transport for the Rust daemon
@@ -53,9 +55,11 @@ The source is intentionally thin: VM lifecycle state should continue to live in
 `bridgevmd`, while the macOS app presents inventory and sends user actions.
 The daemon client currently speaks the same wire format as `bridgevmd` for
 `store_doctor`, `list_vms`, `list_templates`, `create_vm`, `transition_vm`,
-`run_backend`, and `stop_backend`; dashboard Start requests route through
-daemon-owned backend launch with `spawn=true` rather than only marking metadata
-as running, while suspend/resume remain separate lifecycle-control boundaries;
+`run_backend`, `suspend_backend`, `resume_backend`, and `stop_backend`;
+dashboard Start requests route through daemon-owned backend launch with
+`spawn=true` rather than only marking metadata as running, and dashboard
+Suspend/Resume now route through `suspend_backend`/`resume_backend` (Fast Mode
+Apple VZ save/restore) rather than metadata-only transitions;
 the Boot Media panel also speaks `inspect_boot_media_status`,
 `import_boot_media`, `verify_boot_media`, `plan_boot_media_download`, and
 `download_boot_media`.
@@ -99,10 +103,13 @@ daemon boundary until a live guest run preserves observable guest-side effects
 for those commands.
 The lifecycle controls should use the same daemon/API metadata boundaries as the
 CLI. Suspend and resume planning can surface `lifecycle-plan` readiness,
-Compatibility Mode QMP `stop`/`cont` intent, socket availability, and blockers,
-but the dashboard must not present those controls as real guest suspend/resume
-unless a backend command path actually executes them. Fast Mode Apple VZ
-suspend/resume remains reported as not wired.
+Compatibility Mode QMP `stop`/`cont` intent, socket availability, and blockers.
+Fast Mode Apple VZ suspend/resume is now wired end-to-end: Suspend sends
+`suspend_backend` (the daemon boots the Fast VM, runs it briefly, pauses, and
+saves VZ machine state synchronously) and Resume sends `resume_backend` (restores
+the saved state and runs the VM detached). Requires a signed AppleVzRunner via
+`BRIDGEVM_APPLE_VZ_RUNNER`. Compatibility Mode suspend/resume remains a
+follow-up; pausing an already-running VM over IPC is also still out of scope.
 The macOS client can also model the daemon-backed `guest_tools_send_command`
 request/response boundary for safe alpha command dispatch, including
 list-applications and list-windows actions that can update status/result

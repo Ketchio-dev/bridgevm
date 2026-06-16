@@ -3050,7 +3050,7 @@ final class DashboardViewModel: ObservableObject {
         LifecycleActionOption(
           action: .pause,
           title: "Suspend",
-          detail: "Record a suspended runtime state for this VM.",
+          detail: "Pause this VM and save its machine state to disk.",
           systemImage: "pause.fill"
         ),
         LifecycleActionOption(
@@ -3072,7 +3072,7 @@ final class DashboardViewModel: ObservableObject {
         LifecycleActionOption(
           action: .resume,
           title: "Resume",
-          detail: "Return suspended metadata to running state.",
+          detail: "Restore this VM from its saved machine state and run it.",
           systemImage: "play.fill"
         ),
         LifecycleActionOption(

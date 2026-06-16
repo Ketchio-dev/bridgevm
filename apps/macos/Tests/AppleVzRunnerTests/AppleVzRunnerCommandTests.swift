@@ -16,7 +16,7 @@ final class AppleVzRunnerCommandTests: XCTestCase {
     XCTAssertEqual(
       fake.outputLines,
       [
-        "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N]"
+        "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH]"
       ]
     )
     XCTAssertEqual(fake.readStandardInputCallCount, 0)

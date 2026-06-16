@@ -253,6 +253,18 @@ pub struct SnapshotSuspendImageMetadata {
     pub prepared_at_unix: u64,
 }
 
+/// Metadata describing a VM-scoped Fast Mode suspend image (the Apple VZ saved
+/// machine state written when a Fast VM is suspended). Distinct from
+/// [`SnapshotSuspendImageMetadata`], which is keyed by snapshot name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FastSuspendImageMetadata {
+    pub vm: String,
+    pub image_path: PathBuf,
+    pub image_format: String,
+    pub image_exists: bool,
+    pub updated_at_unix: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApplicationConsistentSnapshotPreflightMetadata {
     pub snapshot: String,
@@ -1713,6 +1725,42 @@ impl VmStore {
         Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
     }
 
+    /// Record that a Fast Mode suspend image now exists at `image_path`,
+    /// writing the VM-scoped suspend-image metadata. Used after a successful
+    /// Fast Mode suspend.
+    pub fn mark_fast_suspend_image_exists(
+        &self,
+        vm_name: &str,
+        image_path: &Path,
+    ) -> Result<FastSuspendImageMetadata, StorageError> {
+        let (bundle, _) = self.get_vm(vm_name)?;
+        let metadata = FastSuspendImageMetadata {
+            vm: vm_name.to_string(),
+            image_path: image_path.to_path_buf(),
+            image_format: "apple-vz-saved-state-v1".to_string(),
+            image_exists: image_path.exists(),
+            updated_at_unix: now_unix(),
+        };
+        write_json_pretty_atomic(
+            &fast_suspend_image_metadata_path(&bundle, vm_name),
+            &metadata,
+        )?;
+        Ok(metadata)
+    }
+
+    /// Read the VM-scoped Fast Mode suspend-image metadata, if present.
+    pub fn fast_suspend_image_metadata(
+        &self,
+        vm_name: &str,
+    ) -> Result<Option<FastSuspendImageMetadata>, StorageError> {
+        let (bundle, _) = self.get_vm(vm_name)?;
+        let path = fast_suspend_image_metadata_path(&bundle, vm_name);
+        if !path.exists() {
+            return Ok(None);
+        }
+        Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
+    }
+
     pub fn application_consistent_snapshot_preflight_metadata(
         &self,
         vm_name: &str,
@@ -2855,6 +2903,13 @@ fn snapshot_suspend_image_metadata_path(bundle: &Path, snapshot_name: &str) -> P
         .join("metadata")
         .join("suspend-images")
         .join(format!("{}.json", slug(snapshot_name)))
+}
+
+fn fast_suspend_image_metadata_path(bundle: &Path, vm_name: &str) -> PathBuf {
+    bundle
+        .join("metadata")
+        .join("suspend-images")
+        .join(format!("{}.fast.json", slug(vm_name)))
 }
 
 fn application_consistent_snapshot_preflight_path(bundle: &Path, snapshot_name: &str) -> PathBuf {

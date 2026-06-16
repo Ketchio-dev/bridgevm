@@ -36,6 +36,14 @@ as usb-storage cdrom (bootindex 0) + virtio-rng. Covered by unit tests, the CLI
 flag, and `tests/integration/windows-arm-qemu-args-cli-smoke.sh`. See
 [docs/compatibility-mode/README.md](docs/compatibility-mode/README.md).
 
+## Suspend/Resume (Fast Mode, product feature)
+`bridgevm suspend <vm>` / `bridgevm resume <vm>` work end-to-end for Fast Mode (Apple VZ) Linux VMs, wired runner → `lightvm-runner` → `bridgevm-api`/daemon/CLI → macOS app:
+- AppleVzRunner does VZ `saveMachineState`/`restoreMachineState` (`--save-state`/`--restore-state`); machine identifier + NAT MAC persisted per bundle (required for restore to match).
+- `suspend` boots the Fast VM, pauses, saves to `metadata/suspend-images/<vm>.bin`, marks `suspended`; `resume` restores + runs detached, marks `running`. Needs `BRIDGEVM_APPLE_VZ_RUNNER` (path to a signed AppleVzRunner).
+- macOS app pause/resume send `suspend_backend`/`resume_backend` daemon requests.
+- Verified: real Debian arm64 VZ guest suspended (98 MB state) → resumed to a running guest.
+- Follow-ups: pause an already-running VM via IPC (current model boots→saves), Compatibility Mode suspend/resume, daemon-supervised resumed child.
+
 ## Verification lanes
 - **Safe app lane:** `tests/integration/local-release-readiness-suite.sh --app-only --locally-usable-app`
 - **Rust:** `cargo test --workspace`
