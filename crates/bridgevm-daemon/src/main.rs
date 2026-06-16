@@ -179,6 +179,14 @@ struct SupervisedBackend {
     qmp: Option<QmpClient>,
     guest_tools: Option<AgentSession>,
     guest_tools_stream: Option<BufReader<UnixStream>>,
+    /// A guest-tools socket connection established host-first (right after the
+    /// backend is spawned, before the guest agent boots) and HELD open across
+    /// reconcile ticks. The guest agent writes its `GuestHello` exactly once,
+    /// as the first frame, when it comes up ~a minute into boot. Connecting
+    /// fresh on each tick races past that one-shot hello (the daemon would read
+    /// a later Heartbeat first -> `ExpectedGuestHello`), so instead we connect
+    /// once and keep this reader until the hello arrives or the socket dies.
+    guest_tools_pending: Option<BufReader<UnixStream>>,
     guest_tools_commands: AgentCommandTracker,
 }
 
@@ -189,6 +197,7 @@ impl SupervisedBackend {
             qmp: None,
             guest_tools: None,
             guest_tools_stream: None,
+            guest_tools_pending: None,
             guest_tools_commands: AgentCommandTracker::new(),
         }
     }
@@ -1369,40 +1378,65 @@ fn reconcile_guest_tools_session(
         return Ok(());
     }
 
-    let stream = match UnixStream::connect(&metadata.socket_path) {
-        Ok(stream) => stream,
-        Err(error)
-            if matches!(
-                error.kind(),
-                ErrorKind::NotFound | ErrorKind::ConnectionRefused | ErrorKind::WouldBlock
-            ) =>
-        {
-            return Ok(());
-        }
-        Err(error) => {
-            return Err(error).with_context(|| {
-                format!(
-                    "failed to connect guest tools socket {}",
-                    metadata.socket_path.display()
-                )
-            });
-        }
-    };
-    stream
-        .set_read_timeout(Some(Duration::from_millis(25)))
-        .context("failed to configure guest tools read timeout")?;
+    // Connect host-first and HOLD the connection. The guest agent emits its
+    // `GuestHello` once, as the first frame on the channel, when it boots ~a
+    // minute in. If we reconnected on every tick we would usually attach AFTER
+    // that one-shot hello had already flushed and instead read a later frame
+    // (its periodic Heartbeat), which `read_guest_session` rejects as
+    // `ExpectedGuestHello`. Connecting once up front (well before the agent is
+    // up) guarantees the hello reaches us as the first frame on this held
+    // reader. This mirrors how the live opt-in harness connects before
+    // launching the agent.
+    if backend.guest_tools_pending.is_none() {
+        let stream = match UnixStream::connect(&metadata.socket_path) {
+            Ok(stream) => stream,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    ErrorKind::NotFound | ErrorKind::ConnectionRefused | ErrorKind::WouldBlock
+                ) =>
+            {
+                return Ok(());
+            }
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "failed to connect guest tools socket {}",
+                        metadata.socket_path.display()
+                    )
+                });
+            }
+        };
+        stream
+            .set_read_timeout(Some(Duration::from_millis(25)))
+            .context("failed to configure guest tools read timeout")?;
+        backend.guest_tools_pending = Some(BufReader::new(stream));
+    }
 
     let policy = guest_tools_agent_policy(store, name).map_err(anyhow::Error::msg)?;
-    let mut reader = BufReader::new(stream);
-    match read_guest_session(&mut reader, &policy) {
+    let reader = backend
+        .guest_tools_pending
+        .as_mut()
+        .expect("guest tools pending reader present");
+    match read_guest_session(reader, &policy) {
         Ok(session) => {
             write_guest_tools_runtime(store, name, &session, GuestToolsRuntimeUpdate::Connected)?;
+            let reader = backend
+                .guest_tools_pending
+                .take()
+                .expect("guest tools pending reader present after accept");
             backend.guest_tools = Some(session);
             backend.guest_tools_stream = Some(reader);
         }
+        // No hello yet: the agent is still booting. KEEP the held connection so
+        // we receive the hello as its first frame whenever it arrives.
         Err(error) if guest_tools_session_error_is_idle(&error) => {}
+        // The held connection is unusable (socket closed, or the first frame was
+        // not a hello). Drop it so the next tick reconnects host-first and tries
+        // to catch a fresh hello.
         Err(error) => {
-            eprintln!("bridgevmd rejected guest-tools session for '{name}': {error:?}");
+            eprintln!("bridgevmd resetting guest-tools session for '{name}': {error:?}");
+            backend.guest_tools_pending = None;
         }
     }
     Ok(())
@@ -3302,6 +3336,98 @@ mod tests {
         let clipboard = runtime.clipboard.expect("clipboard metadata");
         assert_eq!(clipboard.text, "latest guest value");
         assert!(clipboard.updated_at_unix > 0);
+
+        state.cleanup_owned_backend("legacy", false).unwrap();
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn reconcile_holds_connection_and_catches_delayed_guest_hello() {
+        // Regression guard for the live application-consistent path: the guest
+        // agent emits its GuestHello exactly once, as the first frame, a beat
+        // after the host connects. The daemon must connect host-first and HOLD
+        // that connection across reconcile ticks so it catches the delayed
+        // hello, instead of reconnecting each tick and racing past it.
+        let store = temp_store();
+        store.create_vm(&compatibility_manifest("legacy")).unwrap();
+        store
+            .transition_state("legacy", VmRuntimeState::Running)
+            .unwrap();
+
+        let token = store.guest_tools_token("legacy").unwrap().token;
+        let guest_tools = store.guest_tools_runner_metadata("legacy").unwrap();
+        let listener = UnixListener::bind(&guest_tools.socket_path).unwrap();
+
+        let (send_hello, await_hello) = std::sync::mpsc::channel::<()>();
+        let server = thread::spawn(move || {
+            // Accept the daemon's host-first connection, then withhold the hello
+            // until the test has run the first (pending, no-data) reconcile —
+            // emulating the guest agent coming up a moment after the host
+            // attaches. The hello must land on this SAME held connection.
+            let (mut stream, _) = listener.accept().unwrap();
+            await_hello.recv().unwrap();
+            let hello = AgentEnvelope::new(AgentMessage::GuestHello {
+                version: PROTOCOL_VERSION,
+                guest_os: "linux".to_string(),
+                agent_version: Some("1.0.0".to_string()),
+                capabilities: vec![AgentCapability {
+                    name: "heartbeat".to_string(),
+                    version: 1,
+                }],
+                auth: Some(AgentAuth::ToolsToken { token }),
+            });
+            stream
+                .write_all(encode_envelope_line(&hello).unwrap().as_bytes())
+                .unwrap();
+            thread::sleep(Duration::from_millis(250));
+        });
+
+        let child = Command::new("sh").arg("-c").arg("sleep 5").spawn().unwrap();
+        let mut state = DaemonState::new(store.clone());
+        state
+            .children
+            .insert("legacy".to_string(), SupervisedBackend::new(child));
+
+        // First reconcile: connects host-first, reads no hello yet -> the
+        // connection is HELD (pending), no session accepted, no reset.
+        state.reconcile_children().unwrap();
+        {
+            let backend = state.children.get("legacy").unwrap();
+            assert!(
+                backend.guest_tools.is_none(),
+                "no session should be accepted before the hello arrives"
+            );
+            assert!(
+                backend.guest_tools_pending.is_some(),
+                "the host-first connection must be held while waiting for the hello"
+            );
+        }
+
+        // The agent now writes its one-shot hello on the SAME held connection.
+        send_hello.send(()).unwrap();
+        thread::sleep(Duration::from_millis(50));
+
+        // Second reconcile: reads the delayed hello on the held connection and
+        // accepts the session (proving the connection was not dropped/reconnected).
+        state.reconcile_children().unwrap();
+        {
+            let backend = state.children.get("legacy").unwrap();
+            let session = backend
+                .guest_tools
+                .as_ref()
+                .expect("session accepted from the delayed hello on the held connection");
+            assert_eq!(session.guest_os, "linux");
+            assert!(session.supports("heartbeat"));
+            assert!(
+                backend.guest_tools_pending.is_none(),
+                "the held connection should move to the active stream once accepted"
+            );
+        }
+        let runtime = store
+            .guest_tools_runtime_metadata("legacy")
+            .unwrap()
+            .expect("runtime metadata");
+        assert!(runtime.connected);
 
         state.cleanup_owned_backend("legacy", false).unwrap();
         server.join().unwrap();

@@ -3,16 +3,19 @@ set -euo pipefail
 
 # application-consistent-snapshot-live-opt-in-smoke.sh
 #
-# KNOWN ISSUE (WIP): this end-to-end smoke does not pass yet. In a local run the
-# daemon-owned guest never produced a guest-tools GuestHello within the timeout
-# (serial log empty), so the freeze/snapshot/thaw round-trip could not be
-# asserted live. The freeze/thaw orchestration's always-thaw guarantee is unit
-# tested (bridgevm-daemon), the guest fsfreeze backend + guest-tools transport
-# are proven by guest-tools-{handshake,effects}-opt-in-smoke.sh, and the
-# Compat snapshot is proven separately — but the daemon-owned application-
-# consistent live path (seed attach via BRIDGEVM_COMPAT_EXTRA_QEMU_ARGS + the
-# loopback-ext4 fsfreeze mount in cloud-init) still needs debugging on-device.
-# It is opt-in (skips without the env below), so it does not affect CI.
+# VERIFIED PASSING on-device (Apple Silicon, QEMU/HVF, Debian 12 arm64 cloud
+# image): the daemon-owned guest booted, the daemon held its guest-tools
+# connection host-first and received the agent's GuestHello, then the real
+# FsFreeze -> disk snapshot -> FsThaw round-trip completed and the snapshot was
+# recorded. Two things were required to get here and are now in place:
+#   1. The daemon must be the CURRENT build (this script rebuilds it; a stale
+#      target/release/bridgevmd predating the guest-tools virtio-serial-pci /
+#      edk2 bios additions spawns a command QEMU cannot realize).
+#   2. The daemon connects host-first and HOLDS the guest-tools connection so it
+#      catches the agent's one-shot GuestHello (see reconcile_guest_tools_session
+#      in crates/bridgevm-daemon).
+# It also needs VNC display :0 (TCP 5900) free, since Compatibility Mode pins
+# `-display vnc=:0`; a leftover QEMU squatting on 5900 makes the spawn fail.
 #
 # Proves the REAL application-consistent snapshot orchestration end to end
 # against a daemon-owned, booted Compatibility (QEMU/HVF) Linux guest:
@@ -114,18 +117,17 @@ DEVICE="/dev/virtio-ports/org.bridgevm.guest-tools.0"
 MOUNT_READY_MARKER="BRIDGEVM-AC-MOUNT-READY"
 AGENT_UP_MARKER="BRIDGEVM-AC-AGENT-UP"
 
-if [[ -x "$ROOT/target/release/bridgevm" ]]; then
-  BRIDGEVM_BIN="$ROOT/target/release/bridgevm"
-else
-  cargo build --quiet -p bridgevm-cli || { echo "FAIL: failed to build bridgevm-cli" >&2; exit 1; }
-  BRIDGEVM_BIN="$ROOT/target/debug/bridgevm"
-fi
-if [[ -x "$ROOT/target/release/bridgevmd" ]]; then
-  BRIDGEVMD_BIN="$ROOT/target/release/bridgevmd"
-else
-  cargo build --quiet -p bridgevm-daemon || { echo "FAIL: failed to build bridgevm-daemon" >&2; exit 1; }
-  BRIDGEVMD_BIN="$ROOT/target/debug/bridgevmd"
-fi
+# Build BOTH binaries fresh from the current tree. Do NOT trust a pre-existing
+# target/release/* artifact: a stale daemon binary (built before the guest-tools
+# virtio-serial-pci device / edk2 bios / node-name were added to the QEMU command
+# builder) silently spawns an old command whose guest-tools channel cannot be
+# realized -- QEMU then dies on startup (empty serial log) and the daemon only
+# ever sees EofBeforeGuestHello. Building fresh here guarantees the daemon under
+# test matches the source. (The build is cheap relative to booting a real VM.)
+cargo build --release -p bridgevm-cli -p bridgevm-daemon \
+  || { echo "FAIL: failed to build bridgevm-cli + bridgevm-daemon" >&2; exit 1; }
+BRIDGEVM_BIN="$ROOT/target/release/bridgevm"
+BRIDGEVMD_BIN="$ROOT/target/release/bridgevmd"
 
 bridgevm()  { "$BRIDGEVM_BIN" --store "$STORE" "$@"; }
 bridgevmd_cli() { "$BRIDGEVM_BIN" --socket "$DAEMON_SOCKET" "$@"; }
