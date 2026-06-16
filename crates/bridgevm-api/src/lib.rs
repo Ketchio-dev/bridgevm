@@ -1548,12 +1548,17 @@ pub fn snapshot_preflight_status(
         .unwrap_or_default();
     let guest_tools_connected = runtime.as_ref().is_some_and(|runtime| runtime.connected);
     let mut blockers = Vec::new();
+    // This is the offline / metadata-only preflight: freeze/thaw can only be
+    // driven by the bridgevmd-owned running backend that holds the live
+    // guest-tools session. The daemon overrides this to `true` in
+    // `owned_backend_snapshot_preflight_status` once it owns the backend.
     let backend_freeze_thaw_supported = false;
 
     if !backend_freeze_thaw_supported && consistency == SnapshotConsistency::ApplicationConsistent {
         blockers.push(SnapshotPreflightBlockerRecord {
             code: "backend-freeze-thaw-unavailable".to_string(),
-            message: "The backend has not wired freeze/thaw execution yet.".to_string(),
+            message: "Freeze/thaw orchestration requires the bridgevmd-owned running backend; this offline preflight cannot drive the guest agent."
+                .to_string(),
             path: None,
         });
     }

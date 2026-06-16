@@ -368,6 +368,66 @@ fn env_flag_enabled(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Test-only extra QEMU args for daemon-spawned Compatibility backends.
+///
+/// Read from `BRIDGEVM_COMPAT_EXTRA_QEMU_ARGS` and shell-word split. This is an
+/// integration-test seam (e.g. attaching a NoCloud cidata seed ISO for the
+/// application-consistent live opt-in smoke) and is unset in normal operation.
+fn compat_extra_qemu_args() -> Vec<String> {
+    match env::var("BRIDGEVM_COMPAT_EXTRA_QEMU_ARGS") {
+        Ok(value) => shell_word_split(&value),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Minimal POSIX-ish shell word splitter supporting single and double quotes.
+/// Sufficient for passing QEMU `-drive file=...,...` style args from tests.
+fn shell_word_split(input: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut in_word = false;
+    let mut quote: Option<char> = None;
+    let mut chars = input.chars();
+    while let Some(c) = chars.next() {
+        match quote {
+            Some(q) => {
+                if c == q {
+                    quote = None;
+                } else if q == '"' && c == '\\' {
+                    if let Some(next) = chars.next() {
+                        current.push(next);
+                    }
+                } else {
+                    current.push(c);
+                }
+            }
+            None => {
+                if c == '\'' || c == '"' {
+                    quote = Some(c);
+                    in_word = true;
+                } else if c == '\\' {
+                    if let Some(next) = chars.next() {
+                        current.push(next);
+                        in_word = true;
+                    }
+                } else if c.is_whitespace() {
+                    if in_word {
+                        words.push(std::mem::take(&mut current));
+                        in_word = false;
+                    }
+                } else {
+                    current.push(c);
+                    in_word = true;
+                }
+            }
+        }
+    }
+    if in_word {
+        words.push(current);
+    }
+    words
+}
+
 fn env_optional_u64(name: &str) -> Result<Option<u64>> {
     let Some(value) = env::var(name).ok().filter(|value| !value.trim().is_empty()) else {
         return Ok(None);
@@ -601,6 +661,12 @@ impl DaemonState {
 
         let command = build_compatibility_command(&manifest, &bundle)
             .map_err(|error| anyhow::anyhow!("{}", compatibility_qemu_command_error(error)))?;
+        // Test-only escape hatch (mirrors BRIDGEVM_APPLE_VZ_RUNNER): append extra
+        // QEMU args without touching the product command builder. The
+        // application-consistent live opt-in smoke uses this to attach a NoCloud
+        // cidata seed ISO so a daemon-owned guest can boot the agent. Args are
+        // shell-word split; empty/unset means no change.
+        let extra_compat_args = compat_extra_qemu_args();
         let log_path = bundle.join("logs").join("qemu.log");
         let guest_tools = self
             .store
@@ -617,6 +683,7 @@ impl DaemonState {
             .context("failed to clone QEMU log file")?;
         let child = Command::new(&command.program)
             .args(&command.args)
+            .args(&extra_compat_args)
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr))
             .spawn()
@@ -992,18 +1059,10 @@ impl DaemonState {
             command_result_timeout(freeze_timeout_millis),
         )?;
         if !freeze_result.ok {
-            let thaw_result = self
-                .send_guest_tools_command_record(
-                    vm,
-                    guest_tools_thaw_filesystem_envelope(thaw_request_id.clone()),
-                )
-                .and_then(|_| {
-                    self.wait_for_guest_tools_command_result(
-                        vm,
-                        &thaw_request_id,
-                        GUEST_TOOLS_COMMAND_RESULT_TIMEOUT,
-                    )
-                });
+            // Freeze did not enter the boundary (the agent rejected it), so the
+            // guest is not quiesced and there is nothing to thaw. Still issue a
+            // best-effort thaw so a partially-frozen agent cannot get stuck.
+            let thaw_attempted = self.dispatch_and_await_thaw(vm, &thaw_request_id).is_ok();
             anyhow::bail!(
                 "guest tools freeze failed for application-consistent snapshot '{}': {}; thaw attempted: {}",
                 snapshot,
@@ -1011,22 +1070,20 @@ impl DaemonState {
                     .error_code
                     .as_deref()
                     .unwrap_or("command-result-not-ok"),
-                thaw_result.is_ok()
+                thaw_attempted
             );
         }
 
+        // The guest is now frozen. From here on the filesystem MUST be thawed no
+        // matter what happens to the snapshot, so we capture the snapshot result
+        // WITHOUT propagating it, then unconditionally dispatch + await the thaw,
+        // and only afterwards surface any errors. This guarantees the thaw is
+        // always sent even when the snapshot fails.
         let snapshot_result =
             self.store
                 .create_snapshot(vm, snapshot, SnapshotKind::ApplicationConsistent);
-        self.send_guest_tools_command_record(
-            vm,
-            guest_tools_thaw_filesystem_envelope(thaw_request_id.clone()),
-        )?;
-        let thaw_result = self.wait_for_guest_tools_command_result(
-            vm,
-            &thaw_request_id,
-            GUEST_TOOLS_COMMAND_RESULT_TIMEOUT,
-        );
+        let thaw_result = self.dispatch_and_await_thaw(vm, &thaw_request_id);
+
         let snapshot_metadata = snapshot_result.with_context(|| {
             format!("failed to create application-consistent snapshot '{snapshot}'")
         })?;
@@ -1056,9 +1113,30 @@ impl DaemonState {
                 freeze_result: freeze_result.into_record(),
                 thaw_result: thaw_result.into_record(),
                 preflight_ready: true,
-                note: "Received successful guest-tools freeze/thaw scaffold CommandResult frames around snapshot metadata creation; this still does not prove OS-level application consistency.".to_string(),
+                note: "Received successful guest-tools freeze/thaw CommandResult frames around snapshot creation; with the agent's Real fsfreeze backend this enters the OS fsfreeze boundary, but this still does not prove OS-level application consistency (it depends on guest applications flushing their own state).".to_string(),
             },
         })
+    }
+
+    /// Dispatches a ThawFilesystem command and waits for its CommandResult.
+    ///
+    /// This is the single thaw step used by [`execute_application_consistent_snapshot`]
+    /// so that the freeze boundary is always closed exactly once, regardless of
+    /// whether the snapshot succeeded or failed.
+    fn dispatch_and_await_thaw(
+        &mut self,
+        vm: &str,
+        thaw_request_id: &str,
+    ) -> Result<CompletedGuestToolsCommand> {
+        self.send_guest_tools_command_record(
+            vm,
+            guest_tools_thaw_filesystem_envelope(thaw_request_id.to_string()),
+        )?;
+        self.wait_for_guest_tools_command_result(
+            vm,
+            thaw_request_id,
+            GUEST_TOOLS_COMMAND_RESULT_TIMEOUT,
+        )
     }
 
     fn owned_backend_snapshot_preflight_status(
@@ -3762,6 +3840,174 @@ mod tests {
         );
         assert_eq!(result.capability.as_deref(), Some("fs-thaw"));
         assert!(result.ok);
+
+        state.cleanup_owned_backend("legacy", false).unwrap();
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn shell_word_split_handles_quotes_and_escapes() {
+        assert_eq!(
+            shell_word_split("-drive file=/tmp/a b.iso,if=virtio,format=raw"),
+            vec![
+                "-drive".to_string(),
+                "file=/tmp/a".to_string(),
+                "b.iso,if=virtio,format=raw".to_string(),
+            ]
+        );
+        assert_eq!(
+            shell_word_split("-drive 'file=/tmp/with space.iso,if=virtio'"),
+            vec![
+                "-drive".to_string(),
+                "file=/tmp/with space.iso,if=virtio".to_string(),
+            ]
+        );
+        assert_eq!(
+            shell_word_split("-drive \"file=/tmp/x.iso,id=cidata\""),
+            vec!["-drive".to_string(), "file=/tmp/x.iso,id=cidata".to_string()]
+        );
+        assert_eq!(
+            shell_word_split("file=/tmp/a\\ b.iso"),
+            vec!["file=/tmp/a b.iso".to_string()]
+        );
+        assert!(shell_word_split("   ").is_empty());
+    }
+
+    #[test]
+    fn daemon_surfaces_thaw_failure_after_successful_snapshot() {
+        // The snapshot succeeds and the freeze entered the boundary, but the
+        // agent's thaw reply is ok:false. The orchestration must still have
+        // DISPATCHED the thaw (the guest cannot be left frozen silently) and
+        // then surface the thaw failure to the caller.
+        let store = temp_store();
+        store.create_vm(&compatibility_manifest("legacy")).unwrap();
+        store
+            .transition_state("legacy", VmRuntimeState::Running)
+            .unwrap();
+
+        let token = store.guest_tools_token("legacy").unwrap().token;
+        let guest_tools = store.guest_tools_runner_metadata("legacy").unwrap();
+        let listener = UnixListener::bind(&guest_tools.socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let hello = AgentEnvelope::new(AgentMessage::GuestHello {
+                version: PROTOCOL_VERSION,
+                guest_os: "linux".to_string(),
+                agent_version: Some("1.0.0".to_string()),
+                capabilities: vec![
+                    AgentCapability {
+                        name: "heartbeat".to_string(),
+                        version: 1,
+                    },
+                    AgentCapability {
+                        name: "fs-freeze".to_string(),
+                        version: 1,
+                    },
+                    AgentCapability {
+                        name: "fs-thaw".to_string(),
+                        version: 1,
+                    },
+                ],
+                auth: Some(AgentAuth::ToolsToken { token }),
+            });
+            stream
+                .write_all(encode_envelope_line(&hello).unwrap().as_bytes())
+                .unwrap();
+
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut freeze_line = String::new();
+            reader.read_line(&mut freeze_line).unwrap();
+            let freeze: AgentEnvelope = serde_json::from_str(freeze_line.trim_end()).unwrap();
+            assert_eq!(
+                freeze.request_id.as_deref(),
+                Some("application-consistent-snapshot:after-thaw-fail:freeze")
+            );
+            assert_eq!(
+                freeze.message,
+                AgentMessage::FreezeFilesystem {
+                    timeout_millis: Some(5_000),
+                }
+            );
+            stream
+                .write_all(
+                    encode_envelope_line(&AgentEnvelope::new(AgentMessage::CommandResult {
+                        request_id: "application-consistent-snapshot:after-thaw-fail:freeze"
+                            .to_string(),
+                        ok: true,
+                        error_code: None,
+                        message: Some("freeze acknowledged".to_string()),
+                        result: None,
+                        metadata: None,
+                    }))
+                    .unwrap()
+                    .as_bytes(),
+                )
+                .unwrap();
+
+            // The thaw MUST still be dispatched even after a successful
+            // snapshot. Reply ok:false to assert the failure is surfaced.
+            let mut thaw_line = String::new();
+            reader.read_line(&mut thaw_line).unwrap();
+            let thaw: AgentEnvelope = serde_json::from_str(thaw_line.trim_end()).unwrap();
+            assert_eq!(
+                thaw.request_id.as_deref(),
+                Some("application-consistent-snapshot:after-thaw-fail:thaw")
+            );
+            assert_eq!(thaw.message, AgentMessage::ThawFilesystem);
+            stream
+                .write_all(
+                    encode_envelope_line(&AgentEnvelope::new(AgentMessage::CommandResult {
+                        request_id: "application-consistent-snapshot:after-thaw-fail:thaw"
+                            .to_string(),
+                        ok: false,
+                        error_code: Some("filesystem-thaw-failed".to_string()),
+                        message: Some("fsfreeze -u failed".to_string()),
+                        result: None,
+                        metadata: None,
+                    }))
+                    .unwrap()
+                    .as_bytes(),
+                )
+                .unwrap();
+            thread::sleep(Duration::from_millis(250));
+        });
+
+        let child = Command::new("sh").arg("-c").arg("sleep 5").spawn().unwrap();
+        let mut state = DaemonState::new(store.clone());
+        state
+            .children
+            .insert("legacy".to_string(), SupervisedBackend::new(child));
+
+        state.reconcile_children().unwrap();
+        let response =
+            state.handle_request(BridgeVmRequest::ExecuteApplicationConsistentSnapshot {
+                vm: "legacy".to_string(),
+                name: "after-thaw-fail".to_string(),
+                freeze_timeout_millis: Some(5_000),
+            });
+        let BridgeVmResponse::Error { message } = response else {
+            panic!("expected thaw-failure error response");
+        };
+        assert!(
+            message.contains("guest tools thaw failed"),
+            "unexpected error: {message}"
+        );
+
+        // The snapshot was recorded (thaw failed only afterwards), and the thaw
+        // command WAS dispatched + tracked as the last command result.
+        let snapshots = store.snapshots("legacy").unwrap();
+        assert_eq!(snapshots.len(), 1);
+        let runtime = store
+            .guest_tools_runtime_metadata("legacy")
+            .unwrap()
+            .expect("runtime metadata");
+        let result = runtime.last_command_result.expect("last command result");
+        assert_eq!(
+            result.request_id,
+            "application-consistent-snapshot:after-thaw-fail:thaw"
+        );
+        assert_eq!(result.capability.as_deref(), Some("fs-thaw"));
+        assert!(!result.ok);
 
         state.cleanup_owned_backend("legacy", false).unwrap();
         server.join().unwrap();

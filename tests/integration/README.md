@@ -1681,3 +1681,31 @@ on `PATH`, a missing `BRIDGEVM_LIVE_QEMU_QCOW2_DISK`, a non-running QMP status,
 or the expected serial sentinel never appearing before the timeout. This
 remains manual opt-in live evidence; metadata-safe suites cover only its
 default skip boundary and the synthetic verifier.
+
+## Application-consistent snapshot live opt-in smoke
+
+`application-consistent-snapshot-live-opt-in-smoke.sh` proves the REAL
+application-consistent snapshot orchestration end to end against a
+daemon-owned, booted Compatibility (QEMU/HVF) Linux guest. `bridgevmd` spawns
+and OWNS the QEMU backend (holding the live `guest-tools.sock` session), the
+guest agent boots with a Real `fsfreeze` backend bound to a SAFE, dedicated
+loopback ext4 mount (`/mnt/bridgevm-fsfreeze`, never the rootfs), and
+`bridgevm --socket <bridgevmd> snapshot execute-application-consistent` drives
+the daemon `FsFreeze -> disk snapshot -> FsThaw` orchestration over the real
+virtio-serial channel.
+
+It asserts the agent's `FsFreeze`/`FsThaw` `CommandResult` frames are
+`ok:true`, that the result messages reference the real fsfreeze boundary on the
+safe mount (so a simulated ack could not pass), and that the disk snapshot was
+recorded between the freeze and the thaw.
+
+This is heavy manual opt-in (it boots a real VM). It SKIPS unless
+`BRIDGEVM_LIVE_GUEST_TOOLS_ALLOW_REAL_START=1` and
+`BRIDGEVM_LIVE_GUEST_TOOLS_QCOW2_DISK=<bootable arm64 Linux cloud qcow2>` are
+set, and requires macOS `hdiutil`, `qemu-system-aarch64` with `hvf`, `python3`,
+and a cross-compiled agent (build via `scripts/build-guest-agent-linux.sh`). The
+guest image must provide `fsfreeze` (util-linux), `mkfs.ext4`, `losetup`/`mount`,
+and `base64`/`gunzip`. The test-only `BRIDGEVM_COMPAT_EXTRA_QEMU_ARGS` daemon
+seam attaches the NoCloud cidata seed ISO to the daemon-spawned QEMU command
+without changing the product command builder. It is excluded from the
+metadata-safe suite; only its default skip boundary is covered there.
