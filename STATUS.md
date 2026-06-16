@@ -57,8 +57,9 @@ Compatibility Mode (QEMU) NAT + port forwarding works at launch: manifest `netwo
 ## Remaining work to fully "complete" the app (with blockers)
 The VM lifecycle (create/run/suspend/resume/stop) + networking + boot evidence are done. The remaining features each have a concrete blocker:
 
-**Implementable but infra-gated (need a one-time setup):**
-- **Guest tools running *in* the guest** (clipboard, shared folders/virtiofs, dynamic resolution, drag-drop) — the host-side virtio-serial channel is already in the launch command; the gap is the `bridgevm-tools-linux` agent running inside the guest. Blocked on: (a) a Linux-arm64 cross-toolchain (not installed: no `aarch64-*-gcc`/`cross`/`zig`, no rust `aarch64-unknown-linux-gnu` target), and (b) injecting the built agent into a booting guest (cloud-init seed ISO) to verify effects.
+**Guest tools — transport PROVEN, effects remaining:**
+- The `bridgevm-tools-linux` agent now cross-compiles to Linux-arm64 (`scripts/build-guest-agent-linux.sh`, via zig + cargo-zigbuild) and the **full transport is verified end-to-end**: the agent runs inside a booted Debian guest (cloud-init NoCloud seed), sends `GuestHello` over `/dev/virtio-ports/org.bridgevm.guest-tools.0` → QEMU virtio-serial → host `guest-tools.sock`, and the host `accept-hello` validates token + capabilities (tampered token rejected). Smoke: `tests/integration/guest-tools-live-handshake-opt-in-smoke.sh`. Gotcha: the guest agent must advertise a capability subset matching the manifest `AgentPolicy` (default manifest disables drag-drop/agent-update).
+- **Remaining for guest tools:** make the individual *effects* really apply in the guest (clipboard sync, shared folders/virtiofs mount, dynamic resolution) — implement the remaining `bridgevm-tools-linux` command handlers with Real backends and surface ack/result correlation in the app. The transport + handshake foundation is done.
 - **Embedded graphical display** — `VZVirtioGraphicsDeviceConfiguration` exists, but `VZVirtualMachineView` needs the VM *in-process* while VMs run in the `AppleVzRunner` helper. Needs an architecture decision (helper hosts the display window vs. stream a framebuffer) and a GUI session to verify (can't verify headless). Adding a graphics device may also disable save/restore — must be conditional.
 
 **Need user resources:**
