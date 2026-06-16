@@ -256,14 +256,15 @@ pub fn build_compatibility_command(
         cpu_arg(&cpu),
         "-drive".to_string(),
         format!(
-            "file={},if=virtio,format={},discard={}",
+            "file={},if=virtio,format={},discard={},node-name={}",
             disk_path.display(),
             manifest.storage.primary.format,
             if manifest.storage.primary.discard {
                 "unmap"
             } else {
                 "ignore"
-            }
+            },
+            COMPAT_PRIMARY_BLOCK_NODE
         ),
         "-netdev".to_string(),
         netdev_arg(manifest)?,
@@ -386,6 +387,138 @@ impl QmpCommand {
             arguments: None,
         }
     }
+
+    /// Build the job-based `snapshot-save` command that writes a full internal
+    /// VM snapshot (CPU + RAM + device state) into the qcow2 disk under `tag`.
+    ///
+    /// `job_id` lets the caller poll completion via `query-jobs`. `devices`
+    /// lists the block node names whose qcow2 receives the snapshot;
+    /// `vmstate` names the device that stores the machine state (RAM/CPU).
+    pub fn snapshot_save(
+        job_id: &str,
+        tag: &str,
+        vmstate: &str,
+        devices: &[String],
+    ) -> Self {
+        Self {
+            execute: "snapshot-save".to_string(),
+            arguments: Some(serde_json::json!({
+                "job-id": job_id,
+                "tag": tag,
+                "vmstate": vmstate,
+                "devices": devices,
+            })),
+        }
+    }
+
+    /// Build the job-based `snapshot-load` command that restores a full
+    /// internal VM snapshot previously written by [`QmpCommand::snapshot_save`].
+    pub fn snapshot_load(
+        job_id: &str,
+        tag: &str,
+        vmstate: &str,
+        devices: &[String],
+    ) -> Self {
+        Self {
+            execute: "snapshot-load".to_string(),
+            arguments: Some(serde_json::json!({
+                "job-id": job_id,
+                "tag": tag,
+                "vmstate": vmstate,
+                "devices": devices,
+            })),
+        }
+    }
+
+    /// Build the `query-jobs` command used to poll job-based commands such as
+    /// `snapshot-save`/`snapshot-load` to completion.
+    pub fn query_jobs() -> Self {
+        Self {
+            execute: "query-jobs".to_string(),
+            arguments: None,
+        }
+    }
+}
+
+/// Block node name QEMU assigns to the primary virtio drive in
+/// [`build_compatibility_command`] (the qcow2 that receives suspend snapshots).
+pub const COMPAT_PRIMARY_BLOCK_NODE: &str = "bridgevm-root";
+
+/// Internal snapshot tag used for Compatibility Mode suspend/resume.
+pub const COMPAT_SUSPEND_SNAPSHOT_TAG: &str = "bridgevm-suspend";
+
+/// Terminal states for a QEMU job (`query-jobs[].status`).
+fn job_status_is_terminal(status: &str) -> bool {
+    matches!(status, "concluded" | "aborting" | "null")
+}
+
+/// Poll `query-jobs` until `job_id` reaches a terminal status or `timeout`
+/// elapses. Returns the job's `error` field if it concluded with one.
+fn wait_for_job(
+    client: &mut QmpClient,
+    job_id: &str,
+    timeout: Duration,
+) -> Result<(), QemuError> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let jobs = client.execute(QmpCommand::query_jobs())?;
+        let job = jobs
+            .as_array()
+            .and_then(|jobs| {
+                jobs.iter().find(|job| {
+                    job.get("id").and_then(Value::as_str) == Some(job_id)
+                })
+            })
+            .cloned();
+
+        match job {
+            Some(job) => {
+                let status = job
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                if job_status_is_terminal(status) {
+                    if let Some(error) = job.get("error").and_then(Value::as_str) {
+                        return Err(QemuError::QmpProtocol(format!(
+                            "snapshot job '{job_id}' failed: {error}"
+                        )));
+                    }
+                    return Ok(());
+                }
+            }
+            // QEMU drops concluded jobs from `query-jobs` after they are
+            // dismissed; a job that has vanished is treated as complete.
+            None => return Ok(()),
+        }
+
+        if std::time::Instant::now() >= deadline {
+            return Err(QemuError::QmpProtocol(format!(
+                "timed out waiting for snapshot job '{job_id}'"
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Pause the guest and save a full internal VM snapshot into the primary
+/// qcow2, then leave QEMU paused. Used by Compatibility Mode suspend.
+///
+/// Sequence: negotiate -> `stop` (pause CPUs) -> `snapshot-save` (job) ->
+/// wait for the job to conclude. The caller is responsible for `quit`ing QEMU
+/// afterwards.
+pub fn suspend_to_snapshot(socket_path: &Path, timeout: Duration) -> Result<(), QemuError> {
+    let mut client = QmpClient::connect_with_timeout(socket_path, Duration::from_secs(2))?;
+    client.negotiate()?;
+    let _ = client.execute(QmpCommand::stop())?;
+    let devices = vec![COMPAT_PRIMARY_BLOCK_NODE.to_string()];
+    let _ = client.execute(QmpCommand::snapshot_save(
+        COMPAT_SUSPEND_SNAPSHOT_TAG,
+        COMPAT_SUSPEND_SNAPSHOT_TAG,
+        COMPAT_PRIMARY_BLOCK_NODE,
+        &devices,
+    ))?;
+    wait_for_job(&mut client, COMPAT_SUSPEND_SNAPSHOT_TAG, timeout)?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1264,6 +1397,187 @@ mod tests {
             "80GiB",
         );
         assert!(build_compatibility_command(&manifest, Path::new("/tmp/fast.vmbridge")).is_err());
+    }
+
+    #[test]
+    fn compatibility_command_names_primary_block_node() {
+        let manifest = VmManifest::new(
+            "compat",
+            VmMode::Compatibility,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "x86_64".to_string(),
+            },
+            "40GiB",
+        );
+        let command =
+            build_compatibility_command(&manifest, Path::new("/tmp/compat.vmbridge")).unwrap();
+        let drive = command
+            .args
+            .iter()
+            .find(|arg| arg.contains("if=virtio"))
+            .expect("primary drive arg present");
+        assert!(
+            drive.contains(&format!("node-name={COMPAT_PRIMARY_BLOCK_NODE}")),
+            "drive arg should name the primary block node: {drive}"
+        );
+    }
+
+    #[test]
+    fn builds_snapshot_save_command_for_suspend() {
+        let devices = vec![COMPAT_PRIMARY_BLOCK_NODE.to_string()];
+        let command = QmpCommand::snapshot_save(
+            COMPAT_SUSPEND_SNAPSHOT_TAG,
+            COMPAT_SUSPEND_SNAPSHOT_TAG,
+            COMPAT_PRIMARY_BLOCK_NODE,
+            &devices,
+        );
+        assert_eq!(
+            serde_json::to_value(&command).unwrap(),
+            json!({
+                "execute": "snapshot-save",
+                "arguments": {
+                    "job-id": "bridgevm-suspend",
+                    "tag": "bridgevm-suspend",
+                    "vmstate": "bridgevm-root",
+                    "devices": ["bridgevm-root"],
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn builds_snapshot_load_command_for_resume() {
+        let devices = vec![COMPAT_PRIMARY_BLOCK_NODE.to_string()];
+        let command = QmpCommand::snapshot_load(
+            COMPAT_SUSPEND_SNAPSHOT_TAG,
+            COMPAT_SUSPEND_SNAPSHOT_TAG,
+            COMPAT_PRIMARY_BLOCK_NODE,
+            &devices,
+        );
+        assert_eq!(
+            serde_json::to_value(&command).unwrap(),
+            json!({
+                "execute": "snapshot-load",
+                "arguments": {
+                    "job-id": "bridgevm-suspend",
+                    "tag": "bridgevm-suspend",
+                    "vmstate": "bridgevm-root",
+                    "devices": ["bridgevm-root"],
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn builds_query_jobs_command() {
+        assert_eq!(
+            serde_json::to_value(QmpCommand::query_jobs()).unwrap(),
+            json!({ "execute": "query-jobs" })
+        );
+    }
+
+    #[test]
+    fn job_status_terminal_classification() {
+        assert!(job_status_is_terminal("concluded"));
+        assert!(job_status_is_terminal("aborting"));
+        assert!(!job_status_is_terminal("running"));
+        assert!(!job_status_is_terminal("created"));
+    }
+
+    #[test]
+    fn wait_for_job_returns_when_job_concludes() {
+        let socket_path = temp_socket_path();
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .write_all(br#"{"QMP":{"version":{"qemu":{"major":8,"minor":2,"micro":0}}}}"#)
+                .unwrap();
+            stream.write_all(b"\n").unwrap();
+
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            // capabilities
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            assert!(line.contains("qmp_capabilities"));
+            stream.write_all(br#"{"return":{}}"#).unwrap();
+            stream.write_all(b"\n").unwrap();
+
+            // first query-jobs: still running
+            line.clear();
+            reader.read_line(&mut line).unwrap();
+            assert!(line.contains("query-jobs"));
+            stream
+                .write_all(br#"{"return":[{"id":"bridgevm-suspend","status":"running"}]}"#)
+                .unwrap();
+            stream.write_all(b"\n").unwrap();
+
+            // second query-jobs: concluded with no error
+            line.clear();
+            reader.read_line(&mut line).unwrap();
+            assert!(line.contains("query-jobs"));
+            stream
+                .write_all(br#"{"return":[{"id":"bridgevm-suspend","status":"concluded"}]}"#)
+                .unwrap();
+            stream.write_all(b"\n").unwrap();
+        });
+
+        let mut client = QmpClient::connect(&socket_path).unwrap();
+        client.negotiate().unwrap();
+        wait_for_job(
+            &mut client,
+            COMPAT_SUSPEND_SNAPSHOT_TAG,
+            Duration::from_secs(2),
+        )
+        .unwrap();
+
+        server.join().unwrap();
+        fs::remove_file(socket_path).unwrap();
+    }
+
+    #[test]
+    fn wait_for_job_surfaces_job_error() {
+        let socket_path = temp_socket_path();
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .write_all(br#"{"QMP":{"version":{"qemu":{"major":8,"minor":2,"micro":0}}}}"#)
+                .unwrap();
+            stream.write_all(b"\n").unwrap();
+
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            assert!(line.contains("qmp_capabilities"));
+            stream.write_all(br#"{"return":{}}"#).unwrap();
+            stream.write_all(b"\n").unwrap();
+
+            line.clear();
+            reader.read_line(&mut line).unwrap();
+            assert!(line.contains("query-jobs"));
+            stream
+                .write_all(
+                    br#"{"return":[{"id":"bridgevm-suspend","status":"concluded","error":"disk full"}]}"#,
+                )
+                .unwrap();
+            stream.write_all(b"\n").unwrap();
+        });
+
+        let mut client = QmpClient::connect(&socket_path).unwrap();
+        client.negotiate().unwrap();
+        let error = wait_for_job(
+            &mut client,
+            COMPAT_SUSPEND_SNAPSHOT_TAG,
+            Duration::from_secs(2),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("disk full"));
+
+        server.join().unwrap();
+        fs::remove_file(socket_path).unwrap();
     }
 
     #[test]

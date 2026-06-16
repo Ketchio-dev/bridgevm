@@ -42,7 +42,9 @@ flag, and `tests/integration/windows-arm-qemu-args-cli-smoke.sh`. See
 - `suspend` boots the Fast VM, pauses, saves to `metadata/suspend-images/<vm>.bin`, marks `suspended`; `resume` restores + runs detached, marks `running`. Needs `BRIDGEVM_APPLE_VZ_RUNNER` (path to a signed AppleVzRunner).
 - macOS app pause/resume send `suspend_backend`/`resume_backend` daemon requests.
 - Verified: real Debian arm64 VZ guest suspended (98 MB state) → resumed to a running guest.
-- Follow-ups: pause an already-running VM via IPC (current model boots→saves), Compatibility Mode suspend/resume, daemon-supervised resumed child.
+- `bridgevm stop <vm>` now reliably terminates the running VM process (SIGTERM→grace→SIGKILL) for both Fast (AppleVzRunner) and Compat (qemu) — no orphan left (release gate). The daemon supervises resumed children like cold-start.
+- Compat (QEMU) suspend: `bridgevm suspend` does a QMP `snapshot-save` internal qcow2 snapshot (`bridgevm-suspend`). **Compat resume is not supported on Apple Silicon under HVF** — QEMU aborts in `cpu_pre_load` restoring an HVF arm64 guest; resume reports this honestly and preserves the snapshot. Fast Mode is the supported suspend/resume path.
+- Follow-ups: pause an already-running Fast VM via IPC (current model boots→saves); Compat live resume (needs a non-HVF path or a future QEMU fix).
 
 ## Verification lanes
 - **Safe app lane:** `tests/integration/local-release-readiness-suite.sh --app-only --locally-usable-app`

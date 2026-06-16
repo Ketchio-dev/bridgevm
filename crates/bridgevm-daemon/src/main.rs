@@ -5,11 +5,13 @@ use bridgevm_agentd::{
     AgentCommandTracker, AgentSession, AgentSessionIoError,
 };
 use bridgevm_api::{
-    add_fast_spawn_blocker, fast_spawn_not_implemented_error, guest_tools_agent_policy,
+    add_fast_spawn_blocker, build_compatibility_resume_command, compat_suspend_marker_path,
+    fast_spawn_not_implemented_error, fast_suspend_state_path, guest_tools_agent_policy,
     guest_tools_freeze_filesystem_envelope, guest_tools_mount_approved_share_envelope,
     guest_tools_thaw_filesystem_envelope, handle_request, launch_readiness_metadata,
-    ApplicationConsistentSnapshotCommandResultRecord, ApplicationConsistentSnapshotExecutionRecord,
-    BridgeVmRequest, BridgeVmResponse, GuestToolsCommandRecord, SnapshotConsistency,
+    resume_backend, suspend_backend, ApplicationConsistentSnapshotCommandResultRecord,
+    ApplicationConsistentSnapshotExecutionRecord, BridgeVmRequest, BridgeVmResponse,
+    GuestToolsCommandRecord, SnapshotConsistency,
 };
 use bridgevm_apple_vz::{build_fast_plan, write_launch_spec_artifact};
 use bridgevm_config::VmMode;
@@ -245,7 +247,13 @@ impl FastModeSpawnConfig {
         Ok(())
     }
 
-    fn runner_args(&self, launch_spec_path: &Path) -> Vec<String> {
+    /// Build the `lightvm-runner` argv, optionally restoring a saved Apple VZ
+    /// machine state (`--apple-vz-restore-state`) for a Fast Mode resume.
+    fn runner_args_with_restore(
+        &self,
+        launch_spec_path: &Path,
+        restore_state: Option<&Path>,
+    ) -> Vec<String> {
         let mut args = vec![
             "--launch-spec".to_string(),
             launch_spec_path.display().to_string(),
@@ -255,6 +263,10 @@ impl FastModeSpawnConfig {
             self.apple_vz_runner.display().to_string(),
             "--apple-vz-allow-real-start".to_string(),
         ];
+        if let Some(state_path) = restore_state {
+            args.push("--apple-vz-restore-state".to_string());
+            args.push(state_path.display().to_string());
+        }
         if let Some(seconds) = self.stop_after_seconds {
             args.push("--apple-vz-stop-after-seconds".to_string());
             args.push(seconds.to_string());
@@ -403,6 +415,16 @@ impl DaemonState {
         match request {
             BridgeVmRequest::RunBackend { name, spawn: true } => self
                 .spawn_backend(&name)
+                .unwrap_or_else(|error| BridgeVmResponse::Error {
+                    message: error.to_string(),
+                }),
+            BridgeVmRequest::ResumeBackend { name } => self
+                .resume_backend_supervised(&name)
+                .unwrap_or_else(|error| BridgeVmResponse::Error {
+                    message: error.to_string(),
+                }),
+            BridgeVmRequest::SuspendBackend { name } => self
+                .suspend_backend_supervised(&name)
                 .unwrap_or_else(|error| BridgeVmResponse::Error {
                     message: error.to_string(),
                 }),
@@ -638,6 +660,17 @@ impl DaemonState {
         manifest: bridgevm_config::VmManifest,
         config: FastModeSpawnConfig,
     ) -> Result<BridgeVmResponse> {
+        self.spawn_fast_backend_with_restore(name, bundle, manifest, config, None)
+    }
+
+    fn spawn_fast_backend_with_restore(
+        &mut self,
+        name: &str,
+        bundle: PathBuf,
+        manifest: bridgevm_config::VmManifest,
+        config: FastModeSpawnConfig,
+        restore_state: Option<PathBuf>,
+    ) -> Result<BridgeVmResponse> {
         config.validate()?;
         let (disk, active_disk) = self
             .store
@@ -665,7 +698,7 @@ impl DaemonState {
             .try_clone()
             .context("failed to clone Apple VZ runner log file")?;
 
-        let args = config.runner_args(&launch_spec_path);
+        let args = config.runner_args_with_restore(&launch_spec_path, restore_state.as_deref());
         let mut child = Command::new(&config.lightvm_runner);
         child.args(&args);
         child.env("BRIDGEVM_APPLE_VZ_ALLOW_REAL_START", "1");
@@ -725,6 +758,153 @@ impl DaemonState {
                 .store
                 .transition_state(name, VmRuntimeState::Running)
                 .context("failed to mark VM running after restart")?,
+        })
+    }
+
+    /// Suspend a backend through the daemon.
+    ///
+    /// Suspend is synchronous (pause -> save state -> quit). If the daemon owns
+    /// the child, drop our `Child`/QMP handles first (without killing) so the
+    /// api suspend path can drive QMP and terminate the recorded pid without the
+    /// reconcile loop racing it. The api suspend path leaves the VM `suspended`.
+    fn suspend_backend_supervised(&mut self, name: &str) -> Result<BridgeVmResponse> {
+        // Release the owned handles before the synchronous suspend so the
+        // supervisor does not poll/clear state underneath it. The api suspend
+        // path is responsible for terminating the recorded pid.
+        self.children.remove(name);
+        let metadata = suspend_backend(&self.store, name).map_err(anyhow::Error::msg)?;
+        Ok(BridgeVmResponse::RunnerStatus {
+            metadata: Some(metadata),
+            qmp_supervisor: self
+                .store
+                .qmp_supervisor_metadata(name)
+                .context("failed to read QMP supervisor metadata")?,
+        })
+    }
+
+    /// Resume a backend through the daemon, tracking the new child in the
+    /// supervisor exactly like cold-start `run` so reconcile/stop see it.
+    ///
+    /// Fast Mode: relaunch `lightvm-runner` with `--apple-vz-restore-state`.
+    /// Compatibility Mode: relaunch QEMU with `-loadvm <tag>`. In both cases the
+    /// child is inserted into `self.children`. When the Fast Mode real-start
+    /// env is not configured, fall back to the daemon-less api resume (which is
+    /// detached, matching legacy behavior).
+    fn resume_backend_supervised(&mut self, name: &str) -> Result<BridgeVmResponse> {
+        if self.children.contains_key(name) {
+            anyhow::bail!("backend is already running for '{name}'");
+        }
+        let (bundle, manifest, _) = self
+            .store
+            .get_vm_with_active_disk(name)
+            .context("failed to read VM")?;
+
+        match manifest.mode {
+            VmMode::Fast => {
+                let state_path = fast_suspend_state_path(&bundle, name);
+                if !state_path.exists() {
+                    anyhow::bail!(
+                        "no saved Fast Mode state to resume from at {}; suspend the VM first",
+                        state_path.display()
+                    );
+                }
+                if let Some(config) = FastModeSpawnConfig::from_env()? {
+                    return self.spawn_fast_backend_with_restore(
+                        name,
+                        bundle,
+                        manifest,
+                        config,
+                        Some(state_path),
+                    );
+                }
+                // Real-start env not configured: fall back to detached api resume.
+                let metadata = resume_backend(&self.store, name).map_err(anyhow::Error::msg)?;
+                Ok(BridgeVmResponse::RunnerStatus {
+                    metadata: Some(metadata),
+                    qmp_supervisor: self
+                        .store
+                        .qmp_supervisor_metadata(name)
+                        .context("failed to read QMP supervisor metadata")?,
+                })
+            }
+            VmMode::Compatibility => self.resume_compatibility_supervised(name, &bundle, &manifest),
+        }
+    }
+
+    fn resume_compatibility_supervised(
+        &mut self,
+        name: &str,
+        bundle: &Path,
+        manifest: &bridgevm_config::VmManifest,
+    ) -> Result<BridgeVmResponse> {
+        let marker_path = compat_suspend_marker_path(bundle, name);
+        if !marker_path.exists() {
+            anyhow::bail!(
+                "no saved Compatibility Mode state to resume from at {}; suspend the VM first",
+                marker_path.display()
+            );
+        }
+        let (disk, active_disk) = self
+            .store
+            .prepare_active_disk(name)
+            .context("failed to prepare active disk")?;
+        if !disk.exists {
+            anyhow::bail!("active disk is not ready: {}", disk.path.display());
+        }
+
+        let command = build_compatibility_resume_command(manifest, bundle)
+            .map_err(|error| anyhow::anyhow!("{error}"))?;
+        let log_path = bundle.join("logs").join("qemu.log");
+        let guest_tools = self
+            .store
+            .guest_tools_runner_metadata(name)
+            .context("failed to prepare guest tools runner metadata")?;
+        fs::create_dir_all(bundle.join("logs")).context("failed to create VM log directory")?;
+        let stdout = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .context("failed to open QEMU log file")?;
+        let stderr = stdout
+            .try_clone()
+            .context("failed to clone QEMU log file")?;
+        let child = Command::new(&command.program)
+            .args(&command.args)
+            .stdout(Stdio::from(stdout))
+            .stderr(Stdio::from(stderr))
+            .spawn()
+            .with_context(|| format!("failed to spawn {}", command.program))?;
+
+        let metadata = RunnerMetadata {
+            engine: "fullvm".to_string(),
+            pid: Some(child.id()),
+            command: command.render_shell_words(),
+            log_path,
+            started_at_unix: now_unix(),
+            dry_run: false,
+            launch_spec_path: None,
+            guest_tools: Some(guest_tools),
+            disk: Some(disk),
+            active_disk: Some(active_disk),
+            launch_readiness: None,
+        };
+        self.store
+            .write_runner_metadata(name, &metadata)
+            .context("failed to write runner metadata")?;
+        // Resume marker consumed.
+        let _ = fs::remove_file(&marker_path);
+        self.store
+            .transition_state(name, VmRuntimeState::Running)
+            .context("failed to mark VM running")?;
+        self.children
+            .insert(name.to_string(), SupervisedBackend::new(child));
+
+        Ok(BridgeVmResponse::RunnerStatus {
+            metadata: Some(metadata),
+            qmp_supervisor: self
+                .store
+                .qmp_supervisor_metadata(name)
+                .context("failed to read QMP supervisor metadata")?,
         })
     }
 
@@ -2607,6 +2787,52 @@ mod tests {
             VmRuntimeState::Stopped
         );
         assert_eq!(store.runner_metadata("legacy").unwrap(), None);
+    }
+
+    #[test]
+    fn daemon_routes_compat_resume_to_supervised_handler() {
+        // Without a suspend marker the supervised compat resume reports the
+        // marker error. This proves the daemon routes ResumeBackend through the
+        // supervised path (the generic api fallback would have produced the
+        // same marker error only via resume_compatibility_backend, never the
+        // legacy "not wired yet" message).
+        let store = temp_store();
+        store.create_vm(&compatibility_manifest("legacy")).unwrap();
+        store
+            .transition_state("legacy", VmRuntimeState::Running)
+            .unwrap();
+
+        let mut state = DaemonState::new(store.clone());
+        let error = state.resume_backend_supervised("legacy").unwrap_err();
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("no saved Compatibility Mode state to resume from"),
+            "{message}"
+        );
+        assert!(!state.children.contains_key("legacy"));
+        fs::remove_dir_all(store.root()).unwrap();
+    }
+
+    #[test]
+    fn daemon_routes_fast_resume_to_supervised_handler() {
+        // Fast resume with no saved state and no real-start env reports the Fast
+        // state-missing error, proving the request reached the supervised Fast
+        // resume branch (not the compat branch and not "not wired yet").
+        let store = temp_store();
+        store.create_vm(&fast_manifest("fast-linux")).unwrap();
+        store
+            .transition_state("fast-linux", VmRuntimeState::Running)
+            .unwrap();
+
+        let mut state = DaemonState::new(store.clone());
+        let error = state.resume_backend_supervised("fast-linux").unwrap_err();
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("no saved Fast Mode state to resume from"),
+            "{message}"
+        );
+        assert!(!state.children.contains_key("fast-linux"));
+        fs::remove_dir_all(store.root()).unwrap();
     }
 
     #[test]

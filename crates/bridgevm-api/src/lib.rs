@@ -14,7 +14,8 @@ use bridgevm_network::{
 };
 use bridgevm_qemu::{
     build_compatibility_command, cont as qmp_cont, is_qmp_status_unavailable, qmp_socket_path,
-    query_status, quit as qmp_quit, stop as qmp_stop, QemuCommand, QemuError,
+    query_status, quit as qmp_quit, stop as qmp_stop, suspend_to_snapshot, QemuCommand, QemuError,
+    COMPAT_SUSPEND_SNAPSHOT_TAG,
 };
 use bridgevm_storage::{
     ApplicationConsistentSnapshotPreflightMetadata, DiskCompactMetadata, DiskCreateMetadata,
@@ -33,7 +34,8 @@ use std::{
     net::IpAddr,
     path::{Component, Path, PathBuf},
     process::{Command, Stdio},
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 const DEFAULT_GUEST_TOOLS_LINUX_DEVICE: &str = "/dev/virtio-ports/org.bridgevm.guest-tools.0";
@@ -5586,25 +5588,163 @@ fn launch_readiness_blocker_summary(readiness: &LaunchReadinessMetadata) -> Stri
         .join(", ")
 }
 
-fn stop_backend(store: &VmStore, name: &str) -> Result<Option<RunnerMetadata>, String> {
+/// Number of seconds a recorded backend process is given to exit gracefully
+/// after `SIGTERM` (or a graceful QMP `quit`) before it is force-killed with
+/// `SIGKILL`.
+const STOP_TERMINATION_GRACE_SECONDS: u64 = 5;
+
+/// Outcome of attempting to terminate a recorded backend process.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ProcessTerminationOutcome {
+    /// No live process existed for the recorded pid (already gone).
+    AlreadyGone,
+    /// The process exited within the grace period after `SIGTERM`.
+    ExitedAfterTerm,
+    /// The process did not exit after `SIGTERM` and was force-killed with `SIGKILL`.
+    Killed,
+}
+
+/// Whether a process with `pid` is currently alive.
+///
+/// Uses `kill -0`, which sends no signal but performs the permission/existence
+/// check, so it reports liveness without disturbing the target.
+#[cfg(unix)]
+fn process_is_alive(pid: u32) -> bool {
+    Command::new("kill")
+        .arg("-0")
+        .arg(pid.to_string())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn process_is_alive(_pid: u32) -> bool {
+    false
+}
+
+/// Send `signal` (e.g. `TERM`, `KILL`) to `pid` via the POSIX `kill` command.
+///
+/// Returns `Ok(())` even if the process is already gone (a no-op delivery),
+/// matching the "make stop idempotent" contract.
+#[cfg(unix)]
+fn signal_process(pid: u32, signal: &str) -> Result<(), String> {
+    let status = Command::new("kill")
+        .arg(format!("-{signal}"))
+        .arg(pid.to_string())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|error| format!("failed to send SIG{signal} to pid {pid}: {error}"))?;
+    // A non-success status almost always means the process already exited
+    // between our liveness check and the signal; treat that as success so stop
+    // stays idempotent.
+    let _ = status;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn signal_process(_pid: u32, _signal: &str) -> Result<(), String> {
+    Err("process termination is only supported on unix platforms".to_string())
+}
+
+/// Terminate the recorded backend process: `SIGTERM`, wait up to
+/// `grace` for a clean exit, then `SIGKILL` if it is still alive.
+///
+/// This is the daemon-less stop path's equivalent of the daemon supervisor's
+/// `Child::kill`: the API library only has the recorded pid (no `Child`
+/// handle), so it signals the pid directly. Idempotent: a pid that is already
+/// gone returns [`ProcessTerminationOutcome::AlreadyGone`].
+fn terminate_recorded_process(
+    pid: u32,
+    grace: Duration,
+) -> Result<ProcessTerminationOutcome, String> {
+    if !process_is_alive(pid) {
+        return Ok(ProcessTerminationOutcome::AlreadyGone);
+    }
+
+    signal_process(pid, "TERM")?;
+
+    let deadline = Instant::now() + grace;
+    while Instant::now() < deadline {
+        if !process_is_alive(pid) {
+            return Ok(ProcessTerminationOutcome::ExitedAfterTerm);
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    if !process_is_alive(pid) {
+        return Ok(ProcessTerminationOutcome::ExitedAfterTerm);
+    }
+
+    signal_process(pid, "KILL")?;
+
+    // Give SIGKILL a brief window to take effect so a follow-up reconcile/stop
+    // does not observe a zombie/live pid.
+    let kill_deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < kill_deadline {
+        if !process_is_alive(pid) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    Ok(ProcessTerminationOutcome::Killed)
+}
+
+/// Stop a VM's backend: gracefully quit QEMU over QMP (Compatibility Mode),
+/// terminate the recorded child process (`SIGTERM` then `SIGKILL`) so no
+/// AppleVzRunner / qemu orphan remains, then clear runtime state and metadata.
+///
+/// Dry-run VMs (no real recorded pid) keep their metadata-only behavior.
+pub fn stop_backend(store: &VmStore, name: &str) -> Result<Option<RunnerMetadata>, String> {
     let (bundle, manifest) = store.get_vm(name).map_err(|error| error.to_string())?;
     let metadata = store
         .runner_metadata(name)
         .map_err(|error| error.to_string())?;
 
+    // A real backend process is one recorded with a pid and not a dry run.
+    // Both Fast (lightvm-runner / AppleVzRunner) and Compatibility (qemu)
+    // backends record their child pid here.
+    let recorded_pid = metadata
+        .as_ref()
+        .filter(|metadata| !metadata.dry_run)
+        .and_then(|metadata| metadata.pid);
+
+    // Compatibility Mode: attempt a graceful QMP quit first so QEMU can flush
+    // and shut down cleanly. If the socket is gone but we have a live recorded
+    // pid, fall through to signal-based termination rather than refusing.
     if manifest.mode == VmMode::Compatibility {
         let socket_path = qmp_socket_path(&bundle);
         if socket_path.exists() {
-            qmp_quit(&socket_path).map_err(|error| error.to_string())?;
-        } else if metadata
-            .as_ref()
-            .is_some_and(|metadata| metadata.pid.is_some() && !metadata.dry_run)
+            // Best-effort: if the guest already quit, the socket may error.
+            if let Err(error) = qmp_quit(&socket_path) {
+                // Only surface the error when there is no recorded pid to fall
+                // back on; otherwise we proceed to terminate the pid directly.
+                if recorded_pid.is_none() {
+                    return Err(error.to_string());
+                }
+            }
+        } else if recorded_pid.is_none()
+            && metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.pid.is_some() && !metadata.dry_run)
         {
+            // Defensive: pid present but filtered out should not happen, but keep
+            // the historical guard for spawned-but-pidless edge cases.
             return Err(format!(
                 "QMP socket unavailable: {}; refusing to mark spawned backend stopped",
                 socket_path.display()
             ));
         }
+    }
+
+    // Release gate: actually terminate the recorded child process so no
+    // AppleVzRunner / qemu orphan remains after stop. Dry-run VMs (no real pid)
+    // skip this entirely and keep their prior metadata-only behavior.
+    if let Some(pid) = recorded_pid {
+        terminate_recorded_process(pid, Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS))?;
     }
 
     store
@@ -5630,7 +5770,7 @@ const FAST_SUSPEND_RUN_SECONDS: u64 = 20;
 /// Compute the Apple VZ saved-state file path for a VM.
 ///
 /// Contract: `<bundle>/metadata/suspend-images/<slug(name)>.bin`.
-fn fast_suspend_state_path(bundle: &Path, name: &str) -> PathBuf {
+pub fn fast_suspend_state_path(bundle: &Path, name: &str) -> PathBuf {
     bundle
         .join("metadata")
         .join("suspend-images")
@@ -5831,21 +5971,25 @@ pub fn cold_start_fast_backend(store: &VmStore, name: &str) -> Result<RunnerMeta
     spawn_fast_backend(store, name, &bundle, &manifest, None)
 }
 
-/// Suspend a Fast Mode VM end-to-end.
+/// How long to wait for the QEMU `snapshot-save` job to conclude during a
+/// Compatibility Mode suspend before giving up.
+const COMPAT_SUSPEND_SNAPSHOT_TIMEOUT_SECONDS: u64 = 120;
+
+/// Suspend a VM end-to-end, dispatching by mode.
 ///
-/// Boots the Fast VM via `lightvm-runner`, lets it run briefly, pauses, saves
-/// the VZ machine state to `<bundle>/metadata/suspend-images/<slug>.bin`, and
-/// exits. This call is SYNCHRONOUS: it waits for the runner to finish before
-/// marking the VM suspended.
+/// Fast Mode: boots the VM via `lightvm-runner`, lets it run briefly, pauses,
+/// saves the VZ machine state to `<bundle>/metadata/suspend-images/<slug>.bin`,
+/// and exits (SYNCHRONOUS).
+///
+/// Compatibility Mode: connects to the running QEMU over QMP, pauses + saves a
+/// full internal qcow2 snapshot, then quits QEMU
+/// (see [`suspend_compatibility_backend`]).
 pub fn suspend_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, String> {
     let (bundle, manifest, _) = store
         .get_vm_with_active_disk(name)
         .map_err(|error| error.to_string())?;
-    if manifest.mode != VmMode::Fast {
-        return Err(
-            "suspend is only implemented for Fast Mode VMs; Compatibility Mode suspend is not wired yet"
-                .to_string(),
-        );
+    if manifest.mode == VmMode::Compatibility {
+        return suspend_compatibility_backend(store, name, &bundle);
     }
 
     let apple_vz_runner = require_apple_vz_runner()?;
@@ -5969,11 +6113,8 @@ pub fn resume_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, Str
     let (bundle, manifest, _) = store
         .get_vm_with_active_disk(name)
         .map_err(|error| error.to_string())?;
-    if manifest.mode != VmMode::Fast {
-        return Err(
-            "resume is only implemented for Fast Mode VMs; Compatibility Mode resume is not wired yet"
-                .to_string(),
-        );
+    if manifest.mode == VmMode::Compatibility {
+        return resume_compatibility_backend(store, name, &bundle, &manifest);
     }
 
     let state_path = fast_suspend_state_path(&bundle, name);
@@ -5987,6 +6128,227 @@ pub fn resume_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, Str
     // Resume is identical to a Fast cold start except it restores the saved VZ
     // machine state instead of booting fresh.
     spawn_fast_backend(store, name, &bundle, &manifest, Some(&state_path))
+}
+
+/// Path to the Compatibility Mode suspend marker/metadata for a VM.
+///
+/// Records that an internal QEMU snapshot tagged [`COMPAT_SUSPEND_SNAPSHOT_TAG`]
+/// lives inside the primary qcow2 so resume knows there is state to restore.
+pub fn compat_suspend_marker_path(bundle: &Path, name: &str) -> PathBuf {
+    bundle
+        .join("metadata")
+        .join("suspend-images")
+        .join(format!("{}-compat.json", bridgevm_config::slug(name)))
+}
+
+/// Suspend a Compatibility Mode (QEMU) VM.
+///
+/// Connects to the running QEMU over QMP, pauses the guest (`stop`), saves a
+/// full internal VM snapshot (CPU + RAM + device state) into the primary qcow2
+/// via the job-based `snapshot-save` QMP command (tag
+/// [`COMPAT_SUSPEND_SNAPSHOT_TAG`]), waits for the job to conclude, then `quit`s
+/// QEMU. The recorded child pid (if any) is terminated to guarantee no orphan
+/// remains, the suspend marker is recorded, and the VM is marked `suspended`.
+fn suspend_compatibility_backend(
+    store: &VmStore,
+    name: &str,
+    bundle: &Path,
+) -> Result<RunnerMetadata, String> {
+    let socket_path = qmp_socket_path(bundle);
+    if !socket_path.exists() {
+        return Err(format!(
+            "QMP socket unavailable: {}; is the Compatibility Mode VM running?",
+            socket_path.display()
+        ));
+    }
+
+    let metadata = store
+        .runner_metadata(name)
+        .map_err(|error| error.to_string())?;
+    let recorded_pid = metadata
+        .as_ref()
+        .filter(|metadata| !metadata.dry_run)
+        .and_then(|metadata| metadata.pid);
+
+    // Pause + save full machine state into the qcow2, then quit QEMU.
+    suspend_to_snapshot(
+        &socket_path,
+        Duration::from_secs(COMPAT_SUSPEND_SNAPSHOT_TIMEOUT_SECONDS),
+    )
+    .map_err(|error| format!("Compatibility Mode suspend (snapshot-save) failed: {error}"))?;
+    // The snapshot is committed; quit QEMU so the process releases the disk.
+    qmp_quit(&socket_path).map_err(|error| error.to_string())?;
+
+    // Guarantee the QEMU process is gone (QMP quit usually does this, but the
+    // recorded pid is the release-gate backstop).
+    if let Some(pid) = recorded_pid {
+        terminate_recorded_process(pid, Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS))?;
+    }
+
+    // Record a suspend marker so resume knows there is internal state to load.
+    let marker_path = compat_suspend_marker_path(bundle, name);
+    if let Some(parent) = marker_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    // Reuse the disk path as the "image path" for the suspend-image metadata so
+    // `mark_fast_suspend_image_exists` reports the location of the saved state.
+    let disk_path = bundle.join("disks").join("root.qcow2");
+    store
+        .mark_fast_suspend_image_exists(name, &disk_path)
+        .map_err(|error| error.to_string())?;
+    fs::write(
+        &marker_path,
+        format!(
+            "{{\"snapshot_tag\":\"{}\",\"disk\":\"{}\"}}\n",
+            COMPAT_SUSPEND_SNAPSHOT_TAG,
+            disk_path.display()
+        ),
+    )
+    .map_err(|error| error.to_string())?;
+
+    // Build a descriptive runner metadata (no live pid; backend is suspended).
+    let command = build_compatibility_command(
+        &store.get_vm(name).map_err(|error| error.to_string())?.1,
+        bundle,
+    )
+    .map_err(compatibility_qemu_command_error)?;
+    let log_path = bundle.join("logs").join("qemu.log");
+    let guest_tools = store
+        .guest_tools_runner_metadata(name)
+        .map_err(|error| error.to_string())?;
+    let suspend_metadata = RunnerMetadata {
+        engine: "fullvm".to_string(),
+        pid: None,
+        command: command.render_shell_words(),
+        log_path,
+        started_at_unix: now_unix(),
+        dry_run: false,
+        launch_spec_path: None,
+        guest_tools: Some(guest_tools),
+        disk: None,
+        active_disk: None,
+        launch_readiness: None,
+    };
+    store
+        .write_runner_metadata(name, &suspend_metadata)
+        .map_err(|error| error.to_string())?;
+
+    let current = store.state(name).map_err(|error| error.to_string())?.state;
+    if current == VmRuntimeState::Stopped {
+        store
+            .transition_state(name, VmRuntimeState::Running)
+            .map_err(|error| error.to_string())?;
+    }
+    store
+        .transition_state(name, VmRuntimeState::Suspended)
+        .map_err(|error| error.to_string())?;
+
+    Ok(suspend_metadata)
+}
+
+/// Build the QEMU command used to resume a suspended Compatibility Mode VM:
+/// the normal compatibility command plus `-loadvm <tag>` so QEMU restores the
+/// internal VM snapshot saved during suspend.
+///
+/// Shared by the daemon-less resume path ([`resume_backend`]) and the daemon's
+/// supervised resume so both spawn an identical process.
+pub fn build_compatibility_resume_command(
+    manifest: &VmManifest,
+    bundle: &Path,
+) -> Result<QemuCommand, String> {
+    let mut command =
+        build_compatibility_command(manifest, bundle).map_err(compatibility_qemu_command_error)?;
+    command.args.push("-loadvm".to_string());
+    command.args.push(COMPAT_SUSPEND_SNAPSHOT_TAG.to_string());
+    Ok(command)
+}
+
+/// Resume a suspended Compatibility Mode (QEMU) VM.
+///
+/// Relaunches QEMU detached with `-loadvm <tag>` appended to the built command
+/// so it restores the internal VM snapshot saved during suspend, records the
+/// new child pid, and marks the VM `running`.
+fn resume_compatibility_backend(
+    store: &VmStore,
+    name: &str,
+    bundle: &Path,
+    manifest: &VmManifest,
+) -> Result<RunnerMetadata, String> {
+    let marker_path = compat_suspend_marker_path(bundle, name);
+    if !marker_path.exists() {
+        return Err(format!(
+            "no saved Compatibility Mode state to resume from at {}; suspend the VM first",
+            marker_path.display()
+        ));
+    }
+
+    let (disk, active_disk) = store
+        .prepare_active_disk(name)
+        .map_err(|error| error.to_string())?;
+    if !disk.exists {
+        return Err(missing_disk_message(&disk));
+    }
+
+    let command = build_compatibility_resume_command(manifest, bundle)?;
+
+    let log_path = bundle.join("logs").join("qemu.log");
+    let guest_tools = store
+        .guest_tools_runner_metadata(name)
+        .map_err(|error| error.to_string())?;
+
+    fs::create_dir_all(bundle.join("logs")).map_err(|error| error.to_string())?;
+    let stdout = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|error| error.to_string())?;
+    let stderr = stdout.try_clone().map_err(|error| error.to_string())?;
+    let mut child = Command::new(&command.program)
+        .args(&command.args)
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
+        .spawn()
+        .map_err(|error| format!("failed to spawn {}: {error}", command.program))?;
+
+    // QEMU `-loadvm` can fail fast while restoring the snapshot — notably,
+    // restoring an HVF-accelerated arm64 guest aborts in cpu_pre_load
+    // (cpreg_vmstate_indexes). Confirm the process actually survived loading the
+    // snapshot before declaring the VM running; otherwise report honestly and
+    // leave the suspend marker + qcow2 snapshot intact so nothing is lost.
+    std::thread::sleep(std::time::Duration::from_millis(2000));
+    if let Ok(Some(status)) = child.try_wait() {
+        return Err(format!(
+            "Compatibility Mode resume failed: QEMU exited ({status}) while restoring the saved snapshot. Restoring a QEMU snapshot is not supported for HVF-accelerated arm64 guests on this host; the suspend snapshot is preserved. See {}.",
+            log_path.display()
+        ));
+    }
+
+    let metadata = RunnerMetadata {
+        engine: "fullvm".to_string(),
+        pid: Some(child.id()),
+        command: command.render_shell_words(),
+        log_path,
+        started_at_unix: now_unix(),
+        dry_run: false,
+        launch_spec_path: None,
+        guest_tools: Some(guest_tools),
+        disk: Some(disk),
+        active_disk: Some(active_disk),
+        launch_readiness: None,
+    };
+    store
+        .write_runner_metadata(name, &metadata)
+        .map_err(|error| error.to_string())?;
+
+    // Resume succeeded (process survived snapshot load); consume the marker so a
+    // subsequent stop->run doesn't try to resume stale state.
+    let _ = fs::remove_file(&marker_path);
+
+    store
+        .transition_state(name, VmRuntimeState::Running)
+        .map_err(|error| error.to_string())?;
+
+    Ok(metadata)
 }
 
 fn lifecycle_plan(
@@ -10789,6 +11151,278 @@ mod tests {
             Some(value) => std::env::set_var("BRIDGEVM_APPLE_VZ_RUNNER", value),
             None => std::env::remove_var("BRIDGEVM_APPLE_VZ_RUNNER"),
         }
+    }
+
+    fn unique_test_root(label: &str) -> PathBuf {
+        let mut root = std::env::temp_dir();
+        root.push(format!(
+            "bridgevm-api-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        root
+    }
+
+    /// Spawn a long-lived process that is NOT a direct child of the test
+    /// process, mirroring production where the recorded backend pid is owned by
+    /// launchd/init (not the api caller). This avoids the zombie/defunct state
+    /// that a direct `Command` child would enter after SIGTERM (which `kill -0`
+    /// still reports as "alive" until reaped). The double-fork reparents the
+    /// `sleep` to init; we read back its real pid via a temp file.
+    #[cfg(unix)]
+    fn spawn_detached_sleep() -> u32 {
+        let pid_file = unique_test_root("detached-sleep-pid");
+        // Shell double-fork: the outer `sh` exits immediately, the backgrounded
+        // subshell's `sleep` gets reparented to init, and we record its pid.
+        let script = format!(
+            "( sleep 300 </dev/null >/dev/null 2>&1 & printf '%d' \"$!\" > '{}' ) &",
+            pid_file.display()
+        );
+        let status = Command::new("sh")
+            .arg("-c")
+            .arg(&script)
+            .status()
+            .expect("failed to spawn detached sleep");
+        assert!(status.success());
+
+        // The pid file is written by the backgrounded subshell; poll for it.
+        let mut pid = None;
+        for _ in 0..200 {
+            if let Ok(contents) = std::fs::read_to_string(&pid_file) {
+                if let Ok(parsed) = contents.trim().parse::<u32>() {
+                    if parsed != 0 {
+                        pid = Some(parsed);
+                        break;
+                    }
+                }
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        let _ = std::fs::remove_file(&pid_file);
+        let pid = pid.expect("detached sleep pid was not recorded");
+        // Wait until the detached process is actually alive before returning.
+        for _ in 0..200 {
+            if process_is_alive(pid) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        pid
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn terminate_recorded_process_kills_live_child() {
+        let pid = spawn_detached_sleep();
+        assert!(process_is_alive(pid));
+
+        let outcome =
+            terminate_recorded_process(pid, Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS))
+                .unwrap();
+        // Release gate: the process is terminated. `sleep` normally exits on
+        // SIGTERM (ExitedAfterTerm), but a reparented-to-init process can be
+        // reaped slightly after the grace window, in which case the SIGKILL
+        // fallback (Killed) takes over. Either is a successful termination; what
+        // matters is that no process remains. AlreadyGone would mean we never
+        // observed it live, which this test rules out via the assert above.
+        assert_ne!(outcome, ProcessTerminationOutcome::AlreadyGone);
+        // Poll briefly: init/launchd reaps the reparented process asynchronously.
+        let mut gone = false;
+        for _ in 0..200 {
+            if !process_is_alive(pid) {
+                gone = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(gone, "process {pid} should be gone after termination");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn terminate_recorded_process_is_noop_for_dead_pid() {
+        let pid = spawn_detached_sleep();
+        signal_process(pid, "KILL").unwrap();
+        // Wait for the detached process to fully exit (init reaps it).
+        for _ in 0..200 {
+            if !process_is_alive(pid) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        let outcome =
+            terminate_recorded_process(pid, Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS))
+                .unwrap();
+        assert_eq!(outcome, ProcessTerminationOutcome::AlreadyGone);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stop_backend_terminates_recorded_child_process() {
+        let store = VmStore::new(unique_test_root("stop-kills-child"));
+        let manifest = VmManifest::new(
+            "fast-linux",
+            VmMode::Fast,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "arm64".to_string(),
+            },
+            "80GiB",
+        );
+        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+            .into_result()
+            .unwrap();
+        store
+            .transition_state("fast-linux", VmRuntimeState::Running)
+            .unwrap();
+
+        let pid = spawn_detached_sleep();
+        let bundle = store.bundle_path("fast-linux");
+        let runner = RunnerMetadata {
+            engine: "lightvm".to_string(),
+            pid: Some(pid),
+            command: vec!["lightvm-runner".to_string()],
+            log_path: bundle.join("logs").join("runner.log"),
+            started_at_unix: now_unix(),
+            dry_run: false,
+            launch_spec_path: None,
+            guest_tools: None,
+            disk: None,
+            active_disk: None,
+            launch_readiness: None,
+        };
+        store.write_runner_metadata("fast-linux", &runner).unwrap();
+
+        let result = stop_backend(&store, "fast-linux").unwrap();
+        assert!(result.is_none());
+        // Release gate: no VM process remains after stop.
+        assert!(!process_is_alive(pid));
+        // State cleared.
+        assert_eq!(
+            store.state("fast-linux").unwrap().state,
+            VmRuntimeState::Stopped
+        );
+        assert!(store.runner_metadata("fast-linux").unwrap().is_none());
+        let _ = std::fs::remove_dir_all(store.root());
+    }
+
+    #[test]
+    fn stop_backend_leaves_dry_run_vm_as_metadata_only() {
+        let store = VmStore::new(unique_test_root("stop-dry-run"));
+        let manifest = VmManifest::new(
+            "fast-linux",
+            VmMode::Fast,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "arm64".to_string(),
+            },
+            "80GiB",
+        );
+        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+            .into_result()
+            .unwrap();
+        store
+            .transition_state("fast-linux", VmRuntimeState::Running)
+            .unwrap();
+
+        let bundle = store.bundle_path("fast-linux");
+        let runner = RunnerMetadata {
+            engine: "lightvm".to_string(),
+            pid: None,
+            command: vec!["lightvm-runner".to_string()],
+            log_path: bundle.join("logs").join("runner.log"),
+            started_at_unix: now_unix(),
+            dry_run: true,
+            launch_spec_path: None,
+            guest_tools: None,
+            disk: None,
+            active_disk: None,
+            launch_readiness: None,
+        };
+        store.write_runner_metadata("fast-linux", &runner).unwrap();
+
+        // No real pid -> no termination attempted; metadata-only stop succeeds.
+        let result = stop_backend(&store, "fast-linux").unwrap();
+        assert!(result.is_none());
+        assert_eq!(
+            store.state("fast-linux").unwrap().state,
+            VmRuntimeState::Stopped
+        );
+        assert!(store.runner_metadata("fast-linux").unwrap().is_none());
+        let _ = std::fs::remove_dir_all(store.root());
+    }
+
+    #[test]
+    fn compatibility_resume_command_appends_loadvm_tag() {
+        let manifest = VmManifest::new(
+            "compat",
+            VmMode::Compatibility,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "x86_64".to_string(),
+            },
+            "40GiB",
+        );
+        let bundle = unique_test_root("compat-resume-cmd");
+        let command = build_compatibility_resume_command(&manifest, &bundle).unwrap();
+        // The last two args must be `-loadvm <tag>`.
+        let tail = &command.args[command.args.len() - 2..];
+        assert_eq!(tail, &["-loadvm".to_string(), "bridgevm-suspend".to_string()]);
+    }
+
+    #[test]
+    fn compatibility_suspend_requires_running_qmp_socket() {
+        let store = VmStore::new(unique_test_root("compat-suspend-no-sock"));
+        let manifest = VmManifest::new(
+            "compat",
+            VmMode::Compatibility,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "x86_64".to_string(),
+            },
+            "40GiB",
+        );
+        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+            .into_result()
+            .unwrap();
+        // No QMP socket present -> suspend should report the socket is unavailable.
+        let error = suspend_backend(&store, "compat").unwrap_err();
+        assert!(
+            error.contains("QMP socket unavailable"),
+            "unexpected error: {error}"
+        );
+        let _ = std::fs::remove_dir_all(store.root());
+    }
+
+    #[test]
+    fn compatibility_resume_requires_suspend_marker() {
+        let store = VmStore::new(unique_test_root("compat-resume-no-marker"));
+        let manifest = VmManifest::new(
+            "compat",
+            VmMode::Compatibility,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "x86_64".to_string(),
+            },
+            "40GiB",
+        );
+        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+            .into_result()
+            .unwrap();
+        let error = resume_backend(&store, "compat").unwrap_err();
+        assert!(
+            error.contains("no saved Compatibility Mode state to resume from"),
+            "unexpected error: {error}"
+        );
+        let _ = std::fs::remove_dir_all(store.root());
     }
 
     fn valid_guest_hello(token: &str, capabilities: &[&str]) -> AgentMessage {

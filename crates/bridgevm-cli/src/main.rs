@@ -7,8 +7,8 @@ use bridgevm_api::{
     create_performance_sample, download_boot_media, fast_spawn_not_implemented_error,
     guest_tools_linux_command, guest_tools_token, import_boot_media, inspect_boot_media_status,
     inspect_guest_tools_status, launch_readiness_metadata, list_ports, list_shares, open_port_plan,
-    plan_boot_media_download, remove_port, remove_share, resume_backend, suspend_backend,
-    verify_boot_media, view_vm_log,
+    plan_boot_media_download, remove_port, remove_share, resume_backend, stop_backend,
+    suspend_backend, verify_boot_media, view_vm_log,
     ApplicationConsistentSnapshotExecutionRecord, BootMediaDownloadPlanMetadata,
     BootMediaDownloadResultMetadata, BootMediaImportMetadata, BootMediaKind, BootMediaStatus,
     BootMediaVerificationMetadata, BridgeVmRequest, BridgeVmResponse, DiagnosticBundleMetadata,
@@ -28,7 +28,7 @@ use bridgevm_core::{
 };
 use bridgevm_qemu::{
     build_compatibility_command, cont as qmp_cont, is_qmp_status_unavailable, qmp_socket_path,
-    query_status, quit as qmp_quit, stop as qmp_stop, QemuError,
+    query_status, stop as qmp_stop, QemuError,
 };
 use bridgevm_storage::{
     ApplicationConsistentSnapshotPreflightMetadata, LaunchReadinessMetadata, QmpSupervisorMetadata,
@@ -2291,32 +2291,13 @@ fn readiness(store: &VmStore, args: ReadinessArgs) -> Result<()> {
 }
 
 fn stop_backend_local(store: &VmStore, args: VmNameArgs) -> Result<()> {
-    let (bundle, manifest) = store.get_vm(&args.name).context("failed to read VM")?;
-    let metadata = store
-        .runner_metadata(&args.name)
-        .context("failed to read runner metadata")?;
-
-    if manifest.mode == VmMode::Compatibility {
-        let socket_path = qmp_socket_path(&bundle);
-        if socket_path.exists() {
-            qmp_quit(&socket_path).context("failed to send QMP quit")?;
-        } else if metadata
-            .as_ref()
-            .is_some_and(|metadata| metadata.pid.is_some() && !metadata.dry_run)
-        {
-            bail!(
-                "QMP socket unavailable: {}; refusing to mark spawned backend stopped",
-                socket_path.display()
-            );
-        }
-    }
-
-    store
-        .transition_state(&args.name, VmRuntimeState::Stopped)
-        .with_context(|| format!("failed to mark VM '{}' stopped", args.name))?;
-    store
-        .clear_runner_metadata(&args.name)
-        .context("failed to clear runner metadata")?;
+    // Delegate to the shared backend so the CLI's direct-stop path also
+    // terminates the recorded child process (SIGTERM -> SIGKILL) and clears
+    // state, matching the daemon. This guarantees no AppleVzRunner / qemu
+    // orphan remains after `bridgevm stop`.
+    stop_backend(store, &args.name)
+        .map_err(anyhow::Error::msg)
+        .with_context(|| format!("failed to stop VM '{}'", args.name))?;
     println!("Stopped {}", args.name);
     Ok(())
 }
