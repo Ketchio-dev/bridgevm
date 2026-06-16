@@ -16,8 +16,8 @@ use bridgevm_api::{
 use bridgevm_apple_vz::{build_fast_plan, write_launch_spec_artifact};
 use bridgevm_config::VmMode;
 use bridgevm_qemu::{
-    build_compatibility_command, qmp_socket_path, query_status, quit as qmp_quit, QemuError,
-    QmpClient, QmpEventDrain,
+    assign_free_vnc_display, build_compatibility_command, qmp_socket_path, query_status,
+    quit as qmp_quit, vnc_display_in_command, QemuError, QmpClient, QmpEventDrain,
 };
 use bridgevm_storage::{
     GuestToolsAgentUpdateMetadata, GuestToolsClipboardMetadata, GuestToolsCommandResultMetadata,
@@ -700,8 +700,14 @@ impl DaemonState {
             anyhow::bail!("active disk is not ready: {}", disk.path.display());
         }
 
-        let command = build_compatibility_command(&manifest, &bundle)
+        let mut command = build_compatibility_command(&manifest, &bundle)
             .map_err(|error| anyhow::anyhow!("{}", compatibility_qemu_command_error(error)))?;
+        // Pin this VM to a free VNC display so concurrent Compat VMs don't
+        // collide on TCP 5900. Avoid displays already handed to live children
+        // (their QEMU may not have bound the port yet, so a bare probe would
+        // hand the same :0 to two back-to-back launches).
+        let avoid = self.live_vnc_displays();
+        assign_free_vnc_display(&mut command, &avoid);
         // Test-only escape hatch (mirrors BRIDGEVM_APPLE_VZ_RUNNER): append extra
         // QEMU args without touching the product command builder. The
         // application-consistent live opt-in smoke uses this to attach a NoCloud
@@ -960,8 +966,12 @@ impl DaemonState {
             anyhow::bail!("active disk is not ready: {}", disk.path.display());
         }
 
-        let command = build_compatibility_resume_command(manifest, bundle)
+        let mut command = build_compatibility_resume_command(manifest, bundle)
             .map_err(|error| anyhow::anyhow!("{error}"))?;
+        // Pin a free VNC display so a resumed Compat VM doesn't collide on 5900,
+        // avoiding displays already owned by this daemon's live children.
+        let avoid = self.live_vnc_displays();
+        assign_free_vnc_display(&mut command, &avoid);
         let log_path = bundle.join("logs").join("qemu.log");
         let guest_tools = self
             .store
@@ -1314,6 +1324,19 @@ impl DaemonState {
                 .qmp_supervisor_metadata(name)
                 .context("failed to read QMP supervisor metadata")?,
         })
+    }
+
+    /// VNC display numbers currently owned by this daemon's live supervised
+    /// backends, read back from their recorded launch commands. A newly launched
+    /// Compat VM avoids these so it doesn't collide on an in-use VNC port even
+    /// before the owning VM's QEMU has finished binding it.
+    fn live_vnc_displays(&self) -> Vec<u16> {
+        self.children
+            .keys()
+            .filter_map(|name| self.store.runner_metadata(name).ok().flatten())
+            .filter(|metadata| !metadata.dry_run && metadata.pid.is_some())
+            .filter_map(|metadata| vnc_display_in_command(&metadata.command))
+            .collect()
     }
 
     /// Tear down every backend this daemon spawned — gracefully (QMP `quit` for

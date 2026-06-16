@@ -13,9 +13,9 @@ use bridgevm_network::{
     PortForwardRule,
 };
 use bridgevm_qemu::{
-    build_compatibility_command, cont as qmp_cont, is_qmp_status_unavailable, qmp_socket_path,
-    query_status, quit as qmp_quit, stop as qmp_stop, suspend_to_snapshot, QemuCommand, QemuError,
-    COMPAT_SUSPEND_SNAPSHOT_TAG,
+    assign_free_vnc_display, build_compatibility_command, cont as qmp_cont,
+    is_qmp_status_unavailable, qmp_socket_path, query_status, quit as qmp_quit, stop as qmp_stop,
+    suspend_to_snapshot, QemuCommand, QemuError, COMPAT_SUSPEND_SNAPSHOT_TAG,
 };
 use bridgevm_storage::{
     ApplicationConsistentSnapshotPreflightMetadata, DiskCompactMetadata, DiskCreateMetadata,
@@ -5357,7 +5357,7 @@ fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadat
         return Ok(metadata);
     }
 
-    let command = build_compatibility_command(&manifest, &bundle)
+    let mut command = build_compatibility_command(&manifest, &bundle)
         .map_err(compatibility_qemu_command_error)?;
     let readiness = compatibility_launch_readiness_metadata(&disk, None);
     if spawn && !readiness.ready {
@@ -5388,6 +5388,12 @@ fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadat
         return Ok(metadata);
     }
 
+    // Pin this VM to a free VNC display before recording + spawning, so two
+    // Compat VMs running at once don't collide on TCP 5900. (The dry-run path
+    // above keeps the deterministic vnc=:0 template since it binds nothing.)
+    // Daemon-less launches probe the live ports only; the daemon additionally
+    // avoids displays it has already handed to its own children.
+    assign_free_vnc_display(&mut command, &[]);
     fs::create_dir_all(bundle.join("logs")).map_err(|error| error.to_string())?;
     let stdout = OpenOptions::new()
         .create(true)
@@ -6294,7 +6300,9 @@ fn resume_compatibility_backend(
         return Err(missing_disk_message(&disk));
     }
 
-    let command = build_compatibility_resume_command(manifest, bundle)?;
+    let mut command = build_compatibility_resume_command(manifest, bundle)?;
+    // Pin a free VNC display so a resumed Compat VM doesn't collide on 5900.
+    assign_free_vnc_display(&mut command, &[]);
 
     let log_path = bundle.join("logs").join("qemu.log");
     let guest_tools = store

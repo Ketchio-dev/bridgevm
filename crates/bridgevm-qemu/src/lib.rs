@@ -808,6 +808,57 @@ fn display_arg(renderer: &str) -> &'static str {
     }
 }
 
+/// The TCP port VNC display `:0` listens on; display `:N` listens on
+/// `VNC_BASE_PORT + N`.
+const VNC_BASE_PORT: u16 = 5900;
+/// How many VNC display numbers to scan for a free one before giving up.
+const VNC_DISPLAY_SCAN_LIMIT: u16 = 64;
+
+/// Move a built command's `-display vnc=:0` onto the lowest free VNC display
+/// number, so concurrently running Compatibility Mode VMs don't collide on TCP
+/// 5900 (the second QEMU would otherwise fail to start with "Failed to find an
+/// available port: Address already in use"). The command builder is kept pure
+/// and deterministic (always `vnc=:0`); spawn paths call this just before they
+/// launch + record the command, so the recorded `-display` reflects the chosen
+/// display (the macOS app's viewer endpoint reads `vnc=:N` back to compute the
+/// VNC port).
+///
+/// `avoid` lists display numbers already handed to other live VMs. This is
+/// required because a VM's QEMU does not bind its VNC port until partway through
+/// startup, so a pure "is the port free right now" probe would hand the same
+/// `:0` to two VMs launched back-to-back (the second would then lose the race
+/// and fail to start). The caller passes the displays of its running backends so
+/// each new VM gets a distinct one. Returns the chosen display (or `None` for a
+/// non-VNC display / when none is free, leaving the command unchanged).
+pub fn assign_free_vnc_display(command: &mut QemuCommand, avoid: &[u16]) -> Option<u16> {
+    let index = command.args.iter().position(|arg| arg == "-display")?;
+    let value = command.args.get(index + 1)?;
+    if !value.starts_with("vnc=:") {
+        return None;
+    }
+    let display = lowest_free_vnc_display(VNC_DISPLAY_SCAN_LIMIT, avoid)?;
+    command.args[index + 1] = format!("vnc=:{display}");
+    Some(display)
+}
+
+/// Extract the VNC display number from a rendered command's `-display vnc=:N`
+/// (used to collect the displays already in use by running VMs). Returns `None`
+/// for a non-VNC display or a malformed value.
+pub fn vnc_display_in_command(args: &[String]) -> Option<u16> {
+    let index = args.iter().position(|arg| arg == "-display")?;
+    args.get(index + 1)?.strip_prefix("vnc=:")?.parse().ok()
+}
+
+/// Find the lowest VNC display number that is not in `avoid` and whose TCP port
+/// is bindable (free).
+fn lowest_free_vnc_display(scan_limit: u16, avoid: &[u16]) -> Option<u16> {
+    use std::net::TcpListener;
+    (0..scan_limit).find(|display| {
+        !avoid.contains(display)
+            && TcpListener::bind(("127.0.0.1", VNC_BASE_PORT + display)).is_ok()
+    })
+}
+
 fn netdev_arg(manifest: &VmManifest) -> Result<String, QemuError> {
     let plan = qemu_network_plan(manifest)?;
     let mut arg = match plan.mode {
@@ -971,6 +1022,44 @@ mod tests {
             .expect("windows arm compat command");
 
         assert_eq!(arg_after(&command.args, "-display"), "vnc=:0");
+    }
+
+    #[test]
+    fn assign_free_vnc_display_skips_displays_already_in_use() {
+        // The avoid-set models displays already handed to other live VMs. Even
+        // though those ports may not be bound yet (QEMU binds late in startup),
+        // the helper must not hand out a display that is in the avoid-set --
+        // this is what stops two back-to-back launches from both getting :0.
+        let mut command = QemuCommand {
+            program: "qemu-system-aarch64".to_string(),
+            args: vec!["-display".to_string(), "vnc=:0".to_string()],
+        };
+        let assigned = assign_free_vnc_display(&mut command, &[0, 1]);
+        let value = arg_after(&command.args, "-display");
+        assert!(value.starts_with("vnc=:"), "still a vnc display: {value}");
+        assert_ne!(value, "vnc=:0", "must skip avoided display :0");
+        assert_ne!(value, "vnc=:1", "must skip avoided display :1");
+        assert_eq!(assigned, vnc_display_in_command(&command.args));
+        assert!(assigned.unwrap() >= 2);
+    }
+
+    #[test]
+    fn assign_free_vnc_display_is_noop_for_non_vnc_display() {
+        let mut command = QemuCommand {
+            program: "qemu-system-aarch64".to_string(),
+            args: vec!["-display".to_string(), "cocoa,gl=on".to_string()],
+        };
+        assert_eq!(assign_free_vnc_display(&mut command, &[]), None);
+        assert_eq!(arg_after(&command.args, "-display"), "cocoa,gl=on");
+    }
+
+    #[test]
+    fn vnc_display_in_command_parses_display_number() {
+        let args = vec!["-display".to_string(), "vnc=:7".to_string()];
+        assert_eq!(vnc_display_in_command(&args), Some(7));
+        let cocoa = vec!["-display".to_string(), "cocoa,gl=on".to_string()];
+        assert_eq!(vnc_display_in_command(&cocoa), None);
+        assert_eq!(vnc_display_in_command(&[]), None);
     }
 
     #[test]
