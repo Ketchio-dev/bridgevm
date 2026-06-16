@@ -35,6 +35,7 @@ use std::{
     os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    sync::atomic::{AtomicBool, Ordering},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -42,6 +43,29 @@ use std::{
 const QMP_SUPERVISOR_DRAIN_LIMIT: usize = 16;
 const GUEST_TOOLS_DRAIN_LIMIT: usize = 16;
 const GUEST_TOOLS_COMMAND_RESULT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Set by the SIGTERM/SIGINT handler so the supervisor loop can reap its
+/// spawned QEMU/AppleVzRunner children before exiting. Without this, killing
+/// `bridgevmd` (the common case: a service restart, or a test harness tearing
+/// the daemon down) would leave its VM processes orphaned — still running and
+/// still holding their ports (e.g. VNC :0 / TCP 5900) with no supervisor.
+static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn handle_shutdown_signal(_signal: libc::c_int) {
+    // Async-signal-safe: only flips an atomic. The actual teardown happens in
+    // the supervisor loop, which polls this flag.
+    SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+fn install_shutdown_handlers() {
+    // SAFETY: `handle_shutdown_signal` does nothing but an atomic store, which
+    // is async-signal-safe, so installing it as a C signal handler is sound.
+    unsafe {
+        let handler = handle_shutdown_signal as *const () as libc::sighandler_t;
+        libc::signal(libc::SIGTERM, handler);
+        libc::signal(libc::SIGINT, handler);
+    }
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "bridgevmd", about = "BridgeVM core daemon scaffold")]
@@ -88,10 +112,18 @@ fn serve(store: VmStore, socket_path: &Path, reconcile_interval: Duration) -> Re
         .set_nonblocking(true)
         .context("failed to configure daemon socket")?;
     println!("bridgevmd listening");
+    install_shutdown_handlers();
     let mut state = DaemonState::new(store);
     let mut last_reconcile = Instant::now();
 
     loop {
+        if SHUTDOWN_REQUESTED.load(Ordering::SeqCst) {
+            println!("bridgevmd received shutdown signal; reaping supervised backends");
+            state.shutdown_reap_children();
+            println!("bridgevmd shutdown complete");
+            return Ok(());
+        }
+
         match listener.accept() {
             Ok(stream) => {
                 if let Err(error) = handle_connection(&mut state, stream.0) {
@@ -1282,6 +1314,36 @@ impl DaemonState {
                 .qmp_supervisor_metadata(name)
                 .context("failed to read QMP supervisor metadata")?,
         })
+    }
+
+    /// Tear down every backend this daemon spawned — gracefully (QMP `quit` for
+    /// Compatibility Mode, then `SIGTERM`/`SIGKILL`) — so no QEMU/AppleVzRunner
+    /// child is orphaned when `bridgevmd` exits. The daemon has no re-adoption
+    /// path (a restarted daemon does not reclaim children by pid), so a child it
+    /// leaves behind is a pure leak that keeps holding its ports. Best-effort:
+    /// failing to reap one backend is logged and does not block the rest, and
+    /// any child that somehow survives a failed cleanup is force-killed.
+    fn shutdown_reap_children(&mut self) {
+        let names: Vec<String> = self.children.keys().cloned().collect();
+        for name in names {
+            if let Err(error) = self.cleanup_owned_backend(&name, true) {
+                // The graceful path bailed (e.g. an unresponsive QMP socket).
+                // If the child is still owned here, cleanup failed before
+                // killing it, so force-kill so it cannot orphan; otherwise it
+                // was already killed and only a later metadata step failed.
+                if let Some(mut backend) = self.children.remove(&name) {
+                    eprintln!(
+                        "bridgevmd shutdown: graceful reap of '{name}' failed ({error:#}); force-killing"
+                    );
+                    let _ = backend.child.kill();
+                    let _ = backend.child.wait();
+                } else {
+                    eprintln!(
+                        "bridgevmd shutdown: reaped backend '{name}' but post-kill cleanup failed: {error:#}"
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -3431,6 +3493,57 @@ mod tests {
 
         state.cleanup_owned_backend("legacy", false).unwrap();
         server.join().unwrap();
+    }
+
+    #[test]
+    fn shutdown_reaps_supervised_children_so_none_orphan() {
+        // Regression guard: killing bridgevmd must not leave its spawned QEMU /
+        // AppleVzRunner children orphaned (still running, still holding ports).
+        let store = temp_store();
+        store.create_vm(&compatibility_manifest("legacy")).unwrap();
+        store
+            .transition_state("legacy", VmRuntimeState::Running)
+            .unwrap();
+
+        // A long-lived stand-in for a spawned backend process.
+        let child = Command::new("sh").arg("-c").arg("sleep 60").spawn().unwrap();
+        let pid = child.id() as libc::pid_t;
+        let mut state = DaemonState::new(store.clone());
+        state
+            .children
+            .insert("legacy".to_string(), SupervisedBackend::new(child));
+
+        // Sanity: the child is alive before shutdown.
+        assert_eq!(
+            unsafe { libc::kill(pid, 0) },
+            0,
+            "the supervised child should be alive before shutdown"
+        );
+
+        state.shutdown_reap_children();
+
+        assert!(
+            !state.children.contains_key("legacy"),
+            "the supervised child must be removed from the daemon on shutdown"
+        );
+        // The spawned process must be reaped (SIGKILL + wait), not orphaned.
+        let mut gone = false;
+        for _ in 0..40 {
+            if unsafe { libc::kill(pid, 0) } == -1 {
+                gone = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        assert!(
+            gone,
+            "the supervised child must be killed on shutdown, not left orphaned"
+        );
+        assert_eq!(
+            store.state("legacy").unwrap().state,
+            VmRuntimeState::Stopped,
+            "the VM should be marked Stopped after its backend is reaped"
+        );
     }
 
     #[test]

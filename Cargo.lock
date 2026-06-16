@@ -164,6 +164,7 @@ dependencies = [
  "bridgevm-qemu",
  "bridgevm-storage",
  "clap",
+ "libc",
  "serde_json",
 ]
 
