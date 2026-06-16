@@ -58,6 +58,17 @@ struct Args {
     real_fsfreeze: bool,
     #[arg(long = "fsfreeze-mount", value_name = "MOUNT")]
     fsfreeze_mounts: Vec<PathBuf>,
+    /// Do NOT apply host TimeSync commands to the real guest clock; only
+    /// acknowledge them. By default a booted guest applies the host epoch to
+    /// its real clock via settimeofday(2) (the agent runs as root under
+    /// cloud-init).
+    #[arg(long)]
+    no_real_time_sync: bool,
+    /// Do NOT read real /proc metrics for the startup GuestMetrics frame; use
+    /// the synthetic --metrics-* values instead. By default the agent reports
+    /// real guest memory + CPU/load read from /proc.
+    #[arg(long)]
+    no_real_metrics: bool,
 }
 
 fn main() -> Result<()> {
@@ -71,6 +82,7 @@ fn main() -> Result<()> {
     let filesystem_freezer = resolve_filesystem_freezer(args.real_fsfreeze, args.fsfreeze_mounts)?;
     let clipboard_writer = resolve_clipboard_writer(&capabilities, args.clipboard_command)?;
     let display_resizer = resolve_display_resizer(&capabilities, args.display_resize_command)?;
+    let clock_setter = resolve_clock_setter(&capabilities, args.no_real_time_sync);
     let telemetry = TelemetryConfig::from_args(
         &capabilities,
         &args.guest_ips,
@@ -78,6 +90,7 @@ fn main() -> Result<()> {
         args.metrics_cpu_percent,
         args.metrics_memory_used_mib,
         args.no_metrics,
+        args.no_real_metrics,
         args.clipboard_text,
     )?;
 
@@ -100,6 +113,7 @@ fn main() -> Result<()> {
                 filesystem_freezer,
                 clipboard_writer,
                 display_resizer,
+                clock_setter,
                 args.serve_once,
             )
         }
@@ -125,6 +139,7 @@ fn main() -> Result<()> {
                 filesystem_freezer,
                 clipboard_writer,
                 display_resizer,
+                clock_setter,
                 args.serve_once,
             )
         }
@@ -195,6 +210,17 @@ fn resolve_display_resizer(
     }
 }
 
+fn resolve_clock_setter(capabilities: &[AgentCapability], no_real_time_sync: bool) -> ClockSetter {
+    // Real clock sync is only meaningful when time-sync is negotiated; if the
+    // capability is absent the handler rejects the command before we ever try
+    // to set the clock, so a simulated setter is the honest default there.
+    if no_real_time_sync || !supports_capability(capabilities, "time-sync") {
+        ClockSetter::simulated()
+    } else {
+        ClockSetter::real(Box::new(SettimeofdayClockBackend))
+    }
+}
+
 fn normalize_fsfreeze_mounts(mounts: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
     let mut seen = BTreeSet::new();
     let mut normalized = Vec::new();
@@ -252,13 +278,15 @@ fn run_tools_session(
     filesystem_freezer: FilesystemFreezer,
     clipboard_writer: ClipboardWriter,
     display_resizer: DisplayResizer,
+    clock_setter: ClockSetter,
     serve_once: bool,
 ) -> Result<()> {
     let mut state = GuestToolsState::new(&capabilities)
         .with_file_drop_dir(file_drop_dir)
         .with_filesystem_freezer(filesystem_freezer)
         .with_clipboard_writer(clipboard_writer)
-        .with_display_resizer(display_resizer);
+        .with_display_resizer(display_resizer)
+        .with_clock_setter(clock_setter);
     let hello = guest_hello(token, guest_os, capabilities);
     write_envelope_line(writer, &hello).map_err(|error| anyhow::anyhow!("{error:?}"))?;
     for envelope in initial_status_envelopes(&telemetry) {
@@ -291,6 +319,7 @@ struct GuestToolsState {
     display_resize_supported: bool,
     fs_freeze_supported: bool,
     fs_thaw_supported: bool,
+    time_sync_supported: bool,
     shared_folders: BTreeMap<String, SharedFolderMount>,
     file_drops: BTreeMap<String, FileDropTransfer>,
     applications: BTreeMap<String, ApplicationEntry>,
@@ -300,6 +329,7 @@ struct GuestToolsState {
     filesystem_freezer: FilesystemFreezer,
     clipboard_writer: ClipboardWriter,
     display_resizer: DisplayResizer,
+    clock_setter: ClockSetter,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -383,6 +413,7 @@ impl GuestToolsState {
             display_resize_supported: supports_capability(capabilities, "display-resize"),
             fs_freeze_supported: supports_capability(capabilities, "fs-freeze"),
             fs_thaw_supported: supports_capability(capabilities, "fs-thaw"),
+            time_sync_supported: supports_capability(capabilities, "time-sync"),
             shared_folders: BTreeMap::new(),
             file_drops: BTreeMap::new(),
             applications: default_applications(),
@@ -392,6 +423,7 @@ impl GuestToolsState {
             filesystem_freezer: FilesystemFreezer::simulated(),
             clipboard_writer: ClipboardWriter::simulated(),
             display_resizer: DisplayResizer::simulated(),
+            clock_setter: ClockSetter::simulated(),
         }
     }
 
@@ -415,6 +447,11 @@ impl GuestToolsState {
         self
     }
 
+    fn with_clock_setter(mut self, clock_setter: ClockSetter) -> Self {
+        self.clock_setter = clock_setter;
+        self
+    }
+
     fn handle_command(&mut self, command: &AgentEnvelope) -> Option<AgentEnvelope> {
         let outcome = self.apply_command(&command.message);
         let request_id = command.request_id.as_ref()?;
@@ -431,7 +468,7 @@ impl GuestToolsState {
 
     fn apply_command(&mut self, message: &AgentMessage) -> CommandOutcome {
         match message {
-            AgentMessage::TimeSync { .. } => CommandOutcome::ok(None),
+            AgentMessage::TimeSync { unix_epoch_millis } => self.sync_time(*unix_epoch_millis),
             AgentMessage::ResizeDisplay {
                 width,
                 height,
@@ -467,6 +504,28 @@ impl GuestToolsState {
                 "unsupported-command",
                 "command is not implemented by the Linux tools scaffold",
             ),
+        }
+    }
+
+    fn sync_time(&mut self, unix_epoch_millis: u64) -> CommandOutcome {
+        if !self.time_sync_supported {
+            return CommandOutcome::error(
+                "capability-not-enabled",
+                "time-sync capability is not enabled",
+            );
+        }
+
+        match self.clock_setter.set_epoch_millis(unix_epoch_millis) {
+            Ok(message) => CommandOutcome {
+                ok: true,
+                error_code: None,
+                message,
+                result: Some(serde_json::json!({
+                    "applied_unix_epoch_millis": unix_epoch_millis,
+                })),
+                metadata: None,
+            },
+            Err(message) => CommandOutcome::error("time-sync-failed", message),
         }
     }
 
@@ -1021,6 +1080,88 @@ fn run_display_resize_command(
     ))
 }
 
+/// Applies host TimeSync commands to the guest clock.
+struct ClockSetter {
+    mode: ClockSetterMode,
+}
+
+enum ClockSetterMode {
+    /// Acknowledge the host epoch without touching the real clock (used on
+    /// non-Linux builds, when --no-real-time-sync is passed, or in tests).
+    Simulated,
+    /// Apply the host epoch to the real guest clock through the backend.
+    Real { backend: Box<dyn ClockBackend> },
+}
+
+impl ClockSetter {
+    fn simulated() -> Self {
+        Self {
+            mode: ClockSetterMode::Simulated,
+        }
+    }
+
+    fn real(backend: Box<dyn ClockBackend>) -> Self {
+        Self {
+            mode: ClockSetterMode::Real { backend },
+        }
+    }
+
+    /// Returns an optional human-readable message on success.
+    fn set_epoch_millis(&mut self, unix_epoch_millis: u64) -> Result<Option<String>, String> {
+        match &mut self.mode {
+            ClockSetterMode::Simulated => Ok(Some(format!(
+                "acknowledged time-sync to {unix_epoch_millis} ms since epoch; guest clock was not changed (simulated)"
+            ))),
+            ClockSetterMode::Real { backend } => {
+                backend.set_epoch_millis(unix_epoch_millis)?;
+                Ok(Some(format!(
+                    "set guest clock to {unix_epoch_millis} ms since epoch"
+                )))
+            }
+        }
+    }
+}
+
+trait ClockBackend {
+    fn set_epoch_millis(&mut self, unix_epoch_millis: u64) -> Result<(), String>;
+}
+
+/// Real Linux backend: set the wall clock with settimeofday(2). The agent runs
+/// as root under cloud-init, so CAP_SYS_TIME is available.
+struct SettimeofdayClockBackend;
+
+impl ClockBackend for SettimeofdayClockBackend {
+    fn set_epoch_millis(&mut self, unix_epoch_millis: u64) -> Result<(), String> {
+        set_system_clock_millis(unix_epoch_millis)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn set_system_clock_millis(unix_epoch_millis: u64) -> Result<(), String> {
+    let seconds = (unix_epoch_millis / 1_000) as libc::time_t;
+    let micros = ((unix_epoch_millis % 1_000) * 1_000) as libc::suseconds_t;
+    let tv = libc::timeval {
+        tv_sec: seconds,
+        tv_usec: micros,
+    };
+    // SAFETY: tv is a fully-initialized timeval; settimeofday reads it and does
+    // not retain the pointer.
+    let rc = unsafe { libc::settimeofday(&tv, std::ptr::null()) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(format!(
+            "settimeofday failed: {}",
+            std::io::Error::last_os_error()
+        ))
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn set_system_clock_millis(_unix_epoch_millis: u64) -> Result<(), String> {
+    Err("real clock sync is only supported on Linux guests".to_string())
+}
+
 struct FilesystemFreezer {
     mode: FilesystemFreezerMode,
 }
@@ -1415,6 +1556,7 @@ struct GuestMetricsConfig {
 }
 
 impl TelemetryConfig {
+    #[allow(clippy::too_many_arguments)]
     fn from_args(
         capabilities: &[AgentCapability],
         guest_ips: &[String],
@@ -1422,13 +1564,42 @@ impl TelemetryConfig {
         metrics_cpu_percent: u8,
         metrics_memory_used_mib: u64,
         no_metrics: bool,
+        no_real_metrics: bool,
         clipboard_text: Option<String>,
+    ) -> Result<Self> {
+        Self::from_args_with_reader(
+            capabilities,
+            guest_ips,
+            no_guest_ip,
+            metrics_cpu_percent,
+            metrics_memory_used_mib,
+            no_metrics,
+            no_real_metrics,
+            clipboard_text,
+            read_proc_metrics,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn from_args_with_reader(
+        capabilities: &[AgentCapability],
+        guest_ips: &[String],
+        no_guest_ip: bool,
+        metrics_cpu_percent: u8,
+        metrics_memory_used_mib: u64,
+        no_metrics: bool,
+        no_real_metrics: bool,
+        clipboard_text: Option<String>,
+        metrics_reader: impl Fn() -> Option<GuestMetricsConfig>,
     ) -> Result<Self> {
         if no_guest_ip && !guest_ips.is_empty() {
             anyhow::bail!("use either --guest-ip or --no-guest-ip, not both");
         }
         if no_metrics && (metrics_cpu_percent != 1 || metrics_memory_used_mib != 256) {
             anyhow::bail!("metrics values cannot be set with --no-metrics");
+        }
+        if no_metrics && no_real_metrics {
+            anyhow::bail!("use either --no-metrics or --no-real-metrics, not both");
         }
         if metrics_cpu_percent > 100 {
             anyhow::bail!("--metrics-cpu-percent must be between 0 and 100");
@@ -1447,13 +1618,19 @@ impl TelemetryConfig {
                 .map(|value| parse_guest_ip(value))
                 .collect::<Result<Vec<_>>>()?
         };
+        let configured_metrics = GuestMetricsConfig {
+            cpu_percent: metrics_cpu_percent,
+            memory_used_mib: metrics_memory_used_mib,
+        };
         let metrics = if no_metrics || !supports_guest_metrics {
             None
+        } else if no_real_metrics {
+            // Honor the synthetic --metrics-* values verbatim.
+            Some(configured_metrics)
         } else {
-            Some(GuestMetricsConfig {
-                cpu_percent: metrics_cpu_percent,
-                memory_used_mib: metrics_memory_used_mib,
-            })
+            // Prefer real /proc-derived metrics; fall back to the configured
+            // synthetic values if /proc is unavailable (e.g. non-Linux build).
+            Some(metrics_reader().unwrap_or(configured_metrics))
         };
         let clipboard_text = match clipboard_text {
             Some(_) if !supports_clipboard => {
@@ -1469,6 +1646,64 @@ impl TelemetryConfig {
             clipboard_text,
         })
     }
+}
+
+/// Read real guest metrics from /proc. Returns None if the files cannot be
+/// read or parsed (e.g. when running off-Linux for unit tests), so the caller
+/// can fall back to the configured synthetic values.
+fn read_proc_metrics() -> Option<GuestMetricsConfig> {
+    let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
+    let memory_used_mib = parse_memory_used_mib(&meminfo)?;
+    // CPU load is approximated from the 1-minute load average over the online
+    // CPU count; clamped to 0..=100 to satisfy the protocol invariant.
+    let loadavg = fs::read_to_string("/proc/loadavg").ok();
+    let cpu_percent = loadavg
+        .as_deref()
+        .and_then(parse_loadavg_one_minute)
+        .map(|load| load_to_cpu_percent(load, online_cpu_count()))
+        .unwrap_or(0);
+    Some(GuestMetricsConfig {
+        cpu_percent,
+        memory_used_mib,
+    })
+}
+
+/// Used = MemTotal - MemAvailable (kB in /proc/meminfo), reported in MiB.
+fn parse_memory_used_mib(meminfo: &str) -> Option<u64> {
+    let mut total_kib = None;
+    let mut available_kib = None;
+    for line in meminfo.lines() {
+        if let Some(value) = parse_meminfo_kib(line, "MemTotal:") {
+            total_kib = Some(value);
+        } else if let Some(value) = parse_meminfo_kib(line, "MemAvailable:") {
+            available_kib = Some(value);
+        }
+    }
+    let total = total_kib?;
+    let available = available_kib?;
+    let used_kib = total.saturating_sub(available);
+    Some(used_kib / 1024)
+}
+
+fn parse_meminfo_kib(line: &str, key: &str) -> Option<u64> {
+    let rest = line.strip_prefix(key)?;
+    rest.split_whitespace().next()?.parse::<u64>().ok()
+}
+
+fn parse_loadavg_one_minute(loadavg: &str) -> Option<f64> {
+    loadavg.split_whitespace().next()?.parse::<f64>().ok()
+}
+
+fn load_to_cpu_percent(load: f64, cpu_count: u64) -> u8 {
+    let cpu_count = cpu_count.max(1) as f64;
+    let percent = (load / cpu_count * 100.0).round();
+    percent.clamp(0.0, 100.0) as u8
+}
+
+fn online_cpu_count() -> u64 {
+    std::thread::available_parallelism()
+        .map(|count| count.get() as u64)
+        .unwrap_or(1)
 }
 
 fn normalize_clipboard_text(text: &str) -> Result<String> {
@@ -2656,6 +2891,240 @@ mod tests {
         assert!(state.shared_folders.contains_key("workspace"));
     }
 
+    #[test]
+    fn time_sync_with_real_backend_applies_epoch_and_replies_with_result() {
+        let applied = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let backend = RecordingClockBackend {
+            applied: applied.clone(),
+            fail: false,
+        };
+        let mut state = GuestToolsState::new(&default_capabilities())
+            .with_clock_setter(ClockSetter::real(Box::new(backend)));
+
+        let command = AgentEnvelope::with_request_id(
+            AgentMessage::TimeSync {
+                unix_epoch_millis: 1_781_470_123_456,
+            },
+            "time-1",
+        );
+
+        assert_eq!(
+            state.handle_command(&command).unwrap().message,
+            AgentMessage::CommandResult {
+                request_id: "time-1".to_string(),
+                ok: true,
+                error_code: None,
+                message: Some("set guest clock to 1781470123456 ms since epoch".to_string()),
+                result: Some(serde_json::json!({
+                    "applied_unix_epoch_millis": 1_781_470_123_456u64,
+                })),
+                metadata: None,
+            }
+        );
+        assert_eq!(applied.borrow().as_slice(), [1_781_470_123_456]);
+    }
+
+    #[test]
+    fn time_sync_simulated_backend_acknowledges_without_setting_clock() {
+        let mut state = GuestToolsState::new(&default_capabilities())
+            .with_clock_setter(ClockSetter::simulated());
+        let command = AgentEnvelope::with_request_id(
+            AgentMessage::TimeSync {
+                unix_epoch_millis: 1_781_470_000_000,
+            },
+            "time-1",
+        );
+
+        let AgentMessage::CommandResult {
+            ok,
+            error_code,
+            message,
+            result,
+            ..
+        } = state.handle_command(&command).unwrap().message
+        else {
+            panic!("expected CommandResult");
+        };
+        assert!(ok);
+        assert_eq!(error_code, None);
+        assert!(message.unwrap().contains("guest clock was not changed"));
+        assert_eq!(
+            result,
+            Some(serde_json::json!({
+                "applied_unix_epoch_millis": 1_781_470_000_000u64,
+            }))
+        );
+    }
+
+    #[test]
+    fn time_sync_real_backend_failure_reports_error() {
+        let applied = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let backend = RecordingClockBackend {
+            applied,
+            fail: true,
+        };
+        let mut state = GuestToolsState::new(&default_capabilities())
+            .with_clock_setter(ClockSetter::real(Box::new(backend)));
+        let command = AgentEnvelope::with_request_id(
+            AgentMessage::TimeSync {
+                unix_epoch_millis: 1_781_470_000_000,
+            },
+            "time-1",
+        );
+
+        let AgentMessage::CommandResult {
+            ok, error_code, ..
+        } = state.handle_command(&command).unwrap().message
+        else {
+            panic!("expected CommandResult");
+        };
+        assert!(!ok);
+        assert_eq!(error_code.as_deref(), Some("time-sync-failed"));
+    }
+
+    #[test]
+    fn time_sync_requires_capability() {
+        let mut state = GuestToolsState::new(&[AgentCapability {
+            name: "heartbeat".to_string(),
+            version: 1,
+        }])
+        .with_clock_setter(ClockSetter::real(Box::new(RecordingClockBackend {
+            applied: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+            fail: false,
+        })));
+        let command = AgentEnvelope::with_request_id(
+            AgentMessage::TimeSync {
+                unix_epoch_millis: 1_781_470_000_000,
+            },
+            "time-1",
+        );
+
+        assert_eq!(
+            state.handle_command(&command).unwrap().message,
+            AgentMessage::CommandResult {
+                request_id: "time-1".to_string(),
+                ok: false,
+                error_code: Some("capability-not-enabled".to_string()),
+                message: Some("time-sync capability is not enabled".to_string()),
+                result: None,
+                metadata: None,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_clock_setter_defaults_to_real_when_capable() {
+        // Real when time-sync is advertised and not opted out.
+        assert!(matches!(
+            resolve_clock_setter(&default_capabilities(), false).mode,
+            ClockSetterMode::Real { .. }
+        ));
+        // Simulated when opted out, or when time-sync is not negotiated.
+        assert!(matches!(
+            resolve_clock_setter(&default_capabilities(), true).mode,
+            ClockSetterMode::Simulated
+        ));
+        assert!(matches!(
+            resolve_clock_setter(
+                &[AgentCapability {
+                    name: "heartbeat".to_string(),
+                    version: 1,
+                }],
+                false,
+            )
+            .mode,
+            ClockSetterMode::Simulated
+        ));
+    }
+
+    #[test]
+    fn proc_meminfo_parses_used_memory_in_mib() {
+        let meminfo = "MemTotal:        4194304 kB\nMemFree:          524288 kB\nMemAvailable:    2097152 kB\nBuffers:           10240 kB\n";
+        // used_kib = 4194304 - 2097152 = 2097152 kB = 2048 MiB
+        assert_eq!(parse_memory_used_mib(meminfo), Some(2048));
+
+        // Missing MemAvailable -> None (cannot compute used reliably).
+        assert_eq!(parse_memory_used_mib("MemTotal: 4194304 kB\n"), None);
+    }
+
+    #[test]
+    fn loadavg_parses_and_maps_to_cpu_percent() {
+        assert_eq!(parse_loadavg_one_minute("0.50 0.25 0.10 1/234 5678"), Some(0.50));
+        assert_eq!(parse_loadavg_one_minute("garbage"), None);
+        // 1.0 load over 4 CPUs -> 25%.
+        assert_eq!(load_to_cpu_percent(1.0, 4), 25);
+        // Saturation: 8.0 load over 4 CPUs clamps to 100%.
+        assert_eq!(load_to_cpu_percent(8.0, 4), 100);
+        // Zero CPUs treated as one.
+        assert_eq!(load_to_cpu_percent(0.5, 0), 50);
+    }
+
+    #[test]
+    fn real_metrics_reader_feeds_telemetry_and_falls_back_when_unavailable() {
+        // A reader that returns real values is used verbatim.
+        let telemetry = TelemetryConfig::from_args_with_reader(
+            &default_capabilities(),
+            &[],
+            false,
+            1,
+            256,
+            false,
+            false,
+            None,
+            || {
+                Some(GuestMetricsConfig {
+                    cpu_percent: 42,
+                    memory_used_mib: 777,
+                })
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            telemetry.metrics,
+            Some(GuestMetricsConfig {
+                cpu_percent: 42,
+                memory_used_mib: 777,
+            })
+        );
+
+        // When the reader yields None, fall back to the configured synthetic
+        // values (here the 256 MiB / 1% defaults).
+        let telemetry = TelemetryConfig::from_args_with_reader(
+            &default_capabilities(),
+            &[],
+            false,
+            1,
+            256,
+            false,
+            false,
+            None,
+            || None,
+        )
+        .unwrap();
+        assert_eq!(
+            telemetry.metrics,
+            Some(GuestMetricsConfig {
+                cpu_percent: 1,
+                memory_used_mib: 256,
+            })
+        );
+    }
+
+    struct RecordingClockBackend {
+        applied: std::rc::Rc<std::cell::RefCell<Vec<u64>>>,
+        fail: bool,
+    }
+
+    impl ClockBackend for RecordingClockBackend {
+        fn set_epoch_millis(&mut self, unix_epoch_millis: u64) -> Result<(), String> {
+            if self.fail {
+                return Err("injected settimeofday failure".to_string());
+            }
+            self.applied.borrow_mut().push(unix_epoch_millis);
+            Ok(())
+        }
+    }
+
     struct RecordingFreezeBackend {
         calls: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
         fail_freeze: Option<PathBuf>,
@@ -2760,6 +3229,8 @@ mod tests {
 
     #[test]
     fn telemetry_config_parses_overrides_and_honors_capabilities() {
+        // Force synthetic metrics (--no-real-metrics) so the exact 17/1024
+        // assertion is deterministic regardless of the host the test runs on.
         let telemetry = TelemetryConfig::from_args(
             &default_capabilities(),
             &["192.168.64.10@enp0s1".to_string()],
@@ -2767,6 +3238,7 @@ mod tests {
             17,
             1024,
             false,
+            true,
             Some("guest copied text\n".to_string()),
         )
         .unwrap();
@@ -2787,7 +3259,8 @@ mod tests {
 
         let capabilities = resolve_capabilities(&["heartbeat".to_string()]).unwrap();
         let telemetry =
-            TelemetryConfig::from_args(&capabilities, &[], false, 1, 256, false, None).unwrap();
+            TelemetryConfig::from_args(&capabilities, &[], false, 1, 256, false, false, None)
+                .unwrap();
         assert!(telemetry.guest_ips.is_empty());
         assert_eq!(telemetry.metrics, None);
         assert_eq!(telemetry.clipboard_text, None);
@@ -2799,6 +3272,7 @@ mod tests {
             101,
             256,
             false,
+            false,
             None
         )
         .is_err());
@@ -2808,6 +3282,7 @@ mod tests {
             false,
             1,
             256,
+            false,
             false,
             None
         )
@@ -2819,6 +3294,7 @@ mod tests {
             1,
             256,
             false,
+            false,
             Some("copy".to_string())
         )
         .is_err());
@@ -2829,7 +3305,20 @@ mod tests {
             1,
             256,
             false,
+            false,
             Some("\n".to_string())
+        )
+        .is_err());
+        // --no-metrics and --no-real-metrics are mutually exclusive.
+        assert!(TelemetryConfig::from_args(
+            &default_capabilities(),
+            &[],
+            false,
+            1,
+            256,
+            true,
+            true,
+            None
         )
         .is_err());
     }
@@ -2842,6 +3331,7 @@ mod tests {
             false,
             1,
             256,
+            false,
             false,
             Some("hello from guest".to_string()),
         )
@@ -2884,6 +3374,7 @@ mod tests {
             FilesystemFreezer::simulated(),
             ClipboardWriter::simulated(),
             DisplayResizer::simulated(),
+            ClockSetter::simulated(),
             true,
         )
         .unwrap();
@@ -2949,6 +3440,7 @@ mod tests {
             FilesystemFreezer::simulated(),
             ClipboardWriter::simulated(),
             DisplayResizer::simulated(),
+            ClockSetter::simulated(),
             false,
         )
         .unwrap();
@@ -2968,8 +3460,11 @@ mod tests {
                 request_id: "time-1".to_string(),
                 ok: true,
                 error_code: None,
-                message: None,
-                result: None,
+                message: Some(
+                    "acknowledged time-sync to 1 ms since epoch; guest clock was not changed (simulated)"
+                        .to_string()
+                ),
+                result: Some(serde_json::json!({ "applied_unix_epoch_millis": 1u64 })),
                 metadata: None,
             }
         );
@@ -3041,6 +3536,7 @@ mod tests {
             FilesystemFreezer::simulated(),
             ClipboardWriter::simulated(),
             DisplayResizer::simulated(),
+            ClockSetter::simulated(),
             true,
         )
         .unwrap();
@@ -3072,7 +3568,10 @@ mod tests {
     }
 
     fn default_telemetry() -> TelemetryConfig {
-        TelemetryConfig::from_args(&default_capabilities(), &[], false, 1, 256, false, None)
+        // Force synthetic metrics so the frame count is deterministic on any
+        // host (real /proc reads would vary the values, not the count, but we
+        // keep tests host-independent).
+        TelemetryConfig::from_args(&default_capabilities(), &[], false, 1, 256, false, true, None)
             .unwrap()
     }
 }

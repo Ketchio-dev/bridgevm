@@ -11,3 +11,8 @@ bridgevm-agent-protocol = { path = "../../crates/bridgevm-agent-protocol" }
 bridgevm-agentd = { path = "../../crates/bridgevm-agentd" }
 clap.workspace = true
 serde_json.workspace = true
+
+# settimeofday(2) for real guest clock sync; only needed on the Linux guest
+# target. The crate still builds on macOS (for unit tests) without it.
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true

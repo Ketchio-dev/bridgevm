@@ -232,6 +232,7 @@ dependencies = [
  "bridgevm-agent-protocol",
  "bridgevm-agentd",
  "clap",
+ "libc",
  "serde_json",
 ]
 
