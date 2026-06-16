@@ -54,10 +54,19 @@ Compatibility Mode (QEMU) NAT + port forwarding works at launch: manifest `netwo
 - **Rust:** `cargo test --workspace`
 - **Live boot (opt-in, heavy):** the `*-live-boot-opt-in-smoke.sh` scripts (need a real disk/ISO + `*_ALLOW_REAL_START=1`).
 
-## Open blockers / follow-ups
-- **Developer ID / notarization** — needs the user's paid Apple Developer account + Developer ID cert + notarytool profile. Only blocks public/signed distribution; all local dev works with ad-hoc signing.
-- **Readiness recorder is serial-only for `live-boot`** — `live_boot_progress_proven` (bridgevm-api) checks the serial sentinel only, so Windows GUI Setup (no serial) can't be formally recorded as `live-boot proven`. Console dimension already accepts graphical viewer evidence. Enhancement = accept a verified graphical frame as boot-progress proof (changes release-gate semantics — needs sign-off).
-- **Full Windows install** (beyond reaching Setup) — needs NVMe target + TPM 2.0 (swtpm) + Secure Boot emulation.
+## Remaining work to fully "complete" the app (with blockers)
+The VM lifecycle (create/run/suspend/resume/stop) + networking + boot evidence are done. The remaining features each have a concrete blocker:
+
+**Implementable but infra-gated (need a one-time setup):**
+- **Guest tools running *in* the guest** (clipboard, shared folders/virtiofs, dynamic resolution, drag-drop) — the host-side virtio-serial channel is already in the launch command; the gap is the `bridgevm-tools-linux` agent running inside the guest. Blocked on: (a) a Linux-arm64 cross-toolchain (not installed: no `aarch64-*-gcc`/`cross`/`zig`, no rust `aarch64-unknown-linux-gnu` target), and (b) injecting the built agent into a booting guest (cloud-init seed ISO) to verify effects.
+- **Embedded graphical display** — `VZVirtioGraphicsDeviceConfiguration` exists, but `VZVirtualMachineView` needs the VM *in-process* while VMs run in the `AppleVzRunner` helper. Needs an architecture decision (helper hosts the display window vs. stream a framebuffer) and a GUI session to verify (can't verify headless). Adding a graphics device may also disable save/restore — must be conditional.
+
+**Need user resources:**
+- **Developer ID / notarization** — user's paid Apple Developer cert + notarytool profile (only blocks public signed distribution; local dev uses ad-hoc signing).
+- **Bridged networking** — `com.apple.vm.networking` entitlement (NAT + port-forward already work without it).
+- **Full Windows install** — Windows license/ISO + TPM 2.0 (swtpm) + Secure Boot (reaching Setup is already proven).
+
+**Smaller follow-ups (implementable now):** resource manager (§14 auto CPU/RAM/battery), real displayd frame sampling, in-guest perf benchmarks (needs the guest agent), readiness graphical boot-progress recording (release-gate semantics — needs sign-off), Compat live resume (needs a non-HVF path).
 
 ## Where to look
 - `PLAN.md` — full plan, roadmap, §20 "Current scaffold progress" running log.
