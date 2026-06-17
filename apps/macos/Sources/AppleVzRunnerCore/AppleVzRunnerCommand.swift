@@ -60,6 +60,14 @@ public enum AppleVzRunnerCommand {
               afterSeconds: launchOptions.stopAfterSeconds ?? 30,
               toStatePath: savePath
             )
+          } else if launchOptions.displayWindow {
+            guard #available(macOS 14.0, *) else {
+              throw AppleVzRunnerCommandError.displayRequiresMacOS14
+            }
+            try AppleVzVirtualMachineLauncher.launchLinuxKernelVirtualMachineWithDisplay(
+              spec: spec,
+              options: launchOptions
+            )
           } else {
             try AppleVzVirtualMachineLauncher.launchLinuxKernelVirtualMachine(
               spec: spec,
@@ -125,7 +133,7 @@ public enum AppleVzRunnerCommand {
     }
   }
 
-  fileprivate static let usage = "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH]"
+  fileprivate static let usage = "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display]"
 
   private static func isHelpRequested(_ arguments: [String]) -> Bool {
     arguments.contains { argument in
@@ -194,6 +202,7 @@ public enum AppleVzRunnerCommand {
     var forceStopGraceSeconds: UInt64?
     var saveStatePath: String?
     var restoreStatePath: String?
+    var displayWindow = false
     var index = 0
 
     while index < arguments.count {
@@ -258,6 +267,9 @@ public enum AppleVzRunnerCommand {
         }
         restoreStatePath = arguments[valueIndex]
         index += 2
+      case "--display":
+        displayWindow = true
+        index += 1
       case "--help", "-h":
         throw AppleVzRunnerCommandError.help
       default:
@@ -277,7 +289,8 @@ public enum AppleVzRunnerCommand {
           stopAfterSeconds: stopAfterSeconds
         ),
         saveStatePath: saveStatePath,
-        restoreStatePath: restoreStatePath
+        restoreStatePath: restoreStatePath,
+        displayWindow: displayWindow
       )
     )
   }
@@ -400,6 +413,7 @@ public enum AppleVzRunnerCommandError: Error, LocalizedError, Equatable {
   case virtualizationFrameworkUnavailable
   case realStartRequiresOptIn
   case saveRestoreRequiresMacOS14
+  case displayRequiresMacOS14
 
   public var errorDescription: String? {
     switch self {
@@ -419,6 +433,8 @@ public enum AppleVzRunnerCommandError: Error, LocalizedError, Equatable {
       return "real Apple VZ start requires --allow-real-vz-start"
     case .saveRestoreRequiresMacOS14:
       return "Apple VZ suspend/resume (--save-state/--restore-state) requires macOS 14 or later"
+    case .displayRequiresMacOS14:
+      return "Apple VZ embedded display (--display) requires macOS 14 or later"
     }
   }
 }

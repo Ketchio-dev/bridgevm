@@ -87,6 +87,41 @@ public enum AppleVzConfigurationBuilder {
     try configuration.validate()
   }
 
+  /// Build the headless Linux configuration and add the devices needed to show
+  /// an embedded graphical display: a Virtio GPU scanout the guest renders to,
+  /// plus a USB keyboard and pointing device so the `VZVirtualMachineView` can
+  /// forward input. Kept entirely separate from `buildLinuxKernelConfiguration`
+  /// so the verified headless boot + save/restore path is untouched. Note: a VZ
+  /// VM with a graphics device generally cannot be saved/restored, so the
+  /// windowed display path does not offer suspend/resume.
+  @available(macOS 14.0, *)
+  public static func buildLinuxKernelConfigurationWithDisplay(
+    spec: AppleVzLaunchSpec,
+    widthInPixels: Int = 1280,
+    heightInPixels: Int = 800
+  ) throws -> VZVirtualMachineConfiguration {
+    let configuration = try buildLinuxKernelConfiguration(spec: spec)
+
+    let graphics = VZVirtioGraphicsDeviceConfiguration()
+    graphics.scanouts = [
+      VZVirtioGraphicsScanoutConfiguration(
+        widthInPixels: widthInPixels,
+        heightInPixels: heightInPixels
+      )
+    ]
+    configuration.graphicsDevices = [graphics]
+    configuration.keyboards = [VZUSBKeyboardConfiguration()]
+    configuration.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
+
+    return configuration
+  }
+
+  @available(macOS 14.0, *)
+  public static func validateLinuxKernelConfigurationWithDisplay(spec: AppleVzLaunchSpec) throws {
+    let configuration = try buildLinuxKernelConfigurationWithDisplay(spec: spec)
+    try configuration.validate()
+  }
+
   private static func loadOrCreateMachineIdentifier(
     bundlePath: String
   ) -> VZGenericMachineIdentifier {

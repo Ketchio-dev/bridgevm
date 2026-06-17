@@ -22,17 +22,23 @@ public struct AppleVzLaunchOptions: Equatable {
   /// When set, the VM is restored from this saved state and resumed instead of
   /// performing a fresh boot (resume).
   public var restoreStatePath: String?
+  /// When true, boot with a graphical display and host the VM in an on-screen
+  /// `VZVirtualMachineView` window (the embedded display). Mutually exclusive
+  /// with save/restore (a VZ VM with a graphics device cannot be saved).
+  public var displayWindow: Bool
 
   public init(
     stopAfterSeconds: UInt64? = nil,
     forceStopGraceSeconds: UInt64? = nil,
     saveStatePath: String? = nil,
-    restoreStatePath: String? = nil
+    restoreStatePath: String? = nil,
+    displayWindow: Bool = false
   ) {
     self.stopAfterSeconds = stopAfterSeconds
     self.forceStopGraceSeconds = forceStopGraceSeconds
     self.saveStatePath = saveStatePath
     self.restoreStatePath = restoreStatePath
+    self.displayWindow = displayWindow
   }
 }
 
@@ -595,6 +601,113 @@ public enum AppleVzVirtualMachineAdapterError: Error, LocalizedError, Equatable 
     case .stopRequestRejected:
       return "AppleVzRunner could not request the guest to stop"
     }
+  }
+}
+#endif
+
+// MARK: - Embedded graphical display (windowed)
+//
+// Hosts the running Linux VM in an on-screen `VZVirtualMachineView`. This is a
+// deliberately separate path from the headless launcher above: `VZVirtualMachineView`
+// requires the VM to live on the main queue, so this path creates the VM with the
+// main-queue initializer and drives it from an AppKit run loop rather than the
+// background-queue adapter. The headless boot + save/restore path is untouched, so a
+// graphics device (which generally disables VZ save/restore) never affects it.
+#if canImport(Virtualization) && canImport(AppKit)
+import AppKit
+
+/// Retains the window controller for the lifetime of the app run loop
+/// (`NSApplication.delegate` does not keep a strong reference).
+private var displayWindowControllerRetainer: AnyObject?
+
+@available(macOS 14.0, *)
+public extension AppleVzVirtualMachineLauncher {
+  /// Boot the Linux VM with a graphics device and show it in a resizable window
+  /// hosting a `VZVirtualMachineView`. Blocks in the AppKit run loop until the
+  /// window is closed or the guest stops. Requires a GUI session (cannot run
+  /// headless); intended to be spawned by the macOS app as a helper process.
+  static func launchLinuxKernelVirtualMachineWithDisplay(
+    spec: AppleVzLaunchSpec,
+    options: AppleVzLaunchOptions = AppleVzLaunchOptions()
+  ) throws {
+    let configuration = try AppleVzConfigurationBuilder.buildLinuxKernelConfigurationWithDisplay(
+      spec: spec)
+    try configuration.validate()
+
+    print("AppleVzRunner starting VM with display: \(spec.vmName)")
+    let app = NSApplication.shared
+    app.setActivationPolicy(.regular)
+
+    // Main-queue VM (required by VZVirtualMachineView).
+    let machine = VZVirtualMachine(configuration: configuration)
+    let controller = AppleVzDisplayWindowController(machine: machine, vmName: spec.vmName, app: app)
+    displayWindowControllerRetainer = controller
+    app.delegate = controller
+
+    app.activate(ignoringOtherApps: true)
+    app.run()
+  }
+}
+
+@available(macOS 14.0, *)
+final class AppleVzDisplayWindowController: NSObject, NSApplicationDelegate,
+  VZVirtualMachineDelegate
+{
+  private let machine: VZVirtualMachine
+  private let vmName: String
+  private unowned let app: NSApplication
+  private var window: NSWindow?
+
+  init(machine: VZVirtualMachine, vmName: String, app: NSApplication) {
+    self.machine = machine
+    self.vmName = vmName
+    self.app = app
+    super.init()
+    machine.delegate = self
+  }
+
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    let frame = NSRect(x: 0, y: 0, width: 1280, height: 800)
+    let view = VZVirtualMachineView(frame: frame)
+    view.virtualMachine = machine
+    view.capturesSystemKeys = true
+
+    let window = NSWindow(
+      contentRect: frame,
+      styleMask: [.titled, .closable, .miniaturizable, .resizable],
+      backing: .buffered,
+      defer: false
+    )
+    window.title = "BridgeVM — \(vmName)"
+    window.contentView = view
+    window.center()
+    window.makeKeyAndOrderFront(nil)
+    self.window = window
+
+    machine.start { [weak self] result in
+      if case let .failure(error) = result {
+        FileHandle.standardError.write(
+          Data("AppleVzRunner: display VM start failed: \(error)\n".utf8))
+        self?.app.terminate(nil)
+      } else {
+        print("AppleVzRunner display VM running: \(self?.vmName ?? "")")
+      }
+    }
+  }
+
+  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    true
+  }
+
+  func guestDidStop(_ virtualMachine: VZVirtualMachine) {
+    print("AppleVzRunner display VM guest stopped: \(vmName)")
+    app.terminate(nil)
+  }
+
+  func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) {
+    FileHandle.standardError.write(
+      Data("AppleVzRunner: display VM stopped with error: \(error)\n".utf8))
+    app.terminate(nil)
   }
 }
 #endif
