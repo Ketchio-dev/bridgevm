@@ -192,7 +192,13 @@ fn resolve_clipboard_writer(
         Some(_) if !supports_capability(capabilities, "clipboard") => {
             anyhow::bail!("--clipboard-command requires the clipboard capability")
         }
+        // Explicit path: run exactly that program with no extra arguments.
         Some(command) => Ok(ClipboardWriter::command(command)),
+        // No explicit command: auto-detect a real clipboard tool when the
+        // capability is enabled, otherwise stay simulated.
+        None if supports_capability(capabilities, "clipboard") => {
+            Ok(detect_clipboard_writer(&SystemDesktopEnv))
+        }
         None => Ok(ClipboardWriter::simulated()),
     }
 }
@@ -205,8 +211,67 @@ fn resolve_display_resizer(
         Some(_) if !supports_capability(capabilities, "display-resize") => {
             anyhow::bail!("--display-resize-command requires the display-resize capability")
         }
+        // Explicit path: run exactly that program (it receives WIDTH HEIGHT SCALE).
         Some(command) => Ok(DisplayResizer::command(command)),
+        // No explicit command: auto-detect a real resize tool when the
+        // capability is enabled, otherwise stay simulated.
+        None if supports_capability(capabilities, "display-resize") => {
+            Ok(detect_display_resizer(&SystemDesktopEnv))
+        }
         None => Ok(DisplayResizer::simulated()),
+    }
+}
+
+/// Reports facts about the guest desktop session used to auto-detect the right
+/// clipboard/resize tool. Injectable so unit tests can supply a fake without
+/// touching the real environment, PATH, or running xclip/xrandr.
+trait DesktopEnv {
+    /// Whether an environment variable (e.g. `WAYLAND_DISPLAY`/`DISPLAY`) is set.
+    fn has_env(&self, name: &str) -> bool;
+    /// Whether an executable is resolvable on `PATH`.
+    fn has_program(&self, program: &str) -> bool;
+}
+
+/// Real implementation backed by the process environment and `PATH`.
+struct SystemDesktopEnv;
+
+impl DesktopEnv for SystemDesktopEnv {
+    fn has_env(&self, name: &str) -> bool {
+        std::env::var_os(name).is_some_and(|value| !value.is_empty())
+    }
+
+    fn has_program(&self, program: &str) -> bool {
+        let Some(path) = std::env::var_os("PATH") else {
+            return false;
+        };
+        std::env::split_paths(&path).any(|dir| {
+            !dir.as_os_str().is_empty() && dir.join(program).is_file()
+        })
+    }
+}
+
+/// Clipboard auto-detection: prefer Wayland's `wl-copy` (no args), fall back to
+/// X11's `xclip -selection clipboard`, otherwise simulated.
+fn detect_clipboard_writer(env: &impl DesktopEnv) -> ClipboardWriter {
+    if env.has_env("WAYLAND_DISPLAY") && env.has_program("wl-copy") {
+        ClipboardWriter::command(PathBuf::from("wl-copy"))
+    } else if env.has_env("DISPLAY") && env.has_program("xclip") {
+        ClipboardWriter::command_with_args(
+            PathBuf::from("xclip"),
+            vec!["-selection".to_string(), "clipboard".to_string()],
+        )
+    } else {
+        ClipboardWriter::simulated()
+    }
+}
+
+/// Display-resize auto-detection: use X11's `xrandr` (it receives WIDTH HEIGHT
+/// SCALE as arguments, like an explicit command), otherwise simulated.
+fn detect_display_resizer(env: &impl DesktopEnv) -> DisplayResizer {
+    if env.has_env("DISPLAY") && env.has_program("xrandr") {
+        DisplayResizer::command(PathBuf::from("xrandr"))
+    } else {
+        DisplayResizer::simulated()
     }
 }
 
@@ -930,7 +995,7 @@ struct ClipboardWriter {
 
 enum ClipboardWriterMode {
     Simulated,
-    Command { command: PathBuf },
+    Command { program: PathBuf, args: Vec<String> },
 }
 
 impl ClipboardWriter {
@@ -940,25 +1005,44 @@ impl ClipboardWriter {
         }
     }
 
-    fn command(command: PathBuf) -> Self {
+    /// Explicit `--clipboard-command <path>`: run the given program with no
+    /// extra arguments, exactly as before.
+    fn command(program: PathBuf) -> Self {
+        Self::command_with_args(program, Vec::new())
+    }
+
+    /// Auto-detected clipboard tools (e.g. `xclip -selection clipboard`) carry
+    /// their own arguments ahead of the piped clipboard text.
+    fn command_with_args(program: PathBuf, args: Vec<String>) -> Self {
         Self {
-            mode: ClipboardWriterMode::Command { command },
+            mode: ClipboardWriterMode::Command { program, args },
         }
     }
 
     fn write_text(&mut self, text: &str) -> Result<Option<String>, String> {
         match &self.mode {
             ClipboardWriterMode::Simulated => Ok(None),
-            ClipboardWriterMode::Command { command } => {
-                run_clipboard_command(command, text)?;
+            ClipboardWriterMode::Command { program, args } => {
+                run_clipboard_command(program, args, text)?;
                 Ok(Some("clipboard updated".to_string()))
             }
         }
     }
+
+    /// Test-only view of the resolved mode: `None` when simulated, otherwise the
+    /// resolved program path plus its arguments.
+    #[cfg(test)]
+    fn command_for_test(&self) -> Option<(&Path, &[String])> {
+        match &self.mode {
+            ClipboardWriterMode::Simulated => None,
+            ClipboardWriterMode::Command { program, args } => Some((program, args)),
+        }
+    }
 }
 
-fn run_clipboard_command(command: &Path, text: &str) -> Result<(), String> {
-    let mut child = ProcessCommand::new(command)
+fn run_clipboard_command(program: &Path, args: &[String], text: &str) -> Result<(), String> {
+    let mut child = ProcessCommand::new(program)
+        .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -966,20 +1050,20 @@ fn run_clipboard_command(command: &Path, text: &str) -> Result<(), String> {
         .map_err(|error| {
             format!(
                 "failed to execute clipboard command {}: {error}",
-                command.display()
+                program.display()
             )
         })?;
 
     let mut stdin = child.stdin.take().ok_or_else(|| {
         format!(
             "failed to open stdin for clipboard command {}",
-            command.display()
+            program.display()
         )
     })?;
     stdin.write_all(text.as_bytes()).map_err(|error| {
         format!(
             "failed to write clipboard text to {}: {error}",
-            command.display()
+            program.display()
         )
     })?;
     drop(stdin);
@@ -987,7 +1071,7 @@ fn run_clipboard_command(command: &Path, text: &str) -> Result<(), String> {
     let output = child.wait_with_output().map_err(|error| {
         format!(
             "failed to wait for clipboard command {}: {error}",
-            command.display()
+            program.display()
         )
     })?;
     if output.status.success() {
@@ -1005,7 +1089,7 @@ fn run_clipboard_command(command: &Path, text: &str) -> Result<(), String> {
     };
     Err(format!(
         "clipboard command {} failed: {detail}",
-        command.display()
+        program.display()
     ))
 }
 
@@ -1040,6 +1124,16 @@ impl DisplayResizer {
                     "display resized to {width}x{height} scale {scale}"
                 )))
             }
+        }
+    }
+
+    /// Test-only view of the resolved mode: `None` when simulated, otherwise the
+    /// resolved program path.
+    #[cfg(test)]
+    fn command_for_test(&self) -> Option<&Path> {
+        match &self.mode {
+            DisplayResizerMode::Simulated => None,
+            DisplayResizerMode::Command { command } => Some(command),
         }
     }
 }
@@ -2047,6 +2141,138 @@ mod tests {
                 metadata: None,
             }
         );
+    }
+
+    /// Fake desktop environment for auto-detection tests: records which env vars
+    /// are "set" and which programs are "on PATH" without touching the real
+    /// process environment or running xclip/xrandr.
+    struct FakeDesktopEnv {
+        envs: &'static [&'static str],
+        programs: &'static [&'static str],
+    }
+
+    impl DesktopEnv for FakeDesktopEnv {
+        fn has_env(&self, name: &str) -> bool {
+            self.envs.contains(&name)
+        }
+
+        fn has_program(&self, program: &str) -> bool {
+            self.programs.contains(&program)
+        }
+    }
+
+    #[test]
+    fn clipboard_detection_prefers_wayland_wl_copy() {
+        // Wayland session with both tools available -> wl-copy, no args, even
+        // though xclip is also present.
+        let env = FakeDesktopEnv {
+            envs: &["WAYLAND_DISPLAY", "DISPLAY"],
+            programs: &["wl-copy", "xclip"],
+        };
+        let writer = detect_clipboard_writer(&env);
+        let (program, args) = writer.command_for_test().expect("expected a command");
+        assert_eq!(program, Path::new("wl-copy"));
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn clipboard_detection_falls_back_to_x11_xclip() {
+        // X11 session (no WAYLAND_DISPLAY) -> xclip with selection args.
+        let env = FakeDesktopEnv {
+            envs: &["DISPLAY"],
+            programs: &["xclip"],
+        };
+        let writer = detect_clipboard_writer(&env);
+        let (program, args) = writer.command_for_test().expect("expected a command");
+        assert_eq!(program, Path::new("xclip"));
+        assert_eq!(args, &["-selection".to_string(), "clipboard".to_string()]);
+    }
+
+    #[test]
+    fn clipboard_detection_falls_back_to_simulated_without_tools() {
+        // Wayland var set but wl-copy missing, and no DISPLAY -> simulated.
+        let env = FakeDesktopEnv {
+            envs: &["WAYLAND_DISPLAY"],
+            programs: &[],
+        };
+        assert!(detect_clipboard_writer(&env).command_for_test().is_none());
+
+        // No session at all -> simulated.
+        let env = FakeDesktopEnv {
+            envs: &[],
+            programs: &["wl-copy", "xclip"],
+        };
+        assert!(detect_clipboard_writer(&env).command_for_test().is_none());
+    }
+
+    #[test]
+    fn display_resize_detection_uses_xrandr_on_x11() {
+        let env = FakeDesktopEnv {
+            envs: &["DISPLAY"],
+            programs: &["xrandr"],
+        };
+        let resizer = detect_display_resizer(&env);
+        assert_eq!(
+            resizer.command_for_test().expect("expected a command"),
+            Path::new("xrandr")
+        );
+
+        // Missing DISPLAY or missing xrandr -> simulated.
+        let no_display = FakeDesktopEnv {
+            envs: &[],
+            programs: &["xrandr"],
+        };
+        assert!(detect_display_resizer(&no_display)
+            .command_for_test()
+            .is_none());
+        let no_tool = FakeDesktopEnv {
+            envs: &["DISPLAY"],
+            programs: &[],
+        };
+        assert!(detect_display_resizer(&no_tool).command_for_test().is_none());
+    }
+
+    #[test]
+    fn explicit_clipboard_command_is_unchanged_by_detection() {
+        // An explicit --clipboard-command path runs that exact program with no
+        // extra args, regardless of capability auto-detection.
+        let writer = resolve_clipboard_writer(
+            &default_capabilities(),
+            Some(PathBuf::from("/usr/local/bin/my-clipboard")),
+        )
+        .unwrap();
+        let (program, args) = writer.command_for_test().expect("expected a command");
+        assert_eq!(program, Path::new("/usr/local/bin/my-clipboard"));
+        assert!(args.is_empty());
+
+        // Likewise for the explicit display-resize command.
+        let resizer = resolve_display_resizer(
+            &default_capabilities(),
+            Some(PathBuf::from("/usr/local/bin/my-resize")),
+        )
+        .unwrap();
+        assert_eq!(
+            resizer.command_for_test().expect("expected a command"),
+            Path::new("/usr/local/bin/my-resize")
+        );
+    }
+
+    #[test]
+    fn detection_only_runs_when_capability_enabled() {
+        // No explicit command and no clipboard/display-resize capability ->
+        // simulated, detection is never consulted.
+        let heartbeat_only = [AgentCapability {
+            name: "heartbeat".to_string(),
+            version: 1,
+        }];
+        assert!(resolve_clipboard_writer(&heartbeat_only, None)
+            .unwrap()
+            .command_for_test()
+            .is_none());
+        assert!(resolve_display_resizer(&heartbeat_only, None)
+            .unwrap()
+            .command_for_test()
+            .is_none());
     }
 
     #[test]
