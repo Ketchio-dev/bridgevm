@@ -4762,6 +4762,33 @@ final class DashboardViewModelTests: XCTestCase {
     XCTAssertEqual(client.inspectedQemuLaunchPlanIDs, [virtualMachine.id])
   }
 
+  func testQemuLaunchPlanSummarizesNetworkModes() {
+    XCTAssertEqual(
+      QemuLaunchPlan(program: "qemu-system-aarch64", args: ["-netdev", "vmnet-host,id=net0"])
+        .networkSummary,
+      "Host-only"
+    )
+    XCTAssertEqual(
+      QemuLaunchPlan(
+        program: "qemu-system-aarch64",
+        args: ["-netdev", "vmnet-bridged,id=net0,ifname=en0"]
+      ).networkSummary,
+      "Bridged"
+    )
+    XCTAssertEqual(
+      QemuLaunchPlan(program: "qemu-system-aarch64", args: ["-netdev", "user,id=net0,restrict=on"])
+        .networkSummary,
+      "Isolated"
+    )
+    XCTAssertEqual(
+      QemuLaunchPlan(
+        program: "qemu-system-aarch64",
+        args: ["-netdev", "user,id=net0,hostfwd=tcp::2222-:22"]
+      ).networkSummary,
+      "User NAT"
+    )
+  }
+
   func testQemuLaunchPlanDerivesVNCViewerEndpoint() {
     let defaultDisplay = QemuLaunchPlan(
       program: "qemu-system-aarch64",

@@ -3241,7 +3241,7 @@ private struct QemuLaunchPlanPanel: View {
             )
             GuestToolsStatusBadge(
               title: "Network",
-              value: networkSummary,
+              value: plan.networkSummary,
               systemImage: "network"
             )
             GuestToolsStatusBadge(
@@ -3268,22 +3268,6 @@ private struct QemuLaunchPlanPanel: View {
     }
     .padding(12)
     .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-  }
-
-  private var networkSummary: String {
-    guard let plan else {
-      return "Not loaded"
-    }
-
-    if plan.args.contains(where: { $0.contains("vmnet-host") }) {
-      return "Host-only"
-    }
-
-    if plan.args.contains(where: { $0.contains("hostfwd=") }) {
-      return "User NAT"
-    }
-
-    return "Configured"
   }
 
   private var viewerSummary: String {

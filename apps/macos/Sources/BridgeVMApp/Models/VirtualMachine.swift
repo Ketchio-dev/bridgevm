@@ -1740,6 +1740,22 @@ struct QemuLaunchPlan: Equatable {
     command.joined(separator: " ")
   }
 
+  var networkSummary: String {
+    if args.contains(where: { $0.contains("vmnet-host") }) {
+      return "Host-only"
+    }
+    if args.contains(where: { $0.contains("vmnet-bridged") }) {
+      return "Bridged"
+    }
+    if args.contains(where: { $0.contains("restrict=on") }) {
+      return "Isolated"
+    }
+    if args.contains(where: { $0.contains("hostfwd=") || $0.hasPrefix("user,") }) {
+      return "User NAT"
+    }
+    return "Configured"
+  }
+
   var viewerEndpoint: URL? {
     guard let displayIndex = args.firstIndex(of: "-display") else {
       return nil
