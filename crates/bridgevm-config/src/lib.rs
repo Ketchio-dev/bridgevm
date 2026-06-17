@@ -157,6 +157,15 @@ pub fn manifest_json_schema_v1() -> &'static str {
         "signedAgentUpdates": { "type": "boolean" }
       }
     },
+    "firmware": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nvmeTarget": { "type": "boolean" },
+        "tpm": { "type": "boolean" },
+        "secureBoot": { "type": "boolean" }
+      }
+    },
     "sharedFolders": {
       "type": "array",
       "items": {
@@ -1141,6 +1150,16 @@ sharedFolders:
         let decoded: VmManifest = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(decoded.firmware, manifest.firmware);
         assert!(!decoded.firmware.is_default());
+    }
+
+    #[test]
+    fn manifest_json_schema_allows_firmware_section() {
+        let schema = manifest_json_schema_v1();
+
+        assert!(schema.contains("\"firmware\""), "{schema}");
+        assert!(schema.contains("\"nvmeTarget\""), "{schema}");
+        assert!(schema.contains("\"tpm\""), "{schema}");
+        assert!(schema.contains("\"secureBoot\""), "{schema}");
     }
 
     #[test]
