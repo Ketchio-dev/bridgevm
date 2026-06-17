@@ -3126,6 +3126,65 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertEqual(execution.summaryTitle, "Snapshot executed")
   }
 
+  func testRuntimeResourcePolicyRequestAndResponseMatchBridgeVmDaemonWireFormat() throws {
+    let request =
+      try JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(
+          DaemonReapplyRuntimeResourcesRequest(name: "dev", visibility: .background)
+        )
+      ) as? [String: Any]
+    XCTAssertEqual(request?["type"] as? String, "reapply_runtime_resources")
+    XCTAssertEqual(request?["name"] as? String, "dev")
+    XCTAssertEqual(request?["visibility"] as? String, "background")
+
+    let json = """
+      {
+        "type": "runtime_resource_policy",
+        "policy": {
+          "vm": "dev",
+          "mode": "fast",
+          "profile": "automatic",
+          "visibility": "background",
+          "state": "running",
+          "on_battery": false,
+          "memory": "2048",
+          "cpu": "1",
+          "display_fps_cap": "10",
+          "rationale": "Battery or background throttling active.",
+          "live_applied": false,
+          "live_apply_blockers": [
+            {
+              "code": "runtime-control-unavailable",
+              "message": "No live Apple VZ/display runtime control channel is available yet; the policy was recorded for UI/display pacing consumers."
+            }
+          ],
+          "updated_at_unix": 1710000500
+        }
+      }
+      """
+
+    let response = try JSONDecoder().decode(
+      DaemonRuntimeResourcePolicyResponse.self,
+      from: Data(json.utf8)
+    )
+
+    XCTAssertEqual(response.type, "runtime_resource_policy")
+    let policy = response.policy.runtimeResourcePolicy
+    XCTAssertEqual(policy.vm, "dev")
+    XCTAssertEqual(policy.mode, "fast")
+    XCTAssertEqual(policy.profile, "automatic")
+    XCTAssertEqual(policy.visibility, .background)
+    XCTAssertEqual(policy.state, "running")
+    XCTAssertFalse(policy.onBattery)
+    XCTAssertEqual(policy.memory, "2048")
+    XCTAssertEqual(policy.cpu, "1")
+    XCTAssertEqual(policy.displayFPSCap, "10")
+    XCTAssertEqual(policy.rationale, "Battery or background throttling active.")
+    XCTAssertEqual(policy.liveApplyTitle, "Recorded")
+    XCTAssertEqual(policy.liveApplyBlockers.first?.code, "runtime-control-unavailable")
+    XCTAssertEqual(policy.updatedAtUnix, 1_710_000_500)
+  }
+
   func testDiagnosticBundleRequestAndResponseMatchBridgeVmDaemonWireFormat() throws {
     let request =
       try JSONSerialization.jsonObject(
@@ -4565,6 +4624,34 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertEqual(transport.requests[1]["vm"] as? String, "dev")
     XCTAssertEqual(transport.requests[1]["name"] as? String, "before-upgrade")
     XCTAssertEqual(transport.requests[1]["freeze_timeout_millis"] as? Int, 5_000)
+  }
+
+  func testDaemonClientReappliesRuntimeResourcesUsingNameFromListCache() async throws {
+    let transport = RecordingDaemonTransport()
+    let client = DaemonVirtualMachineClient(
+      endpoint: .local,
+      transport: transport
+    )
+
+    let virtualMachines = try await client.listVirtualMachines()
+    let vm = try XCTUnwrap(virtualMachines.first)
+
+    let policy = try await client.reapplyRuntimeResources(
+      visibility: .background,
+      on: vm.id
+    )
+
+    XCTAssertEqual(policy.vm, "dev")
+    XCTAssertEqual(policy.mode, "fast")
+    XCTAssertEqual(policy.visibility, .background)
+    XCTAssertEqual(policy.memory, "2048")
+    XCTAssertEqual(policy.cpu, "1")
+    XCTAssertFalse(policy.liveApplied)
+    XCTAssertEqual(policy.liveApplyBlockers.first?.code, "runtime-control-unavailable")
+    let requestTypes = transport.requests.compactMap { $0["type"] as? String }
+    XCTAssertEqual(requestTypes, ["list_vms", "reapply_runtime_resources"])
+    XCTAssertEqual(transport.requests[1]["name"] as? String, "dev")
+    XCTAssertEqual(transport.requests[1]["visibility"] as? String, "background")
   }
 
   func testDaemonClientInspectsQMPStatusUsingNameFromListCache() async throws {
@@ -6106,6 +6193,32 @@ private final class RecordingDaemonTransport: DaemonTransport {
             },
             "preflight_ready": true,
             "note": "scaffold boundary"
+          }
+        }
+        """
+    case "reapply_runtime_resources":
+      responseJSON = """
+        {
+          "type": "runtime_resource_policy",
+          "policy": {
+            "vm": "\(object["name"] as? String ?? "dev")",
+            "mode": "fast",
+            "profile": "automatic",
+            "visibility": "\(object["visibility"] as? String ?? "background")",
+            "state": "running",
+            "on_battery": false,
+            "memory": "2048",
+            "cpu": "1",
+            "display_fps_cap": "10",
+            "rationale": "Battery or background throttling active.",
+            "live_applied": false,
+            "live_apply_blockers": [
+              {
+                "code": "runtime-control-unavailable",
+                "message": "No live Apple VZ/display runtime control channel is available yet; the policy was recorded for UI/display pacing consumers."
+              }
+            ],
+            "updated_at_unix": 1710000500
           }
         }
         """

@@ -6015,6 +6015,61 @@ final class DashboardViewModelTests: XCTestCase {
     )
   }
 
+  func testReapplyRuntimeResourcesStoresPolicy() async throws {
+    let virtualMachine = VirtualMachine(
+      id: UUID(),
+      name: "Dev VM",
+      guest: "Ubuntu Arm64",
+      status: .running,
+      mode: .fast,
+      resources: .init(cpuCount: 4, memoryGB: 8, diskGB: 64),
+      uptime: "12m",
+      ipAddress: "192.168.64.23",
+      lastStarted: nil,
+      notes: "test"
+    )
+    let policy = RuntimeResourcePolicy(
+      vm: "dev",
+      mode: "fast",
+      profile: "automatic",
+      visibility: .background,
+      state: "running",
+      onBattery: false,
+      memory: "2048",
+      cpu: "1",
+      displayFPSCap: "10",
+      rationale: "Battery or background throttling active.",
+      liveApplied: false,
+      liveApplyBlockers: [
+        RuntimeResourcePolicyBlocker(
+          code: "runtime-control-unavailable",
+          message: "No live Apple VZ/display runtime control channel is available yet."
+        )
+      ],
+      updatedAtUnix: 1_710_000_500
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([virtualMachine]),
+      runtimeResourcePolicyResult: .success(policy)
+    )
+    let model = DashboardViewModel(client: client)
+
+    await model.load()
+    let didReapply = await model.reapplyRuntimeResources(
+      visibility: .background,
+      for: virtualMachine
+    )
+
+    XCTAssertTrue(didReapply)
+    XCTAssertEqual(model.runtimeResourcePolicy(for: virtualMachine), policy)
+    XCTAssertNil(model.runtimeResourcePolicyError(for: virtualMachine))
+    XCTAssertEqual(client.reappliedRuntimeResourceRequests.count, 1)
+    XCTAssertEqual(client.reappliedRuntimeResourceRequests[0].visibility, .background)
+    XCTAssertEqual(client.reappliedRuntimeResourceRequests[0].id, virtualMachine.id)
+    XCTAssertEqual(model.alertMessage, "Runtime resource policy recorded for dev.")
+  }
+
   func testCreateDiagnosticBundleStoresResult() async throws {
     let virtualMachine = VirtualMachine(
       id: UUID(),
@@ -7497,6 +7552,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
   var snapshotRestoreResult: Result<SnapshotRestoreResult, Error>
   var applicationConsistentSnapshotExecutionResult:
     Result<ApplicationConsistentSnapshotExecution, Error>
+  var runtimeResourcePolicyResult: Result<RuntimeResourcePolicy, Error>
   var diagnosticBundleResult: Result<DiagnosticBundle, Error>
   var diagnosticBundleDelayNanos: UInt64
   var performanceBaselineResult: Result<PerformanceBaseline, Error>
@@ -7574,6 +7630,8 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
   var restoredSnapshotRequests: [(snapshotName: String, id: VirtualMachine.ID)] = []
   var executedApplicationConsistentSnapshotRequests:
     [(snapshotName: String, freezeTimeoutMillis: UInt64?, id: VirtualMachine.ID)] = []
+  var reappliedRuntimeResourceRequests:
+    [(visibility: RuntimeResourceVisibility, id: VirtualMachine.ID)] = []
   var createdDiagnosticBundleRequests: [(output: String?, id: VirtualMachine.ID)] = []
   var createdPerformanceBaselineRequests: [(output: String?, id: VirtualMachine.ID)] = []
   var createdPerformanceSampleRequests:
@@ -7693,6 +7751,8 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
       ApplicationConsistentSnapshotExecution, Error
     > = .failure(
       VirtualMachineClientError.virtualMachineNotFound),
+    runtimeResourcePolicyResult: Result<RuntimeResourcePolicy, Error> = .failure(
+      VirtualMachineClientError.virtualMachineNotFound),
     diagnosticBundleResult: Result<DiagnosticBundle, Error> = .failure(
       VirtualMachineClientError.virtualMachineNotFound),
     diagnosticBundleDelayNanos: UInt64 = 0,
@@ -7782,6 +7842,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     self.snapshotRestoreResult = snapshotRestoreResult
     self.applicationConsistentSnapshotExecutionResult =
       applicationConsistentSnapshotExecutionResult
+    self.runtimeResourcePolicyResult = runtimeResourcePolicyResult
     self.diagnosticBundleResult = diagnosticBundleResult
     self.diagnosticBundleDelayNanos = diagnosticBundleDelayNanos
     self.performanceBaselineResult = performanceBaselineResult
@@ -8171,6 +8232,14 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
       try await Task.sleep(nanoseconds: applicationConsistentSnapshotExecutionDelayNanos)
     }
     return try applicationConsistentSnapshotExecutionResult.get()
+  }
+
+  func reapplyRuntimeResources(
+    visibility: RuntimeResourceVisibility,
+    on id: VirtualMachine.ID
+  ) async throws -> RuntimeResourcePolicy {
+    reappliedRuntimeResourceRequests.append((visibility, id))
+    return try runtimeResourcePolicyResult.get()
   }
 
   func createDiagnosticBundle(output: String?, on id: VirtualMachine.ID) async throws

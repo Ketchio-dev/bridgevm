@@ -94,6 +94,9 @@ struct DashboardView: View {
           applicationConsistentSnapshotExecutionError:
             model
             .applicationConsistentSnapshotExecutionError(for: virtualMachine),
+          runtimeResourcePolicy: model.runtimeResourcePolicy(for: virtualMachine),
+          isReapplyingRuntimeResources: model.reapplyingRuntimeResourcesID == virtualMachine.id,
+          runtimeResourcePolicyError: model.runtimeResourcePolicyError(for: virtualMachine),
           vmExport: model.vmExport(for: virtualMachine),
           isExportingVirtualMachine: model.exportingVirtualMachineID == virtualMachine.id,
           vmExportError: model.vmExportError(for: virtualMachine),
@@ -321,6 +324,9 @@ struct DashboardView: View {
               freezeTimeoutMillis: freezeTimeoutMillis,
               for: virtualMachine
             )
+          },
+          onReapplyRuntimeResources: { visibility in
+            await model.reapplyRuntimeResources(visibility: visibility, for: virtualMachine)
           },
           onExportVirtualMachine: { output in
             await model.exportVirtualMachine(output: output, for: virtualMachine)

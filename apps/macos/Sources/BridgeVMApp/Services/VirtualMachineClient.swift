@@ -110,6 +110,10 @@ protocol VirtualMachineClient: StoreDoctorInspecting {
     freezeTimeoutMillis: UInt64?,
     on id: VirtualMachine.ID
   ) async throws -> ApplicationConsistentSnapshotExecution
+  func reapplyRuntimeResources(
+    visibility: RuntimeResourceVisibility,
+    on id: VirtualMachine.ID
+  ) async throws -> RuntimeResourcePolicy
   func createDiagnosticBundle(output: String?, on id: VirtualMachine.ID) async throws
     -> DiagnosticBundle
   func createPerformanceBaseline(output: String?, on id: VirtualMachine.ID) async throws
@@ -151,6 +155,13 @@ extension VirtualMachineClient {
   }
 
   func inspectReadinessReport(on id: VirtualMachine.ID) async throws -> VMReadinessReport {
+    throw VirtualMachineClientError.daemonResponseInvalid
+  }
+
+  func reapplyRuntimeResources(
+    visibility: RuntimeResourceVisibility,
+    on id: VirtualMachine.ID
+  ) async throws -> RuntimeResourcePolicy {
     throw VirtualMachineClientError.daemonResponseInvalid
   }
 
@@ -1000,6 +1011,21 @@ final class DaemonVirtualMachineClient: VirtualMachineClient, VirtualMachineClie
     return response.execution.applicationConsistentSnapshotExecution
   }
 
+  func reapplyRuntimeResources(
+    visibility: RuntimeResourceVisibility,
+    on id: VirtualMachine.ID
+  ) async throws -> RuntimeResourcePolicy {
+    guard let name = namesByID[id] else {
+      throw VirtualMachineClientError.virtualMachineNotFound
+    }
+
+    let response = try await transport.send(
+      DaemonReapplyRuntimeResourcesRequest(name: name, visibility: visibility),
+      responseType: DaemonRuntimeResourcePolicyResponse.self
+    )
+    return response.policy.runtimeResourcePolicy
+  }
+
   func createDiagnosticBundle(output: String?, on id: VirtualMachine.ID) async throws
     -> DiagnosticBundle
   {
@@ -1718,6 +1744,15 @@ final class FallbackVirtualMachineClient: VirtualMachineClient, VirtualMachineCl
         freezeTimeoutMillis: freezeTimeoutMillis,
         on: id
       )
+    }
+  }
+
+  func reapplyRuntimeResources(
+    visibility: RuntimeResourceVisibility,
+    on id: VirtualMachine.ID
+  ) async throws -> RuntimeResourcePolicy {
+    try await runPrimaryMutation {
+      try await $0.reapplyRuntimeResources(visibility: visibility, on: id)
     }
   }
 
@@ -2661,6 +2696,12 @@ struct DaemonExecuteApplicationConsistentSnapshotRequest: Encodable {
   }
 }
 
+struct DaemonReapplyRuntimeResourcesRequest: Encodable {
+  let type = "reapply_runtime_resources"
+  var name: String
+  var visibility: RuntimeResourceVisibility
+}
+
 struct DaemonCreateDiagnosticBundleRequest: Encodable {
   let type = "create_diagnostic_bundle"
   var name: String
@@ -3034,6 +3075,11 @@ struct DaemonSnapshotRestoredResponse: Decodable {
 struct DaemonApplicationConsistentSnapshotExecutionResponse: Decodable {
   var type: String
   var execution: DaemonApplicationConsistentSnapshotExecutionDTO
+}
+
+struct DaemonRuntimeResourcePolicyResponse: Decodable {
+  var type: String
+  var policy: DaemonRuntimeResourcePolicyDTO
 }
 
 struct DaemonDiagnosticBundleResponse: Decodable {
@@ -5786,6 +5832,113 @@ struct DaemonApplicationConsistentSnapshotCommandResultDTO: Decodable {
       message: message,
       completedAtUnix: completedAtUnix
     )
+  }
+}
+
+enum RuntimeResourceVisibility: String, Codable, CaseIterable, Equatable {
+  case foreground
+  case background
+
+  var title: String {
+    switch self {
+    case .foreground:
+      return "Foreground"
+    case .background:
+      return "Background"
+    }
+  }
+
+  var systemImage: String {
+    switch self {
+    case .foreground:
+      return "rectangle.inset.filled"
+    case .background:
+      return "rectangle.stack"
+    }
+  }
+}
+
+struct RuntimeResourcePolicy: Equatable {
+  var vm: String
+  var mode: String
+  var profile: String
+  var visibility: RuntimeResourceVisibility
+  var state: String
+  var onBattery: Bool
+  var memory: String
+  var cpu: String
+  var displayFPSCap: String
+  var rationale: String
+  var liveApplied: Bool
+  var liveApplyBlockers: [RuntimeResourcePolicyBlocker]
+  var updatedAtUnix: UInt64
+
+  var liveApplyTitle: String {
+    liveApplied ? "Applied" : "Recorded"
+  }
+}
+
+struct RuntimeResourcePolicyBlocker: Equatable {
+  var code: String
+  var message: String
+}
+
+struct DaemonRuntimeResourcePolicyDTO: Decodable {
+  var vm: String
+  var mode: String
+  var profile: String
+  var visibility: RuntimeResourceVisibility
+  var state: String
+  var onBattery: Bool
+  var memory: String
+  var cpu: String
+  var displayFPSCap: String
+  var rationale: String
+  var liveApplied: Bool
+  var liveApplyBlockers: [DaemonRuntimeResourcePolicyBlockerDTO]
+  var updatedAtUnix: UInt64
+
+  enum CodingKeys: String, CodingKey {
+    case vm
+    case mode
+    case profile
+    case visibility
+    case state
+    case onBattery = "on_battery"
+    case memory
+    case cpu
+    case displayFPSCap = "display_fps_cap"
+    case rationale
+    case liveApplied = "live_applied"
+    case liveApplyBlockers = "live_apply_blockers"
+    case updatedAtUnix = "updated_at_unix"
+  }
+
+  var runtimeResourcePolicy: RuntimeResourcePolicy {
+    RuntimeResourcePolicy(
+      vm: vm,
+      mode: mode,
+      profile: profile,
+      visibility: visibility,
+      state: state,
+      onBattery: onBattery,
+      memory: memory,
+      cpu: cpu,
+      displayFPSCap: displayFPSCap,
+      rationale: rationale,
+      liveApplied: liveApplied,
+      liveApplyBlockers: liveApplyBlockers.map(\.runtimeResourcePolicyBlocker),
+      updatedAtUnix: updatedAtUnix
+    )
+  }
+}
+
+struct DaemonRuntimeResourcePolicyBlockerDTO: Decodable {
+  var code: String
+  var message: String
+
+  var runtimeResourcePolicyBlocker: RuntimeResourcePolicyBlocker {
+    RuntimeResourcePolicyBlocker(code: code, message: message)
   }
 }
 

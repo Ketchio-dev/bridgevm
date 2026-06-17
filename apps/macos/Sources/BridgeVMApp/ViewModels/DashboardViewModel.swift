@@ -86,6 +86,9 @@ final class DashboardViewModel: ObservableObject {
     [VirtualMachine.ID: ApplicationConsistentSnapshotExecution] = [:]
   @Published private(set) var applicationConsistentSnapshotExecutionErrors:
     [VirtualMachine.ID: String] = [:]
+  @Published private(set) var runtimeResourcePolicies:
+    [VirtualMachine.ID: RuntimeResourcePolicy] = [:]
+  @Published private(set) var runtimeResourcePolicyErrors: [VirtualMachine.ID: String] = [:]
   @Published private(set) var diagnosticBundles: [VirtualMachine.ID: DiagnosticBundle] = [:]
   @Published private(set) var diagnosticBundleErrors: [VirtualMachine.ID: String] = [:]
   @Published private(set) var vmExports: [VirtualMachine.ID: VMExportMetadata] = [:]
@@ -138,6 +141,7 @@ final class DashboardViewModel: ObservableObject {
   @Published private(set) var checkingManifestMigrationID: VirtualMachine.ID?
   @Published private(set) var restoringSnapshotID: VirtualMachine.ID?
   @Published private(set) var executingApplicationConsistentSnapshotID: VirtualMachine.ID?
+  @Published private(set) var reapplyingRuntimeResourcesID: VirtualMachine.ID?
   @Published private(set) var creatingDiagnosticBundleID: VirtualMachine.ID?
   @Published private(set) var exportingVirtualMachineID: VirtualMachine.ID?
   @Published private(set) var isImportingVirtualMachine = false
@@ -242,6 +246,8 @@ final class DashboardViewModel: ObservableObject {
     snapshotRestoreErrors = [:]
     applicationConsistentSnapshotExecutions = [:]
     applicationConsistentSnapshotExecutionErrors = [:]
+    runtimeResourcePolicies = [:]
+    runtimeResourcePolicyErrors = [:]
     diagnosticBundles = [:]
     diagnosticBundleErrors = [:]
     vmExports = [:]
@@ -292,6 +298,7 @@ final class DashboardViewModel: ObservableObject {
     checkingManifestMigrationID = nil
     restoringSnapshotID = nil
     executingApplicationConsistentSnapshotID = nil
+    reapplyingRuntimeResourcesID = nil
     creatingDiagnosticBundleID = nil
     exportingVirtualMachineID = nil
     isImportingVirtualMachine = false
@@ -674,6 +681,14 @@ final class DashboardViewModel: ObservableObject {
 
   func applicationConsistentSnapshotExecutionError(for virtualMachine: VirtualMachine) -> String? {
     applicationConsistentSnapshotExecutionErrors[virtualMachine.id]
+  }
+
+  func runtimeResourcePolicy(for virtualMachine: VirtualMachine) -> RuntimeResourcePolicy? {
+    runtimeResourcePolicies[virtualMachine.id]
+  }
+
+  func runtimeResourcePolicyError(for virtualMachine: VirtualMachine) -> String? {
+    runtimeResourcePolicyErrors[virtualMachine.id]
   }
 
   func diagnosticBundle(for virtualMachine: VirtualMachine) -> DiagnosticBundle? {
@@ -2266,6 +2281,51 @@ final class DashboardViewModel: ObservableObject {
     } catch {
       let message = error.localizedDescription
       applicationConsistentSnapshotExecutionErrors[virtualMachine.id] = message
+      alertMessage = message
+      return false
+    }
+  }
+
+  func reapplyRuntimeResources(
+    visibility: RuntimeResourceVisibility,
+    for virtualMachine: VirtualMachine
+  ) async -> Bool {
+    guard canMutateCurrentInventory(action: "Reapply runtime resources", virtualMachine: virtualMachine)
+    else {
+      return false
+    }
+
+    guard reapplyingRuntimeResourcesID != virtualMachine.id else {
+      return false
+    }
+
+    let generation = clientGeneration
+    let operationClient = client
+    reapplyingRuntimeResourcesID = virtualMachine.id
+    defer {
+      if generation == clientGeneration {
+        reapplyingRuntimeResourcesID = nil
+      }
+    }
+
+    do {
+      let policy = try await operationClient.reapplyRuntimeResources(
+        visibility: visibility,
+        on: virtualMachine.id
+      )
+      guard generation == clientGeneration else {
+        return false
+      }
+      runtimeResourcePolicies[virtualMachine.id] = policy
+      runtimeResourcePolicyErrors[virtualMachine.id] = nil
+      alertMessage = "Runtime resource policy recorded for \(policy.vm)."
+      return true
+    } catch {
+      guard generation == clientGeneration else {
+        return false
+      }
+      let message = error.localizedDescription
+      runtimeResourcePolicyErrors[virtualMachine.id] = message
       alertMessage = message
       return false
     }

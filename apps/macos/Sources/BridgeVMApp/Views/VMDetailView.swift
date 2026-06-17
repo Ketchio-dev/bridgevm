@@ -72,6 +72,9 @@ struct VMDetailView: View {
   var applicationConsistentSnapshotExecution: ApplicationConsistentSnapshotExecution? = nil
   var isExecutingApplicationConsistentSnapshot = false
   var applicationConsistentSnapshotExecutionError: String? = nil
+  var runtimeResourcePolicy: RuntimeResourcePolicy? = nil
+  var isReapplyingRuntimeResources = false
+  var runtimeResourcePolicyError: String? = nil
   var vmExport: VMExportMetadata? = nil
   var isExportingVirtualMachine = false
   var vmExportError: String? = nil
@@ -165,6 +168,7 @@ struct VMDetailView: View {
   var onExecuteApplicationConsistentSnapshot: (String, UInt64?) async -> Bool = { _, _ in
     false
   }
+  var onReapplyRuntimeResources: (RuntimeResourceVisibility) async -> Bool = { _ in false }
   var onExportVirtualMachine: (String) async -> Bool = { _ in false }
   var onImportVirtualMachine: (String, String) async -> Bool = { _, _ in false }
   var onCreateDiagnosticBundle: (String) async -> Bool = { _ in false }
@@ -341,6 +345,15 @@ struct VMDetailView: View {
             onPrepare: onPrepareRun,
             onRefresh: onRefreshRunnerStatus
           )
+
+          if virtualMachine.mode == .fast {
+            RuntimeResourcePolicyPanel(
+              policy: runtimeResourcePolicy,
+              isApplying: isReapplyingRuntimeResources,
+              error: runtimeResourcePolicyError,
+              onReapply: onReapplyRuntimeResources
+            )
+          }
 
           QemuLaunchPlanPanel(
             plan: qemuLaunchPlan,
@@ -3072,6 +3085,98 @@ private struct RunnerStatusPanel: View {
         )
         .font(.callout)
         .foregroundStyle(.secondary)
+      }
+    }
+    .padding(12)
+    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+  }
+
+  private func unixTimeText(_ value: UInt64) -> String {
+    Date(timeIntervalSince1970: TimeInterval(value))
+      .formatted(date: .abbreviated, time: .shortened)
+  }
+}
+
+private struct RuntimeResourcePolicyPanel: View {
+  var policy: RuntimeResourcePolicy?
+  var isApplying: Bool
+  var error: String?
+  var onReapply: (RuntimeResourceVisibility) async -> Bool
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack {
+        Text("Runtime Resources")
+          .font(.headline)
+
+        Spacer()
+
+        ForEach(RuntimeResourceVisibility.allCases, id: \.self) { visibility in
+          Button {
+            Task { _ = await onReapply(visibility) }
+          } label: {
+            if isApplying {
+              ProgressView()
+                .controlSize(.small)
+            } else {
+              Label(visibility.title, systemImage: visibility.systemImage)
+            }
+          }
+          .disabled(isApplying)
+        }
+      }
+
+      if let error {
+        Label(error, systemImage: "exclamationmark.triangle")
+          .font(.callout)
+          .foregroundStyle(.red)
+      } else if let policy {
+        VStack(alignment: .leading, spacing: 10) {
+          LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 14) {
+            GuestToolsStatusBadge(
+              title: "Visibility",
+              value: policy.visibility.title,
+              systemImage: policy.visibility.systemImage
+            )
+            GuestToolsStatusBadge(
+              title: "Power",
+              value: policy.onBattery ? "Battery" : "AC",
+              systemImage: policy.onBattery ? "battery.50" : "powerplug"
+            )
+            GuestToolsStatusBadge(
+              title: "Live Apply",
+              value: policy.liveApplyTitle,
+              systemImage: policy.liveApplied ? "checkmark.circle" : "record.circle"
+            )
+          }
+
+          VStack(alignment: .leading, spacing: 6) {
+            GuestToolsFactRow(title: "Profile", value: policy.profile)
+            GuestToolsFactRow(title: "Memory", value: policy.memory)
+            GuestToolsFactRow(title: "CPU", value: policy.cpu)
+            GuestToolsFactRow(title: "Display FPS", value: policy.displayFPSCap)
+            GuestToolsFactRow(title: "Rationale", value: policy.rationale)
+            GuestToolsFactRow(title: "Metadata Recorded", value: unixTimeText(policy.updatedAtUnix))
+          }
+
+          ForEach(policy.liveApplyBlockers, id: \.code) { blocker in
+            VStack(alignment: .leading, spacing: 3) {
+              Text(blocker.code)
+                .font(.caption.weight(.medium))
+              Text(blocker.message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+          }
+        }
+      } else {
+        Text("No runtime policy recorded.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
       }
     }
     .padding(12)
