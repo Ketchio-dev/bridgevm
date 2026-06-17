@@ -79,7 +79,8 @@ final class AppSettingsTests: XCTestCase {
                 launchedProcess = process
                 return BundledDaemonProcess(process: process)
             },
-            livenessProbeDelay: 0
+            livenessProbeDelay: 0,
+            socketReadyProbe: { _ in true }
         )
         defer {
             _ = supervisor.stop(timeout: 1.0)
@@ -305,7 +306,8 @@ final class AppSettingsTests: XCTestCase {
                 launchedProcess = process
                 return BundledDaemonProcess(process: process)
             },
-            livenessProbeDelay: 0
+            livenessProbeDelay: 0,
+            socketReadyProbe: { _ in true }
         )
         defer {
             if launchedProcess?.isRunning == true {
@@ -343,7 +345,8 @@ final class AppSettingsTests: XCTestCase {
                 launchedEnvironments.append(environment)
                 return try launchSleep()
             },
-            livenessProbeDelay: 0
+            livenessProbeDelay: 0,
+            socketReadyProbe: { _ in true }
         )
         settings.allowAppleVzRealStart = true
         let secondReport = supervisor.startIfNeeded(
@@ -355,7 +358,8 @@ final class AppSettingsTests: XCTestCase {
                 launchedEnvironments.append(environment)
                 return try launchSleep()
             },
-            livenessProbeDelay: 0
+            livenessProbeDelay: 0,
+            socketReadyProbe: { _ in true }
         )
         defer {
             _ = supervisor.stop(timeout: 1.0)
@@ -435,7 +439,8 @@ final class AppSettingsTests: XCTestCase {
                     stderrTail: { "bridgevmd stderr before immediate exit" }
                 )
             },
-            livenessProbeDelay: 0
+            livenessProbeDelay: 0,
+            socketReadyProbe: { _ in true }
         )
 
         XCTAssertEqual(report.state, .failed)
@@ -444,6 +449,88 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(report.socketPath, DaemonEndpoint.local.socketPath)
         XCTAssertTrue(report.detail.contains("exited immediately"))
         XCTAssertEqual(report.stderrTail, "bridgevmd stderr before immediate exit")
+    }
+
+    func testBundledDaemonSupervisorWaitsForSocketReadiness() throws {
+        let settings = AppSettings(defaults: isolatedDefaults())
+        let supervisor = BundledDaemonSupervisor()
+        var launchedProcess: Process?
+        var probeCount = 0
+
+        let report = supervisor.startIfNeeded(
+            settings: settings,
+            helperResolver: { name in
+                URL(fileURLWithPath: "/tmp/BridgeVM.app/Contents/Helpers/\(name)")
+            },
+            launcher: { _, _ in
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+                process.arguments = ["60"]
+                try process.run()
+                launchedProcess = process
+                return BundledDaemonProcess(process: process)
+            },
+            livenessProbeDelay: 0,
+            socketReadinessTimeout: 0.5,
+            socketReadinessPollInterval: 0.001,
+            socketReadyProbe: { path in
+                XCTAssertEqual(path, DaemonEndpoint.local.socketPath)
+                probeCount += 1
+                return probeCount >= 3
+            }
+        )
+        defer {
+            _ = supervisor.stop(timeout: 1.0)
+            if launchedProcess?.isRunning == true {
+                launchedProcess?.terminate()
+            }
+        }
+
+        XCTAssertEqual(report.state, .running)
+        XCTAssertTrue(report.isHealthy)
+        XCTAssertEqual(report.socketPath, DaemonEndpoint.local.socketPath)
+        XCTAssertGreaterThanOrEqual(probeCount, 3)
+        XCTAssertTrue(report.detail.contains("socket is ready"))
+    }
+
+    func testBundledDaemonSupervisorFailsWhenSocketNeverBecomesReady() throws {
+        let settings = AppSettings(defaults: isolatedDefaults())
+        let supervisor = BundledDaemonSupervisor()
+        var launchedProcess: Process?
+
+        let report = supervisor.startIfNeeded(
+            settings: settings,
+            helperResolver: { name in
+                URL(fileURLWithPath: "/tmp/BridgeVM.app/Contents/Helpers/\(name)")
+            },
+            launcher: { _, _ in
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+                process.arguments = ["60"]
+                try process.run()
+                launchedProcess = process
+                return BundledDaemonProcess(
+                    process: process,
+                    stderrTail: { "bridgevmd still starting" }
+                )
+            },
+            livenessProbeDelay: 0,
+            socketReadinessTimeout: 0.02,
+            socketReadinessPollInterval: 0.001,
+            socketReadyProbe: { _ in false }
+        )
+        defer {
+            if launchedProcess?.isRunning == true {
+                launchedProcess?.terminate()
+            }
+        }
+
+        XCTAssertEqual(report.state, .failed)
+        XCTAssertFalse(report.isHealthy)
+        XCTAssertEqual(report.socketPath, DaemonEndpoint.local.socketPath)
+        XCTAssertTrue(report.detail.contains("ready socket before timeout"))
+        XCTAssertEqual(report.stderrTail, "bridgevmd still starting")
+        XCTAssertFalse(launchedProcess?.isRunning == true)
     }
 
     func testBundledDaemonProcessCapturesStdoutTail() throws {
@@ -482,7 +569,8 @@ final class AppSettingsTests: XCTestCase {
                 launchedProcess = process
                 return BundledDaemonProcess(process: process)
             },
-            livenessProbeDelay: 0
+            livenessProbeDelay: 0,
+            socketReadyProbe: { _ in true }
         )
         defer {
             if launchedProcess?.isRunning == true {

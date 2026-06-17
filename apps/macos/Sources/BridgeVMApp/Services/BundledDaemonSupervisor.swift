@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct BundledDaemonLaunchReport: Equatable {
@@ -73,7 +74,10 @@ final class BundledDaemonSupervisor {
     settings: AppSettings,
     helperResolver: (String) -> URL?,
     launcher: (URL, [String: String]) throws -> BundledDaemonProcess,
-    livenessProbeDelay: TimeInterval = 0.05
+    livenessProbeDelay: TimeInterval = 0.05,
+    socketReadinessTimeout: TimeInterval = 2.0,
+    socketReadinessPollInterval: TimeInterval = 0.05,
+    socketReadyProbe: (String) -> Bool = BundledDaemonSupervisor.isDaemonSocketReady
   ) -> BundledDaemonLaunchReport {
     let socketPath = settings.effectiveDaemonSocketPath
     guard !settings.useMockInventory else {
@@ -137,6 +141,34 @@ final class BundledDaemonSupervisor {
           stderrTail: stderrTail
         )
       }
+      guard Self.waitForDaemonSocket(
+        at: socketPath,
+        process: launched.process,
+        timeout: socketReadinessTimeout,
+        pollInterval: socketReadinessPollInterval,
+        socketReadyProbe: socketReadyProbe
+      ) else {
+        let stderrTail = launched.stderrTail()
+        let exitedBeforeReady = !launched.process.isRunning
+        if launched.process.isRunning {
+          Self.terminateProcess(launched.process, timeout: 0.5)
+        }
+        launched.cleanup()
+        process = nil
+        let detail: String
+        if exitedBeforeReady {
+          detail = "Bundled bridgevmd exited before creating a ready socket."
+        } else {
+          detail = "Bundled bridgevmd did not create a ready socket before timeout."
+        }
+        return BundledDaemonLaunchReport(
+          state: .failed,
+          helperPath: bridgevmd.path,
+          socketPath: socketPath,
+          detail: detail,
+          stderrTail: stderrTail
+        )
+      }
       process = launched.process
       activeProcessCleanup = launched.cleanup
       activeAllowsAppleVzRealStart = settings.allowAppleVzRealStart
@@ -144,7 +176,7 @@ final class BundledDaemonSupervisor {
         state: .running,
         helperPath: bridgevmd.path,
         socketPath: socketPath,
-        detail: "Bundled bridgevmd launched from \(bridgevmd.path)."
+        detail: "Bundled bridgevmd launched from \(bridgevmd.path) and its socket is ready."
       )
     } catch {
       process = nil
@@ -244,6 +276,77 @@ final class BundledDaemonSupervisor {
       .appendingPathComponent("Helpers")
       .appendingPathComponent(name)
     return FileManager.default.isExecutableFile(atPath: candidate.path) ? candidate : nil
+  }
+
+  static func waitForDaemonSocket(
+    at socketPath: String,
+    process: Process,
+    timeout: TimeInterval,
+    pollInterval: TimeInterval,
+    socketReadyProbe: (String) -> Bool = BundledDaemonSupervisor.isDaemonSocketReady
+  ) -> Bool {
+    let deadline = Date().addingTimeInterval(max(0, timeout))
+    repeat {
+      if socketReadyProbe(socketPath) {
+        return true
+      }
+      guard process.isRunning else {
+        return false
+      }
+      if Date() >= deadline {
+        return false
+      }
+      Thread.sleep(forTimeInterval: max(0.001, pollInterval))
+    } while true
+  }
+
+  static func terminateProcess(_ process: Process, timeout: TimeInterval) {
+    guard process.isRunning else {
+      return
+    }
+    process.terminate()
+    let deadline = Date().addingTimeInterval(max(0, timeout))
+    while process.isRunning && Date() < deadline {
+      Thread.sleep(forTimeInterval: 0.05)
+    }
+    if process.isRunning {
+      process.interrupt()
+    }
+  }
+
+  static func isDaemonSocketReady(_ socketPath: String) -> Bool {
+    let fileDescriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard fileDescriptor >= 0 else {
+      return false
+    }
+    defer {
+      close(fileDescriptor)
+    }
+
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    let maxPathLength = MemoryLayout.size(ofValue: address.sun_path)
+    guard socketPath.utf8.count < maxPathLength else {
+      return false
+    }
+    _ = socketPath.withCString { source in
+      withUnsafeMutablePointer(to: &address.sun_path) { destination in
+        destination.withMemoryRebound(to: CChar.self, capacity: maxPathLength) {
+          strncpy($0, source, maxPathLength)
+        }
+      }
+    }
+
+    let result = withUnsafePointer(to: &address) { pointer in
+      pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+        connect(
+          fileDescriptor,
+          sockaddrPointer,
+          socklen_t(MemoryLayout<sockaddr_un>.size)
+        )
+      }
+    }
+    return result == 0
   }
 }
 
