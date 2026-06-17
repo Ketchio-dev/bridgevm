@@ -5666,6 +5666,11 @@ private struct GuestToolsCommandActionList: View {
 
 private struct GuestClipboardTelemetryView: View {
   var clipboard: GuestClipboardSnapshot?
+  var pasteboard: HostPasteboardWriting = SystemHostPasteboard()
+
+  private var canCopyToHost: Bool {
+    !(clipboard?.text.isEmpty ?? true)
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
@@ -5683,6 +5688,17 @@ private struct GuestClipboardTelemetryView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+
+          HStack {
+            Spacer()
+            Button {
+              copyGuestClipboardToHost(clipboard, into: pasteboard)
+            } label: {
+              Label("Copy to Mac clipboard", systemImage: "doc.on.clipboard")
+            }
+            .disabled(!canCopyToHost)
+          }
+          .controlSize(.small)
         }
       } else {
         Text("No guest-origin clipboard text has been reported.")
