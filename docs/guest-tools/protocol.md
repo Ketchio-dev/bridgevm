@@ -307,12 +307,13 @@ may record and report the current version, available version, download URL,
 signature metadata, and observed timestamp, but it must not download, verify,
 install, execute, or claim completion of a guest-tools update from this notice.
 
-Application-consistent snapshot coordination is also still a conservative
-scaffold/boundary. The storage/API/CLI preflight requires the `fs-freeze` and
-`fs-thaw` capability names and records whether an authenticated guest-tools
-session has advertised them. The protocol surface may carry `FreezeFilesystem`
-and `ThawFilesystem` messages, and the Linux tools scaffold may acknowledge
-them for socket-level testing.
+Application-consistent snapshot coordination keeps a conservative preflight
+record, and the daemon-owned execution path now uses the same protocol surface.
+The storage/API/CLI preflight requires the `fs-freeze` and `fs-thaw` capability
+names and records whether an authenticated guest-tools session has advertised
+them. When a daemon owns the backend and holds an authenticated stream, it can
+send request-correlated `FreezeFilesystem` and `ThawFilesystem` messages around
+snapshot creation and persist the execution result.
 
 By default, Linux tools freeze/thaw acknowledgements are simulated in-memory
 state. When the runner is started with `--real-fsfreeze` and at least one
@@ -332,16 +333,16 @@ is:
 5. Always send the matching thaw command after the snapshot attempt, including
    after snapshot failure, and persist the outcome for diagnostics.
 
-Smoke coverage should follow the existing live Unix socket harnesses in
+Smoke coverage follows the existing live Unix socket harnesses in
 `tests/integration`: run `bridgevm-tools-linux --socket`, send typed frames
 through the daemon-owned path, and assert that the default path reports the
-simulated scaffold boundary where no OS `fsfreeze` was executed. It should also
-cover both the successful freeze/thaw sequence and the failure path where thaw
-is still attempted. The metadata-safe backend smoke must shadow `fsfreeze` on
-`PATH` with a fake executable and use ordinary temporary directories for
-ordering and rollback assertions. A test that targets a real mount or requires
-host privileges belongs in a separate opt-in live harness and must document
-those requirements.
+simulated scaffold boundary where no OS `fsfreeze` was executed. It also covers
+both the successful freeze/thaw sequence and the failure path where thaw is
+still attempted. The metadata-safe backend smoke shadows `fsfreeze` on `PATH`
+with a fake executable and uses ordinary temporary directories for ordering and
+rollback assertions. The separate opt-in live harness targets a real QEMU/HVF
+guest and a safe loopback ext4 mount, proving the real filesystem freeze/thaw
+boundary while still avoiding claims about application-level quiescing.
 
 Host commands may include an envelope `request_id`. `bridgevm-agentd` records
 those commands as pending after authorization, rejects duplicate pending request

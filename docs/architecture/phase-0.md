@@ -2,7 +2,7 @@
 
 BridgeVM currently implements the foundation from `PLAN.md` as a Rust workspace.
 
-The important Phase 0 boundary is intentional: Fast Mode and Compatibility Mode are separate concepts from the beginning, even while their runners are still stubs. This keeps Fast Mode from becoming a thin QEMU settings screen.
+The important Phase 0 boundary is intentional: Fast Mode and Compatibility Mode are separate concepts from the beginning, with separate planner, runner, and verification paths. This keeps Fast Mode from becoming a thin QEMU settings screen.
 
 ## Implemented components
 
@@ -13,8 +13,8 @@ The important Phase 0 boundary is intentional: Fast Mode and Compatibility Mode 
 - `bridgevm-storage`: VM runtime state and snapshot metadata.
 - `bridgevm-cli`: developer CLI for create/list/status/lifecycle/snapshot flows.
 - `BridgeVMApp`: SwiftUI macOS dashboard prototype with VM inventory, settings,
-  Store Doctor/source readiness, lifecycle controls backed by metadata-only
-  plan/readiness surfaces, a
+  Store Doctor/source readiness, lifecycle controls backed by lifecycle-plan
+  readiness plus daemon suspend/resume/stop requests, a
   template-backed creation sheet, boot media readiness, a daemon-backed clone
   sheet with full/linked clone options and linked overlay metadata, and
   daemon-backed guest tools status/readiness visibility, including latest
@@ -30,10 +30,10 @@ The important Phase 0 boundary is intentional: Fast Mode and Compatibility Mode 
   implicit disk creation, or memory restore.
 - `bridgevm-api`: typed request/response protocol for daemon operations.
 - `bridgevm-daemon`: Unix socket metadata service using the typed API protocol.
-- `bridgevm-qemu`: Compatibility Mode QEMU command builder and QMP client scaffold.
-- `bridgevm-apple-vz`: Fast Mode Apple VZ dry-run planner with boot/install media input validation, launch-readiness metadata for runner status surfaces, and a metadata-safe pre-run readiness report fallback for callers that have not written runner metadata yet.
+- `bridgevm-qemu`: Compatibility Mode QEMU command builder, QMP client/control helpers, suspend/resume snapshot helpers, and supervisor metadata support.
+- `bridgevm-apple-vz`: Fast Mode Apple VZ planner plus helper handoff support for opt-in live Linux kernel launch, save/restore, and display-window flows.
 - `bridgevm-api` and `bridgevm-cli`: metadata-safe readiness evidence ingestion for preserved Apple VZ live evidence bundles through `readiness_report` and `bridgevm readiness --live-evidence`, without launching Apple VZ or invoking the Swift helper.
-- `bridgevmd` supervisor: daemon-owned Compatibility Mode child registry for `run --spawn`, periodic exit reconciliation, and stop cleanup.
+- `bridgevmd` supervisor: daemon-owned backend child registry for `run --spawn`, periodic exit reconciliation, QMP/guest-tools reconciliation for Compatibility Mode, and stop/shutdown cleanup.
 - `bridgevm-api`: service contracts for daemon/socket callers.
 - `bridgevm-lightvm` and `bridgevm-fullvm`: separate engine adapters.
 - `bridgevm-agent-protocol`: first typed guest-tools messages.
@@ -175,7 +175,7 @@ This means the current safe path is:
 
 ## Resource profile boundary
 
-Fast Mode and Compatibility Mode now share the same resource profile resolver before their runner-specific plans are emitted. The resolver maps the manifest's `resources.profile` to deterministic default memory, vCPU, display FPS cap, and rationale values. Launch planning is still a planning-time policy layer, not live host telemetry or dynamic throttling.
+Fast Mode and Compatibility Mode now share the same resource profile resolver before their runner-specific plans are emitted. The resolver maps the manifest's `resources.profile` to deterministic default memory, vCPU, display FPS cap, and rationale values, and Fast Mode launch planning can use the current host battery state when `memory` or `cpu` are `auto`. Runtime reapply remains a metadata-backed policy signal until a live Apple VZ/display control channel consumes it.
 
 Manifest `resources.memory` and `resources.cpu` values are only replaced when they are set to `auto`. Explicit memory or CPU values in the manifest are preserved and passed into the Fast Mode Apple VZ plan or Compatibility Mode QEMU arguments. Fast Mode also exposes the selected `display_fps_cap` and `rationale` in its launch spec so callers can inspect why the automatic values were chosen.
 
@@ -296,7 +296,7 @@ Download intent is another metadata boundary, separate from network transfer. `b
 
 SHA-256 verification is a second local metadata boundary, not a download policy. `bridgevm media verify <vm> --sha256 <hex>` hashes the already-resolved Fast Mode boot media file, compares it with the caller-provided expected digest, and records the success or failure under `.vmbridge/metadata/boot-media/<kind>-verify.json`. Boot modes with multiple media paths, such as Linux kernel mode, require `--kind installer-image|kernel|initrd|macos-restore-image` to select the file to verify. The same verification path is available through `bridgevm --socket <sock> media verify <vm> --sha256 <hex>`. That keeps template and OS-download flows plannable without pretending the default VZ launcher starts a VM: `boot-media`, `media import`, `media status`, `media download-plan`, `media download`, `media verify`, `prepare-run`, Fast Mode `run` without spawn, `runner-status`, `lightvm-runner --print-plan`, `lightvm-runner --require-ready`, and `lightvm-runner --launch-spec <path> --print-handoff` can prove which media the Apple VZ boundary should consume and whether the current dry-run launch inputs are ready or blocked. The launch-spec handoff path reads the persisted artifact instead of rebuilding from a manifest, so the Apple VZ backend has a stable artifact-consumer boundary.
 
-Real Apple VZ process launch now exists only at the narrow Swift helper boundary for `linux-kernel` boot with a `raw` primary disk and NAT networking, and it remains guarded by an explicit live-start opt-in. The current dashboard, CLI, daemon, and default Rust runner-plan commands still stop at metadata creation, media readiness, verification, recorded-plan download execution, guest tools status/readiness visibility, dry-run planning, and structured launch-readiness/preflight reporting unless `lightvm-runner --launch-spec <path> --require-ready --launch --apple-vz-runner <helper>` is explicitly pointed at the Swift helper with a supported launch spec and the helper receives `--allow-real-vz-start`. Without that opt-in, even a supported helper invocation must fail before `VZVirtualMachine.start()`, which lets smoke coverage prove the Rust-to-helper handoff without starting a real VM. Manual live E2E can pass `--apple-vz-stop-after-seconds <N>` so the helper requests guest shutdown after startup, and the SwiftPM-built helper must be signed after build with `apps/macos/AppleVzRunner.entitlements` or an equivalent virtualization entitlement. Even when `readiness`, `pre_run_launch_readiness`, `run`, or RunnerStatus reports `ready`, that is launch-readiness information, not proof that the default path spawned an Apple VZ process or that a guest reached boot.
+Real Apple VZ process launch now exists at the Swift helper boundary for supported `linux-kernel` Fast Mode VMs with a `raw` primary disk and NAT networking, and it remains guarded by explicit helper configuration and live-start opt-in. Local and socket-backed planning commands still stop at metadata creation, media readiness, verification, recorded-plan download execution, and structured launch-readiness/preflight reporting; `bridgevm run <vm> --spawn`, daemon-backed Start, suspend, and resume cross into the signed `AppleVzRunner` only when `BRIDGEVM_APPLE_VZ_RUNNER` and the required opt-in are present. Without that helper boundary, the legacy dry-run/not-implemented behavior remains. Manual live E2E can pass `--apple-vz-stop-after-seconds <N>` so the helper requests guest shutdown after startup, and the SwiftPM-built helper must be signed after build with `apps/macos/AppleVzRunner.entitlements` or an equivalent virtualization entitlement. The separate display path (`bridgevm display <vm>` and the app's Show Display action) launches the helper in a local GUI session with Apple VZ graphics; the headless launch and save/restore path remains separate because a graphics device disables VZ save/restore.
 
 ## Snapshot chain scaffold
 
@@ -323,25 +323,27 @@ must be presented as restoring recorded metadata only. It must not imply real
 guest memory restoration, live VM rollback, or full application-consistent
 restore until those backend paths exist.
 
-The current scaffold can create overlays, inspect the active chain member, route startup through that active disk, gate suspend snapshot restore on a recorded image file, record application-consistent snapshot preflight metadata from guest-tools runtime state, and expose a daemon-owned application-consistent freeze/thaw scaffold command path. Disk snapshot restore rewinds the active disk to the selected snapshot's backing image and restores the snapshot's recorded runtime state. The safe fsfreeze backend smoke shadows `fsfreeze` with a fake executable to prove allowlisted command ordering and thaw rollback; it must not be read as live host mount freezing or application consistency. Remaining snapshot work includes real suspend memory serialization/restoration and actual OS/filesystem/application quiescing for application consistency.
+The current implementation can create overlays, inspect the active chain member, route startup through that active disk, gate suspend snapshot restore on a recorded image file, record application-consistent snapshot preflight metadata from guest-tools runtime state, and execute daemon-owned application-consistent freeze/thaw around snapshot creation when a connected guest advertises the required capabilities. Disk snapshot restore rewinds the active disk to the selected snapshot's backing image and restores the snapshot's recorded runtime state. The safe fsfreeze backend smoke shadows `fsfreeze` with a fake executable to prove allowlisted command ordering and thaw rollback; the separate opt-in live smoke proves the real QEMU/HVF guest filesystem freeze/thaw boundary on a safe loopback ext4 mount. Remaining snapshot work includes real suspend memory serialization/restoration and higher-level application quiescing for complete application consistency.
 
 ## Lifecycle control boundary
 
-Phase-0 lifecycle controls are metadata and readiness surfaces, not proof of
-guest power-state control. `bridgevm suspend <vm>` and `bridgevm resume <vm>`
-update recorded runtime state through the CLI/API lifecycle path. They do not
-serialize guest memory, resume a guest, connect to QMP, or call Apple VZ.
+`bridgevm lifecycle-plan <vm> --action suspend|resume` remains the metadata-only
+readiness surface for UI/API command planning, but `bridgevm suspend <vm>` and
+`bridgevm resume <vm>` are now real backend operations when their backend
+requirements are satisfied. Fast Mode uses Apple VZ save/restore through the
+signed helper and is the supported suspend/resume path. Compatibility Mode
+suspend uses QMP `snapshot-save` plus process shutdown, while resume attempts
+`-loadvm bridgevm-suspend` and preserves the suspend marker when the known Apple
+Silicon HVF restore failure appears.
 
-`bridgevm lifecycle-plan <vm> --action suspend|resume` is the safer UI/API
-readiness boundary for controls that look like backend actions. For
-Compatibility Mode it reports the current state, target state, planned QMP
-command (`stop` for suspend and `cont` for resume), QMP socket path
-availability, and blockers without opening the socket or performing a QMP
-handshake. For Fast Mode it reports the Apple VZ runner boundary and returns a
-concrete `apple-vz-runner-unavailable` blocker until `BRIDGEVM_APPLE_VZ_RUNNER`
-points at the signed Swift helper. The macOS dashboard lifecycle controls
-should present this plan and its blockers honestly, and must not imply real
-suspend/resume execution unless the backend-specific runner path is available.
+The plan command reports the current state, target state, backend boundary,
+planned Compatibility Mode QMP command (`stop` for suspend and `cont` for
+resume), QMP socket path availability, and blockers without opening the socket
+or performing a QMP handshake. For Fast Mode it reports the Apple VZ runner
+boundary and returns a concrete `apple-vz-runner-unavailable` blocker until
+`BRIDGEVM_APPLE_VZ_RUNNER` points at the signed Swift helper. The macOS
+dashboard lifecycle controls should present this plan and its blockers honestly
+before invoking the daemon suspend/resume requests.
 
 ## Guest tools policy boundary
 
@@ -402,19 +404,20 @@ stream, and track pending `request_id` values until matching `CommandResult`
 frames arrive. The daemon persists the latest matching result in runtime
 `last_command_result` so status surfaces can show the last request ID,
 capability, success/error fields, and completion timestamp without pretending
-to maintain a full command history. In the current Linux tools scaffold,
-`SetClipboard` and `ClipboardChanged` are clipboard alpha protocol paths:
-`SetClipboard` acknowledgement means the scaffold decoded the command and
-replied for the matching `request_id`, while `ClipboardChanged` can be emitted
-from supplied scaffold text for smoke tests. Neither path reads from or writes
-to the real Linux desktop clipboard yet. `FileDropStart`, `FileDropChunk`, and
-`FileDropComplete` are an inline drag-drop alpha command sequence: the macOS
-dashboard can dispatch them through `guest_tools_send_command` only when
-daemon/backend status advertises drag-drop capability/readiness, and it should
-surface request IDs, pending counts, and latest `CommandResult` metadata. That
-sequence is not proof of a completed host-to-guest filesystem drop, does not
-create or mount a guest filesystem path, and does not replace future durable
-file-transfer/storage plumbing. Shared-folder `MountShare { name,
+to maintain a full command history. `SetClipboard` and display resize now have
+real Linux effect paths when the guest environment provides the required desktop
+tools: the agent can auto-detect `wl-copy`/`xclip` and `xrandr`, and the opt-in
+headless live smoke verifies host-to-guest clipboard text plus resize command
+dispatch through Xvfb/xclip/xrandr. The same protocol still supports simulated
+clipboard/status frames for socket-safe testing. `FileDropStart`,
+`FileDropChunk`, and `FileDropComplete` are an inline drag-drop alpha command
+sequence: the macOS dashboard can dispatch them through
+`guest_tools_send_command` only when daemon/backend status advertises drag-drop
+capability/readiness, and it should surface request IDs, pending counts, and
+latest `CommandResult` metadata. That sequence is not proof of a completed
+host-to-guest filesystem drop, does not create or mount a guest filesystem
+path, and does not replace future durable file-transfer/storage plumbing.
+Shared-folder `MountShare { name,
 host_path_token }` and `UnmountShare { name }` are likewise alpha protocol
 paths: the Linux scaffold updates transient in-memory share state and can reply
 with `CommandResult` for matching `request_id` values, but it does not perform a

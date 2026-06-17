@@ -178,21 +178,24 @@ recorded metadata such as active-disk/runtime state. That dashboard restore
 surface must not claim to restore guest memory, roll back a live QEMU process,
 or provide full application consistency.
 
-Application-consistent snapshots are wired as a scaffold/boundary, not real
-guest coordination yet. Running `bridgevm snapshot create
-legacy-linux app-safe --kind application-consistent` records the snapshot and
-writes `metadata/application-consistent-snapshots/app-safe.json` with
-guest-tools connection state, required `fs-freeze`/`fs-thaw` capabilities,
-advertised and missing capabilities, readiness, backend freeze/thaw support,
-and planned freeze/thaw semantics. The daemon-owned `bridgevm --socket <sock>
-snapshot execute-application-consistent legacy-linux app-safe` path can
-dispatch freeze/thaw scaffold frames around snapshot metadata creation when a
-daemon-owned backend and authenticated guest-tools stream are available. The
-Linux tools scaffold defaults to simulated freeze/thaw acknowledgements. Its
-`--real-fsfreeze` mode is an explicit allowlist-backed backend primitive and is
-covered in safe smoke tests with a fake `fsfreeze` binary shadowed on `PATH`;
-that proves command ordering and rollback behavior, not live host mount
-freezing, application quiescing, or application consistency.
+Application-consistent snapshots have a conservative preflight record plus a
+daemon-owned execution path. Running `bridgevm snapshot create legacy-linux
+app-safe --kind application-consistent` records the snapshot and writes
+`metadata/application-consistent-snapshots/app-safe.json` with guest-tools
+connection state, required `fs-freeze`/`fs-thaw` capabilities, advertised and
+missing capabilities, readiness, backend freeze/thaw support, and planned
+freeze/thaw semantics. The daemon-owned `bridgevm --socket <sock> snapshot
+execute-application-consistent legacy-linux app-safe` path requires a
+daemon-owned backend and authenticated guest-tools stream, dispatches
+request-correlated freeze/thaw commands around snapshot creation, always
+attempts thaw after the snapshot boundary, and records the execution result.
+The Linux tools runner defaults to simulated freeze/thaw acknowledgements for
+socket-safe tests. Its explicit `--real-fsfreeze --fsfreeze-mount <path>` mode
+calls the Linux `fsfreeze` backend on allowlisted mounts; fake-backend smokes
+cover ordering and rollback, and the heavy live opt-in smoke verifies the real
+QEMU/HVF guest path against a safe loopback ext4 mount. That proves the
+filesystem freeze/thaw boundary, not database flushing, application quiescing,
+or complete application-level consistency.
 
 `bridgevm stop legacy-linux` now uses the backend stop path. If QEMU is running and its QMP socket is available, BridgeVM sends QMP `quit`, marks the VM stopped, and clears runner metadata. Dry-run runner metadata is cleared without requiring QMP.
 
@@ -344,4 +347,7 @@ extra storage artifacts on its own.
 
 `bridgevmd` can also run dry-run preparation, explicit disk creation, disk inspection, active-disk verification, disk compaction, metadata-only repair, spawn Compatibility Mode backends, stop dry-run backends, and report runner/QMP status through its socket API. The macOS dashboard Storage Maintenance panel uses those same `verify_disk` and `compact_disk` responses to show the active disk path, qemu-img command, check report or backup path, duration, and refreshed chain metadata without inventing a separate storage manager. The dashboard metadata repair panel/action invokes the daemon `repair_metadata` path and may show repaired/no-op status, actions, timestamp, and VM bundle path. That repair surface is metadata-only: it does not create disks or replace corrupt JSON. Daemon spawn follows the same disk rule as the CLI: missing `qcow2` disks are reported with the `qemu-img create` command and QEMU is not started. Spawned QEMU children started through the daemon are kept in an in-memory supervisor registry. The daemon polls that registry on a short interval, so exited child processes are reconciled even when no client request arrives. When a QMP socket is available, the daemon attaches a short-timeout QMP client to the supervised backend, drains a bounded batch of async events on each reconcile tick, consumes terminal events such as `SHUTDOWN`, and falls back to status polling when no event stream is attached or the stream has to be reset.
 
-This is not yet a complete QEMU process supervisor or storage manager. The next steps are to make QMP supervision fully event-driven across longer backend lifetimes, add real suspend memory serialization/restoration, and connect the application-consistent snapshot preflight metadata to production guest-agent freeze/thaw and app-quiescing execution.
+The remaining Compatibility Mode storage/supervision work is now narrower: make
+QMP supervision fully event-driven across longer backend lifetimes, add real
+suspend memory serialization/restoration, and add higher-level application
+quiescing on top of the verified guest filesystem freeze/thaw boundary.
