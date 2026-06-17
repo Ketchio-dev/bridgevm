@@ -1,4 +1,4 @@
-use bridgevm_config::{Boot, BootMode, VmManifest, VmMode};
+use bridgevm_config::{Boot, BootMode, SharedFolder, VmManifest, VmMode};
 use bridgevm_network::{
     plan_network, NetworkBackend, NetworkMode, NetworkPlan, NetworkPlanError, PortForwardRule,
 };
@@ -154,6 +154,70 @@ pub struct AppleVzLaunchSpec {
     pub integration: AppleVzIntegrationSpec,
     pub logs: AppleVzLogSpec,
     pub readiness: AppleVzReadinessSpec,
+    /// Virtio-FS shared directory handed to the AppleVzRunner helper. The Swift
+    /// side only attaches a single directory (`VZSingleDirectoryShare`), so this
+    /// carries the first approved `SharedFolder`; see [`build_fast_plan`] for how
+    /// extra folders are surfaced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub share: Option<AppleVzShareSpec>,
+}
+
+/// Single Virtio-FS shared directory destined for `--share-dir`/`--share-tag`
+/// (and optionally `--share-read-only`) on the AppleVzRunner helper.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppleVzShareSpec {
+    /// Host path passed to `--share-dir`.
+    pub host_path: String,
+    /// Share tag passed to `--share-tag` (the folder `name`, or `"share"`).
+    pub tag: String,
+    /// When true, emit `--share-read-only`.
+    pub read_only: bool,
+}
+
+/// Default Virtio-FS share tag, matching the AppleVzRunner Swift default
+/// (`AppleVzSharedDirectorySpec` tag "share").
+const DEFAULT_SHARE_TAG: &str = "share";
+
+/// Build the single Virtio-FS share to hand to the AppleVzRunner helper.
+///
+/// Returns `None` unless `integration.shared_folders` is enabled AND at least one
+/// approved `SharedFolder` is present. The Swift side only attaches a single
+/// directory (`VZSingleDirectoryShare`), so the FIRST folder is wired through;
+/// any additional folders are reported via `eprintln!` rather than silently
+/// dropped — multi-share needs Swift `VZMultipleDirectoryShare` (out of scope).
+fn build_share_spec(
+    shared_folders_enabled: bool,
+    shared_folders: &[SharedFolder],
+) -> Option<AppleVzShareSpec> {
+    if !shared_folders_enabled {
+        return None;
+    }
+    let first = shared_folders.first()?;
+    if shared_folders.len() > 1 {
+        let dropped = shared_folders[1..]
+            .iter()
+            .map(|folder| folder.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!(
+            "warning: Apple VZ Fast Mode shares only the first directory '{}' via \
+             VZSingleDirectoryShare; {} additional folder(s) ({}) were not attached — \
+             multi-share requires Swift VZMultipleDirectoryShare support (out of scope).",
+            first.name,
+            shared_folders.len() - 1,
+            dropped
+        );
+    }
+    let tag = if first.name.trim().is_empty() {
+        DEFAULT_SHARE_TAG.to_string()
+    } else {
+        first.name.clone()
+    };
+    Some(AppleVzShareSpec {
+        host_path: first.host_path.clone(),
+        tag,
+        read_only: first.read_only,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -170,6 +234,8 @@ pub struct AppleVzLaunchHandoff {
     pub runner_log_path: String,
     pub serial_log_path: String,
     pub integration: AppleVzIntegrationSpec,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub share: Option<AppleVzShareSpec>,
     pub readiness: AppleVzReadinessSpec,
 }
 
@@ -379,7 +445,7 @@ pub struct AppleVzReadinessBlocker {
 
 impl AppleVzPlan {
     pub fn render_runner_words(&self) -> Vec<String> {
-        vec![
+        let mut words = vec![
             "lightvm-runner".to_string(),
             self.vm_name.clone(),
             "--apple-vz".to_string(),
@@ -389,7 +455,17 @@ impl AppleVzPlan {
             self.config.memory.clone(),
             "--cpu".to_string(),
             self.config.cpu.clone(),
-        ]
+        ];
+        if let Some(share) = &self.launch_spec.share {
+            words.push("--share-dir".to_string());
+            words.push(share.host_path.clone());
+            words.push("--share-tag".to_string());
+            words.push(share.tag.clone());
+            if share.read_only {
+                words.push("--share-read-only".to_string());
+            }
+        }
+        words
     }
 
     pub fn launch_spec(&self) -> &AppleVzLaunchSpec {
@@ -421,6 +497,10 @@ pub fn build_fast_plan(
     let cpu = resolve_vcpu(&manifest.resources.cpu, &resource_decision);
     let boot = build_boot_spec(manifest, Path::new(&bundle_path))?;
     let readiness = build_readiness_spec(&boot, &disk_path, &AppleVzHostCapability::current());
+    let share = build_share_spec(
+        manifest.integration.shared_folders,
+        &manifest.shared_folders,
+    );
     let launch_spec = AppleVzLaunchSpec {
         vm_name: manifest.name.clone(),
         bundle_path: bundle_path.clone(),
@@ -453,6 +533,7 @@ pub fn build_fast_plan(
             virtiofs: manifest.integration.shared_folders,
         },
         logs: AppleVzLogSpec { runner_log_path },
+        share,
         readiness,
     };
 
@@ -533,6 +614,7 @@ pub fn build_launch_handoff(
         runner_log_path: spec.logs.runner_log_path.clone(),
         serial_log_path: spec.devices.serial_log_path.clone(),
         integration: spec.integration.clone(),
+        share: spec.share.clone(),
         readiness: spec.readiness.clone(),
     }
 }
@@ -922,7 +1004,16 @@ fn resolve_bundle_path(bundle_path: &Path, relative_or_absolute: &str) -> PathBu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bridgevm_config::{Boot, BootMode, Guest, VmManifest, VmMode};
+    use bridgevm_config::{Boot, BootMode, Guest, SharedFolder, VmManifest, VmMode};
+
+    fn shared_folder(name: &str, host_path: &str, read_only: bool) -> SharedFolder {
+        SharedFolder {
+            name: name.to_string(),
+            host_path: host_path.to_string(),
+            read_only,
+            host_path_token: None,
+        }
+    }
 
     fn valid_fast_manifest() -> VmManifest {
         VmManifest::new(
@@ -1622,5 +1713,138 @@ mod tests {
         assert!(
             matches!(error, AppleVzError::UnsupportedPrimaryDiskFormat(format) if format == "vmdk")
         );
+    }
+
+    #[test]
+    fn build_fast_plan_populates_share_from_first_approved_folder() {
+        let mut manifest = valid_fast_manifest();
+        manifest.integration.shared_folders = true;
+        manifest.shared_folders = vec![shared_folder("workspace", "/Users/me/work", true)];
+
+        let plan = build_fast_plan(&manifest, Path::new("/tmp/ubuntu-fast.vmbridge")).unwrap();
+        let share = plan
+            .launch_spec
+            .share
+            .as_ref()
+            .expect("share spec should be populated when a folder is approved");
+
+        assert_eq!(share.host_path, "/Users/me/work");
+        assert_eq!(share.tag, "workspace");
+        assert!(share.read_only);
+    }
+
+    #[test]
+    fn build_fast_plan_omits_share_when_no_folders_present() {
+        let mut manifest = valid_fast_manifest();
+        manifest.integration.shared_folders = true;
+        manifest.shared_folders = Vec::new();
+
+        let plan = build_fast_plan(&manifest, Path::new("/tmp/ubuntu-fast.vmbridge")).unwrap();
+
+        assert!(plan.launch_spec.share.is_none());
+    }
+
+    #[test]
+    fn build_fast_plan_omits_share_when_integration_flag_off() {
+        let mut manifest = valid_fast_manifest();
+        manifest.integration.shared_folders = false;
+        manifest.shared_folders = vec![shared_folder("workspace", "/Users/me/work", false)];
+
+        let plan = build_fast_plan(&manifest, Path::new("/tmp/ubuntu-fast.vmbridge")).unwrap();
+
+        assert!(plan.launch_spec.share.is_none());
+    }
+
+    #[test]
+    fn build_share_spec_defaults_tag_to_share_for_empty_name() {
+        let share = build_share_spec(true, &[shared_folder("", "/Users/me/work", false)])
+            .expect("share should be built when enabled with a folder");
+
+        assert_eq!(share.tag, "share");
+        assert_eq!(share.host_path, "/Users/me/work");
+        assert!(!share.read_only);
+    }
+
+    #[test]
+    fn build_share_spec_wires_first_folder_and_keeps_extras_for_warning() {
+        // Multiple folders: only the first is attached (single-directory Swift
+        // limitation). The function still returns the first; the extras are
+        // surfaced via eprintln! rather than dropped silently.
+        let folders = vec![
+            shared_folder("first", "/Users/me/first", false),
+            shared_folder("second", "/Users/me/second", true),
+        ];
+        let share = build_share_spec(true, &folders).expect("first folder should be wired");
+
+        assert_eq!(share.host_path, "/Users/me/first");
+        assert_eq!(share.tag, "first");
+        assert!(!share.read_only);
+    }
+
+    #[test]
+    fn render_runner_words_emits_share_flags() {
+        let mut manifest = valid_fast_manifest();
+        manifest.integration.shared_folders = true;
+        manifest.shared_folders = vec![shared_folder("workspace", "/Users/me/work", true)];
+
+        let plan = build_fast_plan(&manifest, Path::new("/tmp/ubuntu-fast.vmbridge")).unwrap();
+        let words = plan.render_runner_words();
+
+        let share_dir = words.iter().position(|w| w == "--share-dir").unwrap();
+        assert_eq!(words[share_dir + 1], "/Users/me/work");
+        let share_tag = words.iter().position(|w| w == "--share-tag").unwrap();
+        assert_eq!(words[share_tag + 1], "workspace");
+        assert!(words.iter().any(|w| w == "--share-read-only"));
+    }
+
+    #[test]
+    fn render_runner_words_omits_share_read_only_for_writable_share() {
+        let mut manifest = valid_fast_manifest();
+        manifest.integration.shared_folders = true;
+        manifest.shared_folders = vec![shared_folder("workspace", "/Users/me/work", false)];
+
+        let plan = build_fast_plan(&manifest, Path::new("/tmp/ubuntu-fast.vmbridge")).unwrap();
+        let words = plan.render_runner_words();
+
+        assert!(words.iter().any(|w| w == "--share-dir"));
+        assert!(words.iter().any(|w| w == "--share-tag"));
+        assert!(!words.iter().any(|w| w == "--share-read-only"));
+    }
+
+    #[test]
+    fn render_runner_words_emits_no_share_flags_when_share_absent() {
+        let manifest = valid_fast_manifest();
+        // Default manifest has no approved folders, so no share is planned.
+        let plan = build_fast_plan(&manifest, Path::new("/tmp/ubuntu-fast.vmbridge")).unwrap();
+        let words = plan.render_runner_words();
+
+        assert!(plan.launch_spec.share.is_none());
+        assert!(!words.iter().any(|w| w == "--share-dir"));
+        assert!(!words.iter().any(|w| w == "--share-tag"));
+        assert!(!words.iter().any(|w| w == "--share-read-only"));
+    }
+
+    #[test]
+    fn build_launch_handoff_carries_share_through() {
+        let mut manifest = valid_fast_manifest();
+        manifest.integration.shared_folders = true;
+        manifest.shared_folders = vec![shared_folder("workspace", "/Users/me/work", true)];
+
+        let plan = build_fast_plan(&manifest, Path::new("/tmp/ubuntu-fast.vmbridge")).unwrap();
+        let handoff = build_launch_handoff(plan.launch_spec(), None);
+
+        let share = handoff.share.expect("handoff should carry the share spec");
+        assert_eq!(share.host_path, "/Users/me/work");
+        assert_eq!(share.tag, "workspace");
+        assert!(share.read_only);
+    }
+
+    #[test]
+    fn build_launch_handoff_omits_share_when_none_planned() {
+        let manifest = valid_fast_manifest();
+        let plan = build_fast_plan(&manifest, Path::new("/tmp/ubuntu-fast.vmbridge")).unwrap();
+        let handoff = build_launch_handoff(plan.launch_spec(), None);
+
+        assert!(handoff.share.is_none());
     }
 }

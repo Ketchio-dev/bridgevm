@@ -192,6 +192,17 @@ fn launch_handoff(
         if apple_vz_display {
             launcher = launcher.arg("--display");
         }
+        // Shared folder: forward --share-dir/--share-tag (and --share-read-only)
+        // so AppleVzRunner attaches the Virtio-FS VZSingleDirectoryShare. The
+        // share comes from the launch spec / handoff (planned in build_fast_plan
+        // from the manifest's approved shared folders).
+        if let Some(share) = &handoff.share {
+            launcher = launcher.arg("--share-dir").arg(share.host_path.clone());
+            launcher = launcher.arg("--share-tag").arg(share.tag.clone());
+            if share.read_only {
+                launcher = launcher.arg("--share-read-only");
+            }
+        }
         launch_with_apple_vz(&launcher, handoff)
     } else {
         launch_with_apple_vz(&UnsupportedAppleVzLauncher, handoff)
@@ -319,7 +330,7 @@ mod tests {
     use bridgevm_apple_vz::{
         AppleVzBootSpec, AppleVzDeviceSpec, AppleVzDiskSpec, AppleVzGuestSpec,
         AppleVzIntegrationSpec, AppleVzLogSpec, AppleVzPathSpec, AppleVzReadinessBlocker,
-        AppleVzResourceSpec,
+        AppleVzResourceSpec, AppleVzShareSpec,
     };
     use bridgevm_config::BootMode;
     use std::path::PathBuf;
@@ -638,6 +649,100 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn launch_handoff_forwards_share_dir_to_helper() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = std::env::temp_dir().join(format!(
+            "lightvm-runner-apple-vz-share-dir-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&temp);
+        std::fs::create_dir_all(&temp).unwrap();
+        let helper = temp.join("helper.sh");
+        let captured_arg = temp.join("arg.txt");
+        std::fs::write(
+            &helper,
+            format!(
+                "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' \"$@\" > '{}'\n",
+                captured_arg.display()
+            ),
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&helper).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&helper, permissions).unwrap();
+
+        let mut spec = launch_spec_with_readiness(true, Vec::new());
+        spec.share = Some(AppleVzShareSpec {
+            host_path: "/Users/me/work".to_string(),
+            tag: "workspace".to_string(),
+            read_only: true,
+        });
+        launch_handoff(&spec, None, Some(&helper), true, None, None, None, None, false)
+            .expect("helper launch should succeed");
+
+        let captured = std::fs::read_to_string(&captured_arg).unwrap();
+        assert!(
+            captured.contains("--share-dir\n/Users/me/work"),
+            "helper did not receive --share-dir: {captured}"
+        );
+        assert!(
+            captured.contains("--share-tag\nworkspace"),
+            "helper did not receive --share-tag: {captured}"
+        );
+        assert!(
+            captured.contains("--share-read-only"),
+            "helper did not receive --share-read-only: {captured}"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn launch_handoff_omits_share_flags_when_no_share_planned() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = std::env::temp_dir().join(format!(
+            "lightvm-runner-apple-vz-no-share-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&temp);
+        std::fs::create_dir_all(&temp).unwrap();
+        let helper = temp.join("helper.sh");
+        let captured_arg = temp.join("arg.txt");
+        std::fs::write(
+            &helper,
+            format!(
+                "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' \"$@\" > '{}'\n",
+                captured_arg.display()
+            ),
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&helper).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&helper, permissions).unwrap();
+
+        // Default spec carries no share, so no --share-* flags should reach the helper.
+        let spec = launch_spec_with_readiness(true, Vec::new());
+        launch_handoff(&spec, None, Some(&helper), true, None, None, None, None, false)
+            .expect("helper launch should succeed");
+
+        let captured = std::fs::read_to_string(&captured_arg).unwrap();
+        assert!(
+            !captured.contains("--share-dir"),
+            "helper unexpectedly received --share-dir: {captured}"
+        );
+        assert!(
+            !captured.contains("--share-tag"),
+            "helper unexpectedly received --share-tag: {captured}"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
     fn launch_spec_with_readiness(
         ready: bool,
         blockers: Vec<AppleVzReadinessBlocker>,
@@ -686,6 +791,7 @@ mod tests {
             logs: AppleVzLogSpec {
                 runner_log_path: "/tmp/dev.vmbridge/logs/lightvm.log".to_string(),
             },
+            share: None,
             readiness: AppleVzReadinessSpec { ready, blockers },
         }
     }
