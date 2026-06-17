@@ -960,6 +960,10 @@ impl VmStore {
             } else {
                 self.rebase_copied_bundle_metadata(&source, &output, &manifest)?;
             }
+            // Make the clone an independent VM: drop the source's persisted
+            // per-VM identity and transient runtime state so it is not a
+            // network/identity duplicate and starts stopped/clean.
+            self.reset_clone_runtime_identity(&output)?;
             manifest.write(&output.join("manifest.yaml"))?;
             let metadata = VmCloneMetadata {
                 vm: manifest.name,
@@ -2161,6 +2165,61 @@ impl VmStore {
                 write_json_pretty_atomic(&path, &metadata)?;
             }
         }
+
+        Ok(())
+    }
+
+    /// Reset a freshly-copied clone bundle so it is an independent VM rather than
+    /// a duplicate of the source on the network/host.
+    ///
+    /// A bundle copy duplicates everything, including per-VM identity and
+    /// transient runtime state. For a clone we must:
+    /// - drop the persisted per-VM identity (Apple VZ machine identifier and the
+    ///   NAT MAC address) so the clone regenerates fresh identity on next launch
+    ///   and is not a network/identity duplicate of the source;
+    /// - issue a fresh guest-tools token (the source's credential must not be
+    ///   reused);
+    /// - drop transient runner metadata and reset runtime state to Stopped so the
+    ///   clone starts clean (no inherited pid/log pointers into the source's run);
+    /// - drop any inherited Fast Mode saved-state suspend image, which is keyed
+    ///   by the source's name and identity and would otherwise leave the clone
+    ///   marked suspended against state it can never restore.
+    ///
+    /// Snapshot/disk overlay metadata is rebased separately (full clone) or
+    /// dropped (linked clone) by the callers.
+    fn reset_clone_runtime_identity(&self, output: &Path) -> Result<(), StorageError> {
+        let metadata_dir = output.join("metadata");
+
+        // Per-VM identity persisted by the Apple VZ runner (machine identifier +
+        // NAT MAC). Removing them makes the runner mint fresh identity on the
+        // clone's next launch instead of cloning the source's.
+        for identity_file in [
+            metadata_dir.join("machine-identifier.bin"),
+            metadata_dir.join("network-mac-address.txt"),
+        ] {
+            if identity_file.exists() {
+                fs::remove_file(&identity_file)?;
+            }
+        }
+
+        // Fresh guest-tools token: the clone must not share the source's credential.
+        self.write_guest_tools_token_at(output, &new_guest_tools_token()?)?;
+
+        // Transient runner metadata points at the source's run (pid, log files).
+        let runner_path = metadata_dir.join("runner.json");
+        if runner_path.exists() {
+            fs::remove_file(&runner_path)?;
+        }
+
+        // Fast Mode saved-state images live under metadata/suspend-images and are
+        // keyed by the source's name/identity; the clone cannot restore them.
+        let fast_suspend_dir = metadata_dir.join("suspend-images");
+        if fast_suspend_dir.exists() {
+            fs::remove_dir_all(&fast_suspend_dir)?;
+        }
+
+        // The clone starts stopped/clean regardless of the source's live state.
+        self.write_state_at(output, VmRuntimeState::Stopped)?;
 
         Ok(())
     }
@@ -3993,6 +4052,124 @@ mod tests {
         assert!(status.contains('1'));
         assert_eq!(stderr, "qemu-img failed");
         assert!(!store.bundle_path("dev-linked").exists());
+    }
+
+    #[test]
+    fn full_clone_copies_disk_and_manifest_with_new_name_and_hostname() {
+        let store = temp_store();
+        store.create_vm(&manifest("dev")).unwrap();
+        let primary = store.prepare_primary_disk("dev").unwrap();
+        fs::write(&primary.path, b"fake disk contents").unwrap();
+
+        let clone = store.clone_vm("dev", "dev-copy", false).unwrap();
+        assert!(!clone.linked);
+
+        let (clone_bundle, clone_manifest) = store.get_vm("dev-copy").unwrap();
+        assert_eq!(clone_manifest.name, "dev-copy");
+        assert_eq!(clone_manifest.network.hostname, "dev-copy.bridgevm.local");
+
+        // Primary disk file was copied into the clone bundle (independent file).
+        let clone_disk = resolve_bundle_path(&clone_bundle, &clone_manifest.storage.primary.path);
+        assert!(clone_disk.starts_with(&clone_bundle));
+        assert_eq!(fs::read(&clone_disk).unwrap(), b"fake disk contents");
+        assert_ne!(clone_disk, primary.path);
+
+        // Source is untouched.
+        let (_, source_manifest) = store.get_vm("dev").unwrap();
+        assert_eq!(source_manifest.name, "dev");
+        assert_eq!(source_manifest.network.hostname, "dev.bridgevm.local");
+    }
+
+    #[test]
+    fn full_clone_resets_per_vm_identity_and_runtime_state() {
+        let store = temp_store();
+        let source_bundle = store.create_vm(&manifest("dev")).unwrap();
+        let primary = store.prepare_primary_disk("dev").unwrap();
+        fs::write(&primary.path, b"fake disk").unwrap();
+
+        // Persisted per-VM identity written by the Apple VZ runner.
+        let source_metadata = source_bundle.join("metadata");
+        fs::write(source_metadata.join("machine-identifier.bin"), b"source-id").unwrap();
+        fs::write(
+            source_metadata.join("network-mac-address.txt"),
+            b"52:54:00:aa:bb:cc",
+        )
+        .unwrap();
+        // Transient runtime state that must not be inherited.
+        fs::write(source_metadata.join("runner.json"), b"{}").unwrap();
+        let fast_suspend = source_metadata.join("suspend-images");
+        fs::create_dir_all(&fast_suspend).unwrap();
+        fs::write(fast_suspend.join("dev.bin"), b"saved-state").unwrap();
+        store
+            .write_state_at(&source_bundle, VmRuntimeState::Suspended)
+            .unwrap();
+        let source_token = store.guest_tools_token("dev").unwrap();
+
+        let clone_bundle = store.clone_vm("dev", "dev-copy", false).unwrap().output;
+        let clone_metadata = clone_bundle.join("metadata");
+
+        // Identity dropped: regenerated fresh on next launch, not the source's.
+        assert!(!clone_metadata.join("machine-identifier.bin").exists());
+        assert!(!clone_metadata.join("network-mac-address.txt").exists());
+        // Transient runtime state excluded.
+        assert!(!clone_metadata.join("runner.json").exists());
+        assert!(!clone_metadata.join("suspend-images").exists());
+
+        // Guest-tools token regenerated (distinct credential).
+        let clone_token = store.guest_tools_token("dev-copy").unwrap();
+        assert_ne!(clone_token.token, source_token.token);
+
+        // Clone starts stopped/clean even though the source was suspended.
+        let clone_state = store.state("dev-copy").unwrap();
+        assert_eq!(clone_state.state, VmRuntimeState::Stopped);
+
+        // Source identity is preserved.
+        assert!(source_metadata.join("machine-identifier.bin").exists());
+        assert!(source_metadata.join("network-mac-address.txt").exists());
+    }
+
+    #[test]
+    fn full_clone_is_independent_of_source() {
+        let store = temp_store();
+        store.create_vm(&manifest("dev")).unwrap();
+        let primary = store.prepare_primary_disk("dev").unwrap();
+        fs::write(&primary.path, b"fake disk").unwrap();
+
+        let clone_bundle = store.clone_vm("dev", "dev-copy", false).unwrap().output;
+
+        // Mutate the clone's manifest and confirm the source is unaffected.
+        let (_, mut clone_manifest) = store.get_vm("dev-copy").unwrap();
+        clone_manifest.guest.os = "windows".to_string();
+        clone_manifest
+            .write(&clone_bundle.join("manifest.yaml"))
+            .unwrap();
+
+        let (_, source_manifest) = store.get_vm("dev").unwrap();
+        assert_eq!(source_manifest.guest.os, "ubuntu");
+        let (_, reread_clone) = store.get_vm("dev-copy").unwrap();
+        assert_eq!(reread_clone.guest.os, "windows");
+    }
+
+    #[test]
+    fn full_clone_rejects_existing_destination() {
+        let store = temp_store();
+        store.create_vm(&manifest("dev")).unwrap();
+        store.create_vm(&manifest("taken")).unwrap();
+
+        let error = store.clone_vm("dev", "taken", false).unwrap_err();
+        assert!(matches!(error, StorageError::AlreadyExists(name) if name == "taken"));
+        // Existing destination bundle is left intact.
+        assert!(store.get_vm("taken").is_ok());
+    }
+
+    #[test]
+    fn full_clone_rejects_missing_source() {
+        let store = temp_store();
+        store.ensure().unwrap();
+
+        let error = store.clone_vm("ghost", "dev-copy", false).unwrap_err();
+        assert!(matches!(error, StorageError::NotFound(name) if name == "ghost"));
+        assert!(!store.bundle_path("dev-copy").exists());
     }
 
     #[test]

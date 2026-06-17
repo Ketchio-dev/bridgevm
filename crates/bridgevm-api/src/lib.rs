@@ -11119,9 +11119,16 @@ mod tests {
         assert_eq!(clone.vm, "dev-copy");
         assert!(clone.output.join("manifest.yaml").exists());
         assert!(clone.output.join("metadata").join("clone.json").exists());
-        let (_, manifest) = store.get_vm("dev-copy").unwrap();
+        let (clone_bundle, manifest) = store.get_vm("dev-copy").unwrap();
         assert_eq!(manifest.name, "dev-copy");
         assert_eq!(manifest.network.hostname, "dev-copy.bridgevm.local");
+
+        // The clone is a distinct VM and the source is left unchanged.
+        let (source_bundle, source_manifest) = store.get_vm("dev").unwrap();
+        assert_eq!(source_manifest.name, "dev");
+        assert_eq!(source_manifest.network.hostname, "dev.bridgevm.local");
+        assert_ne!(source_bundle, clone_bundle);
+        assert_eq!(store.state("dev-copy").unwrap().state, VmRuntimeState::Stopped);
     }
 
     #[test]
