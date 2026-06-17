@@ -316,7 +316,7 @@ assert_fails_contains \
   "Apple Virtualization.framework launch requires --apple-vz-runner" \
   lightvm_runner --launch-spec "$LAUNCH_SPEC" --require-ready --launch
 assert_fails_contains \
-  "lightvm-runner-launch-spec-ready-swift-helper-unimplemented" \
+  "lightvm-runner-launch-spec-ready-real-start-requires-opt-in" \
   "real Apple VZ start requires --allow-real-vz-start" \
   lightvm_runner --launch-spec "$LAUNCH_SPEC" --require-ready --launch --apple-vz-runner "$APPLE_VZ_RUNNER_BIN"
 
