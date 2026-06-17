@@ -241,6 +241,8 @@ pub struct VmManifest {
     pub security: Security,
     #[serde(rename = "sharedFolders", default)]
     pub shared_folders: Vec<SharedFolder>,
+    #[serde(default, skip_serializing_if = "Firmware::is_default")]
+    pub firmware: Firmware,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -288,6 +290,42 @@ pub struct PrimaryDisk {
     pub size: String,
     pub format: String,
     pub discard: bool,
+}
+
+/// Optional Windows 11-class firmware/hardware requirements for Compatibility
+/// Mode (QEMU aarch64). Every field defaults off, so existing manifests and the
+/// already-proven installer-reachability path are unchanged. Enabling a field
+/// wires the corresponding QEMU device(s) for a full Windows 11 install; each
+/// also needs an external host resource at runtime (see field docs). Ignored
+/// outside aarch64 Compatibility Mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct Firmware {
+    /// Attach the primary disk as an NVMe device (`-device nvme`) instead of
+    /// virtio-blk. Windows 11 Setup recognizes NVMe natively, so no injected
+    /// virtio driver is needed to see the install target.
+    #[serde(rename = "nvmeTarget", default)]
+    pub nvme_target: bool,
+    /// Attach an emulated TPM 2.0 (`tpm-tis-device`) backed by an external
+    /// `swtpm` process listening on `<bundle>/metadata/swtpm.sock`. The swtpm
+    /// process must be started separately (host dependency).
+    #[serde(default)]
+    pub tpm: bool,
+    /// Boot a Secure Boot-capable UEFI: a read-only edk2 code pflash plus a
+    /// writable per-bundle variable store (`<bundle>/metadata/edk2-vars.fd`)
+    /// instead of the plain read-only `-bios`. The varstore must be seeded from
+    /// an edk2 secure-boot template with Microsoft keys enrolled (host
+    /// resource); persisting it in the bundle is what lets Secure Boot state
+    /// survive across boots.
+    #[serde(rename = "secureBoot", default)]
+    pub secure_boot: bool,
+}
+
+impl Firmware {
+    /// True when no firmware feature is requested — used to keep legacy
+    /// manifests byte-stable on round-trip (the section is omitted entirely).
+    pub fn is_default(&self) -> bool {
+        *self == Firmware::default()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -517,6 +555,7 @@ impl VmManifest {
                 signed_agent_updates: true,
             },
             shared_folders: Vec::new(),
+            firmware: Firmware::default(),
         }
     }
 
@@ -1046,6 +1085,57 @@ sharedFolders:
                 field: "installerImage"
             }
         ));
+    }
+
+    #[test]
+    fn firmware_defaults_disabled_and_omitted_from_serialization() {
+        let manifest = VmManifest::new(
+            "win11",
+            VmMode::Compatibility,
+            Guest {
+                os: "windows".to_string(),
+                version: Some("11".to_string()),
+                arch: "arm64".to_string(),
+            },
+            "80GiB",
+        );
+        assert!(manifest.firmware.is_default());
+        assert!(
+            !manifest.firmware.nvme_target
+                && !manifest.firmware.tpm
+                && !manifest.firmware.secure_boot
+        );
+        // Legacy manifests never carried a firmware section, so a default one
+        // must be omitted from output and deserialize back to the default.
+        let yaml = serde_yaml::to_string(&manifest).unwrap();
+        assert!(!yaml.contains("firmware"), "default firmware leaked: {yaml}");
+        let decoded: VmManifest = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(decoded.firmware, Firmware::default());
+    }
+
+    #[test]
+    fn firmware_round_trips_when_enabled() {
+        let mut manifest = VmManifest::new(
+            "win11",
+            VmMode::Compatibility,
+            Guest {
+                os: "windows".to_string(),
+                version: Some("11".to_string()),
+                arch: "arm64".to_string(),
+            },
+            "80GiB",
+        );
+        manifest.firmware = Firmware {
+            nvme_target: true,
+            tpm: true,
+            secure_boot: true,
+        };
+        let yaml = serde_yaml::to_string(&manifest).unwrap();
+        assert!(yaml.contains("nvmeTarget"), "{yaml}");
+        assert!(yaml.contains("secureBoot"), "{yaml}");
+        let decoded: VmManifest = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(decoded.firmware, manifest.firmware);
+        assert!(!decoded.firmware.is_default());
     }
 
     #[test]

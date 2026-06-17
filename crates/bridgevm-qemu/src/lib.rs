@@ -194,6 +194,46 @@ impl QemuImgCommand {
     }
 }
 
+/// Build the `-drive` (and, for NVMe, `-device`) args for the primary disk. The
+/// install target is virtio-blk by default; `firmware.nvmeTarget` (aarch64 only)
+/// instead presents it as an NVMe device, which Windows 11 Setup recognizes
+/// natively. Either way the QMP block node-name is [`COMPAT_PRIMARY_BLOCK_NODE`]
+/// so snapshot/suspend are unaffected.
+fn primary_disk_args(manifest: &VmManifest, disk_path: &Path, is_aarch64: bool) -> Vec<String> {
+    let format = &manifest.storage.primary.format;
+    let discard = if manifest.storage.primary.discard {
+        "unmap"
+    } else {
+        "ignore"
+    };
+    if is_aarch64 && manifest.firmware.nvme_target {
+        vec![
+            "-drive".to_string(),
+            format!(
+                "file={},if=none,format={},discard={},node-name={},id={}",
+                escape_qemu_opt(disk_path.display()),
+                format,
+                discard,
+                COMPAT_PRIMARY_BLOCK_NODE,
+                COMPAT_PRIMARY_NVME_DRIVE
+            ),
+            "-device".to_string(),
+            format!("nvme,drive={},serial=bridgevm-nvme0", COMPAT_PRIMARY_NVME_DRIVE),
+        ]
+    } else {
+        vec![
+            "-drive".to_string(),
+            format!(
+                "file={},if=virtio,format={},discard={},node-name={}",
+                escape_qemu_opt(disk_path.display()),
+                format,
+                discard,
+                COMPAT_PRIMARY_BLOCK_NODE
+            ),
+        ]
+    }
+}
+
 pub fn build_compatibility_command(
     manifest: &VmManifest,
     bundle_path: &Path,
@@ -218,6 +258,7 @@ pub fn build_compatibility_command(
     .to_string();
 
     let disk_path = resolve_bundle_path(bundle_path, &manifest.storage.primary.path);
+    let is_aarch64 = arch == "arm64" || arch == "aarch64";
     let qmp_path = qmp_socket_path(bundle_path);
     let guest_tools_path = guest_tools_socket_path(bundle_path);
     let serial_log = bundle_path.join("logs").join("serial.log");
@@ -254,18 +295,6 @@ pub fn build_compatibility_command(
         memory_arg(&memory),
         "-smp".to_string(),
         cpu_arg(&cpu),
-        "-drive".to_string(),
-        format!(
-            "file={},if=virtio,format={},discard={},node-name={}",
-            escape_qemu_opt(disk_path.display()),
-            manifest.storage.primary.format,
-            if manifest.storage.primary.discard {
-                "unmap"
-            } else {
-                "ignore"
-            },
-            COMPAT_PRIMARY_BLOCK_NODE
-        ),
         "-netdev".to_string(),
         netdev_arg(manifest)?,
         "-device".to_string(),
@@ -287,16 +316,48 @@ pub fn build_compatibility_command(
         format!("file:{}", escape_qemu_opt(serial_log.display())),
     ];
 
-    if arch == "arm64" || arch == "aarch64" {
-        args.extend([
-            "-cpu".to_string(),
-            "host".to_string(),
-            "-bios".to_string(),
-            "edk2-aarch64-code.fd".to_string(),
-        ]);
+    // Primary disk: virtio-blk by default, or an NVMe target for Windows 11.
+    args.extend(primary_disk_args(manifest, &disk_path, is_aarch64));
+
+    if is_aarch64 {
+        args.extend(["-cpu".to_string(), "host".to_string()]);
+        if manifest.firmware.secure_boot {
+            // Secure Boot needs a persistent edk2 variable store (pflash) holding
+            // the enrolled Microsoft keys instead of the ephemeral read-only
+            // `-bios`. The code blob stays read-only; the per-bundle vars file
+            // must be seeded from an edk2 secure-boot template (host resource).
+            let vars_path = secure_boot_vars_path(bundle_path);
+            args.extend([
+                "-drive".to_string(),
+                "if=pflash,format=raw,unit=0,readonly=on,file=edk2-aarch64-code.fd".to_string(),
+                "-drive".to_string(),
+                format!(
+                    "if=pflash,format=raw,unit=1,file={}",
+                    escape_qemu_opt(vars_path.display())
+                ),
+            ]);
+        } else {
+            args.extend(["-bios".to_string(), "edk2-aarch64-code.fd".to_string()]);
+        }
+        if manifest.firmware.tpm {
+            // TPM 2.0 backed by an external swtpm process on a per-bundle socket
+            // (the swtpm process must be launched separately — host dependency).
+            let swtpm_sock = swtpm_socket_path(bundle_path);
+            args.extend([
+                "-chardev".to_string(),
+                format!(
+                    "socket,id=chrtpm,path={}",
+                    escape_qemu_opt(swtpm_sock.display())
+                ),
+                "-tpmdev".to_string(),
+                "emulator,id=tpm0,chardev=chrtpm".to_string(),
+                "-device".to_string(),
+                "tpm-tis-device,tpmdev=tpm0".to_string(),
+            ]);
+        }
     }
 
-    if (arch == "arm64" || arch == "aarch64")
+    if is_aarch64
         && manifest
             .boot
             .as_ref()
@@ -343,6 +404,19 @@ pub fn qmp_socket_path(bundle_path: &Path) -> PathBuf {
 
 pub fn guest_tools_socket_path(bundle_path: &Path) -> PathBuf {
     bundle_path.join("metadata").join("guest-tools.sock")
+}
+
+/// Socket an external `swtpm` process must listen on for the emulated TPM 2.0
+/// (`-tpmdev emulator,...,chardev`). Per-bundle so concurrent VMs don't collide.
+pub fn swtpm_socket_path(bundle_path: &Path) -> PathBuf {
+    bundle_path.join("metadata").join("swtpm.sock")
+}
+
+/// Per-bundle writable edk2 UEFI variable store used when Secure Boot is enabled
+/// (the `if=pflash,unit=1` device). Must be seeded from an edk2 secure-boot vars
+/// template with Microsoft keys enrolled before first boot.
+pub fn secure_boot_vars_path(bundle_path: &Path) -> PathBuf {
+    bundle_path.join("metadata").join("edk2-vars.fd")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -443,6 +517,11 @@ impl QmpCommand {
 /// Block node name QEMU assigns to the primary virtio drive in
 /// [`build_compatibility_command`] (the qcow2 that receives suspend snapshots).
 pub const COMPAT_PRIMARY_BLOCK_NODE: &str = "bridgevm-root";
+
+/// `-drive` id for the primary disk when attached as an NVMe target (Windows 11
+/// full-install firmware). The QMP block node-name stays [`COMPAT_PRIMARY_BLOCK_NODE`]
+/// so snapshot/suspend keep working regardless of the bus.
+pub const COMPAT_PRIMARY_NVME_DRIVE: &str = "bridgevm-nvme";
 
 /// Internal snapshot tag used for Compatibility Mode suspend/resume.
 pub const COMPAT_SUSPEND_SNAPSHOT_TAG: &str = "bridgevm-suspend";
@@ -1229,6 +1308,99 @@ mod tests {
         let error = build_compatibility_command(&manifest, Path::new("/tmp/win11.vmbridge"))
             .expect_err("missing installer image must fail");
         assert!(matches!(error, QemuError::MissingInstallerImage));
+    }
+
+    fn win11_firmware_manifest() -> VmManifest {
+        let mut manifest = VmManifest::new(
+            "win11-arm",
+            VmMode::Compatibility,
+            Guest {
+                os: "windows".to_string(),
+                version: Some("11".to_string()),
+                arch: "arm64".to_string(),
+            },
+            "128GiB",
+        );
+        manifest.display.renderer = "vnc".to_string();
+        manifest
+    }
+
+    #[test]
+    fn firmware_defaults_keep_bios_and_virtio_primary() {
+        let command = build_compatibility_command(
+            &win11_firmware_manifest(),
+            Path::new("/tmp/win11.vmbridge"),
+        )
+        .expect("compat command");
+        // Default firmware: read-only -bios, virtio-blk primary, no nvme/tpm/pflash.
+        assert!(command
+            .args
+            .windows(2)
+            .any(|p| p[0] == "-bios" && p[1] == "edk2-aarch64-code.fd"));
+        assert!(command
+            .args
+            .iter()
+            .any(|a| a.contains("if=virtio") && a.contains("node-name=bridgevm-root")));
+        assert!(!command.args.iter().any(|a| a.contains("nvme")));
+        assert!(!command.args.iter().any(|a| a.contains("tpm")));
+        assert!(!command.args.iter().any(|a| a.contains("pflash")));
+    }
+
+    #[test]
+    fn firmware_nvme_target_attaches_nvme_device() {
+        let mut manifest = win11_firmware_manifest();
+        manifest.firmware.nvme_target = true;
+        let command = build_compatibility_command(&manifest, Path::new("/tmp/win11.vmbridge"))
+            .expect("compat command");
+        // Primary disk presented as an NVMe device (no virtio-blk), QMP node-name
+        // preserved so snapshot/suspend still target the same block node.
+        assert!(command
+            .args
+            .windows(2)
+            .any(|p| p[0] == "-device"
+                && p[1] == "nvme,drive=bridgevm-nvme,serial=bridgevm-nvme0"));
+        assert!(command.args.iter().any(|a| a.contains("if=none")
+            && a.contains("id=bridgevm-nvme")
+            && a.contains("node-name=bridgevm-root")));
+        assert!(!command.args.iter().any(|a| a.contains("if=virtio")));
+    }
+
+    #[test]
+    fn firmware_tpm_wires_swtpm_emulator_device() {
+        let mut manifest = win11_firmware_manifest();
+        manifest.firmware.tpm = true;
+        let command = build_compatibility_command(&manifest, Path::new("/tmp/win11.vmbridge"))
+            .expect("compat command");
+        assert!(command
+            .args
+            .windows(2)
+            .any(|p| p[0] == "-tpmdev" && p[1] == "emulator,id=tpm0,chardev=chrtpm"));
+        assert!(command
+            .args
+            .windows(2)
+            .any(|p| p[0] == "-device" && p[1] == "tpm-tis-device,tpmdev=tpm0"));
+        assert!(command
+            .args
+            .iter()
+            .any(|a| a.contains("socket,id=chrtpm,path=") && a.contains("swtpm.sock")));
+    }
+
+    #[test]
+    fn firmware_secure_boot_swaps_bios_for_pflash_varstore() {
+        let mut manifest = win11_firmware_manifest();
+        manifest.firmware.secure_boot = true;
+        let command = build_compatibility_command(&manifest, Path::new("/tmp/win11.vmbridge"))
+            .expect("compat command");
+        // Read-only code blob + writable per-bundle vars store via pflash; the
+        // plain -bios is gone.
+        assert!(command
+            .args
+            .iter()
+            .any(|a| a == "if=pflash,format=raw,unit=0,readonly=on,file=edk2-aarch64-code.fd"));
+        assert!(command.args.iter().any(|a| a.contains("if=pflash")
+            && a.contains("unit=1")
+            && a.contains("/tmp/win11.vmbridge/metadata/edk2-vars.fd")));
+        assert!(!command.args.iter().any(|a| a == "-bios"));
     }
 
     #[test]
