@@ -123,6 +123,26 @@ final class AppleVzRunnerCoreTests: XCTestCase {
     XCTAssertTrue(configuration.networkDevices.first?.attachment is VZNATNetworkDeviceAttachment)
   }
 
+  func testBuildsVirtioSharedDirectoryDeviceWhenRequested() throws {
+    var spec = try decodeLaunchSpec(readyLinuxKernelLaunchSpecJSON)
+    let diskURL = try makeTemporaryRawDisk()
+    defer { try? FileManager.default.removeItem(at: diskURL) }
+    spec.disk.path = diskURL.path
+
+    let withShare = try AppleVzConfigurationBuilder.buildLinuxKernelConfiguration(
+      spec: spec,
+      sharedDirectory: AppleVzSharedDirectorySpec(
+        path: FileManager.default.temporaryDirectory.path,
+        tag: "share"
+      )
+    )
+    XCTAssertEqual(withShare.directorySharingDevices.count, 1)
+
+    // No share requested -> no directory-sharing device (unchanged default).
+    let plain = try AppleVzConfigurationBuilder.buildLinuxKernelConfiguration(spec: spec)
+    XCTAssertEqual(plain.directorySharingDevices.count, 0)
+  }
+
   func testRejectsQcow2LinuxKernelLaunchSpec() throws {
     var spec = try decodeLaunchSpec(readyLinuxKernelLaunchSpecJSON)
     spec.disk.format = "qcow2"

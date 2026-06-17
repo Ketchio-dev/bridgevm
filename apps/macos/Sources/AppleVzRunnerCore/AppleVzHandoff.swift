@@ -200,6 +200,7 @@ public enum AppleVzRunnerError: Error, LocalizedError, Equatable {
   case invalidMemory(String)
   case invalidCPU(String)
   case notReady([AppleVzReadinessBlocker])
+  case sharedDirectoryRequiresMacOS13
 
   public var errorDescription: String? {
     switch self {
@@ -221,6 +222,8 @@ public enum AppleVzRunnerError: Error, LocalizedError, Equatable {
       return "AppleVzRunner requires numeric CPU count, got \(cpu)"
     case .notReady(let blockers):
       return "AppleVzRunner handoff is not launch-ready: \(Self.blockerSummary(blockers))"
+    case .sharedDirectoryRequiresMacOS13:
+      return "AppleVzRunner shared folders (--share-dir) require macOS 13 or later"
     }
   }
 

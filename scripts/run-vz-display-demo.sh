@@ -114,11 +114,18 @@ PY
 echo "==> Bundle staged at $BUNDLE"
 echo "==> Runner: $RUNNER"
 
+# Share a host folder into the guest (mount in-guest with:
+#   mount -t virtiofs hostshare /mnt/hostshare).
+SHARE_DIR="$DEMO_DIR/hostshare"
+mkdir -p "$SHARE_DIR"
+echo "hello from the host" > "$SHARE_DIR/README.txt"
+
 # 5. Launch.
 if [[ "$MODE" == "check" ]]; then
-  echo "==> Headless graphics boot check (12s, no window)..."
+  echo "==> Headless graphics + shared-folder boot check (12s, no window)..."
   BRIDGEVM_APPLE_VZ_ALLOW_REAL_START=1 "$RUNNER" \
-    --graphics --allow-real-vz-start --stop-after-seconds 12 \
+    --graphics --share-dir "$SHARE_DIR" --share-tag hostshare \
+    --allow-real-vz-start --stop-after-seconds 12 \
     --handoff-json "$HANDOFF" >"$BUNDLE/logs/runner.log" 2>&1 || true
   if grep -aqE 'Run /init|Debian|installer' "$SERIAL_LOG" 2>/dev/null; then
     echo "PASS: the guest booted with the Virtio GPU graphics device attached (headless)."
@@ -131,6 +138,8 @@ if [[ "$MODE" == "check" ]]; then
 else
   echo "==> Opening the embedded display window (close it to stop the VM)..."
   echo "    (must be a GUI login session; for headless/SSH use --check)"
+  echo "    In the guest: mount -t virtiofs hostshare /mnt && cat /mnt/README.txt"
   BRIDGEVM_APPLE_VZ_ALLOW_REAL_START=1 exec "$RUNNER" \
-    --display --allow-real-vz-start --handoff-json "$HANDOFF"
+    --display --share-dir "$SHARE_DIR" --share-tag hostshare \
+    --allow-real-vz-start --handoff-json "$HANDOFF"
 fi

@@ -133,7 +133,7 @@ public enum AppleVzRunnerCommand {
     }
   }
 
-  fileprivate static let usage = "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display] [--graphics]"
+  fileprivate static let usage = "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display] [--graphics] [--share-dir PATH] [--share-tag TAG] [--share-read-only]"
 
   private static func isHelpRequested(_ arguments: [String]) -> Bool {
     arguments.contains { argument in
@@ -204,6 +204,9 @@ public enum AppleVzRunnerCommand {
     var restoreStatePath: String?
     var displayWindow = false
     var graphicsHeadless = false
+    var sharedDirectoryPath: String?
+    var sharedDirectoryTag: String?
+    var sharedDirectoryReadOnly = false
     var index = 0
 
     while index < arguments.count {
@@ -274,6 +277,23 @@ public enum AppleVzRunnerCommand {
       case "--graphics":
         graphicsHeadless = true
         index += 1
+      case "--share-dir":
+        let valueIndex = index + 1
+        guard valueIndex < arguments.count else {
+          throw AppleVzRunnerCommandError.missingValue(argument)
+        }
+        sharedDirectoryPath = arguments[valueIndex]
+        index += 2
+      case "--share-tag":
+        let valueIndex = index + 1
+        guard valueIndex < arguments.count else {
+          throw AppleVzRunnerCommandError.missingValue(argument)
+        }
+        sharedDirectoryTag = arguments[valueIndex]
+        index += 2
+      case "--share-read-only":
+        sharedDirectoryReadOnly = true
+        index += 1
       case "--help", "-h":
         throw AppleVzRunnerCommandError.help
       default:
@@ -295,7 +315,10 @@ public enum AppleVzRunnerCommand {
         saveStatePath: saveStatePath,
         restoreStatePath: restoreStatePath,
         displayWindow: displayWindow,
-        graphicsHeadlessVerification: graphicsHeadless
+        graphicsHeadlessVerification: graphicsHeadless,
+        sharedDirectoryPath: sharedDirectoryPath,
+        sharedDirectoryTag: sharedDirectoryTag,
+        sharedDirectoryReadOnly: sharedDirectoryReadOnly
       )
     )
   }

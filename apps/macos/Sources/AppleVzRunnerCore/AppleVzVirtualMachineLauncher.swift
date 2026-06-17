@@ -32,6 +32,11 @@ public struct AppleVzLaunchOptions: Equatable {
   /// console) on a host with no window server, which the windowed `displayWindow`
   /// path cannot do.
   public var graphicsHeadlessVerification: Bool
+  /// Host directory shared into the guest over VZ-native Virtio FS, plus its
+  /// mount tag. The guest mounts it with `mount -t virtiofs <tag> <dir>`.
+  public var sharedDirectoryPath: String?
+  public var sharedDirectoryTag: String?
+  public var sharedDirectoryReadOnly: Bool
 
   public init(
     stopAfterSeconds: UInt64? = nil,
@@ -39,7 +44,10 @@ public struct AppleVzLaunchOptions: Equatable {
     saveStatePath: String? = nil,
     restoreStatePath: String? = nil,
     displayWindow: Bool = false,
-    graphicsHeadlessVerification: Bool = false
+    graphicsHeadlessVerification: Bool = false,
+    sharedDirectoryPath: String? = nil,
+    sharedDirectoryTag: String? = nil,
+    sharedDirectoryReadOnly: Bool = false
   ) {
     self.stopAfterSeconds = stopAfterSeconds
     self.forceStopGraceSeconds = forceStopGraceSeconds
@@ -47,6 +55,24 @@ public struct AppleVzLaunchOptions: Equatable {
     self.restoreStatePath = restoreStatePath
     self.displayWindow = displayWindow
     self.graphicsHeadlessVerification = graphicsHeadlessVerification
+    self.sharedDirectoryPath = sharedDirectoryPath
+    self.sharedDirectoryTag = sharedDirectoryTag
+    self.sharedDirectoryReadOnly = sharedDirectoryReadOnly
+  }
+
+  /// The shared-directory spec assembled from the path/tag options, if a path
+  /// was provided (tag defaults to "share").
+  var sharedDirectorySpec: AppleVzSharedDirectorySpec? {
+    #if canImport(Virtualization)
+    guard let path = sharedDirectoryPath else { return nil }
+    return AppleVzSharedDirectorySpec(
+      path: path,
+      tag: sharedDirectoryTag ?? "share",
+      readOnly: sharedDirectoryReadOnly
+    )
+    #else
+    return nil
+    #endif
   }
 }
 
@@ -341,9 +367,10 @@ public extension AppleVzVirtualMachineLauncher {
         throw AppleVzRunnerCommandError.displayRequiresMacOS14
       }
       configuration = try AppleVzConfigurationBuilder.buildLinuxKernelConfigurationWithDisplay(
-        spec: spec)
+        spec: spec, sharedDirectory: options.sharedDirectorySpec)
     } else {
-      configuration = try AppleVzConfigurationBuilder.buildLinuxKernelConfiguration(spec: spec)
+      configuration = try AppleVzConfigurationBuilder.buildLinuxKernelConfiguration(
+        spec: spec, sharedDirectory: options.sharedDirectorySpec)
     }
     try configuration.validate()
 
@@ -650,7 +677,7 @@ public extension AppleVzVirtualMachineLauncher {
     options: AppleVzLaunchOptions = AppleVzLaunchOptions()
   ) throws {
     let configuration = try AppleVzConfigurationBuilder.buildLinuxKernelConfigurationWithDisplay(
-      spec: spec)
+      spec: spec, sharedDirectory: options.sharedDirectorySpec)
     try configuration.validate()
 
     print("AppleVzRunner starting VM with display: \(spec.vmName)")

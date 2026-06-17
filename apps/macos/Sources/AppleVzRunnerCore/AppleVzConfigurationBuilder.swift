@@ -3,9 +3,24 @@ import Foundation
 #if canImport(Virtualization)
 import Virtualization
 
+/// A host directory shared into the guest over VZ-native Virtio FS (no
+/// `virtiofsd`; the guest mounts it with `mount -t virtiofs <tag> <dir>`).
+public struct AppleVzSharedDirectorySpec: Equatable {
+  public var path: String
+  public var tag: String
+  public var readOnly: Bool
+
+  public init(path: String, tag: String, readOnly: Bool = false) {
+    self.path = path
+    self.tag = tag
+    self.readOnly = readOnly
+  }
+}
+
 public enum AppleVzConfigurationBuilder {
   public static func buildLinuxKernelConfiguration(
-    spec: AppleVzLaunchSpec
+    spec: AppleVzLaunchSpec,
+    sharedDirectory: AppleVzSharedDirectorySpec? = nil
   ) throws -> VZVirtualMachineConfiguration {
     guard ["arm64", "aarch64"].contains(spec.guest.arch.lowercased()) else {
       throw AppleVzRunnerError.unsupportedGuestArch(spec.guest.arch)
@@ -79,6 +94,24 @@ public enum AppleVzConfigurationBuilder {
       ]
     }
 
+    if let share = sharedDirectory {
+      // VZ-native Virtio FS shared folder (macOS 13+). The guest mounts it with
+      // `mount -t virtiofs <tag> <dir>`. No virtiofsd needed (that is QEMU-only
+      // and unavailable on macOS).
+      guard #available(macOS 13.0, *) else {
+        throw AppleVzRunnerError.sharedDirectoryRequiresMacOS13
+      }
+      try VZVirtioFileSystemDeviceConfiguration.validateTag(share.tag)
+      let device = VZVirtioFileSystemDeviceConfiguration(tag: share.tag)
+      device.share = VZSingleDirectoryShare(
+        directory: VZSharedDirectory(
+          url: URL(fileURLWithPath: share.path),
+          readOnly: share.readOnly
+        )
+      )
+      configuration.directorySharingDevices = [device]
+    }
+
     return configuration
   }
 
@@ -98,9 +131,10 @@ public enum AppleVzConfigurationBuilder {
   public static func buildLinuxKernelConfigurationWithDisplay(
     spec: AppleVzLaunchSpec,
     widthInPixels: Int = 1280,
-    heightInPixels: Int = 800
+    heightInPixels: Int = 800,
+    sharedDirectory: AppleVzSharedDirectorySpec? = nil
   ) throws -> VZVirtualMachineConfiguration {
-    let configuration = try buildLinuxKernelConfiguration(spec: spec)
+    let configuration = try buildLinuxKernelConfiguration(spec: spec, sharedDirectory: sharedDirectory)
 
     let graphics = VZVirtioGraphicsDeviceConfiguration()
     graphics.scanouts = [
