@@ -217,13 +217,22 @@ fn capabilities_for(backend: NetworkBackend, mode: &NetworkMode) -> NetworkCapab
     }
 }
 
+/// Blocker code for QEMU bridged networking. Bridged args ARE generated (a
+/// `vmnet-bridged` netdev), but `vmnet-bridged` on macOS requires the qemu
+/// process to run as root or carry the `com.apple.vm.networking` entitlement,
+/// so this is a privilege requirement rather than an unimplemented feature.
+pub const QEMU_BRIDGED_PRIVILEGE_BLOCKER: &str = "qemu-bridged-requires-privilege";
+
+/// Honest requirement text for [`QEMU_BRIDGED_PRIVILEGE_BLOCKER`].
+pub const QEMU_BRIDGED_PRIVILEGE_REQUIREMENT: &str =
+    "Compatibility Mode QEMU bridged networking uses vmnet-bridged, which requires the qemu \
+process to run as root or carry the com.apple.vm.networking entitlement";
+
 fn requirements_for(backend: NetworkBackend, mode: &NetworkMode) -> Vec<NetworkRequirement> {
     match (backend, mode) {
         (NetworkBackend::Qemu, NetworkMode::Bridged) => vec![NetworkRequirement {
-            blocker: "qemu-bridged-network-unimplemented".to_string(),
-            requirement:
-                "Compatibility Mode QEMU requires bridge or tap helper selection before launch"
-                    .to_string(),
+            blocker: QEMU_BRIDGED_PRIVILEGE_BLOCKER.to_string(),
+            requirement: QEMU_BRIDGED_PRIVILEGE_REQUIREMENT.to_string(),
         }],
         (NetworkBackend::Qemu, NetworkMode::Advanced) => vec![NetworkRequirement {
             blocker: "qemu-advanced-network-unimplemented".to_string(),
@@ -427,6 +436,39 @@ mod tests {
                 .map(|requirement| requirement.blocker.as_str()),
             Some("qemu-advanced-network-unimplemented")
         );
+    }
+
+    #[test]
+    fn qemu_bridged_is_supported_and_requires_privilege() {
+        let plan = plan_network(
+            NetworkBackend::Qemu,
+            NetworkMode::Bridged,
+            "legacy.bridgevm.local",
+            Vec::new(),
+        )
+        .expect("QEMU bridged networking is supported");
+
+        assert_eq!(plan.mode, NetworkMode::Bridged);
+        // Bridged guests get a real LAN IP: outbound + host reachability, no
+        // NAT port forwarding.
+        assert!(plan.capabilities.guest_outbound);
+        assert!(plan.capabilities.host_to_guest);
+        assert!(!plan.capabilities.supports_port_forwarding);
+        // vmnet-bridged needs elevated privilege at runtime.
+        assert!(plan.capabilities.requires_privileged_helper);
+
+        // The remaining requirement is an HONEST privilege requirement, not an
+        // "unimplemented" blocker.
+        let requirement = plan
+            .requirements
+            .first()
+            .expect("bridged carries a privilege requirement");
+        assert_eq!(requirement.blocker, QEMU_BRIDGED_PRIVILEGE_BLOCKER);
+        assert!(!requirement.blocker.contains("unimplemented"));
+        assert!(requirement.requirement.contains("root"));
+        assert!(requirement
+            .requirement
+            .contains("com.apple.vm.networking"));
     }
 
     #[test]

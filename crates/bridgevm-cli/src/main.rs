@@ -4530,7 +4530,7 @@ mod tests {
     fn local_prepare_run_error_preserves_qemu_network_blocker_requirement() {
         let store = unique_store("bridgevm-cli-qemu-network-blocker-test");
         let mut manifest = compatibility_manifest("legacy");
-        manifest.network.mode = "bridged".to_string();
+        manifest.network.mode = "advanced".to_string();
         store.create_vm(&manifest).unwrap();
 
         let error = build_runner_metadata(&store, "legacy", false).unwrap_err();
@@ -4541,11 +4541,11 @@ mod tests {
             "missing CLI context: {message}"
         );
         assert!(
-            message.contains("QEMU launch blocker qemu-bridged-network-unimplemented"),
+            message.contains("QEMU launch blocker qemu-advanced-network-unimplemented"),
             "missing QEMU blocker: {message}"
         );
         assert!(
-            message.contains("requirement: Compatibility Mode QEMU requires bridge or tap helper selection before launch"),
+            message.contains("requirement: Compatibility Mode QEMU requires an advanced network schema and launcher wiring before launch"),
             "missing QEMU requirement: {message}"
         );
     }
@@ -4587,17 +4587,17 @@ mod tests {
     #[test]
     fn daemon_error_output_preserves_qemu_network_blocker_requirement() {
         let error = print_daemon_response(BridgeVmResponse::Error {
-            message: "failed to build Compatibility Mode QEMU command: QEMU launch blocker qemu-bridged-network-unimplemented: bridged networking is not implemented for Compatibility Mode QEMU args yet; requirement: Compatibility Mode QEMU requires bridge or tap helper selection before launch".to_string(),
+            message: "failed to build Compatibility Mode QEMU command: QEMU launch blocker qemu-advanced-network-unimplemented: advanced networking is not implemented for Compatibility Mode QEMU args yet; requirement: Compatibility Mode QEMU requires an advanced network schema and launcher wiring before launch".to_string(),
         })
         .unwrap_err();
         let message = format!("{error:#}");
 
         assert!(
-            message.contains("QEMU launch blocker qemu-bridged-network-unimplemented"),
+            message.contains("QEMU launch blocker qemu-advanced-network-unimplemented"),
             "missing QEMU blocker: {message}"
         );
         assert!(
-            message.contains("requirement: Compatibility Mode QEMU requires bridge or tap helper selection before launch"),
+            message.contains("requirement: Compatibility Mode QEMU requires an advanced network schema and launcher wiring before launch"),
             "missing QEMU requirement: {message}"
         );
     }

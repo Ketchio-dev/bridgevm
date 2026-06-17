@@ -2520,10 +2520,10 @@ mod tests {
     #[test]
     fn daemon_qemu_error_message_preserves_network_blocker_requirement() {
         let message = compatibility_qemu_command_error(QemuError::UnsupportedNetworkRequirement {
-            mode: "bridged".to_string(),
-            blocker: "qemu-bridged-network-unimplemented".to_string(),
+            mode: "advanced".to_string(),
+            blocker: "qemu-advanced-network-unimplemented".to_string(),
             requirement:
-                "Compatibility Mode QEMU requires bridge or tap helper selection before launch"
+                "Compatibility Mode QEMU requires an advanced network schema and launcher wiring before launch"
                     .to_string(),
         });
 
@@ -2532,11 +2532,11 @@ mod tests {
             "{message}"
         );
         assert!(
-            message.contains("QEMU launch blocker qemu-bridged-network-unimplemented"),
+            message.contains("QEMU launch blocker qemu-advanced-network-unimplemented"),
             "{message}"
         );
         assert!(
-            message.contains("requirement: Compatibility Mode QEMU requires bridge or tap helper selection before launch"),
+            message.contains("requirement: Compatibility Mode QEMU requires an advanced network schema and launcher wiring before launch"),
             "{message}"
         );
     }

@@ -118,6 +118,7 @@ pub fn manifest_json_schema_v1() -> &'static str {
       "properties": {
         "mode": { "type": "string", "minLength": 1 },
         "hostname": { "type": "string", "minLength": 1 },
+        "bridgeInterface": { "type": "string", "minLength": 1 },
         "forwards": {
           "type": "array",
           "items": {
@@ -352,6 +353,34 @@ pub struct Network {
     pub hostname: String,
     #[serde(default)]
     pub forwards: Vec<PortForward>,
+    /// Host interface that bridged (`mode: bridged`) networking attaches the
+    /// guest to. Only consulted in Compatibility Mode QEMU bridged networking;
+    /// defaults to [`DEFAULT_BRIDGE_INTERFACE`] when omitted so existing
+    /// manifests (which never carried this field) keep deserializing.
+    #[serde(
+        rename = "bridgeInterface",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub bridge_interface: Option<String>,
+}
+
+/// Default host interface bridged networking attaches to when a manifest does
+/// not pin one with `network.bridgeInterface`. `en0` is the primary
+/// Ethernet/Wi-Fi interface on a typical Mac.
+pub const DEFAULT_BRIDGE_INTERFACE: &str = "en0";
+
+impl Network {
+    /// The host interface bridged networking should attach to: the manifest's
+    /// `bridgeInterface` if set (and non-blank), otherwise
+    /// [`DEFAULT_BRIDGE_INTERFACE`].
+    pub fn bridge_interface(&self) -> &str {
+        self.bridge_interface
+            .as_deref()
+            .map(str::trim)
+            .filter(|iface| !iface.is_empty())
+            .unwrap_or(DEFAULT_BRIDGE_INTERFACE)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -471,6 +500,7 @@ impl VmManifest {
                 mode: "nat".to_string(),
                 hostname,
                 forwards: Vec::new(),
+                bridge_interface: None,
             },
             integration: Integration {
                 tools: if fast { "required" } else { "optional" }.to_string(),
@@ -1113,6 +1143,75 @@ sharedFolders:
                 "expected UnsafePath for {bad}"
             );
         }
+    }
+
+    #[test]
+    fn network_defaults_bridge_interface_for_legacy_manifests() {
+        // A manifest that never carried `bridgeInterface` must still parse, and
+        // the helper must fall back to the default host interface.
+        let yaml = r#"
+schemaVersion: bridgevm.io/v1
+name: legacy-net
+mode: compatibility
+guest:
+  os: ubuntu
+  arch: x86_64
+backend:
+  engine: qemu
+resources:
+  profile: automatic
+  memory: auto
+  cpu: auto
+display:
+  renderer: spice-or-vnc
+  framePolicy: adaptive
+  retina: true
+storage:
+  primary:
+    path: disks/root.qcow2
+    size: 64GiB
+    format: qcow2
+    discard: false
+network:
+  mode: bridged
+  hostname: legacy-net.bridgevm.local
+integration:
+  tools: optional
+  clipboard: true
+  dragDrop: false
+  dynamicResolution: true
+  sharedFolders: true
+security:
+  sharedFolderApproval: required
+  guestCommandExecution: false
+  signedAgentUpdates: true
+"#;
+        let manifest = serde_yaml::from_str::<VmManifest>(yaml).unwrap();
+        manifest.validate().unwrap();
+
+        assert_eq!(manifest.network.bridge_interface, None);
+        assert_eq!(manifest.network.bridge_interface(), DEFAULT_BRIDGE_INTERFACE);
+    }
+
+    #[test]
+    fn network_uses_configured_bridge_interface_when_present() {
+        let mut manifest = VmManifest::new(
+            "bridged",
+            VmMode::Compatibility,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "x86_64".to_string(),
+            },
+            "64GiB",
+        );
+        manifest.network.bridge_interface = Some("en7".to_string());
+        assert_eq!(manifest.network.bridge_interface(), "en7");
+
+        // A blank/whitespace override falls back to the default rather than
+        // emitting an empty ifname.
+        manifest.network.bridge_interface = Some("   ".to_string());
+        assert_eq!(manifest.network.bridge_interface(), DEFAULT_BRIDGE_INTERFACE);
     }
 
     #[test]

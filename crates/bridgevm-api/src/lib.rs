@@ -7348,8 +7348,8 @@ mod tests {
                     requires_privileged_helper: true,
                 }),
                 blockers: vec![NetworkPlanBlockerRecord {
-                    code: "qemu-bridged-network-unimplemented".to_string(),
-                    message: "Compatibility Mode QEMU requires bridge or tap helper selection before launch"
+                    code: "qemu-bridged-requires-privilege".to_string(),
+                    message: "Compatibility Mode QEMU bridged networking uses vmnet-bridged, which requires the qemu process to run as root or carry the com.apple.vm.networking entitlement"
                         .to_string(),
                 }],
                 notes: vec!["dry-run network plan".to_string()],
@@ -9115,7 +9115,7 @@ mod tests {
             },
             "64GiB",
         );
-        manifest.network.mode = "bridged".to_string();
+        manifest.network.mode = "advanced".to_string();
         handle_request(&store, BridgeVmRequest::CreateVm { manifest })
             .into_result()
             .unwrap();
@@ -9127,18 +9127,18 @@ mod tests {
             },
         )
         .into_result()
-        .expect_err("bridged QEMU args should expose launch blocker");
+        .expect_err("advanced QEMU args should expose launch blocker");
 
         assert!(
             message.contains("failed to build Compatibility Mode QEMU command"),
             "{message}"
         );
         assert!(
-            message.contains("QEMU launch blocker qemu-bridged-network-unimplemented"),
+            message.contains("QEMU launch blocker qemu-advanced-network-unimplemented"),
             "{message}"
         );
         assert!(
-            message.contains("requirement: Compatibility Mode QEMU requires bridge or tap helper selection before launch"),
+            message.contains("requirement: Compatibility Mode QEMU requires an advanced network schema and launcher wiring before launch"),
             "{message}"
         );
     }
@@ -9164,7 +9164,7 @@ mod tests {
             },
             "64GiB",
         );
-        manifest.network.mode = "bridged".to_string();
+        manifest.network.mode = "advanced".to_string();
         handle_request(&store, BridgeVmRequest::CreateVm { manifest })
             .into_result()
             .unwrap();
@@ -9176,18 +9176,18 @@ mod tests {
             },
         )
         .into_result()
-        .expect_err("bridged prepare-run should expose launch blocker");
+        .expect_err("advanced prepare-run should expose launch blocker");
 
         assert!(
             message.contains("failed to build Compatibility Mode QEMU command"),
             "{message}"
         );
         assert!(
-            message.contains("QEMU launch blocker qemu-bridged-network-unimplemented"),
+            message.contains("QEMU launch blocker qemu-advanced-network-unimplemented"),
             "{message}"
         );
         assert!(
-            message.contains("requirement: Compatibility Mode QEMU requires bridge or tap helper selection before launch"),
+            message.contains("requirement: Compatibility Mode QEMU requires an advanced network schema and launcher wiring before launch"),
             "{message}"
         );
     }
@@ -9278,7 +9278,8 @@ mod tests {
         assert!(plan
             .blockers
             .iter()
-            .any(|blocker| blocker.code == "qemu-bridged-network-unimplemented"));
+            .any(|blocker| blocker.code == "qemu-bridged-requires-privilege"
+                && blocker.message.contains("com.apple.vm.networking")));
         assert!(store.runner_metadata("legacy").unwrap().is_none());
     }
 

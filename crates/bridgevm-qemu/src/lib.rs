@@ -900,14 +900,28 @@ fn netdev_arg(manifest: &VmManifest) -> Result<String, QemuError> {
         NetworkMode::Nat => "user,id=net0".to_string(),
         NetworkMode::HostOnly => "vmnet-host,id=net0".to_string(),
         NetworkMode::Isolated => "user,id=net0,restrict=on".to_string(),
-        NetworkMode::Bridged | NetworkMode::Advanced => {
+        // Bridged guests attach directly to a host interface via QEMU's
+        // vmnet-bridged netdev and receive a real LAN IP (DHCP from the LAN),
+        // so there is no NAT/hostfwd here -- the planner already rejects port
+        // forwards for any non-NAT mode, so `plan.port_forwards` is empty below.
+        // vmnet-bridged additionally requires the qemu process to run as root
+        // or carry the com.apple.vm.networking entitlement; that runtime
+        // privilege requirement is surfaced through the network plan
+        // (`requires_privileged_helper` + the bridged requirement), not by
+        // failing arg generation.
+        NetworkMode::Bridged => format!(
+            "vmnet-bridged,id=net0,ifname={}",
+            escape_qemu_opt(manifest.network.bridge_interface())
+        ),
+        // Advanced networking is intentionally open-ended and has no settled
+        // schema, so it remains unsupported at the arg-builder level.
+        NetworkMode::Advanced => {
             let requirement = plan.requirements.first().cloned().unwrap_or_else(|| {
                 bridgevm_network::NetworkRequirement {
-                    blocker: format!("qemu-{}-network-unimplemented", plan.mode),
-                    requirement: format!(
-                        "Compatibility Mode QEMU requires {} network launcher wiring before launch",
-                        plan.mode
-                    ),
+                    blocker: "qemu-advanced-network-unimplemented".to_string(),
+                    requirement:
+                        "Compatibility Mode QEMU requires an advanced network schema and launcher wiring before launch"
+                            .to_string(),
                 }
             });
             return Err(QemuError::UnsupportedNetworkRequirement {
@@ -1340,7 +1354,7 @@ mod tests {
     }
 
     #[test]
-    fn qemu_netdev_reports_bridged_launch_requirement_after_planning() {
+    fn qemu_netdev_maps_bridged_mode_to_vmnet_bridged_with_default_interface() {
         let mut manifest = VmManifest::new(
             "legacy",
             VmMode::Compatibility,
@@ -1353,21 +1367,47 @@ mod tests {
         );
         manifest.network.mode = "bridged".to_string();
 
-        let error = build_compatibility_command(&manifest, Path::new("/tmp/legacy.vmbridge"))
-            .expect_err("bridged QEMU launcher wiring is not implemented yet");
+        // Bridged now emits real vmnet-bridged args attached to the default host
+        // interface; it is no longer an "unimplemented" hard error. The runtime
+        // privilege requirement (root / com.apple.vm.networking) is surfaced via
+        // the network plan, not by failing arg generation.
+        assert_eq!(
+            netdev_arg(&manifest).expect("planned bridged netdev"),
+            "vmnet-bridged,id=net0,ifname=en0"
+        );
 
-        assert!(
-            matches!(
-                &error,
-                QemuError::UnsupportedNetworkRequirement {
-                    mode,
-                    blocker,
-                    requirement
-                } if mode == "bridged"
-                    && blocker == "qemu-bridged-network-unimplemented"
-                    && requirement.contains("bridge or tap helper")
-            ),
-            "{error}"
+        // The full command builds successfully (and wires the netdev onto the
+        // virtio-net device) instead of erroring out.
+        let command = build_compatibility_command(&manifest, Path::new("/tmp/legacy.vmbridge"))
+            .expect("bridged compat command builds");
+        assert_eq!(
+            arg_after(&command.args, "-netdev"),
+            "vmnet-bridged,id=net0,ifname=en0"
+        );
+        assert!(command
+            .args
+            .iter()
+            .any(|arg| arg == "virtio-net-pci,netdev=net0"));
+    }
+
+    #[test]
+    fn qemu_netdev_honors_configured_bridge_interface() {
+        let mut manifest = VmManifest::new(
+            "legacy",
+            VmMode::Compatibility,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "x86_64".to_string(),
+            },
+            "64GiB",
+        );
+        manifest.network.mode = "bridged".to_string();
+        manifest.network.bridge_interface = Some("en7".to_string());
+
+        assert_eq!(
+            netdev_arg(&manifest).expect("planned bridged netdev"),
+            "vmnet-bridged,id=net0,ifname=en7"
         );
     }
 
