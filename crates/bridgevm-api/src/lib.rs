@@ -7323,7 +7323,7 @@ mod tests {
                 ready: false,
                 blockers: vec![SnapshotPreflightBlockerRecord {
                     code: "backend-freeze-thaw-unavailable".to_string(),
-                    message: "The backend has not wired freeze/thaw execution yet.".to_string(),
+                    message: "Freeze/thaw orchestration requires the bridgevmd-owned running backend; this offline preflight cannot drive the guest agent.".to_string(),
                     path: None,
                 }],
                 checked_at_unix: 1,

@@ -2404,7 +2404,7 @@ final class DaemonDTOTests: XCTestCase {
           "blockers": [
             {
               "code": "backend-freeze-thaw-unavailable",
-              "message": "The backend has not wired freeze/thaw execution yet.",
+              "message": "Freeze/thaw orchestration requires the bridgevmd-owned running backend; this offline preflight cannot drive the guest agent.",
               "path": null
             }
           ],
@@ -5839,7 +5839,7 @@ private final class RecordingDaemonTransport: DaemonTransport {
             "blockers": [
               {
                 "code": "backend-freeze-thaw-unavailable",
-                "message": "The backend has not wired freeze/thaw execution yet.",
+                "message": "Freeze/thaw orchestration requires the bridgevmd-owned running backend; this offline preflight cannot drive the guest agent.",
                 "path": null
               }
             ],

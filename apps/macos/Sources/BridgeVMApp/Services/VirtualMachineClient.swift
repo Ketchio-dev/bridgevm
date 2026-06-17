@@ -5698,7 +5698,8 @@ private func inferredSnapshotPreflightBlockers(
     blockers.append(
       SnapshotPreflightBlocker(
         code: "backend-freeze-thaw-unavailable",
-        message: "The backend has not wired freeze/thaw execution yet.",
+        message:
+          "Freeze/thaw orchestration requires the bridgevmd-owned running backend; this offline preflight cannot drive the guest agent.",
         path: nil
       ))
   }

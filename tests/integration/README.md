@@ -1452,11 +1452,13 @@ starting Apple VZ:
   tests should therefore exercise validate-only, config-validation,
   unsupported-input, or missing-opt-in paths when they intend to prove the
   process boundary without starting Apple VZ.
-- Fast Mode `run --spawn` keeps the legacy dry-run
-  `fast-mode-spawn-unimplemented` blocker when no signed Swift helper is
-  configured. With the helper configured and explicit opt-in present, it can
-  cross into the limited Apple VZ helper boundary; blocked launches still
-  summarize current missing disk/media or opt-in blockers.
+- Fast Mode `run --spawn` keeps the legacy
+  `fast-mode-spawn-unimplemented` blocker code when no signed Swift helper is
+  configured, but the user-facing error is runner-required: set
+  `BRIDGEVM_APPLE_VZ_RUNNER` to a signed `AppleVzRunner`. With the helper
+  configured and explicit opt-in present, it can cross into the limited Apple VZ
+  helper boundary; blocked launches still summarize current missing disk/media
+  or opt-in blockers.
 - After local media import or a test-created placeholder at the resolved path,
   the missing-boot-media blocker clears while launch remains a readiness result,
   not a spawned Apple VZ process.
