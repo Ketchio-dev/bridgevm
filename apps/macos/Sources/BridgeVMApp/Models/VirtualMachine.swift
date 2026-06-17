@@ -373,6 +373,7 @@ struct VMLiveEvidence: Equatable {
   var network: String
   var serialSentinelRequired: Bool
   var serialSentinelProven: Bool
+  var graphicalBootProgressProven: Bool = false
   var viewerEvidenceProven: Bool = false
   var qmpEvidenceProven: Bool = false
   var guestToolsEffectsProven: Bool = false
@@ -393,6 +394,17 @@ struct VMLiveEvidence: Equatable {
         )
       )
     }
+
+    items.append(
+      VMLiveEvidenceProofItem(
+        kind: "graphical-boot-progress",
+        title: "Boot progress",
+        proven: graphicalBootProgressProven,
+        detail: graphicalBootProgressProven
+          ? "Graphical boot progress captured"
+          : "Graphical boot progress pending"
+      )
+    )
 
     items.append(
       VMLiveEvidenceProofItem(
@@ -434,8 +446,13 @@ struct VMLiveEvidence: Equatable {
     serialSentinelProven || viewerEvidenceProven
   }
 
+  var liveBootProgressProven: Bool {
+    serialSentinelProven || graphicalBootProgressProven
+  }
+
   var hasAnyVerifiedEvidence: Bool {
-    interactiveConsoleEvidenceProven || qmpEvidenceProven || guestToolsEffectsProven
+    liveBootProgressProven || interactiveConsoleEvidenceProven || qmpEvidenceProven
+      || guestToolsEffectsProven
   }
 
   var title: String {
@@ -467,9 +484,11 @@ struct VMLiveEvidence: Equatable {
       ? "graphical/serial console evidence proven"
       : "graphical/serial console evidence pending"
     let viewer = viewerEvidenceProven ? "viewer evidence proven" : "viewer evidence pending"
+    let bootProgress =
+      liveBootProgressProven ? "boot progress proven" : "boot progress pending"
     let qmp = qmpEvidenceProven ? "QMP evidence proven" : "QMP evidence pending"
     let guestTools = guestToolsEffectsProven ? "guest-tools effects proven" : "guest-tools effects pending"
-    return "\(backend), \(bootMode), \(diskFormat), \(network), \(console), \(viewer), \(qmp), \(guestTools)"
+    return "\(backend), \(bootMode), \(diskFormat), \(network), \(console), \(bootProgress), \(viewer), \(qmp), \(guestTools)"
   }
 }
 

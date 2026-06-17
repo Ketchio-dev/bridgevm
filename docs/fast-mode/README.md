@@ -177,9 +177,11 @@ temporary `live-vz-linux` VM bundle. Recording the smoke evidence onto an
 arbitrary existing VM is unsupported unless its name and bundle path match the
 preserved launch spec. A live
 proof needs more than successful process start/stop output: keep serial sentinel
-evidence when `BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED` is set. Viewer frames and QMP
-state can support console diagnostics, but they should not be treated as guest
-boot progress unless a separate verifier-bound guest progress contract is added.
+evidence when `BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED` is set, or provide a
+verifier-bound graphical boot-progress artifact with
+`BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME` plus width, height, stage, and marker
+metadata. Ordinary viewer frames and QMP state can support console diagnostics,
+but they should not be treated as guest boot progress by themselves.
 
 Live attempts preserve `$STORE/evidence` with:
 
@@ -189,7 +191,10 @@ Live attempts preserve `$STORE/evidence` with:
 - the launch spec and handoff JSON consumed at the Apple VZ boundary
 - the selected helper path, copied `AppleVzRunner` artifact, validation output,
   and live-launch output
-- runner and serial log pointers, plus required serial sentinel evidence
+- runner and serial log pointers, plus serial sentinel evidence when configured
+- optional `boot-progress-evidence.json` plus copied graphical boot-progress frame when
+  `BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME`, width, height, stage, and marker values
+  are provided
 - optional `viewer-evidence.json` plus copied viewer frame when
   `BRIDGEVM_LIVE_VZ_VIEWER_FRAME`, width, and height are provided
 - optional `guest-tools-effects.json` copied from
@@ -204,7 +209,7 @@ re-runs the verifier against `.vmbridge/metadata/live-evidence/latest`;
 `bridgevm readiness <vm> --clear-live-evidence` removes that preserved evidence
 metadata and copied bundle.
 
-The live smoke runs `tests/integration/verify-apple-vz-live-evidence.sh "$STORE/evidence"` before printing `PASS`. Reviewers can rerun the same verifier against a preserved bundle before treating a live smoke result as proof. The verifier checks the summary, fixture manifest, environment, launch spec, handoff, selected runner path or copied runner artifact, validation output, launch output, and required serial sentinel evidence as a connected set for opted-in real Apple VZ runs. It cross-checks `environment.txt` against the fixture manifest source paths, the launch spec kernel command line and resources, and the selected runner path. It also treats artifact path lines in `SUMMARY.txt` as assertions that must resolve to the preserved evidence artifacts, not just as human-readable labels. The `Store`, `Bundle`, `Launch spec`, `Handoff JSON`, output path, runner/serial log, `Fixture manifest`, and `Environment` lines must resolve to the evidence fields and artifacts they name.
+The live smoke runs `tests/integration/verify-apple-vz-live-evidence.sh "$STORE/evidence"` before printing `PASS`. Reviewers can rerun the same verifier against a preserved bundle before treating a live smoke result as proof. The verifier checks the summary, fixture manifest, environment, launch spec, handoff, selected runner path or copied runner artifact, validation output, launch output, configured serial sentinel evidence, and optional graphical boot-progress artifact as a connected set for opted-in real Apple VZ runs. It cross-checks `environment.txt` against the fixture manifest source paths, the launch spec kernel command line and resources, and the selected runner path. It also treats artifact path lines in `SUMMARY.txt` as assertions that must resolve to the preserved evidence artifacts, not just as human-readable labels. The `Store`, `Bundle`, `Launch spec`, `Handoff JSON`, output path, runner/serial log, `Fixture manifest`, and `Environment` lines must resolve to the evidence fields and artifacts they name.
 
 That live evidence bundle is not guest-tools-effects proof by default. A
 future/current preserved-evidence path may prove `guest-tools-effects` only when
@@ -224,4 +229,4 @@ The same verifier cross-checks the bounded live controls:
 `BRIDGEVM_LIVE_VZ_FORCE_STOP_GRACE_SECONDS` must be positive integers and match
 the values recorded in `SUMMARY.txt` and the live-launch transcript.
 
-`tests/integration/apple-vz-live-evidence-verifier-smoke.sh` covers the verifier with synthetic evidence only; it does not start a live VM, QEMU, Apple VZ, or a GUI, and the actual live proof still requires the separate opt-in smoke. Set `BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED` to a known fixture sentinel so the smoke proves guest boot progress, not just successful VM start/stop calls.
+`tests/integration/apple-vz-live-evidence-verifier-smoke.sh` covers the verifier with synthetic evidence only; it does not start a live VM, QEMU, Apple VZ, or a GUI, and the actual live proof still requires the separate opt-in smoke. Set `BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED` to a known fixture sentinel or provide `BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME` with matching metadata so the smoke proves guest boot progress, not just successful VM start/stop calls.

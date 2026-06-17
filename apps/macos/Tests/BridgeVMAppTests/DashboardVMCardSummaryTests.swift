@@ -414,6 +414,7 @@ final class DashboardVMCardSummaryTests: XCTestCase {
 
     XCTAssertTrue(summary.metadataItems.contains("Viewer evidence pending"))
     XCTAssertTrue(summary.metadataItems.contains("Serial evidence proven"))
+    XCTAssertTrue(summary.metadataItems.contains("Boot progress evidence proven"))
     XCTAssertTrue(summary.metadataItems.contains("QMP evidence pending"))
   }
 
@@ -445,6 +446,7 @@ final class DashboardVMCardSummaryTests: XCTestCase {
 
     XCTAssertTrue(summary.metadataItems.contains("Viewer evidence proven"))
     XCTAssertTrue(summary.metadataItems.contains("Serial evidence proven"))
+    XCTAssertTrue(summary.metadataItems.contains("Boot progress evidence proven"))
     XCTAssertTrue(summary.metadataItems.contains("QMP evidence pending"))
   }
 
@@ -483,6 +485,7 @@ final class DashboardVMCardSummaryTests: XCTestCase {
 
     XCTAssertTrue(summary.metadataItems.contains("Viewer evidence pending"))
     XCTAssertTrue(summary.metadataItems.contains("Serial evidence pending"))
+    XCTAssertTrue(summary.metadataItems.contains("Boot progress evidence pending"))
     XCTAssertTrue(summary.metadataItems.contains("QMP evidence proven"))
   }
 
@@ -516,6 +519,7 @@ final class DashboardVMCardSummaryTests: XCTestCase {
     )
 
     XCTAssertTrue(summary.metadataItems.contains("Serial evidence pending"))
+    XCTAssertTrue(summary.metadataItems.contains("Boot progress evidence pending"))
     XCTAssertTrue(summary.metadataItems.contains("Viewer evidence pending"))
     XCTAssertTrue(summary.metadataItems.contains("QMP evidence pending"))
   }

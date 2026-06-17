@@ -263,8 +263,10 @@ Later plain `bridgevm readiness <vm>` re-verifies
 `.vmbridge/metadata/live-evidence/latest`; `--clear-live-evidence` removes the
 preserved evidence metadata and copied bundle. As with the Apple VZ path, a live
 proof needs more than successful process start/stop output: the serial sentinel is
-the required guest-boot-progress contract, while viewer/QMP state only supports
-console diagnostics.
+the QEMU harness's default guest-boot-progress contract, while viewer/QMP state
+only supports console diagnostics. Preserved bundles may also include
+verifier-bound `boot-progress-evidence.json` graphical artifacts when a separate
+QEMU viewer capture proves boot progress.
 
 ### Windows 11 Arm installer boot
 

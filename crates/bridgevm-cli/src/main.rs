@@ -2546,6 +2546,10 @@ fn print_readiness_report(report: &VmReadinessReport) {
             evidence.serial_sentinel_required, evidence.serial_sentinel_proven
         );
         println!(
+            "Live evidence graphical boot progress: proven={}",
+            evidence.graphical_boot_progress_proven
+        );
+        println!(
             "Live evidence viewer/console: proven={}",
             evidence.viewer_evidence_proven
         );

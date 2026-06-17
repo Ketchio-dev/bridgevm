@@ -822,6 +822,8 @@ pub struct VmLiveEvidenceVerification {
     pub serial_sentinel_required: bool,
     pub serial_sentinel_proven: bool,
     #[serde(default)]
+    pub graphical_boot_progress_proven: bool,
+    #[serde(default)]
     pub viewer_evidence_proven: bool,
     #[serde(default)]
     pub qmp_evidence_proven: bool,
@@ -3957,8 +3959,16 @@ fn metadata_safe_live_evidence_requirements(
             proven: live_boot_proven,
             note: if live_boot_proven {
                 let evidence = live_evidence.expect("live boot proven requires evidence");
+                let progress_label =
+                    if evidence.serial_sentinel_proven && evidence.graphical_boot_progress_proven {
+                        "serial and graphical boot progress"
+                    } else if evidence.graphical_boot_progress_proven {
+                        "graphical boot progress"
+                    } else {
+                        "serial boot progress"
+                    };
                 format!(
-                    "verified preserved opt-in {} serial boot progress evidence bundle",
+                    "verified preserved opt-in {} {progress_label} evidence bundle",
                     live_evidence_backend_label(&evidence.backend)
                 )
             } else if let Some(evidence) = live_evidence {
@@ -3967,7 +3977,7 @@ fn metadata_safe_live_evidence_requirements(
                     live_evidence_backend_label(&evidence.backend)
                 )
             } else {
-                "requires preserved opt-in serial boot progress evidence from Apple VZ or QEMU"
+                "requires preserved opt-in serial or graphical boot progress evidence from Apple VZ or QEMU"
                     .to_string()
             },
         },
@@ -3998,7 +4008,7 @@ fn metadata_safe_live_evidence_requirements(
 }
 
 fn live_boot_progress_proven(evidence: &VmLiveEvidenceVerification) -> bool {
-    evidence.serial_sentinel_proven
+    evidence.serial_sentinel_proven || evidence.graphical_boot_progress_proven
 }
 
 struct LiveEvidenceVerificationContext {
@@ -4388,6 +4398,7 @@ fn verify_apple_vz_live_evidence_bundle(
     } else {
         false
     };
+    let graphical_boot_progress_proven = verify_graphical_boot_progress_evidence(path)?;
     let viewer_evidence_proven = verify_viewer_evidence(path)?;
     let guest_tools_effects_proven = verify_guest_tools_effects_evidence(path)?;
 
@@ -4400,6 +4411,7 @@ fn verify_apple_vz_live_evidence_bundle(
         network,
         serial_sentinel_required: serial_expected.is_some(),
         serial_sentinel_proven,
+        graphical_boot_progress_proven,
         viewer_evidence_proven,
         qmp_evidence_proven: false,
         guest_tools_effects_proven,
@@ -4631,6 +4643,7 @@ fn verify_qemu_live_evidence_bundle(
         false
     };
 
+    let graphical_boot_progress_proven = verify_graphical_boot_progress_evidence(path)?;
     let viewer_evidence_proven = verify_viewer_evidence(path)?;
     let guest_tools_effects_proven = verify_guest_tools_effects_evidence(path)?;
 
@@ -4643,6 +4656,7 @@ fn verify_qemu_live_evidence_bundle(
         network,
         serial_sentinel_required,
         serial_sentinel_proven,
+        graphical_boot_progress_proven,
         viewer_evidence_proven,
         qmp_evidence_proven: true,
         guest_tools_effects_proven,
@@ -4826,93 +4840,89 @@ fn command_option_value<'a>(
 }
 
 fn verify_viewer_evidence(root: &Path) -> Result<bool, String> {
-    let evidence_path = root.join("viewer-evidence.json");
-    if !evidence_path.exists() {
+    verify_graphical_png_evidence(root, "viewer-evidence.json", "graphical-viewer")
+        .map(|evidence| evidence.is_some())
+}
+
+fn verify_graphical_boot_progress_evidence(root: &Path) -> Result<bool, String> {
+    let Some(evidence) = verify_graphical_png_evidence(
+        root,
+        "boot-progress-evidence.json",
+        "graphical-boot-progress",
+    )?
+    else {
         return Ok(false);
+    };
+
+    let stage = json_string(&evidence, &["stage"])?;
+    if stage.trim().is_empty() {
+        return Err("boot-progress-evidence.json stage is empty".to_string());
+    }
+    let progress_marker = json_string(&evidence, &["progress_marker"])?;
+    if progress_marker.trim().is_empty() {
+        return Err("boot-progress-evidence.json progress_marker is empty".to_string());
     }
 
-    let evidence = read_evidence_json(root, "viewer-evidence.json")?;
+    Ok(true)
+}
+
+fn verify_graphical_png_evidence(
+    root: &Path,
+    file_name: &str,
+    expected_kind: &str,
+) -> Result<Option<serde_json::Value>, String> {
+    let evidence_path = root.join(file_name);
+    if !evidence_path.exists() {
+        return Ok(None);
+    }
+
+    let evidence = read_evidence_json(root, file_name)?;
     if !json_bool(&evidence, &["proven"])? {
-        return Err("viewer-evidence.json does not mark viewer evidence as proven".to_string());
+        return Err(format!(
+            "{file_name} does not mark graphical evidence as proven"
+        ));
     }
     let kind = json_string(&evidence, &["kind"])?;
-    if kind != "graphical-viewer" {
-        return Err(format!(
-            "viewer-evidence.json kind is not graphical-viewer: {kind}"
-        ));
+    if kind != expected_kind {
+        return Err(format!("{file_name} kind is not {expected_kind}: {kind}"));
     }
     let artifact = json_string(&evidence, &["artifact"])?;
-    if artifact.trim().is_empty() {
-        return Err("viewer-evidence.json artifact is empty".to_string());
-    }
-    let artifact_path = Path::new(&artifact);
-    if artifact_path.is_absolute()
-        || artifact_path.components().any(|component| {
-            matches!(
-                component,
-                std::path::Component::ParentDir | std::path::Component::Prefix(_)
-            )
-        })
-    {
-        return Err(
-            "viewer-evidence.json artifact must be a relative path inside the evidence bundle"
-                .to_string(),
-        );
-    }
-    let full_artifact_path = root.join(artifact_path);
-    let metadata = fs::symlink_metadata(&full_artifact_path).map_err(|error| {
-        format!(
-            "viewer-evidence.json artifact is not a file: {} ({error})",
-            full_artifact_path.display()
-        )
-    })?;
-    if metadata.file_type().is_symlink() {
-        return Err(format!(
-            "viewer-evidence.json artifact must not be a symlink: {}",
-            full_artifact_path.display()
-        ));
-    }
-    if !metadata.is_file() {
-        return Err(format!(
-            "viewer-evidence.json artifact is not a file: {}",
-            full_artifact_path.display()
-        ));
-    }
+    let full_artifact_path = relative_evidence_artifact_path(root, &artifact, file_name)?;
     let bytes = fs::read(&full_artifact_path).map_err(|error| {
         format!(
-            "failed to read viewer evidence artifact {}: {error}",
+            "failed to read {file_name} artifact {}: {error}",
             full_artifact_path.display()
         )
     })?;
     if bytes.is_empty() {
-        return Err("viewer-evidence.json artifact is empty".to_string());
+        return Err(format!("{file_name} artifact is empty"));
     }
     let expected_sha256 = json_string(&evidence, &["sha256"])?;
     if !is_sha256_hex(&expected_sha256) {
-        return Err("viewer-evidence.json sha256 is not lowercase SHA-256 hex".to_string());
+        return Err(format!("{file_name} sha256 is not lowercase SHA-256 hex"));
     }
     let actual_sha256 = format!("{:x}", Sha256::digest(&bytes));
     if actual_sha256 != expected_sha256 {
-        return Err("viewer-evidence.json sha256 does not match artifact".to_string());
+        return Err(format!("{file_name} sha256 does not match artifact"));
     }
     let width = json_u64(&evidence, &["width"])?;
     let height = json_u64(&evidence, &["height"])?;
     if width == 0 || height == 0 {
-        return Err("viewer-evidence.json width and height must be nonzero".to_string());
+        return Err(format!("{file_name} width and height must be nonzero"));
     }
-    let (actual_width, actual_height) = png_dimensions(&bytes)
-        .ok_or_else(|| "viewer-evidence.json artifact is not a PNG image".to_string())?;
+    let (actual_width, actual_height) =
+        png_dimensions(&bytes).ok_or_else(|| format!("{file_name} artifact is not a PNG image"))?;
     if actual_width != width || actual_height != height {
-        return Err(
-            "viewer-evidence.json width and height do not match artifact pixels".to_string(),
-        );
+        return Err(format!(
+            "{file_name} width and height do not match artifact pixels"
+        ));
     }
     let observation = json_string(&evidence, &["observation"])?;
     if observation.trim().is_empty() {
-        return Err("viewer-evidence.json observation is empty".to_string());
+        return Err(format!("{file_name} observation is empty"));
     }
 
-    Ok(true)
+    Ok(Some(evidence))
 }
 
 fn png_dimensions(bytes: &[u8]) -> Option<(u64, u64)> {
@@ -7504,7 +7514,7 @@ mod tests {
                     kind: "live-boot".to_string(),
                     required: true,
                     proven: false,
-                    note: "requires preserved opt-in serial boot progress evidence from Apple VZ or QEMU"
+                    note: "requires preserved opt-in serial or graphical boot progress evidence from Apple VZ or QEMU"
                         .to_string(),
                 }],
                 boot_media: None,
@@ -8596,34 +8606,47 @@ mod tests {
 
     #[test]
     fn live_boot_requirement_needs_progress_evidence_not_only_a_bundle() {
-        let evidence = |serial: bool, viewer: bool, qmp: bool| VmLiveEvidenceVerification {
-            path: PathBuf::from("/tmp/evidence"),
-            backend: "apple-virtualization-framework".to_string(),
-            vm_name: "ubuntu".to_string(),
-            boot_mode: "linux-kernel".to_string(),
-            disk_format: "raw".to_string(),
-            network: "nat".to_string(),
-            serial_sentinel_required: serial,
-            serial_sentinel_proven: serial,
-            viewer_evidence_proven: viewer,
-            qmp_evidence_proven: qmp,
-            guest_tools_effects_proven: false,
-            summary: "synthetic test evidence".to_string(),
+        let evidence = |serial: bool, graphical_boot: bool, viewer: bool, qmp: bool| {
+            VmLiveEvidenceVerification {
+                path: PathBuf::from("/tmp/evidence"),
+                backend: "apple-virtualization-framework".to_string(),
+                vm_name: "ubuntu".to_string(),
+                boot_mode: "linux-kernel".to_string(),
+                disk_format: "raw".to_string(),
+                network: "nat".to_string(),
+                serial_sentinel_required: serial,
+                serial_sentinel_proven: serial,
+                graphical_boot_progress_proven: graphical_boot,
+                viewer_evidence_proven: viewer,
+                qmp_evidence_proven: qmp,
+                guest_tools_effects_proven: false,
+                summary: "synthetic test evidence".to_string(),
+            }
         };
 
-        let launch_only = evidence(false, false, false);
+        let launch_only = evidence(false, false, false, false);
         let launch_only_requirements = metadata_safe_live_evidence_requirements(Some(&launch_only));
         assert!(launch_only_requirements.iter().any(|requirement| {
             requirement.kind == "live-boot" && requirement.required && !requirement.proven
         }));
 
-        let serial_progress = evidence(true, false, false);
+        let serial_progress = evidence(true, false, false, false);
         let serial_requirements = metadata_safe_live_evidence_requirements(Some(&serial_progress));
         assert!(serial_requirements.iter().any(|requirement| {
             requirement.kind == "live-boot" && requirement.required && requirement.proven
         }));
 
-        for console_only_evidence in [evidence(false, true, false), evidence(false, false, true)] {
+        let graphical_progress = evidence(false, true, false, false);
+        let graphical_requirements =
+            metadata_safe_live_evidence_requirements(Some(&graphical_progress));
+        assert!(graphical_requirements.iter().any(|requirement| {
+            requirement.kind == "live-boot" && requirement.required && requirement.proven
+        }));
+
+        for console_only_evidence in [
+            evidence(false, false, true, false),
+            evidence(false, false, false, true),
+        ] {
             let requirements =
                 metadata_safe_live_evidence_requirements(Some(&console_only_evidence));
             assert!(requirements.iter().any(|requirement| {

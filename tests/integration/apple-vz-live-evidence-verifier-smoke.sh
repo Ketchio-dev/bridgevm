@@ -203,6 +203,19 @@ cat >"$EVIDENCE_DIR/viewer-evidence.json" <<EOF
   "observation": "preserved viewer frame captured from live VM"
 }
 EOF
+cat >"$EVIDENCE_DIR/boot-progress-evidence.json" <<EOF
+{
+  "proven": true,
+  "kind": "graphical-boot-progress",
+  "artifact": "viewer-frame.png",
+  "width": 1,
+  "height": 1,
+  "sha256": "$VIEWER_SHA",
+  "stage": "boot-menu",
+  "progress_marker": "login prompt visible",
+  "observation": "preserved graphical frame shows guest boot progress"
+}
+EOF
 
 cat >"$EVIDENCE_DIR/environment.txt" <<EOF
 BRIDGEVM_LIVE_VZ_ALLOW_REAL_START=1
@@ -488,6 +501,26 @@ cp "$EVIDENCE_DIR/viewer-evidence.json" "$EVIDENCE_DIR/viewer-evidence.good.json
 perl -0pi -e 's/"width": 1/"width": 2/' "$EVIDENCE_DIR/viewer-evidence.json"
 expect_verifier_rejects "viewer evidence with dimensions that do not match the PNG"
 mv "$EVIDENCE_DIR/viewer-evidence.good.json" "$EVIDENCE_DIR/viewer-evidence.json"
+
+cp "$EVIDENCE_DIR/boot-progress-evidence.json" "$EVIDENCE_DIR/boot-progress-evidence.good.json"
+perl -0pi -e 's/"proven": true/"proven": false/' "$EVIDENCE_DIR/boot-progress-evidence.json"
+expect_verifier_rejects "boot progress evidence not marked proven"
+mv "$EVIDENCE_DIR/boot-progress-evidence.good.json" "$EVIDENCE_DIR/boot-progress-evidence.json"
+
+cp "$EVIDENCE_DIR/boot-progress-evidence.json" "$EVIDENCE_DIR/boot-progress-evidence.good.json"
+perl -0pi -e 's/"kind": "graphical-boot-progress"/"kind": "graphical-viewer"/' "$EVIDENCE_DIR/boot-progress-evidence.json"
+expect_verifier_rejects "boot progress evidence with the wrong kind"
+mv "$EVIDENCE_DIR/boot-progress-evidence.good.json" "$EVIDENCE_DIR/boot-progress-evidence.json"
+
+cp "$EVIDENCE_DIR/boot-progress-evidence.json" "$EVIDENCE_DIR/boot-progress-evidence.good.json"
+perl -0pi -e 's/"artifact": "viewer-frame[.]png"/"artifact": "..\/outside-viewer-frame.png"/' "$EVIDENCE_DIR/boot-progress-evidence.json"
+expect_verifier_rejects "boot progress evidence with a traversal artifact path"
+mv "$EVIDENCE_DIR/boot-progress-evidence.good.json" "$EVIDENCE_DIR/boot-progress-evidence.json"
+
+cp "$EVIDENCE_DIR/boot-progress-evidence.json" "$EVIDENCE_DIR/boot-progress-evidence.good.json"
+perl -0pi -e 's/,\n  "progress_marker": "login prompt visible"//' "$EVIDENCE_DIR/boot-progress-evidence.json"
+expect_verifier_rejects "boot progress evidence without a progress marker"
+mv "$EVIDENCE_DIR/boot-progress-evidence.good.json" "$EVIDENCE_DIR/boot-progress-evidence.json"
 
 perl -0pi -e 's/BRIDGEVM_LIVE_VZ_ALLOW_REAL_START=1/BRIDGEVM_LIVE_VZ_ALLOW_REAL_START=0/' "$EVIDENCE_DIR/environment.txt"
 expect_verifier_rejects "a missing live Apple VZ opt-in environment marker"

@@ -20,6 +20,7 @@ LAUNCH_OUTPUT="$EVIDENCE_DIR/apple-vz-live-launch.output"
 MISSING_OPT_IN_STDOUT="$EVIDENCE_DIR/live-vz-missing-helper-opt-in.stdout"
 MISSING_OPT_IN_STDERR="$EVIDENCE_DIR/live-vz-missing-helper-opt-in.stderr"
 GUEST_TOOLS_EFFECTS="$EVIDENCE_DIR/guest-tools-effects.json"
+BOOT_PROGRESS_EVIDENCE="$EVIDENCE_DIR/boot-progress-evidence.json"
 
 fail() {
   echo "FAIL: $*" >&2
@@ -77,14 +78,14 @@ assert_contains_file "$MISSING_OPT_IN_STDERR" "real Apple VZ start requires --al
 [[ ! -s "$MISSING_OPT_IN_STDOUT" ]] || fail "missing opt-in stdout should be empty: $MISSING_OPT_IN_STDOUT"
 [[ -s "$MISSING_OPT_IN_STDERR" ]] || fail "missing opt-in stderr should be non-empty: $MISSING_OPT_IN_STDERR"
 
-python3 - "$FIXTURE_MANIFEST" "$LAUNCH_SPEC" "$HANDOFF_JSON" "$ENVIRONMENT_FILE" "$SUMMARY_FILE" "$LAUNCH_OUTPUT" "$VALIDATE_OUTPUT" "$GUEST_TOOLS_EFFECTS" <<'PY'
+python3 - "$FIXTURE_MANIFEST" "$LAUNCH_SPEC" "$HANDOFF_JSON" "$ENVIRONMENT_FILE" "$SUMMARY_FILE" "$LAUNCH_OUTPUT" "$VALIDATE_OUTPUT" "$GUEST_TOOLS_EFFECTS" "$BOOT_PROGRESS_EVIDENCE" <<'PY'
 import json
 import hashlib
 import re
 import sys
 from pathlib import Path
 
-manifest_path, launch_path, handoff_path, environment_path, summary_path, launch_output_path, validate_output_path, guest_tools_effects_path = map(Path, sys.argv[1:9])
+manifest_path, launch_path, handoff_path, environment_path, summary_path, launch_output_path, validate_output_path, guest_tools_effects_path, boot_progress_evidence_path = map(Path, sys.argv[1:10])
 evidence_dir = manifest_path.parent
 viewer_evidence_path = evidence_dir / "viewer-evidence.json"
 
@@ -364,37 +365,52 @@ if guest_tools_effects_path.exists():
             continue
         fail(f"guest-tools effect {index} needs expected_value/observed_value or artifact/sha256 evidence")
 
-if viewer_evidence_path.exists():
-    viewer = load_json(viewer_evidence_path)
-    if viewer.get("proven") is not True:
-        fail("viewer evidence is not proven")
-    if viewer.get("kind") != "graphical-viewer":
-        fail("viewer evidence kind is not graphical-viewer")
-    artifact = viewer.get("artifact")
+def verify_graphical_png_evidence(evidence_path, expected_kind, label):
+    evidence = load_json(evidence_path)
+    if evidence.get("proven") is not True:
+        fail(f"{label} is not proven")
+    if evidence.get("kind") != expected_kind:
+        fail(f"{label} kind is not {expected_kind}")
+    artifact = evidence.get("artifact")
     if not isinstance(artifact, str) or not artifact:
-        fail("viewer evidence artifact is missing")
-    artifact_path = require_relative_evidence_file(artifact, "viewer evidence artifact")
+        fail(f"{label} artifact is missing")
+    artifact_path = require_relative_evidence_file(artifact, f"{label} artifact")
     if artifact_path.stat().st_size <= 0:
-        fail(f"viewer evidence artifact is empty: {artifact_path}")
+        fail(f"{label} artifact is empty: {artifact_path}")
     for key in ["width", "height"]:
-        value = viewer.get(key)
+        value = evidence.get(key)
         if not isinstance(value, int) or value <= 0:
-            fail(f"viewer evidence {key} must be a positive integer")
-    sha256 = viewer.get("sha256")
+            fail(f"{label} {key} must be a positive integer")
+    sha256 = evidence.get("sha256")
     if not isinstance(sha256, str) or not sha_pattern.match(sha256):
-        fail("viewer evidence sha256 is not a SHA-256 hex digest")
+        fail(f"{label} sha256 is not a SHA-256 hex digest")
     artifact_bytes = artifact_path.read_bytes()
     actual_sha256 = hashlib.sha256(artifact_bytes).hexdigest()
     if sha256 != actual_sha256:
-        fail("viewer evidence sha256 does not match artifact")
+        fail(f"{label} sha256 does not match artifact")
     dimensions = png_dimensions(artifact_bytes)
     if dimensions is None:
-        fail("viewer evidence artifact is not a PNG image")
-    if dimensions != (viewer["width"], viewer["height"]):
-        fail("viewer evidence width and height do not match artifact pixels")
-    observation = viewer.get("observation")
+        fail(f"{label} artifact is not a PNG image")
+    if dimensions != (evidence["width"], evidence["height"]):
+        fail(f"{label} width and height do not match artifact pixels")
+    observation = evidence.get("observation")
     if not isinstance(observation, str) or not observation:
-        fail("viewer evidence observation is missing")
+        fail(f"{label} observation is missing")
+    return evidence
+
+if viewer_evidence_path.exists():
+    verify_graphical_png_evidence(viewer_evidence_path, "graphical-viewer", "viewer evidence")
+
+if boot_progress_evidence_path.exists():
+    boot_progress = verify_graphical_png_evidence(
+        boot_progress_evidence_path,
+        "graphical-boot-progress",
+        "boot progress evidence",
+    )
+    for key in ["stage", "progress_marker"]:
+        value = boot_progress.get(key)
+        if not isinstance(value, str) or not value:
+            fail(f"boot progress evidence {key} is missing")
 
 if f"BRIDGEVM_LIVE_VZ_STOP_AFTER_SECONDS={stop_after_seconds}" not in launch_output:
     fail("live launch output stop-after bound does not match environment evidence")

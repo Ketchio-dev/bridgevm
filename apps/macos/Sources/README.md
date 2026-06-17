@@ -156,11 +156,13 @@ see the helper decoded the handoff, selected the supported boot/disk/network
 shape, and validated the constructible VZ configuration. Those markers remain
 metadata/synthetic-safe because they are emitted before any allowed call to
 `VZVirtualMachine.start()`; real boot proof still requires the explicit live
-opt-in path and its preserved launch/serial evidence.
+opt-in path and its preserved launch plus serial or graphical boot-progress
+evidence.
 Reviewer evidence should keep the helper output tied to the exact artifacts that
 fed it: the launch spec, handoff JSON, fixture manifest, environment source
 paths, selected resources, kernel command line, runner path, validation output,
-live-launch output, bounded stop/grace controls, and any serial sentinel. The
+live-launch output, bounded stop/grace controls, any serial sentinel, and any
+verifier-bound `boot-progress-evidence.json` artifact. The
 synthetic verifier smoke can exercise those cross-checks without starting Apple
 VZ, QEMU, a GUI console, or a networked guest. A dashboard or daemon status of
 metadata-ready therefore means the app has enough metadata to explain readiness;

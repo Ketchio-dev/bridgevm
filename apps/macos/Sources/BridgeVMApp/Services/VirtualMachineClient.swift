@@ -5936,6 +5936,7 @@ struct DaemonLiveEvidenceDTO: Decodable {
   var network: String
   var serialSentinelRequired: Bool
   var serialSentinelProven: Bool
+  var graphicalBootProgressProven: Bool
   var viewerEvidenceProven: Bool
   var qmpEvidenceProven: Bool
   var guestToolsEffectsProven: Bool
@@ -5950,6 +5951,7 @@ struct DaemonLiveEvidenceDTO: Decodable {
     case network
     case serialSentinelRequired = "serial_sentinel_required"
     case serialSentinelProven = "serial_sentinel_proven"
+    case graphicalBootProgressProven = "graphical_boot_progress_proven"
     case viewerEvidenceProven = "viewer_evidence_proven"
     case qmpEvidenceProven = "qmp_evidence_proven"
     case guestToolsEffectsProven = "guest_tools_effects_proven"
@@ -5966,6 +5968,8 @@ struct DaemonLiveEvidenceDTO: Decodable {
     network = try container.decode(String.self, forKey: .network)
     serialSentinelRequired = try container.decode(Bool.self, forKey: .serialSentinelRequired)
     serialSentinelProven = try container.decode(Bool.self, forKey: .serialSentinelProven)
+    graphicalBootProgressProven =
+      try container.decodeIfPresent(Bool.self, forKey: .graphicalBootProgressProven) ?? false
     viewerEvidenceProven =
       try container.decodeIfPresent(Bool.self, forKey: .viewerEvidenceProven) ?? false
     qmpEvidenceProven =
@@ -5985,6 +5989,7 @@ struct DaemonLiveEvidenceDTO: Decodable {
       network: network,
       serialSentinelRequired: serialSentinelRequired,
       serialSentinelProven: serialSentinelProven,
+      graphicalBootProgressProven: graphicalBootProgressProven,
       viewerEvidenceProven: viewerEvidenceProven,
       qmpEvidenceProven: qmpEvidenceProven,
       guestToolsEffectsProven: guestToolsEffectsProven,

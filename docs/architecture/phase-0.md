@@ -619,9 +619,10 @@ blocker-free command plan does not mean QEMU was spawned or a guest booted.
 Phase 0 readiness evidence should keep three unsatisfied proof categories
 visible instead of folding them into metadata readiness. `live-boot` requires a
 verified opt-in boot with observable guest progress, not just a launch-ready
-spec or helper start/stop transcript. `console` requires a real graphical
-console/viewer or equivalent display signal, not QMP socket status or bounded
-log tails. `guest-tools-effects` requires observable guest-side effects from
+spec or helper start/stop transcript; accepted progress evidence is a serial
+sentinel or verifier-bound `boot-progress-evidence.json` graphical artifact.
+`console` requires a real graphical console/viewer or equivalent display signal,
+not QMP socket status or bounded log tails. `guest-tools-effects` requires observable guest-side effects from
 guest-tools commands, not authenticated dispatch, command tracking metadata, or
 latest command-result receipts alone. Until those live artifacts exist, these
 requirements are required but unproven.

@@ -1891,6 +1891,7 @@ final class DaemonDTOTests: XCTestCase {
             "network": "nat",
             "serial_sentinel_required": true,
             "serial_sentinel_proven": true,
+            "graphical_boot_progress_proven": true,
             "viewer_evidence_proven": true,
             "qmp_evidence_proven": false,
             "guest_tools_effects_proven": true,
@@ -1901,7 +1902,7 @@ final class DaemonDTOTests: XCTestCase {
               "kind": "live-boot",
               "required": true,
               "proven": true,
-              "note": "verified preserved opt-in Apple VZ serial boot progress evidence bundle"
+              "note": "verified preserved opt-in Apple VZ serial and graphical boot progress evidence bundle"
             },
             {
               "kind": "guest-tools-effects",
@@ -1994,6 +1995,7 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertEqual(liveEvidence.summary, "Apple VZ live boot opt-in smoke: passed")
     XCTAssertTrue(liveEvidence.serialSentinelRequired)
     XCTAssertTrue(liveEvidence.serialSentinelProven)
+    XCTAssertTrue(liveEvidence.graphicalBootProgressProven)
     XCTAssertTrue(liveEvidence.viewerEvidenceProven)
     XCTAssertFalse(liveEvidence.qmpEvidenceProven)
     XCTAssertTrue(liveEvidence.guestToolsEffectsProven)
@@ -2177,7 +2179,7 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertEqual(liveEvidence.title, "Preserved live and guest-tools evidence verified")
     XCTAssertEqual(
       liveEvidence.detail,
-      "apple-virtualization-framework, linux-kernel, raw, nat, graphical/serial console evidence proven, viewer evidence proven, QMP evidence pending, guest-tools effects proven"
+      "apple-virtualization-framework, linux-kernel, raw, nat, graphical/serial console evidence proven, boot progress proven, viewer evidence proven, QMP evidence pending, guest-tools effects proven"
     )
   }
 
@@ -2232,6 +2234,7 @@ final class DaemonDTOTests: XCTestCase {
     )
     XCTAssertTrue(liveEvidence.qmpEvidenceProven)
     XCTAssertTrue(liveEvidence.detail.contains("graphical/serial console evidence pending"))
+    XCTAssertTrue(liveEvidence.detail.contains("boot progress pending"))
     XCTAssertTrue(liveEvidence.detail.contains("QMP evidence proven"))
     XCTAssertTrue(liveEvidence.detail.contains("viewer evidence pending"))
   }
@@ -2287,6 +2290,7 @@ final class DaemonDTOTests: XCTestCase {
     )
     XCTAssertFalse(liveEvidence.viewerEvidenceProven)
     XCTAssertFalse(liveEvidence.qmpEvidenceProven)
+    XCTAssertFalse(liveEvidence.graphicalBootProgressProven)
   }
 
   func testReadinessReportDisplaysQmpOnlyGuestToolsEvidenceAsDiagnosticsVerified() throws {
@@ -2343,6 +2347,7 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertTrue(liveEvidence.qmpEvidenceProven)
     XCTAssertTrue(liveEvidence.guestToolsEffectsProven)
     XCTAssertTrue(liveEvidence.detail.contains("graphical/serial console evidence pending"))
+    XCTAssertTrue(liveEvidence.detail.contains("boot progress pending"))
     XCTAssertTrue(liveEvidence.detail.contains("QMP evidence proven"))
     XCTAssertTrue(liveEvidence.detail.contains("guest-tools effects proven"))
   }

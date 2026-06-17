@@ -1445,11 +1445,11 @@ launched Windows 11 25H2 Arm64 to the Setup language screen, confirmed by a QMP
 screendump with `query-status` running (see
 docs/compatibility-mode/README.md, "Windows 11 Arm installer boot").
 
-One follow-up remains for Windows: the readiness evidence recorder cannot yet
-ingest this graphical proof — `live_boot_progress_proven` is serial-sentinel-only
-and Windows GUI Setup emits no serial console output, so formally recording
-Windows boot progress needs an enhancement that accepts a verified graphical
-viewer frame as boot-progress evidence for graphical-only guests.
+The readiness evidence recorder can now ingest verifier-bound
+`boot-progress-evidence.json` graphical PNG artifacts, so graphical-only guests
+such as Windows Setup no longer depend on serial console output to prove
+`live-boot`. Ordinary viewer/QMP evidence remains console evidence only unless
+that separate boot-progress artifact is present.
 ```
 
 Current scaffold progress:

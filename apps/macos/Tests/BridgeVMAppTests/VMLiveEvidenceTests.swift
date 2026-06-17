@@ -20,12 +20,16 @@ final class VMLiveEvidenceTests: XCTestCase {
     )
 
     XCTAssertFalse(evidence.interactiveConsoleEvidenceProven)
+    XCTAssertFalse(evidence.liveBootProgressProven)
     XCTAssertTrue(evidence.hasAnyVerifiedEvidence)
     XCTAssertEqual(
       evidence.proofItems.map(\.kind),
-      ["serial-sentinel", "viewer", "qmp", "guest-tools"]
+      ["serial-sentinel", "graphical-boot-progress", "viewer", "qmp", "guest-tools"]
     )
-    XCTAssertEqual(evidence.proofItems.map(\.status), ["pending", "pending", "proven", "pending"])
+    XCTAssertEqual(
+      evidence.proofItems.map(\.status),
+      ["pending", "pending", "pending", "proven", "pending"]
+    )
   }
 
   func testProofItemsOmitSerialSentinelWhenItIsNotRequired() {
@@ -45,7 +49,35 @@ final class VMLiveEvidenceTests: XCTestCase {
     )
 
     XCTAssertTrue(evidence.interactiveConsoleEvidenceProven)
-    XCTAssertEqual(evidence.proofItems.map(\.kind), ["viewer", "qmp", "guest-tools"])
-    XCTAssertEqual(evidence.proofItems.map(\.status), ["proven", "pending", "proven"])
+    XCTAssertFalse(evidence.liveBootProgressProven)
+    XCTAssertEqual(
+      evidence.proofItems.map(\.kind),
+      ["graphical-boot-progress", "viewer", "qmp", "guest-tools"]
+    )
+    XCTAssertEqual(evidence.proofItems.map(\.status), ["pending", "proven", "pending", "proven"])
+  }
+
+  func testGraphicalBootProgressCanProveLiveBootWithoutConsoleProof() {
+    let evidence = VMLiveEvidence(
+      path: "/tmp/bridgevm-live-evidence",
+      backend: "apple-virtualization-framework",
+      vmName: "Dev VM",
+      bootMode: "linux-kernel",
+      diskFormat: "raw",
+      network: "nat",
+      serialSentinelRequired: false,
+      serialSentinelProven: false,
+      graphicalBootProgressProven: true,
+      viewerEvidenceProven: false,
+      qmpEvidenceProven: false,
+      guestToolsEffectsProven: false,
+      summary: "boot progress captured"
+    )
+
+    XCTAssertTrue(evidence.liveBootProgressProven)
+    XCTAssertFalse(evidence.interactiveConsoleEvidenceProven)
+    XCTAssertTrue(evidence.hasAnyVerifiedEvidence)
+    XCTAssertEqual(evidence.proofItems.first?.kind, "graphical-boot-progress")
+    XCTAssertEqual(evidence.proofItems.first?.status, "proven")
   }
 }

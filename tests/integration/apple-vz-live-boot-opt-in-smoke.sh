@@ -55,10 +55,16 @@ VIEWER_FRAME_SOURCE="${BRIDGEVM_LIVE_VZ_VIEWER_FRAME:-}"
 VIEWER_FRAME_WIDTH="${BRIDGEVM_LIVE_VZ_VIEWER_FRAME_WIDTH:-}"
 VIEWER_FRAME_HEIGHT="${BRIDGEVM_LIVE_VZ_VIEWER_FRAME_HEIGHT:-}"
 VIEWER_FRAME_OBSERVATION="${BRIDGEVM_LIVE_VZ_VIEWER_FRAME_OBSERVATION:-preserved viewer frame captured from live VM}"
+BOOT_PROGRESS_FRAME_SOURCE="${BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME:-}"
+BOOT_PROGRESS_FRAME_WIDTH="${BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME_WIDTH:-}"
+BOOT_PROGRESS_FRAME_HEIGHT="${BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME_HEIGHT:-}"
+BOOT_PROGRESS_STAGE="${BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_STAGE:-guest-boot}"
+BOOT_PROGRESS_MARKER="${BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_MARKER:-graphical boot progress visible}"
+BOOT_PROGRESS_OBSERVATION="${BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_OBSERVATION:-preserved graphical frame shows guest boot progress}"
 GUEST_TOOLS_EFFECTS_SOURCE="${BRIDGEVM_LIVE_VZ_GUEST_TOOLS_EFFECTS_JSON:-}"
 
-[[ -n "$SERIAL_EXPECTED" ]] || \
-  skip "set BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED to prove guest boot progress from the serial log"
+[[ -n "$SERIAL_EXPECTED" || -n "$BOOT_PROGRESS_FRAME_SOURCE" ]] || \
+  skip "set BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED or BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME to prove guest boot progress"
 [[ "$STOP_AFTER_SECONDS" =~ ^[1-9][0-9]*$ ]] || \
   skip "BRIDGEVM_LIVE_VZ_STOP_AFTER_SECONDS must be a positive integer"
 [[ "$FORCE_STOP_GRACE_SECONDS" =~ ^[1-9][0-9]*$ ]] || \
@@ -182,6 +188,11 @@ write_environment_evidence() {
     echo "BRIDGEVM_LIVE_VZ_VIEWER_FRAME=${VIEWER_FRAME_SOURCE:-<unset>}"
     echo "BRIDGEVM_LIVE_VZ_VIEWER_FRAME_WIDTH=${VIEWER_FRAME_WIDTH:-<unset>}"
     echo "BRIDGEVM_LIVE_VZ_VIEWER_FRAME_HEIGHT=${VIEWER_FRAME_HEIGHT:-<unset>}"
+    echo "BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME=${BOOT_PROGRESS_FRAME_SOURCE:-<unset>}"
+    echo "BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME_WIDTH=${BOOT_PROGRESS_FRAME_WIDTH:-<unset>}"
+    echo "BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME_HEIGHT=${BOOT_PROGRESS_FRAME_HEIGHT:-<unset>}"
+    echo "BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_STAGE=$BOOT_PROGRESS_STAGE"
+    echo "BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_MARKER=$BOOT_PROGRESS_MARKER"
     echo "BRIDGEVM_LIVE_VZ_GUEST_TOOLS_EFFECTS_JSON=${GUEST_TOOLS_EFFECTS_SOURCE:-<unset>}"
     echo "BRIDGEVM_LIVE_VZ_MEMORY_MIB=${BRIDGEVM_LIVE_VZ_MEMORY_MIB:-4096}"
     echo "BRIDGEVM_LIVE_VZ_CPU_COUNT=${BRIDGEVM_LIVE_VZ_CPU_COUNT:-2}"
@@ -247,6 +258,39 @@ write_optional_viewer_evidence() {
   "height": $VIEWER_FRAME_HEIGHT,
   "sha256": "$(file_sha256 "$artifact_path")",
   "observation": "$(json_string "$VIEWER_FRAME_OBSERVATION")"
+}
+EOF
+}
+
+write_optional_boot_progress_evidence() {
+  [[ -n "$BOOT_PROGRESS_FRAME_SOURCE" ]] || return 0
+  [[ -f "$BOOT_PROGRESS_FRAME_SOURCE" ]] || fail "boot progress frame evidence does not exist: $BOOT_PROGRESS_FRAME_SOURCE"
+  [[ "$BOOT_PROGRESS_FRAME_WIDTH" =~ ^[1-9][0-9]*$ ]] || fail "BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME_WIDTH must be a positive integer"
+  [[ "$BOOT_PROGRESS_FRAME_HEIGHT" =~ ^[1-9][0-9]*$ ]] || fail "BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME_HEIGHT must be a positive integer"
+  [[ -n "$BOOT_PROGRESS_STAGE" ]] || fail "BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_STAGE must not be empty"
+  [[ -n "$BOOT_PROGRESS_MARKER" ]] || fail "BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_MARKER must not be empty"
+
+  local artifact="boot-progress-frame"
+  local extension="${BOOT_PROGRESS_FRAME_SOURCE##*.}"
+  if [[ "$extension" =~ ^[A-Za-z0-9]{1,8}$ && "$extension" != "$BOOT_PROGRESS_FRAME_SOURCE" ]]; then
+    artifact="$artifact.$extension"
+  else
+    artifact="$artifact.bin"
+  fi
+  local artifact_path="$EVIDENCE_DIR/$artifact"
+  cp "$BOOT_PROGRESS_FRAME_SOURCE" "$artifact_path"
+
+  cat >"$EVIDENCE_DIR/boot-progress-evidence.json" <<EOF
+{
+  "proven": true,
+  "kind": "graphical-boot-progress",
+  "artifact": "$(json_string "$artifact")",
+  "width": $BOOT_PROGRESS_FRAME_WIDTH,
+  "height": $BOOT_PROGRESS_FRAME_HEIGHT,
+  "sha256": "$(file_sha256 "$artifact_path")",
+  "stage": "$(json_string "$BOOT_PROGRESS_STAGE")",
+  "progress_marker": "$(json_string "$BOOT_PROGRESS_MARKER")",
+  "observation": "$(json_string "$BOOT_PROGRESS_OBSERVATION")"
 }
 EOF
 }
@@ -532,6 +576,7 @@ if [[ -n "$SERIAL_EXPECTED" ]]; then
 fi
 
 write_optional_viewer_evidence
+write_optional_boot_progress_evidence
 copy_optional_guest_tools_effects_evidence
 normalize_evidence_log_paths
 write_summary "passed"

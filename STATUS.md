@@ -48,6 +48,10 @@ All three "live boot proof" criteria are now demonstrated on Apple Silicon:
 
 Live evidence is captured via opt-in smokes (`tests/integration/qemu-live-boot-opt-in-smoke.sh`,
 `apple-vz-live-boot-opt-in-smoke.sh`) and recorded with `bridgevm readiness --record-live-evidence`.
+Readiness ingestion now accepts verifier-bound graphical
+`boot-progress-evidence.json` PNG artifacts as live-boot progress proof, while
+ordinary viewer/QMP evidence remains console-only unless a separate progress
+artifact or serial sentinel is present.
 
 ## Windows installer support (product feature)
 `bridgevm` can build and launch the Windows 11 Arm installer in Compatibility Mode:
@@ -111,7 +115,7 @@ The VM lifecycle (create/run/suspend/resume/stop) + networking + boot evidence a
 
 **Resource manager (§14) — battery-adaptive Fast Mode resources DONE:** Fast Mode cold starts — the api `cold_start_fast_backend`/`display_fast_backend` (daemon-less CLI) AND the daemon's own `spawn_fast_backend_with_restore` (the app's primary path) — now expand `auto` memory/cpu using the host power state at launch (`bridgevm-resource-manager::read_on_battery` parses `pmset -g batt`, honoring `BRIDGEVM_FORCE_ON_BATTERY` for tests/demos). Policy: on battery, `auto` Automatic/Office VMs step down to conserve power (4096/2 → 2048/1); Performance/Developer keep their headroom; explicit per-VM values are always respected. Unit-tested (`parses_pmset_battery_state`, `launch_decision_steps_down_auto_profiles_on_battery`, `power_aware_resolution_only_affects_auto_values`). Not applied to resume (must match saved state) or Compat (heavyweight mode). Remaining §14 work: runtime re-apply while running + foreground/background signal.
 
-**Smaller follow-ups (implementable now):** readiness graphical boot-progress recording (release-gate semantics — needs sign-off), Compat live resume (needs a non-HVF path).
+**Smaller follow-ups (implementable now):** Compat live resume (needs a non-HVF path).
 
 ## Where to look
 - `PLAN.md` — full plan, roadmap, §20 "Current scaffold progress" running log.

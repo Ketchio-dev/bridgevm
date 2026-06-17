@@ -22,6 +22,9 @@ struct DashboardVMCardSummary: Equatable {
     if let serialEvidence = Self.serialEvidenceSummary(for: readinessReport) {
       items.append(serialEvidence)
     }
+    if let bootProgressEvidence = Self.bootProgressEvidenceSummary(for: readinessReport) {
+      items.append(bootProgressEvidence)
+    }
     if let viewerEvidence = Self.viewerEvidenceSummary(for: readinessReport) {
       items.append(viewerEvidence)
     }
@@ -94,6 +97,16 @@ struct DashboardVMCardSummary: Equatable {
     return liveEvidence.viewerEvidenceProven
       ? "Viewer evidence proven"
       : "Viewer evidence pending"
+  }
+
+  private static func bootProgressEvidenceSummary(for report: VMReadinessReport?) -> String? {
+    guard let liveEvidence = report?.liveEvidence else {
+      return nil
+    }
+
+    return liveEvidence.liveBootProgressProven
+      ? "Boot progress evidence proven"
+      : "Boot progress evidence pending"
   }
 
   private static func qmpEvidenceSummary(for report: VMReadinessReport?) -> String? {

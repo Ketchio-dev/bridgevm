@@ -190,6 +190,7 @@ assert_live_evidence_readiness_report() {
   assert_contains "$output" "Live evidence disk: raw" "$label"
   assert_contains "$output" "Live evidence network: nat" "$label"
   assert_contains "$output" "Live evidence serial sentinel: required=true proven=true" "$label"
+  assert_contains "$output" "Live evidence graphical boot progress: proven=false" "$label"
   assert_contains "$output" "Live evidence viewer/console: proven=true" "$label"
   assert_contains "$output" "Live evidence QMP: proven=false" "$label"
   assert_contains "$output" "Live evidence guest-tools effects: proven=true" "$label"
@@ -214,12 +215,35 @@ assert_viewer_only_live_evidence_readiness_report() {
   assert_contains "$output" "Live evidence backend: apple-virtualization-framework" "$label"
   assert_contains "$output" "Live evidence VM: $vm" "$label"
   assert_contains "$output" "Live evidence serial sentinel: required=false proven=false" "$label"
+  assert_contains "$output" "Live evidence graphical boot progress: proven=false" "$label"
   assert_contains "$output" "Live evidence viewer/console: proven=true" "$label"
   assert_contains "$output" "Live evidence QMP: proven=false" "$label"
   assert_contains "$output" "Live evidence guest-tools effects: proven=true" "$label"
   assert_contains "$output" "live-boot: required=true proven=false" "$label"
   assert_contains "$output" "console: required=true proven=true" "$label"
   assert_contains "$output" "verified preserved opt-in Apple VZ launch evidence; guest boot progress evidence is still required" "$label"
+  assert_contains "$output" "guest-tools-effects: required=true proven=true" "$label"
+  assert_not_contains "$output" "live-evidence-invalid" "$label"
+}
+
+assert_graphical_boot_progress_live_evidence_readiness_report() {
+  local output="$1"
+  local vm="$2"
+  local evidence="$3"
+  local label="$4"
+
+  assert_contains "$output" "Readiness report for $vm" "$label"
+  assert_contains "$output" "Live evidence: verified ($evidence)" "$label"
+  assert_contains "$output" "Live evidence backend: apple-virtualization-framework" "$label"
+  assert_contains "$output" "Live evidence VM: $vm" "$label"
+  assert_contains "$output" "Live evidence serial sentinel: required=false proven=false" "$label"
+  assert_contains "$output" "Live evidence graphical boot progress: proven=true" "$label"
+  assert_contains "$output" "Live evidence viewer/console: proven=true" "$label"
+  assert_contains "$output" "Live evidence QMP: proven=false" "$label"
+  assert_contains "$output" "Live evidence guest-tools effects: proven=true" "$label"
+  assert_contains "$output" "live-boot: required=true proven=true" "$label"
+  assert_contains "$output" "console: required=true proven=true" "$label"
+  assert_contains "$output" "verified preserved opt-in Apple VZ graphical boot progress evidence bundle" "$label"
   assert_contains "$output" "guest-tools-effects: required=true proven=true" "$label"
   assert_not_contains "$output" "live-evidence-invalid" "$label"
 }
@@ -239,6 +263,7 @@ assert_qemu_live_evidence_readiness_report() {
   assert_contains "$output" "Live evidence disk: qcow2" "$label"
   assert_contains "$output" "Live evidence network: nat" "$label"
   assert_contains "$output" "Live evidence serial sentinel: required=true proven=true" "$label"
+  assert_contains "$output" "Live evidence graphical boot progress: proven=false" "$label"
   assert_contains "$output" "Live evidence viewer/console: proven=false" "$label"
   assert_contains "$output" "Live evidence QMP: proven=true" "$label"
   assert_contains "$output" "Live evidence guest-tools effects: proven=true" "$label"
@@ -263,6 +288,7 @@ assert_qemu_qmp_only_evidence_readiness_report() {
   assert_contains "$output" "Live evidence backend: qemu" "$label"
   assert_contains "$output" "Live evidence VM: $vm" "$label"
   assert_contains "$output" "Live evidence serial sentinel: required=false proven=false" "$label"
+  assert_contains "$output" "Live evidence graphical boot progress: proven=false" "$label"
   assert_contains "$output" "Live evidence viewer/console: proven=false" "$label"
   assert_contains "$output" "Live evidence QMP: proven=true" "$label"
   assert_contains "$output" "live-boot: required=true proven=false" "$label"
@@ -602,6 +628,32 @@ assert_viewer_only_live_evidence_readiness_report \
   "$VM_NAME" \
   "$VIEWER_ONLY_EVIDENCE_DIR" \
   "local viewer-only Apple VZ evidence readiness"
+
+GRAPHICAL_BOOT_PROGRESS_EVIDENCE_DIR="$STORE/evidence/local-live-vz-graphical-boot-progress"
+cp -R "$EVIDENCE_DIR" "$GRAPHICAL_BOOT_PROGRESS_EVIDENCE_DIR"
+rebase_apple_live_evidence_bundle_paths "$EVIDENCE_DIR" "$GRAPHICAL_BOOT_PROGRESS_EVIDENCE_DIR"
+perl -0pi -e 's/BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED=bridgevm-live-ready/BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED=/' \
+  "$GRAPHICAL_BOOT_PROGRESS_EVIDENCE_DIR/environment.txt"
+graphical_boot_progress_sha="$(shasum -a 256 "$GRAPHICAL_BOOT_PROGRESS_EVIDENCE_DIR/viewer-frame.png" | awk '{print $1}')"
+cat >"$GRAPHICAL_BOOT_PROGRESS_EVIDENCE_DIR/boot-progress-evidence.json" <<EOF
+{
+  "proven": true,
+  "kind": "graphical-boot-progress",
+  "artifact": "viewer-frame.png",
+  "width": 1,
+  "height": 1,
+  "sha256": "$graphical_boot_progress_sha",
+  "stage": "boot-menu",
+  "progress_marker": "installer menu visible",
+  "observation": "preserved graphical frame shows guest boot progress"
+}
+EOF
+graphical_boot_progress_evidence_output="$(bridgevm readiness "$VM_NAME" --live-evidence "$GRAPHICAL_BOOT_PROGRESS_EVIDENCE_DIR")"
+assert_graphical_boot_progress_live_evidence_readiness_report \
+  "$graphical_boot_progress_evidence_output" \
+  "$VM_NAME" \
+  "$GRAPHICAL_BOOT_PROGRESS_EVIDENCE_DIR" \
+  "local graphical boot-progress Apple VZ evidence readiness"
 
 BAD_HANDOFF_EVIDENCE_DIR="$STORE/evidence/local-live-vz-bad-handoff"
 cp -R "$EVIDENCE_DIR" "$BAD_HANDOFF_EVIDENCE_DIR"

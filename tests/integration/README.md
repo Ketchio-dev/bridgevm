@@ -341,21 +341,28 @@ known-good live boot fixture.
 
 By default it prints `SKIP` and exits successfully. It only attempts a real
 Apple VZ start when `BRIDGEVM_LIVE_VZ_ALLOW_REAL_START=1`,
-`BRIDGEVM_LIVE_VZ_KERNEL`, `BRIDGEVM_LIVE_VZ_RAW_DISK`, and
-`BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED` are set. The serial sentinel is required so
-the smoke proves guest boot progress, not only successful start/stop calls.
+`BRIDGEVM_LIVE_VZ_KERNEL`, `BRIDGEVM_LIVE_VZ_RAW_DISK`, and either
+`BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED` or `BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME`
+are set. Serial or verifier-bound graphical boot-progress evidence is required
+so the smoke proves guest boot progress, not only successful start/stop calls.
 Optional inputs include `BRIDGEVM_LIVE_VZ_INITRD`,
 `BRIDGEVM_LIVE_VZ_KERNEL_CMDLINE`, `BRIDGEVM_LIVE_VZ_STOP_AFTER_SECONDS`,
 `BRIDGEVM_LIVE_VZ_FORCE_STOP_GRACE_SECONDS`,
 `BRIDGEVM_LIVE_VZ_MEMORY_MIB`, `BRIDGEVM_LIVE_VZ_CPU_COUNT`,
 `BRIDGEVM_LIVE_VZ_RUNNER`,
+`BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME`,
+`BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME_WIDTH`,
+`BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME_HEIGHT`,
+`BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_STAGE`,
+`BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_MARKER`,
 `BRIDGEVM_LIVE_VZ_VIEWER_FRAME`, `BRIDGEVM_LIVE_VZ_VIEWER_FRAME_WIDTH`,
 `BRIDGEVM_LIVE_VZ_VIEWER_FRAME_HEIGHT`, and
 `BRIDGEVM_LIVE_VZ_GUEST_TOOLS_EFFECTS_JSON`. The raw disk is
 copied into a temporary VM bundle before launch so disposable fixture inputs do
 not have to be mutated in place. The bounded timing controls must be positive
-integers, and the script requires `BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED` to appear
-in the serial log after launch.
+integers, and the script requires either `BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED` to
+appear in the serial log after launch or a verifier-checked graphical
+boot-progress artifact.
 
 Successful live runs print the preserved temporary store, an `evidence`
 directory, and `evidence/SUMMARY.txt`. The evidence directory records the input
@@ -364,11 +371,16 @@ Apple VZ launch spec, the handoff JSON consumed by the helper, the selected
 `AppleVzRunner` path, validate/config-check output, live-launch command output,
 and pointers to the runner and serial logs. This keeps the manual proof
 auditable without changing the default no-live behavior. The configured serial
-sentinel must be found before the harness records readiness as verified live
-boot evidence. If a live run also captures a real viewer frame outside
-the harness, provide it with `BRIDGEVM_LIVE_VZ_VIEWER_FRAME` plus positive
-width and height values; the harness copies it into the evidence directory and
-writes verifier-checked `viewer-evidence.json`. If separate guest-tools effect
+sentinel must be found, or verifier-checked `boot-progress-evidence.json` must
+be present, before the harness records readiness as verified live boot evidence.
+If a live run captures a graphical boot-progress frame outside the harness,
+provide it with `BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME` plus positive width and
+height values; the harness copies it into the evidence directory and writes
+verifier-checked `boot-progress-evidence.json` with stage and marker metadata.
+If a live run also captures a real viewer frame outside the harness, provide it
+with `BRIDGEVM_LIVE_VZ_VIEWER_FRAME` plus positive width and height values; the
+harness copies it into the evidence directory and writes verifier-checked
+`viewer-evidence.json`. If separate guest-tools effect
 evidence was produced from observable guest-side results, provide that JSON via
 `BRIDGEVM_LIVE_VZ_GUEST_TOOLS_EFFECTS_JSON`; the harness copies it into the
 bundle for the verifier rather than fabricating guest effects. When that JSON
@@ -382,8 +394,8 @@ Validation evidence is intentionally stricter than a successful helper exit:
 that show the limited Apple VZ shape was constructed and checked. Those markers
 prove only the handoff/configuration boundary for `linux-kernel` + `raw` + NAT;
 they do not prove a live boot, guest console progress, or guest-tools effects
-unless the separate live-launch transcript and required serial sentinel evidence
-come from an explicitly opted-in Apple VZ run.
+unless the separate live-launch transcript and required serial or graphical
+boot-progress evidence come from an explicitly opted-in Apple VZ run.
 
 The preserved `$STORE/evidence` directory from a live smoke can be checked
 afterward with:
@@ -394,8 +406,8 @@ tests/integration/verify-apple-vz-live-evidence.sh "$STORE/evidence"
 
 The verifier checks the summary status, fixture manifest hashes and sizes, the
 launch spec and handoff artifacts, validation and live-launch output, the
-selected runner path, and required serial sentinel evidence from the opted-in
-live run. Validation output is expected to keep the validate-only
+selected runner path, and required serial or graphical boot-progress evidence
+from the opted-in live run. Validation output is expected to keep the validate-only
 config-plan transcript and markers described above. The recorded
 `environment.txt` is not only preserved; it is cross-checked against fixture
 manifest source paths, launch-spec kernel command line and resource values, and
@@ -1474,7 +1486,8 @@ The current required-but-unproven categories are `live-boot`, `console`, and
 
 - `live-boot` needs an opt-in evidence bundle proving verified guest boot
   progress, not only an empty blocker list, valid handoff JSON, or helper
-  start/stop transcript.
+  start/stop transcript. Accepted progress proof is a serial sentinel or
+  verifier-bound `boot-progress-evidence.json` graphical artifact.
 - `console` needs verifier-bound console evidence such as a preserved
   graphical viewer artifact, accepted serial sentinel output, or accepted QEMU
   QMP running evidence. Plain QMP socket readiness, bounded log tail APIs, or
@@ -1492,8 +1505,9 @@ Synthetic verifier tests may assert that these requirement names are preserved.
 The Rust `readiness_report` request and `bridgevm readiness <vm>
 --live-evidence <dir>` CLI can ingest a preserved Apple VZ evidence directory
 without launching a VM, validate the same bounded metadata/text/JSON markers,
-and then mark `live-boot` plus accepted serial, viewer, or QMP console evidence
-proven in that report. `--record-live-evidence` first verifies the supplied directory and then
+and then mark `live-boot` plus accepted graphical boot-progress, serial,
+viewer, or QMP console evidence proven in that report. `--record-live-evidence`
+first verifies the supplied directory and then
 copies it into the VM bundle at `metadata/live-evidence/latest`, records
 `metadata/live-evidence.json`, and lets later plain `bridgevm readiness <vm>`
 re-run the verifier against that preserved path. `--clear-live-evidence` must
@@ -1532,11 +1546,12 @@ bundle file size/hash pairs so reviewers can tell exactly which kernel, initrd,
 and copied raw disk were booted. The summary, environment file, and live-launch
 transcript also retain the configured stop-after and force-stop grace seconds,
 so the manual proof records the bounded lifecycle window used for the run. The
-serial log remains the strongest guest progress proof: configure
-`BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED` with a known sentinel for every non-skipped
-live proof. The harness skips real Apple VZ starts without that sentinel rather
-than treating a serial capture alone as proof. Optional
-`BRIDGEVM_LIVE_VZ_VIEWER_FRAME` and
+serial log remains the strongest guest progress proof, but verifier-bound
+`boot-progress-evidence.json` can also prove graphical boot progress. Configure
+`BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED` with a known sentinel, or provide
+`BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME` plus matching metadata. The harness skips
+real Apple VZ starts without one of those progress signals rather than treating
+process start/stop alone as proof. Optional `BRIDGEVM_LIVE_VZ_VIEWER_FRAME` and
 `BRIDGEVM_LIVE_VZ_GUEST_TOOLS_EFFECTS_JSON` inputs are copied into the evidence
 directory and validated by the verifier when present. A non-skipped successful
 live smoke invokes `verify-apple-vz-live-evidence.sh "$STORE/evidence"` before
@@ -1545,8 +1560,8 @@ printing `PASS`, so the preserved evidence contract is checked immediately.
 `verify-apple-vz-live-evidence.sh <evidence-dir>` validates that preserved
 bundle after the live run. It checks `SUMMARY.txt` status, fixture manifest
 hashes and sizes, launch spec and handoff JSON, validation and live-launch
-output, the selected runner path, and required serial sentinel evidence from the
-opted-in live run. The Rust readiness ingestion path performs a bounded
+output, the selected runner path, and required serial or graphical boot-progress
+evidence from the opted-in live run. The Rust readiness ingestion path performs a bounded
 subset of those checks so local and daemon-backed readiness reports can reflect
 an already-preserved Apple VZ bundle without invoking Swift or starting Apple
 VZ. The shell verifier also cross-checks `environment.txt` against the fixture manifest's
