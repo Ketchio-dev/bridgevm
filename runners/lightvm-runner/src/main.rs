@@ -36,6 +36,8 @@ struct Args {
     apple_vz_save_state: Option<std::path::PathBuf>,
     #[arg(long, value_name = "PATH")]
     apple_vz_restore_state: Option<std::path::PathBuf>,
+    #[arg(long)]
+    apple_vz_display: bool,
     #[arg(long, value_name = "PATH")]
     launch_spec: Option<std::path::PathBuf>,
     #[arg(long)]
@@ -63,6 +65,7 @@ fn main() -> Result<()> {
                 args.apple_vz_force_stop_grace_seconds,
                 args.apple_vz_save_state.as_deref(),
                 args.apple_vz_restore_state.as_deref(),
+                args.apple_vz_display,
             )?;
             return Ok(());
         }
@@ -131,6 +134,7 @@ fn main() -> Result<()> {
             args.apple_vz_force_stop_grace_seconds,
             args.apple_vz_save_state.as_deref(),
             args.apple_vz_restore_state.as_deref(),
+            args.apple_vz_display,
         )?;
         return Ok(());
     }
@@ -153,6 +157,7 @@ fn launch_handoff(
     apple_vz_force_stop_grace_seconds: Option<u64>,
     apple_vz_save_state: Option<&std::path::Path>,
     apple_vz_restore_state: Option<&std::path::Path>,
+    apple_vz_display: bool,
 ) -> Result<()> {
     let handoff = build_launch_handoff(spec, launch_spec_path);
     let attempt = if let Some(program) = apple_vz_runner {
@@ -181,6 +186,11 @@ fn launch_handoff(
             launcher = launcher
                 .arg("--restore-state")
                 .arg(path.display().to_string());
+        }
+        // Embedded display: forward --display so AppleVzRunner boots with a
+        // graphics device and hosts the VM in a VZVirtualMachineView window.
+        if apple_vz_display {
+            launcher = launcher.arg("--display");
         }
         launch_with_apple_vz(&launcher, handoff)
     } else {
@@ -474,7 +484,7 @@ mod tests {
             }],
         );
 
-        let error = launch_handoff(&spec, None, None, false, None, None, None, None)
+        let error = launch_handoff(&spec, None, None, false, None, None, None, None, false)
             .expect_err("blocked launch must fail");
         let message = format!("{error:#}");
 
@@ -499,6 +509,7 @@ mod tests {
             None,
             None,
             None,
+            false,
         )
         .expect_err("default Apple VZ launcher must remain unimplemented");
         let message = format!("{error:#}");
@@ -536,7 +547,7 @@ mod tests {
 
         let spec = launch_spec_with_readiness(true, Vec::new());
 
-        launch_handoff(&spec, None, Some(&helper), true, Some(5), Some(2), None, None)
+        launch_handoff(&spec, None, Some(&helper), true, Some(5), Some(2), None, None, false)
             .expect("helper launch should succeed");
 
         let captured_arg = std::fs::read_to_string(&captured_arg).unwrap();
@@ -577,13 +588,51 @@ mod tests {
 
         let spec = launch_spec_with_readiness(true, Vec::new());
         let state = temp.join("suspend.bin");
-        launch_handoff(&spec, None, Some(&helper), true, Some(5), None, Some(&state), None)
+        launch_handoff(&spec, None, Some(&helper), true, Some(5), None, Some(&state), None, false)
             .expect("helper launch should succeed");
 
         let captured = std::fs::read_to_string(&captured_arg).unwrap();
         assert!(
             captured.contains(&format!("--save-state\n{}", state.display())),
             "helper did not receive --save-state: {captured}"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn launch_handoff_forwards_display_to_helper() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = std::env::temp_dir().join(format!(
+            "lightvm-runner-apple-vz-display-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&temp);
+        std::fs::create_dir_all(&temp).unwrap();
+        let helper = temp.join("helper.sh");
+        let captured_arg = temp.join("arg.txt");
+        std::fs::write(
+            &helper,
+            format!(
+                "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' \"$@\" > '{}'\n",
+                captured_arg.display()
+            ),
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&helper).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&helper, permissions).unwrap();
+
+        let spec = launch_spec_with_readiness(true, Vec::new());
+        launch_handoff(&spec, None, Some(&helper), true, None, None, None, None, true)
+            .expect("helper launch should succeed");
+
+        let captured = std::fs::read_to_string(&captured_arg).unwrap();
+        assert!(
+            captured.contains("--display"),
+            "helper did not receive --display: {captured}"
         );
 
         let _ = std::fs::remove_dir_all(&temp);

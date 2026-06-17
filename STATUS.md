@@ -68,7 +68,9 @@ The VM lifecycle (create/run/suspend/resume/stop) + networking + boot evidence a
   - `AppleVzConfigurationBuilder.buildLinuxKernelConfigurationWithDisplay` adds a Virtio GPU scanout + USB keyboard + USB pointing device (macOS 14+); the headless builder is unchanged (a graphics device disables VZ save/restore, so the display path deliberately has no suspend/resume).
   - `AppleVzVirtualMachineLauncher.launchLinuxKernelVirtualMachineWithDisplay` creates the VM on the main queue and hosts it in a resizable `NSWindow` + `VZVirtualMachineView` via an AppKit run loop.
   - `AppleVzRunner --display` flag (threads `AppleVzLaunchOptions.displayWindow`).
-  - Verifiable parts unit-tested + the whole macOS package compiles (config-with-display validates; `--display` threads through). **Still needs:** a GUI session + a VZ-bootable Linux guest (kernel+initrd+raw disk with a console) to confirm the window renders, and the macOS app-side trigger (a "Show display" action that spawns the runner with `--display`) to drive it from the UI.
+  - `lightvm-runner --apple-vz-display` forwards `--display` to the AppleVzRunner helper (unit-tested: `launch_handoff_forwards_display_to_helper`).
+  - Verifiable parts unit-tested + the whole macOS package + Rust workspace compile.
+  - **Remaining to drive it end-to-end:** (1) the api + CLI need to pass `--apple-vz-display` down — cleanest as a dedicated `bridgevm display <vm>` command / `display_fast_backend` path rather than overloading `run`, since the windowed display has a different lifecycle (no suspend/resume); (2) a macOS app "Show display" action; (3) **user infra to actually see it:** a GUI session + a VZ-bootable Linux guest (raw disk + extracted kernel/initrd with a console), plus `BRIDGEVM_APPLE_VZ_RUNNER` pointing at a signed AppleVzRunner.
 
 **Need user resources:**
 - **Developer ID / notarization** — user's paid Apple Developer cert + notarytool profile (only blocks public signed distribution; local dev uses ad-hoc signing).
