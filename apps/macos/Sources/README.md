@@ -94,8 +94,10 @@ Compatibility Mode QMP socket is known and ready, then shows that result to the
 user. The Logs panel is a separate diagnostic surface for `logs/qemu.log` and
 `logs/serial.log` tails. Neither diagnostic path attaches to a framebuffer or
 streams display output. Compatibility Mode can still plan explicit VNC display
-as a QEMU `-display vnc=:0` external-viewer handoff; what remains future work is
-embedding that graphical viewer directly in the macOS app.
+as a QEMU `-display vnc=:0` dry-run template, and daemon-owned spawn remaps that
+template to a free `vnc=:N` display before launch for an external-viewer
+handoff. What remains future work is embedding that graphical viewer directly in
+the macOS app.
 The Guest Tools panel uses the daemon-backed guest tools status boundary for
 readiness visibility instead of owning transport behavior in the app. For
 daemon-owned Compatibility Mode backends it can show authenticated runtime

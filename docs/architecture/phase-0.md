@@ -612,9 +612,11 @@ diagnostic. The dashboard Logs panel uses the same `view_logs` API exposed by
 from `logs/qemu.log` and `logs/serial.log`, including path, byte-count, and
 truncation metadata. These are client/API boundary checks only: they do not
 create an embedded graphical console or prove guest display output. For
-Compatibility Mode display, explicit VNC renderer planning now hands off to an
-external viewer through QEMU `-display vnc=:0`; embedding that viewer in the
-macOS app remains a future implementation target.
+Compatibility Mode display, explicit VNC renderer planning uses QEMU
+`-display vnc=:0` as the deterministic dry-run template, and daemon-owned spawn
+remaps that template to the lowest free `vnc=:N` display before launch for the
+external-viewer handoff. Embedding that viewer in the macOS app remains a
+future implementation target.
 
 Compatibility Mode launch readiness now uses the same structured
 `LaunchReadinessMetadata` shape as Fast Mode for metadata-safe dry runs and

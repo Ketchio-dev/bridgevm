@@ -251,10 +251,11 @@ tests/integration/qemu-live-boot-opt-in-smoke.sh
 ```
 
 The smoke creates a disposable Compatibility Mode VM, copies the qcow2 to
-`disks/root.qcow2`, spawns QEMU with `run --spawn` (VNC viewer endpoint on
-`-display vnc=:0`), waits up to the timeout for the required serial sentinel plus
-a `query-status` `running` QMP reply, writes the evidence bundle, and then records
-it with `bridgevm readiness <vm> --live-evidence "$STORE/evidence"
+`disks/root.qcow2`, spawns QEMU with `run --spawn` (the daemon remaps the
+default VNC dry-run template to a free `vnc=:N` viewer endpoint before launch),
+waits up to the timeout for the required serial sentinel plus a `query-status`
+`running` QMP reply, writes the evidence bundle, and then records it with
+`bridgevm readiness <vm> --live-evidence "$STORE/evidence"
 --record-live-evidence`. A pass means readiness reports `live-boot` proven, the
 serial sentinel proven, `console` proven (serial counts as console evidence), and
 `QMP` proven; `guest-tools-effects` stays unproven because a stock cloud image has

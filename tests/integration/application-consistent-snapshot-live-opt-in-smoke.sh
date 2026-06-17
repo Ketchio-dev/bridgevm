@@ -14,8 +14,9 @@ set -euo pipefail
 #   2. The daemon connects host-first and HOLDS the guest-tools connection so it
 #      catches the agent's one-shot GuestHello (see reconcile_guest_tools_session
 #      in crates/bridgevm-daemon).
-# It also needs VNC display :0 (TCP 5900) free, since Compatibility Mode pins
-# `-display vnc=:0`; a leftover QEMU squatting on 5900 makes the spawn fail.
+# Compatibility Mode starts from a deterministic `-display vnc=:0` dry-run
+# template, but daemon-owned spawn remaps it to a free VNC display before
+# launch, so a leftover process on TCP 5900 should not collide with this smoke.
 #
 # Proves the REAL application-consistent snapshot orchestration end to end
 # against a daemon-owned, booted Compatibility (QEMU/HVF) Linux guest:
