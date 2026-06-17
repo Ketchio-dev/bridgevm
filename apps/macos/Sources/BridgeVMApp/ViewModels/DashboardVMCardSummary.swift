@@ -47,18 +47,18 @@ struct DashboardVMCardSummary: Equatable {
     }
 
     if report.metadataOnly && report.liveE2ERequired {
-      let evidenceTitle = report.evidenceReadinessTitle.lowercased()
-      if evidenceTitle == "evidence complete" {
+      if report.evidenceReadinessTitle == "Evidence complete" {
         guard report.liveEvidenceVerifiedForDisplay else {
           return "Metadata checks clear; live E2E evidence still required"
         }
         return "Metadata checks clear; live evidence verified"
       }
       let pendingTitles = report.pendingRequiredEvidence.map(\.title)
+      let evidenceTitle = report.liveEvidenceReadinessTitle.lowercased()
       if pendingTitles.isEmpty {
-        return "Metadata checks clear; live evidence \(evidenceTitle)"
+        return "Metadata checks clear; \(evidenceTitle)"
       }
-      return "Metadata checks clear; live evidence \(evidenceTitle): \(pendingTitles.joined(separator: ", "))"
+      return "Metadata checks clear; \(evidenceTitle): \(pendingTitles.joined(separator: ", "))"
     }
 
     return report.readinessTitle

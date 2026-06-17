@@ -3235,7 +3235,7 @@ final class DashboardViewModelTests: XCTestCase {
 
     XCTAssertEqual(
       summary.metadataItems.first,
-      "Metadata checks clear; live evidence 2 evidence checks pending: Live boot, Guest tools effects")
+      "Metadata checks clear; 2 live evidence checks pending: Live boot, Guest tools effects")
     XCTAssertTrue(summary.metadataItems.contains("Guest tools effects unproven"))
     XCTAssertFalse(summary.metadataItems.joined(separator: " ").contains("daemon aggregate"))
     XCTAssertEqual(client.inspectedReadinessReportIDs, [virtualMachine.id])

@@ -1191,7 +1191,7 @@ private struct VMReadinessNextActionPanel: View {
           return "Metadata checks clear; live E2E evidence still required"
         }
 
-        return "Metadata checks clear; live evidence \(readinessReport.evidenceReadinessTitle.lowercased()): \(pending)"
+        return "Metadata checks clear; \(readinessReport.liveEvidenceReadinessTitle.lowercased()): \(pending)"
       }
 
       return readinessReport.notes.first ?? "Aggregate readiness report loaded"

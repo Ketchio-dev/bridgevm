@@ -230,7 +230,7 @@ final class DashboardVMCardSummaryTests: XCTestCase {
 
     XCTAssertEqual(
       summary.metadataItems.first,
-      "Metadata checks clear; live evidence 2 evidence checks pending: Live boot, Console")
+      "Metadata checks clear; 2 live evidence checks pending: Live boot, Console")
     XCTAssertFalse(summary.metadataItems.joined(separator: " ").contains("daemon aggregate"))
   }
 

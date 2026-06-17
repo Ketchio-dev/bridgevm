@@ -355,6 +355,19 @@ struct VMReadinessReport: Equatable {
     return "\(pendingCount) evidence checks pending"
   }
 
+  var liveEvidenceReadinessTitle: String {
+    let pendingCount = pendingRequiredEvidence.count
+    guard pendingCount > 0 else {
+      return "Live evidence complete"
+    }
+
+    if pendingCount == 1 {
+      return "1 live evidence check pending"
+    }
+
+    return "\(pendingCount) live evidence checks pending"
+  }
+
   var liveEvidenceVerifiedForDisplay: Bool {
     guard let liveEvidence else {
       return false
