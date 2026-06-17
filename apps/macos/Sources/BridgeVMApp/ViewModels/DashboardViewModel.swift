@@ -3067,7 +3067,7 @@ final class DashboardViewModel: ObservableObject {
         LifecycleActionOption(
           action: .pause,
           title: "Suspend",
-          detail: "Pause this VM and save its machine state to disk.",
+          detail: "Suspend this VM and save its machine state to disk.",
           systemImage: "pause.fill"
         ),
         LifecycleActionOption(

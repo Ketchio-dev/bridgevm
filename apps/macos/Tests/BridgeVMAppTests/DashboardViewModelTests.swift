@@ -51,6 +51,20 @@ final class DashboardViewModelTests: XCTestCase {
     XCTAssertNil(model.readinessReportError(for: virtualMachine))
   }
 
+  func testMockPauseRecordsSuspendedState() async throws {
+    let client = MockVirtualMachineClient()
+    let virtualMachines = try await client.listVirtualMachines()
+    let running = try XCTUnwrap(virtualMachines.first { $0.status == .running })
+
+    let result = try await client.perform(.pause, on: running.id)
+
+    XCTAssertEqual(result.virtualMachine.status, .suspended)
+    XCTAssertEqual(result.virtualMachine.uptime, "Suspended")
+    XCTAssertEqual(result.message, "\(running.name) suspended.")
+    let refreshed = try await client.listVirtualMachines()
+    XCTAssertEqual(refreshed.first(where: { $0.id == running.id })?.status, .suspended)
+  }
+
   func testLoadRecordsRefreshErrorWithoutDiscardingExistingInventory() async throws {
     let existing = VirtualMachine(
       id: UUID(),
@@ -1744,9 +1758,18 @@ final class DashboardViewModelTests: XCTestCase {
       )
     )
 
-    XCTAssertEqual(model.lifecycleActions(for: running).map(\.action), [.pause, .restart, .stop])
+    XCTAssertEqual(running.primaryActionTitle, "Suspend")
+    let runningActions = model.lifecycleActions(for: running)
+    XCTAssertEqual(runningActions.map(\.action), [.pause, .restart, .stop])
+    XCTAssertEqual(runningActions.first?.title, "Suspend")
+    XCTAssertEqual(
+      runningActions.first?.detail,
+      "Suspend this VM and save its machine state to disk."
+    )
     XCTAssertEqual(model.lifecycleActions(for: suspended).map(\.action), [.resume, .stop])
+    XCTAssertEqual(suspended.primaryActionTitle, "Resume")
     let stoppedActions = model.lifecycleActions(for: stopped)
+    XCTAssertEqual(stopped.primaryActionTitle, "Start")
     XCTAssertEqual(stoppedActions.map(\.action), [.start])
     XCTAssertEqual(
       stoppedActions.first?.detail,

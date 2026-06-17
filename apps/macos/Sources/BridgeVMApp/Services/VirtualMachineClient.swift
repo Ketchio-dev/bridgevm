@@ -7575,9 +7575,9 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
       vm.ipAddress = vm.ipAddress ?? "192.168.64.\(Int.random(in: 30...80))"
       message = "\(vm.name) metadata start recorded."
     case .pause:
-      vm.status = .paused
-      vm.uptime = "Paused"
-      message = "\(vm.name) paused."
+      vm.status = .suspended
+      vm.uptime = "Suspended"
+      message = "\(vm.name) suspended."
     case .resume:
       vm.status = .running
       vm.uptime = "Metadata resume recorded"

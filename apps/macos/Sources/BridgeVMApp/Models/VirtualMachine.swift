@@ -61,7 +61,7 @@ struct VirtualMachine: Identifiable, Equatable {
 
   var primaryActionTitle: String {
     switch status {
-    case .running: return "Pause"
+    case .running: return "Suspend"
     case .paused, .suspended: return "Resume"
     case .stopped, .error: return "Start"
     }
