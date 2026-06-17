@@ -175,9 +175,11 @@ This means the current safe path is:
 
 ## Resource profile boundary
 
-Fast Mode and Compatibility Mode now share the same resource profile resolver before their runner-specific plans are emitted. The resolver maps the manifest's `resources.profile` to deterministic default memory, vCPU, display FPS cap, and rationale values. This is still a planning-time policy layer, not live host telemetry or dynamic throttling.
+Fast Mode and Compatibility Mode now share the same resource profile resolver before their runner-specific plans are emitted. The resolver maps the manifest's `resources.profile` to deterministic default memory, vCPU, display FPS cap, and rationale values. Launch planning is still a planning-time policy layer, not live host telemetry or dynamic throttling.
 
 Manifest `resources.memory` and `resources.cpu` values are only replaced when they are set to `auto`. Explicit memory or CPU values in the manifest are preserved and passed into the Fast Mode Apple VZ plan or Compatibility Mode QEMU arguments. Fast Mode also exposes the selected `display_fps_cap` and `rationale` in its launch spec so callers can inspect why the automatic values were chosen.
+
+Running Fast Mode VMs can also receive a metadata-backed runtime policy signal through `bridgevm resources reapply <vm> --visibility foreground|background` or the matching daemon request. That command requires running Fast Mode runner metadata, re-reads the host battery state, applies the foreground/background policy, and records `metadata/runtime-resources.json` with the chosen memory, CPU, display FPS cap, rationale, and `live_apply_blockers`. Until a live Apple VZ/display control channel exists, the record is honest: `live_applied` is `false` with `runtime-control-unavailable`, so it is a UI/display pacing contract rather than CPU or memory hot-plug.
 
 ## Compatibility Mode port forwards
 

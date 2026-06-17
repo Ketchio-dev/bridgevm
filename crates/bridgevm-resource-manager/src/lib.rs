@@ -87,6 +87,24 @@ pub fn decide_for_launch(profile: ResourceProfile, on_battery: bool) -> Resource
     }
 }
 
+/// Resource decision for a running VM after the UI reports foreground or
+/// background visibility. This is used to re-evaluate policy metadata while a
+/// VM is running; launch-time callers should continue to use
+/// [`decide_for_launch`] so saved-state compatibility stays stable.
+pub fn decide_for_runtime(
+    profile: ResourceProfile,
+    foreground: bool,
+    on_battery: bool,
+) -> ResourceDecision {
+    if foreground {
+        return decide_for_launch(profile, on_battery);
+    }
+    match profile {
+        ResourceProfile::Developer => decide(ResourceProfile::Developer, false, on_battery),
+        _ => decide(ResourceProfile::BatterySaver, true, true),
+    }
+}
+
 /// Power-aware variant of [`decide_from_manifest_profile`].
 pub fn decide_from_manifest_profile_with_power(
     profile: &str,
@@ -253,5 +271,22 @@ mod tests {
         let decision = decide_from_manifest_profile_with_power("automatic", true);
         assert_eq!(resolve_memory("auto", &decision), "2048");
         assert_eq!(resolve_memory("8192", &decision), "8192");
+    }
+
+    #[test]
+    fn runtime_decision_uses_foreground_background_signal() {
+        let foreground = decide_for_runtime(ResourceProfile::Automatic, true, false);
+        assert_eq!(foreground.memory, "4096");
+        assert_eq!(foreground.vcpu, "2");
+        assert_eq!(foreground.display_fps_cap, "adaptive");
+
+        let background = decide_for_runtime(ResourceProfile::Automatic, false, false);
+        assert_eq!(background.memory, "2048");
+        assert_eq!(background.vcpu, "1");
+        assert_eq!(background.display_fps_cap, "10");
+
+        let developer_background = decide_for_runtime(ResourceProfile::Developer, false, false);
+        assert_eq!(developer_background.memory, "4096");
+        assert_eq!(developer_background.vcpu, "4");
     }
 }

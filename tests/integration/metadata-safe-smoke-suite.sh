@@ -56,6 +56,7 @@ SMOKES=(
   "tests/integration/diagnostics-cli-smoke.sh"
   "tests/integration/performance-cli-smoke.sh"
   "tests/integration/resource-profile-readiness-smoke.sh"
+  "tests/integration/runtime-resource-policy-cli-smoke.sh"
   "tests/sleep-wake/metadata-baseline-smoke.sh"
   "tests/integration/apple-vz-live-evidence-verifier-smoke.sh"
   "tests/integration/qemu-live-evidence-verifier-smoke.sh"

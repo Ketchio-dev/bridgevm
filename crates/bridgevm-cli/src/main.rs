@@ -7,14 +7,14 @@ use bridgevm_api::{
     display_fast_backend, download_boot_media, fast_spawn_not_implemented_error,
     guest_tools_linux_command, guest_tools_token, import_boot_media, inspect_boot_media_status,
     inspect_guest_tools_status, launch_readiness_metadata, list_ports, list_shares, open_port_plan,
-    plan_boot_media_download, remove_port, remove_share, resume_backend, stop_backend,
-    suspend_backend, verify_boot_media, view_vm_log, ApplicationConsistentSnapshotExecutionRecord,
-    BootMediaDownloadPlanMetadata, BootMediaDownloadResultMetadata, BootMediaImportMetadata,
-    BootMediaKind, BootMediaStatus, BootMediaVerificationMetadata, BridgeVmRequest,
-    BridgeVmResponse, DiagnosticBundleMetadata, GuestToolsLinuxCommandRecord,
-    GuestToolsLinuxCommandTransport, GuestToolsSessionRecord, GuestToolsStatusRecord,
-    GuestToolsTokenRecord, LifecycleAction, LifecyclePlanRecord, NetworkPlanRecord,
-    OpenPortPlanRecord, PerformanceBaselineMetadata, PerformanceSampleMetadata,
+    plan_boot_media_download, reapply_runtime_resources, remove_port, remove_share, resume_backend,
+    stop_backend, suspend_backend, verify_boot_media, view_vm_log,
+    ApplicationConsistentSnapshotExecutionRecord, BootMediaDownloadPlanMetadata,
+    BootMediaDownloadResultMetadata, BootMediaImportMetadata, BootMediaKind, BootMediaStatus,
+    BootMediaVerificationMetadata, BridgeVmRequest, BridgeVmResponse, DiagnosticBundleMetadata,
+    GuestToolsLinuxCommandRecord, GuestToolsLinuxCommandTransport, GuestToolsSessionRecord,
+    GuestToolsStatusRecord, GuestToolsTokenRecord, LifecycleAction, LifecyclePlanRecord,
+    NetworkPlanRecord, OpenPortPlanRecord, PerformanceBaselineMetadata, PerformanceSampleMetadata,
     PortForwardListRecord, SharedFolderListRecord, SnapshotPreflightStatusRecord, SshPlanRecord,
     VmLogKind, VmLogViewRecord, VmReadinessReport, VmRecord,
 };
@@ -32,7 +32,8 @@ use bridgevm_qemu::{
 };
 use bridgevm_storage::{
     ApplicationConsistentSnapshotPreflightMetadata, LaunchReadinessMetadata, QmpSupervisorMetadata,
-    SnapshotKind, VmManifestMigrationMetadata, VmMetadataRepairMetadata, VmRuntimeState, VmStore,
+    RuntimeResourcePolicyMetadata, RuntimeResourceVisibility, SnapshotKind,
+    VmManifestMigrationMetadata, VmMetadataRepairMetadata, VmRuntimeState, VmStore,
 };
 use clap::{Parser, Subcommand, ValueEnum};
 use std::{
@@ -85,6 +86,8 @@ enum Command {
     Share(ShareCommand),
     Media(MediaCommand),
     GuestTools(GuestToolsCommand),
+    #[command(subcommand)]
+    Resources(ResourcesCommand),
     QemuArgs(VmNameArgs),
     PrepareRun(VmNameArgs),
     BootMedia(VmNameArgs),
@@ -107,6 +110,35 @@ enum Command {
 #[derive(Debug, Subcommand)]
 enum StoreCommand {
     Doctor,
+}
+
+#[derive(Debug, Subcommand)]
+enum ResourcesCommand {
+    /// Re-evaluate a running Fast Mode VM's resource policy for the current
+    /// power state and foreground/background visibility.
+    Reapply(RuntimeResourcesArgs),
+}
+
+#[derive(Debug, Parser)]
+struct RuntimeResourcesArgs {
+    name: String,
+    #[arg(long, value_enum, default_value_t = RuntimeResourceVisibilityChoice::Foreground)]
+    visibility: RuntimeResourceVisibilityChoice,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum RuntimeResourceVisibilityChoice {
+    Foreground,
+    Background,
+}
+
+impl From<RuntimeResourceVisibilityChoice> for RuntimeResourceVisibility {
+    fn from(value: RuntimeResourceVisibilityChoice) -> Self {
+        match value {
+            RuntimeResourceVisibilityChoice::Foreground => RuntimeResourceVisibility::Foreground,
+            RuntimeResourceVisibilityChoice::Background => RuntimeResourceVisibility::Background,
+        }
+    }
 }
 
 #[derive(Debug, Parser)]
@@ -783,6 +815,7 @@ fn main() -> Result<()> {
         Command::Share(args) => share(&store, args),
         Command::Media(args) => media(&store, args),
         Command::GuestTools(args) => guest_tools(&store, args),
+        Command::Resources(args) => resources(&store, args),
         Command::QemuArgs(args) => qemu_args(&store, args),
         Command::PrepareRun(args) => prepare_run(&store, args),
         Command::BootMedia(args) => boot_media(&store, args),
@@ -1150,6 +1183,12 @@ fn request_for(command: Command) -> Result<BridgeVmRequest> {
                 ),
             }),
         },
+        Command::Resources(args) => match args {
+            ResourcesCommand::Reapply(args) => Ok(BridgeVmRequest::ReapplyRuntimeResources {
+                name: args.name,
+                visibility: args.visibility.into(),
+            }),
+        },
         Command::QemuArgs(args) => Ok(BridgeVmRequest::QemuArgs { name: args.name }),
         Command::PrepareRun(args) => Ok(BridgeVmRequest::PrepareRun { name: args.name }),
         Command::BootMedia(args) => Ok(BridgeVmRequest::InspectBootMedia { name: args.name }),
@@ -1347,6 +1386,9 @@ fn print_daemon_response(response: BridgeVmResponse) -> Result<()> {
         } => print_runner_status(metadata, qmp_supervisor.as_ref()),
         BridgeVmResponse::ReadinessReport { report } => print_readiness_report(&report),
         BridgeVmResponse::LifecyclePlan { plan } => print_lifecycle_plan(&plan),
+        BridgeVmResponse::RuntimeResourcePolicy { policy } => {
+            print_runtime_resource_policy(&policy)
+        }
         BridgeVmResponse::BootMedia { name, boot } => print_boot_media(&name, &boot),
         BridgeVmResponse::BootMediaImported { import } => print_boot_media_import(&import),
         BridgeVmResponse::BootMediaStatus { status } => print_boot_media_status(&status),
@@ -2075,6 +2117,20 @@ fn current_unix_epoch_millis() -> u64 {
         .as_millis() as u64
 }
 
+fn resources(store: &VmStore, args: ResourcesCommand) -> Result<()> {
+    match args {
+        ResourcesCommand::Reapply(args) => {
+            let policy = reapply_runtime_resources(store, &args.name, args.visibility.into())
+                .map_err(anyhow::Error::msg)
+                .with_context(|| {
+                    format!("failed to reapply runtime resources for '{}'", args.name)
+                })?;
+            print_runtime_resource_policy(&policy);
+        }
+    }
+    Ok(())
+}
+
 fn qemu_args(store: &VmStore, args: VmNameArgs) -> Result<()> {
     let (bundle, manifest, _) = store
         .get_vm_with_active_disk(&args.name)
@@ -2443,6 +2499,28 @@ fn print_runner_status(
     if let Some(supervisor) = qmp_supervisor {
         print_qmp_supervisor(supervisor);
     }
+}
+
+fn print_runtime_resource_policy(policy: &RuntimeResourcePolicyMetadata) {
+    println!("Runtime resources for {}", policy.vm);
+    println!("Mode: {}", policy.mode);
+    println!("Profile: {}", policy.profile);
+    println!("Visibility: {}", policy.visibility);
+    println!("State: {}", policy.state);
+    println!("On battery: {}", policy.on_battery);
+    println!("Memory: {}", policy.memory);
+    println!("CPU: {}", policy.cpu);
+    println!("Display FPS cap: {}", policy.display_fps_cap);
+    println!("Rationale: {}", policy.rationale);
+    println!("Live applied: {}", policy.live_applied);
+    if policy.live_apply_blockers.is_empty() {
+        println!("Live apply blockers: none");
+    } else {
+        for blocker in &policy.live_apply_blockers {
+            println!("Live apply blocker: {} - {}", blocker.code, blocker.message);
+        }
+    }
+    println!("Metadata recorded: {}", policy.updated_at_unix);
 }
 
 fn compatibility_qemu_command_error(error: QemuError) -> String {
@@ -3983,6 +4061,27 @@ mod tests {
             BridgeVmRequest::LifecyclePlan {
                 name: "dev".to_string(),
                 action: LifecycleAction::Resume,
+            }
+        );
+    }
+
+    #[test]
+    fn resources_reapply_cli_builds_typed_request() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "resources",
+            "reapply",
+            "dev",
+            "--visibility",
+            "background",
+        ])
+        .unwrap();
+        let request = request_for(cli.command).unwrap();
+        assert_eq!(
+            request,
+            BridgeVmRequest::ReapplyRuntimeResources {
+                name: "dev".to_string(),
+                visibility: RuntimeResourceVisibility::Background,
             }
         );
     }

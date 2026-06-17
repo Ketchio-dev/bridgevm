@@ -1536,6 +1536,14 @@ resolves to 6144 MiB and 4 vCPUs, manual memory/CPU overrides are preserved,
 and both local and socket-backed launch specs pass through `lightvm-runner`
 handoff JSON plus Swift `AppleVzRunner --validate-only --print-config-plan`.
 
+`runtime-resource-policy-cli-smoke.sh` covers the running Fast Mode resource
+policy signal without starting Apple VZ. It creates running metadata, writes a
+real-runner metadata fixture, then verifies that local CLI and socket-backed
+`resources reapply` record `metadata/runtime-resources.json` with the requested
+foreground/background visibility, host battery state, resolved automatic
+memory/CPU, display FPS cap, and the honest `runtime-control-unavailable`
+live-apply blocker.
+
 `apple-vz-live-boot-opt-in-smoke.sh` is that separate manual harness. It creates
 a temporary ready `linux-kernel` + `raw` + NAT launch spec, validates the Swift
 configuration boundary, proves the missing opt-in failure, then invokes

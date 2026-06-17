@@ -21,10 +21,12 @@ use bridgevm_storage::{
     ApplicationConsistentSnapshotPreflightMetadata, DiskCompactMetadata, DiskCreateMetadata,
     DiskInspectMetadata, DiskPreparationMetadata, DiskVerifyMetadata, GuestToolsMetricsMetadata,
     GuestToolsRuntimeMetadata, LaunchReadinessBlockerMetadata, LaunchReadinessMetadata,
-    QmpSupervisorMetadata, RunnerMetadata, SnapshotChainMetadata, SnapshotDiskCreateMetadata,
-    SnapshotDiskMetadata, SnapshotKind, SnapshotMetadata, SnapshotRestoreMetadata, VmCloneMetadata,
-    VmDeletionMetadata, VmExportMetadata, VmImportMetadata, VmManifestMigrationMetadata,
-    VmMetadataRepairMetadata, VmRuntimeMetadata, VmRuntimeState, VmStore,
+    QmpSupervisorMetadata, RunnerMetadata, RuntimeResourcePolicyBlocker,
+    RuntimeResourcePolicyMetadata, RuntimeResourceVisibility, SnapshotChainMetadata,
+    SnapshotDiskCreateMetadata, SnapshotDiskMetadata, SnapshotKind, SnapshotMetadata,
+    SnapshotRestoreMetadata, VmCloneMetadata, VmDeletionMetadata, VmExportMetadata,
+    VmImportMetadata, VmManifestMigrationMetadata, VmMetadataRepairMetadata, VmRuntimeMetadata,
+    VmRuntimeState, VmStore,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -327,6 +329,10 @@ pub enum BridgeVmRequest {
         name: String,
         action: LifecycleAction,
     },
+    ReapplyRuntimeResources {
+        name: String,
+        visibility: RuntimeResourceVisibility,
+    },
     StopBackend {
         name: String,
     },
@@ -496,6 +502,9 @@ pub enum BridgeVmResponse {
     },
     LifecyclePlan {
         plan: LifecyclePlanRecord,
+    },
+    RuntimeResourcePolicy {
+        policy: RuntimeResourcePolicyMetadata,
     },
     BootMedia {
         name: String,
@@ -1416,6 +1425,11 @@ fn handle_request_result(
         BridgeVmRequest::LifecyclePlan { name, action } => Ok(BridgeVmResponse::LifecyclePlan {
             plan: lifecycle_plan(store, &name, action)?,
         }),
+        BridgeVmRequest::ReapplyRuntimeResources { name, visibility } => {
+            Ok(BridgeVmResponse::RuntimeResourcePolicy {
+                policy: reapply_runtime_resources(store, &name, visibility)?,
+            })
+        }
         BridgeVmRequest::StopBackend { name } => Ok(BridgeVmResponse::RunnerStatus {
             metadata: stop_backend(store, &name)?,
             qmp_supervisor: store
@@ -6079,6 +6093,70 @@ pub fn apply_power_aware_fast_resources(manifest: &mut VmManifest) {
     manifest.resources.cpu = resolve_vcpu(&manifest.resources.cpu, &decision);
 }
 
+pub fn reapply_runtime_resources(
+    store: &VmStore,
+    name: &str,
+    visibility: RuntimeResourceVisibility,
+) -> Result<RuntimeResourcePolicyMetadata, String> {
+    use bridgevm_resource_manager::{
+        decide_for_runtime, read_on_battery, resolve_memory, resolve_vcpu, ResourceProfile,
+    };
+
+    let (_, manifest) = store.get_vm(name).map_err(|error| error.to_string())?;
+    if manifest.mode != VmMode::Fast {
+        return Err("runtime resource reapply is only implemented for Fast Mode VMs".to_string());
+    }
+
+    let state = store.state(name).map_err(|error| error.to_string())?;
+    if state.state != VmRuntimeState::Running {
+        return Err(format!(
+            "runtime resource reapply requires a running VM; current state is {}",
+            state.state
+        ));
+    }
+
+    let runner = store
+        .runner_metadata(name)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "runtime resource reapply requires runner metadata".to_string())?;
+    if runner.dry_run {
+        return Err(
+            "runtime resource reapply requires a real backend, not dry-run metadata".to_string(),
+        );
+    }
+
+    let on_battery = read_on_battery();
+    let foreground = matches!(visibility, RuntimeResourceVisibility::Foreground);
+    let decision = decide_for_runtime(
+        ResourceProfile::parse(&manifest.resources.profile),
+        foreground,
+        on_battery,
+    );
+    let live_apply_blockers = vec![RuntimeResourcePolicyBlocker {
+        code: "runtime-control-unavailable".to_string(),
+        message: "No live Apple VZ/display runtime control channel is available yet; the policy was recorded for UI/display pacing consumers.".to_string(),
+    }];
+    let policy = RuntimeResourcePolicyMetadata {
+        vm: name.to_string(),
+        mode: manifest.mode.to_string(),
+        profile: manifest.resources.profile.clone(),
+        visibility,
+        state: state.state,
+        on_battery,
+        memory: resolve_memory(&manifest.resources.memory, &decision),
+        cpu: resolve_vcpu(&manifest.resources.cpu, &decision),
+        display_fps_cap: decision.display_fps_cap,
+        rationale: decision.rationale,
+        live_applied: false,
+        live_apply_blockers,
+        updated_at_unix: now_unix(),
+    };
+    store
+        .write_runtime_resource_policy_metadata(name, &policy)
+        .map_err(|error| error.to_string())?;
+    Ok(policy)
+}
+
 /// Boot a Fast Mode VM with an embedded graphical display: spawns the windowed
 /// AppleVzRunner (via lightvm-runner `--apple-vz-display`) that hosts the VM in a
 /// `VZVirtualMachineView` window. Requires `BRIDGEVM_APPLE_VZ_RUNNER` and a GUI
@@ -6883,6 +6961,21 @@ mod tests {
         };
         let json = serde_json::to_string(&request).unwrap();
         assert_eq!(json, r#"{"type":"resume_backend","name":"legacy"}"#);
+        let decoded: BridgeVmRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(request, decoded);
+    }
+
+    #[test]
+    fn reapply_runtime_resources_request_round_trips_as_json() {
+        let request = BridgeVmRequest::ReapplyRuntimeResources {
+            name: "fast-linux".to_string(),
+            visibility: RuntimeResourceVisibility::Background,
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        assert_eq!(
+            json,
+            r#"{"type":"reapply_runtime_resources","name":"fast-linux","visibility":"background"}"#
+        );
         let decoded: BridgeVmRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(request, decoded);
     }
@@ -11321,6 +11414,12 @@ mod tests {
                 previous: std::env::var_os(key),
             }
         }
+
+        fn set(key: &'static str, value: &str) -> Self {
+            let guard = Self::capture(key);
+            std::env::set_var(key, value);
+            guard
+        }
     }
 
     impl Drop for EnvVarGuard {
@@ -11357,6 +11456,83 @@ mod tests {
             .into_result()
             .unwrap();
         (store, name)
+    }
+
+    #[test]
+    fn handler_reapplies_runtime_resources_for_background_fast_vm() {
+        let _battery = EnvVarGuard::set("BRIDGEVM_FORCE_ON_BATTERY", "0");
+        let (store, name) = fast_test_store("runtime-resource-policy");
+        store
+            .transition_state(&name, VmRuntimeState::Running)
+            .unwrap();
+        store
+            .write_runner_metadata(
+                &name,
+                &RunnerMetadata {
+                    engine: "lightvm".to_string(),
+                    pid: Some(42),
+                    command: vec!["lightvm-runner".to_string()],
+                    log_path: PathBuf::from("logs/lightvm.log"),
+                    started_at_unix: now_unix(),
+                    dry_run: false,
+                    launch_spec_path: None,
+                    guest_tools: None,
+                    disk: None,
+                    active_disk: None,
+                    launch_readiness: None,
+                },
+            )
+            .unwrap();
+
+        let response = handle_request(
+            &store,
+            BridgeVmRequest::ReapplyRuntimeResources {
+                name: name.clone(),
+                visibility: RuntimeResourceVisibility::Background,
+            },
+        )
+        .into_result()
+        .unwrap();
+        let BridgeVmResponse::RuntimeResourcePolicy { policy } = response else {
+            panic!("expected runtime resource policy");
+        };
+
+        assert_eq!(policy.vm, name);
+        assert_eq!(policy.visibility, RuntimeResourceVisibility::Background);
+        assert_eq!(policy.state, VmRuntimeState::Running);
+        assert!(!policy.on_battery);
+        assert_eq!(policy.memory, "2048");
+        assert_eq!(policy.cpu, "1");
+        assert_eq!(policy.display_fps_cap, "10");
+        assert!(!policy.live_applied);
+        assert_eq!(
+            policy.live_apply_blockers[0].code,
+            "runtime-control-unavailable"
+        );
+        assert_eq!(
+            store
+                .runtime_resource_policy_metadata(&policy.vm)
+                .unwrap()
+                .as_ref(),
+            Some(&policy)
+        );
+    }
+
+    #[test]
+    fn handler_reapply_runtime_resources_rejects_stopped_vm() {
+        let (store, name) = fast_test_store("runtime-resource-stopped");
+
+        let message = handle_request(
+            &store,
+            BridgeVmRequest::ReapplyRuntimeResources {
+                name,
+                visibility: RuntimeResourceVisibility::Foreground,
+            },
+        )
+        .into_result()
+        .expect_err("stopped VM should reject runtime resource reapply");
+
+        assert!(message.contains("requires a running VM"));
     }
 
     #[test]

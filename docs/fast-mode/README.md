@@ -126,6 +126,8 @@ The Swift configuration and launch boundary is intentionally narrower than dry-r
 
 Fast Mode resource planning now runs through the shared resource-manager scaffold before the Apple VZ launch spec is emitted. When manifest memory or CPU is `auto`, BridgeVM resolves those values deterministically from `resources.profile`. Explicit manifest memory or CPU values are preserved. The launch spec also includes the selected `display_fps_cap` and `rationale` from the resource decision so callers can inspect the planning policy without starting the default Apple VZ launcher path.
 
+For running Fast Mode VMs, `bridgevm resources reapply <vm> --visibility foreground|background` re-evaluates the policy using the current host battery state and records `metadata/runtime-resources.json`. This is available over local CLI and the daemon socket. The record includes `live_applied` and `live_apply_blockers`; today it reports `runtime-control-unavailable` because the live Apple VZ/display control IPC that would consume the policy has not been implemented yet.
+
 `bridgevm ssh ubuntu-dev [--user USER]` is a metadata-only SSH planner. It does
 not execute `ssh`; when connected guest-tools runtime metadata reports a valid
 guest IP, it can print `ssh USER@<guest-ip>`.

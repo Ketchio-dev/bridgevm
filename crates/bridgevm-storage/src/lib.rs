@@ -195,6 +195,45 @@ pub struct RunnerMetadata {
     pub launch_readiness: Option<LaunchReadinessMetadata>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RuntimeResourceVisibility {
+    Foreground,
+    Background,
+}
+
+impl std::fmt::Display for RuntimeResourceVisibility {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RuntimeResourceVisibility::Foreground => write!(f, "foreground"),
+            RuntimeResourceVisibility::Background => write!(f, "background"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeResourcePolicyMetadata {
+    pub vm: String,
+    pub mode: String,
+    pub profile: String,
+    pub visibility: RuntimeResourceVisibility,
+    pub state: VmRuntimeState,
+    pub on_battery: bool,
+    pub memory: String,
+    pub cpu: String,
+    pub display_fps_cap: String,
+    pub rationale: String,
+    pub live_applied: bool,
+    pub live_apply_blockers: Vec<RuntimeResourcePolicyBlocker>,
+    pub updated_at_unix: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeResourcePolicyBlocker {
+    pub code: String,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LaunchReadinessMetadata {
     pub ready: bool,
@@ -2021,6 +2060,27 @@ impl VmStore {
         write_json_pretty_atomic(&guest_tools_runtime_path(&bundle), metadata)
     }
 
+    pub fn runtime_resource_policy_metadata(
+        &self,
+        vm_name: &str,
+    ) -> Result<Option<RuntimeResourcePolicyMetadata>, StorageError> {
+        let (bundle, _) = self.get_vm(vm_name)?;
+        let path = runtime_resource_policy_path(&bundle);
+        if !path.exists() {
+            return Ok(None);
+        }
+        Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
+    }
+
+    pub fn write_runtime_resource_policy_metadata(
+        &self,
+        vm_name: &str,
+        metadata: &RuntimeResourcePolicyMetadata,
+    ) -> Result<(), StorageError> {
+        let (bundle, _) = self.get_vm(vm_name)?;
+        write_json_pretty_atomic(&runtime_resource_policy_path(&bundle), metadata)
+    }
+
     pub fn qmp_supervisor_metadata(
         &self,
         vm_name: &str,
@@ -2997,6 +3057,10 @@ fn guest_tools_token_path(bundle: &Path) -> PathBuf {
 
 fn guest_tools_runtime_path(bundle: &Path) -> PathBuf {
     bundle.join("metadata").join("guest-tools-runtime.json")
+}
+
+fn runtime_resource_policy_path(bundle: &Path) -> PathBuf {
+    bundle.join("metadata").join("runtime-resources.json")
 }
 
 fn deletion_metadata_path(bundle: &Path) -> PathBuf {
@@ -4440,6 +4504,38 @@ mod tests {
 
         store.clear_runner_metadata("dev").unwrap();
         assert_eq!(store.runner_metadata("dev").unwrap(), None);
+    }
+
+    #[test]
+    fn writes_runtime_resource_policy_metadata() {
+        let store = temp_store();
+        store.create_vm(&manifest("dev")).unwrap();
+        let metadata = RuntimeResourcePolicyMetadata {
+            vm: "dev".to_string(),
+            mode: "fast".to_string(),
+            profile: "automatic".to_string(),
+            visibility: RuntimeResourceVisibility::Background,
+            state: VmRuntimeState::Running,
+            on_battery: true,
+            memory: "2048".to_string(),
+            cpu: "1".to_string(),
+            display_fps_cap: "10".to_string(),
+            rationale: "Battery or background throttling active.".to_string(),
+            live_applied: false,
+            live_apply_blockers: vec![RuntimeResourcePolicyBlocker {
+                code: "runtime-control-unavailable".to_string(),
+                message: "No live runtime control channel is available.".to_string(),
+            }],
+            updated_at_unix: now_unix(),
+        };
+
+        store
+            .write_runtime_resource_policy_metadata("dev", &metadata)
+            .unwrap();
+        assert_eq!(
+            store.runtime_resource_policy_metadata("dev").unwrap(),
+            Some(metadata)
+        );
     }
 
     #[test]
