@@ -4,7 +4,7 @@ use bridgevm_apple_vz::{
     build_fast_plan, write_launch_spec_artifact, AppleVzBootSpec, AppleVzPathSpec,
     AppleVzReadinessSpec,
 };
-use bridgevm_config::{PortForward, SharedFolder, VmManifest, VmMode};
+use bridgevm_config::{BootMode, PortForward, SharedFolder, VmManifest, VmMode};
 use bridgevm_core::{
     available_boot_templates, recommend_mode, BootTemplate, GuestChoice, ModeRecommendation,
 };
@@ -14,8 +14,9 @@ use bridgevm_network::{
 };
 use bridgevm_qemu::{
     assign_free_vnc_display, build_compatibility_command, cont as qmp_cont,
-    is_qmp_status_unavailable, qmp_socket_path, query_status, quit as qmp_quit, stop as qmp_stop,
-    suspend_to_snapshot, QemuCommand, QemuError, COMPAT_SUSPEND_SNAPSHOT_TAG,
+    is_qmp_status_unavailable, qmp_socket_path, query_status, quit as qmp_quit,
+    secure_boot_vars_path, stop as qmp_stop, suspend_to_snapshot, swtpm_socket_path, QemuCommand,
+    QemuError, COMPAT_SUSPEND_SNAPSHOT_TAG,
 };
 use bridgevm_storage::{
     ApplicationConsistentSnapshotPreflightMetadata, DiskCompactMetadata, DiskCreateMetadata,
@@ -3903,10 +3904,16 @@ pub fn readiness_report_with_live_evidence_options(
                         prepared_at_unix: now_unix(),
                     };
                     let bundle = store.bundle_path(name);
-                    let command_error = build_compatibility_command(&manifest, &bundle)
+                    let mut readiness_blockers =
+                        compatibility_launch_dependency_blockers(&manifest, &bundle);
+                    if let Some(blocker) = build_compatibility_command(&manifest, &bundle)
                         .err()
-                        .map(compatibility_launch_readiness_blocker_from_qemu_error);
-                    let readiness = compatibility_launch_readiness_metadata(&disk, command_error);
+                        .map(compatibility_launch_readiness_blocker_from_qemu_error)
+                    {
+                        readiness_blockers.push(blocker);
+                    }
+                    let readiness =
+                        compatibility_launch_readiness_metadata(&disk, readiness_blockers);
                     if readiness.ready {
                         notes.push("Compatibility Mode launch readiness was evaluated from the manifest and active disk without writing runner metadata".to_string());
                     } else {
@@ -5384,7 +5391,10 @@ fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadat
 
     let mut command = build_compatibility_command(&manifest, &bundle)
         .map_err(compatibility_qemu_command_error)?;
-    let readiness = compatibility_launch_readiness_metadata(&disk, None);
+    let readiness = compatibility_launch_readiness_metadata(
+        &disk,
+        compatibility_launch_dependency_blockers(&manifest, &bundle),
+    );
     if spawn && !readiness.ready {
         return Err(compatibility_launch_readiness_blocker_summary(&readiness));
     }
@@ -5460,7 +5470,7 @@ fn compatibility_qemu_command_error(error: QemuError) -> String {
 
 pub fn compatibility_launch_readiness_metadata(
     disk: &bridgevm_storage::DiskPreparationMetadata,
-    command_blocker: Option<LaunchReadinessBlockerMetadata>,
+    additional_blockers: Vec<LaunchReadinessBlockerMetadata>,
 ) -> LaunchReadinessMetadata {
     let mut blockers = Vec::new();
     if !disk.exists {
@@ -5471,13 +5481,66 @@ pub fn compatibility_launch_readiness_metadata(
             capability: Some("qemu".to_string()),
         });
     }
-    if let Some(blocker) = command_blocker {
-        blockers.push(blocker);
-    }
+    blockers.extend(additional_blockers);
     LaunchReadinessMetadata {
         ready: blockers.is_empty(),
         blockers,
     }
+}
+
+fn compatibility_launch_dependency_blockers(
+    manifest: &VmManifest,
+    bundle: &Path,
+) -> Vec<LaunchReadinessBlockerMetadata> {
+    let mut blockers = Vec::new();
+
+    if manifest.boot.as_ref().is_some_and(|boot| {
+        boot.mode == BootMode::WindowsInstaller && boot.installer_image.is_some()
+    }) {
+        let installer = manifest
+            .boot
+            .as_ref()
+            .and_then(|boot| boot.installer_image.as_deref())
+            .expect("checked installer image presence");
+        let path = resolve_bundle_path(bundle, installer);
+        if !path.exists() {
+            blockers.push(LaunchReadinessBlockerMetadata {
+                code: "missing-windows-installer-image".to_string(),
+                message: format!("Windows installer image is missing: {}", path.display()),
+                path: Some(path),
+                capability: Some("qemu-boot-media".to_string()),
+            });
+        }
+    }
+
+    if manifest.firmware.tpm {
+        let path = swtpm_socket_path(bundle);
+        if !path.exists() {
+            blockers.push(LaunchReadinessBlockerMetadata {
+                code: "missing-tpm-socket".to_string(),
+                message: format!("firmware.tpm requires swtpm socket: {}", path.display()),
+                path: Some(path),
+                capability: Some("qemu-tpm".to_string()),
+            });
+        }
+    }
+
+    if manifest.firmware.secure_boot {
+        let path = secure_boot_vars_path(bundle);
+        if !path.exists() {
+            blockers.push(LaunchReadinessBlockerMetadata {
+                code: "missing-secure-boot-vars".to_string(),
+                message: format!(
+                    "firmware.secureBoot requires seeded edk2 variable store: {}",
+                    path.display()
+                ),
+                path: Some(path),
+                capability: Some("qemu-secure-boot".to_string()),
+            });
+        }
+    }
+
+    blockers
 }
 
 pub fn compatibility_launch_readiness_blocker_from_qemu_error(
@@ -8712,6 +8775,118 @@ mod tests {
             .join("metadata")
             .join("primary-disk.json")
             .exists());
+    }
+
+    #[test]
+    fn compatibility_readiness_reports_missing_windows_firmware_dependencies() {
+        let mut root = std::env::temp_dir();
+        root.push(format!(
+            "bridgevm-api-compat-firmware-readiness-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = VmStore::new(root);
+        let mut manifest = VmManifest::new(
+            "win11",
+            VmMode::Compatibility,
+            Guest {
+                os: "windows".to_string(),
+                version: Some("11".to_string()),
+                arch: "arm64".to_string(),
+            },
+            "80GiB",
+        );
+        manifest.boot = Some(bridgevm_config::Boot {
+            mode: BootMode::WindowsInstaller,
+            installer_image: Some("installers/win11-arm.iso".to_string()),
+            kernel_path: None,
+            initrd_path: None,
+            kernel_command_line: None,
+            macos_restore_image: None,
+        });
+        manifest.firmware.tpm = true;
+        manifest.firmware.secure_boot = true;
+        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+            .into_result()
+            .unwrap();
+
+        let response = handle_request(
+            &store,
+            BridgeVmRequest::ReadinessReport {
+                name: "win11".to_string(),
+                live_evidence: None,
+                record_live_evidence: false,
+                clear_live_evidence: false,
+            },
+        )
+        .into_result()
+        .unwrap();
+        let BridgeVmResponse::ReadinessReport { report } = response else {
+            panic!("expected readiness report response");
+        };
+        let pre_run_readiness = report
+            .pre_run_launch_readiness
+            .as_ref()
+            .expect("expected Compatibility Mode pre-run readiness");
+
+        for code in [
+            "missing-primary-disk",
+            "missing-windows-installer-image",
+            "missing-tpm-socket",
+            "missing-secure-boot-vars",
+        ] {
+            assert!(
+                pre_run_readiness
+                    .blockers
+                    .iter()
+                    .any(|blocker| blocker.code == code),
+                "missing pre-run blocker {code}: {:?}",
+                pre_run_readiness.blockers
+            );
+            assert!(
+                report
+                    .blockers
+                    .iter()
+                    .any(|blocker| blocker == &format!("launch-readiness-blocker:{code}")),
+                "missing report blocker {code}: {:?}",
+                report.blockers
+            );
+        }
+
+        let response = handle_request(
+            &store,
+            BridgeVmRequest::PrepareRun {
+                name: "win11".to_string(),
+            },
+        )
+        .into_result()
+        .unwrap();
+        let BridgeVmResponse::RunnerStatus {
+            metadata: Some(metadata),
+            ..
+        } = response
+        else {
+            panic!("expected runner status");
+        };
+        let readiness = metadata
+            .launch_readiness
+            .as_ref()
+            .expect("Compatibility dry-run includes launch readiness");
+        assert!(!readiness.ready);
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.code == "missing-windows-installer-image"));
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.code == "missing-tpm-socket"));
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.code == "missing-secure-boot-vars"));
     }
 
     #[test]
