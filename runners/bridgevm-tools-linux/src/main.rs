@@ -12,7 +12,38 @@ use std::{
     os::unix::net::UnixStream,
     path::{Component, Path, PathBuf},
     process::{Command as ProcessCommand, Stdio},
+    thread,
+    time::{Duration, Instant},
 };
+
+/// A trusted PATH pinned for effect commands (clipboard/resize) so an
+/// auto-detected bare program name (`xclip`/`xrandr`/`wl-copy`) can only resolve
+/// from system dirs, not a guest-writable directory earlier in the inherited
+/// PATH (the agent runs as root). Absolute-path commands are unaffected.
+const EFFECT_COMMAND_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
+/// Hard cap so a configured effect command that hangs (e.g. a daemonizing child)
+/// can't wedge the single-threaded agent forever.
+const EFFECT_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Wait for `child` up to `EFFECT_COMMAND_TIMEOUT`, killing + reaping it on
+/// timeout. Returns the exit status, or an error string on timeout/wait failure.
+fn wait_bounded(child: &mut std::process::Child, label: &str) -> Result<std::process::ExitStatus, String> {
+    let deadline = Instant::now() + EFFECT_COMMAND_TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!("{label} timed out"));
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => return Err(format!("failed to wait for {label}: {error}")),
+        }
+    }
+}
 
 const AGENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -1041,11 +1072,15 @@ impl ClipboardWriter {
 }
 
 fn run_clipboard_command(program: &Path, args: &[String], text: &str) -> Result<(), String> {
+    // stdout/stderr -> null: a command (e.g. `xclip`) that daemonizes to serve
+    // the X selection would otherwise inherit + hold these pipes, hanging the
+    // agent forever in the wait. Pinned PATH guards an auto-detected bare name.
     let mut child = ProcessCommand::new(program)
         .args(args)
+        .env("PATH", EFFECT_COMMAND_PATH)
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
         .map_err(|error| {
             format!(
@@ -1054,43 +1089,28 @@ fn run_clipboard_command(program: &Path, args: &[String], text: &str) -> Result<
             )
         })?;
 
+    // Feed the clipboard text on a separate thread so a command that doesn't
+    // drain stdin can't deadlock the agent on a large payload.
     let mut stdin = child.stdin.take().ok_or_else(|| {
         format!(
             "failed to open stdin for clipboard command {}",
             program.display()
         )
     })?;
-    stdin.write_all(text.as_bytes()).map_err(|error| {
-        format!(
-            "failed to write clipboard text to {}: {error}",
-            program.display()
-        )
-    })?;
-    drop(stdin);
+    let payload = text.as_bytes().to_vec();
+    let writer = thread::spawn(move || {
+        let _ = stdin.write_all(&payload);
+        // dropping stdin here closes it (EOF for the child)
+    });
 
-    let output = child.wait_with_output().map_err(|error| {
-        format!(
-            "failed to wait for clipboard command {}: {error}",
-            program.display()
-        )
-    })?;
-    if output.status.success() {
-        return Ok(());
+    let label = format!("clipboard command {}", program.display());
+    let status = wait_bounded(&mut child, &label);
+    let _ = writer.join();
+    match status {
+        Ok(status) if status.success() => Ok(()),
+        Ok(status) => Err(format!("{label} failed: exit status {status}")),
+        Err(error) => Err(error),
     }
-
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let detail = if !stderr.is_empty() {
-        stderr
-    } else if !stdout.is_empty() {
-        stdout
-    } else {
-        format!("exit status {}", output.status)
-    };
-    Err(format!(
-        "clipboard command {} failed: {detail}",
-        program.display()
-    ))
 }
 
 struct DisplayResizer {
@@ -1144,34 +1164,28 @@ fn run_display_resize_command(
     height: u32,
     scale: u16,
 ) -> Result<(), String> {
-    let output = ProcessCommand::new(command)
+    // Pinned PATH (auto-detected bare name resolves only from system dirs),
+    // null fds (a daemonizing child can't hold our pipes), bounded wait.
+    let mut child = ProcessCommand::new(command)
         .arg(width.to_string())
         .arg(height.to_string())
         .arg(scale.to_string())
-        .output()
+        .env("PATH", EFFECT_COMMAND_PATH)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
         .map_err(|error| {
             format!(
                 "failed to execute display resize command {}: {error}",
                 command.display()
             )
         })?;
-    if output.status.success() {
-        return Ok(());
+    let label = format!("display resize command {}", command.display());
+    match wait_bounded(&mut child, &label)? {
+        status if status.success() => Ok(()),
+        status => Err(format!("{label} failed: exit status {status}")),
     }
-
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let detail = if !stderr.is_empty() {
-        stderr
-    } else if !stdout.is_empty() {
-        stdout
-    } else {
-        format!("exit status {}", output.status)
-    };
-    Err(format!(
-        "display resize command {} failed: {detail}",
-        command.display()
-    ))
 }
 
 /// Applies host TimeSync commands to the guest clock.

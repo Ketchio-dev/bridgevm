@@ -5,7 +5,15 @@ Concise "where are we" snapshot. Full plan/roadmap/scaffold log lives in
 
 _Last updated: 2026-06-16._
 
-## Adversarial review pass (this session) — all 7 findings FIXED
+## Adversarial review round 2 (3 parallel reviews: api lifecycle / agent protocol / storage-config-qemu)
+A deeper read-only sweep of the correctness-critical subsystems found a large set
+of real bugs. **All HIGH + most MED are FIXED + tested:**
+- **agent protocol/security:** F1 (HIGH host-OOM: unbounded frame → MAX_FRAME_BYTES cap), F2 (HIGH: non-constant-time token compare → constant-time), F3 (MED: oversized-handshake spin → reset), F4 (MED: auto-detected `xclip`/`xrandr` resolved via guest PATH → pinned PATH for effect commands), F5 (MED: agent's own clipboard spawn could hang it via daemonized-child fd-hold/stdin-deadlock → null fds + threaded stdin + bounded wait).
+- **storage/config/qemu:** HIGH-1 (manifest path bundle-escape → arbitrary file write → `ensure_bundle_relative`), HIGH-2 (QEMU option-string comma injection → escaped), MED-3/MED-4 (memory/size `checked_mul`), MED-5 (empty-slug name → rejected), MED-6 (non-atomic runner.json/state.json → atomic temp+rename).
+- **api lifecycle:** HIGH-1 (PID-reuse → could SIGKILL an unrelated recycled pid; now validates `ps -o etime` start-time vs recorded launch), HIGH-3 (atomic metadata, = MED-6).
+- **Documented MED/LOW backlog (not yet fixed):** api lifecycle metadata/runtime divergence on partial failures (suspend transition after kill, resume's fixed-2s `-loadvm` survival check, `wait_for_job` treating a vanished job as success, fast-suspend transition gating, the two-file spawn crash window) — these share a "lock + idempotent ordering + start-time-validated state reconciliation" fix; plus agent F6 (file-drop buffers vs declared size) and F7 (UnexpectedEof classified idle).
+
+## Adversarial review round 1 (this session) — all 7 findings FIXED
 A read-only review of this session's commits surfaced 7 findings; ALL are now
 fixed + tested. (#1 HIGH) the held guest-tools connection lost a GuestHello split
 across reads → now peeks (MSG_PEEK) for a whole frame before consuming
