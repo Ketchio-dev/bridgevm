@@ -7287,8 +7287,9 @@ mod tests {
                     ],
                     missing_capabilities: Vec::new(),
                     ready: true,
-                    planned_freeze_semantics: "future freeze".to_string(),
-                    planned_thaw_semantics: "future thaw".to_string(),
+                    planned_freeze_semantics: "daemon-owned guest-tools fs-freeze request"
+                        .to_string(),
+                    planned_thaw_semantics: "daemon-owned guest-tools fs-thaw request".to_string(),
                     runtime_updated_at_unix: Some(2),
                     prepared_at_unix: 3,
                 },

@@ -318,6 +318,11 @@ pub struct ApplicationConsistentSnapshotPreflightMetadata {
     pub prepared_at_unix: u64,
 }
 
+const APPLICATION_CONSISTENT_FREEZE_SEMANTICS: &str =
+    "daemon-owned guest-tools fs-freeze request before disk snapshot when the preflight is ready";
+const APPLICATION_CONSISTENT_THAW_SEMANTICS: &str =
+    "daemon-owned guest-tools fs-thaw request after the snapshot attempt when freeze was dispatched";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SnapshotChainMetadata {
     pub active_disk: ActiveDiskMetadata,
@@ -2506,12 +2511,8 @@ impl VmStore {
             available_capabilities,
             missing_capabilities,
             ready,
-            planned_freeze_semantics:
-                "future guest-agent request to freeze guest filesystems before disk snapshot"
-                    .to_string(),
-            planned_thaw_semantics:
-                "future guest-agent request to thaw guest filesystems after disk snapshot attempt"
-                    .to_string(),
+            planned_freeze_semantics: APPLICATION_CONSISTENT_FREEZE_SEMANTICS.to_string(),
+            planned_thaw_semantics: APPLICATION_CONSISTENT_THAW_SEMANTICS.to_string(),
             runtime_updated_at_unix: runtime.as_ref().map(|runtime| runtime.updated_at_unix),
             prepared_at_unix: now_unix(),
         };
@@ -3593,7 +3594,10 @@ mod tests {
         assert!(preflight.runtime_updated_at_unix.is_none());
         assert!(preflight
             .planned_freeze_semantics
-            .contains("future guest-agent request"));
+            .contains("daemon-owned guest-tools fs-freeze request"));
+        assert!(preflight
+            .planned_thaw_semantics
+            .contains("daemon-owned guest-tools fs-thaw request"));
         assert!(store
             .bundle_path("dev")
             .join("metadata")

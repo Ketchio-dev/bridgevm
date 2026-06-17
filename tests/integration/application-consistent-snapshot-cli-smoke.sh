@@ -53,8 +53,8 @@ assert_preflight_contract() {
   assert_contains "$output" "Required capabilities: fs-freeze, fs-thaw" "$label"
   assert_contains "$output" "Missing capabilities: fs-freeze, fs-thaw" "$label"
   assert_contains "$output" "Application-consistent ready: false" "$label"
-  assert_contains "$output" "future guest-agent request to freeze guest filesystems" "$label"
-  assert_contains "$output" "future guest-agent request to thaw guest filesystems" "$label"
+  assert_contains "$output" "daemon-owned guest-tools fs-freeze request" "$label"
+  assert_contains "$output" "daemon-owned guest-tools fs-thaw request" "$label"
 
   [[ -f "$metadata" ]] || fail "$label metadata missing: $metadata"
   grep -q '"ready": false' "$metadata" || fail "$label metadata omitted ready=false"

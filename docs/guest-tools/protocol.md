@@ -323,8 +323,9 @@ filesystem freeze primitive only: it may require root or `CAP_SYS_ADMIN`, may
 be unsupported by a filesystem or mount state, and does not flush databases,
 quiesce applications, coordinate app writes, or prove application consistency.
 `snapshot create <vm> <name> --kind application-consistent` remains a
-readiness/preflight record only. As the boundary matures, the expected sequence
-is:
+readiness/preflight record only. The daemon-owned
+`snapshot execute-application-consistent` path uses that preflight and follows
+this sequence when a connected backend advertises the required capabilities:
 
 1. Validate the authenticated guest-tools session.
 2. Require advertised `fs-freeze` and `fs-thaw` capabilities.
