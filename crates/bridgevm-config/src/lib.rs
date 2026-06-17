@@ -184,6 +184,10 @@ pub enum ConfigError {
     },
     #[error("manifest name cannot be empty")]
     EmptyName,
+    #[error("manifest name '{name}' is not usable (it must contain at least one letter or digit)")]
+    UnusableName { name: String },
+    #[error("manifest {field} must be a bundle-relative path (no absolute or '..' components): {value}")]
+    UnsafePath { field: &'static str, value: String },
     #[error("boot mode {mode} requires {field}")]
     MissingBootInput { mode: BootMode, field: &'static str },
     #[error("boot input {field} cannot be empty")]
@@ -496,6 +500,17 @@ impl VmManifest {
         if self.name.trim().is_empty() {
             return Err(ConfigError::EmptyName);
         }
+        // A name that survives the trim but slugs to empty (e.g. "!!!", "···")
+        // would map onto the shared `vms/.vmbridge` bundle path -> collisions.
+        if slug(&self.name).is_empty() {
+            return Err(ConfigError::UnusableName {
+                name: self.name.clone(),
+            });
+        }
+        // The primary disk is created/truncated under the VM bundle. An absolute
+        // or `..`-escaping path would let a hostile/imported manifest read, write,
+        // or truncate an arbitrary host file. Confine it to the bundle.
+        ensure_bundle_relative("storage.primary.path", &self.storage.primary.path)?;
         validate_boot(self.boot.as_ref())?;
         validate_shared_folders(&self.shared_folders)?;
         Ok(())
@@ -564,6 +579,26 @@ fn validate_shared_folders(shared_folders: &[SharedFolder]) -> Result<(), Config
         }
     }
 
+    Ok(())
+}
+
+/// Reject a path that is absolute or contains a `..`/root/prefix component, so a
+/// manifest-supplied path can only ever resolve inside the VM bundle.
+fn ensure_bundle_relative(field: &'static str, value: &str) -> Result<(), ConfigError> {
+    use std::path::{Component, Path};
+    let path = Path::new(value);
+    let unsafe_path = path.components().any(|component| {
+        matches!(
+            component,
+            Component::RootDir | Component::ParentDir | Component::Prefix(_)
+        )
+    });
+    if unsafe_path {
+        return Err(ConfigError::UnsafePath {
+            field,
+            value: value.to_string(),
+        });
+    }
     Ok(())
 }
 
@@ -1051,6 +1086,50 @@ sharedFolders:
             ConfigError::EmptyBootInput {
                 field: "kernelPath"
             }
+        ));
+    }
+
+    #[test]
+    fn rejects_absolute_or_escaping_primary_disk_path() {
+        let mut manifest = VmManifest::new(
+            "disk-escape",
+            VmMode::Compatibility,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "arm64".to_string(),
+            },
+            "80GiB",
+        );
+        // A legitimate bundle-relative path validates.
+        assert!(manifest.validate().is_ok());
+        for bad in ["/etc/passwd", "../../etc/shadow", "disks/../../../tmp/x"] {
+            manifest.storage.primary.path = bad.to_string();
+            assert!(
+                matches!(
+                    manifest.validate(),
+                    Err(ConfigError::UnsafePath { field: "storage.primary.path", .. })
+                ),
+                "expected UnsafePath for {bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_name_that_slugs_to_empty() {
+        let manifest = VmManifest::new(
+            "!!!",
+            VmMode::Fast,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "arm64".to_string(),
+            },
+            "80GiB",
+        );
+        assert!(matches!(
+            manifest.validate(),
+            Err(ConfigError::UnusableName { .. })
         ));
     }
 }

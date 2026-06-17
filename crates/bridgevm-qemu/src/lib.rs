@@ -257,7 +257,7 @@ pub fn build_compatibility_command(
         "-drive".to_string(),
         format!(
             "file={},if=virtio,format={},discard={},node-name={}",
-            disk_path.display(),
+            escape_qemu_opt(disk_path.display()),
             manifest.storage.primary.format,
             if manifest.storage.primary.discard {
                 "unmap"
@@ -273,18 +273,18 @@ pub fn build_compatibility_command(
         "-display".to_string(),
         display_arg(display_renderer).to_string(),
         "-qmp".to_string(),
-        format!("unix:{},server=on,wait=off", qmp_path.display()),
+        format!("unix:{},server=on,wait=off", escape_qemu_opt(qmp_path.display())),
         "-chardev".to_string(),
         format!(
             "socket,id=bridgevm-tools,path={},server=on,wait=off",
-            guest_tools_path.display()
+            escape_qemu_opt(guest_tools_path.display())
         ),
         "-device".to_string(),
         "virtio-serial-pci".to_string(),
         "-device".to_string(),
         "virtserialport,chardev=bridgevm-tools,name=org.bridgevm.guest-tools.0".to_string(),
         "-serial".to_string(),
-        format!("file:{}", serial_log.display()),
+        format!("file:{}", escape_qemu_opt(serial_log.display())),
     ];
 
     if arch == "arm64" || arch == "aarch64" {
@@ -325,7 +325,7 @@ pub fn build_compatibility_command(
             "-drive".to_string(),
             format!(
                 "if=none,id=installer,file={},media=cdrom,readonly=on",
-                installer_path.display()
+                escape_qemu_opt(installer_path.display())
             ),
             "-device".to_string(),
             "usb-storage,bus=usb.0,drive=installer,bootindex=0".to_string(),
@@ -774,6 +774,14 @@ fn accelerator_arg(profile: &QemuProfile) -> &str {
     }
 }
 
+/// Escape a value interpolated into a comma-delimited QEMU option string (e.g.
+/// `-drive file=...`, `-chardev socket,path=...`). QEMU parses these option
+/// strings on commas, so a literal comma in a (manifest-derived) path must be
+/// doubled (`,,`) or it would inject additional QEMU options.
+fn escape_qemu_opt(value: impl std::fmt::Display) -> String {
+    value.to_string().replace(',', ",,")
+}
+
 fn memory_arg(value: &str) -> String {
     if value == "auto" {
         "4096".to_string()
@@ -781,8 +789,12 @@ fn memory_arg(value: &str) -> String {
         value
             .trim_end_matches("GiB")
             .parse::<u64>()
-            .map(|gib| (gib * 1024).to_string())
-            .unwrap_or_else(|_| value.to_string())
+            // checked_mul: a huge GiB value would otherwise panic (debug) or wrap
+            // (release) into a garbage -m argument. On overflow, pass through.
+            .ok()
+            .and_then(|gib| gib.checked_mul(1024))
+            .map(|mib| mib.to_string())
+            .unwrap_or_else(|| value.to_string())
     } else if value.ends_with("MiB") {
         value.trim_end_matches("MiB").to_string()
     } else {
@@ -1088,6 +1100,39 @@ mod tests {
         let cocoa = vec!["-display".to_string(), "cocoa,gl=on".to_string()];
         assert_eq!(vnc_display_in_command(&cocoa), None);
         assert_eq!(vnc_display_in_command(&[]), None);
+    }
+
+    #[test]
+    fn disk_path_commas_are_escaped_in_the_drive_option() {
+        // A comma in the disk path must be doubled so it can't inject extra QEMU
+        // -drive options (e.g. flip readonly / add a backing file).
+        let mut manifest = VmManifest::new(
+            "comma-disk",
+            VmMode::Compatibility,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "arm64".to_string(),
+            },
+            "80GiB",
+        );
+        manifest.storage.primary.path = "disks/root,if=none.qcow2".to_string();
+        let command = build_compatibility_command(&manifest, Path::new("/tmp/x.vmbridge"))
+            .expect("compat command");
+        let drive = arg_after(&command.args, "-drive");
+        assert!(
+            drive.contains("root,,if=none.qcow2"),
+            "comma not doubled in drive option: {drive}"
+        );
+        assert!(!drive.contains("root,if=none.qcow2"));
+    }
+
+    #[test]
+    fn memory_arg_does_not_panic_or_wrap_on_huge_values() {
+        // 2^54 GiB * 1024 overflows u64; must pass through rather than panic/wrap.
+        assert_eq!(memory_arg("18014398509481984GiB"), "18014398509481984GiB");
+        assert_eq!(memory_arg("4GiB"), "4096");
+        assert_eq!(memory_arg("auto"), "4096");
     }
 
     #[test]

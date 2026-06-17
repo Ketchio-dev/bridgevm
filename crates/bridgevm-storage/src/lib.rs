@@ -2090,10 +2090,9 @@ impl VmStore {
         let (bundle, _) = self.get_vm(vm_name)?;
         let dir = bundle.join("metadata");
         fs::create_dir_all(&dir)?;
-        fs::write(
-            dir.join("runner.json"),
-            serde_json::to_string_pretty(metadata)?,
-        )?;
+        // Atomic (temp + rename): a torn write of runner.json would otherwise
+        // leave invalid JSON that bricks every later lifecycle read.
+        write_json_pretty_atomic(&dir.join("runner.json"), metadata)?;
         Ok(())
     }
 
@@ -2223,10 +2222,9 @@ impl VmStore {
         };
         let dir = bundle.join("metadata");
         fs::create_dir_all(&dir)?;
-        fs::write(
-            dir.join("state.json"),
-            serde_json::to_string_pretty(&metadata)?,
-        )?;
+        // Atomic (temp + rename): a torn write of state.json would otherwise
+        // leave invalid JSON that bricks lifecycle reads.
+        write_json_pretty_atomic(&dir.join("state.json"), &metadata)?;
         Ok(metadata)
     }
 
@@ -2966,7 +2964,13 @@ fn parse_size_bytes(value: &str) -> Option<u64> {
     ];
     for (suffix, multiplier) in units {
         if let Some(number) = trimmed.strip_suffix(suffix) {
-            return number.trim().parse::<u64>().ok().map(|n| n * multiplier);
+            // checked_mul: a huge value would otherwise panic (debug) or wrap
+            // (release) into a wrong set_len size. Overflow -> None.
+            return number
+                .trim()
+                .parse::<u64>()
+                .ok()
+                .and_then(|n| n.checked_mul(multiplier));
         }
     }
     trimmed.parse::<u64>().ok()
