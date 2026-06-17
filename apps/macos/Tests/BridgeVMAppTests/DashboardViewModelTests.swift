@@ -65,6 +65,85 @@ final class DashboardViewModelTests: XCTestCase {
     XCTAssertEqual(refreshed.first(where: { $0.id == running.id })?.status, .suspended)
   }
 
+  func testMockRuntimeResourceReapplyRecordsPolicy() async throws {
+    let client = MockVirtualMachineClient()
+    let virtualMachines = try await client.listVirtualMachines()
+    let fastVM = try XCTUnwrap(virtualMachines.first { $0.mode == .fast })
+
+    let policy = try await client.reapplyRuntimeResources(
+      visibility: .background,
+      on: fastVM.id
+    )
+
+    XCTAssertEqual(policy.vm, fastVM.name)
+    XCTAssertEqual(policy.mode, "fast")
+    XCTAssertEqual(policy.visibility, .background)
+    XCTAssertEqual(policy.state, fastVM.status.rawValue)
+    XCTAssertEqual(policy.memory, "\(max(2, fastVM.resources.memoryGB / 2) * 1024)")
+    XCTAssertEqual(policy.cpu, "\(max(1, fastVM.resources.cpuCount / 2))")
+    XCTAssertEqual(policy.displayFPSCap, "10")
+    XCTAssertFalse(policy.liveApplied)
+    XCTAssertEqual(policy.liveApplyBlockers.first?.code, "mock-runtime-control-unavailable")
+  }
+
+  func testMockInventorySupportsSurfacedMaintenanceAndDiagnosticsActions() async throws {
+    let client = MockVirtualMachineClient()
+    let virtualMachines = try await client.listVirtualMachines()
+    let stoppedVM = try XCTUnwrap(virtualMachines.first { $0.status == .stopped })
+    let runningFastVM = try XCTUnwrap(
+      virtualMachines.first { $0.mode == .fast && $0.status == .running }
+    )
+
+    let verification = try await client.verifyActiveDisk(on: stoppedVM.id)
+    XCTAssertTrue(verification.activeDisk.path.hasSuffix("/disks/root.qcow2"))
+    XCTAssertEqual(verification.exitStatus, "exit status: 0")
+    XCTAssertTrue(verification.report.contains("check-errors"))
+
+    let compaction = try await client.compactActiveDisk(on: stoppedVM.id)
+    XCTAssertEqual(compaction.activeDisk.path, verification.activeDisk.path)
+    XCTAssertLessThan(compaction.compactedSizeBytes, compaction.originalSizeBytes)
+    XCTAssertTrue(compaction.backupPath.contains(".precompact-"))
+
+    let bundle = try await client.createDiagnosticBundle(
+      output: "/tmp/diagnostics",
+      on: stoppedVM.id
+    )
+    XCTAssertEqual(bundle.vm, stoppedVM.name)
+    XCTAssertEqual(bundle.output, "/tmp/diagnostics/legacy-linux-qemu-diagnostics")
+    XCTAssertTrue(bundle.files.contains("manifest.yaml"))
+
+    let baseline = try await client.createPerformanceBaseline(
+      output: "/tmp/perf",
+      on: runningFastVM.id
+    )
+    XCTAssertEqual(baseline.vm, runningFastVM.name)
+    XCTAssertEqual(baseline.artifact, "/tmp/perf/performance-baseline.json")
+    XCTAssertEqual(baseline.guestTools.connected, true)
+    XCTAssertTrue(
+      baseline.measurements.contains { $0.name == "guest_benchmark_cpu_iterations" }
+    )
+
+    let sample = try await client.createPerformanceSample(
+      output: "/tmp/perf",
+      artifactBytes: 4_096,
+      iterations: 2,
+      sync: true,
+      on: runningFastVM.id
+    )
+    XCTAssertEqual(sample.iterationResults.count, 2)
+    XCTAssertEqual(sample.artifactBytes, 4_096)
+    XCTAssertTrue(sample.sync)
+    XCTAssertTrue(
+      sample.measurements.contains { $0.name == "guest_benchmark_cpu_ops_per_sec" }
+    )
+
+    let deletion = try await client.deleteVirtualMachine(on: stoppedVM.id)
+    XCTAssertEqual(deletion.vm, stoppedVM.name)
+    XCTAssertTrue(deletion.metadataOnly)
+    let remainingVirtualMachines = try await client.listVirtualMachines()
+    XCTAssertFalse(remainingVirtualMachines.contains { $0.id == stoppedVM.id })
+  }
+
   func testLoadRecordsRefreshErrorWithoutDiscardingExistingInventory() async throws {
     let existing = VirtualMachine(
       id: UUID(),

@@ -48,14 +48,19 @@ The first app milestone should be a native dashboard that calls the Rust daemon 
 - a Portable Bundle panel for daemon-backed VM bundle export/import metadata,
   including archive format, copied bundle file counts/paths, preserved manifest
   and metadata status, and import rename/manifest rewrite results
+- a Runtime Resources panel for Fast Mode VMs that sends the daemon
+  `reapply_runtime_resources` request, records foreground/background policy
+  metadata, and honestly shows `live_apply_blockers` until live Apple VZ/display
+  control IPC exists
 - persisted Settings controls for the daemon socket path, mock-inventory mode,
   and local Apple VZ live-start opt-in
 
 The source is intentionally thin: VM lifecycle state should continue to live in
 `bridgevmd`, while the macOS app presents inventory and sends user actions.
 The daemon client currently speaks the same wire format as `bridgevmd` for
-`store_doctor`, `list_vms`, `list_templates`, `create_vm`, `transition_vm`,
-`run_backend`, `suspend_backend`, `resume_backend`, and `stop_backend`;
+`store_doctor`, `list_vms`, `list_templates`, `create_vm`, `run_backend`,
+`suspend_backend`, `resume_backend`, `stop_backend`, and
+`reapply_runtime_resources`;
 dashboard Start requests route through daemon-owned backend launch with
 `spawn=true` rather than only marking metadata as running, and dashboard
 Suspend/Resume now route through `suspend_backend`/`resume_backend` (Fast Mode

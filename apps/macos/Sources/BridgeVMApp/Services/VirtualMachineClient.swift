@@ -6350,6 +6350,7 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
   private var diskPreparationsByID: [VirtualMachine.ID: DiskPreparation] = [:]
   private var snapshotsByID: [VirtualMachine.ID: [VMSnapshot]] = [:]
   private var snapshotDisksByID: [VirtualMachine.ID: [VMSnapshotDisk]] = [:]
+  private var runtimeResourcePoliciesByID: [VirtualMachine.ID: RuntimeResourcePolicy] = [:]
 
   nonisolated var sourceTitle: String {
     "Mock inventory"
@@ -7527,6 +7528,71 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
     )
   }
 
+  func verifyActiveDisk(on id: VirtualMachine.ID) async throws -> VMDiskVerification {
+    try await Task.sleep(nanoseconds: 100_000_000)
+
+    guard let vm = virtualMachines.first(where: { $0.id == id }) else {
+      throw VirtualMachineClientError.virtualMachineNotFound
+    }
+
+    let activeDisk = mockActiveDisk(for: vm)
+    let reportValue = DiskMetadataValue.object([
+      "check-errors": .int(0),
+      "corruptions": .int(0),
+      "image-end-offset": .int(Int64(UInt64(vm.resources.diskGB) * 1_073_741_824)),
+      "leaks": .int(0),
+    ])
+
+    return VMDiskVerification(
+      activeDisk: activeDisk,
+      command: ["qemu-img", "check", "--output=json", activeDisk.path],
+      exitStatus: "exit status: 0",
+      report: reportValue.prettyPrinted,
+      reportValue: reportValue,
+      stdout: reportValue.prettyPrinted,
+      stderr: "",
+      verifyDurationMicroseconds: 24_000,
+      verifiedAtUnix: UInt64(Date().timeIntervalSince1970)
+    )
+  }
+
+  func compactActiveDisk(on id: VirtualMachine.ID) async throws -> VMDiskCompaction {
+    try await Task.sleep(nanoseconds: 140_000_000)
+
+    guard let vm = virtualMachines.first(where: { $0.id == id }) else {
+      throw VirtualMachineClientError.virtualMachineNotFound
+    }
+
+    let preparation = diskPreparationsByID[id] ?? mockDiskPreparation(for: vm, existing: true)
+    diskPreparationsByID[id] = preparation
+    let activeDisk = mockActiveDisk(for: vm)
+    let timestamp = UInt64(Date().timeIntervalSince1970)
+    let originalSize = preparation.sizeBytes ?? UInt64(vm.resources.diskGB) * 1_073_741_824
+    let compactedSize = originalSize > 1 ? originalSize * 4 / 5 : originalSize
+    let tempPath = activeDisk.path.replacingOccurrences(of: ".qcow2", with: ".compact.tmp.qcow2")
+    let backupPath = activeDisk.path.replacingOccurrences(
+      of: ".qcow2",
+      with: ".precompact-\(timestamp).qcow2"
+    )
+
+    return VMDiskCompaction(
+      preparation: preparation,
+      activeDisk: activeDisk,
+      command: [
+        "qemu-img", "convert", "-O", activeDisk.format, activeDisk.path, tempPath,
+      ],
+      tempPath: tempPath,
+      backupPath: backupPath,
+      exitStatus: "exit status: 0",
+      stdout: "mock compacted \(activeDisk.path)\n",
+      stderr: "",
+      originalSizeBytes: originalSize,
+      compactedSizeBytes: compactedSize,
+      compactDurationMicroseconds: 58_000,
+      compactedAtUnix: timestamp
+    )
+  }
+
   func repairMetadata(on id: VirtualMachine.ID) async throws -> VMMetadataRepair {
     try await Task.sleep(nanoseconds: 90_000_000)
 
@@ -7626,6 +7692,201 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
     )
   }
 
+  func reapplyRuntimeResources(
+    visibility: RuntimeResourceVisibility,
+    on id: VirtualMachine.ID
+  ) async throws -> RuntimeResourcePolicy {
+    try await Task.sleep(nanoseconds: 120_000_000)
+
+    guard let vm = virtualMachines.first(where: { $0.id == id }) else {
+      throw VirtualMachineClientError.virtualMachineNotFound
+    }
+
+    let isBackground = visibility == .background
+    let memory = isBackground ? max(2, vm.resources.memoryGB / 2) : vm.resources.memoryGB
+    let cpu = isBackground ? max(1, vm.resources.cpuCount / 2) : vm.resources.cpuCount
+    let policy = RuntimeResourcePolicy(
+      vm: vm.name,
+      mode: vm.mode.rawValue,
+      profile: "automatic",
+      visibility: visibility,
+      state: vm.status.rawValue,
+      onBattery: false,
+      memory: "\(memory * 1024)",
+      cpu: "\(cpu)",
+      displayFPSCap: isBackground ? "10" : "60",
+      rationale: isBackground
+        ? "Mock background policy records lower CPU, memory, and display pacing."
+        : "Mock foreground policy records full configured resources.",
+      liveApplied: false,
+      liveApplyBlockers: [
+        RuntimeResourcePolicyBlocker(
+          code: "mock-runtime-control-unavailable",
+          message: "Mock inventory records the policy but does not control a live backend."
+        )
+      ],
+      updatedAtUnix: UInt64(Date().timeIntervalSince1970)
+    )
+    runtimeResourcePoliciesByID[id] = policy
+    return policy
+  }
+
+  func createDiagnosticBundle(output: String?, on id: VirtualMachine.ID) async throws
+    -> DiagnosticBundle
+  {
+    try await Task.sleep(nanoseconds: 120_000_000)
+
+    guard let vm = virtualMachines.first(where: { $0.id == id }) else {
+      throw VirtualMachineClientError.virtualMachineNotFound
+    }
+
+    let outputRoot = mockOutputRoot(output, fallback: "target/bridgevm-dev/diagnostics")
+    let logFile = vm.mode == .fast ? "logs/lightvm.log" : "logs/qemu.log"
+    return DiagnosticBundle(
+      vm: vm.name,
+      source: mockBundlePath(for: vm),
+      output: "\(outputRoot)/\(mockArtifactSlug(for: vm))-diagnostics",
+      files: [
+        "manifest.yaml",
+        "metadata/state.json",
+        "metadata/runtime.json",
+        logFile,
+      ],
+      createdAtUnix: UInt64(Date().timeIntervalSince1970)
+    )
+  }
+
+  func createPerformanceBaseline(output: String?, on id: VirtualMachine.ID) async throws
+    -> PerformanceBaseline
+  {
+    try await Task.sleep(nanoseconds: 120_000_000)
+
+    guard let vm = virtualMachines.first(where: { $0.id == id }) else {
+      throw VirtualMachineClientError.virtualMachineNotFound
+    }
+
+    let outputRoot = mockOutputRoot(output, fallback: "target/bridgevm-dev/performance")
+    let guestTools = try await inspectGuestToolsStatus(on: id)
+    let metrics = guestTools.runtime?.metrics
+    let connected = guestTools.connected ? UInt64(1) : UInt64(0)
+    return PerformanceBaseline(
+      vm: vm.name,
+      source: mockBundlePath(for: vm),
+      output: outputRoot,
+      artifact: "\(outputRoot)/performance-baseline.json",
+      createdAtUnix: UInt64(Date().timeIntervalSince1970),
+      metadataOnly: true,
+      state: vm.status,
+      runner: try await inspectRunnerStatus(on: id),
+      guestTools: guestTools,
+      metrics: metrics,
+      measurements: [
+        PerformanceMeasurement(
+          name: "guest_tools_connected",
+          value: connected,
+          unit: "bool",
+          source: "metadata.guest_tools",
+          metadataOnly: true
+        ),
+        PerformanceMeasurement(
+          name: "guest_benchmark_cpu_iterations",
+          value: connected == 1 ? 250_000 : 0,
+          unit: "iterations",
+          source: "guest_tools.benchmark.cpu.iterations",
+          metadataOnly: true
+        ),
+        PerformanceMeasurement(
+          name: "guest_benchmark_disk_bytes_written",
+          value: connected == 1 ? 1_048_576 : 0,
+          unit: "bytes",
+          source: "guest_tools.benchmark.disk.bytes_written",
+          metadataOnly: true
+        ),
+      ],
+      notes: [
+        "mock baseline includes guest benchmark-shaped measurements for UI coverage",
+        "use bridgevmd for live guest benchmark evidence",
+      ]
+    )
+  }
+
+  func createPerformanceSample(
+    output: String?,
+    artifactBytes: UInt64,
+    iterations: UInt16,
+    sync: Bool,
+    on id: VirtualMachine.ID
+  ) async throws -> PerformanceSample {
+    try await Task.sleep(nanoseconds: 140_000_000)
+
+    guard let vm = virtualMachines.first(where: { $0.id == id }) else {
+      throw VirtualMachineClientError.virtualMachineNotFound
+    }
+
+    let outputRoot = mockOutputRoot(output, fallback: "target/bridgevm-dev/performance")
+    let effectiveBytes = max(UInt64(1), artifactBytes)
+    let effectiveIterations = max(UInt16(1), iterations)
+    let probes = (1...Int(effectiveIterations)).map { "\(outputRoot)/probe-\($0).bin" }
+    let iterationResults = (1...Int(effectiveIterations)).map { index in
+      PerformanceSampleIteration(
+        iteration: UInt16(index),
+        probe: "\(outputRoot)/probe-\(index).bin",
+        bytes: effectiveBytes,
+        writeLatencyMicroseconds: 120 + UInt64(index * 8) + (sync ? 40 : 0),
+        sync: sync
+      )
+    }
+    let totalBytes = effectiveBytes.multipliedReportingOverflow(by: UInt64(effectiveIterations))
+    let guestTools = try await inspectGuestToolsStatus(on: id)
+    let metrics = guestTools.runtime?.metrics
+    let benchmarkConnected = guestTools.connected ? UInt64(1) : UInt64(0)
+
+    return PerformanceSample(
+      vm: vm.name,
+      source: mockBundlePath(for: vm),
+      output: outputRoot,
+      artifact: "\(outputRoot)/performance-sample.json",
+      probe: probes[0],
+      probes: probes,
+      artifactBytes: effectiveBytes,
+      iterations: effectiveIterations,
+      sync: sync,
+      iterationResults: iterationResults,
+      createdAtUnix: UInt64(Date().timeIntervalSince1970),
+      state: vm.status,
+      runner: try await inspectRunnerStatus(on: id),
+      guestTools: guestTools,
+      metrics: metrics,
+      measurements: [
+        PerformanceMeasurement(
+          name: "host_artifact_write_total_bytes",
+          value: totalBytes.overflow ? UInt64.max : totalBytes.partialValue,
+          unit: "bytes",
+          source: "host.fs.write_probe",
+          metadataOnly: false
+        ),
+        PerformanceMeasurement(
+          name: "guest_benchmark_cpu_ops_per_sec",
+          value: benchmarkConnected == 1 ? 75_000 : 0,
+          unit: "ops/s",
+          source: "guest_tools.benchmark.cpu.ops_per_sec",
+          metadataOnly: true
+        ),
+        PerformanceMeasurement(
+          name: "guest_benchmark_disk_mib_per_sec",
+          value: benchmarkConnected == 1 ? 96 : 0,
+          unit: "MiB/s",
+          source: "guest_tools.benchmark.disk.mib_per_sec",
+          metadataOnly: true
+        ),
+      ],
+      notes: [
+        "mock sample records host-side probe metadata",
+        "guest benchmark measurements are mock fixtures; use bridgevmd for live evidence",
+      ]
+    )
+  }
+
   func createVirtualMachine(_ request: CreateVirtualMachineRequest) async throws -> VirtualMachine {
     try await Task.sleep(nanoseconds: 260_000_000)
 
@@ -7682,6 +7943,38 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
       createCommand: linked
         ? ["qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", backingPath, overlayPath]
         : nil
+    )
+  }
+
+  func deleteVirtualMachine(on id: VirtualMachine.ID) async throws -> VMDeletionMetadata {
+    try await Task.sleep(nanoseconds: 140_000_000)
+
+    guard let index = virtualMachines.firstIndex(where: { $0.id == id }) else {
+      throw VirtualMachineClientError.virtualMachineNotFound
+    }
+
+    let vm = virtualMachines[index]
+    guard vm.status == .stopped else {
+      throw VirtualMachineClientError.daemonResponseInvalid
+    }
+
+    virtualMachines.remove(at: index)
+    bootMediaImports[id] = nil
+    bootMediaVerifications[id] = nil
+    bootMediaDownloadPlans[id] = nil
+    bootMediaDownloads[id] = nil
+    portForwardsByID[id] = nil
+    sharedFoldersByID[id] = nil
+    mountedSharedFolderNames[id] = nil
+    diskPreparationsByID[id] = nil
+    snapshotsByID[id] = nil
+    snapshotDisksByID[id] = nil
+    runtimeResourcePoliciesByID[id] = nil
+
+    return VMDeletionMetadata(
+      path: mockBundlePath(for: vm),
+      metadataOnly: true,
+      vm: vm.name
     )
   }
 
@@ -7750,7 +8043,7 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
   }
 
   private func mockDiskPreparation(for vm: VirtualMachine, existing: Bool?) -> DiskPreparation {
-    let path = "target/bridgevm-dev/vms/\(vm.name).vmbridge/disks/root.qcow2"
+    let path = "\(mockBundlePath(for: vm))/disks/root.qcow2"
     let sizeBytes = UInt64(vm.resources.diskGB) * 1_073_741_824
     let exists = existing ?? (vm.status != .error)
     return DiskPreparation(
@@ -7763,6 +8056,45 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
       createCommand: ["qemu-img", "create", "-f", "qcow2", path, "\(vm.resources.diskGB)G"],
       preparedAtUnix: UInt64(Date().timeIntervalSince1970)
     )
+  }
+
+  private func mockBundlePath(for vm: VirtualMachine) -> String {
+    "target/bridgevm-dev/vms/\(vm.name).vmbridge"
+  }
+
+  private func mockActiveDisk(for vm: VirtualMachine) -> VMActiveDisk {
+    if let disk = snapshotDisksByID[vm.id]?.first {
+      return VMActiveDisk(
+        source: "snapshot-overlay",
+        snapshot: disk.snapshot,
+        path: disk.overlayPath,
+        format: disk.overlayFormat,
+        exists: disk.overlayExists,
+        activatedAtUnix: disk.preparedAtUnix
+      )
+    }
+
+    return VMActiveDisk(
+      source: "primary",
+      snapshot: nil,
+      path: "\(mockBundlePath(for: vm))/disks/root.qcow2",
+      format: "qcow2",
+      exists: true,
+      activatedAtUnix: UInt64(Date().timeIntervalSince1970)
+    )
+  }
+
+  private func mockOutputRoot(_ output: String?, fallback: String) -> String {
+    let trimmed = output?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return trimmed.isEmpty ? fallback : trimmed
+  }
+
+  private func mockArtifactSlug(for vm: VirtualMachine) -> String {
+    vm.name
+      .lowercased()
+      .components(separatedBy: CharacterSet.alphanumerics.inverted)
+      .filter { !$0.isEmpty }
+      .joined(separator: "-")
   }
 
   private static func stableShareToken(name: String, hostPath: String) -> String {
