@@ -6760,7 +6760,7 @@ final class DashboardViewModelTests: XCTestCase {
     XCTAssertNil(model.qmpStatusError(for: virtualMachine))
     XCTAssertEqual(
       model.alertMessage,
-      "QMP diagnostics socket available at /tmp/dev-qmp.sock (running, running)."
+      "QMP diagnostics socket available at /tmp/dev-qmp.sock (running)."
     )
   }
 
@@ -6881,7 +6881,7 @@ final class DashboardViewModelTests: XCTestCase {
     XCTAssertEqual(openedURLs.map(\.absoluteString), ["vnc://127.0.0.1:5900"])
     XCTAssertEqual(
       model.alertMessage,
-      "QMP diagnostics socket available at /tmp/dev-qmp.sock (running, running)."
+      "QMP diagnostics socket available at /tmp/dev-qmp.sock (running)."
     )
   }
 
@@ -6983,7 +6983,7 @@ final class DashboardViewModelTests: XCTestCase {
     )
     XCTAssertEqual(
       model.alertMessage,
-      "VNC viewer handoff failed: macOS could not open vnc://127.0.0.1:5900. Open it manually with your VNC viewer. QMP diagnostics socket available at /tmp/dev-qmp.sock (running, running)."
+      "VNC viewer handoff failed: macOS could not open vnc://127.0.0.1:5900. Open it manually with your VNC viewer. QMP diagnostics socket available at /tmp/dev-qmp.sock (running)."
     )
 
     shouldOpenViewer = true
@@ -7044,7 +7044,7 @@ final class DashboardViewModelTests: XCTestCase {
     XCTAssertEqual(model.qemuLaunchPlanError(for: virtualMachine), "Offline")
     XCTAssertEqual(
       model.alertMessage,
-      "VNC viewer endpoint unavailable: Offline. QMP diagnostics socket available at /tmp/dev-qmp.sock (running, running)."
+      "VNC viewer endpoint unavailable: Offline. QMP diagnostics socket available at /tmp/dev-qmp.sock (running)."
     )
   }
 

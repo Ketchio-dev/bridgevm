@@ -873,7 +873,7 @@ final class DaemonDTOTests: XCTestCase {
     let status = response.status.qmpStatus
     XCTAssertEqual(status.socketPath, "/tmp/dev.vmbridge/run/qmp.sock")
     XCTAssertTrue(status.available)
-    XCTAssertEqual(status.readinessTitle, "running, running")
+    XCTAssertEqual(status.readinessTitle, "running")
     let modelSupervisor = try XCTUnwrap(status.supervisor)
     XCTAssertEqual(modelSupervisor.events.count, 2)
     XCTAssertEqual(modelSupervisor.events.map(\.name), ["RESUME", "SHUTDOWN"])
@@ -4575,7 +4575,7 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertTrue(status.available)
     XCTAssertEqual(status.status, "running")
     XCTAssertEqual(status.running, true)
-    XCTAssertEqual(status.readinessTitle, "running, running")
+    XCTAssertEqual(status.readinessTitle, "running")
     let requestTypes = transport.requests.compactMap { $0["type"] as? String }
     XCTAssertEqual(requestTypes, ["list_vms", "qmp_status"])
     XCTAssertEqual(transport.requests[1]["name"] as? String, "dev")

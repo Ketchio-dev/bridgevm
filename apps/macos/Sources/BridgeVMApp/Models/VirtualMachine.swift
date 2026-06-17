@@ -1562,6 +1562,9 @@ struct QMPStatus: Equatable {
     }
 
     if let status, !status.isEmpty {
+      if running == true && status.caseInsensitiveCompare("running") == .orderedSame {
+        return status
+      }
       return running == true ? "\(status), running" : status
     }
 
