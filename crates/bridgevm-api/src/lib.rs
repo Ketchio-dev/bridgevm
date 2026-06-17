@@ -6157,12 +6157,7 @@ pub fn suspend_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, St
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr))
         .status()
-        .map_err(|error| {
-            format!(
-                "failed to run {}: {error}",
-                lightvm_runner.display()
-            )
-        })?;
+        .map_err(|error| format!("failed to run {}: {error}", lightvm_runner.display()))?;
     if !status.success() {
         return Err(format!(
             "Fast Mode suspend runner exited with status {status}; see {}",
@@ -6496,7 +6491,7 @@ fn lifecycle_plan(
         .qmp_supervisor_metadata(name)
         .map_err(|error| error.to_string())?;
     let target_state = action.target_state();
-    let valid_transition = lifecycle_transition_is_valid(current_state, target_state);
+    let valid_transition = lifecycle_transition_is_valid(current_state, action);
     let mut blockers = Vec::new();
     let mut notes = vec!["metadata-only lifecycle plan; no backend command was sent".to_string()];
 
@@ -6549,15 +6544,12 @@ fn lifecycle_plan(
     })
 }
 
-fn lifecycle_transition_is_valid(from: VmRuntimeState, to: VmRuntimeState) -> bool {
+fn lifecycle_transition_is_valid(from: VmRuntimeState, action: LifecycleAction) -> bool {
     matches!(
-        (from, to),
-        (VmRuntimeState::Stopped, VmRuntimeState::Running)
-            | (VmRuntimeState::Running, VmRuntimeState::Stopped)
-            | (VmRuntimeState::Running, VmRuntimeState::Suspended)
-            | (VmRuntimeState::Suspended, VmRuntimeState::Running)
-            | (VmRuntimeState::Suspended, VmRuntimeState::Stopped)
-    ) || from == to
+        (from, action),
+        (VmRuntimeState::Running, LifecycleAction::Suspend)
+            | (VmRuntimeState::Suspended, LifecycleAction::Resume)
+    )
 }
 
 fn execute_qmp_control<F>(
@@ -10491,6 +10483,25 @@ mod tests {
             .blockers
             .iter()
             .any(|blocker| blocker.starts_with("invalid-lifecycle-transition:")));
+
+        let response = handle_request(
+            &store,
+            BridgeVmRequest::LifecyclePlan {
+                name: "fast-linux".to_string(),
+                action: LifecycleAction::Resume,
+            },
+        )
+        .into_result()
+        .unwrap();
+        let BridgeVmResponse::LifecyclePlan { plan } = response else {
+            panic!("expected lifecycle plan");
+        };
+        assert_eq!(plan.target_state, VmRuntimeState::Running);
+        assert!(!plan.executable);
+        assert!(plan
+            .blockers
+            .iter()
+            .any(|blocker| blocker == "invalid-lifecycle-transition:stopped->running"));
     }
 
     #[test]
@@ -11128,7 +11139,10 @@ mod tests {
         assert_eq!(source_manifest.name, "dev");
         assert_eq!(source_manifest.network.hostname, "dev.bridgevm.local");
         assert_ne!(source_bundle, clone_bundle);
-        assert_eq!(store.state("dev-copy").unwrap().state, VmRuntimeState::Stopped);
+        assert_eq!(
+            store.state("dev-copy").unwrap().state,
+            VmRuntimeState::Stopped
+        );
     }
 
     #[test]
@@ -11378,7 +11392,10 @@ mod tests {
         assert_eq!(parse_ps_etime("00:05"), Some(5));
         assert_eq!(parse_ps_etime("  01:30 "), Some(90));
         assert_eq!(parse_ps_etime("01:02:03"), Some(3723));
-        assert_eq!(parse_ps_etime("2-03:04:05"), Some(2 * 86_400 + 3 * 3_600 + 4 * 60 + 5));
+        assert_eq!(
+            parse_ps_etime("2-03:04:05"),
+            Some(2 * 86_400 + 3 * 3_600 + 4 * 60 + 5)
+        );
         assert_eq!(parse_ps_etime("garbage"), None);
         assert_eq!(parse_ps_etime(""), None);
     }
@@ -11389,9 +11406,12 @@ mod tests {
         let pid = spawn_detached_sleep();
         assert!(process_is_alive(pid));
 
-        let outcome =
-            terminate_recorded_process(pid, now_unix(), Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS))
-                .unwrap();
+        let outcome = terminate_recorded_process(
+            pid,
+            now_unix(),
+            Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS),
+        )
+        .unwrap();
         // Release gate: the process is terminated. `sleep` normally exits on
         // SIGTERM (ExitedAfterTerm), but a reparented-to-init process can be
         // reaped slightly after the grace window, in which case the SIGKILL
@@ -11423,9 +11443,12 @@ mod tests {
             }
             thread::sleep(Duration::from_millis(10));
         }
-        let outcome =
-            terminate_recorded_process(pid, now_unix(), Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS))
-                .unwrap();
+        let outcome = terminate_recorded_process(
+            pid,
+            now_unix(),
+            Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS),
+        )
+        .unwrap();
         assert_eq!(outcome, ProcessTerminationOutcome::AlreadyGone);
     }
 
@@ -11543,7 +11566,10 @@ mod tests {
         let command = build_compatibility_resume_command(&manifest, &bundle).unwrap();
         // The last two args must be `-loadvm <tag>`.
         let tail = &command.args[command.args.len() - 2..];
-        assert_eq!(tail, &["-loadvm".to_string(), "bridgevm-suspend".to_string()]);
+        assert_eq!(
+            tail,
+            &["-loadvm".to_string(), "bridgevm-suspend".to_string()]
+        );
     }
 
     #[test]

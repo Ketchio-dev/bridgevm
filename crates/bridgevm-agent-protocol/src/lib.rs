@@ -298,9 +298,7 @@ impl AgentMessage {
                 }
                 Ok(())
             }
-            Self::RunBenchmark { duration_millis } => {
-                validate_benchmark_duration(*duration_millis)
-            }
+            Self::RunBenchmark { duration_millis } => validate_benchmark_duration(*duration_millis),
             Self::CommandResult {
                 request_id,
                 ok,

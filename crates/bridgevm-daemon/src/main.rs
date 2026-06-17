@@ -6,13 +6,12 @@ use bridgevm_agentd::{
 };
 use bridgevm_api::{
     add_fast_spawn_blocker, apply_power_aware_fast_resources, build_compatibility_resume_command,
-    compat_suspend_marker_path,
-    fast_spawn_not_implemented_error, fast_suspend_state_path, guest_tools_agent_policy,
-    guest_tools_freeze_filesystem_envelope, guest_tools_mount_approved_share_envelope,
-    guest_tools_thaw_filesystem_envelope, handle_request, launch_readiness_metadata,
-    resume_backend, suspend_backend, ApplicationConsistentSnapshotCommandResultRecord,
-    ApplicationConsistentSnapshotExecutionRecord, BridgeVmRequest, BridgeVmResponse,
-    GuestToolsCommandRecord, SnapshotConsistency,
+    compat_suspend_marker_path, fast_spawn_not_implemented_error, fast_suspend_state_path,
+    guest_tools_agent_policy, guest_tools_freeze_filesystem_envelope,
+    guest_tools_mount_approved_share_envelope, guest_tools_thaw_filesystem_envelope,
+    handle_request, launch_readiness_metadata, resume_backend, suspend_backend,
+    ApplicationConsistentSnapshotCommandResultRecord, ApplicationConsistentSnapshotExecutionRecord,
+    BridgeVmRequest, BridgeVmResponse, GuestToolsCommandRecord, SnapshotConsistency,
 };
 use bridgevm_apple_vz::{build_fast_plan, write_launch_spec_artifact};
 use bridgevm_config::VmMode;
@@ -3672,7 +3671,10 @@ mod tests {
                 "the connection must be held while the frame is incomplete"
             );
         }
-        assert!(accepted, "split GuestHello was never reassembled + accepted");
+        assert!(
+            accepted,
+            "split GuestHello was never reassembled + accepted"
+        );
         assert_eq!(
             state
                 .children
@@ -3700,7 +3702,11 @@ mod tests {
             .unwrap();
 
         // A long-lived stand-in for a spawned backend process.
-        let child = Command::new("sh").arg("-c").arg("sleep 60").spawn().unwrap();
+        let child = Command::new("sh")
+            .arg("-c")
+            .arg("sleep 60")
+            .spawn()
+            .unwrap();
         let pid = child.id() as libc::pid_t;
         let mut state = DaemonState::new(store.clone());
         state
@@ -4297,7 +4303,10 @@ mod tests {
         );
         assert_eq!(
             shell_word_split("-drive \"file=/tmp/x.iso,id=cidata\""),
-            vec!["-drive".to_string(), "file=/tmp/x.iso,id=cidata".to_string()]
+            vec![
+                "-drive".to_string(),
+                "file=/tmp/x.iso,id=cidata".to_string()
+            ]
         );
         assert_eq!(
             shell_word_split("file=/tmp/a\\ b.iso"),

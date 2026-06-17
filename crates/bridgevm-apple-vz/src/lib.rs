@@ -1840,7 +1840,10 @@ mod tests {
             tag: "workspace".to_string(),
             read_only: false,
         };
-        assert_eq!(encode_share_flag_value(&writable), "workspace=/Users/me/work");
+        assert_eq!(
+            encode_share_flag_value(&writable),
+            "workspace=/Users/me/work"
+        );
 
         let read_only = AppleVzShareSpec {
             host_path: "/Users/me/with=equals and spaces".to_string(),

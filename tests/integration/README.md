@@ -1201,6 +1201,7 @@ Displayd public CLI plan coverage should exercise:
 - Dynamic resize event JSON and Retina backing-size calculation
 - Cursor movement JSON with host-overlay state and framebuffer clamping
 - Dirty-region update strategy and full-frame fallback metadata
+- File-backed frame timing samples through `--frame-sample-file`
 - Human-readable summary output when `--print-plan` is omitted
 
 The expected contract is that `displayd` exposes a metadata-only public runner
@@ -1213,7 +1214,8 @@ Current executable coverage: `displayd-plan-cli-smoke.sh` covers public
 `cargo run -p displayd` invocations for JSON plan output, visibility pacing,
 display pipeline metadata, resize/cursor event serialization, cursor clamping,
 dirty-region update and full-frame fallback metadata, Metal/VNC boundary
-metadata, and non-JSON summary output.
+metadata, file-backed frame timing samples, invalid sample rejection, and
+non-JSON summary output.
 
 Linux guest-tools application/window live socket coverage should exercise:
 

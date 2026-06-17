@@ -78,8 +78,14 @@ bridgevm create "$VM_FAST" --os ubuntu --arch arm64 --mode fast >/dev/null
 fast_blocked="$(bridgevm lifecycle-plan "$VM_FAST" --action suspend)"
 assert_contains "$fast_blocked" "Backend: apple-vz" "fast blocked"
 assert_contains "$fast_blocked" "Executable: false" "fast blocked"
-assert_contains "$fast_blocked" "Blocker: fast-mode-suspend-resume-backend-unimplemented" "fast blocked"
 assert_contains "$fast_blocked" "Blocker: invalid-lifecycle-transition:" "fast blocked"
+assert_contains "$fast_blocked" "Fast Mode suspend/resume is wired through the runner via Apple VZ" "fast blocked"
+
+fast_resume_blocked="$(bridgevm lifecycle-plan "$VM_FAST" --action resume)"
+assert_contains "$fast_resume_blocked" "Action: resume" "fast resume blocked"
+assert_contains "$fast_resume_blocked" "Target state: running" "fast resume blocked"
+assert_contains "$fast_resume_blocked" "Executable: false" "fast resume blocked"
+assert_contains "$fast_resume_blocked" "Blocker: invalid-lifecycle-transition:stopped->running" "fast resume blocked"
 
 SOCKET="$STORE/run/bridgevmd.sock"
 DAEMON_LOG="$STORE/bridgevmd.log"
@@ -97,8 +103,8 @@ done
 [[ -S "$SOCKET" ]] || fail "daemon socket was not ready"
 
 bridgevm create "$VM_SOCKET" --os ubuntu --arch x86_64 --mode compatibility >/dev/null
-bridgevm_socket start "$VM_SOCKET" >/dev/null
-bridgevm_socket suspend "$VM_SOCKET" >/dev/null
+socket_state="$STORE/vms/$VM_SOCKET.vmbridge/metadata/state.json"
+printf '{"state":"suspended","updated_at_unix":1}\n' >"$socket_state"
 
 socket_missing="$(bridgevm_socket lifecycle-plan "$VM_SOCKET" --action resume)"
 assert_contains "$socket_missing" "Lifecycle plan for $VM_SOCKET" "socket missing"

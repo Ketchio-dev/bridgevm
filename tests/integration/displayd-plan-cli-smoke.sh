@@ -32,6 +32,12 @@ BACKGROUND_JSON="$STORE/background.json"
 HIDDEN_JSON="$STORE/hidden.json"
 RESIZE_CURSOR_JSON="$STORE/resize-cursor.json"
 COALESCED_JSON="$STORE/coalesced.json"
+FRAME_SAMPLE_JSON="$STORE/frame-sample.json"
+FRAME_SAMPLE_FILE="$STORE/frame-samples.json"
+BAD_FRAME_SAMPLE_FILE="$STORE/bad-frame-samples.json"
+
+printf '[16000,17000,18000]\n' >"$FRAME_SAMPLE_FILE"
+printf '[16000,0]\n' >"$BAD_FRAME_SAMPLE_FILE"
 
 displayd \
   --print-plan \
@@ -73,16 +79,32 @@ displayd \
   --dirty-regions 129 \
   >"$COALESCED_JSON"
 
+displayd \
+  --print-plan \
+  --visibility foreground \
+  --dirty-regions 5 \
+  --sample-frames 999 \
+  --frame-time-micros 99999 \
+  --frame-sample-file "$FRAME_SAMPLE_FILE" \
+  >"$FRAME_SAMPLE_JSON"
+
+if displayd --print-plan --frame-sample-file "$BAD_FRAME_SAMPLE_FILE" >"$STORE/bad-frame-sample.stdout" 2>"$STORE/bad-frame-sample.stderr"; then
+  fail "displayd accepted a zero-duration frame sample"
+fi
+grep -q "zero duration" "$STORE/bad-frame-sample.stderr" \
+  || fail "displayd zero-duration frame sample error was not clear"
+
 python3 - \
   "$FOREGROUND_JSON" \
   "$BACKGROUND_JSON" \
   "$HIDDEN_JSON" \
   "$RESIZE_CURSOR_JSON" \
-  "$COALESCED_JSON" <<'PY'
+  "$COALESCED_JSON" \
+  "$FRAME_SAMPLE_JSON" <<'PY'
 import json
 import sys
 
-foreground_path, background_path, hidden_path, resize_cursor_path, coalesced_path = sys.argv[1:6]
+foreground_path, background_path, hidden_path, resize_cursor_path, coalesced_path, frame_sample_path = sys.argv[1:7]
 
 def load(path):
     with open(path, encoding="utf-8") as handle:
@@ -230,6 +252,17 @@ require(
 )
 require(coalesced["timing"]["source"] == "metadata-only", "coalesced timing source mismatch")
 require(coalesced["input_events"] == [], "coalesced plan should not synthesize input events")
+
+frame_sample = load(frame_sample_path)
+require(frame_sample["timing"]["sample_frames"] == 3, "frame sample count mismatch")
+require(
+    frame_sample["timing"]["average_frame_time_micros"] == 17000,
+    "frame sample average mismatch",
+)
+require(frame_sample["timing"]["frame_budget_micros"] == 16666, "frame sample budget mismatch")
+require(frame_sample["timing"]["estimated_fps"] == 58, "frame sample estimated fps mismatch")
+require(frame_sample["timing"]["within_budget"] is False, "frame sample budget status mismatch")
+require(frame_sample["timing"]["source"] == "frame-sample-file", "frame sample source mismatch")
 PY
 
 summary="$(displayd \

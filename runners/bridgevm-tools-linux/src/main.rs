@@ -32,7 +32,10 @@ const EFFECT_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Wait for `child` up to `EFFECT_COMMAND_TIMEOUT`, killing + reaping it on
 /// timeout. Returns the exit status, or an error string on timeout/wait failure.
-fn wait_bounded(child: &mut std::process::Child, label: &str) -> Result<std::process::ExitStatus, String> {
+fn wait_bounded(
+    child: &mut std::process::Child,
+    label: &str,
+) -> Result<std::process::ExitStatus, String> {
     let deadline = Instant::now() + EFFECT_COMMAND_TIMEOUT;
     loop {
         match child.try_wait() {
@@ -340,9 +343,8 @@ impl DesktopEnv for SystemDesktopEnv {
         let Some(path) = std::env::var_os("PATH") else {
             return false;
         };
-        std::env::split_paths(&path).any(|dir| {
-            !dir.as_os_str().is_empty() && dir.join(program).is_file()
-        })
+        std::env::split_paths(&path)
+            .any(|dir| !dir.as_os_str().is_empty() && dir.join(program).is_file())
     }
 }
 
@@ -545,7 +547,8 @@ where
     // under the lock is complete before the lock is released.
     let shared_writer = Arc::new(Mutex::new(writer));
     let stop = Arc::new(AtomicBool::new(false));
-    let watcher_handle = spawn_clipboard_watcher(watcher, Arc::clone(&shared_writer), Arc::clone(&stop));
+    let watcher_handle =
+        spawn_clipboard_watcher(watcher, Arc::clone(&shared_writer), Arc::clone(&stop));
 
     let result = run_tools_session_shared(
         reader,
@@ -585,7 +588,9 @@ where
         let ClipboardWatcher { interval, reader } = watcher;
         let mut state = ClipboardWatchState::new();
         // Poll in short slices so a long interval still stops promptly.
-        let slice = interval.min(Duration::from_millis(100)).max(Duration::from_millis(1));
+        let slice = interval
+            .min(Duration::from_millis(100))
+            .max(Duration::from_millis(1));
         let mut waited = Duration::ZERO;
         loop {
             if stop.load(Ordering::SeqCst) {
@@ -1461,8 +1466,13 @@ struct ClipboardReader {
 
 enum ClipboardReaderMode {
     /// No real reader; `read_text` returns the optional canned value.
-    Simulated { value: Option<String> },
-    Command { program: PathBuf, args: Vec<String> },
+    Simulated {
+        value: Option<String>,
+    },
+    Command {
+        program: PathBuf,
+        args: Vec<String>,
+    },
 }
 
 impl ClipboardReader {
@@ -1998,7 +2008,9 @@ fn run_cpu_benchmark(budget: Duration) -> CpuBenchmarkReport {
     let elapsed_millis = elapsed.as_millis().min(u128::from(u64::MAX)) as u64;
     let elapsed_secs = elapsed.as_secs_f64();
     let ops_per_sec = if elapsed_secs > 0.0 {
-        (iterations as f64 / elapsed_secs).round().min(u64::MAX as f64) as u64
+        (iterations as f64 / elapsed_secs)
+            .round()
+            .min(u64::MAX as f64) as u64
     } else {
         0
     };
@@ -2028,7 +2040,10 @@ fn run_disk_benchmark(dir: &Path) -> Result<DiskBenchmarkReport, String> {
         .duration_since(UNIX_EPOCH_FOR_BENCH)
         .map(|since| since.as_micros())
         .unwrap_or(0);
-    let path = dir.join(format!(".bridgevm-bench-{}-{micros}.tmp", std::process::id()));
+    let path = dir.join(format!(
+        ".bridgevm-bench-{}-{micros}.tmp",
+        std::process::id()
+    ));
     let payload = vec![0xA5u8; BENCHMARK_DISK_BYTES];
 
     let start = Instant::now();
@@ -3155,10 +3170,7 @@ mod tests {
             let result = read_frame(&mut reader);
             assert!(matches!(
                 result.message,
-                AgentMessage::CommandResult {
-                    ok: true,
-                    ..
-                }
+                AgentMessage::CommandResult { ok: true, .. }
             ));
         });
 
@@ -3209,7 +3221,9 @@ mod tests {
             envs: &["DISPLAY"],
             programs: &[],
         };
-        assert!(detect_display_resizer(&no_tool).command_for_test().is_none());
+        assert!(detect_display_resizer(&no_tool)
+            .command_for_test()
+            .is_none());
     }
 
     #[test]
@@ -4178,9 +4192,8 @@ mod tests {
             "time-1",
         );
 
-        let AgentMessage::CommandResult {
-            ok, error_code, ..
-        } = state.handle_command(&command).unwrap().message
+        let AgentMessage::CommandResult { ok, error_code, .. } =
+            state.handle_command(&command).unwrap().message
         else {
             panic!("expected CommandResult");
         };
@@ -4255,7 +4268,10 @@ mod tests {
 
     #[test]
     fn loadavg_parses_and_maps_to_cpu_percent() {
-        assert_eq!(parse_loadavg_one_minute("0.50 0.25 0.10 1/234 5678"), Some(0.50));
+        assert_eq!(
+            parse_loadavg_one_minute("0.50 0.25 0.10 1/234 5678"),
+            Some(0.50)
+        );
         assert_eq!(parse_loadavg_one_minute("garbage"), None);
         // 1.0 load over 4 CPUs -> 25%.
         assert_eq!(load_to_cpu_percent(1.0, 4), 25);
@@ -4785,7 +4801,11 @@ mod tests {
         assert!(report.iterations >= BENCHMARK_KERNEL_CHUNK);
         // Loose upper bound: even a very slow host won't spend many seconds on a
         // 1 ms budget; this catches a runaway loop.
-        assert!(report.elapsed_millis < 2_000, "elapsed={}", report.elapsed_millis);
+        assert!(
+            report.elapsed_millis < 2_000,
+            "elapsed={}",
+            report.elapsed_millis
+        );
     }
 
     #[test]
@@ -4937,7 +4957,16 @@ mod tests {
         // Force synthetic metrics so the frame count is deterministic on any
         // host (real /proc reads would vary the values, not the count, but we
         // keep tests host-independent).
-        TelemetryConfig::from_args(&default_capabilities(), &[], false, 1, 256, false, true, None)
-            .unwrap()
+        TelemetryConfig::from_args(
+            &default_capabilities(),
+            &[],
+            false,
+            1,
+            256,
+            false,
+            true,
+            None,
+        )
+        .unwrap()
     }
 }

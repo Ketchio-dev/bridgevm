@@ -26,6 +26,8 @@ done
 
 export PATH="$FAKE_BIN:$PATH"
 export BRIDGEVM_FAKE_BACKEND_LOG="$BACKEND_LOG"
+unset BRIDGEVM_APPLE_VZ_RUNNER
+unset BRIDGEVM_APPLE_VZ_ALLOW_REAL_START
 
 bridgevm() {
   cargo run --quiet -p bridgevm-cli -- --store "$STORE" "$@"
@@ -74,26 +76,23 @@ trap stop_daemon EXIT
 bridgevm create "$VM_NAME" --os ubuntu --arch arm64 --mode fast >/dev/null
 
 stopped_suspend="$(bridgevm suspend "$VM_NAME" 2>&1 || true)"
-assert_contains "$stopped_suspend" "invalid VM state transition from Stopped to Suspended" \
+assert_contains "$stopped_suspend" "set BRIDGEVM_APPLE_VZ_RUNNER to a signed AppleVzRunner" \
   "local stopped suspend rejection"
 
 bridgevm start "$VM_NAME" >/dev/null
 
-local_suspend="$(bridgevm suspend "$VM_NAME")"
-assert_contains "$local_suspend" "Metadata state recorded for $VM_NAME (suspended)" "local suspend"
-
-local_suspended_status="$(bridgevm status "$VM_NAME")"
-assert_contains "$local_suspended_status" "State: suspended" "local suspended status"
-
-local_resume="$(bridgevm resume "$VM_NAME")"
-assert_contains "$local_resume" "Metadata state recorded for $VM_NAME (running)" "local resume"
+local_suspend="$(bridgevm suspend "$VM_NAME" 2>&1 || true)"
+assert_contains "$local_suspend" "set BRIDGEVM_APPLE_VZ_RUNNER to a signed AppleVzRunner" \
+  "local suspend no runner"
 
 local_running_status="$(bridgevm status "$VM_NAME")"
-assert_contains "$local_running_status" "State: running" "local running status"
+assert_contains "$local_running_status" "State: running" "local running status after failed suspend"
 
-bridgevm suspend "$VM_NAME" >/dev/null
-local_stop_from_suspend="$(bridgevm stop "$VM_NAME")"
-assert_contains "$local_stop_from_suspend" "Stopped $VM_NAME" "local stop suspended"
+local_resume="$(bridgevm resume "$VM_NAME" 2>&1 || true)"
+assert_contains "$local_resume" "no saved Fast Mode state to resume from" "local resume no saved state"
+
+local_stop_from_running="$(bridgevm stop "$VM_NAME")"
+assert_contains "$local_stop_from_running" "Stopped $VM_NAME" "local stop running"
 
 assert_no_backend_launch
 
@@ -113,21 +112,22 @@ done
 [[ -S "$SOCKET" ]] || fail "daemon socket was not ready"
 
 socket_stopped_suspend="$(bridgevm_socket suspend "$VM_NAME" 2>&1 || true)"
-assert_contains "$socket_stopped_suspend" "invalid VM state transition from Stopped to Suspended" \
+assert_contains "$socket_stopped_suspend" "set BRIDGEVM_APPLE_VZ_RUNNER to a signed AppleVzRunner" \
   "socket stopped suspend rejection"
 
 socket_start="$(bridgevm_socket start "$VM_NAME")"
 assert_contains "$socket_start" "Metadata state recorded for $VM_NAME (running)" "socket start"
 
-socket_suspend="$(bridgevm_socket suspend "$VM_NAME")"
-assert_contains "$socket_suspend" "Metadata state recorded for $VM_NAME (suspended)" "socket suspend"
+socket_suspend="$(bridgevm_socket suspend "$VM_NAME" 2>&1 || true)"
+assert_contains "$socket_suspend" "set BRIDGEVM_APPLE_VZ_RUNNER to a signed AppleVzRunner" \
+  "socket suspend no runner"
 
-socket_suspended_status="$(bridgevm_socket status "$VM_NAME")"
-assert_contains "$socket_suspended_status" "$VM_NAME" "socket suspended status"
-assert_contains "$socket_suspended_status" "suspended" "socket suspended status"
+socket_running_status="$(bridgevm_socket status "$VM_NAME")"
+assert_contains "$socket_running_status" "$VM_NAME" "socket running status after failed suspend"
+assert_contains "$socket_running_status" "running" "socket running status after failed suspend"
 
-socket_resume="$(bridgevm_socket resume "$VM_NAME")"
-assert_contains "$socket_resume" "Metadata state recorded for $VM_NAME (running)" "socket resume"
+socket_resume="$(bridgevm_socket resume "$VM_NAME" 2>&1 || true)"
+assert_contains "$socket_resume" "no saved Fast Mode state to resume from" "socket resume no saved state"
 
 socket_running_status="$(bridgevm_socket status "$VM_NAME")"
 assert_contains "$socket_running_status" "$VM_NAME" "socket running status"

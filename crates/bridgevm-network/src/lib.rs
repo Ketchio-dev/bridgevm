@@ -466,9 +466,7 @@ mod tests {
         assert_eq!(requirement.blocker, QEMU_BRIDGED_PRIVILEGE_BLOCKER);
         assert!(!requirement.blocker.contains("unimplemented"));
         assert!(requirement.requirement.contains("root"));
-        assert!(requirement
-            .requirement
-            .contains("com.apple.vm.networking"));
+        assert!(requirement.requirement.contains("com.apple.vm.networking"));
     }
 
     #[test]

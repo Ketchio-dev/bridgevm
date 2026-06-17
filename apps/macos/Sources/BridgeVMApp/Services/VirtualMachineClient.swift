@@ -6570,9 +6570,8 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
     var blockers: [String] = []
     var notes = ["metadata-only lifecycle plan; no backend command was sent"]
     let validTransition =
-      vm.status == targetState
-      || (vm.status == .running && targetState == .suspended)
-      || (vm.status == .suspended && targetState == .running)
+      (action == .suspend && vm.status == .running)
+      || (action == .resume && vm.status == .suspended)
 
     if !validTransition {
       blockers.append("invalid-lifecycle-transition:\(vm.status.rawValue)->\(targetState.rawValue)")
@@ -6598,8 +6597,9 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
       qmpCommand = nil
       socketPath = nil
       socketAvailable = false
-      blockers.append("fast-mode-suspend-resume-backend-unimplemented")
-      notes.append("Fast Mode Apple VZ suspend/resume control is not wired yet")
+      notes.append(
+        "Fast Mode suspend/resume is wired through the runner via Apple VZ saveMachineState/restoreMachineState (not QMP); a real suspend/resume requires a signed AppleVzRunner (BRIDGEVM_APPLE_VZ_RUNNER)"
+      )
     }
 
     return LifecyclePlan(

@@ -218,7 +218,10 @@ fn primary_disk_args(manifest: &VmManifest, disk_path: &Path, is_aarch64: bool) 
                 COMPAT_PRIMARY_NVME_DRIVE
             ),
             "-device".to_string(),
-            format!("nvme,drive={},serial=bridgevm-nvme0", COMPAT_PRIMARY_NVME_DRIVE),
+            format!(
+                "nvme,drive={},serial=bridgevm-nvme0",
+                COMPAT_PRIMARY_NVME_DRIVE
+            ),
         ]
     } else {
         vec![
@@ -302,7 +305,10 @@ pub fn build_compatibility_command(
         "-display".to_string(),
         display_arg(display_renderer).to_string(),
         "-qmp".to_string(),
-        format!("unix:{},server=on,wait=off", escape_qemu_opt(qmp_path.display())),
+        format!(
+            "unix:{},server=on,wait=off",
+            escape_qemu_opt(qmp_path.display())
+        ),
         "-chardev".to_string(),
         format!(
             "socket,id=bridgevm-tools,path={},server=on,wait=off",
@@ -363,7 +369,10 @@ pub fn build_compatibility_command(
             .as_ref()
             .is_some_and(|boot| boot.mode == BootMode::WindowsInstaller)
     {
-        let boot = manifest.boot.as_ref().expect("windows-installer boot present");
+        let boot = manifest
+            .boot
+            .as_ref()
+            .expect("windows-installer boot present");
         let installer = boot
             .installer_image
             .as_deref()
@@ -468,12 +477,7 @@ impl QmpCommand {
     /// `job_id` lets the caller poll completion via `query-jobs`. `devices`
     /// lists the block node names whose qcow2 receives the snapshot;
     /// `vmstate` names the device that stores the machine state (RAM/CPU).
-    pub fn snapshot_save(
-        job_id: &str,
-        tag: &str,
-        vmstate: &str,
-        devices: &[String],
-    ) -> Self {
+    pub fn snapshot_save(job_id: &str, tag: &str, vmstate: &str, devices: &[String]) -> Self {
         Self {
             execute: "snapshot-save".to_string(),
             arguments: Some(serde_json::json!({
@@ -487,12 +491,7 @@ impl QmpCommand {
 
     /// Build the job-based `snapshot-load` command that restores a full
     /// internal VM snapshot previously written by [`QmpCommand::snapshot_save`].
-    pub fn snapshot_load(
-        job_id: &str,
-        tag: &str,
-        vmstate: &str,
-        devices: &[String],
-    ) -> Self {
+    pub fn snapshot_load(job_id: &str, tag: &str, vmstate: &str, devices: &[String]) -> Self {
         Self {
             execute: "snapshot-load".to_string(),
             arguments: Some(serde_json::json!({
@@ -533,11 +532,7 @@ fn job_status_is_terminal(status: &str) -> bool {
 
 /// Poll `query-jobs` until `job_id` reaches a terminal status or `timeout`
 /// elapses. Returns the job's `error` field if it concluded with one.
-fn wait_for_job(
-    client: &mut QmpClient,
-    job_id: &str,
-    timeout: Duration,
-) -> Result<(), QemuError> {
+fn wait_for_job(client: &mut QmpClient, job_id: &str, timeout: Duration) -> Result<(), QemuError> {
     let deadline = std::time::Instant::now() + timeout;
     let mut observed = false;
     loop {
@@ -545,9 +540,8 @@ fn wait_for_job(
         let job = jobs
             .as_array()
             .and_then(|jobs| {
-                jobs.iter().find(|job| {
-                    job.get("id").and_then(Value::as_str) == Some(job_id)
-                })
+                jobs.iter()
+                    .find(|job| job.get("id").and_then(Value::as_str) == Some(job_id))
             })
             .cloned();
 
@@ -580,9 +574,7 @@ fn wait_for_job(
             return Err(QemuError::QmpProtocol(if observed {
                 format!("timed out waiting for snapshot job '{job_id}'")
             } else {
-                format!(
-                    "snapshot job '{job_id}' was never observed; snapshot-save likely failed"
-                )
+                format!("snapshot job '{job_id}' was never observed; snapshot-save likely failed")
             }));
         }
         std::thread::sleep(Duration::from_millis(100));
@@ -1274,11 +1266,8 @@ mod tests {
             .windows(2)
             .any(|pair| pair[0] == "-device" && pair[1] == "usb-kbd,bus=usb.0"));
         // Installer ISO as a bootable USB CD-ROM, preferred via bootindex.
-        assert!(command
-            .args
-            .windows(2)
-            .any(|pair| pair[0] == "-device"
-                && pair[1] == "usb-storage,bus=usb.0,drive=installer,bootindex=0"));
+        assert!(command.args.windows(2).any(|pair| pair[0] == "-device"
+            && pair[1] == "usb-storage,bus=usb.0,drive=installer,bootindex=0"));
         assert!(command.args.iter().any(|arg| arg.contains(
             "if=none,id=installer,file=/tmp/win11.vmbridge/media/win11.iso,media=cdrom,readonly=on"
         )));
@@ -1354,11 +1343,13 @@ mod tests {
             .expect("compat command");
         // Primary disk presented as an NVMe device (no virtio-blk), QMP node-name
         // preserved so snapshot/suspend still target the same block node.
-        assert!(command
-            .args
-            .windows(2)
-            .any(|p| p[0] == "-device"
-                && p[1] == "nvme,drive=bridgevm-nvme,serial=bridgevm-nvme0"));
+        assert!(
+            command
+                .args
+                .windows(2)
+                .any(|p| p[0] == "-device"
+                    && p[1] == "nvme,drive=bridgevm-nvme,serial=bridgevm-nvme0")
+        );
         assert!(command.args.iter().any(|a| a.contains("if=none")
             && a.contains("id=bridgevm-nvme")
             && a.contains("node-name=bridgevm-root")));

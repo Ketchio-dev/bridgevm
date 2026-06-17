@@ -3,7 +3,7 @@
 Concise "where are we" snapshot. Full plan/roadmap/scaffold log lives in
 [PLAN.md](PLAN.md); this file is the fast scan.
 
-_Last updated: 2026-06-16._
+_Last updated: 2026-06-17._
 
 ## Adversarial review round 2 (3 parallel reviews: api lifecycle / agent protocol / storage-config-qemu)
 A deeper read-only sweep of the correctness-critical subsystems found a large set
@@ -67,7 +67,7 @@ flag, and `tests/integration/windows-arm-qemu-args-cli-smoke.sh`. See
 `bridgevm run <vm> --spawn` now **really boots** a Fast Mode (Apple VZ) Linux VM (was dry-run only) when `BRIDGEVM_APPLE_VZ_RUNNER` is set — records a real pid, `dry_run:false`, state `running`; without the env it preserves the legacy dry-run/not-implemented behavior (back-compat). `bridgevm suspend <vm>` / `bridgevm resume <vm>` work end-to-end, wired runner → `lightvm-runner` → `bridgevm-api`/daemon/CLI → macOS app:
 - AppleVzRunner does VZ `saveMachineState`/`restoreMachineState` (`--save-state`/`--restore-state`); machine identifier + NAT MAC persisted per bundle (required for restore to match).
 - `suspend` boots the Fast VM, pauses, saves to `metadata/suspend-images/<vm>.bin`, marks `suspended`; `resume` restores + runs detached, marks `running`. Needs `BRIDGEVM_APPLE_VZ_RUNNER` (path to a signed AppleVzRunner).
-- macOS app pause/resume send `suspend_backend`/`resume_backend` daemon requests.
+- macOS app pause/resume send `suspend_backend`/`resume_backend` daemon requests. Daemon/app Start requires the app's Allow Apple VZ live starts setting (or `BRIDGEVM_APPLE_VZ_ALLOW_REAL_START=1`) in addition to a signed `BRIDGEVM_APPLE_VZ_RUNNER`; Show Display sets its own helper opt-in for the local GUI window path.
 - Verified: real Debian arm64 VZ guest suspended (98 MB state) → resumed to a running guest.
 - `bridgevm stop <vm>` now reliably terminates the running VM process (SIGTERM→grace→SIGKILL) for both Fast (AppleVzRunner) and Compat (qemu) — no orphan left (release gate). The daemon supervises resumed children like cold-start.
 - Compat (QEMU) suspend: `bridgevm suspend` does a QMP `snapshot-save` internal qcow2 snapshot (`bridgevm-suspend`). **Compat resume is not supported on Apple Silicon under HVF** — QEMU aborts in `cpu_pre_load` restoring an HVF arm64 guest; resume reports this honestly and preserves the snapshot. Fast Mode is the supported suspend/resume path.
@@ -110,7 +110,7 @@ The VM lifecycle (create/run/suspend/resume/stop) + networking + boot evidence a
 
 **Resource manager (§14) — battery-adaptive Fast Mode resources DONE:** Fast Mode cold starts — the api `cold_start_fast_backend`/`display_fast_backend` (daemon-less CLI) AND the daemon's own `spawn_fast_backend_with_restore` (the app's primary path) — now expand `auto` memory/cpu using the host power state at launch (`bridgevm-resource-manager::read_on_battery` parses `pmset -g batt`, honoring `BRIDGEVM_FORCE_ON_BATTERY` for tests/demos). Policy: on battery, `auto` Automatic/Office VMs step down to conserve power (4096/2 → 2048/1); Performance/Developer keep their headroom; explicit per-VM values are always respected. Unit-tested (`parses_pmset_battery_state`, `launch_decision_steps_down_auto_profiles_on_battery`, `power_aware_resolution_only_affects_auto_values`). Not applied to resume (must match saved state) or Compat (heavyweight mode). Remaining §14 work: runtime re-apply while running + foreground/background signal.
 
-**Smaller follow-ups (implementable now):** real displayd frame sampling, in-guest perf benchmarks (needs the guest agent), readiness graphical boot-progress recording (release-gate semantics — needs sign-off), Compat live resume (needs a non-HVF path).
+**Smaller follow-ups (implementable now):** in-guest perf benchmarks (needs the guest agent), readiness graphical boot-progress recording (release-gate semantics — needs sign-off), Compat live resume (needs a non-HVF path).
 
 ## Where to look
 - `PLAN.md` — full plan, roadmap, §20 "Current scaffold progress" running log.

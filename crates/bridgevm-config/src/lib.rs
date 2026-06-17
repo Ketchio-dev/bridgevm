@@ -187,7 +187,9 @@ pub enum ConfigError {
     EmptyName,
     #[error("manifest name '{name}' is not usable (it must contain at least one letter or digit)")]
     UnusableName { name: String },
-    #[error("manifest {field} must be a bundle-relative path (no absolute or '..' components): {value}")]
+    #[error(
+        "manifest {field} must be a bundle-relative path (no absolute or '..' components): {value}"
+    )]
     UnsafePath { field: &'static str, value: String },
     #[error("boot mode {mode} requires {field}")]
     MissingBootInput { mode: BootMode, field: &'static str },
@@ -1108,7 +1110,10 @@ sharedFolders:
         // Legacy manifests never carried a firmware section, so a default one
         // must be omitted from output and deserialize back to the default.
         let yaml = serde_yaml::to_string(&manifest).unwrap();
-        assert!(!yaml.contains("firmware"), "default firmware leaked: {yaml}");
+        assert!(
+            !yaml.contains("firmware"),
+            "default firmware leaked: {yaml}"
+        );
         let decoded: VmManifest = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(decoded.firmware, Firmware::default());
     }
@@ -1228,7 +1233,10 @@ sharedFolders:
             assert!(
                 matches!(
                     manifest.validate(),
-                    Err(ConfigError::UnsafePath { field: "storage.primary.path", .. })
+                    Err(ConfigError::UnsafePath {
+                        field: "storage.primary.path",
+                        ..
+                    })
                 ),
                 "expected UnsafePath for {bad}"
             );
@@ -1280,7 +1288,10 @@ security:
         manifest.validate().unwrap();
 
         assert_eq!(manifest.network.bridge_interface, None);
-        assert_eq!(manifest.network.bridge_interface(), DEFAULT_BRIDGE_INTERFACE);
+        assert_eq!(
+            manifest.network.bridge_interface(),
+            DEFAULT_BRIDGE_INTERFACE
+        );
     }
 
     #[test]
@@ -1301,7 +1312,10 @@ security:
         // A blank/whitespace override falls back to the default rather than
         // emitting an empty ifname.
         manifest.network.bridge_interface = Some("   ".to_string());
-        assert_eq!(manifest.network.bridge_interface(), DEFAULT_BRIDGE_INTERFACE);
+        assert_eq!(
+            manifest.network.bridge_interface(),
+            DEFAULT_BRIDGE_INTERFACE
+        );
     }
 
     #[test]

@@ -555,8 +555,18 @@ mod tests {
 
         let spec = launch_spec_with_readiness(true, Vec::new());
 
-        launch_handoff(&spec, None, Some(&helper), true, Some(5), Some(2), None, None, false)
-            .expect("helper launch should succeed");
+        launch_handoff(
+            &spec,
+            None,
+            Some(&helper),
+            true,
+            Some(5),
+            Some(2),
+            None,
+            None,
+            false,
+        )
+        .expect("helper launch should succeed");
 
         let captured_arg = std::fs::read_to_string(&captured_arg).unwrap();
         assert_eq!(
@@ -596,8 +606,18 @@ mod tests {
 
         let spec = launch_spec_with_readiness(true, Vec::new());
         let state = temp.join("suspend.bin");
-        launch_handoff(&spec, None, Some(&helper), true, Some(5), None, Some(&state), None, false)
-            .expect("helper launch should succeed");
+        launch_handoff(
+            &spec,
+            None,
+            Some(&helper),
+            true,
+            Some(5),
+            None,
+            Some(&state),
+            None,
+            false,
+        )
+        .expect("helper launch should succeed");
 
         let captured = std::fs::read_to_string(&captured_arg).unwrap();
         assert!(
@@ -634,8 +654,18 @@ mod tests {
         std::fs::set_permissions(&helper, permissions).unwrap();
 
         let spec = launch_spec_with_readiness(true, Vec::new());
-        launch_handoff(&spec, None, Some(&helper), true, None, None, None, None, true)
-            .expect("helper launch should succeed");
+        launch_handoff(
+            &spec,
+            None,
+            Some(&helper),
+            true,
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .expect("helper launch should succeed");
 
         let captured = std::fs::read_to_string(&captured_arg).unwrap();
         assert!(
@@ -684,8 +714,18 @@ mod tests {
                 read_only: false,
             },
         ];
-        launch_handoff(&spec, None, Some(&helper), true, None, None, None, None, false)
-            .expect("helper launch should succeed");
+        launch_handoff(
+            &spec,
+            None,
+            Some(&helper),
+            true,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("helper launch should succeed");
 
         let captured = std::fs::read_to_string(&captured_arg).unwrap();
         assert!(
@@ -732,8 +772,18 @@ mod tests {
 
         // Default spec carries no shares, so no --share flags should reach the helper.
         let spec = launch_spec_with_readiness(true, Vec::new());
-        launch_handoff(&spec, None, Some(&helper), true, None, None, None, None, false)
-            .expect("helper launch should succeed");
+        launch_handoff(
+            &spec,
+            None,
+            Some(&helper),
+            true,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("helper launch should succeed");
 
         let captured = std::fs::read_to_string(&captured_arg).unwrap();
         assert!(

@@ -1,5 +1,6 @@
 use clap::{Parser, ValueEnum};
 use serde::Serialize;
+use std::{fs, path::Path, path::PathBuf, process};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -33,6 +34,8 @@ struct Cli {
     sample_frames: u32,
     #[arg(long, default_value_t = 0)]
     frame_time_micros: u32,
+    #[arg(long)]
+    frame_sample_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ValueEnum)]
@@ -128,8 +131,15 @@ struct MetalPlan {
 }
 
 fn main() {
+    if let Err(message) = run() {
+        eprintln!("displayd error: {message}");
+        process::exit(1);
+    }
+}
+
+fn run() -> Result<(), String> {
     let cli = Cli::parse();
-    let plan = build_display_plan(&cli);
+    let plan = build_display_plan(&cli)?;
 
     if cli.print_plan {
         println!("{}", serde_json::to_string_pretty(&plan).unwrap());
@@ -143,9 +153,11 @@ fn main() {
             plan.dirty_regions.tracked_regions
         );
     }
+
+    Ok(())
 }
 
-fn build_display_plan(cli: &Cli) -> DisplayPlan {
+fn build_display_plan(cli: &Cli) -> Result<DisplayPlan, String> {
     let dirty_regions = effective_dirty_regions(cli);
     let pacing = frame_pacing(cli.visibility, dirty_regions);
     let scale = cli.scale.max(1);
@@ -163,9 +175,9 @@ fn build_display_plan(cli: &Cli) -> DisplayPlan {
         retina_backing_height,
         cursor_position.as_ref(),
     );
-    let timing = frame_timing(cli, &pacing);
+    let timing = frame_timing(cli, &pacing)?;
 
-    DisplayPlan {
+    Ok(DisplayPlan {
         pipeline: vec![
             "guest-framebuffer",
             "dirty-region-detection",
@@ -206,35 +218,82 @@ fn build_display_plan(cli: &Cli) -> DisplayPlan {
             presentation_layer: "coreanimation",
             vnc_fallback_allowed: false,
         },
-    }
+    })
 }
 
-fn frame_timing(cli: &Cli, pacing: &FramePacingPlan) -> FrameTimingPlan {
+fn frame_timing(cli: &Cli, pacing: &FramePacingPlan) -> Result<FrameTimingPlan, String> {
     let frame_budget_micros = if pacing.max_fps == 0 {
         None
     } else {
         Some(1_000_000 / u32::from(pacing.max_fps))
     };
+    if let Some(path) = &cli.frame_sample_file {
+        let samples = read_frame_sample_file(path)?;
+        let average_frame_time_micros = mean_u32(&samples);
+        let estimated_fps = (1_000_000 / average_frame_time_micros).min(u32::from(u16::MAX)) as u16;
+        return Ok(FrameTimingPlan {
+            sample_frames: samples.len().min(u32::MAX as usize) as u32,
+            average_frame_time_micros: Some(average_frame_time_micros),
+            frame_budget_micros,
+            estimated_fps: Some(estimated_fps),
+            within_budget: frame_budget_micros.map(|budget| average_frame_time_micros <= budget),
+            source: "frame-sample-file",
+        });
+    }
     if cli.sample_frames == 0 || cli.frame_time_micros == 0 {
-        return FrameTimingPlan {
+        return Ok(FrameTimingPlan {
             sample_frames: cli.sample_frames,
             average_frame_time_micros: None,
             frame_budget_micros,
             estimated_fps: None,
             within_budget: None,
             source: "metadata-only",
-        };
+        });
     }
 
     let estimated_fps = (1_000_000 / cli.frame_time_micros).min(u32::from(u16::MAX)) as u16;
-    FrameTimingPlan {
+    Ok(FrameTimingPlan {
         sample_frames: cli.sample_frames,
         average_frame_time_micros: Some(cli.frame_time_micros),
         frame_budget_micros,
         estimated_fps: Some(estimated_fps),
         within_budget: frame_budget_micros.map(|budget| cli.frame_time_micros <= budget),
         source: "cli-sample",
+    })
+}
+
+fn read_frame_sample_file(path: &Path) -> Result<Vec<u32>, String> {
+    let content = fs::read_to_string(path).map_err(|error| {
+        format!(
+            "failed to read frame sample file '{}': {error}",
+            path.display()
+        )
+    })?;
+    let samples: Vec<u32> = serde_json::from_str(&content).map_err(|error| {
+        format!(
+            "failed to parse frame sample file '{}' as a JSON array of positive integer microsecond durations: {error}",
+            path.display()
+        )
+    })?;
+    if samples.is_empty() {
+        return Err(format!(
+            "frame sample file '{}' must contain at least one duration",
+            path.display()
+        ));
     }
+    if samples.iter().any(|sample| *sample == 0) {
+        return Err(format!(
+            "frame sample file '{}' contains a zero duration; durations must be positive microseconds",
+            path.display()
+        ));
+    }
+
+    Ok(samples)
+}
+
+fn mean_u32(values: &[u32]) -> u32 {
+    let total: u128 = values.iter().map(|value| u128::from(*value)).sum();
+    (total / values.len() as u128).min(u128::from(u32::MAX)) as u32
 }
 
 fn effective_dirty_regions(cli: &Cli) -> u16 {
@@ -337,12 +396,13 @@ mod tests {
             cursor_y: None,
             sample_frames: 0,
             frame_time_micros: 0,
+            frame_sample_file: None,
         }
     }
 
     #[test]
     fn foreground_dirty_plan_allows_interactive_fps_without_vnc_fallback() {
-        let plan = build_display_plan(&cli(Visibility::Foreground, 3));
+        let plan = build_display_plan(&cli(Visibility::Foreground, 3)).unwrap();
 
         assert_eq!(plan.pacing.max_fps, 60);
         assert_eq!(plan.dirty_regions.update_strategy, "partial-texture-update");
@@ -353,7 +413,7 @@ mod tests {
 
     #[test]
     fn idle_plan_skips_repaints() {
-        let plan = build_display_plan(&cli(Visibility::Foreground, 0));
+        let plan = build_display_plan(&cli(Visibility::Foreground, 0)).unwrap();
 
         assert_eq!(plan.pacing.max_fps, 1);
         assert_eq!(plan.pacing.idle_fps, 0);
@@ -363,7 +423,7 @@ mod tests {
 
     #[test]
     fn background_plan_throttles_frame_rate() {
-        let plan = build_display_plan(&cli(Visibility::Background, 12));
+        let plan = build_display_plan(&cli(Visibility::Background, 12)).unwrap();
 
         assert_eq!(plan.pacing.max_fps, 10);
         assert_eq!(
@@ -374,7 +434,7 @@ mod tests {
 
     #[test]
     fn hidden_plan_disables_presentation() {
-        let plan = build_display_plan(&cli(Visibility::Hidden, 12));
+        let plan = build_display_plan(&cli(Visibility::Hidden, 12)).unwrap();
 
         assert_eq!(plan.pacing.max_fps, 0);
         assert_eq!(plan.pacing.idle_fps, 0);
@@ -387,7 +447,7 @@ mod tests {
         cli.resize_width = Some(1680);
         cli.resize_height = Some(1050);
 
-        let plan = build_display_plan(&cli);
+        let plan = build_display_plan(&cli).unwrap();
 
         assert_eq!(plan.framebuffer.width, 1680);
         assert_eq!(plan.framebuffer.height, 1050);
@@ -411,7 +471,7 @@ mod tests {
         cli.cursor_x = Some(2000);
         cli.cursor_y = Some(950);
 
-        let plan = build_display_plan(&cli);
+        let plan = build_display_plan(&cli).unwrap();
 
         assert_eq!(
             plan.cursor.position,
@@ -433,7 +493,7 @@ mod tests {
         cli.sample_frames = 120;
         cli.frame_time_micros = 16_000;
 
-        let plan = build_display_plan(&cli);
+        let plan = build_display_plan(&cli).unwrap();
 
         assert_eq!(plan.timing.sample_frames, 120);
         assert_eq!(plan.timing.average_frame_time_micros, Some(16_000));
@@ -449,7 +509,7 @@ mod tests {
         cli.sample_frames = 30;
         cli.frame_time_micros = 150_000;
 
-        let plan = build_display_plan(&cli);
+        let plan = build_display_plan(&cli).unwrap();
 
         assert_eq!(plan.timing.frame_budget_micros, Some(100_000));
         assert_eq!(plan.timing.estimated_fps, Some(6));
@@ -458,10 +518,71 @@ mod tests {
 
     #[test]
     fn missing_frame_sample_stays_metadata_only() {
-        let plan = build_display_plan(&cli(Visibility::Foreground, 4));
+        let plan = build_display_plan(&cli(Visibility::Foreground, 4)).unwrap();
 
         assert_eq!(plan.timing.average_frame_time_micros, None);
         assert_eq!(plan.timing.within_budget, None);
         assert_eq!(plan.timing.source, "metadata-only");
+    }
+
+    #[test]
+    fn frame_sample_file_overrides_cli_average_and_reports_derived_timing() {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "bridgevm-displayd-frame-samples-{}.json",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(&path, "[16000,17000,18000]").unwrap();
+        let mut cli = cli(Visibility::Foreground, 4);
+        cli.sample_frames = 999;
+        cli.frame_time_micros = 99_999;
+        cli.frame_sample_file = Some(path.clone());
+
+        let plan = build_display_plan(&cli).unwrap();
+
+        assert_eq!(plan.timing.sample_frames, 3);
+        assert_eq!(plan.timing.average_frame_time_micros, Some(17_000));
+        assert_eq!(plan.timing.frame_budget_micros, Some(16_666));
+        assert_eq!(plan.timing.estimated_fps, Some(58));
+        assert_eq!(plan.timing.within_budget, Some(false));
+        assert_eq!(plan.timing.source, "frame-sample-file");
+
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn frame_sample_file_rejects_empty_or_zero_duration_samples() {
+        let mut empty_path = std::env::temp_dir();
+        empty_path.push(format!(
+            "bridgevm-displayd-empty-frame-samples-{}.json",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(&empty_path, "[]").unwrap();
+        let mut cli = cli(Visibility::Foreground, 4);
+        cli.frame_sample_file = Some(empty_path.clone());
+        let error = build_display_plan(&cli).unwrap_err();
+        assert!(error.contains("at least one duration"));
+
+        let mut zero_path = std::env::temp_dir();
+        zero_path.push(format!(
+            "bridgevm-displayd-zero-frame-samples-{}.json",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(&zero_path, "[16000,0]").unwrap();
+        cli.frame_sample_file = Some(zero_path.clone());
+        let error = build_display_plan(&cli).unwrap_err();
+        assert!(error.contains("zero duration"));
+
+        fs::remove_file(empty_path).unwrap();
+        fs::remove_file(zero_path).unwrap();
     }
 }
