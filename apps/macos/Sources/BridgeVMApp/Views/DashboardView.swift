@@ -149,7 +149,7 @@ struct DashboardView: View {
             await model.openConsole(for: virtualMachine)
           },
           onShowDisplay: {
-            await model.showDisplay(for: virtualMachine)
+            model.showDisplay(for: virtualMachine)
           },
           onStop: {
             await model.perform(.stop, on: virtualMachine)
