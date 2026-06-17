@@ -5,6 +5,25 @@ Concise "where are we" snapshot. Full plan/roadmap/scaffold log lives in
 
 _Last updated: 2026-06-17._
 
+## Current usability judgment
+Local/debug BridgeVM is usable for the verified Phase 0 flows: the app bundle
+builds and opens, the dashboard talks to the bundled daemon, safe metadata flows
+are covered end to end, Compatibility Mode can launch QEMU NAT/port-forwarded
+VMs with supervised process cleanup, and Fast Mode can cross into the signed
+Apple VZ helper for live start/suspend/resume/display only when the required
+helper, opt-in, and boot fixtures are present. The latest local readiness suite
+proves this local app boundary.
+
+Public/distribution-ready completion is still blocked by external resources and
+live fixtures: Developer ID/notarization, GUI-session pixel validation for the
+Fast Show Display window, scriptable in-guest shared-folder mount assertions,
+real runtime Apple VZ/display control IPC for live resource reapply, real
+suspend-image memory serialization/deserialization for metadata suspend
+snapshots, QEMU vmnet privilege/entitlement for host-only/bridged launch, and a
+full Windows install/license/TPM/Secure Boot validation pass. Practical status:
+about 95-97% for the local Phase 0 app surface, not 100% for public
+distribution or every live guest effect.
+
 ## Adversarial review round 2 (3 parallel reviews: api lifecycle / agent protocol / storage-config-qemu)
 A deeper read-only sweep of the correctness-critical subsystems found a large set
 of real bugs. **All HIGH + most MED are FIXED + tested:**
