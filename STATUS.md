@@ -5,6 +5,21 @@ Concise "where are we" snapshot. Full plan/roadmap/scaffold log lives in
 
 _Last updated: 2026-06-16._
 
+## Adversarial review pass (this session)
+A read-only review of this session's commits surfaced 7 findings; the 4 impactful
+ones are FIXED + tested: (#1 HIGH) the held guest-tools connection lost a
+GuestHello split across reads → now peeks for a whole frame before consuming;
+(#2 HIGH) `assign_free_vnc_display` silently fell back to colliding `vnc=:0` on
+exhaustion → now errors; (#3 MED) battery-adaptive resources never ran on the
+daemon/app path → now applied there too; (#4 MED) `pmset` could hang the launch
+→ now timeout-bounded. Remaining LOW follow-ups (documented, not yet fixed):
+(#5) `shutdown_reap_children` can leave a child running only if `Child::kill()`
+itself errors (rare; kill errors are normally ESRCH=already-dead); (#6)
+AppleVzRunner accepts conflicting flag combos (`--display --restore-state`) with
+no validation (not produced by the Rust callers today); (#7) the windowed display
+launcher ignores `--stop-after-seconds` and has no SIGTERM-graceful guest stop
+(interactive path; close the window to stop).
+
 ## What this is
 Open-source, Parallels-class Mac virtualization app with two engines:
 - **Fast Mode (`LightVM`)** = Apple Virtualization.framework (NOT QEMU) — lightweight path for modern guests.

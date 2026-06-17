@@ -107,20 +107,58 @@ pub fn parse_pmset_battery_state(output: &str) -> bool {
 }
 
 /// Read the host power state. Honors `BRIDGEVM_FORCE_ON_BATTERY` (`1`/`0`) for
-/// tests and demos; otherwise shells out to `pmset -g batt` (macOS). Defaults to
-/// "on AC" (false) when the state can't be determined, so resource decisions
-/// never become more conservative than the user configured by accident.
+/// tests and demos; otherwise shells out to `pmset -g batt` (macOS) with a hard
+/// timeout. Defaults to "on AC" (false) when the state can't be determined — a
+/// missing tool, a non-zero exit, OR a hang — so it can never wedge or
+/// needlessly throttle a VM launch (this runs on the cold-start hot path).
 pub fn read_on_battery() -> bool {
     if let Ok(forced) = std::env::var("BRIDGEVM_FORCE_ON_BATTERY") {
         return forced == "1" || forced.eq_ignore_ascii_case("true");
     }
-    std::process::Command::new("pmset")
-        .args(["-g", "batt"])
-        .output()
-        .ok()
-        .filter(|out| out.status.success())
-        .map(|out| parse_pmset_battery_state(&String::from_utf8_lossy(&out.stdout)))
+    pmset_battery_output(std::time::Duration::from_secs(2))
+        .map(|out| parse_pmset_battery_state(&out))
         .unwrap_or(false)
+}
+
+/// Run `pmset -g batt` and return its stdout, killing it (and returning `None`)
+/// if it does not finish within `timeout`. `pmset` is normally instant, but an
+/// unbounded external command on the launch path is a liability if `powerd`/
+/// IORegistry ever wedges.
+fn pmset_battery_output(timeout: std::time::Duration) -> Option<String> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("pmset")
+        .args(["-g", "batt"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return None;
+                }
+                break;
+            }
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Err(_) => return None,
+        }
+    }
+    // pmset's output is small (well under the pipe buffer), so reading after exit
+    // cannot have deadlocked it.
+    let mut out = String::new();
+    child.stdout.take()?.read_to_string(&mut out).ok()?;
+    Some(out)
 }
 
 pub fn resolve_memory(manifest_memory: &str, decision: &ResourceDecision) -> String {
