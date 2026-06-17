@@ -33,7 +33,7 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     net::IpAddr,
     path::{Component, Path, PathBuf},
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -6377,6 +6377,55 @@ pub fn build_compatibility_resume_command(
     Ok(command)
 }
 
+/// Confirm that a spawned QEMU process survived Compatibility Mode `-loadvm`.
+///
+/// QEMU can abort quickly while restoring an internal snapshot. The caller must
+/// only consume the suspend marker after this returns `Ok(())`.
+pub fn verify_compatibility_resume_loaded(
+    child: &mut Child,
+    bundle: &Path,
+    log_path: &Path,
+) -> Result<(), String> {
+    // QEMU `-loadvm` can fail fast while restoring the snapshot — notably,
+    // restoring an HVF-accelerated arm64 guest aborts in cpu_pre_load
+    // (cpreg_vmstate_indexes). Confirm the process actually survived loading the
+    // snapshot before declaring the VM running; otherwise report honestly and
+    // leave the suspend marker + qcow2 snapshot intact so nothing is lost.
+    // Poll over a readiness window so a -loadvm abort is caught WHENEVER it exits
+    // (not only at a single fixed 2s), since we must not consume the irreplaceable
+    // suspend marker unless the VM truly came back.
+    let resume_deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(format!(
+                "Compatibility Mode resume failed: QEMU exited ({status}) while restoring the saved snapshot. Restoring a QEMU snapshot is not supported for HVF-accelerated arm64 guests on this host; the suspend snapshot is preserved. See {}.",
+                log_path.display()
+            ));
+        }
+        if Instant::now() >= resume_deadline {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    // The process survived the window. If QMP is reachable and reports a terminal
+    // status, the restore didn't actually come up -> fail and preserve the
+    // snapshot (kill the half-up QEMU so it can't orphan). If QMP isn't reachable
+    // we rely on the survived-the-window signal rather than risk a false failure.
+    if let Ok(status) = query_status(&qmp_socket_path(bundle)) {
+        if status.is_terminal() {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "Compatibility Mode resume: QEMU reported terminal status '{}' after restoring the snapshot; the suspend snapshot is preserved. See {}.",
+                status.status,
+                log_path.display()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 /// Resume a suspended Compatibility Mode (QEMU) VM.
 ///
 /// Relaunches QEMU detached with `-loadvm <tag>` appended to the built command
@@ -6426,42 +6475,7 @@ fn resume_compatibility_backend(
         .spawn()
         .map_err(|error| format!("failed to spawn {}: {error}", command.program))?;
 
-    // QEMU `-loadvm` can fail fast while restoring the snapshot — notably,
-    // restoring an HVF-accelerated arm64 guest aborts in cpu_pre_load
-    // (cpreg_vmstate_indexes). Confirm the process actually survived loading the
-    // snapshot before declaring the VM running; otherwise report honestly and
-    // leave the suspend marker + qcow2 snapshot intact so nothing is lost.
-    // Poll over a readiness window so a -loadvm abort is caught WHENEVER it exits
-    // (not only at a single fixed 2s), since we must not consume the irreplaceable
-    // suspend marker unless the VM truly came back.
-    let resume_deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        if let Ok(Some(status)) = child.try_wait() {
-            return Err(format!(
-                "Compatibility Mode resume failed: QEMU exited ({status}) while restoring the saved snapshot. Restoring a QEMU snapshot is not supported for HVF-accelerated arm64 guests on this host; the suspend snapshot is preserved. See {}.",
-                log_path.display()
-            ));
-        }
-        if Instant::now() >= resume_deadline {
-            break;
-        }
-        thread::sleep(Duration::from_millis(100));
-    }
-    // The process survived the window. If QMP is reachable and reports a terminal
-    // status, the restore didn't actually come up -> fail and preserve the
-    // snapshot (kill the half-up QEMU so it can't orphan). If QMP isn't reachable
-    // we rely on the survived-the-window signal rather than risk a false failure.
-    if let Ok(status) = query_status(&qmp_socket_path(bundle)) {
-        if status.is_terminal() {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!(
-                "Compatibility Mode resume: QEMU reported terminal status '{}' after restoring the snapshot; the suspend snapshot is preserved. See {}.",
-                status.status,
-                log_path.display()
-            ));
-        }
-    }
+    verify_compatibility_resume_loaded(&mut child, bundle, &log_path)?;
 
     let metadata = RunnerMetadata {
         engine: "fullvm".to_string(),

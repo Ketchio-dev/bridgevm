@@ -196,6 +196,8 @@ freezing, application quiescing, or application consistency.
 
 `bridgevm stop legacy-linux` now uses the backend stop path. If QEMU is running and its QMP socket is available, BridgeVM sends QMP `quit`, marks the VM stopped, and clears runner metadata. Dry-run runner metadata is cleared without requiring QMP.
 
+Compatibility Mode lifecycle suspend uses QMP `stop` plus `snapshot-save` to write an internal qcow2 snapshot tagged `bridgevm-suspend`, then quits QEMU and records a suspend marker. Resume relaunches QEMU with `-loadvm bridgevm-suspend` and only consumes that marker after QEMU survives the restore readiness window and, when reachable, QMP does not report a terminal status. If `-loadvm` exits quickly (the known Apple Silicon HVF arm64 failure mode), both local and daemon/socket resume report the failure and preserve the suspend marker and qcow2 snapshot.
+
 QMP diagnostics are scaffolded:
 
 ```bash

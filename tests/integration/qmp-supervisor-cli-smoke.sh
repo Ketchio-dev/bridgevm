@@ -7,6 +7,7 @@ cd "$ROOT"
 STORE="$(mktemp -d "/tmp/bridgevm-qmp-supervisor.XXXXXX")"
 FAKE_BIN="$STORE/bin"
 VM_NAME="qmp-supervisor"
+VM_RESUME_FAIL="qmp-resume-fail"
 BACKEND_LOG="$STORE/backend-launch.log"
 DAEMON_PID=""
 
@@ -27,6 +28,9 @@ args = sys.argv[1:]
 log_path = os.environ["BRIDGEVM_FAKE_BACKEND_LOG"]
 with open(log_path, "a", encoding="utf-8") as log:
     log.write("qemu-system-x86_64 " + " ".join(args) + "\n")
+
+if os.path.exists(log_path + ".fail-loadvm") and "-loadvm" in args:
+    raise SystemExit(42)
 
 qmp_arg = None
 for index, arg in enumerate(args):
@@ -256,5 +260,28 @@ assert_contains "$(cat "$BACKEND_LOG")" "-qmp unix:$BUNDLE/metadata/qmp.sock,ser
 assert_contains "$(cat "$BACKEND_LOG")" "-display vnc=:0" "fake backend VNC display args"
 assert_contains "$(cat "$BACKEND_LOG")" "socket,id=bridgevm-tools,path=$BUNDLE/metadata/guest-tools.sock,server=on,wait=off" "fake backend guest tools chardev args"
 assert_contains "$(cat "$BACKEND_LOG")" "virtserialport,chardev=bridgevm-tools,name=org.bridgevm.guest-tools.0" "fake backend guest tools device args"
+
+bridgevm_socket create "$VM_RESUME_FAIL" --os ubuntu --arch x86_64 --mode compatibility >/dev/null
+RESUME_BUNDLE="$STORE/vms/$VM_RESUME_FAIL.vmbridge"
+RESUME_DISK="$RESUME_BUNDLE/disks/root.qcow2"
+RESUME_MARKER="$RESUME_BUNDLE/metadata/suspend-images/$VM_RESUME_FAIL-compat.json"
+mkdir -p "$(dirname "$RESUME_DISK")" "$(dirname "$RESUME_MARKER")"
+printf 'fake qcow2 disk for failed resume\n' >"$RESUME_DISK"
+printf '{"snapshot_tag":"bridgevm-suspend","disk":"%s"}\n' "$RESUME_DISK" >"$RESUME_MARKER"
+printf '{"state":"suspended","updated_at_unix":1}\n' >"$RESUME_BUNDLE/metadata/state.json"
+
+touch "$BACKEND_LOG.fail-loadvm"
+if resume_failure="$(bridgevm_socket resume "$VM_RESUME_FAIL" 2>&1)"; then
+  fail "socket resume unexpectedly succeeded after fake -loadvm failure: $resume_failure"
+fi
+assert_contains "$resume_failure" "Compatibility Mode resume failed: QEMU exited" "failed compat resume"
+assert_contains "$resume_failure" "suspend snapshot is preserved" "failed compat resume"
+[[ -f "$RESUME_MARKER" ]] || fail "failed compat resume consumed suspend marker"
+resume_status="$(bridgevm_socket status "$VM_RESUME_FAIL")"
+assert_contains "$resume_status" "$VM_RESUME_FAIL" "failed compat resume state"
+assert_contains "$resume_status" "suspended" "failed compat resume state"
+resume_runner_status="$(bridgevm_socket runner-status "$VM_RESUME_FAIL")"
+assert_contains "$resume_runner_status" "No runner metadata" "failed compat resume runner metadata"
+assert_contains "$(cat "$BACKEND_LOG")" "-loadvm bridgevm-suspend" "failed compat resume loadvm args"
 
 echo "PASS: qmp supervisor CLI/socket metadata smoke ($STORE)"

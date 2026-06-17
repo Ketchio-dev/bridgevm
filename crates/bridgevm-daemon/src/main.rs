@@ -12,10 +12,10 @@ use bridgevm_api::{
     fast_suspend_state_path, guest_tools_agent_policy, guest_tools_freeze_filesystem_envelope,
     guest_tools_mount_approved_share_envelope, guest_tools_thaw_filesystem_envelope,
     handle_request, inspect_guest_tools_status, launch_readiness_metadata, resume_backend,
-    suspend_backend, ApplicationConsistentSnapshotCommandResultRecord,
-    ApplicationConsistentSnapshotExecutionRecord, BridgeVmRequest, BridgeVmResponse,
-    GuestToolsCommandRecord, PerformanceMeasurementRecord, PerformanceSampleMetadata,
-    SnapshotConsistency,
+    suspend_backend, verify_compatibility_resume_loaded,
+    ApplicationConsistentSnapshotCommandResultRecord, ApplicationConsistentSnapshotExecutionRecord,
+    BridgeVmRequest, BridgeVmResponse, GuestToolsCommandRecord, PerformanceMeasurementRecord,
+    PerformanceSampleMetadata, SnapshotConsistency,
 };
 use bridgevm_apple_vz::{build_fast_plan, write_launch_spec_artifact};
 use bridgevm_config::VmMode;
@@ -1014,12 +1014,14 @@ impl DaemonState {
         let stderr = stdout
             .try_clone()
             .context("failed to clone QEMU log file")?;
-        let child = Command::new(&command.program)
+        let mut child = Command::new(&command.program)
             .args(&command.args)
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr))
             .spawn()
             .with_context(|| format!("failed to spawn {}", command.program))?;
+        verify_compatibility_resume_loaded(&mut child, bundle, &log_path)
+            .map_err(anyhow::Error::msg)?;
 
         let metadata = RunnerMetadata {
             engine: "fullvm".to_string(),
