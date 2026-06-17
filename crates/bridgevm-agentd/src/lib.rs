@@ -111,11 +111,19 @@ pub enum AgentdError {
     },
 }
 
+/// Largest single newline-delimited frame the host will buffer from the agent
+/// channel. Bounds host memory against a hostile guest that streams bytes
+/// without a terminating newline (a sustained flood would otherwise grow the
+/// read buffer until OOM). Sized to comfortably hold any legitimate frame
+/// (capability list, a base64 file-drop chunk).
+pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentCodecError {
     EmptyFrame,
     MissingFrameTerminator,
     MultipleFrames,
+    FrameTooLarge,
     Io { kind: ErrorKind, message: String },
     Json(String),
     Protocol(ProtocolValidationError),
@@ -153,6 +161,21 @@ impl From<AgentdError> for AgentSessionIoError {
     }
 }
 
+/// Compare two byte strings in time independent of their contents, so the
+/// guest-tools token check can't be brute-forced byte-by-byte via a timing
+/// side-channel. The length comparison can short-circuit (token length is fixed
+/// and not secret); only the per-byte compare must be constant-time.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
 pub fn accept_guest_hello(
     envelope: &AgentEnvelope,
     policy: &AgentPolicy,
@@ -179,7 +202,7 @@ pub fn accept_guest_hello(
         ));
     };
 
-    if token != &policy.expected_tools_token {
+    if !constant_time_eq(token.as_bytes(), policy.expected_tools_token.as_bytes()) {
         return Err(AgentdError::InvalidToolsToken);
     }
 
@@ -225,18 +248,48 @@ pub fn decode_envelope_line(line: &str) -> Result<AgentEnvelope, AgentCodecError
 pub fn read_envelope_line(
     reader: &mut impl BufRead,
 ) -> Result<Option<AgentEnvelope>, AgentCodecError> {
-    let mut line = String::new();
-    let bytes_read = reader
-        .read_line(&mut line)
-        .map_err(|error| AgentCodecError::Io {
-            kind: error.kind(),
-            message: error.to_string(),
-        })?;
-
-    if bytes_read == 0 && line.is_empty() {
-        return Ok(None);
+    // Bounded line read (vs `read_line`, which grows without limit): accumulate
+    // up to MAX_FRAME_BYTES looking for a newline, erroring out rather than
+    // letting a hostile guest exhaust host memory by never sending one.
+    let mut line: Vec<u8> = Vec::new();
+    loop {
+        let available = match reader.fill_buf() {
+            Ok(buffer) => buffer,
+            Err(error) => {
+                return Err(AgentCodecError::Io {
+                    kind: error.kind(),
+                    message: error.to_string(),
+                })
+            }
+        };
+        if available.is_empty() {
+            // EOF: nothing buffered -> end of stream; a partial line -> let
+            // decode_envelope_line report the missing terminator.
+            if line.is_empty() {
+                return Ok(None);
+            }
+            break;
+        }
+        if let Some(newline) = available.iter().position(|&byte| byte == b'\n') {
+            if line.len() + newline + 1 > MAX_FRAME_BYTES {
+                return Err(AgentCodecError::FrameTooLarge);
+            }
+            line.extend_from_slice(&available[..=newline]);
+            reader.consume(newline + 1);
+            break;
+        }
+        if line.len() + available.len() > MAX_FRAME_BYTES {
+            return Err(AgentCodecError::FrameTooLarge);
+        }
+        let consumed = available.len();
+        line.extend_from_slice(available);
+        reader.consume(consumed);
     }
 
+    let line = String::from_utf8(line).map_err(|error| AgentCodecError::Io {
+        kind: ErrorKind::InvalidData,
+        message: error.to_string(),
+    })?;
     decode_envelope_line(&line).map(Some)
 }
 
@@ -899,6 +952,27 @@ mod tests {
             read_envelope_line(&mut buffer),
             Err(AgentCodecError::MissingFrameTerminator)
         );
+    }
+
+    #[test]
+    fn read_envelope_line_rejects_oversized_frame() {
+        // A hostile guest streaming bytes with no newline must not be able to
+        // grow the host's read buffer without bound.
+        let mut huge = vec![b'A'; MAX_FRAME_BYTES + 16];
+        // (no trailing newline on purpose)
+        let mut buffer = Cursor::new(std::mem::take(&mut huge));
+        assert_eq!(
+            read_envelope_line(&mut buffer),
+            Err(AgentCodecError::FrameTooLarge)
+        );
+    }
+
+    #[test]
+    fn constant_time_eq_matches_only_equal_bytes() {
+        assert!(constant_time_eq(b"abc123", b"abc123"));
+        assert!(!constant_time_eq(b"abc123", b"abc124"));
+        assert!(!constant_time_eq(b"abc", b"abcd"));
+        assert!(constant_time_eq(b"", b""));
     }
 
     #[test]

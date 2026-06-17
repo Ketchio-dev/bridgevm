@@ -1558,6 +1558,17 @@ fn reconcile_guest_tools_session(
         return Err(error).context("failed to peek guest tools socket");
     };
     let Some(newline) = peek[..peeked].iter().position(|&byte| byte == b'\n') else {
+        if peeked == peek.len() {
+            // A frame fills the entire peek window with no newline: oversized or
+            // malformed (a well-formed GuestHello is far smaller). Waiting would
+            // spin forever since the newline can never appear inside the window.
+            // Reset so the next tick reconnects host-first.
+            eprintln!(
+                "bridgevmd resetting guest-tools session for '{name}': oversized handshake frame"
+            );
+            backend.guest_tools_pending = None;
+            return Ok(());
+        }
         // Only a partial frame is buffered so far -- leave it unconsumed and
         // wait for the rest on a later tick.
         return Ok(());
