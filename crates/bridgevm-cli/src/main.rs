@@ -2228,7 +2228,7 @@ fn build_runner_metadata(
     if manifest.mode == VmMode::Fast {
         // Gated REAL cold-start launch: when `BRIDGEVM_APPLE_VZ_RUNNER` is set
         // and the caller asked to spawn, boot a real Apple VZ VM. When unset,
-        // preserve the legacy dry-run + not-implemented behavior.
+        // preserve the legacy dry-run + runner-required fallback.
         if spawn && apple_vz_runner_configured() {
             return cold_start_fast_backend(store, name)
                 .map_err(anyhow::Error::msg)
@@ -4666,7 +4666,7 @@ mod tests {
         let message = format!("{error:#}");
 
         assert!(
-            message.contains("Fast Mode spawn is not implemented yet"),
+            message.contains("Fast Mode spawn requires BRIDGEVM_APPLE_VZ_RUNNER"),
             "{message}"
         );
         assert!(message.contains("launch blockers:"), "{message}");

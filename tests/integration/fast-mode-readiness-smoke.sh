@@ -148,7 +148,7 @@ assert_contains "$runner_output" "missing-installer-image" "local runner-status 
 
 assert_fails_contains \
   "local-run-spawn-blocked" \
-  "Fast Mode spawn is not implemented yet" \
+  "Fast Mode spawn requires BRIDGEVM_APPLE_VZ_RUNNER" \
   bridgevm run "$VM_NAME" --spawn
 assert_contains "$ASSERT_OUTPUT" "launch blockers:" "local run --spawn failure"
 assert_contains "$ASSERT_OUTPUT" "missing-primary-disk" "local run --spawn failure"
@@ -356,7 +356,7 @@ assert_runner_launch_spec_path "socket run runner metadata"
 
 assert_fails_contains \
   "socket-run-spawn-blocked" \
-  "Fast Mode spawn is not implemented yet" \
+  "Fast Mode spawn requires BRIDGEVM_APPLE_VZ_RUNNER" \
   bridgevm_socket run "$VM_NAME" --spawn
 assert_contains "$ASSERT_OUTPUT" "launch blockers:" "socket run --spawn failure"
 assert_contains "$ASSERT_OUTPUT" "missing-installer-image" "socket run --spawn failure"

@@ -2790,7 +2790,7 @@ mod tests {
             panic!("expected Fast Mode spawn error");
         };
         assert!(
-            message.contains("Fast Mode spawn is not implemented yet"),
+            message.contains("Fast Mode spawn requires BRIDGEVM_APPLE_VZ_RUNNER"),
             "{message}"
         );
         assert!(message.contains("launch blockers:"), "{message}");

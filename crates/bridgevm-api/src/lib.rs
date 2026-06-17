@@ -5354,7 +5354,7 @@ fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadat
         // Gated REAL cold-start launch: when `BRIDGEVM_APPLE_VZ_RUNNER` is set
         // and the caller asked to spawn, boot a real Apple VZ VM via
         // `lightvm-runner` (fresh boot, no saved-state restore). When the env
-        // is unset, preserve the legacy dry-run + not-implemented behavior so
+        // is unset, preserve the legacy dry-run + runner-required fallback so
         // all existing metadata-safe smokes/tests stay green.
         if spawn && apple_vz_runner_configured() {
             return spawn_fast_backend(store, name, &bundle, &manifest, None, false);
@@ -5667,7 +5667,7 @@ fn missing_disk_message(disk: &bridgevm_storage::DiskPreparationMetadata) -> Str
 }
 
 pub fn fast_spawn_not_implemented_message() -> &'static str {
-    "Fast Mode spawn is not implemented yet; dry-run planning metadata was updated"
+    "Fast Mode spawn requires BRIDGEVM_APPLE_VZ_RUNNER to point at a signed AppleVzRunner; dry-run planning metadata was updated"
 }
 
 pub fn fast_spawn_not_implemented_error(readiness: &LaunchReadinessMetadata) -> String {
@@ -5706,8 +5706,9 @@ pub fn add_fast_spawn_blocker(readiness: &mut LaunchReadinessMetadata) {
     }
     readiness.blockers.push(LaunchReadinessBlockerMetadata {
         code: "fast-mode-spawn-unimplemented".to_string(),
-        message: "Fast Mode spawn is not wired to Apple Virtualization yet; use dry-run planning"
-            .to_string(),
+        message:
+            "Fast Mode spawn needs BRIDGEVM_APPLE_VZ_RUNNER to point at a signed AppleVzRunner"
+                .to_string(),
         path: None,
         capability: Some("apple-virtualization-framework".to_string()),
     });
@@ -6049,7 +6050,7 @@ fn require_apple_vz_runner() -> Result<PathBuf, String> {
 /// Whether `BRIDGEVM_APPLE_VZ_RUNNER` is set to a non-empty path.
 ///
 /// This gates the REAL Fast Mode cold-start launch: when unset, the Fast spawn
-/// path stays on the legacy dry-run + not-implemented behavior for backward
+/// path stays on the legacy dry-run + runner-required fallback for backward
 /// compatibility. When set, `run_backend` (and `resume_backend`) launch a real
 /// Apple VZ VM via `lightvm-runner`.
 pub fn apple_vz_runner_configured() -> bool {
@@ -11118,7 +11119,7 @@ mod tests {
         .unwrap_err();
 
         assert!(
-            error.contains("Fast Mode spawn is not implemented yet"),
+            error.contains("Fast Mode spawn requires BRIDGEVM_APPLE_VZ_RUNNER"),
             "{error}"
         );
         assert!(error.contains("launch blockers:"), "{error}");
@@ -11956,7 +11957,7 @@ mod tests {
     }
 
     #[test]
-    fn fast_spawn_without_runner_env_returns_not_implemented_error() {
+    fn fast_spawn_without_runner_env_returns_runner_required_error() {
         let _guard = APPLE_VZ_RUNNER_ENV_LOCK.lock().unwrap();
         let _env = EnvVarGuard::capture("BRIDGEVM_APPLE_VZ_RUNNER");
         std::env::remove_var("BRIDGEVM_APPLE_VZ_RUNNER");
@@ -11965,9 +11966,9 @@ mod tests {
         assert!(!apple_vz_runner_configured());
 
         let error = run_backend(&store, &name, true)
-            .expect_err("Fast spawn without BRIDGEVM_APPLE_VZ_RUNNER must stay not-implemented");
+            .expect_err("Fast spawn without BRIDGEVM_APPLE_VZ_RUNNER must stay blocked");
         assert!(
-            error.contains("Fast Mode spawn is not implemented yet"),
+            error.contains("Fast Mode spawn requires BRIDGEVM_APPLE_VZ_RUNNER"),
             "unexpected error: {error}"
         );
         assert!(

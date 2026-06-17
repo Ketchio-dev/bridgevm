@@ -102,7 +102,7 @@ assert_no_launch_claim() {
   assert_not_contains "$output" "Engine:" "$label"
   assert_not_contains "$output" "Launch ready:" "$label"
   assert_not_contains "$output" "Launch blockers:" "$label"
-  assert_not_contains "$output" "Fast Mode spawn is not implemented yet" "$label"
+  assert_not_contains "$output" "Fast Mode spawn requires BRIDGEVM_APPLE_VZ_RUNNER" "$label"
 }
 
 assert_missing_template_media() {
