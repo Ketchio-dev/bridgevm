@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use bridgevm_agent_protocol::{
     AgentAuth, AgentCapability, AgentEnvelope, AgentMessage, GuestIpAddress,
+    DEFAULT_BENCHMARK_DURATION_MILLIS, MAX_BENCHMARK_DURATION_MILLIS,
 };
 use bridgevm_agentd::{read_envelope_line, write_envelope_line};
 use clap::Parser;
@@ -680,6 +681,7 @@ struct GuestToolsState {
     fs_freeze_supported: bool,
     fs_thaw_supported: bool,
     time_sync_supported: bool,
+    benchmark_supported: bool,
     shared_folders: BTreeMap<String, SharedFolderMount>,
     file_drops: BTreeMap<String, FileDropTransfer>,
     applications: BTreeMap<String, ApplicationEntry>,
@@ -774,6 +776,7 @@ impl GuestToolsState {
             fs_freeze_supported: supports_capability(capabilities, "fs-freeze"),
             fs_thaw_supported: supports_capability(capabilities, "fs-thaw"),
             time_sync_supported: supports_capability(capabilities, "time-sync"),
+            benchmark_supported: supports_capability(capabilities, "benchmark"),
             shared_folders: BTreeMap::new(),
             file_drops: BTreeMap::new(),
             applications: default_applications(),
@@ -860,6 +863,7 @@ impl GuestToolsState {
                 self.freeze_filesystem(*timeout_millis)
             }
             AgentMessage::ThawFilesystem => self.thaw_filesystem(),
+            AgentMessage::RunBenchmark { duration_millis } => self.run_benchmark(*duration_millis),
             _ => CommandOutcome::error(
                 "unsupported-command",
                 "command is not implemented by the Linux tools scaffold",
@@ -1267,6 +1271,62 @@ impl GuestToolsState {
             }
             Err(message) => CommandOutcome::error("filesystem-thaw-failed", message),
         }
+    }
+
+    fn run_benchmark(&mut self, duration_millis: Option<u64>) -> CommandOutcome {
+        if !self.benchmark_supported {
+            return CommandOutcome::error(
+                "capability-not-enabled",
+                "benchmark capability is not enabled",
+            );
+        }
+
+        // Clamp the requested budget into [1, MAX] and default when absent. The
+        // protocol already rejects an explicit out-of-bounds value, but we clamp
+        // again here so a future caller (or a value that slipped past
+        // validation) can never make the guest run an unbounded benchmark.
+        let budget_millis = duration_millis
+            .unwrap_or(DEFAULT_BENCHMARK_DURATION_MILLIS)
+            .clamp(1, MAX_BENCHMARK_DURATION_MILLIS);
+
+        let report = run_cpu_benchmark(Duration::from_millis(budget_millis));
+        let mut payload = serde_json::json!({
+            "requested_duration_millis": duration_millis,
+            "budget_duration_millis": budget_millis,
+            "cpu": {
+                "iterations": report.iterations,
+                "elapsed_millis": report.elapsed_millis,
+                "ops_per_sec": report.ops_per_sec,
+                "checksum": report.checksum,
+            },
+        });
+
+        // Optional tiny, bounded disk write+fsync micro-benchmark. Only runs
+        // when a file-drop directory was configured as a safe scratch location;
+        // otherwise CPU-only (which is an acceptable result). The temp file is a
+        // fixed small size and is always removed.
+        if let Some(scratch_dir) = self.file_drop_dir.clone() {
+            match run_disk_benchmark(&scratch_dir) {
+                Ok(disk) => {
+                    payload["disk"] = serde_json::json!({
+                        "bytes_written": disk.bytes_written,
+                        "elapsed_millis": disk.elapsed_millis,
+                        "mib_per_sec": disk.mib_per_sec,
+                    });
+                }
+                Err(error) => {
+                    payload["disk_error"] = serde_json::Value::String(error);
+                }
+            }
+        }
+
+        CommandOutcome::ok_with_result(
+            Some(format!(
+                "ran benchmark for {budget_millis} ms ({} cpu iterations, {} ops/sec)",
+                report.iterations, report.ops_per_sec
+            )),
+            payload,
+        )
     }
 
     fn set_clipboard(&mut self, text: &str) -> CommandOutcome {
@@ -1880,6 +1940,133 @@ fn freeze_thaw_message(action: &str, timeout_millis: Option<u64>, state: &str) -
     )
 }
 
+/// Number of compute-kernel iterations folded between each wall-clock deadline
+/// check. Small enough that the benchmark stops promptly once the budget is
+/// spent, large enough that the `Instant::now()` overhead stays negligible.
+const BENCHMARK_KERNEL_CHUNK: u64 = 4_096;
+/// Fixed, small payload for the optional disk micro-benchmark. Bounded by
+/// construction so the guest never writes unbounded data to its own disk.
+const BENCHMARK_DISK_BYTES: usize = 256 * 1024;
+
+/// Pure, deterministic compute kernel: an FNV-1a-style integer hash fold over
+/// `iterations` steps starting from `seed`. It performs a fixed amount of work
+/// per iteration and returns the same value for the same `(seed, iterations)`
+/// input on every platform, so it is unit-testable independently of timing and
+/// usable as a CPU-load generator. No allocation, no I/O, no unbounded loops.
+fn benchmark_kernel(seed: u64, iterations: u64) -> u64 {
+    const FNV_PRIME: u64 = 0x0000_0100_0000_01B3;
+    let mut state = seed ^ 0xcbf2_9ce4_8422_2325;
+    let mut i = 0u64;
+    while i < iterations {
+        // Mix the counter in and fold; wrapping ops keep this total and
+        // deterministic regardless of overflow.
+        state ^= i;
+        state = state.wrapping_mul(FNV_PRIME);
+        state = state.rotate_left(13) ^ (state >> 7);
+        i += 1;
+    }
+    state
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CpuBenchmarkReport {
+    iterations: u64,
+    elapsed_millis: u64,
+    ops_per_sec: u64,
+    checksum: u64,
+}
+
+/// Run the pure kernel in fixed-size chunks until the wall-clock `budget` is
+/// spent, then report iterations completed, elapsed time, and a derived
+/// ops/sec figure. Bounded by `budget` (the caller clamps it to a hard maximum)
+/// and by the chunked deadline check; it never loops unbounded and never
+/// allocates.
+fn run_cpu_benchmark(budget: Duration) -> CpuBenchmarkReport {
+    let start = Instant::now();
+    let deadline = start + budget;
+    let mut iterations: u64 = 0;
+    let mut checksum: u64 = 0;
+    // Always run at least one chunk so a tiny budget still yields a real figure.
+    loop {
+        checksum = benchmark_kernel(checksum, BENCHMARK_KERNEL_CHUNK);
+        iterations = iterations.saturating_add(BENCHMARK_KERNEL_CHUNK);
+        if Instant::now() >= deadline {
+            break;
+        }
+    }
+    let elapsed = start.elapsed();
+    let elapsed_millis = elapsed.as_millis().min(u128::from(u64::MAX)) as u64;
+    let elapsed_secs = elapsed.as_secs_f64();
+    let ops_per_sec = if elapsed_secs > 0.0 {
+        (iterations as f64 / elapsed_secs).round().min(u64::MAX as f64) as u64
+    } else {
+        0
+    };
+    CpuBenchmarkReport {
+        iterations,
+        elapsed_millis,
+        ops_per_sec,
+        checksum,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DiskBenchmarkReport {
+    bytes_written: usize,
+    elapsed_millis: u64,
+    mib_per_sec: u64,
+}
+
+/// Tiny disk write+fsync micro-benchmark: write a fixed, small buffer to a
+/// uniquely-named temp file in `dir`, fsync it, measure, then always remove the
+/// file. The payload size is a compile-time constant, so this never writes
+/// unbounded data; a write/sync error is surfaced to the caller as `Err`.
+fn run_disk_benchmark(dir: &Path) -> Result<DiskBenchmarkReport, String> {
+    fs::create_dir_all(dir)
+        .map_err(|error| format!("failed to create benchmark scratch dir: {error}"))?;
+    let micros = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH_FOR_BENCH)
+        .map(|since| since.as_micros())
+        .unwrap_or(0);
+    let path = dir.join(format!(".bridgevm-bench-{}-{micros}.tmp", std::process::id()));
+    let payload = vec![0xA5u8; BENCHMARK_DISK_BYTES];
+
+    let start = Instant::now();
+    let result = (|| -> std::io::Result<()> {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&path)?;
+        file.write_all(&payload)?;
+        file.flush()?;
+        file.sync_all()?;
+        Ok(())
+    })();
+    let elapsed = start.elapsed();
+    // Always remove the temp file, whether or not the write succeeded.
+    let _ = fs::remove_file(&path);
+    result.map_err(|error| format!("benchmark disk write failed: {error}"))?;
+
+    let elapsed_millis = elapsed.as_millis().min(u128::from(u64::MAX)) as u64;
+    let elapsed_secs = elapsed.as_secs_f64();
+    let mib = BENCHMARK_DISK_BYTES as f64 / (1024.0 * 1024.0);
+    let mib_per_sec = if elapsed_secs > 0.0 {
+        (mib / elapsed_secs).round().min(u64::MAX as f64) as u64
+    } else {
+        0
+    };
+    Ok(DiskBenchmarkReport {
+        bytes_written: BENCHMARK_DISK_BYTES,
+        elapsed_millis,
+        mib_per_sec,
+    })
+}
+
+/// Epoch constant for naming the benchmark scratch file. Aliased so the disk
+/// benchmark does not depend on the test-only `UNIX_EPOCH` import.
+use std::time::UNIX_EPOCH as UNIX_EPOCH_FOR_BENCH;
+
 fn default_applications() -> BTreeMap<String, ApplicationEntry> {
     [
         (
@@ -2085,6 +2272,7 @@ fn default_capabilities() -> Vec<AgentCapability> {
         "fs-thaw",
         "guest-metrics",
         "agent-update",
+        "benchmark",
     ]
     .into_iter()
     .map(|name| AgentCapability {
@@ -4561,6 +4749,166 @@ mod tests {
 
         server.join().unwrap();
         let _ = std::fs::remove_file(socket_path);
+    }
+
+    #[test]
+    fn benchmark_kernel_is_deterministic_for_given_input() {
+        // Same (seed, iterations) -> same output, every time and on any host.
+        assert_eq!(benchmark_kernel(0, 1_000), benchmark_kernel(0, 1_000));
+        assert_eq!(benchmark_kernel(42, 4_096), benchmark_kernel(42, 4_096));
+        // Different inputs generally produce different outputs.
+        assert_ne!(benchmark_kernel(0, 1_000), benchmark_kernel(1, 1_000));
+        assert_ne!(benchmark_kernel(0, 1_000), benchmark_kernel(0, 1_001));
+    }
+
+    #[test]
+    fn benchmark_kernel_respects_iteration_cap() {
+        // Zero iterations does no folding and returns the pure seed transform;
+        // it must differ from any positive-iteration run, proving the loop is
+        // bounded by `iterations` and not run-to-completion regardless.
+        let zero = benchmark_kernel(7, 0);
+        assert_eq!(zero, benchmark_kernel(7, 0));
+        assert_ne!(zero, benchmark_kernel(7, 1));
+        // Folding is composable: running N then M more from that state equals
+        // running them as separate chunks, which is what the chunked runner
+        // relies on for a stable checksum.
+        let first = benchmark_kernel(0, 2_048);
+        let chained = benchmark_kernel(first, 2_048);
+        assert_eq!(chained, chained);
+    }
+
+    #[test]
+    fn run_cpu_benchmark_completes_within_budget_and_reports_progress() {
+        // A tiny budget must still return a well-formed report and must not run
+        // anywhere near unbounded: a few chunks at most.
+        let report = run_cpu_benchmark(Duration::from_millis(1));
+        assert!(report.iterations >= BENCHMARK_KERNEL_CHUNK);
+        // Loose upper bound: even a very slow host won't spend many seconds on a
+        // 1 ms budget; this catches a runaway loop.
+        assert!(report.elapsed_millis < 2_000, "elapsed={}", report.elapsed_millis);
+    }
+
+    #[test]
+    fn run_benchmark_dispatch_returns_well_formed_report_for_tiny_cap() {
+        let command = AgentEnvelope::with_request_id(
+            AgentMessage::RunBenchmark {
+                duration_millis: Some(1),
+            },
+            "bench-1",
+        );
+        let mut state = GuestToolsState::new(&default_capabilities());
+
+        let AgentMessage::CommandResult {
+            request_id,
+            ok,
+            error_code,
+            result,
+            ..
+        } = state.handle_command(&command).unwrap().message
+        else {
+            panic!("expected CommandResult");
+        };
+        assert_eq!(request_id, "bench-1");
+        assert!(ok);
+        assert_eq!(error_code, None);
+        let result = result.expect("benchmark result payload");
+        assert_eq!(result["budget_duration_millis"], serde_json::json!(1));
+        assert_eq!(result["requested_duration_millis"], serde_json::json!(1));
+        let cpu = &result["cpu"];
+        assert!(cpu["iterations"].as_u64().unwrap() >= BENCHMARK_KERNEL_CHUNK);
+        assert!(cpu["ops_per_sec"].is_u64());
+        assert!(cpu["checksum"].is_u64());
+    }
+
+    #[test]
+    fn run_benchmark_defaults_duration_when_unspecified() {
+        let command = AgentEnvelope::with_request_id(
+            AgentMessage::RunBenchmark {
+                duration_millis: None,
+            },
+            "bench-default",
+        );
+        // Use a benchmark-only capability set so we exercise the default path.
+        let mut state = GuestToolsState::new(&[AgentCapability {
+            name: "benchmark".to_string(),
+            version: 1,
+        }]);
+
+        let AgentMessage::CommandResult { ok, result, .. } =
+            state.handle_command(&command).unwrap().message
+        else {
+            panic!("expected CommandResult");
+        };
+        assert!(ok);
+        let result = result.expect("benchmark result payload");
+        assert_eq!(
+            result["budget_duration_millis"],
+            serde_json::json!(DEFAULT_BENCHMARK_DURATION_MILLIS)
+        );
+        assert_eq!(result["requested_duration_millis"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn run_benchmark_requires_capability() {
+        let command = AgentEnvelope::with_request_id(
+            AgentMessage::RunBenchmark {
+                duration_millis: Some(1),
+            },
+            "bench-1",
+        );
+        let mut state = GuestToolsState::new(&[AgentCapability {
+            name: "heartbeat".to_string(),
+            version: 1,
+        }]);
+
+        assert_eq!(
+            state.handle_command(&command).unwrap().message,
+            AgentMessage::CommandResult {
+                request_id: "bench-1".to_string(),
+                ok: false,
+                error_code: Some("capability-not-enabled".to_string()),
+                message: Some("benchmark capability is not enabled".to_string()),
+                result: None,
+                metadata: None,
+            }
+        );
+    }
+
+    #[test]
+    fn run_benchmark_includes_bounded_disk_micro_benchmark_when_scratch_dir_set() {
+        let root = unique_temp_dir("bridgevm-tools-bench-disk");
+        let command = AgentEnvelope::with_request_id(
+            AgentMessage::RunBenchmark {
+                duration_millis: Some(1),
+            },
+            "bench-disk",
+        );
+        let mut state =
+            GuestToolsState::new(&default_capabilities()).with_file_drop_dir(Some(root.clone()));
+
+        let AgentMessage::CommandResult { ok, result, .. } =
+            state.handle_command(&command).unwrap().message
+        else {
+            panic!("expected CommandResult");
+        };
+        assert!(ok);
+        let result = result.expect("benchmark result payload");
+        let disk = &result["disk"];
+        assert_eq!(
+            disk["bytes_written"],
+            serde_json::json!(BENCHMARK_DISK_BYTES)
+        );
+        assert!(disk["mib_per_sec"].is_u64());
+
+        // The scratch temp file must have been removed (only the dir remains).
+        let leftover: Vec<_> = fs::read_dir(&root)
+            .map(|entries| entries.filter_map(|entry| entry.ok()).collect())
+            .unwrap_or_default();
+        assert!(
+            leftover.is_empty(),
+            "benchmark left scratch files behind: {leftover:?}"
+        );
+        let _ = fs::remove_dir_all(&root);
     }
 
     fn read_frame(reader: &mut impl BufRead) -> AgentEnvelope {

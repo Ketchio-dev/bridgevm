@@ -4,6 +4,14 @@ use std::net::IpAddr;
 pub const PROTOCOL_VERSION: u16 = 1;
 pub const MAX_FREEZE_THAW_TIMEOUT_MILLIS: u64 = 300_000;
 
+/// Default wall-clock budget for an in-guest benchmark when the host does not
+/// specify one. Small enough to stay unobtrusive on a busy guest.
+pub const DEFAULT_BENCHMARK_DURATION_MILLIS: u64 = 1_000;
+/// Hard upper bound on the benchmark wall-clock budget. The guest never runs a
+/// benchmark longer than this no matter what the host requests, so a hostile or
+/// buggy host cannot pin the guest CPU indefinitely.
+pub const MAX_BENCHMARK_DURATION_MILLIS: u64 = 10_000;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentEnvelope {
     pub protocol_version: u16,
@@ -128,6 +136,16 @@ pub enum AgentMessage {
     GuestMetrics {
         cpu_percent: u8,
         memory_used_mib: u64,
+    },
+    /// Host->guest request to run a bounded in-guest performance benchmark.
+    /// `duration_millis` is the wall-clock budget; when `None` the guest uses
+    /// `DEFAULT_BENCHMARK_DURATION_MILLIS`, and any explicit value is validated
+    /// against `MAX_BENCHMARK_DURATION_MILLIS`. The result is reported back
+    /// through the standard `CommandResult.result` payload (same channel as
+    /// guest-metrics / list-applications), not a bespoke transport.
+    RunBenchmark {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        duration_millis: Option<u64>,
     },
     CommandResult {
         request_id: String,
@@ -280,6 +298,9 @@ impl AgentMessage {
                 }
                 Ok(())
             }
+            Self::RunBenchmark { duration_millis } => {
+                validate_benchmark_duration(*duration_millis)
+            }
             Self::CommandResult {
                 request_id,
                 ok,
@@ -315,6 +336,22 @@ fn validate_required_optional(
         Some(value) => validate_non_empty(field, value),
         None => Err(ProtocolValidationError::MissingField { field }),
     }
+}
+
+fn validate_benchmark_duration(
+    duration_millis: Option<u64>,
+) -> Result<(), ProtocolValidationError> {
+    let Some(duration_millis) = duration_millis else {
+        return Ok(());
+    };
+    if duration_millis == 0 || duration_millis > MAX_BENCHMARK_DURATION_MILLIS {
+        return Err(ProtocolValidationError::InvalidBenchmarkDuration {
+            duration_millis,
+            max_duration_millis: MAX_BENCHMARK_DURATION_MILLIS,
+        });
+    }
+
+    Ok(())
 }
 
 fn validate_filesystem_freeze_timeout(
@@ -407,6 +444,10 @@ pub enum ProtocolValidationError {
         max_timeout_millis: u64,
     },
     InvalidCpuPercent(u8),
+    InvalidBenchmarkDuration {
+        duration_millis: u64,
+        max_duration_millis: u64,
+    },
 }
 
 #[cfg(test)]
@@ -518,6 +559,12 @@ mod tests {
                 timeout_millis: Some(30_000),
             },
             AgentMessage::ThawFilesystem,
+            AgentMessage::RunBenchmark {
+                duration_millis: None,
+            },
+            AgentMessage::RunBenchmark {
+                duration_millis: Some(500),
+            },
         ];
 
         for message in messages {
@@ -706,6 +753,24 @@ mod tests {
                 ProtocolValidationError::InvalidFilesystemFreezeTimeout {
                     timeout_millis: MAX_FREEZE_THAW_TIMEOUT_MILLIS + 1,
                     max_timeout_millis: MAX_FREEZE_THAW_TIMEOUT_MILLIS,
+                },
+            ),
+            (
+                AgentMessage::RunBenchmark {
+                    duration_millis: Some(0),
+                },
+                ProtocolValidationError::InvalidBenchmarkDuration {
+                    duration_millis: 0,
+                    max_duration_millis: MAX_BENCHMARK_DURATION_MILLIS,
+                },
+            ),
+            (
+                AgentMessage::RunBenchmark {
+                    duration_millis: Some(MAX_BENCHMARK_DURATION_MILLIS + 1),
+                },
+                ProtocolValidationError::InvalidBenchmarkDuration {
+                    duration_millis: MAX_BENCHMARK_DURATION_MILLIS + 1,
+                    max_duration_millis: MAX_BENCHMARK_DURATION_MILLIS,
                 },
             ),
             (

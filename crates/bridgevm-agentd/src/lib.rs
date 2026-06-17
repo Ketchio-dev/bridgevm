@@ -359,6 +359,7 @@ pub fn required_capability(message: &AgentMessage) -> Option<&'static str> {
         AgentMessage::GuestMetrics { .. } => Some("guest-metrics"),
         AgentMessage::FreezeFilesystem { .. } => Some("fs-freeze"),
         AgentMessage::ThawFilesystem => Some("fs-thaw"),
+        AgentMessage::RunBenchmark { .. } => Some("benchmark"),
     }
 }
 
@@ -693,6 +694,12 @@ mod tests {
                 Some("fs-freeze"),
             ),
             (AgentMessage::ThawFilesystem, Some("fs-thaw")),
+            (
+                AgentMessage::RunBenchmark {
+                    duration_millis: Some(500),
+                },
+                Some("benchmark"),
+            ),
         ];
 
         for (message, expected) in cases {
@@ -743,6 +750,55 @@ mod tests {
             Err(AgentdError::CommandNotAuthorized {
                 capability: "display-resize".to_string()
             })
+        );
+    }
+
+    #[test]
+    fn rejects_benchmark_command_without_benchmark_capability() {
+        // Session advertises only `clipboard`, so a benchmark request must be
+        // rejected as not authorized (mirrors display-resize gating above).
+        let session = accept_guest_hello(
+            &AgentEnvelope::new(valid_guest_hello("token-1", valid_capabilities())),
+            &valid_policy(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            authorize_message(
+                &session,
+                &AgentMessage::RunBenchmark {
+                    duration_millis: Some(500),
+                }
+            ),
+            Err(AgentdError::CommandNotAuthorized {
+                capability: "benchmark".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn authorizes_benchmark_command_with_benchmark_capability() {
+        let policy = AgentPolicy::new("token-1", [("benchmark", 1)]);
+        let session = accept_guest_hello(
+            &AgentEnvelope::new(valid_guest_hello(
+                "token-1",
+                vec![AgentCapability {
+                    name: "benchmark".to_string(),
+                    version: 1,
+                }],
+            )),
+            &policy,
+        )
+        .unwrap();
+
+        assert_eq!(
+            authorize_message(
+                &session,
+                &AgentMessage::RunBenchmark {
+                    duration_millis: Some(500),
+                }
+            ),
+            Ok(())
         );
     }
 
