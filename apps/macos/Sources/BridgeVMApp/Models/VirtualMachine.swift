@@ -244,7 +244,7 @@ struct VMReadinessSummary: Equatable {
         if let blocker = preRunLaunchReadiness.blockers.first {
           return VMReadinessSummary(
             title: preRunLaunchReadiness.title,
-            detail: blocker.path.map { "\(blocker.message) (\($0))" } ?? blocker.message,
+            detail: blocker.summary,
             actionTitle: "Prepare Launch",
             action: .prepareRun,
             severity: .blocked
@@ -284,7 +284,7 @@ struct VMReadinessSummary: Equatable {
     if let blocker = runnerStatus.launchReadiness?.blockers.first {
       return VMReadinessSummary(
         title: runnerStatus.launchReadinessTitle,
-        detail: blocker.path.map { "\(blocker.message) (\($0))" } ?? blocker.message,
+        detail: blocker.summary,
         actionTitle: "Prepare Launch",
         action: .prepareRun,
         severity: .blocked
@@ -1864,5 +1864,15 @@ struct LaunchReadinessBlocker: Identifiable, Equatable {
 
   var id: String {
     "\(code)-\(path ?? capability ?? message)"
+  }
+
+  var summary: String {
+    var value = "\(code): \(message)"
+    if let path {
+      value += " (\(path))"
+    } else if let capability {
+      value += " (\(capability))"
+    }
+    return value
   }
 }

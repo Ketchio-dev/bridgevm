@@ -83,6 +83,49 @@ final class VMReadinessSummaryTests: XCTestCase {
     XCTAssertEqual(summary.severity, .ready)
   }
 
+  func testBlockedLaunchSummaryIncludesBlockerCodeMessageAndCapability() {
+    let summary = VMReadinessSummary.evaluate(
+      virtualMachine: makeVirtualMachine(status: .stopped),
+      bootMediaStatus: makeBootMediaStatus(exists: true),
+      bootMediaStatusError: nil,
+      runnerStatus: RunnerStatus(
+        engine: "fullvm",
+        pid: nil,
+        command: ["qemu-system-x86_64"],
+        logPath: "logs/qemu.log",
+        startedAtUnix: 1_710_000_000,
+        dryRun: true,
+        launchSpecPath: nil,
+        launchReadiness: LaunchReadiness(
+          ready: false,
+          blockers: [
+            LaunchReadinessBlocker(
+              code: "qemu-host-only-requires-privilege",
+              message:
+                "Compatibility Mode QEMU host-only networking uses vmnet-host, which requires the qemu process to run as root or carry the com.apple.vm.networking entitlement",
+              path: nil,
+              capability: "qemu-network"
+            )
+          ]
+        )
+      ),
+      runnerStatusError: nil,
+      snapshotChain: nil,
+      snapshotChainError: nil,
+      diskPreparation: makeDiskPreparation(),
+      diskCreation: nil,
+      diskInspection: nil,
+      diskVerification: nil
+    )
+
+    XCTAssertEqual(summary.title, "Blocked (1)")
+    XCTAssertEqual(summary.action, .prepareRun)
+    XCTAssertEqual(summary.severity, .blocked)
+    XCTAssertEqual(
+      summary.detail,
+      "qemu-host-only-requires-privilege: Compatibility Mode QEMU host-only networking uses vmnet-host, which requires the qemu process to run as root or carry the com.apple.vm.networking entitlement (qemu-network)")
+  }
+
   func testRunningVMOffersQMPProbe() {
     let summary = VMReadinessSummary.evaluate(
       virtualMachine: makeVirtualMachine(status: .running),

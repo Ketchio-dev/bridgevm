@@ -3111,7 +3111,7 @@ final class DashboardViewModel: ObservableObject {
     }
 
     guard readiness.ready else {
-      let blockers = readiness.blockers.map(\.code).joined(separator: ", ")
+      let blockers = readiness.blockers.map(\.summary).joined(separator: ", ")
       let detail = blockers.isEmpty ? "launch readiness is blocked" : blockers
       alertMessage = "\(virtualMachine.name) restart blocked: \(detail)."
       return false

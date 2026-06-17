@@ -2379,9 +2379,11 @@ final class DashboardViewModelTests: XCTestCase {
     XCTAssertEqual(client.preparedRunIDs, [virtualMachine.id])
     XCTAssertTrue(client.performedActionRequests.isEmpty)
     XCTAssertEqual(model.runnerStatus(for: virtualMachine), blockedStatus)
+    let expectedAlert =
+      "\(virtualMachine.name) restart blocked: missing-primary-disk: Primary disk is missing. (/tmp/root.raw)."
     XCTAssertEqual(
       model.alertMessage,
-      "\(virtualMachine.name) restart blocked: missing-primary-disk.")
+      expectedAlert)
   }
 
   func testPerformRestartPreparesBeforeRestartingWhenLaunchReadinessIsReady() async throws {
