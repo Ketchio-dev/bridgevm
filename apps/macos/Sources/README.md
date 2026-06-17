@@ -34,7 +34,7 @@ The first app milestone should be a native dashboard that calls the Rust daemon 
   transport for the Rust daemon
 - daemon-backed Guest Tools command-send DTOs for the typed
   `guest_tools_send_command` boundary, including safe alpha application/window
-  list requests for future integration controls
+  list, launch, focus, and close controls
 - a Console action that queries daemon `qmp_status`/QMP socket readiness,
   reports backend diagnostic status, and keeps Compatibility Mode external VNC
   viewer handoff distinct from embedded macOS console work
