@@ -5393,7 +5393,7 @@ fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadat
     // above keeps the deterministic vnc=:0 template since it binds nothing.)
     // Daemon-less launches probe the live ports only; the daemon additionally
     // avoids displays it has already handed to its own children.
-    assign_free_vnc_display(&mut command, &[]);
+    assign_free_vnc_display(&mut command, &[])?;
     fs::create_dir_all(bundle.join("logs")).map_err(|error| error.to_string())?;
     let stdout = OpenOptions::new()
         .create(true)
@@ -5994,8 +5994,9 @@ pub fn cold_start_fast_backend(store: &VmStore, name: &str) -> Result<RunnerMeta
 /// so a lightweight Apple VZ VM conserves resources on battery. Explicit per-VM
 /// values are preserved (see [`bridgevm_resource_manager::resolve_memory`]). Only
 /// applied to fresh launches — resume must reuse the saved-state config, and
-/// preview/dry-run paths stay deterministic.
-fn apply_power_aware_fast_resources(manifest: &mut VmManifest) {
+/// preview/dry-run paths stay deterministic. Shared by the daemon-less CLI path
+/// (here) and the daemon's own Fast cold-start so both adapt to battery.
+pub fn apply_power_aware_fast_resources(manifest: &mut VmManifest) {
     use bridgevm_resource_manager::{
         decide_from_manifest_profile_with_power, read_on_battery, resolve_memory, resolve_vcpu,
     };
@@ -6341,7 +6342,7 @@ fn resume_compatibility_backend(
 
     let mut command = build_compatibility_resume_command(manifest, bundle)?;
     // Pin a free VNC display so a resumed Compat VM doesn't collide on 5900.
-    assign_free_vnc_display(&mut command, &[]);
+    assign_free_vnc_display(&mut command, &[])?;
 
     let log_path = bundle.join("logs").join("qemu.log");
     let guest_tools = store

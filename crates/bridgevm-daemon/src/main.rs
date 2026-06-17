@@ -5,7 +5,8 @@ use bridgevm_agentd::{
     AgentCommandTracker, AgentSession, AgentSessionIoError,
 };
 use bridgevm_api::{
-    add_fast_spawn_blocker, build_compatibility_resume_command, compat_suspend_marker_path,
+    add_fast_spawn_blocker, apply_power_aware_fast_resources, build_compatibility_resume_command,
+    compat_suspend_marker_path,
     fast_spawn_not_implemented_error, fast_suspend_state_path, guest_tools_agent_policy,
     guest_tools_freeze_filesystem_envelope, guest_tools_mount_approved_share_envelope,
     guest_tools_thaw_filesystem_envelope, handle_request, launch_readiness_metadata,
@@ -707,7 +708,7 @@ impl DaemonState {
         // (their QEMU may not have bound the port yet, so a bare probe would
         // hand the same :0 to two back-to-back launches).
         let avoid = self.live_vnc_displays();
-        assign_free_vnc_display(&mut command, &avoid);
+        assign_free_vnc_display(&mut command, &avoid).map_err(|error| anyhow::anyhow!(error))?;
         // Test-only escape hatch (mirrors BRIDGEVM_APPLE_VZ_RUNNER): append extra
         // QEMU args without touching the product command builder. The
         // application-consistent live opt-in smoke uses this to attach a NoCloud
@@ -781,11 +782,17 @@ impl DaemonState {
         &mut self,
         name: &str,
         bundle: PathBuf,
-        manifest: bridgevm_config::VmManifest,
+        mut manifest: bridgevm_config::VmManifest,
         config: FastModeSpawnConfig,
         restore_state: Option<PathBuf>,
     ) -> Result<BridgeVmResponse> {
         config.validate()?;
+        // Battery-adaptive `auto` resources on a fresh cold start (the app's
+        // primary path goes through the daemon). Not on resume: a restored VM
+        // must reuse the exact saved-state config.
+        if restore_state.is_none() {
+            apply_power_aware_fast_resources(&mut manifest);
+        }
         let (disk, active_disk) = self
             .store
             .prepare_active_disk(name)
@@ -971,7 +978,7 @@ impl DaemonState {
         // Pin a free VNC display so a resumed Compat VM doesn't collide on 5900,
         // avoiding displays already owned by this daemon's live children.
         let avoid = self.live_vnc_displays();
-        assign_free_vnc_display(&mut command, &avoid);
+        assign_free_vnc_display(&mut command, &avoid).map_err(|error| anyhow::anyhow!(error))?;
         let log_path = bundle.join("logs").join("qemu.log");
         let guest_tools = self
             .store
