@@ -117,6 +117,7 @@ struct VMDetailView: View {
   var onPrimaryAction: () async -> Void
   var onClone: () -> Void
   var onOpenConsole: () async -> Bool
+  var onShowDisplay: () async -> Void = {}
   var onStop: () async -> Void
   var onRestart: () async -> Void
   var onPerformLifecycleAction: (VirtualMachineAction) async -> Void
@@ -205,7 +206,8 @@ struct VMDetailView: View {
             isLoadingLog: isLoadingLog,
             logViewError: logViewError,
             onOpenConsole: onOpenConsole,
-            onLoadLog: onLoadLog
+            onLoadLog: onLoadLog,
+            onShowDisplay: onShowDisplay
           )
 
           VMReadinessNextActionPanel(
@@ -673,6 +675,7 @@ private struct ConsoleDiagnosticsPanel: View {
   var logViewError: String?
   var onOpenConsole: () async -> Bool
   var onLoadLog: (VMLogKind) async -> Void
+  var onShowDisplay: () async -> Void = {}
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -799,6 +802,17 @@ private struct ConsoleDiagnosticsPanel: View {
           Label("Refresh Serial Tail", systemImage: "text.alignleft")
         }
         .disabled(isLoadingLog)
+
+        if virtualMachine.mode == .fast {
+          // Fast Mode (Apple VZ) only: open the in-app VZVirtualMachineView
+          // window via the bundled runner (must be a GUI login session).
+          Button {
+            Task { await onShowDisplay() }
+          } label: {
+            Label("Show Display", systemImage: "display")
+          }
+          .help("Open this Fast Mode VM in an embedded display window")
+        }
       }
     }
     .padding(14)

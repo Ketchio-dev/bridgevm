@@ -2488,6 +2488,23 @@ final class DashboardViewModel: ObservableObject {
     }
   }
 
+  /// Open a Fast Mode (Apple VZ) VM in an embedded display window by spawning
+  /// the bundled runner with `--apple-vz-display`. Local-GUI only and outside the
+  /// daemon path (the window must live on the user's session).
+  func showDisplay(for virtualMachine: VirtualMachine) {
+    guard virtualMachine.mode == .fast else {
+      alertMessage = "The embedded display window is available for Fast Mode VMs only."
+      return
+    }
+    do {
+      try EmbeddedDisplayLauncher.launch(vmName: virtualMachine.name)
+      alertMessage =
+        "Opening an embedded display window for \(virtualMachine.name) (close the window to stop the VM)."
+    } catch {
+      alertMessage = error.localizedDescription
+    }
+  }
+
   func openConsole(for virtualMachine: VirtualMachine) async -> Bool {
     let capability = ConsoleCapability.evaluate(for: virtualMachine)
     guard capability.qmpDiagnosticsAvailable else {
