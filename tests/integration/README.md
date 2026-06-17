@@ -1298,8 +1298,9 @@ must not satisfy or overwrite the pending command.
 
 Current executable coverage: `guest-tools-command-tracker-cli-smoke.sh` covers
 the fake QEMU/socket path, duplicate pending request rejection,
-`UnexpectedCommandResult` logging for a stray result, and honest recording of
-the original matching clipboard command result.
+`UnexpectedCommandResult` logging for a stray result, negative checks that the
+stray request ID does not appear in status or runtime metadata, and honest
+recording of the original matching clipboard command result.
 
 Guest-tools agent-update passive metadata coverage should exercise:
 

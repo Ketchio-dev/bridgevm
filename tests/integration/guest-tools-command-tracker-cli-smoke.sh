@@ -17,6 +17,7 @@ SEND_STRAY="$STORE/send-stray"
 SEND_EXPECTED="$STORE/send-expected"
 STRAY_SENT="$STORE/stray-sent"
 EXPECTED_SENT="$STORE/expected-sent"
+RUNTIME_METADATA="$STORE/vms/$VM_NAME.vmbridge/metadata/guest-tools-runtime.json"
 DAEMON_PID=""
 SERVER_PID=""
 PRESERVE_STORE=1
@@ -65,6 +66,16 @@ assert_contains() {
   case "$haystack" in
     *"$needle"*) ;;
     *) fail "$label missing '$needle'; got: $haystack" ;;
+  esac
+}
+
+assert_not_contains() {
+  local haystack="$1"
+  local needle="$2"
+  local label="$3"
+  case "$haystack" in
+    *"$needle"*) fail "$label unexpectedly contained '$needle'; got: $haystack" ;;
+    *) ;;
   esac
 }
 
@@ -333,6 +344,11 @@ done
 [[ -f "$STRAY_SENT" ]] || fail "guest-tools server did not send stray result"
 stray_status="$(bridgevm_socket guest-tools status "$VM_NAME")"
 assert_contains "$stray_status" "Runtime connected: true" "status after stray result"
+assert_not_contains "$stray_status" "stray-1" "status after stray result"
+[[ -f "$RUNTIME_METADATA" ]] || fail "runtime metadata missing after stray result"
+if grep -q 'stray-1' "$RUNTIME_METADATA"; then
+  fail "stray CommandResult was recorded in guest-tools runtime metadata"
+fi
 for _ in {1..100}; do
   if grep -q 'UnexpectedCommandResult { request_id: "stray-1" }' "$DAEMON_LOG"; then
     break

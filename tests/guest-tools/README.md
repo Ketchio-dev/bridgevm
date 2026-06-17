@@ -28,7 +28,7 @@ Current alpha coverage:
 - Runner metadata discovery of guest-tools transport, channel, socket path, and token metadata path
 - `bridgevmd` supervisor bootstrap of an authenticated `GuestHello` over the planned guest-tools socket
 - Bounded `bridgevmd` drain of heartbeat, guest IP, and guest metrics frames into guest-tools runtime metadata
-- Daemon-owned host-to-guest command dispatch over the authenticated guest-tools stream, including pending `request_id` tracking through `CommandResult`
+- Daemon-owned host-to-guest command dispatch over the authenticated guest-tools stream, including pending `request_id` tracking through matching `CommandResult` frames and ignoring unmatched results without overwriting latest-result metadata
 - CLI wrappers for common daemon-owned host commands: clipboard sync, display resize, time sync, and shared-folder mount/unmount
 - `bridgevm-tools-linux` guest-side scaffold transport selection, handshake, capability override parsing, configurable initial status frames, token file parsing and empty-token rejection, command-result replies, simulated freeze/thaw boundary state tracking, real fsfreeze opt-in parsing/backend dispatch scaffolding, long-running command loops, and fake Unix socket command round trips
 - Application-consistent snapshot preflight use of `fs-freeze`/`fs-thaw` capability names, with default freeze/thaw treated as a simulated scaffold/boundary and real fsfreeze covered through fake backend tests until the snapshot path dispatches it end to end

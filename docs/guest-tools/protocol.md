@@ -142,7 +142,9 @@ result in guest-tools runtime metadata as `last_command_result`, so
 `guest-tools status` and the macOS client can show the latest request ID,
 capability, success flag, optional error text, and completion timestamp.
 Status surfaces should treat that value as the latest diagnostic breadcrumb for
-safe alpha command dispatch, not as a durable command log.
+safe alpha command dispatch, not as a durable command log. A `CommandResult`
+whose request ID is not currently pending is logged as unexpected and ignored;
+it must not satisfy a pending command or overwrite `last_command_result`.
 
 The first guest-side executable scaffold is
 `runners/bridgevm-tools-linux`. It can connect to the development Unix socket
