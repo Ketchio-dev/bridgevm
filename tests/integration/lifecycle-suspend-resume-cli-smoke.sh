@@ -7,6 +7,7 @@ cd "$ROOT"
 STORE="$(mktemp -d "/tmp/bridgevm-suspend-resume.XXXXXX")"
 FAKE_BIN="$STORE/bin"
 VM_NAME="suspend-resume-linux"
+COMPAT_VM_NAME="suspend-resume-compat"
 BACKEND_LOG="$STORE/backend-launch.log"
 DAEMON_PID=""
 
@@ -74,10 +75,19 @@ stop_daemon() {
 trap stop_daemon EXIT
 
 bridgevm create "$VM_NAME" --os ubuntu --arch arm64 --mode fast >/dev/null
+bridgevm create "$COMPAT_VM_NAME" --os ubuntu --arch x86_64 --mode compatibility >/dev/null
 
 stopped_suspend="$(bridgevm suspend "$VM_NAME" 2>&1 || true)"
 assert_contains "$stopped_suspend" "set BRIDGEVM_APPLE_VZ_RUNNER to a signed AppleVzRunner" \
   "local stopped suspend rejection"
+
+compat_suspend_no_qmp="$(bridgevm suspend "$COMPAT_VM_NAME" 2>&1 || true)"
+assert_contains "$compat_suspend_no_qmp" "QMP socket unavailable" \
+  "local compat suspend no QMP"
+
+compat_resume_no_state="$(bridgevm resume "$COMPAT_VM_NAME" 2>&1 || true)"
+assert_contains "$compat_resume_no_state" "no saved Compatibility Mode state to resume from" \
+  "local compat resume no saved state"
 
 bridgevm start "$VM_NAME" >/dev/null
 
@@ -114,6 +124,14 @@ done
 socket_stopped_suspend="$(bridgevm_socket suspend "$VM_NAME" 2>&1 || true)"
 assert_contains "$socket_stopped_suspend" "set BRIDGEVM_APPLE_VZ_RUNNER to a signed AppleVzRunner" \
   "socket stopped suspend rejection"
+
+socket_compat_suspend_no_qmp="$(bridgevm_socket suspend "$COMPAT_VM_NAME" 2>&1 || true)"
+assert_contains "$socket_compat_suspend_no_qmp" "QMP socket unavailable" \
+  "socket compat suspend no QMP"
+
+socket_compat_resume_no_state="$(bridgevm_socket resume "$COMPAT_VM_NAME" 2>&1 || true)"
+assert_contains "$socket_compat_resume_no_state" "no saved Compatibility Mode state to resume from" \
+  "socket compat resume no saved state"
 
 socket_start="$(bridgevm_socket start "$VM_NAME")"
 assert_contains "$socket_start" "Metadata state recorded for $VM_NAME (running)" "socket start"
