@@ -12298,6 +12298,32 @@ mod tests {
         let _ = std::fs::remove_dir_all(store.root());
     }
 
+    #[test]
+    fn compatibility_resume_load_failure_reports_preserved_snapshot() {
+        let bundle = unique_test_root("compat-resume-load-failure");
+        let log_path = bundle.join("logs").join("qemu.log");
+        std::fs::create_dir_all(log_path.parent().unwrap()).unwrap();
+        std::fs::write(&log_path, "qemu loadvm failed\n").unwrap();
+
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "exit 42"])
+            .spawn()
+            .expect("spawn exiting fake qemu");
+        let error = verify_compatibility_resume_loaded(&mut child, &bundle, &log_path).unwrap_err();
+
+        assert!(
+            error.contains("Compatibility Mode resume failed: QEMU exited"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            error.contains("the suspend snapshot is preserved"),
+            "unexpected error: {error}"
+        );
+        assert!(error.contains(&log_path.display().to_string()));
+
+        let _ = std::fs::remove_dir_all(bundle);
+    }
+
     fn valid_guest_hello(token: &str, capabilities: &[&str]) -> AgentMessage {
         AgentMessage::GuestHello {
             version: PROTOCOL_VERSION,
