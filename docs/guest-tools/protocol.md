@@ -102,7 +102,12 @@ a developer/debug escape hatch, alongside
 and macOS dashboard can send the current or caller-specified epoch millis when
 the authenticated session advertises `time-sync`, then surface the matching
 request ID and latest `CommandResult`. That status is command plumbing
-readiness, not proof that a production guest clock service changed system time.
+readiness, not by itself proof that a guest clock changed. The Linux guest
+tools agent does include a real `settimeofday(2)` backend when `time-sync` is
+advertised, unless it is started with `--no-real-time-sync`; the opt-in live
+effects smoke verifies the in-guest clock jump. Metadata-safe dashboard/API
+status should therefore distinguish command dispatch from that separate live
+effect evidence.
 
 The host CLI also exposes high-level wrappers for the alpha drag-and-drop,
 application, and window protocol commands:

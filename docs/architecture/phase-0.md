@@ -605,18 +605,19 @@ opening a direct QMP connection. That cache remains metadata-safe diagnostic
 state only: it does not prove live console output, guest boot progress, or
 current guest responsiveness.
 
-The macOS Console action now uses the daemon's `qmp_status` boundary to inspect
-Compatibility Mode QMP socket readiness and present a truthful backend-control
-diagnostic. The dashboard Logs panel uses the same `view_logs` API exposed by
-`bridgevm logs qemu <vm>` and `bridgevm logs serial <vm>` to read bounded tails
-from `logs/qemu.log` and `logs/serial.log`, including path, byte-count, and
-truncation metadata. These are client/API boundary checks only: they do not
-create an embedded graphical console or prove guest display output. For
-Compatibility Mode display, explicit VNC renderer planning uses QEMU
-`-display vnc=:0` as the deterministic dry-run template, and daemon-owned spawn
-remaps that template to the lowest free `vnc=:N` display before launch for the
-external-viewer handoff. Embedding that viewer in the macOS app remains a
-future implementation target.
+The macOS Console action attempts the Compatibility Mode external VNC viewer
+handoff from the launch plan when a viewer endpoint is available, and uses the
+daemon's `qmp_status` boundary to present truthful backend-control diagnostics
+when that endpoint is unavailable or the handoff fails. The dashboard Logs
+panel uses the same `view_logs` API exposed by `bridgevm logs qemu <vm>` and
+`bridgevm logs serial <vm>` to read bounded tails from `logs/qemu.log` and
+`logs/serial.log`, including path, byte-count, and truncation metadata. These
+are client/API boundary checks only: they do not create an embedded graphical
+console or prove guest display output. For Compatibility Mode display, explicit
+VNC renderer planning uses QEMU `-display vnc=:0` as the deterministic dry-run
+template, and daemon-owned spawn remaps that template to the lowest free
+`vnc=:N` display before launch for the external-viewer handoff. Embedding that
+viewer in the macOS app remains a future implementation target.
 
 Compatibility Mode launch readiness now uses the same structured
 `LaunchReadinessMetadata` shape as Fast Mode for metadata-safe dry runs and
