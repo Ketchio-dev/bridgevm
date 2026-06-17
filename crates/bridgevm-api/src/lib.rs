@@ -6528,6 +6528,9 @@ fn lifecycle_plan(
             )
         }
         VmMode::Fast => {
+            if let Err(error) = require_apple_vz_runner() {
+                blockers.push(format!("apple-vz-runner-unavailable:{error}"));
+            }
             notes.push(
                 "Fast Mode suspend/resume is wired through the runner via Apple VZ \
                  saveMachineState/restoreMachineState (not QMP); a real suspend/resume \
@@ -10529,6 +10532,84 @@ mod tests {
     }
 
     #[test]
+    fn handler_fast_lifecycle_plan_requires_existing_runner_for_valid_transition() {
+        let _guard = APPLE_VZ_RUNNER_ENV_LOCK.lock().unwrap();
+        let _env = EnvVarGuard::capture("BRIDGEVM_APPLE_VZ_RUNNER");
+        std::env::remove_var("BRIDGEVM_APPLE_VZ_RUNNER");
+
+        let mut root = std::env::temp_dir();
+        root.push(format!(
+            "bridgevm-api-fast-lifecycle-runner-plan-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = VmStore::new(root);
+        let manifest = VmManifest::new(
+            "fast-linux",
+            VmMode::Fast,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "arm64".to_string(),
+            },
+            "80GiB",
+        );
+        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+            .into_result()
+            .unwrap();
+        handle_request(
+            &store,
+            BridgeVmRequest::TransitionVm {
+                name: "fast-linux".to_string(),
+                state: VmRuntimeState::Running,
+            },
+        )
+        .into_result()
+        .unwrap();
+
+        let response = handle_request(
+            &store,
+            BridgeVmRequest::LifecyclePlan {
+                name: "fast-linux".to_string(),
+                action: LifecycleAction::Suspend,
+            },
+        )
+        .into_result()
+        .unwrap();
+        let BridgeVmResponse::LifecyclePlan { plan } = response else {
+            panic!("expected lifecycle plan");
+        };
+        assert_eq!(plan.backend, "apple-vz");
+        assert!(!plan.executable);
+        assert!(plan.blockers.iter().any(|blocker| {
+            blocker.starts_with("apple-vz-runner-unavailable:set BRIDGEVM_APPLE_VZ_RUNNER")
+        }));
+
+        let runner = store.root().join("AppleVzRunner");
+        fs::write(&runner, b"fake runner").unwrap();
+        std::env::set_var("BRIDGEVM_APPLE_VZ_RUNNER", &runner);
+
+        let response = handle_request(
+            &store,
+            BridgeVmRequest::LifecyclePlan {
+                name: "fast-linux".to_string(),
+                action: LifecycleAction::Suspend,
+            },
+        )
+        .into_result()
+        .unwrap();
+        let BridgeVmResponse::LifecyclePlan { plan } = response else {
+            panic!("expected lifecycle plan");
+        };
+        assert!(plan.executable);
+        assert!(plan.blockers.is_empty());
+
+        let _ = std::fs::remove_dir_all(store.root());
+    }
+
+    #[test]
     fn handler_fast_spawn_error_updates_runner_metadata_with_blocker() {
         let mut root = std::env::temp_dir();
         root.push(format!(
@@ -11214,6 +11295,29 @@ mod tests {
     // env var so parallel test execution does not race on the gate.
     static APPLE_VZ_RUNNER_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn capture(key: &'static str) -> Self {
+            Self {
+                key,
+                previous: std::env::var_os(key),
+            }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
     fn fast_test_store(test: &str) -> (VmStore, String) {
         let mut root = std::env::temp_dir();
         root.push(format!(
@@ -11298,7 +11402,7 @@ mod tests {
     #[test]
     fn fast_spawn_without_runner_env_returns_not_implemented_error() {
         let _guard = APPLE_VZ_RUNNER_ENV_LOCK.lock().unwrap();
-        let previous = std::env::var_os("BRIDGEVM_APPLE_VZ_RUNNER");
+        let _env = EnvVarGuard::capture("BRIDGEVM_APPLE_VZ_RUNNER");
         std::env::remove_var("BRIDGEVM_APPLE_VZ_RUNNER");
 
         let (store, name) = fast_test_store("fast-spawn-no-env");
@@ -11324,16 +11428,13 @@ mod tests {
         assert!(metadata.pid.is_none());
         assert_eq!(metadata.engine, "lightvm");
 
-        if let Some(value) = previous {
-            std::env::set_var("BRIDGEVM_APPLE_VZ_RUNNER", value);
-        }
         let _ = std::fs::remove_dir_all(store.root());
     }
 
     #[test]
     fn apple_vz_runner_configured_reflects_env() {
         let _guard = APPLE_VZ_RUNNER_ENV_LOCK.lock().unwrap();
-        let previous = std::env::var_os("BRIDGEVM_APPLE_VZ_RUNNER");
+        let _env = EnvVarGuard::capture("BRIDGEVM_APPLE_VZ_RUNNER");
 
         std::env::remove_var("BRIDGEVM_APPLE_VZ_RUNNER");
         assert!(!apple_vz_runner_configured());
@@ -11344,11 +11445,6 @@ mod tests {
         // An empty value does not count as configured.
         std::env::set_var("BRIDGEVM_APPLE_VZ_RUNNER", "");
         assert!(!apple_vz_runner_configured());
-
-        match previous {
-            Some(value) => std::env::set_var("BRIDGEVM_APPLE_VZ_RUNNER", value),
-            None => std::env::remove_var("BRIDGEVM_APPLE_VZ_RUNNER"),
-        }
     }
 
     fn unique_test_root(label: &str) -> PathBuf {

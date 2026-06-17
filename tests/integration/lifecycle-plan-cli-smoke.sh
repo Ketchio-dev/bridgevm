@@ -22,6 +22,8 @@ bridgevm_socket() {
   cargo run --quiet -p bridgevm-cli -- --socket "$SOCKET" "$@"
 }
 
+unset BRIDGEVM_APPLE_VZ_RUNNER
+
 fail() {
   echo "FAIL: $*" >&2
   echo "Store preserved at $STORE" >&2
@@ -77,15 +79,28 @@ assert_contains "$local_ready" "Blockers: none" "local ready socket"
 bridgevm create "$VM_FAST" --os ubuntu --arch arm64 --mode fast >/dev/null
 fast_blocked="$(bridgevm lifecycle-plan "$VM_FAST" --action suspend)"
 assert_contains "$fast_blocked" "Backend: apple-vz" "fast blocked"
+assert_contains "$fast_blocked" "Metadata only: true" "fast blocked"
 assert_contains "$fast_blocked" "Executable: false" "fast blocked"
 assert_contains "$fast_blocked" "Blocker: invalid-lifecycle-transition:" "fast blocked"
+assert_contains "$fast_blocked" "Blocker: apple-vz-runner-unavailable:" "fast blocked"
 assert_contains "$fast_blocked" "Fast Mode suspend/resume is wired through the runner via Apple VZ" "fast blocked"
 
+bridgevm start "$VM_FAST" >/dev/null
+fast_missing_runner="$(bridgevm lifecycle-plan "$VM_FAST" --action suspend)"
+assert_contains "$fast_missing_runner" "Current state: running" "fast missing runner"
+assert_contains "$fast_missing_runner" "Metadata only: true" "fast missing runner"
+assert_contains "$fast_missing_runner" "Executable: false" "fast missing runner"
+assert_contains "$fast_missing_runner" "Blocker: apple-vz-runner-unavailable:" "fast missing runner"
+
+fast_state="$STORE/vms/$VM_FAST.vmbridge/metadata/state.json"
+printf '{"state":"suspended","updated_at_unix":1}\n' >"$fast_state"
 fast_resume_blocked="$(bridgevm lifecycle-plan "$VM_FAST" --action resume)"
 assert_contains "$fast_resume_blocked" "Action: resume" "fast resume blocked"
+assert_contains "$fast_resume_blocked" "Current state: suspended" "fast resume blocked"
 assert_contains "$fast_resume_blocked" "Target state: running" "fast resume blocked"
+assert_contains "$fast_resume_blocked" "Metadata only: true" "fast resume blocked"
 assert_contains "$fast_resume_blocked" "Executable: false" "fast resume blocked"
-assert_contains "$fast_resume_blocked" "Blocker: invalid-lifecycle-transition:stopped->running" "fast resume blocked"
+assert_contains "$fast_resume_blocked" "Blocker: apple-vz-runner-unavailable:" "fast resume blocked"
 
 SOCKET="$STORE/run/bridgevmd.sock"
 DAEMON_LOG="$STORE/bridgevmd.log"

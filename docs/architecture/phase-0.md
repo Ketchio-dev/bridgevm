@@ -335,10 +335,11 @@ readiness boundary for controls that look like backend actions. For
 Compatibility Mode it reports the current state, target state, planned QMP
 command (`stop` for suspend and `cont` for resume), QMP socket path
 availability, and blockers without opening the socket or performing a QMP
-handshake. For Fast Mode it reports Apple VZ suspend/resume backend control as
-not wired. The macOS dashboard lifecycle controls should present this plan and
-its blockers honestly, and must not imply real suspend/resume execution until a
-future backend-specific command path exists.
+handshake. For Fast Mode it reports the Apple VZ runner boundary and returns a
+concrete `apple-vz-runner-unavailable` blocker until `BRIDGEVM_APPLE_VZ_RUNNER`
+points at the signed Swift helper. The macOS dashboard lifecycle controls
+should present this plan and its blockers honestly, and must not imply real
+suspend/resume execution unless the backend-specific runner path is available.
 
 ## Guest tools policy boundary
 

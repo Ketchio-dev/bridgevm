@@ -1014,24 +1014,28 @@ Current executable coverage: `lifecycle-restart-cli-smoke.sh` covers local
 running and suspended restarts, socket-backed running and suspended restarts,
 status reporting after each restart path, and backend launch guards.
 
-Lifecycle suspend/resume metadata integration coverage should exercise:
+Lifecycle suspend/resume integration coverage should exercise:
 
-- `bridgevm suspend <vm>` after a running VM metadata state
-- `bridgevm resume <vm>` after a suspended VM metadata state
+- `bridgevm suspend <vm>` after a running VM state with the backend helper absent
+- `bridgevm resume <vm>` after a suspended VM state with required saved-state
+  metadata absent
 - Rejection of `bridgevm suspend <vm>` after a stopped VM metadata state
 - `bridgevm stop <vm>` after a suspended VM metadata state
 - The same suspend and resume operations through
   `bridgevm --socket <sock> suspend <vm>` and
   `bridgevm --socket <sock> resume <vm>`
 
-The expected contract is Phase-0 lifecycle metadata control: suspend records a
-suspended runtime state without starting a backend, resume records running state
-metadata, stopped VMs cannot be suspended, and suspended VMs can still be
-stopped through the safe metadata stop path.
+The expected contract is metadata-safe backend lifecycle control: failed Fast
+Mode suspend with no Apple VZ runner must report `apple-vz-runner-unavailable`
+without creating fake saved-state metadata, failed Fast Mode resume with no
+saved-state metadata must not record restore metadata, stopped VMs cannot be
+suspended, and suspended VMs can still be stopped through the safe metadata stop
+path.
 
 Current executable coverage: `lifecycle-suspend-resume-cli-smoke.sh` covers
-local and socket-backed suspend/resume metadata transitions, stopped-to-suspend
-rejection, suspended-to-stopped lifecycle cleanup, and backend launch guards.
+local and socket-backed missing-runner/missing-saved-state suspend/resume
+guards, stopped-to-suspend rejection, suspended-to-stopped lifecycle cleanup,
+and backend launch guards.
 
 Lifecycle plan integration coverage should exercise:
 
@@ -1039,7 +1043,8 @@ Lifecycle plan integration coverage should exercise:
 - `bridgevm lifecycle-plan <vm> --action resume`
 - `bridgevm --socket <sock> lifecycle-plan <vm> --action suspend|resume`
 - Compatibility Mode mapping to QMP `stop`/`cont` without connecting to QMP
-- Fast Mode reporting the Apple VZ suspend/resume backend as not wired yet
+- Fast Mode reporting the Apple VZ runner boundary and
+  `apple-vz-runner-unavailable` when the helper is absent
 
 The expected contract is metadata-only planning for UI/API command readiness.
 The plan reports current and target lifecycle states, the backend boundary, the
@@ -1439,9 +1444,11 @@ starting Apple VZ:
   tests should therefore exercise validate-only, config-validation,
   unsupported-input, or missing-opt-in paths when they intend to prove the
   process boundary without starting Apple VZ.
-- Fast Mode `run --spawn` still fails before Apple VZ process launch, but its
-  error summarizes the current readiness blockers, including the spawn-only
-  `fast-mode-spawn-unimplemented` blocker and any missing disk/media blockers.
+- Fast Mode `run --spawn` keeps the legacy dry-run
+  `fast-mode-spawn-unimplemented` blocker when no signed Swift helper is
+  configured. With the helper configured and explicit opt-in present, it can
+  cross into the limited Apple VZ helper boundary; blocked launches still
+  summarize current missing disk/media or opt-in blockers.
 - After local media import or a test-created placeholder at the resolved path,
   the missing-boot-media blocker clears while launch remains a readiness result,
   not a spawned Apple VZ process.
