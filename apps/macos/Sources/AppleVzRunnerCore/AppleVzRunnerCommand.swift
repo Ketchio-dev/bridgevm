@@ -133,7 +133,7 @@ public enum AppleVzRunnerCommand {
     }
   }
 
-  fileprivate static let usage = "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display]"
+  fileprivate static let usage = "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display] [--graphics]"
 
   private static func isHelpRequested(_ arguments: [String]) -> Bool {
     arguments.contains { argument in
@@ -203,6 +203,7 @@ public enum AppleVzRunnerCommand {
     var saveStatePath: String?
     var restoreStatePath: String?
     var displayWindow = false
+    var graphicsHeadless = false
     var index = 0
 
     while index < arguments.count {
@@ -270,6 +271,9 @@ public enum AppleVzRunnerCommand {
       case "--display":
         displayWindow = true
         index += 1
+      case "--graphics":
+        graphicsHeadless = true
+        index += 1
       case "--help", "-h":
         throw AppleVzRunnerCommandError.help
       default:
@@ -290,7 +294,8 @@ public enum AppleVzRunnerCommand {
         ),
         saveStatePath: saveStatePath,
         restoreStatePath: restoreStatePath,
-        displayWindow: displayWindow
+        displayWindow: displayWindow,
+        graphicsHeadlessVerification: graphicsHeadless
       )
     )
   }

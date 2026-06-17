@@ -16,7 +16,7 @@ final class AppleVzRunnerCommandTests: XCTestCase {
     XCTAssertEqual(
       fake.outputLines,
       [
-        "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display]"
+        "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display] [--graphics]"
       ]
     )
     XCTAssertEqual(fake.readStandardInputCallCount, 0)
@@ -205,6 +205,27 @@ final class AppleVzRunnerCommandTests: XCTestCase {
     XCTAssertEqual(exitCode, 0)
     XCTAssertEqual(fake.launchVirtualMachineCallCount, 1)
     XCTAssertEqual(fake.launchOptions.first, AppleVzLaunchOptions(displayWindow: true))
+    XCTAssertTrue(fake.errorLines.isEmpty)
+  }
+
+  func testGraphicsFlagThreadsHeadlessGraphicsVerificationToLauncher() {
+    let launchSpecPath = "/tmp/fast.vmbridge/metadata/apple-vz-launch.json"
+    let fake = FakeRunnerDependencies(
+      standardInput: readyHandoffJSON(launchSpecPath: launchSpecPath),
+      files: [launchSpecPath: readyLinuxKernelLaunchSpecJSON]
+    )
+
+    let exitCode = AppleVzRunnerCommand.run(
+      arguments: ["--allow-real-vz-start", "--graphics"],
+      dependencies: fake.dependencies()
+    )
+
+    XCTAssertEqual(exitCode, 0)
+    XCTAssertEqual(fake.launchVirtualMachineCallCount, 1)
+    XCTAssertEqual(
+      fake.launchOptions.first,
+      AppleVzLaunchOptions(graphicsHeadlessVerification: true)
+    )
     XCTAssertTrue(fake.errorLines.isEmpty)
   }
 

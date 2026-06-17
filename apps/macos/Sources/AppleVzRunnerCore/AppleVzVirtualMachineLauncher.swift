@@ -26,19 +26,27 @@ public struct AppleVzLaunchOptions: Equatable {
   /// `VZVirtualMachineView` window (the embedded display). Mutually exclusive
   /// with save/restore (a VZ VM with a graphics device cannot be saved).
   public var displayWindow: Bool
+  /// When true, boot the VM with the graphics-device configuration but WITHOUT a
+  /// window, on the headless launcher. This is a verification path: it proves a
+  /// real guest boots with the Virtio GPU attached (observable on the serial
+  /// console) on a host with no window server, which the windowed `displayWindow`
+  /// path cannot do.
+  public var graphicsHeadlessVerification: Bool
 
   public init(
     stopAfterSeconds: UInt64? = nil,
     forceStopGraceSeconds: UInt64? = nil,
     saveStatePath: String? = nil,
     restoreStatePath: String? = nil,
-    displayWindow: Bool = false
+    displayWindow: Bool = false,
+    graphicsHeadlessVerification: Bool = false
   ) {
     self.stopAfterSeconds = stopAfterSeconds
     self.forceStopGraceSeconds = forceStopGraceSeconds
     self.saveStatePath = saveStatePath
     self.restoreStatePath = restoreStatePath
     self.displayWindow = displayWindow
+    self.graphicsHeadlessVerification = graphicsHeadlessVerification
   }
 }
 
@@ -325,7 +333,18 @@ public extension AppleVzVirtualMachineLauncher {
     spec: AppleVzLaunchSpec,
     options: AppleVzLaunchOptions = AppleVzLaunchOptions()
   ) throws {
-    let configuration = try AppleVzConfigurationBuilder.buildLinuxKernelConfiguration(spec: spec)
+    let configuration: VZVirtualMachineConfiguration
+    if options.graphicsHeadlessVerification {
+      // Verification path: boot the graphics-device config headless (no window)
+      // to prove a real guest comes up with the Virtio GPU attached.
+      guard #available(macOS 14.0, *) else {
+        throw AppleVzRunnerCommandError.displayRequiresMacOS14
+      }
+      configuration = try AppleVzConfigurationBuilder.buildLinuxKernelConfigurationWithDisplay(
+        spec: spec)
+    } else {
+      configuration = try AppleVzConfigurationBuilder.buildLinuxKernelConfiguration(spec: spec)
+    }
     try configuration.validate()
 
     print("AppleVzRunner starting VM: \(spec.vmName)")
