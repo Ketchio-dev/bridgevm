@@ -80,7 +80,9 @@ The VM lifecycle (create/run/suspend/resume/stop) + networking + boot evidence a
 - **Bridged networking** — `com.apple.vm.networking` entitlement (NAT + port-forward already work without it).
 - **Full Windows install** — Windows license/ISO + TPM 2.0 (swtpm) + Secure Boot (reaching Setup is already proven).
 
-**Smaller follow-ups (implementable now):** resource manager (§14 auto CPU/RAM/battery), real displayd frame sampling, in-guest perf benchmarks (needs the guest agent), readiness graphical boot-progress recording (release-gate semantics — needs sign-off), Compat live resume (needs a non-HVF path).
+**Resource manager (§14) — battery-adaptive Fast Mode resources DONE:** Fast Mode cold starts (`cold_start_fast_backend`, `display_fast_backend`) now expand `auto` memory/cpu using the host power state at launch (`bridgevm-resource-manager::read_on_battery` parses `pmset -g batt`, honoring `BRIDGEVM_FORCE_ON_BATTERY` for tests/demos). Policy: on battery, `auto` Automatic/Office VMs step down to conserve power (4096/2 → 2048/1); Performance/Developer keep their headroom; explicit per-VM values are always respected. Unit-tested (`parses_pmset_battery_state`, `launch_decision_steps_down_auto_profiles_on_battery`, `power_aware_resolution_only_affects_auto_values`). Not applied to resume (must match saved state) or Compat (heavyweight mode). Remaining §14 work: runtime re-apply while running + foreground/background signal.
+
+**Smaller follow-ups (implementable now):** real displayd frame sampling, in-guest perf benchmarks (needs the guest agent), readiness graphical boot-progress recording (release-gate semantics — needs sign-off), Compat live resume (needs a non-HVF path).
 
 ## Where to look
 - `PLAN.md` — full plan, roadmap, §20 "Current scaffold progress" running log.

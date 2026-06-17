@@ -70,6 +70,59 @@ pub fn decide_from_manifest_profile(profile: &str) -> ResourceDecision {
     decide(ResourceProfile::parse(profile), true, false)
 }
 
+/// Resource decision for a launch that accounts for the host power state.
+///
+/// Policy: on battery, profiles that mean "let the app decide" (Automatic,
+/// Office, BatterySaver) step down to conserve power; profiles where the user
+/// asked for headroom (Performance, Developer) keep their level. This only ever
+/// affects `auto` memory/cpu — explicit per-VM values are preserved by
+/// [`resolve_memory`]/[`resolve_vcpu`] regardless of this decision.
+pub fn decide_for_launch(profile: ResourceProfile, on_battery: bool) -> ResourceDecision {
+    if !on_battery {
+        return decide(profile, true, false);
+    }
+    match profile {
+        ResourceProfile::Performance | ResourceProfile::Developer => decide(profile, true, true),
+        _ => decide(ResourceProfile::BatterySaver, true, true),
+    }
+}
+
+/// Power-aware variant of [`decide_from_manifest_profile`].
+pub fn decide_from_manifest_profile_with_power(
+    profile: &str,
+    on_battery: bool,
+) -> ResourceDecision {
+    decide_for_launch(ResourceProfile::parse(profile), on_battery)
+}
+
+/// Parse `pmset -g batt` output to decide whether the host is on battery.
+/// `pmset` reports the drawing source on the first line, e.g.
+/// `Now drawing from 'Battery Power'` vs `'AC Power'`.
+pub fn parse_pmset_battery_state(output: &str) -> bool {
+    output
+        .lines()
+        .find(|line| line.contains("Now drawing from"))
+        .map(|line| line.to_ascii_lowercase().contains("battery"))
+        .unwrap_or(false)
+}
+
+/// Read the host power state. Honors `BRIDGEVM_FORCE_ON_BATTERY` (`1`/`0`) for
+/// tests and demos; otherwise shells out to `pmset -g batt` (macOS). Defaults to
+/// "on AC" (false) when the state can't be determined, so resource decisions
+/// never become more conservative than the user configured by accident.
+pub fn read_on_battery() -> bool {
+    if let Ok(forced) = std::env::var("BRIDGEVM_FORCE_ON_BATTERY") {
+        return forced == "1" || forced.eq_ignore_ascii_case("true");
+    }
+    std::process::Command::new("pmset")
+        .args(["-g", "batt"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| parse_pmset_battery_state(&String::from_utf8_lossy(&out.stdout)))
+        .unwrap_or(false)
+}
+
 pub fn resolve_memory(manifest_memory: &str, decision: &ResourceDecision) -> String {
     if manifest_memory == "auto" {
         decision.memory.clone()
@@ -126,5 +179,41 @@ mod tests {
         assert_eq!(resolve_vcpu("auto", &decision), "4");
         assert_eq!(resolve_memory("8192", &decision), "8192");
         assert_eq!(resolve_vcpu("6", &decision), "6");
+    }
+
+    #[test]
+    fn parses_pmset_battery_state() {
+        assert!(parse_pmset_battery_state(
+            "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=...) 82%; discharging"
+        ));
+        assert!(!parse_pmset_battery_state(
+            "Now drawing from 'AC Power'\n -InternalBattery-0 (id=...) 100%; charged"
+        ));
+        // Desktop Macs print no battery line at all -> treated as on AC.
+        assert!(!parse_pmset_battery_state("No batteries available"));
+    }
+
+    #[test]
+    fn launch_decision_steps_down_auto_profiles_on_battery() {
+        // On battery, an "auto" Automatic/Office profile conserves power...
+        let auto_batt = decide_for_launch(ResourceProfile::Automatic, true);
+        assert_eq!(auto_batt.memory, "2048");
+        assert_eq!(auto_batt.vcpu, "1");
+        let office_batt = decide_for_launch(ResourceProfile::Office, true);
+        assert_eq!(office_batt.memory, "2048");
+        // ...but a Performance profile keeps its headroom even on battery.
+        let perf_batt = decide_for_launch(ResourceProfile::Performance, true);
+        assert_eq!(perf_batt.memory, "6144");
+        // On AC, nothing is throttled.
+        let auto_ac = decide_for_launch(ResourceProfile::Automatic, false);
+        assert_eq!(auto_ac.memory, "4096");
+    }
+
+    #[test]
+    fn power_aware_resolution_only_affects_auto_values() {
+        // On battery, "auto" steps down but an explicit value is untouched.
+        let decision = decide_from_manifest_profile_with_power("automatic", true);
+        assert_eq!(resolve_memory("auto", &decision), "2048");
+        assert_eq!(resolve_memory("8192", &decision), "8192");
     }
 }

@@ -5980,13 +5980,29 @@ fn spawn_fast_backend(
 /// `BRIDGEVM_APPLE_VZ_RUNNER` to be set (see [`apple_vz_runner_configured`]);
 /// callers gate on that and fall back to dry-run planning when it is unset.
 pub fn cold_start_fast_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, String> {
-    let (bundle, manifest, _) = store
+    let (bundle, mut manifest, _) = store
         .get_vm_with_active_disk(name)
         .map_err(|error| error.to_string())?;
     if manifest.mode != VmMode::Fast {
         return Err("cold-start launch is only implemented for Fast Mode VMs".to_string());
     }
+    apply_power_aware_fast_resources(&mut manifest);
     spawn_fast_backend(store, name, &bundle, &manifest, None, false)
+}
+
+/// Expand `auto` Fast Mode memory/cpu using the host power state at launch time,
+/// so a lightweight Apple VZ VM conserves resources on battery. Explicit per-VM
+/// values are preserved (see [`bridgevm_resource_manager::resolve_memory`]). Only
+/// applied to fresh launches — resume must reuse the saved-state config, and
+/// preview/dry-run paths stay deterministic.
+fn apply_power_aware_fast_resources(manifest: &mut VmManifest) {
+    use bridgevm_resource_manager::{
+        decide_from_manifest_profile_with_power, read_on_battery, resolve_memory, resolve_vcpu,
+    };
+    let decision =
+        decide_from_manifest_profile_with_power(&manifest.resources.profile, read_on_battery());
+    manifest.resources.memory = resolve_memory(&manifest.resources.memory, &decision);
+    manifest.resources.cpu = resolve_vcpu(&manifest.resources.cpu, &decision);
 }
 
 /// Boot a Fast Mode VM with an embedded graphical display: spawns the windowed
@@ -5995,12 +6011,13 @@ pub fn cold_start_fast_backend(store: &VmStore, name: &str) -> Result<RunnerMeta
 /// session. Unlike cold-start, the display path has no suspend/resume (a VZ
 /// graphics device disables save/restore).
 pub fn display_fast_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, String> {
-    let (bundle, manifest, _) = store
+    let (bundle, mut manifest, _) = store
         .get_vm_with_active_disk(name)
         .map_err(|error| error.to_string())?;
     if manifest.mode != VmMode::Fast {
         return Err("embedded display is only implemented for Fast Mode VMs".to_string());
     }
+    apply_power_aware_fast_resources(&mut manifest);
     spawn_fast_backend(store, name, &bundle, &manifest, None, true)
 }
 

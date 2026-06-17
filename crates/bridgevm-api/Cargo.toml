@@ -13,6 +13,7 @@ bridgevm-config = { path = "../bridgevm-config" }
 bridgevm-core = { path = "../bridgevm-core" }
 bridgevm-network = { path = "../bridgevm-network" }
 bridgevm-qemu = { path = "../bridgevm-qemu" }
+bridgevm-resource-manager = { path = "../bridgevm-resource-manager" }
 bridgevm-storage = { path = "../bridgevm-storage" }
 serde.workspace = true
 serde_json.workspace = true
