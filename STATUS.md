@@ -5,20 +5,22 @@ Concise "where are we" snapshot. Full plan/roadmap/scaffold log lives in
 
 _Last updated: 2026-06-16._
 
-## Adversarial review pass (this session)
-A read-only review of this session's commits surfaced 7 findings; the 4 impactful
-ones are FIXED + tested: (#1 HIGH) the held guest-tools connection lost a
-GuestHello split across reads → now peeks for a whole frame before consuming;
-(#2 HIGH) `assign_free_vnc_display` silently fell back to colliding `vnc=:0` on
-exhaustion → now errors; (#3 MED) battery-adaptive resources never ran on the
-daemon/app path → now applied there too; (#4 MED) `pmset` could hang the launch
-→ now timeout-bounded. Remaining LOW follow-ups (documented, not yet fixed):
-(#5) `shutdown_reap_children` can leave a child running only if `Child::kill()`
-itself errors (rare; kill errors are normally ESRCH=already-dead); (#6)
-AppleVzRunner accepts conflicting flag combos (`--display --restore-state`) with
-no validation (not produced by the Rust callers today); (#7) the windowed display
-launcher ignores `--stop-after-seconds` and has no SIGTERM-graceful guest stop
-(interactive path; close the window to stop).
+## Adversarial review pass (this session) — all 7 findings FIXED
+A read-only review of this session's commits surfaced 7 findings; ALL are now
+fixed + tested. (#1 HIGH) the held guest-tools connection lost a GuestHello split
+across reads → now peeks (MSG_PEEK) for a whole frame before consuming
+(`reconcile_reassembles_a_guest_hello_split_across_reads`). (#2 HIGH)
+`assign_free_vnc_display` silently fell back to colliding `vnc=:0` on exhaustion →
+now errors. (#3 MED) battery-adaptive resources never ran on the daemon/app path →
+now applied there too. (#4 MED) `pmset` could hang the launch → now timeout-
+bounded. (#5 LOW) `cleanup_owned_backend` could drop a child without reaping if
+`Child::kill()` errored → now always `wait()`s (treats already-exited as success),
+so a child can never orphan. (#6 LOW) AppleVzRunner accepted conflicting mode
+flags (`--display`/`--graphics`/`--save-state`/`--restore-state`) → `parse` now
+rejects more than one (`testConflictingModeFlagsAreRejected`). (#7 LOW) the
+windowed display launcher ignored `--stop-after-seconds` and had no graceful stop
+→ now honors the timer and installs SIGINT/SIGTERM handlers that `requestStop()`
+the guest (then force-stop after the grace period) before AppKit terminates.
 
 ## What this is
 Open-source, Parallels-class Mac virtualization app with two engines:

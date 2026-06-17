@@ -1312,10 +1312,19 @@ impl DaemonState {
         }
 
         if !exited {
-            backend
-                .child
-                .kill()
-                .with_context(|| format!("failed to terminate backend '{name}'"))?;
+            match backend.child.kill() {
+                Ok(()) => {}
+                // The child can exit between our poll and the kill; Rust returns
+                // InvalidInput for an already-exited child. Fine -- reap below.
+                Err(error) if error.kind() == ErrorKind::InvalidInput => {}
+                // A genuine kill failure: still reap what we can so the child can
+                // never orphan, then surface the error.
+                Err(error) => {
+                    let _ = backend.child.wait();
+                    return Err(error)
+                        .with_context(|| format!("failed to terminate backend '{name}'"));
+                }
+            }
             let _ = backend.child.wait();
         }
 

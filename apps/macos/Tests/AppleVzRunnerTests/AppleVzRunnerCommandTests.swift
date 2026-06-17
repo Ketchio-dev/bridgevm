@@ -253,6 +253,21 @@ final class AppleVzRunnerCommandTests: XCTestCase {
     XCTAssertTrue(fake.errorLines.isEmpty)
   }
 
+  func testConflictingModeFlagsAreRejected() {
+    let fake = FakeRunnerDependencies(standardInput: "")
+    let exitCode = AppleVzRunnerCommand.run(
+      arguments: ["--allow-real-vz-start", "--display", "--save-state", "/tmp/s.bin"],
+      dependencies: fake.dependencies()
+    )
+    XCTAssertEqual(exitCode, 1)
+    XCTAssertEqual(fake.launchVirtualMachineCallCount, 0)
+    XCTAssertEqual(fake.errorLines.count, 1)
+    XCTAssertTrue(
+      fake.errorLines[0].contains("conflicting"),
+      "expected a conflicting-flags error, got: \(fake.errorLines)"
+    )
+  }
+
   func testStopAfterSecondsAddsDefaultForceStopGrace() {
     let launchSpecPath = "/tmp/fast.vmbridge/metadata/apple-vz-launch.json"
     let fake = FakeRunnerDependencies(

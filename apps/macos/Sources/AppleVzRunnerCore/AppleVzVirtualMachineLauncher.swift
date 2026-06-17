@@ -686,7 +686,13 @@ public extension AppleVzVirtualMachineLauncher {
 
     // Main-queue VM (required by VZVirtualMachineView).
     let machine = VZVirtualMachine(configuration: configuration)
-    let controller = AppleVzDisplayWindowController(machine: machine, vmName: spec.vmName, app: app)
+    let controller = AppleVzDisplayWindowController(
+      machine: machine,
+      vmName: spec.vmName,
+      app: app,
+      stopAfterSeconds: options.stopAfterSeconds,
+      forceStopGraceSeconds: options.forceStopGraceSeconds
+    )
     displayWindowControllerRetainer = controller
     app.delegate = controller
 
@@ -702,12 +708,24 @@ final class AppleVzDisplayWindowController: NSObject, NSApplicationDelegate,
   private let machine: VZVirtualMachine
   private let vmName: String
   private unowned let app: NSApplication
+  private let stopAfterSeconds: UInt64?
+  private let forceStopGraceSeconds: UInt64?
   private var window: NSWindow?
+  private var signalSources: [DispatchSourceSignal] = []
+  private var isStopping = false
 
-  init(machine: VZVirtualMachine, vmName: String, app: NSApplication) {
+  init(
+    machine: VZVirtualMachine,
+    vmName: String,
+    app: NSApplication,
+    stopAfterSeconds: UInt64? = nil,
+    forceStopGraceSeconds: UInt64? = nil
+  ) {
     self.machine = machine
     self.vmName = vmName
     self.app = app
+    self.stopAfterSeconds = stopAfterSeconds
+    self.forceStopGraceSeconds = forceStopGraceSeconds
     super.init()
     machine.delegate = self
   }
@@ -738,6 +756,50 @@ final class AppleVzDisplayWindowController: NSObject, NSApplicationDelegate,
       } else {
         print("AppleVzRunner display VM running: \(self?.vmName ?? "")")
       }
+    }
+
+    // Honor --stop-after-seconds (automation) by gracefully stopping then.
+    if let stopAfter = stopAfterSeconds {
+      DispatchQueue.main.asyncAfter(deadline: .now() + Double(stopAfter)) { [weak self] in
+        self?.beginGracefulStop()
+      }
+    }
+    // SIGTERM/SIGINT (e.g. the daemon reaper) -> request a clean guest stop
+    // before AppKit terminates, instead of being torn down abruptly.
+    for sig in [SIGINT, SIGTERM] {
+      signal(sig, SIG_IGN)
+      let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+      source.setEventHandler { [weak self] in self?.beginGracefulStop() }
+      source.resume()
+      signalSources.append(source)
+    }
+  }
+
+  /// Ask the guest to stop, then force-stop after a grace period, then exit.
+  private func beginGracefulStop() {
+    guard !isStopping else { return }
+    isStopping = true
+    if machine.canRequestStop {
+      do {
+        try machine.requestStop()
+      } catch {
+        forceStopAndTerminate()
+        return
+      }
+      let grace = forceStopGraceSeconds ?? 10
+      DispatchQueue.main.asyncAfter(deadline: .now() + Double(grace)) { [weak self] in
+        self?.forceStopAndTerminate()
+      }
+    } else {
+      forceStopAndTerminate()
+    }
+  }
+
+  private func forceStopAndTerminate() {
+    if machine.canStop {
+      machine.stop { [weak self] _ in self?.app.terminate(nil) }
+    } else {
+      app.terminate(nil)
     }
   }
 

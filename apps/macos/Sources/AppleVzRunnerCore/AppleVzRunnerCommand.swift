@@ -301,6 +301,22 @@ public enum AppleVzRunnerCommand {
       }
     }
 
+    // The launch "mode" flags are mutually exclusive: each selects a different
+    // VM configuration + run loop (windowed display vs headless graphics check
+    // vs suspend vs resume), and silently letting one override another (e.g.
+    // `--display --restore-state` quietly restoring headless) is a footgun.
+    let activeModeFlags = [
+      ("--display", displayWindow),
+      ("--graphics", graphicsHeadless),
+      ("--save-state", saveStatePath != nil),
+      ("--restore-state", restoreStatePath != nil),
+    ]
+    .filter { $0.1 }
+    .map { $0.0 }
+    if activeModeFlags.count > 1 {
+      throw AppleVzRunnerCommandError.conflictingFlags(activeModeFlags.joined(separator: ", "))
+    }
+
     return Options(
       handoffJSON: handoffJSON,
       validateOnly: validateOnly,
@@ -442,6 +458,7 @@ public enum AppleVzRunnerCommandError: Error, LocalizedError, Equatable {
   case realStartRequiresOptIn
   case saveRestoreRequiresMacOS14
   case displayRequiresMacOS14
+  case conflictingFlags(String)
 
   public var errorDescription: String? {
     switch self {
@@ -463,6 +480,8 @@ public enum AppleVzRunnerCommandError: Error, LocalizedError, Equatable {
       return "Apple VZ suspend/resume (--save-state/--restore-state) requires macOS 14 or later"
     case .displayRequiresMacOS14:
       return "Apple VZ embedded display (--display) requires macOS 14 or later"
+    case .conflictingFlags(let flags):
+      return "conflicting mutually-exclusive launch flags: \(flags)"
     }
   }
 }
