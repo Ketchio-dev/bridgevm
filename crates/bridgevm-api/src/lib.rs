@@ -5661,6 +5661,57 @@ fn signal_process(_pid: u32, _signal: &str) -> Result<(), String> {
     Err("process termination is only supported on unix platforms".to_string())
 }
 
+/// Best-effort guard against PID reuse before we signal a recorded pid. A pid in
+/// `runner.json` persists across crashes/reboots, and the OS can recycle it for
+/// an unrelated process; signalling it blindly could SIGKILL a stranger. Compare
+/// the live process's actual start time against the launch time we recorded:
+/// only signal it if it started around then.
+#[cfg(unix)]
+fn recorded_process_is_ours(pid: u32, started_at_unix: u64) -> bool {
+    // macOS `ps` exposes `etime` (elapsed, formatted `[[dd-]hh:]mm:ss`), not the
+    // BSD/Linux `etimes` raw-seconds field.
+    let output = match Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "etime="])
+        .stderr(Stdio::null())
+        .output()
+    {
+        Ok(out) if out.status.success() => out,
+        // Can't query (process gone, or ps unavailable) -> don't signal it.
+        _ => return false,
+    };
+    let elapsed_secs = match parse_ps_etime(&String::from_utf8_lossy(&output.stdout)) {
+        Some(secs) => secs,
+        None => return false,
+    };
+    let actual_start = now_unix().saturating_sub(elapsed_secs);
+    // Allow generous slack for recording delay / clock skew, but reject a process
+    // that started well before or after our recorded launch (i.e. a recycled pid).
+    const TOLERANCE_SECS: u64 = 120;
+    actual_start >= started_at_unix.saturating_sub(TOLERANCE_SECS)
+        && actual_start <= started_at_unix.saturating_add(TOLERANCE_SECS)
+}
+
+/// Parse `ps -o etime` (`[[dd-]hh:]mm:ss`) into elapsed seconds.
+fn parse_ps_etime(value: &str) -> Option<u64> {
+    let value = value.trim();
+    let (days, hms) = match value.split_once('-') {
+        Some((days, rest)) => (days.trim().parse::<u64>().ok()?, rest),
+        None => (0u64, value),
+    };
+    let parts: Vec<&str> = hms.split(':').collect();
+    let (hours, minutes, seconds): (u64, u64, u64) = match parts.as_slice() {
+        [h, m, s] => (h.parse().ok()?, m.parse().ok()?, s.parse().ok()?),
+        [m, s] => (0, m.parse().ok()?, s.parse().ok()?),
+        _ => return None,
+    };
+    Some(days * 86_400 + hours * 3_600 + minutes * 60 + seconds)
+}
+
+#[cfg(not(unix))]
+fn recorded_process_is_ours(_pid: u32, _started_at_unix: u64) -> bool {
+    false
+}
+
 /// Terminate the recorded backend process: `SIGTERM`, wait up to
 /// `grace` for a clean exit, then `SIGKILL` if it is still alive.
 ///
@@ -5670,9 +5721,13 @@ fn signal_process(_pid: u32, _signal: &str) -> Result<(), String> {
 /// gone returns [`ProcessTerminationOutcome::AlreadyGone`].
 fn terminate_recorded_process(
     pid: u32,
+    started_at_unix: u64,
     grace: Duration,
 ) -> Result<ProcessTerminationOutcome, String> {
-    if !process_is_alive(pid) {
+    // Guard against PID reuse: only signal a live pid that actually looks like
+    // the process we launched. A recycled pid (or one whose identity we can't
+    // confirm) is treated as already gone rather than risk killing a stranger.
+    if !process_is_alive(pid) || !recorded_process_is_ours(pid, started_at_unix) {
         return Ok(ProcessTerminationOutcome::AlreadyGone);
     }
 
@@ -5721,7 +5776,7 @@ pub fn stop_backend(store: &VmStore, name: &str) -> Result<Option<RunnerMetadata
     let recorded_pid = metadata
         .as_ref()
         .filter(|metadata| !metadata.dry_run)
-        .and_then(|metadata| metadata.pid);
+        .and_then(|metadata| metadata.pid.map(|pid| (pid, metadata.started_at_unix)));
 
     // Compatibility Mode: attempt a graceful QMP quit first so QEMU can flush
     // and shut down cleanly. If the socket is gone but we have a live recorded
@@ -5754,8 +5809,12 @@ pub fn stop_backend(store: &VmStore, name: &str) -> Result<Option<RunnerMetadata
     // Release gate: actually terminate the recorded child process so no
     // AppleVzRunner / qemu orphan remains after stop. Dry-run VMs (no real pid)
     // skip this entirely and keep their prior metadata-only behavior.
-    if let Some(pid) = recorded_pid {
-        terminate_recorded_process(pid, Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS))?;
+    if let Some((pid, started_at_unix)) = recorded_pid {
+        terminate_recorded_process(
+            pid,
+            started_at_unix,
+            Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS),
+        )?;
     }
 
     store
@@ -6219,7 +6278,7 @@ fn suspend_compatibility_backend(
     let recorded_pid = metadata
         .as_ref()
         .filter(|metadata| !metadata.dry_run)
-        .and_then(|metadata| metadata.pid);
+        .and_then(|metadata| metadata.pid.map(|pid| (pid, metadata.started_at_unix)));
 
     // Pause + save full machine state into the qcow2, then quit QEMU.
     suspend_to_snapshot(
@@ -6232,8 +6291,12 @@ fn suspend_compatibility_backend(
 
     // Guarantee the QEMU process is gone (QMP quit usually does this, but the
     // recorded pid is the release-gate backstop).
-    if let Some(pid) = recorded_pid {
-        terminate_recorded_process(pid, Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS))?;
+    if let Some((pid, started_at_unix)) = recorded_pid {
+        terminate_recorded_process(
+            pid,
+            started_at_unix,
+            Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS),
+        )?;
     }
 
     // Record a suspend marker so resume knows there is internal state to load.
@@ -11284,6 +11347,16 @@ mod tests {
         pid
     }
 
+    #[test]
+    fn parse_ps_etime_handles_all_field_widths() {
+        assert_eq!(parse_ps_etime("00:05"), Some(5));
+        assert_eq!(parse_ps_etime("  01:30 "), Some(90));
+        assert_eq!(parse_ps_etime("01:02:03"), Some(3723));
+        assert_eq!(parse_ps_etime("2-03:04:05"), Some(2 * 86_400 + 3 * 3_600 + 4 * 60 + 5));
+        assert_eq!(parse_ps_etime("garbage"), None);
+        assert_eq!(parse_ps_etime(""), None);
+    }
+
     #[cfg(unix)]
     #[test]
     fn terminate_recorded_process_kills_live_child() {
@@ -11291,7 +11364,7 @@ mod tests {
         assert!(process_is_alive(pid));
 
         let outcome =
-            terminate_recorded_process(pid, Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS))
+            terminate_recorded_process(pid, now_unix(), Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS))
                 .unwrap();
         // Release gate: the process is terminated. `sleep` normally exits on
         // SIGTERM (ExitedAfterTerm), but a reparented-to-init process can be
@@ -11325,7 +11398,7 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
         let outcome =
-            terminate_recorded_process(pid, Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS))
+            terminate_recorded_process(pid, now_unix(), Duration::from_secs(STOP_TERMINATION_GRACE_SECONDS))
                 .unwrap();
         assert_eq!(outcome, ProcessTerminationOutcome::AlreadyGone);
     }
