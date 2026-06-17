@@ -1657,6 +1657,21 @@ impl VmStore {
         self.write_state_at(&bundle, to)
     }
 
+    /// Write the runtime state UNCONDITIONALLY, bypassing the transition-validity
+    /// check. For use only after an irreversible action has already made the new
+    /// state the ground truth (e.g. the backend process has been killed, or a
+    /// suspend snapshot committed): the recorded state must then reflect reality
+    /// even if the prior state was unexpected — refusing the write here is what
+    /// strands a dead backend recorded as `Running`.
+    pub fn force_transition_state(
+        &self,
+        name: &str,
+        to: VmRuntimeState,
+    ) -> Result<VmRuntimeMetadata, StorageError> {
+        let (bundle, _) = self.get_vm(name)?;
+        self.write_state_at(&bundle, to)
+    }
+
     pub fn create_snapshot(
         &self,
         vm_name: &str,

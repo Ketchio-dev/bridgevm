@@ -5817,8 +5817,11 @@ pub fn stop_backend(store: &VmStore, name: &str) -> Result<Option<RunnerMetadata
         )?;
     }
 
+    // The backend process has been terminated -- the VM is definitively Stopped.
+    // Force the transition so an unexpected prior recorded state can't leave a
+    // killed backend recorded as Running/Suspended.
     store
-        .transition_state(name, VmRuntimeState::Stopped)
+        .force_transition_state(name, VmRuntimeState::Stopped)
         .map_err(|error| error.to_string())?;
     store
         .clear_runner_metadata(name)
@@ -6198,17 +6201,11 @@ pub fn suspend_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, St
         .mark_fast_suspend_image_exists(name, &state_path)
         .map_err(|error| error.to_string())?;
 
-    // The runner ran the guest before pausing, so the VM was effectively
-    // Running; transition Stopped -> Running -> Suspended to satisfy the
-    // state-machine validation.
-    let current = store.state(name).map_err(|error| error.to_string())?.state;
-    if current == VmRuntimeState::Stopped {
-        store
-            .transition_state(name, VmRuntimeState::Running)
-            .map_err(|error| error.to_string())?;
-    }
+    // The machine state has been saved -- the VM is definitively Suspended now,
+    // whatever the prior recorded state. Force the transition so an unexpected
+    // prior state can't strand a saved-but-recorded-Running VM.
     store
-        .transition_state(name, VmRuntimeState::Suspended)
+        .force_transition_state(name, VmRuntimeState::Suspended)
         .map_err(|error| error.to_string())?;
 
     Ok(metadata)
@@ -6347,14 +6344,11 @@ fn suspend_compatibility_backend(
         .write_runner_metadata(name, &suspend_metadata)
         .map_err(|error| error.to_string())?;
 
-    let current = store.state(name).map_err(|error| error.to_string())?.state;
-    if current == VmRuntimeState::Stopped {
-        store
-            .transition_state(name, VmRuntimeState::Running)
-            .map_err(|error| error.to_string())?;
-    }
+    // The snapshot is committed and QEMU has been quit/killed -- the VM is
+    // definitively Suspended. Force the transition so an unexpected prior state
+    // can't leave a killed backend recorded as Running with an orphaned snapshot.
     store
-        .transition_state(name, VmRuntimeState::Suspended)
+        .force_transition_state(name, VmRuntimeState::Suspended)
         .map_err(|error| error.to_string())?;
 
     Ok(suspend_metadata)
@@ -6431,12 +6425,36 @@ fn resume_compatibility_backend(
     // (cpreg_vmstate_indexes). Confirm the process actually survived loading the
     // snapshot before declaring the VM running; otherwise report honestly and
     // leave the suspend marker + qcow2 snapshot intact so nothing is lost.
-    std::thread::sleep(std::time::Duration::from_millis(2000));
-    if let Ok(Some(status)) = child.try_wait() {
-        return Err(format!(
-            "Compatibility Mode resume failed: QEMU exited ({status}) while restoring the saved snapshot. Restoring a QEMU snapshot is not supported for HVF-accelerated arm64 guests on this host; the suspend snapshot is preserved. See {}.",
-            log_path.display()
-        ));
+    // Poll over a readiness window so a -loadvm abort is caught WHENEVER it exits
+    // (not only at a single fixed 2s), since we must not consume the irreplaceable
+    // suspend marker unless the VM truly came back.
+    let resume_deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(format!(
+                "Compatibility Mode resume failed: QEMU exited ({status}) while restoring the saved snapshot. Restoring a QEMU snapshot is not supported for HVF-accelerated arm64 guests on this host; the suspend snapshot is preserved. See {}.",
+                log_path.display()
+            ));
+        }
+        if Instant::now() >= resume_deadline {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    // The process survived the window. If QMP is reachable and reports a terminal
+    // status, the restore didn't actually come up -> fail and preserve the
+    // snapshot (kill the half-up QEMU so it can't orphan). If QMP isn't reachable
+    // we rely on the survived-the-window signal rather than risk a false failure.
+    if let Ok(status) = query_status(&qmp_socket_path(bundle)) {
+        if status.is_terminal() {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "Compatibility Mode resume: QEMU reported terminal status '{}' after restoring the snapshot; the suspend snapshot is preserved. See {}.",
+                status.status,
+                log_path.display()
+            ));
+        }
     }
 
     let metadata = RunnerMetadata {
