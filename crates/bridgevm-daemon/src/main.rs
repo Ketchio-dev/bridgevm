@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use bridgevm_agent_protocol::{AgentEnvelope, AgentMessage};
 use bridgevm_agentd::{
-    authorize_message, read_envelope_line, read_guest_session, write_envelope_line,
-    AgentCommandTracker, AgentSession, AgentSessionIoError,
+    accept_guest_hello, authorize_message, decode_envelope_line, read_envelope_line,
+    write_envelope_line, AgentCommandTracker, AgentSession, AgentSessionIoError,
 };
 use bridgevm_api::{
     add_fast_spawn_blocker, apply_power_aware_fast_resources, build_compatibility_resume_command,
@@ -31,8 +31,9 @@ use std::{
     collections::HashMap,
     env, fs,
     io::ErrorKind,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     os::unix::fs::FileTypeExt,
+    os::unix::io::AsRawFd,
     os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -219,7 +220,7 @@ struct SupervisedBackend {
     /// fresh on each tick races past that one-shot hello (the daemon would read
     /// a later Heartbeat first -> `ExpectedGuestHello`), so instead we connect
     /// once and keep this reader until the hello arrives or the socket dies.
-    guest_tools_pending: Option<BufReader<UnixStream>>,
+    guest_tools_pending: Option<UnixStream>,
     guest_tools_commands: AgentCommandTracker,
 }
 
@@ -1502,30 +1503,82 @@ fn reconcile_guest_tools_session(
         stream
             .set_read_timeout(Some(Duration::from_millis(25)))
             .context("failed to configure guest tools read timeout")?;
-        backend.guest_tools_pending = Some(BufReader::new(stream));
+        backend.guest_tools_pending = Some(stream);
     }
 
     let policy = guest_tools_agent_policy(store, name).map_err(anyhow::Error::msg)?;
-    let reader = backend
+    let stream = backend
         .guest_tools_pending
         .as_mut()
-        .expect("guest tools pending reader present");
-    match read_guest_session(reader, &policy) {
+        .expect("guest tools pending stream present");
+
+    // Peek (MSG_PEEK) for a COMPLETE newline-terminated frame before consuming
+    // anything. This makes the held connection resumable: the agent's one-shot
+    // GuestHello can be split across host reads (virtio-serial chunks it), and a
+    // plain `read_line` over the 25ms-timeout socket would consume a partial
+    // frame, lose those bytes when the timeout fires mid-frame, then fail to
+    // parse the tail and reset -- permanently missing the (already-flushed)
+    // hello. Only consuming once the whole line is present means a mid-frame
+    // timeout can never drop bytes.
+    let mut peek = [0u8; 16384];
+    // `UnixStream::peek` is unstable on stable Rust, so peek via libc recv(2)
+    // with MSG_PEEK. SAFETY: `fd` is a valid open socket owned by `stream` for
+    // the duration of the call, and `peek` is a valid writable buffer of
+    // `peek.len()` bytes. The socket's SO_RCVTIMEO (the read timeout set above)
+    // applies, so this returns EAGAIN rather than blocking when no data is ready.
+    let peeked = unsafe {
+        libc::recv(
+            stream.as_raw_fd(),
+            peek.as_mut_ptr() as *mut libc::c_void,
+            peek.len(),
+            libc::MSG_PEEK,
+        )
+    };
+    let peeked = if peeked > 0 {
+        peeked as usize
+    } else if peeked == 0 {
+        // EOF: the socket closed (VM/QEMU gone). Drop + reconnect next tick.
+        backend.guest_tools_pending = None;
+        return Ok(());
+    } else {
+        let error = std::io::Error::last_os_error();
+        if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) {
+            // No data yet (agent still booting). Keep the held connection.
+            return Ok(());
+        }
+        return Err(error).context("failed to peek guest tools socket");
+    };
+    let Some(newline) = peek[..peeked].iter().position(|&byte| byte == b'\n') else {
+        // Only a partial frame is buffered so far -- leave it unconsumed and
+        // wait for the rest on a later tick.
+        return Ok(());
+    };
+
+    // A whole line is present, so consuming exactly it cannot time out mid-frame.
+    let mut frame = vec![0u8; newline + 1];
+    stream
+        .read_exact(&mut frame)
+        .context("failed to read guest hello frame")?;
+    let frame = String::from_utf8_lossy(&frame);
+    let session = decode_envelope_line(&frame)
+        .map_err(AgentSessionIoError::from)
+        .and_then(|envelope| {
+            accept_guest_hello(&envelope, &policy).map_err(AgentSessionIoError::from)
+        });
+    match session {
         Ok(session) => {
             write_guest_tools_runtime(store, name, &session, GuestToolsRuntimeUpdate::Connected)?;
-            let reader = backend
+            let stream = backend
                 .guest_tools_pending
                 .take()
-                .expect("guest tools pending reader present after accept");
+                .expect("guest tools pending stream present after accept");
             backend.guest_tools = Some(session);
-            backend.guest_tools_stream = Some(reader);
+            // Bytes the agent sent right after the hello (its initial Heartbeat +
+            // status burst) are still in the kernel socket buffer; the drain
+            // reader picks them up.
+            backend.guest_tools_stream = Some(BufReader::new(stream));
         }
-        // No hello yet: the agent is still booting. KEEP the held connection so
-        // we receive the hello as its first frame whenever it arrives.
-        Err(error) if guest_tools_session_error_is_idle(&error) => {}
-        // The held connection is unusable (socket closed, or the first frame was
-        // not a hello). Drop it so the next tick reconnects host-first and tries
-        // to catch a fresh hello.
+        // The first frame was not a valid GuestHello -> reset and reconnect.
         Err(error) => {
             eprintln!("bridgevmd resetting guest-tools session for '{name}': {error:?}");
             backend.guest_tools_pending = None;
@@ -1901,10 +1954,6 @@ fn write_guest_tools_runtime(
     store
         .write_guest_tools_runtime_metadata(name, &metadata)
         .context("failed to write guest tools runtime metadata")
-}
-
-fn guest_tools_session_error_is_idle(error: &AgentSessionIoError) -> bool {
-    matches!(error, AgentSessionIoError::Codec(error) if error.is_idle_io())
 }
 
 fn now_unix() -> u64 {
@@ -3520,6 +3569,101 @@ mod tests {
             .unwrap()
             .expect("runtime metadata");
         assert!(runtime.connected);
+
+        state.cleanup_owned_backend("legacy", false).unwrap();
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn reconcile_reassembles_a_guest_hello_split_across_reads() {
+        // The agent's one-shot GuestHello can arrive split across host reads
+        // (virtio-serial chunks it), with a gap longer than the socket read
+        // timeout. The held connection must NOT consume + lose the partial frame
+        // when the timeout fires mid-frame -- it must reassemble and accept once
+        // the whole line is present. (Guards the peek-before-consume fix.)
+        let store = temp_store();
+        store.create_vm(&compatibility_manifest("legacy")).unwrap();
+        store
+            .transition_state("legacy", VmRuntimeState::Running)
+            .unwrap();
+
+        let token = store.guest_tools_token("legacy").unwrap().token;
+        let guest_tools = store.guest_tools_runner_metadata("legacy").unwrap();
+        let listener = UnixListener::bind(&guest_tools.socket_path).unwrap();
+
+        let (start_send, await_send) = std::sync::mpsc::channel::<()>();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            await_send.recv().unwrap();
+            let hello = AgentEnvelope::new(AgentMessage::GuestHello {
+                version: PROTOCOL_VERSION,
+                guest_os: "linux".to_string(),
+                agent_version: Some("1.0.0".to_string()),
+                capabilities: vec![AgentCapability {
+                    name: "heartbeat".to_string(),
+                    version: 1,
+                }],
+                auth: Some(AgentAuth::ToolsToken { token }),
+            });
+            let line = encode_envelope_line(&hello).unwrap();
+            let bytes = line.as_bytes();
+            let mid = bytes.len() / 2;
+            // First half, then a pause LONGER than the 25ms read timeout (so a
+            // naive read would time out mid-frame), then the rest.
+            stream.write_all(&bytes[..mid]).unwrap();
+            stream.flush().unwrap();
+            thread::sleep(Duration::from_millis(120));
+            stream.write_all(&bytes[mid..]).unwrap();
+            stream.flush().unwrap();
+            thread::sleep(Duration::from_millis(250));
+        });
+
+        let child = Command::new("sh").arg("-c").arg("sleep 5").spawn().unwrap();
+        let mut state = DaemonState::new(store.clone());
+        state
+            .children
+            .insert("legacy".to_string(), SupervisedBackend::new(child));
+
+        // First reconcile: connect host-first, nothing to read yet -> held.
+        state.reconcile_children().unwrap();
+        assert!(state
+            .children
+            .get("legacy")
+            .unwrap()
+            .guest_tools_pending
+            .is_some());
+
+        start_send.send(()).unwrap();
+
+        // Poll reconcile until the split hello is reassembled + accepted. While
+        // only the first half is buffered, the connection must stay held (the
+        // partial frame must never be consumed/lost or the connection reset).
+        let mut accepted = false;
+        for _ in 0..40 {
+            thread::sleep(Duration::from_millis(20));
+            state.reconcile_children().unwrap();
+            let backend = state.children.get("legacy").unwrap();
+            if backend.guest_tools.is_some() {
+                accepted = true;
+                break;
+            }
+            assert!(
+                backend.guest_tools_pending.is_some(),
+                "the connection must be held while the frame is incomplete"
+            );
+        }
+        assert!(accepted, "split GuestHello was never reassembled + accepted");
+        assert_eq!(
+            state
+                .children
+                .get("legacy")
+                .unwrap()
+                .guest_tools
+                .as_ref()
+                .unwrap()
+                .guest_os,
+            "linux"
+        );
 
         state.cleanup_owned_backend("legacy", false).unwrap();
         server.join().unwrap();
