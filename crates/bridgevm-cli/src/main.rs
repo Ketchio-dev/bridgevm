@@ -4648,7 +4648,7 @@ mod tests {
             "missing CLI context: {message}"
         );
         assert!(
-            message.contains("QEMU launch blocker qemu-advanced-network-unimplemented"),
+            message.contains("QEMU launch blocker qemu-advanced-network-requires-schema"),
             "missing QEMU blocker: {message}"
         );
         assert!(
@@ -4691,13 +4691,13 @@ mod tests {
     #[test]
     fn daemon_error_output_preserves_qemu_network_blocker_requirement() {
         let error = print_daemon_response(BridgeVmResponse::Error {
-            message: "failed to build Compatibility Mode QEMU command: QEMU launch blocker qemu-advanced-network-unimplemented: advanced networking is not implemented for Compatibility Mode QEMU args yet; requirement: Compatibility Mode QEMU requires an advanced network schema and launcher wiring before launch".to_string(),
+            message: "failed to build Compatibility Mode QEMU command: QEMU launch blocker qemu-advanced-network-requires-schema: advanced networking requires an advanced Compatibility Mode QEMU schema before args can be generated; requirement: Compatibility Mode QEMU requires an advanced network schema and launcher wiring before launch".to_string(),
         })
         .unwrap_err();
         let message = format!("{error:#}");
 
         assert!(
-            message.contains("QEMU launch blocker qemu-advanced-network-unimplemented"),
+            message.contains("QEMU launch blocker qemu-advanced-network-requires-schema"),
             "missing QEMU blocker: {message}"
         );
         assert!(

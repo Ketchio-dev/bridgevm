@@ -248,7 +248,7 @@ fn requirements_for(backend: NetworkBackend, mode: &NetworkMode) -> Vec<NetworkR
             requirement: QEMU_BRIDGED_PRIVILEGE_REQUIREMENT.to_string(),
         }],
         (NetworkBackend::Qemu, NetworkMode::Advanced) => vec![NetworkRequirement {
-            blocker: "qemu-advanced-network-unimplemented".to_string(),
+            blocker: "qemu-advanced-network-requires-schema".to_string(),
             requirement:
                 "Compatibility Mode QEMU requires an advanced network schema and launcher wiring before launch"
                     .to_string(),
@@ -453,7 +453,7 @@ mod tests {
                 .requirements
                 .first()
                 .map(|requirement| requirement.blocker.as_str()),
-            Some("qemu-advanced-network-unimplemented")
+            Some("qemu-advanced-network-requires-schema")
         );
     }
 

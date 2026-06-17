@@ -21,7 +21,7 @@ pub enum QemuError {
     #[error("QEMU launch does not support {0} networking yet")]
     UnsupportedNetworkMode(String),
     #[error(
-        "QEMU launch blocker {blocker}: {mode} networking is not implemented for Compatibility Mode QEMU args yet; requirement: {requirement}"
+        "QEMU launch blocker {blocker}: {mode} networking requires an advanced Compatibility Mode QEMU schema before args can be generated; requirement: {requirement}"
     )]
     UnsupportedNetworkRequirement {
         mode: String,
@@ -989,7 +989,7 @@ fn netdev_arg(manifest: &VmManifest) -> Result<String, QemuError> {
         NetworkMode::Advanced => {
             let requirement = plan.requirements.first().cloned().unwrap_or_else(|| {
                 bridgevm_network::NetworkRequirement {
-                    blocker: "qemu-advanced-network-unimplemented".to_string(),
+                    blocker: "qemu-advanced-network-requires-schema".to_string(),
                     requirement:
                         "Compatibility Mode QEMU requires an advanced network schema and launcher wiring before launch"
                             .to_string(),
@@ -1589,7 +1589,7 @@ mod tests {
         manifest.network.mode = "advanced".to_string();
 
         let error = build_compatibility_command(&manifest, Path::new("/tmp/legacy.vmbridge"))
-            .expect_err("advanced QEMU launcher wiring is not implemented yet");
+            .expect_err("advanced QEMU launcher wiring requires a schema");
 
         assert!(
             matches!(
@@ -1599,7 +1599,7 @@ mod tests {
                     blocker,
                     requirement
                 } if mode == "advanced"
-                    && blocker == "qemu-advanced-network-unimplemented"
+                    && blocker == "qemu-advanced-network-requires-schema"
                     && requirement.contains("advanced network schema")
             ),
             "{error}"

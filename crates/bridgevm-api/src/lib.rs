@@ -5595,7 +5595,7 @@ pub fn compatibility_launch_readiness_blocker_from_qemu_error(
         } => LaunchReadinessBlockerMetadata {
             code: blocker,
             message: format!(
-                "{mode} networking is not implemented for Compatibility Mode QEMU args yet; requirement: {requirement}"
+                "{mode} networking requires an advanced Compatibility Mode QEMU schema before args can be generated; requirement: {requirement}"
             ),
             path: None,
             capability: Some("qemu-network".to_string()),
@@ -9480,7 +9480,7 @@ mod tests {
             "{message}"
         );
         assert!(
-            message.contains("QEMU launch blocker qemu-advanced-network-unimplemented"),
+            message.contains("QEMU launch blocker qemu-advanced-network-requires-schema"),
             "{message}"
         );
         assert!(
@@ -9529,7 +9529,7 @@ mod tests {
             "{message}"
         );
         assert!(
-            message.contains("QEMU launch blocker qemu-advanced-network-unimplemented"),
+            message.contains("QEMU launch blocker qemu-advanced-network-requires-schema"),
             "{message}"
         );
         assert!(

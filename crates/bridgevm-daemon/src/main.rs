@@ -2755,7 +2755,7 @@ mod tests {
     fn daemon_qemu_error_message_preserves_network_blocker_requirement() {
         let message = compatibility_qemu_command_error(QemuError::UnsupportedNetworkRequirement {
             mode: "advanced".to_string(),
-            blocker: "qemu-advanced-network-unimplemented".to_string(),
+            blocker: "qemu-advanced-network-requires-schema".to_string(),
             requirement:
                 "Compatibility Mode QEMU requires an advanced network schema and launcher wiring before launch"
                     .to_string(),
@@ -2766,7 +2766,7 @@ mod tests {
             "{message}"
         );
         assert!(
-            message.contains("QEMU launch blocker qemu-advanced-network-unimplemented"),
+            message.contains("QEMU launch blocker qemu-advanced-network-requires-schema"),
             "{message}"
         );
         assert!(
