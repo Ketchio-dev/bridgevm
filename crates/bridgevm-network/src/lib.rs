@@ -228,8 +228,21 @@ pub const QEMU_BRIDGED_PRIVILEGE_REQUIREMENT: &str =
     "Compatibility Mode QEMU bridged networking uses vmnet-bridged, which requires the qemu \
 process to run as root or carry the com.apple.vm.networking entitlement";
 
+/// Blocker code for QEMU host-only networking. Host-only args ARE generated
+/// (`vmnet-host`), but macOS vmnet backends still need elevated privilege.
+pub const QEMU_HOST_ONLY_PRIVILEGE_BLOCKER: &str = "qemu-host-only-requires-privilege";
+
+/// Honest requirement text for [`QEMU_HOST_ONLY_PRIVILEGE_BLOCKER`].
+pub const QEMU_HOST_ONLY_PRIVILEGE_REQUIREMENT: &str =
+    "Compatibility Mode QEMU host-only networking uses vmnet-host, which requires the qemu \
+process to run as root or carry the com.apple.vm.networking entitlement";
+
 fn requirements_for(backend: NetworkBackend, mode: &NetworkMode) -> Vec<NetworkRequirement> {
     match (backend, mode) {
+        (NetworkBackend::Qemu, NetworkMode::HostOnly) => vec![NetworkRequirement {
+            blocker: QEMU_HOST_ONLY_PRIVILEGE_BLOCKER.to_string(),
+            requirement: QEMU_HOST_ONLY_PRIVILEGE_REQUIREMENT.to_string(),
+        }],
         (NetworkBackend::Qemu, NetworkMode::Bridged) => vec![NetworkRequirement {
             blocker: QEMU_BRIDGED_PRIVILEGE_BLOCKER.to_string(),
             requirement: QEMU_BRIDGED_PRIVILEGE_REQUIREMENT.to_string(),
@@ -408,7 +421,13 @@ mod tests {
         )
         .unwrap();
         assert!(qemu_host_only.capabilities.requires_privileged_helper);
-        assert!(qemu_host_only.requirements.is_empty());
+        let requirement = qemu_host_only
+            .requirements
+            .first()
+            .expect("QEMU host-only carries a privilege requirement");
+        assert_eq!(requirement.blocker, QEMU_HOST_ONLY_PRIVILEGE_BLOCKER);
+        assert!(requirement.requirement.contains("vmnet-host"));
+        assert!(requirement.requirement.contains("com.apple.vm.networking"));
 
         let isolated = plan_network(
             NetworkBackend::Qemu,

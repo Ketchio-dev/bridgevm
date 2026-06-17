@@ -211,15 +211,17 @@ port-forwards outside NAT are rejected before the manifest is rewritten. Fast
 Mode Apple VZ preflight and Compatibility Mode QEMU command generation also
 consume the same planner: Apple VZ still accepts only NAT, while QEMU maps NAT
 to user networking with `hostfwd` entries and maps isolated networking to
-`restrict=on`. Host-only and bridged modes remain explicit unsupported launch
-boundaries until their backend wiring exists.
+`restrict=on`. QEMU also renders host-only as `vmnet-host` and bridged as
+`vmnet-bridged`, but both modes surface explicit launch-readiness blockers
+because macOS vmnet backends require root or the `com.apple.vm.networking`
+entitlement before live launch.
 
 `bridgevm network-plan <vm>` and the daemon `PlanNetwork` request expose the
 manifest-derived plan for a VM without performing live networking. `networkd`
 exposes the same planner as a public runner CLI:
 `cargo run -p networkd -- --print-plan` emits the JSON `NetworkPlan` for
 selected backend, mode, hostname, forwards, capability flags, and notes;
-omitting `--print-plan` emits only a concise readiness summary. These CLIs
+omitting `--print-plan` emits only a concise ready/blocked summary. These CLIs
 reject malformed forward syntax, zero-valued ports, forwards outside NAT, and
 unsupported backend/mode combinations such as Apple VZ bridged networking before
 any backend runner can consume the plan. This boundary is metadata-only: it does

@@ -254,11 +254,12 @@ Resource profiles are resolved at runner-planning time. When manifest `resources
 planner. `cargo run -p networkd -- --print-plan --backend qemu --mode nat
 --hostname <host> --forward <host:guest>` prints a JSON `NetworkPlan` with the
 selected backend, mode, hostname, validated port-forward rules, capability
-flags, and notes. Without `--print-plan`, it prints a concise readiness summary.
-It validates planner inputs and rejection paths such as malformed forwards,
-forwards outside NAT, and Apple VZ bridged networking, but it does not start a
-VM, start QEMU, launch Apple VZ, create host-only interfaces, attach bridges, or
-modify live networking.
+flags, requirements, and notes. Without `--print-plan`, it prints a concise
+ready/blocked summary that includes requirement counts for plans with launch
+blockers. It validates planner inputs and rejection paths such as malformed
+forwards, forwards outside NAT, and Apple VZ bridged networking, but it does
+not start a VM, start QEMU, launch Apple VZ, create host-only interfaces,
+attach bridges, or modify live networking.
 
 `bridgevm ssh <vm> [--user USER]` is a metadata-only connection planner. It does not execute `ssh`; it prints the command BridgeVM would use from currently available metadata. For Compatibility Mode, a manifest port forward whose guest port is `22` is preferred and prints `ssh -p <host-port> USER@127.0.0.1`. Otherwise, if guest-tools runtime metadata is connected and reports a valid guest IP, the plan can print `ssh USER@<guest-ip>`. The macOS dashboard surfaces the same SSH plan metadata alongside the matching open-port plan for forwarded services as metadata/planning information only. That status can show the derived host URL, SSH command, target, and source BridgeVM would use, but it must not claim that BridgeVM opened a browser, connected to the guest service, changed networking, executed `ssh`, started an SSH process, started a backend, or started a VM.
 

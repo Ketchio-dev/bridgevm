@@ -78,11 +78,16 @@ Compatibility Mode networking supports NAT, isolated, and host-only QEMU
 plans. NAT renders QEMU user networking and consumes manifest port forwards as
 `hostfwd` options. Isolated renders restricted user networking. Host-only
 renders the QEMU host-only netdev plan without guest outbound internet and
-without port forwarding; attempts to add `network.forwards` while the manifest
-is in `host-only` mode are rejected by both the local CLI and daemon socket
-API. Bridged and advanced network modes are still accepted as planning intents,
-but QEMU argument generation reports explicit launch blockers until bridge or
-tap helper selection and advanced network launcher wiring exist.
+without port forwarding; because macOS `vmnet-host` requires root or the
+`com.apple.vm.networking` entitlement, `network-plan`, `prepare-run`, and
+spawn readiness report a `qemu-host-only-requires-privilege` blocker before a
+live launch. Attempts to add `network.forwards` while the manifest is in
+`host-only` mode are rejected by both the local CLI and daemon socket API.
+Bridged networking similarly renders a `vmnet-bridged` QEMU netdev but reports
+`qemu-bridged-requires-privilege` until the QEMU process has the required
+privilege. Advanced network mode is still accepted as a planning intent, but
+QEMU argument generation reports an explicit launch blocker until advanced
+network launcher wiring exists.
 
 `bridgevm ssh legacy-linux [--user USER]` uses metadata to print an SSH command
 plan, but does not execute `ssh`. Compatibility Mode prefers a manifest forward

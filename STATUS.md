@@ -78,7 +78,7 @@ flag, and `tests/integration/windows-arm-qemu-args-cli-smoke.sh`. See
 - Follow-ups: pause an already-running Fast VM via IPC (current model boots→saves); Compat live resume (needs a non-HVF path or a future QEMU fix).
 
 ## Networking
-Compatibility Mode (QEMU) NAT + port forwarding works at launch: manifest `network.forwards` become QEMU `hostfwd=tcp::HOST-:GUEST` in the launch command, so the host port is actually bound when the VM runs (verified: host port LISTENs). `bridgevm port add/remove` edit the forwards. Bridged networking still needs the `com.apple.vm.networking` entitlement (user resource).
+Compatibility Mode (QEMU) NAT + port forwarding works at launch: manifest `network.forwards` become QEMU `hostfwd=tcp::HOST-:GUEST` in the launch command, so the host port is actually bound when the VM runs (verified: host port LISTENs). `bridgevm port add/remove` edit the forwards. QEMU host-only and bridged planning now render `vmnet-host` / `vmnet-bridged` but live launch is blocked until the QEMU process runs as root or carries the `com.apple.vm.networking` entitlement (user resource).
 
 ## Verification lanes
 - **Safe app lane:** `tests/integration/local-release-readiness-suite.sh --app-only --locally-usable-app`
@@ -110,7 +110,7 @@ The VM lifecycle (create/run/suspend/resume/stop) + networking + boot evidence a
 
 **Need user resources:**
 - **Developer ID / notarization** — user's paid Apple Developer cert + notarytool profile (only blocks public signed distribution; local dev uses ad-hoc signing).
-- **Bridged networking** — `com.apple.vm.networking` entitlement (NAT + port-forward already work without it).
+- **Host-only / bridged QEMU networking** — `com.apple.vm.networking` entitlement or root-run QEMU for macOS vmnet backends (NAT + port-forward already work without it).
 - **Full Windows install** — Windows license/ISO + TPM 2.0 (swtpm) + Secure Boot (reaching Setup is already proven).
 
 **Resource manager (§14) — battery-adaptive Fast Mode resources + runtime policy signal DONE:** Fast Mode cold starts — the api `cold_start_fast_backend`/`display_fast_backend` (daemon-less CLI) AND the daemon's own `spawn_fast_backend_with_restore` (the app's primary path) — now expand `auto` memory/cpu using the host power state at launch (`bridgevm-resource-manager::read_on_battery` parses `pmset -g batt`, honoring `BRIDGEVM_FORCE_ON_BATTERY` for tests/demos). Policy: on battery, `auto` Automatic/Office VMs step down to conserve power (4096/2 → 2048/1); Performance/Developer keep their headroom; explicit per-VM values are always respected. Runtime `bridgevm resources reapply <vm> --visibility foreground|background` now records a foreground/background + power-aware policy in `metadata/runtime-resources.json` over both local CLI and daemon socket, preserving explicit memory/CPU and exposing `display_fps_cap`, rationale, and `live_apply_blockers`. Unit/integration-tested (`runtime_decision_uses_foreground_background_signal`, `handler_reapplies_runtime_resources_for_background_fast_vm`, `runtime-resource-policy-cli-smoke.sh`). Not applied to resume (must match saved state) or Compat (heavyweight mode). Remaining §14 work: real live Apple VZ/display control IPC to consume the recorded policy (`live_applied` is still false with `runtime-control-unavailable`).

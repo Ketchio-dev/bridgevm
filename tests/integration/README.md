@@ -530,15 +530,18 @@ QEMU host-only networking integration coverage should exercise:
 - `bridgevm --socket <sock> qemu-args <vm>`
 - `bridgevm port add <vm> <host:guest>`
 - `bridgevm --socket <sock> port add <vm> <host:guest>`
+- `bridgevm run <vm> --spawn`
+- `bridgevm --socket <sock> run <vm> --spawn`
 
 The expected contract is that QEMU planning renders a host-only netdev for both
 the local CLI and daemon socket paths, does not render NAT `hostfwd` entries,
 and continues to reject port forwarding outside NAT before rewriting the
-manifest.
+manifest. Live spawn readiness must refuse host-only QEMU launch until the QEMU
+process has the macOS vmnet privilege required for `vmnet-host`.
 
 Current executable coverage: `qemu-host-only-cli-smoke.sh` covers local and
 socket-backed host-only `qemu-args` planning plus local and socket-backed
-port-forward rejection.
+port-forward rejection and spawn readiness refusal.
 
 QMP supervisor integration coverage should exercise:
 
@@ -592,7 +595,7 @@ Networkd public CLI plan coverage should exercise:
 - `cargo run -p networkd -- --print-plan --backend apple-vz --mode host-only`
 - `cargo run -p networkd -- --print-plan --backend qemu --mode isolated`
 - `cargo run -p networkd -- --print-plan --backend qemu --mode bridged`
-- Human-readable summary output when `--print-plan` is omitted
+- Human-readable ready and blocked summary output when `--print-plan` is omitted
 - Rejection for malformed or zero-valued `--forward` inputs
 - Rejection for duplicate host ports
 - Rejection for port forwards outside NAT, including isolated networking
@@ -602,17 +605,18 @@ The expected contract is that `networkd` exposes the shared network planner as
 a public metadata-only runner surface. JSON output should include backend,
 mode, hostname, validated port-forward rules, capability flags, requirements,
 and notes for higher-level runners and smoke tests. Summary output should
-remain concise for operator-facing readiness checks. This smoke must not start
-a VM, start QEMU, launch Apple VZ, create a host-only interface, attach a
-bridge, or modify live networking; it validates planning metadata and rejection
-paths only.
+remain concise for operator-facing readiness checks and must report blocker
+counts when a plan carries requirements. This smoke must not start a VM, start
+QEMU, launch Apple VZ, create a host-only interface, attach a bridge, or modify
+live networking; it validates planning metadata and rejection paths only.
 
 Current executable coverage: `networkd-plan-cli-smoke.sh` covers public
 `cargo run -p networkd` invocations for QEMU NAT forwards, Apple VZ host-only
-planning, QEMU isolated planning, QEMU bridged blocker metadata, summary
-output, malformed, zero-valued, and duplicate host-port forward rejection,
-isolated-plus-forward rejection, and Apple VZ bridged rejection without
-starting QEMU, Apple VZ, or a VM.
+planning, QEMU host-only privilege metadata, QEMU isolated planning, QEMU
+bridged blocker metadata, ready and blocked summary output, malformed,
+zero-valued, and duplicate host-port forward rejection, isolated-plus-forward
+rejection, and Apple VZ bridged rejection without starting QEMU, Apple VZ, or
+a VM.
 
 QMP control integration coverage should exercise:
 

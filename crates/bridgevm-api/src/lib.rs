@@ -5488,7 +5488,7 @@ pub fn compatibility_launch_readiness_metadata(
     }
 }
 
-fn compatibility_launch_dependency_blockers(
+pub fn compatibility_launch_dependency_blockers(
     manifest: &VmManifest,
     bundle: &Path,
 ) -> Vec<LaunchReadinessBlockerMetadata> {
@@ -5540,7 +5540,48 @@ fn compatibility_launch_dependency_blockers(
         }
     }
 
+    blockers.extend(compatibility_network_privilege_blockers(manifest));
+
     blockers
+}
+
+fn compatibility_network_privilege_blockers(
+    manifest: &VmManifest,
+) -> Vec<LaunchReadinessBlockerMetadata> {
+    let Ok(mode) = manifest.network.mode.parse::<NetworkMode>() else {
+        return Vec::new();
+    };
+    if !matches!(mode, NetworkMode::HostOnly | NetworkMode::Bridged) {
+        return Vec::new();
+    }
+    let port_forwards = manifest
+        .network
+        .forwards
+        .iter()
+        .map(|forward| PortForwardRule {
+            host: forward.host,
+            guest: forward.guest,
+        })
+        .collect::<Vec<_>>();
+
+    let Ok(plan) = plan_network(
+        NetworkBackend::Qemu,
+        mode,
+        manifest.network.hostname.clone(),
+        port_forwards,
+    ) else {
+        return Vec::new();
+    };
+
+    plan.requirements
+        .into_iter()
+        .map(|requirement| LaunchReadinessBlockerMetadata {
+            code: requirement.blocker,
+            message: requirement.requirement,
+            path: None,
+            capability: Some("qemu-network".to_string()),
+        })
+        .collect()
 }
 
 pub fn compatibility_launch_readiness_blocker_from_qemu_error(
@@ -5676,12 +5717,14 @@ fn launch_readiness_blocker_summary(readiness: &LaunchReadinessMetadata) -> Stri
     readiness
         .blockers
         .iter()
-        .map(|blocker| match &blocker.path {
-            Some(path) => format!("{} ({})", blocker.code, path.display()),
-            None => match &blocker.capability {
-                Some(capability) => format!("{} ({capability})", blocker.code),
-                None => blocker.code.clone(),
-            },
+        .map(|blocker| {
+            let mut summary = format!("{}: {}", blocker.code, blocker.message);
+            if let Some(path) = &blocker.path {
+                summary.push_str(&format!(" ({})", path.display()));
+            } else if let Some(capability) = &blocker.capability {
+                summary.push_str(&format!(" ({capability})"));
+            }
+            summary
         })
         .collect::<Vec<_>>()
         .join(", ")
@@ -9535,6 +9578,100 @@ mod tests {
     }
 
     #[test]
+    fn handler_refuses_qemu_host_only_spawn_without_privileged_networking() {
+        let mut root = std::env::temp_dir();
+        root.push(format!(
+            "bridgevm-api-qemu-host-only-spawn-blocker-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = VmStore::new(root);
+        let mut manifest = VmManifest::new(
+            "legacy",
+            VmMode::Compatibility,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "x86_64".to_string(),
+            },
+            "1MiB",
+        );
+        manifest.storage.primary.format = "raw".to_string();
+        manifest.storage.primary.path = "disks/root.raw".to_string();
+        manifest.network.mode = "host-only".to_string();
+        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+            .into_result()
+            .unwrap();
+
+        let message = handle_request(
+            &store,
+            BridgeVmRequest::RunBackend {
+                name: "legacy".to_string(),
+                spawn: true,
+            },
+        )
+        .into_result()
+        .expect_err("host-only spawn should require privileged vmnet support");
+
+        assert!(
+            message.contains("qemu-host-only-requires-privilege"),
+            "{message}"
+        );
+        assert!(message.contains("vmnet-host"), "{message}");
+        assert!(message.contains("com.apple.vm.networking"), "{message}");
+        assert!(store.runner_metadata("legacy").unwrap().is_none());
+    }
+
+    #[test]
+    fn handler_refuses_qemu_bridged_spawn_without_privileged_networking() {
+        let mut root = std::env::temp_dir();
+        root.push(format!(
+            "bridgevm-api-qemu-bridged-spawn-blocker-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = VmStore::new(root);
+        let mut manifest = VmManifest::new(
+            "legacy",
+            VmMode::Compatibility,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "x86_64".to_string(),
+            },
+            "1MiB",
+        );
+        manifest.storage.primary.format = "raw".to_string();
+        manifest.storage.primary.path = "disks/root.raw".to_string();
+        manifest.network.mode = "bridged".to_string();
+        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+            .into_result()
+            .unwrap();
+
+        let message = handle_request(
+            &store,
+            BridgeVmRequest::RunBackend {
+                name: "legacy".to_string(),
+                spawn: true,
+            },
+        )
+        .into_result()
+        .expect_err("bridged spawn should require privileged vmnet support");
+
+        assert!(
+            message.contains("qemu-bridged-requires-privilege"),
+            "{message}"
+        );
+        assert!(message.contains("vmnet-bridged"), "{message}");
+        assert!(message.contains("com.apple.vm.networking"), "{message}");
+        assert!(store.runner_metadata("legacy").unwrap().is_none());
+    }
+
+    #[test]
     fn handler_plans_qemu_bridged_network_blocker_without_launching() {
         let mut root = std::env::temp_dir();
         root.push(format!(
@@ -9581,6 +9718,59 @@ mod tests {
             .iter()
             .any(|blocker| blocker.code == "qemu-bridged-requires-privilege"
                 && blocker.message.contains("com.apple.vm.networking")));
+        assert!(store.runner_metadata("legacy").unwrap().is_none());
+    }
+
+    #[test]
+    fn handler_plans_qemu_host_only_privilege_blocker_without_launching() {
+        let mut root = std::env::temp_dir();
+        root.push(format!(
+            "bridgevm-api-network-plan-host-only-privilege-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = VmStore::new(root);
+        let mut manifest = VmManifest::new(
+            "legacy",
+            VmMode::Compatibility,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "x86_64".to_string(),
+            },
+            "64GiB",
+        );
+        manifest.network.mode = "host-only".to_string();
+        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+            .into_result()
+            .unwrap();
+
+        let response = handle_request(
+            &store,
+            BridgeVmRequest::PlanNetwork {
+                name: "legacy".to_string(),
+            },
+        )
+        .into_result()
+        .expect("network plan should return privilege blockers as data");
+        let BridgeVmResponse::NetworkPlanned { plan } = response else {
+            panic!("expected network plan response");
+        };
+
+        assert!(plan.dry_run);
+        assert!(!plan.executable);
+        assert_eq!(plan.backend, "qemu");
+        assert_eq!(plan.mode, "host-only");
+        assert!(plan
+            .capabilities
+            .as_ref()
+            .is_some_and(|capabilities| capabilities.requires_privileged_helper));
+        assert!(plan.blockers.iter().any(|blocker| blocker.code
+            == "qemu-host-only-requires-privilege"
+            && blocker.message.contains("vmnet-host")
+            && blocker.message.contains("com.apple.vm.networking")));
         assert!(store.runner_metadata("legacy").unwrap().is_none());
     }
 

@@ -190,6 +190,45 @@ assert_json_plan \
   0 \
   1
 
+qemu_host_only="$WORKDIR/qemu-host-only.json"
+networkd \
+  --print-plan \
+  --backend qemu \
+  --mode host-only \
+  --hostname qemu-hostonly.bridgevm.local >"$qemu_host_only"
+assert_json_plan \
+  "qemu host-only privilege plan" \
+  "$qemu_host_only" \
+  "qemu" \
+  "host-only" \
+  "qemu-hostonly.bridgevm.local" \
+  0 \
+  false \
+  true \
+  false \
+  true \
+  true \
+  true \
+  1 \
+  1
+python3 - "$qemu_host_only" <<'PY' || fail "qemu host-only blocker metadata mismatch"
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    plan = json.load(handle)
+
+assert plan["requirements"] == [
+    {
+        "blocker": "qemu-host-only-requires-privilege",
+        "requirement": "Compatibility Mode QEMU host-only networking uses vmnet-host, which requires the qemu process to run as root or carry the com.apple.vm.networking entitlement",
+    }
+], plan["requirements"]
+assert plan["notes"] == [
+    "host-only network intent; guest outbound internet is disabled",
+], plan["notes"]
+PY
+
 qemu_isolated="$WORKDIR/qemu-isolated.json"
 networkd \
   --print-plan \
@@ -253,6 +292,9 @@ PY
 
 summary="$(networkd --backend qemu --mode nat --forward 2222:22)"
 assert_contains "$summary" "networkd ready: qemu backend, nat mode, 1 forward rule(s)" "summary output"
+
+blocked_summary="$(networkd --backend qemu --mode host-only)"
+assert_contains "$blocked_summary" "networkd blocked: qemu backend, host-only mode, 0 forward rule(s), 1 requirement(s)" "blocked summary output"
 
 assert_fails_contains \
   "malformed forward" \

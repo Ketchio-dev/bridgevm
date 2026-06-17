@@ -42,14 +42,28 @@ fn main() -> Result<()> {
     if cli.print_plan {
         println!("{}", serde_json::to_string_pretty(&plan)?);
     } else {
-        println!(
+        println!("{}", summary_line(&cli, &plan));
+    }
+    Ok(())
+}
+
+fn summary_line(cli: &Cli, plan: &NetworkPlan) -> String {
+    if plan.requirements.is_empty() {
+        format!(
             "networkd ready: {} backend, {} mode, {} forward rule(s)",
             cli.backend.as_str(),
             plan.mode,
             plan.port_forwards.len()
-        );
+        )
+    } else {
+        format!(
+            "networkd blocked: {} backend, {} mode, {} forward rule(s), {} requirement(s)",
+            cli.backend.as_str(),
+            plan.mode,
+            plan.port_forwards.len(),
+            plan.requirements.len()
+        )
     }
-    Ok(())
 }
 
 fn build_network_plan(cli: &Cli) -> Result<NetworkPlan> {
@@ -173,6 +187,17 @@ mod tests {
         assert_eq!(plan.mode, NetworkMode::HostOnly);
         assert!(plan.capabilities.host_to_guest);
         assert!(!plan.capabilities.guest_outbound);
+    }
+
+    #[test]
+    fn summary_reports_requirements_as_blocked() {
+        let cli = cli(BackendArg::Qemu, ModeArg::HostOnly);
+        let plan = build_network_plan(&cli).unwrap();
+
+        assert_eq!(
+            summary_line(&cli, &plan),
+            "networkd blocked: qemu backend, host-only mode, 0 forward rule(s), 1 requirement(s)"
+        );
     }
 
     #[test]

@@ -8,11 +8,12 @@ use bridgevm_agentd::{
 };
 use bridgevm_api::{
     add_fast_spawn_blocker, apply_power_aware_fast_resources, build_compatibility_resume_command,
-    compat_suspend_marker_path, create_performance_sample, fast_spawn_not_implemented_error,
-    fast_suspend_state_path, guest_tools_agent_policy, guest_tools_freeze_filesystem_envelope,
-    guest_tools_mount_approved_share_envelope, guest_tools_thaw_filesystem_envelope,
-    handle_request, inspect_guest_tools_status, launch_readiness_metadata, resume_backend,
-    suspend_backend, verify_compatibility_resume_loaded,
+    compat_suspend_marker_path, compatibility_launch_dependency_blockers,
+    compatibility_launch_readiness_metadata, create_performance_sample,
+    fast_spawn_not_implemented_error, fast_suspend_state_path, guest_tools_agent_policy,
+    guest_tools_freeze_filesystem_envelope, guest_tools_mount_approved_share_envelope,
+    guest_tools_thaw_filesystem_envelope, handle_request, inspect_guest_tools_status,
+    launch_readiness_metadata, resume_backend, suspend_backend, verify_compatibility_resume_loaded,
     ApplicationConsistentSnapshotCommandResultRecord, ApplicationConsistentSnapshotExecutionRecord,
     BridgeVmRequest, BridgeVmResponse, GuestToolsCommandRecord, PerformanceMeasurementRecord,
     PerformanceSampleMetadata, SnapshotConsistency,
@@ -494,10 +495,14 @@ fn launch_readiness_blocker_summary(readiness: &LaunchReadinessMetadata) -> Stri
     readiness
         .blockers
         .iter()
-        .map(|blocker| match (&blocker.path, &blocker.capability) {
-            (Some(path), _) => format!("{} ({})", blocker.code, path.display()),
-            (None, Some(capability)) => format!("{} ({capability})", blocker.code),
-            (None, None) => blocker.code.clone(),
+        .map(|blocker| {
+            let mut summary = format!("{}: {}", blocker.code, blocker.message);
+            if let Some(path) = &blocker.path {
+                summary.push_str(&format!(" ({})", path.display()));
+            } else if let Some(capability) = &blocker.capability {
+                summary.push_str(&format!(" ({capability})"));
+            }
+            summary
         })
         .collect::<Vec<_>>()
         .join(", ")
@@ -724,6 +729,16 @@ impl DaemonState {
 
         let mut command = build_compatibility_command(&manifest, &bundle)
             .map_err(|error| anyhow::anyhow!("{}", compatibility_qemu_command_error(error)))?;
+        let readiness = compatibility_launch_readiness_metadata(
+            &disk,
+            compatibility_launch_dependency_blockers(&manifest, &bundle),
+        );
+        if !readiness.ready {
+            anyhow::bail!(
+                "Compatibility Mode launch readiness failed: {}",
+                launch_readiness_blocker_summary(&readiness)
+            );
+        }
         // Pin this VM to a free VNC display so concurrent Compat VMs don't
         // collide on TCP 5900. Avoid displays already handed to live children
         // (their QEMU may not have bound the port yet, so a bare probe would
@@ -992,6 +1007,16 @@ impl DaemonState {
             .context("failed to prepare active disk")?;
         if !disk.exists {
             anyhow::bail!("active disk is not ready: {}", disk.path.display());
+        }
+        let readiness = compatibility_launch_readiness_metadata(
+            &disk,
+            compatibility_launch_dependency_blockers(manifest, bundle),
+        );
+        if !readiness.ready {
+            anyhow::bail!(
+                "Compatibility Mode launch readiness failed: {}",
+                launch_readiness_blocker_summary(&readiness)
+            );
         }
 
         let mut command = build_compatibility_resume_command(manifest, bundle)
@@ -2789,6 +2814,36 @@ mod tests {
             .blockers
             .iter()
             .any(|blocker| blocker.code == "fast-mode-spawn-unimplemented"));
+    }
+
+    #[test]
+    fn daemon_refuses_qemu_host_only_spawn_without_privileged_networking() {
+        let store = temp_store();
+        let mut manifest = compatibility_manifest("legacy");
+        manifest.storage.primary.path = "disks/root.raw".to_string();
+        manifest.storage.primary.format = "raw".to_string();
+        manifest.storage.primary.size = "1MiB".to_string();
+        manifest.network.mode = "host-only".to_string();
+        store.create_vm(&manifest).unwrap();
+
+        let response = daemon_request(
+            store.clone(),
+            BridgeVmRequest::RunBackend {
+                name: "legacy".to_string(),
+                spawn: true,
+            },
+        );
+        let BridgeVmResponse::Error { message } = response else {
+            panic!("expected host-only spawn readiness error");
+        };
+
+        assert!(
+            message.contains("qemu-host-only-requires-privilege"),
+            "{message}"
+        );
+        assert!(message.contains("vmnet-host"), "{message}");
+        assert!(message.contains("com.apple.vm.networking"), "{message}");
+        assert!(store.runner_metadata("legacy").unwrap().is_none());
     }
 
     #[test]

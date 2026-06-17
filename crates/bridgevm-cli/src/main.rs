@@ -2,19 +2,20 @@ use anyhow::{bail, Context, Result};
 use bridgevm_agent_protocol::{AgentEnvelope, AgentMessage};
 use bridgevm_api::{
     accept_guest_tools_hello, add_fast_spawn_blocker, add_port, add_share,
-    apple_vz_runner_configured, cold_start_fast_backend, compatibility_launch_readiness_metadata,
-    create_diagnostic_bundle, create_performance_baseline, create_performance_sample,
-    display_fast_backend, download_boot_media, fast_spawn_not_implemented_error,
-    guest_tools_linux_command, guest_tools_token, import_boot_media, inspect_boot_media_status,
-    inspect_guest_tools_status, launch_readiness_metadata, list_ports, list_shares, open_port_plan,
-    plan_boot_media_download, reapply_runtime_resources, remove_port, remove_share, resume_backend,
-    stop_backend, suspend_backend, verify_boot_media, view_vm_log,
-    ApplicationConsistentSnapshotExecutionRecord, BootMediaDownloadPlanMetadata,
-    BootMediaDownloadResultMetadata, BootMediaImportMetadata, BootMediaKind, BootMediaStatus,
-    BootMediaVerificationMetadata, BridgeVmRequest, BridgeVmResponse, DiagnosticBundleMetadata,
-    GuestToolsLinuxCommandRecord, GuestToolsLinuxCommandTransport, GuestToolsSessionRecord,
-    GuestToolsStatusRecord, GuestToolsTokenRecord, LifecycleAction, LifecyclePlanRecord,
-    NetworkPlanRecord, OpenPortPlanRecord, PerformanceBaselineMetadata, PerformanceSampleMetadata,
+    apple_vz_runner_configured, cold_start_fast_backend, compatibility_launch_dependency_blockers,
+    compatibility_launch_readiness_metadata, create_diagnostic_bundle, create_performance_baseline,
+    create_performance_sample, display_fast_backend, download_boot_media,
+    fast_spawn_not_implemented_error, guest_tools_linux_command, guest_tools_token,
+    import_boot_media, inspect_boot_media_status, inspect_guest_tools_status,
+    launch_readiness_metadata, list_ports, list_shares, open_port_plan, plan_boot_media_download,
+    reapply_runtime_resources, remove_port, remove_share, resume_backend, stop_backend,
+    suspend_backend, verify_boot_media, view_vm_log, ApplicationConsistentSnapshotExecutionRecord,
+    BootMediaDownloadPlanMetadata, BootMediaDownloadResultMetadata, BootMediaImportMetadata,
+    BootMediaKind, BootMediaStatus, BootMediaVerificationMetadata, BridgeVmRequest,
+    BridgeVmResponse, DiagnosticBundleMetadata, GuestToolsLinuxCommandRecord,
+    GuestToolsLinuxCommandTransport, GuestToolsSessionRecord, GuestToolsStatusRecord,
+    GuestToolsTokenRecord, LifecycleAction, LifecyclePlanRecord, NetworkPlanRecord,
+    OpenPortPlanRecord, PerformanceBaselineMetadata, PerformanceSampleMetadata,
     PortForwardListRecord, SharedFolderListRecord, SnapshotPreflightStatusRecord, SshPlanRecord,
     VmLogKind, VmLogViewRecord, VmReadinessReport, VmRecord,
 };
@@ -2268,7 +2269,10 @@ fn build_runner_metadata(
 
     let command = build_compatibility_command(&manifest, &bundle)
         .map_err(|error| anyhow::anyhow!("{}", compatibility_qemu_command_error(error)))?;
-    let readiness = compatibility_launch_readiness_metadata(&disk, None);
+    let readiness = compatibility_launch_readiness_metadata(
+        &disk,
+        compatibility_launch_dependency_blockers(&manifest, &bundle),
+    );
     if spawn && !readiness.ready {
         bail!("{}", compatibility_launch_readiness_summary(&readiness));
     }
@@ -2531,7 +2535,7 @@ fn compatibility_launch_readiness_summary(readiness: &LaunchReadinessMetadata) -
     let summary = readiness
         .blockers
         .iter()
-        .map(|blocker| blocker.message.as_str())
+        .map(|blocker| format!("{}: {}", blocker.code, blocker.message))
         .collect::<Vec<_>>()
         .join("; ");
     if summary.is_empty() {

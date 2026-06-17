@@ -8,6 +8,7 @@ STORE="$(mktemp -d "/tmp/bridgevm-hostonly.XXXXXX")"
 VM_NAME="legacy-hostonly"
 BUNDLE="$STORE/vms/$VM_NAME.vmbridge"
 MANIFEST="$BUNDLE/manifest.yaml"
+FAKE_BIN="$STORE/bin"
 
 bridgevm() {
   cargo run --quiet -p bridgevm-cli -- --store "$STORE" "$@"
@@ -75,6 +76,24 @@ assert_port_add_rejected() {
   assert_contains "$output" "host-only networking does not support port forwarding" "$label"
 }
 
+assert_spawn_rejected() {
+  local label="$1"
+  shift
+
+  local stdout="$STORE/$label.stdout"
+  local stderr="$STORE/$label.stderr"
+  if PATH="$FAKE_BIN:$PATH" "$@" >"$stdout" 2>"$stderr"; then
+    fail "$label unexpectedly accepted host-only spawn"
+  fi
+
+  local output
+  output="$(cat "$stdout" "$stderr")"
+  assert_contains "$output" "qemu-host-only-requires-privilege" "$label"
+  assert_contains "$output" "vmnet-host" "$label"
+  assert_contains "$output" "com.apple.vm.networking" "$label"
+  assert_not_contains "$output" "unexpected qemu spawn" "$label"
+}
+
 assert_manifest_has_no_forwards() {
   if grep -q "host: 2222" "$MANIFEST" || grep -q "guest: 22" "$MANIFEST"; then
     fail "host-only port-forward rejection still recorded a forwarding rule"
@@ -90,8 +109,19 @@ stop_daemon() {
 
 trap stop_daemon EXIT
 
+mkdir -p "$FAKE_BIN"
+cat >"$FAKE_BIN/qemu-system-x86_64" <<'SH'
+#!/usr/bin/env bash
+echo "unexpected qemu spawn" >&2
+exit 77
+SH
+chmod +x "$FAKE_BIN/qemu-system-x86_64"
+
 bridgevm create "$VM_NAME" --os ubuntu --arch x86_64 --mode compatibility >/dev/null
 perl -0pi -e 's/network:\n  mode: nat/network:\n  mode: host-only/' "$MANIFEST"
+perl -0pi -e 's/path: disks\/root\.qcow2/path: disks\/root.raw/' "$MANIFEST"
+perl -0pi -e 's/size: 64GiB/size: 1MiB/' "$MANIFEST"
+perl -0pi -e 's/format: qcow2/format: raw/' "$MANIFEST"
 
 grep -q "mode: host-only" "$MANIFEST" || fail "manifest was not switched to host-only"
 
@@ -100,6 +130,7 @@ assert_host_only_qemu_args "$local_qemu_args" "local qemu-args"
 
 assert_port_add_rejected "local-port-add" bridgevm port add "$VM_NAME" 2222:22
 assert_manifest_has_no_forwards
+assert_spawn_rejected "local-run-spawn" bridgevm run "$VM_NAME" --spawn
 
 SOCKET="$STORE/run/bridgevmd.sock"
 DAEMON_LOG="$STORE/bridgevmd.log"
@@ -121,5 +152,6 @@ assert_host_only_qemu_args "$socket_qemu_args" "socket qemu-args"
 
 assert_port_add_rejected "socket-port-add" bridgevm_socket port add "$VM_NAME" 2222:22
 assert_manifest_has_no_forwards
+assert_spawn_rejected "socket-run-spawn" bridgevm_socket run "$VM_NAME" --spawn
 
 echo "PASS: QEMU host-only CLI/socket integration smoke ($STORE)"
