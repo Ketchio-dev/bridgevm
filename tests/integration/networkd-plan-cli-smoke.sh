@@ -258,7 +258,7 @@ networkd \
   --mode bridged \
   --hostname bridged.bridgevm.local >"$qemu_bridged"
 assert_json_plan \
-  "qemu bridged metadata blocker plan" \
+  "qemu bridged vmnet privilege plan" \
   "$qemu_bridged" \
   "qemu" \
   "bridged" \
@@ -272,7 +272,7 @@ assert_json_plan \
   true \
   1 \
   1
-python3 - "$qemu_bridged" <<'PY' || fail "qemu bridged blocker metadata mismatch"
+python3 - "$qemu_bridged" <<'PY' || fail "qemu bridged vmnet privilege metadata mismatch"
 import json
 import sys
 
