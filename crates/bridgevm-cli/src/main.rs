@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use bridgevm_agent_protocol::{AgentEnvelope, AgentMessage};
 use bridgevm_api::{
     accept_guest_tools_hello, add_fast_spawn_blocker, add_port, add_share,
-    apple_vz_runner_configured, cold_start_fast_backend,
+    apple_vz_runner_configured, cold_start_fast_backend, display_fast_backend,
     compatibility_launch_readiness_metadata, create_diagnostic_bundle, create_performance_baseline,
     create_performance_sample, download_boot_media, fast_spawn_not_implemented_error,
     guest_tools_linux_command, guest_tools_token, import_boot_media, inspect_boot_media_status,
@@ -67,6 +67,9 @@ enum Command {
     Restart(VmNameArgs),
     Suspend(VmNameArgs),
     Resume(VmNameArgs),
+    /// Boot a Fast Mode VM with an embedded graphical display window (local GUI
+    /// session only). Requires BRIDGEVM_APPLE_VZ_RUNNER.
+    Display(VmNameArgs),
     Delete(DeleteArgs),
     Export(ExportArgs),
     Import(ImportArgs),
@@ -764,6 +767,7 @@ fn main() -> Result<()> {
         Command::Restart(args) => restart_local(&store, args),
         Command::Suspend(args) => suspend_backend_local(&store, args),
         Command::Resume(args) => resume_backend_local(&store, args),
+        Command::Display(args) => display_backend_local(&store, args),
         Command::Delete(args) => delete(&store, args),
         Command::Export(args) => export_vm(&store, args),
         Command::Import(args) => import_vm(&store, args),
@@ -1162,6 +1166,9 @@ fn request_for(command: Command) -> Result<BridgeVmRequest> {
             name: args.name,
             spawn: args.spawn,
         }),
+        Command::Display(_) => Err(anyhow::anyhow!(
+            "the embedded display window must run on the local GUI session; run `bridgevm display <vm>` with --store (not --socket)"
+        )),
         Command::Readiness(args) => Ok(BridgeVmRequest::ReadinessReport {
             name: args.name,
             live_evidence: args.live_evidence,
@@ -2129,6 +2136,23 @@ fn resume_backend_local(store: &VmStore, args: VmNameArgs) -> Result<()> {
         .context("failed to read QMP supervisor metadata")?;
     println!("Resumed {}", args.name);
     print_runner_status(Some(metadata), qmp_supervisor.as_ref());
+    Ok(())
+}
+
+fn display_backend_local(store: &VmStore, args: VmNameArgs) -> Result<()> {
+    if !apple_vz_runner_configured() {
+        anyhow::bail!(
+            "embedded display requires BRIDGEVM_APPLE_VZ_RUNNER to point at a signed AppleVzRunner"
+        );
+    }
+    let metadata = display_fast_backend(store, &args.name)
+        .map_err(anyhow::Error::msg)
+        .with_context(|| format!("failed to launch embedded display for VM '{}'", args.name))?;
+    println!(
+        "Launched embedded display window for {} (close the window to stop the VM)",
+        args.name
+    );
+    print_runner_status(Some(metadata), None);
     Ok(())
 }
 

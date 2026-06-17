@@ -69,8 +69,9 @@ The VM lifecycle (create/run/suspend/resume/stop) + networking + boot evidence a
   - `AppleVzVirtualMachineLauncher.launchLinuxKernelVirtualMachineWithDisplay` creates the VM on the main queue and hosts it in a resizable `NSWindow` + `VZVirtualMachineView` via an AppKit run loop.
   - `AppleVzRunner --display` flag (threads `AppleVzLaunchOptions.displayWindow`).
   - `lightvm-runner --apple-vz-display` forwards `--display` to the AppleVzRunner helper (unit-tested: `launch_handoff_forwards_display_to_helper`).
-  - Verifiable parts unit-tested + the whole macOS package + Rust workspace compile.
-  - **Remaining to drive it end-to-end:** (1) the api + CLI need to pass `--apple-vz-display` down — cleanest as a dedicated `bridgevm display <vm>` command / `display_fast_backend` path rather than overloading `run`, since the windowed display has a different lifecycle (no suspend/resume); (2) a macOS app "Show display" action; (3) **user infra to actually see it:** a GUI session + a VZ-bootable Linux guest (raw disk + extracted kernel/initrd with a console), plus `BRIDGEVM_APPLE_VZ_RUNNER` pointing at a signed AppleVzRunner.
+  - api `display_fast_backend` + `fast_runner_args(..., display)` push `--apple-vz-display` (unit-tested: `fast_runner_args_display_appends_display_flag`).
+  - **CLI `bridgevm display <vm>`** drives the whole chain (`display <vm>` → display_fast_backend → lightvm-runner `--apple-vz-display` → AppleVzRunner `--display` → graphics config + window). Local-GUI only (rejects `--socket` with a clear message; requires `BRIDGEVM_APPLE_VZ_RUNNER`). Verified: both error paths + 465 workspace tests green; whole macOS package + Rust workspace compile.
+  - **Remaining to actually SEE it (user infra / GUI):** run `bridgevm display <vm>` in a GUI login session with `BRIDGEVM_APPLE_VZ_RUNNER` set to a signed AppleVzRunner and a Fast Mode VM whose disk is a raw image with an extracted kernel/initrd + console (VZ `linux-kernel` boot). Optional polish: a macOS app "Show display" button that shells out to the same path.
 
 **Need user resources:**
 - **Developer ID / notarization** — user's paid Apple Developer cert + notarytool profile (only blocks public signed distribution; local dev uses ad-hoc signing).

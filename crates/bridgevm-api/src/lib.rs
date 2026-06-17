@@ -5325,7 +5325,7 @@ fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadat
         // is unset, preserve the legacy dry-run + not-implemented behavior so
         // all existing metadata-safe smokes/tests stay green.
         if spawn && apple_vz_runner_configured() {
-            return spawn_fast_backend(store, name, &bundle, &manifest, None);
+            return spawn_fast_backend(store, name, &bundle, &manifest, None, false);
         }
         let plan = build_fast_plan(&manifest, &bundle).map_err(|error| error.to_string())?;
         let launch_spec_path = write_launch_spec_artifact(&bundle, plan.launch_spec())
@@ -5875,6 +5875,7 @@ pub fn fast_runner_args(
     launch_spec_path: &Path,
     apple_vz_runner: &Path,
     restore_state: Option<&Path>,
+    display: bool,
 ) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "--launch-spec".to_string(),
@@ -5888,6 +5889,11 @@ pub fn fast_runner_args(
     if let Some(state_path) = restore_state {
         args.push("--apple-vz-restore-state".to_string());
         args.push(state_path.display().to_string());
+    }
+    // Embedded display: lightvm-runner forwards this as `--display` to the
+    // AppleVzRunner, which boots with a graphics device + hosts a window.
+    if display {
+        args.push("--apple-vz-display".to_string());
     }
     args
 }
@@ -5904,6 +5910,7 @@ fn spawn_fast_backend(
     bundle: &Path,
     manifest: &VmManifest,
     restore_state: Option<&Path>,
+    display: bool,
 ) -> Result<RunnerMetadata, String> {
     let apple_vz_runner = require_apple_vz_runner()?;
     let lightvm_runner = find_lightvm_runner();
@@ -5932,7 +5939,7 @@ fn spawn_fast_backend(
         .map_err(|error| error.to_string())?;
     let stderr = stdout.try_clone().map_err(|error| error.to_string())?;
 
-    let args = fast_runner_args(&launch_spec_path, &apple_vz_runner, restore_state);
+    let args = fast_runner_args(&launch_spec_path, &apple_vz_runner, restore_state, display);
 
     let child = Command::new(&lightvm_runner)
         .args(&args)
@@ -5979,7 +5986,22 @@ pub fn cold_start_fast_backend(store: &VmStore, name: &str) -> Result<RunnerMeta
     if manifest.mode != VmMode::Fast {
         return Err("cold-start launch is only implemented for Fast Mode VMs".to_string());
     }
-    spawn_fast_backend(store, name, &bundle, &manifest, None)
+    spawn_fast_backend(store, name, &bundle, &manifest, None, false)
+}
+
+/// Boot a Fast Mode VM with an embedded graphical display: spawns the windowed
+/// AppleVzRunner (via lightvm-runner `--apple-vz-display`) that hosts the VM in a
+/// `VZVirtualMachineView` window. Requires `BRIDGEVM_APPLE_VZ_RUNNER` and a GUI
+/// session. Unlike cold-start, the display path has no suspend/resume (a VZ
+/// graphics device disables save/restore).
+pub fn display_fast_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, String> {
+    let (bundle, manifest, _) = store
+        .get_vm_with_active_disk(name)
+        .map_err(|error| error.to_string())?;
+    if manifest.mode != VmMode::Fast {
+        return Err("embedded display is only implemented for Fast Mode VMs".to_string());
+    }
+    spawn_fast_backend(store, name, &bundle, &manifest, None, true)
 }
 
 /// How long to wait for the QEMU `snapshot-save` job to conclude during a
@@ -6138,7 +6160,7 @@ pub fn resume_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, Str
 
     // Resume is identical to a Fast cold start except it restores the saved VZ
     // machine state instead of booting fresh.
-    spawn_fast_backend(store, name, &bundle, &manifest, Some(&state_path))
+    spawn_fast_backend(store, name, &bundle, &manifest, Some(&state_path), false)
 }
 
 /// Path to the Compatibility Mode suspend marker/metadata for a VM.
@@ -11078,7 +11100,7 @@ mod tests {
     fn fast_runner_args_cold_start_omits_restore_state() {
         let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
         let runner = Path::new("/helpers/AppleVzRunner");
-        let args = fast_runner_args(launch_spec, runner, None);
+        let args = fast_runner_args(launch_spec, runner, None, false);
         assert_eq!(
             args,
             vec![
@@ -11093,6 +11115,17 @@ mod tests {
         );
         // A cold start never restores saved state.
         assert!(!args.iter().any(|arg| arg == "--apple-vz-restore-state"));
+        // and a non-display cold start does not request a display window.
+        assert!(!args.iter().any(|arg| arg == "--apple-vz-display"));
+    }
+
+    #[test]
+    fn fast_runner_args_display_appends_display_flag() {
+        let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
+        let runner = Path::new("/helpers/AppleVzRunner");
+        let args = fast_runner_args(launch_spec, runner, None, true);
+        assert!(args.iter().any(|arg| arg == "--apple-vz-display"));
+        assert!(!args.iter().any(|arg| arg == "--apple-vz-restore-state"));
     }
 
     #[test]
@@ -11100,7 +11133,7 @@ mod tests {
         let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
         let runner = Path::new("/helpers/AppleVzRunner");
         let state = Path::new("/bundle/metadata/suspend-images/fast.bin");
-        let args = fast_runner_args(launch_spec, runner, Some(state));
+        let args = fast_runner_args(launch_spec, runner, Some(state), false);
         assert_eq!(
             args,
             vec![
