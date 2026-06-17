@@ -2318,7 +2318,7 @@ final class DashboardViewModel: ObservableObject {
       }
       runtimeResourcePolicies[virtualMachine.id] = policy
       runtimeResourcePolicyErrors[virtualMachine.id] = nil
-      alertMessage = "Runtime resource policy recorded for \(policy.vm)."
+      alertMessage = runtimeResourcePolicyAlertMessage(policy)
       return true
     } catch {
       guard generation == clientGeneration else {
@@ -2329,6 +2329,24 @@ final class DashboardViewModel: ObservableObject {
       alertMessage = message
       return false
     }
+  }
+
+  private func runtimeResourcePolicyAlertMessage(_ policy: RuntimeResourcePolicy) -> String {
+    if policy.liveApplied {
+      return "Runtime resource policy applied live for \(policy.vm)."
+    }
+    if let blockerSummary = policy.liveApplyBlockerSummary {
+      let terminator = sentenceTerminator(after: blockerSummary)
+      return "Runtime resource policy recorded for \(policy.vm); live apply blocked: \(blockerSummary)\(terminator)"
+    }
+    return "Runtime resource policy recorded for \(policy.vm)."
+  }
+
+  private func sentenceTerminator(after text: String) -> String {
+    guard let last = text.last else {
+      return "."
+    }
+    return ".!?".contains(last) ? "" : "."
   }
 
   func createDiagnosticBundle(output outputText: String, for virtualMachine: VirtualMachine) async

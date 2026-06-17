@@ -6148,7 +6148,12 @@ final class DashboardViewModelTests: XCTestCase {
     XCTAssertEqual(client.reappliedRuntimeResourceRequests.count, 1)
     XCTAssertEqual(client.reappliedRuntimeResourceRequests[0].visibility, .background)
     XCTAssertEqual(client.reappliedRuntimeResourceRequests[0].id, virtualMachine.id)
-    XCTAssertEqual(model.alertMessage, "Runtime resource policy recorded for dev.")
+    let expectedAlert =
+      "Runtime resource policy recorded for dev; live apply blocked: runtime-control-unavailable: No live Apple VZ/display runtime control channel is available yet."
+    XCTAssertEqual(
+      model.alertMessage,
+      expectedAlert
+    )
   }
 
   func testCreateDiagnosticBundleStoresResult() async throws {

@@ -3159,6 +3159,12 @@ private struct RuntimeResourcePolicyPanel: View {
             GuestToolsFactRow(title: "Metadata Recorded", value: unixTimeText(policy.updatedAtUnix))
           }
 
+          if !policy.liveApplied && !policy.liveApplyBlockers.isEmpty {
+            Label("Policy recorded only; live runtime control is unavailable.", systemImage: "record.circle")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+
           ForEach(policy.liveApplyBlockers, id: \.code) { blocker in
             VStack(alignment: .leading, spacing: 3) {
               Text(blocker.code)

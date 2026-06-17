@@ -5874,13 +5874,28 @@ struct RuntimeResourcePolicy: Equatable {
   var updatedAtUnix: UInt64
 
   var liveApplyTitle: String {
-    liveApplied ? "Applied" : "Recorded"
+    if liveApplied {
+      return "Applied"
+    }
+    if !liveApplyBlockers.isEmpty {
+      return "Blocked"
+    }
+    return "Recorded"
+  }
+
+  var liveApplyBlockerSummary: String? {
+    let value = liveApplyBlockers.map(\.summary).joined(separator: "; ")
+    return value.isEmpty ? nil : value
   }
 }
 
 struct RuntimeResourcePolicyBlocker: Equatable {
   var code: String
   var message: String
+
+  var summary: String {
+    "\(code): \(message)"
+  }
 }
 
 struct DaemonRuntimeResourcePolicyDTO: Decodable {

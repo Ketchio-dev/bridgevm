@@ -3180,8 +3180,14 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertEqual(policy.cpu, "1")
     XCTAssertEqual(policy.displayFPSCap, "10")
     XCTAssertEqual(policy.rationale, "Battery or background throttling active.")
-    XCTAssertEqual(policy.liveApplyTitle, "Recorded")
+    XCTAssertEqual(policy.liveApplyTitle, "Blocked")
     XCTAssertEqual(policy.liveApplyBlockers.first?.code, "runtime-control-unavailable")
+    let expectedBlockerSummary =
+      "runtime-control-unavailable: No live Apple VZ/display runtime control channel is available yet; the policy was recorded for UI/display pacing consumers."
+    XCTAssertEqual(
+      policy.liveApplyBlockers.first?.summary,
+      expectedBlockerSummary
+    )
     XCTAssertEqual(policy.updatedAtUnix, 1_710_000_500)
   }
 
