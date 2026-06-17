@@ -12,6 +12,10 @@ use std::{
     os::unix::net::UnixStream,
     path::{Component, Path, PathBuf},
     process::{Command as ProcessCommand, Stdio},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -81,6 +85,18 @@ struct Args {
     clipboard_text: Option<String>,
     #[arg(long, value_name = "PATH")]
     clipboard_command: Option<PathBuf>,
+    /// Poll the real guest OS clipboard every <MS> milliseconds and emit a
+    /// guest-origin `ClipboardChanged` frame whenever its text changes. Default
+    /// 0 disables the watcher (preserving the prior synthetic-only behavior);
+    /// the watcher only runs when this is > 0, the clipboard capability is
+    /// enabled, and a real clipboard reader (wl-paste/xclip) is detected.
+    #[arg(long, value_name = "MS", default_value_t = 0)]
+    clipboard_watch_interval_ms: u64,
+    /// Explicit clipboard reader program for `--clipboard-watch-interval-ms`
+    /// (runs with no extra args, its stdout is the clipboard text). When unset
+    /// the watcher auto-detects wl-paste/xclip.
+    #[arg(long, value_name = "PATH")]
+    clipboard_read_command: Option<PathBuf>,
     #[arg(long, value_name = "PATH")]
     display_resize_command: Option<PathBuf>,
     #[arg(long, value_name = "DIR")]
@@ -112,6 +128,11 @@ fn main() -> Result<()> {
     let capabilities = resolve_capabilities(&args.capabilities)?;
     let filesystem_freezer = resolve_filesystem_freezer(args.real_fsfreeze, args.fsfreeze_mounts)?;
     let clipboard_writer = resolve_clipboard_writer(&capabilities, args.clipboard_command)?;
+    let clipboard_watcher = resolve_clipboard_watcher(
+        &capabilities,
+        args.clipboard_watch_interval_ms,
+        args.clipboard_read_command,
+    )?;
     let display_resizer = resolve_display_resizer(&capabilities, args.display_resize_command)?;
     let clock_setter = resolve_clock_setter(&capabilities, args.no_real_time_sync);
     let telemetry = TelemetryConfig::from_args(
@@ -130,12 +151,12 @@ fn main() -> Result<()> {
             let stream = UnixStream::connect(&socket).with_context(|| {
                 format!("failed to connect guest-tools socket {}", socket.display())
             })?;
-            let mut writer = stream
+            let writer = stream
                 .try_clone()
                 .context("failed to clone guest-tools socket")?;
-            run_tools_session(
+            run_tools_session_watched(
                 stream,
-                &mut writer,
+                writer,
                 &token,
                 &args.guest_os,
                 capabilities,
@@ -143,6 +164,7 @@ fn main() -> Result<()> {
                 args.file_drop_dir,
                 filesystem_freezer,
                 clipboard_writer,
+                clipboard_watcher,
                 display_resizer,
                 clock_setter,
                 args.serve_once,
@@ -156,12 +178,12 @@ fn main() -> Result<()> {
                 .with_context(|| {
                     format!("failed to open guest-tools device {}", device.display())
                 })?;
-            let mut writer = file.try_clone().with_context(|| {
+            let writer = file.try_clone().with_context(|| {
                 format!("failed to clone guest-tools device {}", device.display())
             })?;
-            run_tools_session(
+            run_tools_session_watched(
                 file,
-                &mut writer,
+                writer,
                 &token,
                 &args.guest_os,
                 capabilities,
@@ -169,6 +191,7 @@ fn main() -> Result<()> {
                 args.file_drop_dir,
                 filesystem_freezer,
                 clipboard_writer,
+                clipboard_watcher,
                 display_resizer,
                 clock_setter,
                 args.serve_once,
@@ -234,6 +257,47 @@ fn resolve_clipboard_writer(
     }
 }
 
+/// Resolve the opt-in guest->host clipboard watcher. Returns `None` (watcher
+/// disabled, default behavior unchanged) unless `--clipboard-watch-interval-ms`
+/// is greater than zero AND the clipboard capability is enabled AND a real
+/// reader is available (explicit `--clipboard-read-command` or an auto-detected
+/// wl-paste/xclip). A configured interval with no usable reader is a hard error
+/// so the operator is not silently left without live sync.
+fn resolve_clipboard_watcher(
+    capabilities: &[AgentCapability],
+    interval_ms: u64,
+    command: Option<PathBuf>,
+) -> Result<Option<ClipboardWatcher>> {
+    if interval_ms == 0 {
+        if command.is_some() {
+            anyhow::bail!(
+                "--clipboard-read-command requires --clipboard-watch-interval-ms greater than zero"
+            );
+        }
+        return Ok(None);
+    }
+    if !supports_capability(capabilities, "clipboard") {
+        anyhow::bail!("--clipboard-watch-interval-ms requires the clipboard capability");
+    }
+
+    let reader = match command {
+        // Explicit path: read exactly that program's stdout, no extra args.
+        Some(command) => ClipboardReader::command(command),
+        // No explicit command: auto-detect a real clipboard reader.
+        None => detect_clipboard_reader(&SystemDesktopEnv),
+    };
+    if reader.command_path().is_none() {
+        anyhow::bail!(
+            "--clipboard-watch-interval-ms could not find a clipboard reader (install wl-paste or xclip, or pass --clipboard-read-command)"
+        );
+    }
+
+    Ok(Some(ClipboardWatcher {
+        interval: Duration::from_millis(interval_ms),
+        reader,
+    }))
+}
+
 fn resolve_display_resizer(
     capabilities: &[AgentCapability],
     command: Option<PathBuf>,
@@ -293,6 +357,29 @@ fn detect_clipboard_writer(env: &impl DesktopEnv) -> ClipboardWriter {
         )
     } else {
         ClipboardWriter::simulated()
+    }
+}
+
+/// Clipboard-reader auto-detection (mirrors `detect_clipboard_writer`): prefer
+/// Wayland's `wl-paste --no-newline`, fall back to X11's
+/// `xclip -selection clipboard -o`, otherwise simulated (no reader).
+fn detect_clipboard_reader(env: &impl DesktopEnv) -> ClipboardReader {
+    if env.has_env("WAYLAND_DISPLAY") && env.has_program("wl-paste") {
+        ClipboardReader::command_with_args(
+            PathBuf::from("wl-paste"),
+            vec!["--no-newline".to_string()],
+        )
+    } else if env.has_env("DISPLAY") && env.has_program("xclip") {
+        ClipboardReader::command_with_args(
+            PathBuf::from("xclip"),
+            vec![
+                "-selection".to_string(),
+                "clipboard".to_string(),
+                "-o".to_string(),
+            ],
+        )
+    } else {
+        ClipboardReader::simulated()
     }
 }
 
@@ -396,6 +483,183 @@ fn run_tools_session(
     {
         if let Some(result) = state.handle_command(&command) {
             write_envelope_line(writer, &result).map_err(|error| anyhow::anyhow!("{error:?}"))?;
+        }
+        handled_commands += 1;
+        if serve_once && handled_commands >= 1 {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+/// Session runner with the opt-in continuous clipboard watcher layered on top
+/// of the proven `run_tools_session` loop. When `watcher` is `None` (the
+/// default, interval 0) this is byte-for-byte the same as `run_tools_session`:
+/// no extra thread is spawned and the writer is used directly. When a watcher
+/// is supplied, the writer is shared behind a `Mutex` so the watcher thread and
+/// the command loop never interleave frames, the watcher polls the real reader
+/// on its interval and emits `ClipboardChanged` through the same writer, and the
+/// watcher is signalled to stop and joined before this function returns.
+#[allow(clippy::too_many_arguments)]
+fn run_tools_session_watched<R, W>(
+    reader: R,
+    mut writer: W,
+    token: &str,
+    guest_os: &str,
+    capabilities: Vec<AgentCapability>,
+    telemetry: TelemetryConfig,
+    file_drop_dir: Option<PathBuf>,
+    filesystem_freezer: FilesystemFreezer,
+    clipboard_writer: ClipboardWriter,
+    clipboard_watcher: Option<ClipboardWatcher>,
+    display_resizer: DisplayResizer,
+    clock_setter: ClockSetter,
+    serve_once: bool,
+) -> Result<()>
+where
+    R: Read,
+    W: Write + Send + 'static,
+{
+    let Some(watcher) = clipboard_watcher else {
+        // Disabled watcher: identical to the historical single-threaded path.
+        return run_tools_session(
+            reader,
+            &mut writer,
+            token,
+            guest_os,
+            capabilities,
+            telemetry,
+            file_drop_dir,
+            filesystem_freezer,
+            clipboard_writer,
+            display_resizer,
+            clock_setter,
+            serve_once,
+        );
+    };
+
+    // Share the writer so the watcher thread and the command loop serialize
+    // their frames. write_envelope_line flushes per frame, so a frame written
+    // under the lock is complete before the lock is released.
+    let shared_writer = Arc::new(Mutex::new(writer));
+    let stop = Arc::new(AtomicBool::new(false));
+    let watcher_handle = spawn_clipboard_watcher(watcher, Arc::clone(&shared_writer), Arc::clone(&stop));
+
+    let result = run_tools_session_shared(
+        reader,
+        &shared_writer,
+        token,
+        guest_os,
+        capabilities,
+        telemetry,
+        file_drop_dir,
+        filesystem_freezer,
+        clipboard_writer,
+        display_resizer,
+        clock_setter,
+        serve_once,
+    );
+
+    // Signal the watcher to stop and reap it so no thread leaks and no frame is
+    // written after the session loop has returned.
+    stop.store(true, Ordering::SeqCst);
+    let _ = watcher_handle.join();
+    result
+}
+
+/// Spawn the watcher thread. It polls the reader every `interval`, feeds reads
+/// through the pure `ClipboardWatchState`, and writes a `ClipboardChanged`
+/// frame under the shared writer lock on each detected change. It exits when
+/// `stop` is set or when writing to the shared writer fails (session gone).
+fn spawn_clipboard_watcher<W>(
+    watcher: ClipboardWatcher,
+    shared_writer: Arc<Mutex<W>>,
+    stop: Arc<AtomicBool>,
+) -> thread::JoinHandle<()>
+where
+    W: Write + Send + 'static,
+{
+    thread::spawn(move || {
+        let ClipboardWatcher { interval, reader } = watcher;
+        let mut state = ClipboardWatchState::new();
+        // Poll in short slices so a long interval still stops promptly.
+        let slice = interval.min(Duration::from_millis(100)).max(Duration::from_millis(1));
+        let mut waited = Duration::ZERO;
+        loop {
+            if stop.load(Ordering::SeqCst) {
+                return;
+            }
+            if waited < interval {
+                thread::sleep(slice);
+                waited += slice;
+                continue;
+            }
+            waited = Duration::ZERO;
+
+            // A reader error is non-fatal: skip this tick and try again. A
+            // misbehaving reader is already bounded by run_clipboard_read_command.
+            let latest = reader.read_text().unwrap_or(None);
+            if let Some(text) = state.observe(latest) {
+                let envelope = AgentEnvelope::new(AgentMessage::ClipboardChanged { text });
+                let Ok(mut guard) = shared_writer.lock() else {
+                    return;
+                };
+                if write_envelope_line(&mut *guard, &envelope).is_err() {
+                    // Stream closed / session ended: stop watching.
+                    return;
+                }
+            }
+        }
+    })
+}
+
+/// The command loop body, parameterized over a shared writer so the watcher can
+/// safely interleave `ClipboardChanged` frames. Mirrors `run_tools_session`.
+#[allow(clippy::too_many_arguments)]
+fn run_tools_session_shared<R, W>(
+    reader: R,
+    shared_writer: &Arc<Mutex<W>>,
+    token: &str,
+    guest_os: &str,
+    capabilities: Vec<AgentCapability>,
+    telemetry: TelemetryConfig,
+    file_drop_dir: Option<PathBuf>,
+    filesystem_freezer: FilesystemFreezer,
+    clipboard_writer: ClipboardWriter,
+    display_resizer: DisplayResizer,
+    clock_setter: ClockSetter,
+    serve_once: bool,
+) -> Result<()>
+where
+    R: Read,
+    W: Write,
+{
+    let mut state = GuestToolsState::new(&capabilities)
+        .with_file_drop_dir(file_drop_dir)
+        .with_filesystem_freezer(filesystem_freezer)
+        .with_clipboard_writer(clipboard_writer)
+        .with_display_resizer(display_resizer)
+        .with_clock_setter(clock_setter);
+    let hello = guest_hello(token, guest_os, capabilities);
+    {
+        let mut guard = shared_writer.lock().expect("writer mutex poisoned");
+        write_envelope_line(&mut *guard, &hello).map_err(|error| anyhow::anyhow!("{error:?}"))?;
+        for envelope in initial_status_envelopes(&telemetry) {
+            write_envelope_line(&mut *guard, &envelope)
+                .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+        }
+    }
+
+    let mut reader = BufReader::new(reader);
+    let mut handled_commands = 0usize;
+    while let Some(command) =
+        read_envelope_line(&mut reader).map_err(|error| anyhow::anyhow!("{error:?}"))?
+    {
+        if let Some(result) = state.handle_command(&command) {
+            let mut guard = shared_writer.lock().expect("writer mutex poisoned");
+            write_envelope_line(&mut *guard, &result)
+                .map_err(|error| anyhow::anyhow!("{error:?}"))?;
         }
         handled_commands += 1;
         if serve_once && handled_commands >= 1 {
@@ -1124,6 +1388,172 @@ fn run_clipboard_command(program: &Path, args: &[String], text: &str) -> Result<
         Ok(status) if status.success() => Ok(()),
         Ok(status) => Err(format!("{label} failed: exit status {status}")),
         Err(error) => Err(error),
+    }
+}
+
+/// Reads the guest OS clipboard, mirroring `ClipboardWriter`. The real mode
+/// runs a configured/auto-detected reader (`wl-paste`/`xclip -o`) and captures
+/// its stdout; the simulated mode returns a fixed value (used in tests / when
+/// no reader is available).
+struct ClipboardReader {
+    mode: ClipboardReaderMode,
+}
+
+enum ClipboardReaderMode {
+    /// No real reader; `read_text` returns the optional canned value.
+    Simulated { value: Option<String> },
+    Command { program: PathBuf, args: Vec<String> },
+}
+
+impl ClipboardReader {
+    /// Simulated reader that always yields `None` (no clipboard content).
+    fn simulated() -> Self {
+        Self {
+            mode: ClipboardReaderMode::Simulated { value: None },
+        }
+    }
+
+    /// Simulated reader that yields a fixed value (test helper).
+    #[cfg(test)]
+    fn simulated_value(value: Option<String>) -> Self {
+        Self {
+            mode: ClipboardReaderMode::Simulated { value },
+        }
+    }
+
+    /// Explicit `--clipboard-read-command <path>`: run that program with no
+    /// extra arguments and capture its stdout.
+    fn command(program: PathBuf) -> Self {
+        Self::command_with_args(program, Vec::new())
+    }
+
+    /// Auto-detected readers carry their own arguments (e.g.
+    /// `xclip -selection clipboard -o`).
+    fn command_with_args(program: PathBuf, args: Vec<String>) -> Self {
+        Self {
+            mode: ClipboardReaderMode::Command { program, args },
+        }
+    }
+
+    /// Read the current clipboard text. `Ok(None)` means "nothing usable to
+    /// report this tick" (simulated-empty, or a reader that produced no bytes);
+    /// the watcher treats that as no-change. `Err` is a real reader failure.
+    fn read_text(&self) -> Result<Option<String>, String> {
+        match &self.mode {
+            ClipboardReaderMode::Simulated { value } => Ok(value.clone()),
+            ClipboardReaderMode::Command { program, args } => {
+                run_clipboard_read_command(program, args)
+            }
+        }
+    }
+
+    /// Resolved reader program path, or `None` when simulated. Used to decide
+    /// whether a real reader was found and (in tests) which tool was selected.
+    fn command_path(&self) -> Option<&Path> {
+        match &self.mode {
+            ClipboardReaderMode::Simulated { .. } => None,
+            ClipboardReaderMode::Command { program, .. } => Some(program),
+        }
+    }
+
+    /// Test-only view of the resolved mode: `None` when simulated, otherwise the
+    /// resolved program path plus its arguments.
+    #[cfg(test)]
+    fn command_for_test(&self) -> Option<(&Path, &[String])> {
+        match &self.mode {
+            ClipboardReaderMode::Simulated { .. } => None,
+            ClipboardReaderMode::Command { program, args } => Some((program, args)),
+        }
+    }
+}
+
+/// Run a clipboard reader and capture stdout as the clipboard text. Mirrors the
+/// effect-command hardening used by `run_clipboard_command`: pinned PATH (an
+/// auto-detected bare name resolves only from system dirs), null stdin/stderr (a
+/// daemonizing child can't read our stdin or hold stderr), and a bounded wait so
+/// a hung reader cannot wedge the watcher thread.
+fn run_clipboard_read_command(program: &Path, args: &[String]) -> Result<Option<String>, String> {
+    let mut child = ProcessCommand::new(program)
+        .args(args)
+        .env("PATH", EFFECT_COMMAND_PATH)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| {
+            format!(
+                "failed to execute clipboard read command {}: {error}",
+                program.display()
+            )
+        })?;
+
+    // Drain stdout on a separate thread so a reader that emits a large payload
+    // can't deadlock the bounded wait by filling the pipe before exiting.
+    let mut stdout = child.stdout.take().ok_or_else(|| {
+        format!(
+            "failed to open stdout for clipboard read command {}",
+            program.display()
+        )
+    })?;
+    let drain = thread::spawn(move || {
+        let mut buffer = Vec::new();
+        let _ = stdout.read_to_end(&mut buffer);
+        buffer
+    });
+
+    let label = format!("clipboard read command {}", program.display());
+    let status = wait_bounded(&mut child, &label);
+    let buffer = drain.join().unwrap_or_default();
+    match status {
+        Ok(status) if status.success() => {
+            let text = String::from_utf8_lossy(&buffer)
+                .trim_end_matches(['\r', '\n'])
+                .to_string();
+            if text.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(text))
+            }
+        }
+        Ok(status) => Err(format!("{label} failed: exit status {status}")),
+        Err(error) => Err(error),
+    }
+}
+
+/// Opt-in continuous clipboard watcher configuration: a real reader plus the
+/// poll interval. Only constructed when the watcher is enabled.
+struct ClipboardWatcher {
+    interval: Duration,
+    reader: ClipboardReader,
+}
+
+/// Pure change-detection core for the clipboard watcher. `observe` returns
+/// `Some(text)` only when the observed clipboard content is a non-empty value
+/// that differs from the last reported one; identical repeats and empty/None
+/// reads are suppressed. Empty/None never clears the remembered value, so a
+/// transient empty read between two identical non-empty reads does not cause a
+/// spurious re-emit.
+#[derive(Debug, Default)]
+struct ClipboardWatchState {
+    last_reported: Option<String>,
+}
+
+impl ClipboardWatchState {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn observe(&mut self, latest: Option<String>) -> Option<String> {
+        // Treat None and empty string identically: nothing to report, and the
+        // remembered value is left intact (a momentary empty clipboard read is
+        // not a "change" worth emitting and must not trigger a later re-emit of
+        // the same text).
+        let text = latest.filter(|text| !text.is_empty())?;
+        if self.last_reported.as_deref() == Some(text.as_str()) {
+            return None;
+        }
+        self.last_reported = Some(text.clone());
+        Some(text)
     }
 }
 
@@ -2231,6 +2661,340 @@ mod tests {
             programs: &["wl-copy", "xclip"],
         };
         assert!(detect_clipboard_writer(&env).command_for_test().is_none());
+    }
+
+    #[test]
+    fn clipboard_reader_detection_prefers_wayland_wl_paste() {
+        // Wayland session with both tools -> wl-paste --no-newline.
+        let env = FakeDesktopEnv {
+            envs: &["WAYLAND_DISPLAY", "DISPLAY"],
+            programs: &["wl-paste", "xclip"],
+        };
+        let reader = detect_clipboard_reader(&env);
+        let (program, args) = reader.command_for_test().expect("expected a command");
+        assert_eq!(program, Path::new("wl-paste"));
+        assert_eq!(args, &["--no-newline".to_string()]);
+    }
+
+    #[test]
+    fn clipboard_reader_detection_falls_back_to_x11_xclip() {
+        // X11 session (no WAYLAND_DISPLAY) -> xclip -selection clipboard -o.
+        let env = FakeDesktopEnv {
+            envs: &["DISPLAY"],
+            programs: &["xclip"],
+        };
+        let reader = detect_clipboard_reader(&env);
+        let (program, args) = reader.command_for_test().expect("expected a command");
+        assert_eq!(program, Path::new("xclip"));
+        assert_eq!(
+            args,
+            &[
+                "-selection".to_string(),
+                "clipboard".to_string(),
+                "-o".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn clipboard_reader_detection_falls_back_to_simulated_without_tools() {
+        // Wayland var set but wl-paste missing, and no DISPLAY -> simulated.
+        let env = FakeDesktopEnv {
+            envs: &["WAYLAND_DISPLAY"],
+            programs: &[],
+        };
+        assert!(detect_clipboard_reader(&env).command_for_test().is_none());
+
+        // No session at all -> simulated, even though both tools exist.
+        let env = FakeDesktopEnv {
+            envs: &[],
+            programs: &["wl-paste", "xclip"],
+        };
+        assert!(detect_clipboard_reader(&env).command_for_test().is_none());
+    }
+
+    #[test]
+    fn clipboard_watch_state_emits_on_first_non_empty_and_dedupes() {
+        let mut state = ClipboardWatchState::new();
+        // First non-empty read is emitted.
+        assert_eq!(
+            state.observe(Some("hello".to_string())),
+            Some("hello".to_string())
+        );
+        // Identical repeats are suppressed.
+        assert_eq!(state.observe(Some("hello".to_string())), None);
+        assert_eq!(state.observe(Some("hello".to_string())), None);
+        // A real change re-emits.
+        assert_eq!(
+            state.observe(Some("world".to_string())),
+            Some("world".to_string())
+        );
+        assert_eq!(state.observe(Some("world".to_string())), None);
+    }
+
+    #[test]
+    fn clipboard_watch_state_ignores_empty_and_none_without_clearing() {
+        let mut state = ClipboardWatchState::new();
+        // Empty/None before any value: nothing to report.
+        assert_eq!(state.observe(None), None);
+        assert_eq!(state.observe(Some(String::new())), None);
+
+        assert_eq!(
+            state.observe(Some("payload".to_string())),
+            Some("payload".to_string())
+        );
+        // A transient empty/None read does not clear the remembered value, so
+        // the same text afterwards is still a dedup (no spurious re-emit).
+        assert_eq!(state.observe(None), None);
+        assert_eq!(state.observe(Some(String::new())), None);
+        assert_eq!(state.observe(Some("payload".to_string())), None);
+        // But a genuinely new value after the gap is emitted.
+        assert_eq!(
+            state.observe(Some("next".to_string())),
+            Some("next".to_string())
+        );
+    }
+
+    #[test]
+    fn clipboard_reader_simulated_value_round_trips_through_watch_state() {
+        let reader = ClipboardReader::simulated_value(Some("seed".to_string()));
+        let mut state = ClipboardWatchState::new();
+        assert_eq!(
+            state.observe(reader.read_text().unwrap()),
+            Some("seed".to_string())
+        );
+        // Same simulated value again -> dedup.
+        assert_eq!(state.observe(reader.read_text().unwrap()), None);
+    }
+
+    #[test]
+    fn clipboard_reader_command_captures_stdout_and_trims_trailing_newline() {
+        let root = unique_temp_dir("bridgevm-tools-clipboard-read");
+        fs::create_dir_all(&root).unwrap();
+        let command_path = root.join("read-clipboard.sh");
+        fs::write(&command_path, "#!/bin/sh\nprintf 'clip text\\n'\n").unwrap();
+        let mut permissions = fs::metadata(&command_path).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&command_path, permissions).unwrap();
+
+        let reader = ClipboardReader::command(command_path);
+        assert_eq!(reader.read_text().unwrap(), Some("clip text".to_string()));
+    }
+
+    #[test]
+    fn clipboard_reader_command_treats_empty_output_as_none() {
+        let root = unique_temp_dir("bridgevm-tools-clipboard-read-empty");
+        fs::create_dir_all(&root).unwrap();
+        let command_path = root.join("read-empty.sh");
+        fs::write(&command_path, "#!/bin/sh\nprintf ''\n").unwrap();
+        let mut permissions = fs::metadata(&command_path).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&command_path, permissions).unwrap();
+
+        let reader = ClipboardReader::command(command_path);
+        assert_eq!(reader.read_text().unwrap(), None);
+    }
+
+    #[test]
+    fn clipboard_reader_command_reports_failure() {
+        let reader =
+            ClipboardReader::command(PathBuf::from("/tmp/bridgevm-missing-clipboard-reader"));
+        assert!(reader.read_text().is_err());
+    }
+
+    #[test]
+    fn resolve_clipboard_watcher_disabled_by_default() {
+        // Interval 0 (default) -> no watcher, default behavior unchanged.
+        assert!(resolve_clipboard_watcher(&default_capabilities(), 0, None)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn resolve_clipboard_watcher_rejects_read_command_without_interval() {
+        assert!(resolve_clipboard_watcher(
+            &default_capabilities(),
+            0,
+            Some(PathBuf::from("/usr/local/bin/my-reader")),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn resolve_clipboard_watcher_requires_capability() {
+        let heartbeat_only = [AgentCapability {
+            name: "heartbeat".to_string(),
+            version: 1,
+        }];
+        assert!(resolve_clipboard_watcher(&heartbeat_only, 250, None).is_err());
+    }
+
+    #[test]
+    fn resolve_clipboard_watcher_uses_explicit_read_command() {
+        let watcher = resolve_clipboard_watcher(
+            &default_capabilities(),
+            250,
+            Some(PathBuf::from("/usr/local/bin/my-reader")),
+        )
+        .unwrap()
+        .expect("expected an enabled watcher");
+        assert_eq!(watcher.interval, Duration::from_millis(250));
+        assert_eq!(
+            watcher.reader.command_path(),
+            Some(Path::new("/usr/local/bin/my-reader"))
+        );
+    }
+
+    #[test]
+    fn watched_session_emits_clipboard_changed_on_real_change() {
+        // A reader script whose output changes on the second read; the watcher
+        // must emit one ClipboardChanged frame for each distinct value.
+        let root = unique_temp_dir("bridgevm-tools-clipboard-watch");
+        fs::create_dir_all(&root).unwrap();
+        let value_path = root.join("clip-value.txt");
+        fs::write(&value_path, "first").unwrap();
+        let command_path = root.join("read-clip.sh");
+        fs::write(
+            &command_path,
+            format!("#!/bin/sh\ncat '{}'\n", value_path.display()),
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&command_path).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&command_path, permissions).unwrap();
+
+        let socket_path = temp_socket_path();
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let value_path_for_server = value_path.clone();
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+
+            // Drain hello + initial status frames.
+            let hello = read_frame(&mut reader);
+            assert!(matches!(hello.message, AgentMessage::GuestHello { .. }));
+            assert_eq!(read_frame(&mut reader).message, AgentMessage::Heartbeat);
+            assert!(matches!(
+                read_frame(&mut reader).message,
+                AgentMessage::GuestIpChanged { .. }
+            ));
+            assert!(matches!(
+                read_frame(&mut reader).message,
+                AgentMessage::GuestMetrics { .. }
+            ));
+
+            // First watcher emission: "first".
+            assert_eq!(
+                read_frame(&mut reader).message,
+                AgentMessage::ClipboardChanged {
+                    text: "first".to_string()
+                }
+            );
+            // Change the clipboard value; the watcher must re-emit.
+            fs::write(&value_path_for_server, "second").unwrap();
+            assert_eq!(
+                read_frame(&mut reader).message,
+                AgentMessage::ClipboardChanged {
+                    text: "second".to_string()
+                }
+            );
+            drop(reader);
+            drop(stream);
+        });
+
+        let stream = UnixStream::connect(&socket_path).unwrap();
+        let writer = stream.try_clone().unwrap();
+        let watcher = ClipboardWatcher {
+            interval: Duration::from_millis(10),
+            reader: ClipboardReader::command(command_path),
+        };
+        run_tools_session_watched(
+            stream,
+            writer,
+            "token-1",
+            "linux",
+            default_capabilities(),
+            // No --clipboard-text seed: the only ClipboardChanged frames come
+            // from the live watcher, keeping the assertions unambiguous.
+            default_telemetry(),
+            None,
+            FilesystemFreezer::simulated(),
+            ClipboardWriter::simulated(),
+            Some(watcher),
+            DisplayResizer::simulated(),
+            ClockSetter::simulated(),
+            false,
+        )
+        .unwrap();
+
+        server.join().unwrap();
+        let _ = std::fs::remove_file(socket_path);
+    }
+
+    #[test]
+    fn watched_session_without_watcher_matches_plain_session() {
+        // None watcher must behave exactly like run_tools_session: hello +
+        // initial status + a CommandResult, and no ClipboardChanged (no seed,
+        // no watcher). Uses a socket so the owned writer is Send + 'static.
+        let socket_path = temp_socket_path();
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+
+            let hello = read_frame(&mut reader);
+            assert!(matches!(hello.message, AgentMessage::GuestHello { .. }));
+            assert_eq!(read_frame(&mut reader).message, AgentMessage::Heartbeat);
+            assert!(matches!(
+                read_frame(&mut reader).message,
+                AgentMessage::GuestIpChanged { .. }
+            ));
+            assert!(matches!(
+                read_frame(&mut reader).message,
+                AgentMessage::GuestMetrics { .. }
+            ));
+
+            let command = AgentEnvelope::with_request_id(
+                AgentMessage::ResizeDisplay {
+                    width: 800,
+                    height: 600,
+                    scale: 1,
+                },
+                "resize-1",
+            );
+            write_envelope_line(&mut stream, &command).unwrap();
+
+            let result = read_frame(&mut reader);
+            assert!(matches!(
+                result.message,
+                AgentMessage::CommandResult {
+                    ok: true,
+                    ..
+                }
+            ));
+        });
+
+        let stream = UnixStream::connect(&socket_path).unwrap();
+        let writer = stream.try_clone().unwrap();
+        run_tools_session_watched(
+            stream,
+            writer,
+            "token-1",
+            "linux",
+            default_capabilities(),
+            default_telemetry(),
+            None,
+            FilesystemFreezer::simulated(),
+            ClipboardWriter::simulated(),
+            None,
+            DisplayResizer::simulated(),
+            ClockSetter::simulated(),
+            true,
+        )
+        .unwrap();
+
+        server.join().unwrap();
+        let _ = std::fs::remove_file(socket_path);
     }
 
     #[test]

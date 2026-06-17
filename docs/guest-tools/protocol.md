@@ -152,10 +152,22 @@ with `--socket`, or to the in-guest virtio-serial device with
 heartbeat/IP/metrics status, and acknowledges basic host commands with
 `CommandResult`. For clipboard alpha smoke tests, it can acknowledge
 host-origin `SetClipboard` commands and can emit a guest-origin
-`ClipboardChanged` frame when started with clipboard seed text. Both paths are
-wire-protocol exercises only: `SetClipboard` does not write to the Linux
-desktop clipboard yet, and `ClipboardChanged` is synthetic scaffold state rather
-than a real OS clipboard watcher. The scaffold advertises a broad default
+`ClipboardChanged` frame when started with clipboard seed text. The seed path is
+a wire-protocol exercise only: `ClipboardChanged` from `--clipboard-text` is
+synthetic scaffold state emitted once at startup. There is now also an opt-in
+continuous guest->host watcher: when started with
+`--clipboard-watch-interval-ms <MS>` (default `0` = disabled), the clipboard
+capability enabled, and a real reader available (auto-detected `wl-paste
+--no-newline` on Wayland or `xclip -selection clipboard -o` on X11, or an
+explicit `--clipboard-read-command <path>`), the scaffold polls the real guest
+OS clipboard every interval and emits a `ClipboardChanged` frame whenever the
+text changes (identical repeats and empty reads are suppressed). The watcher
+reuses the same effect-command hardening as the writer (pinned PATH, null fds,
+bounded wait) and shuts down with the session. The default behavior is
+unchanged: with interval `0` no watcher runs. `SetClipboard` host->guest writes
+go through the real clipboard writer (`wl-copy`/`xclip`) when the clipboard
+capability is enabled and a tool is detected; host-side NSPasteboard write-back
+of guest `ClipboardChanged` events remains a separate host integration. The scaffold advertises a broad default
 capability set for development, or an exact manifest-compatible list with
 repeated `--capability <name[:version]>` flags. `bridgevm guest-tools
 linux-command <vm>` is the preferred way to create that exact list for either
@@ -349,13 +361,17 @@ Clipboard alpha uses the same authenticated stream in both directions:
   capability. It may include a `request_id`; when it does, the host keeps the
   request pending until a matching `CommandResult` arrives.
 - `ClipboardChanged` is a guest-to-host event authorized by the same
-  capability. In the Linux scaffold it is emitted only from supplied scaffold
-  state for smoke testing, not from an OS clipboard monitor.
+  capability. In the Linux scaffold it is emitted from the `--clipboard-text`
+  seed once at startup for smoke testing, and additionally from a real OS
+  clipboard watcher when the opt-in `--clipboard-watch-interval-ms` is enabled
+  (see above). With the watcher disabled (the default) it is seed-only.
 
 The current Linux tools scaffold therefore verifies envelope encoding,
 capability authorization, request correlation, and daemon plumbing for
-clipboard sync. Real reads from and writes to the Linux OS clipboard remain a
-future backend integration.
+clipboard sync. Real writes to the Linux OS clipboard happen through the
+detected `wl-copy`/`xclip` writer; real reads happen through the opt-in
+`wl-paste`/`xclip -o` watcher. Host-side delivery of guest `ClipboardChanged`
+events onto the macOS NSPasteboard remains a separate host integration.
 
 Drag-and-drop alpha is exposed through `FileDropStart`, `FileDropChunk`, and
 `FileDropComplete`, or through the matching high-level CLI wrappers:
