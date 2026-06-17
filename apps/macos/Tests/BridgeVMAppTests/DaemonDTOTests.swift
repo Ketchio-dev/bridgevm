@@ -740,18 +740,26 @@ final class DaemonDTOTests: XCTestCase {
   }
 
   func testActionRequestsMatchBridgeVmDaemonWireFormat() throws {
-    let transition =
+    let suspend =
       try JSONSerialization.jsonObject(
-        with: JSONEncoder().encode(
-          DaemonTransitionVirtualMachineRequest(name: "dev", state: .suspended)
-        )
+        with: JSONEncoder().encode(DaemonSuspendBackendRequest(name: "dev"))
       ) as? [String: String]
     XCTAssertEqual(
-      transition,
+      suspend,
       [
-        "type": "transition_vm",
+        "type": "suspend_backend",
         "name": "dev",
-        "state": "suspended",
+      ])
+
+    let resume =
+      try JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(DaemonResumeBackendRequest(name: "dev"))
+      ) as? [String: String]
+    XCTAssertEqual(
+      resume,
+      [
+        "type": "resume_backend",
+        "name": "dev",
       ])
 
     let stop =
@@ -6298,9 +6306,6 @@ private final class RecordingDaemonTransport: DaemonTransport {
           }
         }
         """
-    case "transition_vm":
-      isRunning = object["state"] as? String == "running"
-      responseJSON = #"{"type":"state","name":"dev","metadata":{}}"#
     case "stop_backend":
       isRunning = false
       responseJSON = #"{"type":"runner_status","metadata":null}"#

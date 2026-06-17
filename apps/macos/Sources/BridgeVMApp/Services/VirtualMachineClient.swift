@@ -1192,13 +1192,6 @@ final class DaemonVirtualMachineClient: VirtualMachineClient, VirtualMachineClie
     )
   }
 
-  private func transition(name: String, state: DaemonRuntimeState) async throws {
-    _ = try await transport.send(
-      DaemonTransitionVirtualMachineRequest(name: name, state: state),
-      responseType: DaemonStateResponse.self
-    )
-  }
-
   private func stop(name: String) async throws {
     _ = try await transport.send(
       DaemonStopVirtualMachineRequest(name: name),
@@ -2721,18 +2714,6 @@ struct DaemonViewLogsRequest: Encodable {
   }
 }
 
-enum DaemonRuntimeState: String, Encodable {
-  case running
-  case suspended
-  case stopped
-}
-
-struct DaemonTransitionVirtualMachineRequest: Encodable {
-  let type = "transition_vm"
-  var name: String
-  var state: DaemonRuntimeState
-}
-
 struct DaemonStopVirtualMachineRequest: Encodable {
   let type = "stop_backend"
   var name: String
@@ -2853,10 +2834,6 @@ extension DaemonSuspendBackendRequest: DaemonRequestTimeoutProviding {
 }
 
 extension DaemonResumeBackendRequest: DaemonRequestTimeoutProviding {
-  var daemonRequestTimeoutCategory: DaemonRequestTimeoutCategory { .lifecycleAction }
-}
-
-extension DaemonTransitionVirtualMachineRequest: DaemonRequestTimeoutProviding {
   var daemonRequestTimeoutCategory: DaemonRequestTimeoutCategory { .lifecycleAction }
 }
 
