@@ -82,6 +82,7 @@ Compatibility Mode (QEMU) NAT + port forwarding works at launch: manifest `netwo
 
 ## Verification lanes
 - **Safe app lane:** `tests/integration/local-release-readiness-suite.sh --app-only --locally-usable-app`
+- **Latest app-only readiness pass (2026-06-17):** `tests/integration/local-release-readiness-suite.sh --app-only` passed end to end: Rust workspace tests with default features disabled, Swift app tests, debug `.app` bundle build/signature verification, bundled helper verification, bundled daemon supervisor smoke, release credential/dry-run smokes, live opt-in default skip, preserved live-evidence verifiers, and app-only artifact manifest verification.
 - **Rust:** `cargo test --workspace`
 - **Live boot (opt-in, heavy):** the `*-live-boot-opt-in-smoke.sh` scripts (need a real disk/ISO + `*_ALLOW_REAL_START=1`).
 
