@@ -1,17 +1,21 @@
 use anyhow::{Context, Result};
-use bridgevm_agent_protocol::{AgentEnvelope, AgentMessage};
+use bridgevm_agent_protocol::{
+    AgentEnvelope, AgentMessage, DEFAULT_BENCHMARK_DURATION_MILLIS, MAX_BENCHMARK_DURATION_MILLIS,
+};
 use bridgevm_agentd::{
     accept_guest_hello, authorize_message, decode_envelope_line, read_envelope_line,
     write_envelope_line, AgentCommandTracker, AgentSession, AgentSessionIoError,
 };
 use bridgevm_api::{
     add_fast_spawn_blocker, apply_power_aware_fast_resources, build_compatibility_resume_command,
-    compat_suspend_marker_path, fast_spawn_not_implemented_error, fast_suspend_state_path,
-    guest_tools_agent_policy, guest_tools_freeze_filesystem_envelope,
+    compat_suspend_marker_path, create_performance_sample, fast_spawn_not_implemented_error,
+    fast_suspend_state_path, guest_tools_agent_policy, guest_tools_freeze_filesystem_envelope,
     guest_tools_mount_approved_share_envelope, guest_tools_thaw_filesystem_envelope,
-    handle_request, launch_readiness_metadata, resume_backend, suspend_backend,
-    ApplicationConsistentSnapshotCommandResultRecord, ApplicationConsistentSnapshotExecutionRecord,
-    BridgeVmRequest, BridgeVmResponse, GuestToolsCommandRecord, SnapshotConsistency,
+    handle_request, inspect_guest_tools_status, launch_readiness_metadata, resume_backend,
+    suspend_backend, ApplicationConsistentSnapshotCommandResultRecord,
+    ApplicationConsistentSnapshotExecutionRecord, BridgeVmRequest, BridgeVmResponse,
+    GuestToolsCommandRecord, PerformanceMeasurementRecord, PerformanceSampleMetadata,
+    SnapshotConsistency,
 };
 use bridgevm_apple_vz::{build_fast_plan, write_launch_spec_artifact};
 use bridgevm_config::VmMode;
@@ -577,6 +581,23 @@ impl DaemonState {
                 .unwrap_or_else(|error| BridgeVmResponse::Error {
                     message: error.to_string(),
                 }),
+            BridgeVmRequest::CreatePerformanceSample {
+                name,
+                output,
+                artifact_bytes,
+                iterations,
+                sync,
+            } if self.children.contains_key(&name) => self
+                .create_performance_sample_with_optional_guest_benchmark(
+                    &name,
+                    output,
+                    artifact_bytes,
+                    iterations,
+                    sync,
+                )
+                .unwrap_or_else(|error| BridgeVmResponse::Error {
+                    message: error.to_string(),
+                }),
             request => handle_request(&self.store, request),
         }
     }
@@ -1073,6 +1094,80 @@ impl DaemonState {
             request_id: envelope.request_id,
             pending_commands: backend.guest_tools_commands.pending_count(),
         })
+    }
+
+    fn create_performance_sample_with_optional_guest_benchmark(
+        &mut self,
+        name: &str,
+        output: PathBuf,
+        artifact_bytes: Option<u64>,
+        iterations: Option<u16>,
+        sync: bool,
+    ) -> Result<BridgeVmResponse> {
+        let mut sample =
+            create_performance_sample(&self.store, name, output, artifact_bytes, iterations, sync)
+                .map_err(anyhow::Error::msg)?;
+
+        match self.run_guest_benchmark_for_sample(name, sample.created_at_unix) {
+            Ok(Some(completed)) => record_guest_benchmark_result(&mut sample, &completed),
+            Ok(None) => sample.notes.push(
+                "guest benchmark skipped because no benchmark-capable guest-tools session was connected"
+                    .to_string(),
+            ),
+            Err(error) => sample
+                .notes
+                .push(format!("guest benchmark skipped: {error}")),
+        }
+
+        if let Ok(status) = inspect_guest_tools_status(&self.store, name) {
+            sample.metrics = status
+                .runtime
+                .as_ref()
+                .and_then(|runtime| runtime.metrics.clone());
+            sample.guest_tools = status;
+        }
+        fs::write(
+            &sample.artifact,
+            serde_json::to_string_pretty(&sample).context("failed to serialize sample")?,
+        )
+        .with_context(|| {
+            format!(
+                "failed to update performance sample metadata at {}",
+                sample.artifact.display()
+            )
+        })?;
+
+        Ok(BridgeVmResponse::PerformanceSample { sample })
+    }
+
+    fn run_guest_benchmark_for_sample(
+        &mut self,
+        name: &str,
+        created_at_unix: u64,
+    ) -> Result<Option<CompletedGuestToolsCommand>> {
+        let supports_benchmark = self
+            .children
+            .get(name)
+            .and_then(|backend| backend.guest_tools.as_ref())
+            .is_some_and(|session| session.supports("benchmark"));
+        if !supports_benchmark {
+            return Ok(None);
+        }
+
+        let request_id = format!("performance-sample:{created_at_unix}:guest-benchmark");
+        let envelope = AgentEnvelope::with_request_id(
+            AgentMessage::RunBenchmark {
+                duration_millis: Some(DEFAULT_BENCHMARK_DURATION_MILLIS),
+            },
+            request_id.clone(),
+        );
+        self.send_guest_tools_command_record(name, envelope)?;
+        self.wait_for_guest_tools_command_result(
+            name,
+            &request_id,
+            Duration::from_millis(MAX_BENCHMARK_DURATION_MILLIS.saturating_add(5_000)),
+        )
+        .map(Some)
     }
 
     fn execute_application_consistent_snapshot(
@@ -1664,6 +1759,118 @@ impl CompletedGuestToolsCommand {
             message: self.message,
             completed_at_unix: self.completed_at_unix,
         }
+    }
+}
+
+fn record_guest_benchmark_result(
+    sample: &mut PerformanceSampleMetadata,
+    completed: &CompletedGuestToolsCommand,
+) {
+    sample
+        .notes
+        .retain(|note| note != "host-side sample; no guest benchmark workloads were executed");
+    if !completed.ok {
+        let reason = completed
+            .error_code
+            .as_deref()
+            .or(completed.message.as_deref())
+            .unwrap_or("command-result-not-ok");
+        sample.notes.push(format!(
+            "guest benchmark command did not produce measurements: {reason}"
+        ));
+        return;
+    }
+
+    sample.notes.push(format!(
+        "guest benchmark executed over daemon-owned guest-tools session (request id {})",
+        completed.request_id
+    ));
+    let Some(result) = completed.result.as_ref() else {
+        sample
+            .notes
+            .push("guest benchmark completed without a result payload".to_string());
+        return;
+    };
+
+    push_guest_benchmark_measurement(
+        &mut sample.measurements,
+        result,
+        "/budget_duration_millis",
+        "guest_benchmark_budget_millis",
+        "milliseconds",
+        "guest_tools.benchmark.budget_duration_millis",
+    );
+    push_guest_benchmark_measurement(
+        &mut sample.measurements,
+        result,
+        "/cpu/iterations",
+        "guest_benchmark_cpu_iterations",
+        "count",
+        "guest_tools.benchmark.cpu.iterations",
+    );
+    push_guest_benchmark_measurement(
+        &mut sample.measurements,
+        result,
+        "/cpu/elapsed_millis",
+        "guest_benchmark_cpu_elapsed_millis",
+        "milliseconds",
+        "guest_tools.benchmark.cpu.elapsed_millis",
+    );
+    push_guest_benchmark_measurement(
+        &mut sample.measurements,
+        result,
+        "/cpu/ops_per_sec",
+        "guest_benchmark_cpu_ops_per_sec",
+        "ops_per_second",
+        "guest_tools.benchmark.cpu.ops_per_sec",
+    );
+    push_guest_benchmark_measurement(
+        &mut sample.measurements,
+        result,
+        "/disk/bytes_written",
+        "guest_benchmark_disk_bytes_written",
+        "bytes",
+        "guest_tools.benchmark.disk.bytes_written",
+    );
+    push_guest_benchmark_measurement(
+        &mut sample.measurements,
+        result,
+        "/disk/elapsed_millis",
+        "guest_benchmark_disk_elapsed_millis",
+        "milliseconds",
+        "guest_tools.benchmark.disk.elapsed_millis",
+    );
+    push_guest_benchmark_measurement(
+        &mut sample.measurements,
+        result,
+        "/disk/mib_per_sec",
+        "guest_benchmark_disk_mib_per_sec",
+        "MiB_per_second",
+        "guest_tools.benchmark.disk.mib_per_sec",
+    );
+    if let Some(error) = result.get("disk_error").and_then(|value| value.as_str()) {
+        sample.notes.push(format!(
+            "guest benchmark disk micro-benchmark skipped: {error}"
+        ));
+    }
+}
+
+fn push_guest_benchmark_measurement(
+    measurements: &mut Vec<PerformanceMeasurementRecord>,
+    result: &serde_json::Value,
+    pointer: &str,
+    name: &str,
+    unit: &str,
+    source: &str,
+) {
+    if let Some(value) = result.pointer(pointer).and_then(|value| value.as_u64()) {
+        measurements.push(PerformanceMeasurementRecord {
+            name: name.to_string(),
+            value,
+            unit: unit.to_string(),
+            source: source.to_string(),
+            metadata_only: false,
+        });
     }
 }
 
@@ -2853,7 +3060,7 @@ mod tests {
         );
         assert!(state.children.contains_key("fast-linux"));
 
-        for _ in 0..40 {
+        for _ in 0..120 {
             state.reconcile_children().unwrap();
             if !state.children.contains_key("fast-linux") {
                 break;
@@ -2954,6 +3161,137 @@ mod tests {
                     && measurement.value == 2048
                     && !measurement.metadata_only
             ));
+    }
+
+    #[test]
+    fn daemon_performance_sample_runs_guest_benchmark_when_session_is_connected() {
+        let store = temp_store();
+        store.create_vm(&compatibility_manifest("legacy")).unwrap();
+        store
+            .transition_state("legacy", VmRuntimeState::Running)
+            .unwrap();
+
+        let token = store.guest_tools_token("legacy").unwrap().token;
+        let guest_tools = store.guest_tools_runner_metadata("legacy").unwrap();
+        let listener = UnixListener::bind(&guest_tools.socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let hello = AgentEnvelope::new(AgentMessage::GuestHello {
+                version: PROTOCOL_VERSION,
+                guest_os: "linux".to_string(),
+                agent_version: Some("1.0.0".to_string()),
+                capabilities: vec![
+                    AgentCapability {
+                        name: "heartbeat".to_string(),
+                        version: 1,
+                    },
+                    AgentCapability {
+                        name: "benchmark".to_string(),
+                        version: 1,
+                    },
+                ],
+                auth: Some(AgentAuth::ToolsToken { token }),
+            });
+            stream
+                .write_all(encode_envelope_line(&hello).unwrap().as_bytes())
+                .unwrap();
+
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut command_line = String::new();
+            reader.read_line(&mut command_line).unwrap();
+            let command: AgentEnvelope = serde_json::from_str(command_line.trim_end()).unwrap();
+            assert!(command
+                .request_id
+                .as_deref()
+                .unwrap()
+                .starts_with("performance-sample:"));
+            assert_eq!(
+                command.message,
+                AgentMessage::RunBenchmark {
+                    duration_millis: Some(DEFAULT_BENCHMARK_DURATION_MILLIS)
+                }
+            );
+
+            let result = AgentEnvelope::new(AgentMessage::CommandResult {
+                request_id: command.request_id.unwrap(),
+                ok: true,
+                error_code: None,
+                message: Some("benchmark complete".to_string()),
+                result: Some(serde_json::json!({
+                    "requested_duration_millis": DEFAULT_BENCHMARK_DURATION_MILLIS,
+                    "budget_duration_millis": DEFAULT_BENCHMARK_DURATION_MILLIS,
+                    "cpu": {
+                        "iterations": 4096,
+                        "elapsed_millis": 1000,
+                        "ops_per_sec": 4096,
+                        "checksum": 12345
+                    },
+                    "disk": {
+                        "bytes_written": 4096,
+                        "elapsed_millis": 2,
+                        "mib_per_sec": 25
+                    }
+                })),
+                metadata: None,
+            });
+            stream
+                .write_all(encode_envelope_line(&result).unwrap().as_bytes())
+                .unwrap();
+            thread::sleep(Duration::from_millis(250));
+        });
+
+        let child = Command::new("sh").arg("-c").arg("sleep 5").spawn().unwrap();
+        let mut state = DaemonState::new(store.clone());
+        state
+            .children
+            .insert("legacy".to_string(), SupervisedBackend::new(child));
+
+        let output = store.root().join("daemon-performance-with-benchmark");
+        let response = state
+            .handle_request(BridgeVmRequest::CreatePerformanceSample {
+                name: "legacy".to_string(),
+                output,
+                artifact_bytes: Some(1024),
+                iterations: Some(1),
+                sync: false,
+            })
+            .into_result()
+            .unwrap();
+        let BridgeVmResponse::PerformanceSample { sample } = response else {
+            panic!("expected performance sample response");
+        };
+
+        assert!(sample
+            .notes
+            .iter()
+            .any(|note| note.contains("guest benchmark executed")));
+        assert!(!sample
+            .notes
+            .iter()
+            .any(|note| note.contains("no guest benchmark workloads")));
+        assert!(sample.measurements.iter().any(|measurement| {
+            measurement.name == "guest_benchmark_cpu_iterations"
+                && measurement.value == 4096
+                && !measurement.metadata_only
+        }));
+        assert!(sample.measurements.iter().any(|measurement| {
+            measurement.name == "guest_benchmark_disk_bytes_written"
+                && measurement.value == 4096
+                && !measurement.metadata_only
+        }));
+        let artifact = fs::read_to_string(&sample.artifact).unwrap();
+        assert!(artifact.contains("guest_benchmark_cpu_ops_per_sec"));
+        let runtime = sample
+            .guest_tools
+            .runtime
+            .expect("refreshed guest tools runtime");
+        assert_eq!(
+            runtime.last_command_result.unwrap().capability.as_deref(),
+            Some("benchmark")
+        );
+
+        state.cleanup_owned_backend("legacy", false).unwrap();
+        server.join().unwrap();
     }
 
     #[test]

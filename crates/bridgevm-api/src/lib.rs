@@ -1756,6 +1756,7 @@ fn guest_tools_capabilities(manifest: &VmManifest) -> Vec<GuestToolsCapabilityRe
         guest_tools_capability("guest-ip", "network reporting"),
         guest_tools_capability("time-sync", "clock sync"),
         guest_tools_capability("guest-metrics", "diagnostics"),
+        guest_tools_capability("benchmark", "performance sampling"),
         guest_tools_capability("fs-freeze", "application-consistent snapshot scaffold"),
         guest_tools_capability("fs-thaw", "application-consistent snapshot scaffold"),
     ];

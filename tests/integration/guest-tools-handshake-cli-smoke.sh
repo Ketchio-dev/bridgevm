@@ -151,6 +151,7 @@ exercise_vm() {
   assert_guest_tools_capability "$status_output" "guest-ip" "network reporting" "$label status"
   assert_guest_tools_capability "$status_output" "time-sync" "clock sync" "$label status"
   assert_guest_tools_capability "$status_output" "guest-metrics" "diagnostics" "$label status"
+  assert_guest_tools_capability "$status_output" "benchmark" "performance sampling" "$label status"
   assert_guest_tools_capability "$status_output" "clipboard" "manifest.integration.clipboard" "$label status"
   assert_guest_tools_capability "$status_output" "display-resize" "manifest.integration.dynamicResolution" "$label status"
   assert_guest_tools_capability "$status_output" "shared-folders" "manifest.integration.sharedFolders" "$label status"
@@ -169,6 +170,7 @@ exercise_vm() {
   assert_contains "$default_command" "guest-ip:1" "$label default linux-command"
   assert_contains "$default_command" "time-sync:1" "$label default linux-command"
   assert_contains "$default_command" "guest-metrics:1" "$label default linux-command"
+  assert_contains "$default_command" "benchmark:1" "$label default linux-command"
   assert_contains "$default_command" "clipboard:1" "$label default linux-command"
   assert_contains "$default_command" "display-resize:1" "$label default linux-command"
   assert_contains "$default_command" "shared-folders:1" "$label default linux-command"
@@ -194,7 +196,7 @@ exercise_vm() {
   assert_not_contains "$socket_command" "$token" "$label socket linux-command"
 
   local valid_hello
-  valid_hello="$(hello_json "$token" "heartbeat,clipboard,display-resize,shared-folders,guest-metrics,agent-update,time-sync")"
+  valid_hello="$(hello_json "$token" "heartbeat,clipboard,display-resize,shared-folders,guest-metrics,agent-update,time-sync,benchmark")"
   local accepted
   accepted="$("$runner" guest-tools accept-hello "$vm" --hello-json "$valid_hello")"
   assert_contains "$accepted" "Accepted guest tools session for $vm" "$label accept-hello"
@@ -207,6 +209,7 @@ exercise_vm() {
   assert_contains "$accepted" "Capability: guest-metrics" "$label accept-hello"
   assert_contains "$accepted" "Capability: agent-update" "$label accept-hello"
   assert_contains "$accepted" "Capability: time-sync" "$label accept-hello"
+  assert_contains "$accepted" "Capability: benchmark" "$label accept-hello"
 
   local wrong_token_hello
   wrong_token_hello="$(hello_json "wrong-token" "heartbeat")"

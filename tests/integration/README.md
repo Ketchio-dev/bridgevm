@@ -1361,14 +1361,20 @@ Performance baseline/sample integration coverage should exercise:
   iterations, and oversized artifacts.
 - Missing-VM rejection for baseline and sample paths on local and socket
   transports without creating output artifacts.
+- Optional daemon-owned guest benchmark attachment when a running backend has a
+  connected guest-tools session advertising the `benchmark` capability.
 
 The expected contract is that baseline writes a metadata-only artifact with the
 current VM state, guest-tools status, available runtime metrics, and notes, and
 that sample writes a bounded host-side sample artifact, leaves the probe file or
 per-iteration probe files in the artifact directory, reports non-metadata write
-measurements and aggregate latency metadata, and does not boot, resume, or
-benchmark the guest. Dashboard cards should surface artifact paths, timestamps,
-byte counts, iteration counts, and latency fields as metadata only.
+measurements and aggregate latency metadata, and does not boot or resume the
+guest. Local/offline samples must not claim guest benchmark execution. Daemon
+samples may attach bounded `guest_benchmark_*` measurements only after a
+benchmark-capable guest-tools session returns a successful command result.
+Dashboard cards should surface artifact paths, timestamps, byte counts,
+iteration counts, host latency fields, and optional guest benchmark fields as
+measured artifact metadata.
 
 Current executable coverage: `performance-cli-smoke.sh` covers the local CLI
 and socket-backed halves of the baseline and sample contracts,

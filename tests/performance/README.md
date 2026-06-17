@@ -2,9 +2,10 @@
 
 Future boot, resume, idle CPU, display, and disk I/O tests live here.
 
-Current smoke coverage is limited to metadata and bounded host-side artifacts.
-These outputs are suitable for CLI/socket/API and dashboard card/status wiring,
-but they are not live VM performance evidence.
+Current safe smoke coverage is limited to metadata and bounded host-side
+artifacts. Socket requests can attach a bounded in-guest benchmark only when the
+daemon already owns a running backend with a connected benchmark-capable
+guest-tools session; local/offline samples remain host-only.
 
 The current baseline command is intentionally metadata-only:
 
@@ -40,11 +41,10 @@ bridgevm performance sample <vm> --output <dir> [--artifact-bytes BYTES] [--iter
 ```
 
 This is separate from `performance baseline`: the baseline remains
-metadata-only, while `performance sample` is allowed to create bounded host-side
-probe files. It still avoids guest workloads, VM boot/resume, display timing,
-and guest disk I/O benchmarks. It writes a bounded `write-probe.bin` file for
-one iteration, or numbered `write-probe-0001.bin` files for repeated samples,
-into:
+metadata-only, while local/offline `performance sample` is allowed to create
+bounded host-side probe files. It still avoids VM boot/resume and display
+timing. It writes a bounded `write-probe.bin` file for one iteration, or
+numbered `write-probe-0001.bin` files for repeated samples, into:
 
 ```text
 <output>/bridgevm-performance-sample-<vm>-<timestamp>/
@@ -68,21 +68,30 @@ inspection call duration only; it is not a guest disk I/O benchmark, disk
 throughput measurement, or replacement for future disk I/O tests. The probe
 files are kept so the sample artifact shows what was written.
 
+When the socket request is handled by a daemon-owned running backend with an
+authenticated guest-tools session advertising `benchmark`, the daemon also sends
+a bounded `RunBenchmark` command and appends `guest_benchmark_*` measurements to
+the same sample artifact. The refreshed guest-tools runtime metadata records the
+latest benchmark command result payload, so the artifact carries both the host
+probe and the guest-side result without inventing a separate transport.
+
 Safety caps keep this command suitable for routine smoke checks: the default
 probe size is 1 MiB, default iterations is 1, per-iteration probe size is capped
-at 64 MiB, and total probe output is capped at 256 MiB. `--iterations 0` is
-rejected. `--sync` includes host probe-file `sync_data()` in each iteration's
-measured write latency, so synced and unsynced samples should be compared as
-different measurement modes.
+at 64 MiB, and total probe output is capped at 256 MiB. The guest benchmark
+duration is capped by the guest-tools protocol. `--iterations 0` is rejected.
+`--sync` includes host probe-file `sync_data()` in each iteration's measured
+write latency, so synced and unsynced samples should be compared as different
+measurement modes.
 
 Use sample artifacts to make the next performance work visible without
 pretending they are full benchmarks: compare metadata read/status latency,
 host-artifact write latency, optional disk inspection duration when present,
-total bytes, iteration count, and total sample generation duration alongside the
-metadata-only baseline before adding boot, resume, display, idle CPU, or guest
-disk I/O tests.
+total bytes, iteration count, optional daemon-owned guest benchmark values, and
+total sample generation duration alongside the metadata-only baseline before
+adding boot, resume, display, idle CPU, or broader guest disk I/O tests.
 
 Dashboard performance cards should surface the same artifact path, generation
-time, byte-count, iteration, and latency metadata. They must not present either
-baseline or sample output as proof that a VM booted, resumed, rendered frames,
-or completed guest disk/CPU benchmarks.
+time, byte-count, iteration, host latency metadata, and optional
+`guest_benchmark_*` measurements. They must not present either baseline or a
+host-only sample as proof that a VM booted, resumed, rendered frames, or
+completed guest workloads.

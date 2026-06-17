@@ -559,28 +559,32 @@ resume, idle CPU, display, and disk I/O measurements.
 `bridgevm performance sample <vm> --output <dir> [--artifact-bytes BYTES]
 [--iterations N] [--sync]` adds the first execution-backed host-side
 measurement path. It does not change the baseline boundary: `performance
-baseline` remains metadata-only, while `performance sample` is the bounded
-host-side probe path. It still avoids guest workloads, VM boot/resume, display
-timing, and guest disk I/O benchmarks, but it writes probe files into the sample
-artifact directory and records per-iteration write latency, aggregate latency
-statistics, bytes written, BridgeVM metadata read/status latencies, and total
-sample generation duration in `performance-sample.json`. When the Compatibility
-Mode disk inspection path is available and succeeds, the sample may also record
+baseline` remains metadata-only, while local/offline `performance sample` is the
+bounded host-side probe path. It writes probe files into the sample artifact
+directory and records per-iteration write latency, aggregate latency statistics,
+bytes written, BridgeVM metadata read/status latencies, and total sample
+generation duration in `performance-sample.json`. When the Compatibility Mode
+disk inspection path is available and succeeds, the sample may also record
 `disk_inspect_duration_microseconds`; this is scoped to the host-side
 `qemu-img info` inspection duration and must not be interpreted as guest disk
-I/O, disk throughput, or storage benchmark data. The default probe is 1 MiB for
-one iteration; each iteration is capped at 64 MiB and total probe output is
-capped at 256 MiB. `--sync` includes host probe-file `sync_data()` in each
-iteration's measured write latency, so synced samples should be read as a
-different host-write mode from unsynced samples.
+I/O, disk throughput, or storage benchmark data. When the socket request is
+served by a daemon that owns the running backend and has a connected
+guest-tools session advertising `benchmark`, the daemon also dispatches the
+guest-tools `RunBenchmark` command and appends bounded `guest_benchmark_*`
+measurements to the same artifact. The default host probe is 1 MiB for one
+iteration; each host iteration is capped at 64 MiB and total probe output is
+capped at 256 MiB. The guest benchmark budget is capped by the guest-tools
+protocol. `--sync` includes host probe-file `sync_data()` in each iteration's
+measured write latency, so synced samples should be read as a different
+host-write mode from unsynced samples.
 
 The macOS dashboard surfaces both performance artifacts through the daemon as
 metadata records: artifact path, source bundle, VM state, guest-tools status,
 measurements, notes, per-iteration host write latency for samples, probe files,
 and whether each measurement is metadata-only. It labels `performance baseline`
-as metadata-only and `performance sample` as a bounded host-side artifact write
-probe. Neither surface proves guest boot,
-resume, frame timing, guest disk I/O, or application workload performance.
+as metadata-only and distinguishes host-write probe measurements from optional
+daemon-owned guest benchmark measurements. Neither surface proves guest boot,
+resume, frame timing, or application workload performance.
 
 Compatibility Mode daemon supervision records the latest bounded QMP drain in
 `metadata/qmp-supervisor.json` when a reconcile tick observes QMP events, a
