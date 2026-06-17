@@ -1,10 +1,10 @@
 import Foundation
 
-#if canImport(Virtualization)
-import Virtualization
-
 /// A host directory shared into the guest over VZ-native Virtio FS (no
 /// `virtiofsd`; the guest mounts it with `mount -t virtiofs <tag> <dir>`).
+///
+/// Defined outside the `Virtualization` guard so `AppleVzLaunchOptions` can carry
+/// shares on any build; the actual VZ device wiring stays guarded below.
 public struct AppleVzSharedDirectorySpec: Equatable {
   public var path: String
   public var tag: String
@@ -17,10 +17,23 @@ public struct AppleVzSharedDirectorySpec: Equatable {
   }
 }
 
+#if canImport(Virtualization)
+import Virtualization
+
 public enum AppleVzConfigurationBuilder {
   public static func buildLinuxKernelConfiguration(
     spec: AppleVzLaunchSpec,
     sharedDirectory: AppleVzSharedDirectorySpec? = nil
+  ) throws -> VZVirtualMachineConfiguration {
+    try buildLinuxKernelConfiguration(
+      spec: spec,
+      sharedDirectories: sharedDirectory.map { [$0] } ?? []
+    )
+  }
+
+  public static func buildLinuxKernelConfiguration(
+    spec: AppleVzLaunchSpec,
+    sharedDirectories: [AppleVzSharedDirectorySpec]
   ) throws -> VZVirtualMachineConfiguration {
     guard ["arm64", "aarch64"].contains(spec.guest.arch.lowercased()) else {
       throw AppleVzRunnerError.unsupportedGuestArch(spec.guest.arch)
@@ -94,21 +107,48 @@ public enum AppleVzConfigurationBuilder {
       ]
     }
 
-    if let share = sharedDirectory {
-      // VZ-native Virtio FS shared folder (macOS 13+). The guest mounts it with
-      // `mount -t virtiofs <tag> <dir>`. No virtiofsd needed (that is QEMU-only
-      // and unavailable on macOS).
+    if !sharedDirectories.isEmpty {
+      // VZ-native Virtio FS shared folder(s) (macOS 13+). The guest mounts each
+      // with `mount -t virtiofs <tag> <dir>`. No virtiofsd needed (that is
+      // QEMU-only and unavailable on macOS). A single share uses
+      // VZSingleDirectoryShare; 2+ shares are attached on one Virtio-FS device as
+      // a VZMultipleDirectoryShare keyed by tag.
       guard #available(macOS 13.0, *) else {
         throw AppleVzRunnerError.sharedDirectoryRequiresMacOS13
       }
-      try VZVirtioFileSystemDeviceConfiguration.validateTag(share.tag)
-      let device = VZVirtioFileSystemDeviceConfiguration(tag: share.tag)
-      device.share = VZSingleDirectoryShare(
-        directory: VZSharedDirectory(
-          url: URL(fileURLWithPath: share.path),
-          readOnly: share.readOnly
+      // VZ requires every share tag to be unique within the device; reject
+      // duplicates loudly rather than silently dropping a colliding folder.
+      var seenTags = Set<String>()
+      for share in sharedDirectories {
+        try VZVirtioFileSystemDeviceConfiguration.validateTag(share.tag)
+        guard seenTags.insert(share.tag).inserted else {
+          throw AppleVzConfigurationBuilderError.duplicateSharedDirectoryTag(share.tag)
+        }
+      }
+
+      let device: VZVirtioFileSystemDeviceConfiguration
+      if sharedDirectories.count == 1, let share = sharedDirectories.first {
+        device = VZVirtioFileSystemDeviceConfiguration(tag: share.tag)
+        device.share = VZSingleDirectoryShare(
+          directory: VZSharedDirectory(
+            url: URL(fileURLWithPath: share.path),
+            readOnly: share.readOnly
+          )
         )
-      )
+      } else {
+        // VZMultipleDirectoryShare carries all folders on one device, keyed by
+        // tag. The device itself needs a (validated, unique) tag too; reuse the
+        // first share's tag, which is already in the unique set.
+        var directories: [String: VZSharedDirectory] = [:]
+        for share in sharedDirectories {
+          directories[share.tag] = VZSharedDirectory(
+            url: URL(fileURLWithPath: share.path),
+            readOnly: share.readOnly
+          )
+        }
+        device = VZVirtioFileSystemDeviceConfiguration(tag: sharedDirectories[0].tag)
+        device.share = VZMultipleDirectoryShare(directories: directories)
+      }
       configuration.directorySharingDevices = [device]
     }
 
@@ -134,7 +174,23 @@ public enum AppleVzConfigurationBuilder {
     heightInPixels: Int = 800,
     sharedDirectory: AppleVzSharedDirectorySpec? = nil
   ) throws -> VZVirtualMachineConfiguration {
-    let configuration = try buildLinuxKernelConfiguration(spec: spec, sharedDirectory: sharedDirectory)
+    try buildLinuxKernelConfigurationWithDisplay(
+      spec: spec,
+      widthInPixels: widthInPixels,
+      heightInPixels: heightInPixels,
+      sharedDirectories: sharedDirectory.map { [$0] } ?? []
+    )
+  }
+
+  @available(macOS 14.0, *)
+  public static func buildLinuxKernelConfigurationWithDisplay(
+    spec: AppleVzLaunchSpec,
+    widthInPixels: Int = 1280,
+    heightInPixels: Int = 800,
+    sharedDirectories: [AppleVzSharedDirectorySpec]
+  ) throws -> VZVirtualMachineConfiguration {
+    let configuration = try buildLinuxKernelConfiguration(
+      spec: spec, sharedDirectories: sharedDirectories)
 
     let graphics = VZVirtioGraphicsDeviceConfiguration()
     graphics.scanouts = [
@@ -244,3 +300,19 @@ public enum AppleVzConfigurationBuilder {
   }
 }
 #endif
+
+/// Errors raised while assembling the VZ configuration that are specific to the
+/// builder (kept here, rather than in the shared `AppleVzRunnerError`, so the
+/// multi-share wiring owns its own failure mode).
+public enum AppleVzConfigurationBuilderError: Error, LocalizedError, Equatable {
+  /// Two shared folders resolved to the same Virtio-FS tag. VZ requires every
+  /// tag to be unique, so the colliding share is rejected rather than dropped.
+  case duplicateSharedDirectoryTag(String)
+
+  public var errorDescription: String? {
+    switch self {
+    case .duplicateSharedDirectoryTag(let tag):
+      return "AppleVzRunner shared folders require unique tags; tag '\(tag)' is used more than once"
+    }
+  }
+}

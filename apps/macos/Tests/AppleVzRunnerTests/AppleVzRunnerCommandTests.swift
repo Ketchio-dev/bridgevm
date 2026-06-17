@@ -16,7 +16,7 @@ final class AppleVzRunnerCommandTests: XCTestCase {
     XCTAssertEqual(
       fake.outputLines,
       [
-        "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display] [--graphics] [--share-dir PATH] [--share-tag TAG] [--share-read-only]"
+        "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display] [--graphics] [--share [ro:]TAG=HOST_PATH ...] [--share-dir PATH] [--share-tag TAG] [--share-read-only]"
       ]
     )
     XCTAssertEqual(fake.readStandardInputCallCount, 0)
@@ -226,10 +226,81 @@ final class AppleVzRunnerCommandTests: XCTestCase {
     XCTAssertEqual(exitCode, 0)
     XCTAssertEqual(fake.launchVirtualMachineCallCount, 1)
     let options = fake.launchOptions.first
+    XCTAssertEqual(options?.sharedDirectorySpecs.count, 1)
     XCTAssertEqual(options?.sharedDirectoryPath, "/Users/me/Shared")
     XCTAssertEqual(options?.sharedDirectoryTag, "host")
     XCTAssertEqual(options?.sharedDirectoryReadOnly, true)
     XCTAssertTrue(fake.errorLines.isEmpty)
+  }
+
+  func testRepeatableShareFlagsParseIntoOrderedSpecArray() {
+    let launchSpecPath = "/tmp/fast.vmbridge/metadata/apple-vz-launch.json"
+    let fake = FakeRunnerDependencies(
+      standardInput: readyHandoffJSON(launchSpecPath: launchSpecPath),
+      files: [launchSpecPath: readyLinuxKernelLaunchSpecJSON]
+    )
+
+    let exitCode = AppleVzRunnerCommand.run(
+      arguments: [
+        "--allow-real-vz-start",
+        "--share", "ro:workspace=/Users/me/work",
+        "--share", "docs=/Users/me/with=equals and spaces",
+      ],
+      dependencies: fake.dependencies()
+    )
+
+    XCTAssertEqual(exitCode, 0)
+    XCTAssertEqual(fake.launchVirtualMachineCallCount, 1)
+    let specs = fake.launchOptions.first?.sharedDirectorySpecs
+    XCTAssertEqual(specs?.count, 2)
+    XCTAssertEqual(specs?[0], AppleVzSharedDirectorySpec(
+      path: "/Users/me/work", tag: "workspace", readOnly: true))
+    // Split-on-first-`=` keeps the host path (with its own `=`/spaces) intact.
+    XCTAssertEqual(specs?[1], AppleVzSharedDirectorySpec(
+      path: "/Users/me/with=equals and spaces", tag: "docs", readOnly: false))
+    XCTAssertTrue(fake.errorLines.isEmpty)
+  }
+
+  func testLegacyShareDirFlagAndRepeatableShareFlagsCombine() {
+    let launchSpecPath = "/tmp/fast.vmbridge/metadata/apple-vz-launch.json"
+    let fake = FakeRunnerDependencies(
+      standardInput: readyHandoffJSON(launchSpecPath: launchSpecPath),
+      files: [launchSpecPath: readyLinuxKernelLaunchSpecJSON]
+    )
+
+    let exitCode = AppleVzRunnerCommand.run(
+      arguments: [
+        "--allow-real-vz-start",
+        "--share-dir", "/Users/me/legacy", "--share-tag", "legacy",
+        "--share", "extra=/Users/me/extra",
+      ],
+      dependencies: fake.dependencies()
+    )
+
+    XCTAssertEqual(exitCode, 0)
+    let specs = fake.launchOptions.first?.sharedDirectorySpecs
+    XCTAssertEqual(specs?.count, 2)
+    // The legacy single share is folded in first, then the repeatable --share.
+    XCTAssertEqual(specs?[0].tag, "legacy")
+    XCTAssertEqual(specs?[0].path, "/Users/me/legacy")
+    XCTAssertEqual(specs?[1].tag, "extra")
+    XCTAssertEqual(specs?[1].path, "/Users/me/extra")
+    XCTAssertTrue(fake.errorLines.isEmpty)
+  }
+
+  func testShareFlagWithoutSeparatorFails() {
+    let fake = FakeRunnerDependencies(
+      standardInput: readyHandoffJSON(launchSpecPath: nil)
+    )
+
+    let exitCode = AppleVzRunnerCommand.run(
+      arguments: ["--allow-real-vz-start", "--share", "no-separator-here"],
+      dependencies: fake.dependencies()
+    )
+
+    XCTAssertEqual(exitCode, 1)
+    XCTAssertEqual(fake.launchVirtualMachineCallCount, 0)
+    XCTAssertFalse(fake.errorLines.isEmpty)
   }
 
   func testGraphicsFlagThreadsHeadlessGraphicsVerificationToLauncher() {

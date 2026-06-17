@@ -133,7 +133,7 @@ public enum AppleVzRunnerCommand {
     }
   }
 
-  fileprivate static let usage = "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display] [--graphics] [--share-dir PATH] [--share-tag TAG] [--share-read-only]"
+  fileprivate static let usage = "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display] [--graphics] [--share [ro:]TAG=HOST_PATH ...] [--share-dir PATH] [--share-tag TAG] [--share-read-only]"
 
   private static func isHelpRequested(_ arguments: [String]) -> Bool {
     arguments.contains { argument in
@@ -204,9 +204,14 @@ public enum AppleVzRunnerCommand {
     var restoreStatePath: String?
     var displayWindow = false
     var graphicsHeadless = false
+    // Legacy single-share flags (kept as an alias for one share so the existing
+    // run-vz-display-demo.sh, which passes --share-dir, keeps working).
     var sharedDirectoryPath: String?
     var sharedDirectoryTag: String?
     var sharedDirectoryReadOnly = false
+    // Repeatable `--share <tag>=<host_path>` (optionally `ro:`-prefixed) flag,
+    // one per shared folder, parsed into an ordered array of specs.
+    var sharedDirectorySpecs: [AppleVzSharedDirectorySpec] = []
     var index = 0
 
     while index < arguments.count {
@@ -277,6 +282,13 @@ public enum AppleVzRunnerCommand {
       case "--graphics":
         graphicsHeadless = true
         index += 1
+      case "--share":
+        let valueIndex = index + 1
+        guard valueIndex < arguments.count else {
+          throw AppleVzRunnerCommandError.missingValue(argument)
+        }
+        sharedDirectorySpecs.append(try parseShareFlagValue(arguments[valueIndex]))
+        index += 2
       case "--share-dir":
         let valueIndex = index + 1
         guard valueIndex < arguments.count else {
@@ -317,6 +329,22 @@ public enum AppleVzRunnerCommand {
       throw AppleVzRunnerCommandError.conflictingFlags(activeModeFlags.joined(separator: ", "))
     }
 
+    // Fold the legacy single-share flags (--share-dir/--share-tag/
+    // --share-read-only) into one share, prepended so it keeps acting like the
+    // old single attachment when used on its own. New repeatable --share flags
+    // follow it.
+    var shares: [AppleVzSharedDirectorySpec] = []
+    if let path = sharedDirectoryPath {
+      shares.append(
+        AppleVzSharedDirectorySpec(
+          path: path,
+          tag: sharedDirectoryTag ?? "share",
+          readOnly: sharedDirectoryReadOnly
+        )
+      )
+    }
+    shares.append(contentsOf: sharedDirectorySpecs)
+
     return Options(
       handoffJSON: handoffJSON,
       validateOnly: validateOnly,
@@ -332,11 +360,32 @@ public enum AppleVzRunnerCommand {
         restoreStatePath: restoreStatePath,
         displayWindow: displayWindow,
         graphicsHeadlessVerification: graphicsHeadless,
-        sharedDirectoryPath: sharedDirectoryPath,
-        sharedDirectoryTag: sharedDirectoryTag,
-        sharedDirectoryReadOnly: sharedDirectoryReadOnly
+        sharedDirectorySpecs: shares
       )
     )
+  }
+
+  /// Parse one `--share` value of the form `[ro:]<tag>=<host_path>`.
+  ///
+  /// The optional `ro:` prefix marks the share read-only. The tag is everything
+  /// up to the FIRST `=`; the host path is the remainder (so paths may contain
+  /// `=`, spaces, or commas). A missing `=` or an empty tag is rejected.
+  private static func parseShareFlagValue(_ value: String) throws -> AppleVzSharedDirectorySpec {
+    var remainder = Substring(value)
+    var readOnly = false
+    if remainder.hasPrefix("ro:") {
+      readOnly = true
+      remainder = remainder.dropFirst(3)
+    }
+    guard let separator = remainder.firstIndex(of: "=") else {
+      throw AppleVzRunnerCommandError.invalidShareValue(value)
+    }
+    let tag = String(remainder[remainder.startIndex..<separator])
+    let path = String(remainder[remainder.index(after: separator)...])
+    guard !tag.isEmpty, !path.isEmpty else {
+      throw AppleVzRunnerCommandError.invalidShareValue(value)
+    }
+    return AppleVzSharedDirectorySpec(path: path, tag: tag, readOnly: readOnly)
   }
 
   private static func defaultForceStopGraceSeconds(stopAfterSeconds: UInt64?) -> UInt64? {
@@ -452,6 +501,7 @@ public enum AppleVzRunnerCommandError: Error, LocalizedError, Equatable {
   case help
   case missingValue(String)
   case invalidPositiveInteger(String, String)
+  case invalidShareValue(String)
   case unknownArgument(String)
   case missingLaunchSpecPath
   case virtualizationFrameworkUnavailable
@@ -468,6 +518,8 @@ public enum AppleVzRunnerCommandError: Error, LocalizedError, Equatable {
       return "\(argument) requires a value"
     case .invalidPositiveInteger(let argument, let value):
       return "\(argument) requires a positive integer, got \(value)"
+    case .invalidShareValue(let value):
+      return "--share requires [ro:]<tag>=<host_path>, got \(value)"
     case .unknownArgument(let argument):
       return "unknown argument \(argument)"
     case .missingLaunchSpecPath:

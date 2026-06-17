@@ -137,10 +137,63 @@ final class AppleVzRunnerCoreTests: XCTestCase {
       )
     )
     XCTAssertEqual(withShare.directorySharingDevices.count, 1)
+    if #available(macOS 13.0, *) {
+      let device = withShare.directorySharingDevices.first as? VZVirtioFileSystemDeviceConfiguration
+      XCTAssertEqual(device?.tag, "share")
+      XCTAssertTrue(device?.share is VZSingleDirectoryShare)
+    }
 
     // No share requested -> no directory-sharing device (unchanged default).
     let plain = try AppleVzConfigurationBuilder.buildLinuxKernelConfiguration(spec: spec)
     XCTAssertEqual(plain.directorySharingDevices.count, 0)
+  }
+
+  func testBuildsVirtioMultipleDirectoryShareForTwoOrMoreShares() throws {
+    var spec = try decodeLaunchSpec(readyLinuxKernelLaunchSpecJSON)
+    let diskURL = try makeTemporaryRawDisk()
+    defer { try? FileManager.default.removeItem(at: diskURL) }
+    spec.disk.path = diskURL.path
+
+    let tmp = FileManager.default.temporaryDirectory.path
+    let configuration = try AppleVzConfigurationBuilder.buildLinuxKernelConfiguration(
+      spec: spec,
+      sharedDirectories: [
+        AppleVzSharedDirectorySpec(path: tmp, tag: "workspace", readOnly: true),
+        AppleVzSharedDirectorySpec(path: tmp, tag: "docs", readOnly: false),
+        AppleVzSharedDirectorySpec(path: tmp, tag: "share"),
+      ]
+    )
+
+    // 2+ shares collapse onto a single Virtio-FS device carrying a
+    // VZMultipleDirectoryShare with every tag.
+    XCTAssertEqual(configuration.directorySharingDevices.count, 1)
+    guard #available(macOS 13.0, *) else { return }
+    let device =
+      configuration.directorySharingDevices.first as? VZVirtioFileSystemDeviceConfiguration
+    XCTAssertNotNil(device)
+    let multiShare = device?.share as? VZMultipleDirectoryShare
+    XCTAssertNotNil(multiShare, "2+ shares must use VZMultipleDirectoryShare")
+  }
+
+  func testRejectsDuplicateSharedDirectoryTags() throws {
+    var spec = try decodeLaunchSpec(readyLinuxKernelLaunchSpecJSON)
+    let diskURL = try makeTemporaryRawDisk()
+    defer { try? FileManager.default.removeItem(at: diskURL) }
+    spec.disk.path = diskURL.path
+
+    let tmp = FileManager.default.temporaryDirectory.path
+    XCTAssertThrowsError(
+      try AppleVzConfigurationBuilder.buildLinuxKernelConfiguration(
+        spec: spec,
+        sharedDirectories: [
+          AppleVzSharedDirectorySpec(path: tmp, tag: "dup"),
+          AppleVzSharedDirectorySpec(path: tmp, tag: "dup"),
+        ]
+      )
+    ) { error in
+      XCTAssertEqual(
+        error as? AppleVzConfigurationBuilderError, .duplicateSharedDirectoryTag("dup"))
+    }
   }
 
   func testRejectsQcow2LinuxKernelLaunchSpec() throws {
