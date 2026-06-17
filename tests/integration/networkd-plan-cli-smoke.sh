@@ -242,8 +242,8 @@ with open(sys.argv[1], "r", encoding="utf-8") as handle:
 
 assert plan["requirements"] == [
     {
-        "blocker": "qemu-bridged-network-unimplemented",
-        "requirement": "Compatibility Mode QEMU requires bridge or tap helper selection before launch",
+        "blocker": "qemu-bridged-requires-privilege",
+        "requirement": "Compatibility Mode QEMU bridged networking uses vmnet-bridged, which requires the qemu process to run as root or carry the com.apple.vm.networking entitlement",
     }
 ], plan["requirements"]
 assert plan["notes"] == [

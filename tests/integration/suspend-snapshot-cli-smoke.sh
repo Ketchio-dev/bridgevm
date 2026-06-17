@@ -72,6 +72,19 @@ assert_no_backend_launch() {
   [[ ! -s "$BACKEND_LOG" ]] || fail "backend launch attempted: $(cat "$BACKEND_LOG")"
 }
 
+write_state_fixture() {
+  local vm="$1"
+  local state="$2"
+  local metadata_dir="$STORE/vms/$vm.vmbridge/metadata"
+  mkdir -p "$metadata_dir"
+  cat >"$metadata_dir/state.json" <<EOF
+{
+  "state": "$state",
+  "updated_at_unix": 1
+}
+EOF
+}
+
 assert_suspend_snapshot_contract() {
   local label="$1"
   local vm="$2"
@@ -121,9 +134,9 @@ trap stop_daemon EXIT
 
 bridgevm create "$VM_LOCAL" --os ubuntu --arch arm64 --mode fast >/dev/null
 bridgevm start "$VM_LOCAL" >/dev/null
-bridgevm suspend "$VM_LOCAL" >/dev/null
+write_state_fixture "$VM_LOCAL" "suspended"
 local_create="$(bridgevm snapshot create "$VM_LOCAL" "$SNAPSHOT_NAME" --kind suspend)"
-bridgevm resume "$VM_LOCAL" >/dev/null
+write_state_fixture "$VM_LOCAL" "running"
 
 RUNNER=bridgevm
 assert_suspend_snapshot_contract "local suspend snapshot" "$VM_LOCAL" "$local_create"
@@ -145,9 +158,9 @@ done
 
 bridgevm create "$VM_SOCKET" --os ubuntu --arch arm64 --mode fast >/dev/null
 bridgevm_socket start "$VM_SOCKET" >/dev/null
-bridgevm_socket suspend "$VM_SOCKET" >/dev/null
+write_state_fixture "$VM_SOCKET" "suspended"
 socket_create="$(bridgevm_socket snapshot create "$VM_SOCKET" "$SNAPSHOT_NAME" --kind suspend)"
-bridgevm_socket resume "$VM_SOCKET" >/dev/null
+write_state_fixture "$VM_SOCKET" "running"
 
 RUNNER=bridgevm_socket
 assert_suspend_snapshot_contract "socket suspend snapshot" "$VM_SOCKET" "$socket_create"

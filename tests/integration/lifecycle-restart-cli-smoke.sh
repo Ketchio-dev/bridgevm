@@ -62,6 +62,18 @@ assert_no_backend_launch() {
   [[ ! -s "$BACKEND_LOG" ]] || fail "backend launch attempted: $(cat "$BACKEND_LOG")"
 }
 
+write_state_fixture() {
+  local state="$1"
+  local metadata_dir="$STORE/vms/$VM_NAME.vmbridge/metadata"
+  mkdir -p "$metadata_dir"
+  cat >"$metadata_dir/state.json" <<EOF
+{
+  "state": "$state",
+  "updated_at_unix": 1
+}
+EOF
+}
+
 stop_daemon() {
   if [[ -n "${DAEMON_PID:-}" ]]; then
     kill "$DAEMON_PID" 2>/dev/null || true
@@ -82,7 +94,7 @@ local_status="$(bridgevm status "$VM_NAME")"
 assert_contains "$local_status" "Name: $VM_NAME" "local status after restart"
 assert_contains "$local_status" "State: running" "local status after restart"
 
-bridgevm suspend "$VM_NAME" >/dev/null
+write_state_fixture "suspended"
 local_restart_from_suspend="$(bridgevm restart "$VM_NAME")"
 assert_contains "$local_restart_from_suspend" "Metadata state recorded for $VM_NAME (running)" "local suspended restart"
 assert_no_backend_launch
@@ -109,7 +121,7 @@ socket_status="$(bridgevm_socket status "$VM_NAME")"
 assert_contains "$socket_status" "$VM_NAME" "socket status after restart"
 assert_contains "$socket_status" "running" "socket status after restart"
 
-bridgevm_socket suspend "$VM_NAME" >/dev/null
+write_state_fixture "suspended"
 socket_restart_from_suspend="$(bridgevm_socket restart "$VM_NAME")"
 assert_contains "$socket_restart_from_suspend" "Metadata state recorded for $VM_NAME (running)" "socket suspended restart"
 

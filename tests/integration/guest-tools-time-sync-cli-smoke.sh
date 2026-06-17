@@ -112,11 +112,19 @@ if not isinstance(result, dict):
 checks = [
     result.get("request_id") == request_id,
     result.get("capability") == "time-sync",
-    result.get("ok") is True,
-    result.get("error_code") is None,
-    result.get("message") is None,
 ]
-sys.exit(0 if all(checks) else 1)
+success = (
+    result.get("ok") is True
+    and result.get("error_code") is None
+    and result.get("message") is None
+)
+host_limited = (
+    result.get("ok") is False
+    and result.get("error_code") == "time-sync-failed"
+    and isinstance(result.get("message"), str)
+    and "real clock sync is only supported on Linux guests" in result["message"]
+)
+sys.exit(0 if all(checks) and (success or host_limited) else 1)
 PY
     then
       return 0
@@ -277,9 +285,19 @@ while peers and not done:
                 message = frame.get("message", {})
                 result = message.get("CommandResult") if isinstance(message, dict) else None
                 if result is not None and result.get("request_id") == request_id:
-                    assert result.get("ok") is True, frame
-                    assert result.get("error_code") is None, frame
-                    assert result.get("message") is None, frame
+                    success = (
+                        result.get("ok") is True
+                        and result.get("error_code") is None
+                        and result.get("message") is None
+                    )
+                    host_limited = (
+                        result.get("ok") is False
+                        and result.get("error_code") == "time-sync-failed"
+                        and isinstance(result.get("message"), str)
+                        and "real clock sync is only supported on Linux guests"
+                        in result["message"]
+                    )
+                    assert success or host_limited, frame
                     validated_result = True
                     done = True
                 peer.sendall(line + b"\n")

@@ -131,7 +131,9 @@ write_frame({"SetClipboard": {"text": host_text}}, "clipboard-host-1")
 expect_result("clipboard-host-1", True, message="clipboard updated")
 write_frame({"SetClipboard": {"text": "trigger clipboard backend failure"}}, "clipboard-host-2")
 failure = expect_result("clipboard-host-2", False, error_code="clipboard-write-failed")
-assert "clipboard backend refused payload" in failure.get("message", ""), failure
+failure_message = failure.get("message", "")
+assert "write-clipboard.sh failed" in failure_message, failure
+assert "exit status" in failure_message, failure
 
 connection.close()
 server.close()

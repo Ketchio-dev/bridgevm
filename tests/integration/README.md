@@ -1266,13 +1266,16 @@ Linux guest-tools time-sync live socket coverage should exercise:
 
 The expected contract is that host-origin time-sync commands travel through the
 socket-backed CLI, daemon-owned guest-tools session, and Linux tools scaffold
-without changing a real guest clock. Invalid timestamps are rejected at the
-protocol boundary before dispatch.
+without changing a real guest clock. On non-Linux hosts the local tools
+scaffold can report `time-sync-failed` for the real clock application step; the
+smoke still requires the request-correlated result to reach runtime metadata.
+Invalid timestamps are rejected at the protocol boundary before dispatch.
 
 Current executable coverage: `guest-tools-time-sync-cli-smoke.sh` covers a fake
 QEMU backend plus local Linux tools process, no-session rejection, connected
 `InvalidTimestamp` rejection for `--unix-epoch-millis 0`, valid command frame
-validation, and request-correlated runtime result metadata.
+validation, and request-correlated success or host-limited failure runtime
+result metadata.
 
 Guest-tools command tracker negative-path coverage should exercise:
 

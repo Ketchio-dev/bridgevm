@@ -175,8 +175,9 @@ failure = expect_result(
     error_code="display-resize-failed",
 )
 failure_message = failure.get("message", "")
-assert fail_message in failure_message, failure
 assert "display resize command" in failure_message, failure
+assert "resize-display.sh failed" in failure_message, failure
+assert "exit status" in failure_message, failure
 
 connection.close()
 server.close()
