@@ -715,6 +715,20 @@ impl GuestToolsState {
             Err(message) => return CommandOutcome::error("invalid-file-drop-chunk", message),
         };
 
+        // Reject as soon as the accumulated bytes would exceed the size declared
+        // in FileDropStart, so a misbehaving/compromised sender can't grow this
+        // buffer without bound (duplicate or oversized chunks) before the final
+        // size check in complete_file_drop.
+        if transfer.bytes.len() as u64 + chunk.len() as u64 > transfer.size_bytes {
+            return CommandOutcome::error(
+                "file-drop-overflow",
+                format!(
+                    "file drop {transfer_id} chunk {chunk_index} exceeds declared size {}",
+                    transfer.size_bytes
+                ),
+            );
+        }
+
         transfer.bytes.extend_from_slice(&chunk);
         transfer.chunks_seen = transfer.chunks_seen.max(chunk_index.saturating_add(1));
         CommandOutcome::ok(Some(format!(

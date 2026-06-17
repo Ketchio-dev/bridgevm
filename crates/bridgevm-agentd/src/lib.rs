@@ -131,13 +131,12 @@ pub enum AgentCodecError {
 
 impl AgentCodecError {
     pub fn is_idle_io(&self) -> bool {
+        // Only a would-block / timed-out read is "idle" (no data yet -> retry).
+        // UnexpectedEof means the stream was truncated/half-closed mid-frame --
+        // a terminal condition the caller should reset on, not spin retrying.
         matches!(
             self,
-            Self::Io { kind, .. }
-                if matches!(
-                    kind,
-                    ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::UnexpectedEof
-                )
+            Self::Io { kind, .. } if matches!(kind, ErrorKind::WouldBlock | ErrorKind::TimedOut)
         )
     }
 }

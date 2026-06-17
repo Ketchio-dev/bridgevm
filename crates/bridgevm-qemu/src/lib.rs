@@ -460,6 +460,7 @@ fn wait_for_job(
     timeout: Duration,
 ) -> Result<(), QemuError> {
     let deadline = std::time::Instant::now() + timeout;
+    let mut observed = false;
     loop {
         let jobs = client.execute(QmpCommand::query_jobs())?;
         let job = jobs
@@ -473,6 +474,7 @@ fn wait_for_job(
 
         match job {
             Some(job) => {
+                observed = true;
                 let status = job
                     .get("status")
                     .and_then(Value::as_str)
@@ -486,15 +488,23 @@ fn wait_for_job(
                     return Ok(());
                 }
             }
-            // QEMU drops concluded jobs from `query-jobs` after they are
-            // dismissed; a job that has vanished is treated as complete.
-            None => return Ok(()),
+            // QEMU drops concluded jobs from `query-jobs` after dismissal. Only
+            // treat a vanished job as complete once we've actually OBSERVED it
+            // running -- otherwise a snapshot-save that failed/was reaped before
+            // we ever saw it would be silently reported as a successful snapshot
+            // (and resume would later -loadvm a snapshot that does not exist).
+            None if observed => return Ok(()),
+            None => {}
         }
 
         if std::time::Instant::now() >= deadline {
-            return Err(QemuError::QmpProtocol(format!(
-                "timed out waiting for snapshot job '{job_id}'"
-            )));
+            return Err(QemuError::QmpProtocol(if observed {
+                format!("timed out waiting for snapshot job '{job_id}'")
+            } else {
+                format!(
+                    "snapshot job '{job_id}' was never observed; snapshot-save likely failed"
+                )
+            }));
         }
         std::thread::sleep(Duration::from_millis(100));
     }
