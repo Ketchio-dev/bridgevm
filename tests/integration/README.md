@@ -1442,8 +1442,7 @@ starting Apple VZ:
   treated as constructible Apple VZ disk configuration.
 - `lightvm-runner --launch-spec <path> --require-ready --launch` reaches the
   launcher interface for ready handoffs. The default in-process Rust launcher
-  still returns the explicit unimplemented Apple Virtualization.framework
-  launch error.
+  returns a signed-helper-required error instead of starting Apple VZ itself.
 - Passing `--apple-vz-runner <path>` to that same launch path sends the handoff
   JSON to the Swift helper over stdin, proving the Rust-to-helper process
   boundary. The Swift helper now owns the limited real launch path for
