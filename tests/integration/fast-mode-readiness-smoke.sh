@@ -155,7 +155,7 @@ assert_contains "$ASSERT_OUTPUT" "missing-primary-disk" "local run --spawn failu
 assert_contains "$ASSERT_OUTPUT" "$DISK" "local run --spawn failure"
 assert_contains "$ASSERT_OUTPUT" "missing-installer-image" "local run --spawn failure"
 assert_contains "$ASSERT_OUTPUT" "$INSTALLER" "local run --spawn failure"
-assert_contains "$ASSERT_OUTPUT" "fast-mode-spawn-unimplemented" "local run --spawn failure"
+assert_contains "$ASSERT_OUTPUT" "apple-vz-runner-unavailable" "local run --spawn failure"
 
 mkdir -p "$(dirname "$DISK")" "$(dirname "$INSTALLER")"
 : >"$DISK"
@@ -361,7 +361,7 @@ assert_fails_contains \
 assert_contains "$ASSERT_OUTPUT" "launch blockers:" "socket run --spawn failure"
 assert_contains "$ASSERT_OUTPUT" "missing-installer-image" "socket run --spawn failure"
 assert_contains "$ASSERT_OUTPUT" "$INSTALLER" "socket run --spawn failure"
-assert_contains "$ASSERT_OUTPUT" "fast-mode-spawn-unimplemented" "socket run --spawn failure"
+assert_contains "$ASSERT_OUTPUT" "apple-vz-runner-unavailable" "socket run --spawn failure"
 assert_not_contains "$ASSERT_OUTPUT" "missing-primary-disk" "socket run --spawn failure"
 
 echo "PASS: Fast Mode readiness CLI/socket integration smoke ($STORE)"

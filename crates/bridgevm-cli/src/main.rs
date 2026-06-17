@@ -1,11 +1,11 @@
 use anyhow::{bail, Context, Result};
 use bridgevm_agent_protocol::{AgentEnvelope, AgentMessage};
 use bridgevm_api::{
-    accept_guest_tools_hello, add_fast_spawn_blocker, add_port, add_share,
+    accept_guest_tools_hello, add_fast_spawn_runner_required_blocker, add_port, add_share,
     apple_vz_runner_configured, cold_start_fast_backend, compatibility_launch_dependency_blockers,
     compatibility_launch_readiness_metadata, create_diagnostic_bundle, create_performance_baseline,
     create_performance_sample, display_fast_backend, download_boot_media,
-    fast_spawn_not_implemented_error, guest_tools_linux_command, guest_tools_token,
+    fast_spawn_runner_required_error, guest_tools_linux_command, guest_tools_token,
     import_boot_media, inspect_boot_media_status, inspect_guest_tools_status,
     launch_readiness_metadata, list_ports, list_shares, open_port_plan, plan_boot_media_download,
     reapply_runtime_resources, remove_port, remove_share, resume_backend, stop_backend,
@@ -2239,9 +2239,9 @@ fn build_runner_metadata(
             .context("failed to write Fast Mode launch spec")?;
         let mut readiness = launch_readiness_metadata(&plan.launch_spec().readiness);
         if spawn {
-            add_fast_spawn_blocker(&mut readiness);
+            add_fast_spawn_runner_required_blocker(&mut readiness);
         }
-        let spawn_error = spawn.then(|| fast_spawn_not_implemented_error(&readiness));
+        let spawn_error = spawn.then(|| fast_spawn_runner_required_error(&readiness));
         let metadata = bridgevm_storage::RunnerMetadata {
             engine: "lightvm".to_string(),
             pid: None,
@@ -4671,10 +4671,7 @@ mod tests {
         );
         assert!(message.contains("launch blockers:"), "{message}");
         assert!(message.contains("missing-primary-disk"), "{message}");
-        assert!(
-            message.contains("fast-mode-spawn-unimplemented"),
-            "{message}"
-        );
+        assert!(message.contains("apple-vz-runner-unavailable"), "{message}");
         let metadata = store
             .runner_metadata("fast-linux")
             .unwrap()
@@ -4688,7 +4685,7 @@ mod tests {
         assert!(readiness
             .blockers
             .iter()
-            .any(|blocker| blocker.code == "fast-mode-spawn-unimplemented"));
+            .any(|blocker| blocker.code == "apple-vz-runner-unavailable"));
     }
 
     #[test]

@@ -7,13 +7,14 @@ use bridgevm_agentd::{
     write_envelope_line, AgentCommandTracker, AgentSession, AgentSessionIoError,
 };
 use bridgevm_api::{
-    add_fast_spawn_blocker, apply_power_aware_fast_resources, build_compatibility_resume_command,
-    compat_suspend_marker_path, compatibility_launch_dependency_blockers,
-    compatibility_launch_readiness_metadata, create_performance_sample,
-    fast_spawn_not_implemented_error, fast_suspend_state_path, guest_tools_agent_policy,
-    guest_tools_freeze_filesystem_envelope, guest_tools_mount_approved_share_envelope,
-    guest_tools_thaw_filesystem_envelope, handle_request, inspect_guest_tools_status,
-    launch_readiness_metadata, resume_backend, suspend_backend, verify_compatibility_resume_loaded,
+    add_fast_spawn_runner_required_blocker, apply_power_aware_fast_resources,
+    build_compatibility_resume_command, compat_suspend_marker_path,
+    compatibility_launch_dependency_blockers, compatibility_launch_readiness_metadata,
+    create_performance_sample, fast_spawn_runner_required_error, fast_suspend_state_path,
+    guest_tools_agent_policy, guest_tools_freeze_filesystem_envelope,
+    guest_tools_mount_approved_share_envelope, guest_tools_thaw_filesystem_envelope,
+    handle_request, inspect_guest_tools_status, launch_readiness_metadata, resume_backend,
+    suspend_backend, verify_compatibility_resume_loaded,
     ApplicationConsistentSnapshotCommandResultRecord, ApplicationConsistentSnapshotExecutionRecord,
     BridgeVmRequest, BridgeVmResponse, GuestToolsCommandRecord, PerformanceMeasurementRecord,
     PerformanceSampleMetadata, SnapshotConsistency,
@@ -705,8 +706,8 @@ impl DaemonState {
                         ready: false,
                         blockers: Vec::new(),
                     });
-            add_fast_spawn_blocker(readiness);
-            let spawn_error = fast_spawn_not_implemented_error(readiness);
+            add_fast_spawn_runner_required_blocker(readiness);
+            let spawn_error = fast_spawn_runner_required_error(readiness);
             self.store
                 .write_runner_metadata(name, &metadata)
                 .context("failed to write Fast Mode runner metadata")?;
@@ -2795,10 +2796,7 @@ mod tests {
         );
         assert!(message.contains("launch blockers:"), "{message}");
         assert!(message.contains("missing-primary-disk"), "{message}");
-        assert!(
-            message.contains("fast-mode-spawn-unimplemented"),
-            "{message}"
-        );
+        assert!(message.contains("apple-vz-runner-unavailable"), "{message}");
 
         let metadata = store
             .runner_metadata("fast-linux")
@@ -2813,7 +2811,7 @@ mod tests {
         assert!(readiness
             .blockers
             .iter()
-            .any(|blocker| blocker.code == "fast-mode-spawn-unimplemented"));
+            .any(|blocker| blocker.code == "apple-vz-runner-unavailable"));
     }
 
     #[test]

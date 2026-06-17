@@ -5364,9 +5364,9 @@ fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadat
             .map_err(|error| error.to_string())?;
         let mut readiness = launch_readiness_metadata(&plan.launch_spec().readiness);
         if spawn {
-            add_fast_spawn_blocker(&mut readiness);
+            add_fast_spawn_runner_required_blocker(&mut readiness);
         }
-        let spawn_error = spawn.then(|| fast_spawn_not_implemented_error(&readiness));
+        let spawn_error = spawn.then(|| fast_spawn_runner_required_error(&readiness));
         let metadata = RunnerMetadata {
             engine: "lightvm".to_string(),
             pid: None,
@@ -5666,12 +5666,12 @@ fn missing_disk_message(disk: &bridgevm_storage::DiskPreparationMetadata) -> Str
     }
 }
 
-pub fn fast_spawn_not_implemented_message() -> &'static str {
+pub fn fast_spawn_runner_required_message() -> &'static str {
     "Fast Mode spawn requires BRIDGEVM_APPLE_VZ_RUNNER to point at a signed AppleVzRunner; dry-run planning metadata was updated"
 }
 
-pub fn fast_spawn_not_implemented_error(readiness: &LaunchReadinessMetadata) -> String {
-    let mut message = fast_spawn_not_implemented_message().to_string();
+pub fn fast_spawn_runner_required_error(readiness: &LaunchReadinessMetadata) -> String {
+    let mut message = fast_spawn_runner_required_message().to_string();
     if !readiness.blockers.is_empty() {
         message.push_str("; launch blockers: ");
         message.push_str(&launch_readiness_blocker_summary(readiness));
@@ -5695,17 +5695,17 @@ pub fn launch_readiness_metadata(readiness: &AppleVzReadinessSpec) -> LaunchRead
     }
 }
 
-pub fn add_fast_spawn_blocker(readiness: &mut LaunchReadinessMetadata) {
+pub fn add_fast_spawn_runner_required_blocker(readiness: &mut LaunchReadinessMetadata) {
     readiness.ready = false;
     if readiness
         .blockers
         .iter()
-        .any(|blocker| blocker.code == "fast-mode-spawn-unimplemented")
+        .any(|blocker| blocker.code == "apple-vz-runner-unavailable")
     {
         return;
     }
     readiness.blockers.push(LaunchReadinessBlockerMetadata {
-        code: "fast-mode-spawn-unimplemented".to_string(),
+        code: "apple-vz-runner-unavailable".to_string(),
         message:
             "Fast Mode spawn needs BRIDGEVM_APPLE_VZ_RUNNER to point at a signed AppleVzRunner"
                 .to_string(),
@@ -11124,7 +11124,7 @@ mod tests {
         );
         assert!(error.contains("launch blockers:"), "{error}");
         assert!(error.contains("missing-primary-disk"), "{error}");
-        assert!(error.contains("fast-mode-spawn-unimplemented"), "{error}");
+        assert!(error.contains("apple-vz-runner-unavailable"), "{error}");
         let metadata = store
             .runner_metadata("fast-linux")
             .unwrap()
@@ -11138,7 +11138,7 @@ mod tests {
         assert!(readiness
             .blockers
             .iter()
-            .any(|blocker| blocker.code == "fast-mode-spawn-unimplemented"));
+            .any(|blocker| blocker.code == "apple-vz-runner-unavailable"));
     }
 
     #[test]
@@ -11972,7 +11972,7 @@ mod tests {
             "unexpected error: {error}"
         );
         assert!(
-            error.contains("fast-mode-spawn-unimplemented"),
+            error.contains("apple-vz-runner-unavailable"),
             "unexpected error: {error}"
         );
 
