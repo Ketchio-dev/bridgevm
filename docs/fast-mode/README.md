@@ -97,9 +97,10 @@ configuration plan with `--print-config-plan`. Passing
 helper over stdin instead of using the in-process unsupported launcher. Helper
 stdout/stderr from a successful launch is relayed by `lightvm-runner`, so a
 bounded manual live run can preserve the helper start/finish transcript in
-`apple-vz-live-launch.output` for later evidence review. The default Rust
-launcher still returns an explicit unimplemented launch result. The
-Swift helper now has a limited real launch path for the supported
+`apple-vz-live-launch.output` for later evidence review. Without
+`--apple-vz-runner`, the default Rust launcher returns a signed-helper-required
+error instead of starting Apple VZ itself. The Swift helper now has a limited
+real launch path for the supported
 `linux-kernel` + `raw` disk + NAT shape; unsupported shapes, such as Linux
 installer mode, fail before `VZVirtualMachine.start()` with a clear
 unsupported-input error. Even for the supported shape, the helper requires the

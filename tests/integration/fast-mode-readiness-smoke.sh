@@ -312,8 +312,8 @@ else
 fi
 APPLE_VZ_RUNNER_BIN="$(cd apps/macos && swift build --show-bin-path)/AppleVzRunner"
 assert_fails_contains \
-  "lightvm-runner-launch-spec-ready-launch-unimplemented" \
-  "Apple Virtualization.framework launch is not implemented yet" \
+  "lightvm-runner-launch-spec-ready-launch-requires-helper" \
+  "Apple Virtualization.framework launch requires --apple-vz-runner" \
   lightvm_runner --launch-spec "$LAUNCH_SPEC" --require-ready --launch
 assert_fails_contains \
   "lightvm-runner-launch-spec-ready-swift-helper-unimplemented" \

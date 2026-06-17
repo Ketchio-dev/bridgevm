@@ -297,7 +297,9 @@ impl AppleVzLauncher for UnsupportedAppleVzLauncher {
         handoff: AppleVzLaunchHandoff,
     ) -> Result<AppleVzLaunchAttempt, AppleVzLaunchError> {
         Err(AppleVzLaunchError::Unsupported {
-            message: "Apple Virtualization.framework launch is not implemented yet".to_string(),
+            message:
+                "Apple Virtualization.framework launch requires --apple-vz-runner to point at a signed AppleVzRunner"
+                    .to_string(),
             handoff: Box::new(handoff),
         })
     }
@@ -1197,14 +1199,15 @@ mod tests {
         };
 
         let error = launch_with_apple_vz(&UnsupportedAppleVzLauncher, handoff.clone())
-            .expect_err("default Apple VZ launcher must stay unimplemented");
+            .expect_err("default Apple VZ launcher must require the Swift helper");
 
         match error {
             AppleVzLaunchError::Unsupported {
                 message,
                 handoff: returned_handoff,
             } => {
-                assert!(message.contains("not implemented yet"));
+                assert!(message.contains("--apple-vz-runner"));
+                assert!(message.contains("signed AppleVzRunner"));
                 assert_eq!(*returned_handoff, handoff);
             }
             other => panic!("expected unsupported launch error, got {other:?}"),

@@ -519,11 +519,12 @@ mod tests {
             None,
             false,
         )
-        .expect_err("default Apple VZ launcher must remain unimplemented");
+        .expect_err("default Apple VZ launcher must require the Swift helper");
         let message = format!("{error:#}");
 
         assert!(message.contains("failed to launch Apple VZ handoff"));
-        assert!(message.contains("not implemented yet"));
+        assert!(message.contains("--apple-vz-runner"));
+        assert!(message.contains("signed AppleVzRunner"));
     }
 
     #[cfg(unix)]
