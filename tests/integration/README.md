@@ -1184,19 +1184,21 @@ Linux guest-tools clipboard live socket coverage should exercise:
 The expected contract is that clipboard commands travel through the
 Unix socket protocol and Linux tools scaffold without starting a real VM.
 Successful results prove only that the alpha clipboard command plumbing
-accepted and processed scaffold payloads; they do not claim that a real guest
-OS clipboard was read or written.
+accepted and processed scaffold payloads. Real guest OS clipboard read/write
+proof belongs to the opt-in live effects smoke.
 
 Current executable coverage: `guest-tools-clipboard-cli-smoke.sh` covers a
 live Unix socket session against the Linux tools scaffold, then verifies
 guest-origin clipboard telemetry, host-origin clipboard command dispatch, and
 request-correlated success and failure acknowledgements from the opt-in
-clipboard command backend.
+clipboard command backend. The heavier
+`guest-tools-clipboard-resize-effects-opt-in-smoke.sh` boots a guest and proves
+the real `xclip` path through a headless X server.
 
 Linux guest-tools display-resize live socket coverage should exercise:
 
-- A real `bridgevm-tools-linux --socket <sock> --display-resize-command <path>`
-  process
+- A real `bridgevm-tools-linux --socket <sock>` process with either
+  `--display-resize-command <path>` or an auto-detected `xrandr` backend
 - Host-origin `ResizeDisplay` command frames
 - Request-correlated `CommandResult` metadata for successful display resize
   command dispatch and opt-in backend failures
@@ -1205,8 +1207,9 @@ Linux guest-tools display-resize live socket coverage should exercise:
 The expected contract is that display resize commands travel through the Unix
 socket protocol and Linux tools scaffold without starting a real VM. Successful
 results prove only that the alpha dynamic-resolution command plumbing accepted
-and processed scaffold payloads; they do not claim that a real guest display
-mode was changed.
+and processed scaffold payloads. The opt-in live effects smoke is the evidence
+path for a real guest display command, where the agent runs `xrandr` in a
+headless X session.
 
 Current executable coverage: `guest-tools-display-resize-cli-smoke.sh` covers a
 live Unix socket session against the Linux tools scaffold, then verifies

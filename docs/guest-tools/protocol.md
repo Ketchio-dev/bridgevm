@@ -174,8 +174,12 @@ capability set for development, or an exact manifest-compatible list with
 repeated `--capability <name[:version]>` flags. `bridgevm guest-tools
 linux-command <vm>` is the preferred way to create that exact list for either
 the virtio-serial device transport or the development Unix socket transport. It
-is a protocol loop scaffold; Linux OS clipboard, display, shared-folder, and
-most drag-and-drop integration still need real guest backends. Freeze/thaw
+is a protocol loop scaffold. Linux OS clipboard writes, clipboard watching, and
+display resize effects can call explicit or auto-detected desktop command
+backends (`wl-copy`/`wl-paste`, `xclip`, and `xrandr`) when the matching
+capabilities and desktop environment are available; otherwise they remain
+simulated acknowledgements. Shared-folder, application, window, network, and
+most drag-and-drop integrations still need real guest backends. Freeze/thaw
 defaults to simulated in-memory boundary state, but the Linux scaffold can be
 started with `--real-fsfreeze` and one or more `--fsfreeze-mount <path>` values
 to route freeze/thaw through an explicit allowlist-backed `fsfreeze` command

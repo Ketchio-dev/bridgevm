@@ -120,15 +120,17 @@ Current supported command acknowledgements:
 - `ThawFilesystem`
 
 For `SetClipboard`, acknowledgement means the scaffold decoded the host command
-and wrote a `CommandResult` for the same `request_id`. It does not write the
-text into the Linux OS clipboard yet. If the host sends a command without a
-`request_id`, the scaffold treats it as fire-and-forget and does not emit a
-`CommandResult`; with a `request_id`, `bridgevm-agentd` keeps the command
-pending until the matching result arrives.
+and wrote a `CommandResult` for the same `request_id`. If a clipboard writer is
+configured or auto-detected, the acknowledgement follows that backend result;
+otherwise it is a simulated scaffold acknowledgement and does not prove that the
+Linux OS clipboard changed. If the host sends a command without a `request_id`,
+the scaffold treats it as fire-and-forget and does not emit a `CommandResult`;
+with a `request_id`, `bridgevm-agentd` keeps the command pending until the
+matching result arrives.
 
-Linux clipboard writes are available only through an explicit command backend.
-Start the runner with `--clipboard-command <path>` to route host-origin
-`SetClipboard { text }` commands into an external program:
+Linux clipboard writes are available through an explicit command backend or
+desktop-tool auto-detection. Start the runner with `--clipboard-command <path>`
+to route host-origin `SetClipboard { text }` commands into an external program:
 
 ```bash
 bridgevm-tools-linux \
@@ -141,13 +143,15 @@ The scaffold writes the clipboard text to the command's standard input and
 uses the command exit status to produce the correlated `CommandResult`.
 Successful exits acknowledge the write; failed starts, failed stdin writes, or
 non-zero exits return a failed `CommandResult` when a `request_id` is present.
-Without `--clipboard-command`, `SetClipboard` keeps the default scaffold
-acknowledgement behavior and does not modify the Linux OS clipboard.
+Without `--clipboard-command`, the scaffold tries to auto-detect `wl-copy` on
+Wayland or `xclip -selection clipboard` on X11 when the clipboard capability is
+enabled. If no supported tool is available, `SetClipboard` keeps the default
+simulated acknowledgement behavior and does not modify the Linux OS clipboard.
 
-Linux display resize is also available only through an explicit command
-backend. Start the runner with `--display-resize-command <path>` to route
-host-origin `ResizeDisplay { width, height, scale }` commands into an external
-program:
+Linux display resize is also available through an explicit command backend or
+X11 auto-detection. Start the runner with `--display-resize-command <path>` to
+route host-origin `ResizeDisplay { width, height, scale }` commands into an
+external program:
 
 ```bash
 bridgevm-tools-linux \
@@ -160,7 +164,9 @@ The scaffold invokes the command with the requested `width`, `height`, and
 `scale` as argv values, then uses the command exit status to produce the
 correlated `CommandResult`. Failed starts or non-zero exits return a failed
 `CommandResult` when a `request_id` is present. Without
-`--display-resize-command`, `ResizeDisplay` keeps the default scaffold
+`--display-resize-command`, the scaffold tries to auto-detect `xrandr` when an
+X11 `DISPLAY` is present and the display-resize capability is enabled. If no
+supported tool is available, `ResizeDisplay` keeps the default simulated
 acknowledgement behavior and does not change the Linux display.
 
 The matching host-side shared-folder wrappers use approved manifest share names
@@ -281,10 +287,11 @@ application consistency by itself. BridgeVM does not flush databases, quiesce
 applications, coordinate app writes, or otherwise prove OS/app-consistent
 snapshot readiness.
 
-The scaffold does not yet apply Linux clipboard, display, shared-folder,
-application, window, or network state changes to the guest OS. Freeze/thaw
-changes the guest OS only in the explicit real fsfreeze mode described above;
-otherwise it remains simulated scaffold state. Drag-and-drop file writes are
-available only through the explicit `--file-drop-dir` scaffold output
-directory. Those integrations should build on the same newline-delimited
-`AgentEnvelope` loop.
+The scaffold applies Linux clipboard and display-resize effects only when those
+explicit or auto-detected command backends are available. Shared-folder,
+application, window, and network commands remain alpha protocol/session state
+rather than real guest OS integrations. Freeze/thaw changes the guest OS only in
+the explicit real fsfreeze mode described above; otherwise it remains simulated
+scaffold state. Drag-and-drop file writes are available only through the
+explicit `--file-drop-dir` scaffold output directory. Those integrations should
+build on the same newline-delimited `AgentEnvelope` loop.
