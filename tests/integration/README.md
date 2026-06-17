@@ -613,7 +613,7 @@ live networking; it validates planning metadata and rejection paths only.
 Current executable coverage: `networkd-plan-cli-smoke.sh` covers public
 `cargo run -p networkd` invocations for QEMU NAT forwards, Apple VZ host-only
 planning, QEMU host-only privilege metadata, QEMU isolated planning, QEMU
-bridged blocker metadata, ready and blocked summary output, malformed,
+bridged vmnet privilege metadata, ready and blocked summary output, malformed,
 zero-valued, and duplicate host-port forward rejection, isolated-plus-forward
 rejection, and Apple VZ bridged rejection without starting QEMU, Apple VZ, or
 a VM.
