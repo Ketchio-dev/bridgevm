@@ -19,8 +19,13 @@ installer and `qcow2` Fast Mode plans remain boot-media/planning flows and now
 surface structured live readiness blockers instead of being reported as
 launch-ready. `scripts/stage-vz-linux-demo-vm.sh` now wraps the official
 create/stage/prepare path for a tryable Apple VZ Linux demo bundle without
-starting Apple VZ. The latest local readiness suite proves this local app
-boundary.
+starting Apple VZ. A local June 19, 2026 recheck also proves the daemon-less
+CLI `bridgevm display` wrapper can launch that staged Ubuntu Noble Arm64 Fast
+Mode VM through `lightvm-runner` + `AppleVzRunner`, keep the detached runner
+alive after the CLI returns, answer the Apple VZ display runtime-control
+`status`/`stop` socket, export the 1440x900 RGBA framebuffer, and boot the guest
+to systemd network/SSH socket targets before clean stop. The latest local
+readiness suite proves this local app boundary.
 
 Public/distribution-ready completion is still blocked by external resources and
 live fixtures: Developer ID/notarization, scriptable in-guest shared-folder

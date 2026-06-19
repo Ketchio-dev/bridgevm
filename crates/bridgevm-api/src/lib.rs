@@ -32,6 +32,8 @@ use bridgevm_storage::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::{
     fs::{self, OpenOptions},
     io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
@@ -6142,6 +6144,15 @@ fn is_executable_file(path: &Path) -> bool {
     }
 }
 
+fn spawn_detached_fast_runner(command: &mut Command) -> std::io::Result<Child> {
+    command.stdin(Stdio::null());
+    #[cfg(unix)]
+    {
+        command.process_group(0);
+    }
+    command.spawn()
+}
+
 /// Resolve the signed AppleVzRunner from `BRIDGEVM_APPLE_VZ_RUNNER`.
 fn require_apple_vz_runner() -> Result<PathBuf, String> {
     let path = std::env::var_os("BRIDGEVM_APPLE_VZ_RUNNER")
@@ -6388,12 +6399,13 @@ fn spawn_fast_backend(
         None,
     );
 
-    let child = Command::new(&lightvm_runner)
+    let mut runner_command = Command::new(&lightvm_runner);
+    runner_command
         .args(&args)
         .env("BRIDGEVM_APPLE_VZ_ALLOW_REAL_START", "1")
         .stdout(Stdio::from(stdout))
-        .stderr(Stdio::from(stderr))
-        .spawn()
+        .stderr(Stdio::from(stderr));
+    let child = spawn_detached_fast_runner(&mut runner_command)
         .map_err(|error| format!("failed to spawn {}: {error}", lightvm_runner.display()))?;
 
     let mut command = vec![lightvm_runner.display().to_string()];
@@ -11588,6 +11600,10 @@ mod tests {
 
     #[test]
     fn handler_fast_spawn_error_updates_runner_metadata_with_blocker() {
+        let _guard = APPLE_VZ_RUNNER_ENV_LOCK.lock().unwrap();
+        let _env = EnvVarGuard::capture("BRIDGEVM_APPLE_VZ_RUNNER");
+        std::env::remove_var("BRIDGEVM_APPLE_VZ_RUNNER");
+
         let mut root = std::env::temp_dir();
         root.push(format!(
             "bridgevm-api-fast-spawn-blocker-test-{}",
@@ -12328,6 +12344,50 @@ mod tests {
         (store, name)
     }
 
+    fn stage_ready_fast_linux_kernel_vm(store: &VmStore, name: &str) -> PathBuf {
+        let (bundle, mut manifest) = store.get_vm(name).unwrap();
+        std::fs::create_dir_all(bundle.join("disks")).unwrap();
+        std::fs::create_dir_all(bundle.join("boot")).unwrap();
+        std::fs::write(bundle.join("disks/root.raw"), b"raw disk placeholder").unwrap();
+        std::fs::write(bundle.join("boot/vmlinuz"), b"kernel placeholder").unwrap();
+
+        manifest.storage.primary.path = "disks/root.raw".to_string();
+        manifest.storage.primary.format = "raw".to_string();
+        manifest.boot = Some(bridgevm_config::Boot {
+            mode: BootMode::LinuxKernel,
+            installer_image: None,
+            kernel_path: Some("boot/vmlinuz".to_string()),
+            initrd_path: None,
+            kernel_command_line: Some("console=hvc0 root=/dev/vda".to_string()),
+            macos_restore_image: None,
+        });
+        manifest.write(&bundle.join("manifest.yaml")).unwrap();
+        bundle
+    }
+
+    #[cfg(unix)]
+    fn write_executable(path: &Path, contents: &str) {
+        use std::os::unix::fs::PermissionsExt;
+
+        std::fs::write(path, contents).unwrap();
+        let mut permissions = std::fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(path, permissions).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn process_group_id(pid: u32) -> Option<u32> {
+        let output = Command::new("ps")
+            .args(["-p", &pid.to_string(), "-o", "pgid="])
+            .stderr(Stdio::null())
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        String::from_utf8_lossy(&output.stdout).trim().parse().ok()
+    }
+
     #[test]
     fn handler_reapplies_runtime_resources_for_background_fast_vm() {
         let _battery = EnvVarGuard::set("BRIDGEVM_FORCE_ON_BATTERY", "0");
@@ -12839,6 +12899,105 @@ mod tests {
         assert!(metadata.pid.is_none());
         assert_eq!(metadata.engine, "lightvm");
 
+        let _ = std::fs::remove_dir_all(store.root());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn display_fast_backend_spawns_detached_runner_that_survives_return() {
+        if !(cfg!(target_os = "macos") && cfg!(target_arch = "aarch64")) {
+            return;
+        }
+
+        let _guard = APPLE_VZ_RUNNER_ENV_LOCK.lock().unwrap();
+        let (store, name) = fast_test_store("display-spawn-detached");
+        let bundle = stage_ready_fast_linux_kernel_vm(&store, &name);
+        let helper_dir = store.root().join("helpers");
+        std::fs::create_dir_all(&helper_dir).unwrap();
+        let fake_lightvm_runner = helper_dir.join("lightvm-runner");
+        let fake_apple_vz_runner = helper_dir.join("AppleVzRunner");
+        let args_file = store.root().join("fake-lightvm-args.txt");
+        let env_file = store.root().join("fake-lightvm-env.txt");
+
+        write_executable(&fake_apple_vz_runner, "#!/bin/sh\nexit 0\n");
+        write_executable(
+            &fake_lightvm_runner,
+            r#"#!/bin/sh
+printf '%s\n' "$@" > "$BRIDGEVM_FAKE_RUNNER_ARGS"
+printf '%s\n' "$BRIDGEVM_APPLE_VZ_ALLOW_REAL_START" > "$BRIDGEVM_FAKE_RUNNER_ENV"
+exec sleep 60
+"#,
+        );
+
+        let _apple_runner_env = EnvVarGuard::set(
+            "BRIDGEVM_APPLE_VZ_RUNNER",
+            fake_apple_vz_runner.to_str().unwrap(),
+        );
+        let _lightvm_runner_env = EnvVarGuard::set(
+            "BRIDGEVM_LIGHTVM_RUNNER",
+            fake_lightvm_runner.to_str().unwrap(),
+        );
+        let _fake_args_env =
+            EnvVarGuard::set("BRIDGEVM_FAKE_RUNNER_ARGS", args_file.to_str().unwrap());
+        let _fake_env_env =
+            EnvVarGuard::set("BRIDGEVM_FAKE_RUNNER_ENV", env_file.to_str().unwrap());
+
+        let metadata = display_fast_backend_with_size(&store, &name, Some((1440, 900))).unwrap();
+        let pid = metadata
+            .pid
+            .expect("display spawn records the detached runner pid");
+        for _ in 0..200 {
+            if args_file.exists() && process_is_alive(pid) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        assert!(
+            process_is_alive(pid),
+            "display runner pid {pid} should survive API return"
+        );
+        assert_eq!(
+            process_group_id(pid),
+            Some(pid),
+            "display runner should launch in its own process group"
+        );
+        assert!(metadata
+            .command
+            .iter()
+            .any(|arg| arg == "--apple-vz-display"));
+        assert!(metadata
+            .command
+            .windows(2)
+            .any(|pair| pair == ["--apple-vz-display-width", "1440"]));
+        assert!(metadata
+            .command
+            .windows(2)
+            .any(|pair| pair == ["--apple-vz-display-height", "900"]));
+        let runtime_control = metadata
+            .runtime_control
+            .as_ref()
+            .expect("display spawn records runtime-control metadata");
+        assert_eq!(
+            runtime_control.socket_path,
+            apple_vz_display_control_socket_path(&bundle)
+        );
+
+        let args = std::fs::read_to_string(&args_file).unwrap();
+        assert!(args.contains("--apple-vz-display\n"), "{args}");
+        assert!(args.contains("--apple-vz-display-width\n1440\n"), "{args}");
+        assert!(args.contains("--apple-vz-display-height\n900\n"), "{args}");
+        assert!(
+            args.contains(
+                apple_vz_display_framebuffer_rgba_path(&bundle)
+                    .to_str()
+                    .unwrap()
+            ),
+            "{args}"
+        );
+        assert_eq!(std::fs::read_to_string(&env_file).unwrap().trim(), "1");
+
+        let _ = signal_process(pid, "TERM");
         let _ = std::fs::remove_dir_all(store.root());
     }
 
