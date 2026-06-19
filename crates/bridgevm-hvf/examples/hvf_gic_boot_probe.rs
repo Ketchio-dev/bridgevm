@@ -79,6 +79,7 @@ extern "C" {
     fn hv_vcpu_get_reg(vcpu: HvVcpuT, reg: u32, value: *mut u64) -> HvReturn;
     fn hv_vcpu_set_reg(vcpu: HvVcpuT, reg: u32, value: u64) -> HvReturn;
     fn hv_vcpu_set_sys_reg(vcpu: HvVcpuT, reg: u16, value: u64) -> HvReturn;
+    fn hv_vcpu_get_sys_reg(vcpu: HvVcpuT, reg: u16, value: *mut u64) -> HvReturn;
     fn hv_vcpu_set_vtimer_mask(vcpu: HvVcpuT, vtimer_is_masked: bool) -> HvReturn;
     fn hv_gic_get_redistributor_base(vcpu: HvVcpuT, base: *mut u64) -> HvReturn;
     // Apple in-kernel GICv3 (macOS 15+).
@@ -167,6 +168,10 @@ fn main() {
         hv_vcpu_set_reg(vcpu, HV_REG_PC, 0x0);
         hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5);
         hv_vcpu_set_reg(vcpu, HV_REG_X0, machine::RAM_BASE);
+        // Unmask the virtual timer at the HVF level so it can fire (and hv_gic can
+        // route the timer PPI). It is masked by default, which is why no
+        // VTIMER_ACTIVATED ever arrived and the firmware spun on its ISR flag.
+        hv_vcpu_set_vtimer_mask(vcpu, false);
 
         let vcpu_for_wd = vcpu;
         std::thread::spawn(move || {
@@ -320,6 +325,15 @@ fn main() {
         println!(
             "AT-STOP: x0={:#x} x1={:#x} x2={:#x} x9={:#x}  (x0 device: {:?})",
             rx[0], rx[1], rx[2], rx[3], machine::device_at(rx[0])
+        );
+        // Timer state: CTL bit0=ENABLE, bit1=IMASK, bit2=ISTATUS(fired).
+        let mut tr = [0u64; 4];
+        for (i, r) in [0xdf19u16, 0xdf1a, 0xdf11, 0xdf12].iter().enumerate() {
+            hv_vcpu_get_sys_reg(vcpu, *r, &mut tr[i]);
+        }
+        println!(
+            "TIMERS: CNTV_CTL={:#x} CNTV_CVAL={:#x} | CNTP_CTL={:#x} CNTP_CVAL={:#x}",
+            tr[0], tr[1], tr[2], tr[3]
         );
 
         hv_vcpu_destroy(vcpu);
