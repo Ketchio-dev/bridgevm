@@ -198,27 +198,27 @@ dropping then re-adding the right PCIe windows, fw_cfg big-endian selector/DMA, 
 `/flash@0` node (VirtNorFlashDxe — doubled execution to ~16.8k exits), and creating
 the VM with the **max IPA size** (40-bit; the ECAM is at 256 GiB).
 
-**Current frontier — RngDxe.** `SecurityPkg/RandomNumberGenerator/RngDxe` faults
-with a data abort at `FAR 0x100000000F` (`2^40 + 15`): it reads an all-ones value
-(`X0 = 0xFFFFFFFFFFFFFFFF`), truncates it to the 40-bit IPA boundary, and
-dereferences just past the mappable range. Likely an all-ones pointer/count derived
-from the empty ECAM or a missing RNG/ACPI source. **Oracle established.** The same firmware booted under `qemu-system-aarch64 -M
-virt,gic-version=3,accel=hvf -cpu host` reaches the **UEFI Interactive Shell**
-cleanly (`Press ESC in 5 seconds…`). So the firmware + HVF + RNDR all work; the
-RngDxe fault is a **specific gap between my platform and QEMU's**, not a firmware or
-HVF problem. The guest PARange is already 40-bit (= my IPA), so it is not a
-PARange/IPA mismatch. Remaining gap candidates, to be **bisected differentially
-against QEMU** next session:
-1. **CFI pflash emulation** — QEMU emulates the flash with real read/program/erase
-   command semantics; I map it as plain RX/RW memory, so the firmware's variable
-   store (NorFlashDxe) may corrupt and a later driver reads a bad (all-ones)
-   pointer.
-2. **ACPI/SMBIOS via fw_cfg** — QEMU provides `etc/acpi/tables` etc.; mine does not.
-3. **Missing DTB nodes** — QEMU also has `aliases`, `gpio-keys`, `pl061`,
-   `platform-bus`, `pmu`.
+**RngDxe — FIXED. Root cause: an HVC PC double-advance in the run loop.** Found by
+running **3 parallel worktree agents** (a QEMU+HVF oracle differential, a guest-RAM
+disassembly with live instrumentation, and a DTB-node bisection). The data-abort
+exit handler advances PC by +4 to step over the emulated faulting instruction — but
+HVF reports the **HVC** exit PC *already past* the `hvc` (data aborts report it *at*
+the faulting instruction). The extra +4 skipped `ArmCallHvc`'s `ldr x9, [sp], #0x10`
+(the SMCCC args-pointer reload), so RngDxe's first SMCCC call stored its result
+through a **stale x9** (`0xFF_FFFFFFFF`) and faulted at `0x100000000F`. It was never
+a TRNG/ACPI/flash/DTB-node problem — all three were ruled out in parallel; the QEMU
+oracle (which boots the same firmware to the UEFI shell) confirmed the firmware/HVF
+side is fine. Fix: on an HVC exit, set `PC = last_pc` (no +4); also answer
+`SMCCC_VERSION`. RngDxe now starts, two other optional drivers unload gracefully
+(`Image start failed: Not Found`, exactly as under QEMU), and the firmware runs on
+**through late DXE**.
 
-Tooling that would make this fast: an HVF single-step instruction tracer (to read
-the exact faulting RngDxe instruction) and a `RngDxe.dll` extract+disassemble from
-the firmware volume. Then timer IRQ delivery, NVMe, Linux ACPI / Windows. No
-external host, paid entitlement, or separate machine is in the way; the whole loop,
-including the QEMU oracle, is live-debuggable here.
+**Current frontier — interrupt delivery.** The firmware now hard-spins in EDK2's
+`MmioRead32` (`0x5fcf13b0`, `ldr w0,[x0]; dsb; ret`) with the exit count frozen and
+`vtimer = 0` — i.e. it is polling a register served in-kernel by Apple `hv_gic`,
+waiting for an **interrupt that never fires**. The next subsystem is **architected
+timer / interrupt delivery via `hv_gic`** (handle `HV_EXIT_REASON_VTIMER_ACTIVATED`
+and route the timer PPI through the in-kernel GIC, plus `hv_gic_set_spi` for SPI
+lines). Then NVMe, Linux ACPI / Windows. No external host, paid entitlement, or
+separate machine is in the way; the whole loop, including the QEMU oracle, is
+live-debuggable here.

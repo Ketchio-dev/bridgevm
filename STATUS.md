@@ -69,12 +69,14 @@ the modelled UART, and parses the generated DTB. With Apple's in-kernel GICv3
 **deep into DXE driver dispatch** (`hvf-gic-boot` smoke). The **GIC is fully served
 by Apple** (distributor + redistributor + CPU interface, zero GIC MMIO traps) — the
 key was setting `MPIDR_EL1` so Apple associates each vCPU's redistributor frame.
-Further fixes (PSCI, empty ECAM, `/flash@0` node, fw_cfg endianness, 40-bit IPA)
-carried the firmware through the flash/variable drivers; the current frontier is a
-data abort in `RngDxe` (`FAR 0x100000000F`, an all-ones pointer past the IPA
-boundary). The remaining bring-up is a methodical crash-by-crash effort (best with
-an HVF single-step tracer + captured QEMU ACPI), then timer IRQ, NVMe, Linux ACPI /
-Windows. No external host or paid entitlement is required; the whole loop is
+Further fixes (PSCI, empty ECAM, `/flash@0` node, fw_cfg endianness, 40-bit IPA,
+and an **HVC PC-advance fix** root-caused by 3 parallel worktree agents — the HVC
+exit PC is already past the `hvc`, so the data-abort-style +4 skipped
+`ArmCallHvc`'s args-pointer reload and crashed RngDxe) carried the firmware
+**through late DXE**. The current frontier is **interrupt delivery**: the firmware
+hard-spins in `MmioRead32` polling a `hv_gic`-served register for an interrupt that
+never fires — next is architected-timer/IRQ routing via `hv_gic`, then NVMe, Linux
+ACPI / Windows. No external host or paid entitlement is required; the whole loop is
 live-debuggable here. See
 [docs/hvf-windows-engine-strategy.md](docs/hvf-windows-engine-strategy.md) and
 [docs/hvf-windows-platform-contract-gap.md](docs/hvf-windows-platform-contract-gap.md).
