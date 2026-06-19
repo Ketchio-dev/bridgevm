@@ -52,15 +52,20 @@ unmodified and ACPI/PCIe/Windows-media behaviour matches the QEMU stack, rather
 than hand-writing ACPI and an EDK2 port from scratch (Path B). The current HVF
 probe harness reproduces only the RAM base of that contract and is missing
 `fw_cfg` and PCIe ECAM — the subsystems that gate ACPI and storage, i.e. Windows
-booting at all. Path A steps 1–3 are landed (modelled + verified, not yet running
-on a live VM): `src/fwcfg.rs` (`fw_cfg` keystone), `src/machine.rs` (the `virt`
-machine model + no-overlap validator), `src/dtb.rs` (`build_virt_fdt`, a
+booting at all. Path A steps 1–3 are landed (modelled, unit-tested, and proven
+live at the MMIO level): `src/fwcfg.rs` (`fw_cfg` keystone), `src/machine.rs` (the
+`virt` machine model + no-overlap validator), `src/dtb.rs` (`build_virt_fdt`, a
 QEMU-`virt`-shaped device tree verified `dtc`-clean against the contract), and
 `src/platform_virt.rs` (`VirtPlatform`, which assembles the map + `fw_cfg` + DTB +
 guest-memory layout behind one `on_mmio()` exit entry point). Crate suite green at
-129 tests, zero warnings. The remaining wiring is the live `hv_vcpu_run` loop
-itself, which requires a signed, hypervisor-entitled Apple Silicon host (step 6:
-Linux ACPI-only bring-up). See
+129 tests, zero warnings. **Hypervisor.framework is usable directly on this Apple
+Silicon host via ad-hoc entitlement signing — confirmed by a live end-to-end
+proof** (`examples/hvf_fw_cfg_live.rs` + `hvf-fw-cfg-mmio-live-opt-in-smoke.sh`): a
+real guest vCPU MMIO read is trapped by HVF and routed through `VirtPlatform` into
+`fw_cfg`, and the guest observes the correct signature byte. No external host or
+paid entitlement is required. Remaining work (grow the live loop, load EDK2, model
+GICv3/timer/PCIe/NVMe, then Linux ACPI-only boot at step 6) is pure engineering,
+each step verifiable here the same way. See
 [docs/hvf-windows-engine-strategy.md](docs/hvf-windows-engine-strategy.md) and
 [docs/hvf-windows-platform-contract-gap.md](docs/hvf-windows-platform-contract-gap.md).
 

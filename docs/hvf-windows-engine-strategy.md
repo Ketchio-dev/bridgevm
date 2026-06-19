@@ -111,10 +111,25 @@ ACPI-only boot): Linux gives you `dmesg`, Windows gives you a sad face.
   lives in its own modules — the de-monolithing pattern the audit asked for,
   applied to surviving code rather than a big-bang refactor of the probe harness.
 
-### Live integration point (the only part that needs an entitled host)
+### Live integration point — validated on real Hypervisor.framework
 
-The whole Path A platform is driven by one call from the `hv_vcpu_run` data-abort
-(MMIO) exit handler:
+**This is no longer hypothetical.** Hypervisor.framework is usable directly on an
+Apple Silicon dev host: ad-hoc code-signing grants `com.apple.security.hypervisor`
+(`codesign --sign - --entitlements hv.entitlements --force <bin>`), no paid
+Developer ID or separate machine required. The first end-to-end proof passes today
+— see `examples/hvf_fw_cfg_live.rs` and
+`tests/integration/hvf-fw-cfg-mmio-live-opt-in-smoke.sh`:
+
+```
+MMIO read @ 0x09020000 size 1 -> 0x51 into x0   (real guest data abort)
+guest X0 = 0x51 ('Q')                            (fw_cfg signature, via VirtPlatform)
+LIVE PROOF: real guest MMIO -> VirtPlatform::on_mmio -> fw_cfg -> guest saw 'Q'
+```
+
+i.e. a real guest vCPU's MMIO read was trapped by HVF, decoded, and routed through
+`VirtPlatform::on_mmio` into the `fw_cfg` device, and the guest observed the
+correct byte. The whole Path A platform is driven by exactly this one call from the
+`hv_vcpu_run` data-abort (MMIO) exit handler:
 
 ```rust
 // In the run loop, on an HVF_EXIT_REASON data abort:
@@ -127,18 +142,19 @@ match platform.on_mmio(fault_ipa, op, &mut guest_ram) {
 }
 ```
 
-`guest_ram` is a [`fwcfg::GuestMemoryMut`] view over the HVF-mapped RAM; in tests
-it is `FlatGuestRam`. Standing up the actual `hv_vm_create`/`hv_vcpu_create`/
-`hv_vcpu_run` loop, mapping pflash + RAM per `VirtPlatform::memory_layout()`, and
-placing the DTB at `dtb_load` is the remaining wiring — and the point at which a
-signed, `com.apple.security.hypervisor`-entitled Apple Silicon host becomes
-mandatory. That is the step-6 Linux ACPI-only bring-up.
+`guest_ram` is a [`fwcfg::GuestMemoryMut`] view over the HVF-mapped RAM; in the
+live example it is `FlatGuestRam`. The remaining bring-up — growing this loop to
+map pflash + RAM per `VirtPlatform::memory_layout()`, load `edk2-aarch64-code.fd`,
+place the DTB at `dtb_load`, and model GICv3/timer/PCIe/NVMe — is pure engineering,
+and **every step is now live-verifiable on this host** the same way the fw_cfg
+proof is. The step-6 Linux ACPI-only boot is the milestone, not a hardware gate.
 
-### Honest status of the `fw_cfg` brick
+### Honest status
 
-It is a **spec-modelled, unit-tested** device, not yet wired into a live VM and not
-yet validated against real firmware on an entitled Apple Silicon host. The unit
-tests verify conformance to the documented `fw_cfg` interface (signature, ID/DMA
-feature bits, file directory layout, sequential reads, DMA read/write/skip), not
-interop. Real proof comes at step 6 (Linux ACPI-only boot) on a host with the HVF
-entitlement.
+The device models are **spec-modelled, unit-tested, and now proven live** at the
+MMIO level: a real guest read of `fw_cfg` through HVF returns the correct byte via
+`VirtPlatform`. What is *not* yet proven is full firmware interop — stock
+ArmVirtQemu actually parsing the DTB, fetching ACPI tables over `fw_cfg`, and
+reaching a UEFI shell / Linux ACPI boot. That requires growing the live loop and
+the device set (GICv3, timer, PCIe, NVMe), each step verifiable here the same way.
+No external host, paid entitlement, or separate machine is in the way.
