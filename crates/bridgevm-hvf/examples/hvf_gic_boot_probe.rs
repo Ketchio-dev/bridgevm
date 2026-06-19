@@ -312,6 +312,16 @@ fn main() {
             println!();
         }
 
+        // What is the firmware polling at the stop point? x0 is MmioRead32's address arg.
+        let mut rx = [0u64; 4];
+        for (i, r) in [HV_REG_X0, HV_REG_X0 + 1, HV_REG_X0 + 2, HV_REG_X0 + 9].iter().enumerate() {
+            hv_vcpu_get_reg(vcpu, *r, &mut rx[i]);
+        }
+        println!(
+            "AT-STOP: x0={:#x} x1={:#x} x2={:#x} x9={:#x}  (x0 device: {:?})",
+            rx[0], rx[1], rx[2], rx[3], machine::device_at(rx[0])
+        );
+
         hv_vcpu_destroy(vcpu);
         hv_vm_destroy();
 
