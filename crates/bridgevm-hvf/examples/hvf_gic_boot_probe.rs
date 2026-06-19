@@ -15,8 +15,38 @@ use std::os::raw::c_void;
 use std::ptr::null_mut;
 
 use bridgevm_hvf::dtb::{build_virt_fdt, VirtFdtConfig};
+use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::machine;
-use bridgevm_hvf::platform_virt::{FlatGuestRam, MmioOp, MmioOutcome, VirtPlatform};
+use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome, VirtPlatform};
+
+/// A GuestMemoryMut view over the actual HVF-mapped guest RAM, so fw_cfg DMA
+/// reads/writes hit real firmware memory (not a throwaway buffer).
+struct MappedRam {
+    base: u64,
+    ptr: *mut u8,
+    len: usize,
+}
+impl GuestMemoryMut for MappedRam {
+    fn write_bytes(&mut self, gpa: u64, data: &[u8]) -> bool {
+        let Some(off) = gpa.checked_sub(self.base).map(|o| o as usize) else {
+            return false;
+        };
+        if off + data.len() > self.len {
+            return false;
+        }
+        unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), self.ptr.add(off), data.len()) };
+        true
+    }
+    fn read_bytes(&self, gpa: u64, len: usize) -> Option<Vec<u8>> {
+        let off = gpa.checked_sub(self.base)? as usize;
+        if off + len > self.len {
+            return None;
+        }
+        let mut v = vec![0u8; len];
+        unsafe { std::ptr::copy_nonoverlapping(self.ptr.add(off), v.as_mut_ptr(), len) };
+        Some(v)
+    }
+}
 
 type HvReturn = i32;
 type HvVcpuT = u64;
@@ -45,7 +75,9 @@ extern "C" {
     fn hv_vcpus_exit(vcpus: *const HvVcpuT, vcpu_count: u32) -> HvReturn;
     fn hv_vcpu_get_reg(vcpu: HvVcpuT, reg: u32, value: *mut u64) -> HvReturn;
     fn hv_vcpu_set_reg(vcpu: HvVcpuT, reg: u32, value: u64) -> HvReturn;
+    fn hv_vcpu_set_sys_reg(vcpu: HvVcpuT, reg: u16, value: u64) -> HvReturn;
     fn hv_vcpu_set_vtimer_mask(vcpu: HvVcpuT, vtimer_is_masked: bool) -> HvReturn;
+    fn hv_gic_get_redistributor_base(vcpu: HvVcpuT, base: *mut u64) -> HvReturn;
     // Apple in-kernel GICv3 (macOS 15+).
     fn hv_gic_config_create() -> HvGicConfig;
     fn hv_gic_config_set_distributor_base(config: HvGicConfig, base: u64) -> HvReturn;
@@ -113,6 +145,14 @@ fn main() {
         let mut vcpu: HvVcpuT = 0;
         let mut exit: *mut HvVcpuExit = null_mut();
         assert_eq!(hv_vcpu_create(&mut vcpu, &mut exit, null_mut()), 0, "hv_vcpu_create");
+        // MPIDR_EL1 affinity 0 (bit 31 RES1) — Apple hv_gic associates this vCPU's
+        // redistributor frame from its MPIDR, so this must be set before the GIC
+        // redistributor MMIO is served or hv_gic_get_redistributor_base is called.
+        const HV_SYS_REG_MPIDR_EL1: u16 = 0xc005;
+        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, 0x8000_0000);
+        let mut rdbase = 0u64;
+        let rdr = hv_gic_get_redistributor_base(vcpu, &mut rdbase);
+        println!("hv_gic_get_redistributor_base(vcpu0) = {rdr:#x} -> {rdbase:#x}");
         hv_vcpu_set_reg(vcpu, HV_REG_PC, 0x0);
         hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5);
         hv_vcpu_set_reg(vcpu, HV_REG_X0, machine::RAM_BASE);
@@ -125,7 +165,7 @@ fn main() {
         });
 
         let mut platform = VirtPlatform::new(VirtFdtConfig { cpu_count: 1, ram_size: RAM_SIZE as u64 });
-        let mut guest_ram = FlatGuestRam::new(machine::RAM_BASE, 0);
+        let mut guest_ram = MappedRam { base: machine::RAM_BASE, ptr: ram, len: RAM_SIZE };
         let mut unimpl: BTreeMap<&'static str, u64> = BTreeMap::new();
         let mut redist_lo = u64::MAX;
         let mut redist_hi = 0u64;

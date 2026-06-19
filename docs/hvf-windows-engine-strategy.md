@@ -182,14 +182,21 @@ empty-ECAM + dropping the >IPA-size 64-bit PCIe window, the firmware now:
 - handles **PSCI** (HVC) and an **empty PCIe bus** (ECAM returns all-ones);
 - runs **into DXE proper** (DxeCore), past the previous frontier.
 
-Two precise open frontiers remain (next session):
-1. **Apple `hv_gic` redistributor not served.** All 161 redistributor accesses fall
-   in CPU 0's frame (`0xc000008..0xc01041c`, base `0xc000000`) yet still trap to
-   userspace, while the distributor/CPU-interface are served. Needs an `hv_gic`
-   API step or a redistributor-base constraint we haven't found.
-2. A **DXE control-flow fault** (jump to a stack address) follows — likely
-   downstream of the broken redistributor / missing interrupt delivery.
+**The GIC is now fully served by Apple** — distributor, redistributor, and CPU
+interface, with zero GIC MMIO trapping to userspace. The missing key was
+**`MPIDR_EL1`**: Apple associates each vCPU's redistributor frame from its MPIDR
+affinity, so it must be set (`hv_vcpu_set_sys_reg(HV_SYS_REG_MPIDR_EL1, 0x80000000)`)
+before the redistributor MMIO is served. With it,
+`hv_gic_get_redistributor_base(vcpu0)` returns `0x80a0000` and `gic-redist` drops
+out of the unmodelled list entirely. (The redistributor stays at QEMU virt's
+`0x080a0000`; Apple's `redistributor_region_size` is a *maximum*, not a required
+reservation — confirmed against QEMU's own hvf backend.)
 
-Remaining bring-up (fix redistributor, timer IRQ delivery, then NVMe, then Linux
-ACPI / Windows) is pure engineering, each step verifiable here the same way. No
-external host, paid entitlement, or separate machine is in the way.
+**Sole remaining frontier:** a firmware-internal control-flow fault in DXE driver
+dispatch (synchronous exception to a data address, `~0x47785bdc`, after virtio FDT
+init; even the handler recurses). It is GIC-independent (identical before/after the
+GIC fix) and survives a real-RAM-backed fw_cfg DMA, so the next step is
+instruction-level tracing of the faulting DXE driver (candidates: ACPI/SMBIOS
+platform DXE with empty fw_cfg tables, or a FP/SIMD trap). Then timer IRQ delivery,
+NVMe, Linux ACPI / Windows — each verifiable here the same way. No external host,
+paid entitlement, or separate machine is in the way.
