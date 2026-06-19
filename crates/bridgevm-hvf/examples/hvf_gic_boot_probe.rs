@@ -81,6 +81,7 @@ extern "C" {
     fn hv_vcpu_set_sys_reg(vcpu: HvVcpuT, reg: u16, value: u64) -> HvReturn;
     fn hv_vcpu_get_sys_reg(vcpu: HvVcpuT, reg: u16, value: *mut u64) -> HvReturn;
     fn hv_vcpu_set_vtimer_mask(vcpu: HvVcpuT, vtimer_is_masked: bool) -> HvReturn;
+    fn hv_vcpu_get_vtimer_offset(vcpu: HvVcpuT, vtimer_offset: *mut u64) -> HvReturn;
     fn hv_gic_get_redistributor_base(vcpu: HvVcpuT, base: *mut u64) -> HvReturn;
     // Apple in-kernel GICv3 (macOS 15+).
     fn hv_gic_config_create() -> HvGicConfig;
@@ -114,6 +115,13 @@ fn map_file(path: &str, ipa: u64, region_bytes: usize, flags: u64) {
         std::ptr::copy_nonoverlapping(data.as_ptr(), mem, data.len());
         assert_eq!(hv_vm_map(mem as *mut c_void, ipa, region_bytes, flags), 0, "map {path}");
     }
+}
+
+/// Read the host's virtual counter (Apple Silicon system counter, ~24 MHz).
+fn host_cntvct() -> u64 {
+    let v: u64;
+    unsafe { std::arch::asm!("mrs {}, cntvct_el0", out(reg) v) };
+    v
 }
 
 fn main() {
@@ -334,6 +342,18 @@ fn main() {
         println!(
             "TIMERS: CNTV_CTL={:#x} CNTV_CVAL={:#x} | CNTP_CTL={:#x} CNTP_CVAL={:#x}",
             tr[0], tr[1], tr[2], tr[3]
+        );
+        let mut voff = 0u64;
+        hv_vcpu_get_vtimer_offset(vcpu, &mut voff);
+        let mut cntvoff = 0u64;
+        hv_vcpu_get_sys_reg(vcpu, 0xe703, &mut cntvoff); // CNTVOFF_EL2
+        let hcnt = host_cntvct();
+        let guest_cnt = hcnt.wrapping_sub(cntvoff);
+        let gap = (tr[1] as i128) - (guest_cnt as i128);
+        println!(
+            "CNTVCT: host={hcnt:#x} CNTVOFF_EL2={cntvoff:#x} vtimer_off={voff:#x} guest~={guest_cnt:#x}  CVAL={:#x}  gap={gap} ticks (~{} s @24MHz)",
+            tr[1],
+            gap / 24_000_000
         );
 
         hv_vcpu_destroy(vcpu);
