@@ -325,6 +325,23 @@ pub fn build_virt_fdt(cfg: &VirtFdtConfig) -> Vec<u8> {
     b.prop_str_list("clock-names", &["apb_pclk"]);
     b.end_node();
 
+    // /flash@0 — the two pflash banks (code + vars). ArmVirtPkg's VirtNorFlashDxe
+    // parses this to locate the UEFI variable store; without it the flash driver
+    // faults in DXE.
+    b.begin_node("flash@0");
+    b.prop_str_list("compatible", &["cfi-flash"]);
+    b.prop_cells(
+        "reg",
+        &[
+            (machine::FLASH_CODE.base >> 32) as u32, machine::FLASH_CODE.base as u32,
+            (machine::FLASH_CODE.size >> 32) as u32, machine::FLASH_CODE.size as u32,
+            (machine::FLASH_VARS.base >> 32) as u32, machine::FLASH_VARS.base as u32,
+            (machine::FLASH_VARS.size >> 32) as u32, machine::FLASH_VARS.size as u32,
+        ],
+    );
+    b.prop_u32("bank-width", 4);
+    b.end_node();
+
     // /fw-cfg — the keystone (see crate::fwcfg).
     b.begin_node("fw-cfg@9020000");
     b.prop_str_list("compatible", &["qemu,fw-cfg-mmio"]);
