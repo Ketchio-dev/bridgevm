@@ -202,9 +202,23 @@ the VM with the **max IPA size** (40-bit; the ECAM is at 256 GiB).
 with a data abort at `FAR 0x100000000F` (`2^40 + 15`): it reads an all-ones value
 (`X0 = 0xFFFFFFFFFFFFFFFF`), truncates it to the 40-bit IPA boundary, and
 dereferences just past the mappable range. Likely an all-ones pointer/count derived
-from the empty ECAM or a missing RNG/ACPI source. Resolving it (and the DXE drivers
-after it) is a **methodical crash-by-crash bring-up** best done with dedicated
-tooling — an HVF single-step instruction tracer and/or captured QEMU ACPI/SMBIOS
-tables — rather than one-shot guesses. Then timer IRQ delivery, NVMe, Linux ACPI /
-Windows. No external host, paid entitlement, or separate machine is in the way; the
-whole loop is live-debuggable here.
+from the empty ECAM or a missing RNG/ACPI source. **Oracle established.** The same firmware booted under `qemu-system-aarch64 -M
+virt,gic-version=3,accel=hvf -cpu host` reaches the **UEFI Interactive Shell**
+cleanly (`Press ESC in 5 seconds…`). So the firmware + HVF + RNDR all work; the
+RngDxe fault is a **specific gap between my platform and QEMU's**, not a firmware or
+HVF problem. The guest PARange is already 40-bit (= my IPA), so it is not a
+PARange/IPA mismatch. Remaining gap candidates, to be **bisected differentially
+against QEMU** next session:
+1. **CFI pflash emulation** — QEMU emulates the flash with real read/program/erase
+   command semantics; I map it as plain RX/RW memory, so the firmware's variable
+   store (NorFlashDxe) may corrupt and a later driver reads a bad (all-ones)
+   pointer.
+2. **ACPI/SMBIOS via fw_cfg** — QEMU provides `etc/acpi/tables` etc.; mine does not.
+3. **Missing DTB nodes** — QEMU also has `aliases`, `gpio-keys`, `pl061`,
+   `platform-bus`, `pmu`.
+
+Tooling that would make this fast: an HVF single-step instruction tracer (to read
+the exact faulting RngDxe instruction) and a `RngDxe.dll` extract+disassemble from
+the firmware volume. Then timer IRQ delivery, NVMe, Linux ACPI / Windows. No
+external host, paid entitlement, or separate machine is in the way; the whole loop,
+including the QEMU oracle, is live-debuggable here.
