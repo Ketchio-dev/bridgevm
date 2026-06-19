@@ -256,6 +256,7 @@ fn main() {
                     let mut func = 0u64;
                     hv_vcpu_get_reg(vcpu, HV_REG_X0, &mut func);
                     match func & 0xffff_ffff {
+                        0x8000_0000 => { hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0001); }    // SMCCC_VERSION 1.1
                         0x8400_0000 => { hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0001_0001); } // PSCI_VERSION 1.1
                         0x8400_000A => { hv_vcpu_set_reg(vcpu, HV_REG_X0, 0); }           // PSCI_FEATURES
                         0x8400_0050 => { hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0000); }    // TRNG_VERSION 1.0
@@ -279,7 +280,11 @@ fn main() {
                         }
                         _ => { hv_vcpu_set_reg(vcpu, HV_REG_X0, (-1i64) as u64); }         // NOT_SUPPORTED
                     }
-                    hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
+                    // HVF reports the HVC exit PC already PAST the `hvc` instruction
+                    // (unlike a data abort, where the PC is AT the faulting insn). So
+                    // do NOT advance again: +4 would skip the next instruction — e.g.
+                    // ArmCallHvc's `ldr x9, [sp], #0x10`, which was the RngDxe crash.
+                    hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc);
                     psci_calls += 1;
                 }
                 _ => {
@@ -295,9 +300,10 @@ fn main() {
 
         let serial = platform.uart_output().to_vec();
 
-        // RngDxe is loaded into guest RAM; dump the code around the faulting PC
-        // (from the serial exception report) so it can be disassembled directly.
-        let crash_pc = 0x5FDB_9490u64;
+        // Dump the code around the current frontier PC (read from guest RAM) so it
+        // can be disassembled directly. Set to wherever the firmware currently
+        // stops (`last PC` in the summary).
+        let crash_pc = 0x5fcf_13b0u64;
         if let Some(code) = guest_ram.read_bytes(crash_pc - 0x18, 0x48) {
             print!("CODE@{:#x}:", crash_pc - 0x18);
             for b in &code {
