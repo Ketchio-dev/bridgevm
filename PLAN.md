@@ -22,7 +22,11 @@ tracks:
 
 3. **BridgeVM HVF Engine**
    A future BridgeVM-owned Apple Hypervisor.framework VMM for the Windows 11 Arm
-   non-QEMU, Parallels-like target.
+   non-QEMU, Parallels-like target. Architecture decision and sequenced plan:
+   [docs/hvf-windows-engine-strategy.md](docs/hvf-windows-engine-strategy.md)
+   (Path A — converge on the QEMU `virt` contract so stock ArmVirtQemu firmware
+   boots and ACPI comes from `fw_cfg`); the contract gap is quantified in
+   [docs/hvf-windows-platform-contract-gap.md](docs/hvf-windows-platform-contract-gap.md).
 
 The central idea is:
 

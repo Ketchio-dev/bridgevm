@@ -5,6 +5,15 @@ use std::{
     path::PathBuf,
 };
 
+// Modules of the "QEMU virt contract" path (Path A). New platform code lands in
+// dedicated files like these rather than growing the legacy probe monolith
+// below. See docs/hvf-windows-engine-strategy.md and
+// docs/hvf-windows-platform-contract-gap.md.
+pub mod dtb;
+pub mod fwcfg;
+pub mod machine;
+pub mod platform_virt;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HvfHostCapabilities {
     pub available: bool,

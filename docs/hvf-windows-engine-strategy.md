@@ -1,0 +1,144 @@
+# BridgeVM HVF Windows engine — strategy & sequenced plan
+
+_Last updated: 2026-06-19._
+
+## Context
+
+The BridgeVM HVF engine is the Phase 0 R&D track aimed at booting Windows 11 ARM
+on Apple Silicon **without QEMU**, on Hypervisor.framework directly. A June 2026
+external audit was checked against the live tree and is accurate: the HVF crate is
+a single 34.7k-line probe harness centred on **FDT**, a **userspace GIC skeleton**,
+and **virtio-mmio** — none of which is the right spine for a Windows target. The
+companion document
+[`docs/hvf-windows-platform-contract-gap.md`](hvf-windows-platform-contract-gap.md)
+quantifies why: the smokes already load QEMU's ArmVirtQemu firmware, but the
+platform under it reproduces only the RAM base of the QEMU `virt` contract, and is
+missing `fw_cfg` and PCIe ECAM entirely.
+
+## The decision: Path A — converge on the QEMU `virt` contract
+
+Two coherent ways forward; mixing them (QEMU firmware on a non-QEMU platform) is
+the current broken middle state.
+
+### Path A — "become QEMU `virt`" (CHOSEN)
+
+Implement `fw_cfg`, PCIe ECAM, GICv3 (Apple `hv_gic` or modelled), and the QEMU
+`virt` memory map + DTB. Then:
+
+- Stock `edk2-aarch64-code.fd` boots **unmodified**.
+- The firmware/QEMU-style table flow generates **ACPI for free** — little or no
+  hand-written ACPI in Rust.
+- The **same Windows 11 ARM media that installs under QEMU installs under
+  BridgeVM**, because the guest sees a bit-identical platform.
+- The existing QEMU Compatibility engine becomes a true differential oracle: any
+  divergence is a bug in our device models, diffable against a known-good stack.
+
+Cost: we implement QEMU's paravirtual contract (the `fw_cfg` protocol, the DTB
+ArmVirtQemu consumes, ECAM, GICv3/ITS). This is bounded, well-specified work with a
+reference implementation to diff against.
+
+### Path B — own platform + own firmware (REJECTED for now)
+
+Define a clean-room `bridgevirt-v0`, hand-write ACPI (RSDP/XSDT/FADT/MADT/GTDT/
+MCFG/SPCR/DBG2/DSDT) in Rust, and maintain a custom EDK2/ArmVirtPkg platform port
+that targets those tables. Maximum control, but it means owning an EDK2 fork and a
+from-scratch ACPI generator, and every table address/IRQ/checksum is a place
+Windows can die silently after the boot manager. This is the audit's implicit path
+and a multi-year effort. Revisit only if Path A hits a hard wall (e.g. a QEMU
+contract detail that cannot be reproduced under HVF).
+
+> **Refinement of the audit:** under Path A, FDT is **not** deleted. ArmVirtQemu
+> consumes a DTB; the current DTB is just wrong (no `fw_cfg`/PCIe nodes, wrong
+> addresses). The work is to make the DTB a faithful QEMU-`virt` DTB, while ACPI is
+> produced *above* the platform and delivered through `fw_cfg` — never as a device
+> tree to the guest OS.
+
+## Strategic honesty: is the custom Windows VMM even the highest-value track?
+
+Stated plainly so it is not lost: **QEMU + HVF already boots Windows 11 ARM on the
+CPU axis today.** Parallels' real edge is **GPU/WDDM/guest-tools integration**,
+which is orthogonal to whether the CPU runs on QEMU or a bespoke VMM. The custom
+HVF engine is therefore the most expensive track with the least *user-visible*
+payoff. Legitimate reasons to still pursue it: distribution/licensing (owning the
+stack instead of shipping GPL QEMU), startup overhead, and a polished product
+identity. The current `PLAN.md` staging — "restricted QEMU/HVF for Windows first,
+long-term custom HVF VMM" — is correct and should be preserved. Path A is the
+*cheapest* version of the custom track precisely because it reuses the QEMU
+contract; do not let the from-scratch framing (Path B) rush this track ahead of the
+display/guest-tools work that moves the Parallels-class needle sooner.
+
+## Sequenced plan (ordering, not a calendar)
+
+Realistic effort for a solo/small team is **days-to-weeks per step**, not a day
+each. The ordering is what matters. The single best de-risk is step 6 (Linux
+ACPI-only boot): Linux gives you `dmesg`, Windows gives you a sad face.
+
+| # | Step | State | Notes |
+| --- | --- | --- | --- |
+| 0 | Decide Path A; record contract gap | **done** | this doc + the gap doc + checked-in reference DTS |
+| 1 | `fw_cfg` device model (selector/data + DMA) | **done (modelled + unit-tested)** | `crates/bridgevm-hvf/src/fwcfg.rs`; HVF MMIO wiring still to do |
+| 2 | `virt` machine model + QEMU-shaped DTB generator | **done (modelled + `dtc`-verified)** | `src/machine.rs` (single source of truth + no-overlap validator) and `src/dtb.rs` (`build_virt_fdt`, decompiles `dtc`-clean against the contract). Wiring the map into the live run loop is step 3. |
+| 3 | Assemble the `virt` platform + `fw_cfg` behind one MMIO-exit entry point; feed `etc/acpi/tables`/`etc/acpi/rsdp`/SMBIOS/boot order | **done (assembled + unit-tested)** | `src/platform_virt.rs` (`VirtPlatform`): owns the map, the populated `fw_cfg`, the DTB and the guest-memory layout; `on_mmio()` is the single call the live run loop makes. Only the `hv_vcpu_run` call itself (step 6) needs an entitled host. |
+| 4 | GICv3: spike Apple `hv_gic_create` (macOS 15+, create before vCPUs); else model GICv3+ITS at QEMU bases | after 2 | replaces the userspace skeleton on the product path |
+| 5 | PCIe ECAM (`pci-host-ecam-generic`) + config space + MSI/MSI-X | after 4 | prerequisite for NVMe/virtio-pci |
+| 6 | **Linux ACPI-only boot** through the stock firmware | after 3–5 | the oracle: confirm ACPI/GIC/timer/PCIe before touching Windows |
+| 7 | NVMe controller (identify + admin/IO queues) on PCIe | after 5 | Windows Setup has an inbox NVMe driver; no inbox virtio |
+| 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | after 6–7 | success = a reproducible "where it died", diffed against QEMU |
+| 9 | GOP framebuffer + keyboard | after 8 | Setup UI + "press any key" |
+| 10 | vTPM 2.0, Secure Boot, virtio-net/guest agent | later | Windows 11 compliance + usability |
+
+## What is done in this change
+
+- **Decision recorded** (Path A) with rationale and the rejected alternative.
+- **Contract gap quantified** against the real dumped QEMU `virt` DTB, with a
+  checked-in reference at `docs/reference/qemu-virt-aarch64-gicv3.dts`.
+- **Path A bricks landed (steps 1–2):**
+  - `crates/bridgevm-hvf/src/fwcfg.rs` — spec-correct `fw_cfg` model (14 tests).
+  - `crates/bridgevm-hvf/src/machine.rs` — the `virt` machine model (memory map +
+    IRQ map + GICv3 sizing), single source of truth, with a no-overlap validator
+    that fails on exactly the collision class the gap doc found (9 tests).
+  - `crates/bridgevm-hvf/src/dtb.rs` — an FDT/DTB serializer + `build_virt_fdt`,
+    which emits a QEMU-`virt`-shaped device tree from `machine.rs`. Verified by
+    decompiling the output with `dtc` (zero warnings) and confirming every device
+    address against the contract (5 tests + `examples/emit_virt_dtb.rs`).
+
+  - `crates/bridgevm-hvf/src/platform_virt.rs` — `VirtPlatform`, which assembles
+    the map + populated `fw_cfg` + DTB + guest-memory layout behind one
+    `on_mmio()` entry point (6 tests, incl. a fw_cfg DMA transfer routed through
+    guest RAM via the platform).
+
+  Full crate suite green at **129 passing**, zero warnings. New platform code
+  lives in its own modules — the de-monolithing pattern the audit asked for,
+  applied to surviving code rather than a big-bang refactor of the probe harness.
+
+### Live integration point (the only part that needs an entitled host)
+
+The whole Path A platform is driven by one call from the `hv_vcpu_run` data-abort
+(MMIO) exit handler:
+
+```rust
+// In the run loop, on an HVF_EXIT_REASON data abort:
+let op = if is_write { MmioOp::Write { size, value } } else { MmioOp::Read { size } };
+match platform.on_mmio(fault_ipa, op, &mut guest_ram) {
+    MmioOutcome::ReadValue(v) => set_guest_register(dst_reg, v),
+    MmioOutcome::WriteAck => {}
+    MmioOutcome::KnownUnimplemented(name) => trace!("MMIO to unmodelled {name} @ {fault_ipa:#x}"),
+    MmioOutcome::Unmapped => trace!("MMIO to unmapped {fault_ipa:#x}"),
+}
+```
+
+`guest_ram` is a [`fwcfg::GuestMemoryMut`] view over the HVF-mapped RAM; in tests
+it is `FlatGuestRam`. Standing up the actual `hv_vm_create`/`hv_vcpu_create`/
+`hv_vcpu_run` loop, mapping pflash + RAM per `VirtPlatform::memory_layout()`, and
+placing the DTB at `dtb_load` is the remaining wiring — and the point at which a
+signed, `com.apple.security.hypervisor`-entitled Apple Silicon host becomes
+mandatory. That is the step-6 Linux ACPI-only bring-up.
+
+### Honest status of the `fw_cfg` brick
+
+It is a **spec-modelled, unit-tested** device, not yet wired into a live VM and not
+yet validated against real firmware on an entitled Apple Silicon host. The unit
+tests verify conformance to the documented `fw_cfg` interface (signature, ID/DMA
+feature bits, file directory layout, sequential reads, DMA read/write/skip), not
+interop. Real proof comes at step 6 (Linux ACPI-only boot) on a host with the HVF
+entitlement.

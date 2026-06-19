@@ -45,6 +45,25 @@ For a current evidence-backed gate report, run:
 tests/integration/product-gates-report.sh
 ```
 
+## BridgeVM HVF Windows engine (Phase 0 R&D)
+The HVF Windows track has a recorded architecture decision: **Path A — converge on
+the QEMU `virt` platform contract** so the stock ArmVirtQemu firmware boots
+unmodified and ACPI/PCIe/Windows-media behaviour matches the QEMU stack, rather
+than hand-writing ACPI and an EDK2 port from scratch (Path B). The current HVF
+probe harness reproduces only the RAM base of that contract and is missing
+`fw_cfg` and PCIe ECAM — the subsystems that gate ACPI and storage, i.e. Windows
+booting at all. Path A steps 1–3 are landed (modelled + verified, not yet running
+on a live VM): `src/fwcfg.rs` (`fw_cfg` keystone), `src/machine.rs` (the `virt`
+machine model + no-overlap validator), `src/dtb.rs` (`build_virt_fdt`, a
+QEMU-`virt`-shaped device tree verified `dtc`-clean against the contract), and
+`src/platform_virt.rs` (`VirtPlatform`, which assembles the map + `fw_cfg` + DTB +
+guest-memory layout behind one `on_mmio()` exit entry point). Crate suite green at
+129 tests, zero warnings. The remaining wiring is the live `hv_vcpu_run` loop
+itself, which requires a signed, hypervisor-entitled Apple Silicon host (step 6:
+Linux ACPI-only bring-up). See
+[docs/hvf-windows-engine-strategy.md](docs/hvf-windows-engine-strategy.md) and
+[docs/hvf-windows-platform-contract-gap.md](docs/hvf-windows-platform-contract-gap.md).
+
 ## Parallels-class scope check
 The product plan explicitly targets the four Parallels-like axes, but they are
 not all at the same maturity:
