@@ -192,11 +192,19 @@ out of the unmodelled list entirely. (The redistributor stays at QEMU virt's
 `0x080a0000`; Apple's `redistributor_region_size` is a *maximum*, not a required
 reservation — confirmed against QEMU's own hvf backend.)
 
-**Sole remaining frontier:** a firmware-internal control-flow fault in DXE driver
-dispatch (synchronous exception to a data address, `~0x47785bdc`, after virtio FDT
-init; even the handler recurses). It is GIC-independent (identical before/after the
-GIC fix) and survives a real-RAM-backed fw_cfg DMA, so the next step is
-instruction-level tracing of the faulting DXE driver (candidates: ACPI/SMBIOS
-platform DXE with empty fw_cfg tables, or a FP/SIMD trap). Then timer IRQ delivery,
-NVMe, Linux ACPI / Windows — each verifiable here the same way. No external host,
-paid entitlement, or separate machine is in the way.
+**The firmware boots deep into DXE driver dispatch.** Fixes landed this far, each
+moving the frontier later: PSCI (HVC), empty PCIe ECAM (all-ones config reads),
+dropping then re-adding the right PCIe windows, fw_cfg big-endian selector/DMA, the
+`/flash@0` node (VirtNorFlashDxe — doubled execution to ~16.8k exits), and creating
+the VM with the **max IPA size** (40-bit; the ECAM is at 256 GiB).
+
+**Current frontier — RngDxe.** `SecurityPkg/RandomNumberGenerator/RngDxe` faults
+with a data abort at `FAR 0x100000000F` (`2^40 + 15`): it reads an all-ones value
+(`X0 = 0xFFFFFFFFFFFFFFFF`), truncates it to the 40-bit IPA boundary, and
+dereferences just past the mappable range. Likely an all-ones pointer/count derived
+from the empty ECAM or a missing RNG/ACPI source. Resolving it (and the DXE drivers
+after it) is a **methodical crash-by-crash bring-up** best done with dedicated
+tooling — an HVF single-step instruction tracer and/or captured QEMU ACPI/SMBIOS
+tables — rather than one-shot guesses. Then timer IRQ delivery, NVMe, Linux ACPI /
+Windows. No external host, paid entitlement, or separate machine is in the way; the
+whole loop is live-debuggable here.
