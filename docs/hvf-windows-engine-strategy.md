@@ -149,12 +149,25 @@ place the DTB at `dtb_load`, and model GICv3/timer/PCIe/NVMe — is pure enginee
 and **every step is now live-verifiable on this host** the same way the fw_cfg
 proof is. The step-6 Linux ACPI-only boot is the milestone, not a hardware gate.
 
-### Honest status
+### Honest status — stock EDK2 firmware boots to DXE on this platform
 
-The device models are **spec-modelled, unit-tested, and now proven live** at the
-MMIO level: a real guest read of `fw_cfg` through HVF returns the correct byte via
-`VirtPlatform`. What is *not* yet proven is full firmware interop — stock
-ArmVirtQemu actually parsing the DTB, fetching ACPI tables over `fw_cfg`, and
-reaching a UEFI shell / Linux ACPI boot. That requires growing the live loop and
-the device set (GICv3, timer, PCIe, NVMe), each step verifiable here the same way.
-No external host, paid entitlement, or separate machine is in the way.
+The biggest validation: **the unmodified ArmVirtQemu firmware
+(`edk2-aarch64-code.fd`) boots on the Path A platform.** Loaded at flash `0x0` with
+the generated DTB at the DRAM base, it runs through PEI into DXE and prints its
+banner *through the modelled PL011 UART*:
+
+```
+UEFI firmware (version edk2-stable202408-prebuilt.qemu.org ...)
+InitializeVirtioFdtDxe: Failed to install VirtIO transport @ 0xA000000 ...  (×32)
+```
+
+The `InitializeVirtioFdtDxe` lines prove the firmware **parsed the generated device
+tree** and walked the virtio-mmio nodes at exactly the machine-map addresses. So
+`fw_cfg`, the DTB, and the UART all work against real firmware. See
+`examples/hvf_edk2_boot_probe.rs` + `hvf-edk2-boot-live-opt-in-smoke.sh`.
+
+It stops with a system-register trap (ESR EC `0x18`) after 164 `gic-dist`/
+`gic-redist` accesses — i.e. **the next blocker is GICv3**, empirically confirming
+the audit's P0 and step 4 below. Remaining bring-up (GICv3+timer, then PCIe/NVMe,
+then Linux ACPI / Windows) is pure engineering, each step verifiable here the same
+way. No external host, paid entitlement, or separate machine is in the way.

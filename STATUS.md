@@ -58,14 +58,16 @@ live at the MMIO level): `src/fwcfg.rs` (`fw_cfg` keystone), `src/machine.rs` (t
 QEMU-`virt`-shaped device tree verified `dtc`-clean against the contract), and
 `src/platform_virt.rs` (`VirtPlatform`, which assembles the map + `fw_cfg` + DTB +
 guest-memory layout behind one `on_mmio()` exit entry point). Crate suite green at
-129 tests, zero warnings. **Hypervisor.framework is usable directly on this Apple
-Silicon host via ad-hoc entitlement signing — confirmed by a live end-to-end
-proof** (`examples/hvf_fw_cfg_live.rs` + `hvf-fw-cfg-mmio-live-opt-in-smoke.sh`): a
-real guest vCPU MMIO read is trapped by HVF and routed through `VirtPlatform` into
-`fw_cfg`, and the guest observes the correct signature byte. No external host or
-paid entitlement is required. Remaining work (grow the live loop, load EDK2, model
-GICv3/timer/PCIe/NVMe, then Linux ACPI-only boot at step 6) is pure engineering,
-each step verifiable here the same way. See
+133 tests, zero warnings. **Hypervisor.framework runs directly on this Apple
+Silicon host via ad-hoc entitlement signing, and the stock ArmVirtQemu firmware
+boots on the Path A platform.** Live opt-in proofs under `tests/integration/`:
+`hvf-fw-cfg-mmio` (guest MMIO → `VirtPlatform` → `fw_cfg`), `hvf-uart` (guest
+serial captured via the PL011 model), and **`hvf-edk2-boot`** — the unmodified
+`edk2-aarch64-code.fd` runs through PEI into DXE, prints its UEFI banner through
+the modelled UART, and parses the generated DTB; it stops on a GICv3 system-register
+trap. No external host or paid entitlement is required. **Next blocker = GICv3**
+(empirically confirmed), then timer/PCIe/NVMe, then Linux ACPI / Windows — pure
+engineering, each step verifiable here the same way. See
 [docs/hvf-windows-engine-strategy.md](docs/hvf-windows-engine-strategy.md) and
 [docs/hvf-windows-platform-contract-gap.md](docs/hvf-windows-platform-contract-gap.md).
 
