@@ -9,9 +9,12 @@ use std::{
 // dedicated files like these rather than growing the legacy probe monolith
 // below. See docs/hvf-windows-engine-strategy.md and
 // docs/hvf-windows-platform-contract-gap.md.
+pub mod acpi;
 pub mod dtb;
 pub mod fwcfg;
 pub mod machine;
+pub mod nvme;
+pub mod pcie;
 pub mod pl011;
 pub mod platform_virt;
 
