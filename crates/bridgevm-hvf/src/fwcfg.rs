@@ -275,8 +275,10 @@ impl FwCfg {
     }
 
     /// Handle a guest MMIO write of `size` bytes at `offset` within the window.
-    /// `value` is the big-endian-assembled register value. A write to the DMA
-    /// register triggers a transfer via `mem`.
+    /// `value` is the raw value the guest stored (native byte order). The selector
+    /// and DMA registers are **big-endian** per `qemu,fw-cfg-mmio` — guest firmware
+    /// stores `SwapBytes16(selector)` / `SwapBytes64(dma_addr)` — so swap to recover
+    /// the logical value. A write to the DMA register triggers a transfer via `mem`.
     pub fn mmio_write(
         &mut self,
         offset: u64,
@@ -285,11 +287,8 @@ impl FwCfg {
         mem: &mut dyn GuestMemoryMut,
     ) {
         match offset {
-            REG_SELECTOR => self.select(value as u16),
-            REG_DMA => {
-                let ctrl_gpa = value;
-                self.run_dma_at(ctrl_gpa, mem);
-            }
+            REG_SELECTOR => self.select((value as u16).swap_bytes()),
+            REG_DMA => self.run_dma_at(value.swap_bytes(), mem),
             _ => {}
         }
     }
@@ -489,6 +488,20 @@ mod tests {
         let mut mem = FakeMem::new(0x4000_0000, 0);
         fw.mmio_write(REG_SELECTOR, 2, u64::from(KEY_SIGNATURE), &mut mem);
         assert_eq!(fw.mmio_read(REG_DATA, 1), u64::from(b'Q'));
+    }
+
+    #[test]
+    fn mmio_selector_register_is_big_endian() {
+        // Guest firmware stores SwapBytes16(selector); selecting FILE_DIR (0x0019)
+        // arrives on the bus as 0x1900. The device must swap it back, not read a
+        // non-existent item.
+        let mut fw = FwCfg::new();
+        fw.add_file("etc/x", vec![1, 2, 3]);
+        let mut mem = FakeMem::new(0x4000_0000, 0);
+        fw.mmio_write(REG_SELECTOR, 2, u64::from(KEY_FILE_DIR.swap_bytes()), &mut mem);
+        // FILE_DIR begins with a big-endian u32 file count == 1.
+        let count = fw.mmio_read(REG_DATA, 4);
+        assert_eq!(count, 1, "selector must resolve to FILE_DIR, not a bogus item");
     }
 
     #[test]

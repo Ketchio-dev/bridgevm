@@ -290,10 +290,11 @@ mod tests {
         blob.extend_from_slice(&4u32.to_be_bytes());
         blob.extend_from_slice(&dst.to_be_bytes());
         mem.write_bytes(ctrl, &blob);
-        // Writing the control-structure address to the DMA register runs it.
+        // Writing the control-structure address to the DMA register runs it. The
+        // register is big-endian, so the firmware stores the byte-swapped address.
         let ack = p.on_mmio(
             machine::FW_CFG.base + REG_DMA,
-            MmioOp::Write { size: 8, value: ctrl },
+            MmioOp::Write { size: 8, value: ctrl.swap_bytes() },
             &mut mem,
         );
         assert_eq!(ack, MmioOutcome::WriteAck);
