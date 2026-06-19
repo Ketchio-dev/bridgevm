@@ -47,12 +47,19 @@ pub const FLASH_CODE: Region = Region::new(0x0, 0x0400_0000);
 /// pflash bank 1 — UEFI variable store (`edk2-arm-vars.fd`), writable.
 pub const FLASH_VARS: Region = Region::new(0x0400_0000, 0x0400_0000);
 
-/// GICv3 distributor.
+/// GICv3 distributor (`0x10000` @ `0x10000` alignment — matches both QEMU virt
+/// and Apple `hv_gic`).
 pub const GIC_DIST: Region = Region::new(0x0800_0000, 0x0001_0000);
-/// GICv3 ITS (MSI controller).
+/// GICv3 ITS / MSI region (QEMU reference placement; reserved — not yet wired to
+/// Apple `hv_gic`'s MSI, so currently omitted from the generated DTB).
 pub const GIC_ITS: Region = Region::new(0x0808_0000, 0x0002_0000);
-/// GICv3 redistributor window (covers up to [`MAX_CPUS`] CPUs).
-pub const GIC_REDIST: Region = Region::new(0x080A_0000, 0x00F6_0000);
+/// GICv3 redistributor window. Sized/placed for **Apple `hv_gic`**, which requires
+/// a 32 MiB (`0x0200_0000`) redistributor region — larger than QEMU virt's
+/// `0x080A_0000`/`0xF6_0000` slot, so it is relocated into the free gap between the
+/// virtio-mmio block and the PCIe MMIO window. The firmware reads this from the
+/// generated DTB, so the placement only has to be internally consistent (the
+/// no-overlap validator enforces that).
+pub const GIC_REDIST: Region = Region::new(0x0C00_0000, 0x0200_0000);
 
 /// PL011 UART (firmware/OS serial console).
 pub const UART: Region = Region::new(0x0900_0000, 0x1000);
@@ -196,7 +203,9 @@ mod tests {
         assert_eq!(FLASH_CODE.base, 0x0);
         assert_eq!(GIC_DIST.base, 0x0800_0000);
         assert_eq!(GIC_ITS.base, 0x0808_0000);
-        assert_eq!(GIC_REDIST.base, 0x080A_0000);
+        // Redistributor relocated for Apple hv_gic's 32 MiB region (see const docs).
+        assert_eq!(GIC_REDIST.base, 0x0C00_0000);
+        assert_eq!(GIC_REDIST.size, 0x0200_0000);
         assert_eq!(UART.base, 0x0900_0000);
         assert_eq!(RTC.base, 0x0901_0000);
         assert_eq!(FW_CFG.base, 0x0902_0000);
@@ -250,11 +259,11 @@ mod tests {
 
     #[test]
     fn redistributor_window_sizes_match_gicv3() {
-        // 0xf60000 / 0x20000 = 123 CPUs.
-        assert_eq!(MAX_CPUS, 123);
+        // Apple hv_gic region 0x2000000 / 0x20000 per-CPU stride = 256 CPUs.
+        assert_eq!(MAX_CPUS, 256);
         assert!(redist_fits(1));
-        assert!(redist_fits(123));
-        assert!(!redist_fits(124));
+        assert!(redist_fits(256));
+        assert!(!redist_fits(257));
     }
 
     #[test]

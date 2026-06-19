@@ -129,6 +129,7 @@ impl VirtPlatform {
         match device {
             "fw-cfg" => self.fw_cfg_access(gpa - machine::FW_CFG.base, op, mem),
             "uart" => self.uart_access(gpa - machine::UART.base, op),
+            "pcie-ecam" => Self::ecam_access(op),
             // Modelled in the machine map but no device behaviour yet — surfaced
             // precisely so bring-up traces show the next thing to implement.
             other => MmioOutcome::KnownUnimplemented(other),
@@ -148,6 +149,19 @@ impl VirtPlatform {
     /// Bytes the guest/firmware has written to the UART so far.
     pub fn uart_output(&self) -> &[u8] {
         self.uart.output()
+    }
+
+    /// Empty PCIe ECAM: every config read returns all-ones so the firmware sees
+    /// "no device present" and enumerates an empty bus, instead of treating a
+    /// zero vendor ID as a phantom device and mapping bogus BARs. Writes drop.
+    fn ecam_access(op: MmioOp) -> MmioOutcome {
+        match op {
+            MmioOp::Read { size } => {
+                let mask = if size >= 8 { u64::MAX } else { (1u64 << (size * 8)) - 1 };
+                MmioOutcome::ReadValue(mask)
+            }
+            MmioOp::Write { .. } => MmioOutcome::WriteAck,
+        }
     }
 
     fn fw_cfg_access(&mut self, offset: u64, op: MmioOp, mem: &mut dyn GuestMemoryMut) -> MmioOutcome {
@@ -299,6 +313,20 @@ mod tests {
         assert_eq!(
             p.on_mmio(0x0905_0000, MmioOp::Read { size: 4 }, &mut mem),
             MmioOutcome::Unmapped
+        );
+    }
+
+    #[test]
+    fn empty_ecam_reads_all_ones() {
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+        assert_eq!(
+            p.on_mmio(machine::PCIE_ECAM.base, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0xFFFF_FFFF)
+        );
+        assert_eq!(
+            p.on_mmio(machine::PCIE_ECAM.base + 0x8, MmioOp::Read { size: 2 }, &mut mem),
+            MmioOutcome::ReadValue(0xFFFF)
         );
     }
 

@@ -64,10 +64,14 @@ boots on the Path A platform.** Live opt-in proofs under `tests/integration/`:
 `hvf-fw-cfg-mmio` (guest MMIO → `VirtPlatform` → `fw_cfg`), `hvf-uart` (guest
 serial captured via the PL011 model), and **`hvf-edk2-boot`** — the unmodified
 `edk2-aarch64-code.fd` runs through PEI into DXE, prints its UEFI banner through
-the modelled UART, and parses the generated DTB; it stops on a GICv3 system-register
-trap. No external host or paid entitlement is required. **Next blocker = GICv3**
-(empirically confirmed), then timer/PCIe/NVMe, then Linux ACPI / Windows — pure
-engineering, each step verifiable here the same way. See
+the modelled UART, and parses the generated DTB. With Apple's in-kernel GICv3
+(`hv_gic_create`), minimal PSCI, and an empty PCIe ECAM, the firmware now boots
+**into DXE proper** (`hvf-gic-boot` smoke). Two precise frontiers remain: Apple
+`hv_gic` is not serving the redistributor frame (all accesses `0xc000008..0xc01041c`
+still trap to userspace though the distributor/CPU-interface are served), and a
+downstream DXE control-flow fault. No external host or paid entitlement is required;
+remaining work (redistributor + timer IRQ, then NVMe, then Linux ACPI / Windows) is
+pure engineering, each step verifiable here the same way. See
 [docs/hvf-windows-engine-strategy.md](docs/hvf-windows-engine-strategy.md) and
 [docs/hvf-windows-platform-contract-gap.md](docs/hvf-windows-platform-contract-gap.md).
 

@@ -201,7 +201,6 @@ impl Default for VirtFdtConfig {
 
 // Phandles (internally consistent; values are arbitrary but referenced below).
 const PHANDLE_GIC: u32 = 0x1;
-const PHANDLE_ITS: u32 = 0x2;
 const PHANDLE_APB_PCLK: u32 = 0x3;
 
 // Device-tree interrupt encoding for the GICv3 (`#interrupt-cells = <3>`).
@@ -301,13 +300,8 @@ pub fn build_virt_fdt(cfg: &VirtFdtConfig) -> Vec<u8> {
         ],
     );
     b.prop_u32("phandle", PHANDLE_GIC);
-
-    b.begin_node("its@8080000");
-    b.prop_str_list("compatible", &["arm,gic-v3-its"]);
-    b.prop_empty("msi-controller");
-    b.prop_reg64("reg", machine::GIC_ITS.base, machine::GIC_ITS.size);
-    b.prop_u32("phandle", PHANDLE_ITS);
-    b.end_node();
+    // No ITS node yet: the platform uses Apple hv_gic, whose MSI is not wired into
+    // the DTB. PCIe therefore uses legacy INTx (interrupt-map below), not MSI.
     b.end_node(); // intc
 
     // /pl011 UART
@@ -367,10 +361,13 @@ fn build_pcie_node(b: &mut FdtBuilder) {
     b.prop_cells("bus-range", &[0x0, 0xff]);
     b.prop_reg64("reg", machine::PCIE_ECAM.base, machine::PCIE_ECAM.size);
 
-    // ranges: <pci-addr(3) cpu-addr(2) size(2)> for IO, 32-bit MMIO, 64-bit MMIO.
+    // ranges: <pci-addr(3) cpu-addr(2) size(2)> for IO and 32-bit MMIO. The
+    // 64-bit MMIO window (PCIE_MMIO_64 @ 512 GiB) is intentionally omitted: it
+    // ends at 1 TiB, beyond the default HVF IPA size, and CpuDxe faults trying to
+    // map it. An empty bus needs no high BAR space; re-add it once the VM is
+    // created with a larger IPA size.
     let io = machine::PCIE_PIO;
     let m32 = machine::PCIE_MMIO_32;
-    let m64 = machine::PCIE_MMIO_64;
     b.prop_cells(
         "ranges",
         &[
@@ -382,14 +379,8 @@ fn build_pcie_node(b: &mut FdtBuilder) {
             0x0200_0000, 0x0, m32.base as u32,
             (m32.base >> 32) as u32, m32.base as u32,
             (m32.size >> 32) as u32, m32.size as u32,
-            // 64-bit MMIO (0x03000000)
-            0x0300_0000, (m64.base >> 32) as u32, m64.base as u32,
-            (m64.base >> 32) as u32, m64.base as u32,
-            (m64.size >> 32) as u32, m64.size as u32,
         ],
     );
-
-    b.prop_cells("msi-parent", &[PHANDLE_ITS, 0x0]);
 
     // INTx swizzle: for each of 4 slots, INTA..D map to SPI 3..6 rotated.
     b.prop_cells("interrupt-map-mask", &[0x1800, 0x0, 0x0, 0x7]);
@@ -457,7 +448,7 @@ mod tests {
         // The strings block must mention the keystone + PCIe nodes' props.
         let off_strings = be32(&dtb, 12) as usize;
         let strings = String::from_utf8_lossy(&dtb[off_strings..]);
-        for needed in ["compatible", "reg", "interrupt-map", "msi-parent", "ranges"] {
+        for needed in ["compatible", "reg", "interrupt-map", "ranges"] {
             assert!(strings.contains(needed), "missing property name {needed}");
         }
     }
@@ -471,7 +462,6 @@ mod tests {
             "fw-cfg@9020000",
             "pcie@10000000",
             "intc@8000000",
-            "its@8080000",
             "pl011@9000000",
             "virtio_mmio@a000000",
         ] {
@@ -483,7 +473,7 @@ mod tests {
     #[should_panic(expected = "exceeds GICv3 redistributor window")]
     fn virt_fdt_rejects_too_many_cpus() {
         build_virt_fdt(&VirtFdtConfig {
-            cpu_count: 200,
+            cpu_count: 300, // > MAX_CPUS (256) for the Apple hv_gic redist region
             ram_size: 1 << 30,
         });
     }

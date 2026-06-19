@@ -166,8 +166,30 @@ tree** and walked the virtio-mmio nodes at exactly the machine-map addresses. So
 `fw_cfg`, the DTB, and the UART all work against real firmware. See
 `examples/hvf_edk2_boot_probe.rs` + `hvf-edk2-boot-live-opt-in-smoke.sh`.
 
-It stops with a system-register trap (ESR EC `0x18`) after 164 `gic-dist`/
-`gic-redist` accesses — i.e. **the next blocker is GICv3**, empirically confirming
-the audit's P0 and step 4 below. Remaining bring-up (GICv3+timer, then PCIe/NVMe,
-then Linux ACPI / Windows) is pure engineering, each step verifiable here the same
-way. No external host, paid entitlement, or separate machine is in the way.
+It stopped with a system-register trap (ESR EC `0x18`) after the GIC accesses — so
+GICv3 was the next blocker, exactly as the audit's P0 predicted.
+
+### GICv3 via Apple `hv_gic` — firmware now reaches DXE proper
+
+`hv_gic_create` is available on this host (macOS 15+), so the GIC is provided
+**in-kernel by Apple** instead of hand-modelled (`examples/hvf_gic_boot_probe.rs` +
+`hvf-gic-boot-live-opt-in-smoke.sh`). With the redistributor relocated to fit
+Apple's 32 MiB region (`machine::GIC_REDIST` @ `0x0c000000`) and minimal PSCI +
+empty-ECAM + dropping the >IPA-size 64-bit PCIe window, the firmware now:
+
+- passes GIC CPU-interface init — the EC `0x18` system-register trap is **gone**
+  (Apple serves the distributor + CPU interface);
+- handles **PSCI** (HVC) and an **empty PCIe bus** (ECAM returns all-ones);
+- runs **into DXE proper** (DxeCore), past the previous frontier.
+
+Two precise open frontiers remain (next session):
+1. **Apple `hv_gic` redistributor not served.** All 161 redistributor accesses fall
+   in CPU 0's frame (`0xc000008..0xc01041c`, base `0xc000000`) yet still trap to
+   userspace, while the distributor/CPU-interface are served. Needs an `hv_gic`
+   API step or a redistributor-base constraint we haven't found.
+2. A **DXE control-flow fault** (jump to a stack address) follows — likely
+   downstream of the broken redistributor / missing interrupt delivery.
+
+Remaining bring-up (fix redistributor, timer IRQ delivery, then NVMe, then Linux
+ACPI / Windows) is pure engineering, each step verifiable here the same way. No
+external host, paid entitlement, or separate machine is in the way.
