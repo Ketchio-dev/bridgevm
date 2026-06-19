@@ -16,11 +16,10 @@ use bridgevm_api::{
     handle_request, inspect_guest_tools_status, launch_readiness_metadata, resume_backend,
     suspend_backend, verify_compatibility_resume_loaded,
     ApplicationConsistentSnapshotCommandResultRecord, ApplicationConsistentSnapshotExecutionRecord,
-    BridgeVmRequest, BridgeVmResponse, GuestToolsCommandRecord, PerformanceMeasurementRecord,
-    PerformanceSampleMetadata, SnapshotConsistency,
+    BridgeVmRequest, BridgeVmResponse, CurrentRuntimeEngine, GuestToolsCommandRecord,
+    PerformanceMeasurementRecord, PerformanceSampleMetadata, SnapshotConsistency,
 };
 use bridgevm_apple_vz::{build_fast_plan, write_launch_spec_artifact};
-use bridgevm_config::VmMode;
 use bridgevm_qemu::{
     assign_free_vnc_display, build_compatibility_command, qmp_socket_path, query_status,
     quit as qmp_quit, vnc_display_in_command, QemuError, QmpClient, QmpEventDrain,
@@ -227,6 +226,8 @@ struct SupervisedBackend {
     /// once and keep this reader until the hello arrives or the socket dies.
     guest_tools_pending: Option<UnixStream>,
     guest_tools_commands: AgentCommandTracker,
+    proxy_window_crop_targets: HashMap<String, ProxyWindowCropTarget>,
+    proxy_window_framebuffer_signature: Option<ProxyWindowFramebufferSignature>,
 }
 
 impl SupervisedBackend {
@@ -238,6 +239,8 @@ impl SupervisedBackend {
             guest_tools_stream: None,
             guest_tools_pending: None,
             guest_tools_commands: AgentCommandTracker::new(),
+            proxy_window_crop_targets: HashMap::new(),
+            proxy_window_framebuffer_signature: None,
         }
     }
 }
@@ -632,6 +635,9 @@ impl DaemonState {
             if let Err(error) = drain_guest_tools_messages(&self.store, name, backend) {
                 eprintln!("bridgevmd guest-tools drain failed for '{name}': {error:#}");
             }
+            if let Err(error) = refresh_proxy_window_crop_artifacts(&self.store, name, backend) {
+                eprintln!("bridgevmd proxy-window crop refresh failed for '{name}': {error}");
+            }
 
             let socket_path = qmp_socket_path(&bundle);
             if !socket_path.exists() {
@@ -678,7 +684,8 @@ impl DaemonState {
             .store
             .get_vm_with_active_disk(name)
             .context("failed to read VM")?;
-        if manifest.mode == VmMode::Fast {
+        let runtime_engine = CurrentRuntimeEngine::for_manifest(&manifest);
+        if runtime_engine == CurrentRuntimeEngine::AppleVz {
             if let Some(config) = FastModeSpawnConfig::from_env()? {
                 return self.spawn_fast_backend(name, bundle, manifest, config);
             }
@@ -775,7 +782,7 @@ impl DaemonState {
             .with_context(|| format!("failed to spawn {}", command.program))?;
 
         let metadata = RunnerMetadata {
-            engine: "fullvm".to_string(),
+            engine: runtime_engine.runner_metadata_engine().to_string(),
             pid: Some(child.id()),
             command: command.render_shell_words(),
             log_path,
@@ -786,6 +793,7 @@ impl DaemonState {
             disk: Some(disk),
             active_disk: Some(active_disk),
             launch_readiness: None,
+            runtime_control: None,
         };
         self.store
             .write_runner_metadata(name, &metadata)
@@ -885,6 +893,7 @@ impl DaemonState {
             disk: Some(disk),
             active_disk: Some(active_disk),
             launch_readiness: Some(readiness),
+            runtime_control: None,
         };
         self.store
             .write_runner_metadata(name, &metadata)
@@ -957,8 +966,8 @@ impl DaemonState {
             .get_vm_with_active_disk(name)
             .context("failed to read VM")?;
 
-        match manifest.mode {
-            VmMode::Fast => {
+        match CurrentRuntimeEngine::for_manifest(&manifest) {
+            CurrentRuntimeEngine::AppleVz => {
                 let state_path = fast_suspend_state_path(&bundle, name);
                 if !state_path.exists() {
                     anyhow::bail!(
@@ -985,7 +994,9 @@ impl DaemonState {
                         .context("failed to read QMP supervisor metadata")?,
                 })
             }
-            VmMode::Compatibility => self.resume_compatibility_supervised(name, &bundle, &manifest),
+            CurrentRuntimeEngine::QemuCompatibility => {
+                self.resume_compatibility_supervised(name, &bundle, &manifest)
+            }
         }
     }
 
@@ -1061,6 +1072,7 @@ impl DaemonState {
             disk: Some(disk),
             active_disk: Some(active_disk),
             launch_readiness: None,
+            runtime_control: None,
         };
         self.store
             .write_runner_metadata(name, &metadata)
@@ -1927,6 +1939,15 @@ fn process_guest_tools_envelope(
                     anyhow::anyhow!("unexpected guest tools command result: {error:?}")
                 })?;
             let completed_at_unix = now_unix();
+            let mut result = result.clone();
+            let metadata = metadata.clone();
+            if *ok && pending.capability.as_deref() == Some("windows") {
+                if let Err(message) =
+                    attach_proxy_window_crop_artifacts(store, name, backend, result.as_mut())
+                {
+                    eprintln!("bridgevmd: proxy window crop artifact skipped: {message}");
+                }
+            }
             write_guest_tools_runtime(
                 store,
                 name,
@@ -1975,8 +1996,8 @@ fn process_guest_tools_envelope(
                 ok: *ok,
                 error_code: error_code.clone(),
                 message: message.clone(),
-                result: result.clone(),
-                metadata: metadata.clone(),
+                result,
+                metadata,
                 completed_at_unix,
                 pending_commands: backend.guest_tools_commands.pending_count(),
             }))
@@ -2046,6 +2067,544 @@ fn process_guest_tools_envelope(
             Ok(None)
         }
         _ => Ok(None),
+    }
+}
+
+struct ProxyWindowCropConfig {
+    artifact_dir: PathBuf,
+    framebuffer_rgba_file: PathBuf,
+    framebuffer_width: u32,
+    framebuffer_height: u32,
+    backing_scale: u16,
+}
+
+#[derive(Debug, Clone)]
+struct ProxyWindowCropTarget {
+    id: String,
+    title: Option<String>,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone)]
+struct ProxyWindowClippedRect {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProxyWindowFramebufferSignature {
+    path: PathBuf,
+    len: u64,
+    modified: Option<SystemTime>,
+}
+
+fn attach_proxy_window_crop_artifacts(
+    store: &VmStore,
+    name: &str,
+    backend: &mut SupervisedBackend,
+    result: Option<&mut serde_json::Value>,
+) -> Result<(), String> {
+    let Some(config) = ProxyWindowCropConfig::from_env(store, name)? else {
+        return Ok(());
+    };
+    let Some(result) = result else {
+        return Ok(());
+    };
+    let Some(payload) = result.as_object_mut() else {
+        return Ok(());
+    };
+
+    if let Some(serde_json::Value::Array(windows)) = payload.get_mut("windows") {
+        let mut targets = HashMap::new();
+        for window in windows {
+            if let Some(target) = attach_proxy_window_crop_artifact(&config, window)? {
+                targets.insert(target.id.clone(), target);
+            }
+        }
+        backend.proxy_window_crop_targets = targets;
+    }
+    if let Some(window) = payload.get_mut("window") {
+        if let Some(closed_id) = proxy_window_closed_id(window) {
+            backend.proxy_window_crop_targets.remove(&closed_id);
+        } else if let Some(target) = attach_proxy_window_crop_artifact(&config, window)? {
+            backend
+                .proxy_window_crop_targets
+                .insert(target.id.clone(), target);
+        }
+    }
+    backend.proxy_window_framebuffer_signature = Some(proxy_window_framebuffer_signature(&config)?);
+
+    Ok(())
+}
+
+fn attach_proxy_window_crop_artifact(
+    config: &ProxyWindowCropConfig,
+    window: &mut serde_json::Value,
+) -> Result<Option<ProxyWindowCropTarget>, String> {
+    let Some(target) = proxy_window_crop_target(window) else {
+        return Ok(None);
+    };
+    let Some(summary_path) = materialize_proxy_window_crop_target(config, &target)? else {
+        return Ok(None);
+    };
+
+    if let Some(map) = window.as_object_mut() {
+        map.insert(
+            "window_crop_frame_summary_path".to_string(),
+            serde_json::Value::String(summary_path.display().to_string()),
+        );
+    }
+
+    Ok(Some(target))
+}
+
+fn refresh_proxy_window_crop_artifacts(
+    store: &VmStore,
+    name: &str,
+    backend: &mut SupervisedBackend,
+) -> Result<(), String> {
+    if backend.proxy_window_crop_targets.is_empty() {
+        return Ok(());
+    }
+    let Some(config) = ProxyWindowCropConfig::from_env(store, name)? else {
+        return Ok(());
+    };
+    let signature = proxy_window_framebuffer_signature(&config)?;
+    if backend.proxy_window_framebuffer_signature.as_ref() == Some(&signature) {
+        return Ok(());
+    }
+
+    for target in backend.proxy_window_crop_targets.values() {
+        materialize_proxy_window_crop_target(&config, target)?;
+    }
+    backend.proxy_window_framebuffer_signature = Some(signature);
+    Ok(())
+}
+
+fn materialize_proxy_window_crop_target(
+    config: &ProxyWindowCropConfig,
+    target: &ProxyWindowCropTarget,
+) -> Result<Option<PathBuf>, String> {
+    let Some(clipped) =
+        clip_proxy_window_crop_target(target, config.framebuffer_width, config.framebuffer_height)
+    else {
+        return Ok(None);
+    };
+
+    let slug = safe_proxy_window_artifact_slug(&target.id);
+    let summary_path = config.artifact_dir.join(format!("{slug}.json"));
+    let rgba_path = config.artifact_dir.join(format!("{slug}.rgba"));
+    fs::create_dir_all(&config.artifact_dir).map_err(|error| {
+        format!(
+            "failed to create proxy window artifact directory {}: {error}",
+            config.artifact_dir.display()
+        )
+    })?;
+    materialize_proxy_window_crop(config, &clipped, &rgba_path)?;
+    write_proxy_window_crop_summary(config, target, &clipped, &summary_path, &rgba_path)?;
+
+    Ok(Some(summary_path))
+}
+
+impl ProxyWindowCropConfig {
+    fn from_env(store: &VmStore, name: &str) -> Result<Option<Self>, String> {
+        if let Some(framebuffer_rgba_file) =
+            std::env::var_os("BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_RGBA_FILE")
+        {
+            let framebuffer_rgba_file = PathBuf::from(framebuffer_rgba_file);
+            let framebuffer_width = required_u32_env("BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_WIDTH")?;
+            let framebuffer_height = required_u32_env("BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_HEIGHT")?;
+            return Self::from_parts(
+                store,
+                name,
+                framebuffer_rgba_file,
+                framebuffer_width,
+                framebuffer_height,
+            );
+        }
+        Self::from_runner_metadata(store, name)
+    }
+
+    fn from_runner_metadata(store: &VmStore, name: &str) -> Result<Option<Self>, String> {
+        let Some(metadata) = store
+            .runner_metadata(name)
+            .map_err(|error| format!("failed to read runner metadata for {name}: {error}"))?
+        else {
+            return Ok(None);
+        };
+        if !metadata
+            .command
+            .iter()
+            .any(|arg| arg == "--apple-vz-display")
+        {
+            return Ok(None);
+        }
+        let Some(framebuffer_rgba_file) =
+            runner_arg_path(&metadata.command, "--apple-vz-proxy-framebuffer-rgba-file")
+        else {
+            return Ok(None);
+        };
+        if !framebuffer_rgba_file.is_file() {
+            return Ok(None);
+        }
+        let framebuffer_width =
+            runner_arg_u32(&metadata.command, "--apple-vz-display-width")?.unwrap_or(1280);
+        let framebuffer_height =
+            runner_arg_u32(&metadata.command, "--apple-vz-display-height")?.unwrap_or(800);
+        Self::from_parts(
+            store,
+            name,
+            framebuffer_rgba_file,
+            framebuffer_width,
+            framebuffer_height,
+        )
+    }
+
+    fn from_parts(
+        store: &VmStore,
+        name: &str,
+        framebuffer_rgba_file: PathBuf,
+        framebuffer_width: u32,
+        framebuffer_height: u32,
+    ) -> Result<Option<Self>, String> {
+        let backing_scale = optional_u16_env("BRIDGEVM_PROXY_WINDOW_BACKING_SCALE")?.unwrap_or(1);
+        let artifact_dir = match std::env::var_os("BRIDGEVM_PROXY_WINDOW_ARTIFACT_DIR") {
+            Some(path) => PathBuf::from(path),
+            None => {
+                let (bundle, _) = store
+                    .get_vm(name)
+                    .map_err(|error| format!("failed to resolve VM bundle for {name}: {error}"))?;
+                bundle.join("metadata").join("proxy-windows")
+            }
+        };
+
+        Ok(Some(Self {
+            artifact_dir,
+            framebuffer_rgba_file,
+            framebuffer_width,
+            framebuffer_height,
+            backing_scale: backing_scale.max(1),
+        }))
+    }
+}
+
+fn runner_arg_path(command: &[String], flag: &str) -> Option<PathBuf> {
+    runner_arg_value(command, flag).map(PathBuf::from)
+}
+
+fn runner_arg_u32(command: &[String], flag: &str) -> Result<Option<u32>, String> {
+    let Some(value) = runner_arg_value(command, flag) else {
+        return Ok(None);
+    };
+    value
+        .parse::<u32>()
+        .ok()
+        .filter(|value| *value > 0)
+        .map(Some)
+        .ok_or_else(|| format!("{flag} in runner metadata must be a positive u32, got '{value}'"))
+}
+
+fn runner_arg_value(command: &[String], flag: &str) -> Option<String> {
+    command
+        .windows(2)
+        .find(|pair| pair[0] == flag)
+        .map(|pair| pair[1].clone())
+}
+
+fn required_u32_env(name: &str) -> Result<u32, String> {
+    let value = std::env::var(name).map_err(|_| {
+        format!("{name} must be set when BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_RGBA_FILE is set")
+    })?;
+    value
+        .parse::<u32>()
+        .ok()
+        .filter(|value| *value > 0)
+        .ok_or_else(|| format!("{name} must be a positive u32, got '{value}'"))
+}
+
+fn optional_u16_env(name: &str) -> Result<Option<u16>, String> {
+    let Ok(value) = std::env::var(name) else {
+        return Ok(None);
+    };
+    value
+        .parse::<u16>()
+        .ok()
+        .filter(|value| *value > 0)
+        .map(Some)
+        .ok_or_else(|| format!("{name} must be a positive u16, got '{value}'"))
+}
+
+fn proxy_window_crop_target(window: &serde_json::Value) -> Option<ProxyWindowCropTarget> {
+    let object = window.as_object()?;
+    let id = object.get("id")?.as_str()?.trim();
+    if id.is_empty() {
+        return None;
+    }
+    let bounds = object.get("bounds")?.as_object()?;
+    Some(ProxyWindowCropTarget {
+        id: id.to_string(),
+        title: object
+            .get("title")
+            .and_then(|value| value.as_str())
+            .filter(|value| !value.trim().is_empty())
+            .map(ToOwned::to_owned),
+        x: value_as_i32(bounds.get("x")?)?,
+        y: value_as_i32(bounds.get("y")?)?,
+        width: value_as_u32(bounds.get("width")?)?,
+        height: value_as_u32(bounds.get("height")?)?,
+    })
+}
+
+fn proxy_window_closed_id(window: &serde_json::Value) -> Option<String> {
+    let object = window.as_object()?;
+    if object.get("closed").and_then(|value| value.as_bool()) != Some(true) {
+        return None;
+    }
+    object
+        .get("id")?
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn proxy_window_framebuffer_signature(
+    config: &ProxyWindowCropConfig,
+) -> Result<ProxyWindowFramebufferSignature, String> {
+    let metadata = fs::metadata(&config.framebuffer_rgba_file).map_err(|error| {
+        format!(
+            "failed to inspect proxy framebuffer RGBA {}: {error}",
+            config.framebuffer_rgba_file.display()
+        )
+    })?;
+    Ok(ProxyWindowFramebufferSignature {
+        path: config.framebuffer_rgba_file.clone(),
+        len: metadata.len(),
+        modified: metadata.modified().ok(),
+    })
+}
+
+fn value_as_i32(value: &serde_json::Value) -> Option<i32> {
+    value
+        .as_i64()
+        .and_then(|value| i32::try_from(value).ok())
+        .or_else(|| value.as_str().and_then(|value| value.parse::<i32>().ok()))
+}
+
+fn value_as_u32(value: &serde_json::Value) -> Option<u32> {
+    value
+        .as_u64()
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .or_else(|| {
+            value
+                .as_str()
+                .and_then(|value| value.parse::<u32>().ok())
+                .filter(|value| *value > 0)
+        })
+}
+
+fn clip_proxy_window_crop_target(
+    target: &ProxyWindowCropTarget,
+    framebuffer_width: u32,
+    framebuffer_height: u32,
+) -> Option<ProxyWindowClippedRect> {
+    let left = i64::from(target.x);
+    let top = i64::from(target.y);
+    let right = left.checked_add(i64::from(target.width))?;
+    let bottom = top.checked_add(i64::from(target.height))?;
+    let clipped_left = left.max(0);
+    let clipped_top = top.max(0);
+    let clipped_right = right.min(i64::from(framebuffer_width));
+    let clipped_bottom = bottom.min(i64::from(framebuffer_height));
+    if clipped_left >= clipped_right || clipped_top >= clipped_bottom {
+        return None;
+    }
+
+    Some(ProxyWindowClippedRect {
+        x: clipped_left as u32,
+        y: clipped_top as u32,
+        width: (clipped_right - clipped_left) as u32,
+        height: (clipped_bottom - clipped_top) as u32,
+    })
+}
+
+fn materialize_proxy_window_crop(
+    config: &ProxyWindowCropConfig,
+    clipped: &ProxyWindowClippedRect,
+    output_path: &Path,
+) -> Result<(), String> {
+    let framebuffer = fs::read(&config.framebuffer_rgba_file).map_err(|error| {
+        format!(
+            "failed to read proxy framebuffer RGBA {}: {error}",
+            config.framebuffer_rgba_file.display()
+        )
+    })?;
+    let expected = rgba_byte_len(config.framebuffer_width, config.framebuffer_height)?;
+    if framebuffer.len() != expected {
+        return Err(format!(
+            "proxy framebuffer RGBA {} has {} bytes, expected {}",
+            config.framebuffer_rgba_file.display(),
+            framebuffer.len(),
+            expected
+        ));
+    }
+
+    let framebuffer_row_bytes = rgba_byte_len(config.framebuffer_width, 1)?;
+    let crop_row_bytes = rgba_byte_len(clipped.width, 1)?;
+    let crop_x_bytes = usize::try_from(u64::from(clipped.x) * 4)
+        .map_err(|_| "proxy crop x byte offset exceeds host address space".to_string())?;
+    let crop_y = usize::try_from(clipped.y)
+        .map_err(|_| "proxy crop y offset exceeds host address space".to_string())?;
+    let crop_height = usize::try_from(clipped.height)
+        .map_err(|_| "proxy crop height exceeds host address space".to_string())?;
+    let mut output = Vec::with_capacity(rgba_byte_len(clipped.width, clipped.height)?);
+
+    for row in 0..crop_height {
+        let start = (crop_y + row)
+            .checked_mul(framebuffer_row_bytes)
+            .and_then(|offset| offset.checked_add(crop_x_bytes))
+            .ok_or_else(|| "proxy crop byte offset overflowed".to_string())?;
+        let end = start
+            .checked_add(crop_row_bytes)
+            .ok_or_else(|| "proxy crop row byte range overflowed".to_string())?;
+        if end > framebuffer.len() {
+            return Err("proxy crop row exceeds framebuffer byte range".to_string());
+        }
+        output.extend_from_slice(&framebuffer[start..end]);
+    }
+
+    fs::write(output_path, output).map_err(|error| {
+        format!(
+            "failed to write proxy window RGBA crop {}: {error}",
+            output_path.display()
+        )
+    })
+}
+
+fn rgba_byte_len(width: u32, height: u32) -> Result<usize, String> {
+    let bytes = u64::from(width)
+        .checked_mul(u64::from(height))
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or_else(|| format!("RGBA byte length overflow for {width}x{height}"))?;
+    usize::try_from(bytes)
+        .map_err(|_| format!("RGBA byte length for {width}x{height} exceeds host address space"))
+}
+
+fn write_proxy_window_crop_summary(
+    config: &ProxyWindowCropConfig,
+    target: &ProxyWindowCropTarget,
+    clipped: &ProxyWindowClippedRect,
+    summary_path: &Path,
+    rgba_path: &Path,
+) -> Result<(), String> {
+    let scale = u32::from(config.backing_scale.max(1));
+    let output_bytes = u64::from(clipped.width) * u64::from(clipped.height) * 4;
+    let expected_input_bytes =
+        u64::from(config.framebuffer_width) * u64::from(config.framebuffer_height) * 4;
+    let framebuffer_metadata = fs::metadata(&config.framebuffer_rgba_file).ok();
+    let source_len_bytes = framebuffer_metadata.as_ref().map(|metadata| metadata.len());
+    let source_modified_unix_nanos = framebuffer_metadata
+        .and_then(|metadata| metadata.modified().ok())
+        .and_then(system_time_unix_nanos);
+    let summary = serde_json::json!({
+        "window_region": {
+            "window_id": &target.id,
+            "title": &target.title,
+            "source_rect": {
+                "x": target.x,
+                "y": target.y,
+                "width": target.width,
+                "height": target.height,
+            },
+            "clipped_rect": {
+                "x": clipped.x,
+                "y": clipped.y,
+                "width": clipped.width,
+                "height": clipped.height,
+            },
+            "host_size": {
+                "width": clipped.width,
+                "height": clipped.height,
+            },
+            "backing_rect": {
+                "x": clipped.x.saturating_mul(scale),
+                "y": clipped.y.saturating_mul(scale),
+                "width": clipped.width.saturating_mul(scale),
+                "height": clipped.height.saturating_mul(scale),
+            },
+            "input_mapping": {
+                "coordinate_origin": "guest-framebuffer-top-left",
+                "host_width": clipped.width,
+                "host_height": clipped.height,
+                "guest_x": clipped.x,
+                "guest_y": clipped.y,
+                "guest_width": clipped.width,
+                "guest_height": clipped.height,
+                "scale_x_numerator": clipped.width,
+                "scale_x_denominator": clipped.width,
+                "scale_y_numerator": clipped.height,
+                "scale_y_denominator": clipped.height,
+            },
+            "presentation": "proxy-window-crop",
+        },
+        "window_crop_frame": {
+            "source_path": config.framebuffer_rgba_file.display().to_string(),
+            "output_path": rgba_path.display().to_string(),
+            "pixel_format": "rgba8",
+            "framebuffer_width": config.framebuffer_width,
+            "framebuffer_height": config.framebuffer_height,
+            "crop_rect": {
+                "x": clipped.x,
+                "y": clipped.y,
+                "width": clipped.width,
+                "height": clipped.height,
+            },
+            "output_width": clipped.width,
+            "output_height": clipped.height,
+            "expected_input_bytes": expected_input_bytes,
+            "output_bytes": output_bytes,
+            "source_len_bytes": source_len_bytes,
+            "source_modified_unix_nanos": source_modified_unix_nanos,
+            "refreshed_at_unix_nanos": now_unix_nanos(),
+            "presentation": "proxy-window-crop-frame",
+        },
+    });
+
+    fs::write(
+        summary_path,
+        serde_json::to_vec_pretty(&summary)
+            .map_err(|error| format!("failed to encode proxy window crop summary: {error}"))?,
+    )
+    .map_err(|error| {
+        format!(
+            "failed to write proxy window crop summary {}: {error}",
+            summary_path.display()
+        )
+    })
+}
+
+fn safe_proxy_window_artifact_slug(id: &str) -> String {
+    let slug = id
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let slug = slug.trim_matches('.');
+    if slug.is_empty() {
+        "window".to_string()
+    } else {
+        slug.to_string()
     }
 }
 
@@ -2217,6 +2776,15 @@ fn now_unix() -> u64 {
         .as_secs()
 }
 
+fn now_unix_nanos() -> Option<u64> {
+    system_time_unix_nanos(SystemTime::now())
+}
+
+fn system_time_unix_nanos(time: SystemTime) -> Option<u64> {
+    let nanos = time.duration_since(UNIX_EPOCH).ok()?.as_nanos();
+    u64::try_from(nanos).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2229,9 +2797,35 @@ mod tests {
     use std::net::TcpListener;
     use std::os::unix::fs::PermissionsExt;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Mutex;
     use std::thread::JoinHandle;
 
     static TEST_ID: AtomicU64 = AtomicU64::new(0);
+    static PROXY_WINDOW_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvVarGuard {
+        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    impl EnvVarGuard {
+        fn capture(keys: &[&'static str]) -> Self {
+            Self {
+                saved: keys.iter().map(|key| (*key, env::var_os(key))).collect(),
+            }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            for (key, value) in self.saved.iter().rev() {
+                if let Some(value) = value {
+                    env::set_var(key, value);
+                } else {
+                    env::remove_var(key);
+                }
+            }
+        }
+    }
 
     fn temp_store() -> VmStore {
         let mut path = PathBuf::from("/tmp");
@@ -2288,6 +2882,10 @@ mod tests {
         fs::set_permissions(path, permissions).unwrap();
     }
 
+    fn solid_rgba(width: u32, height: u32, rgba: [u8; 4]) -> Vec<u8> {
+        rgba.repeat((width * height) as usize)
+    }
+
     fn daemon_request(store: VmStore, request: BridgeVmRequest) -> BridgeVmResponse {
         let (mut client, server) = UnixStream::pair().unwrap();
         serde_json::to_writer(&mut client, &request).unwrap();
@@ -2299,6 +2897,171 @@ mod tests {
         let mut line = String::new();
         BufReader::new(client).read_line(&mut line).unwrap();
         serde_json::from_str(line.trim_end()).unwrap()
+    }
+
+    #[test]
+    fn proxy_window_crop_refreshes_cached_targets_when_framebuffer_changes() {
+        let _env_lock = PROXY_WINDOW_ENV_LOCK.lock().unwrap();
+        let _env_guard = EnvVarGuard::capture(&[
+            "BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_RGBA_FILE",
+            "BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_WIDTH",
+            "BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_HEIGHT",
+            "BRIDGEVM_PROXY_WINDOW_BACKING_SCALE",
+            "BRIDGEVM_PROXY_WINDOW_ARTIFACT_DIR",
+        ]);
+        let store = temp_store();
+        store.create_vm(&compatibility_manifest("legacy")).unwrap();
+        let framebuffer = store.root().join("framebuffer.rgba");
+        fs::write(&framebuffer, solid_rgba(4, 4, [0x10, 0x20, 0x30, 0xFF])).unwrap();
+        env::set_var("BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_RGBA_FILE", &framebuffer);
+        env::set_var("BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_WIDTH", "4");
+        env::set_var("BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_HEIGHT", "4");
+        env::set_var("BRIDGEVM_PROXY_WINDOW_BACKING_SCALE", "2");
+
+        let child = Command::new("sh").arg("-c").arg("sleep 5").spawn().unwrap();
+        let mut backend = SupervisedBackend::new(child);
+        backend.proxy_window_crop_targets.insert(
+            "window-1".to_string(),
+            ProxyWindowCropTarget {
+                id: "window-1".to_string(),
+                title: Some("Terminal".to_string()),
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 2,
+            },
+        );
+
+        refresh_proxy_window_crop_artifacts(&store, "legacy", &mut backend).unwrap();
+        let artifact_dir = store
+            .bundle_path("legacy")
+            .join("metadata")
+            .join("proxy-windows");
+        let rgba_path = artifact_dir.join("window-1.rgba");
+        let summary_path = artifact_dir.join("window-1.json");
+        let crop = fs::read(&rgba_path).unwrap();
+        assert_eq!(crop.len(), 2 * 2 * 4);
+        assert_eq!(&crop[..4], &[0x10, 0x20, 0x30, 0xFF]);
+
+        thread::sleep(Duration::from_millis(20));
+        fs::write(&framebuffer, solid_rgba(4, 4, [0xAA, 0xBB, 0xCC, 0xFF])).unwrap();
+        refresh_proxy_window_crop_artifacts(&store, "legacy", &mut backend).unwrap();
+        let crop = fs::read(&rgba_path).unwrap();
+        assert_eq!(&crop[..4], &[0xAA, 0xBB, 0xCC, 0xFF]);
+
+        let summary: serde_json::Value =
+            serde_json::from_slice(&fs::read(summary_path).unwrap()).unwrap();
+        assert_eq!(
+            summary.pointer("/window_region/window_id"),
+            Some(&serde_json::Value::String("window-1".to_string()))
+        );
+        assert_eq!(
+            summary.pointer("/window_crop_frame/output_width"),
+            Some(&serde_json::Value::Number(2.into()))
+        );
+        assert_eq!(
+            summary.pointer("/window_crop_frame/source_len_bytes"),
+            Some(&serde_json::Value::Number(64.into()))
+        );
+        assert!(summary
+            .pointer("/window_crop_frame/source_modified_unix_nanos")
+            .and_then(serde_json::Value::as_u64)
+            .is_some_and(|value| value > 0));
+        assert!(summary
+            .pointer("/window_crop_frame/refreshed_at_unix_nanos")
+            .and_then(serde_json::Value::as_u64)
+            .is_some_and(|value| value > 0));
+
+        backend.child.kill().unwrap();
+        backend.child.wait().unwrap();
+    }
+
+    #[test]
+    fn proxy_window_crop_uses_apple_vz_display_runner_metadata_framebuffer_when_env_unset() {
+        let _env_lock = PROXY_WINDOW_ENV_LOCK.lock().unwrap();
+        let _env_guard = EnvVarGuard::capture(&[
+            "BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_RGBA_FILE",
+            "BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_WIDTH",
+            "BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_HEIGHT",
+            "BRIDGEVM_PROXY_WINDOW_BACKING_SCALE",
+            "BRIDGEVM_PROXY_WINDOW_ARTIFACT_DIR",
+        ]);
+        for key in [
+            "BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_RGBA_FILE",
+            "BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_WIDTH",
+            "BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_HEIGHT",
+            "BRIDGEVM_PROXY_WINDOW_BACKING_SCALE",
+            "BRIDGEVM_PROXY_WINDOW_ARTIFACT_DIR",
+        ] {
+            env::remove_var(key);
+        }
+
+        let store = temp_store();
+        store.create_vm(&fast_manifest("fast-display")).unwrap();
+        let bundle = store.bundle_path("fast-display");
+        let framebuffer = bundle
+            .join("metadata")
+            .join("apple-vz-display-framebuffer.rgba");
+        fs::create_dir_all(framebuffer.parent().unwrap()).unwrap();
+        fs::write(&framebuffer, solid_rgba(4, 4, [0x33, 0x44, 0x55, 0xFF])).unwrap();
+        store
+            .write_runner_metadata(
+                "fast-display",
+                &RunnerMetadata {
+                    engine: "lightvm".to_string(),
+                    pid: Some(42),
+                    command: vec![
+                        "lightvm-runner".to_string(),
+                        "--apple-vz-display".to_string(),
+                        "--apple-vz-display-width".to_string(),
+                        "4".to_string(),
+                        "--apple-vz-display-height".to_string(),
+                        "4".to_string(),
+                        "--apple-vz-proxy-framebuffer-rgba-file".to_string(),
+                        framebuffer.display().to_string(),
+                    ],
+                    log_path: bundle.join("logs/lightvm.log"),
+                    started_at_unix: now_unix(),
+                    dry_run: false,
+                    launch_spec_path: None,
+                    guest_tools: None,
+                    disk: None,
+                    active_disk: None,
+                    launch_readiness: None,
+                    runtime_control: None,
+                },
+            )
+            .unwrap();
+
+        let child = Command::new("sh").arg("-c").arg("sleep 5").spawn().unwrap();
+        let mut backend = SupervisedBackend::new(child);
+        let mut result = serde_json::json!({
+            "windows": [{
+                "id": "window-1",
+                "title": "Terminal",
+                "bounds": {"x": 1, "y": 1, "width": 2, "height": 2}
+            }]
+        });
+
+        attach_proxy_window_crop_artifacts(&store, "fast-display", &mut backend, Some(&mut result))
+            .unwrap();
+
+        let summary_path = result
+            .pointer("/windows/0/window_crop_frame_summary_path")
+            .and_then(serde_json::Value::as_str)
+            .expect("window crop summary path");
+        let summary: serde_json::Value =
+            serde_json::from_slice(&fs::read(summary_path).unwrap()).unwrap();
+        let crop_path = summary
+            .pointer("/window_crop_frame/output_path")
+            .and_then(serde_json::Value::as_str)
+            .expect("crop output path");
+        let crop = fs::read(crop_path).unwrap();
+        assert_eq!(crop.len(), 2 * 2 * 4);
+        assert_eq!(&crop[..4], &[0x33, 0x44, 0x55, 0xFF]);
+
+        backend.child.kill().unwrap();
+        backend.child.wait().unwrap();
     }
 
     #[test]
@@ -3371,6 +4134,7 @@ mod tests {
                     disk: None,
                     active_disk: None,
                     launch_readiness: None,
+                    runtime_control: None,
                 },
             )
             .unwrap();
@@ -3419,6 +4183,7 @@ mod tests {
                     disk: None,
                     active_disk: None,
                     launch_readiness: None,
+                    runtime_control: None,
                 },
             )
             .unwrap();
@@ -3522,6 +4287,7 @@ mod tests {
                     disk: None,
                     active_disk: None,
                     launch_readiness: None,
+                    runtime_control: None,
                 },
             )
             .unwrap();
@@ -3610,6 +4376,7 @@ mod tests {
                     disk: None,
                     active_disk: None,
                     launch_readiness: None,
+                    runtime_control: None,
                 },
             )
             .unwrap();
@@ -3690,6 +4457,7 @@ mod tests {
                     disk: None,
                     active_disk: None,
                     launch_readiness: None,
+                    runtime_control: None,
                 },
             )
             .unwrap();

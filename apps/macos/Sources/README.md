@@ -35,6 +35,14 @@ The first app milestone should be a native dashboard that calls the Rust daemon 
 - daemon-backed Guest Tools command-send DTOs for the typed
   `guest_tools_send_command` boundary, including safe alpha application/window
   list, launch, focus, and close controls
+- a Coherence-lite proxy shell action for guest window rows that include real
+  bounds metadata; the app can open a macOS `NSWindow` sized from the guest
+  window, map host points back into guest coordinates for input forwarding,
+  derive the matching `displayd --window-*` crop-plan arguments, and render a
+  refreshable raw RGBA `window_crop_frame` artifact when one is supplied; the
+  Guest Tools panel also shows tracked proxy count, crop-backed proxy count,
+  tracked-window summaries, refresh state, and a host-only close-proxies cleanup
+  action
 - a Console action that queries daemon `qmp_status`/QMP socket readiness,
   reports backend diagnostic status, and keeps Compatibility Mode external VNC
   viewer handoff distinct from embedded macOS console work
@@ -50,8 +58,12 @@ The first app milestone should be a native dashboard that calls the Rust daemon 
   and metadata status, and import rename/manifest rewrite results
 - a Runtime Resources panel for Fast Mode VMs that sends the daemon
   `reapply_runtime_resources` request, records foreground/background policy
-  metadata, and honestly shows `live_apply_blockers` until live Apple VZ/display
-  control IPC exists
+  metadata, and honestly shows `live_apply_blockers` until live Apple VZ CPU/RAM
+  hot-apply exists
+- display runtime-control actions in the Launch Readiness panel: when runner
+  metadata advertises an Apple VZ display socket, the app can send daemon-backed
+  `runtime_control` `status`/`policy`/`pacing`/`stop` commands and render the
+  latest JSON response
 - persisted Settings controls for the daemon socket path, mock-inventory mode,
   and local Apple VZ live-start opt-in
 
@@ -119,10 +131,37 @@ the saved state and runs the VM detached). Requires a signed AppleVzRunner via
 follow-up; pausing an already-running VM over IPC is also still out of scope.
 The macOS client can also model the daemon-backed `guest_tools_send_command`
 request/response boundary for safe alpha command dispatch, including
-list-applications and list-windows actions that can update status/result
-surfaces. That is a typed client path rather than proof that guest tools UI
-controls are complete or that the app can control real guest applications and
-windows.
+list-applications and list-windows actions that update status/result surfaces.
+The VM detail Guest Tools panel turns the latest application/window command
+results into Launch/Focus/Close rows, so a connected guest agent can be driven
+without manually copying IDs. When the guest reports real `wmctrl` window
+metadata, the row also shows PID/bounds details that later host-proxy windows
+can consume. A bounded row can open a proxy shell via
+`GuestWindowProxyPlanner`/`GuestWindowProxyLauncher`; the shell is sized from the
+guest bounds and its plan maps/clamps host points into guest window coordinates,
+can derive the matching `displayd --window-*` crop-plan arguments, and can
+render a refreshable raw RGBA `window_crop_frame` artifact when the window
+payload includes a summary path. The app DTO layer can also encode
+`SetWindowBounds`, and the proxy shell now debounces host-window move/resize
+events into that command so the guest window manager can be asked to keep the
+real surface aligned with the proxy. The dashboard tracks open proxy shells by
+VM and guest window id; while any proxy is open, it runs one background
+`ListWindows` refresh loop to pick up changed bounds/crop metadata and close a
+host shell when an authoritative guest window list no longer includes that
+window. The VM detail Guest Tools panel exposes that tracked proxy count and
+auto-refresh/in-flight state, lists the tracked proxy windows, reports how many
+are backed by crop artifacts, and provides a host-only cleanup action for closing
+tracked proxy shells without sending guest close commands. Inventory refresh
+also closes/rekeys tracked shells when a VM was removed, stopped, or renamed. It does
+now have a verifier-checked preserved GUI proof of the app-direct whole-view
+framebuffer feeding a crop artifact, but it does not stream a true per-window
+surface. The demo script's opt-in `--prove-proxy-crop` mode preserves that
+visible app-direct crop proof and records the verifier output. The
+Apple VZ display helper can write a whole-view
+AppKit-captured raw RGBA framebuffer file for proxy-crop experiments, and the
+proxy shell can forward pointer/key input through `WindowInput`, but this
+remains typed Coherence-lite command/proxy UX rather than Parallels-style
+host-window Coherence.
 It can execute a recorded boot media download plan, but it does not choose remote
 media URLs or launch Apple Virtualization.framework guests through the dashboard
 or daemon path.

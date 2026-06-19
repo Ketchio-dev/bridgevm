@@ -211,7 +211,7 @@ public enum AppleVzRunnerError: Error, LocalizedError, Equatable {
     case .unsupportedBootMode(let mode):
       return "AppleVzRunner does not support boot mode \(mode) yet"
     case .unsupportedDiskFormat(let format):
-      return "AppleVzRunner requires disk format raw/qcow2, got \(format)"
+      return "AppleVzRunner requires disk format raw, got \(format)"
     case .unsupportedNetwork(let network):
       return "AppleVzRunner requires nat networking, got \(network)"
     case .missingKernel:
@@ -279,10 +279,10 @@ public enum AppleVzHandoffValidator {
     guard ["arm64", "aarch64"].contains(handoff.guest.arch.lowercased()) else {
       throw AppleVzRunnerError.unsupportedGuestArch(handoff.guest.arch)
     }
-    guard ["existing-disk", "linux-installer", "linux-kernel", "macos-restore"].contains(handoff.bootMode) else {
+    guard handoff.bootMode == "linux-kernel" else {
       throw AppleVzRunnerError.unsupportedBootMode(handoff.bootMode)
     }
-    guard ["raw", "qcow2"].contains(handoff.disk.format) else {
+    guard handoff.disk.format == "raw" else {
       throw AppleVzRunnerError.unsupportedDiskFormat(handoff.disk.format)
     }
     guard handoff.readiness.ready else {
@@ -309,7 +309,7 @@ public enum AppleVzHandoffValidator {
       bootMode: validation.bootMode,
       bootLoader: bootLoaderName(for: handoff.bootMode),
       platform: "generic",
-      diskAttachment: handoff.disk.format == "qcow2" ? "disk-image-qcow2" : "disk-image-raw",
+      diskAttachment: "disk-image-raw",
       networkAttachment: "nat",
       memoryBytes: validation.memoryMiB * 1024 * 1024,
       cpuCount: validation.cpuCount,

@@ -15,8 +15,8 @@ final class AppleVzRunnerCoreTests: XCTestCase {
     XCTAssertEqual(handoff.vmName, "fast-linux")
     XCTAssertEqual(handoff.launchSpecPath, "/tmp/fast.vmbridge/metadata/apple-vz-launch.json")
     XCTAssertEqual(handoff.guest.arch, "arm64")
-    XCTAssertEqual(handoff.bootMode, "linux-installer")
-    XCTAssertEqual(handoff.disk.format, "qcow2")
+    XCTAssertEqual(handoff.bootMode, "linux-kernel")
+    XCTAssertEqual(handoff.disk.format, "raw")
     XCTAssertEqual(handoff.resources.memory, "4096")
     XCTAssertEqual(handoff.resources.cpu, "2")
     XCTAssertTrue(handoff.integration.virtiofs)
@@ -30,8 +30,8 @@ final class AppleVzRunnerCoreTests: XCTestCase {
 
     XCTAssertEqual(validation.vmName, "fast-linux")
     XCTAssertEqual(validation.backend, "apple-virtualization-framework")
-    XCTAssertEqual(validation.bootMode, "linux-installer")
-    XCTAssertEqual(validation.diskPath, "/tmp/fast.vmbridge/disks/root.qcow2")
+    XCTAssertEqual(validation.bootMode, "linux-kernel")
+    XCTAssertEqual(validation.diskPath, "/tmp/fast.vmbridge/disks/root.raw")
     XCTAssertEqual(validation.memoryMiB, 4096)
     XCTAssertEqual(validation.cpuCount, 2)
     XCTAssertEqual(validation.virtualizationFrameworkLinked, AppleVzHandoffValidator.virtualizationFrameworkLinked())
@@ -43,10 +43,10 @@ final class AppleVzRunnerCoreTests: XCTestCase {
     let plan = try AppleVzHandoffValidator.configurationPlan(for: handoff)
 
     XCTAssertEqual(plan.vmName, "fast-linux")
-    XCTAssertEqual(plan.bootMode, "linux-installer")
-    XCTAssertEqual(plan.bootLoader, "efi")
+    XCTAssertEqual(plan.bootMode, "linux-kernel")
+    XCTAssertEqual(plan.bootLoader, "linux-kernel")
     XCTAssertEqual(plan.platform, "generic")
-    XCTAssertEqual(plan.diskAttachment, "disk-image-qcow2")
+    XCTAssertEqual(plan.diskAttachment, "disk-image-raw")
     XCTAssertEqual(plan.networkAttachment, "nat")
     XCTAssertEqual(plan.memoryBytes, 4096 * 1024 * 1024)
     XCTAssertEqual(plan.cpuCount, 2)
@@ -68,6 +68,24 @@ final class AppleVzRunnerCoreTests: XCTestCase {
     XCTAssertEqual(plan.diskAttachment, "disk-image-raw")
     XCTAssertEqual(plan.networkAttachment, "nat")
     XCTAssertFalse(plan.balloonDevice)
+  }
+
+  func testRejectsInstallerHandoffBeforeLaunchConstruction() throws {
+    var handoff = try AppleVzHandoffValidator.decode(Data(readyHandoffJSON.utf8))
+    handoff.bootMode = "linux-installer"
+
+    XCTAssertThrowsError(try AppleVzHandoffValidator.validate(handoff)) { error in
+      XCTAssertEqual(error as? AppleVzRunnerError, .unsupportedBootMode("linux-installer"))
+    }
+  }
+
+  func testRejectsQcow2HandoffBeforeLaunchConstruction() throws {
+    var handoff = try AppleVzHandoffValidator.decode(Data(readyHandoffJSON.utf8))
+    handoff.disk.format = "qcow2"
+
+    XCTAssertThrowsError(try AppleVzHandoffValidator.validate(handoff)) { error in
+      XCTAssertEqual(error as? AppleVzRunnerError, .unsupportedDiskFormat("qcow2"))
+    }
   }
 
   func testRejectsInvalidResourcesBeforeLaunchConstruction() throws {
@@ -96,7 +114,7 @@ final class AppleVzRunnerCoreTests: XCTestCase {
           AppleVzReadinessBlocker(
             code: "missing-primary-disk",
             message: "Primary disk is missing.",
-            path: "/tmp/fast.vmbridge/disks/root.qcow2",
+            path: "/tmp/fast.vmbridge/disks/root.raw",
             capability: nil,
           )
         ])
@@ -275,10 +293,10 @@ final class AppleVzRunnerCoreTests: XCTestCase {
         "os": "ubuntu",
         "arch": "arm64"
       },
-      "boot_mode": "linux-installer",
+      "boot_mode": "linux-kernel",
       "disk": {
-        "path": "/tmp/fast.vmbridge/disks/root.qcow2",
-        "format": "qcow2",
+        "path": "/tmp/fast.vmbridge/disks/root.raw",
+        "format": "raw",
         "read_only": false
       },
       "resources": {
@@ -314,10 +332,10 @@ final class AppleVzRunnerCoreTests: XCTestCase {
         "os": "ubuntu",
         "arch": "arm64"
       },
-      "boot_mode": "linux-installer",
+      "boot_mode": "linux-kernel",
       "disk": {
-        "path": "/tmp/fast.vmbridge/disks/root.qcow2",
-        "format": "qcow2",
+        "path": "/tmp/fast.vmbridge/disks/root.raw",
+        "format": "raw",
         "read_only": false
       },
       "resources": {
@@ -341,7 +359,7 @@ final class AppleVzRunnerCoreTests: XCTestCase {
           {
             "code": "missing-primary-disk",
             "message": "Primary disk is missing.",
-            "path": "/tmp/fast.vmbridge/disks/root.qcow2"
+            "path": "/tmp/fast.vmbridge/disks/root.raw"
           }
         ]
       }

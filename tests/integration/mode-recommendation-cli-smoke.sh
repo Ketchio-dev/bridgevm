@@ -34,6 +34,8 @@ assert_not_contains() {
 
 ubuntu_output="$(bridgevm recommend --os ubuntu --arch arm64)"
 assert_contains "$ubuntu_output" "Recommended mode: fast" "Ubuntu arm64 recommendation"
+assert_contains "$ubuntu_output" "Current execution engine: Apple VZ Engine (apple-vz)" "Ubuntu arm64 recommendation"
+assert_contains "$ubuntu_output" "Current engine QEMU usage: not used" "Ubuntu arm64 recommendation"
 assert_contains "$ubuntu_output" "Boot template id: ubuntu-arm64-installer" "Ubuntu arm64 recommendation"
 assert_contains "$ubuntu_output" "Installer image: installers/ubuntu-arm64.iso" "Ubuntu arm64 recommendation"
 
@@ -54,9 +56,16 @@ assert_contains "$macos_output" "Boot template: macos-restore" "macOS arm64 reco
 assert_contains "$macos_output" "macOS restore image: installers/macos-restore.ipsw" "macOS arm64 recommendation"
 
 windows_output="$(bridgevm recommend --os windows --version 11 --arch arm64)"
-assert_contains "$windows_output" "Recommended mode: fast" "Windows 11 Arm recommendation"
-assert_contains "$windows_output" "Fast Mode Experimental with a restricted backend" "Windows 11 Arm recommendation"
-assert_contains "$windows_output" "must not claim Microsoft-authorized status" "Windows 11 Arm recommendation"
+assert_contains "$windows_output" "Recommended mode: compatibility" "Windows 11 Arm recommendation"
+assert_contains "$windows_output" "Current execution engine: QEMU Compatibility Engine (qemu-compatibility)" "Windows 11 Arm recommendation"
+assert_contains "$windows_output" "Current engine QEMU usage: required" "Windows 11 Arm recommendation"
+assert_contains "$windows_output" "Target product engine: BridgeVM HVF Engine (bridge-hvf)" "Windows 11 Arm recommendation"
+assert_contains "$windows_output" "Target engine substrate: Apple Hypervisor.framework plus BridgeVM VMM/device stack" "Windows 11 Arm recommendation"
+assert_contains "$windows_output" "Target engine QEMU usage: not used" "Windows 11 Arm recommendation"
+assert_contains "$windows_output" "Windows is not bootable yet" "Windows 11 Arm recommendation"
+assert_contains "$windows_output" "restricted QEMU/HVF backend today" "Windows 11 Arm recommendation"
+assert_contains "$windows_output" "Apple VZ Fast Mode is Linux/macOS Arm only" "Windows 11 Arm recommendation"
+assert_contains "$windows_output" "must not claim Microsoft-authorized or Parallels-class Windows support" "Windows 11 Arm recommendation"
 assert_not_contains "$windows_output" "Boot template id:" "Windows 11 Arm recommendation"
 
 x86_output="$(bridgevm recommend --os ubuntu --arch x86_64)"

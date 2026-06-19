@@ -479,22 +479,15 @@ pub struct AppleVzReadinessBlocker {
 
 impl AppleVzPlan {
     pub fn render_runner_words(&self) -> Vec<String> {
-        let mut words = vec![
+        vec!["lightvm-runner".to_string(), self.vm_name.clone()]
+    }
+
+    pub fn render_runner_words_for_launch_spec(&self, launch_spec_path: &Path) -> Vec<String> {
+        vec![
             "lightvm-runner".to_string(),
-            self.vm_name.clone(),
-            "--apple-vz".to_string(),
-            "--disk".to_string(),
-            self.config.disk_path.clone(),
-            "--memory".to_string(),
-            self.config.memory.clone(),
-            "--cpu".to_string(),
-            self.config.cpu.clone(),
-        ];
-        for share in &self.launch_spec.shares {
-            words.push("--share".to_string());
-            words.push(encode_share_flag_value(share));
-        }
-        words
+            "--launch-spec".to_string(),
+            launch_spec_path.display().to_string(),
+        ]
     }
 
     pub fn launch_spec(&self) -> &AppleVzLaunchSpec {
@@ -525,7 +518,12 @@ pub fn build_fast_plan(
     let memory = resolve_memory(&manifest.resources.memory, &resource_decision);
     let cpu = resolve_vcpu(&manifest.resources.cpu, &resource_decision);
     let boot = build_boot_spec(manifest, Path::new(&bundle_path))?;
-    let readiness = build_readiness_spec(&boot, &disk_path, &AppleVzHostCapability::current());
+    let readiness = build_readiness_spec(
+        &boot,
+        &disk_path,
+        &manifest.storage.primary.format,
+        &AppleVzHostCapability::current(),
+    );
     let shares = build_share_specs(
         manifest.integration.shared_folders,
         &manifest.shared_folders,
@@ -942,10 +940,12 @@ impl AppleVzHostCapability {
 fn build_readiness_spec(
     boot: &AppleVzBootSpec,
     disk_path: &str,
+    disk_format: &str,
     host: &AppleVzHostCapability,
 ) -> AppleVzReadinessSpec {
     let mut blockers = Vec::new();
     append_host_readiness_blockers(&mut blockers, host);
+    append_current_runner_readiness_blockers(&mut blockers, boot, disk_format);
 
     let disk = Path::new(disk_path);
     if !disk.exists() {
@@ -989,6 +989,35 @@ fn build_readiness_spec(
     AppleVzReadinessSpec {
         ready: blockers.is_empty(),
         blockers,
+    }
+}
+
+fn append_current_runner_readiness_blockers(
+    blockers: &mut Vec<AppleVzReadinessBlocker>,
+    boot: &AppleVzBootSpec,
+    disk_format: &str,
+) {
+    if boot.mode != BootMode::LinuxKernel {
+        blockers.push(AppleVzReadinessBlocker {
+            code: "unsupported-live-boot-mode".to_string(),
+            message: format!(
+                "Current AppleVzRunner live launch supports linux-kernel boot only; this plan uses {}.",
+                boot.mode
+            ),
+            path: None,
+            capability: Some("apple-vz-runner".to_string()),
+        });
+    }
+
+    if disk_format != "raw" {
+        blockers.push(AppleVzReadinessBlocker {
+            code: "unsupported-live-disk-format".to_string(),
+            message: format!(
+                "Current AppleVzRunner live launch supports raw primary disks only; this plan uses {disk_format}."
+            ),
+            path: None,
+            capability: Some("apple-vz-runner".to_string()),
+        });
     }
 }
 
@@ -1565,7 +1594,7 @@ mod tests {
     }
 
     #[test]
-    fn launch_readiness_is_ready_when_required_paths_exist() {
+    fn launch_readiness_reports_runner_limits_for_installer_qcow2() {
         let temp = std::env::temp_dir().join(format!(
             "bridgevm-apple-vz-readiness-{}",
             std::process::id()
@@ -1583,6 +1612,49 @@ mod tests {
             kernel_path: None,
             initrd_path: None,
             kernel_command_line: None,
+            macos_restore_image: None,
+        });
+
+        let plan = build_fast_plan(&manifest, &temp).unwrap();
+
+        assert!(!plan.launch_spec.readiness.ready);
+        assert!(plan
+            .launch_spec
+            .readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.code == "unsupported-live-boot-mode"));
+        assert!(plan
+            .launch_spec
+            .readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.code == "unsupported-live-disk-format"));
+
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn launch_readiness_is_ready_for_linux_kernel_raw_when_required_paths_exist() {
+        let temp = std::env::temp_dir().join(format!(
+            "bridgevm-apple-vz-linux-kernel-readiness-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&temp);
+        std::fs::create_dir_all(temp.join("disks")).unwrap();
+        std::fs::create_dir_all(temp.join("boot")).unwrap();
+        std::fs::write(temp.join("disks/root.raw"), b"disk").unwrap();
+        std::fs::write(temp.join("boot/vmlinuz"), b"kernel").unwrap();
+
+        let mut manifest = valid_fast_manifest();
+        manifest.storage.primary.format = "raw".to_string();
+        manifest.storage.primary.path = "disks/root.raw".to_string();
+        manifest.boot = Some(Boot {
+            mode: BootMode::LinuxKernel,
+            installer_image: None,
+            kernel_path: Some("boot/vmlinuz".to_string()),
+            initrd_path: None,
+            kernel_command_line: Some("console=hvc0 root=/dev/vda".to_string()),
             macos_restore_image: None,
         });
 
@@ -1620,7 +1692,7 @@ mod tests {
             os: "linux".to_string(),
             arch: "x86_64".to_string(),
         };
-        let readiness = build_readiness_spec(&boot, "/tmp/root.qcow2", &host);
+        let readiness = build_readiness_spec(&boot, "/tmp/root.qcow2", "raw", &host);
 
         assert!(!readiness.ready);
         assert!(readiness.blockers.iter().any(|blocker| {
@@ -1639,7 +1711,7 @@ mod tests {
         manifest.guest.os = "windows".to_string();
 
         let error = build_fast_plan(&manifest, Path::new("/tmp/windows.vmbridge"))
-            .expect_err("Windows Fast Mode should use the restricted backend, not Apple VZ");
+            .expect_err("Windows no-QEMU fast path is not Apple VZ");
 
         assert!(matches!(error, AppleVzError::UnsupportedGuestOs(os) if os == "windows"));
     }
@@ -1863,7 +1935,7 @@ mod tests {
     }
 
     #[test]
-    fn render_runner_words_emits_one_share_flag_per_folder() {
+    fn render_runner_words_for_launch_spec_emits_exact_handoff_command() {
         let mut manifest = valid_fast_manifest();
         manifest.integration.shared_folders = true;
         manifest.shared_folders = vec![
@@ -1872,29 +1944,48 @@ mod tests {
         ];
 
         let plan = build_fast_plan(&manifest, Path::new("/tmp/ubuntu-fast.vmbridge")).unwrap();
-        let words = plan.render_runner_words();
+        let launch_spec_path = Path::new("/tmp/ubuntu-fast.vmbridge/metadata/apple-vz-launch.json");
+        let words = plan.render_runner_words_for_launch_spec(launch_spec_path);
 
-        let share_positions: Vec<usize> = words
-            .iter()
-            .enumerate()
-            .filter(|(_, w)| *w == "--share")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(share_positions.len(), 2);
-        assert_eq!(words[share_positions[0] + 1], "ro:workspace=/Users/me/work");
-        assert_eq!(words[share_positions[1] + 1], "docs=/Users/me/docs");
-        // Old single-share flags are no longer emitted by the planner.
+        assert_eq!(
+            words,
+            vec![
+                "lightvm-runner".to_string(),
+                "--launch-spec".to_string(),
+                launch_spec_path.display().to_string(),
+            ]
+        );
+        assert_eq!(plan.launch_spec.shares.len(), 2);
+        assert_eq!(plan.launch_spec.shares[0].tag, "workspace");
+        assert_eq!(plan.launch_spec.shares[0].host_path, "/Users/me/work");
+        assert!(plan.launch_spec.shares[0].read_only);
+        assert_eq!(plan.launch_spec.shares[1].tag, "docs");
+        assert_eq!(plan.launch_spec.shares[1].host_path, "/Users/me/docs");
+        assert!(!plan.launch_spec.shares[1].read_only);
+        assert!(!words.iter().any(|w| w == "--apple-vz"));
+        assert!(!words.iter().any(|w| w == "--disk"));
+        assert!(!words.iter().any(|w| w == "--memory"));
+        assert!(!words.iter().any(|w| w == "--cpu"));
+        assert!(!words.iter().any(|w| w == "--share"));
         assert!(!words.iter().any(|w| w == "--share-dir"));
     }
 
     #[test]
-    fn render_runner_words_emits_no_share_flags_when_shares_absent() {
+    fn render_runner_words_emits_store_reload_command_without_stale_planner_flags() {
         let manifest = valid_fast_manifest();
         // Default manifest has no approved folders, so no shares are planned.
         let plan = build_fast_plan(&manifest, Path::new("/tmp/ubuntu-fast.vmbridge")).unwrap();
         let words = plan.render_runner_words();
 
+        assert_eq!(
+            words,
+            vec!["lightvm-runner".to_string(), "Ubuntu Fast".to_string()]
+        );
         assert!(plan.launch_spec.shares.is_empty());
+        assert!(!words.iter().any(|w| w == "--apple-vz"));
+        assert!(!words.iter().any(|w| w == "--disk"));
+        assert!(!words.iter().any(|w| w == "--memory"));
+        assert!(!words.iter().any(|w| w == "--cpu"));
         assert!(!words.iter().any(|w| w == "--share"));
         assert!(!words.iter().any(|w| w == "--share-dir"));
     }

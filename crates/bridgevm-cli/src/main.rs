@@ -1,31 +1,51 @@
 use anyhow::{bail, Context, Result};
-use bridgevm_agent_protocol::{AgentEnvelope, AgentMessage};
+use bridgevm_agent_protocol::{AgentEnvelope, AgentMessage, WindowInputEvent};
 use bridgevm_api::{
     accept_guest_tools_hello, add_fast_spawn_runner_required_blocker, add_port, add_share,
     apple_vz_runner_configured, cold_start_fast_backend, compatibility_launch_dependency_blockers,
     compatibility_launch_readiness_metadata, create_diagnostic_bundle, create_performance_baseline,
-    create_performance_sample, display_fast_backend, download_boot_media,
+    create_performance_sample, display_fast_backend_with_size, download_boot_media,
     fast_spawn_runner_required_error, guest_tools_linux_command, guest_tools_token,
     import_boot_media, inspect_boot_media_status, inspect_guest_tools_status,
     launch_readiness_metadata, list_ports, list_shares, open_port_plan, plan_boot_media_download,
-    reapply_runtime_resources, remove_port, remove_share, resume_backend, stop_backend,
-    suspend_backend, verify_boot_media, view_vm_log, ApplicationConsistentSnapshotExecutionRecord,
-    BootMediaDownloadPlanMetadata, BootMediaDownloadResultMetadata, BootMediaImportMetadata,
-    BootMediaKind, BootMediaStatus, BootMediaVerificationMetadata, BridgeVmRequest,
-    BridgeVmResponse, DiagnosticBundleMetadata, GuestToolsLinuxCommandRecord,
-    GuestToolsLinuxCommandTransport, GuestToolsSessionRecord, GuestToolsStatusRecord,
-    GuestToolsTokenRecord, LifecycleAction, LifecyclePlanRecord, NetworkPlanRecord,
-    OpenPortPlanRecord, PerformanceBaselineMetadata, PerformanceSampleMetadata,
-    PortForwardListRecord, SharedFolderListRecord, SnapshotPreflightStatusRecord, SshPlanRecord,
-    VmLogKind, VmLogViewRecord, VmReadinessReport, VmRecord,
+    reapply_runtime_resources, remove_port, remove_share, resume_backend, runtime_control_command,
+    stop_backend, suspend_backend, verify_boot_media, view_vm_log,
+    ApplicationConsistentSnapshotExecutionRecord, BootMediaDownloadPlanMetadata,
+    BootMediaDownloadResultMetadata, BootMediaImportMetadata, BootMediaKind, BootMediaStatus,
+    BootMediaVerificationMetadata, BridgeVmRequest, BridgeVmResponse, DiagnosticBundleMetadata,
+    GuestToolsLinuxCommandRecord, GuestToolsLinuxCommandTransport, GuestToolsSessionRecord,
+    GuestToolsStatusRecord, GuestToolsTokenRecord, LifecycleAction, LifecyclePlanRecord,
+    NetworkPlanRecord, OpenPortPlanRecord, PerformanceBaselineMetadata, PerformanceSampleMetadata,
+    PortForwardListRecord, RuntimeControlCommandRecord, SharedFolderListRecord,
+    SnapshotPreflightStatusRecord, SshPlanRecord, VmLogKind, VmLogViewRecord, VmReadinessReport,
+    VmRecord,
 };
 use bridgevm_apple_vz::{
     build_fast_plan, write_launch_spec_artifact, AppleVzBootSpec, AppleVzPathSpec,
 };
 use bridgevm_config::{manifest_json_schema_v1, Boot, BootMode, Guest, VmManifest, VmMode};
 use bridgevm_core::{
-    available_boot_templates, boot_template_by_id, recommend_mode, BootTemplate, GuestChoice,
-    ModeRecommendation,
+    available_boot_templates, available_engine_descriptors, boot_template_by_id,
+    current_engine_descriptor_for_mode, recommend_mode, target_engine_descriptor_for_guest,
+    BootTemplate, GuestChoice, ModeRecommendation, VmEngineDescriptor,
+};
+use bridgevm_hvf::{
+    plan_windows_11_arm_hvf_machine, plan_windows_11_arm_no_qemu, probe_hvf_guest_entry,
+    probe_hvf_guest_exit_loop, probe_hvf_interrupt_timer, probe_hvf_memory_map,
+    probe_hvf_mmio_block_device, probe_hvf_mmio_block_queue, probe_hvf_mmio_read_emulation,
+    probe_hvf_mmio_read_exit, probe_hvf_mmio_rtc_device, probe_hvf_mmio_serial_device,
+    probe_hvf_mmio_write_emulation, probe_hvf_vcpu_create, probe_hvf_vcpu_run, probe_hvf_vm_create,
+    probe_hvf_vtimer_exit, probe_virtio_block_file_backing, probe_virtio_block_iso_backing,
+    probe_virtio_block_request_model, probe_virtio_block_writable_file_backing,
+    probe_windows_11_arm_boot_disk_layout, probe_windows_11_arm_platform_description,
+    probe_windows_11_arm_uefi_firmware_device_discovery,
+    probe_windows_11_arm_uefi_firmware_handoff, probe_windows_11_arm_uefi_firmware_run_loop,
+    probe_windows_11_arm_uefi_pflash_hvf_map, probe_windows_11_arm_uefi_pflash_map,
+    probe_windows_11_arm_uefi_reset_vector_entry, query_hvf_host_capabilities,
+    HvfMachinePlanOptions, WindowsArmBootDiskLayoutOptions, WindowsArmPlatformDescriptionOptions,
+    WindowsArmUefiFirmwareHandoffOptions, WindowsArmUefiFirmwareRunLoopExecutionOptions,
+    WindowsArmUefiFirmwareRunLoopOptions, WindowsArmUefiPflashMapOptions,
+    WINDOWS_ARM_BOOT_DISK_DEFAULT_SIZE_GIB,
 };
 use bridgevm_qemu::{
     build_compatibility_command, cont as qmp_cont, is_qmp_status_unavailable, qmp_socket_path,
@@ -71,7 +91,7 @@ enum Command {
     Resume(VmNameArgs),
     /// Boot a Fast Mode VM with an embedded graphical display window (local GUI
     /// session only). Requires BRIDGEVM_APPLE_VZ_RUNNER.
-    Display(VmNameArgs),
+    Display(DisplayArgs),
     Delete(DeleteArgs),
     Export(ExportArgs),
     Import(ImportArgs),
@@ -89,6 +109,8 @@ enum Command {
     GuestTools(GuestToolsCommand),
     #[command(subcommand)]
     Resources(ResourcesCommand),
+    #[command(subcommand)]
+    RuntimeControl(RuntimeControlCommand),
     QemuArgs(VmNameArgs),
     PrepareRun(VmNameArgs),
     BootMedia(VmNameArgs),
@@ -104,8 +126,309 @@ enum Command {
     RunnerStatus(VmNameArgs),
     Recommend(GuestArgs),
     #[command(subcommand)]
+    Hvf(HvfCommand),
+    #[command(subcommand)]
     Store(StoreCommand),
     Doctor,
+}
+
+#[derive(Debug, Subcommand)]
+enum HvfCommand {
+    /// Print the Windows 11 Arm non-QEMU BridgeVM HVF VMM plan.
+    WindowsPlan(WindowsHvfPlanArgs),
+    /// Print the concrete QEMU-free Windows 11 Arm HVF machine boundary.
+    MachinePlan(WindowsHvfMachinePlanArgs),
+    /// Create or verify a QEMU-free sparse raw GPT boot-disk layout for Windows 11 Arm.
+    WindowsBootDiskLayoutProbe(WindowsHvfBootDiskLayoutProbeArgs),
+    /// Validate a QEMU-free AArch64 UEFI firmware/vars handoff plan for Windows 11 Arm.
+    WindowsFirmwareHandoffProbe(WindowsHvfFirmwareHandoffProbeArgs),
+    /// Load verified AArch64 UEFI code/vars into planned pflash memory images.
+    WindowsPflashMapProbe(WindowsHvfPflashMapProbeArgs),
+    /// Optionally map/unmap verified AArch64 UEFI code/vars pflash slots in HVF.
+    WindowsPflashHvfMapProbe(WindowsHvfPflashHvfMapProbeArgs),
+    /// Optionally enter the AArch64 UEFI reset vector once under HVF.
+    WindowsResetVectorEntryProbe(WindowsHvfResetVectorEntryProbeArgs),
+    /// Optionally run a bounded AArch64 UEFI firmware exit-classification loop under HVF.
+    WindowsFirmwareRunLoopProbe(WindowsHvfFirmwareRunLoopProbeArgs),
+    /// Optionally run the Windows UEFI firmware loop as a named device-discovery gate.
+    WindowsFirmwareDeviceDiscoveryProbe(WindowsHvfFirmwareRunLoopProbeArgs),
+    /// Build the metadata-only Windows 11 Arm FDT platform description.
+    WindowsPlatformDescriptionProbe(WindowsHvfPlatformDescriptionProbeArgs),
+    /// Query Apple Hypervisor.framework host capability metadata without
+    /// creating or launching a VM.
+    HostCapabilities,
+    /// Optionally create and immediately destroy an empty HVF VM.
+    VmProbe(HvfVmProbeArgs),
+    /// Optionally create and immediately destroy an empty HVF VM plus one vCPU.
+    VcpuProbe(HvfVmProbeArgs),
+    /// Optionally pre-cancel and observe one bounded hv_vcpu_run return.
+    VcpuRunProbe(HvfVcpuRunProbeArgs),
+    /// Optionally verify pending IRQ and virtual timer controls on one empty vCPU.
+    InterruptTimerProbe(HvfInterruptTimerProbeArgs),
+    /// Optionally run a WFI loop and observe a host-programmed VTimer exit.
+    VtimerExitProbe(HvfVtimerExitProbeArgs),
+    /// Optionally create an empty HVF VM and map/unmap one guest RAM page.
+    MemoryMapProbe(HvfMemoryMapProbeArgs),
+    /// Optionally run one mapped HVC instruction under a watchdog.
+    GuestEntryProbe(HvfGuestEntryProbeArgs),
+    /// Optionally run two HVC exits with an explicit PC advance.
+    GuestExitLoopProbe(HvfGuestExitLoopProbeArgs),
+    /// Optionally run one unmapped read and observe an MMIO/data-abort exit.
+    MmioReadProbe(HvfMmioReadProbeArgs),
+    /// Optionally emulate one MMIO read and continue guest execution.
+    MmioReadEmulationProbe(HvfMmioReadEmulationProbeArgs),
+    /// Optionally emulate one MMIO write and continue guest execution.
+    MmioWriteEmulationProbe(HvfMmioWriteEmulationProbeArgs),
+    /// Optionally emulate a tiny serial MMIO data/status device loop.
+    MmioSerialDeviceProbe(HvfMmioSerialDeviceProbeArgs),
+    /// Optionally emulate PL011 plus PL031 RTC through the MMIO device bus.
+    MmioRtcDeviceProbe(HvfMmioRtcDeviceProbeArgs),
+    /// Optionally emulate VirtIO-MMIO block identity registers through the MMIO device bus.
+    MmioBlockDeviceProbe(HvfMmioBlockDeviceProbeArgs),
+    /// Optionally emulate VirtIO-MMIO block queue/config/address/notify registers through the MMIO device bus.
+    MmioBlockQueueProbe(HvfMmioBlockQueueProbeArgs),
+    /// Exercise the in-memory VirtIO block read request descriptor model.
+    VirtioBlockRequestModelProbe,
+    /// Exercise a host file-backed VirtIO block read request descriptor model.
+    VirtioBlockFileBackingProbe(HvfVirtioBlockFileBackingProbeArgs),
+    /// Exercise a writable host file-backed VirtIO block write/flush persistence descriptor model.
+    VirtioBlockWritableFileBackingProbe(HvfVirtioBlockFileBackingProbeArgs),
+    /// Exercise a read-only ISO-backed VirtIO block read request descriptor model.
+    VirtioBlockIsoBackingProbe(HvfVirtioBlockIsoBackingProbeArgs),
+}
+
+#[derive(Debug, Parser)]
+struct WindowsHvfPlanArgs {
+    #[arg(long, value_name = "PATH")]
+    installer: Option<PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+struct WindowsHvfMachinePlanArgs {
+    #[arg(long, value_name = "PATH")]
+    installer: Option<PathBuf>,
+    #[arg(long, default_value_t = 6)]
+    memory_gib: u32,
+    #[arg(long, default_value_t = 4)]
+    vcpus: u8,
+}
+
+#[derive(Debug, Parser)]
+struct WindowsHvfBootDiskLayoutProbeArgs {
+    #[arg(long, value_name = "PATH")]
+    disk: PathBuf,
+    #[arg(long, default_value_t = WINDOWS_ARM_BOOT_DISK_DEFAULT_SIZE_GIB)]
+    size_gib: u32,
+    #[arg(long)]
+    create: bool,
+}
+
+#[derive(Debug, Parser)]
+struct WindowsHvfFirmwareHandoffProbeArgs {
+    #[arg(long, value_name = "PATH")]
+    firmware: PathBuf,
+    #[arg(long, value_name = "PATH")]
+    vars_template: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    vars: Option<PathBuf>,
+    #[arg(long)]
+    create_vars: bool,
+}
+
+#[derive(Debug, Parser)]
+struct WindowsHvfPflashMapProbeArgs {
+    #[arg(long, value_name = "PATH")]
+    firmware: PathBuf,
+    #[arg(long, value_name = "PATH")]
+    vars_template: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    vars: Option<PathBuf>,
+    #[arg(long)]
+    create_vars: bool,
+}
+
+#[derive(Debug, Parser)]
+struct WindowsHvfPflashHvfMapProbeArgs {
+    #[arg(long, value_name = "PATH")]
+    firmware: PathBuf,
+    #[arg(long, value_name = "PATH")]
+    vars_template: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    vars: Option<PathBuf>,
+    #[arg(long)]
+    create_vars: bool,
+    #[arg(long)]
+    allow_map: bool,
+}
+
+#[derive(Debug, Parser)]
+struct WindowsHvfResetVectorEntryProbeArgs {
+    #[arg(long, value_name = "PATH")]
+    firmware: PathBuf,
+    #[arg(long, value_name = "PATH")]
+    vars_template: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    vars: Option<PathBuf>,
+    #[arg(long)]
+    create_vars: bool,
+    #[arg(long)]
+    allow_entry: bool,
+}
+
+#[derive(Debug, Parser)]
+struct WindowsHvfFirmwareRunLoopProbeArgs {
+    #[arg(long, value_name = "PATH")]
+    firmware: PathBuf,
+    #[arg(long, value_name = "PATH")]
+    vars_template: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    vars: Option<PathBuf>,
+    #[arg(long)]
+    create_vars: bool,
+    #[arg(long)]
+    allow_loop: bool,
+    #[arg(long, default_value_t = 8)]
+    max_exits: u32,
+    #[arg(long, default_value_t = 64)]
+    guest_ram_mib: u32,
+    #[arg(long, default_value_t = 100)]
+    watchdog_ms: u64,
+    #[arg(long)]
+    map_low_pflash_alias: bool,
+    #[arg(long)]
+    seed_diagnostic_vector: bool,
+    #[arg(long)]
+    seed_guest_ram_diagnostic_vector: bool,
+    #[arg(long)]
+    seed_executable_diagnostic_vector: bool,
+    #[arg(long)]
+    try_recommended_vector_base_vbar: bool,
+    #[arg(long)]
+    continue_after_recommended_vector_base_vbar: bool,
+    #[arg(long)]
+    repair_low_vector_diagnostic_page: bool,
+    #[arg(long)]
+    remap_low_vector_to_recommended_vector: bool,
+    #[arg(long)]
+    continue_after_low_vector_repair: bool,
+    #[arg(long)]
+    restore_low_vector_slot_before_eret: bool,
+    #[arg(long)]
+    wire_interrupt_timer: bool,
+    #[arg(long, value_name = "PATH")]
+    iso: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    writable_disk: Option<PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+struct WindowsHvfPlatformDescriptionProbeArgs {
+    #[arg(long, default_value_t = 6)]
+    memory_gib: u32,
+    #[arg(long, default_value_t = 4)]
+    vcpus: u8,
+}
+
+#[derive(Debug, Parser)]
+struct HvfVmProbeArgs {
+    #[arg(long)]
+    allow_create: bool,
+}
+
+#[derive(Debug, Parser)]
+struct HvfVcpuRunProbeArgs {
+    #[arg(long)]
+    allow_run: bool,
+}
+
+#[derive(Debug, Parser)]
+struct HvfInterruptTimerProbeArgs {
+    #[arg(long)]
+    allow_interrupt_timer: bool,
+}
+
+#[derive(Debug, Parser)]
+struct HvfVtimerExitProbeArgs {
+    #[arg(long)]
+    allow_vtimer_exit: bool,
+}
+
+#[derive(Debug, Parser)]
+struct HvfMemoryMapProbeArgs {
+    #[arg(long)]
+    allow_map: bool,
+}
+
+#[derive(Debug, Parser)]
+struct HvfGuestEntryProbeArgs {
+    #[arg(long)]
+    allow_entry: bool,
+}
+
+#[derive(Debug, Parser)]
+struct HvfGuestExitLoopProbeArgs {
+    #[arg(long)]
+    allow_loop: bool,
+}
+
+#[derive(Debug, Parser)]
+struct HvfMmioReadProbeArgs {
+    #[arg(long)]
+    allow_mmio: bool,
+}
+
+#[derive(Debug, Parser)]
+struct HvfMmioReadEmulationProbeArgs {
+    #[arg(long)]
+    allow_emulate: bool,
+}
+
+#[derive(Debug, Parser)]
+struct HvfMmioWriteEmulationProbeArgs {
+    #[arg(long)]
+    allow_emulate: bool,
+}
+
+#[derive(Debug, Parser)]
+struct HvfMmioSerialDeviceProbeArgs {
+    #[arg(long)]
+    allow_device: bool,
+}
+
+#[derive(Debug, Parser)]
+struct HvfMmioRtcDeviceProbeArgs {
+    #[arg(long)]
+    allow_device: bool,
+}
+
+#[derive(Debug, Parser)]
+struct HvfMmioBlockDeviceProbeArgs {
+    #[arg(long)]
+    allow_device: bool,
+}
+
+#[derive(Debug, Parser)]
+struct HvfMmioBlockQueueProbeArgs {
+    #[arg(long)]
+    allow_device: bool,
+    #[arg(long, value_name = "PATH")]
+    disk: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    iso: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    writable_disk: Option<PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+struct HvfVirtioBlockFileBackingProbeArgs {
+    #[arg(long, value_name = "PATH")]
+    disk: PathBuf,
+}
+
+#[derive(Debug, Parser)]
+struct HvfVirtioBlockIsoBackingProbeArgs {
+    #[arg(long, value_name = "PATH")]
+    iso: PathBuf,
 }
 
 #[derive(Debug, Subcommand)]
@@ -117,6 +440,21 @@ enum StoreCommand {
 enum ResourcesCommand {
     /// Re-evaluate a running Fast Mode VM's resource policy for the current
     /// power state and foreground/background visibility.
+    Reapply(RuntimeResourcesArgs),
+}
+
+#[derive(Debug, Subcommand)]
+enum RuntimeControlCommand {
+    /// Query the live Apple VZ display process over its recorded control socket.
+    Status(VmNameArgs),
+    /// Ask the live Apple VZ display process to stop gracefully.
+    Stop(VmNameArgs),
+    /// Fetch the latest runtime resource policy visible to the display process.
+    Policy(VmNameArgs),
+    /// Summarize the display pacing view derived from the live runtime policy.
+    Pacing(VmNameArgs),
+    /// Re-evaluate runtime resources and ask any live display helper to read
+    /// the refreshed policy.
     Reapply(RuntimeResourcesArgs),
 }
 
@@ -155,8 +493,10 @@ struct CreateArgs {
     arch: Option<String>,
     #[arg(long, value_enum, default_value_t = ModeChoice::Auto)]
     mode: ModeChoice,
-    #[arg(long, default_value = "80GiB")]
-    disk: String,
+    #[arg(long)]
+    disk: Option<String>,
+    #[arg(long, value_enum)]
+    disk_format: Option<DiskFormatChoice>,
     #[arg(long, value_enum)]
     boot_mode: Option<BootModeChoice>,
     #[arg(long, value_name = "PATH")]
@@ -174,6 +514,26 @@ struct CreateArgs {
 #[derive(Debug, Parser)]
 struct VmNameArgs {
     name: String,
+}
+
+#[derive(Debug, Parser)]
+struct DisplayArgs {
+    name: String,
+    #[arg(long, value_name = "PX")]
+    width: Option<u32>,
+    #[arg(long, value_name = "PX")]
+    height: Option<u32>,
+}
+
+impl DisplayArgs {
+    fn display_size(&self) -> Result<Option<(u32, u32)>> {
+        match (self.width, self.height) {
+            (Some(width), Some(height)) if width > 0 && height > 0 => Ok(Some((width, height))),
+            (Some(_), Some(_)) => bail!("--width and --height must be positive integers"),
+            (None, None) => Ok(None),
+            _ => bail!("--width and --height must be provided together"),
+        }
+    }
 }
 
 #[derive(Debug, Parser)]
@@ -472,6 +832,9 @@ enum GuestToolsSubcommand {
     ListWindows(GuestToolsRequestIdArgs),
     FocusWindow(GuestToolsIdCommandArgs),
     CloseWindow(GuestToolsIdCommandArgs),
+    SetWindowBounds(GuestToolsWindowBoundsArgs),
+    WindowPointer(GuestToolsWindowPointerArgs),
+    WindowKey(GuestToolsWindowKeyArgs),
     TimeSync(GuestToolsTimeSyncArgs),
 }
 
@@ -612,6 +975,53 @@ struct GuestToolsIdCommandArgs {
 }
 
 #[derive(Debug, Parser)]
+struct GuestToolsWindowBoundsArgs {
+    vm: String,
+    #[arg(long)]
+    id: String,
+    #[arg(long)]
+    x: i64,
+    #[arg(long)]
+    y: i64,
+    #[arg(long)]
+    width: u64,
+    #[arg(long)]
+    height: u64,
+    #[arg(long, value_name = "ID")]
+    request_id: Option<String>,
+}
+
+#[derive(Debug, Parser)]
+struct GuestToolsWindowPointerArgs {
+    vm: String,
+    #[arg(long)]
+    id: String,
+    #[arg(long)]
+    x: i64,
+    #[arg(long)]
+    y: i64,
+    #[arg(long, value_enum)]
+    action: GuestToolsWindowPointerAction,
+    #[arg(long, value_enum)]
+    button: Option<GuestToolsWindowPointerButton>,
+    #[arg(long, value_name = "ID")]
+    request_id: Option<String>,
+}
+
+#[derive(Debug, Parser)]
+struct GuestToolsWindowKeyArgs {
+    vm: String,
+    #[arg(long)]
+    id: String,
+    #[arg(long)]
+    key: String,
+    #[arg(long, value_enum)]
+    action: GuestToolsWindowKeyAction,
+    #[arg(long, value_name = "ID")]
+    request_id: Option<String>,
+}
+
+#[derive(Debug, Parser)]
 struct GuestToolsTimeSyncArgs {
     vm: String,
     #[arg(long, value_name = "MILLIS")]
@@ -720,6 +1130,59 @@ impl From<GuestToolsLinuxCommandTransportChoice> for GuestToolsLinuxCommandTrans
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum GuestToolsWindowPointerAction {
+    Move,
+    Press,
+    Release,
+    Click,
+}
+
+impl GuestToolsWindowPointerAction {
+    fn as_protocol(self) -> &'static str {
+        match self {
+            Self::Move => "move",
+            Self::Press => "press",
+            Self::Release => "release",
+            Self::Click => "click",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum GuestToolsWindowPointerButton {
+    Left,
+    Middle,
+    Right,
+}
+
+impl GuestToolsWindowPointerButton {
+    fn as_protocol(self) -> &'static str {
+        match self {
+            Self::Left => "left",
+            Self::Middle => "middle",
+            Self::Right => "right",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum GuestToolsWindowKeyAction {
+    Press,
+    Release,
+    Tap,
+}
+
+impl GuestToolsWindowKeyAction {
+    fn as_protocol(self) -> &'static str {
+        match self {
+            Self::Press => "press",
+            Self::Release => "release",
+            Self::Tap => "tap",
+        }
+    }
+}
+
 #[derive(Debug, Parser)]
 struct GuestArgs {
     #[arg(long)]
@@ -744,6 +1207,30 @@ enum BootModeChoice {
     LinuxInstaller,
     WindowsInstaller,
     MacosRestore,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum DiskFormatChoice {
+    Qcow2,
+    Raw,
+}
+
+const DEFAULT_PRIMARY_DISK_SIZE: &str = "80GiB";
+
+impl DiskFormatChoice {
+    fn manifest_format(self) -> &'static str {
+        match self {
+            Self::Qcow2 => "qcow2",
+            Self::Raw => "raw",
+        }
+    }
+
+    fn default_primary_path(self) -> &'static str {
+        match self {
+            Self::Qcow2 => "disks/root.qcow2",
+            Self::Raw => "disks/root.raw",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -817,6 +1304,7 @@ fn main() -> Result<()> {
         Command::Media(args) => media(&store, args),
         Command::GuestTools(args) => guest_tools(&store, args),
         Command::Resources(args) => resources(&store, args),
+        Command::RuntimeControl(args) => runtime_control(&store, args),
         Command::QemuArgs(args) => qemu_args(&store, args),
         Command::PrepareRun(args) => prepare_run(&store, args),
         Command::BootMedia(args) => boot_media(&store, args),
@@ -831,6 +1319,7 @@ fn main() -> Result<()> {
         Command::QmpCont(args) => qmp_control(&store, args, "cont", qmp_cont),
         Command::RunnerStatus(args) => runner_status(&store, args),
         Command::Recommend(args) => recommend(args),
+        Command::Hvf(args) => hvf(args),
         Command::Store(StoreCommand::Doctor) => doctor(&store),
         Command::Doctor => doctor(&store),
     }
@@ -846,10 +1335,7 @@ fn request_for(command: Command) -> Result<BridgeVmRequest> {
     match command {
         Command::List => Ok(BridgeVmRequest::ListVms),
         Command::Templates => Ok(BridgeVmRequest::ListTemplates),
-        Command::Create(args) => {
-            let manifest = manifest_for_create(args)?;
-            Ok(BridgeVmRequest::CreateVm { manifest })
-        }
+        Command::Create(args) => request_for_create(args),
         Command::Status(args) => Ok(BridgeVmRequest::GetVm { name: args.name }),
         Command::Start(args) => Ok(BridgeVmRequest::TransitionVm {
             name: args.name,
@@ -1172,6 +1658,53 @@ fn request_for(command: Command) -> Result<BridgeVmRequest> {
                     args.request_id,
                 ),
             }),
+            GuestToolsSubcommand::SetWindowBounds(args) => {
+                Ok(BridgeVmRequest::GuestToolsSendCommand {
+                    name: args.vm,
+                    envelope: agent_command_envelope(
+                        AgentMessage::SetWindowBounds {
+                            id: args.id,
+                            x: args.x,
+                            y: args.y,
+                            width: args.width,
+                            height: args.height,
+                        },
+                        args.request_id,
+                    ),
+                })
+            }
+            GuestToolsSubcommand::WindowPointer(args) => {
+                Ok(BridgeVmRequest::GuestToolsSendCommand {
+                    name: args.vm,
+                    envelope: agent_command_envelope(
+                        AgentMessage::WindowInput {
+                            id: args.id,
+                            event: WindowInputEvent::Pointer {
+                                x: args.x,
+                                y: args.y,
+                                action: args.action.as_protocol().to_string(),
+                                button: args
+                                    .button
+                                    .map(|button| button.as_protocol().to_string()),
+                            },
+                        },
+                        args.request_id,
+                    ),
+                })
+            }
+            GuestToolsSubcommand::WindowKey(args) => Ok(BridgeVmRequest::GuestToolsSendCommand {
+                name: args.vm,
+                envelope: agent_command_envelope(
+                    AgentMessage::WindowInput {
+                        id: args.id,
+                        event: WindowInputEvent::Key {
+                            key: args.key,
+                            action: args.action.as_protocol().to_string(),
+                        },
+                    },
+                    args.request_id,
+                ),
+            }),
             GuestToolsSubcommand::TimeSync(args) => Ok(BridgeVmRequest::GuestToolsSendCommand {
                 name: args.vm,
                 envelope: agent_command_envelope(
@@ -1186,6 +1719,28 @@ fn request_for(command: Command) -> Result<BridgeVmRequest> {
         },
         Command::Resources(args) => match args {
             ResourcesCommand::Reapply(args) => Ok(BridgeVmRequest::ReapplyRuntimeResources {
+                name: args.name,
+                visibility: args.visibility.into(),
+            }),
+        },
+        Command::RuntimeControl(args) => match args {
+            RuntimeControlCommand::Status(args) => Ok(BridgeVmRequest::RuntimeControl {
+                name: args.name,
+                command: "status".to_string(),
+            }),
+            RuntimeControlCommand::Stop(args) => Ok(BridgeVmRequest::RuntimeControl {
+                name: args.name,
+                command: "stop".to_string(),
+            }),
+            RuntimeControlCommand::Policy(args) => Ok(BridgeVmRequest::RuntimeControl {
+                name: args.name,
+                command: "policy".to_string(),
+            }),
+            RuntimeControlCommand::Pacing(args) => Ok(BridgeVmRequest::RuntimeControl {
+                name: args.name,
+                command: "pacing".to_string(),
+            }),
+            RuntimeControlCommand::Reapply(args) => Ok(BridgeVmRequest::ReapplyRuntimeResources {
                 name: args.name,
                 visibility: args.visibility.into(),
             }),
@@ -1231,9 +1786,40 @@ fn request_for(command: Command) -> Result<BridgeVmRequest> {
                 arch: args.arch,
             },
         }),
+        Command::Hvf(_) => {
+            bail!("hvf commands are local metadata-only commands; omit --socket")
+        }
         Command::Store(StoreCommand::Doctor) => Ok(BridgeVmRequest::Doctor),
         Command::Doctor => Ok(BridgeVmRequest::Doctor),
     }
+}
+
+fn request_for_create(args: CreateArgs) -> Result<BridgeVmRequest> {
+    if create_args_are_plain_template_request(&args) {
+        return Ok(BridgeVmRequest::CreateVmFromTemplate {
+            name: args.name,
+            template_id: args.template.expect("plain template request has template"),
+        });
+    }
+
+    let manifest = manifest_for_create(args)?;
+    Ok(BridgeVmRequest::CreateVm { manifest })
+}
+
+fn create_args_are_plain_template_request(args: &CreateArgs) -> bool {
+    args.template.is_some()
+        && args.os.is_none()
+        && args.version.is_none()
+        && args.arch.is_none()
+        && args.mode == ModeChoice::Auto
+        && args.disk.is_none()
+        && args.disk_format.is_none()
+        && args.boot_mode.is_none()
+        && args.installer_image.is_none()
+        && args.kernel_path.is_none()
+        && args.initrd_path.is_none()
+        && args.kernel_command_line.is_none()
+        && args.macos_restore_image.is_none()
 }
 
 fn send_request(socket: &Path, request: BridgeVmRequest) -> Result<BridgeVmResponse> {
@@ -1261,6 +1847,8 @@ fn print_daemon_response(response: BridgeVmResponse) -> Result<()> {
             println!("BridgeVM store: {}", store_root.display());
             println!("VM bundles: {}", vms_dir.display());
             print_doctor_audit(&doctor_audit_for_paths(&store_root, &vms_dir));
+            print_engine_catalog(available_engine_descriptors());
+            print_parallels_class_progress(&parallels_class_progress());
             println!("Status: {}", status);
         }
         BridgeVmResponse::VmList { vms } => {
@@ -1384,7 +1972,8 @@ fn print_daemon_response(response: BridgeVmResponse) -> Result<()> {
         BridgeVmResponse::RunnerStatus {
             metadata,
             qmp_supervisor,
-        } => print_runner_status(metadata, qmp_supervisor.as_ref()),
+        } => print_runner_status(metadata, qmp_supervisor.as_ref(), None),
+        BridgeVmResponse::RuntimeControl { control } => print_runtime_control_command(&control)?,
         BridgeVmResponse::ReadinessReport { report } => print_readiness_report(&report),
         BridgeVmResponse::LifecyclePlan { plan } => print_lifecycle_plan(&plan),
         BridgeVmResponse::RuntimeResourcePolicy { policy } => {
@@ -1435,7 +2024,7 @@ fn print_daemon_response(response: BridgeVmResponse) -> Result<()> {
             println!("Pending commands: {}", command.pending_commands);
         }
         BridgeVmResponse::ModeRecommendation { recommendation } => {
-            print_mode_recommendation(&recommendation);
+            print_mode_recommendation(&recommendation, None);
         }
         BridgeVmResponse::Error { message } => bail!(message),
     }
@@ -1540,8 +2129,27 @@ fn manifest_for_create(args: CreateArgs) -> Result<VmManifest> {
         ModeChoice::Compatibility => VmMode::Compatibility,
     };
 
+    let disk_size = args
+        .disk
+        .clone()
+        .or_else(|| {
+            template
+                .as_ref()
+                .and_then(|template| template.primary_disk_size().map(str::to_string))
+        })
+        .unwrap_or_else(|| DEFAULT_PRIMARY_DISK_SIZE.to_string());
     let boot = boot_for_create(&args, mode, &rec, template.as_ref());
-    let mut manifest = VmManifest::new(args.name, mode, Guest { os, version, arch }, args.disk);
+    let mut manifest = VmManifest::new(args.name, mode, Guest { os, version, arch }, disk_size);
+    if let Some(template) = &template {
+        template.apply_storage_defaults(&mut manifest.storage.primary);
+        if let Some(disk) = &args.disk {
+            manifest.storage.primary.size = disk.clone();
+        }
+    }
+    if let Some(disk_format) = args.disk_format {
+        manifest.storage.primary.format = disk_format.manifest_format().to_string();
+        manifest.storage.primary.path = disk_format.default_primary_path().to_string();
+    }
     manifest.boot = Some(boot);
     Ok(manifest)
 }
@@ -2093,6 +2701,9 @@ fn guest_tools(store: &VmStore, args: GuestToolsCommand) -> Result<()> {
         | GuestToolsSubcommand::ListWindows(_)
         | GuestToolsSubcommand::FocusWindow(_)
         | GuestToolsSubcommand::CloseWindow(_)
+        | GuestToolsSubcommand::SetWindowBounds(_)
+        | GuestToolsSubcommand::WindowPointer(_)
+        | GuestToolsSubcommand::WindowKey(_)
         | GuestToolsSubcommand::TimeSync(_) => {
             bail!("guest-tools command dispatch requires --socket bridgevmd access")
         }
@@ -2132,6 +2743,50 @@ fn resources(store: &VmStore, args: ResourcesCommand) -> Result<()> {
     Ok(())
 }
 
+fn runtime_control(store: &VmStore, args: RuntimeControlCommand) -> Result<()> {
+    match args {
+        RuntimeControlCommand::Status(args) => {
+            run_runtime_control_command(store, &args.name, "status")
+        }
+        RuntimeControlCommand::Stop(args) => run_runtime_control_command(store, &args.name, "stop"),
+        RuntimeControlCommand::Policy(args) => {
+            run_runtime_control_command(store, &args.name, "policy")
+        }
+        RuntimeControlCommand::Pacing(args) => {
+            run_runtime_control_command(store, &args.name, "pacing")
+        }
+        RuntimeControlCommand::Reapply(args) => {
+            let policy = reapply_runtime_resources(store, &args.name, args.visibility.into())
+                .map_err(anyhow::Error::msg)
+                .with_context(|| {
+                    format!(
+                        "failed to reapply runtime control policy for '{}'",
+                        args.name
+                    )
+                })?;
+            print_runtime_resource_policy(&policy);
+            Ok(())
+        }
+    }
+}
+
+fn run_runtime_control_command(store: &VmStore, name: &str, command: &str) -> Result<()> {
+    let control = runtime_control_command(store, name, command).map_err(anyhow::Error::msg)?;
+    print_runtime_control_command(&control)
+}
+
+fn print_runtime_control_command(control: &RuntimeControlCommandRecord) -> Result<()> {
+    println!("Runtime control {} for {}", control.command, control.vm);
+    println!("Kind: {}", control.kind);
+    println!("Socket: {}", control.socket_path.display());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&control.response)
+            .context("failed to format runtime response")?
+    );
+    Ok(())
+}
+
 fn qemu_args(store: &VmStore, args: VmNameArgs) -> Result<()> {
     let (bundle, manifest, _) = store
         .get_vm_with_active_disk(&args.name)
@@ -2149,7 +2804,7 @@ fn prepare_run(store: &VmStore, args: VmNameArgs) -> Result<()> {
     let qmp_supervisor = store
         .qmp_supervisor_metadata(&args.name)
         .context("failed to read QMP supervisor metadata")?;
-    print_runner_status(Some(metadata), qmp_supervisor.as_ref());
+    print_runner_status(Some(metadata), qmp_supervisor.as_ref(), None);
     Ok(())
 }
 
@@ -2168,7 +2823,7 @@ fn run_backend_local(store: &VmStore, args: RunArgs) -> Result<()> {
     let qmp_supervisor = store
         .qmp_supervisor_metadata(&args.name)
         .context("failed to read QMP supervisor metadata")?;
-    print_runner_status(Some(metadata), qmp_supervisor.as_ref());
+    print_runner_status(Some(metadata), qmp_supervisor.as_ref(), None);
     Ok(())
 }
 
@@ -2180,7 +2835,7 @@ fn suspend_backend_local(store: &VmStore, args: VmNameArgs) -> Result<()> {
         .qmp_supervisor_metadata(&args.name)
         .context("failed to read QMP supervisor metadata")?;
     println!("Suspended {}", args.name);
-    print_runner_status(Some(metadata), qmp_supervisor.as_ref());
+    print_runner_status(Some(metadata), qmp_supervisor.as_ref(), None);
     Ok(())
 }
 
@@ -2192,24 +2847,28 @@ fn resume_backend_local(store: &VmStore, args: VmNameArgs) -> Result<()> {
         .qmp_supervisor_metadata(&args.name)
         .context("failed to read QMP supervisor metadata")?;
     println!("Resumed {}", args.name);
-    print_runner_status(Some(metadata), qmp_supervisor.as_ref());
+    print_runner_status(Some(metadata), qmp_supervisor.as_ref(), None);
     Ok(())
 }
 
-fn display_backend_local(store: &VmStore, args: VmNameArgs) -> Result<()> {
+fn display_backend_local(store: &VmStore, args: DisplayArgs) -> Result<()> {
     if !apple_vz_runner_configured() {
         anyhow::bail!(
             "embedded display requires BRIDGEVM_APPLE_VZ_RUNNER to point at a signed AppleVzRunner"
         );
     }
-    let metadata = display_fast_backend(store, &args.name)
+    let display_size = args.display_size()?;
+    let metadata = display_fast_backend_with_size(store, &args.name, display_size)
         .map_err(anyhow::Error::msg)
         .with_context(|| format!("failed to launch embedded display for VM '{}'", args.name))?;
     println!(
         "Launched embedded display window for {} (close the window to stop the VM)",
         args.name
     );
-    print_runner_status(Some(metadata), None);
+    let runtime_policy = store
+        .runtime_resource_policy_metadata(&args.name)
+        .context("failed to read runtime resource policy metadata")?;
+    print_runner_status(Some(metadata), None, runtime_policy.as_ref());
     Ok(())
 }
 
@@ -2218,13 +2877,15 @@ fn build_runner_metadata(
     name: &str,
     spawn: bool,
 ) -> Result<bridgevm_storage::RunnerMetadata> {
-    let (bundle, manifest, _) = store
+    let (bundle, mut manifest, _) = store
         .get_vm_with_active_disk(name)
         .context("failed to read VM")?;
 
     let (disk, active_disk) = store
         .prepare_active_disk(name)
         .context("failed to prepare active disk")?;
+    manifest.storage.primary.path = active_disk.path.display().to_string();
+    manifest.storage.primary.format = active_disk.format.clone();
     if manifest.mode == VmMode::Fast {
         // Gated REAL cold-start launch: when `BRIDGEVM_APPLE_VZ_RUNNER` is set
         // and the caller asked to spawn, boot a real Apple VZ VM. When unset,
@@ -2245,7 +2906,7 @@ fn build_runner_metadata(
         let metadata = bridgevm_storage::RunnerMetadata {
             engine: "lightvm".to_string(),
             pid: None,
-            command: plan.render_runner_words(),
+            command: plan.render_runner_words_for_launch_spec(&launch_spec_path),
             log_path: plan.launch_spec().logs.runner_log_path.clone().into(),
             started_at_unix: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -2257,6 +2918,7 @@ fn build_runner_metadata(
             disk: Some(disk),
             active_disk: Some(active_disk),
             launch_readiness: Some(readiness),
+            runtime_control: None,
         };
         store
             .write_runner_metadata(name, &metadata)
@@ -2312,6 +2974,7 @@ fn build_runner_metadata(
             disk: Some(disk),
             active_disk: Some(active_disk),
             launch_readiness: Some(readiness),
+            runtime_control: None,
         };
         store
             .write_runner_metadata(name, &metadata)
@@ -2337,6 +3000,7 @@ fn build_runner_metadata(
         disk: Some(disk),
         active_disk: Some(active_disk),
         launch_readiness: Some(readiness),
+        runtime_control: None,
     };
     store
         .write_runner_metadata(name, &metadata)
@@ -2454,13 +3118,17 @@ fn runner_status(store: &VmStore, args: VmNameArgs) -> Result<()> {
     let qmp_supervisor = store
         .qmp_supervisor_metadata(&args.name)
         .context("failed to read QMP supervisor metadata")?;
-    print_runner_status(metadata, qmp_supervisor.as_ref());
+    let runtime_policy = store
+        .runtime_resource_policy_metadata(&args.name)
+        .context("failed to read runtime resource policy metadata")?;
+    print_runner_status(metadata, qmp_supervisor.as_ref(), runtime_policy.as_ref());
     Ok(())
 }
 
 fn print_runner_status(
     metadata: Option<bridgevm_storage::RunnerMetadata>,
     qmp_supervisor: Option<&QmpSupervisorMetadata>,
+    runtime_policy: Option<&RuntimeResourcePolicyMetadata>,
 ) {
     match metadata {
         Some(metadata) => {
@@ -2496,12 +3164,43 @@ fn print_runner_status(
             if let Some(readiness) = metadata.launch_readiness {
                 print_launch_readiness(&readiness);
             }
+            if let Some(runtime_control) = &metadata.runtime_control {
+                print_runtime_control(runtime_control);
+            }
+            if let Some(policy) = runtime_policy {
+                print_runner_runtime_policy(policy);
+            }
             println!("Command: {}", metadata.command.join(" "));
         }
         None => println!("No runner metadata"),
     }
     if let Some(supervisor) = qmp_supervisor {
         print_qmp_supervisor(supervisor);
+    }
+}
+
+fn print_runtime_control(control: &bridgevm_storage::RuntimeControlMetadata) {
+    println!("Runtime control kind: {}", control.kind);
+    println!("Runtime control socket: {}", control.socket_path.display());
+    println!("Runtime control commands: {}", control.commands.join(", "));
+}
+
+fn print_runner_runtime_policy(policy: &RuntimeResourcePolicyMetadata) {
+    println!("Runtime policy visibility: {}", policy.visibility);
+    println!("Runtime policy display FPS cap: {}", policy.display_fps_cap);
+    println!("Runtime policy live applied: {}", policy.live_applied);
+    println!(
+        "Runtime policy control acknowledged: {}",
+        policy.runtime_control_acknowledged
+    );
+    if !policy.live_apply_blockers.is_empty() {
+        let blockers = policy
+            .live_apply_blockers
+            .iter()
+            .map(|blocker| blocker.code.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("Runtime policy blockers: {blockers}");
     }
 }
 
@@ -2517,6 +3216,10 @@ fn print_runtime_resource_policy(policy: &RuntimeResourcePolicyMetadata) {
     println!("Display FPS cap: {}", policy.display_fps_cap);
     println!("Rationale: {}", policy.rationale);
     println!("Live applied: {}", policy.live_applied);
+    println!(
+        "Runtime control acknowledged: {}",
+        policy.runtime_control_acknowledged
+    );
     if policy.live_apply_blockers.is_empty() {
         println!("Live apply blockers: none");
     } else {
@@ -3459,23 +4162,391 @@ fn print_application_consistent_snapshot_execution(
 }
 
 fn recommend(args: GuestArgs) -> Result<()> {
-    let rec = recommend_mode(&GuestChoice {
+    let choice = GuestChoice {
         os: args.os,
         version: args.version,
         arch: args.arch,
-    });
-    print_mode_recommendation(&rec);
+    };
+    let rec = recommend_mode(&choice);
+    print_mode_recommendation(&rec, Some(&choice));
     Ok(())
 }
 
-fn print_mode_recommendation(rec: &ModeRecommendation) {
+fn hvf(command: HvfCommand) -> Result<()> {
+    match command {
+        HvfCommand::WindowsPlan(args) => {
+            let plan = plan_windows_11_arm_no_qemu(args.installer);
+            print!("{}", plan.render_text());
+            Ok(())
+        }
+        HvfCommand::MachinePlan(args) => {
+            if args.memory_gib == 0 {
+                bail!("--memory-gib must be greater than zero");
+            }
+            if args.vcpus == 0 {
+                bail!("--vcpus must be greater than zero");
+            }
+            let plan = plan_windows_11_arm_hvf_machine(HvfMachinePlanOptions {
+                installer: args.installer,
+                memory_gib: args.memory_gib,
+                vcpu_count: args.vcpus,
+            });
+            print!("{}", plan.render_text());
+            Ok(())
+        }
+        HvfCommand::WindowsBootDiskLayoutProbe(args) => {
+            if args.size_gib == 0 {
+                bail!("--size-gib must be greater than zero");
+            }
+            let probe = probe_windows_11_arm_boot_disk_layout(WindowsArmBootDiskLayoutOptions {
+                disk_path: args.disk,
+                size_gib: args.size_gib,
+                create: args.create,
+            });
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::WindowsFirmwareHandoffProbe(args) => {
+            let probe =
+                probe_windows_11_arm_uefi_firmware_handoff(WindowsArmUefiFirmwareHandoffOptions {
+                    firmware_path: args.firmware,
+                    vars_template_path: args.vars_template,
+                    vars_path: args.vars,
+                    create_vars: args.create_vars,
+                });
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::WindowsPflashMapProbe(args) => {
+            let probe = probe_windows_11_arm_uefi_pflash_map(WindowsArmUefiPflashMapOptions {
+                firmware_path: args.firmware,
+                vars_template_path: args.vars_template,
+                vars_path: args.vars,
+                create_vars: args.create_vars,
+            });
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::WindowsPflashHvfMapProbe(args) => {
+            let allow_map = args.allow_map
+                || env::var("BRIDGEVM_HVF_ALLOW_UEFI_PFLASH_MAP").as_deref() == Ok("1");
+            let probe = probe_windows_11_arm_uefi_pflash_hvf_map(
+                WindowsArmUefiPflashMapOptions {
+                    firmware_path: args.firmware,
+                    vars_template_path: args.vars_template,
+                    vars_path: args.vars,
+                    create_vars: args.create_vars,
+                },
+                allow_map,
+            );
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::WindowsResetVectorEntryProbe(args) => {
+            let allow_entry = args.allow_entry
+                || env::var("BRIDGEVM_HVF_ALLOW_UEFI_RESET_VECTOR_ENTRY").as_deref() == Ok("1");
+            let probe = probe_windows_11_arm_uefi_reset_vector_entry(
+                WindowsArmUefiPflashMapOptions {
+                    firmware_path: args.firmware,
+                    vars_template_path: args.vars_template,
+                    vars_path: args.vars,
+                    create_vars: args.create_vars,
+                },
+                allow_entry,
+            );
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::WindowsFirmwareRunLoopProbe(args) => {
+            if args.max_exits == 0 {
+                bail!("--max-exits must be greater than zero");
+            }
+            if args.guest_ram_mib == 0 {
+                bail!("--guest-ram-mib must be greater than zero");
+            }
+            if args.watchdog_ms == 0 {
+                bail!("--watchdog-ms must be greater than zero");
+            }
+            let allow_loop = args.allow_loop
+                || env::var("BRIDGEVM_HVF_ALLOW_UEFI_FIRMWARE_RUN_LOOP").as_deref() == Ok("1");
+            let probe =
+                probe_windows_11_arm_uefi_firmware_run_loop(WindowsArmUefiFirmwareRunLoopOptions {
+                    pflash: WindowsArmUefiPflashMapOptions {
+                        firmware_path: args.firmware,
+                        vars_template_path: args.vars_template,
+                        vars_path: args.vars,
+                        create_vars: args.create_vars,
+                    },
+                    execution: WindowsArmUefiFirmwareRunLoopExecutionOptions {
+                        allow_loop,
+                        requested_exits: args.max_exits,
+                        guest_ram_mib: args.guest_ram_mib,
+                        watchdog_timeout_ms: args.watchdog_ms,
+                        map_low_pflash_alias: args.map_low_pflash_alias,
+                        seed_diagnostic_vector: args.seed_diagnostic_vector,
+                        seed_guest_ram_diagnostic_vector: args.seed_guest_ram_diagnostic_vector,
+                        seed_executable_diagnostic_vector: args.seed_executable_diagnostic_vector,
+                        try_recommended_vector_base_vbar: args.try_recommended_vector_base_vbar,
+                        continue_after_recommended_vector_base_vbar: args
+                            .continue_after_recommended_vector_base_vbar,
+                        repair_low_vector_diagnostic_page: args.repair_low_vector_diagnostic_page,
+                        remap_low_vector_to_recommended_vector: args
+                            .remap_low_vector_to_recommended_vector,
+                        continue_after_low_vector_repair: args.continue_after_low_vector_repair,
+                        restore_low_vector_slot_before_eret: args
+                            .restore_low_vector_slot_before_eret,
+                        wire_interrupt_timer: args.wire_interrupt_timer,
+                        stop_at_first_post_repair_device_boundary: false,
+                        installer_iso_path: args.iso,
+                        writable_target_disk_path: args.writable_disk,
+                    },
+                });
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::WindowsFirmwareDeviceDiscoveryProbe(args) => {
+            if args.max_exits == 0 {
+                bail!("--max-exits must be greater than zero");
+            }
+            if args.guest_ram_mib == 0 {
+                bail!("--guest-ram-mib must be greater than zero");
+            }
+            if args.watchdog_ms == 0 {
+                bail!("--watchdog-ms must be greater than zero");
+            }
+            let allow_loop = args.allow_loop
+                || env::var("BRIDGEVM_HVF_ALLOW_UEFI_FIRMWARE_RUN_LOOP").as_deref() == Ok("1");
+            let probe = probe_windows_11_arm_uefi_firmware_device_discovery(
+                WindowsArmUefiFirmwareRunLoopOptions {
+                    pflash: WindowsArmUefiPflashMapOptions {
+                        firmware_path: args.firmware,
+                        vars_template_path: args.vars_template,
+                        vars_path: args.vars,
+                        create_vars: args.create_vars,
+                    },
+                    execution: WindowsArmUefiFirmwareRunLoopExecutionOptions {
+                        allow_loop,
+                        requested_exits: args.max_exits,
+                        guest_ram_mib: args.guest_ram_mib,
+                        watchdog_timeout_ms: args.watchdog_ms,
+                        map_low_pflash_alias: args.map_low_pflash_alias,
+                        seed_diagnostic_vector: args.seed_diagnostic_vector,
+                        seed_guest_ram_diagnostic_vector: args.seed_guest_ram_diagnostic_vector,
+                        seed_executable_diagnostic_vector: args.seed_executable_diagnostic_vector,
+                        try_recommended_vector_base_vbar: args.try_recommended_vector_base_vbar,
+                        continue_after_recommended_vector_base_vbar: args
+                            .continue_after_recommended_vector_base_vbar,
+                        repair_low_vector_diagnostic_page: args.repair_low_vector_diagnostic_page,
+                        remap_low_vector_to_recommended_vector: args
+                            .remap_low_vector_to_recommended_vector,
+                        continue_after_low_vector_repair: args.continue_after_low_vector_repair,
+                        restore_low_vector_slot_before_eret: args
+                            .restore_low_vector_slot_before_eret,
+                        wire_interrupt_timer: args.wire_interrupt_timer,
+                        stop_at_first_post_repair_device_boundary: false,
+                        installer_iso_path: args.iso,
+                        writable_target_disk_path: args.writable_disk,
+                    },
+                },
+            );
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::WindowsPlatformDescriptionProbe(args) => {
+            if args.memory_gib == 0 {
+                bail!("--memory-gib must be greater than zero");
+            }
+            if args.vcpus == 0 {
+                bail!("--vcpus must be greater than zero");
+            }
+            let probe =
+                probe_windows_11_arm_platform_description(WindowsArmPlatformDescriptionOptions {
+                    guest_ram_bytes: u64::from(args.memory_gib) * 1024 * 1024 * 1024,
+                    vcpu_count: args.vcpus,
+                });
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::HostCapabilities => {
+            let capabilities = query_hvf_host_capabilities();
+            print!("{}", capabilities.render_text());
+            Ok(())
+        }
+        HvfCommand::VmProbe(args) => {
+            let allow_create =
+                args.allow_create || env::var("BRIDGEVM_HVF_ALLOW_VM_CREATE").as_deref() == Ok("1");
+            let probe = probe_hvf_vm_create(allow_create);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::VcpuProbe(args) => {
+            let allow_create =
+                args.allow_create || env::var("BRIDGEVM_HVF_ALLOW_VM_CREATE").as_deref() == Ok("1");
+            let probe = probe_hvf_vcpu_create(allow_create);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::VcpuRunProbe(args) => {
+            let allow_run =
+                args.allow_run || env::var("BRIDGEVM_HVF_ALLOW_VCPU_RUN").as_deref() == Ok("1");
+            let probe = probe_hvf_vcpu_run(allow_run);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::InterruptTimerProbe(args) => {
+            let allow_probe = args.allow_interrupt_timer
+                || env::var("BRIDGEVM_HVF_ALLOW_INTERRUPT_TIMER").as_deref() == Ok("1");
+            let probe = probe_hvf_interrupt_timer(allow_probe);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::VtimerExitProbe(args) => {
+            let allow_probe =
+                args.allow_vtimer_exit || env_truthy("BRIDGEVM_HVF_ALLOW_VTIMER_EXIT");
+            let probe = probe_hvf_vtimer_exit(allow_probe);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::MemoryMapProbe(args) => {
+            let allow_map =
+                args.allow_map || env::var("BRIDGEVM_HVF_ALLOW_MEMORY_MAP").as_deref() == Ok("1");
+            let probe = probe_hvf_memory_map(allow_map);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::GuestEntryProbe(args) => {
+            let allow_entry = args.allow_entry
+                || env::var("BRIDGEVM_HVF_ALLOW_GUEST_ENTRY").as_deref() == Ok("1");
+            let probe = probe_hvf_guest_entry(allow_entry);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::GuestExitLoopProbe(args) => {
+            let allow_loop =
+                args.allow_loop || env::var("BRIDGEVM_HVF_ALLOW_EXIT_LOOP").as_deref() == Ok("1");
+            let probe = probe_hvf_guest_exit_loop(allow_loop);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::MmioReadProbe(args) => {
+            let allow_mmio =
+                args.allow_mmio || env::var("BRIDGEVM_HVF_ALLOW_MMIO_READ").as_deref() == Ok("1");
+            let probe = probe_hvf_mmio_read_exit(allow_mmio);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::MmioReadEmulationProbe(args) => {
+            let allow_emulate = args.allow_emulate
+                || env::var("BRIDGEVM_HVF_ALLOW_MMIO_EMULATION").as_deref() == Ok("1");
+            let probe = probe_hvf_mmio_read_emulation(allow_emulate);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::MmioWriteEmulationProbe(args) => {
+            let allow_emulate = args.allow_emulate
+                || env::var("BRIDGEVM_HVF_ALLOW_MMIO_WRITE_EMULATION").as_deref() == Ok("1");
+            let probe = probe_hvf_mmio_write_emulation(allow_emulate);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::MmioSerialDeviceProbe(args) => {
+            let allow_device = args.allow_device
+                || env::var("BRIDGEVM_HVF_ALLOW_MMIO_SERIAL_DEVICE").as_deref() == Ok("1");
+            let probe = probe_hvf_mmio_serial_device(allow_device);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::MmioRtcDeviceProbe(args) => {
+            let allow_device = args.allow_device
+                || env::var("BRIDGEVM_HVF_ALLOW_MMIO_RTC_DEVICE").as_deref() == Ok("1");
+            let probe = probe_hvf_mmio_rtc_device(allow_device);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::MmioBlockDeviceProbe(args) => {
+            let allow_device = args.allow_device
+                || env::var("BRIDGEVM_HVF_ALLOW_MMIO_BLOCK_DEVICE").as_deref() == Ok("1");
+            let probe = probe_hvf_mmio_block_device(allow_device);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::MmioBlockQueueProbe(args) => {
+            let backing_selectors = usize::from(args.disk.is_some())
+                + usize::from(args.iso.is_some())
+                + usize::from(args.writable_disk.is_some());
+            if backing_selectors > 1 {
+                bail!("--disk, --iso, and --writable-disk are mutually exclusive for hvf mmio-block-queue-probe");
+            }
+            let allow_device = args.allow_device
+                || env::var("BRIDGEVM_HVF_ALLOW_MMIO_BLOCK_QUEUE").as_deref() == Ok("1");
+            let probe =
+                probe_hvf_mmio_block_queue(allow_device, args.disk, args.iso, args.writable_disk);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::VirtioBlockRequestModelProbe => {
+            let probe = probe_virtio_block_request_model();
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::VirtioBlockFileBackingProbe(args) => {
+            let probe = probe_virtio_block_file_backing(args.disk);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::VirtioBlockWritableFileBackingProbe(args) => {
+            let probe = probe_virtio_block_writable_file_backing(args.disk);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::VirtioBlockIsoBackingProbe(args) => {
+            let probe = probe_virtio_block_iso_backing(args.iso);
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+    }
+}
+
+fn env_truthy(name: &str) -> bool {
+    match env::var(name) {
+        Ok(value) => matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        Err(_) => false,
+    }
+}
+
+fn print_mode_recommendation(rec: &ModeRecommendation, choice: Option<&GuestChoice>) {
     println!("Recommended mode: {}", rec.mode);
+    print_recommendation_engine_context(rec, choice);
     println!("Expected performance: {}", rec.performance);
     println!("Battery impact: {}", rec.battery_impact);
     println!("Integration: {}", rec.integration);
     println!("{}", rec.message);
     if let Some(template) = &rec.boot_template {
         print_boot_template(template);
+    }
+}
+
+fn print_recommendation_engine_context(rec: &ModeRecommendation, choice: Option<&GuestChoice>) {
+    let current = current_engine_descriptor_for_mode(rec.mode);
+    println!(
+        "Current execution engine: {} ({})",
+        current.label,
+        current.lane.id()
+    );
+    println!("Current engine substrate: {}", current.substrate);
+    println!("Current engine QEMU usage: {}", current.qemu_usage);
+    if let Some(target) = choice.and_then(target_engine_descriptor_for_guest) {
+        println!(
+            "Target product engine: {} ({})",
+            target.label,
+            target.lane.id()
+        );
+        println!("Target engine substrate: {}", target.substrate);
+        println!("Target engine QEMU usage: {}", target.qemu_usage);
+        println!("Target engine state: {}", target.product_state_detail);
     }
 }
 
@@ -3500,6 +4571,11 @@ fn print_boot_template(template: &BootTemplate) {
     if let Some(path) = &template.macos_restore_image {
         println!("macOS restore image: {path}");
     }
+    if let Some(storage) = &template.storage {
+        println!("Primary disk path: {}", storage.primary.path);
+        println!("Primary disk format: {}", storage.primary.format);
+        println!("Primary disk size: {}", storage.primary.size);
+    }
     println!("Boot note: {}", template.note);
 }
 
@@ -3521,6 +4597,8 @@ fn doctor(store: &VmStore) -> Result<()> {
     println!("BridgeVM store: {}", store.root().display());
     println!("VM bundles: {}", store.vms_dir().display());
     print_doctor_audit(&doctor_audit_for_current_host(store));
+    print_engine_catalog(available_engine_descriptors());
+    print_parallels_class_progress(&parallels_class_progress());
     println!("Status: OK");
     Ok(())
 }
@@ -3547,6 +4625,31 @@ struct DoctorCheck {
     status: DoctorCheckStatus,
     name: String,
     detail: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProductTrackStatus {
+    Proven,
+    Partial,
+    Planned,
+}
+
+impl ProductTrackStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            ProductTrackStatus::Proven => "PROVEN",
+            ProductTrackStatus::Partial => "PARTIAL",
+            ProductTrackStatus::Planned => "PLANNED",
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct ProductTrackProgress {
+    status: ProductTrackStatus,
+    name: &'static str,
+    implemented: &'static str,
+    next: &'static str,
 }
 
 #[derive(Debug)]
@@ -3778,6 +4881,71 @@ fn print_doctor_audit(checks: &[DoctorCheck]) {
     }
 }
 
+fn print_engine_catalog(descriptors: &[VmEngineDescriptor]) {
+    println!("Engine lanes:");
+    for descriptor in descriptors {
+        println!(
+            "[{}] {} ({}): {}",
+            descriptor.product_state.as_str(),
+            descriptor.label,
+            descriptor.lane.id(),
+            descriptor.product_state_detail
+        );
+        println!("    Substrate: {}", descriptor.substrate);
+        println!("    Guest scope: {}", descriptor.guest_scope);
+        println!(
+            "    Windows 11 Arm role: {}",
+            descriptor.windows_11_arm_role
+        );
+        println!("    QEMU: {}", descriptor.qemu_usage);
+    }
+}
+
+fn parallels_class_progress() -> Vec<ProductTrackProgress> {
+    vec![
+        ProductTrackProgress {
+            status: ProductTrackStatus::Partial,
+            name: "macOS-native integration / Coherence",
+            implemented:
+                "clipboard/display resize foundations plus preserved Linux .desktop/gio/gtk-launch/wmctrl live GUI proof and crop/proxy plumbing",
+            next: "drive real guest-window crops from real framebuffer/proxy sessions, then move toward compositor-grade host-window integration",
+        },
+        ProductTrackProgress {
+            status: ProductTrackStatus::Proven,
+            name: "Apple Silicon Fast Mode",
+            implemented:
+                "Apple Virtualization.framework path with live Linux Arm64 boot/suspend/resume and VZVirtualMachineView display",
+            next: "broaden boot shapes and keep app/daemon/helper IPC tight",
+        },
+        ProductTrackProgress {
+            status: ProductTrackStatus::Partial,
+            name: "intelligent resources / battery",
+            implemented:
+                "power-aware launch policy, display pacing consumption, and runtime policy IPC",
+            next: "live Apple VZ CPU/RAM control must apply the policy to a running VM",
+        },
+        ProductTrackProgress {
+            status: ProductTrackStatus::Planned,
+            name: "graphics acceleration / Metal",
+            implemented: "native VZ GUI pixels are proven in an AppKit display window",
+            next: "Metal compositor/frame pacing first; Direct3D-to-Metal or WDDM remains long-term R&D",
+        },
+    ]
+}
+
+fn print_parallels_class_progress(progress: &[ProductTrackProgress]) {
+    println!("Parallels-class progress:");
+    for track in progress {
+        println!(
+            "[{}] {}: {}",
+            track.status.as_str(),
+            track.name,
+            track.implemented
+        );
+        println!("    Next: {}", track.next);
+    }
+}
+
 impl From<SnapshotKindChoice> for SnapshotKind {
     fn from(value: SnapshotKindChoice) -> Self {
         match value {
@@ -3802,6 +4970,19 @@ mod tests {
                 .as_nanos()
         ));
         VmStore::new(root)
+    }
+
+    fn unique_socket_path(prefix: &str) -> PathBuf {
+        let mut path = PathBuf::from("/tmp");
+        path.push(format!(
+            "{prefix}-{}-{}.sock",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        path
     }
 
     fn write_executable(dir: &Path, name: &str) -> PathBuf {
@@ -3837,6 +5018,1154 @@ mod tests {
             },
             "64GiB",
         )
+    }
+
+    fn create_args_for_windows_11_arm(name: &str) -> CreateArgs {
+        CreateArgs {
+            name: name.to_string(),
+            template: None,
+            os: Some("windows".to_string()),
+            version: Some("11".to_string()),
+            arch: Some("arm64".to_string()),
+            mode: ModeChoice::Auto,
+            disk: Some("128GiB".to_string()),
+            disk_format: Some(DiskFormatChoice::Qcow2),
+            boot_mode: None,
+            installer_image: None,
+            kernel_path: None,
+            initrd_path: None,
+            kernel_command_line: None,
+            macos_restore_image: None,
+        }
+    }
+
+    #[test]
+    fn create_auto_uses_compatibility_for_windows_11_arm() {
+        let manifest =
+            manifest_for_create(create_args_for_windows_11_arm("win11")).expect("manifest");
+
+        assert_eq!(manifest.mode, VmMode::Compatibility);
+        assert_eq!(manifest.guest.os, "windows");
+        assert_eq!(manifest.guest.version.as_deref(), Some("11"));
+        assert_eq!(manifest.guest.arch, "arm64");
+    }
+
+    #[test]
+    fn create_rejects_explicit_fast_mode_for_windows_11_arm() {
+        let mut args = create_args_for_windows_11_arm("win11");
+        args.mode = ModeChoice::Fast;
+
+        let error = manifest_for_create(args).expect_err("Windows should not be Fast Mode");
+        assert!(error
+            .to_string()
+            .contains("Apple VZ Fast Mode is Linux/macOS Arm only"));
+    }
+
+    #[test]
+    fn create_accepts_raw_disk_format_for_fast_linux_kernel_live_path() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "create",
+            "vz-linux",
+            "--os",
+            "ubuntu",
+            "--arch",
+            "arm64",
+            "--mode",
+            "fast",
+            "--boot-mode",
+            "linux-kernel",
+            "--kernel-path",
+            "boot/vmlinuz",
+            "--initrd-path",
+            "boot/initrd",
+            "--kernel-command-line",
+            "console=hvc0 root=/dev/vda",
+            "--disk",
+            "64MiB",
+            "--disk-format",
+            "raw",
+        ])
+        .unwrap();
+        let Command::Create(args) = cli.command else {
+            panic!("expected create command");
+        };
+
+        let manifest = manifest_for_create(args).expect("manifest");
+        assert_eq!(manifest.mode, VmMode::Fast);
+        assert_eq!(manifest.storage.primary.path, "disks/root.raw");
+        assert_eq!(manifest.storage.primary.format, "raw");
+        assert_eq!(manifest.storage.primary.size, "64MiB");
+        let boot = manifest.boot.expect("boot");
+        assert_eq!(boot.mode, BootMode::LinuxKernel);
+        assert_eq!(boot.kernel_path.as_deref(), Some("boot/vmlinuz"));
+        assert_eq!(boot.initrd_path.as_deref(), Some("boot/initrd"));
+        assert_eq!(
+            boot.kernel_command_line.as_deref(),
+            Some("console=hvc0 root=/dev/vda")
+        );
+    }
+
+    #[test]
+    fn create_keeps_qcow2_defaults_without_template_storage() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "create",
+            "plain-linux",
+            "--os",
+            "ubuntu",
+            "--arch",
+            "arm64",
+        ])
+        .unwrap();
+        let Command::Create(args) = cli.command else {
+            panic!("expected create command");
+        };
+
+        let manifest = manifest_for_create(args).expect("manifest");
+        assert_eq!(manifest.mode, VmMode::Fast);
+        assert_eq!(manifest.storage.primary.path, "disks/root.qcow2");
+        assert_eq!(manifest.storage.primary.format, "qcow2");
+        assert_eq!(manifest.storage.primary.size, DEFAULT_PRIMARY_DISK_SIZE);
+    }
+
+    #[test]
+    fn create_uses_debian_apple_vz_linux_kernel_raw_template_storage() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "create",
+            "try-vz-linux",
+            "--template",
+            "debian-arm64-apple-vz-linux-kernel-raw",
+        ])
+        .unwrap();
+        let Command::Create(args) = cli.command else {
+            panic!("expected create command");
+        };
+
+        let manifest = manifest_for_create(args).expect("manifest");
+        assert_eq!(manifest.mode, VmMode::Fast);
+        assert_eq!(manifest.guest.os, "debian");
+        assert_eq!(manifest.guest.arch, "arm64");
+        assert_eq!(manifest.storage.primary.path, "disks/root.raw");
+        assert_eq!(manifest.storage.primary.format, "raw");
+        assert_eq!(manifest.storage.primary.size, "64MiB");
+        let boot = manifest.boot.expect("boot");
+        assert_eq!(boot.mode, BootMode::LinuxKernel);
+        assert_eq!(boot.kernel_path.as_deref(), Some("boot/vmlinuz"));
+        assert_eq!(boot.initrd_path.as_deref(), Some("boot/initrd"));
+        assert_eq!(
+            boot.kernel_command_line.as_deref(),
+            Some("console=hvc0 priority=low")
+        );
+    }
+
+    #[test]
+    fn create_uses_ubuntu_apple_vz_linux_kernel_raw_template_storage() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "create",
+            "ubuntu-desktop-vz",
+            "--template",
+            "ubuntu-arm64-apple-vz-linux-kernel-raw",
+        ])
+        .unwrap();
+        let Command::Create(args) = cli.command else {
+            panic!("expected create command");
+        };
+
+        let manifest = manifest_for_create(args).expect("manifest");
+        assert_eq!(manifest.mode, VmMode::Fast);
+        assert_eq!(manifest.guest.os, "ubuntu");
+        assert_eq!(manifest.guest.arch, "arm64");
+        assert_eq!(manifest.storage.primary.path, "disks/root.raw");
+        assert_eq!(manifest.storage.primary.format, "raw");
+        assert_eq!(manifest.storage.primary.size, "32GiB");
+        let boot = manifest.boot.expect("boot");
+        assert_eq!(boot.mode, BootMode::LinuxKernel);
+        assert_eq!(boot.kernel_path.as_deref(), Some("boot/vmlinuz"));
+        assert_eq!(boot.initrd_path.as_deref(), Some("boot/initrd"));
+        assert_eq!(
+            boot.kernel_command_line.as_deref(),
+            Some("console=hvc0 root=/dev/vda2 rw systemd.unit=graphical.target")
+        );
+    }
+
+    #[test]
+    fn socket_request_for_plain_template_create_uses_daemon_template_api() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "create",
+            "try-vz-linux",
+            "--template",
+            "debian-arm64-apple-vz-linux-kernel-raw",
+        ])
+        .unwrap();
+        let Command::Create(args) = cli.command else {
+            panic!("expected create command");
+        };
+
+        let request = request_for(Command::Create(args)).expect("request");
+        let BridgeVmRequest::CreateVmFromTemplate { name, template_id } = request else {
+            panic!("expected create-from-template request");
+        };
+        assert_eq!(name, "try-vz-linux");
+        assert_eq!(template_id, "debian-arm64-apple-vz-linux-kernel-raw");
+    }
+
+    #[test]
+    fn hvf_windows_plan_cli_accepts_installer_path() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "windows-plan",
+            "--installer",
+            "ISO/Win11_25H2_English_Arm64_v2.iso",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::WindowsPlan(args)) = cli.command else {
+            panic!("expected hvf windows-plan command");
+        };
+
+        assert_eq!(
+            args.installer.as_deref(),
+            Some(Path::new("ISO/Win11_25H2_English_Arm64_v2.iso"))
+        );
+    }
+
+    #[test]
+    fn windows_hvf_plan_render_is_blocked_and_qemu_free() {
+        let plan =
+            plan_windows_11_arm_no_qemu(Some(PathBuf::from("ISO/Win11_25H2_English_Arm64_v2.iso")));
+        let output = plan.render_text();
+
+        assert!(output.contains("Windows 11 Arm no-QEMU HVF plan"));
+        assert!(output.contains("Engine: BridgeVM HVF"));
+        assert!(output.contains("Substrate: Apple Hypervisor.framework"));
+        assert!(output.contains("Installer: ISO/Win11_25H2_English_Arm64_v2.iso"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Overall: blocked"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn hvf_host_capabilities_cli_parses() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "host-capabilities"]).unwrap();
+
+        let Command::Hvf(HvfCommand::HostCapabilities) = cli.command else {
+            panic!("expected hvf host-capabilities command");
+        };
+    }
+
+    #[test]
+    fn hvf_vm_probe_cli_defaults_to_no_create() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "vm-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::VmProbe(args)) = cli.command else {
+            panic!("expected hvf vm-probe command");
+        };
+
+        assert!(!args.allow_create);
+    }
+
+    #[test]
+    fn hvf_vm_probe_cli_accepts_explicit_create_opt_in() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "vm-probe", "--allow-create"]).unwrap();
+
+        let Command::Hvf(HvfCommand::VmProbe(args)) = cli.command else {
+            panic!("expected hvf vm-probe command");
+        };
+
+        assert!(args.allow_create);
+    }
+
+    #[test]
+    fn hvf_vcpu_probe_cli_accepts_explicit_create_opt_in() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "vcpu-probe", "--allow-create"]).unwrap();
+
+        let Command::Hvf(HvfCommand::VcpuProbe(args)) = cli.command else {
+            panic!("expected hvf vcpu-probe command");
+        };
+
+        assert!(args.allow_create);
+    }
+
+    #[test]
+    fn hvf_vcpu_run_probe_cli_defaults_to_no_run() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "vcpu-run-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::VcpuRunProbe(args)) = cli.command else {
+            panic!("expected hvf vcpu-run-probe command");
+        };
+
+        assert!(!args.allow_run);
+    }
+
+    #[test]
+    fn hvf_vcpu_run_probe_cli_accepts_explicit_run_opt_in() {
+        let cli =
+            Cli::try_parse_from(["bridgevm", "hvf", "vcpu-run-probe", "--allow-run"]).unwrap();
+
+        let Command::Hvf(HvfCommand::VcpuRunProbe(args)) = cli.command else {
+            panic!("expected hvf vcpu-run-probe command");
+        };
+
+        assert!(args.allow_run);
+    }
+
+    #[test]
+    fn hvf_interrupt_timer_probe_cli_defaults_to_no_probe() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "interrupt-timer-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::InterruptTimerProbe(args)) = cli.command else {
+            panic!("expected hvf interrupt-timer-probe command");
+        };
+
+        assert!(!args.allow_interrupt_timer);
+    }
+
+    #[test]
+    fn hvf_interrupt_timer_probe_cli_accepts_explicit_opt_in() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "interrupt-timer-probe",
+            "--allow-interrupt-timer",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::InterruptTimerProbe(args)) = cli.command else {
+            panic!("expected hvf interrupt-timer-probe command");
+        };
+
+        assert!(args.allow_interrupt_timer);
+    }
+
+    #[test]
+    fn hvf_vtimer_exit_probe_cli_defaults_to_no_probe() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "vtimer-exit-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::VtimerExitProbe(args)) = cli.command else {
+            panic!("expected hvf vtimer-exit-probe command");
+        };
+
+        assert!(!args.allow_vtimer_exit);
+    }
+
+    #[test]
+    fn hvf_vtimer_exit_probe_cli_accepts_explicit_opt_in() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "vtimer-exit-probe",
+            "--allow-vtimer-exit",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::VtimerExitProbe(args)) = cli.command else {
+            panic!("expected hvf vtimer-exit-probe command");
+        };
+
+        assert!(args.allow_vtimer_exit);
+    }
+
+    #[test]
+    fn hvf_memory_map_probe_cli_defaults_to_no_map() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "memory-map-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::MemoryMapProbe(args)) = cli.command else {
+            panic!("expected hvf memory-map-probe command");
+        };
+
+        assert!(!args.allow_map);
+    }
+
+    #[test]
+    fn hvf_memory_map_probe_cli_accepts_explicit_map_opt_in() {
+        let cli =
+            Cli::try_parse_from(["bridgevm", "hvf", "memory-map-probe", "--allow-map"]).unwrap();
+
+        let Command::Hvf(HvfCommand::MemoryMapProbe(args)) = cli.command else {
+            panic!("expected hvf memory-map-probe command");
+        };
+
+        assert!(args.allow_map);
+    }
+
+    #[test]
+    fn hvf_guest_entry_probe_cli_defaults_to_no_entry() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "guest-entry-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::GuestEntryProbe(args)) = cli.command else {
+            panic!("expected hvf guest-entry-probe command");
+        };
+
+        assert!(!args.allow_entry);
+    }
+
+    #[test]
+    fn hvf_guest_entry_probe_cli_accepts_explicit_entry_opt_in() {
+        let cli =
+            Cli::try_parse_from(["bridgevm", "hvf", "guest-entry-probe", "--allow-entry"]).unwrap();
+
+        let Command::Hvf(HvfCommand::GuestEntryProbe(args)) = cli.command else {
+            panic!("expected hvf guest-entry-probe command");
+        };
+
+        assert!(args.allow_entry);
+    }
+
+    #[test]
+    fn hvf_guest_exit_loop_probe_cli_defaults_to_no_loop() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "guest-exit-loop-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::GuestExitLoopProbe(args)) = cli.command else {
+            panic!("expected hvf guest-exit-loop-probe command");
+        };
+
+        assert!(!args.allow_loop);
+    }
+
+    #[test]
+    fn hvf_guest_exit_loop_probe_cli_accepts_explicit_loop_opt_in() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "guest-exit-loop-probe", "--allow-loop"])
+            .unwrap();
+
+        let Command::Hvf(HvfCommand::GuestExitLoopProbe(args)) = cli.command else {
+            panic!("expected hvf guest-exit-loop-probe command");
+        };
+
+        assert!(args.allow_loop);
+    }
+
+    #[test]
+    fn hvf_mmio_read_probe_cli_defaults_to_no_mmio() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "mmio-read-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::MmioReadProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-read-probe command");
+        };
+
+        assert!(!args.allow_mmio);
+    }
+
+    #[test]
+    fn hvf_mmio_read_probe_cli_accepts_explicit_mmio_opt_in() {
+        let cli =
+            Cli::try_parse_from(["bridgevm", "hvf", "mmio-read-probe", "--allow-mmio"]).unwrap();
+
+        let Command::Hvf(HvfCommand::MmioReadProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-read-probe command");
+        };
+
+        assert!(args.allow_mmio);
+    }
+
+    #[test]
+    fn hvf_mmio_read_emulation_probe_cli_defaults_to_no_emulation() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "mmio-read-emulation-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::MmioReadEmulationProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-read-emulation-probe command");
+        };
+
+        assert!(!args.allow_emulate);
+    }
+
+    #[test]
+    fn hvf_mmio_read_emulation_probe_cli_accepts_explicit_emulation_opt_in() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "mmio-read-emulation-probe",
+            "--allow-emulate",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::MmioReadEmulationProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-read-emulation-probe command");
+        };
+
+        assert!(args.allow_emulate);
+    }
+
+    #[test]
+    fn hvf_mmio_write_emulation_probe_cli_defaults_to_no_emulation() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "mmio-write-emulation-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::MmioWriteEmulationProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-write-emulation-probe command");
+        };
+
+        assert!(!args.allow_emulate);
+    }
+
+    #[test]
+    fn hvf_mmio_write_emulation_probe_cli_accepts_explicit_emulation_opt_in() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "mmio-write-emulation-probe",
+            "--allow-emulate",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::MmioWriteEmulationProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-write-emulation-probe command");
+        };
+
+        assert!(args.allow_emulate);
+    }
+
+    #[test]
+    fn hvf_mmio_serial_device_probe_cli_defaults_to_no_device() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "mmio-serial-device-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::MmioSerialDeviceProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-serial-device-probe command");
+        };
+
+        assert!(!args.allow_device);
+    }
+
+    #[test]
+    fn hvf_mmio_serial_device_probe_cli_accepts_explicit_device_opt_in() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "mmio-serial-device-probe",
+            "--allow-device",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::MmioSerialDeviceProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-serial-device-probe command");
+        };
+
+        assert!(args.allow_device);
+    }
+
+    #[test]
+    fn hvf_mmio_rtc_device_probe_cli_defaults_to_no_device() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "mmio-rtc-device-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::MmioRtcDeviceProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-rtc-device-probe command");
+        };
+
+        assert!(!args.allow_device);
+    }
+
+    #[test]
+    fn hvf_mmio_rtc_device_probe_cli_accepts_explicit_device_opt_in() {
+        let cli =
+            Cli::try_parse_from(["bridgevm", "hvf", "mmio-rtc-device-probe", "--allow-device"])
+                .unwrap();
+
+        let Command::Hvf(HvfCommand::MmioRtcDeviceProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-rtc-device-probe command");
+        };
+
+        assert!(args.allow_device);
+    }
+
+    #[test]
+    fn hvf_mmio_block_device_probe_cli_defaults_to_no_device() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "mmio-block-device-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::MmioBlockDeviceProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-block-device-probe command");
+        };
+
+        assert!(!args.allow_device);
+    }
+
+    #[test]
+    fn hvf_mmio_block_device_probe_cli_accepts_explicit_device_opt_in() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "mmio-block-device-probe",
+            "--allow-device",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::MmioBlockDeviceProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-block-device-probe command");
+        };
+
+        assert!(args.allow_device);
+    }
+
+    #[test]
+    fn hvf_mmio_block_queue_probe_cli_defaults_to_no_device() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "mmio-block-queue-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::MmioBlockQueueProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-block-queue-probe command");
+        };
+
+        assert!(!args.allow_device);
+        assert_eq!(args.disk, None);
+        assert_eq!(args.iso, None);
+        assert_eq!(args.writable_disk, None);
+    }
+
+    #[test]
+    fn hvf_mmio_block_queue_probe_cli_accepts_explicit_device_opt_in() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "mmio-block-queue-probe",
+            "--allow-device",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::MmioBlockQueueProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-block-queue-probe command");
+        };
+
+        assert!(args.allow_device);
+        assert_eq!(args.disk, None);
+        assert_eq!(args.iso, None);
+        assert_eq!(args.writable_disk, None);
+    }
+
+    #[test]
+    fn hvf_mmio_block_queue_probe_cli_accepts_file_backing_disk() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "mmio-block-queue-probe",
+            "--allow-device",
+            "--disk",
+            "/tmp/bridgevm-live-block.img",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::MmioBlockQueueProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-block-queue-probe command");
+        };
+
+        assert!(args.allow_device);
+        assert_eq!(
+            args.disk,
+            Some(PathBuf::from("/tmp/bridgevm-live-block.img"))
+        );
+        assert_eq!(args.iso, None);
+        assert_eq!(args.writable_disk, None);
+    }
+
+    #[test]
+    fn hvf_mmio_block_queue_probe_cli_accepts_read_only_iso_backing() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "mmio-block-queue-probe",
+            "--allow-device",
+            "--iso",
+            "/tmp/Win11_Arm64.iso",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::MmioBlockQueueProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-block-queue-probe command");
+        };
+
+        assert!(args.allow_device);
+        assert_eq!(args.disk, None);
+        assert_eq!(args.iso, Some(PathBuf::from("/tmp/Win11_Arm64.iso")));
+        assert_eq!(args.writable_disk, None);
+    }
+
+    #[test]
+    fn hvf_mmio_block_queue_probe_cli_accepts_writable_file_backing_disk() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "mmio-block-queue-probe",
+            "--allow-device",
+            "--writable-disk",
+            "/tmp/bridgevm-writable-live-block.img",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::MmioBlockQueueProbe(args)) = cli.command else {
+            panic!("expected hvf mmio-block-queue-probe command");
+        };
+
+        assert!(args.allow_device);
+        assert_eq!(args.disk, None);
+        assert_eq!(args.iso, None);
+        assert_eq!(
+            args.writable_disk,
+            Some(PathBuf::from("/tmp/bridgevm-writable-live-block.img"))
+        );
+    }
+
+    #[test]
+    fn hvf_virtio_block_request_model_probe_cli_parses() {
+        let cli =
+            Cli::try_parse_from(["bridgevm", "hvf", "virtio-block-request-model-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::VirtioBlockRequestModelProbe) = cli.command else {
+            panic!("expected hvf virtio-block-request-model-probe command");
+        };
+    }
+
+    #[test]
+    fn hvf_virtio_block_file_backing_probe_cli_requires_disk() {
+        let error = Cli::try_parse_from(["bridgevm", "hvf", "virtio-block-file-backing-probe"])
+            .unwrap_err();
+
+        assert!(error.to_string().contains("--disk"));
+    }
+
+    #[test]
+    fn hvf_virtio_block_file_backing_probe_cli_accepts_disk() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "virtio-block-file-backing-probe",
+            "--disk",
+            "/tmp/bridgevm-test.img",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::VirtioBlockFileBackingProbe(args)) = cli.command else {
+            panic!("expected hvf virtio-block-file-backing-probe command");
+        };
+
+        assert_eq!(args.disk, PathBuf::from("/tmp/bridgevm-test.img"));
+    }
+
+    #[test]
+    fn hvf_virtio_block_writable_file_backing_probe_cli_requires_disk() {
+        let error = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "virtio-block-writable-file-backing-probe",
+        ])
+        .unwrap_err();
+
+        assert!(error.to_string().contains("--disk"));
+    }
+
+    #[test]
+    fn hvf_virtio_block_writable_file_backing_probe_cli_accepts_disk() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "virtio-block-writable-file-backing-probe",
+            "--disk",
+            "/tmp/bridgevm-writable-test.img",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::VirtioBlockWritableFileBackingProbe(args)) = cli.command
+        else {
+            panic!("expected hvf virtio-block-writable-file-backing-probe command");
+        };
+
+        assert_eq!(args.disk, PathBuf::from("/tmp/bridgevm-writable-test.img"));
+    }
+
+    #[test]
+    fn hvf_virtio_block_iso_backing_probe_cli_requires_iso() {
+        let error =
+            Cli::try_parse_from(["bridgevm", "hvf", "virtio-block-iso-backing-probe"]).unwrap_err();
+
+        assert!(error.to_string().contains("--iso"));
+    }
+
+    #[test]
+    fn hvf_virtio_block_iso_backing_probe_cli_accepts_iso() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "virtio-block-iso-backing-probe",
+            "--iso",
+            "/tmp/Win11_Arm64.iso",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::VirtioBlockIsoBackingProbe(args)) = cli.command else {
+            panic!("expected hvf virtio-block-iso-backing-probe command");
+        };
+
+        assert_eq!(args.iso, PathBuf::from("/tmp/Win11_Arm64.iso"));
+    }
+
+    #[test]
+    fn hvf_machine_plan_cli_accepts_installer_resources() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "machine-plan",
+            "--installer",
+            "ISO/Win11_25H2_English_Arm64_v2.iso",
+            "--memory-gib",
+            "8",
+            "--vcpus",
+            "6",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::MachinePlan(args)) = cli.command else {
+            panic!("expected hvf machine-plan command");
+        };
+
+        assert_eq!(
+            args.installer.as_deref(),
+            Some(Path::new("ISO/Win11_25H2_English_Arm64_v2.iso"))
+        );
+        assert_eq!(args.memory_gib, 8);
+        assert_eq!(args.vcpus, 6);
+    }
+
+    #[test]
+    fn hvf_windows_boot_disk_layout_probe_cli_accepts_disk_size_and_create() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "windows-boot-disk-layout-probe",
+            "--disk",
+            "/tmp/win11-arm-hvf.raw",
+            "--size-gib",
+            "8",
+            "--create",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::WindowsBootDiskLayoutProbe(args)) = cli.command else {
+            panic!("expected hvf windows-boot-disk-layout-probe command");
+        };
+
+        assert_eq!(args.disk, PathBuf::from("/tmp/win11-arm-hvf.raw"));
+        assert_eq!(args.size_gib, 8);
+        assert!(args.create);
+    }
+
+    #[test]
+    fn hvf_windows_firmware_handoff_probe_cli_accepts_firmware_vars_and_create_vars() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "windows-firmware-handoff-probe",
+            "--firmware",
+            "/tmp/AAVMF_CODE.fd",
+            "--vars-template",
+            "/tmp/AAVMF_VARS.fd",
+            "--vars",
+            "/tmp/win11-arm-vars.fd",
+            "--create-vars",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::WindowsFirmwareHandoffProbe(args)) = cli.command else {
+            panic!("expected hvf windows-firmware-handoff-probe command");
+        };
+
+        assert_eq!(args.firmware, PathBuf::from("/tmp/AAVMF_CODE.fd"));
+        assert_eq!(
+            args.vars_template,
+            Some(PathBuf::from("/tmp/AAVMF_VARS.fd"))
+        );
+        assert_eq!(args.vars, Some(PathBuf::from("/tmp/win11-arm-vars.fd")));
+        assert!(args.create_vars);
+    }
+
+    #[test]
+    fn hvf_windows_pflash_map_probe_cli_accepts_firmware_vars_and_create_vars() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "windows-pflash-map-probe",
+            "--firmware",
+            "/tmp/AAVMF_CODE.fd",
+            "--vars-template",
+            "/tmp/AAVMF_VARS.fd",
+            "--vars",
+            "/tmp/win11-arm-vars.fd",
+            "--create-vars",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::WindowsPflashMapProbe(args)) = cli.command else {
+            panic!("expected hvf windows-pflash-map-probe command");
+        };
+
+        assert_eq!(args.firmware, PathBuf::from("/tmp/AAVMF_CODE.fd"));
+        assert_eq!(
+            args.vars_template,
+            Some(PathBuf::from("/tmp/AAVMF_VARS.fd"))
+        );
+        assert_eq!(args.vars, Some(PathBuf::from("/tmp/win11-arm-vars.fd")));
+        assert!(args.create_vars);
+    }
+
+    #[test]
+    fn hvf_windows_pflash_hvf_map_probe_cli_accepts_firmware_vars_create_vars_and_allow_map() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "windows-pflash-hvf-map-probe",
+            "--firmware",
+            "/tmp/AAVMF_CODE.fd",
+            "--vars-template",
+            "/tmp/AAVMF_VARS.fd",
+            "--vars",
+            "/tmp/win11-arm-vars.fd",
+            "--create-vars",
+            "--allow-map",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::WindowsPflashHvfMapProbe(args)) = cli.command else {
+            panic!("expected hvf windows-pflash-hvf-map-probe command");
+        };
+
+        assert_eq!(args.firmware, PathBuf::from("/tmp/AAVMF_CODE.fd"));
+        assert_eq!(
+            args.vars_template,
+            Some(PathBuf::from("/tmp/AAVMF_VARS.fd"))
+        );
+        assert_eq!(args.vars, Some(PathBuf::from("/tmp/win11-arm-vars.fd")));
+        assert!(args.create_vars);
+        assert!(args.allow_map);
+    }
+
+    #[test]
+    fn hvf_windows_reset_vector_entry_probe_cli_accepts_firmware_vars_create_vars_and_allow_entry()
+    {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "windows-reset-vector-entry-probe",
+            "--firmware",
+            "/tmp/AAVMF_CODE.fd",
+            "--vars-template",
+            "/tmp/AAVMF_VARS.fd",
+            "--vars",
+            "/tmp/win11-arm-vars.fd",
+            "--create-vars",
+            "--allow-entry",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::WindowsResetVectorEntryProbe(args)) = cli.command else {
+            panic!("expected hvf windows-reset-vector-entry-probe command");
+        };
+
+        assert_eq!(args.firmware, PathBuf::from("/tmp/AAVMF_CODE.fd"));
+        assert_eq!(
+            args.vars_template,
+            Some(PathBuf::from("/tmp/AAVMF_VARS.fd"))
+        );
+        assert_eq!(args.vars, Some(PathBuf::from("/tmp/win11-arm-vars.fd")));
+        assert!(args.create_vars);
+        assert!(args.allow_entry);
+    }
+
+    #[test]
+    fn hvf_windows_firmware_run_loop_probe_cli_accepts_firmware_vars_create_vars_and_loop_bounds() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "windows-firmware-run-loop-probe",
+            "--firmware",
+            "/tmp/AAVMF_CODE.fd",
+            "--vars-template",
+            "/tmp/AAVMF_VARS.fd",
+            "--vars",
+            "/tmp/win11-arm-vars.fd",
+            "--create-vars",
+            "--allow-loop",
+            "--max-exits",
+            "12",
+            "--guest-ram-mib",
+            "128",
+            "--watchdog-ms",
+            "250",
+            "--map-low-pflash-alias",
+            "--seed-diagnostic-vector",
+            "--seed-guest-ram-diagnostic-vector",
+            "--seed-executable-diagnostic-vector",
+            "--try-recommended-vector-base-vbar",
+            "--continue-after-recommended-vector-base-vbar",
+            "--repair-low-vector-diagnostic-page",
+            "--remap-low-vector-to-recommended-vector",
+            "--continue-after-low-vector-repair",
+            "--restore-low-vector-slot-before-eret",
+            "--wire-interrupt-timer",
+            "--iso",
+            "/tmp/Win11_Arm64.iso",
+            "--writable-disk",
+            "/tmp/windows-arm.raw",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::WindowsFirmwareRunLoopProbe(args)) = cli.command else {
+            panic!("expected hvf windows-firmware-run-loop-probe command");
+        };
+
+        assert_eq!(args.firmware, PathBuf::from("/tmp/AAVMF_CODE.fd"));
+        assert_eq!(
+            args.vars_template,
+            Some(PathBuf::from("/tmp/AAVMF_VARS.fd"))
+        );
+        assert_eq!(args.vars, Some(PathBuf::from("/tmp/win11-arm-vars.fd")));
+        assert!(args.create_vars);
+        assert!(args.allow_loop);
+        assert_eq!(args.max_exits, 12);
+        assert_eq!(args.guest_ram_mib, 128);
+        assert_eq!(args.watchdog_ms, 250);
+        assert!(args.map_low_pflash_alias);
+        assert!(args.seed_diagnostic_vector);
+        assert!(args.seed_guest_ram_diagnostic_vector);
+        assert!(args.seed_executable_diagnostic_vector);
+        assert!(args.try_recommended_vector_base_vbar);
+        assert!(args.continue_after_recommended_vector_base_vbar);
+        assert!(args.repair_low_vector_diagnostic_page);
+        assert!(args.remap_low_vector_to_recommended_vector);
+        assert!(args.continue_after_low_vector_repair);
+        assert!(args.restore_low_vector_slot_before_eret);
+        assert!(args.wire_interrupt_timer);
+        assert_eq!(args.iso, Some(PathBuf::from("/tmp/Win11_Arm64.iso")));
+        assert_eq!(
+            args.writable_disk,
+            Some(PathBuf::from("/tmp/windows-arm.raw"))
+        );
+    }
+
+    #[test]
+    fn hvf_windows_firmware_device_discovery_probe_cli_accepts_firmware_media_and_loop_flags() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "windows-firmware-device-discovery-probe",
+            "--firmware",
+            "/tmp/AAVMF_CODE.fd",
+            "--vars-template",
+            "/tmp/AAVMF_VARS.fd",
+            "--vars",
+            "/tmp/win11-arm-vars.fd",
+            "--create-vars",
+            "--allow-loop",
+            "--max-exits",
+            "16",
+            "--guest-ram-mib",
+            "128",
+            "--watchdog-ms",
+            "250",
+            "--map-low-pflash-alias",
+            "--repair-low-vector-diagnostic-page",
+            "--continue-after-low-vector-repair",
+            "--wire-interrupt-timer",
+            "--iso",
+            "/tmp/Win11_Arm64.iso",
+            "--writable-disk",
+            "/tmp/windows-arm.raw",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::WindowsFirmwareDeviceDiscoveryProbe(args)) = cli.command
+        else {
+            panic!("expected hvf windows-firmware-device-discovery-probe command");
+        };
+
+        assert_eq!(args.firmware, PathBuf::from("/tmp/AAVMF_CODE.fd"));
+        assert_eq!(
+            args.vars_template,
+            Some(PathBuf::from("/tmp/AAVMF_VARS.fd"))
+        );
+        assert_eq!(args.vars, Some(PathBuf::from("/tmp/win11-arm-vars.fd")));
+        assert!(args.create_vars);
+        assert!(args.allow_loop);
+        assert_eq!(args.max_exits, 16);
+        assert_eq!(args.guest_ram_mib, 128);
+        assert_eq!(args.watchdog_ms, 250);
+        assert!(args.map_low_pflash_alias);
+        assert!(args.repair_low_vector_diagnostic_page);
+        assert!(args.continue_after_low_vector_repair);
+        assert!(args.wire_interrupt_timer);
+        assert_eq!(args.iso, Some(PathBuf::from("/tmp/Win11_Arm64.iso")));
+        assert_eq!(
+            args.writable_disk,
+            Some(PathBuf::from("/tmp/windows-arm.raw"))
+        );
+    }
+
+    #[test]
+    fn hvf_windows_platform_description_probe_cli_accepts_memory_and_vcpus() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "windows-platform-description-probe",
+            "--memory-gib",
+            "8",
+            "--vcpus",
+            "6",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::WindowsPlatformDescriptionProbe(args)) = cli.command else {
+            panic!("expected hvf windows-platform-description-probe command");
+        };
+
+        assert_eq!(args.memory_gib, 8);
+        assert_eq!(args.vcpus, 6);
+    }
+
+    #[test]
+    fn windows_hvf_machine_plan_render_is_blocked_and_qemu_free() {
+        let plan = plan_windows_11_arm_hvf_machine(HvfMachinePlanOptions {
+            installer: Some(PathBuf::from("ISO/Win11_25H2_English_Arm64_v2.iso")),
+            memory_gib: 6,
+            vcpu_count: 4,
+        });
+        let output = plan.render_text();
+
+        assert!(output.contains("Windows 11 Arm HVF machine plan"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Memory: 6 GiB"));
+        assert!(output.contains("vCPU lifecycle:"));
+        assert!(output.contains("Devices:"));
+        assert!(output.contains("firmware UART and RTC skeletons"));
+        assert!(output.contains("read-only installer media"));
+        assert!(output.contains("system boot disk"));
+        assert!(output.contains("Overall: blocked"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn display_cli_accepts_optional_display_size() {
+        let cli = Cli::try_parse_from([
+            "bridgevm", "display", "dev", "--width", "1440", "--height", "900",
+        ])
+        .unwrap();
+        let Command::Display(args) = cli.command else {
+            panic!("expected display command");
+        };
+
+        assert_eq!(args.name, "dev");
+        assert_eq!(args.display_size().unwrap(), Some((1440, 900)));
+    }
+
+    #[test]
+    fn display_cli_requires_width_and_height_together() {
+        let cli = Cli::try_parse_from(["bridgevm", "display", "dev", "--width", "1440"]).unwrap();
+        let Command::Display(args) = cli.command else {
+            panic!("expected display command");
+        };
+
+        let error = args.display_size().expect_err("missing height must fail");
+        assert!(error
+            .to_string()
+            .contains("--width and --height must be provided together"));
     }
 
     #[test]
@@ -3939,6 +6268,39 @@ mod tests {
             status: DoctorCheckStatus::Missing,
             name: "Fast Mode possibility".to_string(),
             detail: "Fast Mode requires macOS with Apple Virtualization".to_string(),
+        }));
+    }
+
+    #[test]
+    fn parallels_class_progress_tracks_honest_product_scope() {
+        let tracks = parallels_class_progress();
+
+        assert!(tracks.contains(&ProductTrackProgress {
+            status: ProductTrackStatus::Partial,
+            name: "macOS-native integration / Coherence",
+            implemented:
+                "clipboard/display resize foundations plus preserved Linux .desktop/gio/gtk-launch/wmctrl live GUI proof and crop/proxy plumbing",
+            next: "drive real guest-window crops from real framebuffer/proxy sessions, then move toward compositor-grade host-window integration",
+        }));
+        assert!(tracks.contains(&ProductTrackProgress {
+            status: ProductTrackStatus::Proven,
+            name: "Apple Silicon Fast Mode",
+            implemented:
+                "Apple Virtualization.framework path with live Linux Arm64 boot/suspend/resume and VZVirtualMachineView display",
+            next: "broaden boot shapes and keep app/daemon/helper IPC tight",
+        }));
+        assert!(tracks.contains(&ProductTrackProgress {
+            status: ProductTrackStatus::Partial,
+            name: "intelligent resources / battery",
+            implemented:
+                "power-aware launch policy, display pacing consumption, and runtime policy IPC",
+            next: "live Apple VZ CPU/RAM control must apply the policy to a running VM",
+        }));
+        assert!(tracks.contains(&ProductTrackProgress {
+            status: ProductTrackStatus::Planned,
+            name: "graphics acceleration / Metal",
+            implemented: "native VZ GUI pixels are proven in an AppKit display window",
+            next: "Metal compositor/frame pacing first; Direct3D-to-Metal or WDDM remains long-term R&D",
         }));
     }
 
@@ -4088,6 +6450,122 @@ mod tests {
                 visibility: RuntimeResourceVisibility::Background,
             }
         );
+    }
+
+    #[test]
+    fn runtime_control_cli_builds_typed_requests() {
+        let cli = Cli::try_parse_from(["bridgevm", "runtime-control", "status", "dev"]).unwrap();
+        let request = request_for(cli.command).unwrap();
+        assert_eq!(
+            request,
+            BridgeVmRequest::RuntimeControl {
+                name: "dev".to_string(),
+                command: "status".to_string(),
+            }
+        );
+
+        let cli = Cli::try_parse_from(["bridgevm", "runtime-control", "stop", "dev"]).unwrap();
+        let request = request_for(cli.command).unwrap();
+        assert_eq!(
+            request,
+            BridgeVmRequest::RuntimeControl {
+                name: "dev".to_string(),
+                command: "stop".to_string(),
+            }
+        );
+
+        let cli = Cli::try_parse_from(["bridgevm", "runtime-control", "policy", "dev"]).unwrap();
+        let request = request_for(cli.command).unwrap();
+        assert_eq!(
+            request,
+            BridgeVmRequest::RuntimeControl {
+                name: "dev".to_string(),
+                command: "policy".to_string(),
+            }
+        );
+
+        let cli = Cli::try_parse_from(["bridgevm", "runtime-control", "pacing", "dev"]).unwrap();
+        let request = request_for(cli.command).unwrap();
+        assert_eq!(
+            request,
+            BridgeVmRequest::RuntimeControl {
+                name: "dev".to_string(),
+                command: "pacing".to_string(),
+            }
+        );
+
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "runtime-control",
+            "reapply",
+            "dev",
+            "--visibility",
+            "background",
+        ])
+        .unwrap();
+        let request = request_for(cli.command).unwrap();
+        assert_eq!(
+            request,
+            BridgeVmRequest::ReapplyRuntimeResources {
+                name: "dev".to_string(),
+                visibility: RuntimeResourceVisibility::Background,
+            }
+        );
+    }
+
+    #[test]
+    fn runtime_control_status_uses_recorded_socket_metadata() {
+        let store = unique_store("bridgevm-cli-runtime-control-test");
+        store.create_vm(&test_manifest("dev")).unwrap();
+        let socket_path = unique_socket_path("bridgevm-cli-rc");
+        let listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = String::new();
+            BufReader::new(stream.try_clone().unwrap())
+                .read_line(&mut request)
+                .unwrap();
+            let request: serde_json::Value = serde_json::from_str(&request).unwrap();
+            assert_eq!(
+                request.get("command").and_then(serde_json::Value::as_str),
+                Some("status")
+            );
+            stream
+                .write_all(
+                    br#"{"display":{"height":768,"width":1024},"ok":true,"state":"running","stopping":false,"supported_commands":["status","stop","policy","pacing"],"vm":"dev"}"#,
+                )
+                .unwrap();
+            stream.write_all(b"\n").unwrap();
+        });
+
+        let metadata = bridgevm_storage::RunnerMetadata {
+            engine: "lightvm".to_string(),
+            pid: Some(42),
+            command: vec!["lightvm-runner".to_string()],
+            log_path: PathBuf::from("lightvm.log"),
+            started_at_unix: 1,
+            dry_run: false,
+            launch_spec_path: None,
+            guest_tools: None,
+            disk: None,
+            active_disk: None,
+            launch_readiness: None,
+            runtime_control: Some(bridgevm_storage::RuntimeControlMetadata {
+                kind: "apple-vz-display".to_string(),
+                socket_path: socket_path.clone(),
+                commands: vec![
+                    "status".to_string(),
+                    "stop".to_string(),
+                    "policy".to_string(),
+                    "pacing".to_string(),
+                ],
+            }),
+        };
+        store.write_runner_metadata("dev", &metadata).unwrap();
+
+        run_runtime_control_command(&store, "dev", "status").unwrap();
+        server.join().unwrap();
+        let _ = fs::remove_file(socket_path);
     }
 
     #[test]
@@ -4504,6 +6982,115 @@ mod tests {
             envelope.message,
             AgentMessage::CloseWindow {
                 id: "window-terminal".to_string(),
+            }
+        );
+
+        let bounds = Cli::try_parse_from([
+            "bridgevm",
+            "guest-tools",
+            "set-window-bounds",
+            "dev",
+            "--id",
+            "window-terminal",
+            "--x",
+            "30",
+            "--y",
+            "40",
+            "--width",
+            "800",
+            "--height",
+            "600",
+            "--request-id",
+            "bounds-1",
+        ])
+        .unwrap();
+        let request = request_for(bounds.command).unwrap();
+        let BridgeVmRequest::GuestToolsSendCommand { name, envelope } = request else {
+            panic!("expected guest tools send command request");
+        };
+
+        assert_eq!(name, "dev");
+        assert_eq!(envelope.request_id.as_deref(), Some("bounds-1"));
+        assert_eq!(
+            envelope.message,
+            AgentMessage::SetWindowBounds {
+                id: "window-terminal".to_string(),
+                x: 30,
+                y: 40,
+                width: 800,
+                height: 600,
+            }
+        );
+
+        let pointer = Cli::try_parse_from([
+            "bridgevm",
+            "guest-tools",
+            "window-pointer",
+            "dev",
+            "--id",
+            "window-terminal",
+            "--x",
+            "120",
+            "--y",
+            "240",
+            "--action",
+            "click",
+            "--button",
+            "left",
+            "--request-id",
+            "pointer-1",
+        ])
+        .unwrap();
+        let request = request_for(pointer.command).unwrap();
+        let BridgeVmRequest::GuestToolsSendCommand { name, envelope } = request else {
+            panic!("expected guest tools send command request");
+        };
+
+        assert_eq!(name, "dev");
+        assert_eq!(envelope.request_id.as_deref(), Some("pointer-1"));
+        assert_eq!(
+            envelope.message,
+            AgentMessage::WindowInput {
+                id: "window-terminal".to_string(),
+                event: WindowInputEvent::Pointer {
+                    x: 120,
+                    y: 240,
+                    action: "click".to_string(),
+                    button: Some("left".to_string()),
+                },
+            }
+        );
+
+        let key = Cli::try_parse_from([
+            "bridgevm",
+            "guest-tools",
+            "window-key",
+            "dev",
+            "--id",
+            "window-terminal",
+            "--key",
+            "Return",
+            "--action",
+            "tap",
+            "--request-id",
+            "key-1",
+        ])
+        .unwrap();
+        let request = request_for(key.command).unwrap();
+        let BridgeVmRequest::GuestToolsSendCommand { name, envelope } = request else {
+            panic!("expected guest tools send command request");
+        };
+
+        assert_eq!(name, "dev");
+        assert_eq!(envelope.request_id.as_deref(), Some("key-1"));
+        assert_eq!(
+            envelope.message,
+            AgentMessage::WindowInput {
+                id: "window-terminal".to_string(),
+                event: WindowInputEvent::Key {
+                    key: "Return".to_string(),
+                    action: "tap".to_string(),
+                },
             }
         );
     }

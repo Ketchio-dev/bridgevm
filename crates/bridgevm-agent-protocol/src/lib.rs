@@ -128,6 +128,17 @@ pub enum AgentMessage {
     CloseWindow {
         id: String,
     },
+    SetWindowBounds {
+        id: String,
+        x: i64,
+        y: i64,
+        width: u64,
+        height: u64,
+    },
+    WindowInput {
+        id: String,
+        event: WindowInputEvent,
+    },
     FreezeFilesystem {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         timeout_millis: Option<u64>,
@@ -289,6 +300,22 @@ impl AgentMessage {
             Self::FocusWindow { id } | Self::CloseWindow { id } => {
                 validate_non_empty("window.id", id)
             }
+            Self::SetWindowBounds {
+                id, width, height, ..
+            } => {
+                validate_non_empty("window.id", id)?;
+                if *width == 0 || *height == 0 {
+                    return Err(ProtocolValidationError::InvalidWindowBounds {
+                        width: *width,
+                        height: *height,
+                    });
+                }
+                Ok(())
+            }
+            Self::WindowInput { id, event } => {
+                validate_non_empty("window.id", id)?;
+                event.validate()
+            }
             Self::FreezeFilesystem { timeout_millis } => {
                 validate_filesystem_freeze_timeout(*timeout_millis)
             }
@@ -314,6 +341,55 @@ impl AgentMessage {
                 Ok(())
             }
             _ => Ok(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WindowInputEvent {
+    Pointer {
+        x: i64,
+        y: i64,
+        action: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        button: Option<String>,
+    },
+    Key {
+        key: String,
+        action: String,
+    },
+}
+
+impl WindowInputEvent {
+    fn validate(&self) -> Result<(), ProtocolValidationError> {
+        match self {
+            Self::Pointer { action, button, .. } => {
+                validate_window_input_action(
+                    "window_input.pointer.action",
+                    action,
+                    &["move", "press", "release", "click"],
+                )?;
+                if action != "move" {
+                    validate_required_optional("window_input.pointer.button", button.as_deref())?;
+                }
+                if let Some(button) = button {
+                    validate_window_input_action(
+                        "window_input.pointer.button",
+                        button,
+                        &["left", "middle", "right"],
+                    )?;
+                }
+                Ok(())
+            }
+            Self::Key { key, action } => {
+                validate_non_empty("window_input.key", key)?;
+                validate_window_input_action(
+                    "window_input.key.action",
+                    action,
+                    &["press", "release", "tap"],
+                )
+            }
         }
     }
 }
@@ -362,6 +438,22 @@ fn validate_filesystem_freeze_timeout(
         return Err(ProtocolValidationError::InvalidFilesystemFreezeTimeout {
             timeout_millis,
             max_timeout_millis: MAX_FREEZE_THAW_TIMEOUT_MILLIS,
+        });
+    }
+
+    Ok(())
+}
+
+fn validate_window_input_action(
+    field: &'static str,
+    value: &str,
+    allowed: &[&str],
+) -> Result<(), ProtocolValidationError> {
+    validate_non_empty(field, value)?;
+    if !allowed.iter().any(|allowed| *allowed == value) {
+        return Err(ProtocolValidationError::InvalidWindowInputValue {
+            field,
+            value: value.to_string(),
         });
     }
 
@@ -445,6 +537,14 @@ pub enum ProtocolValidationError {
     InvalidBenchmarkDuration {
         duration_millis: u64,
         max_duration_millis: u64,
+    },
+    InvalidWindowBounds {
+        width: u64,
+        height: u64,
+    },
+    InvalidWindowInputValue {
+        field: &'static str,
+        value: String,
     },
 }
 
@@ -562,6 +662,29 @@ mod tests {
             },
             AgentMessage::RunBenchmark {
                 duration_millis: Some(500),
+            },
+            AgentMessage::WindowInput {
+                id: "window-1".to_string(),
+                event: WindowInputEvent::Pointer {
+                    x: 120,
+                    y: 240,
+                    action: "click".to_string(),
+                    button: Some("left".to_string()),
+                },
+            },
+            AgentMessage::SetWindowBounds {
+                id: "window-1".to_string(),
+                x: 30,
+                y: 40,
+                width: 800,
+                height: 600,
+            },
+            AgentMessage::WindowInput {
+                id: "window-1".to_string(),
+                event: WindowInputEvent::Key {
+                    key: "Return".to_string(),
+                    action: "tap".to_string(),
+                },
             },
         ];
 
@@ -708,6 +831,110 @@ mod tests {
                 },
                 ProtocolValidationError::EmptyField {
                     field: "application.id",
+                },
+            ),
+            (
+                AgentMessage::SetWindowBounds {
+                    id: " ".to_string(),
+                    x: 0,
+                    y: 0,
+                    width: 800,
+                    height: 600,
+                },
+                ProtocolValidationError::EmptyField { field: "window.id" },
+            ),
+            (
+                AgentMessage::SetWindowBounds {
+                    id: "window-1".to_string(),
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 600,
+                },
+                ProtocolValidationError::InvalidWindowBounds {
+                    width: 0,
+                    height: 600,
+                },
+            ),
+            (
+                AgentMessage::WindowInput {
+                    id: " ".to_string(),
+                    event: WindowInputEvent::Pointer {
+                        x: 1,
+                        y: 2,
+                        action: "move".to_string(),
+                        button: None,
+                    },
+                },
+                ProtocolValidationError::EmptyField { field: "window.id" },
+            ),
+            (
+                AgentMessage::WindowInput {
+                    id: "window-1".to_string(),
+                    event: WindowInputEvent::Pointer {
+                        x: 1,
+                        y: 2,
+                        action: "drag".to_string(),
+                        button: Some("left".to_string()),
+                    },
+                },
+                ProtocolValidationError::InvalidWindowInputValue {
+                    field: "window_input.pointer.action",
+                    value: "drag".to_string(),
+                },
+            ),
+            (
+                AgentMessage::WindowInput {
+                    id: "window-1".to_string(),
+                    event: WindowInputEvent::Pointer {
+                        x: 1,
+                        y: 2,
+                        action: "click".to_string(),
+                        button: None,
+                    },
+                },
+                ProtocolValidationError::MissingField {
+                    field: "window_input.pointer.button",
+                },
+            ),
+            (
+                AgentMessage::WindowInput {
+                    id: "window-1".to_string(),
+                    event: WindowInputEvent::Pointer {
+                        x: 1,
+                        y: 2,
+                        action: "click".to_string(),
+                        button: Some("button-9".to_string()),
+                    },
+                },
+                ProtocolValidationError::InvalidWindowInputValue {
+                    field: "window_input.pointer.button",
+                    value: "button-9".to_string(),
+                },
+            ),
+            (
+                AgentMessage::WindowInput {
+                    id: "window-1".to_string(),
+                    event: WindowInputEvent::Key {
+                        key: "".to_string(),
+                        action: "tap".to_string(),
+                    },
+                },
+                ProtocolValidationError::EmptyField {
+                    field: "window_input.key",
+                },
+            ),
+            (
+                AgentMessage::WindowInput {
+                    id: "window-1".to_string(),
+                    event: WindowInputEvent::Key {
+                        key: "Return".to_string(),
+                        action: "repeat".to_string(),
+                    },
+                },
+                ProtocolValidationError::InvalidWindowInputValue {
+                    field: "window_input.key.action",
+                    value: "repeat".to_string(),
                 },
             ),
             (

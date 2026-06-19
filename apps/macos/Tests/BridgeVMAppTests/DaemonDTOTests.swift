@@ -195,6 +195,60 @@ final class DaemonDTOTests: XCTestCase {
     )
   }
 
+  func testRuntimeControlRequestAndResponseMatchBridgeVmDaemonWireFormat() throws {
+    let data = try JSONEncoder().encode(
+      DaemonRuntimeControlRequest(name: "dev", command: "status")
+    )
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: String])
+    XCTAssertEqual(
+      object,
+      ["type": "runtime_control", "name": "dev", "command": "status"]
+    )
+
+    let json = """
+      {
+        "type": "runtime_control",
+        "control": {
+          "vm": "dev",
+          "kind": "apple-vz-display",
+          "socket_path": "/tmp/bvm-vz-test.sock",
+          "command": "status",
+          "response": {
+            "ok": true,
+            "state": "running",
+            "display": {
+              "width": 1024,
+              "height": 768
+            }
+          }
+        }
+      }
+      """
+
+    let response = try JSONDecoder().decode(
+      DaemonRuntimeControlResponse.self,
+      from: Data(json.utf8)
+    )
+    let result = response.control.runtimeControlCommandResult
+
+    XCTAssertEqual(response.type, "runtime_control")
+    XCTAssertEqual(result.vm, "dev")
+    XCTAssertEqual(result.kind, "apple-vz-display")
+    XCTAssertEqual(result.socketPath, "/tmp/bvm-vz-test.sock")
+    XCTAssertEqual(result.command, "status")
+    XCTAssertEqual(
+      result.response.value,
+      .object([
+        "display": .object([
+          "height": .number("768"),
+          "width": .number("1024"),
+        ]),
+        "ok": .bool(true),
+        "state": .string("running"),
+      ])
+    )
+  }
+
   func testVmListResponseMapsRustVmRecordShape() throws {
     let json = """
       {
@@ -206,7 +260,8 @@ final class DaemonDTOTests: XCTestCase {
             "guest_os": "ubuntu",
             "guest_arch": "x86_64",
             "state": "running",
-            "path": "/tmp/legacy-linux.vmbridge"
+            "store_root": "/tmp/custom-bridgevm",
+            "path": "/tmp/custom-bridgevm/vms/legacy-linux.vmbridge"
           }
         ]
       }
@@ -218,11 +273,21 @@ final class DaemonDTOTests: XCTestCase {
     )
 
     XCTAssertEqual(response.virtualMachines.count, 1)
-    let vm = response.virtualMachines[0].virtualMachine
+    let dto = response.virtualMachines[0]
+    let vm = dto.virtualMachine
     XCTAssertEqual(vm.name, "legacy-linux")
     XCTAssertEqual(vm.guest, "ubuntu x86_64")
     XCTAssertEqual(vm.status, .running)
     XCTAssertEqual(vm.mode, .compatibility)
+    XCTAssertEqual(dto.storeRoot, "/tmp/custom-bridgevm")
+    XCTAssertEqual(dto.path, "/tmp/custom-bridgevm/vms/legacy-linux.vmbridge")
+    XCTAssertEqual(
+      dto.displayStoreMetadata,
+      EmbeddedDisplayLauncher.StoreMetadata(
+        storeRoot: "/tmp/custom-bridgevm",
+        bundlePath: "/tmp/custom-bridgevm/vms/legacy-linux.vmbridge"
+      )
+    )
   }
 
   func testVmListResponseMapsUnknownOrMissingDaemonStateToError() throws {
@@ -311,12 +376,12 @@ final class DaemonDTOTests: XCTestCase {
       {
         "type": "mode_recommendation",
         "recommendation": {
-          "mode": "fast",
-          "performance": "High for productivity workloads",
-          "battery_impact": "Low to medium",
-          "integration": "Experimental",
-          "message": "Windows 11 Arm can use Fast Mode Experimental with a restricted backend. BridgeVM must not claim Microsoft-authorized status.",
-          "fast_mode_available": true
+          "mode": "compatibility",
+          "performance": "Medium; restricted QEMU/HVF path today",
+          "battery_impact": "Higher than Apple VZ Fast Mode",
+          "integration": "Windows beta; not Apple VZ Fast Mode",
+          "message": "Windows 11 Arm uses Compatibility Mode with a restricted QEMU/HVF backend today. Apple VZ Fast Mode is Linux/macOS Arm only; BridgeVM must not claim Microsoft-authorized or Parallels-class Windows support.",
+          "fast_mode_available": false
         }
       }
       """
@@ -326,10 +391,10 @@ final class DaemonDTOTests: XCTestCase {
       from: Data(json.utf8)
     )
 
-    XCTAssertEqual(response.recommendation.mode, .fast)
-    XCTAssertEqual(response.recommendation.batteryImpact, "Low to medium")
-    XCTAssertTrue(response.recommendation.fastModeAvailable)
-    XCTAssertTrue(response.recommendation.message.contains("restricted backend"))
+    XCTAssertEqual(response.recommendation.mode, .compatibility)
+    XCTAssertEqual(response.recommendation.batteryImpact, "Higher than Apple VZ Fast Mode")
+    XCTAssertFalse(response.recommendation.fastModeAvailable)
+    XCTAssertTrue(response.recommendation.message.contains("Apple VZ Fast Mode is Linux/macOS Arm only"))
   }
 
   func testCreateVmRequestMatchesBridgeVmDaemonWireFormat() throws {
@@ -1731,6 +1796,71 @@ final class DaemonDTOTests: XCTestCase {
     let close = try XCTUnwrap(closeMessage["CloseWindow"] as? [String: Any])
     XCTAssertEqual(close["id"] as? String, "window-1")
 
+    let boundsRequest =
+      try JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(
+          DaemonGuestToolsSendCommandRequest(
+            name: "dev",
+            command: .setWindowBounds(id: "window-1", x: 30, y: 40, width: 800, height: 600),
+            requestID: "bounds-1"
+          )
+        )
+      ) as? [String: Any]
+    let boundsEnvelope = try XCTUnwrap(boundsRequest?["envelope"] as? [String: Any])
+    let boundsMessage = try XCTUnwrap(boundsEnvelope["message"] as? [String: Any])
+    let bounds = try XCTUnwrap(boundsMessage["SetWindowBounds"] as? [String: Any])
+    XCTAssertEqual(bounds["id"] as? String, "window-1")
+    XCTAssertEqual(bounds["x"] as? Int, 30)
+    XCTAssertEqual(bounds["y"] as? Int, 40)
+    XCTAssertEqual(bounds["width"] as? Int, 800)
+    XCTAssertEqual(bounds["height"] as? Int, 600)
+
+    let pointerRequest =
+      try JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(
+          DaemonGuestToolsSendCommandRequest(
+            name: "dev",
+            command: .windowPointerInput(
+              id: "window-1",
+              x: 120,
+              y: 240,
+              action: .click,
+              button: .left
+            ),
+            requestID: "pointer-1"
+          )
+        )
+      ) as? [String: Any]
+    let pointerEnvelope = try XCTUnwrap(pointerRequest?["envelope"] as? [String: Any])
+    let pointerMessage = try XCTUnwrap(pointerEnvelope["message"] as? [String: Any])
+    let pointer = try XCTUnwrap(pointerMessage["WindowInput"] as? [String: Any])
+    XCTAssertEqual(pointer["id"] as? String, "window-1")
+    let pointerEvent = try XCTUnwrap(pointer["event"] as? [String: Any])
+    XCTAssertEqual(pointerEvent["kind"] as? String, "pointer")
+    XCTAssertEqual(pointerEvent["x"] as? Int, 120)
+    XCTAssertEqual(pointerEvent["y"] as? Int, 240)
+    XCTAssertEqual(pointerEvent["action"] as? String, "click")
+    XCTAssertEqual(pointerEvent["button"] as? String, "left")
+
+    let keyRequest =
+      try JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(
+          DaemonGuestToolsSendCommandRequest(
+            name: "dev",
+            command: .windowKeyInput(id: "window-1", key: "Return", action: .tap),
+            requestID: "key-1"
+          )
+        )
+      ) as? [String: Any]
+    let keyEnvelope = try XCTUnwrap(keyRequest?["envelope"] as? [String: Any])
+    let keyMessage = try XCTUnwrap(keyEnvelope["message"] as? [String: Any])
+    let key = try XCTUnwrap(keyMessage["WindowInput"] as? [String: Any])
+    XCTAssertEqual(key["id"] as? String, "window-1")
+    let keyEvent = try XCTUnwrap(key["event"] as? [String: Any])
+    XCTAssertEqual(keyEvent["kind"] as? String, "key")
+    XCTAssertEqual(keyEvent["key"] as? String, "Return")
+    XCTAssertEqual(keyEvent["action"] as? String, "tap")
+
     let unmountRequest =
       try JSONSerialization.jsonObject(
         with: JSONEncoder().encode(
@@ -1803,6 +1933,11 @@ final class DaemonDTOTests: XCTestCase {
             "token_path": "metadata/guest-tools-token.json",
             "token_created_at_unix": 1710000050
           },
+          "runtime_control": {
+            "kind": "apple-vz-display",
+            "socket_path": "run/apple-vz-display-control.sock",
+            "commands": ["status", "stop", "policy", "pacing"]
+          },
           "launch_readiness": {
             "ready": false,
             "blockers": [
@@ -1848,6 +1983,11 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertEqual(guestTools.socketPath, "metadata/guest-tools.sock")
     XCTAssertEqual(guestTools.tokenPath, "metadata/guest-tools-token.json")
     XCTAssertEqual(guestTools.tokenCreatedAtUnix, 1_710_000_050)
+    let runtimeControl = try XCTUnwrap(status.runtimeControl)
+    XCTAssertEqual(runtimeControl.kind, "apple-vz-display")
+    XCTAssertEqual(runtimeControl.socketPath, "run/apple-vz-display-control.sock")
+    XCTAssertEqual(runtimeControl.commands, ["status", "stop", "policy", "pacing"])
+    XCTAssertEqual(runtimeControl.commandSummary, "status, stop, policy, pacing")
     let readiness = try XCTUnwrap(status.launchReadiness)
     XCTAssertFalse(readiness.ready)
     let blocker = try XCTUnwrap(readiness.blockers.first)
@@ -3152,10 +3292,11 @@ final class DaemonDTOTests: XCTestCase {
           "display_fps_cap": "10",
           "rationale": "Battery or background throttling active.",
           "live_applied": false,
+          "runtime_control_acknowledged": true,
           "live_apply_blockers": [
             {
               "code": "runtime-control-unavailable",
-              "message": "No live Apple VZ/display runtime control channel is available yet; the policy was recorded for UI/display pacing consumers."
+              "message": "Live Apple VZ CPU/RAM hot-apply is not implemented yet; the policy is available to display pacing and runtime policy IPC consumers."
             }
           ],
           "updated_at_unix": 1710000500
@@ -3181,9 +3322,10 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertEqual(policy.displayFPSCap, "10")
     XCTAssertEqual(policy.rationale, "Battery or background throttling active.")
     XCTAssertEqual(policy.liveApplyTitle, "Blocked")
+    XCTAssertTrue(policy.runtimeControlAcknowledged)
     XCTAssertEqual(policy.liveApplyBlockers.first?.code, "runtime-control-unavailable")
     let expectedBlockerSummary =
-      "runtime-control-unavailable: No live Apple VZ/display runtime control channel is available yet; the policy was recorded for UI/display pacing consumers."
+      "runtime-control-unavailable: Live Apple VZ CPU/RAM hot-apply is not implemented yet; the policy is available to display pacing and runtime policy IPC consumers."
     XCTAssertEqual(
       policy.liveApplyBlockers.first?.summary,
       expectedBlockerSummary
@@ -3558,6 +3700,45 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertEqual(requestTypes, ["list_vms", "run_backend", "list_vms"])
     XCTAssertEqual(transport.requests[1]["name"] as? String, "dev")
     XCTAssertEqual(transport.requests[1]["spawn"] as? Bool, true)
+  }
+
+  func testDaemonClientCachesDisplayStoreMetadataFromList() async throws {
+    let transport = RecordingDaemonTransport()
+    let client = DaemonVirtualMachineClient(
+      endpoint: .local,
+      transport: transport
+    )
+
+    let virtualMachines = try await client.listVirtualMachines()
+    let vm = try XCTUnwrap(virtualMachines.first)
+    let metadata = try XCTUnwrap(client.displayStoreMetadata(for: vm.id))
+
+    XCTAssertEqual(metadata.bundlePath, "/tmp/dev.vmbridge")
+    XCTAssertNil(metadata.storeRoot)
+    XCTAssertEqual(transport.requests.compactMap { $0["type"] as? String }, ["list_vms"])
+  }
+
+  func testDaemonClientSendsRuntimeControlUsingNameFromListCache() async throws {
+    let transport = RecordingDaemonTransport()
+    let client = DaemonVirtualMachineClient(
+      endpoint: .local,
+      transport: transport
+    )
+
+    let initial = try await client.listVirtualMachines()
+    let vm = try XCTUnwrap(initial.first)
+
+    let result = try await client.sendRuntimeControlCommand("status", on: vm.id)
+
+    XCTAssertEqual(result.vm, "dev")
+    XCTAssertEqual(result.kind, "apple-vz-display")
+    XCTAssertEqual(result.socketPath, "/tmp/bvm-vz-test.sock")
+    XCTAssertEqual(result.command, "status")
+    XCTAssertEqual(result.response.value, .object(["ok": .bool(true), "state": .string("running")]))
+    let requestTypes = transport.requests.compactMap { $0["type"] as? String }
+    XCTAssertEqual(requestTypes, ["list_vms", "runtime_control"])
+    XCTAssertEqual(transport.requests[1]["name"] as? String, "dev")
+    XCTAssertEqual(transport.requests[1]["command"] as? String, "status")
   }
 
   func testDaemonClientRestartsThroughStopThenBackendRun() async throws {
@@ -4066,6 +4247,9 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertEqual(status.launchReadiness?.blockers.first?.code, "missing-primary-disk")
     XCTAssertEqual(status.guestTools?.channelName, "org.bridgevm.guest-tools.0")
     XCTAssertEqual(status.guestTools?.socketPath, "metadata/guest-tools.sock")
+    XCTAssertEqual(status.runtimeControl?.kind, "apple-vz-display")
+    XCTAssertEqual(status.runtimeControl?.socketPath, "run/apple-vz-display-control.sock")
+    XCTAssertEqual(status.runtimeControl?.commandSummary, "status, stop, policy, pacing")
     let requestTypes = transport.requests.compactMap { $0["type"] as? String }
     XCTAssertEqual(requestTypes, ["list_vms", "runner_status"])
     XCTAssertEqual(transport.requests[1]["name"] as? String, "dev")
@@ -4111,6 +4295,7 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertEqual(status.command, ["lightvm-runner", "dev", "--apple-vz"])
     XCTAssertEqual(status.launchReadiness?.ready, false)
     XCTAssertEqual(status.launchReadiness?.blockers.first?.code, "missing-primary-disk")
+    XCTAssertEqual(status.runtimeControl?.socketPath, "run/apple-vz-display-control.sock")
     let requestTypes = transport.requests.compactMap { $0["type"] as? String }
     XCTAssertEqual(requestTypes, ["list_vms", "prepare_run"])
     XCTAssertEqual(transport.requests[1]["name"] as? String, "dev")
@@ -4653,6 +4838,7 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertEqual(policy.memory, "2048")
     XCTAssertEqual(policy.cpu, "1")
     XCTAssertFalse(policy.liveApplied)
+    XCTAssertTrue(policy.runtimeControlAcknowledged)
     XCTAssertEqual(policy.liveApplyBlockers.first?.code, "runtime-control-unavailable")
     let requestTypes = transport.requests.compactMap { $0["type"] as? String }
     XCTAssertEqual(requestTypes, ["list_vms", "reapply_runtime_resources"])
@@ -5580,6 +5766,22 @@ private final class RecordingDaemonTransport: DaemonTransport {
           }
         }
         """
+    case "runtime_control":
+      responseJSON = """
+        {
+          "type": "runtime_control",
+          "control": {
+            "vm": "\(object["name"] as? String ?? "dev")",
+            "kind": "apple-vz-display",
+            "socket_path": "/tmp/bvm-vz-test.sock",
+            "command": "\(object["command"] as? String ?? "status")",
+            "response": {
+              "ok": true,
+              "state": "running"
+            }
+          }
+        }
+        """
     case "guest_tools_mount_approved_share":
       responseJSON = """
         {
@@ -5624,6 +5826,11 @@ private final class RecordingDaemonTransport: DaemonTransport {
               "socket_path": "metadata/guest-tools.sock",
               "token_path": "metadata/guest-tools-token.json",
               "token_created_at_unix": 1710000050
+            },
+            "runtime_control": {
+              "kind": "apple-vz-display",
+              "socket_path": "run/apple-vz-display-control.sock",
+              "commands": ["status", "stop", "policy", "pacing"]
             },
             "launch_readiness": {
               "ready": false,
@@ -6218,10 +6425,11 @@ private final class RecordingDaemonTransport: DaemonTransport {
             "display_fps_cap": "10",
             "rationale": "Battery or background throttling active.",
             "live_applied": false,
+            "runtime_control_acknowledged": true,
             "live_apply_blockers": [
               {
                 "code": "runtime-control-unavailable",
-                "message": "No live Apple VZ/display runtime control channel is available yet; the policy was recorded for UI/display pacing consumers."
+                "message": "Live Apple VZ CPU/RAM hot-apply is not implemented yet; the policy is available to display pacing and runtime policy IPC consumers."
               }
             ],
             "updated_at_unix": 1710000500

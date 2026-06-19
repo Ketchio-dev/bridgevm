@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use bridgevm_agent_protocol::{
-    AgentAuth, AgentCapability, AgentEnvelope, AgentMessage, GuestIpAddress,
+    AgentAuth, AgentCapability, AgentEnvelope, AgentMessage, GuestIpAddress, WindowInputEvent,
     DEFAULT_BENCHMARK_DURATION_MILLIS, MAX_BENCHMARK_DURATION_MILLIS,
 };
 use bridgevm_agentd::{read_envelope_line, write_envelope_line};
@@ -139,6 +139,7 @@ fn main() -> Result<()> {
     )?;
     let display_resizer = resolve_display_resizer(&capabilities, args.display_resize_command)?;
     let clock_setter = resolve_clock_setter(&capabilities, args.no_real_time_sync);
+    let desktop_controller = resolve_desktop_controller(&capabilities);
     let telemetry = TelemetryConfig::from_args(
         &capabilities,
         &args.guest_ips,
@@ -171,6 +172,7 @@ fn main() -> Result<()> {
                 clipboard_watcher,
                 display_resizer,
                 clock_setter,
+                desktop_controller,
                 args.serve_once,
             )
         }
@@ -198,6 +200,7 @@ fn main() -> Result<()> {
                 clipboard_watcher,
                 display_resizer,
                 clock_setter,
+                desktop_controller,
                 args.serve_once,
             )
         }
@@ -329,6 +332,8 @@ trait DesktopEnv {
     fn has_env(&self, name: &str) -> bool;
     /// Whether an executable is resolvable on `PATH`.
     fn has_program(&self, program: &str) -> bool;
+    /// Resolved executable path for programs that will be launched later.
+    fn program_path(&self, program: &str) -> Option<PathBuf>;
 }
 
 /// Real implementation backed by the process environment and `PATH`.
@@ -340,11 +345,16 @@ impl DesktopEnv for SystemDesktopEnv {
     }
 
     fn has_program(&self, program: &str) -> bool {
+        self.program_path(program).is_some()
+    }
+
+    fn program_path(&self, program: &str) -> Option<PathBuf> {
         let Some(path) = std::env::var_os("PATH") else {
-            return false;
+            return None;
         };
         std::env::split_paths(&path)
-            .any(|dir| !dir.as_os_str().is_empty() && dir.join(program).is_file())
+            .map(|dir| dir.join(program))
+            .find(|path| path.is_file())
     }
 }
 
@@ -393,6 +403,675 @@ fn detect_display_resizer(env: &impl DesktopEnv) -> DisplayResizer {
         DisplayResizer::command(PathBuf::from("xrandr"))
     } else {
         DisplayResizer::simulated()
+    }
+}
+
+fn resolve_desktop_controller(capabilities: &[AgentCapability]) -> DesktopController {
+    let applications = supports_capability(capabilities, "applications");
+    let windows = supports_capability(capabilities, "windows");
+    if !applications && !windows {
+        return DesktopController::simulated();
+    }
+
+    detect_desktop_controller(&SystemDesktopEnv, applications, windows)
+}
+
+fn detect_desktop_controller(
+    env: &impl DesktopEnv,
+    applications: bool,
+    windows: bool,
+) -> DesktopController {
+    let app_launcher = if applications {
+        if let Some(program) = env.program_path("gio") {
+            Some(AppLauncher::Gio(program))
+        } else if let Some(program) = env.program_path("gtk-launch") {
+            Some(AppLauncher::GtkLaunch(program))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let window_tool = if windows && env.has_env("DISPLAY") {
+        env.program_path("wmctrl")
+    } else {
+        None
+    };
+    let input_tool = if windows && env.has_env("DISPLAY") {
+        env.program_path("xdotool")
+    } else {
+        None
+    };
+
+    if app_launcher.is_some() || window_tool.is_some() || input_tool.is_some() {
+        DesktopController::real(app_launcher, window_tool, input_tool)
+    } else {
+        DesktopController::simulated()
+    }
+}
+
+struct DesktopController {
+    mode: DesktopControllerMode,
+}
+
+enum DesktopControllerMode {
+    Simulated,
+    Real {
+        app_launcher: Option<AppLauncher>,
+        window_tool: Option<PathBuf>,
+        input_tool: Option<PathBuf>,
+    },
+}
+
+enum AppLauncher {
+    Gio(PathBuf),
+    GtkLaunch(PathBuf),
+}
+
+impl DesktopController {
+    fn simulated() -> Self {
+        Self {
+            mode: DesktopControllerMode::Simulated,
+        }
+    }
+
+    fn real(
+        app_launcher: Option<AppLauncher>,
+        window_tool: Option<PathBuf>,
+        input_tool: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            mode: DesktopControllerMode::Real {
+                app_launcher,
+                window_tool,
+                input_tool,
+            },
+        }
+    }
+
+    fn list_applications(&self) -> Option<CommandOutcome> {
+        let DesktopControllerMode::Real {
+            app_launcher: Some(_),
+            ..
+        } = &self.mode
+        else {
+            return None;
+        };
+        Some(match read_desktop_applications() {
+            Ok(applications) => {
+                let names = applications
+                    .iter()
+                    .map(|app| format!("{}:{}", app.id, app.name))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let payload = applications
+                    .iter()
+                    .map(|app| {
+                        serde_json::json!({
+                            "id": app.id,
+                            "name": app.name,
+                            "launched": false,
+                            "source": "linux-desktop-file"
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                CommandOutcome::ok_with_result(
+                    Some(format!("applications: {names}")),
+                    serde_json::json!({ "applications": payload }),
+                )
+            }
+            Err(message) if message == "no visible .desktop applications were found" => {
+                return None;
+            }
+            Err(message) => CommandOutcome::error("applications-list-failed", message),
+        })
+    }
+
+    fn launch_application(&mut self, id: &str) -> Option<CommandOutcome> {
+        let DesktopControllerMode::Real {
+            app_launcher: Some(app_launcher),
+            ..
+        } = &self.mode
+        else {
+            return None;
+        };
+        let applications = match read_desktop_applications() {
+            Ok(applications) => applications,
+            Err(message) if message == "no visible .desktop applications were found" => {
+                return None;
+            }
+            Err(message) => {
+                return Some(CommandOutcome::error("applications-list-failed", message))
+            }
+        };
+        let Some(app) = applications.into_iter().find(|app| app.id == id) else {
+            return Some(CommandOutcome::error(
+                "application-not-found",
+                format!("application {id} was not found"),
+            ));
+        };
+        Some(match run_application_launcher(app_launcher, &app) {
+            Ok(()) => CommandOutcome::ok_with_result(
+                Some(format!("launched application {}", app.name)),
+                serde_json::json!({
+                    "application": {
+                        "id": app.id,
+                        "name": app.name,
+                        "launched": true,
+                        "source": "linux-desktop-file"
+                    }
+                }),
+            ),
+            Err(message) => CommandOutcome::error("application-launch-failed", message),
+        })
+    }
+
+    fn list_windows(&self) -> Option<CommandOutcome> {
+        let DesktopControllerMode::Real {
+            window_tool: Some(window_tool),
+            ..
+        } = &self.mode
+        else {
+            return None;
+        };
+        Some(match read_wmctrl_windows(window_tool) {
+            Ok(windows) => {
+                let names = windows
+                    .iter()
+                    .map(|window| format!("{}:{}", window.id, window.title))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let payload = windows
+                    .iter()
+                    .map(|window| {
+                        let mut window_payload = desktop_window_payload(window);
+                        window_payload["focused"] = serde_json::Value::Bool(false);
+                        window_payload
+                    })
+                    .collect::<Vec<_>>();
+                CommandOutcome::ok_with_result(
+                    Some(format!("windows: {names}")),
+                    serde_json::json!({ "windows": payload }),
+                )
+            }
+            Err(message) if message == "wmctrl reported no desktop windows" => {
+                return None;
+            }
+            Err(message) => CommandOutcome::error("windows-list-failed", message),
+        })
+    }
+
+    fn focus_window(&mut self, id: &str) -> Option<CommandOutcome> {
+        self.run_wmctrl_window_action(id, "-ia", "focused", "focus-window-failed")
+    }
+
+    fn close_window(&mut self, id: &str) -> Option<CommandOutcome> {
+        self.run_wmctrl_window_action(id, "-ic", "closed", "close-window-failed")
+    }
+
+    fn set_window_bounds(
+        &mut self,
+        id: &str,
+        x: i64,
+        y: i64,
+        width: u64,
+        height: u64,
+    ) -> Option<CommandOutcome> {
+        let DesktopControllerMode::Real {
+            window_tool: Some(window_tool),
+            ..
+        } = &self.mode
+        else {
+            return None;
+        };
+        let windows = match read_wmctrl_windows(window_tool) {
+            Ok(windows) => windows,
+            Err(message) if message == "wmctrl reported no desktop windows" => return None,
+            Err(message) => return Some(CommandOutcome::error("windows-list-failed", message)),
+        };
+        let Some(window) = windows.into_iter().find(|window| window.id == id) else {
+            return Some(CommandOutcome::error(
+                "window-not-found",
+                format!("window {id} was not found"),
+            ));
+        };
+
+        let geometry = format!("0,{x},{y},{width},{height}");
+        Some(
+            match run_command_status(window_tool, &["-ir", &window.id, "-e", &geometry]) {
+                Ok(()) => {
+                    let mut window_payload = desktop_window_payload(&window);
+                    window_payload["bounds"] = window_bounds_payload(x, y, width, height);
+                    window_payload["bounds_changed"] = serde_json::Value::Bool(true);
+                    CommandOutcome::ok_with_result(
+                        Some(format!("set bounds for window {}", window.title)),
+                        serde_json::json!({ "window": window_payload }),
+                    )
+                }
+                Err(message) => CommandOutcome::error("window-bounds-failed", message),
+            },
+        )
+    }
+
+    fn input_window(&mut self, id: &str, event: &WindowInputEvent) -> Option<CommandOutcome> {
+        let DesktopControllerMode::Real {
+            window_tool: Some(window_tool),
+            input_tool,
+            ..
+        } = &self.mode
+        else {
+            return None;
+        };
+        let windows = match read_wmctrl_windows(window_tool) {
+            Ok(windows) => windows,
+            Err(message) if message == "wmctrl reported no desktop windows" => return None,
+            Err(message) => return Some(CommandOutcome::error("windows-list-failed", message)),
+        };
+        let Some(window) = windows.into_iter().find(|window| window.id == id) else {
+            return Some(CommandOutcome::error(
+                "window-not-found",
+                format!("window {id} was not found"),
+            ));
+        };
+        let Some(input_tool) = input_tool else {
+            return Some(CommandOutcome::error(
+                "window-input-unsupported",
+                "xdotool is not available for guest window input",
+            ));
+        };
+
+        if let Err(message) = run_command_status(window_tool, &["-ia", &window.id]) {
+            return Some(CommandOutcome::error("window-input-focus-failed", message));
+        }
+
+        Some(match run_xdotool_window_input(input_tool, event) {
+            Ok(()) => {
+                let mut window_payload = desktop_window_payload(&window);
+                window_payload["input"] = window_input_payload(event, "xdotool");
+                CommandOutcome::ok_with_result(
+                    Some(format!(
+                        "sent {} input to window {}",
+                        window_input_label(event),
+                        window.title
+                    )),
+                    serde_json::json!({ "window": window_payload }),
+                )
+            }
+            Err(message) => CommandOutcome::error("window-input-failed", message),
+        })
+    }
+
+    fn run_wmctrl_window_action(
+        &mut self,
+        id: &str,
+        flag: &str,
+        verb: &str,
+        error_code: &str,
+    ) -> Option<CommandOutcome> {
+        let DesktopControllerMode::Real {
+            window_tool: Some(window_tool),
+            ..
+        } = &self.mode
+        else {
+            return None;
+        };
+        let windows = match read_wmctrl_windows(window_tool) {
+            Ok(windows) => windows,
+            Err(message) if message == "wmctrl reported no desktop windows" => return None,
+            Err(message) => return Some(CommandOutcome::error("windows-list-failed", message)),
+        };
+        let Some(window) = windows.into_iter().find(|window| window.id == id) else {
+            return Some(CommandOutcome::error(
+                "window-not-found",
+                format!("window {id} was not found"),
+            ));
+        };
+        Some(match run_command_status(window_tool, &[flag, &window.id]) {
+            Ok(()) => {
+                let mut window_payload = desktop_window_payload(&window);
+                window_payload[verb] = serde_json::Value::Bool(true);
+                CommandOutcome::ok_with_result(
+                    Some(format!("{verb} window {}", window.title)),
+                    serde_json::json!({ "window": window_payload }),
+                )
+            }
+            Err(message) => CommandOutcome::error(error_code, message),
+        })
+    }
+
+    #[cfg(test)]
+    fn is_real_for_test(&self) -> bool {
+        matches!(self.mode, DesktopControllerMode::Real { .. })
+    }
+}
+
+fn run_xdotool_window_input(program: &Path, event: &WindowInputEvent) -> Result<(), String> {
+    match event {
+        WindowInputEvent::Pointer {
+            x,
+            y,
+            action,
+            button,
+        } => {
+            let x_arg = x.to_string();
+            let y_arg = y.to_string();
+            run_command_status(program, &["mousemove", "--sync", &x_arg, &y_arg])?;
+            match action.as_str() {
+                "move" => Ok(()),
+                "press" => {
+                    let button = xdotool_button(button.as_deref())?;
+                    run_command_status(program, &["mousedown", button])
+                }
+                "release" => {
+                    let button = xdotool_button(button.as_deref())?;
+                    run_command_status(program, &["mouseup", button])
+                }
+                "click" => {
+                    let button = xdotool_button(button.as_deref())?;
+                    run_command_status(program, &["click", button])
+                }
+                _ => Err(format!("unsupported pointer action {action}")),
+            }
+        }
+        WindowInputEvent::Key { key, action } => match action.as_str() {
+            "press" => run_command_status(program, &["keydown", key]),
+            "release" => run_command_status(program, &["keyup", key]),
+            "tap" => run_command_status(program, &["key", key]),
+            _ => Err(format!("unsupported key action {action}")),
+        },
+    }
+}
+
+fn xdotool_button(button: Option<&str>) -> Result<&'static str, String> {
+    match button {
+        Some("left") => Ok("1"),
+        Some("middle") => Ok("2"),
+        Some("right") => Ok("3"),
+        Some(button) => Err(format!("unsupported pointer button {button}")),
+        None => Err("pointer button is required".to_string()),
+    }
+}
+
+fn window_input_payload(event: &WindowInputEvent, source: &str) -> serde_json::Value {
+    match event {
+        WindowInputEvent::Pointer {
+            x,
+            y,
+            action,
+            button,
+        } => serde_json::json!({
+            "kind": "pointer",
+            "x": x,
+            "y": y,
+            "action": action,
+            "button": button,
+            "source": source
+        }),
+        WindowInputEvent::Key { key, action } => serde_json::json!({
+            "kind": "key",
+            "key": key,
+            "action": action,
+            "source": source
+        }),
+    }
+}
+
+fn window_input_label(event: &WindowInputEvent) -> &'static str {
+    match event {
+        WindowInputEvent::Pointer { .. } => "pointer",
+        WindowInputEvent::Key { .. } => "key",
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DesktopApplication {
+    id: String,
+    name: String,
+    path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DesktopWindow {
+    id: String,
+    title: String,
+    desktop: Option<i64>,
+    pid: Option<u32>,
+    bounds: Option<DesktopWindowBounds>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DesktopWindowBounds {
+    x: i64,
+    y: i64,
+    width: u64,
+    height: u64,
+}
+
+fn window_bounds_payload(x: i64, y: i64, width: u64, height: u64) -> serde_json::Value {
+    serde_json::json!({
+        "x": x,
+        "y": y,
+        "width": width,
+        "height": height
+    })
+}
+
+fn desktop_window_payload(window: &DesktopWindow) -> serde_json::Value {
+    let mut payload = serde_json::json!({
+        "id": window.id,
+        "title": window.title,
+        "source": "wmctrl"
+    });
+    if let Some(desktop) = window.desktop {
+        payload["desktop"] = serde_json::json!(desktop);
+    }
+    if let Some(pid) = window.pid {
+        payload["pid"] = serde_json::json!(pid);
+    }
+    if let Some(bounds) = &window.bounds {
+        payload["bounds"] = window_bounds_payload(bounds.x, bounds.y, bounds.width, bounds.height);
+    }
+    payload
+}
+
+fn read_desktop_applications() -> Result<Vec<DesktopApplication>, String> {
+    let mut dirs = vec![
+        PathBuf::from("/usr/local/share/applications"),
+        PathBuf::from("/usr/share/applications"),
+    ];
+    if let Some(home) = std::env::var_os("HOME") {
+        dirs.push(PathBuf::from(home).join(".local/share/applications"));
+    }
+
+    let mut apps = BTreeMap::<String, DesktopApplication>::new();
+    for dir in dirs {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("desktop") {
+                continue;
+            }
+            let Some(app) = parse_desktop_application(&path) else {
+                continue;
+            };
+            apps.entry(app.id.clone()).or_insert(app);
+        }
+    }
+
+    if apps.is_empty() {
+        return Err("no visible .desktop applications were found".to_string());
+    }
+    Ok(apps.into_values().collect())
+}
+
+fn parse_desktop_application(path: &Path) -> Option<DesktopApplication> {
+    let contents = fs::read_to_string(path).ok()?;
+    let mut name = None;
+    let mut app_type = None;
+    let mut no_display = false;
+    let mut hidden = false;
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        match key {
+            "Name" => name = Some(value.trim().to_string()),
+            "Type" => app_type = Some(value.trim().to_string()),
+            "NoDisplay" => no_display = value.trim().eq_ignore_ascii_case("true"),
+            "Hidden" => hidden = value.trim().eq_ignore_ascii_case("true"),
+            _ => {}
+        }
+    }
+    if app_type.as_deref() != Some("Application") || no_display || hidden {
+        return None;
+    }
+    let id = path.file_name()?.to_string_lossy().to_string();
+    let name = name.filter(|value| !value.is_empty())?;
+    Some(DesktopApplication {
+        id,
+        name,
+        path: path.to_path_buf(),
+    })
+}
+
+fn run_application_launcher(
+    launcher: &AppLauncher,
+    app: &DesktopApplication,
+) -> Result<(), String> {
+    match launcher {
+        AppLauncher::Gio(program) => {
+            let path = app.path.to_string_lossy().to_string();
+            run_command_status(program, &["launch", &path])
+        }
+        AppLauncher::GtkLaunch(program) => run_command_status(program, &[&app.id]),
+    }
+}
+
+fn read_wmctrl_windows(program: &Path) -> Result<Vec<DesktopWindow>, String> {
+    match run_command_output(program, &["-l", "-p", "-G"]) {
+        Ok(output) => parse_wmctrl_windows(&output, true).or_else(|_| {
+            let fallback = run_command_output(program, &["-l"])?;
+            parse_wmctrl_windows(&fallback, false)
+        }),
+        Err(enhanced_error) => {
+            let fallback = run_command_output(program, &["-l"]).map_err(|fallback_error| {
+                format!("{enhanced_error}; fallback -l also failed: {fallback_error}")
+            })?;
+            parse_wmctrl_windows(&fallback, false)
+        }
+    }
+}
+
+fn parse_wmctrl_windows(output: &str, enhanced: bool) -> Result<Vec<DesktopWindow>, String> {
+    let windows = output
+        .lines()
+        .filter_map(|line| {
+            if enhanced {
+                parse_wmctrl_window_enhanced(line)
+            } else {
+                parse_wmctrl_window_basic(line)
+            }
+        })
+        .collect::<Vec<_>>();
+    if windows.is_empty() {
+        return Err("wmctrl reported no desktop windows".to_string());
+    }
+    Ok(windows)
+}
+
+fn parse_wmctrl_window_enhanced(line: &str) -> Option<DesktopWindow> {
+    let mut parts = line.split_whitespace();
+    let id = parts.next()?.to_string();
+    let desktop = parts.next()?.parse::<i64>().ok()?;
+    let pid = parts.next()?.parse::<u32>().ok()?;
+    let x = parts.next()?.parse::<i64>().ok()?;
+    let y = parts.next()?.parse::<i64>().ok()?;
+    let width = parts.next()?.parse::<u64>().ok()?;
+    let height = parts.next()?.parse::<u64>().ok()?;
+    let _host = parts.next()?;
+    let title = parts.collect::<Vec<_>>().join(" ");
+    if id.is_empty() || title.is_empty() {
+        return None;
+    }
+    Some(DesktopWindow {
+        id,
+        title,
+        desktop: Some(desktop),
+        pid: Some(pid),
+        bounds: Some(DesktopWindowBounds {
+            x,
+            y,
+            width,
+            height,
+        }),
+    })
+}
+
+fn parse_wmctrl_window_basic(line: &str) -> Option<DesktopWindow> {
+    let mut parts = line.split_whitespace();
+    let id = parts.next()?.to_string();
+    let desktop = parts.next()?.parse::<i64>().ok();
+    let _host = parts.next()?;
+    let title = parts.collect::<Vec<_>>().join(" ");
+    if id.is_empty() || title.is_empty() {
+        return None;
+    }
+    Some(DesktopWindow {
+        id,
+        title,
+        desktop,
+        pid: None,
+        bounds: None,
+    })
+}
+
+fn run_command_status(program: &Path, args: &[&str]) -> Result<(), String> {
+    let mut child = ProcessCommand::new(program)
+        .args(args)
+        .env("PATH", EFFECT_COMMAND_PATH)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("failed to execute {}: {error}", program.display()))?;
+    let label = format!("desktop command {}", program.display());
+    match wait_bounded(&mut child, &label)? {
+        status if status.success() => Ok(()),
+        status => Err(format!("{label} failed: exit status {status}")),
+    }
+}
+
+fn run_command_output(program: &Path, args: &[&str]) -> Result<String, String> {
+    let mut child = ProcessCommand::new(program)
+        .args(args)
+        .env("PATH", EFFECT_COMMAND_PATH)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("failed to execute {}: {error}", program.display()))?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| format!("failed to open stdout for {}", program.display()))?;
+    let drain = thread::spawn(move || {
+        let mut buffer = Vec::new();
+        let _ = stdout.read_to_end(&mut buffer);
+        buffer
+    });
+    let label = format!("desktop command {}", program.display());
+    let status = wait_bounded(&mut child, &label);
+    let buffer = drain.join().unwrap_or_default();
+    match status {
+        Ok(status) if status.success() => Ok(String::from_utf8_lossy(&buffer).to_string()),
+        Ok(status) => Err(format!("{label} failed: exit status {status}")),
+        Err(error) => Err(error),
     }
 }
 
@@ -465,6 +1144,7 @@ fn run_tools_session(
     clipboard_writer: ClipboardWriter,
     display_resizer: DisplayResizer,
     clock_setter: ClockSetter,
+    desktop_controller: DesktopController,
     serve_once: bool,
 ) -> Result<()> {
     let mut state = GuestToolsState::new(&capabilities)
@@ -472,7 +1152,8 @@ fn run_tools_session(
         .with_filesystem_freezer(filesystem_freezer)
         .with_clipboard_writer(clipboard_writer)
         .with_display_resizer(display_resizer)
-        .with_clock_setter(clock_setter);
+        .with_clock_setter(clock_setter)
+        .with_desktop_controller(desktop_controller);
     let hello = guest_hello(token, guest_os, capabilities);
     write_envelope_line(writer, &hello).map_err(|error| anyhow::anyhow!("{error:?}"))?;
     for envelope in initial_status_envelopes(&telemetry) {
@@ -518,6 +1199,7 @@ fn run_tools_session_watched<R, W>(
     clipboard_watcher: Option<ClipboardWatcher>,
     display_resizer: DisplayResizer,
     clock_setter: ClockSetter,
+    desktop_controller: DesktopController,
     serve_once: bool,
 ) -> Result<()>
 where
@@ -538,6 +1220,7 @@ where
             clipboard_writer,
             display_resizer,
             clock_setter,
+            desktop_controller,
             serve_once,
         );
     };
@@ -562,6 +1245,7 @@ where
         clipboard_writer,
         display_resizer,
         clock_setter,
+        desktop_controller,
         serve_once,
     );
 
@@ -635,6 +1319,7 @@ fn run_tools_session_shared<R, W>(
     clipboard_writer: ClipboardWriter,
     display_resizer: DisplayResizer,
     clock_setter: ClockSetter,
+    desktop_controller: DesktopController,
     serve_once: bool,
 ) -> Result<()>
 where
@@ -646,7 +1331,8 @@ where
         .with_filesystem_freezer(filesystem_freezer)
         .with_clipboard_writer(clipboard_writer)
         .with_display_resizer(display_resizer)
-        .with_clock_setter(clock_setter);
+        .with_clock_setter(clock_setter)
+        .with_desktop_controller(desktop_controller);
     let hello = guest_hello(token, guest_os, capabilities);
     {
         let mut guard = shared_writer.lock().expect("writer mutex poisoned");
@@ -697,6 +1383,7 @@ struct GuestToolsState {
     clipboard_writer: ClipboardWriter,
     display_resizer: DisplayResizer,
     clock_setter: ClockSetter,
+    desktop_controller: DesktopController,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -723,6 +1410,18 @@ struct WindowEntry {
     title: String,
     focused: bool,
     closed: bool,
+    bounds: Option<DesktopWindowBounds>,
+}
+
+fn window_entry_payload(id: &str, window: &WindowEntry) -> serde_json::Value {
+    let mut payload = serde_json::json!({
+        "id": id,
+        "title": window.title,
+    });
+    if let Some(bounds) = &window.bounds {
+        payload["bounds"] = window_bounds_payload(bounds.x, bounds.y, bounds.width, bounds.height);
+    }
+    payload
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -792,6 +1491,7 @@ impl GuestToolsState {
             clipboard_writer: ClipboardWriter::simulated(),
             display_resizer: DisplayResizer::simulated(),
             clock_setter: ClockSetter::simulated(),
+            desktop_controller: DesktopController::simulated(),
         }
     }
 
@@ -817,6 +1517,11 @@ impl GuestToolsState {
 
     fn with_clock_setter(mut self, clock_setter: ClockSetter) -> Self {
         self.clock_setter = clock_setter;
+        self
+    }
+
+    fn with_desktop_controller(mut self, desktop_controller: DesktopController) -> Self {
+        self.desktop_controller = desktop_controller;
         self
     }
 
@@ -864,6 +1569,14 @@ impl GuestToolsState {
             AgentMessage::ListWindows => self.list_windows(),
             AgentMessage::FocusWindow { id } => self.focus_window(id),
             AgentMessage::CloseWindow { id } => self.close_window(id),
+            AgentMessage::SetWindowBounds {
+                id,
+                x,
+                y,
+                width,
+                height,
+            } => self.set_window_bounds(id, *x, *y, *width, *height),
+            AgentMessage::WindowInput { id, event } => self.window_input(id, event),
             AgentMessage::FreezeFilesystem { timeout_millis } => {
                 self.freeze_filesystem(*timeout_millis)
             }
@@ -1087,6 +1800,10 @@ impl GuestToolsState {
             );
         }
 
+        if let Some(outcome) = self.desktop_controller.list_applications() {
+            return outcome;
+        }
+
         let names = self
             .applications
             .iter()
@@ -1116,6 +1833,9 @@ impl GuestToolsState {
                 "capability-not-enabled",
                 "applications capability is not enabled",
             );
+        }
+        if let Some(outcome) = self.desktop_controller.launch_application(id) {
+            return outcome;
         }
         let Some(app) = self.applications.get_mut(id) else {
             return CommandOutcome::error(
@@ -1148,6 +1868,10 @@ impl GuestToolsState {
             );
         }
 
+        if let Some(outcome) = self.desktop_controller.list_windows() {
+            return outcome;
+        }
+
         let windows = self
             .windows
             .iter()
@@ -1160,11 +1884,9 @@ impl GuestToolsState {
             .iter()
             .filter(|(_, window)| !window.closed)
             .map(|(id, window)| {
-                serde_json::json!({
-                    "id": id,
-                    "title": window.title,
-                    "focused": window.focused
-                })
+                let mut payload = window_entry_payload(id, window);
+                payload["focused"] = serde_json::Value::Bool(window.focused);
+                payload
             })
             .collect::<Vec<_>>();
         CommandOutcome::ok_with_result(
@@ -1180,6 +1902,9 @@ impl GuestToolsState {
                 "windows capability is not enabled",
             );
         }
+        if let Some(outcome) = self.desktop_controller.focus_window(id) {
+            return outcome;
+        }
         if !self.windows.get(id).is_some_and(|window| !window.closed) {
             return CommandOutcome::error("window-not-found", format!("window {id} was not found"));
         }
@@ -1189,18 +1914,14 @@ impl GuestToolsState {
         }
         let window = self.windows.get_mut(id).expect("window checked above");
         window.focused = true;
+        let mut window_payload = window_entry_payload(id, window);
+        window_payload["focused"] = serde_json::Value::Bool(window.focused);
         CommandOutcome::ok_with_result(
             Some(format!(
                 "accepted focus request for window {}",
                 window.title
             )),
-            serde_json::json!({
-                "window": {
-                    "id": id,
-                    "title": window.title,
-                    "focused": window.focused
-                }
-            }),
+            serde_json::json!({ "window": window_payload }),
         )
     }
 
@@ -1211,6 +1932,9 @@ impl GuestToolsState {
                 "windows capability is not enabled",
             );
         }
+        if let Some(outcome) = self.desktop_controller.close_window(id) {
+            return outcome;
+        }
         let Some(window) = self.windows.get_mut(id) else {
             return CommandOutcome::error("window-not-found", format!("window {id} was not found"));
         };
@@ -1220,15 +1944,82 @@ impl GuestToolsState {
 
         window.closed = true;
         window.focused = false;
+        let mut window_payload = window_entry_payload(id, window);
+        window_payload["closed"] = serde_json::Value::Bool(window.closed);
         CommandOutcome::ok_with_result(
             Some(format!("closed window {}", window.title)),
-            serde_json::json!({
-                "window": {
-                    "id": id,
-                    "title": window.title,
-                    "closed": window.closed
-                }
-            }),
+            serde_json::json!({ "window": window_payload }),
+        )
+    }
+
+    fn set_window_bounds(
+        &mut self,
+        id: &str,
+        x: i64,
+        y: i64,
+        width: u64,
+        height: u64,
+    ) -> CommandOutcome {
+        if !self.windows_supported {
+            return CommandOutcome::error(
+                "capability-not-enabled",
+                "windows capability is not enabled",
+            );
+        }
+        if let Some(outcome) = self
+            .desktop_controller
+            .set_window_bounds(id, x, y, width, height)
+        {
+            return outcome;
+        }
+        let Some(window) = self.windows.get_mut(id) else {
+            return CommandOutcome::error("window-not-found", format!("window {id} was not found"));
+        };
+        if window.closed {
+            return CommandOutcome::error("window-not-found", format!("window {id} was not found"));
+        }
+
+        window.bounds = Some(DesktopWindowBounds {
+            x,
+            y,
+            width,
+            height,
+        });
+        let mut window_payload = window_entry_payload(id, window);
+        window_payload["bounds_changed"] = serde_json::Value::Bool(true);
+        CommandOutcome::ok_with_result(
+            Some(format!("set bounds for window {}", window.title)),
+            serde_json::json!({ "window": window_payload }),
+        )
+    }
+
+    fn window_input(&mut self, id: &str, event: &WindowInputEvent) -> CommandOutcome {
+        if !self.windows_supported {
+            return CommandOutcome::error(
+                "capability-not-enabled",
+                "windows capability is not enabled",
+            );
+        }
+        if let Some(outcome) = self.desktop_controller.input_window(id, event) {
+            return outcome;
+        }
+        let Some(window) = self.windows.get(id) else {
+            return CommandOutcome::error("window-not-found", format!("window {id} was not found"));
+        };
+        if window.closed {
+            return CommandOutcome::error("window-not-found", format!("window {id} was not found"));
+        }
+
+        let mut window_payload = window_entry_payload(id, window);
+        window_payload["focused"] = serde_json::Value::Bool(window.focused);
+        window_payload["input"] = window_input_payload(event, "scaffold");
+        CommandOutcome::ok_with_result(
+            Some(format!(
+                "accepted {} input for window {}",
+                window_input_label(event),
+                window.title
+            )),
+            serde_json::json!({ "window": window_payload }),
         )
     }
 
@@ -2111,6 +2902,7 @@ fn default_windows() -> BTreeMap<String, WindowEntry> {
             title: "BridgeVM Linux Desktop".to_string(),
             focused: true,
             closed: false,
+            bounds: None,
         },
     )]
     .into_iter()
@@ -2820,6 +3612,10 @@ mod tests {
         fn has_program(&self, program: &str) -> bool {
             self.programs.contains(&program)
         }
+
+        fn program_path(&self, program: &str) -> Option<PathBuf> {
+            self.has_program(program).then(|| PathBuf::from(program))
+        }
     }
 
     #[test]
@@ -3126,6 +3922,7 @@ mod tests {
             Some(watcher),
             DisplayResizer::simulated(),
             ClockSetter::simulated(),
+            DesktopController::simulated(),
             false,
         )
         .unwrap();
@@ -3189,6 +3986,7 @@ mod tests {
             None,
             DisplayResizer::simulated(),
             ClockSetter::simulated(),
+            DesktopController::simulated(),
             true,
         )
         .unwrap();
@@ -3224,6 +4022,222 @@ mod tests {
         assert!(detect_display_resizer(&no_tool)
             .command_for_test()
             .is_none());
+    }
+
+    #[test]
+    fn desktop_controller_detection_uses_real_tools_when_available() {
+        let env = FakeDesktopEnv {
+            envs: &["DISPLAY"],
+            programs: &["gio", "wmctrl"],
+        };
+        assert!(detect_desktop_controller(&env, true, true).is_real_for_test());
+
+        let no_tools = FakeDesktopEnv {
+            envs: &["DISPLAY"],
+            programs: &[],
+        };
+        assert!(!detect_desktop_controller(&no_tools, true, true).is_real_for_test());
+    }
+
+    #[test]
+    fn desktop_file_parser_filters_visible_applications() {
+        let root = unique_temp_dir("bridgevm-tools-desktop-file");
+        fs::create_dir_all(&root).unwrap();
+        let terminal = root.join("org.bridgevm.Terminal.desktop");
+        fs::write(
+            &terminal,
+            "[Desktop Entry]\nType=Application\nName=Terminal\nExec=terminal\n",
+        )
+        .unwrap();
+        let app = parse_desktop_application(&terminal).expect("visible desktop app");
+        assert_eq!(app.id, "org.bridgevm.Terminal.desktop");
+        assert_eq!(app.name, "Terminal");
+
+        let hidden = root.join("hidden.desktop");
+        fs::write(
+            &hidden,
+            "[Desktop Entry]\nType=Application\nName=Hidden\nNoDisplay=true\n",
+        )
+        .unwrap();
+        assert!(parse_desktop_application(&hidden).is_none());
+    }
+
+    #[test]
+    fn wmctrl_window_backend_lists_focuses_and_closes_real_tool_output() {
+        let root = unique_temp_dir("bridgevm-tools-wmctrl");
+        fs::create_dir_all(&root).unwrap();
+        let command_path = root.join("wmctrl");
+        let action_path = root.join("action.txt");
+        fs::write(
+            &command_path,
+            format!(
+                "#!/bin/sh\ncase \"$1\" in\n  -l) if [ \"$2\" = \"-p\" ] && [ \"$3\" = \"-G\" ]; then echo '0x01200007  0 4242 30 40 800 600 guest Terminal'; else echo '0x01200007  0 guest Terminal'; fi;;\n  -ia|-ic) printf '%s %s' \"$1\" \"$2\" > '{}';;\n  -ir) printf '%s %s %s %s' \"$1\" \"$2\" \"$3\" \"$4\" > '{}';;\n  *) exit 2;;\nesac\n",
+                action_path.display(),
+                action_path.display()
+            ),
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&command_path).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&command_path, permissions).unwrap();
+
+        let mut controller = DesktopController::real(None, Some(command_path), None);
+        let list = controller.list_windows().expect("real window backend");
+        assert!(list.ok);
+        assert_eq!(
+            list.result,
+            Some(serde_json::json!({
+                "windows": [
+                    {
+                        "id": "0x01200007",
+                        "title": "Terminal",
+                        "desktop": 0,
+                        "pid": 4242,
+                        "bounds": {
+                            "x": 30,
+                            "y": 40,
+                            "width": 800,
+                            "height": 600
+                        },
+                        "focused": false,
+                        "source": "wmctrl"
+                    }
+                ]
+            }))
+        );
+
+        let focus = controller
+            .focus_window("0x01200007")
+            .expect("real focus backend");
+        assert!(focus.ok);
+        assert_eq!(fs::read_to_string(&action_path).unwrap(), "-ia 0x01200007");
+
+        let bounds = controller
+            .set_window_bounds("0x01200007", 50, 60, 1024, 768)
+            .expect("real bounds backend");
+        assert!(bounds.ok);
+        assert_eq!(
+            bounds.result,
+            Some(serde_json::json!({
+                "window": {
+                    "id": "0x01200007",
+                    "title": "Terminal",
+                    "desktop": 0,
+                    "pid": 4242,
+                    "bounds": {
+                        "x": 50,
+                        "y": 60,
+                        "width": 1024,
+                        "height": 768
+                    },
+                    "bounds_changed": true,
+                    "source": "wmctrl"
+                }
+            }))
+        );
+        assert_eq!(
+            fs::read_to_string(&action_path).unwrap(),
+            "-ir 0x01200007 -e 0,50,60,1024,768"
+        );
+
+        let close = controller
+            .close_window("0x01200007")
+            .expect("real close backend");
+        assert!(close.ok);
+        assert_eq!(fs::read_to_string(&action_path).unwrap(), "-ic 0x01200007");
+    }
+
+    #[test]
+    fn real_window_input_uses_wmctrl_focus_and_xdotool() {
+        let root = unique_temp_dir("bridgevm-tools-window-input");
+        fs::create_dir_all(&root).unwrap();
+        let wmctrl_path = root.join("wmctrl");
+        let xdotool_path = root.join("xdotool");
+        let action_path = root.join("actions.txt");
+        fs::write(
+            &wmctrl_path,
+            format!(
+                "#!/bin/sh\ncase \"$1\" in\n  -l) if [ \"$2\" = \"-p\" ] && [ \"$3\" = \"-G\" ]; then echo '0x01200007  0 4242 30 40 800 600 guest Terminal'; else echo '0x01200007  0 guest Terminal'; fi;;\n  -ia) printf 'wmctrl %s %s\\n' \"$1\" \"$2\" >> '{}';;\n  *) exit 2;;\nesac\n",
+                action_path.display()
+            ),
+        )
+        .unwrap();
+        fs::write(
+            &xdotool_path,
+            format!(
+                "#!/bin/sh\nprintf 'xdotool' >> '{}'\nfor arg in \"$@\"; do printf ' %s' \"$arg\" >> '{}'; done\nprintf '\\n' >> '{}'\n",
+                action_path.display(),
+                action_path.display(),
+                action_path.display()
+            ),
+        )
+        .unwrap();
+        for path in [&wmctrl_path, &xdotool_path] {
+            let mut permissions = fs::metadata(path).unwrap().permissions();
+            permissions.set_mode(0o700);
+            fs::set_permissions(path, permissions).unwrap();
+        }
+
+        let mut controller = DesktopController::real(None, Some(wmctrl_path), Some(xdotool_path));
+        let pointer = controller
+            .input_window(
+                "0x01200007",
+                &WindowInputEvent::Pointer {
+                    x: 120,
+                    y: 240,
+                    action: "click".to_string(),
+                    button: Some("left".to_string()),
+                },
+            )
+            .expect("real input backend");
+
+        assert!(pointer.ok);
+        assert_eq!(
+            pointer.result,
+            Some(serde_json::json!({
+                "window": {
+                    "id": "0x01200007",
+                    "title": "Terminal",
+                    "desktop": 0,
+                    "pid": 4242,
+                    "bounds": {
+                        "x": 30,
+                        "y": 40,
+                        "width": 800,
+                        "height": 600
+                    },
+                    "input": {
+                        "kind": "pointer",
+                        "x": 120,
+                        "y": 240,
+                        "action": "click",
+                        "button": "left",
+                        "source": "xdotool"
+                    },
+                    "source": "wmctrl"
+                }
+            }))
+        );
+        assert_eq!(
+            fs::read_to_string(&action_path).unwrap(),
+            "wmctrl -ia 0x01200007\nxdotool mousemove --sync 120 240\nxdotool click 1\n"
+        );
+
+        fs::write(&action_path, "").unwrap();
+        let key = controller
+            .input_window(
+                "0x01200007",
+                &WindowInputEvent::Key {
+                    key: "Return".to_string(),
+                    action: "tap".to_string(),
+                },
+            )
+            .expect("real key input backend");
+        assert!(key.ok);
+        assert_eq!(
+            fs::read_to_string(&action_path).unwrap(),
+            "wmctrl -ia 0x01200007\nxdotool key Return\n"
+        );
     }
 
     #[test]
@@ -3771,6 +4785,52 @@ mod tests {
             }
         );
 
+        let bounds = AgentEnvelope::with_request_id(
+            AgentMessage::SetWindowBounds {
+                id: "window-1".to_string(),
+                x: 30,
+                y: 40,
+                width: 800,
+                height: 600,
+            },
+            "bounds-1",
+        );
+        assert_eq!(
+            state.handle_command(&bounds).unwrap().message,
+            AgentMessage::CommandResult {
+                request_id: "bounds-1".to_string(),
+                ok: true,
+                error_code: None,
+                message: Some("set bounds for window BridgeVM Linux Desktop".to_string()),
+                result: Some(serde_json::json!({
+                    "window": {
+                        "id": "window-1",
+                        "title": "BridgeVM Linux Desktop",
+                        "bounds": {
+                            "x": 30,
+                            "y": 40,
+                            "width": 800,
+                            "height": 600
+                        },
+                        "bounds_changed": true
+                    }
+                })),
+                metadata: None,
+            }
+        );
+        assert_eq!(
+            state
+                .windows
+                .get("window-1")
+                .and_then(|window| window.bounds.clone()),
+            Some(DesktopWindowBounds {
+                x: 30,
+                y: 40,
+                width: 800,
+                height: 600,
+            })
+        );
+
         let close = AgentEnvelope::with_request_id(
             AgentMessage::CloseWindow {
                 id: "window-1".to_string(),
@@ -3788,6 +4848,12 @@ mod tests {
                     "window": {
                         "id": "window-1",
                         "title": "BridgeVM Linux Desktop",
+                        "bounds": {
+                            "x": 30,
+                            "y": 40,
+                            "width": 800,
+                            "height": 600
+                        },
                         "closed": true
                     }
                 })),
@@ -3835,6 +4901,28 @@ mod tests {
             state.handle_command(&focus).unwrap().message,
             AgentMessage::CommandResult {
                 request_id: "focus-1".to_string(),
+                ok: false,
+                error_code: Some("capability-not-enabled".to_string()),
+                message: Some("windows capability is not enabled".to_string()),
+                result: None,
+                metadata: None,
+            }
+        );
+
+        let bounds = AgentEnvelope::with_request_id(
+            AgentMessage::SetWindowBounds {
+                id: "window-1".to_string(),
+                x: 30,
+                y: 40,
+                width: 800,
+                height: 600,
+            },
+            "bounds-1",
+        );
+        assert_eq!(
+            state.handle_command(&bounds).unwrap().message,
+            AgentMessage::CommandResult {
+                request_id: "bounds-1".to_string(),
                 ok: false,
                 error_code: Some("capability-not-enabled".to_string()),
                 message: Some("windows capability is not enabled".to_string()),
@@ -4597,6 +5685,7 @@ mod tests {
             ClipboardWriter::simulated(),
             DisplayResizer::simulated(),
             ClockSetter::simulated(),
+            DesktopController::simulated(),
             true,
         )
         .unwrap();
@@ -4663,6 +5752,7 @@ mod tests {
             ClipboardWriter::simulated(),
             DisplayResizer::simulated(),
             ClockSetter::simulated(),
+            DesktopController::simulated(),
             false,
         )
         .unwrap();
@@ -4759,6 +5849,7 @@ mod tests {
             ClipboardWriter::simulated(),
             DisplayResizer::simulated(),
             ClockSetter::simulated(),
+            DesktopController::simulated(),
             true,
         )
         .unwrap();

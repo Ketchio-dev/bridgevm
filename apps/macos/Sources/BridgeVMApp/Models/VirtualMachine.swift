@@ -1447,6 +1447,72 @@ struct GuestToolsCommandResult: Equatable {
   var result: GuestToolsCommandPayload? = nil
   var metadata: GuestToolsCommandPayload? = nil
   var completedAtUnix: UInt64
+
+  var backendSourceSummary: String? {
+    let payloads = [result?.value, metadata?.value].compactMap { $0 }
+    var sources: Set<String> = []
+    var itemCounts: [String: Int] = [:]
+    for payload in payloads {
+      payload.collectBackendSources(into: &sources, itemCounts: &itemCounts)
+    }
+    guard !sources.isEmpty else {
+      return nil
+    }
+
+    let sourceText = sources.sorted().joined(separator: ", ")
+    let countText = itemCounts.keys.sorted().map { key in
+      "\(key): \(itemCounts[key] ?? 0)"
+    }.joined(separator: ", ")
+    return countText.isEmpty ? sourceText : "\(sourceText) (\(countText))"
+  }
+
+  var applicationActions: [GuestToolsApplicationAction] {
+    let payloads = [result?.value, metadata?.value].compactMap { $0 }
+    return Self.uniqueActions(payloads.flatMap(\.applicationActions))
+  }
+
+  var windowActions: [GuestToolsWindowAction] {
+    let payloads = [result?.value, metadata?.value].compactMap { $0 }
+    return Self.uniqueActions(payloads.flatMap(\.windowActions))
+  }
+
+  private static func uniqueActions<T: Identifiable & Equatable>(_ actions: [T]) -> [T]
+  where T.ID == String {
+    var seen: Set<String> = []
+    return actions.filter { action in
+      seen.insert(action.id).inserted
+    }
+  }
+}
+
+struct GuestToolsApplicationAction: Identifiable, Equatable {
+  var id: String
+  var name: String
+  var source: String?
+  var launched: Bool?
+}
+
+struct GuestToolsWindowAction: Identifiable, Equatable {
+  var id: String
+  var title: String
+  var source: String?
+  var focused: Bool?
+  var closed: Bool? = nil
+  var desktop: Int? = nil
+  var pid: Int? = nil
+  var bounds: GuestToolsWindowBounds? = nil
+  var cropFrameSummaryPath: String? = nil
+}
+
+struct GuestToolsWindowBounds: Equatable {
+  var x: Int
+  var y: Int
+  var width: Int
+  var height: Int
+
+  var displayText: String {
+    "\(width)x\(height) at \(x),\(y)"
+  }
 }
 
 struct GuestToolsCommandPayload: Equatable, Decodable {
@@ -1516,6 +1582,180 @@ enum GuestToolsJSONValue: Equatable, Decodable {
       return String(Int64(value))
     }
     return String(value)
+  }
+
+  fileprivate func collectBackendSources(
+    into sources: inout Set<String>,
+    itemCounts: inout [String: Int]
+  ) {
+    switch self {
+    case .object(let values):
+      if case .string(let source)? = values["source"], !source.isEmpty {
+        sources.insert(source)
+      }
+      for key in ["applications", "windows"] {
+        if case .array(let items)? = values[key] {
+          itemCounts[key] = max(itemCounts[key] ?? 0, items.count)
+        }
+      }
+      for child in values.values {
+        child.collectBackendSources(into: &sources, itemCounts: &itemCounts)
+      }
+    case .array(let values):
+      for child in values {
+        child.collectBackendSources(into: &sources, itemCounts: &itemCounts)
+      }
+    case .null, .bool, .number, .string:
+      break
+    }
+  }
+
+  fileprivate var applicationActions: [GuestToolsApplicationAction] {
+    applicationActions(inheritedSource: nil)
+  }
+
+  fileprivate var windowActions: [GuestToolsWindowAction] {
+    windowActions(inheritedSource: nil)
+  }
+
+  private func applicationActions(inheritedSource: String?) -> [GuestToolsApplicationAction] {
+    switch self {
+    case .object(let values):
+      let source = values.stringValue(for: "source") ?? inheritedSource
+      var actions: [GuestToolsApplicationAction] = []
+      if let application = values["application"]?.applicationAction(inheritedSource: source) {
+        actions.append(application)
+      }
+      if case .array(let items)? = values["applications"] {
+        actions.append(
+          contentsOf: items.compactMap { $0.applicationAction(inheritedSource: source) }
+        )
+      }
+      for (key, child) in values where key != "application" && key != "applications" {
+        actions.append(contentsOf: child.applicationActions(inheritedSource: source))
+      }
+      return actions
+    case .array(let values):
+      return values.flatMap { value -> [GuestToolsApplicationAction] in
+        if let action = value.applicationAction(inheritedSource: inheritedSource) {
+          return [action]
+        }
+        return value.applicationActions(inheritedSource: inheritedSource)
+      }
+    case .null, .bool, .number, .string:
+      return []
+    }
+  }
+
+  private func windowActions(inheritedSource: String?) -> [GuestToolsWindowAction] {
+    switch self {
+    case .object(let values):
+      let source = values.stringValue(for: "source") ?? inheritedSource
+      var actions: [GuestToolsWindowAction] = []
+      if let window = values["window"]?.windowAction(inheritedSource: source) {
+        actions.append(window)
+      }
+      if case .array(let items)? = values["windows"] {
+        actions.append(
+          contentsOf: items.compactMap { $0.windowAction(inheritedSource: source) }
+        )
+      }
+      for (key, child) in values where key != "window" && key != "windows" {
+        actions.append(contentsOf: child.windowActions(inheritedSource: source))
+      }
+      return actions
+    case .array(let values):
+      return values.flatMap { value -> [GuestToolsWindowAction] in
+        if let action = value.windowAction(inheritedSource: inheritedSource) {
+          return [action]
+        }
+        return value.windowActions(inheritedSource: inheritedSource)
+      }
+    case .null, .bool, .number, .string:
+      return []
+    }
+  }
+
+  private func applicationAction(inheritedSource: String?) -> GuestToolsApplicationAction? {
+    guard case .object(let values) = self,
+      let id = values.stringValue(for: "id"),
+      !id.isEmpty
+    else {
+      return nil
+    }
+    return GuestToolsApplicationAction(
+      id: id,
+      name: values.stringValue(for: "name") ?? id,
+      source: values.stringValue(for: "source") ?? inheritedSource,
+      launched: values.boolValue(for: "launched")
+    )
+  }
+
+  private func windowAction(inheritedSource: String?) -> GuestToolsWindowAction? {
+    guard case .object(let values) = self,
+      let id = values.stringValue(for: "id"),
+      !id.isEmpty
+    else {
+      return nil
+    }
+    return GuestToolsWindowAction(
+      id: id,
+      title: values.stringValue(for: "title") ?? values.stringValue(for: "name") ?? id,
+      source: values.stringValue(for: "source") ?? inheritedSource,
+      focused: values.boolValue(for: "focused"),
+      closed: values.boolValue(for: "closed"),
+      desktop: values.intValue(for: "desktop"),
+      pid: values.intValue(for: "pid"),
+      bounds: values.windowBounds(for: "bounds"),
+      cropFrameSummaryPath: values.cropFrameSummaryPath
+    )
+  }
+}
+
+private extension Dictionary where Key == String, Value == GuestToolsJSONValue {
+  func stringValue(for key: String) -> String? {
+    guard case .string(let value)? = self[key], !value.isEmpty else {
+      return nil
+    }
+    return value
+  }
+
+  func boolValue(for key: String) -> Bool? {
+    guard case .bool(let value)? = self[key] else {
+      return nil
+    }
+    return value
+  }
+
+  func intValue(for key: String) -> Int? {
+    switch self[key] {
+    case .number(let value):
+      return Int(value)
+    case .string(let value):
+      return Int(value)
+    case .bool, .object, .array, .null, .none:
+      return nil
+    }
+  }
+
+  func windowBounds(for key: String) -> GuestToolsWindowBounds? {
+    guard case .object(let bounds)? = self[key],
+      let x = bounds.intValue(for: "x"),
+      let y = bounds.intValue(for: "y"),
+      let width = bounds.intValue(for: "width"),
+      let height = bounds.intValue(for: "height"),
+      width > 0,
+      height > 0
+    else {
+      return nil
+    }
+    return GuestToolsWindowBounds(x: x, y: y, width: width, height: height)
+  }
+
+  var cropFrameSummaryPath: String? {
+    stringValue(for: "window_crop_frame_summary_path")
+      ?? stringValue(for: "proxy_crop_frame_summary_path")
+      ?? stringValue(for: "displayd_summary_path")
   }
 }
 
@@ -1798,6 +2038,15 @@ enum GuestToolsAgentCommand: Equatable {
   case listWindows
   case focusWindow(id: String)
   case closeWindow(id: String)
+  case setWindowBounds(id: String, x: Int, y: Int, width: UInt64, height: UInt64)
+  case windowPointerInput(
+    id: String,
+    x: Int,
+    y: Int,
+    action: GuestToolsWindowPointerAction,
+    button: GuestToolsWindowPointerButton?
+  )
+  case windowKeyInput(id: String, key: String, action: GuestToolsWindowKeyAction)
   case timeSync(unixEpochMillis: UInt64)
 
   var requiredRuntimeCapability: String {
@@ -1812,12 +2061,32 @@ enum GuestToolsAgentCommand: Equatable {
       return "drag-drop"
     case .listApplications, .launchApplication:
       return "applications"
-    case .listWindows, .focusWindow, .closeWindow:
+    case .listWindows, .focusWindow, .closeWindow, .setWindowBounds, .windowPointerInput,
+      .windowKeyInput:
       return "windows"
     case .timeSync:
       return "time-sync"
     }
   }
+}
+
+enum GuestToolsWindowPointerAction: String, Equatable {
+  case move
+  case press
+  case release
+  case click
+}
+
+enum GuestToolsWindowPointerButton: String, Equatable {
+  case left
+  case middle
+  case right
+}
+
+enum GuestToolsWindowKeyAction: String, Equatable {
+  case press
+  case release
+  case tap
 }
 
 struct RunnerStatus: Equatable {
@@ -1831,6 +2100,7 @@ struct RunnerStatus: Equatable {
   var launchReadiness: LaunchReadiness?
   var qmpSupervisor: QMPSupervisor? = nil
   var guestTools: GuestToolsRunnerStatus? = nil
+  var runtimeControl: RuntimeControlRunnerStatus? = nil
 
   var commandLine: String {
     command.joined(separator: " ")
@@ -1856,6 +2126,28 @@ struct GuestToolsRunnerStatus: Equatable {
   var socketPath: String
   var tokenPath: String
   var tokenCreatedAtUnix: UInt64
+}
+
+struct RuntimeControlRunnerStatus: Equatable {
+  var kind: String
+  var socketPath: String
+  var commands: [String]
+
+  var commandSummary: String {
+    commands.isEmpty ? "None" : commands.joined(separator: ", ")
+  }
+}
+
+struct RuntimeControlCommandResult: Equatable {
+  var vm: String
+  var kind: String
+  var socketPath: String
+  var command: String
+  var response: GuestToolsCommandPayload
+
+  var responseSummary: String {
+    response.displayText.isEmpty ? "No response fields" : response.displayText
+  }
 }
 
 struct LaunchReadiness: Equatable {

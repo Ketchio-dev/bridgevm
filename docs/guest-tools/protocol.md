@@ -183,18 +183,22 @@ is a protocol loop scaffold. Linux OS clipboard writes, clipboard watching, and
 display resize effects can call explicit or auto-detected desktop command
 backends (`wl-copy`/`wl-paste`, `xclip`, and `xrandr`) when the matching
 capabilities and desktop environment are available; otherwise they remain
-simulated acknowledgements. Shared-folder, application, window, network, and
-most drag-and-drop integrations still need real guest backends. Freeze/thaw
+simulated acknowledgements. Application/window commands also have a conservative
+Linux desktop backend: when `gio` or `gtk-launch` is available the agent lists
+visible `.desktop` applications and launches the selected desktop file, and
+when an X11 session has `wmctrl` it lists/focuses/closes real desktop windows.
+If those tools are unavailable, the commands fall back to the in-memory alpha
+scaffold. Shared-folder, network, and most drag-and-drop integrations still need
+real guest backends. Freeze/thaw
 defaults to simulated in-memory boundary state, but the Linux scaffold can be
 started with `--real-fsfreeze` and one or more `--fsfreeze-mount <path>` values
 to route freeze/thaw through an explicit allowlist-backed `fsfreeze` command
 backend. That real mode is still not app quiescing: it may require root or
 `CAP_SYS_ADMIN`, can fail on unsupported filesystems, and does not flush
 databases or coordinate application writes. Application and window metadata are
-also protocol alpha surfaces: the Linux scaffold can
-advertise `applications` and `windows`, list static scaffold entries, and
-acknowledge launch/focus/close commands through in-memory state, but it does
-not launch Linux applications or control real desktop windows yet.
+still alpha surfaces: the real Linux desktop backend is tool-driven and
+best-effort, while the fallback scaffold only acknowledges launch/focus/close
+commands through in-memory state.
 Drag-and-drop alpha commands (`FileDropStart`, `FileDropChunk`, and
 `FileDropComplete`) track transfer state in memory and acknowledge the command
 sequence. When `bridgevm-tools-linux` is started with `--file-drop-dir <dir>`,
@@ -400,16 +404,85 @@ single-component file name. Without that option, it does not update guest
 filesystem state.
 
 Application/window metadata alpha follows the same request/response boundary.
-`ListApplications` and `ListWindows` return scaffold-owned entries only, and
-`LaunchApplication { id }`, `FocusWindow { id }`, and `CloseWindow { id }`
-validate the supplied ID against that scaffold state before returning
-`CommandResult`. A successful result means the authenticated scaffold decoded
-and accepted the protocol command. It must not be presented as evidence that a
-Linux process was launched, a real window was focused, or a real window was
-closed.
-Because list requests do not mutate guest state, they are the preferred safe
-alpha actions for dashboard status controls while real application and window
-integration is still absent.
+`ListApplications`, `LaunchApplication { id }`, `ListWindows`,
+`FocusWindow { id }`, `CloseWindow { id }`,
+`SetWindowBounds { id, x, y, width, height }`, and
+`WindowInput { id, event }` first try the real desktop
+backend when the guest session exposes suitable tools (`gio` / `gtk-launch` for
+visible `.desktop` applications, `wmctrl` for X11 windows, and `xdotool` for
+X11 pointer/key input), then fall back to scaffold-owned entries when those
+tools or entries are unavailable. A successful
+result from the scaffold fallback only means the authenticated scaffold decoded
+and accepted the protocol command; a successful result with
+`"source": "linux-desktop-file"`, `"source": "wmctrl"`, or
+`"source": "xdotool"` means the agent crossed into the guest desktop tool
+boundary. The X11 `wmctrl` backend now prefers
+`wmctrl -l -p -G`, so window payloads can include `pid`, `desktop`, and
+`bounds: { x, y, width, height }` in addition to `id`, `title`, and state flags;
+those fields are the first data contract for host-side proxy windows. Window
+geometry changes use `wmctrl -ir <id> -e 0,x,y,width,height` when the real X11
+backend is available, and the scaffold fallback records the requested bounds in
+memory. That gives the host a tested move/resize command primitive, but not yet
+bidirectional host/guest window movement synchronization. The macOS proxy shell
+uses the primitive for debounced host-proxy move/resize updates. Window payloads may also include
+`window_crop_frame_summary_path` when a host-side
+producer has already written a `displayd` JSON summary containing
+`window_crop_frame`. The daemon can now act as that producer for static
+host-visible RGBA framebuffer inputs: if
+`BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_RGBA_FILE`,
+`BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_WIDTH`, and
+`BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_HEIGHT` are set, successful `windows` command
+results with bounds are augmented with
+`metadata/proxy-windows/<window-id>.json/.rgba` crop artifacts. The macOS app
+consumes the bounds contract to open a proxy `NSWindow` sized from the guest
+bounds and to map/clamp host points back into guest window coordinates. The same
+bounds can be passed to `displayd --window-*` to produce a proxy-window
+crop/input contract, and `displayd` can materialize that contract from a raw
+RGBA framebuffer file into a raw RGBA window crop artifact. When the optional
+summary path is present, the app can decode that artifact contract, render the
+raw RGBA crop as a host image, refresh from the artifact file, and forward
+mouse/key events back through `WindowInput`. The `WindowInput.event` payload is
+tagged with `kind: "pointer"` (`x`, `y`, `action: move|press|release|click`,
+optional `button: left|middle|right`) or `kind: "key"` (`key`, `action:
+press|release|tap`). The daemon keeps a cache of the most recent crop targets
+from successful window payloads and, while the optional framebuffer file is
+configured, refreshes the matching `.rgba` artifacts when that file changes.
+The Apple VZ display helper can now provide that optional framebuffer file for
+Fast display sessions: `--proxy-framebuffer-rgba-file` captures the
+`VZVirtualMachineView` through AppKit, writes raw RGBA bytes atomically, and
+reports the configured path/interval through runtime-control `status`.
+When the explicit framebuffer env vars are absent, daemon-owned, CLI, or
+app-direct Show Display runner metadata can auto-supply the Apple VZ export path
+and dimensions once the file exists, so early `windows` commands do not fail
+before the first frame is written.
+The real-backend socket smoke covers that env-unset app-direct metadata
+fallback with the default `metadata/apple-vz-display-framebuffer.rgba` source
+path and verifies reconcile refresh after rewriting the framebuffer file.
+The crop summary also records source byte length, source modified time, and the
+artifact refresh time for later live-framebuffer producer evidence.
+The macOS proxy reloads that crop summary during its refresh loop, so a changed
+crop output path or output dimensions can be consumed without reopening the
+proxy shell.
+This is still an artifact/input/bounds bridge with whole-view file capture, not
+true per-window streaming or host-window Coherence. Visible live app-direct crop
+proof and bidirectional guest-window/host-proxy movement synchronization remain
+future protocol/display work; today the macOS proxy can debounce host-side
+move/resize changes into `SetWindowBounds` and maps a user-closing the proxy
+shell to `CloseWindow`.
+This real backend boundary is covered by
+`guest-tools-app-window-real-backend-cli-smoke.sh` using fake desktop tools over
+the daemon/socket/CLI path, including a `wmctrl` bounds payload consumed by the
+`displayd` window-region planner and a daemon-side crop refresh after rewriting
+the configured framebuffer file. The heavy opt-in
+`guest-tools-app-window-live-gui-opt-in-smoke.sh` extends that boundary to a
+booted QEMU/HVF guest with Xvfb/openbox/xterm: it launches a `.desktop` app
+through `gio`, then lists/focuses/closes the resulting real X11 window through
+`wmctrl`. The metadata-safe suite only runs the skip guard for this live
+harness. A preserved Ubuntu Noble arm64 live pass on June 17, 2026 proved the
+real Linux desktop-tool boundary over virtio-serial; this should still not be
+presented as Parallels-style Coherence.
+Because list requests do not mutate guest state, they remain the preferred safe
+alpha actions for dashboard status controls.
 The matching high-level wrappers are `bridgevm guest-tools list-applications
 <vm> [--request-id <id>]`, `bridgevm guest-tools launch-application <vm> --id
 <application-id> [--request-id <id>]`, `bridgevm guest-tools list-windows <vm>

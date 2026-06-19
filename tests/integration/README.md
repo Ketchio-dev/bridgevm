@@ -10,6 +10,62 @@ tests/integration/template-create-cli-smoke.sh
 tests/integration/store-doctor-cli-smoke.sh
 tests/integration/mode-recommendation-cli-smoke.sh
 tests/integration/windows-arm-qemu-args-cli-smoke.sh
+tests/integration/windows-arm-hvf-plan-cli-smoke.sh
+tests/integration/windows-arm-hvf-runner-cli-smoke.sh
+tests/integration/windows-arm-hvf-machine-plan-cli-smoke.sh
+tests/integration/windows-arm-hvf-machine-runner-cli-smoke.sh
+tests/integration/windows-arm-hvf-boot-disk-layout-cli-smoke.sh
+tests/integration/windows-arm-hvf-boot-disk-layout-runner-smoke.sh
+tests/integration/windows-arm-hvf-firmware-handoff-cli-smoke.sh
+tests/integration/windows-arm-hvf-firmware-handoff-runner-smoke.sh
+tests/integration/windows-arm-hvf-pflash-map-cli-smoke.sh
+tests/integration/windows-arm-hvf-pflash-map-runner-smoke.sh
+tests/integration/windows-arm-hvf-pflash-hvf-map-cli-smoke.sh
+tests/integration/windows-arm-hvf-pflash-hvf-map-runner-smoke.sh
+tests/integration/windows-arm-hvf-reset-vector-entry-cli-smoke.sh
+tests/integration/windows-arm-hvf-reset-vector-entry-runner-smoke.sh
+tests/integration/windows-arm-hvf-firmware-run-loop-cli-smoke.sh
+tests/integration/windows-arm-hvf-firmware-run-loop-runner-smoke.sh
+tests/integration/windows-arm-hvf-firmware-device-discovery-cli-smoke.sh
+tests/integration/windows-arm-hvf-firmware-device-discovery-runner-smoke.sh
+tests/integration/windows-arm-hvf-platform-description-cli-smoke.sh
+tests/integration/windows-arm-hvf-platform-description-runner-smoke.sh
+tests/integration/hvf-host-capabilities-cli-smoke.sh
+tests/integration/hvf-host-capabilities-runner-smoke.sh
+tests/integration/hvf-vm-probe-cli-smoke.sh
+tests/integration/hvf-vm-probe-runner-smoke.sh
+tests/integration/hvf-vcpu-probe-cli-smoke.sh
+tests/integration/hvf-vcpu-probe-runner-smoke.sh
+tests/integration/hvf-vcpu-run-probe-cli-smoke.sh
+tests/integration/hvf-vcpu-run-probe-runner-smoke.sh
+tests/integration/hvf-memory-map-probe-cli-smoke.sh
+tests/integration/hvf-memory-map-probe-runner-smoke.sh
+tests/integration/hvf-guest-entry-probe-cli-smoke.sh
+tests/integration/hvf-guest-entry-probe-runner-smoke.sh
+tests/integration/hvf-guest-exit-loop-probe-cli-smoke.sh
+tests/integration/hvf-guest-exit-loop-probe-runner-smoke.sh
+tests/integration/hvf-mmio-read-probe-cli-smoke.sh
+tests/integration/hvf-mmio-read-probe-runner-smoke.sh
+tests/integration/hvf-mmio-read-emulation-probe-cli-smoke.sh
+tests/integration/hvf-mmio-read-emulation-probe-runner-smoke.sh
+tests/integration/hvf-mmio-write-emulation-probe-cli-smoke.sh
+tests/integration/hvf-mmio-write-emulation-probe-runner-smoke.sh
+tests/integration/hvf-mmio-serial-device-probe-cli-smoke.sh
+tests/integration/hvf-mmio-serial-device-probe-runner-smoke.sh
+tests/integration/hvf-mmio-rtc-device-probe-cli-smoke.sh
+tests/integration/hvf-mmio-rtc-device-probe-runner-smoke.sh
+tests/integration/hvf-mmio-block-device-probe-cli-smoke.sh
+tests/integration/hvf-mmio-block-device-probe-runner-smoke.sh
+tests/integration/hvf-mmio-block-queue-probe-cli-smoke.sh
+tests/integration/hvf-mmio-block-queue-probe-runner-smoke.sh
+tests/integration/hvf-virtio-block-request-model-cli-smoke.sh
+tests/integration/hvf-virtio-block-request-model-runner-smoke.sh
+tests/integration/hvf-virtio-block-file-backing-cli-smoke.sh
+tests/integration/hvf-virtio-block-file-backing-runner-smoke.sh
+tests/integration/hvf-virtio-block-writable-file-backing-cli-smoke.sh
+tests/integration/hvf-virtio-block-writable-file-backing-runner-smoke.sh
+tests/integration/hvf-virtio-block-iso-backing-cli-smoke.sh
+tests/integration/hvf-virtio-block-iso-backing-runner-smoke.sh
 tests/integration/port-forward-cli-smoke.sh
 tests/integration/clone-cli-smoke.sh
 tests/integration/metadata-repair-cli-smoke.sh
@@ -35,6 +91,7 @@ tests/integration/guest-tools-handshake-cli-smoke.sh
 tests/integration/displayd-plan-cli-smoke.sh
 tests/integration/networkd-plan-cli-smoke.sh
 tests/integration/guest-tools-app-window-cli-smoke.sh
+tests/integration/guest-tools-app-window-real-backend-cli-smoke.sh
 tests/integration/guest-tools-time-sync-cli-smoke.sh
 tests/integration/guest-tools-command-tracker-cli-smoke.sh
 tests/integration/guest-tools-agent-update-cli-smoke.sh
@@ -55,6 +112,9 @@ tests/integration/application-consistent-snapshot-cli-smoke.sh
 tests/integration/application-consistent-freeze-thaw-cli-smoke.sh
 tests/integration/application-consistent-fsfreeze-backend-smoke.sh
 tests/integration/resource-profile-readiness-smoke.sh
+tests/integration/runtime-resource-policy-cli-smoke.sh
+tests/integration/vz-display-demo-cli-smoke.sh
+tests/integration/vz-proxy-crop-evidence-verifier-smoke.sh
 tests/integration/readiness-report-cli-smoke.sh
 tests/integration/fast-mode-readiness-smoke.sh
 tests/integration/fast-mode-readiness-unsupported-smoke.sh
@@ -127,6 +187,10 @@ tests/integration/local-release-readiness-suite.sh --with-metadata-smokes --with
 
 The suite runs `template-create-cli-smoke.sh`, `store-doctor-cli-smoke.sh`,
 `mode-recommendation-cli-smoke.sh`, `windows-arm-qemu-args-cli-smoke.sh`,
+`windows-arm-hvf-plan-cli-smoke.sh`,
+`windows-arm-hvf-runner-cli-smoke.sh`, the HVF machine-plan smokes,
+the HVF host-capabilities and default no-create VM/vCPU/run/memory-map probe smokes,
+the HVF VirtIO block request/file/writable-file/ISO backing smokes,
 `clone-cli-smoke.sh`, `metadata-repair-cli-smoke.sh`,
 `manifest-migration-cli-smoke.sh`, `manifest-schema-cli-smoke.sh`,
 `export-import-cli-smoke.sh`,
@@ -146,17 +210,282 @@ smokes, the disk create/inspect/verify/compact smokes,
 `application-consistent-freeze-thaw-cli-smoke.sh`,
 `application-consistent-fsfreeze-backend-smoke.sh`, `log-viewer-cli-smoke.sh`,
 `diagnostics-cli-smoke.sh`, `performance-cli-smoke.sh`,
-`resource-profile-readiness-smoke.sh`,
+`resource-profile-readiness-smoke.sh`, `runtime-resource-policy-cli-smoke.sh`,
+`vz-display-demo-cli-smoke.sh`, `vz-proxy-crop-evidence-verifier-smoke.sh`,
+`product-gates-report-smoke.sh`,
 `tests/sleep-wake/metadata-baseline-smoke.sh`,
 `apple-vz-live-evidence-verifier-smoke.sh`,
 `qemu-live-evidence-verifier-smoke.sh`, and
-the Apple VZ and QEMU live opt-in skip smokes sequentially and stops at the
-first failure.
+the Apple VZ, QEMU, and guest-tools app/window live opt-in skip smokes
+sequentially and stops at the first failure.
 
-The promoted clone/import/delete, disk, display, lifecycle, guest-tools, QMP,
-SSH planning, diagnostics, performance, resource profile, readiness report,
+The HVF VM probe live opt-in smoke is intentionally outside the metadata-safe
+suite. Set `BRIDGEVM_HVF_ALLOW_VM_CREATE=1` and run
+`tests/integration/hvf-vm-probe-live-opt-in-smoke.sh` directly when you want to
+build/sign `hvf-runner` with `com.apple.security.hypervisor`, then create and
+immediately destroy an empty Apple Hypervisor.framework VM without entering
+firmware, creating vCPUs, or booting Windows.
+
+Run `tests/integration/hvf-vcpu-probe-live-opt-in-smoke.sh` with the same opt-in
+when you also want to create and immediately destroy one empty HVF vCPU. That
+still does not call `hv_vcpu_run`, enter firmware, or boot Windows.
+
+The HVF vCPU run/cancel live opt-in smoke is also intentionally outside the
+metadata-safe suite. Set `BRIDGEVM_HVF_ALLOW_VCPU_RUN=1` and run
+`tests/integration/hvf-vcpu-run-probe-live-opt-in-smoke.sh` directly when you
+want to build/sign `hvf-runner`, create an empty HVF VM/vCPU, call
+`hv_vcpus_exit` before guest entry, then observe one immediate
+`HV_EXIT_REASON_CANCELED` `hv_vcpu_run` return. This proves only the bounded
+run-return API boundary, not mapped guest memory, firmware entry, or Windows
+boot.
+
+The HVF memory map/unmap live opt-in smoke is outside the metadata-safe suite
+too. Set `BRIDGEVM_HVF_ALLOW_MEMORY_MAP=1` and run
+`tests/integration/hvf-memory-map-probe-live-opt-in-smoke.sh` directly when you
+want to build/sign `hvf-runner`, create an empty HVF VM, allocate one 16 KiB
+guest RAM page, map it at IPA `0x40000000`, unmap it, and clean up. This proves
+only the guest-memory mapping boundary, not vCPU execution, firmware entry, or
+Windows boot.
+
+The HVF guest-entry live opt-in smoke is the first mapped guest-instruction
+boundary. Set `BRIDGEVM_HVF_ALLOW_GUEST_ENTRY=1` and run
+`tests/integration/hvf-guest-entry-probe-live-opt-in-smoke.sh` directly when
+you want to build/sign `hvf-runner`, map one `HVC #0` instruction at IPA
+`0x40000000`, set PC/CPSR, run with a watchdog, and require an exception exit.
+This proves only bounded guest code entry/exit, not firmware entry or Windows
+boot.
+
+The HVF guest-exit-loop live opt-in smoke is the first direct mini VMM loop.
+Set `BRIDGEVM_HVF_ALLOW_EXIT_LOOP=1` and run
+`tests/integration/hvf-guest-exit-loop-probe-live-opt-in-smoke.sh` directly
+when you want to build/sign `hvf-runner`, run `HVC #0`, read and advance PC,
+then run `HVC #1` under watchdog protection. This proves only a bounded
+run/exit/PC-advance loop, not firmware entry or Windows boot.
+
+The HVF MMIO read live opt-in smoke is the first data-abort/device-model exit
+boundary. Set `BRIDGEVM_HVF_ALLOW_MMIO_READ=1` and run
+`tests/integration/hvf-mmio-read-probe-live-opt-in-smoke.sh` directly when you
+want to build/sign `hvf-runner`, run one `LDR X0, [X1]` against unmapped IPA
+`0x50000000`, and observe the exit. This proves only the MMIO exit boundary,
+not any implemented device.
+
+The HVF MMIO read-emulation live opt-in smoke is the first minimal device read
+continuation loop. Set `BRIDGEVM_HVF_ALLOW_MMIO_EMULATION=1` and run
+`tests/integration/hvf-mmio-read-emulation-probe-live-opt-in-smoke.sh`
+directly when you want to build/sign `hvf-runner`, handle one unmapped `LDR`
+read by injecting `X0=0x123456789abcdef0`, advance PC, continue to `HVC #0`,
+and verify the value remains in `X0`. This proves only a tiny injected read
+path, not a real device model.
+
+The HVF MMIO write-emulation live opt-in smoke is the matching minimal device
+write continuation loop. Set `BRIDGEVM_HVF_ALLOW_MMIO_WRITE_EMULATION=1` and
+run `tests/integration/hvf-mmio-write-emulation-probe-live-opt-in-smoke.sh`
+directly when you want to build/sign `hvf-runner`, handle one unmapped `STR` by
+capturing `X0=0xfedcba987654321`, advance PC, continue to `HVC #0`, and verify
+the value remains in `X0`. This proves only a tiny captured write path, not a
+real device model.
+
+The HVF MMIO serial-device live opt-in smoke is the first tiny PL011 UART-style
+multi-register device loop. Set `BRIDGEVM_HVF_ALLOW_MMIO_SERIAL_DEVICE=1` and run
+`tests/integration/hvf-mmio-serial-device-probe-live-opt-in-smoke.sh` directly
+when you want to build/sign `hvf-runner`, handle one PL011 data-register write
+`X0=0x41`, route the write plus flag-register read through the reusable BridgeVM
+MMIO device bus, inject one flag read `X0=0x90`, advance PC across both MMIO
+exits, and continue to `HVC #0`. This proves only a tiny PL011 UART skeleton,
+not firmware console or Windows boot support.
+
+The HVF MMIO RTC-device live opt-in smoke is the first two-device BridgeVM MMIO
+bus dispatch. Set `BRIDGEVM_HVF_ALLOW_MMIO_RTC_DEVICE=1` and run
+`tests/integration/hvf-mmio-rtc-device-probe-live-opt-in-smoke.sh` directly when
+you want to build/sign `hvf-runner`, attach PL011 UART plus PL031 RTC skeletons,
+route one PL031 data-register read through the reusable BridgeVM MMIO device
+bus, inject `X0=0x20260618`, advance PC, and continue to `HVC #0`. This proves
+only a tiny RTC skeleton and multi-device dispatch, not firmware time services
+or Windows boot support.
+
+The HVF MMIO block-device live opt-in smoke is the first storage-facing
+VirtIO-MMIO identity loop. Set `BRIDGEVM_HVF_ALLOW_MMIO_BLOCK_DEVICE=1` and run
+`tests/integration/hvf-mmio-block-device-probe-live-opt-in-smoke.sh` directly
+when you want to build/sign `hvf-runner`, attach PL011 UART, PL031 RTC, and a
+VirtIO-MMIO block identity skeleton, route the magic/version/device/vendor
+register reads through the reusable BridgeVM MMIO device bus, inject
+`0x74726976`, `0x2`, `0x2`, and `0x4252564d`, advance PC across all four MMIO
+exits, and continue to `HVC #0`. This proves only VirtIO-MMIO block identity
+register handling, not queues, ISO attach, boot disk IO, persistence, or Windows
+boot support.
+
+The HVF MMIO block queue/config/address/notify live opt-in smoke is the next
+storage-facing VirtIO-MMIO register loop. Set
+`BRIDGEVM_HVF_ALLOW_MMIO_BLOCK_QUEUE=1` and run
+`tests/integration/hvf-mmio-block-queue-probe-live-opt-in-smoke.sh` directly
+when you want to build/sign `hvf-runner`, attach PL011 UART, PL031 RTC, and a
+VirtIO-MMIO block queue/config/address/notify skeleton, route feature, driver
+feature, queue select/size/ready, descriptor/driver/device ring addresses,
+status, queue notify, interrupt status, config generation, and capacity
+registers through the reusable BridgeVM MMIO device bus, advance PC across
+mixed read/write exits, seed one synthetic in-guest-memory read request,
+complete it immediately after `queue_notify`, write data/status/used-ring
+state, raise used-buffer interrupt status, then repeat the same signed live
+HVF `queue_notify` path with `--disk <fixture>` so completion reads sector data
+from a host-file backing at byte offset `0xe00`, then again with
+`--iso <fixture>` so completion reads sector data from a read-only
+installer-media backing at byte offset `0xe00`, then again with
+`--writable-disk <fixture>` so completion performs an initial read, one write,
+one flush, and a reopen persistence check on a writable host-file backing, and
+continue to `HVC #0`.
+The default CLI/runner smokes also verify that `--disk`, `--iso`, and
+`--writable-disk` are recorded without opening a backend when live opt-in is absent. This proves only
+the first live synthetic, host-file-backed, and read-only ISO-backed request
+completion paths, not persistent boot disk lifecycle, firmware boot, installer
+boot, or Windows boot support.
+
+The Windows Arm HVF boot-disk layout smokes are metadata-safe disk-format
+tests, not live HVF entry tests. Run
+`tests/integration/windows-arm-hvf-boot-disk-layout-cli-smoke.sh` and
+`tests/integration/windows-arm-hvf-boot-disk-layout-runner-smoke.sh` when you
+want to create a sparse raw Windows Arm target disk, write a protective MBR plus
+primary/backup GPT, model EFI System, Microsoft Reserved, and Windows Basic
+Data partitions, reopen the disk, and verify MBR/GPT/partition-entry metadata
+without QEMU, Apple VZ, GUI launch, or HVF entry. This proves the boot-disk
+layout boundary, not firmware handoff, installer boot, installed Windows
+persistence, reboot persistence, or Windows boot support.
+
+The Windows Arm HVF firmware handoff smokes are metadata-safe pflash input
+tests, not live HVF entry tests. Run
+`tests/integration/windows-arm-hvf-firmware-handoff-cli-smoke.sh` and
+`tests/integration/windows-arm-hvf-firmware-handoff-runner-smoke.sh` when you
+want to validate synthetic AArch64 UEFI FD and vars-template firmware volume
+headers, verify FV checksums, seed a mutable vars store from the template,
+reopen it, and report the planned code/vars pflash IPA slots without QEMU,
+Apple VZ, GUI launch, or HVF entry. This proves only the firmware metadata
+handoff boundary, not reset-vector entry, UEFI Boot Manager execution,
+installer boot, installed Windows persistence, reboot persistence, or Windows
+boot support.
+
+The Windows Arm HVF pflash map smokes are metadata-safe memory-image tests, not
+live HVF entry tests. Run
+`tests/integration/windows-arm-hvf-pflash-map-cli-smoke.sh` and
+`tests/integration/windows-arm-hvf-pflash-map-runner-smoke.sh` when you want to
+validate synthetic AArch64 UEFI FD and vars inputs, seed a mutable vars store,
+load code/vars into planned 64 MiB pflash memory images, verify copied prefixes,
+zero padding, non-overlapping IPA ranges, guest RAM separation, and device MMIO
+separation without QEMU, Apple VZ, GUI launch, or HVF entry. This proves only
+the pflash memory-image mapping boundary, not reset-vector entry, UEFI Boot
+Manager execution, installer boot, installed Windows persistence, reboot
+persistence, or Windows boot support.
+
+The Windows Arm HVF pflash HVF map smokes are metadata-safe default tests with
+a separate signed live opt-in. Run
+`tests/integration/windows-arm-hvf-pflash-hvf-map-cli-smoke.sh` and
+`tests/integration/windows-arm-hvf-pflash-hvf-map-runner-smoke.sh` when you want
+to verify that prepared UEFI code/vars pflash images are accepted, the default
+path stays opt-in blocked, the planned code slot is read/execute, and the
+planned vars slot is read/write without QEMU, Apple VZ, GUI launch, vCPU
+creation, or guest execution. Run
+`BRIDGEVM_HVF_ALLOW_UEFI_PFLASH_MAP=1 tests/integration/windows-arm-hvf-pflash-hvf-map-live-opt-in-smoke.sh`
+only when you intentionally want the signed runner to create an empty HVF VM,
+map/unmap those pflash slots, and destroy the VM. This still proves only the
+pflash HVF map/unmap boundary, not reset-vector entry, UEFI Boot Manager
+execution, installer boot, installed Windows persistence, reboot persistence,
+or Windows boot support.
+
+The Windows Arm HVF reset-vector entry smokes are metadata-safe default tests
+with a separate signed live opt-in. Run
+`tests/integration/windows-arm-hvf-reset-vector-entry-cli-smoke.sh` and
+`tests/integration/windows-arm-hvf-reset-vector-entry-runner-smoke.sh` when you
+want to verify that prepared UEFI code/vars pflash images are accepted, the
+default path stays opt-in blocked, PC/CPSR/run remain unattempted, and no QEMU,
+Apple VZ, or GUI launch occurs. Run
+`BRIDGEVM_HVF_ALLOW_UEFI_RESET_VECTOR_ENTRY=1 tests/integration/windows-arm-hvf-reset-vector-entry-live-opt-in-smoke.sh`
+only when you intentionally want the signed runner to create an HVF VM, map the
+pflash slots, create one vCPU, set the reset-vector entry registers, run once
+under a watchdog, observe the first exit, classify the Arm exception class,
+report whether PC progressed beyond the reset vector, and clean up. Run
+`BRIDGEVM_HVF_ALLOW_REAL_EDK2_RESET_VECTOR_ENTRY=1 tests/integration/windows-arm-hvf-real-edk2-reset-vector-live-opt-in-smoke.sh`
+when a real AArch64 edk2 pflash image is available and you want to prove that
+the same no-QEMU HVF path accepts it and moves PC beyond the reset vector before
+the first unhandled exception exit. These prove only reset-vector entry,
+first-exit classification, and cleanup, not UEFI Boot Manager execution,
+installer boot, installed Windows persistence, reboot persistence, or Windows
+boot support.
+
+The Windows Arm HVF firmware device-discovery smokes are metadata-safe wrapper
+tests for the firmware run-loop. Run
+`tests/integration/windows-arm-hvf-firmware-device-discovery-cli-smoke.sh` and
+`tests/integration/windows-arm-hvf-firmware-device-discovery-runner-smoke.sh`
+when you want to verify that the named no-QEMU device-discovery command forces
+low pflash alias mapping, low-vector repair, post-repair continue,
+interrupt/timer wiring, and stop-at-first-post-repair-device-boundary policy,
+while the default path remains opt-in blocked and reports
+`Device discovery boundary reached/status/ready` without QEMU, Apple VZ, GUI
+launch, UEFI Boot Manager, installer boot, or Windows boot claims.
+
+The Windows Arm HVF platform-description smokes are metadata-safe FDT tests,
+not live HVF entry tests. Run
+`tests/integration/windows-arm-hvf-platform-description-cli-smoke.sh` and
+`tests/integration/windows-arm-hvf-platform-description-runner-smoke.sh` when
+you want to verify that BridgeVM can build a QEMU-free, Apple-VZ-free FDT
+platform description with magic `0xd00dfeed`, guest RAM at `0x40000000`,
+requested CPU nodes, and PL011/PL031 plus VirtIO-MMIO installer ISO
+(`0x10002000`) and target disk (`0x10003000`) nodes inside the
+`0x10000000..0x20000000` Windows device window. This proves only device
+discovery metadata, not DTB handoff into UEFI, GIC emulation, installer boot,
+or Windows boot support.
+
+The VirtIO block request model smokes are metadata-safe default tests, not live
+HVF entry tests. Run
+`tests/integration/hvf-virtio-block-request-model-cli-smoke.sh` and
+`tests/integration/hvf-virtio-block-request-model-runner-smoke.sh` when you want
+to verify the BridgeVM-owned VirtIO block model can flow through VirtIO-MMIO
+queue setup writes on the MMIO bus plus queue notify on the device bus, complete
+one synthetic in-memory `VIRTIO_BLK_T_IN` descriptor chain, write
+data/status/used ring state, raise interrupt status, and report that QEMU,
+Apple VZ, HVF, and guest execution were not entered. This proves only the first
+request-model boundary, not ISO attach, live block IO, persistence, firmware
+boot, or Windows boot support.
+
+The VirtIO block file backing smokes are metadata-safe default tests, not live
+HVF entry tests. Run
+`tests/integration/hvf-virtio-block-file-backing-cli-smoke.sh` and
+`tests/integration/hvf-virtio-block-file-backing-runner-smoke.sh` when you want
+to verify the BridgeVM-owned VirtIO block model can complete one
+`VIRTIO_BLK_T_IN` descriptor chain by reading sector data from a host disk-image
+file at byte offset `0xe00`, then write data/status/used ring state and raise
+interrupt status without QEMU, Apple VZ, HVF, or guest execution. This proves
+only the metadata-safe host-backed read model, not persistent boot disk
+lifecycle, firmware boot, or Windows boot support.
+
+The VirtIO block ISO backing smokes are metadata-safe default tests, not live
+HVF entry tests. Run
+`tests/integration/hvf-virtio-block-iso-backing-cli-smoke.sh` and
+`tests/integration/hvf-virtio-block-iso-backing-runner-smoke.sh` when you want
+to verify the BridgeVM-owned VirtIO block model can complete one
+`VIRTIO_BLK_T_IN` descriptor chain by reading sector data from a read-only ISO
+backing at byte offset `0xe00`, then write data/status/used ring state and
+raise interrupt status; the same probe then rejects one `VIRTIO_BLK_T_OUT`
+write request with `S_IOERR` and records used-ring/status state. This happens
+without QEMU, Apple VZ, HVF, or guest execution. This proves only the
+metadata-safe installer media sector-read and read-only rejection model, not
+UEFI boot, installer boot, persistent boot disk lifecycle, or Windows boot
+support.
+
+The promoted clone/import/delete, disk, display, display-demo parser, lifecycle,
+guest-tools, QMP, SSH planning, diagnostics, performance, resource profile,
+readiness report,
 application-consistent, sleep/wake metadata baseline, and log coverage stay
 inside the same safety boundary.
+
+To answer product-readiness questions without drifting back into percentage
+estimates, run:
+
+```sh
+tests/integration/product-gates-report.sh
+```
+
+The report prints evidence-backed PASS/PARTIAL/BLOCKED/READY gates for Fast/VZ
+GUI display, Coherence-lite, Ubuntu GUI live opt-in prerequisites, networking,
+true Coherence, and public Parallels-replacement readiness. Its smoke test
+asserts that the report contains no numeric completion percentage.
 
 It uses disposable stores, local Unix sockets, the Linux tools scaffold, fake
 backend stubs or presence markers where daemon-owned runner metadata is
@@ -168,8 +497,9 @@ through a shadow `curl` that copies a local fixture for a fixed
 `example.invalid` URL and refuses unexpected invocations, so the metadata-safe
 suite records download/result metadata without a real network fetch. It also
 exercises the Apple VZ and QEMU live evidence verifiers
-against synthetic evidence only. It does not start a real VM, launch real QEMU
-or Apple VZ, open a graphical console or host browser/SSH client, run guest
+against synthetic evidence only and checks that the heavy app/window live GUI
+harness skips without explicit opt-in. It does not start a real VM, launch real
+QEMU or Apple VZ, open a graphical console or host browser/SSH client, run guest
 benchmarks, freeze real host mounts, claim live guest OS state changes, mutate
 live networking, or fetch network artifacts.
 
@@ -579,8 +909,8 @@ Windows 11 Arm restricted QEMU planning coverage should exercise:
   handoff (`-display vnc=:0`)
 
 The expected contract is that Windows 11 Arm still travels through the
-restricted Compatibility Mode backend until a dedicated Windows Fast Mode
-exists. QEMU planning must select `qemu-system-aarch64`, `-machine virt`,
+restricted Compatibility Mode backend until a dedicated Windows no-QEMU fast
+path exists. QEMU planning must select `qemu-system-aarch64`, `-machine virt`,
 `-accel hvf`, `-cpu host`, and the restricted-profile `virtio-rng-pci` device
 without spawning QEMU or claiming that Windows booted.
 
@@ -588,6 +918,74 @@ Current executable coverage: `windows-arm-qemu-args-cli-smoke.sh` covers local
 and socket-backed Windows 11 Arm restricted `qemu-args` planning, including
 default display remapping, explicit VNC external-viewer handoff preservation,
 and fake backend launch guards for QEMU and Apple VZ binaries.
+
+Current executable coverage: `windows-arm-hvf-plan-cli-smoke.sh` covers the
+metadata-only no-QEMU HVF plan CLI for a Windows 11 Arm installer ISO, asserts
+the BridgeVM HVF / Apple Hypervisor.framework blocked plan text, rejects
+`qemu-system` command text and numeric percentages, and uses fake backend/GUI
+launch guards so the smoke does not start QEMU, Apple VZ, a VM, or a GUI.
+`windows-arm-hvf-runner-cli-smoke.sh` applies the same contract to the separate
+`hvf-runner --windows-plan` executable so the Windows no-QEMU path has a
+runner-level boundary distinct from both `lightvm-runner` and `fullvm-runner`.
+`windows-arm-hvf-boot-disk-layout-cli-smoke.sh` and
+`windows-arm-hvf-boot-disk-layout-runner-smoke.sh` cover the QEMU-free sparse
+raw GPT/ESP/MSR/Windows target disk writer/verifier surfaces for
+`bridgevm hvf windows-boot-disk-layout-probe` and
+`hvf-runner --windows-boot-disk-layout-probe`.
+`windows-arm-hvf-firmware-handoff-cli-smoke.sh` and
+`windows-arm-hvf-firmware-handoff-runner-smoke.sh` cover the QEMU-free AArch64
+UEFI FD/vars-template firmware volume verifier, mutable vars-store seeding, and
+planned pflash IPA reporting surfaces for
+`bridgevm hvf windows-firmware-handoff-probe` and
+`hvf-runner --windows-firmware-handoff-probe`.
+`windows-arm-hvf-pflash-map-cli-smoke.sh` and
+`windows-arm-hvf-pflash-map-runner-smoke.sh` cover the QEMU-free AArch64 UEFI
+code/vars pflash memory-image mapper, copied-prefix verification, zero-padding
+verification, and planned IPA separation checks for
+`bridgevm hvf windows-pflash-map-probe` and
+`hvf-runner --windows-pflash-map-probe`.
+`windows-arm-hvf-pflash-hvf-map-cli-smoke.sh` and
+`windows-arm-hvf-pflash-hvf-map-runner-smoke.sh` cover the QEMU-free,
+Apple-VZ-free default opt-in boundary for mapping prepared code/vars pflash
+slots into an empty HVF VM; `windows-arm-hvf-pflash-hvf-map-live-opt-in-smoke.sh`
+is the signed live map/unmap proof when `BRIDGEVM_HVF_ALLOW_UEFI_PFLASH_MAP=1`
+is explicitly set.
+`windows-arm-hvf-reset-vector-entry-cli-smoke.sh` and
+`windows-arm-hvf-reset-vector-entry-runner-smoke.sh` cover the QEMU-free,
+Apple-VZ-free default opt-in boundary for reset-vector entry over prepared
+UEFI pflash slots; `windows-arm-hvf-reset-vector-entry-live-opt-in-smoke.sh` is
+the signed live first-entry proof when
+`BRIDGEVM_HVF_ALLOW_UEFI_RESET_VECTOR_ENTRY=1` is explicitly set.
+`windows-arm-hvf-real-edk2-reset-vector-live-opt-in-smoke.sh` is the signed
+real-edk2 first-progress proof when
+`BRIDGEVM_HVF_ALLOW_REAL_EDK2_RESET_VECTOR_ENTRY=1` is explicitly set.
+`windows-arm-hvf-firmware-run-loop-cli-smoke.sh` and
+`windows-arm-hvf-firmware-run-loop-runner-smoke.sh` cover the QEMU-free,
+Apple-VZ-free default opt-in boundary for the bounded Windows UEFI firmware
+run-loop over prepared pflash images, guest RAM metadata, generated FDT
+platform DTB metadata at `0x40010000`, `X0` DTB handoff status, installer ISO
+plus writable target disk metadata, and no live HVF entry by default.
+`windows-arm-hvf-real-edk2-firmware-run-loop-live-opt-in-smoke.sh` is the signed
+real-edk2 bounded run-loop proof when explicitly opted in; its recommended
+vector-base mode is one-shot `VBAR_EL1` set telemetry only, and its low-vector
+mode is repair-and-resume-once telemetry only. It now also covers the combined
+recommended-vector continuation plus low-vector repair path, proving the
+descriptor patch while the default continuation keeps the diagnostic page
+patched and resumes through captured `ELR_EL1`/`SPSR_EL1` plus diagnostic
+`ERET`. The same live smoke now has a separate
+`--restore-low-vector-slot-before-eret` opt-in that uses an executable pflash
+`ERET` trampoline, restores the preserved low-vector slot before the
+original-context `ERET`, and proves the target becomes `0xffffffff` /
+`erased-pflash`: exit 4 is `HV_EXIT_REASON_VTIMER_ACTIVATED`, `PC=0x200`,
+`diagnosis=erased-pflash-execution`, and `interaction=vtimer`, with
+`Observed exits: 4`, `VTimer exit count: 2`, and `Blockers: none`. These are
+timer/vector boundaries, not MMIO discovery, UEFI Boot Manager handoff,
+installer boot, Windows boot, GUI, network, TPM, or Secure Boot.
+`hvf-host-capabilities-cli-smoke.sh` and
+`hvf-host-capabilities-runner-smoke.sh` cover the metadata-only
+`bridgevm hvf host-capabilities` and `hvf-runner --host-capabilities`
+boundaries. They accept either real `macos-aarch64` HVF metadata or the
+unsupported fallback while blocking QEMU, Apple VZ, and GUI launch tools.
 
 Networkd public CLI plan coverage should exercise:
 
@@ -1226,20 +1624,41 @@ Displayd public CLI plan coverage should exercise:
 - Cursor movement JSON with host-overlay state and framebuffer clamping
 - Dirty-region update strategy and full-frame fallback metadata
 - File-backed frame timing samples through `--frame-sample-file`
+- File-backed runtime resource policy consumption through
+  `--runtime-policy-file`
+- Proxy-window crop planning through `--window-*`, plus raw RGBA crop artifacts
+  through `--framebuffer-rgba-file` and `--window-crop-rgba-file`
+- macOS proxy-shell unit coverage for decoding a `window_crop_frame` summary,
+  loading the raw RGBA artifact as a host image, and refreshing when that
+  artifact file changes
 - Human-readable summary output when `--print-plan` is omitted
 
 The expected contract is that `displayd` exposes a metadata-only public runner
 surface for Fast Mode display planning without starting QEMU, Apple VZ, Metal,
 or VNC. JSON output should remain suitable for higher-level planning and smoke
 tests; summary output should remain concise for operator-facing readiness
-checks.
+checks. When a runtime policy file is supplied, `displayd` should treat policy
+visibility as the effective display visibility and apply numeric
+`display_fps_cap` values as frame-pacing caps. This is a display pacing
+consumer contract only; it does not imply live Apple VZ CPU/RAM hot-plug.
+When `--window-*` metadata is supplied, `displayd` should emit a
+`window_region` contract with the clipped guest rectangle, Retina backing
+rectangle, host proxy size, and host-to-guest input mapping. When raw RGBA
+frame input and crop output paths are supplied, it should materialize the
+clipped guest-window pixels into the output artifact. The macOS app can consume
+that artifact contract, refresh its proxy image from the file, and forward
+pointer/key input through the guest-tools `WindowInput` path. This proves the
+crop/render/input artifact bridge, not live per-window framebuffer streaming or
+window-position synchronization.
 
 Current executable coverage: `displayd-plan-cli-smoke.sh` covers public
 `cargo run -p displayd` invocations for JSON plan output, visibility pacing,
 display pipeline metadata, resize/cursor event serialization, cursor clamping,
 dirty-region update and full-frame fallback metadata, Metal/VNC boundary
-metadata, file-backed frame timing samples, invalid sample rejection, and
-non-JSON summary output.
+metadata, file-backed frame timing samples, runtime resource policy visibility
+and FPS-cap consumption, proxy-window crop/input mapping metadata, raw RGBA
+window crop bytes, invalid sample rejection, incomplete window metadata
+rejection, wrong-sized RGBA frame rejection, and non-JSON summary output.
 
 Linux guest-tools application/window live socket coverage should exercise:
 
@@ -1257,14 +1676,92 @@ Linux guest-tools application/window live socket coverage should exercise:
 The expected contract is that application and window commands travel through
 the socket-backed CLI, daemon-owned guest-tools session, and Linux tools
 scaffold without starting a real VM. Successful results prove only that the
-alpha command plumbing accepted and processed scaffold entries; they do not
-claim that a real guest application was launched or a real desktop window was
-controlled.
+alpha command plumbing accepted and processed scaffold entries in this smoke;
+they do not claim that a real guest application was launched or a real desktop
+window was controlled. The Linux tools runner also has a real desktop-tool
+backend (`gio`/`gtk-launch` for `.desktop` apps, `wmctrl` for X11 windows), but
+that needs the opt-in GUI guest smoke below before it can be used as Coherence
+evidence.
 
 Current executable coverage: `guest-tools-app-window-cli-smoke.sh` covers a
 fake QEMU backend plus local Linux tools process, then verifies application and
-window command dispatch, result correlation, missing-application launch
-failure metadata, and the closed-window failure case.
+window command dispatch, `SetWindowBounds` dispatch, pointer/key `WindowInput`
+dispatch, result correlation, missing-application launch failure metadata, and
+the closed-window failure case.
+`guest-tools-app-window-real-backend-cli-smoke.sh` runs the same daemon/socket
+path with fake `.desktop`, `gio`, `wmctrl`, and `xdotool` tools on PATH,
+proving that the Linux tools real desktop backend emits
+`linux-desktop-file`/`wmctrl` payload sources, emits `xdotool` input payload
+sources for pointer/key events, invokes `wmctrl -ir ... -e ...` for bounds
+changes, and invokes the detected launcher/window-control/input tools. It also feeds the
+real-backend `wmctrl` bounds into `displayd --window-*` and asserts the
+proxy-window crop/input mapping JSON contract. The same smoke records an
+app-direct Show Display style Apple VZ runner command with
+`--apple-vz-proxy-framebuffer-rgba-file`, then asserts the daemon derives the
+default `metadata/apple-vz-display-framebuffer.rgba` host RGBA framebuffer
+source from runner metadata while framebuffer env vars are unset, writes
+`metadata/proxy-windows/<window-id>.json/.rgba`, and injects
+`window_crop_frame_summary_path` into the real window payload, including source
+path, dimensions, length/mtime, and refresh timestamp metadata; it then
+rewrites that framebuffer file and waits for daemon reconcile to refresh the
+cached proxy crop artifact.
+It still does not boot a GUI guest, stream a true per-window framebuffer, or
+prove a visible guest desktop.
+
+The heavy opt-in live GUI harness
+(`guest-tools-app-window-live-gui-opt-in-smoke.sh`) now preserves a second,
+more realistic crop-boundary artifact when it is run with a bootable arm64
+Linux cloud image: after launching a real X11 terminal in the guest and reading
+its `wmctrl` payload, it writes `live-window-payload.json`, generates a
+synthetic host RGBA framebuffer from those real guest bounds, runs `displayd`
+with the live `window_id`/title/bounds, and preserves
+`live-window-crop.json`, `live-window-crop.rgba`, and
+`live-window-proxy-crop-proof.json`. This proves live guest-window metadata can
+drive the proxy-window crop primitive. It is still not app-direct per-window
+streaming because the framebuffer source in that harness is synthetic; the
+separate Apple VZ proof below covers whole-view app-direct framebuffer export.
+
+The local GUI proof gate for the visible app-direct path is
+`scripts/run-vz-display-demo.sh --prove-proxy-crop`. It starts the Fast/VZ
+AppKit display helper with `--proxy-framebuffer-rgba-file`, captures the actual
+`VZVirtualMachineView` window, waits for the exported whole-view RGBA file, and
+runs `displayd` to materialize a clipped crop artifact. A successful run
+preserves `app-direct-framebuffer.rgba`, `app-direct-window-crop.json`,
+`app-direct-window-crop.rgba`, and `app-direct-proxy-crop-proof.json`. This is a
+GUI-session opt-in proof path for app-direct whole-view framebuffer export
+feeding the crop primitive. A preserved local pass exists at
+`~/bridgevm-live-evidence/apple-vz-proxy-crop-2026-06-18-auto-verified/`: it
+captured a `2696x1800` viewer PNG, exported a `1280x800` raw framebuffer, wrote
+a `640x400` crop artifact, and preserved
+`app-direct-proxy-crop-verifier.output`. It is still not true per-window
+streaming or Parallels-style Coherence. `vz-display-demo-cli-smoke.sh` covers
+only the safe parser/validation boundary for that demo script, including the
+metadata-safe `--preflight` path that reports local fixture/helper/tool
+readiness without downloading, signing, launching Apple VZ, opening a GUI
+window, or running `displayd`; it also asserts the script wires the verifier.
+`verify-vz-proxy-crop-evidence.sh <dir>` validates
+that bundle without launching a VM: it checks required files, relative artifact
+paths, SHA-256 values, PNG dimensions, framebuffer and crop byte sizes, and the
+`displayd` crop summary contract. `vz-proxy-crop-evidence-verifier-smoke.sh`
+builds a tiny synthetic RGBA framebuffer/crop bundle and asserts the verifier
+accepts the good bundle and rejects corrupted byte counts, traversal paths, and
+wrong-sized crop artifacts.
+
+`guest-tools-app-window-live-gui-opt-in-smoke.sh` is the heavy proof path for
+that final guest boundary. With
+`BRIDGEVM_LIVE_GUEST_TOOLS_ALLOW_REAL_START=1`,
+`BRIDGEVM_LIVE_GUEST_TOOLS_QCOW2_DISK=<bootable arm64 cloud qcow2>`, and a
+cross-compiled `bridgevm-tools-linux` agent, it boots a QEMU/HVF guest, installs
+Xvfb/openbox/xterm/wmctrl/gio, launches a `.desktop` app through the live agent,
+then lists/focuses/closes the resulting X11 window through `wmctrl`. The
+script refuses to use a stale cross-compiled agent when the Linux agent/protocol
+sources are newer than the binary. A preserved local pass on June 17, 2026 used
+Ubuntu Noble arm64 cloud image
+`noble-server-cloudimg-arm64.img` and proved the guest network/apt path plus the
+real `.desktop`/`gio`/`wmctrl` boundary over virtio-serial. The metadata-safe
+suite runs only
+`guest-tools-app-window-live-gui-opt-in-skip-smoke.sh`, which proves this heavy
+smoke does not boot anything without explicit opt-in.
 
 Linux guest-tools time-sync live socket coverage should exercise:
 
@@ -1546,10 +2043,24 @@ handoff JSON plus Swift `AppleVzRunner --validate-only --print-config-plan`.
 `runtime-resource-policy-cli-smoke.sh` covers the running Fast Mode resource
 policy signal without starting Apple VZ. It creates running metadata, writes a
 real-runner metadata fixture, then verifies that local CLI and socket-backed
-`resources reapply` record `metadata/runtime-resources.json` with the requested
-foreground/background visibility, host battery state, resolved automatic
-memory/CPU, display FPS cap, and the honest `runtime-control-unavailable`
-live-apply blocker.
+`resources reapply` and `runtime-control reapply` record
+`metadata/runtime-resources.json` with the requested foreground/background
+visibility, host battery state, resolved automatic memory/CPU, display FPS cap,
+runtime-control acknowledgement state, and the honest
+`runtime-control-unavailable` live-apply blocker. It also runs `bridgevm display`
+with fake runner helpers to prove the windowed Fast/VZ
+display path records a foreground runtime policy and threads the requested
+display size, the AppleVzRunner runtime control socket, and the default proxy
+framebuffer RGBA file path to
+`lightvm-runner`, then checks `runner-status` exposes the `apple-vz-display`
+status/stop/policy/pacing socket and foreground policy beside runner metadata
+without starting a real Apple VZ VM. Daemon unit coverage also verifies that
+this recorded display runner command can auto-supply the default framebuffer
+crop source when explicit `BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_*` env vars are
+absent and the RGBA file exists. A fake runtime-control socket also proves
+`runtime-control policy` and `runtime-control pacing` can query the live helper,
+and `resources reapply` can ask that helper to read the refreshed policy and set
+`runtime_control_acknowledged`, without making `live_applied` true.
 
 `apple-vz-live-boot-opt-in-smoke.sh` is that separate manual harness. It creates
 a temporary ready `linux-kernel` + `raw` + NAT launch spec, validates the Swift

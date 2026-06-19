@@ -1,6 +1,11 @@
 use clap::{Parser, ValueEnum};
-use serde::Serialize;
-use std::{fs, path::Path, path::PathBuf, process};
+use serde::{Deserialize, Serialize};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -36,6 +41,28 @@ struct Cli {
     frame_time_micros: u32,
     #[arg(long)]
     frame_sample_file: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    framebuffer_rgba_file: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    window_crop_rgba_file: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    runtime_policy_file: Option<PathBuf>,
+    #[arg(long)]
+    window_id: Option<String>,
+    #[arg(long)]
+    window_title: Option<String>,
+    #[arg(long)]
+    window_x: Option<i32>,
+    #[arg(long)]
+    window_y: Option<i32>,
+    #[arg(long)]
+    window_width: Option<u32>,
+    #[arg(long)]
+    window_height: Option<u32>,
+    #[arg(long)]
+    window_host_width: Option<u32>,
+    #[arg(long)]
+    window_host_height: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ValueEnum)]
@@ -53,9 +80,12 @@ struct DisplayPlan {
     pacing: FramePacingPlan,
     dirty_regions: DirtyRegionPlan,
     cursor: CursorPlan,
+    window_region: Option<WindowRegionPlan>,
+    window_crop_frame: Option<WindowCropFramePlan>,
     input_events: Vec<DisplayInputEvent>,
     timing: FrameTimingPlan,
     metal: MetalPlan,
+    runtime_policy: Option<RuntimePolicyPlan>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -73,7 +103,38 @@ struct FramePacingPlan {
     max_fps: u16,
     idle_fps: u16,
     repaint_when_idle: bool,
-    rationale: &'static str,
+    rationale: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct RuntimePolicyPlan {
+    path: String,
+    visibility: Visibility,
+    display_fps_cap: String,
+    max_fps_override: Option<u16>,
+    source: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+struct RuntimePolicyFile {
+    visibility: RuntimePolicyVisibility,
+    display_fps_cap: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum RuntimePolicyVisibility {
+    Foreground,
+    Background,
+}
+
+impl From<RuntimePolicyVisibility> for Visibility {
+    fn from(value: RuntimePolicyVisibility) -> Self {
+        match value {
+            RuntimePolicyVisibility::Foreground => Visibility::Foreground,
+            RuntimePolicyVisibility::Background => Visibility::Background,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -104,6 +165,73 @@ struct CursorPlan {
 struct CursorPosition {
     x: u32,
     y: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct WindowRegionPlan {
+    window_id: String,
+    title: Option<String>,
+    source_rect: SignedRect,
+    clipped_rect: UnsignedRect,
+    host_size: HostSize,
+    backing_rect: UnsignedRect,
+    input_mapping: WindowInputMapping,
+    presentation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct SignedRect {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct UnsignedRect {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct HostSize {
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct WindowInputMapping {
+    coordinate_origin: &'static str,
+    host_width: u32,
+    host_height: u32,
+    guest_x: u32,
+    guest_y: u32,
+    guest_width: u32,
+    guest_height: u32,
+    scale_x_numerator: u32,
+    scale_x_denominator: u32,
+    scale_y_numerator: u32,
+    scale_y_denominator: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct WindowCropFramePlan {
+    source_path: String,
+    output_path: String,
+    pixel_format: &'static str,
+    framebuffer_width: u32,
+    framebuffer_height: u32,
+    crop_rect: UnsignedRect,
+    output_width: u32,
+    output_height: u32,
+    expected_input_bytes: u64,
+    output_bytes: u64,
+    source_len_bytes: Option<u64>,
+    source_modified_unix_nanos: Option<u64>,
+    refreshed_at_unix_nanos: Option<u64>,
+    presentation: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -140,6 +268,9 @@ fn main() {
 fn run() -> Result<(), String> {
     let cli = Cli::parse();
     let plan = build_display_plan(&cli)?;
+    if let Some(crop_plan) = plan.window_crop_frame.as_ref() {
+        materialize_window_crop(crop_plan)?;
+    }
 
     if cli.print_plan {
         println!("{}", serde_json::to_string_pretty(&plan).unwrap());
@@ -158,14 +289,27 @@ fn run() -> Result<(), String> {
 }
 
 fn build_display_plan(cli: &Cli) -> Result<DisplayPlan, String> {
+    let runtime_policy = runtime_policy_plan(cli.runtime_policy_file.as_deref())?;
     let dirty_regions = effective_dirty_regions(cli);
-    let pacing = frame_pacing(cli.visibility, dirty_regions);
+    let visibility = runtime_policy
+        .as_ref()
+        .map(|policy| policy.visibility)
+        .unwrap_or(cli.visibility);
+    let pacing = frame_pacing(
+        visibility,
+        dirty_regions,
+        runtime_policy
+            .as_ref()
+            .and_then(|policy| policy.max_fps_override),
+    );
     let scale = cli.scale.max(1);
     let width = cli.resize_width.unwrap_or(cli.framebuffer_width);
     let height = cli.resize_height.unwrap_or(cli.framebuffer_height);
     let retina_backing_width = width.saturating_mul(scale.into());
     let retina_backing_height = height.saturating_mul(scale.into());
     let cursor_position = cursor_position(cli, width, height);
+    let window_region = window_region_plan(cli, width, height, scale)?;
+    let window_crop_frame = window_crop_frame_plan(cli, width, height, window_region.as_ref())?;
     let input_events = input_events(
         cli,
         width,
@@ -211,6 +355,8 @@ fn build_display_plan(cli: &Cli) -> Result<DisplayPlan, String> {
             render_guest_cursor_in_framebuffer: !cli.cursor_overlay,
             position: cursor_position,
         },
+        window_region,
+        window_crop_frame,
         input_events,
         timing,
         metal: MetalPlan {
@@ -218,7 +364,44 @@ fn build_display_plan(cli: &Cli) -> Result<DisplayPlan, String> {
             presentation_layer: "coreanimation",
             vnc_fallback_allowed: false,
         },
+        runtime_policy,
     })
+}
+
+fn runtime_policy_plan(path: Option<&Path>) -> Result<Option<RuntimePolicyPlan>, String> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let content = fs::read_to_string(path).map_err(|error| {
+        format!(
+            "failed to read runtime resource policy file '{}': {error}",
+            path.display()
+        )
+    })?;
+    let policy: RuntimePolicyFile = serde_json::from_str(&content).map_err(|error| {
+        format!(
+            "failed to parse runtime resource policy file '{}': {error}",
+            path.display()
+        )
+    })?;
+    let max_fps_override = parse_display_fps_cap(&policy.display_fps_cap)?;
+    Ok(Some(RuntimePolicyPlan {
+        path: path.display().to_string(),
+        visibility: policy.visibility.into(),
+        display_fps_cap: policy.display_fps_cap,
+        max_fps_override,
+        source: "runtime-resources",
+    }))
+}
+
+fn parse_display_fps_cap(value: &str) -> Result<Option<u16>, String> {
+    if value.eq_ignore_ascii_case("adaptive") {
+        return Ok(None);
+    }
+    let parsed = value.parse::<u16>().map_err(|_| {
+        format!("display_fps_cap must be 'adaptive' or a u16 FPS value, got '{value}'")
+    })?;
+    Ok(Some(parsed))
 }
 
 fn frame_timing(cli: &Cli, pacing: &FramePacingPlan) -> Result<FrameTimingPlan, String> {
@@ -315,6 +498,282 @@ fn cursor_position(cli: &Cli, width: u32, height: u32) -> Option<CursorPosition>
     })
 }
 
+fn window_region_plan(
+    cli: &Cli,
+    framebuffer_width: u32,
+    framebuffer_height: u32,
+    scale: u16,
+) -> Result<Option<WindowRegionPlan>, String> {
+    let has_window_region_input = cli.window_id.is_some()
+        || cli.window_title.is_some()
+        || cli.window_x.is_some()
+        || cli.window_y.is_some()
+        || cli.window_width.is_some()
+        || cli.window_height.is_some()
+        || cli.window_host_width.is_some()
+        || cli.window_host_height.is_some();
+    if !has_window_region_input {
+        return Ok(None);
+    }
+
+    let window_id = cli
+        .window_id
+        .as_ref()
+        .filter(|id| !id.trim().is_empty())
+        .cloned()
+        .ok_or_else(|| "window region planning requires --window-id".to_string())?;
+    let x = cli
+        .window_x
+        .ok_or_else(|| "window region planning requires --window-x".to_string())?;
+    let y = cli
+        .window_y
+        .ok_or_else(|| "window region planning requires --window-y".to_string())?;
+    let source_width = positive_window_dimension(cli.window_width, "--window-width")?;
+    let source_height = positive_window_dimension(cli.window_height, "--window-height")?;
+    let source_rect = SignedRect {
+        x,
+        y,
+        width: source_width,
+        height: source_height,
+    };
+    let clipped_rect =
+        clip_rect_to_framebuffer(&source_rect, framebuffer_width, framebuffer_height).ok_or_else(
+            || {
+                format!(
+                    "window region '{}' does not intersect the {}x{} framebuffer",
+                    window_id, framebuffer_width, framebuffer_height
+                )
+            },
+        )?;
+    let host_width = cli.window_host_width.unwrap_or(clipped_rect.width);
+    let host_height = cli.window_host_height.unwrap_or(clipped_rect.height);
+    if host_width == 0 {
+        return Err("--window-host-width must be positive".to_string());
+    }
+    if host_height == 0 {
+        return Err("--window-host-height must be positive".to_string());
+    }
+    let scale_u32 = u32::from(scale.max(1));
+
+    Ok(Some(WindowRegionPlan {
+        window_id,
+        title: cli.window_title.clone(),
+        source_rect,
+        clipped_rect: clipped_rect.clone(),
+        host_size: HostSize {
+            width: host_width,
+            height: host_height,
+        },
+        backing_rect: UnsignedRect {
+            x: clipped_rect.x.saturating_mul(scale_u32),
+            y: clipped_rect.y.saturating_mul(scale_u32),
+            width: clipped_rect.width.saturating_mul(scale_u32),
+            height: clipped_rect.height.saturating_mul(scale_u32),
+        },
+        input_mapping: WindowInputMapping {
+            coordinate_origin: "guest-framebuffer-top-left",
+            host_width,
+            host_height,
+            guest_x: clipped_rect.x,
+            guest_y: clipped_rect.y,
+            guest_width: clipped_rect.width,
+            guest_height: clipped_rect.height,
+            scale_x_numerator: clipped_rect.width,
+            scale_x_denominator: host_width,
+            scale_y_numerator: clipped_rect.height,
+            scale_y_denominator: host_height,
+        },
+        presentation: "proxy-window-crop",
+    }))
+}
+
+fn positive_window_dimension(value: Option<u32>, flag: &str) -> Result<u32, String> {
+    match value {
+        Some(value) if value > 0 => Ok(value),
+        Some(_) => Err(format!("{flag} must be positive")),
+        None => Err(format!("window region planning requires {flag}")),
+    }
+}
+
+fn clip_rect_to_framebuffer(
+    source_rect: &SignedRect,
+    framebuffer_width: u32,
+    framebuffer_height: u32,
+) -> Option<UnsignedRect> {
+    let left = i64::from(source_rect.x);
+    let top = i64::from(source_rect.y);
+    let right = left + i64::from(source_rect.width);
+    let bottom = top + i64::from(source_rect.height);
+    let clipped_left = left.max(0);
+    let clipped_top = top.max(0);
+    let clipped_right = right.min(i64::from(framebuffer_width));
+    let clipped_bottom = bottom.min(i64::from(framebuffer_height));
+    if clipped_left >= clipped_right || clipped_top >= clipped_bottom {
+        return None;
+    }
+
+    Some(UnsignedRect {
+        x: clipped_left as u32,
+        y: clipped_top as u32,
+        width: (clipped_right - clipped_left) as u32,
+        height: (clipped_bottom - clipped_top) as u32,
+    })
+}
+
+fn window_crop_frame_plan(
+    cli: &Cli,
+    framebuffer_width: u32,
+    framebuffer_height: u32,
+    window_region: Option<&WindowRegionPlan>,
+) -> Result<Option<WindowCropFramePlan>, String> {
+    let has_crop_input = cli.framebuffer_rgba_file.is_some() || cli.window_crop_rgba_file.is_some();
+    if !has_crop_input {
+        return Ok(None);
+    }
+
+    let source_path = cli
+        .framebuffer_rgba_file
+        .as_ref()
+        .ok_or_else(|| "window crop frame planning requires --framebuffer-rgba-file".to_string())?;
+    let output_path = cli
+        .window_crop_rgba_file
+        .as_ref()
+        .ok_or_else(|| "window crop frame planning requires --window-crop-rgba-file".to_string())?;
+    let window_region = window_region.ok_or_else(|| {
+        "window crop frame planning requires complete --window-* geometry".to_string()
+    })?;
+    let crop_rect = window_region.clipped_rect.clone();
+    let expected_input_bytes = rgba_frame_byte_len_u64(framebuffer_width, framebuffer_height)?;
+    let output_bytes = rgba_frame_byte_len_u64(crop_rect.width, crop_rect.height)?;
+    let source_metadata = file_metadata_snapshot(source_path);
+
+    Ok(Some(WindowCropFramePlan {
+        source_path: source_path.display().to_string(),
+        output_path: output_path.display().to_string(),
+        pixel_format: "rgba8",
+        framebuffer_width,
+        framebuffer_height,
+        crop_rect: crop_rect.clone(),
+        output_width: crop_rect.width,
+        output_height: crop_rect.height,
+        expected_input_bytes,
+        output_bytes,
+        source_len_bytes: source_metadata
+            .as_ref()
+            .and_then(|metadata| metadata.len_bytes),
+        source_modified_unix_nanos: source_metadata
+            .as_ref()
+            .and_then(|metadata| metadata.modified_unix_nanos),
+        refreshed_at_unix_nanos: now_unix_nanos(),
+        presentation: "proxy-window-crop-frame",
+    }))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FileMetadataSnapshot {
+    len_bytes: Option<u64>,
+    modified_unix_nanos: Option<u64>,
+}
+
+fn file_metadata_snapshot(path: &Path) -> Option<FileMetadataSnapshot> {
+    let metadata = fs::metadata(path).ok()?;
+    Some(FileMetadataSnapshot {
+        len_bytes: Some(metadata.len()),
+        modified_unix_nanos: metadata.modified().ok().and_then(system_time_unix_nanos),
+    })
+}
+
+fn now_unix_nanos() -> Option<u64> {
+    system_time_unix_nanos(SystemTime::now())
+}
+
+fn system_time_unix_nanos(time: SystemTime) -> Option<u64> {
+    let nanos = time.duration_since(UNIX_EPOCH).ok()?.as_nanos();
+    u64::try_from(nanos).ok()
+}
+
+fn rgba_frame_byte_len_u64(width: u32, height: u32) -> Result<u64, String> {
+    u64::from(width)
+        .checked_mul(u64::from(height))
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or_else(|| format!("RGBA frame dimensions {width}x{height} overflow byte length"))
+}
+
+fn rgba_frame_byte_len_usize(width: u32, height: u32) -> Result<usize, String> {
+    let len = rgba_frame_byte_len_u64(width, height)?;
+    usize::try_from(len)
+        .map_err(|_| format!("RGBA frame dimensions {width}x{height} exceed host address space"))
+}
+
+fn materialize_window_crop(plan: &WindowCropFramePlan) -> Result<(), String> {
+    let input = fs::read(&plan.source_path).map_err(|error| {
+        format!(
+            "failed to read RGBA framebuffer '{}': {error}",
+            plan.source_path
+        )
+    })?;
+    let expected_input_bytes = usize::try_from(plan.expected_input_bytes).map_err(|_| {
+        format!(
+            "RGBA framebuffer '{}' is too large for this host",
+            plan.source_path
+        )
+    })?;
+    if input.len() != expected_input_bytes {
+        return Err(format!(
+            "RGBA framebuffer '{}' has {} bytes, expected {} for {}x{} rgba8",
+            plan.source_path,
+            input.len(),
+            plan.expected_input_bytes,
+            plan.framebuffer_width,
+            plan.framebuffer_height
+        ));
+    }
+
+    let output_len = usize::try_from(plan.output_bytes).map_err(|_| {
+        format!(
+            "RGBA crop '{}' is too large for this host",
+            plan.output_path
+        )
+    })?;
+    let mut output = Vec::with_capacity(output_len);
+    let row_stride = rgba_frame_byte_len_usize(plan.framebuffer_width, 1)?;
+    let crop_row_bytes = rgba_frame_byte_len_usize(plan.crop_rect.width, 1)?;
+    let crop_x_bytes = usize::try_from(u64::from(plan.crop_rect.x) * 4)
+        .map_err(|_| "window crop x offset exceeds host address space".to_string())?;
+    let crop_y = usize::try_from(plan.crop_rect.y)
+        .map_err(|_| "window crop y offset exceeds host address space".to_string())?;
+    let crop_height = usize::try_from(plan.crop_rect.height)
+        .map_err(|_| "window crop height exceeds host address space".to_string())?;
+
+    for row in 0..crop_height {
+        let start = (crop_y + row)
+            .checked_mul(row_stride)
+            .and_then(|offset| offset.checked_add(crop_x_bytes))
+            .ok_or_else(|| "window crop byte offset overflowed".to_string())?;
+        let end = start
+            .checked_add(crop_row_bytes)
+            .ok_or_else(|| "window crop row byte range overflowed".to_string())?;
+        output.extend_from_slice(input.get(start..end).ok_or_else(|| {
+            format!(
+                "window crop rect {}x{} at {},{} exceeds RGBA framebuffer {}x{}",
+                plan.crop_rect.width,
+                plan.crop_rect.height,
+                plan.crop_rect.x,
+                plan.crop_rect.y,
+                plan.framebuffer_width,
+                plan.framebuffer_height
+            )
+        })?);
+    }
+
+    fs::write(&plan.output_path, output).map_err(|error| {
+        format!(
+            "failed to write RGBA window crop '{}': {error}",
+            plan.output_path
+        )
+    })
+}
+
 fn input_events(
     cli: &Cli,
     width: u32,
@@ -344,37 +803,55 @@ fn input_events(
     events
 }
 
-fn frame_pacing(visibility: Visibility, dirty_regions: u16) -> FramePacingPlan {
-    match (visibility, dirty_regions) {
+fn frame_pacing(
+    visibility: Visibility,
+    dirty_regions: u16,
+    max_fps_override: Option<u16>,
+) -> FramePacingPlan {
+    let mut plan = match (visibility, dirty_regions) {
         (Visibility::Hidden, _) => FramePacingPlan {
             visibility,
             max_fps: 0,
             idle_fps: 0,
             repaint_when_idle: false,
-            rationale: "hidden VMs should not repaint",
+            rationale: "hidden VMs should not repaint".to_string(),
         },
         (_, 0) => FramePacingPlan {
             visibility,
             max_fps: 1,
             idle_fps: 0,
             repaint_when_idle: false,
-            rationale: "idle guests should not repaint at a fixed refresh rate",
+            rationale: "idle guests should not repaint at a fixed refresh rate".to_string(),
         },
         (Visibility::Background, _) => FramePacingPlan {
             visibility,
             max_fps: 10,
             idle_fps: 0,
             repaint_when_idle: false,
-            rationale: "background VMs are throttled for battery and idle CPU",
+            rationale: "background VMs are throttled for battery and idle CPU".to_string(),
         },
         (Visibility::Foreground, _) => FramePacingPlan {
             visibility,
             max_fps: 60,
             idle_fps: 0,
             repaint_when_idle: false,
-            rationale: "foreground productivity VMs can burst to smooth interactive FPS",
+            rationale: "foreground productivity VMs can burst to smooth interactive FPS"
+                .to_string(),
         },
+    };
+
+    if let Some(cap) = max_fps_override {
+        let capped = plan.max_fps.min(cap);
+        if capped != plan.max_fps {
+            plan.rationale = format!(
+                "{}; runtime policy caps display pacing at {cap} FPS",
+                plan.rationale
+            );
+            plan.max_fps = capped;
+        }
     }
+
+    plan
 }
 
 #[cfg(test)]
@@ -397,6 +874,17 @@ mod tests {
             sample_frames: 0,
             frame_time_micros: 0,
             frame_sample_file: None,
+            framebuffer_rgba_file: None,
+            window_crop_rgba_file: None,
+            runtime_policy_file: None,
+            window_id: None,
+            window_title: None,
+            window_x: None,
+            window_y: None,
+            window_width: None,
+            window_height: None,
+            window_host_width: None,
+            window_host_height: None,
         }
     }
 
@@ -430,6 +918,92 @@ mod tests {
             plan.pacing.rationale,
             "background VMs are throttled for battery and idle CPU"
         );
+    }
+
+    #[test]
+    fn runtime_policy_file_overrides_visibility_and_caps_fps() {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "bridgevm-displayd-runtime-policy-{}.json",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(
+            &path,
+            r#"{
+              "vm": "fast-dev",
+              "mode": "fast",
+              "profile": "automatic",
+              "visibility": "background",
+              "state": "running",
+              "on_battery": true,
+              "memory": "2048",
+              "cpu": "1",
+              "display_fps_cap": "5",
+              "rationale": "test policy",
+              "live_applied": false,
+              "live_apply_blockers": [],
+              "updated_at_unix": 1
+            }"#,
+        )
+        .unwrap();
+        let mut cli = cli(Visibility::Foreground, 12);
+        cli.runtime_policy_file = Some(path.clone());
+
+        let plan = build_display_plan(&cli).unwrap();
+
+        assert_eq!(plan.pacing.visibility, Visibility::Background);
+        assert_eq!(plan.pacing.max_fps, 5);
+        assert!(plan
+            .pacing
+            .rationale
+            .contains("runtime policy caps display pacing at 5 FPS"));
+        assert_eq!(
+            plan.runtime_policy,
+            Some(RuntimePolicyPlan {
+                path: path.display().to_string(),
+                visibility: Visibility::Background,
+                display_fps_cap: "5".to_string(),
+                max_fps_override: Some(5),
+                source: "runtime-resources",
+            })
+        );
+
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn runtime_policy_file_accepts_adaptive_cap() {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "bridgevm-displayd-runtime-policy-adaptive-{}.json",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(
+            &path,
+            r#"{"visibility":"foreground","display_fps_cap":"adaptive"}"#,
+        )
+        .unwrap();
+        let mut cli = cli(Visibility::Background, 12);
+        cli.runtime_policy_file = Some(path.clone());
+
+        let plan = build_display_plan(&cli).unwrap();
+
+        assert_eq!(plan.pacing.visibility, Visibility::Foreground);
+        assert_eq!(plan.pacing.max_fps, 60);
+        assert_eq!(
+            plan.runtime_policy
+                .as_ref()
+                .and_then(|policy| policy.max_fps_override),
+            None
+        );
+
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -485,6 +1059,296 @@ mod tests {
                 overlay: true,
             }]
         );
+    }
+
+    #[test]
+    fn window_region_plan_builds_proxy_crop_contract() {
+        let mut cli = cli(Visibility::Foreground, 4);
+        cli.window_id = Some("0x01200007".to_string());
+        cli.window_title = Some("Terminal".to_string());
+        cli.window_x = Some(30);
+        cli.window_y = Some(40);
+        cli.window_width = Some(800);
+        cli.window_height = Some(600);
+        cli.window_host_width = Some(400);
+        cli.window_host_height = Some(300);
+
+        let plan = build_display_plan(&cli).unwrap();
+
+        assert_eq!(
+            plan.window_region,
+            Some(WindowRegionPlan {
+                window_id: "0x01200007".to_string(),
+                title: Some("Terminal".to_string()),
+                source_rect: SignedRect {
+                    x: 30,
+                    y: 40,
+                    width: 800,
+                    height: 600,
+                },
+                clipped_rect: UnsignedRect {
+                    x: 30,
+                    y: 40,
+                    width: 800,
+                    height: 600,
+                },
+                host_size: HostSize {
+                    width: 400,
+                    height: 300,
+                },
+                backing_rect: UnsignedRect {
+                    x: 60,
+                    y: 80,
+                    width: 1600,
+                    height: 1200,
+                },
+                input_mapping: WindowInputMapping {
+                    coordinate_origin: "guest-framebuffer-top-left",
+                    host_width: 400,
+                    host_height: 300,
+                    guest_x: 30,
+                    guest_y: 40,
+                    guest_width: 800,
+                    guest_height: 600,
+                    scale_x_numerator: 800,
+                    scale_x_denominator: 400,
+                    scale_y_numerator: 600,
+                    scale_y_denominator: 300,
+                },
+                presentation: "proxy-window-crop",
+            })
+        );
+    }
+
+    #[test]
+    fn window_region_plan_clips_to_framebuffer() {
+        let mut cli = cli(Visibility::Foreground, 4);
+        cli.window_id = Some("0x02000010".to_string());
+        cli.window_x = Some(-20);
+        cli.window_y = Some(850);
+        cli.window_width = Some(100);
+        cli.window_height = Some(100);
+
+        let plan = build_display_plan(&cli).unwrap();
+        let region = plan.window_region.unwrap();
+
+        assert_eq!(
+            region.source_rect,
+            SignedRect {
+                x: -20,
+                y: 850,
+                width: 100,
+                height: 100,
+            }
+        );
+        assert_eq!(
+            region.clipped_rect,
+            UnsignedRect {
+                x: 0,
+                y: 850,
+                width: 80,
+                height: 50,
+            }
+        );
+        assert_eq!(
+            region.backing_rect,
+            UnsignedRect {
+                x: 0,
+                y: 1700,
+                width: 160,
+                height: 100,
+            }
+        );
+        assert_eq!(
+            region.input_mapping,
+            WindowInputMapping {
+                coordinate_origin: "guest-framebuffer-top-left",
+                host_width: 80,
+                host_height: 50,
+                guest_x: 0,
+                guest_y: 850,
+                guest_width: 80,
+                guest_height: 50,
+                scale_x_numerator: 80,
+                scale_x_denominator: 80,
+                scale_y_numerator: 50,
+                scale_y_denominator: 50,
+            }
+        );
+    }
+
+    #[test]
+    fn window_region_plan_requires_complete_intersecting_geometry() {
+        let mut missing = cli(Visibility::Foreground, 4);
+        missing.window_id = Some("0x01200007".to_string());
+        let error = build_display_plan(&missing).unwrap_err();
+        assert!(error.contains("--window-x"));
+
+        let mut empty = cli(Visibility::Foreground, 4);
+        empty.window_id = Some("0x01200007".to_string());
+        empty.window_x = Some(10);
+        empty.window_y = Some(10);
+        empty.window_width = Some(0);
+        empty.window_height = Some(100);
+        let error = build_display_plan(&empty).unwrap_err();
+        assert!(error.contains("--window-width must be positive"));
+
+        let mut offscreen = cli(Visibility::Foreground, 4);
+        offscreen.window_id = Some("0x01200007".to_string());
+        offscreen.window_x = Some(2000);
+        offscreen.window_y = Some(10);
+        offscreen.window_width = Some(100);
+        offscreen.window_height = Some(100);
+        let error = build_display_plan(&offscreen).unwrap_err();
+        assert!(error.contains("does not intersect"));
+    }
+
+    #[test]
+    fn window_crop_frame_materializes_clipped_rgba_pixels() {
+        let mut input_path = std::env::temp_dir();
+        input_path.push(format!(
+            "bridgevm-displayd-rgba-input-{}.rgba",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut output_path = std::env::temp_dir();
+        output_path.push(format!(
+            "bridgevm-displayd-rgba-output-{}.rgba",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut frame = Vec::new();
+        for y in 0u8..3 {
+            for x in 0u8..4 {
+                frame.extend_from_slice(&[x, y, y * 4 + x, 255]);
+            }
+        }
+        fs::write(&input_path, &frame).unwrap();
+
+        let mut cli = cli(Visibility::Foreground, 4);
+        cli.framebuffer_width = 4;
+        cli.framebuffer_height = 3;
+        cli.scale = 1;
+        cli.window_id = Some("0x01200007".to_string());
+        cli.window_x = Some(1);
+        cli.window_y = Some(1);
+        cli.window_width = Some(2);
+        cli.window_height = Some(2);
+        cli.framebuffer_rgba_file = Some(input_path.clone());
+        cli.window_crop_rgba_file = Some(output_path.clone());
+
+        let plan = build_display_plan(&cli).unwrap();
+        let crop_plan = plan.window_crop_frame.as_ref().unwrap();
+
+        assert_eq!(crop_plan.source_path, input_path.display().to_string());
+        assert_eq!(crop_plan.output_path, output_path.display().to_string());
+        assert_eq!(crop_plan.pixel_format, "rgba8");
+        assert_eq!(crop_plan.framebuffer_width, 4);
+        assert_eq!(crop_plan.framebuffer_height, 3);
+        assert_eq!(
+            crop_plan.crop_rect,
+            UnsignedRect {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 2,
+            }
+        );
+        assert_eq!(crop_plan.output_width, 2);
+        assert_eq!(crop_plan.output_height, 2);
+        assert_eq!(crop_plan.expected_input_bytes, 48);
+        assert_eq!(crop_plan.output_bytes, 16);
+        assert_eq!(crop_plan.source_len_bytes, Some(48));
+        assert!(crop_plan.source_modified_unix_nanos.is_some());
+        assert!(crop_plan.refreshed_at_unix_nanos.is_some());
+        assert_eq!(crop_plan.presentation, "proxy-window-crop-frame");
+
+        materialize_window_crop(crop_plan).unwrap();
+        assert_eq!(
+            fs::read(&output_path).unwrap(),
+            vec![1, 1, 5, 255, 2, 1, 6, 255, 1, 2, 9, 255, 2, 2, 10, 255,]
+        );
+
+        fs::remove_file(input_path).unwrap();
+        fs::remove_file(output_path).unwrap();
+    }
+
+    #[test]
+    fn window_crop_frame_requires_source_output_and_window_region() {
+        let mut missing_region = cli(Visibility::Foreground, 4);
+        missing_region.framebuffer_rgba_file = Some(PathBuf::from("frame.rgba"));
+        missing_region.window_crop_rgba_file = Some(PathBuf::from("crop.rgba"));
+        let error = build_display_plan(&missing_region).unwrap_err();
+        assert!(error.contains("complete --window-* geometry"));
+
+        let mut missing_output = cli(Visibility::Foreground, 4);
+        missing_output.window_id = Some("0x01200007".to_string());
+        missing_output.window_x = Some(1);
+        missing_output.window_y = Some(1);
+        missing_output.window_width = Some(2);
+        missing_output.window_height = Some(2);
+        missing_output.framebuffer_rgba_file = Some(PathBuf::from("frame.rgba"));
+        let error = build_display_plan(&missing_output).unwrap_err();
+        assert!(error.contains("--window-crop-rgba-file"));
+
+        let mut missing_input = missing_output;
+        missing_input.framebuffer_rgba_file = None;
+        missing_input.window_crop_rgba_file = Some(PathBuf::from("crop.rgba"));
+        let error = build_display_plan(&missing_input).unwrap_err();
+        assert!(error.contains("--framebuffer-rgba-file"));
+    }
+
+    #[test]
+    fn window_crop_frame_rejects_wrong_input_byte_count() {
+        let mut input_path = std::env::temp_dir();
+        input_path.push(format!(
+            "bridgevm-displayd-short-rgba-input-{}.rgba",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut output_path = std::env::temp_dir();
+        output_path.push(format!(
+            "bridgevm-displayd-short-rgba-output-{}.rgba",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(&input_path, [0u8; 4]).unwrap();
+
+        let plan = WindowCropFramePlan {
+            source_path: input_path.display().to_string(),
+            output_path: output_path.display().to_string(),
+            pixel_format: "rgba8",
+            framebuffer_width: 2,
+            framebuffer_height: 2,
+            crop_rect: UnsignedRect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+            output_width: 1,
+            output_height: 1,
+            expected_input_bytes: 16,
+            output_bytes: 4,
+            source_len_bytes: Some(4),
+            source_modified_unix_nanos: None,
+            refreshed_at_unix_nanos: None,
+            presentation: "proxy-window-crop-frame",
+        };
+
+        let error = materialize_window_crop(&plan).unwrap_err();
+        assert!(error.contains("has 4 bytes, expected 16"));
+        assert!(!output_path.exists());
+
+        fs::remove_file(input_path).unwrap();
     }
 
     #[test]

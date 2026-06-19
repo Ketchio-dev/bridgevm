@@ -13,6 +13,10 @@ use std::{
 };
 use thiserror::Error;
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("VM already exists: {0}")]
@@ -193,6 +197,15 @@ pub struct RunnerMetadata {
     pub active_disk: Option<ActiveDiskMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch_readiness: Option<LaunchReadinessMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_control: Option<RuntimeControlMetadata>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeControlMetadata {
+    pub kind: String,
+    pub socket_path: PathBuf,
+    pub commands: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -224,6 +237,8 @@ pub struct RuntimeResourcePolicyMetadata {
     pub display_fps_cap: String,
     pub rationale: String,
     pub live_applied: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub runtime_control_acknowledged: bool,
     pub live_apply_blockers: Vec<RuntimeResourcePolicyBlocker>,
     pub updated_at_unix: u64,
 }
@@ -4501,6 +4516,7 @@ mod tests {
                     capability: None,
                 }],
             }),
+            runtime_control: None,
         };
 
         store.write_runner_metadata("dev", &metadata).unwrap();
@@ -4526,6 +4542,7 @@ mod tests {
             display_fps_cap: "10".to_string(),
             rationale: "Battery or background throttling active.".to_string(),
             live_applied: false,
+            runtime_control_acknowledged: false,
             live_apply_blockers: vec![RuntimeResourcePolicyBlocker {
                 code: "runtime-control-unavailable".to_string(),
                 message: "No live runtime control channel is available.".to_string(),

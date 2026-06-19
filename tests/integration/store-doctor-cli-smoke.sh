@@ -89,6 +89,13 @@ assert_doctor_contract() {
   assert_contains "$output" "macOS host:" "$label"
   assert_contains "$output" "Apple Silicon host:" "$label"
   assert_contains "$output" "Fast Mode possibility:" "$label"
+  assert_contains "$output" "Engine lanes:" "$label"
+  assert_contains "$output" "Apple VZ Engine (apple-vz)" "$label"
+  assert_contains "$output" "Linux/macOS Arm Fast Mode" "$label"
+  assert_contains "$output" "BridgeVM HVF Engine (bridge-hvf)" "$label"
+  assert_contains "$output" "primary Parallels-like Windows 11 Arm target" "$label"
+  assert_contains "$output" "QEMU Compatibility Engine (qemu-compatibility)" "$label"
+  assert_contains "$output" "compatibility fallback, not the Parallels-like target" "$label"
   assert_contains "$output" "Status: OK" "$label"
 }
 

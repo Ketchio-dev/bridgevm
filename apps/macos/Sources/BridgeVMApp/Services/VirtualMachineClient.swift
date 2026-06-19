@@ -131,6 +131,8 @@ protocol VirtualMachineClient: StoreDoctorInspecting {
   func inspectQemuArgs(on id: VirtualMachine.ID) async throws -> QemuLaunchPlan
   func prepareRun(on id: VirtualMachine.ID) async throws -> RunnerStatus
   func inspectRunnerStatus(on id: VirtualMachine.ID) async throws -> RunnerStatus?
+  func sendRuntimeControlCommand(_ command: String, on id: VirtualMachine.ID) async throws
+    -> RuntimeControlCommandResult
   func recommendMode(for choice: GuestChoice) async throws -> ModeRecommendation
   func exportVirtualMachine(on id: VirtualMachine.ID, output: String) async throws
     -> VMExportMetadata
@@ -248,6 +250,12 @@ extension VirtualMachineClient {
     throw VirtualMachineClientError.daemonResponseInvalid
   }
 
+  func sendRuntimeControlCommand(_ command: String, on id: VirtualMachine.ID) async throws
+    -> RuntimeControlCommandResult
+  {
+    throw VirtualMachineClientError.daemonResponseInvalid
+  }
+
   func inspectQemuArgs(on id: VirtualMachine.ID) async throws -> QemuLaunchPlan {
     throw VirtualMachineClientError.daemonResponseInvalid
   }
@@ -348,6 +356,10 @@ protocol VirtualMachineClientSourceProviding {
   var allowsMutationsForCurrentInventory: Bool { get }
 }
 
+protocol VirtualMachineDisplayMetadataProviding {
+  func displayStoreMetadata(for id: VirtualMachine.ID) -> EmbeddedDisplayLauncher.StoreMetadata?
+}
+
 extension VirtualMachineClientSourceProviding {
   var allowsMutationsForCurrentInventory: Bool {
     true
@@ -408,6 +420,8 @@ final class DaemonVirtualMachineClient: VirtualMachineClient, VirtualMachineClie
   private let endpoint: DaemonEndpoint
   private let transport: DaemonTransport
   private var namesByID: [VirtualMachine.ID: String] = [:]
+  private var displayStoreMetadataByID: [VirtualMachine.ID: EmbeddedDisplayLauncher.StoreMetadata] =
+    [:]
 
   init(
     endpoint: DaemonEndpoint = .local,
@@ -440,9 +454,9 @@ final class DaemonVirtualMachineClient: VirtualMachineClient, VirtualMachineClie
       request,
       responseType: DaemonListVirtualMachinesResponse.self
     )
-    let virtualMachines = response.virtualMachines.map { $0.virtualMachine }
-    namesByID = Dictionary(uniqueKeysWithValues: virtualMachines.map { ($0.id, $0.name) })
-    return virtualMachines
+    namesByID = [:]
+    displayStoreMetadataByID = [:]
+    return response.virtualMachines.map(cacheVirtualMachineMetadata)
   }
 
   func listBootTemplates() async throws -> [BootTemplate] {
@@ -800,6 +814,20 @@ final class DaemonVirtualMachineClient: VirtualMachineClient, VirtualMachineClie
     return response.runnerStatus
   }
 
+  func sendRuntimeControlCommand(_ command: String, on id: VirtualMachine.ID) async throws
+    -> RuntimeControlCommandResult
+  {
+    guard let name = namesByID[id] else {
+      throw VirtualMachineClientError.virtualMachineNotFound
+    }
+
+    let response = try await transport.send(
+      DaemonRuntimeControlRequest(name: name, command: command),
+      responseType: DaemonRuntimeControlResponse.self
+    )
+    return response.control.runtimeControlCommandResult
+  }
+
   func inspectQemuArgs(on id: VirtualMachine.ID) async throws -> QemuLaunchPlan {
     guard let name = namesByID[id] else {
       throw VirtualMachineClientError.virtualMachineNotFound
@@ -1147,9 +1175,7 @@ final class DaemonVirtualMachineClient: VirtualMachineClient, VirtualMachineClie
       DaemonCreateVirtualMachineRequest(createRequest: request),
       responseType: DaemonVirtualMachineResponse.self
     )
-    let virtualMachine = response.virtualMachine.virtualMachine
-    namesByID[virtualMachine.id] = virtualMachine.name
-    return virtualMachine
+    return cacheVirtualMachineMetadata(response.virtualMachine)
   }
 
   func recommendMode(for choice: GuestChoice) async throws -> ModeRecommendation {
@@ -1184,6 +1210,7 @@ final class DaemonVirtualMachineClient: VirtualMachineClient, VirtualMachineClie
       responseType: DaemonDeleteVirtualMachineResponse.self
     )
     namesByID.removeValue(forKey: id)
+    displayStoreMetadataByID.removeValue(forKey: id)
     return response.vmDeletionMetadata
   }
 
@@ -1244,6 +1271,23 @@ final class DaemonVirtualMachineClient: VirtualMachineClient, VirtualMachineClie
       DaemonResumeBackendRequest(name: name),
       responseType: DaemonRunnerStatusResponse.self
     )
+  }
+
+  private func cacheVirtualMachineMetadata(_ dto: DaemonVirtualMachineDTO) -> VirtualMachine {
+    let virtualMachine = dto.virtualMachine
+    namesByID[virtualMachine.id] = virtualMachine.name
+    if let displayStoreMetadata = dto.displayStoreMetadata {
+      displayStoreMetadataByID[virtualMachine.id] = displayStoreMetadata
+    } else {
+      displayStoreMetadataByID.removeValue(forKey: virtualMachine.id)
+    }
+    return virtualMachine
+  }
+}
+
+extension DaemonVirtualMachineClient: VirtualMachineDisplayMetadataProviding {
+  func displayStoreMetadata(for id: VirtualMachine.ID) -> EmbeddedDisplayLauncher.StoreMetadata? {
+    displayStoreMetadataByID[id]
   }
 }
 
@@ -1599,6 +1643,14 @@ final class FallbackVirtualMachineClient: VirtualMachineClient, VirtualMachineCl
     }
   }
 
+  func sendRuntimeControlCommand(_ command: String, on id: VirtualMachine.ID) async throws
+    -> RuntimeControlCommandResult
+  {
+    try await runPrimaryMutation {
+      try await $0.sendRuntimeControlCommand(command, on: id)
+    }
+  }
+
   func inspectQemuArgs(on id: VirtualMachine.ID) async throws -> QemuLaunchPlan {
     do {
       let plan = try await primary.inspectQemuArgs(on: id)
@@ -1868,6 +1920,14 @@ final class FallbackVirtualMachineClient: VirtualMachineClient, VirtualMachineCl
     try await runPrimaryMutation {
       try await $0.perform(action, on: id)
     }
+  }
+}
+
+extension FallbackVirtualMachineClient: VirtualMachineDisplayMetadataProviding {
+  func displayStoreMetadata(for id: VirtualMachine.ID) -> EmbeddedDisplayLauncher.StoreMetadata? {
+    let activeClient = allowsMutationsForCurrentInventory ? primary : fallback
+    return (activeClient as? VirtualMachineDisplayMetadataProviding)?
+      .displayStoreMetadata(for: id)
   }
 }
 
@@ -2406,6 +2466,33 @@ extension GuestToolsAgentCommand: Encodable {
     case id
   }
 
+  private enum WindowBoundsCodingKeys: String, CodingKey {
+    case id
+    case x
+    case y
+    case width
+    case height
+  }
+
+  private enum WindowInputCodingKeys: String, CodingKey {
+    case id
+    case event
+  }
+
+  private enum WindowPointerInputCodingKeys: String, CodingKey {
+    case kind
+    case x
+    case y
+    case action
+    case button
+  }
+
+  private enum WindowKeyInputCodingKeys: String, CodingKey {
+    case kind
+    case key
+    case action
+  }
+
   private enum ShareCommandCodingKeys: String, CodingKey {
     case name
   }
@@ -2491,6 +2578,47 @@ extension GuestToolsAgentCommand: Encodable {
         forKey: DynamicCodingKey("CloseWindow")
       )
       try payload.encode(id, forKey: .id)
+    case .setWindowBounds(let id, let x, let y, let width, let height):
+      var container = encoder.container(keyedBy: DynamicCodingKey.self)
+      var payload = container.nestedContainer(
+        keyedBy: WindowBoundsCodingKeys.self,
+        forKey: DynamicCodingKey("SetWindowBounds")
+      )
+      try payload.encode(id, forKey: .id)
+      try payload.encode(x, forKey: .x)
+      try payload.encode(y, forKey: .y)
+      try payload.encode(width, forKey: .width)
+      try payload.encode(height, forKey: .height)
+    case .windowPointerInput(let id, let x, let y, let action, let button):
+      var container = encoder.container(keyedBy: DynamicCodingKey.self)
+      var payload = container.nestedContainer(
+        keyedBy: WindowInputCodingKeys.self,
+        forKey: DynamicCodingKey("WindowInput")
+      )
+      try payload.encode(id, forKey: .id)
+      var event = payload.nestedContainer(
+        keyedBy: WindowPointerInputCodingKeys.self,
+        forKey: .event
+      )
+      try event.encode("pointer", forKey: .kind)
+      try event.encode(x, forKey: .x)
+      try event.encode(y, forKey: .y)
+      try event.encode(action.rawValue, forKey: .action)
+      try event.encodeIfPresent(button?.rawValue, forKey: .button)
+    case .windowKeyInput(let id, let key, let action):
+      var container = encoder.container(keyedBy: DynamicCodingKey.self)
+      var payload = container.nestedContainer(
+        keyedBy: WindowInputCodingKeys.self,
+        forKey: DynamicCodingKey("WindowInput")
+      )
+      try payload.encode(id, forKey: .id)
+      var event = payload.nestedContainer(
+        keyedBy: WindowKeyInputCodingKeys.self,
+        forKey: .event
+      )
+      try event.encode("key", forKey: .kind)
+      try event.encode(key, forKey: .key)
+      try event.encode(action.rawValue, forKey: .action)
     case .timeSync(let unixEpochMillis):
       var container = encoder.container(keyedBy: DynamicCodingKey.self)
       var payload = container.nestedContainer(
@@ -2505,6 +2633,12 @@ extension GuestToolsAgentCommand: Encodable {
 struct DaemonRunnerStatusRequest: Encodable {
   let type = "runner_status"
   var name: String
+}
+
+struct DaemonRuntimeControlRequest: Encodable {
+  let type = "runtime_control"
+  var name: String
+  var command: String
 }
 
 struct DaemonQemuArgsRequest: Encodable {
@@ -2970,6 +3104,11 @@ struct DaemonRunnerStatusResponse: Decodable {
   var runnerStatus: RunnerStatus? {
     metadata?.runnerStatus(qmpSupervisor: qmpSupervisor?.qmpSupervisor)
   }
+}
+
+struct DaemonRuntimeControlResponse: Decodable {
+  var type: String
+  var control: DaemonRuntimeControlCommandDTO
 }
 
 struct DaemonQemuCommandResponse: Decodable {
@@ -4738,6 +4877,8 @@ struct DaemonVirtualMachineDTO: Decodable {
   var ipAddress: String?
   var lastStarted: Date?
   var notes: String?
+  var storeRoot: String?
+  var path: String?
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -4757,6 +4898,7 @@ struct DaemonVirtualMachineDTO: Decodable {
     case lastStarted
     case lastStartedSnake = "last_started"
     case notes
+    case storeRoot = "store_root"
     case path
   }
 
@@ -4784,6 +4926,8 @@ struct DaemonVirtualMachineDTO: Decodable {
       ?? container.decodeIfPresent(String.self, forKey: .ipAddressSnake)
     lastStarted = try container.decodeFlexibleDate(keys: [.lastStarted, .lastStartedSnake])
     notes = try container.decodeIfPresent(String.self, forKey: .notes)
+    storeRoot = try container.decodeIfPresent(String.self, forKey: .storeRoot)
+    path = try container.decodeIfPresent(String.self, forKey: .path)
   }
 
   var virtualMachine: VirtualMachine {
@@ -4810,6 +4954,14 @@ struct DaemonVirtualMachineDTO: Decodable {
         return value
       }
       .joined(separator: " ")
+  }
+
+  var displayStoreMetadata: EmbeddedDisplayLauncher.StoreMetadata? {
+    let metadata = EmbeddedDisplayLauncher.StoreMetadata(storeRoot: storeRoot, bundlePath: path)
+    guard metadata.storeRoot != nil || metadata.bundlePath != nil else {
+      return nil
+    }
+    return metadata
   }
 }
 
@@ -5579,6 +5731,7 @@ struct DaemonRunnerMetadataDTO: Decodable {
   var launchSpecPath: String?
   var launchReadiness: DaemonLaunchReadinessDTO?
   var guestTools: DaemonGuestToolsRunnerMetadataDTO?
+  var runtimeControl: DaemonRuntimeControlMetadataDTO?
 
   enum CodingKeys: String, CodingKey {
     case engine
@@ -5590,6 +5743,7 @@ struct DaemonRunnerMetadataDTO: Decodable {
     case launchSpecPath = "launch_spec_path"
     case launchReadiness = "launch_readiness"
     case guestTools = "guest_tools"
+    case runtimeControl = "runtime_control"
   }
 
   func runnerStatus(qmpSupervisor: QMPSupervisor? = nil) -> RunnerStatus {
@@ -5603,7 +5757,54 @@ struct DaemonRunnerMetadataDTO: Decodable {
       launchSpecPath: launchSpecPath,
       launchReadiness: launchReadiness?.launchReadiness,
       qmpSupervisor: qmpSupervisor,
-      guestTools: guestTools?.guestToolsRunnerStatus
+      guestTools: guestTools?.guestToolsRunnerStatus,
+      runtimeControl: runtimeControl?.runtimeControlRunnerStatus
+    )
+  }
+}
+
+struct DaemonRuntimeControlMetadataDTO: Decodable {
+  var kind: String
+  var socketPath: String
+  var commands: [String]
+
+  enum CodingKeys: String, CodingKey {
+    case kind
+    case socketPath = "socket_path"
+    case commands
+  }
+
+  var runtimeControlRunnerStatus: RuntimeControlRunnerStatus {
+    RuntimeControlRunnerStatus(
+      kind: kind,
+      socketPath: socketPath,
+      commands: commands
+    )
+  }
+}
+
+struct DaemonRuntimeControlCommandDTO: Decodable {
+  var vm: String
+  var kind: String
+  var socketPath: String
+  var command: String
+  var response: GuestToolsCommandPayload
+
+  enum CodingKeys: String, CodingKey {
+    case vm
+    case kind
+    case socketPath = "socket_path"
+    case command
+    case response
+  }
+
+  var runtimeControlCommandResult: RuntimeControlCommandResult {
+    RuntimeControlCommandResult(
+      vm: vm,
+      kind: kind,
+      socketPath: socketPath,
+      command: command,
+      response: response
     )
   }
 }
@@ -5871,6 +6072,7 @@ struct RuntimeResourcePolicy: Equatable {
   var displayFPSCap: String
   var rationale: String
   var liveApplied: Bool
+  var runtimeControlAcknowledged: Bool
   var liveApplyBlockers: [RuntimeResourcePolicyBlocker]
   var updatedAtUnix: UInt64
 
@@ -5911,6 +6113,7 @@ struct DaemonRuntimeResourcePolicyDTO: Decodable {
   var displayFPSCap: String
   var rationale: String
   var liveApplied: Bool
+  var runtimeControlAcknowledged: Bool
   var liveApplyBlockers: [DaemonRuntimeResourcePolicyBlockerDTO]
   var updatedAtUnix: UInt64
 
@@ -5926,8 +6129,29 @@ struct DaemonRuntimeResourcePolicyDTO: Decodable {
     case displayFPSCap = "display_fps_cap"
     case rationale
     case liveApplied = "live_applied"
+    case runtimeControlAcknowledged = "runtime_control_acknowledged"
     case liveApplyBlockers = "live_apply_blockers"
     case updatedAtUnix = "updated_at_unix"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    vm = try container.decode(String.self, forKey: .vm)
+    mode = try container.decode(String.self, forKey: .mode)
+    profile = try container.decode(String.self, forKey: .profile)
+    visibility = try container.decode(RuntimeResourceVisibility.self, forKey: .visibility)
+    state = try container.decode(String.self, forKey: .state)
+    onBattery = try container.decode(Bool.self, forKey: .onBattery)
+    memory = try container.decode(String.self, forKey: .memory)
+    cpu = try container.decode(String.self, forKey: .cpu)
+    displayFPSCap = try container.decode(String.self, forKey: .displayFPSCap)
+    rationale = try container.decode(String.self, forKey: .rationale)
+    liveApplied = try container.decode(Bool.self, forKey: .liveApplied)
+    runtimeControlAcknowledged =
+      try container.decodeIfPresent(Bool.self, forKey: .runtimeControlAcknowledged) ?? false
+    liveApplyBlockers =
+      try container.decode([DaemonRuntimeResourcePolicyBlockerDTO].self, forKey: .liveApplyBlockers)
+    updatedAtUnix = try container.decode(UInt64.self, forKey: .updatedAtUnix)
   }
 
   var runtimeResourcePolicy: RuntimeResourcePolicy {
@@ -5943,6 +6167,7 @@ struct DaemonRuntimeResourcePolicyDTO: Decodable {
       displayFPSCap: displayFPSCap,
       rationale: rationale,
       liveApplied: liveApplied,
+      runtimeControlAcknowledged: runtimeControlAcknowledged,
       liveApplyBlockers: liveApplyBlockers.map(\.runtimeResourcePolicyBlocker),
       updatedAtUnix: updatedAtUnix
     )
@@ -6312,12 +6537,12 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
       name: "Windows 11 Arm Dev",
       guest: "Windows 11 Arm",
       status: .running,
-      mode: .fast,
+      mode: .compatibility,
       resources: .init(cpuCount: 6, memoryGB: 12, diskGB: 128),
       uptime: "2h 14m",
       ipAddress: "192.168.64.12",
       lastStarted: Date(timeIntervalSinceNow: -8_040),
-      notes: "Fast Mode candidate for daily app testing."
+      notes: "Restricted QEMU/HVF Compatibility Mode profile for Windows testing."
     ),
     VirtualMachine(
       id: UUID(uuidString: "3122800D-EC31-4C62-AAD8-B1510DA3CFA7") ?? UUID(),
@@ -6480,13 +6705,13 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
 
     if windows11Arm {
       return ModeRecommendation(
-        mode: .fast,
-        performance: "High for productivity workloads",
-        batteryImpact: "Low to medium",
-        integration: "Experimental",
+        mode: .compatibility,
+        performance: "Medium; restricted QEMU/HVF path today",
+        batteryImpact: "Higher than Apple VZ Fast Mode",
+        integration: "Windows beta; not Apple VZ Fast Mode",
         message:
-          "Windows 11 Arm can use Fast Mode Experimental with a restricted backend. BridgeVM must not claim Microsoft-authorized status.",
-        fastModeAvailable: true,
+          "Windows 11 Arm uses Compatibility Mode with a restricted QEMU/HVF backend today. Apple VZ Fast Mode is Linux/macOS Arm only; BridgeVM must not claim Microsoft-authorized or Parallels-class Windows support.",
+        fastModeAvailable: false,
         bootTemplate: nil
       )
     }
@@ -7189,7 +7414,54 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
       logPath: vm.mode == .fast ? "logs/lightvm.log" : "logs/qemu.log",
       startedAtUnix: vm.status == .running && now > 900 ? now - 900 : now,
       dryRun: vm.status != .running,
-      launchReadiness: readiness
+      launchReadiness: readiness,
+      runtimeControl: vm.mode == .fast && vm.status == .running
+        ? RuntimeControlRunnerStatus(
+          kind: "apple-vz-display",
+          socketPath: "target/bridgevm-dev/vms/\(vm.name).vmbridge/run/apple-vz-display-control.sock",
+          commands: ["status", "stop", "policy", "pacing"]
+        )
+        : nil
+    )
+  }
+
+  func sendRuntimeControlCommand(_ command: String, on id: VirtualMachine.ID) async throws
+    -> RuntimeControlCommandResult
+  {
+    try await Task.sleep(nanoseconds: 90_000_000)
+
+    guard let index = virtualMachines.firstIndex(where: { $0.id == id }) else {
+      throw VirtualMachineClientError.virtualMachineNotFound
+    }
+
+    let vm = virtualMachines[index]
+    guard vm.mode == .fast, vm.status == .running else {
+      throw VirtualMachineClientError.daemonResponseInvalid
+    }
+
+    let normalizedCommand = command.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let accepted = ["status", "stop", "policy", "pacing"].contains(normalizedCommand)
+    let nextState: String
+    if normalizedCommand == "stop" {
+      virtualMachines[index].status = .stopped
+      virtualMachines[index].uptime = "Not running"
+      nextState = "stopping"
+    } else {
+      nextState = vm.status.rawValue
+    }
+
+    return RuntimeControlCommandResult(
+      vm: vm.name,
+      kind: "apple-vz-display",
+      socketPath: "target/bridgevm-dev/vms/\(vm.name).vmbridge/run/apple-vz-display-control.sock",
+      command: normalizedCommand,
+      response: GuestToolsCommandPayload(
+        value: .object([
+          "mock": .bool(true),
+          "ok": .bool(accepted),
+          "state": .string(nextState),
+        ])
+      )
     )
   }
 
@@ -7735,6 +8007,7 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
         ? "Mock background policy records lower CPU, memory, and display pacing."
         : "Mock foreground policy records full configured resources.",
       liveApplied: false,
+      runtimeControlAcknowledged: false,
       liveApplyBlockers: [
         RuntimeResourcePolicyBlocker(
           code: "mock-runtime-control-unavailable",

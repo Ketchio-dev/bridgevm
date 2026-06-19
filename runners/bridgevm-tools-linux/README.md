@@ -240,14 +240,21 @@ completed file into that directory after the received byte count matches the
 declared size. The file name must be a single safe path component; nested paths,
 absolute paths, and parent-directory traversal are rejected.
 
-Application and window metadata support is also intentionally scaffold-only.
-`ListApplications` and `ListWindows` return static or in-memory entries owned
-by the runner, not a live inventory from the Linux desktop environment.
-`LaunchApplication { id }`, `FocusWindow { id }`, and `CloseWindow { id }`
-validate the requested ID against that scaffold state and return
-`CommandResult` when the protocol command is accepted. They do not start Linux
-processes, inspect real windows, focus a window manager surface, or close a
-desktop window.
+Application and window metadata support first tries real Linux desktop tools
+when the guest advertises the relevant capabilities. With `gio` or
+`gtk-launch`, `ListApplications` reads visible `.desktop` files and
+`LaunchApplication { id }` launches the selected desktop entry. With X11
+`DISPLAY` and `wmctrl`, `ListWindows` lists real windows and
+`FocusWindow { id }` / `CloseWindow { id }` ask the window manager to focus or
+close the matching surface, while `SetWindowBounds` uses
+`wmctrl -ir <id> -e 0,x,y,width,height` to ask the guest window manager to move
+or resize the matching surface. Window payloads prefer `wmctrl -l -p -G`, so
+real entries can include `pid`, `desktop`, and `bounds` metadata for later
+host-proxy-window work. A host-side producer may also attach
+`window_crop_frame_summary_path` when it has written a displayd crop summary
+for that window; the Linux agent itself does not capture framebuffer crops. If
+those desktop tools or entries are unavailable, the runner falls back to the
+original in-memory scaffold so protocol and CI paths remain deterministic.
 
 The matching high-level host wrappers are:
 
@@ -257,6 +264,7 @@ bridgevm guest-tools launch-application <vm> --id <application-id> [--request-id
 bridgevm guest-tools list-windows <vm> [--request-id <id>]
 bridgevm guest-tools focus-window <vm> --id <window-id> [--request-id <id>]
 bridgevm guest-tools close-window <vm> --id <window-id> [--request-id <id>]
+bridgevm guest-tools set-window-bounds <vm> --id <window-id> --x <px> --y <px> --width <px> --height <px> [--request-id <id>]
 ```
 
 Application-consistent snapshot freeze/thaw support defaults to a simulated

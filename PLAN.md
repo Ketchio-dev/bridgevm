@@ -9,19 +9,35 @@ For this plan, I’ll call it **BridgeVM**.
 ## Core product thesis
 
 **BridgeVM should not be “another QEMU GUI.”**
-It should be a **two-engine virtualization app**:
+It should be a **multi-engine virtualization app** with three clear execution
+tracks:
 
-1. **Fast Mode**
-   A lightweight, Mac-optimized, Parallels-like path for supported modern guests.
+1. **Compatibility Engine**
+   A QEMU-backed expert path for legacy OSes, x86 emulation, unusual hardware,
+   and broad compatibility.
 
-2. **Compatibility Mode**
-   A heavier, QEMU-powered, expert path for legacy OSes, x86 emulation, unusual hardware, and advanced configuration.
+2. **Apple VZ Engine**
+   A lightweight, Mac-optimized path for Linux/macOS Arm guests through Apple
+   Virtualization.framework.
+
+3. **BridgeVM HVF Engine**
+   A future BridgeVM-owned Apple Hypervisor.framework VMM for the Windows 11 Arm
+   non-QEMU, Parallels-like target.
 
 The central idea is:
 
-> **Fast Mode should feel like Parallels. Compatibility Mode should feel like UTM/QEMU, but with a better UI.**
+> **Apple VZ and BridgeVM HVF should feel lightweight. Compatibility Mode should stay available for QEMU-class flexibility.**
 
 This gives the product a strong identity. Users who want speed get a constrained, polished experience. Users who need full control get an advanced compatibility engine.
+
+The Parallels-like ambition is split into four explicit tracks:
+
+| Track | Product goal | BridgeVM implication |
+| --- | --- | --- |
+| macOS-native integration | Guest apps and files feel like they belong on the Mac. | Guest Tools, shared folders, clipboard, dynamic resize, app/window inventory, and staged Coherence-like host windows. |
+| Apple Silicon hypervisor optimization | Supported Arm guests avoid general emulation overhead. | Fast Mode starts with Apple Virtualization.framework for Linux/macOS Arm and keeps QEMU in Compatibility or restricted Windows paths until a custom VMM is justified. |
+| Intelligent resources and battery | The app changes resource behavior based on foreground/background, battery, workload, and display visibility. | `auto` resources are policy-driven; runtime policy must eventually be consumed by live Apple VZ/display IPC. |
+| Graphics acceleration | Display feels native and efficient; Windows 3D is treated honestly. | Metal/displayd and frame pacing are product tracks; Direct3D-to-Metal/WDDM is long-term R&D, not an MVP promise. |
 
 ---
 
@@ -75,7 +91,8 @@ Choose how you want to run this virtual machine.
 
 Fast Mode
 Best for speed, battery life, and Mac-like integration.
-Recommended for Windows 11 Arm, Linux Arm64, and macOS guests.
+Recommended for Linux Arm64 and macOS guests. Windows 11 Arm uses
+Compatibility Mode today.
 
 Compatibility Mode
 Best for advanced users, legacy operating systems, x86 emulation, and custom hardware.
@@ -96,7 +113,7 @@ Advanced users can override the mode.
 
 BridgeVM should be positioned as:
 
-> **An open-source Mac virtualization app with two engines: a lightweight Parallels-like engine for supported systems, and a full QEMU compatibility engine for everything else.**
+> **An open-source Mac virtualization app with a QEMU compatibility engine, an Apple VZ Linux/macOS fast engine, and a BridgeVM-owned HVF Windows engine R&D track.**
 
 Not:
 
@@ -112,7 +129,7 @@ Not:
 
 The strongest positioning is:
 
-> **The fastest open-source way to run Windows 11 Arm, Linux Arm64, and macOS VMs on Apple Silicon, with a compatibility mode for advanced use cases.**
+> **A Mac-native open-source VM app with a fast Apple VZ path for Linux/macOS Arm guests, plus a guided Compatibility Mode for Windows and advanced use cases.**
 
 ---
 
@@ -170,17 +187,18 @@ bridgevmd
 Rust core daemon
 VM lifecycle, mode selection, resources, storage, network, API
         │
-        ├──────────────────────────────────────┐
-        ▼                                      ▼
-Fast Mode Engine                         Compatibility Engine
-LightVM                                  FullVM
-Apple VZ / custom HVF path               QEMU / HVF / TCG path
-        │                                      │
-        ▼                                      ▼
-displayd                                qemu-display adapter
-Metal compositor                         SPICE/VNC/QEMU display fallback
-        │
-        ▼
+        ├──────────────────────────┬──────────────────────────┐
+        ▼                          ▼                          ▼
+Compatibility Engine          Apple VZ Engine            BridgeVM HVF Engine
+FullVM                        LightVM                    Windows Fast R&D
+QEMU / HVF / TCG              Apple VZ                   Hypervisor.framework
+        │                          │                          │
+        ▼                          ▼                          ▼
+qemu-display adapter          displayd                    BridgeVM display device
+SPICE/VNC fallback            Metal compositor            Metal compositor
+        │                          │                          │
+        └──────────────────────────┴──────────────────────────┘
+                                   ▼
 BridgeVM Guest Tools
 Windows service / Linux daemon / macOS guest helper
 Clipboard, resolution, sharing, drag-drop, app/window metadata
@@ -192,8 +210,10 @@ The project should be built as a collection of small, isolated components:
 | ---------------------- | ------------------------------------------------- |
 | `BridgeVM.app`         | Native UI, VM dashboard, setup wizard, settings   |
 | `bridgevmd`            | Core daemon, VM lifecycle, policies, API          |
-| `lightvm-runner`       | Fast Mode VM runner                               |
+| `lightvm-runner`       | Apple VZ Fast Mode VM runner                      |
 | `fullvm-runner`        | QEMU Compatibility Mode runner                    |
+| `hvf-runner`           | BridgeVM HVF Windows no-QEMU `windows-plan` / `machine-plan` / probe R&D boundary |
+| `bridgevm-hvf`         | Apple Hypervisor.framework VMM R&D boundary       |
 | `displayd`             | Metal-based display pipeline                      |
 | `networkd`             | metadata-only network plans for NAT, port forwarding, host-only, isolated, and bridged intents |
 | `storaged`             | disk images, snapshots, compaction, export/import |
@@ -236,7 +256,7 @@ Initial Fast Mode support:
 | Fedora Arm64    |       P0 | Apple Virtualization.framework                          |
 | Debian Arm64    |       P1 | Apple Virtualization.framework                          |
 | macOS Arm guest |       P1 | Apple Virtualization.framework                          |
-| Windows 11 Arm  |    P0/P1 | Initially restricted QEMU/HVF, long-term custom HVF VMM |
+| Windows 11 Arm  |       R&D | Not Apple VZ Fast Mode today; restricted QEMU/HVF first, long-term custom HVF VMM |
 
 Windows support needs special caution. Microsoft’s official support page documents Parallels Desktop versions 18, 19, and 20 as authorized solutions for running Arm versions of Windows 11 Pro and Enterprise on Apple M1, M2, and M3 computers. BridgeVM should not claim the same Microsoft-authorized status unless such authorization is actually obtained. ([Microsoft 지원][6])
 
@@ -271,17 +291,21 @@ Use Compatibility Mode instead.
 
 Use Apple Virtualization.framework for Linux Arm64 and macOS Arm guests. This lets BridgeVM avoid pulling in the full QEMU stack for the first high-performance path. Apple’s Virtualization framework is the correct starting point for high-level macOS-native VM creation and management. ([Apple Developer][2])
 
-### Stage 2: restricted QEMU/HVF for Windows 11 Arm
+### Stage 2: restricted QEMU/HVF for Windows 11 Arm outside Apple VZ Fast Mode
 
 At first, Windows 11 Arm should use a heavily controlled QEMU/HVF path.
 
 The user should not see QEMU.
-The product should expose it as Fast Mode Experimental.
+The product should expose it as a guided Compatibility/Windows beta path, not
+as Apple VZ Fast Mode.
+This is not the final Parallels-like performance path. If Windows stays on QEMU,
+BridgeVM remains in the same broad performance class as UTM-style QEMU/HVF
+frontends, even if the UI and defaults are better.
 
 Internally:
 
 ```text
-Windows 11 Arm Fast Mode v0
+Windows 11 Arm Compatibility beta
 ├── QEMU
 ├── HVF acceleration
 ├── fixed virtual hardware profile
@@ -296,10 +320,15 @@ Windows 11 Arm Fast Mode v0
 
 Long-term, if the goal is truly Parallels-class lightness, Windows 11 Arm needs a dedicated fast path that gradually replaces QEMU devices with BridgeVM-owned devices.
 
+This does not mean writing a CPU hypervisor from scratch. The CPU virtualization
+substrate should be Apple Hypervisor.framework. BridgeVM's hard work is the VMM
+above it: vCPU exit handling, UEFI/boot flow, block/network/display devices,
+TPM/Secure Boot, guest tools, Windows drivers, and the Metal presentation path.
+
 Target:
 
 ```text
-Windows 11 Arm Fast Mode v2
+Windows 11 Arm custom VMM R&D
 ├── Hypervisor.framework
 ├── custom VMM
 ├── minimal virtio device model
@@ -427,7 +456,7 @@ Example decisions:
 
 | User choice                    | Recommended mode   | Message                                  |
 | ------------------------------ | ------------------ | ---------------------------------------- |
-| Windows 11 Arm                 | Fast Mode          | Best performance on Apple Silicon        |
+| Windows 11 Arm                 | Compatibility Mode | Restricted QEMU/HVF today; custom VMM R&D |
 | Ubuntu Arm64                   | Fast Mode          | Native optimized path available          |
 | Fedora Arm64                   | Fast Mode          | Native optimized path available          |
 | macOS guest                    | Fast Mode          | Apple-native VM path available           |
@@ -699,6 +728,20 @@ running state
 launch/focus/quit
 ```
 
+Current BridgeVM macOS UI can already turn the latest guest-tools
+`applications`/`windows` command-result payloads into clickable Launch,
+Focus, and Close rows, and it preserves real `wmctrl` PID/bounds metadata when
+the Linux guest reports it. Rows with bounds can now open a macOS proxy shell
+planned from the guest window geometry, and the shell can render a refreshable
+raw RGBA `window_crop_frame` artifact when the window payload supplies the
+summary path. While proxy shells are open, the macOS app can keep one background
+`ListWindows` refresh loop alive to update changed proxy plans or close missing
+guest windows, and the Guest Tools panel surfaces tracked proxy count and
+refresh state, tracked-window summaries, crop-backed proxy count, and a
+host-only close-proxies cleanup action. That shell is the first host-window
+foundation, but it is still command/proxy/artifact UX, not a cropped live guest
+application surface.
+
 ## Stage 3: Window metadata
 
 Guest Tools report:
@@ -727,6 +770,36 @@ input coordinates translated back to guest
 ```
 
 This is not perfect, but it can feel good enough for productivity apps.
+
+Current foundation: `GuestWindowProxyPlanner` maps a guest window's reported
+`bounds` to a capped host `NSWindow` size and maps/clamps host points back into
+guest window coordinates for the `WindowInput` command path. The VM detail
+window list exposes a Proxy action only when bounds are present, and the app can
+open a proxy shell for that guest window. `displayd --window-*` now also emits a
+`window_region` crop/input contract: complete guest geometry is validated,
+clipped to the framebuffer, expanded to Retina backing pixels, and paired with
+host-to-guest input scale fractions. With `--framebuffer-rgba-file` and
+`--window-crop-rgba-file`, `displayd` can also materialize the clipped window
+pixels from a raw RGBA framebuffer into a raw RGBA crop artifact with source
+length/mtime and refresh timestamp metadata. The macOS
+proxy shell can decode the matching `window_crop_frame` JSON, validate/load the
+raw RGBA artifact, convert it into a host image, refresh from that artifact
+file, and forward pointer/key input through guest-tools to `xdotool` when the
+guest exposes it. Guest-tools now also exposes `SetWindowBounds` for the same
+window IDs; Linux real desktop sessions execute it through
+`wmctrl -ir <id> -e 0,x,y,width,height`, and scaffold sessions record the
+requested bounds for deterministic tests. The macOS app now keeps a single
+tracked-proxy refresh loop alive while proxy shells are open, dispatching
+`ListWindows` and reconciling changed/missing guest windows without requiring a
+manual refresh; the Guest Tools panel also exposes tracked proxy count and
+auto-refresh/in-flight state, tracked-window summaries, crop-backed proxy count,
+and a host-only cleanup action for closing tracked proxy shells without sending
+guest close commands. The daemon now caches crop targets learned from successful
+window payloads and refreshes their `.rgba` artifacts on reconcile when the
+configured framebuffer file changes. Remaining
+Stage 4 work is the hard part: feed that refreshable artifact from a live
+framebuffer stream and keep the crop synchronized bidirectionally as either the
+host proxy or guest window moves/resizes.
 
 ## Stage 5: True Coherence
 
@@ -1478,8 +1551,75 @@ QMP supervisor metadata has daemon fake-socket unit coverage for terminal-event 
 Fast Mode template boot-media readiness and resource-profile launch-spec handoff have CLI/socket smoke coverage as metadata-only contract locks; they verify local media import/status, inert download planning, readiness blockers, and Apple VZ validate-only config-plan handoff without starting QEMU, Apple VZ, or a VM.
 Aggregate readiness-report CLI coverage and the Apple VZ live opt-in default-skip smoke now lock the pre-launch report contract and default no-live-start boundary without treating either path as live E2E proof.
 Windows 11 Arm restricted backend planning has CLI/socket smoke coverage for `qemu-args` selection of QEMU aarch64, `virt`, `hvf`, `cpu host`, restricted display defaults, explicit VNC preservation, and the restricted-profile RNG device without spawning QEMU or claiming that Windows booted.
+Windows 11 Arm HVF machine-plan CLI/runner smoke coverage verifies no-QEMU machine/vCPU/device readiness metadata without spawning QEMU, Apple VZ, a GUI helper, or a VM.
+The HVF runner now has a dedicated `com.apple.security.hypervisor` entitlement/signing helper, and the opt-in empty VM, one-vCPU create/destroy, pre-canceled `hv_vcpu_run` run/cancel, 16 KiB guest RAM map/unmap, one-instruction `HVC #0` guest-entry, two-exit `HVC #0`/`HVC #1` PC-advance, unmapped `LDR X0, [X1]` MMIO read, injected MMIO read-emulation continuation, captured MMIO write-emulation continuation, and tiny serial-style MMIO device continuation probes pass with the signed runner. This proves only the Hypervisor.framework substrate, vCPU lifecycle, host API run-return boundary, guest IPA mapping boundary, bounded mapped-instruction exit boundary, minimal direct run/exit loop, first data-abort/device-model exit boundary, first injected-read continuation loop, first captured-write continuation loop, and first multi-register device-emulation loop, not firmware entry or Windows boot.
 Performance baseline/sample CLI/socket smoke coverage records metadata-only baselines and bounded host-side sample artifacts, with dashboard-facing artifact/card metadata, without booting, resuming, or benchmarking a guest.
 Real suspend memory serialization/restoration now works at the Fast Mode runner level: AppleVzRunner implements Apple VZ `saveMachineState`/`restoreMachineState` (CLI `--save-state`/`--restore-state`), persisting the machine identifier and network MAC per bundle so the restore configuration matches the saved state. A real Debian arm64 VZ guest was suspended (memory+device state written to a file) and restored/resumed. This is now wired through the whole product: `bridgevm suspend <vm>` / `resume <vm>` (and the daemon `suspend_backend`/`resume_backend` requests) spawn `lightvm-runner` with the save/restore flags, record the saved state at `metadata/suspend-images/<vm>.bin`, and transition the VM to `suspended`/`running`; the macOS app's pause/resume actions send the same daemon requests. Verified end to end via `bridgevm suspend`/`resume` (98 MB state saved, then restored to a running guest). Remaining follow-ups: pausing an already-running VM via IPC (the current model boots the Fast VM, runs briefly, then saves), Compatibility Mode suspend/resume, daemon-supervised tracking of the resumed child, and guest-agent application consistency.
+Fast Mode display runtime-control now exposes `status`, `stop`, `policy`, and `pacing` over the AppleVzRunner display socket. The `policy` command reads the live helper's current `metadata/runtime-resources.json`; `pacing` summarizes the helper-visible display visibility and FPS cap derived from that same policy. CLI, daemon socket, and the macOS Launch Readiness panel can all query it. Runtime resource reapply now records `runtime_control_acknowledged` when that live helper reads the refreshed policy, and `bridgevm runtime-control reapply <vm> --visibility ...` exposes the same safe reapply path from the live-control command group. This is the first live runtime policy IPC boundary, not Apple VZ CPU/RAM hot-apply.
+Guest window proxy shell planning is now wired in the macOS app: window rows
+with real `wmctrl` bounds can open an `NSWindow` sized from guest geometry,
+and tests lock the planner/coordinate-mapping contract plus ViewModel launch
+path. The plan can carry an optional `window_crop_frame_summary_path`, letting
+the launcher decode a displayd crop summary and refresh a raw RGBA artifact in
+the proxy shell. The proxy shell now also has an AppKit input capture layer that
+maps pointer events into guest window coordinates and forwards pointer/key
+events through the guest-tools `WindowInput` command; Linux guests use `xdotool`
+for the real X11 boundary when available. The same protocol family now includes
+`SetWindowBounds`, backed by `wmctrl -ir ... -e ...`, so a host proxy can request
+guest window move/resize changes. Open proxy shells are tracked by VM + guest
+window id; while any proxy is open, a single ViewModel refresh loop dispatches
+`ListWindows`, reloads guest-tools status, refreshes stale bounds/crop-summary
+paths, and closes the host proxy when the guest reports the window closed or an
+authoritative window list omits it. The macOS inventory refresh path also
+reconciles those tracked shells: removed or stopped VMs close their host proxy
+windows, while renamed VMs reopen the proxy under the updated VM title/key. The
+Guest Tools panel now shows tracked proxy count plus auto-refresh/in-flight
+state, tracked-window summaries, and crop-backed proxy count for that loop, and
+it can close those host proxy shells without sending guest close commands.
+This is not live framebuffer capture,
+compositor-grade bidirectional movement/resize sync, or true Coherence yet.
+Displayd now has the matching proxy-window crop contract: `--window-*`
+arguments produce a `window_region` plan with clipped guest/source rectangles,
+Retina backing pixels, host proxy size, and input scale fractions. It can also
+consume a raw RGBA framebuffer file and write the clipped guest-window pixels as
+a raw RGBA crop artifact with source length/mtime and refresh timestamp
+metadata. This is the display-side crop primitive and macOS artifact-render
+bridge for Coherence-lite, not live per-window streaming yet. The live GUI
+opt-in harness now preserves a crop proof from a real guest `wmctrl` window
+payload by generating a synthetic host RGBA framebuffer from those live bounds
+and passing the real window id/title/bounds to `displayd`; this closes the
+"real guest window metadata drives the crop primitive" gap while still leaving
+app-direct per-window framebuffer streaming as future work.
+The daemon now connects that artifact contract to real `wmctrl` window payloads
+when a host RGBA framebuffer source is explicitly configured via
+`BRIDGEVM_PROXY_WINDOW_FRAMEBUFFER_RGBA_FILE` plus framebuffer dimensions. For a
+successful `windows` command result it writes
+`metadata/proxy-windows/<window-id>.json/.rgba`, injects
+`window_crop_frame_summary_path` directly into the result payload, caches the
+window crop target, refreshes the `.rgba` artifact when the configured
+framebuffer file changes, and leaves the normal command result unchanged when no
+framebuffer source is configured. AppleVzRunner display launches can now provide
+that source as a whole-view AppKit capture: `--proxy-framebuffer-rgba-file`
+writes raw RGBA bytes from the `VZVirtualMachineView` on a timer, runtime
+`status` reports `framebuffer_export`, and `bridgevm-api`/the macOS app default
+display launches to `<bundle>/metadata/apple-vz-display-framebuffer.rgba`.
+When explicit framebuffer env vars are absent, daemon-owned, CLI, or app-direct
+Show Display runner metadata can now auto-supply that path and display size
+once the file exists, so the crop bridge does not need duplicate env wiring for
+those display sessions. The macOS proxy also reloads the crop summary during
+its frame refresh loop, and the app-level tracked-proxy refresh loop reloads
+guest window inventory, so changed crop output paths or dimensions are consumed
+without a manual refresh. `scripts/run-vz-display-demo.sh --prove-proxy-crop`
+now wires the live GUI proof gate for that app-direct path: it enables the
+Apple VZ display helper's RGBA export, captures the visible AppKit window, and
+uses `displayd` to write a crop artifact bundle. This is a pragmatic
+file-backed producer for Coherence-lite experiments. A preserved local pass now
+exists at
+`~/bridgevm-live-evidence/apple-vz-proxy-crop-2026-06-18-auto-verified/`,
+proving whole-view app-direct framebuffer export into the crop primitive and
+preserving verifier output, but it is still not
+per-window streaming, compositor-grade bidirectional movement/resize sync, or a
+Metal compositor.
 ```
 
 ---
@@ -1716,7 +1856,7 @@ team VM profiles
 Success criteria:
 
 ```text
-Windows 11 Arm Fast Mode no longer depends on full QEMU for core execution path, or QEMU is reduced to a replaceable backend.
+Windows 11 Arm custom fast path no longer depends on full QEMU for core execution path, or QEMU is reduced to a replaceable backend.
 Display latency and idle CPU approach commercial-grade behavior.
 ```
 
@@ -1901,7 +2041,7 @@ Initial matrix:
 | Apple Silicon macOS | Ubuntu Arm64   | Fast              | P0       |
 | Apple Silicon macOS | Fedora Arm64   | Fast              | P0       |
 | Apple Silicon macOS | Debian Arm64   | Fast              | P1       |
-| Apple Silicon macOS | Windows 11 Arm | Fast experimental | P0/P1    |
+| Apple Silicon macOS | Windows 11 Arm | Compatibility beta | P0/P1    |
 | Apple Silicon macOS | Ubuntu x86_64  | Compatibility     | P1       |
 | Apple Silicon macOS | Windows x86_64 | Compatibility     | P2       |
 | Linux x86_64        | Ubuntu x86_64  | Compatibility     | P2       |

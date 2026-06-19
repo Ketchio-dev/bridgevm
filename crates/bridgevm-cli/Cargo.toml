@@ -16,6 +16,7 @@ bridgevm-apple-vz = { path = "../bridgevm-apple-vz" }
 bridgevm-api = { path = "../bridgevm-api" }
 bridgevm-config = { path = "../bridgevm-config" }
 bridgevm-core = { path = "../bridgevm-core" }
+bridgevm-hvf = { path = "../bridgevm-hvf" }
 bridgevm-qemu = { path = "../bridgevm-qemu" }
 bridgevm-storage = { path = "../bridgevm-storage" }
 clap.workspace = true

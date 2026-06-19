@@ -60,18 +60,21 @@ stop_daemon() {
 make_ready_fast_vm() {
   local vm="$1"
   local bundle="$STORE/vms/$vm.vmbridge"
-  local disk="$bundle/disks/root.qcow2"
-  local installer="$bundle/media/ubuntu.iso"
+  local manifest="$bundle/manifest.yaml"
+  local disk="$bundle/disks/root.raw"
+  local kernel="$bundle/boot/vmlinuz"
 
   bridgevm create "$vm" \
     --os ubuntu \
     --arch arm64 \
     --mode fast \
-    --boot-mode linux-installer \
-    --installer-image media/ubuntu.iso >/dev/null
-  mkdir -p "$(dirname "$disk")" "$(dirname "$installer")"
+    --boot-mode linux-kernel \
+    --kernel-path boot/vmlinuz >/dev/null
+  perl -0pi -e 's#path: disks/root\.qcow2\n    size: 80GiB\n    format: qcow2#path: disks/root.raw\n    size: 64MiB\n    format: raw#' \
+    "$manifest"
+  mkdir -p "$(dirname "$disk")" "$(dirname "$kernel")"
   : >"$disk"
-  : >"$installer"
+  : >"$kernel"
 }
 
 set_resources() {
@@ -147,11 +150,11 @@ assert_apple_vz_config_plan() {
   )"
   assert_contains "$output" "AppleVzRunner handoff ready" "$label"
   assert_contains "$output" "VM: $vm" "$label"
-  assert_contains "$output" "Boot mode: linux-installer" "$label"
+  assert_contains "$output" "Boot mode: linux-kernel" "$label"
   assert_contains "$output" "Memory MiB: $memory" "$label"
   assert_contains "$output" "CPU count: $cpu" "$label"
   assert_contains "$output" "Configuration plan:" "$label"
-  assert_contains "$output" "Disk attachment: disk-image-qcow2" "$label"
+  assert_contains "$output" "Disk attachment: disk-image-raw" "$label"
 }
 
 trap stop_daemon EXIT

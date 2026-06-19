@@ -26,6 +26,10 @@ public struct AppleVzLaunchOptions: Equatable {
   /// `VZVirtualMachineView` window (the embedded display). Mutually exclusive
   /// with save/restore (a VZ VM with a graphics device cannot be saved).
   public var displayWindow: Bool
+  /// Width for the graphical scanout used by `--display` and `--graphics`.
+  public var displayWidthInPixels: Int
+  /// Height for the graphical scanout used by `--display` and `--graphics`.
+  public var displayHeightInPixels: Int
   /// When true, boot the VM with the graphics-device configuration but WITHOUT a
   /// window, on the headless launcher. This is a verification path: it proves a
   /// real guest boots with the Virtio GPU attached (observable on the serial
@@ -36,6 +40,16 @@ public struct AppleVzLaunchOptions: Equatable {
   /// its own mount tag. The guest mounts each with `mount -t virtiofs <tag> <dir>`.
   /// VZ requires every tag to be unique; the Rust planner derives unique tags.
   public var sharedDirectorySpecs: [AppleVzSharedDirectorySpec]
+  /// Optional Unix domain socket used by the windowed display path for live
+  /// status/stop/policy control. This is intentionally separate from the daemon socket:
+  /// the AppKit display helper owns the actual VZ VM object.
+  public var runtimeControlSocketPath: String?
+  /// Optional raw RGBA framebuffer export path for the windowed display path.
+  /// When set, the AppKit display helper periodically captures the
+  /// `VZVirtualMachineView` into this file so host-side proxy-window crops can
+  /// consume a real display source.
+  public var proxyFramebufferRGBAPath: String?
+  public var proxyFramebufferCaptureIntervalMillis: UInt64
 
   /// Host path of the first shared directory, or `nil` when none are configured.
   /// Retained for callers/tests that inspect a single share.
@@ -57,16 +71,26 @@ public struct AppleVzLaunchOptions: Equatable {
     saveStatePath: String? = nil,
     restoreStatePath: String? = nil,
     displayWindow: Bool = false,
+    displayWidthInPixels: Int = 1280,
+    displayHeightInPixels: Int = 800,
     graphicsHeadlessVerification: Bool = false,
-    sharedDirectorySpecs: [AppleVzSharedDirectorySpec] = []
+    sharedDirectorySpecs: [AppleVzSharedDirectorySpec] = [],
+    runtimeControlSocketPath: String? = nil,
+    proxyFramebufferRGBAPath: String? = nil,
+    proxyFramebufferCaptureIntervalMillis: UInt64 = 500
   ) {
     self.stopAfterSeconds = stopAfterSeconds
     self.forceStopGraceSeconds = forceStopGraceSeconds
     self.saveStatePath = saveStatePath
     self.restoreStatePath = restoreStatePath
     self.displayWindow = displayWindow
+    self.displayWidthInPixels = displayWidthInPixels
+    self.displayHeightInPixels = displayHeightInPixels
     self.graphicsHeadlessVerification = graphicsHeadlessVerification
     self.sharedDirectorySpecs = sharedDirectorySpecs
+    self.runtimeControlSocketPath = runtimeControlSocketPath
+    self.proxyFramebufferRGBAPath = proxyFramebufferRGBAPath
+    self.proxyFramebufferCaptureIntervalMillis = proxyFramebufferCaptureIntervalMillis
   }
 
   /// Convenience initializer for a single shared directory (used by callers/tests
@@ -77,10 +101,15 @@ public struct AppleVzLaunchOptions: Equatable {
     saveStatePath: String? = nil,
     restoreStatePath: String? = nil,
     displayWindow: Bool = false,
+    displayWidthInPixels: Int = 1280,
+    displayHeightInPixels: Int = 800,
     graphicsHeadlessVerification: Bool = false,
     sharedDirectoryPath: String?,
     sharedDirectoryTag: String? = nil,
-    sharedDirectoryReadOnly: Bool = false
+    sharedDirectoryReadOnly: Bool = false,
+    runtimeControlSocketPath: String? = nil,
+    proxyFramebufferRGBAPath: String? = nil,
+    proxyFramebufferCaptureIntervalMillis: UInt64 = 500
   ) {
     var specs: [AppleVzSharedDirectorySpec] = []
     if let path = sharedDirectoryPath {
@@ -98,8 +127,13 @@ public struct AppleVzLaunchOptions: Equatable {
       saveStatePath: saveStatePath,
       restoreStatePath: restoreStatePath,
       displayWindow: displayWindow,
+      displayWidthInPixels: displayWidthInPixels,
+      displayHeightInPixels: displayHeightInPixels,
       graphicsHeadlessVerification: graphicsHeadlessVerification,
-      sharedDirectorySpecs: specs
+      sharedDirectorySpecs: specs,
+      runtimeControlSocketPath: runtimeControlSocketPath,
+      proxyFramebufferRGBAPath: proxyFramebufferRGBAPath,
+      proxyFramebufferCaptureIntervalMillis: proxyFramebufferCaptureIntervalMillis
     )
   }
 }
@@ -380,6 +414,289 @@ public enum AppleVzSignalSource {
   }
 }
 
+#if canImport(Darwin)
+struct AppleVzDisplayRuntimeControlSnapshot: Equatable {
+  var vmName: String
+  var state: String
+  var displayWidthInPixels: Int
+  var displayHeightInPixels: Int
+  var isStopping: Bool
+  var proxyFramebufferRGBAPath: String? = nil
+  var proxyFramebufferCaptureIntervalMillis: UInt64? = nil
+}
+
+enum AppleVzDisplayRuntimeControlServerError: Error, LocalizedError, Equatable {
+  case socketPathTooLong(String)
+  case socketCreateFailed(String)
+  case bindFailed(String)
+  case listenFailed(String)
+
+  var errorDescription: String? {
+    switch self {
+    case .socketPathTooLong(let path):
+      return "runtime control socket path is too long: \(path)"
+    case .socketCreateFailed(let message):
+      return "runtime control socket create failed: \(message)"
+    case .bindFailed(let message):
+      return "runtime control socket bind failed: \(message)"
+    case .listenFailed(let message):
+      return "runtime control socket listen failed: \(message)"
+    }
+  }
+}
+
+final class AppleVzDisplayRuntimeControlServer {
+  private let socketPath: String
+  private let statusProvider: () -> AppleVzDisplayRuntimeControlSnapshot
+  private let stopHandler: () -> Void
+  private let runtimePolicyProvider: () -> [String: Any]?
+  private let queue = DispatchQueue(label: "com.bridgevm.apple-vz.display-runtime-control")
+  private var socketFD: Int32 = -1
+  private var source: DispatchSourceRead?
+
+  init(
+    socketPath: String,
+    statusProvider: @escaping () -> AppleVzDisplayRuntimeControlSnapshot,
+    stopHandler: @escaping () -> Void,
+    runtimePolicyProvider: @escaping () -> [String: Any]? = { nil }
+  ) {
+    self.socketPath = socketPath
+    self.statusProvider = statusProvider
+    self.stopHandler = stopHandler
+    self.runtimePolicyProvider = runtimePolicyProvider
+  }
+
+  func start() throws {
+    let url = URL(fileURLWithPath: socketPath)
+    try FileManager.default.createDirectory(
+      at: url.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try? FileManager.default.removeItem(at: url)
+
+    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard fd >= 0 else {
+      throw AppleVzDisplayRuntimeControlServerError.socketCreateFailed(lastErrnoMessage())
+    }
+
+    do {
+      try bindSocket(fd)
+      guard listen(fd, 8) == 0 else {
+        throw AppleVzDisplayRuntimeControlServerError.listenFailed(lastErrnoMessage())
+      }
+    } catch {
+      close(fd)
+      try? FileManager.default.removeItem(at: url)
+      throw error
+    }
+
+    socketFD = fd
+    let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+    source.setEventHandler { [weak self] in
+      self?.acceptAvailableConnections()
+    }
+    source.setCancelHandler { [socketPath] in
+      close(fd)
+      try? FileManager.default.removeItem(atPath: socketPath)
+    }
+    self.source = source
+    source.resume()
+  }
+
+  func stop() {
+    source?.cancel()
+    source = nil
+    socketFD = -1
+  }
+
+  private func bindSocket(_ fd: Int32) throws {
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    let pathBytes = Array(socketPath.utf8)
+    let sunPathCapacity = MemoryLayout.size(ofValue: address.sun_path)
+    guard pathBytes.count < sunPathCapacity else {
+      throw AppleVzDisplayRuntimeControlServerError.socketPathTooLong(socketPath)
+    }
+
+    withUnsafeMutablePointer(to: &address.sun_path) { pointer in
+      pointer.withMemoryRebound(to: CChar.self, capacity: sunPathCapacity) { sunPath in
+        for index in 0..<sunPathCapacity {
+          sunPath[index] = 0
+        }
+        for (index, byte) in pathBytes.enumerated() {
+          sunPath[index] = CChar(bitPattern: byte)
+        }
+      }
+    }
+
+    let result = withUnsafePointer(to: &address) { pointer in
+      pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+        bind(fd, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_un>.size))
+      }
+    }
+    guard result == 0 else {
+      throw AppleVzDisplayRuntimeControlServerError.bindFailed(lastErrnoMessage())
+    }
+  }
+
+  private func acceptAvailableConnections() {
+    let client = accept(socketFD, nil, nil)
+    if client >= 0 {
+      handle(client)
+    }
+  }
+
+  private func handle(_ client: Int32) {
+    defer {
+      close(client)
+    }
+
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    let count = read(client, &buffer, buffer.count)
+    let request = count > 0 ? Data(buffer.prefix(count)) : Data()
+    let response = handleRequest(request)
+    response.withUnsafeBytes { rawBuffer in
+      guard let baseAddress = rawBuffer.baseAddress else {
+        return
+      }
+      _ = write(client, baseAddress, response.count)
+    }
+  }
+
+  private func handleRequest(_ data: Data) -> Data {
+    let command = parseCommand(data)
+    switch command {
+    case "status":
+      return encode(statusResponse())
+    case "stop":
+      stopHandler()
+      var response = statusResponse()
+      response["accepted"] = true
+      return encode(response)
+    case "policy":
+      return encode(policyResponse())
+    case "pacing":
+      return encode(pacingResponse())
+    default:
+      return encode([
+        "ok": false,
+        "error": "unknown-command",
+        "supported_commands": supportedCommands,
+      ])
+    }
+  }
+
+  private func parseCommand(_ data: Data) -> String? {
+    guard
+      let object = try? JSONSerialization.jsonObject(with: data),
+      let dictionary = object as? [String: Any],
+      let command = dictionary["command"] as? String
+    else {
+      return nil
+    }
+    return command
+  }
+
+  private func statusResponse() -> [String: Any] {
+    let snapshot = statusProvider()
+    var framebufferExport: [String: Any] = [
+      "enabled": snapshot.proxyFramebufferRGBAPath != nil
+    ]
+    if let path = snapshot.proxyFramebufferRGBAPath {
+      framebufferExport["path"] = path
+    }
+    if let intervalMillis = snapshot.proxyFramebufferCaptureIntervalMillis {
+      framebufferExport["interval_millis"] = intervalMillis
+    }
+    return [
+      "ok": true,
+      "vm": snapshot.vmName,
+      "state": snapshot.state,
+      "stopping": snapshot.isStopping,
+      "display": [
+        "width": snapshot.displayWidthInPixels,
+        "height": snapshot.displayHeightInPixels,
+      ],
+      "framebuffer_export": framebufferExport,
+      "runtime_policy": [
+        "available": runtimePolicyProvider() != nil
+      ],
+      "supported_commands": supportedCommands,
+    ]
+  }
+
+  private func policyResponse() -> [String: Any] {
+    guard let policy = runtimePolicyProvider() else {
+      return [
+        "ok": false,
+        "error": "policy-unavailable",
+        "supported_commands": supportedCommands,
+      ]
+    }
+    return [
+      "ok": true,
+      "policy": policy,
+      "supported_commands": supportedCommands,
+    ]
+  }
+
+  private func pacingResponse() -> [String: Any] {
+    guard let policy = runtimePolicyProvider() else {
+      return [
+        "ok": false,
+        "error": "policy-unavailable",
+        "supported_commands": supportedCommands,
+      ]
+    }
+
+    let visibility = stringValue(policy["visibility"]) ?? "unknown"
+    let displayFPSCap = stringValue(policy["display_fps_cap"]) ?? "adaptive"
+    let maxFPS: Any
+    if let numericCap = Int(displayFPSCap) {
+      maxFPS = numericCap
+    } else {
+      maxFPS = displayFPSCap
+    }
+
+    return [
+      "ok": true,
+      "visibility": visibility,
+      "display_fps_cap": displayFPSCap,
+      "max_fps": maxFPS,
+      "policy_available": true,
+      "supported_commands": supportedCommands,
+    ]
+  }
+
+  private func stringValue(_ value: Any?) -> String? {
+    switch value {
+    case let value as String:
+      return value
+    case let value as CustomStringConvertible:
+      return value.description
+    default:
+      return nil
+    }
+  }
+
+  private var supportedCommands: [String] {
+    ["status", "stop", "policy", "pacing"]
+  }
+
+  private func encode(_ object: [String: Any]) -> Data {
+    let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]))
+      ?? Data(#"{"ok":false,"error":"encode-failed"}"#.utf8)
+    var output = data
+    output.append(0x0A)
+    return output
+  }
+}
+
+private func lastErrnoMessage() -> String {
+  String(cString: strerror(errno))
+}
+#endif
+
 #if canImport(Virtualization)
 @available(macOS 12.0, *)
 public extension AppleVzVirtualMachineLauncher {
@@ -395,7 +712,10 @@ public extension AppleVzVirtualMachineLauncher {
         throw AppleVzRunnerCommandError.displayRequiresMacOS14
       }
       configuration = try AppleVzConfigurationBuilder.buildLinuxKernelConfigurationWithDisplay(
-        spec: spec, sharedDirectories: options.sharedDirectorySpecs)
+        spec: spec,
+        widthInPixels: options.displayWidthInPixels,
+        heightInPixels: options.displayHeightInPixels,
+        sharedDirectories: options.sharedDirectorySpecs)
     } else {
       configuration = try AppleVzConfigurationBuilder.buildLinuxKernelConfiguration(
         spec: spec, sharedDirectories: options.sharedDirectorySpecs)
@@ -705,7 +1025,10 @@ public extension AppleVzVirtualMachineLauncher {
     options: AppleVzLaunchOptions = AppleVzLaunchOptions()
   ) throws {
     let configuration = try AppleVzConfigurationBuilder.buildLinuxKernelConfigurationWithDisplay(
-      spec: spec, sharedDirectories: options.sharedDirectorySpecs)
+      spec: spec,
+      widthInPixels: options.displayWidthInPixels,
+      heightInPixels: options.displayHeightInPixels,
+      sharedDirectories: options.sharedDirectorySpecs)
     try configuration.validate()
 
     print("AppleVzRunner starting VM with display: \(spec.vmName)")
@@ -718,8 +1041,14 @@ public extension AppleVzVirtualMachineLauncher {
       machine: machine,
       vmName: spec.vmName,
       app: app,
+      displayWidthInPixels: options.displayWidthInPixels,
+      displayHeightInPixels: options.displayHeightInPixels,
       stopAfterSeconds: options.stopAfterSeconds,
-      forceStopGraceSeconds: options.forceStopGraceSeconds
+      forceStopGraceSeconds: options.forceStopGraceSeconds,
+      runtimeControlSocketPath: options.runtimeControlSocketPath,
+      runtimePolicyPath: runtimeResourcePolicyPath(bundlePath: spec.bundlePath),
+      proxyFramebufferRGBAPath: options.proxyFramebufferRGBAPath,
+      proxyFramebufferCaptureIntervalMillis: options.proxyFramebufferCaptureIntervalMillis
     )
     displayWindowControllerRetainer = controller
     app.delegate = controller
@@ -736,30 +1065,56 @@ final class AppleVzDisplayWindowController: NSObject, NSApplicationDelegate,
   private let machine: VZVirtualMachine
   private let vmName: String
   private unowned let app: NSApplication
+  private let displayWidthInPixels: Int
+  private let displayHeightInPixels: Int
   private let stopAfterSeconds: UInt64?
   private let forceStopGraceSeconds: UInt64?
+  private let runtimeControlSocketPath: String?
+  private let runtimePolicyPath: String?
+  private let proxyFramebufferRGBAPath: String?
+  private let proxyFramebufferCaptureIntervalMillis: UInt64
   private var window: NSWindow?
   private var signalSources: [DispatchSourceSignal] = []
+  private var runtimeControlServer: AppleVzDisplayRuntimeControlServer?
+  private var framebufferExporter: AppleVzDisplayFramebufferExporter?
+  private var runtimeState = "starting"
   private var isStopping = false
 
   init(
     machine: VZVirtualMachine,
     vmName: String,
     app: NSApplication,
+    displayWidthInPixels: Int,
+    displayHeightInPixels: Int,
     stopAfterSeconds: UInt64? = nil,
-    forceStopGraceSeconds: UInt64? = nil
+    forceStopGraceSeconds: UInt64? = nil,
+    runtimeControlSocketPath: String? = nil,
+    runtimePolicyPath: String? = nil,
+    proxyFramebufferRGBAPath: String? = nil,
+    proxyFramebufferCaptureIntervalMillis: UInt64 = 500
   ) {
     self.machine = machine
     self.vmName = vmName
     self.app = app
+    self.displayWidthInPixels = displayWidthInPixels
+    self.displayHeightInPixels = displayHeightInPixels
     self.stopAfterSeconds = stopAfterSeconds
     self.forceStopGraceSeconds = forceStopGraceSeconds
+    self.runtimeControlSocketPath = runtimeControlSocketPath
+    self.runtimePolicyPath = runtimePolicyPath
+    self.proxyFramebufferRGBAPath = proxyFramebufferRGBAPath
+    self.proxyFramebufferCaptureIntervalMillis = proxyFramebufferCaptureIntervalMillis
     super.init()
     machine.delegate = self
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
-    let frame = NSRect(x: 0, y: 0, width: 1280, height: 800)
+    let frame = NSRect(
+      x: 0,
+      y: 0,
+      width: displayWidthInPixels,
+      height: displayHeightInPixels
+    )
     let view = VZVirtualMachineView(frame: frame)
     view.virtualMachine = machine
     view.capturesSystemKeys = true
@@ -775,13 +1130,17 @@ final class AppleVzDisplayWindowController: NSObject, NSApplicationDelegate,
     window.center()
     window.makeKeyAndOrderFront(nil)
     self.window = window
+    startFramebufferExporterIfNeeded(for: view)
+    startRuntimeControlServerIfNeeded()
 
     machine.start { [weak self] result in
       if case let .failure(error) = result {
         FileHandle.standardError.write(
           Data("AppleVzRunner: display VM start failed: \(error)\n".utf8))
+        self?.runtimeState = "error"
         self?.app.terminate(nil)
       } else {
+        self?.runtimeState = "running"
         print("AppleVzRunner display VM running: \(self?.vmName ?? "")")
       }
     }
@@ -807,6 +1166,7 @@ final class AppleVzDisplayWindowController: NSObject, NSApplicationDelegate,
   private func beginGracefulStop() {
     guard !isStopping else { return }
     isStopping = true
+    runtimeState = "stopping"
     if machine.canRequestStop {
       do {
         try machine.requestStop()
@@ -831,19 +1191,240 @@ final class AppleVzDisplayWindowController: NSObject, NSApplicationDelegate,
     }
   }
 
+  private func startFramebufferExporterIfNeeded(for view: NSView) {
+    guard let proxyFramebufferRGBAPath else {
+      return
+    }
+    let exporter = AppleVzDisplayFramebufferExporter(
+      view: view,
+      outputPath: proxyFramebufferRGBAPath,
+      width: displayWidthInPixels,
+      height: displayHeightInPixels,
+      intervalMillis: proxyFramebufferCaptureIntervalMillis
+    )
+    do {
+      try exporter.start()
+      framebufferExporter = exporter
+      print("AppleVzRunner display framebuffer export: \(proxyFramebufferRGBAPath)")
+    } catch {
+      FileHandle.standardError.write(
+        Data("AppleVzRunner: display framebuffer export unavailable: \(error)\n".utf8))
+    }
+  }
+
+  private func startRuntimeControlServerIfNeeded() {
+    guard let runtimeControlSocketPath else {
+      return
+    }
+    let server = AppleVzDisplayRuntimeControlServer(
+      socketPath: runtimeControlSocketPath,
+      statusProvider: { [weak self] in
+        DispatchQueue.main.sync {
+          self?.runtimeControlSnapshot()
+            ?? AppleVzDisplayRuntimeControlSnapshot(
+              vmName: "unknown",
+              state: "stopped",
+              displayWidthInPixels: 0,
+              displayHeightInPixels: 0,
+              isStopping: true,
+              proxyFramebufferRGBAPath: nil,
+              proxyFramebufferCaptureIntervalMillis: nil
+            )
+        }
+      },
+      stopHandler: { [weak self] in
+        DispatchQueue.main.async {
+          self?.beginGracefulStop()
+        }
+      },
+      runtimePolicyProvider: { [weak self] in
+        self?.readRuntimePolicy()
+      }
+    )
+    do {
+      try server.start()
+      runtimeControlServer = server
+      print("AppleVzRunner display runtime control socket: \(runtimeControlSocketPath)")
+    } catch {
+      FileHandle.standardError.write(
+        Data("AppleVzRunner: display runtime control unavailable: \(error)\n".utf8))
+    }
+  }
+
+  private func runtimeControlSnapshot() -> AppleVzDisplayRuntimeControlSnapshot {
+    AppleVzDisplayRuntimeControlSnapshot(
+      vmName: vmName,
+      state: runtimeState,
+      displayWidthInPixels: displayWidthInPixels,
+      displayHeightInPixels: displayHeightInPixels,
+      isStopping: isStopping,
+      proxyFramebufferRGBAPath: proxyFramebufferRGBAPath,
+      proxyFramebufferCaptureIntervalMillis: proxyFramebufferRGBAPath == nil
+        ? nil : proxyFramebufferCaptureIntervalMillis
+    )
+  }
+
+  private func readRuntimePolicy() -> [String: Any]? {
+    guard let runtimePolicyPath else {
+      return nil
+    }
+    guard let data = try? Data(contentsOf: URL(fileURLWithPath: runtimePolicyPath)) else {
+      return nil
+    }
+    return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+  }
+
+  func applicationWillTerminate(_ notification: Notification) {
+    framebufferExporter?.stop()
+    framebufferExporter = nil
+    runtimeControlServer?.stop()
+    runtimeControlServer = nil
+  }
+
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     true
   }
 
   func guestDidStop(_ virtualMachine: VZVirtualMachine) {
     print("AppleVzRunner display VM guest stopped: \(vmName)")
+    runtimeState = "stopped"
     app.terminate(nil)
   }
 
   func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) {
     FileHandle.standardError.write(
       Data("AppleVzRunner: display VM stopped with error: \(error)\n".utf8))
+    runtimeState = "error"
     app.terminate(nil)
   }
+}
+
+@available(macOS 14.0, *)
+final class AppleVzDisplayFramebufferExporter {
+  enum ExportError: Error, LocalizedError, Equatable {
+    case invalidDimensions(width: Int, height: Int)
+    case viewUnavailable
+    case bitmapCreationFailed
+    case cgImageCreationFailed
+    case contextCreationFailed
+
+    var errorDescription: String? {
+      switch self {
+      case let .invalidDimensions(width, height):
+        return "framebuffer export dimensions must be positive; got \(width)x\(height)"
+      case .viewUnavailable:
+        return "display view is no longer available"
+      case .bitmapCreationFailed:
+        return "could not allocate an AppKit bitmap for display capture"
+      case .cgImageCreationFailed:
+        return "could not convert display capture to CGImage"
+      case .contextCreationFailed:
+        return "could not allocate RGBA export context"
+      }
+    }
+  }
+
+  private weak var view: NSView?
+  private let outputURL: URL
+  private let width: Int
+  private let height: Int
+  private let interval: TimeInterval
+  private var timer: Timer?
+
+  init(
+    view: NSView,
+    outputPath: String,
+    width: Int,
+    height: Int,
+    intervalMillis: UInt64
+  ) {
+    self.view = view
+    self.outputURL = URL(fileURLWithPath: outputPath)
+    self.width = width
+    self.height = height
+    self.interval = max(0.05, Double(intervalMillis) / 1000.0)
+  }
+
+  func start() throws {
+    try writeFrame()
+    let timer = Timer.scheduledTimer(
+      withTimeInterval: interval,
+      repeats: true
+    ) { [weak self] _ in
+      do {
+        try self?.writeFrame()
+      } catch {
+        FileHandle.standardError.write(
+          Data("AppleVzRunner: display framebuffer export failed: \(error)\n".utf8))
+      }
+    }
+    self.timer = timer
+  }
+
+  func stop() {
+    timer?.invalidate()
+    timer = nil
+  }
+
+  func writeFrame() throws {
+    guard width > 0, height > 0 else {
+      throw ExportError.invalidDimensions(width: width, height: height)
+    }
+    guard let view else {
+      throw ExportError.viewUnavailable
+    }
+    let bounds = view.bounds
+    guard let bitmap = view.bitmapImageRepForCachingDisplay(in: bounds) else {
+      throw ExportError.bitmapCreationFailed
+    }
+    view.cacheDisplay(in: bounds, to: bitmap)
+    guard let image = bitmap.cgImage else {
+      throw ExportError.cgImageCreationFailed
+    }
+
+    let rgba = try Self.rgbaData(from: image, width: width, height: height)
+    try FileManager.default.createDirectory(
+      at: outputURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try rgba.write(to: outputURL, options: .atomic)
+  }
+
+  static func rgbaData(from image: CGImage, width: Int, height: Int) throws -> Data {
+    guard width > 0, height > 0 else {
+      throw ExportError.invalidDimensions(width: width, height: height)
+    }
+    let byteCount = width * height * 4
+    var data = Data(count: byteCount)
+    try data.withUnsafeMutableBytes { rawBuffer in
+      guard let baseAddress = rawBuffer.baseAddress else {
+        throw ExportError.contextCreationFailed
+      }
+      guard
+        let context = CGContext(
+          data: baseAddress,
+          width: width,
+          height: height,
+          bitsPerComponent: 8,
+          bytesPerRow: width * 4,
+          space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+            | CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+      else {
+        throw ExportError.contextCreationFailed
+      }
+      context.interpolationQuality = .none
+      context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    }
+    return data
+  }
+}
+
+private func runtimeResourcePolicyPath(bundlePath: String) -> String {
+  URL(fileURLWithPath: bundlePath)
+    .appendingPathComponent("metadata")
+    .appendingPathComponent("runtime-resources.json")
+    .path
 }
 #endif

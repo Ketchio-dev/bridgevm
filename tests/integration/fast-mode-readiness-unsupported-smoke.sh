@@ -301,24 +301,29 @@ mkdir -p "$(dirname "$DISK")" "$(dirname "$KERNEL")"
 : >"$DISK"
 : >"$KERNEL"
 set_boot_section $'boot:\n  mode: linux-kernel\n  kernelPath: boot/vmlinuz'
-assert_command_succeeds "local-qcow2-linux-kernel-ready-run" bridgevm run "$VM_NAME"
-assert_contains "$ASSERT_OUTPUT" "Launch ready: true" "local qcow2 linux-kernel ready run"
-assert_not_contains "$ASSERT_OUTPUT" "missing-kernel" "local qcow2 linux-kernel ready run"
-assert_not_contains "$ASSERT_OUTPUT" "missing-primary-disk" "local qcow2 linux-kernel ready run"
-handoff_qcow2_output="$(lightvm_runner --launch-spec "$LAUNCH_SPEC" --require-ready --print-handoff)"
+assert_command_succeeds "local-qcow2-linux-kernel-blocked-run" bridgevm run "$VM_NAME"
+assert_contains "$ASSERT_OUTPUT" "Launch ready: false" "local qcow2 linux-kernel blocked run"
+assert_contains "$ASSERT_OUTPUT" "unsupported-live-disk-format" "local qcow2 linux-kernel blocked run"
+assert_not_contains "$ASSERT_OUTPUT" "missing-kernel" "local qcow2 linux-kernel blocked run"
+assert_not_contains "$ASSERT_OUTPUT" "missing-primary-disk" "local qcow2 linux-kernel blocked run"
+assert_fails_contains \
+  "lightvm-runner-qcow2-linux-kernel-require-ready" \
+  "unsupported-live-disk-format" \
+  lightvm_runner --launch-spec "$LAUNCH_SPEC" --require-ready --print-handoff
+handoff_qcow2_output="$(lightvm_runner --launch-spec "$LAUNCH_SPEC" --print-handoff)"
 assert_contains "$handoff_qcow2_output" '"boot_mode": "linux-kernel"' "qcow2 linux-kernel handoff"
 assert_contains "$handoff_qcow2_output" "\"path\": \"$DISK\"" "qcow2 linux-kernel handoff"
 assert_contains "$handoff_qcow2_output" '"format": "qcow2"' "qcow2 linux-kernel handoff"
-assert_contains "$handoff_qcow2_output" '"ready": true' "qcow2 linux-kernel handoff"
+assert_contains "$handoff_qcow2_output" '"ready": false' "qcow2 linux-kernel handoff"
+assert_contains "$handoff_qcow2_output" '"code": "unsupported-live-disk-format"' "qcow2 linux-kernel handoff"
 QCOW2_HANDOFF_JSON="$STORE/qcow2-linux-kernel-handoff.json"
 printf "%s\n" "$handoff_qcow2_output" >"$QCOW2_HANDOFF_JSON"
 assert_fails_contains \
   "apple-vz-runner-qcow2-vz-config-validate" \
-  "AppleVzRunner requires disk format raw/qcow2, got qcow2" \
+  "AppleVzRunner requires disk format raw, got qcow2" \
   bash -c "cd apps/macos && swift run --quiet AppleVzRunner --handoff-json '$QCOW2_HANDOFF_JSON' --validate-only --print-config-plan --validate-vz-config"
-assert_contains "$ASSERT_OUTPUT" "AppleVzRunner handoff ready" "AppleVzRunner qcow2 config validation"
-assert_contains "$ASSERT_OUTPUT" "Configuration plan:" "AppleVzRunner qcow2 config validation"
-assert_contains "$ASSERT_OUTPUT" "Disk attachment: disk-image-qcow2" "AppleVzRunner qcow2 config validation"
+assert_not_contains "$ASSERT_OUTPUT" "AppleVzRunner handoff ready" "AppleVzRunner qcow2 config validation"
+assert_not_contains "$ASSERT_OUTPUT" "Configuration plan:" "AppleVzRunner qcow2 config validation"
 assert_not_contains "$ASSERT_OUTPUT" "VZ configuration validation: ready" "AppleVzRunner qcow2 config validation"
 
 echo "PASS: Fast Mode unsupported readiness CLI/socket smoke ($STORE)"

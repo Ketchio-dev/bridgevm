@@ -210,6 +210,7 @@ fn runner_metadata(
         disk,
         active_disk,
         launch_readiness: None,
+        runtime_control: None,
     }
 }
 

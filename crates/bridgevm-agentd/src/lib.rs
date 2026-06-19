@@ -355,7 +355,9 @@ pub fn required_capability(message: &AgentMessage) -> Option<&'static str> {
         }
         AgentMessage::ListWindows
         | AgentMessage::FocusWindow { .. }
-        | AgentMessage::CloseWindow { .. } => Some("windows"),
+        | AgentMessage::CloseWindow { .. }
+        | AgentMessage::SetWindowBounds { .. }
+        | AgentMessage::WindowInput { .. } => Some("windows"),
         AgentMessage::GuestMetrics { .. } => Some("guest-metrics"),
         AgentMessage::FreezeFilesystem { .. } => Some("fs-freeze"),
         AgentMessage::ThawFilesystem => Some("fs-thaw"),
@@ -680,6 +682,28 @@ mod tests {
             ),
             (AgentMessage::ListApplications, Some("applications")),
             (AgentMessage::ListWindows, Some("windows")),
+            (
+                AgentMessage::SetWindowBounds {
+                    id: "window-1".to_string(),
+                    x: 30,
+                    y: 40,
+                    width: 800,
+                    height: 600,
+                },
+                Some("windows"),
+            ),
+            (
+                AgentMessage::WindowInput {
+                    id: "window-1".to_string(),
+                    event: bridgevm_agent_protocol::WindowInputEvent::Pointer {
+                        x: 10,
+                        y: 20,
+                        action: "click".to_string(),
+                        button: Some("left".to_string()),
+                    },
+                },
+                Some("windows"),
+            ),
             (
                 AgentMessage::GuestMetrics {
                     cpu_percent: 5,

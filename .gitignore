@@ -8,3 +8,17 @@
 
 # Claude Code local runtime/state
 .claude/
+
+# Local OS installers and VM disk artifacts
+/ISO/
+*.iso
+*.dmg
+*.img
+*.raw
+*.qcow2
+*.vhd
+*.vhdx
+*.vmdk
+*.ova
+*.ovmf
+*.fd

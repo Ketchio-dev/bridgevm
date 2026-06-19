@@ -17,6 +17,7 @@ struct VMDetailView: View {
   var isDownloadingBootMedia: Bool
   var bootMediaStatusError: String?
   var guestToolsStatus: GuestToolsStatus?
+  var guestWindowProxyStatus: GuestWindowProxyStatus = .idle
   var guestToolsProvisioning: GuestToolsProvisioning? = nil
   var isLoadingGuestToolsStatus: Bool
   var isSendingGuestToolsCommand: Bool
@@ -30,6 +31,9 @@ struct VMDetailView: View {
   var runnerStatus: RunnerStatus?
   var isLoadingRunnerStatus: Bool
   var runnerStatusError: String?
+  var runtimeControlResult: RuntimeControlCommandResult? = nil
+  var isSendingRuntimeControl = false
+  var runtimeControlError: String? = nil
   var snapshotPreflightStatus: SnapshotPreflightStatus?
   var isLoadingSnapshotPreflightStatus: Bool
   var snapshotPreflightStatusError: String?
@@ -120,7 +124,7 @@ struct VMDetailView: View {
   var onPrimaryAction: () async -> Void
   var onClone: () -> Void
   var onOpenConsole: () async -> Bool
-  var onShowDisplay: () async -> Void = {}
+  var onShowDisplay: (String, String) async -> Void = { _, _ in }
   var onStop: () async -> Void
   var onRestart: () async -> Void
   var onPerformLifecycleAction: (VirtualMachineAction) async -> Void
@@ -149,9 +153,15 @@ struct VMDetailView: View {
   var onLaunchApplication: (String) async -> Bool
   var onFocusWindow: (String) async -> Bool
   var onCloseWindow: (String) async -> Bool
+  var onOpenWindowProxy: (GuestToolsWindowAction) async -> Bool = { _ in false }
+  var onCloseWindowProxies: () -> Void = {}
   var onSendInlineFileDrop: (String, String) async -> Bool
   var onPrepareRun: () async -> Bool = { false }
   var onRefreshRunnerStatus: () async -> Void
+  var onRuntimeControlStatus: () async -> Bool = { false }
+  var onRuntimeControlStopDisplay: () async -> Bool = { false }
+  var onRuntimeControlPolicy: () async -> Bool = { false }
+  var onRuntimeControlPacing: () async -> Bool = { false }
   var onRefreshSnapshotPreflightStatus: () async -> Void
   var onRefreshSnapshots: () async -> Void = {}
   var onRefreshSnapshotChain: () async -> Void = {}
@@ -342,8 +352,15 @@ struct VMDetailView: View {
             preRunLaunchReadiness: readinessReport?.preRunLaunchReadiness,
             isLoading: isLoadingRunnerStatus,
             error: runnerStatusError,
+            runtimeControlResult: runtimeControlResult,
+            isSendingRuntimeControl: isSendingRuntimeControl,
+            runtimeControlError: runtimeControlError,
             onPrepare: onPrepareRun,
-            onRefresh: onRefreshRunnerStatus
+            onRefresh: onRefreshRunnerStatus,
+            onRuntimeControlStatus: onRuntimeControlStatus,
+            onRuntimeControlStopDisplay: onRuntimeControlStopDisplay,
+            onRuntimeControlPolicy: onRuntimeControlPolicy,
+            onRuntimeControlPacing: onRuntimeControlPacing
           )
 
           if virtualMachine.mode == .fast {
@@ -466,6 +483,7 @@ struct VMDetailView: View {
 
           GuestToolsStatusPanel(
             status: guestToolsStatus,
+            guestWindowProxyStatus: guestWindowProxyStatus,
             provisioning: guestToolsProvisioning,
             isLoading: isLoadingGuestToolsStatus,
             isSendingCommand: isSendingGuestToolsCommand,
@@ -481,6 +499,8 @@ struct VMDetailView: View {
             onLaunchApplication: onLaunchApplication,
             onFocusWindow: onFocusWindow,
             onCloseWindow: onCloseWindow,
+            onOpenWindowProxy: onOpenWindowProxy,
+            onCloseWindowProxies: onCloseWindowProxies,
             onSendInlineFileDrop: onSendInlineFileDrop
           )
         }
@@ -688,7 +708,9 @@ private struct ConsoleDiagnosticsPanel: View {
   var logViewError: String?
   var onOpenConsole: () async -> Bool
   var onLoadLog: (VMLogKind) async -> Void
-  var onShowDisplay: () async -> Void = {}
+  var onShowDisplay: (String, String) async -> Void = { _, _ in }
+  @State private var displayWindowWidth = "1280"
+  @State private var displayWindowHeight = "800"
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -819,14 +841,21 @@ private struct ConsoleDiagnosticsPanel: View {
         if virtualMachine.mode == .fast {
           // Fast Mode (Apple VZ) only: open the in-app VZVirtualMachineView
           // window via the bundled runner (must be a GUI login session).
+          TextField("Width", text: $displayWindowWidth)
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 72)
+          TextField("Height", text: $displayWindowHeight)
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 72)
           Button {
-            Task { await onShowDisplay() }
+            Task { await onShowDisplay(displayWindowWidth, displayWindowHeight) }
           } label: {
             Label("Show Display", systemImage: "display")
           }
           .help("Open this Fast Mode VM in an embedded display window")
         }
       }
+      .controlSize(.small)
     }
     .padding(14)
     .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
@@ -2964,8 +2993,15 @@ private struct RunnerStatusPanel: View {
   var preRunLaunchReadiness: LaunchReadiness?
   var isLoading: Bool
   var error: String?
+  var runtimeControlResult: RuntimeControlCommandResult?
+  var isSendingRuntimeControl: Bool
+  var runtimeControlError: String?
   var onPrepare: () async -> Bool
   var onRefresh: () async -> Void
+  var onRuntimeControlStatus: () async -> Bool
+  var onRuntimeControlStopDisplay: () async -> Bool
+  var onRuntimeControlPolicy: () async -> Bool
+  var onRuntimeControlPacing: () async -> Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -3046,11 +3082,86 @@ private struct RunnerStatusPanel: View {
               GuestToolsFactRow(title: "Guest Tools Socket", value: guestTools.socketPath)
               GuestToolsFactRow(title: "Guest Tools Token", value: guestTools.tokenPath)
             }
+            if let runtimeControl = status.runtimeControl {
+              GuestToolsFactRow(title: "Display Control", value: runtimeControl.kind)
+              GuestToolsFactRow(title: "Display Control Socket", value: runtimeControl.socketPath)
+              GuestToolsFactRow(
+                title: "Display Control Commands",
+                value: runtimeControl.commandSummary
+              )
+            }
             GuestToolsFactRow(
               title: status.dryRun ? "Metadata Recorded" : "Started",
               value: unixTimeText(status.startedAtUnix)
             )
           }
+
+          if let runtimeControl = status.runtimeControl {
+            HStack(spacing: 8) {
+              if supports(command: "status", in: runtimeControl) {
+                Button {
+                  Task { _ = await onRuntimeControlStatus() }
+                } label: {
+                  if isSendingRuntimeControl {
+                    ProgressView()
+                      .controlSize(.small)
+                  } else {
+                    Label("Status", systemImage: "waveform.path.ecg")
+                  }
+                }
+                .disabled(isLoading || isSendingRuntimeControl)
+                .help("Ask the embedded Apple VZ display runner for its current status")
+              }
+
+              if supports(command: "policy", in: runtimeControl) {
+                Button {
+                  Task { _ = await onRuntimeControlPolicy() }
+                } label: {
+                  if isSendingRuntimeControl {
+                    ProgressView()
+                      .controlSize(.small)
+                  } else {
+                    Label("Policy", systemImage: "slider.horizontal.3")
+                  }
+                }
+                .disabled(isLoading || isSendingRuntimeControl)
+                .help("Ask the embedded Apple VZ display runner for its latest runtime policy")
+              }
+
+              if supports(command: "pacing", in: runtimeControl) {
+                Button {
+                  Task { _ = await onRuntimeControlPacing() }
+                } label: {
+                  if isSendingRuntimeControl {
+                    ProgressView()
+                      .controlSize(.small)
+                  } else {
+                    Label("Pacing", systemImage: "speedometer")
+                  }
+                }
+                .disabled(isLoading || isSendingRuntimeControl)
+                .help("Ask the embedded Apple VZ display runner for policy-derived display pacing")
+              }
+
+              if supports(command: "stop", in: runtimeControl) {
+                Button(role: .destructive) {
+                  Task { _ = await onRuntimeControlStopDisplay() }
+                } label: {
+                  if isSendingRuntimeControl {
+                    ProgressView()
+                      .controlSize(.small)
+                  } else {
+                    Label("Stop Display", systemImage: "xmark.circle")
+                  }
+                }
+                .disabled(isLoading || isSendingRuntimeControl)
+                .help("Ask the embedded Apple VZ display runner to stop")
+              }
+            }
+            .controlSize(.small)
+          }
+
+          runtimeControlFeedback
 
           if let readiness = status.launchReadiness {
             ReadinessBlockerList(readiness: readiness)
@@ -3078,22 +3189,53 @@ private struct RunnerStatusPanel: View {
             .fixedSize(horizontal: false, vertical: true)
 
           ReadinessBlockerList(readiness: preRunLaunchReadiness)
+          runtimeControlFeedback
         }
       } else {
-        Text(
-          "Refresh to inspect daemon runner metadata, command plan, and Fast Mode launch blockers."
-        )
-        .font(.callout)
-        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+          Text(
+            "Refresh to inspect daemon runner metadata, command plan, and Fast Mode launch blockers."
+          )
+          .font(.callout)
+          .foregroundStyle(.secondary)
+
+          runtimeControlFeedback
+        }
       }
     }
     .padding(12)
     .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
   }
 
+  @ViewBuilder
+  private var runtimeControlFeedback: some View {
+    if let runtimeControlError {
+      Label(runtimeControlError, systemImage: "exclamationmark.triangle")
+        .font(.callout)
+        .foregroundStyle(.red)
+    }
+
+    if let runtimeControlResult {
+      VStack(alignment: .leading, spacing: 6) {
+        GuestToolsFactRow(
+          title: "Last Display Control",
+          value: runtimeControlResult.command
+        )
+        GuestToolsFactRow(
+          title: "Display Response",
+          value: runtimeControlResult.responseSummary
+        )
+      }
+    }
+  }
+
   private func unixTimeText(_ value: UInt64) -> String {
     Date(timeIntervalSince1970: TimeInterval(value))
       .formatted(date: .abbreviated, time: .shortened)
+  }
+
+  private func supports(command: String, in runtimeControl: RuntimeControlRunnerStatus) -> Bool {
+    runtimeControl.commands.contains { $0.caseInsensitiveCompare(command) == .orderedSame }
   }
 }
 
@@ -3147,6 +3289,11 @@ private struct RuntimeResourcePolicyPanel: View {
               title: "Live Apply",
               value: policy.liveApplyTitle,
               systemImage: policy.liveApplied ? "checkmark.circle" : "record.circle"
+            )
+            GuestToolsStatusBadge(
+              title: "Policy Ack",
+              value: policy.runtimeControlAcknowledged ? "Display helper" : "Metadata only",
+              systemImage: policy.runtimeControlAcknowledged ? "checkmark.circle" : "doc.text"
             )
           }
 
@@ -5159,6 +5306,7 @@ private func sharedFolderTokenDisplay(_ token: String) -> String {
 
 private struct GuestToolsStatusPanel: View {
   var status: GuestToolsStatus?
+  var guestWindowProxyStatus: GuestWindowProxyStatus
   var provisioning: GuestToolsProvisioning?
   var isLoading: Bool
   var isSendingCommand: Bool
@@ -5174,6 +5322,8 @@ private struct GuestToolsStatusPanel: View {
   var onLaunchApplication: (String) async -> Bool
   var onFocusWindow: (String) async -> Bool
   var onCloseWindow: (String) async -> Bool
+  var onOpenWindowProxy: (GuestToolsWindowAction) async -> Bool
+  var onCloseWindowProxies: () -> Void
   var onSendInlineFileDrop: (String, String) async -> Bool
 
   var body: some View {
@@ -5183,6 +5333,15 @@ private struct GuestToolsStatusPanel: View {
           .font(.headline)
 
         Spacer()
+
+        if guestWindowProxyStatus.isTrackingWindows {
+          Button {
+            onCloseWindowProxies()
+          } label: {
+            Label("Close Proxies", systemImage: "xmark.rectangle")
+          }
+          .controlSize(.small)
+        }
 
         Button {
           Task { await onRefresh() }
@@ -5240,6 +5399,12 @@ private struct GuestToolsStatusPanel: View {
               systemImage: "folder"
             )
             GuestToolsStatusBadge(
+              title: "Window Proxy",
+              value: guestWindowProxyStatus.badgeTitle,
+              systemImage: guestWindowProxyStatus.isTrackingWindows
+                ? "macwindow.on.rectangle" : "macwindow.badge.plus"
+            )
+            GuestToolsStatusBadge(
               title: "Host Approval",
               value: status.approvedSharedFoldersTitle,
               systemImage: status.approvedSharedFolders.isEmpty ? "lock.slash" : "lock.open"
@@ -5248,6 +5413,17 @@ private struct GuestToolsStatusPanel: View {
 
           VStack(alignment: .leading, spacing: 6) {
             GuestToolsFactRow(title: "Tools Token", value: unixTimeText(status.tokenCreatedAtUnix))
+            GuestToolsFactRow(title: "Window Proxy", value: guestWindowProxyStatus.detailText)
+            if guestWindowProxyStatus.isTrackingWindows {
+              GuestToolsFactRow(
+                title: "Proxy Windows",
+                value: guestWindowProxyStatus.windowSummaryText
+              )
+              GuestToolsFactRow(
+                title: "Proxy Crop",
+                value: guestWindowProxyStatus.cropFrameText
+              )
+            }
             GuestToolsFactRow(
               title: "Approved Shares",
               value: approvedSharedFolderText(status.approvedSharedFolders))
@@ -5297,7 +5473,14 @@ private struct GuestToolsStatusPanel: View {
 
             GuestClipboardTelemetryView(clipboard: runtime.lastClipboard)
             GuestToolsAgentUpdateView(update: runtime.agentUpdate)
-            LastGuestToolsCommandResultView(result: runtime.lastCommandResult)
+            LastGuestToolsCommandResultView(
+              result: runtime.lastCommandResult,
+              isSending: isSendingCommand,
+              onLaunchApplication: onLaunchApplication,
+              onFocusWindow: onFocusWindow,
+              onCloseWindow: onCloseWindow,
+              onOpenWindowProxy: onOpenWindowProxy
+            )
           }
 
           CapabilityList(capabilities: status.capabilities)
@@ -5837,6 +6020,13 @@ private struct GuestToolsAgentUpdateView: View {
 
 private struct LastGuestToolsCommandResultView: View {
   var result: GuestToolsCommandResult?
+  var isSending: Bool
+  var onLaunchApplication: (String) async -> Bool
+  var onFocusWindow: (String) async -> Bool
+  var onCloseWindow: (String) async -> Bool
+  var onOpenWindowProxy: (GuestToolsWindowAction) async -> Bool
+
+  @State private var pendingCloseWindow: GuestToolsWindowAction?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
@@ -5860,9 +6050,25 @@ private struct LastGuestToolsCommandResultView: View {
           GuestToolsFactRow(title: "Request", value: result.requestID)
           GuestToolsFactRow(title: "Message", value: result.message ?? "No message")
           GuestToolsFactRow(title: "Error", value: result.errorCode ?? "None")
+          if let backend = result.backendSourceSummary {
+            GuestToolsFactRow(title: "Backend source", value: backend)
+          }
           GuestToolsFactRow(title: "Result", value: result.result?.displayText ?? "None")
           GuestToolsFactRow(title: "Metadata", value: result.metadata?.displayText ?? "None")
           GuestToolsFactRow(title: "Completed", value: unixTimeText(result.completedAtUnix))
+
+          GuestToolsApplicationActionList(
+            applications: result.applicationActions,
+            isSending: isSending,
+            onLaunch: onLaunchApplication
+          )
+          GuestToolsWindowActionList(
+            windows: result.windowActions,
+            isSending: isSending,
+            onFocus: onFocusWindow,
+            onOpenProxy: onOpenWindowProxy,
+            onRequestClose: { pendingCloseWindow = $0 }
+          )
         }
         .padding(10)
         .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
@@ -5872,11 +6078,170 @@ private struct LastGuestToolsCommandResultView: View {
           .foregroundStyle(.secondary)
       }
     }
+    .alert(
+      "Close guest window?",
+      isPresented: Binding(
+        get: { pendingCloseWindow != nil },
+        set: { if !$0 { pendingCloseWindow = nil } }
+      )
+    ) {
+      Button("Cancel", role: .cancel) {
+        pendingCloseWindow = nil
+      }
+      Button("Close", role: .destructive) {
+        let windowID = pendingCloseWindow?.id ?? ""
+        pendingCloseWindow = nil
+        Task { _ = await onCloseWindow(windowID) }
+      }
+    } message: {
+      Text(
+        "Queue a capability-gated close request for \(pendingCloseWindow?.title ?? "this guest window")."
+      )
+    }
   }
 
   private func unixTimeText(_ value: UInt64) -> String {
     Date(timeIntervalSince1970: TimeInterval(value))
       .formatted(date: .abbreviated, time: .shortened)
+  }
+}
+
+private struct GuestToolsApplicationActionList: View {
+  var applications: [GuestToolsApplicationAction]
+  var isSending: Bool
+  var onLaunch: (String) async -> Bool
+
+  var body: some View {
+    if !applications.isEmpty {
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Applications")
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.secondary)
+
+        ForEach(applications) { application in
+          HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(application.name)
+                .font(.callout.weight(.medium))
+                .lineLimit(1)
+              Text(applicationDetail(application))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+
+            Spacer()
+
+            Button {
+              Task { _ = await onLaunch(application.id) }
+            } label: {
+              Label("Launch", systemImage: "play.circle")
+            }
+            .controlSize(.small)
+            .disabled(isSending)
+          }
+        }
+      }
+      .padding(.top, 4)
+    }
+  }
+
+  private func applicationDetail(_ application: GuestToolsApplicationAction) -> String {
+    var parts = [application.id]
+    if let source = application.source {
+      parts.append(source)
+    }
+    if application.launched == true {
+      parts.append("launched")
+    }
+    return parts.joined(separator: " - ")
+  }
+}
+
+private struct GuestToolsWindowActionList: View {
+  var windows: [GuestToolsWindowAction]
+  var isSending: Bool
+  var onFocus: (String) async -> Bool
+  var onOpenProxy: (GuestToolsWindowAction) async -> Bool
+  var onRequestClose: (GuestToolsWindowAction) -> Void
+
+  var body: some View {
+    if !windows.isEmpty {
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Windows")
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.secondary)
+
+        ForEach(windows) { window in
+          HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(window.title)
+                .font(.callout.weight(.medium))
+                .lineLimit(1)
+              Text(windowDetail(window))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+
+            Spacer()
+
+            Button {
+              Task { _ = await onFocus(window.id) }
+            } label: {
+              Label("Focus", systemImage: "scope")
+            }
+            .controlSize(.small)
+            .disabled(isSending)
+
+            Button {
+              Task { _ = await onOpenProxy(window) }
+            } label: {
+              Label("Proxy", systemImage: "macwindow.on.rectangle")
+            }
+            .controlSize(.small)
+            .disabled(window.bounds == nil)
+            .help(
+              window.bounds == nil
+                ? "Guest window bounds are required before opening a proxy shell."
+                : "Open a macOS proxy shell sized from the guest window bounds."
+            )
+
+            Button(role: .destructive) {
+              onRequestClose(window)
+            } label: {
+              Label("Close", systemImage: "xmark.circle")
+            }
+            .controlSize(.small)
+            .disabled(isSending)
+          }
+        }
+      }
+      .padding(.top, 4)
+    }
+  }
+
+  private func windowDetail(_ window: GuestToolsWindowAction) -> String {
+    var parts = [window.id]
+    if let source = window.source {
+      parts.append(source)
+    }
+    if let pid = window.pid {
+      parts.append("pid \(pid)")
+    }
+    if let bounds = window.bounds {
+      parts.append(bounds.displayText)
+    }
+    if window.cropFrameSummaryPath != nil {
+      parts.append("crop artifact")
+    }
+    if window.focused == true {
+      parts.append("focused")
+    }
+    if window.closed == true {
+      parts.append("closed")
+    }
+    return parts.joined(separator: " - ")
   }
 }
 

@@ -4,9 +4,10 @@ use bridgevm_apple_vz::{
     build_fast_plan, write_launch_spec_artifact, AppleVzBootSpec, AppleVzPathSpec,
     AppleVzReadinessSpec,
 };
-use bridgevm_config::{BootMode, PortForward, SharedFolder, VmManifest, VmMode};
+use bridgevm_config::{BootMode, Guest, PortForward, SharedFolder, VmManifest, VmMode};
 use bridgevm_core::{
-    available_boot_templates, recommend_mode, BootTemplate, GuestChoice, ModeRecommendation,
+    available_boot_templates, boot_template_by_id, current_engine_descriptor_for_mode,
+    recommend_mode, BootTemplate, EngineLane, GuestChoice, ModeRecommendation,
 };
 use bridgevm_network::{
     plan_network, NetworkBackend, NetworkCapabilities, NetworkMode, NetworkPlanError,
@@ -22,7 +23,7 @@ use bridgevm_storage::{
     ApplicationConsistentSnapshotPreflightMetadata, DiskCompactMetadata, DiskCreateMetadata,
     DiskInspectMetadata, DiskPreparationMetadata, DiskVerifyMetadata, GuestToolsMetricsMetadata,
     GuestToolsRuntimeMetadata, LaunchReadinessBlockerMetadata, LaunchReadinessMetadata,
-    QmpSupervisorMetadata, RunnerMetadata, RuntimeResourcePolicyBlocker,
+    QmpSupervisorMetadata, RunnerMetadata, RuntimeControlMetadata, RuntimeResourcePolicyBlocker,
     RuntimeResourcePolicyMetadata, RuntimeResourceVisibility, SnapshotChainMetadata,
     SnapshotDiskCreateMetadata, SnapshotDiskMetadata, SnapshotKind, SnapshotMetadata,
     SnapshotRestoreMetadata, VmCloneMetadata, VmDeletionMetadata, VmExportMetadata,
@@ -33,8 +34,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, OpenOptions},
-    io::{Read, Seek, SeekFrom, Write},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     net::IpAddr,
+    os::unix::net::UnixStream,
     path::{Component, Path, PathBuf},
     process::{Child, Command, Stdio},
     thread,
@@ -55,6 +57,53 @@ pub const BRIDGEVM_API_CONTRACT_VERSION: u16 = 1;
 pub const BRIDGEVM_API_SERVICE_NAME: &str = "bridgevm.api.v1.BridgeVmService";
 pub const BRIDGEVM_API_JSON_OVER_UDS_TRANSPORT: &str = "json-ndjson-over-uds";
 pub const BRIDGEVM_API_GRPC_OVER_UDS_TRANSPORT: &str = "grpc-over-uds";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CurrentRuntimeEngine {
+    AppleVz,
+    QemuCompatibility,
+}
+
+impl CurrentRuntimeEngine {
+    pub fn for_mode(mode: VmMode) -> Self {
+        match current_engine_descriptor_for_mode(mode).lane {
+            EngineLane::AppleVz => Self::AppleVz,
+            EngineLane::QemuCompatibility => Self::QemuCompatibility,
+            EngineLane::BridgeHvf => {
+                unreachable!("BridgeVM HVF is a target engine, not a current VmMode runtime")
+            }
+        }
+    }
+
+    pub fn for_manifest(manifest: &VmManifest) -> Self {
+        Self::for_mode(manifest.mode)
+    }
+
+    pub fn network_backend(self) -> NetworkBackend {
+        match self {
+            Self::AppleVz => NetworkBackend::AppleVz,
+            Self::QemuCompatibility => NetworkBackend::Qemu,
+        }
+    }
+
+    pub fn runner_metadata_engine(self) -> &'static str {
+        match self {
+            Self::AppleVz => "lightvm",
+            Self::QemuCompatibility => "fullvm",
+        }
+    }
+
+    pub fn uses_qmp(self) -> bool {
+        matches!(self, Self::QemuCompatibility)
+    }
+
+    pub fn lifecycle_backend_label(self) -> &'static str {
+        match self {
+            Self::AppleVz => "apple-vz",
+            Self::QemuCompatibility => "qemu-qmp",
+        }
+    }
+}
 
 fn is_false(value: &bool) -> bool {
     !*value
@@ -135,6 +184,10 @@ pub enum BridgeVmRequest {
     ListTemplates,
     CreateVm {
         manifest: VmManifest,
+    },
+    CreateVmFromTemplate {
+        name: String,
+        template_id: String,
     },
     GetVm {
         name: String,
@@ -340,6 +393,10 @@ pub enum BridgeVmRequest {
     RunnerStatus {
         name: String,
     },
+    RuntimeControl {
+        name: String,
+        command: String,
+    },
     QmpSocket {
         name: String,
     },
@@ -501,6 +558,9 @@ pub enum BridgeVmResponse {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         qmp_supervisor: Option<QmpSupervisorMetadata>,
     },
+    RuntimeControl {
+        control: RuntimeControlCommandRecord,
+    },
     LifecyclePlan {
         plan: LifecyclePlanRecord,
     },
@@ -596,6 +656,15 @@ pub struct VmLogViewRecord {
     pub returned_bytes: u64,
     pub truncated: bool,
     pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeControlCommandRecord {
+    pub vm: String,
+    pub kind: String,
+    pub socket_path: PathBuf,
+    pub command: String,
+    pub response: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1129,6 +1198,15 @@ fn handle_request_result(
                 vm: record_for(store, &manifest.name).map_err(|error| error.to_string())?,
             })
         }
+        BridgeVmRequest::CreateVmFromTemplate { name, template_id } => {
+            let manifest = manifest_from_template(name, &template_id)?;
+            store
+                .create_vm(&manifest)
+                .map_err(|error| error.to_string())?;
+            Ok(BridgeVmResponse::Vm {
+                vm: record_for(store, &manifest.name).map_err(|error| error.to_string())?,
+            })
+        }
         BridgeVmRequest::GetVm { name } => Ok(BridgeVmResponse::Vm {
             vm: record_for(store, &name).map_err(|error| error.to_string())?,
         }),
@@ -1445,6 +1523,9 @@ fn handle_request_result(
                 .qmp_supervisor_metadata(&name)
                 .map_err(|error| error.to_string())?,
         }),
+        BridgeVmRequest::RuntimeControl { name, command } => Ok(BridgeVmResponse::RuntimeControl {
+            control: runtime_control_command(store, &name, &command)?,
+        }),
         BridgeVmRequest::QmpSocket { name } => {
             let (bundle, _) = store.get_vm(&name).map_err(|error| error.to_string())?;
             Ok(BridgeVmResponse::QmpSocket {
@@ -1528,6 +1609,30 @@ fn handle_request_result(
             recommendation: recommend_mode(&choice),
         }),
     }
+}
+
+fn manifest_from_template(name: String, template_id: &str) -> Result<VmManifest, String> {
+    let template = boot_template_by_id(template_id)
+        .ok_or_else(|| format!("unknown template id: {template_id}"))?;
+    let choice = GuestChoice {
+        os: template.guest_os.clone(),
+        version: template.guest_version.clone(),
+        arch: template.guest_arch.clone(),
+    };
+    let recommendation = recommend_mode(&choice);
+    let mut manifest = VmManifest::new(
+        name,
+        recommendation.mode,
+        Guest {
+            os: template.guest_os.clone(),
+            version: template.guest_version.clone(),
+            arch: template.guest_arch.clone(),
+        },
+        template.primary_disk_size().unwrap_or("80GiB"),
+    );
+    template.apply_storage_defaults(&mut manifest.storage.primary);
+    manifest.boot = Some(template.as_boot());
+    Ok(manifest)
 }
 
 pub fn inspect_guest_tools_status(
@@ -1902,10 +2007,7 @@ pub fn network_plan(store: &VmStore, name: &str) -> Result<NetworkPlanRecord, St
 }
 
 fn network_plan_for_manifest(manifest: &VmManifest) -> NetworkPlanRecord {
-    let backend = match manifest.mode {
-        VmMode::Fast => NetworkBackend::AppleVz,
-        VmMode::Compatibility => NetworkBackend::Qemu,
-    };
+    let backend = CurrentRuntimeEngine::for_manifest(manifest).network_backend();
     let port_forwards = manifest
         .network
         .forwards
@@ -2009,10 +2111,7 @@ fn validate_network_plan(manifest: &VmManifest) -> Result<(), String> {
         .mode
         .parse::<NetworkMode>()
         .map_err(|error| error.to_string())?;
-    let backend = match manifest.mode {
-        VmMode::Fast => NetworkBackend::AppleVz,
-        VmMode::Compatibility => NetworkBackend::Qemu,
-    };
+    let backend = CurrentRuntimeEngine::for_manifest(manifest).network_backend();
     let forwards = manifest
         .network
         .forwards
@@ -5339,25 +5438,27 @@ fn sha256_file(path: &std::path::Path) -> Result<String, String> {
 }
 
 fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadata, String> {
-    let (bundle, manifest, _) = store
+    let (bundle, mut manifest, _) = store
         .get_vm_with_active_disk(name)
         .map_err(|error| error.to_string())?;
+    let runtime_engine = CurrentRuntimeEngine::for_manifest(&manifest);
 
     let (disk, active_disk) = store
         .prepare_active_disk(name)
         .map_err(|error| error.to_string())?;
-    if manifest.mode != VmMode::Fast && spawn && !disk.exists {
+    apply_active_disk_to_manifest(&mut manifest, &active_disk);
+    if runtime_engine != CurrentRuntimeEngine::AppleVz && spawn && !disk.exists {
         return Err(missing_disk_message(&disk));
     }
 
-    if manifest.mode == VmMode::Fast {
+    if runtime_engine == CurrentRuntimeEngine::AppleVz {
         // Gated REAL cold-start launch: when `BRIDGEVM_APPLE_VZ_RUNNER` is set
         // and the caller asked to spawn, boot a real Apple VZ VM via
         // `lightvm-runner` (fresh boot, no saved-state restore). When the env
         // is unset, preserve the legacy dry-run + runner-required fallback so
         // all existing metadata-safe smokes/tests stay green.
         if spawn && apple_vz_runner_configured() {
-            return spawn_fast_backend(store, name, &bundle, &manifest, None, false);
+            return spawn_fast_backend(store, name, &bundle, &manifest, None, false, None);
         }
         let plan = build_fast_plan(&manifest, &bundle).map_err(|error| error.to_string())?;
         let launch_spec_path = write_launch_spec_artifact(&bundle, plan.launch_spec())
@@ -5368,9 +5469,9 @@ fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadat
         }
         let spawn_error = spawn.then(|| fast_spawn_runner_required_error(&readiness));
         let metadata = RunnerMetadata {
-            engine: "lightvm".to_string(),
+            engine: runtime_engine.runner_metadata_engine().to_string(),
             pid: None,
-            command: plan.render_runner_words(),
+            command: plan.render_runner_words_for_launch_spec(&launch_spec_path),
             log_path: plan.launch_spec().logs.runner_log_path.clone().into(),
             started_at_unix: now_unix(),
             dry_run: true,
@@ -5379,6 +5480,7 @@ fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadat
             disk: Some(disk),
             active_disk: Some(active_disk),
             launch_readiness: Some(readiness),
+            runtime_control: None,
         };
         store
             .write_runner_metadata(name, &metadata)
@@ -5405,7 +5507,7 @@ fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadat
 
     if !spawn {
         let metadata = RunnerMetadata {
-            engine: "fullvm".to_string(),
+            engine: runtime_engine.runner_metadata_engine().to_string(),
             pid: None,
             command: command.render_shell_words(),
             log_path,
@@ -5416,6 +5518,7 @@ fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadat
             disk: Some(disk),
             active_disk: Some(active_disk),
             launch_readiness: Some(readiness),
+            runtime_control: None,
         };
         store
             .write_runner_metadata(name, &metadata)
@@ -5443,7 +5546,7 @@ fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadat
         .spawn()
         .map_err(|error| format!("failed to spawn {}: {error}", command.program))?;
     let metadata = RunnerMetadata {
-        engine: "fullvm".to_string(),
+        engine: runtime_engine.runner_metadata_engine().to_string(),
         pid: Some(child.id()),
         command: command.render_shell_words(),
         log_path,
@@ -5454,6 +5557,7 @@ fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadat
         disk: Some(disk),
         active_disk: Some(active_disk),
         launch_readiness: Some(readiness),
+        runtime_control: None,
     };
     store
         .write_runner_metadata(name, &metadata)
@@ -5664,6 +5768,14 @@ fn missing_disk_message(disk: &bridgevm_storage::DiskPreparationMetadata) -> Str
     } else {
         format!("primary disk is not ready: {}", disk.path.display())
     }
+}
+
+fn apply_active_disk_to_manifest(
+    manifest: &mut VmManifest,
+    active_disk: &bridgevm_storage::ActiveDiskMetadata,
+) {
+    manifest.storage.primary.path = active_disk.path.display().to_string();
+    manifest.storage.primary.format = active_disk.format.clone();
 }
 
 pub fn fast_spawn_runner_required_message() -> &'static str {
@@ -5898,6 +6010,7 @@ fn terminate_recorded_process(
 /// Dry-run VMs (no real recorded pid) keep their metadata-only behavior.
 pub fn stop_backend(store: &VmStore, name: &str) -> Result<Option<RunnerMetadata>, String> {
     let (bundle, manifest) = store.get_vm(name).map_err(|error| error.to_string())?;
+    let runtime_engine = CurrentRuntimeEngine::for_manifest(&manifest);
     let metadata = store
         .runner_metadata(name)
         .map_err(|error| error.to_string())?;
@@ -5913,7 +6026,7 @@ pub fn stop_backend(store: &VmStore, name: &str) -> Result<Option<RunnerMetadata
     // Compatibility Mode: attempt a graceful QMP quit first so QEMU can flush
     // and shut down cleanly. If the socket is gone but we have a live recorded
     // pid, fall through to signal-based termination rather than refusing.
-    if manifest.mode == VmMode::Compatibility {
+    if runtime_engine.uses_qmp() {
         let socket_path = qmp_socket_path(&bundle);
         if socket_path.exists() {
             // Best-effort: if the guest already quit, the socket may error.
@@ -6059,6 +6172,97 @@ pub fn apple_vz_runner_configured() -> bool {
         .unwrap_or(false)
 }
 
+pub fn apple_vz_display_control_socket_path(bundle: &Path) -> PathBuf {
+    PathBuf::from(format!(
+        "/tmp/bvm-vz-{:016x}.sock",
+        stable_runtime_control_socket_hash(&bundle.to_string_lossy())
+    ))
+}
+
+pub fn apple_vz_display_framebuffer_rgba_path(bundle: &Path) -> PathBuf {
+    bundle
+        .join("metadata")
+        .join("apple-vz-display-framebuffer.rgba")
+}
+
+fn stable_runtime_control_socket_hash(value: &str) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+    value.as_bytes().iter().fold(FNV_OFFSET, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME)
+    })
+}
+
+pub fn runtime_control_command(
+    store: &VmStore,
+    name: &str,
+    command: &str,
+) -> Result<RuntimeControlCommandRecord, String> {
+    let metadata = store
+        .runner_metadata(name)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("No runner metadata recorded for {name}"))?;
+    let control = metadata
+        .runtime_control
+        .ok_or_else(|| format!("No runtime control metadata recorded for {name}"))?;
+    if !control
+        .commands
+        .iter()
+        .any(|available| available == command)
+    {
+        let available = if control.commands.is_empty() {
+            "none".to_string()
+        } else {
+            control.commands.join(", ")
+        };
+        return Err(format!(
+            "runtime control `{}` is not advertised for {} (available: {})",
+            command, name, available
+        ));
+    }
+
+    let response = send_runtime_control_command(&control.socket_path, command)?;
+    Ok(RuntimeControlCommandRecord {
+        vm: name.to_string(),
+        kind: control.kind,
+        socket_path: control.socket_path,
+        command: command.to_string(),
+        response,
+    })
+}
+
+fn send_runtime_control_command(socket: &Path, command: &str) -> Result<serde_json::Value, String> {
+    let mut stream = UnixStream::connect(socket).map_err(|error| {
+        format!(
+            "failed to connect to runtime control socket {}: {}",
+            socket.display(),
+            error
+        )
+    })?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .map_err(|error| format!("failed to configure runtime control read timeout: {error}"))?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(2)))
+        .map_err(|error| format!("failed to configure runtime control write timeout: {error}"))?;
+    let mut request = serde_json::to_vec(&serde_json::json!({ "command": command }))
+        .map_err(|error| format!("failed to encode runtime control request: {error}"))?;
+    request.push(b'\n');
+    stream
+        .write_all(&request)
+        .map_err(|error| format!("failed to write runtime control request: {error}"))?;
+
+    let mut line = String::new();
+    BufReader::new(stream)
+        .read_line(&mut line)
+        .map_err(|error| format!("failed to read runtime control response: {error}"))?;
+    if line.trim().is_empty() {
+        return Err("runtime control socket returned an empty response".to_string());
+    }
+    serde_json::from_str(&line)
+        .map_err(|error| format!("invalid runtime control response JSON: {error}"))
+}
+
 /// Build the `lightvm-runner` argv used to launch a Fast Mode Apple VZ VM.
 ///
 /// Shared by the Fast cold-start (`run_backend`) and resume (`resume_backend`)
@@ -6070,6 +6274,10 @@ pub fn fast_runner_args(
     apple_vz_runner: &Path,
     restore_state: Option<&Path>,
     display: bool,
+    display_size: Option<(u32, u32)>,
+    runtime_control_socket: Option<&Path>,
+    proxy_framebuffer_rgba_file: Option<&Path>,
+    proxy_framebuffer_capture_interval_ms: Option<u64>,
 ) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "--launch-spec".to_string(),
@@ -6088,6 +6296,24 @@ pub fn fast_runner_args(
     // AppleVzRunner, which boots with a graphics device + hosts a window.
     if display {
         args.push("--apple-vz-display".to_string());
+        if let Some((width, height)) = display_size {
+            args.push("--apple-vz-display-width".to_string());
+            args.push(width.to_string());
+            args.push("--apple-vz-display-height".to_string());
+            args.push(height.to_string());
+        }
+        if let Some(socket_path) = runtime_control_socket {
+            args.push("--apple-vz-runtime-control-socket".to_string());
+            args.push(socket_path.display().to_string());
+        }
+        if let Some(path) = proxy_framebuffer_rgba_file {
+            args.push("--apple-vz-proxy-framebuffer-rgba-file".to_string());
+            args.push(path.display().to_string());
+        }
+        if let Some(interval_ms) = proxy_framebuffer_capture_interval_ms {
+            args.push("--apple-vz-proxy-framebuffer-capture-interval-ms".to_string());
+            args.push(interval_ms.to_string());
+        }
     }
     args
 }
@@ -6105,6 +6331,7 @@ fn spawn_fast_backend(
     manifest: &VmManifest,
     restore_state: Option<&Path>,
     display: bool,
+    display_size: Option<(u32, u32)>,
 ) -> Result<RunnerMetadata, String> {
     let apple_vz_runner = require_apple_vz_runner()?;
     let lightvm_runner = find_lightvm_runner();
@@ -6113,7 +6340,9 @@ fn spawn_fast_backend(
         .prepare_active_disk(name)
         .map_err(|error| error.to_string())?;
 
-    let plan = build_fast_plan(manifest, bundle).map_err(|error| error.to_string())?;
+    let mut manifest = manifest.clone();
+    apply_active_disk_to_manifest(&mut manifest, &active_disk);
+    let plan = build_fast_plan(&manifest, bundle).map_err(|error| error.to_string())?;
     let launch_spec_path = write_launch_spec_artifact(bundle, plan.launch_spec())
         .map_err(|error| error.to_string())?;
     let readiness = launch_readiness_metadata(&plan.launch_spec().readiness);
@@ -6125,6 +6354,7 @@ fn spawn_fast_backend(
     }
 
     fs::create_dir_all(bundle.join("logs")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(bundle.join("run")).map_err(|error| error.to_string())?;
     let log_path: PathBuf = plan.launch_spec().logs.runner_log_path.clone().into();
     let stdout = OpenOptions::new()
         .create(true)
@@ -6133,7 +6363,30 @@ fn spawn_fast_backend(
         .map_err(|error| error.to_string())?;
     let stderr = stdout.try_clone().map_err(|error| error.to_string())?;
 
-    let args = fast_runner_args(&launch_spec_path, &apple_vz_runner, restore_state, display);
+    let runtime_control = display.then(|| RuntimeControlMetadata {
+        kind: "apple-vz-display".to_string(),
+        socket_path: apple_vz_display_control_socket_path(bundle),
+        commands: vec![
+            "status".to_string(),
+            "stop".to_string(),
+            "policy".to_string(),
+            "pacing".to_string(),
+        ],
+    });
+    let proxy_framebuffer_rgba_file =
+        display.then(|| apple_vz_display_framebuffer_rgba_path(bundle));
+    let args = fast_runner_args(
+        &launch_spec_path,
+        &apple_vz_runner,
+        restore_state,
+        display,
+        display_size,
+        runtime_control
+            .as_ref()
+            .map(|control| control.socket_path.as_path()),
+        proxy_framebuffer_rgba_file.as_deref(),
+        None,
+    );
 
     let child = Command::new(&lightvm_runner)
         .args(&args)
@@ -6157,6 +6410,7 @@ fn spawn_fast_backend(
         disk: Some(disk),
         active_disk: Some(active_disk),
         launch_readiness: Some(readiness),
+        runtime_control,
     };
     store
         .write_runner_metadata(name, &metadata)
@@ -6164,6 +6418,17 @@ fn spawn_fast_backend(
     store
         .transition_state(name, VmRuntimeState::Running)
         .map_err(|error| error.to_string())?;
+    if display {
+        let policy = build_runtime_resource_policy_metadata(
+            name,
+            &manifest,
+            RuntimeResourceVisibility::Foreground,
+            VmRuntimeState::Running,
+        );
+        store
+            .write_runtime_resource_policy_metadata(name, &policy)
+            .map_err(|error| error.to_string())?;
+    }
 
     Ok(metadata)
 }
@@ -6181,7 +6446,7 @@ pub fn cold_start_fast_backend(store: &VmStore, name: &str) -> Result<RunnerMeta
         return Err("cold-start launch is only implemented for Fast Mode VMs".to_string());
     }
     apply_power_aware_fast_resources(&mut manifest);
-    spawn_fast_backend(store, name, &bundle, &manifest, None, false)
+    spawn_fast_backend(store, name, &bundle, &manifest, None, false, None)
 }
 
 /// Expand `auto` Fast Mode memory/cpu using the host power state at launch time,
@@ -6205,10 +6470,6 @@ pub fn reapply_runtime_resources(
     name: &str,
     visibility: RuntimeResourceVisibility,
 ) -> Result<RuntimeResourcePolicyMetadata, String> {
-    use bridgevm_resource_manager::{
-        decide_for_runtime, read_on_battery, resolve_memory, resolve_vcpu, ResourceProfile,
-    };
-
     let (_, manifest) = store.get_vm(name).map_err(|error| error.to_string())?;
     if manifest.mode != VmMode::Fast {
         return Err("runtime resource reapply is only implemented for Fast Mode VMs".to_string());
@@ -6232,6 +6493,47 @@ pub fn reapply_runtime_resources(
         );
     }
 
+    let mut policy =
+        build_runtime_resource_policy_metadata(name, &manifest, visibility, state.state);
+    store
+        .write_runtime_resource_policy_metadata(name, &policy)
+        .map_err(|error| error.to_string())?;
+    if runtime_control_policy_acknowledged(&runner) {
+        policy.runtime_control_acknowledged = true;
+        store
+            .write_runtime_resource_policy_metadata(name, &policy)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(policy)
+}
+
+fn runtime_control_policy_acknowledged(runner: &RunnerMetadata) -> bool {
+    let Some(control) = &runner.runtime_control else {
+        return false;
+    };
+    if !control.commands.iter().any(|command| command == "policy") {
+        return false;
+    }
+
+    match send_runtime_control_command(&control.socket_path, "policy") {
+        Ok(response) => response
+            .get("ok")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+        Err(_) => false,
+    }
+}
+
+fn build_runtime_resource_policy_metadata(
+    name: &str,
+    manifest: &VmManifest,
+    visibility: RuntimeResourceVisibility,
+    state: VmRuntimeState,
+) -> RuntimeResourcePolicyMetadata {
+    use bridgevm_resource_manager::{
+        decide_for_runtime, read_on_battery, resolve_memory, resolve_vcpu, ResourceProfile,
+    };
+
     let on_battery = read_on_battery();
     let foreground = matches!(visibility, RuntimeResourceVisibility::Foreground);
     let decision = decide_for_runtime(
@@ -6239,29 +6541,25 @@ pub fn reapply_runtime_resources(
         foreground,
         on_battery,
     );
-    let live_apply_blockers = vec![RuntimeResourcePolicyBlocker {
-        code: "runtime-control-unavailable".to_string(),
-        message: "No live Apple VZ/display runtime control channel is available yet; the policy was recorded for UI/display pacing consumers.".to_string(),
-    }];
-    let policy = RuntimeResourcePolicyMetadata {
+    RuntimeResourcePolicyMetadata {
         vm: name.to_string(),
         mode: manifest.mode.to_string(),
         profile: manifest.resources.profile.clone(),
         visibility,
-        state: state.state,
+        state,
         on_battery,
         memory: resolve_memory(&manifest.resources.memory, &decision),
         cpu: resolve_vcpu(&manifest.resources.cpu, &decision),
         display_fps_cap: decision.display_fps_cap,
         rationale: decision.rationale,
         live_applied: false,
-        live_apply_blockers,
+        runtime_control_acknowledged: false,
+        live_apply_blockers: vec![RuntimeResourcePolicyBlocker {
+            code: "runtime-control-unavailable".to_string(),
+            message: "Live Apple VZ CPU/RAM hot-apply is not implemented yet; the policy is available to display pacing and runtime policy IPC consumers.".to_string(),
+        }],
         updated_at_unix: now_unix(),
-    };
-    store
-        .write_runtime_resource_policy_metadata(name, &policy)
-        .map_err(|error| error.to_string())?;
-    Ok(policy)
+    }
 }
 
 /// Boot a Fast Mode VM with an embedded graphical display: spawns the windowed
@@ -6270,6 +6568,14 @@ pub fn reapply_runtime_resources(
 /// session. Unlike cold-start, the display path has no suspend/resume (a VZ
 /// graphics device disables save/restore).
 pub fn display_fast_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, String> {
+    display_fast_backend_with_size(store, name, None)
+}
+
+pub fn display_fast_backend_with_size(
+    store: &VmStore,
+    name: &str,
+    display_size: Option<(u32, u32)>,
+) -> Result<RunnerMetadata, String> {
     let (bundle, mut manifest, _) = store
         .get_vm_with_active_disk(name)
         .map_err(|error| error.to_string())?;
@@ -6277,7 +6583,7 @@ pub fn display_fast_backend(store: &VmStore, name: &str) -> Result<RunnerMetadat
         return Err("embedded display is only implemented for Fast Mode VMs".to_string());
     }
     apply_power_aware_fast_resources(&mut manifest);
-    spawn_fast_backend(store, name, &bundle, &manifest, None, true)
+    spawn_fast_backend(store, name, &bundle, &manifest, None, true, display_size)
 }
 
 /// How long to wait for the QEMU `snapshot-save` job to conclude during a
@@ -6294,10 +6600,10 @@ const COMPAT_SUSPEND_SNAPSHOT_TIMEOUT_SECONDS: u64 = 120;
 /// full internal qcow2 snapshot, then quits QEMU
 /// (see [`suspend_compatibility_backend`]).
 pub fn suspend_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, String> {
-    let (bundle, manifest, _) = store
+    let (bundle, mut manifest, _) = store
         .get_vm_with_active_disk(name)
         .map_err(|error| error.to_string())?;
-    if manifest.mode == VmMode::Compatibility {
+    if CurrentRuntimeEngine::for_manifest(&manifest).uses_qmp() {
         return suspend_compatibility_backend(store, name, &bundle);
     }
 
@@ -6307,6 +6613,7 @@ pub fn suspend_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, St
     let (disk, active_disk) = store
         .prepare_active_disk(name)
         .map_err(|error| error.to_string())?;
+    apply_active_disk_to_manifest(&mut manifest, &active_disk);
 
     let plan = build_fast_plan(&manifest, &bundle).map_err(|error| error.to_string())?;
     let launch_spec_path = write_launch_spec_artifact(&bundle, plan.launch_spec())
@@ -6381,6 +6688,7 @@ pub fn suspend_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, St
         disk: Some(disk),
         active_disk: Some(active_disk),
         launch_readiness: Some(readiness),
+        runtime_control: None,
     };
     store
         .write_runner_metadata(name, &metadata)
@@ -6411,7 +6719,7 @@ pub fn resume_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, Str
     let (bundle, manifest, _) = store
         .get_vm_with_active_disk(name)
         .map_err(|error| error.to_string())?;
-    if manifest.mode == VmMode::Compatibility {
+    if CurrentRuntimeEngine::for_manifest(&manifest).uses_qmp() {
         return resume_compatibility_backend(store, name, &bundle, &manifest);
     }
 
@@ -6425,7 +6733,15 @@ pub fn resume_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, Str
 
     // Resume is identical to a Fast cold start except it restores the saved VZ
     // machine state instead of booting fresh.
-    spawn_fast_backend(store, name, &bundle, &manifest, Some(&state_path), false)
+    spawn_fast_backend(
+        store,
+        name,
+        &bundle,
+        &manifest,
+        Some(&state_path),
+        false,
+        None,
+    )
 }
 
 /// Path to the Compatibility Mode suspend marker/metadata for a VM.
@@ -6530,6 +6846,7 @@ fn suspend_compatibility_backend(
         disk: None,
         active_disk: None,
         launch_readiness: None,
+        runtime_control: None,
     };
     store
         .write_runner_metadata(name, &suspend_metadata)
@@ -6637,7 +6954,9 @@ fn resume_compatibility_backend(
         return Err(missing_disk_message(&disk));
     }
 
-    let mut command = build_compatibility_resume_command(manifest, bundle)?;
+    let mut manifest = manifest.clone();
+    apply_active_disk_to_manifest(&mut manifest, &active_disk);
+    let mut command = build_compatibility_resume_command(&manifest, bundle)?;
     // Pin a free VNC display so a resumed Compat VM doesn't collide on 5900.
     assign_free_vnc_display(&mut command, &[])?;
 
@@ -6674,6 +6993,7 @@ fn resume_compatibility_backend(
         disk: Some(disk),
         active_disk: Some(active_disk),
         launch_readiness: None,
+        runtime_control: None,
     };
     store
         .write_runner_metadata(name, &metadata)
@@ -6711,8 +7031,9 @@ fn lifecycle_plan(
         ));
     }
 
-    let (backend, qmp_command, socket_path, socket_available) = match manifest.mode {
-        VmMode::Compatibility => {
+    let runtime_engine = CurrentRuntimeEngine::for_manifest(&manifest);
+    let (backend, qmp_command, socket_path, socket_available) = match runtime_engine {
+        CurrentRuntimeEngine::QemuCompatibility => {
             let socket_path = qmp_socket_path(&bundle);
             let socket_available = socket_path.exists();
             if !socket_available {
@@ -6720,13 +7041,13 @@ fn lifecycle_plan(
             }
             notes.push("Compatibility Mode lifecycle control maps to QMP stop/cont".to_string());
             (
-                "qemu-qmp".to_string(),
+                runtime_engine.lifecycle_backend_label().to_string(),
                 Some(action.qmp_command().to_string()),
                 Some(socket_path),
                 socket_available,
             )
         }
-        VmMode::Fast => {
+        CurrentRuntimeEngine::AppleVz => {
             if let Err(error) = require_apple_vz_runner() {
                 blockers.push(format!("apple-vz-runner-unavailable:{error}"));
             }
@@ -6736,7 +7057,12 @@ fn lifecycle_plan(
                  requires a signed AppleVzRunner (BRIDGEVM_APPLE_VZ_RUNNER)"
                     .to_string(),
             );
-            ("apple-vz".to_string(), None, None, false)
+            (
+                runtime_engine.lifecycle_backend_label().to_string(),
+                None,
+                None,
+                false,
+            )
         }
     };
 
@@ -6871,6 +7197,23 @@ mod tests {
     }
 
     #[test]
+    fn current_runtime_engine_preserves_mode_to_engine_boundary() {
+        let fast = CurrentRuntimeEngine::for_mode(VmMode::Fast);
+        assert_eq!(fast, CurrentRuntimeEngine::AppleVz);
+        assert_eq!(fast.network_backend(), NetworkBackend::AppleVz);
+        assert_eq!(fast.runner_metadata_engine(), "lightvm");
+        assert!(!fast.uses_qmp());
+        assert_eq!(fast.lifecycle_backend_label(), "apple-vz");
+
+        let compatibility = CurrentRuntimeEngine::for_mode(VmMode::Compatibility);
+        assert_eq!(compatibility, CurrentRuntimeEngine::QemuCompatibility);
+        assert_eq!(compatibility.network_backend(), NetworkBackend::Qemu);
+        assert_eq!(compatibility.runner_metadata_engine(), "fullvm");
+        assert!(compatibility.uses_qmp());
+        assert_eq!(compatibility.lifecycle_backend_label(), "qemu-qmp");
+    }
+
+    #[test]
     fn doctor_request_and_response_round_trip_as_json() {
         let request = BridgeVmRequest::Doctor;
         let json = serde_json::to_string(&request).unwrap();
@@ -6915,6 +7258,18 @@ mod tests {
     fn list_templates_request_round_trips_as_json() {
         let request = BridgeVmRequest::ListTemplates;
         let json = serde_json::to_string(&request).unwrap();
+        let decoded: BridgeVmRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(request, decoded);
+    }
+
+    #[test]
+    fn create_vm_from_template_request_round_trips_as_json() {
+        let request = BridgeVmRequest::CreateVmFromTemplate {
+            name: "try-vz-linux".to_string(),
+            template_id: "debian-arm64-apple-vz-linux-kernel-raw".to_string(),
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains(r#""type":"create_vm_from_template""#));
         let decoded: BridgeVmRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(request, decoded);
     }
@@ -7085,6 +7440,38 @@ mod tests {
         );
         let decoded: BridgeVmRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(request, decoded);
+    }
+
+    #[test]
+    fn runtime_control_request_and_response_round_trip_as_json() {
+        let request = BridgeVmRequest::RuntimeControl {
+            name: "fast-linux".to_string(),
+            command: "status".to_string(),
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        assert_eq!(
+            json,
+            r#"{"type":"runtime_control","name":"fast-linux","command":"status"}"#
+        );
+        let decoded: BridgeVmRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(request, decoded);
+
+        let response = BridgeVmResponse::RuntimeControl {
+            control: RuntimeControlCommandRecord {
+                vm: "fast-linux".to_string(),
+                kind: "apple-vz-display".to_string(),
+                socket_path: PathBuf::from("/tmp/bvm-vz-test.sock"),
+                command: "status".to_string(),
+                response: serde_json::json!({
+                    "ok": true,
+                    "state": "running",
+                    "display": {"width": 1024, "height": 768}
+                }),
+            },
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        let decoded: BridgeVmResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(response, decoded);
     }
 
     #[test]
@@ -7966,9 +8353,124 @@ mod tests {
         assert!(templates
             .iter()
             .any(|template| template.id == "ubuntu-arm64-installer"));
+        let ubuntu_vz_template = templates
+            .iter()
+            .find(|template| template.id == "ubuntu-arm64-apple-vz-linux-kernel-raw")
+            .expect("Ubuntu Apple VZ linux-kernel raw template");
+        assert_eq!(ubuntu_vz_template.mode, BootMode::LinuxKernel);
+        assert_eq!(
+            ubuntu_vz_template.kernel_path.as_deref(),
+            Some("boot/vmlinuz")
+        );
+        assert_eq!(
+            ubuntu_vz_template.initrd_path.as_deref(),
+            Some("boot/initrd")
+        );
+        assert_eq!(
+            ubuntu_vz_template.kernel_command_line.as_deref(),
+            Some("console=hvc0 root=/dev/vda2 rw systemd.unit=graphical.target")
+        );
+        let ubuntu_storage = ubuntu_vz_template
+            .storage
+            .as_ref()
+            .expect("Ubuntu storage defaults");
+        assert_eq!(ubuntu_storage.primary.path, "disks/root.raw");
+        assert_eq!(ubuntu_storage.primary.format, "raw");
+        assert_eq!(ubuntu_storage.primary.size, "32GiB");
+        let vz_template = templates
+            .iter()
+            .find(|template| template.id == "debian-arm64-apple-vz-linux-kernel-raw")
+            .expect("Apple VZ linux-kernel raw template");
+        assert_eq!(vz_template.mode, BootMode::LinuxKernel);
+        assert_eq!(vz_template.kernel_path.as_deref(), Some("boot/vmlinuz"));
+        assert_eq!(vz_template.initrd_path.as_deref(), Some("boot/initrd"));
+        assert_eq!(
+            vz_template.kernel_command_line.as_deref(),
+            Some("console=hvc0 priority=low")
+        );
+        let storage = vz_template.storage.as_ref().expect("storage defaults");
+        assert_eq!(storage.primary.path, "disks/root.raw");
+        assert_eq!(storage.primary.format, "raw");
+        assert_eq!(storage.primary.size, "64MiB");
         assert!(templates
             .iter()
             .any(|template| template.id == "macos-restore"));
+    }
+
+    #[test]
+    fn handler_create_preserves_debian_apple_vz_linux_kernel_raw_template_manifest() {
+        let mut root = std::env::temp_dir();
+        root.push(format!(
+            "bridgevm-api-vz-template-create-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = VmStore::new(root);
+        handle_request(
+            &store,
+            BridgeVmRequest::CreateVmFromTemplate {
+                name: "vz-template".to_string(),
+                template_id: "debian-arm64-apple-vz-linux-kernel-raw".to_string(),
+            },
+        )
+        .into_result()
+        .unwrap();
+
+        let (_, stored) = store.get_vm("vz-template").unwrap();
+        assert_eq!(stored.mode, VmMode::Fast);
+        assert_eq!(stored.guest.os, "debian");
+        assert_eq!(stored.guest.arch, "arm64");
+        assert_eq!(stored.storage.primary.path, "disks/root.raw");
+        assert_eq!(stored.storage.primary.format, "raw");
+        assert_eq!(stored.storage.primary.size, "64MiB");
+        let boot = stored.boot.expect("boot");
+        assert_eq!(boot.mode, BootMode::LinuxKernel);
+        assert_eq!(boot.kernel_path.as_deref(), Some("boot/vmlinuz"));
+        assert_eq!(boot.initrd_path.as_deref(), Some("boot/initrd"));
+        assert_eq!(
+            boot.kernel_command_line.as_deref(),
+            Some("console=hvc0 priority=low")
+        );
+    }
+
+    #[test]
+    fn handler_create_preserves_ubuntu_apple_vz_linux_kernel_raw_template_manifest() {
+        let mut root = std::env::temp_dir();
+        root.push(format!(
+            "bridgevm-api-ubuntu-vz-template-create-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = VmStore::new(root);
+        handle_request(
+            &store,
+            BridgeVmRequest::CreateVmFromTemplate {
+                name: "ubuntu-vz-template".to_string(),
+                template_id: "ubuntu-arm64-apple-vz-linux-kernel-raw".to_string(),
+            },
+        )
+        .into_result()
+        .unwrap();
+
+        let (_, stored) = store.get_vm("ubuntu-vz-template").unwrap();
+        assert_eq!(stored.mode, VmMode::Fast);
+        assert_eq!(stored.guest.os, "ubuntu");
+        assert_eq!(stored.guest.arch, "arm64");
+        assert_eq!(stored.storage.primary.path, "disks/root.raw");
+        assert_eq!(stored.storage.primary.format, "raw");
+        assert_eq!(stored.storage.primary.size, "32GiB");
+        let boot = stored.boot.expect("boot");
+        assert_eq!(boot.mode, BootMode::LinuxKernel);
+        assert_eq!(boot.kernel_path.as_deref(), Some("boot/vmlinuz"));
+        assert_eq!(boot.initrd_path.as_deref(), Some("boot/initrd"));
+        assert_eq!(
+            boot.kernel_command_line.as_deref(),
+            Some("console=hvc0 root=/dev/vda2 rw systemd.unit=graphical.target")
+        );
     }
 
     #[test]
@@ -10497,6 +10999,7 @@ mod tests {
             disk: None,
             active_disk: None,
             launch_readiness: None,
+            runtime_control: None,
         };
         store.write_runner_metadata("dev", &runner).unwrap();
         store
@@ -11847,6 +12350,7 @@ mod tests {
                     disk: None,
                     active_disk: None,
                     launch_readiness: None,
+                    runtime_control: None,
                 },
             )
             .unwrap();
@@ -11872,6 +12376,7 @@ mod tests {
         assert_eq!(policy.cpu, "1");
         assert_eq!(policy.display_fps_cap, "10");
         assert!(!policy.live_applied);
+        assert!(!policy.runtime_control_acknowledged);
         assert_eq!(
             policy.live_apply_blockers[0].code,
             "runtime-control-unavailable"
@@ -11883,6 +12388,218 @@ mod tests {
                 .as_ref(),
             Some(&policy)
         );
+    }
+
+    #[test]
+    fn handler_acknowledges_runtime_policy_when_display_control_reads_it() {
+        let _battery = EnvVarGuard::set("BRIDGEVM_FORCE_ON_BATTERY", "0");
+        let (store, name) = fast_test_store("runtime-resource-policy-ack");
+        let socket_path = {
+            let mut path = PathBuf::from("/tmp");
+            path.push(format!(
+                "bridgevm-api-policy-ack-{}-{}.sock",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            path
+        };
+        let listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+        let server = std::thread::spawn({
+            let expected_name = name.clone();
+            move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut request)
+                    .unwrap();
+                let request: serde_json::Value = serde_json::from_str(&request).unwrap();
+                assert_eq!(
+                    request.get("command").and_then(serde_json::Value::as_str),
+                    Some("policy")
+                );
+                stream
+                    .write_all(
+                        serde_json::json!({
+                            "ok": true,
+                            "policy": {
+                                "vm": expected_name,
+                                "visibility": "background",
+                                "display_fps_cap": "10"
+                            },
+                            "supported_commands": ["status", "stop", "policy", "pacing"]
+                        })
+                        .to_string()
+                        .as_bytes(),
+                    )
+                    .unwrap();
+                stream.write_all(b"\n").unwrap();
+            }
+        });
+        store
+            .transition_state(&name, VmRuntimeState::Running)
+            .unwrap();
+        store
+            .write_runner_metadata(
+                &name,
+                &RunnerMetadata {
+                    engine: "lightvm".to_string(),
+                    pid: Some(42),
+                    command: vec!["lightvm-runner".to_string()],
+                    log_path: PathBuf::from("logs/lightvm.log"),
+                    started_at_unix: now_unix(),
+                    dry_run: false,
+                    launch_spec_path: None,
+                    guest_tools: None,
+                    disk: None,
+                    active_disk: None,
+                    launch_readiness: None,
+                    runtime_control: Some(RuntimeControlMetadata {
+                        kind: "apple-vz-display".to_string(),
+                        socket_path: socket_path.clone(),
+                        commands: vec![
+                            "status".to_string(),
+                            "stop".to_string(),
+                            "policy".to_string(),
+                            "pacing".to_string(),
+                        ],
+                    }),
+                },
+            )
+            .unwrap();
+
+        let response = handle_request(
+            &store,
+            BridgeVmRequest::ReapplyRuntimeResources {
+                name: name.clone(),
+                visibility: RuntimeResourceVisibility::Background,
+            },
+        )
+        .into_result()
+        .unwrap();
+        let BridgeVmResponse::RuntimeResourcePolicy { policy } = response else {
+            panic!("expected runtime resource policy");
+        };
+
+        assert_eq!(policy.vm, name);
+        assert_eq!(policy.visibility, RuntimeResourceVisibility::Background);
+        assert!(policy.runtime_control_acknowledged);
+        assert!(!policy.live_applied);
+        assert_eq!(
+            store
+                .runtime_resource_policy_metadata(&policy.vm)
+                .unwrap()
+                .as_ref(),
+            Some(&policy)
+        );
+        server.join().unwrap();
+        let _ = fs::remove_file(socket_path);
+    }
+
+    #[test]
+    fn handler_sends_runtime_control_command_to_recorded_socket() {
+        let (store, name) = fast_test_store("runtime-control-command");
+        let socket_path = {
+            let mut path = PathBuf::from("/tmp");
+            path.push(format!(
+                "bridgevm-api-rc-{}-{}.sock",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            path
+        };
+        let listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+        let server = std::thread::spawn({
+            let expected_name = name.clone();
+            move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut request)
+                    .unwrap();
+                let request: serde_json::Value = serde_json::from_str(&request).unwrap();
+                assert_eq!(
+                    request.get("command").and_then(serde_json::Value::as_str),
+                    Some("status")
+                );
+                stream
+                    .write_all(
+                        serde_json::json!({
+                            "ok": true,
+                            "vm": expected_name,
+                            "state": "running",
+                            "stopping": false,
+                            "display": {"width": 1024, "height": 768},
+                            "supported_commands": ["status", "stop", "policy", "pacing"]
+                        })
+                        .to_string()
+                        .as_bytes(),
+                    )
+                    .unwrap();
+                stream.write_all(b"\n").unwrap();
+            }
+        });
+
+        store
+            .write_runner_metadata(
+                &name,
+                &RunnerMetadata {
+                    engine: "lightvm".to_string(),
+                    pid: Some(42),
+                    command: vec!["lightvm-runner".to_string()],
+                    log_path: PathBuf::from("logs/lightvm.log"),
+                    started_at_unix: now_unix(),
+                    dry_run: false,
+                    launch_spec_path: None,
+                    guest_tools: None,
+                    disk: None,
+                    active_disk: None,
+                    launch_readiness: None,
+                    runtime_control: Some(RuntimeControlMetadata {
+                        kind: "apple-vz-display".to_string(),
+                        socket_path: socket_path.clone(),
+                        commands: vec![
+                            "status".to_string(),
+                            "stop".to_string(),
+                            "policy".to_string(),
+                            "pacing".to_string(),
+                        ],
+                    }),
+                },
+            )
+            .unwrap();
+
+        let response = handle_request(
+            &store,
+            BridgeVmRequest::RuntimeControl {
+                name: name.clone(),
+                command: "status".to_string(),
+            },
+        )
+        .into_result()
+        .unwrap();
+        let BridgeVmResponse::RuntimeControl { control } = response else {
+            panic!("expected runtime control response");
+        };
+
+        assert_eq!(control.vm, name);
+        assert_eq!(control.kind, "apple-vz-display");
+        assert_eq!(control.socket_path, socket_path);
+        assert_eq!(control.command, "status");
+        assert_eq!(
+            control
+                .response
+                .get("state")
+                .and_then(serde_json::Value::as_str),
+            Some("running")
+        );
+        server.join().unwrap();
+        let _ = fs::remove_file(socket_path);
     }
 
     #[test]
@@ -11903,10 +12620,45 @@ mod tests {
     }
 
     #[test]
+    fn display_runtime_policy_uses_foreground_visibility() {
+        let _battery = EnvVarGuard::set("BRIDGEVM_FORCE_ON_BATTERY", "0");
+        let mut manifest = VmManifest::new(
+            "fast-display",
+            VmMode::Fast,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "arm64".to_string(),
+            },
+            "80GiB",
+        );
+        apply_power_aware_fast_resources(&mut manifest);
+
+        let policy = build_runtime_resource_policy_metadata(
+            "fast-display",
+            &manifest,
+            RuntimeResourceVisibility::Foreground,
+            VmRuntimeState::Running,
+        );
+
+        assert_eq!(policy.visibility, RuntimeResourceVisibility::Foreground);
+        assert_eq!(policy.state, VmRuntimeState::Running);
+        assert!(!policy.on_battery);
+        assert_eq!(policy.memory, "4096");
+        assert_eq!(policy.cpu, "2");
+        assert_eq!(policy.display_fps_cap, "adaptive");
+        assert!(!policy.live_applied);
+        assert_eq!(
+            policy.live_apply_blockers[0].code,
+            "runtime-control-unavailable"
+        );
+    }
+
+    #[test]
     fn fast_runner_args_cold_start_omits_restore_state() {
         let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
         let runner = Path::new("/helpers/AppleVzRunner");
-        let args = fast_runner_args(launch_spec, runner, None, false);
+        let args = fast_runner_args(launch_spec, runner, None, false, None, None, None, None);
         assert_eq!(
             args,
             vec![
@@ -11929,9 +12681,102 @@ mod tests {
     fn fast_runner_args_display_appends_display_flag() {
         let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
         let runner = Path::new("/helpers/AppleVzRunner");
-        let args = fast_runner_args(launch_spec, runner, None, true);
+        let args = fast_runner_args(launch_spec, runner, None, true, None, None, None, None);
         assert!(args.iter().any(|arg| arg == "--apple-vz-display"));
         assert!(!args.iter().any(|arg| arg == "--apple-vz-restore-state"));
+    }
+
+    #[test]
+    fn fast_runner_args_display_appends_display_dimensions() {
+        let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
+        let runner = Path::new("/helpers/AppleVzRunner");
+        let args = fast_runner_args(
+            launch_spec,
+            runner,
+            None,
+            true,
+            Some((1440, 900)),
+            None,
+            None,
+            None,
+        );
+        assert_eq!(
+            args,
+            vec![
+                "--launch-spec".to_string(),
+                "/bundle/metadata/launch-spec.json".to_string(),
+                "--require-ready".to_string(),
+                "--launch".to_string(),
+                "--apple-vz-runner".to_string(),
+                "/helpers/AppleVzRunner".to_string(),
+                "--apple-vz-allow-real-start".to_string(),
+                "--apple-vz-display".to_string(),
+                "--apple-vz-display-width".to_string(),
+                "1440".to_string(),
+                "--apple-vz-display-height".to_string(),
+                "900".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn fast_runner_args_display_appends_runtime_control_socket() {
+        let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
+        let runner = Path::new("/helpers/AppleVzRunner");
+        let socket = Path::new("/bundle/run/apple-vz-display-control.sock");
+        let args = fast_runner_args(
+            launch_spec,
+            runner,
+            None,
+            true,
+            None,
+            Some(socket),
+            None,
+            None,
+        );
+
+        assert!(args.iter().any(|arg| arg == "--apple-vz-display"));
+        assert!(args.windows(2).any(|pair| pair
+            == [
+                "--apple-vz-runtime-control-socket",
+                socket.to_str().unwrap()
+            ]));
+    }
+
+    #[test]
+    fn fast_runner_args_display_appends_proxy_framebuffer_export() {
+        let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
+        let runner = Path::new("/helpers/AppleVzRunner");
+        let framebuffer = Path::new("/bundle/metadata/apple-vz-display-framebuffer.rgba");
+        let args = fast_runner_args(
+            launch_spec,
+            runner,
+            None,
+            true,
+            None,
+            None,
+            Some(framebuffer),
+            Some(250),
+        );
+
+        assert!(args.iter().any(|arg| arg == "--apple-vz-display"));
+        assert!(args.windows(2).any(|pair| pair
+            == [
+                "--apple-vz-proxy-framebuffer-rgba-file",
+                framebuffer.to_str().unwrap()
+            ]));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--apple-vz-proxy-framebuffer-capture-interval-ms", "250"]));
+    }
+
+    #[test]
+    fn apple_vz_display_control_socket_path_stays_short_for_macos_unix_sockets() {
+        let bundle = Path::new("/Users/example/.bridgevm/vms/runtime-resources-fast.vmbridge");
+        let socket = apple_vz_display_control_socket_path(bundle);
+
+        assert_eq!(socket, PathBuf::from("/tmp/bvm-vz-50f391db705184f1.sock"));
+        assert!(socket.to_string_lossy().len() < 104);
     }
 
     #[test]
@@ -11939,7 +12784,16 @@ mod tests {
         let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
         let runner = Path::new("/helpers/AppleVzRunner");
         let state = Path::new("/bundle/metadata/suspend-images/fast.bin");
-        let args = fast_runner_args(launch_spec, runner, Some(state), false);
+        let args = fast_runner_args(
+            launch_spec,
+            runner,
+            Some(state),
+            false,
+            None,
+            None,
+            None,
+            None,
+        );
         assert_eq!(
             args,
             vec![
@@ -12164,6 +13018,7 @@ mod tests {
             disk: None,
             active_disk: None,
             launch_readiness: None,
+            runtime_control: None,
         };
         store.write_runner_metadata("fast-linux", &runner).unwrap();
 
@@ -12213,6 +13068,7 @@ mod tests {
             disk: None,
             active_disk: None,
             launch_readiness: None,
+            runtime_control: None,
         };
         store.write_runner_metadata("fast-linux", &runner).unwrap();
 

@@ -133,7 +133,7 @@ public enum AppleVzRunnerCommand {
     }
   }
 
-  fileprivate static let usage = "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display] [--graphics] [--share [ro:]TAG=HOST_PATH ...] [--share-dir PATH] [--share-tag TAG] [--share-read-only]"
+  fileprivate static let usage = "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display] [--graphics] [--display-width PX] [--display-height PX] [--runtime-control-socket PATH] [--proxy-framebuffer-rgba-file PATH] [--proxy-framebuffer-capture-interval-ms N] [--share [ro:]TAG=HOST_PATH ...] [--share-dir PATH] [--share-tag TAG] [--share-read-only]"
 
   private static func isHelpRequested(_ arguments: [String]) -> Bool {
     arguments.contains { argument in
@@ -203,6 +203,11 @@ public enum AppleVzRunnerCommand {
     var saveStatePath: String?
     var restoreStatePath: String?
     var displayWindow = false
+    var displayWidthInPixels = 1280
+    var displayHeightInPixels = 800
+    var runtimeControlSocketPath: String?
+    var proxyFramebufferRGBAPath: String?
+    var proxyFramebufferCaptureIntervalMillis: UInt64 = 500
     var graphicsHeadless = false
     // Legacy single-share flags (kept as an alias for one share so the existing
     // run-vz-display-demo.sh, which passes --share-dir, keeps working).
@@ -279,6 +284,44 @@ public enum AppleVzRunnerCommand {
       case "--display":
         displayWindow = true
         index += 1
+      case "--display-width":
+        let valueIndex = index + 1
+        guard valueIndex < arguments.count else {
+          throw AppleVzRunnerCommandError.missingValue(argument)
+        }
+        displayWidthInPixels = try parseDisplayDimension(argument, arguments[valueIndex])
+        index += 2
+      case "--display-height":
+        let valueIndex = index + 1
+        guard valueIndex < arguments.count else {
+          throw AppleVzRunnerCommandError.missingValue(argument)
+        }
+        displayHeightInPixels = try parseDisplayDimension(argument, arguments[valueIndex])
+        index += 2
+      case "--runtime-control-socket":
+        let valueIndex = index + 1
+        guard valueIndex < arguments.count else {
+          throw AppleVzRunnerCommandError.missingValue(argument)
+        }
+        runtimeControlSocketPath = arguments[valueIndex]
+        index += 2
+      case "--proxy-framebuffer-rgba-file":
+        let valueIndex = index + 1
+        guard valueIndex < arguments.count else {
+          throw AppleVzRunnerCommandError.missingValue(argument)
+        }
+        proxyFramebufferRGBAPath = arguments[valueIndex]
+        index += 2
+      case "--proxy-framebuffer-capture-interval-ms":
+        let valueIndex = index + 1
+        guard valueIndex < arguments.count else {
+          throw AppleVzRunnerCommandError.missingValue(argument)
+        }
+        proxyFramebufferCaptureIntervalMillis = try parsePositiveUInt64(
+          argument,
+          arguments[valueIndex]
+        )
+        index += 2
       case "--graphics":
         graphicsHeadless = true
         index += 1
@@ -328,6 +371,9 @@ public enum AppleVzRunnerCommand {
     if activeModeFlags.count > 1 {
       throw AppleVzRunnerCommandError.conflictingFlags(activeModeFlags.joined(separator: ", "))
     }
+    if proxyFramebufferRGBAPath != nil && !displayWindow {
+      throw AppleVzRunnerCommandError.proxyFramebufferExportRequiresDisplay
+    }
 
     // Fold the legacy single-share flags (--share-dir/--share-tag/
     // --share-read-only) into one share, prepended so it keeps acting like the
@@ -359,10 +405,29 @@ public enum AppleVzRunnerCommand {
         saveStatePath: saveStatePath,
         restoreStatePath: restoreStatePath,
         displayWindow: displayWindow,
+        displayWidthInPixels: displayWidthInPixels,
+        displayHeightInPixels: displayHeightInPixels,
         graphicsHeadlessVerification: graphicsHeadless,
-        sharedDirectorySpecs: shares
+        sharedDirectorySpecs: shares,
+        runtimeControlSocketPath: runtimeControlSocketPath,
+        proxyFramebufferRGBAPath: proxyFramebufferRGBAPath,
+        proxyFramebufferCaptureIntervalMillis: proxyFramebufferCaptureIntervalMillis
       )
     )
+  }
+
+  private static func parsePositiveUInt64(_ argument: String, _ value: String) throws -> UInt64 {
+    guard let parsed = UInt64(value), parsed > 0 else {
+      throw AppleVzRunnerCommandError.invalidPositiveInteger(argument, value)
+    }
+    return parsed
+  }
+
+  private static func parseDisplayDimension(_ argument: String, _ value: String) throws -> Int {
+    guard let parsed = Int(value), parsed > 0 else {
+      throw AppleVzRunnerCommandError.invalidPositiveInteger(argument, value)
+    }
+    return parsed
   }
 
   /// Parse one `--share` value of the form `[ro:]<tag>=<host_path>`.
@@ -509,6 +574,7 @@ public enum AppleVzRunnerCommandError: Error, LocalizedError, Equatable {
   case saveRestoreRequiresMacOS14
   case displayRequiresMacOS14
   case conflictingFlags(String)
+  case proxyFramebufferExportRequiresDisplay
 
   public var errorDescription: String? {
     switch self {
@@ -534,6 +600,8 @@ public enum AppleVzRunnerCommandError: Error, LocalizedError, Equatable {
       return "Apple VZ embedded display (--display) requires macOS 14 or later"
     case .conflictingFlags(let flags):
       return "conflicting mutually-exclusive launch flags: \(flags)"
+    case .proxyFramebufferExportRequiresDisplay:
+      return "--proxy-framebuffer-rgba-file requires --display"
     }
   }
 }

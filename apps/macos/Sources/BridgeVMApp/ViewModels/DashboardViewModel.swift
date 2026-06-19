@@ -3,6 +3,91 @@ import Foundation
 import AppKit
 #endif
 
+private struct ActiveGuestWindowProxyKey: Hashable {
+  var vmID: VirtualMachine.ID
+  var windowID: String
+}
+
+struct GuestWindowProxyStatus: Equatable {
+  var trackedWindowCount: Int
+  var cropBackedWindowCount: Int = 0
+  var trackedWindowSummaries: [String] = []
+  var isAutoRefreshActive: Bool
+  var isRefreshInFlight: Bool
+
+  static let idle = GuestWindowProxyStatus(
+    trackedWindowCount: 0,
+    cropBackedWindowCount: 0,
+    trackedWindowSummaries: [],
+    isAutoRefreshActive: false,
+    isRefreshInFlight: false
+  )
+
+  var isTrackingWindows: Bool {
+    trackedWindowCount > 0
+  }
+
+  var badgeTitle: String {
+    guard trackedWindowCount > 0 else {
+      return "Idle"
+    }
+
+    if isRefreshInFlight {
+      return "Refreshing"
+    }
+
+    if cropBackedWindowCount > 0 {
+      let cropText = cropBackedWindowCount == 1 ? "1 crop" : "\(cropBackedWindowCount) crops"
+      return "\(trackedWindowCount) tracked, \(cropText)"
+    }
+
+    return "\(trackedWindowCount) tracked"
+  }
+
+  var detailText: String {
+    guard trackedWindowCount > 0 else {
+      return "No tracked proxy shells"
+    }
+
+    let windowText = trackedWindowCount == 1 ? "1 tracked window" : "\(trackedWindowCount) tracked windows"
+    let cropText =
+      cropBackedWindowCount == 1
+      ? "1 crop-backed"
+      : "\(cropBackedWindowCount) crop-backed"
+    let refreshText =
+      isRefreshInFlight
+      ? "refreshing"
+      : (isAutoRefreshActive ? "auto refresh active" : "auto refresh stopped")
+    return "\(windowText), \(cropText), \(refreshText)"
+  }
+
+  var cropFrameText: String {
+    guard trackedWindowCount > 0 else {
+      return "No tracked proxy shells"
+    }
+    guard cropBackedWindowCount > 0 else {
+      return "Metadata/input proxy only; no crop artifact yet"
+    }
+    if cropBackedWindowCount == trackedWindowCount {
+      let shellText = trackedWindowCount == 1 ? "proxy shell" : "proxy shells"
+      return "All \(trackedWindowCount) \(shellText) have crop artifacts"
+    }
+    return "\(cropBackedWindowCount)/\(trackedWindowCount) proxy shells have crop artifacts"
+  }
+
+  var windowSummaryText: String {
+    guard !trackedWindowSummaries.isEmpty else {
+      return detailText
+    }
+    let visibleSummaries = trackedWindowSummaries.prefix(3).joined(separator: " | ")
+    let remainingCount = trackedWindowSummaries.count - min(3, trackedWindowSummaries.count)
+    guard remainingCount > 0 else {
+      return visibleSummaries
+    }
+    return "\(visibleSummaries) | +\(remainingCount) more"
+  }
+}
+
 struct LifecycleActionOption: Identifiable, Equatable {
   var action: VirtualMachineAction
   var title: String
@@ -53,6 +138,9 @@ final class DashboardViewModel: ObservableObject {
   @Published private(set) var networkPlanErrors: [VirtualMachine.ID: String] = [:]
   @Published private(set) var runnerStatuses: [VirtualMachine.ID: RunnerStatus] = [:]
   @Published private(set) var runnerStatusErrors: [VirtualMachine.ID: String] = [:]
+  @Published private(set) var runtimeControlResults:
+    [VirtualMachine.ID: RuntimeControlCommandResult] = [:]
+  @Published private(set) var runtimeControlErrors: [VirtualMachine.ID: String] = [:]
   @Published private(set) var snapshotPreflightStatuses:
     [VirtualMachine.ID: SnapshotPreflightStatus] = [:]
   @Published private(set) var snapshotPreflightStatusErrors: [VirtualMachine.ID: String] = [:]
@@ -105,6 +193,8 @@ final class DashboardViewModel: ObservableObject {
   @Published private(set) var qemuLaunchPlanErrors: [VirtualMachine.ID: String] = [:]
   @Published private(set) var guestToolsCommandDispatches:
     [VirtualMachine.ID: GuestToolsCommandDispatch] = [:]
+  @Published private(set) var guestWindowProxyStatuses:
+    [VirtualMachine.ID: GuestWindowProxyStatus] = [:]
   @Published private(set) var logViews: [VirtualMachine.ID: [VMLogKind: VMLogView]] = [:]
   @Published private(set) var logViewErrors: [VirtualMachine.ID: String] = [:]
   @Published private(set) var loadingReadinessReportID: VirtualMachine.ID?
@@ -127,6 +217,7 @@ final class DashboardViewModel: ObservableObject {
   @Published private(set) var loadingNetworkPlanID: VirtualMachine.ID?
   @Published private(set) var openingConsoleID: VirtualMachine.ID?
   @Published private(set) var loadingRunnerStatusID: VirtualMachine.ID?
+  @Published private(set) var sendingRuntimeControlID: VirtualMachine.ID?
   @Published private(set) var loadingSnapshotPreflightStatusID: VirtualMachine.ID?
   @Published private(set) var loadingSnapshotsID: VirtualMachine.ID?
   @Published private(set) var loadingSnapshotChainID: VirtualMachine.ID?
@@ -156,6 +247,19 @@ final class DashboardViewModel: ObservableObject {
 
   private var client: VirtualMachineClient
   private let openExternalURL: @MainActor (URL) -> Bool
+  private let launchEmbeddedDisplay:
+    @MainActor (
+      String, EmbeddedDisplayLauncher.DisplaySize, EmbeddedDisplayLauncher.StoreMetadata?
+    ) throws -> Void
+  private let openGuestWindowProxyShell:
+    @MainActor (GuestWindowProxyPlan, GuestWindowProxyInputSender?) -> Void
+  private let closeGuestWindowProxyShell: @MainActor (String, String) -> Void
+  private let guestWindowProxyRefreshIntervalNanoseconds: UInt64
+  private let guestWindowProxyRefreshStatusDelayNanoseconds: UInt64
+  private var activeGuestWindowProxyPlans: [ActiveGuestWindowProxyKey: GuestWindowProxyPlan] = [:]
+  private var activeGuestWindowProxyVirtualMachines: [VirtualMachine.ID: VirtualMachine] = [:]
+  private var guestWindowProxyRefreshTask: Task<Void, Never>?
+  private var guestWindowProxyRefreshInFlightIDs: Set<VirtualMachine.ID> = []
   private var snapshotMetadataMutationIDs: Set<VirtualMachine.ID> = []
   private var requestedModeRecommendationChoice: GuestChoice?
   private var clientGeneration = 0
@@ -164,10 +268,49 @@ final class DashboardViewModel: ObservableObject {
 
   init(
     client: VirtualMachineClient,
-    openExternalURL: @escaping @MainActor (URL) -> Bool = DashboardViewModel.defaultOpenExternalURL
+    openExternalURL: @escaping @MainActor (URL) -> Bool = DashboardViewModel.defaultOpenExternalURL,
+    launchEmbeddedDisplay: @escaping @MainActor (
+      String, EmbeddedDisplayLauncher.DisplaySize, EmbeddedDisplayLauncher.StoreMetadata?
+    ) throws -> Void = { vmName, displaySize, storeMetadata in
+      try EmbeddedDisplayLauncher.launch(
+        vmName: vmName,
+        displaySize: displaySize,
+        storeMetadata: storeMetadata
+      )
+    },
+    openGuestWindowProxyShell: @escaping @MainActor (
+      GuestWindowProxyPlan,
+      GuestWindowProxyInputSender?
+    ) -> Void = { plan, inputSender in
+      #if canImport(AppKit)
+      GuestWindowProxyLauncher.open(plan: plan, inputSender: inputSender)
+      #else
+      _ = plan
+      _ = inputSender
+      #endif
+    },
+    closeGuestWindowProxyShell: @escaping @MainActor (String, String) -> Void = {
+      vmName,
+      windowID in
+      #if canImport(AppKit)
+      GuestWindowProxyLauncher.closeWithoutGuestCommand(vmName: vmName, windowID: windowID)
+      #else
+      _ = vmName
+      _ = windowID
+      #endif
+    },
+    guestWindowProxyRefreshIntervalNanoseconds: UInt64 = 1_000_000_000,
+    guestWindowProxyRefreshStatusDelayNanoseconds: UInt64 = 150_000_000
   ) {
     self.client = client
     self.openExternalURL = openExternalURL
+    self.launchEmbeddedDisplay = launchEmbeddedDisplay
+    self.openGuestWindowProxyShell = openGuestWindowProxyShell
+    self.closeGuestWindowProxyShell = closeGuestWindowProxyShell
+    self.guestWindowProxyRefreshIntervalNanoseconds =
+      guestWindowProxyRefreshIntervalNanoseconds
+    self.guestWindowProxyRefreshStatusDelayNanoseconds =
+      guestWindowProxyRefreshStatusDelayNanoseconds
   }
 
   private static func defaultOpenExternalURL(_ url: URL) -> Bool {
@@ -179,6 +322,7 @@ final class DashboardViewModel: ObservableObject {
   }
 
   func updateClient(_ client: VirtualMachineClient) {
+    closeAllActiveGuestWindowProxyShellsWithoutGuestCommand()
     clientGeneration += 1
     self.client = client
     virtualMachines = []
@@ -204,6 +348,7 @@ final class DashboardViewModel: ObservableObject {
     guestToolsStatusErrors = [:]
     guestToolsProvisioning = [:]
     guestToolsProvisioningErrors = [:]
+    guestWindowProxyStatuses = [:]
     sharedFolderLists = [:]
     sharedFolderErrors = [:]
     lifecyclePlans = [:]
@@ -218,6 +363,8 @@ final class DashboardViewModel: ObservableObject {
     networkPlanErrors = [:]
     runnerStatuses = [:]
     runnerStatusErrors = [:]
+    runtimeControlResults = [:]
+    runtimeControlErrors = [:]
     snapshotPreflightStatuses = [:]
     snapshotPreflightStatusErrors = [:]
     snapshots = [:]
@@ -284,6 +431,7 @@ final class DashboardViewModel: ObservableObject {
     loadingNetworkPlanID = nil
     openingConsoleID = nil
     loadingRunnerStatusID = nil
+    sendingRuntimeControlID = nil
     loadingSnapshotPreflightStatusID = nil
     loadingSnapshotsID = nil
     loadingSnapshotChainID = nil
@@ -310,6 +458,12 @@ final class DashboardViewModel: ObservableObject {
     isCreatingVirtualMachine = false
     cloningVirtualMachineID = nil
     deletingVirtualMachineID = nil
+    activeGuestWindowProxyPlans = [:]
+    activeGuestWindowProxyVirtualMachines = [:]
+    guestWindowProxyRefreshTask?.cancel()
+    guestWindowProxyRefreshTask = nil
+    guestWindowProxyRefreshInFlightIDs = []
+    guestWindowProxyStatuses = [:]
     snapshotMetadataMutationIDs = []
     alertMessage = nil
   }
@@ -378,6 +532,7 @@ final class DashboardViewModel: ObservableObject {
         return
       }
       invalidateReadinessCaches(changingFrom: virtualMachines, to: loadedVirtualMachines)
+      reconcileOpenGuestWindowProxies(with: loadedVirtualMachines)
       virtualMachines = loadedVirtualMachines
       inventorySourceTitle =
         (loadClient as? VirtualMachineClientSourceProviding)?.sourceTitle ?? "Inventory"
@@ -501,6 +656,10 @@ final class DashboardViewModel: ObservableObject {
     guestToolsStatuses[virtualMachine.id]
   }
 
+  func guestWindowProxyStatus(for virtualMachine: VirtualMachine) -> GuestWindowProxyStatus {
+    guestWindowProxyStatuses[virtualMachine.id] ?? .idle
+  }
+
   func guestToolsProvisioning(for virtualMachine: VirtualMachine) -> GuestToolsProvisioning? {
     guestToolsProvisioning[virtualMachine.id]
   }
@@ -567,6 +726,14 @@ final class DashboardViewModel: ObservableObject {
 
   func runnerStatusError(for virtualMachine: VirtualMachine) -> String? {
     runnerStatusErrors[virtualMachine.id]
+  }
+
+  func runtimeControlResult(for virtualMachine: VirtualMachine) -> RuntimeControlCommandResult? {
+    runtimeControlResults[virtualMachine.id]
+  }
+
+  func runtimeControlError(for virtualMachine: VirtualMachine) -> String? {
+    runtimeControlErrors[virtualMachine.id]
   }
 
   func snapshotPreflightStatus(for virtualMachine: VirtualMachine) -> SnapshotPreflightStatus? {
@@ -870,6 +1037,7 @@ final class DashboardViewModel: ObservableObject {
       }
       guestToolsStatuses[virtualMachine.id] = status
       guestToolsStatusErrors[virtualMachine.id] = nil
+      refreshOpenGuestWindowProxies(from: status, for: virtualMachine)
       await loadGuestToolsProvisioning(
         for: virtualMachine, generation: generation, operationClient: operationClient)
     } catch {
@@ -1304,6 +1472,432 @@ final class DashboardViewModel: ObservableObject {
     )
   }
 
+  func openGuestWindowProxy(
+    for window: GuestToolsWindowAction,
+    in virtualMachine: VirtualMachine
+  ) -> Bool {
+    do {
+      let plan = try GuestWindowProxyPlanner.plan(vmName: virtualMachine.name, window: window)
+      openGuestWindowProxyShell(plan, makeGuestWindowProxyInputSender(for: virtualMachine))
+      storeActiveGuestWindowProxyPlan(plan, for: virtualMachine)
+      startGuestWindowProxyRefreshLoopIfNeeded()
+      updateGuestWindowProxyStatus(for: virtualMachine.id)
+      alertMessage = "Opened proxy shell for \(plan.summary)."
+      return true
+    } catch {
+      alertMessage = error.localizedDescription
+      return false
+    }
+  }
+
+  @discardableResult
+  func closeGuestWindowProxies(for virtualMachine: VirtualMachine) -> Int {
+    let trackedWindowCount = activeGuestWindowProxyPlans.keys.filter {
+      $0.vmID == virtualMachine.id
+    }.count
+    guard trackedWindowCount > 0 else {
+      return 0
+    }
+
+    closeActiveGuestWindowProxyShellsWithoutGuestCommand(for: virtualMachine.id)
+    let proxyText = trackedWindowCount == 1 ? "proxy shell" : "proxy shells"
+    alertMessage = "Closed \(trackedWindowCount) \(proxyText) for \(virtualMachine.name)."
+    return trackedWindowCount
+  }
+
+  private func sendGuestWindowProxyInput(
+    _ input: GuestWindowProxyInputEvent,
+    for virtualMachine: VirtualMachine
+  ) async {
+    switch input {
+    case .bounds(let windowID, let bounds):
+      _ = await sendGuestToolsCommand(
+        .setWindowBounds(
+          id: windowID,
+          x: bounds.x,
+          y: bounds.y,
+          width: UInt64(max(1, bounds.width)),
+          height: UInt64(max(1, bounds.height))
+        ),
+        requestID: "window-bounds-\(UInt64(Date().timeIntervalSince1970 * 1_000))",
+        for: virtualMachine
+      )
+    case .close(let windowID):
+      removeActiveGuestWindowProxyPlan(
+        vmID: virtualMachine.id,
+        windowID: windowID
+      )
+      _ = await sendGuestToolsCommand(
+        .closeWindow(id: windowID),
+        requestID: "window-close-\(UInt64(Date().timeIntervalSince1970 * 1_000))",
+        for: virtualMachine
+      )
+    case .pointer(let windowID, let point, let action, let button):
+      _ = await sendGuestToolsCommand(
+        .windowPointerInput(
+          id: windowID,
+          x: point.x,
+          y: point.y,
+          action: GuestToolsWindowPointerAction(rawValue: action.rawValue) ?? .move,
+          button: button.map { GuestToolsWindowPointerButton(rawValue: $0.rawValue) ?? .left }
+        ),
+        requestID: "window-input-\(UInt64(Date().timeIntervalSince1970 * 1_000))",
+        for: virtualMachine
+      )
+    case .key(let windowID, let key, let action):
+      _ = await sendGuestToolsCommand(
+        .windowKeyInput(
+          id: windowID,
+          key: key,
+          action: GuestToolsWindowKeyAction(rawValue: action.rawValue) ?? .tap
+        ),
+        requestID: "window-input-\(UInt64(Date().timeIntervalSince1970 * 1_000))",
+        for: virtualMachine
+      )
+    }
+  }
+
+  private func refreshOpenGuestWindowProxies(
+    from status: GuestToolsStatus,
+    for virtualMachine: VirtualMachine
+  ) {
+    guard let result = status.runtime?.lastCommandResult else {
+      return
+    }
+
+    var reportedWindowIDs: Set<String> = []
+    for window in result.windowActions {
+      reportedWindowIDs.insert(window.id)
+      let key = guestWindowProxyKey(vmID: virtualMachine.id, windowID: window.id)
+      guard let currentPlan = activeGuestWindowProxyPlans[key] else {
+        continue
+      }
+
+      if window.closed == true {
+        removeActiveGuestWindowProxyPlan(vmID: virtualMachine.id, windowID: window.id)
+        closeGuestWindowProxyShell(currentPlan.vmName, window.id)
+        continue
+      }
+
+      guard let updatedPlan = try? GuestWindowProxyPlanner.plan(
+        vmName: virtualMachine.name,
+        window: window
+      ) else {
+        continue
+      }
+      guard updatedPlan != currentPlan else {
+        continue
+      }
+
+      if updatedPlan.vmName != currentPlan.vmName {
+        closeGuestWindowProxyShell(currentPlan.vmName, currentPlan.windowID)
+      }
+      openGuestWindowProxyShell(
+        updatedPlan,
+        makeGuestWindowProxyInputSender(for: virtualMachine)
+      )
+      storeActiveGuestWindowProxyPlan(updatedPlan, for: virtualMachine)
+    }
+
+    if isAuthoritativeGuestWindowListResult(result) {
+      for (key, currentPlan) in Array(activeGuestWindowProxyPlans)
+      where key.vmID == virtualMachine.id && !reportedWindowIDs.contains(key.windowID) {
+        removeActiveGuestWindowProxyPlan(vmID: key.vmID, windowID: key.windowID)
+        closeGuestWindowProxyShell(currentPlan.vmName, currentPlan.windowID)
+      }
+    }
+  }
+
+  private func reconcileOpenGuestWindowProxies(
+    with loadedVirtualMachines: [VirtualMachine]
+  ) {
+    guard !activeGuestWindowProxyPlans.isEmpty else {
+      return
+    }
+
+    let loadedByID = Dictionary(uniqueKeysWithValues: loadedVirtualMachines.map { ($0.id, $0) })
+    for (key, currentPlan) in Array(activeGuestWindowProxyPlans) {
+      guard let virtualMachine = loadedByID[key.vmID],
+        isGuestWindowProxyRuntimeActive(virtualMachine)
+      else {
+        removeActiveGuestWindowProxyPlan(vmID: key.vmID, windowID: key.windowID)
+        closeGuestWindowProxyShell(currentPlan.vmName, currentPlan.windowID)
+        continue
+      }
+
+      activeGuestWindowProxyVirtualMachines[key.vmID] = virtualMachine
+      guard virtualMachine.name != currentPlan.vmName else {
+        continue
+      }
+
+      var renamedPlan = currentPlan
+      renamedPlan.vmName = virtualMachine.name
+      storeActiveGuestWindowProxyPlan(renamedPlan, for: virtualMachine)
+      closeGuestWindowProxyShell(currentPlan.vmName, currentPlan.windowID)
+      openGuestWindowProxyShell(
+        renamedPlan,
+        makeGuestWindowProxyInputSender(for: virtualMachine)
+      )
+    }
+  }
+
+  private func startGuestWindowProxyRefreshLoopIfNeeded() {
+    guard guestWindowProxyRefreshTask == nil else {
+      return
+    }
+
+    let generation = clientGeneration
+    let interval = guestWindowProxyRefreshIntervalNanoseconds
+    guestWindowProxyRefreshTask = Task { @MainActor [weak self] in
+      guard let self else {
+        return
+      }
+      defer {
+        self.guestWindowProxyRefreshTask = nil
+      }
+
+      while !Task.isCancelled {
+        try? await Task.sleep(nanoseconds: interval)
+        guard !Task.isCancelled,
+          generation == self.clientGeneration,
+          !self.activeGuestWindowProxyPlans.isEmpty
+        else {
+          break
+        }
+        await self.refreshTrackedGuestWindowProxyWindows(generation: generation)
+      }
+    }
+  }
+
+  private func refreshTrackedGuestWindowProxyWindows(generation: Int) async {
+    let vmIDs = Set(activeGuestWindowProxyPlans.keys.map(\.vmID))
+    let operationClient = client
+    for vmID in vmIDs {
+      guard generation == clientGeneration else {
+        return
+      }
+      guard !guestWindowProxyRefreshInFlightIDs.contains(vmID),
+        loadingGuestToolsStatusID != vmID,
+        sendingGuestToolsCommandID != vmID
+      else {
+        continue
+      }
+      guard let virtualMachine = activeGuestWindowProxyVirtualMachines[vmID]
+        ?? virtualMachines.first(where: { $0.id == vmID })
+      else {
+        closeActiveGuestWindowProxyShellsWithoutGuestCommand(for: vmID)
+        continue
+      }
+      guard isGuestWindowProxyRuntimeActive(virtualMachine) else {
+        closeActiveGuestWindowProxyShellsWithoutGuestCommand(for: vmID)
+        continue
+      }
+
+      guestWindowProxyRefreshInFlightIDs.insert(vmID)
+      updateGuestWindowProxyStatus(for: vmID)
+      await refreshTrackedGuestWindowProxyWindows(
+        for: virtualMachine,
+        generation: generation,
+        operationClient: operationClient
+      )
+      guestWindowProxyRefreshInFlightIDs.remove(vmID)
+      updateGuestWindowProxyStatus(for: vmID)
+    }
+  }
+
+  private func refreshTrackedGuestWindowProxyWindows(
+    for virtualMachine: VirtualMachine,
+    generation: Int,
+    operationClient: VirtualMachineClient
+  ) async {
+    do {
+      var status = guestToolsStatuses[virtualMachine.id]
+      if status?.connected != true
+        || status?.runtime?.capabilities.contains("windows") != true
+      {
+        let inspectedStatus = try await operationClient.inspectGuestToolsStatus(
+          on: virtualMachine.id)
+        guard generation == clientGeneration else {
+          return
+        }
+        guestToolsStatuses[virtualMachine.id] = inspectedStatus
+        guestToolsStatusErrors[virtualMachine.id] = nil
+        refreshOpenGuestWindowProxies(from: inspectedStatus, for: virtualMachine)
+        status = inspectedStatus
+      }
+
+      guard status?.connected == true,
+        status?.runtime?.capabilities.contains("windows") == true
+      else {
+        return
+      }
+
+      let requestID = makeGuestToolsRequestID(prefix: "proxy-refresh-windows")
+      let dispatch = try await operationClient.sendGuestToolsCommand(
+        .listWindows,
+        requestID: requestID,
+        on: virtualMachine.id
+      )
+      guard generation == clientGeneration else {
+        return
+      }
+      guestToolsCommandDispatches[virtualMachine.id] = dispatch
+      guestToolsStatusErrors[virtualMachine.id] = nil
+
+      if guestWindowProxyRefreshStatusDelayNanoseconds > 0 {
+        try? await Task.sleep(nanoseconds: guestWindowProxyRefreshStatusDelayNanoseconds)
+      }
+
+      let refreshedStatus = try await operationClient.inspectGuestToolsStatus(
+        on: virtualMachine.id)
+      guard generation == clientGeneration else {
+        return
+      }
+      guestToolsStatuses[virtualMachine.id] = refreshedStatus
+      guestToolsStatusErrors[virtualMachine.id] = nil
+      refreshOpenGuestWindowProxies(from: refreshedStatus, for: virtualMachine)
+    } catch {
+      guard generation == clientGeneration else {
+        return
+      }
+      guestToolsStatusErrors[virtualMachine.id] = error.localizedDescription
+    }
+  }
+
+  private func storeActiveGuestWindowProxyPlan(
+    _ plan: GuestWindowProxyPlan,
+    for virtualMachine: VirtualMachine
+  ) {
+    activeGuestWindowProxyPlans[guestWindowProxyKey(
+      vmID: virtualMachine.id,
+      windowID: plan.windowID
+    )] = plan
+    activeGuestWindowProxyVirtualMachines[virtualMachine.id] = virtualMachine
+    updateGuestWindowProxyStatus(for: virtualMachine.id)
+  }
+
+  private func removeActiveGuestWindowProxyPlan(
+    vmID: VirtualMachine.ID,
+    windowID: String
+  ) {
+    activeGuestWindowProxyPlans[guestWindowProxyKey(vmID: vmID, windowID: windowID)] = nil
+    pruneTrackedGuestWindowProxyVirtualMachineIfUnused(vmID)
+    if activeGuestWindowProxyPlans.isEmpty {
+      guestWindowProxyRefreshTask?.cancel()
+      guestWindowProxyRefreshTask = nil
+    }
+    updateGuestWindowProxyStatus(for: vmID)
+  }
+
+  private func closeActiveGuestWindowProxyShellsWithoutGuestCommand(
+    for vmID: VirtualMachine.ID
+  ) {
+    for (key, plan) in Array(activeGuestWindowProxyPlans) where key.vmID == vmID {
+      activeGuestWindowProxyPlans[key] = nil
+      closeGuestWindowProxyShell(plan.vmName, plan.windowID)
+    }
+    pruneTrackedGuestWindowProxyVirtualMachineIfUnused(vmID)
+    if activeGuestWindowProxyPlans.isEmpty {
+      guestWindowProxyRefreshTask?.cancel()
+      guestWindowProxyRefreshTask = nil
+    }
+    updateGuestWindowProxyStatus(for: vmID)
+  }
+
+  private func closeAllActiveGuestWindowProxyShellsWithoutGuestCommand() {
+    for (_, plan) in Array(activeGuestWindowProxyPlans) {
+      closeGuestWindowProxyShell(plan.vmName, plan.windowID)
+    }
+    activeGuestWindowProxyPlans = [:]
+    activeGuestWindowProxyVirtualMachines = [:]
+    guestWindowProxyRefreshTask?.cancel()
+    guestWindowProxyRefreshTask = nil
+    guestWindowProxyRefreshInFlightIDs = []
+    guestWindowProxyStatuses = [:]
+  }
+
+  private func pruneTrackedGuestWindowProxyVirtualMachineIfUnused(_ vmID: VirtualMachine.ID) {
+    guard !activeGuestWindowProxyPlans.keys.contains(where: { $0.vmID == vmID }) else {
+      return
+    }
+    activeGuestWindowProxyVirtualMachines[vmID] = nil
+    guestWindowProxyRefreshInFlightIDs.remove(vmID)
+  }
+
+  private func isAuthoritativeGuestWindowListResult(
+    _ result: GuestToolsCommandResult
+  ) -> Bool {
+    result.ok
+      && (result.requestID.hasPrefix("windows-")
+        || result.requestID.hasPrefix("proxy-refresh-windows-"))
+  }
+
+  private func isGuestWindowProxyRuntimeActive(_ virtualMachine: VirtualMachine) -> Bool {
+    virtualMachine.status == .running || virtualMachine.status == .paused
+  }
+
+  private func updateGuestWindowProxyStatus(for vmID: VirtualMachine.ID) {
+    let trackedPlans = activeGuestWindowProxyPlans
+      .filter { $0.key.vmID == vmID }
+      .sorted { lhs, rhs in lhs.key.windowID < rhs.key.windowID }
+      .map(\.value)
+    let trackedWindowCount = trackedPlans.count
+    guard trackedWindowCount > 0 else {
+      guestWindowProxyStatuses[vmID] = nil
+      return
+    }
+
+    let cropBackedWindowCount = trackedPlans.filter { hasProxyCropArtifact($0) }.count
+    guestWindowProxyStatuses[vmID] = GuestWindowProxyStatus(
+      trackedWindowCount: trackedWindowCount,
+      cropBackedWindowCount: cropBackedWindowCount,
+      trackedWindowSummaries: trackedPlans.map(proxyWindowSummary),
+      isAutoRefreshActive: guestWindowProxyRefreshTask != nil,
+      isRefreshInFlight: guestWindowProxyRefreshInFlightIDs.contains(vmID)
+    )
+  }
+
+  private func hasProxyCropArtifact(_ plan: GuestWindowProxyPlan) -> Bool {
+    guard let path = plan.cropFrameSummaryPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+    else {
+      return false
+    }
+    return !path.isEmpty
+  }
+
+  private func proxyWindowSummary(_ plan: GuestWindowProxyPlan) -> String {
+    let title = plan.title.trimmingCharacters(in: .whitespacesAndNewlines)
+    var parts = [title.isEmpty ? plan.windowID : title]
+    if !title.isEmpty {
+      parts.append(plan.windowID)
+    }
+    parts.append(plan.guestBounds.displayText)
+    parts.append(hasProxyCropArtifact(plan) ? "crop" : "metadata")
+    return parts.joined(separator: " - ")
+  }
+
+  private func makeGuestWindowProxyInputSender(
+    for virtualMachine: VirtualMachine
+  ) -> GuestWindowProxyInputSender {
+    let vm = virtualMachine
+    let inputQueue = GuestWindowProxyInputQueue { [weak self] input in
+      guard let self else {
+        return
+      }
+      await self.sendGuestWindowProxyInput(input, for: vm)
+    }
+    return { input in
+      inputQueue.enqueue(input)
+    }
+  }
+
+  private func guestWindowProxyKey(
+    vmID: VirtualMachine.ID,
+    windowID: String
+  ) -> ActiveGuestWindowProxyKey {
+    ActiveGuestWindowProxyKey(vmID: vmID, windowID: windowID)
+  }
+
   func sendInlineFileDrop(
     fileName: String,
     contents: String,
@@ -1390,6 +1984,99 @@ final class DashboardViewModel: ObservableObject {
       let message = error.localizedDescription
       runnerStatusErrors[virtualMachine.id] = message
       alertMessage = message
+    }
+  }
+
+  func runtimeControlStatus(for virtualMachine: VirtualMachine) async -> Bool {
+    await sendRuntimeControlCommand("status", refreshRunnerStatus: false, for: virtualMachine)
+  }
+
+  func runtimeControlStopDisplay(for virtualMachine: VirtualMachine) async -> Bool {
+    await sendRuntimeControlCommand("stop", refreshRunnerStatus: true, for: virtualMachine)
+  }
+
+  func runtimeControlPolicy(for virtualMachine: VirtualMachine) async -> Bool {
+    await sendRuntimeControlCommand("policy", refreshRunnerStatus: false, for: virtualMachine)
+  }
+
+  func runtimeControlPacing(for virtualMachine: VirtualMachine) async -> Bool {
+    await sendRuntimeControlCommand("pacing", refreshRunnerStatus: false, for: virtualMachine)
+  }
+
+  private func sendRuntimeControlCommand(
+    _ command: String,
+    refreshRunnerStatus: Bool,
+    for virtualMachine: VirtualMachine
+  ) async -> Bool {
+    guard canMutateCurrentInventory(action: "Runtime control", virtualMachine: virtualMachine)
+    else {
+      return false
+    }
+
+    guard sendingRuntimeControlID != virtualMachine.id else {
+      return false
+    }
+
+    let generation = clientGeneration
+    let operationClient = client
+    sendingRuntimeControlID = virtualMachine.id
+    runtimeControlErrors[virtualMachine.id] = nil
+    defer {
+      if generation == clientGeneration {
+        sendingRuntimeControlID = nil
+      }
+    }
+
+    do {
+      let result = try await operationClient.sendRuntimeControlCommand(
+        command,
+        on: virtualMachine.id
+      )
+      guard generation == clientGeneration else {
+        return false
+      }
+      runtimeControlResults[virtualMachine.id] = result
+      runtimeControlErrors[virtualMachine.id] = nil
+      alertMessage =
+        "\(virtualMachine.name) display control \(result.command) response: \(result.responseSummary)"
+
+      if refreshRunnerStatus {
+        await refreshRunnerStatusAfterRuntimeControl(
+          for: virtualMachine.id,
+          client: operationClient,
+          generation: generation
+        )
+      }
+      return true
+    } catch {
+      guard generation == clientGeneration else {
+        return false
+      }
+      let message = error.localizedDescription
+      runtimeControlResults[virtualMachine.id] = nil
+      runtimeControlErrors[virtualMachine.id] = message
+      alertMessage = message
+      return false
+    }
+  }
+
+  private func refreshRunnerStatusAfterRuntimeControl(
+    for id: VirtualMachine.ID,
+    client operationClient: VirtualMachineClient,
+    generation: Int
+  ) async {
+    switch await inspectRunnerStatusResult(on: id, client: operationClient) {
+    case .success(let status):
+      guard generation == clientGeneration else {
+        return
+      }
+      runnerStatuses[id] = status
+      runnerStatusErrors[id] = nil
+    case .failure(let error):
+      guard generation == clientGeneration else {
+        return
+      }
+      runnerStatusErrors[id] = error.localizedDescription
     }
   }
 
@@ -2335,11 +3022,15 @@ final class DashboardViewModel: ObservableObject {
     if policy.liveApplied {
       return "Runtime resource policy applied live for \(policy.vm)."
     }
+    let prefix =
+      policy.runtimeControlAcknowledged
+      ? "Runtime resource policy recorded for \(policy.vm); display helper acknowledged it"
+      : "Runtime resource policy recorded for \(policy.vm)"
     if let blockerSummary = policy.liveApplyBlockerSummary {
       let terminator = sentenceTerminator(after: blockerSummary)
-      return "Runtime resource policy recorded for \(policy.vm); live apply blocked: \(blockerSummary)\(terminator)"
+      return "\(prefix); live apply blocked: \(blockerSummary)\(terminator)"
     }
-    return "Runtime resource policy recorded for \(policy.vm)."
+    return "\(prefix)."
   }
 
   private func sentenceTerminator(after text: String) -> String {
@@ -2570,14 +3261,38 @@ final class DashboardViewModel: ObservableObject {
   /// the bundled runner with `--apple-vz-display`. Local-GUI only and outside the
   /// daemon path (the window must live on the user's session).
   func showDisplay(for virtualMachine: VirtualMachine) {
+    showDisplay(width: "1280", height: "800", for: virtualMachine)
+  }
+
+  func showDisplay(width widthText: String, height heightText: String, for virtualMachine: VirtualMachine) {
     guard virtualMachine.mode == .fast else {
       alertMessage = "The embedded display window is available for Fast Mode VMs only."
       return
     }
+
+    let trimmedWidth = widthText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedHeight = heightText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let width = Int(trimmedWidth), width > 0 else {
+      alertMessage = "Enter a valid display window width."
+      return
+    }
+    guard let height = Int(trimmedHeight), height > 0 else {
+      alertMessage = "Enter a valid display window height."
+      return
+    }
+
     do {
-      try EmbeddedDisplayLauncher.launch(vmName: virtualMachine.name)
+      let displaySize = EmbeddedDisplayLauncher.DisplaySize(width: width, height: height)
+      let storeMetadata =
+        (client as? VirtualMachineDisplayMetadataProviding)?
+        .displayStoreMetadata(for: virtualMachine.id)
+      try launchEmbeddedDisplay(virtualMachine.name, displaySize, storeMetadata)
       alertMessage =
-        "Opening an embedded display window for \(virtualMachine.name) (close the window to stop the VM)."
+        "Opening an embedded display window for \(virtualMachine.name) at \(displaySize.width)x\(displaySize.height) (close the window to stop the VM)."
+      let generation = clientGeneration
+      Task {
+        await refreshDisplayLaunchCaches(for: virtualMachine, generation: generation)
+      }
     } catch {
       alertMessage = error.localizedDescription
     }
@@ -3305,6 +4020,47 @@ final class DashboardViewModel: ObservableObject {
     }
   }
 
+  private func refreshDisplayLaunchCaches(for virtualMachine: VirtualMachine, generation: Int)
+    async
+  {
+    let id = virtualMachine.id
+    let operationClient = client
+    async let runnerResult = inspectRunnerStatusResult(on: id, client: operationClient)
+    async let runtimePolicyResult = reapplyRuntimeResourcesResult(
+      visibility: .foreground,
+      on: id,
+      client: operationClient
+    )
+
+    switch await runnerResult {
+    case .success(let status):
+      guard generation == clientGeneration else {
+        return
+      }
+      runnerStatuses[id] = status
+      runnerStatusErrors[id] = nil
+    case .failure(let error):
+      guard generation == clientGeneration else {
+        return
+      }
+      runnerStatusErrors[id] = error.localizedDescription
+    }
+
+    switch await runtimePolicyResult {
+    case .success(let policy):
+      guard generation == clientGeneration else {
+        return
+      }
+      runtimeResourcePolicies[id] = policy
+      runtimeResourcePolicyErrors[id] = nil
+    case .failure(let error):
+      guard generation == clientGeneration else {
+        return
+      }
+      runtimeResourcePolicyErrors[id] = error.localizedDescription
+    }
+  }
+
   private func inspectRunnerStatusResult(
     on id: VirtualMachine.ID,
     client: VirtualMachineClient
@@ -3344,9 +4100,25 @@ final class DashboardViewModel: ObservableObject {
     }
   }
 
+  private func reapplyRuntimeResourcesResult(
+    visibility: RuntimeResourceVisibility,
+    on id: VirtualMachine.ID,
+    client: VirtualMachineClient
+  ) async -> Result<
+    RuntimeResourcePolicy, Error
+  > {
+    do {
+      return .success(try await client.reapplyRuntimeResources(visibility: visibility, on: id))
+    } catch {
+      return .failure(error)
+    }
+  }
+
   private func clearRuntimeCaches(for id: VirtualMachine.ID) {
     runnerStatuses[id] = nil
     runnerStatusErrors[id] = nil
+    runtimeControlResults[id] = nil
+    runtimeControlErrors[id] = nil
     qmpStatuses[id] = nil
     qmpStatusErrors[id] = nil
     qemuLaunchPlans[id] = nil
@@ -3364,6 +4136,8 @@ final class DashboardViewModel: ObservableObject {
     snapshotChainErrors[id] = nil
     runnerStatuses[id] = nil
     runnerStatusErrors[id] = nil
+    runtimeControlResults[id] = nil
+    runtimeControlErrors[id] = nil
     qemuLaunchPlans[id] = nil
     qemuLaunchPlanErrors[id] = nil
   }
@@ -3471,10 +4245,19 @@ final class DashboardViewModel: ObservableObject {
       prefix = "focus-window"
     case .closeWindow:
       prefix = "close-window"
+    case .setWindowBounds:
+      prefix = "window-bounds"
+    case .windowPointerInput, .windowKeyInput:
+      prefix = "window-input"
     case .timeSync:
       prefix = "time-sync"
     }
 
+    let millis = UInt64(Date().timeIntervalSince1970 * 1_000)
+    return "\(prefix)-\(millis)"
+  }
+
+  private func makeGuestToolsRequestID(prefix: String) -> String {
     let millis = UInt64(Date().timeIntervalSince1970 * 1_000)
     return "\(prefix)-\(millis)"
   }
@@ -3486,5 +4269,23 @@ final class DashboardViewModel: ObservableObject {
 
   private func requiredMetadataOutput(_ value: String) -> String? {
     optionalTrimmed(value)
+  }
+}
+
+@MainActor
+private final class GuestWindowProxyInputQueue {
+  private var pending: Task<Void, Never>?
+  private let handler: (GuestWindowProxyInputEvent) async -> Void
+
+  init(handler: @escaping (GuestWindowProxyInputEvent) async -> Void) {
+    self.handler = handler
+  }
+
+  func enqueue(_ input: GuestWindowProxyInputEvent) {
+    let previous = pending
+    pending = Task { @MainActor [handler, previous] in
+      await previous?.value
+      await handler(input)
+    }
   }
 }

@@ -1,11 +1,77 @@
 # BridgeVM
 
-BridgeVM is an open-source virtualization app scaffold based on the two-engine plan in `PLAN.md`.
+BridgeVM is an open-source virtualization app scaffold based on the multi-engine plan in `PLAN.md`.
+
+Current product direction:
+
+- **Compatibility Engine**: QEMU/HVF/TCG for broad OS compatibility, legacy systems, x86 emulation, and the current Windows 11 Arm installer evidence path.
+- **Apple VZ Engine**: Apple Virtualization.framework for lightweight Linux/macOS Arm Fast Mode.
+- **BridgeVM HVF Engine**: active R&D for a BridgeVM-owned Apple Hypervisor.framework VMM boundary for the Windows 11 Arm non-QEMU, Parallels-like target.
+
+QEMU remains supported for compatibility. It is not the final architecture for
+the Windows 11 Arm lightweight goal.
 
 The current implementation is a Phase 0 foundation:
 
 - Rust workspace with the planned crates and runner binaries.
 - `bridgevm` CLI for VM creation, listing, mode recommendation, and diagnostics.
+- `bridgevm hvf machine-plan` and `hvf-runner --machine-plan` metadata-only
+  Windows 11 Arm no-QEMU machine planning boundaries for the active BridgeVM
+  HVF engine; they print the planned memory/vCPU/device blockers without
+  creating a VM or launching QEMU/Apple VZ.
+- `bridgevm hvf vm-probe` and `hvf-runner --vm-probe` default to a no-create
+  safety boundary; `--allow-create` / `BRIDGEVM_HVF_ALLOW_VM_CREATE=1` creates
+  and immediately destroys an empty HVF VM when `hvf-runner` is signed with
+  `com.apple.security.hypervisor`, still without firmware, vCPUs, or Windows
+  boot.
+- `bridgevm hvf vcpu-probe` and `hvf-runner --vcpu-probe` extend that opt-in
+  boundary through one empty vCPU create/destroy lifecycle; they still do not
+  call `hv_vcpu_run`.
+- `bridgevm hvf vcpu-run-probe` and `hvf-runner --vcpu-run-probe` add a
+  stronger run-loop boundary: by default they are no-run metadata probes, and
+  `--allow-run` / `BRIDGEVM_HVF_ALLOW_VCPU_RUN=1` creates an empty VM/vCPU,
+  pre-cancels the vCPU with `hv_vcpus_exit`, then observes one immediate
+  `hv_vcpu_run` return. This still does not map memory, enter firmware, or boot
+  Windows.
+- `bridgevm hvf memory-map-probe` and `hvf-runner --memory-map-probe` default
+  to a no-map safety boundary; `--allow-map` /
+  `BRIDGEVM_HVF_ALLOW_MEMORY_MAP=1` creates an empty HVF VM, allocates one
+  16 KiB guest RAM page, maps it at IPA `0x40000000`, unmaps it, and cleans up.
+  This still does not create vCPUs, enter guest code, firmware, or Windows.
+- `bridgevm hvf guest-entry-probe` and `hvf-runner --guest-entry-probe`
+  default to a no-entry safety boundary; `--allow-entry` /
+  `BRIDGEVM_HVF_ALLOW_GUEST_ENTRY=1` maps one `HVC #0` instruction at IPA
+  `0x40000000`, sets PC/CPSR, runs under a watchdog, and records the first
+  guest-exit boundary. This still does not enter firmware or boot Windows.
+- `bridgevm hvf guest-exit-loop-probe` and
+  `hvf-runner --guest-exit-loop-probe` default to a no-loop safety boundary;
+  `--allow-loop` / `BRIDGEVM_HVF_ALLOW_EXIT_LOOP=1` runs `HVC #0`, reads and
+  advances PC, then runs `HVC #1` under watchdog protection. This is the first
+  BridgeVM-owned vCPU exit-loop proof, not firmware or Windows boot.
+- `bridgevm hvf mmio-read-probe` and `hvf-runner --mmio-read-probe` default to
+  a no-MMIO safety boundary; `--allow-mmio` /
+  `BRIDGEVM_HVF_ALLOW_MMIO_READ=1` runs one `LDR X0, [X1]` against unmapped IPA
+  `0x50000000` and records the resulting MMIO/data-abort style exit. This is
+  the first BridgeVM-owned device-model exit proof, not a device implementation.
+- `bridgevm hvf mmio-read-emulation-probe` and
+  `hvf-runner --mmio-read-emulation-probe` default to a no-emulation boundary;
+  `--allow-emulate` / `BRIDGEVM_HVF_ALLOW_MMIO_EMULATION=1` handles that
+  unmapped read by injecting `X0=0x123456789abcdef0`, advancing PC, and
+  continuing to `HVC #0`. This proves the first minimal device read-emulation
+  loop, not a real block/network/display device.
+- `bridgevm hvf mmio-write-emulation-probe` and
+  `hvf-runner --mmio-write-emulation-probe` default to a no-emulation boundary;
+  `--allow-emulate` / `BRIDGEVM_HVF_ALLOW_MMIO_WRITE_EMULATION=1` handles one
+  unmapped `STR X0, [X1]` by capturing `X0=0xfedcba987654321`, advancing PC,
+  and continuing to `HVC #0`. This proves the matching minimal device
+  write-emulation loop, not a real block/network/display device.
+- `bridgevm hvf mmio-serial-device-probe` and
+  `hvf-runner --mmio-serial-device-probe` default to a no-device boundary;
+  `--allow-device` / `BRIDGEVM_HVF_ALLOW_MMIO_SERIAL_DEVICE=1` handles a tiny
+  serial-style MMIO device loop: capture a data-register write
+  `X0=0x41`, inject a status-register read `X0=0x90`, advance PC after both
+  exits, and continue to `HVC #0`. This proves a multi-register device-model
+  skeleton, not a real firmware console or Windows boot device.
 - SwiftUI macOS dashboard prototype with Settings daemon/store doctor status, a creation sheet backed by daemon boot templates, boot media readiness flow, daemon-backed Start through the `run_backend` launch boundary, lifecycle controls for opt-in live backends, VM card metadata for diagnostics/performance/export-import/open-port/SSH status, a clone sheet exposing full/linked clone options through the daemon API, metadata-backed snapshot list/restore/create surfaces, daemon-backed primary-disk prepare/create/inspect and active-disk verify/compact maintenance metadata, VM bundle export/import metadata/file-copy status, diagnostic bundle and performance artifact metadata panels, a metadata-only repair action, manifest-level port-forward list/add/remove controls, metadata/planning-only open-port, SSH, and network-plan visibility, manifest-level approved shared folder list/add/remove controls, daemon-backed guest tools provisioning and status/readiness visibility including the latest command result, a typed client boundary for safe alpha guest tools command dispatch including time sync and an inline file-drop command sequence, a Console button that opens the Compatibility Mode external VNC viewer handoff when available while reporting daemon QMP/socket diagnostics, and a Fast Mode Show Display action that launches the bundled Apple VZ display helper in the local GUI session.
 - Readable `.vmbridge/manifest.yaml` VM bundles.
 - Fast Mode and Compatibility Mode recommendation logic.
@@ -27,10 +93,10 @@ boundaries, diagnostics, and explicit operation receipts all report what
 BridgeVM can safely know without starting a guest. The metadata-safe smoke suite
 now also locks the aggregate readiness CLI contract, the live Apple VZ
 opt-in default-skip boundary, and synthetic Apple VZ/QEMU evidence verifier
-contracts. The remaining 3-5% is not more metadata polish; it
-is the live end-to-end proof boundary. In practice, that means proving a real VM
-boot path with explicit fixtures, host entitlements, backend process control,
-and observable guest progress.
+contracts. The remaining work is tracked as explicit product gates rather than
+a completion percentage: live end-to-end VM proof, explicit fixtures, host
+entitlements, backend process control, observable guest progress, and
+Parallels-style performance/integration evidence are each separate gates.
 
 Default product and dashboard flows still keep real backend starts behind an
 explicit opt-in. Local Fast Mode `run --spawn`, `suspend`, `resume`, and
@@ -40,7 +106,7 @@ from BridgeVM. Daemon/app Start also requires the live-start setting
 (`BRIDGEVM_APPLE_VZ_ALLOW_REAL_START=1`) before the daemon will pass that helper
 opt-in through. These live E2E paths can consume CPU, memory, disk, network, and
 Apple virtualization resources, so they belong in manual opt-in smoke work with
-known kernel/initrd/raw disk fixtures, not in the safe Phase 0 smoke lane. See
+known `linux-kernel` kernel/initrd/raw disk fixtures, not in the safe Phase 0 smoke lane. See
 `docs/fast-mode/README.md` for the current manual live fixture path.
 
 Readiness evidence is also tracked as a stricter future proof boundary. The
@@ -191,7 +257,7 @@ VZ, attach guest tools, or start a VM.
 
 By default VM bundles are stored under `~/.bridgevm/vms`. Set `BRIDGEVM_HOME` to override this during development.
 
-Fast Mode manifests can include an optional `boot` section. For supported Fast Mode guests, `bridgevm create <name> --template <id>` can populate the guest OS, arch, and dry-run boot media metadata when explicit `--os`, `--arch`, or boot flags are omitted. Without `--template`, `bridgevm create` still applies a matching dry-run boot template for supported explicit OS/arch pairs when explicit boot flags are omitted: Linux Arm64 guests default to `linux-installer` with `installers/<guest>-arm64.iso`, and macOS Arm guests default to `macos-restore` with `installers/macos-restore.ipsw`. Override that with `--boot-mode linux-installer --installer-image <path>`, `--boot-mode linux-kernel --kernel-path <path> [--initrd-path <path>] [--kernel-command-line <text>]`, or `--boot-mode macos-restore --macos-restore-image <path>`. `bridgevm recommend` prints the same template hint, and `bridgevm templates` lists the available metadata-only templates without downloading media.
+Fast Mode manifests can include an optional `boot` section. For supported Fast Mode guests, `bridgevm create <name> --template <id>` can populate the guest OS, arch, and dry-run boot media metadata when explicit `--os`, `--arch`, or boot flags are omitted. Without `--template`, `bridgevm create` still applies a matching dry-run boot template for supported explicit OS/arch pairs when explicit boot flags are omitted: Linux Arm64 guests default to `linux-installer` with `installers/<guest>-arm64.iso`, and macOS Arm guests default to `macos-restore` with `installers/macos-restore.ipsw`. Override that with `--boot-mode linux-installer --installer-image <path>`, `--boot-mode linux-kernel --kernel-path <path> [--initrd-path <path>] [--kernel-command-line <text>]`, or `--boot-mode macos-restore --macos-restore-image <path>`. For the current live Apple VZ Linux shape, create a Linux kernel VM with `--disk-format raw` so BridgeVM records `disks/root.raw` and `prepare-run` can create the sparse raw disk directly. The helper `scripts/stage-vz-linux-demo-vm.sh --prepare-fixture --name vz-linux-demo` now wraps that official create/prepare path for a tryable Apple VZ Linux bundle without starting a VM; after it reports `Launch ready: true`, set `BRIDGEVM_APPLE_VZ_RUNNER` to a signed `AppleVzRunner` and run `bridgevm display vz-linux-demo`. `bridgevm recommend` prints the same template hint, and `bridgevm templates` lists the available metadata-only templates without downloading media.
 
 The current default user flow is boot media readiness, not VM launch. `bridgevm boot-media <vm>` resolves the manifest/template boot media through the Apple VZ dry-run plan and prints the installer, kernel, initrd, or macOS restore path with its `exists` state. `bridgevm media status <vm>` shows the same resolved entries with file size, latest local import, latest verification result, latest download plan, and latest download result when present. `bridgevm media import <vm> --source <path>` copies a user-provided local installer, kernel, initrd, or macOS restore file into the expected path and records import metadata under `.vmbridge/metadata/boot-media/<kind>.json`; it does not download media. `bridgevm media verify <vm> --sha256 <hex>` hashes the already-resolved local file, compares it with the caller-provided digest, and records the result under `.vmbridge/metadata/boot-media/<kind>-verify.json`. `bridgevm media download-plan <vm> --url <url> [--sha256 <hex>]` records remote download intent under `.vmbridge/metadata/boot-media/<kind>-download.json` without fetching the URL. `bridgevm media download <vm>` is the explicit execution boundary for that recorded plan: it fetches the planned URL to the resolved destination, verifies the optional planned SHA-256 before replacing the destination, and records the result under `.vmbridge/metadata/boot-media/<kind>-download-result.json`. When a boot mode exposes multiple media paths, add `--kind installer-image|kernel|initrd|macos-restore-image` to select the entry for status-related operations, verification, planning, or download execution. `bridgevm prepare-run`, Fast Mode `bridgevm run <vm>` without spawn, daemon-backed `runner-status`, and `lightvm-runner --print-plan` expose the resolved boot media and launch readiness inside dry-run runner metadata. The narrow real Apple VZ path runs through the Swift `AppleVzRunner` helper for `linux-kernel` + `raw` + NAT specs; local CLI callers opt in with `BRIDGEVM_APPLE_VZ_RUNNER`, while daemon/app callers also enable live starts with `BRIDGEVM_APPLE_VZ_ALLOW_REAL_START=1` or the matching Settings toggle. Any launch-readiness/preflight gate should report blockers such as missing boot media, missing or unsupported primary disks, or unsupported host/guest/backend capabilities before starting Apple VZ.
 

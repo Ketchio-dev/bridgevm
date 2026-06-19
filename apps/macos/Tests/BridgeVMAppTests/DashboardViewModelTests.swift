@@ -1325,13 +1325,13 @@ final class DashboardViewModelTests: XCTestCase {
       note: "Provide an existing disk."
     )
     let recommendation = ModeRecommendation(
-      mode: .fast,
-      performance: "High for productivity workloads",
-      batteryImpact: "Low to medium",
-      integration: "Experimental",
+      mode: .compatibility,
+      performance: "Medium; restricted QEMU/HVF path today",
+      batteryImpact: "Higher than Apple VZ Fast Mode",
+      integration: "Windows beta; not Apple VZ Fast Mode",
       message:
-        "Windows 11 Arm can use Fast Mode Experimental with a restricted backend. BridgeVM must not claim Microsoft-authorized status.",
-      fastModeAvailable: true,
+        "Windows 11 Arm uses Compatibility Mode with a restricted QEMU/HVF backend today. Apple VZ Fast Mode is Linux/macOS Arm only; BridgeVM must not claim Microsoft-authorized or Parallels-class Windows support.",
+      fastModeAvailable: false,
       bootTemplate: nil
     )
     let client = StubVirtualMachineClient(
@@ -1366,12 +1366,12 @@ final class DashboardViewModelTests: XCTestCase {
       note: "Provide an existing disk."
     )
     let recommendation = ModeRecommendation(
-      mode: .fast,
+      mode: .compatibility,
       performance: "High for productivity workloads",
       batteryImpact: "Low to medium",
       integration: "Experimental",
       message: "Stale recommendation",
-      fastModeAvailable: true,
+      fastModeAvailable: false,
       bootTemplate: nil
     )
     let staleClient = StubVirtualMachineClient(
@@ -4559,6 +4559,162 @@ final class DashboardViewModelTests: XCTestCase {
     XCTAssertTrue(client.inspectedGuestToolsStatusIDs.isEmpty)
   }
 
+  func testShowDisplayRejectsInvalidDimensionsBeforeLaunchingHelper() {
+    let virtualMachine = VirtualMachine(
+      id: UUID(),
+      name: "Dev VM",
+      guest: "Ubuntu Arm64",
+      status: .running,
+      mode: .fast,
+      resources: .init(cpuCount: 4, memoryGB: 8, diskGB: 64),
+      uptime: "12m",
+      ipAddress: "192.168.64.23",
+      lastStarted: nil,
+      notes: "test"
+    )
+    let model = DashboardViewModel(
+      client: StubVirtualMachineClient(
+        sourceTitle: "Mock inventory",
+        listResult: .success([virtualMachine])
+      )
+    )
+
+    model.showDisplay(width: "0", height: "900", for: virtualMachine)
+    XCTAssertEqual(model.alertMessage, "Enter a valid display window width.")
+
+    model.showDisplay(width: "1440", height: "nope", for: virtualMachine)
+    XCTAssertEqual(model.alertMessage, "Enter a valid display window height.")
+  }
+
+  func testShowDisplayRefreshesForegroundRuntimeCachesAfterLaunch() async throws {
+    let virtualMachine = VirtualMachine(
+      id: UUID(),
+      name: "Dev VM",
+      guest: "Ubuntu Arm64",
+      status: .running,
+      mode: .fast,
+      resources: .init(cpuCount: 4, memoryGB: 8, diskGB: 64),
+      uptime: "12m",
+      ipAddress: "192.168.64.23",
+      lastStarted: nil,
+      notes: "test"
+    )
+    let runnerStatus = RunnerStatus(
+      engine: "apple-vz",
+      pid: 4242,
+      command: [
+        "lightvm-runner",
+        "Dev VM",
+        "--apple-vz-display",
+        "--apple-vz-display-width",
+        "1440",
+        "--apple-vz-display-height",
+        "900",
+      ],
+      logPath: "logs/lightvm.log",
+      startedAtUnix: 1_710_000_100,
+      dryRun: false,
+      launchSpecPath: ".vmbridge/metadata/apple-vz-launch.json",
+      launchReadiness: LaunchReadiness(ready: true, blockers: [])
+    )
+    let policy = RuntimeResourcePolicy(
+      vm: "Dev VM",
+      mode: "fast",
+      profile: "automatic",
+      visibility: .foreground,
+      state: "running",
+      onBattery: false,
+      memory: "4096",
+      cpu: "2",
+      displayFPSCap: "adaptive",
+      rationale: "Foreground display active.",
+      liveApplied: false,
+      runtimeControlAcknowledged: true,
+      liveApplyBlockers: [
+        RuntimeResourcePolicyBlocker(
+          code: "runtime-control-unavailable",
+          message: "Live Apple VZ CPU/RAM hot-apply is not implemented yet; the policy is available to display pacing and runtime policy IPC consumers."
+        )
+      ],
+      updatedAtUnix: 1_710_000_500
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([virtualMachine]),
+      runnerStatusResult: .success(runnerStatus),
+      runtimeResourcePolicyResult: .success(policy)
+    )
+    var launchedVMName: String?
+    var launchedDisplaySize: EmbeddedDisplayLauncher.DisplaySize?
+    var launchedStoreMetadata: EmbeddedDisplayLauncher.StoreMetadata?
+    let model = DashboardViewModel(
+      client: client,
+      launchEmbeddedDisplay: { vmName, displaySize, storeMetadata in
+        launchedVMName = vmName
+        launchedDisplaySize = displaySize
+        launchedStoreMetadata = storeMetadata
+      }
+    )
+
+    await model.load()
+    model.showDisplay(width: "1440", height: "900", for: virtualMachine)
+    for _ in 0..<20 where model.runtimeResourcePolicy(for: virtualMachine) == nil {
+      await Task.yield()
+    }
+
+    XCTAssertEqual(launchedVMName, "Dev VM")
+    XCTAssertEqual(launchedDisplaySize, EmbeddedDisplayLauncher.DisplaySize(width: 1440, height: 900))
+    XCTAssertNil(launchedStoreMetadata)
+    XCTAssertEqual(client.inspectedRunnerStatusIDs, [virtualMachine.id])
+    XCTAssertEqual(client.reappliedRuntimeResourceRequests.count, 1)
+    XCTAssertEqual(client.reappliedRuntimeResourceRequests[0].visibility, .foreground)
+    XCTAssertEqual(client.reappliedRuntimeResourceRequests[0].id, virtualMachine.id)
+    XCTAssertEqual(model.runnerStatus(for: virtualMachine), runnerStatus)
+    XCTAssertEqual(model.runtimeResourcePolicy(for: virtualMachine), policy)
+    XCTAssertNil(model.runnerStatusError(for: virtualMachine))
+    XCTAssertNil(model.runtimeResourcePolicyError(for: virtualMachine))
+    XCTAssertEqual(
+      model.alertMessage,
+      "Opening an embedded display window for Dev VM at 1440x900 (close the window to stop the VM)."
+    )
+  }
+
+  func testShowDisplayPassesCustomStoreMetadataWhenClientProvidesIt() async throws {
+    let virtualMachine = VirtualMachine(
+      id: UUID(),
+      name: "Dev VM",
+      guest: "Ubuntu Arm64",
+      status: .running,
+      mode: .fast,
+      resources: .init(cpuCount: 4, memoryGB: 8, diskGB: 64),
+      uptime: "12m",
+      ipAddress: "192.168.64.23",
+      lastStarted: nil,
+      notes: "test"
+    )
+    let metadata = EmbeddedDisplayLauncher.StoreMetadata(
+      storeRoot: "/Volumes/BridgeVM Store",
+      bundlePath: "/Volumes/BridgeVM Store/vms/dev-from-daemon.vmbridge"
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "bridgevmd",
+      listResult: .success([virtualMachine]),
+      displayStoreMetadataByID: [virtualMachine.id: metadata]
+    )
+    var launchedStoreMetadata: EmbeddedDisplayLauncher.StoreMetadata?
+    let model = DashboardViewModel(
+      client: client,
+      launchEmbeddedDisplay: { _, _, storeMetadata in
+        launchedStoreMetadata = storeMetadata
+      }
+    )
+
+    await model.load()
+    model.showDisplay(width: "1280", height: "800", for: virtualMachine)
+
+    XCTAssertEqual(launchedStoreMetadata, metadata)
+  }
+
   func testSendGuestToolsCommandRecordsErrorWithoutRefreshingStatus() async throws {
     let virtualMachine = VirtualMachine(
       id: UUID(),
@@ -4724,6 +4880,205 @@ final class DashboardViewModelTests: XCTestCase {
       "apple-vz")
     XCTAssertEqual(client.preparedRunIDs, [virtualMachine.id])
     XCTAssertEqual(model.alertMessage, "Dev VM launch readiness prepared.")
+  }
+
+  func testRuntimeControlStatusStoresDisplayControlResponse() async throws {
+    let virtualMachine = VirtualMachine(
+      id: UUID(),
+      name: "Dev VM",
+      guest: "Ubuntu Arm64",
+      status: .running,
+      mode: .fast,
+      resources: .init(cpuCount: 4, memoryGB: 8, diskGB: 64),
+      uptime: "12m",
+      ipAddress: "192.168.64.23",
+      lastStarted: nil,
+      notes: "test"
+    )
+    let result = RuntimeControlCommandResult(
+      vm: "Dev VM",
+      kind: "apple-vz-display",
+      socketPath: "/tmp/bvm-vz-test.sock",
+      command: "status",
+      response: GuestToolsCommandPayload(
+        value: .object([
+          "ok": .bool(true),
+          "state": .string("running"),
+        ])
+      )
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([virtualMachine]),
+      runtimeControlResult: .success(result)
+    )
+    let model = DashboardViewModel(client: client)
+
+    await model.load()
+    let didSend = await model.runtimeControlStatus(for: virtualMachine)
+
+    XCTAssertTrue(didSend)
+    XCTAssertEqual(model.runtimeControlResult(for: virtualMachine), result)
+    XCTAssertNil(model.runtimeControlError(for: virtualMachine))
+    XCTAssertEqual(client.sentRuntimeControlCommandRequests.count, 1)
+    XCTAssertEqual(client.sentRuntimeControlCommandRequests[0].command, "status")
+    XCTAssertEqual(client.sentRuntimeControlCommandRequests[0].id, virtualMachine.id)
+  }
+
+  func testRuntimeControlPolicyStoresDisplayPolicyResponse() async throws {
+    let virtualMachine = VirtualMachine(
+      id: UUID(),
+      name: "Dev VM",
+      guest: "Ubuntu Arm64",
+      status: .running,
+      mode: .fast,
+      resources: .init(cpuCount: 4, memoryGB: 8, diskGB: 64),
+      uptime: "12m",
+      ipAddress: "192.168.64.23",
+      lastStarted: nil,
+      notes: "test"
+    )
+    let result = RuntimeControlCommandResult(
+      vm: "Dev VM",
+      kind: "apple-vz-display",
+      socketPath: "/tmp/bvm-vz-test.sock",
+      command: "policy",
+      response: GuestToolsCommandPayload(
+        value: .object([
+          "ok": .bool(true),
+          "policy": .object([
+            "visibility": .string("foreground"),
+            "display_fps_cap": .string("adaptive"),
+          ]),
+        ])
+      )
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([virtualMachine]),
+      runtimeControlResult: .success(result)
+    )
+    let model = DashboardViewModel(client: client)
+
+    await model.load()
+    let didSend = await model.runtimeControlPolicy(for: virtualMachine)
+
+    XCTAssertTrue(didSend)
+    XCTAssertEqual(model.runtimeControlResult(for: virtualMachine), result)
+    XCTAssertNil(model.runtimeControlError(for: virtualMachine))
+    XCTAssertEqual(client.sentRuntimeControlCommandRequests.count, 1)
+    XCTAssertEqual(client.sentRuntimeControlCommandRequests[0].command, "policy")
+    XCTAssertEqual(client.sentRuntimeControlCommandRequests[0].id, virtualMachine.id)
+  }
+
+  func testRuntimeControlPacingStoresDisplayPacingResponse() async throws {
+    let virtualMachine = VirtualMachine(
+      id: UUID(),
+      name: "Dev VM",
+      guest: "Ubuntu Arm64",
+      status: .running,
+      mode: .fast,
+      resources: .init(cpuCount: 4, memoryGB: 8, diskGB: 64),
+      uptime: "12m",
+      ipAddress: "192.168.64.23",
+      lastStarted: nil,
+      notes: "test"
+    )
+    let result = RuntimeControlCommandResult(
+      vm: "Dev VM",
+      kind: "apple-vz-display",
+      socketPath: "/tmp/bvm-vz-test.sock",
+      command: "pacing",
+      response: GuestToolsCommandPayload(
+        value: .object([
+          "ok": .bool(true),
+          "visibility": .string("background"),
+          "display_fps_cap": .string("10"),
+          "max_fps": .number("10"),
+        ])
+      )
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([virtualMachine]),
+      runtimeControlResult: .success(result)
+    )
+    let model = DashboardViewModel(client: client)
+
+    await model.load()
+    let didSend = await model.runtimeControlPacing(for: virtualMachine)
+
+    XCTAssertTrue(didSend)
+    XCTAssertEqual(model.runtimeControlResult(for: virtualMachine), result)
+    XCTAssertNil(model.runtimeControlError(for: virtualMachine))
+    XCTAssertEqual(client.sentRuntimeControlCommandRequests.count, 1)
+    XCTAssertEqual(client.sentRuntimeControlCommandRequests[0].command, "pacing")
+    XCTAssertEqual(client.sentRuntimeControlCommandRequests[0].id, virtualMachine.id)
+  }
+
+  func testRuntimeControlStopRefreshesRunnerStatusAfterDisplayStops() async throws {
+    let virtualMachine = VirtualMachine(
+      id: UUID(),
+      name: "Dev VM",
+      guest: "Ubuntu Arm64",
+      status: .running,
+      mode: .fast,
+      resources: .init(cpuCount: 4, memoryGB: 8, diskGB: 64),
+      uptime: "12m",
+      ipAddress: "192.168.64.23",
+      lastStarted: nil,
+      notes: "test"
+    )
+    let previousRunner = RunnerStatus(
+      engine: "apple-vz",
+      pid: 4242,
+      command: ["lightvm-runner", "Dev VM", "--apple-vz-display"],
+      logPath: "logs/lightvm.log",
+      startedAtUnix: 1_710_000_100,
+      dryRun: false,
+      runtimeControl: RuntimeControlRunnerStatus(
+        kind: "apple-vz-display",
+        socketPath: "/tmp/bvm-vz-test.sock",
+        commands: ["status", "stop", "policy", "pacing"]
+      )
+    )
+    let result = RuntimeControlCommandResult(
+      vm: "Dev VM",
+      kind: "apple-vz-display",
+      socketPath: "/tmp/bvm-vz-test.sock",
+      command: "stop",
+      response: GuestToolsCommandPayload(
+        value: .object([
+          "ok": .bool(true),
+          "state": .string("stopping"),
+        ])
+      )
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([virtualMachine]),
+      prepareRunResult: .success(previousRunner),
+      runnerStatusResult: .success(nil),
+      runtimeControlResult: .success(result)
+    )
+    let model = DashboardViewModel(client: client)
+
+    await model.load()
+    let didPrepare = await model.prepareRun(for: virtualMachine)
+    XCTAssertTrue(didPrepare)
+    XCTAssertEqual(model.runnerStatus(for: virtualMachine), previousRunner)
+
+    let didStop = await model.runtimeControlStopDisplay(for: virtualMachine)
+
+    XCTAssertTrue(didStop)
+    XCTAssertEqual(model.runtimeControlResult(for: virtualMachine), result)
+    XCTAssertNil(model.runtimeControlError(for: virtualMachine))
+    XCTAssertNil(model.runnerStatus(for: virtualMachine))
+    XCTAssertNil(model.runnerStatusError(for: virtualMachine))
+    XCTAssertEqual(client.sentRuntimeControlCommandRequests.count, 1)
+    XCTAssertEqual(client.sentRuntimeControlCommandRequests[0].command, "stop")
+    XCTAssertEqual(client.sentRuntimeControlCommandRequests[0].id, virtualMachine.id)
+    XCTAssertEqual(client.inspectedRunnerStatusIDs, [virtualMachine.id])
   }
 
   func testLoadQemuLaunchPlanStoresSelectedVmPlan() async throws {
@@ -6149,10 +6504,11 @@ final class DashboardViewModelTests: XCTestCase {
       displayFPSCap: "10",
       rationale: "Battery or background throttling active.",
       liveApplied: false,
+      runtimeControlAcknowledged: false,
       liveApplyBlockers: [
         RuntimeResourcePolicyBlocker(
           code: "runtime-control-unavailable",
-          message: "No live Apple VZ/display runtime control channel is available yet."
+          message: "Live Apple VZ CPU/RAM hot-apply is not implemented yet; the policy is available to display pacing and runtime policy IPC consumers."
         )
       ],
       updatedAtUnix: 1_710_000_500
@@ -6177,10 +6533,65 @@ final class DashboardViewModelTests: XCTestCase {
     XCTAssertEqual(client.reappliedRuntimeResourceRequests[0].visibility, .background)
     XCTAssertEqual(client.reappliedRuntimeResourceRequests[0].id, virtualMachine.id)
     let expectedAlert =
-      "Runtime resource policy recorded for dev; live apply blocked: runtime-control-unavailable: No live Apple VZ/display runtime control channel is available yet."
+      "Runtime resource policy recorded for dev; live apply blocked: runtime-control-unavailable: Live Apple VZ CPU/RAM hot-apply is not implemented yet; the policy is available to display pacing and runtime policy IPC consumers."
     XCTAssertEqual(
       model.alertMessage,
       expectedAlert
+    )
+  }
+
+  func testReapplyRuntimeResourcesReportsDisplayHelperAcknowledgement() async throws {
+    let virtualMachine = VirtualMachine(
+      id: UUID(),
+      name: "Dev VM",
+      guest: "Ubuntu Arm64",
+      status: .running,
+      mode: .fast,
+      resources: .init(cpuCount: 4, memoryGB: 8, diskGB: 64),
+      uptime: "12m",
+      ipAddress: "192.168.64.23",
+      lastStarted: nil,
+      notes: "test"
+    )
+    let policy = RuntimeResourcePolicy(
+      vm: "dev",
+      mode: "fast",
+      profile: "automatic",
+      visibility: .foreground,
+      state: "running",
+      onBattery: false,
+      memory: "4096",
+      cpu: "2",
+      displayFPSCap: "adaptive",
+      rationale: "Foreground display active.",
+      liveApplied: false,
+      runtimeControlAcknowledged: true,
+      liveApplyBlockers: [
+        RuntimeResourcePolicyBlocker(
+          code: "runtime-control-unavailable",
+          message: "Live Apple VZ CPU/RAM hot-apply is not implemented yet; the policy is available to display pacing and runtime policy IPC consumers."
+        )
+      ],
+      updatedAtUnix: 1_710_000_500
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([virtualMachine]),
+      runtimeResourcePolicyResult: .success(policy)
+    )
+    let model = DashboardViewModel(client: client)
+
+    await model.load()
+    let didReapply = await model.reapplyRuntimeResources(
+      visibility: .foreground,
+      for: virtualMachine
+    )
+
+    XCTAssertTrue(didReapply)
+    XCTAssertEqual(model.runtimeResourcePolicy(for: virtualMachine), policy)
+    XCTAssertEqual(
+      model.alertMessage,
+      "Runtime resource policy recorded for dev; display helper acknowledged it; live apply blocked: runtime-control-unavailable: Live Apple VZ CPU/RAM hot-apply is not implemented yet; the policy is available to display pacing and runtime policy IPC consumers."
     )
   }
 
@@ -7505,6 +7916,765 @@ final class DashboardViewModelTests: XCTestCase {
     )
   }
 
+  func testOpenGuestWindowProxyBuildsPlanAndOpensShell() async throws {
+    let virtualMachine = primaryActionPreflightVirtualMachine(status: .running)
+    let window = GuestToolsWindowAction(
+      id: "0x01200007",
+      title: "Terminal",
+      source: "wmctrl",
+      focused: true,
+      desktop: 0,
+      pid: 4242,
+      bounds: GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600)
+    )
+    let status = GuestToolsStatus(
+      vm: "Dev VM",
+      tools: "required",
+      tokenCreatedAtUnix: 1_710_000_000,
+      capabilities: [
+        GuestToolsCapability(name: "windows", maxVersion: 1, enabledBy: "integration.windows")
+      ],
+      runtime: GuestToolsRuntime(
+        connected: true,
+        guestOS: "ubuntu",
+        agentVersion: "0.1.0",
+        capabilities: ["windows"],
+        lastHeartbeatAtUnix: 1_710_000_060,
+        guestIPAddresses: [],
+        sharedFolders: [],
+        metrics: nil,
+        updatedAtUnix: 1_710_000_062
+      )
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([virtualMachine]),
+      guestToolsStatusResult: .success(status),
+      guestToolsCommandDispatchResult: .success(
+        GuestToolsCommandDispatch(vm: "Dev VM", requestID: "window-input", pendingCommands: 1)
+      )
+    )
+    var openedPlan: GuestWindowProxyPlan?
+    var openedInputSender: GuestWindowProxyInputSender?
+    let model = DashboardViewModel(
+      client: client,
+      openGuestWindowProxyShell: { plan, inputSender in
+        openedPlan = plan
+        openedInputSender = inputSender
+      }
+    )
+
+    XCTAssertTrue(model.openGuestWindowProxy(for: window, in: virtualMachine))
+
+    let plan = try XCTUnwrap(openedPlan)
+    XCTAssertEqual(plan.vmName, "Dev VM")
+    XCTAssertEqual(plan.windowID, "0x01200007")
+    XCTAssertEqual(plan.title, "Terminal")
+    XCTAssertEqual(plan.guestBounds, GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600))
+    XCTAssertEqual(plan.hostSize, GuestWindowProxyPlan.HostSize(width: 800, height: 600))
+    XCTAssertEqual(plan.scale, 1.0, accuracy: 0.0001)
+    XCTAssertEqual(plan.inputScaleX, 1.0, accuracy: 0.0001)
+    XCTAssertEqual(plan.inputScaleY, 1.0, accuracy: 0.0001)
+    XCTAssertEqual(plan.pid, 4242)
+    XCTAssertEqual(plan.desktop, 0)
+    XCTAssertNotNil(openedInputSender)
+
+    openedInputSender?(
+      .pointer(
+        windowID: "0x01200007",
+        point: GuestWindowProxyPlan.GuestPoint(x: 120, y: 240),
+        action: .press,
+        button: .left
+      )
+    )
+    openedInputSender?(
+      .pointer(
+        windowID: "0x01200007",
+        point: GuestWindowProxyPlan.GuestPoint(x: 120, y: 240),
+        action: .release,
+        button: .left
+      )
+    )
+    openedInputSender?(
+      .bounds(
+        windowID: "0x01200007",
+        bounds: GuestToolsWindowBounds(x: 50, y: 60, width: 1024, height: 768)
+      )
+    )
+    openedInputSender?(.close(windowID: "0x01200007"))
+    for _ in 0..<50 {
+      if client.sentGuestToolsCommandRequests.count == 4 {
+        break
+      }
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    XCTAssertEqual(client.sentGuestToolsCommandRequests.count, 4)
+    XCTAssertEqual(
+      client.sentGuestToolsCommandRequests[0].command,
+      .windowPointerInput(id: "0x01200007", x: 120, y: 240, action: .press, button: .left)
+    )
+    XCTAssertEqual(
+      client.sentGuestToolsCommandRequests[1].command,
+      .windowPointerInput(id: "0x01200007", x: 120, y: 240, action: .release, button: .left)
+    )
+    XCTAssertEqual(
+      client.sentGuestToolsCommandRequests[2].command,
+      .setWindowBounds(id: "0x01200007", x: 50, y: 60, width: 1024, height: 768)
+    )
+    XCTAssertEqual(
+      client.sentGuestToolsCommandRequests[3].command,
+      .closeWindow(id: "0x01200007")
+    )
+    XCTAssertTrue(client.sentGuestToolsCommandRequests[3].requestID?.hasPrefix("window-close-") == true)
+    XCTAssertEqual(
+      model.alertMessage,
+      "Opened proxy shell for Terminal (0x01200007, pid 4242, guest 800x600 at 30,40, host 800x600)."
+    )
+  }
+
+  func testCloseGuestWindowProxiesClosesTrackedShellsAndClearsStatus() {
+    let virtualMachine = primaryActionPreflightVirtualMachine(status: .running)
+    let terminalWindow = GuestToolsWindowAction(
+      id: "0x01200007",
+      title: "Terminal",
+      source: "wmctrl",
+      focused: true,
+      desktop: 0,
+      pid: 4242,
+      bounds: GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600)
+    )
+    let filesWindow = GuestToolsWindowAction(
+      id: "0x01200008",
+      title: "Files",
+      source: "wmctrl",
+      focused: false,
+      desktop: 0,
+      pid: 4343,
+      bounds: GuestToolsWindowBounds(x: 120, y: 160, width: 640, height: 480)
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([virtualMachine])
+    )
+    var closedProxyShells: [(vmName: String, windowID: String)] = []
+    let model = DashboardViewModel(
+      client: client,
+      openGuestWindowProxyShell: { _, _ in },
+      closeGuestWindowProxyShell: { vmName, windowID in
+        closedProxyShells.append((vmName, windowID))
+      }
+    )
+
+    XCTAssertTrue(model.openGuestWindowProxy(for: terminalWindow, in: virtualMachine))
+    XCTAssertTrue(model.openGuestWindowProxy(for: filesWindow, in: virtualMachine))
+
+    XCTAssertEqual(model.guestWindowProxyStatus(for: virtualMachine).trackedWindowCount, 2)
+    XCTAssertEqual(model.closeGuestWindowProxies(for: virtualMachine), 2)
+
+    XCTAssertEqual(closedProxyShells.map(\.vmName), ["Dev VM", "Dev VM"])
+    XCTAssertEqual(Set(closedProxyShells.map(\.windowID)), ["0x01200007", "0x01200008"])
+    XCTAssertEqual(model.guestWindowProxyStatus(for: virtualMachine), .idle)
+    XCTAssertEqual(model.alertMessage, "Closed 2 proxy shells for Dev VM.")
+  }
+
+  func testGuestWindowProxyStatusSummarizesTrackedCropBackedWindows() {
+    let virtualMachine = primaryActionPreflightVirtualMachine(status: .running)
+    let terminalWindow = GuestToolsWindowAction(
+      id: "0x01200007",
+      title: "Terminal",
+      source: "wmctrl",
+      focused: true,
+      desktop: 0,
+      pid: 4242,
+      bounds: GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600),
+      cropFrameSummaryPath: "/tmp/terminal-crop.json"
+    )
+    let filesWindow = GuestToolsWindowAction(
+      id: "0x01200008",
+      title: "Files",
+      source: "wmctrl",
+      focused: false,
+      desktop: 0,
+      pid: 4343,
+      bounds: GuestToolsWindowBounds(x: 120, y: 160, width: 640, height: 480)
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([virtualMachine])
+    )
+    let model = DashboardViewModel(
+      client: client,
+      openGuestWindowProxyShell: { _, _ in }
+    )
+
+    XCTAssertTrue(model.openGuestWindowProxy(for: filesWindow, in: virtualMachine))
+    XCTAssertTrue(model.openGuestWindowProxy(for: terminalWindow, in: virtualMachine))
+
+    let status = model.guestWindowProxyStatus(for: virtualMachine)
+    XCTAssertEqual(status.trackedWindowCount, 2)
+    XCTAssertEqual(status.cropBackedWindowCount, 1)
+    XCTAssertEqual(
+      status.trackedWindowSummaries,
+      [
+        "Terminal - 0x01200007 - 800x600 at 30,40 - crop",
+        "Files - 0x01200008 - 640x480 at 120,160 - metadata",
+      ]
+    )
+    XCTAssertEqual(status.detailText, "2 tracked windows, 1 crop-backed, auto refresh active")
+    XCTAssertEqual(status.badgeTitle, "2 tracked, 1 crop")
+    XCTAssertEqual(status.cropFrameText, "1/2 proxy shells have crop artifacts")
+    XCTAssertEqual(
+      status.windowSummaryText,
+      "Terminal - 0x01200007 - 800x600 at 30,40 - crop | Files - 0x01200008 - 640x480 at 120,160 - metadata"
+    )
+  }
+
+  func testOpenGuestWindowProxyRefreshesShellWhenWindowPayloadChanges() async throws {
+    let virtualMachine = primaryActionPreflightVirtualMachine(status: .running)
+    let window = GuestToolsWindowAction(
+      id: "0x01200007",
+      title: "Terminal",
+      source: "wmctrl",
+      focused: true,
+      desktop: 0,
+      pid: 4242,
+      bounds: GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600),
+      cropFrameSummaryPath: "/tmp/crop-a.json"
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([virtualMachine]),
+      guestToolsStatusResult: .success(
+        guestToolsStatus(
+          vm: "Dev VM",
+          window: GuestToolsWindowAction(
+            id: "0x01200007",
+            title: "Terminal",
+            source: "wmctrl",
+            focused: true,
+            desktop: 0,
+            pid: 4242,
+            bounds: GuestToolsWindowBounds(x: 50, y: 60, width: 1024, height: 768),
+            cropFrameSummaryPath: "/tmp/crop-b.json"
+          )
+        )
+      )
+    )
+    var openedPlans: [GuestWindowProxyPlan] = []
+    let model = DashboardViewModel(
+      client: client,
+      openGuestWindowProxyShell: { plan, _ in
+        openedPlans.append(plan)
+      }
+    )
+
+    XCTAssertTrue(model.openGuestWindowProxy(for: window, in: virtualMachine))
+    await model.loadGuestToolsStatus(for: virtualMachine)
+
+    XCTAssertEqual(openedPlans.count, 2)
+    XCTAssertEqual(
+      openedPlans[0].guestBounds,
+      GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600)
+    )
+    XCTAssertEqual(openedPlans[0].cropFrameSummaryPath, "/tmp/crop-a.json")
+    XCTAssertEqual(
+      openedPlans[1].guestBounds,
+      GuestToolsWindowBounds(x: 50, y: 60, width: 1024, height: 768)
+    )
+    XCTAssertEqual(openedPlans[1].cropFrameSummaryPath, "/tmp/crop-b.json")
+  }
+
+  func testOpenGuestWindowProxyClosesOldShellWhenVmNameChangesDuringRefresh()
+    async throws
+  {
+    let virtualMachine = primaryActionPreflightVirtualMachine(status: .running)
+    var renamedVirtualMachine = virtualMachine
+    renamedVirtualMachine.name = "Renamed VM"
+    let window = GuestToolsWindowAction(
+      id: "0x01200007",
+      title: "Terminal",
+      source: "wmctrl",
+      focused: true,
+      desktop: 0,
+      pid: 4242,
+      bounds: GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600)
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([renamedVirtualMachine]),
+      guestToolsStatusResult: .success(
+        guestToolsStatus(
+          vm: "Renamed VM",
+          window: GuestToolsWindowAction(
+            id: "0x01200007",
+            title: "Terminal",
+            source: "wmctrl",
+            focused: true,
+            desktop: 0,
+            pid: 4242,
+            bounds: GuestToolsWindowBounds(x: 50, y: 60, width: 1024, height: 768)
+          )
+        )
+      )
+    )
+    var openedPlans: [GuestWindowProxyPlan] = []
+    var closedProxyShells: [(vmName: String, windowID: String)] = []
+    let model = DashboardViewModel(
+      client: client,
+      openGuestWindowProxyShell: { plan, _ in
+        openedPlans.append(plan)
+      },
+      closeGuestWindowProxyShell: { vmName, windowID in
+        closedProxyShells.append((vmName, windowID))
+      }
+    )
+
+    XCTAssertTrue(model.openGuestWindowProxy(for: window, in: virtualMachine))
+    await model.loadGuestToolsStatus(for: renamedVirtualMachine)
+
+    XCTAssertEqual(openedPlans.map(\.vmName), ["Dev VM", "Renamed VM"])
+    XCTAssertEqual(closedProxyShells.count, 1)
+    XCTAssertEqual(closedProxyShells[0].vmName, "Dev VM")
+    XCTAssertEqual(closedProxyShells[0].windowID, "0x01200007")
+  }
+
+  func testOpenGuestWindowProxyReopensShellWhenInventoryRenamesVm()
+    async throws
+  {
+    let virtualMachine = primaryActionPreflightVirtualMachine(status: .running)
+    var renamedVirtualMachine = virtualMachine
+    renamedVirtualMachine.name = "Renamed VM"
+    let window = GuestToolsWindowAction(
+      id: "0x01200007",
+      title: "Terminal",
+      source: "wmctrl",
+      focused: true,
+      desktop: 0,
+      pid: 4242,
+      bounds: GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600)
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([renamedVirtualMachine])
+    )
+    var openedPlans: [GuestWindowProxyPlan] = []
+    var closedProxyShells: [(vmName: String, windowID: String)] = []
+    let model = DashboardViewModel(
+      client: client,
+      openGuestWindowProxyShell: { plan, _ in
+        openedPlans.append(plan)
+      },
+      closeGuestWindowProxyShell: { vmName, windowID in
+        closedProxyShells.append((vmName, windowID))
+      }
+    )
+
+    XCTAssertTrue(model.openGuestWindowProxy(for: window, in: virtualMachine))
+    await model.load()
+
+    XCTAssertEqual(openedPlans.map(\.vmName), ["Dev VM", "Renamed VM"])
+    XCTAssertEqual(openedPlans.map(\.windowID), ["0x01200007", "0x01200007"])
+    XCTAssertEqual(closedProxyShells.count, 1)
+    XCTAssertEqual(closedProxyShells[0].vmName, "Dev VM")
+    XCTAssertEqual(closedProxyShells[0].windowID, "0x01200007")
+  }
+
+  func testOpenGuestWindowProxyClosesTrackedShellWhenInventoryStopsVm()
+    async throws
+  {
+    let virtualMachine = primaryActionPreflightVirtualMachine(status: .running)
+    var stoppedVirtualMachine = virtualMachine
+    stoppedVirtualMachine.status = .stopped
+    stoppedVirtualMachine.uptime = "Not running"
+    let window = GuestToolsWindowAction(
+      id: "0x01200007",
+      title: "Terminal",
+      source: "wmctrl",
+      focused: true,
+      desktop: 0,
+      pid: 4242,
+      bounds: GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600)
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([stoppedVirtualMachine])
+    )
+    var openedPlans: [GuestWindowProxyPlan] = []
+    var closedProxyShells: [(vmName: String, windowID: String)] = []
+    let model = DashboardViewModel(
+      client: client,
+      openGuestWindowProxyShell: { plan, _ in
+        openedPlans.append(plan)
+      },
+      closeGuestWindowProxyShell: { vmName, windowID in
+        closedProxyShells.append((vmName, windowID))
+      }
+    )
+
+    XCTAssertTrue(model.openGuestWindowProxy(for: window, in: virtualMachine))
+    await model.load()
+    client.listResult = .success([virtualMachine])
+    await model.load()
+
+    XCTAssertEqual(openedPlans.count, 1)
+    XCTAssertEqual(closedProxyShells.count, 1)
+    XCTAssertEqual(closedProxyShells[0].vmName, "Dev VM")
+    XCTAssertEqual(closedProxyShells[0].windowID, "0x01200007")
+  }
+
+  func testOpenGuestWindowProxyClosesTrackedShellWhenInventoryRemovesVm()
+    async throws
+  {
+    let virtualMachine = primaryActionPreflightVirtualMachine(status: .running)
+    let window = GuestToolsWindowAction(
+      id: "0x01200007",
+      title: "Terminal",
+      source: "wmctrl",
+      focused: true,
+      desktop: 0,
+      pid: 4242,
+      bounds: GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600)
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([])
+    )
+    var openedPlans: [GuestWindowProxyPlan] = []
+    var closedProxyShells: [(vmName: String, windowID: String)] = []
+    let model = DashboardViewModel(
+      client: client,
+      openGuestWindowProxyShell: { plan, _ in
+        openedPlans.append(plan)
+      },
+      closeGuestWindowProxyShell: { vmName, windowID in
+        closedProxyShells.append((vmName, windowID))
+      }
+    )
+
+    XCTAssertTrue(model.openGuestWindowProxy(for: window, in: virtualMachine))
+    await model.load()
+    client.listResult = .success([virtualMachine])
+    await model.load()
+
+    XCTAssertEqual(openedPlans.count, 1)
+    XCTAssertEqual(closedProxyShells.count, 1)
+    XCTAssertEqual(closedProxyShells[0].vmName, "Dev VM")
+    XCTAssertEqual(closedProxyShells[0].windowID, "0x01200007")
+  }
+
+  func testOpenGuestWindowProxyClosesTrackedShellWhenGuestReportsWindowClosed()
+    async throws
+  {
+    let virtualMachine = primaryActionPreflightVirtualMachine(status: .running)
+    let window = GuestToolsWindowAction(
+      id: "0x01200007",
+      title: "Terminal",
+      source: "wmctrl",
+      focused: true,
+      desktop: 0,
+      pid: 4242,
+      bounds: GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600)
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([virtualMachine]),
+      guestToolsStatusResult: .success(
+        guestToolsStatus(
+          vm: "Dev VM",
+          window: GuestToolsWindowAction(
+            id: "0x01200007",
+            title: "Terminal",
+            source: "wmctrl",
+            focused: false,
+            closed: true,
+            desktop: 0,
+            pid: 4242,
+            bounds: GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600)
+          )
+        )
+      )
+    )
+    var openedPlans: [GuestWindowProxyPlan] = []
+    var closedProxyShells: [(vmName: String, windowID: String)] = []
+    let model = DashboardViewModel(
+      client: client,
+      openGuestWindowProxyShell: { plan, _ in
+        openedPlans.append(plan)
+      },
+      closeGuestWindowProxyShell: { vmName, windowID in
+        closedProxyShells.append((vmName, windowID))
+      }
+    )
+
+    XCTAssertTrue(model.openGuestWindowProxy(for: window, in: virtualMachine))
+    await model.loadGuestToolsStatus(for: virtualMachine)
+    client.guestToolsStatusResult = .success(
+      guestToolsStatus(
+        vm: "Dev VM",
+        window: GuestToolsWindowAction(
+          id: "0x01200007",
+          title: "Terminal",
+          source: "wmctrl",
+          focused: true,
+          desktop: 0,
+          pid: 4242,
+          bounds: GuestToolsWindowBounds(x: 80, y: 90, width: 1024, height: 768)
+        )
+      )
+    )
+    await model.loadGuestToolsStatus(for: virtualMachine)
+
+    XCTAssertEqual(openedPlans.count, 1)
+    XCTAssertEqual(closedProxyShells.count, 1)
+    XCTAssertEqual(closedProxyShells[0].vmName, "Dev VM")
+    XCTAssertEqual(closedProxyShells[0].windowID, "0x01200007")
+  }
+
+  func testOpenGuestWindowProxyAutoRefreshDispatchesWindowListAndRefreshesShell()
+    async throws
+  {
+    let virtualMachine = primaryActionPreflightVirtualMachine(status: .running)
+    let window = GuestToolsWindowAction(
+      id: "0x01200007",
+      title: "Terminal",
+      source: "wmctrl",
+      focused: true,
+      desktop: 0,
+      pid: 4242,
+      bounds: GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600),
+      cropFrameSummaryPath: "/tmp/crop-a.json"
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([virtualMachine]),
+      guestToolsStatusResult: .success(
+        guestToolsStatus(
+          vm: "Dev VM",
+          window: GuestToolsWindowAction(
+            id: "0x01200007",
+            title: "Terminal",
+            source: "wmctrl",
+            focused: true,
+            desktop: 0,
+            pid: 4242,
+            bounds: GuestToolsWindowBounds(x: 55, y: 65, width: 1024, height: 768),
+            cropFrameSummaryPath: "/tmp/crop-b.json"
+          )
+        )
+      ),
+      guestToolsCommandDispatchResult: .success(
+        GuestToolsCommandDispatch(
+          vm: "Dev VM",
+          requestID: "proxy-refresh-windows-1",
+          pendingCommands: 1
+        )
+      )
+    )
+    var openedPlans: [GuestWindowProxyPlan] = []
+    let model = DashboardViewModel(
+      client: client,
+      openGuestWindowProxyShell: { plan, _ in
+        openedPlans.append(plan)
+      },
+      guestWindowProxyRefreshIntervalNanoseconds: 1_000_000,
+      guestWindowProxyRefreshStatusDelayNanoseconds: 0
+    )
+
+    XCTAssertTrue(model.openGuestWindowProxy(for: window, in: virtualMachine))
+    XCTAssertEqual(
+      model.guestWindowProxyStatus(for: virtualMachine),
+      GuestWindowProxyStatus(
+        trackedWindowCount: 1,
+        cropBackedWindowCount: 1,
+        trackedWindowSummaries: [
+          "Terminal - 0x01200007 - 800x600 at 30,40 - crop"
+        ],
+        isAutoRefreshActive: true,
+        isRefreshInFlight: false
+      )
+    )
+    for _ in 0..<100 {
+      if openedPlans.count >= 2
+        && client.sentGuestToolsCommandRequests.contains(where: { $0.command == .listWindows })
+      {
+        break
+      }
+      try await Task.sleep(nanoseconds: 5_000_000)
+    }
+
+    XCTAssertTrue(client.sentGuestToolsCommandRequests.contains(where: { request in
+      request.command == .listWindows
+        && request.requestID?.hasPrefix("proxy-refresh-windows-") == true
+    }))
+    XCTAssertEqual(openedPlans.count, 2)
+    XCTAssertEqual(openedPlans[1].cropFrameSummaryPath, "/tmp/crop-b.json")
+    XCTAssertEqual(
+      openedPlans[1].guestBounds,
+      GuestToolsWindowBounds(x: 55, y: 65, width: 1024, height: 768)
+    )
+    XCTAssertEqual(model.guestWindowProxyStatus(for: virtualMachine).trackedWindowCount, 1)
+    XCTAssertTrue(model.guestWindowProxyStatus(for: virtualMachine).isAutoRefreshActive)
+
+    model.updateClient(client)
+    XCTAssertEqual(model.guestWindowProxyStatus(for: virtualMachine), .idle)
+  }
+
+  func testOpenGuestWindowProxyClosesTrackedShellWhenAuthoritativeWindowListOmitsIt()
+    async throws
+  {
+    let virtualMachine = primaryActionPreflightVirtualMachine(status: .running)
+    let window = GuestToolsWindowAction(
+      id: "0x01200007",
+      title: "Terminal",
+      source: "wmctrl",
+      focused: true,
+      desktop: 0,
+      pid: 4242,
+      bounds: GuestToolsWindowBounds(x: 30, y: 40, width: 800, height: 600)
+    )
+    let client = StubVirtualMachineClient(
+      sourceTitle: "Mock inventory",
+      listResult: .success([virtualMachine]),
+      guestToolsStatusResult: .success(
+        guestToolsStatus(vm: "Dev VM", windows: [])
+      )
+    )
+    var openedPlans: [GuestWindowProxyPlan] = []
+    var closedProxyShells: [(vmName: String, windowID: String)] = []
+    let model = DashboardViewModel(
+      client: client,
+      openGuestWindowProxyShell: { plan, _ in
+        openedPlans.append(plan)
+      },
+      closeGuestWindowProxyShell: { vmName, windowID in
+        closedProxyShells.append((vmName, windowID))
+      }
+    )
+
+    XCTAssertTrue(model.openGuestWindowProxy(for: window, in: virtualMachine))
+    XCTAssertEqual(model.guestWindowProxyStatus(for: virtualMachine).trackedWindowCount, 1)
+    await model.loadGuestToolsStatus(for: virtualMachine)
+    client.guestToolsStatusResult = .success(
+      guestToolsStatus(vm: "Dev VM", window: window)
+    )
+    await model.loadGuestToolsStatus(for: virtualMachine)
+
+    XCTAssertEqual(openedPlans.count, 1)
+    XCTAssertEqual(closedProxyShells.count, 1)
+    XCTAssertEqual(closedProxyShells[0].vmName, "Dev VM")
+    XCTAssertEqual(closedProxyShells[0].windowID, "0x01200007")
+    XCTAssertEqual(model.guestWindowProxyStatus(for: virtualMachine), .idle)
+  }
+
+  func testOpenGuestWindowProxyRequiresBounds() {
+    let virtualMachine = primaryActionPreflightVirtualMachine(status: .running)
+    let window = GuestToolsWindowAction(
+      id: "0x01200008",
+      title: "Files",
+      source: "wmctrl",
+      focused: nil
+    )
+    var openedPlans: [GuestWindowProxyPlan] = []
+    let model = DashboardViewModel(
+      client: StubVirtualMachineClient(
+        sourceTitle: "Mock inventory",
+        listResult: .success([virtualMachine])
+      ),
+      openGuestWindowProxyShell: { plan, _ in
+        openedPlans.append(plan)
+      }
+    )
+
+    XCTAssertFalse(model.openGuestWindowProxy(for: window, in: virtualMachine))
+
+    XCTAssertTrue(openedPlans.isEmpty)
+    XCTAssertEqual(model.guestWindowProxyStatus(for: virtualMachine), .idle)
+    XCTAssertEqual(
+      model.alertMessage,
+      "Guest window bounds are required before opening a proxy shell."
+    )
+  }
+
+  private func guestToolsStatus(
+    vm: String,
+    window: GuestToolsWindowAction
+  ) -> GuestToolsStatus {
+    guestToolsStatus(vm: vm, windows: [window])
+  }
+
+  private func guestToolsStatus(
+    vm: String,
+    windows: [GuestToolsWindowAction]
+  ) -> GuestToolsStatus {
+    GuestToolsStatus(
+      vm: vm,
+      tools: "required",
+      tokenCreatedAtUnix: 1_710_000_000,
+      capabilities: [
+        GuestToolsCapability(name: "windows", maxVersion: 1, enabledBy: "integration.windows")
+      ],
+      runtime: GuestToolsRuntime(
+        connected: true,
+        guestOS: "ubuntu",
+        agentVersion: "0.1.0",
+        capabilities: ["windows"],
+        lastHeartbeatAtUnix: 1_710_000_060,
+        guestIPAddresses: [],
+        sharedFolders: [],
+        metrics: nil,
+        lastCommandResult: GuestToolsCommandResult(
+          requestID: "windows-1",
+          capability: "windows",
+          ok: true,
+          errorCode: nil,
+          message: "listed windows",
+          result: GuestToolsCommandPayload(
+            value: .object([
+              "windows": .array(windows.map { guestToolsJSON(window: $0) })
+            ])
+          ),
+          metadata: nil,
+          completedAtUnix: 1_710_000_062
+        ),
+        updatedAtUnix: 1_710_000_062
+      )
+    )
+  }
+
+  private func guestToolsJSON(window: GuestToolsWindowAction) -> GuestToolsJSONValue {
+    var values: [String: GuestToolsJSONValue] = [
+      "id": .string(window.id),
+      "title": .string(window.title),
+    ]
+    if let source = window.source {
+      values["source"] = .string(source)
+    }
+    if let focused = window.focused {
+      values["focused"] = .bool(focused)
+    }
+    if let closed = window.closed {
+      values["closed"] = .bool(closed)
+    }
+    if let desktop = window.desktop {
+      values["desktop"] = .number("\(desktop)")
+    }
+    if let pid = window.pid {
+      values["pid"] = .number("\(pid)")
+    }
+    if let bounds = window.bounds {
+      values["bounds"] = .object([
+        "x": .number("\(bounds.x)"),
+        "y": .number("\(bounds.y)"),
+        "width": .number("\(bounds.width)"),
+        "height": .number("\(bounds.height)"),
+      ])
+    }
+    if let cropFrameSummaryPath = window.cropFrameSummaryPath {
+      values["window_crop_frame_summary_path"] = .string(cropFrameSummaryPath)
+    }
+    return .object(values)
+  }
+
   private func primaryActionPreflightVirtualMachine(
     status: VirtualMachine.Status
   ) -> VirtualMachine {
@@ -7617,11 +8787,12 @@ final class DashboardViewModelTests: XCTestCase {
 }
 
 private final class StubVirtualMachineClient: VirtualMachineClient,
-  VirtualMachineClientSourceProviding
+  VirtualMachineClientSourceProviding, VirtualMachineDisplayMetadataProviding
 {
   var sourceTitle: String
   var allowsMutationsForCurrentInventory: Bool
   var listResult: Result<[VirtualMachine], Error>
+  var displayStoreMetadataByID: [VirtualMachine.ID: EmbeddedDisplayLauncher.StoreMetadata]
   var templatesResult: Result<[BootTemplate], Error>
   var createResult: Result<VirtualMachine, Error>
   var cloneResult: Result<CloneVirtualMachineMetadata, Error>
@@ -7650,6 +8821,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
   var logViewResult: Result<VMLogView, Error>
   var prepareRunResult: Result<RunnerStatus, Error>
   var runnerStatusResult: Result<RunnerStatus?, Error>
+  var runtimeControlResult: Result<RuntimeControlCommandResult, Error>
   var recommendationResult: Result<ModeRecommendation, Error>
   var snapshotPreflightStatusResult: Result<SnapshotPreflightStatus, Error>
   var snapshotsResult: Result<[VMSnapshot], Error>
@@ -7727,6 +8899,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
   var viewedLogRequests: [(kind: VMLogKind, bytes: UInt64?, id: VirtualMachine.ID)] = []
   var preparedRunIDs: [VirtualMachine.ID] = []
   var inspectedRunnerStatusIDs: [VirtualMachine.ID] = []
+  var sentRuntimeControlCommandRequests: [(command: String, id: VirtualMachine.ID)] = []
   var requestedModeChoices: [GuestChoice] = []
   var inspectedSnapshotPreflightStatusIDs: [VirtualMachine.ID] = []
   var listedSnapshotIDs: [VirtualMachine.ID] = []
@@ -7782,6 +8955,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     sourceTitle: String,
     allowsMutationsForCurrentInventory: Bool = true,
     listResult: Result<[VirtualMachine], Error>,
+    displayStoreMetadataByID: [VirtualMachine.ID: EmbeddedDisplayLauncher.StoreMetadata] = [:],
     templatesResult: Result<[BootTemplate], Error> = .success([]),
     createResult: Result<VirtualMachine, Error> = .failure(
       VirtualMachineClientError.virtualMachineNotFound),
@@ -7832,6 +9006,8 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     prepareRunResult: Result<RunnerStatus, Error> = .failure(
       VirtualMachineClientError.virtualMachineNotFound),
     runnerStatusResult: Result<RunnerStatus?, Error> = .failure(
+      VirtualMachineClientError.virtualMachineNotFound),
+    runtimeControlResult: Result<RuntimeControlCommandResult, Error> = .failure(
       VirtualMachineClientError.virtualMachineNotFound),
     recommendationResult: Result<ModeRecommendation, Error> = .failure(
       VirtualMachineClientError.virtualMachineNotFound),
@@ -7914,6 +9090,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     self.sourceTitle = sourceTitle
     self.allowsMutationsForCurrentInventory = allowsMutationsForCurrentInventory
     self.listResult = listResult
+    self.displayStoreMetadataByID = displayStoreMetadataByID
     self.templatesResult = templatesResult
     self.createResult = createResult
     self.cloneResult = cloneResult
@@ -7940,6 +9117,7 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
     self.logViewResult = logViewResult
     self.prepareRunResult = prepareRunResult
     self.runnerStatusResult = runnerStatusResult
+    self.runtimeControlResult = runtimeControlResult
     self.recommendationResult = recommendationResult
     self.snapshotPreflightStatusResult = snapshotPreflightStatusResult
     self.snapshotsResult = snapshotsResult
@@ -8003,6 +9181,10 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
       try await Task.sleep(nanoseconds: listDelayNanos)
     }
     return try listResult.get()
+  }
+
+  func displayStoreMetadata(for id: VirtualMachine.ID) -> EmbeddedDisplayLauncher.StoreMetadata? {
+    displayStoreMetadataByID[id]
   }
 
   func listBootTemplates() async throws -> [BootTemplate] {
@@ -8204,6 +9386,13 @@ private final class StubVirtualMachineClient: VirtualMachineClient,
   func inspectRunnerStatus(on id: VirtualMachine.ID) async throws -> RunnerStatus? {
     inspectedRunnerStatusIDs.append(id)
     return try runnerStatusResult.get()
+  }
+
+  func sendRuntimeControlCommand(_ command: String, on id: VirtualMachine.ID) async throws
+    -> RuntimeControlCommandResult
+  {
+    sentRuntimeControlCommandRequests.append((command, id))
+    return try runtimeControlResult.get()
   }
 
   func inspectQemuArgs(on id: VirtualMachine.ID) async throws -> QemuLaunchPlan {

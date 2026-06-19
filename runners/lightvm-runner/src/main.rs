@@ -8,7 +8,8 @@ use bridgevm_config::VmMode;
 use bridgevm_core::VmEngine;
 use bridgevm_lightvm::LightVmEngine;
 use bridgevm_storage::{
-    LaunchReadinessBlockerMetadata, LaunchReadinessMetadata, RunnerMetadata, VmStore,
+    LaunchReadinessBlockerMetadata, LaunchReadinessMetadata, RunnerMetadata,
+    RuntimeControlMetadata, VmRuntimeState, VmStore,
 };
 use clap::Parser;
 
@@ -38,6 +39,16 @@ struct Args {
     apple_vz_restore_state: Option<std::path::PathBuf>,
     #[arg(long)]
     apple_vz_display: bool,
+    #[arg(long, value_name = "PX")]
+    apple_vz_display_width: Option<u32>,
+    #[arg(long, value_name = "PX")]
+    apple_vz_display_height: Option<u32>,
+    #[arg(long, value_name = "PATH")]
+    apple_vz_runtime_control_socket: Option<std::path::PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    apple_vz_proxy_framebuffer_rgba_file: Option<std::path::PathBuf>,
+    #[arg(long, value_name = "MILLIS")]
+    apple_vz_proxy_framebuffer_capture_interval_ms: Option<u64>,
     #[arg(long, value_name = "PATH")]
     launch_spec: Option<std::path::PathBuf>,
     #[arg(long)]
@@ -66,6 +77,11 @@ fn main() -> Result<()> {
                 args.apple_vz_save_state.as_deref(),
                 args.apple_vz_restore_state.as_deref(),
                 args.apple_vz_display,
+                args.apple_vz_display_width,
+                args.apple_vz_display_height,
+                args.apple_vz_runtime_control_socket.as_deref(),
+                args.apple_vz_proxy_framebuffer_rgba_file.as_deref(),
+                args.apple_vz_proxy_framebuffer_capture_interval_ms,
             )?;
             return Ok(());
         }
@@ -82,10 +98,18 @@ fn main() -> Result<()> {
         .store
         .map(VmStore::new)
         .unwrap_or_else(VmStore::default);
-    let (bundle, manifest, _) = store
+    let (bundle, mut manifest, _) = store
         .get_vm_with_active_disk(&vm)
         .context("failed to read VM")?;
     ensure_fast_mode(manifest.mode)?;
+
+    if args.write_metadata || args.require_ready || args.launch {
+        let (_, active_disk) = store
+            .prepare_active_disk(&vm)
+            .context("failed to prepare active disk")?;
+        manifest.storage.primary.path = active_disk.path.display().to_string();
+        manifest.storage.primary.format = active_disk.format;
+    }
 
     let plan = build_fast_plan(&manifest, &bundle).context("failed to build Apple VZ plan")?;
     let launch_spec_path = if args.write_metadata || args.require_ready || args.launch {
@@ -104,7 +128,11 @@ fn main() -> Result<()> {
         let metadata = RunnerMetadata {
             engine: engine.name().to_string(),
             pid: None,
-            command: plan.render_runner_words(),
+            command: plan.render_runner_words_for_launch_spec(
+                launch_spec_path
+                    .as_deref()
+                    .expect("--write-metadata writes a launch spec before runner metadata"),
+            ),
             log_path: plan.launch_spec().logs.runner_log_path.clone().into(),
             started_at_unix: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -116,6 +144,7 @@ fn main() -> Result<()> {
             disk: Some(disk),
             active_disk: Some(active_disk),
             launch_readiness: Some(launch_readiness_metadata(&plan.launch_spec().readiness)),
+            runtime_control: None,
         };
         store
             .write_runner_metadata(&vm, &metadata)
@@ -125,7 +154,16 @@ fn main() -> Result<()> {
         ensure_launch_ready(plan.launch_spec())?;
     }
     if args.launch {
-        launch_handoff(
+        record_live_launch_metadata(
+            &store,
+            &vm,
+            engine.name(),
+            &plan,
+            launch_spec_path.clone(),
+            args.apple_vz_runtime_control_socket.clone(),
+            std::env::args().collect(),
+        )?;
+        let launch_result = launch_handoff(
             plan.launch_spec(),
             launch_spec_path.as_deref(),
             args.apple_vz_runner.as_deref(),
@@ -135,7 +173,19 @@ fn main() -> Result<()> {
             args.apple_vz_save_state.as_deref(),
             args.apple_vz_restore_state.as_deref(),
             args.apple_vz_display,
-        )?;
+            args.apple_vz_display_width,
+            args.apple_vz_display_height,
+            args.apple_vz_runtime_control_socket.as_deref(),
+            args.apple_vz_proxy_framebuffer_rgba_file.as_deref(),
+            args.apple_vz_proxy_framebuffer_capture_interval_ms,
+        );
+        if let Err(error) = launch_result {
+            let _ = store.transition_state(&vm, VmRuntimeState::Stopped);
+            return Err(error);
+        }
+        store
+            .transition_state(&vm, VmRuntimeState::Stopped)
+            .context("failed to record VM stopped after Fast launch exit")?;
         return Ok(());
     }
     print_launch_spec_or_words(
@@ -143,8 +193,59 @@ fn main() -> Result<()> {
         launch_spec_path.as_deref(),
         args.print_plan,
         args.print_handoff,
-        plan.render_runner_words(),
+        launch_spec_path
+            .as_deref()
+            .map(|path| plan.render_runner_words_for_launch_spec(path))
+            .unwrap_or_else(|| plan.render_runner_words()),
     )?;
+    Ok(())
+}
+
+fn record_live_launch_metadata(
+    store: &VmStore,
+    vm: &str,
+    engine_name: &str,
+    plan: &bridgevm_apple_vz::AppleVzPlan,
+    launch_spec_path: Option<std::path::PathBuf>,
+    runtime_control_socket: Option<std::path::PathBuf>,
+    command: Vec<String>,
+) -> Result<()> {
+    let (disk, active_disk) = store
+        .prepare_active_disk(vm)
+        .context("failed to prepare active disk for live Fast launch metadata")?;
+    let runtime_control = runtime_control_socket.map(|socket_path| RuntimeControlMetadata {
+        kind: "apple-vz-display".to_string(),
+        socket_path,
+        commands: vec![
+            "status".to_string(),
+            "stop".to_string(),
+            "policy".to_string(),
+            "pacing".to_string(),
+        ],
+    });
+    let metadata = RunnerMetadata {
+        engine: engine_name.to_string(),
+        pid: Some(std::process::id()),
+        command,
+        log_path: plan.launch_spec().logs.runner_log_path.clone().into(),
+        started_at_unix: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        dry_run: false,
+        launch_spec_path,
+        guest_tools: None,
+        disk: Some(disk),
+        active_disk: Some(active_disk),
+        launch_readiness: Some(launch_readiness_metadata(&plan.launch_spec().readiness)),
+        runtime_control,
+    };
+    store
+        .write_runner_metadata(vm, &metadata)
+        .context("failed to write live Fast launch runner metadata")?;
+    store
+        .transition_state(vm, VmRuntimeState::Running)
+        .context("failed to record VM running for live Fast launch")?;
     Ok(())
 }
 
@@ -158,6 +259,11 @@ fn launch_handoff(
     apple_vz_save_state: Option<&std::path::Path>,
     apple_vz_restore_state: Option<&std::path::Path>,
     apple_vz_display: bool,
+    apple_vz_display_width: Option<u32>,
+    apple_vz_display_height: Option<u32>,
+    apple_vz_runtime_control_socket: Option<&std::path::Path>,
+    apple_vz_proxy_framebuffer_rgba_file: Option<&std::path::Path>,
+    apple_vz_proxy_framebuffer_capture_interval_ms: Option<u64>,
 ) -> Result<()> {
     let handoff = build_launch_handoff(spec, launch_spec_path);
     let attempt = if let Some(program) = apple_vz_runner {
@@ -191,6 +297,27 @@ fn launch_handoff(
         // graphics device and hosts the VM in a VZVirtualMachineView window.
         if apple_vz_display {
             launcher = launcher.arg("--display");
+        }
+        if let Some(width) = apple_vz_display_width {
+            launcher = launcher.arg("--display-width").arg(width.to_string());
+        }
+        if let Some(height) = apple_vz_display_height {
+            launcher = launcher.arg("--display-height").arg(height.to_string());
+        }
+        if let Some(path) = apple_vz_runtime_control_socket {
+            launcher = launcher
+                .arg("--runtime-control-socket")
+                .arg(path.display().to_string());
+        }
+        if let Some(path) = apple_vz_proxy_framebuffer_rgba_file {
+            launcher = launcher
+                .arg("--proxy-framebuffer-rgba-file")
+                .arg(path.display().to_string());
+        }
+        if let Some(interval_ms) = apple_vz_proxy_framebuffer_capture_interval_ms {
+            launcher = launcher
+                .arg("--proxy-framebuffer-capture-interval-ms")
+                .arg(interval_ms.to_string());
         }
         // Shared folders: forward one repeatable `--share <tag>=<host_path>`
         // (optionally `ro:`-prefixed) flag per approved folder so AppleVzRunner
@@ -329,7 +456,7 @@ mod tests {
         AppleVzIntegrationSpec, AppleVzLogSpec, AppleVzPathSpec, AppleVzReadinessBlocker,
         AppleVzResourceSpec, AppleVzShareSpec,
     };
-    use bridgevm_config::BootMode;
+    use bridgevm_config::{BootMode, Guest, VmManifest};
     use std::path::PathBuf;
 
     #[test]
@@ -427,6 +554,24 @@ mod tests {
     }
 
     #[test]
+    fn launch_spec_flag_parses_without_vm_name() {
+        let args = Args::try_parse_from([
+            "lightvm-runner",
+            "--launch-spec",
+            "/tmp/ubuntu-fast.vmbridge/metadata/apple-vz-launch.json",
+        ])
+        .expect("launch spec handoff should parse without a VM name");
+
+        assert_eq!(args.vm, None);
+        assert_eq!(
+            args.launch_spec.as_deref(),
+            Some(std::path::Path::new(
+                "/tmp/ubuntu-fast.vmbridge/metadata/apple-vz-launch.json"
+            ))
+        );
+    }
+
+    #[test]
     fn apple_vz_suspend_resume_state_flags_parse() {
         let save = Args::try_parse_from([
             "lightvm-runner",
@@ -481,6 +626,93 @@ mod tests {
     }
 
     #[test]
+    fn record_live_launch_metadata_writes_running_state_and_runtime_control() {
+        let temp = std::env::temp_dir().join(format!(
+            "lightvm-runner-live-metadata-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&temp);
+        let store = VmStore::new(&temp);
+        let mut manifest = VmManifest::new(
+            "dev",
+            VmMode::Fast,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: None,
+                arch: "arm64".to_string(),
+            },
+            "80GiB",
+        );
+        manifest.storage.primary.path = "disks/root.raw".to_string();
+        manifest.storage.primary.format = "raw".to_string();
+        manifest.boot = Some(bridgevm_config::Boot {
+            mode: BootMode::LinuxKernel,
+            installer_image: None,
+            kernel_path: Some("boot/vmlinuz".to_string()),
+            initrd_path: None,
+            kernel_command_line: Some("console=hvc0".to_string()),
+            macos_restore_image: None,
+        });
+        store.create_vm(&manifest).unwrap();
+        let bundle = store.bundle_path("dev");
+        let plan = build_fast_plan(&manifest, &bundle).unwrap();
+        let socket = temp.join("bvm-vz.sock");
+        let framebuffer = bundle
+            .join("metadata")
+            .join("apple-vz-display-framebuffer.rgba");
+        let command = vec![
+            "lightvm-runner".to_string(),
+            "dev".to_string(),
+            "--launch".to_string(),
+            "--apple-vz-display".to_string(),
+            "--apple-vz-display-width".to_string(),
+            "1440".to_string(),
+            "--apple-vz-display-height".to_string(),
+            "900".to_string(),
+            "--apple-vz-runtime-control-socket".to_string(),
+            socket.display().to_string(),
+            "--apple-vz-proxy-framebuffer-rgba-file".to_string(),
+            framebuffer.display().to_string(),
+        ];
+
+        record_live_launch_metadata(
+            &store,
+            "dev",
+            "lightvm",
+            &plan,
+            Some(bundle.join("metadata/apple-vz-launch.json")),
+            Some(socket.clone()),
+            command.clone(),
+        )
+        .unwrap();
+
+        let metadata = store.runner_metadata("dev").unwrap().unwrap();
+        assert_eq!(metadata.engine, "lightvm");
+        assert_eq!(metadata.pid, Some(std::process::id()));
+        assert_eq!(metadata.command, command);
+        assert!(!metadata.dry_run);
+        assert_eq!(
+            metadata
+                .runtime_control
+                .as_ref()
+                .map(|control| &control.socket_path),
+            Some(&socket)
+        );
+        assert_eq!(
+            metadata.runtime_control.as_ref().unwrap().commands,
+            vec![
+                "status".to_string(),
+                "stop".to_string(),
+                "policy".to_string(),
+                "pacing".to_string(),
+            ]
+        );
+        assert_eq!(store.state("dev").unwrap().state, VmRuntimeState::Running);
+
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
     fn launch_handoff_rejects_blocked_spec_before_launcher() {
         let spec = launch_spec_with_readiness(
             false,
@@ -492,8 +724,10 @@ mod tests {
             }],
         );
 
-        let error = launch_handoff(&spec, None, None, false, None, None, None, None, false)
-            .expect_err("blocked launch must fail");
+        let error = launch_handoff(
+            &spec, None, None, false, None, None, None, None, false, None, None, None, None, None,
+        )
+        .expect_err("blocked launch must fail");
         let message = format!("{error:#}");
 
         assert!(message.contains("failed to launch Apple VZ handoff"));
@@ -518,6 +752,11 @@ mod tests {
             None,
             None,
             false,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .expect_err("default Apple VZ launcher must require the Swift helper");
         let message = format!("{error:#}");
@@ -566,6 +805,11 @@ mod tests {
             None,
             None,
             false,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .expect("helper launch should succeed");
 
@@ -617,6 +861,11 @@ mod tests {
             Some(&state),
             None,
             false,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .expect("helper launch should succeed");
 
@@ -655,6 +904,7 @@ mod tests {
         std::fs::set_permissions(&helper, permissions).unwrap();
 
         let spec = launch_spec_with_readiness(true, Vec::new());
+        let framebuffer = temp.join("display.rgba");
         launch_handoff(
             &spec,
             None,
@@ -665,6 +915,11 @@ mod tests {
             None,
             None,
             true,
+            Some(1440),
+            Some(900),
+            None,
+            Some(&framebuffer),
+            Some(250),
         )
         .expect("helper launch should succeed");
 
@@ -672,6 +927,21 @@ mod tests {
         assert!(
             captured.contains("--display"),
             "helper did not receive --display: {captured}"
+        );
+        assert!(
+            captured.contains("--display-width\n1440\n--display-height\n900"),
+            "helper did not receive display dimensions: {captured}"
+        );
+        assert!(
+            captured.contains(&format!(
+                "--proxy-framebuffer-rgba-file\n{}",
+                framebuffer.display()
+            )),
+            "helper did not receive proxy framebuffer export path: {captured}"
+        );
+        assert!(
+            captured.contains("--proxy-framebuffer-capture-interval-ms\n250"),
+            "helper did not receive proxy framebuffer export interval: {captured}"
         );
 
         let _ = std::fs::remove_dir_all(&temp);
@@ -725,6 +995,11 @@ mod tests {
             None,
             None,
             false,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .expect("helper launch should succeed");
 
@@ -783,6 +1058,11 @@ mod tests {
             None,
             None,
             false,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .expect("helper launch should succeed");
 

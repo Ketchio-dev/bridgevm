@@ -6,6 +6,14 @@ It is for legacy operating systems, x86 emulation, research OSes, custom kernels
 
 It may be slower than Fast Mode, but its product promise is that more things are possible.
 
+For Windows 11 Arm, this path is a compatibility bridge, not the final
+Parallels-like performance architecture. QEMU/HVF can validate installer
+reachability and a controlled Windows beta profile, but it shares the same broad
+ceiling as other QEMU/HVF frontends. The no-QEMU Windows fast path belongs in a
+separate Apple Hypervisor.framework VMM/device/display/driver effort.
+The separate HVF `machine-plan` gate tracks that future custom VMM path; it is
+not a Compatibility launch path.
+
 ## Implemented scaffold
 
 The Rust `bridgevm-qemu` crate can build a QEMU command preview from a Compatibility Mode manifest. The CLI exposes this through:
@@ -154,12 +162,14 @@ bridgevm guest-tools close-window <vm> --id <window-id> [--request-id <id>]
 Commands with request IDs remain pending until the guest returns a matching
 `CommandResult`.
 
-These Compatibility Mode command surfaces are still alpha protocol scaffolds in
-the current Linux guest tools runner. Application and window metadata use static
-or in-memory scaffold entries rather than real desktop inventory; launch,
-focus, and close acknowledgements do not start processes or control real
-windows. Drag-and-drop commands track transfer state in memory but do not
-write files unless the Linux tools scaffold is explicitly started with
+These Compatibility Mode command surfaces are still alpha, but the Linux guest
+tools runner can now cross into real desktop tool boundaries when the guest
+session provides them: `.desktop` application inventory plus launch through
+`gio`/`gtk-launch`, and X11 window list/focus/close through `wmctrl`. When those
+tools are absent, application/window commands fall back to static in-memory
+scaffold entries, and those fallback acknowledgements do not start processes or
+control real windows. Drag-and-drop commands track transfer state in memory but
+do not write files unless the Linux tools scaffold is explicitly started with
 `--file-drop-dir`; in that opt-in path it base64-decodes chunks and materializes
 the completed payload under that configured directory after validating the
 declared size and file name.
@@ -317,9 +327,10 @@ Verified: Windows 11 25H2 Arm64 booted to the Setup "Select language settings"
 screen under the product-generated command, confirmed by a QMP `screendump` with
 `query-status` running. The "Press any key" prompt has a short timeout, so a key
 must be sent early (over QMP `send-key`, or pressed in the viewer). Reaching the
-Setup screen does not require the target disk; a real install still needs an
-NVMe-backed target the WinPE `stornvme` driver can see rather than the default
-`virtio` primary disk.
+Setup screen does not prove the final product goal. A real install still needs
+the Windows target disk, TPM/Secure Boot, guest tools, and display/input
+integration validated end to end; the Parallels-like path additionally requires
+replacing this QEMU device stack with BridgeVM-owned HVF VMM devices.
 
 `bridgevm diagnostics bundle legacy-linux --output <dir>` packages the
 Compatibility Mode state that is useful for support without copying large or

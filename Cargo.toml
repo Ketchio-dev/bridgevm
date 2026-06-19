@@ -18,6 +18,7 @@ members = [
   "runners/bridgevm-tools-linux",
   "runners/displayd",
   "runners/fullvm-runner",
+  "runners/hvf-runner",
   "runners/lightvm-runner",
   "runners/networkd",
 ]

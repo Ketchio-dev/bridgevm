@@ -11,6 +11,13 @@ DISK="$BUNDLE/disks/root.qcow2"
 INSTALLER="$BUNDLE/media/ubuntu.iso"
 LAUNCH_SPEC="$BUNDLE/metadata/apple-vz-launch.json"
 RUNNER_METADATA="$BUNDLE/metadata/runner.json"
+RAW_VM_NAME="fast-linux-kernel-raw"
+RAW_BUNDLE="$STORE/vms/$RAW_VM_NAME.vmbridge"
+RAW_DISK="$RAW_BUNDLE/disks/root.raw"
+RAW_KERNEL="$RAW_BUNDLE/boot/vmlinuz"
+RAW_INITRD="$RAW_BUNDLE/boot/initrd"
+RAW_LAUNCH_SPEC="$RAW_BUNDLE/metadata/apple-vz-launch.json"
+RAW_RUNNER_METADATA="$RAW_BUNDLE/metadata/runner.json"
 
 bridgevm() {
   cargo run --quiet -p bridgevm-cli -- --store "$STORE" "$@"
@@ -83,12 +90,34 @@ assert_file_contains() {
   fi
 }
 
+assert_file_not_contains() {
+  local file="$1"
+  local needle="$2"
+  local label="$3"
+  [[ -f "$file" ]] || fail "$label missing file $file"
+  if grep -Fq "$needle" "$file"; then
+    fail "$label unexpectedly included '$needle' in $file"
+  fi
+}
+
 assert_runner_launch_spec_path() {
   local label="$1"
   [[ -f "$RUNNER_METADATA" ]] || fail "$label missing file $RUNNER_METADATA"
   if ! EXPECTED_LAUNCH_SPEC="$LAUNCH_SPEC" perl -0ne 'exit(/"launch_spec_path"\s*:\s*"\Q$ENV{EXPECTED_LAUNCH_SPEC}\E"/ ? 0 : 1)' "$RUNNER_METADATA"; then
     fail "$label launch_spec_path did not match $LAUNCH_SPEC in $RUNNER_METADATA"
   fi
+}
+
+assert_runner_launch_spec_command() {
+  local label="$1"
+  assert_file_contains "$RUNNER_METADATA" '"command": [' "$label"
+  assert_file_contains "$RUNNER_METADATA" '"lightvm-runner"' "$label"
+  assert_file_contains "$RUNNER_METADATA" '"--launch-spec"' "$label"
+  assert_file_contains "$RUNNER_METADATA" "\"$LAUNCH_SPEC\"" "$label"
+  assert_file_not_contains "$RUNNER_METADATA" '"--apple-vz"' "$label"
+  assert_file_not_contains "$RUNNER_METADATA" '"--disk"' "$label"
+  assert_file_not_contains "$RUNNER_METADATA" '"--memory"' "$label"
+  assert_file_not_contains "$RUNNER_METADATA" '"--cpu"' "$label"
 }
 
 stop_daemon() {
@@ -116,9 +145,11 @@ assert_contains "$prepare_output" "missing-primary-disk" "prepare-run output"
 assert_contains "$prepare_output" "$DISK" "prepare-run output"
 assert_contains "$prepare_output" "missing-installer-image" "prepare-run output"
 assert_contains "$prepare_output" "$INSTALLER" "prepare-run output"
+assert_contains "$prepare_output" "Command: lightvm-runner --launch-spec $LAUNCH_SPEC" "prepare-run output"
 assert_file_contains "$LAUNCH_SPEC" '"vm_name": "fast-linux"' "prepare-run launch spec"
 assert_file_contains "$LAUNCH_SPEC" '"ready": false' "prepare-run launch spec"
 assert_runner_launch_spec_path "prepare-run runner metadata"
+assert_runner_launch_spec_command "prepare-run runner metadata"
 assert_fails_contains \
   "lightvm-runner-require-ready-blocked" \
   "Fast Mode launch readiness failed" \
@@ -145,6 +176,7 @@ assert_contains "$runner_output" "Launch spec: $LAUNCH_SPEC" "local runner-statu
 assert_contains "$runner_output" "Launch ready: false" "local runner-status output"
 assert_contains "$runner_output" "missing-primary-disk" "local runner-status output"
 assert_contains "$runner_output" "missing-installer-image" "local runner-status output"
+assert_contains "$runner_output" "Command: lightvm-runner --launch-spec $LAUNCH_SPEC" "local runner-status output"
 
 assert_fails_contains \
   "local-run-spawn-blocked" \
@@ -165,38 +197,65 @@ run_output="$(bridgevm run "$VM_NAME")"
 assert_contains "$run_output" "Engine: lightvm" "local run output"
 assert_contains "$run_output" "Dry run: true" "local run output"
 assert_contains "$run_output" "Launch spec: $LAUNCH_SPEC" "local run output"
-assert_contains "$run_output" "Launch ready: true" "local run output"
+assert_contains "$run_output" "Launch ready: false" "local run output"
+assert_contains "$run_output" "unsupported-live-boot-mode" "local run output"
+assert_contains "$run_output" "unsupported-live-disk-format" "local run output"
 assert_not_contains "$run_output" "missing-primary-disk" "local run output"
 assert_not_contains "$run_output" "missing-installer-image" "local run output"
-assert_file_contains "$LAUNCH_SPEC" '"ready": true' "local run launch spec"
+assert_contains "$run_output" "Command: lightvm-runner --launch-spec $LAUNCH_SPEC" "local run output"
+assert_file_contains "$LAUNCH_SPEC" '"ready": false' "local run launch spec"
+assert_file_contains "$LAUNCH_SPEC" '"unsupported-live-boot-mode"' "local run launch spec"
+assert_file_contains "$LAUNCH_SPEC" '"unsupported-live-disk-format"' "local run launch spec"
 assert_runner_launch_spec_path "local run runner metadata"
-runner_ready_output="$(lightvm_runner "$VM_NAME" --require-ready --print-plan)"
-assert_contains "$runner_ready_output" '"ready": true' "ready lightvm-runner output"
-assert_file_contains "$LAUNCH_SPEC" '"ready": true' "ready lightvm-runner launch spec"
-handoff_ready_output="$(lightvm_runner --launch-spec "$LAUNCH_SPEC" --require-ready --print-handoff)"
-assert_contains "$handoff_ready_output" '"backend": "apple-virtualization-framework"' "ready handoff output"
-assert_contains "$handoff_ready_output" '"ready": true' "ready handoff output"
-assert_contains "$handoff_ready_output" '"vm_name": "fast-linux"' "ready handoff output"
-assert_contains "$handoff_ready_output" "\"launch_spec_path\": \"$LAUNCH_SPEC\"" "ready handoff output"
-assert_contains "$handoff_ready_output" '"boot_mode": "linux-installer"' "ready handoff output"
-assert_contains "$handoff_ready_output" "\"path\": \"$DISK\"" "ready handoff output"
-assert_contains "$handoff_ready_output" '"resources": {' "ready handoff output"
-assert_contains "$handoff_ready_output" '"memory": "4096"' "ready handoff output"
-assert_contains "$handoff_ready_output" '"cpu": "2"' "ready handoff output"
-READY_HANDOFF_JSON="$STORE/ready-handoff.json"
-printf "%s\n" "$handoff_ready_output" >"$READY_HANDOFF_JSON"
-apple_vz_runner_validate_output="$(
-  cd apps/macos
-  swift run --quiet AppleVzRunner --handoff-json "$READY_HANDOFF_JSON" --validate-only --print-config-plan
-)"
-assert_contains "$apple_vz_runner_validate_output" "AppleVzRunner handoff ready" "AppleVzRunner validate output"
-assert_contains "$apple_vz_runner_validate_output" "VM: fast-linux" "AppleVzRunner validate output"
-assert_contains "$apple_vz_runner_validate_output" "Boot mode: linux-installer" "AppleVzRunner validate output"
-assert_contains "$apple_vz_runner_validate_output" "Memory MiB: 4096" "AppleVzRunner validate output"
-assert_contains "$apple_vz_runner_validate_output" "CPU count: 2" "AppleVzRunner validate output"
-assert_contains "$apple_vz_runner_validate_output" "Configuration plan:" "AppleVzRunner validate output"
-assert_contains "$apple_vz_runner_validate_output" "Boot loader: efi" "AppleVzRunner validate output"
-assert_contains "$apple_vz_runner_validate_output" "Disk attachment: disk-image-qcow2" "AppleVzRunner validate output"
+assert_runner_launch_spec_command "local run runner metadata"
+assert_fails_contains \
+  "lightvm-runner-require-ready-live-unsupported" \
+  "unsupported-live-boot-mode" \
+  lightvm_runner "$VM_NAME" --require-ready --print-plan
+handoff_planned_output="$(lightvm_runner --launch-spec "$LAUNCH_SPEC" --print-handoff)"
+assert_contains "$handoff_planned_output" '"backend": "apple-virtualization-framework"' "planned handoff output"
+assert_contains "$handoff_planned_output" '"ready": false' "planned handoff output"
+assert_contains "$handoff_planned_output" '"unsupported-live-boot-mode"' "planned handoff output"
+assert_contains "$handoff_planned_output" '"unsupported-live-disk-format"' "planned handoff output"
+assert_contains "$handoff_planned_output" '"vm_name": "fast-linux"' "planned handoff output"
+assert_contains "$handoff_planned_output" "\"launch_spec_path\": \"$LAUNCH_SPEC\"" "planned handoff output"
+assert_contains "$handoff_planned_output" '"boot_mode": "linux-installer"' "planned handoff output"
+assert_contains "$handoff_planned_output" "\"path\": \"$DISK\"" "planned handoff output"
+assert_contains "$handoff_planned_output" '"resources": {' "planned handoff output"
+assert_contains "$handoff_planned_output" '"memory": "4096"' "planned handoff output"
+assert_contains "$handoff_planned_output" '"cpu": "2"' "planned handoff output"
+
+raw_create_output="$(bridgevm create "$RAW_VM_NAME" \
+  --os ubuntu \
+  --arch arm64 \
+  --mode fast \
+  --boot-mode linux-kernel \
+  --kernel-path boot/vmlinuz \
+  --initrd-path boot/initrd \
+  --kernel-command-line "console=hvc0 root=/dev/vda" \
+  --disk 64MiB \
+  --disk-format raw)"
+assert_contains "$raw_create_output" "Created fast VM at $RAW_BUNDLE" "raw linux-kernel create output"
+assert_file_contains "$RAW_BUNDLE/manifest.yaml" "path: disks/root.raw" "raw linux-kernel manifest"
+assert_file_contains "$RAW_BUNDLE/manifest.yaml" "format: raw" "raw linux-kernel manifest"
+mkdir -p "$RAW_BUNDLE/boot"
+: >"$RAW_KERNEL"
+: >"$RAW_INITRD"
+raw_prepare_output="$(bridgevm prepare-run "$RAW_VM_NAME")"
+assert_contains "$raw_prepare_output" "Engine: lightvm" "raw linux-kernel prepare output"
+assert_contains "$raw_prepare_output" "Dry run: true" "raw linux-kernel prepare output"
+assert_contains "$raw_prepare_output" "Launch spec: $RAW_LAUNCH_SPEC" "raw linux-kernel prepare output"
+assert_contains "$raw_prepare_output" "Launch ready: true" "raw linux-kernel prepare output"
+assert_contains "$raw_prepare_output" "Command: lightvm-runner --launch-spec $RAW_LAUNCH_SPEC" "raw linux-kernel prepare output"
+assert_not_contains "$raw_prepare_output" "unsupported-live-disk-format" "raw linux-kernel prepare output"
+assert_not_contains "$raw_prepare_output" "unsupported-live-boot-mode" "raw linux-kernel prepare output"
+assert_file_contains "$RAW_LAUNCH_SPEC" '"mode": "linux-kernel"' "raw linux-kernel launch spec"
+assert_file_contains "$RAW_LAUNCH_SPEC" '"format": "raw"' "raw linux-kernel launch spec"
+assert_file_contains "$RAW_LAUNCH_SPEC" '"ready": true' "raw linux-kernel launch spec"
+assert_file_contains "$RAW_RUNNER_METADATA" '"--launch-spec"' "raw linux-kernel runner metadata"
+assert_file_contains "$RAW_RUNNER_METADATA" "\"$RAW_LAUNCH_SPEC\"" "raw linux-kernel runner metadata"
+[[ -f "$RAW_DISK" ]] || fail "raw linux-kernel prepare did not create $RAW_DISK"
+
 VZ_BUNDLE="$STORE/vms/vz-linux-kernel.vmbridge"
 VZ_DISK="$VZ_BUNDLE/disks/root.raw"
 VZ_KERNEL="$VZ_BUNDLE/boot/vmlinuz"
@@ -314,11 +373,11 @@ APPLE_VZ_RUNNER_BIN="$(cd apps/macos && swift build --show-bin-path)/AppleVzRunn
 assert_fails_contains \
   "lightvm-runner-launch-spec-ready-launch-requires-helper" \
   "Apple Virtualization.framework launch requires --apple-vz-runner" \
-  lightvm_runner --launch-spec "$LAUNCH_SPEC" --require-ready --launch
+  lightvm_runner --launch-spec "$VZ_LAUNCH_SPEC" --require-ready --launch
 assert_fails_contains \
   "lightvm-runner-launch-spec-ready-real-start-requires-opt-in" \
   "real Apple VZ start requires --allow-real-vz-start" \
-  lightvm_runner --launch-spec "$LAUNCH_SPEC" --require-ready --launch --apple-vz-runner "$APPLE_VZ_RUNNER_BIN"
+  lightvm_runner --launch-spec "$VZ_LAUNCH_SPEC" --require-ready --launch --apple-vz-runner "$APPLE_VZ_RUNNER_BIN"
 
 SOCKET="$STORE/run/bridgevmd.sock"
 DAEMON_LOG="$STORE/bridgevmd.log"
@@ -339,7 +398,9 @@ socket_status_output="$(bridgevm_socket runner-status "$VM_NAME")"
 assert_contains "$socket_status_output" "Engine: lightvm" "socket runner-status output"
 assert_contains "$socket_status_output" "Dry run: true" "socket runner-status output"
 assert_contains "$socket_status_output" "Launch spec: $LAUNCH_SPEC" "socket runner-status output"
-assert_contains "$socket_status_output" "Launch ready: true" "socket runner-status output"
+assert_contains "$socket_status_output" "Launch ready: false" "socket runner-status output"
+assert_contains "$socket_status_output" "unsupported-live-boot-mode" "socket runner-status output"
+assert_contains "$socket_status_output" "unsupported-live-disk-format" "socket runner-status output"
 
 rm -f "$INSTALLER"
 
@@ -349,10 +410,16 @@ assert_contains "$socket_run_output" "Dry run: true" "socket run output"
 assert_contains "$socket_run_output" "Launch spec: $LAUNCH_SPEC" "socket run output"
 assert_contains "$socket_run_output" "Launch ready: false" "socket run output"
 assert_contains "$socket_run_output" "missing-installer-image" "socket run output"
+assert_contains "$socket_run_output" "unsupported-live-boot-mode" "socket run output"
+assert_contains "$socket_run_output" "unsupported-live-disk-format" "socket run output"
 assert_contains "$socket_run_output" "$INSTALLER" "socket run output"
 assert_not_contains "$socket_run_output" "missing-primary-disk" "socket run output"
+assert_contains "$socket_run_output" "Command: lightvm-runner --launch-spec $LAUNCH_SPEC" "socket run output"
 assert_file_contains "$LAUNCH_SPEC" '"missing-installer-image"' "socket run launch spec"
+assert_file_contains "$LAUNCH_SPEC" '"unsupported-live-boot-mode"' "socket run launch spec"
+assert_file_contains "$LAUNCH_SPEC" '"unsupported-live-disk-format"' "socket run launch spec"
 assert_runner_launch_spec_path "socket run runner metadata"
+assert_runner_launch_spec_command "socket run runner metadata"
 
 assert_fails_contains \
   "socket-run-spawn-blocked" \
@@ -360,6 +427,8 @@ assert_fails_contains \
   bridgevm_socket run "$VM_NAME" --spawn
 assert_contains "$ASSERT_OUTPUT" "launch blockers:" "socket run --spawn failure"
 assert_contains "$ASSERT_OUTPUT" "missing-installer-image" "socket run --spawn failure"
+assert_contains "$ASSERT_OUTPUT" "unsupported-live-boot-mode" "socket run --spawn failure"
+assert_contains "$ASSERT_OUTPUT" "unsupported-live-disk-format" "socket run --spawn failure"
 assert_contains "$ASSERT_OUTPUT" "$INSTALLER" "socket run --spawn failure"
 assert_contains "$ASSERT_OUTPUT" "apple-vz-runner-unavailable" "socket run --spawn failure"
 assert_not_contains "$ASSERT_OUTPUT" "missing-primary-disk" "socket run --spawn failure"

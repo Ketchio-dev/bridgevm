@@ -16,7 +16,7 @@ final class AppleVzRunnerCommandTests: XCTestCase {
     XCTAssertEqual(
       fake.outputLines,
       [
-        "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display] [--graphics] [--share [ro:]TAG=HOST_PATH ...] [--share-dir PATH] [--share-tag TAG] [--share-read-only]"
+        "usage: AppleVzRunner [--handoff-json PATH] [--validate-only] [--print-config-plan] [--validate-vz-config] [--allow-real-vz-start] [--stop-after-seconds N] [--force-stop-grace-seconds N] [--save-state PATH] [--restore-state PATH] [--display] [--graphics] [--display-width PX] [--display-height PX] [--runtime-control-socket PATH] [--proxy-framebuffer-rgba-file PATH] [--proxy-framebuffer-capture-interval-ms N] [--share [ro:]TAG=HOST_PATH ...] [--share-dir PATH] [--share-tag TAG] [--share-read-only]"
       ]
     )
     XCTAssertEqual(fake.readStandardInputCallCount, 0)
@@ -206,6 +206,143 @@ final class AppleVzRunnerCommandTests: XCTestCase {
     XCTAssertEqual(fake.launchVirtualMachineCallCount, 1)
     XCTAssertEqual(fake.launchOptions.first, AppleVzLaunchOptions(displayWindow: true))
     XCTAssertTrue(fake.errorLines.isEmpty)
+  }
+
+  func testDisplayDimensionsThreadToLauncher() {
+    let launchSpecPath = "/tmp/fast.vmbridge/metadata/apple-vz-launch.json"
+    let fake = FakeRunnerDependencies(
+      standardInput: readyHandoffJSON(launchSpecPath: launchSpecPath),
+      files: [launchSpecPath: readyLinuxKernelLaunchSpecJSON]
+    )
+
+    let exitCode = AppleVzRunnerCommand.run(
+      arguments: [
+        "--allow-real-vz-start",
+        "--display",
+        "--display-width",
+        "1440",
+        "--display-height",
+        "900",
+      ],
+      dependencies: fake.dependencies()
+    )
+
+    XCTAssertEqual(exitCode, 0)
+    XCTAssertEqual(fake.launchVirtualMachineCallCount, 1)
+    XCTAssertEqual(
+      fake.launchOptions.first,
+      AppleVzLaunchOptions(
+        displayWindow: true,
+        displayWidthInPixels: 1440,
+        displayHeightInPixels: 900
+      )
+    )
+    XCTAssertTrue(fake.errorLines.isEmpty)
+  }
+
+  func testRuntimeControlSocketThreadsToLauncher() {
+    let launchSpecPath = "/tmp/fast.vmbridge/metadata/apple-vz-launch.json"
+    let controlSocketPath = "/tmp/fast.vmbridge/run/apple-vz-display-control.sock"
+    let fake = FakeRunnerDependencies(
+      standardInput: readyHandoffJSON(launchSpecPath: launchSpecPath),
+      files: [launchSpecPath: readyLinuxKernelLaunchSpecJSON]
+    )
+
+    let exitCode = AppleVzRunnerCommand.run(
+      arguments: [
+        "--allow-real-vz-start",
+        "--display",
+        "--runtime-control-socket",
+        controlSocketPath,
+      ],
+      dependencies: fake.dependencies()
+    )
+
+    XCTAssertEqual(exitCode, 0)
+    XCTAssertEqual(fake.launchVirtualMachineCallCount, 1)
+    XCTAssertEqual(
+      fake.launchOptions.first,
+      AppleVzLaunchOptions(
+        displayWindow: true,
+        runtimeControlSocketPath: controlSocketPath
+      )
+    )
+    XCTAssertTrue(fake.errorLines.isEmpty)
+  }
+
+  func testProxyFramebufferExportThreadsToDisplayLauncher() {
+    let launchSpecPath = "/tmp/fast.vmbridge/metadata/apple-vz-launch.json"
+    let framebufferPath = "/tmp/fast.vmbridge/metadata/apple-vz-display-framebuffer.rgba"
+    let fake = FakeRunnerDependencies(
+      standardInput: readyHandoffJSON(launchSpecPath: launchSpecPath),
+      files: [launchSpecPath: readyLinuxKernelLaunchSpecJSON]
+    )
+
+    let exitCode = AppleVzRunnerCommand.run(
+      arguments: [
+        "--allow-real-vz-start",
+        "--display",
+        "--proxy-framebuffer-rgba-file",
+        framebufferPath,
+        "--proxy-framebuffer-capture-interval-ms",
+        "250",
+      ],
+      dependencies: fake.dependencies()
+    )
+
+    XCTAssertEqual(exitCode, 0)
+    XCTAssertEqual(fake.launchVirtualMachineCallCount, 1)
+    XCTAssertEqual(
+      fake.launchOptions.first,
+      AppleVzLaunchOptions(
+        displayWindow: true,
+        proxyFramebufferRGBAPath: framebufferPath,
+        proxyFramebufferCaptureIntervalMillis: 250
+      )
+    )
+    XCTAssertTrue(fake.errorLines.isEmpty)
+  }
+
+  func testProxyFramebufferExportRequiresDisplay() {
+    let fake = FakeRunnerDependencies(standardInput: readyHandoffJSON(launchSpecPath: nil))
+
+    let exitCode = AppleVzRunnerCommand.run(
+      arguments: ["--proxy-framebuffer-rgba-file", "/tmp/display.rgba"],
+      dependencies: fake.dependencies()
+    )
+
+    XCTAssertEqual(exitCode, 1)
+    XCTAssertEqual(fake.launchVirtualMachineCallCount, 0)
+    XCTAssertEqual(fake.errorLines, ["--proxy-framebuffer-rgba-file requires --display"])
+  }
+
+  func testProxyFramebufferExportIntervalRejectsNonPositiveValues() {
+    let fake = FakeRunnerDependencies(standardInput: readyHandoffJSON(launchSpecPath: nil))
+
+    let exitCode = AppleVzRunnerCommand.run(
+      arguments: ["--display", "--proxy-framebuffer-capture-interval-ms", "0"],
+      dependencies: fake.dependencies()
+    )
+
+    XCTAssertEqual(exitCode, 1)
+    XCTAssertEqual(fake.launchVirtualMachineCallCount, 0)
+    XCTAssertEqual(
+      fake.errorLines,
+      ["--proxy-framebuffer-capture-interval-ms requires a positive integer, got 0"]
+    )
+  }
+
+  func testDisplayDimensionsRejectNonPositiveValues() {
+    let fake = FakeRunnerDependencies(standardInput: readyHandoffJSON(launchSpecPath: nil))
+
+    let exitCode = AppleVzRunnerCommand.run(
+      arguments: ["--display-width", "0"],
+      dependencies: fake.dependencies()
+    )
+
+    XCTAssertEqual(exitCode, 1)
+    XCTAssertEqual(fake.launchVirtualMachineCallCount, 0)
+    XCTAssertEqual(fake.errorLines, ["--display-width requires a positive integer, got 0"])
   }
 
   func testShareDirFlagsThreadSharedDirectoryToLauncher() {

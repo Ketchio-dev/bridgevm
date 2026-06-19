@@ -33,6 +33,7 @@ struct DashboardView: View {
           isDownloadingBootMedia: model.downloadingBootMediaID == virtualMachine.id,
           bootMediaStatusError: model.bootMediaStatusError(for: virtualMachine),
           guestToolsStatus: model.guestToolsStatus(for: virtualMachine),
+          guestWindowProxyStatus: model.guestWindowProxyStatus(for: virtualMachine),
           guestToolsProvisioning: model.guestToolsProvisioning(for: virtualMachine),
           isLoadingGuestToolsStatus: model.loadingGuestToolsStatusID == virtualMachine.id,
           isSendingGuestToolsCommand: model.sendingGuestToolsCommandID == virtualMachine.id,
@@ -46,6 +47,9 @@ struct DashboardView: View {
           runnerStatus: model.runnerStatus(for: virtualMachine),
           isLoadingRunnerStatus: model.loadingRunnerStatusID == virtualMachine.id,
           runnerStatusError: model.runnerStatusError(for: virtualMachine),
+          runtimeControlResult: model.runtimeControlResult(for: virtualMachine),
+          isSendingRuntimeControl: model.sendingRuntimeControlID == virtualMachine.id,
+          runtimeControlError: model.runtimeControlError(for: virtualMachine),
           snapshotPreflightStatus: model.snapshotPreflightStatus(for: virtualMachine),
           isLoadingSnapshotPreflightStatus: model.loadingSnapshotPreflightStatusID
             == virtualMachine.id,
@@ -148,8 +152,8 @@ struct DashboardView: View {
           onOpenConsole: {
             await model.openConsole(for: virtualMachine)
           },
-          onShowDisplay: {
-            model.showDisplay(for: virtualMachine)
+          onShowDisplay: { width, height in
+            model.showDisplay(width: width, height: height, for: virtualMachine)
           },
           onStop: {
             await model.perform(.stop, on: virtualMachine)
@@ -266,6 +270,12 @@ struct DashboardView: View {
           onCloseWindow: { windowID in
             await model.closeWindow(id: windowID, for: virtualMachine)
           },
+          onOpenWindowProxy: { window in
+            model.openGuestWindowProxy(for: window, in: virtualMachine)
+          },
+          onCloseWindowProxies: {
+            model.closeGuestWindowProxies(for: virtualMachine)
+          },
           onSendInlineFileDrop: { fileName, contents in
             await model.sendInlineFileDrop(
               fileName: fileName,
@@ -278,6 +288,18 @@ struct DashboardView: View {
           },
           onRefreshRunnerStatus: {
             await model.loadRunnerStatus(for: virtualMachine)
+          },
+          onRuntimeControlStatus: {
+            await model.runtimeControlStatus(for: virtualMachine)
+          },
+          onRuntimeControlStopDisplay: {
+            await model.runtimeControlStopDisplay(for: virtualMachine)
+          },
+          onRuntimeControlPolicy: {
+            await model.runtimeControlPolicy(for: virtualMachine)
+          },
+          onRuntimeControlPacing: {
+            await model.runtimeControlPacing(for: virtualMachine)
           },
           onRefreshSnapshotPreflightStatus: {
             await model.loadSnapshotPreflightStatus(for: virtualMachine)
