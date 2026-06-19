@@ -252,19 +252,33 @@ fn main() {
                     hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
                 }
                 EC_HVC => {
-                    // Minimal PSCI (the DTB declares method = "hvc").
+                    // SMCCC: PSCI (DTB method = "hvc") + ARM TRNG (RngDxe uses it).
                     let mut func = 0u64;
                     hv_vcpu_get_reg(vcpu, HV_REG_X0, &mut func);
-                    let ret: u64 = match func & 0xffff_ffff {
-                        0x8400_0000 => 0x0001_0001, // PSCI_VERSION -> 1.1
-                        0x8400_000A => 0,           // PSCI_FEATURES -> success
+                    match func & 0xffff_ffff {
+                        0x8400_0000 => { hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0001_0001); } // PSCI_VERSION 1.1
+                        0x8400_000A => { hv_vcpu_set_reg(vcpu, HV_REG_X0, 0); }           // PSCI_FEATURES
+                        0x8400_0050 => { hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0000); }    // TRNG_VERSION 1.0
+                        0x8400_0051 => { hv_vcpu_set_reg(vcpu, HV_REG_X0, 0); }           // TRNG_FEATURES: present
+                        0x8400_0052 => {                                                  // TRNG_GET_UUID
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0b0a_0908);
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, 0x0f0e_0d0c);
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, 0x0302_0100);
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, 0x0706_0504);
+                        }
+                        0x8400_0053 | 0xc400_0053 => {                                    // TRNG_RND_32 / _64
+                            let r = exits.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(0xD1B5_4A32);
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);                          // SUCCESS
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, r);
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, r.rotate_left(17) ^ 0xA5A5_5A5A);
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, r.rotate_left(41) ^ 0x1234_5678);
+                        }
                         0x8400_0008 | 0x8400_0009 => {
                             stop_reason = format!("PSCI {:#x} (system off/reset)", func & 0xffff_ffff);
                             break;
                         }
-                        _ => (-1i64) as u64, // NOT_SUPPORTED
-                    };
-                    hv_vcpu_set_reg(vcpu, HV_REG_X0, ret);
+                        _ => { hv_vcpu_set_reg(vcpu, HV_REG_X0, (-1i64) as u64); }         // NOT_SUPPORTED
+                    }
                     hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
                     psci_calls += 1;
                 }
@@ -280,6 +294,18 @@ fn main() {
         }
 
         let serial = platform.uart_output().to_vec();
+
+        // RngDxe is loaded into guest RAM; dump the code around the faulting PC
+        // (from the serial exception report) so it can be disassembled directly.
+        let crash_pc = 0x5FDB_9490u64;
+        if let Some(code) = guest_ram.read_bytes(crash_pc - 0x18, 0x48) {
+            print!("CODE@{:#x}:", crash_pc - 0x18);
+            for b in &code {
+                print!("{:02x}", b);
+            }
+            println!();
+        }
+
         hv_vcpu_destroy(vcpu);
         hv_vm_destroy();
 
