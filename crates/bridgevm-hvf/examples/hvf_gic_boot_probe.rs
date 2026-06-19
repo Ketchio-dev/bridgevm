@@ -67,6 +67,9 @@ struct HvVcpuExit {
 #[link(name = "Hypervisor", kind = "framework")]
 extern "C" {
     fn hv_vm_create(config: *mut c_void) -> HvReturn;
+    fn hv_vm_config_create() -> *mut c_void;
+    fn hv_vm_config_set_ipa_size(config: *mut c_void, ipa_bit_length: u32) -> HvReturn;
+    fn hv_vm_config_get_max_ipa_size(ipa_bit_length: *mut u32) -> HvReturn;
     fn hv_vm_destroy() -> HvReturn;
     fn hv_vm_map(addr: *mut c_void, ipa: u64, size: usize, flags: u64) -> HvReturn;
     fn hv_vcpu_create(vcpu: *mut HvVcpuT, exit: *mut *mut HvVcpuExit, config: *mut c_void) -> HvReturn;
@@ -119,7 +122,15 @@ fn main() {
         .unwrap_or_else(|_| "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-arm-vars.fd".into());
 
     unsafe {
-        assert_eq!(hv_vm_create(null_mut()), 0, "hv_vm_create");
+        // Create the VM with the max IPA size: the PCIe ECAM sits at 256 GiB,
+        // beyond the 36-bit default IPA window.
+        let vmcfg = hv_vm_config_create();
+        let mut max_ipa = 0u32;
+        hv_vm_config_get_max_ipa_size(&mut max_ipa);
+        hv_vm_config_set_ipa_size(vmcfg, max_ipa);
+        let vc = hv_vm_create(vmcfg);
+        println!("hv_vm_create(ipa={max_ipa}) = {vc:#x}");
+        assert_eq!(vc, 0, "hv_vm_create");
 
         // In-kernel GICv3 must be created after the VM and before any vCPU.
         let gic = hv_gic_config_create();
