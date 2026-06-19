@@ -19,6 +19,7 @@
 use crate::dtb::{build_virt_fdt, VirtFdtConfig};
 use crate::fwcfg::{FwCfg, GuestMemoryMut};
 use crate::machine::{self, Region};
+use crate::pl011::Pl011;
 
 /// A guest MMIO access as decoded from an HVF data-abort exit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +61,7 @@ pub struct GuestMemoryLayout {
 pub struct VirtPlatform {
     cfg: VirtFdtConfig,
     fw_cfg: FwCfg,
+    uart: Pl011,
     dtb: Vec<u8>,
 }
 
@@ -76,7 +78,12 @@ impl VirtPlatform {
         // `etc/system-states` advertises which ACPI S-states are enabled; the
         // firmware may write it back, so it is writable. 6 bytes: S3, S4, ... .
         fw_cfg.add_writable_file("etc/system-states", vec![0u8; 6]);
-        Self { cfg, fw_cfg, dtb }
+        Self {
+            cfg,
+            fw_cfg,
+            uart: Pl011::new(),
+            dtb,
+        }
     }
 
     /// Register the guest ACPI tables (`etc/acpi/rsdp`, `etc/acpi/tables`,
@@ -121,10 +128,26 @@ impl VirtPlatform {
         };
         match device {
             "fw-cfg" => self.fw_cfg_access(gpa - machine::FW_CFG.base, op, mem),
+            "uart" => self.uart_access(gpa - machine::UART.base, op),
             // Modelled in the machine map but no device behaviour yet — surfaced
             // precisely so bring-up traces show the next thing to implement.
             other => MmioOutcome::KnownUnimplemented(other),
         }
+    }
+
+    fn uart_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {
+        match op {
+            MmioOp::Read { size } => MmioOutcome::ReadValue(self.uart.mmio_read(offset, size)),
+            MmioOp::Write { size, value } => {
+                self.uart.mmio_write(offset, size, value);
+                MmioOutcome::WriteAck
+            }
+        }
+    }
+
+    /// Bytes the guest/firmware has written to the UART so far.
+    pub fn uart_output(&self) -> &[u8] {
+        self.uart.output()
     }
 
     fn fw_cfg_access(&mut self, offset: u64, op: MmioOp, mem: &mut dyn GuestMemoryMut) -> MmioOutcome {
@@ -267,10 +290,7 @@ mod tests {
     fn mmio_classifies_known_and_unmapped_addresses() {
         let mut p = platform();
         let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
-        assert_eq!(
-            p.on_mmio(machine::UART.base, MmioOp::Read { size: 4 }, &mut mem),
-            MmioOutcome::KnownUnimplemented("uart")
-        );
+        // GIC is mapped in the machine map but not yet modelled.
         assert_eq!(
             p.on_mmio(machine::GIC_DIST.base, MmioOp::Read { size: 4 }, &mut mem),
             MmioOutcome::KnownUnimplemented("gic-dist")
@@ -280,6 +300,28 @@ mod tests {
             p.on_mmio(0x0905_0000, MmioOp::Read { size: 4 }, &mut mem),
             MmioOutcome::Unmapped
         );
+    }
+
+    #[test]
+    fn uart_writes_are_captured_via_mmio() {
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+        for b in b"HI\n" {
+            assert_eq!(
+                p.on_mmio(
+                    machine::UART.base,
+                    MmioOp::Write { size: 1, value: u64::from(*b) },
+                    &mut mem
+                ),
+                MmioOutcome::WriteAck
+            );
+        }
+        assert_eq!(p.uart_output(), b"HI\n");
+        // UARTFR (offset 0x18) reports transmit-ready (TXFE set).
+        assert!(matches!(
+            p.on_mmio(machine::UART.base + 0x18, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(v) if v & (1 << 7) != 0
+        ));
     }
 
     #[test]

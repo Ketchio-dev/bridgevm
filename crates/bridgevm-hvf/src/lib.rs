@@ -12,6 +12,7 @@ use std::{
 pub mod dtb;
 pub mod fwcfg;
 pub mod machine;
+pub mod pl011;
 pub mod platform_virt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
