@@ -19,7 +19,10 @@
 
 use crate::acpi::{build_acpi, ACPI_LOADER_FILE, ACPI_RSDP_FILE, ACPI_TABLE_FILE};
 use crate::dtb::{build_virt_fdt, VirtFdtConfig};
-use crate::fwcfg::{FwCfg, GuestMemoryMut};
+use crate::fwcfg::{
+    FwCfg, GuestMemoryMut, KEY_CMDLINE_DATA, KEY_CMDLINE_SIZE, KEY_INITRD_DATA, KEY_INITRD_SIZE,
+    KEY_KERNEL_DATA, KEY_KERNEL_SIZE,
+};
 use crate::machine::{self, Region};
 use crate::nvme::NvmeController;
 use crate::pcie::{PcieEcam, NVME_BDF};
@@ -132,6 +135,37 @@ impl VirtPlatform {
     /// far. Live probes use this to persist an explicitly writable image.
     pub fn nvme_disk(&self) -> &[u8] {
         self.nvme.disk_image()
+    }
+
+    /// Register QEMU direct-Linux-boot payloads in the fixed fw_cfg slots that
+    /// ArmVirtQemu's `QemuKernelLoaderFsDxe` reads before BDS falls through to
+    /// normal boot options. `cmdline` must include the terminating NUL byte.
+    pub fn set_linux_boot_blobs(
+        &mut self,
+        kernel: Vec<u8>,
+        initrd: Option<Vec<u8>>,
+        cmdline: Vec<u8>,
+    ) {
+        assert!(
+            cmdline.last().copied() == Some(0),
+            "Linux fw_cfg cmdline blob must be NUL-terminated"
+        );
+        let initrd = initrd.unwrap_or_default();
+        let kernel_len =
+            u32::try_from(kernel.len()).expect("Linux kernel fw_cfg blob exceeds 4 GiB");
+        let initrd_len =
+            u32::try_from(initrd.len()).expect("Linux initrd fw_cfg blob exceeds 4 GiB");
+        let cmdline_len =
+            u32::try_from(cmdline.len()).expect("Linux cmdline fw_cfg blob exceeds 4 GiB");
+        self.fw_cfg
+            .add_item(KEY_KERNEL_SIZE, kernel_len.to_le_bytes().to_vec());
+        self.fw_cfg.add_item(KEY_KERNEL_DATA, kernel);
+        self.fw_cfg
+            .add_item(KEY_INITRD_SIZE, initrd_len.to_le_bytes().to_vec());
+        self.fw_cfg.add_item(KEY_INITRD_DATA, initrd);
+        self.fw_cfg
+            .add_item(KEY_CMDLINE_SIZE, cmdline_len.to_le_bytes().to_vec());
+        self.fw_cfg.add_item(KEY_CMDLINE_DATA, cmdline);
     }
 
     /// Register the guest ACPI tables (`etc/acpi/rsdp`, `etc/acpi/tables`,
@@ -495,13 +529,14 @@ mod tests {
             &mut mem,
         );
         assert_eq!(ack, MmioOutcome::WriteAck);
-        // ...then a 4-byte data read returns "QEMU" big-endian.
+        // ...then a 4-byte data read returns the little-endian CPU value for
+        // the byte stream "QEMU".
         let v = p.on_mmio(
             machine::FW_CFG.base + REG_DATA,
             MmioOp::Read { size: 4 },
             &mut mem,
         );
-        assert_eq!(v, MmioOutcome::ReadValue(0x5145_4d55));
+        assert_eq!(v, MmioOutcome::ReadValue(0x554d_4551));
     }
 
     #[test]
@@ -873,6 +908,41 @@ mod tests {
         for name in [ACPI_RSDP_FILE, ACPI_TABLE_FILE, ACPI_LOADER_FILE] {
             assert!(blob.contains(name), "default fw_cfg dir missing {name}");
         }
+    }
+
+    #[test]
+    fn linux_boot_blobs_register_qemu_numeric_fw_cfg_items() {
+        let mut p = platform();
+        p.set_linux_boot_blobs(
+            b"kernel-image".to_vec(),
+            Some(b"initrd-image".to_vec()),
+            b"console=ttyAMA0\0".to_vec(),
+        );
+
+        p.fw_cfg.select(KEY_KERNEL_SIZE);
+        assert_eq!(
+            p.fw_cfg.mmio_read(0, 4),
+            12,
+            "QemuKernelLoaderFsDxe reads KERNEL_SIZE with QemuFwCfgRead32"
+        );
+        p.fw_cfg.select(KEY_KERNEL_DATA);
+        assert_eq!(p.fw_cfg.read_data(12), b"kernel-image");
+
+        p.fw_cfg.select(KEY_INITRD_SIZE);
+        assert_eq!(p.fw_cfg.mmio_read(0, 4), 12);
+        p.fw_cfg.select(KEY_INITRD_DATA);
+        assert_eq!(p.fw_cfg.read_data(12), b"initrd-image");
+
+        p.fw_cfg.select(KEY_CMDLINE_SIZE);
+        assert_eq!(p.fw_cfg.mmio_read(0, 4), 16);
+        p.fw_cfg.select(KEY_CMDLINE_DATA);
+        assert_eq!(p.fw_cfg.read_data(16), b"console=ttyAMA0\0");
+
+        p.fw_cfg.select(crate::fwcfg::KEY_FILE_DIR);
+        let dir = p.fw_cfg.read_data(p.fw_cfg.file_dir_bytes().len());
+        let blob = String::from_utf8_lossy(&dir);
+        assert!(!blob.contains("kernel-image"));
+        assert!(!blob.contains("initrd-image"));
     }
 
     #[test]

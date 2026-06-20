@@ -14,6 +14,7 @@ pub const DEFAULT_QEMU_AARCH64_CODE: &str =
     "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-aarch64-code.fd";
 pub const DEFAULT_QEMU_AARCH64_VARS: &str =
     "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-arm-vars.fd";
+pub const DEFAULT_LINUX_CMDLINE: &str = "console=ttyAMA0 earlycon=pl011,0x09000000 acpi=force";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaWriteKind {
@@ -90,12 +91,60 @@ impl WritableMedia {
     }
 }
 
+/// QEMU-style direct Linux boot inputs exposed through fixed fw_cfg selectors.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinuxBootMedia {
+    pub kernel_path: PathBuf,
+    pub initrd_path: Option<PathBuf>,
+    pub cmdline: String,
+}
+
+impl LinuxBootMedia {
+    pub fn new(kernel_path: impl Into<PathBuf>) -> Self {
+        Self {
+            kernel_path: kernel_path.into(),
+            initrd_path: None,
+            cmdline: DEFAULT_LINUX_CMDLINE.to_string(),
+        }
+    }
+
+    pub fn with_initrd_path(mut self, path: Option<impl Into<PathBuf>>) -> Self {
+        self.initrd_path = path.map(Into::into);
+        self
+    }
+
+    pub fn with_cmdline(mut self, cmdline: impl Into<String>) -> Self {
+        self.cmdline = cmdline.into();
+        self
+    }
+
+    pub fn read_kernel_bounded(&self, max_bytes: usize) -> io::Result<Vec<u8>> {
+        read_bounded_file(&self.kernel_path, max_bytes)
+    }
+
+    pub fn read_initrd_bounded(&self, max_bytes: usize) -> io::Result<Option<Vec<u8>>> {
+        self.initrd_path
+            .as_ref()
+            .map(|path| read_bounded_file(path, max_bytes))
+            .transpose()
+    }
+
+    /// EDK2's generic QEMU loader requires the command line blob to include its
+    /// terminating NUL. Environment variables cannot carry NULs, so append one.
+    pub fn cmdline_bytes(&self) -> Vec<u8> {
+        let mut bytes = self.cmdline.as_bytes().to_vec();
+        bytes.push(0);
+        bytes
+    }
+}
+
 /// Path A boot media selected for a live run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VirtBootMediaConfig {
     pub firmware_code_path: PathBuf,
     pub flash_vars: WritableMedia,
     pub nvme_disk: Option<WritableMedia>,
+    pub linux_boot: Option<LinuxBootMedia>,
 }
 
 impl VirtBootMediaConfig {
@@ -104,6 +153,7 @@ impl VirtBootMediaConfig {
             firmware_code_path: PathBuf::from(DEFAULT_QEMU_AARCH64_CODE),
             flash_vars: WritableMedia::new(DEFAULT_QEMU_AARCH64_VARS),
             nvme_disk: None,
+            linux_boot: None,
         }
     }
 
@@ -124,6 +174,14 @@ impl VirtBootMediaConfig {
             WritableMedia::new(path)
                 .with_snapshot_path(env::var("BRIDGEVM_NVME_DISK_OUT").ok())
                 .with_write_back(env_flag("BRIDGEVM_NVME_DISK_WRITABLE"))
+        });
+
+        cfg.linux_boot = env::var("BRIDGEVM_LINUX_KERNEL").ok().map(|path| {
+            let cmdline =
+                env::var("BRIDGEVM_LINUX_CMDLINE").unwrap_or_else(|_| DEFAULT_LINUX_CMDLINE.into());
+            LinuxBootMedia::new(path)
+                .with_initrd_path(env::var("BRIDGEVM_LINUX_INITRD").ok())
+                .with_cmdline(cmdline)
         });
         cfg
     }
@@ -213,5 +271,27 @@ mod tests {
             PathBuf::from(DEFAULT_QEMU_AARCH64_VARS)
         );
         assert!(cfg.nvme_disk.is_none());
+        assert!(cfg.linux_boot.is_none());
+    }
+
+    #[test]
+    fn linux_cmdline_bytes_are_nul_terminated() {
+        let media = LinuxBootMedia::new("/tmp/Image").with_cmdline("console=ttyAMA0");
+        assert_eq!(media.cmdline_bytes(), b"console=ttyAMA0\0");
+    }
+
+    #[test]
+    fn linux_boot_media_reads_optional_initrd() {
+        let kernel = temp_path("kernel");
+        let initrd = temp_path("initrd");
+        fs::write(&kernel, [0x4d, 0x5a]).unwrap();
+        fs::write(&initrd, [1, 2, 3]).unwrap();
+
+        let media = LinuxBootMedia::new(&kernel).with_initrd_path(Some(&initrd));
+        assert_eq!(media.read_kernel_bounded(4).unwrap(), [0x4d, 0x5a]);
+        assert_eq!(media.read_initrd_bounded(4).unwrap().unwrap(), [1, 2, 3]);
+
+        fs::remove_file(kernel).ok();
+        fs::remove_file(initrd).ok();
     }
 }

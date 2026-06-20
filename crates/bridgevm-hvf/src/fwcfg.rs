@@ -42,6 +42,19 @@ pub const KEY_FILE_DIR: u16 = 0x0019;
 /// First selector handed out to dynamically registered named files.
 pub const KEY_FILE_FIRST: u16 = 0x0020;
 
+/// `FW_CFG_KERNEL_SIZE` — QEMU `-kernel` payload size.
+pub const KEY_KERNEL_SIZE: u16 = 0x0008;
+/// `FW_CFG_INITRD_SIZE` — QEMU `-initrd` payload size.
+pub const KEY_INITRD_SIZE: u16 = 0x000b;
+/// `FW_CFG_KERNEL_DATA` — QEMU `-kernel` payload bytes.
+pub const KEY_KERNEL_DATA: u16 = 0x0011;
+/// `FW_CFG_INITRD_DATA` — QEMU `-initrd` payload bytes.
+pub const KEY_INITRD_DATA: u16 = 0x0012;
+/// `FW_CFG_CMDLINE_SIZE` — QEMU `-append` command line size.
+pub const KEY_CMDLINE_SIZE: u16 = 0x0014;
+/// `FW_CFG_CMDLINE_DATA` — QEMU `-append` command line bytes.
+pub const KEY_CMDLINE_DATA: u16 = 0x0015;
+
 // `FW_CFG_ID` feature bits.
 const ID_TRADITIONAL: u32 = 0x01;
 const ID_DMA: u32 = 0x02;
@@ -171,6 +184,25 @@ impl FwCfg {
         self.add_entry(name, data, true)
     }
 
+    /// Register a fixed selector item that does not appear in `FILE_DIR`.
+    ///
+    /// ArmVirtQemu's `QemuKernelLoaderFsDxe` consumes QEMU direct-kernel-boot
+    /// payloads through traditional fw_cfg keys (`KERNEL_SIZE`, `KERNEL_DATA`,
+    /// `INITRD_*`, `CMDLINE_*`) rather than named files.
+    pub fn add_item(&mut self, key: u16, data: Vec<u8>) {
+        assert!(
+            key < KEY_FILE_FIRST && key != KEY_FILE_DIR,
+            "fixed fw_cfg item key must be below KEY_FILE_FIRST and not FILE_DIR: {key:#x}"
+        );
+        self.entries.insert(
+            key,
+            Entry {
+                data,
+                writable: false,
+            },
+        );
+    }
+
     fn add_entry(&mut self, name: &str, data: Vec<u8>, writable: bool) -> u16 {
         assert!(
             name.len() < 56,
@@ -260,19 +292,19 @@ impl FwCfg {
 
     // ---- MMIO register interface -------------------------------------------
     //
-    // The `qemu,fw-cfg-mmio` selector and DMA registers are big-endian; the HVF
-    // run loop assembles the guest access bytes big-endian before calling these,
-    // and splits a big-endian result back onto the bus. DATA is a byte stream:
-    // a width-`size` read returns the next `size` stream bytes assembled
-    // big-endian (QEMU's `DEVICE_BIG_ENDIAN` data mem-op).
+    // The `qemu,fw-cfg-mmio` selector and DMA registers are big-endian. DATA is
+    // a byte stream consumed by normal little-endian AArch64 loads: a 32-bit
+    // read of bytes "QEMU" must produce SIGNATURE_32('Q','E','M','U')
+    // (0x554d4551), while big-endian entries such as FILE_DIR remain
+    // big-endian bytes that firmware explicitly swaps after reading.
 
     /// Handle a guest MMIO read of `size` bytes at `offset` within the window.
     pub fn mmio_read(&mut self, offset: u64, size: u8) -> u64 {
         match offset {
             REG_DATA => {
                 let mut value: u64 = 0;
-                for _ in 0..size {
-                    value = (value << 8) | u64::from(self.read_data_byte());
+                for shift in 0..size {
+                    value |= u64::from(self.read_data_byte()) << (u64::from(shift) * 8);
                 }
                 value
             }
@@ -457,6 +489,23 @@ mod tests {
     }
 
     #[test]
+    fn fixed_items_are_readable_without_file_dir_entries() {
+        let mut fw = FwCfg::new();
+        fw.add_item(KEY_KERNEL_SIZE, 4u32.to_le_bytes().to_vec());
+        fw.add_item(KEY_KERNEL_DATA, b"boot".to_vec());
+
+        fw.select(KEY_KERNEL_SIZE);
+        assert_eq!(fw.mmio_read(REG_DATA, 4), 4);
+        fw.select(KEY_KERNEL_DATA);
+        assert_eq!(fw.read_data(4), b"boot");
+
+        fw.select(KEY_FILE_DIR);
+        let dir = fw.read_data(fw.file_dir_bytes().len());
+        let count = u32::from_be_bytes([dir[0], dir[1], dir[2], dir[3]]);
+        assert_eq!(count, 0, "fixed selector items stay out of FILE_DIR");
+    }
+
+    #[test]
     fn directory_is_sorted_by_name_with_be_fields() {
         let mut fw = FwCfg::new();
         // Insert out of lexical order; directory must come back sorted.
@@ -488,11 +537,12 @@ mod tests {
     }
 
     #[test]
-    fn mmio_data_read_is_big_endian_stream() {
+    fn mmio_data_read_is_little_endian_cpu_load_from_stream() {
         let mut fw = FwCfg::new();
         fw.select(KEY_SIGNATURE);
-        // A 4-byte big-endian read of "QEMU" == 0x51454d55.
-        assert_eq!(fw.mmio_read(REG_DATA, 4), 0x5145_4d55);
+        // AArch64 firmware does `MmioRead32(DATA)` and compares against
+        // SIGNATURE_32('Q','E','M','U') == 0x554d4551.
+        assert_eq!(fw.mmio_read(REG_DATA, 4), 0x554d_4551);
     }
 
     #[test]
@@ -524,9 +574,10 @@ mod tests {
             &mut mem,
         );
         // FILE_DIR begins with a big-endian u32 file count == 1.
-        let count = fw.mmio_read(REG_DATA, 4);
+        let raw_count = fw.mmio_read(REG_DATA, 4);
         assert_eq!(
-            count, 1,
+            u32::from_be_bytes((raw_count as u32).to_le_bytes()),
+            1,
             "selector must resolve to FILE_DIR, not a bogus item"
         );
     }

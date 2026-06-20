@@ -14,6 +14,11 @@
 //!   BRIDGEVM_NVME_DISK_OUT=/path/to/out.img ...      # snapshot after run
 //!   BRIDGEVM_NVME_DISK_WRITABLE=1 ...                # write back to input path
 //!
+//! Optional QEMU-style Linux direct boot:
+//!   BRIDGEVM_LINUX_KERNEL=/path/to/Image ...
+//!   BRIDGEVM_LINUX_INITRD=/path/to/initrd.gz ...      # optional
+//!   BRIDGEVM_LINUX_CMDLINE='console=ttyAMA0 acpi=force' ...
+//!
 //! Optional writable UEFI vars:
 //!   BRIDGEVM_AARCH64_UEFI_VARS=/path/to/vars.fd ...
 //!   BRIDGEVM_AARCH64_UEFI_VARS_OUT=/path/to/vars-out.fd ...
@@ -135,6 +140,7 @@ const WATCH_TARGET: u64 = 0x5ffd_f798;
 const DBGWCR_STORE_8B: u64 = 0x1ff7;
 
 const RAM_SIZE: usize = 0x2000_0000; // 512 MiB
+const MAX_LINUX_BOOT_BLOB_BYTES: usize = RAM_SIZE;
 const MAX_EXITS: u64 = 50_000_000;
 const WATCHDOG_MS: u64 = 8000;
 
@@ -152,6 +158,13 @@ fn env_u64(name: &str, default: u64) -> u64 {
         .ok()
         .and_then(|s| parse_u64(&s))
         .unwrap_or(default)
+}
+
+fn env_flag(name: &str) -> bool {
+    matches!(
+        std::env::var(name).ok().as_deref(),
+        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
+    )
 }
 
 fn read_reg(vcpu: HvVcpuT, reg: u32) -> u64 {
@@ -228,6 +241,10 @@ fn serial_reached_shell(serial: &[u8]) -> bool {
     contains_bytes(serial, b"UEFI Interactive Shell") || contains_bytes(serial, b"Shell>")
 }
 
+fn serial_reached_linux(serial: &[u8]) -> bool {
+    contains_bytes(serial, b"Linux version") || contains_bytes(serial, b"Kernel panic")
+}
+
 fn map_file(path: &Path, ipa: u64, region_bytes: usize, flags: u64) {
     let data = read_bounded_file(path, region_bytes)
         .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
@@ -254,6 +271,7 @@ fn host_cntvct() -> u64 {
 fn main() {
     let media = VirtBootMediaConfig::from_probe_env();
     let watchdog_ms = env_u64("BRIDGEVM_BOOT_PROBE_WATCHDOG_MS", WATCHDOG_MS);
+    let trace_fwcfg = env_flag("BRIDGEVM_TRACE_FWCFG");
 
     unsafe {
         // Create the VM with the max IPA size: the PCIe ECAM sits at 256 GiB,
@@ -386,6 +404,34 @@ fn main() {
             );
             platform.load_nvme_disk(data);
         }
+        if let Some(linux) = media.linux_boot.as_ref() {
+            let kernel = linux
+                .read_kernel_bounded(MAX_LINUX_BOOT_BLOB_BYTES)
+                .unwrap_or_else(|e| {
+                    panic!("read Linux kernel {}: {e}", linux.kernel_path.display())
+                });
+            let initrd = linux
+                .read_initrd_bounded(MAX_LINUX_BOOT_BLOB_BYTES)
+                .unwrap_or_else(|e| panic!("read Linux initrd: {e}"));
+            println!(
+                "Linux kernel loaded: {} ({} bytes)",
+                linux.kernel_path.display(),
+                kernel.len()
+            );
+            if let Some(path) = linux.initrd_path.as_ref() {
+                println!(
+                    "Linux initrd loaded: {} ({} bytes)",
+                    path.display(),
+                    initrd.as_ref().map_or(0, Vec::len)
+                );
+            }
+            println!(
+                "Linux cmdline loaded: {:?} ({} bytes including NUL)",
+                linux.cmdline,
+                linux.cmdline_bytes().len()
+            );
+            platform.set_linux_boot_blobs(kernel, initrd, linux.cmdline_bytes());
+        }
         let mut guest_ram = MappedRam {
             base: machine::RAM_BASE,
             ptr: ram,
@@ -399,6 +445,7 @@ fn main() {
         let mut psci_calls = 0u64;
         let mut last_pc = 0u64;
         let mut watch_hits = 0u32;
+        let mut fwcfg_trace_count = 0u32;
         let stop_reason;
 
         loop {
@@ -442,7 +489,20 @@ fn main() {
                     } else {
                         MmioOp::Read { size }
                     };
-                    match platform.on_mmio(ipa, op, &mut guest_ram) {
+                    let trace_this_fwcfg =
+                        trace_fwcfg && machine::FW_CFG.contains(ipa) && fwcfg_trace_count < 512;
+                    if trace_this_fwcfg {
+                        fwcfg_trace_count += 1;
+                        println!(
+                            "FWCFG[{fwcfg_trace_count:03}] pc={last_pc:#x} off={:#x} op={op:?}",
+                            ipa - machine::FW_CFG.base
+                        );
+                    }
+                    let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
+                    if trace_this_fwcfg {
+                        println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
+                    }
+                    match outcome {
                         MmioOutcome::ReadValue(v) if !is_write => {
                             hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
                         }
@@ -560,6 +620,10 @@ fn main() {
             }
             if exits >= MAX_EXITS {
                 stop_reason = format!("exit cap {MAX_EXITS}");
+                break;
+            }
+            if serial_reached_linux(platform.uart_output()) {
+                stop_reason = "serial reached Linux kernel".into();
                 break;
             }
             if serial_reached_shell(platform.uart_output()) {
