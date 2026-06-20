@@ -645,6 +645,79 @@ fn print_pe_owner(mem: &dyn GuestMemoryMut, label: &str, addr: u64) {
     }
 }
 
+fn pe_owner_summary(mem: &dyn GuestMemoryMut, addr: u64) -> String {
+    if addr < machine::RAM_BASE {
+        return "outside RAM".to_string();
+    }
+    match find_pe_owner(mem, addr, 512 * 1024 * 1024) {
+        Some(owner) => {
+            let rva = addr - owner.base;
+            let pdb = owner.pdb_path.as_deref().unwrap_or("-");
+            format!(
+                "base={:#x} rva={rva:#x} entry={:#x} pdb={pdb}",
+                owner.base, owner.entry_rva
+            )
+        }
+        None => "no PE owner within 512 MiB below".to_string(),
+    }
+}
+
+fn translated_ipa(mem: &dyn GuestMemoryMut, ctx: &Stage1Context, va: u64) -> Result<u64, String> {
+    stage1::translate(mem, ctx, va)
+        .map(|t| t.ipa)
+        .map_err(|failure| failure.reason)
+}
+
+fn print_frame_chain(mem: &dyn GuestMemoryMut, ctx: &Stage1Context, start_fp: u64, limit: usize) {
+    if start_fp == 0 || limit == 0 {
+        return;
+    }
+    println!("FRAMECHAIN: start_fp={start_fp:#x} limit={limit}");
+    let mut fp = start_fp;
+    for index in 0..limit {
+        let fp_ipa = match translated_ipa(mem, ctx, fp) {
+            Ok(ipa) => ipa,
+            Err(reason) => {
+                println!("  frame[{index}]: fp={fp:#x}: {reason}");
+                break;
+            }
+        };
+        let Some(next_fp) = read_le_u64(mem, fp_ipa) else {
+            println!("  frame[{index}]: fp={fp:#x} fp_ipa={fp_ipa:#x}: frame unreadable");
+            break;
+        };
+        let saved_lr = read_le_u64(mem, fp_ipa + 8).unwrap_or(0);
+        let lr_ipa = if saved_lr == 0 {
+            None
+        } else {
+            translated_ipa(mem, ctx, saved_lr).ok()
+        };
+        let owner = lr_ipa
+            .map(|ipa| pe_owner_summary(mem, ipa))
+            .unwrap_or_else(|| "-".to_string());
+        match lr_ipa {
+            Some(ipa) => println!(
+                "  frame[{index}]: fp={fp:#x} fp_ipa={fp_ipa:#x} next_fp={next_fp:#x} lr={saved_lr:#x} lr_ipa={ipa:#x} image={owner}"
+            ),
+            None => println!(
+                "  frame[{index}]: fp={fp:#x} fp_ipa={fp_ipa:#x} next_fp={next_fp:#x} lr={saved_lr:#x} lr_ipa=- image={owner}"
+            ),
+        }
+        if next_fp == 0 {
+            break;
+        }
+        if next_fp <= fp {
+            println!("  frame[{index}]: stopping: next_fp is not above current fp");
+            break;
+        }
+        if next_fp - fp > 1024 * 1024 {
+            println!("  frame[{index}]: stopping: next_fp jump exceeds 1 MiB");
+            break;
+        }
+        fp = next_fp;
+    }
+}
+
 #[derive(Debug, Clone)]
 struct MmioTrace {
     count: u64,
@@ -1631,6 +1704,9 @@ fn main() {
         if fp != 0 {
             dump_guest_bytes(&guest_ram, "FRAME[fp]", fp, 0, 0x80);
             dump_translated_guest_bytes(&guest_ram, "FRAME[fp]", fp_ipa, 0, 0x80);
+            let frame_limit =
+                usize::try_from(env_u64("BRIDGEVM_FRAME_CHAIN_LIMIT", 12)).unwrap_or(12);
+            print_frame_chain(&guest_ram, &stage1_ctx, fp, frame_limit.min(64));
         }
         if sp_el1 != 0 {
             dump_guest_bytes(&guest_ram, "STACK[sp_el1]", sp_el1, 0, 0x100);

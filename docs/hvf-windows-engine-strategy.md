@@ -253,7 +253,11 @@ The remaining OS-boot contract work is now narrower:
   controls and walks the guest's 4 KiB stage-1 tables through the reusable
   `src/stage1.rs` helper, so the latest watchdog snapshot resolves
   `pc=0xfffff80145081cdc` through `TTBR1_EL1` to `ipa=0x100481cdc`, inside
-  `ntkrnlmp.pdb` at RVA `0x481cdc`. The PCIe MMIO tail
+  `ntkrnlmp.pdb` at RVA `0x481cdc`. Watchdog dumps also walk a bounded saved-FP
+  frame chain (`FRAMECHAIN`, default 12 frames, capped at 64 through
+  `BRIDGEVM_FRAME_CHAIN_LIMIT`) and resolve saved LR values through the same
+  stage-1 helper, giving kernel RVAs such as `0x519f6c`, `0x2c3d88`,
+  `0x518434`, and `0x50e358` in `ntkrnlmp.pdb`. The PCIe MMIO tail
   repeatedly reads NVMe `CSTS`/`CC` and rings `SQ0TDBL`, so the next diff is
   Windows NVMe/PCIe command flow and device-shape parity rather than the old
   late-DXE poll, the cdboot stub writer, basic ISO reachability, or interrupt
