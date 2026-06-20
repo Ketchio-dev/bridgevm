@@ -250,6 +250,7 @@ impl VirtioMmioBlock {
             0x08 => {
                 if self.queue_sel == 0 && value != 0 {
                     self.guest_page_size = 4096;
+                    self.queue_num = QUEUE_MAX;
                     self.queue_desc = value.saturating_mul(u64::from(self.guest_page_size));
                     self.queue_ready = true;
                     self.derive_legacy_queue_addresses();
