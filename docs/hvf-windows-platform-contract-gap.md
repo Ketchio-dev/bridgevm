@@ -6,8 +6,9 @@ _Last updated: 2026-06-20._
 > Path A. The active Path A source of truth is now
 > [`crates/bridgevm-hvf/src/machine.rs`](../crates/bridgevm-hvf/src/machine.rs) plus
 > [`crates/bridgevm-hvf/src/platform_virt.rs`](../crates/bridgevm-hvf/src/platform_virt.rs).
-> That implementation now boots stock ArmVirtQemu firmware to the UEFI shell. The
-> legacy `src/lib.rs` probe map below is retained as historical context, not as the
+> That implementation now boots stock ArmVirtQemu firmware to the UEFI shell and
+> QEMU direct Linux boot blobs through Debian installer userspace startup. The legacy
+> `src/lib.rs` probe map below is retained as historical context, not as the
 > desired machine model.
 
 ## Why this document exists
@@ -127,7 +128,10 @@ virtio-mmio slots, PCIe ECAM host-bridge config space, a first NVMe endpoint at
 pflash vars model wired behind `VirtPlatform::on_mmio()` with live-probe
 snapshot/writeback hooks. The stock ArmVirtQemu firmware boots to the UEFI shell.
 ACPI blobs are now delivered through QEMU-style `etc/acpi/rsdp`,
-`etc/acpi/tables` and `etc/table-loader` fw_cfg files. The remaining gap is above
-firmware: production-grade NVMe and pflash persistence in the engine-facing VM
-configuration, interrupt/MSI behavior, and then Linux ACPI / Windows installer
-validation.
+`etc/acpi/tables` and `etc/table-loader` fw_cfg files. QEMU-style Linux
+`-kernel`/`-initrd`/`-append` fw_cfg blobs now boot Debian's arm64 installer kernel
+through EFI, ACPI, GIC/timer init, `ARMH0011` PL011 console binding, `PCI0` root
+bridge enumeration, ECAM reservation through `PNP0C02`, initramfs unpack, and
+`Run /init as init process`. The remaining gap is above firmware: a QEMU-like PCI
+`_OSC` method, production-grade NVMe and pflash persistence in the engine-facing
+VM configuration, interrupt/MSI behavior, and then Windows installer validation.

@@ -1,6 +1,6 @@
 # BridgeVM HVF Windows engine — strategy & sequenced plan
 
-_Last updated: 2026-06-19._
+_Last updated: 2026-06-20._
 
 ## Context
 
@@ -81,7 +81,7 @@ ACPI-only boot): Linux gives you `dmesg`, Windows gives you a sad face.
 | 3 | Assemble the `virt` platform + `fw_cfg` behind one MMIO-exit entry point; feed `etc/acpi/tables`/`etc/acpi/rsdp`/SMBIOS/boot order | **done (assembled + live-wired)** | `src/platform_virt.rs` (`VirtPlatform`): owns the map, populated `fw_cfg`, DTB, ACPI table-loader blobs, guest-memory layout and MMIO dispatch; `on_mmio()` is the single call the live run loop makes |
 | 4 | GICv3: spike Apple `hv_gic_create` (macOS 15+, create before vCPUs); else model GICv3+ITS at QEMU bases | **done (Apple `hv_gic`, live)** | distributor/redistributor + timer delivery are served by Hypervisor.framework; ITS/MSI remains separate work |
 | 5 | PCIe ECAM (`pci-host-ecam-generic`) + config space + MSI/MSI-X | **partial** | ECAM host bridge, NVMe endpoint config space and BAR0 MMIO routing are wired; MSI/MSI-X delivery is still pending |
-| 6 | **Linux ACPI-only boot** through the stock firmware | after 3–5 | the oracle: confirm ACPI/GIC/timer/PCIe before touching Windows |
+| 6 | **Linux ACPI-only boot** through the stock firmware | **partial (installer userspace starts)** | QEMU-style `-kernel`/`-initrd` fw_cfg blobs boot Debian's arm64 installer kernel through EFI, ACPI, GIC, timer, PL011 console binding, PCI root enumeration, initramfs unpack and `/init`. Current gaps vs QEMU: PCI `_OSC` is still absent, CPU topology tables are minimal, and the installer has not yet been driven all the way through storage/network paths. |
 | 7 | NVMe controller (identify + admin/IO queues) on PCIe | **partial** | minimal controller and admin/IO queues are reachable through PCIe BAR0; raw image load/snapshot is wired into the live boot probe; interrupt/MSI behavior and OS boot validation remain |
 | 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | after 6–7 | success = a reproducible "where it died", diffed against QEMU |
 | 9 | GOP framebuffer + keyboard | after 8 | Setup UI + "press any key" |
@@ -192,14 +192,30 @@ Other fixed bring-up blockers remain important traps for future work:
 - The DTB needs the QEMU `virt` `/flash@0` node and must omit the 64-bit PCIe MMIO
   window until the guest IPA aperture can represent it.
 
-### Current frontier — OS boot contract
+### Current frontier — ACPI device parity for OS boot
 
-Firmware boot is no longer the frontier. The next milestone is an ACPI-only Linux
-boot through the stock firmware, because Linux gives a useful `dmesg` oracle before
-Windows. To get there:
+Firmware boot is no longer the frontier, and neither is the old late-DXE
+`0x5fcf13b0` polling hang. The live probe now has two useful OS-level proofs:
+
+- stock ArmVirtQemu firmware reaches the UEFI shell under Apple `hv_gic`;
+- QEMU direct Linux boot blobs (`BRIDGEVM_LINUX_KERNEL`/`INITRD`/`CMDLINE`) reach
+  Debian's arm64 installer kernel, ACPI interpreter enablement, GIC/timer init,
+  initramfs unpack, and `Run /init as init process`.
+
+The first ACPI device-parity gap is now closed: BridgeVM's generated DSDT names
+the `ARMH0011` PL011 console, `PNP0A08` `PCI0` root bridge, `PNP0C02` ECAM
+reservation and `PNP0C0C` power button. The Linux oracle now logs `legacy console
+[ttyAMA0] enabled`, `ACPI: PCI Root Bridge [PCI0]`, `ECAM area ... reserved by
+PNP0C02:00`, `PnP ACPI: found 1 devices`, and starts installer userspace instead
+of printing `Warning: unable to open an initial console.`
+
+The remaining OS-boot contract work is now narrower:
 
 - keep the QEMU-style ACPI delivery wired through `fw_cfg` entries
   `etc/acpi/rsdp`, `etc/acpi/tables` and `etc/table-loader`;
+- implement a QEMU-like PCI `_OSC` method instead of leaving Linux with
+  `AE_NOT_FOUND`, then add the remaining ACPI parity tables that matter for
+  Windows diagnostics (PPTT/DBG2/IORT as needed);
 - extend the raw-image NVMe path from load/snapshot into production-grade
   host-file persistence and interrupt/MSI behavior;
 - lift the pflash variable snapshot/writeback hooks from the live boot probe into

@@ -107,13 +107,14 @@ impl Table {
         self.bytes.extend(std::iter::repeat(0u8).take(n));
     }
 
-    /// A 12-byte ACPI Generic Address Structure (GAS): system-memory access to a
-    /// register at `address`, `bit_width` wide.
-    fn gas_memory(&mut self, address: u64, bit_width: u8) {
+    /// A 12-byte ACPI Generic Address Structure (GAS) with an explicit ACPI
+    /// access-size encoding (1=byte, 2=word,
+    /// 3=dword, 4=qword). SPCR consumers warn if this is left undefined.
+    fn gas_memory_with_access_size(&mut self, address: u64, bit_width: u8, access_size: u8) {
         self.u8(0x00); // AddressSpaceId = SystemMemory
         self.u8(bit_width);
         self.u8(0x00); // BitOffset
-        self.u8(0x00); // AccessSize = undefined
+        self.u8(access_size);
         self.u64(address);
     }
 
@@ -512,11 +513,262 @@ fn fadt_len() -> u64 {
     build_fadt(0).len() as u64
 }
 
-/// A minimal, valid (empty) DSDT: just a zero-length AML definition block. Real
-/// device objects are unnecessary for boot on this platform — the OS discovers
-/// devices from MADT/GTDT/MCFG/SPCR — but the FADT must point at *some* DSDT.
+// ---- AML helpers ------------------------------------------------------------
+
+const AML_ZERO_OP: u8 = 0x00;
+const AML_ONE_OP: u8 = 0x01;
+const AML_BYTE_PREFIX: u8 = 0x0A;
+const AML_DWORD_PREFIX: u8 = 0x0C;
+const AML_STRING_PREFIX: u8 = 0x0D;
+const AML_NAME_OP: u8 = 0x08;
+const AML_SCOPE_OP: u8 = 0x10;
+const AML_BUFFER_OP: u8 = 0x11;
+const AML_EXT_OP: u8 = 0x5B;
+const AML_DEVICE_OP: u8 = 0x82;
+
+const EISA_PNP0A08: [u8; 4] = [0x41, 0xD0, 0x0A, 0x08];
+const EISA_PNP0A03: [u8; 4] = [0x41, 0xD0, 0x0A, 0x03];
+const EISA_PNP0C02: [u8; 4] = [0x41, 0xD0, 0x0C, 0x02];
+const EISA_PNP0C0C: [u8; 4] = [0x41, 0xD0, 0x0C, 0x0C];
+
+fn aml_pkg_length(payload_len: usize) -> Vec<u8> {
+    for encoded_len in 1..=4 {
+        let total = payload_len + encoded_len;
+        if encoded_len == 1 {
+            if total <= 0x3F {
+                return vec![total as u8];
+            }
+            continue;
+        }
+        let max = match encoded_len {
+            2 => 0x0FFF,
+            3 => 0x0F_FFFF,
+            4 => 0x0FFF_FFFF,
+            _ => unreachable!(),
+        };
+        if total <= max {
+            let follow = encoded_len - 1;
+            let mut out = Vec::with_capacity(encoded_len);
+            out.push(((follow as u8) << 6) | ((total & 0x0F) as u8));
+            let mut rest = total >> 4;
+            for _ in 0..follow {
+                out.push((rest & 0xFF) as u8);
+                rest >>= 8;
+            }
+            return out;
+        }
+    }
+    panic!("AML package length too large: {payload_len}");
+}
+
+fn aml_name_string(name: &[u8; 4], value: &str) -> Vec<u8> {
+    assert!(
+        !value.as_bytes().contains(&0),
+        "AML strings are NUL-terminated"
+    );
+    let mut out = vec![AML_NAME_OP];
+    out.extend_from_slice(name);
+    out.push(AML_STRING_PREFIX);
+    out.extend_from_slice(value.as_bytes());
+    out.push(0);
+    out
+}
+
+fn aml_name_eisa(name: &[u8; 4], encoded: [u8; 4]) -> Vec<u8> {
+    let mut out = vec![AML_NAME_OP];
+    out.extend_from_slice(name);
+    out.push(AML_DWORD_PREFIX);
+    out.extend_from_slice(&encoded);
+    out
+}
+
+fn aml_name_simple(name: &[u8; 4], op: u8) -> Vec<u8> {
+    let mut out = vec![AML_NAME_OP];
+    out.extend_from_slice(name);
+    out.push(op);
+    out
+}
+
+fn aml_name_buffer(name: &[u8; 4], bytes: &[u8]) -> Vec<u8> {
+    assert!(bytes.len() <= u8::MAX as usize, "small AML buffer expected");
+    let mut out = vec![AML_NAME_OP];
+    out.extend_from_slice(name);
+    out.push(AML_BUFFER_OP);
+    out.extend(aml_pkg_length(2 + bytes.len()));
+    out.push(AML_BYTE_PREFIX);
+    out.push(bytes.len() as u8);
+    out.extend_from_slice(bytes);
+    out
+}
+
+fn aml_scope(name: &[u8; 4], body: &[u8]) -> Vec<u8> {
+    let mut out = vec![AML_SCOPE_OP];
+    out.extend(aml_pkg_length(name.len() + body.len()));
+    out.extend_from_slice(name);
+    out.extend_from_slice(body);
+    out
+}
+
+fn aml_device(name: &[u8; 4], body: &[u8]) -> Vec<u8> {
+    let mut out = vec![AML_EXT_OP, AML_DEVICE_OP];
+    out.extend(aml_pkg_length(name.len() + body.len()));
+    out.extend_from_slice(name);
+    out.extend_from_slice(body);
+    out
+}
+
+fn resource_memory32_fixed(base: u64, size: u64) -> Vec<u8> {
+    let base = u32::try_from(base).expect("Memory32Fixed base exceeds 32 bits");
+    let size = u32::try_from(size).expect("Memory32Fixed size exceeds 32 bits");
+    let mut out = vec![0x86, 0x09, 0x00, 0x01]; // Memory32Fixed, ReadWrite
+    out.extend_from_slice(&base.to_le_bytes());
+    out.extend_from_slice(&size.to_le_bytes());
+    out
+}
+
+fn resource_interrupt(gsiv: u32) -> Vec<u8> {
+    let mut out = vec![0x89, 0x06, 0x00, 0x01, 0x01]; // Consumer, level, active-high, exclusive
+    out.extend_from_slice(&gsiv.to_le_bytes());
+    out
+}
+
+fn resource_word_bus_number(min: u16, max: u16) -> Vec<u8> {
+    let len = max
+        .checked_sub(min)
+        .and_then(|v| v.checked_add(1))
+        .expect("invalid PCI bus range");
+    let mut out = vec![0x88, 0x0D, 0x00, 0x02, 0x0C, 0x00]; // Word address, bus, min/max fixed
+    out.extend_from_slice(&0u16.to_le_bytes()); // granularity
+    out.extend_from_slice(&min.to_le_bytes());
+    out.extend_from_slice(&max.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes()); // translation offset
+    out.extend_from_slice(&len.to_le_bytes());
+    out
+}
+
+fn resource_dword_memory(base: u64, size: u64) -> Vec<u8> {
+    let base = u32::try_from(base).expect("DWordMemory base exceeds 32 bits");
+    let size = u32::try_from(size).expect("DWordMemory size exceeds 32 bits");
+    let max = base
+        .checked_add(size)
+        .and_then(|v| v.checked_sub(1))
+        .expect("DWordMemory range overflow");
+    let mut out = vec![0x87, 0x17, 0x00, 0x00, 0x0C, 0x01]; // Memory, min/max fixed, read-write
+    out.extend_from_slice(&0u32.to_le_bytes()); // granularity
+    out.extend_from_slice(&base.to_le_bytes());
+    out.extend_from_slice(&max.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes()); // translation offset
+    out.extend_from_slice(&size.to_le_bytes());
+    out
+}
+
+fn resource_dword_io(base: u64, size: u64) -> Vec<u8> {
+    let base = u32::try_from(base).expect("DWordIO translation exceeds 32 bits");
+    let size = u32::try_from(size).expect("DWordIO size exceeds 32 bits");
+    let max = size.checked_sub(1).expect("DWordIO size must be non-zero");
+    let mut out = vec![0x87, 0x17, 0x00, 0x01, 0x0C, 0x03]; // I/O, min/max fixed, entire range
+    out.extend_from_slice(&0u32.to_le_bytes()); // granularity
+    out.extend_from_slice(&0u32.to_le_bytes()); // host-visible I/O min
+    out.extend_from_slice(&max.to_le_bytes()); // host-visible I/O max
+    out.extend_from_slice(&base.to_le_bytes()); // translation to CPU MMIO window
+    out.extend_from_slice(&size.to_le_bytes());
+    out
+}
+
+fn resource_qword_memory(base: u64, size: u64) -> Vec<u8> {
+    let max = base
+        .checked_add(size)
+        .and_then(|v| v.checked_sub(1))
+        .expect("QWordMemory range overflow");
+    let mut out = vec![0x8A, 0x2B, 0x00, 0x00, 0x0C, 0x01]; // Memory, min/max fixed, read-write
+    out.extend_from_slice(&0u64.to_le_bytes()); // granularity
+    out.extend_from_slice(&base.to_le_bytes());
+    out.extend_from_slice(&max.to_le_bytes());
+    out.extend_from_slice(&0u64.to_le_bytes()); // translation offset
+    out.extend_from_slice(&size.to_le_bytes());
+    out
+}
+
+fn resource_end_tag() -> [u8; 2] {
+    [0x79, 0x00]
+}
+
+fn build_pl011_dsdt_device() -> Vec<u8> {
+    let mut crs = Vec::new();
+    crs.extend(resource_memory32_fixed(
+        machine::UART.base,
+        machine::UART.size,
+    ));
+    crs.extend(resource_interrupt(machine::spi_to_intid(machine::SPI_UART)));
+    crs.extend(resource_end_tag());
+
+    let mut body = Vec::new();
+    body.extend(aml_name_string(b"_HID", "ARMH0011"));
+    body.extend(aml_name_simple(b"_UID", AML_ZERO_OP));
+    body.extend(aml_name_simple(b"_CCA", AML_ONE_OP));
+    body.extend(aml_name_buffer(b"_CRS", &crs));
+    aml_device(b"COM0", &body)
+}
+
+fn build_pci_root_dsdt_device() -> Vec<u8> {
+    let mut crs = Vec::new();
+    crs.extend(resource_word_bus_number(0, 0x00FF));
+    crs.extend(resource_dword_memory(
+        machine::PCIE_MMIO_32.base,
+        machine::PCIE_MMIO_32.size,
+    ));
+    crs.extend(resource_dword_io(
+        machine::PCIE_PIO.base,
+        machine::PCIE_PIO.size,
+    ));
+    crs.extend(resource_end_tag());
+
+    let mut body = Vec::new();
+    body.extend(aml_name_eisa(b"_HID", EISA_PNP0A08));
+    body.extend(aml_name_eisa(b"_CID", EISA_PNP0A03));
+    body.extend(aml_name_simple(b"_SEG", AML_ZERO_OP));
+    body.extend(aml_name_simple(b"_BBN", AML_ZERO_OP));
+    body.extend(aml_name_simple(b"_UID", AML_ZERO_OP));
+    body.extend(aml_name_simple(b"_CCA", AML_ONE_OP));
+    body.extend(aml_name_buffer(b"_CRS", &crs));
+    aml_device(b"PCI0", &body)
+}
+
+fn build_power_button_dsdt_device() -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend(aml_name_eisa(b"_HID", EISA_PNP0C0C));
+    aml_device(b"PWRB", &body)
+}
+
+fn build_ecam_reserved_dsdt_device() -> Vec<u8> {
+    let mut crs = Vec::new();
+    crs.extend(resource_qword_memory(
+        machine::PCIE_ECAM.base,
+        machine::PCIE_ECAM.size,
+    ));
+    crs.extend(resource_end_tag());
+
+    let mut body = Vec::new();
+    body.extend(aml_name_eisa(b"_HID", EISA_PNP0C02));
+    body.extend(aml_name_simple(b"_UID", AML_ZERO_OP));
+    body.extend(aml_name_buffer(b"_CRS", &crs));
+    aml_device(b"RES0", &body)
+}
+
+/// QEMU-like DSDT surface for devices Linux/Windows enumerate through ACPI.
+/// MADT/GTDT/MCFG/SPCR carry the architectural tables, while this AML names the
+/// platform devices the OS driver core expects to bind (`ARMH0011` PL011,
+/// `PNP0A08` PCI root bridge and a power button).
 fn build_dsdt() -> Vec<u8> {
-    Table::new(b"DSDT", 2).finish()
+    let mut sb = Vec::new();
+    sb.extend(build_pl011_dsdt_device());
+    sb.extend(build_pci_root_dsdt_device());
+    sb.extend(build_ecam_reserved_dsdt_device());
+    sb.extend(build_power_button_dsdt_device());
+
+    let mut t = Table::new(b"DSDT", 2);
+    t.bytes.extend(aml_scope(b"_SB_", &sb));
+    t.finish()
 }
 
 /// MADT (Multiple APIC Description Table) for GICv3: one GICC per CPU, a single
@@ -630,7 +882,7 @@ fn build_spcr() -> Vec<u8> {
     let mut t = Table::new(b"SPCR", 2);
     t.u8(0x03); // Interface Type = ARM PL011 UART
     t.pad(3); // reserved
-    t.gas_memory(machine::UART.base, 32); // Base Address (32-bit register width)
+    t.gas_memory_with_access_size(machine::UART.base, 32, 3); // Base Address (dword access)
     t.u8(0x08); // Interrupt Type = ARM GIC
     t.u8(0); // IRQ (8259, unused)
     t.u32(machine::spi_to_intid(machine::SPI_UART)); // Global System Interrupt
@@ -692,6 +944,9 @@ mod tests {
     }
     fn write_le_sized(b: &mut [u8], off: usize, size: u8, value: u64) {
         b[off..off + size as usize].copy_from_slice(&value.to_le_bytes()[..size as usize]);
+    }
+    fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+        haystack.windows(needle.len()).any(|w| w == needle)
     }
     fn replay_loader(blobs: &AcpiBlobs) -> (Vec<u8>, Vec<u8>) {
         const TABLES_BASE: u64 = 0x4800_0000;
@@ -942,6 +1197,70 @@ mod tests {
     }
 
     #[test]
+    fn dsdt_names_qemu_like_uart_pci_and_power_devices() {
+        let blobs = build_acpi(1);
+        let tables = split_tables(&blobs.tables);
+        let dsdt = find(&tables, "DSDT");
+        assert!(
+            dsdt.len() > ACPI_HEADER_LEN,
+            "DSDT must carry AML, not just an empty definition block"
+        );
+        for needle in [
+            b"_SB_".as_slice(),
+            b"COM0".as_slice(),
+            b"ARMH0011".as_slice(),
+            b"PCI0".as_slice(),
+            b"RES0".as_slice(),
+            b"PWRB".as_slice(),
+        ] {
+            assert!(
+                contains_bytes(dsdt, needle),
+                "DSDT missing AML name/string {:?}",
+                String::from_utf8_lossy(needle)
+            );
+        }
+        assert!(
+            contains_bytes(
+                dsdt,
+                &resource_memory32_fixed(machine::UART.base, machine::UART.size)
+            ),
+            "DSDT must describe the PL011 MMIO window"
+        );
+        assert!(
+            contains_bytes(
+                dsdt,
+                &resource_interrupt(machine::spi_to_intid(machine::SPI_UART))
+            ),
+            "DSDT must describe the PL011 GIC interrupt"
+        );
+        assert!(
+            contains_bytes(dsdt, &resource_word_bus_number(0, 0x00FF)),
+            "DSDT must describe PCI buses 00-ff"
+        );
+        assert!(
+            contains_bytes(
+                dsdt,
+                &resource_dword_memory(machine::PCIE_MMIO_32.base, machine::PCIE_MMIO_32.size),
+            ),
+            "DSDT must describe the PCI 32-bit MMIO aperture"
+        );
+        assert!(
+            contains_bytes(
+                dsdt,
+                &resource_dword_io(machine::PCIE_PIO.base, machine::PCIE_PIO.size),
+            ),
+            "DSDT must describe the translated PCI I/O aperture"
+        );
+        assert!(
+            contains_bytes(
+                dsdt,
+                &resource_qword_memory(machine::PCIE_ECAM.base, machine::PCIE_ECAM.size),
+            ),
+            "DSDT must reserve the ECAM aperture through PNP0C02"
+        );
+    }
+
+    #[test]
     fn madt_has_one_gicc_per_cpu_plus_gicd_and_gicr() {
         for cpu_count in [1u64, 2, 8, 16, 17] {
             let blobs = build_acpi(cpu_count);
@@ -1039,6 +1358,11 @@ mod tests {
         let tables = split_tables(&blobs.tables);
         let spcr = find(&tables, "SPCR");
         assert_eq!(spcr[ACPI_HEADER_LEN], 0x03, "interface type = ARM PL011");
+        assert_eq!(
+            spcr[ACPI_HEADER_LEN + 4 + 3],
+            3,
+            "SPCR GAS access size must be dword"
+        );
         // GAS base address is at header + interface_type(1) + reserved(3) + 4.
         let gas_addr = le64(spcr, ACPI_HEADER_LEN + 4 + 4);
         assert_eq!(gas_addr, machine::UART.base);
