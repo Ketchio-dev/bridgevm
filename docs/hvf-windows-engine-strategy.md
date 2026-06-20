@@ -81,7 +81,7 @@ ACPI-only boot): Linux gives you `dmesg`, Windows gives you a sad face.
 | 3 | Assemble the `virt` platform + `fw_cfg` behind one MMIO-exit entry point; feed `etc/acpi/tables`/`etc/acpi/rsdp`/SMBIOS/boot order | **done (assembled + live-wired)** | `src/platform_virt.rs` (`VirtPlatform`): owns the map, populated `fw_cfg`, DTB, ACPI table-loader blobs, guest-memory layout and MMIO dispatch; `on_mmio()` is the single call the live run loop makes |
 | 4 | GICv3: spike Apple `hv_gic_create` (macOS 15+, create before vCPUs); else model GICv3+ITS at QEMU bases | **done (Apple `hv_gic`, live)** | distributor/redistributor + timer delivery are served by Hypervisor.framework; ITS/MSI remains separate work |
 | 5 | PCIe ECAM (`pci-host-ecam-generic`) + config space + MSI/MSI-X | **partial** | ECAM host bridge, NVMe endpoint config space and BAR0 MMIO routing are wired; MSI/MSI-X delivery is still pending |
-| 6 | **Linux ACPI-only boot** through the stock firmware | **partial (installer userspace starts)** | QEMU-style `-kernel`/`-initrd` fw_cfg blobs boot Debian's arm64 installer kernel through EFI, ACPI, SMBIOS/DMI, GIC, timer, PL011 console binding, PCI root enumeration, QEMU-like PCI `_OSC`, basic PPTT CPU topology, initramfs unpack and `/init`. The ECAM PnP reservation warning is present in the QEMU+HVF oracle too, so the active BridgeVM-only diagnostics are now the topology sysfs warning, missing ACPI PMU IRQ metadata, and storage/network paths that have not yet been driven end to end. |
+| 6 | **Linux ACPI-only boot** through the stock firmware | **partial (installer userspace starts)** | QEMU-style `-kernel`/`-initrd` fw_cfg blobs boot Debian's arm64 installer kernel through EFI, ACPI, SMBIOS/DMI, GIC, timer, PL011 console binding, ACPI0007 CPU device enumeration, PCI root enumeration, QEMU-like PCI `_OSC`, basic PPTT CPU topology, PMU IRQ metadata, initramfs unpack and `/init`. The ECAM PnP reservation warning is present in the QEMU+HVF oracle too, so the active BridgeVM-only gaps are now storage/network/MSI behavior and Windows validation rather than early ACPI metadata. |
 | 7 | NVMe controller (identify + admin/IO queues) on PCIe | **partial** | minimal controller and admin/IO queues are reachable through PCIe BAR0; raw image load/snapshot is wired into the live boot probe; interrupt/MSI behavior and OS boot validation remain |
 | 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | after 6–7 | success = a reproducible "where it died", diffed against QEMU |
 | 9 | GOP framebuffer + keyboard | after 8 | Setup UI + "press any key" |
@@ -206,20 +206,22 @@ Firmware boot is no longer the frontier, and neither is the old late-DXE
   of `DMI not present or invalid`.
 
 The first ACPI device-parity gaps are now closed: BridgeVM's generated DSDT names
-the `ARMH0011` PL011 console, `PNP0A08` `PCI0` root bridge, `PNP0C02` ECAM
-reservation and `PNP0C0C` power button, and `PCI0._OSC` follows QEMU's host-bridge
-policy. The Linux oracle now logs `legacy console [ttyAMA0] enabled`,
-`ACPI: PCI Root Bridge [PCI0]`, `_OSC: OS now controls [PCIeHotplug SHPCHotplug
-PME AER PCIeCapability]`, `ECAM area ... reserved by PNP0C02:00`, `PnP ACPI:
-found 1 devices`, and starts installer userspace instead of printing `Warning:
-unable to open an initial console.` A QEMU-like PPTT is now installed as well, so
-Linux no longer reports `No PPTT table found` or `cacheinfo: Unable to detect
-cache hierarchy for CPU 0`, and QEMU-style SMBIOS now removes the earlier
-`DMI not present or invalid` warning. The ECAM PnP reservation warning also
+QEMU-like `ACPI0007` CPU devices, the `ARMH0011` PL011 console, `PNP0A08` `PCI0`
+root bridge, `PNP0C02` ECAM reservation and `PNP0C0C` power button, and
+`PCI0._OSC` follows QEMU's host-bridge policy. The MADT now follows QEMU's GICv3
+shape as well: revision 4, GICD before GICC entries, and PMU PPI 7 advertised as
+performance-interrupt GSIV `0x17`. The Linux oracle now logs `ACPI: CPU0 has been
+hot-added`, `legacy console [ttyAMA0] enabled`, `ACPI: PCI Root Bridge [PCI0]`,
+`_OSC: OS now controls [PCIeHotplug SHPCHotplug PME AER PCIeCapability]`, `ECAM
+area ... reserved by PNP0C02:00`, `PnP ACPI: found 1 devices`, and starts
+installer userspace instead of printing `Warning: unable to open an initial
+console.` A QEMU-like PPTT is installed, so Linux no longer reports `No PPTT table
+found` or `cacheinfo: Unable to detect cache hierarchy for CPU 0`; QEMU-style
+SMBIOS removes the earlier `DMI not present or invalid` warning; and the latest
+live HVF run no longer logs the previous `topology_sysfs_init`, `cpuinfo`, or
+`No ACPI PMU IRQ for CPU0` diagnostics. The ECAM PnP reservation warning also
 appears under the QEMU+HVF oracle with the same firmware and Linux command line,
-so it is not currently a BridgeVM-only diff. The remaining ACPI diagnostics are
-narrower: Linux still trips a topology sysfs warning during `topology_sysfs_init`,
-reports `No ACPI PMU IRQ for CPU0`, and correctly notes that QEMU-style `_OSC`
+so it is not currently a BridgeVM-only diff. QEMU-style `_OSC` still correctly
 does not grant LTR.
 
 The remaining OS-boot contract work is now narrower:
@@ -227,7 +229,7 @@ The remaining OS-boot contract work is now narrower:
 - keep the QEMU-style ACPI delivery wired through `fw_cfg` entries
   `etc/acpi/rsdp`, `etc/acpi/tables` and `etc/table-loader`;
 - add the remaining ACPI parity tables/metadata that matter for Windows/Linux
-  diagnostics and clean logs (DBG2/IORT/cache/PMU details as needed);
+  device paths (notably DBG2/IORT/MSI-related metadata as needed);
 - extend the raw-image NVMe path from load/snapshot into production-grade
   host-file persistence and interrupt/MSI behavior;
 - lift the pflash variable snapshot/writeback hooks from the live boot probe into

@@ -133,10 +133,12 @@ delivered through `etc/smbios/smbios-anchor` and `etc/smbios/smbios-tables`.
 QEMU-style Linux `-kernel`/`-initrd`/`-append` fw_cfg blobs now boot Debian's
 arm64 installer kernel through EFI, ACPI, SMBIOS/DMI, GIC/timer init,
 `ARMH0011` PL011 console binding, `PCI0` root bridge enumeration, QEMU-like PCI
-`_OSC`, basic PPTT CPU topology, ECAM reservation through `PNP0C02`, initramfs
-unpack, and `Run /init as init process`. The ECAM PnP reservation warning is also
+`_OSC`, ACPI0007 CPU device enumeration, basic PPTT CPU topology, PMU IRQ
+metadata, ECAM reservation through `PNP0C02`, initramfs unpack, and `Run /init as
+init process`. The latest live HVF run no longer logs the previous
+`topology_sysfs_init`, `cpuinfo`, `cacheinfo`, `No PPTT table found`, `No ACPI PMU
+IRQ`, or invalid-DMI diagnostics. The ECAM PnP reservation warning is also
 present in the QEMU+HVF oracle, so it is no longer treated as a BridgeVM-only
-platform gap. The remaining gap is above firmware: Linux topology sysfs/cache/PMU
-metadata cleanup, production-grade NVMe and pflash persistence in the
-engine-facing VM configuration, interrupt/MSI behavior, and then Windows
-installer validation.
+platform gap. The remaining gap is above firmware: production-grade NVMe and
+pflash persistence in the engine-facing VM configuration, interrupt/MSI behavior,
+ACPI IORT/DBG2 details as needed, and then Windows installer validation.

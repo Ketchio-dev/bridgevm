@@ -166,7 +166,7 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     // via etc/table-loader), but internal pointers must be self-consistent.
     const TABLES_BASE: u64 = 0;
 
-    let dsdt = build_dsdt();
+    let dsdt = build_dsdt(cpu_count);
     let madt = build_madt(cpu_count);
     let pptt = build_pptt(cpu_count);
     let gtdt = build_gtdt();
@@ -609,6 +609,13 @@ fn aml_name_simple(name: &[u8; 4], op: u8) -> Vec<u8> {
     out
 }
 
+fn aml_name_byte(name: &[u8; 4], value: u8) -> Vec<u8> {
+    let mut out = vec![AML_NAME_OP];
+    out.extend_from_slice(name);
+    out.extend(aml_byte(value));
+    out
+}
+
 fn aml_name_buffer(name: &[u8; 4], bytes: &[u8]) -> Vec<u8> {
     assert!(bytes.len() <= u8::MAX as usize, "small AML buffer expected");
     let mut out = vec![AML_NAME_OP];
@@ -830,6 +837,22 @@ fn build_pl011_dsdt_device() -> Vec<u8> {
     aml_device(b"COM0", &body)
 }
 
+fn build_cpu_dsdt_device(cpu: u64) -> Vec<u8> {
+    let name = format!("C{cpu:03X}");
+    assert!(
+        name.len() == 4,
+        "ACPI CPU device name requires a three-hex-digit UID: {cpu}",
+    );
+    let mut device_name = [0u8; 4];
+    device_name.copy_from_slice(name.as_bytes());
+    let uid = u8::try_from(cpu).expect("ACPI CPU UID exceeds one-byte AML encoding");
+
+    let mut body = Vec::new();
+    body.extend(aml_name_string(b"_HID", "ACPI0007"));
+    body.extend(aml_name_byte(b"_UID", uid));
+    aml_device(&device_name, &body)
+}
+
 fn build_pci_root_dsdt_device() -> Vec<u8> {
     let mut crs = Vec::new();
     crs.extend(resource_word_bus_number(0, 0x00FF));
@@ -914,10 +937,13 @@ fn build_ecam_reserved_dsdt_device() -> Vec<u8> {
 
 /// QEMU-like DSDT surface for devices Linux/Windows enumerate through ACPI.
 /// MADT/GTDT/MCFG/SPCR carry the architectural tables, while this AML names the
-/// platform devices the OS driver core expects to bind (`ARMH0011` PL011,
-/// `PNP0A08` PCI root bridge and a power button).
-fn build_dsdt() -> Vec<u8> {
+/// platform devices the OS driver core expects to bind (`ACPI0007` CPU devices,
+/// `ARMH0011` PL011, `PNP0A08` PCI root bridge and a power button).
+fn build_dsdt(cpu_count: u64) -> Vec<u8> {
     let mut sb = Vec::new();
+    for cpu in 0..cpu_count {
+        sb.extend(build_cpu_dsdt_device(cpu));
+    }
     sb.extend(build_pl011_dsdt_device());
     sb.extend(build_pci_root_dsdt_device());
     sb.extend(build_ecam_reserved_dsdt_device());
@@ -931,9 +957,20 @@ fn build_dsdt() -> Vec<u8> {
 /// MADT (Multiple APIC Description Table) for GICv3: one GICC per CPU, a single
 /// GICD, and a GICR covering the whole redistributor window.
 fn build_madt(cpu_count: u64) -> Vec<u8> {
-    let mut t = Table::new(b"APIC", 5); // MADT signature is "APIC"
+    let mut t = Table::new(b"APIC", 4); // MADT signature is "APIC"
     t.u32(0); // Local Interrupt Controller Address (unused on GICv3)
     t.u32(0); // Flags (no PC-AT 8259)
+
+    // GIC Distributor (type 0x0C) — exactly one. QEMU emits the GICD before
+    // per-CPU GICC structures.
+    t.u8(0x0C); // Type = GICD
+    t.u8(24); // Length
+    t.u16(0); // reserved
+    t.u32(0); // GIC ID
+    t.u64(machine::GIC_DIST.base); // Physical Base Address
+    t.u32(0); // System Vector Base (reserved, must be 0)
+    t.u8(3); // GIC version = 3
+    t.pad(3); // reserved
 
     // One GIC CPU Interface (type 0x0B) structure per CPU.
     for cpu in 0..cpu_count {
@@ -944,7 +981,7 @@ fn build_madt(cpu_count: u64) -> Vec<u8> {
         t.u32(cpu as u32); // ACPI Processor UID
         t.u32(1); // Flags = Enabled
         t.u32(0); // Parking Protocol Version
-        t.u32(0); // Performance Interrupt GSIV
+        t.u32(ppi_to_gsiv(machine::PPI_PMU)); // Performance Interrupt GSIV
         t.u64(0); // Parked Address
         t.u64(0); // Physical Base Address (0 on GICv3 — sysreg interface)
         t.u64(0); // GICV (virtual CPU interface)
@@ -957,16 +994,6 @@ fn build_madt(cpu_count: u64) -> Vec<u8> {
         t.u8(0); // reserved
         t.u16(0); // SPE overflow Interrupt
     }
-
-    // GIC Distributor (type 0x0C) — exactly one.
-    t.u8(0x0C); // Type = GICD
-    t.u8(24); // Length
-    t.u16(0); // reserved
-    t.u32(0); // GIC ID
-    t.u64(machine::GIC_DIST.base); // Physical Base Address
-    t.u32(0); // System Vector Base (reserved, must be 0)
-    t.u8(3); // GIC version = 3
-    t.pad(3); // reserved
 
     // GIC Redistributor (type 0x0E) — discovery range covering all GICRs.
     t.u8(0x0E); // Type = GICR
@@ -1426,7 +1453,7 @@ mod tests {
 
     #[test]
     fn dsdt_names_qemu_like_uart_pci_and_power_devices() {
-        let blobs = build_acpi(1);
+        let blobs = build_acpi(2);
         let tables = split_tables(&blobs.tables);
         let dsdt = find(&tables, "DSDT");
         assert!(
@@ -1435,6 +1462,9 @@ mod tests {
         );
         for needle in [
             b"_SB_".as_slice(),
+            b"C000".as_slice(),
+            b"C001".as_slice(),
+            b"ACPI0007".as_slice(),
             b"COM0".as_slice(),
             b"ARMH0011".as_slice(),
             b"PCI0".as_slice(),
@@ -1448,6 +1478,10 @@ mod tests {
                 String::from_utf8_lossy(needle)
             );
         }
+        assert!(
+            contains_bytes(dsdt, &[AML_NAME_OP, b'_', b'U', b'I', b'D', AML_ONE_OP],),
+            "DSDT must describe CPU ACPI0007 UIDs"
+        );
         assert!(
             contains_bytes(
                 dsdt,
@@ -1532,6 +1566,7 @@ mod tests {
             let blobs = build_acpi(cpu_count);
             let tables = split_tables(&blobs.tables);
             let madt = find(&tables, "APIC");
+            assert_eq!(madt[8], 4, "MADT revision must match QEMU virt");
             // Walk the interrupt-controller structures after the 8-byte MADT body.
             let mut off = ACPI_HEADER_LEN + 8;
             let mut gicc = 0u64;
@@ -1561,8 +1596,13 @@ mod tests {
         let blobs = build_acpi(3);
         let tables = split_tables(&blobs.tables);
         let madt = find(&tables, "APIC");
-        // First GICC starts right after the MADT body; GICR base is at +60.
-        let gicc0 = ACPI_HEADER_LEN + 8;
+        // QEMU emits the GICD after the MADT body; the first GICC follows it.
+        let gicc0 = ACPI_HEADER_LEN + 8 + 24;
+        assert_eq!(
+            le32(madt, gicc0 + 20),
+            ppi_to_gsiv(machine::PPI_PMU),
+            "GICC must advertise QEMU-like PMU PPI GSIV",
+        );
         let gicr_base = le64(madt, gicc0 + 60);
         assert_eq!(gicr_base, machine::GIC_REDIST.base);
         // Second CPU's redistributor is one stride higher.
@@ -1579,8 +1619,8 @@ mod tests {
         let blobs = build_acpi(1);
         let tables = split_tables(&blobs.tables);
         let madt = find(&tables, "APIC");
-        // With one CPU: body(8) + one GICC(80); the GICD follows.
-        let gicd = ACPI_HEADER_LEN + 8 + 80;
+        // The GICD follows the 8-byte MADT body, matching QEMU virt.
+        let gicd = ACPI_HEADER_LEN + 8;
         assert_eq!(madt[gicd], 0x0C, "expected GICD at computed offset");
         let dist_base = le64(madt, gicd + 8);
         assert_eq!(dist_base, machine::GIC_DIST.base);
