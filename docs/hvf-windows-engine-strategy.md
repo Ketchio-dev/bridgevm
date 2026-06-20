@@ -250,9 +250,10 @@ The remaining OS-boot contract work is now narrower:
   virtual-address code (`pc=0xfffff801...`). Recent 120 s traces end in Windows
   high-VA code (one data-abort snapshot, one watchdog snapshot with
   `ESR=0x56001004`/SVC state). The live probe now reads the EL1 translation
-  controls and walks the guest's 4 KiB stage-1 tables, so the latest watchdog
-  snapshot resolves `pc=0xfffff80145081cdc` through `TTBR1_EL1` to
-  `ipa=0x100481cdc`, inside `ntkrnlmp.pdb` at RVA `0x481cdc`. The PCIe MMIO tail
+  controls and walks the guest's 4 KiB stage-1 tables through the reusable
+  `src/stage1.rs` helper, so the latest watchdog snapshot resolves
+  `pc=0xfffff80145081cdc` through `TTBR1_EL1` to `ipa=0x100481cdc`, inside
+  `ntkrnlmp.pdb` at RVA `0x481cdc`. The PCIe MMIO tail
   repeatedly reads NVMe `CSTS`/`CC` and rings `SQ0TDBL`, so the next diff is
   Windows NVMe/PCIe command flow and device-shape parity rather than the old
   late-DXE poll, the cdboot stub writer, basic ISO reachability, or interrupt
