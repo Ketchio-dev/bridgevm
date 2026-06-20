@@ -2134,6 +2134,18 @@ fn main() {
         if let Some(stats) = platform.virtio_iso_stats() {
             print_block_media_stats("legacy virtio-mmio ISO stats", stats);
         }
+        match platform.ramfb_config() {
+            Some(config) => println!(
+                "ramfb config: addr={:#x} fourcc={:#010x} xrgb8888={} {}x{} stride={}",
+                config.addr,
+                config.fourcc,
+                config.is_xrgb8888(),
+                config.width,
+                config.height,
+                config.stride
+            ),
+            None => println!("ramfb config: inactive"),
+        }
         println!("symbol lines: {}", symbols.len());
         for line in symbols.iter().rev().take(8).rev() {
             println!("{line}");

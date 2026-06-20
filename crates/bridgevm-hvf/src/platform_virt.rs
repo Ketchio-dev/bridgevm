@@ -34,6 +34,7 @@ use crate::pcie::{PcieEcam, PcieMmioTarget, PciePioTarget, NVME_BDF, VIRTIO_BLK_
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
 use crate::pl031::Pl031;
+use crate::ramfb::{Ramfb, RamfbConfig, RAMFB_CONFIG_SIZE, RAMFB_FW_CFG_FILE};
 use crate::smbios::{build_smbios, SMBIOS_ANCHOR_FILE, SMBIOS_TABLE_FILE};
 use crate::virtio_blk::{
     VirtioMmioBlock, VirtioMmioBlockResult, VirtioMmioBlockStats, VirtioPciBlock, VirtioPciBlockOp,
@@ -88,6 +89,7 @@ pub struct VirtPlatform {
     nvme: NvmeController,
     virtio_iso: Option<VirtioMmioBlock>,
     pci_boot_media: Option<VirtioPciBlock>,
+    ramfb: Ramfb,
     flash_vars: P30NorFlash,
     pending_msix: Vec<MsixMessage>,
     pending_spi_levels: Vec<(u32, bool)>,
@@ -106,6 +108,7 @@ impl VirtPlatform {
         // `etc/system-states` advertises which ACPI S-states are enabled; the
         // firmware may write it back, so it is writable. 6 bytes: S3, S4, ... .
         fw_cfg.add_writable_file("etc/system-states", vec![0u8; 6]);
+        fw_cfg.add_writable_file(RAMFB_FW_CFG_FILE, vec![0u8; RAMFB_CONFIG_SIZE]);
         let acpi = build_acpi(cfg.cpu_count);
         fw_cfg.add_file(ACPI_RSDP_FILE, acpi.rsdp);
         fw_cfg.add_file(ACPI_TABLE_FILE, acpi.tables);
@@ -122,6 +125,7 @@ impl VirtPlatform {
             nvme: NvmeController::new(DEFAULT_NVME_DISK_BYTES),
             virtio_iso: None,
             pci_boot_media: None,
+            ramfb: Ramfb::new(),
             flash_vars: P30NorFlash::new(
                 machine::FLASH_VARS.base,
                 machine::FLASH_VARS.size as usize,
@@ -184,6 +188,10 @@ impl VirtPlatform {
 
     pub fn pci_boot_media_stats(&self) -> Option<VirtioMmioBlockStats> {
         self.pci_boot_media.as_ref().map(VirtioPciBlock::stats)
+    }
+
+    pub fn ramfb_config(&self) -> Option<RamfbConfig> {
+        self.ramfb.config()
     }
 
     /// Snapshot the first NVMe disk image, including guest writes processed so
@@ -566,8 +574,15 @@ impl VirtPlatform {
             MmioOp::Read { size } => MmioOutcome::ReadValue(self.fw_cfg.mmio_read(offset, size)),
             MmioOp::Write { size, value } => {
                 self.fw_cfg.mmio_write(offset, size, value, mem);
+                self.refresh_ramfb();
                 MmioOutcome::WriteAck
             }
+        }
+    }
+
+    fn refresh_ramfb(&mut self) {
+        if let Some(bytes) = self.fw_cfg.file_bytes(RAMFB_FW_CFG_FILE) {
+            self.ramfb.update_from_fw_cfg(bytes);
         }
     }
 }
@@ -618,8 +633,9 @@ impl GuestMemoryMut for FlatGuestRam {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fwcfg::{DMA_CTL_READ, DMA_CTL_SELECT, KEY_FILE_DIR, KEY_SIGNATURE};
+    use crate::fwcfg::{DMA_CTL_READ, DMA_CTL_SELECT, DMA_CTL_WRITE, KEY_FILE_DIR, KEY_SIGNATURE};
     use crate::machine;
+    use crate::ramfb::{DRM_FORMAT_XRGB8888, RAMFB_CONFIG_SIZE};
     use std::{fs, path::PathBuf, time::SystemTime};
 
     const REG_DATA: u64 = 0x0;
@@ -739,6 +755,32 @@ mod tests {
         e[44..48].copy_from_slice(&cdw11.to_le_bytes());
         e[48..52].copy_from_slice(&cdw12.to_le_bytes());
         e
+    }
+
+    fn fw_cfg_file_entry(p: &mut VirtPlatform, name: &[u8]) -> (u16, usize) {
+        p.fw_cfg.select(KEY_FILE_DIR);
+        let dir = p.fw_cfg.read_data(p.fw_cfg.file_dir_bytes().len());
+        let count = u32::from_be_bytes([dir[0], dir[1], dir[2], dir[3]]) as usize;
+        (0..count)
+            .find_map(|index| {
+                let record = &dir[4 + index * 64..4 + (index + 1) * 64];
+                let name_end = record[8..64]
+                    .iter()
+                    .position(|&byte| byte == 0)
+                    .unwrap_or(56);
+                (&record[8..8 + name_end] == name).then(|| {
+                    let size =
+                        u32::from_be_bytes([record[0], record[1], record[2], record[3]]) as usize;
+                    let select = u16::from_be_bytes([record[4], record[5]]);
+                    (select, size)
+                })
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "default fw_cfg dir missing {}",
+                    String::from_utf8_lossy(name)
+                )
+            })
     }
 
     fn nvme_mmio_write(
@@ -1528,26 +1570,63 @@ mod tests {
     }
 
     #[test]
+    fn default_fw_cfg_registers_qemu_ramfb_file() {
+        let mut p = platform();
+        let (_, size) = fw_cfg_file_entry(&mut p, b"etc/ramfb");
+
+        assert_eq!(size, RAMFB_CONFIG_SIZE);
+        assert_eq!(p.ramfb_config(), None);
+    }
+
+    #[test]
+    fn fw_cfg_dma_write_updates_ramfb_config() {
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x1000);
+        let (selector, size) = fw_cfg_file_entry(&mut p, b"etc/ramfb");
+        let src = machine::RAM_BASE + 0x100;
+        let ctrl = machine::RAM_BASE + 0x200;
+        let mut config = [0u8; RAMFB_CONFIG_SIZE];
+        config[0..8].copy_from_slice(&0x4010_0000u64.to_be_bytes());
+        config[8..12].copy_from_slice(&DRM_FORMAT_XRGB8888.to_be_bytes());
+        config[12..16].copy_from_slice(&0u32.to_be_bytes());
+        config[16..20].copy_from_slice(&1024u32.to_be_bytes());
+        config[20..24].copy_from_slice(&768u32.to_be_bytes());
+        config[24..28].copy_from_slice(&(1024u32 * 4).to_be_bytes());
+        let control = (u32::from(selector) << 16) | DMA_CTL_SELECT | DMA_CTL_WRITE;
+        let mut dma = Vec::new();
+        dma.extend_from_slice(&control.to_be_bytes());
+        dma.extend_from_slice(&(size as u32).to_be_bytes());
+        dma.extend_from_slice(&src.to_be_bytes());
+        assert!(mem.write_bytes(src, &config));
+        assert!(mem.write_bytes(ctrl, &dma));
+
+        let outcome = p.on_mmio(
+            machine::FW_CFG.base + REG_DMA,
+            MmioOp::Write {
+                size: 8,
+                value: ctrl.swap_bytes(),
+            },
+            &mut mem,
+        );
+
+        assert_eq!(outcome, MmioOutcome::WriteAck);
+        assert_eq!(
+            p.ramfb_config(),
+            Some(RamfbConfig {
+                addr: 0x4010_0000,
+                fourcc: DRM_FORMAT_XRGB8888,
+                flags: 0,
+                width: 1024,
+                height: 768,
+                stride: 4096,
+            })
+        );
+    }
+
+    #[test]
     fn default_fw_cfg_bootorder_targets_qemu_virtio_blk_pci_installer() {
         let mut p = platform();
-        p.fw_cfg.select(KEY_FILE_DIR);
-        let dir = p.fw_cfg.read_data(p.fw_cfg.file_dir_bytes().len());
-        let count = u32::from_be_bytes([dir[0], dir[1], dir[2], dir[3]]) as usize;
-        let bootorder = (0..count)
-            .find_map(|index| {
-                let record = &dir[4 + index * 64..4 + (index + 1) * 64];
-                let name_end = record[8..64]
-                    .iter()
-                    .position(|&byte| byte == 0)
-                    .unwrap_or(56);
-                (&record[8..8 + name_end] == b"bootorder").then(|| {
-                    let size =
-                        u32::from_be_bytes([record[0], record[1], record[2], record[3]]) as usize;
-                    let select = u16::from_be_bytes([record[4], record[5]]);
-                    (select, size)
-                })
-            })
-            .unwrap_or_else(|| panic!("default fw_cfg dir missing bootorder"));
+        let bootorder = fw_cfg_file_entry(&mut p, b"bootorder");
         assert_eq!(bootorder.1, bootorder::QEMU_VIRTIO_BLK_PCI_BOOTORDER.len());
 
         p.fw_cfg.select(bootorder.0);

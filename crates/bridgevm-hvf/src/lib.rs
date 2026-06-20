@@ -21,6 +21,7 @@ pub mod pflash;
 pub mod pl011;
 pub mod pl031;
 pub mod platform_virt;
+pub mod ramfb;
 pub mod smbios;
 pub mod stage1;
 pub mod virtio_blk;

@@ -290,6 +290,15 @@ impl FwCfg {
         &self.entries[&KEY_FILE_DIR].data
     }
 
+    pub fn file_bytes(&self, name: &str) -> Option<&[u8]> {
+        let select = self
+            .files
+            .iter()
+            .find(|file| file.name == name)
+            .map(|file| file.select)?;
+        self.entries.get(&select).map(|entry| entry.data.as_slice())
+    }
+
     // ---- MMIO register interface -------------------------------------------
     //
     // The `qemu,fw-cfg-mmio` selector and DMA registers are big-endian. DATA is
@@ -639,6 +648,37 @@ mod tests {
         assert_eq!(fw.dma_execute(access, &mut mem), 0);
         fw.select(sel);
         assert_eq!(fw.read_data(4), vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn file_bytes_observes_named_entry_without_moving_cursor() {
+        let mut fw = FwCfg::new();
+        fw.add_file("etc/ramfb", vec![0xaa; 4]);
+        fw.select(KEY_SIGNATURE);
+
+        assert_eq!(fw.read_data_byte(), b'Q');
+        assert_eq!(
+            fw.file_bytes("etc/ramfb"),
+            Some(&[0xaa, 0xaa, 0xaa, 0xaa][..])
+        );
+        assert_eq!(fw.read_data_byte(), b'E');
+    }
+
+    #[test]
+    fn file_bytes_reflects_dma_write_to_writable_entry() {
+        let mut fw = FwCfg::new();
+        let sel = fw.add_writable_file("etc/ramfb", vec![0; 4]);
+        let mut mem = FakeMem::new(0x4000_0000, 0x1000);
+        mem.write_bytes(0x4000_0000, &[5, 6, 7, 8]);
+        let access = FwCfgDmaAccess {
+            control: (u32::from(sel) << 16) | DMA_CTL_SELECT | DMA_CTL_WRITE,
+            length: 4,
+            address: 0x4000_0000,
+        };
+
+        assert_eq!(fw.dma_execute(access, &mut mem), 0);
+
+        assert_eq!(fw.file_bytes("etc/ramfb"), Some(&[5, 6, 7, 8][..]));
     }
 
     #[test]
