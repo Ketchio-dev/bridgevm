@@ -154,6 +154,22 @@ pub const NVME_MSIX_TABLE_OFFSET: u32 = 0x2000;
 /// Offset of the MSI-X Pending Bit Array in BAR0.
 pub const NVME_MSIX_PBA_OFFSET: u32 = 0x3000;
 
+// ---- The QEMU-oracle installer media endpoint (00:03.0) --------------------
+
+/// Bus/device/function QEMU uses for the Windows installer media device in the
+/// live GICv3 oracle (`virtio-blk-pci` behind the PCI root).
+pub const VIRTIO_BLK_BDF: (u8, u8, u8) = (0, 3, 0);
+/// Red Hat virtio vendor id.
+pub const VIRTIO_BLK_VENDOR_ID: u16 = 0x1af4;
+/// Transitional virtio block device id reported by QEMU's `virtio-blk-pci`.
+pub const VIRTIO_BLK_DEVICE_ID: u16 = 0x1001;
+/// Class code `0x010000`: mass storage / SCSI storage controller.
+pub const VIRTIO_BLK_CLASS_CODE: u32 = 0x0001_0000;
+/// Revision id reported by the boot-media endpoint.
+pub const VIRTIO_BLK_REVISION: u8 = 0x00;
+/// First parity step: a 16 KiB memory BAR for the PCI transport register block.
+pub const VIRTIO_BLK_BAR0_SIZE: u32 = 0x4000;
+
 /// The value an ECAM read returns when no device answers: all-ones. Firmware
 /// treats a `0xFFFF_FFFF` vendor/device read as "slot empty".
 pub const NO_DEVICE: u64 = 0xFFFF_FFFF;
@@ -296,6 +312,22 @@ impl Function {
             bars,
             cap_ptr: NVME_MSIX_CAP_OFFSET,
             cap_bytes,
+        }
+    }
+
+    /// QEMU-oracle virtio block installer media endpoint at `00:03.0`.
+    fn virtio_blk() -> Self {
+        let mut bars = [Bar::default(); NUM_BARS];
+        bars[0] = Bar::memory32(VIRTIO_BLK_BAR0_SIZE);
+        Self {
+            bdf: VIRTIO_BLK_BDF,
+            vendor_device: (u32::from(VIRTIO_BLK_DEVICE_ID) << 16)
+                | u32::from(VIRTIO_BLK_VENDOR_ID),
+            revision_class: (VIRTIO_BLK_CLASS_CODE << 8) | u32::from(VIRTIO_BLK_REVISION),
+            command: 0,
+            bars,
+            cap_ptr: 0,
+            cap_bytes: Vec::new(),
         }
     }
 
@@ -453,10 +485,14 @@ impl Default for PcieEcam {
 
 impl PcieEcam {
     /// A fresh root complex: one host bridge at `00:00.0`, one NVMe endpoint at
-    /// `00:01.0`, every other slot empty.
+    /// `00:01.0`, and the QEMU-oracle installer media endpoint at `00:03.0`.
     pub fn new() -> Self {
         Self {
-            functions: vec![Function::host_bridge(), Function::nvme()],
+            functions: vec![
+                Function::host_bridge(),
+                Function::nvme(),
+                Function::virtio_blk(),
+            ],
         }
     }
 
@@ -771,6 +807,52 @@ mod tests {
         assert_eq!(ecam.cfg_read(ecam_offset(0, 0, 1, 0x00), 4), NO_DEVICE);
         // A non-zero bus is empty.
         assert_eq!(ecam.cfg_read(ecam_offset(1, 0, 0, 0x00), 4), NO_DEVICE);
+    }
+
+    #[test]
+    fn boot_media_endpoint_reports_qemu_oracle_identity_at_00_03_0() {
+        let ecam = PcieEcam::new();
+        let (bus, dev, func) = VIRTIO_BLK_BDF;
+
+        let vd = ecam.cfg_read(ecam_offset(bus, dev, func, REG_VENDOR_DEVICE), 4);
+        assert_eq!(vd & 0xFFFF, u64::from(VIRTIO_BLK_VENDOR_ID));
+        assert_eq!((vd >> 16) & 0xFFFF, u64::from(VIRTIO_BLK_DEVICE_ID));
+
+        let rc = ecam.cfg_read(ecam_offset(bus, dev, func, REG_REVISION_CLASS), 4);
+        assert_eq!(rc >> 8, u64::from(VIRTIO_BLK_CLASS_CODE));
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(bus, dev, func, 0x0e), 1),
+            u64::from(HEADER_TYPE_ENDPOINT)
+        );
+    }
+
+    #[test]
+    fn boot_media_bar_decode_requires_memory_space() {
+        let mut ecam = PcieEcam::new();
+        let (bus, dev, func) = VIRTIO_BLK_BDF;
+        let bar0 = ecam_offset(bus, dev, func, REG_BAR0);
+        let cmd = ecam_offset(bus, dev, func, REG_COMMAND_STATUS);
+        let base = machine::PCIE_MMIO_32.base + 0x1_0000;
+
+        ecam.cfg_write(bar0, 4, base);
+        assert_eq!(ecam.mmio_target(base), None);
+
+        ecam.cfg_write(cmd, 2, u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER));
+        assert_eq!(
+            ecam.mmio_target(base),
+            Some(PcieMmioTarget {
+                bdf: VIRTIO_BLK_BDF,
+                bar_index: 0,
+                offset: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn qemu_xhci_slot_stays_empty_for_this_work_unit() {
+        let ecam = PcieEcam::new();
+
+        assert_eq!(ecam.cfg_read(ecam_offset(0, 2, 0, 0x00), 4), NO_DEVICE);
     }
 
     #[test]

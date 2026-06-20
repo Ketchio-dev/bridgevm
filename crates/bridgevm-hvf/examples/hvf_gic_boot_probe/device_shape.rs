@@ -34,10 +34,20 @@ fn device_shape_lines(installer_iso_attached: bool, nvme_namespace_bytes: u64) -
         format!(
             "boot-media installer ISO: virtio-mmio slot {INSTALLER_ISO_SLOT} base={iso_base:#x} spi={iso_spi} intid={iso_intid} attached={installer_iso_attached}"
         ),
+        format!(
+            "boot-media installer ISO: {bus:02x}:{dev:02x}.{func} virtio-blk-pci vendor={vendor:#06x} device={device:#06x} class={class:#08x} bar0_size={bar0:#x} attached={installer_iso_attached}",
+            bus = pcie::VIRTIO_BLK_BDF.0,
+            dev = pcie::VIRTIO_BLK_BDF.1,
+            func = pcie::VIRTIO_BLK_BDF.2,
+            vendor = pcie::VIRTIO_BLK_VENDOR_ID,
+            device = pcie::VIRTIO_BLK_DEVICE_ID,
+            class = pcie::VIRTIO_BLK_CLASS_CODE,
+            bar0 = pcie::VIRTIO_BLK_BAR0_SIZE,
+        ),
         "qemu oracle parity: virtio-net-pci 00:01.0 absent (BridgeVM uses NVMe at 00:01.0)"
             .to_string(),
         "qemu oracle parity: qemu-xhci 00:02.0 absent".to_string(),
-        "qemu oracle parity: virtio-blk-pci 00:03.0 absent (BridgeVM installer ISO uses legacy virtio-mmio)"
+        "qemu oracle parity: legacy virtio-mmio slot 31 kept as installer ISO fallback"
             .to_string(),
     ]
 }
@@ -45,7 +55,7 @@ fn device_shape_lines(installer_iso_attached: bool, nvme_namespace_bytes: u64) -
 #[cfg(test)]
 mod tests {
     #[test]
-    fn summary_names_current_bridgevm_and_qemu_boot_media_shapes() {
+    fn summary_names_pci_boot_media_and_legacy_mmio_fallback() {
         let lines = super::device_shape_lines(true, 16 * 1024 * 1024);
 
         assert!(lines
@@ -55,11 +65,11 @@ mod tests {
         assert!(lines
             .iter()
             .any(|line| line.contains("virtio-mmio slot 31")));
+        assert!(lines.iter().any(|line| line.contains("legacy virtio-mmio")));
+        assert!(lines.iter().any(|line| line
+            .contains("00:03.0 virtio-blk-pci vendor=0x1af4 device=0x1001 class=0x010000")));
         assert!(lines
             .iter()
             .any(|line| line.contains("qemu-xhci 00:02.0 absent")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("virtio-blk-pci 00:03.0 absent")));
     }
 }
