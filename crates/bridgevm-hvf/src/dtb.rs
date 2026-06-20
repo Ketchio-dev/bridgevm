@@ -203,6 +203,7 @@ impl Default for VirtFdtConfig {
 
 // Phandles (internally consistent; values are arbitrary but referenced below).
 const PHANDLE_GIC: u32 = 0x1;
+const PHANDLE_ITS: u32 = 0x2;
 const PHANDLE_APB_PCLK: u32 = 0x3;
 
 // Device-tree interrupt encoding for the GICv3 (`#interrupt-cells = <3>`).
@@ -224,6 +225,7 @@ pub fn build_virt_fdt(cfg: &VirtFdtConfig) -> Vec<u8> {
     b.prop_u32("#size-cells", 2);
     b.prop_str_list("compatible", &["linux,dummy-virt"]);
     b.prop_str("model", "bridgevm-virt");
+    b.prop_empty("dma-coherent");
     // All devices inherit the GIC as their interrupt parent (QEMU sets this on
     // the root); without it `dtc` warns and OS interrupt routing is ambiguous.
     b.prop_cells("interrupt-parent", &[PHANDLE_GIC]);
@@ -314,8 +316,15 @@ pub fn build_virt_fdt(cfg: &VirtFdtConfig) -> Vec<u8> {
         ],
     );
     b.prop_u32("phandle", PHANDLE_GIC);
-    // No ITS node yet: the platform uses Apple hv_gic, whose MSI is not wired into
-    // the DTB. PCIe therefore uses legacy INTx (interrupt-map below), not MSI.
+
+    b.begin_node("its@8080000");
+    b.prop_str_list("compatible", &["arm,gic-v3-its"]);
+    b.prop_empty("msi-controller");
+    b.prop_u32("#msi-cells", 1);
+    b.prop_reg64("reg", machine::GIC_ITS.base, machine::GIC_ITS.size);
+    b.prop_u32("phandle", PHANDLE_ITS);
+    b.end_node();
+
     b.end_node(); // intc
 
     // /pl011 UART
@@ -390,7 +399,10 @@ fn build_pcie_node(b: &mut FdtBuilder) {
     b.prop_u32("#address-cells", 3);
     b.prop_u32("#size-cells", 2);
     b.prop_u32("#interrupt-cells", 1);
+    b.prop_u32("linux,pci-domain", 0);
     b.prop_cells("bus-range", &[0x0, 0xff]);
+    b.prop_empty("dma-coherent");
+    b.prop_cells("msi-map", &[0, PHANDLE_ITS, 0, 0x1_0000]);
     b.prop_reg64("reg", machine::PCIE_ECAM.base, machine::PCIE_ECAM.size);
 
     // ranges: <pci-addr(3) cpu-addr(2) size(2)> for IO and 32-bit MMIO. The
@@ -499,7 +511,16 @@ mod tests {
         // The strings block must mention the keystone + PCIe nodes' props.
         let off_strings = be32(&dtb, 12) as usize;
         let strings = String::from_utf8_lossy(&dtb[off_strings..]);
-        for needed in ["compatible", "reg", "interrupt-map", "ranges"] {
+        for needed in [
+            "compatible",
+            "reg",
+            "interrupt-map",
+            "ranges",
+            "msi-map",
+            "msi-controller",
+            "#msi-cells",
+            "dma-coherent",
+        ] {
             assert!(strings.contains(needed), "missing property name {needed}");
         }
     }
@@ -513,6 +534,7 @@ mod tests {
             "fw-cfg@9020000",
             "pcie@10000000",
             "intc@8000000",
+            "its@8080000",
             "pl011@9000000",
             "virtio_mmio@a000000",
         ] {

@@ -2,8 +2,9 @@
 //!
 //! Windows 11 ARM (and an ACPI-only Linux boot) refuses to come up without ACPI
 //! tables: the firmware hands the guest an RSDP that chains to the XSDT, FADT,
-//! MADT (GIC topology), PPTT (CPU topology), GTDT (architected timer), MCFG (PCIe
-//! ECAM) and SPCR (serial console). Stock ArmVirtQemu firmware does not synthesise these itself
+//! MADT (GIC/ITS topology), PPTT (CPU topology), GTDT (architected timer), MCFG
+//! (PCIe ECAM), IORT (PCI RID to ITS MSI routing) and SPCR (serial console).
+//! Stock ArmVirtQemu firmware does not synthesise these itself
 //! on this platform — it installs whatever the host exposes through `fw_cfg`
 //! under `etc/acpi/rsdp` (the RSDP), `etc/acpi/tables` (the concatenated
 //! tables), and `etc/table-loader` (QEMU linker commands for relocation and
@@ -16,9 +17,9 @@
 //! unit-tested. ACPI integers are little-endian (unlike the big-endian DTB).
 //!
 //! References: ACPI 6.5 (RSDP §5.2.5, XSDT §5.2.8, FADT §5.2.9, MADT §5.2.12,
-//! PPTT §5.2.29, GTDT §5.2.25, MCFG (PCI Firmware Spec 3.3), SPCR (Microsoft Serial Port
-//! Console Redirection Table)) and the tables QEMU's `hw/arm/virt-acpi-build.c`
-//! emits for the `virt` machine.
+//! PPTT §5.2.29, GTDT §5.2.25, MCFG (PCI Firmware Spec 3.3), SPCR (Microsoft
+//! Serial Port Console Redirection Table)), Arm IORT (DEN 0049), and the tables
+//! QEMU's `hw/arm/virt-acpi-build.c` emits for the `virt` machine.
 
 use crate::machine;
 
@@ -47,8 +48,8 @@ pub struct AcpiBlobs {
     /// Checksum bytes are zero here; the firmware computes final checksums after
     /// applying `loader` relocations, matching QEMU's `bios-linker-loader`.
     pub rsdp: Vec<u8>,
-    /// `etc/acpi/tables` — XSDT, FADT, DSDT, MADT, PPTT, GTDT, MCFG and SPCR,
-    /// concatenated in the order their physical addresses are laid out.
+    /// `etc/acpi/tables` — XSDT, FADT, DSDT, MADT, PPTT, GTDT, MCFG, IORT and
+    /// SPCR, concatenated in the order their physical addresses are laid out.
     ///
     /// Checksum bytes are zero here; the firmware computes final checksums after
     /// applying `loader` relocations, matching QEMU's `bios-linker-loader`.
@@ -171,13 +172,14 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     let pptt = build_pptt(cpu_count);
     let gtdt = build_gtdt();
     let mcfg = build_mcfg();
+    let iort = build_iort();
     let spcr = build_spcr();
 
-    // The XSDT references FADT/MADT/PPTT/GTDT/MCFG/SPCR. The FADT references the DSDT.
-    // Compute offsets in concatenation order: XSDT first, then the rest.
+    // The XSDT references FADT/MADT/PPTT/GTDT/MCFG/IORT/SPCR. The FADT references
+    // the DSDT. Compute offsets in concatenation order: XSDT first, then the rest.
     // (Order within the blob is a free choice; we keep XSDT first so its address
     // is easy to reason about, then DSDT, then the XSDT-listed tables.)
-    let xsdt_len = xsdt_len_for(6);
+    let xsdt_len = xsdt_len_for(7);
     let off_xsdt = 0u64;
     let off_dsdt = off_xsdt + xsdt_len;
     let off_fadt = off_dsdt + dsdt.len() as u64;
@@ -185,7 +187,8 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     let off_pptt = off_madt + madt.len() as u64;
     let off_gtdt = off_pptt + pptt.len() as u64;
     let off_mcfg = off_gtdt + gtdt.len() as u64;
-    let off_spcr = off_mcfg + mcfg.len() as u64;
+    let off_iort = off_mcfg + mcfg.len() as u64;
+    let off_spcr = off_iort + iort.len() as u64;
 
     let fadt = build_fadt(TABLES_BASE + off_dsdt);
     debug_assert_eq!(fadt.len() as u64, fadt_len());
@@ -196,6 +199,7 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
         TABLES_BASE + off_pptt,
         TABLES_BASE + off_gtdt,
         TABLES_BASE + off_mcfg,
+        TABLES_BASE + off_iort,
         TABLES_BASE + off_spcr,
     ]);
     debug_assert_eq!(xsdt.len() as u64, xsdt_len);
@@ -208,6 +212,7 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
         TableSpan::new(off_pptt, pptt.len() as u64),
         TableSpan::new(off_gtdt, gtdt.len() as u64),
         TableSpan::new(off_mcfg, mcfg.len() as u64),
+        TableSpan::new(off_iort, iort.len() as u64),
         TableSpan::new(off_spcr, spcr.len() as u64),
     ];
 
@@ -219,6 +224,7 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     tables.extend_from_slice(&pptt);
     tables.extend_from_slice(&gtdt);
     tables.extend_from_slice(&mcfg);
+    tables.extend_from_slice(&iort);
     tables.extend_from_slice(&spcr);
 
     let mut rsdp = build_rsdp(TABLES_BASE + off_xsdt);
@@ -229,7 +235,9 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
             xsdt: off_xsdt,
             fadt: off_fadt,
             table_spans: &table_spans,
-            xsdt_entries: &[off_fadt, off_madt, off_pptt, off_gtdt, off_mcfg, off_spcr],
+            xsdt_entries: &[
+                off_fadt, off_madt, off_pptt, off_gtdt, off_mcfg, off_iort, off_spcr,
+            ],
         },
     );
 
@@ -1002,6 +1010,15 @@ fn build_madt(cpu_count: u64) -> Vec<u8> {
     t.u64(machine::GIC_REDIST.base); // Discovery Range Base Address
     t.u32(machine::GIC_REDIST.size as u32); // Discovery Range Length
 
+    // GIC ITS (type 0x0F) — MSI controller used by PCIe MSI/MSI-X. The GIC ITS
+    // ID must match the IORT ITS Group identifier array below.
+    t.u8(0x0F); // Type = GIC ITS
+    t.u8(20); // Length
+    t.u16(0); // reserved
+    t.u32(0); // GIC ITS ID
+    t.u64(machine::GIC_ITS.base); // Physical Base Address
+    t.u32(0); // reserved
+
     t.finish()
 }
 
@@ -1124,6 +1141,70 @@ fn build_mcfg() -> Vec<u8> {
     t.u8(0); // Start PCI bus number
     t.u8(0xFF); // End PCI bus number
     t.u32(0); // reserved
+    t.finish()
+}
+
+const IORT_NODE_OFFSET: u32 = 48;
+const IORT_ID_MAPPING_ENTRY_SIZE: u16 = 20;
+const IORT_ITS_GROUP_NODE_SIZE: u16 = 24;
+const IORT_ROOT_COMPLEX_NODE_SIZE: u16 = 36;
+
+/// Append one IORT ID mapping entry. `id_count` is the natural count; the ACPI
+/// encoding stores count-minus-one, matching QEMU's helper.
+fn append_iort_id_mapping(
+    t: &mut Table,
+    input_base: u32,
+    id_count: u32,
+    output_ref: u32,
+    flags: u32,
+) {
+    assert!(id_count > 0, "IORT ID mapping must cover at least one ID");
+    t.u32(input_base);
+    t.u32(id_count - 1);
+    t.u32(input_base); // output base: identity RID mapping
+    t.u32(output_ref);
+    t.u32(flags);
+}
+
+/// IORT (I/O Remapping Table) for PCIe MSI routing. With no SMMU in the current
+/// Path A platform, QEMU emits a compact table with an ITS Group node and a PCI
+/// Root Complex node whose full 16-bit RID space maps directly to that ITS.
+fn build_iort() -> Vec<u8> {
+    let mut t = Table::new(b"IORT", 5);
+
+    // Table 2 IORT body.
+    t.u32(2); // number of IORT nodes: ITS Group + Root Complex
+    t.u32(IORT_NODE_OFFSET); // offset to node array
+    t.u32(0); // reserved
+    debug_assert_eq!(t.bytes.len(), IORT_NODE_OFFSET as usize);
+
+    // Table 12 ITS Group node.
+    t.u8(0); // Type = ITS Group
+    t.u16(IORT_ITS_GROUP_NODE_SIZE);
+    t.u8(1); // Revision
+    t.u32(0); // Identifier
+    t.u32(0); // Number of ID mappings
+    t.u32(0); // Reference to ID Array
+    t.u32(1); // Number of ITSs
+    t.u32(0); // GIC ITS Identifier Array: MADT GIC ITS ID 0
+
+    // Table 17 Root Complex node.
+    t.u8(2); // Type = Root Complex
+    t.u16(IORT_ROOT_COMPLEX_NODE_SIZE + IORT_ID_MAPPING_ENTRY_SIZE);
+    t.u8(3); // Revision
+    t.u32(1); // Identifier
+    t.u32(1); // Number of ID mappings
+    t.u32(u32::from(IORT_ROOT_COMPLEX_NODE_SIZE)); // Reference to ID Array
+    t.u32(1); // Memory access properties: CCA fully coherent
+    t.u8(0); // Allocation hints
+    t.u16(0); // reserved
+    t.u8(0x3); // Memory access flags: CCA + CPM/DACS, matching QEMU
+    t.u32(0); // ATS Attribute
+    t.u32(0); // PCI Segment number
+    t.u8(64); // Memory address size limit
+    t.pad(3); // reserved
+    append_iort_id_mapping(&mut t, 0, 0x1_0000, IORT_NODE_OFFSET, 0);
+
     t.finish()
 }
 
@@ -1314,7 +1395,7 @@ mod tests {
         let sigs: Vec<&str> = tables.iter().map(|(s, _)| s.as_str()).collect();
         // FADT's signature is "FACP" and MADT's is "APIC" by spec.
         for needed in [
-            "XSDT", "DSDT", "FACP", "APIC", "PPTT", "GTDT", "MCFG", "SPCR",
+            "XSDT", "DSDT", "FACP", "APIC", "PPTT", "GTDT", "MCFG", "IORT", "SPCR",
         ] {
             assert!(sigs.contains(&needed), "missing table {needed} in {sigs:?}");
         }
@@ -1364,15 +1445,15 @@ mod tests {
                 .iter()
                 .filter(|&&cmd| cmd == LOADER_CMD_ADD_POINTER)
                 .count(),
-            8
+            9
         );
-        // Eight ACPI tables plus RSDP v1 and extended checksums.
+        // Nine ACPI tables plus RSDP v1 and extended checksums.
         assert_eq!(
             commands
                 .iter()
                 .filter(|&&cmd| cmd == LOADER_CMD_ADD_CHECKSUM)
                 .count(),
-            10
+            11
         );
     }
 
@@ -1388,8 +1469,8 @@ mod tests {
         // XSDT entries are 8-byte pointers after the 36-byte header.
         let entry_count = (xsdt.len() - ACPI_HEADER_LEN) / 8;
         assert_eq!(
-            entry_count, 6,
-            "XSDT must list FADT/MADT/PPTT/GTDT/MCFG/SPCR"
+            entry_count, 7,
+            "XSDT must list FADT/MADT/PPTT/GTDT/MCFG/IORT/SPCR"
         );
         // Each listed pointer must land on a real table header in the blob.
         let valid_offsets: Vec<u64> = {
@@ -1572,6 +1653,7 @@ mod tests {
             let mut gicc = 0u64;
             let mut gicd = 0u64;
             let mut gicr = 0u64;
+            let mut gic_its = 0u64;
             while off < madt.len() {
                 let typ = madt[off];
                 let len = madt[off + 1] as usize;
@@ -1580,6 +1662,12 @@ mod tests {
                     0x0B => gicc += 1,
                     0x0C => gicd += 1,
                     0x0E => gicr += 1,
+                    0x0F => {
+                        gic_its += 1;
+                        assert_eq!(len, 20, "GIC ITS MADT entry length");
+                        assert_eq!(le32(madt, off + 4), 0, "GIC ITS ID");
+                        assert_eq!(le64(madt, off + 8), machine::GIC_ITS.base, "GIC ITS base");
+                    }
                     _ => {}
                 }
                 off += len;
@@ -1588,6 +1676,7 @@ mod tests {
             assert_eq!(gicc, cpu_count, "one GICC per CPU");
             assert_eq!(gicd, 1, "exactly one GICD");
             assert_eq!(gicr, 1, "exactly one GICR discovery range");
+            assert_eq!(gic_its, 1, "exactly one GIC ITS");
         }
     }
 
@@ -1695,6 +1784,71 @@ mod tests {
         let end_bus = mcfg[ACPI_HEADER_LEN + 8 + 11];
         assert_eq!(start_bus, 0);
         assert_eq!(end_bus, 0xFF);
+    }
+
+    #[test]
+    fn iort_maps_the_full_pci_rid_space_to_the_gic_its() {
+        let blobs = build_acpi(4);
+        let tables = split_tables(&blobs.tables);
+        let iort = find(&tables, "IORT");
+
+        assert_eq!(iort[8], 5, "IORT revision must match QEMU virt");
+        assert_eq!(le32(iort, ACPI_HEADER_LEN), 2, "ITS Group + Root Complex");
+        assert_eq!(
+            le32(iort, ACPI_HEADER_LEN + 4),
+            IORT_NODE_OFFSET,
+            "node array offset"
+        );
+
+        let its = IORT_NODE_OFFSET as usize;
+        assert_eq!(iort[its], 0, "first IORT node is an ITS Group");
+        assert_eq!(
+            u16::from_le_bytes([iort[its + 1], iort[its + 2]]),
+            IORT_ITS_GROUP_NODE_SIZE
+        );
+        assert_eq!(iort[its + 3], 1, "ITS Group revision");
+        assert_eq!(le32(iort, its + 4), 0, "ITS Group identifier");
+        assert_eq!(le32(iort, its + 8), 0, "ITS Group has no ID mappings");
+        assert_eq!(le32(iort, its + 12), 0, "ITS Group ID array ref is zero");
+        assert_eq!(le32(iort, its + 16), 1, "one ITS identifier");
+        assert_eq!(le32(iort, its + 20), 0, "MADT GIC ITS ID 0");
+
+        let rc = its + IORT_ITS_GROUP_NODE_SIZE as usize;
+        assert_eq!(iort[rc], 2, "second IORT node is a PCI Root Complex");
+        assert_eq!(
+            u16::from_le_bytes([iort[rc + 1], iort[rc + 2]]),
+            IORT_ROOT_COMPLEX_NODE_SIZE + IORT_ID_MAPPING_ENTRY_SIZE
+        );
+        assert_eq!(iort[rc + 3], 3, "Root Complex revision");
+        assert_eq!(le32(iort, rc + 4), 1, "Root Complex identifier");
+        assert_eq!(le32(iort, rc + 8), 1, "one Root Complex ID mapping");
+        assert_eq!(
+            le32(iort, rc + 12),
+            u32::from(IORT_ROOT_COMPLEX_NODE_SIZE),
+            "ID mapping array starts after the Root Complex node body"
+        );
+        assert_eq!(le32(iort, rc + 16), 1, "fully coherent memory access");
+        assert_eq!(iort[rc + 20], 0, "no allocation hints");
+        assert_eq!(
+            u16::from_le_bytes([iort[rc + 21], iort[rc + 22]]),
+            0,
+            "reserved"
+        );
+        assert_eq!(iort[rc + 23], 0x3, "CCA + CPM/DACS flags");
+        assert_eq!(le32(iort, rc + 24), 0, "ATS disabled");
+        assert_eq!(le32(iort, rc + 28), 0, "PCI segment 0");
+        assert_eq!(iort[rc + 32], 64, "64-bit memory address size limit");
+
+        let map = rc + IORT_ROOT_COMPLEX_NODE_SIZE as usize;
+        assert_eq!(le32(iort, map), 0, "RID input base");
+        assert_eq!(le32(iort, map + 4), 0xFFFF, "all 16-bit PCI RIDs");
+        assert_eq!(le32(iort, map + 8), 0, "RID output base");
+        assert_eq!(
+            le32(iort, map + 12),
+            IORT_NODE_OFFSET,
+            "RIDs map directly to the ITS Group"
+        );
+        assert_eq!(le32(iort, map + 16), 0, "mapping flags");
     }
 
     #[test]
