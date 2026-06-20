@@ -82,7 +82,7 @@ ACPI-only boot): Linux gives you `dmesg`, Windows gives you a sad face.
 | 4 | GICv3: spike Apple `hv_gic_create` (macOS 15+, create before vCPUs); else model GICv3+ITS at QEMU bases | **done (Apple `hv_gic`, live)** | distributor/redistributor + timer delivery are served by Hypervisor.framework; ITS/MSI remains separate work |
 | 5 | PCIe ECAM (`pci-host-ecam-generic`) + config space + MSI/MSI-X | **partial** | ECAM host bridge, NVMe endpoint config space and BAR0 MMIO routing are wired; MSI/MSI-X delivery is still pending |
 | 6 | **Linux ACPI-only boot** through the stock firmware | after 3–5 | the oracle: confirm ACPI/GIC/timer/PCIe before touching Windows |
-| 7 | NVMe controller (identify + admin/IO queues) on PCIe | **partial** | minimal controller and admin/IO queues exist and are reachable through PCIe BAR0; boot-media backing, interrupt/MSI behavior and OS boot validation remain |
+| 7 | NVMe controller (identify + admin/IO queues) on PCIe | **partial** | minimal controller and admin/IO queues are reachable through PCIe BAR0; raw image load/snapshot is wired into the live boot probe; interrupt/MSI behavior and OS boot validation remain |
 | 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | after 6–7 | success = a reproducible "where it died", diffed against QEMU |
 | 9 | GOP framebuffer + keyboard | after 8 | Setup UI + "press any key" |
 | 10 | vTPM 2.0, Secure Boot, virtio-net/guest agent | later | Windows 11 compliance + usability |
@@ -200,8 +200,8 @@ Windows. To get there:
 
 - keep the QEMU-style ACPI delivery wired through `fw_cfg` entries
   `etc/acpi/rsdp`, `etc/acpi/tables` and `etc/table-loader`;
-- turn the minimal in-memory NVMe BAR0 path into a real boot-media path with
-  host/disk backing and interrupt/MSI behavior;
+- extend the raw-image NVMe path from load/snapshot into production-grade
+  host-file persistence and interrupt/MSI behavior;
 - persist pflash variable writes back to a vars image so boot order and NVRAM state
   survive repeated runs;
 - then boot Linux with ACPI, diff against QEMU+HVF, and only then try Windows Setup.

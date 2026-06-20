@@ -123,9 +123,10 @@ the sequenced plan live in
 
 Path A now has `fw_cfg`, a QEMU-shaped DTB, Apple `hv_gic`, PL011, PL031, empty
 virtio-mmio slots, PCIe ECAM host-bridge config space, a first NVMe endpoint at
-`00:01.0` with BAR0 routing, and a minimal P30 pflash vars model wired behind
-`VirtPlatform::on_mmio()`. The stock ArmVirtQemu firmware boots to the UEFI
-shell. ACPI blobs are now delivered through QEMU-style `etc/acpi/rsdp`,
-`etc/acpi/tables` and `etc/table-loader` fw_cfg files. The remaining gap is above
-firmware: boot-media backing for NVMe, interrupt/MSI behavior, pflash variable
-persistence, and then Linux ACPI / Windows installer validation.
+`00:01.0` with BAR0 routing and raw-image load/snapshot hooks, and a minimal P30
+pflash vars model wired behind `VirtPlatform::on_mmio()`. The stock ArmVirtQemu
+firmware boots to the UEFI shell. ACPI blobs are now delivered through QEMU-style
+`etc/acpi/rsdp`, `etc/acpi/tables` and `etc/table-loader` fw_cfg files. The
+remaining gap is above firmware: production-grade NVMe persistence, interrupt/MSI
+behavior, pflash variable persistence, and then Linux ACPI / Windows installer
+validation.

@@ -8,6 +8,11 @@
 //!   cargo build -p bridgevm-hvf --example hvf_gic_boot_probe
 //!   codesign --sign - --entitlements hv.entitlements --force target/debug/examples/hvf_gic_boot_probe
 //!   target/debug/examples/hvf_gic_boot_probe
+//!
+//! Optional NVMe media:
+//!   BRIDGEVM_NVME_DISK=/path/to/raw.img target/debug/examples/hvf_gic_boot_probe
+//!   BRIDGEVM_NVME_DISK_OUT=/path/to/out.img ...      # snapshot after run
+//!   BRIDGEVM_NVME_DISK_WRITABLE=1 ...                # write back to input path
 
 use std::alloc::{alloc_zeroed, Layout};
 use std::collections::BTreeMap;
@@ -140,6 +145,13 @@ fn env_u64(name: &str, default: u64) -> u64 {
         .ok()
         .and_then(|s| parse_u64(&s))
         .unwrap_or(default)
+}
+
+fn env_flag(name: &str) -> bool {
+    matches!(
+        std::env::var(name).ok().as_deref(),
+        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
+    )
 }
 
 fn read_reg(vcpu: HvVcpuT, reg: u32) -> u64 {
@@ -353,6 +365,14 @@ fn main() {
             ram_size: RAM_SIZE as u64,
         });
         platform.load_flash_vars(&vars_data);
+        let nvme_disk_path = std::env::var("BRIDGEVM_NVME_DISK").ok();
+        let nvme_disk_out = std::env::var("BRIDGEVM_NVME_DISK_OUT").ok();
+        let nvme_disk_writable = env_flag("BRIDGEVM_NVME_DISK_WRITABLE");
+        if let Some(path) = nvme_disk_path.as_deref() {
+            let data = std::fs::read(path).unwrap_or_else(|e| panic!("read NVMe disk {path}: {e}"));
+            println!("NVMe disk loaded: {path} ({} bytes)", data.len());
+            platform.load_nvme_disk(data);
+        }
         let mut guest_ram = MappedRam {
             base: machine::RAM_BASE,
             ptr: ram,
@@ -536,6 +556,25 @@ fn main() {
         }
 
         let serial = platform.uart_output().to_vec();
+        if let Some(path) = nvme_disk_out.as_deref() {
+            std::fs::write(path, platform.nvme_disk())
+                .unwrap_or_else(|e| panic!("write NVMe disk snapshot {path}: {e}"));
+            println!(
+                "NVMe disk snapshot written: {path} ({} bytes)",
+                platform.nvme_disk().len()
+            );
+        }
+        if nvme_disk_writable {
+            let Some(path) = nvme_disk_path.as_deref() else {
+                panic!("BRIDGEVM_NVME_DISK_WRITABLE=1 requires BRIDGEVM_NVME_DISK");
+            };
+            std::fs::write(path, platform.nvme_disk())
+                .unwrap_or_else(|e| panic!("write back NVMe disk {path}: {e}"));
+            println!(
+                "NVMe disk written back: {path} ({} bytes)",
+                platform.nvme_disk().len()
+            );
+        }
         maybe_write_file("BRIDGEVM_BOOT_PROBE_SERIAL_OUT", &serial, "serial log");
         let symbols = symbol_lines(&serial);
         if !symbols.is_empty() {

@@ -116,6 +116,18 @@ impl VirtPlatform {
         self.flash_vars.load(data);
     }
 
+    /// Replace the first NVMe disk image. The image is padded to full 512-byte
+    /// LBAs by the controller.
+    pub fn load_nvme_disk(&mut self, data: Vec<u8>) {
+        self.nvme.load_disk_image(data);
+    }
+
+    /// Snapshot the first NVMe disk image, including guest writes processed so
+    /// far. Live probes use this to persist an explicitly writable image.
+    pub fn nvme_disk(&self) -> &[u8] {
+        self.nvme.disk_image()
+    }
+
     /// Register the guest ACPI tables (`etc/acpi/rsdp`, `etc/acpi/tables`,
     /// `etc/table-loader`) the firmware installs. On Path A these come from the
     /// QEMU-style table generator; until that lands this lets callers attach
@@ -379,6 +391,65 @@ mod tests {
         e
     }
 
+    fn nvme_mmio_write(
+        p: &mut VirtPlatform,
+        mem: &mut FlatGuestRam,
+        offset: u64,
+        size: u8,
+        value: u64,
+    ) {
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_MMIO_32.base + offset,
+                MmioOp::Write { size, value },
+                mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+    }
+
+    fn enable_nvme_controller(p: &mut VirtPlatform, mem: &mut FlatGuestRam, asq: u64, acq: u64) {
+        let qdepth = 4u64;
+        nvme_mmio_write(
+            p,
+            mem,
+            crate::nvme::REG_AQA,
+            4,
+            ((qdepth - 1) << 16) | (qdepth - 1),
+        );
+        nvme_mmio_write(p, mem, crate::nvme::REG_ASQ, 8, asq);
+        nvme_mmio_write(p, mem, crate::nvme::REG_ACQ, 8, acq);
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_MMIO_32.base + crate::nvme::REG_CC,
+                MmioOp::Write { size: 4, value: 1 },
+                mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+    }
+
+    fn submit_admin_sqe(
+        p: &mut VirtPlatform,
+        mem: &mut FlatGuestRam,
+        asq: u64,
+        slot: u16,
+        sqe: &[u8; 64],
+    ) {
+        assert!(mem.write_bytes(asq + u64::from(slot) * crate::nvme::SQ_ENTRY_SIZE, sqe));
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_MMIO_32.base + crate::nvme::REG_DOORBELL_BASE,
+                MmioOp::Write {
+                    size: 4,
+                    value: u64::from(slot + 1),
+                },
+                mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+    }
+
     #[test]
     fn dtb_is_generated_and_well_formed() {
         let p = platform();
@@ -576,36 +647,10 @@ mod tests {
         let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x8000);
         program_nvme_bar0(&mut p, &mut mem);
 
-        let bar0 = machine::PCIE_MMIO_32.base;
-        for (offset, value) in [
-            (crate::nvme::REG_AQA, 0x0003_0003),
-            (crate::nvme::REG_ASQ, ASQ),
-            (crate::nvme::REG_ACQ, ACQ),
-        ] {
-            assert_eq!(
-                p.on_mmio(bar0 + offset, MmioOp::Write { size: 8, value }, &mut mem),
-                MmioOutcome::WriteAck
-            );
-        }
-        assert_eq!(
-            p.on_mmio(
-                bar0 + crate::nvme::REG_CC,
-                MmioOp::Write { size: 4, value: 1 },
-                &mut mem
-            ),
-            MmioOutcome::WriteAck
-        );
+        enable_nvme_controller(&mut p, &mut mem, ASQ, ACQ);
 
         let identify_controller = encode_nvme_sqe(0x06, 7, 0, DATA, 0x01, 0, 0);
-        assert!(mem.write_bytes(ASQ, &identify_controller));
-        assert_eq!(
-            p.on_mmio(
-                bar0 + crate::nvme::REG_DOORBELL_BASE,
-                MmioOp::Write { size: 4, value: 1 },
-                &mut mem
-            ),
-            MmioOutcome::WriteAck
-        );
+        submit_admin_sqe(&mut p, &mut mem, ASQ, 0, &identify_controller);
 
         let identify = mem.read_bytes(DATA, 4096).unwrap();
         assert_eq!(u16::from_le_bytes([identify[0], identify[1]]), 0x1b36);
@@ -616,6 +661,85 @@ mod tests {
         let status = u16::from_le_bytes([completion[14], completion[15]]);
         assert_eq!(status & 0x1, 1, "phase tag must be set");
         assert_eq!(status >> 1, 0, "identify must complete successfully");
+    }
+
+    #[test]
+    fn pcie_nvme_reads_and_writes_preloaded_disk_media() {
+        const ASQ: u64 = machine::RAM_BASE + 0x1000;
+        const ACQ: u64 = machine::RAM_BASE + 0x2000;
+        const IO_SQ: u64 = machine::RAM_BASE + 0x3000;
+        const IO_CQ: u64 = machine::RAM_BASE + 0x4000;
+        const DATA: u64 = machine::RAM_BASE + 0x5000;
+        const SLBA: u64 = 7;
+
+        let mut p = platform();
+        let mut disk = vec![0u8; crate::nvme::LBA_SIZE * 16];
+        let pattern: Vec<u8> = (0..crate::nvme::LBA_SIZE)
+            .map(|i| 0x80 | ((i % 0x40) as u8))
+            .collect();
+        let start = SLBA as usize * crate::nvme::LBA_SIZE;
+        disk[start..start + crate::nvme::LBA_SIZE].copy_from_slice(&pattern);
+        p.load_nvme_disk(disk);
+
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x9000);
+        program_nvme_bar0(&mut p, &mut mem);
+        enable_nvme_controller(&mut p, &mut mem, ASQ, ACQ);
+
+        let cdw10 = (3u32 << 16) | 1;
+        let create_cq = encode_nvme_sqe(0x05, 1, 0, IO_CQ, cdw10, 0, 0);
+        submit_admin_sqe(&mut p, &mut mem, ASQ, 0, &create_cq);
+        let create_sq = encode_nvme_sqe(0x01, 2, 0, IO_SQ, cdw10, 1u32 << 16, 0);
+        submit_admin_sqe(&mut p, &mut mem, ASQ, 1, &create_sq);
+
+        let read = encode_nvme_sqe(
+            0x02,
+            0x10,
+            crate::nvme::NSID,
+            DATA,
+            SLBA as u32,
+            (SLBA >> 32) as u32,
+            0,
+        );
+        assert!(mem.write_bytes(IO_SQ, &read));
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_MMIO_32.base + crate::nvme::REG_DOORBELL_BASE + 2 * 4,
+                MmioOp::Write { size: 4, value: 1 },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            mem.read_bytes(DATA, crate::nvme::LBA_SIZE).unwrap(),
+            pattern
+        );
+
+        let replacement: Vec<u8> = (0..crate::nvme::LBA_SIZE)
+            .map(|i| 0x40 | ((i % 0x20) as u8))
+            .collect();
+        assert!(mem.write_bytes(DATA, &replacement));
+        let write = encode_nvme_sqe(
+            0x01,
+            0x11,
+            crate::nvme::NSID,
+            DATA,
+            SLBA as u32,
+            (SLBA >> 32) as u32,
+            0,
+        );
+        assert!(mem.write_bytes(IO_SQ + crate::nvme::SQ_ENTRY_SIZE, &write));
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_MMIO_32.base + crate::nvme::REG_DOORBELL_BASE + 2 * 4,
+                MmioOp::Write { size: 4, value: 2 },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            &p.nvme_disk()[start..start + crate::nvme::LBA_SIZE],
+            replacement.as_slice()
+        );
     }
 
     #[test]

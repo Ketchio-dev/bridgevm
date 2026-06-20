@@ -17,7 +17,7 @@
 //!   * Admin commands: IDENTIFY (controller + namespace), CREATE I/O
 //!     COMPLETION/SUBMISSION QUEUE, SET FEATURES (number of queues).
 //!   * One I/O queue processing NVM READ (0x02) / WRITE (0x01) against a flat
-//!     `Vec<u8>` disk with 512-byte LBAs, using PRP1 for single-page transfers.
+//!     disk image with 512-byte LBAs, using PRP1 for single-page transfers.
 //!
 //! The DMA/queue path mirrors `fwcfg.rs`: all guest-memory traffic flows through
 //! the shared [`GuestMemoryMut`] trait, and completions are written straight
@@ -233,8 +233,15 @@ impl NvmeController {
     /// Create a controller with a `disk_bytes`-sized backing store. The size is
     /// rounded up to a whole number of `LBA_SIZE` blocks.
     pub fn new(disk_bytes: usize) -> Self {
-        let blocks = disk_bytes.div_ceil(LBA_SIZE);
-        let disk = vec![0u8; blocks * LBA_SIZE];
+        Self::with_disk_image(vec![0u8; rounded_disk_len(disk_bytes)])
+    }
+
+    /// Create a controller from an existing raw disk image. The image is padded
+    /// with zeros up to a whole number of `LBA_SIZE` blocks so namespace capacity
+    /// and transfer bounds stay block-aligned.
+    pub fn with_disk_image(mut disk: Vec<u8>) -> Self {
+        let len = rounded_disk_len(disk.len());
+        disk.resize(len, 0);
         Self {
             cc: 0,
             csts: 0,
@@ -252,6 +259,18 @@ impl NvmeController {
             max_io_queues: MAX_IO_QUEUE_PAIRS,
             last_feature_result: 0,
         }
+    }
+
+    /// Replace the backing disk image, padding to a full LBA. This resets queue
+    /// and controller register state, mirroring a cold-plugged different device.
+    pub fn load_disk_image(&mut self, disk: Vec<u8>) {
+        *self = Self::with_disk_image(disk);
+    }
+
+    /// Snapshot of the current disk image, including guest writes that have been
+    /// processed through the NVMe queues.
+    pub fn disk_image(&self) -> &[u8] {
+        &self.disk
     }
 
     /// Number of `LBA_SIZE`-byte logical blocks in the backing disk.
@@ -659,6 +678,10 @@ fn mask_to_size(value: u64, size: u8) -> u64 {
     }
 }
 
+fn rounded_disk_len(bytes: usize) -> usize {
+    bytes.div_ceil(LBA_SIZE) * LBA_SIZE
+}
+
 /// Merge a partial write into a 64-bit register. `high` selects the upper
 /// 32-bit half (for split 32-bit accesses to a 64-bit register).
 fn merge_u64(current: u64, value: u64, size: u8, high: bool) -> u64 {
@@ -823,6 +846,21 @@ mod tests {
         let ctrl = NvmeController::new(0);
         assert_eq!(ctrl.mmio_read(REG_VS, 4), u64::from(NVME_VERSION_1_4_0));
         assert_eq!(ctrl.mmio_read(REG_VS, 4), 0x0001_0400);
+    }
+
+    #[test]
+    fn disk_image_constructor_pads_and_snapshots_media() {
+        let mut ctrl = NvmeController::with_disk_image(vec![0xaa; LBA_SIZE + 7]);
+        assert_eq!(ctrl.disk_image().len(), LBA_SIZE * 2);
+        assert_eq!(ctrl.block_count(), 2);
+        assert_eq!(ctrl.disk_image()[0], 0xaa);
+        assert_eq!(ctrl.disk_image()[LBA_SIZE + 6], 0xaa);
+        assert_eq!(ctrl.disk_image()[LBA_SIZE + 7], 0);
+
+        ctrl.load_disk_image(vec![0xbb; 3]);
+        assert_eq!(ctrl.disk_image().len(), LBA_SIZE);
+        assert_eq!(ctrl.block_count(), 1);
+        assert_eq!(&ctrl.disk_image()[..3], &[0xbb; 3]);
     }
 
     #[test]
