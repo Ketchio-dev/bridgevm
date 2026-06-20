@@ -33,9 +33,9 @@ use std::ptr::null_mut;
 
 use bridgevm_hvf::dtb::{build_virt_fdt, VirtFdtConfig};
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
-use bridgevm_hvf::machine;
 use bridgevm_hvf::media::{read_bounded_file, MediaWrite, VirtBootMediaConfig};
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome, VirtPlatform};
+use bridgevm_hvf::{machine, pcie};
 
 /// A GuestMemoryMut view over the actual HVF-mapped guest RAM, so fw_cfg DMA
 /// reads/writes hit real firmware memory (not a throwaway buffer).
@@ -110,7 +110,15 @@ extern "C" {
     fn hv_gic_config_create() -> HvGicConfig;
     fn hv_gic_config_set_distributor_base(config: HvGicConfig, base: u64) -> HvReturn;
     fn hv_gic_config_set_redistributor_base(config: HvGicConfig, base: u64) -> HvReturn;
+    fn hv_gic_config_set_msi_region_base(config: HvGicConfig, base: u64) -> HvReturn;
+    fn hv_gic_config_set_msi_interrupt_range(
+        config: HvGicConfig,
+        intid_base: u32,
+        intid_count: u32,
+    ) -> HvReturn;
     fn hv_gic_create(config: HvGicConfig) -> HvReturn;
+    fn hv_gic_send_msi(address: u64, intid: u32) -> HvReturn;
+    fn hv_gic_get_spi_interrupt_range(intid_base: *mut u32, intid_count: *mut u32) -> HvReturn;
 }
 
 const HV_REG_X0: u32 = 0;
@@ -136,6 +144,7 @@ const HV_SYS_REG_DBGWCR0_EL1: u16 = 0x8007;
 const HV_SYS_REG_MDSCR_EL1: u16 = 0x8012;
 const HV_SYS_REG_SP_EL0: u16 = 0xc208;
 const HV_SYS_REG_SP_EL1: u16 = 0xe208;
+const HV_GIC_REG_GICM_SET_SPI_NSR: u64 = 0x40;
 // Watch the poll target for stores: 8-byte aligned address, BAS=0xFF (8 bytes),
 // LSC=0b10 (store), PAC=0b11 (EL0+EL1), E=1. = 0x1FF7.
 const WATCH_TARGET: u64 = 0x5ffd_f798;
@@ -318,6 +327,18 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
 
+fn deliver_pending_msix(platform: &mut VirtPlatform, trace: bool) {
+    for message in platform.take_pending_msix() {
+        let status = unsafe { hv_gic_send_msi(message.address, message.data) };
+        if trace || status != 0 {
+            println!(
+                "MSIX vector {} -> addr {:#x} intid {} status {status:#x}",
+                message.vector, message.address, message.data
+            );
+        }
+    }
+}
+
 fn serial_reached_shell(serial: &[u8]) -> bool {
     contains_bytes(serial, b"UEFI Interactive Shell") || contains_bytes(serial, b"Shell>")
 }
@@ -382,6 +403,7 @@ fn main() {
     let media = VirtBootMediaConfig::from_probe_env();
     let watchdog_ms = env_u64("BRIDGEVM_BOOT_PROBE_WATCHDOG_MS", WATCHDOG_MS);
     let trace_fwcfg = env_flag("BRIDGEVM_TRACE_FWCFG");
+    let trace_msix = env_flag("BRIDGEVM_TRACE_MSIX");
     let stop_on_linux = env_flag_default("BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX", true);
 
     unsafe {
@@ -408,11 +430,41 @@ fn main() {
             0,
             "set redist base"
         );
+        let mut spi_intid_base = 0u32;
+        let mut spi_intid_count = 0u32;
+        assert_eq!(
+            hv_gic_get_spi_interrupt_range(&mut spi_intid_base, &mut spi_intid_count),
+            0,
+            "get SPI INTID range"
+        );
+        let msi_intid_base = machine::spi_to_intid(machine::SPI_PCIE_INTA);
+        let msi_intid_count = u32::from(pcie::NVME_MSIX_VECTOR_COUNT);
+        assert!(
+            msi_intid_base >= spi_intid_base
+                && msi_intid_base + msi_intid_count <= spi_intid_base + spi_intid_count,
+            "MSI INTID range {msi_intid_base}..{} outside supported SPI INTID range {spi_intid_base}..{}",
+            msi_intid_base + msi_intid_count,
+            spi_intid_base + spi_intid_count
+        );
+        assert_eq!(
+            hv_gic_config_set_msi_region_base(gic, machine::GIC_ITS.base),
+            0,
+            "set MSI region base"
+        );
+        assert_eq!(
+            hv_gic_config_set_msi_interrupt_range(gic, msi_intid_base, msi_intid_count),
+            0,
+            "set MSI INTID range"
+        );
         let gic_r = hv_gic_create(gic);
         println!(
-            "hv_gic_create = {gic_r:#x} (dist {:#x}, redist {:#x})",
+            "hv_gic_create = {gic_r:#x} (dist {:#x}, redist {:#x}, msi {:#x}+{:#x}, intids {}..{})",
             machine::GIC_DIST.base,
-            machine::GIC_REDIST.base
+            machine::GIC_REDIST.base,
+            machine::GIC_ITS.base,
+            HV_GIC_REG_GICM_SET_SPI_NSR,
+            msi_intid_base,
+            msi_intid_base + msi_intid_count
         );
         assert_eq!(gic_r, 0, "hv_gic_create");
 
@@ -637,6 +689,7 @@ fn main() {
                             }
                         }
                     }
+                    deliver_pending_msix(&mut platform, trace_msix);
                     hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
                 }
                 EC_HVC => {

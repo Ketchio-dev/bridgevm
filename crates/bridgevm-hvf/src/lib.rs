@@ -14,6 +14,7 @@ pub mod dtb;
 pub mod fwcfg;
 pub mod machine;
 pub mod media;
+pub mod msix;
 pub mod nvme;
 pub mod pcie;
 pub mod pflash;

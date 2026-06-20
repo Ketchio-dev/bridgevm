@@ -108,6 +108,13 @@ pub const CMD_WRITABLE_MASK: u16 = CMD_MEMORY_SPACE | CMD_BUS_MASTER;
 /// capability list, so this stays clear; endpoints that add MSI-X set it.
 pub const STATUS_CAP_LIST: u16 = 1 << 4;
 
+/// Function-level MSI-X control bits from the PCI capability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MsixFunctionControl {
+    pub enabled: bool,
+    pub function_masked: bool,
+}
+
 // ---- The host bridge identity (00:00.0) -------------------------------------
 
 /// Red Hat, Inc. — the vendor QEMU uses for its paravirtual root complex.
@@ -403,6 +410,21 @@ impl Function {
         self.set_capability_byte(control_off + 1, hi);
         true
     }
+
+    fn msix_control(&self) -> Option<MsixFunctionControl> {
+        if self.cap_ptr == 0 || self.capability_byte(u16::from(self.cap_ptr)) != CAP_ID_MSIX {
+            return None;
+        }
+        let control_off = u16::from(self.cap_ptr) + 2;
+        let control = u16::from_le_bytes([
+            self.capability_byte(control_off),
+            self.capability_byte(control_off + 1),
+        ]);
+        Some(MsixFunctionControl {
+            enabled: control & 0x8000 != 0,
+            function_masked: control & 0x4000 != 0,
+        })
+    }
 }
 
 // ---- The ECAM device --------------------------------------------------------
@@ -507,6 +529,13 @@ impl PcieEcam {
             }
         }
         None
+    }
+
+    /// Function-level MSI-X control for the first NVMe endpoint.
+    pub fn nvme_msix_control(&self) -> MsixFunctionControl {
+        self.function_at(NVME_BDF)
+            .and_then(Function::msix_control)
+            .unwrap_or_default()
     }
 }
 
@@ -869,11 +898,20 @@ mod tests {
         let mut ecam = PcieEcam::new();
         let control = u16::from(NVME_MSIX_CAP_OFFSET) + 2;
 
+        assert_eq!(ecam.nvme_msix_control(), MsixFunctionControl::default());
+
         // The table-size bits are read-only; only function-mask and enable move.
         ecam.cfg_write(ecam_offset(0, 1, 0, control), 2, 0xffff);
         assert_eq!(
             ecam.cfg_read(ecam_offset(0, 1, 0, control), 2),
             u64::from(0xc000 | (NVME_MSIX_VECTOR_COUNT - 1))
+        );
+        assert_eq!(
+            ecam.nvme_msix_control(),
+            MsixFunctionControl {
+                enabled: true,
+                function_masked: true,
+            }
         );
 
         ecam.cfg_write(ecam_offset(0, 1, 0, control + 1), 1, 0x00);
@@ -882,6 +920,7 @@ mod tests {
             u64::from(NVME_MSIX_VECTOR_COUNT - 1),
             "sub-byte writes clear the writable MSI-X control bits"
         );
+        assert_eq!(ecam.nvme_msix_control(), MsixFunctionControl::default());
     }
 
     #[test]

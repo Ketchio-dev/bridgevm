@@ -27,6 +27,8 @@
 //! registers), 5 (admin command set) and the NVM Command Set; QEMU `hw/nvme/`.
 
 use crate::fwcfg::GuestMemoryMut;
+use crate::msix::{MsixMessage, MsixTable};
+use crate::pcie::{NVME_MSIX_PBA_OFFSET, NVME_MSIX_TABLE_OFFSET, NVME_MSIX_VECTOR_COUNT};
 
 /// Size of one submission-queue entry, in bytes (NVMe fixed: 64).
 pub const SQ_ENTRY_SIZE: u64 = 64;
@@ -205,6 +207,15 @@ struct CompletionQueue {
     phase: bool,
     /// Last head the guest reported through the CQ doorbell.
     head: u16,
+    /// MSI-X vector to signal when this completion queue receives an entry.
+    interrupt_vector: u16,
+}
+
+/// Completion metadata that the platform layer turns into an interrupt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NvmeCompletionEvent {
+    pub cqid: u16,
+    pub vector: u16,
 }
 
 /// A modelled minimal NVMe controller.
@@ -230,6 +241,8 @@ pub struct NvmeController {
     /// Command-specific result for the *next* completion's DW0 (e.g. the queue
     /// count granted by SET FEATURES). Consumed when the completion is posted.
     last_feature_result: u32,
+    /// BAR-backed MSI-X table and PBA for this endpoint.
+    msix: MsixTable,
 }
 
 impl NvmeController {
@@ -261,6 +274,7 @@ impl NvmeController {
             // pool so a guest requesting several is granted a sane non-zero count.
             max_io_queues: MAX_IO_QUEUE_PAIRS,
             last_feature_result: 0,
+            msix: MsixTable::new(NVME_MSIX_VECTOR_COUNT),
         }
     }
 
@@ -297,6 +311,12 @@ impl NvmeController {
 
     /// Handle a guest MMIO read of `size` bytes (1/2/4/8) at `offset` in BAR0.
     pub fn mmio_read(&self, offset: u64, size: u8) -> u64 {
+        if let Some(table_offset) = self.msix_table_offset(offset) {
+            return self.msix.table_read(table_offset, size);
+        }
+        if let Some(pba_offset) = self.msix_pba_offset(offset) {
+            return self.msix.pba_read(pba_offset, size);
+        }
         // 64-bit registers can be read as two 32-bit halves; resolve the
         // containing register and slice out the requested window.
         let (reg_base, full): (u64, u64) = match offset {
@@ -320,6 +340,14 @@ impl NvmeController {
     /// writes only record the new tail/head; the queue engine runs in
     /// [`NvmeController::process`], called by the run loop after the MMIO write.
     pub fn mmio_write(&mut self, offset: u64, size: u8, value: u64) {
+        if let Some(table_offset) = self.msix_table_offset(offset) {
+            self.msix.table_write(table_offset, size, value);
+            return;
+        }
+        if let Some(pba_offset) = self.msix_pba_offset(offset) {
+            self.msix.pba_write(pba_offset, size, value);
+            return;
+        }
         let v32 = value as u32;
         match offset {
             REG_INTMS => self.intms |= v32,
@@ -360,6 +388,7 @@ impl NvmeController {
                 tail: 0,
                 phase: true,
                 head: 0,
+                interrupt_vector: 0,
             });
             self.csts |= CSTS_RDY_BIT;
         } else if !now_enabled && was_enabled {
@@ -393,16 +422,23 @@ impl NvmeController {
     /// controller's head, executing commands and posting completions back into
     /// guest RAM. The run loop calls this after each doorbell write (and may
     /// call it speculatively — it is a no-op when nothing is pending).
-    pub fn process(&mut self, mem: &mut dyn GuestMemoryMut) {
+    pub fn process(&mut self, mem: &mut dyn GuestMemoryMut) -> Vec<NvmeCompletionEvent> {
         // Admin queue (index 0) first, then I/O queues.
+        let mut completions = Vec::new();
         let sq_count = self.sqs.len();
         for qid in 0..sq_count {
-            self.process_sq(qid, mem);
+            self.process_sq(qid, mem, &mut completions);
         }
+        completions
     }
 
     /// Drain submission queue `qid` until its head catches the guest's tail.
-    fn process_sq(&mut self, qid: usize, mem: &mut dyn GuestMemoryMut) {
+    fn process_sq(
+        &mut self,
+        qid: usize,
+        mem: &mut dyn GuestMemoryMut,
+        completions: &mut Vec<NvmeCompletionEvent>,
+    ) {
         loop {
             let (base, size, head, tail, cqid) = match self.sqs.get(qid) {
                 Some(Some(sq)) => (sq.base, sq.size, sq.head, sq.tail_doorbell, sq.cqid),
@@ -430,7 +466,9 @@ impl NvmeController {
             } else {
                 self.execute_io(&cmd, mem)
             };
-            self.post_completion(cqid, qid as u16, &cmd, status, mem);
+            if let Some(completion) = self.post_completion(cqid, qid as u16, &cmd, status, mem) {
+                completions.push(completion);
+            }
         }
     }
 
@@ -522,6 +560,7 @@ impl NvmeController {
             tail: 0,
             phase: true,
             head: 0,
+            interrupt_vector: (cmd.cdw11 & 0xffff) as u16,
         });
         SC_SUCCESS
     }
@@ -630,17 +669,25 @@ impl NvmeController {
         cmd: &SubmissionEntry,
         status: u16,
         mem: &mut dyn GuestMemoryMut,
-    ) {
+    ) -> Option<NvmeCompletionEvent> {
         let dw0 = std::mem::take(&mut self.last_feature_result);
-        let (base, tail, size, phase, sq_head) = match self.cqs.get(cqid as usize) {
+        let (base, tail, size, phase, sq_head, interrupt_vector) = match self.cqs.get(cqid as usize)
+        {
             Some(Some(cq)) => {
                 let sq_head = match self.sqs.get(sqid as usize) {
                     Some(Some(sq)) => sq.head,
                     _ => 0,
                 };
-                (cq.base, cq.tail, cq.size, cq.phase, sq_head)
+                (
+                    cq.base,
+                    cq.tail,
+                    cq.size,
+                    cq.phase,
+                    sq_head,
+                    cq.interrupt_vector,
+                )
             }
-            _ => return,
+            _ => return None,
         };
 
         // Status field (CDW3 bits 31:17 = status code, bit 16 = phase tag).
@@ -656,7 +703,9 @@ impl NvmeController {
         entry[14..16].copy_from_slice(&status_field.to_le_bytes());
 
         let entry_gpa = base + u64::from(tail) * CQ_ENTRY_SIZE;
-        let _ = mem.write_bytes(entry_gpa, &entry);
+        if !mem.write_bytes(entry_gpa, &entry) {
+            return None;
+        }
 
         // Advance the CQ tail, toggling the phase tag when it wraps.
         let new_tail = (tail + 1) % size;
@@ -666,6 +715,39 @@ impl NvmeController {
                 cq.phase = !cq.phase;
             }
         }
+        Some(NvmeCompletionEvent {
+            cqid,
+            vector: interrupt_vector,
+        })
+    }
+
+    pub fn raise_msix(
+        &mut self,
+        vector: u16,
+        function_enabled: bool,
+        function_masked: bool,
+    ) -> Option<MsixMessage> {
+        self.msix.raise(vector, function_enabled, function_masked)
+    }
+
+    pub fn drain_pending_msix(
+        &mut self,
+        function_enabled: bool,
+        function_masked: bool,
+    ) -> Vec<MsixMessage> {
+        self.msix.drain_pending(function_enabled, function_masked)
+    }
+
+    fn msix_table_offset(&self, offset: u64) -> Option<u64> {
+        let base = u64::from(NVME_MSIX_TABLE_OFFSET);
+        let rel = offset.checked_sub(base)?;
+        (rel < self.msix.table_byte_len()).then_some(rel)
+    }
+
+    fn msix_pba_offset(&self, offset: u64) -> Option<u64> {
+        let base = u64::from(NVME_MSIX_PBA_OFFSET);
+        let rel = offset.checked_sub(base)?;
+        (rel < self.msix.pba_byte_len()).then_some(rel)
     }
 }
 
@@ -857,6 +939,31 @@ mod tests {
     }
 
     #[test]
+    fn msix_table_and_pba_live_in_bar0_without_overlapping_doorbells() {
+        let mut ctrl = NvmeController::new(0);
+        let table = u64::from(NVME_MSIX_TABLE_OFFSET);
+        let pba = u64::from(NVME_MSIX_PBA_OFFSET);
+
+        assert_eq!(ctrl.mmio_read(table + 12, 4), 1, "vectors start masked");
+        ctrl.mmio_write(table, 8, 0x0808_0000);
+        ctrl.mmio_write(table + 8, 4, 35);
+
+        assert_eq!(ctrl.raise_msix(0, true, false), None);
+        assert_eq!(ctrl.mmio_read(pba, 8), 1, "masked vector sets PBA bit");
+
+        ctrl.mmio_write(table + 12, 4, 0);
+        assert_eq!(
+            ctrl.drain_pending_msix(true, false),
+            vec![MsixMessage {
+                vector: 0,
+                address: 0x0808_0000,
+                data: 35,
+            }]
+        );
+        assert_eq!(ctrl.mmio_read(pba, 8), 0);
+    }
+
+    #[test]
     fn cap_low_half_readable_as_32_bits() {
         let ctrl = NvmeController::new(0);
         let lo = ctrl.mmio_read(REG_CAP, 4);
@@ -939,6 +1046,27 @@ mod tests {
         assert_eq!(nn, 1, "one namespace");
         assert_eq!(id[512], 0x66, "SQES = 64-byte entries");
         assert_eq!(id[513], 0x44, "CQES = 16-byte entries");
+    }
+
+    #[test]
+    fn process_reports_admin_completion_vector_zero() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let sqe = encode_sqe(
+            ADMIN_OP_IDENTIFY,
+            0x56,
+            0,
+            DATA_BASE,
+            IDENTIFY_CNS_CONTROLLER,
+            0,
+            0,
+        );
+        assert!(mem.write_bytes(ASQ_BASE, &sqe));
+        ctrl.mmio_write(REG_DOORBELL_BASE, 4, 1);
+
+        assert_eq!(
+            ctrl.process(&mut mem),
+            vec![NvmeCompletionEvent { cqid: 0, vector: 0 }]
+        );
     }
 
     #[test]

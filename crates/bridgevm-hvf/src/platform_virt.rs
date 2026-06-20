@@ -24,7 +24,8 @@ use crate::fwcfg::{
     KEY_KERNEL_DATA, KEY_KERNEL_SIZE,
 };
 use crate::machine::{self, Region};
-use crate::nvme::NvmeController;
+use crate::msix::MsixMessage;
+use crate::nvme::{NvmeCompletionEvent, NvmeController};
 use crate::pcie::{PcieEcam, NVME_BDF};
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
@@ -78,6 +79,7 @@ pub struct VirtPlatform {
     pcie: PcieEcam,
     nvme: NvmeController,
     flash_vars: P30NorFlash,
+    pending_msix: Vec<MsixMessage>,
     dtb: Vec<u8>,
 }
 
@@ -112,6 +114,7 @@ impl VirtPlatform {
                 machine::FLASH_VARS.size as usize,
                 0x40000,
             ),
+            pending_msix: Vec::new(),
             dtb,
         }
     }
@@ -139,6 +142,13 @@ impl VirtPlatform {
     /// far. Live probes use this to persist an explicitly writable image.
     pub fn nvme_disk(&self) -> &[u8] {
         self.nvme.disk_image()
+    }
+
+    /// Drain MSI-X messages raised by PCIe devices since the last call. The live
+    /// HVF run loop turns these into `hv_gic_send_msi` calls after configuring
+    /// Apple `hv_gic`'s MSI frame.
+    pub fn take_pending_msix(&mut self) -> Vec<MsixMessage> {
+        std::mem::take(&mut self.pending_msix)
     }
 
     /// Register QEMU direct-Linux-boot payloads in the fixed fw_cfg slots that
@@ -253,6 +263,7 @@ impl VirtPlatform {
             MmioOp::Read { size } => MmioOutcome::ReadValue(self.pcie.cfg_read(ecam_offset, size)),
             MmioOp::Write { size, value } => {
                 self.pcie.cfg_write(ecam_offset, size, value);
+                self.flush_nvme_pending_msix();
                 MmioOutcome::WriteAck
             }
         }
@@ -285,10 +296,32 @@ impl VirtPlatform {
             MmioOp::Read { size } => MmioOutcome::ReadValue(self.nvme.mmio_read(offset, size)),
             MmioOp::Write { size, value } => {
                 self.nvme.mmio_write(offset, size, value);
-                self.nvme.process(mem);
+                let completions = self.nvme.process(mem);
+                self.queue_nvme_completion_msix(completions);
+                self.flush_nvme_pending_msix();
                 MmioOutcome::WriteAck
             }
         }
+    }
+
+    fn queue_nvme_completion_msix(&mut self, completions: Vec<NvmeCompletionEvent>) {
+        let control = self.pcie.nvme_msix_control();
+        for completion in completions {
+            if let Some(message) =
+                self.nvme
+                    .raise_msix(completion.vector, control.enabled, control.function_masked)
+            {
+                self.pending_msix.push(message);
+            }
+        }
+    }
+
+    fn flush_nvme_pending_msix(&mut self) {
+        let control = self.pcie.nvme_msix_control();
+        self.pending_msix.extend(
+            self.nvme
+                .drain_pending_msix(control.enabled, control.function_masked),
+        );
     }
 
     fn uart_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {
@@ -467,6 +500,29 @@ mod tests {
             p.on_mmio(
                 machine::PCIE_MMIO_32.base + crate::nvme::REG_CC,
                 MmioOp::Write { size: 4, value: 1 },
+                mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+    }
+
+    fn enable_nvme_msix_vector0(
+        p: &mut VirtPlatform,
+        mem: &mut FlatGuestRam,
+        address: u64,
+        data: u32,
+    ) {
+        let table = u64::from(crate::pcie::NVME_MSIX_TABLE_OFFSET);
+        nvme_mmio_write(p, mem, table, 8, address);
+        nvme_mmio_write(p, mem, table + 8, 4, u64::from(data));
+        nvme_mmio_write(p, mem, table + 12, 4, 0);
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(1, 0, u16::from(crate::pcie::NVME_MSIX_CAP_OFFSET) + 2),
+                MmioOp::Write {
+                    size: 2,
+                    value: 0x8000,
+                },
                 mem,
             ),
             MmioOutcome::WriteAck
@@ -706,6 +762,33 @@ mod tests {
         let status = u16::from_le_bytes([completion[14], completion[15]]);
         assert_eq!(status & 0x1, 1, "phase tag must be set");
         assert_eq!(status >> 1, 0, "identify must complete successfully");
+    }
+
+    #[test]
+    fn pcie_nvme_msix_table_completion_queues_a_message() {
+        const ASQ: u64 = machine::RAM_BASE + 0x1000;
+        const ACQ: u64 = machine::RAM_BASE + 0x2000;
+        const DATA: u64 = machine::RAM_BASE + 0x3000;
+        const MSI_ADDRESS: u64 = machine::GIC_ITS.base + 0x40;
+        const MSI_DATA: u32 = 35;
+
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x8000);
+        program_nvme_bar0(&mut p, &mut mem);
+        enable_nvme_msix_vector0(&mut p, &mut mem, MSI_ADDRESS, MSI_DATA);
+        enable_nvme_controller(&mut p, &mut mem, ASQ, ACQ);
+
+        let identify_controller = encode_nvme_sqe(0x06, 9, 0, DATA, 0x01, 0, 0);
+        submit_admin_sqe(&mut p, &mut mem, ASQ, 0, &identify_controller);
+
+        assert_eq!(
+            p.take_pending_msix(),
+            vec![crate::msix::MsixMessage {
+                vector: 0,
+                address: MSI_ADDRESS,
+                data: MSI_DATA,
+            }]
+        );
     }
 
     #[test]
