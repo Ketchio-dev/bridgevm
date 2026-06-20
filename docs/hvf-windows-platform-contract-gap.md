@@ -159,10 +159,14 @@ NVMe model now retains a bounded recent command/completion trace for that diff.
 The latest NVMe admin-command pass accepts Windows Asynchronous Event Requests as
 pending, handles the observed standard `Get Features` probes, completes
 `Identify` CNS `0x06` for the NVM command set, models QEMU's command-effects log
-page `0x05`, handles the firmware-slot log page, and eliminates
-`invalid-opcode` completions. The remaining observed `invalid-field` completions
-are optional/vendor/reserved query surfaces and need QEMU-oracle comparison before
-changing the device model.
+page `0x05`, handles the firmware-slot log page, advertises Security Send/Receive
+with QEMU's default no-SPDM behavior, and eliminates `invalid-opcode`
+completions. The Windows loader currently issues two zero-length `SECURITY_RECV`
+probes; BridgeVM reports `invalid-field`, matching QEMU's short-request rejection
+shape. The remaining observed `invalid-field` completions are
+optional/vendor/reserved query surfaces and need QEMU-oracle comparison before
+changing the device model. QEMU's next visible divergence is volatile write cache
+(`Get Features` FID `0x06`), which the oracle reports as enabled.
 The remaining gap is above firmware: lift NVMe overlay/writeback and
 pflash persistence into the engine-facing VM configuration, keep tightening
 Windows-relevant ACPI details such as DBG2 as needed, add installer usability

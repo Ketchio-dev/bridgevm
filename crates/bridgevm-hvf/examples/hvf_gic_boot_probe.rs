@@ -680,6 +680,8 @@ fn nvme_opcode_name(trace: &NvmeCommandTrace) -> &'static str {
             0x09 => "set-features",
             0x0a => "get-features",
             0x0c => "async-event-request",
+            0x81 => "security-send",
+            0x82 => "security-receive",
             _ => "admin-unknown",
         }
     } else {

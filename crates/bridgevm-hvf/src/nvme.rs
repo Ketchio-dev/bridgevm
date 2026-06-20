@@ -122,6 +122,8 @@ const ADMIN_OP_IDENTIFY: u8 = 0x06;
 const ADMIN_OP_SET_FEATURES: u8 = 0x09;
 const ADMIN_OP_GET_FEATURES: u8 = 0x0a;
 const ADMIN_OP_ASYNC_EVENT_REQUEST: u8 = 0x0c;
+const ADMIN_OP_SECURITY_SEND: u8 = 0x81;
+const ADMIN_OP_SECURITY_RECV: u8 = 0x82;
 
 // ---- NVM (I/O) opcodes (NVMe NVM Command Set) -----------------------------
 const NVM_OP_WRITE: u8 = 0x01;
@@ -163,6 +165,11 @@ const LOG_PAGE_COMMAND_EFFECTS: u8 = 0x05;
 // ---- Command Effects log bits (NVMe 1.4 §5.14.1.5) ------------------------
 const CMD_EFFECT_CSUPP: u32 = 1 << 0;
 const CMD_EFFECT_LBCC: u32 = 1 << 1;
+
+// ---- Security protocol values (NVMe 1.4 §5.22 / QEMU nvme_security_*) -----
+const SECURITY_PROTOCOL_INFORMATION: u8 = 0x00;
+const SECURITY_PROTOCOL_DMTF_SPDM: u8 = 0xe8;
+const SECURITY_PROTOCOL_INFO_LIST_LEN: usize = 10;
 
 // ---- Completion status codes (NVMe 1.4 §4.6.1, generic command status) ----
 /// Successful completion (status code type 0, code 0).
@@ -896,6 +903,8 @@ impl NvmeController {
             ADMIN_OP_SET_FEATURES => self.admin_set_features(cmd),
             ADMIN_OP_GET_FEATURES => self.admin_get_features(cmd, mem),
             ADMIN_OP_ASYNC_EVENT_REQUEST => return self.admin_async_event_request(),
+            ADMIN_OP_SECURITY_SEND => self.admin_security_send(cmd),
+            ADMIN_OP_SECURITY_RECV => self.admin_security_receive(cmd, mem),
             ADMIN_OP_DELETE_IO_SQ | ADMIN_OP_DELETE_IO_CQ => SC_SUCCESS,
             _ => SC_INVALID_OPCODE,
         };
@@ -976,6 +985,9 @@ impl NvmeController {
         // zero-based. Windows submits AERs during setup; they should remain
         // pending rather than completing as invalid opcodes.
         d[259] = MAX_ASYNC_EVENT_REQUESTS - 1;
+        // OACS (256..258): advertise Security Send/Receive now that the minimal
+        // QEMU-compatible security protocol information query is implemented.
+        d[256..258].copy_from_slice(&1u16.to_le_bytes());
         // SQES (512): min/max submission-queue entry size = 2^6 = 64 bytes.
         d[512] = 0x66;
         // CQES (513): min/max completion-queue entry size = 2^4 = 16 bytes.
@@ -1106,6 +1118,8 @@ impl NvmeController {
         set_admin(ADMIN_OP_SET_FEATURES, CMD_EFFECT_CSUPP);
         set_admin(ADMIN_OP_GET_FEATURES, CMD_EFFECT_CSUPP);
         set_admin(ADMIN_OP_ASYNC_EVENT_REQUEST, CMD_EFFECT_CSUPP);
+        set_admin(ADMIN_OP_SECURITY_SEND, CMD_EFFECT_CSUPP);
+        set_admin(ADMIN_OP_SECURITY_RECV, CMD_EFFECT_CSUPP);
 
         let mut set_io = |opcode: u8, effects: u32| {
             let off = 1024 + usize::from(opcode) * 4;
@@ -1114,6 +1128,43 @@ impl NvmeController {
         set_io(NVM_OP_WRITE, CMD_EFFECT_CSUPP | CMD_EFFECT_LBCC);
         set_io(NVM_OP_READ, CMD_EFFECT_CSUPP);
         d
+    }
+
+    /// SECURITY SEND. QEMU advertises the opcode, but without an SPDM socket it
+    /// rejects every protocol as invalid-field. Keep that shape while the
+    /// controller only supports the discovery receive path below.
+    fn admin_security_send(&self, _cmd: &SubmissionEntry) -> u16 {
+        SC_INVALID_FIELD
+    }
+
+    /// SECURITY RECEIVE. Match QEMU's default no-SPDM behavior: the only
+    /// successful request is SECP=0/SPSP=0, which returns the supported security
+    /// protocol list. SPDM and certificate paths remain invalid-field.
+    fn admin_security_receive(&self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
+        let secp = ((cmd.cdw10 >> 24) & 0xff) as u8;
+        let spsp = (cmd.cdw10 >> 8) & 0xffff;
+        let alloc_len = cmd.cdw11;
+        match (secp, spsp) {
+            (SECURITY_PROTOCOL_INFORMATION, 0) => {
+                if alloc_len < SECURITY_PROTOCOL_INFO_LIST_LEN as u32 {
+                    return SC_INVALID_FIELD;
+                }
+                let mut resp = [0u8; SECURITY_PROTOCOL_INFO_LIST_LEN];
+                // QEMU reports a two-byte supported-protocol list containing
+                // Security Protocol Information and a second zero entry when no
+                // SPDM socket is configured.
+                resp[7] = 2;
+                resp[8] = SECURITY_PROTOCOL_INFORMATION;
+                resp[9] = 0;
+                if mem.write_bytes(cmd.prp1, &resp) {
+                    SC_SUCCESS
+                } else {
+                    SC_INVALID_FIELD
+                }
+            }
+            (SECURITY_PROTOCOL_DMTF_SPDM, _) => SC_INVALID_FIELD,
+            _ => SC_INVALID_FIELD,
+        }
     }
 
     /// CREATE I/O COMPLETION QUEUE (NVMe 1.4 §5.3). CDW10: QID bits 15:0,
@@ -2008,6 +2059,12 @@ mod tests {
         // expected SQES/CQES entry-size encoding.
         let id = mem.read_bytes(DATA_BASE, PAGE_SIZE).unwrap();
         assert_eq!(id.len(), PAGE_SIZE);
+        let oacs = u16::from_le_bytes([id[256], id[257]]);
+        assert_eq!(
+            oacs & 1,
+            1,
+            "OACS advertises Security Send/Receive like QEMU's default NVMe"
+        );
         let nn = u32::from_le_bytes([id[516], id[517], id[518], id[519]]);
         assert_eq!(nn, 1, "one namespace");
         assert_eq!(
@@ -2324,11 +2381,8 @@ mod tests {
         assert_eq!(effect_at(0, ADMIN_OP_GET_LOG_PAGE), CMD_EFFECT_CSUPP);
         assert_eq!(effect_at(0, ADMIN_OP_IDENTIFY), CMD_EFFECT_CSUPP);
         assert_eq!(effect_at(0, ADMIN_OP_GET_FEATURES), CMD_EFFECT_CSUPP);
-        assert_eq!(
-            effect_at(0, 0x82),
-            0,
-            "security receive is not implemented yet and must not be advertised"
-        );
+        assert_eq!(effect_at(0, ADMIN_OP_SECURITY_SEND), CMD_EFFECT_CSUPP);
+        assert_eq!(effect_at(0, ADMIN_OP_SECURITY_RECV), CMD_EFFECT_CSUPP);
         assert_eq!(
             effect_at(1024, NVM_OP_WRITE),
             CMD_EFFECT_CSUPP | CMD_EFFECT_LBCC
@@ -2362,6 +2416,86 @@ mod tests {
                 "vendor log page {lid:#x} matches QEMU's unsupported default"
             );
         }
+    }
+
+    #[test]
+    fn security_receive_protocol_info_matches_qemu_no_spdm_default() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let cdw10 = u32::from(SECURITY_PROTOCOL_INFORMATION) << 24;
+        let sqe = encode_sqe(
+            ADMIN_OP_SECURITY_RECV,
+            0x90,
+            0,
+            DATA_BASE,
+            cdw10,
+            SECURITY_PROTOCOL_INFO_LIST_LEN as u32,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 0, &sqe);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_SUCCESS
+        );
+
+        assert_eq!(
+            mem.read_bytes(DATA_BASE, SECURITY_PROTOCOL_INFO_LIST_LEN)
+                .unwrap(),
+            vec![0, 0, 0, 0, 0, 0, 0, 2, SECURITY_PROTOCOL_INFORMATION, 0,]
+        );
+    }
+
+    #[test]
+    fn security_receive_rejects_short_or_unsupported_requests() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let cases = [
+            (
+                (u32::from(SECURITY_PROTOCOL_INFORMATION) << 24),
+                (SECURITY_PROTOCOL_INFO_LIST_LEN - 1) as u32,
+            ),
+            (
+                (u32::from(SECURITY_PROTOCOL_INFORMATION) << 24) | (1 << 8),
+                SECURITY_PROTOCOL_INFO_LIST_LEN as u32,
+            ),
+            (
+                u32::from(SECURITY_PROTOCOL_DMTF_SPDM) << 24,
+                SECURITY_PROTOCOL_INFO_LIST_LEN as u32,
+            ),
+        ];
+        for (slot, (cdw10, cdw11)) in cases.into_iter().enumerate() {
+            let sqe = encode_sqe(
+                ADMIN_OP_SECURITY_RECV,
+                0x91 + slot as u16,
+                0,
+                DATA_BASE,
+                cdw10,
+                cdw11,
+                0,
+            );
+            submit_admin(&mut ctrl, &mut mem, slot as u16, &sqe);
+            assert_eq!(
+                completion_status(&read_completion(&mem, ACQ_BASE, slot as u16)),
+                SC_INVALID_FIELD
+            );
+        }
+    }
+
+    #[test]
+    fn security_send_reports_invalid_field_without_spdm_socket() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let sqe = encode_sqe(
+            ADMIN_OP_SECURITY_SEND,
+            0x94,
+            0,
+            DATA_BASE,
+            u32::from(SECURITY_PROTOCOL_DMTF_SPDM) << 24,
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 0, &sqe);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_INVALID_FIELD
+        );
     }
 
     #[test]

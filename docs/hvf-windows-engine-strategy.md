@@ -247,8 +247,9 @@ The remaining OS-boot contract work is now narrower:
   serial input only after the CD prompt is printed. With that path the loader
   prints `Loading files...`, reads roughly 300 MiB in a 30 s run and roughly
   646 MiB in a 120 s run with zero virtio I/O errors, and reaches Windows high
-  virtual-address code (`pc=0xfffff801...`). The 120 s trace ends with an EL1
-  data abort in Windows code while the recent PCIe MMIO tail repeatedly reads NVMe
+  virtual-address code (`pc=0xfffff801...`). Recent 120 s traces end in Windows
+  high-VA code (one data-abort snapshot, one watchdog snapshot with
+  `ESR=0x56001004`/SVC state) while the PCIe MMIO tail repeatedly reads NVMe
   `CSTS`/`CC` and rings `SQ0TDBL`, so the next diff is Windows NVMe/PCIe command
   flow and device-shape parity rather than the old late-DXE poll, the cdboot stub
   writer, basic ISO reachability, or interrupt delivery. The live probe now keeps
@@ -258,11 +259,16 @@ The remaining OS-boot contract work is now narrower:
   closed: Asynchronous Event Request commands are accepted and left pending,
   standard `Get Features` probes return boring defaults, `Identify` CNS `0x06`
   succeeds for the NVM command set, QEMU's command-effects log page `0x05` is
-  modelled, and firmware-slot log page `0x03` completes. The latest trace has no
-  `invalid-opcode` completions; the remaining NVMe `invalid-field` completions
-  are Windows probes of optional or vendor/reserved surfaces (`Get Features` FID
-  `0xd0`/`0x7f` and log pages `0xc0`/`0xc1`) and should be diffed against QEMU
-  before being papered over.
+  modelled, firmware-slot log page `0x03` completes, and Security Send/Receive
+  opcodes are advertised with QEMU's default no-SPDM behavior. Windows currently
+  issues two zero-length `SECURITY_RECV` probes; BridgeVM reports
+  `invalid-field`, matching QEMU's rejected short-request shape. The latest trace
+  has no `invalid-opcode` completions; the remaining NVMe `invalid-field`
+  completions are Windows probes of optional or vendor/reserved surfaces
+  (`Get Features` FID `0xd0`/`0x7f` and log pages `0xc0`/`0xc1`) and should be
+  diffed against QEMU before being papered over. The next observed QEMU-only NVMe
+  feature answer to match is volatile write cache (`Get Features` FID `0x06`),
+  which QEMU reports as enabled.
 - add the remaining ACPI parity tables/metadata that matter for Windows/Linux
   device paths (notably DBG2; Apple `hv_gic` lacks guest-visible LPIs/ITS, so
   current MSI routing is advertised as a MADT Generic MSI Frame instead of
