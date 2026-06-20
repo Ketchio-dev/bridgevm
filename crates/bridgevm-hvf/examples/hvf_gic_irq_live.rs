@@ -38,7 +38,11 @@ extern "C" {
     fn hv_vm_create(config: *mut c_void) -> HvReturn;
     fn hv_vm_destroy() -> HvReturn;
     fn hv_vm_map(addr: *mut c_void, ipa: u64, size: usize, flags: u64) -> HvReturn;
-    fn hv_vcpu_create(vcpu: *mut HvVcpuT, exit: *mut *mut HvVcpuExit, config: *mut c_void) -> HvReturn;
+    fn hv_vcpu_create(
+        vcpu: *mut HvVcpuT,
+        exit: *mut *mut HvVcpuExit,
+        config: *mut c_void,
+    ) -> HvReturn;
     fn hv_vcpu_destroy(vcpu: HvVcpuT) -> HvReturn;
     fn hv_vcpu_run(vcpu: HvVcpuT) -> HvReturn;
     fn hv_vcpus_exit(vcpus: *const HvVcpuT, vcpu_count: u32) -> HvReturn;
@@ -64,11 +68,10 @@ const FLAG_OFFSET: usize = 0x3000;
 // GICD_CTLR, redistributor SGI frame (IGROUPR0/ISENABLER0/IPRIORITYR for PPI 27),
 // arm CNTV = now + 0x100000, enable IRQs, spin. (Assembled from gic-timer asm.)
 const SETUP: [u32; 29] = [
-    0xd2800020, 0xd518cca0, 0xd5033fdf, 0xd2801fe0, 0xd5184600, 0xd2800020, 0xd518cce0,
-    0xd2a80000, 0xf2820000, 0xd518c000, 0xd5033fdf, 0xd2a10001, 0x52800262, 0xb9000022,
-    0xd2a10161, 0x52a10002, 0xb9008022, 0xb9010022, 0xb904183f, 0xd5033f9f, 0xd5033fdf,
-    0xd53be040, 0xd2a00203, 0x8b030000, 0xd51be340, 0x52800020, 0xd51be320, 0xd50342ff,
-    0x14000000,
+    0xd2800020, 0xd518cca0, 0xd5033fdf, 0xd2801fe0, 0xd5184600, 0xd2800020, 0xd518cce0, 0xd2a80000,
+    0xf2820000, 0xd518c000, 0xd5033fdf, 0xd2a10001, 0x52800262, 0xb9000022, 0xd2a10161, 0x52a10002,
+    0xb9008022, 0xb9010022, 0xb904183f, 0xd5033f9f, 0xd5033fdf, 0xd53be040, 0xd2a00203, 0x8b030000,
+    0xd51be340, 0x52800020, 0xd51be320, 0xd50342ff, 0x14000000,
 ];
 // IRQ handler (placed at VBAR + 0x280): ack ICC_IAR1_EL1, write flag at 0x40003000,
 // EOI, eret.
@@ -93,14 +96,23 @@ fn main() {
             std::ptr::copy_nonoverlapping(w.to_le_bytes().as_ptr(), mem.add(0x1280 + i * 4), 4);
         }
         assert_eq!(
-            hv_vm_map(mem as *mut c_void, GUEST_BASE, 0x1_0000, HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC),
+            hv_vm_map(
+                mem as *mut c_void,
+                GUEST_BASE,
+                0x1_0000,
+                HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC
+            ),
             0,
             "hv_vm_map"
         );
 
         let mut vcpu: HvVcpuT = 0;
         let mut exit: *mut HvVcpuExit = null_mut();
-        assert_eq!(hv_vcpu_create(&mut vcpu, &mut exit, null_mut()), 0, "hv_vcpu_create");
+        assert_eq!(
+            hv_vcpu_create(&mut vcpu, &mut exit, null_mut()),
+            0,
+            "hv_vcpu_create"
+        );
         hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, 0x8000_0000);
         hv_vcpu_set_reg(vcpu, HV_REG_PC, GUEST_BASE);
         hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5);
@@ -128,7 +140,10 @@ fn main() {
                 }
                 1 => {
                     let esr = (*exit).exception.syndrome;
-                    println!("unexpected exception EC {:#x} ESR {esr:#x}", (esr >> 26) & 0x3f);
+                    println!(
+                        "unexpected exception EC {:#x} ESR {esr:#x}",
+                        (esr >> 26) & 0x3f
+                    );
                     break;
                 }
                 r => {
@@ -143,8 +158,16 @@ fn main() {
         hv_vm_destroy();
 
         println!("flag={flag} vtimer_exits={vtimer_exits}");
-        assert_eq!(flag, 1, "guest IRQ handler must have run (timer PPI delivered)");
-        assert_eq!(vtimer_exits, 0, "with hv_gic the timer is delivered in-kernel (no VTIMER exit)");
-        println!("LIVE PROOF: hv_gic delivers the architected-timer PPI to an EL1 guest IRQ handler");
+        assert_eq!(
+            flag, 1,
+            "guest IRQ handler must have run (timer PPI delivered)"
+        );
+        assert_eq!(
+            vtimer_exits, 0,
+            "with hv_gic the timer is delivered in-kernel (no VTIMER exit)"
+        );
+        println!(
+            "LIVE PROOF: hv_gic delivers the architected-timer PPI to an EL1 guest IRQ handler"
+        );
     }
 }

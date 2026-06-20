@@ -263,7 +263,7 @@ impl NvmeController {
     fn cap(&self) -> u64 {
         let mqes = u64::from(MAX_QUEUE_ENTRIES - 1) << CAP_MQES_SHIFT;
         let to = 2u64 << CAP_TO_SHIFT; // 2 * 500 ms = 1 s
-        // DSTRD = 0 (4-byte stride). CSS bit 37 ⇒ NVM command set supported.
+                                       // DSTRD = 0 (4-byte stride). CSS bit 37 ⇒ NVM command set supported.
         mqes | CAP_CQR_BIT | to | (0u64 << CAP_DSTRD_SHIFT) | CAP_CSS_NVM_BIT
     }
 
@@ -543,8 +543,7 @@ impl NvmeController {
             // The completion DW0 carries the allocated counts (0-based: NSQA in
             // bits 15:0, NCQA in bits 31:16); the generic completion path emits
             // it via `last_feature_result`.
-            self.last_feature_result =
-                (u32::from(cq_granted) << 16) | u32::from(sq_granted);
+            self.last_feature_result = (u32::from(cq_granted) << 16) | u32::from(sq_granted);
         }
         SC_SUCCESS
     }
@@ -628,7 +627,7 @@ impl NvmeController {
 
         let mut entry = [0u8; 16];
         entry[0..4].copy_from_slice(&dw0.to_le_bytes()); // command-specific DW0
-        // DW1 reserved (4..8).
+                                                         // DW1 reserved (4..8).
         entry[8..10].copy_from_slice(&sq_head.to_le_bytes()); // SQ head pointer
         entry[10..12].copy_from_slice(&sqid.to_le_bytes()); // SQ identifier
         entry[12..14].copy_from_slice(&cmd.command_id.to_le_bytes());
@@ -829,8 +828,16 @@ mod tests {
     #[test]
     fn enabling_cc_sets_csts_rdy() {
         let mut ctrl = NvmeController::new(0);
-        assert_eq!(ctrl.mmio_read(REG_CSTS, 4) & 1, 0, "RDY clear before enable");
-        ctrl.mmio_write(REG_AQA, 4, (u32::from(QDEPTH - 1) << 16 | u32::from(QDEPTH - 1)).into());
+        assert_eq!(
+            ctrl.mmio_read(REG_CSTS, 4) & 1,
+            0,
+            "RDY clear before enable"
+        );
+        ctrl.mmio_write(
+            REG_AQA,
+            4,
+            (u32::from(QDEPTH - 1) << 16 | u32::from(QDEPTH - 1)).into(),
+        );
         ctrl.mmio_write(REG_ASQ, 8, ASQ_BASE);
         ctrl.mmio_write(REG_ACQ, 8, ACQ_BASE);
         ctrl.mmio_write(REG_CC, 4, u64::from(CC_EN_BIT));
@@ -886,7 +893,10 @@ mod tests {
             0,
         );
         submit_admin(&mut ctrl, &mut mem, 0, &sqe);
-        assert_eq!(completion_status(&read_completion(&mem, ACQ_BASE, 0)), SC_SUCCESS);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_SUCCESS
+        );
 
         let id = mem.read_bytes(DATA_BASE, PAGE_SIZE).unwrap();
         // NSZE = total logical blocks = disk size / 512.
@@ -924,7 +934,10 @@ mod tests {
         let cdw10 = (u32::from(QDEPTH - 1) << 16) | 1; // QSIZE(0-based)<<16 | QID
         let cq_cmd = encode_sqe(ADMIN_OP_CREATE_IO_CQ, 1, 0, IO_CQ_BASE, cdw10, 0, 0);
         submit_admin(&mut ctrl, &mut mem, 0, &cq_cmd);
-        assert_eq!(completion_status(&read_completion(&mem, ACQ_BASE, 0)), SC_SUCCESS);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_SUCCESS
+        );
 
         // 2) CREATE I/O SUBMISSION QUEUE (QID 1 → CQID 1, base IO_SQ_BASE).
         let sq_cmd = encode_sqe(
@@ -937,7 +950,10 @@ mod tests {
             0,
         );
         submit_admin(&mut ctrl, &mut mem, 1, &sq_cmd);
-        assert_eq!(completion_status(&read_completion(&mem, ACQ_BASE, 1)), SC_SUCCESS);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 1)),
+            SC_SUCCESS
+        );
 
         // 3) Stage a known pattern in the guest data buffer and WRITE LBA 7.
         let pattern: Vec<u8> = (0..LBA_SIZE).map(|i| (i % 256) as u8).collect();
@@ -948,9 +964,9 @@ mod tests {
             0x10,
             NSID,
             DATA_BASE,
-            slba as u32,       // CDW10 = SLBA low
+            slba as u32,         // CDW10 = SLBA low
             (slba >> 32) as u32, // CDW11 = SLBA high
-            0,                 // CDW12 = NLB 0-based ⇒ 1 block
+            0,                   // CDW12 = NLB 0-based ⇒ 1 block
         );
         // I/O SQ 1 tail doorbell is at DOORBELL_BASE + 2*4 (SQ1TDBL).
         let io_sq1_dbl = REG_DOORBELL_BASE + 2 * 4;

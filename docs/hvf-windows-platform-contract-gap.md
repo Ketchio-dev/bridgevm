@@ -1,6 +1,14 @@
 # HVF Windows path: platform-contract gap vs. QEMU `virt`
 
-_Last updated: 2026-06-19._
+_Last updated: 2026-06-20._
+
+> **Status note:** this document records the original contract gap that motivated
+> Path A. The active Path A source of truth is now
+> [`crates/bridgevm-hvf/src/machine.rs`](../crates/bridgevm-hvf/src/machine.rs) plus
+> [`crates/bridgevm-hvf/src/platform_virt.rs`](../crates/bridgevm-hvf/src/platform_virt.rs).
+> That implementation now boots stock ArmVirtQemu firmware to the UEFI shell. The
+> legacy `src/lib.rs` probe map below is retained as historical context, not as the
+> desired machine model.
 
 ## Why this document exists
 
@@ -19,13 +27,13 @@ installs the **guest ACPI tables that QEMU generates and exposes through
 GICv3 (with an ITS for MSI), a `pci-host-ecam-generic` root complex, PL011/PL031,
 and flash banks — all at the QEMU `virt` addresses, described by a QEMU-shaped DTB.
 
-Today `bridgevm-hvf` presents almost none of that. It loads QEMU's firmware onto a
-**non-QEMU platform**. That mismatch — not a firmware bug — is the root cause of
-the `try-recommended-vbar` / `low-vector-repair` / `restore-before-eret` /
-`diagnostic` vector-patching seen in the firmware run-loop smokes: the firmware
-faults early because the hardware underneath it is not the hardware it was built
-for, and the run loop tries to patch around the faults instead of supplying the
-contract.
+Originally `bridgevm-hvf` presented almost none of that and loaded QEMU's firmware
+onto a **non-QEMU platform**. That mismatch — not a firmware bug — was the root
+cause of the `try-recommended-vbar` / `low-vector-repair` /
+`restore-before-eret` / `diagnostic` vector-patching seen in the early firmware
+run-loop smokes: the firmware faulted early because the hardware underneath it was
+not the hardware it was built for, and the run loop tried to patch around the
+faults instead of supplying the contract.
 
 > **Windows 11 ARM consumes ACPI, not a device tree.** A DTB handed to the
 > *firmware* is fine and expected (that is how ArmVirtQemu works); the DTB just has
@@ -67,7 +75,7 @@ across recent QEMU releases but the ECAM/highmem layout can shift with options.
 
 GIC: `gic-version=3`, `#interrupt-cells = <3>`, ITS is `msi-controller`.
 
-### `bridgevm-hvf` current map (`crates/bridgevm-hvf/src/lib.rs`)
+### Legacy `bridgevm-hvf` probe map (`crates/bridgevm-hvf/src/lib.rs`)
 
 | Constant | Base |
 | --- | --- |
@@ -83,7 +91,7 @@ GIC: `gic-version=3`, `#interrupt-cells = <3>`, ITS is `msi-controller`.
 | `WINDOWS_ARM_GUEST_RAM_IPA` | `0x4000_0000` |
 | platform DTB | `0x4001_0000` |
 
-## The gap, side by side
+## The original gap, side by side
 
 | Capability | QEMU `virt` (the firmware's contract) | `bridgevm-hvf` today | Verdict |
 | --- | --- | --- | --- |
@@ -98,10 +106,10 @@ GIC: `gic-version=3`, `#interrupt-cells = <3>`, ITS is `msi-controller`.
 | virtio transport | virtio-**mmio** @ `0x0A00_0000`, 0x200 stride | virtio-mmio @ `0x1000_2000`/`0x1000_3000` | MISMATCH (base, stride, count); and virtio-mmio is the wrong transport for an inbox-driver Windows install (see strategy). |
 | RAM base | `0x4000_0000` | `0x4000_0000` | ✅ **MATCH — the only one.** |
 
-**Bottom line:** of QEMU `virt`'s entire device map, the only thing the current
-HVF platform reproduces is the RAM base. The two genuinely *missing* subsystems —
-`fw_cfg` and PCIe ECAM (+ ITS) — are precisely the ones that gate ACPI and storage,
-i.e. the ones that gate Windows booting at all.
+**Original bottom line:** of QEMU `virt`'s entire device map, the legacy HVF probe
+map reproduced only the RAM base. The two genuinely missing subsystems —
+`fw_cfg` and PCIe ECAM (+ ITS) — were precisely the ones that gated ACPI and
+storage, i.e. the ones that gate Windows booting at all.
 
 ## What this implies (see the strategy doc for the decision)
 
@@ -113,7 +121,9 @@ the rejected alternative (Path B, own platform + own EDK2 + hand-written ACPI), 
 the sequenced plan live in
 [`docs/hvf-windows-engine-strategy.md`](hvf-windows-engine-strategy.md).
 
-The first brick of Path A — the `fw_cfg` keystone — is implemented and unit-tested
-in [`crates/bridgevm-hvf/src/fwcfg.rs`](../crates/bridgevm-hvf/src/fwcfg.rs)
-(`FW_CFG_MMIO_BASE = 0x0902_0000`). It models the selector/data and DMA interfaces;
-HVF wiring (mapping the MMIO window and feeding ACPI/SMBIOS blobs) is the next step.
+Path A now has `fw_cfg`, a QEMU-shaped DTB, Apple `hv_gic`, PL011, PL031, empty
+virtio-mmio slots, PCIe ECAM host-bridge config space, and a minimal P30 pflash
+vars model wired behind `VirtPlatform::on_mmio()`. The stock ArmVirtQemu firmware
+boots to the UEFI shell. The remaining gap is above firmware: ACPI table-loader
+delivery, real PCIe endpoints/BAR routing, NVMe, and then Linux ACPI / Windows
+installer validation.

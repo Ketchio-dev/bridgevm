@@ -41,7 +41,11 @@ extern "C" {
     fn hv_vm_create(config: *mut c_void) -> HvReturn;
     fn hv_vm_destroy() -> HvReturn;
     fn hv_vm_map(addr: *mut c_void, ipa: u64, size: usize, flags: u64) -> HvReturn;
-    fn hv_vcpu_create(vcpu: *mut HvVcpuT, exit: *mut *mut HvVcpuExit, config: *mut c_void) -> HvReturn;
+    fn hv_vcpu_create(
+        vcpu: *mut HvVcpuT,
+        exit: *mut *mut HvVcpuExit,
+        config: *mut c_void,
+    ) -> HvReturn;
     fn hv_vcpu_destroy(vcpu: HvVcpuT) -> HvReturn;
     fn hv_vcpu_run(vcpu: HvVcpuT) -> HvReturn;
     fn hv_vcpu_get_reg(vcpu: HvVcpuT, reg: u32, value: *mut u64) -> HvReturn;
@@ -86,7 +90,11 @@ fn main() {
 
         let mut vcpu: HvVcpuT = 0;
         let mut exit: *mut HvVcpuExit = null_mut();
-        assert_eq!(hv_vcpu_create(&mut vcpu, &mut exit, null_mut()), 0, "hv_vcpu_create");
+        assert_eq!(
+            hv_vcpu_create(&mut vcpu, &mut exit, null_mut()),
+            0,
+            "hv_vcpu_create"
+        );
         hv_vcpu_set_reg(vcpu, HV_REG_PC, GUEST_BASE);
         hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5); // EL1h, DAIF masked
 
@@ -115,13 +123,16 @@ fn main() {
                     if is_write {
                         let mut v = 0u64;
                         hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v);
-                        let _ = platform.on_mmio(ipa, MmioOp::Write { size, value: v }, &mut guest_ram);
+                        let _ =
+                            platform.on_mmio(ipa, MmioOp::Write { size, value: v }, &mut guest_ram);
                     } else {
                         match platform.on_mmio(ipa, MmioOp::Read { size }, &mut guest_ram) {
                             MmioOutcome::ReadValue(v) => {
                                 hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
                                 mmio_reads += 1;
-                                println!("MMIO read  @ {ipa:#011x} size {size} -> {v:#04x} into x{srt}");
+                                println!(
+                                    "MMIO read  @ {ipa:#011x} size {size} -> {v:#04x} into x{srt}"
+                                );
                             }
                             other => println!("on_mmio @ {ipa:#x} -> {other:?}"),
                         }
@@ -146,7 +157,10 @@ fn main() {
 
         println!("guest X0   = {x0:#04x} ('{}')", x0 as u8 as char);
         assert_eq!(mmio_reads, 1, "exactly one fw_cfg MMIO read expected");
-        assert_eq!(x0, 0x51, "guest must observe fw_cfg signature byte 'Q' (0x51)");
+        assert_eq!(
+            x0, 0x51,
+            "guest must observe fw_cfg signature byte 'Q' (0x51)"
+        );
         println!(
             "LIVE PROOF: real guest MMIO -> VirtPlatform::on_mmio -> fw_cfg -> guest saw 'Q' (0x51)"
         );

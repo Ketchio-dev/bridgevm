@@ -7,11 +7,10 @@ use bridgevm_hvf::dtb::{build_virt_fdt, VirtFdtConfig};
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = args.next().expect("usage: emit_virt_dtb <out.dtb> [cpus] [ram_gib]");
-    let cpu_count = args
+    let path = args
         .next()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(4);
+        .expect("usage: emit_virt_dtb <out.dtb> [cpus] [ram_gib]");
+    let cpu_count = args.next().and_then(|s| s.parse().ok()).unwrap_or(4);
     let ram_gib: u64 = args.next().and_then(|s| s.parse().ok()).unwrap_or(6);
     let dtb = build_virt_fdt(&VirtFdtConfig {
         cpu_count,

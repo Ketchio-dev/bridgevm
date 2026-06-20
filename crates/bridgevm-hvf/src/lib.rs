@@ -15,6 +15,7 @@ pub mod fwcfg;
 pub mod machine;
 pub mod nvme;
 pub mod pcie;
+pub mod pflash;
 pub mod pl011;
 pub mod pl031;
 pub mod platform_virt;

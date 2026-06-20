@@ -74,8 +74,7 @@ pub const VIRTIO_MMIO_SLOT_SIZE: u64 = 0x200;
 /// Number of virtio-mmio slots QEMU `virt` exposes.
 pub const VIRTIO_MMIO_COUNT: u64 = 32;
 /// virtio-mmio transport array.
-pub const VIRTIO_MMIO: Region =
-    Region::new(0x0A00_0000, VIRTIO_MMIO_SLOT_SIZE * VIRTIO_MMIO_COUNT);
+pub const VIRTIO_MMIO: Region = Region::new(0x0A00_0000, VIRTIO_MMIO_SLOT_SIZE * VIRTIO_MMIO_COUNT);
 
 /// PCIe ECAM config space (`pci-host-ecam-generic`), buses 0..=0xff.
 pub const PCIE_ECAM: Region = Region::new(0x40_1000_0000, 0x1000_0000);

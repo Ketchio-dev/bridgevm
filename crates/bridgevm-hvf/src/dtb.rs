@@ -57,7 +57,8 @@ impl FdtBuilder {
     }
 
     pub fn begin_node(&mut self, name: &str) {
-        self.structure.extend_from_slice(&FDT_BEGIN_NODE.to_be_bytes());
+        self.structure
+            .extend_from_slice(&FDT_BEGIN_NODE.to_be_bytes());
         self.structure.extend_from_slice(name.as_bytes());
         self.structure.push(0);
         pad_to_4(&mut self.structure);
@@ -65,7 +66,8 @@ impl FdtBuilder {
     }
 
     pub fn end_node(&mut self) {
-        self.structure.extend_from_slice(&FDT_END_NODE.to_be_bytes());
+        self.structure
+            .extend_from_slice(&FDT_END_NODE.to_be_bytes());
         self.depth -= 1;
     }
 
@@ -273,10 +275,18 @@ pub fn build_virt_fdt(cfg: &VirtFdtConfig) -> Vec<u8> {
     b.prop_cells(
         "interrupts",
         &[
-            IRQ_PPI, machine::PPI_TIMER_SECURE, IRQ_LEVEL_HI,
-            IRQ_PPI, machine::PPI_TIMER_NONSEC, IRQ_LEVEL_HI,
-            IRQ_PPI, machine::PPI_TIMER_VIRT, IRQ_LEVEL_HI,
-            IRQ_PPI, machine::PPI_TIMER_HYP, IRQ_LEVEL_HI,
+            IRQ_PPI,
+            machine::PPI_TIMER_SECURE,
+            IRQ_LEVEL_HI,
+            IRQ_PPI,
+            machine::PPI_TIMER_NONSEC,
+            IRQ_LEVEL_HI,
+            IRQ_PPI,
+            machine::PPI_TIMER_VIRT,
+            IRQ_LEVEL_HI,
+            IRQ_PPI,
+            machine::PPI_TIMER_HYP,
+            IRQ_LEVEL_HI,
         ],
     );
     b.end_node();
@@ -293,10 +303,14 @@ pub fn build_virt_fdt(cfg: &VirtFdtConfig) -> Vec<u8> {
     b.prop_cells(
         "reg",
         &[
-            (machine::GIC_DIST.base >> 32) as u32, machine::GIC_DIST.base as u32,
-            (machine::GIC_DIST.size >> 32) as u32, machine::GIC_DIST.size as u32,
-            (machine::GIC_REDIST.base >> 32) as u32, machine::GIC_REDIST.base as u32,
-            (machine::GIC_REDIST.size >> 32) as u32, machine::GIC_REDIST.size as u32,
+            (machine::GIC_DIST.base >> 32) as u32,
+            machine::GIC_DIST.base as u32,
+            (machine::GIC_DIST.size >> 32) as u32,
+            machine::GIC_DIST.size as u32,
+            (machine::GIC_REDIST.base >> 32) as u32,
+            machine::GIC_REDIST.base as u32,
+            (machine::GIC_REDIST.size >> 32) as u32,
+            machine::GIC_REDIST.size as u32,
         ],
     );
     b.prop_u32("phandle", PHANDLE_GIC);
@@ -308,10 +322,7 @@ pub fn build_virt_fdt(cfg: &VirtFdtConfig) -> Vec<u8> {
     b.begin_node("pl011@9000000");
     b.prop_str_list("compatible", &["arm,pl011", "arm,primecell"]);
     b.prop_reg64("reg", machine::UART.base, machine::UART.size);
-    b.prop_cells(
-        "interrupts",
-        &[IRQ_SPI, machine::SPI_UART, IRQ_LEVEL_HI],
-    );
+    b.prop_cells("interrupts", &[IRQ_SPI, machine::SPI_UART, IRQ_LEVEL_HI]);
     b.prop_cells("clocks", &[PHANDLE_APB_PCLK, PHANDLE_APB_PCLK]);
     b.prop_str_list("clock-names", &["uartclk", "apb_pclk"]);
     b.end_node();
@@ -333,10 +344,14 @@ pub fn build_virt_fdt(cfg: &VirtFdtConfig) -> Vec<u8> {
     b.prop_cells(
         "reg",
         &[
-            (machine::FLASH_CODE.base >> 32) as u32, machine::FLASH_CODE.base as u32,
-            (machine::FLASH_CODE.size >> 32) as u32, machine::FLASH_CODE.size as u32,
-            (machine::FLASH_VARS.base >> 32) as u32, machine::FLASH_VARS.base as u32,
-            (machine::FLASH_VARS.size >> 32) as u32, machine::FLASH_VARS.size as u32,
+            (machine::FLASH_CODE.base >> 32) as u32,
+            machine::FLASH_CODE.base as u32,
+            (machine::FLASH_CODE.size >> 32) as u32,
+            machine::FLASH_CODE.size as u32,
+            (machine::FLASH_VARS.base >> 32) as u32,
+            machine::FLASH_VARS.base as u32,
+            (machine::FLASH_VARS.size >> 32) as u32,
+            machine::FLASH_VARS.size as u32,
         ],
     );
     b.prop_u32("bank-width", 4);
@@ -389,13 +404,21 @@ fn build_pcie_node(b: &mut FdtBuilder) {
         "ranges",
         &[
             // I/O space (0x01000000)
-            0x0100_0000, 0x0, 0x0,
-            (io.base >> 32) as u32, io.base as u32,
-            (io.size >> 32) as u32, io.size as u32,
+            0x0100_0000,
+            0x0,
+            0x0,
+            (io.base >> 32) as u32,
+            io.base as u32,
+            (io.size >> 32) as u32,
+            io.size as u32,
             // 32-bit MMIO (0x02000000)
-            0x0200_0000, 0x0, m32.base as u32,
-            (m32.base >> 32) as u32, m32.base as u32,
-            (m32.size >> 32) as u32, m32.size as u32,
+            0x0200_0000,
+            0x0,
+            m32.base as u32,
+            (m32.base >> 32) as u32,
+            m32.base as u32,
+            (m32.size >> 32) as u32,
+            m32.size as u32,
         ],
     );
 
@@ -406,9 +429,16 @@ fn build_pcie_node(b: &mut FdtBuilder) {
         for pin in 1u32..=4 {
             let spi = machine::SPI_PCIE_INTA + ((dev + pin - 1) % 4);
             map.extend_from_slice(&[
-                dev << 11, 0x0, 0x0, // pci addr (device in bits 11..15)
-                pin,                 // pci interrupt pin (1=INTA)
-                PHANDLE_GIC, 0x0, 0x0, IRQ_SPI, spi, IRQ_LEVEL_HI,
+                dev << 11,
+                0x0,
+                0x0, // pci addr (device in bits 11..15)
+                pin, // pci interrupt pin (1=INTA)
+                PHANDLE_GIC,
+                0x0,
+                0x0,
+                IRQ_SPI,
+                spi,
+                IRQ_LEVEL_HI,
             ]);
         }
     }
@@ -434,7 +464,11 @@ mod tests {
         let dtb = b.finish();
 
         assert_eq!(be32(&dtb, 0), FDT_MAGIC);
-        assert_eq!(be32(&dtb, 4) as usize, dtb.len(), "totalsize == byte length");
+        assert_eq!(
+            be32(&dtb, 4) as usize,
+            dtb.len(),
+            "totalsize == byte length"
+        );
         assert_eq!(be32(&dtb, 20), FDT_VERSION);
         assert_eq!(be32(&dtb, 24), FDT_LAST_COMP_VERSION);
     }

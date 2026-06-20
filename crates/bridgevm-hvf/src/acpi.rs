@@ -329,7 +329,7 @@ fn build_madt(cpu_count: u64) -> Vec<u8> {
         t.u64(0); // GICH (hypervisor interface)
         t.u32(0); // VGIC Maintenance interrupt
         t.u64(redistributor_base(cpu)); // GICR Base Address (per-CPU)
-        // MPIDR: affinity packed Aff3[39:32] | Aff2[23:16] | Aff1[15:8] | Aff0[7:0].
+                                        // MPIDR: affinity packed Aff3[39:32] | Aff2[23:16] | Aff1[15:8] | Aff0[7:0].
         t.u64(mpidr_for(cpu));
         t.u8(0); // Processor Power Efficiency Class
         t.u8(0); // reserved
@@ -403,7 +403,7 @@ fn ppi_to_gsiv(ppi: u32) -> u32 {
 fn build_mcfg() -> Vec<u8> {
     let mut t = Table::new(b"MCFG", 1);
     t.u64(0); // reserved
-    // One configuration-space allocation entry (16 bytes).
+              // One configuration-space allocation entry (16 bytes).
     t.u64(machine::PCIE_ECAM.base); // Base Address of enhanced config space
     t.u16(0); // PCI Segment Group Number
     t.u8(0); // Start PCI bus number
@@ -454,7 +454,13 @@ mod tests {
     /// Read a little-endian u64 at `off`.
     fn le64(b: &[u8], off: usize) -> u64 {
         u64::from_le_bytes([
-            b[off], b[off + 1], b[off + 2], b[off + 3], b[off + 4], b[off + 5], b[off + 6],
+            b[off],
+            b[off + 1],
+            b[off + 2],
+            b[off + 3],
+            b[off + 4],
+            b[off + 5],
+            b[off + 6],
             b[off + 7],
         ])
     }
@@ -467,7 +473,10 @@ mod tests {
         while off + ACPI_HEADER_LEN <= tables.len() {
             let sig = String::from_utf8_lossy(&tables[off..off + 4]).to_string();
             let len = le32(tables, off + 4) as usize;
-            assert!(len >= ACPI_HEADER_LEN, "table {sig} length too small: {len}");
+            assert!(
+                len >= ACPI_HEADER_LEN,
+                "table {sig} length too small: {len}"
+            );
             assert!(off + len <= tables.len(), "table {sig} overruns blob");
             out.push((sig, &tables[off..off + len]));
             off += len;

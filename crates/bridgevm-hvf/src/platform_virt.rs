@@ -20,6 +20,7 @@ use crate::dtb::{build_virt_fdt, VirtFdtConfig};
 use crate::fwcfg::{FwCfg, GuestMemoryMut};
 use crate::machine::{self, Region};
 use crate::pcie::PcieEcam;
+use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
 use crate::pl031::Pl031;
 
@@ -66,6 +67,7 @@ pub struct VirtPlatform {
     uart: Pl011,
     rtc: Pl031,
     pcie: PcieEcam,
+    flash_vars: P30NorFlash,
     dtb: Vec<u8>,
 }
 
@@ -88,8 +90,20 @@ impl VirtPlatform {
             uart: Pl011::new(),
             rtc: Pl031::new(),
             pcie: PcieEcam::new(),
+            flash_vars: P30NorFlash::new(
+                machine::FLASH_VARS.base,
+                machine::FLASH_VARS.size as usize,
+                0x40000,
+            ),
             dtb,
         }
+    }
+
+    /// Load the writable pflash bank backing bytes. Live HVF code leaves the vars
+    /// bank unmapped so NOR command/status reads and writes trap here instead of
+    /// being treated as plain RAM stores.
+    pub fn load_flash_vars(&mut self, data: &[u8]) {
+        self.flash_vars.load(data);
     }
 
     /// Register the guest ACPI tables (`etc/acpi/rsdp`, `etc/acpi/tables`,
@@ -138,6 +152,7 @@ impl VirtPlatform {
             "rtc" => self.rtc_access(gpa - machine::RTC.base, op),
             "pcie-ecam" => self.pcie_access(gpa - machine::PCIE_ECAM.base, op),
             "virtio-mmio" => self.virtio_mmio_access(gpa - machine::VIRTIO_MMIO.base, op),
+            "flash-vars" => self.flash_vars.access(gpa, op),
             // Modelled in the machine map but no device behaviour yet — surfaced
             // precisely so bring-up traces show the next thing to implement.
             other => MmioOutcome::KnownUnimplemented(other),
@@ -441,6 +456,32 @@ mod tests {
         assert_eq!(
             p.on_mmio(machine::RTC.base, MmioOp::Read { size: 4 }, &mut mem),
             MmioOutcome::ReadValue(0x2026_0619)
+        );
+    }
+
+    #[test]
+    fn flash_vars_routes_nor_status_protocol() {
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+        p.load_flash_vars(&[0x78, 0x56, 0x34, 0x12]);
+        assert_eq!(
+            p.on_mmio(machine::FLASH_VARS.base, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0x1234_5678)
+        );
+        assert_eq!(
+            p.on_mmio(
+                machine::FLASH_VARS.base,
+                MmioOp::Write {
+                    size: 4,
+                    value: 0x0070_0070,
+                },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(machine::FLASH_VARS.base, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0x0080_0080)
         );
     }
 

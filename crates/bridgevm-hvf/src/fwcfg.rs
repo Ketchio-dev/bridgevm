@@ -279,13 +279,7 @@ impl FwCfg {
     /// and DMA registers are **big-endian** per `qemu,fw-cfg-mmio` — guest firmware
     /// stores `SwapBytes16(selector)` / `SwapBytes64(dma_addr)` — so swap to recover
     /// the logical value. A write to the DMA register triggers a transfer via `mem`.
-    pub fn mmio_write(
-        &mut self,
-        offset: u64,
-        _size: u8,
-        value: u64,
-        mem: &mut dyn GuestMemoryMut,
-    ) {
+    pub fn mmio_write(&mut self, offset: u64, _size: u8, value: u64, mem: &mut dyn GuestMemoryMut) {
         match offset {
             REG_SELECTOR => self.select((value as u16).swap_bytes()),
             REG_DMA => self.run_dma_at(value.swap_bytes(), mem),
@@ -498,10 +492,18 @@ mod tests {
         let mut fw = FwCfg::new();
         fw.add_file("etc/x", vec![1, 2, 3]);
         let mut mem = FakeMem::new(0x4000_0000, 0);
-        fw.mmio_write(REG_SELECTOR, 2, u64::from(KEY_FILE_DIR.swap_bytes()), &mut mem);
+        fw.mmio_write(
+            REG_SELECTOR,
+            2,
+            u64::from(KEY_FILE_DIR.swap_bytes()),
+            &mut mem,
+        );
         // FILE_DIR begins with a big-endian u32 file count == 1.
         let count = fw.mmio_read(REG_DATA, 4);
-        assert_eq!(count, 1, "selector must resolve to FILE_DIR, not a bogus item");
+        assert_eq!(
+            count, 1,
+            "selector must resolve to FILE_DIR, not a bogus item"
+        );
     }
 
     #[test]
@@ -535,7 +537,9 @@ mod tests {
     fn dma_write_into_readonly_entry_is_rejected() {
         let mut fw = FwCfg::new();
         let mut mem = FakeMem::new(0x4000_0000, 0x1000);
-        mem.write_bytes(0x4000_0000, &[0xaa, 0xbb]).then_some(()).unwrap();
+        mem.write_bytes(0x4000_0000, &[0xaa, 0xbb])
+            .then_some(())
+            .unwrap();
         fw.select(KEY_SIGNATURE);
         let access = FwCfgDmaAccess {
             control: DMA_CTL_WRITE,

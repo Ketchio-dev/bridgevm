@@ -35,7 +35,11 @@ extern "C" {
     fn hv_vm_create(config: *mut c_void) -> HvReturn;
     fn hv_vm_destroy() -> HvReturn;
     fn hv_vm_map(addr: *mut c_void, ipa: u64, size: usize, flags: u64) -> HvReturn;
-    fn hv_vcpu_create(vcpu: *mut HvVcpuT, exit: *mut *mut HvVcpuExit, config: *mut c_void) -> HvReturn;
+    fn hv_vcpu_create(
+        vcpu: *mut HvVcpuT,
+        exit: *mut *mut HvVcpuExit,
+        config: *mut c_void,
+    ) -> HvReturn;
     fn hv_vcpu_destroy(vcpu: HvVcpuT) -> HvReturn;
     fn hv_vcpu_run(vcpu: HvVcpuT) -> HvReturn;
     fn hv_vcpu_get_reg(vcpu: HvVcpuT, reg: u32, value: *mut u64) -> HvReturn;
@@ -75,13 +79,22 @@ fn main() {
             std::ptr::copy_nonoverlapping(w.to_le_bytes().as_ptr(), mem.add(i * 4), 4);
         }
         assert_eq!(
-            hv_vm_map(mem as *mut c_void, GUEST_BASE, size, HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC),
+            hv_vm_map(
+                mem as *mut c_void,
+                GUEST_BASE,
+                size,
+                HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC
+            ),
             0,
             "hv_vm_map"
         );
         let mut vcpu: HvVcpuT = 0;
         let mut exit: *mut HvVcpuExit = null_mut();
-        assert_eq!(hv_vcpu_create(&mut vcpu, &mut exit, null_mut()), 0, "hv_vcpu_create");
+        assert_eq!(
+            hv_vcpu_create(&mut vcpu, &mut exit, null_mut()),
+            0,
+            "hv_vcpu_create"
+        );
         hv_vcpu_set_reg(vcpu, HV_REG_PC, GUEST_BASE);
         hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5);
 
@@ -107,7 +120,8 @@ fn main() {
                     if is_write {
                         let mut v = 0u64;
                         hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v);
-                        let _ = platform.on_mmio(ipa, MmioOp::Write { size, value: v }, &mut guest_ram);
+                        let _ =
+                            platform.on_mmio(ipa, MmioOp::Write { size, value: v }, &mut guest_ram);
                     } else if let MmioOutcome::ReadValue(v) =
                         platform.on_mmio(ipa, MmioOp::Read { size }, &mut guest_ram)
                     {

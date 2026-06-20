@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Live milestone proof: with Apple's in-kernel GICv3 (hv_gic_create) and minimal
-# PSCI, the stock ArmVirtQemu firmware boots through PEI, GIC init, and PSCI into
-# late-DXE phase on the Path A platform. The current unresolved frontier is a
-# firmware-specific event flag poll at PC 0x5fcf13b0 / RAM 0x5ffdf798, not generic
-# GIC redistributor service or timer-PPI delivery.
+# Live milestone proof: with Apple's in-kernel GICv3 (hv_gic_create), minimal
+# PSCI, and modelled QEMU-virt pflash variables, the stock ArmVirtQemu firmware
+# reaches the UEFI shell on the Path A platform.
 #
 # Opt-in (needs Apple Silicon + Hypervisor.framework + QEMU's edk2 firmware files):
 #   BRIDGEVM_HVF_ALLOW_LIVE_GIC_BOOT=1 tests/integration/hvf-gic-boot-live-opt-in-smoke.sh
@@ -40,8 +38,10 @@ cat > "$ENT" <<'PLIST'
 PLIST
 codesign --sign - --entitlements "$ENT" --force "$BIN"
 
-OUT="$(BRIDGEVM_AARCH64_UEFI_CODE="$CODE" BRIDGEVM_AARCH64_UEFI_VARS="$VARS" "$BIN" || true)"
+OUT="$(BRIDGEVM_AARCH64_UEFI_CODE="$CODE" BRIDGEVM_AARCH64_UEFI_VARS="$VARS" BRIDGEVM_BOOT_PROBE_WATCHDOG_MS="${BRIDGEVM_BOOT_PROBE_WATCHDOG_MS:-20000}" "$BIN" || true)"
 echo "$OUT" | grep -vE "Failed to install VirtIO" | head -20
 echo "$OUT" | grep -q "hv_gic_create = 0x0" || { echo "FAIL: hv_gic_create did not succeed"; exit 1; }
 echo "$OUT" | grep -q "UEFI firmware" || { echo "FAIL: firmware did not reach DXE banner"; exit 1; }
-echo "PASS: firmware boots through Apple hv_gic + PSCI into DXE on the Path A platform"
+echo "$OUT" | grep -q "UEFI Interactive Shell" || { echo "FAIL: firmware did not reach UEFI shell"; exit 1; }
+echo "$OUT" | grep -q "stop: serial reached UEFI shell" || { echo "FAIL: boot probe did not stop on the shell milestone"; exit 1; }
+echo "PASS: firmware boots through Apple hv_gic + PSCI to UEFI shell on the Path A platform"

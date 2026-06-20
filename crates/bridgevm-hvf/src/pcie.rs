@@ -206,7 +206,11 @@ impl Function {
         match reg {
             REG_VENDOR_DEVICE => self.vendor_device,
             REG_COMMAND_STATUS => {
-                let status = if self.cap_ptr != 0 { STATUS_CAP_LIST } else { 0 };
+                let status = if self.cap_ptr != 0 {
+                    STATUS_CAP_LIST
+                } else {
+                    0
+                };
                 u32::from(self.command) | (u32::from(status) << 16)
             }
             REG_REVISION_CLASS => self.revision_class,
@@ -369,7 +373,9 @@ fn insert(dword: u32, reg: u16, size: u8, value: u64) -> u32 {
         _ => 0xFFFF_FFFF,
     };
     let field_mask = width_mask.checked_shl(shift).unwrap_or(0);
-    let placed = ((value as u32) & width_mask).checked_shl(shift).unwrap_or(0);
+    let placed = ((value as u32) & width_mask)
+        .checked_shl(shift)
+        .unwrap_or(0);
     (dword & !field_mask) | placed
 }
 
@@ -433,8 +439,14 @@ impl MsixCapability {
         );
         assert!((table_bir as usize) < NUM_BARS, "table BIR out of range");
         assert!((pba_bir as usize) < NUM_BARS, "PBA BIR out of range");
-        assert!(table_offset % 8 == 0, "MSI-X table offset must be 8-byte aligned");
-        assert!(pba_offset % 8 == 0, "MSI-X PBA offset must be 8-byte aligned");
+        assert!(
+            table_offset % 8 == 0,
+            "MSI-X table offset must be 8-byte aligned"
+        );
+        assert!(
+            pba_offset % 8 == 0,
+            "MSI-X PBA offset must be 8-byte aligned"
+        );
         Self {
             table_size,
             table_bir,
@@ -568,11 +580,17 @@ mod tests {
     fn command_register_is_writable_and_reads_back() {
         let mut ecam = PcieEcam::new();
         // Initially the command register is clear.
-        assert_eq!(ecam.cfg_read(ecam_offset(0, 0, 0, REG_COMMAND_STATUS), 2), 0);
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 0, 0, REG_COMMAND_STATUS), 2),
+            0
+        );
         // Enable memory space + bus master.
         let cmd = u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER);
         ecam.cfg_write(ecam_offset(0, 0, 0, REG_COMMAND_STATUS), 2, cmd);
-        assert_eq!(ecam.cfg_read(ecam_offset(0, 0, 0, REG_COMMAND_STATUS), 2), cmd);
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 0, 0, REG_COMMAND_STATUS), 2),
+            cmd
+        );
         // Non-writable command bits (e.g. bit 0, I/O space) are masked off.
         ecam.cfg_write(ecam_offset(0, 0, 0, REG_COMMAND_STATUS), 2, 0xFFFF);
         assert_eq!(
@@ -585,11 +603,7 @@ mod tests {
     fn status_high_word_is_not_clobbered_by_a_command_write() {
         let mut ecam = PcieEcam::new();
         // A 4-byte write to the command/status dword must only touch command.
-        ecam.cfg_write(
-            ecam_offset(0, 0, 0, REG_COMMAND_STATUS),
-            4,
-            0xFFFF_FFFF,
-        );
+        ecam.cfg_write(ecam_offset(0, 0, 0, REG_COMMAND_STATUS), 4, 0xFFFF_FFFF);
         let dword = ecam.cfg_read(ecam_offset(0, 0, 0, REG_COMMAND_STATUS), 4);
         assert_eq!(dword & 0xFFFF, u64::from(CMD_WRITABLE_MASK));
         // Host bridge has no cap list, so the status word stays zero.
@@ -620,7 +634,7 @@ mod tests {
         let mut bar = Bar {
             value: 0,
             size_mask: !(0x1_0000u32 - 1), // mask for a 64 KiB region
-            type_bits: 0,                   // 32-bit, non-prefetch memory BAR
+            type_bits: 0,                  // 32-bit, non-prefetch memory BAR
         };
         // Write all-ones, read back the size mask.
         bar.write(0xFFFF_FFFF);

@@ -143,85 +143,67 @@ match platform.on_mmio(fault_ipa, op, &mut guest_ram) {
 ```
 
 `guest_ram` is a [`fwcfg::GuestMemoryMut`] view over the HVF-mapped RAM; in the
-live example it is `FlatGuestRam`. The remaining bring-up — growing this loop to
-map pflash + RAM per `VirtPlatform::memory_layout()`, load `edk2-aarch64-code.fd`,
-place the DTB at `dtb_load`, and model GICv3/timer/PCIe/NVMe — is pure engineering,
-and **every step is now live-verifiable on this host** the same way the fw_cfg
-proof is. The step-6 Linux ACPI-only boot is the milestone, not a hardware gate.
+live examples it is either `FlatGuestRam` or a direct view over the mapped HVF RAM.
+That loop now maps pflash/RAM, loads `edk2-aarch64-code.fd`, places the generated
+DTB at `dtb_load`, serves Apple `hv_gic`, and routes Path A MMIO through
+`VirtPlatform`. The remaining work is no longer "can firmware execute"; it is the
+guest-OS contract above firmware: ACPI table-loader wiring, PCIe/NVMe devices,
+and then Linux ACPI-only / Windows install attempts.
 
-### Honest status — stock EDK2 firmware boots to DXE on this platform
+### Honest status — stock ArmVirtQemu reaches UEFI Shell
 
 The biggest validation: **the unmodified ArmVirtQemu firmware
-(`edk2-aarch64-code.fd`) boots on the Path A platform.** Loaded at flash `0x0` with
-the generated DTB at the DRAM base, it runs through PEI into DXE and prints its
-banner *through the modelled PL011 UART*:
+(`edk2-aarch64-code.fd`) reaches the UEFI shell on the Path A platform.** The live
+proof is `examples/hvf_gic_boot_probe.rs` +
+`tests/integration/hvf-gic-boot-live-opt-in-smoke.sh`, which ad-hoc signs the
+example with the Hypervisor entitlement, boots with Apple `hv_gic`, and now asserts
+the shell banner:
 
 ```
-UEFI firmware (version edk2-stable202408-prebuilt.qemu.org ...)
-InitializeVirtioFdtDxe: Failed to install VirtIO transport @ 0xA000000 ...  (×32)
+BdsDxe: starting Boot0001 "EFI Internal Shell"
+UEFI Interactive Shell v2.2
+Shell>
 ```
 
-The `InitializeVirtioFdtDxe` lines prove the firmware **parsed the generated device
-tree** and walked the virtio-mmio nodes at exactly the machine-map addresses. So
-`fw_cfg`, the DTB, and the UART all work against real firmware. See
-`examples/hvf_edk2_boot_probe.rs` + `hvf-edk2-boot-live-opt-in-smoke.sh`.
+This is true for the QEMU prebuilt release firmware and for the local DEBUG EDK2
+build with symbol logs. The DEBUG build is still valuable because it emits
+`add-symbol-file ...` lines that `examples/edk2_symbolize_log.rs` can resolve
+against the EDK2 `.debug` files, but it is no longer required to get past DXE.
 
-It stopped with a system-register trap (ESR EC `0x18`) after the GIC accesses — so
-GICv3 was the next blocker, exactly as the audit's P0 predicted.
+### What moved the frontier
 
-### GICv3 via Apple `hv_gic` — firmware now reaches DXE proper
+The major late-DXE stall was not a timer, interrupt, ACPI, or ISR-delivery bug.
+The writable pflash variable bank had been mapped as plain writable RAM. EDK2's
+`VirtNorFlashDxe` talks to that bank through Intel P30/StrataFlash command and
+status sequences, so command writes into raw RAM corrupted the backing bytes and
+left the firmware polling forever for a write-ready status bit. `src/pflash.rs`
+now models the small subset EDK2 needs (array reads, status reads, ID/CFI probes,
+word/buffered program and erase), and the live probe leaves the vars bank unmapped
+so those accesses trap into `VirtPlatform::on_mmio()`.
 
-`hv_gic_create` is available on this host (macOS 15+), so the GIC is provided
-**in-kernel by Apple** instead of hand-modelled (`examples/hvf_gic_boot_probe.rs` +
-`hvf-gic-boot-live-opt-in-smoke.sh`). With the redistributor relocated to fit
-Apple's 32 MiB region (`machine::GIC_REDIST` @ `0x0c000000`) and minimal PSCI +
-empty-ECAM + dropping the >IPA-size 64-bit PCIe window, the firmware now:
+Other fixed bring-up blockers remain important traps for future work:
 
-- passes GIC CPU-interface init — the EC `0x18` system-register trap is **gone**
-  (Apple serves the distributor + CPU interface);
-- handles **PSCI** (HVC) and an **empty PCIe bus** (ECAM returns all-ones);
-- runs **into DXE proper** (DxeCore), past the previous frontier.
+- Apple `hv_gic` serves distributor, redistributor and CPU-interface state in
+  kernel; set `MPIDR_EL1 = 0x80000000` before redistributor service.
+- HVC exits report PC already past the `hvc`; data-abort exits still need PC + 4.
+- `fw_cfg` selector and DMA registers are big-endian.
+- The VM must use the max IPA size (40-bit here) because the PCIe ECAM sits at
+  256 GiB.
+- The DTB needs the QEMU `virt` `/flash@0` node and must omit the 64-bit PCIe MMIO
+  window until the guest IPA aperture can represent it.
 
-**The GIC is now fully served by Apple** — distributor, redistributor, and CPU
-interface, with zero GIC MMIO trapping to userspace. The missing key was
-**`MPIDR_EL1`**: Apple associates each vCPU's redistributor frame from its MPIDR
-affinity, so it must be set (`hv_vcpu_set_sys_reg(HV_SYS_REG_MPIDR_EL1, 0x80000000)`)
-before the redistributor MMIO is served. With it,
-`hv_gic_get_redistributor_base(vcpu0)` returns `0x80a0000` and `gic-redist` drops
-out of the unmodelled list entirely. (The redistributor stays at QEMU virt's
-`0x080a0000`; Apple's `redistributor_region_size` is a *maximum*, not a required
-reservation — confirmed against QEMU's own hvf backend.)
+### Current frontier — OS boot contract
 
-**The firmware boots deep into DXE driver dispatch.** Fixes landed this far, each
-moving the frontier later: PSCI (HVC), empty PCIe ECAM (all-ones config reads),
-dropping then re-adding the right PCIe windows, fw_cfg big-endian selector/DMA, the
-`/flash@0` node (VirtNorFlashDxe — doubled execution to ~16.8k exits), and creating
-the VM with the **max IPA size** (40-bit; the ECAM is at 256 GiB).
+Firmware boot is no longer the frontier. The next milestone is an ACPI-only Linux
+boot through the stock firmware, because Linux gives a useful `dmesg` oracle before
+Windows. To get there:
 
-**RngDxe — FIXED. Root cause: an HVC PC double-advance in the run loop.** Found by
-running **3 parallel worktree agents** (a QEMU+HVF oracle differential, a guest-RAM
-disassembly with live instrumentation, and a DTB-node bisection). The data-abort
-exit handler advances PC by +4 to step over the emulated faulting instruction — but
-HVF reports the **HVC** exit PC *already past* the `hvc` (data aborts report it *at*
-the faulting instruction). The extra +4 skipped `ArmCallHvc`'s `ldr x9, [sp], #0x10`
-(the SMCCC args-pointer reload), so RngDxe's first SMCCC call stored its result
-through a **stale x9** (`0xFF_FFFFFFFF`) and faulted at `0x100000000F`. It was never
-a TRNG/ACPI/flash/DTB-node problem — all three were ruled out in parallel; the QEMU
-oracle (which boots the same firmware to the UEFI shell) confirmed the firmware/HVF
-side is fine. Fix: on an HVC exit, set `PC = last_pc` (no +4); also answer
-`SMCCC_VERSION`. RngDxe now starts, two other optional drivers unload gracefully
-(`Image start failed: Not Found`, exactly as under QEMU), and the firmware runs on
-**through late DXE**.
+- wire `acpi.rs` into `VirtPlatform::set_acpi_tables()` via `fw_cfg` entries
+  `etc/acpi/rsdp`, `etc/acpi/tables` and `etc/table-loader`;
+- expose a real PCIe endpoint and BAR routing for the existing NVMe model;
+- persist pflash variable writes back to a vars image so boot order and NVRAM state
+  survive repeated runs;
+- then boot Linux with ACPI, diff against QEMU+HVF, and only then try Windows Setup.
 
-**Current frontier — firmware-specific event producer.** The firmware now
-hard-spins in EDK2's `MmioRead32` (`0x5fcf13b0`, `ldr w0,[x0]; dsb; ret`) polling
-RAM `0x5ffdf798`, waiting for `0x800080` while the value stays `0x700070`.
-Controlled live guests prove Apple `hv_gic` delivers host-asserted SPIs and the
-architected-timer PPI end to end, so this is not a generic interrupt-delivery
-failure. The Path A platform now also models QEMU's PL031 RTC; the live boot probe
-still stops at the same poll target with `unmodelled MMIO touched: {}`. The next
-high-leverage step is a DEBUG ArmVirtQemu build with `.map` symbols so the
-firmware names the driver/structure that owns the polled flag, while continuing
-to diff device behaviour and vCPU init against the QEMU+HVF oracle. Then NVMe,
-Linux ACPI / Windows. No external host, paid entitlement, or separate machine is
-in the way; the whole loop, including the QEMU oracle, is live-debuggable here.
+No external host, paid entitlement, or separate machine is in the way; the whole
+loop, including the QEMU oracle, is live-debuggable here.

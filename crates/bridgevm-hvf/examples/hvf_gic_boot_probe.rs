@@ -72,7 +72,11 @@ extern "C" {
     fn hv_vm_config_get_max_ipa_size(ipa_bit_length: *mut u32) -> HvReturn;
     fn hv_vm_destroy() -> HvReturn;
     fn hv_vm_map(addr: *mut c_void, ipa: u64, size: usize, flags: u64) -> HvReturn;
-    fn hv_vcpu_create(vcpu: *mut HvVcpuT, exit: *mut *mut HvVcpuExit, config: *mut c_void) -> HvReturn;
+    fn hv_vcpu_create(
+        vcpu: *mut HvVcpuT,
+        exit: *mut *mut HvVcpuExit,
+        config: *mut c_void,
+    ) -> HvReturn;
     fn hv_vcpu_destroy(vcpu: HvVcpuT) -> HvReturn;
     fn hv_vcpu_run(vcpu: HvVcpuT) -> HvReturn;
     fn hv_vcpus_exit(vcpus: *const HvVcpuT, vcpu_count: u32) -> HvReturn;
@@ -92,6 +96,8 @@ extern "C" {
 }
 
 const HV_REG_X0: u32 = 0;
+const HV_REG_FP: u32 = 29;
+const HV_REG_LR: u32 = 30;
 const HV_REG_PC: u32 = 31;
 const HV_REG_CPSR: u32 = 34;
 const HV_MEMORY_READ: u64 = 1;
@@ -109,6 +115,8 @@ const EC_SOFTSTEP_SAME: u64 = 0x33;
 const HV_SYS_REG_DBGWVR0_EL1: u16 = 0x8006;
 const HV_SYS_REG_DBGWCR0_EL1: u16 = 0x8007;
 const HV_SYS_REG_MDSCR_EL1: u16 = 0x8012;
+const HV_SYS_REG_SP_EL0: u16 = 0xc208;
+const HV_SYS_REG_SP_EL1: u16 = 0xe208;
 // Watch the poll target for stores: 8-byte aligned address, BAS=0xFF (8 bytes),
 // LSC=0b10 (store), PAC=0b11 (EL0+EL1), E=1. = 0x1FF7.
 const WATCH_TARGET: u64 = 0x5ffd_f798;
@@ -118,14 +126,98 @@ const RAM_SIZE: usize = 0x2000_0000; // 512 MiB
 const MAX_EXITS: u64 = 50_000_000;
 const WATCHDOG_MS: u64 = 8000;
 
-fn map_file(path: &str, ipa: u64, region_bytes: usize, flags: u64) {
+fn parse_u64(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if let Some(h) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u64::from_str_radix(h, 16).ok()
+    } else {
+        s.parse().ok()
+    }
+}
+
+fn env_u64(name: &str, default: u64) -> u64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|s| parse_u64(&s))
+        .unwrap_or(default)
+}
+
+fn read_reg(vcpu: HvVcpuT, reg: u32) -> u64 {
+    let mut value = 0u64;
+    unsafe {
+        hv_vcpu_get_reg(vcpu, reg, &mut value);
+    }
+    value
+}
+
+fn read_sys_reg(vcpu: HvVcpuT, reg: u16) -> u64 {
+    let mut value = 0u64;
+    unsafe {
+        hv_vcpu_get_sys_reg(vcpu, reg, &mut value);
+    }
+    value
+}
+
+fn print_bytes(label: &str, base: u64, bytes: &[u8]) {
+    print!("{label}@{base:#x}:");
+    for b in bytes {
+        print!("{b:02x}");
+    }
+    println!();
+}
+
+fn dump_guest_bytes(mem: &dyn GuestMemoryMut, label: &str, center: u64, before: u64, len: usize) {
+    let Some(base) = center.checked_sub(before) else {
+        println!("{label}@{center:#x}: <underflow>");
+        return;
+    };
+    match mem.read_bytes(base, len) {
+        Some(bytes) => print_bytes(label, base, &bytes),
+        None => println!("{label}@{base:#x}: <not in guest RAM view>"),
+    }
+}
+
+fn maybe_write_file(path_env: &str, bytes: &[u8], description: &str) {
+    if let Ok(path) = std::env::var(path_env) {
+        std::fs::write(&path, bytes)
+            .unwrap_or_else(|e| panic!("write {description} to {path}: {e}"));
+        println!("{description} written: {path} ({} bytes)", bytes.len());
+    }
+}
+
+fn symbol_lines(serial: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(serial)
+        .lines()
+        .filter(|line| line.starts_with("add-symbol-file "))
+        .map(str::to_owned)
+        .collect()
+}
+
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.windows(needle.len()).any(|w| w == needle)
+}
+
+fn serial_reached_shell(serial: &[u8]) -> bool {
+    contains_bytes(serial, b"UEFI Interactive Shell") || contains_bytes(serial, b"Shell>")
+}
+
+fn read_region_file(path: &str, region_bytes: usize) -> Vec<u8> {
     let data = std::fs::read(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
     assert!(data.len() <= region_bytes, "{path} larger than region");
+    data
+}
+
+fn map_file(path: &str, ipa: u64, region_bytes: usize, flags: u64) {
+    let data = read_region_file(path, region_bytes);
     let layout = Layout::from_size_align(region_bytes, 0x1_0000).unwrap();
     unsafe {
         let mem = alloc_zeroed(layout);
         std::ptr::copy_nonoverlapping(data.as_ptr(), mem, data.len());
-        assert_eq!(hv_vm_map(mem as *mut c_void, ipa, region_bytes, flags), 0, "map {path}");
+        assert_eq!(
+            hv_vm_map(mem as *mut c_void, ipa, region_bytes, flags),
+            0,
+            "map {path}"
+        );
     }
 }
 
@@ -137,10 +229,12 @@ fn host_cntvct() -> u64 {
 }
 
 fn main() {
-    let code = std::env::var("BRIDGEVM_AARCH64_UEFI_CODE")
-        .unwrap_or_else(|_| "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-aarch64-code.fd".into());
+    let code = std::env::var("BRIDGEVM_AARCH64_UEFI_CODE").unwrap_or_else(|_| {
+        "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-aarch64-code.fd".into()
+    });
     let vars = std::env::var("BRIDGEVM_AARCH64_UEFI_VARS")
         .unwrap_or_else(|_| "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-arm-vars.fd".into());
+    let watchdog_ms = env_u64("BRIDGEVM_BOOT_PROBE_WATCHDOG_MS", WATCHDOG_MS);
 
     unsafe {
         // Create the VM with the max IPA size: the PCIe ECAM sits at 256 GiB,
@@ -155,28 +249,57 @@ fn main() {
 
         // In-kernel GICv3 must be created after the VM and before any vCPU.
         let gic = hv_gic_config_create();
-        assert_eq!(hv_gic_config_set_distributor_base(gic, machine::GIC_DIST.base), 0, "set dist base");
-        assert_eq!(hv_gic_config_set_redistributor_base(gic, machine::GIC_REDIST.base), 0, "set redist base");
+        assert_eq!(
+            hv_gic_config_set_distributor_base(gic, machine::GIC_DIST.base),
+            0,
+            "set dist base"
+        );
+        assert_eq!(
+            hv_gic_config_set_redistributor_base(gic, machine::GIC_REDIST.base),
+            0,
+            "set redist base"
+        );
         let gic_r = hv_gic_create(gic);
-        println!("hv_gic_create = {gic_r:#x} (dist {:#x}, redist {:#x})", machine::GIC_DIST.base, machine::GIC_REDIST.base);
+        println!(
+            "hv_gic_create = {gic_r:#x} (dist {:#x}, redist {:#x})",
+            machine::GIC_DIST.base,
+            machine::GIC_REDIST.base
+        );
         assert_eq!(gic_r, 0, "hv_gic_create");
 
-        map_file(&code, machine::FLASH_CODE.base, machine::FLASH_CODE.size as usize, HV_MEMORY_READ | HV_MEMORY_EXEC);
-        map_file(&vars, machine::FLASH_VARS.base, machine::FLASH_VARS.size as usize, HV_MEMORY_READ | HV_MEMORY_WRITE);
+        map_file(
+            &code,
+            machine::FLASH_CODE.base,
+            machine::FLASH_CODE.size as usize,
+            HV_MEMORY_READ | HV_MEMORY_EXEC,
+        );
+        let vars_data = read_region_file(&vars, machine::FLASH_VARS.size as usize);
 
         let ram_layout = Layout::from_size_align(RAM_SIZE, 0x1_0000).unwrap();
         let ram = alloc_zeroed(ram_layout);
-        let dtb = build_virt_fdt(&VirtFdtConfig { cpu_count: 1, ram_size: RAM_SIZE as u64 });
+        let dtb = build_virt_fdt(&VirtFdtConfig {
+            cpu_count: 1,
+            ram_size: RAM_SIZE as u64,
+        });
         std::ptr::copy_nonoverlapping(dtb.as_ptr(), ram, dtb.len());
         assert_eq!(
-            hv_vm_map(ram as *mut c_void, machine::RAM_BASE, RAM_SIZE, HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC),
+            hv_vm_map(
+                ram as *mut c_void,
+                machine::RAM_BASE,
+                RAM_SIZE,
+                HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC
+            ),
             0,
             "map ram"
         );
 
         let mut vcpu: HvVcpuT = 0;
         let mut exit: *mut HvVcpuExit = null_mut();
-        assert_eq!(hv_vcpu_create(&mut vcpu, &mut exit, null_mut()), 0, "hv_vcpu_create");
+        assert_eq!(
+            hv_vcpu_create(&mut vcpu, &mut exit, null_mut()),
+            0,
+            "hv_vcpu_create"
+        );
         // MPIDR_EL1 affinity 0 (bit 31 RES1) — Apple hv_gic associates this vCPU's
         // redistributor frame from its MPIDR, so this must be set before the GIC
         // redistributor MMIO is served or hv_gic_get_redistributor_base is called.
@@ -201,14 +324,13 @@ fn main() {
         // store perturbs boot timing.
         let watch_addr: Option<u64> = std::env::var("BRIDGEVM_WATCH").ok().map(|s| {
             let s = s.trim();
-            if let Some(h) = s.strip_prefix("0x") {
-                u64::from_str_radix(h, 16).unwrap_or(WATCH_TARGET)
-            } else if s == "1" {
+            if s == "1" {
                 WATCH_TARGET
             } else {
-                s.parse().unwrap_or(WATCH_TARGET)
+                parse_u64(s).unwrap_or(WATCH_TARGET)
             }
         });
+        let watch_target = watch_addr.unwrap_or(WATCH_TARGET);
         if let Some(addr) = watch_addr {
             hv_vcpu_set_trap_debug_exceptions(vcpu, true);
             hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWVR0_EL1, addr);
@@ -221,13 +343,21 @@ fn main() {
 
         let vcpu_for_wd = vcpu;
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(WATCHDOG_MS));
+            std::thread::sleep(std::time::Duration::from_millis(watchdog_ms));
             let v = vcpu_for_wd;
             hv_vcpus_exit(&v, 1);
         });
 
-        let mut platform = VirtPlatform::new(VirtFdtConfig { cpu_count: 1, ram_size: RAM_SIZE as u64 });
-        let mut guest_ram = MappedRam { base: machine::RAM_BASE, ptr: ram, len: RAM_SIZE };
+        let mut platform = VirtPlatform::new(VirtFdtConfig {
+            cpu_count: 1,
+            ram_size: RAM_SIZE as u64,
+        });
+        platform.load_flash_vars(&vars_data);
+        let mut guest_ram = MappedRam {
+            base: machine::RAM_BASE,
+            ptr: ram,
+            len: RAM_SIZE,
+        };
         let mut unimpl: BTreeMap<&'static str, u64> = BTreeMap::new();
         let mut redist_lo = u64::MAX;
         let mut redist_hi = 0u64;
@@ -308,29 +438,46 @@ fn main() {
                     let mut func = 0u64;
                     hv_vcpu_get_reg(vcpu, HV_REG_X0, &mut func);
                     match func & 0xffff_ffff {
-                        0x8000_0000 => { hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0001); }    // SMCCC_VERSION 1.1
-                        0x8400_0000 => { hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0001_0001); } // PSCI_VERSION 1.1
-                        0x8400_000A => { hv_vcpu_set_reg(vcpu, HV_REG_X0, 0); }           // PSCI_FEATURES
-                        0x8400_0050 => { hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0000); }    // TRNG_VERSION 1.0
-                        0x8400_0051 => { hv_vcpu_set_reg(vcpu, HV_REG_X0, 0); }           // TRNG_FEATURES: present
-                        0x8400_0052 => {                                                  // TRNG_GET_UUID
+                        0x8000_0000 => {
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0001);
+                        } // SMCCC_VERSION 1.1
+                        0x8400_0000 => {
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0001_0001);
+                        } // PSCI_VERSION 1.1
+                        0x8400_000A => {
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
+                        } // PSCI_FEATURES
+                        0x8400_0050 => {
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0000);
+                        } // TRNG_VERSION 1.0
+                        0x8400_0051 => {
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
+                        } // TRNG_FEATURES: present
+                        0x8400_0052 => {
+                            // TRNG_GET_UUID
                             hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0b0a_0908);
                             hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, 0x0f0e_0d0c);
                             hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, 0x0302_0100);
                             hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, 0x0706_0504);
                         }
-                        0x8400_0053 | 0xc400_0053 => {                                    // TRNG_RND_32 / _64
-                            let r = exits.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(0xD1B5_4A32);
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);                          // SUCCESS
+                        0x8400_0053 | 0xc400_0053 => {
+                            // TRNG_RND_32 / _64
+                            let r = exits
+                                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                .wrapping_add(0xD1B5_4A32);
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0); // SUCCESS
                             hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, r);
                             hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, r.rotate_left(17) ^ 0xA5A5_5A5A);
                             hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, r.rotate_left(41) ^ 0x1234_5678);
                         }
                         0x8400_0008 | 0x8400_0009 => {
-                            stop_reason = format!("PSCI {:#x} (system off/reset)", func & 0xffff_ffff);
+                            stop_reason =
+                                format!("PSCI {:#x} (system off/reset)", func & 0xffff_ffff);
                             break;
                         }
-                        _ => { hv_vcpu_set_reg(vcpu, HV_REG_X0, (-1i64) as u64); }         // NOT_SUPPORTED
+                        _ => {
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0, (-1i64) as u64);
+                        } // NOT_SUPPORTED
                     }
                     // HVF reports the HVC exit PC already PAST the `hvc` instruction
                     // (unlike a data abort, where the PC is AT the faulting insn). So
@@ -353,14 +500,14 @@ fn main() {
                     let mut cp = 0u64;
                     hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cp);
                     hv_vcpu_set_reg(vcpu, HV_REG_CPSR, cp | (1 << 21)); // PSTATE.SS
-                    // do NOT advance PC: re-execute the store under single-step.
+                                                                        // do NOT advance PC: re-execute the store under single-step.
                 }
                 EC_SOFTSTEP_LOWER | EC_SOFTSTEP_SAME => {
                     let cur = guest_ram
-                        .read_bytes(WATCH_TARGET, 8)
+                        .read_bytes(watch_target, 8)
                         .map(|b| u64::from_le_bytes(b.try_into().unwrap()))
                         .unwrap_or(0);
-                    println!(" -> {WATCH_TARGET:#x} = {cur:#x}");
+                    println!(" -> {watch_target:#x} = {cur:#x}");
                     // Clear single-step; re-arm the watchpoint unless we have enough.
                     let mut md = 0u64;
                     hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, &mut md);
@@ -382,46 +529,67 @@ fn main() {
                 stop_reason = format!("exit cap {MAX_EXITS}");
                 break;
             }
+            if serial_reached_shell(platform.uart_output()) {
+                stop_reason = "serial reached UEFI shell".into();
+                break;
+            }
         }
 
         let serial = platform.uart_output().to_vec();
-
-        // Dump the code around the current frontier PC (read from guest RAM) so it
-        // can be disassembled directly. Set to wherever the firmware currently
-        // stops (`last PC` in the summary).
-        let crash_pc = 0x5fcf_13b0u64;
-        if let Some(code) = guest_ram.read_bytes(crash_pc - 0x18, 0x48) {
-            print!("CODE@{:#x}:", crash_pc - 0x18);
-            for b in &code {
-                print!("{:02x}", b);
-            }
-            println!();
+        maybe_write_file("BRIDGEVM_BOOT_PROBE_SERIAL_OUT", &serial, "serial log");
+        let symbols = symbol_lines(&serial);
+        if !symbols.is_empty() {
+            let text = symbols.join("\n") + "\n";
+            maybe_write_file(
+                "BRIDGEVM_BOOT_PROBE_SYMBOLS_OUT",
+                text.as_bytes(),
+                "symbol log",
+            );
         }
-        // The spin PC is the MmioRead32 leaf; LR(x30) holds the poll loop's return
-        // address. Dump the caller so we can disassemble what it waits on.
-        let mut lr = 0u64;
-        hv_vcpu_get_reg(vcpu, HV_REG_X0 + 30, &mut lr);
-        println!("LR(x30)={lr:#x}");
-        if let Some(code) = guest_ram.read_bytes(lr.saturating_sub(0x28), 0x50) {
-            print!("CALLER@{:#x}:", lr - 0x28);
-            for b in &code {
-                print!("{:02x}", b);
+
+        let fp = read_reg(vcpu, HV_REG_FP);
+        let lr = read_reg(vcpu, HV_REG_LR);
+        let sp_el0 = read_sys_reg(vcpu, HV_SYS_REG_SP_EL0);
+        let sp_el1 = read_sys_reg(vcpu, HV_SYS_REG_SP_EL1);
+        println!(
+            "REGS: pc={last_pc:#x} lr={lr:#x} fp={fp:#x} sp_el0={sp_el0:#x} sp_el1={sp_el1:#x}"
+        );
+        dump_guest_bytes(&guest_ram, "CODE[pc]", last_pc, 0x20, 0x60);
+        dump_guest_bytes(&guest_ram, "CODE[lr]", lr, 0x28, 0x60);
+        if fp != 0 {
+            dump_guest_bytes(&guest_ram, "FRAME[fp]", fp, 0, 0x80);
+        }
+        if sp_el1 != 0 {
+            dump_guest_bytes(&guest_ram, "STACK[sp_el1]", sp_el1, 0, 0x100);
+        }
+        if let Ok(extra) = std::env::var("BRIDGEVM_BOOT_PROBE_DUMP_GPA") {
+            if let Some(gpa) = parse_u64(&extra) {
+                dump_guest_bytes(&guest_ram, "DUMP[env]", gpa, 0, 0x100);
             }
-            println!();
         }
 
         // What is the firmware polling at the stop point? x0 is MmioRead32's address arg.
         let mut rx = [0u64; 4];
-        for (i, r) in [HV_REG_X0, HV_REG_X0 + 1, HV_REG_X0 + 2, HV_REG_X0 + 9].iter().enumerate() {
+        for (i, r) in [HV_REG_X0, HV_REG_X0 + 1, HV_REG_X0 + 2, HV_REG_X0 + 9]
+            .iter()
+            .enumerate()
+        {
             hv_vcpu_get_reg(vcpu, *r, &mut rx[i]);
         }
         println!(
             "AT-STOP: x0={:#x} x1={:#x} x2={:#x} x9={:#x}  (x0 device: {:?})",
-            rx[0], rx[1], rx[2], rx[3], machine::device_at(rx[0])
+            rx[0],
+            rx[1],
+            rx[2],
+            rx[3],
+            machine::device_at(rx[0])
         );
         // Poll-loop state: x22 = polled address, x21 = expected value, x20 = last read.
         let mut ry = [0u64; 3];
-        for (i, r) in [HV_REG_X0 + 20, HV_REG_X0 + 21, HV_REG_X0 + 22].iter().enumerate() {
+        for (i, r) in [HV_REG_X0 + 20, HV_REG_X0 + 21, HV_REG_X0 + 22]
+            .iter()
+            .enumerate()
+        {
             hv_vcpu_get_reg(vcpu, *r, &mut ry[i]);
         }
         println!(
@@ -468,8 +636,14 @@ fn main() {
 
         println!("=== EDK2 boot probe (with Apple hv_gic) ===");
         println!("stop: {stop_reason}");
-        println!("exits: {exits} (vtimer {vtimer_exits}, psci {psci_calls}), last PC: {last_pc:#x}");
+        println!(
+            "exits: {exits} (vtimer {vtimer_exits}, psci {psci_calls}), last PC: {last_pc:#x}"
+        );
         println!("unmodelled MMIO touched: {unimpl:?}");
+        println!("symbol lines: {}", symbols.len());
+        for line in symbols.iter().rev().take(8).rev() {
+            println!("{line}");
+        }
         if redist_hi != 0 {
             println!(
                 "gic-redist IPA range: {redist_lo:#x}..={redist_hi:#x} (redist base {:#x}, frame0 ends {:#x})",
@@ -478,6 +652,9 @@ fn main() {
             );
         }
         println!("serial bytes: {}", serial.len());
-        println!("--- serial (tail) ---\n{}\n--- end ---", String::from_utf8_lossy(&serial));
+        println!(
+            "--- serial (tail) ---\n{}\n--- end ---",
+            String::from_utf8_lossy(&serial)
+        );
     }
 }

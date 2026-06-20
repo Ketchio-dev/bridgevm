@@ -40,7 +40,11 @@ extern "C" {
     fn hv_vm_create(config: *mut c_void) -> HvReturn;
     fn hv_vm_destroy() -> HvReturn;
     fn hv_vm_map(addr: *mut c_void, ipa: u64, size: usize, flags: u64) -> HvReturn;
-    fn hv_vcpu_create(vcpu: *mut HvVcpuT, exit: *mut *mut HvVcpuExit, config: *mut c_void) -> HvReturn;
+    fn hv_vcpu_create(
+        vcpu: *mut HvVcpuT,
+        exit: *mut *mut HvVcpuExit,
+        config: *mut c_void,
+    ) -> HvReturn;
     fn hv_vcpu_destroy(vcpu: HvVcpuT) -> HvReturn;
     fn hv_vcpu_run(vcpu: HvVcpuT) -> HvReturn;
     fn hv_vcpus_exit(vcpus: *const HvVcpuT, vcpu_count: u32) -> HvReturn;
@@ -70,13 +74,18 @@ fn map_file(path: &str, ipa: u64, region_bytes: usize, flags: u64) {
     unsafe {
         let mem = alloc_zeroed(layout);
         std::ptr::copy_nonoverlapping(data.as_ptr(), mem, data.len());
-        assert_eq!(hv_vm_map(mem as *mut c_void, ipa, region_bytes, flags), 0, "map {path}");
+        assert_eq!(
+            hv_vm_map(mem as *mut c_void, ipa, region_bytes, flags),
+            0,
+            "map {path}"
+        );
     }
 }
 
 fn main() {
-    let code = std::env::var("BRIDGEVM_AARCH64_UEFI_CODE")
-        .unwrap_or_else(|_| "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-aarch64-code.fd".into());
+    let code = std::env::var("BRIDGEVM_AARCH64_UEFI_CODE").unwrap_or_else(|_| {
+        "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-aarch64-code.fd".into()
+    });
     let vars = std::env::var("BRIDGEVM_AARCH64_UEFI_VARS")
         .unwrap_or_else(|_| "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-arm-vars.fd".into());
 
@@ -84,24 +93,46 @@ fn main() {
         assert_eq!(hv_vm_create(null_mut()), 0, "hv_vm_create");
 
         // Flash code (RX) at 0x0, flash vars (RW) at 0x04000000.
-        map_file(&code, machine::FLASH_CODE.base, machine::FLASH_CODE.size as usize, HV_MEMORY_READ | HV_MEMORY_EXEC);
-        map_file(&vars, machine::FLASH_VARS.base, machine::FLASH_VARS.size as usize, HV_MEMORY_READ | HV_MEMORY_WRITE);
+        map_file(
+            &code,
+            machine::FLASH_CODE.base,
+            machine::FLASH_CODE.size as usize,
+            HV_MEMORY_READ | HV_MEMORY_EXEC,
+        );
+        map_file(
+            &vars,
+            machine::FLASH_VARS.base,
+            machine::FLASH_VARS.size as usize,
+            HV_MEMORY_READ | HV_MEMORY_WRITE,
+        );
 
         // RAM at 0x40000000, with the device tree at its base (DRAM base = where
         // ArmVirtQemu looks for the DTB).
         let ram_layout = Layout::from_size_align(RAM_SIZE, 0x1_0000).unwrap();
         let ram = alloc_zeroed(ram_layout);
-        let dtb = build_virt_fdt(&VirtFdtConfig { cpu_count: 1, ram_size: RAM_SIZE as u64 });
+        let dtb = build_virt_fdt(&VirtFdtConfig {
+            cpu_count: 1,
+            ram_size: RAM_SIZE as u64,
+        });
         std::ptr::copy_nonoverlapping(dtb.as_ptr(), ram, dtb.len());
         assert_eq!(
-            hv_vm_map(ram as *mut c_void, machine::RAM_BASE, RAM_SIZE, HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC),
+            hv_vm_map(
+                ram as *mut c_void,
+                machine::RAM_BASE,
+                RAM_SIZE,
+                HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC
+            ),
             0,
             "map ram"
         );
 
         let mut vcpu: HvVcpuT = 0;
         let mut exit: *mut HvVcpuExit = null_mut();
-        assert_eq!(hv_vcpu_create(&mut vcpu, &mut exit, null_mut()), 0, "hv_vcpu_create");
+        assert_eq!(
+            hv_vcpu_create(&mut vcpu, &mut exit, null_mut()),
+            0,
+            "hv_vcpu_create"
+        );
         hv_vcpu_set_reg(vcpu, HV_REG_PC, 0x0); // reset vector
         hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5); // EL1h, DAIF masked
         hv_vcpu_set_reg(vcpu, HV_REG_X0, machine::RAM_BASE); // DTB pointer (boot protocol)
@@ -114,7 +145,10 @@ fn main() {
             hv_vcpus_exit(&v, 1);
         });
 
-        let mut platform = VirtPlatform::new(VirtFdtConfig { cpu_count: 1, ram_size: RAM_SIZE as u64 });
+        let mut platform = VirtPlatform::new(VirtFdtConfig {
+            cpu_count: 1,
+            ram_size: RAM_SIZE as u64,
+        });
         let mut guest_ram = FlatGuestRam::new(machine::RAM_BASE, 0);
         let mut unimpl: BTreeMap<&'static str, u64> = BTreeMap::new();
         let mut exits = 0u64;
@@ -201,7 +235,10 @@ fn main() {
         println!("unmodelled MMIO touched: {unimpl:?}");
         println!("serial bytes captured: {}", serial.len());
         if !serial.is_empty() {
-            println!("--- serial ---\n{}\n--- end serial ---", String::from_utf8_lossy(&serial));
+            println!(
+                "--- serial ---\n{}\n--- end serial ---",
+                String::from_utf8_lossy(&serial)
+            );
         } else {
             println!("(no serial output captured)");
         }
