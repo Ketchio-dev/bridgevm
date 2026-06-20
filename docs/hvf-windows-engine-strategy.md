@@ -257,9 +257,12 @@ The remaining OS-boot contract work is now narrower:
   frame chain (`FRAMECHAIN`, default 12 frames, capped at 64 through
   `BRIDGEVM_FRAME_CHAIN_LIMIT`) and resolve saved LR values through the same
   stage-1 helper, giving kernel RVAs such as `0x519f6c`, `0x2c3d88`,
-  `0x518434`, and `0x50e358` in `ntkrnlmp.pdb`. The PCIe MMIO tail
-  repeatedly reads NVMe `CSTS`/`CC` and rings `SQ0TDBL`, so the next diff is
-  Windows NVMe/PCIe command flow and device-shape parity rather than the old
+  `0x518434`, and `0x50e358` in `ntkrnlmp.pdb`. The stop dump now prints the
+  full x0-x28 GPR set and decodes SVC/HVC ESR immediates; the latest Windows
+  stop is still SVC immediate `0x1004`, with the service-call register context
+  captured in `/tmp/bridgevm-svc-gprs-60s.out`. The PCIe MMIO tail repeatedly
+  reads NVMe `CSTS`/`CC` and rings `SQ0TDBL`, so the next diff is Windows
+  NVMe/PCIe command flow and device-shape parity rather than the old
   late-DXE poll, the cdboot stub writer, basic ISO reachability, or interrupt
   delivery. The live probe now prints the recent PCIe MMIO tail with decoded
   NVMe register names (`BRIDGEVM_RECENT_PCIE_MMIO`), e.g. `nvme.SQ0TDBL`,

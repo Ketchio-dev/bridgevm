@@ -291,11 +291,40 @@ fn describe_esr(esr: u64) -> String {
         let trap = SysRegTrap::decode(esr);
         return format!("{}: {}", exception_class_name(ec), trap.describe());
     }
+    if ec == 0x15 || ec == EC_HVC {
+        let iss = esr & 0x01ff_ffff;
+        let imm16 = iss & 0xffff;
+        return format!(
+            "{} EC={ec:#x} ISS={iss:#x} imm16={imm16:#x}",
+            exception_class_name(ec)
+        );
+    }
     format!(
         "{} EC={ec:#x} ISS={:#x}",
         exception_class_name(ec),
         esr & 0x01ff_ffff
     )
+}
+
+#[cfg(test)]
+mod esr_tests {
+    use super::*;
+
+    #[test]
+    fn describes_svc_immediate() {
+        assert_eq!(
+            describe_esr(0x5600_1004),
+            "SVC AArch64 EC=0x15 ISS=0x1004 imm16=0x1004"
+        );
+    }
+
+    #[test]
+    fn describes_hvc_immediate() {
+        assert_eq!(
+            describe_esr((EC_HVC << 26) | 0xabcd),
+            "HVC AArch64 EC=0x16 ISS=0xabcd imm16=0xabcd"
+        );
+    }
 }
 
 fn parse_u64(s: &str) -> Option<u64> {
@@ -343,6 +372,17 @@ fn read_sys_reg(vcpu: HvVcpuT, reg: u16) -> u64 {
         hv_vcpu_get_sys_reg(vcpu, reg, &mut value);
     }
     value
+}
+
+fn print_gpr_context(vcpu: HvVcpuT) {
+    for &(start, end) in &[(0u32, 8u32), (8, 16), (16, 24), (24, 29)] {
+        print!("GPRS[x{start}..x{}]:", end - 1);
+        for index in start..end {
+            let value = read_reg(vcpu, HV_REG_X0 + index);
+            print!(" x{index}={value:#x}");
+        }
+        println!();
+    }
 }
 
 fn print_bytes(label: &str, base: u64, bytes: &[u8]) {
@@ -1506,6 +1546,7 @@ fn main() {
         println!(
             "REGS: pc={last_pc:#x} lr={lr:#x} fp={fp:#x} sp_el0={sp_el0:#x} sp_el1={sp_el1:#x}"
         );
+        print_gpr_context(vcpu);
         println!(
             "STAGE1: SCTLR={:#x} MMU={} TCR={:#x} TTBR0={:#x} TTBR1={:#x} MAIR={:#x}",
             stage1_ctx.sctlr_el1,
@@ -1555,7 +1596,6 @@ fn main() {
         }
         dump_env_guest_bytes(&guest_ram);
 
-        // What is the firmware polling at the stop point? x0 is MmioRead32's address arg.
         let mut rx = [0u64; 4];
         for (i, r) in [HV_REG_X0, HV_REG_X0 + 1, HV_REG_X0 + 2, HV_REG_X0 + 9]
             .iter()
@@ -1564,15 +1604,17 @@ fn main() {
             hv_vcpu_get_reg(vcpu, *r, &mut rx[i]);
         }
         println!(
-            "AT-STOP: x0={:#x} x1={:#x} x2={:#x} x9={:#x}  (x0 device: {:?})",
+            "REG-HINTS: x0={:#x} x1={:#x} x2={:#x} x9={:#x}  (x0 device: {:?})",
             rx[0],
             rx[1],
             rx[2],
             rx[3],
             machine::device_at(rx[0])
         );
-        dump_guest_bytes_if_mapped(&guest_ram, "AT-STOP[x0]", rx[0], 0x40, 0x100);
-        // Poll-loop state: x22 = polled address, x21 = expected value, x20 = last read.
+        dump_guest_bytes_if_mapped(&guest_ram, "REG-HINT[x0]", rx[0], 0x40, 0x100);
+        // Legacy late-DXE poll convention: x22 = polled address, x21 = expected value,
+        // x20 = last read. These registers are still useful breadcrumbs, but Windows
+        // high-VA/SVC stops must be read through the full GPR dump above.
         let mut ry = [0u64; 3];
         for (i, r) in [HV_REG_X0 + 20, HV_REG_X0 + 21, HV_REG_X0 + 22]
             .iter()
@@ -1581,18 +1623,18 @@ fn main() {
             hv_vcpu_get_reg(vcpu, *r, &mut ry[i]);
         }
         println!(
-            "POLL: x22(addr)={:#x} (dev {:?})  x21(expect)={:#x}  x20(last)={:#x}",
+            "LEGACY-POLL-HINT: x22(addr)={:#x} (dev {:?})  x21(expect)={:#x}  x20(last)={:#x}",
             ry[2],
             machine::device_at(ry[2]),
             ry[1],
             ry[0]
         );
-        dump_guest_bytes_if_mapped(&guest_ram, "POLL[x22]", ry[2], 0, 0x100);
+        dump_guest_bytes_if_mapped(&guest_ram, "LEGACY-POLL[x22]", ry[2], 0, 0x100);
         if ry[1] != ry[2] {
-            dump_guest_bytes_if_mapped(&guest_ram, "POLL[x21]", ry[1], 0, 0x100);
+            dump_guest_bytes_if_mapped(&guest_ram, "LEGACY-POLL[x21]", ry[1], 0, 0x100);
         }
         if ry[0] != ry[1] && ry[0] != ry[2] {
-            dump_guest_bytes_if_mapped(&guest_ram, "POLL[x20]", ry[0], 0, 0x100);
+            dump_guest_bytes_if_mapped(&guest_ram, "LEGACY-POLL[x20]", ry[0], 0, 0x100);
         }
         let mut cpsr = 0u64;
         hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cpsr);
