@@ -3,7 +3,8 @@
 //! Windows 11 ARM (and an ACPI-only Linux boot) refuses to come up without ACPI
 //! tables: the firmware hands the guest an RSDP that chains to the XSDT, FADT,
 //! MADT (GIC topology + the Apple `hv_gic` MSI frame), PPTT (CPU topology), GTDT
-//! (architected timer), MCFG (PCIe ECAM) and SPCR (serial console).
+//! (architected timer), MCFG (PCIe ECAM), SPCR (serial console) and DBG2
+//! (debug serial port metadata).
 //! Stock ArmVirtQemu firmware does not synthesise these itself
 //! on this platform — it installs whatever the host exposes through `fw_cfg`
 //! under `etc/acpi/rsdp` (the RSDP), `etc/acpi/tables` (the concatenated
@@ -18,7 +19,8 @@
 //!
 //! References: ACPI 6.5 (RSDP §5.2.5, XSDT §5.2.8, FADT §5.2.9, MADT §5.2.12,
 //! PPTT §5.2.29, GTDT §5.2.25, MCFG (PCI Firmware Spec 3.3), SPCR (Microsoft
-//! Serial Port Console Redirection Table)), and the tables QEMU's
+//! Serial Port Console Redirection Table), DBG2 (Microsoft Debug Port Table 2)),
+//! and the tables QEMU's
 //! `hw/arm/virt-acpi-build.c` emits for the `virt` machine.
 
 use crate::machine;
@@ -48,8 +50,8 @@ pub struct AcpiBlobs {
     /// Checksum bytes are zero here; the firmware computes final checksums after
     /// applying `loader` relocations, matching QEMU's `bios-linker-loader`.
     pub rsdp: Vec<u8>,
-    /// `etc/acpi/tables` — XSDT, FADT, DSDT, MADT, PPTT, GTDT, MCFG and SPCR,
-    /// concatenated in the order their physical addresses are laid out.
+    /// `etc/acpi/tables` — XSDT, FADT, DSDT, MADT, PPTT, GTDT, MCFG, SPCR and
+    /// DBG2, concatenated in the order their physical addresses are laid out.
     ///
     /// Checksum bytes are zero here; the firmware computes final checksums after
     /// applying `loader` relocations, matching QEMU's `bios-linker-loader`.
@@ -173,12 +175,14 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     let gtdt = build_gtdt();
     let mcfg = build_mcfg();
     let spcr = build_spcr();
+    let dbg2 = build_dbg2();
 
-    // The XSDT references FADT/MADT/PPTT/GTDT/MCFG/SPCR. The FADT references
-    // the DSDT. Compute offsets in concatenation order: XSDT first, then the rest.
-    // (Order within the blob is a free choice; we keep XSDT first so its address
-    // is easy to reason about, then DSDT, then the XSDT-listed tables.)
-    let xsdt_len = xsdt_len_for(6);
+    // The XSDT references FADT/MADT/PPTT/GTDT/MCFG/SPCR/DBG2. The FADT
+    // references the DSDT. Compute offsets in concatenation order: XSDT first,
+    // then the rest. (Order within the blob is a free choice; we keep XSDT first
+    // so its address is easy to reason about, then DSDT, then the XSDT-listed
+    // tables.)
+    let xsdt_len = xsdt_len_for(7);
     let off_xsdt = 0u64;
     let off_dsdt = off_xsdt + xsdt_len;
     let off_fadt = off_dsdt + dsdt.len() as u64;
@@ -187,6 +191,7 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     let off_gtdt = off_pptt + pptt.len() as u64;
     let off_mcfg = off_gtdt + gtdt.len() as u64;
     let off_spcr = off_mcfg + mcfg.len() as u64;
+    let off_dbg2 = off_spcr + spcr.len() as u64;
 
     let fadt = build_fadt(TABLES_BASE + off_dsdt);
     debug_assert_eq!(fadt.len() as u64, fadt_len());
@@ -198,6 +203,7 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
         TABLES_BASE + off_gtdt,
         TABLES_BASE + off_mcfg,
         TABLES_BASE + off_spcr,
+        TABLES_BASE + off_dbg2,
     ]);
     debug_assert_eq!(xsdt.len() as u64, xsdt_len);
 
@@ -210,6 +216,7 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
         TableSpan::new(off_gtdt, gtdt.len() as u64),
         TableSpan::new(off_mcfg, mcfg.len() as u64),
         TableSpan::new(off_spcr, spcr.len() as u64),
+        TableSpan::new(off_dbg2, dbg2.len() as u64),
     ];
 
     let mut tables = Vec::new();
@@ -221,6 +228,7 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     tables.extend_from_slice(&gtdt);
     tables.extend_from_slice(&mcfg);
     tables.extend_from_slice(&spcr);
+    tables.extend_from_slice(&dbg2);
 
     let mut rsdp = build_rsdp(TABLES_BASE + off_xsdt);
     let loader = build_table_loader(
@@ -230,7 +238,9 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
             xsdt: off_xsdt,
             fadt: off_fadt,
             table_spans: &table_spans,
-            xsdt_entries: &[off_fadt, off_madt, off_pptt, off_gtdt, off_mcfg, off_spcr],
+            xsdt_entries: &[
+                off_fadt, off_madt, off_pptt, off_gtdt, off_mcfg, off_spcr, off_dbg2,
+            ],
         },
     );
 
@@ -937,9 +947,9 @@ fn build_ecam_reserved_dsdt_device() -> Vec<u8> {
 }
 
 /// QEMU-like DSDT surface for devices Linux/Windows enumerate through ACPI.
-/// MADT/GTDT/MCFG/SPCR carry the architectural tables, while this AML names the
-/// platform devices the OS driver core expects to bind (`ACPI0007` CPU devices,
-/// `ARMH0011` PL011, `PNP0A08` PCI root bridge and a power button).
+/// MADT/GTDT/MCFG/SPCR/DBG2 carry the architectural tables, while this AML names
+/// the platform devices the OS driver core expects to bind (`ACPI0007` CPU
+/// devices, `ARMH0011` PL011, `PNP0A08` PCI root bridge and a power button).
 fn build_dsdt(cpu_count: u64) -> Vec<u8> {
     let mut sb = Vec::new();
     for cpu in 0..cpu_count {
@@ -1167,6 +1177,41 @@ fn build_spcr() -> Vec<u8> {
     t.finish()
 }
 
+/// DBG2 (Debug Port Table 2) describing the same PL011 as a serial debug port.
+fn build_dbg2() -> Vec<u8> {
+    const NAMESPACE: &[u8] = b"COM0\0";
+    const DEBUG_DEVICE_INFO_OFFSET: u32 = 44;
+    const BASE_ADDRESS_REGISTER_OFFSET: u16 = 22;
+    const ADDRESS_SIZE_OFFSET: u16 = 34;
+    const NAMESPACE_STRING_OFFSET: u16 = 38;
+
+    let device_len =
+        u16::try_from(BASE_ADDRESS_REGISTER_OFFSET as usize + 12 + 4 + NAMESPACE.len())
+            .expect("DBG2 device info length exceeds u16");
+
+    let mut t = Table::new(b"DBG2", 0);
+    t.u32(DEBUG_DEVICE_INFO_OFFSET); // OffsetDbgDeviceInfo
+    t.u32(1); // NumberDbgDeviceInfo
+
+    t.u8(0); // Revision
+    t.u16(device_len); // Length
+    t.u8(1); // NumberOfGenericAddressRegisters
+    t.u16(NAMESPACE.len() as u16); // NameSpaceStringLength
+    t.u16(NAMESPACE_STRING_OFFSET); // NameSpaceStringOffset
+    t.u16(0); // OemDataLength
+    t.u16(0); // OemDataOffset
+    t.u16(0x8000); // Port Type = Serial
+    t.u16(0x0003); // Port Subtype = ARM PL011 UART
+    t.u16(0); // Reserved
+    t.u16(BASE_ADDRESS_REGISTER_OFFSET);
+    t.u16(ADDRESS_SIZE_OFFSET);
+
+    t.gas_memory_with_access_size(machine::UART.base, 32, 3);
+    t.u32(machine::UART.size as u32);
+    t.bytes.extend_from_slice(NAMESPACE);
+    t.finish()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1176,6 +1221,10 @@ mod tests {
         bytes.iter().fold(0u8, |a, &b| a.wrapping_add(b)) == 0
     }
 
+    /// Read a little-endian u16 at `off`.
+    fn le16(b: &[u8], off: usize) -> u16 {
+        u16::from_le_bytes([b[off], b[off + 1]])
+    }
     /// Read a little-endian u32 at `off`.
     fn le32(b: &[u8], off: usize) -> u32 {
         u32::from_le_bytes([b[off], b[off + 1], b[off + 2], b[off + 3]])
@@ -1328,7 +1377,7 @@ mod tests {
         let sigs: Vec<&str> = tables.iter().map(|(s, _)| s.as_str()).collect();
         // FADT's signature is "FACP" and MADT's is "APIC" by spec.
         for needed in [
-            "XSDT", "DSDT", "FACP", "APIC", "PPTT", "GTDT", "MCFG", "SPCR",
+            "XSDT", "DSDT", "FACP", "APIC", "PPTT", "GTDT", "MCFG", "SPCR", "DBG2",
         ] {
             assert!(sigs.contains(&needed), "missing table {needed} in {sigs:?}");
         }
@@ -1382,15 +1431,15 @@ mod tests {
                 .iter()
                 .filter(|&&cmd| cmd == LOADER_CMD_ADD_POINTER)
                 .count(),
-            8
+            9
         );
-        // Eight ACPI tables plus RSDP v1 and extended checksums.
+        // Nine ACPI tables plus RSDP v1 and extended checksums.
         assert_eq!(
             commands
                 .iter()
                 .filter(|&&cmd| cmd == LOADER_CMD_ADD_CHECKSUM)
                 .count(),
-            10
+            11
         );
     }
 
@@ -1406,8 +1455,8 @@ mod tests {
         // XSDT entries are 8-byte pointers after the 36-byte header.
         let entry_count = (xsdt.len() - ACPI_HEADER_LEN) / 8;
         assert_eq!(
-            entry_count, 6,
-            "XSDT must list FADT/MADT/PPTT/GTDT/MCFG/SPCR"
+            entry_count, 7,
+            "XSDT must list FADT/MADT/PPTT/GTDT/MCFG/SPCR/DBG2"
         );
         // Each listed pointer must land on a real table header in the blob.
         let valid_offsets: Vec<u64> = {
@@ -1772,6 +1821,39 @@ mod tests {
         // GSIV is at header + 4 + 12(GAS) + interrupt_type(1) + irq(1).
         let gsiv = le32(spcr, ACPI_HEADER_LEN + 4 + 12 + 2);
         assert_eq!(gsiv, machine::spi_to_intid(machine::SPI_UART));
+    }
+
+    #[test]
+    fn dbg2_describes_the_pl011_debug_port() {
+        let blobs = build_acpi(1);
+        let tables = split_tables(&blobs.tables);
+        let dbg2 = find(&tables, "DBG2");
+        assert_eq!(dbg2[8], 0, "DBG2 revision must match QEMU virt");
+
+        let device_info_offset = le32(dbg2, ACPI_HEADER_LEN) as usize;
+        assert_eq!(device_info_offset, 44);
+        assert_eq!(le32(dbg2, ACPI_HEADER_LEN + 4), 1);
+
+        let dev = device_info_offset;
+        assert_eq!(dbg2[dev], 0, "Debug Device Information revision");
+        assert_eq!(le16(dbg2, dev + 1), 43, "Debug Device Information length");
+        assert_eq!(dbg2[dev + 3], 1, "one GAS register");
+        assert_eq!(le16(dbg2, dev + 4), 5, "COM0 namespace length");
+        assert_eq!(le16(dbg2, dev + 6), 38, "namespace string offset");
+        assert_eq!(le16(dbg2, dev + 12), 0x8000, "Port Type = Serial");
+        assert_eq!(le16(dbg2, dev + 14), 0x0003, "Port Subtype = ARM PL011");
+
+        let gas_off = dev + le16(dbg2, dev + 18) as usize;
+        assert_eq!(dbg2[gas_off], 0, "DBG2 GAS must be system memory");
+        assert_eq!(dbg2[gas_off + 1], 32, "DBG2 GAS register width");
+        assert_eq!(dbg2[gas_off + 3], 3, "DBG2 GAS access size must be dword");
+        assert_eq!(le64(dbg2, gas_off + 4), machine::UART.base);
+
+        let size_off = dev + le16(dbg2, dev + 20) as usize;
+        assert_eq!(le32(dbg2, size_off), machine::UART.size as u32);
+
+        let namespace_off = dev + le16(dbg2, dev + 6) as usize;
+        assert_eq!(&dbg2[namespace_off..namespace_off + 5], b"COM0\0");
     }
 
     #[test]

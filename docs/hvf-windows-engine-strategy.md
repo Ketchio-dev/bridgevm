@@ -270,10 +270,10 @@ The remaining OS-boot contract work is now narrower:
   surface now matches QEMU's observed shape: Identify Controller advertises VWC
   `0x7`, `Get Features` FID `0x06` reports the current cache enabled, and NVM
   Flush (`0x00`) completes for both namespace and broadcast-NSID requests.
-- add the remaining ACPI parity tables/metadata that matter for Windows/Linux
-  device paths (notably DBG2; Apple `hv_gic` lacks guest-visible LPIs/ITS, so
-  current MSI routing is advertised as a MADT Generic MSI Frame instead of
-  MADT ITS + IORT);
+- keep tightening ACPI parity that matters for Windows/Linux device paths. DBG2
+  now matches QEMU's PL011 debug-port shape; Apple `hv_gic` still lacks
+  guest-visible LPIs/ITS, so current MSI routing is advertised as a MADT Generic
+  MSI Frame instead of MADT ITS + IORT;
 - lift the raw-image NVMe overlay/writeback path from the live boot probe into
   the eventual engine-facing VM configuration and keep extending it toward
   production persistence semantics;

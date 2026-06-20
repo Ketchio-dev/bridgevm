@@ -171,6 +171,6 @@ observed behaviour: Identify Controller advertises VWC `0x7`, `Get Features` FID
 namespace and broadcast-NSID requests.
 The remaining gap is above firmware: lift NVMe overlay/writeback and
 pflash persistence into the engine-facing VM configuration, keep tightening
-Windows-relevant ACPI details such as DBG2 as needed, add installer usability
-devices such as GOP framebuffer, keyboard/input and networking, and then run
-Windows installer validation.
+Windows-relevant ACPI/device-path details beyond the now-modelled PL011 DBG2
+surface, add installer usability devices such as GOP framebuffer, keyboard/input
+and networking, and then run Windows installer validation.
