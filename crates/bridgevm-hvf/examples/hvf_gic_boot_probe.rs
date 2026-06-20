@@ -324,6 +324,18 @@ fn main() {
             }
             println!();
         }
+        // The spin PC is the MmioRead32 leaf; LR(x30) holds the poll loop's return
+        // address. Dump the caller so we can disassemble what it waits on.
+        let mut lr = 0u64;
+        hv_vcpu_get_reg(vcpu, HV_REG_X0 + 30, &mut lr);
+        println!("LR(x30)={lr:#x}");
+        if let Some(code) = guest_ram.read_bytes(lr.saturating_sub(0x28), 0x50) {
+            print!("CALLER@{:#x}:", lr - 0x28);
+            for b in &code {
+                print!("{:02x}", b);
+            }
+            println!();
+        }
 
         // What is the firmware polling at the stop point? x0 is MmioRead32's address arg.
         let mut rx = [0u64; 4];
@@ -333,6 +345,18 @@ fn main() {
         println!(
             "AT-STOP: x0={:#x} x1={:#x} x2={:#x} x9={:#x}  (x0 device: {:?})",
             rx[0], rx[1], rx[2], rx[3], machine::device_at(rx[0])
+        );
+        // Poll-loop state: x22 = polled address, x21 = expected value, x20 = last read.
+        let mut ry = [0u64; 3];
+        for (i, r) in [HV_REG_X0 + 20, HV_REG_X0 + 21, HV_REG_X0 + 22].iter().enumerate() {
+            hv_vcpu_get_reg(vcpu, *r, &mut ry[i]);
+        }
+        println!(
+            "POLL: x22(addr)={:#x} (dev {:?})  x21(expect)={:#x}  x20(last)={:#x}",
+            ry[2],
+            machine::device_at(ry[2]),
+            ry[1],
+            ry[0]
         );
         let mut cpsr = 0u64;
         hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cpsr);
