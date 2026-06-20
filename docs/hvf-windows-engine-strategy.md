@@ -244,7 +244,14 @@ The remaining OS-boot contract work is now narrower:
   successfully, and now asserts its legacy SPI through Apple `hv_gic`; the Windows
   loader still stops after `ConvertPages` failures, so the next diff is loader
   memory-map/device-shape parity rather than basic ISO reachability or interrupt
-  delivery.
+  delivery. The current live probe also fixes an important diagnostic trap: on a
+  watchdog cancel, the true guest PC must be reread instead of reusing the last
+  MMIO-exit PC. With that correction, the Windows ISO run stops at
+  `0x13c647200`, a RAM stub containing `0x14000000` (`b .`), while the last
+  modelled MMIO is only a UART newline write from `0x477a5018`. Preloading a
+  serial-space byte through the PL011 RX queue is consumed by the guest but does
+  not move the frontier, so this is not simply the unhandled "Press any key"
+  input path.
 - add the remaining ACPI parity tables/metadata that matter for Windows/Linux
   device paths (notably DBG2; Apple `hv_gic` lacks guest-visible LPIs/ITS, so
   current MSI routing is advertised as a MADT Generic MSI Frame instead of

@@ -437,6 +437,18 @@ impl VirtPlatform {
         self.uart.output()
     }
 
+    /// Queue bytes that the guest can read from the PL011 UART data register.
+    /// Live probes use this to test firmware/loader input paths while the default
+    /// platform remains an unattached, receive-empty serial backend.
+    pub fn push_uart_input(&mut self, bytes: &[u8]) {
+        self.uart.push_input(bytes);
+    }
+
+    /// Number of preloaded PL011 input bytes still waiting to be read.
+    pub fn uart_input_len(&self) -> usize {
+        self.uart.input_len()
+    }
+
     fn fw_cfg_access(
         &mut self,
         offset: u64,
@@ -1094,10 +1106,31 @@ mod tests {
             );
         }
         assert_eq!(p.uart_output(), b"HI\n");
-        // UARTFR (offset 0x18) reports transmit-ready (TXFE set).
+        // UARTFR (offset 0x18) reports idle FIFOs: TXFE and RXFE set.
         assert!(matches!(
             p.on_mmio(machine::UART.base + 0x18, MmioOp::Read { size: 4 }, &mut mem),
-            MmioOutcome::ReadValue(v) if v & (1 << 7) != 0
+            MmioOutcome::ReadValue(v) if v & ((1 << 7) | (1 << 4)) == ((1 << 7) | (1 << 4))
+        ));
+    }
+
+    #[test]
+    fn uart_reads_consume_preloaded_input_via_mmio() {
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+        p.push_uart_input(b" ");
+        assert_eq!(p.uart_input_len(), 1);
+        assert!(matches!(
+            p.on_mmio(machine::UART.base + 0x18, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(v) if v & (1 << 4) == 0
+        ));
+        assert_eq!(
+            p.on_mmio(machine::UART.base, MmioOp::Read { size: 1 }, &mut mem),
+            MmioOutcome::ReadValue(u64::from(b' '))
+        );
+        assert_eq!(p.uart_input_len(), 0);
+        assert!(matches!(
+            p.on_mmio(machine::UART.base + 0x18, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(v) if v & (1 << 4) != 0
         ));
     }
 

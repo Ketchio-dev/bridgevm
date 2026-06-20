@@ -16,6 +16,7 @@
 //!
 //! Optional installer ISO media (virtio-mmio block slot 31):
 //!   BRIDGEVM_INSTALLER_ISO=/path/to/windows.iso ...
+//!   BRIDGEVM_UART_RX=' ' ...                          # preloaded serial input bytes
 //!
 //! Optional QEMU-style Linux direct boot:
 //!   BRIDGEVM_LINUX_KERNEL=/path/to/Image ...
@@ -292,6 +293,136 @@ fn dump_guest_bytes(mem: &dyn GuestMemoryMut, label: &str, center: u64, before: 
     match mem.read_bytes(base, len) {
         Some(bytes) => print_bytes(label, base, &bytes),
         None => println!("{label}@{base:#x}: <not in guest RAM view>"),
+    }
+}
+
+fn dump_guest_bytes_if_mapped(
+    mem: &dyn GuestMemoryMut,
+    label: &str,
+    center: u64,
+    before: u64,
+    len: usize,
+) {
+    let Some(base) = center.checked_sub(before) else {
+        return;
+    };
+    if let Some(bytes) = mem.read_bytes(base, len) {
+        print_bytes(label, base, &bytes);
+    }
+}
+
+fn dump_env_guest_bytes(mem: &dyn GuestMemoryMut) {
+    let Ok(extra) = std::env::var("BRIDGEVM_BOOT_PROBE_DUMP_GPA") else {
+        return;
+    };
+    for (idx, spec) in extra
+        .split(|c: char| matches!(c, ',' | ';' | ' ' | '\n' | '\t'))
+        .filter(|s| !s.trim().is_empty())
+        .enumerate()
+    {
+        let mut parts = spec.split(':');
+        let Some(gpa) = parts.next().and_then(parse_u64) else {
+            println!("DUMP[env:{idx}] {spec:?}: <invalid gpa>");
+            continue;
+        };
+        let len = parts
+            .next()
+            .and_then(parse_u64)
+            .map(|v| v.clamp(1, 0x1000) as usize)
+            .unwrap_or(0x100);
+        let before = parts
+            .next()
+            .and_then(parse_u64)
+            .map(|v| v.min(0x1000))
+            .unwrap_or(0);
+        dump_guest_bytes(mem, &format!("DUMP[env:{idx}]"), gpa, before, len);
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MmioTrace {
+    count: u64,
+    reads: u64,
+    writes: u64,
+    last_pc: u64,
+    last_ipa: u64,
+    last_op: &'static str,
+    last_value: Option<u64>,
+    last_outcome: &'static str,
+}
+
+impl Default for MmioTrace {
+    fn default() -> Self {
+        Self {
+            count: 0,
+            reads: 0,
+            writes: 0,
+            last_pc: 0,
+            last_ipa: 0,
+            last_op: "",
+            last_value: None,
+            last_outcome: "",
+        }
+    }
+}
+
+fn mmio_outcome_label(outcome: &MmioOutcome) -> &'static str {
+    match outcome {
+        MmioOutcome::ReadValue(_) => "read-value",
+        MmioOutcome::WriteAck => "write-ack",
+        MmioOutcome::KnownUnimplemented(_) => "known-unimplemented",
+        MmioOutcome::Unmapped => "unmapped",
+    }
+}
+
+fn record_mmio_trace(
+    traces: &mut BTreeMap<&'static str, MmioTrace>,
+    device: &'static str,
+    pc: u64,
+    ipa: u64,
+    op: MmioOp,
+    outcome: &MmioOutcome,
+) {
+    let entry = traces.entry(device).or_default();
+    entry.count += 1;
+    entry.last_pc = pc;
+    entry.last_ipa = ipa;
+    entry.last_outcome = mmio_outcome_label(outcome);
+    match op {
+        MmioOp::Read { .. } => {
+            entry.reads += 1;
+            entry.last_op = "read";
+            entry.last_value = match outcome {
+                MmioOutcome::ReadValue(value) => Some(*value),
+                _ => None,
+            };
+        }
+        MmioOp::Write { value, .. } => {
+            entry.writes += 1;
+            entry.last_op = "write";
+            entry.last_value = Some(value);
+        }
+    }
+}
+
+fn print_mmio_traces(traces: &BTreeMap<&'static str, MmioTrace>) {
+    println!("modelled MMIO trace:");
+    for (device, trace) in traces {
+        let value = trace
+            .last_value
+            .map(|v| format!("{v:#x}"))
+            .unwrap_or_else(|| "-".to_string());
+        println!(
+            "  {device}: count={} reads={} writes={} last_pc={:#x} last_ipa={:#x} last_op={} last_value={} last_outcome={}",
+            trace.count,
+            trace.reads,
+            trace.writes,
+            trace.last_pc,
+            trace.last_ipa,
+            trace.last_op,
+            value,
+            trace.last_outcome
+        );
     }
 }
 
@@ -577,6 +708,10 @@ fn main() {
             cpu_count: 1,
             ram_size: media.ram_size,
         });
+        if let Ok(input) = std::env::var("BRIDGEVM_UART_RX") {
+            platform.push_uart_input(input.as_bytes());
+            println!("UART RX preloaded: {} bytes", input.len());
+        }
         platform.load_flash_vars(&vars_data);
         if let Some(nvme) = media.nvme_disk.as_ref() {
             platform
@@ -630,6 +765,7 @@ fn main() {
             ptr: ram,
             len: ram_size,
         };
+        let mut mmio_traces: BTreeMap<&'static str, MmioTrace> = BTreeMap::new();
         let mut unimpl: BTreeMap<&'static str, u64> = BTreeMap::new();
         let mut redist_lo = u64::MAX;
         let mut redist_hi = 0u64;
@@ -650,6 +786,7 @@ fn main() {
             exits += 1;
             let reason = (*exit).reason;
             if reason == EXIT_CANCELED {
+                hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                 stop_reason = "watchdog (CANCELED)".into();
                 break;
             }
@@ -663,6 +800,7 @@ fn main() {
                 continue;
             }
             if reason != EXIT_EXCEPTION {
+                hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                 stop_reason = format!("exit reason {reason}");
                 break;
             }
@@ -692,6 +830,8 @@ fn main() {
                         );
                     }
                     let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
+                    let device = machine::device_at(ipa).unwrap_or("<unmapped>");
+                    record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
                     if trace_this_fwcfg {
                         println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
                     }
@@ -905,11 +1045,7 @@ fn main() {
         if sp_el1 != 0 {
             dump_guest_bytes(&guest_ram, "STACK[sp_el1]", sp_el1, 0, 0x100);
         }
-        if let Ok(extra) = std::env::var("BRIDGEVM_BOOT_PROBE_DUMP_GPA") {
-            if let Some(gpa) = parse_u64(&extra) {
-                dump_guest_bytes(&guest_ram, "DUMP[env]", gpa, 0, 0x100);
-            }
-        }
+        dump_env_guest_bytes(&guest_ram);
 
         // What is the firmware polling at the stop point? x0 is MmioRead32's address arg.
         let mut rx = [0u64; 4];
@@ -927,6 +1063,7 @@ fn main() {
             rx[3],
             machine::device_at(rx[0])
         );
+        dump_guest_bytes_if_mapped(&guest_ram, "AT-STOP[x0]", rx[0], 0x40, 0x100);
         // Poll-loop state: x22 = polled address, x21 = expected value, x20 = last read.
         let mut ry = [0u64; 3];
         for (i, r) in [HV_REG_X0 + 20, HV_REG_X0 + 21, HV_REG_X0 + 22]
@@ -942,6 +1079,13 @@ fn main() {
             ry[1],
             ry[0]
         );
+        dump_guest_bytes_if_mapped(&guest_ram, "POLL[x22]", ry[2], 0, 0x100);
+        if ry[1] != ry[2] {
+            dump_guest_bytes_if_mapped(&guest_ram, "POLL[x21]", ry[1], 0, 0x100);
+        }
+        if ry[0] != ry[1] && ry[0] != ry[2] {
+            dump_guest_bytes_if_mapped(&guest_ram, "POLL[x20]", ry[0], 0, 0x100);
+        }
         let mut cpsr = 0u64;
         hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cpsr);
         println!(
@@ -980,6 +1124,8 @@ fn main() {
             "exits: {exits} (vtimer {vtimer_exits}, psci {psci_calls}), last PC: {last_pc:#x}"
         );
         println!("unmodelled MMIO touched: {unimpl:?}");
+        print_mmio_traces(&mmio_traces);
+        println!("UART RX remaining bytes: {}", platform.uart_input_len());
         if let Some(stats) = platform.virtio_iso_stats() {
             println!(
                 "virtio ISO stats: version={} status={:#x} features={:#x} queue_ready={} queue_num={} qdesc={:#x} qavail={:#x} qused={:#x} notify={} requests={} reads={} unsupported={} io_errors={} bytes_read={} last_sector={:?} last_len={} last_status={:?}",
