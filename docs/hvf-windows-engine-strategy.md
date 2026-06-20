@@ -203,8 +203,9 @@ Windows. To get there:
 - extend the raw-image NVMe path from load/snapshot into production-grade
   host-file persistence and interrupt/MSI behavior;
 - lift the pflash variable snapshot/writeback hooks from the live boot probe into
-  the eventual engine-facing VM configuration so boot order and NVRAM state
-  survive repeated runs outside ad-hoc probes;
+  the eventual engine-facing VM configuration (`src/media.rs` now holds the
+  reusable host-file policy) so boot order and NVRAM state survive repeated runs
+  outside ad-hoc probes;
 - then boot Linux with ACPI, diff against QEMU+HVF, and only then try Windows Setup.
 
 No external host, paid entitlement, or separate machine is in the way; the whole

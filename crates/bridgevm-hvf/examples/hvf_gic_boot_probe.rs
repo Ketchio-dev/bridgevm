@@ -22,11 +22,13 @@
 use std::alloc::{alloc_zeroed, Layout};
 use std::collections::BTreeMap;
 use std::os::raw::c_void;
+use std::path::Path;
 use std::ptr::null_mut;
 
 use bridgevm_hvf::dtb::{build_virt_fdt, VirtFdtConfig};
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::machine;
+use bridgevm_hvf::media::{read_bounded_file, MediaWrite, VirtBootMediaConfig};
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome, VirtPlatform};
 
 /// A GuestMemoryMut view over the actual HVF-mapped guest RAM, so fw_cfg DMA
@@ -152,13 +154,6 @@ fn env_u64(name: &str, default: u64) -> u64 {
         .unwrap_or(default)
 }
 
-fn env_flag(name: &str) -> bool {
-    matches!(
-        std::env::var(name).ok().as_deref(),
-        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
-    )
-}
-
 fn read_reg(vcpu: HvVcpuT, reg: u32) -> u64 {
     let mut value = 0u64;
     unsafe {
@@ -199,6 +194,17 @@ fn write_named_bytes(path: &str, bytes: &[u8], label: &str) {
     println!("{label}: {path} ({} bytes)", bytes.len());
 }
 
+fn print_media_writes(subject: &str, writes: &[MediaWrite]) {
+    for write in writes {
+        println!(
+            "{}: {} ({} bytes)",
+            write.kind.label(subject),
+            write.path.display(),
+            write.bytes
+        );
+    }
+}
+
 fn maybe_write_file(path_env: &str, bytes: &[u8], description: &str) {
     if let Ok(path) = std::env::var(path_env) {
         let label = format!("{description} written");
@@ -222,14 +228,9 @@ fn serial_reached_shell(serial: &[u8]) -> bool {
     contains_bytes(serial, b"UEFI Interactive Shell") || contains_bytes(serial, b"Shell>")
 }
 
-fn read_region_file(path: &str, region_bytes: usize) -> Vec<u8> {
-    let data = std::fs::read(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
-    assert!(data.len() <= region_bytes, "{path} larger than region");
-    data
-}
-
-fn map_file(path: &str, ipa: u64, region_bytes: usize, flags: u64) {
-    let data = read_region_file(path, region_bytes);
+fn map_file(path: &Path, ipa: u64, region_bytes: usize, flags: u64) {
+    let data = read_bounded_file(path, region_bytes)
+        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let layout = Layout::from_size_align(region_bytes, 0x1_0000).unwrap();
     unsafe {
         let mem = alloc_zeroed(layout);
@@ -237,7 +238,8 @@ fn map_file(path: &str, ipa: u64, region_bytes: usize, flags: u64) {
         assert_eq!(
             hv_vm_map(mem as *mut c_void, ipa, region_bytes, flags),
             0,
-            "map {path}"
+            "map {}",
+            path.display()
         );
     }
 }
@@ -250,13 +252,7 @@ fn host_cntvct() -> u64 {
 }
 
 fn main() {
-    let code = std::env::var("BRIDGEVM_AARCH64_UEFI_CODE").unwrap_or_else(|_| {
-        "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-aarch64-code.fd".into()
-    });
-    let vars = std::env::var("BRIDGEVM_AARCH64_UEFI_VARS")
-        .unwrap_or_else(|_| "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-arm-vars.fd".into());
-    let vars_out = std::env::var("BRIDGEVM_AARCH64_UEFI_VARS_OUT").ok();
-    let vars_writable = env_flag("BRIDGEVM_AARCH64_UEFI_VARS_WRITABLE");
+    let media = VirtBootMediaConfig::from_probe_env();
     let watchdog_ms = env_u64("BRIDGEVM_BOOT_PROBE_WATCHDOG_MS", WATCHDOG_MS);
 
     unsafe {
@@ -291,12 +287,15 @@ fn main() {
         assert_eq!(gic_r, 0, "hv_gic_create");
 
         map_file(
-            &code,
+            &media.firmware_code_path,
             machine::FLASH_CODE.base,
             machine::FLASH_CODE.size as usize,
             HV_MEMORY_READ | HV_MEMORY_EXEC,
         );
-        let vars_data = read_region_file(&vars, machine::FLASH_VARS.size as usize);
+        let vars_data = media
+            .flash_vars
+            .read_bounded(machine::FLASH_VARS.size as usize)
+            .unwrap_or_else(|e| panic!("read UEFI vars {}: {e}", media.flash_vars.path.display()));
 
         let ram_layout = Layout::from_size_align(RAM_SIZE, 0x1_0000).unwrap();
         let ram = alloc_zeroed(ram_layout);
@@ -376,12 +375,15 @@ fn main() {
             ram_size: RAM_SIZE as u64,
         });
         platform.load_flash_vars(&vars_data);
-        let nvme_disk_path = std::env::var("BRIDGEVM_NVME_DISK").ok();
-        let nvme_disk_out = std::env::var("BRIDGEVM_NVME_DISK_OUT").ok();
-        let nvme_disk_writable = env_flag("BRIDGEVM_NVME_DISK_WRITABLE");
-        if let Some(path) = nvme_disk_path.as_deref() {
-            let data = std::fs::read(path).unwrap_or_else(|e| panic!("read NVMe disk {path}: {e}"));
-            println!("NVMe disk loaded: {path} ({} bytes)", data.len());
+        if let Some(nvme) = media.nvme_disk.as_ref() {
+            let data = nvme
+                .read_bounded(usize::MAX)
+                .unwrap_or_else(|e| panic!("read NVMe disk {}: {e}", nvme.path.display()));
+            println!(
+                "NVMe disk loaded: {} ({} bytes)",
+                nvme.path.display(),
+                data.len()
+            );
             platform.load_nvme_disk(data);
         }
         let mut guest_ram = MappedRam {
@@ -567,24 +569,16 @@ fn main() {
         }
 
         let serial = platform.uart_output().to_vec();
-        if let Some(path) = vars_out.as_deref() {
-            write_named_bytes(
-                path,
-                platform.flash_vars_image(),
-                "UEFI vars snapshot written",
-            );
-        }
-        if vars_writable {
-            write_named_bytes(&vars, platform.flash_vars_image(), "UEFI vars written back");
-        }
-        if let Some(path) = nvme_disk_out.as_deref() {
-            write_named_bytes(path, platform.nvme_disk(), "NVMe disk snapshot written");
-        }
-        if nvme_disk_writable {
-            let Some(path) = nvme_disk_path.as_deref() else {
-                panic!("BRIDGEVM_NVME_DISK_WRITABLE=1 requires BRIDGEVM_NVME_DISK");
-            };
-            write_named_bytes(path, platform.nvme_disk(), "NVMe disk written back");
+        let vars_writes = media
+            .flash_vars
+            .persist(platform.flash_vars_image())
+            .unwrap_or_else(|e| panic!("persist UEFI vars: {e}"));
+        print_media_writes("UEFI vars", &vars_writes);
+        if let Some(nvme) = media.nvme_disk.as_ref() {
+            let writes = nvme
+                .persist(platform.nvme_disk())
+                .unwrap_or_else(|e| panic!("persist NVMe disk: {e}"));
+            print_media_writes("NVMe disk", &writes);
         }
         maybe_write_file("BRIDGEVM_BOOT_PROBE_SERIAL_OUT", &serial, "serial log");
         let symbols = symbol_lines(&serial);
