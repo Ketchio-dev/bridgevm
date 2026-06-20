@@ -32,7 +32,7 @@
 //!   BRIDGEVM_AARCH64_UEFI_VARS_WRITABLE=1 ...        # write back to vars path
 
 use std::alloc::{alloc_zeroed, Layout};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 use std::os::raw::c_void;
 use std::path::Path;
 use std::ptr::null_mut;
@@ -47,6 +47,9 @@ use bridgevm_hvf::stage1::{self, Stage1Context, Stage1WalkStep};
 #[path = "hvf_gic_boot_probe/nvme_trace.rs"]
 mod nvme_trace;
 use nvme_trace::print_nvme_command_trace;
+#[path = "hvf_gic_boot_probe/pcie_mmio_trace.rs"]
+mod pcie_mmio_trace;
+use pcie_mmio_trace::RecentMmio;
 
 /// A GuestMemoryMut view over the actual HVF-mapped guest RAM, so fw_cfg DMA
 /// reads/writes hit real firmware memory (not a throwaway buffer).
@@ -745,90 +748,6 @@ impl Default for MmioTrace {
             last_value: None,
             last_outcome: "",
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct RecentMmioEvent {
-    pc: u64,
-    ipa: u64,
-    op: String,
-    outcome: String,
-}
-
-#[derive(Debug)]
-struct RecentMmio {
-    device: &'static str,
-    max: usize,
-    events: VecDeque<RecentMmioEvent>,
-}
-
-impl RecentMmio {
-    fn new(device: &'static str, max: usize) -> Self {
-        Self {
-            device,
-            max,
-            events: VecDeque::with_capacity(max.min(1024)),
-        }
-    }
-
-    fn record(
-        &mut self,
-        device: &'static str,
-        pc: u64,
-        ipa: u64,
-        op: &MmioOp,
-        outcome: &MmioOutcome,
-    ) {
-        if self.max == 0 || device != self.device {
-            return;
-        }
-        if self.events.len() == self.max {
-            self.events.pop_front();
-        }
-        self.events.push_back(RecentMmioEvent {
-            pc,
-            ipa,
-            op: describe_mmio_op(op),
-            outcome: describe_mmio_outcome(outcome),
-        });
-    }
-
-    fn print(&self) {
-        if self.events.is_empty() {
-            return;
-        }
-        println!(
-            "recent {} MMIO events (last {}):",
-            self.device,
-            self.events.len()
-        );
-        for event in &self.events {
-            println!(
-                "  pc={:#x} ipa={:#x} off={:#x} op={} outcome={}",
-                event.pc,
-                event.ipa,
-                event.ipa.saturating_sub(machine::PCIE_MMIO_32.base),
-                event.op,
-                event.outcome
-            );
-        }
-    }
-}
-
-fn describe_mmio_op(op: &MmioOp) -> String {
-    match op {
-        MmioOp::Read { size } => format!("read{size}"),
-        MmioOp::Write { size, value } => format!("write{size}({value:#x})"),
-    }
-}
-
-fn describe_mmio_outcome(outcome: &MmioOutcome) -> String {
-    match outcome {
-        MmioOutcome::ReadValue(value) => format!("read-value({value:#x})"),
-        MmioOutcome::WriteAck => "write-ack".to_string(),
-        MmioOutcome::KnownUnimplemented(name) => format!("known-unimplemented({name})"),
-        MmioOutcome::Unmapped => "unmapped".to_string(),
     }
 }
 

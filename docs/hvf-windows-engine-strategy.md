@@ -261,7 +261,11 @@ The remaining OS-boot contract work is now narrower:
   repeatedly reads NVMe `CSTS`/`CC` and rings `SQ0TDBL`, so the next diff is
   Windows NVMe/PCIe command flow and device-shape parity rather than the old
   late-DXE poll, the cdboot stub writer, basic ISO reachability, or interrupt
-  delivery. The live probe now keeps a bounded NVMe command/completion ring
+  delivery. The live probe now prints the recent PCIe MMIO tail with decoded
+  NVMe register names (`BRIDGEVM_RECENT_PCIE_MMIO`), e.g. `nvme.SQ0TDBL`,
+  `nvme.CQ0HDBL`, `nvme.SQ1TDBL`, `nvme.CSTS`, `nvme.CC` and `nvme.ASQ`,
+  which makes queue-doorbell churn visible without re-decoding BAR offsets by
+  hand. It also keeps a bounded NVMe command/completion ring
   (`BRIDGEVM_RECENT_NVME_COMMANDS`) so the next long run can identify the
   repeated SQE, its decoded LBA/count or admin selector, PRPs/CDWs, completion
   status, interrupt route, expected pending AERs versus other pending commands,
