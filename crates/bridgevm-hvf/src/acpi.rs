@@ -523,13 +523,28 @@ const AML_STRING_PREFIX: u8 = 0x0D;
 const AML_NAME_OP: u8 = 0x08;
 const AML_SCOPE_OP: u8 = 0x10;
 const AML_BUFFER_OP: u8 = 0x11;
+const AML_METHOD_OP: u8 = 0x14;
 const AML_EXT_OP: u8 = 0x5B;
 const AML_DEVICE_OP: u8 = 0x82;
+const AML_LOCAL0_OP: u8 = 0x60;
+const AML_ARG0_OP: u8 = 0x68;
+const AML_STORE_OP: u8 = 0x70;
+const AML_AND_OP: u8 = 0x7B;
+const AML_OR_OP: u8 = 0x7D;
+const AML_CREATE_DWORD_FIELD_OP: u8 = 0x8A;
+const AML_LNOT_OP: u8 = 0x92;
+const AML_LEQUAL_OP: u8 = 0x93;
+const AML_IF_OP: u8 = 0xA0;
+const AML_ELSE_OP: u8 = 0xA1;
+const AML_RETURN_OP: u8 = 0xA4;
 
 const EISA_PNP0A08: [u8; 4] = [0x41, 0xD0, 0x0A, 0x08];
 const EISA_PNP0A03: [u8; 4] = [0x41, 0xD0, 0x0A, 0x03];
 const EISA_PNP0C02: [u8; 4] = [0x41, 0xD0, 0x0C, 0x02];
 const EISA_PNP0C0C: [u8; 4] = [0x41, 0xD0, 0x0C, 0x0C];
+const PCI_HOST_BRIDGE_OSC_UUID: [u8; 16] = [
+    0x5B, 0x4D, 0xDB, 0x33, 0xF7, 0x1F, 0x1C, 0x40, 0x96, 0x57, 0x74, 0x41, 0xC0, 0x3D, 0xD7, 0x66,
+];
 
 fn aml_pkg_length(payload_len: usize) -> Vec<u8> {
     for encoded_len in 1..=4 {
@@ -601,6 +616,93 @@ fn aml_name_buffer(name: &[u8; 4], bytes: &[u8]) -> Vec<u8> {
     out
 }
 
+fn aml_name_ref(name: &[u8; 4]) -> Vec<u8> {
+    name.to_vec()
+}
+
+fn aml_arg(n: u8) -> Vec<u8> {
+    assert!(n <= 6, "AML has only Arg0..Arg6");
+    vec![AML_ARG0_OP + n]
+}
+
+fn aml_local0() -> Vec<u8> {
+    vec![AML_LOCAL0_OP]
+}
+
+fn aml_byte(value: u8) -> Vec<u8> {
+    match value {
+        0 => vec![AML_ZERO_OP],
+        1 => vec![AML_ONE_OP],
+        _ => vec![AML_BYTE_PREFIX, value],
+    }
+}
+
+fn aml_uuid_buffer(bytes: &[u8; 16]) -> Vec<u8> {
+    let mut out = vec![AML_BUFFER_OP];
+    out.extend(aml_pkg_length(2 + bytes.len()));
+    out.push(AML_BYTE_PREFIX);
+    out.push(bytes.len() as u8);
+    out.extend_from_slice(bytes);
+    out
+}
+
+fn aml_create_dword_field(source: &[u8], byte_index: u8, name: &[u8; 4]) -> Vec<u8> {
+    let mut out = vec![AML_CREATE_DWORD_FIELD_OP];
+    out.extend_from_slice(source);
+    out.extend(aml_byte(byte_index));
+    out.extend_from_slice(name);
+    out
+}
+
+fn aml_store(source: &[u8], target: &[u8]) -> Vec<u8> {
+    let mut out = vec![AML_STORE_OP];
+    out.extend_from_slice(source);
+    out.extend_from_slice(target);
+    out
+}
+
+fn aml_binary_op(op: u8, left: &[u8], right: &[u8], target: &[u8]) -> Vec<u8> {
+    let mut out = vec![op];
+    out.extend_from_slice(left);
+    out.extend_from_slice(right);
+    out.extend_from_slice(target);
+    out
+}
+
+fn aml_equal(left: &[u8], right: &[u8]) -> Vec<u8> {
+    let mut out = vec![AML_LEQUAL_OP];
+    out.extend_from_slice(left);
+    out.extend_from_slice(right);
+    out
+}
+
+fn aml_not_equal(left: &[u8], right: &[u8]) -> Vec<u8> {
+    let mut out = vec![AML_LNOT_OP];
+    out.extend(aml_equal(left, right));
+    out
+}
+
+fn aml_if(predicate: &[u8], body: &[u8]) -> Vec<u8> {
+    let mut out = vec![AML_IF_OP];
+    out.extend(aml_pkg_length(predicate.len() + body.len()));
+    out.extend_from_slice(predicate);
+    out.extend_from_slice(body);
+    out
+}
+
+fn aml_else(body: &[u8]) -> Vec<u8> {
+    let mut out = vec![AML_ELSE_OP];
+    out.extend(aml_pkg_length(body.len()));
+    out.extend_from_slice(body);
+    out
+}
+
+fn aml_return(value: &[u8]) -> Vec<u8> {
+    let mut out = vec![AML_RETURN_OP];
+    out.extend_from_slice(value);
+    out
+}
+
 fn aml_scope(name: &[u8; 4], body: &[u8]) -> Vec<u8> {
     let mut out = vec![AML_SCOPE_OP];
     out.extend(aml_pkg_length(name.len() + body.len()));
@@ -613,6 +715,19 @@ fn aml_device(name: &[u8; 4], body: &[u8]) -> Vec<u8> {
     let mut out = vec![AML_EXT_OP, AML_DEVICE_OP];
     out.extend(aml_pkg_length(name.len() + body.len()));
     out.extend_from_slice(name);
+    out.extend_from_slice(body);
+    out
+}
+
+fn aml_method(name: &[u8; 4], arg_count: u8, serialized: bool, body: &[u8]) -> Vec<u8> {
+    assert!(
+        arg_count <= 7,
+        "AML methods support at most seven arguments"
+    );
+    let mut out = vec![AML_METHOD_OP];
+    out.extend(aml_pkg_length(name.len() + 1 + body.len()));
+    out.extend_from_slice(name);
+    out.push(arg_count | if serialized { 0x08 } else { 0x00 });
     out.extend_from_slice(body);
     out
 }
@@ -731,7 +846,44 @@ fn build_pci_root_dsdt_device() -> Vec<u8> {
     body.extend(aml_name_simple(b"_UID", AML_ZERO_OP));
     body.extend(aml_name_simple(b"_CCA", AML_ONE_OP));
     body.extend(aml_name_buffer(b"_CRS", &crs));
+    body.extend(build_pci_root_osc_method());
     aml_device(b"PCI0", &body)
+}
+
+fn build_pci_root_osc_method() -> Vec<u8> {
+    let cdw1 = aml_name_ref(b"CDW1");
+    let cdw3 = aml_name_ref(b"CDW3");
+    let local0 = aml_local0();
+
+    let mut known_uuid_body = Vec::new();
+    known_uuid_body.extend(aml_create_dword_field(&aml_arg(3), 4, b"CDW2"));
+    known_uuid_body.extend(aml_create_dword_field(&aml_arg(3), 8, b"CDW3"));
+    known_uuid_body.extend(aml_store(&cdw3, &local0));
+    // Match QEMU's generic PCI host bridge policy: grant OS control for
+    // PCIeHotplug, SHPCHotplug, PME, AER and PCIeCapability, but not LTR.
+    known_uuid_body.extend(aml_binary_op(AML_AND_OP, &local0, &aml_byte(0x1F), &local0));
+    known_uuid_body.extend(aml_if(
+        &aml_not_equal(&aml_arg(1), &aml_byte(1)),
+        &aml_binary_op(AML_OR_OP, &cdw1, &aml_byte(0x08), &cdw1),
+    ));
+    known_uuid_body.extend(aml_if(
+        &aml_not_equal(&cdw3, &local0),
+        &aml_binary_op(AML_OR_OP, &cdw1, &aml_byte(0x10), &cdw1),
+    ));
+    known_uuid_body.extend(aml_store(&local0, &cdw3));
+
+    let mut unknown_uuid_body = Vec::new();
+    unknown_uuid_body.extend(aml_binary_op(AML_OR_OP, &cdw1, &aml_byte(0x04), &cdw1));
+
+    let mut body = Vec::new();
+    body.extend(aml_create_dword_field(&aml_arg(3), 0, b"CDW1"));
+    body.extend(aml_if(
+        &aml_equal(&aml_arg(0), &aml_uuid_buffer(&PCI_HOST_BRIDGE_OSC_UUID)),
+        &known_uuid_body,
+    ));
+    body.extend(aml_else(&unknown_uuid_body));
+    body.extend(aml_return(&aml_arg(3)));
+    aml_method(b"_OSC", 4, false, &body)
 }
 
 fn build_power_button_dsdt_device() -> Vec<u8> {
@@ -1210,6 +1362,7 @@ mod tests {
             b"COM0".as_slice(),
             b"ARMH0011".as_slice(),
             b"PCI0".as_slice(),
+            b"_OSC".as_slice(),
             b"RES0".as_slice(),
             b"PWRB".as_slice(),
         ] {
@@ -1257,6 +1410,43 @@ mod tests {
                 &resource_qword_memory(machine::PCIE_ECAM.base, machine::PCIE_ECAM.size),
             ),
             "DSDT must reserve the ECAM aperture through PNP0C02"
+        );
+    }
+
+    #[test]
+    fn dsdt_pci_root_osc_matches_qemu_control_policy() {
+        let blobs = build_acpi(1);
+        let tables = split_tables(&blobs.tables);
+        let dsdt = find(&tables, "DSDT");
+        assert!(
+            contains_bytes(dsdt, b"_OSC"),
+            "PCI root bridge must expose _OSC"
+        );
+        assert!(
+            contains_bytes(dsdt, &PCI_HOST_BRIDGE_OSC_UUID),
+            "_OSC must use the PCI host bridge UUID"
+        );
+        for name in [b"CDW1".as_slice(), b"CDW2".as_slice(), b"CDW3".as_slice()] {
+            assert!(
+                contains_bytes(dsdt, name),
+                "_OSC must create {} dword field",
+                String::from_utf8_lossy(name)
+            );
+        }
+        assert!(
+            contains_bytes(dsdt, &[AML_AND_OP, AML_LOCAL0_OP, AML_BYTE_PREFIX, 0x1F]),
+            "_OSC must mask OS-requested PCIe control to QEMU's supported feature set"
+        );
+        assert!(
+            contains_bytes(
+                dsdt,
+                &[AML_OR_OP, b'C', b'D', b'W', b'1', AML_BYTE_PREFIX, 0x10]
+            ),
+            "_OSC must set the capabilities-masked status bit when denying control bits"
+        );
+        assert!(
+            contains_bytes(dsdt, &[AML_RETURN_OP, AML_ARG0_OP + 3]),
+            "_OSC must return Arg3"
         );
     }
 
