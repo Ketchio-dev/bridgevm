@@ -26,6 +26,8 @@
 
 use crate::machine::PCIE_ECAM;
 
+mod virtio_caps;
+
 // ---- ECAM geometry ----------------------------------------------------------
 
 /// Bytes of config space per function (PCIe extended config space: 4 KiB).
@@ -319,6 +321,7 @@ impl Function {
     fn virtio_blk() -> Self {
         let mut bars = [Bar::default(); NUM_BARS];
         bars[0] = Bar::memory32(VIRTIO_BLK_BAR0_SIZE);
+        let caps = virtio_caps::boot_media_capability_list();
         Self {
             bdf: VIRTIO_BLK_BDF,
             vendor_device: (u32::from(VIRTIO_BLK_DEVICE_ID) << 16)
@@ -326,8 +329,8 @@ impl Function {
             revision_class: (VIRTIO_BLK_CLASS_CODE << 8) | u32::from(VIRTIO_BLK_REVISION),
             command: 0,
             bars,
-            cap_ptr: 0,
-            cap_bytes: Vec::new(),
+            cap_ptr: caps.cap_ptr,
+            cap_bytes: caps.cap_bytes,
         }
     }
 
@@ -412,6 +415,9 @@ impl Function {
             return false;
         }
         let cap = u16::from(self.cap_ptr);
+        if self.capability_byte(cap) != CAP_ID_MSIX {
+            return false;
+        }
         let cap_end = cap + MsixCapability::SIZE_BYTES;
         if reg + 4 <= cap || reg >= cap_end {
             return false;
