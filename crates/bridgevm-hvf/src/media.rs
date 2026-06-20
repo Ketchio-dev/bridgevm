@@ -15,6 +15,8 @@ pub const DEFAULT_QEMU_AARCH64_CODE: &str =
 pub const DEFAULT_QEMU_AARCH64_VARS: &str =
     "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-arm-vars.fd";
 pub const DEFAULT_LINUX_CMDLINE: &str = "console=ttyAMA0 earlycon=pl011,0x09000000 acpi=force";
+pub const DEFAULT_RAM_MIB: u64 = 512;
+pub const MIB: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaWriteKind {
@@ -141,6 +143,7 @@ impl LinuxBootMedia {
 /// Path A boot media selected for a live run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VirtBootMediaConfig {
+    pub ram_size: u64,
     pub firmware_code_path: PathBuf,
     pub flash_vars: WritableMedia,
     pub nvme_disk: Option<WritableMedia>,
@@ -150,6 +153,7 @@ pub struct VirtBootMediaConfig {
 impl VirtBootMediaConfig {
     pub fn qemu_defaults() -> Self {
         Self {
+            ram_size: DEFAULT_RAM_MIB * MIB,
             firmware_code_path: PathBuf::from(DEFAULT_QEMU_AARCH64_CODE),
             flash_vars: WritableMedia::new(DEFAULT_QEMU_AARCH64_VARS),
             nvme_disk: None,
@@ -159,6 +163,13 @@ impl VirtBootMediaConfig {
 
     pub fn from_probe_env() -> Self {
         let mut cfg = Self::qemu_defaults();
+        if let Ok(mib) = env::var("BRIDGEVM_RAM_MIB") {
+            let mib = mib
+                .parse::<u64>()
+                .expect("BRIDGEVM_RAM_MIB must be a positive integer");
+            assert!(mib > 0, "BRIDGEVM_RAM_MIB must be non-zero");
+            cfg.ram_size = mib.checked_mul(MIB).expect("BRIDGEVM_RAM_MIB overflow");
+        }
         if let Ok(path) = env::var("BRIDGEVM_AARCH64_UEFI_CODE") {
             cfg.firmware_code_path = PathBuf::from(path);
         }
@@ -270,6 +281,7 @@ mod tests {
             cfg.flash_vars.path,
             PathBuf::from(DEFAULT_QEMU_AARCH64_VARS)
         );
+        assert_eq!(cfg.ram_size, DEFAULT_RAM_MIB * MIB);
         assert!(cfg.nvme_disk.is_none());
         assert!(cfg.linux_boot.is_none());
     }

@@ -144,7 +144,12 @@ platform gap. The current Apple `hv_gic` path deliberately advertises the MSI
 surface as a GICv2m-compatible Generic MSI Frame (Apple's GICM registers) rather
 than MADT ITS + IORT: the in-kernel GIC does not expose guest-visible LPIs/ITS,
 while Linux falls back to the MSI-frame driver when the GIC distributor lacks LPI
-support. The remaining gap is above firmware: lift NVMe overlay/writeback and
+support. The Windows ISO oracle now narrows the installer-media gap: QEMU/HVF with
+ACPI enabled and `-cdrom` exposes the ISO as `.../CDROM(0x0)` and reaches
+`Press any key to boot from CD or DVD...`; the same ISO attached as BridgeVM's
+raw NVMe namespace fails the firmware boot option with `Not Found`, so BridgeVM
+needs a CD-ROM/El Torito media path rather than treating the ISO as a plain disk.
+The remaining gap is above firmware: lift NVMe overlay/writeback and
 pflash persistence into the engine-facing VM configuration, keep tightening
 Windows-relevant ACPI details such as DBG2 as needed, add installer usability
 devices such as GOP framebuffer, keyboard/input and networking, and then run

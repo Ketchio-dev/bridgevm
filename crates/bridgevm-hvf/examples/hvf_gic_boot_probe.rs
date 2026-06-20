@@ -19,6 +19,7 @@
 //!   BRIDGEVM_LINUX_INITRD=/path/to/initrd.gz ...      # optional
 //!   BRIDGEVM_LINUX_CMDLINE='console=ttyAMA0 acpi=force' ...
 //!   BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX=0 ...           # keep running after early Linux logs
+//!   BRIDGEVM_RAM_MIB=4096 ...                         # Windows-scale RAM experiments
 //!
 //! Optional writable UEFI vars:
 //!   BRIDGEVM_AARCH64_UEFI_VARS=/path/to/vars.fd ...
@@ -150,8 +151,6 @@ const HV_GIC_REG_GICM_SET_SPI_NSR: u64 = 0x40;
 const WATCH_TARGET: u64 = 0x5ffd_f798;
 const DBGWCR_STORE_8B: u64 = 0x1ff7;
 
-const RAM_SIZE: usize = 0x2000_0000; // 512 MiB
-const MAX_LINUX_BOOT_BLOB_BYTES: usize = RAM_SIZE;
 const MAX_EXITS: u64 = 50_000_000;
 const WATCHDOG_MS: u64 = 8000;
 
@@ -401,6 +400,12 @@ unsafe fn emulate_debug_os_lock_sysreg(vcpu: HvVcpuT, trap: SysRegTrap) -> bool 
 
 fn main() {
     let media = VirtBootMediaConfig::from_probe_env();
+    let ram_size = usize::try_from(media.ram_size).expect("guest RAM size does not fit usize");
+    assert!(
+        ram_size >= 128 * 1024 * 1024,
+        "guest RAM must be at least 128 MiB"
+    );
+    println!("Guest RAM: {} MiB", media.ram_size / (1024 * 1024));
     let watchdog_ms = env_u64("BRIDGEVM_BOOT_PROBE_WATCHDOG_MS", WATCHDOG_MS);
     let trace_fwcfg = env_flag("BRIDGEVM_TRACE_FWCFG");
     let trace_msix = env_flag("BRIDGEVM_TRACE_MSIX");
@@ -479,18 +484,19 @@ fn main() {
             .read_bounded(machine::FLASH_VARS.size as usize)
             .unwrap_or_else(|e| panic!("read UEFI vars {}: {e}", media.flash_vars.path.display()));
 
-        let ram_layout = Layout::from_size_align(RAM_SIZE, 0x1_0000).unwrap();
+        let ram_layout = Layout::from_size_align(ram_size, 0x1_0000).unwrap();
         let ram = alloc_zeroed(ram_layout);
         let dtb = build_virt_fdt(&VirtFdtConfig {
             cpu_count: 1,
-            ram_size: RAM_SIZE as u64,
+            ram_size: media.ram_size,
         });
+        assert!(dtb.len() < ram_size, "DTB must fit in guest RAM");
         std::ptr::copy_nonoverlapping(dtb.as_ptr(), ram, dtb.len());
         assert_eq!(
             hv_vm_map(
                 ram as *mut c_void,
                 machine::RAM_BASE,
-                RAM_SIZE,
+                ram_size,
                 HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC
             ),
             0,
@@ -555,7 +561,7 @@ fn main() {
 
         let mut platform = VirtPlatform::new(VirtFdtConfig {
             cpu_count: 1,
-            ram_size: RAM_SIZE as u64,
+            ram_size: media.ram_size,
         });
         platform.load_flash_vars(&vars_data);
         if let Some(nvme) = media.nvme_disk.as_ref() {
@@ -570,13 +576,11 @@ fn main() {
             );
         }
         if let Some(linux) = media.linux_boot.as_ref() {
-            let kernel = linux
-                .read_kernel_bounded(MAX_LINUX_BOOT_BLOB_BYTES)
-                .unwrap_or_else(|e| {
-                    panic!("read Linux kernel {}: {e}", linux.kernel_path.display())
-                });
+            let kernel = linux.read_kernel_bounded(ram_size).unwrap_or_else(|e| {
+                panic!("read Linux kernel {}: {e}", linux.kernel_path.display())
+            });
             let initrd = linux
-                .read_initrd_bounded(MAX_LINUX_BOOT_BLOB_BYTES)
+                .read_initrd_bounded(ram_size)
                 .unwrap_or_else(|e| panic!("read Linux initrd: {e}"));
             println!(
                 "Linux kernel loaded: {} ({} bytes)",
@@ -600,7 +604,7 @@ fn main() {
         let mut guest_ram = MappedRam {
             base: machine::RAM_BASE,
             ptr: ram,
-            len: RAM_SIZE,
+            len: ram_size,
         };
         let mut unimpl: BTreeMap<&'static str, u64> = BTreeMap::new();
         let mut redist_lo = u64::MAX;
