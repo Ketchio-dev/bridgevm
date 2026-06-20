@@ -83,7 +83,7 @@ ACPI-only boot): Linux gives you `dmesg`, Windows gives you a sad face.
 | 5 | PCIe ECAM (`pci-host-ecam-generic`) + config space + MSI/MSI-X | **partial (wired + Linux validated)** | ECAM host bridge, NVMe endpoint config space, BAR0 MMIO routing, writable MSI-X table/PBA, Apple GICM/GICv2m-style MSI-frame metadata and `hv_gic_send_msi` delivery are wired; Linux drives the NVMe queue through the PCI endpoint under ACPI |
 | 6 | **Linux ACPI-only boot** through the stock firmware | **partial (Ubuntu root userspace starts)** | QEMU-style `-kernel`/`-initrd` fw_cfg blobs boot Ubuntu's arm64 kernel through EFI, ACPI, SMBIOS/DMI, GIC, timer, PL011 console binding, ACPI0007 CPU device enumeration, PCI root enumeration, QEMU-like PCI `_OSC`, basic PPTT CPU topology, PMU IRQ metadata, root ext4 mount, `/boot` and `/boot/efi` mounts, `sysinit.target`, and `basic.target`. The ECAM PnP reservation warning is present in the QEMU+HVF oracle too, so the active BridgeVM-only gaps are now post-boot services, missing devices such as network/display/input, and Windows validation rather than early ACPI metadata. |
 | 7 | NVMe controller (identify + admin/IO queues) on PCIe | **partial (Linux root boot validated)** | the controller is reachable through PCIe BAR0; raw host-file media is wired into the live boot probe with read-only sparse overlays or write-through mode; PRP1/PRP2/PRP-list transfers, including PRP2 list-pointer offsets, are handled; Linux no longer reports the previous large-read `SC_INVALID_FIELD` / ext4 journal-abort failure |
-| 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | partial (virtio-mmio ISO reads) | QEMU/HVF with ACPI enabled and `-cdrom` reaches `Press any key to boot from CD or DVD...`; BridgeVM's raw ISO-as-NVMe path fails in firmware with `Not Found`, but the live probe now attaches the ISO as a read-only QEMU-like legacy virtio-mmio block device on slot 31. Firmware loads `UEFI Misc Device`, raises its legacy SPI completion line through `hv_gic_set_spi`, reads about 1 MiB with no virtio I/O errors, then stalls after Windows loader `ConvertPages` failures (`10000000-1012BFFF`, then `102000-102FFF`). |
+| 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | partial (Windows loader reaches high VA code) | QEMU/HVF with ACPI enabled and `-cdrom` reaches `Press any key to boot from CD or DVD...`; BridgeVM's raw ISO-as-NVMe path fails in firmware with `Not Found`, but the live probe now attaches the ISO as a read-only QEMU-like legacy virtio-mmio block device on slot 31. Exposing PMUVer in `ID_AA64DFR0_EL1` lets cdboot pass its PMU register path, prompt-time PL011 input injection passes the CD prompt, and the Windows loader reaches `Loading files...`, reads hundreds of MiB from the ISO without virtio I/O errors, and enters Windows high virtual-address code. The active frontier is now the Windows NVMe/PCIe/device-shape path after the loader runs, not late DXE, basic ISO reads, or interrupt delivery. |
 | 9 | GOP framebuffer + keyboard | after 8 | Setup UI + "press any key"; serial input is not enough to satisfy the Windows CD prompt in the QEMU oracle |
 | 10 | vTPM 2.0, Secure Boot, virtio-net/guest agent | later | Windows 11 compliance + usability |
 
@@ -241,25 +241,27 @@ The remaining OS-boot contract work is now narrower:
   stock firmware creates a BridgeVM NVMe boot option but fails it with `Not
   Found` and falls through to the shell. The current BridgeVM virtio-mmio block
   ISO prototype is discovered as QEMU-like legacy virtio-mmio, services reads
-  successfully, and now asserts its legacy SPI through Apple `hv_gic`; the Windows
-  loader still stops after `ConvertPages` failures, so the next diff is loader
-  memory-map/device-shape parity rather than basic ISO reachability or interrupt
-  delivery. The current live probe also fixes an important diagnostic trap: on a
-  watchdog cancel, the true guest PC must be reread instead of reusing the last
-  MMIO-exit PC. With that correction, the Windows ISO run stops at
-  `0x13c647200`, a RAM stub containing `0x14000000` (`b .`), while the last
-  modelled MMIO is only a UART newline write from `0x477a5018`. A live hardware
-  watchpoint on `0x13c647200` catches the writer: `PC=0x477a3dc8`,
-  `LR=0x477875d4`, storing `0x14000000`, so the next symbol-free diff should
-  identify that firmware/loader stub writer rather than chasing stale MMIO state.
-  Preloading a
-  serial-space byte through the PL011 RX queue is consumed by the guest but does
-  not move the frontier, so this is not simply the unhandled "Press any key"
-  input path. The cdboot image to disassemble is the El Torito FAT image entry
-  `CDROM(0x0,0x84C,0x3480)`, not the ISO root `/efi/boot/bootaa64.efi`; its PE
-  `SizeOfImage` is `0x12c000`, matching the QEMU log. The preserved LR
-  `0x13c6fb5d4` maps to cdboot RVA `0x75d4`, inside runtime-function range
-  `0x7568..0x7880`.
+  successfully, and asserts its legacy SPI through Apple `hv_gic`. The latest
+  live probe exposes PMUVer (`ID_AA64DFR0_EL1[11:8] = 1`) so cdboot no longer
+  traps on PMU register access, and `BRIDGEVM_UART_RX_ON_CD_PROMPT=' '` injects
+  serial input only after the CD prompt is printed. With that path the loader
+  prints `Loading files...`, reads roughly 300 MiB in a 30 s run and roughly
+  646 MiB in a 120 s run with zero virtio I/O errors, and reaches Windows high
+  virtual-address code (`pc=0xfffff801...`). The 120 s trace ends with an EL1
+  data abort in Windows code while the recent PCIe MMIO tail repeatedly reads NVMe
+  `CSTS`/`CC` and rings `SQ0TDBL`, so the next diff is Windows NVMe/PCIe command
+  flow and device-shape parity rather than the old late-DXE poll, the cdboot stub
+  writer, basic ISO reachability, or interrupt delivery. The live probe now keeps
+  a bounded NVMe command/completion ring (`BRIDGEVM_RECENT_NVME_COMMANDS`) so the
+  next long run can identify the repeated SQE, its PRPs/CDWs and completion
+  status directly. The first Windows-observed NVMe admin-command gaps are now
+  closed: Asynchronous Event Request commands are accepted and left pending,
+  standard `Get Features` probes return boring defaults, and firmware-slot log
+  page `0x03` completes. The latest trace has no `invalid-opcode` completions;
+  the remaining NVMe `invalid-field` completions are Windows probes of optional
+  or vendor/reserved surfaces (`Identify` CNS `0x06`, `Get Features` FID
+  `0xd0`/`0x7f`, and log pages `0xc0`/`0xc1`) and should be diffed against
+  QEMU before being papered over.
 - add the remaining ACPI parity tables/metadata that matter for Windows/Linux
   device paths (notably DBG2; Apple `hv_gic` lacks guest-visible LPIs/ITS, so
   current MSI routing is advertised as a MADT Generic MSI Frame instead of

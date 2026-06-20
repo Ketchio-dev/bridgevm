@@ -15,7 +15,8 @@
 //! Scope (deliberately minimal — *not yet wired live*):
 //!   * BAR0 registers: CAP, VS (1.4.0), CC, CSTS, AQA, ASQ, ACQ, doorbells.
 //!   * Admin commands: IDENTIFY (controller + namespace), CREATE I/O
-//!     COMPLETION/SUBMISSION QUEUE, SET FEATURES (number of queues).
+//!     COMPLETION/SUBMISSION QUEUE, GET/SET FEATURES (small Windows-observed
+//!     subset).
 //!   * One I/O queue processing NVM READ (0x02) / WRITE (0x01) against a flat
 //!     raw disk backend with 512-byte LBAs, using PRP1/PRP2 and PRP lists for
 //!     data transfers. Unit tests usually use an in-memory image; live probes
@@ -29,7 +30,7 @@
 //! registers), 5 (admin command set) and the NVM Command Set; QEMU `hw/nvme/`.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     fs::{File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
     path::Path,
@@ -57,6 +58,11 @@ pub const MAX_QUEUE_ENTRIES: u16 = 64;
 /// model only drives one, but exposes a small pool so a multi-queue guest gets
 /// a sane non-zero allocation back.
 pub const MAX_IO_QUEUE_PAIRS: u16 = 8;
+/// Maximum outstanding Asynchronous Event Request commands retained without
+/// completion. The identify controller AERL field advertises this as zero-based.
+pub const MAX_ASYNC_EVENT_REQUESTS: u8 = 4;
+/// Number of recent commands retained for live bring-up diagnostics.
+pub const COMMAND_TRACE_CAPACITY: usize = 256;
 
 // ---- BAR0 register offsets (NVMe 1.4 §3.1) --------------------------------
 /// Controller Capabilities (64-bit, RO).
@@ -114,6 +120,8 @@ const ADMIN_OP_DELETE_IO_CQ: u8 = 0x04;
 const ADMIN_OP_CREATE_IO_CQ: u8 = 0x05;
 const ADMIN_OP_IDENTIFY: u8 = 0x06;
 const ADMIN_OP_SET_FEATURES: u8 = 0x09;
+const ADMIN_OP_GET_FEATURES: u8 = 0x0a;
+const ADMIN_OP_ASYNC_EVENT_REQUEST: u8 = 0x0c;
 
 // ---- NVM (I/O) opcodes (NVMe NVM Command Set) -----------------------------
 const NVM_OP_WRITE: u8 = 0x01;
@@ -126,7 +134,17 @@ const IDENTIFY_CNS_ACTIVE_NAMESPACE_LIST: u32 = 0x02;
 const IDENTIFY_CNS_NAMESPACE_DESCRIPTOR_LIST: u32 = 0x03;
 
 // ---- SET FEATURES feature IDs (NVMe 1.4 §5.21.1) --------------------------
+const FEATURE_ARBITRATION: u8 = 0x01;
+const FEATURE_POWER_MANAGEMENT: u8 = 0x02;
+const FEATURE_TEMPERATURE_THRESHOLD: u8 = 0x04;
+const FEATURE_ERROR_RECOVERY: u8 = 0x05;
+const FEATURE_VOLATILE_WRITE_CACHE: u8 = 0x06;
 const FEATURE_NUMBER_OF_QUEUES: u8 = 0x07;
+const FEATURE_INTERRUPT_COALESCING: u8 = 0x08;
+const FEATURE_INTERRUPT_VECTOR_CONFIGURATION: u8 = 0x09;
+const FEATURE_WRITE_ATOMICITY_NORMAL: u8 = 0x0a;
+const FEATURE_ASYNC_EVENT_CONFIGURATION: u8 = 0x0b;
+const FEATURE_AUTONOMOUS_POWER_STATE_TRANSITION: u8 = 0x0c;
 
 // ---- CREATE I/O COMPLETION QUEUE fields (NVMe 1.4 §5.3) -------------------
 const CREATE_IO_CQ_PC_BIT: u32 = 1 << 0;
@@ -135,6 +153,7 @@ const CREATE_IO_CQ_IV_SHIFT: u32 = 16;
 
 // ---- GET LOG PAGE log identifiers (NVMe 1.4 §5.14.1) ----------------------
 const LOG_PAGE_SMART_HEALTH: u8 = 0x02;
+const LOG_PAGE_FIRMWARE_SLOT_INFO: u8 = 0x03;
 
 // ---- Completion status codes (NVMe 1.4 §4.6.1, generic command status) ----
 /// Successful completion (status code type 0, code 0).
@@ -247,6 +266,59 @@ struct CompletionQueue {
 pub struct NvmeCompletionEvent {
     pub cqid: u16,
     pub vector: u16,
+}
+
+/// Completion routing metadata captured with a processed NVMe command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NvmeCompletionTrace {
+    pub cqid: u16,
+    pub vector: u16,
+}
+
+/// A recent NVMe submission entry processed by the controller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NvmeCommandTrace {
+    pub sqid: u16,
+    pub cqid: u16,
+    pub sq_head: u16,
+    pub sq_tail: u16,
+    pub sq_entry_gpa: u64,
+    pub opcode: u8,
+    pub command_id: u16,
+    pub nsid: u32,
+    pub prp1: u64,
+    pub prp2: u64,
+    pub cdw10: u32,
+    pub cdw11: u32,
+    pub cdw12: u32,
+    pub cdw13: u32,
+    pub cdw14: u32,
+    pub cdw15: u32,
+    pub status: u16,
+    pub completion_posted: bool,
+    pub completion: Option<NvmeCompletionTrace>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CommandResult {
+    status: u16,
+    complete: bool,
+}
+
+impl CommandResult {
+    const fn complete(status: u16) -> Self {
+        Self {
+            status,
+            complete: true,
+        }
+    }
+
+    const fn pending() -> Self {
+        Self {
+            status: SC_SUCCESS,
+            complete: false,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -458,6 +530,12 @@ pub struct NvmeController {
     last_feature_result: u32,
     /// BAR-backed MSI-X table and PBA for this endpoint.
     msix: MsixTable,
+    /// Recent command/completion history for live Windows bring-up.
+    command_trace: VecDeque<NvmeCommandTrace>,
+    /// Outstanding AER commands that should complete only when an async event is
+    /// raised. This minimal controller does not raise events yet, so it only
+    /// tracks the advertised limit and leaves accepted requests pending.
+    pending_async_event_requests: u8,
 }
 
 impl NvmeController {
@@ -501,6 +579,8 @@ impl NvmeController {
             max_io_queues: MAX_IO_QUEUE_PAIRS,
             last_feature_result: 0,
             msix: MsixTable::new(NVME_MSIX_VECTOR_COUNT),
+            command_trace: VecDeque::with_capacity(COMMAND_TRACE_CAPACITY),
+            pending_async_event_requests: 0,
         }
     }
 
@@ -550,6 +630,11 @@ impl NvmeController {
     /// Number of `LBA_SIZE`-byte logical blocks in the backing disk.
     pub fn block_count(&self) -> u64 {
         self.disk.byte_len() / LBA_SIZE as u64
+    }
+
+    /// Snapshot recent commands processed by the queue engine, oldest first.
+    pub fn recent_command_trace(&self) -> Vec<NvmeCommandTrace> {
+        self.command_trace.iter().copied().collect()
     }
 
     /// The assembled 64-bit `CAP` register value.
@@ -654,6 +739,7 @@ impl NvmeController {
             self.sqs = vec![None];
             self.cqs = vec![None];
             self.csts &= !CSTS_RDY_BIT;
+            self.pending_async_event_requests = 0;
         }
     }
 
@@ -719,7 +805,7 @@ impl NvmeController {
                 sq.head = new_head;
             }
 
-            let status = if qid == 0 {
+            let result = if qid == 0 {
                 self.execute_admin(&cmd, mem)
             } else {
                 self.execute_io(&cmd, mem)
@@ -736,10 +822,39 @@ impl NvmeController {
                     cmd.cdw12,
                     cmd.prp1,
                     cmd.prp2,
-                    status
+                    result.status
                 );
             }
-            if let Some(completion) = self.post_completion(cqid, qid as u16, &cmd, status, mem) {
+            let (completion_posted, completion) = if result.complete {
+                self.post_completion(cqid, qid as u16, &cmd, result.status, mem)
+            } else {
+                (false, None)
+            };
+            self.record_command_trace(NvmeCommandTrace {
+                sqid: qid as u16,
+                cqid,
+                sq_head: head,
+                sq_tail: tail,
+                sq_entry_gpa: entry_gpa,
+                opcode: cmd.opcode,
+                command_id: cmd.command_id,
+                nsid: cmd.nsid,
+                prp1: cmd.prp1,
+                prp2: cmd.prp2,
+                cdw10: cmd.cdw10,
+                cdw11: cmd.cdw11,
+                cdw12: cmd.cdw12,
+                cdw13: cmd.cdw13,
+                cdw14: cmd.cdw14,
+                cdw15: cmd.cdw15,
+                status: result.status,
+                completion_posted,
+                completion: completion.map(|c| NvmeCompletionTrace {
+                    cqid: c.cqid,
+                    vector: c.vector,
+                }),
+            });
+            if let Some(completion) = completion {
                 if nvme_trace_enabled() {
                     println!(
                         "NVME completion cid={} sqid={} cqid={} vector={}",
@@ -751,17 +866,39 @@ impl NvmeController {
         }
     }
 
+    fn record_command_trace(&mut self, trace: NvmeCommandTrace) {
+        if self.command_trace.len() == COMMAND_TRACE_CAPACITY {
+            self.command_trace.pop_front();
+        }
+        self.command_trace.push_back(trace);
+    }
+
     /// Execute an admin command, returning the NVMe status field to report.
-    fn execute_admin(&mut self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
-        match cmd.opcode {
+    fn execute_admin(
+        &mut self,
+        cmd: &SubmissionEntry,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> CommandResult {
+        let status = match cmd.opcode {
             ADMIN_OP_IDENTIFY => self.admin_identify(cmd, mem),
             ADMIN_OP_GET_LOG_PAGE => self.admin_get_log_page(cmd, mem),
             ADMIN_OP_CREATE_IO_CQ => self.admin_create_io_cq(cmd),
             ADMIN_OP_CREATE_IO_SQ => self.admin_create_io_sq(cmd),
             ADMIN_OP_SET_FEATURES => self.admin_set_features(cmd),
+            ADMIN_OP_GET_FEATURES => self.admin_get_features(cmd, mem),
+            ADMIN_OP_ASYNC_EVENT_REQUEST => return self.admin_async_event_request(),
             ADMIN_OP_DELETE_IO_SQ | ADMIN_OP_DELETE_IO_CQ => SC_SUCCESS,
             _ => SC_INVALID_OPCODE,
+        };
+        CommandResult::complete(status)
+    }
+
+    fn admin_async_event_request(&mut self) -> CommandResult {
+        if self.pending_async_event_requests >= MAX_ASYNC_EVENT_REQUESTS {
+            return CommandResult::complete(SC_INVALID_FIELD);
         }
+        self.pending_async_event_requests += 1;
+        CommandResult::pending()
     }
 
     /// IDENTIFY (CNS in CDW10 bits 7:0). Writes a 4 KiB structure to PRP1.
@@ -819,6 +956,10 @@ impl NvmeController {
         d[72] = 0;
         // VER (80..84): identify data agrees with VS.
         d[80..84].copy_from_slice(&NVME_VERSION_1_4_0.to_le_bytes());
+        // AERL (259): maximum concurrently outstanding async event requests,
+        // zero-based. Windows submits AERs during setup; they should remain
+        // pending rather than completing as invalid opcodes.
+        d[259] = MAX_ASYNC_EVENT_REQUESTS - 1;
         // SQES (512): min/max submission-queue entry size = 2^6 = 64 bytes.
         d[512] = 0x66;
         // CQES (513): min/max completion-queue entry size = 2^4 = 16 bytes.
@@ -890,6 +1031,7 @@ impl NvmeController {
 
         let data = match lid {
             LOG_PAGE_SMART_HEALTH => self.smart_health_log(byte_count),
+            LOG_PAGE_FIRMWARE_SLOT_INFO => self.firmware_slot_info_log(byte_count),
             _ => return SC_INVALID_FIELD,
         };
         if mem.write_bytes(cmd.prp1, &data) {
@@ -909,6 +1051,18 @@ impl NvmeController {
         }
         if d.len() >= 5 {
             d[4] = 10; // available spare threshold (%)
+        }
+        d
+    }
+
+    fn firmware_slot_info_log(&self, byte_count: usize) -> Vec<u8> {
+        let mut d = vec![0u8; byte_count];
+        if !d.is_empty() {
+            // Active Firmware Info: active slot 1, no pending activation slot.
+            d[0] = 1;
+        }
+        if d.len() >= 72 {
+            write_ascii(&mut d[8..72], "BridgeVM NVMe firmware slot 1");
         }
         d
     }
@@ -987,13 +1141,46 @@ impl NvmeController {
         SC_SUCCESS
     }
 
+    /// GET FEATURES (NVMe 1.4 §5.14). Windows probes several optional features
+    /// during setup. Return boring, disabled defaults for the generic features
+    /// this tiny controller can safely expose, and report invalid-field (not
+    /// invalid-opcode) for reserved/vendor-specific feature IDs.
+    fn admin_get_features(&mut self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
+        let fid = (cmd.cdw10 & 0xff) as u8;
+        let value = match fid {
+            FEATURE_ARBITRATION => 0,
+            FEATURE_POWER_MANAGEMENT => 0,
+            FEATURE_TEMPERATURE_THRESHOLD => 0,
+            FEATURE_ERROR_RECOVERY => 0,
+            FEATURE_VOLATILE_WRITE_CACHE => 0,
+            FEATURE_NUMBER_OF_QUEUES => {
+                let granted = u32::from(self.max_io_queues.saturating_sub(1));
+                (granted << 16) | granted
+            }
+            FEATURE_INTERRUPT_COALESCING => 0,
+            FEATURE_INTERRUPT_VECTOR_CONFIGURATION => cmd.cdw11 & 0xffff,
+            FEATURE_WRITE_ATOMICITY_NORMAL => 0,
+            FEATURE_ASYNC_EVENT_CONFIGURATION => 0,
+            FEATURE_AUTONOMOUS_POWER_STATE_TRANSITION => {
+                if cmd.prp1 != 0 && !mem.write_bytes(cmd.prp1, &vec![0u8; 256]) {
+                    return SC_INVALID_FIELD;
+                }
+                0
+            }
+            _ => return SC_INVALID_FIELD,
+        };
+        self.last_feature_result = value;
+        SC_SUCCESS
+    }
+
     /// Execute an NVM I/O command (READ / WRITE) against the disk backend.
-    fn execute_io(&mut self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
-        match cmd.opcode {
+    fn execute_io(&mut self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> CommandResult {
+        let status = match cmd.opcode {
             NVM_OP_READ => self.io_read(cmd, mem),
             NVM_OP_WRITE => self.io_write(cmd, mem),
             _ => SC_INVALID_OPCODE,
-        }
+        };
+        CommandResult::complete(status)
     }
 
     /// NVM READ (0x02). SLBA in CDW10/11 (64-bit), NLB in CDW12 bits 15:0
@@ -1064,7 +1251,7 @@ impl NvmeController {
         cmd: &SubmissionEntry,
         status: u16,
         mem: &mut dyn GuestMemoryMut,
-    ) -> Option<NvmeCompletionEvent> {
+    ) -> (bool, Option<NvmeCompletionEvent>) {
         let dw0 = std::mem::take(&mut self.last_feature_result);
         let (base, tail, size, phase, sq_head, interrupt_vector, interrupts_enabled) =
             match self.cqs.get(cqid as usize) {
@@ -1083,7 +1270,7 @@ impl NvmeController {
                         cq.interrupts_enabled,
                     )
                 }
-                _ => return None,
+                _ => return (false, None),
             };
 
         // Status field (CDW3 bits 31:17 = status code, bit 16 = phase tag).
@@ -1100,7 +1287,7 @@ impl NvmeController {
 
         let entry_gpa = base + u64::from(tail) * CQ_ENTRY_SIZE;
         if !mem.write_bytes(entry_gpa, &entry) {
-            return None;
+            return (false, None);
         }
 
         // Advance the CQ tail, toggling the phase tag when it wraps.
@@ -1111,10 +1298,13 @@ impl NvmeController {
                 cq.phase = !cq.phase;
             }
         }
-        interrupts_enabled.then_some(NvmeCompletionEvent {
-            cqid,
-            vector: interrupt_vector,
-        })
+        (
+            true,
+            interrupts_enabled.then_some(NvmeCompletionEvent {
+                cqid,
+                vector: interrupt_vector,
+            }),
+        )
     }
 
     pub fn raise_msix(
@@ -1498,6 +1688,10 @@ mod tests {
         u16::from_le_bytes([entry[14], entry[15]]) >> 1
     }
 
+    fn completion_dw0(entry: &[u8; 16]) -> u32 {
+        u32::from_le_bytes([entry[0], entry[1], entry[2], entry[3]])
+    }
+
     fn create_io_queue_pair(
         ctrl: &mut NvmeController,
         mem: &mut FakeMem,
@@ -1766,6 +1960,11 @@ mod tests {
         assert_eq!(id.len(), PAGE_SIZE);
         let nn = u32::from_le_bytes([id[516], id[517], id[518], id[519]]);
         assert_eq!(nn, 1, "one namespace");
+        assert_eq!(
+            id[259],
+            MAX_ASYNC_EVENT_REQUESTS - 1,
+            "AERL advertises the retained async-event request slots"
+        );
         assert_eq!(id[512], 0x66, "SQES = 64-byte entries");
         assert_eq!(id[513], 0x44, "CQES = 16-byte entries");
         assert!(
@@ -1793,6 +1992,45 @@ mod tests {
             ctrl.process(&mut mem),
             vec![NvmeCompletionEvent { cqid: 0, vector: 0 }]
         );
+        let trace = ctrl.recent_command_trace();
+        assert_eq!(trace.len(), 1);
+        assert_eq!(trace[0].sqid, 0);
+        assert_eq!(trace[0].cqid, 0);
+        assert_eq!(trace[0].sq_head, 0);
+        assert_eq!(trace[0].sq_tail, 1);
+        assert_eq!(trace[0].sq_entry_gpa, ASQ_BASE);
+        assert_eq!(trace[0].opcode, ADMIN_OP_IDENTIFY);
+        assert_eq!(trace[0].command_id, 0x56);
+        assert_eq!(trace[0].prp1, DATA_BASE);
+        assert_eq!(trace[0].cdw10, IDENTIFY_CNS_CONTROLLER);
+        assert_eq!(trace[0].status, SC_SUCCESS);
+        assert!(trace[0].completion_posted);
+        assert_eq!(
+            trace[0].completion,
+            Some(NvmeCompletionTrace { cqid: 0, vector: 0 })
+        );
+    }
+
+    #[test]
+    fn async_event_request_is_accepted_and_left_pending() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let sqe = encode_sqe(ADMIN_OP_ASYNC_EVENT_REQUEST, 0x77, 0, 0, 0, 0, 0);
+        assert!(mem.write_bytes(ASQ_BASE, &sqe));
+        ctrl.mmio_write(REG_DOORBELL_BASE, 4, 1);
+
+        assert_eq!(ctrl.process(&mut mem), Vec::<NvmeCompletionEvent>::new());
+        let admin_sq = ctrl.sqs[0].as_ref().expect("admin SQ installed");
+        assert_eq!(admin_sq.head, 1, "AER consumes an SQ entry");
+        assert_eq!(read_completion(&mem, ACQ_BASE, 0), [0u8; 16]);
+        assert_eq!(ctrl.pending_async_event_requests, 1);
+
+        let trace = ctrl.recent_command_trace();
+        assert_eq!(trace.len(), 1);
+        assert_eq!(trace[0].opcode, ADMIN_OP_ASYNC_EVENT_REQUEST);
+        assert_eq!(trace[0].command_id, 0x77);
+        assert_eq!(trace[0].status, SC_SUCCESS);
+        assert!(!trace[0].completion_posted);
+        assert_eq!(trace[0].completion, None);
     }
 
     #[test]
@@ -1940,6 +2178,34 @@ mod tests {
     }
 
     #[test]
+    fn get_log_page_firmware_slot_info_completes() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let numd = (512u32 / 4) - 1;
+        let cdw10 = (numd << 16) | u32::from(LOG_PAGE_FIRMWARE_SLOT_INFO);
+        let sqe = encode_sqe(
+            ADMIN_OP_GET_LOG_PAGE,
+            6,
+            0xffff_ffff,
+            DATA_BASE,
+            cdw10,
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 0, &sqe);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_SUCCESS
+        );
+
+        let log = mem.read_bytes(DATA_BASE, 512).unwrap();
+        assert_eq!(log[0] & 0x7, 1, "active firmware slot is slot 1");
+        assert!(
+            log[8..72].starts_with(b"BridgeVM NVMe firmware slot 1"),
+            "firmware revision slot string is present"
+        );
+    }
+
+    #[test]
     fn set_features_number_of_queues_completes() {
         let (mut ctrl, mut mem) = enabled_controller();
         // Request more queues than we have; controller grants what it can.
@@ -1956,6 +2222,56 @@ mod tests {
         submit_admin(&mut ctrl, &mut mem, 0, &sqe);
         let cqe = read_completion(&mem, ACQ_BASE, 0);
         assert_eq!(completion_status(&cqe), SC_SUCCESS);
+    }
+
+    #[test]
+    fn get_features_number_of_queues_reports_capacity_in_completion_dw0() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let sqe = encode_sqe(
+            ADMIN_OP_GET_FEATURES,
+            8,
+            0,
+            0,
+            u32::from(FEATURE_NUMBER_OF_QUEUES),
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 0, &sqe);
+        let cqe = read_completion(&mem, ACQ_BASE, 0);
+        assert_eq!(completion_status(&cqe), SC_SUCCESS);
+        let granted = u32::from(MAX_IO_QUEUE_PAIRS - 1);
+        assert_eq!(completion_dw0(&cqe), (granted << 16) | granted);
+    }
+
+    #[test]
+    fn get_features_apst_returns_zero_table() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        assert!(mem.write_bytes(DATA_BASE, &[0xaa; 256]));
+        let sqe = encode_sqe(
+            ADMIN_OP_GET_FEATURES,
+            9,
+            0,
+            DATA_BASE,
+            u32::from(FEATURE_AUTONOMOUS_POWER_STATE_TRANSITION),
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 0, &sqe);
+        let cqe = read_completion(&mem, ACQ_BASE, 0);
+        assert_eq!(completion_status(&cqe), SC_SUCCESS);
+        assert_eq!(completion_dw0(&cqe), 0);
+        assert_eq!(mem.read_bytes(DATA_BASE, 256).unwrap(), vec![0u8; 256]);
+    }
+
+    #[test]
+    fn get_features_unknown_feature_reports_invalid_field_not_invalid_opcode() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let sqe = encode_sqe(ADMIN_OP_GET_FEATURES, 10, 0, 0, 0xd0, 0, 0);
+        submit_admin(&mut ctrl, &mut mem, 0, &sqe);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_INVALID_FIELD
+        );
     }
 
     #[test]
@@ -2037,6 +2353,27 @@ mod tests {
         // 5) The data round-trips through the disk backend byte-for-byte.
         let got = mem.read_bytes(DATA_BASE, LBA_SIZE).unwrap();
         assert_eq!(got, pattern, "WRITE then READ of one LBA round-trips");
+
+        let trace = ctrl.recent_command_trace();
+        let write_trace = trace
+            .iter()
+            .find(|event| event.sqid == 1 && event.command_id == 0x10)
+            .expect("I/O WRITE command trace is retained");
+        assert_eq!(write_trace.opcode, NVM_OP_WRITE);
+        assert_eq!(write_trace.status, SC_SUCCESS);
+        assert_eq!(write_trace.cdw10, slba as u32);
+        assert!(write_trace.completion_posted);
+        assert_eq!(write_trace.completion, None);
+
+        let read_trace = trace
+            .iter()
+            .find(|event| event.sqid == 1 && event.command_id == 0x11)
+            .expect("I/O READ command trace is retained");
+        assert_eq!(read_trace.opcode, NVM_OP_READ);
+        assert_eq!(read_trace.status, SC_SUCCESS);
+        assert_eq!(read_trace.cdw10, slba as u32);
+        assert!(read_trace.completion_posted);
+        assert_eq!(read_trace.completion, None);
     }
 
     #[test]

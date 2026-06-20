@@ -17,6 +17,7 @@
 //! Optional installer ISO media (virtio-mmio block slot 31):
 //!   BRIDGEVM_INSTALLER_ISO=/path/to/windows.iso ...
 //!   BRIDGEVM_UART_RX=' ' ...                          # preloaded serial input bytes
+//!   BRIDGEVM_UART_RX_ON_CD_PROMPT=' ' ...             # inject after cdboot prompt is printed
 //!
 //! Optional QEMU-style Linux direct boot:
 //!   BRIDGEVM_LINUX_KERNEL=/path/to/Image ...
@@ -31,7 +32,7 @@
 //!   BRIDGEVM_AARCH64_UEFI_VARS_WRITABLE=1 ...        # write back to vars path
 
 use std::alloc::{alloc_zeroed, Layout};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::os::raw::c_void;
 use std::path::Path;
 use std::ptr::null_mut;
@@ -40,6 +41,7 @@ use bridgevm_hvf::dtb::{build_virt_fdt, VirtFdtConfig};
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::machine;
 use bridgevm_hvf::media::{read_bounded_file, MediaWrite, MediaWriteKind, VirtBootMediaConfig};
+use bridgevm_hvf::nvme::NvmeCommandTrace;
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome, VirtPlatform};
 
 /// A GuestMemoryMut view over the actual HVF-mapped guest RAM, so fw_cfg DMA
@@ -93,6 +95,9 @@ extern "C" {
     fn hv_vm_config_create() -> *mut c_void;
     fn hv_vm_config_set_ipa_size(config: *mut c_void, ipa_bit_length: u32) -> HvReturn;
     fn hv_vm_config_get_max_ipa_size(ipa_bit_length: *mut u32) -> HvReturn;
+    fn hv_vm_config_get_el2_supported(el2_supported: *mut bool) -> HvReturn;
+    fn hv_vm_config_get_el2_enabled(config: *mut c_void, el2_enabled: *mut bool) -> HvReturn;
+    fn hv_vm_config_set_el2_enabled(config: *mut c_void, el2_enabled: bool) -> HvReturn;
     fn hv_vm_destroy() -> HvReturn;
     fn hv_vm_map(addr: *mut c_void, ipa: u64, size: usize, flags: u64) -> HvReturn;
     fn hv_vcpu_create(
@@ -148,6 +153,12 @@ const EC_SOFTSTEP_SAME: u64 = 0x33;
 const HV_SYS_REG_DBGWVR0_EL1: u16 = 0x8006;
 const HV_SYS_REG_DBGWCR0_EL1: u16 = 0x8007;
 const HV_SYS_REG_MDSCR_EL1: u16 = 0x8012;
+const HV_SYS_REG_ID_AA64DFR0_EL1: u16 = 0xc028;
+const HV_SYS_REG_SPSR_EL1: u16 = 0xc200;
+const HV_SYS_REG_ELR_EL1: u16 = 0xc201;
+const HV_SYS_REG_ESR_EL1: u16 = 0xc290;
+const HV_SYS_REG_FAR_EL1: u16 = 0xc300;
+const HV_SYS_REG_VBAR_EL1: u16 = 0xc600;
 const HV_SYS_REG_SP_EL0: u16 = 0xc208;
 const HV_SYS_REG_SP_EL1: u16 = 0xe208;
 const HV_GIC_REG_GICM_SET_SPI_NSR: u64 = 0x40;
@@ -211,6 +222,14 @@ impl SysRegTrap {
             (2, 0, 1, 0, 4) => "OSLAR_EL1",
             (2, 0, 1, 1, 4) => "OSLSR_EL1",
             (2, 0, 1, 3, 4) => "OSDLR_EL1",
+            (3, 3, 9, 12, 0) => "PMCR_EL0",
+            (3, 3, 9, 12, 1) => "PMCNTENSET_EL0",
+            (3, 3, 9, 12, 2) => "PMCNTENCLR_EL0",
+            (3, 3, 9, 12, 3) => "PMOVSCLR_EL0",
+            (3, 0, 9, 14, 2) => "PMINTENCLR_EL1",
+            (3, 3, 9, 14, 0) => "PMUSERENR_EL0",
+            (3, 3, 9, 14, 1) => "PMINTENSET_EL1",
+            (3, 3, 14, 15, 7) => "PMCCFILTR_EL0",
             _ => "<unknown>",
         }
     }
@@ -228,6 +247,43 @@ impl SysRegTrap {
             self.rt
         )
     }
+}
+
+fn exception_class_name(ec: u64) -> &'static str {
+    match ec {
+        0x00 => "unknown/uncategorized",
+        0x01 => "trapped WFI/WFE",
+        0x07 => "trapped FP/SIMD/SVE",
+        0x15 => "SVC AArch64",
+        0x16 => "HVC AArch64",
+        0x18 => "trapped MSR/MRS system register",
+        0x20 => "instruction abort lower EL",
+        0x21 => "instruction abort same EL",
+        0x24 => "data abort lower EL",
+        0x25 => "data abort same EL",
+        0x26 => "SP alignment fault",
+        0x2f => "SError",
+        0x30 => "breakpoint lower EL",
+        0x31 => "breakpoint same EL",
+        0x32 => "software step lower EL",
+        0x33 => "software step same EL",
+        0x34 => "watchpoint lower EL",
+        0x35 => "watchpoint same EL",
+        _ => "<unknown EC>",
+    }
+}
+
+fn describe_esr(esr: u64) -> String {
+    let ec = (esr >> 26) & 0x3f;
+    if ec == EC_SYS_REG_TRAP {
+        let trap = SysRegTrap::decode(esr);
+        return format!("{}: {}", exception_class_name(ec), trap.describe());
+    }
+    format!(
+        "{} EC={ec:#x} ISS={:#x}",
+        exception_class_name(ec),
+        esr & 0x01ff_ffff
+    )
 }
 
 fn parse_u64(s: &str) -> Option<u64> {
@@ -339,6 +395,168 @@ fn dump_env_guest_bytes(mem: &dyn GuestMemoryMut) {
     }
 }
 
+#[derive(Debug)]
+struct PeImageOwner {
+    base: u64,
+    size: u32,
+    entry_rva: u32,
+    machine: u16,
+    preferred_base: u64,
+    pdb_path: Option<String>,
+}
+
+fn read_le_u16(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u16> {
+    let bytes = mem.read_bytes(gpa, 2)?;
+    Some(u16::from_le_bytes(bytes.try_into().ok()?))
+}
+
+fn read_le_u32(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u32> {
+    let bytes = mem.read_bytes(gpa, 4)?;
+    Some(u32::from_le_bytes(bytes.try_into().ok()?))
+}
+
+fn read_le_u64(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u64> {
+    let bytes = mem.read_bytes(gpa, 8)?;
+    Some(u64::from_le_bytes(bytes.try_into().ok()?))
+}
+
+fn codeview_path(bytes: &[u8]) -> Option<String> {
+    let start = if bytes.starts_with(b"RSDS") {
+        24
+    } else if bytes.starts_with(b"NB10") {
+        16
+    } else {
+        return None;
+    };
+    let path = bytes.get(start..)?;
+    let end = path.iter().position(|b| *b == 0).unwrap_or(path.len());
+    if end == 0 {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&path[..end]).to_string();
+    Some(text)
+}
+
+fn pe_debug_pdb_path(
+    mem: &dyn GuestMemoryMut,
+    base: u64,
+    optional_header: u64,
+    optional_magic: u16,
+) -> Option<String> {
+    let (dirs_offset, debug_dir_offset) = match optional_magic {
+        0x10b => (0x5c, 0x60 + 6 * 8), // PE32
+        0x20b => (0x6c, 0x70 + 6 * 8), // PE32+
+        _ => return None,
+    };
+    if read_le_u32(mem, optional_header + dirs_offset)? <= 6 {
+        return None;
+    }
+    let debug_rva = u64::from(read_le_u32(mem, optional_header + debug_dir_offset)?);
+    let debug_size = u64::from(read_le_u32(mem, optional_header + debug_dir_offset + 4)?);
+    if debug_rva == 0 || debug_size < 28 {
+        return None;
+    }
+    let entries = (debug_size / 28).min(16);
+    for i in 0..entries {
+        let entry = base + debug_rva + i * 28;
+        let typ = read_le_u32(mem, entry + 12)?;
+        if typ != 2 {
+            continue; // IMAGE_DEBUG_TYPE_CODEVIEW
+        }
+        let size = read_le_u32(mem, entry + 16)?;
+        let addr = read_le_u32(mem, entry + 20)?;
+        if size < 4 || addr == 0 {
+            continue;
+        }
+        let bytes = mem.read_bytes(base + u64::from(addr), (size as usize).min(512))?;
+        if let Some(path) = codeview_path(&bytes) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn pe_image_at(mem: &dyn GuestMemoryMut, base: u64) -> Option<PeImageOwner> {
+    if mem.read_bytes(base, 2)?.as_slice() != b"MZ" {
+        return None;
+    }
+    let e_lfanew = u64::from(read_le_u32(mem, base + 0x3c)?);
+    if !(0x40..=0x1000).contains(&e_lfanew) {
+        return None;
+    }
+    let pe = base + e_lfanew;
+    if mem.read_bytes(pe, 4)?.as_slice() != b"PE\0\0" {
+        return None;
+    }
+    let machine = read_le_u16(mem, pe + 4)?;
+    let optional_size = u64::from(read_le_u16(mem, pe + 20)?);
+    let optional = pe + 24;
+    if optional_size < 0x60 {
+        return None;
+    }
+    let magic = read_le_u16(mem, optional)?;
+    let preferred_base = match magic {
+        0x10b => u64::from(read_le_u32(mem, optional + 0x1c)?),
+        0x20b => read_le_u64(mem, optional + 0x18)?,
+        _ => return None,
+    };
+    let entry_rva = read_le_u32(mem, optional + 0x10)?;
+    let size = read_le_u32(mem, optional + 0x38)?;
+    if size == 0 || size > 128 * 1024 * 1024 {
+        return None;
+    }
+    Some(PeImageOwner {
+        base,
+        size,
+        entry_rva,
+        machine,
+        preferred_base,
+        pdb_path: pe_debug_pdb_path(mem, base, optional, magic),
+    })
+}
+
+fn find_pe_owner(mem: &dyn GuestMemoryMut, addr: u64, scan_limit: u64) -> Option<PeImageOwner> {
+    if addr < machine::RAM_BASE {
+        return None;
+    }
+    let min = machine::RAM_BASE.max(addr.saturating_sub(scan_limit));
+    let mut base = addr & !0xfff;
+    loop {
+        if let Some(owner) = pe_image_at(mem, base) {
+            if addr >= owner.base && addr < owner.base + u64::from(owner.size) {
+                return Some(owner);
+            }
+        }
+        if base <= min {
+            break;
+        }
+        base = base.saturating_sub(0x1000);
+    }
+    None
+}
+
+fn print_pe_owner(mem: &dyn GuestMemoryMut, label: &str, addr: u64) {
+    if addr < machine::RAM_BASE {
+        println!("IMAGE[{label}]: {addr:#x}: outside RAM");
+        return;
+    }
+    match find_pe_owner(mem, addr, 512 * 1024 * 1024) {
+        Some(owner) => {
+            let rva = addr - owner.base;
+            let pdb = owner.pdb_path.as_deref().unwrap_or("-");
+            println!(
+                "IMAGE[{label}]: addr={addr:#x} base={:#x} size={:#x} rva={rva:#x} entry={:#x} machine={:#x} preferred_base={:#x} pdb={pdb}",
+                owner.base,
+                owner.size,
+                owner.entry_rva,
+                owner.machine,
+                owner.preferred_base
+            );
+        }
+        None => println!("IMAGE[{label}]: {addr:#x}: no PE owner found within 512 MiB below"),
+    }
+}
+
 #[derive(Debug, Clone)]
 struct MmioTrace {
     count: u64,
@@ -363,6 +581,167 @@ impl Default for MmioTrace {
             last_value: None,
             last_outcome: "",
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RecentMmioEvent {
+    pc: u64,
+    ipa: u64,
+    op: String,
+    outcome: String,
+}
+
+#[derive(Debug)]
+struct RecentMmio {
+    device: &'static str,
+    max: usize,
+    events: VecDeque<RecentMmioEvent>,
+}
+
+impl RecentMmio {
+    fn new(device: &'static str, max: usize) -> Self {
+        Self {
+            device,
+            max,
+            events: VecDeque::with_capacity(max.min(1024)),
+        }
+    }
+
+    fn record(
+        &mut self,
+        device: &'static str,
+        pc: u64,
+        ipa: u64,
+        op: &MmioOp,
+        outcome: &MmioOutcome,
+    ) {
+        if self.max == 0 || device != self.device {
+            return;
+        }
+        if self.events.len() == self.max {
+            self.events.pop_front();
+        }
+        self.events.push_back(RecentMmioEvent {
+            pc,
+            ipa,
+            op: describe_mmio_op(op),
+            outcome: describe_mmio_outcome(outcome),
+        });
+    }
+
+    fn print(&self) {
+        if self.events.is_empty() {
+            return;
+        }
+        println!(
+            "recent {} MMIO events (last {}):",
+            self.device,
+            self.events.len()
+        );
+        for event in &self.events {
+            println!(
+                "  pc={:#x} ipa={:#x} off={:#x} op={} outcome={}",
+                event.pc,
+                event.ipa,
+                event.ipa.saturating_sub(machine::PCIE_MMIO_32.base),
+                event.op,
+                event.outcome
+            );
+        }
+    }
+}
+
+fn describe_mmio_op(op: &MmioOp) -> String {
+    match op {
+        MmioOp::Read { size } => format!("read{size}"),
+        MmioOp::Write { size, value } => format!("write{size}({value:#x})"),
+    }
+}
+
+fn describe_mmio_outcome(outcome: &MmioOutcome) -> String {
+    match outcome {
+        MmioOutcome::ReadValue(value) => format!("read-value({value:#x})"),
+        MmioOutcome::WriteAck => "write-ack".to_string(),
+        MmioOutcome::KnownUnimplemented(name) => format!("known-unimplemented({name})"),
+        MmioOutcome::Unmapped => "unmapped".to_string(),
+    }
+}
+
+fn nvme_opcode_name(trace: &NvmeCommandTrace) -> &'static str {
+    if trace.sqid == 0 {
+        match trace.opcode {
+            0x00 => "delete-io-sq",
+            0x01 => "create-io-sq",
+            0x02 => "get-log-page",
+            0x04 => "delete-io-cq",
+            0x05 => "create-io-cq",
+            0x06 => "identify",
+            0x09 => "set-features",
+            0x0a => "get-features",
+            0x0c => "async-event-request",
+            _ => "admin-unknown",
+        }
+    } else {
+        match trace.opcode {
+            0x01 => "write",
+            0x02 => "read",
+            _ => "io-unknown",
+        }
+    }
+}
+
+fn nvme_status_name(status: u16) -> &'static str {
+    match status {
+        0x0000 => "success",
+        0x0001 => "invalid-opcode",
+        0x0002 => "invalid-field",
+        _ => "unknown",
+    }
+}
+
+fn print_nvme_command_trace(platform: &VirtPlatform) {
+    let limit = usize::try_from(env_u64("BRIDGEVM_RECENT_NVME_COMMANDS", 32)).unwrap_or(32);
+    if limit == 0 {
+        return;
+    }
+    let trace = platform.nvme_command_trace();
+    if trace.is_empty() {
+        return;
+    }
+    let start = trace.len().saturating_sub(limit);
+    println!(
+        "recent NVMe commands (last {} of {}):",
+        trace.len() - start,
+        trace.len()
+    );
+    for event in &trace[start..] {
+        let queue_kind = if event.sqid == 0 { "admin" } else { "io" };
+        let completion = event
+            .completion
+            .map(|c| format!("completion=cq{}:vector{}", c.cqid, c.vector))
+            .unwrap_or_else(|| "completion=<not-posted>".to_string());
+        println!(
+            "  {queue_kind} sqid={} cqid={} head={} tail={} entry={:#x} cid={} op={:#04x}({}) nsid={} prp1={:#x} prp2={:#x} cdw10={:#010x} cdw11={:#010x} cdw12={:#010x} status={:#06x}({}) posted={} {}",
+            event.sqid,
+            event.cqid,
+            event.sq_head,
+            event.sq_tail,
+            event.sq_entry_gpa,
+            event.command_id,
+            event.opcode,
+            nvme_opcode_name(event),
+            event.nsid,
+            event.prp1,
+            event.prp2,
+            event.cdw10,
+            event.cdw11,
+            event.cdw12,
+            event.status,
+            nvme_status_name(event.status),
+            event.completion_posted,
+            completion
+        );
     }
 }
 
@@ -495,6 +874,37 @@ fn serial_reached_linux_panic(serial: &[u8]) -> bool {
     contains_bytes(serial, b"Kernel panic")
 }
 
+#[derive(Debug)]
+struct SerialTriggeredUartInput {
+    marker: &'static [u8],
+    bytes: Vec<u8>,
+    fired: bool,
+}
+
+impl SerialTriggeredUartInput {
+    fn from_env(env: &str, marker: &'static [u8]) -> Option<Self> {
+        let bytes = std::env::var(env).ok()?.into_bytes();
+        Some(Self {
+            marker,
+            bytes,
+            fired: false,
+        })
+    }
+
+    fn maybe_fire(&mut self, platform: &mut VirtPlatform) {
+        if self.fired || !contains_bytes(platform.uart_output(), self.marker) {
+            return;
+        }
+        platform.push_uart_input(&self.bytes);
+        self.fired = true;
+        println!(
+            "UART RX prompt injection fired: {} bytes after serial marker {:?}",
+            self.bytes.len(),
+            String::from_utf8_lossy(self.marker)
+        );
+    }
+}
+
 fn map_file(path: &Path, ipa: u64, region_bytes: usize, flags: u64) {
     let data = read_bounded_file(path, region_bytes)
         .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
@@ -563,6 +973,23 @@ fn main() {
         let mut max_ipa = 0u32;
         hv_vm_config_get_max_ipa_size(&mut max_ipa);
         hv_vm_config_set_ipa_size(vmcfg, max_ipa);
+        let mut el2_supported = false;
+        let el2_supported_status = hv_vm_config_get_el2_supported(&mut el2_supported);
+        let mut el2_enabled_before = false;
+        let el2_enabled_before_status =
+            hv_vm_config_get_el2_enabled(vmcfg, &mut el2_enabled_before);
+        let request_el2 = env_flag("BRIDGEVM_ENABLE_EL2");
+        let el2_enable_status = if request_el2 && el2_supported_status == 0 && el2_supported {
+            hv_vm_config_set_el2_enabled(vmcfg, true)
+        } else {
+            0
+        };
+        let mut el2_enabled_after = false;
+        let el2_enabled_after_status = hv_vm_config_get_el2_enabled(vmcfg, &mut el2_enabled_after);
+        println!(
+            "EL2 config: requested={} supported={} status={el2_supported_status:#x}, enabled_before={} status={el2_enabled_before_status:#x}, set_true={el2_enable_status:#x}, enabled_after={} status={el2_enabled_after_status:#x}",
+            request_el2, el2_supported, el2_enabled_before, el2_enabled_after
+        );
         let vc = hv_vm_create(vmcfg);
         println!("hv_vm_create(ipa={max_ipa}) = {vc:#x}");
         assert_eq!(vc, 0, "hv_vm_create");
@@ -661,6 +1088,14 @@ fn main() {
         // redistributor MMIO is served or hv_gic_get_redistributor_base is called.
         const HV_SYS_REG_MPIDR_EL1: u16 = 0xc005;
         hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, 0x8000_0000);
+        let mut dfr0_before = 0u64;
+        let dfr0_read_status =
+            hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_ID_AA64DFR0_EL1, &mut dfr0_before);
+        let dfr0_after = (dfr0_before & !(0xf << 8)) | (0x1 << 8);
+        let dfr0_set_status = hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_ID_AA64DFR0_EL1, dfr0_after);
+        println!(
+            "ID_AA64DFR0_EL1 PMUVer: before={dfr0_before:#x} read={dfr0_read_status:#x} after={dfr0_after:#x} set={dfr0_set_status:#x}"
+        );
         let mut rdbase = 0u64;
         let rdr = hv_gic_get_redistributor_base(vcpu, &mut rdbase);
         println!("hv_gic_get_redistributor_base(vcpu0) = {rdr:#x} -> {rdbase:#x}");
@@ -712,6 +1147,10 @@ fn main() {
             platform.push_uart_input(input.as_bytes());
             println!("UART RX preloaded: {} bytes", input.len());
         }
+        let mut cd_prompt_uart_input = SerialTriggeredUartInput::from_env(
+            "BRIDGEVM_UART_RX_ON_CD_PROMPT",
+            b"Press any key to boot from CD or DVD",
+        );
         platform.load_flash_vars(&vars_data);
         if let Some(nvme) = media.nvme_disk.as_ref() {
             platform
@@ -766,6 +1205,10 @@ fn main() {
             len: ram_size,
         };
         let mut mmio_traces: BTreeMap<&'static str, MmioTrace> = BTreeMap::new();
+        let mut recent_pcie_mmio = RecentMmio::new(
+            "pcie-mmio-32",
+            usize::try_from(env_u64("BRIDGEVM_RECENT_PCIE_MMIO", 32)).unwrap_or(32),
+        );
         let mut unimpl: BTreeMap<&'static str, u64> = BTreeMap::new();
         let mut redist_lo = u64::MAX;
         let mut redist_hi = 0u64;
@@ -774,6 +1217,8 @@ fn main() {
         let mut psci_calls = 0u64;
         let mut last_pc = 0u64;
         let mut watch_hits = 0u32;
+        let mut last_watch_pc = 0u64;
+        let mut last_watch_lr = 0u64;
         let mut fwcfg_trace_count = 0u32;
         let stop_reason;
 
@@ -831,6 +1276,7 @@ fn main() {
                     }
                     let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
                     let device = machine::device_at(ipa).unwrap_or("<unmapped>");
+                    recent_pcie_mmio.record(device, last_pc, ipa, &op, &outcome);
                     record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
                     if trace_this_fwcfg {
                         println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
@@ -930,6 +1376,8 @@ fn main() {
                     watch_hits += 1;
                     let mut lr = 0u64;
                     hv_vcpu_get_reg(vcpu, HV_REG_X0 + 30, &mut lr);
+                    last_watch_pc = last_pc;
+                    last_watch_lr = lr;
                     print!("WATCH #{watch_hits}: store @ PC {last_pc:#x} LR {lr:#x}");
                     // Single-step over the store: disable the watchpoint and arm
                     // PSTATE.SS so the store retires and we can read the new value.
@@ -972,6 +1420,9 @@ fn main() {
             if serial_reached_linux_panic(platform.uart_output()) {
                 stop_reason = "serial reached Linux kernel panic".into();
                 break;
+            }
+            if let Some(trigger) = cd_prompt_uart_input.as_mut() {
+                trigger.maybe_fire(&mut platform);
             }
             if stop_on_linux && serial_reached_linux_early_boot(platform.uart_output()) {
                 stop_reason = "serial reached Linux early boot".into();
@@ -1037,6 +1488,12 @@ fn main() {
         println!(
             "REGS: pc={last_pc:#x} lr={lr:#x} fp={fp:#x} sp_el0={sp_el0:#x} sp_el1={sp_el1:#x}"
         );
+        print_pe_owner(&guest_ram, "pc", last_pc);
+        print_pe_owner(&guest_ram, "lr", lr);
+        if last_watch_pc != 0 {
+            print_pe_owner(&guest_ram, "watch-pc", last_watch_pc);
+            print_pe_owner(&guest_ram, "watch-lr", last_watch_lr);
+        }
         dump_guest_bytes(&guest_ram, "CODE[pc]", last_pc, 0x20, 0x60);
         dump_guest_bytes(&guest_ram, "CODE[lr]", lr, 0x28, 0x60);
         if fp != 0 {
@@ -1096,6 +1553,17 @@ fn main() {
             (cpsr >> 6) & 1,
             (cpsr >> 2) & 3
         );
+        let vbar_el1 = read_sys_reg(vcpu, HV_SYS_REG_VBAR_EL1);
+        let elr_el1 = read_sys_reg(vcpu, HV_SYS_REG_ELR_EL1);
+        let esr_el1 = read_sys_reg(vcpu, HV_SYS_REG_ESR_EL1);
+        let far_el1 = read_sys_reg(vcpu, HV_SYS_REG_FAR_EL1);
+        let spsr_el1 = read_sys_reg(vcpu, HV_SYS_REG_SPSR_EL1);
+        println!(
+            "EL1_EXC: VBAR={vbar_el1:#x} ELR={elr_el1:#x} ESR={esr_el1:#x} ({}) FAR={far_el1:#x} SPSR={spsr_el1:#x}",
+            describe_esr(esr_el1)
+        );
+        print_pe_owner(&guest_ram, "elr", elr_el1);
+        dump_guest_bytes_if_mapped(&guest_ram, "CODE[elr]", elr_el1, 0x20, 0x60);
         // Timer state: CTL bit0=ENABLE, bit1=IMASK, bit2=ISTATUS(fired).
         let mut tr = [0u64; 4];
         for (i, r) in [0xdf19u16, 0xdf1a, 0xdf11, 0xdf12].iter().enumerate() {
@@ -1125,7 +1593,16 @@ fn main() {
         );
         println!("unmodelled MMIO touched: {unimpl:?}");
         print_mmio_traces(&mmio_traces);
+        recent_pcie_mmio.print();
+        print_nvme_command_trace(&platform);
         println!("UART RX remaining bytes: {}", platform.uart_input_len());
+        if let Some(trigger) = cd_prompt_uart_input.as_ref() {
+            println!(
+                "UART RX prompt injection: fired={} bytes={}",
+                trigger.fired,
+                trigger.bytes.len()
+            );
+        }
         if let Some(stats) = platform.virtio_iso_stats() {
             println!(
                 "virtio ISO stats: version={} status={:#x} features={:#x} queue_ready={} queue_num={} qdesc={:#x} qavail={:#x} qused={:#x} notify={} requests={} reads={} unsupported={} io_errors={} bytes_read={} last_sector={:?} last_len={} last_status={:?}",

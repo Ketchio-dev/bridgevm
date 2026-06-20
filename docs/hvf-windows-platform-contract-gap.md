@@ -149,9 +149,18 @@ ACPI enabled and `-cdrom` exposes the ISO as `.../CDROM(0x0)` and reaches
 `Press any key to boot from CD or DVD...`; the same ISO attached as BridgeVM's
 raw NVMe namespace fails the firmware boot option with `Not Found`. BridgeVM's
 new virtio-mmio block ISO prototype on slot 31 is discovered by firmware and
-services reads successfully, but Windows loader execution now stops after
-`ConvertPages` failures, so the active gap has moved from basic ISO reachability
-to memory-map/device-shape parity with the QEMU oracle.
+services reads successfully. The current live probe exposes PMUVer in
+`ID_AA64DFR0_EL1`, injects a PL011 byte after the CD prompt is printed, reaches
+`Loading files...`, reads hundreds of MiB from the ISO without virtio I/O errors,
+and enters Windows high virtual-address code. The active gap has moved from basic
+ISO reachability and the old loader `ConvertPages`/cdboot-stub frontier to
+Windows NVMe/PCIe command flow and device-shape parity with the QEMU oracle; the
+NVMe model now retains a bounded recent command/completion trace for that diff.
+The latest NVMe admin-command pass accepts Windows Asynchronous Event Requests as
+pending, handles the observed standard `Get Features` probes and firmware-slot
+log page, and eliminates `invalid-opcode` completions. The remaining observed
+`invalid-field` completions are optional/vendor/reserved query surfaces and need
+QEMU-oracle comparison before changing the device model.
 The remaining gap is above firmware: lift NVMe overlay/writeback and
 pflash persistence into the engine-facing VM configuration, keep tightening
 Windows-relevant ACPI details such as DBG2 as needed, add installer usability

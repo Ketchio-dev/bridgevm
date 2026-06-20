@@ -27,7 +27,7 @@ use crate::fwcfg::{
 };
 use crate::machine::{self, Region};
 use crate::msix::MsixMessage;
-use crate::nvme::{NvmeCompletionEvent, NvmeController};
+use crate::nvme::{NvmeCommandTrace, NvmeCompletionEvent, NvmeController};
 use crate::pcie::{PcieEcam, NVME_BDF};
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
@@ -196,6 +196,13 @@ impl VirtPlatform {
     /// Current byte length of the NVMe namespace backing media.
     pub fn nvme_disk_len(&self) -> u64 {
         self.nvme.disk_len()
+    }
+
+    /// Recent NVMe commands processed by the controller, oldest first. Live
+    /// probes use this to diagnose Windows setup stalls without enabling a
+    /// firehose of per-command logging.
+    pub fn nvme_command_trace(&self) -> Vec<NvmeCommandTrace> {
+        self.nvme.recent_command_trace()
     }
 
     /// Drain MSI-X messages raised by PCIe devices since the last call. The live
