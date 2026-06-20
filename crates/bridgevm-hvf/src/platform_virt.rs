@@ -28,7 +28,7 @@ use crate::fwcfg::{
 use crate::machine::{self, Region};
 use crate::msix::MsixMessage;
 use crate::nvme::{NvmeCommandTrace, NvmeCompletionEvent, NvmeController};
-use crate::pcie::{PcieEcam, PcieMmioTarget, NVME_BDF, VIRTIO_BLK_BDF};
+use crate::pcie::{PcieEcam, PcieMmioTarget, PciePioTarget, NVME_BDF, VIRTIO_BLK_BDF};
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
 use crate::pl031::Pl031;
@@ -223,6 +223,13 @@ impl VirtPlatform {
         self.pcie.mmio_target(gpa)
     }
 
+    /// Resolve a guest-physical PCIe I/O-window address against the currently
+    /// programmed endpoint I/O BARs without dispatching the access.
+    pub fn pcie_pio_target(&self, gpa: u64) -> Option<PciePioTarget> {
+        let port = gpa.checked_sub(machine::PCIE_PIO.base)?;
+        self.pcie.pio_target(port)
+    }
+
     /// Drain MSI-X messages raised by PCIe devices since the last call. The live
     /// HVF run loop turns these into `hv_gic_send_msi` calls after configuring
     /// Apple `hv_gic`'s MSI frame.
@@ -313,6 +320,7 @@ impl VirtPlatform {
             "rtc" => self.rtc_access(gpa - machine::RTC.base, op),
             "pcie-ecam" => self.pcie_access(gpa - machine::PCIE_ECAM.base, op),
             "pcie-mmio-32" => self.pcie_mmio_access(gpa, op, mem),
+            "pcie-pio" => self.pcie_pio_access(gpa, op, mem),
             "virtio-mmio" => self.virtio_mmio_access(gpa - machine::VIRTIO_MMIO.base, op, mem),
             "flash-vars" => self.flash_vars.access(gpa, op),
             // Modelled in the machine map but no device behaviour yet — surfaced
@@ -382,6 +390,21 @@ impl VirtPlatform {
         }
     }
 
+    fn pcie_pio_access(
+        &mut self,
+        gpa: u64,
+        op: MmioOp,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> MmioOutcome {
+        let Some(target) = self.pcie_pio_target(gpa) else {
+            return MmioOutcome::KnownUnimplemented("pcie-pio");
+        };
+        match (target.bdf, target.bar_index) {
+            (VIRTIO_BLK_BDF, 0) => self.pci_boot_media_legacy_pio_access(target.offset, op, mem),
+            _ => MmioOutcome::KnownUnimplemented("pcie-pio"),
+        }
+    }
+
     /// PCIe BAR memory-space access through the 32-bit MMIO aperture. Today the
     /// only endpoint is the NVMe controller at `00:01.0` BAR0.
     fn pcie_mmio_access(
@@ -395,7 +418,7 @@ impl VirtPlatform {
         };
         match (target.bdf, target.bar_index) {
             (NVME_BDF, 0) => self.nvme_access(target.offset, op, mem),
-            (VIRTIO_BLK_BDF, 0) => self.pci_boot_media_access(target.offset, op, mem),
+            (VIRTIO_BLK_BDF, 4) => self.pci_boot_media_access(target.offset, op, mem),
             _ => MmioOutcome::KnownUnimplemented("pcie-mmio-32"),
         }
     }
@@ -414,6 +437,35 @@ impl VirtPlatform {
             MmioOp::Read { size } => dev.access(offset, VirtioPciBlockOp::Read { size }, mem),
             MmioOp::Write { size, value } => {
                 dev.access(offset, VirtioPciBlockOp::Write { size, value }, mem)
+            }
+        };
+        let new_irq = dev.interrupt_line_level();
+        if old_irq != new_irq {
+            self.pending_spi_levels
+                .push((machine::spi_to_intid(machine::SPI_PCIE_INTA), new_irq));
+        }
+        match result {
+            VirtioMmioBlockResult::ReadValue(v) => MmioOutcome::ReadValue(v),
+            VirtioMmioBlockResult::WriteAck => MmioOutcome::WriteAck,
+        }
+    }
+
+    fn pci_boot_media_legacy_pio_access(
+        &mut self,
+        offset: u64,
+        op: MmioOp,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> MmioOutcome {
+        let Some(dev) = self.pci_boot_media.as_mut() else {
+            return MmioOutcome::KnownUnimplemented("virtio-blk-pci");
+        };
+        let old_irq = dev.interrupt_line_level();
+        let result = match op {
+            MmioOp::Read { size } => {
+                dev.legacy_io_access(offset, VirtioPciBlockOp::Read { size }, mem)
+            }
+            MmioOp::Write { size, value } => {
+                dev.legacy_io_access(offset, VirtioPciBlockOp::Write { size, value }, mem)
             }
         };
         let new_irq = dev.interrupt_line_level();
@@ -629,9 +681,9 @@ mod tests {
         );
     }
 
-    fn program_virtio_blk_bar0(p: &mut VirtPlatform, mem: &mut FlatGuestRam, base: u64) {
+    fn program_virtio_blk_bar4(p: &mut VirtPlatform, mem: &mut FlatGuestRam, base: u64) {
         p.on_mmio(
-            pcie_cfg_gpa(3, 0, crate::pcie::REG_BAR0),
+            pcie_cfg_gpa(3, 0, crate::pcie::REG_BAR0 + 4 * 4),
             MmioOp::Write {
                 size: 4,
                 value: base,
@@ -643,6 +695,25 @@ mod tests {
             MmioOp::Write {
                 size: 2,
                 value: u64::from(crate::pcie::CMD_MEMORY_SPACE | crate::pcie::CMD_BUS_MASTER),
+            },
+            mem,
+        );
+    }
+
+    fn program_virtio_blk_bar0_pio(p: &mut VirtPlatform, mem: &mut FlatGuestRam, port: u64) {
+        p.on_mmio(
+            pcie_cfg_gpa(3, 0, crate::pcie::REG_BAR0),
+            MmioOp::Write {
+                size: 4,
+                value: port,
+            },
+            mem,
+        );
+        p.on_mmio(
+            pcie_cfg_gpa(3, 0, crate::pcie::REG_COMMAND_STATUS),
+            MmioOp::Write {
+                size: 2,
+                value: u64::from(crate::pcie::CMD_IO_SPACE | crate::pcie::CMD_BUS_MASTER),
             },
             mem,
         );
@@ -1105,7 +1176,7 @@ mod tests {
         p.attach_pci_boot_media(&path).unwrap();
         let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x10000);
         let bar = machine::PCIE_MMIO_32.base + 0x8000;
-        program_virtio_blk_bar0(&mut p, &mut mem, bar);
+        program_virtio_blk_bar4(&mut p, &mut mem, bar);
 
         let desc = machine::RAM_BASE + 0x1000;
         let avail = machine::RAM_BASE + 0x2000;
@@ -1162,6 +1233,41 @@ mod tests {
             p.take_pending_spi_levels(),
             vec![(machine::spi_to_intid(machine::SPI_PCIE_INTA), false)]
         );
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn pcie_boot_media_legacy_pio_bar_decodes_without_unimplemented() {
+        let path = temp_path("pci-boot-media-pio");
+        fs::write(&path, [0u8; 512]).unwrap();
+
+        let mut p = platform();
+        p.attach_pci_boot_media(&path).unwrap();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x1000);
+        program_virtio_blk_bar0_pio(&mut p, &mut mem, 0);
+
+        assert_eq!(
+            p.pcie_pio_target(machine::PCIE_PIO.base),
+            Some(PciePioTarget {
+                bdf: VIRTIO_BLK_BDF,
+                bar_index: 0,
+                offset: 0,
+            })
+        );
+        assert_eq!(
+            p.on_mmio(machine::PCIE_PIO.base, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0x60)
+        );
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_PIO.base + 0x12,
+                MmioOp::Write { size: 1, value: 4 },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(p.pci_boot_media_stats().unwrap().status, 4);
 
         fs::remove_file(path).ok();
     }

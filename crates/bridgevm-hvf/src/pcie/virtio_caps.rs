@@ -1,10 +1,12 @@
+use super::VIRTIO_BLK_MSIX_CAP_OFFSET;
+
 const VIRTIO_PCI_CAP_VENDOR: u8 = 0x09;
 const VIRTIO_PCI_CAP_COMMON_CFG: u8 = 1;
 const VIRTIO_PCI_CAP_NOTIFY_CFG: u8 = 2;
 const VIRTIO_PCI_CAP_ISR_CFG: u8 = 3;
 const VIRTIO_PCI_CAP_DEVICE_CFG: u8 = 4;
 
-const VIRTIO_PCI_BAR0: u8 = 0;
+const VIRTIO_PCI_BAR4: u8 = 4;
 const VIRTIO_PCI_CAP_COMMON_OFFSET: u8 = 0x40;
 const VIRTIO_PCI_CAP_NOTIFY_OFFSET: u8 = 0x50;
 const VIRTIO_PCI_CAP_ISR_OFFSET: u8 = 0x64;
@@ -62,7 +64,7 @@ pub(super) fn boot_media_capability_list() -> VirtioCapabilityList {
         offset: VIRTIO_PCI_CAP_COMMON_OFFSET,
         next: VIRTIO_PCI_CAP_NOTIFY_OFFSET,
         cfg_type: VIRTIO_PCI_CAP_COMMON_CFG,
-        bar: VIRTIO_PCI_BAR0,
+        bar: VIRTIO_PCI_BAR4,
         region_offset: VIRTIO_PCI_COMMON_CFG_OFFSET,
         region_length: VIRTIO_PCI_CFG_REGION_SIZE,
     };
@@ -70,7 +72,7 @@ pub(super) fn boot_media_capability_list() -> VirtioCapabilityList {
         offset: VIRTIO_PCI_CAP_NOTIFY_OFFSET,
         next: VIRTIO_PCI_CAP_ISR_OFFSET,
         cfg_type: VIRTIO_PCI_CAP_NOTIFY_CFG,
-        bar: VIRTIO_PCI_BAR0,
+        bar: VIRTIO_PCI_BAR4,
         region_offset: VIRTIO_PCI_NOTIFY_CFG_OFFSET,
         region_length: VIRTIO_PCI_CFG_REGION_SIZE,
     };
@@ -78,15 +80,15 @@ pub(super) fn boot_media_capability_list() -> VirtioCapabilityList {
         offset: VIRTIO_PCI_CAP_ISR_OFFSET,
         next: VIRTIO_PCI_CAP_DEVICE_OFFSET,
         cfg_type: VIRTIO_PCI_CAP_ISR_CFG,
-        bar: VIRTIO_PCI_BAR0,
+        bar: VIRTIO_PCI_BAR4,
         region_offset: VIRTIO_PCI_ISR_CFG_OFFSET,
         region_length: VIRTIO_PCI_CFG_REGION_SIZE,
     };
     let device = VirtioPciCap {
         offset: VIRTIO_PCI_CAP_DEVICE_OFFSET,
-        next: 0,
+        next: VIRTIO_BLK_MSIX_CAP_OFFSET,
         cfg_type: VIRTIO_PCI_CAP_DEVICE_CFG,
-        bar: VIRTIO_PCI_BAR0,
+        bar: VIRTIO_PCI_BAR4,
         region_offset: VIRTIO_PCI_DEVICE_CFG_OFFSET,
         region_length: VIRTIO_PCI_CFG_REGION_SIZE,
     };
@@ -118,7 +120,7 @@ fn push_bytes(cap_bytes: &mut Vec<(u16, u8)>, offset: u8, bytes: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::super::{
-        PcieEcam, REG_CAP_PTR, REG_COMMAND_STATUS, STATUS_CAP_LIST, VIRTIO_BLK_BDF,
+        PcieEcam, CAP_ID_MSIX, REG_CAP_PTR, REG_COMMAND_STATUS, STATUS_CAP_LIST, VIRTIO_BLK_BDF,
     };
     use super::*;
 
@@ -162,9 +164,12 @@ mod tests {
 
         let mut caps = Vec::new();
         for _ in 0..8 {
+            let cap_id = read_u8(&ecam, VIRTIO_BLK_BDF, u16::from(cap));
+            if cap_id == CAP_ID_MSIX {
+                break;
+            }
             assert_eq!(
-                read_u8(&ecam, VIRTIO_BLK_BDF, u16::from(cap)),
-                VIRTIO_PCI_CAP_VENDOR,
+                cap_id, VIRTIO_PCI_CAP_VENDOR,
                 "virtio transport capability must use PCI vendor capability id"
             );
             let cap_len = read_u8(&ecam, VIRTIO_BLK_BDF, u16::from(cap) + 2);
@@ -201,28 +206,28 @@ mod tests {
             vec![
                 VirtioVendorCap {
                     cfg_type: VIRTIO_PCI_CAP_COMMON_CFG,
-                    bar: VIRTIO_PCI_BAR0,
+                    bar: VIRTIO_PCI_BAR4,
                     offset: VIRTIO_PCI_COMMON_CFG_OFFSET,
                     length: VIRTIO_PCI_CFG_REGION_SIZE,
                     notify_off_multiplier: None,
                 },
                 VirtioVendorCap {
                     cfg_type: VIRTIO_PCI_CAP_NOTIFY_CFG,
-                    bar: VIRTIO_PCI_BAR0,
+                    bar: VIRTIO_PCI_BAR4,
                     offset: VIRTIO_PCI_NOTIFY_CFG_OFFSET,
                     length: VIRTIO_PCI_CFG_REGION_SIZE,
                     notify_off_multiplier: Some(VIRTIO_PCI_NOTIFY_OFF_MULTIPLIER),
                 },
                 VirtioVendorCap {
                     cfg_type: VIRTIO_PCI_CAP_ISR_CFG,
-                    bar: VIRTIO_PCI_BAR0,
+                    bar: VIRTIO_PCI_BAR4,
                     offset: VIRTIO_PCI_ISR_CFG_OFFSET,
                     length: VIRTIO_PCI_CFG_REGION_SIZE,
                     notify_off_multiplier: None,
                 },
                 VirtioVendorCap {
                     cfg_type: VIRTIO_PCI_CAP_DEVICE_CFG,
-                    bar: VIRTIO_PCI_BAR0,
+                    bar: VIRTIO_PCI_BAR4,
                     offset: VIRTIO_PCI_DEVICE_CFG_OFFSET,
                     length: VIRTIO_PCI_CFG_REGION_SIZE,
                     notify_off_multiplier: None,

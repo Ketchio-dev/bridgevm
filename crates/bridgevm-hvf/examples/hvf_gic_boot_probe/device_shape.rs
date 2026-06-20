@@ -47,7 +47,7 @@ fn device_shape_lines(
             "boot-media installer ISO fallback: virtio-mmio slot {INSTALLER_ISO_SLOT} base={iso_base:#x} spi={iso_spi} intid={iso_intid} attached={legacy_mmio_installer_iso_attached}"
         ),
         format!(
-            "boot-media installer ISO: {bus:02x}:{dev:02x}.{func} virtio-blk-pci vendor={vendor:#06x} device={device:#06x} class={class:#08x} bar0_size={bar0:#x} attached={pci_installer_iso_attached}",
+            "boot-media installer ISO: {bus:02x}:{dev:02x}.{func} virtio-blk-pci vendor={vendor:#06x} device={device:#06x} class={class:#08x} bar0_io_size={bar0:#x} bar1_msix_size={bar1:#x} bar4_modern_mmio_size={bar4:#x} attached={pci_installer_iso_attached}",
             bus = pcie::VIRTIO_BLK_BDF.0,
             dev = pcie::VIRTIO_BLK_BDF.1,
             func = pcie::VIRTIO_BLK_BDF.2,
@@ -55,6 +55,8 @@ fn device_shape_lines(
             device = pcie::VIRTIO_BLK_DEVICE_ID,
             class = pcie::VIRTIO_BLK_CLASS_CODE,
             bar0 = pcie::VIRTIO_BLK_BAR0_SIZE,
+            bar1 = pcie::VIRTIO_BLK_BAR1_SIZE,
+            bar4 = pcie::VIRTIO_BLK_BAR4_SIZE,
         ),
         "qemu oracle parity: virtio-net-pci 00:01.0 absent (BridgeVM uses NVMe at 00:01.0)"
             .to_string(),
@@ -83,6 +85,8 @@ mod tests {
         assert!(lines.iter().any(|line| line.contains("legacy virtio-mmio")));
         assert!(lines.iter().any(|line| line
             .contains("00:03.0 virtio-blk-pci vendor=0x1af4 device=0x1001 class=0x010000")
+            && line.contains("bar0_io_size=0x80")
+            && line.contains("bar4_modern_mmio_size=0x4000")
             && line.contains("attached=true")));
         assert!(lines
             .iter()

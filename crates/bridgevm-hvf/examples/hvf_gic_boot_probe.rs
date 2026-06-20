@@ -61,7 +61,7 @@ mod nvme_trace;
 use nvme_trace::print_nvme_command_trace;
 #[path = "hvf_gic_boot_probe/pcie_mmio_trace.rs"]
 mod pcie_mmio_trace;
-use pcie_mmio_trace::RecentMmio;
+use pcie_mmio_trace::{PcieTraceTarget, RecentMmio};
 
 /// A GuestMemoryMut view over the actual HVF-mapped guest RAM, so fw_cfg DMA
 /// reads/writes hit real firmware memory (not a throwaway buffer).
@@ -1383,6 +1383,10 @@ fn main() {
             "pcie-mmio-32",
             usize::try_from(env_u64("BRIDGEVM_RECENT_PCIE_MMIO", 32)).unwrap_or(32),
         );
+        let mut recent_pcie_pio = RecentMmio::new(
+            "pcie-pio",
+            usize::try_from(env_u64("BRIDGEVM_RECENT_PCIE_PIO", 32)).unwrap_or(32),
+        );
         let mut unimpl: BTreeMap<&'static str, u64> = BTreeMap::new();
         let mut redist_lo = u64::MAX;
         let mut redist_hi = 0u64;
@@ -1465,13 +1469,14 @@ fn main() {
                         );
                     }
                     let device = machine::device_at(ipa).unwrap_or("<unmapped>");
-                    let pcie_target = if device == "pcie-mmio-32" {
-                        platform.pcie_mmio_target(ipa)
-                    } else {
-                        None
+                    let pcie_target = match device {
+                        "pcie-mmio-32" => platform.pcie_mmio_target(ipa).map(PcieTraceTarget::Mmio),
+                        "pcie-pio" => platform.pcie_pio_target(ipa).map(PcieTraceTarget::Pio),
+                        _ => None,
                     };
                     let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
                     recent_pcie_mmio.record(device, last_pc, ipa, pcie_target, &op, &outcome);
+                    recent_pcie_pio.record(device, last_pc, ipa, pcie_target, &op, &outcome);
                     record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
                     if trace_this_fwcfg {
                         println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
@@ -1844,6 +1849,7 @@ fn main() {
         println!("unmodelled MMIO touched: {unimpl:?}");
         print_mmio_traces(&mmio_traces);
         recent_pcie_mmio.print();
+        recent_pcie_pio.print();
         print_nvme_command_trace(&platform);
         println!("UART RX remaining bytes: {}", platform.uart_input_len());
         if let Some(trigger) = cd_prompt_uart_input.as_ref() {

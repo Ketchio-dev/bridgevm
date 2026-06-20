@@ -1,13 +1,19 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use bridgevm_hvf::machine;
-use bridgevm_hvf::pcie::PcieMmioTarget;
+use bridgevm_hvf::pcie::{PcieMmioTarget, PciePioTarget};
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome};
 
 #[path = "pcie_mmio_trace/registers.rs"]
 mod registers;
 
-use registers::pcie_mmio_register_name;
+use registers::{pcie_mmio_register_name, pcie_pio_register_name};
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum PcieTraceTarget {
+    Mmio(PcieMmioTarget),
+    Pio(PciePioTarget),
+}
 
 #[derive(Debug, Clone)]
 struct RecentMmioEvent {
@@ -40,7 +46,7 @@ impl RecentMmio {
         device: &'static str,
         pc: u64,
         ipa: u64,
-        target: Option<PcieMmioTarget>,
+        target: Option<PcieTraceTarget>,
         op: &MmioOp,
         outcome: &MmioOutcome,
     ) {
@@ -53,7 +59,7 @@ impl RecentMmio {
         self.events.push_back(RecentMmioEvent {
             pc,
             ipa,
-            reg: pcie_mmio_register_name(target, ipa.saturating_sub(machine::PCIE_MMIO_32.base)),
+            reg: register_name(device, ipa, target),
             op_kind: mmio_op_kind(op),
             op: describe_mmio_op(op),
             outcome: describe_mmio_outcome(outcome),
@@ -71,7 +77,7 @@ impl RecentMmio {
         );
         self.print_register_summary();
         for event in &self.events {
-            let off = event.ipa.saturating_sub(machine::PCIE_MMIO_32.base);
+            let off = event.ipa.saturating_sub(aperture_base(self.device));
             println!(
                 "  pc={:#x} ipa={:#x} off={off:#x} reg={} op={} outcome={}",
                 event.pc, event.ipa, event.reg, event.op, event.outcome
@@ -102,6 +108,30 @@ impl RecentMmio {
         for ((reg, op_kind), count) in ranked.into_iter().take(10) {
             println!("  x{count} {op_kind} {reg}");
         }
+    }
+}
+
+fn register_name(device: &'static str, ipa: u64, target: Option<PcieTraceTarget>) -> String {
+    match (device, target) {
+        ("pcie-mmio-32", Some(PcieTraceTarget::Mmio(target))) => {
+            pcie_mmio_register_name(Some(target), ipa.saturating_sub(machine::PCIE_MMIO_32.base))
+        }
+        ("pcie-mmio-32", _) => {
+            pcie_mmio_register_name(None, ipa.saturating_sub(machine::PCIE_MMIO_32.base))
+        }
+        ("pcie-pio", Some(PcieTraceTarget::Pio(target))) => {
+            pcie_pio_register_name(Some(target), ipa.saturating_sub(machine::PCIE_PIO.base))
+        }
+        ("pcie-pio", _) => pcie_pio_register_name(None, ipa.saturating_sub(machine::PCIE_PIO.base)),
+        _ => format!("{device}+{:#x}", ipa.saturating_sub(aperture_base(device))),
+    }
+}
+
+fn aperture_base(device: &'static str) -> u64 {
+    match device {
+        "pcie-mmio-32" => machine::PCIE_MMIO_32.base,
+        "pcie-pio" => machine::PCIE_PIO.base,
+        _ => 0,
     }
 }
 

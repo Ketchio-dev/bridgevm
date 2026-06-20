@@ -99,12 +99,14 @@ pub const NUM_BARS: usize = 6;
 pub const HEADER_TYPE_ENDPOINT: u8 = 0x00;
 
 // Command-register bits the host bridge actually honours.
+/// Command bit 0: respond to I/O-space accesses.
+pub const CMD_IO_SPACE: u16 = 1 << 0;
 /// Command bit 1: respond to memory-space accesses.
 pub const CMD_MEMORY_SPACE: u16 = 1 << 1;
 /// Command bit 2: act as a bus master (issue DMA).
 pub const CMD_BUS_MASTER: u16 = 1 << 2;
 /// Mask of command bits this model keeps writable; others read back as zero.
-pub const CMD_WRITABLE_MASK: u16 = CMD_MEMORY_SPACE | CMD_BUS_MASTER;
+pub const CMD_WRITABLE_MASK: u16 = CMD_IO_SPACE | CMD_MEMORY_SPACE | CMD_BUS_MASTER;
 
 /// Status register: capabilities-list present (bit 4). The host bridge has no
 /// capability list, so this stays clear; endpoints that add MSI-X set it.
@@ -169,8 +171,20 @@ pub const VIRTIO_BLK_DEVICE_ID: u16 = 0x1001;
 pub const VIRTIO_BLK_CLASS_CODE: u32 = 0x0001_0000;
 /// Revision id reported by the boot-media endpoint.
 pub const VIRTIO_BLK_REVISION: u8 = 0x00;
-/// First parity step: a 16 KiB memory BAR for the PCI transport register block.
-pub const VIRTIO_BLK_BAR0_SIZE: u32 = 0x4000;
+/// Legacy virtio-blk-pci I/O BAR.
+pub const VIRTIO_BLK_BAR0_SIZE: u32 = 0x80;
+/// MSI-X table/PBA memory BAR.
+pub const VIRTIO_BLK_BAR1_SIZE: u32 = 0x1000;
+/// Modern virtio PCI transport memory BAR.
+pub const VIRTIO_BLK_BAR4_SIZE: u32 = 0x4000;
+/// PCI capability-list offset for the virtio-blk MSI-X capability.
+pub const VIRTIO_BLK_MSIX_CAP_OFFSET: u8 = 0x84;
+/// Number of MSI-X vectors exposed by the boot-media endpoint.
+pub const VIRTIO_BLK_MSIX_VECTOR_COUNT: u16 = 2;
+/// Offset of the virtio-blk MSI-X table in BAR1.
+pub const VIRTIO_BLK_MSIX_TABLE_OFFSET: u32 = 0x0000;
+/// Offset of the virtio-blk MSI-X Pending Bit Array in BAR1.
+pub const VIRTIO_BLK_MSIX_PBA_OFFSET: u32 = 0x0800;
 
 /// The value an ECAM read returns when no device answers: all-ones. Firmware
 /// treats a `0xFFFF_FFFF` vendor/device read as "slot empty".
@@ -205,6 +219,14 @@ struct Bar {
     /// Non-writable low type bits (memory/IO, 32/64-bit, prefetch) kept across
     /// a base re-program and the sizing probe.
     type_bits: u32,
+    kind: BarKind,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum BarKind {
+    #[default]
+    Memory32,
+    Io,
 }
 
 impl Bar {
@@ -222,6 +244,22 @@ impl Bar {
             value: 0,
             size_mask: !(size - 1),
             type_bits: 0,
+            kind: BarKind::Memory32,
+        }
+    }
+
+    /// Construct an I/O BAR with a power-of-two size.
+    fn io(size: u32) -> Self {
+        assert!(size >= 0x4, "PCI I/O BAR size must be at least 4 bytes");
+        assert!(
+            size.is_power_of_two(),
+            "PCI I/O BAR size must be a power of two"
+        );
+        Self {
+            value: 0,
+            size_mask: !(size - 1),
+            type_bits: 0x1,
+            kind: BarKind::Io,
         }
     }
 
@@ -257,20 +295,43 @@ impl Bar {
         if self.size_mask == 0 {
             0
         } else {
-            u64::from((!(self.size_mask & !0xF)).wrapping_add(1))
+            let mask = match self.kind {
+                BarKind::Memory32 => self.size_mask & !0xF,
+                BarKind::Io => self.size_mask & !0x3,
+            };
+            u64::from((!mask).wrapping_add(1))
         }
     }
 
-    /// Programmed 32-bit memory base, if the BAR is implemented.
+    /// Programmed base, if the BAR is implemented.
     fn base(&self) -> Option<u64> {
-        (self.size_mask != 0).then_some(u64::from(self.value & self.size_mask & !0xF))
+        if self.size_mask == 0 {
+            return None;
+        }
+        let mask = match self.kind {
+            BarKind::Memory32 => !0xF,
+            BarKind::Io => !0x3,
+        };
+        Some(u64::from(self.value & self.size_mask & mask))
     }
 
-    /// Offset into this BAR for `gpa`, if the BAR currently decodes it.
-    fn offset_of(&self, gpa: u64) -> Option<u64> {
+    /// Offset into this BAR for `addr`, if the BAR currently decodes it.
+    fn offset_of(&self, addr: u64) -> Option<u64> {
         let base = self.base()?;
         let size = self.size();
-        (gpa >= base && gpa < base + size).then_some(gpa - base)
+        (addr >= base && addr < base + size).then_some(addr - base)
+    }
+
+    fn mmio_offset_of(&self, gpa: u64) -> Option<u64> {
+        (self.kind == BarKind::Memory32)
+            .then(|| self.offset_of(gpa))
+            .flatten()
+    }
+
+    fn pio_offset_of(&self, port: u64) -> Option<u64> {
+        (self.kind == BarKind::Io)
+            .then(|| self.offset_of(port))
+            .flatten()
     }
 }
 
@@ -320,8 +381,23 @@ impl Function {
     /// QEMU-oracle virtio block installer media endpoint at `00:03.0`.
     fn virtio_blk() -> Self {
         let mut bars = [Bar::default(); NUM_BARS];
-        bars[0] = Bar::memory32(VIRTIO_BLK_BAR0_SIZE);
+        bars[0] = Bar::io(VIRTIO_BLK_BAR0_SIZE);
+        bars[1] = Bar::memory32(VIRTIO_BLK_BAR1_SIZE);
+        bars[4] = Bar::memory32(VIRTIO_BLK_BAR4_SIZE);
         let caps = virtio_caps::boot_media_capability_list();
+        let msix = MsixCapability::new(
+            VIRTIO_BLK_MSIX_VECTOR_COUNT,
+            1,
+            VIRTIO_BLK_MSIX_TABLE_OFFSET,
+            VIRTIO_BLK_MSIX_PBA_OFFSET,
+        );
+        let mut cap_bytes = caps.cap_bytes;
+        cap_bytes.extend(
+            msix.to_bytes(0)
+                .into_iter()
+                .enumerate()
+                .map(|(i, byte)| (u16::from(VIRTIO_BLK_MSIX_CAP_OFFSET) + i as u16, byte)),
+        );
         Self {
             bdf: VIRTIO_BLK_BDF,
             vendor_device: (u32::from(VIRTIO_BLK_DEVICE_ID) << 16)
@@ -330,7 +406,7 @@ impl Function {
             command: 0,
             bars,
             cap_ptr: caps.cap_ptr,
-            cap_bytes: caps.cap_bytes,
+            cap_bytes,
         }
     }
 
@@ -411,13 +487,9 @@ impl Function {
     /// guest may only change Message Control bits 14 (function mask) and 15
     /// (MSI-X enable).
     fn write_capability_dword(&mut self, reg: u16, value: u32) -> bool {
-        if self.cap_ptr == 0 {
+        let Some(cap) = self.msix_capability_offset() else {
             return false;
-        }
-        let cap = u16::from(self.cap_ptr);
-        if self.capability_byte(cap) != CAP_ID_MSIX {
-            return false;
-        }
+        };
         let cap_end = cap + MsixCapability::SIZE_BYTES;
         if reg + 4 <= cap || reg >= cap_end {
             return false;
@@ -450,10 +522,7 @@ impl Function {
     }
 
     fn msix_control(&self) -> Option<MsixFunctionControl> {
-        if self.cap_ptr == 0 || self.capability_byte(u16::from(self.cap_ptr)) != CAP_ID_MSIX {
-            return None;
-        }
-        let control_off = u16::from(self.cap_ptr) + 2;
+        let control_off = self.msix_capability_offset()? + 2;
         let control = u16::from_le_bytes([
             self.capability_byte(control_off),
             self.capability_byte(control_off + 1),
@@ -462,6 +531,21 @@ impl Function {
             enabled: control & 0x8000 != 0,
             function_masked: control & 0x4000 != 0,
         })
+    }
+
+    fn msix_capability_offset(&self) -> Option<u16> {
+        let mut cap = self.cap_ptr;
+        for _ in 0..32 {
+            if cap == 0 {
+                return None;
+            }
+            let off = u16::from(cap);
+            if self.capability_byte(off) == CAP_ID_MSIX {
+                return Some(off);
+            }
+            cap = self.capability_byte(off + 1);
+        }
+        None
     }
 }
 
@@ -478,6 +562,14 @@ pub struct PcieEcam {
 /// A decoded memory-space access into a programmed PCI BAR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PcieMmioTarget {
+    pub bdf: (u8, u8, u8),
+    pub bar_index: usize,
+    pub offset: u64,
+}
+
+/// A decoded I/O-space access into a programmed PCI BAR.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PciePioTarget {
     pub bdf: (u8, u8, u8),
     pub bar_index: usize,
     pub offset: u64,
@@ -561,8 +653,29 @@ impl PcieEcam {
                 continue;
             }
             for (idx, bar) in func.bars.iter().enumerate() {
-                if let Some(offset) = bar.offset_of(gpa) {
+                if let Some(offset) = bar.mmio_offset_of(gpa) {
                     return Some(PcieMmioTarget {
+                        bdf: func.bdf,
+                        bar_index: idx,
+                        offset,
+                    });
+                }
+            }
+        }
+        None
+    }
+
+    /// Resolve a PCI I/O-port address to the programmed endpoint BAR that
+    /// decodes it. Only functions with I/O Space enabled in the command register
+    /// are allowed to answer.
+    pub fn pio_target(&self, port: u64) -> Option<PciePioTarget> {
+        for func in &self.functions {
+            if func.command & CMD_IO_SPACE == 0 {
+                continue;
+            }
+            for (idx, bar) in func.bars.iter().enumerate() {
+                if let Some(offset) = bar.pio_offset_of(port) {
+                    return Some(PciePioTarget {
                         bdf: func.bdf,
                         bar_index: idx,
                         offset,
@@ -833,22 +946,69 @@ mod tests {
     }
 
     #[test]
-    fn boot_media_bar_decode_requires_memory_space() {
+    fn boot_media_given_bars_when_sizing_then_matches_qemu_oracle_shape() {
+        let mut ecam = PcieEcam::new();
+        let (bus, dev, func) = VIRTIO_BLK_BDF;
+
+        // Given: QEMU's virtio-blk-pci exposes BAR0 as 0x80 bytes of PIO.
+        let bar0 = ecam_offset(bus, dev, func, REG_BAR0);
+        ecam.cfg_write(bar0, 4, 0xFFFF_FFFF);
+        let bar0_readback = ecam.cfg_read(bar0, 4) as u32;
+        let bar0_size = (!(bar0_readback & !0x3)).wrapping_add(1);
+        assert_eq!(bar0_readback & 0x1, 0x1, "BAR0 must be an I/O BAR");
+        assert_eq!(bar0_size, 0x80);
+
+        // Given: BAR1 is the 32-bit memory aperture used for MSI-X.
+        let bar1 = ecam_offset(bus, dev, func, REG_BAR0 + 4);
+        ecam.cfg_write(bar1, 4, 0xFFFF_FFFF);
+        let bar1_readback = ecam.cfg_read(bar1, 4) as u32;
+        assert_eq!(bar1_readback & 0xF, 0, "BAR1 must be 32-bit memory");
+        assert_eq!((!(bar1_readback & !0xF)).wrapping_add(1), 0x1000);
+
+        // Then: BAR4 is the modern virtio MMIO transport block, sized 0x4000.
+        let bar4 = ecam_offset(bus, dev, func, REG_BAR0 + 4 * 4);
+        ecam.cfg_write(bar4, 4, 0xFFFF_FFFF);
+        let bar4_readback = ecam.cfg_read(bar4, 4) as u32;
+        assert_eq!(bar4_readback & 0xF, 0, "BAR4 must be 32-bit memory");
+        assert_eq!((!(bar4_readback & !0xF)).wrapping_add(1), 0x4000);
+    }
+
+    #[test]
+    fn boot_media_given_bars_when_command_bits_change_then_pio_and_mmio_decode_separately() {
         let mut ecam = PcieEcam::new();
         let (bus, dev, func) = VIRTIO_BLK_BDF;
         let bar0 = ecam_offset(bus, dev, func, REG_BAR0);
+        let bar4 = ecam_offset(bus, dev, func, REG_BAR0 + 4 * 4);
         let cmd = ecam_offset(bus, dev, func, REG_COMMAND_STATUS);
-        let base = machine::PCIE_MMIO_32.base + 0x1_0000;
+        let pio_base = 0xC000;
+        let mmio_base = machine::PCIE_MMIO_32.base + 0x1_0000;
 
-        ecam.cfg_write(bar0, 4, base);
-        assert_eq!(ecam.mmio_target(base), None);
+        // Given: firmware programmed both BAR0 PIO and BAR4 MMIO bases.
+        ecam.cfg_write(bar0, 4, pio_base);
+        ecam.cfg_write(bar4, 4, mmio_base);
+        assert_eq!(ecam.pio_target(pio_base), None);
+        assert_eq!(ecam.mmio_target(mmio_base), None);
 
-        ecam.cfg_write(cmd, 2, u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER));
+        // When: only I/O space is enabled, only BAR0 decodes.
+        ecam.cfg_write(cmd, 2, u64::from(CMD_IO_SPACE));
         assert_eq!(
-            ecam.mmio_target(base),
-            Some(PcieMmioTarget {
+            ecam.pio_target(pio_base),
+            Some(PciePioTarget {
                 bdf: VIRTIO_BLK_BDF,
                 bar_index: 0,
+                offset: 0,
+            })
+        );
+        assert_eq!(ecam.mmio_target(mmio_base), None);
+
+        // When: only memory space is enabled, only BAR4 decodes.
+        ecam.cfg_write(cmd, 2, u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER));
+        assert_eq!(ecam.pio_target(pio_base), None);
+        assert_eq!(
+            ecam.mmio_target(mmio_base),
+            Some(PcieMmioTarget {
+                bdf: VIRTIO_BLK_BDF,
+                bar_index: 4,
                 offset: 0,
             })
         );
@@ -1050,11 +1210,7 @@ mod tests {
     #[test]
     fn bar_sizing_returns_a_power_of_two_mask() {
         // Exercise the BAR sizing protocol directly: a 64 KiB 32-bit memory BAR.
-        let mut bar = Bar {
-            value: 0,
-            size_mask: !(0x1_0000u32 - 1), // mask for a 64 KiB region
-            type_bits: 0,                  // 32-bit, non-prefetch memory BAR
-        };
+        let mut bar = Bar::memory32(0x1_0000);
         // Write all-ones, read back the size mask.
         bar.write(0xFFFF_FFFF);
         let readback = bar.read();

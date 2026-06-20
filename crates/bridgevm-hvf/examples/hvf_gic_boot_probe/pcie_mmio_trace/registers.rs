@@ -1,5 +1,5 @@
 use bridgevm_hvf::nvme;
-use bridgevm_hvf::pcie::{self, PcieMmioTarget};
+use bridgevm_hvf::pcie::{self, PcieMmioTarget, PciePioTarget};
 
 pub(super) fn pcie_mmio_register_name(
     target: Option<PcieMmioTarget>,
@@ -11,22 +11,60 @@ pub(super) fn pcie_mmio_register_name(
     pcie_bar_register_label(target)
 }
 
+pub(super) fn pcie_pio_register_name(target: Option<PciePioTarget>, port: u64) -> String {
+    let Some(target) = target else {
+        return format!("pcie-pio+{port:#x}");
+    };
+    pcie_pio_bar_register_label(target)
+}
+
+fn pcie_bar_prefix(bdf: (u8, u8, u8), bar_index: usize, offset: u64) -> String {
+    let (bus, device, function) = bdf;
+    format!("{bus:02x}:{device:02x}.{function} BAR{bar_index}+{offset:#x}")
+}
+
 fn pcie_bar_register_label(target: PcieMmioTarget) -> String {
-    let (bus, device, function) = target.bdf;
-    let prefix = format!(
-        "{bus:02x}:{device:02x}.{function} BAR{}+{:#x}",
-        target.bar_index, target.offset
-    );
+    let prefix = pcie_bar_prefix(target.bdf, target.bar_index, target.offset);
     match pcie_bar_register_name(target) {
         Some(name) => format!("{prefix} {name}"),
         None => prefix,
     }
 }
 
+fn pcie_pio_bar_register_label(target: PciePioTarget) -> String {
+    let prefix = pcie_bar_prefix(target.bdf, target.bar_index, target.offset);
+    match pcie_pio_bar_register_name(target) {
+        Some(name) => format!("{prefix} {name}"),
+        None => prefix,
+    }
+}
+
+fn pcie_pio_bar_register_name(target: PciePioTarget) -> Option<String> {
+    match (target.bdf, target.bar_index) {
+        (pcie::VIRTIO_BLK_BDF, 0) => Some(virtio_pci_bar0_io_register_name(target.offset)),
+        _ => None,
+    }
+}
+
+fn virtio_pci_bar0_io_register_name(offset: u64) -> String {
+    match offset {
+        0x00 => "virtio.legacy.device_features".to_string(),
+        0x04 => "virtio.legacy.driver_features".to_string(),
+        0x08 => "virtio.legacy.queue_pfn".to_string(),
+        0x0c => "virtio.legacy.queue_size".to_string(),
+        0x0e => "virtio.legacy.queue_select".to_string(),
+        0x10 => "virtio.legacy.queue_notify".to_string(),
+        0x12 => "virtio.legacy.device_status".to_string(),
+        0x13 => "virtio.legacy.isr".to_string(),
+        o if o >= 0x14 => format!("virtio.legacy.device_config+{:#x}", o - 0x14),
+        _ => format!("virtio.legacy+{offset:#x}"),
+    }
+}
+
 fn pcie_bar_register_name(target: PcieMmioTarget) -> Option<String> {
     match (target.bdf, target.bar_index) {
         (pcie::NVME_BDF, 0) => Some(nvme_bar0_register_name(target.offset)),
-        (pcie::VIRTIO_BLK_BDF, 0) => Some(virtio_pci_bar0_register_name(target.offset)),
+        (pcie::VIRTIO_BLK_BDF, 4) => Some(virtio_pci_bar4_register_name(target.offset)),
         _ => None,
     }
 }
@@ -80,7 +118,7 @@ fn nvme_bar0_register_name(offset: u64) -> String {
     }
 }
 
-fn virtio_pci_bar0_register_name(offset: u64) -> String {
+fn virtio_pci_bar4_register_name(offset: u64) -> String {
     match offset {
         0x0000 => "virtio.common.device_feature_select".to_string(),
         0x0004 => "virtio.common.device_feature".to_string(),
@@ -104,7 +142,7 @@ fn virtio_pci_bar0_register_name(offset: u64) -> String {
         0x1000 => "virtio.isr".to_string(),
         o if (0x2000..0x3000).contains(&o) => format!("virtio.device+{:#x}", o - 0x2000),
         o if (0x3000..0x4000).contains(&o) => format!("virtio.notify+{:#x}", o - 0x3000),
-        _ => format!("virtio.bar0+{offset:#x}"),
+        _ => format!("virtio.bar4+{offset:#x}"),
     }
 }
 
@@ -150,11 +188,11 @@ mod tests {
             (
                 PcieMmioTarget {
                     bdf: pcie::VIRTIO_BLK_BDF,
-                    bar_index: 0,
+                    bar_index: 4,
                     offset: 0,
                 },
                 0x8000,
-                "00:03.0 BAR0+0x0 virtio.common.device_feature_select",
+                "00:03.0 BAR4+0x0 virtio.common.device_feature_select",
             ),
         ] {
             assert_eq!(
@@ -165,7 +203,23 @@ mod tests {
     }
 
     #[test]
+    fn labels_programmed_pio_bars_by_bdf_and_bar_offset() {
+        assert_eq!(
+            pcie_pio_register_name(
+                Some(PciePioTarget {
+                    bdf: pcie::VIRTIO_BLK_BDF,
+                    bar_index: 0,
+                    offset: 0x10,
+                }),
+                0x10,
+            ),
+            "00:03.0 BAR0+0x10 virtio.legacy.queue_notify"
+        );
+    }
+
+    #[test]
     fn falls_back_to_aperture_offset_without_a_resolved_target() {
         assert_eq!(pcie_mmio_register_name(None, 0x4000), "pcie-mmio-32+0x4000");
+        assert_eq!(pcie_pio_register_name(None, 0x40), "pcie-pio+0x40");
     }
 }
