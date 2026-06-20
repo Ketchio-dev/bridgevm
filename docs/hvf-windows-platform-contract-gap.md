@@ -131,8 +131,9 @@ ACPI blobs are now delivered through QEMU-style `etc/acpi/rsdp`,
 `etc/acpi/tables` and `etc/table-loader` fw_cfg files. QEMU-style Linux
 `-kernel`/`-initrd`/`-append` fw_cfg blobs now boot Debian's arm64 installer kernel
 through EFI, ACPI, GIC/timer init, `ARMH0011` PL011 console binding, `PCI0` root
-bridge enumeration, QEMU-like PCI `_OSC`, ECAM reservation through `PNP0C02`,
-initramfs unpack, and `Run /init as init process`. The remaining gap is above
-firmware: PPTT/cache-topology parity, the remaining ECAM reservation warning,
-production-grade NVMe and pflash persistence in the engine-facing VM
-configuration, interrupt/MSI behavior, and then Windows installer validation.
+bridge enumeration, QEMU-like PCI `_OSC`, basic PPTT CPU topology, ECAM
+reservation through `PNP0C02`, initramfs unpack, and `Run /init as init process`.
+The remaining gap is above firmware: the remaining ECAM reservation warning,
+Linux topology sysfs/cache metadata cleanup, production-grade NVMe and pflash
+persistence in the engine-facing VM configuration, interrupt/MSI behavior, and
+then Windows installer validation.

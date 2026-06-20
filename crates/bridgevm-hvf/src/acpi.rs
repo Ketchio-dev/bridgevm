@@ -2,8 +2,8 @@
 //!
 //! Windows 11 ARM (and an ACPI-only Linux boot) refuses to come up without ACPI
 //! tables: the firmware hands the guest an RSDP that chains to the XSDT, FADT,
-//! MADT (GIC topology), GTDT (architected timer), MCFG (PCIe ECAM) and SPCR
-//! (serial console). Stock ArmVirtQemu firmware does not synthesise these itself
+//! MADT (GIC topology), PPTT (CPU topology), GTDT (architected timer), MCFG (PCIe
+//! ECAM) and SPCR (serial console). Stock ArmVirtQemu firmware does not synthesise these itself
 //! on this platform — it installs whatever the host exposes through `fw_cfg`
 //! under `etc/acpi/rsdp` (the RSDP), `etc/acpi/tables` (the concatenated
 //! tables), and `etc/table-loader` (QEMU linker commands for relocation and
@@ -16,7 +16,7 @@
 //! unit-tested. ACPI integers are little-endian (unlike the big-endian DTB).
 //!
 //! References: ACPI 6.5 (RSDP §5.2.5, XSDT §5.2.8, FADT §5.2.9, MADT §5.2.12,
-//! GTDT §5.2.25, MCFG (PCI Firmware Spec 3.3), SPCR (Microsoft Serial Port
+//! PPTT §5.2.29, GTDT §5.2.25, MCFG (PCI Firmware Spec 3.3), SPCR (Microsoft Serial Port
 //! Console Redirection Table)) and the tables QEMU's `hw/arm/virt-acpi-build.c`
 //! emits for the `virt` machine.
 
@@ -47,7 +47,7 @@ pub struct AcpiBlobs {
     /// Checksum bytes are zero here; the firmware computes final checksums after
     /// applying `loader` relocations, matching QEMU's `bios-linker-loader`.
     pub rsdp: Vec<u8>,
-    /// `etc/acpi/tables` — XSDT, FADT, DSDT, MADT, GTDT, MCFG and SPCR,
+    /// `etc/acpi/tables` — XSDT, FADT, DSDT, MADT, PPTT, GTDT, MCFG and SPCR,
     /// concatenated in the order their physical addresses are laid out.
     ///
     /// Checksum bytes are zero here; the firmware computes final checksums after
@@ -168,20 +168,22 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
 
     let dsdt = build_dsdt();
     let madt = build_madt(cpu_count);
+    let pptt = build_pptt(cpu_count);
     let gtdt = build_gtdt();
     let mcfg = build_mcfg();
     let spcr = build_spcr();
 
-    // The XSDT references FADT/MADT/GTDT/MCFG/SPCR. The FADT references the DSDT.
+    // The XSDT references FADT/MADT/PPTT/GTDT/MCFG/SPCR. The FADT references the DSDT.
     // Compute offsets in concatenation order: XSDT first, then the rest.
     // (Order within the blob is a free choice; we keep XSDT first so its address
     // is easy to reason about, then DSDT, then the XSDT-listed tables.)
-    let xsdt_len = xsdt_len_for(5);
+    let xsdt_len = xsdt_len_for(6);
     let off_xsdt = 0u64;
     let off_dsdt = off_xsdt + xsdt_len;
     let off_fadt = off_dsdt + dsdt.len() as u64;
     let off_madt = off_fadt + fadt_len() as u64;
-    let off_gtdt = off_madt + madt.len() as u64;
+    let off_pptt = off_madt + madt.len() as u64;
+    let off_gtdt = off_pptt + pptt.len() as u64;
     let off_mcfg = off_gtdt + gtdt.len() as u64;
     let off_spcr = off_mcfg + mcfg.len() as u64;
 
@@ -191,6 +193,7 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     let xsdt = build_xsdt(&[
         TABLES_BASE + off_fadt,
         TABLES_BASE + off_madt,
+        TABLES_BASE + off_pptt,
         TABLES_BASE + off_gtdt,
         TABLES_BASE + off_mcfg,
         TABLES_BASE + off_spcr,
@@ -202,6 +205,7 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
         TableSpan::new(off_dsdt, dsdt.len() as u64),
         TableSpan::new(off_fadt, fadt.len() as u64),
         TableSpan::new(off_madt, madt.len() as u64),
+        TableSpan::new(off_pptt, pptt.len() as u64),
         TableSpan::new(off_gtdt, gtdt.len() as u64),
         TableSpan::new(off_mcfg, mcfg.len() as u64),
         TableSpan::new(off_spcr, spcr.len() as u64),
@@ -212,6 +216,7 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     tables.extend_from_slice(&dsdt);
     tables.extend_from_slice(&fadt);
     tables.extend_from_slice(&madt);
+    tables.extend_from_slice(&pptt);
     tables.extend_from_slice(&gtdt);
     tables.extend_from_slice(&mcfg);
     tables.extend_from_slice(&spcr);
@@ -224,7 +229,7 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
             xsdt: off_xsdt,
             fadt: off_fadt,
             table_spans: &table_spans,
-            xsdt_entries: &[off_fadt, off_madt, off_gtdt, off_mcfg, off_spcr],
+            xsdt_entries: &[off_fadt, off_madt, off_pptt, off_gtdt, off_mcfg, off_spcr],
         },
     );
 
@@ -986,6 +991,72 @@ fn mpidr_for(cpu: u64) -> u64 {
     (aff1 << 8) | aff0
 }
 
+const PPTT_NODE_PROCESSOR: u8 = 0;
+const PPTT_PROCESSOR_PHYSICAL_PACKAGE: u32 = 1 << 0;
+const PPTT_PROCESSOR_ACPI_ID_VALID: u32 = 1 << 1;
+const PPTT_PROCESSOR_LEAF: u32 = 1 << 3;
+const PPTT_PROCESSOR_IDENTICAL: u32 = 1 << 4;
+
+/// Append an ACPI PPTT processor hierarchy node (type 0). Offsets stored in
+/// `parent` and `private_resources` are relative to the start of the PPTT table.
+fn append_pptt_processor_node(
+    t: &mut Table,
+    flags: u32,
+    parent: u32,
+    acpi_processor_id: u32,
+    private_resources: &[u32],
+) {
+    let len = 20 + private_resources.len() * 4;
+    let len = u8::try_from(len).expect("PPTT processor node length exceeds u8");
+    t.u8(PPTT_NODE_PROCESSOR);
+    t.u8(len);
+    t.u16(0); // reserved
+    t.u32(flags);
+    t.u32(parent);
+    t.u32(acpi_processor_id);
+    t.u32(private_resources.len() as u32);
+    for &resource in private_resources {
+        t.u32(resource);
+    }
+}
+
+/// PPTT (Processor Properties Topology Table). Match QEMU's simple homogeneous
+/// topology for `virt`: one root package node, one socket node, and one leaf
+/// processor node per ACPI Processor UID.
+fn build_pptt(cpu_count: u64) -> Vec<u8> {
+    let mut t = Table::new(b"PPTT", 2);
+
+    let root_offset = t.bytes.len() as u32;
+    append_pptt_processor_node(
+        &mut t,
+        PPTT_PROCESSOR_PHYSICAL_PACKAGE | PPTT_PROCESSOR_IDENTICAL,
+        0,
+        0,
+        &[],
+    );
+
+    let socket_offset = t.bytes.len() as u32;
+    append_pptt_processor_node(
+        &mut t,
+        PPTT_PROCESSOR_PHYSICAL_PACKAGE | PPTT_PROCESSOR_IDENTICAL,
+        root_offset,
+        0,
+        &[],
+    );
+
+    for cpu in 0..cpu_count {
+        append_pptt_processor_node(
+            &mut t,
+            PPTT_PROCESSOR_ACPI_ID_VALID | PPTT_PROCESSOR_LEAF,
+            socket_offset,
+            u32::try_from(cpu).expect("ACPI processor ID exceeds u32"),
+            &[],
+        );
+    }
+
+    t.finish()
+}
+
 /// GTDT (Generic Timer Description Table) describing the architected timer. The
 /// per-CPU timer interrupts are PPIs; the GSIV is `PPI + 16` (PPIs occupy
 /// INTIDs 16..31). Edge/level is encoded in the per-timer flags.
@@ -1215,7 +1286,9 @@ mod tests {
         let tables = split_tables(&blobs.tables);
         let sigs: Vec<&str> = tables.iter().map(|(s, _)| s.as_str()).collect();
         // FADT's signature is "FACP" and MADT's is "APIC" by spec.
-        for needed in ["XSDT", "DSDT", "FACP", "APIC", "GTDT", "MCFG", "SPCR"] {
+        for needed in [
+            "XSDT", "DSDT", "FACP", "APIC", "PPTT", "GTDT", "MCFG", "SPCR",
+        ] {
             assert!(sigs.contains(&needed), "missing table {needed} in {sigs:?}");
         }
     }
@@ -1264,15 +1337,15 @@ mod tests {
                 .iter()
                 .filter(|&&cmd| cmd == LOADER_CMD_ADD_POINTER)
                 .count(),
-            7
+            8
         );
-        // Seven ACPI tables plus RSDP v1 and extended checksums.
+        // Eight ACPI tables plus RSDP v1 and extended checksums.
         assert_eq!(
             commands
                 .iter()
                 .filter(|&&cmd| cmd == LOADER_CMD_ADD_CHECKSUM)
                 .count(),
-            9
+            10
         );
     }
 
@@ -1287,7 +1360,10 @@ mod tests {
         let xsdt = find(&tables, "XSDT");
         // XSDT entries are 8-byte pointers after the 36-byte header.
         let entry_count = (xsdt.len() - ACPI_HEADER_LEN) / 8;
-        assert_eq!(entry_count, 5, "XSDT must list FADT/MADT/GTDT/MCFG/SPCR");
+        assert_eq!(
+            entry_count, 6,
+            "XSDT must list FADT/MADT/PPTT/GTDT/MCFG/SPCR"
+        );
         // Each listed pointer must land on a real table header in the blob.
         let valid_offsets: Vec<u64> = {
             let mut offs = Vec::new();
@@ -1509,6 +1585,61 @@ mod tests {
         let dist_base = le64(madt, gicd + 8);
         assert_eq!(dist_base, machine::GIC_DIST.base);
         assert_eq!(madt[gicd + 20], 3, "GIC version must be 3");
+    }
+
+    #[test]
+    fn pptt_has_qemu_like_root_socket_and_cpu_leaf_nodes() {
+        let cpu_count = 3u64;
+        let blobs = build_acpi(cpu_count);
+        let tables = split_tables(&blobs.tables);
+        let pptt = find(&tables, "PPTT");
+        assert_eq!(pptt[8], 2, "PPTT revision must match QEMU");
+
+        let mut nodes = Vec::new();
+        let mut off = ACPI_HEADER_LEN;
+        while off < pptt.len() {
+            let typ = pptt[off];
+            let len = pptt[off + 1] as usize;
+            assert_eq!(typ, PPTT_NODE_PROCESSOR, "only processor nodes expected");
+            assert_eq!(len, 20, "PPTT processor nodes have no private resources");
+            nodes.push((
+                off as u32,
+                le32(pptt, off + 4),
+                le32(pptt, off + 8),
+                le32(pptt, off + 12),
+                le32(pptt, off + 16),
+            ));
+            off += len;
+        }
+
+        assert_eq!(off, pptt.len(), "PPTT nodes must tile the table exactly");
+        assert_eq!(nodes.len(), 2 + cpu_count as usize);
+
+        let root = nodes[0];
+        assert_eq!(root.0, ACPI_HEADER_LEN as u32);
+        assert_eq!(
+            root.1,
+            PPTT_PROCESSOR_PHYSICAL_PACKAGE | PPTT_PROCESSOR_IDENTICAL
+        );
+        assert_eq!(root.2, 0, "root node has no parent");
+        assert_eq!(root.3, 0, "root package ID");
+        assert_eq!(root.4, 0, "root has no private resources");
+
+        let socket = nodes[1];
+        assert_eq!(
+            socket.1,
+            PPTT_PROCESSOR_PHYSICAL_PACKAGE | PPTT_PROCESSOR_IDENTICAL
+        );
+        assert_eq!(socket.2, root.0, "socket parent must be the root node");
+        assert_eq!(socket.3, 0, "single socket ID");
+        assert_eq!(socket.4, 0, "socket has no private resources");
+
+        for (idx, node) in nodes[2..].iter().enumerate() {
+            assert_eq!(node.1, PPTT_PROCESSOR_ACPI_ID_VALID | PPTT_PROCESSOR_LEAF);
+            assert_eq!(node.2, socket.0, "CPU leaf parent must be the socket");
+            assert_eq!(node.3, idx as u32, "CPU leaf ID matches ACPI UID");
+            assert_eq!(node.4, 0, "CPU leaf has no private resources");
+        }
     }
 
     #[test]
