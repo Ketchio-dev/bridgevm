@@ -146,6 +146,7 @@ pub struct VirtBootMediaConfig {
     pub ram_size: u64,
     pub firmware_code_path: PathBuf,
     pub flash_vars: WritableMedia,
+    pub installer_iso_path: Option<PathBuf>,
     pub nvme_disk: Option<WritableMedia>,
     pub linux_boot: Option<LinuxBootMedia>,
 }
@@ -156,6 +157,7 @@ impl VirtBootMediaConfig {
             ram_size: DEFAULT_RAM_MIB * MIB,
             firmware_code_path: PathBuf::from(DEFAULT_QEMU_AARCH64_CODE),
             flash_vars: WritableMedia::new(DEFAULT_QEMU_AARCH64_VARS),
+            installer_iso_path: None,
             nvme_disk: None,
             linux_boot: None,
         }
@@ -180,6 +182,8 @@ impl VirtBootMediaConfig {
             .ok()
             .map(PathBuf::from);
         cfg.flash_vars.write_back = env_flag("BRIDGEVM_AARCH64_UEFI_VARS_WRITABLE");
+
+        cfg.installer_iso_path = env::var("BRIDGEVM_INSTALLER_ISO").ok().map(PathBuf::from);
 
         cfg.nvme_disk = env::var("BRIDGEVM_NVME_DISK").ok().map(|path| {
             WritableMedia::new(path)
@@ -282,6 +286,7 @@ mod tests {
             PathBuf::from(DEFAULT_QEMU_AARCH64_VARS)
         );
         assert_eq!(cfg.ram_size, DEFAULT_RAM_MIB * MIB);
+        assert!(cfg.installer_iso_path.is_none());
         assert!(cfg.nvme_disk.is_none());
         assert!(cfg.linux_boot.is_none());
     }

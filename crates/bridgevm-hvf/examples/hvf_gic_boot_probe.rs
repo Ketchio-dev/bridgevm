@@ -14,6 +14,9 @@
 //!   BRIDGEVM_NVME_DISK_OUT=/path/to/out.img ...      # snapshot after run
 //!   BRIDGEVM_NVME_DISK_WRITABLE=1 ...                # write back to input path
 //!
+//! Optional installer ISO media (virtio-mmio block slot 31):
+//!   BRIDGEVM_INSTALLER_ISO=/path/to/windows.iso ...
+//!
 //! Optional QEMU-style Linux direct boot:
 //!   BRIDGEVM_LINUX_KERNEL=/path/to/Image ...
 //!   BRIDGEVM_LINUX_INITRD=/path/to/initrd.gz ...      # optional
@@ -575,6 +578,16 @@ fn main() {
                 nvme.write_back
             );
         }
+        if let Some(path) = media.installer_iso_path.as_ref() {
+            platform
+                .attach_virtio_iso(path)
+                .unwrap_or_else(|e| panic!("attach installer ISO {}: {e}", path.display()));
+            println!(
+                "Installer ISO attached on virtio-mmio slot {}: {}",
+                bridgevm_hvf::virtio_blk::INSTALLER_ISO_SLOT,
+                path.display()
+            );
+        }
         if let Some(linux) = media.linux_boot.as_ref() {
             let kernel = linux.read_kernel_bounded(ram_size).unwrap_or_else(|e| {
                 panic!("read Linux kernel {}: {e}", linux.kernel_path.display())
@@ -955,6 +968,20 @@ fn main() {
             "exits: {exits} (vtimer {vtimer_exits}, psci {psci_calls}), last PC: {last_pc:#x}"
         );
         println!("unmodelled MMIO touched: {unimpl:?}");
+        if let Some(stats) = platform.virtio_iso_stats() {
+            println!(
+                "virtio ISO stats: notify={} requests={} reads={} unsupported={} io_errors={} bytes_read={} last_sector={:?} last_len={} last_status={:?}",
+                stats.notify_count,
+                stats.request_count,
+                stats.read_count,
+                stats.unsupported_count,
+                stats.io_error_count,
+                stats.bytes_read,
+                stats.last_sector,
+                stats.last_len,
+                stats.last_status
+            );
+        }
         println!("symbol lines: {}", symbols.len());
         for line in symbols.iter().rev().take(8).rev() {
             println!("{line}");

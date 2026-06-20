@@ -33,6 +33,9 @@ use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
 use crate::pl031::Pl031;
 use crate::smbios::{build_smbios, SMBIOS_ANCHOR_FILE, SMBIOS_TABLE_FILE};
+use crate::virtio_blk::{
+    VirtioMmioBlock, VirtioMmioBlockResult, VirtioMmioBlockStats, INSTALLER_ISO_SLOT,
+};
 
 const DEFAULT_NVME_DISK_BYTES: usize = 16 * 1024 * 1024;
 
@@ -80,6 +83,7 @@ pub struct VirtPlatform {
     rtc: Pl031,
     pcie: PcieEcam,
     nvme: NvmeController,
+    virtio_iso: Option<VirtioMmioBlock>,
     flash_vars: P30NorFlash,
     pending_msix: Vec<MsixMessage>,
     dtb: Vec<u8>,
@@ -111,6 +115,7 @@ impl VirtPlatform {
             rtc: Pl031::new(),
             pcie: PcieEcam::new(),
             nvme: NvmeController::new(DEFAULT_NVME_DISK_BYTES),
+            virtio_iso: None,
             flash_vars: P30NorFlash::new(
                 machine::FLASH_VARS.base,
                 machine::FLASH_VARS.size as usize,
@@ -149,6 +154,20 @@ impl VirtPlatform {
         write_back: bool,
     ) -> io::Result<()> {
         self.nvme.load_raw_file(path, write_back)
+    }
+
+    /// Attach a read-only Windows/Linux installer ISO to the last QEMU virt
+    /// virtio-mmio transport slot. QEMU's own `virtio-blk-device` oracle uses
+    /// slot 31 (`0x0a003e00`) for an explicitly added MMIO block device.
+    pub fn attach_virtio_iso(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
+        self.virtio_iso = Some(VirtioMmioBlock::open_read_only(path)?);
+        Ok(())
+    }
+
+    /// Current read/queue counters for the installer ISO block device, if one is
+    /// attached. Live probes print this when diagnosing Windows media boot.
+    pub fn virtio_iso_stats(&self) -> Option<VirtioMmioBlockStats> {
+        self.virtio_iso.as_ref().map(VirtioMmioBlock::stats)
     }
 
     /// Snapshot the first NVMe disk image, including guest writes processed so
@@ -261,7 +280,7 @@ impl VirtPlatform {
             "rtc" => self.rtc_access(gpa - machine::RTC.base, op),
             "pcie-ecam" => self.pcie_access(gpa - machine::PCIE_ECAM.base, op),
             "pcie-mmio-32" => self.pcie_mmio_access(gpa, op, mem),
-            "virtio-mmio" => self.virtio_mmio_access(gpa - machine::VIRTIO_MMIO.base, op),
+            "virtio-mmio" => self.virtio_mmio_access(gpa - machine::VIRTIO_MMIO.base, op, mem),
             "flash-vars" => self.flash_vars.access(gpa, op),
             // Modelled in the machine map but no device behaviour yet — surfaced
             // precisely so bring-up traces show the next thing to implement.
@@ -273,10 +292,29 @@ impl VirtPlatform {
     /// DeviceID 0 so the firmware sees "valid transport, no device" and skips it
     /// silently — matching QEMU's empty slots. Returning 0 (no magic) instead made
     /// VirtioMmioInit fail with EFI_UNSUPPORTED and log 32 errors per boot.
-    fn virtio_mmio_access(&self, slot_offset: u64, op: MmioOp) -> MmioOutcome {
+    fn virtio_mmio_access(
+        &mut self,
+        slot_offset: u64,
+        op: MmioOp,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> MmioOutcome {
+        let slot = slot_offset / machine::VIRTIO_MMIO_SLOT_SIZE;
+        let reg = slot_offset % machine::VIRTIO_MMIO_SLOT_SIZE;
+        if slot == INSTALLER_ISO_SLOT {
+            if let Some(dev) = self.virtio_iso.as_mut() {
+                let (is_write, size, value) = match op {
+                    MmioOp::Read { size } => (false, size, 0),
+                    MmioOp::Write { size, value } => (true, size, value),
+                };
+                return match dev.access(reg, is_write, size, value, mem) {
+                    VirtioMmioBlockResult::ReadValue(v) => MmioOutcome::ReadValue(v),
+                    VirtioMmioBlockResult::WriteAck => MmioOutcome::WriteAck,
+                };
+            }
+        }
         match op {
             MmioOp::Read { .. } => {
-                let value = match slot_offset % machine::VIRTIO_MMIO_SLOT_SIZE {
+                let value = match reg {
                     0x00 => 0x7472_6976, // MagicValue, "virt"
                     0x04 => 0x2,         // Version: virtio-mmio 1.0+
                     0x08 => 0x0,         // DeviceID: 0 = no device present

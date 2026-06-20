@@ -147,8 +147,11 @@ while Linux falls back to the MSI-frame driver when the GIC distributor lacks LP
 support. The Windows ISO oracle now narrows the installer-media gap: QEMU/HVF with
 ACPI enabled and `-cdrom` exposes the ISO as `.../CDROM(0x0)` and reaches
 `Press any key to boot from CD or DVD...`; the same ISO attached as BridgeVM's
-raw NVMe namespace fails the firmware boot option with `Not Found`, so BridgeVM
-needs a CD-ROM/El Torito media path rather than treating the ISO as a plain disk.
+raw NVMe namespace fails the firmware boot option with `Not Found`. BridgeVM's
+new virtio-mmio block ISO prototype on slot 31 is discovered by firmware and
+services reads successfully, but Windows loader execution now stops after
+`ConvertPages` failures, so the active gap has moved from basic ISO reachability
+to memory-map/device-shape parity with the QEMU oracle.
 The remaining gap is above firmware: lift NVMe overlay/writeback and
 pflash persistence into the engine-facing VM configuration, keep tightening
 Windows-relevant ACPI details such as DBG2 as needed, add installer usability

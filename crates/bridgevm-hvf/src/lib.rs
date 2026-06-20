@@ -22,6 +22,7 @@ pub mod pl011;
 pub mod pl031;
 pub mod platform_virt;
 pub mod smbios;
+pub mod virtio_blk;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HvfHostCapabilities {
