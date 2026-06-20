@@ -213,12 +213,15 @@ side is fine. Fix: on an HVC exit, set `PC = last_pc` (no +4); also answer
 (`Image start failed: Not Found`, exactly as under QEMU), and the firmware runs on
 **through late DXE**.
 
-**Current frontier — interrupt delivery.** The firmware now hard-spins in EDK2's
-`MmioRead32` (`0x5fcf13b0`, `ldr w0,[x0]; dsb; ret`) with the exit count frozen and
-`vtimer = 0` — i.e. it is polling a register served in-kernel by Apple `hv_gic`,
-waiting for an **interrupt that never fires**. The next subsystem is **architected
-timer / interrupt delivery via `hv_gic`** (handle `HV_EXIT_REASON_VTIMER_ACTIVATED`
-and route the timer PPI through the in-kernel GIC, plus `hv_gic_set_spi` for SPI
-lines). Then NVMe, Linux ACPI / Windows. No external host, paid entitlement, or
-separate machine is in the way; the whole loop, including the QEMU oracle, is
-live-debuggable here.
+**Current frontier — firmware-specific event producer.** The firmware now
+hard-spins in EDK2's `MmioRead32` (`0x5fcf13b0`, `ldr w0,[x0]; dsb; ret`) polling
+RAM `0x5ffdf798`, waiting for `0x800080` while the value stays `0x700070`.
+Controlled live guests prove Apple `hv_gic` delivers host-asserted SPIs and the
+architected-timer PPI end to end, so this is not a generic interrupt-delivery
+failure. The Path A platform now also models QEMU's PL031 RTC; the live boot probe
+still stops at the same poll target with `unmodelled MMIO touched: {}`. The next
+high-leverage step is a DEBUG ArmVirtQemu build with `.map` symbols so the
+firmware names the driver/structure that owns the polled flag, while continuing
+to diff device behaviour and vCPU init against the QEMU+HVF oracle. Then NVMe,
+Linux ACPI / Windows. No external host, paid entitlement, or separate machine is
+in the way; the whole loop, including the QEMU oracle, is live-debuggable here.

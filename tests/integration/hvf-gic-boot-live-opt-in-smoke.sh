@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Live milestone proof: with Apple's in-kernel GICv3 (hv_gic_create) and minimal
 # PSCI, the stock ArmVirtQemu firmware boots through PEI, GIC init, and PSCI into
-# the DXE phase on the Path A platform. (Beyond DXE the firmware currently hits an
-# unresolved frontier: the redistributor MMIO is not served by Apple hv_gic, and a
-# DXE control-flow fault follows — both under investigation.)
+# late-DXE phase on the Path A platform. The current unresolved frontier is a
+# firmware-specific event flag poll at PC 0x5fcf13b0 / RAM 0x5ffdf798, not generic
+# GIC redistributor service or timer-PPI delivery.
 #
 # Opt-in (needs Apple Silicon + Hypervisor.framework + QEMU's edk2 firmware files):
 #   BRIDGEVM_HVF_ALLOW_LIVE_GIC_BOOT=1 tests/integration/hvf-gic-boot-live-opt-in-smoke.sh

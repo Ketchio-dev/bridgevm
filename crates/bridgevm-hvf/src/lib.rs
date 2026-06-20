@@ -16,6 +16,7 @@ pub mod machine;
 pub mod nvme;
 pub mod pcie;
 pub mod pl011;
+pub mod pl031;
 pub mod platform_virt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

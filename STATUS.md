@@ -58,7 +58,7 @@ live at the MMIO level): `src/fwcfg.rs` (`fw_cfg` keystone), `src/machine.rs` (t
 QEMU-`virt`-shaped device tree verified `dtc`-clean against the contract), and
 `src/platform_virt.rs` (`VirtPlatform`, which assembles the map + `fw_cfg` + DTB +
 guest-memory layout behind one `on_mmio()` exit entry point). Crate suite green at
-133 tests, zero warnings. **Hypervisor.framework runs directly on this Apple
+179 tests. **Hypervisor.framework runs directly on this Apple
 Silicon host via ad-hoc entitlement signing, and the stock ArmVirtQemu firmware
 boots on the Path A platform.** Live opt-in proofs under `tests/integration/`:
 `hvf-fw-cfg-mmio` (guest MMIO → `VirtPlatform` → `fw_cfg`), `hvf-uart` (guest
@@ -73,10 +73,16 @@ Further fixes (PSCI, empty ECAM, `/flash@0` node, fw_cfg endianness, 40-bit IPA,
 and an **HVC PC-advance fix** root-caused by 3 parallel worktree agents — the HVC
 exit PC is already past the `hvc`, so the data-abort-style +4 skipped
 `ArmCallHvc`'s args-pointer reload and crashed RngDxe) carried the firmware
-**through late DXE**. The current frontier is **interrupt delivery**: the firmware
-hard-spins in `MmioRead32` polling a `hv_gic`-served register for an interrupt that
-never fires — next is architected-timer/IRQ routing via `hv_gic`, then NVMe, Linux
-ACPI / Windows. No external host or paid entitlement is required; the whole loop is
+**through late DXE**. Since then, controlled live guests proved Apple `hv_gic`
+delivers both host-asserted SPIs and the architected-timer PPI end to end, so the
+remaining stall is not a generic interrupt-delivery failure. `VirtPlatform` now
+also models QEMU's PL031 RTC at `0x0901_0000`; the firmware still reaches the same
+late-DXE stall (`PC=0x5fcf13b0`) polling RAM `0x5ffdf798` for `0x800080` while the
+value stays `0x700070` and unmodelled MMIO remains `{}`. The current frontier is
+therefore identifying the firmware-specific event/device producer for that flag,
+preferably with a DEBUG ArmVirtQemu build plus `.map` symbols, while continuing to
+diff device behaviour against the QEMU+HVF oracle. Then NVMe, Linux ACPI /
+Windows. No external host or paid entitlement is required; the whole loop is
 live-debuggable here. See
 [docs/hvf-windows-engine-strategy.md](docs/hvf-windows-engine-strategy.md) and
 [docs/hvf-windows-platform-contract-gap.md](docs/hvf-windows-platform-contract-gap.md).

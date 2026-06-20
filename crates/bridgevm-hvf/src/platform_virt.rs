@@ -21,6 +21,7 @@ use crate::fwcfg::{FwCfg, GuestMemoryMut};
 use crate::machine::{self, Region};
 use crate::pcie::PcieEcam;
 use crate::pl011::Pl011;
+use crate::pl031::Pl031;
 
 /// A guest MMIO access as decoded from an HVF data-abort exit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +64,7 @@ pub struct VirtPlatform {
     cfg: VirtFdtConfig,
     fw_cfg: FwCfg,
     uart: Pl011,
+    rtc: Pl031,
     pcie: PcieEcam,
     dtb: Vec<u8>,
 }
@@ -84,6 +86,7 @@ impl VirtPlatform {
             cfg,
             fw_cfg,
             uart: Pl011::new(),
+            rtc: Pl031::new(),
             pcie: PcieEcam::new(),
             dtb,
         }
@@ -132,6 +135,7 @@ impl VirtPlatform {
         match device {
             "fw-cfg" => self.fw_cfg_access(gpa - machine::FW_CFG.base, op, mem),
             "uart" => self.uart_access(gpa - machine::UART.base, op),
+            "rtc" => self.rtc_access(gpa - machine::RTC.base, op),
             "pcie-ecam" => self.pcie_access(gpa - machine::PCIE_ECAM.base, op),
             "virtio-mmio" => self.virtio_mmio_access(gpa - machine::VIRTIO_MMIO.base, op),
             // Modelled in the machine map but no device behaviour yet — surfaced
@@ -182,12 +186,27 @@ impl VirtPlatform {
         }
     }
 
+    fn rtc_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {
+        match op {
+            MmioOp::Read { size } => MmioOutcome::ReadValue(self.rtc.mmio_read(offset, size)),
+            MmioOp::Write { size, value } => {
+                self.rtc.mmio_write(offset, size, value);
+                MmioOutcome::WriteAck
+            }
+        }
+    }
+
     /// Bytes the guest/firmware has written to the UART so far.
     pub fn uart_output(&self) -> &[u8] {
         self.uart.output()
     }
 
-    fn fw_cfg_access(&mut self, offset: u64, op: MmioOp, mem: &mut dyn GuestMemoryMut) -> MmioOutcome {
+    fn fw_cfg_access(
+        &mut self,
+        offset: u64,
+        op: MmioOp,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> MmioOutcome {
         match op {
             MmioOp::Read { size } => MmioOutcome::ReadValue(self.fw_cfg.mmio_read(offset, size)),
             MmioOp::Write { size, value } => {
@@ -295,7 +314,11 @@ mod tests {
         );
         assert_eq!(ack, MmioOutcome::WriteAck);
         // ...then a 4-byte data read returns "QEMU" big-endian.
-        let v = p.on_mmio(machine::FW_CFG.base + REG_DATA, MmioOp::Read { size: 4 }, &mut mem);
+        let v = p.on_mmio(
+            machine::FW_CFG.base + REG_DATA,
+            MmioOp::Read { size: 4 },
+            &mut mem,
+        );
         assert_eq!(v, MmioOutcome::ReadValue(0x5145_4d55));
     }
 
@@ -317,7 +340,10 @@ mod tests {
         // register is big-endian, so the firmware stores the byte-swapped address.
         let ack = p.on_mmio(
             machine::FW_CFG.base + REG_DMA,
-            MmioOp::Write { size: 8, value: ctrl.swap_bytes() },
+            MmioOp::Write {
+                size: 8,
+                value: ctrl.swap_bytes(),
+            },
             &mut mem,
         );
         assert_eq!(ack, MmioOutcome::WriteAck);
@@ -351,7 +377,11 @@ mod tests {
         );
         // An empty slot (device 1, ECAM offset dev<<15) reads all-ones (no device).
         assert_eq!(
-            p.on_mmio(machine::PCIE_ECAM.base + (1 << 15), MmioOp::Read { size: 4 }, &mut mem),
+            p.on_mmio(
+                machine::PCIE_ECAM.base + (1 << 15),
+                MmioOp::Read { size: 4 },
+                &mut mem
+            ),
             MmioOutcome::ReadValue(0xFFFF_FFFF)
         );
     }
@@ -364,7 +394,10 @@ mod tests {
             assert_eq!(
                 p.on_mmio(
                     machine::UART.base,
-                    MmioOp::Write { size: 1, value: u64::from(*b) },
+                    MmioOp::Write {
+                        size: 1,
+                        value: u64::from(*b)
+                    },
                     &mut mem
                 ),
                 MmioOutcome::WriteAck
@@ -376,6 +409,39 @@ mod tests {
             p.on_mmio(machine::UART.base + 0x18, MmioOp::Read { size: 4 }, &mut mem),
             MmioOutcome::ReadValue(v) if v & (1 << 7) != 0
         ));
+    }
+
+    #[test]
+    fn rtc_data_and_id_registers_are_modelled() {
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+        assert_eq!(
+            p.on_mmio(
+                machine::RTC.base + 0xfe0,
+                MmioOp::Read { size: 4 },
+                &mut mem
+            ),
+            MmioOutcome::ReadValue(0x31)
+        );
+        match p.on_mmio(machine::RTC.base, MmioOp::Read { size: 4 }, &mut mem) {
+            MmioOutcome::ReadValue(value) => assert!(value > 1_600_000_000),
+            other => panic!("unexpected RTC read outcome: {other:?}"),
+        }
+        assert_eq!(
+            p.on_mmio(
+                machine::RTC.base + 0x008,
+                MmioOp::Write {
+                    size: 4,
+                    value: 0x2026_0619,
+                },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(machine::RTC.base, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0x2026_0619)
+        );
     }
 
     #[test]
