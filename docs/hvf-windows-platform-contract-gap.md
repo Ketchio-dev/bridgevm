@@ -148,14 +148,24 @@ support. The Windows ISO oracle now narrows the installer-media gap: QEMU/HVF wi
 ACPI enabled and `-cdrom` exposes the ISO as `.../CDROM(0x0)` and reaches
 `Press any key to boot from CD or DVD...`; the same ISO attached as BridgeVM's
 raw NVMe namespace fails the firmware boot option with `Not Found`. BridgeVM's
-new virtio-mmio block ISO prototype on slot 31 is discovered by firmware and
-services reads successfully. The current live probe exposes PMUVer in
-`ID_AA64DFR0_EL1`, injects a PL011 byte after the CD prompt is printed, reaches
-`Loading files...`, reads hundreds of MiB from the ISO without virtio I/O errors,
-and enters Windows high virtual-address code. The active gap has moved from basic
-ISO reachability and the old loader `ConvertPages`/cdboot-stub frontier to
-Windows NVMe/PCIe command flow and device-shape parity with the QEMU oracle; the
-NVMe model now retains a bounded recent command/completion trace for that diff.
+older virtio-mmio block ISO prototype on slot 31 is discovered by firmware and
+services reads successfully, but it is now only an explicit fallback
+(`BRIDGEVM_INSTALLER_ISO_TRANSPORT=mmio`). The live probe defaults the installer
+ISO to a read-only PCI `virtio-blk-pci` endpoint at `00:03.0`, matching the QEMU
+oracle's storage slot shape while remaining honest that this is fixed block media,
+not true CD-ROM/removable-media or xHCI/USB-storage semantics. The PCI boot-media
+parity work is tracked by
+`.omo/ulw-loop/evidence/task-5-bridgevm-hvf-pci-boot-media-parity-device-shape.txt`
+and the follow-up live evidence target
+`.omo/ulw-loop/evidence/bridgevm-hvf-pci-boot-media-parity-live-hvf.txt`. The
+pre-switch legacy-mmio live evidence exposes PMUVer in `ID_AA64DFR0_EL1`, injects
+a PL011 byte after the CD prompt is printed, reaches `Loading files...`, reads
+hundreds of MiB from the ISO without virtio I/O errors, and enters Windows high
+virtual-address code.
+The active gap has moved from basic ISO reachability and the old loader
+`ConvertPages`/cdboot-stub frontier to Windows PCI/NVMe command flow and the
+remaining QEMU device-shape differences; the NVMe model now retains a bounded
+recent command/completion trace for that diff.
 The latest NVMe admin-command pass accepts Windows Asynchronous Event Requests as
 pending, handles the observed standard `Get Features` probes, completes
 `Identify` CNS `0x06` for the NVM command set, models QEMU's command-effects log
@@ -180,8 +190,10 @@ no-CMB registers `CMBLOC`/`CMBSZ` as zero. Its NVMe summary has only the
 expected pending Asynchronous Event Requests and no other pending commands, so
 the current differential target is Windows high-VA/SVC context and QEMU device
 shape parity rather than a plain missing-completion bug.
-The remaining gap is above firmware: lift NVMe overlay/writeback and
-pflash persistence into the engine-facing VM configuration, keep tightening
-Windows-relevant ACPI/device-path details beyond the now-modelled PL011 DBG2
-surface, add installer usability devices such as GOP framebuffer, keyboard/input
-and networking, and then run Windows installer validation.
+The remaining gap is above firmware: validate the PCI boot-media default with a
+live HVF run, lift NVMe overlay/writeback and pflash persistence into the
+engine-facing VM configuration, keep tightening Windows-relevant ACPI/device-path
+details beyond the now-modelled PL011 DBG2 surface, add installer usability
+devices such as GOP framebuffer, keyboard/input, xHCI/USB-storage if the fixed
+virtio-blk media shape is not enough, and networking, and then run Windows
+installer validation.

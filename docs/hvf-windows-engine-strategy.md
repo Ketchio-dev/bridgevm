@@ -83,7 +83,7 @@ ACPI-only boot): Linux gives you `dmesg`, Windows gives you a sad face.
 | 5 | PCIe ECAM (`pci-host-ecam-generic`) + config space + MSI/MSI-X | **partial (wired + Linux validated)** | ECAM host bridge, NVMe endpoint config space, BAR0 MMIO routing, writable MSI-X table/PBA, Apple GICM/GICv2m-style MSI-frame metadata and `hv_gic_send_msi` delivery are wired; Linux drives the NVMe queue through the PCI endpoint under ACPI |
 | 6 | **Linux ACPI-only boot** through the stock firmware | **partial (Ubuntu root userspace starts)** | QEMU-style `-kernel`/`-initrd` fw_cfg blobs boot Ubuntu's arm64 kernel through EFI, ACPI, SMBIOS/DMI, GIC, timer, PL011 console binding, ACPI0007 CPU device enumeration, PCI root enumeration, QEMU-like PCI `_OSC`, basic PPTT CPU topology, PMU IRQ metadata, root ext4 mount, `/boot` and `/boot/efi` mounts, `sysinit.target`, and `basic.target`. The ECAM PnP reservation warning is present in the QEMU+HVF oracle too, so the active BridgeVM-only gaps are now post-boot services, missing devices such as network/display/input, and Windows validation rather than early ACPI metadata. |
 | 7 | NVMe controller (identify + admin/IO queues) on PCIe | **partial (Linux root boot validated)** | the controller is reachable through PCIe BAR0; raw host-file media is wired into the live boot probe with read-only sparse overlays or write-through mode; PRP1/PRP2/PRP-list transfers, including PRP2 list-pointer offsets, are handled; Linux no longer reports the previous large-read `SC_INVALID_FIELD` / ext4 journal-abort failure |
-| 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | partial (Windows loader reaches high VA code) | QEMU/HVF with ACPI enabled and `-cdrom` reaches `Press any key to boot from CD or DVD...`; BridgeVM's raw ISO-as-NVMe path fails in firmware with `Not Found`, but the live probe now attaches the ISO as a read-only QEMU-like legacy virtio-mmio block device on slot 31. Exposing PMUVer in `ID_AA64DFR0_EL1` lets cdboot pass its PMU register path, prompt-time PL011 input injection passes the CD prompt, and the Windows loader reaches `Loading files...`, reads hundreds of MiB from the ISO without virtio I/O errors, and enters Windows high virtual-address code. The active frontier is now the Windows NVMe/PCIe/device-shape path after the loader runs, not late DXE, basic ISO reads, or interrupt delivery. |
+| 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | partial (Windows loader reaches high VA code) | QEMU/HVF with ACPI enabled and `-cdrom` reaches `Press any key to boot from CD or DVD...`; BridgeVM's raw ISO-as-NVMe path fails in firmware with `Not Found`, and the older legacy virtio-mmio ISO path is now only an explicit fallback. The live probe defaults `BRIDGEVM_INSTALLER_ISO` to a read-only PCI `virtio-blk-pci` endpoint at `00:03.0`, matching the QEMU storage slot shape without claiming true CD-ROM/removable-media semantics; the follow-up live run must validate that new default. Existing legacy-mmio live evidence shows PMUVer in `ID_AA64DFR0_EL1` lets cdboot pass its PMU register path, prompt-time PL011 input injection passes the CD prompt, and the Windows loader reaches `Loading files...`, reads hundreds of MiB from the ISO without virtio I/O errors, and enters Windows high virtual-address code. The active frontier is now the Windows PCI/NVMe/device-shape path after the loader runs, not late DXE, basic ISO reads, or interrupt delivery. |
 | 9 | GOP framebuffer + keyboard | after 8 | Setup UI + "press any key"; serial input is not enough to satisfy the Windows CD prompt in the QEMU oracle |
 | 10 | vTPM 2.0, Secure Boot, virtio-net/guest agent | later | Windows 11 compliance + usability |
 
@@ -239,15 +239,23 @@ The remaining OS-boot contract work is now narrower:
   Windows Boot Manager fails early with `BlInitializeLibrary failed 0xc0000225`.
   Attaching the raw ISO as the existing BridgeVM NVMe namespace is not a shortcut:
   stock firmware creates a BridgeVM NVMe boot option but fails it with `Not
-  Found` and falls through to the shell. The current BridgeVM virtio-mmio block
-  ISO prototype is discovered as QEMU-like legacy virtio-mmio, services reads
-  successfully, and asserts its legacy SPI through Apple `hv_gic`. The latest
-  live probe exposes PMUVer (`ID_AA64DFR0_EL1[11:8] = 1`) so cdboot no longer
-  traps on PMU register access, and `BRIDGEVM_UART_RX_ON_CD_PROMPT=' '` injects
-  serial input only after the CD prompt is printed. With that path the loader
-  prints `Loading files...`, reads roughly 300 MiB in a 30 s run and roughly
-  646 MiB in a 120 s run with zero virtio I/O errors, and reaches Windows high
-  virtual-address code (`pc=0xfffff801...`). Recent 120 s traces end in Windows
+  Found` and falls through to the shell. The current BridgeVM live probe now
+  exposes the installer ISO as read-only PCI `virtio-blk-pci` at `00:03.0` by
+  default, with `BRIDGEVM_INSTALLER_ISO_TRANSPORT=mmio` preserving the older
+  legacy virtio-mmio slot-31 path as a fallback. This is fixed read-only block
+  media: it deliberately does not claim QEMU's true CD-ROM/removable-media or
+  xHCI/USB-storage semantics. The PCI boot-media parity work is tracked by
+  `.omo/ulw-loop/evidence/task-5-bridgevm-hvf-pci-boot-media-parity-device-shape.txt`
+  and `.omo/ulw-loop/evidence/task-5-bridgevm-hvf-pci-boot-media-parity-example-check.txt`;
+  the follow-up live proof should land in
+  `.omo/ulw-loop/evidence/bridgevm-hvf-pci-boot-media-parity-live-hvf.txt`. The
+  latest live probe exposes PMUVer (`ID_AA64DFR0_EL1[11:8] = 1`) so cdboot no
+  longer traps on PMU register access, and `BRIDGEVM_UART_RX_ON_CD_PROMPT=' '`
+  injects serial input only after the CD prompt is printed. With the previous
+  legacy-mmio path the loader prints `Loading files...`, reads roughly 300 MiB in
+  a 30 s run and roughly 646 MiB in a 120 s run with zero virtio I/O errors, and
+  reaches Windows high virtual-address code (`pc=0xfffff801...`). Recent 120 s
+  traces end in Windows
   high-VA code (one data-abort snapshot, one watchdog snapshot with
   `ESR=0x56001004`/SVC state). The live probe now reads the EL1 translation
   controls and walks the guest's 4 KiB stage-1 tables through the reusable
