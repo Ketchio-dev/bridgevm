@@ -116,6 +116,12 @@ impl VirtPlatform {
         self.flash_vars.load(data);
     }
 
+    /// Snapshot the writable pflash variable bank, including guest writes
+    /// accepted through the NOR command protocol.
+    pub fn flash_vars_image(&self) -> &[u8] {
+        self.flash_vars.image()
+    }
+
     /// Replace the first NVMe disk image. The image is padded to full 512-byte
     /// LBAs by the controller.
     pub fn load_nvme_disk(&mut self, data: Vec<u8>) {
@@ -824,6 +830,38 @@ mod tests {
             p.on_mmio(machine::FLASH_VARS.base, MmioOp::Read { size: 4 }, &mut mem),
             MmioOutcome::ReadValue(0x0080_0080)
         );
+    }
+
+    #[test]
+    fn flash_vars_snapshot_reflects_guest_programming() {
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+        p.load_flash_vars(&[0xff; 8]);
+        assert_eq!(p.flash_vars_image()[0], 0xff);
+
+        assert_eq!(
+            p.on_mmio(
+                machine::FLASH_VARS.base,
+                MmioOp::Write {
+                    size: 4,
+                    value: 0x0040_0040,
+                },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(
+                machine::FLASH_VARS.base,
+                MmioOp::Write {
+                    size: 4,
+                    value: 0x1234_5678,
+                },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(&p.flash_vars_image()[0..4], &[0x78, 0x56, 0x34, 0x12]);
     }
 
     #[test]

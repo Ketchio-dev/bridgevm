@@ -202,8 +202,9 @@ Windows. To get there:
   `etc/acpi/rsdp`, `etc/acpi/tables` and `etc/table-loader`;
 - extend the raw-image NVMe path from load/snapshot into production-grade
   host-file persistence and interrupt/MSI behavior;
-- persist pflash variable writes back to a vars image so boot order and NVRAM state
-  survive repeated runs;
+- lift the pflash variable snapshot/writeback hooks from the live boot probe into
+  the eventual engine-facing VM configuration so boot order and NVRAM state
+  survive repeated runs outside ad-hoc probes;
 - then boot Linux with ACPI, diff against QEMU+HVF, and only then try Windows Setup.
 
 No external host, paid entitlement, or separate machine is in the way; the whole

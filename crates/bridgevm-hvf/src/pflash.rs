@@ -61,7 +61,14 @@ impl P30NorFlash {
             data.len() <= self.bytes.len(),
             "pflash image larger than bank"
         );
+        self.bytes.fill(0xff);
         self.bytes[..data.len()].copy_from_slice(data);
+        self.mode = Mode::ReadArray;
+    }
+
+    /// Snapshot of the whole pflash bank, including guest variable-store writes.
+    pub fn image(&self) -> &[u8] {
+        &self.bytes
     }
 
     pub fn access(&mut self, gpa: u64, op: MmioOp) -> MmioOutcome {
@@ -245,6 +252,24 @@ mod tests {
         let mut f = flash();
         f.load(&[0x78, 0x56, 0x34, 0x12]);
         assert_eq!(read32(&mut f, 0), 0x1234_5678);
+        assert_eq!(f.image()[4], 0xff);
+    }
+
+    #[test]
+    fn image_snapshot_reflects_program_and_erase() {
+        let mut f = flash();
+        f.load(&[0; 16]);
+        assert_eq!(f.image()[0], 0);
+
+        write32(&mut f, 0x100, 0x0040_0040);
+        write32(&mut f, 0x100, 0x1234_5678);
+        write32(&mut f, 0, 0x00ff_00ff);
+        assert_eq!(&f.image()[0x100..0x104], &[0x78, 0x56, 0x34, 0x12]);
+
+        write32(&mut f, 0, 0x0020_0020);
+        write32(&mut f, 0, 0x00d0_00d0);
+        write32(&mut f, 0, 0x00ff_00ff);
+        assert_eq!(&f.image()[0..4], &[0xff; 4]);
     }
 
     #[test]

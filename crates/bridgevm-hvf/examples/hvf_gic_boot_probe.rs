@@ -13,6 +13,11 @@
 //!   BRIDGEVM_NVME_DISK=/path/to/raw.img target/debug/examples/hvf_gic_boot_probe
 //!   BRIDGEVM_NVME_DISK_OUT=/path/to/out.img ...      # snapshot after run
 //!   BRIDGEVM_NVME_DISK_WRITABLE=1 ...                # write back to input path
+//!
+//! Optional writable UEFI vars:
+//!   BRIDGEVM_AARCH64_UEFI_VARS=/path/to/vars.fd ...
+//!   BRIDGEVM_AARCH64_UEFI_VARS_OUT=/path/to/vars-out.fd ...
+//!   BRIDGEVM_AARCH64_UEFI_VARS_WRITABLE=1 ...        # write back to vars path
 
 use std::alloc::{alloc_zeroed, Layout};
 use std::collections::BTreeMap;
@@ -189,11 +194,15 @@ fn dump_guest_bytes(mem: &dyn GuestMemoryMut, label: &str, center: u64, before: 
     }
 }
 
+fn write_named_bytes(path: &str, bytes: &[u8], label: &str) {
+    std::fs::write(path, bytes).unwrap_or_else(|e| panic!("{label} to {path}: {e}"));
+    println!("{label}: {path} ({} bytes)", bytes.len());
+}
+
 fn maybe_write_file(path_env: &str, bytes: &[u8], description: &str) {
     if let Ok(path) = std::env::var(path_env) {
-        std::fs::write(&path, bytes)
-            .unwrap_or_else(|e| panic!("write {description} to {path}: {e}"));
-        println!("{description} written: {path} ({} bytes)", bytes.len());
+        let label = format!("{description} written");
+        write_named_bytes(&path, bytes, &label);
     }
 }
 
@@ -246,6 +255,8 @@ fn main() {
     });
     let vars = std::env::var("BRIDGEVM_AARCH64_UEFI_VARS")
         .unwrap_or_else(|_| "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-arm-vars.fd".into());
+    let vars_out = std::env::var("BRIDGEVM_AARCH64_UEFI_VARS_OUT").ok();
+    let vars_writable = env_flag("BRIDGEVM_AARCH64_UEFI_VARS_WRITABLE");
     let watchdog_ms = env_u64("BRIDGEVM_BOOT_PROBE_WATCHDOG_MS", WATCHDOG_MS);
 
     unsafe {
@@ -556,24 +567,24 @@ fn main() {
         }
 
         let serial = platform.uart_output().to_vec();
-        if let Some(path) = nvme_disk_out.as_deref() {
-            std::fs::write(path, platform.nvme_disk())
-                .unwrap_or_else(|e| panic!("write NVMe disk snapshot {path}: {e}"));
-            println!(
-                "NVMe disk snapshot written: {path} ({} bytes)",
-                platform.nvme_disk().len()
+        if let Some(path) = vars_out.as_deref() {
+            write_named_bytes(
+                path,
+                platform.flash_vars_image(),
+                "UEFI vars snapshot written",
             );
+        }
+        if vars_writable {
+            write_named_bytes(&vars, platform.flash_vars_image(), "UEFI vars written back");
+        }
+        if let Some(path) = nvme_disk_out.as_deref() {
+            write_named_bytes(path, platform.nvme_disk(), "NVMe disk snapshot written");
         }
         if nvme_disk_writable {
             let Some(path) = nvme_disk_path.as_deref() else {
                 panic!("BRIDGEVM_NVME_DISK_WRITABLE=1 requires BRIDGEVM_NVME_DISK");
             };
-            std::fs::write(path, platform.nvme_disk())
-                .unwrap_or_else(|e| panic!("write back NVMe disk {path}: {e}"));
-            println!(
-                "NVMe disk written back: {path} ({} bytes)",
-                platform.nvme_disk().len()
-            );
+            write_named_bytes(path, platform.nvme_disk(), "NVMe disk written back");
         }
         maybe_write_file("BRIDGEVM_BOOT_PROBE_SERIAL_OUT", &serial, "serial log");
         let symbols = symbol_lines(&serial);
