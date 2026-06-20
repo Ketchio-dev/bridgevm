@@ -256,12 +256,13 @@ The remaining OS-boot contract work is now narrower:
   next long run can identify the repeated SQE, its PRPs/CDWs and completion
   status directly. The first Windows-observed NVMe admin-command gaps are now
   closed: Asynchronous Event Request commands are accepted and left pending,
-  standard `Get Features` probes return boring defaults, and firmware-slot log
-  page `0x03` completes. The latest trace has no `invalid-opcode` completions;
-  the remaining NVMe `invalid-field` completions are Windows probes of optional
-  or vendor/reserved surfaces (`Identify` CNS `0x06`, `Get Features` FID
-  `0xd0`/`0x7f`, and log pages `0xc0`/`0xc1`) and should be diffed against
-  QEMU before being papered over.
+  standard `Get Features` probes return boring defaults, `Identify` CNS `0x06`
+  succeeds for the NVM command set, QEMU's command-effects log page `0x05` is
+  modelled, and firmware-slot log page `0x03` completes. The latest trace has no
+  `invalid-opcode` completions; the remaining NVMe `invalid-field` completions
+  are Windows probes of optional or vendor/reserved surfaces (`Get Features` FID
+  `0xd0`/`0x7f` and log pages `0xc0`/`0xc1`) and should be diffed against QEMU
+  before being papered over.
 - add the remaining ACPI parity tables/metadata that matter for Windows/Linux
   device paths (notably DBG2; Apple `hv_gic` lacks guest-visible LPIs/ITS, so
   current MSI routing is advertised as a MADT Generic MSI Frame instead of

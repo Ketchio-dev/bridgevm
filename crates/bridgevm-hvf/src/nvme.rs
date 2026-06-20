@@ -127,11 +127,15 @@ const ADMIN_OP_ASYNC_EVENT_REQUEST: u8 = 0x0c;
 const NVM_OP_WRITE: u8 = 0x01;
 const NVM_OP_READ: u8 = 0x02;
 
+// ---- Command Set Identifiers (NVMe 1.4 §7.1) ------------------------------
+const COMMAND_SET_NVM: u8 = 0x00;
+
 // ---- IDENTIFY CNS values (NVMe 1.4 §5.15.1) -------------------------------
 const IDENTIFY_CNS_NAMESPACE: u32 = 0x00;
 const IDENTIFY_CNS_CONTROLLER: u32 = 0x01;
 const IDENTIFY_CNS_ACTIVE_NAMESPACE_LIST: u32 = 0x02;
 const IDENTIFY_CNS_NAMESPACE_DESCRIPTOR_LIST: u32 = 0x03;
+const IDENTIFY_CNS_COMMAND_SET_CONTROLLER: u32 = 0x06;
 
 // ---- SET FEATURES feature IDs (NVMe 1.4 §5.21.1) --------------------------
 const FEATURE_ARBITRATION: u8 = 0x01;
@@ -154,6 +158,11 @@ const CREATE_IO_CQ_IV_SHIFT: u32 = 16;
 // ---- GET LOG PAGE log identifiers (NVMe 1.4 §5.14.1) ----------------------
 const LOG_PAGE_SMART_HEALTH: u8 = 0x02;
 const LOG_PAGE_FIRMWARE_SLOT_INFO: u8 = 0x03;
+const LOG_PAGE_COMMAND_EFFECTS: u8 = 0x05;
+
+// ---- Command Effects log bits (NVMe 1.4 §5.14.1.5) ------------------------
+const CMD_EFFECT_CSUPP: u32 = 1 << 0;
+const CMD_EFFECT_LBCC: u32 = 1 << 1;
 
 // ---- Completion status codes (NVMe 1.4 §4.6.1, generic command status) ----
 /// Successful completion (status code type 0, code 0).
@@ -906,6 +915,13 @@ impl NvmeController {
         let cns = cmd.cdw10 & 0xff;
         let data = match cns {
             IDENTIFY_CNS_CONTROLLER => self.identify_controller(),
+            IDENTIFY_CNS_COMMAND_SET_CONTROLLER => {
+                let csi = ((cmd.cdw11 >> 24) & 0xff) as u8;
+                if csi != COMMAND_SET_NVM {
+                    return SC_INVALID_FIELD;
+                }
+                self.identify_command_set_controller()
+            }
             IDENTIFY_CNS_ACTIVE_NAMESPACE_LIST => self.identify_active_namespace_list(cmd.nsid),
             IDENTIFY_CNS_NAMESPACE_DESCRIPTOR_LIST => {
                 if cmd.nsid == NSID {
@@ -975,6 +991,14 @@ impl NvmeController {
         d
     }
 
+    /// Build a 4 KiB command-set-specific Identify Controller structure for the
+    /// NVM command set (CNS=0x06, CSI=0). QEMU answers this Windows probe with
+    /// an otherwise boring `NvmeIdCtrlNvm`; keep the BridgeVM page conservative
+    /// rather than advertising optional NVM commands that are not implemented.
+    fn identify_command_set_controller(&self) -> Vec<u8> {
+        vec![0u8; PAGE_SIZE]
+    }
+
     /// Build a 4 KiB Identify Namespace structure (NVMe 1.4 §5.15.2.1).
     fn identify_namespace(&self) -> Vec<u8> {
         let mut d = vec![0u8; PAGE_SIZE];
@@ -1020,20 +1044,28 @@ impl NvmeController {
         d
     }
 
-    /// GET LOG PAGE. Linux reads SMART / health information during probe; a
-    /// zeroed, normal-temperature log is enough for this minimal volatile disk.
+    /// GET LOG PAGE. Linux reads SMART / health information during probe, and
+    /// Windows asks for the command-effects log while sizing the controller.
     fn admin_get_log_page(&self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
         let lid = (cmd.cdw10 & 0xff) as u8;
         let numdl = (cmd.cdw10 >> 16) & 0xffff;
         let numdu = cmd.cdw11 & 0xffff;
+        let offset = ((u64::from(cmd.cdw13)) << 32) | u64::from(cmd.cdw12);
+        if offset & 0x3 != 0 || offset >= PAGE_SIZE_U64 {
+            return SC_INVALID_FIELD;
+        }
         let dword_count = ((numdu << 16) | numdl).saturating_add(1);
-        let byte_count = (dword_count as usize).saturating_mul(4).min(PAGE_SIZE);
+        let max_len = PAGE_SIZE - offset as usize;
+        let byte_count = (dword_count as usize).saturating_mul(4).min(max_len);
 
-        let data = match lid {
-            LOG_PAGE_SMART_HEALTH => self.smart_health_log(byte_count),
-            LOG_PAGE_FIRMWARE_SLOT_INFO => self.firmware_slot_info_log(byte_count),
+        let log = match lid {
+            LOG_PAGE_SMART_HEALTH => self.smart_health_log(),
+            LOG_PAGE_FIRMWARE_SLOT_INFO => self.firmware_slot_info_log(),
+            LOG_PAGE_COMMAND_EFFECTS => self.command_effects_log(),
             _ => return SC_INVALID_FIELD,
         };
+        let start = offset as usize;
+        let data = &log[start..start + byte_count];
         if mem.write_bytes(cmd.prp1, &data) {
             SC_SUCCESS
         } else {
@@ -1041,29 +1073,46 @@ impl NvmeController {
         }
     }
 
-    fn smart_health_log(&self, byte_count: usize) -> Vec<u8> {
-        let mut d = vec![0u8; byte_count];
-        if d.len() >= 4 {
-            // Composite temperature in Kelvin, little-endian at bytes 1..3.
-            // 300K is boring and healthy.
-            d[1..3].copy_from_slice(&300u16.to_le_bytes());
-            d[3] = 100; // available spare (%)
-        }
-        if d.len() >= 5 {
-            d[4] = 10; // available spare threshold (%)
-        }
+    fn smart_health_log(&self) -> Vec<u8> {
+        let mut d = vec![0u8; PAGE_SIZE];
+        // Composite temperature in Kelvin, little-endian at bytes 1..3.
+        // 300K is boring and healthy.
+        d[1..3].copy_from_slice(&300u16.to_le_bytes());
+        d[3] = 100; // available spare (%)
+        d[4] = 10; // available spare threshold (%)
         d
     }
 
-    fn firmware_slot_info_log(&self, byte_count: usize) -> Vec<u8> {
-        let mut d = vec![0u8; byte_count];
-        if !d.is_empty() {
-            // Active Firmware Info: active slot 1, no pending activation slot.
-            d[0] = 1;
-        }
-        if d.len() >= 72 {
-            write_ascii(&mut d[8..72], "BridgeVM NVMe firmware slot 1");
-        }
+    fn firmware_slot_info_log(&self) -> Vec<u8> {
+        let mut d = vec![0u8; PAGE_SIZE];
+        // Active Firmware Info: active slot 1, no pending activation slot.
+        d[0] = 1;
+        write_ascii(&mut d[8..72], "BridgeVM NVMe firmware slot 1");
+        d
+    }
+
+    fn command_effects_log(&self) -> Vec<u8> {
+        let mut d = vec![0u8; PAGE_SIZE];
+        let mut set_admin = |opcode: u8, effects: u32| {
+            let off = usize::from(opcode) * 4;
+            d[off..off + 4].copy_from_slice(&effects.to_le_bytes());
+        };
+        set_admin(ADMIN_OP_DELETE_IO_SQ, CMD_EFFECT_CSUPP);
+        set_admin(ADMIN_OP_CREATE_IO_SQ, CMD_EFFECT_CSUPP);
+        set_admin(ADMIN_OP_GET_LOG_PAGE, CMD_EFFECT_CSUPP);
+        set_admin(ADMIN_OP_DELETE_IO_CQ, CMD_EFFECT_CSUPP);
+        set_admin(ADMIN_OP_CREATE_IO_CQ, CMD_EFFECT_CSUPP);
+        set_admin(ADMIN_OP_IDENTIFY, CMD_EFFECT_CSUPP);
+        set_admin(ADMIN_OP_SET_FEATURES, CMD_EFFECT_CSUPP);
+        set_admin(ADMIN_OP_GET_FEATURES, CMD_EFFECT_CSUPP);
+        set_admin(ADMIN_OP_ASYNC_EVENT_REQUEST, CMD_EFFECT_CSUPP);
+
+        let mut set_io = |opcode: u8, effects: u32| {
+            let off = 1024 + usize::from(opcode) * 4;
+            d[off..off + 4].copy_from_slice(&effects.to_le_bytes());
+        };
+        set_io(NVM_OP_WRITE, CMD_EFFECT_CSUPP | CMD_EFFECT_LBCC);
+        set_io(NVM_OP_READ, CMD_EFFECT_CSUPP);
         d
     }
 
@@ -1456,6 +1505,7 @@ fn identify_cns_name(cns: u32) -> &'static str {
         IDENTIFY_CNS_CONTROLLER => "controller",
         IDENTIFY_CNS_ACTIVE_NAMESPACE_LIST => "active-ns-list",
         IDENTIFY_CNS_NAMESPACE_DESCRIPTOR_LIST => "ns-desc-list",
+        IDENTIFY_CNS_COMMAND_SET_CONTROLLER => "command-set-controller",
         _ => "unknown",
     }
 }
@@ -1974,6 +2024,47 @@ mod tests {
     }
 
     #[test]
+    fn identify_command_set_controller_completes_for_nvm_csi() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let sqe = encode_sqe(
+            ADMIN_OP_IDENTIFY,
+            0x57,
+            0xffff_ffff,
+            DATA_BASE,
+            IDENTIFY_CNS_COMMAND_SET_CONTROLLER,
+            u32::from(COMMAND_SET_NVM) << 24,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 0, &sqe);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_SUCCESS
+        );
+
+        let id = mem.read_bytes(DATA_BASE, PAGE_SIZE).unwrap();
+        assert_eq!(id, vec![0u8; PAGE_SIZE]);
+    }
+
+    #[test]
+    fn identify_command_set_controller_rejects_unknown_csi() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let sqe = encode_sqe(
+            ADMIN_OP_IDENTIFY,
+            0x58,
+            0xffff_ffff,
+            DATA_BASE,
+            IDENTIFY_CNS_COMMAND_SET_CONTROLLER,
+            0xff << 24,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 0, &sqe);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_INVALID_FIELD
+        );
+    }
+
+    #[test]
     fn process_reports_admin_completion_vector_zero() {
         let (mut ctrl, mut mem) = enabled_controller();
         let sqe = encode_sqe(
@@ -2206,6 +2297,74 @@ mod tests {
     }
 
     #[test]
+    fn get_log_page_command_effects_completes_with_supported_commands() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let numd = (PAGE_SIZE as u32 / 4) - 1;
+        let cdw10 = (numd << 16) | u32::from(LOG_PAGE_COMMAND_EFFECTS);
+        let sqe = encode_sqe(
+            ADMIN_OP_GET_LOG_PAGE,
+            7,
+            0xffff_ffff,
+            DATA_BASE,
+            cdw10,
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 0, &sqe);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_SUCCESS
+        );
+
+        let log = mem.read_bytes(DATA_BASE, PAGE_SIZE).unwrap();
+        let effect_at = |base: usize, opcode: u8| {
+            let off = base + usize::from(opcode) * 4;
+            u32::from_le_bytes(log[off..off + 4].try_into().unwrap())
+        };
+        assert_eq!(effect_at(0, ADMIN_OP_GET_LOG_PAGE), CMD_EFFECT_CSUPP);
+        assert_eq!(effect_at(0, ADMIN_OP_IDENTIFY), CMD_EFFECT_CSUPP);
+        assert_eq!(effect_at(0, ADMIN_OP_GET_FEATURES), CMD_EFFECT_CSUPP);
+        assert_eq!(
+            effect_at(0, 0x82),
+            0,
+            "security receive is not implemented yet and must not be advertised"
+        );
+        assert_eq!(
+            effect_at(1024, NVM_OP_WRITE),
+            CMD_EFFECT_CSUPP | CMD_EFFECT_LBCC
+        );
+        assert_eq!(effect_at(1024, NVM_OP_READ), CMD_EFFECT_CSUPP);
+        assert_eq!(
+            effect_at(1024, 0x00),
+            0,
+            "flush is not implemented yet and must not be advertised"
+        );
+    }
+
+    #[test]
+    fn get_log_page_vendor_logs_remain_invalid_field() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let numd = (512u32 / 4) - 1;
+        for (slot, lid) in [0xc0u8, 0xc1].into_iter().enumerate() {
+            let sqe = encode_sqe(
+                ADMIN_OP_GET_LOG_PAGE,
+                0x80 + slot as u16,
+                0xffff_ffff,
+                DATA_BASE + slot as u64 * PAGE_SIZE_U64,
+                (numd << 16) | u32::from(lid),
+                0,
+                0,
+            );
+            submit_admin(&mut ctrl, &mut mem, slot as u16, &sqe);
+            assert_eq!(
+                completion_status(&read_completion(&mem, ACQ_BASE, slot as u16)),
+                SC_INVALID_FIELD,
+                "vendor log page {lid:#x} matches QEMU's unsupported default"
+            );
+        }
+    }
+
+    #[test]
     fn set_features_number_of_queues_completes() {
         let (mut ctrl, mut mem) = enabled_controller();
         // Request more queues than we have; controller grants what it can.
@@ -2266,12 +2425,23 @@ mod tests {
     #[test]
     fn get_features_unknown_feature_reports_invalid_field_not_invalid_opcode() {
         let (mut ctrl, mut mem) = enabled_controller();
-        let sqe = encode_sqe(ADMIN_OP_GET_FEATURES, 10, 0, 0, 0xd0, 0, 0);
-        submit_admin(&mut ctrl, &mut mem, 0, &sqe);
-        assert_eq!(
-            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
-            SC_INVALID_FIELD
-        );
+        for (slot, fid) in [0xd0u8, 0x7f].into_iter().enumerate() {
+            let sqe = encode_sqe(
+                ADMIN_OP_GET_FEATURES,
+                10 + slot as u16,
+                0,
+                0,
+                u32::from(fid),
+                0,
+                0,
+            );
+            submit_admin(&mut ctrl, &mut mem, slot as u16, &sqe);
+            assert_eq!(
+                completion_status(&read_completion(&mem, ACQ_BASE, slot as u16)),
+                SC_INVALID_FIELD,
+                "feature {fid:#x} matches QEMU's unsupported default"
+            );
+        }
     }
 
     #[test]
