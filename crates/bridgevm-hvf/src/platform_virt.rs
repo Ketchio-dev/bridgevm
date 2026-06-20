@@ -133,9 +133,30 @@ impl VirtPlatform {
             "fw-cfg" => self.fw_cfg_access(gpa - machine::FW_CFG.base, op, mem),
             "uart" => self.uart_access(gpa - machine::UART.base, op),
             "pcie-ecam" => self.pcie_access(gpa - machine::PCIE_ECAM.base, op),
+            "virtio-mmio" => self.virtio_mmio_access(gpa - machine::VIRTIO_MMIO.base, op),
             // Modelled in the machine map but no device behaviour yet — surfaced
             // precisely so bring-up traces show the next thing to implement.
             other => MmioOutcome::KnownUnimplemented(other),
+        }
+    }
+
+    /// Empty virtio-mmio transport slot. Advertise a valid v2 register block with
+    /// DeviceID 0 so the firmware sees "valid transport, no device" and skips it
+    /// silently — matching QEMU's empty slots. Returning 0 (no magic) instead made
+    /// VirtioMmioInit fail with EFI_UNSUPPORTED and log 32 errors per boot.
+    fn virtio_mmio_access(&self, slot_offset: u64, op: MmioOp) -> MmioOutcome {
+        match op {
+            MmioOp::Read { .. } => {
+                let value = match slot_offset % machine::VIRTIO_MMIO_SLOT_SIZE {
+                    0x00 => 0x7472_6976, // MagicValue, "virt"
+                    0x04 => 0x2,         // Version: virtio-mmio 1.0+
+                    0x08 => 0x0,         // DeviceID: 0 = no device present
+                    0x0c => 0x554d_4551, // VendorID, "QEMU"
+                    _ => 0,
+                };
+                MmioOutcome::ReadValue(value)
+            }
+            MmioOp::Write { .. } => MmioOutcome::WriteAck,
         }
     }
 
