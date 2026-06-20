@@ -44,6 +44,9 @@ use bridgevm_hvf::media::{read_bounded_file, MediaWrite, MediaWriteKind, VirtBoo
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome, VirtPlatform};
 use bridgevm_hvf::stage1::{self, Stage1Context, Stage1WalkStep};
 
+#[path = "hvf_gic_boot_probe/arm64_trace.rs"]
+mod arm64_trace;
+use arm64_trace::print_translated_instruction_words;
 #[path = "hvf_gic_boot_probe/nvme_trace.rs"]
 mod nvme_trace;
 use nvme_trace::print_nvme_command_trace;
@@ -1583,6 +1586,8 @@ fn main() {
         dump_guest_bytes(&guest_ram, "CODE[lr]", lr, 0x28, 0x60);
         dump_translated_guest_bytes(&guest_ram, "CODE[pc]", pc_ipa, 0x20, 0x60);
         dump_translated_guest_bytes(&guest_ram, "CODE[lr]", lr_ipa, 0x28, 0x60);
+        print_translated_instruction_words(&guest_ram, "CODE[pc]", last_pc, pc_ipa, 0x20, 0x60);
+        print_translated_instruction_words(&guest_ram, "CODE[lr]", lr, lr_ipa, 0x28, 0x60);
         if fp != 0 {
             dump_guest_bytes(&guest_ram, "FRAME[fp]", fp, 0, 0x80);
             dump_translated_guest_bytes(&guest_ram, "FRAME[fp]", fp_ipa, 0, 0x80);
@@ -1654,6 +1659,7 @@ fn main() {
         print_translated_pe_owner(&guest_ram, "elr", elr_ipa);
         dump_guest_bytes_if_mapped(&guest_ram, "CODE[elr]", elr_el1, 0x20, 0x60);
         dump_translated_guest_bytes(&guest_ram, "CODE[elr]", elr_ipa, 0x20, 0x60);
+        print_translated_instruction_words(&guest_ram, "CODE[elr]", elr_el1, elr_ipa, 0x20, 0x60);
         // Timer state: CTL bit0=ENABLE, bit1=IMASK, bit2=ISTATUS(fired).
         let mut tr = [0u64; 4];
         for (i, r) in [0xdf19u16, 0xdf1a, 0xdf11, 0xdf12].iter().enumerate() {

@@ -258,11 +258,16 @@ The remaining OS-boot contract work is now narrower:
   `BRIDGEVM_FRAME_CHAIN_LIMIT`) and resolve saved LR values through the same
   stage-1 helper, giving kernel RVAs such as `0x519f6c`, `0x2c3d88`,
   `0x518434`, and `0x50e358` in `ntkrnlmp.pdb`. The stop dump now prints the
-  full x0-x28 GPR set and decodes SVC/HVC ESR immediates; the latest Windows
-  stop is still SVC immediate `0x1004`, with the service-call register context
-  captured in `/tmp/bridgevm-svc-gprs-60s.out`. The PCIe MMIO tail repeatedly
-  reads NVMe `CSTS`/`CC` and rings `SQ0TDBL`, so the next diff is Windows
-  NVMe/PCIe command flow and device-shape parity rather than the old
+  full x0-x28 GPR set, decodes SVC/HVC ESR immediates, and emits a small
+  branch-aware AArch64 instruction-word summary for translated PC/LR/ELR code
+  windows. The latest Windows stop still carries SVC immediate `0x1004` in EL1
+  exception state, but the watchdog PC itself is in `ntkrnlmp.pdb` RVA
+  `0x481cdc`, immediately after a decoded `dsb sy; isb sy; wfi` idle sequence
+  (`/tmp/bridgevm-arm64-insn-60s.out`). That makes the next QEMU diff an
+  idle-wake/timer/interrupt/device-shape question rather than an HVF SVC-exit
+  question. The PCIe MMIO tail repeatedly reads NVMe `CSTS`/`CC` and rings
+  `SQ0TDBL`, so the next diff is Windows NVMe/PCIe command flow and device-shape
+  parity rather than the old
   late-DXE poll, the cdboot stub writer, basic ISO reachability, or interrupt
   delivery. The live probe now prints the recent PCIe MMIO tail with decoded
   NVMe register names (`BRIDGEVM_RECENT_PCIE_MMIO`), e.g. `nvme.SQ0TDBL`,
