@@ -162,13 +162,15 @@ pending, handles the observed standard `Get Features` probes, completes
 page `0x05`, handles the firmware-slot log page, advertises Security Send/Receive
 with QEMU's default no-SPDM behavior, and eliminates `invalid-opcode`
 completions. The Windows loader currently issues two zero-length `SECURITY_RECV`
-probes; BridgeVM reports `invalid-field`, matching QEMU's short-request rejection
-shape. The remaining observed `invalid-field` completions are
-optional/vendor/reserved query surfaces and need QEMU-oracle comparison before
-changing the device model. The volatile write cache surface now follows QEMU's
-observed behaviour: Identify Controller advertises VWC `0x7`, `Get Features` FID
-`0x06` reports the current cache enabled, and NVM Flush (`0x00`) succeeds for
-namespace and broadcast-NSID requests.
+probes and probes optional/vendor surfaces (`Get Features` FID `0xd0`/`0x7f`
+and log pages `0xc0`/`0xc1`); BridgeVM now reports QEMU-like
+`invalid-field | DNR` for those unsupported paths. The 120 s post-DNR live run
+still reaches Windows high virtual-address SVC state after reading `645730816`
+bytes from the ISO with zero virtio I/O errors and no unmodelled MMIO. The
+volatile write cache surface now follows QEMU's observed behaviour: Identify
+Controller advertises VWC `0x7`, `Get Features` FID `0x06` reports the current
+cache enabled, and NVM Flush (`0x00`) succeeds for namespace and broadcast-NSID
+requests.
 The remaining gap is above firmware: lift NVMe overlay/writeback and
 pflash persistence into the engine-facing VM configuration, keep tightening
 Windows-relevant ACPI/device-path details beyond the now-modelled PL011 DBG2

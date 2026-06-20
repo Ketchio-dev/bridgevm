@@ -188,6 +188,10 @@ const SECURITY_PROTOCOL_INFO_LIST_LEN: usize = 10;
 const SC_SUCCESS: u16 = 0x0000;
 /// Invalid Field in Command.
 const SC_INVALID_FIELD: u16 = 0x0002;
+/// Do Not Retry bit, carried in the NVMe completion status code field.
+const SC_DNR: u16 = 0x4000;
+/// QEMU's default for unsupported optional/vendor command surfaces.
+const SC_INVALID_FIELD_DNR: u16 = SC_INVALID_FIELD | SC_DNR;
 /// Invalid Opcode.
 const SC_INVALID_OPCODE: u16 = 0x0001;
 
@@ -1083,7 +1087,7 @@ impl NvmeController {
         let numdu = cmd.cdw11 & 0xffff;
         let offset = ((u64::from(cmd.cdw13)) << 32) | u64::from(cmd.cdw12);
         if offset & 0x3 != 0 || offset >= PAGE_SIZE_U64 {
-            return SC_INVALID_FIELD;
+            return SC_INVALID_FIELD_DNR;
         }
         let dword_count = ((numdu << 16) | numdl).saturating_add(1);
         let max_len = PAGE_SIZE - offset as usize;
@@ -1093,7 +1097,7 @@ impl NvmeController {
             LOG_PAGE_SMART_HEALTH => self.smart_health_log(),
             LOG_PAGE_FIRMWARE_SLOT_INFO => self.firmware_slot_info_log(),
             LOG_PAGE_COMMAND_EFFECTS => self.command_effects_log(),
-            _ => return SC_INVALID_FIELD,
+            _ => return SC_INVALID_FIELD_DNR,
         };
         let start = offset as usize;
         let data = &log[start..start + byte_count];
@@ -1154,7 +1158,7 @@ impl NvmeController {
     /// rejects every protocol as invalid-field. Keep that shape while the
     /// controller only supports the discovery receive path below.
     fn admin_security_send(&self, _cmd: &SubmissionEntry) -> u16 {
-        SC_INVALID_FIELD
+        SC_INVALID_FIELD_DNR
     }
 
     /// SECURITY RECEIVE. Match QEMU's default no-SPDM behavior: the only
@@ -1167,7 +1171,7 @@ impl NvmeController {
         match (secp, spsp) {
             (SECURITY_PROTOCOL_INFORMATION, 0) => {
                 if alloc_len < SECURITY_PROTOCOL_INFO_LIST_LEN as u32 {
-                    return SC_INVALID_FIELD;
+                    return SC_INVALID_FIELD_DNR;
                 }
                 let mut resp = [0u8; SECURITY_PROTOCOL_INFO_LIST_LEN];
                 // QEMU reports a two-byte supported-protocol list containing
@@ -1182,8 +1186,8 @@ impl NvmeController {
                     SC_INVALID_FIELD
                 }
             }
-            (SECURITY_PROTOCOL_DMTF_SPDM, _) => SC_INVALID_FIELD,
-            _ => SC_INVALID_FIELD,
+            (SECURITY_PROTOCOL_DMTF_SPDM, _) => SC_INVALID_FIELD_DNR,
+            _ => SC_INVALID_FIELD_DNR,
         }
     }
 
@@ -1279,7 +1283,7 @@ impl NvmeController {
         let select = (cmd.cdw10 >> GET_FEATURE_SELECT_SHIFT) & 0x7;
         if select == GET_FEATURE_SELECT_CAPABILITIES {
             let Some(capabilities) = feature_capabilities(fid) else {
-                return SC_INVALID_FIELD;
+                return SC_INVALID_FIELD_DNR;
             };
             self.last_feature_result = capabilities;
             return SC_SUCCESS;
@@ -1314,7 +1318,7 @@ impl NvmeController {
                 }
                 0
             }
-            _ => return SC_INVALID_FIELD,
+            _ => return SC_INVALID_FIELD_DNR,
         };
         self.last_feature_result = value;
         SC_SUCCESS
@@ -2477,7 +2481,7 @@ mod tests {
     }
 
     #[test]
-    fn get_log_page_vendor_logs_remain_invalid_field() {
+    fn get_log_page_vendor_logs_match_qemu_invalid_field_dnr() {
         let (mut ctrl, mut mem) = enabled_controller();
         let numd = (512u32 / 4) - 1;
         for (slot, lid) in [0xc0u8, 0xc1].into_iter().enumerate() {
@@ -2493,8 +2497,8 @@ mod tests {
             submit_admin(&mut ctrl, &mut mem, slot as u16, &sqe);
             assert_eq!(
                 completion_status(&read_completion(&mem, ACQ_BASE, slot as u16)),
-                SC_INVALID_FIELD,
-                "vendor log page {lid:#x} matches QEMU's unsupported default"
+                SC_INVALID_FIELD_DNR,
+                "vendor log page {lid:#x} matches QEMU's unsupported default with DNR"
             );
         }
     }
@@ -2555,7 +2559,7 @@ mod tests {
             submit_admin(&mut ctrl, &mut mem, slot as u16, &sqe);
             assert_eq!(
                 completion_status(&read_completion(&mem, ACQ_BASE, slot as u16)),
-                SC_INVALID_FIELD
+                SC_INVALID_FIELD_DNR
             );
         }
     }
@@ -2575,7 +2579,7 @@ mod tests {
         submit_admin(&mut ctrl, &mut mem, 0, &sqe);
         assert_eq!(
             completion_status(&read_completion(&mem, ACQ_BASE, 0)),
-            SC_INVALID_FIELD
+            SC_INVALID_FIELD_DNR
         );
     }
 
@@ -2779,7 +2783,7 @@ mod tests {
     }
 
     #[test]
-    fn get_features_unknown_feature_reports_invalid_field_not_invalid_opcode() {
+    fn get_features_unknown_feature_matches_qemu_invalid_field_dnr() {
         let (mut ctrl, mut mem) = enabled_controller();
         for (slot, fid) in [0xd0u8, 0x7f].into_iter().enumerate() {
             let sqe = encode_sqe(
@@ -2794,8 +2798,8 @@ mod tests {
             submit_admin(&mut ctrl, &mut mem, slot as u16, &sqe);
             assert_eq!(
                 completion_status(&read_completion(&mem, ACQ_BASE, slot as u16)),
-                SC_INVALID_FIELD,
-                "feature {fid:#x} matches QEMU's unsupported default"
+                SC_INVALID_FIELD_DNR,
+                "feature {fid:#x} matches QEMU's unsupported default with DNR"
             );
         }
     }

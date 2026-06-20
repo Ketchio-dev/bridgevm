@@ -699,6 +699,7 @@ fn nvme_status_name(status: u16) -> &'static str {
         0x0000 => "success",
         0x0001 => "invalid-opcode",
         0x0002 => "invalid-field",
+        0x4002 => "invalid-field-dnr",
         _ => "unknown",
     }
 }

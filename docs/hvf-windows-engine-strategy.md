@@ -261,15 +261,18 @@ The remaining OS-boot contract work is now narrower:
   succeeds for the NVM command set, QEMU's command-effects log page `0x05` is
   modelled, firmware-slot log page `0x03` completes, and Security Send/Receive
   opcodes are advertised with QEMU's default no-SPDM behavior. Windows currently
-  issues two zero-length `SECURITY_RECV` probes; BridgeVM reports
-  `invalid-field`, matching QEMU's rejected short-request shape. The latest trace
-  has no `invalid-opcode` completions; the remaining NVMe `invalid-field`
-  completions are Windows probes of optional or vendor/reserved surfaces
-  (`Get Features` FID `0xd0`/`0x7f` and log pages `0xc0`/`0xc1`) and should be
-  diffed against QEMU before being papered over. The volatile write cache
-  surface now matches QEMU's observed shape: Identify Controller advertises VWC
-  `0x7`, `Get Features` FID `0x06` reports the current cache enabled, and NVM
-  Flush (`0x00`) completes for both namespace and broadcast-NSID requests.
+  issues two zero-length `SECURITY_RECV` probes and probes optional/vendor
+  surfaces (`Get Features` FID `0xd0`/`0x7f` and log pages `0xc0`/`0xc1`);
+  BridgeVM now matches QEMU's `invalid-field | DNR` status for those unsupported
+  query paths. The 120 s post-DNR live run
+  (`/tmp/bridgevm-nvme-dnr-120s.out`) still reaches `Loading files...`, reads
+  `645730816` bytes from the ISO with zero virtio I/O errors, and stops at the
+  same Windows high-VA/SVC frontier (`pc=0xfffff80335681cdc`,
+  `ESR=0x56001004`) with no unmodelled MMIO or `invalid-opcode` completions. The
+  volatile write cache surface now matches QEMU's observed shape: Identify
+  Controller advertises VWC `0x7`, `Get Features` FID `0x06` reports the current
+  cache enabled, and NVM Flush (`0x00`) completes for both namespace and
+  broadcast-NSID requests.
 - keep tightening ACPI parity that matters for Windows/Linux device paths. DBG2
   now matches QEMU's PL011 debug-port shape; Apple `hv_gic` still lacks
   guest-visible LPIs/ITS, so current MSI routing is advertised as a MADT Generic
