@@ -18,6 +18,7 @@
 //!   BRIDGEVM_LINUX_KERNEL=/path/to/Image ...
 //!   BRIDGEVM_LINUX_INITRD=/path/to/initrd.gz ...      # optional
 //!   BRIDGEVM_LINUX_CMDLINE='console=ttyAMA0 acpi=force' ...
+//!   BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX=0 ...           # keep running after early Linux logs
 //!
 //! Optional writable UEFI vars:
 //!   BRIDGEVM_AARCH64_UEFI_VARS=/path/to/vars.fd ...
@@ -125,6 +126,7 @@ const EXIT_EXCEPTION: u32 = 1;
 const EXIT_VTIMER: u32 = 2;
 const EC_DATA_ABORT: u64 = 0x24;
 const EC_HVC: u64 = 0x16;
+const EC_SYS_REG_TRAP: u64 = 0x18;
 const EC_WATCHPOINT_LOWER: u64 = 0x34;
 const EC_WATCHPOINT_SAME: u64 = 0x35;
 const EC_SOFTSTEP_LOWER: u64 = 0x32;
@@ -143,6 +145,55 @@ const RAM_SIZE: usize = 0x2000_0000; // 512 MiB
 const MAX_LINUX_BOOT_BLOB_BYTES: usize = RAM_SIZE;
 const MAX_EXITS: u64 = 50_000_000;
 const WATCHDOG_MS: u64 = 8000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SysRegTrap {
+    op0: u8,
+    op1: u8,
+    crn: u8,
+    crm: u8,
+    op2: u8,
+    rt: u32,
+    is_read: bool,
+}
+
+impl SysRegTrap {
+    fn decode(esr: u64) -> Self {
+        let iss = esr & 0x01ff_ffff;
+        Self {
+            op0: ((iss >> 20) & 0x3) as u8,
+            op2: ((iss >> 17) & 0x7) as u8,
+            op1: ((iss >> 14) & 0x7) as u8,
+            crn: ((iss >> 10) & 0xf) as u8,
+            rt: ((iss >> 5) & 0x1f) as u32,
+            crm: ((iss >> 1) & 0xf) as u8,
+            is_read: (iss & 1) != 0,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match (self.op0, self.op1, self.crn, self.crm, self.op2) {
+            (2, 0, 1, 0, 4) => "OSLAR_EL1",
+            (2, 0, 1, 1, 4) => "OSLSR_EL1",
+            (2, 0, 1, 3, 4) => "OSDLR_EL1",
+            _ => "<unknown>",
+        }
+    }
+
+    fn describe(self) -> String {
+        let dir = if self.is_read { "MRS" } else { "MSR" };
+        format!(
+            "{dir} {} (S{}_{}_C{}_C{}_{}, Rt=x{})",
+            self.name(),
+            self.op0,
+            self.op1,
+            self.crn,
+            self.crm,
+            self.op2,
+            self.rt
+        )
+    }
+}
 
 fn parse_u64(s: &str) -> Option<u64> {
     let s = s.trim();
@@ -165,6 +216,14 @@ fn env_flag(name: &str) -> bool {
         std::env::var(name).ok().as_deref(),
         Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
     )
+}
+
+fn env_flag_default(name: &str, default: bool) -> bool {
+    match std::env::var(name).ok().as_deref() {
+        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES") => true,
+        Some("0") | Some("false") | Some("FALSE") | Some("no") | Some("NO") => false,
+        _ => default,
+    }
 }
 
 fn read_reg(vcpu: HvVcpuT, reg: u32) -> u64 {
@@ -241,8 +300,13 @@ fn serial_reached_shell(serial: &[u8]) -> bool {
     contains_bytes(serial, b"UEFI Interactive Shell") || contains_bytes(serial, b"Shell>")
 }
 
-fn serial_reached_linux(serial: &[u8]) -> bool {
-    contains_bytes(serial, b"Linux version") || contains_bytes(serial, b"Kernel panic")
+fn serial_reached_linux_early_boot(serial: &[u8]) -> bool {
+    contains_bytes(serial, b"Booting Linux on physical CPU")
+        || contains_bytes(serial, b"Linux version")
+}
+
+fn serial_reached_linux_panic(serial: &[u8]) -> bool {
+    contains_bytes(serial, b"Kernel panic")
 }
 
 fn map_file(path: &Path, ipa: u64, region_bytes: usize, flags: u64) {
@@ -268,10 +332,35 @@ fn host_cntvct() -> u64 {
     v
 }
 
+unsafe fn emulate_debug_os_lock_sysreg(vcpu: HvVcpuT, trap: SysRegTrap) -> bool {
+    match (
+        trap.op0,
+        trap.op1,
+        trap.crn,
+        trap.crm,
+        trap.op2,
+        trap.is_read,
+    ) {
+        // Linux clears the Arm debug OS lock / double lock while bringing up
+        // debug infrastructure. HVF traps these implementation-defined debug
+        // registers; treating the writes as no-ops and reads as unlocked lets
+        // the guest proceed without exposing host debug state.
+        (2, 0, 1, 0, 4, false) | (2, 0, 1, 3, 4, false) => true,
+        (2, 0, 1, 1, 4, true) | (2, 0, 1, 3, 4, true) => {
+            if trap.rt != 31 {
+                hv_vcpu_set_reg(vcpu, HV_REG_X0 + trap.rt, 0);
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
 fn main() {
     let media = VirtBootMediaConfig::from_probe_env();
     let watchdog_ms = env_u64("BRIDGEVM_BOOT_PROBE_WATCHDOG_MS", WATCHDOG_MS);
     let trace_fwcfg = env_flag("BRIDGEVM_TRACE_FWCFG");
+    let stop_on_linux = env_flag_default("BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX", true);
 
     unsafe {
         // Create the VM with the max IPA size: the PCIe ECAM sits at 256 GiB,
@@ -579,6 +668,18 @@ fn main() {
                     hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc);
                     psci_calls += 1;
                 }
+                EC_SYS_REG_TRAP => {
+                    let trap = SysRegTrap::decode(esr);
+                    if emulate_debug_os_lock_sysreg(vcpu, trap) {
+                        hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
+                    } else {
+                        stop_reason = format!(
+                            "unsupported system register trap {} ESR {esr:#x} @ PC {last_pc:#x}",
+                            trap.describe()
+                        );
+                        break;
+                    }
+                }
                 EC_WATCHPOINT_LOWER | EC_WATCHPOINT_SAME => {
                     watch_hits += 1;
                     let mut lr = 0u64;
@@ -622,8 +723,12 @@ fn main() {
                 stop_reason = format!("exit cap {MAX_EXITS}");
                 break;
             }
-            if serial_reached_linux(platform.uart_output()) {
-                stop_reason = "serial reached Linux kernel".into();
+            if serial_reached_linux_panic(platform.uart_output()) {
+                stop_reason = "serial reached Linux kernel panic".into();
+                break;
+            }
+            if stop_on_linux && serial_reached_linux_early_boot(platform.uart_output()) {
+                stop_reason = "serial reached Linux early boot".into();
                 break;
             }
             if serial_reached_shell(platform.uart_output()) {
