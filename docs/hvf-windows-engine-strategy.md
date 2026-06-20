@@ -80,9 +80,9 @@ ACPI-only boot): Linux gives you `dmesg`, Windows gives you a sad face.
 | 2 | `virt` machine model + QEMU-shaped DTB generator | **done (modelled + `dtc`-verified)** | `src/machine.rs` (single source of truth + no-overlap validator) and `src/dtb.rs` (`build_virt_fdt`, decompiles `dtc`-clean against the contract). Wiring the map into the live run loop is step 3. |
 | 3 | Assemble the `virt` platform + `fw_cfg` behind one MMIO-exit entry point; feed `etc/acpi/tables`/`etc/acpi/rsdp`/SMBIOS/boot order | **done (assembled + live-wired)** | `src/platform_virt.rs` (`VirtPlatform`): owns the map, populated `fw_cfg`, DTB, ACPI table-loader blobs, guest-memory layout and MMIO dispatch; `on_mmio()` is the single call the live run loop makes |
 | 4 | GICv3: spike Apple `hv_gic_create` (macOS 15+, create before vCPUs); else model GICv3+ITS at QEMU bases | **done (Apple `hv_gic`, live)** | distributor/redistributor + timer delivery are served by Hypervisor.framework; ITS/MSI remains separate work |
-| 5 | PCIe ECAM (`pci-host-ecam-generic`) + config space + MSI/MSI-X | **partial** | ECAM host bridge, NVMe endpoint config space and BAR0 MMIO routing are wired; MSI/MSI-X delivery is still pending |
+| 5 | PCIe ECAM (`pci-host-ecam-generic`) + config space + MSI/MSI-X | **partial** | ECAM host bridge, NVMe endpoint config space, BAR0 MMIO routing and a writable NVMe MSI-X capability are wired; MSI/MSI-X delivery is still pending |
 | 6 | **Linux ACPI-only boot** through the stock firmware | **partial (installer userspace starts)** | QEMU-style `-kernel`/`-initrd` fw_cfg blobs boot Debian's arm64 installer kernel through EFI, ACPI, SMBIOS/DMI, GIC, timer, PL011 console binding, ACPI0007 CPU device enumeration, PCI root enumeration, QEMU-like PCI `_OSC`, basic PPTT CPU topology, PMU IRQ metadata, initramfs unpack and `/init`. The ECAM PnP reservation warning is present in the QEMU+HVF oracle too, so the active BridgeVM-only gaps are now storage/network/MSI behavior and Windows validation rather than early ACPI metadata. |
-| 7 | NVMe controller (identify + admin/IO queues) on PCIe | **partial** | minimal controller and admin/IO queues are reachable through PCIe BAR0; raw image load/snapshot is wired into the live boot probe; interrupt/MSI behavior and OS boot validation remain |
+| 7 | NVMe controller (identify + admin/IO queues) on PCIe | **partial** | minimal controller and admin/IO queues are reachable through PCIe BAR0; raw image load/snapshot is wired into the live boot probe; the endpoint now advertises MSI-X table/PBA locations, but interrupt delivery and OS boot validation remain |
 | 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | after 6–7 | success = a reproducible "where it died", diffed against QEMU |
 | 9 | GOP framebuffer + keyboard | after 8 | Setup UI + "press any key" |
 | 10 | vTPM 2.0, Secure Boot, virtio-net/guest agent | later | Windows 11 compliance + usability |
@@ -231,7 +231,7 @@ The remaining OS-boot contract work is now narrower:
 - add the remaining ACPI parity tables/metadata that matter for Windows/Linux
   device paths (notably DBG2/IORT/MSI-related metadata as needed);
 - extend the raw-image NVMe path from load/snapshot into production-grade
-  host-file persistence and interrupt/MSI behavior;
+  host-file persistence and interrupt/MSI delivery;
 - lift the pflash variable snapshot/writeback hooks from the live boot probe into
   the eventual engine-facing VM configuration (`src/media.rs` now holds the
   reusable host-file policy) so boot order and NVRAM state survive repeated runs

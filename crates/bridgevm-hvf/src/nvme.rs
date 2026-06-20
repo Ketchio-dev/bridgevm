@@ -66,6 +66,9 @@ pub const REG_ACQ: u64 = 0x30;
 /// First doorbell register (`SQ0TDBL`). With `CAP.DSTRD = 0` the stride is 4
 /// bytes, so doorbell `n` lives at `DOORBELL_BASE + n * 4`.
 pub const REG_DOORBELL_BASE: u64 = 0x1000;
+/// First offset after the modelled doorbell aperture. One admin queue pair plus
+/// `MAX_IO_QUEUE_PAIRS` I/O queue pairs, two doorbells per queue.
+pub const REG_DOORBELL_END: u64 = REG_DOORBELL_BASE + (MAX_IO_QUEUE_PAIRS as u64 + 1) * 2 * 4;
 
 // ---- CAP fields (NVMe 1.4 §3.1.1) -----------------------------------------
 /// `CAP.MQES` lives in bits 15:0 and is 0-based.
@@ -327,7 +330,7 @@ impl NvmeController {
             0x2C => self.asq = merge_u64(self.asq, value, size, true),
             REG_ACQ => self.acq = merge_u64(self.acq, value, size, false),
             0x34 => self.acq = merge_u64(self.acq, value, size, true),
-            o if o >= REG_DOORBELL_BASE => self.write_doorbell(o, v32),
+            o if is_modelled_doorbell(o) => self.write_doorbell(o, v32),
             _ => {}
         }
     }
@@ -678,6 +681,10 @@ fn mask_to_size(value: u64, size: u8) -> u64 {
     }
 }
 
+fn is_modelled_doorbell(offset: u64) -> bool {
+    (REG_DOORBELL_BASE..REG_DOORBELL_END).contains(&offset) && offset % 4 == 0
+}
+
 fn rounded_disk_len(bytes: usize) -> usize {
     bytes.div_ceil(LBA_SIZE) * LBA_SIZE
 }
@@ -831,6 +838,22 @@ mod tests {
         assert_eq!((cap >> 32) & 0xf, 0);
         // NVM command set bit (37) must be set.
         assert_ne!(cap & (1 << 37), 0);
+    }
+
+    #[test]
+    fn doorbell_decode_stays_inside_the_modelled_aperture() {
+        assert!(is_modelled_doorbell(REG_DOORBELL_BASE));
+        assert!(is_modelled_doorbell(REG_DOORBELL_END - 4));
+        assert!(!is_modelled_doorbell(REG_DOORBELL_END));
+        assert!(!is_modelled_doorbell(REG_DOORBELL_BASE + 2));
+
+        let (mut ctrl, _mem) = enabled_controller();
+        ctrl.mmio_write(REG_DOORBELL_END, 4, 7);
+        let admin_sq = ctrl.sqs[0].as_ref().expect("admin SQ installed");
+        assert_eq!(
+            admin_sq.tail_doorbell, 0,
+            "BAR offsets beyond the modelled doorbells must not be treated as SQ0TDBL"
+        );
     }
 
     #[test]

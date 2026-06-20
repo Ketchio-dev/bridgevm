@@ -138,6 +138,14 @@ pub const NVME_REVISION: u8 = 0x01;
 /// register page plus enough doorbells for the small queue count this VMM
 /// exposes; it is power-of-two for PCI BAR sizing.
 pub const NVME_BAR0_SIZE: u32 = 0x4000;
+/// PCI capability-list offset for the NVMe endpoint's MSI-X capability.
+pub const NVME_MSIX_CAP_OFFSET: u8 = 0x40;
+/// Number of MSI-X vectors exposed by the minimal NVMe endpoint.
+pub const NVME_MSIX_VECTOR_COUNT: u16 = 2;
+/// Offset of the MSI-X table in BAR0. Kept away from NVMe registers/doorbells.
+pub const NVME_MSIX_TABLE_OFFSET: u32 = 0x2000;
+/// Offset of the MSI-X Pending Bit Array in BAR0.
+pub const NVME_MSIX_PBA_OFFSET: u32 = 0x3000;
 
 /// The value an ECAM read returns when no device answers: all-ones. Firmware
 /// treats a `0xFFFF_FFFF` vendor/device read as "slot empty".
@@ -261,14 +269,26 @@ impl Function {
     fn nvme() -> Self {
         let mut bars = [Bar::default(); NUM_BARS];
         bars[0] = Bar::memory32(NVME_BAR0_SIZE);
+        let msix = MsixCapability::new(
+            NVME_MSIX_VECTOR_COUNT,
+            0,
+            NVME_MSIX_TABLE_OFFSET,
+            NVME_MSIX_PBA_OFFSET,
+        );
+        let cap_bytes = msix
+            .to_bytes(0)
+            .into_iter()
+            .enumerate()
+            .map(|(i, byte)| (u16::from(NVME_MSIX_CAP_OFFSET) + i as u16, byte))
+            .collect();
         Self {
             bdf: NVME_BDF,
             vendor_device: (u32::from(NVME_DEVICE_ID) << 16) | u32::from(NVME_VENDOR_ID),
             revision_class: (NVME_CLASS_CODE << 8) | u32::from(NVME_REVISION),
             command: 0,
             bars,
-            cap_ptr: 0,
-            cap_bytes: Vec::new(),
+            cap_ptr: NVME_MSIX_CAP_OFFSET,
+            cap_bytes,
         }
     }
 
@@ -323,10 +343,65 @@ impl Function {
                 let idx = ((reg - REG_BAR0) / 4) as usize;
                 self.bars[idx].write(value);
             }
+            _ if self.write_capability_dword(reg, value) => {}
             // Identity, class and header registers are read-only; capability
             // bytes are read-only in this model.
             _ => {}
         }
+    }
+
+    fn capability_byte(&self, off: u16) -> u8 {
+        self.cap_bytes
+            .iter()
+            .find_map(|&(o, v)| (o == off).then_some(v))
+            .unwrap_or(0)
+    }
+
+    fn set_capability_byte(&mut self, off: u16, value: u8) {
+        if let Some((_, v)) = self.cap_bytes.iter_mut().find(|(o, _)| *o == off) {
+            *v = value;
+        } else {
+            self.cap_bytes.push((off, value));
+        }
+    }
+
+    /// Handle writes into the MSI-X capability. Most fields are read-only; the
+    /// guest may only change Message Control bits 14 (function mask) and 15
+    /// (MSI-X enable).
+    fn write_capability_dword(&mut self, reg: u16, value: u32) -> bool {
+        if self.cap_ptr == 0 {
+            return false;
+        }
+        let cap = u16::from(self.cap_ptr);
+        let cap_end = cap + MsixCapability::SIZE_BYTES;
+        if reg + 4 <= cap || reg >= cap_end {
+            return false;
+        }
+
+        let control_off = cap + 2;
+        let mut requested = u16::from_le_bytes([
+            self.capability_byte(control_off),
+            self.capability_byte(control_off + 1),
+        ]);
+        let bytes = value.to_le_bytes();
+        for (byte, incoming) in bytes.iter().enumerate() {
+            let off = reg + byte as u16;
+            if off == control_off {
+                requested = (requested & !0x00ff) | u16::from(*incoming);
+            } else if off == control_off + 1 {
+                requested = (requested & !0xff00) | (u16::from(*incoming) << 8);
+            }
+        }
+
+        let current = u16::from_le_bytes([
+            self.capability_byte(control_off),
+            self.capability_byte(control_off + 1),
+        ]);
+        let next = (current & !0xc000) | (requested & 0xc000);
+        let [lo, hi] = next.to_le_bytes();
+        self.set_capability_byte(control_off, lo);
+        self.set_capability_byte(control_off + 1, hi);
+        true
     }
 }
 
@@ -742,6 +817,71 @@ mod tests {
 
         // BAR0 exists but is not programmed before firmware/OS assignment.
         assert_eq!(ecam.cfg_read(ecam_offset(0, 1, 0, REG_BAR0), 4), 0);
+    }
+
+    #[test]
+    fn nvme_endpoint_exposes_msix_capability() {
+        let ecam = PcieEcam::new();
+        let status = ecam.cfg_read(ecam_offset(0, 1, 0, REG_COMMAND_STATUS), 4) >> 16;
+        assert_ne!(
+            status & u64::from(STATUS_CAP_LIST),
+            0,
+            "NVMe endpoint must advertise a PCI capability list"
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 1, 0, REG_CAP_PTR), 1),
+            u64::from(NVME_MSIX_CAP_OFFSET)
+        );
+
+        let cap = u16::from(NVME_MSIX_CAP_OFFSET);
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 1, 0, cap), 1),
+            u64::from(CAP_ID_MSIX)
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 1, 0, cap + 1), 1),
+            0,
+            "single-capability list should terminate"
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 1, 0, cap + 2), 2),
+            u64::from(NVME_MSIX_VECTOR_COUNT - 1),
+            "MSI-X table-size field is encoded as count - 1"
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 1, 0, cap + 4), 4),
+            u64::from(NVME_MSIX_TABLE_OFFSET)
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 1, 0, cap + 8), 4),
+            u64::from(NVME_MSIX_PBA_OFFSET)
+        );
+        assert!(
+            NVME_MSIX_TABLE_OFFSET
+                + u32::from(NVME_MSIX_VECTOR_COUNT) * MsixCapability::ENTRY_BYTES
+                <= NVME_BAR0_SIZE
+        );
+        assert!(NVME_MSIX_PBA_OFFSET + 8 <= NVME_BAR0_SIZE);
+    }
+
+    #[test]
+    fn nvme_msix_enable_and_function_mask_bits_are_writable() {
+        let mut ecam = PcieEcam::new();
+        let control = u16::from(NVME_MSIX_CAP_OFFSET) + 2;
+
+        // The table-size bits are read-only; only function-mask and enable move.
+        ecam.cfg_write(ecam_offset(0, 1, 0, control), 2, 0xffff);
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 1, 0, control), 2),
+            u64::from(0xc000 | (NVME_MSIX_VECTOR_COUNT - 1))
+        );
+
+        ecam.cfg_write(ecam_offset(0, 1, 0, control + 1), 1, 0x00);
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 1, 0, control), 2),
+            u64::from(NVME_MSIX_VECTOR_COUNT - 1),
+            "sub-byte writes clear the writable MSI-X control bits"
+        );
     }
 
     #[test]

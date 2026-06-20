@@ -140,5 +140,7 @@ init process`. The latest live HVF run no longer logs the previous
 IRQ`, or invalid-DMI diagnostics. The ECAM PnP reservation warning is also
 present in the QEMU+HVF oracle, so it is no longer treated as a BridgeVM-only
 platform gap. The remaining gap is above firmware: production-grade NVMe and
-pflash persistence in the engine-facing VM configuration, interrupt/MSI behavior,
-ACPI IORT/DBG2 details as needed, and then Windows installer validation.
+pflash persistence in the engine-facing VM configuration, interrupt/MSI delivery
+(the NVMe endpoint now advertises a writable MSI-X capability, but vectors are not
+yet injected), ACPI IORT/DBG2 details as needed, and then Windows installer
+validation.
