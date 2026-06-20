@@ -83,6 +83,10 @@ pub const REG_AQA: u64 = 0x24;
 pub const REG_ASQ: u64 = 0x28;
 /// Admin Completion Queue Base Address (64-bit, RW).
 pub const REG_ACQ: u64 = 0x30;
+/// Controller Memory Buffer Location (32-bit, RO). We advertise no CMB.
+pub const REG_CMBLOC: u64 = 0x38;
+/// Controller Memory Buffer Size (32-bit, RO). We advertise no CMB.
+pub const REG_CMBSZ: u64 = 0x3C;
 /// First doorbell register (`SQ0TDBL`). With `CAP.DSTRD = 0` the stride is 4
 /// bytes, so doorbell `n` lives at `DOORBELL_BASE + n * 4`.
 pub const REG_DOORBELL_BASE: u64 = 0x1000;

@@ -265,7 +265,10 @@ The remaining OS-boot contract work is now narrower:
   NVMe register names (`BRIDGEVM_RECENT_PCIE_MMIO`), e.g. `nvme.SQ0TDBL`,
   `nvme.CQ0HDBL`, `nvme.SQ1TDBL`, `nvme.CSTS`, `nvme.CC` and `nvme.ASQ`,
   which makes queue-doorbell churn visible without re-decoding BAR offsets by
-  hand. It also keeps a bounded NVMe command/completion ring
+  hand. The same tail now emits a ranked register summary, and the latest
+  Windows run shows the expected admin/I/O queue doorbells plus optional
+  no-CMB probes (`nvme.CMBLOC`/`nvme.CMBSZ`, both reading zero), with no
+  unmodelled MMIO. It also keeps a bounded NVMe command/completion ring
   (`BRIDGEVM_RECENT_NVME_COMMANDS`) so the next long run can identify the
   repeated SQE, its decoded LBA/count or admin selector, PRPs/CDWs, completion
   status, interrupt route, expected pending AERs versus other pending commands,
@@ -287,7 +290,11 @@ The remaining OS-boot contract work is now narrower:
   volatile write cache surface now matches QEMU's observed shape: Identify
   Controller advertises VWC `0x7`, `Get Features` FID `0x06` reports the current
   cache enabled, and NVM Flush (`0x00`) completes for both namespace and
-  broadcast-NSID requests.
+  broadcast-NSID requests. Later 60 s register-summary runs reach the same
+  Windows high-VA/SVC frontier class, with stops resolving into `ntkrnlmp.pdb`
+  RVAs such as `0x481cdc` and `0x4e0d78`, only the expected four pending
+  Asynchronous Event Requests, and no other pending NVMe commands. The current
+  evidence no longer points at missing NVMe completions.
 - keep tightening ACPI parity that matters for Windows/Linux device paths. DBG2
   now matches QEMU's PL011 debug-port shape; Apple `hv_gic` still lacks
   guest-visible LPIs/ITS, so current MSI routing is advertised as a MADT Generic

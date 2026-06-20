@@ -174,7 +174,12 @@ fails the guest page-table walk at an invalid L0 descriptor. The
 volatile write cache surface now follows QEMU's observed behaviour: Identify
 Controller advertises VWC `0x7`, `Get Features` FID `0x06` reports the current
 cache enabled, and NVM Flush (`0x00`) succeeds for namespace and broadcast-NSID
-requests.
+requests. The latest PCIe MMIO register-summary pass shows Windows repeatedly
+ringing NVMe queue doorbells, polling `CSTS`/`CC`/`ASQ`, and reading optional
+no-CMB registers `CMBLOC`/`CMBSZ` as zero. Its NVMe summary has only the
+expected pending Asynchronous Event Requests and no other pending commands, so
+the current differential target is Windows high-VA/SVC context and QEMU device
+shape parity rather than a plain missing-completion bug.
 The remaining gap is above firmware: lift NVMe overlay/writeback and
 pflash persistence into the engine-facing VM configuration, keep tightening
 Windows-relevant ACPI/device-path details beyond the now-modelled PL011 DBG2
