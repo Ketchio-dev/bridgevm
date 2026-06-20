@@ -28,7 +28,7 @@ use crate::fwcfg::{
 use crate::machine::{self, Region};
 use crate::msix::MsixMessage;
 use crate::nvme::{NvmeCommandTrace, NvmeCompletionEvent, NvmeController};
-use crate::pcie::{PcieEcam, NVME_BDF, VIRTIO_BLK_BDF};
+use crate::pcie::{PcieEcam, PcieMmioTarget, NVME_BDF, VIRTIO_BLK_BDF};
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
 use crate::pl031::Pl031;
@@ -215,6 +215,12 @@ impl VirtPlatform {
     /// firehose of per-command logging.
     pub fn nvme_command_trace(&self) -> Vec<NvmeCommandTrace> {
         self.nvme.recent_command_trace()
+    }
+
+    /// Resolve a guest-physical PCIe MMIO address against the currently
+    /// programmed endpoint BARs without dispatching the access.
+    pub fn pcie_mmio_target(&self, gpa: u64) -> Option<PcieMmioTarget> {
+        self.pcie.mmio_target(gpa)
     }
 
     /// Drain MSI-X messages raised by PCIe devices since the last call. The live

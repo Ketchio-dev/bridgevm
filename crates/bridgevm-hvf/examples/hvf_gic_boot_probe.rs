@@ -1464,9 +1464,14 @@ fn main() {
                             ipa - machine::FW_CFG.base
                         );
                     }
-                    let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
                     let device = machine::device_at(ipa).unwrap_or("<unmapped>");
-                    recent_pcie_mmio.record(device, last_pc, ipa, &op, &outcome);
+                    let pcie_target = if device == "pcie-mmio-32" {
+                        platform.pcie_mmio_target(ipa)
+                    } else {
+                        None
+                    };
+                    let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
+                    recent_pcie_mmio.record(device, last_pc, ipa, pcie_target, &op, &outcome);
                     record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
                     if trace_this_fwcfg {
                         println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
