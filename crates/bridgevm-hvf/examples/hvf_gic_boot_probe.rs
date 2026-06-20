@@ -896,9 +896,14 @@ struct RunLoopDrainStats {
     data_abort_attempts: u64,
     msix: DeliveryCounts,
     spi: DeliveryCounts,
+    last_drain_location: Option<&'static str>,
     last_drain_exit: Option<u64>,
     last_drain_pc: Option<u64>,
+    last_drain_msix: DeliveryCounts,
+    last_drain_spi: DeliveryCounts,
     last_nonzero_location: Option<&'static str>,
+    last_nonzero_exit: Option<u64>,
+    last_nonzero_pc: Option<u64>,
 }
 
 impl RunLoopDrainStats {
@@ -917,9 +922,22 @@ impl RunLoopDrainStats {
                 success: 0,
                 failure: 0,
             },
+            last_drain_location: None,
             last_drain_exit: None,
             last_drain_pc: None,
+            last_drain_msix: DeliveryCounts {
+                drained: 0,
+                success: 0,
+                failure: 0,
+            },
+            last_drain_spi: DeliveryCounts {
+                drained: 0,
+                success: 0,
+                failure: 0,
+            },
             last_nonzero_location: None,
+            last_nonzero_exit: None,
+            last_nonzero_pc: None,
         }
     }
 
@@ -936,14 +954,19 @@ impl RunLoopDrainStats {
 
         let spi = deliver_pending_spis(platform, trace.spi);
         let msix = deliver_pending_msix(platform, trace.msix);
+        self.last_drain_location = Some(context.location.as_str());
         self.last_drain_exit = Some(context.exit);
         self.last_drain_pc = Some(context.pc);
+        self.last_drain_msix = msix;
+        self.last_drain_spi = spi;
         self.spi.add(spi);
         self.msix.add(msix);
 
         if spi.has_deliveries() || msix.has_deliveries() {
             let location = context.location.as_str();
             self.last_nonzero_location = Some(location);
+            self.last_nonzero_exit = Some(context.exit);
+            self.last_nonzero_pc = Some(context.pc);
             if self.trace {
                 println!(
                     "G004 IRQ drain: location={location} exit={} pc={:#x} msix drained={} success={} failure={} spi drained={} success={} failure={}",
@@ -984,6 +1007,229 @@ impl RunLoopDrainStats {
             "G004 IRQ drain last: exit={} pc={} last_nonzero_location={}",
             last_drain_exit, last_drain_pc, last_nonzero_location
         );
+    }
+
+    fn last_drain_was_empty(&self) -> Option<bool> {
+        if self.last_drain_location.is_none() {
+            None
+        } else {
+            Some(self.last_drain_msix.drained == 0 && self.last_drain_spi.drained == 0)
+        }
+    }
+}
+
+const ARM64_WFI: u32 = 0xd503_207f;
+const ARM64_WFE: u32 = 0xd503_205f;
+const G011_INSN_WINDOW_BEFORE: u64 = 0x20;
+const G011_INSN_WINDOW_LEN: usize = 0x60;
+
+#[derive(Clone, Copy)]
+struct WfiPcObservation {
+    word_at: Option<u32>,
+    word_before: Option<u32>,
+    window_has_wfi: bool,
+}
+
+impl WfiPcObservation {
+    const fn unavailable() -> Self {
+        Self {
+            word_at: None,
+            word_before: None,
+            window_has_wfi: false,
+        }
+    }
+
+    fn is_wfiish(self) -> bool {
+        word_is_wait_instruction(self.word_at) || word_is_wait_instruction(self.word_before)
+    }
+}
+
+struct WfiWakeSummary<'a> {
+    stop_reason: &'a str,
+    stop_reason_code: Option<u32>,
+    exits: u64,
+    vtimer_exits: u64,
+    final_pc: u64,
+    last_prerun_pc: Option<u64>,
+    final_pc_observation: WfiPcObservation,
+    last_prerun_pc_observation: WfiPcObservation,
+    last_nonzero_irq_drain_pc_observation: Option<WfiPcObservation>,
+}
+
+impl WfiWakeSummary<'_> {
+    fn print(&self, drain_stats: &RunLoopDrainStats) {
+        let last_nonzero_location = drain_stats.last_nonzero_location.unwrap_or("<none>");
+        let last_nonzero_irq_drain_pc_wfiish = self
+            .last_nonzero_irq_drain_pc_observation
+            .map(WfiPcObservation::is_wfiish);
+        println!("G011 WFI wake-source summary:");
+        println!(
+            "  stop={} reason_code={} exits={} watchdog_canceled={}",
+            self.stop_reason,
+            format_optional_u32_hex(self.stop_reason_code),
+            self.exits,
+            self.stop_reason_code == Some(EXIT_CANCELED)
+        );
+        println!(
+            "  final_pc={:#x} final_pc_wfiish={} final_window_has_wfi={} final_word_at={} final_word_before={}",
+            self.final_pc,
+            self.final_pc_observation.is_wfiish(),
+            self.final_pc_observation.window_has_wfi,
+            format_optional_instruction_word(self.final_pc_observation.word_at),
+            format_optional_instruction_word(self.final_pc_observation.word_before)
+        );
+        println!(
+            "  last_prerun_pc={} last_prerun_pc_wfiish={} last_prerun_window_has_wfi={} last_prerun_word_at={} last_prerun_word_before={}",
+            format_optional_u64_hex(self.last_prerun_pc),
+            self.last_prerun_pc_observation.is_wfiish(),
+            self.last_prerun_pc_observation.window_has_wfi,
+            format_optional_instruction_word(self.last_prerun_pc_observation.word_at),
+            format_optional_instruction_word(self.last_prerun_pc_observation.word_before)
+        );
+        println!(
+            "  vtimer_exits={} msix_drained={} spi_drained={} device_event_quiescent_at_stop={}",
+            self.vtimer_exits,
+            drain_stats.msix.drained,
+            drain_stats.spi.drained,
+            format_optional_bool(drain_stats.last_drain_was_empty())
+        );
+        println!(
+            "  last_nonzero_irq_drain=location={} exit={} pc={} pc_wfiish={}",
+            last_nonzero_location,
+            format_optional_u64_dec(drain_stats.last_nonzero_exit),
+            format_optional_u64_hex(drain_stats.last_nonzero_pc),
+            format_optional_bool(last_nonzero_irq_drain_pc_wfiish)
+        );
+    }
+}
+
+fn word_is_wait_instruction(word: Option<u32>) -> bool {
+    matches!(word, Some(ARM64_WFI | ARM64_WFE))
+}
+
+fn read_translated_instruction_word(mem: &dyn GuestMemoryMut, ipa: Option<u64>) -> Option<u32> {
+    let bytes = mem.read_bytes(ipa?, 4)?;
+    let word_bytes: [u8; 4] = bytes.try_into().ok()?;
+    Some(u32::from_le_bytes(word_bytes))
+}
+
+fn translated_word_before(mem: &dyn GuestMemoryMut, center_ipa: Option<u64>) -> Option<u32> {
+    read_translated_instruction_word(mem, center_ipa?.checked_sub(4))
+}
+
+fn translated_window_has_wfi(mem: &dyn GuestMemoryMut, center_ipa: Option<u64>) -> bool {
+    let Some(center_ipa) = center_ipa else {
+        return false;
+    };
+    let Some(base_ipa) = center_ipa.checked_sub(G011_INSN_WINDOW_BEFORE) else {
+        return false;
+    };
+    let Some(bytes) = mem.read_bytes(base_ipa, G011_INSN_WINDOW_LEN & !3) else {
+        return false;
+    };
+    bytes.chunks_exact(4).any(|chunk| {
+        let Ok(word_bytes) = <[u8; 4]>::try_from(chunk) else {
+            return false;
+        };
+        u32::from_le_bytes(word_bytes) == ARM64_WFI
+    })
+}
+
+fn wfi_pc_observation(mem: &dyn GuestMemoryMut, center_ipa: Option<u64>) -> WfiPcObservation {
+    if center_ipa.is_none() {
+        return WfiPcObservation::unavailable();
+    }
+    WfiPcObservation {
+        word_at: read_translated_instruction_word(mem, center_ipa),
+        word_before: translated_word_before(mem, center_ipa),
+        window_has_wfi: translated_window_has_wfi(mem, center_ipa),
+    }
+}
+
+fn format_optional_bool(value: Option<bool>) -> String {
+    value.map_or_else(|| "<none>".to_string(), |value| value.to_string())
+}
+
+fn format_optional_u32_hex(value: Option<u32>) -> String {
+    value.map_or_else(|| "<none>".to_string(), |value| format!("{value:#x}"))
+}
+
+fn format_optional_instruction_word(value: Option<u32>) -> String {
+    value.map_or_else(
+        || "<unreadable>".to_string(),
+        |value| format!("{value:#010x}"),
+    )
+}
+
+fn format_optional_u64_dec(value: Option<u64>) -> String {
+    value.map_or_else(|| "<none>".to_string(), |value| value.to_string())
+}
+
+fn format_optional_u64_hex(value: Option<u64>) -> String {
+    value.map_or_else(|| "<none>".to_string(), |value| format!("{value:#x}"))
+}
+
+#[cfg(test)]
+mod wfi_summary_tests {
+    use super::*;
+
+    struct TestMem {
+        base: u64,
+        bytes: Vec<u8>,
+    }
+
+    impl GuestMemoryMut for TestMem {
+        fn write_bytes(&mut self, gpa: u64, data: &[u8]) -> bool {
+            let Some(off) = gpa
+                .checked_sub(self.base)
+                .and_then(|off| usize::try_from(off).ok())
+            else {
+                return false;
+            };
+            if off + data.len() > self.bytes.len() {
+                return false;
+            }
+            self.bytes[off..off + data.len()].copy_from_slice(data);
+            true
+        }
+
+        fn read_bytes(&self, gpa: u64, len: usize) -> Option<Vec<u8>> {
+            let off = usize::try_from(gpa.checked_sub(self.base)?).ok()?;
+            if off + len > self.bytes.len() {
+                return None;
+            }
+            Some(self.bytes[off..off + len].to_vec())
+        }
+    }
+
+    #[test]
+    fn finds_wfi_near_translated_final_pc() {
+        let center_ipa = 0x1020;
+        let mut mem = TestMem {
+            base: 0x1000,
+            bytes: vec![0; 0x80],
+        };
+        assert!(mem.write_bytes(center_ipa - 4, &ARM64_WFI.to_le_bytes()));
+
+        let observation = wfi_pc_observation(&mem, Some(center_ipa));
+
+        assert!(observation.window_has_wfi);
+        assert!(observation.is_wfiish());
+        assert_eq!(observation.word_before, Some(ARM64_WFI));
+    }
+
+    #[test]
+    fn reports_no_wfi_when_translation_is_missing() {
+        let mem = TestMem {
+            base: 0x1000,
+            bytes: vec![0; 0x20],
+        };
+
+        let observation = wfi_pc_observation(&mem, Some(0x9000));
+
+        assert!(!observation.window_has_wfi);
+        assert!(!observation.is_wfiish());
+        assert_eq!(observation.word_at, None);
     }
 }
 
@@ -1394,6 +1640,7 @@ fn main() {
         let mut vtimer_exits = 0u64;
         let mut psci_calls = 0u64;
         let mut last_pc = 0u64;
+        let mut last_pre_run_pc: u64;
         let mut watch_hits = 0u32;
         let mut last_watch_pc = 0u64;
         let mut last_watch_lr = 0u64;
@@ -1404,10 +1651,12 @@ fn main() {
             spi: trace_spi,
         };
         let stop_reason;
+        let mut stop_reason_code = None;
 
         loop {
             let mut drain_pc = 0u64;
             hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
+            last_pre_run_pc = drain_pc;
             drain_stats.drain_pending(
                 &mut platform,
                 drain_trace,
@@ -1419,17 +1668,20 @@ fn main() {
             );
             let r = hv_vcpu_run(vcpu);
             if r != 0 {
+                hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                 stop_reason = format!("hv_vcpu_run error {r:#x}");
                 break;
             }
             exits += 1;
             let reason = (*exit).reason;
+            stop_reason_code = Some(reason);
             if reason == EXIT_CANCELED {
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                 stop_reason = "watchdog (CANCELED)".into();
                 break;
             }
             if reason == EXIT_VTIMER {
+                hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                 vtimer_exits += 1;
                 hv_vcpu_set_vtimer_mask(vcpu, true);
                 if exits >= MAX_EXITS {
@@ -1846,6 +2098,23 @@ fn main() {
             "exits: {exits} (vtimer {vtimer_exits}, psci {psci_calls}), last PC: {last_pc:#x}"
         );
         drain_stats.print_summary();
+        let last_prerun_pc_ipa = translated_ipa(&guest_ram, &stage1_ctx, last_pre_run_pc).ok();
+        let last_nonzero_irq_drain_pc_ipa = drain_stats
+            .last_nonzero_pc
+            .and_then(|pc| translated_ipa(&guest_ram, &stage1_ctx, pc).ok());
+        WfiWakeSummary {
+            stop_reason: &stop_reason,
+            stop_reason_code,
+            exits,
+            vtimer_exits,
+            final_pc: last_pc,
+            last_prerun_pc: Some(last_pre_run_pc),
+            final_pc_observation: wfi_pc_observation(&guest_ram, pc_ipa),
+            last_prerun_pc_observation: wfi_pc_observation(&guest_ram, last_prerun_pc_ipa),
+            last_nonzero_irq_drain_pc_observation: last_nonzero_irq_drain_pc_ipa
+                .map(|ipa| wfi_pc_observation(&guest_ram, Some(ipa))),
+        }
+        .print(&drain_stats);
         println!("unmodelled MMIO touched: {unimpl:?}");
         print_mmio_traces(&mmio_traces);
         recent_pcie_mmio.print();
