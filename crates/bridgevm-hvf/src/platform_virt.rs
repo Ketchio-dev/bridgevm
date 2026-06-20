@@ -17,6 +17,8 @@
 //! code-signed Apple Silicon host (the step-6 Linux ACPI-only bring-up in
 //! `docs/hvf-windows-engine-strategy.md`).
 
+mod bootorder;
+
 use std::{io, path::Path};
 
 use crate::acpi::{build_acpi, ACPI_LOADER_FILE, ACPI_RSDP_FILE, ACPI_TABLE_FILE};
@@ -100,7 +102,7 @@ impl VirtPlatform {
         let dtb = build_virt_fdt(&cfg);
         let mut fw_cfg = FwCfg::new();
         // Minimal real control entries the firmware/OS consult.
-        fw_cfg.add_file("bootorder", Vec::new());
+        fw_cfg.add_file("bootorder", bootorder::qemu_virtio_blk_pci_bootorder());
         // `etc/system-states` advertises which ACPI S-states are enabled; the
         // firmware may write it back, so it is writable. 6 bytes: S3, S4, ... .
         fw_cfg.add_writable_file("etc/system-states", vec![0u8; 6]);
@@ -616,7 +618,7 @@ impl GuestMemoryMut for FlatGuestRam {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fwcfg::{DMA_CTL_READ, DMA_CTL_SELECT, KEY_SIGNATURE};
+    use crate::fwcfg::{DMA_CTL_READ, DMA_CTL_SELECT, KEY_FILE_DIR, KEY_SIGNATURE};
     use crate::machine;
     use std::{fs, path::PathBuf, time::SystemTime};
 
@@ -1523,6 +1525,36 @@ mod tests {
         for name in [SMBIOS_ANCHOR_FILE, SMBIOS_TABLE_FILE] {
             assert!(blob.contains(name), "default fw_cfg dir missing {name}");
         }
+    }
+
+    #[test]
+    fn default_fw_cfg_bootorder_targets_qemu_virtio_blk_pci_installer() {
+        let mut p = platform();
+        p.fw_cfg.select(KEY_FILE_DIR);
+        let dir = p.fw_cfg.read_data(p.fw_cfg.file_dir_bytes().len());
+        let count = u32::from_be_bytes([dir[0], dir[1], dir[2], dir[3]]) as usize;
+        let bootorder = (0..count)
+            .find_map(|index| {
+                let record = &dir[4 + index * 64..4 + (index + 1) * 64];
+                let name_end = record[8..64]
+                    .iter()
+                    .position(|&byte| byte == 0)
+                    .unwrap_or(56);
+                (&record[8..8 + name_end] == b"bootorder").then(|| {
+                    let size =
+                        u32::from_be_bytes([record[0], record[1], record[2], record[3]]) as usize;
+                    let select = u16::from_be_bytes([record[4], record[5]]);
+                    (select, size)
+                })
+            })
+            .unwrap_or_else(|| panic!("default fw_cfg dir missing bootorder"));
+        assert_eq!(bootorder.1, bootorder::QEMU_VIRTIO_BLK_PCI_BOOTORDER.len());
+
+        p.fw_cfg.select(bootorder.0);
+        assert_eq!(
+            p.fw_cfg.read_data(bootorder.1),
+            bootorder::QEMU_VIRTIO_BLK_PCI_BOOTORDER
+        );
     }
 
     #[test]

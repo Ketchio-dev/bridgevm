@@ -91,6 +91,7 @@ pub const REG_BIST_HEADER: u16 = 0x0c;
 pub const REG_BAR0: u16 = 0x10;
 /// Capabilities pointer (8-bit at `0x34`).
 pub const REG_CAP_PTR: u16 = 0x34;
+pub const REG_SUBSYSTEM_IDS: u16 = 0x2c;
 
 /// Number of Base Address Registers in a type-0 (endpoint) header.
 pub const NUM_BARS: usize = 6;
@@ -171,6 +172,8 @@ pub const VIRTIO_BLK_DEVICE_ID: u16 = 0x1001;
 pub const VIRTIO_BLK_CLASS_CODE: u32 = 0x0001_0000;
 /// Revision id reported by the boot-media endpoint.
 pub const VIRTIO_BLK_REVISION: u8 = 0x00;
+pub const VIRTIO_BLK_SUBSYSTEM_VENDOR_ID: u16 = 0x1af4;
+pub const VIRTIO_BLK_SUBSYSTEM_ID: u16 = 0x0002;
 /// Legacy virtio-blk-pci I/O BAR.
 pub const VIRTIO_BLK_BAR0_SIZE: u32 = 0x80;
 /// MSI-X table/PBA memory BAR.
@@ -197,6 +200,7 @@ struct Function {
     bdf: (u8, u8, u8),
     vendor_device: u32,
     revision_class: u32,
+    subsystem_ids: u32,
     /// The mutable command register (low 16 bits) — bit-masked on write.
     command: u16,
     /// BAR latch values. A `0` size mask means "this BAR is unimplemented", so
@@ -344,6 +348,7 @@ impl Function {
             vendor_device: (u32::from(HOST_BRIDGE_DEVICE_ID) << 16)
                 | u32::from(HOST_BRIDGE_VENDOR_ID),
             revision_class: (HOST_BRIDGE_CLASS_CODE << 8) | u32::from(HOST_BRIDGE_REVISION),
+            subsystem_ids: 0,
             command: 0,
             bars: [Bar::default(); NUM_BARS],
             cap_ptr: 0,
@@ -371,6 +376,7 @@ impl Function {
             bdf: NVME_BDF,
             vendor_device: (u32::from(NVME_DEVICE_ID) << 16) | u32::from(NVME_VENDOR_ID),
             revision_class: (NVME_CLASS_CODE << 8) | u32::from(NVME_REVISION),
+            subsystem_ids: 0,
             command: 0,
             bars,
             cap_ptr: NVME_MSIX_CAP_OFFSET,
@@ -403,6 +409,8 @@ impl Function {
             vendor_device: (u32::from(VIRTIO_BLK_DEVICE_ID) << 16)
                 | u32::from(VIRTIO_BLK_VENDOR_ID),
             revision_class: (VIRTIO_BLK_CLASS_CODE << 8) | u32::from(VIRTIO_BLK_REVISION),
+            subsystem_ids: (u32::from(VIRTIO_BLK_SUBSYSTEM_ID) << 16)
+                | u32::from(VIRTIO_BLK_SUBSYSTEM_VENDOR_ID),
             command: 0,
             bars,
             cap_ptr: caps.cap_ptr,
@@ -428,6 +436,7 @@ impl Function {
                 // Cache line / latency / BIST all zero; header type in byte 2.
                 u32::from(HEADER_TYPE_ENDPOINT) << 16
             }
+            REG_SUBSYSTEM_IDS => self.subsystem_ids,
             REG_CAP_PTR => u32::from(self.cap_ptr),
             _ if (REG_BAR0..REG_BAR0 + (NUM_BARS as u16) * 4).contains(&reg) => {
                 let idx = ((reg - REG_BAR0) / 4) as usize;
@@ -942,6 +951,22 @@ mod tests {
         assert_eq!(
             ecam.cfg_read(ecam_offset(bus, dev, func, 0x0e), 1),
             u64::from(HEADER_TYPE_ENDPOINT)
+        );
+    }
+
+    #[test]
+    fn boot_media_endpoint_reports_qemu_oracle_subsystem_id() {
+        let ecam = PcieEcam::new();
+        let (bus, dev, func) = VIRTIO_BLK_BDF;
+
+        let subsystem = ecam.cfg_read(ecam_offset(bus, dev, func, REG_SUBSYSTEM_IDS), 4);
+        assert_eq!(
+            subsystem & 0xFFFF,
+            u64::from(VIRTIO_BLK_SUBSYSTEM_VENDOR_ID)
+        );
+        assert_eq!(
+            (subsystem >> 16) & 0xFFFF,
+            u64::from(VIRTIO_BLK_SUBSYSTEM_ID)
         );
     }
 
