@@ -146,6 +146,28 @@ const MAX_LINUX_BOOT_BLOB_BYTES: usize = RAM_SIZE;
 const MAX_EXITS: u64 = 50_000_000;
 const WATCHDOG_MS: u64 = 8000;
 
+struct HvVmGuard;
+
+impl Drop for HvVmGuard {
+    fn drop(&mut self) {
+        unsafe {
+            hv_vm_destroy();
+        }
+    }
+}
+
+struct HvVcpuGuard {
+    vcpu: HvVcpuT,
+}
+
+impl Drop for HvVcpuGuard {
+    fn drop(&mut self) {
+        unsafe {
+            hv_vcpu_destroy(self.vcpu);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SysRegTrap {
     op0: u8,
@@ -372,6 +394,7 @@ fn main() {
         let vc = hv_vm_create(vmcfg);
         println!("hv_vm_create(ipa={max_ipa}) = {vc:#x}");
         assert_eq!(vc, 0, "hv_vm_create");
+        let _vm_guard = HvVmGuard;
 
         // In-kernel GICv3 must be created after the VM and before any vCPU.
         let gic = hv_gic_config_create();
@@ -429,6 +452,7 @@ fn main() {
             0,
             "hv_vcpu_create"
         );
+        let _vcpu_guard = HvVcpuGuard { vcpu };
         // MPIDR_EL1 affinity 0 (bit 31 RES1) — Apple hv_gic associates this vCPU's
         // redistributor frame from its MPIDR, so this must be set before the GIC
         // redistributor MMIO is served or hv_gic_get_redistributor_base is called.
@@ -843,9 +867,6 @@ fn main() {
             tr[1],
             gap / 24_000_000
         );
-
-        hv_vcpu_destroy(vcpu);
-        hv_vm_destroy();
 
         println!("=== EDK2 boot probe (with Apple hv_gic) ===");
         println!("stop: {stop_reason}");
