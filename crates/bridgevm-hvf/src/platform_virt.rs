@@ -7,6 +7,7 @@
 //! - [`crate::fwcfg`] — the `fw_cfg` keystone, populated with the guest device
 //!   tree, ACPI tables, SMBIOS and boot order.
 //! - [`crate::dtb`] — the QEMU-`virt`-shaped device tree handed to firmware.
+//! - [`crate::nvme`] — the first PCIe storage endpoint behind BAR0.
 //!
 //! The live wiring is small and lives at the data-abort (MMIO) exit of
 //! `hv_vcpu_run`: on a guest MMIO fault the run loop calls [`VirtPlatform::on_mmio`]
@@ -20,10 +21,13 @@ use crate::acpi::{build_acpi, ACPI_LOADER_FILE, ACPI_RSDP_FILE, ACPI_TABLE_FILE}
 use crate::dtb::{build_virt_fdt, VirtFdtConfig};
 use crate::fwcfg::{FwCfg, GuestMemoryMut};
 use crate::machine::{self, Region};
-use crate::pcie::PcieEcam;
+use crate::nvme::NvmeController;
+use crate::pcie::{PcieEcam, NVME_BDF};
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
 use crate::pl031::Pl031;
+
+const DEFAULT_NVME_DISK_BYTES: usize = 16 * 1024 * 1024;
 
 /// A guest MMIO access as decoded from an HVF data-abort exit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,14 +72,15 @@ pub struct VirtPlatform {
     uart: Pl011,
     rtc: Pl031,
     pcie: PcieEcam,
+    nvme: NvmeController,
     flash_vars: P30NorFlash,
     dtb: Vec<u8>,
 }
 
 impl VirtPlatform {
     /// Build the platform: generate the device tree from the machine map and
-    /// stand up `fw_cfg` with its standard control entries. ACPI/SMBIOS blobs are
-    /// attached separately via [`Self::set_acpi_tables`] / [`Self::set_smbios`].
+    /// stand up `fw_cfg` with its standard control entries and generated ACPI
+    /// table-loader blobs.
     pub fn new(cfg: VirtFdtConfig) -> Self {
         let dtb = build_virt_fdt(&cfg);
         let mut fw_cfg = FwCfg::new();
@@ -94,6 +99,7 @@ impl VirtPlatform {
             uart: Pl011::new(),
             rtc: Pl031::new(),
             pcie: PcieEcam::new(),
+            nvme: NvmeController::new(DEFAULT_NVME_DISK_BYTES),
             flash_vars: P30NorFlash::new(
                 machine::FLASH_VARS.base,
                 machine::FLASH_VARS.size as usize,
@@ -155,6 +161,7 @@ impl VirtPlatform {
             "uart" => self.uart_access(gpa - machine::UART.base, op),
             "rtc" => self.rtc_access(gpa - machine::RTC.base, op),
             "pcie-ecam" => self.pcie_access(gpa - machine::PCIE_ECAM.base, op),
+            "pcie-mmio-32" => self.pcie_mmio_access(gpa, op, mem),
             "virtio-mmio" => self.virtio_mmio_access(gpa - machine::VIRTIO_MMIO.base, op),
             "flash-vars" => self.flash_vars.access(gpa, op),
             // Modelled in the machine map but no device behaviour yet — surfaced
@@ -190,6 +197,39 @@ impl VirtPlatform {
             MmioOp::Read { size } => MmioOutcome::ReadValue(self.pcie.cfg_read(ecam_offset, size)),
             MmioOp::Write { size, value } => {
                 self.pcie.cfg_write(ecam_offset, size, value);
+                MmioOutcome::WriteAck
+            }
+        }
+    }
+
+    /// PCIe BAR memory-space access through the 32-bit MMIO aperture. Today the
+    /// only endpoint is the NVMe controller at `00:01.0` BAR0.
+    fn pcie_mmio_access(
+        &mut self,
+        gpa: u64,
+        op: MmioOp,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> MmioOutcome {
+        let Some(target) = self.pcie.mmio_target(gpa) else {
+            return MmioOutcome::KnownUnimplemented("pcie-mmio-32");
+        };
+        match (target.bdf, target.bar_index) {
+            (NVME_BDF, 0) => self.nvme_access(target.offset, op, mem),
+            _ => MmioOutcome::KnownUnimplemented("pcie-mmio-32"),
+        }
+    }
+
+    fn nvme_access(
+        &mut self,
+        offset: u64,
+        op: MmioOp,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> MmioOutcome {
+        match op {
+            MmioOp::Read { size } => MmioOutcome::ReadValue(self.nvme.mmio_read(offset, size)),
+            MmioOp::Write { size, value } => {
+                self.nvme.mmio_write(offset, size, value);
+                self.nvme.process(mem);
                 MmioOutcome::WriteAck
             }
         }
@@ -293,6 +333,52 @@ mod tests {
         VirtPlatform::new(VirtFdtConfig::default())
     }
 
+    fn pcie_cfg_gpa(device: u8, function: u8, reg: u16) -> u64 {
+        machine::PCIE_ECAM.base
+            + (u64::from(device) << 15)
+            + (u64::from(function) << 12)
+            + u64::from(reg)
+    }
+
+    fn program_nvme_bar0(p: &mut VirtPlatform, mem: &mut FlatGuestRam) {
+        p.on_mmio(
+            pcie_cfg_gpa(1, 0, crate::pcie::REG_BAR0),
+            MmioOp::Write {
+                size: 4,
+                value: machine::PCIE_MMIO_32.base,
+            },
+            mem,
+        );
+        p.on_mmio(
+            pcie_cfg_gpa(1, 0, crate::pcie::REG_COMMAND_STATUS),
+            MmioOp::Write {
+                size: 2,
+                value: u64::from(crate::pcie::CMD_MEMORY_SPACE | crate::pcie::CMD_BUS_MASTER),
+            },
+            mem,
+        );
+    }
+
+    fn encode_nvme_sqe(
+        opcode: u8,
+        command_id: u16,
+        nsid: u32,
+        prp1: u64,
+        cdw10: u32,
+        cdw11: u32,
+        cdw12: u32,
+    ) -> [u8; 64] {
+        let mut e = [0u8; 64];
+        let cdw0 = u32::from(opcode) | (u32::from(command_id) << 16);
+        e[0..4].copy_from_slice(&cdw0.to_le_bytes());
+        e[4..8].copy_from_slice(&nsid.to_le_bytes());
+        e[24..32].copy_from_slice(&prp1.to_le_bytes());
+        e[40..44].copy_from_slice(&cdw10.to_le_bytes());
+        e[44..48].copy_from_slice(&cdw11.to_le_bytes());
+        e[48..52].copy_from_slice(&cdw12.to_le_bytes());
+        e
+    }
+
     #[test]
     fn dtb_is_generated_and_well_formed() {
         let p = platform();
@@ -394,15 +480,142 @@ mod tests {
             p.on_mmio(machine::PCIE_ECAM.base, MmioOp::Read { size: 4 }, &mut mem),
             MmioOutcome::ReadValue(0x0008_1b36)
         );
-        // An empty slot (device 1, ECAM offset dev<<15) reads all-ones (no device).
+        // An empty slot (device 2, ECAM offset dev<<15) reads all-ones (no device).
         assert_eq!(
             p.on_mmio(
-                machine::PCIE_ECAM.base + (1 << 15),
+                machine::PCIE_ECAM.base + (2 << 15),
                 MmioOp::Read { size: 4 },
                 &mut mem
             ),
             MmioOutcome::ReadValue(0xFFFF_FFFF)
         );
+    }
+
+    #[test]
+    fn pcie_nvme_endpoint_routes_bar0_to_controller_registers() {
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(1, 0, crate::pcie::REG_VENDOR_DEVICE),
+                MmioOp::Read { size: 4 },
+                &mut mem
+            ),
+            MmioOutcome::ReadValue(0x0010_1b36)
+        );
+        assert!(matches!(
+            p.on_mmio(
+                pcie_cfg_gpa(1, 0, crate::pcie::REG_REVISION_CLASS),
+                MmioOp::Read { size: 4 },
+                &mut mem
+            ),
+            MmioOutcome::ReadValue(v) if v >> 8 == u64::from(crate::pcie::NVME_CLASS_CODE)
+        ));
+
+        p.on_mmio(
+            pcie_cfg_gpa(1, 0, crate::pcie::REG_BAR0),
+            MmioOp::Write {
+                size: 4,
+                value: 0xFFFF_FFFF,
+            },
+            &mut mem,
+        );
+        let MmioOutcome::ReadValue(mask) = p.on_mmio(
+            pcie_cfg_gpa(1, 0, crate::pcie::REG_BAR0),
+            MmioOp::Read { size: 4 },
+            &mut mem,
+        ) else {
+            panic!("BAR0 sizing read did not return a value");
+        };
+        let size = (!((mask as u32) & !0xF)).wrapping_add(1);
+        assert_eq!(size, crate::pcie::NVME_BAR0_SIZE);
+
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_MMIO_32.base + crate::nvme::REG_VS,
+                MmioOp::Read { size: 4 },
+                &mut mem
+            ),
+            MmioOutcome::KnownUnimplemented("pcie-mmio-32")
+        );
+        program_nvme_bar0(&mut p, &mut mem);
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_MMIO_32.base + crate::nvme::REG_VS,
+                MmioOp::Read { size: 4 },
+                &mut mem
+            ),
+            MmioOutcome::ReadValue(u64::from(crate::nvme::NVME_VERSION_1_4_0))
+        );
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_MMIO_32.base + crate::nvme::REG_CC,
+                MmioOp::Write { size: 4, value: 1 },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_MMIO_32.base + crate::nvme::REG_CSTS,
+                MmioOp::Read { size: 4 },
+                &mut mem
+            ),
+            MmioOutcome::ReadValue(1)
+        );
+    }
+
+    #[test]
+    fn pcie_nvme_bar0_doorbell_processes_admin_identify() {
+        const ASQ: u64 = machine::RAM_BASE + 0x1000;
+        const ACQ: u64 = machine::RAM_BASE + 0x2000;
+        const DATA: u64 = machine::RAM_BASE + 0x3000;
+
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x8000);
+        program_nvme_bar0(&mut p, &mut mem);
+
+        let bar0 = machine::PCIE_MMIO_32.base;
+        for (offset, value) in [
+            (crate::nvme::REG_AQA, 0x0003_0003),
+            (crate::nvme::REG_ASQ, ASQ),
+            (crate::nvme::REG_ACQ, ACQ),
+        ] {
+            assert_eq!(
+                p.on_mmio(bar0 + offset, MmioOp::Write { size: 8, value }, &mut mem),
+                MmioOutcome::WriteAck
+            );
+        }
+        assert_eq!(
+            p.on_mmio(
+                bar0 + crate::nvme::REG_CC,
+                MmioOp::Write { size: 4, value: 1 },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+
+        let identify_controller = encode_nvme_sqe(0x06, 7, 0, DATA, 0x01, 0, 0);
+        assert!(mem.write_bytes(ASQ, &identify_controller));
+        assert_eq!(
+            p.on_mmio(
+                bar0 + crate::nvme::REG_DOORBELL_BASE,
+                MmioOp::Write { size: 4, value: 1 },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+
+        let identify = mem.read_bytes(DATA, 4096).unwrap();
+        assert_eq!(u16::from_le_bytes([identify[0], identify[1]]), 0x1b36);
+        assert!(identify[24..64].starts_with(b"BridgeVM NVMe"));
+
+        let completion = mem.read_bytes(ACQ, 16).unwrap();
+        assert_eq!(u16::from_le_bytes([completion[12], completion[13]]), 7);
+        let status = u16::from_le_bytes([completion[14], completion[15]]);
+        assert_eq!(status & 0x1, 1, "phase tag must be set");
+        assert_eq!(status >> 1, 0, "identify must complete successfully");
     }
 
     #[test]

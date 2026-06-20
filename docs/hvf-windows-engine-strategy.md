@@ -76,13 +76,13 @@ ACPI-only boot): Linux gives you `dmesg`, Windows gives you a sad face.
 | # | Step | State | Notes |
 | --- | --- | --- | --- |
 | 0 | Decide Path A; record contract gap | **done** | this doc + the gap doc + checked-in reference DTS |
-| 1 | `fw_cfg` device model (selector/data + DMA) | **done (modelled + unit-tested)** | `crates/bridgevm-hvf/src/fwcfg.rs`; HVF MMIO wiring still to do |
+| 1 | `fw_cfg` device model (selector/data + DMA) | **done (modelled + live-wired)** | `crates/bridgevm-hvf/src/fwcfg.rs`; exercised through `VirtPlatform::on_mmio()` in the live HVF boot probe |
 | 2 | `virt` machine model + QEMU-shaped DTB generator | **done (modelled + `dtc`-verified)** | `src/machine.rs` (single source of truth + no-overlap validator) and `src/dtb.rs` (`build_virt_fdt`, decompiles `dtc`-clean against the contract). Wiring the map into the live run loop is step 3. |
-| 3 | Assemble the `virt` platform + `fw_cfg` behind one MMIO-exit entry point; feed `etc/acpi/tables`/`etc/acpi/rsdp`/SMBIOS/boot order | **done (assembled + unit-tested)** | `src/platform_virt.rs` (`VirtPlatform`): owns the map, the populated `fw_cfg`, the DTB and the guest-memory layout; `on_mmio()` is the single call the live run loop makes. Only the `hv_vcpu_run` call itself (step 6) needs an entitled host. |
-| 4 | GICv3: spike Apple `hv_gic_create` (macOS 15+, create before vCPUs); else model GICv3+ITS at QEMU bases | after 2 | replaces the userspace skeleton on the product path |
-| 5 | PCIe ECAM (`pci-host-ecam-generic`) + config space + MSI/MSI-X | after 4 | prerequisite for NVMe/virtio-pci |
+| 3 | Assemble the `virt` platform + `fw_cfg` behind one MMIO-exit entry point; feed `etc/acpi/tables`/`etc/acpi/rsdp`/SMBIOS/boot order | **done (assembled + live-wired)** | `src/platform_virt.rs` (`VirtPlatform`): owns the map, populated `fw_cfg`, DTB, ACPI table-loader blobs, guest-memory layout and MMIO dispatch; `on_mmio()` is the single call the live run loop makes |
+| 4 | GICv3: spike Apple `hv_gic_create` (macOS 15+, create before vCPUs); else model GICv3+ITS at QEMU bases | **done (Apple `hv_gic`, live)** | distributor/redistributor + timer delivery are served by Hypervisor.framework; ITS/MSI remains separate work |
+| 5 | PCIe ECAM (`pci-host-ecam-generic`) + config space + MSI/MSI-X | **partial** | ECAM host bridge, NVMe endpoint config space and BAR0 MMIO routing are wired; MSI/MSI-X delivery is still pending |
 | 6 | **Linux ACPI-only boot** through the stock firmware | after 3–5 | the oracle: confirm ACPI/GIC/timer/PCIe before touching Windows |
-| 7 | NVMe controller (identify + admin/IO queues) on PCIe | after 5 | Windows Setup has an inbox NVMe driver; no inbox virtio |
+| 7 | NVMe controller (identify + admin/IO queues) on PCIe | **partial** | minimal controller and admin/IO queues exist and are reachable through PCIe BAR0; boot-media backing, interrupt/MSI behavior and OS boot validation remain |
 | 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | after 6–7 | success = a reproducible "where it died", diffed against QEMU |
 | 9 | GOP framebuffer + keyboard | after 8 | Setup UI + "press any key" |
 | 10 | vTPM 2.0, Secure Boot, virtio-net/guest agent | later | Windows 11 compliance + usability |
@@ -200,7 +200,8 @@ Windows. To get there:
 
 - keep the QEMU-style ACPI delivery wired through `fw_cfg` entries
   `etc/acpi/rsdp`, `etc/acpi/tables` and `etc/table-loader`;
-- expose a real PCIe endpoint and BAR routing for the existing NVMe model;
+- turn the minimal in-memory NVMe BAR0 path into a real boot-media path with
+  host/disk backing and interrupt/MSI behavior;
 - persist pflash variable writes back to a vars image so boot order and NVRAM state
   survive repeated runs;
 - then boot Linux with ACPI, diff against QEMU+HVF, and only then try Windows Setup.

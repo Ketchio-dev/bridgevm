@@ -9,11 +9,11 @@
 //!
 //! Until now the live platform answered every ECAM access with all-ones
 //! (`0xFFFF_FFFF`), i.e. "no device at this address" for the whole bus. That is
-//! a legal but empty machine: the guest sees a host bridge-less root complex and
-//! cannot attach storage. This module replaces that stub with a real host bridge
-//! at `00:00.0` plus the config read/write decode (including the BAR-sizing
-//! probe protocol and an MSI-X capability builder) that future NVMe / virtio-pci
-//! endpoints plug into.
+//! a legal but empty machine: the guest sees a storage-less root complex and
+//! cannot attach install media. This module replaces that stub with a real host
+//! bridge at `00:00.0`, an NVMe endpoint at `00:01.0`, and the config
+//! read/write decode (including the BAR-sizing probe protocol and an MSI-X
+//! capability builder) that further PCIe endpoints plug into.
 //!
 //! It is the same shape as the other Path A bricks: pure data + logic, no
 //! Hypervisor.framework calls, fully unit-testable on any host. The live HVF run
@@ -120,6 +120,25 @@ pub const HOST_BRIDGE_CLASS_CODE: u32 = 0x0006_0000;
 /// Revision id reported by the host bridge.
 pub const HOST_BRIDGE_REVISION: u8 = 0x00;
 
+// ---- The first storage endpoint (00:01.0) -----------------------------------
+
+/// Bus/device/function used by the first NVMe controller. QEMU command lines
+/// commonly attach the first user device at slot 1, leaving `00:00.0` for the
+/// host bridge.
+pub const NVME_BDF: (u8, u8, u8) = (0, 1, 0);
+/// Vendor id used by QEMU's PCIe devices.
+pub const NVME_VENDOR_ID: u16 = 0x1b36;
+/// Device id for the BridgeVM/QEMU-style NVMe endpoint.
+pub const NVME_DEVICE_ID: u16 = 0x0010;
+/// Class code `0x010802`: mass storage / NVM Express / NVMe.
+pub const NVME_CLASS_CODE: u32 = 0x0001_0802;
+/// Revision id reported by the endpoint.
+pub const NVME_REVISION: u8 = 0x01;
+/// BAR0 window for controller registers and doorbells. 16 KiB covers the
+/// register page plus enough doorbells for the small queue count this VMM
+/// exposes; it is power-of-two for PCI BAR sizing.
+pub const NVME_BAR0_SIZE: u32 = 0x4000;
+
 /// The value an ECAM read returns when no device answers: all-ones. Firmware
 /// treats a `0xFFFF_FFFF` vendor/device read as "slot empty".
 pub const NO_DEVICE: u64 = 0xFFFF_FFFF;
@@ -156,6 +175,23 @@ struct Bar {
 }
 
 impl Bar {
+    /// Construct a 32-bit, non-prefetchable memory BAR with a power-of-two size.
+    fn memory32(size: u32) -> Self {
+        assert!(
+            size >= 0x10,
+            "PCI memory BAR size must be at least 16 bytes"
+        );
+        assert!(
+            size.is_power_of_two(),
+            "PCI memory BAR size must be a power of two"
+        );
+        Self {
+            value: 0,
+            size_mask: !(size - 1),
+            type_bits: 0,
+        }
+    }
+
     /// Read back the BAR. After an all-ones sizing write the latched value is
     /// the size mask; otherwise it is the programmed base. Unimplemented BARs
     /// always read `0`.
@@ -182,6 +218,27 @@ impl Bar {
             self.value = (value & self.size_mask) | self.type_bits;
         }
     }
+
+    /// Size of the decoded BAR region, or zero if unimplemented.
+    fn size(&self) -> u64 {
+        if self.size_mask == 0 {
+            0
+        } else {
+            u64::from((!(self.size_mask & !0xF)).wrapping_add(1))
+        }
+    }
+
+    /// Programmed 32-bit memory base, if the BAR is implemented.
+    fn base(&self) -> Option<u64> {
+        (self.size_mask != 0).then_some(u64::from(self.value & self.size_mask & !0xF))
+    }
+
+    /// Offset into this BAR for `gpa`, if the BAR currently decodes it.
+    fn offset_of(&self, gpa: u64) -> Option<u64> {
+        let base = self.base()?;
+        let size = self.size();
+        (gpa >= base && gpa < base + size).then_some(gpa - base)
+    }
 }
 
 impl Function {
@@ -195,6 +252,21 @@ impl Function {
             revision_class: (HOST_BRIDGE_CLASS_CODE << 8) | u32::from(HOST_BRIDGE_REVISION),
             command: 0,
             bars: [Bar::default(); NUM_BARS],
+            cap_ptr: 0,
+            cap_bytes: Vec::new(),
+        }
+    }
+
+    /// The first NVMe storage endpoint at `00:01.0`.
+    fn nvme() -> Self {
+        let mut bars = [Bar::default(); NUM_BARS];
+        bars[0] = Bar::memory32(NVME_BAR0_SIZE);
+        Self {
+            bdf: NVME_BDF,
+            vendor_device: (u32::from(NVME_DEVICE_ID) << 16) | u32::from(NVME_VENDOR_ID),
+            revision_class: (NVME_CLASS_CODE << 8) | u32::from(NVME_REVISION),
+            command: 0,
+            bars,
             cap_ptr: 0,
             cap_bytes: Vec::new(),
         }
@@ -268,6 +340,14 @@ pub struct PcieEcam {
     functions: Vec<Function>,
 }
 
+/// A decoded memory-space access into a programmed PCI BAR.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PcieMmioTarget {
+    pub bdf: (u8, u8, u8),
+    pub bar_index: usize,
+    pub offset: u64,
+}
+
 impl Default for PcieEcam {
     fn default() -> Self {
         Self::new()
@@ -275,11 +355,11 @@ impl Default for PcieEcam {
 }
 
 impl PcieEcam {
-    /// A fresh root complex: one host bridge at `00:00.0`, every other slot
-    /// empty.
+    /// A fresh root complex: one host bridge at `00:00.0`, one NVMe endpoint at
+    /// `00:01.0`, every other slot empty.
     pub fn new() -> Self {
         Self {
-            functions: vec![Function::host_bridge()],
+            functions: vec![Function::host_bridge(), Function::nvme()],
         }
     }
 
@@ -331,6 +411,27 @@ impl PcieEcam {
     pub fn host_bridge_present(&self) -> bool {
         let vid = self.cfg_read(0, 2);
         vid != u64::from(0xFFFFu16) && vid == u64::from(HOST_BRIDGE_VENDOR_ID)
+    }
+
+    /// Resolve an absolute guest-physical address in PCI memory space to the
+    /// programmed endpoint BAR that decodes it. Only functions with Memory Space
+    /// enabled in the PCI command register are allowed to answer.
+    pub fn mmio_target(&self, gpa: u64) -> Option<PcieMmioTarget> {
+        for func in &self.functions {
+            if func.command & CMD_MEMORY_SPACE == 0 {
+                continue;
+            }
+            for (idx, bar) in func.bars.iter().enumerate() {
+                if let Some(offset) = bar.offset_of(gpa) {
+                    return Some(PcieMmioTarget {
+                        bdf: func.bdf,
+                        bar_index: idx,
+                        offset,
+                    });
+                }
+            }
+        }
+        None
     }
 }
 
@@ -558,10 +659,10 @@ mod tests {
     #[test]
     fn empty_slot_reads_all_ones() {
         let ecam = PcieEcam::new();
-        // 00:01.0 is empty.
-        assert_eq!(ecam.cfg_read(ecam_offset(0, 1, 0, 0x00), 4), NO_DEVICE);
-        assert_eq!(ecam.cfg_read(ecam_offset(0, 1, 0, 0x00), 2), 0xFFFF);
-        assert_eq!(ecam.cfg_read(ecam_offset(0, 1, 0, 0x00), 1), 0xFF);
+        // 00:02.0 is empty; 00:01.0 is the NVMe endpoint.
+        assert_eq!(ecam.cfg_read(ecam_offset(0, 2, 0, 0x00), 4), NO_DEVICE);
+        assert_eq!(ecam.cfg_read(ecam_offset(0, 2, 0, 0x00), 2), 0xFFFF);
+        assert_eq!(ecam.cfg_read(ecam_offset(0, 2, 0, 0x00), 1), 0xFF);
         // A different function of device 0 is also empty.
         assert_eq!(ecam.cfg_read(ecam_offset(0, 0, 1, 0x00), 4), NO_DEVICE);
         // A non-zero bus is empty.
@@ -571,9 +672,9 @@ mod tests {
     #[test]
     fn writes_to_empty_slots_are_dropped() {
         let mut ecam = PcieEcam::new();
-        ecam.cfg_write(ecam_offset(0, 1, 0, REG_COMMAND_STATUS), 2, 0x7);
+        ecam.cfg_write(ecam_offset(0, 2, 0, REG_COMMAND_STATUS), 2, 0x7);
         // Still empty.
-        assert_eq!(ecam.cfg_read(ecam_offset(0, 1, 0, 0x00), 4), NO_DEVICE);
+        assert_eq!(ecam.cfg_read(ecam_offset(0, 2, 0, 0x00), 4), NO_DEVICE);
     }
 
     #[test]
@@ -626,6 +727,57 @@ mod tests {
         // (a zero size mask means "no region"), which firmware reads as "skip".
         ecam.cfg_write(ecam_offset(0, 0, 0, REG_BAR0), 4, 0xFFFF_FFFF);
         assert_eq!(ecam.cfg_read(ecam_offset(0, 0, 0, REG_BAR0), 4), 0);
+    }
+
+    #[test]
+    fn nvme_endpoint_reports_storage_class_and_bar0() {
+        let ecam = PcieEcam::new();
+        let vd = ecam.cfg_read(ecam_offset(0, 1, 0, REG_VENDOR_DEVICE), 4);
+        assert_eq!(vd & 0xFFFF, u64::from(NVME_VENDOR_ID));
+        assert_eq!((vd >> 16) & 0xFFFF, u64::from(NVME_DEVICE_ID));
+
+        let rc = ecam.cfg_read(ecam_offset(0, 1, 0, REG_REVISION_CLASS), 4);
+        assert_eq!(rc >> 8, u64::from(NVME_CLASS_CODE));
+        assert_eq!(rc & 0xFF, u64::from(NVME_REVISION));
+
+        // BAR0 exists but is not programmed before firmware/OS assignment.
+        assert_eq!(ecam.cfg_read(ecam_offset(0, 1, 0, REG_BAR0), 4), 0);
+    }
+
+    #[test]
+    fn nvme_bar0_sizing_and_memory_decode_follow_command_enable() {
+        let mut ecam = PcieEcam::new();
+        let bar0 = ecam_offset(0, 1, 0, REG_BAR0);
+        let cmd = ecam_offset(0, 1, 0, REG_COMMAND_STATUS);
+
+        ecam.cfg_write(bar0, 4, 0xFFFF_FFFF);
+        let readback = ecam.cfg_read(bar0, 4) as u32;
+        let size = (!(readback & !0xF)).wrapping_add(1);
+        assert_eq!(size, NVME_BAR0_SIZE);
+
+        let base = machine::PCIE_MMIO_32.base as u32;
+        ecam.cfg_write(bar0, 4, u64::from(base));
+        assert_eq!(ecam.cfg_read(bar0, 4), u64::from(base));
+        assert_eq!(ecam.mmio_target(machine::PCIE_MMIO_32.base), None);
+
+        ecam.cfg_write(cmd, 2, u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER));
+        assert_eq!(
+            ecam.mmio_target(machine::PCIE_MMIO_32.base),
+            Some(PcieMmioTarget {
+                bdf: NVME_BDF,
+                bar_index: 0,
+                offset: 0,
+            })
+        );
+        assert_eq!(
+            ecam.mmio_target(machine::PCIE_MMIO_32.base + 0x1234)
+                .map(|t| t.offset),
+            Some(0x1234)
+        );
+        assert_eq!(
+            ecam.mmio_target(machine::PCIE_MMIO_32.base + u64::from(NVME_BAR0_SIZE)),
+            None
+        );
     }
 
     #[test]
