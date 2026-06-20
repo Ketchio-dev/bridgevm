@@ -165,8 +165,10 @@ completions. The Windows loader currently issues two zero-length `SECURITY_RECV`
 probes; BridgeVM reports `invalid-field`, matching QEMU's short-request rejection
 shape. The remaining observed `invalid-field` completions are
 optional/vendor/reserved query surfaces and need QEMU-oracle comparison before
-changing the device model. QEMU's next visible divergence is volatile write cache
-(`Get Features` FID `0x06`), which the oracle reports as enabled.
+changing the device model. The volatile write cache surface now follows QEMU's
+observed behaviour: Identify Controller advertises VWC `0x7`, `Get Features` FID
+`0x06` reports the current cache enabled, and NVM Flush (`0x00`) succeeds for
+namespace and broadcast-NSID requests.
 The remaining gap is above firmware: lift NVMe overlay/writeback and
 pflash persistence into the engine-facing VM configuration, keep tightening
 Windows-relevant ACPI details such as DBG2 as needed, add installer usability

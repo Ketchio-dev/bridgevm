@@ -266,9 +266,10 @@ The remaining OS-boot contract work is now narrower:
   has no `invalid-opcode` completions; the remaining NVMe `invalid-field`
   completions are Windows probes of optional or vendor/reserved surfaces
   (`Get Features` FID `0xd0`/`0x7f` and log pages `0xc0`/`0xc1`) and should be
-  diffed against QEMU before being papered over. The next observed QEMU-only NVMe
-  feature answer to match is volatile write cache (`Get Features` FID `0x06`),
-  which QEMU reports as enabled.
+  diffed against QEMU before being papered over. The volatile write cache
+  surface now matches QEMU's observed shape: Identify Controller advertises VWC
+  `0x7`, `Get Features` FID `0x06` reports the current cache enabled, and NVM
+  Flush (`0x00`) completes for both namespace and broadcast-NSID requests.
 - add the remaining ACPI parity tables/metadata that matter for Windows/Linux
   device paths (notably DBG2; Apple `hv_gic` lacks guest-visible LPIs/ITS, so
   current MSI routing is advertised as a MADT Generic MSI Frame instead of

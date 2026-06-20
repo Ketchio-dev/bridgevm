@@ -686,6 +686,7 @@ fn nvme_opcode_name(trace: &NvmeCommandTrace) -> &'static str {
         }
     } else {
         match trace.opcode {
+            0x00 => "flush",
             0x01 => "write",
             0x02 => "read",
             _ => "io-unknown",

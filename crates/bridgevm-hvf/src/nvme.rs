@@ -126,6 +126,7 @@ const ADMIN_OP_SECURITY_SEND: u8 = 0x81;
 const ADMIN_OP_SECURITY_RECV: u8 = 0x82;
 
 // ---- NVM (I/O) opcodes (NVMe NVM Command Set) -----------------------------
+const NVM_OP_FLUSH: u8 = 0x00;
 const NVM_OP_WRITE: u8 = 0x01;
 const NVM_OP_READ: u8 = 0x02;
 
@@ -151,6 +152,17 @@ const FEATURE_INTERRUPT_VECTOR_CONFIGURATION: u8 = 0x09;
 const FEATURE_WRITE_ATOMICITY_NORMAL: u8 = 0x0a;
 const FEATURE_ASYNC_EVENT_CONFIGURATION: u8 = 0x0b;
 const FEATURE_AUTONOMOUS_POWER_STATE_TRANSITION: u8 = 0x0c;
+const GET_FEATURE_SELECT_SHIFT: u32 = 8;
+const GET_FEATURE_SELECT_DEFAULT: u32 = 0x1;
+const GET_FEATURE_SELECT_SAVED: u32 = 0x2;
+const GET_FEATURE_SELECT_CAPABILITIES: u32 = 0x3;
+const FEATURE_CAP_NAMESPACE_SPECIFIC: u32 = 1 << 1;
+const FEATURE_CAP_CHANGEABLE: u32 = 1 << 2;
+
+// ---- Identify Controller feature bits -------------------------------------
+const VWC_PRESENT: u8 = 1 << 0;
+const VWC_NSID_BROADCAST_SUPPORT: u8 = 3 << 1;
+const VWC_QEMU_DEFAULT: u8 = VWC_PRESENT | VWC_NSID_BROADCAST_SUPPORT;
 
 // ---- CREATE I/O COMPLETION QUEUE fields (NVMe 1.4 §5.3) -------------------
 const CREATE_IO_CQ_PC_BIT: u32 = 1 << 0;
@@ -544,6 +556,9 @@ pub struct NvmeController {
     /// Command-specific result for the *next* completion's DW0 (e.g. the queue
     /// count granted by SET FEATURES). Consumed when the completion is posted.
     last_feature_result: u32,
+    /// Current volatile write cache state. QEMU's default NVMe endpoint
+    /// advertises a present cache and boots with it enabled.
+    volatile_write_cache_enabled: bool,
     /// BAR-backed MSI-X table and PBA for this endpoint.
     msix: MsixTable,
     /// Recent command/completion history for live Windows bring-up.
@@ -594,6 +609,7 @@ impl NvmeController {
             // pool so a guest requesting several is granted a sane non-zero count.
             max_io_queues: MAX_IO_QUEUE_PAIRS,
             last_feature_result: 0,
+            volatile_write_cache_enabled: true,
             msix: MsixTable::new(NVME_MSIX_VECTOR_COUNT),
             command_trace: VecDeque::with_capacity(COMMAND_TRACE_CAPACITY),
             pending_async_event_requests: 0,
@@ -994,6 +1010,9 @@ impl NvmeController {
         d[513] = 0x44;
         // NN (516..520): number of namespaces = 1.
         d[516..520].copy_from_slice(&1u32.to_le_bytes());
+        // VWC (525): QEMU advertises a present volatile write cache and support
+        // for broadcast-NSID flushes.
+        d[525] = VWC_QEMU_DEFAULT;
         // SUBNQN (768..1024): NUL-terminated subsystem NQN. Linux warns for
         // NVMe >= 1.2.1 if this field is empty or consumes the whole NQN field.
         write_cstr(
@@ -1125,6 +1144,7 @@ impl NvmeController {
             let off = 1024 + usize::from(opcode) * 4;
             d[off..off + 4].copy_from_slice(&effects.to_le_bytes());
         };
+        set_io(NVM_OP_FLUSH, CMD_EFFECT_CSUPP | CMD_EFFECT_LBCC);
         set_io(NVM_OP_WRITE, CMD_EFFECT_CSUPP | CMD_EFFECT_LBCC);
         set_io(NVM_OP_READ, CMD_EFFECT_CSUPP);
         d
@@ -1221,22 +1241,31 @@ impl NvmeController {
         SC_SUCCESS
     }
 
-    /// SET FEATURES (NVMe 1.4 §5.21). Only NUMBER OF QUEUES (0x07) is honoured;
-    /// any other feature is accepted as a no-op so setup does not stall.
+    /// SET FEATURES (NVMe 1.4 §5.21). Keep the small set Windows probes aligned
+    /// with QEMU defaults; unsupported features remain harmless no-ops here.
     fn admin_set_features(&mut self, cmd: &SubmissionEntry) -> u16 {
         let fid = (cmd.cdw10 & 0xff) as u8;
-        if fid == FEATURE_NUMBER_OF_QUEUES {
-            // CDW11: NSQR bits 15:0, NCQR bits 31:16 (both 0-based requests).
-            let nsqr = (cmd.cdw11 & 0xffff) as u16;
-            let ncqr = ((cmd.cdw11 >> 16) & 0xffff) as u16;
-            // Grant the smaller of each request and our capacity (all 0-based).
-            let capacity = self.max_io_queues.saturating_sub(1);
-            let sq_granted = nsqr.min(capacity);
-            let cq_granted = ncqr.min(capacity);
-            // The completion DW0 carries the allocated counts (0-based: NSQA in
-            // bits 15:0, NCQA in bits 31:16); the generic completion path emits
-            // it via `last_feature_result`.
-            self.last_feature_result = (u32::from(cq_granted) << 16) | u32::from(sq_granted);
+        match fid {
+            FEATURE_NUMBER_OF_QUEUES => {
+                // CDW11: NSQR bits 15:0, NCQR bits 31:16 (both 0-based requests).
+                let nsqr = (cmd.cdw11 & 0xffff) as u16;
+                let ncqr = ((cmd.cdw11 >> 16) & 0xffff) as u16;
+                // Grant the smaller of each request and our capacity (all 0-based).
+                let capacity = self.max_io_queues.saturating_sub(1);
+                let sq_granted = nsqr.min(capacity);
+                let cq_granted = ncqr.min(capacity);
+                // The completion DW0 carries the allocated counts (0-based: NSQA in
+                // bits 15:0, NCQA in bits 31:16); the generic completion path emits
+                // it via `last_feature_result`.
+                self.last_feature_result = (u32::from(cq_granted) << 16) | u32::from(sq_granted);
+            }
+            FEATURE_VOLATILE_WRITE_CACHE => {
+                self.volatile_write_cache_enabled = (cmd.cdw11 & 1) != 0;
+                if !self.volatile_write_cache_enabled {
+                    let _ = self.disk.flush();
+                }
+            }
+            _ => {}
         }
         SC_SUCCESS
     }
@@ -1247,12 +1276,30 @@ impl NvmeController {
     /// invalid-opcode) for reserved/vendor-specific feature IDs.
     fn admin_get_features(&mut self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
         let fid = (cmd.cdw10 & 0xff) as u8;
+        let select = (cmd.cdw10 >> GET_FEATURE_SELECT_SHIFT) & 0x7;
+        if select == GET_FEATURE_SELECT_CAPABILITIES {
+            let Some(capabilities) = feature_capabilities(fid) else {
+                return SC_INVALID_FIELD;
+            };
+            self.last_feature_result = capabilities;
+            return SC_SUCCESS;
+        }
+        let wants_default = matches!(
+            select,
+            GET_FEATURE_SELECT_DEFAULT | GET_FEATURE_SELECT_SAVED
+        );
         let value = match fid {
             FEATURE_ARBITRATION => 0,
             FEATURE_POWER_MANAGEMENT => 0,
             FEATURE_TEMPERATURE_THRESHOLD => 0,
             FEATURE_ERROR_RECOVERY => 0,
-            FEATURE_VOLATILE_WRITE_CACHE => 0,
+            FEATURE_VOLATILE_WRITE_CACHE => {
+                if wants_default {
+                    0
+                } else {
+                    u32::from(self.volatile_write_cache_enabled)
+                }
+            }
             FEATURE_NUMBER_OF_QUEUES => {
                 let granted = u32::from(self.max_io_queues.saturating_sub(1));
                 (granted << 16) | granted
@@ -1273,14 +1320,28 @@ impl NvmeController {
         SC_SUCCESS
     }
 
-    /// Execute an NVM I/O command (READ / WRITE) against the disk backend.
+    /// Execute an NVM I/O command against the disk backend.
     fn execute_io(&mut self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> CommandResult {
         let status = match cmd.opcode {
+            NVM_OP_FLUSH => self.io_flush(cmd),
             NVM_OP_READ => self.io_read(cmd, mem),
             NVM_OP_WRITE => self.io_write(cmd, mem),
             _ => SC_INVALID_OPCODE,
         };
         CommandResult::complete(status)
+    }
+
+    /// NVM FLUSH (0x00). QEMU accepts both NSID 1 and broadcast NSID for a
+    /// single-NVM-namespace controller. Memory-backed media is already coherent;
+    /// host-file media uses the existing flush hook.
+    fn io_flush(&mut self, cmd: &SubmissionEntry) -> u16 {
+        if cmd.nsid != NSID && cmd.nsid != u32::MAX {
+            return SC_INVALID_FIELD;
+        }
+        match self.disk.flush() {
+            Ok(()) => SC_SUCCESS,
+            Err(_) => SC_INVALID_FIELD,
+        }
     }
 
     /// NVM READ (0x02). SLBA in CDW10/11 (64-bit), NLB in CDW12 bits 15:0
@@ -1558,6 +1619,23 @@ fn identify_cns_name(cns: u32) -> &'static str {
         IDENTIFY_CNS_NAMESPACE_DESCRIPTOR_LIST => "ns-desc-list",
         IDENTIFY_CNS_COMMAND_SET_CONTROLLER => "command-set-controller",
         _ => "unknown",
+    }
+}
+
+fn feature_capabilities(fid: u8) -> Option<u32> {
+    match fid {
+        FEATURE_TEMPERATURE_THRESHOLD
+        | FEATURE_VOLATILE_WRITE_CACHE
+        | FEATURE_NUMBER_OF_QUEUES
+        | FEATURE_WRITE_ATOMICITY_NORMAL
+        | FEATURE_ASYNC_EVENT_CONFIGURATION => Some(FEATURE_CAP_CHANGEABLE),
+        FEATURE_ERROR_RECOVERY => Some(FEATURE_CAP_CHANGEABLE | FEATURE_CAP_NAMESPACE_SPECIFIC),
+        FEATURE_ARBITRATION
+        | FEATURE_POWER_MANAGEMENT
+        | FEATURE_INTERRUPT_COALESCING
+        | FEATURE_INTERRUPT_VECTOR_CONFIGURATION
+        | FEATURE_AUTONOMOUS_POWER_STATE_TRANSITION => Some(0),
+        _ => None,
     }
 }
 
@@ -2074,6 +2152,10 @@ mod tests {
         );
         assert_eq!(id[512], 0x66, "SQES = 64-byte entries");
         assert_eq!(id[513], 0x44, "CQES = 16-byte entries");
+        assert_eq!(
+            id[525], VWC_QEMU_DEFAULT,
+            "VWC advertises QEMU's present cache plus broadcast-NSID flush support"
+        );
         assert!(
             id[768..1024].starts_with(b"nqn.2026-06.dev.bridgevm:bridgevm-hvf:nvme0\0"),
             "SUBNQN must be present and NUL-terminated for Linux"
@@ -2384,15 +2466,14 @@ mod tests {
         assert_eq!(effect_at(0, ADMIN_OP_SECURITY_SEND), CMD_EFFECT_CSUPP);
         assert_eq!(effect_at(0, ADMIN_OP_SECURITY_RECV), CMD_EFFECT_CSUPP);
         assert_eq!(
+            effect_at(1024, NVM_OP_FLUSH),
+            CMD_EFFECT_CSUPP | CMD_EFFECT_LBCC
+        );
+        assert_eq!(
             effect_at(1024, NVM_OP_WRITE),
             CMD_EFFECT_CSUPP | CMD_EFFECT_LBCC
         );
         assert_eq!(effect_at(1024, NVM_OP_READ), CMD_EFFECT_CSUPP);
-        assert_eq!(
-            effect_at(1024, 0x00),
-            0,
-            "flush is not implemented yet and must not be advertised"
-        );
     }
 
     #[test]
@@ -2537,6 +2618,147 @@ mod tests {
     }
 
     #[test]
+    fn get_features_volatile_write_cache_matches_qemu_default() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let current = encode_sqe(
+            ADMIN_OP_GET_FEATURES,
+            0x70,
+            0,
+            0,
+            u32::from(FEATURE_VOLATILE_WRITE_CACHE),
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 0, &current);
+        let cqe = read_completion(&mem, ACQ_BASE, 0);
+        assert_eq!(completion_status(&cqe), SC_SUCCESS);
+        assert_eq!(
+            completion_dw0(&cqe),
+            1,
+            "QEMU reports volatile write cache enabled by default"
+        );
+
+        let caps = encode_sqe(
+            ADMIN_OP_GET_FEATURES,
+            0x71,
+            0,
+            0,
+            u32::from(FEATURE_VOLATILE_WRITE_CACHE)
+                | (GET_FEATURE_SELECT_CAPABILITIES << GET_FEATURE_SELECT_SHIFT),
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 1, &caps);
+        let cqe = read_completion(&mem, ACQ_BASE, 1);
+        assert_eq!(completion_status(&cqe), SC_SUCCESS);
+        assert_eq!(
+            completion_dw0(&cqe),
+            FEATURE_CAP_CHANGEABLE,
+            "QEMU reports VWC as a changeable feature"
+        );
+
+        let default = encode_sqe(
+            ADMIN_OP_GET_FEATURES,
+            0x72,
+            0,
+            0,
+            u32::from(FEATURE_VOLATILE_WRITE_CACHE)
+                | (GET_FEATURE_SELECT_DEFAULT << GET_FEATURE_SELECT_SHIFT),
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 2, &default);
+        let cqe = read_completion(&mem, ACQ_BASE, 2);
+        assert_eq!(completion_status(&cqe), SC_SUCCESS);
+        assert_eq!(
+            completion_dw0(&cqe),
+            0,
+            "QEMU reports VWC default as disabled even when current is enabled"
+        );
+
+        let saved = encode_sqe(
+            ADMIN_OP_GET_FEATURES,
+            0x73,
+            0,
+            0,
+            u32::from(FEATURE_VOLATILE_WRITE_CACHE)
+                | (GET_FEATURE_SELECT_SAVED << GET_FEATURE_SELECT_SHIFT),
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 3, &saved);
+        let cqe = read_completion(&mem, ACQ_BASE, 3);
+        assert_eq!(completion_status(&cqe), SC_SUCCESS);
+        assert_eq!(
+            completion_dw0(&cqe),
+            0,
+            "QEMU falls saved VWC back to the default value"
+        );
+    }
+
+    #[test]
+    fn set_features_volatile_write_cache_updates_current_value() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let disable = encode_sqe(
+            ADMIN_OP_SET_FEATURES,
+            0x72,
+            0,
+            0,
+            u32::from(FEATURE_VOLATILE_WRITE_CACHE),
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 0, &disable);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_SUCCESS
+        );
+
+        let current = encode_sqe(
+            ADMIN_OP_GET_FEATURES,
+            0x73,
+            0,
+            0,
+            u32::from(FEATURE_VOLATILE_WRITE_CACHE),
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 1, &current);
+        let cqe = read_completion(&mem, ACQ_BASE, 1);
+        assert_eq!(completion_status(&cqe), SC_SUCCESS);
+        assert_eq!(completion_dw0(&cqe), 0);
+
+        let enable = encode_sqe(
+            ADMIN_OP_SET_FEATURES,
+            0x74,
+            0,
+            0,
+            u32::from(FEATURE_VOLATILE_WRITE_CACHE),
+            1,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 2, &enable);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 2)),
+            SC_SUCCESS
+        );
+
+        let current = encode_sqe(
+            ADMIN_OP_GET_FEATURES,
+            0x75,
+            0,
+            0,
+            u32::from(FEATURE_VOLATILE_WRITE_CACHE),
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 3, &current);
+        let cqe = read_completion(&mem, ACQ_BASE, 3);
+        assert_eq!(completion_status(&cqe), SC_SUCCESS);
+        assert_eq!(completion_dw0(&cqe), 1);
+    }
+
+    #[test]
     fn get_features_apst_returns_zero_table() {
         let (mut ctrl, mut mem) = enabled_controller();
         assert!(mem.write_bytes(DATA_BASE, &[0xaa; 256]));
@@ -2678,6 +2900,30 @@ mod tests {
         assert_eq!(read_trace.cdw10, slba as u32);
         assert!(read_trace.completion_posted);
         assert_eq!(read_trace.completion, None);
+    }
+
+    #[test]
+    fn flush_command_completes_for_namespace_and_broadcast_nsid() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        let flush = encode_sqe(NVM_OP_FLUSH, 0x76, NSID, 0, 0, 0, 0);
+        assert!(mem.write_bytes(IO_SQ_BASE, &flush));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 0)),
+            SC_SUCCESS
+        );
+
+        let broadcast_flush = encode_sqe(NVM_OP_FLUSH, 0x77, u32::MAX, 0, 0, 0, 0);
+        assert!(mem.write_bytes(IO_SQ_BASE + SQ_ENTRY_SIZE, &broadcast_flush));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 2);
+        ctrl.process(&mut mem);
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 1)),
+            SC_SUCCESS
+        );
     }
 
     #[test]
