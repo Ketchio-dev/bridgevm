@@ -251,7 +251,11 @@ The remaining OS-boot contract work is now narrower:
   modelled MMIO is only a UART newline write from `0x477a5018`. Preloading a
   serial-space byte through the PL011 RX queue is consumed by the guest but does
   not move the frontier, so this is not simply the unhandled "Press any key"
-  input path.
+  input path. The cdboot image to disassemble is the El Torito FAT image entry
+  `CDROM(0x0,0x84C,0x3480)`, not the ISO root `/efi/boot/bootaa64.efi`; its PE
+  `SizeOfImage` is `0x12c000`, matching the QEMU log. The preserved LR
+  `0x13c6fb5d4` maps to cdboot RVA `0x75d4`, inside runtime-function range
+  `0x7568..0x7880`.
 - add the remaining ACPI parity tables/metadata that matter for Windows/Linux
   device paths (notably DBG2; Apple `hv_gic` lacks guest-visible LPIs/ITS, so
   current MSI routing is advertised as a MADT Generic MSI Frame instead of
