@@ -1,13 +1,25 @@
 use bridgevm_hvf::{machine, pcie, virtio_blk::INSTALLER_ISO_SLOT};
 
-pub(super) fn print_device_shape(installer_iso_attached: bool, nvme_namespace_bytes: u64) {
+pub(super) fn print_device_shape(
+    pci_installer_iso_attached: bool,
+    legacy_mmio_installer_iso_attached: bool,
+    nvme_namespace_bytes: u64,
+) {
     println!("BridgeVM device shape:");
-    for line in device_shape_lines(installer_iso_attached, nvme_namespace_bytes) {
+    for line in device_shape_lines(
+        pci_installer_iso_attached,
+        legacy_mmio_installer_iso_attached,
+        nvme_namespace_bytes,
+    ) {
         println!("  {line}");
     }
 }
 
-fn device_shape_lines(installer_iso_attached: bool, nvme_namespace_bytes: u64) -> Vec<String> {
+fn device_shape_lines(
+    pci_installer_iso_attached: bool,
+    legacy_mmio_installer_iso_attached: bool,
+    nvme_namespace_bytes: u64,
+) -> Vec<String> {
     let (nvme_bus, nvme_dev, nvme_func) = pcie::NVME_BDF;
     let iso_base = machine::virtio_mmio_slot(INSTALLER_ISO_SLOT).base;
     let iso_slot = match u32::try_from(INSTALLER_ISO_SLOT) {
@@ -32,10 +44,10 @@ fn device_shape_lines(installer_iso_attached: bool, nvme_namespace_bytes: u64) -
         ),
         format!("boot-media nvme namespace bytes={nvme_namespace_bytes}"),
         format!(
-            "boot-media installer ISO: virtio-mmio slot {INSTALLER_ISO_SLOT} base={iso_base:#x} spi={iso_spi} intid={iso_intid} attached={installer_iso_attached}"
+            "boot-media installer ISO fallback: virtio-mmio slot {INSTALLER_ISO_SLOT} base={iso_base:#x} spi={iso_spi} intid={iso_intid} attached={legacy_mmio_installer_iso_attached}"
         ),
         format!(
-            "boot-media installer ISO: {bus:02x}:{dev:02x}.{func} virtio-blk-pci vendor={vendor:#06x} device={device:#06x} class={class:#08x} bar0_size={bar0:#x} attached={installer_iso_attached}",
+            "boot-media installer ISO: {bus:02x}:{dev:02x}.{func} virtio-blk-pci vendor={vendor:#06x} device={device:#06x} class={class:#08x} bar0_size={bar0:#x} attached={pci_installer_iso_attached}",
             bus = pcie::VIRTIO_BLK_BDF.0,
             dev = pcie::VIRTIO_BLK_BDF.1,
             func = pcie::VIRTIO_BLK_BDF.2,
@@ -56,7 +68,7 @@ fn device_shape_lines(installer_iso_attached: bool, nvme_namespace_bytes: u64) -
 mod tests {
     #[test]
     fn summary_names_pci_boot_media_and_legacy_mmio_fallback() {
-        let lines = super::device_shape_lines(true, 16 * 1024 * 1024);
+        let lines = super::device_shape_lines(true, false, 16 * 1024 * 1024);
 
         assert!(lines
             .iter()
@@ -65,11 +77,26 @@ mod tests {
         assert!(lines
             .iter()
             .any(|line| line.contains("virtio-mmio slot 31")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("virtio-mmio slot 31") && line.contains("attached=false")));
         assert!(lines.iter().any(|line| line.contains("legacy virtio-mmio")));
         assert!(lines.iter().any(|line| line
-            .contains("00:03.0 virtio-blk-pci vendor=0x1af4 device=0x1001 class=0x010000")));
+            .contains("00:03.0 virtio-blk-pci vendor=0x1af4 device=0x1001 class=0x010000")
+            && line.contains("attached=true")));
         assert!(lines
             .iter()
             .any(|line| line.contains("qemu-xhci 00:02.0 absent")));
+
+        let fallback_lines = super::device_shape_lines(false, true, 16 * 1024 * 1024);
+        assert!(fallback_lines
+            .iter()
+            .any(|line| line.contains("virtio-mmio slot 31") && line.contains("attached=true")));
+        assert!(
+            fallback_lines
+                .iter()
+                .any(|line| line.contains("00:03.0 virtio-blk-pci")
+                    && line.contains("attached=false"))
+        );
     }
 }

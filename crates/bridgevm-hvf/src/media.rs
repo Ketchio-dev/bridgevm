@@ -140,6 +140,35 @@ impl LinuxBootMedia {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallerIsoTransport {
+    Pci,
+    Mmio,
+}
+
+impl InstallerIsoTransport {
+    pub fn from_env_value(value: Option<&str>) -> Self {
+        let Some(value) = value else {
+            return Self::Pci;
+        };
+        let value = value.trim();
+        if value.eq_ignore_ascii_case("pci") {
+            Self::Pci
+        } else if value.eq_ignore_ascii_case("mmio") {
+            Self::Mmio
+        } else {
+            panic!("BRIDGEVM_INSTALLER_ISO_TRANSPORT must be 'pci' or 'mmio'");
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Pci => "pci",
+            Self::Mmio => "mmio",
+        }
+    }
+}
+
 /// Path A boot media selected for a live run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VirtBootMediaConfig {
@@ -147,6 +176,7 @@ pub struct VirtBootMediaConfig {
     pub firmware_code_path: PathBuf,
     pub flash_vars: WritableMedia,
     pub installer_iso_path: Option<PathBuf>,
+    pub installer_iso_transport: InstallerIsoTransport,
     pub nvme_disk: Option<WritableMedia>,
     pub linux_boot: Option<LinuxBootMedia>,
 }
@@ -158,6 +188,7 @@ impl VirtBootMediaConfig {
             firmware_code_path: PathBuf::from(DEFAULT_QEMU_AARCH64_CODE),
             flash_vars: WritableMedia::new(DEFAULT_QEMU_AARCH64_VARS),
             installer_iso_path: None,
+            installer_iso_transport: InstallerIsoTransport::Pci,
             nvme_disk: None,
             linux_boot: None,
         }
@@ -184,6 +215,9 @@ impl VirtBootMediaConfig {
         cfg.flash_vars.write_back = env_flag("BRIDGEVM_AARCH64_UEFI_VARS_WRITABLE");
 
         cfg.installer_iso_path = env::var("BRIDGEVM_INSTALLER_ISO").ok().map(PathBuf::from);
+        cfg.installer_iso_transport = InstallerIsoTransport::from_env_value(
+            env::var("BRIDGEVM_INSTALLER_ISO_TRANSPORT").ok().as_deref(),
+        );
 
         cfg.nvme_disk = env::var("BRIDGEVM_NVME_DISK").ok().map(|path| {
             WritableMedia::new(path)
@@ -287,8 +321,24 @@ mod tests {
         );
         assert_eq!(cfg.ram_size, DEFAULT_RAM_MIB * MIB);
         assert!(cfg.installer_iso_path.is_none());
+        assert_eq!(cfg.installer_iso_transport, InstallerIsoTransport::Pci);
         assert!(cfg.nvme_disk.is_none());
         assert!(cfg.linux_boot.is_none());
+    }
+
+    #[test]
+    fn installer_iso_transport_defaults_to_pci_and_allows_mmio_fallback() {
+        // Given no explicit installer ISO transport selector.
+        let default_transport = InstallerIsoTransport::from_env_value(None);
+
+        // Then PCI boot media is selected by default.
+        assert_eq!(default_transport, InstallerIsoTransport::Pci);
+
+        // Given the legacy virtio-mmio fallback selector.
+        let fallback_transport = InstallerIsoTransport::from_env_value(Some("mmio"));
+
+        // Then legacy virtio-mmio is selected explicitly.
+        assert_eq!(fallback_transport, InstallerIsoTransport::Mmio);
     }
 
     #[test]

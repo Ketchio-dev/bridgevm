@@ -14,8 +14,9 @@
 //!   BRIDGEVM_NVME_DISK_OUT=/path/to/out.img ...      # snapshot after run
 //!   BRIDGEVM_NVME_DISK_WRITABLE=1 ...                # write back to input path
 //!
-//! Optional installer ISO media (virtio-mmio block slot 31):
+//! Optional installer ISO media (PCI boot media by default):
 //!   BRIDGEVM_INSTALLER_ISO=/path/to/windows.iso ...
+//!   BRIDGEVM_INSTALLER_ISO_TRANSPORT=mmio ...          # legacy virtio-mmio slot 31 fallback
 //!   BRIDGEVM_UART_RX=' ' ...                          # preloaded serial input bytes
 //!   BRIDGEVM_UART_RX_ON_CD_PROMPT=' ' ...             # inject after cdboot prompt is printed
 //!
@@ -40,9 +41,12 @@ use std::ptr::null_mut;
 use bridgevm_hvf::dtb::{build_virt_fdt, VirtFdtConfig};
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::machine;
-use bridgevm_hvf::media::{read_bounded_file, MediaWrite, MediaWriteKind, VirtBootMediaConfig};
+use bridgevm_hvf::media::{
+    read_bounded_file, InstallerIsoTransport, MediaWrite, MediaWriteKind, VirtBootMediaConfig,
+};
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome, VirtPlatform};
 use bridgevm_hvf::stage1::{self, Stage1Context, Stage1WalkStep};
+use bridgevm_hvf::virtio_blk::{VirtioMmioBlockStats, INSTALLER_ISO_SLOT};
 
 #[path = "hvf_gic_boot_probe/arm64_trace.rs"]
 mod arm64_trace;
@@ -788,6 +792,29 @@ fn print_media_writes(subject: &str, writes: &[MediaWrite]) {
     }
 }
 
+fn print_block_media_stats(label: &str, stats: VirtioMmioBlockStats) {
+    println!(
+        "{label}: version={} status={:#x} features={:#x} queue_ready={} queue_num={} qdesc={:#x} qavail={:#x} qused={:#x} notify={} requests={} reads={} unsupported={} io_errors={} bytes_read={} last_sector={:?} last_len={} last_status={:?}",
+        stats.transport_version,
+        stats.status,
+        stats.driver_features,
+        stats.queue_ready,
+        stats.queue_num,
+        stats.queue_desc,
+        stats.queue_driver,
+        stats.queue_device,
+        stats.notify_count,
+        stats.request_count,
+        stats.read_count,
+        stats.unsupported_count,
+        stats.io_error_count,
+        stats.bytes_read,
+        stats.last_sector,
+        stats.last_len,
+        stats.last_status
+    );
+}
+
 fn maybe_write_file(path_env: &str, bytes: &[u8], description: &str) {
     if let Ok(path) = std::env::var(path_env) {
         let label = format!("{description} written");
@@ -1291,17 +1318,33 @@ fn main() {
             );
         }
         if let Some(path) = media.installer_iso_path.as_ref() {
-            platform
-                .attach_virtio_iso(path)
-                .unwrap_or_else(|e| panic!("attach installer ISO {}: {e}", path.display()));
-            println!(
-                "Installer ISO attached on virtio-mmio slot {}: {}",
-                bridgevm_hvf::virtio_blk::INSTALLER_ISO_SLOT,
-                path.display()
-            );
+            match media.installer_iso_transport {
+                InstallerIsoTransport::Pci => {
+                    platform.attach_pci_boot_media(path).unwrap_or_else(|e| {
+                        panic!("attach PCI installer ISO {}: {e}", path.display())
+                    });
+                    println!(
+                        "Installer ISO attached on PCI boot media 00:03.0: {}",
+                        path.display()
+                    );
+                }
+                InstallerIsoTransport::Mmio => {
+                    platform.attach_virtio_iso(path).unwrap_or_else(|e| {
+                        panic!("attach legacy MMIO installer ISO {}: {e}", path.display())
+                    });
+                    println!(
+                        "Installer ISO attached on legacy virtio-mmio slot {INSTALLER_ISO_SLOT}: {}",
+                        path.display()
+                    );
+                }
+            }
         }
+        let installer_iso_attached = media.installer_iso_path.is_some();
+        let legacy_mmio_fallback_active =
+            installer_iso_attached && media.installer_iso_transport == InstallerIsoTransport::Mmio;
         device_shape::print_device_shape(
-            media.installer_iso_path.is_some(),
+            installer_iso_attached && media.installer_iso_transport == InstallerIsoTransport::Pci,
+            legacy_mmio_fallback_active,
             platform.nvme_disk_len(),
         );
         if let Some(linux) = media.linux_boot.as_ref() {
@@ -1805,27 +1848,11 @@ fn main() {
                 trigger.bytes.len()
             );
         }
+        if let Some(stats) = platform.pci_boot_media_stats() {
+            print_block_media_stats("PCI boot-media stats", stats);
+        }
         if let Some(stats) = platform.virtio_iso_stats() {
-            println!(
-                "virtio ISO stats: version={} status={:#x} features={:#x} queue_ready={} queue_num={} qdesc={:#x} qavail={:#x} qused={:#x} notify={} requests={} reads={} unsupported={} io_errors={} bytes_read={} last_sector={:?} last_len={} last_status={:?}",
-                stats.transport_version,
-                stats.status,
-                stats.driver_features,
-                stats.queue_ready,
-                stats.queue_num,
-                stats.queue_desc,
-                stats.queue_driver,
-                stats.queue_device,
-                stats.notify_count,
-                stats.request_count,
-                stats.read_count,
-                stats.unsupported_count,
-                stats.io_error_count,
-                stats.bytes_read,
-                stats.last_sector,
-                stats.last_len,
-                stats.last_status
-            );
+            print_block_media_stats("legacy virtio-mmio ISO stats", stats);
         }
         println!("symbol lines: {}", symbols.len());
         for line in symbols.iter().rev().take(8).rev() {
