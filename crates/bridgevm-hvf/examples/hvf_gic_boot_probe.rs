@@ -334,6 +334,16 @@ fn main() {
             "AT-STOP: x0={:#x} x1={:#x} x2={:#x} x9={:#x}  (x0 device: {:?})",
             rx[0], rx[1], rx[2], rx[3], machine::device_at(rx[0])
         );
+        let mut cpsr = 0u64;
+        hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cpsr);
+        println!(
+            "CPSR={cpsr:#x}  DAIF: D={} A={} I(irq-masked)={} F={}  EL={}",
+            (cpsr >> 9) & 1,
+            (cpsr >> 8) & 1,
+            (cpsr >> 7) & 1,
+            (cpsr >> 6) & 1,
+            (cpsr >> 2) & 3
+        );
         // Timer state: CTL bit0=ENABLE, bit1=IMASK, bit2=ISTATUS(fired).
         let mut tr = [0u64; 4];
         for (i, r) in [0xdf19u16, 0xdf1a, 0xdf11, 0xdf12].iter().enumerate() {
