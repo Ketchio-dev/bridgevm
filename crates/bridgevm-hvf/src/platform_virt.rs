@@ -86,6 +86,7 @@ pub struct VirtPlatform {
     virtio_iso: Option<VirtioMmioBlock>,
     flash_vars: P30NorFlash,
     pending_msix: Vec<MsixMessage>,
+    pending_spi_levels: Vec<(u32, bool)>,
     dtb: Vec<u8>,
 }
 
@@ -122,6 +123,7 @@ impl VirtPlatform {
                 0x40000,
             ),
             pending_msix: Vec::new(),
+            pending_spi_levels: Vec::new(),
             dtb,
         }
     }
@@ -201,6 +203,12 @@ impl VirtPlatform {
     /// Apple `hv_gic`'s MSI frame.
     pub fn take_pending_msix(&mut self) -> Vec<MsixMessage> {
         std::mem::take(&mut self.pending_msix)
+    }
+
+    /// Drain level changes for legacy SPI-backed devices such as virtio-mmio.
+    /// The live HVF loop turns these into `hv_gic_set_spi(intid, level)`.
+    pub fn take_pending_spi_levels(&mut self) -> Vec<(u32, bool)> {
+        std::mem::take(&mut self.pending_spi_levels)
     }
 
     /// Register QEMU direct-Linux-boot payloads in the fixed fw_cfg slots that
@@ -288,7 +296,7 @@ impl VirtPlatform {
         }
     }
 
-    /// Empty virtio-mmio transport slot. Advertise a valid v2 register block with
+    /// Empty virtio-mmio transport slot. Advertise a valid legacy register block with
     /// DeviceID 0 so the firmware sees "valid transport, no device" and skips it
     /// silently — matching QEMU's empty slots. Returning 0 (no magic) instead made
     /// VirtioMmioInit fail with EFI_UNSUPPORTED and log 32 errors per boot.
@@ -306,7 +314,16 @@ impl VirtPlatform {
                     MmioOp::Read { size } => (false, size, 0),
                     MmioOp::Write { size, value } => (true, size, value),
                 };
-                return match dev.access(reg, is_write, size, value, mem) {
+                let old_irq = dev.interrupt_line_level();
+                let result = dev.access(reg, is_write, size, value, mem);
+                let new_irq = dev.interrupt_line_level();
+                if old_irq != new_irq {
+                    self.pending_spi_levels.push((
+                        machine::spi_to_intid(machine::virtio_mmio_spi(INSTALLER_ISO_SLOT as u32)),
+                        new_irq,
+                    ));
+                }
+                return match result {
                     VirtioMmioBlockResult::ReadValue(v) => MmioOutcome::ReadValue(v),
                     VirtioMmioBlockResult::WriteAck => MmioOutcome::WriteAck,
                 };
@@ -316,7 +333,7 @@ impl VirtPlatform {
             MmioOp::Read { .. } => {
                 let value = match reg {
                     0x00 => 0x7472_6976, // MagicValue, "virt"
-                    0x04 => 0x2,         // Version: virtio-mmio 1.0+
+                    0x04 => 0x1,         // Version: virtio-mmio 0.9.5
                     0x08 => 0x0,         // DeviceID: 0 = no device present
                     0x0c => 0x554d_4551, // VendorID, "QEMU"
                     _ => 0,
@@ -484,6 +501,7 @@ mod tests {
     use super::*;
     use crate::fwcfg::{DMA_CTL_READ, DMA_CTL_SELECT, KEY_SIGNATURE};
     use crate::machine;
+    use std::{fs, path::PathBuf, time::SystemTime};
 
     const REG_DATA: u64 = 0x0;
     const REG_SELECTOR: u64 = 0x8;
@@ -498,6 +516,33 @@ mod tests {
             + (u64::from(device) << 15)
             + (u64::from(function) << 12)
             + u64::from(reg)
+    }
+
+    fn temp_path(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "bridgevm-hvf-platform-virt-{name}-{}-{nanos}",
+            std::process::id()
+        ))
+    }
+
+    fn write_vring_desc(
+        mem: &mut FlatGuestRam,
+        table: u64,
+        index: u16,
+        addr: u64,
+        len: u32,
+        flags: u16,
+        next: u16,
+    ) {
+        let gpa = table + u64::from(index) * 16;
+        assert!(mem.write_bytes(gpa, &addr.to_le_bytes()));
+        assert!(mem.write_bytes(gpa + 8, &len.to_le_bytes()));
+        assert!(mem.write_bytes(gpa + 12, &flags.to_le_bytes()));
+        assert!(mem.write_bytes(gpa + 14, &next.to_le_bytes()));
     }
 
     fn program_nvme_bar0(p: &mut VirtPlatform, mem: &mut FlatGuestRam) {
@@ -860,6 +905,96 @@ mod tests {
                 data: MSI_DATA,
             }]
         );
+    }
+
+    #[test]
+    fn virtio_iso_completion_queues_legacy_spi_level_changes() {
+        const REG_GUEST_PAGE_SIZE: u64 = 0x28;
+        const REG_QUEUE_NUM: u64 = 0x38;
+        const REG_QUEUE_ALIGN: u64 = 0x3c;
+        const REG_QUEUE_PFN: u64 = 0x40;
+        const REG_QUEUE_NOTIFY: u64 = 0x50;
+        const REG_INTERRUPT_ACK: u64 = 0x64;
+        const DESC_F_NEXT: u16 = 1;
+        const DESC_F_WRITE: u16 = 2;
+        const VIRTIO_BLK_T_IN: u32 = 0;
+        const VIRTIO_BLK_S_OK: u8 = 0;
+
+        let path = temp_path("virtio-iso");
+        let mut media = vec![0u8; 1024];
+        media[512..520].copy_from_slice(b"WINSETUP");
+        fs::write(&path, media).unwrap();
+
+        let mut p = platform();
+        p.attach_virtio_iso(&path).unwrap();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x10000);
+        let slot_base = machine::virtio_mmio_slot(INSTALLER_ISO_SLOT).base;
+        let desc = machine::RAM_BASE + 0x1000;
+        let avail = desc + 8 * 16;
+        let used = (avail + 4 + 8 * 2).div_ceil(4096) * 4096;
+        let header = machine::RAM_BASE + 0x4000;
+        let data = machine::RAM_BASE + 0x5000;
+        let status = machine::RAM_BASE + 0x6000;
+
+        assert!(mem.write_bytes(header, &VIRTIO_BLK_T_IN.to_le_bytes()));
+        assert!(mem.write_bytes(header + 8, &1u64.to_le_bytes()));
+        write_vring_desc(&mut mem, desc, 0, header, 16, DESC_F_NEXT, 1);
+        write_vring_desc(&mut mem, desc, 1, data, 512, DESC_F_NEXT | DESC_F_WRITE, 2);
+        write_vring_desc(&mut mem, desc, 2, status, 1, DESC_F_WRITE, 0);
+        assert!(mem.write_bytes(avail + 2, &1u16.to_le_bytes()));
+        assert!(mem.write_bytes(avail + 4, &0u16.to_le_bytes()));
+
+        for (reg, value) in [
+            (REG_QUEUE_NUM, 8),
+            (REG_GUEST_PAGE_SIZE, 4096),
+            (REG_QUEUE_ALIGN, 4096),
+            (REG_QUEUE_PFN, desc >> 12),
+        ] {
+            assert_eq!(
+                p.on_mmio(slot_base + reg, MmioOp::Write { size: 4, value }, &mut mem),
+                MmioOutcome::WriteAck
+            );
+        }
+        assert_eq!(
+            p.on_mmio(
+                slot_base + REG_QUEUE_NOTIFY,
+                MmioOp::Write { size: 4, value: 0 },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+
+        assert_eq!(mem.read_bytes(data, 8).unwrap(), b"WINSETUP");
+        assert_eq!(mem.read_bytes(status, 1).unwrap(), [VIRTIO_BLK_S_OK]);
+        assert_eq!(
+            u16::from_le_bytes(mem.read_bytes(used + 2, 2).unwrap().try_into().unwrap()),
+            1
+        );
+        assert_eq!(
+            p.take_pending_spi_levels(),
+            vec![(
+                machine::spi_to_intid(machine::virtio_mmio_spi(INSTALLER_ISO_SLOT as u32)),
+                true
+            )]
+        );
+
+        assert_eq!(
+            p.on_mmio(
+                slot_base + REG_INTERRUPT_ACK,
+                MmioOp::Write { size: 4, value: 1 },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.take_pending_spi_levels(),
+            vec![(
+                machine::spi_to_intid(machine::virtio_mmio_spi(INSTALLER_ISO_SLOT as u32)),
+                false
+            )]
+        );
+
+        fs::remove_file(path).ok();
     }
 
     #[test]

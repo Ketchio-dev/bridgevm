@@ -58,9 +58,10 @@ pub const GIC_ITS: Region = Region::new(0x0808_0000, 0x0002_0000);
 pub const GIC_MSI_FRAME: Region = Region::new(GIC_ITS.base, 0x1000);
 /// First absolute GIC INTID reserved for message-signalled PCI interrupts.
 ///
-/// Keep this away from legacy INTx SPIs (35..38) so guests can use either path
-/// without sharing interrupt lines.
-pub const GIC_MSI_INTID_BASE: u32 = 64;
+/// Apple `hv_gic_set_spi` rejects any INTID inside the configured MSI range, so
+/// keep this above every DT-advertised legacy SPI (currently virtio-mmio slot 31
+/// ends at absolute INTID 79).
+pub const GIC_MSI_INTID_BASE: u32 = 128;
 /// Number of message-signalled SPI INTIDs exposed through the MSI frame.
 pub const GIC_MSI_INTID_COUNT: u32 = 64;
 /// GICv3 redistributor window — the standard QEMU virt placement, which Apple
@@ -262,6 +263,29 @@ mod tests {
         assert_eq!(spi_to_intid(SPI_RTC), 34);
         assert_eq!(spi_to_intid(SPI_PCIE_INTA), 35);
         assert_eq!(spi_to_intid(SPI_GPIO), 39);
+    }
+
+    #[test]
+    fn msi_intid_range_does_not_overlap_legacy_spis() {
+        let msi_start = GIC_MSI_INTID_BASE;
+        let msi_end = GIC_MSI_INTID_BASE + GIC_MSI_INTID_COUNT;
+        let legacy_intids = [
+            spi_to_intid(SPI_UART),
+            spi_to_intid(SPI_RTC),
+            spi_to_intid(SPI_PCIE_INTA),
+            spi_to_intid(SPI_PCIE_INTA + 1),
+            spi_to_intid(SPI_PCIE_INTA + 2),
+            spi_to_intid(SPI_PCIE_INTA + 3),
+            spi_to_intid(SPI_GPIO),
+            spi_to_intid(virtio_mmio_spi(0)),
+            spi_to_intid(virtio_mmio_spi((VIRTIO_MMIO_COUNT - 1) as u32)),
+        ];
+        for intid in legacy_intids {
+            assert!(
+                intid < msi_start || intid >= msi_end,
+                "legacy INTID {intid} overlaps MSI range {msi_start}..{msi_end}"
+            );
+        }
     }
 
     #[test]

@@ -3,8 +3,8 @@
 //! QEMU's `virt` machine exposes 32 virtio-mmio transports. ArmVirtQemu's
 //! firmware can boot a Windows ISO from a read-only virtio block device on one
 //! of those transports and presents the El Torito image as `CDROM(0x0)`. This
-//! module models just enough of the modern virtio-mmio transport and split
-//! virtqueue block protocol for firmware reads from a host ISO file.
+//! module models just enough of QEMU's default legacy virtio-mmio transport and
+//! split virtqueue block protocol for firmware reads from a host ISO file.
 
 use std::{
     fs::File,
@@ -17,6 +17,7 @@ use crate::{fwcfg::GuestMemoryMut, machine};
 pub const INSTALLER_ISO_SLOT: u64 = machine::VIRTIO_MMIO_COUNT - 1;
 
 const MAGIC_VALUE: u32 = 0x7472_6976; // "virt"
+const VERSION_LEGACY: u32 = 1;
 const VERSION_MODERN: u32 = 2;
 const DEVICE_ID_BLOCK: u32 = 2;
 const VENDOR_ID_QEMU: u32 = 0x554d_4551; // "QEMU"
@@ -29,9 +30,12 @@ const REG_DEVICE_FEATURES: u64 = 0x010;
 const REG_DEVICE_FEATURES_SEL: u64 = 0x014;
 const REG_DRIVER_FEATURES: u64 = 0x020;
 const REG_DRIVER_FEATURES_SEL: u64 = 0x024;
+const REG_GUEST_PAGE_SIZE: u64 = 0x028;
 const REG_QUEUE_SEL: u64 = 0x030;
 const REG_QUEUE_NUM_MAX: u64 = 0x034;
 const REG_QUEUE_NUM: u64 = 0x038;
+const REG_QUEUE_ALIGN: u64 = 0x03c;
+const REG_QUEUE_PFN: u64 = 0x040;
 const REG_QUEUE_READY: u64 = 0x044;
 const REG_QUEUE_NOTIFY: u64 = 0x050;
 const REG_INTERRUPT_STATUS: u64 = 0x060;
@@ -61,6 +65,21 @@ const VIRTIO_BLK_S_OK: u8 = 0;
 const VIRTIO_BLK_S_IOERR: u8 = 1;
 const VIRTIO_BLK_S_UNSUPP: u8 = 2;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VirtioMmioTransport {
+    Legacy,
+    Modern,
+}
+
+impl VirtioMmioTransport {
+    const fn version(self) -> u32 {
+        match self {
+            Self::Legacy => VERSION_LEGACY,
+            Self::Modern => VERSION_MODERN,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VirtioMmioBlockResult {
     ReadValue(u64),
@@ -71,11 +90,14 @@ pub enum VirtioMmioBlockResult {
 pub struct VirtioMmioBlock {
     backend: RawFileBackend,
     stats: VirtioMmioBlockStats,
+    transport: VirtioMmioTransport,
     device_features_sel: u32,
     driver_features_sel: u32,
     driver_features: [u32; 2],
+    guest_page_size: u32,
     queue_sel: u32,
     queue_num: u16,
+    queue_align: u32,
     queue_ready: bool,
     queue_desc: u64,
     queue_driver: u64,
@@ -87,6 +109,7 @@ pub struct VirtioMmioBlock {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct VirtioMmioBlockStats {
+    pub transport_version: u32,
     pub notify_count: u64,
     pub request_count: u64,
     pub read_count: u64,
@@ -96,18 +119,40 @@ pub struct VirtioMmioBlockStats {
     pub last_sector: Option<u64>,
     pub last_len: u32,
     pub last_status: Option<u8>,
+    pub queue_num: u16,
+    pub queue_ready: bool,
+    pub queue_desc: u64,
+    pub queue_driver: u64,
+    pub queue_device: u64,
+    pub status: u32,
+    pub driver_features: u64,
 }
 
 impl VirtioMmioBlock {
     pub fn open_read_only(path: impl AsRef<Path>) -> io::Result<Self> {
+        Self::open_read_only_with_transport(path, VirtioMmioTransport::Legacy)
+    }
+
+    #[cfg(test)]
+    fn open_read_only_modern(path: impl AsRef<Path>) -> io::Result<Self> {
+        Self::open_read_only_with_transport(path, VirtioMmioTransport::Modern)
+    }
+
+    fn open_read_only_with_transport(
+        path: impl AsRef<Path>,
+        transport: VirtioMmioTransport,
+    ) -> io::Result<Self> {
         Ok(Self {
             backend: RawFileBackend::open(path)?,
             stats: VirtioMmioBlockStats::default(),
+            transport,
             device_features_sel: 0,
             driver_features_sel: 0,
             driver_features: [0; 2],
+            guest_page_size: 4096,
             queue_sel: 0,
             queue_num: 0,
+            queue_align: 4096,
             queue_ready: false,
             queue_desc: 0,
             queue_driver: 0,
@@ -123,7 +168,21 @@ impl VirtioMmioBlock {
     }
 
     pub fn stats(&self) -> VirtioMmioBlockStats {
-        self.stats
+        let mut stats = self.stats;
+        stats.transport_version = self.transport.version();
+        stats.queue_num = self.queue_num;
+        stats.queue_ready = self.queue_ready;
+        stats.queue_desc = self.queue_desc;
+        stats.queue_driver = self.queue_driver;
+        stats.queue_device = self.queue_device;
+        stats.status = self.status;
+        stats.driver_features =
+            u64::from(self.driver_features[0]) | (u64::from(self.driver_features[1]) << 32);
+        stats
+    }
+
+    pub fn interrupt_line_level(&self) -> bool {
+        self.interrupt_status != 0
     }
 
     pub fn access(
@@ -144,7 +203,7 @@ impl VirtioMmioBlock {
     fn read(&self, offset: u64, size: u8) -> u64 {
         let value = match offset {
             REG_MAGIC => u64::from(MAGIC_VALUE),
-            REG_VERSION => u64::from(VERSION_MODERN),
+            REG_VERSION => u64::from(self.transport.version()),
             REG_DEVICE_ID => u64::from(DEVICE_ID_BLOCK),
             REG_VENDOR_ID => u64::from(VENDOR_ID_QEMU),
             REG_DEVICE_FEATURES => u64::from(self.device_features()),
@@ -160,6 +219,13 @@ impl VirtioMmioBlock {
             }
             REG_QUEUE_NUM => u64::from(self.queue_num),
             REG_QUEUE_READY => u64::from(self.queue_ready as u32),
+            REG_QUEUE_PFN if self.transport == VirtioMmioTransport::Legacy => {
+                if self.queue_ready && self.guest_page_size != 0 {
+                    self.queue_desc / u64::from(self.guest_page_size)
+                } else {
+                    0
+                }
+            }
             REG_INTERRUPT_STATUS => u64::from(self.interrupt_status),
             REG_STATUS => u64::from(self.status),
             REG_QUEUE_DESC_LOW => self.queue_desc & 0xffff_ffff,
@@ -184,14 +250,37 @@ impl VirtioMmioBlock {
                     self.driver_features[self.driver_features_sel as usize] = value as u32;
                 }
             }
+            REG_GUEST_PAGE_SIZE if self.transport == VirtioMmioTransport::Legacy => {
+                if value != 0 {
+                    self.guest_page_size = value as u32;
+                }
+            }
             REG_QUEUE_SEL => self.queue_sel = value as u32,
             REG_QUEUE_NUM => {
                 if self.queue_sel == 0 {
                     self.queue_num = (value as u16).min(QUEUE_MAX);
                 }
             }
+            REG_QUEUE_ALIGN if self.transport == VirtioMmioTransport::Legacy => {
+                if value != 0 {
+                    self.queue_align = value as u32;
+                    if self.queue_ready {
+                        self.derive_legacy_queue_addresses();
+                    }
+                }
+            }
+            REG_QUEUE_PFN if self.transport == VirtioMmioTransport::Legacy => {
+                if self.queue_sel == 0 && value != 0 {
+                    self.queue_desc = value.saturating_mul(u64::from(self.guest_page_size));
+                    self.queue_ready = true;
+                    self.derive_legacy_queue_addresses();
+                } else if self.queue_sel == 0 {
+                    self.queue_ready = false;
+                    self.last_avail_idx = 0;
+                }
+            }
             REG_QUEUE_READY => {
-                if self.queue_sel == 0 {
+                if self.queue_sel == 0 && self.transport == VirtioMmioTransport::Modern {
                     self.queue_ready = value != 0;
                     if !self.queue_ready {
                         self.last_avail_idx = 0;
@@ -211,12 +300,24 @@ impl VirtioMmioBlock {
                     self.reset_queue();
                 }
             }
-            REG_QUEUE_DESC_LOW => self.queue_desc = set_low(self.queue_desc, value),
-            REG_QUEUE_DESC_HIGH => self.queue_desc = set_high(self.queue_desc, value),
-            REG_QUEUE_DRIVER_LOW => self.queue_driver = set_low(self.queue_driver, value),
-            REG_QUEUE_DRIVER_HIGH => self.queue_driver = set_high(self.queue_driver, value),
-            REG_QUEUE_DEVICE_LOW => self.queue_device = set_low(self.queue_device, value),
-            REG_QUEUE_DEVICE_HIGH => self.queue_device = set_high(self.queue_device, value),
+            REG_QUEUE_DESC_LOW if self.transport == VirtioMmioTransport::Modern => {
+                self.queue_desc = set_low(self.queue_desc, value)
+            }
+            REG_QUEUE_DESC_HIGH if self.transport == VirtioMmioTransport::Modern => {
+                self.queue_desc = set_high(self.queue_desc, value)
+            }
+            REG_QUEUE_DRIVER_LOW if self.transport == VirtioMmioTransport::Modern => {
+                self.queue_driver = set_low(self.queue_driver, value)
+            }
+            REG_QUEUE_DRIVER_HIGH if self.transport == VirtioMmioTransport::Modern => {
+                self.queue_driver = set_high(self.queue_driver, value)
+            }
+            REG_QUEUE_DEVICE_LOW if self.transport == VirtioMmioTransport::Modern => {
+                self.queue_device = set_low(self.queue_device, value)
+            }
+            REG_QUEUE_DEVICE_HIGH if self.transport == VirtioMmioTransport::Modern => {
+                self.queue_device = set_high(self.queue_device, value)
+            }
             _ => {}
         }
     }
@@ -227,16 +328,34 @@ impl VirtioMmioBlock {
         self.queue_desc = 0;
         self.queue_driver = 0;
         self.queue_device = 0;
+        self.queue_align = 4096;
         self.interrupt_status = 0;
         self.last_avail_idx = 0;
     }
 
     fn device_features(&self) -> u32 {
+        if self.transport == VirtioMmioTransport::Legacy {
+            return VIRTIO_BLK_F_RO | VIRTIO_BLK_F_BLK_SIZE;
+        }
         match self.device_features_sel {
             0 => VIRTIO_BLK_F_RO | VIRTIO_BLK_F_BLK_SIZE,
             1 => VIRTIO_F_VERSION_1,
             _ => 0,
         }
+    }
+
+    fn derive_legacy_queue_addresses(&mut self) {
+        if self.queue_num == 0 || self.queue_desc == 0 {
+            return;
+        }
+        let avail = self
+            .queue_desc
+            .saturating_add(u64::from(self.queue_num) * DESC_SIZE);
+        let used_unaligned = avail
+            .saturating_add(4)
+            .saturating_add(u64::from(self.queue_num) * 2);
+        self.queue_driver = avail;
+        self.queue_device = align_up(used_unaligned, u64::from(self.queue_align.max(1)));
     }
 
     fn config_read(&self, offset: u64, size: u8) -> u64 {
@@ -469,6 +588,11 @@ fn mask_to_size(value: u64, size: u8) -> u64 {
     }
 }
 
+fn align_up(value: u64, align: u64) -> u64 {
+    let align = align.max(1);
+    value.div_ceil(align).saturating_mul(align)
+}
+
 fn read_le_from_bytes(bytes: &[u8], offset: u64, size: u8) -> Option<u64> {
     let offset = usize::try_from(offset).ok()?;
     let size = usize::from(size);
@@ -562,8 +686,16 @@ mod tests {
             VirtioMmioBlockResult::ReadValue(u64::from(MAGIC_VALUE))
         );
         assert_eq!(
+            dev.access(REG_VERSION, false, 4, 0, &mut mem),
+            VirtioMmioBlockResult::ReadValue(u64::from(VERSION_LEGACY))
+        );
+        assert_eq!(
             dev.access(REG_DEVICE_ID, false, 4, 0, &mut mem),
             VirtioMmioBlockResult::ReadValue(u64::from(DEVICE_ID_BLOCK))
+        );
+        assert_eq!(
+            dev.access(REG_DEVICE_FEATURES, false, 4, 0, &mut mem),
+            VirtioMmioBlockResult::ReadValue(u64::from(VIRTIO_BLK_F_RO | VIRTIO_BLK_F_BLK_SIZE))
         );
         assert_eq!(
             dev.access(REG_CONFIG, false, 8, 0, &mut mem),
@@ -578,12 +710,94 @@ mod tests {
     }
 
     #[test]
-    fn read_request_copies_media_to_guest_and_posts_used_element() {
+    fn legacy_read_request_copies_media_to_guest_and_posts_used_element() {
         let path = temp_path("read");
         let mut media = vec![0u8; 1024];
         media[512..520].copy_from_slice(b"WINSETUP");
         fs::write(&path, media).unwrap();
         let mut dev = VirtioMmioBlock::open_read_only(&path).unwrap();
+        let mut mem = TestMem::new(0x4000_0000, 0x10000);
+
+        let desc = 0x4000_1000;
+        let avail = desc + 8 * DESC_SIZE;
+        let used = align_up(avail + 4 + 8 * 2, 4096);
+        let header = 0x4000_4000;
+        let data = 0x4000_5000;
+        let status = 0x4000_6000;
+
+        mem.write(header, &VIRTIO_BLK_T_IN.to_le_bytes());
+        mem.write(header + 8, &1u64.to_le_bytes());
+        write_desc(
+            &mut mem,
+            desc,
+            0,
+            Descriptor {
+                addr: header,
+                len: 16,
+                flags: DESC_F_NEXT,
+                next: 1,
+            },
+        );
+        write_desc(
+            &mut mem,
+            desc,
+            1,
+            Descriptor {
+                addr: data,
+                len: 512,
+                flags: DESC_F_NEXT | DESC_F_WRITE,
+                next: 2,
+            },
+        );
+        write_desc(
+            &mut mem,
+            desc,
+            2,
+            Descriptor {
+                addr: status,
+                len: 1,
+                flags: DESC_F_WRITE,
+                next: 0,
+            },
+        );
+        mem.write(avail + 2, &1u16.to_le_bytes());
+        mem.write(avail + 4, &0u16.to_le_bytes());
+
+        dev.access(REG_QUEUE_NUM, true, 4, 8, &mut mem);
+        dev.access(REG_GUEST_PAGE_SIZE, true, 4, 4096, &mut mem);
+        dev.access(REG_QUEUE_ALIGN, true, 4, 4096, &mut mem);
+        dev.access(REG_QUEUE_PFN, true, 4, desc >> 12, &mut mem);
+        dev.access(REG_QUEUE_NOTIFY, true, 4, 0, &mut mem);
+
+        assert_eq!(&mem.read(data, 8), b"WINSETUP");
+        assert_eq!(mem.read(status, 1), [VIRTIO_BLK_S_OK]);
+        assert_eq!(
+            u16::from_le_bytes(mem.read(used + 2, 2).try_into().unwrap()),
+            1
+        );
+        assert_eq!(
+            u32::from_le_bytes(mem.read(used + 4, 4).try_into().unwrap()),
+            0
+        );
+        assert_eq!(
+            u32::from_le_bytes(mem.read(used + 8, 4).try_into().unwrap()),
+            513
+        );
+        assert_eq!(
+            dev.access(REG_INTERRUPT_STATUS, false, 4, 0, &mut mem),
+            VirtioMmioBlockResult::ReadValue(1)
+        );
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn modern_read_request_copies_media_to_guest_and_posts_used_element() {
+        let path = temp_path("modern-read");
+        let mut media = vec![0u8; 1024];
+        media[512..520].copy_from_slice(b"WINSETUP");
+        fs::write(&path, media).unwrap();
+        let mut dev = VirtioMmioBlock::open_read_only_modern(&path).unwrap();
         let mut mem = TestMem::new(0x4000_0000, 0x10000);
 
         let desc = 0x4000_1000;
@@ -643,14 +857,6 @@ mod tests {
         assert_eq!(
             u16::from_le_bytes(mem.read(used + 2, 2).try_into().unwrap()),
             1
-        );
-        assert_eq!(
-            u32::from_le_bytes(mem.read(used + 4, 4).try_into().unwrap()),
-            0
-        );
-        assert_eq!(
-            u32::from_le_bytes(mem.read(used + 8, 4).try_into().unwrap()),
-            513
         );
         assert_eq!(
             dev.access(REG_INTERRUPT_STATUS, false, 4, 0, &mut mem),

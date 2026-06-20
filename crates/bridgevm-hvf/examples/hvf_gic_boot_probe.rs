@@ -122,6 +122,7 @@ extern "C" {
     ) -> HvReturn;
     fn hv_gic_create(config: HvGicConfig) -> HvReturn;
     fn hv_gic_send_msi(address: u64, intid: u32) -> HvReturn;
+    fn hv_gic_set_spi(intid: u32, level: bool) -> HvReturn;
     fn hv_gic_get_spi_interrupt_range(intid_base: *mut u32, intid_count: *mut u32) -> HvReturn;
 }
 
@@ -341,6 +342,15 @@ fn deliver_pending_msix(platform: &mut VirtPlatform, trace: bool) {
     }
 }
 
+fn deliver_pending_spis(platform: &mut VirtPlatform, trace: bool) {
+    for (intid, level) in platform.take_pending_spi_levels() {
+        let status = unsafe { hv_gic_set_spi(intid, level) };
+        if trace || status != 0 {
+            println!("SPI intid {intid} level={level} status {status:#x}");
+        }
+    }
+}
+
 fn serial_reached_shell(serial: &[u8]) -> bool {
     contains_bytes(serial, b"UEFI Interactive Shell") || contains_bytes(serial, b"Shell>")
 }
@@ -412,6 +422,7 @@ fn main() {
     let watchdog_ms = env_u64("BRIDGEVM_BOOT_PROBE_WATCHDOG_MS", WATCHDOG_MS);
     let trace_fwcfg = env_flag("BRIDGEVM_TRACE_FWCFG");
     let trace_msix = env_flag("BRIDGEVM_TRACE_MSIX");
+    let trace_spi = env_flag("BRIDGEVM_TRACE_SPI");
     let stop_on_linux = env_flag_default("BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX", true);
 
     unsafe {
@@ -706,6 +717,7 @@ fn main() {
                             }
                         }
                     }
+                    deliver_pending_spis(&mut platform, trace_spi);
                     deliver_pending_msix(&mut platform, trace_msix);
                     hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
                 }
@@ -970,7 +982,15 @@ fn main() {
         println!("unmodelled MMIO touched: {unimpl:?}");
         if let Some(stats) = platform.virtio_iso_stats() {
             println!(
-                "virtio ISO stats: notify={} requests={} reads={} unsupported={} io_errors={} bytes_read={} last_sector={:?} last_len={} last_status={:?}",
+                "virtio ISO stats: version={} status={:#x} features={:#x} queue_ready={} queue_num={} qdesc={:#x} qavail={:#x} qused={:#x} notify={} requests={} reads={} unsupported={} io_errors={} bytes_read={} last_sector={:?} last_len={} last_status={:?}",
+                stats.transport_version,
+                stats.status,
+                stats.driver_features,
+                stats.queue_ready,
+                stats.queue_num,
+                stats.queue_desc,
+                stats.queue_driver,
+                stats.queue_device,
                 stats.notify_count,
                 stats.request_count,
                 stats.read_count,
