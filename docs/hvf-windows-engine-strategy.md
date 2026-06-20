@@ -263,7 +263,8 @@ The remaining OS-boot contract work is now narrower:
   late-DXE poll, the cdboot stub writer, basic ISO reachability, or interrupt
   delivery. The live probe now keeps a bounded NVMe command/completion ring
   (`BRIDGEVM_RECENT_NVME_COMMANDS`) so the next long run can identify the
-  repeated SQE, its PRPs/CDWs and completion status directly. The first
+  repeated SQE, its decoded LBA/count or admin selector, PRPs/CDWs, completion
+  status, interrupt route, and repeated command signatures directly. The first
   Windows-observed NVMe admin-command gaps are now
   closed: Asynchronous Event Request commands are accepted and left pending,
   standard `Get Features` probes return boring defaults, `Identify` CNS `0x06`
