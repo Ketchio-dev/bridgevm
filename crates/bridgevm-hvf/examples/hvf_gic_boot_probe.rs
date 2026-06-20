@@ -154,10 +154,15 @@ const HV_SYS_REG_DBGWVR0_EL1: u16 = 0x8006;
 const HV_SYS_REG_DBGWCR0_EL1: u16 = 0x8007;
 const HV_SYS_REG_MDSCR_EL1: u16 = 0x8012;
 const HV_SYS_REG_ID_AA64DFR0_EL1: u16 = 0xc028;
+const HV_SYS_REG_SCTLR_EL1: u16 = 0xc080;
+const HV_SYS_REG_TTBR0_EL1: u16 = 0xc100;
+const HV_SYS_REG_TTBR1_EL1: u16 = 0xc101;
+const HV_SYS_REG_TCR_EL1: u16 = 0xc102;
 const HV_SYS_REG_SPSR_EL1: u16 = 0xc200;
 const HV_SYS_REG_ELR_EL1: u16 = 0xc201;
 const HV_SYS_REG_ESR_EL1: u16 = 0xc290;
 const HV_SYS_REG_FAR_EL1: u16 = 0xc300;
+const HV_SYS_REG_MAIR_EL1: u16 = 0xc510;
 const HV_SYS_REG_VBAR_EL1: u16 = 0xc600;
 const HV_SYS_REG_SP_EL0: u16 = 0xc208;
 const HV_SYS_REG_SP_EL1: u16 = 0xe208;
@@ -392,6 +397,357 @@ fn dump_env_guest_bytes(mem: &dyn GuestMemoryMut) {
             .map(|v| v.min(0x1000))
             .unwrap_or(0);
         dump_guest_bytes(mem, &format!("DUMP[env:{idx}]"), gpa, before, len);
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Stage1Context {
+    sctlr_el1: u64,
+    tcr_el1: u64,
+    ttbr0_el1: u64,
+    ttbr1_el1: u64,
+    mair_el1: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Stage1Root {
+    Ttbr0,
+    Ttbr1,
+}
+
+impl Stage1Root {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Ttbr0 => "TTBR0_EL1",
+            Self::Ttbr1 => "TTBR1_EL1",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Stage1WalkStep {
+    level: u8,
+    table_ipa: u64,
+    index: u64,
+    entry_ipa: u64,
+    descriptor: Option<u64>,
+    kind: &'static str,
+    next_table_ipa: Option<u64>,
+    output_ipa: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+struct Stage1Translation {
+    root: Stage1Root,
+    va_bits: u8,
+    start_level: u8,
+    ipa: u64,
+    leaf_va_base: u64,
+    leaf_ipa_base: u64,
+    leaf_level: u8,
+    leaf_descriptor: u64,
+    leaf_kind: &'static str,
+    attr_index: u8,
+    access_permissions: u8,
+    shareability: u8,
+    access_flag: bool,
+    pxn: bool,
+    uxn: bool,
+    steps: Vec<Stage1WalkStep>,
+}
+
+#[derive(Debug, Clone)]
+struct Stage1WalkFailure {
+    reason: String,
+    steps: Vec<Stage1WalkStep>,
+}
+
+fn stage1_descriptor_kind(descriptor: u64, level: u8) -> &'static str {
+    match (descriptor & 0x3, level) {
+        (0, _) => "invalid",
+        (1, 0..=2) => "block",
+        (1, _) => "reserved",
+        (3, 0..=2) => "table",
+        (3, _) => "page",
+        _ => "reserved",
+    }
+}
+
+fn stage1_descriptor_span_bytes(level: u8, kind: &'static str) -> Option<u64> {
+    let shift = match (kind, level) {
+        ("block", 0) => 39,
+        ("block", 1) => 30,
+        ("block", 2) => 21,
+        ("page", 3) => 12,
+        _ => return None,
+    };
+    Some(1u64 << shift)
+}
+
+fn stage1_descriptor_output_address(descriptor: u64, level: u8, kind: &'static str) -> Option<u64> {
+    let span = stage1_descriptor_span_bytes(level, kind)?;
+    Some(descriptor & 0x0000_ffff_ffff_f000 & !(span - 1))
+}
+
+fn stage1_start_level(va_bits: u8) -> Option<u8> {
+    match va_bits {
+        40..=64 => Some(0),
+        31..=39 => Some(1),
+        22..=30 => Some(2),
+        12..=21 => Some(3),
+        _ => None,
+    }
+}
+
+fn stage1_root_for_va(ctx: &Stage1Context, va: u64) -> Result<(Stage1Root, u8, u8, u64), String> {
+    let t0sz = (ctx.tcr_el1 & 0x3f) as u8;
+    let t1sz = ((ctx.tcr_el1 >> 16) & 0x3f) as u8;
+    let ttbr0_bits = 64u8
+        .checked_sub(t0sz)
+        .ok_or_else(|| format!("invalid T0SZ {t0sz}"))?;
+    let ttbr1_bits = 64u8
+        .checked_sub(t1sz)
+        .ok_or_else(|| format!("invalid T1SZ {t1sz}"))?;
+    let ttbr0_match = if ttbr0_bits == 64 {
+        true
+    } else {
+        va < (1u64 << ttbr0_bits)
+    };
+    let ttbr1_match = if ttbr1_bits == 64 {
+        true
+    } else {
+        va >= (u64::MAX << ttbr1_bits)
+    };
+
+    let (root, va_bits, ttbr, tg_ok, tg_label) = if ttbr1_match && (!ttbr0_match || (va >> 63) != 0)
+    {
+        (
+            Stage1Root::Ttbr1,
+            ttbr1_bits,
+            ctx.ttbr1_el1,
+            ((ctx.tcr_el1 >> 30) & 0x3) == 0b10,
+            "TG1",
+        )
+    } else if ttbr0_match {
+        (
+            Stage1Root::Ttbr0,
+            ttbr0_bits,
+            ctx.ttbr0_el1,
+            ((ctx.tcr_el1 >> 14) & 0x3) == 0b00,
+            "TG0",
+        )
+    } else if ttbr1_match {
+        (
+            Stage1Root::Ttbr1,
+            ttbr1_bits,
+            ctx.ttbr1_el1,
+            ((ctx.tcr_el1 >> 30) & 0x3) == 0b10,
+            "TG1",
+        )
+    } else {
+        return Err(format!(
+            "VA is outside TTBR0/TTBR1 ranges (T0SZ={t0sz}, T1SZ={t1sz})"
+        ));
+    };
+
+    if !tg_ok {
+        return Err(format!(
+            "{} is not 4 KiB granule in TCR_EL1={:#x}",
+            tg_label, ctx.tcr_el1
+        ));
+    }
+    let start_level =
+        stage1_start_level(va_bits).ok_or_else(|| format!("unsupported VA size {va_bits}"))?;
+    Ok((root, va_bits, start_level, ttbr))
+}
+
+fn read_stage1_descriptor(mem: &dyn GuestMemoryMut, ipa: u64) -> Option<u64> {
+    let bytes = mem.read_bytes(ipa, 8)?;
+    Some(u64::from_le_bytes(bytes.try_into().ok()?))
+}
+
+fn stage1_translate(
+    mem: &dyn GuestMemoryMut,
+    ctx: &Stage1Context,
+    va: u64,
+) -> Result<Stage1Translation, Stage1WalkFailure> {
+    if ctx.sctlr_el1 & 1 == 0 {
+        return Err(Stage1WalkFailure {
+            reason: "SCTLR_EL1.M is clear".to_string(),
+            steps: Vec::new(),
+        });
+    }
+    let (root, va_bits, start_level, ttbr) = match stage1_root_for_va(ctx, va) {
+        Ok(root) => root,
+        Err(reason) => {
+            return Err(Stage1WalkFailure {
+                reason,
+                steps: Vec::new(),
+            });
+        }
+    };
+    let mut table_ipa = ttbr & 0x0000_ffff_ffff_f000;
+    let mut steps = Vec::new();
+    for level in start_level..=3 {
+        let shift = 39u32.saturating_sub(u32::from(level) * 9);
+        let index = (va >> shift) & 0x1ff;
+        let Some(entry_ipa) = table_ipa.checked_add(index.saturating_mul(8)) else {
+            return Err(Stage1WalkFailure {
+                reason: format!("L{level} entry IPA overflow"),
+                steps,
+            });
+        };
+        let descriptor = read_stage1_descriptor(mem, entry_ipa);
+        let kind = descriptor
+            .map(|d| stage1_descriptor_kind(d, level))
+            .unwrap_or("not-readable");
+        let next_table_ipa = descriptor
+            .filter(|_| kind == "table")
+            .map(|d| d & 0x0000_ffff_ffff_f000);
+        let output_ipa = descriptor.and_then(|d| stage1_descriptor_output_address(d, level, kind));
+        steps.push(Stage1WalkStep {
+            level,
+            table_ipa,
+            index,
+            entry_ipa,
+            descriptor,
+            kind,
+            next_table_ipa,
+            output_ipa,
+        });
+        let Some(descriptor) = descriptor else {
+            return Err(Stage1WalkFailure {
+                reason: format!("L{level} descriptor at {entry_ipa:#x} is not in RAM view"),
+                steps,
+            });
+        };
+        if let Some(next_table_ipa) = next_table_ipa {
+            table_ipa = next_table_ipa;
+            continue;
+        }
+        let Some(span) = stage1_descriptor_span_bytes(level, kind) else {
+            return Err(Stage1WalkFailure {
+                reason: format!("L{level} descriptor kind {kind} is not translatable"),
+                steps,
+            });
+        };
+        let Some(leaf_ipa_base) = output_ipa else {
+            return Err(Stage1WalkFailure {
+                reason: format!("L{level} descriptor has no output address"),
+                steps,
+            });
+        };
+        let leaf_va_base = va & !(span - 1);
+        let Some(ipa) = leaf_ipa_base.checked_add(va - leaf_va_base) else {
+            return Err(Stage1WalkFailure {
+                reason: "translated IPA overflow".to_string(),
+                steps,
+            });
+        };
+        return Ok(Stage1Translation {
+            root,
+            va_bits,
+            start_level,
+            ipa,
+            leaf_va_base,
+            leaf_ipa_base,
+            leaf_level: level,
+            leaf_descriptor: descriptor,
+            leaf_kind: kind,
+            attr_index: ((descriptor >> 2) & 0x7) as u8,
+            access_permissions: ((descriptor >> 6) & 0x3) as u8,
+            shareability: ((descriptor >> 8) & 0x3) as u8,
+            access_flag: descriptor & (1 << 10) != 0,
+            pxn: descriptor & (1 << 53) != 0,
+            uxn: descriptor & (1 << 54) != 0,
+            steps,
+        });
+    }
+    Err(Stage1WalkFailure {
+        reason: "walk exhausted without leaf".to_string(),
+        steps,
+    })
+}
+
+fn print_stage1_walk_steps(label: &str, steps: &[Stage1WalkStep]) {
+    if !env_flag("BRIDGEVM_TRACE_STAGE1_WALKS") {
+        return;
+    }
+    for step in steps {
+        let desc = step
+            .descriptor
+            .map(|v| format!("{v:#x}"))
+            .unwrap_or_else(|| "-".to_string());
+        let next = step
+            .next_table_ipa
+            .map(|v| format!("{v:#x}"))
+            .unwrap_or_else(|| "-".to_string());
+        let out = step
+            .output_ipa
+            .map(|v| format!("{v:#x}"))
+            .unwrap_or_else(|| "-".to_string());
+        println!(
+            "  WALK[{label}]: L{} table={:#x} index={:#x} entry={:#x} desc={} kind={} next={} out={}",
+            step.level, step.table_ipa, step.index, step.entry_ipa, desc, step.kind, next, out
+        );
+    }
+}
+
+fn print_stage1_translation(
+    mem: &dyn GuestMemoryMut,
+    ctx: &Stage1Context,
+    label: &str,
+    va: u64,
+) -> Option<u64> {
+    if va == 0 {
+        return None;
+    }
+    match stage1_translate(mem, ctx, va) {
+        Ok(t) => {
+            println!(
+                "XLATE[{label}]: va={va:#x} -> ipa={:#x} root={} va_bits={} start=L{} leaf=L{}:{} desc={:#x} va_base={:#x} ipa_base={:#x} attr={} ap={} sh={} af={} pxn={} uxn={}",
+                t.ipa,
+                t.root.label(),
+                t.va_bits,
+                t.start_level,
+                t.leaf_level,
+                t.leaf_kind,
+                t.leaf_descriptor,
+                t.leaf_va_base,
+                t.leaf_ipa_base,
+                t.attr_index,
+                t.access_permissions,
+                t.shareability,
+                t.access_flag,
+                t.pxn,
+                t.uxn
+            );
+            print_stage1_walk_steps(label, &t.steps);
+            Some(t.ipa)
+        }
+        Err(failure) => {
+            println!("XLATE[{label}]: va={va:#x}: {}", failure.reason);
+            print_stage1_walk_steps(label, &failure.steps);
+            None
+        }
+    }
+}
+
+fn dump_translated_guest_bytes(
+    mem: &dyn GuestMemoryMut,
+    label: &str,
+    ipa: Option<u64>,
+    before: u64,
+    len: usize,
+) {
+    if let Some(ipa) = ipa {
+        dump_guest_bytes(mem, &format!("{label}->ipa"), ipa, before, len);
+    }
+}
+
+fn print_translated_pe_owner(mem: &dyn GuestMemoryMut, label: &str, ipa: Option<u64>) {
+    if let Some(ipa) = ipa {
+        print_pe_owner(mem, &format!("{label}->ipa"), ipa);
     }
 }
 
@@ -1489,22 +1845,64 @@ fn main() {
         let lr = read_reg(vcpu, HV_REG_LR);
         let sp_el0 = read_sys_reg(vcpu, HV_SYS_REG_SP_EL0);
         let sp_el1 = read_sys_reg(vcpu, HV_SYS_REG_SP_EL1);
+        let vbar_el1 = read_sys_reg(vcpu, HV_SYS_REG_VBAR_EL1);
+        let elr_el1 = read_sys_reg(vcpu, HV_SYS_REG_ELR_EL1);
+        let esr_el1 = read_sys_reg(vcpu, HV_SYS_REG_ESR_EL1);
+        let far_el1 = read_sys_reg(vcpu, HV_SYS_REG_FAR_EL1);
+        let spsr_el1 = read_sys_reg(vcpu, HV_SYS_REG_SPSR_EL1);
+        let stage1_ctx = Stage1Context {
+            sctlr_el1: read_sys_reg(vcpu, HV_SYS_REG_SCTLR_EL1),
+            tcr_el1: read_sys_reg(vcpu, HV_SYS_REG_TCR_EL1),
+            ttbr0_el1: read_sys_reg(vcpu, HV_SYS_REG_TTBR0_EL1),
+            ttbr1_el1: read_sys_reg(vcpu, HV_SYS_REG_TTBR1_EL1),
+            mair_el1: read_sys_reg(vcpu, HV_SYS_REG_MAIR_EL1),
+        };
         println!(
             "REGS: pc={last_pc:#x} lr={lr:#x} fp={fp:#x} sp_el0={sp_el0:#x} sp_el1={sp_el1:#x}"
         );
+        println!(
+            "STAGE1: SCTLR={:#x} MMU={} TCR={:#x} TTBR0={:#x} TTBR1={:#x} MAIR={:#x}",
+            stage1_ctx.sctlr_el1,
+            stage1_ctx.sctlr_el1 & 1 != 0,
+            stage1_ctx.tcr_el1,
+            stage1_ctx.ttbr0_el1,
+            stage1_ctx.ttbr1_el1,
+            stage1_ctx.mair_el1
+        );
+        let pc_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "pc", last_pc);
+        let lr_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "lr", lr);
+        let elr_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "elr", elr_el1);
+        let _vbar_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "vbar", vbar_el1);
+        let _far_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "far", far_el1);
+        let fp_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "fp", fp);
+        let _sp_el0_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "sp_el0", sp_el0);
+        let sp_el1_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "sp_el1", sp_el1);
         print_pe_owner(&guest_ram, "pc", last_pc);
         print_pe_owner(&guest_ram, "lr", lr);
+        print_translated_pe_owner(&guest_ram, "pc", pc_ipa);
+        print_translated_pe_owner(&guest_ram, "lr", lr_ipa);
+        print_translated_pe_owner(&guest_ram, "elr", elr_ipa);
         if last_watch_pc != 0 {
             print_pe_owner(&guest_ram, "watch-pc", last_watch_pc);
             print_pe_owner(&guest_ram, "watch-lr", last_watch_lr);
+            let watch_pc_ipa =
+                print_stage1_translation(&guest_ram, &stage1_ctx, "watch-pc", last_watch_pc);
+            let watch_lr_ipa =
+                print_stage1_translation(&guest_ram, &stage1_ctx, "watch-lr", last_watch_lr);
+            print_translated_pe_owner(&guest_ram, "watch-pc", watch_pc_ipa);
+            print_translated_pe_owner(&guest_ram, "watch-lr", watch_lr_ipa);
         }
         dump_guest_bytes(&guest_ram, "CODE[pc]", last_pc, 0x20, 0x60);
         dump_guest_bytes(&guest_ram, "CODE[lr]", lr, 0x28, 0x60);
+        dump_translated_guest_bytes(&guest_ram, "CODE[pc]", pc_ipa, 0x20, 0x60);
+        dump_translated_guest_bytes(&guest_ram, "CODE[lr]", lr_ipa, 0x28, 0x60);
         if fp != 0 {
             dump_guest_bytes(&guest_ram, "FRAME[fp]", fp, 0, 0x80);
+            dump_translated_guest_bytes(&guest_ram, "FRAME[fp]", fp_ipa, 0, 0x80);
         }
         if sp_el1 != 0 {
             dump_guest_bytes(&guest_ram, "STACK[sp_el1]", sp_el1, 0, 0x100);
+            dump_translated_guest_bytes(&guest_ram, "STACK[sp_el1]", sp_el1_ipa, 0, 0x100);
         }
         dump_env_guest_bytes(&guest_ram);
 
@@ -1557,17 +1955,14 @@ fn main() {
             (cpsr >> 6) & 1,
             (cpsr >> 2) & 3
         );
-        let vbar_el1 = read_sys_reg(vcpu, HV_SYS_REG_VBAR_EL1);
-        let elr_el1 = read_sys_reg(vcpu, HV_SYS_REG_ELR_EL1);
-        let esr_el1 = read_sys_reg(vcpu, HV_SYS_REG_ESR_EL1);
-        let far_el1 = read_sys_reg(vcpu, HV_SYS_REG_FAR_EL1);
-        let spsr_el1 = read_sys_reg(vcpu, HV_SYS_REG_SPSR_EL1);
         println!(
             "EL1_EXC: VBAR={vbar_el1:#x} ELR={elr_el1:#x} ESR={esr_el1:#x} ({}) FAR={far_el1:#x} SPSR={spsr_el1:#x}",
             describe_esr(esr_el1)
         );
         print_pe_owner(&guest_ram, "elr", elr_el1);
+        print_translated_pe_owner(&guest_ram, "elr", elr_ipa);
         dump_guest_bytes_if_mapped(&guest_ram, "CODE[elr]", elr_el1, 0x20, 0x60);
+        dump_translated_guest_bytes(&guest_ram, "CODE[elr]", elr_ipa, 0x20, 0x60);
         // Timer state: CTL bit0=ENABLE, bit1=IMASK, bit2=ISTATUS(fired).
         let mut tr = [0u64; 4];
         for (i, r) in [0xdf19u16, 0xdf1a, 0xdf11, 0xdf12].iter().enumerate() {

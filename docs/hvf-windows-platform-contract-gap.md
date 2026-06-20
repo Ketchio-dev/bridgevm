@@ -167,6 +167,10 @@ and log pages `0xc0`/`0xc1`); BridgeVM now reports QEMU-like
 `invalid-field | DNR` for those unsupported paths. The 120 s post-DNR live run
 still reaches Windows high virtual-address SVC state after reading `645730816`
 bytes from the ISO with zero virtio I/O errors and no unmodelled MMIO. The
+stage-1 translation dump from the same frontier resolves
+`pc=0xfffff80145081cdc` through `TTBR1_EL1` to `ipa=0x100481cdc`, owned by
+`ntkrnlmp.pdb` at RVA `0x481cdc`; the low ELR/FAR user-address context currently
+fails the guest page-table walk at an invalid L0 descriptor. The
 volatile write cache surface now follows QEMU's observed behaviour: Identify
 Controller advertises VWC `0x7`, `Get Features` FID `0x06` reports the current
 cache enabled, and NVM Flush (`0x00`) succeeds for namespace and broadcast-NSID

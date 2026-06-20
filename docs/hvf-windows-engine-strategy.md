@@ -249,13 +249,17 @@ The remaining OS-boot contract work is now narrower:
   646 MiB in a 120 s run with zero virtio I/O errors, and reaches Windows high
   virtual-address code (`pc=0xfffff801...`). Recent 120 s traces end in Windows
   high-VA code (one data-abort snapshot, one watchdog snapshot with
-  `ESR=0x56001004`/SVC state) while the PCIe MMIO tail repeatedly reads NVMe
-  `CSTS`/`CC` and rings `SQ0TDBL`, so the next diff is Windows NVMe/PCIe command
-  flow and device-shape parity rather than the old late-DXE poll, the cdboot stub
-  writer, basic ISO reachability, or interrupt delivery. The live probe now keeps
-  a bounded NVMe command/completion ring (`BRIDGEVM_RECENT_NVME_COMMANDS`) so the
-  next long run can identify the repeated SQE, its PRPs/CDWs and completion
-  status directly. The first Windows-observed NVMe admin-command gaps are now
+  `ESR=0x56001004`/SVC state). The live probe now reads the EL1 translation
+  controls and walks the guest's 4 KiB stage-1 tables, so the latest watchdog
+  snapshot resolves `pc=0xfffff80145081cdc` through `TTBR1_EL1` to
+  `ipa=0x100481cdc`, inside `ntkrnlmp.pdb` at RVA `0x481cdc`. The PCIe MMIO tail
+  repeatedly reads NVMe `CSTS`/`CC` and rings `SQ0TDBL`, so the next diff is
+  Windows NVMe/PCIe command flow and device-shape parity rather than the old
+  late-DXE poll, the cdboot stub writer, basic ISO reachability, or interrupt
+  delivery. The live probe now keeps a bounded NVMe command/completion ring
+  (`BRIDGEVM_RECENT_NVME_COMMANDS`) so the next long run can identify the
+  repeated SQE, its PRPs/CDWs and completion status directly. The first
+  Windows-observed NVMe admin-command gaps are now
   closed: Asynchronous Event Request commands are accepted and left pending,
   standard `Get Features` probes return boring defaults, `Identify` CNS `0x06`
   succeeds for the NVM command set, QEMU's command-effects log page `0x05` is
