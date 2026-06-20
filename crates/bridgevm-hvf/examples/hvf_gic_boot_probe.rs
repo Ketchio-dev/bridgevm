@@ -82,6 +82,7 @@ extern "C" {
     fn hv_vcpu_get_sys_reg(vcpu: HvVcpuT, reg: u16, value: *mut u64) -> HvReturn;
     fn hv_vcpu_set_vtimer_mask(vcpu: HvVcpuT, vtimer_is_masked: bool) -> HvReturn;
     fn hv_vcpu_get_vtimer_offset(vcpu: HvVcpuT, vtimer_offset: *mut u64) -> HvReturn;
+    fn hv_vcpu_set_trap_debug_exceptions(vcpu: HvVcpuT, value: bool) -> HvReturn;
     fn hv_gic_get_redistributor_base(vcpu: HvVcpuT, base: *mut u64) -> HvReturn;
     // Apple in-kernel GICv3 (macOS 15+).
     fn hv_gic_config_create() -> HvGicConfig;
@@ -101,6 +102,17 @@ const EXIT_EXCEPTION: u32 = 1;
 const EXIT_VTIMER: u32 = 2;
 const EC_DATA_ABORT: u64 = 0x24;
 const EC_HVC: u64 = 0x16;
+const EC_WATCHPOINT_LOWER: u64 = 0x34;
+const EC_WATCHPOINT_SAME: u64 = 0x35;
+const EC_SOFTSTEP_LOWER: u64 = 0x32;
+const EC_SOFTSTEP_SAME: u64 = 0x33;
+const HV_SYS_REG_DBGWVR0_EL1: u16 = 0x8006;
+const HV_SYS_REG_DBGWCR0_EL1: u16 = 0x8007;
+const HV_SYS_REG_MDSCR_EL1: u16 = 0x8012;
+// Watch the poll target for stores: 8-byte aligned address, BAS=0xFF (8 bytes),
+// LSC=0b10 (store), PAC=0b11 (EL0+EL1), E=1. = 0x1FF7.
+const WATCH_TARGET: u64 = 0x5ffd_f798;
+const DBGWCR_STORE_8B: u64 = 0x1ff7;
 
 const RAM_SIZE: usize = 0x2000_0000; // 512 MiB
 const MAX_EXITS: u64 = 50_000_000;
@@ -181,6 +193,32 @@ fn main() {
         // VTIMER_ACTIVATED ever arrived and the firmware spun on its ISR flag.
         hv_vcpu_set_vtimer_mask(vcpu, false);
 
+        // Hardware watchpoint on a firmware address (default the poll target
+        // 0x5ffdf798): route guest debug exceptions to the host, then arm
+        // DBGWVR0/DBGWCR0 for stores. Unlike a read-only page, this traps only the
+        // exact address with no emulation. Opt-in via BRIDGEVM_WATCH=1 (or
+        // BRIDGEVM_WATCH=0x... for a different address) since single-stepping each
+        // store perturbs boot timing.
+        let watch_addr: Option<u64> = std::env::var("BRIDGEVM_WATCH").ok().map(|s| {
+            let s = s.trim();
+            if let Some(h) = s.strip_prefix("0x") {
+                u64::from_str_radix(h, 16).unwrap_or(WATCH_TARGET)
+            } else if s == "1" {
+                WATCH_TARGET
+            } else {
+                s.parse().unwrap_or(WATCH_TARGET)
+            }
+        });
+        if let Some(addr) = watch_addr {
+            hv_vcpu_set_trap_debug_exceptions(vcpu, true);
+            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWVR0_EL1, addr);
+            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWCR0_EL1, DBGWCR_STORE_8B);
+            let mut mdscr = 0u64;
+            hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, &mut mdscr);
+            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, mdscr | (1 << 15)); // MDE
+            println!("watchpoint armed on {addr:#x} (store)");
+        }
+
         let vcpu_for_wd = vcpu;
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(WATCHDOG_MS));
@@ -197,6 +235,7 @@ fn main() {
         let mut vtimer_exits = 0u64;
         let mut psci_calls = 0u64;
         let mut last_pc = 0u64;
+        let mut watch_hits = 0u32;
         let stop_reason;
 
         loop {
@@ -299,6 +338,40 @@ fn main() {
                     // ArmCallHvc's `ldr x9, [sp], #0x10`, which was the RngDxe crash.
                     hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc);
                     psci_calls += 1;
+                }
+                EC_WATCHPOINT_LOWER | EC_WATCHPOINT_SAME => {
+                    watch_hits += 1;
+                    let mut lr = 0u64;
+                    hv_vcpu_get_reg(vcpu, HV_REG_X0 + 30, &mut lr);
+                    print!("WATCH #{watch_hits}: store @ PC {last_pc:#x} LR {lr:#x}");
+                    // Single-step over the store: disable the watchpoint and arm
+                    // PSTATE.SS so the store retires and we can read the new value.
+                    hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWCR0_EL1, 0);
+                    let mut md = 0u64;
+                    hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, &mut md);
+                    hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, md | 1); // SS
+                    let mut cp = 0u64;
+                    hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cp);
+                    hv_vcpu_set_reg(vcpu, HV_REG_CPSR, cp | (1 << 21)); // PSTATE.SS
+                    // do NOT advance PC: re-execute the store under single-step.
+                }
+                EC_SOFTSTEP_LOWER | EC_SOFTSTEP_SAME => {
+                    let cur = guest_ram
+                        .read_bytes(WATCH_TARGET, 8)
+                        .map(|b| u64::from_le_bytes(b.try_into().unwrap()))
+                        .unwrap_or(0);
+                    println!(" -> {WATCH_TARGET:#x} = {cur:#x}");
+                    // Clear single-step; re-arm the watchpoint unless we have enough.
+                    let mut md = 0u64;
+                    hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, &mut md);
+                    hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, md & !1);
+                    let mut cp = 0u64;
+                    hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cp);
+                    hv_vcpu_set_reg(vcpu, HV_REG_CPSR, cp & !(1 << 21));
+                    if watch_hits < 40 {
+                        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWCR0_EL1, DBGWCR_STORE_8B);
+                    }
+                    // do NOT advance PC: the step already retired the instruction.
                 }
                 _ => {
                     stop_reason = format!("exception EC {ec:#x} ESR {esr:#x} @ PC {last_pc:#x}");
