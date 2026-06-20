@@ -28,13 +28,14 @@ use crate::fwcfg::{
 use crate::machine::{self, Region};
 use crate::msix::MsixMessage;
 use crate::nvme::{NvmeCommandTrace, NvmeCompletionEvent, NvmeController};
-use crate::pcie::{PcieEcam, NVME_BDF};
+use crate::pcie::{PcieEcam, NVME_BDF, VIRTIO_BLK_BDF};
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
 use crate::pl031::Pl031;
 use crate::smbios::{build_smbios, SMBIOS_ANCHOR_FILE, SMBIOS_TABLE_FILE};
 use crate::virtio_blk::{
-    VirtioMmioBlock, VirtioMmioBlockResult, VirtioMmioBlockStats, INSTALLER_ISO_SLOT,
+    VirtioMmioBlock, VirtioMmioBlockResult, VirtioMmioBlockStats, VirtioPciBlock, VirtioPciBlockOp,
+    INSTALLER_ISO_SLOT,
 };
 
 const DEFAULT_NVME_DISK_BYTES: usize = 16 * 1024 * 1024;
@@ -84,6 +85,7 @@ pub struct VirtPlatform {
     pcie: PcieEcam,
     nvme: NvmeController,
     virtio_iso: Option<VirtioMmioBlock>,
+    pci_boot_media: Option<VirtioPciBlock>,
     flash_vars: P30NorFlash,
     pending_msix: Vec<MsixMessage>,
     pending_spi_levels: Vec<(u32, bool)>,
@@ -117,6 +119,7 @@ impl VirtPlatform {
             pcie: PcieEcam::new(),
             nvme: NvmeController::new(DEFAULT_NVME_DISK_BYTES),
             virtio_iso: None,
+            pci_boot_media: None,
             flash_vars: P30NorFlash::new(
                 machine::FLASH_VARS.base,
                 machine::FLASH_VARS.size as usize,
@@ -166,10 +169,19 @@ impl VirtPlatform {
         Ok(())
     }
 
+    pub fn attach_pci_boot_media(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
+        self.pci_boot_media = Some(VirtioPciBlock::open_read_only(path)?);
+        Ok(())
+    }
+
     /// Current read/queue counters for the installer ISO block device, if one is
     /// attached. Live probes print this when diagnosing Windows media boot.
     pub fn virtio_iso_stats(&self) -> Option<VirtioMmioBlockStats> {
         self.virtio_iso.as_ref().map(VirtioMmioBlock::stats)
+    }
+
+    pub fn pci_boot_media_stats(&self) -> Option<VirtioMmioBlockStats> {
+        self.pci_boot_media.as_ref().map(VirtioPciBlock::stats)
     }
 
     /// Snapshot the first NVMe disk image, including guest writes processed so
@@ -377,7 +389,35 @@ impl VirtPlatform {
         };
         match (target.bdf, target.bar_index) {
             (NVME_BDF, 0) => self.nvme_access(target.offset, op, mem),
+            (VIRTIO_BLK_BDF, 0) => self.pci_boot_media_access(target.offset, op, mem),
             _ => MmioOutcome::KnownUnimplemented("pcie-mmio-32"),
+        }
+    }
+
+    fn pci_boot_media_access(
+        &mut self,
+        offset: u64,
+        op: MmioOp,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> MmioOutcome {
+        let Some(dev) = self.pci_boot_media.as_mut() else {
+            return MmioOutcome::KnownUnimplemented("virtio-blk-pci");
+        };
+        let old_irq = dev.interrupt_line_level();
+        let result = match op {
+            MmioOp::Read { size } => dev.access(offset, VirtioPciBlockOp::Read { size }, mem),
+            MmioOp::Write { size, value } => {
+                dev.access(offset, VirtioPciBlockOp::Write { size, value }, mem)
+            }
+        };
+        let new_irq = dev.interrupt_line_level();
+        if old_irq != new_irq {
+            self.pending_spi_levels
+                .push((machine::spi_to_intid(machine::SPI_PCIE_INTA), new_irq));
+        }
+        match result {
+            VirtioMmioBlockResult::ReadValue(v) => MmioOutcome::ReadValue(v),
+            VirtioMmioBlockResult::WriteAck => MmioOutcome::WriteAck,
         }
     }
 
@@ -575,6 +615,25 @@ mod tests {
         );
         p.on_mmio(
             pcie_cfg_gpa(1, 0, crate::pcie::REG_COMMAND_STATUS),
+            MmioOp::Write {
+                size: 2,
+                value: u64::from(crate::pcie::CMD_MEMORY_SPACE | crate::pcie::CMD_BUS_MASTER),
+            },
+            mem,
+        );
+    }
+
+    fn program_virtio_blk_bar0(p: &mut VirtPlatform, mem: &mut FlatGuestRam, base: u64) {
+        p.on_mmio(
+            pcie_cfg_gpa(3, 0, crate::pcie::REG_BAR0),
+            MmioOp::Write {
+                size: 4,
+                value: base,
+            },
+            mem,
+        );
+        p.on_mmio(
+            pcie_cfg_gpa(3, 0, crate::pcie::REG_COMMAND_STATUS),
             MmioOp::Write {
                 size: 2,
                 value: u64::from(crate::pcie::CMD_MEMORY_SPACE | crate::pcie::CMD_BUS_MASTER),
@@ -1014,6 +1073,106 @@ mod tests {
         );
 
         fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn pcie_boot_media_reads_from_attached_iso_and_posts_interrupt() {
+        const PCI_ISR_CFG_OFFSET: u64 = 0x1000;
+        const PCI_NOTIFY_CFG_OFFSET: u64 = 0x3000;
+        const REG_QUEUE_NUM: u64 = 0x038;
+        const REG_QUEUE_READY: u64 = 0x044;
+        const REG_QUEUE_NOTIFY: u64 = 0x050;
+        const REG_QUEUE_DESC_LOW: u64 = 0x080;
+        const REG_QUEUE_DRIVER_LOW: u64 = 0x090;
+        const REG_QUEUE_DEVICE_LOW: u64 = 0x0a0;
+        const DESC_F_NEXT: u16 = 1;
+        const DESC_F_WRITE: u16 = 2;
+        const VIRTIO_BLK_T_IN: u32 = 0;
+        const VIRTIO_BLK_S_OK: u8 = 0;
+
+        let path = temp_path("pci-boot-media");
+        let mut media = vec![0u8; 1024];
+        media[512..520].copy_from_slice(b"WINSETUP");
+        fs::write(&path, media).unwrap();
+
+        let mut p = platform();
+        p.attach_pci_boot_media(&path).unwrap();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x10000);
+        let bar = machine::PCIE_MMIO_32.base + 0x8000;
+        program_virtio_blk_bar0(&mut p, &mut mem, bar);
+
+        let desc = machine::RAM_BASE + 0x1000;
+        let avail = machine::RAM_BASE + 0x2000;
+        let used = machine::RAM_BASE + 0x3000;
+        let header = machine::RAM_BASE + 0x4000;
+        let data = machine::RAM_BASE + 0x5000;
+        let status = machine::RAM_BASE + 0x6000;
+
+        assert!(mem.write_bytes(header, &VIRTIO_BLK_T_IN.to_le_bytes()));
+        assert!(mem.write_bytes(header + 8, &1u64.to_le_bytes()));
+        write_vring_desc(&mut mem, desc, 0, header, 16, DESC_F_NEXT, 1);
+        write_vring_desc(&mut mem, desc, 1, data, 512, DESC_F_NEXT | DESC_F_WRITE, 2);
+        write_vring_desc(&mut mem, desc, 2, status, 1, DESC_F_WRITE, 0);
+        assert!(mem.write_bytes(avail + 2, &1u16.to_le_bytes()));
+        assert!(mem.write_bytes(avail + 4, &0u16.to_le_bytes()));
+
+        for (reg, value) in [
+            (REG_QUEUE_NUM, 8),
+            (REG_QUEUE_DESC_LOW, desc),
+            (REG_QUEUE_DRIVER_LOW, avail),
+            (REG_QUEUE_DEVICE_LOW, used),
+            (REG_QUEUE_READY, 1),
+        ] {
+            assert_eq!(
+                p.on_mmio(bar + reg, MmioOp::Write { size: 4, value }, &mut mem),
+                MmioOutcome::WriteAck
+            );
+        }
+        assert_eq!(
+            p.on_mmio(
+                bar + PCI_NOTIFY_CFG_OFFSET + REG_QUEUE_NOTIFY,
+                MmioOp::Write { size: 4, value: 0 },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+
+        assert_eq!(mem.read_bytes(data, 8).unwrap(), b"WINSETUP");
+        assert_eq!(mem.read_bytes(status, 1).unwrap(), [VIRTIO_BLK_S_OK]);
+        assert_eq!(
+            p.take_pending_spi_levels(),
+            vec![(machine::spi_to_intid(machine::SPI_PCIE_INTA), true)]
+        );
+
+        assert_eq!(
+            p.on_mmio(
+                bar + PCI_ISR_CFG_OFFSET,
+                MmioOp::Write { size: 4, value: 1 },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.take_pending_spi_levels(),
+            vec![(machine::spi_to_intid(machine::SPI_PCIE_INTA), false)]
+        );
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn unknown_pcie_bar_still_reports_known_unimplemented() {
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_MMIO_32.base + 0x1_0000,
+                MmioOp::Read { size: 4 },
+                &mut mem
+            ),
+            MmioOutcome::KnownUnimplemented("pcie-mmio-32")
+        );
     }
 
     #[test]
