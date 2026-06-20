@@ -5,10 +5,11 @@
 //! MADT (GIC topology), GTDT (architected timer), MCFG (PCIe ECAM) and SPCR
 //! (serial console). Stock ArmVirtQemu firmware does not synthesise these itself
 //! on this platform — it installs whatever the host exposes through `fw_cfg`
-//! under `etc/acpi/rsdp` (the RSDP) and `etc/acpi/tables` (the concatenated
-//! tables). This module builds those two blobs from the single source of truth
-//! in [`crate::machine`], so every address and interrupt number matches the DTB
-//! the same firmware parses (see [`crate::dtb`]).
+//! under `etc/acpi/rsdp` (the RSDP), `etc/acpi/tables` (the concatenated
+//! tables), and `etc/table-loader` (QEMU linker commands for relocation and
+//! checksums). This module builds those blobs from the single source of truth in
+//! [`crate::machine`], so every address and interrupt number matches the DTB the
+//! same firmware parses (see [`crate::dtb`]).
 //!
 //! It is a self-contained, host-only byte serializer in the style of
 //! [`crate::dtb`] / [`crate::fwcfg`]: no Hypervisor.framework calls, fully
@@ -31,14 +32,30 @@ const OEM_REVISION: u32 = 1;
 const CREATOR_ID: &[u8; 4] = b"BVM ";
 const CREATOR_REVISION: u32 = 1;
 
-/// The two blobs the firmware fetches from `fw_cfg`.
+/// QEMU fw_cfg file carrying the concatenated ACPI tables.
+pub const ACPI_TABLE_FILE: &str = "etc/acpi/tables";
+/// QEMU fw_cfg file carrying the RSDP.
+pub const ACPI_RSDP_FILE: &str = "etc/acpi/rsdp";
+/// QEMU fw_cfg file carrying loader/linker commands.
+pub const ACPI_LOADER_FILE: &str = "etc/table-loader";
+
+/// The three blobs the firmware fetches from `fw_cfg`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcpiBlobs {
     /// `etc/acpi/rsdp` — the Root System Description Pointer (36 bytes, v2).
+    ///
+    /// Checksum bytes are zero here; the firmware computes final checksums after
+    /// applying `loader` relocations, matching QEMU's `bios-linker-loader`.
     pub rsdp: Vec<u8>,
     /// `etc/acpi/tables` — XSDT, FADT, DSDT, MADT, GTDT, MCFG and SPCR,
     /// concatenated in the order their physical addresses are laid out.
+    ///
+    /// Checksum bytes are zero here; the firmware computes final checksums after
+    /// applying `loader` relocations, matching QEMU's `bios-linker-loader`.
     pub tables: Vec<u8>,
+    /// `etc/table-loader` — QEMU loader commands that allocate the two files,
+    /// relocate all table-internal pointers, and compute final ACPI checksums.
+    pub loader: Vec<u8>,
 }
 
 /// One-byte ACPI checksum: the value that makes the sum of every byte in
@@ -179,6 +196,16 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     ]);
     debug_assert_eq!(xsdt.len() as u64, xsdt_len);
 
+    let table_spans = [
+        TableSpan::new(off_xsdt, xsdt.len() as u64),
+        TableSpan::new(off_dsdt, dsdt.len() as u64),
+        TableSpan::new(off_fadt, fadt.len() as u64),
+        TableSpan::new(off_madt, madt.len() as u64),
+        TableSpan::new(off_gtdt, gtdt.len() as u64),
+        TableSpan::new(off_mcfg, mcfg.len() as u64),
+        TableSpan::new(off_spcr, spcr.len() as u64),
+    ];
+
     let mut tables = Vec::new();
     tables.extend_from_slice(&xsdt);
     tables.extend_from_slice(&dsdt);
@@ -188,9 +215,195 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     tables.extend_from_slice(&mcfg);
     tables.extend_from_slice(&spcr);
 
-    let rsdp = build_rsdp(TABLES_BASE + off_xsdt);
+    let mut rsdp = build_rsdp(TABLES_BASE + off_xsdt);
+    let loader = build_table_loader(
+        &mut rsdp,
+        &mut tables,
+        LoaderLayout {
+            xsdt: off_xsdt,
+            fadt: off_fadt,
+            table_spans: &table_spans,
+            xsdt_entries: &[off_fadt, off_madt, off_gtdt, off_mcfg, off_spcr],
+        },
+    );
 
-    AcpiBlobs { rsdp, tables }
+    AcpiBlobs {
+        rsdp,
+        tables,
+        loader,
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TableSpan {
+    start: u32,
+    len: u32,
+}
+
+impl TableSpan {
+    fn new(start: u64, len: u64) -> Self {
+        Self {
+            start: u32::try_from(start).expect("ACPI table offset exceeds 4 GiB"),
+            len: u32::try_from(len).expect("ACPI table length exceeds 4 GiB"),
+        }
+    }
+}
+
+struct LoaderLayout<'a> {
+    xsdt: u64,
+    fadt: u64,
+    table_spans: &'a [TableSpan],
+    xsdt_entries: &'a [u64],
+}
+
+const LOADER_ENTRY_LEN: usize = 128;
+const LOADER_PAYLOAD_LEN: usize = 124;
+const LOADER_FILE_NAME_LEN: usize = 56;
+
+const LOADER_CMD_ALLOCATE: u32 = 1;
+const LOADER_CMD_ADD_POINTER: u32 = 2;
+const LOADER_CMD_ADD_CHECKSUM: u32 = 3;
+
+const LOADER_ZONE_HIGH: u8 = 1;
+const LOADER_ZONE_FSEG: u8 = 2;
+
+const TABLE_ALLOC_ALIGN: u32 = 64;
+const RSDP_ALLOC_ALIGN: u32 = 16;
+const ACPI_CHECKSUM_OFFSET: u32 = 9;
+const RSDP_V1_CHECKSUM_OFFSET: u32 = 8;
+const RSDP_EXT_CHECKSUM_OFFSET: u32 = 32;
+const RSDP_XSDT_OFFSET: u32 = 24;
+const FADT_X_DSDT_OFFSET: u32 = 140;
+
+fn build_table_loader(rsdp: &mut [u8], tables: &mut [u8], layout: LoaderLayout<'_>) -> Vec<u8> {
+    let mut loader = Vec::new();
+
+    // QEMU prepends allocation commands while building; emit the final order
+    // directly so all files are allocated before pointer/checksum commands.
+    loader.extend(alloc_entry(
+        ACPI_RSDP_FILE,
+        RSDP_ALLOC_ALIGN,
+        LOADER_ZONE_FSEG,
+    ));
+    loader.extend(alloc_entry(
+        ACPI_TABLE_FILE,
+        TABLE_ALLOC_ALIGN,
+        LOADER_ZONE_HIGH,
+    ));
+
+    loader.extend(add_pointer_entry(
+        ACPI_TABLE_FILE,
+        u32_checked(layout.fadt + u64::from(FADT_X_DSDT_OFFSET)),
+        8,
+        ACPI_TABLE_FILE,
+    ));
+
+    for (idx, _) in layout.xsdt_entries.iter().enumerate() {
+        loader.extend(add_pointer_entry(
+            ACPI_TABLE_FILE,
+            u32_checked(layout.xsdt + ACPI_HEADER_LEN as u64 + (idx as u64) * 8),
+            8,
+            ACPI_TABLE_FILE,
+        ));
+    }
+
+    loader.extend(add_pointer_entry(
+        ACPI_RSDP_FILE,
+        RSDP_XSDT_OFFSET,
+        8,
+        ACPI_TABLE_FILE,
+    ));
+
+    for span in layout.table_spans {
+        tables[(span.start + ACPI_CHECKSUM_OFFSET) as usize] = 0;
+        loader.extend(add_checksum_entry(
+            ACPI_TABLE_FILE,
+            span.start + ACPI_CHECKSUM_OFFSET,
+            span.start,
+            span.len,
+        ));
+    }
+
+    rsdp[RSDP_V1_CHECKSUM_OFFSET as usize] = 0;
+    rsdp[RSDP_EXT_CHECKSUM_OFFSET as usize] = 0;
+    loader.extend(add_checksum_entry(
+        ACPI_RSDP_FILE,
+        RSDP_V1_CHECKSUM_OFFSET,
+        0,
+        20,
+    ));
+    loader.extend(add_checksum_entry(
+        ACPI_RSDP_FILE,
+        RSDP_EXT_CHECKSUM_OFFSET,
+        0,
+        36,
+    ));
+
+    debug_assert_eq!(loader.len() % LOADER_ENTRY_LEN, 0);
+    loader
+}
+
+fn u32_checked(v: u64) -> u32 {
+    u32::try_from(v).expect("ACPI loader offset exceeds 4 GiB")
+}
+
+fn loader_entry(command: u32, payload: [u8; LOADER_PAYLOAD_LEN]) -> [u8; LOADER_ENTRY_LEN] {
+    let mut entry = [0u8; LOADER_ENTRY_LEN];
+    entry[..4].copy_from_slice(&command.to_le_bytes());
+    entry[4..].copy_from_slice(&payload);
+    entry
+}
+
+fn write_loader_name(dst: &mut [u8], name: &str) {
+    assert!(
+        name.len() < LOADER_FILE_NAME_LEN,
+        "loader file name must be < {LOADER_FILE_NAME_LEN} bytes: {name:?}",
+    );
+    dst[..name.len()].copy_from_slice(name.as_bytes());
+}
+
+fn alloc_entry(file: &str, align: u32, zone: u8) -> [u8; LOADER_ENTRY_LEN] {
+    let mut payload = [0u8; LOADER_PAYLOAD_LEN];
+    write_loader_name(&mut payload[..LOADER_FILE_NAME_LEN], file);
+    payload[LOADER_FILE_NAME_LEN..LOADER_FILE_NAME_LEN + 4].copy_from_slice(&align.to_le_bytes());
+    payload[LOADER_FILE_NAME_LEN + 4] = zone;
+    loader_entry(LOADER_CMD_ALLOCATE, payload)
+}
+
+fn add_pointer_entry(
+    dest_file: &str,
+    offset: u32,
+    size: u8,
+    src_file: &str,
+) -> [u8; LOADER_ENTRY_LEN] {
+    assert!(matches!(size, 1 | 2 | 4 | 8), "invalid pointer size {size}");
+    let mut payload = [0u8; LOADER_PAYLOAD_LEN];
+    write_loader_name(&mut payload[..LOADER_FILE_NAME_LEN], dest_file);
+    write_loader_name(
+        &mut payload[LOADER_FILE_NAME_LEN..LOADER_FILE_NAME_LEN * 2],
+        src_file,
+    );
+    let off = LOADER_FILE_NAME_LEN * 2;
+    payload[off..off + 4].copy_from_slice(&offset.to_le_bytes());
+    payload[off + 4] = size;
+    loader_entry(LOADER_CMD_ADD_POINTER, payload)
+}
+
+fn add_checksum_entry(
+    file: &str,
+    result_offset: u32,
+    start: u32,
+    len: u32,
+) -> [u8; LOADER_ENTRY_LEN] {
+    let mut payload = [0u8; LOADER_PAYLOAD_LEN];
+    write_loader_name(&mut payload[..LOADER_FILE_NAME_LEN], file);
+    let mut off = LOADER_FILE_NAME_LEN;
+    payload[off..off + 4].copy_from_slice(&result_offset.to_le_bytes());
+    off += 4;
+    payload[off..off + 4].copy_from_slice(&start.to_le_bytes());
+    off += 4;
+    payload[off..off + 4].copy_from_slice(&len.to_le_bytes());
+    loader_entry(LOADER_CMD_ADD_CHECKSUM, payload)
 }
 
 /// Serialized length of an XSDT listing `entries` tables (header + 8 bytes each).
@@ -464,6 +677,94 @@ mod tests {
             b[off + 7],
         ])
     }
+    fn le_name(b: &[u8], off: usize) -> String {
+        let name = &b[off..off + LOADER_FILE_NAME_LEN];
+        let len = name
+            .iter()
+            .position(|&byte| byte == 0)
+            .unwrap_or(LOADER_FILE_NAME_LEN);
+        std::str::from_utf8(&name[..len]).unwrap().to_string()
+    }
+    fn read_le_sized(b: &[u8], off: usize, size: u8) -> u64 {
+        let mut raw = [0u8; 8];
+        raw[..size as usize].copy_from_slice(&b[off..off + size as usize]);
+        u64::from_le_bytes(raw)
+    }
+    fn write_le_sized(b: &mut [u8], off: usize, size: u8, value: u64) {
+        b[off..off + size as usize].copy_from_slice(&value.to_le_bytes()[..size as usize]);
+    }
+    fn replay_loader(blobs: &AcpiBlobs) -> (Vec<u8>, Vec<u8>) {
+        const TABLES_BASE: u64 = 0x4800_0000;
+        const RSDP_BASE: u64 = 0x000F_0000;
+
+        let mut tables = Vec::new();
+        let mut rsdp = Vec::new();
+
+        for entry in blobs.loader.chunks_exact(LOADER_ENTRY_LEN) {
+            let cmd = le32(entry, 0);
+            match cmd {
+                LOADER_CMD_ALLOCATE => {
+                    let file = le_name(entry, 4);
+                    let align = le32(entry, 4 + LOADER_FILE_NAME_LEN);
+                    let zone = entry[4 + LOADER_FILE_NAME_LEN + 4];
+                    match file.as_str() {
+                        ACPI_RSDP_FILE => {
+                            assert_eq!(align, RSDP_ALLOC_ALIGN);
+                            assert_eq!(zone, LOADER_ZONE_FSEG);
+                            rsdp = blobs.rsdp.clone();
+                        }
+                        ACPI_TABLE_FILE => {
+                            assert_eq!(align, TABLE_ALLOC_ALIGN);
+                            assert_eq!(zone, LOADER_ZONE_HIGH);
+                            tables = blobs.tables.clone();
+                        }
+                        other => panic!("unexpected ACPI allocation {other}"),
+                    }
+                }
+                LOADER_CMD_ADD_POINTER => {
+                    let pointer_file = le_name(entry, 4);
+                    let pointee_file = le_name(entry, 4 + LOADER_FILE_NAME_LEN);
+                    let off = 4 + LOADER_FILE_NAME_LEN * 2;
+                    let pointer_offset = le32(entry, off) as usize;
+                    let pointer_size = entry[off + 4];
+                    let (pointee_base, pointee_size) = match pointee_file.as_str() {
+                        ACPI_TABLE_FILE => (TABLES_BASE, tables.len()),
+                        ACPI_RSDP_FILE => (RSDP_BASE, rsdp.len()),
+                        other => panic!("unexpected pointer source {other}"),
+                    };
+                    let target = match pointer_file.as_str() {
+                        ACPI_TABLE_FILE => &mut tables,
+                        ACPI_RSDP_FILE => &mut rsdp,
+                        other => panic!("unexpected pointer destination {other}"),
+                    };
+                    let value = read_le_sized(target, pointer_offset, pointer_size);
+                    assert!(
+                        value < pointee_size as u64,
+                        "pointer offset {value:#x} must point inside {pointee_file}",
+                    );
+                    write_le_sized(target, pointer_offset, pointer_size, value + pointee_base);
+                }
+                LOADER_CMD_ADD_CHECKSUM => {
+                    let file = le_name(entry, 4);
+                    let off = 4 + LOADER_FILE_NAME_LEN;
+                    let result = le32(entry, off) as usize;
+                    let start = le32(entry, off + 4) as usize;
+                    let len = le32(entry, off + 8) as usize;
+                    let target = match file.as_str() {
+                        ACPI_TABLE_FILE => &mut tables,
+                        ACPI_RSDP_FILE => &mut rsdp,
+                        other => panic!("unexpected checksum file {other}"),
+                    };
+                    target[result] = checksum(&target[start..start + len]);
+                }
+                other => panic!("unexpected ACPI loader command {other}"),
+            }
+        }
+
+        assert!(!tables.is_empty(), "table allocation command missing");
+        assert!(!rsdp.is_empty(), "RSDP allocation command missing");
+        (rsdp, tables)
+    }
 
     /// Split the `etc/acpi/tables` blob back into (signature, slice) tables by
     /// walking each header's length field.
@@ -515,7 +816,8 @@ mod tests {
     #[test]
     fn rsdp_has_signature_and_both_checksums_valid() {
         let blobs = build_acpi(1);
-        let rsdp = &blobs.rsdp;
+        let (rsdp, _) = replay_loader(&blobs);
+        let rsdp = &rsdp;
         assert_eq!(&rsdp[..8], b"RSD PTR ");
         assert_eq!(rsdp.len(), 36);
         assert_eq!(rsdp[15], 2, "RSDP revision must be 2 (ACPI 2.0+)");
@@ -528,9 +830,43 @@ mod tests {
     #[test]
     fn every_table_is_checksum_valid() {
         let blobs = build_acpi(8);
-        for (sig, table) in split_tables(&blobs.tables) {
+        let (_, tables) = replay_loader(&blobs);
+        for (sig, table) in split_tables(&tables) {
             assert!(sums_to_zero(table), "table {sig} checksum invalid");
         }
+    }
+
+    #[test]
+    fn table_loader_has_qemu_shape_and_commands() {
+        let blobs = build_acpi(2);
+        assert_eq!(blobs.loader.len() % LOADER_ENTRY_LEN, 0);
+        let commands: Vec<u32> = blobs
+            .loader
+            .chunks_exact(LOADER_ENTRY_LEN)
+            .map(|entry| le32(entry, 0))
+            .collect();
+        assert_eq!(commands[0], LOADER_CMD_ALLOCATE);
+        assert_eq!(commands[1], LOADER_CMD_ALLOCATE);
+        assert_eq!(le_name(&blobs.loader, 4), ACPI_RSDP_FILE);
+        assert_eq!(
+            le_name(&blobs.loader, LOADER_ENTRY_LEN + 4),
+            ACPI_TABLE_FILE
+        );
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|&&cmd| cmd == LOADER_CMD_ADD_POINTER)
+                .count(),
+            7
+        );
+        // Seven ACPI tables plus RSDP v1 and extended checksums.
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|&&cmd| cmd == LOADER_CMD_ADD_CHECKSUM)
+                .count(),
+            9
+        );
     }
 
     #[test]

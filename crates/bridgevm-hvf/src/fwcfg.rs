@@ -176,6 +176,13 @@ impl FwCfg {
             name.len() < 56,
             "fw_cfg file name must be < 56 bytes: {name:?}"
         );
+        if let Some(file) = self.files.iter_mut().find(|file| file.name == name) {
+            let select = file.select;
+            file.size = u32::try_from(data.len()).expect("fw_cfg file exceeds 4 GiB");
+            self.entries.insert(select, Entry { data, writable });
+            self.rebuild_file_dir();
+            return select;
+        }
         let select = self.next_file_selector;
         self.next_file_selector = self
             .next_file_selector
@@ -429,6 +436,24 @@ mod tests {
         // The blob is reachable through its selector.
         fw.select(b);
         assert_eq!(fw.read_data(2), vec![4, 5]);
+    }
+
+    #[test]
+    fn registering_the_same_file_replaces_without_duplicate_directory_entry() {
+        let mut fw = FwCfg::new();
+        let first = fw.add_file("etc/acpi/tables", vec![1, 2]);
+        let second = fw.add_file("etc/acpi/tables", vec![3, 4, 5]);
+        assert_eq!(first, second);
+
+        fw.select(first);
+        assert_eq!(fw.read_data(3), vec![3, 4, 5]);
+
+        fw.select(KEY_FILE_DIR);
+        let dir = fw.read_data(fw.file_dir_bytes().len());
+        let count = u32::from_be_bytes([dir[0], dir[1], dir[2], dir[3]]);
+        assert_eq!(count, 1);
+        let size = u32::from_be_bytes([dir[4], dir[5], dir[6], dir[7]]);
+        assert_eq!(size, 3);
     }
 
     #[test]

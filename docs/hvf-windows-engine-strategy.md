@@ -147,8 +147,8 @@ live examples it is either `FlatGuestRam` or a direct view over the mapped HVF R
 That loop now maps pflash/RAM, loads `edk2-aarch64-code.fd`, places the generated
 DTB at `dtb_load`, serves Apple `hv_gic`, and routes Path A MMIO through
 `VirtPlatform`. The remaining work is no longer "can firmware execute"; it is the
-guest-OS contract above firmware: ACPI table-loader wiring, PCIe/NVMe devices,
-and then Linux ACPI-only / Windows install attempts.
+guest-OS contract above firmware: PCIe endpoint/BAR routing, NVMe storage, and
+then Linux ACPI-only / Windows install attempts.
 
 ### Honest status — stock ArmVirtQemu reaches UEFI Shell
 
@@ -198,7 +198,7 @@ Firmware boot is no longer the frontier. The next milestone is an ACPI-only Linu
 boot through the stock firmware, because Linux gives a useful `dmesg` oracle before
 Windows. To get there:
 
-- wire `acpi.rs` into `VirtPlatform::set_acpi_tables()` via `fw_cfg` entries
+- keep the QEMU-style ACPI delivery wired through `fw_cfg` entries
   `etc/acpi/rsdp`, `etc/acpi/tables` and `etc/table-loader`;
 - expose a real PCIe endpoint and BAR routing for the existing NVMe model;
 - persist pflash variable writes back to a vars image so boot order and NVRAM state

@@ -16,6 +16,7 @@
 //! code-signed Apple Silicon host (the step-6 Linux ACPI-only bring-up in
 //! `docs/hvf-windows-engine-strategy.md`).
 
+use crate::acpi::{build_acpi, ACPI_LOADER_FILE, ACPI_RSDP_FILE, ACPI_TABLE_FILE};
 use crate::dtb::{build_virt_fdt, VirtFdtConfig};
 use crate::fwcfg::{FwCfg, GuestMemoryMut};
 use crate::machine::{self, Region};
@@ -78,12 +79,15 @@ impl VirtPlatform {
     pub fn new(cfg: VirtFdtConfig) -> Self {
         let dtb = build_virt_fdt(&cfg);
         let mut fw_cfg = FwCfg::new();
-        // Minimal real control entries the firmware/OS consult. ACPI table blobs
-        // are registered later once generated (or reused from the QEMU oracle).
+        // Minimal real control entries the firmware/OS consult.
         fw_cfg.add_file("bootorder", Vec::new());
         // `etc/system-states` advertises which ACPI S-states are enabled; the
         // firmware may write it back, so it is writable. 6 bytes: S3, S4, ... .
         fw_cfg.add_writable_file("etc/system-states", vec![0u8; 6]);
+        let acpi = build_acpi(cfg.cpu_count);
+        fw_cfg.add_file(ACPI_RSDP_FILE, acpi.rsdp);
+        fw_cfg.add_file(ACPI_TABLE_FILE, acpi.tables);
+        fw_cfg.add_file(ACPI_LOADER_FILE, acpi.loader);
         Self {
             cfg,
             fw_cfg,
@@ -112,9 +116,9 @@ impl VirtPlatform {
     /// known-good bytes (e.g. captured from the QEMU oracle) so the rest of the
     /// pipeline can be exercised end to end.
     pub fn set_acpi_tables(&mut self, rsdp: Vec<u8>, tables: Vec<u8>, loader: Vec<u8>) {
-        self.fw_cfg.add_file("etc/acpi/rsdp", rsdp);
-        self.fw_cfg.add_file("etc/acpi/tables", tables);
-        self.fw_cfg.add_file("etc/table-loader", loader);
+        self.fw_cfg.add_file(ACPI_RSDP_FILE, rsdp);
+        self.fw_cfg.add_file(ACPI_TABLE_FILE, tables);
+        self.fw_cfg.add_file(ACPI_LOADER_FILE, loader);
     }
 
     /// Register the SMBIOS entry point + tables (`etc/smbios/smbios-anchor`,
@@ -483,6 +487,17 @@ mod tests {
             p.on_mmio(machine::FLASH_VARS.base, MmioOp::Read { size: 4 }, &mut mem),
             MmioOutcome::ReadValue(0x0080_0080)
         );
+    }
+
+    #[test]
+    fn generated_acpi_tables_are_registered_by_default() {
+        let mut p = platform();
+        p.fw_cfg.select(crate::fwcfg::KEY_FILE_DIR);
+        let dir = p.fw_cfg.read_data(p.fw_cfg.file_dir_bytes().len());
+        let blob = String::from_utf8_lossy(&dir);
+        for name in [ACPI_RSDP_FILE, ACPI_TABLE_FILE, ACPI_LOADER_FILE] {
+            assert!(blob.contains(name), "default fw_cfg dir missing {name}");
+        }
     }
 
     #[test]
