@@ -29,6 +29,7 @@ use crate::pcie::{PcieEcam, NVME_BDF};
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
 use crate::pl031::Pl031;
+use crate::smbios::{build_smbios, SMBIOS_ANCHOR_FILE, SMBIOS_TABLE_FILE};
 
 const DEFAULT_NVME_DISK_BYTES: usize = 16 * 1024 * 1024;
 
@@ -96,6 +97,9 @@ impl VirtPlatform {
         fw_cfg.add_file(ACPI_RSDP_FILE, acpi.rsdp);
         fw_cfg.add_file(ACPI_TABLE_FILE, acpi.tables);
         fw_cfg.add_file(ACPI_LOADER_FILE, acpi.loader);
+        let smbios = build_smbios(cfg.cpu_count, cfg.ram_size);
+        fw_cfg.add_file(SMBIOS_ANCHOR_FILE, smbios.anchor);
+        fw_cfg.add_file(SMBIOS_TABLE_FILE, smbios.tables);
         Self {
             cfg,
             fw_cfg,
@@ -182,8 +186,8 @@ impl VirtPlatform {
     /// Register the SMBIOS entry point + tables (`etc/smbios/smbios-anchor`,
     /// `etc/smbios/smbios-tables`).
     pub fn set_smbios(&mut self, anchor: Vec<u8>, tables: Vec<u8>) {
-        self.fw_cfg.add_file("etc/smbios/smbios-anchor", anchor);
-        self.fw_cfg.add_file("etc/smbios/smbios-tables", tables);
+        self.fw_cfg.add_file(SMBIOS_ANCHOR_FILE, anchor);
+        self.fw_cfg.add_file(SMBIOS_TABLE_FILE, tables);
     }
 
     /// The generated device tree blob (DTB magic `0xd00dfeed`).
@@ -911,6 +915,17 @@ mod tests {
     }
 
     #[test]
+    fn generated_smbios_tables_are_registered_by_default() {
+        let mut p = platform();
+        p.fw_cfg.select(crate::fwcfg::KEY_FILE_DIR);
+        let dir = p.fw_cfg.read_data(p.fw_cfg.file_dir_bytes().len());
+        let blob = String::from_utf8_lossy(&dir);
+        for name in [SMBIOS_ANCHOR_FILE, SMBIOS_TABLE_FILE] {
+            assert!(blob.contains(name), "default fw_cfg dir missing {name}");
+        }
+    }
+
+    #[test]
     fn linux_boot_blobs_register_qemu_numeric_fw_cfg_items() {
         let mut p = platform();
         p.set_linux_boot_blobs(
@@ -960,6 +975,7 @@ mod tests {
             "etc/acpi/tables",
             "etc/table-loader",
             "etc/smbios/smbios-anchor",
+            "etc/smbios/smbios-tables",
             "bootorder",
         ] {
             assert!(blob.contains(name), "fw_cfg dir missing {name}");
