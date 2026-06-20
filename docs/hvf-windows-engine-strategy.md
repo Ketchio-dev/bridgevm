@@ -80,9 +80,9 @@ ACPI-only boot): Linux gives you `dmesg`, Windows gives you a sad face.
 | 2 | `virt` machine model + QEMU-shaped DTB generator | **done (modelled + `dtc`-verified)** | `src/machine.rs` (single source of truth + no-overlap validator) and `src/dtb.rs` (`build_virt_fdt`, decompiles `dtc`-clean against the contract). Wiring the map into the live run loop is step 3. |
 | 3 | Assemble the `virt` platform + `fw_cfg` behind one MMIO-exit entry point; feed `etc/acpi/tables`/`etc/acpi/rsdp`/SMBIOS/boot order | **done (assembled + live-wired)** | `src/platform_virt.rs` (`VirtPlatform`): owns the map, populated `fw_cfg`, DTB, ACPI table-loader blobs, guest-memory layout and MMIO dispatch; `on_mmio()` is the single call the live run loop makes |
 | 4 | GICv3: spike Apple `hv_gic_create` (macOS 15+, create before vCPUs); else model GICv3+ITS at QEMU bases | **done (Apple `hv_gic`, live)** | distributor/redistributor, timer delivery and the MSI frame are served by Hypervisor.framework |
-| 5 | PCIe ECAM (`pci-host-ecam-generic`) + config space + MSI/MSI-X | **partial (wired, OS validation pending)** | ECAM host bridge, NVMe endpoint config space, BAR0 MMIO routing, writable MSI-X table/PBA, DTB ITS metadata, ACPI MADT ITS/IORT metadata and `hv_gic_send_msi` delivery are wired |
-| 6 | **Linux ACPI-only boot** through the stock firmware | **partial (installer userspace starts)** | QEMU-style `-kernel`/`-initrd` fw_cfg blobs boot Debian's arm64 installer kernel through EFI, ACPI, SMBIOS/DMI, GIC, timer, PL011 console binding, ACPI0007 CPU device enumeration, PCI root enumeration, QEMU-like PCI `_OSC`, basic PPTT CPU topology, PMU IRQ metadata, initramfs unpack and `/init`. The ECAM PnP reservation warning is present in the QEMU+HVF oracle too, so the active BridgeVM-only gaps are now storage/network/MSI behavior and Windows validation rather than early ACPI metadata. |
-| 7 | NVMe controller (identify + admin/IO queues) on PCIe | **partial** | minimal controller and admin/IO queues are reachable through PCIe BAR0; raw image load/snapshot is wired into the live boot probe; the endpoint raises MSI-X completions through Apple `hv_gic`; Linux/Windows storage-path validation remains |
+| 5 | PCIe ECAM (`pci-host-ecam-generic`) + config space + MSI/MSI-X | **partial (wired + Linux validated)** | ECAM host bridge, NVMe endpoint config space, BAR0 MMIO routing, writable MSI-X table/PBA, Apple GICM/GICv2m-style MSI-frame metadata and `hv_gic_send_msi` delivery are wired; Linux drives the NVMe queue through the PCI endpoint under ACPI |
+| 6 | **Linux ACPI-only boot** through the stock firmware | **partial (Ubuntu root userspace starts)** | QEMU-style `-kernel`/`-initrd` fw_cfg blobs boot Ubuntu's arm64 kernel through EFI, ACPI, SMBIOS/DMI, GIC, timer, PL011 console binding, ACPI0007 CPU device enumeration, PCI root enumeration, QEMU-like PCI `_OSC`, basic PPTT CPU topology, PMU IRQ metadata, root ext4 mount, `/boot` and `/boot/efi` mounts, `sysinit.target`, and `basic.target`. The ECAM PnP reservation warning is present in the QEMU+HVF oracle too, so the active BridgeVM-only gaps are now post-boot services, missing devices such as network/display/input, and Windows validation rather than early ACPI metadata. |
+| 7 | NVMe controller (identify + admin/IO queues) on PCIe | **partial (Linux root boot validated)** | the controller is reachable through PCIe BAR0; raw host-file media is wired into the live boot probe with read-only sparse overlays or write-through mode; PRP1/PRP2/PRP-list transfers, including PRP2 list-pointer offsets, are handled; Linux no longer reports the previous large-read `SC_INVALID_FIELD` / ext4 journal-abort failure |
 | 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | after 6–7 | success = a reproducible "where it died", diffed against QEMU |
 | 9 | GOP framebuffer + keyboard | after 8 | Setup UI + "press any key" |
 | 10 | vTPM 2.0, Secure Boot, virtio-net/guest agent | later | Windows 11 compliance + usability |
@@ -107,7 +107,7 @@ ACPI-only boot): Linux gives you `dmesg`, Windows gives you a sad face.
     `on_mmio()` entry point (6 tests, incl. a fw_cfg DMA transfer routed through
     guest RAM via the platform).
 
-  Full crate suite green at **211 passing**, zero warnings. New platform code
+  Full crate suite green at **230 passing**, zero warnings. New platform code
   lives in its own modules — the de-monolithing pattern the audit asked for,
   applied to surviving code rather than a big-bang refactor of the probe harness.
 
@@ -192,15 +192,20 @@ Other fixed bring-up blockers remain important traps for future work:
 - The DTB needs the QEMU `virt` `/flash@0` node and must omit the 64-bit PCIe MMIO
   window until the guest IPA aperture can represent it.
 
-### Current frontier — ACPI device parity for OS boot
+### Current frontier — Linux root boot to Windows installer validation
 
 Firmware boot is no longer the frontier, and neither is the old late-DXE
-`0x5fcf13b0` polling hang. The live probe now has two useful OS-level proofs:
+`0x5fcf13b0` polling hang. The live probe now has three useful OS-level proofs:
 
 - stock ArmVirtQemu firmware reaches the UEFI shell under Apple `hv_gic`;
 - QEMU direct Linux boot blobs (`BRIDGEVM_LINUX_KERNEL`/`INITRD`/`CMDLINE`) reach
   Debian's arm64 installer kernel, ACPI interpreter enablement, GIC/timer init,
   initramfs unpack, and `Run /init as init process`.
+- a real Ubuntu 24.04 ARM raw root disk attached through the modelled NVMe PCIe
+  endpoint reaches `Welcome to Ubuntu 24.04.4 LTS!`, mounts the root filesystem,
+  mounts `/boot` and `/boot/efi`, reaches `sysinit.target` and `basic.target`,
+  and no longer logs the previous `nvme0n1: I/O Cmd ... sc 0x2` /
+  `EXT4-fs error` cascade.
 - QEMU-style SMBIOS blobs in `fw_cfg` are installed by firmware and consumed by
   Linux, which now logs `SMBIOS 3.0.0 present` and a BridgeVM `DMI:` line instead
   of `DMI not present or invalid`.
@@ -229,14 +234,18 @@ The remaining OS-boot contract work is now narrower:
 - keep the QEMU-style ACPI delivery wired through `fw_cfg` entries
   `etc/acpi/rsdp`, `etc/acpi/tables` and `etc/table-loader`;
 - add the remaining ACPI parity tables/metadata that matter for Windows/Linux
-  device paths (notably DBG2; MADT ITS and IORT are now wired);
-- extend the raw-image NVMe path from load/snapshot into production-grade
-  host-file persistence and validate guest-programmed MSI-X delivery under Linux;
+  device paths (notably DBG2; Apple `hv_gic` lacks guest-visible LPIs/ITS, so
+  current MSI routing is advertised as a MADT Generic MSI Frame instead of
+  MADT ITS + IORT);
+- lift the raw-image NVMe overlay/writeback path from the live boot probe into
+  the eventual engine-facing VM configuration and keep extending it toward
+  production persistence semantics;
 - lift the pflash variable snapshot/writeback hooks from the live boot probe into
   the eventual engine-facing VM configuration (`src/media.rs` now holds the
   reusable host-file policy) so boot order and NVRAM state survive repeated runs
   outside ad-hoc probes;
-- then boot Linux with ACPI, diff against QEMU+HVF, and only then try Windows Setup.
+- decide the next guest-visible devices for installer usability (network, GOP
+  framebuffer, keyboard/input), diff against QEMU+HVF, and then try Windows Setup.
 
 No external host, paid entitlement, or separate machine is in the way; the whole
 loop, including the QEMU oracle, is live-debuggable here.

@@ -33,9 +33,9 @@ use std::ptr::null_mut;
 
 use bridgevm_hvf::dtb::{build_virt_fdt, VirtFdtConfig};
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
-use bridgevm_hvf::media::{read_bounded_file, MediaWrite, VirtBootMediaConfig};
+use bridgevm_hvf::machine;
+use bridgevm_hvf::media::{read_bounded_file, MediaWrite, MediaWriteKind, VirtBootMediaConfig};
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome, VirtPlatform};
-use bridgevm_hvf::{machine, pcie};
 
 /// A GuestMemoryMut view over the actual HVF-mapped guest RAM, so fw_cfg DMA
 /// reads/writes hit real firmware memory (not a throwaway buffer).
@@ -437,8 +437,8 @@ fn main() {
             0,
             "get SPI INTID range"
         );
-        let msi_intid_base = machine::spi_to_intid(machine::SPI_PCIE_INTA);
-        let msi_intid_count = u32::from(pcie::NVME_MSIX_VECTOR_COUNT);
+        let msi_intid_base = machine::GIC_MSI_INTID_BASE;
+        let msi_intid_count = machine::GIC_MSI_INTID_COUNT;
         assert!(
             msi_intid_base >= spi_intid_base
                 && msi_intid_base + msi_intid_count <= spi_intid_base + spi_intid_count,
@@ -559,15 +559,15 @@ fn main() {
         });
         platform.load_flash_vars(&vars_data);
         if let Some(nvme) = media.nvme_disk.as_ref() {
-            let data = nvme
-                .read_bounded(usize::MAX)
-                .unwrap_or_else(|e| panic!("read NVMe disk {}: {e}", nvme.path.display()));
+            platform
+                .attach_nvme_raw_file(&nvme.path, nvme.write_back)
+                .unwrap_or_else(|e| panic!("attach NVMe disk {}: {e}", nvme.path.display()));
             println!(
-                "NVMe disk loaded: {} ({} bytes)",
+                "NVMe raw disk attached: {} ({} bytes, write_back={})",
                 nvme.path.display(),
-                data.len()
+                platform.nvme_disk_len(),
+                nvme.write_back
             );
-            platform.load_nvme_disk(data);
         }
         if let Some(linux) = media.linux_boot.as_ref() {
             let kernel = linux
@@ -821,9 +821,33 @@ fn main() {
             .unwrap_or_else(|e| panic!("persist UEFI vars: {e}"));
         print_media_writes("UEFI vars", &vars_writes);
         if let Some(nvme) = media.nvme_disk.as_ref() {
-            let writes = nvme
-                .persist(platform.nvme_disk())
-                .unwrap_or_else(|e| panic!("persist NVMe disk: {e}"));
+            let writes = if let Some(image) = platform.nvme_disk_if_memory() {
+                nvme.persist(image)
+                    .unwrap_or_else(|e| panic!("persist NVMe disk: {e}"))
+            } else {
+                let mut writes = Vec::new();
+                if let Some(path) = nvme.snapshot_path.as_ref() {
+                    let bytes = platform.export_nvme_disk(path).unwrap_or_else(|e| {
+                        panic!("export NVMe disk snapshot {}: {e}", path.display())
+                    });
+                    writes.push(MediaWrite {
+                        kind: MediaWriteKind::Snapshot,
+                        path: path.clone(),
+                        bytes: usize::try_from(bytes).unwrap_or(usize::MAX),
+                    });
+                }
+                if nvme.write_back {
+                    platform
+                        .flush_nvme_disk()
+                        .unwrap_or_else(|e| panic!("flush NVMe disk {}: {e}", nvme.path.display()));
+                    writes.push(MediaWrite {
+                        kind: MediaWriteKind::WriteBack,
+                        path: nvme.path.clone(),
+                        bytes: usize::try_from(platform.nvme_disk_len()).unwrap_or(usize::MAX),
+                    });
+                }
+                writes
+            };
             print_media_writes("NVMe disk", &writes);
         }
         maybe_write_file("BRIDGEVM_BOOT_PROBE_SERIAL_OUT", &serial, "serial log");

@@ -50,9 +50,19 @@ pub const FLASH_VARS: Region = Region::new(0x0400_0000, 0x0400_0000);
 /// GICv3 distributor (`0x10000` @ `0x10000` alignment — matches both QEMU virt
 /// and Apple `hv_gic`).
 pub const GIC_DIST: Region = Region::new(0x0800_0000, 0x0001_0000);
-/// GICv3 ITS / MSI region (QEMU reference placement; reserved — not yet wired to
-/// Apple `hv_gic`'s MSI, so currently omitted from the generated DTB).
+/// QEMU's GICv3 ITS slot. Apple `hv_gic` exposes this same placement as a
+/// GICv2m-compatible MSI frame (`GICM_TYPER` @ 0x8, `SET_SPI_NSR` @ 0x40)
+/// rather than a guest-visible architectural ITS/LPI block.
 pub const GIC_ITS: Region = Region::new(0x0808_0000, 0x0002_0000);
+/// MSI frame register aperture consumed by Apple `hv_gic`.
+pub const GIC_MSI_FRAME: Region = Region::new(GIC_ITS.base, 0x1000);
+/// First absolute GIC INTID reserved for message-signalled PCI interrupts.
+///
+/// Keep this away from legacy INTx SPIs (35..38) so guests can use either path
+/// without sharing interrupt lines.
+pub const GIC_MSI_INTID_BASE: u32 = 64;
+/// Number of message-signalled SPI INTIDs exposed through the MSI frame.
+pub const GIC_MSI_INTID_COUNT: u32 = 64;
 /// GICv3 redistributor window — the standard QEMU virt placement, which Apple
 /// `hv_gic` also accepts (QEMU's own hvf backend uses this exact base). Apple's
 /// `redistributor_region_size` (`0x0200_0000`) is the *maximum* supported (≈256

@@ -17,6 +17,8 @@
 //! code-signed Apple Silicon host (the step-6 Linux ACPI-only bring-up in
 //! `docs/hvf-windows-engine-strategy.md`).
 
+use std::{io, path::Path};
+
 use crate::acpi::{build_acpi, ACPI_LOADER_FILE, ACPI_RSDP_FILE, ACPI_TABLE_FILE};
 use crate::dtb::{build_virt_fdt, VirtFdtConfig};
 use crate::fwcfg::{
@@ -138,10 +140,41 @@ impl VirtPlatform {
         self.nvme.load_disk_image(data);
     }
 
+    /// Attach a host raw disk file as the first NVMe namespace without reading
+    /// the whole image into memory. With `write_back = false`, guest writes stay
+    /// in a sparse overlay and are only visible through explicit export.
+    pub fn attach_nvme_raw_file(
+        &mut self,
+        path: impl AsRef<Path>,
+        write_back: bool,
+    ) -> io::Result<()> {
+        self.nvme.load_raw_file(path, write_back)
+    }
+
     /// Snapshot the first NVMe disk image, including guest writes processed so
     /// far. Live probes use this to persist an explicitly writable image.
     pub fn nvme_disk(&self) -> &[u8] {
         self.nvme.disk_image()
+    }
+
+    /// In-memory snapshot of the first NVMe disk, if the media is memory-backed.
+    pub fn nvme_disk_if_memory(&self) -> Option<&[u8]> {
+        self.nvme.disk_image_if_memory()
+    }
+
+    /// Export current NVMe media to a raw file, applying sparse overlay writes.
+    pub fn export_nvme_disk(&mut self, path: impl AsRef<Path>) -> io::Result<u64> {
+        self.nvme.export_disk_image(path)
+    }
+
+    /// Flush write-through NVMe media.
+    pub fn flush_nvme_disk(&mut self) -> io::Result<()> {
+        self.nvme.flush_disk()
+    }
+
+    /// Current byte length of the NVMe namespace backing media.
+    pub fn nvme_disk_len(&self) -> u64 {
+        self.nvme.disk_len()
     }
 
     /// Drain MSI-X messages raised by PCIe devices since the last call. The live
@@ -814,7 +847,7 @@ mod tests {
         enable_nvme_controller(&mut p, &mut mem, ASQ, ACQ);
 
         let cdw10 = (3u32 << 16) | 1;
-        let create_cq = encode_nvme_sqe(0x05, 1, 0, IO_CQ, cdw10, 0, 0);
+        let create_cq = encode_nvme_sqe(0x05, 1, 0, IO_CQ, cdw10, 1, 0);
         submit_admin_sqe(&mut p, &mut mem, ASQ, 0, &create_cq);
         let create_sq = encode_nvme_sqe(0x01, 2, 0, IO_SQ, cdw10, 1u32 << 16, 0);
         submit_admin_sqe(&mut p, &mut mem, ASQ, 1, &create_sq);

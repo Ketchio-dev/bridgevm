@@ -17,7 +17,9 @@
 //!   * Admin commands: IDENTIFY (controller + namespace), CREATE I/O
 //!     COMPLETION/SUBMISSION QUEUE, SET FEATURES (number of queues).
 //!   * One I/O queue processing NVM READ (0x02) / WRITE (0x01) against a flat
-//!     disk image with 512-byte LBAs, using PRP1 for single-page transfers.
+//!     raw disk backend with 512-byte LBAs, using PRP1/PRP2 and PRP lists for
+//!     data transfers. Unit tests usually use an in-memory image; live probes
+//!     can attach large host raw files without reading them into RAM.
 //!
 //! The DMA/queue path mirrors `fwcfg.rs`: all guest-memory traffic flows through
 //! the shared [`GuestMemoryMut`] trait, and completions are written straight
@@ -25,6 +27,13 @@
 //!
 //! References: NVM Express Base Specification 1.4, sections 3 (controller
 //! registers), 5 (admin command set) and the NVM Command Set; QEMU `hw/nvme/`.
+
+use std::{
+    collections::BTreeMap,
+    fs::{File, OpenOptions},
+    io::{self, Read, Seek, SeekFrom, Write},
+    path::Path,
+};
 
 use crate::fwcfg::GuestMemoryMut;
 use crate::msix::{MsixMessage, MsixTable};
@@ -38,6 +47,9 @@ pub const CQ_ENTRY_SIZE: u64 = 16;
 pub const LBA_SIZE: usize = 512;
 /// Guest-visible memory page size assumed for PRP transfers (single page).
 pub const PAGE_SIZE: usize = 4096;
+const PAGE_SIZE_U64: u64 = PAGE_SIZE as u64;
+const FILE_OVERLAY_CHUNK_SIZE: u64 = PAGE_SIZE_U64;
+const EXPORT_CHUNK_SIZE: usize = 1024 * 1024;
 /// Maximum number of submission/completion queue entries we advertise
 /// (`CAP.MQES` is 0-based, so the wire value is `MAX_QUEUE_ENTRIES - 1`).
 pub const MAX_QUEUE_ENTRIES: u16 = 64;
@@ -97,6 +109,7 @@ const CSTS_RDY_BIT: u32 = 1 << 0;
 // ---- Admin opcodes (NVMe 1.4 §5, Figure 139) ------------------------------
 const ADMIN_OP_DELETE_IO_SQ: u8 = 0x00;
 const ADMIN_OP_CREATE_IO_SQ: u8 = 0x01;
+const ADMIN_OP_GET_LOG_PAGE: u8 = 0x02;
 const ADMIN_OP_DELETE_IO_CQ: u8 = 0x04;
 const ADMIN_OP_CREATE_IO_CQ: u8 = 0x05;
 const ADMIN_OP_IDENTIFY: u8 = 0x06;
@@ -109,9 +122,19 @@ const NVM_OP_READ: u8 = 0x02;
 // ---- IDENTIFY CNS values (NVMe 1.4 §5.15.1) -------------------------------
 const IDENTIFY_CNS_NAMESPACE: u32 = 0x00;
 const IDENTIFY_CNS_CONTROLLER: u32 = 0x01;
+const IDENTIFY_CNS_ACTIVE_NAMESPACE_LIST: u32 = 0x02;
+const IDENTIFY_CNS_NAMESPACE_DESCRIPTOR_LIST: u32 = 0x03;
 
 // ---- SET FEATURES feature IDs (NVMe 1.4 §5.21.1) --------------------------
 const FEATURE_NUMBER_OF_QUEUES: u8 = 0x07;
+
+// ---- CREATE I/O COMPLETION QUEUE fields (NVMe 1.4 §5.3) -------------------
+const CREATE_IO_CQ_PC_BIT: u32 = 1 << 0;
+const CREATE_IO_CQ_IEN_BIT: u32 = 1 << 1;
+const CREATE_IO_CQ_IV_SHIFT: u32 = 16;
+
+// ---- GET LOG PAGE log identifiers (NVMe 1.4 §5.14.1) ----------------------
+const LOG_PAGE_SMART_HEALTH: u8 = 0x02;
 
 // ---- Completion status codes (NVMe 1.4 §4.6.1, generic command status) ----
 /// Successful completion (status code type 0, code 0).
@@ -123,6 +146,12 @@ const SC_INVALID_OPCODE: u16 = 0x0001;
 
 /// The single namespace's identifier (NSID 1).
 pub const NSID: u32 = 1;
+
+const NS_EUI64: [u8; 8] = *b"BVMNVME1";
+const NS_NGUID: [u8; 16] = *b"BridgeVM-NVMeNS1";
+const NS_UUID: [u8; 16] = [
+    0x42, 0x56, 0x4d, 0x00, 0x20, 0x26, 0x06, 0x20, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+];
 
 /// A decoded 64-byte NVMe submission-queue entry. Only the fields this minimal
 /// model consumes are surfaced; everything is read from guest RAM little-endian.
@@ -209,6 +238,8 @@ struct CompletionQueue {
     head: u16,
     /// MSI-X vector to signal when this completion queue receives an entry.
     interrupt_vector: u16,
+    /// Whether completions on this CQ should generate an interrupt.
+    interrupts_enabled: bool,
 }
 
 /// Completion metadata that the platform layer turns into an interrupt.
@@ -218,8 +249,192 @@ pub struct NvmeCompletionEvent {
     pub vector: u16,
 }
 
+#[derive(Debug)]
+enum DiskBackend {
+    Memory(Vec<u8>),
+    RawFile(RawFileDisk),
+}
+
+#[derive(Debug)]
+struct RawFileDisk {
+    file: File,
+    len: u64,
+    overlay: BTreeMap<u64, Vec<u8>>,
+    write_back: bool,
+}
+
+impl DiskBackend {
+    fn memory(mut disk: Vec<u8>) -> Self {
+        let len = rounded_disk_len(disk.len());
+        disk.resize(len, 0);
+        Self::Memory(disk)
+    }
+
+    fn raw_file(path: impl AsRef<Path>, write_back: bool) -> io::Result<Self> {
+        let path = path.as_ref();
+        let file = OpenOptions::new().read(true).write(write_back).open(path)?;
+        let len = file.metadata()?.len();
+        if len % LBA_SIZE as u64 != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "{} is {len} bytes, not a multiple of the {LBA_SIZE}-byte NVMe LBA size",
+                    path.display()
+                ),
+            ));
+        }
+        Ok(Self::RawFile(RawFileDisk {
+            file,
+            len,
+            overlay: BTreeMap::new(),
+            write_back,
+        }))
+    }
+
+    fn byte_len(&self) -> u64 {
+        match self {
+            Self::Memory(disk) => disk.len() as u64,
+            Self::RawFile(disk) => disk.len,
+        }
+    }
+
+    fn memory_image(&self) -> Option<&[u8]> {
+        match self {
+            Self::Memory(disk) => Some(disk),
+            Self::RawFile(_) => None,
+        }
+    }
+
+    fn read_at(&mut self, offset: u64, len: usize) -> io::Result<Vec<u8>> {
+        self.validate_range(offset, len)?;
+        match self {
+            Self::Memory(disk) => {
+                let start = offset as usize;
+                Ok(disk[start..start + len].to_vec())
+            }
+            Self::RawFile(disk) => disk.read_at(offset, len),
+        }
+    }
+
+    fn write_at(&mut self, offset: u64, data: &[u8]) -> io::Result<()> {
+        self.validate_range(offset, data.len())?;
+        match self {
+            Self::Memory(disk) => {
+                let start = offset as usize;
+                disk[start..start + data.len()].copy_from_slice(data);
+                Ok(())
+            }
+            Self::RawFile(disk) => disk.write_at(offset, data),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            Self::Memory(_) => Ok(()),
+            Self::RawFile(disk) => disk.file.flush(),
+        }
+    }
+
+    fn export_to_path(&mut self, path: impl AsRef<Path>) -> io::Result<u64> {
+        let mut out = File::create(path)?;
+        let len = self.byte_len();
+        let mut offset = 0u64;
+        while offset < len {
+            let chunk_len = (len - offset).min(EXPORT_CHUNK_SIZE as u64) as usize;
+            let chunk = self.read_at(offset, chunk_len)?;
+            out.write_all(&chunk)?;
+            offset += chunk_len as u64;
+        }
+        out.flush()?;
+        Ok(len)
+    }
+
+    fn validate_range(&self, offset: u64, len: usize) -> io::Result<()> {
+        let end = offset.checked_add(len as u64).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "NVMe disk range overflows")
+        })?;
+        if end > self.byte_len() {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!(
+                    "NVMe disk range {offset:#x}..{end:#x} exceeds image size {:#x}",
+                    self.byte_len()
+                ),
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl RawFileDisk {
+    fn read_at(&mut self, offset: u64, len: usize) -> io::Result<Vec<u8>> {
+        let mut out = vec![0u8; len];
+        if len == 0 {
+            return Ok(out);
+        }
+        let end = offset + len as u64;
+        self.file.seek(SeekFrom::Start(offset))?;
+        self.file.read_exact(&mut out)?;
+        for (&chunk_base, chunk) in self.overlay.range(..end) {
+            let chunk_end = chunk_base + chunk.len() as u64;
+            if chunk_end <= offset {
+                continue;
+            }
+            let copy_start = offset.max(chunk_base);
+            let copy_end = end.min(chunk_end);
+            let src = (copy_start - chunk_base) as usize;
+            let dst = (copy_start - offset) as usize;
+            let copy_len = (copy_end - copy_start) as usize;
+            out[dst..dst + copy_len].copy_from_slice(&chunk[src..src + copy_len]);
+        }
+        Ok(out)
+    }
+
+    fn write_at(&mut self, offset: u64, data: &[u8]) -> io::Result<()> {
+        if data.is_empty() {
+            return Ok(());
+        }
+        if self.write_back {
+            self.file.seek(SeekFrom::Start(offset))?;
+            self.file.write_all(data)?;
+            return Ok(());
+        }
+
+        let mut copied = 0usize;
+        while copied < data.len() {
+            let abs = offset + copied as u64;
+            let chunk_base = (abs / FILE_OVERLAY_CHUNK_SIZE) * FILE_OVERLAY_CHUNK_SIZE;
+            let chunk_len = self.chunk_len(chunk_base)?;
+            let chunk_off = (abs - chunk_base) as usize;
+            let copy_len = (data.len() - copied).min(chunk_len - chunk_off);
+
+            if !self.overlay.contains_key(&chunk_base) {
+                let mut chunk = vec![0u8; chunk_len];
+                self.file.seek(SeekFrom::Start(chunk_base))?;
+                self.file.read_exact(&mut chunk)?;
+                self.overlay.insert(chunk_base, chunk);
+            }
+            let chunk = self.overlay.get_mut(&chunk_base).unwrap();
+            chunk[chunk_off..chunk_off + copy_len]
+                .copy_from_slice(&data[copied..copied + copy_len]);
+            copied += copy_len;
+        }
+        Ok(())
+    }
+
+    fn chunk_len(&self, chunk_base: u64) -> io::Result<usize> {
+        if chunk_base >= self.len {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "overlay chunk starts past the NVMe image",
+            ));
+        }
+        Ok((self.len - chunk_base).min(FILE_OVERLAY_CHUNK_SIZE) as usize)
+    }
+}
+
 /// A modelled minimal NVMe controller.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct NvmeController {
     // --- BAR0 register backing store ---
     cc: u32,
@@ -234,8 +449,8 @@ pub struct NvmeController {
     cqs: Vec<Option<CompletionQueue>>,
 
     // --- Backend ---
-    /// Flat disk backing store, `LBA_SIZE`-byte logical blocks.
-    disk: Vec<u8>,
+    /// Raw disk backing store, `LBA_SIZE`-byte logical blocks.
+    disk: DiskBackend,
     /// Negotiated maximum number of I/O queue pairs (SET FEATURES 0x07).
     max_io_queues: u16,
     /// Command-specific result for the *next* completion's DW0 (e.g. the queue
@@ -249,15 +464,26 @@ impl NvmeController {
     /// Create a controller with a `disk_bytes`-sized backing store. The size is
     /// rounded up to a whole number of `LBA_SIZE` blocks.
     pub fn new(disk_bytes: usize) -> Self {
-        Self::with_disk_image(vec![0u8; rounded_disk_len(disk_bytes)])
+        Self::with_disk_backend(DiskBackend::memory(vec![0u8; rounded_disk_len(disk_bytes)]))
     }
 
     /// Create a controller from an existing raw disk image. The image is padded
     /// with zeros up to a whole number of `LBA_SIZE` blocks so namespace capacity
     /// and transfer bounds stay block-aligned.
-    pub fn with_disk_image(mut disk: Vec<u8>) -> Self {
-        let len = rounded_disk_len(disk.len());
-        disk.resize(len, 0);
+    pub fn with_disk_image(disk: Vec<u8>) -> Self {
+        Self::with_disk_backend(DiskBackend::memory(disk))
+    }
+
+    /// Create a controller backed by a host raw disk file. When `write_back` is
+    /// false, guest writes are kept in a sparse in-memory overlay; when true,
+    /// writes are applied directly to the host file.
+    pub fn with_raw_file(path: impl AsRef<Path>, write_back: bool) -> io::Result<Self> {
+        Ok(Self::with_disk_backend(DiskBackend::raw_file(
+            path, write_back,
+        )?))
+    }
+
+    fn with_disk_backend(disk: DiskBackend) -> Self {
         Self {
             cc: 0,
             csts: 0,
@@ -284,15 +510,46 @@ impl NvmeController {
         *self = Self::with_disk_image(disk);
     }
 
+    /// Replace the backing disk with a host raw file and reset controller state.
+    pub fn load_raw_file(&mut self, path: impl AsRef<Path>, write_back: bool) -> io::Result<()> {
+        *self = Self::with_raw_file(path, write_back)?;
+        Ok(())
+    }
+
     /// Snapshot of the current disk image, including guest writes that have been
-    /// processed through the NVMe queues.
+    /// processed through the NVMe queues. This is only available for the small
+    /// in-memory backend used by unit tests and ad-hoc media.
     pub fn disk_image(&self) -> &[u8] {
-        &self.disk
+        self.disk
+            .memory_image()
+            .expect("NVMe disk image is host-file backed; export it instead")
+    }
+
+    /// Snapshot view for callers that need to distinguish memory-backed media
+    /// from large host-file-backed media.
+    pub fn disk_image_if_memory(&self) -> Option<&[u8]> {
+        self.disk.memory_image()
+    }
+
+    /// Export the full current disk image to `path`, applying any sparse overlay
+    /// writes on top of the source raw file.
+    pub fn export_disk_image(&mut self, path: impl AsRef<Path>) -> io::Result<u64> {
+        self.disk.export_to_path(path)
+    }
+
+    /// Flush host-file-backed write-through media.
+    pub fn flush_disk(&mut self) -> io::Result<()> {
+        self.disk.flush()
+    }
+
+    /// Current byte length of the backing disk.
+    pub fn disk_len(&self) -> u64 {
+        self.disk.byte_len()
     }
 
     /// Number of `LBA_SIZE`-byte logical blocks in the backing disk.
     pub fn block_count(&self) -> u64 {
-        (self.disk.len() / LBA_SIZE) as u64
+        self.disk.byte_len() / LBA_SIZE as u64
     }
 
     /// The assembled 64-bit `CAP` register value.
@@ -389,6 +646,7 @@ impl NvmeController {
                 phase: true,
                 head: 0,
                 interrupt_vector: 0,
+                interrupts_enabled: true,
             });
             self.csts |= CSTS_RDY_BIT;
         } else if !now_enabled && was_enabled {
@@ -466,7 +724,28 @@ impl NvmeController {
             } else {
                 self.execute_io(&cmd, mem)
             };
+            if nvme_trace_enabled() {
+                let kind = if qid == 0 { "admin" } else { "io" };
+                println!(
+                    "NVME {kind} qid={qid} cid={} op={:#04x} nsid={} cdw10={:#010x} cdw11={:#010x} cdw12={:#010x} prp1={:#x} prp2={:#x} status={:#06x}",
+                    cmd.command_id,
+                    cmd.opcode,
+                    cmd.nsid,
+                    cmd.cdw10,
+                    cmd.cdw11,
+                    cmd.cdw12,
+                    cmd.prp1,
+                    cmd.prp2,
+                    status
+                );
+            }
             if let Some(completion) = self.post_completion(cqid, qid as u16, &cmd, status, mem) {
+                if nvme_trace_enabled() {
+                    println!(
+                        "NVME completion cid={} sqid={} cqid={} vector={}",
+                        cmd.command_id, qid, completion.cqid, completion.vector
+                    );
+                }
                 completions.push(completion);
             }
         }
@@ -476,6 +755,7 @@ impl NvmeController {
     fn execute_admin(&mut self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
         match cmd.opcode {
             ADMIN_OP_IDENTIFY => self.admin_identify(cmd, mem),
+            ADMIN_OP_GET_LOG_PAGE => self.admin_get_log_page(cmd, mem),
             ADMIN_OP_CREATE_IO_CQ => self.admin_create_io_cq(cmd),
             ADMIN_OP_CREATE_IO_SQ => self.admin_create_io_sq(cmd),
             ADMIN_OP_SET_FEATURES => self.admin_set_features(cmd),
@@ -489,6 +769,14 @@ impl NvmeController {
         let cns = cmd.cdw10 & 0xff;
         let data = match cns {
             IDENTIFY_CNS_CONTROLLER => self.identify_controller(),
+            IDENTIFY_CNS_ACTIVE_NAMESPACE_LIST => self.identify_active_namespace_list(cmd.nsid),
+            IDENTIFY_CNS_NAMESPACE_DESCRIPTOR_LIST => {
+                if cmd.nsid == NSID {
+                    self.identify_namespace_descriptor_list()
+                } else {
+                    return SC_INVALID_FIELD;
+                }
+            }
             IDENTIFY_CNS_NAMESPACE => {
                 if cmd.nsid == NSID {
                     self.identify_namespace()
@@ -499,6 +787,17 @@ impl NvmeController {
             }
             _ => return SC_INVALID_FIELD,
         };
+        if nvme_trace_enabled() {
+            let label = identify_cns_name(cns);
+            let preview_len = data.len().min(32);
+            println!(
+                "NVME identify {label} cns={cns:#x} nsid={} len={} first={} block_count={}",
+                cmd.nsid,
+                data.len(),
+                hex_preview(&data[..preview_len]),
+                self.block_count()
+            );
+        }
         if mem.write_bytes(cmd.prp1, &data) {
             SC_SUCCESS
         } else {
@@ -518,12 +817,20 @@ impl NvmeController {
         write_ascii(&mut d[64..72], "1.0");
         // RAB (72) recommended arbitration burst.
         d[72] = 0;
+        // VER (80..84): identify data agrees with VS.
+        d[80..84].copy_from_slice(&NVME_VERSION_1_4_0.to_le_bytes());
         // SQES (512): min/max submission-queue entry size = 2^6 = 64 bytes.
         d[512] = 0x66;
         // CQES (513): min/max completion-queue entry size = 2^4 = 16 bytes.
         d[513] = 0x44;
         // NN (516..520): number of namespaces = 1.
         d[516..520].copy_from_slice(&1u32.to_le_bytes());
+        // SUBNQN (768..1024): NUL-terminated subsystem NQN. Linux warns for
+        // NVMe >= 1.2.1 if this field is empty or consumes the whole NQN field.
+        write_cstr(
+            &mut d[768..1024],
+            "nqn.2026-06.dev.bridgevm:bridgevm-hvf:nvme0",
+        );
         d
     }
 
@@ -539,19 +846,89 @@ impl NvmeController {
         d[25] = 0;
         // FLBAS (26): formatted LBA size ⇒ format index 0.
         d[26] = 0;
+        // NGUID (104..120) / EUI64 (120..128): stable non-zero namespace IDs.
+        d[104..120].copy_from_slice(&NS_NGUID);
+        d[120..128].copy_from_slice(&NS_EUI64);
         // LBAF0 (128..132): MS=0, LBADS = log2(512) = 9 (bits 23:16), RP=0.
         let lbads: u32 = 9 << 16;
         d[128..132].copy_from_slice(&lbads.to_le_bytes());
         d
     }
 
+    /// Build a 4 KiB Identify Active Namespace ID List (CNS=0x02). The list
+    /// contains active namespace IDs greater than the command NSID, in ascending
+    /// order, terminated by zero. This model exposes exactly NSID 1.
+    fn identify_active_namespace_list(&self, after_nsid: u32) -> Vec<u8> {
+        let mut d = vec![0u8; PAGE_SIZE];
+        if after_nsid < NSID {
+            d[0..4].copy_from_slice(&NSID.to_le_bytes());
+        }
+        d
+    }
+
+    /// Build a 4 KiB Identify Namespace Identification Descriptor List
+    /// (CNS=0x03). UUID, NGUID and EUI64 descriptors mirror the stable namespace
+    /// identifiers in Identify Namespace, followed by a zero descriptor header to
+    /// terminate the list.
+    fn identify_namespace_descriptor_list(&self) -> Vec<u8> {
+        let mut d = vec![0u8; PAGE_SIZE];
+        let mut off = 0usize;
+        append_namespace_id_descriptor(&mut d, &mut off, 0x03, &NS_UUID);
+        append_namespace_id_descriptor(&mut d, &mut off, 0x02, &NS_NGUID);
+        append_namespace_id_descriptor(&mut d, &mut off, 0x01, &NS_EUI64);
+        d
+    }
+
+    /// GET LOG PAGE. Linux reads SMART / health information during probe; a
+    /// zeroed, normal-temperature log is enough for this minimal volatile disk.
+    fn admin_get_log_page(&self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
+        let lid = (cmd.cdw10 & 0xff) as u8;
+        let numdl = (cmd.cdw10 >> 16) & 0xffff;
+        let numdu = cmd.cdw11 & 0xffff;
+        let dword_count = ((numdu << 16) | numdl).saturating_add(1);
+        let byte_count = (dword_count as usize).saturating_mul(4).min(PAGE_SIZE);
+
+        let data = match lid {
+            LOG_PAGE_SMART_HEALTH => self.smart_health_log(byte_count),
+            _ => return SC_INVALID_FIELD,
+        };
+        if mem.write_bytes(cmd.prp1, &data) {
+            SC_SUCCESS
+        } else {
+            SC_INVALID_FIELD
+        }
+    }
+
+    fn smart_health_log(&self, byte_count: usize) -> Vec<u8> {
+        let mut d = vec![0u8; byte_count];
+        if d.len() >= 4 {
+            // Composite temperature in Kelvin, little-endian at bytes 1..3.
+            // 300K is boring and healthy.
+            d[1..3].copy_from_slice(&300u16.to_le_bytes());
+            d[3] = 100; // available spare (%)
+        }
+        if d.len() >= 5 {
+            d[4] = 10; // available spare threshold (%)
+        }
+        d
+    }
+
     /// CREATE I/O COMPLETION QUEUE (NVMe 1.4 §5.3). CDW10: QID bits 15:0,
-    /// QSIZE bits 31:16 (0-based). PRP1 is the queue base.
+    /// QSIZE bits 31:16 (0-based). CDW11: PC bit 0, IEN bit 1, interrupt
+    /// vector bits 31:16. PRP1 is the queue base.
     fn admin_create_io_cq(&mut self, cmd: &SubmissionEntry) -> u16 {
         let qid = (cmd.cdw10 & 0xffff) as usize;
         let qsize = ((cmd.cdw10 >> 16) & 0xffff) as u16 + 1;
+        let interrupt_vector = ((cmd.cdw11 >> CREATE_IO_CQ_IV_SHIFT) & 0xffff) as u16;
+        let interrupts_enabled = cmd.cdw11 & CREATE_IO_CQ_IEN_BIT != 0;
         if qid == 0 {
             return SC_INVALID_FIELD; // QID 0 is the admin queue
+        }
+        if cmd.cdw11 & CREATE_IO_CQ_PC_BIT == 0 {
+            return SC_INVALID_FIELD; // CAP.CQR requires physically contiguous queues.
+        }
+        if interrupts_enabled && interrupt_vector >= NVME_MSIX_VECTOR_COUNT {
+            return SC_INVALID_FIELD;
         }
         ensure_slot(&mut self.cqs, qid);
         self.cqs[qid] = Some(CompletionQueue {
@@ -560,7 +937,8 @@ impl NvmeController {
             tail: 0,
             phase: true,
             head: 0,
-            interrupt_vector: (cmd.cdw11 & 0xffff) as u16,
+            interrupt_vector,
+            interrupts_enabled,
         });
         SC_SUCCESS
     }
@@ -619,17 +997,25 @@ impl NvmeController {
     }
 
     /// NVM READ (0x02). SLBA in CDW10/11 (64-bit), NLB in CDW12 bits 15:0
-    /// (0-based). Single-page PRP1 transfer ⇒ at most `PAGE_SIZE` bytes.
-    fn io_read(&self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
+    /// (0-based). Data is scattered through PRP1/PRP2 or a PRP list.
+    fn io_read(&mut self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
         let Some((start, len)) = self.transfer_range(cmd) else {
             return SC_INVALID_FIELD;
         };
-        let data = self.disk[start..start + len].to_vec();
-        if mem.write_bytes(cmd.prp1, &data) {
-            SC_SUCCESS
-        } else {
-            SC_INVALID_FIELD
+        let Some(spans) = prp_spans(cmd, len, mem) else {
+            return SC_INVALID_FIELD;
+        };
+        let mut disk_off = start;
+        for (gpa, span_len) in spans {
+            let Ok(data) = self.disk.read_at(disk_off, span_len) else {
+                return SC_INVALID_FIELD;
+            };
+            if !mem.write_bytes(gpa, &data) {
+                return SC_INVALID_FIELD;
+            }
+            disk_off += span_len as u64;
         }
+        SC_SUCCESS
     }
 
     /// NVM WRITE (0x01). Same addressing as READ; copies guest data into disk.
@@ -637,27 +1023,36 @@ impl NvmeController {
         let Some((start, len)) = self.transfer_range(cmd) else {
             return SC_INVALID_FIELD;
         };
-        let Some(data) = mem.read_bytes(cmd.prp1, len) else {
+        let Some(spans) = prp_spans(cmd, len, mem) else {
             return SC_INVALID_FIELD;
         };
-        self.disk[start..start + len].copy_from_slice(&data);
+        let mut disk_off = start;
+        for (gpa, span_len) in spans {
+            let Some(data) = mem.read_bytes(gpa, span_len) else {
+                return SC_INVALID_FIELD;
+            };
+            if self.disk.write_at(disk_off, &data).is_err() {
+                return SC_INVALID_FIELD;
+            }
+            disk_off += span_len as u64;
+        }
         SC_SUCCESS
     }
 
     /// Decode (SLBA, NLB) into a byte range into `self.disk`, validating it fits
-    /// the disk and a single PRP page. Returns `(start_byte, len_bytes)`.
-    fn transfer_range(&self, cmd: &SubmissionEntry) -> Option<(usize, usize)> {
+    /// the disk. Returns `(start_byte, len_bytes)`.
+    fn transfer_range(&self, cmd: &SubmissionEntry) -> Option<(u64, usize)> {
         let slba = u64::from(cmd.cdw10) | (u64::from(cmd.cdw11) << 32);
         let nlb = u64::from(cmd.cdw12 & 0xffff) + 1; // 0-based count
-        let len = (nlb as usize).checked_mul(LBA_SIZE)?;
-        if len > PAGE_SIZE {
-            return None; // single-page PRP1 transfers only
-        }
-        let start = (slba as usize).checked_mul(LBA_SIZE)?;
-        if start.checked_add(len)? > self.disk.len() {
+        let len = nlb.checked_mul(LBA_SIZE as u64)?;
+        let start = slba.checked_mul(LBA_SIZE as u64)?;
+        if start.checked_add(len)? > self.disk.byte_len() {
             return None; // out of range
         }
-        Some((start, len))
+        if len > usize::MAX as u64 {
+            return None;
+        }
+        Some((start, len as usize))
     }
 
     /// Post a 16-byte completion-queue entry for `cmd` into completion queue
@@ -671,24 +1066,25 @@ impl NvmeController {
         mem: &mut dyn GuestMemoryMut,
     ) -> Option<NvmeCompletionEvent> {
         let dw0 = std::mem::take(&mut self.last_feature_result);
-        let (base, tail, size, phase, sq_head, interrupt_vector) = match self.cqs.get(cqid as usize)
-        {
-            Some(Some(cq)) => {
-                let sq_head = match self.sqs.get(sqid as usize) {
-                    Some(Some(sq)) => sq.head,
-                    _ => 0,
-                };
-                (
-                    cq.base,
-                    cq.tail,
-                    cq.size,
-                    cq.phase,
-                    sq_head,
-                    cq.interrupt_vector,
-                )
-            }
-            _ => return None,
-        };
+        let (base, tail, size, phase, sq_head, interrupt_vector, interrupts_enabled) =
+            match self.cqs.get(cqid as usize) {
+                Some(Some(cq)) => {
+                    let sq_head = match self.sqs.get(sqid as usize) {
+                        Some(Some(sq)) => sq.head,
+                        _ => 0,
+                    };
+                    (
+                        cq.base,
+                        cq.tail,
+                        cq.size,
+                        cq.phase,
+                        sq_head,
+                        cq.interrupt_vector,
+                        cq.interrupts_enabled,
+                    )
+                }
+                _ => return None,
+            };
 
         // Status field (CDW3 bits 31:17 = status code, bit 16 = phase tag).
         let phase_bit = u16::from(phase);
@@ -715,7 +1111,7 @@ impl NvmeController {
                 cq.phase = !cq.phase;
             }
         }
-        Some(NvmeCompletionEvent {
+        interrupts_enabled.then_some(NvmeCompletionEvent {
             cqid,
             vector: interrupt_vector,
         })
@@ -751,6 +1147,96 @@ impl NvmeController {
     }
 }
 
+/// Decode a command's PRP data pointers into guest-physical spans covering
+/// `len` bytes. PRP1 may start at an offset within the first memory page; PRP2
+/// is either the second data page or, for larger transfers, a pointer into a PRP
+/// list containing little-endian entries. The command's PRP2 list pointer may
+/// itself include an offset into the first list page; chained list-page pointers
+/// and data-page entries must be page-aligned.
+fn prp_spans(
+    cmd: &SubmissionEntry,
+    len: usize,
+    mem: &dyn GuestMemoryMut,
+) -> Option<Vec<(u64, usize)>> {
+    if len == 0 {
+        return Some(Vec::new());
+    }
+    if cmd.prp1 == 0 {
+        return None;
+    }
+
+    let mut spans = Vec::new();
+    let mut remaining = len;
+    let first_page_left = (PAGE_SIZE_U64 - (cmd.prp1 % PAGE_SIZE_U64)) as usize;
+    let first_len = remaining.min(first_page_left);
+    spans.push((cmd.prp1, first_len));
+    remaining -= first_len;
+
+    if remaining == 0 {
+        return Some(spans);
+    }
+    if cmd.prp2 == 0 {
+        return None;
+    }
+
+    if remaining <= PAGE_SIZE {
+        if cmd.prp2 % PAGE_SIZE_U64 != 0 {
+            return None;
+        }
+        spans.push((cmd.prp2, remaining));
+        return Some(spans);
+    }
+
+    let mut list_gpa = cmd.prp2;
+    let mut list_pages_seen = 0usize;
+
+    while remaining > 0 {
+        let list_offset = (list_gpa % PAGE_SIZE_U64) as usize;
+        if list_offset % 8 != 0 {
+            return None;
+        }
+        list_pages_seen += 1;
+        if list_pages_seen > 16 {
+            return None;
+        }
+
+        let raw = mem.read_bytes(list_gpa, PAGE_SIZE - list_offset)?;
+        let mut followed_chain = false;
+        let entries_in_page = raw.len() / 8;
+        for (idx, chunk) in raw.chunks_exact(8).enumerate() {
+            let entry = u64::from_le_bytes(chunk.try_into().unwrap());
+            if entry == 0 {
+                return None;
+            }
+
+            if idx == entries_in_page - 1 && remaining > PAGE_SIZE {
+                if entry % PAGE_SIZE_U64 != 0 {
+                    return None;
+                }
+                list_gpa = entry;
+                followed_chain = true;
+                break;
+            }
+
+            if entry % PAGE_SIZE_U64 != 0 {
+                return None;
+            }
+            let span_len = remaining.min(PAGE_SIZE);
+            spans.push((entry, span_len));
+            remaining -= span_len;
+            if remaining == 0 {
+                return Some(spans);
+            }
+        }
+
+        if !followed_chain {
+            return None;
+        }
+    }
+
+    Some(spans)
+}
+
 // ---- small helpers --------------------------------------------------------
 
 /// Mask `value` to a 1/2/4/8-byte access width.
@@ -765,6 +1251,32 @@ fn mask_to_size(value: u64, size: u8) -> u64 {
 
 fn is_modelled_doorbell(offset: u64) -> bool {
     (REG_DOORBELL_BASE..REG_DOORBELL_END).contains(&offset) && offset % 4 == 0
+}
+
+fn nvme_trace_enabled() -> bool {
+    matches!(
+        std::env::var("BRIDGEVM_TRACE_NVME").ok().as_deref(),
+        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
+    )
+}
+
+fn identify_cns_name(cns: u32) -> &'static str {
+    match cns {
+        IDENTIFY_CNS_NAMESPACE => "namespace",
+        IDENTIFY_CNS_CONTROLLER => "controller",
+        IDENTIFY_CNS_ACTIVE_NAMESPACE_LIST => "active-ns-list",
+        IDENTIFY_CNS_NAMESPACE_DESCRIPTOR_LIST => "ns-desc-list",
+        _ => "unknown",
+    }
+}
+
+fn hex_preview(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        use std::fmt::Write;
+        let _ = write!(&mut out, "{b:02x}");
+    }
+    out
 }
 
 fn rounded_disk_len(bytes: usize) -> usize {
@@ -802,9 +1314,35 @@ fn write_ascii(dst: &mut [u8], s: &str) {
     dst[..n].copy_from_slice(&bytes[..n]);
 }
 
+/// Copy `s` into `dst` as a C string, clearing the full destination first.
+fn write_cstr(dst: &mut [u8], s: &str) {
+    dst.fill(0);
+    if dst.is_empty() {
+        return;
+    }
+    let bytes = s.as_bytes();
+    let n = bytes.len().min(dst.len() - 1);
+    dst[..n].copy_from_slice(&bytes[..n]);
+}
+
+fn append_namespace_id_descriptor(dst: &mut [u8], off: &mut usize, nidt: u8, id: &[u8]) {
+    let end = *off + 4 + id.len();
+    assert!(end <= dst.len(), "namespace ID descriptor list overflow");
+    dst[*off] = nidt;
+    dst[*off + 1] = id.len() as u8;
+    // bytes 2..4 are reserved and remain zero.
+    dst[*off + 4..end].copy_from_slice(id);
+    *off = end;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     /// A flat span of guest RAM for exercising the queue/DMA path in tests,
     /// mirroring `fwcfg.rs`'s `FakeMem`.
@@ -855,11 +1393,25 @@ mod tests {
         cdw11: u32,
         cdw12: u32,
     ) -> [u8; 64] {
+        encode_sqe_with_prps(opcode, command_id, nsid, prp1, 0, cdw10, cdw11, cdw12)
+    }
+
+    fn encode_sqe_with_prps(
+        opcode: u8,
+        command_id: u16,
+        nsid: u32,
+        prp1: u64,
+        prp2: u64,
+        cdw10: u32,
+        cdw11: u32,
+        cdw12: u32,
+    ) -> [u8; 64] {
         let mut e = [0u8; 64];
         let cdw0 = u32::from(opcode) | (u32::from(command_id) << 16);
         e[0..4].copy_from_slice(&cdw0.to_le_bytes());
         e[4..8].copy_from_slice(&nsid.to_le_bytes());
         e[24..32].copy_from_slice(&prp1.to_le_bytes());
+        e[32..40].copy_from_slice(&prp2.to_le_bytes());
         e[40..44].copy_from_slice(&cdw10.to_le_bytes());
         e[44..48].copy_from_slice(&cdw11.to_le_bytes());
         e[48..52].copy_from_slice(&cdw12.to_le_bytes());
@@ -875,11 +1427,48 @@ mod tests {
     const DATA_BASE: u64 = 0x4000_5000; // PRP data buffer
     const QDEPTH: u16 = 8;
 
+    fn temp_path(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "bridgevm-hvf-nvme-{name}-{}-{nanos}",
+            std::process::id()
+        ))
+    }
+
     /// Enable a fresh controller with admin queues installed.
-    fn enabled_controller() -> (NvmeController, FakeMem) {
-        let mut ctrl = NvmeController::new(1 << 20); // 1 MiB disk
-        let mem = FakeMem::new(MEM_BASE, 0x8000);
+    fn enabled_controller_with_disk_and_mem_len(
+        disk: Vec<u8>,
+        mem_len: usize,
+    ) -> (NvmeController, FakeMem) {
+        let mut ctrl = NvmeController::with_disk_image(disk);
+        let mem = FakeMem::new(MEM_BASE, mem_len);
         // Program AQA (0-based sizes), ASQ, ACQ, then set CC.EN.
+        let aqa = (u32::from(QDEPTH - 1) << 16) | u32::from(QDEPTH - 1);
+        ctrl.mmio_write(REG_AQA, 4, u64::from(aqa));
+        ctrl.mmio_write(REG_ASQ, 8, ASQ_BASE);
+        ctrl.mmio_write(REG_ACQ, 8, ACQ_BASE);
+        ctrl.mmio_write(REG_CC, 4, u64::from(CC_EN_BIT));
+        (ctrl, mem)
+    }
+
+    fn enabled_controller_with_mem_len(mem_len: usize) -> (NvmeController, FakeMem) {
+        enabled_controller_with_disk_and_mem_len(vec![0u8; 1 << 20], mem_len)
+    }
+
+    fn enabled_controller() -> (NvmeController, FakeMem) {
+        enabled_controller_with_mem_len(0x8000)
+    }
+
+    fn enabled_controller_with_raw_file(
+        path: &Path,
+        write_back: bool,
+        mem_len: usize,
+    ) -> (NvmeController, FakeMem) {
+        let mut ctrl = NvmeController::with_raw_file(path, write_back).unwrap();
+        let mem = FakeMem::new(MEM_BASE, mem_len);
         let aqa = (u32::from(QDEPTH - 1) << 16) | u32::from(QDEPTH - 1);
         ctrl.mmio_write(REG_AQA, 4, u64::from(aqa));
         ctrl.mmio_write(REG_ASQ, 8, ASQ_BASE);
@@ -907,6 +1496,36 @@ mod tests {
 
     fn completion_status(entry: &[u8; 16]) -> u16 {
         u16::from_le_bytes([entry[14], entry[15]]) >> 1
+    }
+
+    fn create_io_queue_pair(
+        ctrl: &mut NvmeController,
+        mem: &mut FakeMem,
+        first_admin_slot: u16,
+        cq_cdw11: u32,
+    ) {
+        let cdw10 = (u32::from(QDEPTH - 1) << 16) | 1;
+        let cq_cmd = encode_sqe(ADMIN_OP_CREATE_IO_CQ, 1, 0, IO_CQ_BASE, cdw10, cq_cdw11, 0);
+        submit_admin(ctrl, mem, first_admin_slot, &cq_cmd);
+        assert_eq!(
+            completion_status(&read_completion(mem, ACQ_BASE, first_admin_slot)),
+            SC_SUCCESS
+        );
+
+        let sq_cmd = encode_sqe(
+            ADMIN_OP_CREATE_IO_SQ,
+            2,
+            0,
+            IO_SQ_BASE,
+            cdw10,
+            1u32 << 16,
+            0,
+        );
+        submit_admin(ctrl, mem, first_admin_slot + 1, &sq_cmd);
+        assert_eq!(
+            completion_status(&read_completion(mem, ACQ_BASE, first_admin_slot + 1)),
+            SC_SUCCESS
+        );
     }
 
     #[test]
@@ -994,6 +1613,109 @@ mod tests {
     }
 
     #[test]
+    fn raw_file_backend_uses_sparse_overlay_and_exports_snapshot() {
+        let source = temp_path("raw-overlay-source");
+        let snapshot = temp_path("raw-overlay-snapshot");
+        let slba = 5u64;
+        let start = slba as usize * LBA_SIZE;
+        let mut disk = vec![0u8; LBA_SIZE * 16];
+        let original: Vec<u8> = (0..LBA_SIZE).map(|i| 0x20 | (i % 0x20) as u8).collect();
+        disk[start..start + LBA_SIZE].copy_from_slice(&original);
+        fs::write(&source, &disk).unwrap();
+
+        let (mut ctrl, mut mem) = enabled_controller_with_raw_file(&source, false, 0x10000);
+        assert_eq!(ctrl.block_count(), 16);
+        assert!(ctrl.disk_image_if_memory().is_none());
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        let read = encode_sqe(
+            NVM_OP_READ,
+            0x30,
+            NSID,
+            DATA_BASE,
+            slba as u32,
+            (slba >> 32) as u32,
+            0,
+        );
+        assert!(mem.write_bytes(IO_SQ_BASE, &read));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+        assert_eq!(mem.read_bytes(DATA_BASE, LBA_SIZE).unwrap(), original);
+
+        let replacement: Vec<u8> = (0..LBA_SIZE).map(|i| 0x80 | (i % 0x40) as u8).collect();
+        assert!(mem.write_bytes(DATA_BASE, &replacement));
+        let write = encode_sqe(
+            NVM_OP_WRITE,
+            0x31,
+            NSID,
+            DATA_BASE,
+            slba as u32,
+            (slba >> 32) as u32,
+            0,
+        );
+        assert!(mem.write_bytes(IO_SQ_BASE + SQ_ENTRY_SIZE, &write));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 2);
+        ctrl.process(&mut mem);
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 1)),
+            SC_SUCCESS
+        );
+
+        assert_eq!(
+            &fs::read(&source).unwrap()[start..start + LBA_SIZE],
+            original.as_slice(),
+            "read-only file backend keeps guest writes in the overlay"
+        );
+        assert_eq!(
+            ctrl.export_disk_image(&snapshot).unwrap(),
+            disk.len() as u64
+        );
+        assert_eq!(
+            &fs::read(&snapshot).unwrap()[start..start + LBA_SIZE],
+            replacement.as_slice(),
+            "snapshot export applies overlay writes"
+        );
+
+        fs::remove_file(source).ok();
+        fs::remove_file(snapshot).ok();
+    }
+
+    #[test]
+    fn raw_file_backend_write_back_updates_source_file() {
+        let source = temp_path("raw-writeback-source");
+        let slba = 3u64;
+        let start = slba as usize * LBA_SIZE;
+        fs::write(&source, vec![0u8; LBA_SIZE * 8]).unwrap();
+
+        let (mut ctrl, mut mem) = enabled_controller_with_raw_file(&source, true, 0x10000);
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        let replacement: Vec<u8> = (0..LBA_SIZE).map(|i| 0x40 | (i % 0x20) as u8).collect();
+        assert!(mem.write_bytes(DATA_BASE, &replacement));
+        let write = encode_sqe(
+            NVM_OP_WRITE,
+            0x32,
+            NSID,
+            DATA_BASE,
+            slba as u32,
+            (slba >> 32) as u32,
+            0,
+        );
+        assert!(mem.write_bytes(IO_SQ_BASE, &write));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+        ctrl.flush_disk().unwrap();
+
+        assert_eq!(
+            &fs::read(&source).unwrap()[start..start + LBA_SIZE],
+            replacement.as_slice(),
+            "write-back file backend persists guest writes to the source"
+        );
+
+        fs::remove_file(source).ok();
+    }
+
+    #[test]
     fn enabling_cc_sets_csts_rdy() {
         let mut ctrl = NvmeController::new(0);
         assert_eq!(
@@ -1046,6 +1768,10 @@ mod tests {
         assert_eq!(nn, 1, "one namespace");
         assert_eq!(id[512], 0x66, "SQES = 64-byte entries");
         assert_eq!(id[513], 0x44, "CQES = 16-byte entries");
+        assert!(
+            id[768..1024].starts_with(b"nqn.2026-06.dev.bridgevm:bridgevm-hvf:nvme0\0"),
+            "SUBNQN must be present and NUL-terminated for Linux"
+        );
     }
 
     #[test]
@@ -1094,6 +1820,123 @@ mod tests {
         // LBAF0 LBADS (bits 23:16) = 9 ⇒ 2^9 = 512-byte LBAs.
         let lbaf0 = u32::from_le_bytes([id[128], id[129], id[130], id[131]]);
         assert_eq!((lbaf0 >> 16) & 0xff, 9);
+        assert_eq!(&id[104..120], &NS_NGUID);
+        assert_eq!(&id[120..128], &NS_EUI64);
+    }
+
+    #[test]
+    fn identify_active_namespace_list_reports_nsid_one_once() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let sqe = encode_sqe(
+            ADMIN_OP_IDENTIFY,
+            2,
+            0,
+            DATA_BASE,
+            IDENTIFY_CNS_ACTIVE_NAMESPACE_LIST,
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 0, &sqe);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_SUCCESS
+        );
+
+        let list = mem.read_bytes(DATA_BASE, PAGE_SIZE).unwrap();
+        assert_eq!(u32::from_le_bytes(list[0..4].try_into().unwrap()), NSID);
+        assert_eq!(
+            u32::from_le_bytes(list[4..8].try_into().unwrap()),
+            0,
+            "namespace list must be zero-terminated"
+        );
+
+        let sqe = encode_sqe(
+            ADMIN_OP_IDENTIFY,
+            3,
+            NSID,
+            DATA_BASE + PAGE_SIZE as u64,
+            IDENTIFY_CNS_ACTIVE_NAMESPACE_LIST,
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 1, &sqe);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 1)),
+            SC_SUCCESS
+        );
+        let empty = mem
+            .read_bytes(DATA_BASE + PAGE_SIZE as u64, PAGE_SIZE)
+            .unwrap();
+        assert_eq!(
+            u32::from_le_bytes(empty[0..4].try_into().unwrap()),
+            0,
+            "no active namespaces follow NSID 1"
+        );
+    }
+
+    #[test]
+    fn identify_namespace_descriptor_list_reports_stable_identifiers() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let sqe = encode_sqe(
+            ADMIN_OP_IDENTIFY,
+            4,
+            NSID,
+            DATA_BASE,
+            IDENTIFY_CNS_NAMESPACE_DESCRIPTOR_LIST,
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 0, &sqe);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_SUCCESS
+        );
+
+        let desc = mem.read_bytes(DATA_BASE, PAGE_SIZE).unwrap();
+        assert_eq!(desc[0], 0x03, "first descriptor is UUID");
+        assert_eq!(desc[1], 16, "UUID descriptor length");
+        assert_eq!(
+            &desc[4..20],
+            &NS_UUID,
+            "UUID descriptor carries the stable namespace UUID"
+        );
+        assert_eq!(desc[20], 0x02, "second descriptor is NGUID");
+        assert_eq!(desc[21], 16, "NGUID descriptor length");
+        assert_eq!(&desc[24..40], &NS_NGUID);
+        assert_eq!(desc[40], 0x01, "third descriptor is EUI64");
+        assert_eq!(desc[41], 8, "EUI64 descriptor length");
+        assert_eq!(&desc[44..52], &NS_EUI64);
+        assert_eq!(desc[52], 0, "zero descriptor length terminates the list");
+    }
+
+    #[test]
+    fn get_log_page_smart_health_completes() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let numd = (512u32 / 4) - 1;
+        let cdw10 = (numd << 16) | u32::from(LOG_PAGE_SMART_HEALTH);
+        let sqe = encode_sqe(
+            ADMIN_OP_GET_LOG_PAGE,
+            5,
+            0xffff_ffff,
+            DATA_BASE,
+            cdw10,
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 0, &sqe);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_SUCCESS
+        );
+
+        let smart = mem.read_bytes(DATA_BASE, 512).unwrap();
+        assert_eq!(smart[0], 0, "no critical warning bits set");
+        assert_eq!(
+            u16::from_le_bytes([smart[1], smart[2]]),
+            300,
+            "composite temperature is reported in Kelvin"
+        );
+        assert_eq!(smart[3], 100, "available spare percentage");
     }
 
     #[test]
@@ -1121,7 +1964,15 @@ mod tests {
 
         // 1) CREATE I/O COMPLETION QUEUE (QID 1, depth QDEPTH, base IO_CQ_BASE).
         let cdw10 = (u32::from(QDEPTH - 1) << 16) | 1; // QSIZE(0-based)<<16 | QID
-        let cq_cmd = encode_sqe(ADMIN_OP_CREATE_IO_CQ, 1, 0, IO_CQ_BASE, cdw10, 0, 0);
+        let cq_cmd = encode_sqe(
+            ADMIN_OP_CREATE_IO_CQ,
+            1,
+            0,
+            IO_CQ_BASE,
+            cdw10,
+            CREATE_IO_CQ_PC_BIT,
+            0,
+        );
         submit_admin(&mut ctrl, &mut mem, 0, &cq_cmd);
         assert_eq!(
             completion_status(&read_completion(&mem, ACQ_BASE, 0)),
@@ -1189,6 +2040,215 @@ mod tests {
     }
 
     #[test]
+    fn io_completion_queue_uses_interrupt_vector_from_cdw11_high_half() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let cdw10 = (u32::from(QDEPTH - 1) << 16) | 1;
+        let cq_cdw11 = CREATE_IO_CQ_PC_BIT | CREATE_IO_CQ_IEN_BIT | (1u32 << CREATE_IO_CQ_IV_SHIFT);
+
+        submit_admin(
+            &mut ctrl,
+            &mut mem,
+            0,
+            &encode_sqe(ADMIN_OP_CREATE_IO_CQ, 1, 0, IO_CQ_BASE, cdw10, cq_cdw11, 0),
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_SUCCESS
+        );
+
+        submit_admin(
+            &mut ctrl,
+            &mut mem,
+            1,
+            &encode_sqe(
+                ADMIN_OP_CREATE_IO_SQ,
+                2,
+                0,
+                IO_SQ_BASE,
+                cdw10,
+                1u32 << 16,
+                0,
+            ),
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 1)),
+            SC_SUCCESS
+        );
+
+        let read_cmd = encode_sqe(NVM_OP_READ, 0x44, NSID, DATA_BASE, 0, 0, 0);
+        assert!(mem.write_bytes(IO_SQ_BASE, &read_cmd));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+
+        assert_eq!(
+            ctrl.process(&mut mem),
+            vec![NvmeCompletionEvent { cqid: 1, vector: 1 }],
+            "CQ interrupt vector is CDW11[31:16], not the low PC/IEN bits"
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 0)),
+            SC_SUCCESS
+        );
+    }
+
+    #[test]
+    fn read_uses_prp2_for_two_page_transfer() {
+        let disk: Vec<u8> = (0..PAGE_SIZE * 4).map(|i| (i % 251) as u8).collect();
+        let (mut ctrl, mut mem) = enabled_controller_with_disk_and_mem_len(disk.clone(), 0x10000);
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        let second_page = DATA_BASE + PAGE_SIZE_U64;
+        let read_cmd = encode_sqe_with_prps(
+            NVM_OP_READ,
+            0x50,
+            NSID,
+            DATA_BASE,
+            second_page,
+            0,
+            0,
+            15, // 16 LBAs = 8192 bytes = PRP1 + direct PRP2 page
+        );
+        assert!(mem.write_bytes(IO_SQ_BASE, &read_cmd));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+
+        assert_eq!(
+            mem.read_bytes(DATA_BASE, PAGE_SIZE).unwrap(),
+            disk[0..PAGE_SIZE]
+        );
+        assert_eq!(
+            mem.read_bytes(second_page, PAGE_SIZE).unwrap(),
+            disk[PAGE_SIZE..PAGE_SIZE * 2]
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 0)),
+            SC_SUCCESS
+        );
+    }
+
+    #[test]
+    fn read_uses_prp_list_for_larger_transfer() {
+        let pages = 6usize;
+        let disk: Vec<u8> = (0..PAGE_SIZE * pages)
+            .map(|i| 0x80 | ((i % 0x40) as u8))
+            .collect();
+        let (mut ctrl, mut mem) = enabled_controller_with_disk_and_mem_len(disk.clone(), 0x20000);
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        let list_base = DATA_BASE + PAGE_SIZE_U64;
+        let data0 = DATA_BASE + 2 * PAGE_SIZE_U64;
+        let mut list = vec![0u8; PAGE_SIZE];
+        for page in 1..pages {
+            let gpa = data0 + (page as u64) * PAGE_SIZE_U64;
+            let off = (page - 1) * 8;
+            list[off..off + 8].copy_from_slice(&gpa.to_le_bytes());
+        }
+        assert!(mem.write_bytes(list_base, &list));
+
+        let blocks = pages as u32 * (PAGE_SIZE as u32 / LBA_SIZE as u32);
+        let read_cmd =
+            encode_sqe_with_prps(NVM_OP_READ, 0x51, NSID, data0, list_base, 0, 0, blocks - 1);
+        assert!(mem.write_bytes(IO_SQ_BASE, &read_cmd));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+
+        for page in 0..pages {
+            let gpa = data0 + (page as u64) * PAGE_SIZE_U64;
+            let start = page * PAGE_SIZE;
+            assert_eq!(
+                mem.read_bytes(gpa, PAGE_SIZE).unwrap(),
+                disk[start..start + PAGE_SIZE],
+                "page {page} should be populated through the PRP list"
+            );
+        }
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 0)),
+            SC_SUCCESS
+        );
+    }
+
+    #[test]
+    fn read_uses_prp_list_starting_at_prp2_offset() {
+        let pages = 4usize;
+        let disk: Vec<u8> = (0..PAGE_SIZE * pages)
+            .map(|i| 0x20 | ((i % 0x5f) as u8))
+            .collect();
+        let (mut ctrl, mut mem) = enabled_controller_with_disk_and_mem_len(disk.clone(), 0x20000);
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        let list_base = DATA_BASE + PAGE_SIZE_U64;
+        let list_ptr = list_base + 0x100;
+        let data0 = DATA_BASE + 2 * PAGE_SIZE_U64;
+        let mut list = vec![0u8; (pages - 1) * 8];
+        for page in 1..pages {
+            let gpa = data0 + (page as u64) * PAGE_SIZE_U64;
+            let off = (page - 1) * 8;
+            list[off..off + 8].copy_from_slice(&gpa.to_le_bytes());
+        }
+        assert!(mem.write_bytes(list_ptr, &list));
+
+        let blocks = pages as u32 * (PAGE_SIZE as u32 / LBA_SIZE as u32);
+        let read_cmd =
+            encode_sqe_with_prps(NVM_OP_READ, 0x53, NSID, data0, list_ptr, 0, 0, blocks - 1);
+        assert!(mem.write_bytes(IO_SQ_BASE, &read_cmd));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+
+        for page in 0..pages {
+            let gpa = data0 + (page as u64) * PAGE_SIZE_U64;
+            let start = page * PAGE_SIZE;
+            assert_eq!(
+                mem.read_bytes(gpa, PAGE_SIZE).unwrap(),
+                disk[start..start + PAGE_SIZE],
+                "page {page} should be populated through the offset PRP list"
+            );
+        }
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 0)),
+            SC_SUCCESS
+        );
+    }
+
+    #[test]
+    fn write_uses_prp_list_for_larger_transfer() {
+        let pages = 4usize;
+        let (mut ctrl, mut mem) =
+            enabled_controller_with_disk_and_mem_len(vec![0u8; PAGE_SIZE * pages], 0x18000);
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        let list_base = DATA_BASE + PAGE_SIZE_U64;
+        let data0 = DATA_BASE + 2 * PAGE_SIZE_U64;
+        let replacement: Vec<u8> = (0..PAGE_SIZE * pages)
+            .map(|i| 0x40 | ((i % 0x20) as u8))
+            .collect();
+        assert!(mem.write_bytes(data0, &replacement[0..PAGE_SIZE]));
+
+        let mut list = vec![0u8; PAGE_SIZE];
+        for page in 1..pages {
+            let gpa = data0 + (page as u64) * PAGE_SIZE_U64;
+            assert!(mem.write_bytes(gpa, &replacement[page * PAGE_SIZE..(page + 1) * PAGE_SIZE]));
+            let off = (page - 1) * 8;
+            list[off..off + 8].copy_from_slice(&gpa.to_le_bytes());
+        }
+        assert!(mem.write_bytes(list_base, &list));
+
+        let blocks = pages as u32 * (PAGE_SIZE as u32 / LBA_SIZE as u32);
+        let write_cmd =
+            encode_sqe_with_prps(NVM_OP_WRITE, 0x52, NSID, data0, list_base, 0, 0, blocks - 1);
+        assert!(mem.write_bytes(IO_SQ_BASE, &write_cmd));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+
+        assert_eq!(
+            &ctrl.disk_image()[0..PAGE_SIZE * pages],
+            replacement.as_slice()
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 0)),
+            SC_SUCCESS
+        );
+    }
+
+    #[test]
     fn read_out_of_range_lba_fails() {
         let (mut ctrl, mut mem) = enabled_controller();
         // Create I/O CQ + SQ (QID 1) as above.
@@ -1197,7 +2257,15 @@ mod tests {
             &mut ctrl,
             &mut mem,
             0,
-            &encode_sqe(ADMIN_OP_CREATE_IO_CQ, 1, 0, IO_CQ_BASE, cdw10, 0, 0),
+            &encode_sqe(
+                ADMIN_OP_CREATE_IO_CQ,
+                1,
+                0,
+                IO_CQ_BASE,
+                cdw10,
+                CREATE_IO_CQ_PC_BIT,
+                0,
+            ),
         );
         submit_admin(
             &mut ctrl,

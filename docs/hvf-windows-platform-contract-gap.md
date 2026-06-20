@@ -124,7 +124,7 @@ the sequenced plan live in
 
 Path A now has `fw_cfg`, a QEMU-shaped DTB, Apple `hv_gic`, PL011, PL031, empty
 virtio-mmio slots, PCIe ECAM host-bridge config space, a first NVMe endpoint at
-`00:01.0` with BAR0 routing and raw-image load/snapshot hooks, and a minimal P30
+`00:01.0` with BAR0 routing and raw host-file media hooks, and a minimal P30
 pflash vars model wired behind `VirtPlatform::on_mmio()` with live-probe
 snapshot/writeback hooks. The stock ArmVirtQemu firmware boots to the UEFI shell.
 ACPI blobs are now delivered through QEMU-style `etc/acpi/rsdp`,
@@ -134,13 +134,18 @@ QEMU-style Linux `-kernel`/`-initrd`/`-append` fw_cfg blobs now boot Debian's
 arm64 installer kernel through EFI, ACPI, SMBIOS/DMI, GIC/timer init,
 `ARMH0011` PL011 console binding, `PCI0` root bridge enumeration, QEMU-like PCI
 `_OSC`, ACPI0007 CPU device enumeration, basic PPTT CPU topology, PMU IRQ
-metadata, ECAM reservation through `PNP0C02`, initramfs unpack, and `Run /init as
-init process`. The latest live HVF run no longer logs the previous
+metadata, ECAM reservation through `PNP0C02`, initramfs unpack, root ext4 mount,
+`/boot` and `/boot/efi` mounts, `sysinit.target`, and `basic.target`. The latest
+live HVF run no longer logs the previous
 `topology_sysfs_init`, `cpuinfo`, `cacheinfo`, `No PPTT table found`, `No ACPI PMU
 IRQ`, or invalid-DMI diagnostics. The ECAM PnP reservation warning is also
 present in the QEMU+HVF oracle, so it is no longer treated as a BridgeVM-only
-platform gap. The remaining gap is above firmware: production-grade NVMe and
-pflash persistence in the engine-facing VM configuration, guest validation of the
-wired MSI-X path (the NVMe endpoint now advertises writable MSI-X table/PBA
-storage and vectors are injected through Apple `hv_gic`), remaining ACPI details
-such as DBG2 as needed, and then Windows installer validation.
+platform gap. The current Apple `hv_gic` path deliberately advertises the MSI
+surface as a GICv2m-compatible Generic MSI Frame (Apple's GICM registers) rather
+than MADT ITS + IORT: the in-kernel GIC does not expose guest-visible LPIs/ITS,
+while Linux falls back to the MSI-frame driver when the GIC distributor lacks LPI
+support. The remaining gap is above firmware: lift NVMe overlay/writeback and
+pflash persistence into the engine-facing VM configuration, keep tightening
+Windows-relevant ACPI details such as DBG2 as needed, add installer usability
+devices such as GOP framebuffer, keyboard/input and networking, and then run
+Windows installer validation.

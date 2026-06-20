@@ -203,7 +203,7 @@ impl Default for VirtFdtConfig {
 
 // Phandles (internally consistent; values are arbitrary but referenced below).
 const PHANDLE_GIC: u32 = 0x1;
-const PHANDLE_ITS: u32 = 0x2;
+const PHANDLE_GIC_MSI_FRAME: u32 = 0x2;
 const PHANDLE_APB_PCLK: u32 = 0x3;
 
 // Device-tree interrupt encoding for the GICv3 (`#interrupt-cells = <3>`).
@@ -317,12 +317,17 @@ pub fn build_virt_fdt(cfg: &VirtFdtConfig) -> Vec<u8> {
     );
     b.prop_u32("phandle", PHANDLE_GIC);
 
-    b.begin_node("its@8080000");
-    b.prop_str_list("compatible", &["arm,gic-v3-its"]);
+    b.begin_node("v2m@8080000");
+    b.prop_str_list("compatible", &["arm,gic-v2m-frame"]);
     b.prop_empty("msi-controller");
-    b.prop_u32("#msi-cells", 1);
-    b.prop_reg64("reg", machine::GIC_ITS.base, machine::GIC_ITS.size);
-    b.prop_u32("phandle", PHANDLE_ITS);
+    b.prop_reg64(
+        "reg",
+        machine::GIC_MSI_FRAME.base,
+        machine::GIC_MSI_FRAME.size,
+    );
+    b.prop_u32("arm,msi-base-spi", machine::GIC_MSI_INTID_BASE);
+    b.prop_u32("arm,msi-num-spis", machine::GIC_MSI_INTID_COUNT);
+    b.prop_u32("phandle", PHANDLE_GIC_MSI_FRAME);
     b.end_node();
 
     b.end_node(); // intc
@@ -385,7 +390,7 @@ pub fn build_virt_fdt(cfg: &VirtFdtConfig) -> Vec<u8> {
         b.end_node();
     }
 
-    // /pcie — ECAM root complex with INTx interrupt-map and MSI via the ITS.
+    // /pcie — ECAM root complex with INTx interrupt-map and MSI via the frame.
     build_pcie_node(&mut b);
 
     b.end_node(); // root
@@ -402,7 +407,7 @@ fn build_pcie_node(b: &mut FdtBuilder) {
     b.prop_u32("linux,pci-domain", 0);
     b.prop_cells("bus-range", &[0x0, 0xff]);
     b.prop_empty("dma-coherent");
-    b.prop_cells("msi-map", &[0, PHANDLE_ITS, 0, 0x1_0000]);
+    b.prop_cells("msi-parent", &[PHANDLE_GIC_MSI_FRAME]);
     b.prop_reg64("reg", machine::PCIE_ECAM.base, machine::PCIE_ECAM.size);
 
     // ranges: <pci-addr(3) cpu-addr(2) size(2)> for IO and 32-bit MMIO. The
@@ -516,9 +521,10 @@ mod tests {
             "reg",
             "interrupt-map",
             "ranges",
-            "msi-map",
+            "msi-parent",
             "msi-controller",
-            "#msi-cells",
+            "arm,msi-base-spi",
+            "arm,msi-num-spis",
             "dma-coherent",
         ] {
             assert!(strings.contains(needed), "missing property name {needed}");
@@ -534,7 +540,7 @@ mod tests {
             "fw-cfg@9020000",
             "pcie@10000000",
             "intc@8000000",
-            "its@8080000",
+            "v2m@8080000",
             "pl011@9000000",
             "virtio_mmio@a000000",
         ] {
