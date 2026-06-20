@@ -889,9 +889,164 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
 
-fn deliver_pending_msix(platform: &mut VirtPlatform, trace: bool) {
+#[derive(Clone, Copy)]
+enum DrainLocation {
+    PreRun,
+    DataAbort,
+}
+
+impl DrainLocation {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::PreRun => "pre-run",
+            Self::DataAbort => "data-abort",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct DrainContext {
+    location: DrainLocation,
+    exit: u64,
+    pc: u64,
+}
+
+#[derive(Clone, Copy)]
+struct DrainTrace {
+    msix: bool,
+    spi: bool,
+}
+
+#[derive(Clone, Copy, Default)]
+struct DeliveryCounts {
+    drained: u64,
+    success: u64,
+    failure: u64,
+}
+
+impl DeliveryCounts {
+    const fn has_deliveries(self) -> bool {
+        self.drained != 0
+    }
+
+    fn record_status(&mut self, status: HvReturn) {
+        self.drained += 1;
+        if status == 0 {
+            self.success += 1;
+        } else {
+            self.failure += 1;
+        }
+    }
+
+    fn add(&mut self, other: Self) {
+        self.drained += other.drained;
+        self.success += other.success;
+        self.failure += other.failure;
+    }
+}
+
+struct RunLoopDrainStats {
+    trace: bool,
+    pre_run_attempts: u64,
+    data_abort_attempts: u64,
+    msix: DeliveryCounts,
+    spi: DeliveryCounts,
+    last_drain_exit: Option<u64>,
+    last_drain_pc: Option<u64>,
+    last_nonzero_location: Option<&'static str>,
+}
+
+impl RunLoopDrainStats {
+    const fn new(trace: bool) -> Self {
+        Self {
+            trace,
+            pre_run_attempts: 0,
+            data_abort_attempts: 0,
+            msix: DeliveryCounts {
+                drained: 0,
+                success: 0,
+                failure: 0,
+            },
+            spi: DeliveryCounts {
+                drained: 0,
+                success: 0,
+                failure: 0,
+            },
+            last_drain_exit: None,
+            last_drain_pc: None,
+            last_nonzero_location: None,
+        }
+    }
+
+    fn drain_pending(
+        &mut self,
+        platform: &mut VirtPlatform,
+        trace: DrainTrace,
+        context: DrainContext,
+    ) {
+        match context.location {
+            DrainLocation::PreRun => self.pre_run_attempts += 1,
+            DrainLocation::DataAbort => self.data_abort_attempts += 1,
+        }
+
+        let spi = deliver_pending_spis(platform, trace.spi);
+        let msix = deliver_pending_msix(platform, trace.msix);
+        self.last_drain_exit = Some(context.exit);
+        self.last_drain_pc = Some(context.pc);
+        self.spi.add(spi);
+        self.msix.add(msix);
+
+        if spi.has_deliveries() || msix.has_deliveries() {
+            let location = context.location.as_str();
+            self.last_nonzero_location = Some(location);
+            if self.trace {
+                println!(
+                    "G004 IRQ drain: location={location} exit={} pc={:#x} msix drained={} success={} failure={} spi drained={} success={} failure={}",
+                    context.exit,
+                    context.pc,
+                    msix.drained,
+                    msix.success,
+                    msix.failure,
+                    spi.drained,
+                    spi.success,
+                    spi.failure
+                );
+            }
+        }
+    }
+
+    fn print_summary(&self) {
+        let last_drain_exit = self
+            .last_drain_exit
+            .map_or_else(|| "<none>".to_string(), |exit| exit.to_string());
+        let last_drain_pc = self
+            .last_drain_pc
+            .map_or_else(|| "<none>".to_string(), |pc| format!("{pc:#x}"));
+        let last_nonzero_location = self.last_nonzero_location.unwrap_or("<none>");
+        println!(
+            "G004 IRQ drain attempts: pre-run={} data-abort={}",
+            self.pre_run_attempts, self.data_abort_attempts
+        );
+        println!(
+            "G004 IRQ drain MSI-X: drained={} success={} failure={}",
+            self.msix.drained, self.msix.success, self.msix.failure
+        );
+        println!(
+            "G004 IRQ drain SPI: drained={} success={} failure={}",
+            self.spi.drained, self.spi.success, self.spi.failure
+        );
+        println!(
+            "G004 IRQ drain last: exit={} pc={} last_nonzero_location={}",
+            last_drain_exit, last_drain_pc, last_nonzero_location
+        );
+    }
+}
+
+fn deliver_pending_msix(platform: &mut VirtPlatform, trace: bool) -> DeliveryCounts {
+    let mut counts = DeliveryCounts::default();
     for message in platform.take_pending_msix() {
         let status = unsafe { hv_gic_send_msi(message.address, message.data) };
+        counts.record_status(status);
         if trace || status != 0 {
             println!(
                 "MSIX vector {} -> addr {:#x} intid {} status {status:#x}",
@@ -899,15 +1054,19 @@ fn deliver_pending_msix(platform: &mut VirtPlatform, trace: bool) {
             );
         }
     }
+    counts
 }
 
-fn deliver_pending_spis(platform: &mut VirtPlatform, trace: bool) {
+fn deliver_pending_spis(platform: &mut VirtPlatform, trace: bool) -> DeliveryCounts {
+    let mut counts = DeliveryCounts::default();
     for (intid, level) in platform.take_pending_spi_levels() {
         let status = unsafe { hv_gic_set_spi(intid, level) };
+        counts.record_status(status);
         if trace || status != 0 {
             println!("SPI intid {intid} level={level} status {status:#x}");
         }
     }
+    counts
 }
 
 fn serial_reached_shell(serial: &[u8]) -> bool {
@@ -1013,6 +1172,7 @@ fn main() {
     let trace_fwcfg = env_flag("BRIDGEVM_TRACE_FWCFG");
     let trace_msix = env_flag("BRIDGEVM_TRACE_MSIX");
     let trace_spi = env_flag("BRIDGEVM_TRACE_SPI");
+    let trace_run_loop = env_flag("BRIDGEVM_TRACE_RUN_LOOP");
     let stop_on_linux = env_flag_default("BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX", true);
 
     unsafe {
@@ -1269,9 +1429,25 @@ fn main() {
         let mut last_watch_pc = 0u64;
         let mut last_watch_lr = 0u64;
         let mut fwcfg_trace_count = 0u32;
+        let mut drain_stats = RunLoopDrainStats::new(trace_run_loop);
+        let drain_trace = DrainTrace {
+            msix: trace_msix,
+            spi: trace_spi,
+        };
         let stop_reason;
 
         loop {
+            let mut drain_pc = 0u64;
+            hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
+            drain_stats.drain_pending(
+                &mut platform,
+                drain_trace,
+                DrainContext {
+                    location: DrainLocation::PreRun,
+                    exit: exits,
+                    pc: drain_pc,
+                },
+            );
             let r = hv_vcpu_run(vcpu);
             if r != 0 {
                 stop_reason = format!("hv_vcpu_run error {r:#x}");
@@ -1352,8 +1528,15 @@ fn main() {
                             }
                         }
                     }
-                    deliver_pending_spis(&mut platform, trace_spi);
-                    deliver_pending_msix(&mut platform, trace_msix);
+                    drain_stats.drain_pending(
+                        &mut platform,
+                        drain_trace,
+                        DrainContext {
+                            location: DrainLocation::DataAbort,
+                            exit: exits,
+                            pc: last_pc,
+                        },
+                    );
                     hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
                 }
                 EC_HVC => {
@@ -1687,6 +1870,7 @@ fn main() {
         println!(
             "exits: {exits} (vtimer {vtimer_exits}, psci {psci_calls}), last PC: {last_pc:#x}"
         );
+        drain_stats.print_summary();
         println!("unmodelled MMIO touched: {unimpl:?}");
         print_mmio_traces(&mmio_traces);
         recent_pcie_mmio.print();
