@@ -37,11 +37,17 @@ use crate::pl031::Pl031;
 use crate::ramfb::{Ramfb, RamfbConfig, RAMFB_CONFIG_SIZE, RAMFB_FW_CFG_FILE};
 use crate::smbios::{build_smbios, SMBIOS_ANCHOR_FILE, SMBIOS_TABLE_FILE};
 use crate::virtio_blk::{
-    VirtioMmioBlock, VirtioMmioBlockResult, VirtioMmioBlockStats, VirtioPciBlock, VirtioPciBlockOp,
-    INSTALLER_ISO_SLOT,
+    VirtioBlockRequestTrace, VirtioMmioBlock, VirtioMmioBlockResult, VirtioMmioBlockStats,
+    VirtioPciBlock, VirtioPciBlockOp, INSTALLER_ISO_SLOT,
 };
 
 const DEFAULT_NVME_DISK_BYTES: usize = 16 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RamfbFwCfg {
+    Absent,
+    Present,
+}
 
 /// A guest MMIO access as decoded from an HVF data-abort exit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +107,17 @@ impl VirtPlatform {
     /// stand up `fw_cfg` with its standard control entries and generated ACPI
     /// table-loader blobs.
     pub fn new(cfg: VirtFdtConfig) -> Self {
+        Self::new_with_ramfb_state(cfg, RamfbFwCfg::Absent)
+    }
+
+    /// Build the platform with QEMU's `ramfb` fw_cfg file registered. QEMU only
+    /// exposes this surface when a framebuffer device is requested, not for
+    /// `-display none`, so the default constructor leaves it absent.
+    pub fn new_with_ramfb(cfg: VirtFdtConfig) -> Self {
+        Self::new_with_ramfb_state(cfg, RamfbFwCfg::Present)
+    }
+
+    fn new_with_ramfb_state(cfg: VirtFdtConfig, ramfb: RamfbFwCfg) -> Self {
         let dtb = build_virt_fdt(&cfg);
         let mut fw_cfg = FwCfg::new();
         // Minimal real control entries the firmware/OS consult.
@@ -108,7 +125,12 @@ impl VirtPlatform {
         // `etc/system-states` advertises which ACPI S-states are enabled; the
         // firmware may write it back, so it is writable. 6 bytes: S3, S4, ... .
         fw_cfg.add_writable_file("etc/system-states", vec![0u8; 6]);
-        fw_cfg.add_writable_file(RAMFB_FW_CFG_FILE, vec![0u8; RAMFB_CONFIG_SIZE]);
+        match ramfb {
+            RamfbFwCfg::Absent => {}
+            RamfbFwCfg::Present => {
+                fw_cfg.add_writable_file(RAMFB_FW_CFG_FILE, vec![0u8; RAMFB_CONFIG_SIZE]);
+            }
+        }
         let acpi = build_acpi(cfg.cpu_count);
         fw_cfg.add_file(ACPI_RSDP_FILE, acpi.rsdp);
         fw_cfg.add_file(ACPI_TABLE_FILE, acpi.tables);
@@ -188,6 +210,18 @@ impl VirtPlatform {
 
     pub fn pci_boot_media_stats(&self) -> Option<VirtioMmioBlockStats> {
         self.pci_boot_media.as_ref().map(VirtioPciBlock::stats)
+    }
+
+    pub fn pci_boot_media_request_trace(&self) -> Option<Vec<VirtioBlockRequestTrace>> {
+        self.pci_boot_media
+            .as_ref()
+            .map(VirtioPciBlock::recent_request_trace)
+    }
+
+    pub fn virtio_iso_request_trace(&self) -> Option<Vec<VirtioBlockRequestTrace>> {
+        self.virtio_iso
+            .as_ref()
+            .map(VirtioMmioBlock::recent_request_trace)
     }
 
     pub fn ramfb_config(&self) -> Option<RamfbConfig> {
@@ -646,6 +680,10 @@ mod tests {
         VirtPlatform::new(VirtFdtConfig::default())
     }
 
+    fn platform_with_ramfb() -> VirtPlatform {
+        VirtPlatform::new_with_ramfb(VirtFdtConfig::default())
+    }
+
     fn pcie_cfg_gpa(device: u8, function: u8, reg: u16) -> u64 {
         machine::PCIE_ECAM.base
             + (u64::from(device) << 15)
@@ -757,30 +795,32 @@ mod tests {
         e
     }
 
-    fn fw_cfg_file_entry(p: &mut VirtPlatform, name: &[u8]) -> (u16, usize) {
+    fn find_fw_cfg_file_entry(p: &mut VirtPlatform, name: &[u8]) -> Option<(u16, usize)> {
         p.fw_cfg.select(KEY_FILE_DIR);
         let dir = p.fw_cfg.read_data(p.fw_cfg.file_dir_bytes().len());
         let count = u32::from_be_bytes([dir[0], dir[1], dir[2], dir[3]]) as usize;
-        (0..count)
-            .find_map(|index| {
-                let record = &dir[4 + index * 64..4 + (index + 1) * 64];
-                let name_end = record[8..64]
-                    .iter()
-                    .position(|&byte| byte == 0)
-                    .unwrap_or(56);
-                (&record[8..8 + name_end] == name).then(|| {
-                    let size =
-                        u32::from_be_bytes([record[0], record[1], record[2], record[3]]) as usize;
-                    let select = u16::from_be_bytes([record[4], record[5]]);
-                    (select, size)
-                })
+        (0..count).find_map(|index| {
+            let record = &dir[4 + index * 64..4 + (index + 1) * 64];
+            let name_end = record[8..64]
+                .iter()
+                .position(|&byte| byte == 0)
+                .unwrap_or(56);
+            (&record[8..8 + name_end] == name).then(|| {
+                let size =
+                    u32::from_be_bytes([record[0], record[1], record[2], record[3]]) as usize;
+                let select = u16::from_be_bytes([record[4], record[5]]);
+                (select, size)
             })
-            .unwrap_or_else(|| {
-                panic!(
-                    "default fw_cfg dir missing {}",
-                    String::from_utf8_lossy(name)
-                )
-            })
+        })
+    }
+
+    fn fw_cfg_file_entry(p: &mut VirtPlatform, name: &[u8]) -> (u16, usize) {
+        find_fw_cfg_file_entry(p, name).unwrap_or_else(|| {
+            panic!(
+                "default fw_cfg dir missing {}",
+                String::from_utf8_lossy(name)
+            )
+        })
     }
 
     fn nvme_mmio_write(
@@ -1570,8 +1610,16 @@ mod tests {
     }
 
     #[test]
-    fn default_fw_cfg_registers_qemu_ramfb_file() {
+    fn default_fw_cfg_matches_qemu_display_none_without_ramfb_file() {
         let mut p = platform();
+
+        assert_eq!(find_fw_cfg_file_entry(&mut p, b"etc/ramfb"), None);
+        assert_eq!(p.ramfb_config(), None);
+    }
+
+    #[test]
+    fn ramfb_opt_in_registers_qemu_ramfb_file() {
+        let mut p = platform_with_ramfb();
         let (_, size) = fw_cfg_file_entry(&mut p, b"etc/ramfb");
 
         assert_eq!(size, RAMFB_CONFIG_SIZE);
@@ -1580,7 +1628,7 @@ mod tests {
 
     #[test]
     fn fw_cfg_dma_write_updates_ramfb_config() {
-        let mut p = platform();
+        let mut p = platform_with_ramfb();
         let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x1000);
         let (selector, size) = fw_cfg_file_entry(&mut p, b"etc/ramfb");
         let src = machine::RAM_BASE + 0x100;

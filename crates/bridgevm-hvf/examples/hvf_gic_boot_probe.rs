@@ -46,7 +46,7 @@ use bridgevm_hvf::media::{
 };
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome, VirtPlatform};
 use bridgevm_hvf::stage1::{self, Stage1Context, Stage1WalkStep};
-use bridgevm_hvf::virtio_blk::{VirtioMmioBlockStats, INSTALLER_ISO_SLOT};
+use bridgevm_hvf::virtio_blk::{VirtioBlockRequestTrace, VirtioMmioBlockStats, INSTALLER_ISO_SLOT};
 
 #[path = "hvf_gic_boot_probe/arm64_trace.rs"]
 mod arm64_trace;
@@ -815,6 +815,16 @@ fn print_block_media_stats(label: &str, stats: VirtioMmioBlockStats) {
     );
 }
 
+fn print_block_request_trace(label: &str, trace: &[VirtioBlockRequestTrace]) {
+    println!("{label}: {} entries", trace.len());
+    for entry in trace {
+        println!(
+            "  seq={} type={} sector={} len={} status={:#x}",
+            entry.sequence, entry.request_type, entry.sector, entry.data_len, entry.status
+        );
+    }
+}
+
 fn maybe_write_file(path_env: &str, bytes: &[u8], description: &str) {
     if let Ok(path) = std::env::var(path_env) {
         let label = format!("{description} written");
@@ -1539,10 +1549,17 @@ fn main() {
             hv_vcpus_exit(&v, 1);
         });
 
-        let mut platform = VirtPlatform::new(VirtFdtConfig {
+        let platform_cfg = VirtFdtConfig {
             cpu_count: 1,
             ram_size: media.ram_size,
-        });
+        };
+        let mut platform = if env_flag("BRIDGEVM_RAMFB") {
+            println!("ramfb fw_cfg: enabled");
+            VirtPlatform::new_with_ramfb(platform_cfg)
+        } else {
+            println!("ramfb fw_cfg: disabled");
+            VirtPlatform::new(platform_cfg)
+        };
         if let Ok(input) = std::env::var("BRIDGEVM_UART_RX") {
             platform.push_uart_input(input.as_bytes());
             println!("UART RX preloaded: {} bytes", input.len());
@@ -2131,8 +2148,14 @@ fn main() {
         if let Some(stats) = platform.pci_boot_media_stats() {
             print_block_media_stats("PCI boot-media stats", stats);
         }
+        if let Some(trace) = platform.pci_boot_media_request_trace() {
+            print_block_request_trace("recent PCI boot-media requests", &trace);
+        }
         if let Some(stats) = platform.virtio_iso_stats() {
             print_block_media_stats("legacy virtio-mmio ISO stats", stats);
+        }
+        if let Some(trace) = platform.virtio_iso_request_trace() {
+            print_block_request_trace("recent legacy virtio-mmio ISO requests", &trace);
         }
         match platform.ramfb_config() {
             Some(config) => println!(

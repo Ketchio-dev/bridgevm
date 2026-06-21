@@ -6,6 +6,8 @@
 //! module models just enough of QEMU's default legacy virtio-mmio transport and
 //! split virtqueue block protocol for firmware reads from a host ISO file.
 
+mod trace;
+
 use std::{
     fs::File,
     io::{self, Read, Seek, SeekFrom},
@@ -13,6 +15,8 @@ use std::{
 };
 
 use crate::{fwcfg::GuestMemoryMut, machine};
+use trace::RecentVirtioBlockRequests;
+pub use trace::{VirtioBlockRequestTrace, RECENT_REQUEST_TRACE_LIMIT};
 
 pub const INSTALLER_ISO_SLOT: u64 = machine::VIRTIO_MMIO_COUNT - 1;
 
@@ -117,6 +121,8 @@ pub struct VirtioMmioBlock {
     status: u32,
     interrupt_status: u32,
     last_avail_idx: u16,
+    request_sequence: u64,
+    request_trace: RecentVirtioBlockRequests,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -171,6 +177,8 @@ impl VirtioMmioBlock {
             status: 0,
             interrupt_status: 0,
             last_avail_idx: 0,
+            request_sequence: 0,
+            request_trace: RecentVirtioBlockRequests::default(),
         })
     }
 
@@ -194,6 +202,10 @@ impl VirtioMmioBlock {
 
     pub fn interrupt_line_level(&self) -> bool {
         self.interrupt_status != 0
+    }
+
+    pub fn recent_request_trace(&self) -> Vec<VirtioBlockRequestTrace> {
+        self.request_trace.snapshot()
     }
 
     pub fn access(
@@ -410,6 +422,17 @@ impl VirtioMmioBlock {
         self.last_avail_idx = 0;
     }
 
+    fn record_request_trace(&mut self, req_type: u32, sector: u64, data_len: u32, status: u8) {
+        self.request_sequence = self.request_sequence.saturating_add(1);
+        self.request_trace.record(VirtioBlockRequestTrace {
+            sequence: self.request_sequence,
+            request_type: req_type,
+            sector,
+            data_len,
+            status,
+        });
+    }
+
     fn device_features(&self) -> u32 {
         if self.transport == VirtioMmioTransport::Legacy {
             return VIRTIO_BLK_F_RO | VIRTIO_BLK_F_BLK_SIZE;
@@ -481,12 +504,16 @@ impl VirtioMmioBlock {
         let sector = u64::from_le_bytes(header[8..16].try_into().unwrap());
         let status = *descs.last().unwrap();
         let data_descs = &descs[1..descs.len() - 1];
+        let data_len = data_descs
+            .iter()
+            .fold(0u32, |sum, desc| sum.saturating_add(desc.len));
         self.stats.request_count = self.stats.request_count.saturating_add(1);
         self.stats.last_sector = Some(sector);
 
         if req_type != VIRTIO_BLK_T_IN {
             self.stats.unsupported_count = self.stats.unsupported_count.saturating_add(1);
             self.stats.last_status = Some(VIRTIO_BLK_S_UNSUPP);
+            self.record_request_trace(req_type, sector, data_len, VIRTIO_BLK_S_UNSUPP);
             return RequestCompletion::write_status(mem, Some(&status), VIRTIO_BLK_S_UNSUPP, 1);
         }
         self.stats.read_count = self.stats.read_count.saturating_add(1);
@@ -496,6 +523,7 @@ impl VirtioMmioBlock {
             None => {
                 self.stats.io_error_count = self.stats.io_error_count.saturating_add(1);
                 self.stats.last_status = Some(VIRTIO_BLK_S_IOERR);
+                self.record_request_trace(req_type, sector, data_len, VIRTIO_BLK_S_IOERR);
                 return RequestCompletion::write_status(mem, Some(&status), VIRTIO_BLK_S_IOERR, 1);
             }
         };
@@ -504,17 +532,20 @@ impl VirtioMmioBlock {
             if desc.flags & DESC_F_WRITE == 0 {
                 self.stats.io_error_count = self.stats.io_error_count.saturating_add(1);
                 self.stats.last_status = Some(VIRTIO_BLK_S_IOERR);
+                self.record_request_trace(req_type, sector, data_len, VIRTIO_BLK_S_IOERR);
                 return RequestCompletion::write_status(mem, Some(&status), VIRTIO_BLK_S_IOERR, 1);
             }
             let len = desc.len as usize;
             let Ok(data) = self.backend.read_at(byte_offset, len) else {
                 self.stats.io_error_count = self.stats.io_error_count.saturating_add(1);
                 self.stats.last_status = Some(VIRTIO_BLK_S_IOERR);
+                self.record_request_trace(req_type, sector, data_len, VIRTIO_BLK_S_IOERR);
                 return RequestCompletion::write_status(mem, Some(&status), VIRTIO_BLK_S_IOERR, 1);
             };
             if !mem.write_bytes(desc.addr, &data) {
                 self.stats.io_error_count = self.stats.io_error_count.saturating_add(1);
                 self.stats.last_status = Some(VIRTIO_BLK_S_IOERR);
+                self.record_request_trace(req_type, sector, data_len, VIRTIO_BLK_S_IOERR);
                 return RequestCompletion::write_status(mem, Some(&status), VIRTIO_BLK_S_IOERR, 1);
             }
             byte_offset = byte_offset.saturating_add(u64::from(desc.len));
@@ -523,6 +554,7 @@ impl VirtioMmioBlock {
         }
         self.stats.last_len = written_len;
         self.stats.last_status = Some(VIRTIO_BLK_S_OK);
+        self.record_request_trace(req_type, sector, data_len, VIRTIO_BLK_S_OK);
         RequestCompletion::write_status(
             mem,
             Some(&status),
@@ -581,6 +613,10 @@ impl VirtioPciBlock {
 
     pub fn interrupt_line_level(&self) -> bool {
         self.block.interrupt_line_level()
+    }
+
+    pub fn recent_request_trace(&self) -> Vec<VirtioBlockRequestTrace> {
+        self.block.recent_request_trace()
     }
 
     pub fn access(

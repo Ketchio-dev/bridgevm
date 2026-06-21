@@ -517,6 +517,90 @@ fn pci_legacy_pio_queue_pfn_notify_processes_edk2_read_request() {
 }
 
 #[test]
+fn pci_legacy_pio_read_records_recent_request_trace() {
+    const LEGACY_QUEUE_PFN: u64 = 0x08;
+    const LEGACY_QUEUE_NOTIFY: u64 = 0x10;
+
+    let path = temp_path("pci-legacy-pio-trace");
+    let mut media = vec![0u8; 4096];
+    media[1024..1032].copy_from_slice(b"BOOTSECT");
+    fs::write(&path, media).unwrap();
+    let mut dev = VirtioPciBlock::open_read_only(&path).unwrap();
+    let mut mem = TestMem::new(0x4000_0000, 0x10000);
+
+    let desc = 0x4000_1000;
+    let avail = desc + u64::from(QUEUE_MAX) * DESC_SIZE;
+    let header = 0x4000_4000;
+    let data = 0x4000_5000;
+    let status = 0x4000_6000;
+
+    mem.write(header, &VIRTIO_BLK_T_IN.to_le_bytes());
+    mem.write(header + 8, &2u64.to_le_bytes());
+    write_desc(
+        &mut mem,
+        desc,
+        0,
+        Descriptor {
+            addr: header,
+            len: 16,
+            flags: DESC_F_NEXT,
+            next: 1,
+        },
+    );
+    write_desc(
+        &mut mem,
+        desc,
+        1,
+        Descriptor {
+            addr: data,
+            len: 1024,
+            flags: DESC_F_NEXT | DESC_F_WRITE,
+            next: 2,
+        },
+    );
+    write_desc(
+        &mut mem,
+        desc,
+        2,
+        Descriptor {
+            addr: status,
+            len: 1,
+            flags: DESC_F_WRITE,
+            next: 0,
+        },
+    );
+    mem.write(avail + 2, &1u16.to_le_bytes());
+    mem.write(avail + 4, &0u16.to_le_bytes());
+
+    dev.legacy_io_access(
+        LEGACY_QUEUE_PFN,
+        VirtioPciBlockOp::Write {
+            size: 4,
+            value: desc >> 12,
+        },
+        &mut mem,
+    );
+    dev.legacy_io_access(
+        LEGACY_QUEUE_NOTIFY,
+        VirtioPciBlockOp::Write { size: 2, value: 0 },
+        &mut mem,
+    );
+
+    assert_eq!(
+        dev.recent_request_trace().last().copied(),
+        Some(VirtioBlockRequestTrace {
+            sequence: 1,
+            request_type: VIRTIO_BLK_T_IN,
+            sector: 2,
+            data_len: 1024,
+            status: VIRTIO_BLK_S_OK,
+        })
+    );
+
+    fs::remove_file(path).ok();
+}
+
+#[test]
 fn pci_write_request_is_rejected_for_read_only_iso() {
     let path = temp_path("pci-write-reject");
     fs::write(&path, vec![0u8; 1024]).unwrap();
