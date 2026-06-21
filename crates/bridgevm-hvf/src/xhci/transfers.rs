@@ -123,19 +123,24 @@ impl XhciController {
             return false;
         }
         let data_length = trb_transfer_length(data.status);
-        if data_length != u32::from(DEVICE_DESCRIPTOR_LENGTH) {
+        if data_length == 0 || data_length > u32::from(DEVICE_DESCRIPTOR_LENGTH) {
             trace::ep0_reject_with_value("unexpected_data_length", data_length);
             return false;
         }
-        if setup_packet.length != DEVICE_DESCRIPTOR_LENGTH {
+        if u32::from(setup_packet.length) != data_length {
             trace::ep0_reject_with_value("unexpected_setup_length", u32::from(setup_packet.length));
             return false;
         }
-        if !mem.write_bytes(data.parameter, &DEVICE_DESCRIPTOR) {
+        let Ok(descriptor_length) = usize::try_from(data_length) else {
+            trace::ep0_reject_with_value("unexpected_data_length", data_length);
+            return false;
+        };
+        let descriptor = &DEVICE_DESCRIPTOR[..descriptor_length];
+        if !mem.write_bytes(data.parameter, descriptor) {
             trace::ep0_reject_with_gpa("descriptor_write_failed", data.parameter);
             return false;
         }
-        trace::ep0_descriptor_write_success(data.parameter, DEVICE_DESCRIPTOR.len());
+        trace::ep0_descriptor_write_success(data.parameter, descriptor.len());
         let (event_parameter, event_residual_length, event_flags) =
             transfer_event_completion(&completion);
         let event_status =

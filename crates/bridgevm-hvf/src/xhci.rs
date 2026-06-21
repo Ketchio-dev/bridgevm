@@ -276,4 +276,7 @@ mod test_support;
 mod tests;
 
 #[cfg(test)]
+mod transfer_prefix_tests;
+
+#[cfg(test)]
 mod transfer_tests;
