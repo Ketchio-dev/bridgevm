@@ -383,7 +383,8 @@ impl Bar {
     fn offset_of(&self, addr: u64) -> Option<u64> {
         let base = self.base()?;
         let size = self.size();
-        (addr >= base && addr < base + size).then_some(addr - base)
+        let offset = addr.checked_sub(base)?;
+        (offset < size).then_some(offset)
     }
 
     fn mmio_offset_of(&self, gpa: u64) -> Option<u64> {
@@ -522,8 +523,8 @@ impl Function {
                 let low = bar.base()?;
                 let high = u64::from(self.bars.get(idx + 1)?.value);
                 let base = (high << 32) | low;
-                let end = base.checked_add(bar.size())?;
-                (gpa >= base && gpa < end).then_some(gpa - base)
+                let offset = gpa.checked_sub(base)?;
+                (offset < bar.size()).then_some(offset)
             }
             BarKind::Memory64High | BarKind::Io => None,
         }
@@ -1145,6 +1146,47 @@ mod tests {
             Some(PcieMmioTarget {
                 bdf: VIRTIO_BLK_BDF,
                 bar_index: 4,
+                offset: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn bar_decode_ignores_addresses_below_programmed_base() {
+        let mut ecam = PcieEcam::new();
+        let (bus, dev, func) = VIRTIO_BLK_BDF;
+        let pio_bar0 = ecam_offset(bus, dev, func, REG_BAR0);
+        let pio_cmd = ecam_offset(bus, dev, func, REG_COMMAND_STATUS);
+        let pio_base = 0xc000;
+
+        ecam.cfg_write(pio_bar0, 4, pio_base);
+        ecam.cfg_write(pio_cmd, 2, u64::from(CMD_IO_SPACE));
+
+        assert_eq!(ecam.pio_target(pio_base - 1), None);
+        assert_eq!(
+            ecam.pio_target(pio_base),
+            Some(PciePioTarget {
+                bdf: VIRTIO_BLK_BDF,
+                bar_index: 0,
+                offset: 0,
+            })
+        );
+
+        let xhci_bar0 = ecam_offset(0, 2, 0, REG_BAR0);
+        let xhci_bar1 = ecam_offset(0, 2, 0, REG_BAR0 + 4);
+        let xhci_cmd = ecam_offset(0, 2, 0, REG_COMMAND_STATUS);
+        let mmio_base = machine::PCIE_MMIO_32.base + 0x2_0000;
+
+        ecam.cfg_write(xhci_bar0, 4, mmio_base);
+        ecam.cfg_write(xhci_bar1, 4, 0);
+        ecam.cfg_write(xhci_cmd, 2, u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER));
+
+        assert_eq!(ecam.mmio_target(mmio_base - 1), None);
+        assert_eq!(
+            ecam.mmio_target(mmio_base),
+            Some(PcieMmioTarget {
+                bdf: XHCI_BDF,
+                bar_index: 0,
                 offset: 0,
             })
         );
