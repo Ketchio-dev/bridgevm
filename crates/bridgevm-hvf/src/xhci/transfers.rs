@@ -29,9 +29,6 @@ const SLOT_ID: u32 = 1;
 const ENDPOINT_ID_EP0: u32 = 1;
 const EVENT_ENDPOINT_ID_SHIFT: u32 = 16;
 const EVENT_SLOT_ID_SHIFT: u32 = 24;
-const EP0_CONTEXT_OFFSET: u64 = 0x40;
-const EP_TR_DEQUEUE_OFFSET: u64 = 0x8;
-const EP_TR_DEQUEUE_MASK: u64 = !0xf;
 const TRB_TRANSFER_LENGTH_MASK: u32 = 0x1f_ffff;
 
 #[derive(Clone, Copy)]
@@ -53,22 +50,6 @@ pub(super) const fn is_slot_doorbell(offset: u64, size: u8) -> bool {
 }
 
 impl XhciController {
-    pub(super) fn capture_address_device_input_context(
-        &mut self,
-        mem: &dyn GuestMemoryMut,
-        input_context: u64,
-        slot_id: u32,
-    ) {
-        if slot_id != SLOT_ID {
-            return;
-        }
-        let ep0_dequeue = input_context + EP0_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET;
-        let Some(raw_dequeue) = read_mem_u64(mem, ep0_dequeue) else {
-            return;
-        };
-        self.slot1_ep0_dequeue = raw_dequeue & EP_TR_DEQUEUE_MASK;
-    }
-
     pub(super) fn process_slot_doorbell(
         &mut self,
         offset: u64,
@@ -230,11 +211,6 @@ fn read_transfer_trb(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<TransferTrb> 
         status: read_u32(&raw, 8)?,
         control: read_u32(&raw, 12)?,
     })
-}
-
-fn read_mem_u64(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u64> {
-    let raw = mem.read_bytes(gpa, 8)?;
-    read_u64(&raw, 0)
 }
 
 fn trb_type(control: u32) -> u32 {

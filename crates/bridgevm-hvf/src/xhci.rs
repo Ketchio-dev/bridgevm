@@ -3,6 +3,7 @@ use crate::msix::MsixTable;
 use crate::pcie::{XHCI_MSIX_PBA_OFFSET, XHCI_MSIX_TABLE_OFFSET, XHCI_MSIX_VECTOR_COUNT};
 
 mod commands;
+mod device_context;
 mod event;
 mod interrupts;
 mod mmio;
@@ -249,6 +250,9 @@ impl XhciController {
         self.reset_event_ring();
     }
 }
+
+#[cfg(test)]
+mod address_context_tests;
 
 #[cfg(test)]
 mod command_tests;
