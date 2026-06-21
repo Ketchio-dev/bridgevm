@@ -1288,6 +1288,35 @@ mod tests {
     }
 
     #[test]
+    fn qemu_xhci_64bit_bar_decodes_high_mmio_after_command_enable() {
+        let mut ecam = PcieEcam::new();
+        let bar0 = ecam_offset(0, 2, 0, REG_BAR0);
+        let bar1 = ecam_offset(0, 2, 0, REG_BAR0 + 4);
+        let cmd = ecam_offset(0, 2, 0, REG_COMMAND_STATUS);
+        let base = machine::PCIE_MMIO_64.base + 0x2_0000;
+
+        ecam.cfg_write(bar0, 4, base & 0xffff_ffff);
+        ecam.cfg_write(bar1, 4, base >> 32);
+        assert_eq!(ecam.mmio_target(base), None);
+
+        ecam.cfg_write(cmd, 2, u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER));
+        assert_eq!(ecam.mmio_target(base - 1), None);
+        assert_eq!(
+            ecam.mmio_target(base),
+            Some(PcieMmioTarget {
+                bdf: XHCI_BDF,
+                bar_index: 0,
+                offset: 0,
+            })
+        );
+        assert_eq!(
+            ecam.mmio_target(base + 0x3fff).map(|target| target.offset),
+            Some(0x3fff)
+        );
+        assert_eq!(ecam.mmio_target(base + u64::from(XHCI_BAR0_SIZE)), None);
+    }
+
+    #[test]
     fn writes_to_empty_slots_are_dropped() {
         let mut ecam = PcieEcam::new();
         ecam.cfg_write(ecam_offset(0, 4, 0, REG_COMMAND_STATUS), 2, 0x7);

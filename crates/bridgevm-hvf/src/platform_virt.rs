@@ -366,7 +366,8 @@ impl VirtPlatform {
             "uart" => self.uart_access(gpa - machine::UART.base, op),
             "rtc" => self.rtc_access(gpa - machine::RTC.base, op),
             "pcie-ecam" => self.pcie_access(gpa - machine::PCIE_ECAM.base, op),
-            "pcie-mmio-32" => self.pcie_mmio_access(gpa, op, mem),
+            "pcie-mmio-32" => self.pcie_mmio_access("pcie-mmio-32", gpa, op, mem),
+            "pcie-mmio-64" => self.pcie_mmio_access("pcie-mmio-64", gpa, op, mem),
             "pcie-pio" => self.pcie_pio_access(gpa, op, mem),
             "virtio-mmio" => self.virtio_mmio_access(gpa - machine::VIRTIO_MMIO.base, op, mem),
             "flash-vars" => self.flash_vars.access(gpa, op),
@@ -452,22 +453,21 @@ impl VirtPlatform {
         }
     }
 
-    /// PCIe BAR memory-space access through the 32-bit MMIO aperture. Today the
-    /// only endpoint is the NVMe controller at `00:01.0` BAR0.
     fn pcie_mmio_access(
         &mut self,
+        aperture: &'static str,
         gpa: u64,
         op: MmioOp,
         mem: &mut dyn GuestMemoryMut,
     ) -> MmioOutcome {
         let Some(target) = self.pcie.mmio_target(gpa) else {
-            return MmioOutcome::KnownUnimplemented("pcie-mmio-32");
+            return MmioOutcome::KnownUnimplemented(aperture);
         };
         match (target.bdf, target.bar_index) {
             (NVME_BDF, 0) => self.nvme_access(target.offset, op, mem),
             (XHCI_BDF, 0) => self.xhci_access(target.offset, op),
             (VIRTIO_BLK_BDF, 4) => self.pci_boot_media_access(target.offset, op, mem),
-            _ => MmioOutcome::KnownUnimplemented("pcie-mmio-32"),
+            _ => MmioOutcome::KnownUnimplemented(aperture),
         }
     }
 
@@ -1459,6 +1459,68 @@ mod tests {
         assert_eq!(
             p.on_mmio(base + 0x18, MmioOp::Read { size: 4 }, &mut mem),
             MmioOutcome::ReadValue(0x0000_1000)
+        );
+    }
+
+    #[test]
+    fn xhci_bar_routes_from_64bit_mmio_window() {
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+        let base = machine::PCIE_MMIO_64.base + 0x2_0000;
+
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(
+                    crate::pcie::XHCI_BDF.1,
+                    crate::pcie::XHCI_BDF.2,
+                    crate::pcie::REG_BAR0
+                ),
+                MmioOp::Write {
+                    size: 4,
+                    value: base & 0xffff_ffff,
+                },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(
+                    crate::pcie::XHCI_BDF.1,
+                    crate::pcie::XHCI_BDF.2,
+                    crate::pcie::REG_BAR0 + 4
+                ),
+                MmioOp::Write {
+                    size: 4,
+                    value: base >> 32,
+                },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(
+                    crate::pcie::XHCI_BDF.1,
+                    crate::pcie::XHCI_BDF.2,
+                    crate::pcie::REG_COMMAND_STATUS
+                ),
+                MmioOp::Write {
+                    size: 2,
+                    value: u64::from(crate::pcie::CMD_MEMORY_SPACE | crate::pcie::CMD_BUS_MASTER),
+                },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+
+        assert_eq!(
+            p.on_mmio(base, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0x0100_0040)
+        );
+        assert_eq!(
+            p.on_mmio(base + 0x04, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0x0800_1040)
         );
     }
 

@@ -159,10 +159,9 @@ pub fn virtio_mmio_slot(i: u64) -> Region {
     )
 }
 
-/// The fixed MMIO device regions, in ascending base order. (RAM and the PCIe
-/// 64-bit window are intentionally excluded — RAM is system memory and the
-/// 64-bit window lives far above the device block.)
-pub fn mmio_regions() -> [(&'static str, Region); 13] {
+/// The fixed MMIO device regions, in ascending base order. RAM is intentionally
+/// excluded because it is system memory, not a device aperture.
+pub fn mmio_regions() -> [(&'static str, Region); 14] {
     [
         ("flash-code", FLASH_CODE),
         ("flash-vars", FLASH_VARS),
@@ -177,6 +176,7 @@ pub fn mmio_regions() -> [(&'static str, Region); 13] {
         ("pcie-mmio-32", PCIE_MMIO_32),
         ("pcie-pio", PCIE_PIO),
         ("pcie-ecam", PCIE_ECAM),
+        ("pcie-mmio-64", PCIE_MMIO_64),
     ]
 }
 
@@ -302,6 +302,7 @@ mod tests {
         assert_eq!(device_at(UART.base), Some("uart"));
         assert_eq!(device_at(FW_CFG.base + 0x8), Some("fw-cfg"));
         assert_eq!(device_at(0x0A00_3E10), Some("virtio-mmio"));
+        assert_eq!(device_at(PCIE_MMIO_64.base), Some("pcie-mmio-64"));
         // A hole between GPIO and the virtio block resolves to nothing.
         assert_eq!(device_at(0x0905_0000), None);
     }
