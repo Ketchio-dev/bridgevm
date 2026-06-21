@@ -1,6 +1,9 @@
 use crate::fwcfg::GuestMemoryMut;
 
-use super::{XhciController, USB_CMD_RS, USB_STS_HCH};
+use super::{
+    trace::{self, EventPostTrace, EventRingTrace},
+    XhciController, USB_CMD_RS, USB_STS_HCH,
+};
 
 pub(super) const USB_STS_EINT: u32 = 1 << 3;
 pub(super) const IMAN_INTERRUPT_PENDING: u32 = 1 << 0;
@@ -70,30 +73,58 @@ impl XhciController {
         control_without_cycle: u32,
     ) -> bool {
         if self.erstsz0 == 0 {
+            trace::event_post_reject("erst_size_zero");
             return false;
         }
         let Some(raw_erst) = mem.read_bytes(self.erstba0, 16) else {
+            trace::event_post_reject_with_gpa("erst_read_failed", self.erstba0);
             return false;
         };
         let Some(segment_base) = read_u64(&raw_erst, 0) else {
+            trace::event_post_reject_with_gpa("erst_segment_base_decode_failed", self.erstba0);
             return false;
         };
         let Some(segment_trbs) = read_u32(&raw_erst, 8) else {
+            trace::event_post_reject_with_gpa("erst_segment_size_decode_failed", self.erstba0);
             return false;
         };
         if segment_base == 0 || segment_trbs == 0 || self.event_enqueue >= segment_trbs {
+            trace::event_post_reject_with_ring(
+                "invalid_event_segment",
+                EventRingTrace {
+                    segment_base,
+                    segment_trbs,
+                    enqueue: self.event_enqueue,
+                    cycle: self.event_cycle,
+                },
+            );
             return false;
         }
 
         let event_gpa = segment_base + u64::from(self.event_enqueue) * TRB_SIZE_BYTES;
         let cycle = if self.event_cycle { TRB_CYCLE } else { 0 };
+        let control = control_without_cycle | cycle;
+        let trace = EventPostTrace {
+            ring: EventRingTrace {
+                segment_base,
+                segment_trbs,
+                enqueue: self.event_enqueue,
+                cycle: self.event_cycle,
+            },
+            parameter,
+            status,
+            control,
+            event_gpa,
+        };
         let mut event = [0u8; TRB_SIZE];
         event[0..8].copy_from_slice(&parameter.to_le_bytes());
         event[8..12].copy_from_slice(&status.to_le_bytes());
-        event[12..16].copy_from_slice(&(control_without_cycle | cycle).to_le_bytes());
+        event[12..16].copy_from_slice(&control.to_le_bytes());
         if !mem.write_bytes(event_gpa, &event) {
+            trace::event_post_reject_with_event("event_write_failed", trace);
             return false;
         }
+        trace::event_post_success(trace);
 
         self.event_enqueue += 1;
         if self.event_enqueue == segment_trbs {

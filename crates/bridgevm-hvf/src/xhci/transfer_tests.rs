@@ -293,7 +293,7 @@ fn event_data_control() -> u32 {
 
 fn assert_success_transfer_event(mem: &TestRam, event_gpa: u64) {
     assert_eq!(mem.read_u64(event_gpa), EVENT_DATA_PARAMETER);
-    assert_eq!(mem.read_u32(event_gpa + 8) & 0x00ff_ffff, 18);
+    assert_eq!(mem.read_u32(event_gpa + 8) & 0x00ff_ffff, 0);
     assert_eq!(mem.read_u32(event_gpa + 8) >> 24, COMPLETION_CODE_SUCCESS);
     let control = mem.read_u32(event_gpa + 12);
     assert_eq!((control >> 10) & 0x3f, TRB_TYPE_TRANSFER_EVENT);

@@ -7,26 +7,18 @@ mod event;
 mod interrupts;
 mod mmio;
 mod ports;
+mod trace;
 mod transfers;
+mod usb;
 
 use mmio::{checked_region_offset, mask_to_size, merge_dword};
-use ports::{initial_ports, port_reg, PortState};
+use ports::{initial_ports, port_reg, PortState, XHCI_PORT_COUNT};
 
 pub const XHCI_CAP_LENGTH: u8 = 0x40;
 
 const USB_CMD_RS: u32 = 1 << 0;
 const USB_CMD_HCRST: u32 = 1 << 1;
 const USB_STS_HCH: u32 = 1 << 0;
-const XHCI_PORT_COUNT: usize = 8;
-const PORTSC_CCS: u32 = 1 << 0;
-const PORTSC_PED: u32 = 1 << 1;
-const PORTSC_PR: u32 = 1 << 4;
-const PORTSC_PP: u32 = 1 << 9;
-const PORTSC_SPEED_HIGH: u32 = 3 << 10;
-const PORTSC_CSC: u32 = 1 << 17;
-const PORTSC_PRC: u32 = 1 << 21;
-const PORT_REG_BASE: u64 = 0x440;
-const PORT_REG_STRIDE: u64 = 0x10;
 
 #[derive(Debug, Clone)]
 pub struct XhciController {

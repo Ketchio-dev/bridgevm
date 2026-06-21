@@ -1,7 +1,14 @@
-use super::{
-    PORTSC_CCS, PORTSC_CSC, PORTSC_PED, PORTSC_PP, PORTSC_PR, PORTSC_PRC, PORTSC_SPEED_HIGH,
-    PORT_REG_BASE, PORT_REG_STRIDE, XHCI_PORT_COUNT,
-};
+pub(super) const XHCI_PORT_COUNT: usize = 8;
+
+const PORTSC_CCS: u32 = 1 << 0;
+const PORTSC_PED: u32 = 1 << 1;
+const PORTSC_PR: u32 = 1 << 4;
+pub(super) const PORTSC_PP: u32 = 1 << 9;
+const PORTSC_SPEED_HIGH: u32 = 3 << 10;
+const PORTSC_CSC: u32 = 1 << 17;
+const PORTSC_PRC: u32 = 1 << 21;
+pub(super) const PORT_REG_BASE: u64 = 0x440;
+pub(super) const PORT_REG_STRIDE: u64 = 0x10;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct PortState {

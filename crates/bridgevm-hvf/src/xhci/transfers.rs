@@ -1,6 +1,13 @@
 use crate::fwcfg::GuestMemoryMut;
 
-use super::XhciController;
+use super::{
+    trace,
+    usb::{
+        is_device_descriptor_request, parse_setup_packet, DEVICE_DESCRIPTOR,
+        DEVICE_DESCRIPTOR_LENGTH,
+    },
+    XhciController,
+};
 
 const DOORBELL_BASE: u64 = 0x2000;
 const DOORBELL_STRIDE: u64 = 4;
@@ -25,15 +32,7 @@ const EVENT_SLOT_ID_SHIFT: u32 = 24;
 const EP0_CONTEXT_OFFSET: u64 = 0x40;
 const EP_TR_DEQUEUE_OFFSET: u64 = 0x8;
 const EP_TR_DEQUEUE_MASK: u64 = !0xf;
-const USB_REQUEST_GET_DESCRIPTOR: u8 = 0x06;
-const USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_DEVICE: u8 = 0x80;
-const USB_DESCRIPTOR_TYPE_DEVICE: u8 = 1;
-const DEVICE_DESCRIPTOR_LENGTH: u16 = 18;
 const TRB_TRANSFER_LENGTH_MASK: u32 = 0x1f_ffff;
-
-const DEVICE_DESCRIPTOR: [u8; 18] = [
-    18, 1, 0x00, 0x02, 0, 0, 0, 64, 0x09, 0x12, 0x01, 0x00, 0x00, 0x01, 0, 0, 0, 1,
-];
 
 #[derive(Clone, Copy)]
 struct TransferTrb {
@@ -41,15 +40,6 @@ struct TransferTrb {
     parameter: u64,
     status: u32,
     control: u32,
-}
-
-#[derive(Clone, Copy)]
-struct SetupPacket {
-    bm_request_type: u8,
-    request: u8,
-    value: u16,
-    index: u16,
-    length: u16,
 }
 
 #[derive(Clone, Copy)]
@@ -102,42 +92,77 @@ impl XhciController {
 
     fn process_ep0_control_transfer(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
         let transfer_ring = self.slot1_ep0_dequeue;
+        trace::ep0_handler_entered(transfer_ring);
         if transfer_ring == 0 {
+            trace::ep0_reject("no_ep0_dequeue");
             return false;
         }
         let Some(setup) = read_transfer_trb(mem, transfer_ring) else {
+            trace::ep0_reject_with_gpa("setup_trb_read_failed", transfer_ring);
             return false;
         };
+        trace_trb("setup", setup);
         let Some(data) = read_transfer_trb(mem, transfer_ring + TRB_SIZE_BYTES) else {
+            trace::ep0_reject_with_gpa("data_trb_read_failed", transfer_ring + TRB_SIZE_BYTES);
             return false;
         };
+        trace_trb("data", data);
         let Some(completion) = find_control_completion(mem, transfer_ring + 2 * TRB_SIZE_BYTES)
         else {
+            trace::ep0_reject_with_gpa(
+                "completion_trbs_invalid",
+                transfer_ring + 2 * TRB_SIZE_BYTES,
+            );
             return false;
         };
         let setup_packet = parse_setup_packet(setup.parameter);
-        if !is_device_descriptor_request(setup_packet)
-            || trb_type(setup.control) != TRB_TYPE_SETUP_STAGE
-            || trb_type(data.control) != TRB_TYPE_DATA_STAGE
-            || data.control & TRB_DATA_STAGE_DIRECTION_IN == 0
-            || trb_transfer_length(data.status) != u32::from(DEVICE_DESCRIPTOR_LENGTH)
-        {
+        trace::ep0_setup_packet(
+            setup_packet.bm_request_type,
+            setup_packet.request,
+            setup_packet.value,
+            setup_packet.index,
+            setup_packet.length,
+        );
+        let setup_type = trb_type(setup.control);
+        if !is_device_descriptor_request(setup_packet) {
+            trace::ep0_reject("unsupported_setup_packet");
+            return false;
+        }
+        if setup_type != TRB_TYPE_SETUP_STAGE {
+            trace::ep0_reject_with_value("unexpected_setup_trb_type", setup_type);
+            return false;
+        }
+        let data_type = trb_type(data.control);
+        if data_type != TRB_TYPE_DATA_STAGE {
+            trace::ep0_reject_with_value("unexpected_data_trb_type", data_type);
+            return false;
+        }
+        if data.control & TRB_DATA_STAGE_DIRECTION_IN == 0 {
+            trace::ep0_reject("data_stage_not_in");
+            return false;
+        }
+        let data_length = trb_transfer_length(data.status);
+        if data_length != u32::from(DEVICE_DESCRIPTOR_LENGTH) {
+            trace::ep0_reject_with_value("unexpected_data_length", data_length);
             return false;
         }
         if setup_packet.length != DEVICE_DESCRIPTOR_LENGTH {
+            trace::ep0_reject_with_value("unexpected_setup_length", u32::from(setup_packet.length));
             return false;
         }
         if !mem.write_bytes(data.parameter, &DEVICE_DESCRIPTOR) {
+            trace::ep0_reject_with_gpa("descriptor_write_failed", data.parameter);
             return false;
         }
-        let (event_parameter, event_length, event_flags) =
-            transfer_event_completion(&completion, trb_transfer_length(data.status));
-        let posted = self.post_event(
-            mem,
-            event_parameter,
-            (COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT) | event_length,
-            transfer_event_control(SLOT_ID, ENDPOINT_ID_EP0) | event_flags,
-        );
+        trace::ep0_descriptor_write_success(data.parameter, DEVICE_DESCRIPTOR.len());
+        let (event_parameter, event_residual_length, event_flags) =
+            transfer_event_completion(&completion);
+        let event_status =
+            (COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT) | event_residual_length;
+        let event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_EP0) | event_flags;
+        trace::ep0_post_event_request(event_parameter, event_status, event_control);
+        let posted = self.post_event(mem, event_parameter, event_status, event_control);
+        trace::ep0_post_event_result(posted);
         if posted {
             self.slot1_ep0_dequeue = completion.status_stage.gpa + TRB_SIZE_BYTES;
         }
@@ -148,56 +173,53 @@ impl XhciController {
 fn find_control_completion(mem: &dyn GuestMemoryMut, first_gpa: u64) -> Option<ControlCompletion> {
     let first = read_transfer_trb(mem, first_gpa)?;
     match trb_type(first.control) {
-        TRB_TYPE_STATUS_STAGE => Some(ControlCompletion {
-            status_stage: first,
-            event_data: None,
-        }),
+        TRB_TYPE_STATUS_STAGE => {
+            trace_trb("status", first);
+            Some(ControlCompletion {
+                status_stage: first,
+                event_data: None,
+            })
+        }
         TRB_TYPE_EVENT_DATA => {
+            trace_trb("event_data", first);
             let second = read_transfer_trb(mem, first_gpa + TRB_SIZE_BYTES)?;
+            trace_trb("status", second);
             match trb_type(second.control) {
                 TRB_TYPE_STATUS_STAGE => Some(ControlCompletion {
                     status_stage: second,
                     event_data: (first.control & TRB_IOC != 0).then_some(first),
                 }),
-                _ => None,
+                _ => {
+                    trace::ep0_reject_with_value(
+                        "completion_second_not_status",
+                        trb_type(second.control),
+                    );
+                    None
+                }
             }
         }
-        _ => None,
+        _ => {
+            trace::ep0_reject_with_value(
+                "completion_first_unexpected_type",
+                trb_type(first.control),
+            );
+            None
+        }
     }
 }
 
-fn transfer_event_completion(completion: &ControlCompletion, transferred: u32) -> (u64, u32, u32) {
+fn transfer_event_completion(completion: &ControlCompletion) -> (u64, u32, u32) {
     if let Some(event_data) = completion.event_data {
-        (event_data.parameter, transferred, TRANSFER_EVENT_ED)
+        (event_data.parameter, 0, TRANSFER_EVENT_ED)
     } else {
         (completion.status_stage.gpa, 0, 0)
     }
-}
-
-fn is_device_descriptor_request(packet: SetupPacket) -> bool {
-    let [descriptor_index, descriptor_type] = packet.value.to_le_bytes();
-    packet.bm_request_type == USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_DEVICE
-        && packet.request == USB_REQUEST_GET_DESCRIPTOR
-        && descriptor_type == USB_DESCRIPTOR_TYPE_DEVICE
-        && descriptor_index == 0
-        && packet.index == 0
 }
 
 fn transfer_event_control(slot_id: u32, endpoint_id: u32) -> u32 {
     (slot_id << EVENT_SLOT_ID_SHIFT)
         | (endpoint_id << EVENT_ENDPOINT_ID_SHIFT)
         | (TRB_TYPE_TRANSFER_EVENT << TRB_TYPE_SHIFT)
-}
-
-fn parse_setup_packet(parameter: u64) -> SetupPacket {
-    let bytes = parameter.to_le_bytes();
-    SetupPacket {
-        bm_request_type: bytes[0],
-        request: bytes[1],
-        value: u16::from_le_bytes([bytes[2], bytes[3]]),
-        index: u16::from_le_bytes([bytes[4], bytes[5]]),
-        length: u16::from_le_bytes([bytes[6], bytes[7]]),
-    }
 }
 
 fn read_transfer_trb(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<TransferTrb> {
@@ -233,4 +255,15 @@ fn read_u64(bytes: &[u8], offset: usize) -> Option<u64> {
     let raw = bytes.get(offset..offset + 8)?;
     let array: [u8; 8] = raw.try_into().ok()?;
     Some(u64::from_le_bytes(array))
+}
+
+fn trace_trb(label: &str, trb: TransferTrb) {
+    trace::ep0_trb(
+        label,
+        trb.gpa,
+        trb.parameter,
+        trb.status,
+        trb.control,
+        trb_type(trb.control),
+    );
 }

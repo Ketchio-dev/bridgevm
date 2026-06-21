@@ -1,3 +1,4 @@
+use super::ports::{PORTSC_PP, PORT_REG_BASE, PORT_REG_STRIDE};
 use super::*;
 
 const PORTSC_CCS: u32 = 1 << 0;
