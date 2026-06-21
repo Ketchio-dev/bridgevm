@@ -465,19 +465,18 @@ impl VirtPlatform {
         };
         match (target.bdf, target.bar_index) {
             (NVME_BDF, 0) => self.nvme_access(target.offset, op, mem),
-            (XHCI_BDF, 0) => self.xhci_access(target.offset, op),
+            (XHCI_BDF, 0) => match op {
+                MmioOp::Read { size } => {
+                    MmioOutcome::ReadValue(self.xhci.mmio_read(target.offset, size))
+                }
+                MmioOp::Write { size, value } => {
+                    self.xhci
+                        .mmio_write_with_mem(target.offset, size, value, mem);
+                    MmioOutcome::WriteAck
+                }
+            },
             (VIRTIO_BLK_BDF, 4) => self.pci_boot_media_access(target.offset, op, mem),
             _ => MmioOutcome::KnownUnimplemented(aperture),
-        }
-    }
-
-    fn xhci_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {
-        match op {
-            MmioOp::Read { size } => MmioOutcome::ReadValue(self.xhci.mmio_read(offset, size)),
-            MmioOp::Write { size, value } => {
-                self.xhci.mmio_write(offset, size, value);
-                MmioOutcome::WriteAck
-            }
         }
     }
 

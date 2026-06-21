@@ -1,8 +1,12 @@
+use crate::fwcfg::GuestMemoryMut;
 use crate::msix::MsixTable;
 use crate::pcie::{XHCI_MSIX_PBA_OFFSET, XHCI_MSIX_TABLE_OFFSET, XHCI_MSIX_VECTOR_COUNT};
 
+mod commands;
+mod mmio;
 mod ports;
 
+use mmio::{checked_region_offset, mask_to_size, merge_dword};
 use ports::{initial_ports, port_reg, PortState};
 
 pub const XHCI_CAP_LENGTH: u8 = 0x40;
@@ -10,6 +14,7 @@ pub const XHCI_CAP_LENGTH: u8 = 0x40;
 const USB_CMD_RS: u32 = 1 << 0;
 const USB_CMD_HCRST: u32 = 1 << 1;
 const USB_STS_HCH: u32 = 1 << 0;
+const USB_STS_EINT: u32 = 1 << 3;
 const XHCI_PORT_COUNT: usize = 8;
 const PORTSC_CCS: u32 = 1 << 0;
 const PORTSC_PED: u32 = 1 << 1;
@@ -36,6 +41,8 @@ pub struct XhciController {
     erstsz0: u32,
     erstba0: u64,
     erdp0: u64,
+    event_enqueue: u32,
+    event_cycle: bool,
 }
 
 impl Default for XhciController {
@@ -59,6 +66,8 @@ impl XhciController {
             erstsz0: 0,
             erstba0: 0,
             erdp0: 0,
+            event_enqueue: 0,
+            event_cycle: true,
         }
     }
 
@@ -112,6 +121,19 @@ impl XhciController {
             let part = value >> (u32::from(consumed) * 8);
             self.write_dword(aligned, merge_dword(old, current, chunk, part));
             consumed += chunk;
+        }
+    }
+
+    pub fn mmio_write_with_mem(
+        &mut self,
+        offset: u64,
+        size: u8,
+        value: u64,
+        mem: &mut dyn GuestMemoryMut,
+    ) {
+        self.mmio_write(offset, size, value);
+        if commands::is_command_doorbell(offset, size) {
+            self.process_command_doorbell(mem);
         }
     }
 
@@ -177,6 +199,7 @@ impl XhciController {
             0x40 => {
                 if value & USB_CMD_HCRST != 0 {
                     self.ports = initial_ports();
+                    self.reset_event_ring();
                 }
                 self.usb_command = value & !USB_CMD_HCRST;
             }
@@ -186,54 +209,55 @@ impl XhciController {
             0x70 => self.dcbaap = (self.dcbaap & !0xffff_ffff) | u64::from(value),
             0x74 => self.dcbaap = (self.dcbaap & 0xffff_ffff) | (u64::from(value) << 32),
             0x78 => self.config = value,
-            0x1020 => self.iman0 = value,
+            0x1020 => {
+                let pending = if value & 1 != 0 { 0 } else { self.iman0 & 1 };
+                self.iman0 = pending | (value & 0x2);
+            }
             0x1024 => self.imod0 = value,
-            0x1028 => self.erstsz0 = value,
-            0x1030 => self.erstba0 = (self.erstba0 & !0xffff_ffff) | u64::from(value),
-            0x1034 => self.erstba0 = (self.erstba0 & 0xffff_ffff) | (u64::from(value) << 32),
-            0x1038 => self.erdp0 = (self.erdp0 & !0xffff_ffff) | u64::from(value),
-            0x103c => self.erdp0 = (self.erdp0 & 0xffff_ffff) | (u64::from(value) << 32),
+            0x1028 => {
+                self.erstsz0 = value;
+                self.reset_event_ring();
+            }
+            0x1030 => {
+                self.erstba0 = (self.erstba0 & !0xffff_ffff) | u64::from(value);
+                self.reset_event_ring();
+            }
+            0x1034 => {
+                self.erstba0 = (self.erstba0 & 0xffff_ffff) | (u64::from(value) << 32);
+                self.reset_event_ring();
+            }
+            0x1038 => {
+                self.erdp0 = (self.erdp0 & !0xffff_ffff) | u64::from(value);
+                self.reset_event_ring();
+            }
+            0x103c => {
+                self.erdp0 = (self.erdp0 & 0xffff_ffff) | (u64::from(value) << 32);
+                self.reset_event_ring();
+            }
             _ => {}
         }
     }
 
     fn usb_status(&self) -> u32 {
+        let event_interrupt = if self.iman0 & 1 != 0 { USB_STS_EINT } else { 0 };
         if self.usb_command & USB_CMD_RS == 0 {
-            USB_STS_HCH
+            USB_STS_HCH | event_interrupt
         } else {
-            0
+            event_interrupt
         }
     }
-}
 
-fn checked_region_offset(offset: u64, base: u64, len: u64) -> Option<u64> {
-    let end = base.checked_add(len)?;
-    (offset >= base && offset < end).then(|| offset - base)
-}
-
-fn merge_dword(old: u32, offset: u64, size: u8, value: u64) -> u32 {
-    let shift = ((offset & 0x3) * 8) as u32;
-    let width_mask: u32 = match size {
-        1 => 0xff,
-        2 => 0xffff,
-        3 => 0x00ff_ffff,
-        _ => 0xffff_ffff,
-    };
-    let field_mask = width_mask.checked_shl(shift).unwrap_or(0);
-    let placed = ((value as u32) & width_mask)
-        .checked_shl(shift)
-        .unwrap_or(0);
-    (old & !field_mask) | placed
-}
-
-fn mask_to_size(value: u64, size: u8) -> u64 {
-    match size {
-        1 => value & 0xff,
-        2 => value & 0xffff,
-        4 => value & 0xffff_ffff,
-        _ => value,
+    fn reset_event_ring(&mut self) {
+        self.event_enqueue = 0;
+        self.event_cycle = true;
     }
 }
 
 #[cfg(test)]
+mod command_tests;
+
+#[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod platform_tests;
