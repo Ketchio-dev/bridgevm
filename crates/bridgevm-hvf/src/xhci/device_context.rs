@@ -9,6 +9,7 @@ const DEVICE_CONTEXT_POINTER_MASK: u64 = !0x3f;
 const SLOT_CONTEXT_DWORD3_OFFSET: u64 = 0x0c;
 const EP0_INPUT_CONTEXT_OFFSET: u64 = 0x40;
 const EP0_OUTPUT_CONTEXT_OFFSET: u64 = 0x20;
+const EP_CONTEXT_BYTES: usize = 32;
 const EP_TR_DEQUEUE_OFFSET: u64 = 0x8;
 const EP_TR_DEQUEUE_MASK: u64 = !0xf;
 const SLOT_STATE_ADDRESSED: u32 = 3 << 27;
@@ -24,13 +25,13 @@ impl XhciController {
             return;
         }
         let input_context = input_context & DEVICE_CONTEXT_POINTER_MASK;
-        let Some(ep0_dequeue_gpa) = input_context
-            .checked_add(EP0_INPUT_CONTEXT_OFFSET)
-            .and_then(|base| base.checked_add(EP_TR_DEQUEUE_OFFSET))
-        else {
+        let Some(ep0_input_gpa) = input_context.checked_add(EP0_INPUT_CONTEXT_OFFSET) else {
             return;
         };
-        let Some(raw_dequeue) = read_mem_u64(mem, ep0_dequeue_gpa) else {
+        let Some(ep0_input_context) = mem.read_bytes(ep0_input_gpa, EP_CONTEXT_BYTES) else {
+            return;
+        };
+        let Some(raw_dequeue) = read_u64(&ep0_input_context, EP_TR_DEQUEUE_OFFSET as usize) else {
             return;
         };
         self.slot1_ep0_dequeue = raw_dequeue & EP_TR_DEQUEUE_MASK;
@@ -53,14 +54,14 @@ impl XhciController {
         let Some(slot_dword3_gpa) = output_context.checked_add(SLOT_CONTEXT_DWORD3_OFFSET) else {
             return;
         };
-        let Some(ep0_dequeue_output_gpa) = output_context
-            .checked_add(EP0_OUTPUT_CONTEXT_OFFSET)
-            .and_then(|base| base.checked_add(EP_TR_DEQUEUE_OFFSET))
-        else {
+        let Some(ep0_output_gpa) = output_context.checked_add(EP0_OUTPUT_CONTEXT_OFFSET) else {
+            return;
+        };
+        let Some(ep0_dequeue_output_gpa) = ep0_output_gpa.checked_add(EP_TR_DEQUEUE_OFFSET) else {
             return;
         };
         if mem.read_bytes(slot_dword3_gpa, 4).is_none()
-            || mem.read_bytes(ep0_dequeue_output_gpa, 8).is_none()
+            || mem.read_bytes(ep0_output_gpa, EP_CONTEXT_BYTES).is_none()
         {
             return;
         }
@@ -71,19 +72,22 @@ impl XhciController {
         ) {
             return;
         }
+        if !mem.write_bytes(ep0_output_gpa, &ep0_input_context) {
+            return;
+        }
         if !write_mem_u64(mem, ep0_dequeue_output_gpa, raw_dequeue) {
             return;
         }
     }
 }
 
+fn write_mem_u32(mem: &mut dyn GuestMemoryMut, gpa: u64, value: u32) -> bool {
+    mem.write_bytes(gpa, &value.to_le_bytes())
+}
+
 fn read_mem_u64(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u64> {
     let raw = mem.read_bytes(gpa, 8)?;
     read_u64(&raw, 0)
-}
-
-fn write_mem_u32(mem: &mut dyn GuestMemoryMut, gpa: u64, value: u32) -> bool {
-    mem.write_bytes(gpa, &value.to_le_bytes())
 }
 
 fn write_mem_u64(mem: &mut dyn GuestMemoryMut, gpa: u64, value: u64) -> bool {

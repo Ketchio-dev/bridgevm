@@ -13,9 +13,13 @@ const TRB_CYCLE: u64 = 1;
 const SLOT_CONTEXT_DWORD3: u64 = 0x0c;
 const EP0_INPUT_CONTEXT_OFFSET: u64 = 0x40;
 const EP0_OUTPUT_CONTEXT_OFFSET: u64 = 0x20;
+const EP_CONTEXT_DWORD1_OFFSET: u64 = 0x4;
 const EP_TR_DEQUEUE_OFFSET: u64 = 0x8;
+const EP_CONTEXT_DWORD4_OFFSET: u64 = 0x10;
 const SLOT_STATE_ADDRESSED: u32 = 3 << 27;
 const NON_SLOT1_ID: u32 = 2;
+const EP0_DWORD1: u32 = (3 << 1) | (4 << 3) | (64 << 16);
+const EP0_DWORD4: u32 = 8;
 
 #[test]
 fn address_device_command_populates_output_context_from_dcbaa_slot_entry() {
@@ -36,6 +40,45 @@ fn address_device_command_populates_output_context_from_dcbaa_slot_entry() {
     assert_eq!(
         mem.read_u64(OUTPUT_CONTEXT + EP0_OUTPUT_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET),
         EP0_RING | TRB_CYCLE
+    );
+    assert_success_completion(&mem, EVENT_RING, CMD_RING, ENABLE_SLOT_ID);
+}
+
+#[test]
+fn address_device_command_copies_ep0_endpoint_context_dwords() {
+    // Given: EP0 input context carries the endpoint parameters EDK2 reads back.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    setup_address_device_command(&mut xhci, &mut mem, ENABLE_SLOT_ID);
+    mem.write_u64(DCBAA + (u64::from(ENABLE_SLOT_ID) * 8), OUTPUT_CONTEXT);
+    mem.write_u32(
+        INPUT_CONTEXT + EP0_INPUT_CONTEXT_OFFSET + EP_CONTEXT_DWORD1_OFFSET,
+        EP0_DWORD1,
+    );
+    mem.write_u32(
+        INPUT_CONTEXT + EP0_INPUT_CONTEXT_OFFSET + EP_CONTEXT_DWORD4_OFFSET,
+        EP0_DWORD4,
+    );
+    assert_eq!(
+        mem.read_u32(INPUT_CONTEXT + EP0_INPUT_CONTEXT_OFFSET + EP_CONTEXT_DWORD1_OFFSET),
+        EP0_DWORD1
+    );
+    assert_eq!(
+        mem.read_u32(INPUT_CONTEXT + EP0_INPUT_CONTEXT_OFFSET + EP_CONTEXT_DWORD4_OFFSET),
+        EP0_DWORD4
+    );
+
+    // When: Address Device completes for slot 1.
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+
+    // Then: output EP0 exposes the same endpoint context dwords firmware consumes.
+    assert_eq!(
+        mem.read_u32(OUTPUT_CONTEXT + EP0_OUTPUT_CONTEXT_OFFSET + EP_CONTEXT_DWORD1_OFFSET),
+        EP0_DWORD1
+    );
+    assert_eq!(
+        mem.read_u32(OUTPUT_CONTEXT + EP0_OUTPUT_CONTEXT_OFFSET + EP_CONTEXT_DWORD4_OFFSET),
+        EP0_DWORD4
     );
     assert_success_completion(&mem, EVENT_RING, CMD_RING, ENABLE_SLOT_ID);
 }
