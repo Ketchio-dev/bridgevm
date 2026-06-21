@@ -1,3 +1,8 @@
+mod snapshot;
+#[cfg(test)]
+mod snapshot_tests;
+pub use snapshot::{RamfbSnapshot, RamfbSnapshotError, RamfbSnapshotSummary};
+
 pub const RAMFB_FW_CFG_FILE: &str = "etc/ramfb";
 pub const RAMFB_CONFIG_SIZE: usize = 28;
 pub const DRM_FORMAT_XRGB8888: u32 = 0x3432_5258;
@@ -41,6 +46,10 @@ impl RamfbConfig {
 
     pub const fn is_xrgb8888(self) -> bool {
         self.fourcc == DRM_FORMAT_XRGB8888
+    }
+
+    pub fn framebuffer_len(self) -> Result<usize, RamfbSnapshotError> {
+        snapshot::framebuffer_len(self)
     }
 }
 

@@ -66,6 +66,8 @@ use pcie_mmio_trace::{PcieTraceTarget, RecentMmio};
 #[path = "hvf_gic_boot_probe/pe_trace.rs"]
 mod pe_trace;
 use pe_trace::{print_frame_chain, print_pe_owner, print_translated_pe_owner, translated_ipa};
+#[path = "hvf_gic_boot_probe/ramfb_dump.rs"]
+mod ramfb_dump;
 #[path = "hvf_gic_boot_probe/serial_input.rs"]
 mod serial_input;
 use serial_input::SerialTriggeredUartInput;
@@ -1904,7 +1906,8 @@ fn main() {
         if let Some(trace) = platform.virtio_iso_request_trace() {
             print_block_request_trace("recent legacy virtio-mmio ISO requests", &trace);
         }
-        match platform.ramfb_config() {
+        let ramfb_config = platform.ramfb_config();
+        match ramfb_config {
             Some(config) => println!(
                 "ramfb config: addr={:#x} fourcc={:#010x} xrgb8888={} {}x{} stride={}",
                 config.addr,
@@ -1916,6 +1919,7 @@ fn main() {
             ),
             None => println!("ramfb config: inactive"),
         }
+        ramfb_dump::print_and_dump(ramfb_config, &guest_ram);
         println!("symbol lines: {}", symbols.len());
         for line in symbols.iter().rev().take(8).rev() {
             println!("{line}");
