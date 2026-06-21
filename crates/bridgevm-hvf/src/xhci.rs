@@ -34,6 +34,8 @@ pub struct XhciController {
     usb_command: u32,
     dnctrl: u32,
     crcr: u64,
+    command_dequeue: u64,
+    command_cycle: bool,
     dcbaap: u64,
     config: u32,
     iman0: u32,
@@ -59,6 +61,8 @@ impl XhciController {
             usb_command: 0,
             dnctrl: 0,
             crcr: 0,
+            command_dequeue: 0,
+            command_cycle: false,
             dcbaap: 0,
             config: 0,
             iman0: 0,
@@ -204,8 +208,8 @@ impl XhciController {
                 self.usb_command = value & !USB_CMD_HCRST;
             }
             0x54 => self.dnctrl = value,
-            0x58 => self.crcr = (self.crcr & !0xffff_ffff) | u64::from(value),
-            0x5c => self.crcr = (self.crcr & 0xffff_ffff) | (u64::from(value) << 32),
+            0x58 => self.write_crcr_low(value),
+            0x5c => self.write_crcr_high(value),
             0x70 => self.dcbaap = (self.dcbaap & !0xffff_ffff) | u64::from(value),
             0x74 => self.dcbaap = (self.dcbaap & 0xffff_ffff) | (u64::from(value) << 32),
             0x78 => self.config = value,
@@ -228,11 +232,9 @@ impl XhciController {
             }
             0x1038 => {
                 self.erdp0 = (self.erdp0 & !0xffff_ffff) | u64::from(value);
-                self.reset_event_ring();
             }
             0x103c => {
                 self.erdp0 = (self.erdp0 & 0xffff_ffff) | (u64::from(value) << 32);
-                self.reset_event_ring();
             }
             _ => {}
         }
