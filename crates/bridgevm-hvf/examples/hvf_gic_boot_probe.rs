@@ -71,6 +71,9 @@ mod ramfb_dump;
 #[path = "hvf_gic_boot_probe/serial_input.rs"]
 mod serial_input;
 use serial_input::SerialTriggeredUartInput;
+#[path = "hvf_gic_boot_probe/xhci_trace.rs"]
+mod xhci_trace;
+use xhci_trace::XhciBringupTrace;
 
 /// A GuestMemoryMut view over the actual HVF-mapped guest RAM, so fw_cfg DMA
 /// reads/writes hit real firmware memory (not a throwaway buffer).
@@ -1143,6 +1146,7 @@ fn main() {
     let trace_msix = env_flag("BRIDGEVM_TRACE_MSIX");
     let trace_spi = env_flag("BRIDGEVM_TRACE_SPI");
     let trace_run_loop = env_flag("BRIDGEVM_TRACE_RUN_LOOP");
+    let trace_xhci_bringup = env_flag("BRIDGEVM_TRACE_XHCI_BRINGUP");
     let stop_on_linux = env_flag_default("BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX", true);
 
     unsafe {
@@ -1430,6 +1434,10 @@ fn main() {
             "pcie-pio",
             usize::try_from(env_u64("BRIDGEVM_RECENT_PCIE_PIO", 32)).unwrap_or(32),
         );
+        let mut recent_xhci = XhciBringupTrace::new(
+            usize::try_from(env_u64("BRIDGEVM_RECENT_XHCI", 160)).unwrap_or(160),
+        );
+        recent_xhci.print_events_immediately(trace_xhci_bringup);
         let mut unimpl: BTreeMap<&'static str, u64> = BTreeMap::new();
         let mut redist_lo = u64::MAX;
         let mut redist_hi = 0u64;
@@ -1523,6 +1531,11 @@ fn main() {
                         "pcie-pio" => platform.pcie_pio_target(ipa).map(PcieTraceTarget::Pio),
                         _ => None,
                     };
+                    let xhci_target = match pcie_target {
+                        Some(PcieTraceTarget::Mmio(target)) => Some(target),
+                        Some(PcieTraceTarget::Pio(_)) | None => None,
+                    };
+                    recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
                     let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
                     recent_pcie_mmio.record(device, last_pc, ipa, pcie_target, &op, &outcome);
                     recent_pcie_pio.record(device, last_pc, ipa, pcie_target, &op, &outcome);
@@ -1916,6 +1929,7 @@ fn main() {
         print_mmio_traces(&mmio_traces);
         recent_pcie_mmio.print();
         recent_pcie_pio.print();
+        recent_xhci.print();
         print_nvme_command_trace(&platform);
         println!("UART RX remaining bytes: {}", platform.uart_input_len());
         for trigger in &uart_triggers {
