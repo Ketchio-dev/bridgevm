@@ -652,7 +652,8 @@ impl FlatGuestRam {
         }
     }
     fn offset(&self, gpa: u64) -> Option<usize> {
-        gpa.checked_sub(self.base).map(|o| o as usize)
+        gpa.checked_sub(self.base)
+            .and_then(|value| usize::try_from(value).ok())
     }
 }
 
@@ -661,7 +662,9 @@ impl GuestMemoryMut for FlatGuestRam {
         let Some(start) = self.offset(gpa) else {
             return false;
         };
-        let end = start + data.len();
+        let Some(end) = start.checked_add(data.len()) else {
+            return false;
+        };
         if end > self.bytes.len() {
             return false;
         }
@@ -670,7 +673,7 @@ impl GuestMemoryMut for FlatGuestRam {
     }
     fn read_bytes(&self, gpa: u64, len: usize) -> Option<Vec<u8>> {
         let start = self.offset(gpa)?;
-        let end = start + len;
+        let end = start.checked_add(len)?;
         if end > self.bytes.len() {
             return None;
         }
@@ -1777,6 +1780,15 @@ mod tests {
 
         assert_eq!(size, RAMFB_CONFIG_SIZE);
         assert_eq!(p.ramfb_config(), None);
+    }
+
+    #[test]
+    fn flat_guest_ram_rejects_ranges_that_overflow_host_offset() {
+        let mut ram = FlatGuestRam::new(0, 16);
+        let overflowing_gpa = usize::MAX as u64;
+
+        assert_eq!(ram.read_bytes(overflowing_gpa, 2), None);
+        assert!(!ram.write_bytes(overflowing_gpa, &[1, 2]));
     }
 
     #[test]

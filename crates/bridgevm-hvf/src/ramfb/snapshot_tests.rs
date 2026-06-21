@@ -69,6 +69,56 @@ fn snapshot_summarizes_xrgb8888_framebuffer() {
 }
 
 #[test]
+fn snapshot_ignores_x_byte_when_counting_nonzero_pixels() {
+    let config = RamfbConfig {
+        addr: 0x4008_0000,
+        fourcc: DRM_FORMAT_XRGB8888,
+        flags: 0,
+        width: 1,
+        height: 1,
+        stride: 4,
+    };
+    let ram = TestRam::new(0x4008_0000, vec![0x00, 0x00, 0x00, 0xff]);
+
+    let snapshot = RamfbSnapshot::read_from(&ram, config).unwrap();
+
+    assert_eq!(snapshot.summary.nonzero_bytes, 1);
+    assert_eq!(snapshot.summary.nonzero_pixels, 0);
+    assert_eq!(snapshot.summary.zero_pixels, 1);
+    assert_eq!(snapshot.summary.first_nonzero_pixel, None);
+    assert_eq!(snapshot.ppm_bytes().unwrap(), b"P6\n1 1\n255\n\x00\x00\x00");
+}
+
+#[test]
+fn snapshot_preserves_stride_padding_in_byte_len() {
+    let config = RamfbConfig {
+        addr: 0x4008_0000,
+        fourcc: DRM_FORMAT_XRGB8888,
+        flags: 0,
+        width: 1,
+        height: 2,
+        stride: 8,
+    };
+    let ram = TestRam::new(
+        0x4008_0000,
+        vec![
+            0x03, 0x02, 0x01, 0x00, 0xaa, 0xbb, 0xcc, 0xdd, 0x06, 0x05, 0x04, 0x00, 0x11, 0x22,
+            0x33, 0x44,
+        ],
+    );
+
+    let snapshot = RamfbSnapshot::read_from(&ram, config).unwrap();
+
+    assert_eq!(config.framebuffer_len().unwrap(), 16);
+    assert_eq!(snapshot.summary.byte_len, 16);
+    assert_eq!(snapshot.summary.pixel_count, 2);
+    assert_eq!(
+        snapshot.ppm_bytes().unwrap(),
+        b"P6\n1 2\n255\n\x01\x02\x03\x04\x05\x06"
+    );
+}
+
+#[test]
 fn snapshot_rejects_inactive_config() {
     let ram = TestRam::new(0x4000_0000, vec![0; 16]);
     let config = RamfbConfig {
@@ -83,6 +133,32 @@ fn snapshot_rejects_inactive_config() {
     assert_eq!(
         RamfbSnapshot::read_from(&ram, config),
         Err(RamfbSnapshotError::Inactive)
+    );
+}
+
+#[test]
+fn snapshot_rejects_unsupported_format_before_sizing() {
+    let ram = TestRam::new(0x4000_0000, vec![0; 16]);
+    let config = RamfbConfig {
+        addr: 0x4000_0000,
+        fourcc: 0x3432_4241,
+        flags: 0,
+        width: 1,
+        height: 1,
+        stride: 4,
+    };
+
+    assert_eq!(
+        config.framebuffer_len(),
+        Err(RamfbSnapshotError::UnsupportedFormat {
+            fourcc: config.fourcc
+        })
+    );
+    assert_eq!(
+        RamfbSnapshot::read_from(&ram, config),
+        Err(RamfbSnapshotError::UnsupportedFormat {
+            fourcc: config.fourcc
+        })
     );
 }
 

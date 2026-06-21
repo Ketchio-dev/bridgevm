@@ -81,23 +81,55 @@ struct MappedRam {
 }
 impl GuestMemoryMut for MappedRam {
     fn write_bytes(&mut self, gpa: u64, data: &[u8]) -> bool {
-        let Some(off) = gpa.checked_sub(self.base).map(|o| o as usize) else {
+        let Some(off) = gpa
+            .checked_sub(self.base)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
             return false;
         };
-        if off + data.len() > self.len {
+        let Some(end) = off.checked_add(data.len()) else {
+            return false;
+        };
+        if end > self.len {
             return false;
         }
+        // SAFETY: Category 10/11 - `off..end` was checked to stay inside the
+        // live HVF RAM mapping, so `ptr.add(off)` is in-bounds for `data.len()`.
         unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), self.ptr.add(off), data.len()) };
         true
     }
     fn read_bytes(&self, gpa: u64, len: usize) -> Option<Vec<u8>> {
-        let off = gpa.checked_sub(self.base)? as usize;
-        if off + len > self.len {
+        let off = gpa
+            .checked_sub(self.base)
+            .and_then(|value| usize::try_from(value).ok())?;
+        let end = off.checked_add(len)?;
+        if end > self.len {
             return None;
         }
         let mut v = vec![0u8; len];
+        // SAFETY: Category 10/11 - `off..end` was checked to stay inside the
+        // live HVF RAM mapping, so copying `len` bytes from `ptr.add(off)` is in-bounds.
         unsafe { std::ptr::copy_nonoverlapping(self.ptr.add(off), v.as_mut_ptr(), len) };
         Some(v)
+    }
+}
+
+#[cfg(test)]
+mod mapped_ram_tests {
+    use super::*;
+
+    #[test]
+    fn mapped_ram_rejects_ranges_that_overflow_host_offset() {
+        let mut bytes = [0u8; 16];
+        let mut ram = MappedRam {
+            base: 0,
+            ptr: bytes.as_mut_ptr(),
+            len: bytes.len(),
+        };
+        let overflowing_gpa = usize::MAX as u64;
+
+        assert_eq!(ram.read_bytes(overflowing_gpa, 2), None);
+        assert!(!ram.write_bytes(overflowing_gpa, &[1, 2]));
     }
 }
 

@@ -46,6 +46,7 @@ struct FramebufferGeometry {
 }
 
 pub(super) fn framebuffer_len(config: RamfbConfig) -> Result<usize, RamfbSnapshotError> {
+    ensure_xrgb8888(config)?;
     framebuffer_geometry(config).map(|geometry| geometry.byte_len)
 }
 
@@ -157,7 +158,7 @@ fn summarize_xrgb8888(
         let row_start = row * geometry.stride;
         let row_end = row_start + geometry.row_bytes;
         for (col, pixel) in bytes[row_start..row_end].chunks_exact(4).enumerate() {
-            if pixel != [0, 0, 0, 0] {
+            if pixel[0..3] != [0, 0, 0] {
                 let row_index = u64::try_from(row).map_err(|_| RamfbSnapshotError::SizeOverflow)?;
                 let col_index = u64::try_from(col).map_err(|_| RamfbSnapshotError::SizeOverflow)?;
                 let pixel_index = row_index * u64::from(config.width) + col_index;
