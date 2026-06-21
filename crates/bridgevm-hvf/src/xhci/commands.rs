@@ -1,6 +1,6 @@
 use crate::fwcfg::GuestMemoryMut;
 
-use super::XhciController;
+use super::{event::IMAN_INTERRUPT_PENDING, XhciController};
 
 const DOORBELL0: u64 = 0x2000;
 const TRB_SIZE: usize = 16;
@@ -20,7 +20,6 @@ const COMPLETION_CODE_SUCCESS: u32 = 1;
 const SLOT_ID: u32 = 1;
 const COMMAND_SLOT_ID_SHIFT: u32 = 24;
 const COMMAND_SLOT_ID_MASK: u32 = 0xff;
-const IMAN_INTERRUPT_PENDING: u32 = 1;
 const MAX_LINK_TRBS_PER_DOORBELL: usize = 8;
 
 pub(super) const fn is_command_doorbell(offset: u64, size: u8) -> bool {
@@ -121,6 +120,7 @@ impl XhciController {
             self.event_enqueue = 0;
             self.event_cycle = !self.event_cycle;
         }
+        self.event_handler_busy = true;
         self.iman0 |= IMAN_INTERRUPT_PENDING;
         true
     }

@@ -3,6 +3,7 @@ use crate::msix::MsixTable;
 use crate::pcie::{XHCI_MSIX_PBA_OFFSET, XHCI_MSIX_TABLE_OFFSET, XHCI_MSIX_VECTOR_COUNT};
 
 mod commands;
+mod event;
 mod mmio;
 mod ports;
 
@@ -14,7 +15,6 @@ pub const XHCI_CAP_LENGTH: u8 = 0x40;
 const USB_CMD_RS: u32 = 1 << 0;
 const USB_CMD_HCRST: u32 = 1 << 1;
 const USB_STS_HCH: u32 = 1 << 0;
-const USB_STS_EINT: u32 = 1 << 3;
 const XHCI_PORT_COUNT: usize = 8;
 const PORTSC_CCS: u32 = 1 << 0;
 const PORTSC_PED: u32 = 1 << 1;
@@ -43,6 +43,7 @@ pub struct XhciController {
     erstsz0: u32,
     erstba0: u64,
     erdp0: u64,
+    event_handler_busy: bool,
     event_enqueue: u32,
     event_cycle: bool,
 }
@@ -70,6 +71,7 @@ impl XhciController {
             erstsz0: 0,
             erstba0: 0,
             erdp0: 0,
+            event_handler_busy: false,
             event_enqueue: 0,
             event_cycle: true,
         }
@@ -186,7 +188,7 @@ impl XhciController {
             0x1028 => self.erstsz0,
             0x1030 => self.erstba0 as u32,
             0x1034 => (self.erstba0 >> 32) as u32,
-            0x1038 => self.erdp0 as u32,
+            0x1038 => self.erdp_low(),
             0x103c => (self.erdp0 >> 32) as u32,
             _ => 0,
         }
@@ -213,10 +215,7 @@ impl XhciController {
             0x70 => self.dcbaap = (self.dcbaap & !0xffff_ffff) | u64::from(value),
             0x74 => self.dcbaap = (self.dcbaap & 0xffff_ffff) | (u64::from(value) << 32),
             0x78 => self.config = value,
-            0x1020 => {
-                let pending = if value & 1 != 0 { 0 } else { self.iman0 & 1 };
-                self.iman0 = pending | (value & 0x2);
-            }
+            0x1020 => self.write_iman0(value),
             0x1024 => self.imod0 = value,
             0x1028 => {
                 self.erstsz0 = value;
@@ -230,33 +229,18 @@ impl XhciController {
                 self.erstba0 = (self.erstba0 & 0xffff_ffff) | (u64::from(value) << 32);
                 self.reset_event_ring();
             }
-            0x1038 => {
-                self.erdp0 = (self.erdp0 & !0xffff_ffff) | u64::from(value);
-            }
-            0x103c => {
-                self.erdp0 = (self.erdp0 & 0xffff_ffff) | (u64::from(value) << 32);
-            }
+            0x1038 => self.write_erdp_low(value),
+            0x103c => self.write_erdp_high(value),
             _ => {}
         }
-    }
-
-    fn usb_status(&self) -> u32 {
-        let event_interrupt = if self.iman0 & 1 != 0 { USB_STS_EINT } else { 0 };
-        if self.usb_command & USB_CMD_RS == 0 {
-            USB_STS_HCH | event_interrupt
-        } else {
-            event_interrupt
-        }
-    }
-
-    fn reset_event_ring(&mut self) {
-        self.event_enqueue = 0;
-        self.event_cycle = true;
     }
 }
 
 #[cfg(test)]
 mod command_tests;
+
+#[cfg(test)]
+mod event_tests;
 
 #[cfg(test)]
 mod tests;

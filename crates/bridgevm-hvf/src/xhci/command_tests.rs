@@ -1,31 +1,32 @@
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
+use crate::xhci::event::USB_STS_EINT;
 
-const DOORBELL_BASE: u64 = 0x2000;
+pub(super) const DOORBELL_BASE: u64 = 0x2000;
 const TRB_TYPE_LINK: u32 = 6;
-const TRB_TYPE_ENABLE_SLOT: u32 = 9;
+pub(super) const TRB_TYPE_ENABLE_SLOT: u32 = 9;
 const TRB_TYPE_DISABLE_SLOT: u32 = 10;
 const TRB_TYPE_ADDRESS_DEVICE: u32 = 11;
 const TRB_TYPE_COMMAND_COMPLETION_EVENT: u32 = 33;
 const COMPLETION_CODE_SUCCESS: u32 = 1;
-const ENABLE_SLOT_ID: u32 = 1;
+pub(super) const ENABLE_SLOT_ID: u32 = 1;
 const ADDRESS_DEVICE_SLOT_ID: u32 = 7;
 const DISABLE_SLOT_ID: u32 = 4;
-const TRB_SIZE: u64 = 16;
+pub(super) const TRB_SIZE: u64 = 16;
 const CMD_RING: u64 = 0x1000;
 const LINK_TARGET: u64 = 0x1110;
 const ERST: u64 = 0x2000;
-const EVENT_RING: u64 = 0x3000;
+pub(super) const EVENT_RING: u64 = 0x3000;
 const LINK_TOGGLE_CYCLE: u32 = 1 << 1;
 const DCBAA: u64 = 0x4000;
 
 #[derive(Debug)]
-struct TestRam {
+pub(super) struct TestRam {
     bytes: Vec<u8>,
 }
 
 impl TestRam {
-    fn new(len: usize) -> Self {
+    pub(super) fn new(len: usize) -> Self {
         Self {
             bytes: vec![0; len],
         }
@@ -77,7 +78,11 @@ impl GuestMemoryMut for TestRam {
     }
 }
 
-fn setup_command_rings(xhci: &mut XhciController, mem: &mut TestRam, command_control: u32) {
+pub(super) fn setup_command_rings(
+    xhci: &mut XhciController,
+    mem: &mut TestRam,
+    command_control: u32,
+) {
     mem.write_u32(CMD_RING + 12, command_control);
     setup_event_ring(xhci, mem);
 }
@@ -95,7 +100,7 @@ fn setup_event_ring(xhci: &mut XhciController, mem: &mut TestRam) {
     xhci.mmio_write(0x1020, 4, 0x2);
 }
 
-fn command_control(trb_type: u32, slot_id: u32) -> u32 {
+pub(super) fn command_control(trb_type: u32, slot_id: u32) -> u32 {
     command_control_with_cycle(trb_type, slot_id, true)
 }
 
