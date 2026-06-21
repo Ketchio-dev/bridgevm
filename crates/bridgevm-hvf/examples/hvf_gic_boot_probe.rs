@@ -63,6 +63,9 @@ use nvme_trace::print_nvme_command_trace;
 #[path = "hvf_gic_boot_probe/pcie_mmio_trace.rs"]
 mod pcie_mmio_trace;
 use pcie_mmio_trace::{targetless_xhci_trace_context, PcieTraceTarget, RecentMmio};
+#[path = "hvf_gic_boot_probe/pcie_ecam_trace.rs"]
+mod pcie_ecam_trace;
+use pcie_ecam_trace::RecentPcieEcam;
 #[path = "hvf_gic_boot_probe/pe_trace.rs"]
 mod pe_trace;
 use pe_trace::{print_frame_chain, print_pe_owner, print_translated_pe_owner, translated_ipa};
@@ -1434,6 +1437,9 @@ fn main() {
             "pcie-pio",
             usize::try_from(env_u64("BRIDGEVM_RECENT_PCIE_PIO", 32)).unwrap_or(32),
         );
+        let mut recent_pcie_ecam = RecentPcieEcam::new(
+            usize::try_from(env_u64("BRIDGEVM_RECENT_PCIE_ECAM", 128)).unwrap_or(128),
+        );
         let mut recent_xhci = XhciBringupTrace::new(
             usize::try_from(env_u64("BRIDGEVM_RECENT_XHCI", 160)).unwrap_or(160),
         );
@@ -1537,6 +1543,14 @@ fn main() {
                     };
                     recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
                     let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
+                    recent_pcie_ecam.record_after(
+                        &mut platform,
+                        &mut guest_ram,
+                        last_pc,
+                        ipa,
+                        &op,
+                        &outcome,
+                    );
                     let pcie_context = targetless_xhci_trace_context(
                         &mut platform,
                         &mut guest_ram,
@@ -1943,6 +1957,7 @@ fn main() {
         .print(&drain_stats);
         println!("unmodelled MMIO touched: {unimpl:?}");
         print_mmio_traces(&mmio_traces);
+        recent_pcie_ecam.print();
         recent_pcie_mmio.print();
         recent_pcie_pio.print();
         recent_xhci.print();
