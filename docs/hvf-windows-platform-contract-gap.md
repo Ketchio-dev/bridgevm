@@ -1,6 +1,6 @@
 # HVF Windows path: platform-contract gap vs. QEMU `virt`
 
-_Last updated: 2026-06-20._
+_Last updated: 2026-06-21._
 
 > **Status note:** this document records the original contract gap that motivated
 > Path A. The active Path A source of truth is now
@@ -190,10 +190,18 @@ no-CMB registers `CMBLOC`/`CMBSZ` as zero. Its NVMe summary has only the
 expected pending Asynchronous Event Requests and no other pending commands, so
 the current differential target is Windows high-VA/SVC context and QEMU device
 shape parity rather than a plain missing-completion bug.
-The remaining gap is above firmware: validate the PCI boot-media default with a
-live HVF run, lift NVMe overlay/writeback and pflash persistence into the
-engine-facing VM configuration, keep tightening Windows-relevant ACPI/device-path
-details beyond the now-modelled PL011 DBG2 surface, add installer usability
-devices such as GOP framebuffer, keyboard/input, xHCI/USB-storage if the fixed
-virtio-blk media shape is not enough, and networking, and then run Windows
-installer validation.
+The remaining gap is above firmware: the PCI boot-media default has now been
+validated far enough to reach Windows 11 Setup with ramfb enabled. The repeatable
+probe recipe injects a PL011 space after `BdsDxe: starting Boot0001`; the run
+serves 234 PCI virtio boot-media reads, reads `646239744` bytes from the ISO, and
+captures an 800x600 ramfb screenshot showing Setup's `Install driver to show
+hardware` page. That page means fixed `virtio-blk-pci` media is sufficient for
+firmware and boot-loader reads but not yet sufficient for WinPE/Setup hardware or
+media discovery. Continue by diffing QEMU+HVF `-cdrom` against BridgeVM's exposed
+install-media shape, then model the smallest guest-visible path Windows Setup can
+use: true CD-ROM/removable semantics, xHCI USB mass storage, or an inbox-visible
+NVMe-backed media/target arrangement. In parallel, lift NVMe overlay/writeback and
+pflash persistence into the engine-facing VM configuration, keep tightening
+Windows-relevant ACPI/device-path details beyond the now-modelled PL011 DBG2
+surface, add production input/networking, and then run Windows installer
+validation again.

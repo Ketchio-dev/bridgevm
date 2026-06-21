@@ -1,6 +1,6 @@
 # BridgeVM HVF Windows engine — strategy & sequenced plan
 
-_Last updated: 2026-06-20._
+_Last updated: 2026-06-21._
 
 ## Context
 
@@ -83,8 +83,8 @@ ACPI-only boot): Linux gives you `dmesg`, Windows gives you a sad face.
 | 5 | PCIe ECAM (`pci-host-ecam-generic`) + config space + MSI/MSI-X | **partial (wired + Linux validated)** | ECAM host bridge, NVMe endpoint config space, BAR0 MMIO routing, writable MSI-X table/PBA, Apple GICM/GICv2m-style MSI-frame metadata and `hv_gic_send_msi` delivery are wired; Linux drives the NVMe queue through the PCI endpoint under ACPI |
 | 6 | **Linux ACPI-only boot** through the stock firmware | **partial (Ubuntu root userspace starts)** | QEMU-style `-kernel`/`-initrd` fw_cfg blobs boot Ubuntu's arm64 kernel through EFI, ACPI, SMBIOS/DMI, GIC, timer, PL011 console binding, ACPI0007 CPU device enumeration, PCI root enumeration, QEMU-like PCI `_OSC`, basic PPTT CPU topology, PMU IRQ metadata, root ext4 mount, `/boot` and `/boot/efi` mounts, `sysinit.target`, and `basic.target`. The ECAM PnP reservation warning is present in the QEMU+HVF oracle too, so the active BridgeVM-only gaps are now post-boot services, missing devices such as network/display/input, and Windows validation rather than early ACPI metadata. |
 | 7 | NVMe controller (identify + admin/IO queues) on PCIe | **partial (Linux root boot validated)** | the controller is reachable through PCIe BAR0; raw host-file media is wired into the live boot probe with read-only sparse overlays or write-through mode; PRP1/PRP2/PRP-list transfers, including PRP2 list-pointer offsets, are handled; Linux no longer reports the previous large-read `SC_INVALID_FIELD` / ext4 journal-abort failure |
-| 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | partial (Windows loader reaches high VA code) | QEMU/HVF with ACPI enabled and `-cdrom` reaches `Press any key to boot from CD or DVD...`; BridgeVM's raw ISO-as-NVMe path fails in firmware with `Not Found`, and the older legacy virtio-mmio ISO path is now only an explicit fallback. The live probe defaults `BRIDGEVM_INSTALLER_ISO` to a read-only PCI `virtio-blk-pci` endpoint at `00:03.0`, matching the QEMU storage slot shape without claiming true CD-ROM/removable-media semantics; the follow-up live run must validate that new default. Existing legacy-mmio live evidence shows PMUVer in `ID_AA64DFR0_EL1` lets cdboot pass its PMU register path, prompt-time PL011 input injection passes the CD prompt, and the Windows loader reaches `Loading files...`, reads hundreds of MiB from the ISO without virtio I/O errors, and enters Windows high virtual-address code. The active frontier is now the Windows PCI/NVMe/device-shape path after the loader runs, not late DXE, basic ISO reads, or interrupt delivery. |
-| 9 | GOP framebuffer + keyboard | after 8 | Setup UI + "press any key"; serial input is not enough to satisfy the Windows CD prompt in the QEMU oracle |
+| 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | **partial (Windows Setup GUI reached)** | With `BRIDGEVM_RAMFB=1`, stock ArmVirtQemu firmware, the PCI `virtio-blk-pci` installer ISO at `00:03.0`, and a serial-marker space injected at `BdsDxe: starting Boot0001`, BridgeVM reaches Windows 11 Setup's ramfb GUI. The current screen is `Install driver to show hardware`; PCI boot-media serviced 234 read requests and read `646239744` bytes from the ISO with status `0x0`. The active frontier has moved from boot-start input timing to Windows Setup media/storage discoverability. |
+| 9 | GOP framebuffer + keyboard/input | partial (ramfb proof only) | QEMU ramfb fw_cfg is wired enough for snapshots and Windows Setup UI evidence. PL011 marker injection is sufficient for the boot prompt in the probe, but production input still needs a guest-visible keyboard path. |
 | 10 | vTPM 2.0, Secure Boot, virtio-net/guest agent | later | Windows 11 compliance + usability |
 
 ## What is done in this change
@@ -210,6 +210,40 @@ Firmware boot is no longer the frontier, and neither is the old late-DXE
   Linux, which now logs `SMBIOS 3.0.0 present` and a BridgeVM `DMI:` line instead
   of `DMI not present or invalid`.
 
+#### 2026-06-21 ramfb Windows Setup proof
+
+The ramfb path is now repeatable with boot-start input injection. Use the same
+ad-hoc HVF signing recipe as the live opt-in tests, then run:
+
+```sh
+BRIDGEVM_RAMFB=1 \
+BRIDGEVM_INSTALLER_ISO=/Users/user/Downloads/Win11_25H2_English_Arm64_v2.iso \
+BRIDGEVM_UART_RX_ON_SERIAL_MARKER=' ' \
+BRIDGEVM_UART_RX_SERIAL_MARKER='BdsDxe: starting Boot0001' \
+BRIDGEVM_RAM_MIB=4096 \
+BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=90000 \
+BRIDGEVM_RAMFB_DUMP_DIR=.omo/ulw-loop/evidence/ramfb-g001-marker-trigger \
+target/debug/examples/hvf_gic_boot_probe
+```
+
+Live evidence:
+`.omo/ulw-loop/evidence/G001-C001-ramfb-marker-trigger-live-hvf.txt` shows
+`hv_vm_create(ipa=40) = 0x0`, `ramfb fw_cfg: enabled`, and
+`UART RX injection serial-marker: fired=true bytes=1`. The same run records
+PCI boot-media `requests=234 reads=234 bytes_read=646239744 status=0x0` and
+dumps a non-empty 800x600 ramfb snapshot whose PNG shows Windows 11 Setup at
+`Install driver to show hardware`.
+
+That screen is useful because it proves the loader and GUI are alive, but it also
+narrows the next platform slice. BridgeVM's installer ISO is currently a fixed
+`virtio-blk-pci` block device used successfully by firmware/boot code; Windows
+Setup then asks for a media driver, so the next diff is the guest-visible
+install-media/storage shape exposed to WinPE. Do not treat the older Boot0001
+timeout as the active frontier unless this marker-trigger run regresses. The
+serial tail still prints `ConvertPages: failed to find range 10000000 - 1012BFFF`;
+keep it in traces, but the ramfb GUI and successful ISO reads show it is not the
+current stop by itself.
+
 The first ACPI device-parity gaps are now closed: BridgeVM's generated DSDT names
 QEMU-like `ACPI0007` CPU devices, the `ARMH0011` PL011 console, `PNP0A08` `PCI0`
 root bridge, `PNP0C02` ECAM reservation and `PNP0C0C` power button, and
@@ -322,8 +356,13 @@ The remaining OS-boot contract work is now narrower:
   the eventual engine-facing VM configuration (`src/media.rs` now holds the
   reusable host-file policy) so boot order and NVRAM state survive repeated runs
   outside ad-hoc probes;
-- decide the next guest-visible devices for installer usability (network, GOP
-  framebuffer, keyboard/input), diff against QEMU+HVF, and then try Windows Setup.
+- decide and implement the next guest-visible install-media path for Windows
+  Setup. The leading candidates are true QEMU-parity CD-ROM/removable media
+  semantics, xHCI USB mass storage once the controller has enough operational
+  model, or an inbox-visible NVMe-backed target/install-media arrangement. Keep
+  the diff empirical: QEMU+HVF reaches this phase with `-cdrom`; BridgeVM's fixed
+  virtio block media is enough for firmware and loader reads, but not enough for
+  Setup's hardware/media discovery screen.
 
 No external host, paid entitlement, or separate machine is in the way; the whole
 loop, including the QEMU oracle, is live-debuggable here.
