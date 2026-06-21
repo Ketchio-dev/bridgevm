@@ -481,8 +481,25 @@ impl VirtPlatform {
                     MmioOutcome::WriteAck
                 }
             },
+            (VIRTIO_BLK_BDF, 1) => self.pci_boot_media_msix_access(target.offset, op),
             (VIRTIO_BLK_BDF, 4) => self.pci_boot_media_access(target.offset, op, mem),
             _ => MmioOutcome::KnownUnimplemented(aperture),
+        }
+    }
+
+    fn pci_boot_media_msix_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {
+        let Some(dev) = self.pci_boot_media.as_mut() else {
+            return MmioOutcome::KnownUnimplemented("virtio-blk-pci");
+        };
+        let result = match op {
+            MmioOp::Read { size } => dev.msix_bar_access(offset, VirtioPciBlockOp::Read { size }),
+            MmioOp::Write { size, value } => {
+                dev.msix_bar_access(offset, VirtioPciBlockOp::Write { size, value })
+            }
+        };
+        match result {
+            VirtioMmioBlockResult::ReadValue(v) => MmioOutcome::ReadValue(v),
+            VirtioMmioBlockResult::WriteAck => MmioOutcome::WriteAck,
         }
     }
 
@@ -780,6 +797,25 @@ mod tests {
     fn program_virtio_blk_bar4(p: &mut VirtPlatform, mem: &mut FlatGuestRam, base: u64) {
         p.on_mmio(
             pcie_cfg_gpa(3, 0, crate::pcie::REG_BAR0 + 4 * 4),
+            MmioOp::Write {
+                size: 4,
+                value: base,
+            },
+            mem,
+        );
+        p.on_mmio(
+            pcie_cfg_gpa(3, 0, crate::pcie::REG_COMMAND_STATUS),
+            MmioOp::Write {
+                size: 2,
+                value: u64::from(crate::pcie::CMD_MEMORY_SPACE | crate::pcie::CMD_BUS_MASTER),
+            },
+            mem,
+        );
+    }
+
+    fn program_virtio_blk_bar1(p: &mut VirtPlatform, mem: &mut FlatGuestRam, base: u64) {
+        p.on_mmio(
+            pcie_cfg_gpa(3, 0, crate::pcie::REG_BAR0 + 4),
             MmioOp::Write {
                 size: 4,
                 value: base,
@@ -1356,6 +1392,100 @@ mod tests {
             p.take_pending_spi_levels(),
             vec![(machine::spi_to_intid(machine::SPI_PCIE_INTA), false)]
         );
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn pcie_boot_media_msix_bar_decodes_table_and_pba() {
+        let path = temp_path("pci-boot-media-msix");
+        fs::write(&path, [0u8; 512]).unwrap();
+
+        let mut p = platform();
+        p.attach_pci_boot_media(&path).unwrap();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x1000);
+        let bar = machine::PCIE_MMIO_32.base + 0x1_8000;
+        program_virtio_blk_bar1(&mut p, &mut mem, bar);
+
+        assert_eq!(
+            p.pcie_mmio_target(bar),
+            Some(PcieMmioTarget {
+                bdf: VIRTIO_BLK_BDF,
+                bar_index: 1,
+                offset: 0,
+            })
+        );
+        assert_eq!(
+            p.on_mmio(bar + 12, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(1)
+        );
+        assert_eq!(
+            p.on_mmio(
+                bar,
+                MmioOp::Write {
+                    size: 4,
+                    value: 0xfee0_0000,
+                },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(bar, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0xfee0_0000)
+        );
+        assert_eq!(
+            p.on_mmio(
+                bar + u64::from(crate::pcie::VIRTIO_BLK_MSIX_PBA_OFFSET),
+                MmioOp::Read { size: 8 },
+                &mut mem
+            ),
+            MmioOutcome::ReadValue(0)
+        );
+        assert_eq!(
+            p.on_mmio(
+                bar + u64::from(crate::pcie::VIRTIO_BLK_MSIX_PBA_OFFSET),
+                MmioOp::Write {
+                    size: 8,
+                    value: u64::MAX,
+                },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(
+                bar + u64::from(crate::pcie::VIRTIO_BLK_MSIX_PBA_OFFSET),
+                MmioOp::Read { size: 8 },
+                &mut mem
+            ),
+            MmioOutcome::ReadValue(0)
+        );
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn pcie_boot_media_modern_bar_live_offsets_stay_modelled() {
+        let path = temp_path("pci-boot-media-modern-offsets");
+        fs::write(&path, [0u8; 512]).unwrap();
+
+        let mut p = platform();
+        p.attach_pci_boot_media(&path).unwrap();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x1000);
+        let bar = machine::PCIE_MMIO_32.base + 0x1_c000;
+        program_virtio_blk_bar4(&mut p, &mut mem, bar);
+
+        for offset in [0x20, 0x28, 0x30, 0x38, 0x40, 0x48, 0x50, 0x58] {
+            assert!(matches!(
+                p.on_mmio(bar + offset, MmioOp::Read { size: 4 }, &mut mem),
+                MmioOutcome::ReadValue(_)
+            ));
+            assert_eq!(
+                p.on_mmio(bar + offset, MmioOp::Write { size: 4, value: 0 }, &mut mem),
+                MmioOutcome::WriteAck
+            );
+        }
 
         fs::remove_file(path).ok();
     }

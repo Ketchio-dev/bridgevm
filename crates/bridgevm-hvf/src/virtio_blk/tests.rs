@@ -281,6 +281,57 @@ fn pci_read_only_block_media_reports_capacity_and_ro_features() {
 }
 
 #[test]
+fn pci_msix_bar_table_round_trips_and_pba_is_read_only() {
+    let path = temp_path("pci-msix");
+    fs::write(&path, vec![0u8; 512]).unwrap();
+    let mut dev = VirtioPciBlock::open_read_only(&path).unwrap();
+
+    assert_eq!(
+        dev.msix_bar_access(
+            u64::from(VIRTIO_BLK_MSIX_TABLE_OFFSET) + 12,
+            VirtioPciBlockOp::Read { size: 4 },
+        ),
+        VirtioMmioBlockResult::ReadValue(1)
+    );
+    assert_eq!(
+        dev.msix_bar_access(
+            u64::from(VIRTIO_BLK_MSIX_TABLE_OFFSET),
+            VirtioPciBlockOp::Write {
+                size: 8,
+                value: 0x0000_0001_fee0_0000,
+            },
+        ),
+        VirtioMmioBlockResult::WriteAck
+    );
+    assert_eq!(
+        dev.msix_bar_access(
+            u64::from(VIRTIO_BLK_MSIX_TABLE_OFFSET),
+            VirtioPciBlockOp::Read { size: 8 },
+        ),
+        VirtioMmioBlockResult::ReadValue(0x0000_0001_fee0_0000)
+    );
+    assert_eq!(
+        dev.msix_bar_access(
+            u64::from(VIRTIO_BLK_MSIX_PBA_OFFSET),
+            VirtioPciBlockOp::Write {
+                size: 8,
+                value: u64::MAX,
+            },
+        ),
+        VirtioMmioBlockResult::WriteAck
+    );
+    assert_eq!(
+        dev.msix_bar_access(
+            u64::from(VIRTIO_BLK_MSIX_PBA_OFFSET),
+            VirtioPciBlockOp::Read { size: 8 },
+        ),
+        VirtioMmioBlockResult::ReadValue(0)
+    );
+
+    fs::remove_file(path).ok();
+}
+
+#[test]
 fn pci_read_request_copies_iso_sector_to_guest() {
     let path = temp_path("pci-read");
     let mut media = vec![0u8; 1024];

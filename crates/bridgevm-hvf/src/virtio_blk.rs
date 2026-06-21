@@ -14,7 +14,14 @@ use std::{
     path::Path,
 };
 
-use crate::{fwcfg::GuestMemoryMut, machine};
+use crate::{
+    fwcfg::GuestMemoryMut,
+    machine,
+    msix::MsixTable,
+    pcie::{
+        VIRTIO_BLK_MSIX_PBA_OFFSET, VIRTIO_BLK_MSIX_TABLE_OFFSET, VIRTIO_BLK_MSIX_VECTOR_COUNT,
+    },
+};
 use trace::RecentVirtioBlockRequests;
 pub use trace::{VirtioBlockRequestTrace, RECENT_REQUEST_TRACE_LIMIT};
 
@@ -598,12 +605,14 @@ impl VirtioMmioBlock {
 #[derive(Debug)]
 pub struct VirtioPciBlock {
     block: VirtioMmioBlock,
+    msix: MsixTable,
 }
 
 impl VirtioPciBlock {
     pub fn open_read_only(path: impl AsRef<Path>) -> io::Result<Self> {
         Ok(Self {
             block: VirtioMmioBlock::open_read_only_modern(path)?,
+            msix: MsixTable::new(VIRTIO_BLK_MSIX_VECTOR_COUNT),
         })
     }
 
@@ -655,6 +664,45 @@ impl VirtioPciBlock {
                 VirtioMmioBlockResult::WriteAck
             }
         }
+    }
+
+    pub fn msix_bar_access(&mut self, offset: u64, op: VirtioPciBlockOp) -> VirtioMmioBlockResult {
+        if let Some(table_offset) = self.msix_table_offset(offset) {
+            return match op {
+                VirtioPciBlockOp::Read { size } => {
+                    VirtioMmioBlockResult::ReadValue(self.msix.table_read(table_offset, size))
+                }
+                VirtioPciBlockOp::Write { size, value } => {
+                    self.msix.table_write(table_offset, size, value);
+                    VirtioMmioBlockResult::WriteAck
+                }
+            };
+        }
+        if let Some(pba_offset) = self.msix_pba_offset(offset) {
+            return match op {
+                VirtioPciBlockOp::Read { size } => {
+                    VirtioMmioBlockResult::ReadValue(self.msix.pba_read(pba_offset, size))
+                }
+                VirtioPciBlockOp::Write { size, value } => {
+                    self.msix.pba_write(pba_offset, size, value);
+                    VirtioMmioBlockResult::WriteAck
+                }
+            };
+        }
+        match op {
+            VirtioPciBlockOp::Read { .. } => VirtioMmioBlockResult::ReadValue(0),
+            VirtioPciBlockOp::Write { .. } => VirtioMmioBlockResult::WriteAck,
+        }
+    }
+
+    fn msix_table_offset(&self, offset: u64) -> Option<u64> {
+        let rel = offset.checked_sub(u64::from(VIRTIO_BLK_MSIX_TABLE_OFFSET))?;
+        (rel < self.msix.table_byte_len()).then_some(rel)
+    }
+
+    fn msix_pba_offset(&self, offset: u64) -> Option<u64> {
+        let rel = offset.checked_sub(u64::from(VIRTIO_BLK_MSIX_PBA_OFFSET))?;
+        (rel < self.msix.pba_byte_len()).then_some(rel)
     }
 }
 
