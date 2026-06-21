@@ -15,6 +15,7 @@ const TRB_TYPE_LINK: u32 = 6;
 const TRB_TYPE_ENABLE_SLOT: u32 = 9;
 const TRB_TYPE_DISABLE_SLOT: u32 = 10;
 const TRB_TYPE_ADDRESS_DEVICE: u32 = 11;
+const TRB_TYPE_STOP_ENDPOINT: u32 = 15;
 const TRB_TYPE_COMMAND_COMPLETION_EVENT: u32 = 33;
 const COMPLETION_CODE_SUCCESS: u32 = 1;
 const SLOT_ID: u32 = 1;
@@ -71,6 +72,17 @@ impl XhciController {
                     return posted;
                 }
                 TRB_TYPE_DISABLE_SLOT => {
+                    let posted = self.post_command_completion(
+                        mem,
+                        command_trb,
+                        command_slot_id(command_control),
+                    );
+                    if posted {
+                        self.advance_command_dequeue(command_trb);
+                    }
+                    return posted;
+                }
+                TRB_TYPE_STOP_ENDPOINT => {
                     let posted = self.post_command_completion(
                         mem,
                         command_trb,

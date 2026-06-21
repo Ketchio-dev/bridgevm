@@ -4,8 +4,10 @@ use crate::xhci::event::USB_STS_EINT;
 
 const TRB_TYPE_LINK: u32 = 6;
 const TRB_TYPE_DISABLE_SLOT: u32 = 10;
+const STOP_ENDPOINT_OBSERVED_CONTROL: u32 = 0x0101_3c01;
 const ADDRESS_DEVICE_SLOT_ID: u32 = 7;
 const DISABLE_SLOT_ID: u32 = 4;
+const STOP_ENDPOINT_SLOT_ID: u32 = 1;
 const LINK_TARGET: u64 = 0x1110;
 const LINK_TOGGLE_CYCLE: u32 = 1 << 1;
 
@@ -116,6 +118,24 @@ fn disable_slot_command_posts_success_completion_event() {
 
     // Then: event ring receives a successful Command Completion Event for that slot.
     assert_success_completion(&mem, EVENT_RING, CMD_RING, DISABLE_SLOT_ID);
+}
+
+#[test]
+fn stop_endpoint_command_posts_success_completion_and_advances_crcr_for_observed_control() {
+    // Given: a command/event ring pair containing the observed Stop Endpoint TRB.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x5000);
+    setup_command_rings(&mut xhci, &mut mem, STOP_ENDPOINT_OBSERVED_CONTROL);
+
+    // When: the guest rings host-controller doorbell 0.
+    xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem);
+
+    // Then: completion is posted for slot 1 and CRCR advances past the command.
+    assert_eq!(
+        (mem.read_u64(EVENT_RING), xhci.mmio_read(0x58, 8)),
+        (CMD_RING, CMD_RING + TRB_SIZE + 1)
+    );
+    assert_success_completion(&mem, EVENT_RING, CMD_RING, STOP_ENDPOINT_SLOT_ID);
 }
 
 #[test]
