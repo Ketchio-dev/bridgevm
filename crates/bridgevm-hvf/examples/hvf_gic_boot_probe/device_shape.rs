@@ -44,6 +44,16 @@ fn device_shape_lines(
         ),
         format!("boot-media nvme namespace bytes={nvme_namespace_bytes}"),
         format!(
+            "qemu-xhci: {bus:02x}:{dev:02x}.{func} vendor={vendor:#06x} device={device:#06x} class={class:#08x} bar0_mmio64_size={bar0:#x}",
+            bus = pcie::XHCI_BDF.0,
+            dev = pcie::XHCI_BDF.1,
+            func = pcie::XHCI_BDF.2,
+            vendor = pcie::XHCI_VENDOR_ID,
+            device = pcie::XHCI_DEVICE_ID,
+            class = pcie::XHCI_CLASS_CODE,
+            bar0 = pcie::XHCI_BAR0_SIZE,
+        ),
+        format!(
             "boot-media installer ISO fallback: virtio-mmio slot {INSTALLER_ISO_SLOT} base={iso_base:#x} spi={iso_spi} intid={iso_intid} attached={legacy_mmio_installer_iso_attached}"
         ),
         format!(
@@ -60,7 +70,6 @@ fn device_shape_lines(
         ),
         "qemu oracle parity: virtio-net-pci 00:01.0 absent (BridgeVM uses NVMe at 00:01.0)"
             .to_string(),
-        "qemu oracle parity: qemu-xhci 00:02.0 absent".to_string(),
         "qemu oracle parity: legacy virtio-mmio slot 31 kept as installer ISO fallback"
             .to_string(),
     ]
@@ -76,6 +85,9 @@ mod tests {
             .iter()
             .any(|line| line.contains("00:00.0 pci-host-ecam-generic")));
         assert!(lines.iter().any(|line| line.contains("00:01.0 nvme")));
+        assert!(lines.iter().any(|line| line
+            .contains("qemu-xhci: 00:02.0 vendor=0x1b36 device=0x000d class=0x0c0330")
+            && line.contains("bar0_mmio64_size=0x4000")));
         assert!(lines
             .iter()
             .any(|line| line.contains("virtio-mmio slot 31")));
@@ -88,10 +100,6 @@ mod tests {
             && line.contains("bar0_io_size=0x80")
             && line.contains("bar4_modern_mmio_size=0x4000")
             && line.contains("attached=true")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("qemu-xhci 00:02.0 absent")));
-
         let fallback_lines = super::device_shape_lines(false, true, 16 * 1024 * 1024);
         assert!(fallback_lines
             .iter()

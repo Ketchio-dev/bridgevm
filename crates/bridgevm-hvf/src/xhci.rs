@@ -1,0 +1,255 @@
+use crate::msix::MsixTable;
+use crate::pcie::{XHCI_MSIX_PBA_OFFSET, XHCI_MSIX_TABLE_OFFSET, XHCI_MSIX_VECTOR_COUNT};
+
+pub const XHCI_CAP_LENGTH: u8 = 0x40;
+
+const USB_CMD_RS: u32 = 1 << 0;
+const USB_CMD_HCRST: u32 = 1 << 1;
+const USB_STS_HCH: u32 = 1 << 0;
+
+#[derive(Debug, Clone)]
+pub struct XhciController {
+    msix: MsixTable,
+    usb_command: u32,
+    dnctrl: u32,
+    crcr: u64,
+    dcbaap: u64,
+    config: u32,
+    iman0: u32,
+    imod0: u32,
+    erstsz0: u32,
+    erstba0: u64,
+    erdp0: u64,
+}
+
+impl Default for XhciController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl XhciController {
+    pub fn new() -> Self {
+        Self {
+            msix: MsixTable::new(XHCI_MSIX_VECTOR_COUNT),
+            usb_command: 0,
+            dnctrl: 0,
+            crcr: 0,
+            dcbaap: 0,
+            config: 0,
+            iman0: 0,
+            imod0: 0,
+            erstsz0: 0,
+            erstba0: 0,
+            erdp0: 0,
+        }
+    }
+
+    pub fn mmio_read(&self, offset: u64, size: u8) -> u64 {
+        if let Some(table_offset) = checked_region_offset(
+            offset,
+            u64::from(XHCI_MSIX_TABLE_OFFSET),
+            self.msix.table_byte_len(),
+        ) {
+            return self.msix.table_read(table_offset, size);
+        }
+        if let Some(pba_offset) = checked_region_offset(
+            offset,
+            u64::from(XHCI_MSIX_PBA_OFFSET),
+            self.msix.pba_byte_len(),
+        ) {
+            return self.msix.pba_read(pba_offset, size);
+        }
+
+        let mut value = 0u64;
+        for byte in 0..usize::from(size.min(8)) {
+            value |= u64::from(self.register_byte(offset + byte as u64)) << (byte * 8);
+        }
+        mask_to_size(value, size)
+    }
+
+    pub fn mmio_write(&mut self, offset: u64, size: u8, value: u64) {
+        if let Some(table_offset) = checked_region_offset(
+            offset,
+            u64::from(XHCI_MSIX_TABLE_OFFSET),
+            self.msix.table_byte_len(),
+        ) {
+            self.msix.table_write(table_offset, size, value);
+            return;
+        }
+        if let Some(pba_offset) = checked_region_offset(
+            offset,
+            u64::from(XHCI_MSIX_PBA_OFFSET),
+            self.msix.pba_byte_len(),
+        ) {
+            self.msix.pba_write(pba_offset, size, value);
+            return;
+        }
+
+        let mut consumed = 0u8;
+        while consumed < size.min(8) {
+            let current = offset + u64::from(consumed);
+            let aligned = current & !0x3;
+            let chunk = (4 - (current & 0x3) as u8).min(size.min(8) - consumed);
+            let old = self.read_dword(aligned);
+            let part = value >> (u32::from(consumed) * 8);
+            self.write_dword(aligned, merge_dword(old, current, chunk, part));
+            consumed += chunk;
+        }
+    }
+
+    fn register_byte(&self, offset: u64) -> u8 {
+        let shift = ((offset & 0x3) * 8) as u32;
+        ((self.read_dword(offset & !0x3) >> shift) & 0xff) as u8
+    }
+
+    fn read_dword(&self, offset: u64) -> u32 {
+        match offset {
+            0x00 => 0x0100_0040,
+            0x04 => 0x0800_1040,
+            0x08 => 0x0000_000f,
+            0x0c => 0x0000_0000,
+            0x10 => 0x0008_7001,
+            0x14 => 0x0000_2000,
+            0x18 => 0x0000_1000,
+            0x1c => 0x0000_0000,
+            0x20 => 0x0200_0402,
+            0x24 => 0x2042_5355,
+            0x28 => 0x0000_0405,
+            0x2c => 0x0000_0000,
+            0x30 => 0x0300_0002,
+            0x34 => 0x2042_5355,
+            0x38 => 0x0000_0401,
+            0x3c => 0x0000_0000,
+            0x40 => self.usb_command,
+            0x44 => self.usb_status(),
+            0x48 => 0x0000_0001,
+            0x54 => self.dnctrl,
+            0x58 => self.crcr as u32,
+            0x5c => (self.crcr >> 32) as u32,
+            0x70 => self.dcbaap as u32,
+            0x74 => (self.dcbaap >> 32) as u32,
+            0x78 => self.config,
+            0x1000 => 0x0000_0003,
+            0x1020 => self.iman0,
+            0x1024 => self.imod0,
+            0x1028 => self.erstsz0,
+            0x1030 => self.erstba0 as u32,
+            0x1034 => (self.erstba0 >> 32) as u32,
+            0x1038 => self.erdp0 as u32,
+            0x103c => (self.erdp0 >> 32) as u32,
+            _ => 0,
+        }
+    }
+
+    fn write_dword(&mut self, offset: u64, value: u32) {
+        match offset {
+            0x40 => self.usb_command = value & !USB_CMD_HCRST,
+            0x54 => self.dnctrl = value,
+            0x58 => self.crcr = (self.crcr & !0xffff_ffff) | u64::from(value),
+            0x5c => self.crcr = (self.crcr & 0xffff_ffff) | (u64::from(value) << 32),
+            0x70 => self.dcbaap = (self.dcbaap & !0xffff_ffff) | u64::from(value),
+            0x74 => self.dcbaap = (self.dcbaap & 0xffff_ffff) | (u64::from(value) << 32),
+            0x78 => self.config = value,
+            0x1020 => self.iman0 = value,
+            0x1024 => self.imod0 = value,
+            0x1028 => self.erstsz0 = value,
+            0x1030 => self.erstba0 = (self.erstba0 & !0xffff_ffff) | u64::from(value),
+            0x1034 => self.erstba0 = (self.erstba0 & 0xffff_ffff) | (u64::from(value) << 32),
+            0x1038 => self.erdp0 = (self.erdp0 & !0xffff_ffff) | u64::from(value),
+            0x103c => self.erdp0 = (self.erdp0 & 0xffff_ffff) | (u64::from(value) << 32),
+            _ => {}
+        }
+    }
+
+    fn usb_status(&self) -> u32 {
+        if self.usb_command & USB_CMD_RS == 0 {
+            USB_STS_HCH
+        } else {
+            0
+        }
+    }
+}
+
+fn checked_region_offset(offset: u64, base: u64, len: u64) -> Option<u64> {
+    let end = base.checked_add(len)?;
+    (offset >= base && offset < end).then(|| offset - base)
+}
+
+fn merge_dword(old: u32, offset: u64, size: u8, value: u64) -> u32 {
+    let shift = ((offset & 0x3) * 8) as u32;
+    let width_mask: u32 = match size {
+        1 => 0xff,
+        2 => 0xffff,
+        3 => 0x00ff_ffff,
+        _ => 0xffff_ffff,
+    };
+    let field_mask = width_mask.checked_shl(shift).unwrap_or(0);
+    let placed = ((value as u32) & width_mask)
+        .checked_shl(shift)
+        .unwrap_or(0);
+    (old & !field_mask) | placed
+}
+
+fn mask_to_size(value: u64, size: u8) -> u64 {
+    match size {
+        1 => value & 0xff,
+        2 => value & 0xffff,
+        4 => value & 0xffff_ffff,
+        _ => value,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_qemu_capability_and_extended_capability_registers() {
+        let xhci = XhciController::new();
+
+        assert_eq!(xhci.mmio_read(0x00, 1), u64::from(XHCI_CAP_LENGTH));
+        assert_eq!(xhci.mmio_read(0x00, 4), 0x0100_0040);
+        assert_eq!(xhci.mmio_read(0x04, 4), 0x0800_1040);
+        assert_eq!(xhci.mmio_read(0x08, 4), 0x0000_000f);
+        assert_eq!(xhci.mmio_read(0x10, 4), 0x0008_7001);
+        assert_eq!(xhci.mmio_read(0x14, 4), 0x0000_2000);
+        assert_eq!(xhci.mmio_read(0x18, 4), 0x0000_1000);
+        assert_eq!(xhci.mmio_read(0x20, 4), 0x0200_0402);
+        assert_eq!(xhci.mmio_read(0x24, 4), 0x2042_5355);
+        assert_eq!(xhci.mmio_read(0x28, 4), 0x0000_0405);
+        assert_eq!(xhci.mmio_read(0x30, 4), 0x0300_0002);
+        assert_eq!(xhci.mmio_read(0x34, 4), 0x2042_5355);
+        assert_eq!(xhci.mmio_read(0x38, 4), 0x0000_0401);
+    }
+
+    #[test]
+    fn operational_registers_are_benign_and_writable() {
+        let mut xhci = XhciController::new();
+
+        assert_eq!(xhci.mmio_read(0x44, 4), USB_STS_HCH.into());
+        assert_eq!(xhci.mmio_read(0x48, 4), 1);
+
+        xhci.mmio_write(0x40, 4, u64::from(USB_CMD_RS | USB_CMD_HCRST));
+        assert_eq!(xhci.mmio_read(0x40, 4), u64::from(USB_CMD_RS));
+        assert_eq!(xhci.mmio_read(0x44, 4), 0);
+
+        xhci.mmio_write(0x70, 8, 0x1234_5678_9abc_def0);
+        xhci.mmio_write(0x78, 4, 8);
+        assert_eq!(xhci.mmio_read(0x70, 8), 0x1234_5678_9abc_def0);
+        assert_eq!(xhci.mmio_read(0x78, 4), 8);
+    }
+
+    #[test]
+    fn msix_table_and_pba_are_bar_backed() {
+        let mut xhci = XhciController::new();
+
+        assert_eq!(xhci.mmio_read(u64::from(XHCI_MSIX_TABLE_OFFSET), 4), 0);
+        xhci.mmio_write(u64::from(XHCI_MSIX_TABLE_OFFSET), 4, 0xfee0_0000);
+        assert_eq!(
+            xhci.mmio_read(u64::from(XHCI_MSIX_TABLE_OFFSET), 4),
+            0xfee0_0000
+        );
+        assert_eq!(xhci.mmio_read(u64::from(XHCI_MSIX_PBA_OFFSET), 4), 0);
+    }
+}

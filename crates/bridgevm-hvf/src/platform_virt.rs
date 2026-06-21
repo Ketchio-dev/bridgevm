@@ -30,7 +30,7 @@ use crate::fwcfg::{
 use crate::machine::{self, Region};
 use crate::msix::MsixMessage;
 use crate::nvme::{NvmeCommandTrace, NvmeCompletionEvent, NvmeController};
-use crate::pcie::{PcieEcam, PcieMmioTarget, PciePioTarget, NVME_BDF, VIRTIO_BLK_BDF};
+use crate::pcie::{PcieEcam, PcieMmioTarget, PciePioTarget, NVME_BDF, VIRTIO_BLK_BDF, XHCI_BDF};
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
 use crate::pl031::Pl031;
@@ -40,6 +40,7 @@ use crate::virtio_blk::{
     VirtioBlockRequestTrace, VirtioMmioBlock, VirtioMmioBlockResult, VirtioMmioBlockStats,
     VirtioPciBlock, VirtioPciBlockOp, INSTALLER_ISO_SLOT,
 };
+use crate::xhci::XhciController;
 
 const DEFAULT_NVME_DISK_BYTES: usize = 16 * 1024 * 1024;
 
@@ -93,6 +94,7 @@ pub struct VirtPlatform {
     rtc: Pl031,
     pcie: PcieEcam,
     nvme: NvmeController,
+    xhci: XhciController,
     virtio_iso: Option<VirtioMmioBlock>,
     pci_boot_media: Option<VirtioPciBlock>,
     ramfb: Ramfb,
@@ -145,6 +147,7 @@ impl VirtPlatform {
             rtc: Pl031::new(),
             pcie: PcieEcam::new(),
             nvme: NvmeController::new(DEFAULT_NVME_DISK_BYTES),
+            xhci: XhciController::new(),
             virtio_iso: None,
             pci_boot_media: None,
             ramfb: Ramfb::new(),
@@ -462,8 +465,19 @@ impl VirtPlatform {
         };
         match (target.bdf, target.bar_index) {
             (NVME_BDF, 0) => self.nvme_access(target.offset, op, mem),
+            (XHCI_BDF, 0) => self.xhci_access(target.offset, op),
             (VIRTIO_BLK_BDF, 4) => self.pci_boot_media_access(target.offset, op, mem),
             _ => MmioOutcome::KnownUnimplemented("pcie-mmio-32"),
+        }
+    }
+
+    fn xhci_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {
+        match op {
+            MmioOp::Read { size } => MmioOutcome::ReadValue(self.xhci.mmio_read(offset, size)),
+            MmioOp::Write { size, value } => {
+                self.xhci.mmio_write(offset, size, value);
+                MmioOutcome::WriteAck
+            }
         }
     }
 
@@ -1007,10 +1021,9 @@ mod tests {
             p.on_mmio(machine::PCIE_ECAM.base, MmioOp::Read { size: 4 }, &mut mem),
             MmioOutcome::ReadValue(0x0008_1b36)
         );
-        // An empty slot (device 2, ECAM offset dev<<15) reads all-ones (no device).
         assert_eq!(
             p.on_mmio(
-                machine::PCIE_ECAM.base + (2 << 15),
+                machine::PCIE_ECAM.base + (4 << 15),
                 MmioOp::Read { size: 4 },
                 &mut mem
             ),
@@ -1368,6 +1381,84 @@ mod tests {
                 &mut mem
             ),
             MmioOutcome::KnownUnimplemented("pcie-mmio-32")
+        );
+    }
+
+    #[test]
+    fn xhci_bar_reports_qemu_capability_registers() {
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+        let base = machine::PCIE_MMIO_32.base + 0x2_0000;
+
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(
+                    crate::pcie::XHCI_BDF.1,
+                    crate::pcie::XHCI_BDF.2,
+                    crate::pcie::REG_BAR0
+                ),
+                MmioOp::Write {
+                    size: 4,
+                    value: base,
+                },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(
+                    crate::pcie::XHCI_BDF.1,
+                    crate::pcie::XHCI_BDF.2,
+                    crate::pcie::REG_BAR0 + 4
+                ),
+                MmioOp::Write { size: 4, value: 0 },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(
+                    crate::pcie::XHCI_BDF.1,
+                    crate::pcie::XHCI_BDF.2,
+                    crate::pcie::REG_COMMAND_STATUS
+                ),
+                MmioOp::Write {
+                    size: 2,
+                    value: u64::from(crate::pcie::CMD_MEMORY_SPACE | crate::pcie::CMD_BUS_MASTER),
+                },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(base, MmioOp::Read { size: 1 }, &mut mem),
+            MmioOutcome::ReadValue(0x40)
+        );
+        assert_eq!(
+            p.on_mmio(base, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0x0100_0040)
+        );
+        assert_eq!(
+            p.on_mmio(base + 0x04, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0x0800_1040)
+        );
+        assert_eq!(
+            p.on_mmio(base + 0x08, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0x0000_000f)
+        );
+        assert_eq!(
+            p.on_mmio(base + 0x10, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0x0008_7001)
+        );
+        assert_eq!(
+            p.on_mmio(base + 0x14, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0x0000_2000)
+        );
+        assert_eq!(
+            p.on_mmio(base + 0x18, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0x0000_1000)
         );
     }
 

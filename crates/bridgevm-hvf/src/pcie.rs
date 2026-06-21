@@ -159,6 +159,37 @@ pub const NVME_MSIX_TABLE_OFFSET: u32 = 0x2000;
 /// Offset of the MSI-X Pending Bit Array in BAR0.
 pub const NVME_MSIX_PBA_OFFSET: u32 = 0x3000;
 
+// ---- The QEMU xHCI controller endpoint (00:02.0) ---------------------------
+
+/// Bus/device/function QEMU uses for `qemu-xhci` in the Windows installer oracle.
+pub const XHCI_BDF: (u8, u8, u8) = (0, 2, 0);
+/// Vendor id used by QEMU's xHCI controller.
+pub const XHCI_VENDOR_ID: u16 = 0x1b36;
+/// Device id for QEMU's `qemu-xhci` endpoint.
+pub const XHCI_DEVICE_ID: u16 = 0x000d;
+/// Class code `0x0c0330`: serial bus / USB / xHCI.
+pub const XHCI_CLASS_CODE: u32 = 0x000c_0330;
+/// Revision id reported by QEMU's `qemu-xhci`.
+pub const XHCI_REVISION: u8 = 0x01;
+pub const XHCI_SUBSYSTEM_VENDOR_ID: u16 = 0x1af4;
+pub const XHCI_SUBSYSTEM_ID: u16 = 0x1100;
+/// QEMU's 64-bit xHCI memory BAR size.
+pub const XHCI_BAR0_SIZE: u32 = 0x4000;
+/// PCI capability-list offset for the xHCI endpoint's MSI-X capability.
+pub const XHCI_MSIX_CAP_OFFSET: u8 = 0x90;
+/// PCI Express capability offset following the MSI-X capability.
+pub const XHCI_PCIE_CAP_OFFSET: u8 = 0xa0;
+/// Number of MSI-X vectors exposed by QEMU's xHCI endpoint.
+pub const XHCI_MSIX_VECTOR_COUNT: u16 = 16;
+/// Offset of the xHCI MSI-X table in BAR0.
+pub const XHCI_MSIX_TABLE_OFFSET: u32 = 0x3000;
+/// Offset of the xHCI MSI-X Pending Bit Array in BAR0.
+pub const XHCI_MSIX_PBA_OFFSET: u32 = 0x3800;
+const XHCI_PCIE_CAP_BYTES: [u8; 20] = [
+    0x10, 0x00, 0x92, 0x00, 0x20, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0x04, 0x00, 0x00,
+    0x00, 0x00, 0x11, 0x00,
+];
+
 // ---- The QEMU-oracle installer media endpoint (00:03.0) --------------------
 
 /// Bus/device/function QEMU uses for the Windows installer media device in the
@@ -230,6 +261,8 @@ struct Bar {
 enum BarKind {
     #[default]
     Memory32,
+    Memory64Low,
+    Memory64High,
     Io,
 }
 
@@ -250,6 +283,31 @@ impl Bar {
             type_bits: 0,
             kind: BarKind::Memory32,
         }
+    }
+
+    fn memory64(size: u32) -> (Self, Self) {
+        assert!(
+            size >= 0x10,
+            "PCI memory BAR size must be at least 16 bytes"
+        );
+        assert!(
+            size.is_power_of_two(),
+            "PCI memory BAR size must be a power of two"
+        );
+        (
+            Self {
+                value: 0,
+                size_mask: !(size - 1),
+                type_bits: 0x4,
+                kind: BarKind::Memory64Low,
+            },
+            Self {
+                value: 0,
+                size_mask: 0xFFFF_FFFF,
+                type_bits: 0,
+                kind: BarKind::Memory64High,
+            },
+        )
     }
 
     /// Construct an I/O BAR with a power-of-two size.
@@ -300,7 +358,8 @@ impl Bar {
             0
         } else {
             let mask = match self.kind {
-                BarKind::Memory32 => self.size_mask & !0xF,
+                BarKind::Memory32 | BarKind::Memory64Low => self.size_mask & !0xF,
+                BarKind::Memory64High => return 0,
                 BarKind::Io => self.size_mask & !0x3,
             };
             u64::from((!mask).wrapping_add(1))
@@ -313,7 +372,8 @@ impl Bar {
             return None;
         }
         let mask = match self.kind {
-            BarKind::Memory32 => !0xF,
+            BarKind::Memory32 | BarKind::Memory64Low => !0xF,
+            BarKind::Memory64High => return None,
             BarKind::Io => !0x3,
         };
         Some(u64::from(self.value & self.size_mask & mask))
@@ -415,6 +475,57 @@ impl Function {
             bars,
             cap_ptr: caps.cap_ptr,
             cap_bytes,
+        }
+    }
+
+    fn xhci() -> Self {
+        let mut bars = [Bar::default(); NUM_BARS];
+        let (bar0, bar1) = Bar::memory64(XHCI_BAR0_SIZE);
+        bars[0] = bar0;
+        bars[1] = bar1;
+        let msix = MsixCapability::new(
+            XHCI_MSIX_VECTOR_COUNT,
+            0,
+            XHCI_MSIX_TABLE_OFFSET,
+            XHCI_MSIX_PBA_OFFSET,
+        );
+        let mut cap_bytes: Vec<(u16, u8)> = msix
+            .to_bytes(XHCI_PCIE_CAP_OFFSET)
+            .into_iter()
+            .enumerate()
+            .map(|(i, byte)| (u16::from(XHCI_MSIX_CAP_OFFSET) + i as u16, byte))
+            .collect();
+        cap_bytes.extend(
+            XHCI_PCIE_CAP_BYTES
+                .into_iter()
+                .enumerate()
+                .map(|(i, byte)| (u16::from(XHCI_PCIE_CAP_OFFSET) + i as u16, byte)),
+        );
+        Self {
+            bdf: XHCI_BDF,
+            vendor_device: (u32::from(XHCI_DEVICE_ID) << 16) | u32::from(XHCI_VENDOR_ID),
+            revision_class: (XHCI_CLASS_CODE << 8) | u32::from(XHCI_REVISION),
+            subsystem_ids: (u32::from(XHCI_SUBSYSTEM_ID) << 16)
+                | u32::from(XHCI_SUBSYSTEM_VENDOR_ID),
+            command: 0,
+            bars,
+            cap_ptr: XHCI_MSIX_CAP_OFFSET,
+            cap_bytes,
+        }
+    }
+
+    fn mmio_offset_of_bar(&self, idx: usize, gpa: u64) -> Option<u64> {
+        let bar = self.bars.get(idx)?;
+        match bar.kind {
+            BarKind::Memory32 => bar.mmio_offset_of(gpa),
+            BarKind::Memory64Low => {
+                let low = bar.base()?;
+                let high = u64::from(self.bars.get(idx + 1)?.value);
+                let base = (high << 32) | low;
+                let end = base.checked_add(bar.size())?;
+                (gpa >= base && gpa < end).then_some(gpa - base)
+            }
+            BarKind::Memory64High | BarKind::Io => None,
         }
     }
 
@@ -598,6 +709,7 @@ impl PcieEcam {
             functions: vec![
                 Function::host_bridge(),
                 Function::nvme(),
+                Function::xhci(),
                 Function::virtio_blk(),
             ],
         }
@@ -661,8 +773,8 @@ impl PcieEcam {
             if func.command & CMD_MEMORY_SPACE == 0 {
                 continue;
             }
-            for (idx, bar) in func.bars.iter().enumerate() {
-                if let Some(offset) = bar.mmio_offset_of(gpa) {
+            for idx in 0..func.bars.len() {
+                if let Some(offset) = func.mmio_offset_of_bar(idx, gpa) {
                     return Some(PcieMmioTarget {
                         bdf: func.bdf,
                         bar_index: idx,
@@ -927,10 +1039,9 @@ mod tests {
     #[test]
     fn empty_slot_reads_all_ones() {
         let ecam = PcieEcam::new();
-        // 00:02.0 is empty; 00:01.0 is the NVMe endpoint.
-        assert_eq!(ecam.cfg_read(ecam_offset(0, 2, 0, 0x00), 4), NO_DEVICE);
-        assert_eq!(ecam.cfg_read(ecam_offset(0, 2, 0, 0x00), 2), 0xFFFF);
-        assert_eq!(ecam.cfg_read(ecam_offset(0, 2, 0, 0x00), 1), 0xFF);
+        assert_eq!(ecam.cfg_read(ecam_offset(0, 4, 0, 0x00), 4), NO_DEVICE);
+        assert_eq!(ecam.cfg_read(ecam_offset(0, 4, 0, 0x00), 2), 0xFFFF);
+        assert_eq!(ecam.cfg_read(ecam_offset(0, 4, 0, 0x00), 1), 0xFF);
         // A different function of device 0 is also empty.
         assert_eq!(ecam.cfg_read(ecam_offset(0, 0, 1, 0x00), 4), NO_DEVICE);
         // A non-zero bus is empty.
@@ -1040,18 +1151,106 @@ mod tests {
     }
 
     #[test]
-    fn qemu_xhci_slot_stays_empty_for_this_work_unit() {
+    fn qemu_xhci_endpoint_reports_oracle_identity_at_00_02_0() {
         let ecam = PcieEcam::new();
 
-        assert_eq!(ecam.cfg_read(ecam_offset(0, 2, 0, 0x00), 4), NO_DEVICE);
+        let vd = ecam.cfg_read(ecam_offset(0, 2, 0, REG_VENDOR_DEVICE), 4);
+        assert_eq!(vd & 0xFFFF, u64::from(XHCI_VENDOR_ID));
+        assert_eq!((vd >> 16) & 0xFFFF, u64::from(XHCI_DEVICE_ID));
+
+        let rc = ecam.cfg_read(ecam_offset(0, 2, 0, REG_REVISION_CLASS), 4);
+        assert_eq!(rc >> 8, u64::from(XHCI_CLASS_CODE));
+        assert_eq!(rc & 0xFF, u64::from(XHCI_REVISION));
+
+        let subsystem = ecam.cfg_read(ecam_offset(0, 2, 0, REG_SUBSYSTEM_IDS), 4);
+        assert_eq!(subsystem & 0xFFFF, u64::from(XHCI_SUBSYSTEM_VENDOR_ID));
+        assert_eq!((subsystem >> 16) & 0xFFFF, u64::from(XHCI_SUBSYSTEM_ID));
+    }
+
+    #[test]
+    fn qemu_xhci_exposes_msix_and_pcie_capabilities() {
+        let ecam = PcieEcam::new();
+        let status = ecam.cfg_read(ecam_offset(0, 2, 0, REG_COMMAND_STATUS), 4) >> 16;
+        assert_ne!(status & u64::from(STATUS_CAP_LIST), 0);
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 2, 0, REG_CAP_PTR), 1),
+            u64::from(XHCI_MSIX_CAP_OFFSET)
+        );
+
+        let msix = u16::from(XHCI_MSIX_CAP_OFFSET);
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 2, 0, msix), 1),
+            u64::from(CAP_ID_MSIX)
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 2, 0, msix + 1), 1),
+            u64::from(XHCI_PCIE_CAP_OFFSET)
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 2, 0, msix + 2), 2),
+            u64::from(XHCI_MSIX_VECTOR_COUNT - 1)
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 2, 0, msix + 4), 4),
+            u64::from(XHCI_MSIX_TABLE_OFFSET)
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 2, 0, msix + 8), 4),
+            u64::from(XHCI_MSIX_PBA_OFFSET)
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 2, 0, u16::from(XHCI_PCIE_CAP_OFFSET)), 1),
+            0x10
+        );
+    }
+
+    #[test]
+    fn qemu_xhci_bar0_is_64bit_16k_memory_bar() {
+        let mut ecam = PcieEcam::new();
+        let bar0 = ecam_offset(0, 2, 0, REG_BAR0);
+        let bar1 = ecam_offset(0, 2, 0, REG_BAR0 + 4);
+
+        ecam.cfg_write(bar0, 4, 0xFFFF_FFFF);
+        ecam.cfg_write(bar1, 4, 0xFFFF_FFFF);
+
+        assert_eq!(ecam.cfg_read(bar0, 4), 0xffff_c004);
+        assert_eq!(ecam.cfg_read(bar1, 4), 0xffff_ffff);
+    }
+
+    #[test]
+    fn qemu_xhci_64bit_bar_decodes_low_mmio_after_command_enable() {
+        let mut ecam = PcieEcam::new();
+        let bar0 = ecam_offset(0, 2, 0, REG_BAR0);
+        let bar1 = ecam_offset(0, 2, 0, REG_BAR0 + 4);
+        let cmd = ecam_offset(0, 2, 0, REG_COMMAND_STATUS);
+        let base = machine::PCIE_MMIO_32.base + 0x2_0000;
+
+        ecam.cfg_write(bar0, 4, base);
+        ecam.cfg_write(bar1, 4, 0);
+        assert_eq!(ecam.mmio_target(base), None);
+
+        ecam.cfg_write(cmd, 2, u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER));
+        assert_eq!(
+            ecam.mmio_target(base),
+            Some(PcieMmioTarget {
+                bdf: XHCI_BDF,
+                bar_index: 0,
+                offset: 0,
+            })
+        );
+        assert_eq!(
+            ecam.mmio_target(base + 0x3fff).map(|target| target.offset),
+            Some(0x3fff)
+        );
+        assert_eq!(ecam.mmio_target(base + u64::from(XHCI_BAR0_SIZE)), None);
     }
 
     #[test]
     fn writes_to_empty_slots_are_dropped() {
         let mut ecam = PcieEcam::new();
-        ecam.cfg_write(ecam_offset(0, 2, 0, REG_COMMAND_STATUS), 2, 0x7);
+        ecam.cfg_write(ecam_offset(0, 4, 0, REG_COMMAND_STATUS), 2, 0x7);
         // Still empty.
-        assert_eq!(ecam.cfg_read(ecam_offset(0, 2, 0, 0x00), 4), NO_DEVICE);
+        assert_eq!(ecam.cfg_read(ecam_offset(0, 4, 0, 0x00), 4), NO_DEVICE);
     }
 
     #[test]

@@ -25,6 +25,7 @@ pub mod ramfb;
 pub mod smbios;
 pub mod stage1;
 pub mod virtio_blk;
+pub mod xhci;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HvfHostCapabilities {
