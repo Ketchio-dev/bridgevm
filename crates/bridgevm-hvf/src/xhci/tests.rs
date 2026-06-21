@@ -1,7 +1,14 @@
 use super::*;
 
-const fn portsc_offset(port: u64) -> u64 {
-    PORT_REG_BASE + port * PORT_REG_STRIDE
+const PORTSC_CCS: u32 = 1 << 0;
+const PORTSC_PED: u32 = 1 << 1;
+const PORTSC_PR: u32 = 1 << 4;
+const PORTSC_SPEED_HIGH: u32 = 3 << 10;
+const PORTSC_CSC: u32 = 1 << 17;
+const PORTSC_PRC: u32 = 1 << 21;
+
+const fn portsc_offset(port: usize) -> u64 {
+    PORT_REG_BASE + port as u64 * PORT_REG_STRIDE
 }
 
 #[test]
@@ -46,8 +53,25 @@ fn portsc_reports_hardwired_power_for_each_root_port() {
     let xhci = XhciController::new();
 
     for port in 0..XHCI_PORT_COUNT {
-        assert_eq!(xhci.mmio_read(portsc_offset(port), 4), u64::from(PORTSC_PP));
+        let portsc = xhci.mmio_read(portsc_offset(port), 4) as u32;
+        assert_eq!(portsc & PORTSC_PP, PORTSC_PP);
+        if port != 0 {
+            assert_eq!(portsc, PORTSC_PP);
+        }
     }
+}
+
+#[test]
+fn first_root_port_reports_connected_high_speed_keyboard_candidate() {
+    let xhci = XhciController::new();
+
+    let portsc = xhci.mmio_read(portsc_offset(0), 4) as u32;
+
+    assert_eq!(portsc & PORTSC_PP, PORTSC_PP);
+    assert_eq!(
+        portsc & (PORTSC_CCS | PORTSC_PED | PORTSC_SPEED_HIGH | PORTSC_CSC),
+        PORTSC_CCS | PORTSC_PED | PORTSC_SPEED_HIGH | PORTSC_CSC
+    );
 }
 
 #[test]
@@ -57,9 +81,27 @@ fn portsc_writes_cannot_clear_power_without_ppc() {
     for port in 0..XHCI_PORT_COUNT {
         for value in [u64::from(PORTSC_PP), 0] {
             xhci.mmio_write(portsc_offset(port), 4, value);
-            assert_eq!(xhci.mmio_read(portsc_offset(port), 4), u64::from(PORTSC_PP));
+            let portsc = xhci.mmio_read(portsc_offset(port), 4) as u32;
+            assert_eq!(portsc & PORTSC_PP, PORTSC_PP);
         }
     }
+}
+
+#[test]
+fn connected_port_change_bits_are_write_one_to_clear() {
+    let mut xhci = XhciController::new();
+    let port = portsc_offset(0);
+
+    assert_ne!(xhci.mmio_read(port, 4) as u32 & PORTSC_CSC, 0);
+
+    xhci.mmio_write(port, 4, u64::from(PORTSC_CSC));
+    assert_eq!(xhci.mmio_read(port, 4) as u32 & PORTSC_CSC, 0);
+
+    xhci.mmio_write(port, 4, u64::from(PORTSC_PR));
+    assert_ne!(xhci.mmio_read(port, 4) as u32 & PORTSC_PRC, 0);
+
+    xhci.mmio_write(port, 4, u64::from(PORTSC_PRC));
+    assert_eq!(xhci.mmio_read(port, 4) as u32 & PORTSC_PRC, 0);
 }
 
 #[test]
@@ -77,13 +119,17 @@ fn port_companion_registers_and_unmodeled_ninth_port_read_zero() {
 }
 
 #[test]
-fn controller_reset_leaves_root_ports_powered_and_disconnected() {
+fn controller_reset_restores_initial_root_port_state() {
     let mut xhci = XhciController::new();
 
-    xhci.mmio_write(PORT_REG_BASE, 4, 0);
+    xhci.mmio_write(PORT_REG_BASE, 4, u64::from(PORTSC_CSC));
     xhci.mmio_write(0x40, 4, u64::from(USB_CMD_HCRST));
 
-    assert_eq!(xhci.mmio_read(PORT_REG_BASE, 4), u64::from(PORTSC_PP));
+    let portsc = xhci.mmio_read(PORT_REG_BASE, 4) as u32;
+    assert_eq!(
+        portsc & (PORTSC_CCS | PORTSC_PED | PORTSC_SPEED_HIGH | PORTSC_CSC),
+        PORTSC_CCS | PORTSC_PED | PORTSC_SPEED_HIGH | PORTSC_CSC
+    );
 }
 
 #[test]

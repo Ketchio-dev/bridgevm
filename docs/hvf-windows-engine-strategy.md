@@ -84,7 +84,7 @@ ACPI-only boot): Linux gives you `dmesg`, Windows gives you a sad face.
 | 6 | **Linux ACPI-only boot** through the stock firmware | **partial (Ubuntu root userspace starts)** | QEMU-style `-kernel`/`-initrd` fw_cfg blobs boot Ubuntu's arm64 kernel through EFI, ACPI, SMBIOS/DMI, GIC, timer, PL011 console binding, ACPI0007 CPU device enumeration, PCI root enumeration, QEMU-like PCI `_OSC`, basic PPTT CPU topology, PMU IRQ metadata, root ext4 mount, `/boot` and `/boot/efi` mounts, `sysinit.target`, and `basic.target`. The ECAM PnP reservation warning is present in the QEMU+HVF oracle too, so the active BridgeVM-only gaps are now post-boot services, missing devices such as network/display/input, and Windows validation rather than early ACPI metadata. |
 | 7 | NVMe controller (identify + admin/IO queues) on PCIe | **partial (Linux root boot validated)** | the controller is reachable through PCIe BAR0; raw host-file media is wired into the live boot probe with read-only sparse overlays or write-through mode; PRP1/PRP2/PRP-list transfers, including PRP2 list-pointer offsets, are handled; Linux no longer reports the previous large-read `SC_INVALID_FIELD` / ext4 journal-abort failure |
 | 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | **partial (Windows Setup GUI reached)** | With `BRIDGEVM_RAMFB=1`, stock ArmVirtQemu firmware, the PCI `virtio-blk-pci` installer ISO at `00:03.0`, a serial-marker space injected at `BdsDxe: starting Boot0001`, and a separate GPT raw NVMe target disk, BridgeVM reaches Windows 11 Setup's `Select language settings` ramfb GUI. The prior `Install driver to show hardware` screen came from booting without a usable writable target disk, not from a missing firmware/loader ISO path. |
-| 9 | GOP framebuffer + keyboard/input | partial (ramfb proof only) | QEMU ramfb fw_cfg is wired enough for snapshots and Windows Setup UI evidence. PL011 marker injection is sufficient for the boot prompt in the probe, but production input still needs a guest-visible keyboard path. |
+| 9 | GOP framebuffer + keyboard/input | partial (ramfb + xHCI port frontier) | QEMU ramfb fw_cfg is wired enough for snapshots and Windows Setup UI evidence. PL011 marker injection is sufficient for the boot prompt in the probe. The qemu-xhci endpoint now exposes a powered, connected high-speed root-port candidate and firmware reaches USB enumeration, but production input still needs xHCI command/event completions, USB descriptors, and a keyboard/tablet event path. |
 | 10 | vTPM 2.0, Secure Boot, virtio-net/guest agent | later | Windows 11 compliance + usability |
 
 ## What is done in this change
@@ -264,6 +264,18 @@ that older driver page as a no-target-disk experiment unless it reappears with a
 separate writable NVMe target attached. The serial tail still prints
 `ConvertPages: failed to find range ...`; keep it in traces, but the Setup GUI and
 successful ISO/target-disk path show it is not the current stop by itself.
+
+The next input-focused run moved the xHCI frontier without importing QEMU code.
+BridgeVM's qemu-xhci endpoint now reports port 0 as powered, connected,
+enabled, high-speed, and connect-change pending. Live evidence in
+`.omo/ulw-loop/evidence/G003-C002-connected-port-live-hvf.txt` shows Windows still
+reaches the same `Select language settings` ramfb page, while xHCI traffic advances
+from powered-only `PORTSC = 0x200` polling to `PORTSC[0] = 0xe03` / `0x20e03`,
+`CRCR`, `DCBAAP`, `CONFIG`, `ERST`, and interrupter register programming. The
+serial tail then prints `XhcInitializeDeviceSlot: Enable Slot Failed, Status =
+Time out`, followed by `UsbEnumerateNewDev: failed to set device address`. Treat
+the next minimal input slice as xHCI command-ring/event-ring completion for
+`Enable Slot` before adding full USB HID descriptors or queued keyboard events.
 
 The first ACPI device-parity gaps are now closed: BridgeVM's generated DSDT names
 QEMU-like `ACPI0007` CPU devices, the `ARMH0011` PL011 console, `PNP0A08` `PCI0`

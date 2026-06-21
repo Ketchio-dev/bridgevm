@@ -1,19 +1,31 @@
 use crate::msix::MsixTable;
 use crate::pcie::{XHCI_MSIX_PBA_OFFSET, XHCI_MSIX_TABLE_OFFSET, XHCI_MSIX_VECTOR_COUNT};
 
+mod ports;
+
+use ports::{initial_ports, port_reg, PortState};
+
 pub const XHCI_CAP_LENGTH: u8 = 0x40;
 
 const USB_CMD_RS: u32 = 1 << 0;
 const USB_CMD_HCRST: u32 = 1 << 1;
 const USB_STS_HCH: u32 = 1 << 0;
-const XHCI_PORT_COUNT: u64 = 8;
+const XHCI_PORT_COUNT: usize = 8;
+const PORTSC_CCS: u32 = 1 << 0;
+const PORTSC_PED: u32 = 1 << 1;
+const PORTSC_PR: u32 = 1 << 4;
 const PORTSC_PP: u32 = 1 << 9;
+const PORTSC_SPEED_SHIFT: u32 = 10;
+const PORTSC_SPEED_HIGH: u32 = 3 << PORTSC_SPEED_SHIFT;
+const PORTSC_CSC: u32 = 1 << 17;
+const PORTSC_PRC: u32 = 1 << 21;
 const PORT_REG_BASE: u64 = 0x440;
 const PORT_REG_STRIDE: u64 = 0x10;
 
 #[derive(Debug, Clone)]
 pub struct XhciController {
     msix: MsixTable,
+    ports: [PortState; XHCI_PORT_COUNT],
     usb_command: u32,
     dnctrl: u32,
     crcr: u64,
@@ -36,6 +48,7 @@ impl XhciController {
     pub fn new() -> Self {
         Self {
             msix: MsixTable::new(XHCI_MSIX_VECTOR_COUNT),
+            ports: initial_ports(),
             usb_command: 0,
             dnctrl: 0,
             crcr: 0,
@@ -108,8 +121,14 @@ impl XhciController {
     }
 
     fn read_dword(&self, offset: u64) -> u32 {
+        if let Some((port, reg)) = port_reg(offset) {
+            return match reg {
+                0x0 => self.ports[port].portsc(),
+                0x4 | 0x8 | 0xc => 0,
+                _ => 0,
+            };
+        }
         match offset {
-            o if port_reg(o) == Some(0) => PORTSC_PP,
             0x00 => 0x0100_0040,
             0x04 => 0x0800_1040,
             0x08 => 0x0000_000f,
@@ -148,8 +167,19 @@ impl XhciController {
     }
 
     fn write_dword(&mut self, offset: u64, value: u32) {
+        if let Some((port, reg)) = port_reg(offset) {
+            if reg == 0x0 {
+                self.ports[port].write_portsc(value);
+            }
+            return;
+        }
         match offset {
-            0x40 => self.usb_command = value & !USB_CMD_HCRST,
+            0x40 => {
+                if value & USB_CMD_HCRST != 0 {
+                    self.ports = initial_ports();
+                }
+                self.usb_command = value & !USB_CMD_HCRST;
+            }
             0x54 => self.dnctrl = value,
             0x58 => self.crcr = (self.crcr & !0xffff_ffff) | u64::from(value),
             0x5c => self.crcr = (self.crcr & 0xffff_ffff) | (u64::from(value) << 32),
@@ -179,11 +209,6 @@ impl XhciController {
 fn checked_region_offset(offset: u64, base: u64, len: u64) -> Option<u64> {
     let end = base.checked_add(len)?;
     (offset >= base && offset < end).then(|| offset - base)
-}
-
-fn port_reg(offset: u64) -> Option<u64> {
-    let relative = offset.checked_sub(PORT_REG_BASE)?;
-    (relative < XHCI_PORT_COUNT * PORT_REG_STRIDE).then_some(relative % PORT_REG_STRIDE)
 }
 
 fn merge_dword(old: u32, offset: u64, size: u8, value: u64) -> u32 {

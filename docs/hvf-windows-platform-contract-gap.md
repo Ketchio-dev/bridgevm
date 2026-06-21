@@ -201,9 +201,14 @@ the same PCI installer ISO and captures `Select language settings` instead:
 `.omo/ulw-loop/evidence/ramfb-g002-disk-shaped-nvme-source/ramfb-800x600-13c7a0000-0ccc66f0651d4a64.png`.
 That makes the current minimal storage recipe: PCI `virtio-blk-pci` boot media
 for the read-only ISO and a separate writable NVMe namespace for the install
-target. Continue by making this recipe engine-facing and then adding the next
-guest-visible usability path Windows Setup needs, starting with production
-keyboard/input and persistent writable disk/UEFI-vars plumbing. In parallel, keep
-tightening Windows-relevant ACPI/device-path details beyond the now-modelled PL011
-DBG2 surface, add network/guest-agent devices, and then run Windows installer
-validation again.
+target. The first xHCI input slice now reports one powered, connected high-speed
+root-port candidate, which moves firmware from powered-only PORTSC polling into
+USB enumeration. Live evidence
+`.omo/ulw-loop/evidence/G003-C002-connected-port-live-hvf.txt` reaches the same
+Windows Setup `Select language settings` page, but the serial tail now reports
+`XhcInitializeDeviceSlot: Enable Slot Failed, Status = Time out`. Continue with
+the smallest xHCI command-ring/event-ring completion needed for `Enable Slot`,
+then layer USB HID descriptors and queued keyboard/tablet events. In parallel,
+keep tightening Windows-relevant ACPI/device-path details beyond the now-modelled
+PL011 DBG2 surface, add network/guest-agent devices, and then run Windows
+installer validation again.
