@@ -19,6 +19,7 @@
 //!   BRIDGEVM_INSTALLER_ISO_TRANSPORT=mmio ...          # legacy virtio-mmio slot 31 fallback
 //!   BRIDGEVM_UART_RX=' ' ...                          # preloaded serial input bytes
 //!   BRIDGEVM_UART_RX_ON_CD_PROMPT=' ' ...             # inject after cdboot prompt is printed
+//!   BRIDGEVM_UART_RX_ON_SERIAL_MARKER=' ' BRIDGEVM_UART_RX_SERIAL_MARKER='BdsDxe: starting Boot0001' ...
 //!
 //! Optional QEMU-style Linux direct boot:
 //!   BRIDGEVM_LINUX_KERNEL=/path/to/Image ...
@@ -65,6 +66,9 @@ use pcie_mmio_trace::{PcieTraceTarget, RecentMmio};
 #[path = "hvf_gic_boot_probe/pe_trace.rs"]
 mod pe_trace;
 use pe_trace::{print_frame_chain, print_pe_owner, print_translated_pe_owner, translated_ipa};
+#[path = "hvf_gic_boot_probe/serial_input.rs"]
+mod serial_input;
+use serial_input::SerialTriggeredUartInput;
 
 /// A GuestMemoryMut view over the actual HVF-mapped guest RAM, so fw_cfg DMA
 /// reads/writes hit real firmware memory (not a throwaway buffer).
@@ -1045,37 +1049,6 @@ fn serial_reached_linux_panic(serial: &[u8]) -> bool {
     contains_bytes(serial, b"Kernel panic")
 }
 
-#[derive(Debug)]
-struct SerialTriggeredUartInput {
-    marker: &'static [u8],
-    bytes: Vec<u8>,
-    fired: bool,
-}
-
-impl SerialTriggeredUartInput {
-    fn from_env(env: &str, marker: &'static [u8]) -> Option<Self> {
-        let bytes = std::env::var(env).ok()?.into_bytes();
-        Some(Self {
-            marker,
-            bytes,
-            fired: false,
-        })
-    }
-
-    fn maybe_fire(&mut self, platform: &mut VirtPlatform) {
-        if self.fired || !contains_bytes(platform.uart_output(), self.marker) {
-            return;
-        }
-        platform.push_uart_input(&self.bytes);
-        self.fired = true;
-        println!(
-            "UART RX prompt injection fired: {} bytes after serial marker {:?}",
-            self.bytes.len(),
-            String::from_utf8_lossy(self.marker)
-        );
-    }
-}
-
 fn map_file(path: &Path, ipa: u64, region_bytes: usize, flags: u64) {
     let data = read_bounded_file(path, region_bytes)
         .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
@@ -1326,10 +1299,21 @@ fn main() {
             platform.push_uart_input(input.as_bytes());
             println!("UART RX preloaded: {} bytes", input.len());
         }
-        let mut cd_prompt_uart_input = SerialTriggeredUartInput::from_env(
+        let mut uart_triggers = Vec::new();
+        if let Some(trigger) = SerialTriggeredUartInput::from_env(
+            "cd-prompt",
             "BRIDGEVM_UART_RX_ON_CD_PROMPT",
             b"Press any key to boot from CD or DVD",
-        );
+        ) {
+            uart_triggers.push(trigger);
+        }
+        if let Some(trigger) = SerialTriggeredUartInput::from_env_with_marker_env(
+            "serial-marker",
+            "BRIDGEVM_UART_RX_ON_SERIAL_MARKER",
+            "BRIDGEVM_UART_RX_SERIAL_MARKER",
+        ) {
+            uart_triggers.push(trigger);
+        }
         platform.load_flash_vars(&vars_data);
         if let Some(nvme) = media.nvme_disk.as_ref() {
             platform
@@ -1659,7 +1643,7 @@ fn main() {
                 stop_reason = "serial reached Linux kernel panic".into();
                 break;
             }
-            if let Some(trigger) = cd_prompt_uart_input.as_mut() {
+            for trigger in &mut uart_triggers {
                 trigger.maybe_fire(&mut platform);
             }
             if stop_on_linux && serial_reached_linux_early_boot(platform.uart_output()) {
@@ -1900,11 +1884,12 @@ fn main() {
         recent_pcie_pio.print();
         print_nvme_command_trace(&platform);
         println!("UART RX remaining bytes: {}", platform.uart_input_len());
-        if let Some(trigger) = cd_prompt_uart_input.as_ref() {
+        for trigger in &uart_triggers {
             println!(
-                "UART RX prompt injection: fired={} bytes={}",
-                trigger.fired,
-                trigger.bytes.len()
+                "UART RX injection {}: fired={} bytes={}",
+                trigger.name(),
+                trigger.fired(),
+                trigger.bytes_len()
             );
         }
         if let Some(stats) = platform.pci_boot_media_stats() {
