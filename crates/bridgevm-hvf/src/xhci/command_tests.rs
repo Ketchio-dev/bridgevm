@@ -1,127 +1,13 @@
+use super::test_support::*;
 use super::*;
-use crate::fwcfg::GuestMemoryMut;
 use crate::xhci::event::USB_STS_EINT;
 
-pub(super) const DOORBELL_BASE: u64 = 0x2000;
 const TRB_TYPE_LINK: u32 = 6;
-pub(super) const TRB_TYPE_ENABLE_SLOT: u32 = 9;
 const TRB_TYPE_DISABLE_SLOT: u32 = 10;
-const TRB_TYPE_ADDRESS_DEVICE: u32 = 11;
-const TRB_TYPE_COMMAND_COMPLETION_EVENT: u32 = 33;
-const COMPLETION_CODE_SUCCESS: u32 = 1;
-pub(super) const ENABLE_SLOT_ID: u32 = 1;
 const ADDRESS_DEVICE_SLOT_ID: u32 = 7;
 const DISABLE_SLOT_ID: u32 = 4;
-pub(super) const TRB_SIZE: u64 = 16;
-const CMD_RING: u64 = 0x1000;
 const LINK_TARGET: u64 = 0x1110;
-const ERST: u64 = 0x2000;
-pub(super) const EVENT_RING: u64 = 0x3000;
 const LINK_TOGGLE_CYCLE: u32 = 1 << 1;
-const DCBAA: u64 = 0x4000;
-
-#[derive(Debug)]
-pub(super) struct TestRam {
-    bytes: Vec<u8>,
-}
-
-impl TestRam {
-    pub(super) fn new(len: usize) -> Self {
-        Self {
-            bytes: vec![0; len],
-        }
-    }
-
-    fn write_u32(&mut self, gpa: u64, value: u32) {
-        assert!(self.write_bytes(gpa, &value.to_le_bytes()));
-    }
-
-    fn write_u64(&mut self, gpa: u64, value: u64) {
-        assert!(self.write_bytes(gpa, &value.to_le_bytes()));
-    }
-
-    fn read_u32(&self, gpa: u64) -> u32 {
-        let bytes = self.read_bytes(gpa, 4).unwrap();
-        u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
-    }
-
-    fn read_u64(&self, gpa: u64) -> u64 {
-        let bytes = self.read_bytes(gpa, 8).unwrap();
-        u64::from_le_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-        ])
-    }
-}
-
-impl GuestMemoryMut for TestRam {
-    fn write_bytes(&mut self, gpa: u64, data: &[u8]) -> bool {
-        let Ok(start) = usize::try_from(gpa) else {
-            return false;
-        };
-        let Some(end) = start.checked_add(data.len()) else {
-            return false;
-        };
-        if end > self.bytes.len() {
-            return false;
-        }
-        self.bytes[start..end].copy_from_slice(data);
-        true
-    }
-
-    fn read_bytes(&self, gpa: u64, len: usize) -> Option<Vec<u8>> {
-        let start = usize::try_from(gpa).ok()?;
-        let end = start.checked_add(len)?;
-        if end > self.bytes.len() {
-            return None;
-        }
-        Some(self.bytes[start..end].to_vec())
-    }
-}
-
-pub(super) fn setup_command_rings(
-    xhci: &mut XhciController,
-    mem: &mut TestRam,
-    command_control: u32,
-) {
-    mem.write_u32(CMD_RING + 12, command_control);
-    setup_event_ring(xhci, mem);
-}
-
-fn setup_event_ring(xhci: &mut XhciController, mem: &mut TestRam) {
-    mem.write_u64(ERST, EVENT_RING);
-    mem.write_u32(ERST + 8, 16);
-
-    xhci.mmio_write(0x58, 8, CMD_RING | 1);
-    xhci.mmio_write(0x70, 8, DCBAA);
-    xhci.mmio_write(0x78, 4, 64);
-    xhci.mmio_write(0x1028, 4, 1);
-    xhci.mmio_write(0x1030, 8, ERST);
-    xhci.mmio_write(0x1038, 8, EVENT_RING | 0x8);
-    xhci.mmio_write(0x1020, 4, 0x2);
-}
-
-pub(super) fn command_control(trb_type: u32, slot_id: u32) -> u32 {
-    command_control_with_cycle(trb_type, slot_id, true)
-}
-
-fn command_control_with_cycle(trb_type: u32, slot_id: u32, cycle: bool) -> u32 {
-    let cycle_bit = u32::from(cycle);
-    (slot_id << 24) | (trb_type << 10) | cycle_bit
-}
-
-fn assert_success_completion(
-    mem: &TestRam,
-    event_gpa: u64,
-    command_gpa: u64,
-    expected_slot_id: u32,
-) {
-    assert_eq!(mem.read_u64(event_gpa), command_gpa);
-    assert_eq!(mem.read_u32(event_gpa + 8) >> 24, COMPLETION_CODE_SUCCESS);
-    let control = mem.read_u32(event_gpa + 12);
-    assert_eq!((control >> 10) & 0x3f, TRB_TYPE_COMMAND_COMPLETION_EVENT);
-    assert_eq!((control >> 24) & 0xff, expected_slot_id);
-    assert_eq!(control & 1, 1);
-}
 
 #[test]
 fn enable_slot_command_posts_success_completion_event() {

@@ -1,8 +1,8 @@
-use super::command_tests::{
+use super::event::USB_STS_EINT;
+use super::test_support::{
     command_control, setup_command_rings, TestRam, DOORBELL_BASE, ENABLE_SLOT_ID, EVENT_RING,
     TRB_SIZE, TRB_TYPE_ENABLE_SLOT,
 };
-use super::event::USB_STS_EINT;
 use super::*;
 
 #[test]

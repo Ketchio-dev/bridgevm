@@ -1,3 +1,5 @@
+use crate::fwcfg::GuestMemoryMut;
+
 use super::{XhciController, USB_CMD_RS, USB_STS_HCH};
 
 pub(super) const USB_STS_EINT: u32 = 1 << 3;
@@ -5,6 +7,9 @@ pub(super) const IMAN_INTERRUPT_PENDING: u32 = 1 << 0;
 
 const ERDP_EHB: u32 = 1 << 3;
 const IMAN_INTERRUPT_ENABLE: u32 = 1 << 1;
+const TRB_SIZE: usize = 16;
+const TRB_SIZE_BYTES: u64 = 16;
+const TRB_CYCLE: u32 = 1;
 
 impl XhciController {
     pub(super) fn write_iman0(&mut self, value: u32) {
@@ -56,4 +61,59 @@ impl XhciController {
     pub(super) fn write_erdp_high(&mut self, value: u32) {
         self.erdp0 = (self.erdp0 & 0xffff_ffff) | (u64::from(value) << 32);
     }
+
+    pub(super) fn post_event(
+        &mut self,
+        mem: &mut dyn GuestMemoryMut,
+        parameter: u64,
+        status: u32,
+        control_without_cycle: u32,
+    ) -> bool {
+        if self.erstsz0 == 0 {
+            return false;
+        }
+        let Some(raw_erst) = mem.read_bytes(self.erstba0, 16) else {
+            return false;
+        };
+        let Some(segment_base) = read_u64(&raw_erst, 0) else {
+            return false;
+        };
+        let Some(segment_trbs) = read_u32(&raw_erst, 8) else {
+            return false;
+        };
+        if segment_base == 0 || segment_trbs == 0 || self.event_enqueue >= segment_trbs {
+            return false;
+        }
+
+        let event_gpa = segment_base + u64::from(self.event_enqueue) * TRB_SIZE_BYTES;
+        let cycle = if self.event_cycle { TRB_CYCLE } else { 0 };
+        let mut event = [0u8; TRB_SIZE];
+        event[0..8].copy_from_slice(&parameter.to_le_bytes());
+        event[8..12].copy_from_slice(&status.to_le_bytes());
+        event[12..16].copy_from_slice(&(control_without_cycle | cycle).to_le_bytes());
+        if !mem.write_bytes(event_gpa, &event) {
+            return false;
+        }
+
+        self.event_enqueue += 1;
+        if self.event_enqueue == segment_trbs {
+            self.event_enqueue = 0;
+            self.event_cycle = !self.event_cycle;
+        }
+        self.event_handler_busy = true;
+        self.iman0 |= IMAN_INTERRUPT_PENDING;
+        true
+    }
+}
+
+fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
+    let raw = bytes.get(offset..offset + 4)?;
+    let array: [u8; 4] = raw.try_into().ok()?;
+    Some(u32::from_le_bytes(array))
+}
+
+fn read_u64(bytes: &[u8], offset: usize) -> Option<u64> {
+    let raw = bytes.get(offset..offset + 8)?;
+    let array: [u8; 8] = raw.try_into().ok()?;
+    Some(u64::from_le_bytes(array))
 }

@@ -9,12 +9,20 @@ pub(super) const COMMAND_RING: u64 = machine::RAM_BASE + 0x1000;
 pub(super) const ERST: u64 = machine::RAM_BASE + 0x2000;
 pub(super) const EVENT_RING: u64 = machine::RAM_BASE + 0x3000;
 pub(super) const DCBAA: u64 = machine::RAM_BASE + 0x4000;
+pub(super) const INPUT_CONTEXT: u64 = machine::RAM_BASE + 0x5000;
+pub(super) const EP0_RING: u64 = machine::RAM_BASE + 0x6000;
+pub(super) const DATA_STAGE_BUFFER: u64 = machine::RAM_BASE + 0x7000;
 pub(super) const TRB_TYPE_ENABLE_SLOT: u32 = 9;
 pub(super) const TRB_TYPE_ADDRESS_DEVICE: u32 = 11;
 const TRB_TYPE_COMMAND_COMPLETION_EVENT: u32 = 33;
+const TRB_TYPE_TRANSFER_EVENT: u32 = 32;
 const COMPLETION_CODE_SUCCESS: u32 = 1;
+const TRB_DATA_STAGE_DIRECTION_IN: u32 = 1 << 16;
 pub(super) const ENABLE_SLOT_ID: u32 = 1;
 pub(super) const ADDRESS_DEVICE_SLOT_ID: u32 = 6;
+pub(super) const DEVICE_DESCRIPTOR: [u8; 18] = [
+    18, 1, 0x00, 0x02, 0, 0, 0, 64, 0x09, 0x12, 0x01, 0x00, 0x00, 0x01, 0, 0, 0, 1,
+];
 
 #[derive(Clone, Copy)]
 pub(super) struct BarWrite {
@@ -130,13 +138,17 @@ pub(super) fn enable_xhci_msix_vector0(
 }
 
 pub(super) fn write_command_trb(mem: &mut FlatGuestRam, command_control: u32) {
-    let command = [0u32, 0, 0, command_control];
-    for (index, dword) in command.iter().enumerate() {
-        assert!(mem.write_bytes(
-            COMMAND_RING + u64::try_from(index).unwrap() * 4,
-            &dword.to_le_bytes()
-        ));
-    }
+    write_command_trb_with_parameter(mem, 0, command_control);
+}
+
+pub(super) fn write_command_trb_with_parameter(
+    mem: &mut FlatGuestRam,
+    parameter: u64,
+    command_control: u32,
+) {
+    assert!(mem.write_bytes(COMMAND_RING, &parameter.to_le_bytes()));
+    assert!(mem.write_bytes(COMMAND_RING + 8, &0u32.to_le_bytes()));
+    assert!(mem.write_bytes(COMMAND_RING + 12, &command_control.to_le_bytes()));
 }
 
 pub(super) fn write_event_ring_table(mem: &mut FlatGuestRam) {
@@ -158,6 +170,41 @@ pub(super) fn assert_success_completion(mem: &FlatGuestRam, expected_slot_id: u3
     assert_eq!(control >> 24, expected_slot_id);
 }
 
+pub(super) fn write_ep0_input_context(mem: &mut FlatGuestRam, ep0_dequeue: u64) {
+    assert!(mem.write_bytes(INPUT_CONTEXT + 0x40 + 8, &ep0_dequeue.to_le_bytes()));
+}
+
+pub(super) fn write_get_descriptor_device_transfer(mem: &mut FlatGuestRam) {
+    write_u64(mem, EP0_RING, 0x0012_0000_0100_0680);
+    write_u32(mem, EP0_RING + 8, 8);
+    write_u32(mem, EP0_RING + 12, transfer_control(2));
+
+    write_u64(mem, EP0_RING + 0x10, DATA_STAGE_BUFFER);
+    write_u32(
+        mem,
+        EP0_RING + 0x18,
+        u32::try_from(DEVICE_DESCRIPTOR.len()).unwrap(),
+    );
+    write_u32(
+        mem,
+        EP0_RING + 0x1c,
+        transfer_control(3) | TRB_DATA_STAGE_DIRECTION_IN,
+    );
+
+    write_u32(mem, EP0_RING + 0x2c, transfer_control(7));
+    write_u32(mem, EP0_RING + 0x3c, transfer_control(4));
+}
+
+pub(super) fn assert_success_transfer_event(mem: &FlatGuestRam, event_gpa: u64) {
+    assert_eq!(read_u64(mem, event_gpa), EP0_RING + 0x30);
+    assert_eq!(read_u32(mem, event_gpa + 8) >> 24, COMPLETION_CODE_SUCCESS);
+    let control = read_u32(mem, event_gpa + 12);
+    assert_eq!((control >> 10) & 0x3f, TRB_TYPE_TRANSFER_EVENT);
+    assert_eq!((control >> 16) & 0x1f, 1);
+    assert_eq!(control >> 24, ENABLE_SLOT_ID);
+    assert_eq!(control & 1, 1);
+}
+
 fn pcie_cfg_gpa(device: u8, function: u8, reg: u16) -> u64 {
     machine::PCIE_ECAM.base
         + (u64::from(device) << 15)
@@ -167,6 +214,26 @@ fn pcie_cfg_gpa(device: u8, function: u8, reg: u16) -> u64 {
 
 fn read_u32(mem: &FlatGuestRam, gpa: u64) -> u32 {
     u32::from_le_bytes(mem.read_bytes(gpa, 4).unwrap().try_into().unwrap())
+}
+
+pub(super) fn read_bytes(mem: &FlatGuestRam, gpa: u64, len: usize) -> Vec<u8> {
+    mem.read_bytes(gpa, len).unwrap()
+}
+
+fn read_u64(mem: &FlatGuestRam, gpa: u64) -> u64 {
+    u64::from_le_bytes(mem.read_bytes(gpa, 8).unwrap().try_into().unwrap())
+}
+
+fn write_u32(mem: &mut FlatGuestRam, gpa: u64, value: u32) {
+    assert!(mem.write_bytes(gpa, &value.to_le_bytes()));
+}
+
+fn write_u64(mem: &mut FlatGuestRam, gpa: u64, value: u64) {
+    assert!(mem.write_bytes(gpa, &value.to_le_bytes()));
+}
+
+fn transfer_control(trb_type: u32) -> u32 {
+    (trb_type << 10) | 1
 }
 
 fn low_u32(value: u64) -> u32 {

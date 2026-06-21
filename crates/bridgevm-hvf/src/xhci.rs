@@ -7,6 +7,7 @@ mod event;
 mod interrupts;
 mod mmio;
 mod ports;
+mod transfers;
 
 use mmio::{checked_region_offset, mask_to_size, merge_dword};
 use ports::{initial_ports, port_reg, PortState};
@@ -21,8 +22,7 @@ const PORTSC_CCS: u32 = 1 << 0;
 const PORTSC_PED: u32 = 1 << 1;
 const PORTSC_PR: u32 = 1 << 4;
 const PORTSC_PP: u32 = 1 << 9;
-const PORTSC_SPEED_SHIFT: u32 = 10;
-const PORTSC_SPEED_HIGH: u32 = 3 << PORTSC_SPEED_SHIFT;
+const PORTSC_SPEED_HIGH: u32 = 3 << 10;
 const PORTSC_CSC: u32 = 1 << 17;
 const PORTSC_PRC: u32 = 1 << 21;
 const PORT_REG_BASE: u64 = 0x440;
@@ -47,6 +47,7 @@ pub struct XhciController {
     event_handler_busy: bool,
     event_enqueue: u32,
     event_cycle: bool,
+    slot1_ep0_dequeue: u64,
 }
 
 impl Default for XhciController {
@@ -75,6 +76,7 @@ impl XhciController {
             event_handler_busy: false,
             event_enqueue: 0,
             event_cycle: true,
+            slot1_ep0_dequeue: 0,
         }
     }
 
@@ -142,6 +144,9 @@ impl XhciController {
         if commands::is_command_doorbell(offset, size) {
             return self.process_command_doorbell(mem);
         }
+        if transfers::is_slot_doorbell(offset, size) {
+            return self.process_slot_doorbell(offset, value, mem);
+        }
         false
     }
 
@@ -152,10 +157,10 @@ impl XhciController {
 
     fn read_dword(&self, offset: u64) -> u32 {
         if let Some((port, reg)) = port_reg(offset) {
-            return match reg {
-                0x0 => self.ports[port].portsc(),
-                0x4 | 0x8 | 0xc => 0,
-                _ => 0,
+            return if reg == 0x0 {
+                self.ports[port].portsc()
+            } else {
+                0
             };
         }
         match offset {
@@ -248,6 +253,7 @@ impl XhciController {
         self.erstsz0 = 0;
         self.erstba0 = 0;
         self.erdp0 = 0;
+        self.slot1_ep0_dequeue = 0;
         self.reset_event_ring();
     }
 }
@@ -268,4 +274,10 @@ mod platform_tests;
 mod platform_test_support;
 
 #[cfg(test)]
+mod test_support;
+
+#[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod transfer_tests;

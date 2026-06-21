@@ -1,6 +1,6 @@
 use crate::fwcfg::GuestMemoryMut;
 
-use super::{event::IMAN_INTERRUPT_PENDING, XhciController};
+use super::XhciController;
 
 const DOORBELL0: u64 = 0x2000;
 const TRB_SIZE: usize = 16;
@@ -70,12 +70,24 @@ impl XhciController {
                     }
                     return posted;
                 }
-                TRB_TYPE_DISABLE_SLOT | TRB_TYPE_ADDRESS_DEVICE => {
+                TRB_TYPE_DISABLE_SLOT => {
                     let posted = self.post_command_completion(
                         mem,
                         command_trb,
                         command_slot_id(command_control),
                     );
+                    if posted {
+                        self.advance_command_dequeue(command_trb);
+                    }
+                    return posted;
+                }
+                TRB_TYPE_ADDRESS_DEVICE => {
+                    let Some(input_context) = read_u64(&raw_command, 0) else {
+                        return false;
+                    };
+                    let slot_id = command_slot_id(command_control);
+                    self.capture_address_device_input_context(mem, input_context, slot_id);
+                    let posted = self.post_command_completion(mem, command_trb, slot_id);
                     if posted {
                         self.advance_command_dequeue(command_trb);
                     }
@@ -93,39 +105,12 @@ impl XhciController {
         command_trb: u64,
         slot_id: u32,
     ) -> bool {
-        if self.erstsz0 == 0 {
-            return false;
-        }
-        let Some(raw_erst) = mem.read_bytes(self.erstba0, 16) else {
-            return false;
-        };
-        let Some(segment_base) = read_u64(&raw_erst, 0) else {
-            return false;
-        };
-        let Some(segment_trbs) = read_u32(&raw_erst, 8) else {
-            return false;
-        };
-        if segment_base == 0 || segment_trbs == 0 || self.event_enqueue >= segment_trbs {
-            return false;
-        }
-
-        let event_gpa = segment_base + u64::from(self.event_enqueue) * TRB_SIZE_BYTES;
-        let mut event = [0u8; TRB_SIZE];
-        event[0..8].copy_from_slice(&command_trb.to_le_bytes());
-        event[8..12].copy_from_slice(&(COMPLETION_CODE_SUCCESS << 24).to_le_bytes());
-        event[12..16].copy_from_slice(&event_control(self.event_cycle, slot_id).to_le_bytes());
-        if !mem.write_bytes(event_gpa, &event) {
-            return false;
-        }
-
-        self.event_enqueue += 1;
-        if self.event_enqueue == segment_trbs {
-            self.event_enqueue = 0;
-            self.event_cycle = !self.event_cycle;
-        }
-        self.event_handler_busy = true;
-        self.iman0 |= IMAN_INTERRUPT_PENDING;
-        true
+        self.post_event(
+            mem,
+            command_trb,
+            COMPLETION_CODE_SUCCESS << 24,
+            event_control(slot_id),
+        )
     }
 
     fn advance_command_dequeue(&mut self, command_trb: u64) {
@@ -149,11 +134,8 @@ fn command_slot_id(control: u32) -> u32 {
     (control >> COMMAND_SLOT_ID_SHIFT) & COMMAND_SLOT_ID_MASK
 }
 
-fn event_control(cycle: bool, slot_id: u32) -> u32 {
-    let cycle_bit = if cycle { TRB_CYCLE } else { 0 };
-    (slot_id << COMMAND_SLOT_ID_SHIFT)
-        | (TRB_TYPE_COMMAND_COMPLETION_EVENT << TRB_TYPE_SHIFT)
-        | cycle_bit
+fn event_control(slot_id: u32) -> u32 {
+    (slot_id << COMMAND_SLOT_ID_SHIFT) | (TRB_TYPE_COMMAND_COMPLETION_EVENT << TRB_TYPE_SHIFT)
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
