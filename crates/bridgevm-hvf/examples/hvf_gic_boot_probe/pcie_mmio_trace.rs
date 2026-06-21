@@ -4,9 +4,13 @@ use bridgevm_hvf::machine;
 use bridgevm_hvf::pcie::{PcieMmioTarget, PciePioTarget};
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome};
 
+#[path = "pcie_mmio_trace/context.rs"]
+mod context;
 #[path = "pcie_mmio_trace/registers.rs"]
 mod registers;
 
+pub(super) use context::targetless_xhci_trace_context;
+use context::PcieTraceContext;
 use registers::{pcie_mmio_register_name, pcie_pio_register_name};
 
 #[derive(Debug, Clone, Copy)]
@@ -23,6 +27,7 @@ struct RecentMmioEvent {
     op_kind: &'static str,
     op: String,
     outcome: String,
+    context: Option<PcieTraceContext>,
 }
 
 #[derive(Debug)]
@@ -50,6 +55,19 @@ impl RecentMmio {
         op: &MmioOp,
         outcome: &MmioOutcome,
     ) {
+        self.record_with_context(device, pc, ipa, target, op, outcome, None);
+    }
+
+    pub(super) fn record_with_context(
+        &mut self,
+        device: &'static str,
+        pc: u64,
+        ipa: u64,
+        target: Option<PcieTraceTarget>,
+        op: &MmioOp,
+        outcome: &MmioOutcome,
+        context: Option<PcieTraceContext>,
+    ) {
         if self.max == 0 || device != self.device {
             return;
         }
@@ -63,6 +81,7 @@ impl RecentMmio {
             op_kind: mmio_op_kind(op),
             op: describe_mmio_op(op),
             outcome: describe_mmio_outcome(outcome),
+            context,
         });
     }
 
@@ -76,13 +95,16 @@ impl RecentMmio {
             self.events.len()
         );
         self.print_register_summary();
-        for event in &self.events {
-            let off = event.ipa.saturating_sub(aperture_base(self.device));
-            println!(
-                "  pc={:#x} ipa={:#x} off={off:#x} reg={} op={} outcome={}",
-                event.pc, event.ipa, event.reg, event.op, event.outcome
-            );
+        for line in self.event_lines() {
+            println!("{line}");
         }
+    }
+
+    fn event_lines(&self) -> Vec<String> {
+        self.events
+            .iter()
+            .map(|event| format_event_line(self.device, event))
+            .collect()
     }
 
     fn print_register_summary(&self) {
@@ -108,6 +130,18 @@ impl RecentMmio {
         for ((reg, op_kind), count) in ranked.into_iter().take(10) {
             println!("  x{count} {op_kind} {reg}");
         }
+    }
+}
+
+fn format_event_line(device: &'static str, event: &RecentMmioEvent) -> String {
+    let off = event.ipa.saturating_sub(aperture_base(device));
+    let base = format!(
+        "  pc={:#x} ipa={:#x} off={off:#x} reg={} op={} outcome={}",
+        event.pc, event.ipa, event.reg, event.op, event.outcome
+    );
+    match event.context {
+        Some(context) => format!("{base} {}", context.describe_for_ipa(event.ipa)),
+        None => base,
     }
 }
 
@@ -155,5 +189,51 @@ fn describe_mmio_outcome(outcome: &MmioOutcome) -> String {
         MmioOutcome::WriteAck => "write-ack".to_string(),
         MmioOutcome::KnownUnimplemented(name) => format!("known-unimplemented({name})"),
         MmioOutcome::Unmapped => "unmapped".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bridgevm_hvf::pcie::{CMD_BUS_MASTER, XHCI_BDF};
+
+    #[test]
+    fn targetless_xhci_range_event_includes_decode_snapshot() {
+        // Given: a recent PCIe MMIO trace event that no longer resolves to a BAR
+        // target even though its GPA is inside the previously programmed xHCI BAR0.
+        let mut recent = RecentMmio::new("pcie-mmio-32", 4);
+        let snapshot = context::PcieConfigSnapshot::xhci(
+            u32::from(CMD_BUS_MASTER),
+            context::PcieBarReadbacks {
+                bar0: 0x3efe_8004,
+                bar1: 0,
+            },
+            None,
+        );
+
+        // When: the probe records a targetless xHCI-range KnownUnimplemented event.
+        recent.record_with_context(
+            "pcie-mmio-32",
+            0xffff_f803_8e35_9e78,
+            0x3efe_9040,
+            None,
+            &MmioOp::Read { size: 4 },
+            &MmioOutcome::KnownUnimplemented("pcie-mmio-32"),
+            Some(PcieTraceContext::PciConfig(snapshot)),
+        );
+
+        // Then: the printed event line carries current xHCI command/BAR state,
+        // making a later live trace distinguish decode loss from missing register semantics.
+        let line = recent.event_lines().join("\n");
+        assert!(line.contains("pcie-mmio-32+0x2efe9040"));
+        assert!(line.contains("xhci=00:02.0"));
+        assert!(line.contains("command=0x0004"));
+        assert!(line.contains("memory=false"));
+        assert!(line.contains("bus_master=true"));
+        assert!(line.contains("bar0=0x3efe8004"));
+        assert!(line.contains("bar1=0x00000000"));
+        assert!(line.contains("base=0x3efe8000"));
+        assert!(line.contains("contains_ipa=true"));
+        assert_eq!(XHCI_BDF, (0, 2, 0));
     }
 }

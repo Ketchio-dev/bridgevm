@@ -62,7 +62,7 @@ mod nvme_trace;
 use nvme_trace::print_nvme_command_trace;
 #[path = "hvf_gic_boot_probe/pcie_mmio_trace.rs"]
 mod pcie_mmio_trace;
-use pcie_mmio_trace::{PcieTraceTarget, RecentMmio};
+use pcie_mmio_trace::{targetless_xhci_trace_context, PcieTraceTarget, RecentMmio};
 #[path = "hvf_gic_boot_probe/pe_trace.rs"]
 mod pe_trace;
 use pe_trace::{print_frame_chain, print_pe_owner, print_translated_pe_owner, translated_ipa};
@@ -1537,7 +1537,23 @@ fn main() {
                     };
                     recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
                     let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
-                    recent_pcie_mmio.record(device, last_pc, ipa, pcie_target, &op, &outcome);
+                    let pcie_context = targetless_xhci_trace_context(
+                        &mut platform,
+                        &mut guest_ram,
+                        device,
+                        ipa,
+                        pcie_target,
+                        &outcome,
+                    );
+                    recent_pcie_mmio.record_with_context(
+                        device,
+                        last_pc,
+                        ipa,
+                        pcie_target,
+                        &op,
+                        &outcome,
+                        pcie_context,
+                    );
                     recent_pcie_pio.record(device, last_pc, ipa, pcie_target, &op, &outcome);
                     record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
                     if trace_this_fwcfg {
