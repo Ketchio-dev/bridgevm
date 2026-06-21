@@ -38,16 +38,15 @@ impl PcieConfigSnapshot {
 
     pub(super) fn bar0_mmio64_contains(self, ipa: u64) -> bool {
         let base = (u64::from(self.bars.bar1) << 32) | u64::from(self.bars.bar0 & !0xf);
-        let limit = base + u64::from(pcie::XHCI_BAR0_SIZE);
-        base != 0 && (base..limit).contains(&ipa)
+        base != 0
+            && ipa
+                .checked_sub(base)
+                .is_some_and(|offset| offset < u64::from(pcie::XHCI_BAR0_SIZE))
     }
 
     fn describe_for_ipa(self, ipa: u64) -> String {
         let (bus, device, function) = self.bdf;
-        let command = match u16::try_from(self.command_status & u32::from(u16::MAX)) {
-            Ok(command) => command,
-            Err(_) => return "xhci=<invalid-command>".to_string(),
-        };
+        let command = (self.command_status & u32::from(u16::MAX)) as u16;
         let status = self.command_status >> 16;
         let memory = command & pcie::CMD_MEMORY_SPACE != 0;
         let bus_master = command & pcie::CMD_BUS_MASTER != 0;
@@ -225,5 +224,38 @@ mod tests {
         );
 
         assert_eq!(context, None);
+    }
+
+    #[test]
+    fn bar0_mmio64_contains_matches_normal_base() {
+        let snapshot = PcieConfigSnapshot::xhci(
+            0,
+            PcieBarReadbacks {
+                bar0: 0x0001_0000,
+                bar1: 0,
+            },
+            None,
+        );
+
+        assert!(snapshot.bar0_mmio64_contains(0x0001_0100));
+        assert!(!snapshot.bar0_mmio64_contains(0x0001_0000 + u64::from(pcie::XHCI_BAR0_SIZE)));
+    }
+
+    #[test]
+    fn bar0_mmio64_contains_rejects_overflowing_bar_readbacks() {
+        for bars in [
+            PcieBarReadbacks {
+                bar0: u32::MAX,
+                bar1: u32::MAX,
+            },
+            PcieBarReadbacks {
+                bar0: 0xffff_f000,
+                bar1: u32::MAX,
+            },
+        ] {
+            let snapshot = PcieConfigSnapshot::xhci(0, bars, None);
+
+            assert!(!snapshot.bar0_mmio64_contains(0x1000));
+        }
     }
 }
