@@ -4,6 +4,7 @@ use crate::pcie::{XHCI_MSIX_PBA_OFFSET, XHCI_MSIX_TABLE_OFFSET, XHCI_MSIX_VECTOR
 
 mod commands;
 mod event;
+mod interrupts;
 mod mmio;
 mod ports;
 
@@ -136,11 +137,12 @@ impl XhciController {
         size: u8,
         value: u64,
         mem: &mut dyn GuestMemoryMut,
-    ) {
+    ) -> bool {
         self.mmio_write(offset, size, value);
         if commands::is_command_doorbell(offset, size) {
-            self.process_command_doorbell(mem);
+            return self.process_command_doorbell(mem);
         }
+        false
     }
 
     fn register_byte(&self, offset: u64) -> u8 {
@@ -205,7 +207,7 @@ impl XhciController {
             0x40 => {
                 if value & USB_CMD_HCRST != 0 {
                     self.ports = initial_ports();
-                    self.reset_event_ring();
+                    self.reset_programmed_state();
                 }
                 self.usb_command = value & !USB_CMD_HCRST;
             }
@@ -234,6 +236,20 @@ impl XhciController {
             _ => {}
         }
     }
+
+    fn reset_programmed_state(&mut self) {
+        self.crcr = 0;
+        self.command_dequeue = 0;
+        self.command_cycle = false;
+        self.dcbaap = 0;
+        self.config = 0;
+        self.iman0 = 0;
+        self.imod0 = 0;
+        self.erstsz0 = 0;
+        self.erstba0 = 0;
+        self.erdp0 = 0;
+        self.reset_event_ring();
+    }
 }
 
 #[cfg(test)]
@@ -243,7 +259,13 @@ mod command_tests;
 mod event_tests;
 
 #[cfg(test)]
-mod tests;
+mod msix_tests;
 
 #[cfg(test)]
 mod platform_tests;
+
+#[cfg(test)]
+mod platform_test_support;
+
+#[cfg(test)]
+mod tests;

@@ -37,26 +37,26 @@ impl XhciController {
         self.sync_command_ring_from_crcr();
     }
 
-    pub(super) fn process_command_doorbell(&mut self, mem: &mut dyn GuestMemoryMut) {
+    pub(super) fn process_command_doorbell(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
         for _ in 0..MAX_LINK_TRBS_PER_DOORBELL {
             let command_trb = self.command_dequeue;
             if command_trb == 0 {
-                return;
+                return false;
             }
             let Some(raw_command) = mem.read_bytes(command_trb, TRB_SIZE) else {
-                return;
+                return false;
             };
             let Some(command_control) = read_u32(&raw_command, 12) else {
-                return;
+                return false;
             };
             let expected_cycle = if self.command_cycle { TRB_CYCLE } else { 0 };
             if command_control & TRB_CYCLE != expected_cycle {
-                return;
+                return false;
             }
             match trb_type(command_control) {
                 TRB_TYPE_LINK => {
                     let Some(link_target) = read_u64(&raw_command, 0) else {
-                        return;
+                        return false;
                     };
                     self.command_dequeue = link_target & LINK_TRB_POINTER_MASK;
                     if command_control & TRB_LINK_TOGGLE_CYCLE != 0 {
@@ -64,24 +64,27 @@ impl XhciController {
                     }
                 }
                 TRB_TYPE_ENABLE_SLOT => {
-                    if self.post_command_completion(mem, command_trb, SLOT_ID) {
+                    let posted = self.post_command_completion(mem, command_trb, SLOT_ID);
+                    if posted {
                         self.advance_command_dequeue(command_trb);
                     }
-                    return;
+                    return posted;
                 }
                 TRB_TYPE_DISABLE_SLOT | TRB_TYPE_ADDRESS_DEVICE => {
-                    if self.post_command_completion(
+                    let posted = self.post_command_completion(
                         mem,
                         command_trb,
                         command_slot_id(command_control),
-                    ) {
+                    );
+                    if posted {
                         self.advance_command_dequeue(command_trb);
                     }
-                    return;
+                    return posted;
                 }
-                _ => return,
+                _ => return false,
             }
         }
+        false
     }
 
     fn post_command_completion(
@@ -128,6 +131,7 @@ impl XhciController {
     fn advance_command_dequeue(&mut self, command_trb: u64) {
         if let Some(next) = command_trb.checked_add(TRB_SIZE_BYTES) {
             self.command_dequeue = next;
+            self.crcr = next | u64::from(self.command_cycle);
         }
     }
 

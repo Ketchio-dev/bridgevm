@@ -433,6 +433,7 @@ impl VirtPlatform {
             MmioOp::Write { size, value } => {
                 self.pcie.cfg_write(ecam_offset, size, value);
                 self.flush_nvme_pending_msix();
+                self.flush_xhci_pending_msix();
                 MmioOutcome::WriteAck
             }
         }
@@ -470,8 +471,13 @@ impl VirtPlatform {
                     MmioOutcome::ReadValue(self.xhci.mmio_read(target.offset, size))
                 }
                 MmioOp::Write { size, value } => {
-                    self.xhci
-                        .mmio_write_with_mem(target.offset, size, value, mem);
+                    let posted_completion =
+                        self.xhci
+                            .mmio_write_with_mem(target.offset, size, value, mem);
+                    if posted_completion {
+                        self.queue_xhci_completion_msix();
+                    }
+                    self.flush_xhci_pending_msix();
                     MmioOutcome::WriteAck
                 }
             },
@@ -570,6 +576,24 @@ impl VirtPlatform {
         let control = self.pcie.nvme_msix_control();
         self.pending_msix.extend(
             self.nvme
+                .drain_pending_msix(control.enabled, control.function_masked),
+        );
+    }
+
+    fn queue_xhci_completion_msix(&mut self) {
+        let control = self.pcie.xhci_msix_control();
+        if let Some(message) = self
+            .xhci
+            .raise_msix(0, control.enabled, control.function_masked)
+        {
+            self.pending_msix.push(message);
+        }
+    }
+
+    fn flush_xhci_pending_msix(&mut self) {
+        let control = self.pcie.xhci_msix_control();
+        self.pending_msix.extend(
+            self.xhci
                 .drain_pending_msix(control.enabled, control.function_masked),
         );
     }

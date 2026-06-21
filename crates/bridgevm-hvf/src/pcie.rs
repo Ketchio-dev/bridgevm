@@ -814,6 +814,13 @@ impl PcieEcam {
             .and_then(Function::msix_control)
             .unwrap_or_default()
     }
+
+    /// Function-level MSI-X control for the xHCI endpoint.
+    pub fn xhci_msix_control(&self) -> MsixFunctionControl {
+        self.function_at(XHCI_BDF)
+            .and_then(Function::msix_control)
+            .unwrap_or_default()
+    }
 }
 
 // ---- sub-dword access helpers -----------------------------------------------

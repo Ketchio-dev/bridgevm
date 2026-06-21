@@ -29,6 +29,11 @@ impl XhciController {
         }
     }
 
+    pub(super) fn interrupt_pending_and_enabled(&self) -> bool {
+        let enabled_pending = IMAN_INTERRUPT_PENDING | IMAN_INTERRUPT_ENABLE;
+        self.iman0 & enabled_pending == enabled_pending
+    }
+
     pub(super) fn reset_event_ring(&mut self) {
         self.event_enqueue = 0;
         self.event_handler_busy = false;

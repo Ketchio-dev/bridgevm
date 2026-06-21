@@ -151,6 +151,52 @@ fn enable_slot_command_posts_success_completion_event() {
 }
 
 #[test]
+fn command_completion_advances_guest_visible_crcr_readback() {
+    // Given: firmware-style command/event rings containing one Enable Slot TRB.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x5000);
+    setup_command_rings(
+        &mut xhci,
+        &mut mem,
+        command_control(TRB_TYPE_ENABLE_SLOT, ENABLE_SLOT_ID),
+    );
+
+    // When: the guest rings host-controller doorbell 0.
+    xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem);
+
+    // Then: CRCR readback reports the next command TRB while preserving cycle.
+    assert_eq!(xhci.mmio_read(0x58, 8), CMD_RING + TRB_SIZE + 1);
+}
+
+#[test]
+fn host_controller_reset_clears_command_and_runtime_programming() {
+    // Given: command, interrupter, and runtime registers contain stale guest state.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x5000);
+    setup_command_rings(
+        &mut xhci,
+        &mut mem,
+        command_control(TRB_TYPE_ENABLE_SLOT, ENABLE_SLOT_ID),
+    );
+    xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem);
+    xhci.mmio_write(0x1024, 4, 0x1357);
+
+    // When: the guest resets the host controller.
+    xhci.mmio_write(0x40, 4, u64::from(USB_CMD_HCRST));
+
+    // Then: command/runtime programming is clear for a fresh initialization.
+    assert_eq!(xhci.mmio_read(0x58, 8), 0);
+    assert_eq!(xhci.mmio_read(0x70, 8), 0);
+    assert_eq!(xhci.mmio_read(0x78, 4), 0);
+    assert_eq!(xhci.mmio_read(0x1020, 4), 0);
+    assert_eq!(xhci.mmio_read(0x1024, 4), 0);
+    assert_eq!(xhci.mmio_read(0x1028, 4), 0);
+    assert_eq!(xhci.mmio_read(0x1030, 8), 0);
+    assert_eq!(xhci.mmio_read(0x1038, 8), 0);
+    assert_eq!(xhci.mmio_read(0x44, 4) & u64::from(USB_STS_EINT), 0);
+}
+
+#[test]
 fn address_device_command_posts_success_completion_event() {
     // Given: a command/event ring pair containing one Address Device TRB.
     let mut xhci = XhciController::new();
