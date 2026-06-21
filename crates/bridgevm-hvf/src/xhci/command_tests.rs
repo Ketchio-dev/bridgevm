@@ -4,10 +4,18 @@ use crate::xhci::event::USB_STS_EINT;
 
 const TRB_TYPE_LINK: u32 = 6;
 const TRB_TYPE_DISABLE_SLOT: u32 = 10;
+const TRB_TYPE_SET_TR_DEQUEUE_POINTER: u32 = 16;
 const STOP_ENDPOINT_OBSERVED_CONTROL: u32 = 0x0101_3c01;
 const ADDRESS_DEVICE_SLOT_ID: u32 = 7;
 const DISABLE_SLOT_ID: u32 = 4;
 const STOP_ENDPOINT_SLOT_ID: u32 = 1;
+const SET_TR_DEQUEUE_POINTER_SLOT_ID: u32 = 1;
+const ENDPOINT_ID_EP0: u32 = 1;
+const SET_TR_DEQUEUE_POINTER_OBSERVED_CONTROL: u32 = (SET_TR_DEQUEUE_POINTER_SLOT_ID << 24)
+    | (ENDPOINT_ID_EP0 << 16)
+    | (TRB_TYPE_SET_TR_DEQUEUE_POINTER << 10)
+    | 1;
+const EP0_RECOVERY_RING: u64 = 0x2220;
 const LINK_TARGET: u64 = 0x1110;
 const LINK_TOGGLE_CYCLE: u32 = 1 << 1;
 
@@ -136,6 +144,27 @@ fn stop_endpoint_command_posts_success_completion_and_advances_crcr_for_observed
         (CMD_RING, CMD_RING + TRB_SIZE + 1)
     );
     assert_success_completion(&mem, EVENT_RING, CMD_RING, STOP_ENDPOINT_SLOT_ID);
+}
+
+#[test]
+fn set_tr_dequeue_pointer_command_updates_ep0_dequeue_and_posts_completion() {
+    // Given: firmware recovery points slot 1 EP0 at a new transfer-ring dequeue pointer.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x8000);
+    setup_command_rings_with_parameter(
+        &mut xhci,
+        &mut mem,
+        EP0_RECOVERY_RING | 1,
+        SET_TR_DEQUEUE_POINTER_OBSERVED_CONTROL,
+    );
+
+    // When: the guest rings host-controller doorbell 0 for Set TR Dequeue Pointer.
+    xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem);
+
+    // Then: completion is posted and the EP0 software dequeue tracks the command pointer.
+    assert_success_completion(&mem, EVENT_RING, CMD_RING, SET_TR_DEQUEUE_POINTER_SLOT_ID);
+    assert_eq!(xhci.slot1_ep0_dequeue, EP0_RECOVERY_RING);
+    assert_eq!(xhci.mmio_read(0x58, 8), CMD_RING + TRB_SIZE + 1);
 }
 
 #[test]

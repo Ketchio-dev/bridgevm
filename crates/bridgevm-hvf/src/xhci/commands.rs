@@ -16,11 +16,16 @@ const TRB_TYPE_ENABLE_SLOT: u32 = 9;
 const TRB_TYPE_DISABLE_SLOT: u32 = 10;
 const TRB_TYPE_ADDRESS_DEVICE: u32 = 11;
 const TRB_TYPE_STOP_ENDPOINT: u32 = 15;
+const TRB_TYPE_SET_TR_DEQUEUE_POINTER: u32 = 16;
 const TRB_TYPE_COMMAND_COMPLETION_EVENT: u32 = 33;
 const COMPLETION_CODE_SUCCESS: u32 = 1;
 const SLOT_ID: u32 = 1;
 const COMMAND_SLOT_ID_SHIFT: u32 = 24;
 const COMMAND_SLOT_ID_MASK: u32 = 0xff;
+const COMMAND_ENDPOINT_ID_SHIFT: u32 = 16;
+const COMMAND_ENDPOINT_ID_MASK: u32 = 0x1f;
+const ENDPOINT_ID_EP0: u32 = 1;
+const TR_DEQUEUE_POINTER_MASK: u64 = !0xf;
 const MAX_LINK_TRBS_PER_DOORBELL: usize = 8;
 
 pub(super) const fn is_command_doorbell(offset: u64, size: u8) -> bool {
@@ -93,6 +98,21 @@ impl XhciController {
                     }
                     return posted;
                 }
+                TRB_TYPE_SET_TR_DEQUEUE_POINTER => {
+                    let Some(raw_dequeue) = read_u64(&raw_command, 0) else {
+                        return false;
+                    };
+                    let slot_id = command_slot_id(command_control);
+                    if slot_id == SLOT_ID && command_endpoint_id(command_control) == ENDPOINT_ID_EP0
+                    {
+                        self.slot1_ep0_dequeue = raw_dequeue & TR_DEQUEUE_POINTER_MASK;
+                    }
+                    let posted = self.post_command_completion(mem, command_trb, slot_id);
+                    if posted {
+                        self.advance_command_dequeue(command_trb);
+                    }
+                    return posted;
+                }
                 TRB_TYPE_ADDRESS_DEVICE => {
                     let Some(input_context) = read_u64(&raw_command, 0) else {
                         return false;
@@ -144,6 +164,10 @@ fn trb_type(control: u32) -> u32 {
 
 fn command_slot_id(control: u32) -> u32 {
     (control >> COMMAND_SLOT_ID_SHIFT) & COMMAND_SLOT_ID_MASK
+}
+
+fn command_endpoint_id(control: u32) -> u32 {
+    (control >> COMMAND_ENDPOINT_ID_SHIFT) & COMMAND_ENDPOINT_ID_MASK
 }
 
 fn event_control(slot_id: u32) -> u32 {
