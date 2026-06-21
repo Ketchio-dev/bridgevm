@@ -193,15 +193,17 @@ shape parity rather than a plain missing-completion bug.
 The remaining gap is above firmware: the PCI boot-media default has now been
 validated far enough to reach Windows 11 Setup with ramfb enabled. The repeatable
 probe recipe injects a PL011 space after `BdsDxe: starting Boot0001`; the run
-serves 234 PCI virtio boot-media reads, reads `646239744` bytes from the ISO, and
-captures an 800x600 ramfb screenshot showing Setup's `Install driver to show
-hardware` page. That page means fixed `virtio-blk-pci` media is sufficient for
-firmware and boot-loader reads but not yet sufficient for WinPE/Setup hardware or
-media discovery. Continue by diffing QEMU+HVF `-cdrom` against BridgeVM's exposed
-install-media shape, then model the smallest guest-visible path Windows Setup can
-use: true CD-ROM/removable semantics, xHCI USB mass storage, or an inbox-visible
-NVMe-backed media/target arrangement. In parallel, lift NVMe overlay/writeback and
-pflash persistence into the engine-facing VM configuration, keep tightening
-Windows-relevant ACPI/device-path details beyond the now-modelled PL011 DBG2
-surface, add production input/networking, and then run Windows installer
+serves 234 PCI virtio boot-media reads and reads `646239744` bytes from the ISO.
+A no-target-disk run captured Setup's `Install driver to show hardware` page, but
+the follow-up disk-shaped target run attaches a separate GPT raw NVMe image with
+the same PCI installer ISO and captures `Select language settings` instead:
+`.omo/ulw-loop/evidence/G002-C002-disk-shaped-nvme-source-live-hvf.txt` plus
+`.omo/ulw-loop/evidence/ramfb-g002-disk-shaped-nvme-source/ramfb-800x600-13c7a0000-0ccc66f0651d4a64.png`.
+That makes the current minimal storage recipe: PCI `virtio-blk-pci` boot media
+for the read-only ISO and a separate writable NVMe namespace for the install
+target. Continue by making this recipe engine-facing and then adding the next
+guest-visible usability path Windows Setup needs, starting with production
+keyboard/input and persistent writable disk/UEFI-vars plumbing. In parallel, keep
+tightening Windows-relevant ACPI/device-path details beyond the now-modelled PL011
+DBG2 surface, add network/guest-agent devices, and then run Windows installer
 validation again.

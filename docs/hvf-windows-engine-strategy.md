@@ -83,7 +83,7 @@ ACPI-only boot): Linux gives you `dmesg`, Windows gives you a sad face.
 | 5 | PCIe ECAM (`pci-host-ecam-generic`) + config space + MSI/MSI-X | **partial (wired + Linux validated)** | ECAM host bridge, NVMe endpoint config space, BAR0 MMIO routing, writable MSI-X table/PBA, Apple GICM/GICv2m-style MSI-frame metadata and `hv_gic_send_msi` delivery are wired; Linux drives the NVMe queue through the PCI endpoint under ACPI |
 | 6 | **Linux ACPI-only boot** through the stock firmware | **partial (Ubuntu root userspace starts)** | QEMU-style `-kernel`/`-initrd` fw_cfg blobs boot Ubuntu's arm64 kernel through EFI, ACPI, SMBIOS/DMI, GIC, timer, PL011 console binding, ACPI0007 CPU device enumeration, PCI root enumeration, QEMU-like PCI `_OSC`, basic PPTT CPU topology, PMU IRQ metadata, root ext4 mount, `/boot` and `/boot/efi` mounts, `sysinit.target`, and `basic.target`. The ECAM PnP reservation warning is present in the QEMU+HVF oracle too, so the active BridgeVM-only gaps are now post-boot services, missing devices such as network/display/input, and Windows validation rather than early ACPI metadata. |
 | 7 | NVMe controller (identify + admin/IO queues) on PCIe | **partial (Linux root boot validated)** | the controller is reachable through PCIe BAR0; raw host-file media is wired into the live boot probe with read-only sparse overlays or write-through mode; PRP1/PRP2/PRP-list transfers, including PRP2 list-pointer offsets, are handled; Linux no longer reports the previous large-read `SC_INVALID_FIELD` / ext4 journal-abort failure |
-| 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | **partial (Windows Setup GUI reached)** | With `BRIDGEVM_RAMFB=1`, stock ArmVirtQemu firmware, the PCI `virtio-blk-pci` installer ISO at `00:03.0`, and a serial-marker space injected at `BdsDxe: starting Boot0001`, BridgeVM reaches Windows 11 Setup's ramfb GUI. The current screen is `Install driver to show hardware`; PCI boot-media serviced 234 read requests and read `646239744` bytes from the ISO with status `0x0`. The active frontier has moved from boot-start input timing to Windows Setup media/storage discoverability. |
+| 8 | Windows Boot Manager / Setup first attempt; capture deterministic failure trace | **partial (Windows Setup GUI reached)** | With `BRIDGEVM_RAMFB=1`, stock ArmVirtQemu firmware, the PCI `virtio-blk-pci` installer ISO at `00:03.0`, a serial-marker space injected at `BdsDxe: starting Boot0001`, and a separate GPT raw NVMe target disk, BridgeVM reaches Windows 11 Setup's `Select language settings` ramfb GUI. The prior `Install driver to show hardware` screen came from booting without a usable writable target disk, not from a missing firmware/loader ISO path. |
 | 9 | GOP framebuffer + keyboard/input | partial (ramfb proof only) | QEMU ramfb fw_cfg is wired enough for snapshots and Windows Setup UI evidence. PL011 marker injection is sufficient for the boot prompt in the probe, but production input still needs a guest-visible keyboard path. |
 | 10 | vTPM 2.0, Secure Boot, virtio-net/guest agent | later | Windows 11 compliance + usability |
 
@@ -234,15 +234,36 @@ PCI boot-media `requests=234 reads=234 bytes_read=646239744 status=0x0` and
 dumps a non-empty 800x600 ramfb snapshot whose PNG shows Windows 11 Setup at
 `Install driver to show hardware`.
 
-That screen is useful because it proves the loader and GUI are alive, but it also
-narrows the next platform slice. BridgeVM's installer ISO is currently a fixed
-`virtio-blk-pci` block device used successfully by firmware/boot code; Windows
-Setup then asks for a media driver, so the next diff is the guest-visible
-install-media/storage shape exposed to WinPE. Do not treat the older Boot0001
-timeout as the active frontier unless this marker-trigger run regresses. The
-serial tail still prints `ConvertPages: failed to find range 10000000 - 1012BFFF`;
-keep it in traces, but the ramfb GUI and successful ISO reads show it is not the
-current stop by itself.
+That screen was useful because it proved the loader and GUI were alive, but the
+next focused run narrowed the meaning of the failure. Booting the same PCI
+`virtio-blk-pci` installer ISO while also attaching a separate GPT raw NVMe disk
+as the writable target moved the ramfb snapshot to Windows 11 Setup's
+`Select language settings` page:
+
+```sh
+BRIDGEVM_RAMFB=1 \
+BRIDGEVM_INSTALLER_ISO=/Users/user/Downloads/Win11_25H2_English_Arm64_v2.iso \
+BRIDGEVM_NVME_DISK=/tmp/bridgevm-g002-winsetup-source.raw \
+BRIDGEVM_TRACE_NVME=1 \
+BRIDGEVM_RECENT_NVME_COMMANDS=192 \
+BRIDGEVM_UART_RX_ON_SERIAL_MARKER=' ' \
+BRIDGEVM_UART_RX_SERIAL_MARKER='BdsDxe: starting Boot0001' \
+BRIDGEVM_RAM_MIB=4096 \
+BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=120000 \
+BRIDGEVM_RAMFB_DUMP_DIR=.omo/ulw-loop/evidence/ramfb-g002-disk-shaped-nvme-source \
+target/debug/examples/hvf_gic_boot_probe
+```
+
+Live evidence:
+`.omo/ulw-loop/evidence/G002-C002-disk-shaped-nvme-source-live-hvf.txt` exits
+cleanly after serving the same 234 PCI boot-media requests and reading
+`646239744` bytes from the ISO. Its ramfb PNG at
+`.omo/ulw-loop/evidence/ramfb-g002-disk-shaped-nvme-source/ramfb-800x600-13c7a0000-0ccc66f0651d4a64.png`
+shows `Select language settings`, not `Install driver to show hardware`. Treat
+that older driver page as a no-target-disk experiment unless it reappears with a
+separate writable NVMe target attached. The serial tail still prints
+`ConvertPages: failed to find range ...`; keep it in traces, but the Setup GUI and
+successful ISO/target-disk path show it is not the current stop by itself.
 
 The first ACPI device-parity gaps are now closed: BridgeVM's generated DSDT names
 QEMU-like `ACPI0007` CPU devices, the `ARMH0011` PL011 console, `PNP0A08` `PCI0`
