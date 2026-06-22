@@ -195,6 +195,14 @@ pub(super) fn write_get_descriptor_device_transfer(mem: &mut FlatGuestRam) {
     write_u32(mem, EP0_RING + 0x3c, transfer_control(4));
 }
 
+pub(super) fn write_set_configuration_transfer(mem: &mut FlatGuestRam) {
+    write_u64(mem, EP0_RING, 0x0000_0000_0001_0900);
+    write_u32(mem, EP0_RING + 8, 8);
+    write_u32(mem, EP0_RING + 12, transfer_control(2));
+
+    write_u32(mem, EP0_RING + 0x1c, transfer_control(4));
+}
+
 pub(super) fn assert_success_transfer_event_for_trb(
     mem: &FlatGuestRam,
     event_gpa: u64,

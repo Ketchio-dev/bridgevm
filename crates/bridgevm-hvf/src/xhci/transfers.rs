@@ -2,16 +2,17 @@ use crate::fwcfg::GuestMemoryMut;
 
 use super::{
     trace,
-    usb::{descriptor_for_setup_packet, parse_setup_packet},
+    usb::{descriptor_for_setup_packet, is_set_configuration_request, parse_setup_packet},
     XhciController,
 };
+use trb::{read_transfer_trb, trace_transfer_trb, trb_transfer_length, trb_type, TransferTrb};
+
+mod trb;
 
 const DOORBELL_BASE: u64 = 0x2000;
 const DOORBELL_STRIDE: u64 = 4;
-const TRB_SIZE: usize = 16;
 const TRB_SIZE_BYTES: u64 = 16;
 const TRB_TYPE_SHIFT: u32 = 10;
-const TRB_TYPE_MASK: u32 = 0x3f;
 const TRB_TYPE_SETUP_STAGE: u32 = 2;
 const TRB_TYPE_DATA_STAGE: u32 = 3;
 const TRB_TYPE_STATUS_STAGE: u32 = 4;
@@ -26,20 +27,17 @@ const SLOT_ID: u32 = 1;
 const ENDPOINT_ID_EP0: u32 = 1;
 const EVENT_ENDPOINT_ID_SHIFT: u32 = 16;
 const EVENT_SLOT_ID_SHIFT: u32 = 24;
-const TRB_TRANSFER_LENGTH_MASK: u32 = 0x1f_ffff;
-
-#[derive(Clone, Copy)]
-struct TransferTrb {
-    gpa: u64,
-    parameter: u64,
-    status: u32,
-    control: u32,
-}
 
 #[derive(Clone, Copy)]
 struct ControlCompletion {
     status_stage: TransferTrb,
     event_data: Option<TransferTrb>,
+}
+
+struct ControlEventRequest {
+    setup: TransferTrb,
+    completion: ControlCompletion,
+    residual_length: u32,
 }
 
 pub(super) const fn is_slot_doorbell(offset: u64, size: u8) -> bool {
@@ -79,20 +77,7 @@ impl XhciController {
             trace::ep0_reject_with_gpa("setup_trb_read_failed", transfer_ring);
             return false;
         };
-        trace_trb("setup", setup);
-        let Some(data) = read_transfer_trb(mem, transfer_ring + TRB_SIZE_BYTES) else {
-            trace::ep0_reject_with_gpa("data_trb_read_failed", transfer_ring + TRB_SIZE_BYTES);
-            return false;
-        };
-        trace_trb("data", data);
-        let Some(completion) = find_control_completion(mem, transfer_ring + 2 * TRB_SIZE_BYTES)
-        else {
-            trace::ep0_reject_with_gpa(
-                "completion_trbs_invalid",
-                transfer_ring + 2 * TRB_SIZE_BYTES,
-            );
-            return false;
-        };
+        trace_transfer_trb("setup", setup);
         let setup_packet = parse_setup_packet(setup.parameter);
         trace::ep0_setup_packet(
             setup_packet.bm_request_type,
@@ -102,14 +87,45 @@ impl XhciController {
             setup_packet.length,
         );
         let setup_type = trb_type(setup.control);
-        let Some(descriptor) = descriptor_for_setup_packet(setup_packet) else {
-            trace::ep0_reject("unsupported_setup_packet");
-            return false;
-        };
         if setup_type != TRB_TYPE_SETUP_STAGE {
             trace::ep0_reject_with_value("unexpected_setup_trb_type", setup_type);
             return false;
         }
+        if is_set_configuration_request(setup_packet) {
+            let Some(completion) = find_control_completion(mem, transfer_ring + TRB_SIZE_BYTES)
+            else {
+                trace::ep0_reject_with_gpa(
+                    "completion_trbs_invalid",
+                    transfer_ring + TRB_SIZE_BYTES,
+                );
+                return false;
+            };
+            return self.post_control_completion_events(
+                mem,
+                ControlEventRequest {
+                    setup,
+                    completion,
+                    residual_length: 0,
+                },
+            );
+        }
+        let Some(data) = read_transfer_trb(mem, transfer_ring + TRB_SIZE_BYTES) else {
+            trace::ep0_reject_with_gpa("data_trb_read_failed", transfer_ring + TRB_SIZE_BYTES);
+            return false;
+        };
+        trace_transfer_trb("data", data);
+        let Some(completion) = find_control_completion(mem, transfer_ring + 2 * TRB_SIZE_BYTES)
+        else {
+            trace::ep0_reject_with_gpa(
+                "completion_trbs_invalid",
+                transfer_ring + 2 * TRB_SIZE_BYTES,
+            );
+            return false;
+        };
+        let Some(descriptor) = descriptor_for_setup_packet(setup_packet) else {
+            trace::ep0_reject("unsupported_setup_packet");
+            return false;
+        };
         let data_type = trb_type(data.control);
         if data_type != TRB_TYPE_DATA_STAGE {
             trace::ep0_reject_with_value("unexpected_data_trb_type", data_type);
@@ -144,22 +160,43 @@ impl XhciController {
             return false;
         }
         trace::ep0_descriptor_write_success(data.parameter, descriptor_prefix.len());
+        self.post_control_completion_events(
+            mem,
+            ControlEventRequest {
+                setup,
+                completion,
+                residual_length,
+            },
+        )
+    }
+
+    fn post_control_completion_events(
+        &mut self,
+        mem: &mut dyn GuestMemoryMut,
+        request: ControlEventRequest,
+    ) -> bool {
         let start_event_status = COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT;
         let start_event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_EP0);
-        trace::ep0_post_event_request(setup.gpa, start_event_status, start_event_control);
-        let start_posted = self.post_event(mem, setup.gpa, start_event_status, start_event_control);
+        trace::ep0_post_event_request(request.setup.gpa, start_event_status, start_event_control);
+        let start_posted = self.post_event(
+            mem,
+            request.setup.gpa,
+            start_event_status,
+            start_event_control,
+        );
         trace::ep0_post_event_result(start_posted);
         if !start_posted {
             return false;
         }
-        let (event_parameter, event_flags) = transfer_event_completion(&completion);
-        let event_status = (COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT) | residual_length;
+        let (event_parameter, event_flags) = transfer_event_completion(&request.completion);
+        let event_status =
+            (COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT) | request.residual_length;
         let event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_EP0) | event_flags;
         trace::ep0_post_event_request(event_parameter, event_status, event_control);
         let posted = self.post_event(mem, event_parameter, event_status, event_control);
         trace::ep0_post_event_result(posted);
         if posted {
-            self.slot1_ep0_dequeue = completion.status_stage.gpa + TRB_SIZE_BYTES;
+            self.slot1_ep0_dequeue = request.completion.status_stage.gpa + TRB_SIZE_BYTES;
         }
         posted
     }
@@ -169,16 +206,16 @@ fn find_control_completion(mem: &dyn GuestMemoryMut, first_gpa: u64) -> Option<C
     let first = read_transfer_trb(mem, first_gpa)?;
     match trb_type(first.control) {
         TRB_TYPE_STATUS_STAGE => {
-            trace_trb("status", first);
+            trace_transfer_trb("status", first);
             Some(ControlCompletion {
                 status_stage: first,
                 event_data: None,
             })
         }
         TRB_TYPE_EVENT_DATA => {
-            trace_trb("event_data", first);
+            trace_transfer_trb("event_data", first);
             let second = read_transfer_trb(mem, first_gpa + TRB_SIZE_BYTES)?;
-            trace_trb("status", second);
+            trace_transfer_trb("status", second);
             match trb_type(second.control) {
                 TRB_TYPE_STATUS_STAGE => Some(ControlCompletion {
                     status_stage: second,
@@ -215,45 +252,4 @@ fn transfer_event_control(slot_id: u32, endpoint_id: u32) -> u32 {
     (slot_id << EVENT_SLOT_ID_SHIFT)
         | (endpoint_id << EVENT_ENDPOINT_ID_SHIFT)
         | (TRB_TYPE_TRANSFER_EVENT << TRB_TYPE_SHIFT)
-}
-
-fn read_transfer_trb(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<TransferTrb> {
-    let raw = mem.read_bytes(gpa, TRB_SIZE)?;
-    Some(TransferTrb {
-        gpa,
-        parameter: read_u64(&raw, 0)?,
-        status: read_u32(&raw, 8)?,
-        control: read_u32(&raw, 12)?,
-    })
-}
-
-fn trb_type(control: u32) -> u32 {
-    (control >> TRB_TYPE_SHIFT) & TRB_TYPE_MASK
-}
-
-fn trb_transfer_length(status: u32) -> u32 {
-    status & TRB_TRANSFER_LENGTH_MASK
-}
-
-fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
-    let raw = bytes.get(offset..offset + 4)?;
-    let array: [u8; 4] = raw.try_into().ok()?;
-    Some(u32::from_le_bytes(array))
-}
-
-fn read_u64(bytes: &[u8], offset: usize) -> Option<u64> {
-    let raw = bytes.get(offset..offset + 8)?;
-    let array: [u8; 8] = raw.try_into().ok()?;
-    Some(u64::from_le_bytes(array))
-}
-
-fn trace_trb(label: &str, trb: TransferTrb) {
-    trace::ep0_trb(
-        label,
-        trb.gpa,
-        trb.parameter,
-        trb.status,
-        trb.control,
-        trb_type(trb.control),
-    );
 }

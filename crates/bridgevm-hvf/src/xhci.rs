@@ -279,6 +279,12 @@ mod test_support;
 mod tests;
 
 #[cfg(test)]
+mod set_configuration_tests;
+
+#[cfg(test)]
+mod set_configuration_msix_tests;
+
+#[cfg(test)]
 mod transfer_prefix_tests;
 
 #[cfg(test)]

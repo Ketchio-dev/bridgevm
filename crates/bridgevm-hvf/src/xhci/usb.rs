@@ -1,5 +1,7 @@
 const USB_REQUEST_GET_DESCRIPTOR: u8 = 0x06;
+const USB_REQUEST_SET_CONFIGURATION: u8 = 0x09;
 const USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_DEVICE: u8 = 0x80;
+const USB_REQUEST_TYPE_HOST_TO_DEVICE_STANDARD_DEVICE: u8 = 0x00;
 const USB_DESCRIPTOR_TYPE_DEVICE: u8 = 1;
 const USB_DESCRIPTOR_TYPE_CONFIGURATION: u8 = 2;
 
@@ -46,4 +48,12 @@ pub(super) fn descriptor_for_setup_packet(packet: SetupPacket) -> Option<&'stati
         USB_DESCRIPTOR_TYPE_CONFIGURATION => Some(&CONFIGURATION_DESCRIPTOR),
         _ => None,
     }
+}
+
+pub(super) fn is_set_configuration_request(packet: SetupPacket) -> bool {
+    packet.bm_request_type == USB_REQUEST_TYPE_HOST_TO_DEVICE_STANDARD_DEVICE
+        && packet.request == USB_REQUEST_SET_CONFIGURATION
+        && packet.value == 1
+        && packet.index == 0
+        && packet.length == 0
 }
