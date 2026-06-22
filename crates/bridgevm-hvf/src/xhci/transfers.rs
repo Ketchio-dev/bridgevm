@@ -2,7 +2,10 @@ use crate::fwcfg::GuestMemoryMut;
 
 use super::{
     trace,
-    usb::{descriptor_for_setup_packet, is_set_configuration_request, parse_setup_packet},
+    usb::{
+        descriptor_for_setup_packet, is_hid_set_protocol_request, is_set_configuration_request,
+        parse_setup_packet,
+    },
     XhciController,
 };
 use trb::{read_transfer_trb, trace_transfer_trb, trb_transfer_length, trb_type, TransferTrb};
@@ -91,7 +94,7 @@ impl XhciController {
             trace::ep0_reject_with_value("unexpected_setup_trb_type", setup_type);
             return false;
         }
-        if is_set_configuration_request(setup_packet) {
+        if is_set_configuration_request(setup_packet) || is_hid_set_protocol_request(setup_packet) {
             let Some(completion) = find_control_completion(mem, transfer_ring + TRB_SIZE_BYTES)
             else {
                 trace::ep0_reject_with_gpa(

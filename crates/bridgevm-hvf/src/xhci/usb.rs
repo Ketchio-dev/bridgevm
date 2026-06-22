@@ -1,7 +1,9 @@
 const USB_REQUEST_GET_DESCRIPTOR: u8 = 0x06;
 const USB_REQUEST_SET_CONFIGURATION: u8 = 0x09;
+const USB_REQUEST_HID_SET_PROTOCOL: u8 = 0x0b;
 const USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_DEVICE: u8 = 0x80;
 const USB_REQUEST_TYPE_HOST_TO_DEVICE_STANDARD_DEVICE: u8 = 0x00;
+const USB_REQUEST_TYPE_HOST_TO_DEVICE_CLASS_INTERFACE: u8 = 0x21;
 const USB_DESCRIPTOR_TYPE_DEVICE: u8 = 1;
 const USB_DESCRIPTOR_TYPE_CONFIGURATION: u8 = 2;
 
@@ -54,6 +56,14 @@ pub(super) fn is_set_configuration_request(packet: SetupPacket) -> bool {
     packet.bm_request_type == USB_REQUEST_TYPE_HOST_TO_DEVICE_STANDARD_DEVICE
         && packet.request == USB_REQUEST_SET_CONFIGURATION
         && packet.value == 1
+        && packet.index == 0
+        && packet.length == 0
+}
+
+pub(super) fn is_hid_set_protocol_request(packet: SetupPacket) -> bool {
+    packet.bm_request_type == USB_REQUEST_TYPE_HOST_TO_DEVICE_CLASS_INTERFACE
+        && packet.request == USB_REQUEST_HID_SET_PROTOCOL
+        && packet.value <= 1
         && packet.index == 0
         && packet.length == 0
 }

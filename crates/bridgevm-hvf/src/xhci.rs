@@ -285,6 +285,9 @@ mod set_configuration_tests;
 mod set_configuration_msix_tests;
 
 #[cfg(test)]
+mod set_protocol_tests;
+
+#[cfg(test)]
 mod transfer_prefix_tests;
 
 #[cfg(test)]
