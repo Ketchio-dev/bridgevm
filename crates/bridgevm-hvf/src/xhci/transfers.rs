@@ -141,6 +141,14 @@ impl XhciController {
             return false;
         }
         trace::ep0_descriptor_write_success(data.parameter, descriptor.len());
+        let start_event_status = COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT;
+        let start_event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_EP0);
+        trace::ep0_post_event_request(setup.gpa, start_event_status, start_event_control);
+        let start_posted = self.post_event(mem, setup.gpa, start_event_status, start_event_control);
+        trace::ep0_post_event_result(start_posted);
+        if !start_posted {
+            return false;
+        }
         let (event_parameter, event_residual_length, event_flags) =
             transfer_event_completion(&completion);
         let event_status =

@@ -11,6 +11,7 @@ pub(super) const COMPLETION_CODE_SUCCESS: u32 = 1;
 pub(super) const ENABLE_SLOT_ID: u32 = 1;
 pub(super) const TRB_SIZE: u64 = 16;
 pub(super) const CMD_RING: u64 = 0x1000;
+const TRB_EVENT_DATA: u32 = 1 << 2;
 const ERST: u64 = 0x2000;
 pub(super) const EVENT_RING: u64 = 0x3000;
 const DCBAA: u64 = 0x4000;
@@ -142,4 +143,29 @@ pub(super) fn assert_success_completion(
     assert_eq!((control >> 10) & 0x3f, TRB_TYPE_COMMAND_COMPLETION_EVENT);
     assert_eq!((control >> 24) & 0xff, expected_slot_id);
     assert_eq!(control & 1, 1);
+}
+
+pub(super) fn assert_success_transfer_event_for_trb(mem: &TestRam, event_gpa: u64, trb_gpa: u64) {
+    assert_success_transfer_event(mem, event_gpa, trb_gpa, 0);
+}
+
+pub(super) fn assert_success_event_data_transfer_event(
+    mem: &TestRam,
+    event_gpa: u64,
+    event_parameter: u64,
+) {
+    assert_success_transfer_event(mem, event_gpa, event_parameter, TRB_EVENT_DATA);
+}
+
+fn assert_success_transfer_event(mem: &TestRam, event_gpa: u64, parameter: u64, event_data: u32) {
+    assert_eq!(mem.read_u64(event_gpa), parameter);
+    assert_eq!(mem.read_u32(event_gpa + 8) & 0x00ff_ffff, 0);
+    assert_eq!(mem.read_u32(event_gpa + 8) >> 24, COMPLETION_CODE_SUCCESS);
+    let control = mem.read_u32(event_gpa + 12);
+    assert_eq!((control >> 10) & 0x3f, TRB_TYPE_TRANSFER_EVENT);
+    assert_eq!((control >> 16) & 0x1f, 1);
+    assert_eq!((control >> 24) & 0xff, 1);
+    assert_eq!(control & TRB_EVENT_DATA, event_data);
+    assert_eq!(control & 1, 1);
+    assert_ne!(mem.read_u64(event_gpa), CMD_RING);
 }

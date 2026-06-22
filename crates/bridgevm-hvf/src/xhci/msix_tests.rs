@@ -181,12 +181,13 @@ fn xhci_ep0_transfer_completion_queues_msix_message_when_vector_unmasked() {
         },
     );
 
-    // Then: the EP0 completion reaches the event ring and queues vector 0 again.
+    // Then: the EP0 completions reach the event ring and queue vector 0 again.
     assert_eq!(
         read_bytes(&mem, DATA_STAGE_BUFFER, DEVICE_DESCRIPTOR.len()),
         DEVICE_DESCRIPTOR
     );
-    assert_success_transfer_event(&mem, EVENT_RING + 0x10);
+    assert_success_transfer_event_for_trb(&mem, EVENT_RING + 0x10, EP0_RING);
+    assert_success_transfer_event_for_trb(&mem, EVENT_RING + 0x20, EP0_RING + 0x30);
     assert_eq!(
         platform.take_pending_msix(),
         vec![MsixMessage {

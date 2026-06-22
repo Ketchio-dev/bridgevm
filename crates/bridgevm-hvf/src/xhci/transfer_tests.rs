@@ -1,7 +1,7 @@
 use super::test_support::{
+    assert_success_event_data_transfer_event, assert_success_transfer_event_for_trb,
     command_control, setup_command_rings_with_parameter, setup_packet_parameter, SetupPacketFields,
-    TestRam, CMD_RING, COMPLETION_CODE_SUCCESS, DOORBELL_BASE, ENABLE_SLOT_ID, EVENT_RING,
-    TRB_SIZE, TRB_TYPE_ADDRESS_DEVICE, TRB_TYPE_TRANSFER_EVENT,
+    TestRam, DOORBELL_BASE, ENABLE_SLOT_ID, EVENT_RING, TRB_SIZE, TRB_TYPE_ADDRESS_DEVICE,
 };
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
@@ -19,7 +19,6 @@ const TRB_TYPE_SETUP_STAGE: u32 = 2;
 const TRB_TYPE_DATA_STAGE: u32 = 3;
 const TRB_TYPE_STATUS_STAGE: u32 = 4;
 const TRB_TYPE_OBSERVED_TYPE7: u32 = 7;
-const TRB_EVENT_DATA: u32 = 1 << 2;
 const TRB_DATA_STAGE_DIRECTION_IN: u32 = 1 << 16;
 
 #[derive(Clone, Copy)]
@@ -73,7 +72,7 @@ fn ep0_get_descriptor_device_writes_descriptor_and_posts_transfer_event() {
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
 
-    // Then: exactly the 18-byte device descriptor is written and a Transfer Event is posted.
+    // Then: exactly the 18-byte device descriptor is written and URB edge events are posted.
     assert_eq!(
         mem.read_bytes(DATA_STAGE_BUFFER, DEVICE_DESCRIPTOR.len())
             .unwrap(),
@@ -83,7 +82,12 @@ fn ep0_get_descriptor_device_writes_descriptor_and_posts_transfer_event() {
         mem.read_bytes(DATA_STAGE_BUFFER + 18, 14).unwrap(),
         [0xaa; 14]
     );
-    assert_success_transfer_event(&mem, EVENT_RING + TRB_SIZE);
+    assert_success_transfer_event_for_trb(&mem, EVENT_RING + TRB_SIZE, EP0_RING);
+    assert_success_event_data_transfer_event(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 2),
+        EVENT_DATA_PARAMETER,
+    );
     assert_eq!(xhci.mmio_read(0x1020, 4) & 1, 1);
     assert_eq!(
         xhci.mmio_read(0x44, 4) & u64::from(USB_STS_EINT),
@@ -289,19 +293,6 @@ fn transfer_control(trb_type: u32) -> u32 {
 
 fn event_data_control() -> u32 {
     transfer_control(TRB_TYPE_OBSERVED_TYPE7) | (1 << 5)
-}
-
-fn assert_success_transfer_event(mem: &TestRam, event_gpa: u64) {
-    assert_eq!(mem.read_u64(event_gpa), EVENT_DATA_PARAMETER);
-    assert_eq!(mem.read_u32(event_gpa + 8) & 0x00ff_ffff, 0);
-    assert_eq!(mem.read_u32(event_gpa + 8) >> 24, COMPLETION_CODE_SUCCESS);
-    let control = mem.read_u32(event_gpa + 12);
-    assert_eq!((control >> 10) & 0x3f, TRB_TYPE_TRANSFER_EVENT);
-    assert_eq!((control >> 16) & 0x1f, 1);
-    assert_eq!((control >> 24) & 0xff, 1);
-    assert_eq!(control & TRB_EVENT_DATA, TRB_EVENT_DATA);
-    assert_eq!(control & 1, 1);
-    assert_ne!(mem.read_u64(event_gpa), CMD_RING);
 }
 
 fn assert_descriptor_buffer_is_unchanged(mem: &TestRam, fill: u8) {

@@ -195,8 +195,12 @@ pub(super) fn write_get_descriptor_device_transfer(mem: &mut FlatGuestRam) {
     write_u32(mem, EP0_RING + 0x3c, transfer_control(4));
 }
 
-pub(super) fn assert_success_transfer_event(mem: &FlatGuestRam, event_gpa: u64) {
-    assert_eq!(read_u64(mem, event_gpa), EP0_RING + 0x30);
+pub(super) fn assert_success_transfer_event_for_trb(
+    mem: &FlatGuestRam,
+    event_gpa: u64,
+    trb_gpa: u64,
+) {
+    assert_eq!(read_u64(mem, event_gpa), trb_gpa);
     assert_eq!(read_u32(mem, event_gpa + 8) >> 24, COMPLETION_CODE_SUCCESS);
     let control = read_u32(mem, event_gpa + 12);
     assert_eq!((control >> 10) & 0x3f, TRB_TYPE_TRANSFER_EVENT);
