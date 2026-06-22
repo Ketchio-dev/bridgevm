@@ -16,6 +16,8 @@ const SET_TR_DEQUEUE_POINTER_OBSERVED_CONTROL: u32 = (SET_TR_DEQUEUE_POINTER_SLO
     | (TRB_TYPE_SET_TR_DEQUEUE_POINTER << 10)
     | 1;
 const EP0_RECOVERY_RING: u64 = 0x2220;
+const SLOT1_INPUT_CONTEXT: u64 = 0x3000;
+const SLOT1_EP0_RING: u64 = 0x3400;
 const LINK_TARGET: u64 = 0x1110;
 const LINK_TOGGLE_CYCLE: u32 = 1 << 1;
 
@@ -126,6 +128,49 @@ fn disable_slot_command_posts_success_completion_event() {
 
     // Then: event ring receives a successful Command Completion Event for that slot.
     assert_success_completion(&mem, EVENT_RING, CMD_RING, DISABLE_SLOT_ID);
+}
+
+#[test]
+fn disable_slot_for_slot1_clears_usb_configuration_state() {
+    // Given: slot 1 has stale USB configuration state from a previous enumeration.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x5000);
+    xhci.usb_configuration = 1;
+    setup_command_rings(
+        &mut xhci,
+        &mut mem,
+        command_control(TRB_TYPE_DISABLE_SLOT, ENABLE_SLOT_ID),
+    );
+
+    // When: the guest disables slot 1.
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+
+    // Then: the slot-local USB state is unconfigured again.
+    assert_success_completion(&mem, EVENT_RING, CMD_RING, ENABLE_SLOT_ID);
+    assert_eq!(xhci.usb_configuration, 0);
+}
+
+#[test]
+fn address_device_for_slot1_clears_usb_configuration_state() {
+    // Given: slot 1 is being re-addressed after a previous configured lifecycle.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x5000);
+    xhci.usb_configuration = 1;
+    mem.write_u64(SLOT1_INPUT_CONTEXT + 0x40 + 8, SLOT1_EP0_RING | 1);
+    setup_command_rings_with_parameter(
+        &mut xhci,
+        &mut mem,
+        SLOT1_INPUT_CONTEXT,
+        command_control(TRB_TYPE_ADDRESS_DEVICE, ENABLE_SLOT_ID),
+    );
+
+    // When: the guest addresses slot 1.
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+
+    // Then: configuration state returns to default while the new EP0 ring is captured.
+    assert_success_completion(&mem, EVENT_RING, CMD_RING, ENABLE_SLOT_ID);
+    assert_eq!(xhci.usb_configuration, 0);
+    assert_eq!(xhci.slot1_ep0_dequeue, SLOT1_EP0_RING);
 }
 
 #[test]

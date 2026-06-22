@@ -4,7 +4,7 @@ use super::super::{
     trace,
     usb::{
         data_in_for_setup_packet, is_hid_set_protocol_request, is_hid_set_report_request,
-        is_set_configuration_request, parse_setup_packet, ControlInData,
+        parse_setup_packet, set_configuration_value, ControlInData,
     },
     XhciController,
 };
@@ -17,6 +17,8 @@ const TRB_SIZE_BYTES: u64 = 16;
 const TRB_TYPE_SETUP_STAGE: u32 = 2;
 const TRB_TYPE_DATA_STAGE: u32 = 3;
 const TRB_DATA_STAGE_DIRECTION_IN: u32 = 1 << 16;
+const DATA_STAGE_OFFSET: u64 = TRB_SIZE_BYTES;
+const STATUS_STAGE_OFFSET: u64 = TRB_SIZE_BYTES * 2;
 
 impl XhciController {
     pub(super) fn process_ep0_control_transfer(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
@@ -44,13 +46,14 @@ impl XhciController {
             trace::ep0_reject_with_value("unexpected_setup_trb_type", setup_type);
             return false;
         }
-        if is_set_configuration_request(setup_packet) || is_hid_set_protocol_request(setup_packet) {
-            let Some(completion) = find_control_completion(mem, transfer_ring + TRB_SIZE_BYTES)
-            else {
-                trace::ep0_reject_with_gpa(
-                    "completion_trbs_invalid",
-                    transfer_ring + TRB_SIZE_BYTES,
-                );
+        let set_configuration = set_configuration_value(setup_packet);
+        if set_configuration.is_some() || is_hid_set_protocol_request(setup_packet) {
+            let Some(completion_gpa) = transfer_ring.checked_add(DATA_STAGE_OFFSET) else {
+                trace::ep0_reject_with_gpa("completion_trbs_overflow", transfer_ring);
+                return false;
+            };
+            let Some(completion) = find_control_completion(mem, completion_gpa) else {
+                trace::ep0_reject_with_gpa("completion_trbs_invalid", completion_gpa);
                 return false;
             };
             let posted = self.post_control_completion_events(
@@ -61,8 +64,10 @@ impl XhciController {
                     residual_length: 0,
                 },
             );
-            if posted && is_set_configuration_request(setup_packet) {
-                self.usb_configuration = 1;
+            if posted {
+                if let Some(value) = set_configuration {
+                    self.usb_configuration = value;
+                }
             }
             return posted;
         }
@@ -78,17 +83,21 @@ impl XhciController {
         transfer_ring: u64,
         setup: TransferTrb,
     ) -> bool {
-        let Some(data) = read_transfer_trb(mem, transfer_ring + TRB_SIZE_BYTES) else {
-            trace::ep0_reject_with_gpa("data_trb_read_failed", transfer_ring + TRB_SIZE_BYTES);
+        let Some(data_gpa) = transfer_ring.checked_add(DATA_STAGE_OFFSET) else {
+            trace::ep0_reject_with_gpa("data_trb_overflow", transfer_ring);
+            return false;
+        };
+        let Some(data) = read_transfer_trb(mem, data_gpa) else {
+            trace::ep0_reject_with_gpa("data_trb_read_failed", data_gpa);
             return false;
         };
         trace_transfer_trb("data", data);
-        let Some(completion) = find_control_completion(mem, transfer_ring + 2 * TRB_SIZE_BYTES)
-        else {
-            trace::ep0_reject_with_gpa(
-                "completion_trbs_invalid",
-                transfer_ring + 2 * TRB_SIZE_BYTES,
-            );
+        let Some(completion_gpa) = transfer_ring.checked_add(STATUS_STAGE_OFFSET) else {
+            trace::ep0_reject_with_gpa("completion_trbs_overflow", transfer_ring);
+            return false;
+        };
+        let Some(completion) = find_control_completion(mem, completion_gpa) else {
+            trace::ep0_reject_with_gpa("completion_trbs_invalid", completion_gpa);
             return false;
         };
         let setup_packet = parse_setup_packet(setup.parameter);
@@ -130,17 +139,21 @@ impl XhciController {
         transfer_ring: u64,
         setup: TransferTrb,
     ) -> bool {
-        let Some(data) = read_transfer_trb(mem, transfer_ring + TRB_SIZE_BYTES) else {
-            trace::ep0_reject_with_gpa("data_trb_read_failed", transfer_ring + TRB_SIZE_BYTES);
+        let Some(data_gpa) = transfer_ring.checked_add(DATA_STAGE_OFFSET) else {
+            trace::ep0_reject_with_gpa("data_trb_overflow", transfer_ring);
+            return false;
+        };
+        let Some(data) = read_transfer_trb(mem, data_gpa) else {
+            trace::ep0_reject_with_gpa("data_trb_read_failed", data_gpa);
             return false;
         };
         trace_transfer_trb("data", data);
-        let Some(completion) = find_control_completion(mem, transfer_ring + 2 * TRB_SIZE_BYTES)
-        else {
-            trace::ep0_reject_with_gpa(
-                "completion_trbs_invalid",
-                transfer_ring + 2 * TRB_SIZE_BYTES,
-            );
+        let Some(completion_gpa) = transfer_ring.checked_add(STATUS_STAGE_OFFSET) else {
+            trace::ep0_reject_with_gpa("completion_trbs_overflow", transfer_ring);
+            return false;
+        };
+        let Some(completion) = find_control_completion(mem, completion_gpa) else {
+            trace::ep0_reject_with_gpa("completion_trbs_invalid", completion_gpa);
             return false;
         };
         let setup_packet = parse_setup_packet(setup.parameter);

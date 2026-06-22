@@ -34,6 +34,28 @@ fn ep0_set_configuration_completes_no_data_setup_status_transfer() {
 }
 
 #[test]
+fn ep0_set_configuration_zero_completes_and_clears_selected_configuration() {
+    // Given: configuration 1 was selected, then the guest unconfigures the device.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x8000);
+    prepare_addressed_set_configuration(&mut xhci, &mut mem, 1, 0);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
+    assert_eq!(xhci.usb_configuration, 1);
+    write_ep0_input_context(&mut mem, EP0_RING + (TRB_SIZE * 2) | 1);
+    write_set_configuration_transfer(&mut mem, 0, 0);
+    xhci.slot1_ep0_dequeue = EP0_RING;
+
+    // When: the guest sends SET_CONFIGURATION(0).
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
+
+    // Then: the request completes and the tracked current configuration is zero.
+    assert_success_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 3), EP0_RING);
+    assert_success_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 4), EP0_RING + TRB_SIZE);
+    assert_eq!(xhci.slot1_ep0_dequeue, EP0_RING + (TRB_SIZE * 2));
+    assert_eq!(xhci.usb_configuration, 0);
+}
+
+#[test]
 fn ep0_set_configuration_rejects_unsupported_configuration_value() {
     // Given: only configuration value 1 exists in the minimal descriptor tree.
     let mut xhci = XhciController::new();

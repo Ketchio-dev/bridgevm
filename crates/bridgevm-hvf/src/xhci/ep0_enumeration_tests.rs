@@ -135,6 +135,24 @@ fn ep0_get_configuration_rejects_out_data_stage() {
     assert_eq!(xhci.slot1_ep0_dequeue, EP0_RING);
 }
 
+#[test]
+fn ep0_hid_set_report_rejects_in_data_stage() {
+    // Given: HID SET_REPORT is malformed with an IN data stage.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x8000);
+    prepare_addressed_ep0(&mut xhci, &mut mem);
+    write_hid_set_report_transfer(&mut mem, true, 1);
+    assert!(mem.write_bytes(DATA_STAGE_BUFFER, &[0xaa]));
+
+    // When: the guest rings slot 1 endpoint 0.
+    assert!(!xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
+
+    // Then: the malformed direction is rejected without writing or moving EP0.
+    assert_eq!(mem.read_bytes(DATA_STAGE_BUFFER, 1).unwrap(), [0xaa]);
+    assert_eq!(mem.read_u64(EVENT_RING + TRB_SIZE), 0);
+    assert_eq!(xhci.slot1_ep0_dequeue, EP0_RING);
+}
+
 fn prepare_addressed_ep0(xhci: &mut XhciController, mem: &mut TestRam) {
     mem.write_u64(INPUT_CONTEXT + 0x40 + 8, EP0_RING | 1);
     setup_command_rings_with_parameter(

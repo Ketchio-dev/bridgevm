@@ -35,6 +35,18 @@ impl XhciController {
         mem: &mut dyn GuestMemoryMut,
         request: ControlEventRequest,
     ) -> bool {
+        let Some(next_dequeue) = request
+            .completion
+            .status_stage
+            .gpa
+            .checked_add(TRB_SIZE_BYTES)
+        else {
+            trace::ep0_reject_with_gpa(
+                "status_stage_next_overflow",
+                request.completion.status_stage.gpa,
+            );
+            return false;
+        };
         let start_event_status = COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT;
         let start_event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_EP0);
         trace::ep0_post_event_request(request.setup.gpa, start_event_status, start_event_control);
@@ -56,7 +68,7 @@ impl XhciController {
         let posted = self.post_event(mem, event_parameter, event_status, event_control);
         trace::ep0_post_event_result(posted);
         if posted {
-            self.slot1_ep0_dequeue = request.completion.status_stage.gpa + TRB_SIZE_BYTES;
+            self.slot1_ep0_dequeue = next_dequeue;
         }
         posted
     }
@@ -77,7 +89,11 @@ pub(super) fn find_control_completion(
         }
         TRB_TYPE_EVENT_DATA => {
             trace_transfer_trb("event_data", first);
-            let second = read_transfer_trb(mem, first_gpa + TRB_SIZE_BYTES)?;
+            let Some(second_gpa) = first_gpa.checked_add(TRB_SIZE_BYTES) else {
+                trace::ep0_reject_with_gpa("completion_second_overflow", first_gpa);
+                return None;
+            };
+            let second = read_transfer_trb(mem, second_gpa)?;
             trace_transfer_trb("status", second);
             match trb_type(second.control) {
                 TRB_TYPE_STATUS_STAGE => Some(ControlCompletion {

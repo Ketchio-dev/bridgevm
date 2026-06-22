@@ -284,6 +284,9 @@ mod set_configuration_msix_tests;
 mod set_protocol_tests;
 
 #[cfg(test)]
+mod ep0_overflow_tests;
+
+#[cfg(test)]
 mod ep0_enumeration_tests;
 
 #[cfg(test)]

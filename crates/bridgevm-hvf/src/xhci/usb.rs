@@ -94,12 +94,19 @@ fn get_configuration_for_setup_packet(
         .then_some(ControlInData::Byte(current_configuration))
 }
 
-pub(super) fn is_set_configuration_request(packet: SetupPacket) -> bool {
-    packet.bm_request_type == USB_REQUEST_TYPE_HOST_TO_DEVICE_STANDARD_DEVICE
-        && packet.request == USB_REQUEST_SET_CONFIGURATION
-        && packet.value == 1
-        && packet.index == 0
-        && packet.length == 0
+pub(super) fn set_configuration_value(packet: SetupPacket) -> Option<u8> {
+    if packet.bm_request_type != USB_REQUEST_TYPE_HOST_TO_DEVICE_STANDARD_DEVICE
+        || packet.request != USB_REQUEST_SET_CONFIGURATION
+        || packet.index != 0
+        || packet.length != 0
+    {
+        return None;
+    }
+    match packet.value {
+        0 => Some(0),
+        1 => Some(1),
+        _ => None,
+    }
 }
 
 pub(super) fn is_hid_set_protocol_request(packet: SetupPacket) -> bool {

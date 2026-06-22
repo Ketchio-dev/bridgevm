@@ -78,12 +78,12 @@ impl XhciController {
                     return posted;
                 }
                 TRB_TYPE_DISABLE_SLOT => {
-                    let posted = self.post_command_completion(
-                        mem,
-                        command_trb,
-                        command_slot_id(command_control),
-                    );
+                    let slot_id = command_slot_id(command_control);
+                    let posted = self.post_command_completion(mem, command_trb, slot_id);
                     if posted {
+                        if slot_id == SLOT_ID {
+                            self.usb_configuration = 0;
+                        }
                         self.advance_command_dequeue(command_trb);
                     }
                     return posted;
@@ -122,6 +122,9 @@ impl XhciController {
                     self.capture_address_device_input_context(mem, input_context, slot_id);
                     let posted = self.post_command_completion(mem, command_trb, slot_id);
                     if posted {
+                        if slot_id == SLOT_ID {
+                            self.usb_configuration = 0;
+                        }
                         self.advance_command_dequeue(command_trb);
                     }
                     return posted;
