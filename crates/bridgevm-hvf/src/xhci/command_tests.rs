@@ -4,6 +4,7 @@ use crate::xhci::event::USB_STS_EINT;
 
 const TRB_TYPE_LINK: u32 = 6;
 const TRB_TYPE_DISABLE_SLOT: u32 = 10;
+const TRB_TYPE_EVALUATE_CONTEXT: u32 = 13;
 const TRB_TYPE_SET_TR_DEQUEUE_POINTER: u32 = 16;
 const STOP_ENDPOINT_OBSERVED_CONTROL: u32 = 0x0101_3c01;
 const ADDRESS_DEVICE_SLOT_ID: u32 = 7;
@@ -20,6 +21,7 @@ const SLOT1_INPUT_CONTEXT: u64 = 0x3000;
 const SLOT1_EP0_RING: u64 = 0x3400;
 const LINK_TARGET: u64 = 0x1110;
 const LINK_TOGGLE_CYCLE: u32 = 1 << 1;
+const SLOT1_OUTPUT_CONTEXT: u64 = 0x5000;
 
 #[test]
 fn enable_slot_command_posts_success_completion_event() {
@@ -210,6 +212,31 @@ fn set_tr_dequeue_pointer_command_updates_ep0_dequeue_and_posts_completion() {
     assert_success_completion(&mem, EVENT_RING, CMD_RING, SET_TR_DEQUEUE_POINTER_SLOT_ID);
     assert_eq!(xhci.slot1_ep0_dequeue, EP0_RECOVERY_RING);
     assert_eq!(xhci.mmio_read(0x58, 8), CMD_RING + TRB_SIZE + 1);
+}
+
+#[test]
+fn evaluate_context_command_posts_success_completion_and_advances_crcr() {
+    // Given: firmware evaluates slot 1 context while DCI3-looking input data is present.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x8000);
+    mem.write_u64(0x4000 + u64::from(ENABLE_SLOT_ID) * 8, SLOT1_OUTPUT_CONTEXT);
+    mem.write_u32(SLOT1_INPUT_CONTEXT + 0x04, 1 << 3);
+    mem.write_u64(SLOT1_INPUT_CONTEXT + 0x80 + 0x8, 0x6001);
+    setup_command_rings_with_parameter(
+        &mut xhci,
+        &mut mem,
+        SLOT1_INPUT_CONTEXT,
+        command_control(TRB_TYPE_EVALUATE_CONTEXT, ENABLE_SLOT_ID),
+    );
+
+    // When: the guest rings host-controller doorbell 0 for Evaluate Context.
+    xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem);
+
+    // Then: completion is posted, CRCR advances, and DCI3 state is not fabricated.
+    assert_success_completion(&mem, EVENT_RING, CMD_RING, ENABLE_SLOT_ID);
+    assert_eq!(xhci.mmio_read(0x58, 8), CMD_RING + TRB_SIZE + 1);
+    assert_eq!((xhci.slot1_dci3_dequeue, xhci.slot1_dci3_dcs), (0, false));
+    assert_eq!(mem.read_u64(SLOT1_OUTPUT_CONTEXT + 0x60), 0);
 }
 
 #[test]

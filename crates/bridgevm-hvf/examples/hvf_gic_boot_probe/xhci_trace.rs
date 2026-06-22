@@ -169,7 +169,7 @@ impl XhciBringupTrace {
             trb::TYPE_LINK => {
                 self.command_dequeue = command.parameter & LINK_TRB_POINTER_MASK;
             }
-            trb::TYPE_ENABLE_SLOT | trb::TYPE_DISABLE_SLOT => {
+            trb::TYPE_ENABLE_SLOT | trb::TYPE_DISABLE_SLOT | trb::TYPE_EVALUATE_CONTEXT => {
                 self.advance_command_dequeue(command_gpa);
             }
             trb::TYPE_ADDRESS_DEVICE => {

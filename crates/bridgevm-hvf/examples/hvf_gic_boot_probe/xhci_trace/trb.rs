@@ -9,6 +9,7 @@ pub(super) const TYPE_ENABLE_SLOT: u32 = 9;
 pub(super) const TYPE_DISABLE_SLOT: u32 = 10;
 pub(super) const TYPE_ADDRESS_DEVICE: u32 = 11;
 pub(super) const TYPE_CONFIGURE_ENDPOINT: u32 = 12;
+pub(super) const TYPE_EVALUATE_CONTEXT: u32 = 13;
 pub(super) const TYPE_STOP_ENDPOINT: u32 = 15;
 
 const TYPE_NORMAL: u32 = 1;
@@ -57,6 +58,7 @@ impl Trb {
             TYPE_DISABLE_SLOT => "disable_slot".to_string(),
             TYPE_ADDRESS_DEVICE => "address_device".to_string(),
             TYPE_CONFIGURE_ENDPOINT => "configure_endpoint".to_string(),
+            TYPE_EVALUATE_CONTEXT => "evaluate_context".to_string(),
             TYPE_STOP_ENDPOINT => "stop_endpoint".to_string(),
             other => format!("type{other}"),
         }
