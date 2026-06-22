@@ -129,6 +129,24 @@ impl XhciController {
         self.slot1_dci3_dequeue = raw_dequeue & EP_TR_DEQUEUE_MASK;
         self.slot1_dci3_dcs = raw_dequeue & 1 != 0;
     }
+
+    pub(super) fn write_slot1_dci3_output_dequeue(&self, mem: &mut dyn GuestMemoryMut) {
+        let dcbaa = self.dcbaap & DCBAA_POINTER_MASK;
+        let Some(output_context) = output_context_for_slot(mem, dcbaa, SLOT_ID) else {
+            return;
+        };
+        let Some(dci3_dequeue_gpa) = output_context
+            .checked_add(DCI3_OUTPUT_CONTEXT_OFFSET)
+            .and_then(|gpa| gpa.checked_add(EP_TR_DEQUEUE_OFFSET))
+        else {
+            return;
+        };
+        write_mem_u64(
+            mem,
+            dci3_dequeue_gpa,
+            self.slot1_dci3_dequeue | u64::from(self.slot1_dci3_dcs),
+        );
+    }
 }
 
 fn output_context_for_slot(mem: &dyn GuestMemoryMut, dcbaa: u64, slot_id: u32) -> Option<u64> {

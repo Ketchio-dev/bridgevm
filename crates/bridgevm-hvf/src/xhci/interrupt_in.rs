@@ -5,11 +5,14 @@ use super::XhciController;
 const TRB_SIZE: usize = 16;
 const TRB_SIZE_BYTES: u64 = 16;
 const TRB_CYCLE: u32 = 1;
+const TRB_LINK_TOGGLE_CYCLE: u32 = 1 << 1;
 const TRB_TYPE_SHIFT: u32 = 10;
 const TRB_TYPE_MASK: u32 = 0x3f;
+const TRB_TYPE_LINK: u32 = 6;
 const TRB_TYPE_NORMAL: u32 = 1;
 const TRB_TYPE_TRANSFER_EVENT: u32 = 32;
 const TRB_TRANSFER_LENGTH_MASK: u32 = 0x1f_ffff;
+const LINK_TRB_POINTER_MASK: u64 = !0xf;
 const COMPLETION_CODE_SUCCESS: u32 = 1;
 const COMPLETION_CODE_SHIFT: u32 = 24;
 const SLOT_ID: u32 = 1;
@@ -18,6 +21,7 @@ const EVENT_ENDPOINT_ID_SHIFT: u32 = 16;
 const EVENT_SLOT_ID_SHIFT: u32 = 24;
 const HID_BOOT_KEYBOARD_REPORT_LEN: u32 = 8;
 const HID_BOOT_KEYBOARD_NO_KEY_REPORT: [u8; 8] = [0; 8];
+const MAX_LINK_TRBS_PER_DOORBELL: usize = 8;
 
 struct InterruptTransferTrb {
     gpa: u64,
@@ -31,41 +35,61 @@ impl XhciController {
         &mut self,
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
-        let transfer_ring = self.slot1_dci3_dequeue;
-        if transfer_ring == 0 {
-            return false;
-        }
-        let Some(interrupt_transfer) = read_transfer_trb(mem, transfer_ring) else {
-            return false;
-        };
-        let expected_cycle = if self.slot1_dci3_dcs { TRB_CYCLE } else { 0 };
-        if interrupt_transfer.control & TRB_CYCLE != expected_cycle {
-            return false;
-        }
-        if trb_type(interrupt_transfer.control) != TRB_TYPE_NORMAL {
-            return false;
-        }
-        let transfer_length = trb_transfer_length(interrupt_transfer.status);
-        let write_len = transfer_length.min(HID_BOOT_KEYBOARD_REPORT_LEN);
-        if write_len > 0 {
-            let Ok(write_len) = usize::try_from(write_len) else {
-                return false;
-            };
-            if !mem.write_bytes(
-                interrupt_transfer.parameter,
-                &HID_BOOT_KEYBOARD_NO_KEY_REPORT[..write_len],
-            ) {
+        for _ in 0..MAX_LINK_TRBS_PER_DOORBELL {
+            let transfer_ring = self.slot1_dci3_dequeue;
+            if transfer_ring == 0 {
                 return false;
             }
+            let Some(interrupt_transfer) = read_transfer_trb(mem, transfer_ring) else {
+                return false;
+            };
+            let expected_cycle = if self.slot1_dci3_dcs { TRB_CYCLE } else { 0 };
+            if interrupt_transfer.control & TRB_CYCLE != expected_cycle {
+                return false;
+            }
+            match trb_type(interrupt_transfer.control) {
+                TRB_TYPE_LINK => {
+                    self.slot1_dci3_dequeue = interrupt_transfer.parameter & LINK_TRB_POINTER_MASK;
+                    if interrupt_transfer.control & TRB_LINK_TOGGLE_CYCLE != 0 {
+                        self.slot1_dci3_dcs = !self.slot1_dci3_dcs;
+                    }
+                    self.write_slot1_dci3_output_dequeue(mem);
+                }
+                TRB_TYPE_NORMAL => {
+                    let Some(next_dequeue) = interrupt_transfer.gpa.checked_add(TRB_SIZE_BYTES)
+                    else {
+                        return false;
+                    };
+                    let transfer_length = trb_transfer_length(interrupt_transfer.status);
+                    let write_len = transfer_length.min(HID_BOOT_KEYBOARD_REPORT_LEN);
+                    if write_len > 0 {
+                        let Ok(write_len) = usize::try_from(write_len) else {
+                            return false;
+                        };
+                        if !mem.write_bytes(
+                            interrupt_transfer.parameter,
+                            &HID_BOOT_KEYBOARD_NO_KEY_REPORT[..write_len],
+                        ) {
+                            return false;
+                        }
+                    }
+                    let residual_length =
+                        transfer_length.saturating_sub(HID_BOOT_KEYBOARD_REPORT_LEN);
+                    let event_status =
+                        (COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT) | residual_length;
+                    let event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_DCI3);
+                    let posted =
+                        self.post_event(mem, interrupt_transfer.gpa, event_status, event_control);
+                    if posted {
+                        self.slot1_dci3_dequeue = next_dequeue;
+                        self.write_slot1_dci3_output_dequeue(mem);
+                    }
+                    return posted;
+                }
+                _ => return false,
+            }
         }
-        let residual_length = transfer_length.saturating_sub(HID_BOOT_KEYBOARD_REPORT_LEN);
-        let event_status = (COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT) | residual_length;
-        let event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_DCI3);
-        let posted = self.post_event(mem, interrupt_transfer.gpa, event_status, event_control);
-        if posted {
-            self.slot1_dci3_dequeue = interrupt_transfer.gpa + TRB_SIZE_BYTES;
-        }
-        posted
+        false
     }
 }
 
