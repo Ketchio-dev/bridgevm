@@ -15,6 +15,7 @@ const TRB_TYPE_LINK: u32 = 6;
 const TRB_TYPE_ENABLE_SLOT: u32 = 9;
 const TRB_TYPE_DISABLE_SLOT: u32 = 10;
 const TRB_TYPE_ADDRESS_DEVICE: u32 = 11;
+const TRB_TYPE_CONFIGURE_ENDPOINT: u32 = 12;
 const TRB_TYPE_STOP_ENDPOINT: u32 = 15;
 const TRB_TYPE_SET_TR_DEQUEUE_POINTER: u32 = 16;
 const TRB_TYPE_COMMAND_COMPLETION_EVENT: u32 = 33;
@@ -119,6 +120,18 @@ impl XhciController {
                     };
                     let slot_id = command_slot_id(command_control);
                     self.capture_address_device_input_context(mem, input_context, slot_id);
+                    let posted = self.post_command_completion(mem, command_trb, slot_id);
+                    if posted {
+                        self.advance_command_dequeue(command_trb);
+                    }
+                    return posted;
+                }
+                TRB_TYPE_CONFIGURE_ENDPOINT => {
+                    let Some(input_context) = read_u64(&raw_command, 0) else {
+                        return false;
+                    };
+                    let slot_id = command_slot_id(command_control);
+                    self.capture_configure_endpoint_input_context(mem, input_context, slot_id);
                     let posted = self.post_command_completion(mem, command_trb, slot_id);
                     if posted {
                         self.advance_command_dequeue(command_trb);

@@ -5,9 +5,11 @@ use crate::pcie::{XHCI_MSIX_PBA_OFFSET, XHCI_MSIX_TABLE_OFFSET, XHCI_MSIX_VECTOR
 mod commands;
 mod device_context;
 mod event;
+mod interrupt_in;
 mod interrupts;
 mod mmio;
 mod ports;
+mod reset;
 mod trace;
 mod transfers;
 mod usb;
@@ -41,6 +43,8 @@ pub struct XhciController {
     event_enqueue: u32,
     event_cycle: bool,
     slot1_ep0_dequeue: u64,
+    slot1_dci3_dequeue: u64,
+    slot1_dci3_dcs: bool,
 }
 
 impl Default for XhciController {
@@ -70,6 +74,8 @@ impl XhciController {
             event_enqueue: 0,
             event_cycle: true,
             slot1_ep0_dequeue: 0,
+            slot1_dci3_dequeue: 0,
+            slot1_dci3_dcs: false,
         }
     }
 
@@ -234,21 +240,6 @@ impl XhciController {
             _ => {}
         }
     }
-
-    fn reset_programmed_state(&mut self) {
-        self.crcr = 0;
-        self.command_dequeue = 0;
-        self.command_cycle = false;
-        self.dcbaap = 0;
-        self.config = 0;
-        self.iman0 = 0;
-        self.imod0 = 0;
-        self.erstsz0 = 0;
-        self.erstba0 = 0;
-        self.erdp0 = 0;
-        self.slot1_ep0_dequeue = 0;
-        self.reset_event_ring();
-    }
 }
 
 #[cfg(test)]
@@ -256,6 +247,9 @@ mod address_context_tests;
 
 #[cfg(test)]
 mod command_tests;
+
+#[cfg(test)]
+mod configure_endpoint_tests;
 
 #[cfg(test)]
 mod config_descriptor_tests;

@@ -1,0 +1,126 @@
+use super::test_support::{
+    assert_success_completion, command_control, setup_command_rings_with_parameter, TestRam,
+    CMD_RING, DOORBELL_BASE, ENABLE_SLOT_ID, EVENT_RING, TRB_SIZE,
+};
+use super::*;
+
+const TRB_TYPE_CONFIGURE_ENDPOINT: u32 = 12;
+const TRB_TYPE_NORMAL: u32 = 1;
+const TRB_TYPE_TRANSFER_EVENT: u32 = 32;
+const INPUT_CONTEXT: u64 = 0x5000;
+const DCI3_RING: u64 = 0x6000;
+const DCI3_BUFFER: u64 = 0x6800;
+const OUTPUT_CONTEXT: u64 = 0x7000;
+const DCBAA: u64 = 0x4000;
+const DCI3: u32 = 3;
+const DCI3_INPUT_CONTEXT_OFFSET: u64 = 0x80;
+const DCI3_OUTPUT_CONTEXT_OFFSET: u64 = 0x60;
+const INPUT_CONTROL_ADD_CONTEXT_OFFSET: u64 = 0x04;
+const EP_CONTEXT_DWORD1_OFFSET: u64 = 0x04;
+const EP_TR_DEQUEUE_OFFSET: u64 = 0x08;
+const EP_CONTEXT_DWORD4_OFFSET: u64 = 0x10;
+const EP_CONTEXT_BYTES: usize = 32;
+const DCI3_ADD_CONTEXT_FLAG: u32 = 1 << DCI3;
+const DCI3_DWORD1: u32 = (3 << 1) | (3 << 3) | (8 << 16);
+const DCI3_DWORD4: u32 = 8;
+const TRB_CYCLE: u64 = 1;
+const COMPLETION_CODE_SUCCESS: u32 = 1;
+
+#[test]
+fn configure_endpoint_command_copies_dci3_context_and_posts_completion() {
+    // Given: slot 1 Configure Endpoint names an input context adding HID interrupt IN DCI3.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    setup_configure_endpoint_command(&mut xhci, &mut mem);
+
+    // When: the guest rings host-controller doorbell 0 for Configure Endpoint type 12.
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+
+    // Then: DCI3 is copied into the output context and command completion advances CRCR.
+    assert_eq!(
+        mem.read_bytes(
+            OUTPUT_CONTEXT + DCI3_OUTPUT_CONTEXT_OFFSET,
+            EP_CONTEXT_BYTES
+        )
+        .unwrap(),
+        mem.read_bytes(INPUT_CONTEXT + DCI3_INPUT_CONTEXT_OFFSET, EP_CONTEXT_BYTES)
+            .unwrap()
+    );
+    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING);
+    assert_success_completion(&mem, EVENT_RING, CMD_RING, ENABLE_SLOT_ID);
+    assert_eq!(xhci.mmio_read(0x58, 8), CMD_RING + TRB_SIZE + TRB_CYCLE);
+}
+
+#[test]
+fn slot1_dci3_doorbell_posts_interrupt_in_transfer_event() {
+    // Given: Configure Endpoint has installed slot 1 HID interrupt IN DCI3.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    setup_configure_endpoint_command(&mut xhci, &mut mem);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+
+    // When: the guest rings slot 1 doorbell target DCI3.
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
+
+    // Then: a minimal successful Transfer Event is posted for the interrupt IN ring.
+    assert_eq!(mem.read_bytes(DCI3_BUFFER, 8).unwrap(), [0; 8]);
+    assert_success_dci3_transfer_event(&mem, EVENT_RING + TRB_SIZE, DCI3_RING);
+    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING + TRB_SIZE);
+}
+
+#[test]
+fn host_controller_reset_clears_captured_dci3_state() {
+    // Given: Configure Endpoint installed slot 1 HID interrupt IN DCI3, then HCRST reset runs.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    setup_configure_endpoint_command(&mut xhci, &mut mem);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    xhci.mmio_write(0x40, 4, u64::from(USB_CMD_HCRST));
+
+    // When: the guest rings the stale slot 1 DCI3 doorbell.
+    assert!(!xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
+
+    // Then: no stale DCI3 transfer event is posted.
+    assert_eq!(mem.read_u64(EVENT_RING + TRB_SIZE), 0);
+}
+
+fn setup_configure_endpoint_command(xhci: &mut XhciController, mem: &mut TestRam) {
+    setup_command_rings_with_parameter(
+        xhci,
+        mem,
+        INPUT_CONTEXT,
+        command_control(TRB_TYPE_CONFIGURE_ENDPOINT, ENABLE_SLOT_ID),
+    );
+    mem.write_u64(DCBAA + (u64::from(ENABLE_SLOT_ID) * 8), OUTPUT_CONTEXT);
+    mem.write_u32(
+        INPUT_CONTEXT + INPUT_CONTROL_ADD_CONTEXT_OFFSET,
+        DCI3_ADD_CONTEXT_FLAG,
+    );
+    mem.write_u32(
+        INPUT_CONTEXT + DCI3_INPUT_CONTEXT_OFFSET + EP_CONTEXT_DWORD1_OFFSET,
+        DCI3_DWORD1,
+    );
+    mem.write_u64(
+        INPUT_CONTEXT + DCI3_INPUT_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET,
+        DCI3_RING | TRB_CYCLE,
+    );
+    mem.write_u32(
+        INPUT_CONTEXT + DCI3_INPUT_CONTEXT_OFFSET + EP_CONTEXT_DWORD4_OFFSET,
+        DCI3_DWORD4,
+    );
+    mem.write_u64(DCI3_RING, DCI3_BUFFER);
+    mem.write_u32(DCI3_RING + 8, 8);
+    mem.write_u32(DCI3_RING + 12, (TRB_TYPE_NORMAL << 10) | 1);
+    assert!(mem.write_bytes(DCI3_BUFFER, &[0xaa; 8]));
+}
+
+fn assert_success_dci3_transfer_event(mem: &TestRam, event_gpa: u64, trb_gpa: u64) {
+    assert_eq!(mem.read_u64(event_gpa), trb_gpa);
+    assert_eq!(mem.read_u32(event_gpa + 8) & 0x00ff_ffff, 0);
+    assert_eq!(mem.read_u32(event_gpa + 8) >> 24, COMPLETION_CODE_SUCCESS);
+    let control = mem.read_u32(event_gpa + 12);
+    assert_eq!((control >> 10) & 0x3f, TRB_TYPE_TRANSFER_EVENT);
+    assert_eq!((control >> 16) & 0x1f, DCI3);
+    assert_eq!((control >> 24) & 0xff, ENABLE_SLOT_ID);
+    assert_eq!(control & 1, 1);
+}

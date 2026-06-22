@@ -28,6 +28,7 @@ const COMPLETION_CODE_SUCCESS: u32 = 1;
 const COMPLETION_CODE_SHIFT: u32 = 24;
 const SLOT_ID: u32 = 1;
 const ENDPOINT_ID_EP0: u32 = 1;
+const ENDPOINT_ID_DCI3: u32 = 3;
 const EVENT_ENDPOINT_ID_SHIFT: u32 = 16;
 const EVENT_SLOT_ID_SHIFT: u32 = 24;
 
@@ -63,10 +64,14 @@ impl XhciController {
         let Ok(target) = u32::try_from(value & 0xff) else {
             return false;
         };
-        if slot_id != SLOT_ID || target != ENDPOINT_ID_EP0 {
+        if slot_id != SLOT_ID {
             return false;
         }
-        self.process_ep0_control_transfer(mem)
+        match target {
+            ENDPOINT_ID_EP0 => self.process_ep0_control_transfer(mem),
+            ENDPOINT_ID_DCI3 => self.process_dci3_interrupt_in_transfer(mem),
+            _ => false,
+        }
     }
 
     fn process_ep0_control_transfer(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
