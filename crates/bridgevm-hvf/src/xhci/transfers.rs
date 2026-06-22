@@ -2,10 +2,7 @@ use crate::fwcfg::GuestMemoryMut;
 
 use super::{
     trace,
-    usb::{
-        is_device_descriptor_request, parse_setup_packet, DEVICE_DESCRIPTOR,
-        DEVICE_DESCRIPTOR_LENGTH,
-    },
+    usb::{descriptor_for_setup_packet, parse_setup_packet},
     XhciController,
 };
 
@@ -105,10 +102,10 @@ impl XhciController {
             setup_packet.length,
         );
         let setup_type = trb_type(setup.control);
-        if !is_device_descriptor_request(setup_packet) {
+        let Some(descriptor) = descriptor_for_setup_packet(setup_packet) else {
             trace::ep0_reject("unsupported_setup_packet");
             return false;
-        }
+        };
         if setup_type != TRB_TYPE_SETUP_STAGE {
             trace::ep0_reject_with_value("unexpected_setup_trb_type", setup_type);
             return false;
@@ -123,7 +120,11 @@ impl XhciController {
             return false;
         }
         let data_length = trb_transfer_length(data.status);
-        if data_length == 0 || data_length > u32::from(DEVICE_DESCRIPTOR_LENGTH) {
+        let Ok(max_descriptor_length) = u32::try_from(descriptor.len()) else {
+            trace::ep0_reject_with_value("unexpected_data_length", data_length);
+            return false;
+        };
+        if data_length == 0 {
             trace::ep0_reject_with_value("unexpected_data_length", data_length);
             return false;
         }
@@ -131,16 +132,18 @@ impl XhciController {
             trace::ep0_reject_with_value("unexpected_setup_length", u32::from(setup_packet.length));
             return false;
         }
-        let Ok(descriptor_length) = usize::try_from(data_length) else {
+        let transfer_length = data_length.min(max_descriptor_length);
+        let residual_length = data_length - transfer_length;
+        let Ok(descriptor_length) = usize::try_from(transfer_length) else {
             trace::ep0_reject_with_value("unexpected_data_length", data_length);
             return false;
         };
-        let descriptor = &DEVICE_DESCRIPTOR[..descriptor_length];
-        if !mem.write_bytes(data.parameter, descriptor) {
+        let descriptor_prefix = &descriptor[..descriptor_length];
+        if !mem.write_bytes(data.parameter, descriptor_prefix) {
             trace::ep0_reject_with_gpa("descriptor_write_failed", data.parameter);
             return false;
         }
-        trace::ep0_descriptor_write_success(data.parameter, descriptor.len());
+        trace::ep0_descriptor_write_success(data.parameter, descriptor_prefix.len());
         let start_event_status = COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT;
         let start_event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_EP0);
         trace::ep0_post_event_request(setup.gpa, start_event_status, start_event_control);
@@ -149,10 +152,8 @@ impl XhciController {
         if !start_posted {
             return false;
         }
-        let (event_parameter, event_residual_length, event_flags) =
-            transfer_event_completion(&completion);
-        let event_status =
-            (COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT) | event_residual_length;
+        let (event_parameter, event_flags) = transfer_event_completion(&completion);
+        let event_status = (COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT) | residual_length;
         let event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_EP0) | event_flags;
         trace::ep0_post_event_request(event_parameter, event_status, event_control);
         let posted = self.post_event(mem, event_parameter, event_status, event_control);
@@ -202,11 +203,11 @@ fn find_control_completion(mem: &dyn GuestMemoryMut, first_gpa: u64) -> Option<C
     }
 }
 
-fn transfer_event_completion(completion: &ControlCompletion) -> (u64, u32, u32) {
+fn transfer_event_completion(completion: &ControlCompletion) -> (u64, u32) {
     if let Some(event_data) = completion.event_data {
-        (event_data.parameter, 0, TRANSFER_EVENT_ED)
+        (event_data.parameter, TRANSFER_EVENT_ED)
     } else {
-        (completion.status_stage.gpa, 0, 0)
+        (completion.status_stage.gpa, 0)
     }
 }
 

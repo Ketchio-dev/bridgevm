@@ -258,6 +258,9 @@ mod address_context_tests;
 mod command_tests;
 
 #[cfg(test)]
+mod config_descriptor_tests;
+
+#[cfg(test)]
 mod event_tests;
 
 #[cfg(test)]
