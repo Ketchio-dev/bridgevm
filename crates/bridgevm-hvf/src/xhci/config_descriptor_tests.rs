@@ -30,7 +30,7 @@ fn ep0_get_descriptor_configuration_returns_8_byte_header() {
     // When: the guest rings slot 1 endpoint 0.
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
 
-    // Then: the header exposes the total length and reports setup/status completion events.
+    // Then: the header exposes the total length and reports setup/data/status completion events.
     assert_eq!(
         mem.read_bytes(DATA_STAGE_BUFFER, 8).unwrap(),
         CONFIG_DESCRIPTOR[..8]
@@ -101,8 +101,13 @@ fn ep0_get_descriptor_configuration_short_completes_overlength_request() {
     assert_success_transfer_event_with_residual(
         &mem,
         EVENT_RING + (TRB_SIZE * 2),
-        EP0_RING + (TRB_SIZE * 2),
+        EP0_RING + TRB_SIZE,
         255 - u32::try_from(CONFIG_DESCRIPTOR.len()).unwrap(),
+    );
+    assert_success_transfer_event_for_trb(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 3),
+        EP0_RING + (TRB_SIZE * 2),
     );
     assert_eq!(xhci.slot1_ep0_dequeue, EP0_RING + (TRB_SIZE * 3));
 }
@@ -177,9 +182,10 @@ fn transfer_control(trb_type: u32) -> u32 {
 
 fn assert_success_transfer_events_without_event_data(mem: &TestRam) {
     assert_success_transfer_event_for_trb(mem, EVENT_RING + TRB_SIZE, EP0_RING);
+    assert_success_transfer_event_for_trb(mem, EVENT_RING + (TRB_SIZE * 2), EP0_RING + TRB_SIZE);
     assert_success_transfer_event_for_trb(
         mem,
-        EVENT_RING + (TRB_SIZE * 2),
+        EVENT_RING + (TRB_SIZE * 3),
         EP0_RING + (TRB_SIZE * 2),
     );
 }

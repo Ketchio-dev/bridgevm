@@ -25,6 +25,7 @@ fn ep0_set_configuration_completes_no_data_setup_status_transfer() {
     // Then: setup and status stage success events are posted and EP0 advances.
     assert_success_transfer_event_for_trb(&mem, EVENT_RING + TRB_SIZE, EP0_RING);
     assert_success_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 2), EP0_RING + TRB_SIZE);
+    assert_eq!(mem.read_u64(EVENT_RING + (TRB_SIZE * 3)), 0);
     assert_eq!(xhci.slot1_ep0_dequeue, EP0_RING + (TRB_SIZE * 2));
     assert_eq!(xhci.mmio_read(0x1020, 4) & 1, 1);
     assert_eq!(
@@ -51,6 +52,7 @@ fn ep0_set_configuration_zero_completes_and_clears_selected_configuration() {
     // Then: the request completes and the tracked current configuration is zero.
     assert_success_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 3), EP0_RING);
     assert_success_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 4), EP0_RING + TRB_SIZE);
+    assert_eq!(mem.read_u64(EVENT_RING + (TRB_SIZE * 5)), 0);
     assert_eq!(xhci.slot1_ep0_dequeue, EP0_RING + (TRB_SIZE * 2));
     assert_eq!(xhci.usb_configuration, 0);
 }

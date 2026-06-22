@@ -60,6 +60,7 @@ impl XhciController {
                 mem,
                 ControlEventRequest {
                     setup,
+                    data_stage: None,
                     completion,
                     residual_length: 0,
                 },
@@ -127,6 +128,7 @@ impl XhciController {
             mem,
             ControlEventRequest {
                 setup,
+                data_stage: Some(data),
                 completion,
                 residual_length: 0,
             },
@@ -198,6 +200,7 @@ impl XhciController {
             mem,
             ControlEventRequest {
                 setup,
+                data_stage: Some(data),
                 completion,
                 residual_length,
             },

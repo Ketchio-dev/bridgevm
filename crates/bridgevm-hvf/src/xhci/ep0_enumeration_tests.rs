@@ -28,13 +28,19 @@ fn ep0_get_descriptor_string0_returns_langid_prefix() {
     // When: the guest rings slot 1 endpoint 0.
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
 
-    // Then: the deterministic LANGID descriptor prefix is returned with short residual.
+    // Then: the deterministic LANGID descriptor prefix is returned with setup/data/status events.
     assert_eq!(mem.read_bytes(DATA_STAGE_BUFFER, 2).unwrap(), [4, 3]);
     assert_eq!(mem.read_bytes(DATA_STAGE_BUFFER + 2, 2).unwrap(), [0xaa; 2]);
     assert_success_transfer_event_for_trb(&mem, EVENT_RING + TRB_SIZE, EP0_RING);
     assert_success_transfer_event_with_residual(
         &mem,
         EVENT_RING + (TRB_SIZE * 2),
+        EP0_RING + TRB_SIZE,
+        0,
+    );
+    assert_success_transfer_event_with_residual(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 3),
         EP0_RING + (TRB_SIZE * 2),
         0,
     );
@@ -66,6 +72,12 @@ fn ep0_get_configuration_returns_current_configuration_after_set_configuration()
     assert_success_transfer_event_with_residual(
         &mem,
         EVENT_RING + (TRB_SIZE * 4),
+        get_configuration_ring + TRB_SIZE,
+        0,
+    );
+    assert_success_transfer_event_with_residual(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 5),
         get_configuration_ring + (TRB_SIZE * 2),
         0,
     );
@@ -87,11 +99,12 @@ fn ep0_hid_set_report_completes_out_data_control_transfer() {
     // When: the guest rings slot 1 endpoint 0.
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
 
-    // Then: setup and status completion events are posted and EP0 advances.
+    // Then: setup, OUT data, and status completion events are posted and EP0 advances.
     assert_success_transfer_event_for_trb(&mem, EVENT_RING + TRB_SIZE, EP0_RING);
+    assert_success_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 2), EP0_RING + TRB_SIZE);
     assert_success_transfer_event_for_trb(
         &mem,
-        EVENT_RING + (TRB_SIZE * 2),
+        EVENT_RING + (TRB_SIZE * 3),
         EP0_RING + (TRB_SIZE * 2),
     );
     assert_eq!(xhci.slot1_ep0_dequeue, EP0_RING + (TRB_SIZE * 3));

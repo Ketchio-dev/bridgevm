@@ -51,7 +51,7 @@ fn ep0_get_descriptor_device_accepts_8_byte_prefix_without_event_data() {
 }
 
 #[test]
-fn ep0_prefix_completion_reports_setup_and_status_trbs_for_edk2_urb_matching() {
+fn ep0_prefix_completion_reports_setup_data_and_status_trbs_for_edk2_urb_matching() {
     // Given: EDK2's max-packet probe has Setup/Data/Status TRBs without Event Data.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0x8000);
@@ -68,7 +68,7 @@ fn ep0_prefix_completion_reports_setup_and_status_trbs_for_edk2_urb_matching() {
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
 
-    // Then: the event ring reports both TrbStart and TrbEnd for EDK2 StartDone/EndDone.
+    // Then: the event ring reports setup, data, and status TRBs for EDK2 URB accounting.
     assert_success_transfer_events_without_event_data(&mem);
 }
 
@@ -109,9 +109,10 @@ fn transfer_control(trb_type: u32) -> u32 {
 
 fn assert_success_transfer_events_without_event_data(mem: &TestRam) {
     assert_success_transfer_event_for_trb(mem, EVENT_RING + TRB_SIZE, EP0_RING);
+    assert_success_transfer_event_for_trb(mem, EVENT_RING + (TRB_SIZE * 2), EP0_RING + TRB_SIZE);
     assert_success_transfer_event_for_trb(
         mem,
-        EVENT_RING + (TRB_SIZE * 2),
+        EVENT_RING + (TRB_SIZE * 3),
         EP0_RING + (TRB_SIZE * 2),
     );
 }

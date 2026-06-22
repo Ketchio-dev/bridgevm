@@ -187,7 +187,8 @@ fn xhci_ep0_transfer_completion_queues_msix_message_when_vector_unmasked() {
         DEVICE_DESCRIPTOR
     );
     assert_success_transfer_event_for_trb(&mem, EVENT_RING + 0x10, EP0_RING);
-    assert_success_transfer_event_for_trb(&mem, EVENT_RING + 0x20, EP0_RING + 0x30);
+    assert_success_transfer_event_for_trb(&mem, EVENT_RING + 0x20, EP0_RING + 0x10);
+    assert_success_transfer_event_for_trb(&mem, EVENT_RING + 0x30, EP0_RING + 0x30);
     assert_eq!(
         platform.take_pending_msix(),
         vec![MsixMessage {

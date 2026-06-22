@@ -25,6 +25,7 @@ pub(super) struct ControlCompletion {
 
 pub(super) struct ControlEventRequest {
     pub(super) setup: TransferTrb,
+    pub(super) data_stage: Option<TransferTrb>,
     pub(super) completion: ControlCompletion,
     pub(super) residual_length: u32,
 }
@@ -47,26 +48,46 @@ impl XhciController {
             );
             return false;
         };
+        let event_control_base = transfer_event_control(SLOT_ID, ENDPOINT_ID_EP0);
         let start_event_status = COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT;
-        let start_event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_EP0);
-        trace::ep0_post_event_request(request.setup.gpa, start_event_status, start_event_control);
+        trace::ep0_post_event_request(request.setup.gpa, start_event_status, event_control_base);
         let start_posted = self.post_event(
             mem,
             request.setup.gpa,
             start_event_status,
-            start_event_control,
+            event_control_base,
         );
         trace::ep0_post_event_result(start_posted);
         if !start_posted {
             return false;
         }
-        let (event_parameter, event_flags) = transfer_event_completion(&request.completion);
-        let event_status =
-            (COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT) | request.residual_length;
-        let event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_EP0) | event_flags;
-        trace::ep0_post_event_request(event_parameter, event_status, event_control);
-        let posted = self.post_event(mem, event_parameter, event_status, event_control);
-        trace::ep0_post_event_result(posted);
+        let posted = {
+            let mut post_completion_event =
+                |event_parameter: u64, residual_length: u32, event_flags: u32| -> bool {
+                    let event_status =
+                        (COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT) | residual_length;
+                    let event_control = event_control_base | event_flags;
+                    trace::ep0_post_event_request(event_parameter, event_status, event_control);
+                    let posted = self.post_event(mem, event_parameter, event_status, event_control);
+                    trace::ep0_post_event_result(posted);
+                    posted
+                };
+            match request.completion.event_data {
+                Some(event_data) => post_completion_event(
+                    event_data.parameter,
+                    request.residual_length,
+                    TRANSFER_EVENT_ED,
+                ),
+                None => {
+                    if let Some(data_stage) = request.data_stage {
+                        if !post_completion_event(data_stage.gpa, request.residual_length, 0) {
+                            return false;
+                        }
+                    }
+                    post_completion_event(request.completion.status_stage.gpa, 0, 0)
+                }
+            }
+        };
         if posted {
             self.slot1_ep0_dequeue = next_dequeue;
         }
@@ -116,14 +137,6 @@ pub(super) fn find_control_completion(
             );
             None
         }
-    }
-}
-
-fn transfer_event_completion(completion: &ControlCompletion) -> (u64, u32) {
-    if let Some(event_data) = completion.event_data {
-        (event_data.parameter, TRANSFER_EVENT_ED)
-    } else {
-        (completion.status_stage.gpa, 0)
     }
 }
 
