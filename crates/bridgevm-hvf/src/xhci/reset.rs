@@ -15,6 +15,7 @@ impl XhciController {
         self.slot1_ep0_dequeue = 0;
         self.slot1_dci3_dequeue = 0;
         self.slot1_dci3_dcs = false;
+        self.usb_configuration = 0;
         self.reset_event_ring();
     }
 }

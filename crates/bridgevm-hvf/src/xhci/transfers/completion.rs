@@ -1,0 +1,118 @@
+use crate::fwcfg::GuestMemoryMut;
+
+use super::super::{trace, XhciController};
+use super::trb::{read_transfer_trb, trace_transfer_trb, trb_type, TransferTrb};
+
+const TRB_SIZE_BYTES: u64 = 16;
+const TRB_TYPE_SHIFT: u32 = 10;
+const TRB_TYPE_STATUS_STAGE: u32 = 4;
+const TRB_TYPE_EVENT_DATA: u32 = 7;
+const TRB_TYPE_TRANSFER_EVENT: u32 = 32;
+const TRB_IOC: u32 = 1 << 5;
+const TRANSFER_EVENT_ED: u32 = 1 << 2;
+const COMPLETION_CODE_SUCCESS: u32 = 1;
+const COMPLETION_CODE_SHIFT: u32 = 24;
+const SLOT_ID: u32 = 1;
+const ENDPOINT_ID_EP0: u32 = 1;
+const EVENT_ENDPOINT_ID_SHIFT: u32 = 16;
+const EVENT_SLOT_ID_SHIFT: u32 = 24;
+
+#[derive(Clone, Copy)]
+pub(super) struct ControlCompletion {
+    status_stage: TransferTrb,
+    event_data: Option<TransferTrb>,
+}
+
+pub(super) struct ControlEventRequest {
+    pub(super) setup: TransferTrb,
+    pub(super) completion: ControlCompletion,
+    pub(super) residual_length: u32,
+}
+
+impl XhciController {
+    pub(super) fn post_control_completion_events(
+        &mut self,
+        mem: &mut dyn GuestMemoryMut,
+        request: ControlEventRequest,
+    ) -> bool {
+        let start_event_status = COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT;
+        let start_event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_EP0);
+        trace::ep0_post_event_request(request.setup.gpa, start_event_status, start_event_control);
+        let start_posted = self.post_event(
+            mem,
+            request.setup.gpa,
+            start_event_status,
+            start_event_control,
+        );
+        trace::ep0_post_event_result(start_posted);
+        if !start_posted {
+            return false;
+        }
+        let (event_parameter, event_flags) = transfer_event_completion(&request.completion);
+        let event_status =
+            (COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT) | request.residual_length;
+        let event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_EP0) | event_flags;
+        trace::ep0_post_event_request(event_parameter, event_status, event_control);
+        let posted = self.post_event(mem, event_parameter, event_status, event_control);
+        trace::ep0_post_event_result(posted);
+        if posted {
+            self.slot1_ep0_dequeue = request.completion.status_stage.gpa + TRB_SIZE_BYTES;
+        }
+        posted
+    }
+}
+
+pub(super) fn find_control_completion(
+    mem: &dyn GuestMemoryMut,
+    first_gpa: u64,
+) -> Option<ControlCompletion> {
+    let first = read_transfer_trb(mem, first_gpa)?;
+    match trb_type(first.control) {
+        TRB_TYPE_STATUS_STAGE => {
+            trace_transfer_trb("status", first);
+            Some(ControlCompletion {
+                status_stage: first,
+                event_data: None,
+            })
+        }
+        TRB_TYPE_EVENT_DATA => {
+            trace_transfer_trb("event_data", first);
+            let second = read_transfer_trb(mem, first_gpa + TRB_SIZE_BYTES)?;
+            trace_transfer_trb("status", second);
+            match trb_type(second.control) {
+                TRB_TYPE_STATUS_STAGE => Some(ControlCompletion {
+                    status_stage: second,
+                    event_data: (first.control & TRB_IOC != 0).then_some(first),
+                }),
+                _ => {
+                    trace::ep0_reject_with_value(
+                        "completion_second_not_status",
+                        trb_type(second.control),
+                    );
+                    None
+                }
+            }
+        }
+        _ => {
+            trace::ep0_reject_with_value(
+                "completion_first_unexpected_type",
+                trb_type(first.control),
+            );
+            None
+        }
+    }
+}
+
+fn transfer_event_completion(completion: &ControlCompletion) -> (u64, u32) {
+    if let Some(event_data) = completion.event_data {
+        (event_data.parameter, TRANSFER_EVENT_ED)
+    } else {
+        (completion.status_stage.gpa, 0)
+    }
+}
+
+fn transfer_event_control(slot_id: u32, endpoint_id: u32) -> u32 {
+    (slot_id << EVENT_SLOT_ID_SHIFT)
+        | (endpoint_id << EVENT_ENDPOINT_ID_SHIFT)
+        | (TRB_TYPE_TRANSFER_EVENT << TRB_TYPE_SHIFT)
+}

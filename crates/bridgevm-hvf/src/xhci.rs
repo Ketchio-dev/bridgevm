@@ -45,6 +45,7 @@ pub struct XhciController {
     slot1_ep0_dequeue: u64,
     slot1_dci3_dequeue: u64,
     slot1_dci3_dcs: bool,
+    usb_configuration: u8,
 }
 
 impl Default for XhciController {
@@ -76,6 +77,7 @@ impl XhciController {
             slot1_ep0_dequeue: 0,
             slot1_dci3_dequeue: 0,
             slot1_dci3_dcs: false,
+            usb_configuration: 0,
         }
     }
 
@@ -280,6 +282,9 @@ mod set_configuration_msix_tests;
 
 #[cfg(test)]
 mod set_protocol_tests;
+
+#[cfg(test)]
+mod ep0_enumeration_tests;
 
 #[cfg(test)]
 mod transfer_prefix_tests;

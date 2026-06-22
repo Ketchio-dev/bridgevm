@@ -109,10 +109,10 @@ fn ep0_get_descriptor_configuration_short_completes_overlength_request() {
 
 #[test]
 fn ep0_get_descriptor_unsupported_type_still_rejects_without_write() {
-    // Given: the guest asks for an unsupported string descriptor.
+    // Given: the guest asks for an unsupported descriptor type.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0x9000);
-    prepare_addressed_config_transfer(&mut xhci, &mut mem, 8, 0x0300);
+    prepare_addressed_config_transfer(&mut xhci, &mut mem, 8, 0x0400);
     assert!(mem.write_bytes(DATA_STAGE_BUFFER, &[0xaa; 8]));
 
     // When: the guest rings slot 1 endpoint 0.
