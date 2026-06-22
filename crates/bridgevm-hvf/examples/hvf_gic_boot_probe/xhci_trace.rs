@@ -4,6 +4,14 @@ use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::pcie::{self, PcieMmioTarget};
 use bridgevm_hvf::platform_virt::MmioOp;
 
+#[path = "xhci_trace/context.rs"]
+mod context;
+#[cfg(test)]
+#[path = "xhci_trace/context_tests.rs"]
+mod context_tests;
+#[cfg(test)]
+#[path = "xhci_trace/test_support.rs"]
+mod test_support;
 #[cfg(test)]
 #[path = "xhci_trace/tests.rs"]
 mod tests;
@@ -23,13 +31,6 @@ const DOORBELL_STRIDE: u64 = 4;
 const MAX_DOORBELL_INDEX: u64 = 64;
 const COMMAND_RING_POINTER_MASK: u64 = !0x3f;
 const LINK_TRB_POINTER_MASK: u64 = !0xf;
-const INPUT_CONTEXT_POINTER_MASK: u64 = !0xf;
-const TRANSFER_RING_POINTER_MASK: u64 = !0xf;
-const INPUT_CONTROL_CONTEXT_BYTES: u64 = 0x20;
-const SLOT_CONTEXT_BYTES: u64 = 0x20;
-const EP0_CONTEXT_OFFSET: u64 = INPUT_CONTROL_CONTEXT_BYTES + SLOT_CONTEXT_BYTES;
-const EP_TR_DEQUEUE_OFFSET: u64 = 0x8;
-const SLOT_COUNT: usize = 256;
 const DEFAULT_MAX_EVENTS: usize = 160;
 const MAX_TRANSFER_TRBS_TO_DUMP: u64 = 4;
 
@@ -41,7 +42,7 @@ pub(super) struct XhciBringupTrace {
     raw_crcr: u64,
     command_dequeue: u64,
     command_cycle: bool,
-    ep0_dequeue_by_slot: [u64; SLOT_COUNT],
+    endpoint_contexts: context::EndpointContexts,
 }
 
 impl XhciBringupTrace {
@@ -53,7 +54,7 @@ impl XhciBringupTrace {
             raw_crcr: 0,
             command_dequeue: 0,
             command_cycle: false,
-            ep0_dequeue_by_slot: [0; SLOT_COUNT],
+            endpoint_contexts: context::EndpointContexts::new(),
         }
     }
 
@@ -130,12 +131,14 @@ impl XhciBringupTrace {
 
         let slot = index as usize;
         let target = value & 0xff;
-        let ep0_dequeue = self.ep0_dequeue_by_slot[slot];
+        let ep0_dequeue = self.endpoint_contexts.ep0_dequeue(slot);
+        let dci3_dequeue = self.endpoint_contexts.dci3_dequeue(slot);
         self.push(format!(
-            "doorbell[{index}] slot={index} target={target:#x} value={value:#x} ep0_dequeue={ep0_dequeue:#x}"
+            "doorbell[{index}] slot={index} target={target:#x} value={value:#x} ep0_dequeue={ep0_dequeue:#x} dci3_dequeue={dci3_dequeue:#x}"
         ));
-        if ep0_dequeue != 0 {
-            self.dump_transfer_ring(slot, target, ep0_dequeue, mem);
+        let (ring_name, dequeue) = self.endpoint_contexts.ring_for_target(slot, target);
+        if dequeue != 0 {
+            self.dump_transfer_ring(slot, target, ring_name, dequeue, mem);
         }
     }
 
@@ -170,61 +173,53 @@ impl XhciBringupTrace {
                 self.advance_command_dequeue(command_gpa);
             }
             trb::TYPE_ADDRESS_DEVICE => {
-                self.capture_address_device_input_context(
+                if let Some(event) = self.endpoint_contexts.capture_address_device(
                     command.slot_id(),
                     command.parameter,
                     mem,
-                );
+                ) {
+                    self.push(event);
+                }
+                self.advance_command_dequeue(command_gpa);
+            }
+            trb::TYPE_CONFIGURE_ENDPOINT => {
+                if let Some(event) = self.endpoint_contexts.capture_configure_endpoint(
+                    command.slot_id(),
+                    command.parameter,
+                    mem,
+                ) {
+                    self.push(event);
+                }
                 self.advance_command_dequeue(command_gpa);
             }
             _ => {}
         }
     }
 
-    fn capture_address_device_input_context(
-        &mut self,
-        slot: u32,
-        input_context: u64,
-        mem: &dyn GuestMemoryMut,
-    ) {
-        let slot_index = slot as usize;
-        if slot_index >= SLOT_COUNT {
-            return;
-        }
-        let input_context = input_context & INPUT_CONTEXT_POINTER_MASK;
-        let ep0_context = input_context + EP0_CONTEXT_OFFSET;
-        let Some(ep0_dequeue_raw) = trb::read_guest_u64(mem, ep0_context + EP_TR_DEQUEUE_OFFSET)
-        else {
-            self.push(format!(
-                "address_device slot={slot} input_context={input_context:#x} ep0_context={ep0_context:#x} ep0_dequeue=unreadable"
-            ));
-            return;
-        };
-        let ep0_dequeue = ep0_dequeue_raw & TRANSFER_RING_POINTER_MASK;
-        self.ep0_dequeue_by_slot[slot_index] = ep0_dequeue;
-        self.push(format!(
-            "address_device slot={slot} input_context={input_context:#x} ep0_context={ep0_context:#x} ep0_dequeue_raw={ep0_dequeue_raw:#x} ep0_dequeue={ep0_dequeue:#x}"
-        ));
-    }
-
     fn dump_transfer_ring(
         &mut self,
         slot: usize,
         target: u32,
-        ep0_dequeue: u64,
+        ring_name: &str,
+        dequeue: u64,
         mem: &dyn GuestMemoryMut,
     ) {
         for trb_index in 0..MAX_TRANSFER_TRBS_TO_DUMP {
-            let gpa = ep0_dequeue + trb_index * trb::BYTES_U64;
+            let Some(gpa) = dequeue.checked_add(trb_index * trb::BYTES_U64) else {
+                self.push(format!(
+                    "transfer_trb slot={slot} target={target:#x} ring={ring_name} index={trb_index} gpa=overflow dequeue={dequeue:#x}"
+                ));
+                return;
+            };
             let Some(transfer) = trb::Trb::read_from(mem, gpa) else {
                 self.push(format!(
-                    "transfer_trb slot={slot} target={target:#x} index={trb_index} gpa={gpa:#x} unreadable"
+                    "transfer_trb slot={slot} target={target:#x} ring={ring_name} index={trb_index} gpa={gpa:#x} unreadable"
                 ));
                 return;
             };
             let setup = transfer.setup_description();
             self.push(format!(
-                "transfer_trb slot={slot} target={target:#x} index={trb_index} gpa={gpa:#x} type={} parameter={parameter:#x} status={status:#x} control={control:#x}{setup}",
+                "transfer_trb slot={slot} target={target:#x} ring={ring_name} index={trb_index} gpa={gpa:#x} type={} parameter={parameter:#x} status={status:#x} control={control:#x}{setup}",
                 transfer.kind_name(),
                 parameter = transfer.parameter,
                 status = transfer.status,

@@ -8,7 +8,10 @@ pub(super) const TYPE_LINK: u32 = 6;
 pub(super) const TYPE_ENABLE_SLOT: u32 = 9;
 pub(super) const TYPE_DISABLE_SLOT: u32 = 10;
 pub(super) const TYPE_ADDRESS_DEVICE: u32 = 11;
+pub(super) const TYPE_CONFIGURE_ENDPOINT: u32 = 12;
+pub(super) const TYPE_STOP_ENDPOINT: u32 = 15;
 
+const TYPE_NORMAL: u32 = 1;
 const TYPE_DATA_STAGE: u32 = 3;
 const TYPE_STATUS_STAGE: u32 = 4;
 pub(super) const TYPE_SHIFT: u32 = 10;
@@ -45,6 +48,7 @@ impl Trb {
 
     pub(super) fn kind_name(self) -> String {
         match self.kind() {
+            TYPE_NORMAL => "normal".to_string(),
             TYPE_SETUP_STAGE => "setup_stage".to_string(),
             TYPE_DATA_STAGE => "data_stage".to_string(),
             TYPE_STATUS_STAGE => "status_stage".to_string(),
@@ -52,6 +56,8 @@ impl Trb {
             TYPE_ENABLE_SLOT => "enable_slot".to_string(),
             TYPE_DISABLE_SLOT => "disable_slot".to_string(),
             TYPE_ADDRESS_DEVICE => "address_device".to_string(),
+            TYPE_CONFIGURE_ENDPOINT => "configure_endpoint".to_string(),
+            TYPE_STOP_ENDPOINT => "stop_endpoint".to_string(),
             other => format!("type{other}"),
         }
     }
@@ -74,6 +80,10 @@ impl Trb {
 
 pub(super) fn read_guest_u64(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u64> {
     mem.read_bytes(gpa, 8).and_then(|bytes| read_u64(&bytes, 0))
+}
+
+pub(super) fn read_guest_u32(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u32> {
+    mem.read_bytes(gpa, 4).and_then(|bytes| read_u32(&bytes, 0))
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
