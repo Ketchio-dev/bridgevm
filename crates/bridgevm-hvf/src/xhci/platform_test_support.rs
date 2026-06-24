@@ -12,14 +12,31 @@ pub(super) const DCBAA: u64 = machine::RAM_BASE + 0x4000;
 pub(super) const INPUT_CONTEXT: u64 = machine::RAM_BASE + 0x5000;
 pub(super) const EP0_RING: u64 = machine::RAM_BASE + 0x6000;
 pub(super) const DATA_STAGE_BUFFER: u64 = machine::RAM_BASE + 0x7000;
+pub(super) const DCI3_RING: u64 = machine::RAM_BASE + 0x8000;
+pub(super) const DCI3_KEY_BUFFER: u64 = machine::RAM_BASE + 0x8800;
+pub(super) const DCI3_RELEASE_BUFFER: u64 = machine::RAM_BASE + 0x8820;
+pub(super) const OUTPUT_CONTEXT: u64 = machine::RAM_BASE + 0x9000;
 pub(super) const TRB_TYPE_ENABLE_SLOT: u32 = 9;
 pub(super) const TRB_TYPE_ADDRESS_DEVICE: u32 = 11;
+pub(super) const TRB_TYPE_CONFIGURE_ENDPOINT: u32 = 12;
+pub(super) const TRB_TYPE_NORMAL: u32 = 1;
 const TRB_TYPE_COMMAND_COMPLETION_EVENT: u32 = 33;
-const TRB_TYPE_TRANSFER_EVENT: u32 = 32;
-const COMPLETION_CODE_SUCCESS: u32 = 1;
+pub(super) const TRB_TYPE_TRANSFER_EVENT: u32 = 32;
+pub(super) const COMPLETION_CODE_SUCCESS: u32 = 1;
 const TRB_DATA_STAGE_DIRECTION_IN: u32 = 1 << 16;
+pub(super) const TRB_SIZE: u64 = 16;
 pub(super) const ENABLE_SLOT_ID: u32 = 1;
 pub(super) const ADDRESS_DEVICE_SLOT_ID: u32 = 6;
+pub(super) const DCI3: u32 = 3;
+pub(super) const DCI3_INPUT_CONTEXT_OFFSET: u64 = 0x80;
+pub(super) const INPUT_CONTROL_ADD_CONTEXT_OFFSET: u64 = 0x04;
+pub(super) const EP_CONTEXT_DWORD1_OFFSET: u64 = 0x04;
+pub(super) const EP_TR_DEQUEUE_OFFSET: u64 = 0x08;
+pub(super) const EP_CONTEXT_DWORD4_OFFSET: u64 = 0x10;
+pub(super) const DCI3_ADD_CONTEXT_FLAG: u32 = 1 << DCI3;
+pub(super) const DCI3_DWORD1: u32 = (3 << 1) | (3 << 3) | (8 << 16);
+pub(super) const DCI3_DWORD4: u32 = 8;
+pub(super) const TRB_CYCLE: u64 = 1;
 pub(super) const DEVICE_DESCRIPTOR: [u8; 18] = [
     18, 1, 0x00, 0x02, 0, 0, 0, 64, 0x09, 0x12, 0x01, 0x00, 0x00, 0x01, 0, 0, 0, 1,
 ];
@@ -224,7 +241,7 @@ fn pcie_cfg_gpa(device: u8, function: u8, reg: u16) -> u64 {
         + u64::from(reg)
 }
 
-fn read_u32(mem: &FlatGuestRam, gpa: u64) -> u32 {
+pub(super) fn read_u32(mem: &FlatGuestRam, gpa: u64) -> u32 {
     u32::from_le_bytes(mem.read_bytes(gpa, 4).unwrap().try_into().unwrap())
 }
 
@@ -232,7 +249,7 @@ pub(super) fn read_bytes(mem: &FlatGuestRam, gpa: u64, len: usize) -> Vec<u8> {
     mem.read_bytes(gpa, len).unwrap()
 }
 
-fn read_u64(mem: &FlatGuestRam, gpa: u64) -> u64 {
+pub(super) fn read_u64(mem: &FlatGuestRam, gpa: u64) -> u64 {
     u64::from_le_bytes(mem.read_bytes(gpa, 8).unwrap().try_into().unwrap())
 }
 

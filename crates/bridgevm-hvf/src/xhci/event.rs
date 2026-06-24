@@ -1,7 +1,7 @@
 use crate::fwcfg::GuestMemoryMut;
 
 use super::{
-    trace::{self, EventPostTrace, EventRingTrace},
+    trace::{self, EventPostStateTrace, EventPostTrace, EventRingTrace},
     XhciController, USB_CMD_RS, USB_STS_HCH,
 };
 
@@ -54,11 +54,20 @@ impl XhciController {
     }
 
     pub(super) fn write_erdp_low(&mut self, value: u32) {
+        let next_erdp = (self.erdp0 & !0xffff_ffff) | u64::from(value & !ERDP_EHB);
         if value & ERDP_EHB != 0 {
             self.event_handler_busy = false;
             self.iman0 &= !IMAN_INTERRUPT_PENDING;
+            trace::erdp_ehb_consumed(
+                next_erdp,
+                EventPostStateTrace {
+                    event_handler_busy: self.event_handler_busy,
+                    iman_interrupt_pending: self.iman0 & IMAN_INTERRUPT_PENDING != 0,
+                    usb_sts_eint: self.usb_status() & USB_STS_EINT != 0,
+                },
+            );
         }
-        self.erdp0 = (self.erdp0 & !0xffff_ffff) | u64::from(value & !ERDP_EHB);
+        self.erdp0 = next_erdp;
     }
 
     pub(super) fn write_erdp_high(&mut self, value: u32) {
@@ -124,8 +133,6 @@ impl XhciController {
             trace::event_post_reject_with_event("event_write_failed", trace);
             return false;
         }
-        trace::event_post_success(trace);
-
         self.event_enqueue += 1;
         if self.event_enqueue == segment_trbs {
             self.event_enqueue = 0;
@@ -133,6 +140,14 @@ impl XhciController {
         }
         self.event_handler_busy = true;
         self.iman0 |= IMAN_INTERRUPT_PENDING;
+        trace::event_post_success(
+            trace,
+            EventPostStateTrace {
+                event_handler_busy: self.event_handler_busy,
+                iman_interrupt_pending: self.iman0 & IMAN_INTERRUPT_PENDING != 0,
+                usb_sts_eint: self.usb_status() & USB_STS_EINT != 0,
+            },
+        );
         true
     }
 }

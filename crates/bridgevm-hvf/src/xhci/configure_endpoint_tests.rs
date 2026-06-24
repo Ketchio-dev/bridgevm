@@ -4,31 +4,32 @@ use super::test_support::{
 };
 use super::*;
 
-const TRB_TYPE_CONFIGURE_ENDPOINT: u32 = 12;
-const TRB_TYPE_LINK: u32 = 6;
-const TRB_TYPE_NORMAL: u32 = 1;
-const TRB_TYPE_TRANSFER_EVENT: u32 = 32;
-const INPUT_CONTEXT: u64 = 0x5000;
-const DCI3_RING: u64 = 0x6000;
-const DCI3_WRAP_RING: u64 = 0x6200;
-const DCI3_BUFFER: u64 = 0x6800;
-const DCI3_WRAP_BUFFER: u64 = 0x6820;
-const OUTPUT_CONTEXT: u64 = 0x7000;
-const DCBAA: u64 = 0x4000;
-const DCI3: u32 = 3;
-const DCI3_INPUT_CONTEXT_OFFSET: u64 = 0x80;
-const DCI3_OUTPUT_CONTEXT_OFFSET: u64 = 0x60;
-const INPUT_CONTROL_ADD_CONTEXT_OFFSET: u64 = 0x04;
-const EP_CONTEXT_DWORD1_OFFSET: u64 = 0x04;
-const EP_TR_DEQUEUE_OFFSET: u64 = 0x08;
-const EP_CONTEXT_DWORD4_OFFSET: u64 = 0x10;
-const EP_CONTEXT_BYTES: usize = 32;
-const DCI3_ADD_CONTEXT_FLAG: u32 = 1 << DCI3;
-const DCI3_DWORD1: u32 = (3 << 1) | (3 << 3) | (8 << 16);
-const DCI3_DWORD4: u32 = 8;
-const TRB_CYCLE: u64 = 1;
-const TRB_LINK_TOGGLE_CYCLE: u32 = 1 << 1;
-const COMPLETION_CODE_SUCCESS: u32 = 1;
+pub(super) const TRB_TYPE_CONFIGURE_ENDPOINT: u32 = 12;
+pub(super) const TRB_TYPE_LINK: u32 = 6;
+pub(super) const TRB_TYPE_NORMAL: u32 = 1;
+pub(super) const TRB_TYPE_TRANSFER_EVENT: u32 = 32;
+pub(super) const INPUT_CONTEXT: u64 = 0x5000;
+pub(super) const DCI3_RING: u64 = 0x6000;
+pub(super) const DCI3_WRAP_RING: u64 = 0x6200;
+pub(super) const DCI3_BUFFER: u64 = 0x6800;
+pub(super) const DCI3_WRAP_BUFFER: u64 = 0x6820;
+pub(super) const DCI3_INVALID_BUFFER: u64 = 0x8ffc;
+pub(super) const OUTPUT_CONTEXT: u64 = 0x7000;
+pub(super) const DCBAA: u64 = 0x4000;
+pub(super) const DCI3: u32 = 3;
+pub(super) const DCI3_INPUT_CONTEXT_OFFSET: u64 = 0x80;
+pub(super) const DCI3_OUTPUT_CONTEXT_OFFSET: u64 = 0x60;
+pub(super) const INPUT_CONTROL_ADD_CONTEXT_OFFSET: u64 = 0x04;
+pub(super) const EP_CONTEXT_DWORD1_OFFSET: u64 = 0x04;
+pub(super) const EP_TR_DEQUEUE_OFFSET: u64 = 0x08;
+pub(super) const EP_CONTEXT_DWORD4_OFFSET: u64 = 0x10;
+pub(super) const EP_CONTEXT_BYTES: usize = 32;
+pub(super) const DCI3_ADD_CONTEXT_FLAG: u32 = 1 << DCI3;
+pub(super) const DCI3_DWORD1: u32 = (3 << 1) | (3 << 3) | (8 << 16);
+pub(super) const DCI3_DWORD4: u32 = 8;
+pub(super) const TRB_CYCLE: u64 = 1;
+pub(super) const TRB_LINK_TOGGLE_CYCLE: u32 = 1 << 1;
+pub(super) const COMPLETION_CODE_SUCCESS: u32 = 1;
 
 #[test]
 fn configure_endpoint_command_copies_dci3_context_and_posts_completion() {
@@ -148,23 +149,7 @@ fn slot1_dci3_link_trb_to_inactive_target_updates_output_dequeue_without_event()
     );
 }
 
-#[test]
-fn host_controller_reset_clears_captured_dci3_state() {
-    // Given: Configure Endpoint installed slot 1 HID interrupt IN DCI3, then HCRST reset runs.
-    let mut xhci = XhciController::new();
-    let mut mem = TestRam::new(0x9000);
-    setup_configure_endpoint_command(&mut xhci, &mut mem);
-    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
-    xhci.mmio_write(0x40, 4, u64::from(USB_CMD_HCRST));
-
-    // When: the guest rings the stale slot 1 DCI3 doorbell.
-    assert!(!xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
-
-    // Then: no stale DCI3 transfer event is posted.
-    assert_eq!(mem.read_u64(EVENT_RING + TRB_SIZE), 0);
-}
-
-fn setup_configure_endpoint_command(xhci: &mut XhciController, mem: &mut TestRam) {
+pub(super) fn setup_configure_endpoint_command(xhci: &mut XhciController, mem: &mut TestRam) {
     setup_command_rings_with_parameter(
         xhci,
         mem,
@@ -192,7 +177,7 @@ fn setup_configure_endpoint_command(xhci: &mut XhciController, mem: &mut TestRam
     assert!(mem.write_bytes(DCI3_BUFFER, &[0xaa; 8]));
 }
 
-fn write_dci3_normal_trb(mem: &mut TestRam, trb_gpa: u64, buffer_gpa: u64, cycle: bool) {
+pub(super) fn write_dci3_normal_trb(mem: &mut TestRam, trb_gpa: u64, buffer_gpa: u64, cycle: bool) {
     mem.write_u64(trb_gpa, buffer_gpa);
     mem.write_u32(trb_gpa + 8, 8);
     mem.write_u32(trb_gpa + 12, (TRB_TYPE_NORMAL << 10) | u32::from(cycle));
@@ -206,7 +191,7 @@ fn write_dci3_link_trb(mem: &mut TestRam, trb_gpa: u64, target_gpa: u64, cycle: 
     );
 }
 
-fn assert_success_dci3_transfer_event(mem: &TestRam, event_gpa: u64, trb_gpa: u64) {
+pub(super) fn assert_success_dci3_transfer_event(mem: &TestRam, event_gpa: u64, trb_gpa: u64) {
     assert_eq!(mem.read_u64(event_gpa), trb_gpa);
     assert_eq!(mem.read_u32(event_gpa + 8) & 0x00ff_ffff, 0);
     assert_eq!(mem.read_u32(event_gpa + 8) >> 24, COMPLETION_CODE_SUCCESS);

@@ -40,9 +40,12 @@ use crate::virtio_blk::{
     VirtioBlockRequestTrace, VirtioMmioBlock, VirtioMmioBlockResult, VirtioMmioBlockStats,
     VirtioPciBlock, VirtioPciBlockOp, INSTALLER_ISO_SLOT,
 };
-use crate::xhci::XhciController;
+use crate::xhci::{
+    SetupInputAction, XhciController, XhciSetupInputQueueError, XhciSetupInputReportStats,
+};
 
 const DEFAULT_NVME_DISK_BYTES: usize = 16 * 1024 * 1024;
+const HID_BOOT_KEYBOARD_USAGE_SPACE: u8 = 0x2c;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RamfbFwCfg {
@@ -70,6 +73,19 @@ pub enum MmioOutcome {
     KnownUnimplemented(&'static str),
     /// The address belongs to no device in the machine map.
     Unmapped,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct XhciHidBootKeyReportStats {
+    pub queued_space_reports: u64,
+    pub unsupported_usage_rejections: u64,
+    pub busy_rejections: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XhciHidBootKeyQueueError {
+    UnsupportedUsage { usage: u8 },
+    Busy,
 }
 
 /// Where the firmware, device tree and RAM live in the guest address space.
@@ -101,6 +117,7 @@ pub struct VirtPlatform {
     flash_vars: P30NorFlash,
     pending_msix: Vec<MsixMessage>,
     pending_spi_levels: Vec<(u32, bool)>,
+    xhci_hid_boot_key_report_stats: XhciHidBootKeyReportStats,
     dtb: Vec<u8>,
 }
 
@@ -158,6 +175,7 @@ impl VirtPlatform {
             ),
             pending_msix: Vec::new(),
             pending_spi_levels: Vec::new(),
+            xhci_hid_boot_key_report_stats: XhciHidBootKeyReportStats::default(),
             dtb,
         }
     }
@@ -225,6 +243,56 @@ impl VirtPlatform {
         self.virtio_iso
             .as_ref()
             .map(VirtioMmioBlock::recent_request_trace)
+    }
+
+    pub fn queue_xhci_hid_boot_key_usage(
+        &mut self,
+        usage: u8,
+    ) -> Result<(), XhciHidBootKeyQueueError> {
+        if usage != HID_BOOT_KEYBOARD_USAGE_SPACE {
+            self.xhci_hid_boot_key_report_stats
+                .unsupported_usage_rejections = self
+                .xhci_hid_boot_key_report_stats
+                .unsupported_usage_rejections
+                .saturating_add(1);
+            return Err(XhciHidBootKeyQueueError::UnsupportedUsage { usage });
+        }
+        self.queue_xhci_setup_input_actions(&[SetupInputAction::Space])
+            .map_err(|error| match error {
+                XhciSetupInputQueueError::Busy => XhciHidBootKeyQueueError::Busy,
+                XhciSetupInputQueueError::EmptySequence
+                | XhciSetupInputQueueError::TooManyActions { .. } => XhciHidBootKeyQueueError::Busy,
+            })?;
+        self.xhci_hid_boot_key_report_stats.queued_space_reports = self
+            .xhci_hid_boot_key_report_stats
+            .queued_space_reports
+            .saturating_add(1);
+        Ok(())
+    }
+
+    pub fn queue_xhci_setup_input_actions(
+        &mut self,
+        actions: &[SetupInputAction],
+    ) -> Result<(), XhciSetupInputQueueError> {
+        match self.xhci.queue_setup_input_actions(actions) {
+            Ok(()) => Ok(()),
+            Err(XhciSetupInputQueueError::Busy) => {
+                self.xhci_hid_boot_key_report_stats.busy_rejections = self
+                    .xhci_hid_boot_key_report_stats
+                    .busy_rejections
+                    .saturating_add(1);
+                Err(XhciSetupInputQueueError::Busy)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn xhci_hid_boot_key_report_stats(&self) -> XhciHidBootKeyReportStats {
+        self.xhci_hid_boot_key_report_stats
+    }
+
+    pub fn xhci_setup_input_report_stats(&self) -> XhciSetupInputReportStats {
+        self.xhci.setup_input_report_stats()
     }
 
     pub fn ramfb_config(&self) -> Option<RamfbConfig> {

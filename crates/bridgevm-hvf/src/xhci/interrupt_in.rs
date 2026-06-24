@@ -1,6 +1,10 @@
 use crate::fwcfg::GuestMemoryMut;
 
-use super::XhciController;
+use super::{
+    setup_input_report::SetupInputReport,
+    setup_input_report::{HID_BOOT_KEYBOARD_NO_KEY_REPORT, HID_BOOT_KEYBOARD_REPORT_LEN},
+    XhciController,
+};
 
 const TRB_SIZE: usize = 16;
 const TRB_SIZE_BYTES: u64 = 16;
@@ -19,8 +23,6 @@ const SLOT_ID: u32 = 1;
 const ENDPOINT_ID_DCI3: u32 = 3;
 const EVENT_ENDPOINT_ID_SHIFT: u32 = 16;
 const EVENT_SLOT_ID_SHIFT: u32 = 24;
-const HID_BOOT_KEYBOARD_REPORT_LEN: u32 = 8;
-const HID_BOOT_KEYBOARD_NO_KEY_REPORT: [u8; 8] = [0; 8];
 const MAX_LINK_TRBS_PER_DOORBELL: usize = 8;
 
 struct InterruptTransferTrb {
@@ -60,18 +62,19 @@ impl XhciController {
                     else {
                         return false;
                     };
+                    let queued_report = self.boot_keyboard_report_queue.peek();
+                    let report = queued_report
+                        .map(SetupInputReport::bytes)
+                        .unwrap_or(HID_BOOT_KEYBOARD_NO_KEY_REPORT);
                     let transfer_length = trb_transfer_length(interrupt_transfer.status);
                     let write_len = transfer_length.min(HID_BOOT_KEYBOARD_REPORT_LEN);
-                    if write_len > 0 {
-                        let Ok(write_len) = usize::try_from(write_len) else {
-                            return false;
-                        };
-                        if !mem.write_bytes(
-                            interrupt_transfer.parameter,
-                            &HID_BOOT_KEYBOARD_NO_KEY_REPORT[..write_len],
-                        ) {
-                            return false;
-                        }
+                    let Ok(write_len) = usize::try_from(write_len) else {
+                        return false;
+                    };
+                    if write_len > 0
+                        && !mem.write_bytes(interrupt_transfer.parameter, &report[..write_len])
+                    {
+                        return false;
                     }
                     let residual_length =
                         transfer_length.saturating_sub(HID_BOOT_KEYBOARD_REPORT_LEN);
@@ -81,6 +84,17 @@ impl XhciController {
                     let posted =
                         self.post_event(mem, interrupt_transfer.gpa, event_status, event_control);
                     if posted {
+                        if write_len > 0 {
+                            if let Some(queued_report) = queued_report {
+                                self.record_setup_input_report_emitted(
+                                    queued_report,
+                                    report,
+                                    interrupt_transfer.gpa,
+                                    interrupt_transfer.parameter,
+                                );
+                                self.boot_keyboard_report_queue.pop_front();
+                            }
+                        }
                         self.slot1_dci3_dequeue = next_dequeue;
                         self.write_slot1_dci3_output_dequeue(mem);
                     }
