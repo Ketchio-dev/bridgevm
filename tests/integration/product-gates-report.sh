@@ -259,6 +259,98 @@ SH
   return 0
 }
 
+windows_hvf_xhci_hid_boot_key_metadata() {
+  local store
+  store="$(mktemp -d "/tmp/bridgevm-product-hvf-xhci-hid-boot-key.XXXXXX")"
+  local fake_bin="$store/bin"
+  local backend_log="$store/backend-launch.log"
+  mkdir -p "$fake_bin"
+
+  fail_xhci_hid_boot_key_metadata() {
+    local message="$1"
+    rm -rf "$store"
+    printf '%s' "$message"
+    return 1
+  }
+
+  local backend
+  for backend in qemu-system qemu-system-x86_64 qemu-system-aarch64 qemu-system-arm AppleVzRunner open osascript; do
+    cat >"$fake_bin/$backend" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf '%s %s\n' "$(basename "$0")" "$*" >>"${BRIDGEVM_FAKE_BACKEND_LOG:?}"
+echo "backend or GUI launch is forbidden in Windows Arm HVF xHCI HID boot-key product gate: $(basename "$0")" >&2
+exit 99
+SH
+    chmod +x "$fake_bin/$backend"
+  done
+
+  local cli_output=""
+  local runner_output=""
+  cli_output="$(
+    PATH="$fake_bin:$PATH" \
+    BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
+    BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
+    cargo run -q -p bridgevm-cli -- hvf windows-xhci-hid-boot-key-probe 2>&1
+  )" || {
+    fail_xhci_hid_boot_key_metadata "bridgevm hvf windows-xhci-hid-boot-key-probe failed: $cli_output"
+    return 1
+  }
+
+  runner_output="$(
+    PATH="$fake_bin:$PATH" \
+    BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
+    BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
+    cargo run -q -p hvf-runner -- --windows-xhci-hid-boot-key-probe 2>&1
+  )" || {
+    fail_xhci_hid_boot_key_metadata "hvf-runner --windows-xhci-hid-boot-key-probe failed: $runner_output"
+    return 1
+  }
+
+  if [[ -s "$backend_log" ]]; then
+    fail_xhci_hid_boot_key_metadata "backend or GUI launch attempted: $(cat "$backend_log")"
+    return 1
+  fi
+
+  assert_xhci_hid_boot_key_marker() {
+    local output="$1"
+    local surface="$2"
+    local marker="$3"
+    local message="$4"
+    contains_text "$output" "$marker" \
+      || { fail_xhci_hid_boot_key_metadata "$surface missing $message"; return 1; }
+  }
+
+  check_xhci_hid_boot_key_surface() {
+    local surface_output="$1"
+    local surface="$2"
+    assert_xhci_hid_boot_key_marker "$surface_output" "$surface" "Windows 11 Arm HVF xHCI HID boot-key report probe" "xHCI HID boot-key title" || return 1
+    assert_xhci_hid_boot_key_marker "$surface_output" "$surface" "QEMU: not used" "QEMU: not used" || return 1
+    assert_xhci_hid_boot_key_marker "$surface_output" "$surface" "Apple VZ: not used" "Apple VZ: not used" || return 1
+    assert_xhci_hid_boot_key_marker "$surface_output" "$surface" "HVF: not entered" "HVF: not entered" || return 1
+    assert_xhci_hid_boot_key_marker "$surface_output" "$surface" "Windows boot: not claimed" "Windows boot: not claimed" || return 1
+    assert_xhci_hid_boot_key_marker "$surface_output" "$surface" "Usage page: 0x07" "HID usage page" || return 1
+    assert_xhci_hid_boot_key_marker "$surface_output" "$surface" "Usage ID: 0x2c" "HID usage ID" || return 1
+    assert_xhci_hid_boot_key_marker "$surface_output" "$surface" "Key report: 00 00 2c 00 00 00 00 00" "Space key report" || return 1
+    assert_xhci_hid_boot_key_marker "$surface_output" "$surface" "Release report: 00 00 00 00 00 00 00 00" "release report" || return 1
+    assert_xhci_hid_boot_key_marker "$surface_output" "$surface" "Transfer events: 2" "transfer event count" || return 1
+    assert_xhci_hid_boot_key_marker "$surface_output" "$surface" "Blockers: none" "blocker-free xHCI HID evidence" || return 1
+    ! contains_text "$surface_output" "qemu-system" \
+      || { fail_xhci_hid_boot_key_metadata "$surface reported qemu-system in xHCI HID boot-key output"; return 1; }
+    ! contains_text "$surface_output" "Windows boot: claimed" \
+      || { fail_xhci_hid_boot_key_metadata "$surface xHCI HID boot-key output claimed Windows boot"; return 1; }
+    ! grep -Eq '[0-9]+([.][0-9]+)?%' <<<"$surface_output" \
+      || { fail_xhci_hid_boot_key_metadata "$surface reported forbidden percentage in xHCI HID boot-key output"; return 1; }
+  }
+
+  check_xhci_hid_boot_key_surface "$cli_output" "CLI" || return 1
+  check_xhci_hid_boot_key_surface "$runner_output" "runner" || return 1
+
+  rm -rf "$store"
+  return 0
+}
+
 windows_hvf_firmware_handoff_metadata() {
   local store
   store="$(mktemp -d "/tmp/bridgevm-product-hvf-firmware-handoff.XXXXXX")"
@@ -2864,7 +2956,7 @@ main() {
   line="$(status_line "BLOCKED" "Windows no-QEMU fast path" "QEMU/HVF can prove installer reachability, but it stays in the UTM-class Compatibility ceiling; Parallels-like Windows needs a BridgeVM-owned HVF VMM/device/display stack.")"
   output+="$line"$'\n'
 
-  line="$(status_line "RESEARCH" "Windows HVF VMM" "CPU virtualization should use Apple Hypervisor.framework, not a from-scratch hypervisor; host capability query, pending IRQ/vtimer API control probe, the signed opt-in VTimer exit boundary, PL011/PL031 MMIO bus probes, VirtIO-MMIO block identity plus queue/config/address/notify register probes, the first in-memory VirtIO block read request model, the first host-file-backed block read model, the first writable host-file block write/flush/reopen persistence model, the first read-only ISO-backed block read/write-rejection model, the signed opt-in live queue_notify --disk/--iso/--writable-disk paths, the sparse raw GPT/ESP/MSR/Windows boot-disk layout writer/verifier, the AArch64 UEFI firmware FD/vars pflash handoff verifier, the pflash memory-image mapper, the opt-in pflash HVF map/unmap boundary, opt-in UEFI reset-vector first-entry with exception-class and PC-progress reporting, and the opt-in bounded UEFI firmware run-loop exit-classification boundary with guest RAM plus optional low pflash alias mapping, metadata-only FDT platform description generation, platform DTB guest-RAM population at 0x40010000, X0 DTB handoff seeding, SP_EL1 seeding, pflash, guest-RAM, or executable-candidate diagnostic VBAR/vector seeding, PC instruction word/hint, X0-X4/CPSR, EL1 exception/vector sysregs, EL1 MMU translation sysreg snapshots, PC stage-1 leaf descriptor/XN reporting, stage-1 descriptor samples and walk entries for low-vector, pflash, guest-RAM, executable-vector, PC, VBAR, ELR, FAR, and SP addresses, an EL1-executable leaf candidate scan with vector-sync VA/PA/instruction/hint telemetry plus 2 KiB-aligned vector-base scan/suppression/limit telemetry plus passive recommended-vector-base selection and opt-in one-shot recommended-vector-base VBAR set and follow-up-exit telemetry, automatic diagnosis classification, first-class installer ISO plus writable target disk metadata, first firmware data-abort MMIO routing through the Windows device-window PL011/PL031 plus VirtIO-MMIO installer ISO at 0x10002000 read-only and target disk at 0x10003000 writable skeleton bus, and minimal single-vCPU GICv3 priority-selected PPI/SPI delivery with ICC_CTLR EOImode EOIR/DIR split and handled-ICC read/write/last-INTID telemetry plus handled MMIO read/write, per-device MMIO, virtio queue_notify, and virtio request-completion telemetry are wired. Preserved opt-in live evidence, not re-run by this metadata report, includes live writable queue_notify write/flush/reopen persistence and a real edk2 run-loop proof that reaches PC 0x200 before watchdog cancel with instruction=0xffffffff / instruction_hint=erased-pflash, VBAR_EL1=0x0, and ESR_EL1=0x86000007 (instruction abort same EL, translation fault level 3). The unrepaired/default sample set plus walk trace proves the low vector base/sync slot walk to an invalid L3 descriptor, while the firmware reset/vector block descriptor is 0x60000008000c01 with PXN=true and UXN=true, the guest-RAM diagnostic vector block descriptor is 0x60000040000f0d with PXN=true and UXN=true, and the seeded SP_EL1 block descriptor is 0x60000043e00f0d with PXN=true and UXN=true. The executable scan finds low firmware pflash alias 0x200000 as an EL1-executable 2 MiB block candidate with descriptor=0x200f8d, PXN=false, and UXN=false, and the run-loop now reports the candidate's current-EL/SPx vector sync slot VA/PA/instruction/hint, scans 2 KiB-aligned vector-base candidates while filtering zero/erased slots, records a passive recommendation, and exposes --try-recommended-vector-base-vbar to seed the selected recommended vector base with a diagnostic vector, set VBAR_EL1 once, record requested/attempted/set/diagnostic-vector-populated/source-exit/target/status plus follow-up-exit telemetry, and route the follow-up through diagnosis=executable-diagnostic-vector-hvc-exit to diagnosis=executable-diagnostic-vector-eret-landing-hvc-exit. The executable-candidate diagnostic-vector proof sets VBAR_EL1=0x200000, reaches a real HVC AArch64 exit at PC=0x200204 with diagnosis=executable-diagnostic-vector-hvc-exit, handles that exit, rewrites ELR_EL1 to the executable landing pad, resumes through ERET, and stops cleanly at PC=0x20020c with diagnosis=executable-diagnostic-vector-eret-landing-hvc-exit and no unsupported-exit blocker. The non-continue low-vector repair proof wires the firmware VTimer deadline path, handles the first HV_EXIT_REASON_VTIMER_ACTIVATED boundary, patches the real low-vector L3 stage-1 descriptor at entry IPA 0xc000 from previous descriptor 0x0 to descriptor=0xf8f, reaches PC=0x204 with diagnosis=low-vector-diagnostic-page-hvc-exit, routes through ERET, arms a one-shot ERET resume back to captured ELR_EL1/SPSR_EL1 with HV_SUCCESS status names, and stops at PC=0x20c with diagnosis=low-vector-diagnostic-page-eret-landing-hvc-exit. The default continue-after-low-vector-repair proof keeps the diagnostic page patched, records Low vector diagnostic page slot restored: false, and stops at the PC=0x204/PC=0x20c diagnostic HVC/ERET frontier; the separate --restore-low-vector-slot-before-eret opt-in uses an executable ERET trampoline, restores the preserved original low-vector bytes before ERET, records Low vector diagnostic page restore before ERET requested: true and attempted: true, proves the target is 0xffffffff / erased-pflash instead of the installed diagnostic HVC, records exit 4 as HV_EXIT_REASON_VTIMER_ACTIVATED at PC=0x200 with diagnosis=erased-pflash-execution and interaction=vtimer, and finishes with Observed exits: 4, VTimer exit count: 2, Final PC: 0x200, Blockers: none. The pflash diagnostic-vector proof reaches PC 0x08000200 with instruction=0xd4000022, and the guest-RAM diagnostic-vector proof reaches PC 0x40000200 with the same HVC instruction, but both are still execute-never under the live stage-1 tables. The missing work is the VMM/firmware bootstrap above that repaired vector path: interrupt-capable platform/device discovery that lets UEFI fully drive those devices, UEFI Boot Manager handoff, installed Windows persistence, net/display devices, TPM/Secure Boot, and Windows tools/drivers.")"
+  line="$(status_line "RESEARCH" "Windows HVF VMM" "CPU virtualization should use Apple Hypervisor.framework, not a from-scratch hypervisor; host capability query, pending IRQ/vtimer API control probe, the signed opt-in VTimer exit boundary, PL011/PL031 MMIO bus probes, VirtIO-MMIO block identity plus queue/config/address/notify register probes, the first in-memory VirtIO block read request model, the first host-file-backed block read model, the first writable host-file block write/flush/reopen persistence model, the first read-only ISO-backed block read/write-rejection model, the signed opt-in live queue_notify --disk/--iso/--writable-disk paths, the sparse raw GPT/ESP/MSR/Windows boot-disk layout writer/verifier, the AArch64 UEFI firmware FD/vars pflash handoff verifier, the pflash memory-image mapper, the opt-in pflash HVF map/unmap boundary, opt-in UEFI reset-vector first-entry with exception-class and PC-progress reporting, and the opt-in bounded UEFI firmware run-loop exit-classification boundary with guest RAM plus optional low pflash alias mapping, metadata-only FDT platform description generation, platform DTB guest-RAM population at 0x40010000, X0 DTB handoff seeding, SP_EL1 seeding, pflash, guest-RAM, or executable-candidate diagnostic VBAR/vector seeding, PC instruction word/hint, X0-X4/CPSR, EL1 exception/vector sysregs, EL1 MMU translation sysreg snapshots, PC stage-1 leaf descriptor/XN reporting, stage-1 descriptor samples and walk entries for low-vector, pflash, guest-RAM, executable-vector, PC, VBAR, ELR, FAR, and SP addresses, an EL1-executable leaf candidate scan with vector-sync VA/PA/instruction/hint telemetry plus 2 KiB-aligned vector-base scan/suppression/limit telemetry plus passive recommended-vector-base selection and opt-in one-shot recommended-vector-base VBAR set and follow-up-exit telemetry, automatic diagnosis classification, first-class installer ISO plus writable target disk metadata, first firmware data-abort MMIO routing through the Windows device-window PL011/PL031 plus VirtIO-MMIO installer ISO at 0x10002000 read-only and target disk at 0x10003000 writable skeleton bus, and minimal single-vCPU GICv3 priority-selected PPI/SPI delivery with ICC_CTLR EOImode EOIR/DIR split and handled-ICC read/write/last-INTID telemetry plus handled MMIO read/write, per-device MMIO, virtio queue_notify, and virtio request-completion telemetry are wired. Preserved opt-in live evidence, not re-run by this metadata report, includes live writable queue_notify write/flush/reopen persistence and a real edk2 run-loop proof that reaches PC 0x200 before watchdog cancel with instruction=0xffffffff / instruction_hint=erased-pflash, VBAR_EL1=0x0, and ESR_EL1=0x86000007 (instruction abort same EL, translation fault level 3). The unrepaired/default sample set plus walk trace proves the low vector base/sync slot walk to an invalid L3 descriptor, while the firmware reset/vector block descriptor is 0x60000008000c01 with PXN=true and UXN=true, the guest-RAM diagnostic vector block descriptor is 0x60000040000f0d with PXN=true and UXN=true, and the seeded SP_EL1 block descriptor is 0x60000043e00f0d with PXN=true and UXN=true. The executable scan finds low firmware pflash alias 0x200000 as an EL1-executable 2 MiB block candidate with descriptor=0x200f8d, PXN=false, and UXN=false, and the run-loop now reports the candidate's current-EL/SPx vector sync slot VA/PA/instruction/hint, scans 2 KiB-aligned vector-base candidates while filtering zero/erased slots, records a passive recommendation, and exposes --try-recommended-vector-base-vbar to seed the selected recommended vector base with a diagnostic vector, set VBAR_EL1 once, record requested/attempted/set/diagnostic-vector-populated/source-exit/target/status plus follow-up-exit telemetry, and route the follow-up through diagnosis=executable-diagnostic-vector-hvc-exit to diagnosis=executable-diagnostic-vector-eret-landing-hvc-exit. The executable-candidate diagnostic-vector proof sets VBAR_EL1=0x200000, reaches a real HVC AArch64 exit at PC=0x200204 with diagnosis=executable-diagnostic-vector-hvc-exit, handles that exit, rewrites ELR_EL1 to the executable landing pad, resumes through ERET, and stops cleanly at PC=0x20020c with diagnosis=executable-diagnostic-vector-eret-landing-hvc-exit and no unsupported-exit blocker. The non-continue low-vector repair proof wires the firmware VTimer deadline path, handles the first HV_EXIT_REASON_VTIMER_ACTIVATED boundary, patches the real low-vector L3 stage-1 descriptor at entry IPA 0xc000 from previous descriptor 0x0 to descriptor=0xf8f, reaches PC=0x204 with diagnosis=low-vector-diagnostic-page-hvc-exit, routes through ERET, arms a one-shot ERET resume back to captured ELR_EL1/SPSR_EL1 with HV_SUCCESS status names, and stops at PC=0x20c with diagnosis=low-vector-diagnostic-page-eret-landing-hvc-exit. The default continue-after-low-vector-repair proof keeps the diagnostic page patched, records Low vector diagnostic page slot restored: false, and stops at the PC=0x204/PC=0x20c diagnostic HVC/ERET frontier; the separate --restore-low-vector-slot-before-eret opt-in uses an executable ERET trampoline, restores the preserved original low-vector bytes before ERET, records Low vector diagnostic page restore before ERET requested: true and attempted: true, proves the target is 0xffffffff / erased-pflash instead of the installed diagnostic HVC, records exit 4 as HV_EXIT_REASON_VTIMER_ACTIVATED at PC=0x200 with diagnosis=erased-pflash-execution and interaction=vtimer, and finishes with Observed exits: 4, VTimer exit count: 2, Final PC: 0x200, Blockers: none. The pflash diagnostic-vector proof reaches PC 0x08000200 with instruction=0xd4000022, and the guest-RAM diagnostic-vector proof reaches PC 0x40000200 with the same HVC instruction, but both are still execute-never under the live stage-1 tables. The missing work is the VMM/firmware bootstrap above that repaired vector path: interrupt-capable platform/device discovery that lets UEFI fully drive those devices, UEFI Boot Manager handoff, Windows installation persistence, net/display devices, TPM/Secure Boot, and Windows tools/drivers.")"
   output+="$line"$'\n'
 
   line="$(status_line "RESEARCH" "Windows HVF low-vector resume telemetry" "Preserved opt-in live smoke output records low-vector repair-and-resume-once telemetry: the VMM patches the low-vector L3 descriptor at entry IPA 0xc000 from previous descriptor 0x0 to descriptor=0xf8f, records whether a repeated low-vector fault is observed, captures original PC/ELR_EL1/ESR_EL1/FAR_EL1/SPSR_EL1 from the fault, and reaches the low-vector HVC/ERET landing path. The continue-after-low-vector-repair option now has a metadata-safe no-opt-in smoke that records Continue after low-vector repair requested: true, Continue after low-vector repair attempted: false, and post-repair unsupported exit reason/classification plus first-device-interaction and first-unhandled-access telemetry remain not observed without live opt-in; in the default live path it keeps the diagnostic page patched and resumes through captured ELR_EL1/SPSR_EL1 plus the diagnostic ERET, while the separate --restore-low-vector-slot-before-eret opt-in restores the original low-vector bytes through an executable ERET trampoline before proving the target is erased-pflash-execution rather than another synthetic diagnostic-page stop. The low-vector classifier now requires instruction_word_after_exit == AARCH64_ERET for the synthetic low-vector HVC diagnosis, so restored 0xffffffff low-vector bytes surface as erased-pflash-execution. This is explicit repair/resume telemetry only; it is not UEFI Boot Manager handoff, installer boot, Windows boot, GUI, network, TPM, Secure Boot, or a usable Windows fast path.")"
@@ -2886,6 +2978,14 @@ main() {
     line="$(status_line "PASS" "Windows HVF boot-disk layout boundary" "bridgevm hvf windows-boot-disk-layout-probe and hvf-runner --windows-boot-disk-layout-probe create sparse raw Windows Arm target disks, reopen them, and verify protective MBR, primary/backup GPT, ESP, MSR, and Windows Basic Data partitions without QEMU, Apple VZ, GUI launch, or HVF entry.")"
   else
     line="$(status_line "BLOCKED" "Windows HVF boot-disk layout boundary" "$hvf_boot_disk_layout_detail")"
+  fi
+  output+="$line"$'\n'
+
+  local hvf_xhci_hid_boot_key_detail
+  if hvf_xhci_hid_boot_key_detail="$(windows_hvf_xhci_hid_boot_key_metadata)"; then
+    line="$(status_line "PASS" "Windows HVF xHCI HID boot-key report boundary" "bridgevm hvf windows-xhci-hid-boot-key-probe and hvf-runner --windows-xhci-hid-boot-key-probe prove queued USB boot-keyboard Space [00 00 2c 00 00 00 00 00] plus release [00 00 00 00 00 00 00 00] over BridgeVM-owned xHCI DCI3, without QEMU, Apple VZ, GUI launch, HVF entry, UEFI Boot Manager, installer boot, or Windows boot claims; live evidence is the serial-marker frontier / CD prompt absent or unchanged frontier; Windows no-QEMU fast path remains blocked/research until evidence proves Windows boots from an installed target. Windows boot: not claimed.")"
+  else
+    line="$(status_line "BLOCKED" "Windows HVF xHCI HID boot-key report boundary" "$hvf_xhci_hid_boot_key_detail")"
   fi
   output+="$line"$'\n'
 
@@ -3100,7 +3200,7 @@ main() {
   line="$(status_line "BLOCKED" "Parallels-style true Coherence" "no compositor-grade live per-window stream, dock/menu integration, or Windows DirectX/Metal translation claim yet.")"
   output+="$line"$'\n'
 
-  line="$(status_line "BLOCKED" "Public Parallels replacement" "local app/readiness lanes exist, but public notarized release plus true Coherence/performance gates are not complete.")"
+  line="$(status_line "BLOCKED" "Public release readiness boundary" "local app/readiness lanes exist, but public notarized release plus true Coherence/performance gates are not complete.")"
   output+="$line"$'\n'
 
   if has_forbidden_percent "$output"; then

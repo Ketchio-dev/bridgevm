@@ -11,11 +11,11 @@ use bridgevm_hvf::{
     probe_windows_11_arm_uefi_firmware_device_discovery,
     probe_windows_11_arm_uefi_firmware_handoff, probe_windows_11_arm_uefi_firmware_run_loop,
     probe_windows_11_arm_uefi_pflash_hvf_map, probe_windows_11_arm_uefi_pflash_map,
-    probe_windows_11_arm_uefi_reset_vector_entry, query_hvf_host_capabilities,
-    HvfMachinePlanOptions, WindowsArmBootDiskLayoutOptions, WindowsArmPlatformDescriptionOptions,
-    WindowsArmUefiFirmwareHandoffOptions, WindowsArmUefiFirmwareRunLoopExecutionOptions,
-    WindowsArmUefiFirmwareRunLoopOptions, WindowsArmUefiPflashMapOptions,
-    WINDOWS_ARM_BOOT_DISK_DEFAULT_SIZE_GIB,
+    probe_windows_11_arm_uefi_reset_vector_entry, probe_windows_11_arm_xhci_hid_boot_key_report,
+    query_hvf_host_capabilities, HvfMachinePlanOptions, WindowsArmBootDiskLayoutOptions,
+    WindowsArmPlatformDescriptionOptions, WindowsArmUefiFirmwareHandoffOptions,
+    WindowsArmUefiFirmwareRunLoopExecutionOptions, WindowsArmUefiFirmwareRunLoopOptions,
+    WindowsArmUefiPflashMapOptions, WINDOWS_ARM_BOOT_DISK_DEFAULT_SIZE_GIB,
 };
 use clap::Parser;
 use std::{env, path::PathBuf};
@@ -46,6 +46,8 @@ struct Args {
     windows_firmware_device_discovery_probe: bool,
     #[arg(long)]
     windows_platform_description_probe: bool,
+    #[arg(long)]
+    windows_xhci_hid_boot_key_probe: bool,
     #[arg(long)]
     host_capabilities: bool,
     #[arg(long)]
@@ -393,6 +395,12 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    if args.windows_xhci_hid_boot_key_probe {
+        let probe = probe_windows_11_arm_xhci_hid_boot_key_report();
+        print!("{}", probe.render_text());
+        return Ok(());
+    }
+
     if args.host_capabilities {
         let capabilities = query_hvf_host_capabilities();
         print!("{}", capabilities.render_text());
@@ -587,6 +595,7 @@ fn main() -> Result<()> {
         "Run: hvf-runner --windows-firmware-device-discovery-probe --firmware <AAVMF_CODE.fd> --vars-template <AAVMF_VARS.fd> --vars <vars.fd> [--create-vars] [--allow-loop] [--max-exits 16] [--guest-ram-mib 64] [--watchdog-ms 100] [--map-low-pflash-alias] [--repair-low-vector-diagnostic-page] [--continue-after-low-vector-repair] [--wire-interrupt-timer] [--iso <Win11_Arm64.iso>] [--writable-disk <windows.raw>]"
     );
     println!("Run: hvf-runner --windows-platform-description-probe [--memory-gib 6] [--vcpus 4]");
+    println!("Run: hvf-runner --windows-xhci-hid-boot-key-probe");
     println!("Run: hvf-runner --host-capabilities");
     println!("Run: hvf-runner --vm-probe [--allow-create]");
     println!("Run: hvf-runner --vcpu-probe [--allow-create]");
@@ -720,5 +729,13 @@ mod tests {
             args.writable_disk,
             Some(PathBuf::from("/tmp/windows-arm.raw"))
         );
+    }
+
+    #[test]
+    fn parses_windows_xhci_hid_boot_key_probe_flag() {
+        let args =
+            Args::try_parse_from(["hvf-runner", "--windows-xhci-hid-boot-key-probe"]).unwrap();
+
+        assert!(args.windows_xhci_hid_boot_key_probe);
     }
 }

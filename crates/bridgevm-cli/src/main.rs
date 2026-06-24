@@ -41,11 +41,11 @@ use bridgevm_hvf::{
     probe_windows_11_arm_uefi_firmware_device_discovery,
     probe_windows_11_arm_uefi_firmware_handoff, probe_windows_11_arm_uefi_firmware_run_loop,
     probe_windows_11_arm_uefi_pflash_hvf_map, probe_windows_11_arm_uefi_pflash_map,
-    probe_windows_11_arm_uefi_reset_vector_entry, query_hvf_host_capabilities,
-    HvfMachinePlanOptions, WindowsArmBootDiskLayoutOptions, WindowsArmPlatformDescriptionOptions,
-    WindowsArmUefiFirmwareHandoffOptions, WindowsArmUefiFirmwareRunLoopExecutionOptions,
-    WindowsArmUefiFirmwareRunLoopOptions, WindowsArmUefiPflashMapOptions,
-    WINDOWS_ARM_BOOT_DISK_DEFAULT_SIZE_GIB,
+    probe_windows_11_arm_uefi_reset_vector_entry, probe_windows_11_arm_xhci_hid_boot_key_report,
+    query_hvf_host_capabilities, HvfMachinePlanOptions, WindowsArmBootDiskLayoutOptions,
+    WindowsArmPlatformDescriptionOptions, WindowsArmUefiFirmwareHandoffOptions,
+    WindowsArmUefiFirmwareRunLoopExecutionOptions, WindowsArmUefiFirmwareRunLoopOptions,
+    WindowsArmUefiPflashMapOptions, WINDOWS_ARM_BOOT_DISK_DEFAULT_SIZE_GIB,
 };
 use bridgevm_qemu::{
     build_compatibility_command, cont as qmp_cont, is_qmp_status_unavailable, qmp_socket_path,
@@ -154,6 +154,8 @@ enum HvfCommand {
     WindowsFirmwareDeviceDiscoveryProbe(WindowsHvfFirmwareRunLoopProbeArgs),
     /// Build the metadata-only Windows 11 Arm FDT platform description.
     WindowsPlatformDescriptionProbe(WindowsHvfPlatformDescriptionProbeArgs),
+    /// Probe metadata-only xHCI HID boot-key report generation for Windows 11 Arm.
+    WindowsXhciHidBootKeyProbe,
     /// Query Apple Hypervisor.framework host capability metadata without
     /// creating or launching a VM.
     HostCapabilities,
@@ -4367,6 +4369,11 @@ fn hvf(command: HvfCommand) -> Result<()> {
             print!("{}", probe.render_text());
             Ok(())
         }
+        HvfCommand::WindowsXhciHidBootKeyProbe => {
+            let probe = probe_windows_11_arm_xhci_hid_boot_key_report();
+            print!("{}", probe.render_text());
+            Ok(())
+        }
         HvfCommand::HostCapabilities => {
             let capabilities = query_hvf_host_capabilities();
             print!("{}", capabilities.render_text());
@@ -6117,6 +6124,16 @@ mod tests {
 
         assert_eq!(args.memory_gib, 8);
         assert_eq!(args.vcpus, 6);
+    }
+
+    #[test]
+    fn hvf_windows_xhci_hid_boot_key_probe_cli_parses() {
+        let cli =
+            Cli::try_parse_from(["bridgevm", "hvf", "windows-xhci-hid-boot-key-probe"]).unwrap();
+
+        let Command::Hvf(HvfCommand::WindowsXhciHidBootKeyProbe) = cli.command else {
+            panic!("expected hvf windows-xhci-hid-boot-key-probe command");
+        };
     }
 
     #[test]
