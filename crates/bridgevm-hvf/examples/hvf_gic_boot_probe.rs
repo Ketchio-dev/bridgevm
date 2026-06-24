@@ -19,6 +19,11 @@
 //!   BRIDGEVM_INSTALLER_ISO_TRANSPORT=mmio ...          # legacy virtio-mmio slot 31 fallback
 //!   BRIDGEVM_UART_RX=' ' ...                          # preloaded serial input bytes
 //!   BRIDGEVM_UART_RX_ON_CD_PROMPT=' ' ...             # inject after cdboot prompt is printed
+//!   BRIDGEVM_XHCI_BOOT_KEY_ON_CD_PROMPT=' ' ...        # queue xHCI HID Space after cdboot prompt
+//!   BRIDGEVM_XHCI_BOOT_KEY_ON_SERIAL_MARKER=' ' BRIDGEVM_XHCI_BOOT_KEY_SERIAL_MARKER='BdsDxe: starting Boot0001' ... # debug frontier xHCI Space trigger; CD prompt remains separate
+//!   BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS='tab,enter,space' BRIDGEVM_XHCI_SETUP_INPUT_SERIAL_MARKER='BdsDxe: starting Boot0001' ... # queue typed setup input actions; no text/modifiers/repeats
+//!   BRIDGEVM_RAMFB_SAMPLE_MS=1000,5000,15000 ...       # symmetric elapsed RAMFB checkpoints for no-input/setup-input probes
+//!   BRIDGEVM_RAMFB_SAMPLE_UNTIL_COMPLETE=1 ...         # proof mode: observe UEFI shell but continue until RAMFB samples complete
 //!   BRIDGEVM_UART_RX_ON_SERIAL_MARKER=' ' BRIDGEVM_UART_RX_SERIAL_MARKER='BdsDxe: starting Boot0001' ...
 //!
 //! Optional QEMU-style Linux direct boot:
@@ -38,6 +43,10 @@ use std::collections::BTreeMap;
 use std::os::raw::c_void;
 use std::path::Path;
 use std::ptr::null_mut;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 use bridgevm_hvf::dtb::{build_virt_fdt, VirtFdtConfig};
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
@@ -71,9 +80,15 @@ mod pe_trace;
 use pe_trace::{print_frame_chain, print_pe_owner, print_translated_pe_owner, translated_ipa};
 #[path = "hvf_gic_boot_probe/ramfb_dump.rs"]
 mod ramfb_dump;
+#[path = "hvf_gic_boot_probe/ramfb_sample_loop.rs"]
+mod ramfb_sample_loop;
+use ramfb_sample_loop::{RamfbSampleLoop, RamfbSampleShellAction};
 #[path = "hvf_gic_boot_probe/serial_input.rs"]
 mod serial_input;
 use serial_input::SerialTriggeredUartInput;
+#[path = "hvf_gic_boot_probe/xhci_hid_input.rs"]
+mod xhci_hid_input;
+use xhci_hid_input::{print_setup_input_rejection, XhciHidBootKeyTrigger, XhciSetupInputTrigger};
 #[path = "hvf_gic_boot_probe/xhci_trace.rs"]
 mod xhci_trace;
 use xhci_trace::XhciBringupTrace;
@@ -1318,9 +1333,12 @@ fn main() {
             println!("watchpoint armed on {addr:#x} (store)");
         }
 
+        let watchdog_fired = Arc::new(AtomicBool::new(false));
+        let watchdog_fired_for_thread = Arc::clone(&watchdog_fired);
         let vcpu_for_wd = vcpu;
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(watchdog_ms));
+            watchdog_fired_for_thread.store(true, Ordering::SeqCst);
             let v = vcpu_for_wd;
             hv_vcpus_exit(&v, 1);
         });
@@ -1354,6 +1372,30 @@ fn main() {
             "BRIDGEVM_UART_RX_SERIAL_MARKER",
         ) {
             uart_triggers.push(trigger);
+        }
+        let mut xhci_hid_boot_key_triggers = Vec::new();
+        if let Some(trigger) =
+            XhciHidBootKeyTrigger::from_env("cd-prompt", "BRIDGEVM_XHCI_BOOT_KEY_ON_CD_PROMPT")
+        {
+            xhci_hid_boot_key_triggers.push(trigger);
+        }
+        if let Some(trigger) = XhciHidBootKeyTrigger::from_env_with_marker_env(
+            "serial-marker",
+            "BRIDGEVM_XHCI_BOOT_KEY_ON_SERIAL_MARKER",
+            "BRIDGEVM_XHCI_BOOT_KEY_SERIAL_MARKER",
+        ) {
+            xhci_hid_boot_key_triggers.push(trigger);
+        }
+        let mut xhci_setup_input_triggers = Vec::new();
+        if let Some(trigger_result) = XhciSetupInputTrigger::from_env(
+            "setup-input",
+            "BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS",
+            "BRIDGEVM_XHCI_SETUP_INPUT_SERIAL_MARKER",
+        ) {
+            match trigger_result {
+                Ok(trigger) => xhci_setup_input_triggers.push(trigger),
+                Err(error) => print_setup_input_rejection("setup-input", &error),
+            }
         }
         platform.load_flash_vars(&vars_data);
         if let Some(nvme) = media.nvme_disk.as_ref() {
@@ -1457,6 +1499,7 @@ fn main() {
         let mut last_watch_lr = 0u64;
         let mut fwcfg_trace_count = 0u32;
         let mut drain_stats = RunLoopDrainStats::new(trace_run_loop);
+        let mut ramfb_sample_loop = RamfbSampleLoop::from_env();
         let drain_trace = DrainTrace {
             msix: trace_msix,
             spi: trace_spi,
@@ -1486,12 +1529,14 @@ fn main() {
             exits += 1;
             let reason = (*exit).reason;
             stop_reason_code = Some(reason);
-            if reason == EXIT_CANCELED {
+            let sample_tick_canceled =
+                ramfb_sample_loop.canceled_by_sample_tick(reason, &watchdog_fired);
+            if reason == EXIT_CANCELED && !sample_tick_canceled {
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                 stop_reason = "watchdog (CANCELED)".into();
                 break;
             }
-            if reason == EXIT_VTIMER {
+            if !sample_tick_canceled && reason == EXIT_VTIMER {
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                 vtimer_exits += 1;
                 hv_vcpu_set_vtimer_mask(vcpu, true);
@@ -1501,215 +1546,228 @@ fn main() {
                 }
                 continue;
             }
-            if reason != EXIT_EXCEPTION {
+            if !sample_tick_canceled && reason != EXIT_EXCEPTION {
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                 stop_reason = format!("exit reason {reason}");
                 break;
             }
-            let esr = (*exit).exception.syndrome;
-            let ec = (esr >> 26) & 0x3f;
-            hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
-            match ec {
-                EC_DATA_ABORT => {
-                    let ipa = (*exit).exception.physical_address;
-                    let size = 1u8 << ((esr >> 22) & 0x3);
-                    let srt = ((esr >> 16) & 0x1f) as u32;
-                    let is_write = (esr >> 6) & 1 == 1;
-                    let op = if is_write {
-                        let mut v = 0u64;
-                        hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v);
-                        MmioOp::Write { size, value: v }
-                    } else {
-                        MmioOp::Read { size }
-                    };
-                    let trace_this_fwcfg =
-                        trace_fwcfg && machine::FW_CFG.contains(ipa) && fwcfg_trace_count < 512;
-                    if trace_this_fwcfg {
-                        fwcfg_trace_count += 1;
-                        println!(
-                            "FWCFG[{fwcfg_trace_count:03}] pc={last_pc:#x} off={:#x} op={op:?}",
-                            ipa - machine::FW_CFG.base
+            if !sample_tick_canceled {
+                let esr = (*exit).exception.syndrome;
+                let ec = (esr >> 26) & 0x3f;
+                hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
+                match ec {
+                    EC_DATA_ABORT => {
+                        let ipa = (*exit).exception.physical_address;
+                        let size = 1u8 << ((esr >> 22) & 0x3);
+                        let srt = ((esr >> 16) & 0x1f) as u32;
+                        let is_write = (esr >> 6) & 1 == 1;
+                        let op = if is_write {
+                            let mut v = 0u64;
+                            hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v);
+                            MmioOp::Write { size, value: v }
+                        } else {
+                            MmioOp::Read { size }
+                        };
+                        let trace_this_fwcfg =
+                            trace_fwcfg && machine::FW_CFG.contains(ipa) && fwcfg_trace_count < 512;
+                        if trace_this_fwcfg {
+                            fwcfg_trace_count += 1;
+                            println!(
+                                "FWCFG[{fwcfg_trace_count:03}] pc={last_pc:#x} off={:#x} op={op:?}",
+                                ipa - machine::FW_CFG.base
+                            );
+                        }
+                        let device = machine::device_at(ipa).unwrap_or("<unmapped>");
+                        let pcie_target = match device {
+                            "pcie-mmio-32" => {
+                                platform.pcie_mmio_target(ipa).map(PcieTraceTarget::Mmio)
+                            }
+                            "pcie-pio" => platform.pcie_pio_target(ipa).map(PcieTraceTarget::Pio),
+                            _ => None,
+                        };
+                        let xhci_target = match pcie_target {
+                            Some(PcieTraceTarget::Mmio(target)) => Some(target),
+                            Some(PcieTraceTarget::Pio(_)) | None => None,
+                        };
+                        recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
+                        let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
+                        recent_pcie_ecam.record_after(
+                            &mut platform,
+                            &mut guest_ram,
+                            last_pc,
+                            ipa,
+                            &op,
+                            &outcome,
                         );
-                    }
-                    let device = machine::device_at(ipa).unwrap_or("<unmapped>");
-                    let pcie_target = match device {
-                        "pcie-mmio-32" => platform.pcie_mmio_target(ipa).map(PcieTraceTarget::Mmio),
-                        "pcie-pio" => platform.pcie_pio_target(ipa).map(PcieTraceTarget::Pio),
-                        _ => None,
-                    };
-                    let xhci_target = match pcie_target {
-                        Some(PcieTraceTarget::Mmio(target)) => Some(target),
-                        Some(PcieTraceTarget::Pio(_)) | None => None,
-                    };
-                    recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
-                    let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
-                    recent_pcie_ecam.record_after(
-                        &mut platform,
-                        &mut guest_ram,
-                        last_pc,
-                        ipa,
-                        &op,
-                        &outcome,
-                    );
-                    let pcie_context = targetless_xhci_trace_context(
-                        &mut platform,
-                        &mut guest_ram,
-                        device,
-                        ipa,
-                        pcie_target,
-                        &outcome,
-                    );
-                    recent_pcie_mmio.record_with_context(
-                        device,
-                        last_pc,
-                        ipa,
-                        pcie_target,
-                        &op,
-                        &outcome,
-                        pcie_context,
-                    );
-                    recent_pcie_pio.record(device, last_pc, ipa, pcie_target, &op, &outcome);
-                    record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
-                    if trace_this_fwcfg {
-                        println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
-                    }
-                    match outcome {
-                        MmioOutcome::ReadValue(v) if !is_write => {
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
+                        let pcie_context = targetless_xhci_trace_context(
+                            &mut platform,
+                            &mut guest_ram,
+                            device,
+                            ipa,
+                            pcie_target,
+                            &outcome,
+                        );
+                        recent_pcie_mmio.record_with_context(
+                            device,
+                            last_pc,
+                            ipa,
+                            pcie_target,
+                            &op,
+                            &outcome,
+                            pcie_context,
+                        );
+                        recent_pcie_pio.record(device, last_pc, ipa, pcie_target, &op, &outcome);
+                        record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
+                        if trace_this_fwcfg {
+                            println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
                         }
-                        MmioOutcome::ReadValue(_) | MmioOutcome::WriteAck => {}
-                        MmioOutcome::KnownUnimplemented(name) => {
-                            *unimpl.entry(name).or_insert(0) += 1;
-                            if name == "gic-redist" {
-                                redist_lo = redist_lo.min(ipa);
-                                redist_hi = redist_hi.max(ipa);
+                        match outcome {
+                            MmioOutcome::ReadValue(v) if !is_write => {
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
                             }
-                            if !is_write {
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
+                            MmioOutcome::ReadValue(_) | MmioOutcome::WriteAck => {}
+                            MmioOutcome::KnownUnimplemented(name) => {
+                                *unimpl.entry(name).or_insert(0) += 1;
+                                if name == "gic-redist" {
+                                    redist_lo = redist_lo.min(ipa);
+                                    redist_hi = redist_hi.max(ipa);
+                                }
+                                if !is_write {
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
+                                }
+                            }
+                            MmioOutcome::Unmapped => {
+                                *unimpl.entry("<unmapped>").or_insert(0) += 1;
+                                if !is_write {
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
+                                }
                             }
                         }
-                        MmioOutcome::Unmapped => {
-                            *unimpl.entry("<unmapped>").or_insert(0) += 1;
-                            if !is_write {
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
-                            }
-                        }
-                    }
-                    drain_stats.drain_pending(
-                        &mut platform,
-                        drain_trace,
-                        DrainContext {
-                            location: DrainLocation::DataAbort,
-                            exit: exits,
-                            pc: last_pc,
-                        },
-                    );
-                    hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
-                }
-                EC_HVC => {
-                    // SMCCC: PSCI (DTB method = "hvc") + ARM TRNG (RngDxe uses it).
-                    let mut func = 0u64;
-                    hv_vcpu_get_reg(vcpu, HV_REG_X0, &mut func);
-                    match func & 0xffff_ffff {
-                        0x8000_0000 => {
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0001);
-                        } // SMCCC_VERSION 1.1
-                        0x8400_0000 => {
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0001_0001);
-                        } // PSCI_VERSION 1.1
-                        0x8400_000A => {
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
-                        } // PSCI_FEATURES
-                        0x8400_0050 => {
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0000);
-                        } // TRNG_VERSION 1.0
-                        0x8400_0051 => {
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
-                        } // TRNG_FEATURES: present
-                        0x8400_0052 => {
-                            // TRNG_GET_UUID
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0b0a_0908);
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, 0x0f0e_0d0c);
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, 0x0302_0100);
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, 0x0706_0504);
-                        }
-                        0x8400_0053 | 0xc400_0053 => {
-                            // TRNG_RND_32 / _64
-                            let r = exits
-                                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-                                .wrapping_add(0xD1B5_4A32);
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0, 0); // SUCCESS
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, r);
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, r.rotate_left(17) ^ 0xA5A5_5A5A);
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, r.rotate_left(41) ^ 0x1234_5678);
-                        }
-                        0x8400_0008 | 0x8400_0009 => {
-                            stop_reason =
-                                format!("PSCI {:#x} (system off/reset)", func & 0xffff_ffff);
-                            break;
-                        }
-                        _ => {
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0, (-1i64) as u64);
-                        } // NOT_SUPPORTED
-                    }
-                    // HVF reports the HVC exit PC already PAST the `hvc` instruction
-                    // (unlike a data abort, where the PC is AT the faulting insn). So
-                    // do NOT advance again: +4 would skip the next instruction — e.g.
-                    // ArmCallHvc's `ldr x9, [sp], #0x10`, which was the RngDxe crash.
-                    hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc);
-                    psci_calls += 1;
-                }
-                EC_SYS_REG_TRAP => {
-                    let trap = SysRegTrap::decode(esr);
-                    if emulate_debug_os_lock_sysreg(vcpu, trap) {
+                        drain_stats.drain_pending(
+                            &mut platform,
+                            drain_trace,
+                            DrainContext {
+                                location: DrainLocation::DataAbort,
+                                exit: exits,
+                                pc: last_pc,
+                            },
+                        );
                         hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
-                    } else {
-                        stop_reason = format!(
+                    }
+                    EC_HVC => {
+                        // SMCCC: PSCI (DTB method = "hvc") + ARM TRNG (RngDxe uses it).
+                        let mut func = 0u64;
+                        hv_vcpu_get_reg(vcpu, HV_REG_X0, &mut func);
+                        match func & 0xffff_ffff {
+                            0x8000_0000 => {
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0001);
+                            } // SMCCC_VERSION 1.1
+                            0x8400_0000 => {
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0001_0001);
+                            } // PSCI_VERSION 1.1
+                            0x8400_000A => {
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
+                            } // PSCI_FEATURES
+                            0x8400_0050 => {
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0000);
+                            } // TRNG_VERSION 1.0
+                            0x8400_0051 => {
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
+                            } // TRNG_FEATURES: present
+                            0x8400_0052 => {
+                                // TRNG_GET_UUID
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0b0a_0908);
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, 0x0f0e_0d0c);
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, 0x0302_0100);
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, 0x0706_0504);
+                            }
+                            0x8400_0053 | 0xc400_0053 => {
+                                // TRNG_RND_32 / _64
+                                let r = exits
+                                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                    .wrapping_add(0xD1B5_4A32);
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0, 0); // SUCCESS
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, r);
+                                hv_vcpu_set_reg(
+                                    vcpu,
+                                    HV_REG_X0 + 2,
+                                    r.rotate_left(17) ^ 0xA5A5_5A5A,
+                                );
+                                hv_vcpu_set_reg(
+                                    vcpu,
+                                    HV_REG_X0 + 3,
+                                    r.rotate_left(41) ^ 0x1234_5678,
+                                );
+                            }
+                            0x8400_0008 | 0x8400_0009 => {
+                                stop_reason =
+                                    format!("PSCI {:#x} (system off/reset)", func & 0xffff_ffff);
+                                break;
+                            }
+                            _ => {
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0, (-1i64) as u64);
+                            } // NOT_SUPPORTED
+                        }
+                        // HVF reports the HVC exit PC already PAST the `hvc` instruction
+                        // (unlike a data abort, where the PC is AT the faulting insn). So
+                        // do NOT advance again: +4 would skip the next instruction — e.g.
+                        // ArmCallHvc's `ldr x9, [sp], #0x10`, which was the RngDxe crash.
+                        hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc);
+                        psci_calls += 1;
+                    }
+                    EC_SYS_REG_TRAP => {
+                        let trap = SysRegTrap::decode(esr);
+                        if emulate_debug_os_lock_sysreg(vcpu, trap) {
+                            hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
+                        } else {
+                            stop_reason = format!(
                             "unsupported system register trap {} ESR {esr:#x} @ PC {last_pc:#x}",
                             trap.describe()
                         );
+                            break;
+                        }
+                    }
+                    EC_WATCHPOINT_LOWER | EC_WATCHPOINT_SAME => {
+                        watch_hits += 1;
+                        let mut lr = 0u64;
+                        hv_vcpu_get_reg(vcpu, HV_REG_X0 + 30, &mut lr);
+                        last_watch_pc = last_pc;
+                        last_watch_lr = lr;
+                        print!("WATCH #{watch_hits}: store @ PC {last_pc:#x} LR {lr:#x}");
+                        // Single-step over the store: disable the watchpoint and arm
+                        // PSTATE.SS so the store retires and we can read the new value.
+                        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWCR0_EL1, 0);
+                        let mut md = 0u64;
+                        hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, &mut md);
+                        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, md | 1); // SS
+                        let mut cp = 0u64;
+                        hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cp);
+                        hv_vcpu_set_reg(vcpu, HV_REG_CPSR, cp | (1 << 21)); // PSTATE.SS
+                                                                            // do NOT advance PC: re-execute the store under single-step.
+                    }
+                    EC_SOFTSTEP_LOWER | EC_SOFTSTEP_SAME => {
+                        let cur = guest_ram
+                            .read_bytes(watch_target, 8)
+                            .map(|b| u64::from_le_bytes(b.try_into().unwrap()))
+                            .unwrap_or(0);
+                        println!(" -> {watch_target:#x} = {cur:#x}");
+                        // Clear single-step; re-arm the watchpoint unless we have enough.
+                        let mut md = 0u64;
+                        hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, &mut md);
+                        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, md & !1);
+                        let mut cp = 0u64;
+                        hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cp);
+                        hv_vcpu_set_reg(vcpu, HV_REG_CPSR, cp & !(1 << 21));
+                        if watch_hits < 40 {
+                            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWCR0_EL1, DBGWCR_STORE_8B);
+                        }
+                        // do NOT advance PC: the step already retired the instruction.
+                    }
+                    _ => {
+                        stop_reason =
+                            format!("exception EC {ec:#x} ESR {esr:#x} @ PC {last_pc:#x}");
                         break;
                     }
-                }
-                EC_WATCHPOINT_LOWER | EC_WATCHPOINT_SAME => {
-                    watch_hits += 1;
-                    let mut lr = 0u64;
-                    hv_vcpu_get_reg(vcpu, HV_REG_X0 + 30, &mut lr);
-                    last_watch_pc = last_pc;
-                    last_watch_lr = lr;
-                    print!("WATCH #{watch_hits}: store @ PC {last_pc:#x} LR {lr:#x}");
-                    // Single-step over the store: disable the watchpoint and arm
-                    // PSTATE.SS so the store retires and we can read the new value.
-                    hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWCR0_EL1, 0);
-                    let mut md = 0u64;
-                    hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, &mut md);
-                    hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, md | 1); // SS
-                    let mut cp = 0u64;
-                    hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cp);
-                    hv_vcpu_set_reg(vcpu, HV_REG_CPSR, cp | (1 << 21)); // PSTATE.SS
-                                                                        // do NOT advance PC: re-execute the store under single-step.
-                }
-                EC_SOFTSTEP_LOWER | EC_SOFTSTEP_SAME => {
-                    let cur = guest_ram
-                        .read_bytes(watch_target, 8)
-                        .map(|b| u64::from_le_bytes(b.try_into().unwrap()))
-                        .unwrap_or(0);
-                    println!(" -> {watch_target:#x} = {cur:#x}");
-                    // Clear single-step; re-arm the watchpoint unless we have enough.
-                    let mut md = 0u64;
-                    hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, &mut md);
-                    hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, md & !1);
-                    let mut cp = 0u64;
-                    hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cp);
-                    hv_vcpu_set_reg(vcpu, HV_REG_CPSR, cp & !(1 << 21));
-                    if watch_hits < 40 {
-                        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWCR0_EL1, DBGWCR_STORE_8B);
-                    }
-                    // do NOT advance PC: the step already retired the instruction.
-                }
-                _ => {
-                    stop_reason = format!("exception EC {ec:#x} ESR {esr:#x} @ PC {last_pc:#x}");
-                    break;
                 }
             }
             if exits >= MAX_EXITS {
@@ -1723,13 +1781,31 @@ fn main() {
             for trigger in &mut uart_triggers {
                 trigger.maybe_fire(&mut platform);
             }
+            for trigger in &mut xhci_hid_boot_key_triggers {
+                trigger.maybe_fire(&mut platform);
+            }
+            for trigger in &mut xhci_setup_input_triggers {
+                let ramfb_config = platform.ramfb_config();
+                trigger.maybe_fire_with_ramfb_checkpoints(&mut platform, |label| {
+                    ramfb_dump::print_checkpoint(label, ramfb_config, &guest_ram);
+                });
+            }
+            let ramfb_config = platform.ramfb_config();
+            ramfb_sample_loop.emit_due(vcpu, |label| {
+                ramfb_dump::print_checkpoint(label, ramfb_config, &guest_ram);
+            });
             if stop_on_linux && serial_reached_linux_early_boot(platform.uart_output()) {
                 stop_reason = "serial reached Linux early boot".into();
                 break;
             }
             if serial_reached_shell(platform.uart_output()) {
-                stop_reason = "serial reached UEFI shell".into();
-                break;
+                match ramfb_sample_loop.observe_shell(vcpu) {
+                    RamfbSampleShellAction::Continue => {}
+                    RamfbSampleShellAction::StopNow { reason } => {
+                        stop_reason = reason.into();
+                        break;
+                    }
+                }
             }
         }
 
@@ -1970,6 +2046,12 @@ fn main() {
                 trigger.fired(),
                 trigger.bytes_len()
             );
+        }
+        for trigger in &xhci_hid_boot_key_triggers {
+            trigger.print_summary(&platform);
+        }
+        for trigger in &xhci_setup_input_triggers {
+            trigger.print_summary(&platform);
         }
         if let Some(stats) = platform.pci_boot_media_stats() {
             print_block_media_stats("PCI boot-media stats", stats);
