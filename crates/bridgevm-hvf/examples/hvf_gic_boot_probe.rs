@@ -782,6 +782,7 @@ impl RunLoopDrainStats {
     fn drain_pending(
         &mut self,
         platform: &mut VirtPlatform,
+        mem: &mut dyn GuestMemoryMut,
         trace: DrainTrace,
         context: DrainContext,
     ) {
@@ -790,6 +791,7 @@ impl RunLoopDrainStats {
             DrainLocation::DataAbort => self.data_abort_attempts += 1,
         }
 
+        platform.drain_xhci_setup_input_reports(mem);
         let spi = deliver_pending_spis(platform, trace.spi);
         let msix = deliver_pending_msix(platform, trace.msix);
         self.last_drain_location = Some(context.location.as_str());
@@ -1521,6 +1523,7 @@ fn main() {
             last_pre_run_pc = drain_pc;
             drain_stats.drain_pending(
                 &mut platform,
+                &mut guest_ram,
                 drain_trace,
                 DrainContext {
                     location: DrainLocation::PreRun,
@@ -1656,6 +1659,7 @@ fn main() {
                         }
                         drain_stats.drain_pending(
                             &mut platform,
+                            &mut guest_ram,
                             drain_trace,
                             DrainContext {
                                 location: DrainLocation::DataAbort,

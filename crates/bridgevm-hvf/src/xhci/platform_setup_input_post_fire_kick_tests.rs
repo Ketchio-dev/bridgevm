@@ -1,6 +1,8 @@
 use super::platform_setup_input_support::*;
 use super::platform_test_support::*;
 use crate::fwcfg::GuestMemoryMut;
+use crate::machine;
+use crate::platform_virt::{MmioOp, MmioOutcome};
 use crate::xhci::SetupInputAction;
 
 #[test]
@@ -49,4 +51,66 @@ fn platform_setup_input_post_fire_kicks_reposted_dci3_poll_after_boot_key() {
     assert_eq!(stats.queued_reports, 4);
     assert_eq!(stats.emitted_key_reports, 2);
     assert_eq!(stats.emitted_release_reports, 1);
+}
+
+#[test]
+fn platform_post_fire_setup_input_retries_late_dci3_on_host_tick_without_doorbell() {
+    // Given: the boot key consumed the only live DCI3 polls before setup-input fires.
+    let (mut platform, mut mem) = new_platform_and_ram();
+    program_xhci_bar0(&mut platform, &mut mem);
+    configure_dci3_interrupt_in_over_bar0(&mut platform, &mut mem);
+    write_dci3_normal_trb(&mut mem, DCI3_RING, DCI3_KEY_BUFFER);
+    write_dci3_normal_trb(&mut mem, DCI3_RING + TRB_SIZE, DCI3_RELEASE_BUFFER);
+    assert!(mem.write_bytes(DCI3_KEY_BUFFER, &[0xaa; 8]));
+    assert!(mem.write_bytes(DCI3_RELEASE_BUFFER, &[0xbb; 8]));
+    assert!(platform.queue_xhci_hid_boot_key_usage(0x2c).is_ok());
+    ring_dci3_doorbell(&mut platform, &mut mem);
+    acknowledge_event_ring_dequeue(&mut platform, &mut mem, 2);
+    ring_dci3_doorbell(&mut platform, &mut mem);
+    acknowledge_event_ring_dequeue(&mut platform, &mut mem, 3);
+    assert!(mem.write_bytes(DCI3_RING, &[0; 16]));
+    assert!(mem.write_bytes(DCI3_RING + TRB_SIZE, &[0; 16]));
+
+    // When: setup-input queues reports while the immediate DCI3 drain cannot emit.
+    assert_eq!(
+        platform.queue_xhci_setup_input_actions_with_mem(&[SetupInputAction::Enter], &mut mem),
+        Ok(())
+    );
+    let queued = platform.xhci_setup_input_report_stats();
+    assert_eq!(queued.queued_reports, 4);
+    assert_eq!(queued.emitted_key_reports, 1);
+    assert_eq!(queued.emitted_release_reports, 1);
+
+    // When: the guest later posts DCI3 polls, but no DCI3 doorbell follows; only
+    // ordinary host-side loop opportunities occur.
+    write_dci3_normal_trb(&mut mem, DCI3_RING, DCI3_KEY_BUFFER + 0x40);
+    write_dci3_normal_trb(&mut mem, DCI3_RING + TRB_SIZE, DCI3_RELEASE_BUFFER + 0x40);
+    assert!(mem.write_bytes(DCI3_KEY_BUFFER + 0x40, &[0xcc; 8]));
+    assert!(mem.write_bytes(DCI3_RELEASE_BUFFER + 0x40, &[0xdd; 8]));
+    for _ in 0..2 {
+        assert!(matches!(
+            platform.on_mmio(
+                machine::UART.base + 0x18,
+                MmioOp::Read { size: 4 },
+                &mut mem
+            ),
+            MmioOutcome::ReadValue(_)
+        ));
+    }
+
+    // Then: host-side retry opportunities drain the queued key and release.
+    assert_eq!(
+        read_bytes(&mem, DCI3_KEY_BUFFER + 0x40, 8),
+        [0, 0, 0x28, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(read_bytes(&mem, DCI3_RELEASE_BUFFER + 0x40, 8), [0; 8]);
+    assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 3), DCI3_RING);
+    assert_success_dci3_transfer_event_for_trb(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 4),
+        DCI3_RING + TRB_SIZE,
+    );
+    let stats = platform.xhci_setup_input_report_stats();
+    assert_eq!(stats.emitted_key_reports, 2);
+    assert_eq!(stats.emitted_release_reports, 2);
 }

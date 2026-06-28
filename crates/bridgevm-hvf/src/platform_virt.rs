@@ -51,6 +51,7 @@ use crate::xhci::{
 
 const DEFAULT_NVME_DISK_BYTES: usize = 16 * 1024 * 1024;
 const HID_BOOT_KEYBOARD_USAGE_SPACE: u8 = 0x2c;
+const MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RamfbFwCfg {
@@ -318,14 +319,28 @@ impl VirtPlatform {
         mem: &mut dyn GuestMemoryMut,
     ) -> Result<(), XhciSetupInputQueueError> {
         self.queue_xhci_setup_input_actions(actions)?;
-        for _ in 0..actions.len().saturating_mul(2) {
+        self.drain_xhci_setup_input_reports(mem);
+        Ok(())
+    }
+
+    pub fn drain_xhci_setup_input_reports(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
+        let mut posted_completion = false;
+        let stats = self.xhci.setup_input_report_stats();
+        let emitted_reports = stats
+            .emitted_key_reports
+            .saturating_add(stats.emitted_release_reports);
+        let pending_reports = stats.queued_reports.saturating_sub(emitted_reports);
+        for _ in 0..pending_reports.min(MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS as u64) {
             if !self.xhci.process_queued_dci3_input(mem) {
                 break;
             }
+            posted_completion = true;
             self.queue_xhci_completion_msix();
         }
-        self.flush_xhci_pending_msix();
-        Ok(())
+        if posted_completion {
+            self.flush_xhci_pending_msix();
+        }
+        posted_completion
     }
 
     pub fn xhci_hid_boot_key_report_stats(&self) -> XhciHidBootKeyReportStats {
@@ -484,7 +499,14 @@ impl VirtPlatform {
         let Some(device) = machine::device_at(gpa) else {
             return MmioOutcome::Unmapped;
         };
-        match device {
+        let retry_setup_input_after_mmio = match device {
+            "pcie-mmio-32" | "pcie-mmio-64" => !matches!(
+                self.pcie.mmio_target(gpa),
+                Some(target) if target.bdf == XHCI_BDF && target.bar_index == 0
+            ),
+            _ => true,
+        };
+        let outcome = match device {
             "fw-cfg" => self.fw_cfg_access(gpa - machine::FW_CFG.base, op, mem),
             "uart" => self.uart_access(gpa - machine::UART.base, op),
             "rtc" => self.rtc_access(gpa - machine::RTC.base, op),
@@ -497,7 +519,11 @@ impl VirtPlatform {
             // Modelled in the machine map but no device behaviour yet — surfaced
             // precisely so bring-up traces show the next thing to implement.
             other => MmioOutcome::KnownUnimplemented(other),
+        };
+        if retry_setup_input_after_mmio {
+            self.drain_xhci_setup_input_reports(mem);
         }
+        outcome
     }
 
     /// Empty virtio-mmio transport slot. Advertise a valid legacy register block with
