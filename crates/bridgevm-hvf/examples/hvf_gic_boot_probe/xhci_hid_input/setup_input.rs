@@ -4,6 +4,8 @@ mod actions;
 mod delay;
 #[path = "setup_input/error.rs"]
 mod error;
+#[path = "setup_input/host_wake.rs"]
+mod host_wake;
 #[path = "setup_input/trigger.rs"]
 mod trigger;
 
@@ -19,4 +21,5 @@ const _: () = {
 };
 
 pub(crate) use error::{print_setup_input_rejection, XhciSetupInputEnvError};
+pub(crate) use host_wake::SetupInputHostWake;
 pub(crate) use trigger::XhciSetupInputTrigger;

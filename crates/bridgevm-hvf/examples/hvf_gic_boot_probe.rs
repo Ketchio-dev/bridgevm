@@ -93,7 +93,9 @@ mod serial_input;
 use serial_input::SerialTriggeredUartInput;
 #[path = "hvf_gic_boot_probe/xhci_hid_input.rs"]
 mod xhci_hid_input;
-use xhci_hid_input::{print_setup_input_rejection, XhciHidBootKeyTrigger, XhciSetupInputTrigger};
+use xhci_hid_input::{
+    print_setup_input_rejection, SetupInputHostWake, XhciHidBootKeyTrigger, XhciSetupInputTrigger,
+};
 #[path = "hvf_gic_boot_probe/xhci_trace.rs"]
 mod xhci_trace;
 use xhci_trace::XhciBringupTrace;
@@ -1505,6 +1507,7 @@ fn main() {
         let mut fwcfg_trace_count = 0u32;
         let mut drain_stats = RunLoopDrainStats::new(trace_run_loop);
         let mut ramfb_sample_loop = RamfbSampleLoop::from_env();
+        let mut setup_input_host_wake = SetupInputHostWake::new();
         let drain_trace = DrainTrace {
             msix: trace_msix,
             spi: trace_spi,
@@ -1536,12 +1539,15 @@ fn main() {
             stop_reason_code = Some(reason);
             let sample_tick_canceled =
                 ramfb_sample_loop.canceled_by_sample_tick(reason, &watchdog_fired);
-            if reason == EXIT_CANCELED && !sample_tick_canceled {
+            let setup_input_wake_canceled =
+                setup_input_host_wake.canceled_by_host_wake(reason, &watchdog_fired);
+            let automation_tick_canceled = sample_tick_canceled || setup_input_wake_canceled;
+            if reason == EXIT_CANCELED && !automation_tick_canceled {
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                 stop_reason = "watchdog (CANCELED)".into();
                 break;
             }
-            if !sample_tick_canceled && reason == EXIT_VTIMER {
+            if !automation_tick_canceled && reason == EXIT_VTIMER {
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                 vtimer_exits += 1;
                 hv_vcpu_set_vtimer_mask(vcpu, true);
@@ -1551,12 +1557,12 @@ fn main() {
                 }
                 continue;
             }
-            if !sample_tick_canceled && reason != EXIT_EXCEPTION {
+            if !automation_tick_canceled && reason != EXIT_EXCEPTION {
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                 stop_reason = format!("exit reason {reason}");
                 break;
             }
-            if !sample_tick_canceled {
+            if !automation_tick_canceled {
                 let esr = (*exit).exception.syndrome;
                 let ec = (esr >> 26) & 0x3f;
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
@@ -1791,9 +1797,18 @@ fn main() {
             }
             for trigger in &mut xhci_setup_input_triggers {
                 let ramfb_config = platform.ramfb_config();
-                trigger.maybe_fire_with_ramfb_checkpoints(&mut platform, |label| {
+                let now = std::time::Instant::now();
+                trigger.maybe_fire_with_ramfb_checkpoints_at(&mut platform, now, |label| {
                     ramfb_dump::print_checkpoint(label, ramfb_config, &guest_ram);
                 });
+                if let Some(deadline) = trigger.pending_host_wake_deadline_at(&platform, now) {
+                    let v = vcpu;
+                    if setup_input_host_wake.arm(deadline, move || {
+                        hv_vcpus_exit(&v, 1);
+                    }) {
+                        println!("xHCI setup-input host wake armed for delayed trigger");
+                    }
+                }
             }
             let ramfb_config = platform.ramfb_config();
             ramfb_sample_loop.emit_due(vcpu, |label| {

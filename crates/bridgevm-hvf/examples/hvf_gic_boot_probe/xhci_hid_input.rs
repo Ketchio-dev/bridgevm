@@ -33,4 +33,6 @@ mod setup_input_ramfb_tests;
 mod test_support;
 
 pub(crate) use boot_key::XhciHidBootKeyTrigger;
-pub(crate) use setup_input::{print_setup_input_rejection, XhciSetupInputTrigger};
+pub(crate) use setup_input::{
+    print_setup_input_rejection, SetupInputHostWake, XhciSetupInputTrigger,
+};

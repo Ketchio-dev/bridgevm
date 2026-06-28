@@ -90,6 +90,7 @@ impl XhciSetupInputTrigger {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn maybe_fire_with_ramfb_checkpoints<F>(
         &mut self,
         platform: &mut VirtPlatform,
@@ -105,20 +106,36 @@ impl XhciSetupInputTrigger {
         platform: &mut VirtPlatform,
         now: Instant,
         mut emit_checkpoint: F,
-    ) where
+    ) -> bool
+    where
         F: FnMut(&str),
     {
         let can_checkpoint = self.ready_for_ramfb_checkpoints_at(platform, now);
         if can_checkpoint {
             emit_checkpoint("setup-input-before");
         }
-        if self.maybe_fire_at(platform, now) {
+        let fired = self.maybe_fire_at(platform, now);
+        if fired {
             self.fired_at = Some(now);
             if can_checkpoint {
                 emit_checkpoint("setup-input-after");
             }
         }
         self.emit_due_ramfb_delay_checkpoints(now, &mut emit_checkpoint);
+        fired
+    }
+
+    pub(crate) fn pending_host_wake_deadline_at(
+        &mut self,
+        platform: &VirtPlatform,
+        now: Instant,
+    ) -> Option<Instant> {
+        if self.fired || !contains_bytes(platform.uart_output(), self.marker.as_bytes()) {
+            return None;
+        }
+        let marker_seen_at = *self.marker_seen_at.get_or_insert(now);
+        let deadline = marker_seen_at.checked_add(self.fire_delay)?;
+        (deadline > now).then_some(deadline)
     }
 
     pub(crate) fn print_summary(&self, platform: &VirtPlatform) {
