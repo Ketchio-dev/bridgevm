@@ -1,38 +1,21 @@
 use crate::fwcfg::GuestMemoryMut;
 
 use super::{
+    interrupt_trb::{
+        read_transfer_trb, transfer_event_control, trb_transfer_length, trb_type,
+        COMPLETION_CODE_SHIFT, COMPLETION_CODE_SUCCESS, LINK_TRB_POINTER_MASK, TRB_CYCLE,
+        TRB_LINK_TOGGLE_CYCLE, TRB_SIZE_BYTES, TRB_TYPE_LINK, TRB_TYPE_NORMAL,
+    },
     setup_input_report::SetupInputReport,
     setup_input_report::{HID_BOOT_KEYBOARD_NO_KEY_REPORT, HID_BOOT_KEYBOARD_REPORT_LEN},
     XhciController,
 };
 
-const TRB_SIZE: usize = 16;
-const TRB_SIZE_BYTES: u64 = 16;
-const TRB_CYCLE: u32 = 1;
-const TRB_LINK_TOGGLE_CYCLE: u32 = 1 << 1;
-const TRB_TYPE_SHIFT: u32 = 10;
-const TRB_TYPE_MASK: u32 = 0x3f;
-const TRB_TYPE_LINK: u32 = 6;
-const TRB_TYPE_NORMAL: u32 = 1;
-const TRB_TYPE_TRANSFER_EVENT: u32 = 32;
-const TRB_TRANSFER_LENGTH_MASK: u32 = 0x1f_ffff;
-const LINK_TRB_POINTER_MASK: u64 = !0xf;
-const COMPLETION_CODE_SUCCESS: u32 = 1;
-const COMPLETION_CODE_SHIFT: u32 = 24;
 const SLOT_ID: u32 = 1;
 const ENDPOINT_ID_DCI3: u32 = 3;
-const EVENT_ENDPOINT_ID_SHIFT: u32 = 16;
-const EVENT_SLOT_ID_SHIFT: u32 = 24;
 const MAX_LINK_TRBS_PER_DOORBELL: usize = 8;
 const MIN_REUSABLE_DCI3_RING_TRBS: u64 = 4;
 const MIN_DELAYED_REUSABLE_DCI3_RING_TRBS: u64 = 2;
-
-struct InterruptTransferTrb {
-    gpa: u64,
-    parameter: u64,
-    status: u32,
-    control: u32,
-}
 
 #[derive(Clone, Copy)]
 enum Dci3RearmPolicy {
@@ -99,9 +82,15 @@ impl XhciController {
             }
             match trb_type(interrupt_transfer.control) {
                 TRB_TYPE_LINK => {
-                    self.slot1_dci3_dequeue = interrupt_transfer.parameter & LINK_TRB_POINTER_MASK;
+                    let next_dequeue = interrupt_transfer.parameter & LINK_TRB_POINTER_MASK;
+                    let wraps_to_ring_base =
+                        next_dequeue == self.slot1_dci3_ring_base && self.slot1_dci3_ring_base != 0;
+                    self.slot1_dci3_dequeue = next_dequeue;
                     if interrupt_transfer.control & TRB_LINK_TOGGLE_CYCLE != 0 {
                         self.slot1_dci3_dcs = !self.slot1_dci3_dcs;
+                        if wraps_to_ring_base {
+                            self.slot1_dci3_two_entry_queue_rearm = true;
+                        }
                     }
                     self.write_slot1_dci3_output_dequeue(mem);
                 }
@@ -172,10 +161,13 @@ impl XhciController {
         mem: &dyn GuestMemoryMut,
         rearm_policy: Dci3RearmPolicy,
     ) -> bool {
-        if !self.has_queued_setup_input_report()
-            || self.slot1_dci3_ring_base == 0
-            || self.slot1_dci3_dequeue == self.slot1_dci3_ring_base
-        {
+        if !self.has_queued_setup_input_report() || self.slot1_dci3_ring_base == 0 {
+            return false;
+        }
+        let wrapped_base_rearm = matches!(rearm_policy, Dci3RearmPolicy::ReusableQueueDrain)
+            && self.slot1_dci3_dequeue == self.slot1_dci3_ring_base
+            && self.slot1_dci3_two_entry_queue_rearm;
+        if self.slot1_dci3_dequeue == self.slot1_dci3_ring_base && !wrapped_base_rearm {
             return false;
         }
         let Some(minimum_consumed_trbs) =
@@ -183,23 +175,28 @@ impl XhciController {
         else {
             return false;
         };
-        let Some(consumed_bytes) = self
-            .slot1_dci3_dequeue
-            .checked_sub(self.slot1_dci3_ring_base)
-        else {
-            return false;
-        };
-        if consumed_bytes % TRB_SIZE_BYTES != 0
-            || consumed_bytes / TRB_SIZE_BYTES < minimum_consumed_trbs
-        {
-            return false;
+        if !wrapped_base_rearm {
+            let Some(consumed_bytes) = self
+                .slot1_dci3_dequeue
+                .checked_sub(self.slot1_dci3_ring_base)
+            else {
+                return false;
+            };
+            if consumed_bytes % TRB_SIZE_BYTES != 0
+                || consumed_bytes / TRB_SIZE_BYTES < minimum_consumed_trbs
+            {
+                return false;
+            }
         }
         let Some(interrupt_transfer) = read_transfer_trb(mem, self.slot1_dci3_ring_base) else {
             return false;
         };
         let expected_cycle = if self.slot1_dci3_dcs { TRB_CYCLE } else { 0 };
         if interrupt_transfer.control & TRB_CYCLE != expected_cycle {
-            return false;
+            if !wrapped_base_rearm {
+                return false;
+            }
+            self.slot1_dci3_dcs = interrupt_transfer.control & TRB_CYCLE != 0;
         }
         match trb_type(interrupt_transfer.control) {
             TRB_TYPE_LINK | TRB_TYPE_NORMAL => {
@@ -211,8 +208,8 @@ impl XhciController {
     }
 
     pub(super) fn arm_two_entry_dci3_queue_rearm_if_consumed(&mut self) {
-        self.slot1_dci3_two_entry_queue_rearm =
-            self.consumed_slot1_dci3_ring_trbs() >= MIN_DELAYED_REUSABLE_DCI3_RING_TRBS;
+        self.slot1_dci3_two_entry_queue_rearm = self.slot1_dci3_two_entry_queue_rearm
+            || self.consumed_slot1_dci3_ring_trbs() >= MIN_DELAYED_REUSABLE_DCI3_RING_TRBS;
     }
 
     fn consumed_slot1_dci3_ring_trbs(&self) -> u64 {
@@ -230,40 +227,4 @@ impl XhciController {
         }
         consumed_bytes / TRB_SIZE_BYTES
     }
-}
-
-fn read_transfer_trb(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<InterruptTransferTrb> {
-    let raw = mem.read_bytes(gpa, TRB_SIZE)?;
-    Some(InterruptTransferTrb {
-        gpa,
-        parameter: read_u64(&raw, 0)?,
-        status: read_u32(&raw, 8)?,
-        control: read_u32(&raw, 12)?,
-    })
-}
-
-fn trb_type(control: u32) -> u32 {
-    (control >> TRB_TYPE_SHIFT) & TRB_TYPE_MASK
-}
-
-fn trb_transfer_length(status: u32) -> u32 {
-    status & TRB_TRANSFER_LENGTH_MASK
-}
-
-fn transfer_event_control(slot_id: u32, endpoint_id: u32) -> u32 {
-    (slot_id << EVENT_SLOT_ID_SHIFT)
-        | (endpoint_id << EVENT_ENDPOINT_ID_SHIFT)
-        | (TRB_TYPE_TRANSFER_EVENT << TRB_TYPE_SHIFT)
-}
-
-fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
-    let raw = bytes.get(offset..offset + 4)?;
-    let array: [u8; 4] = raw.try_into().ok()?;
-    Some(u32::from_le_bytes(array))
-}
-
-fn read_u64(bytes: &[u8], offset: usize) -> Option<u64> {
-    let raw = bytes.get(offset..offset + 8)?;
-    let array: [u8; 8] = raw.try_into().ok()?;
-    Some(u64::from_le_bytes(array))
 }

@@ -6,6 +6,7 @@ mod commands;
 mod device_context;
 mod event;
 mod interrupt_in;
+mod interrupt_trb;
 mod interrupts;
 mod mmio;
 mod ports;
@@ -188,6 +189,8 @@ mod event_tests;
 mod hid_report_descriptor_tests;
 #[cfg(test)]
 mod msix_tests;
+#[cfg(test)]
+mod platform_setup_input_cycle_drain_tests;
 #[cfg(test)]
 mod platform_setup_input_late_drain_tests;
 #[cfg(test)]
