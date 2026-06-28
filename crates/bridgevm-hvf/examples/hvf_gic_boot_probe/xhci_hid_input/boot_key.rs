@@ -33,7 +33,7 @@ impl XhciHidBootKeyTrigger {
         marker_env: &'static str,
     ) -> Option<Self> {
         let value = std::env::var(usage_env).ok()?;
-        if value != " " {
+        if !is_hid_space_value(&value) {
             return None;
         }
         match ProbeMarker::custom_from_env(marker_env) {
@@ -51,7 +51,7 @@ impl XhciHidBootKeyTrigger {
         value: &str,
         marker: ProbeMarker,
     ) -> Option<Self> {
-        if value != " " {
+        if !is_hid_space_value(value) {
             return None;
         }
         Some(Self {
@@ -127,6 +127,10 @@ impl XhciHidBootKeyTrigger {
     pub(crate) fn marker(&self) -> &[u8] {
         self.marker.as_bytes()
     }
+}
+
+fn is_hid_space_value(value: &str) -> bool {
+    matches!(value, " " | "<space>")
 }
 
 fn print_marker_rejection(name: &'static str, error: &MarkerEnvError) {
