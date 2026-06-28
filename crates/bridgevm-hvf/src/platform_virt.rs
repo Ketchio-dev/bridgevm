@@ -319,7 +319,7 @@ impl VirtPlatform {
     ) -> Result<(), XhciSetupInputQueueError> {
         self.queue_xhci_setup_input_actions(actions)?;
         for _ in 0..actions.len().saturating_mul(2) {
-            if !self.xhci.process_dci3_interrupt_in_transfer(mem) {
+            if !self.xhci.process_queued_dci3_input(mem) {
                 break;
             }
             self.queue_xhci_completion_msix();

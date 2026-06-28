@@ -24,6 +24,7 @@ const ENDPOINT_ID_DCI3: u32 = 3;
 const EVENT_ENDPOINT_ID_SHIFT: u32 = 16;
 const EVENT_SLOT_ID_SHIFT: u32 = 24;
 const MAX_LINK_TRBS_PER_DOORBELL: usize = 8;
+const MIN_REUSABLE_DCI3_RING_TRBS: u64 = 4;
 
 struct InterruptTransferTrb {
     gpa: u64,
@@ -32,25 +33,46 @@ struct InterruptTransferTrb {
     control: u32,
 }
 
+#[derive(Clone, Copy)]
+enum Dci3RearmPolicy {
+    Disabled,
+    AfterDoorbell,
+    ReusableQueueDrain,
+}
+
+impl Dci3RearmPolicy {
+    const fn minimum_consumed_trbs(self) -> Option<u64> {
+        match self {
+            Self::Disabled => None,
+            Self::AfterDoorbell => Some(1),
+            Self::ReusableQueueDrain => Some(MIN_REUSABLE_DCI3_RING_TRBS),
+        }
+    }
+}
+
 impl XhciController {
     pub(crate) fn process_dci3_interrupt_in_transfer(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
-        self.process_dci3_interrupt_in_transfer_with_rearm(mem, false)
+        self.process_dci3_interrupt_in_transfer_with_rearm(mem, Dci3RearmPolicy::Disabled)
+    }
+
+    pub(crate) fn process_queued_dci3_input(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
+        self.process_dci3_interrupt_in_transfer_with_rearm(mem, Dci3RearmPolicy::ReusableQueueDrain)
     }
 
     pub(super) fn process_dci3_interrupt_in_transfer_after_doorbell(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
-        self.process_dci3_interrupt_in_transfer_with_rearm(mem, true)
+        self.process_dci3_interrupt_in_transfer_with_rearm(mem, Dci3RearmPolicy::AfterDoorbell)
     }
 
     fn process_dci3_interrupt_in_transfer_with_rearm(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
-        allow_rearm: bool,
+        rearm_policy: Dci3RearmPolicy,
     ) -> bool {
         for _ in 0..MAX_LINK_TRBS_PER_DOORBELL {
             let transfer_ring = self.slot1_dci3_dequeue;
@@ -58,14 +80,14 @@ impl XhciController {
                 return false;
             }
             let Some(interrupt_transfer) = read_transfer_trb(mem, transfer_ring) else {
-                if allow_rearm && self.rearm_slot1_dci3_to_ring_base_if_queued(mem) {
+                if self.rearm_slot1_dci3_to_ring_base_if_queued(mem, rearm_policy) {
                     continue;
                 }
                 return false;
             };
             let expected_cycle = if self.slot1_dci3_dcs { TRB_CYCLE } else { 0 };
             if interrupt_transfer.control & TRB_CYCLE != expected_cycle {
-                if allow_rearm && self.rearm_slot1_dci3_to_ring_base_if_queued(mem) {
+                if self.rearm_slot1_dci3_to_ring_base_if_queued(mem, rearm_policy) {
                     continue;
                 }
                 return false;
@@ -127,7 +149,7 @@ impl XhciController {
                     return posted;
                 }
                 _ => {
-                    if allow_rearm && self.rearm_slot1_dci3_to_ring_base_if_queued(mem) {
+                    if self.rearm_slot1_dci3_to_ring_base_if_queued(mem, rearm_policy) {
                         continue;
                     }
                     return false;
@@ -137,10 +159,28 @@ impl XhciController {
         false
     }
 
-    fn rearm_slot1_dci3_to_ring_base_if_queued(&mut self, mem: &dyn GuestMemoryMut) -> bool {
+    fn rearm_slot1_dci3_to_ring_base_if_queued(
+        &mut self,
+        mem: &dyn GuestMemoryMut,
+        rearm_policy: Dci3RearmPolicy,
+    ) -> bool {
         if !self.has_queued_setup_input_report()
             || self.slot1_dci3_ring_base == 0
             || self.slot1_dci3_dequeue == self.slot1_dci3_ring_base
+        {
+            return false;
+        }
+        let Some(minimum_consumed_trbs) = rearm_policy.minimum_consumed_trbs() else {
+            return false;
+        };
+        let Some(consumed_bytes) = self
+            .slot1_dci3_dequeue
+            .checked_sub(self.slot1_dci3_ring_base)
+        else {
+            return false;
+        };
+        if consumed_bytes % TRB_SIZE_BYTES != 0
+            || consumed_bytes / TRB_SIZE_BYTES < minimum_consumed_trbs
         {
             return false;
         }
