@@ -172,6 +172,7 @@ impl XhciController {
     ) -> Result<(), XhciSetupInputQueueError> {
         match self.boot_keyboard_report_queue.queue_actions(actions) {
             Ok(queued_reports) => {
+                self.arm_two_entry_dci3_queue_rearm_if_consumed();
                 self.setup_input_report_stats.queued_actions = self
                     .setup_input_report_stats
                     .queued_actions

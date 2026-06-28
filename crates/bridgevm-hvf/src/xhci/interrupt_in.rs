@@ -25,6 +25,7 @@ const EVENT_ENDPOINT_ID_SHIFT: u32 = 16;
 const EVENT_SLOT_ID_SHIFT: u32 = 24;
 const MAX_LINK_TRBS_PER_DOORBELL: usize = 8;
 const MIN_REUSABLE_DCI3_RING_TRBS: u64 = 4;
+const MIN_DELAYED_REUSABLE_DCI3_RING_TRBS: u64 = 2;
 
 struct InterruptTransferTrb {
     gpa: u64,
@@ -41,11 +42,15 @@ enum Dci3RearmPolicy {
 }
 
 impl Dci3RearmPolicy {
-    const fn minimum_consumed_trbs(self) -> Option<u64> {
+    const fn minimum_consumed_trbs(self, two_entry_queue_rearm: bool) -> Option<u64> {
         match self {
             Self::Disabled => None,
             Self::AfterDoorbell => Some(1),
-            Self::ReusableQueueDrain => Some(MIN_REUSABLE_DCI3_RING_TRBS),
+            Self::ReusableQueueDrain => Some(if two_entry_queue_rearm {
+                MIN_DELAYED_REUSABLE_DCI3_RING_TRBS
+            } else {
+                MIN_REUSABLE_DCI3_RING_TRBS
+            }),
         }
     }
 }
@@ -141,6 +146,9 @@ impl XhciController {
                                     interrupt_transfer.parameter,
                                 );
                                 self.boot_keyboard_report_queue.pop_front();
+                                if !self.has_queued_setup_input_report() {
+                                    self.slot1_dci3_two_entry_queue_rearm = false;
+                                }
                             }
                         }
                         self.slot1_dci3_dequeue = next_dequeue;
@@ -170,7 +178,9 @@ impl XhciController {
         {
             return false;
         }
-        let Some(minimum_consumed_trbs) = rearm_policy.minimum_consumed_trbs() else {
+        let Some(minimum_consumed_trbs) =
+            rearm_policy.minimum_consumed_trbs(self.slot1_dci3_two_entry_queue_rearm)
+        else {
             return false;
         };
         let Some(consumed_bytes) = self
@@ -198,6 +208,27 @@ impl XhciController {
             }
             _ => false,
         }
+    }
+
+    pub(super) fn arm_two_entry_dci3_queue_rearm_if_consumed(&mut self) {
+        self.slot1_dci3_two_entry_queue_rearm =
+            self.consumed_slot1_dci3_ring_trbs() >= MIN_DELAYED_REUSABLE_DCI3_RING_TRBS;
+    }
+
+    fn consumed_slot1_dci3_ring_trbs(&self) -> u64 {
+        if self.slot1_dci3_ring_base == 0 {
+            return 0;
+        }
+        let Some(consumed_bytes) = self
+            .slot1_dci3_dequeue
+            .checked_sub(self.slot1_dci3_ring_base)
+        else {
+            return 0;
+        };
+        if consumed_bytes % TRB_SIZE_BYTES != 0 {
+            return 0;
+        }
+        consumed_bytes / TRB_SIZE_BYTES
     }
 }
 

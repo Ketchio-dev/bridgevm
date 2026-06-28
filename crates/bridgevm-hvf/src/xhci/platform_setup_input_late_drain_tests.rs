@@ -74,6 +74,74 @@ fn platform_delayed_setup_input_rearms_reusable_dci3_ring_without_new_doorbell()
 }
 
 #[test]
+fn platform_delayed_setup_input_drains_two_entry_reusable_dci3_ring_after_boot_key_polling() {
+    // Given: live DCI3 polling consumed a two-entry reusable interrupt IN ring for boot key/release.
+    let (mut platform, mut mem) = new_platform_and_ram();
+    program_xhci_bar0(&mut platform, &mut mem);
+    configure_dci3_interrupt_in_over_bar0(&mut platform, &mut mem);
+    write_dci3_normal_trb(&mut mem, DCI3_RING, DCI3_KEY_BUFFER);
+    write_dci3_normal_trb(&mut mem, DCI3_RING + TRB_SIZE, DCI3_RELEASE_BUFFER);
+    assert!(mem.write_bytes(DCI3_KEY_BUFFER, &[0xaa; 8]));
+    assert!(mem.write_bytes(DCI3_RELEASE_BUFFER, &[0xbb; 8]));
+    assert!(platform.queue_xhci_hid_boot_key_usage(0x2c).is_ok());
+    ring_dci3_doorbell(&mut platform, &mut mem);
+    acknowledge_event_ring_dequeue(&mut platform, &mut mem, 2);
+    ring_dci3_doorbell(&mut platform, &mut mem);
+    acknowledge_event_ring_dequeue(&mut platform, &mut mem, 3);
+    assert_eq!(
+        read_bytes(&mem, DCI3_KEY_BUFFER, 8),
+        [0, 0, 0x2c, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(read_bytes(&mem, DCI3_RELEASE_BUFFER, 8), [0; 8]);
+    let stats = platform.xhci_setup_input_report_stats();
+    assert_eq!(stats.emitted_key_reports, 1);
+    assert_eq!(stats.emitted_release_reports, 1);
+
+    // When: delayed setup input queues multiple actions after that live polling window.
+    assert_eq!(
+        platform.queue_xhci_setup_input_actions_with_mem(
+            &[
+                SetupInputAction::Tab,
+                SetupInputAction::Enter,
+                SetupInputAction::Space,
+            ],
+            &mut mem
+        ),
+        Ok(())
+    );
+
+    // Then: queue-time draining reuses the same two DCI3 TRBs until the delayed sequence is empty.
+    assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 3), DCI3_RING);
+    assert_success_dci3_transfer_event_for_trb(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 4),
+        DCI3_RING + TRB_SIZE,
+    );
+    assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 5), DCI3_RING);
+    assert_success_dci3_transfer_event_for_trb(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 6),
+        DCI3_RING + TRB_SIZE,
+    );
+    assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 7), DCI3_RING);
+    assert_success_dci3_transfer_event_for_trb(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 8),
+        DCI3_RING + TRB_SIZE,
+    );
+    assert_eq!(
+        read_bytes(&mem, DCI3_KEY_BUFFER, 8),
+        [0, 0, 0x2c, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(read_bytes(&mem, DCI3_RELEASE_BUFFER, 8), [0; 8]);
+    let stats = platform.xhci_setup_input_report_stats();
+    assert_eq!(stats.queued_actions, 4);
+    assert_eq!(stats.queued_reports, 8);
+    assert_eq!(stats.emitted_key_reports, 4);
+    assert_eq!(stats.emitted_release_reports, 4);
+}
+
+#[test]
 fn platform_delayed_setup_input_drains_reposted_dci3_trbs_after_initial_boot_key() {
     // Given: the installer boot key used the first two DCI3 TRBs before setup input fires.
     let (mut platform, mut mem) = new_platform_and_ram();

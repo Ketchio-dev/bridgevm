@@ -129,6 +129,7 @@ impl XhciController {
         self.slot1_dci3_dequeue = raw_dequeue & EP_TR_DEQUEUE_MASK;
         self.slot1_dci3_ring_base = self.slot1_dci3_dequeue;
         self.slot1_dci3_dcs = raw_dequeue & 1 != 0;
+        self.slot1_dci3_two_entry_queue_rearm = false;
     }
 
     pub(super) fn write_slot1_dci3_output_dequeue(&self, mem: &mut dyn GuestMemoryMut) {
