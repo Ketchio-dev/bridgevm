@@ -35,6 +35,7 @@ const DCI3_ADD_CONTEXT_FLAG: u32 = 1 << DCI3;
 const DCI3_DWORD1: u32 = (3 << 1) | (3 << 3) | (8 << 16);
 const DCI3_DWORD4: u32 = 8;
 const TRB_CYCLE: u64 = 1;
+const USB_CMD_HCRST: u32 = 1 << 1;
 
 pub(crate) fn new_platform() -> VirtPlatform {
     VirtPlatform::new(VirtFdtConfig::default())
@@ -135,10 +136,35 @@ pub(crate) fn configure_dci3_interrupt_in_over_bar0(
     assert_success_completion(mem, ENABLE_SLOT_ID);
 }
 
+pub(crate) fn reset_xhci_host_controller_over_bar0(
+    platform: &mut VirtPlatform,
+    mem: &mut FlatGuestRam,
+) {
+    write_xhci_bar0(platform, mem, 0x40, 4, u64::from(USB_CMD_HCRST));
+}
+
 pub(crate) fn write_dci3_normal_trb(mem: &mut FlatGuestRam, trb_gpa: u64, buffer_gpa: u64) {
     write_u64(mem, trb_gpa, buffer_gpa);
     write_u32(mem, trb_gpa + 8, 8);
     write_u32(mem, trb_gpa + 12, (TRB_TYPE_NORMAL << 10) | 1);
+}
+
+pub(crate) fn ring_dci3_doorbell(platform: &mut VirtPlatform, mem: &mut FlatGuestRam) {
+    write_xhci_bar0(platform, mem, 0x2004, 4, u64::from(DCI3));
+}
+
+pub(crate) fn acknowledge_event_ring_dequeue(
+    platform: &mut VirtPlatform,
+    mem: &mut FlatGuestRam,
+    event_index: u64,
+) {
+    write_xhci_bar0(
+        platform,
+        mem,
+        0x1038,
+        4,
+        (EVENT_RING + (TRB_SIZE * event_index)) | 0x8,
+    );
 }
 
 pub(crate) fn assert_success_dci3_transfer_event_for_trb(
