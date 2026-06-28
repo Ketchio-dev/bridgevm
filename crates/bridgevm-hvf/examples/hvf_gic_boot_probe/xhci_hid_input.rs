@@ -23,6 +23,9 @@ mod setup_input_delay_parse_tests;
 #[path = "xhci_hid_input/setup_input_env_tests.rs"]
 mod setup_input_env_tests;
 #[cfg(test)]
+#[path = "xhci_hid_input/setup_input_fire_delay_tests.rs"]
+mod setup_input_fire_delay_tests;
+#[cfg(test)]
 #[path = "xhci_hid_input/setup_input_ramfb_tests.rs"]
 mod setup_input_ramfb_tests;
 #[cfg(test)]

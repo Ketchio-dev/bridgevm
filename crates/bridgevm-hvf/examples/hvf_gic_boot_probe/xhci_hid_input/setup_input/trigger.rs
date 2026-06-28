@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bridgevm_hvf::platform_virt::VirtPlatform;
 use bridgevm_hvf::xhci::{SetupInputAction, XhciSetupInputQueueError};
@@ -7,7 +7,8 @@ use super::actions::parse_setup_input_actions;
 #[cfg(test)]
 use super::delay::ramfb_delay_checkpoints_from_ms;
 use super::delay::{
-    default_ramfb_delay_checkpoints, parse_setup_input_ramfb_delay_env, RamfbDelayCheckpoint,
+    default_ramfb_delay_checkpoints, parse_setup_input_fire_delay_env,
+    parse_setup_input_ramfb_delay_env, RamfbDelayCheckpoint,
 };
 use super::{XhciSetupInputEnvError, SETUP_INPUT_DEFAULT_MARKER};
 use crate::xhci_hid_input::marker::ProbeMarker;
@@ -21,6 +22,8 @@ pub(crate) struct XhciSetupInputTrigger {
     fired: bool,
     reported_queue_rejection: bool,
     fired_at: Option<Instant>,
+    marker_seen_at: Option<Instant>,
+    fire_delay: Duration,
     ramfb_delay_checkpoints: Vec<RamfbDelayCheckpoint>,
 }
 
@@ -44,6 +47,10 @@ impl XhciSetupInputTrigger {
             Ok(checkpoints) => checkpoints,
             Err(error) => return Some(Err(error)),
         };
+        trigger.fire_delay = match parse_setup_input_fire_delay_env() {
+            Ok(delay) => delay,
+            Err(error) => return Some(Err(error)),
+        };
         Some(Ok(trigger))
     }
 
@@ -59,12 +66,19 @@ impl XhciSetupInputTrigger {
             fired: false,
             reported_queue_rejection: false,
             fired_at: None,
+            marker_seen_at: None,
+            fire_delay: Duration::ZERO,
             ramfb_delay_checkpoints: default_ramfb_delay_checkpoints(),
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn maybe_fire(&mut self, platform: &mut VirtPlatform) -> bool {
-        if self.fired || !contains_bytes(platform.uart_output(), self.marker.as_bytes()) {
+        self.maybe_fire_at(platform, Instant::now())
+    }
+
+    fn maybe_fire_at(&mut self, platform: &mut VirtPlatform, now: Instant) -> bool {
+        if !self.fire_delay_elapsed_at(platform, now) {
             return false;
         }
         match platform.queue_xhci_setup_input_actions(&self.actions) {
@@ -94,11 +108,11 @@ impl XhciSetupInputTrigger {
     ) where
         F: FnMut(&str),
     {
-        let can_checkpoint = self.ready_for_ramfb_checkpoints(platform);
+        let can_checkpoint = self.ready_for_ramfb_checkpoints_at(platform, now);
         if can_checkpoint {
             emit_checkpoint("setup-input-before");
         }
-        if self.maybe_fire(platform) {
+        if self.maybe_fire_at(platform, now) {
             self.fired_at = Some(now);
             if can_checkpoint {
                 emit_checkpoint("setup-input-after");
@@ -149,8 +163,8 @@ impl XhciSetupInputTrigger {
         }
     }
 
-    fn ready_for_ramfb_checkpoints(&self, platform: &VirtPlatform) -> bool {
-        if self.fired || !contains_bytes(platform.uart_output(), self.marker.as_bytes()) {
+    fn ready_for_ramfb_checkpoints_at(&mut self, platform: &VirtPlatform, now: Instant) -> bool {
+        if !self.fire_delay_elapsed_at(platform, now) {
             return false;
         }
         let stats = platform.xhci_setup_input_report_stats();
@@ -158,6 +172,17 @@ impl XhciSetupInputTrigger {
             .emitted_key_reports
             .saturating_add(stats.emitted_release_reports);
         stats.queued_reports == emitted_reports
+    }
+
+    fn fire_delay_elapsed_at(&mut self, platform: &VirtPlatform, now: Instant) -> bool {
+        if self.fired || !contains_bytes(platform.uart_output(), self.marker.as_bytes()) {
+            return false;
+        }
+        let marker_seen_at = *self.marker_seen_at.get_or_insert(now);
+        match now.checked_duration_since(marker_seen_at) {
+            Some(elapsed) => elapsed >= self.fire_delay,
+            None => false,
+        }
     }
 
     fn record_fire(&mut self, platform: &VirtPlatform) -> bool {

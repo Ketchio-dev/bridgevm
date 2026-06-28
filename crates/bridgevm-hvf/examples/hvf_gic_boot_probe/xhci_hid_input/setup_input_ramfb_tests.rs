@@ -147,9 +147,11 @@ fn xhci_setup_input_ramfb_default_delay_env_emits_task_owned_labels() {
     let actions_env = "BRIDGEVM_TEST_XHCI_SETUP_INPUT_ACTIONS_DEFAULT_DELAY";
     let marker_env = "BRIDGEVM_TEST_XHCI_SETUP_INPUT_MARKER_DEFAULT_DELAY";
     let delay_env = "BRIDGEVM_XHCI_SETUP_INPUT_RAMFB_DELAY_MS";
+    let fire_delay_env = "BRIDGEVM_XHCI_SETUP_INPUT_FIRE_DELAY_MS";
     std::env::set_var(actions_env, "space");
     std::env::remove_var(marker_env);
     std::env::remove_var(delay_env);
+    std::env::remove_var(fire_delay_env);
     let mut trigger = XhciSetupInputTrigger::from_env("setup-input", actions_env, marker_env)
         .unwrap()
         .unwrap();

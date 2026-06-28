@@ -18,9 +18,11 @@ fn xhci_setup_input_from_env_defaults_absent_marker() {
     let actions_env = "BRIDGEVM_TEST_XHCI_SETUP_INPUT_ACTIONS_DEFAULT_MARKER";
     let marker_env = "BRIDGEVM_TEST_XHCI_SETUP_INPUT_MARKER_ABSENT";
     let delay_env = "BRIDGEVM_XHCI_SETUP_INPUT_RAMFB_DELAY_MS";
+    let fire_delay_env = "BRIDGEVM_XHCI_SETUP_INPUT_FIRE_DELAY_MS";
     std::env::set_var(actions_env, "space");
     std::env::remove_var(marker_env);
     std::env::remove_var(delay_env);
+    std::env::remove_var(fire_delay_env);
 
     let result = XhciSetupInputTrigger::from_env("setup-input", actions_env, marker_env);
 
@@ -39,9 +41,11 @@ fn xhci_setup_input_from_env_rejects_non_unicode_marker() {
     let actions_env = "BRIDGEVM_TEST_XHCI_SETUP_INPUT_ACTIONS_NONUNICODE";
     let marker_env = "BRIDGEVM_TEST_XHCI_SETUP_INPUT_MARKER_NONUNICODE";
     let delay_env = "BRIDGEVM_XHCI_SETUP_INPUT_RAMFB_DELAY_MS";
+    let fire_delay_env = "BRIDGEVM_XHCI_SETUP_INPUT_FIRE_DELAY_MS";
     std::env::set_var(actions_env, "space");
     std::env::set_var(marker_env, OsString::from_vec(vec![0xff]));
     std::env::remove_var(delay_env);
+    std::env::remove_var(fire_delay_env);
 
     let result = XhciSetupInputTrigger::from_env("setup-input", actions_env, marker_env);
 
@@ -85,9 +89,11 @@ fn xhci_setup_input_parse_rejection_has_no_ramfb_checkpoint_trigger() {
     let actions_env = "BRIDGEVM_TEST_XHCI_SETUP_INPUT_ACTIONS_PARSE_REJECT";
     let marker_env = "BRIDGEVM_TEST_XHCI_SETUP_INPUT_MARKER_PARSE_REJECT";
     let delay_env = "BRIDGEVM_XHCI_SETUP_INPUT_RAMFB_DELAY_MS";
+    let fire_delay_env = "BRIDGEVM_XHCI_SETUP_INPUT_FIRE_DELAY_MS";
     std::env::set_var(actions_env, "hello");
     std::env::remove_var(marker_env);
     std::env::remove_var(delay_env);
+    std::env::remove_var(fire_delay_env);
     let mut platform = new_platform();
     emit_uart(&mut platform, b"BdsDxe: starting Boot0001");
 

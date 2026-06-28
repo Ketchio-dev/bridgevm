@@ -7,6 +7,9 @@ const SETUP_INPUT_RAMFB_DELAY_ENV_MAX_BYTES: usize = 128;
 const SETUP_INPUT_RAMFB_MAX_DELAYS: usize = 16;
 const SETUP_INPUT_RAMFB_MAX_DELAY_MS: u64 = 120_000;
 const SETUP_INPUT_RAMFB_DEFAULT_DELAY_MS: &[u64] = &[1_000, 5_000, 15_000];
+const SETUP_INPUT_FIRE_DELAY_ENV: &str = "BRIDGEVM_XHCI_SETUP_INPUT_FIRE_DELAY_MS";
+const SETUP_INPUT_FIRE_DELAY_ENV_MAX_BYTES: usize = 32;
+const SETUP_INPUT_FIRE_MAX_DELAY_MS: u64 = 600_000;
 
 #[derive(Debug)]
 pub(super) struct RamfbDelayCheckpoint {
@@ -21,6 +24,16 @@ pub(super) fn parse_setup_input_ramfb_delay_env(
         Ok(value) => parse_setup_input_ramfb_delay_value(&value),
         Err(std::env::VarError::NotPresent) => Ok(default_ramfb_delay_checkpoints()),
         Err(std::env::VarError::NotUnicode(_)) => Err(XhciSetupInputEnvError::RamfbDelayInvalid {
+            token: String::from("<non-unicode>"),
+        }),
+    }
+}
+
+pub(super) fn parse_setup_input_fire_delay_env() -> Result<Duration, XhciSetupInputEnvError> {
+    match std::env::var(SETUP_INPUT_FIRE_DELAY_ENV) {
+        Ok(value) => parse_setup_input_fire_delay_value(&value),
+        Err(std::env::VarError::NotPresent) => Ok(Duration::ZERO),
+        Err(std::env::VarError::NotUnicode(_)) => Err(XhciSetupInputEnvError::FireDelayInvalid {
             token: String::from("<non-unicode>"),
         }),
     }
@@ -89,6 +102,28 @@ fn parse_setup_input_ramfb_delay_value(
     ramfb_delay_checkpoints_from_ms(&delays_ms)
 }
 
+fn parse_setup_input_fire_delay_value(value: &str) -> Result<Duration, XhciSetupInputEnvError> {
+    if value.len() > SETUP_INPUT_FIRE_DELAY_ENV_MAX_BYTES {
+        return Err(XhciSetupInputEnvError::FireDelayTooLong {
+            len: value.len(),
+            max: SETUP_INPUT_FIRE_DELAY_ENV_MAX_BYTES,
+        });
+    }
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(XhciSetupInputEnvError::FireDelayInvalid {
+            token: value.to_string(),
+        });
+    }
+    let Ok(delay_ms) = trimmed.parse::<u64>() else {
+        return Err(XhciSetupInputEnvError::FireDelayInvalid {
+            token: trimmed.to_string(),
+        });
+    };
+    validate_fire_delay_ms(delay_ms)?;
+    Ok(Duration::from_millis(delay_ms))
+}
+
 fn validate_delay_ms(delay_ms: u64) -> Result<(), XhciSetupInputEnvError> {
     if delay_ms == 0 {
         return Err(XhciSetupInputEnvError::RamfbDelayInvalid {
@@ -99,6 +134,16 @@ fn validate_delay_ms(delay_ms: u64) -> Result<(), XhciSetupInputEnvError> {
         return Err(XhciSetupInputEnvError::RamfbDelayTooLarge {
             requested_ms: delay_ms,
             max_ms: SETUP_INPUT_RAMFB_MAX_DELAY_MS,
+        });
+    }
+    Ok(())
+}
+
+fn validate_fire_delay_ms(delay_ms: u64) -> Result<(), XhciSetupInputEnvError> {
+    if delay_ms > SETUP_INPUT_FIRE_MAX_DELAY_MS {
+        return Err(XhciSetupInputEnvError::FireDelayTooLarge {
+            requested_ms: delay_ms,
+            max_ms: SETUP_INPUT_FIRE_MAX_DELAY_MS,
         });
     }
     Ok(())

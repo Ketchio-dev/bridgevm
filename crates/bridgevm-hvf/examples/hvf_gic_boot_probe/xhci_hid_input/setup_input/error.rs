@@ -16,6 +16,9 @@ pub(crate) enum XhciSetupInputEnvError {
     RamfbDelayInvalid { token: String },
     RamfbDelayTooLarge { requested_ms: u64, max_ms: u64 },
     RamfbDelayDuplicate { delay_ms: u64 },
+    FireDelayTooLong { len: usize, max: usize },
+    FireDelayInvalid { token: String },
+    FireDelayTooLarge { requested_ms: u64, max_ms: u64 },
     Marker(MarkerEnvError),
 }
 
@@ -36,6 +39,9 @@ impl XhciSetupInputEnvError {
             Self::RamfbDelayInvalid { .. } => "ramfb_delay_invalid",
             Self::RamfbDelayTooLarge { .. } => "ramfb_delay_too_large",
             Self::RamfbDelayDuplicate { .. } => "ramfb_delay_duplicate",
+            Self::FireDelayTooLong { .. } => "fire_delay_too_long",
+            Self::FireDelayInvalid { .. } => "fire_delay_invalid",
+            Self::FireDelayTooLarge { .. } => "fire_delay_too_large",
             Self::Marker(error) => error.name(),
         }
     }
