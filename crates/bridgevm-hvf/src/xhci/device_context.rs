@@ -90,6 +90,9 @@ impl XhciController {
         if !write_mem_u64(mem, ep0_dequeue_output_gpa, raw_dequeue) {
             return;
         }
+        if self.slot1_dci3_dequeue != 0 && self.slot1_dci3_ring_base != 0 {
+            self.write_slot1_dci3_output_dequeue(mem);
+        }
     }
 
     pub(super) fn capture_configure_endpoint_input_context(

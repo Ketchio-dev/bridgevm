@@ -8,6 +8,7 @@ use crate::fwcfg::GuestMemoryMut;
 
 const READDRESS_INPUT_CONTEXT: u64 = 0x7200;
 const READDRESS_EP0_RING: u64 = 0x7300;
+const READDRESS_OUTPUT_CONTEXT: u64 = 0x7600;
 const EP0_INPUT_CONTEXT_OFFSET: u64 = 0x40;
 
 #[test]
@@ -75,6 +76,61 @@ fn delayed_setup_input_after_readdress_drains_from_current_dci3_output_dequeue()
     assert_eq!(stats.queued_reports, 18);
     assert_eq!(stats.emitted_key_reports, 9);
     assert_eq!(stats.emitted_release_reports, 9);
+}
+
+#[test]
+fn delayed_setup_input_after_new_output_context_readdress_keeps_dci3_endpoint() {
+    // Given: DCI3 emitted the boot-key pair, leaving valid internal endpoint state.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0xa000);
+    setup_configure_endpoint_command(&mut xhci, &mut mem);
+    write_dci3_normal_trb(&mut mem, DCI3_RING + TRB_SIZE, DCI3_WRAP_BUFFER, true);
+    write_dci3_normal_trb(
+        &mut mem,
+        DCI3_RING + (TRB_SIZE * 2),
+        delayed_setup_input_buffer(0),
+        true,
+    );
+    write_dci3_normal_trb(
+        &mut mem,
+        DCI3_RING + (TRB_SIZE * 3),
+        delayed_setup_input_buffer(1),
+        true,
+    );
+    assert!(mem.write_bytes(delayed_setup_input_buffer(0), &[0xcc; 8]));
+    assert!(mem.write_bytes(delayed_setup_input_buffer(1), &[0xdd; 8]));
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert!(xhci.queue_boot_keyboard_space());
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
+    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING + (TRB_SIZE * 2));
+
+    // When: the guest switches slot 1 to a fresh output context and re-addresses via EP0.
+    mem.write_u64(
+        DCBAA + (u64::from(ENABLE_SLOT_ID) * 8),
+        READDRESS_OUTPUT_CONTEXT,
+    );
+    setup_address_device_command(&mut xhci, &mut mem);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert_eq!(
+        xhci.queue_setup_input_actions(&[SetupInputAction::Enter]),
+        Ok(())
+    );
+
+    // Then: queued setup-input can still drain through DCI3 in the current output context.
+    let drained = xhci.process_queued_dci3_input(&mut mem);
+    assert!(
+        drained,
+        "reason=no_dci3_endpoint dequeue={:#x} ring_base={:#x} dcs={} stats={:?}",
+        xhci.slot1_dci3_dequeue,
+        xhci.slot1_dci3_ring_base,
+        xhci.slot1_dci3_dcs,
+        xhci.setup_input_report_stats()
+    );
+    assert_eq!(
+        mem.read_bytes(delayed_setup_input_buffer(0), 8).unwrap(),
+        [0, 0, 0x28, 0, 0, 0, 0, 0]
+    );
 }
 
 fn setup_address_device_command(xhci: &mut XhciController, mem: &mut TestRam) {
