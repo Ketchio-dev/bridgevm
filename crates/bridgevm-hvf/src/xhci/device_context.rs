@@ -14,9 +14,13 @@ const DCI3: u32 = 3;
 const DCI3_INPUT_CONTEXT_OFFSET: u64 = 0x80;
 const DCI3_OUTPUT_CONTEXT_OFFSET: u64 = 0x60;
 const EP_CONTEXT_BYTES: usize = 32;
+const EP_CONTEXT_DWORD0_OFFSET: u64 = 0x0;
 const EP_TR_DEQUEUE_OFFSET: u64 = 0x8;
 const EP_TR_DEQUEUE_MASK: u64 = !0xf;
 const SLOT_STATE_ADDRESSED: u32 = 3 << 27;
+const EP_STATE_MASK: u32 = 0x7;
+const EP_STATE_RUNNING: u32 = 1;
+const EP_STATE_STOPPED: u32 = 3;
 
 impl XhciController {
     pub(super) fn capture_address_device_input_context(
@@ -39,6 +43,7 @@ impl XhciController {
             return;
         };
         self.slot1_ep0_dequeue = raw_dequeue & EP_TR_DEQUEUE_MASK;
+        self.slot1_ep0_dcs = raw_dequeue & 1 != 0;
 
         let dcbaa = self.dcbaap & DCBAA_POINTER_MASK;
         let Some(dcbaa_entry) = u64::from(slot_id)
@@ -77,6 +82,9 @@ impl XhciController {
             return;
         }
         if !mem.write_bytes(ep0_output_gpa, &ep0_input_context) {
+            return;
+        }
+        if !write_ep_context_state(mem, ep0_output_gpa, EP_STATE_RUNNING) {
             return;
         }
         if !write_mem_u64(mem, ep0_dequeue_output_gpa, raw_dequeue) {
@@ -151,6 +159,30 @@ impl XhciController {
         );
     }
 
+    pub(super) fn write_slot1_ep0_output_stopped(&self, mem: &mut dyn GuestMemoryMut) {
+        let dcbaa = self.dcbaap & DCBAA_POINTER_MASK;
+        let Some(output_context) = output_context_for_slot(mem, dcbaa, SLOT_ID) else {
+            return;
+        };
+        let Some(ep0_output_gpa) = output_context.checked_add(EP0_OUTPUT_CONTEXT_OFFSET) else {
+            return;
+        };
+        let Some(ep0_dequeue_gpa) = ep0_output_gpa.checked_add(EP_TR_DEQUEUE_OFFSET) else {
+            return;
+        };
+        if mem.read_bytes(ep0_output_gpa, EP_CONTEXT_BYTES).is_none() {
+            return;
+        }
+        if !write_ep_context_state(mem, ep0_output_gpa, EP_STATE_STOPPED) {
+            return;
+        }
+        write_mem_u64(
+            mem,
+            ep0_dequeue_gpa,
+            self.slot1_ep0_dequeue | u64::from(self.slot1_ep0_dcs),
+        );
+    }
+
     pub(super) fn slot1_dci3_output_dequeue_state(
         &self,
         mem: &dyn GuestMemoryMut,
@@ -184,6 +216,16 @@ fn output_context_for_slot(mem: &dyn GuestMemoryMut, dcbaa: u64, slot_id: u32) -
 
 fn write_mem_u32(mem: &mut dyn GuestMemoryMut, gpa: u64, value: u32) -> bool {
     mem.write_bytes(gpa, &value.to_le_bytes())
+}
+
+fn write_ep_context_state(mem: &mut dyn GuestMemoryMut, ep_context_gpa: u64, state: u32) -> bool {
+    let Some(dword0_gpa) = ep_context_gpa.checked_add(EP_CONTEXT_DWORD0_OFFSET) else {
+        return false;
+    };
+    let Some(dword0) = read_mem_u32(mem, dword0_gpa) else {
+        return false;
+    };
+    write_mem_u32(mem, dword0_gpa, (dword0 & !EP_STATE_MASK) | state)
 }
 
 fn read_mem_u32(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u32> {

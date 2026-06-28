@@ -51,6 +51,7 @@ pub struct XhciController {
     event_enqueue: u32,
     event_cycle: bool,
     slot1_ep0_dequeue: u64,
+    slot1_ep0_dcs: bool,
     slot1_dci3_dequeue: u64,
     slot1_dci3_ring_base: u64,
     slot1_dci3_dcs: bool,
@@ -87,6 +88,7 @@ impl XhciController {
             event_enqueue: 0,
             event_cycle: true,
             slot1_ep0_dequeue: 0,
+            slot1_ep0_dcs: false,
             slot1_dci3_dequeue: 0,
             slot1_dci3_ring_base: 0,
             slot1_dci3_dcs: false,
@@ -215,6 +217,8 @@ mod set_configuration_msix_tests;
 mod set_configuration_tests;
 #[cfg(test)]
 mod set_protocol_tests;
+#[cfg(test)]
+mod stop_endpoint_tests;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]

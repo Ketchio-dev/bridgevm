@@ -90,12 +90,13 @@ impl XhciController {
                     return posted;
                 }
                 TRB_TYPE_STOP_ENDPOINT => {
-                    let posted = self.post_command_completion(
-                        mem,
-                        command_trb,
-                        command_slot_id(command_control),
-                    );
+                    let slot_id = command_slot_id(command_control);
+                    let endpoint_id = command_endpoint_id(command_control);
+                    let posted = self.post_command_completion(mem, command_trb, slot_id);
                     if posted {
+                        if slot_id == SLOT_ID && endpoint_id == ENDPOINT_ID_EP0 {
+                            self.write_slot1_ep0_output_stopped(mem);
+                        }
                         self.advance_command_dequeue(command_trb);
                     }
                     return posted;
@@ -108,6 +109,7 @@ impl XhciController {
                     if slot_id == SLOT_ID && command_endpoint_id(command_control) == ENDPOINT_ID_EP0
                     {
                         self.slot1_ep0_dequeue = raw_dequeue & TR_DEQUEUE_POINTER_MASK;
+                        self.slot1_ep0_dcs = raw_dequeue & 1 != 0;
                     }
                     let posted = self.post_command_completion(mem, command_trb, slot_id);
                     if posted {

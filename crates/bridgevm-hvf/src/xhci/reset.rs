@@ -13,6 +13,7 @@ impl XhciController {
         self.erstba0 = 0;
         self.erdp0 = 0;
         self.slot1_ep0_dequeue = 0;
+        self.slot1_ep0_dcs = false;
         self.invalidate_slot1_dci3_endpoint_state();
         self.boot_keyboard_report_queue.clear();
         self.usb_configuration = 0;
