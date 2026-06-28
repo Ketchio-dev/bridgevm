@@ -203,6 +203,10 @@ impl XhciController {
         self.setup_input_report_stats
     }
 
+    pub(super) fn has_queued_setup_input_report(&self) -> bool {
+        !self.boot_keyboard_report_queue.is_empty()
+    }
+
     pub(super) fn record_setup_input_report_emitted(
         &mut self,
         queued_report: SetupInputReport,

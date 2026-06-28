@@ -157,6 +157,9 @@ impl XhciController {
         if transfers::is_slot_doorbell(offset, size) {
             return self.process_slot_doorbell(offset, value, mem);
         }
+        if self.has_queued_setup_input_report() {
+            return self.process_dci3_interrupt_in_transfer(mem);
+        }
         false
     }
 }
@@ -181,6 +184,10 @@ mod event_tests;
 mod hid_report_descriptor_tests;
 #[cfg(test)]
 mod msix_tests;
+#[cfg(test)]
+mod platform_setup_input_late_drain_tests;
+#[cfg(test)]
+mod platform_setup_input_support;
 #[cfg(test)]
 mod platform_setup_input_tests;
 #[cfg(test)]
