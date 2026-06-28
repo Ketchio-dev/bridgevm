@@ -1798,9 +1798,14 @@ fn main() {
             for trigger in &mut xhci_setup_input_triggers {
                 let ramfb_config = platform.ramfb_config();
                 let now = std::time::Instant::now();
-                trigger.maybe_fire_with_ramfb_checkpoints_at(&mut platform, now, |label| {
-                    ramfb_dump::print_checkpoint(label, ramfb_config, &guest_ram);
-                });
+                trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
+                    &mut platform,
+                    &mut guest_ram,
+                    now,
+                    |label, mem| {
+                        ramfb_dump::print_checkpoint(label, ramfb_config, mem);
+                    },
+                );
                 if let Some(deadline) = trigger.pending_host_wake_deadline_at(&platform, now) {
                     let v = vcpu;
                     if setup_input_host_wake.arm(deadline, move || {

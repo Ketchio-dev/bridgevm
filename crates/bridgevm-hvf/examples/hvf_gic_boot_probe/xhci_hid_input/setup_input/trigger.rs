@@ -3,6 +3,9 @@ use std::time::{Duration, Instant};
 use bridgevm_hvf::platform_virt::VirtPlatform;
 use bridgevm_hvf::xhci::{SetupInputAction, XhciSetupInputQueueError};
 
+#[path = "trigger/ramfb.rs"]
+mod ramfb;
+
 use super::actions::parse_setup_input_actions;
 #[cfg(test)]
 use super::delay::ramfb_delay_checkpoints_from_ms;
@@ -77,52 +80,27 @@ impl XhciSetupInputTrigger {
         self.maybe_fire_at(platform, Instant::now())
     }
 
+    #[cfg(test)]
     fn maybe_fire_at(&mut self, platform: &mut VirtPlatform, now: Instant) -> bool {
+        self.maybe_fire_by_at(platform, now, |platform, actions| {
+            platform.queue_xhci_setup_input_actions(actions)
+        })
+    }
+
+    fn maybe_fire_by_at<F>(&mut self, platform: &mut VirtPlatform, now: Instant, queue: F) -> bool
+    where
+        F: FnOnce(&mut VirtPlatform, &[SetupInputAction]) -> Result<(), XhciSetupInputQueueError>,
+    {
         if !self.fire_delay_elapsed_at(platform, now) {
             return false;
         }
-        match platform.queue_xhci_setup_input_actions(&self.actions) {
+        match queue(platform, &self.actions) {
             Ok(()) => self.record_fire(platform),
             Err(error) => {
                 self.report_queue_rejection(error);
                 false
             }
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn maybe_fire_with_ramfb_checkpoints<F>(
-        &mut self,
-        platform: &mut VirtPlatform,
-        mut emit_checkpoint: F,
-    ) where
-        F: FnMut(&str),
-    {
-        self.maybe_fire_with_ramfb_checkpoints_at(platform, Instant::now(), &mut emit_checkpoint);
-    }
-
-    pub(crate) fn maybe_fire_with_ramfb_checkpoints_at<F>(
-        &mut self,
-        platform: &mut VirtPlatform,
-        now: Instant,
-        mut emit_checkpoint: F,
-    ) -> bool
-    where
-        F: FnMut(&str),
-    {
-        let can_checkpoint = self.ready_for_ramfb_checkpoints_at(platform, now);
-        if can_checkpoint {
-            emit_checkpoint("setup-input-before");
-        }
-        let fired = self.maybe_fire_at(platform, now);
-        if fired {
-            self.fired_at = Some(now);
-            if can_checkpoint {
-                emit_checkpoint("setup-input-after");
-            }
-        }
-        self.emit_due_ramfb_delay_checkpoints(now, &mut emit_checkpoint);
-        fired
     }
 
     pub(crate) fn pending_host_wake_deadline_at(
@@ -160,35 +138,6 @@ impl XhciSetupInputTrigger {
 
     pub(crate) fn action_names(&self) -> String {
         format_action_names(&self.actions)
-    }
-
-    fn emit_due_ramfb_delay_checkpoints<F>(&mut self, now: Instant, emit_checkpoint: &mut F)
-    where
-        F: FnMut(&str),
-    {
-        let Some(fired_at) = self.fired_at else {
-            return;
-        };
-        let Some(elapsed) = now.checked_duration_since(fired_at) else {
-            return;
-        };
-        for checkpoint in &mut self.ramfb_delay_checkpoints {
-            if !checkpoint.emitted && elapsed >= checkpoint.delay {
-                checkpoint.emitted = true;
-                emit_checkpoint(&checkpoint.label);
-            }
-        }
-    }
-
-    fn ready_for_ramfb_checkpoints_at(&mut self, platform: &VirtPlatform, now: Instant) -> bool {
-        if !self.fire_delay_elapsed_at(platform, now) {
-            return false;
-        }
-        let stats = platform.xhci_setup_input_report_stats();
-        let emitted_reports = stats
-            .emitted_key_reports
-            .saturating_add(stats.emitted_release_reports);
-        stats.queued_reports == emitted_reports
     }
 
     fn fire_delay_elapsed_at(&mut self, platform: &VirtPlatform, now: Instant) -> bool {
