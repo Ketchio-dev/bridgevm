@@ -70,6 +70,19 @@ final class AppleVzRunnerCoreTests: XCTestCase {
     XCTAssertFalse(plan.balloonDevice)
   }
 
+  func testBuildsIsoEfiRawConfigurationPlanBeforeLaunchBoundary() throws {
+    var handoff = try AppleVzHandoffValidator.decode(Data(readyHandoffJSON.utf8))
+    handoff.bootMode = "iso-efi"
+    handoff.disk.format = "raw"
+
+    let plan = try AppleVzHandoffValidator.configurationPlan(for: handoff)
+
+    XCTAssertEqual(plan.bootMode, "iso-efi")
+    XCTAssertEqual(plan.bootLoader, "efi")
+    XCTAssertEqual(plan.diskAttachment, "disk-image-raw")
+    XCTAssertEqual(plan.networkAttachment, "nat")
+  }
+
   func testRejectsInstallerHandoffBeforeLaunchConstruction() throws {
     var handoff = try AppleVzHandoffValidator.decode(Data(readyHandoffJSON.utf8))
     handoff.bootMode = "linux-installer"

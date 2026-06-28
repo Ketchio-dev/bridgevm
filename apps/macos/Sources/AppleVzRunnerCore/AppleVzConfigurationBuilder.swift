@@ -38,7 +38,7 @@ public enum AppleVzConfigurationBuilder {
     guard ["arm64", "aarch64"].contains(spec.guest.arch.lowercased()) else {
       throw AppleVzRunnerError.unsupportedGuestArch(spec.guest.arch)
     }
-    guard spec.boot.mode == "linux-kernel" else {
+    guard ["linux-kernel", "iso-efi"].contains(spec.boot.mode) else {
       throw AppleVzRunnerError.unsupportedBootMode(spec.boot.mode)
     }
     guard spec.disk.format == "raw" else {
@@ -50,9 +50,6 @@ public enum AppleVzConfigurationBuilder {
     guard spec.readiness.ready else {
       throw AppleVzRunnerError.notReady(spec.readiness.blockers)
     }
-    guard let kernel = spec.boot.kernel else {
-      throw AppleVzRunnerError.missingKernel
-    }
 
     let configuration = VZVirtualMachineConfiguration()
     let platform = VZGenericPlatformConfiguration()
@@ -63,25 +60,54 @@ public enum AppleVzConfigurationBuilder {
     platform.machineIdentifier = loadOrCreateMachineIdentifier(bundlePath: spec.bundlePath)
     configuration.platform = platform
 
-    let bootLoader = VZLinuxBootLoader(kernelURL: URL(fileURLWithPath: kernel.path))
-    if let initrd = spec.boot.initrd {
-      bootLoader.initialRamdiskURL = URL(fileURLWithPath: initrd.path)
+    // Boot loader + storage depend on the boot mode. The install target disk is
+    // always attached; iso-efi adds the installer ISO as USB mass storage.
+    var storageDevices: [VZStorageDeviceConfiguration] = []
+    let targetDisk = try VZDiskImageStorageDeviceAttachment(
+      url: URL(fileURLWithPath: spec.disk.path), readOnly: spec.disk.readOnly)
+    storageDevices.append(VZVirtioBlockDeviceConfiguration(attachment: targetDisk))
+
+    switch spec.boot.mode {
+    case "iso-efi":
+      // Boot an arbitrary Linux installer ISO via EFI (the UTM/VZ approach for
+      // running any distro). An EFI variable store (created on first run)
+      // persists firmware/boot entries onto the disk the user installs to.
+      guard #available(macOS 13.0, *) else {
+        throw AppleVzRunnerError.unsupportedBootMode("iso-efi requires macOS 13+")
+      }
+      guard let iso = spec.boot.iso else { throw AppleVzRunnerError.missingKernel }
+      let varStorePath = spec.boot.efiVarStore ?? (spec.bundlePath + "/nvram/efivars.bin")
+      try? FileManager.default.createDirectory(
+        at: URL(fileURLWithPath: varStorePath).deletingLastPathComponent(),
+        withIntermediateDirectories: true)
+      let varStore: VZEFIVariableStore
+      if FileManager.default.fileExists(atPath: varStorePath) {
+        varStore = VZEFIVariableStore(url: URL(fileURLWithPath: varStorePath))
+      } else {
+        varStore = try VZEFIVariableStore(creatingVariableStoreAt: URL(fileURLWithPath: varStorePath))
+      }
+      let efi = VZEFIBootLoader()
+      efi.variableStore = varStore
+      configuration.bootLoader = efi
+      let isoAttachment = try VZDiskImageStorageDeviceAttachment(
+        url: URL(fileURLWithPath: iso.path), readOnly: true)
+      storageDevices.append(VZUSBMassStorageDeviceConfiguration(attachment: isoAttachment))
+    default:  // "linux-kernel"
+      guard let kernel = spec.boot.kernel else { throw AppleVzRunnerError.missingKernel }
+      let bootLoader = VZLinuxBootLoader(kernelURL: URL(fileURLWithPath: kernel.path))
+      if let initrd = spec.boot.initrd {
+        bootLoader.initialRamdiskURL = URL(fileURLWithPath: initrd.path)
+      }
+      if let commandLine = spec.boot.kernelCommandLine {
+        bootLoader.commandLine = commandLine
+      }
+      configuration.bootLoader = bootLoader
     }
-    if let commandLine = spec.boot.kernelCommandLine {
-      bootLoader.commandLine = commandLine
-    }
-    configuration.bootLoader = bootLoader
 
     configuration.cpuCount = try parsePositiveInt(spec.resources.cpu)
     configuration.memorySize = try parsePositiveUInt64(spec.resources.memory) * 1024 * 1024
 
-    let diskAttachment = try VZDiskImageStorageDeviceAttachment(
-      url: URL(fileURLWithPath: spec.disk.path),
-      readOnly: spec.disk.readOnly
-    )
-    configuration.storageDevices = [
-      VZVirtioBlockDeviceConfiguration(attachment: diskAttachment)
-    ]
+    configuration.storageDevices = storageDevices
 
     let networkDevice = VZVirtioNetworkDeviceConfiguration()
     // Persist a stable MAC per VM bundle. Like the machine identifier, an
@@ -202,6 +228,22 @@ public enum AppleVzConfigurationBuilder {
     configuration.graphicsDevices = [graphics]
     configuration.keyboards = [VZUSBKeyboardConfiguration()]
     configuration.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
+
+    // Seamless host<->guest clipboard via the SPICE agent protocol over a
+    // Virtio console port. The guest shares the macOS pasteboard once it runs
+    // `spice-vdagent` (it autostarts under XFCE/GNOME). This is the same
+    // mechanism UTM uses for Apple VZ Linux clipboard and is OS-level (copy in
+    // either direction), unlike the guest-tools agent button path. macOS 13+,
+    // and this is the windowed-display path, so the headless save/restore
+    // configuration is unaffected.
+    let spiceConsole = VZVirtioConsoleDeviceConfiguration()
+    let spicePort = VZVirtioConsolePortConfiguration()
+    spicePort.name = VZSpiceAgentPortAttachment.spiceAgentPortName
+    let spiceAgent = VZSpiceAgentPortAttachment()
+    spiceAgent.sharesClipboard = true
+    spicePort.attachment = spiceAgent
+    spiceConsole.ports[0] = spicePort
+    configuration.consoleDevices = [spiceConsole]
 
     return configuration
   }

@@ -100,6 +100,10 @@ public struct AppleVzBootSpec: Codable, Equatable {
   public var initrd: AppleVzPathSpec?
   public var kernelCommandLine: String?
   public var macosRestoreImage: AppleVzPathSpec?
+  /// For mode == "iso-efi": the installer ISO to boot via EFI, and the EFI
+  /// variable store path (created if absent) that persists firmware/boot vars.
+  public var iso: AppleVzPathSpec?
+  public var efiVarStore: String?
 
   enum CodingKeys: String, CodingKey {
     case mode
@@ -108,6 +112,8 @@ public struct AppleVzBootSpec: Codable, Equatable {
     case initrd
     case kernelCommandLine = "kernel_command_line"
     case macosRestoreImage = "macos_restore_image"
+    case iso
+    case efiVarStore = "efi_var_store"
   }
 }
 
@@ -279,7 +285,7 @@ public enum AppleVzHandoffValidator {
     guard ["arm64", "aarch64"].contains(handoff.guest.arch.lowercased()) else {
       throw AppleVzRunnerError.unsupportedGuestArch(handoff.guest.arch)
     }
-    guard handoff.bootMode == "linux-kernel" else {
+    guard ["linux-kernel", "iso-efi"].contains(handoff.bootMode) else {
       throw AppleVzRunnerError.unsupportedBootMode(handoff.bootMode)
     }
     guard handoff.disk.format == "raw" else {
@@ -331,7 +337,7 @@ public enum AppleVzHandoffValidator {
     switch bootMode {
     case "linux-kernel":
       return "linux-kernel"
-    case "linux-installer", "existing-disk", "macos-restore":
+    case "iso-efi", "linux-installer", "existing-disk", "macos-restore":
       return "efi"
     default:
       return "unknown"
