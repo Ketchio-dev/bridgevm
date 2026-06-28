@@ -1,3 +1,4 @@
+// allow: SIZE_OK - Task 5q virt platform wiring is a legacy monolithic surface carried to preserve validated HVF/PCIe evidence; full modular split is separate work.
 //! `VirtPlatform` — the assembled Path A "QEMU virt" platform.
 //!
 //! This ties the three Path A bricks together into the object a live HVF run
@@ -29,8 +30,12 @@ use crate::fwcfg::{
 };
 use crate::machine::{self, Region};
 use crate::msix::MsixMessage;
-use crate::nvme::{NvmeCommandTrace, NvmeCompletionEvent, NvmeController};
-use crate::pcie::{PcieEcam, PcieMmioTarget, PciePioTarget, NVME_BDF, VIRTIO_BLK_BDF, XHCI_BDF};
+use crate::nvme::{
+    NvmeCommandTrace, NvmeCompletionEvent, NvmeController, REG_CC, REG_DOORBELL_BASE,
+};
+use crate::pcie::{
+    CfgAddr, PcieEcam, PcieMmioTarget, PciePioTarget, NVME_BDF, VIRTIO_BLK_BDF, XHCI_BDF,
+};
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
 use crate::pl031::Pl031;
@@ -101,6 +106,18 @@ pub struct GuestMemoryLayout {
     pub dtb_load: u64,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NvmePcieLiveness {
+    pub nvme_advertised: bool,
+    pub nvme_ecam_touched: bool,
+    pub nvme_command_memory_enabled: bool,
+    pub nvme_command_bus_master_enabled: bool,
+    pub nvme_bar0_assigned: bool,
+    pub nvme_mmio_reached: bool,
+    pub nvme_cc_enabled: bool,
+    pub nvme_admin_doorbell_rung: bool,
+}
+
 /// The assembled Path A platform.
 #[derive(Debug)]
 pub struct VirtPlatform {
@@ -118,6 +135,10 @@ pub struct VirtPlatform {
     pending_msix: Vec<MsixMessage>,
     pending_spi_levels: Vec<(u32, bool)>,
     xhci_hid_boot_key_report_stats: XhciHidBootKeyReportStats,
+    nvme_ecam_touched: bool,
+    nvme_mmio_reached: bool,
+    nvme_cc_enabled: bool,
+    nvme_admin_doorbell_rung: bool,
     dtb: Vec<u8>,
 }
 
@@ -176,6 +197,10 @@ impl VirtPlatform {
             pending_msix: Vec::new(),
             pending_spi_levels: Vec::new(),
             xhci_hid_boot_key_report_stats: XhciHidBootKeyReportStats::default(),
+            nvme_ecam_touched: false,
+            nvme_mmio_reached: false,
+            nvme_cc_enabled: false,
+            nvme_admin_doorbell_rung: false,
             dtb,
         }
     }
@@ -330,6 +355,20 @@ impl VirtPlatform {
     /// firehose of per-command logging.
     pub fn nvme_command_trace(&self) -> Vec<NvmeCommandTrace> {
         self.nvme.recent_command_trace()
+    }
+
+    pub fn nvme_pcie_liveness(&self) -> NvmePcieLiveness {
+        let state = self.pcie.nvme_endpoint_state();
+        NvmePcieLiveness {
+            nvme_advertised: state.advertised,
+            nvme_ecam_touched: self.nvme_ecam_touched,
+            nvme_command_memory_enabled: state.command_memory_enabled,
+            nvme_command_bus_master_enabled: state.command_bus_master_enabled,
+            nvme_bar0_assigned: state.bar0_assigned,
+            nvme_mmio_reached: self.nvme_mmio_reached,
+            nvme_cc_enabled: self.nvme_cc_enabled,
+            nvme_admin_doorbell_rung: self.nvme_admin_doorbell_rung,
+        }
     }
 
     /// Resolve a guest-physical PCIe MMIO address against the currently
@@ -496,6 +535,9 @@ impl VirtPlatform {
     /// PCIe ECAM config-space access: a real host bridge at 00:00.0, all-ones
     /// (no device) elsewhere. Replaces the earlier blanket all-ones stub.
     fn pcie_access(&mut self, ecam_offset: u64, op: MmioOp) -> MmioOutcome {
+        if CfgAddr::from_ecam_offset(ecam_offset).bdf() == NVME_BDF {
+            self.nvme_ecam_touched = true;
+        }
         match op {
             MmioOp::Read { size } => MmioOutcome::ReadValue(self.pcie.cfg_read(ecam_offset, size)),
             MmioOp::Write { size, value } => {
@@ -532,6 +574,18 @@ impl VirtPlatform {
         let Some(target) = self.pcie.mmio_target(gpa) else {
             return MmioOutcome::KnownUnimplemented(aperture);
         };
+        if target.bdf == NVME_BDF && target.bar_index == 0 {
+            self.nvme_mmio_reached = true;
+            match op {
+                MmioOp::Write { value, .. } if target.offset == REG_CC && value & 1 != 0 => {
+                    self.nvme_cc_enabled = true;
+                }
+                MmioOp::Write { .. } if target.offset == REG_DOORBELL_BASE => {
+                    self.nvme_admin_doorbell_rung = true;
+                }
+                MmioOp::Read { .. } | MmioOp::Write { .. } => {}
+            }
+        }
         match (target.bdf, target.bar_index) {
             (NVME_BDF, 0) => self.nvme_access(target.offset, op, mem),
             (XHCI_BDF, 0) => match op {
@@ -1237,6 +1291,109 @@ mod tests {
     }
 
     #[test]
+    fn pcie_nvme_liveness_separates_bar_command_mmio_cc_and_admin_doorbell() {
+        const ASQ: u64 = machine::RAM_BASE + 0x1000;
+        const ACQ: u64 = machine::RAM_BASE + 0x2000;
+        const DATA: u64 = machine::RAM_BASE + 0x3000;
+
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x8000);
+
+        // Given: the NVMe endpoint is advertised but untouched.
+        let initial = p.nvme_pcie_liveness();
+        assert!(initial.nvme_advertised);
+        assert!(!initial.nvme_ecam_touched);
+        assert!(!initial.nvme_bar0_assigned);
+        assert!(!initial.nvme_command_memory_enabled);
+        assert!(!initial.nvme_command_bus_master_enabled);
+        assert!(!initial.nvme_mmio_reached);
+        assert!(!initial.nvme_cc_enabled);
+        assert!(!initial.nvme_admin_doorbell_rung);
+
+        // When: firmware assigns NVMe BAR0 but leaves command memory disabled.
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(1, 0, crate::pcie::REG_BAR0),
+                MmioOp::Write {
+                    size: 4,
+                    value: machine::PCIE_MMIO_32.base,
+                },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+
+        // Then: BAR assignment is visible without claiming MMIO reachability.
+        let bar_only = p.nvme_pcie_liveness();
+        assert!(bar_only.nvme_ecam_touched);
+        assert!(bar_only.nvme_bar0_assigned);
+        assert!(!bar_only.nvme_command_memory_enabled);
+        assert!(!bar_only.nvme_command_bus_master_enabled);
+        assert!(!bar_only.nvme_mmio_reached);
+        assert_eq!(p.pcie_mmio_target(machine::PCIE_MMIO_32.base), None);
+
+        // When: only NVMe command memory is enabled.
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(1, 0, crate::pcie::REG_COMMAND_STATUS),
+                MmioOp::Write {
+                    size: 2,
+                    value: u64::from(crate::pcie::CMD_MEMORY_SPACE),
+                },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+
+        // Then: MMIO decode is enabled while bus-master is still reported apart.
+        let memory_only = p.nvme_pcie_liveness();
+        assert!(memory_only.nvme_command_memory_enabled);
+        assert!(!memory_only.nvme_command_bus_master_enabled);
+        assert_eq!(
+            p.pcie_mmio_target(machine::PCIE_MMIO_32.base),
+            Some(PcieMmioTarget {
+                bdf: NVME_BDF,
+                bar_index: 0,
+                offset: 0,
+            })
+        );
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_MMIO_32.base + crate::nvme::REG_VS,
+                MmioOp::Read { size: 4 },
+                &mut mem,
+            ),
+            MmioOutcome::ReadValue(u64::from(crate::nvme::NVME_VERSION_1_4_0))
+        );
+        let mmio_read = p.nvme_pcie_liveness();
+        assert!(mmio_read.nvme_mmio_reached);
+        assert!(!mmio_read.nvme_cc_enabled);
+        assert!(!mmio_read.nvme_admin_doorbell_rung);
+
+        // When: bus-master is added and the admin queue is used.
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(1, 0, crate::pcie::REG_COMMAND_STATUS),
+                MmioOp::Write {
+                    size: 2,
+                    value: u64::from(crate::pcie::CMD_MEMORY_SPACE | crate::pcie::CMD_BUS_MASTER),
+                },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        enable_nvme_controller(&mut p, &mut mem, ASQ, ACQ);
+        let identify_controller = encode_nvme_sqe(0x06, 11, 0, DATA, 0x01, 0, 0);
+        submit_admin_sqe(&mut p, &mut mem, ASQ, 0, &identify_controller);
+
+        // Then: liveness distinguishes bus-master, CC enable, and doorbell.
+        let live = p.nvme_pcie_liveness();
+        assert!(live.nvme_command_bus_master_enabled);
+        assert!(live.nvme_cc_enabled);
+        assert!(live.nvme_admin_doorbell_rung);
+    }
+
+    #[test]
     fn pcie_nvme_bar0_doorbell_processes_admin_identify() {
         const ASQ: u64 = machine::RAM_BASE + 0x1000;
         const ACQ: u64 = machine::RAM_BASE + 0x2000;
@@ -1605,6 +1762,56 @@ mod tests {
                 &mut mem
             ),
             MmioOutcome::KnownUnimplemented("pcie-mmio-32")
+        );
+    }
+
+    #[test]
+    fn xhci_bar_and_command_do_not_enable_nvme_liveness_or_decode() {
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+        let xhci_base = machine::PCIE_MMIO_32.base + 0x2_0000;
+
+        // Given: only xHCI BAR0 and command bits are programmed.
+        for (reg, value) in [
+            (crate::pcie::REG_BAR0, xhci_base),
+            (crate::pcie::REG_BAR0 + 4, 0),
+            (
+                crate::pcie::REG_COMMAND_STATUS,
+                u64::from(crate::pcie::CMD_MEMORY_SPACE | crate::pcie::CMD_BUS_MASTER),
+            ),
+        ] {
+            assert_eq!(
+                p.on_mmio(
+                    pcie_cfg_gpa(crate::pcie::XHCI_BDF.1, crate::pcie::XHCI_BDF.2, reg),
+                    MmioOp::Write {
+                        size: if reg == crate::pcie::REG_COMMAND_STATUS {
+                            2
+                        } else {
+                            4
+                        },
+                        value,
+                    },
+                    &mut mem,
+                ),
+                MmioOutcome::WriteAck
+            );
+        }
+
+        // Then: xHCI decode exists, but NVMe liveness and NVMe BAR decode do not.
+        let live = p.nvme_pcie_liveness();
+        assert!(live.nvme_advertised);
+        assert!(!live.nvme_ecam_touched);
+        assert!(!live.nvme_bar0_assigned);
+        assert!(!live.nvme_command_memory_enabled);
+        assert!(!live.nvme_command_bus_master_enabled);
+        assert_eq!(p.pcie_mmio_target(machine::PCIE_MMIO_32.base), None);
+        assert_eq!(
+            p.pcie_mmio_target(xhci_base),
+            Some(PcieMmioTarget {
+                bdf: XHCI_BDF,
+                bar_index: 0,
+                offset: 0,
+            })
         );
     }
 

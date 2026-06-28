@@ -1,3 +1,4 @@
+// allow: SIZE_OK - Task 5q PCIe ECAM model is a legacy monolithic surface carried to preserve validated HVF/PCIe evidence; full modular split is separate work.
 //! PCIe ECAM config-space model for the Path A "QEMU virt contract" platform.
 //!
 //! The QEMU `virt` machine exposes its PCIe host bridge through an
@@ -379,9 +380,21 @@ impl Bar {
         Some(u64::from(self.value & self.size_mask & mask))
     }
 
+    fn assigned_base(&self) -> Option<u64> {
+        let base = self.base()?;
+        let sizing_readback = self.size_mask | self.type_bits;
+        match self.kind {
+            BarKind::Memory32 | BarKind::Memory64Low => {
+                (base != 0 && self.value != sizing_readback).then_some(base)
+            }
+            BarKind::Io => (self.value != sizing_readback).then_some(base),
+            BarKind::Memory64High => None,
+        }
+    }
+
     /// Offset into this BAR for `addr`, if the BAR currently decodes it.
     fn offset_of(&self, addr: u64) -> Option<u64> {
-        let base = self.base()?;
+        let base = self.assigned_base()?;
         let size = self.size();
         let offset = addr.checked_sub(base)?;
         (offset < size).then_some(offset)
@@ -696,6 +709,14 @@ pub struct PciePioTarget {
     pub offset: u64,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PcieNvmeEndpointState {
+    pub advertised: bool,
+    pub command_memory_enabled: bool,
+    pub command_bus_master_enabled: bool,
+    pub bar0_assigned: bool,
+}
+
 impl Default for PcieEcam {
     fn default() -> Self {
         Self::new()
@@ -727,6 +748,21 @@ impl PcieEcam {
 
     fn function_at_mut(&mut self, bdf: (u8, u8, u8)) -> Option<&mut Function> {
         self.functions.iter_mut().find(|f| f.bdf == bdf)
+    }
+
+    pub fn nvme_endpoint_state(&self) -> PcieNvmeEndpointState {
+        let Some(func) = self.function_at(NVME_BDF) else {
+            return PcieNvmeEndpointState::default();
+        };
+        let expected_vendor_device = (u32::from(NVME_DEVICE_ID) << 16) | u32::from(NVME_VENDOR_ID);
+        let expected_revision_class = (NVME_CLASS_CODE << 8) | u32::from(NVME_REVISION);
+        PcieNvmeEndpointState {
+            advertised: func.vendor_device == expected_vendor_device
+                && func.revision_class == expected_revision_class,
+            command_memory_enabled: func.command & CMD_MEMORY_SPACE != 0,
+            command_bus_master_enabled: func.command & CMD_BUS_MASTER != 0,
+            bar0_assigned: func.bars[0].assigned_base().is_some(),
+        }
     }
 
     /// Read `size` (1, 2 or 4) bytes of config space at `ecam_offset` (relative
@@ -1474,7 +1510,7 @@ mod tests {
     }
 
     #[test]
-    fn nvme_bar0_sizing_and_memory_decode_follow_command_enable() {
+    fn nvme_command_enables_bar0_mmio_decode() {
         let mut ecam = PcieEcam::new();
         let bar0 = ecam_offset(0, 1, 0, REG_BAR0);
         let cmd = ecam_offset(0, 1, 0, REG_COMMAND_STATUS);
@@ -1487,9 +1523,14 @@ mod tests {
         let base = machine::PCIE_MMIO_32.base as u32;
         ecam.cfg_write(bar0, 4, u64::from(base));
         assert_eq!(ecam.cfg_read(bar0, 4), u64::from(base));
+        assert!(ecam.nvme_endpoint_state().bar0_assigned);
+        assert!(!ecam.nvme_endpoint_state().command_memory_enabled);
+        assert!(!ecam.nvme_endpoint_state().command_bus_master_enabled);
         assert_eq!(ecam.mmio_target(machine::PCIE_MMIO_32.base), None);
 
         ecam.cfg_write(cmd, 2, u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER));
+        assert!(ecam.nvme_endpoint_state().command_memory_enabled);
+        assert!(ecam.nvme_endpoint_state().command_bus_master_enabled);
         assert_eq!(
             ecam.mmio_target(machine::PCIE_MMIO_32.base),
             Some(PcieMmioTarget {
@@ -1507,6 +1548,74 @@ mod tests {
             ecam.mmio_target(machine::PCIE_MMIO_32.base + u64::from(NVME_BAR0_SIZE)),
             None
         );
+    }
+
+    #[test]
+    fn xhci_command_enable_does_not_satisfy_nvme_command_or_decode() {
+        let mut ecam = PcieEcam::new();
+        let nvme_bar0 = ecam_offset(0, 1, 0, REG_BAR0);
+        let nvme_cmd = ecam_offset(0, 1, 0, REG_COMMAND_STATUS);
+        let xhci_bar0 = ecam_offset(0, 2, 0, REG_BAR0);
+        let xhci_bar1 = ecam_offset(0, 2, 0, REG_BAR0 + 4);
+        let xhci_cmd = ecam_offset(0, 2, 0, REG_COMMAND_STATUS);
+        let nvme_base = machine::PCIE_MMIO_32.base;
+        let xhci_base = machine::PCIE_MMIO_32.base + 0x2_0000;
+
+        // Given: NVMe has a BAR0 base, while only xHCI has command bits enabled.
+        ecam.cfg_write(nvme_bar0, 4, nvme_base);
+        ecam.cfg_write(xhci_bar0, 4, xhci_base);
+        ecam.cfg_write(xhci_bar1, 4, 0);
+        ecam.cfg_write(xhci_cmd, 2, u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER));
+
+        // Then: xHCI enablement remains separate from the NVMe endpoint.
+        let nvme_state = ecam.nvme_endpoint_state();
+        assert!(nvme_state.bar0_assigned);
+        assert!(!nvme_state.command_memory_enabled);
+        assert!(!nvme_state.command_bus_master_enabled);
+        assert_eq!(ecam.mmio_target(nvme_base), None);
+        assert_eq!(
+            ecam.mmio_target(xhci_base),
+            Some(PcieMmioTarget {
+                bdf: XHCI_BDF,
+                bar_index: 0,
+                offset: 0,
+            })
+        );
+
+        // When: NVMe command bits are written, its own BAR starts decoding.
+        ecam.cfg_write(nvme_cmd, 2, u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER));
+
+        // Then: the NVMe target is enabled by NVMe's command register only.
+        assert_eq!(
+            ecam.mmio_target(nvme_base),
+            Some(PcieMmioTarget {
+                bdf: NVME_BDF,
+                bar_index: 0,
+                offset: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn nvme_bar0_sizing_probe_does_not_decode_after_command_enable() {
+        let mut ecam = PcieEcam::new();
+        let bar0 = ecam_offset(0, 1, 0, REG_BAR0);
+        let cmd = ecam_offset(0, 1, 0, REG_COMMAND_STATUS);
+
+        // Given: firmware is probing BAR0 size, not assigning a real base.
+        ecam.cfg_write(bar0, 4, 0xFFFF_FFFF);
+        let sizing_readback = ecam.cfg_read(bar0, 4);
+        let sizing_probe_base = sizing_readback & !0xF;
+        assert!(!ecam.nvme_endpoint_state().bar0_assigned);
+
+        // When: command memory/bus-master bits are enabled while the sizing
+        // latch is still present.
+        ecam.cfg_write(cmd, 2, u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER));
+
+        // Then: the sizing value is still not an assigned BAR and must not
+        // decode as the NVMe MMIO aperture.
+        assert!(!ecam.nvme_endpoint_state().bar0_assigned);
+        assert_eq!(ecam.mmio_target(sizing_probe_base), None);
     }
 
     #[test]
