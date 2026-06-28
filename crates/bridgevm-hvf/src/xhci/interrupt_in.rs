@@ -168,7 +168,24 @@ impl XhciController {
             && self.slot1_dci3_dequeue == self.slot1_dci3_ring_base
             && self.slot1_dci3_two_entry_queue_rearm;
         if self.slot1_dci3_dequeue == self.slot1_dci3_ring_base && !wrapped_base_rearm {
-            return false;
+            if !matches!(rearm_policy, Dci3RearmPolicy::ReusableQueueDrain) {
+                return false;
+            }
+            let Some(interrupt_transfer) = read_transfer_trb(mem, self.slot1_dci3_ring_base) else {
+                return false;
+            };
+            let expected_cycle = if self.slot1_dci3_dcs { TRB_CYCLE } else { 0 };
+            if interrupt_transfer.control & TRB_CYCLE == expected_cycle {
+                return false;
+            }
+            return match trb_type(interrupt_transfer.control) {
+                TRB_TYPE_LINK | TRB_TYPE_NORMAL => {
+                    self.slot1_dci3_dcs = interrupt_transfer.control & TRB_CYCLE != 0;
+                    self.slot1_dci3_dequeue = self.slot1_dci3_ring_base;
+                    true
+                }
+                _ => false,
+            };
         }
         let Some(minimum_consumed_trbs) =
             rearm_policy.minimum_consumed_trbs(self.slot1_dci3_two_entry_queue_rearm)
