@@ -62,11 +62,16 @@ impl XhciController {
                     else {
                         return false;
                     };
-                    let queued_report = self.boot_keyboard_report_queue.peek();
-                    let report = queued_report
-                        .map(SetupInputReport::bytes)
-                        .unwrap_or(HID_BOOT_KEYBOARD_NO_KEY_REPORT);
                     let transfer_length = trb_transfer_length(interrupt_transfer.status);
+                    let can_emit_queued_report = transfer_length >= HID_BOOT_KEYBOARD_REPORT_LEN;
+                    let queued_report = self.boot_keyboard_report_queue.peek();
+                    let report = if can_emit_queued_report {
+                        queued_report
+                            .map(SetupInputReport::bytes)
+                            .unwrap_or(HID_BOOT_KEYBOARD_NO_KEY_REPORT)
+                    } else {
+                        HID_BOOT_KEYBOARD_NO_KEY_REPORT
+                    };
                     let write_len = transfer_length.min(HID_BOOT_KEYBOARD_REPORT_LEN);
                     let Ok(write_len) = usize::try_from(write_len) else {
                         return false;
@@ -84,7 +89,7 @@ impl XhciController {
                     let posted =
                         self.post_event(mem, interrupt_transfer.gpa, event_status, event_control);
                     if posted {
-                        if write_len > 0 {
+                        if can_emit_queued_report {
                             if let Some(queued_report) = queued_report {
                                 self.record_setup_input_report_emitted(
                                     queued_report,

@@ -32,6 +32,50 @@ fn slot1_dci3_doorbell_emits_queued_boot_key_report_once_then_releases() {
 }
 
 #[test]
+fn slot1_dci3_short_transfer_preserves_queued_setup_input_report_until_full_buffer() {
+    // Given: Configure Endpoint installed DCI3 with a short interrupt IN buffer before full ones.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    setup_configure_endpoint_command(&mut xhci, &mut mem);
+    mem.write_u32(DCI3_RING + 8, 4);
+    write_dci3_normal_trb(&mut mem, DCI3_RING + TRB_SIZE, DCI3_WRAP_BUFFER, true);
+    write_dci3_normal_trb(
+        &mut mem,
+        DCI3_RING + (TRB_SIZE * 2),
+        DCI3_BUFFER + 0x40,
+        true,
+    );
+    assert!(mem.write_bytes(DCI3_WRAP_BUFFER, &[0xbb; 8]));
+    assert!(mem.write_bytes(DCI3_BUFFER + 0x40, &[0xcc; 8]));
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert!(xhci.queue_boot_keyboard_space());
+
+    // When: the guest first polls with a short buffer, then with two full buffers.
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
+    assert!(!xhci.queue_boot_keyboard_space());
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
+
+    // Then: the short transfer does not expose or consume Space; the next full buffer gets it.
+    assert_eq!(
+        mem.read_bytes(DCI3_BUFFER, 8).unwrap(),
+        [0, 0, 0, 0, 0xaa, 0xaa, 0xaa, 0xaa]
+    );
+    assert_eq!(
+        mem.read_bytes(DCI3_WRAP_BUFFER, 8).unwrap(),
+        [0, 0, 0x2c, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(mem.read_bytes(DCI3_BUFFER + 0x40, 8).unwrap(), [0; 8]);
+    assert_success_dci3_transfer_event(&mem, EVENT_RING + TRB_SIZE, DCI3_RING);
+    assert_success_dci3_transfer_event(&mem, EVENT_RING + (TRB_SIZE * 2), DCI3_RING + TRB_SIZE);
+    assert_success_dci3_transfer_event(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 3),
+        DCI3_RING + (TRB_SIZE * 2),
+    );
+}
+
+#[test]
 fn setup_input_action_queue_emits_minimal_navigation_sequence() {
     // Given: Configure Endpoint installed DCI3 with one interrupt IN buffer per setup action edge.
     let mut xhci = XhciController::new();
