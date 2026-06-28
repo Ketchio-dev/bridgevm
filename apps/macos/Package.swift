@@ -10,11 +10,16 @@ let package = Package(
     products: [
         .executable(name: "BridgeVMApp", targets: ["BridgeVMApp"]),
         .executable(name: "AppleVzRunner", targets: ["AppleVzRunner"]),
+        .executable(name: "BridgeVMControl", targets: ["BridgeVMControl"]),
     ],
     targets: [
         .executableTarget(
             name: "BridgeVMApp",
             path: "Sources/BridgeVMApp"
+        ),
+        .executableTarget(
+            name: "BridgeVMControl",
+            path: "Sources/BridgeVMControl"
         ),
         .target(
             name: "AppleVzRunnerCore",
@@ -34,6 +39,11 @@ let package = Package(
             name: "AppleVzRunnerTests",
             dependencies: ["AppleVzRunnerCore"],
             path: "Tests/AppleVzRunnerTests"
+        ),
+        .testTarget(
+            name: "BridgeVMControlTests",
+            dependencies: ["BridgeVMControl"],
+            path: "Tests/BridgeVMControlTests"
         )
     ]
 )
