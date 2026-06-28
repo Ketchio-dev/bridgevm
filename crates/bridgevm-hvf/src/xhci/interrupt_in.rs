@@ -19,7 +19,6 @@ const MIN_DELAYED_REUSABLE_DCI3_RING_TRBS: u64 = 2;
 
 #[derive(Clone, Copy)]
 enum Dci3RearmPolicy {
-    Disabled,
     AfterDoorbell,
     ReusableQueueDrain,
 }
@@ -27,7 +26,6 @@ enum Dci3RearmPolicy {
 impl Dci3RearmPolicy {
     const fn minimum_consumed_trbs(self, two_entry_queue_rearm: bool) -> Option<u64> {
         match self {
-            Self::Disabled => None,
             Self::AfterDoorbell => Some(1),
             Self::ReusableQueueDrain => Some(if two_entry_queue_rearm {
                 MIN_DELAYED_REUSABLE_DCI3_RING_TRBS
@@ -43,7 +41,7 @@ impl XhciController {
         &mut self,
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
-        self.process_dci3_interrupt_in_transfer_with_rearm(mem, Dci3RearmPolicy::Disabled)
+        self.process_dci3_interrupt_in_transfer_with_rearm(mem, Dci3RearmPolicy::ReusableQueueDrain)
     }
 
     pub(crate) fn process_queued_dci3_input(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {

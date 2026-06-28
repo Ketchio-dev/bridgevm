@@ -194,6 +194,8 @@ mod platform_setup_input_cycle_drain_tests;
 #[cfg(test)]
 mod platform_setup_input_late_drain_tests;
 #[cfg(test)]
+mod platform_setup_input_post_fire_kick_tests;
+#[cfg(test)]
 mod platform_setup_input_support;
 #[cfg(test)]
 mod platform_setup_input_tests;
