@@ -1,7 +1,7 @@
 use super::test_support::{
-    assert_success_event_data_transfer_event, assert_success_transfer_event_for_trb,
-    command_control, setup_command_rings_with_parameter, setup_packet_parameter, SetupPacketFields,
-    TestRam, DOORBELL_BASE, ENABLE_SLOT_ID, EVENT_RING, TRB_SIZE, TRB_TYPE_ADDRESS_DEVICE,
+    assert_success_event_data_transfer_event, command_control, setup_command_rings_with_parameter,
+    setup_packet_parameter, SetupPacketFields, TestRam, DOORBELL_BASE, ENABLE_SLOT_ID, EVENT_RING,
+    TRB_SIZE, TRB_TYPE_ADDRESS_DEVICE,
 };
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
@@ -54,7 +54,7 @@ fn address_device_command_captures_slot1_ep0_dequeue_from_input_context() {
 }
 
 #[test]
-fn ep0_get_descriptor_device_writes_descriptor_and_posts_transfer_event() {
+fn ep0_event_data_control_td_posts_only_event_data_transfer_event() {
     // Given: slot 1 has an EP0 ring containing Setup/Data/type7/Status TRBs for GET_DESCRIPTOR.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0x8000);
@@ -72,7 +72,7 @@ fn ep0_get_descriptor_device_writes_descriptor_and_posts_transfer_event() {
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
 
-    // Then: exactly the 18-byte device descriptor is written and URB edge events are posted.
+    // Then: exactly the 18-byte device descriptor is written and only the Event Data event is posted.
     assert_eq!(
         mem.read_bytes(DATA_STAGE_BUFFER, DEVICE_DESCRIPTOR.len())
             .unwrap(),
@@ -82,12 +82,8 @@ fn ep0_get_descriptor_device_writes_descriptor_and_posts_transfer_event() {
         mem.read_bytes(DATA_STAGE_BUFFER + 18, 14).unwrap(),
         [0xaa; 14]
     );
-    assert_success_transfer_event_for_trb(&mem, EVENT_RING + TRB_SIZE, EP0_RING);
-    assert_success_event_data_transfer_event(
-        &mem,
-        EVENT_RING + (TRB_SIZE * 2),
-        EVENT_DATA_PARAMETER,
-    );
+    assert_success_event_data_transfer_event(&mem, EVENT_RING + TRB_SIZE, EVENT_DATA_PARAMETER);
+    assert_eq!(mem.read_u64(EVENT_RING + (TRB_SIZE * 2)), 0);
     assert_eq!(xhci.mmio_read(0x1020, 4) & 1, 1);
     assert_eq!(
         xhci.mmio_read(0x44, 4) & u64::from(USB_STS_EINT),

@@ -49,18 +49,6 @@ impl XhciController {
             return false;
         };
         let event_control_base = transfer_event_control(SLOT_ID, ENDPOINT_ID_EP0);
-        let start_event_status = COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT;
-        trace::ep0_post_event_request(request.setup.gpa, start_event_status, event_control_base);
-        let start_posted = self.post_event(
-            mem,
-            request.setup.gpa,
-            start_event_status,
-            event_control_base,
-        );
-        trace::ep0_post_event_result(start_posted);
-        if !start_posted {
-            return false;
-        }
         let posted = {
             let mut post_completion_event =
                 |event_parameter: u64, residual_length: u32, event_flags: u32| -> bool {
@@ -79,6 +67,9 @@ impl XhciController {
                     TRANSFER_EVENT_ED,
                 ),
                 None => {
+                    if !post_completion_event(request.setup.gpa, 0, 0) {
+                        return false;
+                    }
                     if let Some(data_stage) = request.data_stage {
                         if !post_completion_event(data_stage.gpa, request.residual_length, 0) {
                             return false;
