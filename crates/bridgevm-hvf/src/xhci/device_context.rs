@@ -149,6 +149,13 @@ impl XhciController {
             self.slot1_dci3_dequeue | u64::from(self.slot1_dci3_dcs),
         );
     }
+
+    pub(super) fn invalidate_slot1_dci3_endpoint_state(&mut self) {
+        self.slot1_dci3_dequeue = 0;
+        self.slot1_dci3_ring_base = 0;
+        self.slot1_dci3_dcs = false;
+        self.slot1_dci3_two_entry_queue_rearm = false;
+    }
 }
 
 fn output_context_for_slot(mem: &dyn GuestMemoryMut, dcbaa: u64, slot_id: u32) -> Option<u64> {
