@@ -127,6 +127,7 @@ impl XhciController {
             return;
         }
         self.slot1_dci3_dequeue = raw_dequeue & EP_TR_DEQUEUE_MASK;
+        self.slot1_dci3_ring_base = self.slot1_dci3_dequeue;
         self.slot1_dci3_dcs = raw_dequeue & 1 != 0;
     }
 

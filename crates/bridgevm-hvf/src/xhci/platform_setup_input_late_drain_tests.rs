@@ -4,6 +4,53 @@ use crate::fwcfg::GuestMemoryMut;
 use crate::xhci::SetupInputAction;
 
 #[test]
+fn platform_delayed_setup_input_drains_reposted_dci3_trbs_after_initial_boot_key() {
+    // Given: the installer boot key used the first two DCI3 TRBs before setup input fires.
+    let (mut platform, mut mem) = new_platform_and_ram();
+    program_xhci_bar0(&mut platform, &mut mem);
+    configure_dci3_interrupt_in_over_bar0(&mut platform, &mut mem);
+    write_dci3_normal_trb(&mut mem, DCI3_RING, DCI3_KEY_BUFFER);
+    write_dci3_normal_trb(&mut mem, DCI3_RING + TRB_SIZE, DCI3_RELEASE_BUFFER);
+    assert!(mem.write_bytes(DCI3_KEY_BUFFER, &[0xaa; 8]));
+    assert!(mem.write_bytes(DCI3_RELEASE_BUFFER, &[0xbb; 8]));
+    assert!(platform.queue_xhci_hid_boot_key_usage(0x2c).is_ok());
+    ring_dci3_doorbell(&mut platform, &mut mem);
+    acknowledge_event_ring_dequeue(&mut platform, &mut mem, 2);
+    ring_dci3_doorbell(&mut platform, &mut mem);
+    acknowledge_event_ring_dequeue(&mut platform, &mut mem, 3);
+    assert!(mem.write_bytes(DCI3_RING, &[0; 16]));
+    assert!(mem.write_bytes(DCI3_RING + TRB_SIZE, &[0; 16]));
+
+    // When: delayed setup input queues Enter, then Windows reposts DCI3 slot 0 twice.
+    assert_eq!(
+        platform.queue_xhci_setup_input_actions_with_mem(&[SetupInputAction::Enter], &mut mem),
+        Ok(())
+    );
+    write_dci3_normal_trb(&mut mem, DCI3_RING, DCI3_KEY_BUFFER + 0x40);
+    assert!(mem.write_bytes(DCI3_KEY_BUFFER + 0x40, &[0xcc; 8]));
+    ring_dci3_doorbell(&mut platform, &mut mem);
+    acknowledge_event_ring_dequeue(&mut platform, &mut mem, 4);
+    write_dci3_normal_trb(&mut mem, DCI3_RING, DCI3_KEY_BUFFER + 0x60);
+    assert!(mem.write_bytes(DCI3_KEY_BUFFER + 0x60, &[0xdd; 8]));
+    ring_dci3_doorbell(&mut platform, &mut mem);
+    acknowledge_event_ring_dequeue(&mut platform, &mut mem, 5);
+
+    // Then: reposted DCI3 TRBs drain the queued setup-input key and release.
+    assert_eq!(
+        read_bytes(&mem, DCI3_KEY_BUFFER + 0x40, 8),
+        [0, 0, 0x28, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(read_bytes(&mem, DCI3_KEY_BUFFER + 0x60, 8), [0; 8]);
+    assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 3), DCI3_RING);
+    assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 4), DCI3_RING);
+    let stats = platform.xhci_setup_input_report_stats();
+    assert_eq!(stats.queued_actions, 2);
+    assert_eq!(stats.queued_reports, 4);
+    assert_eq!(stats.emitted_key_reports, 2);
+    assert_eq!(stats.emitted_release_reports, 2);
+}
+
+#[test]
 fn platform_late_dci3_trbs_drain_on_runtime_event_ack_without_second_doorbell() {
     // Given: setup input needs six DCI3 polls, but the guest has posted only two so far.
     let (mut platform, mut mem) = new_platform_and_ram();

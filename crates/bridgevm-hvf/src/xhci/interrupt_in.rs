@@ -37,16 +37,37 @@ impl XhciController {
         &mut self,
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
+        self.process_dci3_interrupt_in_transfer_with_rearm(mem, false)
+    }
+
+    pub(super) fn process_dci3_interrupt_in_transfer_after_doorbell(
+        &mut self,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> bool {
+        self.process_dci3_interrupt_in_transfer_with_rearm(mem, true)
+    }
+
+    fn process_dci3_interrupt_in_transfer_with_rearm(
+        &mut self,
+        mem: &mut dyn GuestMemoryMut,
+        allow_rearm: bool,
+    ) -> bool {
         for _ in 0..MAX_LINK_TRBS_PER_DOORBELL {
             let transfer_ring = self.slot1_dci3_dequeue;
             if transfer_ring == 0 {
                 return false;
             }
             let Some(interrupt_transfer) = read_transfer_trb(mem, transfer_ring) else {
+                if allow_rearm && self.rearm_slot1_dci3_to_ring_base_if_queued(mem) {
+                    continue;
+                }
                 return false;
             };
             let expected_cycle = if self.slot1_dci3_dcs { TRB_CYCLE } else { 0 };
             if interrupt_transfer.control & TRB_CYCLE != expected_cycle {
+                if allow_rearm && self.rearm_slot1_dci3_to_ring_base_if_queued(mem) {
+                    continue;
+                }
                 return false;
             }
             match trb_type(interrupt_transfer.control) {
@@ -105,10 +126,38 @@ impl XhciController {
                     }
                     return posted;
                 }
-                _ => return false,
+                _ => {
+                    if allow_rearm && self.rearm_slot1_dci3_to_ring_base_if_queued(mem) {
+                        continue;
+                    }
+                    return false;
+                }
             }
         }
         false
+    }
+
+    fn rearm_slot1_dci3_to_ring_base_if_queued(&mut self, mem: &dyn GuestMemoryMut) -> bool {
+        if !self.has_queued_setup_input_report()
+            || self.slot1_dci3_ring_base == 0
+            || self.slot1_dci3_dequeue == self.slot1_dci3_ring_base
+        {
+            return false;
+        }
+        let Some(interrupt_transfer) = read_transfer_trb(mem, self.slot1_dci3_ring_base) else {
+            return false;
+        };
+        let expected_cycle = if self.slot1_dci3_dcs { TRB_CYCLE } else { 0 };
+        if interrupt_transfer.control & TRB_CYCLE != expected_cycle {
+            return false;
+        }
+        match trb_type(interrupt_transfer.control) {
+            TRB_TYPE_LINK | TRB_TYPE_NORMAL => {
+                self.slot1_dci3_dequeue = self.slot1_dci3_ring_base;
+                true
+            }
+            _ => false,
+        }
     }
 }
 
