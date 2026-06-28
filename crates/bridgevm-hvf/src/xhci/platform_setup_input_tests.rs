@@ -91,6 +91,40 @@ fn platform_setup_input_action_queue_reaches_dci3_over_pcie_bar0() {
 }
 
 #[test]
+fn platform_setup_input_action_queue_delivers_pending_dci3_without_doorbell() {
+    // Given: the guest already posted two DCI3 interrupt-IN TRBs and is waiting.
+    let (mut platform, mut mem) = new_platform_and_ram();
+    program_xhci_bar0(&mut platform, &mut mem);
+    configure_dci3_interrupt_in_over_bar0(&mut platform, &mut mem);
+    write_dci3_normal_trb(&mut mem, DCI3_RING, DCI3_KEY_BUFFER);
+    write_dci3_normal_trb(&mut mem, DCI3_RING + TRB_SIZE, DCI3_RELEASE_BUFFER);
+    assert!(mem.write_bytes(DCI3_KEY_BUFFER, &[0xaa; 8]));
+    assert!(mem.write_bytes(DCI3_RELEASE_BUFFER, &[0xbb; 8]));
+
+    // When: setup input is queued after the TRBs are already available.
+    assert_eq!(
+        platform.queue_xhci_setup_input_actions_with_mem(&[SetupInputAction::Enter], &mut mem),
+        Ok(())
+    );
+
+    // Then: the queued Enter press and release are delivered without another doorbell.
+    assert_eq!(
+        read_bytes(&mem, DCI3_KEY_BUFFER, 8),
+        [0, 0, 0x28, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(read_bytes(&mem, DCI3_RELEASE_BUFFER, 8), [0; 8]);
+    assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + TRB_SIZE, DCI3_RING);
+    assert_success_dci3_transfer_event_for_trb(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 2),
+        DCI3_RING + TRB_SIZE,
+    );
+    let stats = platform.xhci_setup_input_report_stats();
+    assert_eq!(stats.emitted_key_reports, 1);
+    assert_eq!(stats.emitted_release_reports, 1);
+}
+
+#[test]
 fn platform_rejects_unsupported_hid_boot_key_usage() {
     // Given: the platform has a ready xHCI DCI3 interrupt-IN ring.
     let (mut platform, mut mem) = new_platform_and_ram();

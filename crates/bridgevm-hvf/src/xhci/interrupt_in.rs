@@ -33,7 +33,7 @@ struct InterruptTransferTrb {
 }
 
 impl XhciController {
-    pub(super) fn process_dci3_interrupt_in_transfer(
+    pub(crate) fn process_dci3_interrupt_in_transfer(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {

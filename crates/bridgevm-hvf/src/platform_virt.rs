@@ -312,6 +312,22 @@ impl VirtPlatform {
         }
     }
 
+    pub fn queue_xhci_setup_input_actions_with_mem(
+        &mut self,
+        actions: &[SetupInputAction],
+        mem: &mut dyn GuestMemoryMut,
+    ) -> Result<(), XhciSetupInputQueueError> {
+        self.queue_xhci_setup_input_actions(actions)?;
+        for _ in 0..actions.len().saturating_mul(2) {
+            if !self.xhci.process_dci3_interrupt_in_transfer(mem) {
+                break;
+            }
+            self.queue_xhci_completion_msix();
+        }
+        self.flush_xhci_pending_msix();
+        Ok(())
+    }
+
     pub fn xhci_hid_boot_key_report_stats(&self) -> XhciHidBootKeyReportStats {
         self.xhci_hid_boot_key_report_stats
     }
