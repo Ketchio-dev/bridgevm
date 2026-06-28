@@ -3,12 +3,22 @@ use std::collections::BTreeMap;
 use bridgevm_hvf::nvme::NvmeCommandTrace;
 use bridgevm_hvf::platform_virt::VirtPlatform;
 
+use crate::nvme_storage_effect::{
+    nvme_pcie_liveness_attribution_line, nvme_storage_effect_summary,
+    nvme_storage_effect_summary_line, NvmePcieLivenessSnapshot,
+};
+
 pub(super) fn print_nvme_command_trace(platform: &VirtPlatform) {
     let limit = usize::try_from(super::env_u64("BRIDGEVM_RECENT_NVME_COMMANDS", 32)).unwrap_or(32);
+    let trace = platform.nvme_command_trace();
+    let liveness = NvmePcieLivenessSnapshot::from(platform.nvme_pcie_liveness());
+    println!(
+        "{}",
+        nvme_pcie_liveness_attribution_line(liveness, nvme_storage_effect_summary(&trace))
+    );
     if limit == 0 {
         return;
     }
-    let trace = platform.nvme_command_trace();
     if trace.is_empty() {
         return;
     }
@@ -48,6 +58,7 @@ pub(super) fn print_nvme_command_trace(platform: &VirtPlatform) {
             interrupt
         );
     }
+    println!("{}", nvme_storage_effect_summary_line(&trace[start..]));
 
     let mut summaries: BTreeMap<String, (usize, u16, u16)> = BTreeMap::new();
     let mut pending = 0usize;
@@ -209,7 +220,7 @@ fn is_pending_async_event(trace: &NvmeCommandTrace) -> bool {
 mod tests {
     use super::*;
 
-    fn trace(sqid: u16, opcode: u8, cdw10: u32, cdw11: u32, cdw12: u32) -> NvmeCommandTrace {
+    fn trace(sqid: u16, opcode: u8) -> NvmeCommandTrace {
         NvmeCommandTrace {
             sqid,
             cqid: 0,
@@ -221,9 +232,9 @@ mod tests {
             nsid: 0,
             prp1: 0,
             prp2: 0,
-            cdw10,
-            cdw11,
-            cdw12,
+            cdw10: 0,
+            cdw11: 0,
+            cdw12: 0,
             cdw13: 0,
             cdw14: 0,
             cdw15: 0,
@@ -235,7 +246,11 @@ mod tests {
 
     #[test]
     fn create_io_sq_detail_decodes_cqid_from_cdw11_high_half() {
-        let t = trace(0, 0x01, 0x003f_0001, 0x0001_0005, 0);
+        let t = NvmeCommandTrace {
+            cdw10: 0x003f_0001,
+            cdw11: 0x0001_0005,
+            ..trace(0, 0x01)
+        };
         assert_eq!(
             nvme_command_detail(&t),
             "sqid=1 cqid=1 qsize=64 qflags=0x0005"
@@ -244,7 +259,7 @@ mod tests {
 
     #[test]
     fn async_event_request_is_the_expected_pending_admin_command() {
-        let mut t = trace(0, 0x0c, 0, 0, 0);
+        let mut t = trace(0, 0x0c);
         t.completion_posted = false;
         assert!(is_pending_async_event(&t));
     }

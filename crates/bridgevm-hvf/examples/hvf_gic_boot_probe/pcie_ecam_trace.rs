@@ -10,6 +10,7 @@ mod tests;
 #[derive(Debug, Clone)]
 struct PcieEcamEvent {
     pc: u64,
+    bdf: (u8, u8, u8),
     reg: u16,
     op: String,
     outcome: String,
@@ -24,6 +25,23 @@ struct PcieBarReadbacks {
     bar0: u32,
     bar1: u32,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TrackedEndpoint {
+    bdf: (u8, u8, u8),
+    msix_cap_offset: u8,
+}
+
+const TRACKED_ENDPOINTS: [TrackedEndpoint; 2] = [
+    TrackedEndpoint {
+        bdf: pcie::NVME_BDF,
+        msix_cap_offset: pcie::NVME_MSIX_CAP_OFFSET,
+    },
+    TrackedEndpoint {
+        bdf: pcie::XHCI_BDF,
+        msix_cap_offset: pcie::XHCI_MSIX_CAP_OFFSET,
+    },
+];
 
 #[derive(Debug)]
 pub(super) struct RecentPcieEcam {
@@ -52,7 +70,10 @@ impl RecentPcieEcam {
             return;
         }
         let cfg = pcie::CfgAddr::from_ecam_offset(ipa - machine::PCIE_ECAM.base);
-        if cfg.bdf() != pcie::XHCI_BDF || !tracked_xhci_reg(cfg.reg) {
+        let Some(endpoint) = tracked_endpoint(cfg.bdf()) else {
+            return;
+        };
+        if !tracked_reg(endpoint, cfg.reg) {
             return;
         }
         if self.events.len() == self.max {
@@ -60,18 +81,19 @@ impl RecentPcieEcam {
         }
         self.events.push_back(PcieEcamEvent {
             pc,
+            bdf: cfg.bdf(),
             reg: cfg.reg,
             op: describe_mmio_op(op),
             outcome: describe_mmio_outcome(outcome),
             readback: pcie_cfg_read(platform, mem, cfg.bdf(), cfg.reg, access_size(op)),
             command_status: pcie_cfg_read(platform, mem, cfg.bdf(), pcie::REG_COMMAND_STATUS, 4)
                 .and_then(|value| u32::try_from(value).ok()),
-            bars: xhci_bar_readbacks(platform, mem),
+            bars: pcie_bar_readbacks(platform, mem, cfg.bdf()),
             msix_control: pcie_cfg_read(
                 platform,
                 mem,
                 cfg.bdf(),
-                u16::from(pcie::XHCI_MSIX_CAP_OFFSET) + 2,
+                u16::from(endpoint.msix_cap_offset) + 2,
                 2,
             )
             .and_then(|value| u16::try_from(value).ok()),
@@ -83,7 +105,7 @@ impl RecentPcieEcam {
             return;
         }
         println!(
-            "recent PCIe ECAM lifecycle events (xHCI last {}):",
+            "recent PCIe ECAM lifecycle events (last {}):",
             self.events.len()
         );
         for line in self.event_lines() {
@@ -97,11 +119,11 @@ impl RecentPcieEcam {
 }
 
 fn format_event_line(event: &PcieEcamEvent) -> String {
-    let (bus, device, function) = pcie::XHCI_BDF;
+    let (bus, device, function) = event.bdf;
     let mut line = format!(
         "  pc={:#x} bdf={bus:02x}:{device:02x}.{function} reg={}+{:#x} op={} outcome={}",
         event.pc,
-        xhci_reg_label(event.reg),
+        tracked_reg_label(event),
         event.reg,
         event.op,
         event.outcome
@@ -131,14 +153,25 @@ fn format_event_line(event: &PcieEcamEvent) -> String {
     line
 }
 
-fn tracked_xhci_reg(reg: u16) -> bool {
-    let command_status = pcie::REG_COMMAND_STATUS..pcie::REG_COMMAND_STATUS + 4;
-    let xhci_bar = pcie::REG_BAR0..pcie::REG_BAR0 + 8;
-    let msix = u16::from(pcie::XHCI_MSIX_CAP_OFFSET)..u16::from(pcie::XHCI_MSIX_CAP_OFFSET) + 12;
-    command_status.contains(&reg) || xhci_bar.contains(&reg) || msix.contains(&reg)
+fn tracked_endpoint(bdf: (u8, u8, u8)) -> Option<TrackedEndpoint> {
+    TRACKED_ENDPOINTS
+        .iter()
+        .copied()
+        .find(|endpoint| endpoint.bdf == bdf)
 }
 
-fn xhci_reg_label(reg: u16) -> String {
+fn tracked_reg(endpoint: TrackedEndpoint, reg: u16) -> bool {
+    let command_status = pcie::REG_COMMAND_STATUS..pcie::REG_COMMAND_STATUS + 4;
+    let bar = pcie::REG_BAR0..pcie::REG_BAR0 + 8;
+    let msix = u16::from(endpoint.msix_cap_offset)..u16::from(endpoint.msix_cap_offset) + 12;
+    command_status.contains(&reg) || bar.contains(&reg) || msix.contains(&reg)
+}
+
+fn tracked_reg_label(event: &PcieEcamEvent) -> String {
+    let msix_cap_offset = tracked_endpoint(event.bdf)
+        .map(|endpoint| endpoint.msix_cap_offset)
+        .unwrap_or(0);
+    let reg = event.reg;
     if (pcie::REG_COMMAND_STATUS..pcie::REG_COMMAND_STATUS + 4).contains(&reg) {
         return "command/status".to_string();
     }
@@ -148,21 +181,23 @@ fn xhci_reg_label(reg: u16) -> String {
     if (pcie::REG_BAR0 + 4..pcie::REG_BAR0 + 8).contains(&reg) {
         return "BAR1".to_string();
     }
-    if (u16::from(pcie::XHCI_MSIX_CAP_OFFSET) + 2..u16::from(pcie::XHCI_MSIX_CAP_OFFSET) + 4)
-        .contains(&reg)
-    {
+    if (u16::from(msix_cap_offset) + 2..u16::from(msix_cap_offset) + 4).contains(&reg) {
         return "msix.message_control".to_string();
+    }
+    if (u16::from(msix_cap_offset)..u16::from(msix_cap_offset) + 12).contains(&reg) {
+        return "msix".to_string();
     }
     "cfg".to_string()
 }
 
-fn xhci_bar_readbacks(
+fn pcie_bar_readbacks(
     platform: &mut VirtPlatform,
     mem: &mut dyn GuestMemoryMut,
+    bdf: (u8, u8, u8),
 ) -> Option<PcieBarReadbacks> {
-    let bar0 = pcie_cfg_read(platform, mem, pcie::XHCI_BDF, pcie::REG_BAR0, 4)
+    let bar0 = pcie_cfg_read(platform, mem, bdf, pcie::REG_BAR0, 4)
         .and_then(|value| u32::try_from(value).ok())?;
-    let bar1 = pcie_cfg_read(platform, mem, pcie::XHCI_BDF, pcie::REG_BAR0 + 4, 4)
+    let bar1 = pcie_cfg_read(platform, mem, bdf, pcie::REG_BAR0 + 4, 4)
         .and_then(|value| u32::try_from(value).ok())?;
     Some(PcieBarReadbacks { bar0, bar1 })
 }

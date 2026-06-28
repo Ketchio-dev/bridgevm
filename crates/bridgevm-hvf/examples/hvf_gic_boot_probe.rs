@@ -1,3 +1,4 @@
+// allow: SIZE_OK - Task 5q boot probe harness is a legacy monolithic surface carried to preserve validated HVF/PCIe evidence; full modular split is separate work.
 //! Bounded probe: load the stock ArmVirtQemu firmware on the Path A platform with
 //! Apple's in-kernel GICv3 (`hv_gic_create`) wired in, and see how far past the
 //! previous GIC system-register trap it boots. Captures PL011 serial and records
@@ -69,8 +70,12 @@ use mmio_trace::{print_mmio_traces, record_mmio_trace, MmioTrace};
 #[path = "hvf_gic_boot_probe/nvme_trace.rs"]
 mod nvme_trace;
 use nvme_trace::print_nvme_command_trace;
+#[path = "hvf_gic_boot_probe/nvme_storage_effect.rs"]
+mod nvme_storage_effect;
 #[path = "hvf_gic_boot_probe/pcie_mmio_trace.rs"]
 mod pcie_mmio_trace;
+#[path = "hvf_gic_boot_probe/storage_effect_receipt.rs"]
+mod storage_effect_receipt;
 use pcie_mmio_trace::{targetless_xhci_trace_context, PcieTraceTarget, RecentMmio};
 #[path = "hvf_gic_boot_probe/pcie_ecam_trace.rs"]
 mod pcie_ecam_trace;
@@ -1845,6 +1850,10 @@ fn main() {
             };
             print_media_writes("NVMe disk", &writes);
         }
+        storage_effect_receipt::maybe_write_probe_storage_effect_receipt(
+            media.nvme_disk.as_ref(),
+            &platform,
+        );
         maybe_write_file("BRIDGEVM_BOOT_PROBE_SERIAL_OUT", &serial, "serial log");
         let symbols = symbol_lines(&serial);
         if !symbols.is_empty() {
