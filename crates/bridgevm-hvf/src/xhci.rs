@@ -178,6 +178,8 @@ mod ep0_overflow_tests;
 #[cfg(test)]
 mod event_tests;
 #[cfg(test)]
+mod hid_report_descriptor_tests;
+#[cfg(test)]
 mod msix_tests;
 #[cfg(test)]
 mod platform_setup_input_tests;

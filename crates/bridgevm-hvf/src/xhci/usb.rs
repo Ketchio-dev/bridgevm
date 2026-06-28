@@ -4,19 +4,62 @@ const USB_REQUEST_SET_CONFIGURATION: u8 = 0x09;
 const USB_REQUEST_HID_SET_REPORT: u8 = 0x09;
 const USB_REQUEST_HID_SET_PROTOCOL: u8 = 0x0b;
 const USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_DEVICE: u8 = 0x80;
+const USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_INTERFACE: u8 = 0x81;
 const USB_REQUEST_TYPE_HOST_TO_DEVICE_STANDARD_DEVICE: u8 = 0x00;
 const USB_REQUEST_TYPE_HOST_TO_DEVICE_CLASS_INTERFACE: u8 = 0x21;
 const USB_DESCRIPTOR_TYPE_DEVICE: u8 = 1;
 const USB_DESCRIPTOR_TYPE_CONFIGURATION: u8 = 2;
 const USB_DESCRIPTOR_TYPE_STRING: u8 = 3;
+const USB_DESCRIPTOR_TYPE_HID_REPORT: u8 = 0x22;
+const HID_REPORT_DESCRIPTOR_LENGTH: u8 = 63;
+const HID_REPORT_DESCRIPTOR_LENGTH_USIZE: usize = 63;
 
 pub(super) const DEVICE_DESCRIPTOR: [u8; 18] = [
     18, 1, 0x00, 0x02, 0, 0, 0, 64, 0x09, 0x12, 0x01, 0x00, 0x00, 0x01, 0, 0, 0, 1,
 ];
 
 pub(super) const CONFIGURATION_DESCRIPTOR: [u8; 34] = [
-    9, 2, 34, 0, 1, 1, 0, 0x80, 50, 9, 4, 0, 0, 1, 0x03, 0x01, 0x01, 0, 9, 0x21, 0x11, 0x01, 0, 1,
-    0x22, 63, 0, 7, 5, 0x81, 0x03, 8, 0, 10,
+    9,
+    2,
+    34,
+    0,
+    1,
+    1,
+    0,
+    0x80,
+    50,
+    9,
+    4,
+    0,
+    0,
+    1,
+    0x03,
+    0x01,
+    0x01,
+    0,
+    9,
+    0x21,
+    0x11,
+    0x01,
+    0,
+    1,
+    USB_DESCRIPTOR_TYPE_HID_REPORT,
+    HID_REPORT_DESCRIPTOR_LENGTH,
+    0,
+    7,
+    5,
+    0x81,
+    0x03,
+    8,
+    0,
+    10,
+];
+
+pub(super) const HID_REPORT_DESCRIPTOR: [u8; HID_REPORT_DESCRIPTOR_LENGTH_USIZE] = [
+    0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0x05, 0x07, 0x19, 0xe0, 0x29, 0xe7, 0x15, 0x00, 0x25, 0x01,
+    0x75, 0x01, 0x95, 0x08, 0x81, 0x02, 0x95, 0x01, 0x75, 0x08, 0x81, 0x03, 0x95, 0x05, 0x75, 0x01,
+    0x05, 0x08, 0x19, 0x01, 0x29, 0x05, 0x91, 0x02, 0x95, 0x01, 0x75, 0x03, 0x91, 0x03, 0x95, 0x06,
+    0x75, 0x08, 0x15, 0x00, 0x25, 0x65, 0x05, 0x07, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00, 0xc0,
 ];
 
 const STRING0_DESCRIPTOR: [u8; 4] = [4, USB_DESCRIPTOR_TYPE_STRING, 0x09, 0x04];
@@ -67,17 +110,22 @@ pub(super) fn data_in_for_setup_packet(
 
 fn descriptor_for_setup_packet(packet: SetupPacket) -> Option<&'static [u8]> {
     let [descriptor_index, descriptor_type] = packet.value.to_le_bytes();
-    if packet.bm_request_type != USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_DEVICE
-        || packet.request != USB_REQUEST_GET_DESCRIPTOR
-        || descriptor_index != 0
-        || packet.index != 0
-    {
+    if packet.request != USB_REQUEST_GET_DESCRIPTOR || descriptor_index != 0 || packet.index != 0 {
         return None;
     }
-    match descriptor_type {
-        USB_DESCRIPTOR_TYPE_DEVICE => Some(&DEVICE_DESCRIPTOR),
-        USB_DESCRIPTOR_TYPE_CONFIGURATION => Some(&CONFIGURATION_DESCRIPTOR),
-        USB_DESCRIPTOR_TYPE_STRING => Some(&STRING0_DESCRIPTOR),
+    match (packet.bm_request_type, descriptor_type) {
+        (USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_DEVICE, USB_DESCRIPTOR_TYPE_DEVICE) => {
+            Some(&DEVICE_DESCRIPTOR)
+        }
+        (USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_DEVICE, USB_DESCRIPTOR_TYPE_CONFIGURATION) => {
+            Some(&CONFIGURATION_DESCRIPTOR)
+        }
+        (USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_DEVICE, USB_DESCRIPTOR_TYPE_STRING) => {
+            Some(&STRING0_DESCRIPTOR)
+        }
+        (USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_INTERFACE, USB_DESCRIPTOR_TYPE_HID_REPORT) => {
+            Some(&HID_REPORT_DESCRIPTOR)
+        }
         _ => None,
     }
 }
