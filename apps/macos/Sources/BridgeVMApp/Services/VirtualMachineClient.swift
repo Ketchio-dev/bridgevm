@@ -6548,7 +6548,7 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
       id: UUID(uuidString: "3122800D-EC31-4C62-AAD8-B1510DA3CFA7") ?? UUID(),
       name: "Ubuntu Arm64 Lab",
       guest: "Ubuntu 24.04 Arm64",
-      status: .paused,
+      status: .running,
       mode: .fast,
       resources: .init(cpuCount: 4, memoryGB: 8, diskGB: 64),
       uptime: "47m",
