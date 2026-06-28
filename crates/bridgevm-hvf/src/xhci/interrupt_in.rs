@@ -43,6 +43,9 @@ impl XhciController {
         for _ in 0..MAX_LINK_TRBS_PER_DOORBELL {
             let transfer_ring = self.slot1_dci3_dequeue;
             if transfer_ring == 0 {
+                if self.reacquire_slot1_dci3_from_output_context_if_ready(mem) {
+                    continue;
+                }
                 self.trace_dci3_drain_blocked("no_dci3_endpoint", rearm_policy);
                 return false;
             }
@@ -155,5 +158,31 @@ impl XhciController {
         }
         self.trace_dci3_drain_blocked("link_trb_limit", rearm_policy);
         false
+    }
+
+    fn reacquire_slot1_dci3_from_output_context_if_ready(
+        &mut self,
+        mem: &dyn GuestMemoryMut,
+    ) -> bool {
+        let Some((dequeue, dcs)) = self.slot1_dci3_output_dequeue_state(mem) else {
+            return false;
+        };
+        let Some(interrupt_transfer) = read_transfer_trb(mem, dequeue) else {
+            return false;
+        };
+        let expected_cycle = if dcs { TRB_CYCLE } else { 0 };
+        if interrupt_transfer.control & TRB_CYCLE != expected_cycle {
+            return false;
+        }
+        match trb_type(interrupt_transfer.control) {
+            TRB_TYPE_LINK | TRB_TYPE_NORMAL => {
+                self.slot1_dci3_dequeue = dequeue;
+                self.slot1_dci3_ring_base = dequeue;
+                self.slot1_dci3_dcs = dcs;
+                self.slot1_dci3_two_entry_queue_rearm = false;
+                true
+            }
+            _ => false,
+        }
     }
 }

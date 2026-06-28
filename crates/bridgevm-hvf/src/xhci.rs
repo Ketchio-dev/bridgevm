@@ -180,6 +180,8 @@ mod config_descriptor_tests;
 #[cfg(test)]
 mod configure_endpoint_setup_input_no_endpoint_tests;
 #[cfg(test)]
+mod configure_endpoint_setup_input_readdress_tests;
+#[cfg(test)]
 mod configure_endpoint_setup_input_tests;
 #[cfg(test)]
 mod configure_endpoint_tests;
