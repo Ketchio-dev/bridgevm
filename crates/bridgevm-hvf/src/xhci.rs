@@ -3,6 +3,7 @@ use crate::msix::MsixTable;
 use crate::pcie::{XHCI_MSIX_PBA_OFFSET, XHCI_MSIX_TABLE_OFFSET, XHCI_MSIX_VECTOR_COUNT};
 
 mod commands;
+mod dci3_rearm;
 mod device_context;
 mod event;
 mod interrupt_in;
@@ -14,6 +15,7 @@ mod registers;
 mod reset;
 mod setup_input_report;
 pub(crate) mod trace;
+mod trace_dci3_drain;
 mod transfers;
 mod usb;
 
@@ -175,6 +177,8 @@ mod address_context_tests;
 mod command_tests;
 #[cfg(test)]
 mod config_descriptor_tests;
+#[cfg(test)]
+mod configure_endpoint_setup_input_no_endpoint_tests;
 #[cfg(test)]
 mod configure_endpoint_setup_input_tests;
 #[cfg(test)]

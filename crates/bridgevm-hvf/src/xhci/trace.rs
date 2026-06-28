@@ -33,6 +33,8 @@ pub(crate) struct SetupInputReportEmittedTrace<'a> {
     pub(crate) emitted_release_reports: u64,
 }
 
+pub(crate) use super::trace_dci3_drain::{dci3_drain_blocked, Dci3DrainBlockedTrace};
+
 pub(crate) fn bringup_enabled() -> bool {
     matches!(
         std::env::var("BRIDGEVM_TRACE_XHCI_BRINGUP").ok().as_deref(),
@@ -282,5 +284,13 @@ mod tests {
         assert!(line.contains("event_handler_busy=false"));
         assert!(line.contains("iman_interrupt_pending=false"));
         assert!(line.contains("usb_sts_eint=false"));
+    }
+
+    #[test]
+    fn dci3_drain_blocked_trace_format_includes_parseable_state() {
+        // Given: queued setup input cannot drain because DCI3 has no installed endpoint state.
+        // When: the trace line is formatted for live-log parsers.
+        // Then: the reason and every DCI3 state field are stable key/value tokens.
+        super::super::trace_dci3_drain::assert_dci3_drain_blocked_trace_format_includes_parseable_state();
     }
 }
