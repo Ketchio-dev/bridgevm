@@ -210,7 +210,8 @@ fn xhci_setup_input_trigger_retries_after_hcrst_clears_queued_but_unemitted_repo
     assert_eq!(stats_before_reset.emitted_key_reports, 1);
     assert_eq!(stats_before_reset.emitted_release_reports, 1);
     reset_xhci_host_controller_over_bar0(&mut platform, &mut mem);
-    configure_dci3_interrupt_in_over_bar0(&mut platform, &mut mem);
+    let next_event_index = configure_dci3_interrupt_in_over_bar0(&mut platform, &mut mem);
+    assert_eq!(next_event_index, 2);
     write_dci3_normal_trb(&mut mem, DCI3_RING, DCI3_KEY_BUFFER + 0x40);
     write_dci3_normal_trb(&mut mem, DCI3_RING + TRB_SIZE, DCI3_RELEASE_BUFFER + 0x40);
     assert!(mem.write_bytes(DCI3_KEY_BUFFER + 0x40, &[0xcc; 8]));
@@ -233,10 +234,14 @@ fn xhci_setup_input_trigger_retries_after_hcrst_clears_queued_but_unemitted_repo
         [0, 0, 0x28, 0, 0, 0, 0, 0]
     );
     assert_eq!(read_bytes(&mem, DCI3_RELEASE_BUFFER + 0x40, 8), [0; 8]);
-    assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + TRB_SIZE, DCI3_RING);
     assert_success_dci3_transfer_event_for_trb(
         &mem,
-        EVENT_RING + (TRB_SIZE * 2),
+        EVENT_RING + (TRB_SIZE * next_event_index),
+        DCI3_RING,
+    );
+    assert_success_dci3_transfer_event_for_trb(
+        &mem,
+        EVENT_RING + (TRB_SIZE * (next_event_index + 1)),
         DCI3_RING + TRB_SIZE,
     );
     let stats = platform.xhci_setup_input_report_stats();

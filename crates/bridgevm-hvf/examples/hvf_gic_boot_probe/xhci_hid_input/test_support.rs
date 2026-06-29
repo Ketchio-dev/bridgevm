@@ -23,9 +23,11 @@ const ENABLE_SLOT_ID: u32 = 1;
 const DCI3: u32 = 3;
 const TRB_TYPE_CONFIGURE_ENDPOINT: u32 = 12;
 const TRB_TYPE_COMMAND_COMPLETION_EVENT: u32 = 33;
+const TRB_TYPE_PORT_STATUS_CHANGE_EVENT: u32 = 34;
 const TRB_TYPE_TRANSFER_EVENT: u32 = 32;
 const TRB_TYPE_NORMAL: u32 = 1;
 const COMPLETION_CODE_SUCCESS: u32 = 1;
+const PORT_STATUS_CHANGE_EVENT_PARAMETER: u64 = 1 << 24;
 const DCI3_INPUT_CONTEXT_OFFSET: u64 = 0x80;
 const INPUT_CONTROL_ADD_CONTEXT_OFFSET: u64 = 0x04;
 const EP_CONTEXT_DWORD1_OFFSET: u64 = 0x04;
@@ -93,7 +95,7 @@ pub(crate) fn program_xhci_bar0(platform: &mut VirtPlatform, mem: &mut FlatGuest
 pub(crate) fn configure_dci3_interrupt_in_over_bar0(
     platform: &mut VirtPlatform,
     mem: &mut FlatGuestRam,
-) {
+) -> u64 {
     write_event_ring_table(mem);
     write_u64(mem, DCBAA + (u64::from(ENABLE_SLOT_ID) * 8), OUTPUT_CONTEXT);
     write_u32(
@@ -133,7 +135,21 @@ pub(crate) fn configure_dci3_interrupt_in_over_bar0(
     ] {
         write_xhci_bar0(platform, mem, offset, size, value);
     }
-    assert_success_completion(mem, ENABLE_SLOT_ID);
+    let first_event_control = read_u32(mem, EVENT_RING + 12);
+    let command_completion_event_index =
+        if ((first_event_control >> 10) & 0x3f) == TRB_TYPE_PORT_STATUS_CHANGE_EVENT {
+            assert_eq!(
+                read_u64(mem, EVENT_RING),
+                PORT_STATUS_CHANGE_EVENT_PARAMETER
+            );
+            assert_eq!(read_u32(mem, EVENT_RING + 8), 0);
+            assert_eq!(first_event_control & 1, 1);
+            1
+        } else {
+            0
+        };
+    assert_success_completion(mem, command_completion_event_index, ENABLE_SLOT_ID);
+    command_completion_event_index + 1
 }
 
 pub(crate) fn reset_xhci_host_controller_over_bar0(
@@ -209,11 +225,12 @@ fn write_event_ring_table(mem: &mut FlatGuestRam) {
     assert!(mem.write_bytes(ERST + 8, &16u32.to_le_bytes()));
 }
 
-fn assert_success_completion(mem: &FlatGuestRam, expected_slot_id: u32) {
-    assert_eq!(read_u32(mem, EVENT_RING), low_u32(COMMAND_RING));
-    assert_eq!(read_u32(mem, EVENT_RING + 4), high_u32(COMMAND_RING));
-    assert_eq!(read_u32(mem, EVENT_RING + 8) >> 24, COMPLETION_CODE_SUCCESS);
-    let control = read_u32(mem, EVENT_RING + 12);
+fn assert_success_completion(mem: &FlatGuestRam, event_index: u64, expected_slot_id: u32) {
+    let event_gpa = EVENT_RING + (TRB_SIZE * event_index);
+    assert_eq!(read_u32(mem, event_gpa), low_u32(COMMAND_RING));
+    assert_eq!(read_u32(mem, event_gpa + 4), high_u32(COMMAND_RING));
+    assert_eq!(read_u32(mem, event_gpa + 8) >> 24, COMPLETION_CODE_SUCCESS);
+    let control = read_u32(mem, event_gpa + 12);
     assert_eq!((control >> 10) & 0x3f, TRB_TYPE_COMMAND_COMPLETION_EVENT);
     assert_eq!(control & 1, 1);
     assert_eq!(control >> 24, expected_slot_id);
