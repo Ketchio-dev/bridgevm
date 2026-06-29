@@ -189,7 +189,7 @@ fn host_controller_reset_clears_captured_dci3_state() {
 }
 
 #[test]
-fn slot1_dci3_stale_after_readdress_does_not_consume_setup_input_until_reconfigured() {
+fn slot1_dci3_readdress_preserves_setup_input_endpoint_until_reconfigured() {
     // Given: an early DCI3 Configure Endpoint installed a ring and emitted the boot-key pair.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0x9000);
@@ -216,29 +216,37 @@ fn slot1_dci3_stale_after_readdress_does_not_consume_setup_input_until_reconfigu
         Ok(())
     );
 
-    // Then: queue-time draining must not consume the stale old DCI3 ring.
-    assert!(!xhci.process_queued_dci3_input(&mut mem));
-    assert_eq!(mem.read_bytes(DCI3_BUFFER, 8).unwrap(), [0xaa; 8]);
-    assert_eq!(mem.read_bytes(DCI3_WRAP_BUFFER, 8).unwrap(), [0xbb; 8]);
+    // Then: a non-reset readdress keeps the configured DCI3 endpoint usable.
+    assert!(xhci.process_queued_dci3_input(&mut mem));
+    assert!(xhci.process_queued_dci3_input(&mut mem));
+    assert_eq!(
+        mem.read_bytes(DCI3_BUFFER, 8).unwrap(),
+        [0, 0, 0x28, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(mem.read_bytes(DCI3_WRAP_BUFFER, 8).unwrap(), [0; 8]);
     let stats = xhci.setup_input_report_stats();
     assert_eq!(stats.queued_reports, 4);
-    assert_eq!(stats.emitted_key_reports, 1);
-    assert_eq!(stats.emitted_release_reports, 1);
+    assert_eq!(stats.emitted_key_reports, 2);
+    assert_eq!(stats.emitted_release_reports, 2);
 
     // When: a later Configure Endpoint installs a new DCI3 ring.
     setup_reconfigure_endpoint_command(&mut xhci, &mut mem);
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert_eq!(
+        xhci.queue_setup_input_actions(&[SetupInputAction::Space]),
+        Ok(())
+    );
     assert!(xhci.process_queued_dci3_input(&mut mem));
 
-    // Then: the queued setup-input report drains to the new ring instead.
+    // Then: subsequent setup-input reports drain to the new ring instead.
     assert_eq!(
         mem.read_bytes(NEW_DCI3_BUFFER, 8).unwrap(),
-        [0, 0, 0x28, 0, 0, 0, 0, 0]
+        [0, 0, 0x2c, 0, 0, 0, 0, 0]
     );
     assert_success_dci3_transfer_event(&mem, EVENT_RING + TRB_SIZE, NEW_DCI3_RING);
     let stats = xhci.setup_input_report_stats();
-    assert_eq!(stats.emitted_key_reports, 2);
-    assert_eq!(stats.emitted_release_reports, 1);
+    assert_eq!(stats.emitted_key_reports, 3);
+    assert_eq!(stats.emitted_release_reports, 2);
 }
 
 fn setup_address_device_command(xhci: &mut XhciController, mem: &mut TestRam) {

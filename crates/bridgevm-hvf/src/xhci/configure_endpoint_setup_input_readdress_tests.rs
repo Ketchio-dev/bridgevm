@@ -9,6 +9,7 @@ use crate::fwcfg::GuestMemoryMut;
 const READDRESS_INPUT_CONTEXT: u64 = 0x7200;
 const READDRESS_EP0_RING: u64 = 0x7300;
 const READDRESS_OUTPUT_CONTEXT: u64 = 0x7600;
+const SECOND_READDRESS_OUTPUT_CONTEXT: u64 = 0x7800;
 const EP0_INPUT_CONTEXT_OFFSET: u64 = 0x40;
 
 #[test]
@@ -33,8 +34,14 @@ fn delayed_setup_input_after_readdress_drains_from_current_dci3_output_dequeue()
     // When: Windows re-addresses slot 1 via EP0, then delayed setup-input queues eight actions.
     setup_address_device_command(&mut xhci, &mut mem);
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
-    assert_eq!(xhci.slot1_dci3_dequeue, 0);
-    assert_eq!(xhci.slot1_dci3_ring_base, 0);
+    assert_eq!(
+        mem.read_u64(OUTPUT_CONTEXT + DCI3_OUTPUT_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET),
+        DCI3_RING + (TRB_SIZE * 2) + TRB_CYCLE
+    );
+    xhci.slot1_dci3_dequeue = 0;
+    xhci.slot1_dci3_ring_base = 0;
+    xhci.slot1_dci3_dcs = false;
+    xhci.slot1_dci3_two_entry_queue_rearm = false;
     let delayed_actions = [
         SetupInputAction::Enter,
         SetupInputAction::Tab,
@@ -125,6 +132,74 @@ fn delayed_setup_input_after_new_output_context_readdress_keeps_dci3_endpoint() 
         xhci.slot1_dci3_dequeue,
         xhci.slot1_dci3_ring_base,
         xhci.slot1_dci3_dcs,
+        xhci.setup_input_report_stats()
+    );
+    assert_eq!(
+        mem.read_bytes(delayed_setup_input_buffer(0), 8).unwrap(),
+        [0, 0, 0x28, 0, 0, 0, 0, 0]
+    );
+}
+
+#[test]
+fn delayed_setup_input_after_repeated_fresh_output_readdress_keeps_live_dci3_endpoint() {
+    // Given: DCI3 emitted the boot-key pair, leaving the live ring at the next TRB.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0xa000);
+    setup_configure_endpoint_command(&mut xhci, &mut mem);
+    write_dci3_normal_trb(&mut mem, DCI3_RING + TRB_SIZE, DCI3_WRAP_BUFFER, true);
+    write_dci3_normal_trb(
+        &mut mem,
+        DCI3_RING + (TRB_SIZE * 2),
+        delayed_setup_input_buffer(0),
+        true,
+    );
+    write_dci3_normal_trb(
+        &mut mem,
+        DCI3_RING + (TRB_SIZE * 3),
+        delayed_setup_input_buffer(1),
+        true,
+    );
+    assert!(mem.write_bytes(delayed_setup_input_buffer(0), &[0xcc; 8]));
+    assert!(mem.write_bytes(delayed_setup_input_buffer(1), &[0xdd; 8]));
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert!(xhci.queue_boot_keyboard_space());
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
+    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING + (TRB_SIZE * 2));
+
+    // When: Windows-style readdress loops move slot 1 across two fresh output contexts.
+    mem.write_u64(
+        DCBAA + (u64::from(ENABLE_SLOT_ID) * 8),
+        READDRESS_OUTPUT_CONTEXT,
+    );
+    setup_address_device_command(&mut xhci, &mut mem);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert_eq!(
+        mem.read_u64(READDRESS_OUTPUT_CONTEXT + DCI3_OUTPUT_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET),
+        DCI3_RING + (TRB_SIZE * 2) + TRB_CYCLE
+    );
+
+    mem.write_u64(
+        DCBAA + (u64::from(ENABLE_SLOT_ID) * 8),
+        SECOND_READDRESS_OUTPUT_CONTEXT,
+    );
+    setup_address_device_command(&mut xhci, &mut mem);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert_eq!(
+        xhci.queue_setup_input_actions(&[SetupInputAction::Enter]),
+        Ok(())
+    );
+
+    // Then: delayed setup-input drains from the live DCI3 ring, not a zeroed endpoint snapshot.
+    let drained = xhci.process_queued_dci3_input(&mut mem);
+    assert!(
+        drained,
+        "reason=no_dci3_endpoint dequeue={:#x} ring_base={:#x} current_output_dequeue={:#x} stats={:?}",
+        xhci.slot1_dci3_dequeue,
+        xhci.slot1_dci3_ring_base,
+        mem.read_u64(
+            SECOND_READDRESS_OUTPUT_CONTEXT + DCI3_OUTPUT_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET
+        ),
         xhci.setup_input_report_stats()
     );
     assert_eq!(
