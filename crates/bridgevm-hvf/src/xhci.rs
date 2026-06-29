@@ -18,6 +18,7 @@ mod reset;
 mod setup_input_report;
 pub(crate) mod trace;
 mod trace_dci3_drain;
+mod trace_dci3_input_capture;
 mod trace_host_controller_reset;
 mod transfers;
 mod usb;
@@ -242,6 +243,8 @@ mod stop_endpoint_tests;
 mod test_support;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod trace_tests;
 #[cfg(test)]
 mod transfer_prefix_tests;
 #[cfg(test)]

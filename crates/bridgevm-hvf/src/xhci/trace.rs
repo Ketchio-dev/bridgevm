@@ -34,6 +34,9 @@ pub(crate) struct SetupInputReportEmittedTrace<'a> {
 }
 
 pub(crate) use super::trace_dci3_drain::{dci3_drain_blocked, Dci3DrainBlockedTrace};
+pub(crate) use super::trace_dci3_input_capture::{
+    dci3_input_capture, Dci3InputCaptureTrace, Dci3InputContextField,
+};
 pub(crate) use super::trace_host_controller_reset::host_controller_reset;
 
 pub(crate) fn bringup_enabled() -> bool {
@@ -201,7 +204,10 @@ fn format_report(report: [u8; 8]) -> String {
     )
 }
 
-fn format_event_post_success(trace: EventPostTrace, state: EventPostStateTrace) -> String {
+pub(super) fn format_event_post_success(
+    trace: EventPostTrace,
+    state: EventPostStateTrace,
+) -> String {
     format!(
         "XHCI event post result posted=true parameter={parameter:#x} status={status:#010x} control={control:#010x} event_gpa={event_gpa:#x} segment_base={segment_base:#x} segment_trbs={segment_trbs} enqueue={enqueue} cycle={cycle} event_handler_busy={event_handler_busy} iman_interrupt_pending={iman_interrupt_pending} usb_sts_eint={usb_sts_eint}",
         parameter = trace.parameter,
@@ -218,80 +224,11 @@ fn format_event_post_success(trace: EventPostTrace, state: EventPostStateTrace) 
     )
 }
 
-fn format_erdp_ehb_consumed(erdp0: u64, state: EventPostStateTrace) -> String {
+pub(super) fn format_erdp_ehb_consumed(erdp0: u64, state: EventPostStateTrace) -> String {
     format!(
         "XHCI ERDP EHB consumed erdp0={erdp0:#x} event_handler_busy={event_handler_busy} iman_interrupt_pending={iman_interrupt_pending} usb_sts_eint={usb_sts_eint}",
         event_handler_busy = state.event_handler_busy,
         iman_interrupt_pending = state.iman_interrupt_pending,
         usb_sts_eint = state.usb_sts_eint
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn posted_event() -> EventPostTrace {
-        EventPostTrace {
-            ring: EventRingTrace {
-                segment_base: 0x5000,
-                segment_trbs: 2,
-                enqueue: 1,
-                cycle: true,
-            },
-            parameter: 0x1000,
-            status: 0x0100_0000,
-            control: 0x0100_8401,
-            event_gpa: 0x5010,
-        }
-    }
-
-    #[test]
-    fn event_post_success_trace_includes_live_interrupt_state() {
-        // Given: a Command Completion Event was posted into a live event ring.
-        let state = EventPostStateTrace {
-            event_handler_busy: true,
-            iman_interrupt_pending: true,
-            usb_sts_eint: true,
-        };
-
-        // When: the trace line is formatted for the transcript classifier.
-        let line = format_event_post_success(posted_event(), state);
-
-        // Then: event-ring enqueue/cycle and interrupt-pending fields are parseable.
-        assert!(line.contains("posted=true"));
-        assert!(line.contains("segment_base=0x5000"));
-        assert!(line.contains("enqueue=1"));
-        assert!(line.contains("cycle=1"));
-        assert!(line.contains("iman_interrupt_pending=true"));
-        assert!(line.contains("usb_sts_eint=true"));
-    }
-
-    #[test]
-    fn erdp_ehb_trace_includes_cleared_interrupt_state() {
-        // Given: the guest consumed the event-ring handler busy bit through ERDP.
-        let state = EventPostStateTrace {
-            event_handler_busy: false,
-            iman_interrupt_pending: false,
-            usb_sts_eint: false,
-        };
-
-        // When: the ERDP trace line is formatted for the transcript classifier.
-        let line = format_erdp_ehb_consumed(0x5010, state);
-
-        // Then: the live EHB clear contract is explicit in the transcript.
-        assert!(line.contains("XHCI ERDP EHB consumed"));
-        assert!(line.contains("erdp0=0x5010"));
-        assert!(line.contains("event_handler_busy=false"));
-        assert!(line.contains("iman_interrupt_pending=false"));
-        assert!(line.contains("usb_sts_eint=false"));
-    }
-
-    #[test]
-    fn dci3_drain_blocked_trace_format_includes_parseable_state() {
-        // Given: queued setup input cannot drain because DCI3 has no installed endpoint state.
-        // When: the trace line is formatted for live-log parsers.
-        // Then: the reason and every DCI3 state field are stable key/value tokens.
-        super::super::trace_dci3_drain::assert_dci3_drain_blocked_trace_format_includes_parseable_state();
-    }
 }
