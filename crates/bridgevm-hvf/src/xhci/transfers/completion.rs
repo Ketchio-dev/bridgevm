@@ -81,6 +81,7 @@ impl XhciController {
         };
         if posted {
             self.slot1_ep0_dequeue = next_dequeue;
+            self.write_slot1_ep0_output_dequeue(mem);
         }
         posted
     }

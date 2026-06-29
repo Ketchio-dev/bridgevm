@@ -92,6 +92,25 @@ fn ep0_event_data_control_td_posts_only_event_data_transfer_event() {
 }
 
 #[test]
+fn ep0_event_data_control_td_publishes_advanced_output_dequeue() {
+    // Given: Address Device has a guest-visible output context for an EP0 Event Data TD.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    let completion = CompletionShape::ObservedType7ThenStatus;
+    mem.write_u64(0x4000 + (u64::from(ENABLE_SLOT_ID) * 8), 0x8000);
+    prepare_addressed_ep0(&mut xhci, &mut mem, completion);
+
+    // When: the guest rings EP0 for GET_DESCRIPTOR(Device).
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
+
+    // Then: EP0 output context publishes the post-TD dequeue before any StopEndpoint.
+    assert_eq!(
+        mem.read_u64(0x8000 + 0x20 + 0x8),
+        EP0_RING + (TRB_SIZE * 4) | u64::from(TRB_CYCLE)
+    );
+}
+
+#[test]
 fn ep0_get_descriptor_device_rejects_out_data_stage() {
     // Given: a GET_DESCRIPTOR transfer whose Data Stage points the wrong direction.
     let mut xhci = XhciController::new();
