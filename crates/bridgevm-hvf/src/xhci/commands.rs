@@ -112,6 +112,7 @@ impl XhciController {
                     {
                         self.slot1_ep0_dequeue = raw_dequeue & TR_DEQUEUE_POINTER_MASK;
                         self.slot1_ep0_dcs = raw_dequeue & 1 != 0;
+                        self.write_slot1_ep0_output_dequeue(mem);
                     }
                     let posted = self.post_command_completion(mem, command_trb, slot_id);
                     if posted {

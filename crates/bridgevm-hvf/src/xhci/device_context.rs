@@ -180,7 +180,7 @@ impl XhciController {
         );
     }
 
-    pub(super) fn write_slot1_ep0_output_stopped(&self, mem: &mut dyn GuestMemoryMut) {
+    pub(super) fn write_slot1_ep0_output_dequeue(&self, mem: &mut dyn GuestMemoryMut) {
         let dcbaa = self.dcbaap & DCBAA_POINTER_MASK;
         let Some(output_context) = output_context_for_slot(mem, dcbaa, SLOT_ID) else {
             return;
@@ -194,14 +194,28 @@ impl XhciController {
         if mem.read_bytes(ep0_output_gpa, EP_CONTEXT_BYTES).is_none() {
             return;
         }
-        if !write_ep_context_state(mem, ep0_output_gpa, EP_STATE_STOPPED) {
-            return;
-        }
         write_mem_u64(
             mem,
             ep0_dequeue_gpa,
             self.slot1_ep0_dequeue | u64::from(self.slot1_ep0_dcs),
         );
+    }
+
+    pub(super) fn write_slot1_ep0_output_stopped(&self, mem: &mut dyn GuestMemoryMut) {
+        let dcbaa = self.dcbaap & DCBAA_POINTER_MASK;
+        let Some(output_context) = output_context_for_slot(mem, dcbaa, SLOT_ID) else {
+            return;
+        };
+        let Some(ep0_output_gpa) = output_context.checked_add(EP0_OUTPUT_CONTEXT_OFFSET) else {
+            return;
+        };
+        if mem.read_bytes(ep0_output_gpa, EP_CONTEXT_BYTES).is_none() {
+            return;
+        }
+        if !write_ep_context_state(mem, ep0_output_gpa, EP_STATE_STOPPED) {
+            return;
+        }
+        self.write_slot1_ep0_output_dequeue(mem);
     }
 
     pub(super) fn disable_slot1_context(&mut self, mem: &mut dyn GuestMemoryMut) {

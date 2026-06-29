@@ -198,6 +198,8 @@ fn set_tr_dequeue_pointer_command_updates_ep0_dequeue_and_posts_completion() {
     // Given: firmware recovery points slot 1 EP0 at a new transfer-ring dequeue pointer.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0x8000);
+    mem.write_u64(0x4000 + u64::from(ENABLE_SLOT_ID) * 8, SLOT1_OUTPUT_CONTEXT);
+    mem.write_u64(SLOT1_OUTPUT_CONTEXT + 0x20 + 0x8, 0x4441);
     setup_command_rings_with_parameter(
         &mut xhci,
         &mut mem,
@@ -211,6 +213,10 @@ fn set_tr_dequeue_pointer_command_updates_ep0_dequeue_and_posts_completion() {
     // Then: completion is posted and the EP0 software dequeue tracks the command pointer.
     assert_success_completion(&mem, EVENT_RING, CMD_RING, SET_TR_DEQUEUE_POINTER_SLOT_ID);
     assert_eq!(xhci.slot1_ep0_dequeue, EP0_RECOVERY_RING);
+    assert_eq!(
+        mem.read_u64(SLOT1_OUTPUT_CONTEXT + 0x20 + 0x8),
+        EP0_RECOVERY_RING | 1
+    );
     assert_eq!(xhci.mmio_read(0x58, 8), CMD_RING + TRB_SIZE + 1);
 }
 
