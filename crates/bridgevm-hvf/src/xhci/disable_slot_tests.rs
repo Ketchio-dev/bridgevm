@@ -1,7 +1,7 @@
 use super::configure_endpoint_tests::*;
 use super::test_support::{
     command_control, setup_command_rings_with_parameter, TestRam, DOORBELL_BASE, ENABLE_SLOT_ID,
-    EVENT_RING, TRB_SIZE,
+    EVENT_RING, TRB_SIZE, TRB_TYPE_ADDRESS_DEVICE,
 };
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
@@ -11,6 +11,7 @@ const TRB_TYPE_STOP_ENDPOINT: u32 = 15;
 const TRB_TYPE_SET_TR_DEQUEUE_POINTER: u32 = 16;
 const ENDPOINT_ID_EP0: u32 = 1;
 const EP0_RECOVERY_RING: u64 = 0x7200;
+const EP0_INPUT_CONTEXT_OFFSET: u64 = 0x40;
 const EP0_OUTPUT_CONTEXT_OFFSET: u64 = 0x20;
 const EP_STATE_MASK: u32 = 0x7;
 const EP_STATE_STOPPED: u32 = 3;
@@ -76,6 +77,40 @@ fn queued_setup_input_after_disable_slot_waits_for_fresh_dci3_context() {
     assert_success_dci3_transfer_event(&mem, EVENT_RING + TRB_SIZE, FRESH_DCI3_RING);
 }
 
+#[test]
+fn queued_setup_input_after_disable_slot_reacquires_fresh_address_device_dci3_context() {
+    // Given: DCI3 existed before DisableSlot, then stale endpoint state was cleared.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    setup_configure_endpoint_command(&mut xhci, &mut mem);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert_eq!(
+        xhci.queue_setup_input_actions(&[SetupInputAction::Enter]),
+        Ok(())
+    );
+    setup_disable_slot_command(&mut xhci, &mut mem);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert!(!xhci.process_queued_dci3_input(&mut mem));
+    assert_eq!(mem.read_bytes(DCI3_BUFFER, 8).unwrap(), [0xaa; 8]);
+
+    // When: the next slot lifecycle addresses the device with a fresh DCI3 Add Context.
+    setup_fresh_address_device_command_with_dci3(&mut xhci, &mut mem);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    let fresh_drained = xhci.process_queued_dci3_input(&mut mem);
+
+    // Then: setup input drains through the fresh AddressDevice DCI3 endpoint only.
+    assert!(
+        fresh_drained,
+        "reason=no_dci3_endpoint dequeue={:#x} ring_base={:#x} last_dequeue={:#x}",
+        xhci.slot1_dci3_dequeue, xhci.slot1_dci3_ring_base, xhci.slot1_dci3_last_dequeue
+    );
+    assert_eq!(
+        mem.read_bytes(FRESH_DCI3_BUFFER, 8).unwrap(),
+        [0, 0, 0x28, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(mem.read_bytes(DCI3_BUFFER, 8).unwrap(), [0xaa; 8]);
+}
+
 fn setup_set_tr_dequeue_command(xhci: &mut XhciController, mem: &mut TestRam) {
     setup_command_rings_with_parameter(
         xhci,
@@ -101,6 +136,41 @@ fn setup_stop_endpoint_command(xhci: &mut XhciController, mem: &mut TestRam) {
         0,
         command_control(TRB_TYPE_STOP_ENDPOINT, ENABLE_SLOT_ID) | (ENDPOINT_ID_EP0 << 16),
     );
+}
+
+fn setup_fresh_address_device_command_with_dci3(xhci: &mut XhciController, mem: &mut TestRam) {
+    setup_command_rings_with_parameter(
+        xhci,
+        mem,
+        FRESH_INPUT_CONTEXT,
+        command_control(TRB_TYPE_ADDRESS_DEVICE, ENABLE_SLOT_ID),
+    );
+    mem.write_u64(
+        DCBAA + (u64::from(ENABLE_SLOT_ID) * 8),
+        FRESH_OUTPUT_CONTEXT,
+    );
+    mem.write_u32(
+        FRESH_INPUT_CONTEXT + INPUT_CONTROL_ADD_CONTEXT_OFFSET,
+        DCI3_ADD_CONTEXT_FLAG,
+    );
+    mem.write_u64(
+        FRESH_INPUT_CONTEXT + EP0_INPUT_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET,
+        EP0_RECOVERY_RING | TRB_CYCLE,
+    );
+    mem.write_u32(
+        FRESH_INPUT_CONTEXT + DCI3_INPUT_CONTEXT_OFFSET + EP_CONTEXT_DWORD1_OFFSET,
+        DCI3_DWORD1,
+    );
+    mem.write_u64(
+        FRESH_INPUT_CONTEXT + DCI3_INPUT_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET,
+        FRESH_DCI3_RING | TRB_CYCLE,
+    );
+    mem.write_u32(
+        FRESH_INPUT_CONTEXT + DCI3_INPUT_CONTEXT_OFFSET + EP_CONTEXT_DWORD4_OFFSET,
+        DCI3_DWORD4,
+    );
+    write_dci3_normal_trb(mem, FRESH_DCI3_RING, FRESH_DCI3_BUFFER, true);
+    assert!(mem.write_bytes(FRESH_DCI3_BUFFER, &[0xcc; 8]));
 }
 
 fn setup_fresh_configure_endpoint_command(xhci: &mut XhciController, mem: &mut TestRam) {
