@@ -4,6 +4,9 @@ use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::pcie::{self, PcieMmioTarget};
 use bridgevm_hvf::platform_virt::MmioOp;
 
+#[cfg(test)]
+#[path = "xhci_trace/command_trace_tests.rs"]
+mod command_trace_tests;
 #[path = "xhci_trace/context.rs"]
 mod context;
 #[cfg(test)]
@@ -169,9 +172,11 @@ impl XhciBringupTrace {
             trb::TYPE_LINK => {
                 self.command_dequeue = command.parameter & LINK_TRB_POINTER_MASK;
             }
-            trb::TYPE_ENABLE_SLOT | trb::TYPE_DISABLE_SLOT | trb::TYPE_EVALUATE_CONTEXT => {
-                self.advance_command_dequeue(command_gpa);
-            }
+            trb::TYPE_ENABLE_SLOT
+            | trb::TYPE_DISABLE_SLOT
+            | trb::TYPE_EVALUATE_CONTEXT
+            | trb::TYPE_STOP_ENDPOINT
+            | trb::TYPE_SET_TR_DEQUEUE_POINTER => self.advance_command_dequeue(command_gpa),
             trb::TYPE_ADDRESS_DEVICE => {
                 if let Some(event) = self.endpoint_contexts.capture_address_device(
                     command.slot_id(),
