@@ -55,12 +55,12 @@ impl XhciController {
         }
     }
 
-    pub(super) fn write_dword(&mut self, offset: u64, value: u32) {
+    pub(super) fn write_dword(&mut self, offset: u64, value: u32) -> bool {
         if let Some((port, reg)) = port_reg(offset) {
             if reg == 0x0 {
-                self.ports[port].write_portsc(value);
+                return self.ports[port].write_portsc(value);
             }
-            return;
+            return false;
         }
         match offset {
             0x40 => {
@@ -68,7 +68,7 @@ impl XhciController {
                     trace::host_controller_reset(value);
                     self.ports = post_hcrst_ports();
                     self.reset_programmed_state();
-                    self.mark_post_hcrst_port_status_change_pending();
+                    self.mark_port_status_change_pending();
                 }
                 self.usb_command = value & !USB_CMD_HCRST;
             }
@@ -96,5 +96,6 @@ impl XhciController {
             0x103c => self.write_erdp_high(value),
             _ => {}
         }
+        false
     }
 }

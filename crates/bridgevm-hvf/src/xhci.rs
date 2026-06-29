@@ -1,6 +1,6 @@
 use crate::fwcfg::GuestMemoryMut;
 use crate::msix::MsixTable;
-use crate::pcie::{XHCI_MSIX_PBA_OFFSET, XHCI_MSIX_TABLE_OFFSET, XHCI_MSIX_VECTOR_COUNT};
+use crate::pcie::{XHCI_MSIX_PBA_OFFSET, XHCI_MSIX_TABLE_OFFSET};
 
 mod commands;
 mod dci3_endpoint_state;
@@ -11,6 +11,7 @@ mod event;
 mod interrupt_in;
 mod interrupt_trb;
 mod interrupts;
+mod lifecycle;
 mod mmio;
 mod ports;
 mod registers;
@@ -24,7 +25,7 @@ mod transfers;
 mod usb;
 
 use mmio::{checked_region_offset, mask_to_size, merge_dword};
-use ports::{initial_ports, PortState, XHCI_PORT_COUNT};
+use ports::{PortState, XHCI_PORT_COUNT};
 pub use setup_input_report::{
     SetupInputAction, XhciSetupInputQueueError, XhciSetupInputReportStats,
 };
@@ -54,7 +55,7 @@ pub struct XhciController {
     event_handler_busy: bool,
     event_enqueue: u32,
     event_cycle: bool,
-    post_hcrst_port_status_change_pending: bool,
+    port_status_change_pending: bool,
     slot1_ep0_dequeue: u64,
     slot1_ep0_dcs: bool,
     slot1_dci3_dequeue: u64,
@@ -71,50 +72,7 @@ pub struct XhciController {
     usb_configuration: u8,
 }
 
-impl Default for XhciController {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl XhciController {
-    pub fn new() -> Self {
-        Self {
-            msix: MsixTable::new(XHCI_MSIX_VECTOR_COUNT),
-            ports: initial_ports(),
-            usb_command: 0,
-            dnctrl: 0,
-            crcr: 0,
-            command_dequeue: 0,
-            command_cycle: false,
-            dcbaap: 0,
-            config: 0,
-            iman0: 0,
-            imod0: 0,
-            erstsz0: 0,
-            erstba0: 0,
-            erdp0: 0,
-            event_handler_busy: false,
-            event_enqueue: 0,
-            event_cycle: true,
-            post_hcrst_port_status_change_pending: false,
-            slot1_ep0_dequeue: 0,
-            slot1_ep0_dcs: false,
-            slot1_dci3_dequeue: 0,
-            slot1_dci3_ring_base: 0,
-            slot1_dci3_dcs: false,
-            slot1_dci3_two_entry_queue_rearm: false,
-            slot1_dci3_last_dequeue: 0,
-            slot1_dci3_last_dcs: false,
-            slot1_dci3_last_ring_base: 0,
-            slot1_dci3_last_ring_dcs: false,
-            slot1_dci3_last_reusable: false,
-            boot_keyboard_report_queue: setup_input_report::BootKeyboardReportQueue::default(),
-            setup_input_report_stats: XhciSetupInputReportStats::default(),
-            usb_configuration: 0,
-        }
-    }
-
     pub fn mmio_read(&self, offset: u64, size: u8) -> u64 {
         if let Some(table_offset) = checked_region_offset(
             offset,
@@ -138,14 +96,14 @@ impl XhciController {
         mask_to_size(value, size)
     }
 
-    pub fn mmio_write(&mut self, offset: u64, size: u8, value: u64) {
+    pub fn mmio_write(&mut self, offset: u64, size: u8, value: u64) -> bool {
         if let Some(table_offset) = checked_region_offset(
             offset,
             u64::from(XHCI_MSIX_TABLE_OFFSET),
             self.msix.table_byte_len(),
         ) {
             self.msix.table_write(table_offset, size, value);
-            return;
+            return false;
         }
         if let Some(pba_offset) = checked_region_offset(
             offset,
@@ -153,19 +111,22 @@ impl XhciController {
             self.msix.pba_byte_len(),
         ) {
             self.msix.pba_write(pba_offset, size, value);
-            return;
+            return false;
         }
 
         let mut consumed = 0u8;
+        let mut port_status_change_generated = false;
         while consumed < size.min(8) {
             let current = offset + u64::from(consumed);
             let aligned = current & !0x3;
             let chunk = (4 - (current & 0x3) as u8).min(size.min(8) - consumed);
             let old = self.read_dword(aligned);
             let part = value >> (u32::from(consumed) * 8);
-            self.write_dword(aligned, merge_dword(old, current, chunk, part));
+            port_status_change_generated |=
+                self.write_dword(aligned, merge_dword(old, current, chunk, part));
             consumed += chunk;
         }
+        port_status_change_generated
     }
 
     pub fn mmio_write_with_mem(
@@ -176,8 +137,11 @@ impl XhciController {
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
         let event_ring_programming_write = event::is_event_ring_programming_write(offset, size);
-        self.mmio_write(offset, size, value);
-        let mut interrupt = if event_ring_programming_write {
+        let port_status_change_generated = self.mmio_write(offset, size, value);
+        if port_status_change_generated {
+            self.mark_port_status_change_pending();
+        }
+        let mut interrupt = if event_ring_programming_write || port_status_change_generated {
             self.post_pending_port_status_change_event(mem)
         } else {
             false
@@ -242,6 +206,8 @@ mod platform_setup_input_tests;
 mod platform_test_support;
 #[cfg(test)]
 mod platform_tests;
+#[cfg(test)]
+mod port_reset_change_tests;
 #[cfg(test)]
 mod set_configuration_msix_tests;
 #[cfg(test)]

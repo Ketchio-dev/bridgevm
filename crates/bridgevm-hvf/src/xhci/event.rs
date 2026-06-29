@@ -57,15 +57,15 @@ impl XhciController {
         self.event_cycle = true;
     }
 
-    pub(super) fn mark_post_hcrst_port_status_change_pending(&mut self) {
-        self.post_hcrst_port_status_change_pending = true;
+    pub(super) fn mark_port_status_change_pending(&mut self) {
+        self.port_status_change_pending = true;
     }
 
     pub(super) fn post_pending_port_status_change_event(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
-        if !self.post_hcrst_port_status_change_pending {
+        if !self.port_status_change_pending {
             return false;
         }
         let posted = self.post_event(
@@ -75,7 +75,7 @@ impl XhciController {
             TRB_TYPE_PORT_STATUS_CHANGE_EVENT << 10,
         );
         if posted {
-            self.post_hcrst_port_status_change_pending = false;
+            self.port_status_change_pending = false;
         }
         posted
     }

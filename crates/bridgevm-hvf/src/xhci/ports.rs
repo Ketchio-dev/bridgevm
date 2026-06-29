@@ -67,7 +67,7 @@ impl PortState {
         value
     }
 
-    pub(super) fn write_portsc(&mut self, value: u32) {
+    pub(super) fn write_portsc(&mut self, value: u32) -> bool {
         if value & PORTSC_CSC != 0 {
             self.connect_change = false;
         }
@@ -77,7 +77,9 @@ impl PortState {
         if value & PORTSC_PR != 0 && self.connected {
             self.enabled = true;
             self.reset_change = true;
+            return true;
         }
+        false
     }
 }
 
