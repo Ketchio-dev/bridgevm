@@ -7,6 +7,8 @@ const DCBAA_ENTRY_BYTES: u64 = 8;
 const DCBAA_POINTER_MASK: u64 = !0x3f;
 const DEVICE_CONTEXT_POINTER_MASK: u64 = !0x3f;
 const INPUT_CONTROL_ADD_CONTEXT_OFFSET: u64 = 0x04;
+const SLOT_INPUT_CONTEXT_OFFSET: u64 = 0x20;
+const SLOT_CONTEXT_DWORD0_TO_DWORD2_BYTES: usize = 12;
 const SLOT_CONTEXT_DWORD3_OFFSET: u64 = 0x0c;
 const EP0_INPUT_CONTEXT_OFFSET: u64 = 0x40;
 const EP0_OUTPUT_CONTEXT_OFFSET: u64 = 0x20;
@@ -33,6 +35,9 @@ impl XhciController {
             return;
         }
         let input_context = input_context & DEVICE_CONTEXT_POINTER_MASK;
+        let slot_input_context = input_context
+            .checked_add(SLOT_INPUT_CONTEXT_OFFSET)
+            .and_then(|gpa| mem.read_bytes(gpa, SLOT_CONTEXT_DWORD0_TO_DWORD2_BYTES));
         let Some(ep0_input_gpa) = input_context.checked_add(EP0_INPUT_CONTEXT_OFFSET) else {
             return;
         };
@@ -73,6 +78,11 @@ impl XhciController {
             || mem.read_bytes(ep0_output_gpa, EP_CONTEXT_BYTES).is_none()
         {
             return;
+        }
+        if let Some(slot_input_context) = slot_input_context {
+            if !mem.write_bytes(output_context, &slot_input_context) {
+                return;
+            }
         }
         if !write_mem_u32(
             mem,
