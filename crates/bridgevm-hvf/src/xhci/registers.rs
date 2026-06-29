@@ -58,7 +58,12 @@ impl XhciController {
     pub(super) fn write_dword(&mut self, offset: u64, value: u32) -> bool {
         if let Some((port, reg)) = port_reg(offset) {
             if reg == 0x0 {
-                return self.ports[port].write_portsc(value);
+                let acknowledged_change = self.ports[port].change_acknowledged_by(value);
+                let generated_change = self.ports[port].write_portsc(value);
+                if acknowledged_change && !self.ports.iter().any(|port| port.has_change()) {
+                    self.port_status_change_pending = false;
+                }
+                return generated_change;
             }
             return false;
         }

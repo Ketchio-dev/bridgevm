@@ -67,6 +67,15 @@ impl PortState {
         value
     }
 
+    pub(super) const fn has_change(self) -> bool {
+        self.connect_change || self.reset_change
+    }
+
+    pub(super) const fn change_acknowledged_by(self, value: u32) -> bool {
+        (value & PORTSC_CSC != 0 && self.connect_change)
+            || (value & PORTSC_PRC != 0 && self.reset_change)
+    }
+
     pub(super) fn write_portsc(&mut self, value: u32) -> bool {
         if value & PORTSC_CSC != 0 {
             self.connect_change = false;
