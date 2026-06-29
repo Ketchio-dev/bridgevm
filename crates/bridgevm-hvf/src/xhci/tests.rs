@@ -26,10 +26,10 @@ fn reports_qemu_capability_and_extended_capability_registers() {
     assert_eq!(xhci.mmio_read(0x18, 4), 0x0000_1000);
     assert_eq!(xhci.mmio_read(0x20, 4), 0x0200_0402);
     assert_eq!(xhci.mmio_read(0x24, 4), 0x2042_5355);
-    assert_eq!(xhci.mmio_read(0x28, 4), 0x0000_0405);
+    assert_eq!(xhci.mmio_read(0x28, 4), 0x0000_0401);
     assert_eq!(xhci.mmio_read(0x30, 4), 0x0300_0002);
     assert_eq!(xhci.mmio_read(0x34, 4), 0x2042_5355);
-    assert_eq!(xhci.mmio_read(0x38, 4), 0x0000_0401);
+    assert_eq!(xhci.mmio_read(0x38, 4), 0x0000_0405);
 }
 
 #[test]
@@ -72,6 +72,25 @@ fn first_root_port_reports_connected_high_speed_keyboard_candidate() {
     assert_eq!(
         portsc & (PORTSC_CCS | PORTSC_PED | PORTSC_SPEED_HIGH | PORTSC_CSC),
         PORTSC_CCS | PORTSC_PED | PORTSC_SPEED_HIGH | PORTSC_CSC
+    );
+}
+
+#[test]
+fn supported_protocol_range_matches_connected_high_speed_root_port() {
+    let xhci = XhciController::new();
+
+    let usb2_protocol_ports = u32::try_from(xhci.mmio_read(0x28, 4)).unwrap();
+    let compatible_port_offset = usb2_protocol_ports & 0xff;
+    let compatible_port_count = (usb2_protocol_ports >> 8) & 0xff;
+    let compatible_port_limit = compatible_port_offset + compatible_port_count;
+    let connected_high_speed_root_port = 1;
+
+    assert!(
+        (compatible_port_offset..compatible_port_limit).contains(&connected_high_speed_root_port),
+        "USB2 Supported Protocol compatible port range {}..={} must include connected high-speed root port {}",
+        compatible_port_offset,
+        compatible_port_limit.saturating_sub(1),
+        connected_high_speed_root_port
     );
 }
 
