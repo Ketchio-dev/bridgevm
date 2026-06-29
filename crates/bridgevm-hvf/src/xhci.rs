@@ -62,6 +62,7 @@ pub struct XhciController {
     slot1_dci3_last_dcs: bool,
     slot1_dci3_last_ring_base: u64,
     slot1_dci3_last_ring_dcs: bool,
+    slot1_dci3_last_reusable: bool,
     boot_keyboard_report_queue: setup_input_report::BootKeyboardReportQueue,
     setup_input_report_stats: XhciSetupInputReportStats,
     usb_configuration: u8,
@@ -103,6 +104,7 @@ impl XhciController {
             slot1_dci3_last_dcs: false,
             slot1_dci3_last_ring_base: 0,
             slot1_dci3_last_ring_dcs: false,
+            slot1_dci3_last_reusable: false,
             boot_keyboard_report_queue: setup_input_report::BootKeyboardReportQueue::default(),
             setup_input_report_stats: XhciSetupInputReportStats::default(),
             usb_configuration: 0,
@@ -191,6 +193,8 @@ mod command_tests;
 mod config_descriptor_tests;
 #[cfg(test)]
 mod configure_endpoint_setup_input_no_endpoint_tests;
+#[cfg(test)]
+mod configure_endpoint_setup_input_post_hcrst_tests;
 #[cfg(test)]
 mod configure_endpoint_setup_input_readdress_tests;
 #[cfg(test)]

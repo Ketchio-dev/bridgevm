@@ -165,7 +165,7 @@ impl XhciController {
         mem: &dyn GuestMemoryMut,
     ) -> bool {
         let Some((dequeue, dcs)) = self.slot1_dci3_output_dequeue_state(mem).or_else(|| {
-            (self.slot1_dci3_last_dequeue != 0)
+            (self.slot1_dci3_last_reusable && self.slot1_dci3_last_dequeue != 0)
                 .then_some((self.slot1_dci3_last_dequeue, self.slot1_dci3_last_dcs))
         }) else {
             return false;

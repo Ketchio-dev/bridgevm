@@ -10,6 +10,7 @@ impl XhciController {
         self.slot1_dci3_last_dcs = false;
         self.slot1_dci3_last_ring_base = 0;
         self.slot1_dci3_last_ring_dcs = false;
+        self.slot1_dci3_last_reusable = false;
     }
 
     pub(super) fn remember_slot1_dci3_endpoint_state(&mut self) {
@@ -18,6 +19,7 @@ impl XhciController {
             self.slot1_dci3_last_dcs = self.slot1_dci3_dcs;
             self.slot1_dci3_last_ring_base = self.slot1_dci3_ring_base;
             self.slot1_dci3_last_ring_dcs = self.slot1_dci3_dcs;
+            self.slot1_dci3_last_reusable = true;
         }
     }
 }
