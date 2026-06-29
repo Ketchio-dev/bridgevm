@@ -99,10 +99,8 @@ fn delayed_setup_input_after_new_output_context_readdress_keeps_dci3_endpoint() 
     );
     setup_address_device_command(&mut xhci, &mut mem);
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
-    assert_eq!(
-        xhci.queue_setup_input_actions(&[SetupInputAction::Enter]),
-        Ok(())
-    );
+    xhci.queue_setup_input_actions(&[SetupInputAction::Enter])
+        .unwrap();
 
     // Then: queued setup-input can still drain through DCI3 in the current output context.
     let drained = xhci.process_queued_dci3_input(&mut mem);
@@ -145,10 +143,9 @@ fn delayed_setup_input_after_repeated_fresh_output_readdress_keeps_live_dci3_end
     );
     setup_address_device_command(&mut xhci, &mut mem);
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
-    assert_eq!(
-        xhci.queue_setup_input_actions(&[SetupInputAction::Enter]),
-        Ok(())
-    );
+    assert!(xhci
+        .queue_setup_input_actions(&[SetupInputAction::Enter])
+        .is_ok());
 
     // Then: delayed setup-input drains from the live DCI3 ring, not a zeroed endpoint snapshot.
     let drained = xhci.process_queued_dci3_input(&mut mem);
@@ -215,6 +212,37 @@ fn delayed_setup_input_after_reinit_loses_output_dequeue_reacquires_last_dci3_sn
         mem.read_bytes(delayed_setup_input_buffer(0), 8).unwrap(),
         [0, 0, 0x28, 0, 0, 0, 0, 0]
     );
+}
+
+#[test]
+fn delayed_setup_input_after_stale_live_dequeue_refuses_consumed_ring_base() {
+    // Given: normal Configure Endpoint and DCI3 doorbells emitted the boot-key pair.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0xa000);
+    let live_dequeue = emit_boot_key_pair_at_live_dci3(&mut xhci, &mut mem);
+    assert!(mem.write_bytes(DCI3_BUFFER, &[0xaa; 8]));
+
+    // When: the current output/internal DCI3 state is lost and the last live dequeue is stale.
+    mem.write_u64(DCBAA + 8, READDRESS_OUTPUT_CONTEXT);
+    setup_address_device_command(&mut xhci, &mut mem);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    mem.write_u32(live_dequeue + 12, TRB_TYPE_NORMAL << 10);
+    xhci.slot1_dci3_dequeue = 0;
+    xhci.slot1_dci3_ring_base = 0;
+    xhci.slot1_dci3_dcs = false;
+    xhci.slot1_dci3_two_entry_queue_rearm = false;
+    assert_eq!(
+        xhci.queue_setup_input_actions(&[SetupInputAction::Enter]),
+        Ok(())
+    );
+
+    // Then: the host refuses to synthesize a transfer from the already-consumed ring base.
+    assert!(!xhci.process_queued_dci3_input(&mut mem));
+    assert_eq!(
+        mem.read_bytes(delayed_setup_input_buffer(0), 8).unwrap(),
+        [0xcc; 8]
+    );
+    assert_eq!(mem.read_bytes(DCI3_BUFFER, 8).unwrap(), [0xaa; 8]);
 }
 
 fn emit_boot_key_pair_at_live_dci3(xhci: &mut XhciController, mem: &mut TestRam) -> u64 {

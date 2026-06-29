@@ -170,6 +170,15 @@ impl XhciController {
         }) else {
             return false;
         };
+        self.reacquire_slot1_dci3_from_dequeue(mem, dequeue, dcs)
+    }
+
+    fn reacquire_slot1_dci3_from_dequeue(
+        &mut self,
+        mem: &dyn GuestMemoryMut,
+        dequeue: u64,
+        dcs: bool,
+    ) -> bool {
         let Some(interrupt_transfer) = read_transfer_trb(mem, dequeue) else {
             return false;
         };

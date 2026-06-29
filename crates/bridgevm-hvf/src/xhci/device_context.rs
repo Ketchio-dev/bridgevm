@@ -201,22 +201,6 @@ impl XhciController {
         let dequeue = raw_dequeue & EP_TR_DEQUEUE_MASK;
         (dequeue != 0).then_some((dequeue, raw_dequeue & 1 != 0))
     }
-
-    pub(super) fn invalidate_slot1_dci3_endpoint_state(&mut self) {
-        self.slot1_dci3_dequeue = 0;
-        self.slot1_dci3_ring_base = 0;
-        self.slot1_dci3_dcs = false;
-        self.slot1_dci3_two_entry_queue_rearm = false;
-        self.slot1_dci3_last_dequeue = 0;
-        self.slot1_dci3_last_dcs = false;
-    }
-
-    fn remember_slot1_dci3_endpoint_state(&mut self) {
-        if self.slot1_dci3_dequeue != 0 && self.slot1_dci3_ring_base != 0 {
-            self.slot1_dci3_last_dequeue = self.slot1_dci3_dequeue;
-            self.slot1_dci3_last_dcs = self.slot1_dci3_dcs;
-        }
-    }
 }
 
 fn output_context_for_slot(mem: &dyn GuestMemoryMut, dcbaa: u64, slot_id: u32) -> Option<u64> {

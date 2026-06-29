@@ -3,6 +3,7 @@ use crate::msix::MsixTable;
 use crate::pcie::{XHCI_MSIX_PBA_OFFSET, XHCI_MSIX_TABLE_OFFSET, XHCI_MSIX_VECTOR_COUNT};
 
 mod commands;
+mod dci3_endpoint_state;
 mod dci3_rearm;
 mod device_context;
 mod event;
@@ -16,6 +17,7 @@ mod reset;
 mod setup_input_report;
 pub(crate) mod trace;
 mod trace_dci3_drain;
+mod trace_host_controller_reset;
 mod transfers;
 mod usb;
 
@@ -58,6 +60,8 @@ pub struct XhciController {
     slot1_dci3_two_entry_queue_rearm: bool,
     slot1_dci3_last_dequeue: u64,
     slot1_dci3_last_dcs: bool,
+    slot1_dci3_last_ring_base: u64,
+    slot1_dci3_last_ring_dcs: bool,
     boot_keyboard_report_queue: setup_input_report::BootKeyboardReportQueue,
     setup_input_report_stats: XhciSetupInputReportStats,
     usb_configuration: u8,
@@ -97,6 +101,8 @@ impl XhciController {
             slot1_dci3_two_entry_queue_rearm: false,
             slot1_dci3_last_dequeue: 0,
             slot1_dci3_last_dcs: false,
+            slot1_dci3_last_ring_base: 0,
+            slot1_dci3_last_ring_dcs: false,
             boot_keyboard_report_queue: setup_input_report::BootKeyboardReportQueue::default(),
             setup_input_report_stats: XhciSetupInputReportStats::default(),
             usb_configuration: 0,

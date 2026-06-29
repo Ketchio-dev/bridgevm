@@ -34,6 +34,7 @@ pub(crate) struct SetupInputReportEmittedTrace<'a> {
 }
 
 pub(crate) use super::trace_dci3_drain::{dci3_drain_blocked, Dci3DrainBlockedTrace};
+pub(crate) use super::trace_host_controller_reset::host_controller_reset;
 
 pub(crate) fn bringup_enabled() -> bool {
     matches!(

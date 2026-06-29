@@ -1,6 +1,6 @@
 use super::{
     ports::{initial_ports, port_reg},
-    XhciController, USB_CMD_HCRST,
+    trace, XhciController, USB_CMD_HCRST,
 };
 
 impl XhciController {
@@ -65,6 +65,7 @@ impl XhciController {
         match offset {
             0x40 => {
                 if value & USB_CMD_HCRST != 0 {
+                    trace::host_controller_reset(value);
                     self.ports = initial_ports();
                     self.reset_programmed_state();
                 }
