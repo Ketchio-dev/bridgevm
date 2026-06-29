@@ -90,27 +90,7 @@ fn delayed_setup_input_after_new_output_context_readdress_keeps_dci3_endpoint() 
     // Given: DCI3 emitted the boot-key pair, leaving valid internal endpoint state.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0xa000);
-    setup_configure_endpoint_command(&mut xhci, &mut mem);
-    write_dci3_normal_trb(&mut mem, DCI3_RING + TRB_SIZE, DCI3_WRAP_BUFFER, true);
-    write_dci3_normal_trb(
-        &mut mem,
-        DCI3_RING + (TRB_SIZE * 2),
-        delayed_setup_input_buffer(0),
-        true,
-    );
-    write_dci3_normal_trb(
-        &mut mem,
-        DCI3_RING + (TRB_SIZE * 3),
-        delayed_setup_input_buffer(1),
-        true,
-    );
-    assert!(mem.write_bytes(delayed_setup_input_buffer(0), &[0xcc; 8]));
-    assert!(mem.write_bytes(delayed_setup_input_buffer(1), &[0xdd; 8]));
-    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
-    assert!(xhci.queue_boot_keyboard_space());
-    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
-    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
-    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING + (TRB_SIZE * 2));
+    emit_boot_key_pair_at_live_dci3(&mut xhci, &mut mem);
 
     // When: the guest switches slot 1 to a fresh output context and re-addresses via EP0.
     mem.write_u64(
@@ -145,27 +125,7 @@ fn delayed_setup_input_after_repeated_fresh_output_readdress_keeps_live_dci3_end
     // Given: DCI3 emitted the boot-key pair, leaving the live ring at the next TRB.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0xa000);
-    setup_configure_endpoint_command(&mut xhci, &mut mem);
-    write_dci3_normal_trb(&mut mem, DCI3_RING + TRB_SIZE, DCI3_WRAP_BUFFER, true);
-    write_dci3_normal_trb(
-        &mut mem,
-        DCI3_RING + (TRB_SIZE * 2),
-        delayed_setup_input_buffer(0),
-        true,
-    );
-    write_dci3_normal_trb(
-        &mut mem,
-        DCI3_RING + (TRB_SIZE * 3),
-        delayed_setup_input_buffer(1),
-        true,
-    );
-    assert!(mem.write_bytes(delayed_setup_input_buffer(0), &[0xcc; 8]));
-    assert!(mem.write_bytes(delayed_setup_input_buffer(1), &[0xdd; 8]));
-    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
-    assert!(xhci.queue_boot_keyboard_space());
-    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
-    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
-    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING + (TRB_SIZE * 2));
+    emit_boot_key_pair_at_live_dci3(&mut xhci, &mut mem);
 
     // When: Windows-style readdress loops move slot 1 across two fresh output contexts.
     mem.write_u64(
@@ -206,6 +166,81 @@ fn delayed_setup_input_after_repeated_fresh_output_readdress_keeps_live_dci3_end
         mem.read_bytes(delayed_setup_input_buffer(0), 8).unwrap(),
         [0, 0, 0x28, 0, 0, 0, 0, 0]
     );
+}
+
+#[test]
+fn delayed_setup_input_after_reinit_loses_output_dequeue_reacquires_last_dci3_snapshot() {
+    // Given: early DCI3 doorbells emitted the boot-key pair and advanced to a live TRB.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0xa000);
+    let live_dequeue = emit_boot_key_pair_at_live_dci3(&mut xhci, &mut mem);
+    assert_eq!(
+        mem.read_u64(OUTPUT_CONTEXT + DCI3_OUTPUT_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET),
+        live_dequeue + TRB_CYCLE
+    );
+
+    // When: a non-HCRST reinit/readdress leaves no current DCI3 output dequeue or internal DCI3.
+    mem.write_u64(
+        DCBAA + (u64::from(ENABLE_SLOT_ID) * 8),
+        READDRESS_OUTPUT_CONTEXT,
+    );
+    setup_address_device_command(&mut xhci, &mut mem);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    mem.write_u64(
+        READDRESS_OUTPUT_CONTEXT + DCI3_OUTPUT_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET,
+        0,
+    );
+    xhci.slot1_dci3_dequeue = 0;
+    xhci.slot1_dci3_ring_base = 0;
+    xhci.slot1_dci3_dcs = false;
+    xhci.slot1_dci3_two_entry_queue_rearm = false;
+    assert_eq!(
+        xhci.queue_setup_input_actions(&[SetupInputAction::Enter]),
+        Ok(())
+    );
+
+    // Then: delayed setup-input still drains from the last observed live DCI3 dequeue.
+    let drained = xhci.process_queued_dci3_input(&mut mem);
+    assert!(
+        drained,
+        "reason=no_dci3_endpoint dequeue={:#x} ring_base={:#x} current_output_dequeue={:#x} live_dequeue={live_dequeue:#x} stats={:?}",
+        xhci.slot1_dci3_dequeue,
+        xhci.slot1_dci3_ring_base,
+        mem.read_u64(
+            READDRESS_OUTPUT_CONTEXT + DCI3_OUTPUT_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET
+        ),
+        xhci.setup_input_report_stats()
+    );
+    assert_eq!(
+        mem.read_bytes(delayed_setup_input_buffer(0), 8).unwrap(),
+        [0, 0, 0x28, 0, 0, 0, 0, 0]
+    );
+}
+
+fn emit_boot_key_pair_at_live_dci3(xhci: &mut XhciController, mem: &mut TestRam) -> u64 {
+    setup_configure_endpoint_command(xhci, mem);
+    write_dci3_normal_trb(mem, DCI3_RING + TRB_SIZE, DCI3_WRAP_BUFFER, true);
+    write_dci3_normal_trb(
+        mem,
+        DCI3_RING + (TRB_SIZE * 2),
+        delayed_setup_input_buffer(0),
+        true,
+    );
+    write_dci3_normal_trb(
+        mem,
+        DCI3_RING + (TRB_SIZE * 3),
+        delayed_setup_input_buffer(1),
+        true,
+    );
+    assert!(mem.write_bytes(delayed_setup_input_buffer(0), &[0xcc; 8]));
+    assert!(mem.write_bytes(delayed_setup_input_buffer(1), &[0xdd; 8]));
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, mem));
+    assert!(xhci.queue_boot_keyboard_space());
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), mem));
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), mem));
+    let live_dequeue = DCI3_RING + (TRB_SIZE * 2);
+    assert_eq!(xhci.slot1_dci3_dequeue, live_dequeue);
+    live_dequeue
 }
 
 fn setup_address_device_command(xhci: &mut XhciController, mem: &mut TestRam) {

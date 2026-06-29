@@ -128,6 +128,7 @@ impl XhciController {
         self.slot1_dci3_ring_base = dci3_dequeue;
         self.slot1_dci3_dcs = raw_dequeue & 1 != 0;
         self.slot1_dci3_two_entry_queue_rearm = false;
+        self.remember_slot1_dci3_endpoint_state();
 
         let dcbaa = self.dcbaap & DCBAA_POINTER_MASK;
         let Some(output_context) = output_context_for_slot(mem, dcbaa, slot_id) else {
@@ -144,7 +145,8 @@ impl XhciController {
         }
     }
 
-    pub(super) fn write_slot1_dci3_output_dequeue(&self, mem: &mut dyn GuestMemoryMut) {
+    pub(super) fn write_slot1_dci3_output_dequeue(&mut self, mem: &mut dyn GuestMemoryMut) {
+        self.remember_slot1_dci3_endpoint_state();
         let dcbaa = self.dcbaap & DCBAA_POINTER_MASK;
         let Some(output_context) = output_context_for_slot(mem, dcbaa, SLOT_ID) else {
             return;
@@ -205,6 +207,15 @@ impl XhciController {
         self.slot1_dci3_ring_base = 0;
         self.slot1_dci3_dcs = false;
         self.slot1_dci3_two_entry_queue_rearm = false;
+        self.slot1_dci3_last_dequeue = 0;
+        self.slot1_dci3_last_dcs = false;
+    }
+
+    fn remember_slot1_dci3_endpoint_state(&mut self) {
+        if self.slot1_dci3_dequeue != 0 && self.slot1_dci3_ring_base != 0 {
+            self.slot1_dci3_last_dequeue = self.slot1_dci3_dequeue;
+            self.slot1_dci3_last_dcs = self.slot1_dci3_dcs;
+        }
     }
 }
 
