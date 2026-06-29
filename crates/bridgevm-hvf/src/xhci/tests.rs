@@ -147,9 +147,14 @@ fn controller_reset_restores_initial_root_port_state() {
 
     let portsc = xhci.mmio_read(PORT_REG_BASE, 4) as u32;
     assert_eq!(
-        portsc & (PORTSC_CCS | PORTSC_PED | PORTSC_SPEED_HIGH | PORTSC_CSC),
-        PORTSC_CCS | PORTSC_PED | PORTSC_SPEED_HIGH | PORTSC_CSC
+        portsc & (PORTSC_CCS | PORTSC_SPEED_HIGH | PORTSC_CSC),
+        PORTSC_CCS | PORTSC_SPEED_HIGH | PORTSC_CSC
     );
+    assert_eq!(portsc & PORTSC_PED, 0);
+
+    xhci.mmio_write(PORT_REG_BASE, 4, u64::from(PORTSC_PR));
+    let portsc = xhci.mmio_read(PORT_REG_BASE, 4) as u32;
+    assert_eq!(portsc & (PORTSC_PED | PORTSC_PRC), PORTSC_PED | PORTSC_PRC);
 }
 
 #[test]

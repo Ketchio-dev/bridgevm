@@ -1,7 +1,26 @@
 use super::configure_endpoint_tests::*;
-use super::test_support::{TestRam, DOORBELL_BASE, TRB_SIZE};
+use super::ports::PORT_REG_BASE;
+use super::test_support::{
+    assert_success_completion, command_control, setup_command_rings,
+    setup_command_rings_with_parameter, TestRam, CMD_RING, DOORBELL_BASE, ENABLE_SLOT_ID,
+    EVENT_RING, TRB_SIZE, TRB_TYPE_ADDRESS_DEVICE, TRB_TYPE_ENABLE_SLOT,
+};
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
+
+const PORTSC_CCS: u32 = 1 << 0;
+const PORTSC_PED: u32 = 1 << 1;
+const PORTSC_PR: u32 = 1 << 4;
+const PORTSC_PP: u32 = 1 << 9;
+const PORTSC_SPEED_HIGH: u32 = 3 << 10;
+const PORTSC_CSC: u32 = 1 << 17;
+const PORTSC_PRC: u32 = 1 << 21;
+const FRESH_INPUT_CONTEXT: u64 = 0x7400;
+const FRESH_OUTPUT_CONTEXT: u64 = 0x7c00;
+const FRESH_EP0_RING: u64 = 0x8000;
+const FRESH_DCI3_RING: u64 = 0x8200;
+const FRESH_DCI3_BUFFER: u64 = 0x8600;
+const EP0_INPUT_CONTEXT_OFFSET: u64 = 0x40;
 
 #[test]
 fn queued_setup_input_after_hcrst_reacquires_only_fresh_dci3_output_dequeue() {
@@ -63,4 +82,94 @@ fn queued_setup_input_after_hcrst_reacquires_only_fresh_dci3_output_dequeue() {
     assert_eq!(stats.queued_reports, 2);
     assert_eq!(stats.emitted_key_reports, 1);
     assert_eq!(stats.emitted_release_reports, 1);
+}
+
+#[test]
+fn post_hcrst_port_reset_allows_fresh_slot_lifecycle_to_publish_dci3() {
+    // Given: slot 1 had a configured DCI3 endpoint before a host-controller reset.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    setup_configure_endpoint_command(&mut xhci, &mut mem);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING);
+
+    // When: Windows resets the host controller and starts root-port reset enumeration again.
+    xhci.mmio_write(0x40, 4, u64::from(USB_CMD_HCRST));
+    let post_hcrst_portsc = xhci.mmio_read(PORT_REG_BASE, 4) as u32;
+
+    // Then: the HID port is connected and changed, but not stale-enabled before PORTSC.PR.
+    assert_eq!(post_hcrst_portsc & PORTSC_PP, PORTSC_PP);
+    assert_eq!(
+        post_hcrst_portsc & (PORTSC_CCS | PORTSC_SPEED_HIGH | PORTSC_CSC),
+        PORTSC_CCS | PORTSC_SPEED_HIGH | PORTSC_CSC
+    );
+    assert_eq!(post_hcrst_portsc & PORTSC_PED, 0);
+    assert_eq!(post_hcrst_portsc & PORTSC_PRC, 0);
+    assert_eq!(xhci.slot1_dci3_dequeue, 0);
+
+    // When: the guest explicitly resets the connected port and runs a new slot lifecycle.
+    xhci.mmio_write(PORT_REG_BASE, 4, u64::from(PORTSC_PR));
+    let post_port_reset_portsc = xhci.mmio_read(PORT_REG_BASE, 4) as u32;
+    assert_eq!(
+        post_port_reset_portsc & (PORTSC_CCS | PORTSC_PED | PORTSC_SPEED_HIGH | PORTSC_PRC),
+        PORTSC_CCS | PORTSC_PED | PORTSC_SPEED_HIGH | PORTSC_PRC
+    );
+
+    setup_command_rings(
+        &mut xhci,
+        &mut mem,
+        command_control(TRB_TYPE_ENABLE_SLOT, ENABLE_SLOT_ID),
+    );
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert_success_completion(&mem, EVENT_RING, CMD_RING, ENABLE_SLOT_ID);
+
+    mem.write_u64(
+        FRESH_INPUT_CONTEXT + EP0_INPUT_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET,
+        FRESH_EP0_RING | TRB_CYCLE,
+    );
+    mem.write_u64(
+        DCBAA + (u64::from(ENABLE_SLOT_ID) * 8),
+        FRESH_OUTPUT_CONTEXT,
+    );
+    setup_command_rings_with_parameter(
+        &mut xhci,
+        &mut mem,
+        FRESH_INPUT_CONTEXT,
+        command_control(TRB_TYPE_ADDRESS_DEVICE, ENABLE_SLOT_ID),
+    );
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert_success_completion(&mem, EVENT_RING, CMD_RING, ENABLE_SLOT_ID);
+
+    mem.write_u32(
+        FRESH_INPUT_CONTEXT + INPUT_CONTROL_ADD_CONTEXT_OFFSET,
+        DCI3_ADD_CONTEXT_FLAG,
+    );
+    mem.write_u32(
+        FRESH_INPUT_CONTEXT + DCI3_INPUT_CONTEXT_OFFSET + EP_CONTEXT_DWORD1_OFFSET,
+        DCI3_DWORD1,
+    );
+    mem.write_u64(
+        FRESH_INPUT_CONTEXT + DCI3_INPUT_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET,
+        FRESH_DCI3_RING | TRB_CYCLE,
+    );
+    mem.write_u32(
+        FRESH_INPUT_CONTEXT + DCI3_INPUT_CONTEXT_OFFSET + EP_CONTEXT_DWORD4_OFFSET,
+        DCI3_DWORD4,
+    );
+    write_dci3_normal_trb(&mut mem, FRESH_DCI3_RING, FRESH_DCI3_BUFFER, true);
+    setup_command_rings_with_parameter(
+        &mut xhci,
+        &mut mem,
+        FRESH_INPUT_CONTEXT,
+        command_control(TRB_TYPE_CONFIGURE_ENDPOINT, ENABLE_SLOT_ID),
+    );
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+
+    // Then: the post-reset lifecycle publishes a fresh DCI3 endpoint, not stale state.
+    assert_eq!(xhci.slot1_dci3_dequeue, FRESH_DCI3_RING);
+    assert_eq!(
+        mem.read_u64(FRESH_OUTPUT_CONTEXT + DCI3_OUTPUT_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET),
+        FRESH_DCI3_RING | TRB_CYCLE
+    );
+    assert_eq!(mem.read_u64(FRESH_DCI3_RING), FRESH_DCI3_BUFFER);
 }
