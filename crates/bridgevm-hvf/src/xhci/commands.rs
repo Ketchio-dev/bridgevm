@@ -85,6 +85,7 @@ impl XhciController {
                     if posted {
                         if slot_id == SLOT_ID {
                             self.usb_configuration = 0;
+                            self.disable_slot1_context(mem);
                         }
                         self.advance_command_dequeue(command_trb);
                     }

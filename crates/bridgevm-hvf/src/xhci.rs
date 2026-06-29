@@ -205,6 +205,8 @@ mod configure_endpoint_setup_input_tests;
 #[cfg(test)]
 mod configure_endpoint_tests;
 #[cfg(test)]
+mod disable_slot_tests;
+#[cfg(test)]
 mod ep0_enumeration_tests;
 #[cfg(test)]
 mod ep0_overflow_tests;

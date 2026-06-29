@@ -21,6 +21,7 @@ const DCI3_OUTPUT_CONTEXT_OFFSET: u64 = 0x60;
 const EP_CONTEXT_BYTES: usize = 32;
 const EP_TR_DEQUEUE_OFFSET: u64 = 0x8;
 const EP_TR_DEQUEUE_MASK: u64 = !0xf;
+const EP_STATE_DISABLED: u32 = 0;
 const SLOT_STATE_DEFAULT: u32 = 2 << 27;
 const SLOT_STATE_ADDRESSED: u32 = 3 << 27;
 const EP_STATE_RUNNING: u32 = 1;
@@ -201,6 +202,33 @@ impl XhciController {
             ep0_dequeue_gpa,
             self.slot1_ep0_dequeue | u64::from(self.slot1_ep0_dcs),
         );
+    }
+
+    pub(super) fn disable_slot1_context(&mut self, mem: &mut dyn GuestMemoryMut) {
+        self.slot1_ep0_dequeue = 0;
+        self.slot1_ep0_dcs = false;
+        self.invalidate_slot1_dci3_endpoint_state();
+        let dcbaa = self.dcbaap & DCBAA_POINTER_MASK;
+        let Some(output_context) = output_context_for_slot(mem, dcbaa, SLOT_ID) else {
+            return;
+        };
+        for endpoint_offset in [EP0_OUTPUT_CONTEXT_OFFSET, DCI3_OUTPUT_CONTEXT_OFFSET] {
+            let Some(endpoint_gpa) = output_context.checked_add(endpoint_offset) else {
+                continue;
+            };
+            let Some(dequeue_gpa) = endpoint_gpa.checked_add(EP_TR_DEQUEUE_OFFSET) else {
+                continue;
+            };
+            if mem.read_bytes(endpoint_gpa, EP_CONTEXT_BYTES).is_none() {
+                continue;
+            }
+            if !write_ep_context_state(mem, endpoint_gpa, EP_STATE_DISABLED) {
+                return;
+            }
+            if !write_mem_u64(mem, dequeue_gpa, 0) {
+                return;
+            }
+        }
     }
 
     pub(super) fn slot1_dci3_output_dequeue_state(
