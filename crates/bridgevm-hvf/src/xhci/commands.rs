@@ -21,6 +21,7 @@ const TRB_TYPE_STOP_ENDPOINT: u32 = 15;
 const TRB_TYPE_SET_TR_DEQUEUE_POINTER: u32 = 16;
 const TRB_TYPE_COMMAND_COMPLETION_EVENT: u32 = 33;
 const COMPLETION_CODE_SUCCESS: u32 = 1;
+const ADDRESS_DEVICE_BSR: u32 = 1 << 9;
 const SLOT_ID: u32 = 1;
 const COMMAND_SLOT_ID_SHIFT: u32 = 24;
 const COMMAND_SLOT_ID_MASK: u32 = 0xff;
@@ -122,7 +123,12 @@ impl XhciController {
                         return false;
                     };
                     let slot_id = command_slot_id(command_control);
-                    self.capture_address_device_input_context(mem, input_context, slot_id);
+                    self.capture_address_device_input_context(
+                        mem,
+                        input_context,
+                        slot_id,
+                        command_control & ADDRESS_DEVICE_BSR != 0,
+                    );
                     let posted = self.post_command_completion(mem, command_trb, slot_id);
                     if posted {
                         if slot_id == SLOT_ID {

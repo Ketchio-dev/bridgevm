@@ -6,6 +6,7 @@ mod commands;
 mod dci3_endpoint_state;
 mod dci3_rearm;
 mod device_context;
+mod device_context_mem;
 mod event;
 mod interrupt_in;
 mod interrupt_trb;
@@ -185,6 +186,8 @@ impl XhciController {
     }
 }
 
+#[cfg(test)]
+mod address_context_bsr_tests;
 #[cfg(test)]
 mod address_context_tests;
 #[cfg(test)]

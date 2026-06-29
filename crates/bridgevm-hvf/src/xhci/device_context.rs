@@ -1,9 +1,12 @@
 use crate::fwcfg::GuestMemoryMut;
 
+use super::device_context_mem::{
+    output_context_for_slot, read_mem_u32, read_mem_u64, read_u64, write_ep_context_state,
+    write_mem_u32, write_mem_u64,
+};
 use super::XhciController;
 
 const SLOT_ID: u32 = 1;
-const DCBAA_ENTRY_BYTES: u64 = 8;
 const DCBAA_POINTER_MASK: u64 = !0x3f;
 const DEVICE_CONTEXT_POINTER_MASK: u64 = !0x3f;
 const INPUT_CONTROL_ADD_CONTEXT_OFFSET: u64 = 0x04;
@@ -16,11 +19,10 @@ const DCI3: u32 = 3;
 const DCI3_INPUT_CONTEXT_OFFSET: u64 = 0x80;
 const DCI3_OUTPUT_CONTEXT_OFFSET: u64 = 0x60;
 const EP_CONTEXT_BYTES: usize = 32;
-const EP_CONTEXT_DWORD0_OFFSET: u64 = 0x0;
 const EP_TR_DEQUEUE_OFFSET: u64 = 0x8;
 const EP_TR_DEQUEUE_MASK: u64 = !0xf;
+const SLOT_STATE_DEFAULT: u32 = 2 << 27;
 const SLOT_STATE_ADDRESSED: u32 = 3 << 27;
-const EP_STATE_MASK: u32 = 0x7;
 const EP_STATE_RUNNING: u32 = 1;
 const EP_STATE_STOPPED: u32 = 3;
 
@@ -30,6 +32,7 @@ impl XhciController {
         mem: &mut dyn GuestMemoryMut,
         input_context: u64,
         slot_id: u32,
+        block_set_address_request: bool,
     ) {
         if slot_id != SLOT_ID {
             return;
@@ -51,19 +54,9 @@ impl XhciController {
         self.slot1_ep0_dcs = raw_dequeue & 1 != 0;
 
         let dcbaa = self.dcbaap & DCBAA_POINTER_MASK;
-        let Some(dcbaa_entry) = u64::from(slot_id)
-            .checked_mul(DCBAA_ENTRY_BYTES)
-            .and_then(|slot_offset| dcbaa.checked_add(slot_offset))
-        else {
+        let Some(output_context) = output_context_for_slot(mem, dcbaa, slot_id) else {
             return;
         };
-        let Some(output_context_raw) = read_mem_u64(mem, dcbaa_entry) else {
-            return;
-        };
-        let output_context = output_context_raw & DEVICE_CONTEXT_POINTER_MASK;
-        if output_context == 0 {
-            return;
-        }
 
         let Some(slot_dword3_gpa) = output_context.checked_add(SLOT_CONTEXT_DWORD3_OFFSET) else {
             return;
@@ -83,6 +76,18 @@ impl XhciController {
             if !mem.write_bytes(output_context, &slot_input_context) {
                 return;
             }
+        }
+        if block_set_address_request {
+            if !write_mem_u32(mem, slot_dword3_gpa, SLOT_STATE_DEFAULT | (slot_id & 0xff)) {
+                return;
+            }
+            if !mem.write_bytes(ep0_output_gpa, &ep0_input_context) {
+                return;
+            }
+            if !write_mem_u64(mem, ep0_dequeue_output_gpa, raw_dequeue) {
+                return;
+            }
+            return;
         }
         if !write_mem_u32(
             mem,
@@ -211,53 +216,4 @@ impl XhciController {
         let dequeue = raw_dequeue & EP_TR_DEQUEUE_MASK;
         (dequeue != 0).then_some((dequeue, raw_dequeue & 1 != 0))
     }
-}
-
-fn output_context_for_slot(mem: &dyn GuestMemoryMut, dcbaa: u64, slot_id: u32) -> Option<u64> {
-    let dcbaa_entry = u64::from(slot_id)
-        .checked_mul(DCBAA_ENTRY_BYTES)
-        .and_then(|slot_offset| dcbaa.checked_add(slot_offset))?;
-    let output_context_raw = read_mem_u64(mem, dcbaa_entry)?;
-    let output_context = output_context_raw & DEVICE_CONTEXT_POINTER_MASK;
-    (output_context != 0).then_some(output_context)
-}
-
-fn write_mem_u32(mem: &mut dyn GuestMemoryMut, gpa: u64, value: u32) -> bool {
-    mem.write_bytes(gpa, &value.to_le_bytes())
-}
-
-fn write_ep_context_state(mem: &mut dyn GuestMemoryMut, ep_context_gpa: u64, state: u32) -> bool {
-    let Some(dword0_gpa) = ep_context_gpa.checked_add(EP_CONTEXT_DWORD0_OFFSET) else {
-        return false;
-    };
-    let Some(dword0) = read_mem_u32(mem, dword0_gpa) else {
-        return false;
-    };
-    write_mem_u32(mem, dword0_gpa, (dword0 & !EP_STATE_MASK) | state)
-}
-
-fn read_mem_u32(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u32> {
-    let raw = mem.read_bytes(gpa, 4)?;
-    read_u32(&raw, 0)
-}
-
-fn read_mem_u64(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u64> {
-    let raw = mem.read_bytes(gpa, 8)?;
-    read_u64(&raw, 0)
-}
-
-fn write_mem_u64(mem: &mut dyn GuestMemoryMut, gpa: u64, value: u64) -> bool {
-    mem.write_bytes(gpa, &value.to_le_bytes())
-}
-
-fn read_u64(bytes: &[u8], offset: usize) -> Option<u64> {
-    let raw = bytes.get(offset..offset + 8)?;
-    let array: [u8; 8] = raw.try_into().ok()?;
-    Some(u64::from_le_bytes(array))
-}
-
-fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
-    let raw = bytes.get(offset..offset + 4)?;
-    let array: [u8; 4] = raw.try_into().ok()?;
-    Some(u32::from_le_bytes(array))
 }
