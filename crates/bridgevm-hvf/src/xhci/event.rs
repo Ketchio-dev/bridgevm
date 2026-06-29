@@ -10,9 +10,18 @@ pub(super) const IMAN_INTERRUPT_PENDING: u32 = 1 << 0;
 
 const ERDP_EHB: u32 = 1 << 3;
 const IMAN_INTERRUPT_ENABLE: u32 = 1 << 1;
+const PORT_STATUS_CHANGE_EVENT_PORT_ID: u64 = 1 << 24;
+const TRB_TYPE_PORT_STATUS_CHANGE_EVENT: u32 = 34;
 const TRB_SIZE: usize = 16;
 const TRB_SIZE_BYTES: u64 = 16;
 const TRB_CYCLE: u32 = 1;
+const EVENT_RING_PROGRAMMING_START: u64 = 0x1028;
+const EVENT_RING_PROGRAMMING_END: u64 = 0x1038;
+
+pub(super) fn is_event_ring_programming_write(offset: u64, size: u8) -> bool {
+    let end = offset.saturating_add(u64::from(size.min(8)));
+    offset < EVENT_RING_PROGRAMMING_END && end > EVENT_RING_PROGRAMMING_START
+}
 
 impl XhciController {
     pub(super) fn write_iman0(&mut self, value: u32) {
@@ -46,6 +55,29 @@ impl XhciController {
         self.event_enqueue = 0;
         self.event_handler_busy = false;
         self.event_cycle = true;
+    }
+
+    pub(super) fn mark_post_hcrst_port_status_change_pending(&mut self) {
+        self.post_hcrst_port_status_change_pending = true;
+    }
+
+    pub(super) fn post_pending_port_status_change_event(
+        &mut self,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> bool {
+        if !self.post_hcrst_port_status_change_pending {
+            return false;
+        }
+        let posted = self.post_event(
+            mem,
+            PORT_STATUS_CHANGE_EVENT_PORT_ID,
+            0,
+            TRB_TYPE_PORT_STATUS_CHANGE_EVENT << 10,
+        );
+        if posted {
+            self.post_hcrst_port_status_change_pending = false;
+        }
+        posted
     }
 
     pub(super) fn erdp_low(&self) -> u32 {

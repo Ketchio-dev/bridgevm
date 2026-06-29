@@ -21,9 +21,20 @@ const FRESH_EP0_RING: u64 = 0x8000;
 const FRESH_DCI3_RING: u64 = 0x8200;
 const FRESH_DCI3_BUFFER: u64 = 0x8600;
 const EP0_INPUT_CONTEXT_OFFSET: u64 = 0x40;
+const POST_HCRST_ERST: u64 = 0x2000;
+const TRB_TYPE_PORT_STATUS_CHANGE_EVENT: u32 = 34;
+const USB_STS_EINT: u64 = 1 << 3;
+const IMAN_INTERRUPT_PENDING: u64 = 1 << 0;
+const IMAN_INTERRUPT_ENABLE: u64 = 1 << 1;
+
+fn read_bytes(mem: &TestRam, gpa: u64, len: usize) -> Result<Vec<u8>, String> {
+    mem.read_bytes(gpa, len)
+        .ok_or_else(|| format!("unbacked test RAM read at {gpa:#x}"))
+}
 
 #[test]
-fn queued_setup_input_after_hcrst_reacquires_only_fresh_dci3_output_dequeue() {
+fn queued_setup_input_after_hcrst_reacquires_only_fresh_dci3_output_dequeue() -> Result<(), String>
+{
     // Given: DCI3 was configured before a real HCRST, leaving a stale diagnostic snapshot behind.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0xa000);
@@ -45,7 +56,7 @@ fn queued_setup_input_after_hcrst_reacquires_only_fresh_dci3_output_dequeue() {
 
     // Then: the stale last snapshot is not used as a post-HCRST endpoint.
     assert!(!drained);
-    assert_eq!(mem.read_bytes(DCI3_BUFFER, 8).unwrap(), [0xaa; 8]);
+    assert_eq!(read_bytes(&mem, DCI3_BUFFER, 8)?, [0xaa; 8]);
     let stats = xhci.setup_input_report_stats();
     assert_eq!(stats.emitted_key_reports, 0);
     assert_eq!(stats.emitted_release_reports, 0);
@@ -74,14 +85,15 @@ fn queued_setup_input_after_hcrst_reacquires_only_fresh_dci3_output_dequeue() {
 
     // Then: delayed setup-input drains from the fresh post-reset DCI3 endpoint.
     assert_eq!(
-        mem.read_bytes(DCI3_BUFFER, 8).unwrap(),
+        read_bytes(&mem, DCI3_BUFFER, 8)?,
         [0, 0, 0x28, 0, 0, 0, 0, 0]
     );
-    assert_eq!(mem.read_bytes(DCI3_WRAP_BUFFER, 8).unwrap(), [0; 8]);
+    assert_eq!(read_bytes(&mem, DCI3_WRAP_BUFFER, 8)?, [0; 8]);
     let stats = xhci.setup_input_report_stats();
     assert_eq!(stats.queued_reports, 2);
     assert_eq!(stats.emitted_key_reports, 1);
     assert_eq!(stats.emitted_release_reports, 1);
+    Ok(())
 }
 
 #[test]
@@ -172,4 +184,52 @@ fn post_hcrst_port_reset_allows_fresh_slot_lifecycle_to_publish_dci3() {
         FRESH_DCI3_RING | TRB_CYCLE
     );
     assert_eq!(mem.read_u64(FRESH_DCI3_RING), FRESH_DCI3_BUFFER);
+}
+
+#[test]
+fn port_status_change_event_posts_once_when_event_ring_is_programmed_after_hcrst() {
+    // Given: a prior slot lifecycle left stale DCI3 state before HCRST.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    setup_configure_endpoint_command(&mut xhci, &mut mem);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING);
+
+    xhci.mmio_write(0x40, 4, u64::from(USB_CMD_HCRST));
+    assert_eq!(xhci.slot1_dci3_dequeue, 0);
+    assert_eq!(xhci.slot1_dci3_last_ring_base, 0);
+    let post_hcrst_portsc = xhci.mmio_read(PORT_REG_BASE, 4) as u32;
+    assert_eq!(
+        post_hcrst_portsc & (PORTSC_CCS | PORTSC_SPEED_HIGH | PORTSC_CSC),
+        PORTSC_CCS | PORTSC_SPEED_HIGH | PORTSC_CSC
+    );
+
+    mem.write_u64(POST_HCRST_ERST, EVENT_RING);
+    mem.write_u32(POST_HCRST_ERST + 8, 16);
+
+    // When: Windows programs a usable event ring through mem-backed MMIO.
+    assert!(!xhci.mmio_write_with_mem(0x1020, 4, IMAN_INTERRUPT_ENABLE, &mut mem));
+    assert!(!xhci.mmio_write_with_mem(0x1028, 4, 1, &mut mem));
+    assert!(!xhci.mmio_write_with_mem(0x1038, 8, EVENT_RING | 0x8, &mut mem));
+    let posted = xhci.mmio_write_with_mem(0x1030, 8, POST_HCRST_ERST, &mut mem);
+
+    // Then: exactly one xHCI Port Status Change Event for port id 1 is posted.
+    assert!(posted);
+    assert_eq!((mem.read_u64(EVENT_RING) >> 24) & 0xff, 1);
+    assert_eq!(mem.read_u32(EVENT_RING + 8), 0);
+    let control = mem.read_u32(EVENT_RING + 12);
+    assert_eq!((control >> 10) & 0x3f, TRB_TYPE_PORT_STATUS_CHANGE_EVENT);
+    assert_eq!(control & 1, 1);
+    assert_eq!(mem.read_u64(EVENT_RING + TRB_SIZE), 0);
+    assert_eq!(
+        xhci.mmio_read(0x1020, 4) & IMAN_INTERRUPT_PENDING,
+        IMAN_INTERRUPT_PENDING
+    );
+    assert_eq!(xhci.mmio_read(0x44, 4) & USB_STS_EINT, USB_STS_EINT);
+    assert_eq!(xhci.slot1_dci3_dequeue, 0);
+    assert_eq!(xhci.slot1_dci3_last_ring_base, 0);
+
+    let duplicate = xhci.mmio_write_with_mem(0x1028, 4, 1, &mut mem);
+    assert!(!duplicate);
+    assert_eq!(mem.read_u64(EVENT_RING + TRB_SIZE), 0);
 }

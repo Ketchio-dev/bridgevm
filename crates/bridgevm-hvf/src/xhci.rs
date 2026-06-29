@@ -54,6 +54,7 @@ pub struct XhciController {
     event_handler_busy: bool,
     event_enqueue: u32,
     event_cycle: bool,
+    post_hcrst_port_status_change_pending: bool,
     slot1_ep0_dequeue: u64,
     slot1_ep0_dcs: bool,
     slot1_dci3_dequeue: u64,
@@ -96,6 +97,7 @@ impl XhciController {
             event_handler_busy: false,
             event_enqueue: 0,
             event_cycle: true,
+            post_hcrst_port_status_change_pending: false,
             slot1_ep0_dequeue: 0,
             slot1_ep0_dcs: false,
             slot1_dci3_dequeue: 0,
@@ -173,17 +175,26 @@ impl XhciController {
         value: u64,
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
+        let event_ring_programming_write = event::is_event_ring_programming_write(offset, size);
         self.mmio_write(offset, size, value);
+        let mut interrupt = if event_ring_programming_write {
+            self.post_pending_port_status_change_event(mem)
+        } else {
+            false
+        };
         if commands::is_command_doorbell(offset, size) {
-            return self.process_command_doorbell(mem);
+            interrupt |= self.process_command_doorbell(mem);
+            return interrupt;
         }
         if transfers::is_slot_doorbell(offset, size) {
-            return self.process_slot_doorbell(offset, value, mem);
+            interrupt |= self.process_slot_doorbell(offset, value, mem);
+            return interrupt;
         }
         if self.has_queued_setup_input_report() {
-            return self.process_dci3_interrupt_in_transfer(mem);
+            interrupt |= self.process_dci3_interrupt_in_transfer(mem);
+            return interrupt;
         }
-        false
+        interrupt
     }
 }
 

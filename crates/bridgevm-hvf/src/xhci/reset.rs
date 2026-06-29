@@ -12,6 +12,7 @@ impl XhciController {
         self.erstsz0 = 0;
         self.erstba0 = 0;
         self.erdp0 = 0;
+        self.post_hcrst_port_status_change_pending = false;
         self.slot1_ep0_dequeue = 0;
         self.slot1_ep0_dcs = false;
         self.invalidate_slot1_dci3_endpoint_state();

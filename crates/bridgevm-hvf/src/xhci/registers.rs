@@ -68,6 +68,7 @@ impl XhciController {
                     trace::host_controller_reset(value);
                     self.ports = post_hcrst_ports();
                     self.reset_programmed_state();
+                    self.mark_post_hcrst_port_status_change_pending();
                 }
                 self.usb_command = value & !USB_CMD_HCRST;
             }
