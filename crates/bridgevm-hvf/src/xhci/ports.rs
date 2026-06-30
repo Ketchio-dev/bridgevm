@@ -40,13 +40,13 @@ impl PortState {
         }
     }
 
-    const fn post_hcrst_high_speed_hid_candidate() -> Self {
+    const fn post_hcrst(self) -> Self {
         Self {
-            connected: true,
+            connected: self.connected,
             enabled: false,
-            connect_change: true,
+            connect_change: self.connect_change,
             reset_change: false,
-            speed: PORTSC_SPEED_HIGH,
+            speed: self.speed,
         }
     }
 
@@ -98,10 +98,10 @@ pub(super) fn initial_ports() -> [PortState; XHCI_PORT_COUNT] {
     ports
 }
 
-pub(super) fn post_hcrst_ports() -> [PortState; XHCI_PORT_COUNT] {
-    let mut ports = [PortState::disconnected(); XHCI_PORT_COUNT];
-    ports[0] = PortState::post_hcrst_high_speed_hid_candidate();
-    ports
+pub(super) fn post_hcrst_ports(
+    ports: [PortState; XHCI_PORT_COUNT],
+) -> [PortState; XHCI_PORT_COUNT] {
+    ports.map(PortState::post_hcrst)
 }
 
 pub(super) fn port_reg(offset: u64) -> Option<(usize, u64)> {

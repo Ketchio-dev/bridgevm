@@ -139,7 +139,7 @@ fn port_companion_registers_and_unmodeled_ninth_port_read_zero() {
 }
 
 #[test]
-fn controller_reset_restores_initial_root_port_state() {
+fn controller_reset_preserves_connected_root_port_without_stale_changes() {
     let mut xhci = XhciController::new();
 
     xhci.mmio_write(PORT_REG_BASE, 4, u64::from(PORTSC_CSC));
@@ -147,10 +147,10 @@ fn controller_reset_restores_initial_root_port_state() {
 
     let portsc = xhci.mmio_read(PORT_REG_BASE, 4) as u32;
     assert_eq!(
-        portsc & (PORTSC_CCS | PORTSC_SPEED_HIGH | PORTSC_CSC),
-        PORTSC_CCS | PORTSC_SPEED_HIGH | PORTSC_CSC
+        portsc & (PORTSC_CCS | PORTSC_PP | PORTSC_SPEED_HIGH),
+        PORTSC_CCS | PORTSC_PP | PORTSC_SPEED_HIGH
     );
-    assert_eq!(portsc & PORTSC_PED, 0);
+    assert_eq!(portsc & (PORTSC_PED | PORTSC_CSC | PORTSC_PRC), 0);
 
     xhci.mmio_write(PORT_REG_BASE, 4, u64::from(PORTSC_PR));
     let portsc = xhci.mmio_read(PORT_REG_BASE, 4) as u32;
