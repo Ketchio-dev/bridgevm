@@ -7,9 +7,19 @@ use bridgevm_hvf::{fwcfg::GuestMemoryMut, machine, pcie};
 #[path = "pcie_ecam_trace/tests.rs"]
 mod tests;
 
+#[path = "pcie_ecam_trace/context.rs"]
+mod context;
+use context::mmio_access_kind;
+pub(super) use context::{PcieEcamAccess, PcieEcamOwnerContext};
+#[path = "pcie_ecam_trace/format.rs"]
+mod format;
+use format::format_event_line;
+
 #[derive(Debug, Clone)]
 struct PcieEcamEvent {
     pc: u64,
+    access: &'static str,
+    owner_context: PcieEcamOwnerContext,
     bdf: (u8, u8, u8),
     reg: u16,
     op: String,
@@ -57,6 +67,7 @@ impl RecentPcieEcam {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn record_after(
         &mut self,
         platform: &mut VirtPlatform,
@@ -66,10 +77,29 @@ impl RecentPcieEcam {
         op: &MmioOp,
         outcome: &MmioOutcome,
     ) {
-        if self.max == 0 || !machine::PCIE_ECAM.contains(ipa) {
+        self.record_after_with_context(
+            platform,
+            mem,
+            PcieEcamAccess {
+                pc,
+                ipa,
+                op,
+                outcome,
+                owner_context: PcieEcamOwnerContext::unattributed(ipa),
+            },
+        );
+    }
+
+    pub(super) fn record_after_with_context(
+        &mut self,
+        platform: &mut VirtPlatform,
+        mem: &mut dyn GuestMemoryMut,
+        access: PcieEcamAccess<'_>,
+    ) {
+        if self.max == 0 || !machine::PCIE_ECAM.contains(access.ipa) {
             return;
         }
-        let cfg = pcie::CfgAddr::from_ecam_offset(ipa - machine::PCIE_ECAM.base);
+        let cfg = pcie::CfgAddr::from_ecam_offset(access.ipa - machine::PCIE_ECAM.base);
         let Some(endpoint) = tracked_endpoint(cfg.bdf()) else {
             return;
         };
@@ -80,12 +110,14 @@ impl RecentPcieEcam {
             self.events.pop_front();
         }
         self.events.push_back(PcieEcamEvent {
-            pc,
+            pc: access.pc,
+            access: mmio_access_kind(access.op),
+            owner_context: access.owner_context,
             bdf: cfg.bdf(),
             reg: cfg.reg,
-            op: describe_mmio_op(op),
-            outcome: describe_mmio_outcome(outcome),
-            readback: pcie_cfg_read(platform, mem, cfg.bdf(), cfg.reg, access_size(op)),
+            op: describe_mmio_op(access.op),
+            outcome: describe_mmio_outcome(access.outcome),
+            readback: pcie_cfg_read(platform, mem, cfg.bdf(), cfg.reg, access_size(access.op)),
             command_status: pcie_cfg_read(platform, mem, cfg.bdf(), pcie::REG_COMMAND_STATUS, 4)
                 .and_then(|value| u32::try_from(value).ok()),
             bars: pcie_bar_readbacks(platform, mem, cfg.bdf()),
@@ -116,41 +148,6 @@ impl RecentPcieEcam {
     fn event_lines(&self) -> Vec<String> {
         self.events.iter().map(format_event_line).collect()
     }
-}
-
-fn format_event_line(event: &PcieEcamEvent) -> String {
-    let (bus, device, function) = event.bdf;
-    let mut line = format!(
-        "  pc={:#x} bdf={bus:02x}:{device:02x}.{function} reg={}+{:#x} op={} outcome={}",
-        event.pc,
-        tracked_reg_label(event),
-        event.reg,
-        event.op,
-        event.outcome
-    );
-    if let Some(readback) = event.readback {
-        line.push_str(&format!(" readback={readback:#010x}"));
-    }
-    if let Some(command_status) = event.command_status {
-        let command = (command_status & u32::from(u16::MAX)) as u16;
-        let status = command_status >> 16;
-        let memory = command & pcie::CMD_MEMORY_SPACE != 0;
-        let bus_master = command & pcie::CMD_BUS_MASTER != 0;
-        line.push_str(&format!(
-            " command={command:#06x} memory={memory} bus_master={bus_master} status={status:#06x}"
-        ));
-    }
-    if let Some(bars) = event.bars {
-        let base = (u64::from(bars.bar1) << 32) | u64::from(bars.bar0 & !0xf);
-        line.push_str(&format!(
-            " bar0={:#010x} bar1={:#010x} base={base:#x}",
-            bars.bar0, bars.bar1
-        ));
-    }
-    if let Some(msix_control) = event.msix_control {
-        line.push_str(&format!(" msix_ctrl={msix_control:#06x}"));
-    }
-    line
 }
 
 fn tracked_endpoint(bdf: (u8, u8, u8)) -> Option<TrackedEndpoint> {

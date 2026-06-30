@@ -79,7 +79,7 @@ mod storage_effect_receipt;
 use pcie_mmio_trace::{targetless_xhci_trace_context, PcieTraceTarget, RecentMmio};
 #[path = "hvf_gic_boot_probe/pcie_ecam_trace.rs"]
 mod pcie_ecam_trace;
-use pcie_ecam_trace::RecentPcieEcam;
+use pcie_ecam_trace::{PcieEcamAccess, PcieEcamOwnerContext, RecentPcieEcam};
 #[path = "hvf_gic_boot_probe/pe_trace.rs"]
 mod pe_trace;
 use pe_trace::{print_frame_chain, print_pe_owner, print_translated_pe_owner, translated_ipa};
@@ -1605,13 +1605,26 @@ fn main() {
                         };
                         recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
                         let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
-                        recent_pcie_ecam.record_after(
+                        let pcie_ecam_owner_context = PcieEcamOwnerContext {
+                            exit: exits,
+                            ipa,
+                            esr,
+                            ec,
+                            srt,
+                            serial_phase: PcieEcamOwnerContext::serial_phase_from_uart(
+                                platform.uart_output(),
+                            ),
+                        };
+                        recent_pcie_ecam.record_after_with_context(
                             &mut platform,
                             &mut guest_ram,
-                            last_pc,
-                            ipa,
-                            &op,
-                            &outcome,
+                            PcieEcamAccess {
+                                pc: last_pc,
+                                ipa,
+                                op: &op,
+                                outcome: &outcome,
+                                owner_context: pcie_ecam_owner_context,
+                            },
                         );
                         let pcie_context = targetless_xhci_trace_context(
                             &mut platform,

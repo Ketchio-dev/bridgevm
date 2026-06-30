@@ -2,6 +2,9 @@ use bridgevm_hvf::dtb::VirtFdtConfig;
 
 use super::*;
 
+#[path = "tests/trace_enrichment.rs"]
+mod trace_enrichment;
+
 struct NullGuestMemory;
 
 impl GuestMemoryMut for NullGuestMemory {
