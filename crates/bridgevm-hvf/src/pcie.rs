@@ -157,10 +157,18 @@ pub const NVME_MSIX_CAP_OFFSET: u8 = 0x40;
 /// subsystem id 0x1100), which EDK2 boots.
 pub const NVME_SUBSYSTEM_VENDOR_ID: u16 = 0x1af4;
 pub const NVME_SUBSYSTEM_ID: u16 = 0x1100;
-/// PCI Express capability offset chained after the NVMe MSI-X capability. NVMe
-/// is a PCIe endpoint; EDK2's NvmExpressDxe only binds a device that advertises
-/// a PCI Express capability (our xHCI endpoint has one and EDK2 binds it, QEMU's
-/// NVMe has one and EDK2 boots it), so the NVMe endpoint must expose one too.
+/// Power Management capability offset chained between MSI-X and PCI Express.
+/// QEMU's NVMe (which EDK2 boots) exposes a PM capability; EDK2 may power the
+/// endpoint to D0 through it before the driver touches the controller.
+pub const NVME_PM_CAP_OFFSET: u8 = 0x50;
+/// Minimal PCI Power Management capability (ID 0x01): PMC version 3, PMCSR in
+/// D0. The `next` byte is patched to chain onward when the endpoint is built.
+const NVME_PM_CAP_BYTES: [u8; 8] = [0x01, 0x00, 0x03, 0x00, 0x08, 0x00, 0x00, 0x00];
+/// PCI Express capability offset chained after the NVMe Power Management
+/// capability. NVMe is a PCIe endpoint; EDK2's NvmExpressDxe only binds a device
+/// that advertises a PCI Express capability (our xHCI endpoint has one and EDK2
+/// binds it, QEMU's NVMe has one and EDK2 boots it), so the NVMe endpoint must
+/// expose one too.
 pub const NVME_PCIE_CAP_OFFSET: u8 = 0x60;
 /// Number of MSI-X vectors exposed by the minimal NVMe endpoint.
 pub const NVME_MSIX_VECTOR_COUNT: u16 = 2;
@@ -459,12 +467,22 @@ impl Function {
             NVME_MSIX_TABLE_OFFSET,
             NVME_MSIX_PBA_OFFSET,
         );
+        // Capability chain: MSI-X (0x40) -> Power Management (0x50) ->
+        // PCI Express (0x60, terminates), mirroring QEMU's NVMe endpoint.
         let mut cap_bytes: Vec<(u16, u8)> = msix
-            .to_bytes(NVME_PCIE_CAP_OFFSET)
+            .to_bytes(NVME_PM_CAP_OFFSET)
             .into_iter()
             .enumerate()
             .map(|(i, byte)| (u16::from(NVME_MSIX_CAP_OFFSET) + i as u16, byte))
             .collect();
+        let mut pm_cap = NVME_PM_CAP_BYTES;
+        pm_cap[1] = NVME_PCIE_CAP_OFFSET;
+        cap_bytes.extend(
+            pm_cap
+                .into_iter()
+                .enumerate()
+                .map(|(i, byte)| (u16::from(NVME_PM_CAP_OFFSET) + i as u16, byte)),
+        );
         cap_bytes.extend(
             XHCI_PCIE_CAP_BYTES
                 .into_iter()
@@ -1488,8 +1506,16 @@ mod tests {
         );
         assert_eq!(
             ecam.cfg_read(ecam_offset(0, 1, 0, cap + 1), 1),
+            u64::from(NVME_PM_CAP_OFFSET),
+            "MSI-X capability must chain to the Power Management capability"
+        );
+        // Power Management capability (ID 0x01) chains onward to PCI Express.
+        let pm = u16::from(NVME_PM_CAP_OFFSET);
+        assert_eq!(ecam.cfg_read(ecam_offset(0, 1, 0, pm), 1), 0x01);
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 1, 0, pm + 1), 1),
             u64::from(NVME_PCIE_CAP_OFFSET),
-            "MSI-X capability must chain to the PCI Express capability"
+            "Power Management capability must chain to PCI Express"
         );
         // The PCI Express capability (ID 0x10) that EDK2's NvmExpressDxe needs
         // terminates the list.
