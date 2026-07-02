@@ -433,7 +433,14 @@ impl Function {
     /// The first NVMe storage endpoint at `00:01.0`.
     fn nvme() -> Self {
         let mut bars = [Bar::default(); NUM_BARS];
-        bars[0] = Bar::memory32(NVME_BAR0_SIZE);
+        // The NVMe spec requires the controller registers behind a 64-bit BAR
+        // (BAR0/BAR1 pair). EDK2's NvmExpressDxe honours that and refuses to
+        // bind a 32-bit BAR0, so it never enables the controller and drops to
+        // the UEFI Shell instead of booting the NVMe. Match the xHCI endpoint,
+        // which EDK2 binds, by exposing a 64-bit BAR0.
+        let (bar0, bar1) = Bar::memory64(NVME_BAR0_SIZE);
+        bars[0] = bar0;
+        bars[1] = bar1;
         let msix = MsixCapability::new(
             NVME_MSIX_VECTOR_COUNT,
             0,
@@ -533,7 +540,10 @@ impl Function {
         match bar.kind {
             BarKind::Memory32 => bar.mmio_offset_of(gpa),
             BarKind::Memory64Low => {
-                let low = bar.base()?;
+                // Use assigned_base(), not base(), so a BAR still holding a
+                // firmware sizing latch (all-ones write-back) does not spuriously
+                // decode — matching the 32-bit path.
+                let low = bar.assigned_base()?;
                 let high = u64::from(self.bars.get(idx + 1)?.value);
                 let base = (high << 32) | low;
                 let offset = gpa.checked_sub(base)?;
@@ -1513,16 +1523,21 @@ mod tests {
     fn nvme_command_enables_bar0_mmio_decode() {
         let mut ecam = PcieEcam::new();
         let bar0 = ecam_offset(0, 1, 0, REG_BAR0);
+        let bar1 = ecam_offset(0, 1, 0, REG_BAR0 + 4);
         let cmd = ecam_offset(0, 1, 0, REG_COMMAND_STATUS);
 
         ecam.cfg_write(bar0, 4, 0xFFFF_FFFF);
         let readback = ecam.cfg_read(bar0, 4) as u32;
+        // Bit 2 of a 64-bit memory BAR is the hardwired type indicator; mask
+        // the low 4 bits before computing the aperture size.
         let size = (!(readback & !0xF)).wrapping_add(1);
         assert_eq!(size, NVME_BAR0_SIZE);
+        assert_eq!(readback & 0x6, 0x4, "NVMe BAR0 must advertise 64-bit type");
 
         let base = machine::PCIE_MMIO_32.base as u32;
         ecam.cfg_write(bar0, 4, u64::from(base));
-        assert_eq!(ecam.cfg_read(bar0, 4), u64::from(base));
+        ecam.cfg_write(bar1, 4, 0);
+        assert_eq!(ecam.cfg_read(bar0, 4) & !0xF, u64::from(base));
         assert!(ecam.nvme_endpoint_state().bar0_assigned);
         assert!(!ecam.nvme_endpoint_state().command_memory_enabled);
         assert!(!ecam.nvme_endpoint_state().command_bus_master_enabled);
