@@ -21,6 +21,7 @@ pub(crate) mod trace;
 mod trace_dci3_drain;
 mod trace_dci3_input_capture;
 mod trace_host_controller_reset;
+mod trace_mmio;
 mod transfers;
 mod usb;
 
@@ -93,10 +94,13 @@ impl XhciController {
         for byte in 0..usize::from(size.min(8)) {
             value |= u64::from(self.register_byte(offset + byte as u64)) << (byte * 8);
         }
-        mask_to_size(value, size)
+        let value = mask_to_size(value, size);
+        trace_mmio::mmio_read(offset, size, value);
+        value
     }
 
     pub fn mmio_write(&mut self, offset: u64, size: u8, value: u64) -> bool {
+        trace_mmio::mmio_write(offset, size, value);
         if let Some(table_offset) = checked_region_offset(
             offset,
             u64::from(XHCI_MSIX_TABLE_OFFSET),
@@ -206,6 +210,8 @@ mod platform_setup_input_tests;
 mod platform_test_support;
 #[cfg(test)]
 mod platform_tests;
+#[cfg(test)]
+mod port_link_state_tests;
 #[cfg(test)]
 mod port_reset_change_tests;
 #[cfg(test)]

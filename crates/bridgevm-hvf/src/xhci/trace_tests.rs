@@ -60,3 +60,13 @@ fn dci3_drain_blocked_trace_format_includes_parseable_state() {
 fn dci3_input_capture_trace_format_includes_parseable_context_state() {
     super::trace_dci3_input_capture::assert_dci3_input_capture_trace_format_includes_parseable_context_state();
 }
+
+#[test]
+fn mmio_trace_format_includes_parseable_access() {
+    super::trace_mmio::assert_mmio_trace_format_includes_parseable_access();
+}
+
+#[test]
+fn mmio_read_repeat_flush_summarizes_extra_repeats() {
+    super::trace_mmio::assert_mmio_read_repeat_flush_summarizes_extra_repeats();
+}
