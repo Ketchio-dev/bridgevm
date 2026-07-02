@@ -289,3 +289,57 @@ fn setup_reconfigure_endpoint_command(xhci: &mut XhciController, mem: &mut TestR
     write_dci3_normal_trb(mem, NEW_DCI3_RING, NEW_DCI3_BUFFER, true);
     assert!(mem.write_bytes(NEW_DCI3_BUFFER, &[0xcc; 8]));
 }
+
+const WINDOWS_DCI3_COOKIE: u64 = 0xffff_920e_011c_1883;
+const TRB_CHAIN: u32 = 1 << 4;
+const TRB_IOC: u32 = 1 << 5;
+const TRB_TYPE_EVENT_DATA: u32 = 7;
+const TRANSFER_EVENT_ED: u32 = 1 << 2;
+const INTERRUPTER_TARGET_1: u32 = 1 << 22;
+
+#[test]
+fn slot1_dci3_chained_event_data_td_posts_cookie_event_on_target_interrupter() {
+    // Given: the observed Windows interrupt-IN TD is a chained Normal TRB
+    // followed by an Event Data TRB carrying the URB cookie, with both TRBs
+    // targeting interrupter 1.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    setup_configure_endpoint_command(&mut xhci, &mut mem);
+    super::test_support::setup_secondary_event_ring(&mut xhci, &mut mem);
+    mem.write_u64(DCI3_RING, DCI3_BUFFER);
+    mem.write_u32(DCI3_RING + 8, 8 | INTERRUPTER_TARGET_1);
+    mem.write_u32(
+        DCI3_RING + 12,
+        (super::configure_endpoint_tests::TRB_TYPE_NORMAL << 10) | TRB_CHAIN | 1,
+    );
+    mem.write_u64(DCI3_RING + TRB_SIZE, WINDOWS_DCI3_COOKIE);
+    mem.write_u32(DCI3_RING + TRB_SIZE + 8, INTERRUPTER_TARGET_1);
+    mem.write_u32(
+        DCI3_RING + TRB_SIZE + 12,
+        (TRB_TYPE_EVENT_DATA << 10) | TRB_IOC | 1,
+    );
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert!(xhci.queue_boot_keyboard_space());
+
+    // When: the guest rings the DCI3 doorbell.
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
+
+    // Then: the report lands in the Normal TRB buffer, one Event Data
+    // completion with the cookie posts on interrupter 1, and the ring
+    // advances past both TRBs.
+    assert_eq!(
+        mem.read_bytes(DCI3_BUFFER, 8).unwrap(),
+        [0, 0, 0x2c, 0, 0, 0, 0, 0]
+    );
+    let event_gpa = super::test_support::EVENT_RING1;
+    assert_eq!(mem.read_u64(event_gpa), WINDOWS_DCI3_COOKIE);
+    assert_eq!(mem.read_u32(event_gpa + 8) & 0x00ff_ffff, 8);
+    assert_eq!(mem.read_u32(event_gpa + 8) >> 24, 1);
+    let control = mem.read_u32(event_gpa + 12);
+    assert_eq!((control >> 10) & 0x3f, 32);
+    assert_eq!((control >> 16) & 0x1f, DCI3);
+    assert_eq!(control & TRANSFER_EVENT_ED, TRANSFER_EVENT_ED);
+    assert_eq!(mem.read_u64(event_gpa + TRB_SIZE), 0);
+    assert_eq!(mem.read_u64(EVENT_RING + (TRB_SIZE * 2)), 0);
+    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING + (TRB_SIZE * 2));
+}

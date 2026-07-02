@@ -4,8 +4,9 @@ use super::{
     dci3_rearm::{Dci3RearmPolicy, Dci3RearmResult},
     interrupt_trb::{
         read_transfer_trb, transfer_event_control, trb_interrupter_target, trb_transfer_length,
-        trb_type, COMPLETION_CODE_SHIFT, COMPLETION_CODE_SUCCESS, LINK_TRB_POINTER_MASK, TRB_CYCLE,
-        TRB_LINK_TOGGLE_CYCLE, TRB_SIZE_BYTES, TRB_TYPE_LINK, TRB_TYPE_NORMAL,
+        trb_type, InterruptTransferTrb, COMPLETION_CODE_SHIFT, COMPLETION_CODE_SUCCESS,
+        LINK_TRB_POINTER_MASK, TRB_CYCLE, TRB_LINK_TOGGLE_CYCLE, TRB_SIZE_BYTES, TRB_TYPE_LINK,
+        TRB_TYPE_NORMAL,
     },
     setup_input_report::SetupInputReport,
     setup_input_report::{HID_BOOT_KEYBOARD_NO_KEY_REPORT, HID_BOOT_KEYBOARD_REPORT_LEN},
@@ -15,6 +16,13 @@ use super::{
 const SLOT_ID: u32 = 1;
 const ENDPOINT_ID_DCI3: u32 = 3;
 const MAX_LINK_TRBS_PER_DOORBELL: usize = 8;
+const TRB_CHAIN: u32 = 1 << 4;
+const TRB_IOC: u32 = 1 << 5;
+const TRB_TYPE_EVENT_DATA: u32 = 7;
+const TRANSFER_EVENT_ED: u32 = 1 << 2;
+/// QEMU oracle: a TD that moves fewer bytes than requested completes with
+/// Short Packet, not Success.
+const COMPLETION_CODE_SHORT_PACKET: u32 = 13;
 
 impl XhciController {
     pub(crate) fn process_dci3_interrupt_in_transfer(
@@ -61,6 +69,7 @@ impl XhciController {
             };
             let expected_cycle = if self.slot1_dci3_dcs { TRB_CYCLE } else { 0 };
             if interrupt_transfer.control & TRB_CYCLE != expected_cycle {
+                trace_blocked_trb("cycle_mismatch", &interrupt_transfer, self.slot1_dci3_dcs);
                 let rearm_result = self.rearm_slot1_dci3_to_ring_base_if_queued(mem, rearm_policy);
                 if rearm_result.is_rearmed() {
                     continue;
@@ -85,8 +94,16 @@ impl XhciController {
                     self.write_slot1_dci3_output_dequeue(mem);
                 }
                 TRB_TYPE_NORMAL => {
-                    let Some(next_dequeue) = interrupt_transfer.gpa.checked_add(TRB_SIZE_BYTES)
-                    else {
+                    // Windows chains the interrupt-IN Normal TRB to an Event
+                    // Data TRB carrying the URB cookie; the TD completes with
+                    // one Event Data completion instead of a per-TRB event.
+                    let event_data =
+                        read_chained_event_data(mem, &interrupt_transfer, self.slot1_dci3_dcs);
+                    let last_td_trb_gpa = event_data
+                        .as_ref()
+                        .map(|event_data| event_data.gpa)
+                        .unwrap_or(interrupt_transfer.gpa);
+                    let Some(next_dequeue) = last_td_trb_gpa.checked_add(TRB_SIZE_BYTES) else {
                         self.trace_dci3_drain_blocked("dequeue_overflow", rearm_policy);
                         return false;
                     };
@@ -114,18 +131,34 @@ impl XhciController {
                         self.trace_dci3_drain_blocked("write_failed", rearm_policy);
                         return false;
                     }
-                    let residual_length =
-                        transfer_length.saturating_sub(HID_BOOT_KEYBOARD_REPORT_LEN);
-                    let event_status =
-                        (COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT) | residual_length;
+                    let written_length = write_len as u32;
+                    let completion_code = if written_length < transfer_length {
+                        COMPLETION_CODE_SHORT_PACKET
+                    } else {
+                        COMPLETION_CODE_SUCCESS
+                    };
                     let event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_DCI3);
-                    let posted = self.post_event_to_interrupter(
-                        mem,
-                        trb_interrupter_target(interrupt_transfer.status),
-                        interrupt_transfer.gpa,
-                        event_status,
-                        event_control,
-                    );
+                    let posted = match event_data.as_ref() {
+                        Some(event_data) => self.post_event_to_interrupter(
+                            mem,
+                            trb_interrupter_target(event_data.status),
+                            event_data.parameter,
+                            (completion_code << COMPLETION_CODE_SHIFT) | written_length,
+                            event_control | TRANSFER_EVENT_ED,
+                        ),
+                        None => {
+                            let residual_length =
+                                transfer_length.saturating_sub(HID_BOOT_KEYBOARD_REPORT_LEN);
+                            self.post_event_to_interrupter(
+                                mem,
+                                trb_interrupter_target(interrupt_transfer.status),
+                                interrupt_transfer.gpa,
+                                (COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT)
+                                    | residual_length,
+                                event_control,
+                            )
+                        }
+                    };
                     if posted {
                         if can_emit_queued_report {
                             if let Some(queued_report) = queued_report {
@@ -149,6 +182,7 @@ impl XhciController {
                     return posted;
                 }
                 _ => {
+                    trace_blocked_trb("unexpected_type", &interrupt_transfer, self.slot1_dci3_dcs);
                     let rearm_result =
                         self.rearm_slot1_dci3_to_ring_base_if_queued(mem, rearm_policy);
                     if rearm_result.is_rearmed() {
@@ -201,5 +235,41 @@ impl XhciController {
             }
             _ => false,
         }
+    }
+}
+
+fn read_chained_event_data(
+    mem: &dyn GuestMemoryMut,
+    normal: &InterruptTransferTrb,
+    dcs: bool,
+) -> Option<InterruptTransferTrb> {
+    if normal.control & TRB_CHAIN == 0 {
+        return None;
+    }
+    let event_data_gpa = normal.gpa.checked_add(TRB_SIZE_BYTES)?;
+    let event_data = read_transfer_trb(mem, event_data_gpa)?;
+    let expected_cycle = if dcs { TRB_CYCLE } else { 0 };
+    if event_data.control & TRB_CYCLE != expected_cycle
+        || trb_type(event_data.control) != TRB_TYPE_EVENT_DATA
+        || event_data.control & TRB_IOC == 0
+    {
+        return None;
+    }
+    Some(event_data)
+}
+
+fn trace_blocked_trb(
+    reason: &str,
+    trb: &super::interrupt_trb::InterruptTransferTrb,
+    expected_dcs: bool,
+) {
+    if super::trace::bringup_enabled() {
+        println!(
+            "XHCI DCI3 blocked_trb reason={reason} gpa={gpa:#x} parameter={parameter:#x} status={status:#010x} control={control:#010x} expected_dcs={expected_dcs}",
+            gpa = trb.gpa,
+            parameter = trb.parameter,
+            status = trb.status,
+            control = trb.control,
+        );
     }
 }
