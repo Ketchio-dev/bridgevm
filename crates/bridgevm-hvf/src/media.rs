@@ -10,8 +10,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
+// The default firmware code volume is vendored in-repo: a current
+// tianocore/edk2 ArmVirtQemu build. Homebrew's stale qemu-11.0.1
+// `edk2-aarch64-code.fd` does NOT bind our NVMe endpoint (its older
+// NvmExpressDxe/PciBus never reads the controller registers), whereas a
+// firmware built from current edk2 binds it and boots Windows from NVMe.
+// The variable store stays on the (version-insensitive) Homebrew template.
 pub const DEFAULT_QEMU_AARCH64_CODE: &str =
-    "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-aarch64-code.fd";
+    concat!(env!("CARGO_MANIFEST_DIR"), "/firmware/edk2-aarch64-code.fd");
 pub const DEFAULT_QEMU_AARCH64_VARS: &str =
     "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-arm-vars.fd";
 pub const DEFAULT_LINUX_CMDLINE: &str = "console=ttyAMA0 earlycon=pl011,0x09000000 acpi=force";
@@ -306,6 +312,23 @@ mod tests {
 
         fs::remove_file(&writes[0].path).ok();
         fs::remove_file(&writes[1].path).ok();
+    }
+
+    #[test]
+    fn vendored_firmware_code_volume_exists() {
+        // The default firmware code volume must ship in-repo so NVMe boot works
+        // out of the box (the Homebrew firmware cannot bind our NVMe endpoint).
+        let fw = PathBuf::from(DEFAULT_QEMU_AARCH64_CODE);
+        let bytes = fs::read(&fw)
+            .unwrap_or_else(|e| panic!("vendored firmware {} missing: {e}", fw.display()));
+        // Sanity-check it is a real tianocore firmware volume by finding the
+        // "_FVH" firmware-volume-header signature (ArmVirtQemu carries it a
+        // little way into the image, not at a fixed offset).
+        assert!(bytes.len() > 0x2000, "firmware volume truncated");
+        assert!(
+            bytes[..0x4000].windows(4).any(|w| w == b"_FVH"),
+            "not an EDK2 firmware volume"
+        );
     }
 
     #[test]
