@@ -153,6 +153,10 @@ pub const NVME_REVISION: u8 = 0x01;
 pub const NVME_BAR0_SIZE: u32 = 0x4000;
 /// PCI capability-list offset for the NVMe endpoint's MSI-X capability.
 pub const NVME_MSIX_CAP_OFFSET: u8 = 0x40;
+/// NVMe subsystem IDs matching QEMU's `nvme` device (subsystem vendor 0x1af4,
+/// subsystem id 0x1100), which EDK2 boots.
+pub const NVME_SUBSYSTEM_VENDOR_ID: u16 = 0x1af4;
+pub const NVME_SUBSYSTEM_ID: u16 = 0x1100;
 /// PCI Express capability offset chained after the NVMe MSI-X capability. NVMe
 /// is a PCIe endpoint; EDK2's NvmExpressDxe only binds a device that advertises
 /// a PCI Express capability (our xHCI endpoint has one and EDK2 binds it, QEMU's
@@ -439,11 +443,14 @@ impl Function {
     fn nvme() -> Self {
         let mut bars = [Bar::default(); NUM_BARS];
         // The NVMe spec requires the controller registers behind a 64-bit BAR
-        // (BAR0/BAR1 pair). EDK2's NvmExpressDxe honours that and refuses to
-        // bind a 32-bit BAR0, so it never enables the controller and drops to
-        // the UEFI Shell instead of booting the NVMe. Match the xHCI endpoint,
-        // which EDK2 binds, by exposing a 64-bit BAR0.
-        let (bar0, bar1) = Bar::memory64(NVME_BAR0_SIZE);
+        // (BAR0/BAR1 pair). EDK2's NvmExpressDxe refuses to bind a 32-bit BAR0.
+        // Expose a 64-bit BAR0 like the xHCI endpoint EDK2 binds, and hardwire
+        // the low BAR's memory-type bits (bit 2 = 64-bit) into its read-back so
+        // an un-programmed BAR0 reads 0x4 — matching QEMU's NVMe (which EDK2
+        // boots) and the PCI spec, where those type bits are read-only rather
+        // than only appearing during a sizing probe.
+        let (mut bar0, bar1) = Bar::memory64(NVME_BAR0_SIZE);
+        bar0.value = bar0.type_bits;
         bars[0] = bar0;
         bars[1] = bar1;
         let msix = MsixCapability::new(
@@ -468,7 +475,10 @@ impl Function {
             bdf: NVME_BDF,
             vendor_device: (u32::from(NVME_DEVICE_ID) << 16) | u32::from(NVME_VENDOR_ID),
             revision_class: (NVME_CLASS_CODE << 8) | u32::from(NVME_REVISION),
-            subsystem_ids: 0,
+            // Match QEMU's NVMe subsystem IDs (1af4:1100); some enumerators
+            // distrust a zero subsystem ID.
+            subsystem_ids: (u32::from(NVME_SUBSYSTEM_ID) << 16)
+                | u32::from(NVME_SUBSYSTEM_VENDOR_ID),
             command: 0,
             bars,
             cap_ptr: NVME_MSIX_CAP_OFFSET,
@@ -1451,8 +1461,10 @@ mod tests {
         assert_eq!(rc >> 8, u64::from(NVME_CLASS_CODE));
         assert_eq!(rc & 0xFF, u64::from(NVME_REVISION));
 
-        // BAR0 exists but is not programmed before firmware/OS assignment.
-        assert_eq!(ecam.cfg_read(ecam_offset(0, 1, 0, REG_BAR0), 4), 0);
+        // BAR0 is a 64-bit memory BAR: unprogrammed it reads back only its
+        // hardwired type bits (bit 2 = 64-bit), matching QEMU's NVMe endpoint.
+        assert_eq!(ecam.cfg_read(ecam_offset(0, 1, 0, REG_BAR0), 4), 0x4);
+        assert_eq!(ecam.cfg_read(ecam_offset(0, 1, 0, REG_BAR0 + 4), 4), 0);
     }
 
     #[test]
