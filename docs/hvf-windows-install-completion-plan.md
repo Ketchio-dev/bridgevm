@@ -1,10 +1,17 @@
-# BridgeVM HVF — Windows install-completion plan (Codex-ready)
+# BridgeVM HVF Engine — Windows completion plan (Codex-ready)
 
-Goal: take BridgeVM's from-scratch HVF VMM from "Windows 11 ARM64 Setup boots from
-NVMe" to "a fully-installed Windows boots to the desktop", driven by an unattended /
-WinPE-scripted install. This plan is written so an AI coding agent (Codex) can execute
-it step by step. Live HVF boots must run on this Mac (signed binary); pure code + unit
-tests can be done anywhere.
+Goal: take BridgeVM's from-scratch HVF VMM (the QEMU-independent VMM directly on Apple
+Hypervisor.framework, `crates/bridgevm-hvf`) from "Windows 11 ARM64 Setup boots from
+NVMe" all the way to **a usable Windows 11 ARM desktop** — install completes, boots to
+desktop, keyboard/pointer/display/network work, and it is fast enough to use. This plan
+is written so an AI coding agent (Codex) can execute it step by step. Live HVF boots must
+run on this Mac (signed binary); pure code + unit tests can be done anywhere.
+
+Scope note: Workstreams A–C (install → desktop) are specified in detail because they are
+the concrete next work. Workstreams D–F (usability → polish) are **entry-condition-gated
+and evidence-driven** — they cannot be fully pinned down until the desktop is reachable,
+so they give the sub-goals, likely approaches, and acceptance criteria, and expect new
+walls at each rung (exactly like `DRIVER_PNP_WATCHDOG` surfaced at the install rung).
 
 ---
 
@@ -207,22 +214,101 @@ fast-path (bulk PRP copy, fewer per-command allocations) as a follow-up task.
 
 ---
 
-## Workstream D (later) — real usability (not needed to *install*)
-- **Input**: keys already reach the Windows HID stack but the Setup GUI did not act on
-  them (leg-A wall). Revisit for interactive desktop use (focus/routing, or a different
-  HID/absolute-pointer device).
-- **Display**: ramfb is enough for proof; a faster/native GOP path for real use.
+## Workstream D — Usable desktop I/O   *(entry condition: Workstream C done — Windows boots to desktop)*
+
+These cannot be fully specified until the desktop is reachable; new walls will surface.
+Method for each: reach the surface, capture ramfb/trace evidence, fix, prove.
+
+### D1. Input — keyboard + pointer
+- Current: the xHCI DCI3 HID **keyboard** delivers reports into the Windows HID ring, but
+  Setup's GUI never acted on them ("leg-A" wall; root cause was *above* the xHCI layer —
+  WinPE input focus/routing or report interpretation, never diagnosable from the host).
+- First test on the real desktop: does the existing keyboard register in a desktop app
+  (Notepad)? The Setup-GUI non-response may be Setup-specific, and a booted desktop can
+  finally run **guest-side diagnostic tools** we never had in WinPE.
+- Add a **pointer**: model a USB HID **absolute pointer / tablet** (like QEMU `usb-tablet`)
+  as a second HID endpoint on the xHCI — absolute coordinates avoid pointer-capture and
+  are what VMs use. Needs a report descriptor + an inject path for move/click.
+- If keys still don't register: diagnose the HID report descriptor + input routing with
+  guest tools; try boot-protocol vs report-protocol, or a distinct HID interface.
+- Acceptance (live, ramfb): type visible text into a desktop app AND move+click the pointer.
+
+### D2. Display
+- Current: EDK2 presents our `ramfb` as the UEFI GOP framebuffer, so Windows' Basic Display
+  Adapter should drive a basic (unaccelerated) desktop once booted. Confirm resolution,
+  stride/format, and redraw.
+- Real use: a usable resolution (≥1080p) and smooth redraw. ramfb is fixed-mode; a
+  resizable/accelerated path (virtio-gpu or a paravirtual display) is a larger future item
+  — defer until basic display is confirmed usable.
+- Acceptance: desktop renders correctly at a usable resolution; windows/cursor update
+  smoothly enough to use.
+
+### D3. Network
+- Current: **no NIC is modelled**. Windows runs offline but activation/updates/browsing
+  need a NIC.
+- Real design choice: model a NIC Windows 11 ARM can drive **in-box**, OR a paravirtual
+  `virtio-net` + inject its ARM64 driver into the image. virtio-net is the natural
+  paravirtual fit but needs the driver injected; an in-box-driver NIC avoids injection but
+  Windows-ARM in-box NIC coverage is thin — evaluate before committing.
+- Wire host networking (reuse `crates/bridgevm-network` / `runners/networkd` if they fit,
+  else a minimal user-mode NAT).
+- Acceptance: Windows gets an IP and reaches the internet (ping + a browser page), by ramfb.
+
+### D4. Storage persistence *(mostly already done)*
+- The NSID-2 target is a persistent host file (write-back), so the installed OS persists.
+  Confirm user changes survive shutdown/reboot, and make PSCI SYSTEM_OFF flush the NVMe
+  backing on clean shutdown.
+- Acceptance: create files in session 1, reboot, they exist in session 2.
+
+## Workstream E — Performance & scale   *(measure first — start only after an install completes)*
+Profile and fix *measured* bottlenecks, not guessed ones.
+- **E1. SMP / multi-vCPU** — the probe runs **1 vCPU** (`VirtFdtConfig.cpu_count`). A
+  Windows desktop is painful on one core; this is the single largest responsiveness lever.
+  Needs per-vCPU run-loop threads, a GIC redistributor per CPU, MPIDR affinity, PSCI
+  `CPU_ON`, and MMIO/interrupt thread-safety — a real concurrency change to the platform.
+- **E2. NVMe throughput** — the WIM apply and general IO go through the emulated NVMe.
+  Profile the command path (per-command allocations, PRP copies, doorbell handling); batch
+  / zero-copy the hot paths.
+- **E3. Run-loop / MMIO efficiency** — trim per-exit overhead on hot MMIO (xHCI/NVMe
+  doorbells, GIC).
+- Acceptance: install apply completes in a practical time; desktop is responsive enough
+  for daily use (set a concrete target once E1 lands).
+
+## Workstream F — Parallels-like integration   *(far future; optional for v1)*
+Not required for "usable Windows". Sequence after D+E only if the product needs it.
+- A Windows guest agent + paravirtual channel for dynamic resolution/resize, clipboard
+  sharing, shared folders, drag-drop, graceful shutdown, audio. Prior art to reuse/extend:
+  `crates/bridgevm-agentd`, `crates/bridgevm-agent-protocol`, `runners/bridgevm-tools-linux`.
 
 ---
 
-## Definition of done
-1. `cargo test -p bridgevm-hvf` and `-p hvf-runner` green after every code change.
-2. A live WinPE-scripted install partitions NSID 2, applies the WIM, and `bcdboot`s with
-   no `DRIVER_PNP_WATCHDOG`.
-3. The probe reboots the VM on SYSTEM_RESET with NVMe + UEFI vars preserved.
-4. The installed Windows reaches the desktop (ramfb screenshot), input/display deferred to
-   Workstream D.
+## Milestone ladder — "완성" = a usable Windows 11 ARM on the HVF engine
+1. ✅ **M1 — Setup boots from NVMe** (done this session).
+2. **M2 — Scripted/unattended install completes** (A + B + C): WIM applied, bootable,
+   reboots into the installed OS.
+3. **M3 — Installed Windows reaches the desktop** (C3 + reboot-loop): OOBE auto-skipped,
+   autologon, desktop rendered.
+4. **M4 — Interactive desktop** (D1 + D2): keyboard + pointer work, display usable.
+5. **M5 — Connected, persistent, fast enough** (D3 + D4 + E): network up, changes persist,
+   multi-vCPU responsiveness.
+6. **M6 — Integration polish** (F, optional): resize / clipboard / shared folders.
 
-Suggested order: **A1 → A2 → A3** (unblock the install), then **B1→B2→B3** (reboots), then
-**C**. A and B are independent and can be developed in parallel; both need live boots to
-confirm, which must run on this Mac with the signed probe.
+**"Usable Windows" = M4 plus basic M5.** Everything past M3 is entry-condition-gated and
+evidence-driven — expect a new wall at each rung.
+
+## Definition of done (per milestone)
+- Every code change keeps `cargo test -p bridgevm-hvf` and `-p hvf-runner` green; every
+  guest-visible change carries a **signed-probe live proof** (ramfb screenshot / trace),
+  as this repo already does (see the memory status file + `.omo/ulw-loop/evidence`).
+- **M2:** WinPE-scripted install partitions NSID 2, applies the WIM, `bcdboot`s, with no
+  `DRIVER_PNP_WATCHDOG`; the probe reboots on SYSTEM_RESET with NVMe + UEFI vars preserved.
+- **M3:** installed Windows desktop in a ramfb screenshot.
+- **M4:** type text + move/click on the desktop (ramfb proof).
+- **M5:** Windows online (IP + page load), files persist across reboot, multi-vCPU active.
+
+## Suggested order
+**A1→A2→A3** (unblock install) ∥ **B1→B2→B3** (reboots) → **C** (⇒ M3) → **D1, D2** (⇒ M4)
+→ **D3, D4, E1** (⇒ M5) → F. A and B are parallelizable. Every workstream past C needs live
+boots on this Mac with the signed probe. Keep the philosophy: **implement first, refactor
+only where a feature demands it (B's re-entrant `main`, E1's SMP), optimize only after
+measuring.**
