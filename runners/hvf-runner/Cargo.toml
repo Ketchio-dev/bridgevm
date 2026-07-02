@@ -9,3 +9,6 @@ rust-version.workspace = true
 anyhow.workspace = true
 bridgevm-hvf = { path = "../../crates/bridgevm-hvf" }
 clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
