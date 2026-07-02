@@ -2,6 +2,7 @@ const USB_REQUEST_GET_DESCRIPTOR: u8 = 0x06;
 const USB_REQUEST_GET_CONFIGURATION: u8 = 0x08;
 const USB_REQUEST_SET_CONFIGURATION: u8 = 0x09;
 const USB_REQUEST_HID_SET_REPORT: u8 = 0x09;
+const USB_REQUEST_HID_SET_IDLE: u8 = 0x0a;
 const USB_REQUEST_HID_SET_PROTOCOL: u8 = 0x0b;
 const USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_DEVICE: u8 = 0x80;
 const USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_INTERFACE: u8 = 0x81;
@@ -161,6 +162,17 @@ pub(super) fn is_hid_set_protocol_request(packet: SetupPacket) -> bool {
     packet.bm_request_type == USB_REQUEST_TYPE_HOST_TO_DEVICE_CLASS_INTERFACE
         && packet.request == USB_REQUEST_HID_SET_PROTOCOL
         && packet.value <= 1
+        && packet.index == 0
+        && packet.length == 0
+}
+
+/// HID SET_IDLE (class-interface OUT, no data). Windows sends this during
+/// keyboard enumeration and treats a STALL as a device fault, resetting and
+/// re-enumerating the keyboard. `value` carries duration<<8 | reportId, which
+/// this stateless model accepts and acknowledges without storing.
+pub(super) fn is_hid_set_idle_request(packet: SetupPacket) -> bool {
+    packet.bm_request_type == USB_REQUEST_TYPE_HOST_TO_DEVICE_CLASS_INTERFACE
+        && packet.request == USB_REQUEST_HID_SET_IDLE
         && packet.index == 0
         && packet.length == 0
 }
