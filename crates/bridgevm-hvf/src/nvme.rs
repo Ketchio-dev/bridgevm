@@ -199,14 +199,31 @@ const SC_INVALID_FIELD_DNR: u16 = SC_INVALID_FIELD | SC_DNR;
 /// Invalid Opcode.
 const SC_INVALID_OPCODE: u16 = 0x0001;
 
-/// The single namespace's identifier (NSID 1).
+/// The primary namespace's identifier (NSID 1).
 pub const NSID: u32 = 1;
+/// Optional second namespace (NSID 2), used as a blank Windows install target
+/// alongside the NSID-1 installer source.
+pub const NSID2: u32 = 2;
 
 const NS_EUI64: [u8; 8] = *b"BVMNVME1";
 const NS_NGUID: [u8; 16] = *b"BridgeVM-NVMeNS1";
 const NS_UUID: [u8; 16] = [
     0x42, 0x56, 0x4d, 0x00, 0x20, 0x26, 0x06, 0x20, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
 ];
+const NS2_EUI64: [u8; 8] = *b"BVMNVME2";
+const NS2_NGUID: [u8; 16] = *b"BridgeVM-NVMeNS2";
+const NS2_UUID: [u8; 16] = [
+    0x42, 0x56, 0x4d, 0x00, 0x20, 0x26, 0x06, 0x20, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+];
+
+/// Per-namespace stable identifiers (NGUID, EUI64, UUID) for NSID 1 and 2.
+fn namespace_identifiers(nsid: u32) -> ([u8; 16], [u8; 8], [u8; 16]) {
+    if nsid == NSID2 {
+        (NS2_NGUID, NS2_EUI64, NS2_UUID)
+    } else {
+        (NS_NGUID, NS_EUI64, NS_UUID)
+    }
+}
 
 /// A decoded 64-byte NVMe submission-queue entry. Only the fields this minimal
 /// model consumes are surfaced; everything is read from guest RAM little-endian.
@@ -557,8 +574,10 @@ pub struct NvmeController {
     cqs: Vec<Option<CompletionQueue>>,
 
     // --- Backend ---
-    /// Raw disk backing store, `LBA_SIZE`-byte logical blocks.
+    /// Raw disk backing store for NSID 1, `LBA_SIZE`-byte logical blocks.
     disk: DiskBackend,
+    /// Optional NSID-2 backing store (blank Windows install target).
+    disk2: Option<DiskBackend>,
     /// Negotiated maximum number of I/O queue pairs (SET FEATURES 0x07).
     max_io_queues: u16,
     /// Command-specific result for the *next* completion's DW0 (e.g. the queue
@@ -612,6 +631,7 @@ impl NvmeController {
             sqs: vec![None],
             cqs: vec![None],
             disk,
+            disk2: None,
             // Capacity for SET FEATURES (NUMBER OF QUEUES) to negotiate against.
             // The model only ever drives one I/O queue, but advertises a small
             // pool so a guest requesting several is granted a sane non-zero count.
@@ -634,6 +654,62 @@ impl NvmeController {
     pub fn load_raw_file(&mut self, path: impl AsRef<Path>, write_back: bool) -> io::Result<()> {
         *self = Self::with_raw_file(path, write_back)?;
         Ok(())
+    }
+
+    /// Attach a blank NSID-2 target namespace backed by `disk_bytes` of in-memory
+    /// storage (rounded to a whole LBA). Windows sees a second, empty disk.
+    pub fn attach_second_namespace(&mut self, disk_bytes: usize) {
+        self.disk2 = Some(DiskBackend::memory(vec![0u8; rounded_disk_len(disk_bytes)]));
+    }
+
+    /// Attach an NSID-2 target namespace backed by a host raw file (see
+    /// [`Self::with_raw_file`] for the `write_back` semantics).
+    pub fn attach_second_namespace_raw_file(
+        &mut self,
+        path: impl AsRef<Path>,
+        write_back: bool,
+    ) -> io::Result<()> {
+        self.disk2 = Some(DiskBackend::raw_file(path, write_back)?);
+        Ok(())
+    }
+
+    /// Whether an NSID-2 target namespace is attached.
+    pub fn has_second_namespace(&self) -> bool {
+        self.disk2.is_some()
+    }
+
+    /// The number of active namespaces (1 or 2).
+    fn namespace_count(&self) -> u32 {
+        if self.disk2.is_some() {
+            2
+        } else {
+            1
+        }
+    }
+
+    /// Immutable backing store for `nsid`, if that namespace is active.
+    fn backend_for_nsid(&self, nsid: u32) -> Option<&DiskBackend> {
+        match nsid {
+            NSID => Some(&self.disk),
+            NSID2 => self.disk2.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Mutable backing store for `nsid`, if that namespace is active.
+    fn backend_for_nsid_mut(&mut self, nsid: u32) -> Option<&mut DiskBackend> {
+        match nsid {
+            NSID => Some(&mut self.disk),
+            NSID2 => self.disk2.as_mut(),
+            _ => None,
+        }
+    }
+
+    /// Block count for a specific namespace.
+    fn block_count_for(&self, nsid: u32) -> u64 {
+        self.backend_for_nsid(nsid)
+            .map(|b| b.byte_len() / LBA_SIZE as u64)
+            .unwrap_or(0)
     }
 
     /// Snapshot of the current disk image, including guest writes that have been
@@ -957,15 +1033,15 @@ impl NvmeController {
             }
             IDENTIFY_CNS_ACTIVE_NAMESPACE_LIST => self.identify_active_namespace_list(cmd.nsid),
             IDENTIFY_CNS_NAMESPACE_DESCRIPTOR_LIST => {
-                if cmd.nsid == NSID {
-                    self.identify_namespace_descriptor_list()
+                if self.backend_for_nsid(cmd.nsid).is_some() {
+                    self.identify_namespace_descriptor_list(cmd.nsid)
                 } else {
                     return SC_INVALID_FIELD;
                 }
             }
             IDENTIFY_CNS_NAMESPACE => {
-                if cmd.nsid == NSID {
-                    self.identify_namespace()
+                if self.backend_for_nsid(cmd.nsid).is_some() {
+                    self.identify_namespace(cmd.nsid)
                 } else {
                     // Unallocated namespace ⇒ a zeroed structure (NVMe 1.4).
                     vec![0u8; PAGE_SIZE]
@@ -1016,8 +1092,8 @@ impl NvmeController {
         d[512] = 0x66;
         // CQES (513): min/max completion-queue entry size = 2^4 = 16 bytes.
         d[513] = 0x44;
-        // NN (516..520): number of namespaces = 1.
-        d[516..520].copy_from_slice(&1u32.to_le_bytes());
+        // NN (516..520): maximum/number of namespaces (1 or 2).
+        d[516..520].copy_from_slice(&self.namespace_count().to_le_bytes());
         // VWC (525): QEMU advertises a present volatile write cache and support
         // for broadcast-NSID flushes.
         d[525] = VWC_QEMU_DEFAULT;
@@ -1039,9 +1115,9 @@ impl NvmeController {
     }
 
     /// Build a 4 KiB Identify Namespace structure (NVMe 1.4 §5.15.2.1).
-    fn identify_namespace(&self) -> Vec<u8> {
+    fn identify_namespace(&self, nsid: u32) -> Vec<u8> {
         let mut d = vec![0u8; PAGE_SIZE];
-        let nsze = self.block_count();
+        let nsze = self.block_count_for(nsid);
         // NSZE (0..8), NCAP (8..16), NUSE (16..24): all in logical blocks.
         d[0..8].copy_from_slice(&nsze.to_le_bytes());
         d[8..16].copy_from_slice(&nsze.to_le_bytes());
@@ -1051,8 +1127,9 @@ impl NvmeController {
         // FLBAS (26): formatted LBA size ⇒ format index 0.
         d[26] = 0;
         // NGUID (104..120) / EUI64 (120..128): stable non-zero namespace IDs.
-        d[104..120].copy_from_slice(&NS_NGUID);
-        d[120..128].copy_from_slice(&NS_EUI64);
+        let (nguid, eui64, _uuid) = namespace_identifiers(nsid);
+        d[104..120].copy_from_slice(&nguid);
+        d[120..128].copy_from_slice(&eui64);
         // LBAF0 (128..132): MS=0, LBADS = log2(512) = 9 (bits 23:16), RP=0.
         let lbads: u32 = 9 << 16;
         d[128..132].copy_from_slice(&lbads.to_le_bytes());
@@ -1061,11 +1138,15 @@ impl NvmeController {
 
     /// Build a 4 KiB Identify Active Namespace ID List (CNS=0x02). The list
     /// contains active namespace IDs greater than the command NSID, in ascending
-    /// order, terminated by zero. This model exposes exactly NSID 1.
+    /// order, terminated by zero.
     fn identify_active_namespace_list(&self, after_nsid: u32) -> Vec<u8> {
         let mut d = vec![0u8; PAGE_SIZE];
-        if after_nsid < NSID {
-            d[0..4].copy_from_slice(&NSID.to_le_bytes());
+        let mut off = 0usize;
+        for nsid in [NSID, NSID2] {
+            if nsid > after_nsid && self.backend_for_nsid(nsid).is_some() {
+                d[off..off + 4].copy_from_slice(&nsid.to_le_bytes());
+                off += 4;
+            }
         }
         d
     }
@@ -1074,12 +1155,13 @@ impl NvmeController {
     /// (CNS=0x03). UUID, NGUID and EUI64 descriptors mirror the stable namespace
     /// identifiers in Identify Namespace, followed by a zero descriptor header to
     /// terminate the list.
-    fn identify_namespace_descriptor_list(&self) -> Vec<u8> {
+    fn identify_namespace_descriptor_list(&self, nsid: u32) -> Vec<u8> {
         let mut d = vec![0u8; PAGE_SIZE];
         let mut off = 0usize;
-        append_namespace_id_descriptor(&mut d, &mut off, 0x03, &NS_UUID);
-        append_namespace_id_descriptor(&mut d, &mut off, 0x02, &NS_NGUID);
-        append_namespace_id_descriptor(&mut d, &mut off, 0x01, &NS_EUI64);
+        let (nguid, eui64, uuid) = namespace_identifiers(nsid);
+        append_namespace_id_descriptor(&mut d, &mut off, 0x03, &uuid);
+        append_namespace_id_descriptor(&mut d, &mut off, 0x02, &nguid);
+        append_namespace_id_descriptor(&mut d, &mut off, 0x01, &eui64);
         d
     }
 
@@ -1343,10 +1425,18 @@ impl NvmeController {
     /// single-NVM-namespace controller. Memory-backed media is already coherent;
     /// host-file media uses the existing flush hook.
     fn io_flush(&mut self, cmd: &SubmissionEntry) -> u16 {
-        if cmd.nsid != NSID && cmd.nsid != u32::MAX {
-            return SC_INVALID_FIELD;
+        // Broadcast NSID flushes every active namespace.
+        if cmd.nsid == u32::MAX {
+            let mut ok = self.disk.flush().is_ok();
+            if let Some(disk2) = self.disk2.as_mut() {
+                ok &= disk2.flush().is_ok();
+            }
+            return if ok { SC_SUCCESS } else { SC_INVALID_FIELD };
         }
-        match self.disk.flush() {
+        let Some(backend) = self.backend_for_nsid_mut(cmd.nsid) else {
+            return SC_INVALID_FIELD;
+        };
+        match backend.flush() {
             Ok(()) => SC_SUCCESS,
             Err(_) => SC_INVALID_FIELD,
         }
@@ -1355,15 +1445,21 @@ impl NvmeController {
     /// NVM READ (0x02). SLBA in CDW10/11 (64-bit), NLB in CDW12 bits 15:0
     /// (0-based). Data is scattered through PRP1/PRP2 or a PRP list.
     fn io_read(&mut self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
-        let Some((start, len)) = self.transfer_range(cmd) else {
+        let Some(byte_len) = self.backend_for_nsid(cmd.nsid).map(DiskBackend::byte_len) else {
+            return SC_INVALID_FIELD;
+        };
+        let Some((start, len)) = transfer_range(cmd, byte_len) else {
             return SC_INVALID_FIELD;
         };
         let Some(spans) = prp_spans(cmd, len, mem) else {
             return SC_INVALID_FIELD;
         };
+        let Some(backend) = self.backend_for_nsid_mut(cmd.nsid) else {
+            return SC_INVALID_FIELD;
+        };
         let mut disk_off = start;
         for (gpa, span_len) in spans {
-            let Ok(data) = self.disk.read_at(disk_off, span_len) else {
+            let Ok(data) = backend.read_at(disk_off, span_len) else {
                 return SC_INVALID_FIELD;
             };
             if !mem.write_bytes(gpa, &data) {
@@ -1376,10 +1472,16 @@ impl NvmeController {
 
     /// NVM WRITE (0x01). Same addressing as READ; copies guest data into disk.
     fn io_write(&mut self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
-        let Some((start, len)) = self.transfer_range(cmd) else {
+        let Some(byte_len) = self.backend_for_nsid(cmd.nsid).map(DiskBackend::byte_len) else {
+            return SC_INVALID_FIELD;
+        };
+        let Some((start, len)) = transfer_range(cmd, byte_len) else {
             return SC_INVALID_FIELD;
         };
         let Some(spans) = prp_spans(cmd, len, mem) else {
+            return SC_INVALID_FIELD;
+        };
+        let Some(backend) = self.backend_for_nsid_mut(cmd.nsid) else {
             return SC_INVALID_FIELD;
         };
         let mut disk_off = start;
@@ -1387,28 +1489,12 @@ impl NvmeController {
             let Some(data) = mem.read_bytes(gpa, span_len) else {
                 return SC_INVALID_FIELD;
             };
-            if self.disk.write_at(disk_off, &data).is_err() {
+            if backend.write_at(disk_off, &data).is_err() {
                 return SC_INVALID_FIELD;
             }
             disk_off += span_len as u64;
         }
         SC_SUCCESS
-    }
-
-    /// Decode (SLBA, NLB) into a byte range into `self.disk`, validating it fits
-    /// the disk. Returns `(start_byte, len_bytes)`.
-    fn transfer_range(&self, cmd: &SubmissionEntry) -> Option<(u64, usize)> {
-        let slba = u64::from(cmd.cdw10) | (u64::from(cmd.cdw11) << 32);
-        let nlb = u64::from(cmd.cdw12 & 0xffff) + 1; // 0-based count
-        let len = nlb.checked_mul(LBA_SIZE as u64)?;
-        let start = slba.checked_mul(LBA_SIZE as u64)?;
-        if start.checked_add(len)? > self.disk.byte_len() {
-            return None; // out of range
-        }
-        if len > usize::MAX as u64 {
-            return None;
-        }
-        Some((start, len as usize))
     }
 
     /// Post a 16-byte completion-queue entry for `cmd` into completion queue
@@ -1658,6 +1744,22 @@ fn hex_preview(bytes: &[u8]) -> String {
 
 fn rounded_disk_len(bytes: usize) -> usize {
     bytes.div_ceil(LBA_SIZE) * LBA_SIZE
+}
+
+/// Decode (SLBA, NLB) into a byte range, validating it fits a `byte_len`-sized
+/// namespace. Returns `(start_byte, len_bytes)`.
+fn transfer_range(cmd: &SubmissionEntry, byte_len: u64) -> Option<(u64, usize)> {
+    let slba = u64::from(cmd.cdw10) | (u64::from(cmd.cdw11) << 32);
+    let nlb = u64::from(cmd.cdw12 & 0xffff) + 1; // 0-based count
+    let len = nlb.checked_mul(LBA_SIZE as u64)?;
+    let start = slba.checked_mul(LBA_SIZE as u64)?;
+    if start.checked_add(len)? > byte_len {
+        return None; // out of range
+    }
+    if len > usize::MAX as u64 {
+        return None;
+    }
+    Some((start, len as usize))
 }
 
 /// Merge a partial write into a 64-bit register. `high` selects the upper
@@ -2247,6 +2349,80 @@ mod tests {
             trace[0].completion,
             Some(NvmeCompletionTrace { cqid: 0, vector: 0 })
         );
+    }
+
+    #[test]
+    fn second_namespace_is_listed_sized_and_bounds_checked() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        // 2 MiB blank install target as NSID 2.
+        let target_bytes = 2 * 1024 * 1024usize;
+        ctrl.attach_second_namespace(target_bytes);
+        assert!(ctrl.has_second_namespace());
+
+        // Active namespace list (after NSID 0) reports NSID 1 then NSID 2 then 0.
+        let sqe = encode_sqe(
+            ADMIN_OP_IDENTIFY,
+            0x10,
+            0,
+            DATA_BASE,
+            IDENTIFY_CNS_ACTIVE_NAMESPACE_LIST,
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 0, &sqe);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_SUCCESS
+        );
+        let list = mem.read_bytes(DATA_BASE, PAGE_SIZE).unwrap();
+        assert_eq!(u32::from_le_bytes(list[0..4].try_into().unwrap()), NSID);
+        assert_eq!(u32::from_le_bytes(list[4..8].try_into().unwrap()), NSID2);
+        assert_eq!(u32::from_le_bytes(list[8..12].try_into().unwrap()), 0);
+
+        // Identify Namespace for NSID 2 reports the target's block count.
+        let sqe = encode_sqe(
+            ADMIN_OP_IDENTIFY,
+            0x11,
+            NSID2,
+            DATA_BASE,
+            IDENTIFY_CNS_NAMESPACE,
+            0,
+            0,
+        );
+        submit_admin(&mut ctrl, &mut mem, 1, &sqe);
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 1)),
+            SC_SUCCESS
+        );
+        let ns = mem.read_bytes(DATA_BASE, PAGE_SIZE).unwrap();
+        let nsze = u64::from_le_bytes(ns[0..8].try_into().unwrap());
+        assert_eq!(nsze, (target_bytes / LBA_SIZE) as u64);
+
+        // Transfer bounds are enforced per namespace: reading the first LBA past
+        // the small 1 MiB NSID-1 disk fails, but that LBA is valid on the 2 MiB
+        // NSID 2. `block_count_for` reflects each namespace's own size.
+        assert_eq!(ctrl.block_count_for(NSID), (1 << 20) / LBA_SIZE as u64);
+        assert_eq!(
+            ctrl.block_count_for(NSID2),
+            (target_bytes / LBA_SIZE) as u64
+        );
+        assert_eq!(ctrl.block_count_for(3), 0, "unallocated namespace");
+        let over_ns1_lba = (1 << 20) / LBA_SIZE as u32; // first LBA past NSID 1
+        let read = SubmissionEntry {
+            opcode: NVM_OP_READ,
+            command_id: 0,
+            nsid: NSID,
+            prp1: 0,
+            prp2: 0,
+            cdw10: over_ns1_lba,
+            cdw11: 0,
+            cdw12: 0, // NLB 0-based => 1 block
+            cdw13: 0,
+            cdw14: 0,
+            cdw15: 0,
+        };
+        assert!(transfer_range(&read, ctrl.block_count_for(NSID) * LBA_SIZE as u64).is_none());
+        assert!(transfer_range(&read, ctrl.block_count_for(NSID2) * LBA_SIZE as u64).is_some());
     }
 
     #[test]

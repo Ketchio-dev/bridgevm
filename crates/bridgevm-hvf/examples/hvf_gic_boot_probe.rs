@@ -1418,6 +1418,18 @@ fn main() {
                 nvme.write_back
             );
         }
+        if let Some(target) = media.nvme_target.as_ref() {
+            platform
+                .attach_nvme_second_namespace_raw_file(&target.path, target.write_back)
+                .unwrap_or_else(|e| {
+                    panic!("attach NVMe target (NSID 2) {}: {e}", target.path.display())
+                });
+            println!(
+                "NVMe target namespace (NSID 2) attached: {} (write_back={})",
+                target.path.display(),
+                target.write_back
+            );
+        }
         if let Some(path) = media.installer_iso_path.as_ref() {
             match media.installer_iso_transport {
                 InstallerIsoTransport::Pci => {

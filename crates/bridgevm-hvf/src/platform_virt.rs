@@ -236,6 +236,22 @@ impl VirtPlatform {
         self.nvme.load_raw_file(path, write_back)
     }
 
+    /// Attach a blank NSID-2 target namespace of `disk_bytes` in-memory storage,
+    /// so Windows sees a second empty disk to install onto.
+    pub fn attach_nvme_second_namespace(&mut self, disk_bytes: usize) {
+        self.nvme.attach_second_namespace(disk_bytes);
+    }
+
+    /// Attach a host raw file as the NSID-2 target namespace (sparse overlay when
+    /// `write_back = false`, direct writes when true).
+    pub fn attach_nvme_second_namespace_raw_file(
+        &mut self,
+        path: impl AsRef<Path>,
+        write_back: bool,
+    ) -> io::Result<()> {
+        self.nvme.attach_second_namespace_raw_file(path, write_back)
+    }
+
     /// Attach a read-only Windows/Linux installer ISO to the last QEMU virt
     /// virtio-mmio transport slot. QEMU's own `virtio-blk-device` oracle uses
     /// slot 31 (`0x0a003e00`) for an explicitly added MMIO block device.

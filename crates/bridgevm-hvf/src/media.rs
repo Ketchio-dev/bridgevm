@@ -184,6 +184,9 @@ pub struct VirtBootMediaConfig {
     pub installer_iso_path: Option<PathBuf>,
     pub installer_iso_transport: InstallerIsoTransport,
     pub nvme_disk: Option<WritableMedia>,
+    /// Optional blank NSID-2 target namespace (Windows install destination),
+    /// backed by a host raw file so a large sparse target avoids resident RAM.
+    pub nvme_target: Option<WritableMedia>,
     pub linux_boot: Option<LinuxBootMedia>,
 }
 
@@ -196,6 +199,7 @@ impl VirtBootMediaConfig {
             installer_iso_path: None,
             installer_iso_transport: InstallerIsoTransport::Pci,
             nvme_disk: None,
+            nvme_target: None,
             linux_boot: None,
         }
     }
@@ -229,6 +233,12 @@ impl VirtBootMediaConfig {
             WritableMedia::new(path)
                 .with_snapshot_path(env::var("BRIDGEVM_NVME_DISK_OUT").ok())
                 .with_write_back(env_flag("BRIDGEVM_NVME_DISK_WRITABLE"))
+        });
+
+        cfg.nvme_target = env::var("BRIDGEVM_NVME_DISK2").ok().map(|path| {
+            WritableMedia::new(path)
+                .with_snapshot_path(env::var("BRIDGEVM_NVME_DISK2_OUT").ok())
+                .with_write_back(env_flag("BRIDGEVM_NVME_DISK2_WRITABLE"))
         });
 
         cfg.linux_boot = env::var("BRIDGEVM_LINUX_KERNEL").ok().map(|path| {
