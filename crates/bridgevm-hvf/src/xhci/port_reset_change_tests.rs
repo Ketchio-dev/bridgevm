@@ -17,7 +17,7 @@ const IMAN_INTERRUPT_PENDING: u64 = 1 << 0;
 const IMAN_INTERRUPT_ENABLE: u64 = 1 << 1;
 
 #[test]
-fn acked_connected_port_hcrst_does_not_synthesize_new_connect_change_event() {
+fn acked_connected_port_hcrst_reannounces_fresh_connect_change_event() {
     // Given: the guest has acknowledged the connected physical port's initial change bits.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0x9000);
@@ -35,37 +35,48 @@ fn acked_connected_port_hcrst_does_not_synthesize_new_connect_change_event() {
     // When: HCRST clears controller-programmed state for the same still-connected device.
     xhci.mmio_write(0x40, 4, u64::from(USB_CMD_HCRST));
 
-    // Then: the port remains physically connected and powered, but no stale change is synthesized.
+    // Then: the reset controller re-detects the attached device (QEMU oracle:
+    // xhci_reset re-runs xhci_port_update, which re-posts CSC), so the next
+    // driver instance sees a fresh connect change rather than a silent port.
     let post_hcrst_portsc = xhci.mmio_read(PORT_REG_BASE, 4) as u32;
     assert_eq!(
-        post_hcrst_portsc & (PORTSC_CCS | PORTSC_PP | PORTSC_SPEED_HIGH),
-        PORTSC_CCS | PORTSC_PP | PORTSC_SPEED_HIGH
+        post_hcrst_portsc & (PORTSC_CCS | PORTSC_PP | PORTSC_SPEED_HIGH | PORTSC_CSC),
+        PORTSC_CCS | PORTSC_PP | PORTSC_SPEED_HIGH | PORTSC_CSC
     );
-    assert_eq!(post_hcrst_portsc & PORTSC_PED, 0);
-    assert_eq!(post_hcrst_portsc & (PORTSC_CSC | PORTSC_PRC), 0);
+    assert_eq!(post_hcrst_portsc & (PORTSC_PED | PORTSC_PRC), 0);
 
     mem.write_u64(POST_HCRST_ERST, EVENT_RING);
     mem.write_u32(POST_HCRST_ERST + 8, 16);
     assert!(!xhci.mmio_write_with_mem(0x1020, 4, IMAN_INTERRUPT_ENABLE, &mut mem));
     assert!(!xhci.mmio_write_with_mem(0x1028, 4, 1, &mut mem));
     assert!(!xhci.mmio_write_with_mem(0x1038, 8, EVENT_RING | 0x8, &mut mem));
-    assert!(!xhci.mmio_write_with_mem(0x1030, 8, POST_HCRST_ERST, &mut mem));
-    assert_eq!(mem.read_u64(EVENT_RING), 0);
-    assert_eq!(xhci.mmio_read(0x1020, 4) & IMAN_INTERRUPT_PENDING, 0);
-    assert_eq!(xhci.mmio_read(0x44, 4) & USB_STS_EINT, 0);
+    assert!(xhci.mmio_write_with_mem(0x1030, 8, POST_HCRST_ERST, &mut mem));
 
+    // Then: the fresh connect-change PSC lands once the new event ring is usable.
+    assert_eq!(mem.read_u64(EVENT_RING), 1 << 24);
+    assert_eq!(mem.read_u32(EVENT_RING + 8), 0);
+    let control = mem.read_u32(EVENT_RING + 12);
+    assert_eq!((control >> 10) & 0x3f, TRB_TYPE_PORT_STATUS_CHANGE_EVENT);
+    assert_eq!(control & 1, 1);
+    assert_eq!(
+        xhci.mmio_read(0x1020, 4) & IMAN_INTERRUPT_PENDING,
+        IMAN_INTERRUPT_PENDING
+    );
+    assert_eq!(xhci.mmio_read(0x44, 4) & USB_STS_EINT, USB_STS_EINT);
+
+    // When: the guest consumes the event and completes a port reset.
+    xhci.mmio_write_with_mem(0x1038, 8, EVENT_RING | 0x8, &mut mem);
+    assert!(!xhci.mmio_write_with_mem(PORT_REG_BASE, 4, u64::from(PORTSC_CSC), &mut mem));
     assert!(xhci.mmio_write_with_mem(PORT_REG_BASE, 4, u64::from(PORTSC_PR), &mut mem));
     let portsc_after_reset = xhci.mmio_read(PORT_REG_BASE, 4) as u32;
     assert_eq!(
         portsc_after_reset & (PORTSC_PED | PORTSC_PRC),
         PORTSC_PED | PORTSC_PRC
     );
-    assert_eq!(mem.read_u64(EVENT_RING), 1 << 24);
-    assert_eq!(mem.read_u32(EVENT_RING + 8), 0);
-    let control = mem.read_u32(EVENT_RING + 12);
+    assert_eq!(mem.read_u64(EVENT_RING + TRB_SIZE), 1 << 24);
+    let control = mem.read_u32(EVENT_RING + TRB_SIZE + 12);
     assert_eq!((control >> 10) & 0x3f, TRB_TYPE_PORT_STATUS_CHANGE_EVENT);
     assert_eq!(control & 1, 1);
-    assert_eq!(mem.read_u64(EVENT_RING + TRB_SIZE), 0);
     assert_eq!(
         xhci.mmio_read(0x1020, 4) & IMAN_INTERRUPT_PENDING,
         IMAN_INTERRUPT_PENDING

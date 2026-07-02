@@ -4,6 +4,7 @@ use super::*;
 const PORTSC_CCS: u32 = 1 << 0;
 const PORTSC_PED: u32 = 1 << 1;
 const PORTSC_PR: u32 = 1 << 4;
+const PORTSC_PLS_RX_DETECT: u32 = 5 << 5;
 const PORTSC_SPEED_HIGH: u32 = 3 << 10;
 const PORTSC_CSC: u32 = 1 << 17;
 const PORTSC_PRC: u32 = 1 << 21;
@@ -57,7 +58,7 @@ fn portsc_reports_hardwired_power_for_each_root_port() {
         let portsc = xhci.mmio_read(portsc_offset(port), 4) as u32;
         assert_eq!(portsc & PORTSC_PP, PORTSC_PP);
         if port != 0 {
-            assert_eq!(portsc, PORTSC_PP);
+            assert_eq!(portsc, PORTSC_PP | PORTSC_PLS_RX_DETECT);
         }
     }
 }
@@ -139,7 +140,7 @@ fn port_companion_registers_and_unmodeled_ninth_port_read_zero() {
 }
 
 #[test]
-fn controller_reset_preserves_connected_root_port_without_stale_changes() {
+fn controller_reset_reannounces_connected_root_port_with_fresh_connect_change() {
     let mut xhci = XhciController::new();
 
     xhci.mmio_write(PORT_REG_BASE, 4, u64::from(PORTSC_CSC));
@@ -147,10 +148,10 @@ fn controller_reset_preserves_connected_root_port_without_stale_changes() {
 
     let portsc = xhci.mmio_read(PORT_REG_BASE, 4) as u32;
     assert_eq!(
-        portsc & (PORTSC_CCS | PORTSC_PP | PORTSC_SPEED_HIGH),
-        PORTSC_CCS | PORTSC_PP | PORTSC_SPEED_HIGH
+        portsc & (PORTSC_CCS | PORTSC_PP | PORTSC_SPEED_HIGH | PORTSC_CSC),
+        PORTSC_CCS | PORTSC_PP | PORTSC_SPEED_HIGH | PORTSC_CSC
     );
-    assert_eq!(portsc & (PORTSC_PED | PORTSC_CSC | PORTSC_PRC), 0);
+    assert_eq!(portsc & (PORTSC_PED | PORTSC_PRC), 0);
 
     xhci.mmio_write(PORT_REG_BASE, 4, u64::from(PORTSC_PR));
     let portsc = xhci.mmio_read(PORT_REG_BASE, 4) as u32;
