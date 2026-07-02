@@ -153,6 +153,11 @@ pub const NVME_REVISION: u8 = 0x01;
 pub const NVME_BAR0_SIZE: u32 = 0x4000;
 /// PCI capability-list offset for the NVMe endpoint's MSI-X capability.
 pub const NVME_MSIX_CAP_OFFSET: u8 = 0x40;
+/// PCI Express capability offset chained after the NVMe MSI-X capability. NVMe
+/// is a PCIe endpoint; EDK2's NvmExpressDxe only binds a device that advertises
+/// a PCI Express capability (our xHCI endpoint has one and EDK2 binds it, QEMU's
+/// NVMe has one and EDK2 boots it), so the NVMe endpoint must expose one too.
+pub const NVME_PCIE_CAP_OFFSET: u8 = 0x60;
 /// Number of MSI-X vectors exposed by the minimal NVMe endpoint.
 pub const NVME_MSIX_VECTOR_COUNT: u16 = 2;
 /// Offset of the MSI-X table in BAR0. Kept away from NVMe registers/doorbells.
@@ -447,12 +452,18 @@ impl Function {
             NVME_MSIX_TABLE_OFFSET,
             NVME_MSIX_PBA_OFFSET,
         );
-        let cap_bytes = msix
-            .to_bytes(0)
+        let mut cap_bytes: Vec<(u16, u8)> = msix
+            .to_bytes(NVME_PCIE_CAP_OFFSET)
             .into_iter()
             .enumerate()
             .map(|(i, byte)| (u16::from(NVME_MSIX_CAP_OFFSET) + i as u16, byte))
             .collect();
+        cap_bytes.extend(
+            XHCI_PCIE_CAP_BYTES
+                .into_iter()
+                .enumerate()
+                .map(|(i, byte)| (u16::from(NVME_PCIE_CAP_OFFSET) + i as u16, byte)),
+        );
         Self {
             bdf: NVME_BDF,
             vendor_device: (u32::from(NVME_DEVICE_ID) << 16) | u32::from(NVME_VENDOR_ID),
@@ -1465,8 +1476,17 @@ mod tests {
         );
         assert_eq!(
             ecam.cfg_read(ecam_offset(0, 1, 0, cap + 1), 1),
+            u64::from(NVME_PCIE_CAP_OFFSET),
+            "MSI-X capability must chain to the PCI Express capability"
+        );
+        // The PCI Express capability (ID 0x10) that EDK2's NvmExpressDxe needs
+        // terminates the list.
+        let pcie = u16::from(NVME_PCIE_CAP_OFFSET);
+        assert_eq!(ecam.cfg_read(ecam_offset(0, 1, 0, pcie), 1), 0x10);
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(0, 1, 0, pcie + 1), 1),
             0,
-            "single-capability list should terminate"
+            "PCI Express capability terminates the list"
         );
         assert_eq!(
             ecam.cfg_read(ecam_offset(0, 1, 0, cap + 2), 2),
