@@ -10,6 +10,7 @@ fn posted_event() -> EventPostTrace {
             segment_trbs: 2,
             enqueue: 1,
             cycle: true,
+            interrupter: 1,
         },
         parameter: 0x1000,
         status: 0x0100_0000,
@@ -28,6 +29,7 @@ fn event_post_success_trace_includes_live_interrupt_state() {
     let line = format_event_post_success(posted_event(), state);
 
     assert!(line.contains("posted=true"));
+    assert!(line.contains("interrupter=1"));
     assert!(line.contains("segment_base=0x5000"));
     assert!(line.contains("enqueue=1"));
     assert!(line.contains("cycle=1"));
@@ -42,7 +44,7 @@ fn erdp_ehb_trace_includes_cleared_interrupt_state() {
         iman_interrupt_pending: false,
         usb_sts_eint: false,
     };
-    let line = format_erdp_ehb_consumed(0x5010, state);
+    let line = format_erdp_ehb_consumed(0x5010, 0, state);
 
     assert!(line.contains("XHCI ERDP EHB consumed"));
     assert!(line.contains("erdp0=0x5010"));

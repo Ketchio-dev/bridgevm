@@ -59,8 +59,8 @@ fn controller_post_fire_setup_input_resyncs_stale_dci3_base_cycle() {
     assert!(mem.write_bytes(DCI3_KEY_BUFFER, &[0xaa; 8]));
     assert!(mem.write_bytes(DCI3_RELEASE_BUFFER, &[0xbb; 8]));
     let mut controller = XhciController::new();
-    controller.erstsz0 = 1;
-    controller.erstba0 = ERST;
+    controller.mmio_write(0x1028, 4, 1);
+    controller.mmio_write(0x1030, 8, ERST);
     controller.slot1_dci3_ring_base = DCI3_RING;
     controller.slot1_dci3_dequeue = DCI3_RING;
     controller.slot1_dci3_dcs = false;

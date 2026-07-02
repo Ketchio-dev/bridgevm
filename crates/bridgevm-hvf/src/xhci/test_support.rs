@@ -13,7 +13,9 @@ pub(super) const TRB_SIZE: u64 = 16;
 pub(super) const CMD_RING: u64 = 0x1000;
 const TRB_EVENT_DATA: u32 = 1 << 2;
 const ERST: u64 = 0x2000;
+const ERST1: u64 = 0x2040;
 pub(super) const EVENT_RING: u64 = 0x3000;
+pub(super) const EVENT_RING1: u64 = 0x3800;
 const DCBAA: u64 = 0x4000;
 
 #[derive(Clone, Copy)]
@@ -114,6 +116,17 @@ pub(super) fn setup_event_ring(xhci: &mut XhciController, mem: &mut TestRam) {
     xhci.mmio_write(0x1020, 4, 0x2);
 }
 
+/// Windows bootmgr programs interrupter 1 for transfer events (its transfer
+/// TRBs carry interrupter target 1) while commands stay on interrupter 0.
+pub(super) fn setup_secondary_event_ring(xhci: &mut XhciController, mem: &mut TestRam) {
+    mem.write_u64(ERST1, EVENT_RING1);
+    mem.write_u32(ERST1 + 8, 16);
+    xhci.mmio_write(0x1048, 4, 1);
+    xhci.mmio_write(0x1050, 8, ERST1);
+    xhci.mmio_write(0x1058, 8, EVENT_RING1 | 0x8);
+    xhci.mmio_write(0x1040, 4, 0x2);
+}
+
 pub(super) fn command_control(trb_type: u32, slot_id: u32) -> u32 {
     command_control_with_cycle(trb_type, slot_id, true)
 }
@@ -146,20 +159,27 @@ pub(super) fn assert_success_completion(
 }
 
 pub(super) fn assert_success_transfer_event_for_trb(mem: &TestRam, event_gpa: u64, trb_gpa: u64) {
-    assert_success_transfer_event(mem, event_gpa, trb_gpa, 0);
+    assert_success_transfer_event(mem, event_gpa, trb_gpa, 0, 0);
 }
 
 pub(super) fn assert_success_event_data_transfer_event(
     mem: &TestRam,
     event_gpa: u64,
     event_parameter: u64,
+    edtla: u32,
 ) {
-    assert_success_transfer_event(mem, event_gpa, event_parameter, TRB_EVENT_DATA);
+    assert_success_transfer_event(mem, event_gpa, event_parameter, TRB_EVENT_DATA, edtla);
 }
 
-fn assert_success_transfer_event(mem: &TestRam, event_gpa: u64, parameter: u64, event_data: u32) {
+fn assert_success_transfer_event(
+    mem: &TestRam,
+    event_gpa: u64,
+    parameter: u64,
+    event_data: u32,
+    transfer_length: u32,
+) {
     assert_eq!(mem.read_u64(event_gpa), parameter);
-    assert_eq!(mem.read_u32(event_gpa + 8) & 0x00ff_ffff, 0);
+    assert_eq!(mem.read_u32(event_gpa + 8) & 0x00ff_ffff, transfer_length);
     assert_eq!(mem.read_u32(event_gpa + 8) >> 24, COMPLETION_CODE_SUCCESS);
     let control = mem.read_u32(event_gpa + 12);
     assert_eq!((control >> 10) & 0x3f, TRB_TYPE_TRANSFER_EVENT);

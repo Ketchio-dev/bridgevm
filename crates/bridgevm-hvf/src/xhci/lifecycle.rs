@@ -1,6 +1,7 @@
 use crate::msix::MsixTable;
 use crate::pcie::XHCI_MSIX_VECTOR_COUNT;
 
+use super::event::{Interrupter, XHCI_INTERRUPTER_COUNT};
 use super::{ports::initial_ports, setup_input_report, XhciController, XhciSetupInputReportStats};
 
 impl Default for XhciController {
@@ -21,14 +22,7 @@ impl XhciController {
             command_cycle: false,
             dcbaap: 0,
             config: 0,
-            iman0: 0,
-            imod0: 0,
-            erstsz0: 0,
-            erstba0: 0,
-            erdp0: 0,
-            event_handler_busy: false,
-            event_enqueue: 0,
-            event_cycle: true,
+            interrupters: [Interrupter::new(); XHCI_INTERRUPTER_COUNT],
             port_status_change_pending: false,
             slot1_ep0_dequeue: 0,
             slot1_ep0_dcs: false,

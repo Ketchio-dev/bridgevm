@@ -1,7 +1,7 @@
 use super::test_support::{
     assert_success_completion, command_control, setup_command_rings_with_parameter,
-    setup_packet_parameter, SetupPacketFields, TestRam, CMD_RING, DOORBELL_BASE, ENABLE_SLOT_ID,
-    EVENT_RING, TRB_SIZE, TRB_TYPE_ADDRESS_DEVICE,
+    setup_packet_parameter, setup_secondary_event_ring, SetupPacketFields, TestRam, CMD_RING,
+    DOORBELL_BASE, ENABLE_SLOT_ID, EVENT_RING, TRB_SIZE, TRB_TYPE_ADDRESS_DEVICE,
 };
 use super::*;
 
@@ -41,6 +41,7 @@ fn stop_endpoint_after_ep0_event_data_td_publishes_stopped_output_context() {
     );
     mem.write_u32(CMD_RING + TRB_SIZE + 12, stop_endpoint_control());
     mem.write_u64(DCBAA + (u64::from(ENABLE_SLOT_ID) * 8), OUTPUT_CONTEXT);
+    setup_secondary_event_ring(&mut xhci, &mut mem);
     write_get_descriptor_device_transfer(&mut mem);
 
     // When: Address Device completes, GET_DESCRIPTOR(device) posts Event Data, then EP0 stops.
@@ -60,7 +61,7 @@ fn stop_endpoint_after_ep0_event_data_td_publishes_stopped_output_context() {
     );
     assert_success_completion(
         &mem,
-        EVENT_RING + (TRB_SIZE * 2),
+        EVENT_RING + TRB_SIZE,
         CMD_RING + TRB_SIZE,
         ENABLE_SLOT_ID,
     );
@@ -85,6 +86,7 @@ fn set_tr_dequeue_pointer_after_ep0_stop_updates_output_context_dequeue() {
         set_tr_dequeue_pointer_control(),
     );
     mem.write_u64(DCBAA + (u64::from(ENABLE_SLOT_ID) * 8), OUTPUT_CONTEXT);
+    setup_secondary_event_ring(&mut xhci, &mut mem);
     write_get_descriptor_device_transfer(&mut mem);
 
     // When: Address Device, Event Data, Stop Endpoint, then Set TR Dequeue Pointer complete.
@@ -100,7 +102,7 @@ fn set_tr_dequeue_pointer_after_ep0_stop_updates_output_context_dequeue() {
     );
     assert_success_completion(
         &mem,
-        EVENT_RING + (TRB_SIZE * 3),
+        EVENT_RING + (TRB_SIZE * 2),
         CMD_RING + (TRB_SIZE * 2),
         ENABLE_SLOT_ID,
     );

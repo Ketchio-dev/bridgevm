@@ -1,7 +1,7 @@
 use super::test_support::{
     assert_success_event_data_transfer_event, command_control, setup_command_rings_with_parameter,
-    setup_packet_parameter, SetupPacketFields, TestRam, DOORBELL_BASE, ENABLE_SLOT_ID, EVENT_RING,
-    TRB_SIZE, TRB_TYPE_ADDRESS_DEVICE,
+    setup_packet_parameter, setup_secondary_event_ring, SetupPacketFields, TestRam, DOORBELL_BASE,
+    ENABLE_SLOT_ID, EVENT_RING, EVENT_RING1, TRB_SIZE, TRB_TYPE_ADDRESS_DEVICE,
 };
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
@@ -11,6 +11,8 @@ const INPUT_CONTEXT: u64 = 0x5000;
 const EP0_RING: u64 = 0x6000;
 const DATA_STAGE_BUFFER: u64 = 0x7000;
 const EVENT_DATA_PARAMETER: u64 = 0xffff_b684_1bff_5790;
+const TRAILING_EVENT_DATA_PARAMETER: u64 = 0xffff_b684_1bff_57a0;
+const TRB_CHAIN: u32 = 1 << 4;
 const DEVICE_DESCRIPTOR: [u8; 18] = [
     18, 1, 0x00, 0x02, 0, 0, 0, 64, 0x09, 0x12, 0x01, 0x00, 0x00, 0x01, 0, 0, 0, 1,
 ];
@@ -39,6 +41,7 @@ fn address_device_command_captures_slot1_ep0_dequeue_from_input_context() {
         INPUT_CONTEXT,
         command_control(TRB_TYPE_ADDRESS_DEVICE, ENABLE_SLOT_ID),
     );
+    setup_secondary_event_ring(&mut xhci, &mut mem);
     write_get_descriptor_device_transfer(&mut mem);
 
     // When: the guest completes Address Device and then rings slot 1 endpoint 0.
@@ -65,6 +68,7 @@ fn ep0_event_data_control_td_posts_only_event_data_transfer_event() {
         INPUT_CONTEXT,
         command_control(TRB_TYPE_ADDRESS_DEVICE, ENABLE_SLOT_ID),
     );
+    setup_secondary_event_ring(&mut xhci, &mut mem);
     write_get_descriptor_device_transfer(&mut mem);
     assert!(mem.write_bytes(DATA_STAGE_BUFFER, &[0xaa; 32]));
 
@@ -82,13 +86,111 @@ fn ep0_event_data_control_td_posts_only_event_data_transfer_event() {
         mem.read_bytes(DATA_STAGE_BUFFER + 18, 14).unwrap(),
         [0xaa; 14]
     );
-    assert_success_event_data_transfer_event(&mem, EVENT_RING + TRB_SIZE, EVENT_DATA_PARAMETER);
-    assert_eq!(mem.read_u64(EVENT_RING + (TRB_SIZE * 2)), 0);
-    assert_eq!(xhci.mmio_read(0x1020, 4) & 1, 1);
+    assert_success_event_data_transfer_event(&mem, EVENT_RING1, EVENT_DATA_PARAMETER, 18);
+    assert_eq!(mem.read_u64(EVENT_RING + TRB_SIZE), 0);
+    assert_eq!(mem.read_u64(EVENT_RING1 + TRB_SIZE), 0);
+    assert_eq!(xhci.mmio_read(0x1040, 4) & 1, 1);
     assert_eq!(
         xhci.mmio_read(0x44, 4) & u64::from(USB_STS_EINT),
         u64::from(USB_STS_EINT)
     );
+}
+
+#[test]
+fn ep0_short_control_read_completes_with_short_packet_code() {
+    // Given: winload requests a 64-byte device descriptor read; the device
+    // only has 18 bytes. QEMU oracle: a short TD completes with Short
+    // Packet (13) and EDTLA = bytes transferred, not Success.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x8000);
+    write_ep0_input_context(&mut mem, EP0_RING | 1);
+    setup_command_rings_with_parameter(
+        &mut xhci,
+        &mut mem,
+        INPUT_CONTEXT,
+        command_control(TRB_TYPE_ADDRESS_DEVICE, ENABLE_SLOT_ID),
+    );
+    setup_secondary_event_ring(&mut xhci, &mut mem);
+    mem.write_u64(
+        EP0_RING,
+        setup_packet_parameter(SetupPacketFields {
+            bm_request_type: 0x80,
+            request: 0x06,
+            value: 0x0100,
+            index: 0,
+            length: 64,
+        }),
+    );
+    mem.write_u32(EP0_RING + 8, 8);
+    mem.write_u32(EP0_RING + 12, transfer_control(TRB_TYPE_SETUP_STAGE));
+    mem.write_u64(EP0_RING + TRB_SIZE, DATA_STAGE_BUFFER);
+    mem.write_u32(EP0_RING + TRB_SIZE + 8, 64);
+    mem.write_u32(
+        EP0_RING + TRB_SIZE + 12,
+        transfer_control(TRB_TYPE_DATA_STAGE) | TRB_DATA_STAGE_DIRECTION_IN,
+    );
+    mem.write_u64(EP0_RING + (TRB_SIZE * 2), EVENT_DATA_PARAMETER);
+    mem.write_u32(EP0_RING + (TRB_SIZE * 2) + 8, 0x400000);
+    mem.write_u32(EP0_RING + (TRB_SIZE * 2) + 12, event_data_control());
+    mem.write_u32(
+        EP0_RING + (TRB_SIZE * 3) + 12,
+        transfer_control(TRB_TYPE_STATUS_STAGE),
+    );
+
+    // When: the guest rings Address Device and then the slot 1 endpoint 0 doorbell.
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
+
+    // Then: the Event Data completion reports Short Packet with the 18-byte EDTLA.
+    assert_eq!(
+        mem.read_bytes(DATA_STAGE_BUFFER, DEVICE_DESCRIPTOR.len())
+            .unwrap(),
+        DEVICE_DESCRIPTOR
+    );
+    assert_eq!(mem.read_u64(EVENT_RING1), EVENT_DATA_PARAMETER);
+    assert_eq!(mem.read_u32(EVENT_RING1 + 8) >> 24, 13);
+    assert_eq!(mem.read_u32(EVENT_RING1 + 8) & 0x00ff_ffff, 18);
+}
+
+#[test]
+fn ep0_chained_status_stage_posts_trailing_event_data_event() {
+    // Given: the observed Windows bootmgr control TD chains the Status Stage to
+    // a trailing Event Data TRB that requests the status TD's own event, with
+    // every TRB targeting interrupter 1.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x8000);
+    write_ep0_input_context(&mut mem, EP0_RING | 1);
+    setup_command_rings_with_parameter(
+        &mut xhci,
+        &mut mem,
+        INPUT_CONTEXT,
+        command_control(TRB_TYPE_ADDRESS_DEVICE, ENABLE_SLOT_ID),
+    );
+    setup_secondary_event_ring(&mut xhci, &mut mem);
+    write_get_descriptor_device_transfer(&mut mem);
+    mem.write_u32(
+        EP0_RING + (TRB_SIZE * 3) + 12,
+        transfer_control(TRB_TYPE_STATUS_STAGE) | TRB_CHAIN,
+    );
+    mem.write_u64(EP0_RING + (TRB_SIZE * 4), TRAILING_EVENT_DATA_PARAMETER);
+    mem.write_u32(EP0_RING + (TRB_SIZE * 4) + 8, 0x400000);
+    mem.write_u32(EP0_RING + (TRB_SIZE * 4) + 12, event_data_control());
+
+    // When: the guest rings Address Device and then the slot 1 endpoint 0 doorbell.
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
+
+    // Then: the data TD and status TD each post their Event Data completion on
+    // interrupter 1 and EP0 advances past the trailing Event Data TRB.
+    assert_success_event_data_transfer_event(&mem, EVENT_RING1, EVENT_DATA_PARAMETER, 18);
+    assert_success_event_data_transfer_event(
+        &mem,
+        EVENT_RING1 + TRB_SIZE,
+        TRAILING_EVENT_DATA_PARAMETER,
+        0,
+    );
+    assert_eq!(mem.read_u64(EVENT_RING1 + (TRB_SIZE * 2)), 0);
+    assert_eq!(xhci.slot1_ep0_dequeue, EP0_RING + (TRB_SIZE * 5));
 }
 
 #[test]
@@ -242,6 +344,7 @@ fn prepare_addressed_ep0(
         transfer_control(TRB_TYPE_DATA_STAGE) | TRB_DATA_STAGE_DIRECTION_IN,
         completion,
     );
+    setup_secondary_event_ring(xhci, mem);
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, mem));
 }
 

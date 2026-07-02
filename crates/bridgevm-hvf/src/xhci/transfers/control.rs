@@ -63,6 +63,7 @@ impl XhciController {
                     data_stage: None,
                     completion,
                     residual_length: 0,
+                    transferred_length: 0,
                 },
             );
             if posted {
@@ -131,6 +132,7 @@ impl XhciController {
                 data_stage: Some(data),
                 completion,
                 residual_length: 0,
+                transferred_length: data_length,
             },
         )
     }
@@ -203,6 +205,7 @@ impl XhciController {
                 data_stage: Some(data),
                 completion,
                 residual_length,
+                transferred_length: transfer_length,
             },
         )
     }

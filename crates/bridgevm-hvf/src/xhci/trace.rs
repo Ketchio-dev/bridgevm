@@ -4,6 +4,7 @@ pub(crate) struct EventRingTrace {
     pub(crate) segment_trbs: u32,
     pub(crate) enqueue: u32,
     pub(crate) cycle: bool,
+    pub(crate) interrupter: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -61,11 +62,12 @@ pub(crate) fn event_post_reject_with_gpa(reason: &str, gpa: u64) {
 pub(crate) fn event_post_reject_with_ring(reason: &str, trace: EventRingTrace) {
     if bringup_enabled() {
         println!(
-            "XHCI event post result posted=false reason={reason} segment_base={segment_base:#x} segment_trbs={segment_trbs} enqueue={enqueue} cycle={cycle}",
+            "XHCI event post result posted=false reason={reason} segment_base={segment_base:#x} segment_trbs={segment_trbs} enqueue={enqueue} cycle={cycle} interrupter={interrupter}",
             segment_base = trace.segment_base,
             segment_trbs = trace.segment_trbs,
             enqueue = trace.enqueue,
-            cycle = u32::from(trace.cycle)
+            cycle = u32::from(trace.cycle),
+            interrupter = trace.interrupter
         );
     }
 }
@@ -73,7 +75,7 @@ pub(crate) fn event_post_reject_with_ring(reason: &str, trace: EventRingTrace) {
 pub(crate) fn event_post_reject_with_event(reason: &str, trace: EventPostTrace) {
     if bringup_enabled() {
         println!(
-            "XHCI event post result posted=false reason={reason} parameter={parameter:#x} status={status:#010x} control={control:#010x} event_gpa={event_gpa:#x} segment_base={segment_base:#x} segment_trbs={segment_trbs} enqueue={enqueue} cycle={cycle}",
+            "XHCI event post result posted=false reason={reason} parameter={parameter:#x} status={status:#010x} control={control:#010x} event_gpa={event_gpa:#x} segment_base={segment_base:#x} segment_trbs={segment_trbs} enqueue={enqueue} cycle={cycle} interrupter={interrupter}",
             parameter = trace.parameter,
             status = trace.status,
             control = trace.control,
@@ -81,7 +83,8 @@ pub(crate) fn event_post_reject_with_event(reason: &str, trace: EventPostTrace) 
             segment_base = trace.ring.segment_base,
             segment_trbs = trace.ring.segment_trbs,
             enqueue = trace.ring.enqueue,
-            cycle = u32::from(trace.ring.cycle)
+            cycle = u32::from(trace.ring.cycle),
+            interrupter = trace.ring.interrupter
         );
     }
 }
@@ -92,9 +95,9 @@ pub(crate) fn event_post_success(trace: EventPostTrace, state: EventPostStateTra
     }
 }
 
-pub(crate) fn erdp_ehb_consumed(erdp0: u64, state: EventPostStateTrace) {
+pub(crate) fn erdp_ehb_consumed(erdp: u64, interrupter: usize, state: EventPostStateTrace) {
     if bringup_enabled() {
-        println!("{}", format_erdp_ehb_consumed(erdp0, state));
+        println!("{}", format_erdp_ehb_consumed(erdp, interrupter, state));
     }
 }
 
@@ -209,7 +212,7 @@ pub(super) fn format_event_post_success(
     state: EventPostStateTrace,
 ) -> String {
     format!(
-        "XHCI event post result posted=true parameter={parameter:#x} status={status:#010x} control={control:#010x} event_gpa={event_gpa:#x} segment_base={segment_base:#x} segment_trbs={segment_trbs} enqueue={enqueue} cycle={cycle} event_handler_busy={event_handler_busy} iman_interrupt_pending={iman_interrupt_pending} usb_sts_eint={usb_sts_eint}",
+        "XHCI event post result posted=true parameter={parameter:#x} status={status:#010x} control={control:#010x} event_gpa={event_gpa:#x} segment_base={segment_base:#x} segment_trbs={segment_trbs} enqueue={enqueue} cycle={cycle} interrupter={interrupter} event_handler_busy={event_handler_busy} iman_interrupt_pending={iman_interrupt_pending} usb_sts_eint={usb_sts_eint}",
         parameter = trace.parameter,
         status = trace.status,
         control = trace.control,
@@ -218,15 +221,20 @@ pub(super) fn format_event_post_success(
         segment_trbs = trace.ring.segment_trbs,
         enqueue = trace.ring.enqueue,
         cycle = u32::from(trace.ring.cycle),
+        interrupter = trace.ring.interrupter,
         event_handler_busy = state.event_handler_busy,
         iman_interrupt_pending = state.iman_interrupt_pending,
         usb_sts_eint = state.usb_sts_eint
     )
 }
 
-pub(super) fn format_erdp_ehb_consumed(erdp0: u64, state: EventPostStateTrace) -> String {
+pub(super) fn format_erdp_ehb_consumed(
+    erdp: u64,
+    interrupter: usize,
+    state: EventPostStateTrace,
+) -> String {
     format!(
-        "XHCI ERDP EHB consumed erdp0={erdp0:#x} event_handler_busy={event_handler_busy} iman_interrupt_pending={iman_interrupt_pending} usb_sts_eint={usb_sts_eint}",
+        "XHCI ERDP EHB consumed erdp0={erdp:#x} interrupter={interrupter} event_handler_busy={event_handler_busy} iman_interrupt_pending={iman_interrupt_pending} usb_sts_eint={usb_sts_eint}",
         event_handler_busy = state.event_handler_busy,
         iman_interrupt_pending = state.iman_interrupt_pending,
         usb_sts_eint = state.usb_sts_eint

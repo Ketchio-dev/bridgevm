@@ -763,12 +763,10 @@ impl VirtPlatform {
 
     fn queue_xhci_completion_msix(&mut self) {
         let control = self.pcie.xhci_msix_control();
-        if let Some(message) = self
-            .xhci
-            .raise_msix(0, control.enabled, control.function_masked)
-        {
-            self.pending_msix.push(message);
-        }
+        self.pending_msix.extend(
+            self.xhci
+                .raise_pending_interrupter_msix(control.enabled, control.function_masked),
+        );
     }
 
     fn flush_xhci_pending_msix(&mut self) {

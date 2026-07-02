@@ -177,7 +177,8 @@ fn assert_success_transfer_event_with_residual(
 ) {
     assert_eq!(mem.read_u64(event_gpa), trb_gpa);
     assert_eq!(mem.read_u32(event_gpa + 8) & 0x00ff_ffff, residual);
-    assert_eq!(mem.read_u32(event_gpa + 8) >> 24, 1);
+    let expected_completion_code = if residual > 0 { 13 } else { 1 };
+    assert_eq!(mem.read_u32(event_gpa + 8) >> 24, expected_completion_code);
     let control = mem.read_u32(event_gpa + 12);
     assert_eq!((control >> 10) & 0x3f, TRB_TYPE_TRANSFER_EVENT);
     assert_eq!((control >> 16) & 0x1f, 1);

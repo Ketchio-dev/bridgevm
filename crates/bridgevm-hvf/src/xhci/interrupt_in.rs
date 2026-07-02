@@ -3,8 +3,8 @@ use crate::fwcfg::GuestMemoryMut;
 use super::{
     dci3_rearm::{Dci3RearmPolicy, Dci3RearmResult},
     interrupt_trb::{
-        read_transfer_trb, transfer_event_control, trb_transfer_length, trb_type,
-        COMPLETION_CODE_SHIFT, COMPLETION_CODE_SUCCESS, LINK_TRB_POINTER_MASK, TRB_CYCLE,
+        read_transfer_trb, transfer_event_control, trb_interrupter_target, trb_transfer_length,
+        trb_type, COMPLETION_CODE_SHIFT, COMPLETION_CODE_SUCCESS, LINK_TRB_POINTER_MASK, TRB_CYCLE,
         TRB_LINK_TOGGLE_CYCLE, TRB_SIZE_BYTES, TRB_TYPE_LINK, TRB_TYPE_NORMAL,
     },
     setup_input_report::SetupInputReport,
@@ -119,8 +119,13 @@ impl XhciController {
                     let event_status =
                         (COMPLETION_CODE_SUCCESS << COMPLETION_CODE_SHIFT) | residual_length;
                     let event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_DCI3);
-                    let posted =
-                        self.post_event(mem, interrupt_transfer.gpa, event_status, event_control);
+                    let posted = self.post_event_to_interrupter(
+                        mem,
+                        trb_interrupter_target(interrupt_transfer.status),
+                        interrupt_transfer.gpa,
+                        event_status,
+                        event_control,
+                    );
                     if posted {
                         if can_emit_queued_report {
                             if let Some(queued_report) = queued_report {

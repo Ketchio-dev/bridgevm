@@ -14,6 +14,7 @@ const TRB_TYPE_SHIFT: u32 = 10;
 const TRB_TYPE_MASK: u32 = 0x3f;
 const TRB_TYPE_TRANSFER_EVENT: u32 = 32;
 const TRB_TRANSFER_LENGTH_MASK: u32 = 0x1f_ffff;
+const TRB_INTERRUPTER_TARGET_SHIFT: u32 = 22;
 const EVENT_ENDPOINT_ID_SHIFT: u32 = 16;
 const EVENT_SLOT_ID_SHIFT: u32 = 24;
 
@@ -43,6 +44,10 @@ pub(super) const fn trb_type(control: u32) -> u32 {
 
 pub(super) const fn trb_transfer_length(status: u32) -> u32 {
     status & TRB_TRANSFER_LENGTH_MASK
+}
+
+pub(super) const fn trb_interrupter_target(status: u32) -> usize {
+    (status >> TRB_INTERRUPTER_TARGET_SHIFT) as usize
 }
 
 pub(super) const fn transfer_event_control(slot_id: u32, endpoint_id: u32) -> u32 {

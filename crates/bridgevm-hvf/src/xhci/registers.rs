@@ -1,7 +1,22 @@
 use super::{
+    event::XHCI_INTERRUPTER_COUNT,
     ports::{port_reg, post_hcrst_ports},
     trace, XhciController, USB_CMD_HCRST,
 };
+
+const INTERRUPTER_REG_BASE: u64 = 0x1020;
+const INTERRUPTER_REG_STRIDE: u64 = 0x20;
+
+fn interrupter_reg(offset: u64) -> Option<(usize, u64)> {
+    let relative = offset.checked_sub(INTERRUPTER_REG_BASE)?;
+    if relative >= XHCI_INTERRUPTER_COUNT as u64 * INTERRUPTER_REG_STRIDE {
+        return None;
+    }
+    Some((
+        (relative / INTERRUPTER_REG_STRIDE) as usize,
+        relative % INTERRUPTER_REG_STRIDE,
+    ))
+}
 
 impl XhciController {
     pub(super) fn register_byte(&self, offset: u64) -> u8 {
@@ -15,6 +30,19 @@ impl XhciController {
                 self.ports[port].portsc()
             } else {
                 0
+            };
+        }
+        if let Some((index, reg)) = interrupter_reg(offset) {
+            let interrupter = &self.interrupters[index];
+            return match reg {
+                0x00 => interrupter.iman,
+                0x04 => interrupter.imod,
+                0x08 => interrupter.erstsz,
+                0x10 => interrupter.erstba as u32,
+                0x14 => (interrupter.erstba >> 32) as u32,
+                0x18 => self.erdp_low(index),
+                0x1c => (interrupter.erdp >> 32) as u32,
+                _ => 0,
             };
         }
         match offset {
@@ -44,13 +72,6 @@ impl XhciController {
             0x74 => (self.dcbaap >> 32) as u32,
             0x78 => self.config,
             0x1000 => 0x0000_0003,
-            0x1020 => self.iman0,
-            0x1024 => self.imod0,
-            0x1028 => self.erstsz0,
-            0x1030 => self.erstba0 as u32,
-            0x1034 => (self.erstba0 >> 32) as u32,
-            0x1038 => self.erdp_low(),
-            0x103c => (self.erdp0 >> 32) as u32,
             _ => 0,
         }
     }
@@ -64,6 +85,31 @@ impl XhciController {
                     self.port_status_change_pending = false;
                 }
                 return generated_change;
+            }
+            return false;
+        }
+        if let Some((index, reg)) = interrupter_reg(offset) {
+            match reg {
+                0x00 => self.write_iman(index, value),
+                0x04 => self.interrupters[index].imod = value,
+                0x08 => {
+                    self.interrupters[index].erstsz = value;
+                    self.reset_event_ring(index);
+                }
+                0x10 => {
+                    let interrupter = &mut self.interrupters[index];
+                    interrupter.erstba = (interrupter.erstba & !0xffff_ffff) | u64::from(value);
+                    self.reset_event_ring(index);
+                }
+                0x14 => {
+                    let interrupter = &mut self.interrupters[index];
+                    interrupter.erstba =
+                        (interrupter.erstba & 0xffff_ffff) | (u64::from(value) << 32);
+                    self.reset_event_ring(index);
+                }
+                0x18 => self.write_erdp_low(index, value),
+                0x1c => self.write_erdp_high(index, value),
+                _ => {}
             }
             return false;
         }
@@ -85,22 +131,6 @@ impl XhciController {
             0x70 => self.dcbaap = (self.dcbaap & !0xffff_ffff) | u64::from(value),
             0x74 => self.dcbaap = (self.dcbaap & 0xffff_ffff) | (u64::from(value) << 32),
             0x78 => self.config = value,
-            0x1020 => self.write_iman0(value),
-            0x1024 => self.imod0 = value,
-            0x1028 => {
-                self.erstsz0 = value;
-                self.reset_event_ring();
-            }
-            0x1030 => {
-                self.erstba0 = (self.erstba0 & !0xffff_ffff) | u64::from(value);
-                self.reset_event_ring();
-            }
-            0x1034 => {
-                self.erstba0 = (self.erstba0 & 0xffff_ffff) | (u64::from(value) << 32);
-                self.reset_event_ring();
-            }
-            0x1038 => self.write_erdp_low(value),
-            0x103c => self.write_erdp_high(value),
             _ => {}
         }
         false
