@@ -1,3 +1,4 @@
+const USB_REQUEST_CLEAR_FEATURE: u8 = 0x01;
 const USB_REQUEST_GET_DESCRIPTOR: u8 = 0x06;
 const USB_REQUEST_GET_CONFIGURATION: u8 = 0x08;
 const USB_REQUEST_SET_CONFIGURATION: u8 = 0x09;
@@ -7,7 +8,10 @@ const USB_REQUEST_HID_SET_PROTOCOL: u8 = 0x0b;
 const USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_DEVICE: u8 = 0x80;
 const USB_REQUEST_TYPE_DEVICE_TO_HOST_STANDARD_INTERFACE: u8 = 0x81;
 const USB_REQUEST_TYPE_HOST_TO_DEVICE_STANDARD_DEVICE: u8 = 0x00;
+const USB_REQUEST_TYPE_HOST_TO_DEVICE_STANDARD_ENDPOINT: u8 = 0x02;
 const USB_REQUEST_TYPE_HOST_TO_DEVICE_CLASS_INTERFACE: u8 = 0x21;
+const USB_FEATURE_ENDPOINT_HALT: u16 = 0x0000;
+const USB_ENDPOINT_ADDRESS_DCI3_INTERRUPT_IN: u16 = 0x0081;
 const USB_DESCRIPTOR_TYPE_DEVICE: u8 = 1;
 const USB_DESCRIPTOR_TYPE_CONFIGURATION: u8 = 2;
 const USB_DESCRIPTOR_TYPE_STRING: u8 = 3;
@@ -163,6 +167,18 @@ pub(super) fn is_hid_set_protocol_request(packet: SetupPacket) -> bool {
         && packet.request == USB_REQUEST_HID_SET_PROTOCOL
         && packet.value <= 1
         && packet.index == 0
+        && packet.length == 0
+}
+
+/// CLEAR_FEATURE(ENDPOINT_HALT) on the interrupt-IN endpoint (standard,
+/// endpoint recipient, no data). Windows issues this to un-halt / reset the
+/// keyboard's interrupt endpoint; a STALL here is a device fault. The USB spec
+/// also resets the endpoint's data toggle to DATA0 on this request.
+pub(super) fn is_clear_endpoint_halt_request(packet: SetupPacket) -> bool {
+    packet.bm_request_type == USB_REQUEST_TYPE_HOST_TO_DEVICE_STANDARD_ENDPOINT
+        && packet.request == USB_REQUEST_CLEAR_FEATURE
+        && packet.value == USB_FEATURE_ENDPOINT_HALT
+        && packet.index == USB_ENDPOINT_ADDRESS_DCI3_INTERRUPT_IN
         && packet.length == 0
 }
 

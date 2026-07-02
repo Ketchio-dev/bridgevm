@@ -3,8 +3,9 @@ use crate::fwcfg::GuestMemoryMut;
 use super::super::{
     trace,
     usb::{
-        data_in_for_setup_packet, is_hid_set_idle_request, is_hid_set_protocol_request,
-        is_hid_set_report_request, parse_setup_packet, set_configuration_value, ControlInData,
+        data_in_for_setup_packet, is_clear_endpoint_halt_request, is_hid_set_idle_request,
+        is_hid_set_protocol_request, is_hid_set_report_request, parse_setup_packet,
+        set_configuration_value, ControlInData,
     },
     XhciController,
 };
@@ -50,6 +51,7 @@ impl XhciController {
         if set_configuration.is_some()
             || is_hid_set_protocol_request(setup_packet)
             || is_hid_set_idle_request(setup_packet)
+            || is_clear_endpoint_halt_request(setup_packet)
         {
             let Some(completion_gpa) = transfer_ring.checked_add(DATA_STAGE_OFFSET) else {
                 trace::ep0_reject_with_gpa("completion_trbs_overflow", transfer_ring);

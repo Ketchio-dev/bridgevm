@@ -240,3 +240,81 @@ fn prepare_addressed_set_idle(
     );
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, mem));
 }
+
+#[test]
+fn ep0_clear_endpoint_halt_completes_no_data_setup_status_transfer() {
+    // Given: Windows sends CLEAR_FEATURE(ENDPOINT_HALT) on the interrupt-IN
+    // endpoint 0x81 (standard, endpoint recipient, no data) — observed in the
+    // live trace; previously STALLed.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x8000);
+    mem.write_u64(INPUT_CONTEXT + 0x40 + 8, EP0_RING | 1);
+    setup_command_rings_with_parameter(
+        &mut xhci,
+        &mut mem,
+        INPUT_CONTEXT,
+        command_control(TRB_TYPE_ADDRESS_DEVICE, ENABLE_SLOT_ID),
+    );
+    mem.write_u64(
+        EP0_RING,
+        setup_packet_parameter(SetupPacketFields {
+            bm_request_type: 0x02,
+            request: 0x01,
+            value: 0x0000,
+            index: 0x0081,
+            length: 0,
+        }),
+    );
+    mem.write_u32(EP0_RING + 8, 8);
+    mem.write_u32(EP0_RING + 12, transfer_control(TRB_TYPE_SETUP_STAGE));
+    mem.write_u32(
+        EP0_RING + TRB_SIZE + 12,
+        transfer_control(TRB_TYPE_STATUS_STAGE),
+    );
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+
+    // When: the guest rings slot 1 endpoint 0.
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
+
+    // Then: the request completes with setup + status events (no STALL), so
+    // Windows does not treat the interrupt endpoint as faulty.
+    assert_success_transfer_event_for_trb(&mem, EVENT_RING + TRB_SIZE, EP0_RING);
+    assert_success_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 2), EP0_RING + TRB_SIZE);
+    assert_eq!(xhci.slot1_ep0_dequeue, EP0_RING + (TRB_SIZE * 2));
+}
+
+#[test]
+fn ep0_clear_feature_on_other_endpoint_is_not_treated_as_endpoint_halt() {
+    // Given: a CLEAR_FEATURE targeting a different endpoint address.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x8000);
+    mem.write_u64(INPUT_CONTEXT + 0x40 + 8, EP0_RING | 1);
+    setup_command_rings_with_parameter(
+        &mut xhci,
+        &mut mem,
+        INPUT_CONTEXT,
+        command_control(TRB_TYPE_ADDRESS_DEVICE, ENABLE_SLOT_ID),
+    );
+    mem.write_u64(
+        EP0_RING,
+        setup_packet_parameter(SetupPacketFields {
+            bm_request_type: 0x02,
+            request: 0x01,
+            value: 0x0000,
+            index: 0x0082,
+            length: 0,
+        }),
+    );
+    mem.write_u32(EP0_RING + 8, 8);
+    mem.write_u32(EP0_RING + 12, transfer_control(TRB_TYPE_SETUP_STAGE));
+    mem.write_u32(
+        EP0_RING + TRB_SIZE + 12,
+        transfer_control(TRB_TYPE_STATUS_STAGE),
+    );
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+
+    // When/Then: an unmodeled endpoint is not accepted as the DCI3 endpoint.
+    assert!(!xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
+    assert_eq!(mem.read_u64(EVENT_RING + TRB_SIZE), 0);
+    assert_eq!(xhci.slot1_ep0_dequeue, EP0_RING);
+}
