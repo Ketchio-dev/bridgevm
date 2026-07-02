@@ -19,6 +19,7 @@ const TRB_TYPE_CONFIGURE_ENDPOINT: u32 = 12;
 const TRB_TYPE_EVALUATE_CONTEXT: u32 = 13;
 const TRB_TYPE_STOP_ENDPOINT: u32 = 15;
 const TRB_TYPE_SET_TR_DEQUEUE_POINTER: u32 = 16;
+const TRB_TYPE_RESET_DEVICE: u32 = 17;
 const TRB_TYPE_COMMAND_COMPLETION_EVENT: u32 = 33;
 const COMPLETION_CODE_SUCCESS: u32 = 1;
 const ADDRESS_DEVICE_BSR: u32 = 1 << 9;
@@ -156,6 +157,21 @@ impl XhciController {
                     let slot_id = command_slot_id(command_control);
                     let posted = self.post_command_completion(mem, command_trb, slot_id);
                     if posted {
+                        self.advance_command_dequeue(command_trb);
+                    }
+                    return posted;
+                }
+                TRB_TYPE_RESET_DEVICE => {
+                    // winload resets the BSR-addressed device before the full
+                    // Address Device; the slot returns to the default state
+                    // with every endpoint but EP0 disabled.
+                    let slot_id = command_slot_id(command_control);
+                    let posted = self.post_command_completion(mem, command_trb, slot_id);
+                    if posted {
+                        if slot_id == SLOT_ID {
+                            self.usb_configuration = 0;
+                            self.invalidate_slot1_dci3_endpoint_state();
+                        }
                         self.advance_command_dequeue(command_trb);
                     }
                     return posted;

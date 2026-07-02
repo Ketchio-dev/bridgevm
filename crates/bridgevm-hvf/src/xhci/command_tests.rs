@@ -7,6 +7,7 @@ const TRB_TYPE_DISABLE_SLOT: u32 = 10;
 const TRB_TYPE_EVALUATE_CONTEXT: u32 = 13;
 const TRB_TYPE_SET_TR_DEQUEUE_POINTER: u32 = 16;
 const STOP_ENDPOINT_OBSERVED_CONTROL: u32 = 0x0101_3c01;
+const RESET_DEVICE_OBSERVED_CONTROL: u32 = 0x0100_4601;
 const ADDRESS_DEVICE_SLOT_ID: u32 = 7;
 const DISABLE_SLOT_ID: u32 = 4;
 const STOP_ENDPOINT_SLOT_ID: u32 = 1;
@@ -22,6 +23,28 @@ const SLOT1_EP0_RING: u64 = 0x3400;
 const LINK_TARGET: u64 = 0x1110;
 const LINK_TOGGLE_CYCLE: u32 = 1 << 1;
 const SLOT1_OUTPUT_CONTEXT: u64 = 0x5000;
+
+#[test]
+fn reset_device_command_posts_completion_and_resets_slot_state() {
+    // Given: the observed winload sequence sends Reset Device after reading
+    // the device descriptor through a BSR-addressed slot.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x5000);
+    setup_command_rings(&mut xhci, &mut mem, RESET_DEVICE_OBSERVED_CONTROL);
+    xhci.slot1_dci3_dequeue = SLOT1_EP0_RING;
+    xhci.slot1_dci3_ring_base = SLOT1_EP0_RING;
+    xhci.usb_configuration = 1;
+
+    // When: the guest rings host-controller doorbell 0.
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+
+    // Then: a success completion posts and the slot returns to the default
+    // (unconfigured, non-DCI3) state awaiting a fresh Address Device.
+    assert_success_completion(&mem, EVENT_RING, CMD_RING, 1);
+    assert_eq!(xhci.slot1_dci3_dequeue, 0);
+    assert_eq!(xhci.slot1_dci3_ring_base, 0);
+    assert_eq!(xhci.usb_configuration, 0);
+}
 
 #[test]
 fn enable_slot_command_posts_success_completion_event() {

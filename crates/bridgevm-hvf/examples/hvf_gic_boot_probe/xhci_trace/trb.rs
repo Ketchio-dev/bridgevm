@@ -12,6 +12,7 @@ pub(super) const TYPE_CONFIGURE_ENDPOINT: u32 = 12;
 pub(super) const TYPE_EVALUATE_CONTEXT: u32 = 13;
 pub(super) const TYPE_STOP_ENDPOINT: u32 = 15;
 pub(super) const TYPE_SET_TR_DEQUEUE_POINTER: u32 = 16;
+pub(super) const TYPE_RESET_DEVICE: u32 = 17;
 
 const TYPE_NORMAL: u32 = 1;
 const TYPE_DATA_STAGE: u32 = 3;
@@ -62,6 +63,7 @@ impl Trb {
             TYPE_EVALUATE_CONTEXT => "evaluate_context".to_string(),
             TYPE_STOP_ENDPOINT => "stop_endpoint".to_string(),
             TYPE_SET_TR_DEQUEUE_POINTER => "set_tr_dequeue_pointer".to_string(),
+            TYPE_RESET_DEVICE => "reset_device".to_string(),
             other => format!("type{other}"),
         }
     }
