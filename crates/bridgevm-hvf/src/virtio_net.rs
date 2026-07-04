@@ -333,7 +333,9 @@ impl<B: NetBackend> VirtioNet<B> {
             (COMMON_DEVICE_STATUS, 1) => u64::from(self.status & 0xff),
             (COMMON_CONFIG_GENERATION, 1) => 0,
             (COMMON_QUEUE_SELECT, 2) => u64::from(self.queue_sel as u16),
-            (COMMON_QUEUE_SIZE, 2) => self.selected_queue().map_or(0, |q| u64::from(q.size)),
+            (COMMON_QUEUE_SIZE, 2) => self.selected_queue().map_or(0, |q| {
+                u64::from(if q.size == 0 { QUEUE_MAX } else { q.size })
+            }),
             (COMMON_QUEUE_MSIX_VECTOR, 2) => self
                 .selected_queue()
                 .map_or(u64::from(VIRTIO_MSI_NO_VECTOR), |q| {
@@ -1082,6 +1084,114 @@ mod tests {
             u64::from(VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS)
                 | (u64::from(VIRTIO_F_VERSION_1) << 32)
         );
+    }
+
+    #[test]
+    fn modern_driver_common_config_sequence_advertises_and_enables_both_queues() {
+        let mut dev = VirtioPciNet::new_loopback();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let rx_desc = 0x4000_1000;
+        let rx_avail = 0x4000_2000;
+        let rx_used = 0x4000_3000;
+        let tx_desc = 0x4000_5000;
+        let tx_avail = 0x4000_6000;
+        let tx_used = 0x4000_7000;
+        let tx_hdr = 0x4000_8000;
+        let tx_payload = 0x4000_9000;
+        let frame = b"\x02\x00\x00\x00\x00\x01\x52\x54\x00\x42\x56\x01\x08\x00modern";
+
+        pci_write(&mut dev, COMMON_DEVICE_STATUS, 1, 0x01, &mut mem);
+        pci_write(&mut dev, COMMON_DEVICE_STATUS, 1, 0x03, &mut mem);
+
+        pci_write(&mut dev, COMMON_DEVICE_FEATURE_SELECT, 4, 0, &mut mem);
+        assert_eq!(
+            pci_read(&mut dev, COMMON_DEVICE_FEATURE, 4, &mut mem),
+            u64::from(VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS)
+        );
+        pci_write(&mut dev, COMMON_DEVICE_FEATURE_SELECT, 4, 1, &mut mem);
+        assert_eq!(
+            pci_read(&mut dev, COMMON_DEVICE_FEATURE, 4, &mut mem),
+            u64::from(VIRTIO_F_VERSION_1)
+        );
+        pci_write(&mut dev, COMMON_DRIVER_FEATURE_SELECT, 4, 0, &mut mem);
+        pci_write(
+            &mut dev,
+            COMMON_DRIVER_FEATURE,
+            4,
+            u64::from(VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS),
+            &mut mem,
+        );
+        pci_write(&mut dev, COMMON_DRIVER_FEATURE_SELECT, 4, 1, &mut mem);
+        pci_write(
+            &mut dev,
+            COMMON_DRIVER_FEATURE,
+            4,
+            u64::from(VIRTIO_F_VERSION_1),
+            &mut mem,
+        );
+        pci_write(&mut dev, COMMON_DEVICE_STATUS, 1, 0x07, &mut mem);
+        assert_eq!(pci_read(&mut dev, COMMON_DEVICE_STATUS, 1, &mut mem), 0x07);
+        assert_eq!(pci_read(&mut dev, COMMON_NUM_QUEUES, 2, &mut mem), 2);
+
+        for (queue, desc, avail, used, vector) in [
+            (0, rx_desc, rx_avail, rx_used, 0u16),
+            (1, tx_desc, tx_avail, tx_used, 1u16),
+        ] {
+            pci_write(&mut dev, COMMON_QUEUE_SELECT, 2, queue, &mut mem);
+            assert_eq!(
+                pci_read(&mut dev, COMMON_QUEUE_SIZE, 2, &mut mem),
+                u64::from(QUEUE_MAX)
+            );
+            pci_write(&mut dev, COMMON_QUEUE_SIZE, 2, 8, &mut mem);
+            pci_write(&mut dev, COMMON_QUEUE_DESC, 8, desc, &mut mem);
+            pci_write(&mut dev, COMMON_QUEUE_DRIVER, 8, avail, &mut mem);
+            pci_write(&mut dev, COMMON_QUEUE_DEVICE, 8, used, &mut mem);
+            pci_write(
+                &mut dev,
+                COMMON_QUEUE_MSIX_VECTOR,
+                2,
+                u64::from(vector),
+                &mut mem,
+            );
+            pci_write(&mut dev, COMMON_QUEUE_ENABLE, 2, 1, &mut mem);
+        }
+
+        pci_write(&mut dev, COMMON_DEVICE_STATUS, 1, 0x0f, &mut mem);
+
+        let stats = dev.stats();
+        assert_eq!(stats.status, 0x0f);
+        assert_eq!(stats.queues[0].size, 8);
+        assert!(stats.queues[0].ready);
+        assert_eq!(stats.queues[0].desc, rx_desc);
+        assert_eq!(stats.queues[0].driver, rx_avail);
+        assert_eq!(stats.queues[0].device, rx_used);
+        assert_eq!(stats.queues[0].msix_vector, 0);
+        assert_eq!(stats.queues[1].size, 8);
+        assert!(stats.queues[1].ready);
+        assert_eq!(stats.queues[1].desc, tx_desc);
+        assert_eq!(stats.queues[1].driver, tx_avail);
+        assert_eq!(stats.queues[1].device, tx_used);
+        assert_eq!(stats.queues[1].msix_vector, 1);
+
+        mem.write(tx_hdr, &[0; VIRTIO_NET_HDR_LEN]);
+        mem.write(tx_payload, frame);
+        write_desc(
+            &mut mem,
+            tx_desc,
+            0,
+            tx_hdr,
+            VIRTIO_NET_HDR_LEN as u32,
+            DESC_F_NEXT,
+            1,
+        );
+        write_desc(&mut mem, tx_desc, 1, tx_payload, frame.len() as u32, 0, 0);
+        mem.write(tx_avail + 2, &1u16.to_le_bytes());
+        mem.write(tx_avail + 4, &0u16.to_le_bytes());
+
+        pci_write(&mut dev, PCI_NOTIFY_CFG_OFFSET + 4, 4, 0, &mut mem);
+
+        assert_eq!(dev.backend().transmitted_frames(), &[frame.to_vec()]);
+        assert_eq!(dev.stats().notify_count, 1);
     }
 
     #[test]
