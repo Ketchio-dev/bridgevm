@@ -372,8 +372,66 @@ impl SmpTrace {
         println!("SMP trace: vCPU{cpu} {from:?} -> {to:?}");
     }
 
-    fn secondary_vcpu_created(&self, cpu: u64, vcpu: HvVcpuT) {
-        println!("SMP trace: vCPU{cpu} created HVF vCPU {vcpu}");
+    fn secondary_vcpu_created(&self, cpu: u64, vcpu: HvVcpuT, exit: *mut HvVcpuExit) {
+        println!("SMP trace: vCPU{cpu} created HVF vCPU {vcpu} exit={exit:p}");
+    }
+
+    fn secondary_waiting_off(&self, cpu: u64) {
+        println!("SMP trace: vCPU{cpu} blocking while Off");
+    }
+
+    fn secondary_woke(&self, cpu: u64, state: PsciState) {
+        println!("SMP trace: vCPU{cpu} woke with state {state:?}");
+    }
+
+    fn secondary_run_loop_entered(&self, cpu: u64, exits: u64) {
+        println!("SMP trace: vCPU{cpu} entering run loop after {exits} exits");
+    }
+
+    fn secondary_before_first_run(&self, cpu: u64, pc: u64, cpsr: u64, x0: u64, mpidr: u64) {
+        println!(
+            "SMP trace: vCPU{cpu} before first hv_vcpu_run PC={pc:#x} CPSR={cpsr:#x} X0={x0:#x} MPIDR_EL1={mpidr:#x}"
+        );
+    }
+
+    fn secondary_pre_run_drain(&self, cpu: u64, exit: u64, pc: u64) {
+        if exit < 10 {
+            println!(
+                "SMP trace: vCPU{cpu} pre-run drain before run {} PC={pc:#x}",
+                exit + 1
+            );
+        }
+    }
+
+    fn secondary_post_run_drain(&self, cpu: u64, exit: u64) {
+        if exit < 10 {
+            println!(
+                "SMP trace: vCPU{cpu} pre-run drain complete before run {}",
+                exit + 1
+            );
+        }
+    }
+
+    fn secondary_run_result(&self, cpu: u64, run: u64, status: HvReturn, exit: *mut HvVcpuExit) {
+        if run > 10 {
+            return;
+        }
+        if status != 0 {
+            println!("SMP trace: vCPU{cpu} hv_vcpu_run #{run} returned {status:#x}");
+            return;
+        }
+        let reason = unsafe { (*exit).reason };
+        if reason == EXIT_EXCEPTION {
+            let esr = unsafe { (*exit).exception.syndrome };
+            let ec = (esr >> 26) & 0x3f;
+            println!(
+                "SMP trace: vCPU{cpu} hv_vcpu_run #{run} returned {status:#x} reason={reason} EC={ec:#x} ESR={esr:#x}"
+            );
+        } else {
+            println!(
+                "SMP trace: vCPU{cpu} hv_vcpu_run #{run} returned {status:#x} reason={reason}"
+            );
+        }
     }
 
     fn cpu0_progress(&self, exits: u64) {
@@ -614,10 +672,16 @@ fn secondary_vcpu_thread(
     );
     loop {
         while *state == PsciState::Off && !shutdown.load(Ordering::SeqCst) {
+            if let Some(trace) = smp_trace.as_deref() {
+                trace.secondary_waiting_off(control.index);
+            }
             state = control
                 .condvar
                 .wait(state)
                 .expect("secondary vCPU state condvar");
+            if let Some(trace) = smp_trace.as_deref() {
+                trace.secondary_woke(control.index, *state);
+            }
         }
         if shutdown.load(Ordering::SeqCst) {
             break;
@@ -634,10 +698,10 @@ fn secondary_vcpu_thread(
                     exit = created_exit;
                     _vcpu_guard = Some(guard);
                     if let Some(trace) = smp_trace.as_deref() {
-                        trace.secondary_vcpu_created(control.index, vcpu);
+                        trace.secondary_vcpu_created(control.index, vcpu, exit);
                     }
                 }
-                apply_secondary_cpu_on_reset(vcpu, entry, context);
+                apply_secondary_cpu_on_reset(vcpu, control.mpidr, entry, context);
                 if let Some(trace) = smp_trace.as_deref() {
                     trace.state_transition(control.index, PsciState::OnPending, PsciState::On);
                 }
@@ -796,8 +860,37 @@ fn psci_affinity_info(controls: &[Arc<VcpuControl>], target_mpidr: u64) -> u64 {
     }
 }
 
-fn apply_secondary_cpu_on_reset(vcpu: HvVcpuT, entry: u64, context: u64) {
+fn apply_secondary_cpu_on_reset(vcpu: HvVcpuT, mpidr: u64, entry: u64, context: u64) {
     unsafe {
+        for reg in HV_REG_X0..=HV_REG_LR {
+            hv_vcpu_set_reg(vcpu, reg, 0);
+        }
+        for reg in [
+            HV_SYS_REG_SCTLR_EL1,
+            HV_SYS_REG_TTBR0_EL1,
+            HV_SYS_REG_TTBR1_EL1,
+            HV_SYS_REG_TCR_EL1,
+            HV_SYS_REG_SPSR_EL1,
+            HV_SYS_REG_ELR_EL1,
+            HV_SYS_REG_ESR_EL1,
+            HV_SYS_REG_FAR_EL1,
+            HV_SYS_REG_MAIR_EL1,
+            HV_SYS_REG_VBAR_EL1,
+            HV_SYS_REG_SP_EL0,
+            HV_SYS_REG_SP_EL1,
+            HV_SYS_REG_CNTP_CTL_EL0,
+            HV_SYS_REG_CNTP_CVAL_EL0,
+            HV_SYS_REG_CNTV_CTL_EL0,
+            HV_SYS_REG_CNTV_CVAL_EL0,
+        ] {
+            hv_vcpu_set_sys_reg(vcpu, reg, 0);
+        }
+        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, mpidr);
+        let mut dfr0 = 0u64;
+        if hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_ID_AA64DFR0_EL1, &mut dfr0) == 0 {
+            let dfr0 = (dfr0 & !(0xf << 8)) | (0x1 << 8);
+            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_ID_AA64DFR0_EL1, dfr0);
+        }
         hv_vcpu_set_reg(vcpu, HV_REG_PC, entry);
         hv_vcpu_set_reg(vcpu, HV_REG_X0, context);
         hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5);
@@ -826,6 +919,9 @@ fn run_secondary_until_parked(
     exits: &mut u64,
     smp_trace: Option<&SmpTrace>,
 ) -> bool {
+    if let Some(trace) = smp_trace {
+        trace.secondary_run_loop_entered(control.index, *exits);
+    }
     loop {
         if shutdown.load(Ordering::SeqCst) {
             return true;
@@ -833,6 +929,20 @@ fn run_secondary_until_parked(
         let mut drain_pc = 0u64;
         unsafe {
             hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
+        }
+        if let Some(trace) = smp_trace {
+            if *exits == 0 {
+                let mut cpsr = 0u64;
+                let mut x0 = 0u64;
+                let mut mpidr = 0u64;
+                unsafe {
+                    hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cpsr);
+                    hv_vcpu_get_reg(vcpu, HV_REG_X0, &mut x0);
+                    hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, &mut mpidr);
+                }
+                trace.secondary_before_first_run(control.index, drain_pc, cpsr, x0, mpidr);
+            }
+            trace.secondary_pre_run_drain(control.index, *exits, drain_pc);
         }
         {
             let mut platform_guard = lock_platform(
@@ -852,9 +962,19 @@ fn run_secondary_until_parked(
                 },
             );
         }
-        let reason = match run_hvf_vcpu_once(vcpu, exit) {
-            Ok(reason) => reason,
-            Err(r) => {
+        if let Some(trace) = smp_trace {
+            trace.secondary_post_run_drain(control.index, *exits);
+        }
+        let run_index = *exits + 1;
+        let run_status = unsafe { hv_vcpu_run(vcpu) };
+        if let Some(trace) = smp_trace {
+            trace.secondary_run_result(control.index, run_index, run_status, exit);
+        }
+        let reason = if run_status == 0 {
+            unsafe { (*exit).reason }
+        } else {
+            {
+                let r = run_status;
                 println!("secondary vCPU{} hv_vcpu_run error {r:#x}", control.index);
                 return true;
             }
