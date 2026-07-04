@@ -15,6 +15,7 @@ pub mod fwcfg;
 pub mod machine;
 pub mod media;
 pub mod msix;
+pub mod net_nat;
 pub mod nvme;
 pub mod pcie;
 pub mod pflash;
