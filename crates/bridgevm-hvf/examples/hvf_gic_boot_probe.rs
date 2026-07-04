@@ -83,7 +83,7 @@ mod storage_effect_receipt;
 use pcie_mmio_trace::{targetless_xhci_trace_context, PcieTraceTarget, RecentMmio};
 #[path = "hvf_gic_boot_probe/pcie_ecam_trace.rs"]
 mod pcie_ecam_trace;
-use pcie_ecam_trace::{PcieEcamAccess, PcieEcamOwnerContext, RecentPcieEcam};
+use pcie_ecam_trace::{PcieEcamAccess, RecentPcieEcam};
 #[path = "hvf_gic_boot_probe/pe_trace.rs"]
 mod pe_trace;
 use pe_trace::{print_frame_chain, print_pe_owner, print_translated_pe_owner, translated_ipa};
@@ -2054,6 +2054,38 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
 
+#[derive(Default)]
+struct SerialStopScans {
+    shell_prompt: IncrementalSerialScan,
+    shell_short_prompt: IncrementalSerialScan,
+    linux_boot_cpu: IncrementalSerialScan,
+    linux_version: IncrementalSerialScan,
+    linux_panic: IncrementalSerialScan,
+}
+
+#[derive(Default)]
+struct IncrementalSerialScan {
+    scanned_len: usize,
+    found: bool,
+}
+
+impl IncrementalSerialScan {
+    fn contains_new(&mut self, haystack: &[u8], needle: &[u8]) -> bool {
+        if self.found {
+            return true;
+        }
+        if needle.is_empty() {
+            self.found = true;
+            return true;
+        }
+        let overlap = needle.len().saturating_sub(1);
+        let start = self.scanned_len.saturating_sub(overlap).min(haystack.len());
+        self.scanned_len = haystack.len();
+        self.found = contains_bytes(&haystack[start..], needle);
+        self.found
+    }
+}
+
 #[derive(Clone, Copy)]
 enum DrainLocation {
     PreRun,
@@ -2519,17 +2551,22 @@ fn deliver_pending_spis(platform: &mut VirtPlatform, trace: bool) -> DeliveryCou
     counts
 }
 
-fn serial_reached_shell(serial: &[u8]) -> bool {
-    contains_bytes(serial, b"UEFI Interactive Shell") || contains_bytes(serial, b"Shell>")
+fn serial_reached_shell(serial: &[u8], scans: &mut SerialStopScans) -> bool {
+    scans
+        .shell_prompt
+        .contains_new(serial, b"UEFI Interactive Shell")
+        || scans.shell_short_prompt.contains_new(serial, b"Shell>")
 }
 
-fn serial_reached_linux_early_boot(serial: &[u8]) -> bool {
-    contains_bytes(serial, b"Booting Linux on physical CPU")
-        || contains_bytes(serial, b"Linux version")
+fn serial_reached_linux_early_boot(serial: &[u8], scans: &mut SerialStopScans) -> bool {
+    scans
+        .linux_boot_cpu
+        .contains_new(serial, b"Booting Linux on physical CPU")
+        || scans.linux_version.contains_new(serial, b"Linux version")
 }
 
-fn serial_reached_linux_panic(serial: &[u8]) -> bool {
-    contains_bytes(serial, b"Kernel panic")
+fn serial_reached_linux_panic(serial: &[u8], scans: &mut SerialStopScans) -> bool {
+    scans.linux_panic.contains_new(serial, b"Kernel panic")
 }
 
 fn map_file(path: &Path, ipa: u64, region_bytes: usize, flags: u64) {
@@ -3018,6 +3055,7 @@ fn main() {
             let mut drain_stats = RunLoopDrainStats::new(trace_run_loop);
             let mut ramfb_sample_loop = RamfbSampleLoop::from_env();
             let mut setup_input_host_wake = SetupInputHostWake::new();
+            let mut serial_stop_scans = SerialStopScans::default();
             let mut stop_reason;
             let mut stop_reason_code = None;
             let mut requested_system_reset = false;
@@ -3134,25 +3172,20 @@ fn main() {
                                 };
                                 recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
                                 let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
-                                let pcie_ecam_owner_context = PcieEcamOwnerContext {
-                                    exit: exits,
-                                    ipa,
-                                    esr,
-                                    ec,
-                                    srt,
-                                    serial_phase: PcieEcamOwnerContext::serial_phase_from_uart(
-                                        platform.uart_output(),
-                                    ),
-                                };
                                 recent_pcie_ecam.record_after_with_context(
                                     platform,
                                     &mut guest_ram,
                                     PcieEcamAccess {
                                         pc: last_pc,
                                         ipa,
+                                        exit: exits,
+                                        esr,
+                                        ec,
+                                        srt,
                                         op: &op,
                                         outcome: &outcome,
-                                        owner_context: pcie_ecam_owner_context,
+                                        #[cfg(test)]
+                                        owner_context: None,
                                     },
                                 );
                                 let pcie_context = targetless_xhci_trace_context(
@@ -3403,7 +3436,7 @@ fn main() {
                         "cpu0 automation platform mutex",
                     );
                     let platform = &mut *platform_guard;
-                    if serial_reached_linux_panic(platform.uart_output()) {
+                    if serial_reached_linux_panic(platform.uart_output(), &mut serial_stop_scans) {
                         Some("serial reached Linux kernel panic".into())
                     } else {
                         for trigger in &mut uart_triggers {
@@ -3478,10 +3511,17 @@ fn main() {
                         ramfb_sample_loop.emit_due(vcpu, |label| {
                             ramfb_dump::print_checkpoint(label, ramfb_config, &guest_ram);
                         });
-                        if stop_on_linux && serial_reached_linux_early_boot(platform.uart_output())
+                        if stop_on_linux
+                            && serial_reached_linux_early_boot(
+                                platform.uart_output(),
+                                &mut serial_stop_scans,
+                            )
                         {
                             Some("serial reached Linux early boot".into())
-                        } else if serial_reached_shell(platform.uart_output()) {
+                        } else if serial_reached_shell(
+                            platform.uart_output(),
+                            &mut serial_stop_scans,
+                        ) {
                             match ramfb_sample_loop.observe_shell(vcpu) {
                                 RamfbSampleShellAction::Continue => None,
                                 RamfbSampleShellAction::StopNow { reason } => Some(reason.into()),

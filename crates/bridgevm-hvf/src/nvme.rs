@@ -34,6 +34,7 @@ use std::{
     fs::{File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
     path::Path,
+    sync::OnceLock,
 };
 
 use crate::fwcfg::GuestMemoryMut;
@@ -500,7 +501,8 @@ impl RawFileDisk {
         let end = offset + len as u64;
         self.file.seek(SeekFrom::Start(offset))?;
         self.file.read_exact(&mut out)?;
-        for (&chunk_base, chunk) in self.overlay.range(..end) {
+        let overlay_start = offset.saturating_sub(FILE_OVERLAY_CHUNK_SIZE - 1);
+        for (&chunk_base, chunk) in self.overlay.range(overlay_start..end) {
             let chunk_end = chunk_base + chunk.len() as u64;
             if chunk_end <= offset {
                 continue;
@@ -1735,10 +1737,13 @@ fn is_modelled_doorbell(offset: u64) -> bool {
 }
 
 fn nvme_trace_enabled() -> bool {
-    matches!(
-        std::env::var("BRIDGEVM_TRACE_NVME").ok().as_deref(),
-        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
-    )
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        matches!(
+            std::env::var("BRIDGEVM_TRACE_NVME").ok().as_deref(),
+            Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
+        )
+    })
 }
 
 fn identify_cns_name(cns: u32) -> &'static str {

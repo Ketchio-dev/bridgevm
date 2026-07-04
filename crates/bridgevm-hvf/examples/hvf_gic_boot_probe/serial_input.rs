@@ -6,6 +6,7 @@ pub(crate) struct SerialTriggeredUartInput {
     marker: Vec<u8>,
     bytes: Vec<u8>,
     fired: bool,
+    marker_scan: IncrementalMarkerScan,
 }
 
 impl SerialTriggeredUartInput {
@@ -33,11 +34,16 @@ impl SerialTriggeredUartInput {
             marker,
             bytes,
             fired: false,
+            marker_scan: IncrementalMarkerScan::default(),
         })
     }
 
     pub(crate) fn maybe_fire(&mut self, platform: &mut VirtPlatform) {
-        if self.fired || !contains_bytes(platform.uart_output(), &self.marker) {
+        if self.fired
+            || !self
+                .marker_scan
+                .contains_new(platform.uart_output(), &self.marker)
+        {
             return;
         }
         platform.push_uart_input(&self.bytes);
@@ -67,6 +73,29 @@ fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())
         .any(|window| window == needle)
+}
+
+#[derive(Debug, Default)]
+struct IncrementalMarkerScan {
+    scanned_len: usize,
+    found: bool,
+}
+
+impl IncrementalMarkerScan {
+    fn contains_new(&mut self, haystack: &[u8], needle: &[u8]) -> bool {
+        if self.found {
+            return true;
+        }
+        if needle.is_empty() {
+            self.found = true;
+            return true;
+        }
+        let overlap = needle.len().saturating_sub(1);
+        let start = self.scanned_len.saturating_sub(overlap).min(haystack.len());
+        self.scanned_len = haystack.len();
+        self.found = contains_bytes(&haystack[start..], needle);
+        self.found
+    }
 }
 
 #[cfg(test)]

@@ -23,12 +23,15 @@ use super::delay::{
 };
 use super::{XhciSetupInputEnvError, SETUP_INPUT_DEFAULT_MARKER};
 use crate::xhci_hid_input::marker::ProbeMarker;
-use crate::xhci_hid_input::report_text::{contains_bytes, format_action_names, queue_error_name};
+use crate::xhci_hid_input::report_text::{
+    contains_bytes, format_action_names, queue_error_name, IncrementalMarkerScan,
+};
 
 #[derive(Debug)]
 pub(crate) struct XhciSetupInputTrigger {
     name: &'static str,
     marker: ProbeMarker,
+    marker_scan: IncrementalMarkerScan,
     actions: Vec<SetupInputAction>,
     attempted: bool,
     attempted_controller_reset_generation: u64,
@@ -112,6 +115,7 @@ impl XhciSetupInputTrigger {
         Ok(Self {
             name,
             marker,
+            marker_scan: IncrementalMarkerScan::default(),
             actions: parse_setup_input_actions(value)?,
             attempted: false,
             attempted_controller_reset_generation: 0,

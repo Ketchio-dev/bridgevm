@@ -23,11 +23,29 @@ pub(super) enum PcieTraceTarget {
 struct RecentMmioEvent {
     pc: u64,
     ipa: u64,
-    reg: String,
-    op_kind: &'static str,
-    op: String,
-    outcome: String,
+    target: Option<PcieTraceTarget>,
+    op: MmioOp,
+    outcome: RecentMmioOutcome,
     context: Option<PcieTraceContext>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RecentMmioOutcome {
+    ReadValue(u64),
+    WriteAck,
+    KnownUnimplemented(&'static str),
+    Unmapped,
+}
+
+impl From<&MmioOutcome> for RecentMmioOutcome {
+    fn from(outcome: &MmioOutcome) -> Self {
+        match outcome {
+            MmioOutcome::ReadValue(value) => Self::ReadValue(*value),
+            MmioOutcome::WriteAck => Self::WriteAck,
+            MmioOutcome::KnownUnimplemented(name) => Self::KnownUnimplemented(name),
+            MmioOutcome::Unmapped => Self::Unmapped,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -77,10 +95,9 @@ impl RecentMmio {
         self.events.push_back(RecentMmioEvent {
             pc,
             ipa,
-            reg: register_name(device, ipa, target),
-            op_kind: mmio_op_kind(op),
-            op: describe_mmio_op(op),
-            outcome: describe_mmio_outcome(outcome),
+            target,
+            op: *op,
+            outcome: outcome.into(),
             context,
         });
     }
@@ -111,7 +128,10 @@ impl RecentMmio {
         let mut counts: BTreeMap<(String, &'static str), usize> = BTreeMap::new();
         for event in &self.events {
             *counts
-                .entry((event.reg.clone(), event.op_kind))
+                .entry((
+                    register_name(self.device, event.ipa, event.target),
+                    mmio_op_kind(&event.op),
+                ))
                 .or_insert(0) += 1;
         }
         let mut ranked: Vec<_> = counts.into_iter().collect();
@@ -135,9 +155,12 @@ impl RecentMmio {
 
 fn format_event_line(device: &'static str, event: &RecentMmioEvent) -> String {
     let off = event.ipa.saturating_sub(aperture_base(device));
+    let reg = register_name(device, event.ipa, event.target);
+    let op = describe_mmio_op(&event.op);
+    let outcome = describe_mmio_outcome(event.outcome);
     let base = format!(
         "  pc={:#x} ipa={:#x} off={off:#x} reg={} op={} outcome={}",
-        event.pc, event.ipa, event.reg, event.op, event.outcome
+        event.pc, event.ipa, reg, op, outcome
     );
     match event.context {
         Some(context) => format!("{base} {}", context.describe_for_ipa(event.ipa)),
@@ -183,12 +206,12 @@ fn describe_mmio_op(op: &MmioOp) -> String {
     }
 }
 
-fn describe_mmio_outcome(outcome: &MmioOutcome) -> String {
+fn describe_mmio_outcome(outcome: RecentMmioOutcome) -> String {
     match outcome {
-        MmioOutcome::ReadValue(value) => format!("read-value({value:#x})"),
-        MmioOutcome::WriteAck => "write-ack".to_string(),
-        MmioOutcome::KnownUnimplemented(name) => format!("known-unimplemented({name})"),
-        MmioOutcome::Unmapped => "unmapped".to_string(),
+        RecentMmioOutcome::ReadValue(value) => format!("read-value({value:#x})"),
+        RecentMmioOutcome::WriteAck => "write-ack".to_string(),
+        RecentMmioOutcome::KnownUnimplemented(name) => format!("known-unimplemented({name})"),
+        RecentMmioOutcome::Unmapped => "unmapped".to_string(),
     }
 }
 

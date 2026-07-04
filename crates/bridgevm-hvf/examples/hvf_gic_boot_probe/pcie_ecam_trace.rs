@@ -83,9 +83,14 @@ impl RecentPcieEcam {
             PcieEcamAccess {
                 pc,
                 ipa,
+                exit: 0,
+                esr: 0,
+                ec: 0,
+                srt: 0,
                 op,
                 outcome,
-                owner_context: PcieEcamOwnerContext::unattributed(ipa),
+                #[cfg(test)]
+                owner_context: Some(PcieEcamOwnerContext::unattributed(ipa)),
             },
         );
     }
@@ -112,7 +117,7 @@ impl RecentPcieEcam {
         self.events.push_back(PcieEcamEvent {
             pc: access.pc,
             access: mmio_access_kind(access.op),
-            owner_context: access.owner_context,
+            owner_context: owner_context(platform, &access),
             bdf: cfg.bdf(),
             reg: cfg.reg,
             op: describe_mmio_op(access.op),
@@ -147,6 +152,21 @@ impl RecentPcieEcam {
 
     fn event_lines(&self) -> Vec<String> {
         self.events.iter().map(format_event_line).collect()
+    }
+}
+
+fn owner_context(platform: &VirtPlatform, access: &PcieEcamAccess<'_>) -> PcieEcamOwnerContext {
+    #[cfg(test)]
+    if let Some(owner_context) = &access.owner_context {
+        return owner_context.clone();
+    }
+    PcieEcamOwnerContext {
+        exit: access.exit,
+        ipa: access.ipa,
+        esr: access.esr,
+        ec: access.ec,
+        srt: access.srt,
+        serial_phase: PcieEcamOwnerContext::serial_phase_from_uart(platform.uart_output()),
     }
 }
 

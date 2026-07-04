@@ -20,16 +20,20 @@ fn nvme_command_disable_event_includes_owner_context_fields() {
         PcieEcamAccess {
             pc: 0x9876,
             ipa: gpa,
+            exit: 42,
+            esr: 0x9341_0045,
+            ec: 0x24,
+            srt: 1,
             op: &clear,
             outcome: &outcome,
-            owner_context: PcieEcamOwnerContext {
+            owner_context: Some(PcieEcamOwnerContext {
                 exit: 42,
                 ipa: 0xfeed_beef,
                 esr: 0x9341_0045,
                 ec: 0x24,
                 srt: 1,
                 serial_phase: "Boot0001\\r\\n".to_string(),
-            },
+            }),
         },
     );
 

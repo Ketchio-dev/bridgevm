@@ -42,9 +42,14 @@ impl PcieEcamOwnerContext {
 pub(crate) struct PcieEcamAccess<'a> {
     pub(crate) pc: u64,
     pub(crate) ipa: u64,
+    pub(crate) exit: u64,
+    pub(crate) esr: u64,
+    pub(crate) ec: u64,
+    pub(crate) srt: u32,
     pub(crate) op: &'a MmioOp,
     pub(crate) outcome: &'a MmioOutcome,
-    pub(crate) owner_context: PcieEcamOwnerContext,
+    #[cfg(test)]
+    pub(crate) owner_context: Option<PcieEcamOwnerContext>,
 }
 
 pub(crate) fn mmio_access_kind(op: &MmioOp) -> &'static str {

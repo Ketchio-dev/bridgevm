@@ -4,7 +4,6 @@ use bridgevm_hvf::platform_virt::VirtPlatform;
 use bridgevm_hvf::xhci::XhciSetupInputReportStats;
 
 use super::XhciSetupInputTrigger;
-use crate::xhci_hid_input::report_text::contains_bytes;
 
 impl XhciSetupInputTrigger {
     pub(super) fn attempted_in_current_controller_generation(
@@ -37,7 +36,9 @@ impl XhciSetupInputTrigger {
         self.complete_pending_fire_if_report_emitted_at(platform, now);
         if self.fired
             || self.attempted_in_current_controller_generation(platform)
-            || !contains_bytes(platform.uart_output(), self.marker.as_bytes())
+            || !self
+                .marker_scan
+                .contains_new(platform.uart_output(), self.marker.as_bytes())
         {
             return None;
         }
@@ -50,7 +51,9 @@ impl XhciSetupInputTrigger {
         self.complete_pending_fire_if_report_emitted_at(platform, now);
         if self.fired
             || self.attempted_in_current_controller_generation(platform)
-            || !contains_bytes(platform.uart_output(), self.marker.as_bytes())
+            || !self
+                .marker_scan
+                .contains_new(platform.uart_output(), self.marker.as_bytes())
         {
             return false;
         }

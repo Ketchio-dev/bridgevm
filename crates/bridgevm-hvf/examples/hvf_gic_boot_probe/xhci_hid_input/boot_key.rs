@@ -1,7 +1,7 @@
 use bridgevm_hvf::platform_virt::VirtPlatform;
 
 use super::marker::{MarkerEnvError, ProbeMarker, MARKER_MAX_BYTES};
-use super::report_text::{contains_bytes, format_report};
+use super::report_text::{contains_bytes, format_report, IncrementalMarkerScan};
 
 const CD_PROMPT_MARKER: &[u8] = b"Press any key to boot from CD or DVD";
 const HID_BOOT_KEYBOARD_USAGE_SPACE: u8 = 0x2c;
@@ -19,6 +19,7 @@ pub(crate) struct XhciHidBootKeyTrigger {
     marker: ProbeMarker,
     usage: u8,
     fired: bool,
+    marker_scan: IncrementalMarkerScan,
 }
 
 impl XhciHidBootKeyTrigger {
@@ -59,11 +60,16 @@ impl XhciHidBootKeyTrigger {
             marker,
             usage: HID_BOOT_KEYBOARD_USAGE_SPACE,
             fired: false,
+            marker_scan: IncrementalMarkerScan::default(),
         })
     }
 
     pub(crate) fn maybe_fire(&mut self, platform: &mut VirtPlatform) {
-        if self.fired || !contains_bytes(platform.uart_output(), self.marker.as_bytes()) {
+        if self.fired
+            || !self
+                .marker_scan
+                .contains_new(platform.uart_output(), self.marker.as_bytes())
+        {
             return;
         }
         if platform.queue_xhci_hid_boot_key_usage(self.usage).is_ok() {

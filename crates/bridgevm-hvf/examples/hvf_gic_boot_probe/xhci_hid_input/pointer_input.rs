@@ -7,7 +7,7 @@ use bridgevm_hvf::xhci::{
 };
 
 use super::marker::{MarkerEnvError, ProbeMarker, MARKER_MAX_BYTES};
-use super::report_text::contains_bytes;
+use super::report_text::{contains_bytes, IncrementalMarkerScan};
 
 const POINTER_INPUT_DEFAULT_MARKER: &[u8] = b"BdsDxe: starting Boot0001";
 const POINTER_INPUT_ENV_MAX_BYTES: usize = 128;
@@ -82,6 +82,7 @@ struct PointerRamfbDelayCheckpoint {
 pub(crate) struct XhciPointerInputTrigger {
     name: &'static str,
     marker: ProbeMarker,
+    marker_scan: IncrementalMarkerScan,
     actions: Vec<PointerInputAction>,
     attempted: bool,
     attempted_controller_reset_generation: u64,
@@ -140,6 +141,7 @@ impl XhciPointerInputTrigger {
         ))
     }
 
+    #[cfg(test)]
     fn from_env_value_with_marker_and_delay(
         name: &'static str,
         value: &str,
@@ -165,6 +167,7 @@ impl XhciPointerInputTrigger {
         Ok(Self {
             name,
             marker,
+            marker_scan: IncrementalMarkerScan::default(),
             actions: parse_pointer_input_actions(value)?,
             attempted: false,
             attempted_controller_reset_generation: 0,
@@ -239,7 +242,9 @@ impl XhciPointerInputTrigger {
         self.complete_pending_fire_if_report_emitted_at(platform, now);
         if self.fired
             || self.attempted_in_current_controller_generation(platform)
-            || !contains_bytes(platform.uart_output(), self.marker.as_bytes())
+            || !self
+                .marker_scan
+                .contains_new(platform.uart_output(), self.marker.as_bytes())
         {
             return None;
         }
@@ -275,7 +280,9 @@ impl XhciPointerInputTrigger {
         self.complete_pending_fire_if_report_emitted_at(platform, now);
         if self.fired
             || self.attempted_in_current_controller_generation(platform)
-            || !contains_bytes(platform.uart_output(), self.marker.as_bytes())
+            || !self
+                .marker_scan
+                .contains_new(platform.uart_output(), self.marker.as_bytes())
         {
             return false;
         }
