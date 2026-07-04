@@ -321,38 +321,10 @@ impl<B: NetBackend> VirtioNet<B> {
     }
 
     fn read_common(&self, offset: u64, size: u8) -> u64 {
-        let value = match (offset, size) {
-            (COMMON_DEVICE_FEATURE_SELECT, 4) => u64::from(self.device_features_sel),
-            (COMMON_DEVICE_FEATURE, 4) => u64::from(self.device_features()),
-            (COMMON_DRIVER_FEATURE_SELECT, 4) => u64::from(self.driver_features_sel),
-            (COMMON_DRIVER_FEATURE, 4) => {
-                u64::from(self.driver_features[self.driver_features_sel.min(1) as usize])
-            }
-            (COMMON_CONFIG_MSIX_VECTOR, 2) => u64::from(self.config_msix_vector),
-            (COMMON_NUM_QUEUES, 2) => QUEUE_COUNT as u64,
-            (COMMON_DEVICE_STATUS, 1) => u64::from(self.status & 0xff),
-            (COMMON_CONFIG_GENERATION, 1) => 0,
-            (COMMON_QUEUE_SELECT, 2) => u64::from(self.queue_sel as u16),
-            (COMMON_QUEUE_SIZE, 2) => self.selected_queue().map_or(0, |q| {
-                u64::from(if q.size == 0 { QUEUE_MAX } else { q.size })
-            }),
-            (COMMON_QUEUE_MSIX_VECTOR, 2) => self
-                .selected_queue()
-                .map_or(u64::from(VIRTIO_MSI_NO_VECTOR), |q| {
-                    u64::from(q.msix_vector)
-                }),
-            (COMMON_QUEUE_ENABLE, 2) => self
-                .selected_queue()
-                .map_or(0, |q| u64::from(q.ready as u8)),
-            (COMMON_QUEUE_NOTIFY_OFF, 2) => {
-                self.selected_queue().map_or(0, |q| u64::from(q.notify_off))
-            }
-            (COMMON_QUEUE_DESC, 8) => self.selected_queue().map_or(0, |q| q.desc),
-            (COMMON_QUEUE_DRIVER, 8) => self.selected_queue().map_or(0, |q| q.driver),
-            (COMMON_QUEUE_DEVICE, 8) => self.selected_queue().map_or(0, |q| q.device),
-            _ => self.read_mmio_alias(offset, size),
-        };
-        mask_to_size(value, size)
+        if let Some(value) = self.read_common_field(offset, size) {
+            return value;
+        }
+        self.read_mmio_alias(offset, size)
     }
 
     fn read_mmio_alias(&self, offset: u64, size: u8) -> u64 {
@@ -391,30 +363,10 @@ impl<B: NetBackend> VirtioNet<B> {
     }
 
     fn write_common(&mut self, offset: u64, size: u8, value: u64, mem: &mut dyn GuestMemoryMut) {
-        match (offset, size) {
-            (COMMON_DEVICE_FEATURE_SELECT, 4) => self.device_features_sel = value as u32,
-            (COMMON_DRIVER_FEATURE_SELECT, 4) => self.driver_features_sel = value as u32,
-            (COMMON_DRIVER_FEATURE, 4) => self.write_driver_features(value),
-            (COMMON_CONFIG_MSIX_VECTOR, 2) => self.config_msix_vector = value as u16,
-            (COMMON_DEVICE_STATUS, 1) => self.write_status(value),
-            (COMMON_QUEUE_SELECT, 2) => self.queue_sel = value as u32,
-            (COMMON_QUEUE_SIZE, 2) => self.write_selected_queue(|q| {
-                q.size = (value as u16).min(QUEUE_MAX);
-            }),
-            (COMMON_QUEUE_MSIX_VECTOR, 2) => self.write_selected_queue(|q| {
-                q.msix_vector = value as u16;
-            }),
-            (COMMON_QUEUE_ENABLE, 2) => self.write_selected_queue(|q| {
-                q.ready = value != 0;
-                if !q.ready {
-                    q.last_avail_idx = 0;
-                }
-            }),
-            (COMMON_QUEUE_DESC, 8) => self.write_selected_queue(|q| q.desc = value),
-            (COMMON_QUEUE_DRIVER, 8) => self.write_selected_queue(|q| q.driver = value),
-            (COMMON_QUEUE_DEVICE, 8) => self.write_selected_queue(|q| q.device = value),
-            _ => self.write_mmio_alias(offset, value, mem),
+        if self.write_common_field(offset, size, value) {
+            return;
         }
+        self.write_mmio_alias(offset, value, mem);
     }
 
     fn write_mmio_alias(&mut self, offset: u64, value: u64, mem: &mut dyn GuestMemoryMut) {
@@ -453,8 +405,219 @@ impl<B: NetBackend> VirtioNet<B> {
 
     fn write_driver_features(&mut self, value: u64) {
         if self.driver_features_sel < 2 {
-            self.driver_features[self.driver_features_sel as usize] = value as u32;
+            let index = self.driver_features_sel as usize;
+            self.driver_features[index] = (value as u32) & offered_features_word(index as u32);
         }
+    }
+
+    fn read_common_field(&self, offset: u64, size: u8) -> Option<u64> {
+        if !is_supported_common_access_size(size) {
+            return None;
+        }
+        let selected_queue = self.selected_queue();
+        let fields = [
+            (
+                COMMON_DEVICE_FEATURE_SELECT,
+                4,
+                u64::from(self.device_features_sel),
+            ),
+            (
+                COMMON_DEVICE_FEATURE,
+                4,
+                u64::from(offered_features_word(self.device_features_sel)),
+            ),
+            (
+                COMMON_DRIVER_FEATURE_SELECT,
+                4,
+                u64::from(self.driver_features_sel),
+            ),
+            (
+                COMMON_DRIVER_FEATURE,
+                4,
+                u64::from(self.driver_features[self.driver_features_sel.min(1) as usize]),
+            ),
+            (
+                COMMON_CONFIG_MSIX_VECTOR,
+                2,
+                u64::from(self.config_msix_vector),
+            ),
+            (COMMON_NUM_QUEUES, 2, QUEUE_COUNT as u64),
+            (COMMON_DEVICE_STATUS, 1, u64::from(self.status & 0xff)),
+            (COMMON_CONFIG_GENERATION, 1, 0),
+            (COMMON_QUEUE_SELECT, 2, u64::from(self.queue_sel as u16)),
+            (
+                COMMON_QUEUE_SIZE,
+                2,
+                selected_queue.map_or(0, |q| {
+                    u64::from(if q.size == 0 { QUEUE_MAX } else { q.size })
+                }),
+            ),
+            (
+                COMMON_QUEUE_MSIX_VECTOR,
+                2,
+                selected_queue.map_or(u64::from(VIRTIO_MSI_NO_VECTOR), |q| {
+                    u64::from(q.msix_vector)
+                }),
+            ),
+            (
+                COMMON_QUEUE_ENABLE,
+                2,
+                selected_queue.map_or(0, |q| u64::from(q.ready as u8)),
+            ),
+            (
+                COMMON_QUEUE_NOTIFY_OFF,
+                2,
+                selected_queue.map_or(0, |q| u64::from(q.notify_off)),
+            ),
+            (COMMON_QUEUE_DESC, 8, selected_queue.map_or(0, |q| q.desc)),
+            (
+                COMMON_QUEUE_DRIVER,
+                8,
+                selected_queue.map_or(0, |q| q.driver),
+            ),
+            (
+                COMMON_QUEUE_DEVICE,
+                8,
+                selected_queue.map_or(0, |q| q.device),
+            ),
+        ];
+        fields.iter().find_map(|(base, width, value)| {
+            read_common_register(*base, *width, *value, offset, size)
+        })
+    }
+
+    fn write_common_field(&mut self, offset: u64, size: u8, value: u64) -> bool {
+        if !is_supported_common_access_size(size) {
+            return false;
+        }
+
+        if common_access_touches(COMMON_DEVICE_FEATURE_SELECT, 4, offset, size) {
+            self.device_features_sel = write_common_register(
+                self.device_features_sel.into(),
+                COMMON_DEVICE_FEATURE_SELECT,
+                4,
+                offset,
+                size,
+                value,
+            ) as u32;
+            return true;
+        }
+        if common_access_touches(COMMON_DRIVER_FEATURE_SELECT, 4, offset, size) {
+            self.driver_features_sel = write_common_register(
+                self.driver_features_sel.into(),
+                COMMON_DRIVER_FEATURE_SELECT,
+                4,
+                offset,
+                size,
+                value,
+            ) as u32;
+            return true;
+        }
+        if common_access_touches(COMMON_DRIVER_FEATURE, 4, offset, size) {
+            let current = self.driver_features[self.driver_features_sel.min(1) as usize];
+            let merged = write_common_register(
+                current.into(),
+                COMMON_DRIVER_FEATURE,
+                4,
+                offset,
+                size,
+                value,
+            );
+            self.write_driver_features(merged);
+            return true;
+        }
+        if common_access_touches(COMMON_CONFIG_MSIX_VECTOR, 2, offset, size) {
+            self.config_msix_vector = write_common_register(
+                self.config_msix_vector.into(),
+                COMMON_CONFIG_MSIX_VECTOR,
+                2,
+                offset,
+                size,
+                value,
+            ) as u16;
+            return true;
+        }
+        if common_access_touches(COMMON_DEVICE_STATUS, 1, offset, size) {
+            let status = write_common_register(
+                u64::from(self.status & 0xff),
+                COMMON_DEVICE_STATUS,
+                1,
+                offset,
+                size,
+                value,
+            );
+            self.write_status(status);
+            return true;
+        }
+        if common_access_touches(COMMON_QUEUE_SELECT, 2, offset, size) {
+            self.queue_sel = write_common_register(
+                u64::from(self.queue_sel as u16),
+                COMMON_QUEUE_SELECT,
+                2,
+                offset,
+                size,
+                value,
+            ) as u32;
+            return true;
+        }
+
+        let Some(queue) = self.queues.get_mut(self.queue_sel as usize) else {
+            return common_access_touches_queue_field(offset, size);
+        };
+        if common_access_touches(COMMON_QUEUE_SIZE, 2, offset, size) {
+            queue.size = (write_common_register(
+                u64::from(queue.size),
+                COMMON_QUEUE_SIZE,
+                2,
+                offset,
+                size,
+                value,
+            ) as u16)
+                .min(QUEUE_MAX);
+            return true;
+        }
+        if common_access_touches(COMMON_QUEUE_MSIX_VECTOR, 2, offset, size) {
+            queue.msix_vector = write_common_register(
+                u64::from(queue.msix_vector),
+                COMMON_QUEUE_MSIX_VECTOR,
+                2,
+                offset,
+                size,
+                value,
+            ) as u16;
+            return true;
+        }
+        if common_access_touches(COMMON_QUEUE_ENABLE, 2, offset, size) {
+            let enable = write_common_register(
+                u64::from(queue.ready as u8),
+                COMMON_QUEUE_ENABLE,
+                2,
+                offset,
+                size,
+                value,
+            );
+            queue.ready = enable == 1;
+            if !queue.ready {
+                queue.last_avail_idx = 0;
+            }
+            return true;
+        }
+        if common_access_touches(COMMON_QUEUE_DESC, 8, offset, size) {
+            queue.desc =
+                write_common_register(queue.desc, COMMON_QUEUE_DESC, 8, offset, size, value);
+            return true;
+        }
+        if common_access_touches(COMMON_QUEUE_DRIVER, 8, offset, size) {
+            queue.driver =
+                write_common_register(queue.driver, COMMON_QUEUE_DRIVER, 8, offset, size, value);
+            return true;
+        }
+        if common_access_touches(COMMON_QUEUE_DEVICE, 8, offset, size) {
+            queue.device =
+                write_common_register(queue.device, COMMON_QUEUE_DEVICE, 8, offset, size, value);
+            return true;
+        }
+        false
     }
 
     fn write_status(&mut self, value: u64) {
@@ -475,11 +638,7 @@ impl<B: NetBackend> VirtioNet<B> {
     }
 
     fn device_features(&self) -> u32 {
-        match self.device_features_sel {
-            0 => VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS,
-            1 => VIRTIO_F_VERSION_1,
-            _ => 0,
-        }
+        offered_features_word(self.device_features_sel)
     }
 
     fn config_read(&self, offset: u64, size: u8) -> u64 {
@@ -894,6 +1053,81 @@ fn set_high(current: u64, value: u64) -> u64 {
     (current & 0xffff_ffff) | ((value & 0xffff_ffff) << 32)
 }
 
+fn offered_features_word(select: u32) -> u32 {
+    match select {
+        0 => VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS,
+        1 => VIRTIO_F_VERSION_1,
+        _ => 0,
+    }
+}
+
+fn is_supported_common_access_size(size: u8) -> bool {
+    matches!(size, 1 | 2 | 4 | 8)
+}
+
+fn common_access_touches(base: u64, width: u8, offset: u64, size: u8) -> bool {
+    let access_end = offset.saturating_add(u64::from(size));
+    let field_end = base + u64::from(width);
+    offset < field_end && base < access_end
+}
+
+fn common_access_touches_queue_field(offset: u64, size: u8) -> bool {
+    [
+        (COMMON_QUEUE_SIZE, 2),
+        (COMMON_QUEUE_MSIX_VECTOR, 2),
+        (COMMON_QUEUE_ENABLE, 2),
+        (COMMON_QUEUE_DESC, 8),
+        (COMMON_QUEUE_DRIVER, 8),
+        (COMMON_QUEUE_DEVICE, 8),
+    ]
+    .iter()
+    .any(|(base, width)| common_access_touches(*base, *width, offset, size))
+}
+
+fn read_common_register(base: u64, width: u8, value: u64, offset: u64, size: u8) -> Option<u64> {
+    if !common_access_touches(base, width, offset, size) {
+        return None;
+    }
+    let mut out = 0u64;
+    for access_byte in 0..size {
+        let byte_offset = offset + u64::from(access_byte);
+        if byte_offset < base || byte_offset >= base + u64::from(width) {
+            continue;
+        }
+        let field_byte = byte_offset - base;
+        let byte = (value >> (field_byte * 8)) & 0xff;
+        out |= byte << (u64::from(access_byte) * 8);
+    }
+    Some(mask_to_size(out, size))
+}
+
+fn write_common_register(
+    current: u64,
+    base: u64,
+    width: u8,
+    offset: u64,
+    size: u8,
+    value: u64,
+) -> u64 {
+    let mut out = current;
+    for access_byte in 0..size {
+        let byte_offset = offset + u64::from(access_byte);
+        if byte_offset < base || byte_offset >= base + u64::from(width) {
+            continue;
+        }
+        let field_byte = byte_offset - base;
+        let shift = field_byte * 8;
+        let byte = (value >> (u64::from(access_byte) * 8)) & 0xff;
+        out = (out & !(0xff << shift)) | (byte << shift);
+    }
+    let bits = u64::from(width) * 8;
+    if bits == 64 {
+        out
+    } else {
+        out & ((1u64 << bits) - 1)
+    }
+}
+
 fn mask_to_size(value: u64, size: u8) -> u64 {
     match size {
         1 => value & 0xff,
@@ -982,6 +1216,11 @@ mod tests {
         }
     }
 
+    fn pci_write_split_u64(dev: &mut VirtioPciNet, offset: u64, value: u64, mem: &mut TestMem) {
+        pci_write(dev, offset, 4, value & 0xffff_ffff, mem);
+        pci_write(dev, offset + 4, 4, value >> 32, mem);
+    }
+
     fn write_desc(
         mem: &mut TestMem,
         table: u64,
@@ -1007,13 +1246,13 @@ mod tests {
         used: u64,
         vector: u16,
     ) {
-        pci_write(dev, REG_QUEUE_SEL, 4, u64::from(queue), mem);
-        pci_write(dev, REG_QUEUE_NUM, 4, 8, mem);
-        pci_write(dev, REG_QUEUE_DESC_LOW, 4, desc, mem);
-        pci_write(dev, REG_QUEUE_DRIVER_LOW, 4, avail, mem);
-        pci_write(dev, REG_QUEUE_DEVICE_LOW, 4, used, mem);
+        pci_write(dev, COMMON_QUEUE_SELECT, 2, u64::from(queue), mem);
+        pci_write(dev, COMMON_QUEUE_SIZE, 2, 8, mem);
+        pci_write_split_u64(dev, COMMON_QUEUE_DESC, desc, mem);
+        pci_write_split_u64(dev, COMMON_QUEUE_DRIVER, avail, mem);
+        pci_write_split_u64(dev, COMMON_QUEUE_DEVICE, used, mem);
         pci_write(dev, COMMON_QUEUE_MSIX_VECTOR, 2, u64::from(vector), mem);
-        pci_write(dev, REG_QUEUE_READY, 4, 1, mem);
+        pci_write(dev, COMMON_QUEUE_ENABLE, 2, 1, mem);
     }
 
     fn program_msix_vector(dev: &mut VirtioPciNet, vector: u16, address: u64, data: u32) {
@@ -1084,6 +1323,88 @@ mod tests {
             u64::from(VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS)
                 | (u64::from(VIRTIO_F_VERSION_1) << 32)
         );
+    }
+
+    #[test]
+    fn modern_common_config_masks_features_and_accepts_split_queue_address_writes() {
+        let mut dev = VirtioPciNet::new_loopback();
+        let mut mem = TestMem::new(0x4000_0000, 0x1000);
+        let rx_desc = 0x0000_0001_4000_1000;
+        let rx_avail = 0x0000_0001_4000_2000;
+        let rx_used = 0x0000_0001_4000_3000;
+        let tx_desc = 0x0000_0001_4000_5000;
+        let tx_avail = 0x0000_0001_4000_6000;
+        let tx_used = 0x0000_0001_4000_7000;
+        let offered = u64::from(VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS)
+            | (u64::from(VIRTIO_F_VERSION_1) << 32);
+
+        pci_write(&mut dev, COMMON_DEVICE_FEATURE_SELECT, 4, 0, &mut mem);
+        assert_eq!(
+            pci_read(&mut dev, COMMON_DEVICE_FEATURE, 4, &mut mem),
+            0x0001_0020
+        );
+        pci_write(&mut dev, COMMON_DEVICE_FEATURE_SELECT, 4, 1, &mut mem);
+        assert_eq!(
+            pci_read(&mut dev, COMMON_DEVICE_FEATURE, 4, &mut mem),
+            0x0000_0001
+        );
+
+        pci_write(&mut dev, COMMON_DRIVER_FEATURE_SELECT, 4, 0, &mut mem);
+        pci_write(&mut dev, COMMON_DRIVER_FEATURE, 4, 0xffff_ffff, &mut mem);
+        pci_write(&mut dev, COMMON_DRIVER_FEATURE_SELECT, 4, 1, &mut mem);
+        pci_write(&mut dev, COMMON_DRIVER_FEATURE, 4, 0x112f_8001, &mut mem);
+        assert_eq!(dev.stats().driver_features, offered);
+        assert_eq!(dev.stats().driver_features & !offered, 0);
+
+        pci_write(&mut dev, COMMON_DEVICE_STATUS, 1, 0x01, &mut mem);
+        pci_write(&mut dev, COMMON_DEVICE_STATUS, 1, 0x03, &mut mem);
+        pci_write(&mut dev, COMMON_DEVICE_STATUS, 1, 0x07, &mut mem);
+
+        for (queue, desc, avail, used, vector) in [
+            (0, rx_desc, rx_avail, rx_used, 1u16),
+            (1, tx_desc, tx_avail, tx_used, 0u16),
+        ] {
+            pci_write(&mut dev, COMMON_QUEUE_SELECT, 2, queue, &mut mem);
+            assert_eq!(
+                pci_read(&mut dev, COMMON_QUEUE_SIZE, 2, &mut mem),
+                u64::from(QUEUE_MAX)
+            );
+            pci_write(
+                &mut dev,
+                COMMON_QUEUE_SIZE,
+                2,
+                u64::from(QUEUE_MAX),
+                &mut mem,
+            );
+            pci_write_split_u64(&mut dev, COMMON_QUEUE_DESC, desc, &mut mem);
+            pci_write_split_u64(&mut dev, COMMON_QUEUE_DRIVER, avail, &mut mem);
+            pci_write_split_u64(&mut dev, COMMON_QUEUE_DEVICE, used, &mut mem);
+            pci_write(
+                &mut dev,
+                COMMON_QUEUE_MSIX_VECTOR,
+                2,
+                u64::from(vector),
+                &mut mem,
+            );
+            pci_write(&mut dev, COMMON_QUEUE_ENABLE, 2, 1, &mut mem);
+        }
+
+        pci_write(&mut dev, COMMON_DEVICE_STATUS, 1, 0x0f, &mut mem);
+
+        let stats = dev.stats();
+        assert_eq!(stats.status, 0x0f);
+        assert_eq!(stats.queues[0].size, QUEUE_MAX);
+        assert!(stats.queues[0].ready);
+        assert_eq!(stats.queues[0].desc, rx_desc);
+        assert_eq!(stats.queues[0].driver, rx_avail);
+        assert_eq!(stats.queues[0].device, rx_used);
+        assert_eq!(stats.queues[0].msix_vector, 1);
+        assert_eq!(stats.queues[1].size, QUEUE_MAX);
+        assert!(stats.queues[1].ready);
+        assert_eq!(stats.queues[1].desc, tx_desc);
+        assert_eq!(stats.queues[1].driver, tx_avail);
+        assert_eq!(stats.queues[1].device, tx_used);
+        assert_eq!(stats.queues[1].msix_vector, 0);
     }
 
     #[test]
@@ -1234,12 +1555,12 @@ mod tests {
         assert_eq!(stats.queues[1].msix_vector, 1);
         assert_eq!(stats.queues[1].notify_off, 1);
 
-        pci_write(&mut dev, REG_QUEUE_SEL, 4, 0, &mut mem);
-        assert_eq!(pci_read(&mut dev, REG_QUEUE_NUM, 4, &mut mem), 8);
+        pci_write(&mut dev, COMMON_QUEUE_SELECT, 2, 0, &mut mem);
+        assert_eq!(pci_read(&mut dev, COMMON_QUEUE_SIZE, 2, &mut mem), 8);
         assert_eq!(pci_read(&mut dev, COMMON_QUEUE_NOTIFY_OFF, 2, &mut mem), 0);
-        pci_write(&mut dev, REG_QUEUE_SEL, 4, 1, &mut mem);
+        pci_write(&mut dev, COMMON_QUEUE_SELECT, 2, 1, &mut mem);
         assert_eq!(
-            pci_read(&mut dev, REG_QUEUE_DESC_LOW, 4, &mut mem),
+            pci_read(&mut dev, COMMON_QUEUE_DESC, 4, &mut mem),
             0x4000_4000
         );
         assert_eq!(pci_read(&mut dev, COMMON_QUEUE_NOTIFY_OFF, 2, &mut mem), 1);
