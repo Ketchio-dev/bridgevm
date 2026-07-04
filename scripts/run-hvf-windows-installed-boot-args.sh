@@ -8,6 +8,7 @@ init_installed_boot_defaults() {
   RAM_MIB="4096"
   RAMFB_SAMPLES="1000,5000,15000,30000,60000,90000,120000"
   ENABLE_XHCI="0"
+  VIRTIO_NET="0"
   SETUP_INPUT_ACTIONS=""
   SETUP_INPUT_MARKER=""
   SETUP_INPUT_FIRE_DELAY_MS=""
@@ -58,6 +59,7 @@ parse_installed_boot_args() {
         RAMFB_SAMPLES="$2"; shift 2
         ;;
       --enable-xhci) ENABLE_XHCI="1"; shift ;;
+      --virtio-net) VIRTIO_NET="1"; shift ;;
       --setup-input-actions)
         [[ $# -ge 2 ]] || { usage; exit 2; }
         setup_input_actions_list "$2" || { echo "FAIL: --setup-input-actions requires 1-32 comma-separated actions from: tab, enter, space, win+r, lgui+r, text:<[a-z0-9/.-]+>" >&2; exit 2; }

@@ -15,6 +15,8 @@ Options:
   --ramfb-samples LIST    Comma-separated RAMFB sample ms values. Default:
                           1000,5000,15000,30000,60000,90000,120000.
   --enable-xhci           Leave xHCI present for desktop input diagnosis.
+  --virtio-net            Attach the virtio-net NIC (BRIDGEVM_VIRTIO_NET=1)
+                          with the userspace NAT backend.
   --setup-input-actions LIST
                           Optional comma-separated xHCI setup-input keys:
                           tab, enter, space,

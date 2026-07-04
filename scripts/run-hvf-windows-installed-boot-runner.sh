@@ -110,6 +110,9 @@ build_installed_boot_env_args() {
   if [[ "$ENABLE_XHCI" != "1" ]]; then
     ENV_ARGS=('BRIDGEVM_DISABLE_XHCI=1' "${ENV_ARGS[@]}")
   fi
+  if [[ "${VIRTIO_NET:-0}" == "1" ]]; then
+    ENV_ARGS+=('BRIDGEVM_VIRTIO_NET=1' 'BRIDGEVM_VIRTIO_NET_BACKEND=nat')
+  fi
   printf '%s\n' "${ENV_ARGS[@]}"
 }
 
