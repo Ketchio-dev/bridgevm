@@ -46,7 +46,7 @@ log "creating destination raw $OUT ($SIZE_BYTES bytes)"
 rm -f "$OUT"
 # qemu-img-less: make a sparse file then partition via hdiutil.
 mkfile -n "$SIZE_BYTES" "$OUT" 2>/dev/null || dd if=/dev/zero of="$OUT" bs=1 count=0 seek="$SIZE_BYTES"
-DST_DEV="$(hdiutil attach -nomount "$OUT" | awk 'NR==1{print $1}')"
+DST_DEV="$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -nomount "$OUT" | awk 'NR==1{print $1}')"
 log "destination attached at $DST_DEV"
 diskutil partitionDisk "$DST_DEV" GPT FAT32 WINSETUP 100%
 DST_VOL="/Volumes/WINSETUP"
@@ -69,9 +69,9 @@ wimlib-imagex split "$ISO_MNT/sources/install.wim" "$DST_VOL/sources/install.swm
 # 5. Inject the scripted-install payload into boot.wim image 2 (Windows Setup).
 log "injecting bvinstall payload into boot.wim image 2"
 wimlib-imagex update "$DST_VOL/sources/boot.wim" 2 <<UPDATE
-add $ASSETS/winpeshl.ini /Windows/System32/winpeshl.ini
-add $ASSETS/bvinstall.cmd /Windows/System32/bvinstall.cmd
-add $ASSETS/bvdiskpart.txt /Windows/System32/bvdiskpart.txt
+add "$ASSETS/winpeshl.ini" /Windows/System32/winpeshl.ini
+add "$ASSETS/bvinstall.cmd" /Windows/System32/bvinstall.cmd
+add "$ASSETS/bvdiskpart.txt" /Windows/System32/bvdiskpart.txt
 UPDATE
 
 # 6. Verify the injected paths and required boot files.
