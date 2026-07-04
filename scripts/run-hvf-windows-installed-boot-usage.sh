@@ -16,8 +16,9 @@ Options:
                           1000,5000,15000,30000,60000,90000,120000.
   --enable-xhci           Leave xHCI present for desktop input diagnosis.
   --setup-input-actions LIST
-                          Optional xHCI setup-input keys: tab, enter, space,
-                          win+r, lgui+r, text:<lowercase-alnum>.
+                          Optional comma-separated xHCI setup-input keys:
+                          tab, enter, space,
+                          win+r, lgui+r, text:<[a-z0-9/.-]+>.
                           Requires --enable-xhci.
   --setup-input-marker TEXT
                           Serial marker that arms setup-input. Default is

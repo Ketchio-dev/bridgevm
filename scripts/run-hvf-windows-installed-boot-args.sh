@@ -60,17 +60,17 @@ parse_installed_boot_args() {
       --enable-xhci) ENABLE_XHCI="1"; shift ;;
       --setup-input-actions)
         [[ $# -ge 2 ]] || { usage; exit 2; }
-        setup_input_actions_list "$2" || { echo "FAIL: --setup-input-actions requires 1-32 actions from: tab, enter, space, win+r, lgui+r, text:<lowercase-alnum>" >&2; exit 2; }
+        setup_input_actions_list "$2" || { echo "FAIL: --setup-input-actions requires 1-32 comma-separated actions from: tab, enter, space, win+r, lgui+r, text:<[a-z0-9/.-]+>" >&2; exit 2; }
         SETUP_INPUT_ACTIONS="$2"; shift 2
         ;;
       --setup-input-marker) [[ $# -ge 2 ]] || { usage; exit 2; }; setup_input_marker_value "$2" || { echo "FAIL: --setup-input-marker requires 1-96 bytes" >&2; exit 2; }; SETUP_INPUT_MARKER="$2"; shift 2 ;;
       --setup-input-fire-delay-ms) [[ $# -ge 2 ]] || { usage; exit 2; }; setup_input_fire_delay_ms "$2" || { echo "FAIL: --setup-input-fire-delay-ms requires an integer <= 600000" >&2; exit 2; }; SETUP_INPUT_FIRE_DELAY_MS="$2"; shift 2 ;;
       --setup-input-ramfb-delay-ms) [[ $# -ge 2 ]] || { usage; exit 2; }; ramfb_sample_list "$2" || { echo "FAIL: --setup-input-ramfb-delay-ms requires 1-16 positive comma-separated integers, each <= 120000" >&2; exit 2; }; SETUP_INPUT_RAMFB_DELAY_MS="$2"; shift 2 ;;
-      --setup-input2-actions) [[ $# -ge 2 ]] || { usage; exit 2; }; setup_input_actions_list "$2" || { echo "FAIL: --setup-input2-actions requires 1-32 actions from: tab, enter, space, win+r, lgui+r, text:<lowercase-alnum>" >&2; exit 2; }; SETUP_INPUT2_ACTIONS="$2"; shift 2 ;;
+      --setup-input2-actions) [[ $# -ge 2 ]] || { usage; exit 2; }; setup_input_actions_list "$2" || { echo "FAIL: --setup-input2-actions requires 1-32 comma-separated actions from: tab, enter, space, win+r, lgui+r, text:<[a-z0-9/.-]+>" >&2; exit 2; }; SETUP_INPUT2_ACTIONS="$2"; shift 2 ;;
       --setup-input2-marker) [[ $# -ge 2 ]] || { usage; exit 2; }; setup_input_marker_value "$2" || { echo "FAIL: --setup-input2-marker requires 1-96 bytes" >&2; exit 2; }; SETUP_INPUT2_MARKER="$2"; shift 2 ;;
       --setup-input2-fire-delay-ms) [[ $# -ge 2 ]] || { usage; exit 2; }; setup_input_fire_delay_ms "$2" || { echo "FAIL: --setup-input2-fire-delay-ms requires an integer <= 600000" >&2; exit 2; }; SETUP_INPUT2_FIRE_DELAY_MS="$2"; shift 2 ;;
       --setup-input2-ramfb-delay-ms) [[ $# -ge 2 ]] || { usage; exit 2; }; ramfb_sample_list "$2" || { echo "FAIL: --setup-input2-ramfb-delay-ms requires 1-16 positive comma-separated integers, each <= 120000" >&2; exit 2; }; SETUP_INPUT2_RAMFB_DELAY_MS="$2"; shift 2 ;;
-      --setup-input3-actions) [[ $# -ge 2 ]] || { usage; exit 2; }; setup_input_actions_list "$2" || { echo "FAIL: --setup-input3-actions requires 1-32 actions from: tab, enter, space, win+r, lgui+r, text:<lowercase-alnum>" >&2; exit 2; }; SETUP_INPUT3_ACTIONS="$2"; shift 2 ;;
+      --setup-input3-actions) [[ $# -ge 2 ]] || { usage; exit 2; }; setup_input_actions_list "$2" || { echo "FAIL: --setup-input3-actions requires 1-32 comma-separated actions from: tab, enter, space, win+r, lgui+r, text:<[a-z0-9/.-]+>" >&2; exit 2; }; SETUP_INPUT3_ACTIONS="$2"; shift 2 ;;
       --setup-input3-marker) [[ $# -ge 2 ]] || { usage; exit 2; }; setup_input_marker_value "$2" || { echo "FAIL: --setup-input3-marker requires 1-96 bytes" >&2; exit 2; }; SETUP_INPUT3_MARKER="$2"; shift 2 ;;
       --setup-input3-fire-delay-ms) [[ $# -ge 2 ]] || { usage; exit 2; }; setup_input_fire_delay_ms "$2" || { echo "FAIL: --setup-input3-fire-delay-ms requires an integer <= 600000" >&2; exit 2; }; SETUP_INPUT3_FIRE_DELAY_MS="$2"; shift 2 ;;
       --setup-input3-ramfb-delay-ms) [[ $# -ge 2 ]] || { usage; exit 2; }; ramfb_sample_list "$2" || { echo "FAIL: --setup-input3-ramfb-delay-ms requires 1-16 positive comma-separated integers, each <= 120000" >&2; exit 2; }; SETUP_INPUT3_RAMFB_DELAY_MS="$2"; shift 2 ;;

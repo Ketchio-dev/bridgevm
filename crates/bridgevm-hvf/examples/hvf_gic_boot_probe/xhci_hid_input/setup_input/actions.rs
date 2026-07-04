@@ -17,7 +17,8 @@ pub(super) fn parse_setup_input_actions(
     }
     let mut actions = Vec::new();
     for token in trimmed
-        .split([',', ' ', '\t', '\n'])
+        .split(',')
+        .map(str::trim)
         .filter(|token| !token.is_empty())
     {
         parse_setup_input_token(token, &mut actions)?;
@@ -33,12 +34,12 @@ fn parse_setup_input_token(
     actions: &mut Vec<SetupInputAction>,
 ) -> Result<(), XhciSetupInputEnvError> {
     let normalized = token.to_ascii_lowercase();
-    if normalized.contains('*') {
+    if token.contains('*') {
         return Err(XhciSetupInputEnvError::Repeat {
             token: token.to_string(),
         });
     }
-    if let Some(text) = normalized.strip_prefix("text:") {
+    if let Some(text) = token.strip_prefix("text:") {
         if text.is_empty() {
             return Err(XhciSetupInputEnvError::UnsupportedToken {
                 token: token.to_string(),
@@ -139,6 +140,9 @@ fn ascii_text_action(ch: char) -> Option<SetupInputAction> {
         '8' => ("8", 0x25),
         '9' => ("9", 0x26),
         '0' => ("0", 0x27),
+        '/' => ("/", 0x38),
+        '-' => ("-", 0x2d),
+        '.' => (".", 0x37),
         _ => return None,
     };
     Some(SetupInputAction::Key {

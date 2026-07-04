@@ -34,15 +34,26 @@ setup_input_actions_list() {
   local normalized
   local text
   local count=0
-  for token in ${1//,/ }; do
+  local -a tokens
+  local old_ifs="$IFS"
+  IFS=,
+  read -r -a tokens <<< "$1"
+  IFS="$old_ifs"
+  for token in "${tokens[@]}"; do
+    token="${token#"${token%%[![:space:]]*}"}"
+    token="${token%"${token##*[![:space:]]}"}"
+    [[ -n "$token" ]] || continue
     normalized="$(printf '%s' "$token" | tr '[:upper:]' '[:lower:]')"
     case "$normalized" in
       tab|enter|space|win+r|lgui+r)
         count=$((count + 1))
         ;;
       text:*)
-        text="${normalized#text:}"
-        [[ "$text" =~ ^[a-z0-9]+$ ]] || return 1
+        case "$token" in
+          text:*) text="${token#text:}" ;;
+          *) return 1 ;;
+        esac
+        [[ "$text" =~ ^[a-z0-9/.-]+$ ]] || return 1
         count=$((count + ${#text}))
         ;;
       *)
