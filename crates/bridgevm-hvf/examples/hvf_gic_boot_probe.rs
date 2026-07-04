@@ -1569,9 +1569,15 @@ unsafe fn emulate_debug_os_lock_sysreg(vcpu: HvVcpuT, trap: SysRegTrap) -> bool 
 
 fn main() {
     let media = VirtBootMediaConfig::from_probe_env();
+    let smp_cpus = env_u64("BRIDGEVM_SMP_CPUS", 1).clamp(1, machine::MAX_CPUS);
+    let smp_cpus = if machine::redist_fits(smp_cpus) {
+        smp_cpus
+    } else {
+        1
+    };
     let platform_cfg = VirtPlatformConfig {
         fdt: VirtFdtConfig {
-            cpu_count: 1,
+            cpu_count: smp_cpus,
             ram_size: media.ram_size,
         },
         devices: media.platform_devices,
@@ -1582,6 +1588,7 @@ fn main() {
         "guest RAM must be at least 128 MiB"
     );
     println!("Guest RAM: {} MiB", media.ram_size / (1024 * 1024));
+    println!("SMP CPUs advertised: {smp_cpus}");
     let watchdog_ms = env_u64("BRIDGEVM_BOOT_PROBE_WATCHDOG_MS", WATCHDOG_MS);
     let trace_fwcfg = env_flag("BRIDGEVM_TRACE_FWCFG");
     let trace_msix = env_flag("BRIDGEVM_TRACE_MSIX");

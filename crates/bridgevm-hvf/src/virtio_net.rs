@@ -82,7 +82,7 @@ const DESC_F_WRITE: u16 = 2;
 const VIRTIO_NET_HDR_LEN: usize = 12;
 const DEFAULT_MAC: [u8; 6] = [0x52, 0x54, 0x00, 0x42, 0x56, 0x01];
 
-pub trait NetBackend {
+pub trait NetBackend: Send {
     fn transmit(&mut self, frame: &[u8]);
     fn poll_receive(&mut self) -> Option<Vec<u8>>;
     fn poll_host_sockets(&mut self) {}

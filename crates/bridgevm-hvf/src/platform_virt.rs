@@ -236,6 +236,11 @@ pub struct VirtPlatform {
     xhci_dci5_last_emission: Option<Instant>,
 }
 
+const _: fn() = || {
+    fn assert_send<T: Send>() {}
+    assert_send::<crate::platform_virt::VirtPlatform>();
+};
+
 impl VirtPlatform {
     /// Build the platform: generate the device tree from the machine map and
     /// stand up `fw_cfg` with its standard control entries and generated ACPI
