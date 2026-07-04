@@ -46,8 +46,9 @@ use std::path::Path;
 use std::ptr::null_mut;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
+    Arc, Condvar, Mutex,
 };
+use std::thread::{self, JoinHandle};
 
 use bridgevm_hvf::dtb::VirtFdtConfig;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
@@ -321,6 +322,176 @@ impl Drop for HvVcpuGuard {
         unsafe {
             hv_vcpu_destroy(self.vcpu);
         }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PsciState {
+    Off,
+    OnPending,
+    On,
+}
+
+struct VcpuControl {
+    state: Mutex<PsciState>,
+    condvar: Condvar,
+    entry: AtomicU64,
+    context: AtomicU64,
+    mpidr: u64,
+    index: u64,
+}
+
+impl VcpuControl {
+    fn new(index: u64) -> Self {
+        Self {
+            state: Mutex::new(PsciState::Off),
+            condvar: Condvar::new(),
+            entry: AtomicU64::new(0),
+            context: AtomicU64::new(0),
+            mpidr: 0x8000_0000 | machine::cpu_mpidr(index),
+            index,
+        }
+    }
+
+    fn notify_shutdown(&self) {
+        self.condvar.notify_all();
+    }
+}
+
+struct SecondaryVcpuSet {
+    shutdown: Arc<AtomicBool>,
+    controls: Vec<Arc<VcpuControl>>,
+    handles: Vec<JoinHandle<()>>,
+}
+
+impl SecondaryVcpuSet {
+    fn spawn(cpu_count: u64, ram_base: usize, ram_size: usize) -> Self {
+        if cpu_count <= 1 {
+            return Self {
+                shutdown: Arc::new(AtomicBool::new(false)),
+                controls: Vec::new(),
+                handles: Vec::new(),
+            };
+        }
+
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let controls: Vec<_> = (1..cpu_count)
+            .map(|index| Arc::new(VcpuControl::new(index)))
+            .collect();
+        let handles = controls
+            .iter()
+            .map(|control| {
+                let control = Arc::clone(control);
+                let shutdown = Arc::clone(&shutdown);
+                thread::Builder::new()
+                    .name(format!("bridgevm-hvf-vcpu{}", control.index))
+                    .spawn(move || secondary_vcpu_thread(control, shutdown, ram_base, ram_size))
+                    .expect("spawn secondary vCPU thread")
+            })
+            .collect();
+
+        Self {
+            shutdown,
+            controls,
+            handles,
+        }
+    }
+
+    fn shutdown_and_join(self) {
+        self.shutdown.store(true, Ordering::SeqCst);
+        for control in &self.controls {
+            control.notify_shutdown();
+        }
+        for handle in self.handles {
+            handle.join().expect("join secondary vCPU thread");
+        }
+    }
+}
+
+fn secondary_vcpu_thread(
+    control: Arc<VcpuControl>,
+    shutdown: Arc<AtomicBool>,
+    ram_base: usize,
+    ram_size: usize,
+) {
+    let mut vcpu: HvVcpuT = 0;
+    let mut exit: *mut HvVcpuExit = null_mut();
+    unsafe {
+        assert_eq!(
+            hv_vcpu_create(&mut vcpu, &mut exit, null_mut()),
+            0,
+            "hv_vcpu_create secondary vCPU{}",
+            control.index
+        );
+        assert_eq!(
+            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, control.mpidr),
+            0,
+            "set secondary MPIDR_EL1"
+        );
+    }
+    let _vcpu_guard = HvVcpuGuard { vcpu };
+    let _guest_ram = MappedRam {
+        base: machine::RAM_BASE,
+        ptr: ram_base as *mut u8,
+        len: ram_size,
+    };
+
+    let mut state = control.state.lock().expect("secondary vCPU state mutex");
+    loop {
+        while *state == PsciState::Off && !shutdown.load(Ordering::SeqCst) {
+            state = control
+                .condvar
+                .wait(state)
+                .expect("secondary vCPU state condvar");
+        }
+        if shutdown.load(Ordering::SeqCst) {
+            break;
+        }
+        match *state {
+            PsciState::Off => {}
+            PsciState::OnPending => {
+                let _entry = control.entry.load(Ordering::SeqCst);
+                let _context = control.context.load(Ordering::SeqCst);
+                *state = PsciState::On;
+            }
+            PsciState::On => {
+                state = control
+                    .condvar
+                    .wait(state)
+                    .expect("secondary vCPU parked before CPU_ON support");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod vcpu_control_tests {
+    use super::*;
+
+    #[test]
+    fn vcpu_control_starts_off_with_linear_mpidr() {
+        let control = VcpuControl::new(17);
+
+        assert_eq!(*control.state.lock().unwrap(), PsciState::Off);
+        assert_eq!(control.entry.load(Ordering::SeqCst), 0);
+        assert_eq!(control.context.load(Ordering::SeqCst), 0);
+        assert_eq!(control.index, 17);
+        assert_eq!(control.mpidr, 0x8000_0000 | machine::cpu_mpidr(17));
+    }
+
+    #[test]
+    fn psci_state_has_parked_secondary_transitions_reserved() {
+        let control = VcpuControl::new(1);
+        {
+            let mut state = control.state.lock().unwrap();
+            *state = PsciState::OnPending;
+            assert_eq!(*state, PsciState::OnPending);
+            *state = PsciState::On;
+            assert_eq!(*state, PsciState::On);
+            *state = PsciState::Off;
+        }
+        assert_eq!(*control.state.lock().unwrap(), PsciState::Off);
     }
 }
 
@@ -1856,8 +2027,14 @@ fn main() {
         let mut reboot_count = 0u64;
         reset_vcpu_for_boot(vcpu);
         arm_watchpoint_for_boot(vcpu, watch_addr);
+        let platform = Arc::new(Mutex::new(platform));
 
         'reboot: loop {
+            // Secondary vCPUs are intentionally scoped to one boot generation in
+            // Stage 1. SYSTEM_RESET joins them before resetting CPU0/platform
+            // state; the next loop iteration respawns a fresh parked set.
+            let secondary_vcpus =
+                (smp_cpus > 1).then(|| SecondaryVcpuSet::spawn(smp_cpus, ram as usize, ram_size));
             let boot_generation = begin_watchdog_generation(&watchdog_generation);
             let watchdog_fired = Arc::new(AtomicBool::new(false));
             spawn_boot_watchdog(
@@ -1868,9 +2045,13 @@ fn main() {
                 Arc::clone(&watchdog_fired),
             );
 
-            if let Ok(input) = std::env::var("BRIDGEVM_UART_RX") {
-                platform.push_uart_input(input.as_bytes());
-                println!("UART RX preloaded: {} bytes", input.len());
+            {
+                let mut platform_guard = platform.lock().expect("platform mutex");
+                let platform = &mut *platform_guard;
+                if let Ok(input) = std::env::var("BRIDGEVM_UART_RX") {
+                    platform.push_uart_input(input.as_bytes());
+                    println!("UART RX preloaded: {} bytes", input.len());
+                }
             }
             let mut uart_triggers = Vec::new();
             if let Some(trigger) = SerialTriggeredUartInput::from_env(
@@ -1989,16 +2170,20 @@ fn main() {
                 let mut drain_pc = 0u64;
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
                 last_pre_run_pc = drain_pc;
-                drain_stats.drain_pending(
-                    &mut platform,
-                    &mut guest_ram,
-                    drain_trace,
-                    DrainContext {
-                        location: DrainLocation::PreRun,
-                        exit: exits,
-                        pc: drain_pc,
-                    },
-                );
+                {
+                    let mut platform_guard = platform.lock().expect("platform mutex");
+                    let platform = &mut *platform_guard;
+                    drain_stats.drain_pending(
+                        platform,
+                        &mut guest_ram,
+                        drain_trace,
+                        DrainContext {
+                            location: DrainLocation::PreRun,
+                            exit: exits,
+                            pc: drain_pc,
+                        },
+                    );
+                }
                 let r = hv_vcpu_run(vcpu);
                 if r != 0 {
                     hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
@@ -2060,69 +2245,91 @@ fn main() {
                                 ipa - machine::FW_CFG.base
                             );
                             }
-                            let device = machine::device_at(ipa).unwrap_or("<unmapped>");
-                            let pcie_target = match device {
-                                "pcie-mmio-32" => {
-                                    platform.pcie_mmio_target(ipa).map(PcieTraceTarget::Mmio)
-                                }
-                                "pcie-pio" => {
-                                    platform.pcie_pio_target(ipa).map(PcieTraceTarget::Pio)
-                                }
-                                _ => None,
-                            };
-                            let xhci_target = match pcie_target {
-                                Some(PcieTraceTarget::Mmio(target)) => Some(target),
-                                Some(PcieTraceTarget::Pio(_)) | None => None,
-                            };
-                            recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
-                            let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
-                            let pcie_ecam_owner_context = PcieEcamOwnerContext {
-                                exit: exits,
-                                ipa,
-                                esr,
-                                ec,
-                                srt,
-                                serial_phase: PcieEcamOwnerContext::serial_phase_from_uart(
-                                    platform.uart_output(),
-                                ),
-                            };
-                            recent_pcie_ecam.record_after_with_context(
-                                &mut platform,
-                                &mut guest_ram,
-                                PcieEcamAccess {
-                                    pc: last_pc,
+                            let outcome = {
+                                let mut platform_guard = platform.lock().expect("platform mutex");
+                                let platform = &mut *platform_guard;
+                                let device = machine::device_at(ipa).unwrap_or("<unmapped>");
+                                let pcie_target = match device {
+                                    "pcie-mmio-32" => {
+                                        platform.pcie_mmio_target(ipa).map(PcieTraceTarget::Mmio)
+                                    }
+                                    "pcie-pio" => {
+                                        platform.pcie_pio_target(ipa).map(PcieTraceTarget::Pio)
+                                    }
+                                    _ => None,
+                                };
+                                let xhci_target = match pcie_target {
+                                    Some(PcieTraceTarget::Mmio(target)) => Some(target),
+                                    Some(PcieTraceTarget::Pio(_)) | None => None,
+                                };
+                                recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
+                                let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
+                                let pcie_ecam_owner_context = PcieEcamOwnerContext {
+                                    exit: exits,
                                     ipa,
-                                    op: &op,
-                                    outcome: &outcome,
-                                    owner_context: pcie_ecam_owner_context,
-                                },
-                            );
-                            let pcie_context = targetless_xhci_trace_context(
-                                &mut platform,
-                                &mut guest_ram,
-                                device,
-                                ipa,
-                                pcie_target,
-                                &outcome,
-                            );
-                            recent_pcie_mmio.record_with_context(
-                                device,
-                                last_pc,
-                                ipa,
-                                pcie_target,
-                                &op,
-                                &outcome,
-                                pcie_context,
-                            );
-                            recent_pcie_pio.record(
-                                device,
-                                last_pc,
-                                ipa,
-                                pcie_target,
-                                &op,
-                                &outcome,
-                            );
-                            record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
+                                    esr,
+                                    ec,
+                                    srt,
+                                    serial_phase: PcieEcamOwnerContext::serial_phase_from_uart(
+                                        platform.uart_output(),
+                                    ),
+                                };
+                                recent_pcie_ecam.record_after_with_context(
+                                    platform,
+                                    &mut guest_ram,
+                                    PcieEcamAccess {
+                                        pc: last_pc,
+                                        ipa,
+                                        op: &op,
+                                        outcome: &outcome,
+                                        owner_context: pcie_ecam_owner_context,
+                                    },
+                                );
+                                let pcie_context = targetless_xhci_trace_context(
+                                    platform,
+                                    &mut guest_ram,
+                                    device,
+                                    ipa,
+                                    pcie_target,
+                                    &outcome,
+                                );
+                                recent_pcie_mmio.record_with_context(
+                                    device,
+                                    last_pc,
+                                    ipa,
+                                    pcie_target,
+                                    &op,
+                                    &outcome,
+                                    pcie_context,
+                                );
+                                recent_pcie_pio.record(
+                                    device,
+                                    last_pc,
+                                    ipa,
+                                    pcie_target,
+                                    &op,
+                                    &outcome,
+                                );
+                                record_mmio_trace(
+                                    &mut mmio_traces,
+                                    device,
+                                    last_pc,
+                                    ipa,
+                                    op,
+                                    &outcome,
+                                );
+                                drain_stats.drain_pending(
+                                    platform,
+                                    &mut guest_ram,
+                                    drain_trace,
+                                    DrainContext {
+                                        location: DrainLocation::DataAbort,
+                                        exit: exits,
+                                        pc: last_pc,
+                                    },
+                                );
+                                outcome
+                            };
                             if trace_this_fwcfg {
                                 println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
                             }
@@ -2148,16 +2355,6 @@ fn main() {
                                     }
                                 }
                             }
-                            drain_stats.drain_pending(
-                                &mut platform,
-                                &mut guest_ram,
-                                drain_trace,
-                                DrainContext {
-                                    location: DrainLocation::DataAbort,
-                                    exit: exits,
-                                    pc: last_pc,
-                                },
-                            );
                             hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
                         }
                         EC_HVC => {
@@ -2293,84 +2490,107 @@ fn main() {
                     stop_reason = format!("exit cap {MAX_EXITS}");
                     break;
                 }
-                if serial_reached_linux_panic(platform.uart_output()) {
-                    stop_reason = "serial reached Linux kernel panic".into();
-                    break;
-                }
-                for trigger in &mut uart_triggers {
-                    trigger.maybe_fire(&mut platform);
-                }
-                for trigger in &mut xhci_hid_boot_key_triggers {
-                    trigger.maybe_fire(&mut platform);
-                }
-                for trigger in &mut xhci_setup_input_triggers {
-                    let ramfb_config = platform.ramfb_config();
-                    let now = std::time::Instant::now();
-                    trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
-                        &mut platform,
-                        &mut guest_ram,
-                        now,
-                        |label, mem| {
-                            ramfb_dump::print_checkpoint(label, ramfb_config, mem);
-                        },
-                    );
-                    if let Some(deadline) = trigger.pending_host_wake_deadline_at(&platform, now) {
-                        let v = vcpu;
-                        let wake_generation = Arc::clone(&watchdog_generation);
-                        let wake_boot_generation = boot_generation;
-                        if setup_input_host_wake.arm(deadline, move || {
-                            if watchdog_generation_matches(&wake_generation, wake_boot_generation) {
-                                hv_vcpus_exit(&v, 1);
+                let automation_stop_reason = {
+                    let mut platform_guard = platform.lock().expect("platform mutex");
+                    let platform = &mut *platform_guard;
+                    if serial_reached_linux_panic(platform.uart_output()) {
+                        Some("serial reached Linux kernel panic".into())
+                    } else {
+                        for trigger in &mut uart_triggers {
+                            trigger.maybe_fire(platform);
+                        }
+                        for trigger in &mut xhci_hid_boot_key_triggers {
+                            trigger.maybe_fire(platform);
+                        }
+                        for trigger in &mut xhci_setup_input_triggers {
+                            let ramfb_config = platform.ramfb_config();
+                            let now = std::time::Instant::now();
+                            trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
+                                platform,
+                                &mut guest_ram,
+                                now,
+                                |label, mem| {
+                                    ramfb_dump::print_checkpoint(label, ramfb_config, mem);
+                                },
+                            );
+                            if let Some(deadline) =
+                                trigger.pending_host_wake_deadline_at(platform, now)
+                            {
+                                let v = vcpu;
+                                let wake_generation = Arc::clone(&watchdog_generation);
+                                let wake_boot_generation = boot_generation;
+                                if setup_input_host_wake.arm(deadline, move || {
+                                    if watchdog_generation_matches(
+                                        &wake_generation,
+                                        wake_boot_generation,
+                                    ) {
+                                        hv_vcpus_exit(&v, 1);
+                                    }
+                                }) {
+                                    println!(
+                                        "xHCI setup-input host wake armed for delayed trigger"
+                                    );
+                                }
                             }
-                        }) {
-                            println!("xHCI setup-input host wake armed for delayed trigger");
                         }
-                    }
-                }
-                for trigger in &mut xhci_pointer_input_triggers {
-                    let ramfb_config = platform.ramfb_config();
-                    let now = std::time::Instant::now();
-                    trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
-                        &mut platform,
-                        &mut guest_ram,
-                        now,
-                        |label, mem| {
-                            ramfb_dump::print_checkpoint(label, ramfb_config, mem);
-                        },
-                    );
-                    if let Some(deadline) = trigger.pending_host_wake_deadline_at(&platform, now) {
-                        let v = vcpu;
-                        let wake_generation = Arc::clone(&watchdog_generation);
-                        let wake_boot_generation = boot_generation;
-                        if setup_input_host_wake.arm(deadline, move || {
-                            if watchdog_generation_matches(&wake_generation, wake_boot_generation) {
-                                hv_vcpus_exit(&v, 1);
+                        for trigger in &mut xhci_pointer_input_triggers {
+                            let ramfb_config = platform.ramfb_config();
+                            let now = std::time::Instant::now();
+                            trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
+                                platform,
+                                &mut guest_ram,
+                                now,
+                                |label, mem| {
+                                    ramfb_dump::print_checkpoint(label, ramfb_config, mem);
+                                },
+                            );
+                            if let Some(deadline) =
+                                trigger.pending_host_wake_deadline_at(platform, now)
+                            {
+                                let v = vcpu;
+                                let wake_generation = Arc::clone(&watchdog_generation);
+                                let wake_boot_generation = boot_generation;
+                                if setup_input_host_wake.arm(deadline, move || {
+                                    if watchdog_generation_matches(
+                                        &wake_generation,
+                                        wake_boot_generation,
+                                    ) {
+                                        hv_vcpus_exit(&v, 1);
+                                    }
+                                }) {
+                                    println!(
+                                        "xHCI pointer-input host wake armed for delayed trigger"
+                                    );
+                                }
                             }
-                        }) {
-                            println!("xHCI pointer-input host wake armed for delayed trigger");
+                        }
+                        let ramfb_config = platform.ramfb_config();
+                        ramfb_sample_loop.emit_due(vcpu, |label| {
+                            ramfb_dump::print_checkpoint(label, ramfb_config, &guest_ram);
+                        });
+                        if stop_on_linux && serial_reached_linux_early_boot(platform.uart_output())
+                        {
+                            Some("serial reached Linux early boot".into())
+                        } else if serial_reached_shell(platform.uart_output()) {
+                            match ramfb_sample_loop.observe_shell(vcpu) {
+                                RamfbSampleShellAction::Continue => None,
+                                RamfbSampleShellAction::StopNow { reason } => Some(reason.into()),
+                            }
+                        } else {
+                            None
                         }
                     }
-                }
-                let ramfb_config = platform.ramfb_config();
-                ramfb_sample_loop.emit_due(vcpu, |label| {
-                    ramfb_dump::print_checkpoint(label, ramfb_config, &guest_ram);
-                });
-                if stop_on_linux && serial_reached_linux_early_boot(platform.uart_output()) {
-                    stop_reason = "serial reached Linux early boot".into();
+                };
+                if let Some(reason) = automation_stop_reason {
+                    stop_reason = reason;
                     break;
-                }
-                if serial_reached_shell(platform.uart_output()) {
-                    match ramfb_sample_loop.observe_shell(vcpu) {
-                        RamfbSampleShellAction::Continue => {}
-                        RamfbSampleShellAction::StopNow { reason } => {
-                            stop_reason = reason.into();
-                            break;
-                        }
-                    }
                 }
             }
 
             invalidate_watchdog_generation(&watchdog_generation);
+            if let Some(secondary_vcpus) = secondary_vcpus {
+                secondary_vcpus.shutdown_and_join();
+            }
             if requested_system_reset {
                 match decide_system_reset(reboot_count, reboot_plan) {
                     SystemResetDecision::Reboot {
@@ -2383,6 +2603,8 @@ fn main() {
                             reboot_plan.max_reboots
                         );
                         if actions.reset_platform {
+                            let mut platform_guard = platform.lock().expect("platform mutex");
+                            let platform = &mut *platform_guard;
                             platform.reset();
                         }
                         if actions.reset_guest_ram {
@@ -2402,6 +2624,8 @@ fn main() {
                 }
             }
 
+            let mut platform_guard = platform.lock().expect("platform mutex");
+            let platform = &mut *platform_guard;
             let serial = platform.uart_output().to_vec();
             let vars_writes = media
                 .flash_vars
@@ -2409,17 +2633,16 @@ fn main() {
                 .unwrap_or_else(|e| panic!("persist UEFI vars: {e}"));
             print_media_writes("UEFI vars", &vars_writes);
             if let Some(nvme) = media.nvme_disk.as_ref() {
-                let writes = persist_nvme_media(&mut platform, nvme, NvmePersistNamespace::Primary);
+                let writes = persist_nvme_media(platform, nvme, NvmePersistNamespace::Primary);
                 print_media_writes(NvmePersistNamespace::Primary.subject(), &writes);
             }
             if let Some(target) = media.nvme_target.as_ref() {
-                let writes =
-                    persist_nvme_media(&mut platform, target, NvmePersistNamespace::Target);
+                let writes = persist_nvme_media(platform, target, NvmePersistNamespace::Target);
                 print_media_writes(NvmePersistNamespace::Target.subject(), &writes);
             }
             storage_effect_receipt::maybe_write_probe_storage_effect_receipt(
                 media.nvme_disk.as_ref(),
-                &platform,
+                platform,
             );
             maybe_write_file("BRIDGEVM_BOOT_PROBE_SERIAL_OUT", &serial, "serial log");
             let symbols = symbol_lines(&serial);
@@ -2620,8 +2843,8 @@ fn main() {
             recent_pcie_mmio.print();
             recent_pcie_pio.print();
             recent_xhci.print(platform.xhci_event_lifecycle_stats());
-            print_hid_semantic_summary(&platform);
-            print_nvme_command_trace(&platform);
+            print_hid_semantic_summary(platform);
+            print_nvme_command_trace(platform);
             println!("UART RX remaining bytes: {}", platform.uart_input_len());
             for trigger in &uart_triggers {
                 println!(
@@ -2632,13 +2855,13 @@ fn main() {
                 );
             }
             for trigger in &xhci_hid_boot_key_triggers {
-                trigger.print_summary(&platform);
+                trigger.print_summary(platform);
             }
             for trigger in &xhci_setup_input_triggers {
-                trigger.print_summary(&platform);
+                trigger.print_summary(platform);
             }
             for trigger in &xhci_pointer_input_triggers {
-                trigger.print_summary(&platform);
+                trigger.print_summary(platform);
             }
             if let Some(stats) = platform.pci_boot_media_stats() {
                 print_block_media_stats("PCI boot-media stats", stats);
