@@ -147,9 +147,10 @@ fn platform_rejects_unsupported_hid_boot_key_usage() {
     );
     ring_dci3_doorbell(&mut platform, &mut mem);
 
-    // Then: the queue is rejected and DCI3 remains in the existing no-key state.
-    assert_eq!(read_bytes(&mem, DCI3_KEY_BUFFER, 8), [0; 8]);
-    assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + TRB_SIZE, DCI3_RING);
+    // Then: the usage was rejected, so nothing is queued and the idle DCI3 poll
+    // NAKs — the buffer is untouched and no transfer event is posted.
+    assert_eq!(read_bytes(&mem, DCI3_KEY_BUFFER, 8), [0xaa; 8]);
+    assert_eq!(read_bytes(&mem, EVENT_RING + TRB_SIZE, 8), [0; 8]);
 }
 
 #[test]
@@ -168,13 +169,14 @@ fn platform_rejects_empty_setup_input_without_stale_report() {
     );
     ring_dci3_doorbell(&mut platform, &mut mem);
 
-    // Then: the rejected queue did not leave a stale key report behind.
-    assert_eq!(read_bytes(&mem, DCI3_KEY_BUFFER, 8), [0; 8]);
+    // Then: the rejected queue left nothing to deliver, so the idle DCI3 poll
+    // NAKs without writing a stale report or posting a transfer event.
+    assert_eq!(read_bytes(&mem, DCI3_KEY_BUFFER, 8), [0xaa; 8]);
+    assert_eq!(read_bytes(&mem, EVENT_RING + TRB_SIZE, 8), [0; 8]);
     assert_eq!(
         platform
             .xhci_setup_input_report_stats()
             .empty_sequence_rejections,
         1
     );
-    assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + TRB_SIZE, DCI3_RING);
 }

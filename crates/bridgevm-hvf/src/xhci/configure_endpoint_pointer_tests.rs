@@ -4,7 +4,7 @@ use super::configure_endpoint_tests::{
     EP_TR_DEQUEUE_OFFSET, INPUT_CONTEXT, INPUT_CONTROL_ADD_CONTEXT_OFFSET,
     INPUT_CONTROL_DROP_CONTEXT_OFFSET, OUTPUT_CONTEXT, TRB_CYCLE, TRB_TYPE_TRANSFER_EVENT,
 };
-use super::test_support::{TestRam, DOORBELL_BASE};
+use super::test_support::{TestRam, DOORBELL_BASE, EVENT_RING, TRB_SIZE};
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 
@@ -128,4 +128,33 @@ pub(super) fn assert_short_packet_dci5_transfer_event(mem: &TestRam, event_gpa: 
     assert_eq!((control >> 10) & 0x3f, TRB_TYPE_TRANSFER_EVENT);
     assert_eq!((control >> 16) & 0x1f, DCI5);
     assert_eq!(control & 1, 1);
+}
+
+#[test]
+fn slot1_dci5_idle_doorbell_pends_then_queued_drain_completes_the_pointer_report() {
+    // Given: pointer DCI5 is configured with one armed interrupt-IN buffer.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    setup_configure_endpoint_with_pointer(&mut xhci, &mut mem);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+
+    // When: the guest polls DCI5 with no pointer report queued, the endpoint
+    // NAKs and leaves the TD armed at ring base with no transfer event posted.
+    assert!(!xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI5), &mut mem));
+    assert_eq!(mem.read_bytes(DCI5_BUFFER, 8).unwrap(), [0xaa; 8]);
+    assert_eq!(mem.read_u64(EVENT_RING + TRB_SIZE), 0);
+    assert_eq!(xhci.slot1_dci5_dequeue, DCI5_RING);
+
+    // Then: once a move report is queued, the drain path completes that same
+    // pending TD with the report bytes and posts one short-packet event.
+    let position = PointerPosition::new(12_288, 20_480).unwrap();
+    xhci.queue_pointer_input_actions(&[PointerInputAction::Move(position)])
+        .unwrap();
+    assert!(xhci.process_queued_dci5_pointer_input(&mut mem));
+    assert_eq!(
+        mem.read_bytes(DCI5_BUFFER, 5).unwrap(),
+        [0, 0, 0x30, 0, 0x50]
+    );
+    assert_short_packet_dci5_transfer_event(&mem, EVENT_RING + TRB_SIZE, DCI5_RING);
+    assert_eq!(xhci.slot1_dci5_dequeue, DCI5_RING + TRB_SIZE);
 }

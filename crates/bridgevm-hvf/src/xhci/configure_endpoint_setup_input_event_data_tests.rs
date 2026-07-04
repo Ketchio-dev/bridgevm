@@ -73,6 +73,7 @@ fn slot1_dci3_repeated_chained_event_data_tds_post_cookie_events_and_advance() {
         true,
     );
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert!(xhci.queue_boot_keyboard_space());
 
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
@@ -104,6 +105,7 @@ fn slot1_dci3_chained_event_data_td_follows_link_and_toggles_cycle() {
         false,
     );
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert!(xhci.queue_boot_keyboard_space());
 
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));

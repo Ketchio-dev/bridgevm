@@ -8,7 +8,6 @@ use super::{
         LINK_TRB_POINTER_MASK, TRB_CYCLE, TRB_LINK_TOGGLE_CYCLE, TRB_SIZE_BYTES, TRB_TYPE_LINK,
         TRB_TYPE_NORMAL,
     },
-    setup_input_report::SetupInputReport,
     setup_input_report::{HID_BOOT_KEYBOARD_NO_KEY_REPORT, HID_BOOT_KEYBOARD_REPORT_LEN},
     XhciController,
 };
@@ -104,16 +103,27 @@ impl XhciController {
                         self.trace_dci3_drain_blocked("dequeue_overflow", rearm_policy);
                         return false;
                     };
+                    let Some(queued_report) = self.boot_keyboard_report_queue.peek() else {
+                        // A real HID interrupt-IN endpoint NAKs when it has no
+                        // report to send; the host controller then leaves the
+                        // transfer descriptor armed and retries at the polling
+                        // interval without posting a transfer event. Completing
+                        // an idle poll with a synthetic no-key report instead
+                        // makes the guest ack and immediately re-ring the
+                        // doorbell, which livelocks the interrupter (one event
+                        // and interrupt per poll). Leave the Normal TD pending
+                        // (no report write, no event, no dequeue advance) until
+                        // real input is queued and drained.
+                        self.trace_dci3_drain_blocked("no_queued_input_report", rearm_policy);
+                        return false;
+                    };
                     let transfer_length = trb_transfer_length(interrupt_transfer.status);
                     let can_emit_queued_report = transfer_length >= HID_BOOT_KEYBOARD_REPORT_LEN;
-                    let queued_report = self.boot_keyboard_report_queue.peek();
-                    if queued_report.is_some() && !can_emit_queued_report {
+                    if !can_emit_queued_report {
                         self.trace_dci3_drain_blocked("short_interrupt_in_buffer", rearm_policy);
                     }
                     let report = if can_emit_queued_report {
-                        queued_report
-                            .map(SetupInputReport::bytes)
-                            .unwrap_or(HID_BOOT_KEYBOARD_NO_KEY_REPORT)
+                        queued_report.bytes()
                     } else {
                         HID_BOOT_KEYBOARD_NO_KEY_REPORT
                     };
@@ -158,17 +168,15 @@ impl XhciController {
                     };
                     if posted {
                         if can_emit_queued_report {
-                            if let Some(queued_report) = queued_report {
-                                self.record_setup_input_report_emitted(
-                                    queued_report,
-                                    report,
-                                    interrupt_transfer.gpa,
-                                    interrupt_transfer.parameter,
-                                );
-                                self.boot_keyboard_report_queue.pop_front();
-                                if !self.has_queued_setup_input_report() {
-                                    self.slot1_dci3_two_entry_queue_rearm = false;
-                                }
+                            self.record_setup_input_report_emitted(
+                                queued_report,
+                                report,
+                                interrupt_transfer.gpa,
+                                interrupt_transfer.parameter,
+                            );
+                            self.boot_keyboard_report_queue.pop_front();
+                            if !self.has_queued_setup_input_report() {
+                                self.slot1_dci3_two_entry_queue_rearm = false;
                             }
                         }
                         self.slot1_dci3_dequeue = next_dequeue;

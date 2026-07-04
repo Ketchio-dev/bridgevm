@@ -9,8 +9,9 @@ const TRB_LINK_TOGGLE_CYCLE: u32 = 1 << 1;
 
 #[test]
 fn platform_delayed_setup_input_resyncs_reusable_dci3_ring_after_cycle_toggle() {
-    // Given: Windows has wrapped a reusable DCI3 ring through a link TRB, leaving the
-    // controller parked at ring base with the consumer cycle toggled away from base.
+    // Given: a reusable two-entry DCI3 ring whose link TRB wraps to ring base
+    // and toggles the consumer cycle. With no report queued the endpoint NAKs
+    // idle polls, so the ring stays armed until real input arrives.
     let (mut platform, mut mem) = new_platform_and_ram();
     program_xhci_bar0(&mut platform, &mut mem);
     configure_dci3_interrupt_in_over_bar0(&mut platform, &mut mem);
@@ -19,24 +20,37 @@ fn platform_delayed_setup_input_resyncs_reusable_dci3_ring_after_cycle_toggle() 
     write_dci3_link_trb(&mut mem, DCI3_RING + (TRB_SIZE * 2), DCI3_RING);
     assert!(mem.write_bytes(DCI3_KEY_BUFFER, &[0xaa; 8]));
     assert!(mem.write_bytes(DCI3_RELEASE_BUFFER, &[0xbb; 8]));
-    ring_dci3_doorbell(&mut platform, &mut mem);
-    acknowledge_event_ring_dequeue(&mut platform, &mut mem, 2);
-    ring_dci3_doorbell(&mut platform, &mut mem);
-    acknowledge_event_ring_dequeue(&mut platform, &mut mem, 3);
-    ring_dci3_doorbell(&mut platform, &mut mem);
 
-    // When: delayed setup input fires after that idle cycle-toggled state.
+    // An idle poll before any input pends: no transfer event and no report.
+    ring_dci3_doorbell(&mut platform, &mut mem);
+    assert_eq!(read_bytes(&mem, DCI3_KEY_BUFFER, 8), [0xaa; 8]);
+    assert_eq!(read_bytes(&mem, EVENT_RING + TRB_SIZE, 8), [0; 8]);
+
+    // When: a delayed setup-input sequence of two actions drains at queue time.
+    // Delivering four reports across the two-entry ring forces the drain to
+    // follow the link, wrap to base, and resynchronize the toggled cycle.
     assert_eq!(
-        platform.queue_xhci_setup_input_actions_with_mem(&[SetupInputAction::Enter], &mut mem),
+        platform.queue_xhci_setup_input_actions_with_mem(
+            &[SetupInputAction::Enter, SetupInputAction::Tab],
+            &mut mem
+        ),
         Ok(())
     );
 
-    // Then: queue-time drain resynchronizes to the reusable base TRB and emits both reports.
+    // Then: every queued report is emitted; the last pass leaves Tab in the key
+    // buffer and the release in the release buffer, and four transfer events
+    // were posted onto the reused ring TRBs.
     assert_eq!(
         read_bytes(&mem, DCI3_KEY_BUFFER, 8),
-        [0, 0, 0x28, 0, 0, 0, 0, 0]
+        [0, 0, 0x2b, 0, 0, 0, 0, 0]
     );
     assert_eq!(read_bytes(&mem, DCI3_RELEASE_BUFFER, 8), [0; 8]);
+    assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + TRB_SIZE, DCI3_RING);
+    assert_success_dci3_transfer_event_for_trb(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 2),
+        DCI3_RING + TRB_SIZE,
+    );
     assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 3), DCI3_RING);
     assert_success_dci3_transfer_event_for_trb(
         &mem,
@@ -44,8 +58,8 @@ fn platform_delayed_setup_input_resyncs_reusable_dci3_ring_after_cycle_toggle() 
         DCI3_RING + TRB_SIZE,
     );
     let stats = platform.xhci_setup_input_report_stats();
-    assert_eq!(stats.emitted_key_reports, 1);
-    assert_eq!(stats.emitted_release_reports, 1);
+    assert_eq!(stats.emitted_key_reports, 2);
+    assert_eq!(stats.emitted_release_reports, 2);
 }
 
 #[test]

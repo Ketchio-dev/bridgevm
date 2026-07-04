@@ -58,20 +58,21 @@ fn configure_endpoint_command_copies_dci3_context_and_posts_completion() {
 }
 
 #[test]
-fn slot1_dci3_doorbell_posts_interrupt_in_transfer_event() {
+fn slot1_dci3_doorbell_pends_when_no_report_is_queued() {
     // Given: Configure Endpoint has installed slot 1 HID interrupt IN DCI3.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0x9000);
     setup_configure_endpoint_command(&mut xhci, &mut mem);
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
 
-    // When: the guest rings slot 1 doorbell target DCI3.
-    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
+    // When: the guest rings slot 1 doorbell target DCI3 with no report queued.
+    assert!(!xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
 
-    // Then: a minimal successful Transfer Event is posted for the interrupt IN ring.
-    assert_eq!(mem.read_bytes(DCI3_BUFFER, 8).unwrap(), [0; 8]);
-    assert_success_dci3_transfer_event(&mem, EVENT_RING + TRB_SIZE, DCI3_RING);
-    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING + TRB_SIZE);
+    // Then: the interrupt IN endpoint NAKs — the Normal TD stays armed, the
+    // buffer is untouched, no transfer event is posted, and the dequeue holds.
+    assert_eq!(mem.read_bytes(DCI3_BUFFER, 8).unwrap(), [0xaa; 8]);
+    assert_eq!(mem.read_u64(EVENT_RING + TRB_SIZE), 0);
+    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING);
 }
 
 #[test]
@@ -85,6 +86,7 @@ fn slot1_dci3_doorbell_follows_link_trb_and_updates_output_dequeue() {
     write_dci3_normal_trb(&mut mem, DCI3_WRAP_RING, DCI3_WRAP_BUFFER, false);
     assert!(mem.write_bytes(DCI3_WRAP_BUFFER, &[0xbb; 8]));
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert!(xhci.queue_boot_keyboard_space());
 
     // When: the guest rings slot 1 DCI3 once before and once at the Link/TRB cycle frontier.
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));

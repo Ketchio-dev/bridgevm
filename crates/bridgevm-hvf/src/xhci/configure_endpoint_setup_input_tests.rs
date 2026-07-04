@@ -225,10 +225,12 @@ fn host_controller_reset_clears_captured_dci3_state() {
     // When: DCI3 is configured again after reset and the guest rings the doorbell.
     setup_configure_endpoint_command(&mut xhci, &mut mem);
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
-    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
+    assert!(!xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
 
-    // Then: the pending key was cleared by HCRST, so the next report is still no-key.
-    assert_eq!(mem.read_bytes(DCI3_BUFFER, 8).unwrap(), [0; 8]);
+    // Then: HCRST cleared the pending key, so the reconfigured endpoint has
+    // nothing to deliver and the idle poll NAKs without posting a stale report.
+    assert_eq!(mem.read_bytes(DCI3_BUFFER, 8).unwrap(), [0xaa; 8]);
+    assert_eq!(mem.read_u64(EVENT_RING + TRB_SIZE), 0);
 }
 
 #[test]
@@ -331,4 +333,66 @@ fn setup_reconfigure_endpoint_command(xhci: &mut XhciController, mem: &mut TestR
     );
     write_dci3_normal_trb(mem, NEW_DCI3_RING, NEW_DCI3_BUFFER, true);
     assert!(mem.write_bytes(NEW_DCI3_BUFFER, &[0xcc; 8]));
+}
+
+#[test]
+fn slot1_dci3_idle_doorbell_pends_then_queued_drain_completes_the_same_td() {
+    // Given: Configure Endpoint installed slot 1 DCI3 with one armed Normal TD.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    setup_configure_endpoint_command(&mut xhci, &mut mem);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+
+    // When: the guest rings DCI3 with no report queued, the endpoint NAKs and
+    // leaves the TD armed at ring base with no transfer event posted.
+    assert!(!xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
+    assert_eq!(mem.read_bytes(DCI3_BUFFER, 8).unwrap(), [0xaa; 8]);
+    assert_eq!(mem.read_u64(EVENT_RING + TRB_SIZE), 0);
+    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING);
+
+    // Then: once a report is queued, the drain path completes that same pending
+    // TD with the key bytes and posts exactly one transfer event, without any
+    // new guest doorbell.
+    assert!(xhci.queue_boot_keyboard_space());
+    assert!(xhci.process_queued_dci3_input(&mut mem));
+    assert_eq!(
+        mem.read_bytes(DCI3_BUFFER, 8).unwrap(),
+        [0, 0, 0x2c, 0, 0, 0, 0, 0]
+    );
+    assert_success_dci3_transfer_event(&mem, EVENT_RING + TRB_SIZE, DCI3_RING);
+    assert_eq!(mem.read_u64(EVENT_RING + (TRB_SIZE * 2)), 0);
+    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING + TRB_SIZE);
+}
+
+#[test]
+fn slot1_dci3_queued_reports_consume_one_td_each_leaving_the_rest_armed() {
+    // Given: two armed Normal TDs and an idle poll that pends both of them.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    setup_configure_endpoint_command(&mut xhci, &mut mem);
+    write_dci3_normal_trb(&mut mem, DCI3_RING + TRB_SIZE, DCI3_WRAP_BUFFER, true);
+    assert!(mem.write_bytes(DCI3_WRAP_BUFFER, &[0xbb; 8]));
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    assert!(!xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI3), &mut mem));
+    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING);
+
+    // When: a single key queues a press then a release report.
+    assert!(xhci.queue_boot_keyboard_space());
+
+    // Then: the press consumes exactly the first TD and the second TD stays
+    // armed and untouched until the release drains it.
+    assert!(xhci.process_queued_dci3_input(&mut mem));
+    assert_eq!(
+        mem.read_bytes(DCI3_BUFFER, 8).unwrap(),
+        [0, 0, 0x2c, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(mem.read_bytes(DCI3_WRAP_BUFFER, 8).unwrap(), [0xbb; 8]);
+    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING + TRB_SIZE);
+
+    assert!(xhci.process_queued_dci3_input(&mut mem));
+    assert_eq!(mem.read_bytes(DCI3_WRAP_BUFFER, 8).unwrap(), [0; 8]);
+    assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING + (TRB_SIZE * 2));
+
+    // With the queue drained, a further drain attempt pends again.
+    assert!(!xhci.process_queued_dci3_input(&mut mem));
 }

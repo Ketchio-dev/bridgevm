@@ -5,7 +5,8 @@ use crate::xhci::SetupInputAction;
 
 #[test]
 fn platform_delayed_setup_input_rearms_reusable_dci3_ring_without_new_doorbell() {
-    // Given: live DCI3 polling has advanced past a small reusable interrupt IN ring.
+    // Given: a reusable four-entry interrupt IN ring. With no report queued the
+    // endpoint NAKs idle polls, so the ring stays armed at its base.
     let (mut platform, mut mem) = new_platform_and_ram();
     program_xhci_bar0(&mut platform, &mut mem);
     configure_dci3_interrupt_in_over_bar0(&mut platform, &mut mem);
@@ -16,13 +17,15 @@ fn platform_delayed_setup_input_rearms_reusable_dci3_ring_without_new_doorbell()
             DCI3_KEY_BUFFER + (0x20 * index),
         );
         assert!(mem.write_bytes(DCI3_KEY_BUFFER + (0x20 * index), &[0xaa; 8]));
-        ring_dci3_doorbell(&mut platform, &mut mem);
-        acknowledge_event_ring_dequeue(&mut platform, &mut mem, index + 2);
     }
-    assert!(mem.write_bytes(DCI3_KEY_BUFFER, &[0xcc; 8]));
-    assert!(mem.write_bytes(DCI3_KEY_BUFFER + 0x20, &[0xdd; 8]));
 
-    // When: delayed setup input queues more reports than the reusable ring holds.
+    // An idle poll before any input pends without advancing the ring.
+    ring_dci3_doorbell(&mut platform, &mut mem);
+    assert_eq!(read_bytes(&mem, DCI3_KEY_BUFFER, 8), [0xaa; 8]);
+    assert_eq!(read_bytes(&mem, EVENT_RING + TRB_SIZE, 8), [0; 8]);
+
+    // When: delayed setup input queues more reports than the reusable ring holds
+    // and drains at queue time without any new guest doorbell.
     assert_eq!(
         platform.queue_xhci_setup_input_actions_with_mem(
             &[
@@ -35,39 +38,42 @@ fn platform_delayed_setup_input_rearms_reusable_dci3_ring_without_new_doorbell()
         Ok(())
     );
 
-    // Then: queue-time draining rearms to the existing reusable DCI3 TRBs immediately.
+    // Then: the first four reports consume the ring, then the drain rearms to
+    // ring base and reuses the first two TRBs for the remaining reports.
+    assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + TRB_SIZE, DCI3_RING);
+    assert_success_dci3_transfer_event_for_trb(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 2),
+        DCI3_RING + TRB_SIZE,
+    );
+    assert_success_dci3_transfer_event_for_trb(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 3),
+        DCI3_RING + (TRB_SIZE * 2),
+    );
+    assert_success_dci3_transfer_event_for_trb(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 4),
+        DCI3_RING + (TRB_SIZE * 3),
+    );
     assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 5), DCI3_RING);
     assert_success_dci3_transfer_event_for_trb(
         &mem,
         EVENT_RING + (TRB_SIZE * 6),
         DCI3_RING + TRB_SIZE,
     );
+    // Tab (the third and fourth reports) landed on the third and fourth TRBs.
     assert_eq!(
         read_bytes(&mem, DCI3_KEY_BUFFER + 0x40, 8),
         [0, 0, 0x2b, 0, 0, 0, 0, 0]
     );
     assert_eq!(read_bytes(&mem, DCI3_KEY_BUFFER + 0x60, 8), [0; 8]);
-    assert_success_dci3_transfer_event_for_trb(
-        &mem,
-        EVENT_RING + (TRB_SIZE * 7),
-        DCI3_RING + (TRB_SIZE * 2),
-    );
-    assert_success_dci3_transfer_event_for_trb(
-        &mem,
-        EVENT_RING + (TRB_SIZE * 8),
-        DCI3_RING + (TRB_SIZE * 3),
-    );
+    // Space (the wrapped fifth and sixth reports) reused the first two TRBs.
     assert_eq!(
         read_bytes(&mem, DCI3_KEY_BUFFER, 8),
         [0, 0, 0x2c, 0, 0, 0, 0, 0]
     );
     assert_eq!(read_bytes(&mem, DCI3_KEY_BUFFER + 0x20, 8), [0; 8]);
-    assert_success_dci3_transfer_event_for_trb(&mem, EVENT_RING + (TRB_SIZE * 9), DCI3_RING);
-    assert_success_dci3_transfer_event_for_trb(
-        &mem,
-        EVENT_RING + (TRB_SIZE * 10),
-        DCI3_RING + TRB_SIZE,
-    );
     let stats = platform.xhci_setup_input_report_stats();
     assert_eq!(stats.emitted_key_reports, 3);
     assert_eq!(stats.emitted_release_reports, 3);
