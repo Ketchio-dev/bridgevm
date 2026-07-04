@@ -73,6 +73,11 @@ impl XhciSetupInputTrigger {
         if !self.fire_delay_elapsed_at(platform, now) {
             return false;
         }
+        if setup_input_reports_pending(platform)
+            && !self.has_stale_unemitted_attempt_after_hcrst(platform)
+        {
+            return false;
+        }
         self.mark_attempted_at_controller_generation(platform);
         let before_stats = platform.xhci_setup_input_report_stats();
         match platform.queue_xhci_setup_input_actions_with_mem(&self.actions, mem) {
@@ -163,4 +168,19 @@ impl XhciSetupInputTrigger {
             .saturating_add(stats.emitted_release_reports);
         stats.queued_reports == emitted_reports
     }
+
+    fn has_stale_unemitted_attempt_after_hcrst(&self, platform: &VirtPlatform) -> bool {
+        let stats = platform.xhci_setup_input_report_stats();
+        self.pending_emitted_reports_at_attempt.is_some()
+            && self.attempted
+            && self.attempted_controller_reset_generation != stats.controller_reset_generation
+    }
+}
+
+fn setup_input_reports_pending(platform: &VirtPlatform) -> bool {
+    let stats = platform.xhci_setup_input_report_stats();
+    let emitted_reports = stats
+        .emitted_key_reports
+        .saturating_add(stats.emitted_release_reports);
+    stats.queued_reports > emitted_reports
 }

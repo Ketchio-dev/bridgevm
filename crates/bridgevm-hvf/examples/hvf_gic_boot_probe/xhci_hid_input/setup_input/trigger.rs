@@ -256,4 +256,9 @@ impl XhciSetupInputTrigger {
         trigger.ramfb_delay_checkpoints = ramfb_delay_checkpoints_from_ms(delays_ms)?;
         Ok(trigger)
     }
+
+    #[cfg(test)]
+    pub(crate) fn set_fire_delay_for_test(&mut self, fire_delay: Duration) {
+        self.fire_delay = fire_delay;
+    }
 }

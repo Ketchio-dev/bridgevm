@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 
@@ -70,6 +70,79 @@ fn xhci_setup_input_trigger_memory_drain_delivers_pending_dci3_when_fired() {
         stats.emitted_release_reports,
         checkpoints.join(",")
     );
+}
+
+#[test]
+fn xhci_setup_input_shared_marker_triggers_wait_for_prior_sequence_to_drain() {
+    // Given: three setup-input triggers share the same serial marker and become
+    // ready while the DCI3 keyboard endpoint is paced to one report per tick.
+    let (mut platform, mut mem) = new_platform_and_ram();
+    program_xhci_bar0(&mut platform, &mut mem);
+    configure_dci3_interrupt_in_over_bar0(&mut platform, &mut mem);
+    let marker = b"BdsDxe: starting Boot0003";
+    let mut triggers = [
+        XhciSetupInputTrigger::from_env_value_with_custom_marker("setup-input", "text:cmd", marker)
+            .unwrap(),
+        XhciSetupInputTrigger::from_env_value_with_custom_marker("setup-input-2", "enter", marker)
+            .unwrap(),
+        XhciSetupInputTrigger::from_env_value_with_custom_marker(
+            "setup-input-3",
+            "text:ipconfig,enter",
+            marker,
+        )
+        .unwrap(),
+    ];
+    triggers[1].set_fire_delay_for_test(Duration::from_millis(10));
+    triggers[2].set_fire_delay_for_test(Duration::from_millis(20));
+    emit_uart(&mut platform, marker);
+
+    let expected_usages = [
+        0x06, 0x10, 0x07, 0x28, 0x0c, 0x13, 0x06, 0x12, 0x11, 0x09, 0x0c, 0x0a, 0x28,
+    ];
+    let report_count = expected_usages.len() * 2;
+    for report_index in 0..report_count {
+        write_dci3_normal_trb(
+            &mut mem,
+            DCI3_RING + (TRB_SIZE * report_index as u64),
+            DCI3_KEY_BUFFER + (0x20 * report_index as u64),
+        );
+        assert!(mem.write_bytes(DCI3_KEY_BUFFER + (0x20 * report_index as u64), &[0xaa; 8]));
+    }
+
+    let base = Instant::now();
+    platform.set_xhci_report_interval(Duration::from_millis(30));
+    for tick in 0..80 {
+        platform.set_host_now(base + Duration::from_millis(10 * tick));
+        for trigger in &mut triggers {
+            trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
+                &mut platform,
+                &mut mem,
+                base + Duration::from_millis(10 * tick),
+                |_label: &str, _mem| {},
+            );
+        }
+        platform.drain_xhci_setup_input_reports(&mut mem);
+    }
+
+    // Then: the emitted DCI3 key reports are exactly the three setup-input
+    // sequences in trigger order, with releases between keys and no stray usages.
+    let mut observed_usages = Vec::new();
+    for report_index in 0..report_count {
+        let report = read_bytes(&mem, DCI3_KEY_BUFFER + (0x20 * report_index as u64), 8);
+        if report_index % 2 == 0 {
+            observed_usages.push(report[2]);
+        } else {
+            assert_eq!(report, [0; 8], "release report {report_index}");
+        }
+    }
+    assert_eq!(observed_usages, expected_usages);
+
+    let stats = platform.xhci_setup_input_report_stats();
+    assert_eq!(stats.queued_actions, expected_usages.len() as u64);
+    assert_eq!(stats.queued_reports, report_count as u64);
+    assert_eq!(stats.emitted_key_reports, expected_usages.len() as u64);
+    assert_eq!(stats.emitted_release_reports, expected_usages.len() as u64);
+    assert_eq!(stats.busy_rejections, 0);
 }
 
 #[test]
