@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Build a minimal bootable WinPE "driver injector" disk: boots WinPE from NVMe
+# (NSID 1) and runs bvinject.cmd, which DISM /Add-Drivers the netkvm ARM64
+# driver into the installed Windows image on the NSID-2 target, then shuts down.
+# Much smaller than the full installer source (no install.wim).
+#
+# Host-side only. Requires hdiutil, wimlib-imagex, rsync. Output persists.
+set -euo pipefail
+
+ISO="${ISO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/ISO/Win11_25H2_English_Arm64_v2.iso}"
+ASSETS="${ASSETS:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/win-assets}"
+DRIVER_SRC="${DRIVER_SRC:-$HOME/BridgeVM/drivers/netkvm}"
+OUT="${OUT:-$HOME/BridgeVM/win-injector.raw}"
+SIZE_BYTES="${SIZE_BYTES:-1610612736}" # 1.5 GiB
+
+log() { printf '[build-injector] %s\n' "$*"; }
+
+[[ -f "$ISO" ]] || { echo "FAIL: ISO not found: $ISO" >&2; exit 1; }
+[[ -f "$DRIVER_SRC/netkvm.inf" ]] || { echo "FAIL: netkvm.inf not in $DRIVER_SRC" >&2; exit 1; }
+for f in winpeshl-inject.ini bvinject.cmd; do
+  [[ -f "$ASSETS/$f" ]] || { echo "FAIL: missing asset $ASSETS/$f" >&2; exit 1; }
+done
+
+cleanup() {
+  [[ -n "${ISO_MNT:-}" ]] && hdiutil detach "$ISO_MNT" -quiet 2>/dev/null || true
+  [[ -n "${DST_DEV:-}" ]] && hdiutil detach "$DST_DEV" -quiet 2>/dev/null || true
+}
+trap cleanup EXIT
+
+log "attaching ISO"
+ISO_MNT="$(hdiutil mount "$ISO" | awk '{print $NF}' | tail -1)"
+
+log "creating destination raw $OUT"
+rm -f "$OUT"
+mkfile -n "$SIZE_BYTES" "$OUT"
+DST_DEV="$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -nomount "$OUT" | awk 'NR==1{print $1}')"
+diskutil partitionDisk "$DST_DEV" GPT FAT32 WINJECT 100%
+DST_VOL="/Volumes/WINJECT"
+
+# WinPE UEFI boot needs the EFI/boot loader, the BCD store, and boot.wim.
+log "copying WinPE boot files (efi tree, boot, bootmgr, boot.wim)"
+rsync -a "$ISO_MNT/efi" "$DST_VOL"/
+[[ -d "$ISO_MNT/boot" ]] && rsync -a "$ISO_MNT/boot" "$DST_VOL"/ || true
+for f in bootmgr bootmgr.efi; do [[ -e "$ISO_MNT/$f" ]] && cp "$ISO_MNT/$f" "$DST_VOL"/ || true; done
+mkdir -p "$DST_VOL/sources"
+cp "$ISO_MNT/sources/boot.wim" "$DST_VOL/sources/boot.wim"
+
+log "staging netkvm driver at \\drivers\\netkvm"
+mkdir -p "$DST_VOL/drivers/netkvm"
+cp "$DRIVER_SRC"/* "$DST_VOL/drivers/netkvm/"
+
+log "injecting bvinject payload into boot.wim image 2"
+wimlib-imagex update "$DST_VOL/sources/boot.wim" 2 <<UPDATE
+add "$ASSETS/winpeshl-inject.ini" /Windows/System32/winpeshl.ini
+add "$ASSETS/bvinject.cmd" /Windows/System32/bvinject.cmd
+UPDATE
+
+log "verifying"
+wimlib-imagex dir "$DST_VOL/sources/boot.wim" 2 | grep -E 'bvinject.cmd|winpeshl.ini' || {
+  echo "FAIL: payload not in boot.wim" >&2; exit 1; }
+[[ -f "$DST_VOL/efi/boot/bootaa64.efi" ]] || { echo "FAIL: bootaa64.efi missing" >&2; exit 1; }
+[[ -f "$DST_VOL/drivers/netkvm/netkvm.inf" ]] || { echo "FAIL: netkvm missing" >&2; exit 1; }
+
+sync
+hdiutil detach "$DST_DEV" -quiet; DST_DEV=""
+hdiutil detach "$ISO_MNT" -quiet; ISO_MNT=""
+log "DONE: driver injector at $OUT"
+log "run: run-hvf-windows-installed-boot.sh with NSID1=this injector, NSID2=desktop target"
