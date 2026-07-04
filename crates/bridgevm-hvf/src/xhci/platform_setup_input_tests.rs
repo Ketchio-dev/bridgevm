@@ -180,3 +180,87 @@ fn platform_rejects_empty_setup_input_without_stale_report() {
         1
     );
 }
+
+#[test]
+fn paced_setup_input_drain_releases_one_report_per_host_interval() {
+    use std::time::{Duration, Instant};
+
+    let (mut platform, mut mem) = new_platform_and_ram();
+    program_xhci_bar0(&mut platform, &mut mem);
+    configure_dci3_interrupt_in_over_bar0(&mut platform, &mut mem);
+    // Arm four ready interrupt-IN TDs so the guest side never limits draining.
+    for index in 0..4 {
+        write_dci3_normal_trb(
+            &mut mem,
+            DCI3_RING + (TRB_SIZE * index),
+            DCI3_KEY_BUFFER + (0x20 * index),
+        );
+        assert!(mem.write_bytes(DCI3_KEY_BUFFER + (0x20 * index), &[0xaa; 8]));
+    }
+    platform.set_xhci_report_interval(Duration::from_millis(30));
+    let base = Instant::now();
+    platform.set_host_now(base);
+
+    // Two keys = four reports with four TDs ready; unpaced this drains in one call.
+    platform
+        .queue_xhci_setup_input_actions(&[SetupInputAction::Tab, SetupInputAction::Enter])
+        .unwrap();
+
+    let emitted = |platform: &crate::platform_virt::VirtPlatform| {
+        let stats = platform.xhci_setup_input_report_stats();
+        stats.emitted_key_reports + stats.emitted_release_reports
+    };
+
+    // At `base` only the first report is released; repeat drains at the same host
+    // time release nothing more (pacing gate holds).
+    platform.drain_xhci_setup_input_reports(&mut mem);
+    assert_eq!(emitted(&platform), 1);
+    platform.drain_xhci_setup_input_reports(&mut mem);
+    assert_eq!(emitted(&platform), 1);
+
+    // A step short of the interval still releases nothing.
+    platform.set_host_now(base + Duration::from_millis(29));
+    platform.drain_xhci_setup_input_reports(&mut mem);
+    assert_eq!(emitted(&platform), 1);
+
+    // Each full 30ms host-time step releases exactly one more report.
+    platform.set_host_now(base + Duration::from_millis(30));
+    platform.drain_xhci_setup_input_reports(&mut mem);
+    assert_eq!(emitted(&platform), 2);
+
+    platform.set_host_now(base + Duration::from_millis(60));
+    platform.drain_xhci_setup_input_reports(&mut mem);
+    assert_eq!(emitted(&platform), 3);
+
+    platform.set_host_now(base + Duration::from_millis(90));
+    platform.drain_xhci_setup_input_reports(&mut mem);
+    assert_eq!(emitted(&platform), 4);
+}
+
+#[test]
+fn zero_interval_keeps_the_burst_drain_even_with_a_host_clock() {
+    use std::time::{Duration, Instant};
+
+    let (mut platform, mut mem) = new_platform_and_ram();
+    program_xhci_bar0(&mut platform, &mut mem);
+    configure_dci3_interrupt_in_over_bar0(&mut platform, &mut mem);
+    for index in 0..4 {
+        write_dci3_normal_trb(
+            &mut mem,
+            DCI3_RING + (TRB_SIZE * index),
+            DCI3_KEY_BUFFER + (0x20 * index),
+        );
+        assert!(mem.write_bytes(DCI3_KEY_BUFFER + (0x20 * index), &[0xaa; 8]));
+    }
+    // Interval left at the default (zero) even though a host clock is present.
+    platform.set_xhci_report_interval(Duration::ZERO);
+    platform.set_host_now(Instant::now());
+    platform
+        .queue_xhci_setup_input_actions(&[SetupInputAction::Tab, SetupInputAction::Enter])
+        .unwrap();
+
+    // One drain releases all four reports — old, unpaced behavior preserved.
+    platform.drain_xhci_setup_input_reports(&mut mem);
+    let stats = platform.xhci_setup_input_report_stats();
+    assert_eq!(stats.emitted_key_reports + stats.emitted_release_reports, 4);
+}

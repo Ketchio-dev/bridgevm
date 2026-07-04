@@ -20,7 +20,11 @@
 
 mod bootorder;
 
-use std::{io, path::Path};
+use std::{
+    io,
+    path::Path,
+    time::{Duration, Instant},
+};
 
 use crate::acpi::{build_acpi, ACPI_LOADER_FILE, ACPI_RSDP_FILE, ACPI_TABLE_FILE};
 use crate::dtb::{build_virt_fdt_with_devices, VirtFdtConfig, VirtFdtDeviceConfig};
@@ -179,6 +183,17 @@ pub struct VirtPlatform {
     nvme_cc_enabled: bool,
     nvme_admin_doorbell_rung: bool,
     dtb: Vec<u8>,
+    // Minimum host-time spacing between consecutive HID interrupt-IN report
+    // emissions. Windows drops keystrokes when many reports land microseconds
+    // apart (the guest coalesces the interrupt-IN completions), so live runs
+    // throttle emission; `Duration::ZERO` means no pacing (the default, so unit
+    // tests drain a queued sequence in one call). The clock read stays in the
+    // probe: it pushes `Instant::now()` in via `set_host_now`, and while
+    // `host_now` is `None` (the unit-test default) the drain paths are unpaced.
+    xhci_report_interval: Duration,
+    host_now: Option<Instant>,
+    xhci_dci3_last_emission: Option<Instant>,
+    xhci_dci5_last_emission: Option<Instant>,
 }
 
 impl VirtPlatform {
@@ -249,7 +264,27 @@ impl VirtPlatform {
             nvme_cc_enabled: false,
             nvme_admin_doorbell_rung: false,
             dtb,
+            xhci_report_interval: Duration::ZERO,
+            host_now: None,
+            xhci_dci3_last_emission: None,
+            xhci_dci5_last_emission: None,
         }
+    }
+
+    /// Set the minimum host-time interval between consecutive HID interrupt-IN
+    /// report emissions on DCI3/DCI5. `Duration::ZERO` disables pacing (drain a
+    /// queued sequence as fast as the guest arms transfer descriptors). Live
+    /// runs set this to avoid bursting keystrokes the guest then drops.
+    pub fn set_xhci_report_interval(&mut self, interval: Duration) {
+        self.xhci_report_interval = interval;
+    }
+
+    /// Feed the current host time to the platform once per run-loop iteration.
+    /// The report-pacing gate reads this; the `Instant::now()` call itself stays
+    /// in the probe so this crate holds no clock and unit tests stay
+    /// deterministic (they never call this, so pacing is inert).
+    pub fn set_host_now(&mut self, now: Instant) {
+        self.host_now = Some(now);
     }
 
     /// Load the writable pflash bank backing bytes. Live HVF code leaves the vars
@@ -305,6 +340,10 @@ impl VirtPlatform {
         self.nvme_mmio_reached = false;
         self.nvme_cc_enabled = false;
         self.nvme_admin_doorbell_rung = false;
+        // The interrupt-IN endpoints are re-armed from scratch after reset;
+        // start report pacing fresh (the configured interval is preserved).
+        self.xhci_dci3_last_emission = None;
+        self.xhci_dci5_last_emission = None;
     }
 
     /// Snapshot the writable pflash variable bank, including guest writes
@@ -464,16 +503,34 @@ impl VirtPlatform {
             .saturating_add(stats.emitted_release_reports);
         let pending_reports = stats.queued_reports.saturating_sub(emitted_reports);
         for _ in 0..pending_reports.min(MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS as u64) {
+            if !self.report_pacing_allows_emission(self.xhci_dci3_last_emission) {
+                break;
+            }
             if !self.xhci.process_queued_dci3_input(mem) {
                 break;
             }
             posted_completion = true;
             self.queue_xhci_completion_msix();
+            self.xhci_dci3_last_emission = self.host_now.or(self.xhci_dci3_last_emission);
         }
         if posted_completion {
             self.flush_xhci_pending_msix();
         }
         posted_completion
+    }
+
+    /// Report-pacing gate: while `host_now` is unset (unit tests) or the interval
+    /// is zero, every emission is allowed (unpaced). Otherwise an emission is
+    /// held off until the configured interval has elapsed since this endpoint's
+    /// last emission. Because a single drain call sees one fixed `host_now`, this
+    /// releases at most one report per run-loop iteration once pacing is active.
+    fn report_pacing_allows_emission(&self, last_emission: Option<Instant>) -> bool {
+        match self.host_now {
+            None => true,
+            Some(now) => {
+                report_pacing_allows_emission(self.xhci_report_interval, last_emission, now)
+            }
+        }
     }
 
     pub fn xhci_hid_boot_key_report_stats(&self) -> XhciHidBootKeyReportStats {
@@ -516,11 +573,15 @@ impl VirtPlatform {
             .saturating_add(stats.emitted_release_reports);
         let pending_reports = stats.queued_reports.saturating_sub(emitted_reports);
         for _ in 0..pending_reports.min(MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS as u64) {
+            if !self.report_pacing_allows_emission(self.xhci_dci5_last_emission) {
+                break;
+            }
             if !self.xhci.process_queued_dci5_pointer_input(mem) {
                 break;
             }
             posted_completion = true;
             self.queue_xhci_completion_msix();
+            self.xhci_dci5_last_emission = self.host_now.or(self.xhci_dci5_last_emission);
         }
         if posted_completion {
             self.flush_xhci_pending_msix();
@@ -1100,6 +1161,24 @@ impl GuestMemoryMut for FlatGuestRam {
             return None;
         }
         Some(self.bytes[start..end].to_vec())
+    }
+}
+
+/// Report-pacing decision. A zero interval or a not-yet-emitted endpoint always
+/// permits the next report; otherwise the caller must wait until `interval` has
+/// elapsed since `last_emission`. Kept as a free function so the gate is unit
+/// tested deterministically with synthetic `Instant`s.
+fn report_pacing_allows_emission(
+    interval: Duration,
+    last_emission: Option<Instant>,
+    now: Instant,
+) -> bool {
+    if interval.is_zero() {
+        return true;
+    }
+    match last_emission {
+        None => true,
+        Some(last) => now.saturating_duration_since(last) >= interval,
     }
 }
 
@@ -3110,5 +3189,56 @@ mod tests {
         }
         // Suppress unused-variable warning for `mem` in this assertion-only test.
         let _ = &mut mem;
+    }
+
+    #[test]
+    fn report_pacing_zero_interval_is_unpaced() {
+        let base = Instant::now();
+        assert!(report_pacing_allows_emission(Duration::ZERO, None, base));
+        assert!(report_pacing_allows_emission(
+            Duration::ZERO,
+            Some(base),
+            base
+        ));
+        assert!(report_pacing_allows_emission(
+            Duration::ZERO,
+            Some(base + Duration::from_millis(1)),
+            base
+        ));
+    }
+
+    #[test]
+    fn report_pacing_first_emission_allowed_then_gated_until_interval_elapses() {
+        let base = Instant::now();
+        let interval = Duration::from_millis(30);
+        // Nothing emitted yet: the first report is always allowed.
+        assert!(report_pacing_allows_emission(interval, None, base));
+        // Just emitted at `base`: held off until the full interval passes.
+        assert!(!report_pacing_allows_emission(interval, Some(base), base));
+        assert!(!report_pacing_allows_emission(
+            interval,
+            Some(base),
+            base + Duration::from_millis(29)
+        ));
+        assert!(report_pacing_allows_emission(
+            interval,
+            Some(base),
+            base + Duration::from_millis(30)
+        ));
+        assert!(report_pacing_allows_emission(
+            interval,
+            Some(base),
+            base + Duration::from_millis(31)
+        ));
+    }
+
+    #[test]
+    fn report_pacing_tolerates_now_before_last_emission() {
+        // A non-monotonic clock (now earlier than the last emission) must not
+        // underflow into "allowed"; saturating_duration_since yields zero.
+        let base = Instant::now();
+        let interval = Duration::from_millis(30);
+        let last = base + Duration::from_millis(100);
+        assert!(!report_pacing_allows_emission(interval, Some(last), base));
     }
 }

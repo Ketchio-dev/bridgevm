@@ -1161,6 +1161,9 @@ impl RunLoopDrainStats {
             DrainLocation::DataAbort => self.data_abort_attempts += 1,
         }
 
+        // Feed host time to the platform's HID report pacing (the crate holds no
+        // clock of its own). Both PreRun and DataAbort drains route through here.
+        platform.set_host_now(std::time::Instant::now());
         platform.drain_xhci_setup_input_reports(mem);
         platform.drain_xhci_pointer_input_reports(mem);
         let spi = deliver_pending_spis(platform, trace.spi);
@@ -1444,6 +1447,38 @@ mod wfi_summary_tests {
     }
 }
 
+const XHCI_REPORT_INTERVAL_ENV: &str = "BRIDGEVM_XHCI_REPORT_INTERVAL_MS";
+const XHCI_REPORT_INTERVAL_DEFAULT_MS: u64 = 30;
+const XHCI_REPORT_INTERVAL_MAX_MS: u64 = 10_000;
+
+/// Minimum host-time spacing between consecutive HID interrupt-IN reports, from
+/// `BRIDGEVM_XHCI_REPORT_INTERVAL_MS` (default 30 ms; `0` disables pacing).
+/// Windows drops keystrokes when a burst of reports lands microseconds apart, so
+/// live runs throttle emission. Parsed leniently like the other optional
+/// `BRIDGEVM_XHCI_*` knobs: a missing/invalid value falls back to the default.
+fn parse_xhci_report_interval_env() -> std::time::Duration {
+    let ms = match std::env::var(XHCI_REPORT_INTERVAL_ENV) {
+        Ok(value) => match value.trim().parse::<u64>() {
+            Ok(ms) if ms <= XHCI_REPORT_INTERVAL_MAX_MS => ms,
+            Ok(ms) => {
+                println!(
+                    "{XHCI_REPORT_INTERVAL_ENV}={ms} exceeds max {XHCI_REPORT_INTERVAL_MAX_MS}; clamping"
+                );
+                XHCI_REPORT_INTERVAL_MAX_MS
+            }
+            Err(_) => {
+                println!(
+                    "{XHCI_REPORT_INTERVAL_ENV}='{}' invalid; using default {XHCI_REPORT_INTERVAL_DEFAULT_MS}",
+                    value.trim()
+                );
+                XHCI_REPORT_INTERVAL_DEFAULT_MS
+            }
+        },
+        Err(_) => XHCI_REPORT_INTERVAL_DEFAULT_MS,
+    };
+    std::time::Duration::from_millis(ms)
+}
+
 fn deliver_pending_msix(platform: &mut VirtPlatform, trace: bool) -> DeliveryCounts {
     let mut counts = DeliveryCounts::default();
     for message in platform.take_pending_msix() {
@@ -1656,6 +1691,16 @@ fn main() {
         }
         if !platform_cfg.devices.virtio_boot_media_present {
             println!("virtio installer ISO surfaces: disabled by BRIDGEVM_DISABLE_VIRTIO_ISO");
+        }
+        let xhci_report_interval = parse_xhci_report_interval_env();
+        platform.set_xhci_report_interval(xhci_report_interval);
+        if xhci_report_interval.is_zero() {
+            println!("xHCI HID report pacing: disabled (BRIDGEVM_XHCI_REPORT_INTERVAL_MS=0)");
+        } else {
+            println!(
+                "xHCI HID report pacing: {} ms between reports",
+                xhci_report_interval.as_millis()
+            );
         }
 
         let ram_layout = Layout::from_size_align(ram_size, 0x1_0000).unwrap();
