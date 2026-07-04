@@ -56,6 +56,7 @@ use bridgevm_hvf::media::{
     read_bounded_file, InstallerIsoTransport, MediaWrite, MediaWriteKind, VirtBootMediaConfig,
     WritableMedia,
 };
+use bridgevm_hvf::net_nat::NatStats;
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome, VirtPlatform, VirtPlatformConfig};
 use bridgevm_hvf::stage1::{self, Stage1Context, Stage1WalkStep};
 use bridgevm_hvf::virtio_blk::{VirtioBlockRequestTrace, VirtioMmioBlockStats, INSTALLER_ISO_SLOT};
@@ -1010,6 +1011,48 @@ fn print_block_media_stats(label: &str, stats: VirtioMmioBlockStats) {
         stats.last_sector,
         stats.last_len,
         stats.last_status
+    );
+}
+
+fn print_net_nat_stats(stats: NatStats) {
+    println!(
+        "virtio-net NAT stats: guest_frames={} arp_requests={} dhcp_discover={} dhcp_request={} dns_queries={} icmp_echo={} tcp_segments={} udp_datagrams={} other={} pending_replies={} lease={}.{}.{}.{} tcp_flows={} udp_flows={}",
+        stats.guest_frames,
+        stats.arp_requests,
+        stats.dhcp_discover,
+        stats.dhcp_request,
+        stats.dns_queries,
+        stats.icmp_echo,
+        stats.tcp_segments,
+        stats.udp_datagrams,
+        stats.other,
+        stats.pending_replies,
+        stats.dhcp_lease_ip[0],
+        stats.dhcp_lease_ip[1],
+        stats.dhcp_lease_ip[2],
+        stats.dhcp_lease_ip[3],
+        stats.tcp_flow_count,
+        stats.udp_flow_count,
+    );
+    println!(
+        "virtio-net NAT replies: arp={} dhcp_offers={} dhcp_acks={} dns={} icmp={} tcp={} udp={}",
+        stats.arp_replies,
+        stats.dhcp_offers,
+        stats.dhcp_acks,
+        stats.dns_replies,
+        stats.icmp_replies,
+        stats.tcp_segments_out,
+        stats.udp_datagrams_out,
+    );
+    println!(
+        "virtio-net NAT drops/again: malformed={} no_guest_mac={} udp_recv_again={} tcp_connect_again={} tcp_read_again={} tcp_write_again={} socket_errors={}",
+        stats.dropped_malformed_frames,
+        stats.dropped_no_guest_mac,
+        stats.udp_recv_again,
+        stats.tcp_connect_again,
+        stats.tcp_read_again,
+        stats.tcp_write_again,
+        stats.socket_errors,
     );
 }
 
@@ -2661,6 +2704,9 @@ fn main() {
                         q.ready, q.size, q.desc, q.last_avail_idx, q.msix_vector,
                     );
                 }
+            }
+            if let Some(stats) = platform.virtio_net_nat_stats() {
+                print_net_nat_stats(stats);
             }
             if let Some(trace) = platform.virtio_iso_request_trace() {
                 print_block_request_trace("recent legacy virtio-mmio ISO requests", &trace);

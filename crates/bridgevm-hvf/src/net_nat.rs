@@ -72,7 +72,11 @@ pub trait OutboundIpv4Handler {
         &mut self,
         _guest_mac: Option<MacAddr>,
         _reply_queue: &mut VecDeque<Vec<u8>>,
+        _stats: &mut NatStats,
     ) {
+    }
+    fn active_flow_counts(&self) -> (usize, usize) {
+        (0, 0)
     }
 }
 
@@ -110,6 +114,38 @@ pub struct NatBackend<H = QueuedOutboundIpv4Handler> {
     guest_mac: Option<MacAddr>,
     reply_queue: VecDeque<Vec<u8>>,
     outbound_ipv4: H,
+    stats: NatStats,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NatStats {
+    pub guest_frames: u64,
+    pub arp_requests: u64,
+    pub dhcp_discover: u64,
+    pub dhcp_request: u64,
+    pub dns_queries: u64,
+    pub icmp_echo: u64,
+    pub tcp_segments: u64,
+    pub udp_datagrams: u64,
+    pub other: u64,
+    pub arp_replies: u64,
+    pub dhcp_offers: u64,
+    pub dhcp_acks: u64,
+    pub dns_replies: u64,
+    pub icmp_replies: u64,
+    pub tcp_segments_out: u64,
+    pub udp_datagrams_out: u64,
+    pub dhcp_lease_ip: Ipv4Addr,
+    pub tcp_flow_count: usize,
+    pub udp_flow_count: usize,
+    pub pending_replies: usize,
+    pub dropped_malformed_frames: u64,
+    pub dropped_no_guest_mac: u64,
+    pub udp_recv_again: u64,
+    pub tcp_connect_again: u64,
+    pub tcp_read_again: u64,
+    pub tcp_write_again: u64,
+    pub socket_errors: u64,
 }
 
 impl Default for NatBackend<QueuedOutboundIpv4Handler> {
@@ -138,6 +174,7 @@ impl<H> NatBackend<H> {
             guest_mac: None,
             reply_queue: VecDeque::new(),
             outbound_ipv4,
+            stats: NatStats::default(),
         }
     }
 
@@ -156,11 +193,27 @@ impl<H> NatBackend<H> {
     pub fn outbound_ipv4_handler_mut(&mut self) -> &mut H {
         &mut self.outbound_ipv4
     }
+
+    pub fn stats(&self) -> NatStats
+    where
+        H: OutboundIpv4Handler,
+    {
+        let (tcp_flow_count, udp_flow_count) = self.outbound_ipv4.active_flow_counts();
+        NatStats {
+            tcp_flow_count,
+            udp_flow_count,
+            pending_replies: self.reply_queue.len(),
+            ..self.stats
+        }
+    }
 }
 
 impl<H: OutboundIpv4Handler> NetBackend for NatBackend<H> {
     fn transmit(&mut self, frame: &[u8]) {
+        self.stats.guest_frames = self.stats.guest_frames.saturating_add(1);
         let Some(eth) = EthernetFrame::parse(frame) else {
+            self.stats.dropped_malformed_frames =
+                self.stats.dropped_malformed_frames.saturating_add(1);
             return;
         };
         if self.guest_mac.is_none() {
@@ -170,7 +223,9 @@ impl<H: OutboundIpv4Handler> NetBackend for NatBackend<H> {
         match eth.ethertype {
             ETHERTYPE_ARP => self.handle_arp(&eth),
             ETHERTYPE_IPV4 => self.handle_ipv4(&eth),
-            _ => {}
+            _ => {
+                self.stats.other = self.stats.other.saturating_add(1);
+            }
         }
     }
 
@@ -179,19 +234,30 @@ impl<H: OutboundIpv4Handler> NetBackend for NatBackend<H> {
     }
 
     fn poll_host_sockets(&mut self) {
-        self.outbound_ipv4
-            .poll_host_sockets(self.guest_mac, &mut self.reply_queue);
+        self.outbound_ipv4.poll_host_sockets(
+            self.guest_mac,
+            &mut self.reply_queue,
+            &mut self.stats,
+        );
     }
 }
 
 impl<H: OutboundIpv4Handler> NatBackend<H> {
     fn handle_arp(&mut self, eth: &EthernetFrame<'_>) {
         let Some(request) = ArpPacket::parse(eth.payload) else {
+            self.stats.dropped_malformed_frames =
+                self.stats.dropped_malformed_frames.saturating_add(1);
             return;
         };
-        if request.opcode != ARP_OPCODE_REQUEST || request.target_ip != GATEWAY_IP {
+        if request.opcode != ARP_OPCODE_REQUEST {
+            self.stats.other = self.stats.other.saturating_add(1);
             return;
         }
+        self.stats.arp_requests = self.stats.arp_requests.saturating_add(1);
+        if request.target_ip != GATEWAY_IP && request.target_ip != DNS_IP {
+            return;
+        }
+        let reply_ip = request.target_ip;
 
         let mut payload = Vec::with_capacity(28);
         payload.extend_from_slice(&ARP_HARDWARE_ETHERNET.to_be_bytes());
@@ -200,29 +266,41 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
         payload.push(4);
         payload.extend_from_slice(&ARP_OPCODE_REPLY.to_be_bytes());
         payload.extend_from_slice(&GATEWAY_MAC);
-        payload.extend_from_slice(&GATEWAY_IP);
+        payload.extend_from_slice(&reply_ip);
         payload.extend_from_slice(&request.sender_mac);
         payload.extend_from_slice(&request.sender_ip);
         self.queue_ethernet(ETHERTYPE_ARP, &payload);
+        self.stats.arp_replies = self.stats.arp_replies.saturating_add(1);
     }
 
     fn handle_ipv4(&mut self, eth: &EthernetFrame<'_>) {
         let Some(packet) = Ipv4Packet::parse(eth.payload) else {
+            self.stats.dropped_malformed_frames =
+                self.stats.dropped_malformed_frames.saturating_add(1);
             return;
         };
 
         if packet.protocol == IPV4_PROTOCOL_UDP {
             let Some(udp) = UdpDatagram::parse(packet.payload) else {
+                self.stats.dropped_malformed_frames =
+                    self.stats.dropped_malformed_frames.saturating_add(1);
                 return;
             };
             if udp.src_port == DHCP_CLIENT_PORT && udp.dst_port == DHCP_SERVER_PORT {
                 self.handle_dhcp(&packet, &udp);
                 return;
             }
+            if packet.dst == DNS_IP && udp.dst_port == 53 {
+                self.stats.dns_queries = self.stats.dns_queries.saturating_add(1);
+            } else {
+                self.stats.udp_datagrams = self.stats.udp_datagrams.saturating_add(1);
+            }
             if (packet.dst == DNS_IP && udp.dst_port == 53)
                 || is_non_local_ipv4_destination(packet.dst)
             {
                 self.outbound_ipv4.handle_outbound_ipv4(&packet);
+            } else {
+                self.stats.other = self.stats.other.saturating_add(1);
             }
             return;
         }
@@ -233,7 +311,10 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
         }
 
         if packet.protocol == IPV4_PROTOCOL_TCP && is_non_local_ipv4_destination(packet.dst) {
+            self.stats.tcp_segments = self.stats.tcp_segments.saturating_add(1);
             self.outbound_ipv4.handle_outbound_ipv4(&packet);
+        } else {
+            self.stats.other = self.stats.other.saturating_add(1);
         }
     }
 
@@ -242,8 +323,14 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
             return;
         };
         let reply_type = match request.message_type {
-            DHCP_DISCOVER => DHCP_OFFER,
-            DHCP_REQUEST => DHCP_ACK,
+            DHCP_DISCOVER => {
+                self.stats.dhcp_discover = self.stats.dhcp_discover.saturating_add(1);
+                DHCP_OFFER
+            }
+            DHCP_REQUEST => {
+                self.stats.dhcp_request = self.stats.dhcp_request.saturating_add(1);
+                DHCP_ACK
+            }
             _ => return,
         };
 
@@ -264,15 +351,24 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
             packet.identification,
         );
         self.queue_ethernet(ETHERTYPE_IPV4, &ipv4);
+        self.stats.dhcp_lease_ip = GUEST_IP;
+        if reply_type == DHCP_OFFER {
+            self.stats.dhcp_offers = self.stats.dhcp_offers.saturating_add(1);
+        } else {
+            self.stats.dhcp_acks = self.stats.dhcp_acks.saturating_add(1);
+        }
     }
 
     fn handle_icmp(&mut self, packet: &Ipv4Packet<'_>) {
         if packet.dst != GATEWAY_IP || packet.payload.len() < 8 {
+            self.stats.other = self.stats.other.saturating_add(1);
             return;
         }
         if packet.payload[0] != 8 || packet.payload[1] != 0 {
+            self.stats.other = self.stats.other.saturating_add(1);
             return;
         }
+        self.stats.icmp_echo = self.stats.icmp_echo.saturating_add(1);
 
         let mut reply = packet.payload.to_vec();
         reply[0] = 0;
@@ -289,10 +385,12 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
             packet.identification,
         );
         self.queue_ethernet(ETHERTYPE_IPV4, &ipv4);
+        self.stats.icmp_replies = self.stats.icmp_replies.saturating_add(1);
     }
 
     fn queue_ethernet(&mut self, ethertype: u16, payload: &[u8]) {
         let Some(dst_mac) = self.guest_mac else {
+            self.stats.dropped_no_guest_mac = self.stats.dropped_no_guest_mac.saturating_add(1);
             return;
         };
         self.reply_queue.push_back(EthernetFrame::build(
@@ -487,7 +585,12 @@ impl HostSocketOutboundIpv4Handler {
         self.evict_idle_flows();
     }
 
-    fn poll_udp(&mut self, guest_mac: Option<MacAddr>, reply_queue: &mut VecDeque<Vec<u8>>) {
+    fn poll_udp(
+        &mut self,
+        guest_mac: Option<MacAddr>,
+        reply_queue: &mut VecDeque<Vec<u8>>,
+        stats: &mut NatStats,
+    ) {
         let Some(guest_mac) = guest_mac else {
             return;
         };
@@ -507,15 +610,31 @@ impl HostSocketOutboundIpv4Handler {
                             key.guest_port,
                             &buf[..len],
                         );
+                        if key.public_dst == DNS_IP && key.public_dst_port == 53 {
+                            stats.dns_replies = stats.dns_replies.saturating_add(1);
+                        } else {
+                            stats.udp_datagrams_out = stats.udp_datagrams_out.saturating_add(1);
+                        }
                     }
-                    Err(e) if would_block(&e) => break,
-                    Err(_) => break,
+                    Err(e) if would_block(&e) => {
+                        stats.udp_recv_again = stats.udp_recv_again.saturating_add(1);
+                        break;
+                    }
+                    Err(_) => {
+                        stats.socket_errors = stats.socket_errors.saturating_add(1);
+                        break;
+                    }
                 }
             }
         }
     }
 
-    fn poll_tcp(&mut self, guest_mac: Option<MacAddr>, reply_queue: &mut VecDeque<Vec<u8>>) {
+    fn poll_tcp(
+        &mut self,
+        guest_mac: Option<MacAddr>,
+        reply_queue: &mut VecDeque<Vec<u8>>,
+        stats: &mut NatStats,
+    ) {
         let Some(guest_mac) = guest_mac else {
             return;
         };
@@ -529,6 +648,7 @@ impl HostSocketOutboundIpv4Handler {
                 TCP_FLAG_RST | TCP_FLAG_ACK,
                 &[],
             );
+            stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
         }
         let now = self.tick;
         let mut remove = Vec::new();
@@ -547,6 +667,7 @@ impl HostSocketOutboundIpv4Handler {
                             TCP_FLAG_SYN | TCP_FLAG_ACK,
                             &[],
                         );
+                        stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
                     }
                     Ok(Some(_)) | Err(_) => {
                         queue_tcp_reply(
@@ -558,10 +679,14 @@ impl HostSocketOutboundIpv4Handler {
                             TCP_FLAG_RST | TCP_FLAG_ACK,
                             &[],
                         );
+                        stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
+                        stats.socket_errors = stats.socket_errors.saturating_add(1);
                         remove.push(*key);
                         continue;
                     }
-                    Ok(None) => {}
+                    Ok(None) => {
+                        stats.tcp_connect_again = stats.tcp_connect_again.saturating_add(1);
+                    }
                 }
             }
             if flow.state != TcpProxyState::Connecting {
@@ -576,6 +701,7 @@ impl HostSocketOutboundIpv4Handler {
                         TCP_FLAG_ACK,
                         &[],
                     );
+                    stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
                     flow.pending_ack = false;
                 }
                 let mut buf = [0u8; 1460];
@@ -592,6 +718,7 @@ impl HostSocketOutboundIpv4Handler {
                                     TCP_FLAG_FIN | TCP_FLAG_ACK,
                                     &[],
                                 );
+                                stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
                                 flow.our_next = flow.our_next.wrapping_add(1);
                                 flow.host_fin_sent = true;
                             }
@@ -607,9 +734,13 @@ impl HostSocketOutboundIpv4Handler {
                                 TCP_FLAG_PSH | TCP_FLAG_ACK,
                                 &buf[..len],
                             );
+                            stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
                             flow.our_next = flow.our_next.wrapping_add(len as u32);
                         }
-                        Err(e) if would_block(&e) => break,
+                        Err(e) if would_block(&e) => {
+                            stats.tcp_read_again = stats.tcp_read_again.saturating_add(1);
+                            break;
+                        }
                         Err(_) => {
                             queue_tcp_reply(
                                 reply_queue,
@@ -620,6 +751,8 @@ impl HostSocketOutboundIpv4Handler {
                                 TCP_FLAG_RST | TCP_FLAG_ACK,
                                 &[],
                             );
+                            stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
+                            stats.socket_errors = stats.socket_errors.saturating_add(1);
                             remove.push(*key);
                             break;
                         }
@@ -657,11 +790,16 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
         &mut self,
         guest_mac: Option<MacAddr>,
         reply_queue: &mut VecDeque<Vec<u8>>,
+        stats: &mut NatStats,
     ) {
         self.bump_tick();
-        self.poll_udp(guest_mac, reply_queue);
-        self.poll_tcp(guest_mac, reply_queue);
+        self.poll_udp(guest_mac, reply_queue, stats);
+        self.poll_tcp(guest_mac, reply_queue, stats);
         self.evict_idle_flows();
+    }
+
+    fn active_flow_counts(&self) -> (usize, usize) {
+        (self.tcp_flows.len(), self.udp_flows.len())
     }
 }
 
@@ -1718,9 +1856,64 @@ mod tests {
         backend.transmit(&unrelated);
         assert!(backend.poll_receive().is_none());
 
-        backend.transmit(&arp_request(GUEST_MAC, GUEST_IP, DNS_IP));
+        backend.transmit(&arp_request(GUEST_MAC, GUEST_IP, [10, 0, 2, 99]));
         assert!(backend.poll_receive().is_none());
         assert_eq!(backend.pending_receive_len(), 0);
+    }
+
+    #[test]
+    fn arp_request_for_advertised_dns_ip_produces_gateway_mac_reply() {
+        let mut backend = NatBackend::new();
+
+        backend.transmit(&arp_request(GUEST_MAC, GUEST_IP, DNS_IP));
+        let reply = backend.poll_receive().unwrap();
+        assert!(backend.poll_receive().is_none());
+
+        let eth = EthernetFrame::parse(&reply).unwrap();
+        assert_eq!(eth.dst, GUEST_MAC);
+        assert_eq!(eth.src, GATEWAY_MAC);
+        assert_eq!(eth.ethertype, ETHERTYPE_ARP);
+        assert_eq!(read_u16_be(eth.payload, 6), Some(ARP_OPCODE_REPLY));
+        assert_eq!(read_array::<6>(eth.payload, 8), Some(GATEWAY_MAC));
+        assert_eq!(read_array::<4>(eth.payload, 14), Some(DNS_IP));
+        assert_eq!(read_array::<6>(eth.payload, 18), Some(GUEST_MAC));
+        assert_eq!(read_array::<4>(eth.payload, 24), Some(GUEST_IP));
+    }
+
+    #[test]
+    fn nat_stats_count_guest_frames_replies_and_lease() {
+        let mut backend = NatBackend::new();
+        backend.transmit(&arp_request(GUEST_MAC, GUEST_IP, GATEWAY_IP));
+        backend.transmit(&dhcp_frame(DHCP_DISCOVER, [1, 2, 3, 4], GUEST_MAC));
+        backend.transmit(&dhcp_frame(DHCP_REQUEST, [5, 6, 7, 8], GUEST_MAC));
+        backend.transmit(&icmp_echo_request());
+        backend.transmit(&udp_guest_frame(DNS_IP, 53, 53000, b"dns-query"));
+        backend.transmit(&tcp_guest_frame(
+            [127, 0, 0, 1],
+            80,
+            49152,
+            0x1000,
+            0,
+            TCP_FLAG_SYN,
+            &[],
+        ));
+
+        let stats = backend.stats();
+        assert_eq!(stats.guest_frames, 6);
+        assert_eq!(stats.arp_requests, 1);
+        assert_eq!(stats.dhcp_discover, 1);
+        assert_eq!(stats.dhcp_request, 1);
+        assert_eq!(stats.icmp_echo, 1);
+        assert_eq!(stats.dns_queries, 1);
+        assert_eq!(stats.tcp_segments, 1);
+        assert_eq!(stats.arp_replies, 1);
+        assert_eq!(stats.dhcp_offers, 1);
+        assert_eq!(stats.dhcp_acks, 1);
+        assert_eq!(stats.icmp_replies, 1);
+        assert_eq!(stats.dhcp_lease_ip, GUEST_IP);
+        assert_eq!(stats.pending_replies, 4);
+        assert_eq!(stats.tcp_flow_count, 0);
+        assert_eq!(stats.udp_flow_count, 0);
     }
 
     #[test]
@@ -1813,6 +2006,53 @@ mod tests {
         assert_eq!(udp.dst_port, 49152);
         assert_eq!(udp.payload, b"world");
         assert_eq!(udp_checksum(ip.src, ip.dst, udp.segment), 0);
+    }
+
+    #[test]
+    fn host_socket_udp_multiple_replies_all_drain_from_receive_queue() {
+        let Some(echo) = loopback_udp_socket() else {
+            return;
+        };
+        echo.set_nonblocking(true).unwrap();
+        let port = echo.local_addr().unwrap().port();
+        let mut backend = NatBackend::with_outbound_handler(
+            HostSocketOutboundIpv4Handler::with_dns_resolver(StdIpv4Addr::LOCALHOST),
+        );
+
+        backend.transmit(&udp_guest_frame([127, 0, 0, 1], port, 49152, b"hello"));
+
+        let mut buf = [0u8; 64];
+        let peer = loop {
+            match echo.recv_from(&mut buf) {
+                Ok((len, peer)) => {
+                    assert_eq!(&buf[..len], b"hello");
+                    break peer;
+                }
+                Err(e) if would_block(&e) => backend.poll_host_sockets(),
+                Err(e) => panic!("udp echo recv failed: {e}"),
+            }
+        };
+        echo.send_to(b"one", peer).unwrap();
+        echo.send_to(b"two", peer).unwrap();
+        for _ in 0..64 {
+            backend.poll_host_sockets();
+            if backend.pending_receive_len() >= 2 {
+                break;
+            }
+        }
+
+        let first = backend.poll_receive().unwrap();
+        let second = backend.poll_receive().unwrap();
+        assert!(backend.poll_receive().is_none());
+        let (_, _, first_udp) = parse_ipv4_udp_payload(&first);
+        let (_, _, second_udp) = parse_ipv4_udp_payload(&second);
+        assert_eq!(first_udp.payload, b"one");
+        assert_eq!(second_udp.payload, b"two");
+        let stats = backend.stats();
+        assert_eq!(stats.udp_datagrams, 1);
+        assert_eq!(stats.udp_datagrams_out, 2);
+        assert_eq!(stats.pending_replies, 0);
+        assert_eq!(stats.udp_flow_count, 1);
     }
 
     #[test]

@@ -34,7 +34,7 @@ use crate::fwcfg::{
 };
 use crate::machine::{self, Region};
 use crate::msix::MsixMessage;
-use crate::net_nat::{HostSocketOutboundIpv4Handler, NatBackend};
+use crate::net_nat::{HostSocketOutboundIpv4Handler, NatBackend, NatStats};
 use crate::nvme::{
     NvmeCommandTrace, NvmeCompletionEvent, NvmeController, REG_CC, REG_DOORBELL_BASE,
 };
@@ -130,13 +130,60 @@ impl VirtPlatformConfig {
     }
 }
 
-fn make_virtio_net_backend(kind: VirtioNetBackendKind) -> Box<dyn NetBackend> {
-    match kind {
-        VirtioNetBackendKind::Nat => {
-            Box::new(NatBackend::<HostSocketOutboundIpv4Handler>::new_host_socket())
+#[derive(Debug)]
+enum PlatformNetBackend {
+    Nat(NatBackend<HostSocketOutboundIpv4Handler>),
+    Loopback(LoopbackTestBackend),
+}
+
+impl PlatformNetBackend {
+    fn new(kind: VirtioNetBackendKind) -> Self {
+        match kind {
+            VirtioNetBackendKind::Nat => Self::Nat(NatBackend::new_host_socket()),
+            VirtioNetBackendKind::Loopback => Self::Loopback(LoopbackTestBackend::default()),
         }
-        VirtioNetBackendKind::Loopback => Box::new(LoopbackTestBackend::default()),
     }
+
+    fn nat_stats(&self) -> Option<NatStats> {
+        match self {
+            Self::Nat(backend) => Some(backend.stats()),
+            Self::Loopback(_) => None,
+        }
+    }
+}
+
+impl NetBackend for PlatformNetBackend {
+    fn transmit(&mut self, frame: &[u8]) {
+        match self {
+            Self::Nat(backend) => backend.transmit(frame),
+            Self::Loopback(backend) => backend.transmit(frame),
+        }
+    }
+
+    fn poll_receive(&mut self) -> Option<Vec<u8>> {
+        match self {
+            Self::Nat(backend) => backend.poll_receive(),
+            Self::Loopback(backend) => backend.poll_receive(),
+        }
+    }
+
+    fn poll_host_sockets(&mut self) {
+        if let Self::Nat(backend) = self {
+            backend.poll_host_sockets();
+        }
+    }
+
+    #[cfg(test)]
+    fn test_transmitted_frames(&self) -> Option<&[Vec<u8>]> {
+        match self {
+            Self::Nat(_) => None,
+            Self::Loopback(backend) => backend.test_transmitted_frames(),
+        }
+    }
+}
+
+fn make_virtio_net_backend(kind: VirtioNetBackendKind) -> PlatformNetBackend {
+    PlatformNetBackend::new(kind)
 }
 
 /// A guest MMIO access as decoded from an HVF data-abort exit.
@@ -212,7 +259,7 @@ pub struct VirtPlatform {
     xhci: XhciController,
     virtio_iso: Option<VirtioMmioBlock>,
     pci_boot_media: Option<VirtioPciBlock>,
-    virtio_net: Option<VirtioPciNet<Box<dyn NetBackend>>>,
+    virtio_net: Option<VirtioPciNet<PlatformNetBackend>>,
     ramfb: Ramfb,
     flash_vars: P30NorFlash,
     pending_msix: Vec<MsixMessage>,
@@ -470,6 +517,12 @@ impl VirtPlatform {
 
     pub fn virtio_net_stats(&self) -> Option<VirtioNetStats> {
         self.virtio_net.as_ref().map(VirtioPciNet::stats)
+    }
+
+    pub fn virtio_net_nat_stats(&self) -> Option<NatStats> {
+        self.virtio_net
+            .as_ref()
+            .and_then(|dev| dev.backend().nat_stats())
     }
 
     pub fn pump_virtio_net_receive(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
