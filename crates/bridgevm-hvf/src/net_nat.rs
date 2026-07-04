@@ -208,7 +208,7 @@ impl<H> NatBackend<H> {
     }
 }
 
-impl<H: OutboundIpv4Handler> NetBackend for NatBackend<H> {
+impl<H: OutboundIpv4Handler + Send> NetBackend for NatBackend<H> {
     fn transmit(&mut self, frame: &[u8]) {
         self.stats.guest_frames = self.stats.guest_frames.saturating_add(1);
         let Some(eth) = EthernetFrame::parse(frame) else {

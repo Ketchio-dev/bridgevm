@@ -148,6 +148,13 @@ pub const fn redist_fits(cpu_count: u64) -> bool {
     cpu_count <= MAX_CPUS
 }
 
+/// Linear MPIDR affinity for `cpu` (Aff0 = 0..15, Aff1 = group of 16).
+pub const fn cpu_mpidr(cpu: u64) -> u64 {
+    let a0 = cpu % 16;
+    let a1 = cpu / 16;
+    (a1 << 8) | a0
+}
+
 // ---- Helpers & validation ---------------------------------------------------
 
 /// MMIO region for virtio-mmio slot `i` (panics if `i >= VIRTIO_MMIO_COUNT`).
@@ -295,6 +302,14 @@ mod tests {
         assert!(redist_fits(1));
         assert!(redist_fits(123));
         assert!(!redist_fits(124));
+    }
+
+    #[test]
+    fn cpu_mpidr_uses_linear_affinity() {
+        assert_eq!(cpu_mpidr(0), 0);
+        assert_eq!(cpu_mpidr(1), 1);
+        assert_eq!(cpu_mpidr(16), 0x100);
+        assert_eq!(0x8000_0000 | cpu_mpidr(0), 0x8000_0000);
     }
 
     #[test]

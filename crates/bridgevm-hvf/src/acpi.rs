@@ -1037,9 +1037,7 @@ fn redistributor_base(cpu: u64) -> u64 {
 /// Linear MPIDR affinity for `cpu` (Aff0 = 0..15, Aff1 = group of 16), matching
 /// the scheme QEMU `virt` uses for small CPU counts.
 fn mpidr_for(cpu: u64) -> u64 {
-    let aff0 = cpu % 16;
-    let aff1 = cpu / 16;
-    (aff1 << 8) | aff0
+    machine::cpu_mpidr(cpu)
 }
 
 const PPTT_NODE_PROCESSOR: u8 = 0;

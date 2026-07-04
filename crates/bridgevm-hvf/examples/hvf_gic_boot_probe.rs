@@ -46,8 +46,10 @@ use std::path::Path;
 use std::ptr::null_mut;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
+    Arc, Condvar, Mutex, MutexGuard, TryLockError,
 };
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use bridgevm_hvf::dtb::VirtFdtConfig;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
@@ -300,8 +302,26 @@ const DBGWCR_STORE_8B: u64 = 0x1ff7;
 const MAX_EXITS: u64 = 50_000_000;
 const WATCHDOG_MS: u64 = 8000;
 const DEFAULT_MAX_REBOOTS: u64 = 8;
+const PSCI_SUCCESS: u64 = 0;
+const PSCI_NOT_SUPPORTED: u64 = (-1i64) as u64;
+const PSCI_INVALID_PARAMS: u64 = (-2i64) as u64;
+const PSCI_ALREADY_ON: u64 = (-4i64) as u64;
+const PSCI_VERSION: u64 = 0x8400_0000;
+const PSCI_CPU_OFF: u64 = 0x8400_0002;
+const PSCI_CPU_ON_32: u64 = 0x8400_0003;
+const PSCI_CPU_ON_64: u64 = 0xc400_0003;
+const PSCI_AFFINITY_INFO_32: u64 = 0x8400_0004;
+const PSCI_AFFINITY_INFO_64: u64 = 0xc400_0004;
 const PSCI_SYSTEM_OFF: u64 = 0x8400_0008;
 const PSCI_SYSTEM_RESET: u64 = 0x8400_0009;
+const PSCI_FEATURES: u64 = 0x8400_000A;
+const SMCCC_VERSION: u64 = 0x8000_0000;
+const TRNG_VERSION: u64 = 0x8400_0050;
+const TRNG_FEATURES: u64 = 0x8400_0051;
+const TRNG_GET_UUID: u64 = 0x8400_0052;
+const TRNG_RND_32: u64 = 0x8400_0053;
+const TRNG_RND_64: u64 = 0xc400_0053;
+const MPIDR_RES1_BIT: u64 = 0x8000_0000;
 
 struct HvVmGuard;
 
@@ -322,6 +342,955 @@ impl Drop for HvVcpuGuard {
         unsafe {
             hv_vcpu_destroy(self.vcpu);
         }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PsciState {
+    Off,
+    OnPending,
+    On,
+}
+
+const SMP_TRACE_PROGRESS_INTERVAL: u64 = 10_000;
+const SMP_TRACE_LOCK_WARN_AFTER: Duration = Duration::from_millis(250);
+
+struct SmpTrace {
+    cpu0_exits: AtomicU64,
+    secondary_exits: AtomicU64,
+}
+
+impl SmpTrace {
+    fn new() -> Self {
+        Self {
+            cpu0_exits: AtomicU64::new(0),
+            secondary_exits: AtomicU64::new(0),
+        }
+    }
+
+    fn state_transition(&self, cpu: u64, from: PsciState, to: PsciState) {
+        println!("SMP trace: vCPU{cpu} {from:?} -> {to:?}");
+    }
+
+    fn secondary_vcpu_created(&self, cpu: u64, vcpu: HvVcpuT, exit: *mut HvVcpuExit) {
+        println!("SMP trace: vCPU{cpu} created HVF vCPU {vcpu} exit={exit:p}");
+    }
+
+    fn secondary_waiting_off(&self, cpu: u64) {
+        println!("SMP trace: vCPU{cpu} blocking while Off");
+    }
+
+    fn secondary_woke(&self, cpu: u64, state: PsciState) {
+        println!("SMP trace: vCPU{cpu} woke with state {state:?}");
+    }
+
+    fn secondary_run_loop_entered(&self, cpu: u64, exits: u64) {
+        println!("SMP trace: vCPU{cpu} entering run loop after {exits} exits");
+    }
+
+    fn secondary_before_first_run(&self, cpu: u64, pc: u64, cpsr: u64, x0: u64, mpidr: u64) {
+        println!(
+            "SMP trace: vCPU{cpu} before first hv_vcpu_run PC={pc:#x} CPSR={cpsr:#x} X0={x0:#x} MPIDR_EL1={mpidr:#x}"
+        );
+    }
+
+    fn secondary_pre_run_drain(&self, cpu: u64, exit: u64, pc: u64) {
+        if exit < 10 {
+            println!(
+                "SMP trace: vCPU{cpu} pre-run drain before run {} PC={pc:#x}",
+                exit + 1
+            );
+        }
+    }
+
+    fn secondary_post_run_drain(&self, cpu: u64, exit: u64) {
+        if exit < 10 {
+            println!(
+                "SMP trace: vCPU{cpu} pre-run drain complete before run {}",
+                exit + 1
+            );
+        }
+    }
+
+    fn secondary_run_result(&self, cpu: u64, run: u64, status: HvReturn, exit: *mut HvVcpuExit) {
+        if run > 10 {
+            return;
+        }
+        if status != 0 {
+            println!("SMP trace: vCPU{cpu} hv_vcpu_run #{run} returned {status:#x}");
+            return;
+        }
+        let reason = unsafe { (*exit).reason };
+        if reason == EXIT_EXCEPTION {
+            let esr = unsafe { (*exit).exception.syndrome };
+            let ec = (esr >> 26) & 0x3f;
+            println!(
+                "SMP trace: vCPU{cpu} hv_vcpu_run #{run} returned {status:#x} reason={reason} EC={ec:#x} ESR={esr:#x}"
+            );
+        } else {
+            println!(
+                "SMP trace: vCPU{cpu} hv_vcpu_run #{run} returned {status:#x} reason={reason}"
+            );
+        }
+    }
+
+    fn cpu0_progress(&self, exits: u64) {
+        self.cpu0_exits.store(exits, Ordering::Relaxed);
+        if exits != 0 && exits % SMP_TRACE_PROGRESS_INTERVAL == 0 {
+            println!(
+                "SMP trace: progress cpu0_exits={} secondary_exits={}",
+                exits,
+                self.secondary_exits.load(Ordering::Relaxed)
+            );
+        }
+    }
+
+    fn secondary_progress(&self) {
+        let exits = self.secondary_exits.fetch_add(1, Ordering::Relaxed) + 1;
+        if exits % SMP_TRACE_PROGRESS_INTERVAL == 0 {
+            println!(
+                "SMP trace: progress cpu0_exits={} secondary_exits={}",
+                self.cpu0_exits.load(Ordering::Relaxed),
+                exits
+            );
+        }
+    }
+
+    fn lock_with_wait_trace<'a, T>(
+        &self,
+        cpu: u64,
+        lock_name: &'static str,
+        context: &'static str,
+        mutex: &'a Mutex<T>,
+    ) -> MutexGuard<'a, T> {
+        let started = Instant::now();
+        let mut last_report = Duration::ZERO;
+        loop {
+            match mutex.try_lock() {
+                Ok(guard) => {
+                    let elapsed = started.elapsed();
+                    if elapsed >= SMP_TRACE_LOCK_WARN_AFTER {
+                        println!(
+                            "SMP trace: vCPU{cpu} acquired {lock_name} after {} ms ({context})",
+                            elapsed.as_millis()
+                        );
+                    }
+                    return guard;
+                }
+                Err(TryLockError::WouldBlock) => {
+                    let elapsed = started.elapsed();
+                    if elapsed >= SMP_TRACE_LOCK_WARN_AFTER
+                        && elapsed.saturating_sub(last_report) >= SMP_TRACE_LOCK_WARN_AFTER
+                    {
+                        println!(
+                            "SMP trace: vCPU{cpu} waiting {} ms for {lock_name} ({context})",
+                            elapsed.as_millis()
+                        );
+                        last_report = elapsed;
+                    }
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(TryLockError::Poisoned(_)) => panic!("{context}"),
+            }
+        }
+    }
+}
+
+fn lock_with_optional_trace<'a, T>(
+    mutex: &'a Mutex<T>,
+    smp_trace: Option<&SmpTrace>,
+    cpu: u64,
+    lock_name: &'static str,
+    context: &'static str,
+) -> MutexGuard<'a, T> {
+    match smp_trace {
+        Some(trace) => trace.lock_with_wait_trace(cpu, lock_name, context, mutex),
+        None => mutex.lock().expect(context),
+    }
+}
+
+fn lock_platform<'a>(
+    platform: &'a Arc<Mutex<VirtPlatform>>,
+    smp_trace: Option<&SmpTrace>,
+    cpu: u64,
+    context: &'static str,
+) -> MutexGuard<'a, VirtPlatform> {
+    lock_with_optional_trace(platform, smp_trace, cpu, "platform mutex", context)
+}
+
+fn lock_vcpu_state<'a>(
+    control: &'a VcpuControl,
+    smp_trace: Option<&SmpTrace>,
+    cpu: u64,
+    context: &'static str,
+) -> MutexGuard<'a, PsciState> {
+    lock_with_optional_trace(
+        &control.state,
+        smp_trace,
+        cpu,
+        "VcpuControl.state mutex",
+        context,
+    )
+}
+
+struct VcpuControl {
+    state: Mutex<PsciState>,
+    condvar: Condvar,
+    entry: AtomicU64,
+    context: AtomicU64,
+    vcpu: AtomicU64,
+    mpidr: u64,
+    index: u64,
+}
+
+impl VcpuControl {
+    fn new(index: u64) -> Self {
+        Self {
+            state: Mutex::new(PsciState::Off),
+            condvar: Condvar::new(),
+            entry: AtomicU64::new(0),
+            context: AtomicU64::new(0),
+            vcpu: AtomicU64::new(0),
+            mpidr: 0x8000_0000 | machine::cpu_mpidr(index),
+            index,
+        }
+    }
+
+    fn notify_shutdown(&self) {
+        self.condvar.notify_all();
+    }
+}
+
+struct SecondaryVcpuSet {
+    shutdown: Arc<AtomicBool>,
+    controls: Vec<Arc<VcpuControl>>,
+    handles: Vec<JoinHandle<()>>,
+}
+
+impl SecondaryVcpuSet {
+    fn spawn(
+        cpu_count: u64,
+        ram_base: usize,
+        ram_size: usize,
+        platform: Arc<Mutex<VirtPlatform>>,
+        drain_trace: DrainTrace,
+        smp_trace: Option<Arc<SmpTrace>>,
+    ) -> Self {
+        if cpu_count <= 1 {
+            return Self {
+                shutdown: Arc::new(AtomicBool::new(false)),
+                controls: Vec::new(),
+                handles: Vec::new(),
+            };
+        }
+
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let controls: Vec<_> = (1..cpu_count)
+            .map(|index| Arc::new(VcpuControl::new(index)))
+            .collect();
+        let handles = controls
+            .iter()
+            .map(|control| {
+                let control = Arc::clone(control);
+                let controls_for_thread = controls.clone();
+                let shutdown = Arc::clone(&shutdown);
+                let platform = Arc::clone(&platform);
+                let smp_trace = smp_trace.clone();
+                thread::Builder::new()
+                    .name(format!("bridgevm-hvf-vcpu{}", control.index))
+                    .spawn(move || {
+                        secondary_vcpu_thread(
+                            control,
+                            shutdown,
+                            ram_base,
+                            ram_size,
+                            platform,
+                            drain_trace,
+                            controls_for_thread,
+                            smp_trace,
+                        )
+                    })
+                    .expect("spawn secondary vCPU thread")
+            })
+            .collect();
+
+        Self {
+            shutdown,
+            controls,
+            handles,
+        }
+    }
+
+    fn shutdown_and_join(self) {
+        self.shutdown.store(true, Ordering::SeqCst);
+        for control in &self.controls {
+            control.notify_shutdown();
+        }
+        let vcpus: Vec<_> = self
+            .controls
+            .iter()
+            .map(|control| control.vcpu.load(Ordering::SeqCst))
+            .filter(|vcpu| *vcpu != 0)
+            .collect();
+        if !vcpus.is_empty() {
+            unsafe {
+                hv_vcpus_exit(vcpus.as_ptr(), u32::try_from(vcpus.len()).unwrap());
+            }
+        }
+        for handle in self.handles {
+            handle.join().expect("join secondary vCPU thread");
+        }
+    }
+}
+
+fn secondary_vcpu_thread(
+    control: Arc<VcpuControl>,
+    shutdown: Arc<AtomicBool>,
+    ram_base: usize,
+    ram_size: usize,
+    platform: Arc<Mutex<VirtPlatform>>,
+    drain_trace: DrainTrace,
+    controls: Vec<Arc<VcpuControl>>,
+    smp_trace: Option<Arc<SmpTrace>>,
+) {
+    let mut vcpu: HvVcpuT = 0;
+    let mut exit: *mut HvVcpuExit = null_mut();
+    let mut _vcpu_guard: Option<HvVcpuGuard> = None;
+    let mut guest_ram = MappedRam {
+        base: machine::RAM_BASE,
+        ptr: ram_base as *mut u8,
+        len: ram_size,
+    };
+    let mut drain_stats = RunLoopDrainStats::new(false);
+    let mut exits = 0u64;
+
+    let mut state = lock_vcpu_state(
+        &control,
+        smp_trace.as_deref(),
+        control.index,
+        "secondary vCPU state mutex",
+    );
+    loop {
+        while *state == PsciState::Off && !shutdown.load(Ordering::SeqCst) {
+            if let Some(trace) = smp_trace.as_deref() {
+                trace.secondary_waiting_off(control.index);
+            }
+            state = control
+                .condvar
+                .wait(state)
+                .expect("secondary vCPU state condvar");
+            if let Some(trace) = smp_trace.as_deref() {
+                trace.secondary_woke(control.index, *state);
+            }
+        }
+        if shutdown.load(Ordering::SeqCst) {
+            break;
+        }
+        match *state {
+            PsciState::Off => {}
+            PsciState::OnPending => {
+                let entry = control.entry.load(Ordering::SeqCst);
+                let context = control.context.load(Ordering::SeqCst);
+                drop(state);
+                if vcpu == 0 {
+                    let (created_vcpu, created_exit, guard) = create_secondary_hvf_vcpu(&control);
+                    vcpu = created_vcpu;
+                    exit = created_exit;
+                    _vcpu_guard = Some(guard);
+                    if let Some(trace) = smp_trace.as_deref() {
+                        trace.secondary_vcpu_created(control.index, vcpu, exit);
+                    }
+                }
+                apply_secondary_cpu_on_reset(vcpu, control.mpidr, entry, context);
+                if let Some(trace) = smp_trace.as_deref() {
+                    trace.state_transition(control.index, PsciState::OnPending, PsciState::On);
+                }
+                state = lock_vcpu_state(
+                    &control,
+                    smp_trace.as_deref(),
+                    control.index,
+                    "secondary vCPU state mutex",
+                );
+                *state = PsciState::On;
+                drop(state);
+                let stop = run_secondary_until_parked(
+                    vcpu,
+                    exit,
+                    &mut guest_ram,
+                    &platform,
+                    &mut drain_stats,
+                    drain_trace,
+                    &control,
+                    &controls,
+                    &shutdown,
+                    &mut exits,
+                    smp_trace.as_deref(),
+                );
+                state = lock_vcpu_state(
+                    &control,
+                    smp_trace.as_deref(),
+                    control.index,
+                    "secondary vCPU state mutex",
+                );
+                if stop {
+                    break;
+                }
+            }
+            PsciState::On => {
+                drop(state);
+                let stop = run_secondary_until_parked(
+                    vcpu,
+                    exit,
+                    &mut guest_ram,
+                    &platform,
+                    &mut drain_stats,
+                    drain_trace,
+                    &control,
+                    &controls,
+                    &shutdown,
+                    &mut exits,
+                    smp_trace.as_deref(),
+                );
+                state = lock_vcpu_state(
+                    &control,
+                    smp_trace.as_deref(),
+                    control.index,
+                    "secondary vCPU state mutex",
+                );
+                if stop {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+fn create_secondary_hvf_vcpu(control: &VcpuControl) -> (HvVcpuT, *mut HvVcpuExit, HvVcpuGuard) {
+    let mut vcpu: HvVcpuT = 0;
+    let mut exit: *mut HvVcpuExit = null_mut();
+    unsafe {
+        assert_eq!(
+            hv_vcpu_create(&mut vcpu, &mut exit, null_mut()),
+            0,
+            "hv_vcpu_create secondary vCPU{}",
+            control.index
+        );
+        control.vcpu.store(vcpu, Ordering::SeqCst);
+        assert_eq!(
+            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, control.mpidr),
+            0,
+            "set secondary MPIDR_EL1"
+        );
+    }
+    (vcpu, exit, HvVcpuGuard { vcpu })
+}
+
+fn normalized_mpidr(value: u64) -> u64 {
+    value & !MPIDR_RES1_BIT
+}
+
+fn psci_target_index(target_mpidr: u64, controls: &[Arc<VcpuControl>]) -> Option<usize> {
+    let target = normalized_mpidr(target_mpidr);
+    controls
+        .iter()
+        .position(|control| normalized_mpidr(control.mpidr) == target)
+}
+
+fn psci_features(func: u64) -> u64 {
+    match func {
+        PSCI_VERSION
+        | PSCI_CPU_OFF
+        | PSCI_CPU_ON_32
+        | PSCI_CPU_ON_64
+        | PSCI_AFFINITY_INFO_32
+        | PSCI_AFFINITY_INFO_64
+        | PSCI_SYSTEM_OFF
+        | PSCI_SYSTEM_RESET
+        | PSCI_FEATURES
+        | TRNG_VERSION
+        | TRNG_FEATURES
+        | TRNG_GET_UUID
+        | TRNG_RND_32
+        | TRNG_RND_64 => PSCI_SUCCESS,
+        _ => PSCI_NOT_SUPPORTED,
+    }
+}
+
+fn psci_cpu_on(
+    controls: &[Arc<VcpuControl>],
+    target_mpidr: u64,
+    entry: u64,
+    context: u64,
+    smp_trace: Option<&SmpTrace>,
+) -> u64 {
+    let Some(target_index) = psci_target_index(target_mpidr, controls) else {
+        return PSCI_INVALID_PARAMS;
+    };
+    let control = &controls[target_index];
+    let mut state = lock_vcpu_state(control, smp_trace, 0, "target vCPU PSCI state mutex");
+    if matches!(*state, PsciState::On | PsciState::OnPending) {
+        return PSCI_ALREADY_ON;
+    }
+    control.entry.store(entry, Ordering::SeqCst);
+    control.context.store(context, Ordering::SeqCst);
+    if let Some(trace) = smp_trace {
+        trace.state_transition(control.index, PsciState::Off, PsciState::OnPending);
+    }
+    *state = PsciState::OnPending;
+    drop(state);
+    control.condvar.notify_one();
+    PSCI_SUCCESS
+}
+
+fn psci_affinity_info(controls: &[Arc<VcpuControl>], target_mpidr: u64) -> u64 {
+    if normalized_mpidr(target_mpidr) == machine::cpu_mpidr(0) {
+        return 0;
+    }
+    let Some(target_index) = psci_target_index(target_mpidr, controls) else {
+        return 1;
+    };
+    let state = controls[target_index]
+        .state
+        .lock()
+        .expect("target vCPU PSCI state mutex");
+    if *state == PsciState::On {
+        0
+    } else {
+        1
+    }
+}
+
+fn apply_secondary_cpu_on_reset(vcpu: HvVcpuT, mpidr: u64, entry: u64, context: u64) {
+    unsafe {
+        for reg in HV_REG_X0..=HV_REG_LR {
+            hv_vcpu_set_reg(vcpu, reg, 0);
+        }
+        for reg in [
+            HV_SYS_REG_SCTLR_EL1,
+            HV_SYS_REG_TTBR0_EL1,
+            HV_SYS_REG_TTBR1_EL1,
+            HV_SYS_REG_TCR_EL1,
+            HV_SYS_REG_SPSR_EL1,
+            HV_SYS_REG_ELR_EL1,
+            HV_SYS_REG_ESR_EL1,
+            HV_SYS_REG_FAR_EL1,
+            HV_SYS_REG_MAIR_EL1,
+            HV_SYS_REG_VBAR_EL1,
+            HV_SYS_REG_SP_EL0,
+            HV_SYS_REG_SP_EL1,
+            HV_SYS_REG_CNTP_CTL_EL0,
+            HV_SYS_REG_CNTP_CVAL_EL0,
+            HV_SYS_REG_CNTV_CTL_EL0,
+            HV_SYS_REG_CNTV_CVAL_EL0,
+        ] {
+            hv_vcpu_set_sys_reg(vcpu, reg, 0);
+        }
+        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, mpidr);
+        let mut dfr0 = 0u64;
+        if hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_ID_AA64DFR0_EL1, &mut dfr0) == 0 {
+            let dfr0 = (dfr0 & !(0xf << 8)) | (0x1 << 8);
+            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_ID_AA64DFR0_EL1, dfr0);
+        }
+        hv_vcpu_set_reg(vcpu, HV_REG_PC, entry);
+        hv_vcpu_set_reg(vcpu, HV_REG_X0, context);
+        hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5);
+        hv_vcpu_set_vtimer_mask(vcpu, false);
+    }
+}
+
+fn run_hvf_vcpu_once(vcpu: HvVcpuT, exit: *mut HvVcpuExit) -> Result<u32, HvReturn> {
+    let r = unsafe { hv_vcpu_run(vcpu) };
+    if r != 0 {
+        return Err(r);
+    }
+    Ok(unsafe { (*exit).reason })
+}
+
+fn run_secondary_until_parked(
+    vcpu: HvVcpuT,
+    exit: *mut HvVcpuExit,
+    guest_ram: &mut MappedRam,
+    platform: &Arc<Mutex<VirtPlatform>>,
+    drain_stats: &mut RunLoopDrainStats,
+    drain_trace: DrainTrace,
+    control: &Arc<VcpuControl>,
+    controls: &[Arc<VcpuControl>],
+    shutdown: &AtomicBool,
+    exits: &mut u64,
+    smp_trace: Option<&SmpTrace>,
+) -> bool {
+    if let Some(trace) = smp_trace {
+        trace.secondary_run_loop_entered(control.index, *exits);
+    }
+    loop {
+        if shutdown.load(Ordering::SeqCst) {
+            return true;
+        }
+        let mut drain_pc = 0u64;
+        unsafe {
+            hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
+        }
+        if let Some(trace) = smp_trace {
+            if *exits == 0 {
+                let mut cpsr = 0u64;
+                let mut x0 = 0u64;
+                let mut mpidr = 0u64;
+                unsafe {
+                    hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cpsr);
+                    hv_vcpu_get_reg(vcpu, HV_REG_X0, &mut x0);
+                    hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, &mut mpidr);
+                }
+                trace.secondary_before_first_run(control.index, drain_pc, cpsr, x0, mpidr);
+            }
+            trace.secondary_pre_run_drain(control.index, *exits, drain_pc);
+        }
+        {
+            let mut platform_guard = lock_platform(
+                platform,
+                smp_trace,
+                control.index,
+                "secondary pre-run platform mutex",
+            );
+            drain_stats.drain_pending(
+                &mut platform_guard,
+                guest_ram,
+                drain_trace,
+                DrainContext {
+                    location: DrainLocation::PreRun,
+                    exit: *exits,
+                    pc: drain_pc,
+                },
+            );
+        }
+        if let Some(trace) = smp_trace {
+            trace.secondary_post_run_drain(control.index, *exits);
+        }
+        let run_index = *exits + 1;
+        let run_status = unsafe { hv_vcpu_run(vcpu) };
+        if let Some(trace) = smp_trace {
+            trace.secondary_run_result(control.index, run_index, run_status, exit);
+        }
+        let reason = if run_status == 0 {
+            unsafe { (*exit).reason }
+        } else {
+            {
+                let r = run_status;
+                println!("secondary vCPU{} hv_vcpu_run error {r:#x}", control.index);
+                return true;
+            }
+        };
+        *exits += 1;
+        if let Some(trace) = smp_trace {
+            trace.secondary_progress();
+        }
+        if reason == EXIT_CANCELED {
+            if shutdown.load(Ordering::SeqCst) {
+                return true;
+            }
+            continue;
+        }
+        if reason == EXIT_VTIMER {
+            unsafe {
+                hv_vcpu_set_vtimer_mask(vcpu, true);
+            }
+            continue;
+        }
+        if reason != EXIT_EXCEPTION {
+            println!(
+                "secondary vCPU{} stopped on exit reason {reason}",
+                control.index
+            );
+            return true;
+        }
+        let esr = unsafe { (*exit).exception.syndrome };
+        let ec = (esr >> 26) & 0x3f;
+        let mut pc = 0u64;
+        unsafe {
+            hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut pc);
+        }
+        match ec {
+            EC_DATA_ABORT => {
+                let ipa = unsafe { (*exit).exception.physical_address };
+                let size = 1u8 << ((esr >> 22) & 0x3);
+                let srt = ((esr >> 16) & 0x1f) as u32;
+                let is_write = (esr >> 6) & 1 == 1;
+                let op = if is_write {
+                    let mut v = 0u64;
+                    unsafe {
+                        hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v);
+                    }
+                    MmioOp::Write { size, value: v }
+                } else {
+                    MmioOp::Read { size }
+                };
+                let outcome = {
+                    let mut platform_guard = lock_platform(
+                        platform,
+                        smp_trace,
+                        control.index,
+                        "secondary data-abort platform mutex",
+                    );
+                    let outcome = platform_guard.on_mmio(ipa, op, guest_ram);
+                    drain_stats.drain_pending(
+                        &mut platform_guard,
+                        guest_ram,
+                        drain_trace,
+                        DrainContext {
+                            location: DrainLocation::DataAbort,
+                            exit: *exits,
+                            pc,
+                        },
+                    );
+                    outcome
+                };
+                match outcome {
+                    MmioOutcome::ReadValue(v) if !is_write => unsafe {
+                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
+                    },
+                    MmioOutcome::ReadValue(_) | MmioOutcome::WriteAck => {}
+                    MmioOutcome::KnownUnimplemented(_) | MmioOutcome::Unmapped => {
+                        if !is_write {
+                            unsafe {
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
+                            }
+                        }
+                    }
+                }
+                unsafe {
+                    hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4);
+                }
+            }
+            EC_HVC => {
+                let mut func = 0u64;
+                unsafe {
+                    hv_vcpu_get_reg(vcpu, HV_REG_X0, &mut func);
+                }
+                match func {
+                    SMCCC_VERSION => unsafe {
+                        hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0001);
+                    },
+                    PSCI_VERSION => unsafe {
+                        hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0001_0001);
+                    },
+                    PSCI_FEATURES => {
+                        let mut queried = 0u64;
+                        unsafe {
+                            hv_vcpu_get_reg(vcpu, HV_REG_X0 + 1, &mut queried);
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0, psci_features(queried));
+                        }
+                    }
+                    PSCI_CPU_OFF => {
+                        let mut state = lock_vcpu_state(
+                            control,
+                            smp_trace,
+                            control.index,
+                            "secondary PSCI state mutex",
+                        );
+                        if let Some(trace) = smp_trace {
+                            trace.state_transition(control.index, *state, PsciState::Off);
+                        }
+                        *state = PsciState::Off;
+                        return false;
+                    }
+                    PSCI_CPU_ON_32 | PSCI_CPU_ON_64 => {
+                        let mut target = 0u64;
+                        let mut entry = 0u64;
+                        let mut context = 0u64;
+                        unsafe {
+                            hv_vcpu_get_reg(vcpu, HV_REG_X0 + 1, &mut target);
+                            hv_vcpu_get_reg(vcpu, HV_REG_X0 + 2, &mut entry);
+                            hv_vcpu_get_reg(vcpu, HV_REG_X0 + 3, &mut context);
+                            hv_vcpu_set_reg(
+                                vcpu,
+                                HV_REG_X0,
+                                psci_cpu_on(controls, target, entry, context, smp_trace),
+                            );
+                        }
+                    }
+                    PSCI_AFFINITY_INFO_32 | PSCI_AFFINITY_INFO_64 => {
+                        let mut target = 0u64;
+                        unsafe {
+                            hv_vcpu_get_reg(vcpu, HV_REG_X0 + 1, &mut target);
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0, psci_affinity_info(controls, target));
+                        }
+                    }
+                    PSCI_SYSTEM_OFF | PSCI_SYSTEM_RESET => return true,
+                    TRNG_VERSION => unsafe {
+                        hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0000);
+                    },
+                    TRNG_FEATURES => unsafe {
+                        hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
+                    },
+                    TRNG_GET_UUID => unsafe {
+                        hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0b0a_0908);
+                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, 0x0f0e_0d0c);
+                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, 0x0302_0100);
+                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, 0x0706_0504);
+                    },
+                    TRNG_RND_32 | TRNG_RND_64 => {
+                        let r = exits
+                            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                            .wrapping_add(0xD1B5_4A32);
+                        unsafe {
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0, PSCI_SUCCESS);
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, r);
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, r.rotate_left(17) ^ 0xA5A5_5A5A);
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, r.rotate_left(41) ^ 0x1234_5678);
+                        }
+                    }
+                    _ => unsafe {
+                        hv_vcpu_set_reg(vcpu, HV_REG_X0, PSCI_NOT_SUPPORTED);
+                    },
+                }
+                unsafe {
+                    hv_vcpu_set_reg(vcpu, HV_REG_PC, pc);
+                }
+            }
+            EC_SYS_REG_TRAP => {
+                let trap = SysRegTrap::decode(esr);
+                if unsafe { emulate_debug_os_lock_sysreg(vcpu, trap) } {
+                    unsafe {
+                        hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4);
+                    }
+                } else {
+                    println!(
+                        "secondary vCPU{} unsupported system register trap {} ESR {esr:#x} @ PC {pc:#x}",
+                        control.index,
+                        trap.describe()
+                    );
+                    return true;
+                }
+            }
+            _ => {
+                println!(
+                    "secondary vCPU{} exception EC {ec:#x} ESR {esr:#x} @ PC {pc:#x}",
+                    control.index
+                );
+                return true;
+            }
+        }
+        if *exits >= MAX_EXITS {
+            println!("secondary vCPU{} exit cap {MAX_EXITS}", control.index);
+            return true;
+        }
+    }
+}
+
+#[cfg(test)]
+mod vcpu_control_tests {
+    use super::*;
+
+    #[test]
+    fn vcpu_control_starts_off_with_linear_mpidr() {
+        let control = VcpuControl::new(17);
+
+        assert_eq!(*control.state.lock().unwrap(), PsciState::Off);
+        assert_eq!(control.entry.load(Ordering::SeqCst), 0);
+        assert_eq!(control.context.load(Ordering::SeqCst), 0);
+        assert_eq!(control.vcpu.load(Ordering::SeqCst), 0);
+        assert_eq!(control.index, 17);
+        assert_eq!(control.mpidr, 0x8000_0000 | machine::cpu_mpidr(17));
+    }
+
+    #[test]
+    fn psci_state_has_parked_secondary_transitions_reserved() {
+        let control = VcpuControl::new(1);
+        {
+            let mut state = control.state.lock().unwrap();
+            *state = PsciState::OnPending;
+            assert_eq!(*state, PsciState::OnPending);
+            *state = PsciState::On;
+            assert_eq!(*state, PsciState::On);
+            *state = PsciState::Off;
+        }
+        assert_eq!(*control.state.lock().unwrap(), PsciState::Off);
+    }
+
+    #[test]
+    fn psci_target_index_masks_mpidr_res1_bit() {
+        let controls: Vec<_> = (1..4)
+            .map(|index| Arc::new(VcpuControl::new(index)))
+            .collect();
+
+        assert_eq!(psci_target_index(machine::cpu_mpidr(1), &controls), Some(0));
+        assert_eq!(
+            psci_target_index(0x8000_0000 | machine::cpu_mpidr(2), &controls),
+            Some(1)
+        );
+        assert_eq!(psci_target_index(machine::cpu_mpidr(0), &controls), None);
+        assert_eq!(psci_target_index(machine::cpu_mpidr(4), &controls), None);
+    }
+
+    #[test]
+    fn psci_cpu_on_sets_pending_and_returns_codes() {
+        let controls: Vec<_> = (1..3)
+            .map(|index| Arc::new(VcpuControl::new(index)))
+            .collect();
+
+        assert_eq!(
+            psci_cpu_on(&controls, machine::cpu_mpidr(1), 0x1234, 0x5678, None),
+            PSCI_SUCCESS
+        );
+        assert_eq!(*controls[0].state.lock().unwrap(), PsciState::OnPending);
+        assert_eq!(controls[0].entry.load(Ordering::SeqCst), 0x1234);
+        assert_eq!(controls[0].context.load(Ordering::SeqCst), 0x5678);
+        assert_eq!(
+            psci_cpu_on(
+                &controls,
+                0x8000_0000 | machine::cpu_mpidr(1),
+                0x9,
+                0xa,
+                None
+            ),
+            PSCI_ALREADY_ON
+        );
+        assert_eq!(
+            psci_cpu_on(&controls, machine::cpu_mpidr(3), 0x9, 0xa, None),
+            PSCI_INVALID_PARAMS
+        );
+    }
+
+    #[test]
+    fn psci_cpu_on_defers_hvf_vcpu_creation_to_secondary_thread() {
+        let controls: Vec<_> = (1..2)
+            .map(|index| Arc::new(VcpuControl::new(index)))
+            .collect();
+
+        assert_eq!(
+            psci_cpu_on(&controls, machine::cpu_mpidr(1), 0x8000, 0xfeed, None),
+            PSCI_SUCCESS
+        );
+
+        let control = &controls[0];
+        assert_eq!(*control.state.lock().unwrap(), PsciState::OnPending);
+        assert_eq!(control.entry.load(Ordering::SeqCst), 0x8000);
+        assert_eq!(control.context.load(Ordering::SeqCst), 0xfeed);
+        assert_eq!(control.vcpu.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn psci_features_only_reports_implemented_functions() {
+        for func in [
+            PSCI_VERSION,
+            PSCI_CPU_OFF,
+            PSCI_CPU_ON_32,
+            PSCI_CPU_ON_64,
+            PSCI_AFFINITY_INFO_32,
+            PSCI_AFFINITY_INFO_64,
+            PSCI_SYSTEM_OFF,
+            PSCI_SYSTEM_RESET,
+            PSCI_FEATURES,
+            TRNG_VERSION,
+            TRNG_FEATURES,
+            TRNG_GET_UUID,
+            TRNG_RND_32,
+            TRNG_RND_64,
+        ] {
+            assert_eq!(psci_features(func), PSCI_SUCCESS, "func {func:#x}");
+        }
+        assert_eq!(psci_features(0x8400_00ff), PSCI_NOT_SUPPORTED);
+        assert_eq!(psci_features(SMCCC_VERSION), PSCI_NOT_SUPPORTED);
     }
 }
 
@@ -1612,9 +2581,15 @@ unsafe fn emulate_debug_os_lock_sysreg(vcpu: HvVcpuT, trap: SysRegTrap) -> bool 
 
 fn main() {
     let media = VirtBootMediaConfig::from_probe_env();
+    let smp_cpus = env_u64("BRIDGEVM_SMP_CPUS", 1).clamp(1, machine::MAX_CPUS);
+    let smp_cpus = if machine::redist_fits(smp_cpus) {
+        smp_cpus
+    } else {
+        1
+    };
     let platform_cfg = VirtPlatformConfig {
         fdt: VirtFdtConfig {
-            cpu_count: 1,
+            cpu_count: smp_cpus,
             ram_size: media.ram_size,
         },
         devices: media.platform_devices,
@@ -1625,12 +2600,14 @@ fn main() {
         "guest RAM must be at least 128 MiB"
     );
     println!("Guest RAM: {} MiB", media.ram_size / (1024 * 1024));
+    println!("SMP CPUs advertised: {smp_cpus}");
     let watchdog_ms = env_u64("BRIDGEVM_BOOT_PROBE_WATCHDOG_MS", WATCHDOG_MS);
     let trace_fwcfg = env_flag("BRIDGEVM_TRACE_FWCFG");
     let trace_msix = env_flag("BRIDGEVM_TRACE_MSIX");
     let trace_spi = env_flag("BRIDGEVM_TRACE_SPI");
     let trace_run_loop = env_flag("BRIDGEVM_TRACE_RUN_LOOP");
     let trace_xhci_bringup = env_flag("BRIDGEVM_TRACE_XHCI_BRINGUP");
+    let smp_trace_enabled = env_flag("BRIDGEVM_SMP_TRACE");
     let stop_on_linux = env_flag_default("BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX", true);
 
     unsafe {
@@ -1892,8 +2869,27 @@ fn main() {
         let mut reboot_count = 0u64;
         reset_vcpu_for_boot(vcpu);
         arm_watchpoint_for_boot(vcpu, watch_addr);
+        let platform = Arc::new(Mutex::new(platform));
 
         'reboot: loop {
+            // Secondary vCPUs are intentionally scoped to one boot generation in
+            // Stage 1. SYSTEM_RESET joins them before resetting CPU0/platform
+            // state; the next loop iteration respawns a fresh parked set.
+            let drain_trace = DrainTrace {
+                msix: trace_msix,
+                spi: trace_spi,
+            };
+            let smp_trace = (smp_cpus > 1 && smp_trace_enabled).then(|| Arc::new(SmpTrace::new()));
+            let secondary_vcpus = (smp_cpus > 1).then(|| {
+                SecondaryVcpuSet::spawn(
+                    smp_cpus,
+                    ram as usize,
+                    ram_size,
+                    Arc::clone(&platform),
+                    drain_trace,
+                    smp_trace.clone(),
+                )
+            });
             let boot_generation = begin_watchdog_generation(&watchdog_generation);
             let watchdog_fired = Arc::new(AtomicBool::new(false));
             spawn_boot_watchdog(
@@ -1904,9 +2900,18 @@ fn main() {
                 Arc::clone(&watchdog_fired),
             );
 
-            if let Ok(input) = std::env::var("BRIDGEVM_UART_RX") {
-                platform.push_uart_input(input.as_bytes());
-                println!("UART RX preloaded: {} bytes", input.len());
+            {
+                let mut platform_guard = lock_platform(
+                    &platform,
+                    smp_trace.as_deref(),
+                    0,
+                    "cpu0 UART preload platform mutex",
+                );
+                let platform = &mut *platform_guard;
+                if let Ok(input) = std::env::var("BRIDGEVM_UART_RX") {
+                    platform.push_uart_input(input.as_bytes());
+                    println!("UART RX preloaded: {} bytes", input.len());
+                }
             }
             let mut uart_triggers = Vec::new();
             if let Some(trigger) = SerialTriggeredUartInput::from_env(
@@ -2013,10 +3018,6 @@ fn main() {
             let mut drain_stats = RunLoopDrainStats::new(trace_run_loop);
             let mut ramfb_sample_loop = RamfbSampleLoop::from_env();
             let mut setup_input_host_wake = SetupInputHostWake::new();
-            let drain_trace = DrainTrace {
-                msix: trace_msix,
-                spi: trace_spi,
-            };
             let mut stop_reason;
             let mut stop_reason_code = None;
             let mut requested_system_reset = false;
@@ -2025,24 +3026,37 @@ fn main() {
                 let mut drain_pc = 0u64;
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
                 last_pre_run_pc = drain_pc;
-                drain_stats.drain_pending(
-                    &mut platform,
-                    &mut guest_ram,
-                    drain_trace,
-                    DrainContext {
-                        location: DrainLocation::PreRun,
-                        exit: exits,
-                        pc: drain_pc,
-                    },
-                );
-                let r = hv_vcpu_run(vcpu);
-                if r != 0 {
-                    hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
-                    stop_reason = format!("hv_vcpu_run error {r:#x}");
-                    break;
+                {
+                    let mut platform_guard = lock_platform(
+                        &platform,
+                        smp_trace.as_deref(),
+                        0,
+                        "cpu0 pre-run platform mutex",
+                    );
+                    let platform = &mut *platform_guard;
+                    drain_stats.drain_pending(
+                        platform,
+                        &mut guest_ram,
+                        drain_trace,
+                        DrainContext {
+                            location: DrainLocation::PreRun,
+                            exit: exits,
+                            pc: drain_pc,
+                        },
+                    );
                 }
+                let reason = match run_hvf_vcpu_once(vcpu, exit) {
+                    Ok(reason) => reason,
+                    Err(r) => {
+                        hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
+                        stop_reason = format!("hv_vcpu_run error {r:#x}");
+                        break;
+                    }
+                };
                 exits += 1;
-                let reason = (*exit).reason;
+                if let Some(trace) = smp_trace.as_deref() {
+                    trace.cpu0_progress(exits);
+                }
                 stop_reason_code = Some(reason);
                 let sample_tick_canceled =
                     ramfb_sample_loop.canceled_by_sample_tick(reason, &watchdog_fired);
@@ -2096,69 +3110,96 @@ fn main() {
                                 ipa - machine::FW_CFG.base
                             );
                             }
-                            let device = machine::device_at(ipa).unwrap_or("<unmapped>");
-                            let pcie_target = match device {
-                                "pcie-mmio-32" => {
-                                    platform.pcie_mmio_target(ipa).map(PcieTraceTarget::Mmio)
-                                }
-                                "pcie-pio" => {
-                                    platform.pcie_pio_target(ipa).map(PcieTraceTarget::Pio)
-                                }
-                                _ => None,
-                            };
-                            let xhci_target = match pcie_target {
-                                Some(PcieTraceTarget::Mmio(target)) => Some(target),
-                                Some(PcieTraceTarget::Pio(_)) | None => None,
-                            };
-                            recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
-                            let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
-                            let pcie_ecam_owner_context = PcieEcamOwnerContext {
-                                exit: exits,
-                                ipa,
-                                esr,
-                                ec,
-                                srt,
-                                serial_phase: PcieEcamOwnerContext::serial_phase_from_uart(
-                                    platform.uart_output(),
-                                ),
-                            };
-                            recent_pcie_ecam.record_after_with_context(
-                                &mut platform,
-                                &mut guest_ram,
-                                PcieEcamAccess {
-                                    pc: last_pc,
+                            let outcome = {
+                                let mut platform_guard = lock_platform(
+                                    &platform,
+                                    smp_trace.as_deref(),
+                                    0,
+                                    "cpu0 data-abort platform mutex",
+                                );
+                                let platform = &mut *platform_guard;
+                                let device = machine::device_at(ipa).unwrap_or("<unmapped>");
+                                let pcie_target = match device {
+                                    "pcie-mmio-32" => {
+                                        platform.pcie_mmio_target(ipa).map(PcieTraceTarget::Mmio)
+                                    }
+                                    "pcie-pio" => {
+                                        platform.pcie_pio_target(ipa).map(PcieTraceTarget::Pio)
+                                    }
+                                    _ => None,
+                                };
+                                let xhci_target = match pcie_target {
+                                    Some(PcieTraceTarget::Mmio(target)) => Some(target),
+                                    Some(PcieTraceTarget::Pio(_)) | None => None,
+                                };
+                                recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
+                                let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
+                                let pcie_ecam_owner_context = PcieEcamOwnerContext {
+                                    exit: exits,
                                     ipa,
-                                    op: &op,
-                                    outcome: &outcome,
-                                    owner_context: pcie_ecam_owner_context,
-                                },
-                            );
-                            let pcie_context = targetless_xhci_trace_context(
-                                &mut platform,
-                                &mut guest_ram,
-                                device,
-                                ipa,
-                                pcie_target,
-                                &outcome,
-                            );
-                            recent_pcie_mmio.record_with_context(
-                                device,
-                                last_pc,
-                                ipa,
-                                pcie_target,
-                                &op,
-                                &outcome,
-                                pcie_context,
-                            );
-                            recent_pcie_pio.record(
-                                device,
-                                last_pc,
-                                ipa,
-                                pcie_target,
-                                &op,
-                                &outcome,
-                            );
-                            record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
+                                    esr,
+                                    ec,
+                                    srt,
+                                    serial_phase: PcieEcamOwnerContext::serial_phase_from_uart(
+                                        platform.uart_output(),
+                                    ),
+                                };
+                                recent_pcie_ecam.record_after_with_context(
+                                    platform,
+                                    &mut guest_ram,
+                                    PcieEcamAccess {
+                                        pc: last_pc,
+                                        ipa,
+                                        op: &op,
+                                        outcome: &outcome,
+                                        owner_context: pcie_ecam_owner_context,
+                                    },
+                                );
+                                let pcie_context = targetless_xhci_trace_context(
+                                    platform,
+                                    &mut guest_ram,
+                                    device,
+                                    ipa,
+                                    pcie_target,
+                                    &outcome,
+                                );
+                                recent_pcie_mmio.record_with_context(
+                                    device,
+                                    last_pc,
+                                    ipa,
+                                    pcie_target,
+                                    &op,
+                                    &outcome,
+                                    pcie_context,
+                                );
+                                recent_pcie_pio.record(
+                                    device,
+                                    last_pc,
+                                    ipa,
+                                    pcie_target,
+                                    &op,
+                                    &outcome,
+                                );
+                                record_mmio_trace(
+                                    &mut mmio_traces,
+                                    device,
+                                    last_pc,
+                                    ipa,
+                                    op,
+                                    &outcome,
+                                );
+                                drain_stats.drain_pending(
+                                    platform,
+                                    &mut guest_ram,
+                                    drain_trace,
+                                    DrainContext {
+                                        location: DrainLocation::DataAbort,
+                                        exit: exits,
+                                        pc: last_pc,
+                                    },
+                                );
+                                outcome
+                            };
                             if trace_this_fwcfg {
                                 println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
                             }
@@ -2184,16 +3225,6 @@ fn main() {
                                     }
                                 }
                             }
-                            drain_stats.drain_pending(
-                                &mut platform,
-                                &mut guest_ram,
-                                drain_trace,
-                                DrainContext {
-                                    location: DrainLocation::DataAbort,
-                                    exit: exits,
-                                    pc: last_pc,
-                                },
-                            );
                             hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
                         }
                         EC_HVC => {
@@ -2201,34 +3232,69 @@ fn main() {
                             let mut func = 0u64;
                             hv_vcpu_get_reg(vcpu, HV_REG_X0, &mut func);
                             match func & 0xffff_ffff {
-                                0x8000_0000 => {
+                                SMCCC_VERSION => {
                                     hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0001);
                                 } // SMCCC_VERSION 1.1
-                                0x8400_0000 => {
+                                PSCI_VERSION => {
                                     hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0001_0001);
                                 } // PSCI_VERSION 1.1
-                                0x8400_000A => {
-                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
+                                PSCI_FEATURES => {
+                                    let mut queried = 0u64;
+                                    hv_vcpu_get_reg(vcpu, HV_REG_X0 + 1, &mut queried);
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, psci_features(queried));
                                 } // PSCI_FEATURES
-                                0x8400_0050 => {
+                                PSCI_CPU_ON_32 | PSCI_CPU_ON_64 => {
+                                    let mut target = 0u64;
+                                    let mut entry = 0u64;
+                                    let mut context = 0u64;
+                                    hv_vcpu_get_reg(vcpu, HV_REG_X0 + 1, &mut target);
+                                    hv_vcpu_get_reg(vcpu, HV_REG_X0 + 2, &mut entry);
+                                    hv_vcpu_get_reg(vcpu, HV_REG_X0 + 3, &mut context);
+                                    let result = match secondary_vcpus.as_ref() {
+                                        Some(secondary_vcpus) => psci_cpu_on(
+                                            &secondary_vcpus.controls,
+                                            target,
+                                            entry,
+                                            context,
+                                            smp_trace.as_deref(),
+                                        ),
+                                        None => PSCI_NOT_SUPPORTED,
+                                    };
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, result);
+                                }
+                                PSCI_CPU_OFF => {
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, PSCI_NOT_SUPPORTED);
+                                }
+                                PSCI_AFFINITY_INFO_32 | PSCI_AFFINITY_INFO_64 => {
+                                    let mut target = 0u64;
+                                    hv_vcpu_get_reg(vcpu, HV_REG_X0 + 1, &mut target);
+                                    let result = match secondary_vcpus.as_ref() {
+                                        Some(secondary_vcpus) => {
+                                            psci_affinity_info(&secondary_vcpus.controls, target)
+                                        }
+                                        None => 1,
+                                    };
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, result);
+                                }
+                                TRNG_VERSION => {
                                     hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0000);
                                 } // TRNG_VERSION 1.0
-                                0x8400_0051 => {
+                                TRNG_FEATURES => {
                                     hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
                                 } // TRNG_FEATURES: present
-                                0x8400_0052 => {
+                                TRNG_GET_UUID => {
                                     // TRNG_GET_UUID
                                     hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0b0a_0908);
                                     hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, 0x0f0e_0d0c);
                                     hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, 0x0302_0100);
                                     hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, 0x0706_0504);
                                 }
-                                0x8400_0053 | 0xc400_0053 => {
+                                TRNG_RND_32 | TRNG_RND_64 => {
                                     // TRNG_RND_32 / _64
                                     let r = exits
                                         .wrapping_mul(0x9E37_79B9_7F4A_7C15)
                                         .wrapping_add(0xD1B5_4A32);
-                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, 0); // SUCCESS
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, PSCI_SUCCESS); // SUCCESS
                                     hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, r);
                                     hv_vcpu_set_reg(
                                         vcpu,
@@ -2260,7 +3326,7 @@ fn main() {
                                     break;
                                 }
                                 _ => {
-                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, (-1i64) as u64);
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, PSCI_NOT_SUPPORTED);
                                 } // NOT_SUPPORTED
                             }
                             // HVF reports the HVC exit PC already PAST the `hvc` instruction
@@ -2329,84 +3395,112 @@ fn main() {
                     stop_reason = format!("exit cap {MAX_EXITS}");
                     break;
                 }
-                if serial_reached_linux_panic(platform.uart_output()) {
-                    stop_reason = "serial reached Linux kernel panic".into();
-                    break;
-                }
-                for trigger in &mut uart_triggers {
-                    trigger.maybe_fire(&mut platform);
-                }
-                for trigger in &mut xhci_hid_boot_key_triggers {
-                    trigger.maybe_fire(&mut platform);
-                }
-                for trigger in &mut xhci_setup_input_triggers {
-                    let ramfb_config = platform.ramfb_config();
-                    let now = std::time::Instant::now();
-                    trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
-                        &mut platform,
-                        &mut guest_ram,
-                        now,
-                        |label, mem| {
-                            ramfb_dump::print_checkpoint(label, ramfb_config, mem);
-                        },
+                let automation_stop_reason = {
+                    let mut platform_guard = lock_platform(
+                        &platform,
+                        smp_trace.as_deref(),
+                        0,
+                        "cpu0 automation platform mutex",
                     );
-                    if let Some(deadline) = trigger.pending_host_wake_deadline_at(&platform, now) {
-                        let v = vcpu;
-                        let wake_generation = Arc::clone(&watchdog_generation);
-                        let wake_boot_generation = boot_generation;
-                        if setup_input_host_wake.arm(deadline, move || {
-                            if watchdog_generation_matches(&wake_generation, wake_boot_generation) {
-                                hv_vcpus_exit(&v, 1);
+                    let platform = &mut *platform_guard;
+                    if serial_reached_linux_panic(platform.uart_output()) {
+                        Some("serial reached Linux kernel panic".into())
+                    } else {
+                        for trigger in &mut uart_triggers {
+                            trigger.maybe_fire(platform);
+                        }
+                        for trigger in &mut xhci_hid_boot_key_triggers {
+                            trigger.maybe_fire(platform);
+                        }
+                        for trigger in &mut xhci_setup_input_triggers {
+                            let ramfb_config = platform.ramfb_config();
+                            let now = std::time::Instant::now();
+                            trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
+                                platform,
+                                &mut guest_ram,
+                                now,
+                                |label, mem| {
+                                    ramfb_dump::print_checkpoint(label, ramfb_config, mem);
+                                },
+                            );
+                            if let Some(deadline) =
+                                trigger.pending_host_wake_deadline_at(platform, now)
+                            {
+                                let v = vcpu;
+                                let wake_generation = Arc::clone(&watchdog_generation);
+                                let wake_boot_generation = boot_generation;
+                                if setup_input_host_wake.arm(deadline, move || {
+                                    if watchdog_generation_matches(
+                                        &wake_generation,
+                                        wake_boot_generation,
+                                    ) {
+                                        hv_vcpus_exit(&v, 1);
+                                    }
+                                }) {
+                                    println!(
+                                        "xHCI setup-input host wake armed for delayed trigger"
+                                    );
+                                }
                             }
-                        }) {
-                            println!("xHCI setup-input host wake armed for delayed trigger");
+                        }
+                        for trigger in &mut xhci_pointer_input_triggers {
+                            let ramfb_config = platform.ramfb_config();
+                            let now = std::time::Instant::now();
+                            trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
+                                platform,
+                                &mut guest_ram,
+                                now,
+                                |label, mem| {
+                                    ramfb_dump::print_checkpoint(label, ramfb_config, mem);
+                                },
+                            );
+                            if let Some(deadline) =
+                                trigger.pending_host_wake_deadline_at(platform, now)
+                            {
+                                let v = vcpu;
+                                let wake_generation = Arc::clone(&watchdog_generation);
+                                let wake_boot_generation = boot_generation;
+                                if setup_input_host_wake.arm(deadline, move || {
+                                    if watchdog_generation_matches(
+                                        &wake_generation,
+                                        wake_boot_generation,
+                                    ) {
+                                        hv_vcpus_exit(&v, 1);
+                                    }
+                                }) {
+                                    println!(
+                                        "xHCI pointer-input host wake armed for delayed trigger"
+                                    );
+                                }
+                            }
+                        }
+                        let ramfb_config = platform.ramfb_config();
+                        ramfb_sample_loop.emit_due(vcpu, |label| {
+                            ramfb_dump::print_checkpoint(label, ramfb_config, &guest_ram);
+                        });
+                        if stop_on_linux && serial_reached_linux_early_boot(platform.uart_output())
+                        {
+                            Some("serial reached Linux early boot".into())
+                        } else if serial_reached_shell(platform.uart_output()) {
+                            match ramfb_sample_loop.observe_shell(vcpu) {
+                                RamfbSampleShellAction::Continue => None,
+                                RamfbSampleShellAction::StopNow { reason } => Some(reason.into()),
+                            }
+                        } else {
+                            None
                         }
                     }
-                }
-                for trigger in &mut xhci_pointer_input_triggers {
-                    let ramfb_config = platform.ramfb_config();
-                    let now = std::time::Instant::now();
-                    trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
-                        &mut platform,
-                        &mut guest_ram,
-                        now,
-                        |label, mem| {
-                            ramfb_dump::print_checkpoint(label, ramfb_config, mem);
-                        },
-                    );
-                    if let Some(deadline) = trigger.pending_host_wake_deadline_at(&platform, now) {
-                        let v = vcpu;
-                        let wake_generation = Arc::clone(&watchdog_generation);
-                        let wake_boot_generation = boot_generation;
-                        if setup_input_host_wake.arm(deadline, move || {
-                            if watchdog_generation_matches(&wake_generation, wake_boot_generation) {
-                                hv_vcpus_exit(&v, 1);
-                            }
-                        }) {
-                            println!("xHCI pointer-input host wake armed for delayed trigger");
-                        }
-                    }
-                }
-                let ramfb_config = platform.ramfb_config();
-                ramfb_sample_loop.emit_due(vcpu, |label| {
-                    ramfb_dump::print_checkpoint(label, ramfb_config, &guest_ram);
-                });
-                if stop_on_linux && serial_reached_linux_early_boot(platform.uart_output()) {
-                    stop_reason = "serial reached Linux early boot".into();
+                };
+                if let Some(reason) = automation_stop_reason {
+                    stop_reason = reason;
                     break;
-                }
-                if serial_reached_shell(platform.uart_output()) {
-                    match ramfb_sample_loop.observe_shell(vcpu) {
-                        RamfbSampleShellAction::Continue => {}
-                        RamfbSampleShellAction::StopNow { reason } => {
-                            stop_reason = reason.into();
-                            break;
-                        }
-                    }
                 }
             }
 
             invalidate_watchdog_generation(&watchdog_generation);
+            if let Some(secondary_vcpus) = secondary_vcpus {
+                secondary_vcpus.shutdown_and_join();
+            }
             if requested_system_reset {
                 match decide_system_reset(reboot_count, reboot_plan) {
                     SystemResetDecision::Reboot {
@@ -2419,6 +3513,8 @@ fn main() {
                             reboot_plan.max_reboots
                         );
                         if actions.reset_platform {
+                            let mut platform_guard = platform.lock().expect("platform mutex");
+                            let platform = &mut *platform_guard;
                             platform.reset();
                         }
                         if actions.reset_guest_ram {
@@ -2438,6 +3534,8 @@ fn main() {
                 }
             }
 
+            let mut platform_guard = platform.lock().expect("platform mutex");
+            let platform = &mut *platform_guard;
             let serial = platform.uart_output().to_vec();
             let vars_writes = media
                 .flash_vars
@@ -2445,17 +3543,16 @@ fn main() {
                 .unwrap_or_else(|e| panic!("persist UEFI vars: {e}"));
             print_media_writes("UEFI vars", &vars_writes);
             if let Some(nvme) = media.nvme_disk.as_ref() {
-                let writes = persist_nvme_media(&mut platform, nvme, NvmePersistNamespace::Primary);
+                let writes = persist_nvme_media(platform, nvme, NvmePersistNamespace::Primary);
                 print_media_writes(NvmePersistNamespace::Primary.subject(), &writes);
             }
             if let Some(target) = media.nvme_target.as_ref() {
-                let writes =
-                    persist_nvme_media(&mut platform, target, NvmePersistNamespace::Target);
+                let writes = persist_nvme_media(platform, target, NvmePersistNamespace::Target);
                 print_media_writes(NvmePersistNamespace::Target.subject(), &writes);
             }
             storage_effect_receipt::maybe_write_probe_storage_effect_receipt(
                 media.nvme_disk.as_ref(),
-                &platform,
+                platform,
             );
             maybe_write_file("BRIDGEVM_BOOT_PROBE_SERIAL_OUT", &serial, "serial log");
             let symbols = symbol_lines(&serial);
@@ -2656,8 +3753,8 @@ fn main() {
             recent_pcie_mmio.print();
             recent_pcie_pio.print();
             recent_xhci.print(platform.xhci_event_lifecycle_stats());
-            print_hid_semantic_summary(&platform);
-            print_nvme_command_trace(&platform);
+            print_hid_semantic_summary(platform);
+            print_nvme_command_trace(platform);
             println!("UART RX remaining bytes: {}", platform.uart_input_len());
             for trigger in &uart_triggers {
                 println!(
@@ -2668,13 +3765,13 @@ fn main() {
                 );
             }
             for trigger in &xhci_hid_boot_key_triggers {
-                trigger.print_summary(&platform);
+                trigger.print_summary(platform);
             }
             for trigger in &xhci_setup_input_triggers {
-                trigger.print_summary(&platform);
+                trigger.print_summary(platform);
             }
             for trigger in &xhci_pointer_input_triggers {
-                trigger.print_summary(&platform);
+                trigger.print_summary(platform);
             }
             if let Some(stats) = platform.pci_boot_media_stats() {
                 print_block_media_stats("PCI boot-media stats", stats);
