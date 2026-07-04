@@ -3,7 +3,7 @@
 Concise "where are we" snapshot. Full plan/roadmap/scaffold log lives in
 [PLAN.md](PLAN.md); this file is the fast scan.
 
-_Last updated: 2026-06-19._
+_Last updated: 2026-07-04._
 
 ## Current usability judgment
 Local/debug BridgeVM is usable for the verified Phase 0 flows: the app bundle
@@ -45,46 +45,53 @@ For a current evidence-backed gate report, run:
 tests/integration/product-gates-report.sh
 ```
 
-## BridgeVM HVF Windows engine (Phase 0 R&D)
-The HVF Windows track has a recorded architecture decision: **Path A — converge on
-the QEMU `virt` platform contract** so the stock ArmVirtQemu firmware boots
-unmodified and ACPI/PCIe/Windows-media behaviour matches the QEMU stack, rather
-than hand-writing ACPI and an EDK2 port from scratch (Path B). The current HVF
-probe harness reproduces only the RAM base of that contract and is missing
-`fw_cfg` and PCIe ECAM — the subsystems that gate ACPI and storage, i.e. Windows
-booting at all. Path A steps 1–3 are landed (modelled, unit-tested, and proven
-live at the MMIO level): `src/fwcfg.rs` (`fw_cfg` keystone), `src/machine.rs` (the
-`virt` machine model + no-overlap validator), `src/dtb.rs` (`build_virt_fdt`, a
-QEMU-`virt`-shaped device tree verified `dtc`-clean against the contract), and
-`src/platform_virt.rs` (`VirtPlatform`, which assembles the map + `fw_cfg` + DTB +
-guest-memory layout behind one `on_mmio()` exit entry point). Crate suite green at
-179 tests. **Hypervisor.framework runs directly on this Apple
-Silicon host via ad-hoc entitlement signing, and the stock ArmVirtQemu firmware
-boots on the Path A platform.** Live opt-in proofs under `tests/integration/`:
-`hvf-fw-cfg-mmio` (guest MMIO → `VirtPlatform` → `fw_cfg`), `hvf-uart` (guest
-serial captured via the PL011 model), and **`hvf-edk2-boot`** — the unmodified
-`edk2-aarch64-code.fd` runs through PEI into DXE, prints its UEFI banner through
-the modelled UART, and parses the generated DTB. With Apple's in-kernel GICv3
-(`hv_gic_create`), minimal PSCI, and an empty PCIe ECAM, the firmware now boots
-**deep into DXE driver dispatch** (`hvf-gic-boot` smoke). The **GIC is fully served
-by Apple** (distributor + redistributor + CPU interface, zero GIC MMIO traps) — the
-key was setting `MPIDR_EL1` so Apple associates each vCPU's redistributor frame.
-Further fixes (PSCI, empty ECAM, `/flash@0` node, fw_cfg endianness, 40-bit IPA,
-and an **HVC PC-advance fix** root-caused by 3 parallel worktree agents — the HVC
-exit PC is already past the `hvc`, so the data-abort-style +4 skipped
-`ArmCallHvc`'s args-pointer reload and crashed RngDxe) carried the firmware
-**through late DXE**. Since then, controlled live guests proved Apple `hv_gic`
-delivers both host-asserted SPIs and the architected-timer PPI end to end, so the
-remaining stall is not a generic interrupt-delivery failure. `VirtPlatform` now
-also models QEMU's PL031 RTC at `0x0901_0000`; the firmware still reaches the same
-late-DXE stall (`PC=0x5fcf13b0`) polling RAM `0x5ffdf798` for `0x800080` while the
-value stays `0x700070` and unmodelled MMIO remains `{}`. The current frontier is
-therefore identifying the firmware-specific event/device producer for that flag,
-preferably with a DEBUG ArmVirtQemu build plus `.map` symbols, while continuing to
-diff device behaviour against the QEMU+HVF oracle. Then NVMe, Linux ACPI /
-Windows. No external host or paid entitlement is required; the whole loop is
-live-debuggable here. See
-[docs/hvf-windows-engine-strategy.md](docs/hvf-windows-engine-strategy.md) and
+## BridgeVM HVF Windows engine — boots Windows 11 ARM64 to an interactive desktop
+The from-scratch VMM (`crates/bridgevm-hvf`, directly on Apple Hypervisor.framework,
+QEMU-independent) now boots a real, installed **Windows 11 ARM64 desktop** and drives
+it with keyboard and pointer. Progress against the completion-plan milestone ladder
+([docs/hvf-windows-install-completion-plan.md](docs/hvf-windows-install-completion-plan.md)):
+
+| Milestone | State |
+| --- | --- |
+| **M1** Windows Setup boots from NVMe alone (no ISO/keyboard) | ✅ done |
+| **M2** Scripted install completes (WIM applied, bootable) | ✅ done |
+| **M3** Installed Windows reaches the desktop (OOBE auto-skip, `bridge` autologon) | ✅ done |
+| **M4** Interactive desktop (keyboard + pointer + display) | ✅ substantively done — visible typing into apps + pointer move/click, all ramfb-proven with xHCI enabled |
+| **M5** Connected · persistent · fast enough | 🟡 partial (see below) |
+| **M6** Integration polish (clipboard / resize / shared folders) | ⬜ not started |
+
+The old "late-DXE stall / firmware won't bind NVMe" wall is **resolved**: root cause
+was the stale Homebrew `edk2-aarch64-code.fd`; a current tianocore/edk2 ArmVirtQemu
+firmware is now vendored in-repo (`crates/bridgevm-hvf/firmware/`) and boots Windows
+Setup from NVMe. The platform models a `virt`-shaped machine (`fw_cfg`, PCIe ECAM,
+PL011/PL031, Apple in-kernel GICv3) plus device models: NVMe (2 namespaces), xHCI
+(HID keyboard DCI3 + absolute-pointer DCI5), ramfb display, and a `VirtPlatform::reset()`
+reboot loop that survives Windows' install/OOBE reboots while preserving disks + UEFI
+vars. The whole install→desktop pipeline is reproducible from the Win11 ARM64 ISO via
+`scripts/build-hvf-windows-scripted-source.sh` + `scripts/run-hvf-windows-scripted-install.sh`
++ `scripts/run-hvf-windows-installed-boot.sh`.
+
+M5 status (the remaining work to "usable"):
+- **Network (D3)** — a `virtio-net-pci` device model + an in-process userspace slirp-style
+  NAT (ARP/DHCP/DNS/ICMP + host-socket TCP/UDP proxy) are implemented and unit-tested; the
+  in-box `netkvm` ARM64 driver is injected offline via WinPE+DISM and **binds + completes
+  virtio feature negotiation** against our device. Live IP is not yet up — the guest driver
+  doesn't finish programming the virtqueues (two virtio-1.0 common-config bugs are precisely
+  diagnosed and in progress). No modelled NIC works driverless on Windows-ARM, so virtio-net +
+  driver injection is the chosen path.
+- **Performance (E1 / SMP)** — the probe runs a **single vCPU**, so first-boot OOBE takes tens
+  of minutes and the desktop is sluggish. This is the single largest usability gap; a staged
+  multi-vCPU design (per-vCPU threads, PSCI `CPU_ON`, a global platform lock per MMIO exit,
+  `BRIDGEVM_SMP_CPUS`) is planned but not started.
+- **Persistence (D4)** — NVMe write-back to the host image is proven (installed changes survive
+  reboot); a clean in-guest shutdown + flush proof is pending.
+
+Honest framing: this is an impressive from-scratch VMM result, but it is **not yet a usable
+daily product** — no working network, single-core, and it still needs the scripted harness +
+injected drivers rather than a clean UX. The project's own strategy note flags this as the
+highest-cost / lowest-user-value track (QEMU+HVF already boots Windows 11 ARM today). Full
+history + reproduction recipes live in the assistant memory status file; strategy/gap context
+in [docs/hvf-windows-engine-strategy.md](docs/hvf-windows-engine-strategy.md) and
 [docs/hvf-windows-platform-contract-gap.md](docs/hvf-windows-platform-contract-gap.md).
 
 ## Parallels-class scope check
