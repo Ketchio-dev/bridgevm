@@ -351,6 +351,52 @@ enum PsciState {
     On,
 }
 
+const SMP_TRACE_PROGRESS_INTERVAL: u64 = 10_000;
+
+struct SmpTrace {
+    cpu0_exits: AtomicU64,
+    secondary_exits: AtomicU64,
+}
+
+impl SmpTrace {
+    fn new() -> Self {
+        Self {
+            cpu0_exits: AtomicU64::new(0),
+            secondary_exits: AtomicU64::new(0),
+        }
+    }
+
+    fn state_transition(&self, cpu: u64, from: PsciState, to: PsciState) {
+        println!("SMP trace: vCPU{cpu} {from:?} -> {to:?}");
+    }
+
+    fn secondary_vcpu_created(&self, cpu: u64, vcpu: HvVcpuT) {
+        println!("SMP trace: vCPU{cpu} created HVF vCPU {vcpu}");
+    }
+
+    fn cpu0_progress(&self, exits: u64) {
+        self.cpu0_exits.store(exits, Ordering::Relaxed);
+        if exits != 0 && exits % SMP_TRACE_PROGRESS_INTERVAL == 0 {
+            println!(
+                "SMP trace: progress cpu0_exits={} secondary_exits={}",
+                exits,
+                self.secondary_exits.load(Ordering::Relaxed)
+            );
+        }
+    }
+
+    fn secondary_progress(&self) {
+        let exits = self.secondary_exits.fetch_add(1, Ordering::Relaxed) + 1;
+        if exits % SMP_TRACE_PROGRESS_INTERVAL == 0 {
+            println!(
+                "SMP trace: progress cpu0_exits={} secondary_exits={}",
+                self.cpu0_exits.load(Ordering::Relaxed),
+                exits
+            );
+        }
+    }
+}
+
 struct VcpuControl {
     state: Mutex<PsciState>,
     condvar: Condvar,
@@ -392,6 +438,7 @@ impl SecondaryVcpuSet {
         ram_size: usize,
         platform: Arc<Mutex<VirtPlatform>>,
         drain_trace: DrainTrace,
+        smp_trace: Option<Arc<SmpTrace>>,
     ) -> Self {
         if cpu_count <= 1 {
             return Self {
@@ -412,6 +459,7 @@ impl SecondaryVcpuSet {
                 let controls_for_thread = controls.clone();
                 let shutdown = Arc::clone(&shutdown);
                 let platform = Arc::clone(&platform);
+                let smp_trace = smp_trace.clone();
                 thread::Builder::new()
                     .name(format!("bridgevm-hvf-vcpu{}", control.index))
                     .spawn(move || {
@@ -423,6 +471,7 @@ impl SecondaryVcpuSet {
                             platform,
                             drain_trace,
                             controls_for_thread,
+                            smp_trace,
                         )
                     })
                     .expect("spawn secondary vCPU thread")
@@ -466,24 +515,11 @@ fn secondary_vcpu_thread(
     platform: Arc<Mutex<VirtPlatform>>,
     drain_trace: DrainTrace,
     controls: Vec<Arc<VcpuControl>>,
+    smp_trace: Option<Arc<SmpTrace>>,
 ) {
     let mut vcpu: HvVcpuT = 0;
     let mut exit: *mut HvVcpuExit = null_mut();
-    unsafe {
-        assert_eq!(
-            hv_vcpu_create(&mut vcpu, &mut exit, null_mut()),
-            0,
-            "hv_vcpu_create secondary vCPU{}",
-            control.index
-        );
-        control.vcpu.store(vcpu, Ordering::SeqCst);
-        assert_eq!(
-            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, control.mpidr),
-            0,
-            "set secondary MPIDR_EL1"
-        );
-    }
-    let _vcpu_guard = HvVcpuGuard { vcpu };
+    let mut _vcpu_guard: Option<HvVcpuGuard> = None;
     let mut guest_ram = MappedRam {
         base: machine::RAM_BASE,
         ptr: ram_base as *mut u8,
@@ -508,7 +544,19 @@ fn secondary_vcpu_thread(
             PsciState::OnPending => {
                 let entry = control.entry.load(Ordering::SeqCst);
                 let context = control.context.load(Ordering::SeqCst);
+                if vcpu == 0 {
+                    let (created_vcpu, created_exit, guard) = create_secondary_hvf_vcpu(&control);
+                    vcpu = created_vcpu;
+                    exit = created_exit;
+                    _vcpu_guard = Some(guard);
+                    if let Some(trace) = smp_trace.as_deref() {
+                        trace.secondary_vcpu_created(control.index, vcpu);
+                    }
+                }
                 apply_secondary_cpu_on_reset(vcpu, entry, context);
+                if let Some(trace) = smp_trace.as_deref() {
+                    trace.state_transition(control.index, PsciState::OnPending, PsciState::On);
+                }
                 *state = PsciState::On;
                 drop(state);
                 let stop = run_secondary_until_parked(
@@ -522,6 +570,7 @@ fn secondary_vcpu_thread(
                     &controls,
                     &shutdown,
                     &mut exits,
+                    smp_trace.as_deref(),
                 );
                 state = control.state.lock().expect("secondary vCPU state mutex");
                 if stop {
@@ -541,6 +590,7 @@ fn secondary_vcpu_thread(
                     &controls,
                     &shutdown,
                     &mut exits,
+                    smp_trace.as_deref(),
                 );
                 state = control.state.lock().expect("secondary vCPU state mutex");
                 if stop {
@@ -549,6 +599,26 @@ fn secondary_vcpu_thread(
             }
         }
     }
+}
+
+fn create_secondary_hvf_vcpu(control: &VcpuControl) -> (HvVcpuT, *mut HvVcpuExit, HvVcpuGuard) {
+    let mut vcpu: HvVcpuT = 0;
+    let mut exit: *mut HvVcpuExit = null_mut();
+    unsafe {
+        assert_eq!(
+            hv_vcpu_create(&mut vcpu, &mut exit, null_mut()),
+            0,
+            "hv_vcpu_create secondary vCPU{}",
+            control.index
+        );
+        control.vcpu.store(vcpu, Ordering::SeqCst);
+        assert_eq!(
+            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, control.mpidr),
+            0,
+            "set secondary MPIDR_EL1"
+        );
+    }
+    (vcpu, exit, HvVcpuGuard { vcpu })
 }
 
 fn normalized_mpidr(value: u64) -> u64 {
@@ -582,7 +652,13 @@ fn psci_features(func: u64) -> u64 {
     }
 }
 
-fn psci_cpu_on(controls: &[Arc<VcpuControl>], target_mpidr: u64, entry: u64, context: u64) -> u64 {
+fn psci_cpu_on(
+    controls: &[Arc<VcpuControl>],
+    target_mpidr: u64,
+    entry: u64,
+    context: u64,
+    smp_trace: Option<&SmpTrace>,
+) -> u64 {
     let Some(target_index) = psci_target_index(target_mpidr, controls) else {
         return PSCI_INVALID_PARAMS;
     };
@@ -593,6 +669,9 @@ fn psci_cpu_on(controls: &[Arc<VcpuControl>], target_mpidr: u64, entry: u64, con
     }
     control.entry.store(entry, Ordering::SeqCst);
     control.context.store(context, Ordering::SeqCst);
+    if let Some(trace) = smp_trace {
+        trace.state_transition(control.index, PsciState::Off, PsciState::OnPending);
+    }
     *state = PsciState::OnPending;
     control.condvar.notify_one();
     PSCI_SUCCESS
@@ -644,6 +723,7 @@ fn run_secondary_until_parked(
     controls: &[Arc<VcpuControl>],
     shutdown: &AtomicBool,
     exits: &mut u64,
+    smp_trace: Option<&SmpTrace>,
 ) -> bool {
     loop {
         if shutdown.load(Ordering::SeqCst) {
@@ -674,6 +754,9 @@ fn run_secondary_until_parked(
             }
         };
         *exits += 1;
+        if let Some(trace) = smp_trace {
+            trace.secondary_progress();
+        }
         if reason == EXIT_CANCELED {
             if shutdown.load(Ordering::SeqCst) {
                 return true;
@@ -767,6 +850,9 @@ fn run_secondary_until_parked(
                     }
                     PSCI_CPU_OFF => {
                         let mut state = control.state.lock().expect("secondary PSCI state mutex");
+                        if let Some(trace) = smp_trace {
+                            trace.state_transition(control.index, *state, PsciState::Off);
+                        }
                         *state = PsciState::Off;
                         return false;
                     }
@@ -781,7 +867,7 @@ fn run_secondary_until_parked(
                             hv_vcpu_set_reg(
                                 vcpu,
                                 HV_REG_X0,
-                                psci_cpu_on(controls, target, entry, context),
+                                psci_cpu_on(controls, target, entry, context, smp_trace),
                             );
                         }
                     }
@@ -906,20 +992,44 @@ mod vcpu_control_tests {
             .collect();
 
         assert_eq!(
-            psci_cpu_on(&controls, machine::cpu_mpidr(1), 0x1234, 0x5678),
+            psci_cpu_on(&controls, machine::cpu_mpidr(1), 0x1234, 0x5678, None),
             PSCI_SUCCESS
         );
         assert_eq!(*controls[0].state.lock().unwrap(), PsciState::OnPending);
         assert_eq!(controls[0].entry.load(Ordering::SeqCst), 0x1234);
         assert_eq!(controls[0].context.load(Ordering::SeqCst), 0x5678);
         assert_eq!(
-            psci_cpu_on(&controls, 0x8000_0000 | machine::cpu_mpidr(1), 0x9, 0xa),
+            psci_cpu_on(
+                &controls,
+                0x8000_0000 | machine::cpu_mpidr(1),
+                0x9,
+                0xa,
+                None
+            ),
             PSCI_ALREADY_ON
         );
         assert_eq!(
-            psci_cpu_on(&controls, machine::cpu_mpidr(3), 0x9, 0xa),
+            psci_cpu_on(&controls, machine::cpu_mpidr(3), 0x9, 0xa, None),
             PSCI_INVALID_PARAMS
         );
+    }
+
+    #[test]
+    fn psci_cpu_on_defers_hvf_vcpu_creation_to_secondary_thread() {
+        let controls: Vec<_> = (1..2)
+            .map(|index| Arc::new(VcpuControl::new(index)))
+            .collect();
+
+        assert_eq!(
+            psci_cpu_on(&controls, machine::cpu_mpidr(1), 0x8000, 0xfeed, None),
+            PSCI_SUCCESS
+        );
+
+        let control = &controls[0];
+        assert_eq!(*control.state.lock().unwrap(), PsciState::OnPending);
+        assert_eq!(control.entry.load(Ordering::SeqCst), 0x8000);
+        assert_eq!(control.context.load(Ordering::SeqCst), 0xfeed);
+        assert_eq!(control.vcpu.load(Ordering::SeqCst), 0);
     }
 
     #[test]
@@ -2218,6 +2328,7 @@ fn main() {
     let trace_spi = env_flag("BRIDGEVM_TRACE_SPI");
     let trace_run_loop = env_flag("BRIDGEVM_TRACE_RUN_LOOP");
     let trace_xhci_bringup = env_flag("BRIDGEVM_TRACE_XHCI_BRINGUP");
+    let smp_trace_enabled = env_flag("BRIDGEVM_SMP_TRACE");
     let stop_on_linux = env_flag_default("BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX", true);
 
     unsafe {
@@ -2489,6 +2600,7 @@ fn main() {
                 msix: trace_msix,
                 spi: trace_spi,
             };
+            let smp_trace = (smp_cpus > 1 && smp_trace_enabled).then(|| Arc::new(SmpTrace::new()));
             let secondary_vcpus = (smp_cpus > 1).then(|| {
                 SecondaryVcpuSet::spawn(
                     smp_cpus,
@@ -2496,6 +2608,7 @@ fn main() {
                     ram_size,
                     Arc::clone(&platform),
                     drain_trace,
+                    smp_trace.clone(),
                 )
             });
             let boot_generation = begin_watchdog_generation(&watchdog_generation);
@@ -2652,6 +2765,9 @@ fn main() {
                     }
                 };
                 exits += 1;
+                if let Some(trace) = smp_trace.as_deref() {
+                    trace.cpu0_progress(exits);
+                }
                 stop_reason_code = Some(reason);
                 let sample_tick_canceled =
                     ramfb_sample_loop.canceled_by_sample_tick(reason, &watchdog_fired);
@@ -2846,6 +2962,7 @@ fn main() {
                                             target,
                                             entry,
                                             context,
+                                            smp_trace.as_deref(),
                                         ),
                                         None => PSCI_NOT_SUPPORTED,
                                     };
