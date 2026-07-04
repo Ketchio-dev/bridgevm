@@ -3447,13 +3447,21 @@ fn main() {
                         }
                         for trigger in &mut xhci_setup_input_triggers {
                             let ramfb_config = platform.ramfb_config();
+                            let virtio_gpu_scanout = platform
+                                .virtio_gpu_scanout()
+                                .map(ramfb_dump::OwnedGpuScanout::from_scanout);
                             let now = std::time::Instant::now();
                             trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
                                 platform,
                                 &mut guest_ram,
                                 now,
                                 |label, mem| {
-                                    ramfb_dump::print_checkpoint(label, ramfb_config, mem);
+                                    ramfb_dump::print_checkpoint_with_virtio_gpu(
+                                        label,
+                                        virtio_gpu_scanout.clone(),
+                                        ramfb_config,
+                                        mem,
+                                    );
                                 },
                             );
                             if let Some(deadline) =
@@ -3478,13 +3486,21 @@ fn main() {
                         }
                         for trigger in &mut xhci_pointer_input_triggers {
                             let ramfb_config = platform.ramfb_config();
+                            let virtio_gpu_scanout = platform
+                                .virtio_gpu_scanout()
+                                .map(ramfb_dump::OwnedGpuScanout::from_scanout);
                             let now = std::time::Instant::now();
                             trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
                                 platform,
                                 &mut guest_ram,
                                 now,
                                 |label, mem| {
-                                    ramfb_dump::print_checkpoint(label, ramfb_config, mem);
+                                    ramfb_dump::print_checkpoint_with_virtio_gpu(
+                                        label,
+                                        virtio_gpu_scanout.clone(),
+                                        ramfb_config,
+                                        mem,
+                                    );
                                 },
                             );
                             if let Some(deadline) =
@@ -3508,8 +3524,16 @@ fn main() {
                             }
                         }
                         let ramfb_config = platform.ramfb_config();
+                        let virtio_gpu_scanout = platform
+                            .virtio_gpu_scanout()
+                            .map(ramfb_dump::OwnedGpuScanout::from_scanout);
                         ramfb_sample_loop.emit_due(vcpu, |label| {
-                            ramfb_dump::print_checkpoint(label, ramfb_config, &guest_ram);
+                            ramfb_dump::print_checkpoint_with_virtio_gpu(
+                                label,
+                                virtio_gpu_scanout.clone(),
+                                ramfb_config,
+                                &guest_ram,
+                            );
                         });
                         if stop_on_linux
                             && serial_reached_linux_early_boot(
@@ -3849,6 +3873,9 @@ fn main() {
                 print_block_request_trace("recent legacy virtio-mmio ISO requests", &trace);
             }
             let ramfb_config = platform.ramfb_config();
+            let virtio_gpu_scanout = platform
+                .virtio_gpu_scanout()
+                .map(ramfb_dump::OwnedGpuScanout::from_scanout);
             match ramfb_config {
                 Some(config) => println!(
                     "ramfb config: addr={:#x} fourcc={:#010x} xrgb8888={} {}x{} stride={}",
@@ -3861,7 +3888,11 @@ fn main() {
                 ),
                 None => println!("ramfb config: inactive"),
             }
-            ramfb_dump::print_and_dump(ramfb_config, &guest_ram);
+            ramfb_dump::print_and_dump_with_virtio_gpu(
+                virtio_gpu_scanout,
+                ramfb_config,
+                &guest_ram,
+            );
             println!("symbol lines: {}", symbols.len());
             for line in symbols.iter().rev().take(8).rev() {
                 println!("{line}");

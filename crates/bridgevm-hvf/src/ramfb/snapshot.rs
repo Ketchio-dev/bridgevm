@@ -51,6 +51,26 @@ pub(super) fn framebuffer_len(config: RamfbConfig) -> Result<usize, RamfbSnapsho
 }
 
 impl RamfbSnapshot {
+    pub fn from_xrgb8888_bytes(
+        config: RamfbConfig,
+        bytes: Vec<u8>,
+    ) -> Result<Self, RamfbSnapshotError> {
+        ensure_xrgb8888(config)?;
+        let geometry = framebuffer_geometry(config)?;
+        if bytes.len() != geometry.byte_len {
+            return Err(RamfbSnapshotError::GuestMemoryOutOfRange {
+                addr: config.addr,
+                len: geometry.byte_len,
+            });
+        }
+        let summary = summarize_xrgb8888(config, geometry, &bytes)?;
+        Ok(Self {
+            config,
+            bytes,
+            summary,
+        })
+    }
+
     pub fn read_from(
         mem: &dyn GuestMemoryMut,
         config: RamfbConfig,

@@ -257,6 +257,7 @@ impl VirtBootMediaConfig {
         let virtio_iso_present = !env_flag("BRIDGEVM_DISABLE_VIRTIO_ISO");
         cfg.platform_devices.virtio_boot_media_present = virtio_iso_present;
         cfg.platform_devices.virtio_net_present = env_flag("BRIDGEVM_VIRTIO_NET");
+        cfg.platform_devices.virtio_gpu_present = env_flag("BRIDGEVM_VIRTIO_GPU");
         cfg.platform_devices.virtio_net_backend = VirtioNetBackendKind::from_env_value(
             env::var("BRIDGEVM_VIRTIO_NET_BACKEND").ok().as_deref(),
         );
@@ -319,6 +320,7 @@ mod tests {
             "BRIDGEVM_DISABLE_XHCI",
             "BRIDGEVM_DISABLE_VIRTIO_ISO",
             "BRIDGEVM_VIRTIO_NET",
+            "BRIDGEVM_VIRTIO_GPU",
             "BRIDGEVM_VIRTIO_NET_BACKEND",
             "BRIDGEVM_RAMFB",
             "BRIDGEVM_DISABLE_RAMFB_DEVICE",
@@ -445,6 +447,18 @@ mod tests {
         let cfg = VirtBootMediaConfig::from_probe_env();
 
         assert!(cfg.platform_devices.virtio_net_present);
+        clear_probe_disable_env();
+    }
+
+    #[test]
+    fn probe_env_enables_virtio_gpu_when_truthy() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_probe_disable_env();
+        env::set_var("BRIDGEVM_VIRTIO_GPU", "yes");
+
+        let cfg = VirtBootMediaConfig::from_probe_env();
+
+        assert!(cfg.platform_devices.virtio_gpu_present);
         clear_probe_disable_env();
     }
 

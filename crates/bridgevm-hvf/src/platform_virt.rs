@@ -40,7 +40,7 @@ use crate::nvme::{
 };
 use crate::pcie::{
     CfgAddr, PcieEcam, PcieEcamConfig, PcieMmioTarget, PciePioTarget, NVME_BDF, VIRTIO_BLK_BDF,
-    VIRTIO_NET_BDF, XHCI_BDF,
+    VIRTIO_GPU_BDF, VIRTIO_NET_BDF, XHCI_BDF,
 };
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
@@ -50,6 +50,9 @@ use crate::smbios::{build_smbios, SMBIOS_ANCHOR_FILE, SMBIOS_TABLE_FILE};
 use crate::virtio_blk::{
     VirtioBlockRequestTrace, VirtioMmioBlock, VirtioMmioBlockResult, VirtioMmioBlockStats,
     VirtioPciBlock, VirtioPciBlockOp, INSTALLER_ISO_SLOT,
+};
+use crate::virtio_gpu::{
+    VirtioGpuResult, VirtioGpuScanout, VirtioGpuStats, VirtioPciGpu, VirtioPciGpuOp,
 };
 use crate::virtio_net::{
     LoopbackTestBackend, NetBackend, VirtioNetResult, VirtioNetStats, VirtioPciNet, VirtioPciNetOp,
@@ -69,6 +72,7 @@ pub struct VirtPlatformDeviceConfig {
     pub xhci_present: bool,
     pub virtio_boot_media_present: bool,
     pub virtio_net_present: bool,
+    pub virtio_gpu_present: bool,
     pub virtio_net_backend: VirtioNetBackendKind,
     pub legacy_virtio_mmio_present: bool,
     pub ramfb_present: bool,
@@ -80,6 +84,7 @@ impl Default for VirtPlatformDeviceConfig {
             xhci_present: true,
             virtio_boot_media_present: true,
             virtio_net_present: false,
+            virtio_gpu_present: false,
             virtio_net_backend: VirtioNetBackendKind::Nat,
             legacy_virtio_mmio_present: true,
             ramfb_present: false,
@@ -260,6 +265,7 @@ pub struct VirtPlatform {
     virtio_iso: Option<VirtioMmioBlock>,
     pci_boot_media: Option<VirtioPciBlock>,
     virtio_net: Option<VirtioPciNet<PlatformNetBackend>>,
+    virtio_gpu: Option<VirtioPciGpu>,
     ramfb: Ramfb,
     flash_vars: P30NorFlash,
     pending_msix: Vec<MsixMessage>,
@@ -338,6 +344,7 @@ impl VirtPlatform {
                 xhci_present: config.devices.xhci_present,
                 virtio_blk_present: config.devices.virtio_boot_media_present,
                 virtio_net_present: config.devices.virtio_net_present,
+                virtio_gpu_present: config.devices.virtio_gpu_present,
             }),
             nvme: NvmeController::new(DEFAULT_NVME_DISK_BYTES),
             xhci: XhciController::new(),
@@ -346,6 +353,10 @@ impl VirtPlatform {
             virtio_net: config.devices.virtio_net_present.then(|| {
                 VirtioPciNet::new(make_virtio_net_backend(config.devices.virtio_net_backend))
             }),
+            virtio_gpu: config
+                .devices
+                .virtio_gpu_present
+                .then(VirtioPciGpu::new_from_env),
             ramfb: Ramfb::new(),
             flash_vars: P30NorFlash::new(
                 machine::FLASH_VARS.base,
@@ -409,6 +420,7 @@ impl VirtPlatform {
             xhci_present: self.devices.xhci_present,
             virtio_blk_present: self.devices.virtio_boot_media_present,
             virtio_net_present: self.devices.virtio_net_present,
+            virtio_gpu_present: self.devices.virtio_gpu_present,
         });
         self.nvme.reset_registers_keep_disks();
         self.xhci = XhciController::new();
@@ -421,6 +433,9 @@ impl VirtPlatform {
             dev.reset_runtime_state();
         }
         if let Some(dev) = self.virtio_net.as_mut() {
+            dev.reset_runtime_state();
+        }
+        if let Some(dev) = self.virtio_gpu.as_mut() {
             dev.reset_runtime_state();
         }
         self.pending_msix.clear();
@@ -528,6 +543,14 @@ impl VirtPlatform {
         self.virtio_net
             .as_ref()
             .and_then(|dev| dev.backend().nat_stats())
+    }
+
+    pub fn virtio_gpu_stats(&self) -> Option<VirtioGpuStats> {
+        self.virtio_gpu.as_ref().map(VirtioPciGpu::stats)
+    }
+
+    pub fn virtio_gpu_scanout(&self) -> Option<VirtioGpuScanout<'_>> {
+        self.virtio_gpu.as_ref().and_then(VirtioPciGpu::scanout)
     }
 
     pub fn pump_virtio_net_receive(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
@@ -985,6 +1008,7 @@ impl VirtPlatform {
                 self.flush_nvme_pending_msix();
                 self.flush_xhci_pending_msix();
                 self.flush_virtio_net_pending_msix();
+                self.flush_virtio_gpu_pending_msix();
                 MmioOutcome::WriteAck
             }
         }
@@ -1048,6 +1072,8 @@ impl VirtPlatform {
             (VIRTIO_BLK_BDF, 4) => self.pci_boot_media_access(target.offset, op, mem),
             (VIRTIO_NET_BDF, 1) => self.virtio_net_msix_access(target.offset, op),
             (VIRTIO_NET_BDF, 4) => self.virtio_net_access(target.offset, op, mem),
+            (VIRTIO_GPU_BDF, 1) => self.virtio_gpu_msix_access(target.offset, op),
+            (VIRTIO_GPU_BDF, 4) => self.virtio_gpu_access(target.offset, op, mem),
             _ => MmioOutcome::KnownUnimplemented(aperture),
         }
     }
@@ -1134,6 +1160,48 @@ impl VirtPlatform {
         match result {
             VirtioNetResult::ReadValue(v) => MmioOutcome::ReadValue(v),
             VirtioNetResult::WriteAck => MmioOutcome::WriteAck,
+        }
+    }
+
+    fn virtio_gpu_msix_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {
+        let Some(dev) = self.virtio_gpu.as_mut() else {
+            return MmioOutcome::KnownUnimplemented("virtio-gpu-pci");
+        };
+        let is_write = matches!(op, MmioOp::Write { .. });
+        let result = match op {
+            MmioOp::Read { size } => dev.msix_bar_access(offset, VirtioPciGpuOp::Read { size }),
+            MmioOp::Write { size, value } => {
+                dev.msix_bar_access(offset, VirtioPciGpuOp::Write { size, value })
+            }
+        };
+        if is_write {
+            self.flush_virtio_gpu_pending_msix();
+        }
+        match result {
+            VirtioGpuResult::ReadValue(v) => MmioOutcome::ReadValue(v),
+            VirtioGpuResult::WriteAck => MmioOutcome::WriteAck,
+        }
+    }
+
+    fn virtio_gpu_access(
+        &mut self,
+        offset: u64,
+        op: MmioOp,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> MmioOutcome {
+        let Some(dev) = self.virtio_gpu.as_mut() else {
+            return MmioOutcome::KnownUnimplemented("virtio-gpu-pci");
+        };
+        let result = match op {
+            MmioOp::Read { size } => dev.access(offset, VirtioPciGpuOp::Read { size }, mem),
+            MmioOp::Write { size, value } => {
+                dev.access(offset, VirtioPciGpuOp::Write { size, value }, mem)
+            }
+        };
+        self.flush_virtio_gpu_pending_msix();
+        match result {
+            VirtioGpuResult::ReadValue(v) => MmioOutcome::ReadValue(v),
+            VirtioGpuResult::WriteAck => MmioOutcome::WriteAck,
         }
     }
 
@@ -1234,6 +1302,18 @@ impl VirtPlatform {
             return;
         };
         let control = self.pcie.virtio_net_msix_control();
+        self.pending_msix
+            .extend(dev.drain_pending_msix(control.enabled, control.function_masked));
+    }
+
+    fn flush_virtio_gpu_pending_msix(&mut self) {
+        if !self.devices.virtio_gpu_present {
+            return;
+        }
+        let Some(dev) = self.virtio_gpu.as_mut() else {
+            return;
+        };
+        let control = self.pcie.virtio_gpu_msix_control();
         self.pending_msix
             .extend(dev.drain_pending_msix(control.enabled, control.function_masked));
     }

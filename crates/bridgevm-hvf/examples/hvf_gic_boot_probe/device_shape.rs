@@ -86,6 +86,21 @@ fn device_shape_lines(
     } else {
         "virtio-net-pci: disabled".to_string()
     };
+    let virtio_gpu = if devices.virtio_gpu_present {
+        format!(
+            "virtio-gpu-pci: {bus:02x}:{dev:02x}.{func} vendor={vendor:#06x} device={device:#06x} class={class:#08x} bar1_msix_size={bar1:#x} bar4_modern_mmio_size={bar4:#x}",
+            bus = pcie::VIRTIO_GPU_BDF.0,
+            dev = pcie::VIRTIO_GPU_BDF.1,
+            func = pcie::VIRTIO_GPU_BDF.2,
+            vendor = pcie::VIRTIO_GPU_VENDOR_ID,
+            device = pcie::VIRTIO_GPU_DEVICE_ID,
+            class = pcie::VIRTIO_GPU_CLASS_CODE,
+            bar1 = pcie::VIRTIO_GPU_BAR1_SIZE,
+            bar4 = pcie::VIRTIO_GPU_BAR4_SIZE,
+        )
+    } else {
+        "virtio-gpu-pci: disabled".to_string()
+    };
     let legacy_parity = if devices.legacy_virtio_mmio_present {
         "qemu oracle parity: legacy virtio-mmio slot 31 kept as installer ISO fallback"
     } else {
@@ -110,6 +125,7 @@ fn device_shape_lines(
         legacy_virtio,
         pci_virtio,
         virtio_net,
+        virtio_gpu,
         legacy_parity.to_string(),
     ]
 }
@@ -162,6 +178,7 @@ mod tests {
                     && line.contains("attached=false"))
         );
         assert!(lines.iter().any(|line| line == "virtio-net-pci: disabled"));
+        assert!(lines.iter().any(|line| line == "virtio-gpu-pci: disabled"));
         let net_lines = super::device_shape_lines(
             VirtPlatformDeviceConfig {
                 virtio_net_present: true,
@@ -175,6 +192,19 @@ mod tests {
             .contains("virtio-net-pci: 00:04.0 vendor=0x1af4 device=0x1041 class=0x020000")
             && line.contains("bar1_msix_size=0x1000")
             && line.contains("bar4_modern_mmio_size=0x4000")));
+        let gpu_lines = super::device_shape_lines(
+            VirtPlatformDeviceConfig {
+                virtio_gpu_present: true,
+                ..VirtPlatformDeviceConfig::default()
+            },
+            false,
+            false,
+            16 * 1024 * 1024,
+        );
+        assert!(gpu_lines.iter().any(|line| line
+            .contains("virtio-gpu-pci: 00:05.0 vendor=0x1af4 device=0x1050 class=0x038000")
+            && line.contains("bar1_msix_size=0x1000")
+            && line.contains("bar4_modern_mmio_size=0x4000")));
     }
 
     #[test]
@@ -184,6 +214,7 @@ mod tests {
                 xhci_present: false,
                 virtio_boot_media_present: false,
                 virtio_net_present: false,
+                virtio_gpu_present: false,
                 virtio_net_backend: bridgevm_hvf::platform_virt::VirtioNetBackendKind::Nat,
                 legacy_virtio_mmio_present: false,
                 ramfb_present: false,
@@ -201,5 +232,6 @@ mod tests {
             .iter()
             .any(|line| line == "boot-media installer ISO: virtio-blk-pci disabled"));
         assert!(lines.iter().any(|line| line == "virtio-net-pci: disabled"));
+        assert!(lines.iter().any(|line| line == "virtio-gpu-pci: disabled"));
     }
 }
