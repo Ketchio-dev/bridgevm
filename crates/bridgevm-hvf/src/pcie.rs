@@ -238,6 +238,33 @@ pub const VIRTIO_BLK_MSIX_TABLE_OFFSET: u32 = 0x0000;
 /// Offset of the virtio-blk MSI-X Pending Bit Array in BAR1.
 pub const VIRTIO_BLK_MSIX_PBA_OFFSET: u32 = 0x0800;
 
+// ---- The modern virtio-net endpoint (00:04.0) ------------------------------
+
+/// Bus/device/function for the opt-in modern-only `virtio-net-pci` endpoint.
+pub const VIRTIO_NET_BDF: (u8, u8, u8) = (0, 4, 0);
+/// Red Hat virtio vendor id.
+pub const VIRTIO_NET_VENDOR_ID: u16 = 0x1af4;
+/// Modern virtio network device id (`0x1040 + virtio device id 1`).
+pub const VIRTIO_NET_DEVICE_ID: u16 = 0x1041;
+/// Class code `0x020000`: network / Ethernet controller.
+pub const VIRTIO_NET_CLASS_CODE: u32 = 0x0002_0000;
+/// Modern virtio PCI revision id.
+pub const VIRTIO_NET_REVISION: u8 = 0x01;
+pub const VIRTIO_NET_SUBSYSTEM_VENDOR_ID: u16 = 0x1af4;
+pub const VIRTIO_NET_SUBSYSTEM_ID: u16 = 0x0040;
+/// MSI-X table/PBA memory BAR.
+pub const VIRTIO_NET_BAR1_SIZE: u32 = 0x1000;
+/// Modern virtio PCI transport memory BAR.
+pub const VIRTIO_NET_BAR4_SIZE: u32 = 0x4000;
+/// PCI capability-list offset for the virtio-net MSI-X capability.
+pub const VIRTIO_NET_MSIX_CAP_OFFSET: u8 = 0x84;
+/// One vector per virtio-net queue (RX=0, TX=1).
+pub const VIRTIO_NET_MSIX_VECTOR_COUNT: u16 = 2;
+/// Offset of the virtio-net MSI-X table in BAR1.
+pub const VIRTIO_NET_MSIX_TABLE_OFFSET: u32 = 0x0000;
+/// Offset of the virtio-net MSI-X Pending Bit Array in BAR1.
+pub const VIRTIO_NET_MSIX_PBA_OFFSET: u32 = 0x0800;
+
 /// The value an ECAM read returns when no device answers: all-ones. Firmware
 /// treats a `0xFFFF_FFFF` vendor/device read as "slot empty".
 pub const NO_DEVICE: u64 = 0xFFFF_FFFF;
@@ -538,6 +565,39 @@ impl Function {
         }
     }
 
+    /// Modern-only virtio network endpoint at `00:04.0`.
+    fn virtio_net() -> Self {
+        let mut bars = [Bar::default(); NUM_BARS];
+        bars[1] = Bar::memory32(VIRTIO_NET_BAR1_SIZE);
+        bars[4] = Bar::memory32(VIRTIO_NET_BAR4_SIZE);
+        let caps = virtio_caps::capability_list(VIRTIO_NET_MSIX_CAP_OFFSET);
+        let msix = MsixCapability::new(
+            VIRTIO_NET_MSIX_VECTOR_COUNT,
+            1,
+            VIRTIO_NET_MSIX_TABLE_OFFSET,
+            VIRTIO_NET_MSIX_PBA_OFFSET,
+        );
+        let mut cap_bytes = caps.cap_bytes;
+        cap_bytes.extend(
+            msix.to_bytes(0)
+                .into_iter()
+                .enumerate()
+                .map(|(i, byte)| (u16::from(VIRTIO_NET_MSIX_CAP_OFFSET) + i as u16, byte)),
+        );
+        Self {
+            bdf: VIRTIO_NET_BDF,
+            vendor_device: (u32::from(VIRTIO_NET_DEVICE_ID) << 16)
+                | u32::from(VIRTIO_NET_VENDOR_ID),
+            revision_class: (VIRTIO_NET_CLASS_CODE << 8) | u32::from(VIRTIO_NET_REVISION),
+            subsystem_ids: (u32::from(VIRTIO_NET_SUBSYSTEM_ID) << 16)
+                | u32::from(VIRTIO_NET_SUBSYSTEM_VENDOR_ID),
+            command: 0,
+            bars,
+            cap_ptr: caps.cap_ptr,
+            cap_bytes,
+        }
+    }
+
     fn xhci() -> Self {
         let mut bars = [Bar::default(); NUM_BARS];
         let (bar0, bar1) = Bar::memory64(XHCI_BAR0_SIZE);
@@ -770,6 +830,7 @@ pub struct PcieNvmeEndpointState {
 pub struct PcieEcamConfig {
     pub xhci_present: bool,
     pub virtio_blk_present: bool,
+    pub virtio_net_present: bool,
 }
 
 impl Default for PcieEcamConfig {
@@ -777,6 +838,7 @@ impl Default for PcieEcamConfig {
         Self {
             xhci_present: true,
             virtio_blk_present: true,
+            virtio_net_present: false,
         }
     }
 }
@@ -801,6 +863,9 @@ impl PcieEcam {
         }
         if config.virtio_blk_present {
             functions.push(Function::virtio_blk());
+        }
+        if config.virtio_net_present {
+            functions.push(Function::virtio_net());
         }
         Self { functions }
     }
@@ -922,6 +987,13 @@ impl PcieEcam {
     /// Function-level MSI-X control for the xHCI endpoint.
     pub fn xhci_msix_control(&self) -> MsixFunctionControl {
         self.function_at(XHCI_BDF)
+            .and_then(Function::msix_control)
+            .unwrap_or_default()
+    }
+
+    /// Function-level MSI-X control for the virtio-net endpoint.
+    pub fn virtio_net_msix_control(&self) -> MsixFunctionControl {
+        self.function_at(VIRTIO_NET_BDF)
             .and_then(Function::msix_control)
             .unwrap_or_default()
     }
@@ -1100,6 +1172,19 @@ mod tests {
             | u64::from(reg)
     }
 
+    fn bdf_ecam_offset(bdf: (u8, u8, u8), reg: u16) -> u64 {
+        ecam_offset(bdf.0, bdf.1, bdf.2, reg)
+    }
+
+    fn read_config_bytes(ecam: &PcieEcam, bdf: (u8, u8, u8), len: usize) -> Vec<u8> {
+        (0..len)
+            .map(|reg| {
+                u8::try_from(ecam.cfg_read(bdf_ecam_offset(bdf, reg as u16), 1))
+                    .expect("single-byte config read fits in u8")
+            })
+            .collect()
+    }
+
     #[test]
     fn ecam_offset_decodes_into_bdf_reg() {
         let off = ecam_offset(0x12, 0x1a, 0x5, 0x3c);
@@ -1158,6 +1243,41 @@ mod tests {
         assert_eq!(ecam.cfg_read(ecam_offset(0, 0, 1, 0x00), 4), NO_DEVICE);
         // A non-zero bus is empty.
         assert_eq!(ecam.cfg_read(ecam_offset(1, 0, 0, 0x00), 4), NO_DEVICE);
+    }
+
+    #[test]
+    fn boot_media_config_space_bytes_stay_byte_identical() {
+        let ecam = PcieEcam::new();
+        let mut expected = [0u8; 0x100];
+        expected[0x00..0x04].copy_from_slice(&[0xf4, 0x1a, 0x01, 0x10]);
+        expected[0x04..0x08].copy_from_slice(&[0x00, 0x00, 0x10, 0x00]);
+        expected[0x08..0x0c].copy_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+        expected[0x2c..0x30].copy_from_slice(&[0xf4, 0x1a, 0x02, 0x00]);
+        expected[0x34] = 0x40;
+        expected[0x40..0x50].copy_from_slice(&[
+            0x09, 0x50, 0x10, 0x01, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0x00, 0x00,
+        ]);
+        expected[0x50..0x64].copy_from_slice(&[
+            0x09, 0x64, 0x14, 0x02, 0x04, 0x00, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00, 0x10,
+            0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
+        ]);
+        expected[0x64..0x74].copy_from_slice(&[
+            0x09, 0x74, 0x10, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10,
+            0x00, 0x00,
+        ]);
+        expected[0x74..0x84].copy_from_slice(&[
+            0x09, 0x84, 0x10, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x10,
+            0x00, 0x00,
+        ]);
+        expected[0x84..0x90].copy_from_slice(&[
+            0x11, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x00, 0x00,
+        ]);
+
+        assert_eq!(
+            read_config_bytes(&ecam, VIRTIO_BLK_BDF, expected.len()),
+            expected
+        );
     }
 
     #[test]
@@ -1256,6 +1376,121 @@ mod tests {
             ecam.mmio_target(mmio_base),
             Some(PcieMmioTarget {
                 bdf: VIRTIO_BLK_BDF,
+                bar_index: 4,
+                offset: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn virtio_net_endpoint_is_absent_by_default_and_gated_on() {
+        let ecam = PcieEcam::new();
+        assert_eq!(
+            ecam.cfg_read(bdf_ecam_offset(VIRTIO_NET_BDF, REG_VENDOR_DEVICE), 4),
+            NO_DEVICE
+        );
+
+        let ecam = PcieEcam::new_with_config(PcieEcamConfig {
+            virtio_net_present: true,
+            ..PcieEcamConfig::default()
+        });
+        let vd = ecam.cfg_read(bdf_ecam_offset(VIRTIO_NET_BDF, REG_VENDOR_DEVICE), 4);
+        assert_eq!(vd & 0xffff, u64::from(VIRTIO_NET_VENDOR_ID));
+        assert_eq!((vd >> 16) & 0xffff, u64::from(VIRTIO_NET_DEVICE_ID));
+        let rc = ecam.cfg_read(bdf_ecam_offset(VIRTIO_NET_BDF, REG_REVISION_CLASS), 4);
+        assert_eq!(rc >> 8, u64::from(VIRTIO_NET_CLASS_CODE));
+        assert_eq!(rc & 0xff, u64::from(VIRTIO_NET_REVISION));
+        let subsystem = ecam.cfg_read(bdf_ecam_offset(VIRTIO_NET_BDF, REG_SUBSYSTEM_IDS), 4);
+        assert_eq!(
+            subsystem & 0xffff,
+            u64::from(VIRTIO_NET_SUBSYSTEM_VENDOR_ID)
+        );
+        assert_eq!(
+            (subsystem >> 16) & 0xffff,
+            u64::from(VIRTIO_NET_SUBSYSTEM_ID)
+        );
+    }
+
+    #[test]
+    fn virtio_net_modern_bars_and_capabilities_match_stage1_shape() {
+        let mut ecam = PcieEcam::new_with_config(PcieEcamConfig {
+            virtio_net_present: true,
+            ..PcieEcamConfig::default()
+        });
+        let (bus, dev, func) = VIRTIO_NET_BDF;
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(bus, dev, func, REG_CAP_PTR), 1),
+            0x40
+        );
+
+        let bar1 = ecam_offset(bus, dev, func, REG_BAR0 + 4);
+        ecam.cfg_write(bar1, 4, 0xffff_ffff);
+        let bar1_readback = ecam.cfg_read(bar1, 4) as u32;
+        assert_eq!(bar1_readback & 0xf, 0);
+        assert_eq!(
+            (!(bar1_readback & !0xf)).wrapping_add(1),
+            VIRTIO_NET_BAR1_SIZE
+        );
+
+        let bar4 = ecam_offset(bus, dev, func, REG_BAR0 + 4 * 4);
+        ecam.cfg_write(bar4, 4, 0xffff_ffff);
+        let bar4_readback = ecam.cfg_read(bar4, 4) as u32;
+        assert_eq!(bar4_readback & 0xf, 0);
+        assert_eq!(
+            (!(bar4_readback & !0xf)).wrapping_add(1),
+            VIRTIO_NET_BAR4_SIZE
+        );
+
+        let msix = u16::from(VIRTIO_NET_MSIX_CAP_OFFSET);
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(bus, dev, func, msix), 1),
+            u64::from(CAP_ID_MSIX)
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(bus, dev, func, msix + 2), 2),
+            u64::from(VIRTIO_NET_MSIX_VECTOR_COUNT - 1)
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(bus, dev, func, msix + 4), 4),
+            u64::from(VIRTIO_NET_MSIX_TABLE_OFFSET | 1)
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(bus, dev, func, msix + 8), 4),
+            u64::from(VIRTIO_NET_MSIX_PBA_OFFSET | 1)
+        );
+    }
+
+    #[test]
+    fn virtio_net_bar1_and_bar4_decode_after_command_enable() {
+        let mut ecam = PcieEcam::new_with_config(PcieEcamConfig {
+            virtio_net_present: true,
+            ..PcieEcamConfig::default()
+        });
+        let (bus, dev, func) = VIRTIO_NET_BDF;
+        let bar1 = ecam_offset(bus, dev, func, REG_BAR0 + 4);
+        let bar4 = ecam_offset(bus, dev, func, REG_BAR0 + 4 * 4);
+        let cmd = ecam_offset(bus, dev, func, REG_COMMAND_STATUS);
+        let bar1_base = machine::PCIE_MMIO_32.base + 0x4_0000;
+        let bar4_base = machine::PCIE_MMIO_32.base + 0x5_0000;
+
+        ecam.cfg_write(bar1, 4, bar1_base);
+        ecam.cfg_write(bar4, 4, bar4_base);
+        assert_eq!(ecam.mmio_target(bar1_base), None);
+        assert_eq!(ecam.mmio_target(bar4_base), None);
+
+        ecam.cfg_write(cmd, 2, u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER));
+        assert_eq!(
+            ecam.mmio_target(bar1_base),
+            Some(PcieMmioTarget {
+                bdf: VIRTIO_NET_BDF,
+                bar_index: 1,
+                offset: 0,
+            })
+        );
+        assert_eq!(
+            ecam.mmio_target(bar4_base),
+            Some(PcieMmioTarget {
+                bdf: VIRTIO_NET_BDF,
                 bar_index: 4,
                 offset: 0,
             })

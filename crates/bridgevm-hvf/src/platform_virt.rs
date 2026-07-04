@@ -39,7 +39,7 @@ use crate::nvme::{
 };
 use crate::pcie::{
     CfgAddr, PcieEcam, PcieEcamConfig, PcieMmioTarget, PciePioTarget, NVME_BDF, VIRTIO_BLK_BDF,
-    XHCI_BDF,
+    VIRTIO_NET_BDF, XHCI_BDF,
 };
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
@@ -50,6 +50,7 @@ use crate::virtio_blk::{
     VirtioBlockRequestTrace, VirtioMmioBlock, VirtioMmioBlockResult, VirtioMmioBlockStats,
     VirtioPciBlock, VirtioPciBlockOp, INSTALLER_ISO_SLOT,
 };
+use crate::virtio_net::{VirtioNetResult, VirtioNetStats, VirtioPciNet, VirtioPciNetOp};
 use crate::xhci::{
     PointerInputAction, SetupInputAction, XhciController, XhciEventLifecycleStats,
     XhciHidSemanticStats, XhciPointerInputQueueError, XhciPointerInputReportStats,
@@ -64,6 +65,7 @@ const MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS: usize = 16;
 pub struct VirtPlatformDeviceConfig {
     pub xhci_present: bool,
     pub virtio_boot_media_present: bool,
+    pub virtio_net_present: bool,
     pub legacy_virtio_mmio_present: bool,
     pub ramfb_present: bool,
 }
@@ -73,6 +75,7 @@ impl Default for VirtPlatformDeviceConfig {
         Self {
             xhci_present: true,
             virtio_boot_media_present: true,
+            virtio_net_present: false,
             legacy_virtio_mmio_present: true,
             ramfb_present: false,
         }
@@ -173,6 +176,7 @@ pub struct VirtPlatform {
     xhci: XhciController,
     virtio_iso: Option<VirtioMmioBlock>,
     pci_boot_media: Option<VirtioPciBlock>,
+    virtio_net: Option<VirtioPciNet>,
     ramfb: Ramfb,
     flash_vars: P30NorFlash,
     pending_msix: Vec<MsixMessage>,
@@ -245,11 +249,16 @@ impl VirtPlatform {
             pcie: PcieEcam::new_with_config(PcieEcamConfig {
                 xhci_present: config.devices.xhci_present,
                 virtio_blk_present: config.devices.virtio_boot_media_present,
+                virtio_net_present: config.devices.virtio_net_present,
             }),
             nvme: NvmeController::new(DEFAULT_NVME_DISK_BYTES),
             xhci: XhciController::new(),
             virtio_iso: None,
             pci_boot_media: None,
+            virtio_net: config
+                .devices
+                .virtio_net_present
+                .then(VirtioPciNet::new_loopback),
             ramfb: Ramfb::new(),
             flash_vars: P30NorFlash::new(
                 machine::FLASH_VARS.base,
@@ -312,6 +321,7 @@ impl VirtPlatform {
         self.pcie = PcieEcam::new_with_config(PcieEcamConfig {
             xhci_present: self.devices.xhci_present,
             virtio_blk_present: self.devices.virtio_boot_media_present,
+            virtio_net_present: self.devices.virtio_net_present,
         });
         self.nvme.reset_registers_keep_disks();
         self.xhci = XhciController::new();
@@ -321,6 +331,9 @@ impl VirtPlatform {
             dev.reset_runtime_state();
         }
         if let Some(dev) = self.pci_boot_media.as_mut() {
+            dev.reset_runtime_state();
+        }
+        if let Some(dev) = self.virtio_net.as_mut() {
             dev.reset_runtime_state();
         }
         self.pending_msix.clear();
@@ -418,6 +431,21 @@ impl VirtPlatform {
         self.pci_boot_media
             .as_ref()
             .map(VirtioPciBlock::recent_request_trace)
+    }
+
+    pub fn virtio_net_stats(&self) -> Option<VirtioNetStats> {
+        self.virtio_net.as_ref().map(VirtioPciNet::stats)
+    }
+
+    pub fn pump_virtio_net_receive(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
+        let Some(dev) = self.virtio_net.as_mut() else {
+            return false;
+        };
+        let delivered = dev.pump_receive(mem);
+        if delivered {
+            self.flush_virtio_net_pending_msix();
+        }
+        delivered
     }
 
     pub fn virtio_iso_request_trace(&self) -> Option<Vec<VirtioBlockRequestTrace>> {
@@ -858,6 +886,7 @@ impl VirtPlatform {
                 self.pcie.cfg_write(ecam_offset, size, value);
                 self.flush_nvme_pending_msix();
                 self.flush_xhci_pending_msix();
+                self.flush_virtio_net_pending_msix();
                 MmioOutcome::WriteAck
             }
         }
@@ -919,6 +948,8 @@ impl VirtPlatform {
             },
             (VIRTIO_BLK_BDF, 1) => self.pci_boot_media_msix_access(target.offset, op),
             (VIRTIO_BLK_BDF, 4) => self.pci_boot_media_access(target.offset, op, mem),
+            (VIRTIO_NET_BDF, 1) => self.virtio_net_msix_access(target.offset, op),
+            (VIRTIO_NET_BDF, 4) => self.virtio_net_access(target.offset, op, mem),
             _ => MmioOutcome::KnownUnimplemented(aperture),
         }
     }
@@ -963,6 +994,48 @@ impl VirtPlatform {
         match result {
             VirtioMmioBlockResult::ReadValue(v) => MmioOutcome::ReadValue(v),
             VirtioMmioBlockResult::WriteAck => MmioOutcome::WriteAck,
+        }
+    }
+
+    fn virtio_net_msix_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {
+        let Some(dev) = self.virtio_net.as_mut() else {
+            return MmioOutcome::KnownUnimplemented("virtio-net-pci");
+        };
+        let is_write = matches!(op, MmioOp::Write { .. });
+        let result = match op {
+            MmioOp::Read { size } => dev.msix_bar_access(offset, VirtioPciNetOp::Read { size }),
+            MmioOp::Write { size, value } => {
+                dev.msix_bar_access(offset, VirtioPciNetOp::Write { size, value })
+            }
+        };
+        if is_write {
+            self.flush_virtio_net_pending_msix();
+        }
+        match result {
+            VirtioNetResult::ReadValue(v) => MmioOutcome::ReadValue(v),
+            VirtioNetResult::WriteAck => MmioOutcome::WriteAck,
+        }
+    }
+
+    fn virtio_net_access(
+        &mut self,
+        offset: u64,
+        op: MmioOp,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> MmioOutcome {
+        let Some(dev) = self.virtio_net.as_mut() else {
+            return MmioOutcome::KnownUnimplemented("virtio-net-pci");
+        };
+        let result = match op {
+            MmioOp::Read { size } => dev.access(offset, VirtioPciNetOp::Read { size }, mem),
+            MmioOp::Write { size, value } => {
+                dev.access(offset, VirtioPciNetOp::Write { size, value }, mem)
+            }
+        };
+        self.flush_virtio_net_pending_msix();
+        match result {
+            VirtioNetResult::ReadValue(v) => MmioOutcome::ReadValue(v),
+            VirtioNetResult::WriteAck => MmioOutcome::WriteAck,
         }
     }
 
@@ -1053,6 +1126,18 @@ impl VirtPlatform {
             self.xhci
                 .drain_pending_msix(control.enabled, control.function_masked),
         );
+    }
+
+    fn flush_virtio_net_pending_msix(&mut self) {
+        if !self.devices.virtio_net_present {
+            return;
+        }
+        let Some(dev) = self.virtio_net.as_mut() else {
+            return;
+        };
+        let control = self.pcie.virtio_net_msix_control();
+        self.pending_msix
+            .extend(dev.drain_pending_msix(control.enabled, control.function_masked));
     }
 
     fn uart_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {
@@ -1193,6 +1278,17 @@ mod tests {
     const REG_DATA: u64 = 0x0;
     const REG_SELECTOR: u64 = 0x8;
     const REG_DMA: u64 = 0x10;
+    const NET_COMMON_QUEUE_SELECT: u64 = 0x16;
+    const NET_COMMON_QUEUE_SIZE: u64 = 0x18;
+    const NET_COMMON_QUEUE_MSIX_VECTOR: u64 = 0x1a;
+    const NET_COMMON_QUEUE_ENABLE: u64 = 0x1c;
+    const NET_COMMON_QUEUE_DESC: u64 = 0x20;
+    const NET_COMMON_QUEUE_DRIVER: u64 = 0x28;
+    const NET_COMMON_QUEUE_DEVICE: u64 = 0x30;
+    const NET_NOTIFY_CFG_OFFSET: u64 = 0x3000;
+    const NET_TX_QUEUE: u16 = 1;
+    const NET_VIRTIO_HDR_LEN: usize = 12;
+    const NET_DESC_F_NEXT: u16 = 1;
 
     fn platform() -> VirtPlatform {
         VirtPlatform::new(VirtFdtConfig::default())
@@ -1456,6 +1552,149 @@ mod tests {
                 value: u64::from(crate::pcie::CMD_IO_SPACE | crate::pcie::CMD_BUS_MASTER),
             },
             mem,
+        );
+    }
+
+    fn program_virtio_net_bar4(p: &mut VirtPlatform, mem: &mut FlatGuestRam, base: u64) {
+        p.on_mmio(
+            pcie_cfg_gpa(
+                crate::pcie::VIRTIO_NET_BDF.1,
+                crate::pcie::VIRTIO_NET_BDF.2,
+                crate::pcie::REG_BAR0 + 4 * 4,
+            ),
+            MmioOp::Write {
+                size: 4,
+                value: base,
+            },
+            mem,
+        );
+        p.on_mmio(
+            pcie_cfg_gpa(
+                crate::pcie::VIRTIO_NET_BDF.1,
+                crate::pcie::VIRTIO_NET_BDF.2,
+                crate::pcie::REG_COMMAND_STATUS,
+            ),
+            MmioOp::Write {
+                size: 2,
+                value: u64::from(crate::pcie::CMD_MEMORY_SPACE | crate::pcie::CMD_BUS_MASTER),
+            },
+            mem,
+        );
+    }
+
+    fn program_virtio_net_bar1(p: &mut VirtPlatform, mem: &mut FlatGuestRam, base: u64) {
+        p.on_mmio(
+            pcie_cfg_gpa(
+                crate::pcie::VIRTIO_NET_BDF.1,
+                crate::pcie::VIRTIO_NET_BDF.2,
+                crate::pcie::REG_BAR0 + 4,
+            ),
+            MmioOp::Write {
+                size: 4,
+                value: base,
+            },
+            mem,
+        );
+        p.on_mmio(
+            pcie_cfg_gpa(
+                crate::pcie::VIRTIO_NET_BDF.1,
+                crate::pcie::VIRTIO_NET_BDF.2,
+                crate::pcie::REG_COMMAND_STATUS,
+            ),
+            MmioOp::Write {
+                size: 2,
+                value: u64::from(crate::pcie::CMD_MEMORY_SPACE | crate::pcie::CMD_BUS_MASTER),
+            },
+            mem,
+        );
+    }
+
+    fn virtio_net_write(
+        p: &mut VirtPlatform,
+        mem: &mut FlatGuestRam,
+        bar: u64,
+        offset: u64,
+        size: u8,
+        value: u64,
+    ) {
+        assert_eq!(
+            p.on_mmio(bar + offset, MmioOp::Write { size, value }, mem),
+            MmioOutcome::WriteAck
+        );
+    }
+
+    fn setup_virtio_net_queue(
+        p: &mut VirtPlatform,
+        mem: &mut FlatGuestRam,
+        bar: u64,
+        queue: u16,
+        desc: u64,
+        avail: u64,
+        used: u64,
+        vector: u16,
+    ) {
+        for (offset, size, value) in [
+            (NET_COMMON_QUEUE_SELECT, 2, u64::from(queue)),
+            (NET_COMMON_QUEUE_SIZE, 2, 8),
+            (NET_COMMON_QUEUE_MSIX_VECTOR, 2, u64::from(vector)),
+            (NET_COMMON_QUEUE_DESC, 8, desc),
+            (NET_COMMON_QUEUE_DRIVER, 8, avail),
+            (NET_COMMON_QUEUE_DEVICE, 8, used),
+            (NET_COMMON_QUEUE_ENABLE, 2, 1),
+        ] {
+            virtio_net_write(p, mem, bar, offset, size, value);
+        }
+    }
+
+    fn enable_virtio_net_msix_vector(
+        p: &mut VirtPlatform,
+        mem: &mut FlatGuestRam,
+        bar1: u64,
+        vector: u16,
+        address: u64,
+        data: u32,
+    ) {
+        let entry = bar1 + u64::from(vector) * 16;
+        assert_eq!(
+            p.on_mmio(
+                entry,
+                MmioOp::Write {
+                    size: 8,
+                    value: address,
+                },
+                mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(
+                entry + 8,
+                MmioOp::Write {
+                    size: 4,
+                    value: u64::from(data),
+                },
+                mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(entry + 12, MmioOp::Write { size: 4, value: 0 }, mem),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(
+                    crate::pcie::VIRTIO_NET_BDF.1,
+                    crate::pcie::VIRTIO_NET_BDF.2,
+                    u16::from(crate::pcie::VIRTIO_NET_MSIX_CAP_OFFSET) + 2,
+                ),
+                MmioOp::Write {
+                    size: 2,
+                    value: 0x8000,
+                },
+                mem,
+            ),
+            MmioOutcome::WriteAck
         );
     }
 
@@ -2320,6 +2559,138 @@ mod tests {
         assert_eq!(p.pci_boot_media_stats().unwrap().status, 4);
 
         fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn pcie_virtio_net_opt_in_routes_tx_msix_and_reset_clears_runtime_state() {
+        const MSI_ADDRESS: u64 = machine::GIC_ITS.base + 0x80;
+        const MSI_DATA: u32 = 0x61;
+
+        let mut p = platform_with_devices(VirtPlatformDeviceConfig {
+            virtio_net_present: true,
+            ..VirtPlatformDeviceConfig::default()
+        });
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x20000);
+        let bar4 = machine::PCIE_MMIO_32.base + 0x4_0000;
+        let bar1 = machine::PCIE_MMIO_32.base + 0x5_0000;
+
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(
+                    crate::pcie::VIRTIO_NET_BDF.1,
+                    crate::pcie::VIRTIO_NET_BDF.2,
+                    crate::pcie::REG_VENDOR_DEVICE,
+                ),
+                MmioOp::Read { size: 4 },
+                &mut mem,
+            ),
+            MmioOutcome::ReadValue(0x1041_1af4)
+        );
+        program_virtio_net_bar4(&mut p, &mut mem, bar4);
+        program_virtio_net_bar1(&mut p, &mut mem, bar1);
+        assert_eq!(
+            p.pcie_mmio_target(bar4),
+            Some(PcieMmioTarget {
+                bdf: crate::pcie::VIRTIO_NET_BDF,
+                bar_index: 4,
+                offset: 0,
+            })
+        );
+        assert_eq!(
+            p.pcie_mmio_target(bar1),
+            Some(PcieMmioTarget {
+                bdf: crate::pcie::VIRTIO_NET_BDF,
+                bar_index: 1,
+                offset: 0,
+            })
+        );
+
+        let desc = machine::RAM_BASE + 0x10000;
+        let avail = machine::RAM_BASE + 0x11000;
+        let used = machine::RAM_BASE + 0x12000;
+        let hdr = machine::RAM_BASE + 0x13000;
+        let payload = machine::RAM_BASE + 0x14000;
+        let frame = b"\x02\x00\x00\x00\x00\x01\x52\x54\x00\x42\x56\x01\x08\x00platform";
+
+        setup_virtio_net_queue(
+            &mut p,
+            &mut mem,
+            bar4,
+            NET_TX_QUEUE,
+            desc,
+            avail,
+            used,
+            NET_TX_QUEUE,
+        );
+        enable_virtio_net_msix_vector(&mut p, &mut mem, bar1, NET_TX_QUEUE, MSI_ADDRESS, MSI_DATA);
+        assert!(mem.write_bytes(hdr, &[0; NET_VIRTIO_HDR_LEN]));
+        assert!(mem.write_bytes(payload, frame));
+        write_vring_desc(
+            &mut mem,
+            desc,
+            0,
+            hdr,
+            NET_VIRTIO_HDR_LEN as u32,
+            NET_DESC_F_NEXT,
+            1,
+        );
+        write_vring_desc(&mut mem, desc, 1, payload, frame.len() as u32, 0, 0);
+        assert!(mem.write_bytes(avail + 2, &1u16.to_le_bytes()));
+        assert!(mem.write_bytes(avail + 4, &0u16.to_le_bytes()));
+
+        assert_eq!(
+            p.on_mmio(
+                bar4 + NET_NOTIFY_CFG_OFFSET + u64::from(NET_TX_QUEUE) * 4,
+                MmioOp::Write { size: 4, value: 0 },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+
+        let net = p.virtio_net.as_ref().expect("virtio-net device present");
+        assert_eq!(net.backend().transmitted_frames(), &[frame.to_vec()]);
+        assert_eq!(
+            p.pending_msix,
+            vec![crate::msix::MsixMessage {
+                vector: NET_TX_QUEUE,
+                address: MSI_ADDRESS,
+                data: MSI_DATA,
+            }]
+        );
+        let stats = p.virtio_net_stats().unwrap();
+        assert_eq!(stats.tx_count, 1);
+        assert_eq!(stats.queues[usize::from(NET_TX_QUEUE)].last_avail_idx, 1);
+
+        p.reset();
+
+        assert_eq!(
+            p.take_pending_msix(),
+            Vec::<crate::msix::MsixMessage>::new()
+        );
+        assert_eq!(p.pcie_mmio_target(bar4), None);
+        let stats = p.virtio_net_stats().unwrap();
+        assert_eq!(stats.tx_count, 0);
+        assert_eq!(stats.notify_count, 0);
+        assert!(!stats.queues[usize::from(NET_TX_QUEUE)].ready);
+        assert_eq!(stats.status, 0);
+
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(
+                    crate::pcie::VIRTIO_NET_BDF.1,
+                    crate::pcie::VIRTIO_NET_BDF.2,
+                    crate::pcie::REG_VENDOR_DEVICE,
+                ),
+                MmioOp::Read { size: 4 },
+                &mut mem,
+            ),
+            MmioOutcome::ReadValue(0x1041_1af4)
+        );
+        program_virtio_net_bar1(&mut p, &mut mem, bar1);
+        assert_eq!(
+            p.on_mmio(bar1 + 12, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(1)
+        );
     }
 
     #[test]

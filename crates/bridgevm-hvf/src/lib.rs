@@ -25,6 +25,7 @@ pub mod ramfb;
 pub mod smbios;
 pub mod stage1;
 pub mod virtio_blk;
+pub mod virtio_net;
 mod windows_arm_xhci_hid_boot_key_probe;
 pub mod xhci;
 

@@ -256,6 +256,7 @@ impl VirtBootMediaConfig {
         cfg.platform_devices.xhci_present = !env_flag("BRIDGEVM_DISABLE_XHCI");
         let virtio_iso_present = !env_flag("BRIDGEVM_DISABLE_VIRTIO_ISO");
         cfg.platform_devices.virtio_boot_media_present = virtio_iso_present;
+        cfg.platform_devices.virtio_net_present = env_flag("BRIDGEVM_VIRTIO_NET");
         cfg.platform_devices.legacy_virtio_mmio_present = virtio_iso_present;
         cfg.platform_devices.ramfb_present =
             env_flag("BRIDGEVM_RAMFB") && !env_flag("BRIDGEVM_DISABLE_RAMFB_DEVICE");
@@ -314,6 +315,7 @@ mod tests {
         for name in [
             "BRIDGEVM_DISABLE_XHCI",
             "BRIDGEVM_DISABLE_VIRTIO_ISO",
+            "BRIDGEVM_VIRTIO_NET",
             "BRIDGEVM_RAMFB",
             "BRIDGEVM_DISABLE_RAMFB_DEVICE",
         ] {
@@ -405,6 +407,7 @@ mod tests {
 
         assert!(!cfg.platform_devices.xhci_present);
         assert!(!cfg.platform_devices.virtio_boot_media_present);
+        assert!(!cfg.platform_devices.virtio_net_present);
         assert!(!cfg.platform_devices.legacy_virtio_mmio_present);
         assert!(!cfg.platform_devices.ramfb_present);
         clear_probe_disable_env();
@@ -423,8 +426,21 @@ mod tests {
 
         assert!(cfg.platform_devices.xhci_present);
         assert!(cfg.platform_devices.virtio_boot_media_present);
+        assert!(!cfg.platform_devices.virtio_net_present);
         assert!(cfg.platform_devices.legacy_virtio_mmio_present);
         assert!(cfg.platform_devices.ramfb_present);
+        clear_probe_disable_env();
+    }
+
+    #[test]
+    fn probe_env_enables_virtio_net_when_truthy() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_probe_disable_env();
+        env::set_var("BRIDGEVM_VIRTIO_NET", "yes");
+
+        let cfg = VirtBootMediaConfig::from_probe_env();
+
+        assert!(cfg.platform_devices.virtio_net_present);
         clear_probe_disable_env();
     }
 

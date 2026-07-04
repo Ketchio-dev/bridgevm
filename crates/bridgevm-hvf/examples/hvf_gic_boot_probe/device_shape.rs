@@ -71,6 +71,21 @@ fn device_shape_lines(
     } else {
         "boot-media installer ISO: virtio-blk-pci disabled".to_string()
     };
+    let virtio_net = if devices.virtio_net_present {
+        format!(
+            "virtio-net-pci: {bus:02x}:{dev:02x}.{func} vendor={vendor:#06x} device={device:#06x} class={class:#08x} bar1_msix_size={bar1:#x} bar4_modern_mmio_size={bar4:#x}",
+            bus = pcie::VIRTIO_NET_BDF.0,
+            dev = pcie::VIRTIO_NET_BDF.1,
+            func = pcie::VIRTIO_NET_BDF.2,
+            vendor = pcie::VIRTIO_NET_VENDOR_ID,
+            device = pcie::VIRTIO_NET_DEVICE_ID,
+            class = pcie::VIRTIO_NET_CLASS_CODE,
+            bar1 = pcie::VIRTIO_NET_BAR1_SIZE,
+            bar4 = pcie::VIRTIO_NET_BAR4_SIZE,
+        )
+    } else {
+        "virtio-net-pci: disabled".to_string()
+    };
     let legacy_parity = if devices.legacy_virtio_mmio_present {
         "qemu oracle parity: legacy virtio-mmio slot 31 kept as installer ISO fallback"
     } else {
@@ -94,8 +109,7 @@ fn device_shape_lines(
         xhci,
         legacy_virtio,
         pci_virtio,
-        "qemu oracle parity: virtio-net-pci 00:01.0 absent (BridgeVM uses NVMe at 00:01.0)"
-            .to_string(),
+        virtio_net,
         legacy_parity.to_string(),
     ]
 }
@@ -147,6 +161,20 @@ mod tests {
                 .any(|line| line.contains("00:03.0 virtio-blk-pci")
                     && line.contains("attached=false"))
         );
+        assert!(lines.iter().any(|line| line == "virtio-net-pci: disabled"));
+        let net_lines = super::device_shape_lines(
+            VirtPlatformDeviceConfig {
+                virtio_net_present: true,
+                ..VirtPlatformDeviceConfig::default()
+            },
+            false,
+            false,
+            16 * 1024 * 1024,
+        );
+        assert!(net_lines.iter().any(|line| line
+            .contains("virtio-net-pci: 00:04.0 vendor=0x1af4 device=0x1041 class=0x020000")
+            && line.contains("bar1_msix_size=0x1000")
+            && line.contains("bar4_modern_mmio_size=0x4000")));
     }
 
     #[test]
@@ -155,6 +183,7 @@ mod tests {
             VirtPlatformDeviceConfig {
                 xhci_present: false,
                 virtio_boot_media_present: false,
+                virtio_net_present: false,
                 legacy_virtio_mmio_present: false,
                 ramfb_present: false,
             },
@@ -170,5 +199,6 @@ mod tests {
         assert!(lines
             .iter()
             .any(|line| line == "boot-media installer ISO: virtio-blk-pci disabled"));
+        assert!(lines.iter().any(|line| line == "virtio-net-pci: disabled"));
     }
 }

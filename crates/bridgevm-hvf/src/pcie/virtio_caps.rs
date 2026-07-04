@@ -60,6 +60,10 @@ impl VirtioPciCap {
 }
 
 pub(super) fn boot_media_capability_list() -> VirtioCapabilityList {
+    capability_list(VIRTIO_BLK_MSIX_CAP_OFFSET)
+}
+
+pub(super) fn capability_list(msix_cap_offset: u8) -> VirtioCapabilityList {
     let common = VirtioPciCap {
         offset: VIRTIO_PCI_CAP_COMMON_OFFSET,
         next: VIRTIO_PCI_CAP_NOTIFY_OFFSET,
@@ -86,7 +90,7 @@ pub(super) fn boot_media_capability_list() -> VirtioCapabilityList {
     };
     let device = VirtioPciCap {
         offset: VIRTIO_PCI_CAP_DEVICE_OFFSET,
-        next: VIRTIO_BLK_MSIX_CAP_OFFSET,
+        next: msix_cap_offset,
         cfg_type: VIRTIO_PCI_CAP_DEVICE_CFG,
         bar: VIRTIO_PCI_BAR4,
         region_offset: VIRTIO_PCI_DEVICE_CFG_OFFSET,
