@@ -1,0 +1,14 @@
+rem BridgeVM scripted install — partition the NSID-2 target (disk 1).
+rem Installer (NSID-1 FAT32) is disk 0 and must stay intact.
+select disk 1
+clean
+convert gpt
+create partition efi size=260
+format quick fs=fat32 label=System
+assign letter=S
+create partition msr size=16
+create partition primary
+format quick fs=ntfs label=Windows
+assign letter=W
+list volume
+exit
