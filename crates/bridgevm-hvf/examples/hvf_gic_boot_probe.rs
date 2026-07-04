@@ -2642,6 +2642,26 @@ fn main() {
             if let Some(stats) = platform.virtio_iso_stats() {
                 print_block_media_stats("legacy virtio-mmio ISO stats", stats);
             }
+            if let Some(stats) = platform.virtio_net_stats() {
+                println!(
+                    "virtio-net stats: notify={} tx={} rx={} tx_bytes={} rx_bytes={} status={:#x} driver_features={:#x} interrupt_status={:#x} pending_rx={}",
+                    stats.notify_count,
+                    stats.tx_count,
+                    stats.rx_count,
+                    stats.tx_bytes,
+                    stats.rx_bytes,
+                    stats.status,
+                    stats.driver_features,
+                    stats.interrupt_status,
+                    stats.pending_rx_frame,
+                );
+                for (i, q) in stats.queues.iter().enumerate() {
+                    println!(
+                        "virtio-net queue[{i}]: ready={} size={} desc={:#x} last_avail_idx={} msix_vector={}",
+                        q.ready, q.size, q.desc, q.last_avail_idx, q.msix_vector,
+                    );
+                }
+            }
             if let Some(trace) = platform.virtio_iso_request_trace() {
                 print_block_request_trace("recent legacy virtio-mmio ISO requests", &trace);
             }
