@@ -170,8 +170,9 @@ const NVME_PM_CAP_BYTES: [u8; 8] = [0x01, 0x00, 0x03, 0x00, 0x08, 0x00, 0x00, 0x
 /// binds it, QEMU's NVMe has one and EDK2 boots it), so the NVMe endpoint must
 /// expose one too.
 pub const NVME_PCIE_CAP_OFFSET: u8 = 0x60;
-/// Number of MSI-X vectors exposed by the minimal NVMe endpoint.
-pub const NVME_MSIX_VECTOR_COUNT: u16 = 2;
+/// Number of MSI-X vectors exposed by the NVMe endpoint: one admin vector plus
+/// eight I/O vectors so SMP guests can spread storage completions across vCPUs.
+pub const NVME_MSIX_VECTOR_COUNT: u16 = 9;
 /// Offset of the MSI-X table in BAR0. Kept away from NVMe registers/doorbells.
 pub const NVME_MSIX_TABLE_OFFSET: u32 = 0x2000;
 /// Offset of the MSI-X Pending Bit Array in BAR0.
@@ -1784,6 +1785,10 @@ mod tests {
             ecam.cfg_read(ecam_offset(0, 1, 0, cap + 2), 2),
             u64::from(NVME_MSIX_VECTOR_COUNT - 1),
             "MSI-X table-size field is encoded as count - 1"
+        );
+        assert_eq!(
+            NVME_MSIX_VECTOR_COUNT, 9,
+            "NVMe advertises one admin vector plus eight I/O vectors"
         );
         assert_eq!(
             ecam.cfg_read(ecam_offset(0, 1, 0, cap + 4), 4),

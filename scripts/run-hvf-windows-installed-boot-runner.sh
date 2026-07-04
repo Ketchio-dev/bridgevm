@@ -39,6 +39,8 @@ write_installed_boot_preflight() {
     printf 'vars=%s\n' "$VARS"
     printf 'evidence_dir=%s\n' "$EVIDENCE_DIR"
     printf 'build_profile=%s\n' "$BUILD_PROFILE"
+    printf 'daily_preset=%s\n' "$DAILY"
+    printf 'smp_cpus=%s\n' "${SMP_CPUS:-<unset>}"
     printf 'policy=%s %s writable-target\n' "$XHCI_POLICY" "$BOOT_MODE"
     printf 'ramfb_samples=%s\n' "$RAMFB_SAMPLES"
     print_input_summary
@@ -111,6 +113,9 @@ build_installed_boot_env_args() {
     DISK_ENV=("BRIDGEVM_NVME_DISK=$TARGET" 'BRIDGEVM_NVME_DISK_WRITABLE=1')
   fi
   ENV_ARGS=("${COMMON_ENV[@]}" "${DISK_ENV[@]}")
+  if [[ -n "$SMP_CPUS" ]]; then
+    ENV_ARGS+=("BRIDGEVM_SMP_CPUS=$SMP_CPUS")
+  fi
   append_input_env_args
   if [[ "$ENABLE_XHCI" != "1" ]]; then
     ENV_ARGS=('BRIDGEVM_DISABLE_XHCI=1' "${ENV_ARGS[@]}")

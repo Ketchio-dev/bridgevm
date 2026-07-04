@@ -17,6 +17,11 @@ Options:
   --enable-xhci           Leave xHCI present for desktop input diagnosis.
   --virtio-net            Attach the virtio-net NIC (BRIDGEVM_VIRTIO_NET=1)
                           with the userspace NAT backend.
+  --daily                 Opt-in daily-driver preset. Changes defaults only
+                          when not explicitly overridden: --ram-mib 6144 and
+                          --watchdog-ms 86400000. Also sets
+                          BRIDGEVM_SMP_CPUS=4 and implies --release unless
+                          --skip-build is set.
   --setup-input-actions LIST
                           Optional comma-separated xHCI setup-input keys:
                           tab, enter, space,

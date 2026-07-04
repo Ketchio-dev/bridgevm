@@ -3361,6 +3361,29 @@ mod tests {
     }
 
     #[test]
+    fn create_io_completion_queue_accepts_all_advertised_io_vectors() {
+        for vector in 1..NVME_MSIX_VECTOR_COUNT {
+            let (mut ctrl, mut mem) = enabled_controller();
+            let cdw10 = (u32::from(QDEPTH - 1) << 16) | 1;
+            let cq_cdw11 = CREATE_IO_CQ_PC_BIT
+                | CREATE_IO_CQ_IEN_BIT
+                | (u32::from(vector) << CREATE_IO_CQ_IV_SHIFT);
+
+            submit_admin(
+                &mut ctrl,
+                &mut mem,
+                0,
+                &encode_sqe(ADMIN_OP_CREATE_IO_CQ, 1, 0, IO_CQ_BASE, cdw10, cq_cdw11, 0),
+            );
+            assert_eq!(
+                completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+                SC_SUCCESS,
+                "CREATE IO CQ should accept MSI-X vector {vector}"
+            );
+        }
+    }
+
+    #[test]
     fn read_uses_prp2_for_two_page_transfer() {
         let disk: Vec<u8> = (0..PAGE_SIZE * 4).map(|i| (i % 251) as u8).collect();
         let (mut ctrl, mut mem) = enabled_controller_with_disk_and_mem_len(disk.clone(), 0x10000);

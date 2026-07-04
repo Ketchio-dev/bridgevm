@@ -27,7 +27,11 @@ init_installed_boot_defaults() {
   POINTER_INPUT_RAMFB_DELAY_MS=""
   BUILD_PROFILE="debug"
   SKIP_BUILD="0"
+  DAILY="0"
+  RAM_MIB_EXPLICIT="0"
+  WATCHDOG_MS_EXPLICIT="0"
   PRINT_POLICY="0"
+  SMP_CPUS=""
   XHCI_POLICY=""
   XHCI_REASON=""
 }
@@ -42,7 +46,7 @@ parse_installed_boot_args() {
       --watchdog-ms)
         [[ $# -ge 2 ]] || { usage; exit 2; }
         positive_integer "$2" || { echo "FAIL: --watchdog-ms requires a positive integer" >&2; exit 2; }
-        WATCHDOG_MS="$2"; shift 2
+        WATCHDOG_MS="$2"; WATCHDOG_MS_EXPLICIT="1"; shift 2
         ;;
       --max-reboots)
         [[ $# -ge 2 ]] || { usage; exit 2; }
@@ -52,7 +56,7 @@ parse_installed_boot_args() {
       --ram-mib)
         [[ $# -ge 2 ]] || { usage; exit 2; }
         positive_integer "$2" || { echo "FAIL: --ram-mib requires a positive integer" >&2; exit 2; }
-        RAM_MIB="$2"; shift 2
+        RAM_MIB="$2"; RAM_MIB_EXPLICIT="1"; shift 2
         ;;
       --ramfb-samples)
         [[ $# -ge 2 ]] || { usage; exit 2; }
@@ -83,11 +87,23 @@ parse_installed_boot_args() {
       --pointer-input-ramfb-delay-ms) [[ $# -ge 2 ]] || { usage; exit 2; }; ramfb_sample_list "$2" || { echo "FAIL: --pointer-input-ramfb-delay-ms requires 1-16 positive comma-separated integers, each <= 120000" >&2; exit 2; }; POINTER_INPUT_RAMFB_DELAY_MS="$2"; shift 2 ;;
       --release) BUILD_PROFILE="release"; shift ;;
       --skip-build) SKIP_BUILD="1"; shift ;;
+      --daily) DAILY="1"; shift ;;
       --print-policy) PRINT_POLICY="1"; shift ;;
       -h|--help) usage; exit 0 ;;
       *) usage; exit 2 ;;
     esac
   done
+  apply_installed_boot_daily_defaults
+}
+
+apply_installed_boot_daily_defaults() {
+  [[ "$DAILY" == "1" ]] || return 0
+  [[ "$RAM_MIB_EXPLICIT" == "1" ]] || RAM_MIB="6144"
+  [[ "$WATCHDOG_MS_EXPLICIT" == "1" ]] || WATCHDOG_MS="86400000"
+  SMP_CPUS="4"
+  if [[ "$SKIP_BUILD" != "1" ]]; then
+    BUILD_PROFILE="release"
+  fi
 }
 
 validate_installed_boot_option_combinations() {
@@ -151,6 +167,8 @@ validate_installed_boot_required_paths() {
 print_installed_boot_policy() {
   printf '%s\n' \
     "$XHCI_POLICY" \
+    "DAILY_PRESET=$DAILY" \
+    "BRIDGEVM_SMP_CPUS=${SMP_CPUS:-<unset> (probe default 1)}" \
     "BRIDGEVM_RAMFB_SAMPLE_MS=$RAMFB_SAMPLES" \
     "BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS=${SETUP_INPUT_ACTIONS:-<unset>}" \
     "BRIDGEVM_XHCI_SETUP_INPUT_SERIAL_MARKER=${SETUP_INPUT_MARKER:-<probe-default>}" \
