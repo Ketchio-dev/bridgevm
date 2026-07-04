@@ -55,6 +55,13 @@ DST_VOL="/Volumes/WINSETUP"
 log "copying ISO tree (excluding install.wim)"
 rsync -a --exclude 'sources/install.wim' "$ISO_MNT"/ "$DST_VOL"/
 
+# 3b. Place the OOBE-skip/autologon unattend at the source root; bvinstall.cmd
+# copies it to W:\Windows\Panther\unattend.xml after the WIM apply.
+if [[ -f "$ASSETS/unattend.xml" ]]; then
+  log "staging unattend.xml at source root"
+  cp "$ASSETS/unattend.xml" "$DST_VOL/unattend.xml"
+fi
+
 # 4. Split install.wim into FAT32-safe .swm parts on the destination.
 log "splitting install.wim -> install.swm/install*.swm (<${SWM_SPLIT_MB}MB each)"
 wimlib-imagex split "$ISO_MNT/sources/install.wim" "$DST_VOL/sources/install.swm" "$SWM_SPLIT_MB"

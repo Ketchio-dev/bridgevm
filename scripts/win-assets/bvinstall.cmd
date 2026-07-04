@@ -38,6 +38,13 @@ if errorlevel 1 (
   goto :end
 )
 
+rem --- plant the OOBE-skip/autologon unattend into the installed image ---
+if exist %SRC%\unattend.xml (
+  echo BVINSTALL UNATTEND
+  if not exist W:\Windows\Panther mkdir W:\Windows\Panther
+  copy /y %SRC%\unattend.xml W:\Windows\Panther\unattend.xml
+)
+
 echo BVINSTALL DONE
 :end
 wpeutil shutdown
