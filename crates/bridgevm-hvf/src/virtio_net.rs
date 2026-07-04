@@ -85,6 +85,36 @@ const DEFAULT_MAC: [u8; 6] = [0x52, 0x54, 0x00, 0x42, 0x56, 0x01];
 pub trait NetBackend {
     fn transmit(&mut self, frame: &[u8]);
     fn poll_receive(&mut self) -> Option<Vec<u8>>;
+    fn poll_host_sockets(&mut self) {}
+    #[cfg(test)]
+    fn test_transmitted_frames(&self) -> Option<&[Vec<u8>]> {
+        None
+    }
+}
+
+impl NetBackend for Box<dyn NetBackend> {
+    fn transmit(&mut self, frame: &[u8]) {
+        self.as_mut().transmit(frame);
+    }
+
+    fn poll_receive(&mut self) -> Option<Vec<u8>> {
+        self.as_mut().poll_receive()
+    }
+
+    fn poll_host_sockets(&mut self) {
+        self.as_mut().poll_host_sockets();
+    }
+
+    #[cfg(test)]
+    fn test_transmitted_frames(&self) -> Option<&[Vec<u8>]> {
+        self.as_ref().test_transmitted_frames()
+    }
+}
+
+impl std::fmt::Debug for dyn NetBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NetBackend").finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -110,6 +140,11 @@ impl NetBackend for LoopbackTestBackend {
 
     fn poll_receive(&mut self) -> Option<Vec<u8>> {
         self.receive.pop_front()
+    }
+
+    #[cfg(test)]
+    fn test_transmitted_frames(&self) -> Option<&[Vec<u8>]> {
+        Some(self.transmitted_frames())
     }
 }
 
@@ -665,6 +700,10 @@ impl<B: NetBackend> VirtioPciNet<B> {
 
     pub fn pump_receive(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
         self.net.pump_receive(mem)
+    }
+
+    pub fn poll_host_sockets(&mut self) {
+        self.net.backend_mut().poll_host_sockets();
     }
 
     pub fn access(

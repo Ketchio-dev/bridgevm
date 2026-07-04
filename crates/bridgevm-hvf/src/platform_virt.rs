@@ -34,6 +34,7 @@ use crate::fwcfg::{
 };
 use crate::machine::{self, Region};
 use crate::msix::MsixMessage;
+use crate::net_nat::{HostSocketOutboundIpv4Handler, NatBackend};
 use crate::nvme::{
     NvmeCommandTrace, NvmeCompletionEvent, NvmeController, REG_CC, REG_DOORBELL_BASE,
 };
@@ -50,7 +51,9 @@ use crate::virtio_blk::{
     VirtioBlockRequestTrace, VirtioMmioBlock, VirtioMmioBlockResult, VirtioMmioBlockStats,
     VirtioPciBlock, VirtioPciBlockOp, INSTALLER_ISO_SLOT,
 };
-use crate::virtio_net::{VirtioNetResult, VirtioNetStats, VirtioPciNet, VirtioPciNetOp};
+use crate::virtio_net::{
+    LoopbackTestBackend, NetBackend, VirtioNetResult, VirtioNetStats, VirtioPciNet, VirtioPciNetOp,
+};
 use crate::xhci::{
     PointerInputAction, SetupInputAction, XhciController, XhciEventLifecycleStats,
     XhciHidSemanticStats, XhciPointerInputQueueError, XhciPointerInputReportStats,
@@ -66,6 +69,7 @@ pub struct VirtPlatformDeviceConfig {
     pub xhci_present: bool,
     pub virtio_boot_media_present: bool,
     pub virtio_net_present: bool,
+    pub virtio_net_backend: VirtioNetBackendKind,
     pub legacy_virtio_mmio_present: bool,
     pub ramfb_present: bool,
 }
@@ -76,8 +80,31 @@ impl Default for VirtPlatformDeviceConfig {
             xhci_present: true,
             virtio_boot_media_present: true,
             virtio_net_present: false,
+            virtio_net_backend: VirtioNetBackendKind::Nat,
             legacy_virtio_mmio_present: true,
             ramfb_present: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VirtioNetBackendKind {
+    Nat,
+    Loopback,
+}
+
+impl VirtioNetBackendKind {
+    pub fn from_env_value(value: Option<&str>) -> Self {
+        let Some(value) = value else {
+            return Self::Nat;
+        };
+        let value = value.trim();
+        if value.eq_ignore_ascii_case("nat") {
+            Self::Nat
+        } else if value.eq_ignore_ascii_case("loopback") {
+            Self::Loopback
+        } else {
+            panic!("BRIDGEVM_VIRTIO_NET_BACKEND must be 'nat' or 'loopback'");
         }
     }
 }
@@ -100,6 +127,15 @@ impl VirtPlatformConfig {
         let mut config = Self::new(fdt);
         config.devices.ramfb_present = true;
         config
+    }
+}
+
+fn make_virtio_net_backend(kind: VirtioNetBackendKind) -> Box<dyn NetBackend> {
+    match kind {
+        VirtioNetBackendKind::Nat => {
+            Box::new(NatBackend::<HostSocketOutboundIpv4Handler>::new_host_socket())
+        }
+        VirtioNetBackendKind::Loopback => Box::new(LoopbackTestBackend::default()),
     }
 }
 
@@ -176,7 +212,7 @@ pub struct VirtPlatform {
     xhci: XhciController,
     virtio_iso: Option<VirtioMmioBlock>,
     pci_boot_media: Option<VirtioPciBlock>,
-    virtio_net: Option<VirtioPciNet>,
+    virtio_net: Option<VirtioPciNet<Box<dyn NetBackend>>>,
     ramfb: Ramfb,
     flash_vars: P30NorFlash,
     pending_msix: Vec<MsixMessage>,
@@ -255,10 +291,9 @@ impl VirtPlatform {
             xhci: XhciController::new(),
             virtio_iso: None,
             pci_boot_media: None,
-            virtio_net: config
-                .devices
-                .virtio_net_present
-                .then(VirtioPciNet::new_loopback),
+            virtio_net: config.devices.virtio_net_present.then(|| {
+                VirtioPciNet::new(make_virtio_net_backend(config.devices.virtio_net_backend))
+            }),
             ramfb: Ramfb::new(),
             flash_vars: P30NorFlash::new(
                 machine::FLASH_VARS.base,
@@ -438,9 +473,14 @@ impl VirtPlatform {
     }
 
     pub fn pump_virtio_net_receive(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
+        self.poll_virtio_net(mem)
+    }
+
+    pub fn poll_virtio_net(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
         let Some(dev) = self.virtio_net.as_mut() else {
             return false;
         };
+        dev.poll_host_sockets();
         let delivered = dev.pump_receive(mem);
         if delivered {
             self.flush_virtio_net_pending_msix();
@@ -2568,6 +2608,7 @@ mod tests {
 
         let mut p = platform_with_devices(VirtPlatformDeviceConfig {
             virtio_net_present: true,
+            virtio_net_backend: VirtioNetBackendKind::Loopback,
             ..VirtPlatformDeviceConfig::default()
         });
         let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x20000);
@@ -2648,7 +2689,10 @@ mod tests {
         );
 
         let net = p.virtio_net.as_ref().expect("virtio-net device present");
-        assert_eq!(net.backend().transmitted_frames(), &[frame.to_vec()]);
+        assert_eq!(
+            net.backend().test_transmitted_frames(),
+            Some(&[frame.to_vec()][..])
+        );
         assert_eq!(
             p.pending_msix,
             vec![crate::msix::MsixMessage {

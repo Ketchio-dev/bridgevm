@@ -1166,6 +1166,7 @@ impl RunLoopDrainStats {
         platform.set_host_now(std::time::Instant::now());
         platform.drain_xhci_setup_input_reports(mem);
         platform.drain_xhci_pointer_input_reports(mem);
+        platform.poll_virtio_net(mem);
         let spi = deliver_pending_spis(platform, trace.spi);
         let msix = deliver_pending_msix(platform, trace.msix);
         self.last_drain_location = Some(context.location.as_str());

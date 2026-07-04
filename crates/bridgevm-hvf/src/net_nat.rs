@@ -7,7 +7,12 @@
 //! handler with a socket-backed handler without changing the virtio-net device
 //! model.
 
-use std::collections::VecDeque;
+use std::{
+    collections::{HashMap, VecDeque},
+    io::{self, Read, Write},
+    net::{IpAddr, Ipv4Addr as StdIpv4Addr, Shutdown, SocketAddrV4, TcpStream, UdpSocket},
+    os::fd::{FromRawFd, RawFd},
+};
 
 use crate::virtio_net::NetBackend;
 
@@ -63,6 +68,12 @@ const DHCP_OPT_REQUESTED_IP: u8 = 50;
 /// receive queue as Ethernet-framed IPv4 packets.
 pub trait OutboundIpv4Handler {
     fn handle_outbound_ipv4(&mut self, packet: &Ipv4Packet<'_>);
+    fn poll_host_sockets(
+        &mut self,
+        _guest_mac: Option<MacAddr>,
+        _reply_queue: &mut VecDeque<Vec<u8>>,
+    ) {
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -166,6 +177,11 @@ impl<H: OutboundIpv4Handler> NetBackend for NatBackend<H> {
     fn poll_receive(&mut self) -> Option<Vec<u8>> {
         self.reply_queue.pop_front()
     }
+
+    fn poll_host_sockets(&mut self) {
+        self.outbound_ipv4
+            .poll_host_sockets(self.guest_mac, &mut self.reply_queue);
+    }
 }
 
 impl<H: OutboundIpv4Handler> NatBackend<H> {
@@ -203,7 +219,9 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
                 self.handle_dhcp(&packet, &udp);
                 return;
             }
-            if is_non_local_ipv4_destination(packet.dst) {
+            if (packet.dst == DNS_IP && udp.dst_port == 53)
+                || is_non_local_ipv4_destination(packet.dst)
+            {
                 self.outbound_ipv4.handle_outbound_ipv4(&packet);
             }
             return;
@@ -283,6 +301,501 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
             ethertype,
             payload,
         ));
+    }
+}
+
+impl NatBackend<HostSocketOutboundIpv4Handler> {
+    pub fn new_host_socket() -> Self {
+        Self::with_outbound_handler(HostSocketOutboundIpv4Handler::new())
+    }
+}
+
+#[derive(Debug)]
+pub struct HostSocketOutboundIpv4Handler {
+    udp_flows: HashMap<UdpFlowKey, UdpFlow>,
+    tcp_flows: HashMap<TcpFlowKey, TcpFlow>,
+    pending_tcp_resets: VecDeque<PendingTcpReset>,
+    dns_resolver: StdIpv4Addr,
+    tick: u64,
+    idle_timeout_ticks: u64,
+    max_flows: usize,
+    tcp_isn_counter: u32,
+}
+
+impl Default for HostSocketOutboundIpv4Handler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl HostSocketOutboundIpv4Handler {
+    const DEFAULT_IDLE_TIMEOUT_TICKS: u64 = 30_000;
+    const DEFAULT_MAX_FLOWS: usize = 256;
+
+    pub fn new() -> Self {
+        Self::with_dns_resolver(
+            first_resolv_conf_nameserver().unwrap_or(StdIpv4Addr::new(1, 1, 1, 1)),
+        )
+    }
+
+    pub fn with_dns_resolver(dns_resolver: StdIpv4Addr) -> Self {
+        Self {
+            udp_flows: HashMap::new(),
+            tcp_flows: HashMap::new(),
+            pending_tcp_resets: VecDeque::new(),
+            dns_resolver,
+            tick: 0,
+            idle_timeout_ticks: Self::DEFAULT_IDLE_TIMEOUT_TICKS,
+            max_flows: Self::DEFAULT_MAX_FLOWS,
+            tcp_isn_counter: 0x4256_0000,
+        }
+    }
+
+    #[cfg(test)]
+    fn with_idle_timeout_ticks(mut self, ticks: u64) -> Self {
+        self.idle_timeout_ticks = ticks;
+        self
+    }
+
+    #[cfg(test)]
+    fn udp_flow_count(&self) -> usize {
+        self.udp_flows.len()
+    }
+
+    fn bump_tick(&mut self) -> u64 {
+        self.tick = self.tick.saturating_add(1);
+        self.tick
+    }
+
+    fn next_tcp_isn(&mut self) -> u32 {
+        self.tcp_isn_counter = self.tcp_isn_counter.wrapping_add(0x1f3d_5b79);
+        self.tcp_isn_counter
+    }
+
+    fn evict_idle_flows(&mut self) {
+        let now = self.tick;
+        let timeout = self.idle_timeout_ticks;
+        self.udp_flows
+            .retain(|_, flow| now.saturating_sub(flow.last_activity) <= timeout);
+        self.tcp_flows
+            .retain(|_, flow| now.saturating_sub(flow.last_activity) <= timeout);
+        evict_lru(&mut self.udp_flows, self.max_flows);
+        evict_lru(&mut self.tcp_flows, self.max_flows);
+    }
+
+    fn handle_udp(&mut self, packet: &Ipv4Packet<'_>, udp: &UdpDatagram<'_>) {
+        let now = self.bump_tick();
+        let mut public_dst = packet.dst;
+        let mut socket_dst = packet.dst;
+        let mut dst_port = udp.dst_port;
+        if packet.dst == DNS_IP && udp.dst_port == 53 {
+            public_dst = DNS_IP;
+            socket_dst = self.dns_resolver.octets();
+            dst_port = 53;
+        }
+        let key = UdpFlowKey {
+            guest_ip: packet.src,
+            guest_port: udp.src_port,
+            public_dst,
+            public_dst_port: udp.dst_port,
+            socket_dst,
+            socket_dst_port: dst_port,
+        };
+        if !self.udp_flows.contains_key(&key) {
+            match UdpSocket::bind(SocketAddrV4::new(StdIpv4Addr::UNSPECIFIED, 0)).and_then(
+                |socket| {
+                    socket.set_nonblocking(true)?;
+                    socket.connect(SocketAddrV4::new(StdIpv4Addr::from(socket_dst), dst_port))?;
+                    Ok(socket)
+                },
+            ) {
+                Ok(socket) => {
+                    self.udp_flows.insert(
+                        key,
+                        UdpFlow {
+                            socket,
+                            last_activity: now,
+                        },
+                    );
+                }
+                Err(_) => return,
+            }
+        }
+        if let Some(flow) = self.udp_flows.get_mut(&key) {
+            flow.last_activity = now;
+            let _ = flow.socket.send(udp.payload);
+        }
+        self.evict_idle_flows();
+    }
+
+    fn handle_tcp(&mut self, packet: &Ipv4Packet<'_>, tcp: &TcpSegment<'_>) {
+        let now = self.bump_tick();
+        let key = TcpFlowKey {
+            guest_ip: packet.src,
+            guest_port: tcp.src_port,
+            dst_ip: packet.dst,
+            dst_port: tcp.dst_port,
+        };
+        if tcp.flags & TCP_FLAG_RST != 0 {
+            self.tcp_flows.remove(&key);
+            return;
+        }
+        if tcp.flags & TCP_FLAG_SYN != 0 && !self.tcp_flows.contains_key(&key) {
+            let our_seq = self.next_tcp_isn();
+            let stream = match nonblocking_tcp_connect(StdIpv4Addr::from(packet.dst), tcp.dst_port)
+            {
+                Ok(stream) => stream,
+                Err(_) => {
+                    self.pending_tcp_resets.push_back(PendingTcpReset {
+                        key,
+                        seq: our_seq,
+                        ack: tcp.seq.wrapping_add(1),
+                    });
+                    return;
+                }
+            };
+            self.tcp_flows.insert(
+                key,
+                TcpFlow::new(stream, tcp.seq.wrapping_add(1), our_seq, now),
+            );
+            self.evict_idle_flows();
+            return;
+        }
+        let Some(flow) = self.tcp_flows.get_mut(&key) else {
+            return;
+        };
+        flow.last_activity = now;
+        if tcp.flags & TCP_FLAG_ACK != 0 {
+            flow.observe_guest_ack(tcp.ack);
+        }
+        if !tcp.payload.is_empty() {
+            if tcp.seq == flow.guest_next {
+                flow.guest_next = flow.guest_next.wrapping_add(tcp.payload.len() as u32);
+                flow.write_buf.extend(tcp.payload);
+                flow.pending_ack = true;
+                flow.flush_host_write();
+            }
+            // Out-of-order payload is intentionally dropped; the guest TCP stack
+            // will retransmit from the last ACKed byte.
+        }
+        if tcp.flags & TCP_FLAG_FIN != 0 && tcp.seq == flow.guest_next {
+            flow.guest_next = flow.guest_next.wrapping_add(1);
+            flow.guest_fin = true;
+            flow.pending_ack = true;
+            let _ = flow.stream.shutdown(Shutdown::Write);
+        }
+        self.evict_idle_flows();
+    }
+
+    fn poll_udp(&mut self, guest_mac: Option<MacAddr>, reply_queue: &mut VecDeque<Vec<u8>>) {
+        let Some(guest_mac) = guest_mac else {
+            return;
+        };
+        let now = self.tick;
+        let mut buf = [0u8; 2048];
+        for (key, flow) in &mut self.udp_flows {
+            loop {
+                match flow.socket.recv(&mut buf) {
+                    Ok(len) => {
+                        flow.last_activity = now;
+                        queue_udp_reply(
+                            reply_queue,
+                            guest_mac,
+                            key.public_dst,
+                            key.guest_ip,
+                            key.public_dst_port,
+                            key.guest_port,
+                            &buf[..len],
+                        );
+                    }
+                    Err(e) if would_block(&e) => break,
+                    Err(_) => break,
+                }
+            }
+        }
+    }
+
+    fn poll_tcp(&mut self, guest_mac: Option<MacAddr>, reply_queue: &mut VecDeque<Vec<u8>>) {
+        let Some(guest_mac) = guest_mac else {
+            return;
+        };
+        while let Some(reset) = self.pending_tcp_resets.pop_front() {
+            queue_tcp_reply(
+                reply_queue,
+                guest_mac,
+                &reset.key,
+                reset.seq,
+                reset.ack,
+                TCP_FLAG_RST | TCP_FLAG_ACK,
+                &[],
+            );
+        }
+        let now = self.tick;
+        let mut remove = Vec::new();
+        for (key, flow) in &mut self.tcp_flows {
+            flow.last_activity = now;
+            if flow.state == TcpProxyState::Connecting {
+                match tcp_connect_error(&flow.stream) {
+                    Ok(Some(0)) => {
+                        flow.state = TcpProxyState::Established;
+                        queue_tcp_reply(
+                            reply_queue,
+                            guest_mac,
+                            key,
+                            flow.our_seq,
+                            flow.guest_next,
+                            TCP_FLAG_SYN | TCP_FLAG_ACK,
+                            &[],
+                        );
+                    }
+                    Ok(Some(_)) | Err(_) => {
+                        queue_tcp_reply(
+                            reply_queue,
+                            guest_mac,
+                            key,
+                            flow.our_seq,
+                            flow.guest_next,
+                            TCP_FLAG_RST | TCP_FLAG_ACK,
+                            &[],
+                        );
+                        remove.push(*key);
+                        continue;
+                    }
+                    Ok(None) => {}
+                }
+            }
+            if flow.state != TcpProxyState::Connecting {
+                flow.flush_host_write();
+                if flow.pending_ack {
+                    queue_tcp_reply(
+                        reply_queue,
+                        guest_mac,
+                        key,
+                        flow.our_next,
+                        flow.guest_next,
+                        TCP_FLAG_ACK,
+                        &[],
+                    );
+                    flow.pending_ack = false;
+                }
+                let mut buf = [0u8; 1460];
+                loop {
+                    match flow.stream.read(&mut buf) {
+                        Ok(0) => {
+                            if !flow.host_fin_sent {
+                                queue_tcp_reply(
+                                    reply_queue,
+                                    guest_mac,
+                                    key,
+                                    flow.our_next,
+                                    flow.guest_next,
+                                    TCP_FLAG_FIN | TCP_FLAG_ACK,
+                                    &[],
+                                );
+                                flow.our_next = flow.our_next.wrapping_add(1);
+                                flow.host_fin_sent = true;
+                            }
+                            break;
+                        }
+                        Ok(len) => {
+                            queue_tcp_reply(
+                                reply_queue,
+                                guest_mac,
+                                key,
+                                flow.our_next,
+                                flow.guest_next,
+                                TCP_FLAG_PSH | TCP_FLAG_ACK,
+                                &buf[..len],
+                            );
+                            flow.our_next = flow.our_next.wrapping_add(len as u32);
+                        }
+                        Err(e) if would_block(&e) => break,
+                        Err(_) => {
+                            queue_tcp_reply(
+                                reply_queue,
+                                guest_mac,
+                                key,
+                                flow.our_next,
+                                flow.guest_next,
+                                TCP_FLAG_RST | TCP_FLAG_ACK,
+                                &[],
+                            );
+                            remove.push(*key);
+                            break;
+                        }
+                    }
+                }
+            }
+            if flow.closed() {
+                remove.push(*key);
+            }
+        }
+        for key in remove {
+            self.tcp_flows.remove(&key);
+        }
+    }
+}
+
+impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
+    fn handle_outbound_ipv4(&mut self, packet: &Ipv4Packet<'_>) {
+        match packet.protocol {
+            IPV4_PROTOCOL_UDP => {
+                if let Some(udp) = UdpDatagram::parse(packet.payload) {
+                    self.handle_udp(packet, &udp);
+                }
+            }
+            IPV4_PROTOCOL_TCP => {
+                if let Some(tcp) = TcpSegment::parse(packet.payload) {
+                    self.handle_tcp(packet, &tcp);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn poll_host_sockets(
+        &mut self,
+        guest_mac: Option<MacAddr>,
+        reply_queue: &mut VecDeque<Vec<u8>>,
+    ) {
+        self.bump_tick();
+        self.poll_udp(guest_mac, reply_queue);
+        self.poll_tcp(guest_mac, reply_queue);
+        self.evict_idle_flows();
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct UdpFlowKey {
+    guest_ip: Ipv4Addr,
+    guest_port: u16,
+    public_dst: Ipv4Addr,
+    public_dst_port: u16,
+    socket_dst: Ipv4Addr,
+    socket_dst_port: u16,
+}
+
+#[derive(Debug)]
+struct UdpFlow {
+    socket: UdpSocket,
+    last_activity: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct TcpFlowKey {
+    guest_ip: Ipv4Addr,
+    guest_port: u16,
+    dst_ip: Ipv4Addr,
+    dst_port: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PendingTcpReset {
+    key: TcpFlowKey,
+    seq: u32,
+    ack: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TcpProxyState {
+    Connecting,
+    Established,
+}
+
+#[derive(Debug)]
+struct TcpFlow {
+    stream: TcpStream,
+    state: TcpProxyState,
+    guest_next: u32,
+    our_seq: u32,
+    our_next: u32,
+    write_buf: VecDeque<u8>,
+    pending_ack: bool,
+    guest_fin: bool,
+    host_fin_sent: bool,
+    host_fin_acked: bool,
+    last_activity: u64,
+}
+
+impl TcpFlow {
+    fn new(stream: TcpStream, guest_next: u32, our_seq: u32, last_activity: u64) -> Self {
+        Self {
+            stream,
+            state: TcpProxyState::Connecting,
+            guest_next,
+            our_seq,
+            our_next: our_seq.wrapping_add(1),
+            write_buf: VecDeque::new(),
+            pending_ack: false,
+            guest_fin: false,
+            host_fin_sent: false,
+            host_fin_acked: false,
+            last_activity,
+        }
+    }
+
+    fn observe_guest_ack(&mut self, ack: u32) {
+        if self.host_fin_sent && ack == self.our_next {
+            self.host_fin_acked = true;
+        }
+    }
+
+    fn flush_host_write(&mut self) {
+        while !self.write_buf.is_empty() {
+            let contiguous = self.write_buf.make_contiguous();
+            match self.stream.write(contiguous) {
+                Ok(0) => break,
+                Ok(len) => {
+                    self.write_buf.drain(..len);
+                }
+                Err(e) if would_block(&e) => break,
+                Err(_) => break,
+            }
+        }
+    }
+
+    fn closed(&self) -> bool {
+        self.guest_fin && self.host_fin_sent && self.host_fin_acked
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TcpSegment<'a> {
+    pub src_port: u16,
+    pub dst_port: u16,
+    pub seq: u32,
+    pub ack: u32,
+    pub flags: u8,
+    pub window: u16,
+    pub segment: &'a [u8],
+    pub payload: &'a [u8],
+}
+
+const TCP_FLAG_FIN: u8 = 0x01;
+const TCP_FLAG_SYN: u8 = 0x02;
+const TCP_FLAG_RST: u8 = 0x04;
+const TCP_FLAG_PSH: u8 = 0x08;
+const TCP_FLAG_ACK: u8 = 0x10;
+
+impl<'a> TcpSegment<'a> {
+    pub fn parse(bytes: &'a [u8]) -> Option<Self> {
+        if bytes.len() < 20 {
+            return None;
+        }
+        let data_offset = usize::from(bytes[12] >> 4) * 4;
+        if data_offset < 20 || data_offset > bytes.len() {
+            return None;
+        }
+        Some(Self {
+            src_port: read_u16_be(bytes, 0)?,
+            dst_port: read_u16_be(bytes, 2)?,
+            seq: u32::from_be_bytes(read_array(bytes, 4)?),
+            ack: u32::from_be_bytes(read_array(bytes, 8)?),
+            flags: bytes[13],
+            window: read_u16_be(bytes, 14)?,
+            segment: bytes,
+            payload: &bytes[data_offset..],
+        })
     }
 }
 
@@ -504,6 +1017,32 @@ pub fn build_udp_datagram(
     segment
 }
 
+pub fn build_tcp_segment(
+    src_ip: Ipv4Addr,
+    dst_ip: Ipv4Addr,
+    src_port: u16,
+    dst_port: u16,
+    seq: u32,
+    ack: u32,
+    flags: u8,
+    payload: &[u8],
+) -> Vec<u8> {
+    let mut segment = Vec::with_capacity(20 + payload.len());
+    segment.extend_from_slice(&src_port.to_be_bytes());
+    segment.extend_from_slice(&dst_port.to_be_bytes());
+    segment.extend_from_slice(&seq.to_be_bytes());
+    segment.extend_from_slice(&ack.to_be_bytes());
+    segment.push(5 << 4);
+    segment.push(flags);
+    segment.extend_from_slice(&65535u16.to_be_bytes());
+    segment.extend_from_slice(&0u16.to_be_bytes());
+    segment.extend_from_slice(&0u16.to_be_bytes());
+    segment.extend_from_slice(payload);
+    let checksum = tcp_checksum(src_ip, dst_ip, &segment);
+    segment[16..18].copy_from_slice(&checksum.to_be_bytes());
+    segment
+}
+
 pub fn ipv4_header_checksum(header: &[u8]) -> u16 {
     internet_checksum(header)
 }
@@ -515,6 +1054,16 @@ pub fn udp_checksum(src_ip: Ipv4Addr, dst_ip: Ipv4Addr, udp_segment: &[u8]) -> u
     sum = checksum_add_bytes(sum, &[0, IPV4_PROTOCOL_UDP]);
     sum = checksum_add_bytes(sum, &(udp_segment.len() as u16).to_be_bytes());
     sum = checksum_add_bytes(sum, udp_segment);
+    checksum_finalize(sum)
+}
+
+pub fn tcp_checksum(src_ip: Ipv4Addr, dst_ip: Ipv4Addr, tcp_segment: &[u8]) -> u16 {
+    let mut sum = 0u32;
+    sum = checksum_add_bytes(sum, &src_ip);
+    sum = checksum_add_bytes(sum, &dst_ip);
+    sum = checksum_add_bytes(sum, &[0, IPV4_PROTOCOL_TCP]);
+    sum = checksum_add_bytes(sum, &(tcp_segment.len() as u16).to_be_bytes());
+    sum = checksum_add_bytes(sum, tcp_segment);
     checksum_finalize(sum)
 }
 
@@ -623,6 +1172,289 @@ fn is_non_local_ipv4_destination(dst: Ipv4Addr) -> bool {
     dst[0..3] != [10, 0, 2]
 }
 
+fn first_resolv_conf_nameserver() -> Option<StdIpv4Addr> {
+    let contents = std::fs::read_to_string("/etc/resolv.conf").ok()?;
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.starts_with('#') || !line.starts_with("nameserver") {
+            continue;
+        }
+        let addr = line.split_whitespace().nth(1)?;
+        if let Ok(IpAddr::V4(ip)) = addr.parse::<IpAddr>() {
+            return Some(ip);
+        }
+    }
+    None
+}
+
+fn queue_udp_reply(
+    reply_queue: &mut VecDeque<Vec<u8>>,
+    guest_mac: MacAddr,
+    src_ip: Ipv4Addr,
+    dst_ip: Ipv4Addr,
+    src_port: u16,
+    dst_port: u16,
+    payload: &[u8],
+) {
+    let udp = build_udp_datagram(src_ip, dst_ip, src_port, dst_port, payload);
+    let ipv4 = build_ipv4_packet(src_ip, dst_ip, IPV4_PROTOCOL_UDP, &udp);
+    reply_queue.push_back(EthernetFrame::build(
+        guest_mac,
+        GATEWAY_MAC,
+        ETHERTYPE_IPV4,
+        &ipv4,
+    ));
+}
+
+fn queue_tcp_reply(
+    reply_queue: &mut VecDeque<Vec<u8>>,
+    guest_mac: MacAddr,
+    key: &TcpFlowKey,
+    seq: u32,
+    ack: u32,
+    flags: u8,
+    payload: &[u8],
+) {
+    let tcp = build_tcp_segment(
+        key.dst_ip,
+        key.guest_ip,
+        key.dst_port,
+        key.guest_port,
+        seq,
+        ack,
+        flags,
+        payload,
+    );
+    let ipv4 = build_ipv4_packet(key.dst_ip, key.guest_ip, IPV4_PROTOCOL_TCP, &tcp);
+    reply_queue.push_back(EthernetFrame::build(
+        guest_mac,
+        GATEWAY_MAC,
+        ETHERTYPE_IPV4,
+        &ipv4,
+    ));
+}
+
+fn evict_lru<K: Copy + Eq + std::hash::Hash, V: HasLastActivity>(
+    map: &mut HashMap<K, V>,
+    cap: usize,
+) {
+    while map.len() > cap {
+        let Some((&key, _)) = map.iter().min_by_key(|(_, flow)| flow.last_activity()) else {
+            return;
+        };
+        map.remove(&key);
+    }
+}
+
+trait HasLastActivity {
+    fn last_activity(&self) -> u64;
+}
+
+impl HasLastActivity for UdpFlow {
+    fn last_activity(&self) -> u64 {
+        self.last_activity
+    }
+}
+
+impl HasLastActivity for TcpFlow {
+    fn last_activity(&self) -> u64 {
+        self.last_activity
+    }
+}
+
+fn would_block(err: &io::Error) -> bool {
+    matches!(
+        err.kind(),
+        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+    )
+}
+
+fn tcp_connect_error(stream: &TcpStream) -> io::Result<Option<i32>> {
+    match stream.take_error()? {
+        Some(err) => Ok(Some(err.raw_os_error().unwrap_or(1))),
+        None => {
+            let mut byte = [0u8; 0];
+            match stream.peek(&mut byte) {
+                Ok(_) => Ok(Some(0)),
+                Err(err) if would_block(&err) => Ok(None),
+                Err(err) if err.kind() == io::ErrorKind::NotConnected => Ok(None),
+                Err(err) => Ok(Some(err.raw_os_error().unwrap_or(1))),
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+fn nonblocking_tcp_connect(dst: StdIpv4Addr, port: u16) -> io::Result<TcpStream> {
+    let fd = raw_nonblocking_tcp_socket()?;
+    let connect_result = raw_connect_ipv4(fd, dst, port);
+    if let Err(err) = connect_result {
+        if !raw_connect_in_progress(&err) {
+            let _ = raw_close(fd);
+            return Err(err);
+        }
+    }
+    // SAFETY: fd is a valid TCP socket created above and ownership is moved into TcpStream.
+    let stream = unsafe { TcpStream::from_raw_fd(fd) };
+    stream.set_nonblocking(true)?;
+    Ok(stream)
+}
+
+#[cfg(not(unix))]
+fn nonblocking_tcp_connect(dst: StdIpv4Addr, port: u16) -> io::Result<TcpStream> {
+    let stream = TcpStream::connect(SocketAddrV4::new(dst, port))?;
+    stream.set_nonblocking(true)?;
+    Ok(stream)
+}
+
+#[cfg(unix)]
+fn raw_nonblocking_tcp_socket() -> io::Result<RawFd> {
+    // SAFETY: socket is called with valid constants; errors are returned via errno.
+    let fd = unsafe { socket(AF_INET, SOCK_STREAM, 0) };
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: fcntl operates on the socket fd created above.
+    let flags = unsafe { fcntl(fd, F_GETFL, 0) };
+    if flags < 0 || unsafe { fcntl(fd, F_SETFL, flags | O_NONBLOCK) } < 0 {
+        let err = io::Error::last_os_error();
+        let _ = raw_close(fd);
+        return Err(err);
+    }
+    Ok(fd)
+}
+
+#[cfg(unix)]
+fn raw_connect_ipv4(fd: RawFd, dst: StdIpv4Addr, port: u16) -> io::Result<()> {
+    let addr = RawSockAddrIn::new(dst, port);
+    // SAFETY: addr points to a properly initialized IPv4 sockaddr for this platform.
+    let rc = unsafe {
+        connect(
+            fd,
+            (&addr as *const RawSockAddrIn).cast::<RawSockAddr>(),
+            std::mem::size_of::<RawSockAddrIn>() as RawSockLen,
+        )
+    };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(unix)]
+fn raw_connect_in_progress(err: &io::Error) -> bool {
+    matches!(
+        err.raw_os_error(),
+        Some(ERRNO_EINPROGRESS) | Some(ERRNO_EALREADY) | Some(ERRNO_EWOULDBLOCK)
+    )
+}
+
+#[cfg(unix)]
+fn raw_close(fd: RawFd) -> io::Result<()> {
+    // SAFETY: close is called with a raw fd; errors are surfaced through errno.
+    let rc = unsafe { close(fd) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(target_os = "macos")]
+type RawSockLen = u32;
+#[cfg(target_os = "macos")]
+#[repr(C)]
+struct RawSockAddr {
+    sa_len: u8,
+    sa_family: u8,
+    sa_data: [u8; 14],
+}
+#[cfg(target_os = "macos")]
+#[repr(C)]
+struct RawSockAddrIn {
+    sin_len: u8,
+    sin_family: u8,
+    sin_port: u16,
+    sin_addr: u32,
+    sin_zero: [u8; 8],
+}
+#[cfg(target_os = "macos")]
+impl RawSockAddrIn {
+    fn new(dst: StdIpv4Addr, port: u16) -> Self {
+        Self {
+            sin_len: std::mem::size_of::<Self>() as u8,
+            sin_family: AF_INET as u8,
+            sin_port: port.to_be(),
+            sin_addr: u32::from_ne_bytes(dst.octets()),
+            sin_zero: [0; 8],
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+type RawSockLen = u32;
+#[cfg(target_os = "linux")]
+#[repr(C)]
+struct RawSockAddr {
+    sa_family: u16,
+    sa_data: [u8; 14],
+}
+#[cfg(target_os = "linux")]
+#[repr(C)]
+struct RawSockAddrIn {
+    sin_family: u16,
+    sin_port: u16,
+    sin_addr: u32,
+    sin_zero: [u8; 8],
+}
+#[cfg(target_os = "linux")]
+impl RawSockAddrIn {
+    fn new(dst: StdIpv4Addr, port: u16) -> Self {
+        Self {
+            sin_family: AF_INET as u16,
+            sin_port: port.to_be(),
+            sin_addr: u32::from_ne_bytes(dst.octets()),
+            sin_zero: [0; 8],
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+const AF_INET: i32 = 2;
+#[cfg(target_os = "linux")]
+const AF_INET: i32 = 2;
+#[cfg(unix)]
+const SOCK_STREAM: i32 = 1;
+#[cfg(unix)]
+const F_GETFL: i32 = 3;
+#[cfg(unix)]
+const F_SETFL: i32 = 4;
+#[cfg(target_os = "macos")]
+const O_NONBLOCK: i32 = 0x0004;
+#[cfg(target_os = "linux")]
+const O_NONBLOCK: i32 = 0o4000;
+#[cfg(target_os = "macos")]
+const ERRNO_EINPROGRESS: i32 = 36;
+#[cfg(target_os = "linux")]
+const ERRNO_EINPROGRESS: i32 = 115;
+#[cfg(target_os = "macos")]
+const ERRNO_EALREADY: i32 = 37;
+#[cfg(target_os = "linux")]
+const ERRNO_EALREADY: i32 = 114;
+#[cfg(target_os = "macos")]
+const ERRNO_EWOULDBLOCK: i32 = 35;
+#[cfg(target_os = "linux")]
+const ERRNO_EWOULDBLOCK: i32 = 11;
+
+#[cfg(unix)]
+unsafe extern "C" {
+    fn socket(domain: i32, ty: i32, protocol: i32) -> RawFd;
+    fn connect(fd: RawFd, addr: *const RawSockAddr, len: RawSockLen) -> i32;
+    fn fcntl(fd: RawFd, cmd: i32, arg: i32) -> i32;
+    fn close(fd: RawFd) -> i32;
+}
+
 fn read_u16_be(bytes: &[u8], offset: usize) -> Option<u16> {
     Some(u16::from_be_bytes(read_array(bytes, offset)?))
 }
@@ -700,6 +1532,51 @@ mod tests {
         let ip = Ipv4Packet::parse(eth.payload).unwrap();
         let udp = UdpDatagram::parse(ip.payload).unwrap();
         (eth, ip, udp)
+    }
+
+    fn udp_guest_frame(dst_ip: Ipv4Addr, dst_port: u16, src_port: u16, payload: &[u8]) -> Vec<u8> {
+        let udp = build_udp_datagram(GUEST_IP, dst_ip, src_port, dst_port, payload);
+        let ipv4 = build_ipv4_packet(GUEST_IP, dst_ip, IPV4_PROTOCOL_UDP, &udp);
+        EthernetFrame::build(GATEWAY_MAC, GUEST_MAC, ETHERTYPE_IPV4, &ipv4)
+    }
+
+    fn tcp_guest_frame(
+        dst_ip: Ipv4Addr,
+        dst_port: u16,
+        src_port: u16,
+        seq: u32,
+        ack: u32,
+        flags: u8,
+        payload: &[u8],
+    ) -> Vec<u8> {
+        let tcp = build_tcp_segment(
+            GUEST_IP, dst_ip, src_port, dst_port, seq, ack, flags, payload,
+        );
+        let ipv4 = build_ipv4_packet(GUEST_IP, dst_ip, IPV4_PROTOCOL_TCP, &tcp);
+        EthernetFrame::build(GATEWAY_MAC, GUEST_MAC, ETHERTYPE_IPV4, &ipv4)
+    }
+
+    fn parse_ipv4_tcp(frame: &[u8]) -> (EthernetFrame<'_>, Ipv4Packet<'_>, TcpSegment<'_>) {
+        let eth = EthernetFrame::parse(frame).unwrap();
+        let ip = Ipv4Packet::parse(eth.payload).unwrap();
+        let tcp = TcpSegment::parse(ip.payload).unwrap();
+        (eth, ip, tcp)
+    }
+
+    fn loopback_udp_socket() -> Option<UdpSocket> {
+        match UdpSocket::bind(SocketAddrV4::new(StdIpv4Addr::LOCALHOST, 0)) {
+            Ok(socket) => Some(socket),
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => None,
+            Err(e) => panic!("loopback udp bind failed: {e}"),
+        }
+    }
+
+    fn loopback_tcp_listener() -> Option<std::net::TcpListener> {
+        match std::net::TcpListener::bind(SocketAddrV4::new(StdIpv4Addr::LOCALHOST, 0)) {
+            Ok(listener) => Some(listener),
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => None,
+            Err(e) => panic!("loopback tcp bind failed: {e}"),
+        }
     }
 
     #[test]
@@ -876,5 +1753,220 @@ mod tests {
         assert!(backend.poll_receive().is_none());
         assert_eq!(backend.queued_outbound_ipv4_len(), 1);
         assert_eq!(backend.poll_outbound_ipv4(), Some(ipv4));
+    }
+
+    #[test]
+    fn synthetic_dns_udp_packets_are_queued_for_outbound_handler() {
+        let mut backend = NatBackend::new();
+        let frame = udp_guest_frame(DNS_IP, 53, 53000, b"dns-query");
+
+        backend.transmit(&frame);
+
+        assert!(backend.poll_receive().is_none());
+        let packet = backend.poll_outbound_ipv4().unwrap();
+        let ip = Ipv4Packet::parse(&packet).unwrap();
+        let udp = UdpDatagram::parse(ip.payload).unwrap();
+        assert_eq!(ip.dst, DNS_IP);
+        assert_eq!(udp.dst_port, 53);
+        assert_eq!(udp.payload, b"dns-query");
+    }
+
+    #[test]
+    fn host_socket_udp_flow_echoes_reply_to_guest() {
+        let Some(echo) = loopback_udp_socket() else {
+            return;
+        };
+        echo.set_nonblocking(true).unwrap();
+        let port = echo.local_addr().unwrap().port();
+        let mut backend = NatBackend::with_outbound_handler(
+            HostSocketOutboundIpv4Handler::with_dns_resolver(StdIpv4Addr::LOCALHOST),
+        );
+
+        backend.transmit(&udp_guest_frame([127, 0, 0, 1], port, 49152, b"hello"));
+
+        let mut buf = [0u8; 64];
+        let peer = loop {
+            match echo.recv_from(&mut buf) {
+                Ok((len, peer)) => {
+                    assert_eq!(&buf[..len], b"hello");
+                    break peer;
+                }
+                Err(e) if would_block(&e) => backend.poll_host_sockets(),
+                Err(e) => panic!("udp echo recv failed: {e}"),
+            }
+        };
+        echo.send_to(b"world", peer).unwrap();
+        for _ in 0..64 {
+            backend.poll_host_sockets();
+            if backend.pending_receive_len() > 0 {
+                break;
+            }
+        }
+
+        let reply = backend.poll_receive().unwrap();
+        let (eth, ip, udp) = parse_ipv4_udp_payload(&reply);
+        assert_eq!(eth.dst, GUEST_MAC);
+        assert_eq!(eth.src, GATEWAY_MAC);
+        assert_eq!(ip.src, [127, 0, 0, 1]);
+        assert_eq!(ip.dst, GUEST_IP);
+        assert_eq!(udp.src_port, port);
+        assert_eq!(udp.dst_port, 49152);
+        assert_eq!(udp.payload, b"world");
+        assert_eq!(udp_checksum(ip.src, ip.dst, udp.segment), 0);
+    }
+
+    #[test]
+    fn host_socket_udp_flows_evict_after_idle_timeout() {
+        let Some(echo) = loopback_udp_socket() else {
+            return;
+        };
+        let port = echo.local_addr().unwrap().port();
+        let handler = HostSocketOutboundIpv4Handler::with_dns_resolver(StdIpv4Addr::LOCALHOST)
+            .with_idle_timeout_ticks(2);
+        let mut backend = NatBackend::with_outbound_handler(handler);
+
+        backend.transmit(&udp_guest_frame([127, 0, 0, 1], port, 49152, b"hello"));
+        assert_eq!(backend.outbound_ipv4_handler().udp_flow_count(), 1);
+        backend.poll_host_sockets();
+        backend.poll_host_sockets();
+        backend.poll_host_sockets();
+        assert_eq!(backend.outbound_ipv4_handler().udp_flow_count(), 0);
+    }
+
+    #[test]
+    fn host_socket_tcp_flow_proxies_data_and_fin() {
+        let Some(listener) = loopback_tcp_listener() else {
+            return;
+        };
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut backend = NatBackend::<HostSocketOutboundIpv4Handler>::new_host_socket();
+        let guest_isn = 0x1000_0000;
+        let guest_port = 49153;
+
+        backend.transmit(&tcp_guest_frame(
+            [127, 0, 0, 1],
+            port,
+            guest_port,
+            guest_isn,
+            0,
+            TCP_FLAG_SYN,
+            &[],
+        ));
+
+        let mut server = None;
+        let syn_ack = loop {
+            backend.poll_host_sockets();
+            if server.is_none() {
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        stream.set_nonblocking(true).unwrap();
+                        server = Some(stream);
+                    }
+                    Err(e) if would_block(&e) => {}
+                    Err(e) => panic!("tcp accept failed: {e}"),
+                }
+            }
+            if let Some(frame) = backend.poll_receive() {
+                break frame;
+            }
+        };
+        let (_, ip, tcp) = parse_ipv4_tcp(&syn_ack);
+        assert_eq!(ip.src, [127, 0, 0, 1]);
+        assert_eq!(
+            tcp.flags & (TCP_FLAG_SYN | TCP_FLAG_ACK),
+            TCP_FLAG_SYN | TCP_FLAG_ACK
+        );
+        assert_eq!(tcp.ack, guest_isn.wrapping_add(1));
+        let host_next = tcp.seq.wrapping_add(1);
+
+        backend.transmit(&tcp_guest_frame(
+            [127, 0, 0, 1],
+            port,
+            guest_port,
+            guest_isn.wrapping_add(1),
+            host_next,
+            TCP_FLAG_ACK | TCP_FLAG_PSH,
+            b"ping",
+        ));
+        let mut server = server.unwrap();
+        let mut buf = [0u8; 16];
+        loop {
+            backend.poll_host_sockets();
+            match server.read(&mut buf) {
+                Ok(4) => break,
+                Ok(_) => {}
+                Err(e) if would_block(&e) => {}
+                Err(e) => panic!("server read failed: {e}"),
+            }
+        }
+        assert_eq!(&buf[..4], b"ping");
+        server.write_all(b"pong").unwrap();
+        let data = loop {
+            backend.poll_host_sockets();
+            if let Some(frame) = backend.poll_receive() {
+                let (_, _, tcp) = parse_ipv4_tcp(&frame);
+                if !tcp.payload.is_empty() {
+                    break frame;
+                }
+            }
+        };
+        let (_, _, tcp) = parse_ipv4_tcp(&data);
+        assert_eq!(
+            tcp.flags & (TCP_FLAG_PSH | TCP_FLAG_ACK),
+            TCP_FLAG_PSH | TCP_FLAG_ACK
+        );
+        assert_eq!(tcp.payload, b"pong");
+        assert_eq!(tcp.ack, guest_isn.wrapping_add(5));
+
+        backend.transmit(&tcp_guest_frame(
+            [127, 0, 0, 1],
+            port,
+            guest_port,
+            guest_isn.wrapping_add(5),
+            tcp.seq.wrapping_add(4),
+            TCP_FLAG_FIN | TCP_FLAG_ACK,
+            &[],
+        ));
+        let _ = server.shutdown(Shutdown::Write);
+        let fin = loop {
+            backend.poll_host_sockets();
+            if let Some(frame) = backend.poll_receive() {
+                let (_, _, tcp) = parse_ipv4_tcp(&frame);
+                if tcp.flags & TCP_FLAG_FIN != 0 {
+                    break frame;
+                }
+            }
+        };
+        let (_, _, tcp) = parse_ipv4_tcp(&fin);
+        assert_eq!(tcp.ack, guest_isn.wrapping_add(6));
+    }
+
+    #[test]
+    fn host_socket_tcp_connect_to_closed_port_returns_rst() {
+        let Some(listener) = loopback_tcp_listener() else {
+            return;
+        };
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let mut backend = NatBackend::<HostSocketOutboundIpv4Handler>::new_host_socket();
+
+        backend.transmit(&tcp_guest_frame(
+            [127, 0, 0, 1],
+            port,
+            49154,
+            0x2000_0000,
+            0,
+            TCP_FLAG_SYN,
+            &[],
+        ));
+        let rst = loop {
+            backend.poll_host_sockets();
+            if let Some(frame) = backend.poll_receive() {
+                break frame;
+            }
+        };
+        let (_, _, tcp) = parse_ipv4_tcp(&rst);
+        assert_ne!(tcp.flags & TCP_FLAG_RST, 0);
     }
 }

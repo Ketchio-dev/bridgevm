@@ -10,7 +10,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::platform_virt::VirtPlatformDeviceConfig;
+use crate::platform_virt::{VirtPlatformDeviceConfig, VirtioNetBackendKind};
 
 // The default firmware code volume is vendored in-repo: a current
 // tianocore/edk2 ArmVirtQemu build. Homebrew's stale qemu-11.0.1
@@ -257,6 +257,9 @@ impl VirtBootMediaConfig {
         let virtio_iso_present = !env_flag("BRIDGEVM_DISABLE_VIRTIO_ISO");
         cfg.platform_devices.virtio_boot_media_present = virtio_iso_present;
         cfg.platform_devices.virtio_net_present = env_flag("BRIDGEVM_VIRTIO_NET");
+        cfg.platform_devices.virtio_net_backend = VirtioNetBackendKind::from_env_value(
+            env::var("BRIDGEVM_VIRTIO_NET_BACKEND").ok().as_deref(),
+        );
         cfg.platform_devices.legacy_virtio_mmio_present = virtio_iso_present;
         cfg.platform_devices.ramfb_present =
             env_flag("BRIDGEVM_RAMFB") && !env_flag("BRIDGEVM_DISABLE_RAMFB_DEVICE");
@@ -316,6 +319,7 @@ mod tests {
             "BRIDGEVM_DISABLE_XHCI",
             "BRIDGEVM_DISABLE_VIRTIO_ISO",
             "BRIDGEVM_VIRTIO_NET",
+            "BRIDGEVM_VIRTIO_NET_BACKEND",
             "BRIDGEVM_RAMFB",
             "BRIDGEVM_DISABLE_RAMFB_DEVICE",
         ] {
