@@ -25,6 +25,7 @@ init_installed_boot_defaults() {
   POINTER_INPUT_MARKER=""
   POINTER_INPUT_FIRE_DELAY_MS=""
   POINTER_INPUT_RAMFB_DELAY_MS=""
+  BUILD_PROFILE="debug"
   SKIP_BUILD="0"
   PRINT_POLICY="0"
   XHCI_POLICY=""
@@ -80,6 +81,7 @@ parse_installed_boot_args() {
       --pointer-input-marker) [[ $# -ge 2 ]] || { usage; exit 2; }; setup_input_marker_value "$2" || { echo "FAIL: --pointer-input-marker requires 1-96 bytes" >&2; exit 2; }; POINTER_INPUT_MARKER="$2"; shift 2 ;;
       --pointer-input-fire-delay-ms) [[ $# -ge 2 ]] || { usage; exit 2; }; setup_input_fire_delay_ms "$2" || { echo "FAIL: --pointer-input-fire-delay-ms requires an integer <= 600000" >&2; exit 2; }; POINTER_INPUT_FIRE_DELAY_MS="$2"; shift 2 ;;
       --pointer-input-ramfb-delay-ms) [[ $# -ge 2 ]] || { usage; exit 2; }; ramfb_sample_list "$2" || { echo "FAIL: --pointer-input-ramfb-delay-ms requires 1-16 positive comma-separated integers, each <= 120000" >&2; exit 2; }; POINTER_INPUT_RAMFB_DELAY_MS="$2"; shift 2 ;;
+      --release) BUILD_PROFILE="release"; shift ;;
       --skip-build) SKIP_BUILD="1"; shift ;;
       --print-policy) PRINT_POLICY="1"; shift ;;
       -h|--help) usage; exit 0 ;;
@@ -166,6 +168,7 @@ print_installed_boot_policy() {
     "BRIDGEVM_XHCI_POINTER_INPUT_SERIAL_MARKER=${POINTER_INPUT_MARKER:-<probe-default>}" \
     "BRIDGEVM_XHCI_POINTER_INPUT_FIRE_DELAY_MS=${POINTER_INPUT_FIRE_DELAY_MS:-<unset>}" \
     "BRIDGEVM_XHCI_POINTER_INPUT_RAMFB_DELAY_MS=${POINTER_INPUT_RAMFB_DELAY_MS:-<probe-default>}" \
+    "BUILD_PROFILE=$BUILD_PROFILE" \
     'BRIDGEVM_NVME_DISK_WRITABLE=1 when booting target as only NVMe' \
     'BRIDGEVM_NVME_DISK2_WRITABLE=1 when --placeholder-nsid1 is set' \
     "reason=$XHCI_REASON; C4/D1 boots the installed target without the installer disk and supports the proven NSID-2 target position"

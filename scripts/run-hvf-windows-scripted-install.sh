@@ -18,7 +18,8 @@ Options:
   --watchdog-ms N         Probe watchdog in milliseconds. Default: 280000.
   --max-reboots N         Maximum PSCI SYSTEM_RESET reboots. Default: 8.
   --ram-mib N             Guest RAM in MiB. Default: 4096.
-  --skip-build            Reuse target/debug/examples/hvf_gic_boot_probe.
+  --release               Build and run target/release/examples/hvf_gic_boot_probe.
+  --skip-build            Reuse the selected profile's existing hvf_gic_boot_probe.
   --print-policy          Print the enforced policy and exit.
   -h, --help              Show this help.
 
@@ -95,6 +96,7 @@ CLEANUP_CREATED_MEDIA="0"
 WATCHDOG_MS="280000"
 MAX_REBOOTS="8"
 RAM_MIB="4096"
+BUILD_PROFILE="debug"
 SKIP_BUILD="0"
 PRINT_POLICY="0"
 
@@ -151,6 +153,10 @@ while [[ $# -gt 0 ]]; do
       positive_integer "$2" || { echo "FAIL: --ram-mib requires a positive integer" >&2; exit 2; }
       RAM_MIB="$2"
       shift 2
+      ;;
+    --release)
+      BUILD_PROFILE="release"
+      shift
       ;;
     --skip-build)
       SKIP_BUILD="1"
@@ -260,13 +266,18 @@ else
   [[ -f "$VARS" ]] || { echo "FAIL: vars file not found: $VARS" >&2; exit 1; }
 fi
 
-BIN="target/debug/examples/hvf_gic_boot_probe"
+if [[ "$BUILD_PROFILE" == "release" ]]; then
+  BIN="target/release/examples/hvf_gic_boot_probe"
+else
+  BIN="target/debug/examples/hvf_gic_boot_probe"
+fi
 {
   date -u
   printf 'source=%s\n' "$SOURCE"
   printf 'target=%s\n' "$TARGET"
   printf 'vars=%s\n' "$VARS"
   printf 'evidence_dir=%s\n' "$EVIDENCE_DIR"
+  printf 'build_profile=%s\n' "$BUILD_PROFILE"
   printf 'policy=BRIDGEVM_DISABLE_XHCI=1\n'
   printf 'source_stat:\n'
   ls -lh "$SOURCE"
@@ -285,7 +296,11 @@ BIN="target/debug/examples/hvf_gic_boot_probe"
 if [[ "$SKIP_BUILD" != "1" ]]; then
   {
     printf '\ncargo_build:\n'
-    cargo build -p bridgevm-hvf --example hvf_gic_boot_probe
+    if [[ "$BUILD_PROFILE" == "release" ]]; then
+      cargo build --release -p bridgevm-hvf --example hvf_gic_boot_probe
+    else
+      cargo build -p bridgevm-hvf --example hvf_gic_boot_probe
+    fi
     printf '\ncodesign_force:\n'
     codesign --sign - --entitlements apps/macos/HvfRunner.entitlements --force "$BIN"
   } >> "$EVIDENCE_DIR/preflight.txt" 2>&1

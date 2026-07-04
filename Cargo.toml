@@ -41,3 +41,10 @@ sha2 = "0.10"
 tar = "0.4"
 thiserror = "1.0"
 time = { version = "0.3", features = ["formatting", "macros"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+overflow-checks = true
+debug = 1

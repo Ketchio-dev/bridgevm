@@ -58,7 +58,8 @@ Options:
                           Delay after marker before pointer-input fires. Default: 0.
   --pointer-input-ramfb-delay-ms LIST
                           RAMFB checkpoints after pointer-input.
-  --skip-build            Reuse target/debug/examples/hvf_gic_boot_probe.
+  --release               Build and run target/release/examples/hvf_gic_boot_probe.
+  --skip-build            Reuse the selected profile's existing hvf_gic_boot_probe.
   --print-policy          Print the enforced policy and exit.
   -h, --help              Show this help.
 

@@ -38,6 +38,7 @@ write_installed_boot_preflight() {
     printf 'placeholder_nsid1=%s\n' "${PLACEHOLDER_NSID1:-<none>}"
     printf 'vars=%s\n' "$VARS"
     printf 'evidence_dir=%s\n' "$EVIDENCE_DIR"
+    printf 'build_profile=%s\n' "$BUILD_PROFILE"
     printf 'policy=%s %s writable-target\n' "$XHCI_POLICY" "$BOOT_MODE"
     printf 'ramfb_samples=%s\n' "$RAMFB_SAMPLES"
     print_input_summary
@@ -83,7 +84,11 @@ build_and_sign_probe_if_needed() {
   [[ "$SKIP_BUILD" != "1" ]] || return 0
   {
     printf '\ncargo_build:\n'
-    cargo build -p bridgevm-hvf --example hvf_gic_boot_probe
+    if [[ "$BUILD_PROFILE" == "release" ]]; then
+      cargo build --release -p bridgevm-hvf --example hvf_gic_boot_probe
+    else
+      cargo build -p bridgevm-hvf --example hvf_gic_boot_probe
+    fi
     printf '\ncodesign_force:\n'
     codesign --sign - --entitlements apps/macos/HvfRunner.entitlements --force "$BIN"
   } >> "$EVIDENCE_DIR/preflight.txt" 2>&1
@@ -180,7 +185,11 @@ run_installed_boot_probe() {
   fi
   RUN_STATUS=0
   PROBE_PID=""
-  BIN="target/debug/examples/hvf_gic_boot_probe"
+  if [[ "$BUILD_PROFILE" == "release" ]]; then
+    BIN="target/release/examples/hvf_gic_boot_probe"
+  else
+    BIN="target/debug/examples/hvf_gic_boot_probe"
+  fi
   trap cleanup EXIT
   write_installed_boot_preflight
   build_and_sign_probe_if_needed
