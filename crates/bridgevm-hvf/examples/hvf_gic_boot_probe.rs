@@ -46,9 +46,10 @@ use std::path::Path;
 use std::ptr::null_mut;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc, Condvar, Mutex,
+    Arc, Condvar, Mutex, MutexGuard, TryLockError,
 };
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use bridgevm_hvf::dtb::VirtFdtConfig;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
@@ -352,6 +353,7 @@ enum PsciState {
 }
 
 const SMP_TRACE_PROGRESS_INTERVAL: u64 = 10_000;
+const SMP_TRACE_LOCK_WARN_AFTER: Duration = Duration::from_millis(250);
 
 struct SmpTrace {
     cpu0_exits: AtomicU64,
@@ -395,6 +397,82 @@ impl SmpTrace {
             );
         }
     }
+
+    fn lock_with_wait_trace<'a, T>(
+        &self,
+        cpu: u64,
+        lock_name: &'static str,
+        context: &'static str,
+        mutex: &'a Mutex<T>,
+    ) -> MutexGuard<'a, T> {
+        let started = Instant::now();
+        let mut last_report = Duration::ZERO;
+        loop {
+            match mutex.try_lock() {
+                Ok(guard) => {
+                    let elapsed = started.elapsed();
+                    if elapsed >= SMP_TRACE_LOCK_WARN_AFTER {
+                        println!(
+                            "SMP trace: vCPU{cpu} acquired {lock_name} after {} ms ({context})",
+                            elapsed.as_millis()
+                        );
+                    }
+                    return guard;
+                }
+                Err(TryLockError::WouldBlock) => {
+                    let elapsed = started.elapsed();
+                    if elapsed >= SMP_TRACE_LOCK_WARN_AFTER
+                        && elapsed.saturating_sub(last_report) >= SMP_TRACE_LOCK_WARN_AFTER
+                    {
+                        println!(
+                            "SMP trace: vCPU{cpu} waiting {} ms for {lock_name} ({context})",
+                            elapsed.as_millis()
+                        );
+                        last_report = elapsed;
+                    }
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(TryLockError::Poisoned(_)) => panic!("{context}"),
+            }
+        }
+    }
+}
+
+fn lock_with_optional_trace<'a, T>(
+    mutex: &'a Mutex<T>,
+    smp_trace: Option<&SmpTrace>,
+    cpu: u64,
+    lock_name: &'static str,
+    context: &'static str,
+) -> MutexGuard<'a, T> {
+    match smp_trace {
+        Some(trace) => trace.lock_with_wait_trace(cpu, lock_name, context, mutex),
+        None => mutex.lock().expect(context),
+    }
+}
+
+fn lock_platform<'a>(
+    platform: &'a Arc<Mutex<VirtPlatform>>,
+    smp_trace: Option<&SmpTrace>,
+    cpu: u64,
+    context: &'static str,
+) -> MutexGuard<'a, VirtPlatform> {
+    lock_with_optional_trace(platform, smp_trace, cpu, "platform mutex", context)
+}
+
+fn lock_vcpu_state<'a>(
+    control: &'a VcpuControl,
+    smp_trace: Option<&SmpTrace>,
+    cpu: u64,
+    context: &'static str,
+) -> MutexGuard<'a, PsciState> {
+    lock_with_optional_trace(
+        &control.state,
+        smp_trace,
+        cpu,
+        "VcpuControl.state mutex",
+        context,
+    )
 }
 
 struct VcpuControl {
@@ -528,7 +606,12 @@ fn secondary_vcpu_thread(
     let mut drain_stats = RunLoopDrainStats::new(false);
     let mut exits = 0u64;
 
-    let mut state = control.state.lock().expect("secondary vCPU state mutex");
+    let mut state = lock_vcpu_state(
+        &control,
+        smp_trace.as_deref(),
+        control.index,
+        "secondary vCPU state mutex",
+    );
     loop {
         while *state == PsciState::Off && !shutdown.load(Ordering::SeqCst) {
             state = control
@@ -544,6 +627,7 @@ fn secondary_vcpu_thread(
             PsciState::OnPending => {
                 let entry = control.entry.load(Ordering::SeqCst);
                 let context = control.context.load(Ordering::SeqCst);
+                drop(state);
                 if vcpu == 0 {
                     let (created_vcpu, created_exit, guard) = create_secondary_hvf_vcpu(&control);
                     vcpu = created_vcpu;
@@ -557,6 +641,12 @@ fn secondary_vcpu_thread(
                 if let Some(trace) = smp_trace.as_deref() {
                     trace.state_transition(control.index, PsciState::OnPending, PsciState::On);
                 }
+                state = lock_vcpu_state(
+                    &control,
+                    smp_trace.as_deref(),
+                    control.index,
+                    "secondary vCPU state mutex",
+                );
                 *state = PsciState::On;
                 drop(state);
                 let stop = run_secondary_until_parked(
@@ -572,7 +662,12 @@ fn secondary_vcpu_thread(
                     &mut exits,
                     smp_trace.as_deref(),
                 );
-                state = control.state.lock().expect("secondary vCPU state mutex");
+                state = lock_vcpu_state(
+                    &control,
+                    smp_trace.as_deref(),
+                    control.index,
+                    "secondary vCPU state mutex",
+                );
                 if stop {
                     break;
                 }
@@ -592,7 +687,12 @@ fn secondary_vcpu_thread(
                     &mut exits,
                     smp_trace.as_deref(),
                 );
-                state = control.state.lock().expect("secondary vCPU state mutex");
+                state = lock_vcpu_state(
+                    &control,
+                    smp_trace.as_deref(),
+                    control.index,
+                    "secondary vCPU state mutex",
+                );
                 if stop {
                     break;
                 }
@@ -663,7 +763,7 @@ fn psci_cpu_on(
         return PSCI_INVALID_PARAMS;
     };
     let control = &controls[target_index];
-    let mut state = control.state.lock().expect("target vCPU PSCI state mutex");
+    let mut state = lock_vcpu_state(control, smp_trace, 0, "target vCPU PSCI state mutex");
     if matches!(*state, PsciState::On | PsciState::OnPending) {
         return PSCI_ALREADY_ON;
     }
@@ -673,6 +773,7 @@ fn psci_cpu_on(
         trace.state_transition(control.index, PsciState::Off, PsciState::OnPending);
     }
     *state = PsciState::OnPending;
+    drop(state);
     control.condvar.notify_one();
     PSCI_SUCCESS
 }
@@ -734,7 +835,12 @@ fn run_secondary_until_parked(
             hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
         }
         {
-            let mut platform_guard = platform.lock().expect("platform mutex");
+            let mut platform_guard = lock_platform(
+                platform,
+                smp_trace,
+                control.index,
+                "secondary pre-run platform mutex",
+            );
             drain_stats.drain_pending(
                 &mut platform_guard,
                 guest_ram,
@@ -798,7 +904,12 @@ fn run_secondary_until_parked(
                     MmioOp::Read { size }
                 };
                 let outcome = {
-                    let mut platform_guard = platform.lock().expect("platform mutex");
+                    let mut platform_guard = lock_platform(
+                        platform,
+                        smp_trace,
+                        control.index,
+                        "secondary data-abort platform mutex",
+                    );
                     let outcome = platform_guard.on_mmio(ipa, op, guest_ram);
                     drain_stats.drain_pending(
                         &mut platform_guard,
@@ -849,7 +960,12 @@ fn run_secondary_until_parked(
                         }
                     }
                     PSCI_CPU_OFF => {
-                        let mut state = control.state.lock().expect("secondary PSCI state mutex");
+                        let mut state = lock_vcpu_state(
+                            control,
+                            smp_trace,
+                            control.index,
+                            "secondary PSCI state mutex",
+                        );
                         if let Some(trace) = smp_trace {
                             trace.state_transition(control.index, *state, PsciState::Off);
                         }
@@ -2622,7 +2738,12 @@ fn main() {
             );
 
             {
-                let mut platform_guard = platform.lock().expect("platform mutex");
+                let mut platform_guard = lock_platform(
+                    &platform,
+                    smp_trace.as_deref(),
+                    0,
+                    "cpu0 UART preload platform mutex",
+                );
                 let platform = &mut *platform_guard;
                 if let Ok(input) = std::env::var("BRIDGEVM_UART_RX") {
                     platform.push_uart_input(input.as_bytes());
@@ -2743,7 +2864,12 @@ fn main() {
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
                 last_pre_run_pc = drain_pc;
                 {
-                    let mut platform_guard = platform.lock().expect("platform mutex");
+                    let mut platform_guard = lock_platform(
+                        &platform,
+                        smp_trace.as_deref(),
+                        0,
+                        "cpu0 pre-run platform mutex",
+                    );
                     let platform = &mut *platform_guard;
                     drain_stats.drain_pending(
                         platform,
@@ -2822,7 +2948,12 @@ fn main() {
                             );
                             }
                             let outcome = {
-                                let mut platform_guard = platform.lock().expect("platform mutex");
+                                let mut platform_guard = lock_platform(
+                                    &platform,
+                                    smp_trace.as_deref(),
+                                    0,
+                                    "cpu0 data-abort platform mutex",
+                                );
                                 let platform = &mut *platform_guard;
                                 let device = machine::device_at(ipa).unwrap_or("<unmapped>");
                                 let pcie_target = match device {
@@ -3102,7 +3233,12 @@ fn main() {
                     break;
                 }
                 let automation_stop_reason = {
-                    let mut platform_guard = platform.lock().expect("platform mutex");
+                    let mut platform_guard = lock_platform(
+                        &platform,
+                        smp_trace.as_deref(),
+                        0,
+                        "cpu0 automation platform mutex",
+                    );
                     let platform = &mut *platform_guard;
                     if serial_reached_linux_panic(platform.uart_output()) {
                         Some("serial reached Linux kernel panic".into())
