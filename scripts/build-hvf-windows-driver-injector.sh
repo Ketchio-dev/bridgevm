@@ -9,14 +9,20 @@ set -euo pipefail
 
 ISO="${ISO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/ISO/Win11_25H2_English_Arm64_v2.iso}"
 ASSETS="${ASSETS:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/win-assets}"
-DRIVER_SRC="${DRIVER_SRC:-$HOME/BridgeVM/drivers/netkvm}"
+# DRIVER_DIRS = space-separated list of "name:path" driver source dirs to stage
+# under \drivers\<name>. Default: just netkvm. Example for viogpudo:
+#   DRIVER_DIRS="viogpudo:$HOME/BridgeVM/drivers/viogpudo"
+DRIVER_DIRS="${DRIVER_DIRS:-netkvm:$HOME/BridgeVM/drivers/netkvm}"
 OUT="${OUT:-$HOME/BridgeVM/win-injector.raw}"
 SIZE_BYTES="${SIZE_BYTES:-1610612736}" # 1.5 GiB
 
 log() { printf '[build-injector] %s\n' "$*"; }
 
 [[ -f "$ISO" ]] || { echo "FAIL: ISO not found: $ISO" >&2; exit 1; }
-[[ -f "$DRIVER_SRC/netkvm.inf" ]] || { echo "FAIL: netkvm.inf not in $DRIVER_SRC" >&2; exit 1; }
+for spec in $DRIVER_DIRS; do
+  src="${spec#*:}"
+  ls "$src"/*.inf >/dev/null 2>&1 || { echo "FAIL: no .inf in driver dir $src" >&2; exit 1; }
+done
 for f in winpeshl-inject.ini bvinject.cmd; do
   [[ -f "$ASSETS/$f" ]] || { echo "FAIL: missing asset $ASSETS/$f" >&2; exit 1; }
 done
@@ -45,9 +51,12 @@ for f in bootmgr bootmgr.efi; do [[ -e "$ISO_MNT/$f" ]] && cp "$ISO_MNT/$f" "$DS
 mkdir -p "$DST_VOL/sources"
 cp "$ISO_MNT/sources/boot.wim" "$DST_VOL/sources/boot.wim"
 
-log "staging netkvm driver at \\drivers\\netkvm"
-mkdir -p "$DST_VOL/drivers/netkvm"
-cp "$DRIVER_SRC"/* "$DST_VOL/drivers/netkvm/"
+for spec in $DRIVER_DIRS; do
+  name="${spec%%:*}"; src="${spec#*:}"
+  log "staging driver '$name' at \\drivers\\$name"
+  mkdir -p "$DST_VOL/drivers/$name"
+  cp "$src"/* "$DST_VOL/drivers/$name/"
+done
 
 log "injecting bvinject payload into boot.wim image 2"
 wimlib-imagex update "$DST_VOL/sources/boot.wim" 2 <<UPDATE
@@ -59,7 +68,7 @@ log "verifying"
 wimlib-imagex dir "$DST_VOL/sources/boot.wim" 2 | grep -E 'bvinject.cmd|winpeshl.ini' || {
   echo "FAIL: payload not in boot.wim" >&2; exit 1; }
 [[ -f "$DST_VOL/efi/boot/bootaa64.efi" ]] || { echo "FAIL: bootaa64.efi missing" >&2; exit 1; }
-[[ -f "$DST_VOL/drivers/netkvm/netkvm.inf" ]] || { echo "FAIL: netkvm missing" >&2; exit 1; }
+ls "$DST_VOL"/drivers/*/*.inf >/dev/null 2>&1 || { echo "FAIL: no staged drivers" >&2; exit 1; }
 
 sync
 hdiutil detach "$DST_DEV" -quiet; DST_DEV=""
