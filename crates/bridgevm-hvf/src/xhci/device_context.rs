@@ -6,19 +6,26 @@ use super::device_context_mem::{
 };
 use super::XhciController;
 
-const SLOT_ID: u32 = 1;
-const DCBAA_POINTER_MASK: u64 = !0x3f;
+#[path = "device_context_drop_context.rs"]
+mod drop_context;
+
+pub(super) const SLOT_ID: u32 = 1;
+pub(super) const DCBAA_POINTER_MASK: u64 = !0x3f;
 const DEVICE_CONTEXT_POINTER_MASK: u64 = !0x3f;
 const SLOT_INPUT_CONTEXT_OFFSET: u64 = 0x20;
 const SLOT_CONTEXT_DWORD0_TO_DWORD2_BYTES: usize = 12;
 const SLOT_CONTEXT_DWORD3_OFFSET: u64 = 0x0c;
 const EP0_INPUT_CONTEXT_OFFSET: u64 = 0x40;
 const EP0_OUTPUT_CONTEXT_OFFSET: u64 = 0x20;
-const DCI3_OUTPUT_CONTEXT_OFFSET: u64 = 0x60;
-const EP_CONTEXT_BYTES: usize = 32;
-const EP_TR_DEQUEUE_OFFSET: u64 = 0x8;
+pub(super) const DCI3_OUTPUT_CONTEXT_OFFSET: u64 = 0x60;
+pub(super) const DCI5_OUTPUT_CONTEXT_OFFSET: u64 = 0xa0;
+pub(super) const INPUT_CONTROL_DROP_CONTEXT_OFFSET: u64 = 0x00;
+pub(super) const EP_CONTEXT_BYTES: usize = 32;
+pub(super) const EP_TR_DEQUEUE_OFFSET: u64 = 0x8;
 const EP_TR_DEQUEUE_MASK: u64 = !0xf;
-const EP_STATE_DISABLED: u32 = 0;
+pub(super) const DCI3: u32 = 3;
+pub(super) const DCI5: u32 = 5;
+pub(super) const EP_STATE_DISABLED: u32 = 0;
 const SLOT_STATE_DEFAULT: u32 = 2 << 27;
 const SLOT_STATE_ADDRESSED: u32 = 3 << 27;
 const EP_STATE_RUNNING: u32 = 1;
@@ -86,6 +93,7 @@ impl XhciController {
                 return;
             }
             self.capture_slot1_dci3_input_context(mem, input_context);
+            self.capture_slot1_dci5_input_context(mem, input_context);
             return;
         }
         if !write_mem_u32(
@@ -110,6 +118,7 @@ impl XhciController {
         {
             self.write_slot1_dci3_output_dequeue(mem);
         }
+        self.capture_slot1_dci5_input_context(mem, input_context);
     }
 
     pub(super) fn capture_configure_endpoint_input_context(
@@ -122,7 +131,9 @@ impl XhciController {
             return;
         }
         let input_context = input_context & DEVICE_CONTEXT_POINTER_MASK;
+        self.apply_slot1_configure_endpoint_drop_context(mem, input_context);
         self.capture_slot1_dci3_input_context(mem, input_context);
+        self.capture_slot1_dci5_input_context(mem, input_context);
     }
 
     pub(super) fn write_slot1_dci3_output_dequeue(&mut self, mem: &mut dyn GuestMemoryMut) {
@@ -186,11 +197,16 @@ impl XhciController {
         self.slot1_ep0_dequeue = 0;
         self.slot1_ep0_dcs = false;
         self.invalidate_slot1_dci3_endpoint_state();
+        self.invalidate_slot1_dci5_endpoint_state();
         let dcbaa = self.dcbaap & DCBAA_POINTER_MASK;
         let Some(output_context) = output_context_for_slot(mem, dcbaa, SLOT_ID) else {
             return;
         };
-        for endpoint_offset in [EP0_OUTPUT_CONTEXT_OFFSET, DCI3_OUTPUT_CONTEXT_OFFSET] {
+        for endpoint_offset in [
+            EP0_OUTPUT_CONTEXT_OFFSET,
+            DCI3_OUTPUT_CONTEXT_OFFSET,
+            DCI5_OUTPUT_CONTEXT_OFFSET,
+        ] {
             let Some(endpoint_gpa) = output_context.checked_add(endpoint_offset) else {
                 continue;
             };

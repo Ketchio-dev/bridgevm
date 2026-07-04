@@ -210,6 +210,7 @@ impl FwCfg {
         );
         if let Some(file) = self.files.iter_mut().find(|file| file.name == name) {
             let select = file.select;
+            // SAFE-EXPECT: fw_cfg blobs are host-constructed and the directory format is u32-sized.
             file.size = u32::try_from(data.len()).expect("fw_cfg file exceeds 4 GiB");
             self.entries.insert(select, Entry { data, writable });
             self.rebuild_file_dir();
@@ -219,7 +220,9 @@ impl FwCfg {
         self.next_file_selector = self
             .next_file_selector
             .checked_add(1)
+            // SAFE-EXPECT: selector exhaustion requires constructing >64K fw_cfg files.
             .expect("fw_cfg selector space exhausted");
+        // SAFE-EXPECT: fw_cfg blobs are host-constructed and the directory format is u32-sized.
         let size = u32::try_from(data.len()).expect("fw_cfg file exceeds 4 GiB");
         self.entries.insert(select, Entry { data, writable });
         self.files.push(FileMeta {
@@ -283,6 +286,34 @@ impl FwCfg {
     /// Read `n` bytes of the selected entry as a stream.
     pub fn read_data(&mut self, n: usize) -> Vec<u8> {
         (0..n).map(|_| self.read_data_byte()).collect()
+    }
+
+    pub fn reset_runtime_state(&mut self) {
+        self.selector = KEY_SIGNATURE;
+        self.offset = 0;
+    }
+
+    pub fn reset_file_bytes(&mut self, name: &str, fill: u8) -> bool {
+        let Some(select) = self
+            .files
+            .iter()
+            .find(|file| file.name == name)
+            .map(|file| file.select)
+        else {
+            self.reset_runtime_state();
+            return false;
+        };
+        let Some(entry) = self.entries.get_mut(&select) else {
+            self.reset_runtime_state();
+            return false;
+        };
+        if !entry.writable {
+            self.reset_runtime_state();
+            return false;
+        }
+        entry.data.fill(fill);
+        self.reset_runtime_state();
+        true
     }
 
     /// The raw `FILE_DIR` blob, for callers that want to inspect it directly.

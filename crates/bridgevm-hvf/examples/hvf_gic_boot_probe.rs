@@ -22,7 +22,7 @@
 //!   BRIDGEVM_UART_RX_ON_CD_PROMPT=' ' ...             # inject after cdboot prompt is printed
 //!   BRIDGEVM_XHCI_BOOT_KEY_ON_CD_PROMPT=' ' ...        # queue xHCI HID Space after cdboot prompt
 //!   BRIDGEVM_XHCI_BOOT_KEY_ON_SERIAL_MARKER=' ' BRIDGEVM_XHCI_BOOT_KEY_SERIAL_MARKER='BdsDxe: starting Boot0001' ... # debug frontier xHCI Space trigger; CD prompt remains separate
-//!   BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS='tab,enter,space' BRIDGEVM_XHCI_SETUP_INPUT_SERIAL_MARKER='BdsDxe: starting Boot0001' ... # queue typed setup input actions; no text/modifiers/repeats
+//!   BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS='win+r,text:notepad,enter' BRIDGEVM_XHCI_SETUP_INPUT2_ACTIONS='text:g021keys' BRIDGEVM_XHCI_SETUP_INPUT_SERIAL_MARKER='BdsDxe: starting Boot0003' ... # queue guarded setup input actions
 //!   BRIDGEVM_RAMFB_SAMPLE_MS=1000,5000,15000 ...       # symmetric elapsed RAMFB checkpoints for no-input/setup-input probes
 //!   BRIDGEVM_RAMFB_SAMPLE_UNTIL_COMPLETE=1 ...         # proof mode: observe UEFI shell but continue until RAMFB samples complete
 //!   BRIDGEVM_UART_RX_ON_SERIAL_MARKER=' ' BRIDGEVM_UART_RX_SERIAL_MARKER='BdsDxe: starting Boot0001' ...
@@ -45,17 +45,18 @@ use std::os::raw::c_void;
 use std::path::Path;
 use std::ptr::null_mut;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
 };
 
-use bridgevm_hvf::dtb::{build_virt_fdt, VirtFdtConfig};
+use bridgevm_hvf::dtb::VirtFdtConfig;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::machine;
 use bridgevm_hvf::media::{
     read_bounded_file, InstallerIsoTransport, MediaWrite, MediaWriteKind, VirtBootMediaConfig,
+    WritableMedia,
 };
-use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome, VirtPlatform};
+use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome, VirtPlatform, VirtPlatformConfig};
 use bridgevm_hvf::stage1::{self, Stage1Context, Stage1WalkStep};
 use bridgevm_hvf::virtio_blk::{VirtioBlockRequestTrace, VirtioMmioBlockStats, INSTALLER_ISO_SLOT};
 
@@ -94,7 +95,8 @@ use serial_input::SerialTriggeredUartInput;
 #[path = "hvf_gic_boot_probe/xhci_hid_input.rs"]
 mod xhci_hid_input;
 use xhci_hid_input::{
-    print_setup_input_rejection, SetupInputHostWake, XhciHidBootKeyTrigger, XhciSetupInputTrigger,
+    print_hid_semantic_summary, print_pointer_input_rejection, print_setup_input_rejection,
+    SetupInputHostWake, XhciHidBootKeyTrigger, XhciPointerInputTrigger, XhciSetupInputTrigger,
 };
 #[path = "hvf_gic_boot_probe/xhci_trace.rs"]
 mod xhci_trace;
@@ -142,6 +144,19 @@ impl GuestMemoryMut for MappedRam {
     }
 }
 
+fn reset_guest_ram_for_boot(guest_ram: &mut MappedRam, dtb: &[u8]) {
+    assert!(dtb.len() < guest_ram.len, "DTB must fit in guest RAM");
+    unsafe {
+        // SAFETY: Category 10/11 - `guest_ram.ptr` points to the live RAM mapping
+        // with `guest_ram.len` bytes allocated by the probe before this helper runs.
+        std::ptr::write_bytes(guest_ram.ptr, 0, guest_ram.len);
+    }
+    assert!(
+        guest_ram.write_bytes(machine::RAM_BASE, dtb),
+        "copy DTB to guest RAM base"
+    );
+}
+
 #[cfg(test)]
 mod mapped_ram_tests {
     use super::*;
@@ -158,6 +173,22 @@ mod mapped_ram_tests {
 
         assert_eq!(ram.read_bytes(overflowing_gpa, 2), None);
         assert!(!ram.write_bytes(overflowing_gpa, &[1, 2]));
+    }
+
+    #[test]
+    fn reset_guest_ram_for_boot_zeroes_ram_and_places_dtb_at_base() {
+        let mut bytes = [0xa5u8; 16];
+        let mut ram = MappedRam {
+            base: machine::RAM_BASE,
+            ptr: bytes.as_mut_ptr(),
+            len: bytes.len(),
+        };
+        let dtb = [1, 2, 3, 4];
+
+        reset_guest_ram_for_boot(&mut ram, &dtb);
+
+        assert_eq!(&bytes[..dtb.len()], dtb.as_slice());
+        assert!(bytes[dtb.len()..].iter().all(|byte| *byte == 0));
     }
 }
 
@@ -241,6 +272,7 @@ const EC_SOFTSTEP_SAME: u64 = 0x33;
 const HV_SYS_REG_DBGWVR0_EL1: u16 = 0x8006;
 const HV_SYS_REG_DBGWCR0_EL1: u16 = 0x8007;
 const HV_SYS_REG_MDSCR_EL1: u16 = 0x8012;
+const HV_SYS_REG_MPIDR_EL1: u16 = 0xc005;
 const HV_SYS_REG_ID_AA64DFR0_EL1: u16 = 0xc028;
 const HV_SYS_REG_SCTLR_EL1: u16 = 0xc080;
 const HV_SYS_REG_TTBR0_EL1: u16 = 0xc100;
@@ -254,6 +286,10 @@ const HV_SYS_REG_MAIR_EL1: u16 = 0xc510;
 const HV_SYS_REG_VBAR_EL1: u16 = 0xc600;
 const HV_SYS_REG_SP_EL0: u16 = 0xc208;
 const HV_SYS_REG_SP_EL1: u16 = 0xe208;
+const HV_SYS_REG_CNTP_CTL_EL0: u16 = 0xdf11;
+const HV_SYS_REG_CNTP_CVAL_EL0: u16 = 0xdf12;
+const HV_SYS_REG_CNTV_CTL_EL0: u16 = 0xdf19;
+const HV_SYS_REG_CNTV_CVAL_EL0: u16 = 0xdf1a;
 const HV_GIC_REG_GICM_SET_SPI_NSR: u64 = 0x40;
 // Watch the poll target for stores: 8-byte aligned address, BAS=0xFF (8 bytes),
 // LSC=0b10 (store), PAC=0b11 (EL0+EL1), E=1. = 0x1FF7.
@@ -262,6 +298,9 @@ const DBGWCR_STORE_8B: u64 = 0x1ff7;
 
 const MAX_EXITS: u64 = 50_000_000;
 const WATCHDOG_MS: u64 = 8000;
+const DEFAULT_MAX_REBOOTS: u64 = 8;
+const PSCI_SYSTEM_OFF: u64 = 0x8400_0008;
+const PSCI_SYSTEM_RESET: u64 = 0x8400_0009;
 
 struct HvVmGuard;
 
@@ -425,17 +464,194 @@ fn env_u64(name: &str, default: u64) -> u64 {
 }
 
 fn env_flag(name: &str) -> bool {
-    matches!(
-        std::env::var(name).ok().as_deref(),
-        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
-    )
+    let Ok(value) = std::env::var(name) else {
+        return false;
+    };
+    let value = value.trim();
+    value == "1"
+        || value.eq_ignore_ascii_case("true")
+        || value.eq_ignore_ascii_case("yes")
+        || value.eq_ignore_ascii_case("on")
 }
 
 fn env_flag_default(name: &str, default: bool) -> bool {
     match std::env::var(name).ok().as_deref() {
-        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES") => true,
+        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES") | Some("on")
+        | Some("ON") => true,
         Some("0") | Some("false") | Some("FALSE") | Some("no") | Some("NO") => false,
         _ => default,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RebootPlan {
+    max_reboots: u64,
+}
+
+impl RebootPlan {
+    fn from_env() -> Self {
+        Self::from_env_value(
+            std::env::var("BRIDGEVM_BOOT_PROBE_MAX_REBOOTS")
+                .ok()
+                .as_deref(),
+        )
+    }
+
+    fn from_env_value(value: Option<&str>) -> Self {
+        Self {
+            max_reboots: value.and_then(parse_u64).unwrap_or(DEFAULT_MAX_REBOOTS),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RebootActions {
+    reset_guest_ram: bool,
+    reset_platform: bool,
+    reset_vcpu: bool,
+    continue_run_loop: bool,
+}
+
+impl RebootActions {
+    const SYSTEM_RESET: Self = Self {
+        reset_guest_ram: true,
+        reset_platform: true,
+        reset_vcpu: true,
+        continue_run_loop: true,
+    };
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SystemResetDecision {
+    Reboot {
+        next_reboot_count: u64,
+        actions: RebootActions,
+    },
+    Stop {
+        reason: String,
+    },
+}
+
+fn decide_system_reset(reboot_count: u64, plan: RebootPlan) -> SystemResetDecision {
+    if reboot_count < plan.max_reboots {
+        return SystemResetDecision::Reboot {
+            next_reboot_count: reboot_count + 1,
+            actions: RebootActions::SYSTEM_RESET,
+        };
+    }
+    SystemResetDecision::Stop {
+        reason: format!(
+            "PSCI {PSCI_SYSTEM_RESET:#x} max reboot count {} reached",
+            plan.max_reboots
+        ),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PsciTerminalAction {
+    SystemOff,
+    SystemReset,
+}
+
+fn psci_terminal_action(func: u64) -> Option<PsciTerminalAction> {
+    match func & 0xffff_ffff {
+        PSCI_SYSTEM_OFF => Some(PsciTerminalAction::SystemOff),
+        PSCI_SYSTEM_RESET => Some(PsciTerminalAction::SystemReset),
+        _ => None,
+    }
+}
+
+fn begin_watchdog_generation(generation: &AtomicU64) -> u64 {
+    generation.fetch_add(1, Ordering::SeqCst).wrapping_add(1)
+}
+
+fn invalidate_watchdog_generation(generation: &AtomicU64) {
+    generation.fetch_add(1, Ordering::SeqCst);
+}
+
+fn watchdog_generation_matches(generation: &AtomicU64, expected: u64) -> bool {
+    generation.load(Ordering::SeqCst) == expected
+}
+
+fn spawn_boot_watchdog(
+    vcpu: HvVcpuT,
+    watchdog_ms: u64,
+    generation: Arc<AtomicU64>,
+    boot_generation: u64,
+    watchdog_fired: Arc<AtomicBool>,
+) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(watchdog_ms));
+        if !watchdog_generation_matches(&generation, boot_generation) {
+            return;
+        }
+        watchdog_fired.store(true, Ordering::SeqCst);
+        let v = vcpu;
+        // SAFETY: Category 8 - FFI boundary. `vcpu` is a live HVF vCPU
+        // handle owned by the probe until shutdown, and `&v` points to one
+        // initialized handle for the duration of this call.
+        unsafe {
+            hv_vcpus_exit(&v, 1);
+        }
+    });
+}
+
+#[cfg(test)]
+mod reboot_plan_tests {
+    use super::*;
+
+    #[test]
+    fn reboot_plan_resets_guest_ram_platform_and_vcpu() {
+        assert_eq!(
+            psci_terminal_action(PSCI_SYSTEM_OFF),
+            Some(PsciTerminalAction::SystemOff)
+        );
+        assert_eq!(
+            psci_terminal_action(PSCI_SYSTEM_RESET),
+            Some(PsciTerminalAction::SystemReset)
+        );
+        assert_eq!(
+            decide_system_reset(0, RebootPlan { max_reboots: 2 }),
+            SystemResetDecision::Reboot {
+                next_reboot_count: 1,
+                actions: RebootActions {
+                    reset_guest_ram: true,
+                    reset_platform: true,
+                    reset_vcpu: true,
+                    continue_run_loop: true,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn reboot_guard_parses_env_and_caps_system_reset_loop() {
+        assert_eq!(
+            RebootPlan::from_env_value(Some("0x2")),
+            RebootPlan { max_reboots: 2 }
+        );
+        assert_eq!(
+            RebootPlan::from_env_value(Some("bad")),
+            RebootPlan {
+                max_reboots: DEFAULT_MAX_REBOOTS
+            }
+        );
+        assert!(matches!(
+            decide_system_reset(0, RebootPlan { max_reboots: 0 }),
+            SystemResetDecision::Stop { .. }
+        ));
+        assert!(matches!(
+            decide_system_reset(1, RebootPlan { max_reboots: 1 }),
+            SystemResetDecision::Stop { .. }
+        ));
+
+        let generation = AtomicU64::new(7);
+        assert!(watchdog_generation_matches(&generation, 7));
+        assert!(!watchdog_generation_matches(&generation, 6));
+        let boot_generation = begin_watchdog_generation(&generation);
+        assert!(watchdog_generation_matches(&generation, boot_generation));
+        invalidate_watchdog_generation(&generation);
+        assert!(!watchdog_generation_matches(&generation, boot_generation));
     }
 }
 
@@ -464,6 +680,72 @@ fn print_gpr_context(vcpu: HvVcpuT) {
         }
         println!();
     }
+}
+
+fn reset_vcpu_for_boot(vcpu: HvVcpuT) {
+    // SAFETY: Category 8 - FFI boundary. `vcpu` is the live HVF vCPU handle
+    // reset on the run-loop thread while it is not inside `hv_vcpu_run`; all
+    // register identifiers are HVF constants, and every output pointer below
+    // is a stack local valid for the duration of its call.
+    unsafe {
+        for reg in HV_REG_X0..=HV_REG_LR {
+            hv_vcpu_set_reg(vcpu, reg, 0);
+        }
+        for reg in [
+            HV_SYS_REG_SCTLR_EL1,
+            HV_SYS_REG_TTBR0_EL1,
+            HV_SYS_REG_TTBR1_EL1,
+            HV_SYS_REG_TCR_EL1,
+            HV_SYS_REG_SPSR_EL1,
+            HV_SYS_REG_ELR_EL1,
+            HV_SYS_REG_ESR_EL1,
+            HV_SYS_REG_FAR_EL1,
+            HV_SYS_REG_MAIR_EL1,
+            HV_SYS_REG_VBAR_EL1,
+            HV_SYS_REG_SP_EL0,
+            HV_SYS_REG_SP_EL1,
+            HV_SYS_REG_CNTP_CTL_EL0,
+            HV_SYS_REG_CNTP_CVAL_EL0,
+            HV_SYS_REG_CNTV_CTL_EL0,
+            HV_SYS_REG_CNTV_CVAL_EL0,
+        ] {
+            hv_vcpu_set_sys_reg(vcpu, reg, 0);
+        }
+        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, 0x8000_0000);
+        let mut dfr0_before = 0u64;
+        let dfr0_read_status =
+            hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_ID_AA64DFR0_EL1, &mut dfr0_before);
+        let dfr0_after = (dfr0_before & !(0xf << 8)) | (0x1 << 8);
+        let dfr0_set_status = hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_ID_AA64DFR0_EL1, dfr0_after);
+        println!(
+            "ID_AA64DFR0_EL1 PMUVer: before={dfr0_before:#x} read={dfr0_read_status:#x} after={dfr0_after:#x} set={dfr0_set_status:#x}"
+        );
+        let mut rdbase = 0u64;
+        let rdr = hv_gic_get_redistributor_base(vcpu, &mut rdbase);
+        println!("hv_gic_get_redistributor_base(vcpu0) = {rdr:#x} -> {rdbase:#x}");
+        hv_vcpu_set_reg(vcpu, HV_REG_PC, 0x0);
+        hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5);
+        hv_vcpu_set_reg(vcpu, HV_REG_X0, machine::RAM_BASE);
+        hv_vcpu_set_vtimer_mask(vcpu, false);
+    }
+}
+
+fn arm_watchpoint_for_boot(vcpu: HvVcpuT, watch_addr: Option<u64>) {
+    let Some(addr) = watch_addr else {
+        return;
+    };
+    // SAFETY: Category 8 - FFI boundary. `vcpu` is the live HVF vCPU handle,
+    // `addr` is written as a guest debug address value, and `&mut mdscr` is a
+    // valid stack output pointer for the single `hv_vcpu_get_sys_reg` call.
+    unsafe {
+        hv_vcpu_set_trap_debug_exceptions(vcpu, true);
+        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWVR0_EL1, addr);
+        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWCR0_EL1, DBGWCR_STORE_8B);
+        let mut mdscr = 0u64;
+        hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, &mut mdscr);
+        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, mdscr | (1 << 15));
+    }
+    println!("watchpoint armed on {addr:#x} (store)");
 }
 
 fn print_bytes(label: &str, base: u64, bytes: &[u8]) {
@@ -618,6 +900,94 @@ fn print_media_writes(subject: &str, writes: &[MediaWrite]) {
             write.bytes
         );
     }
+}
+
+#[derive(Clone, Copy)]
+enum NvmePersistNamespace {
+    Primary,
+    Target,
+}
+
+impl NvmePersistNamespace {
+    fn subject(self) -> &'static str {
+        match self {
+            Self::Primary => "NVMe disk",
+            Self::Target => "NVMe target namespace (NSID 2)",
+        }
+    }
+
+    fn image_if_memory(self, platform: &VirtPlatform) -> Option<&[u8]> {
+        match self {
+            Self::Primary => platform.nvme_disk_if_memory(),
+            Self::Target => platform.nvme_second_namespace_disk_if_memory(),
+        }
+    }
+
+    fn export_snapshot(self, platform: &mut VirtPlatform, path: &Path) -> std::io::Result<u64> {
+        match self {
+            Self::Primary => platform.export_nvme_disk(path),
+            Self::Target => platform.export_nvme_second_namespace_disk(path),
+        }
+    }
+
+    fn flush(self, platform: &mut VirtPlatform) -> std::io::Result<()> {
+        match self {
+            Self::Primary => platform.flush_nvme_disk(),
+            Self::Target => platform.flush_nvme_second_namespace_disk(),
+        }
+    }
+
+    fn disk_len(self, platform: &VirtPlatform) -> u64 {
+        match self {
+            Self::Primary => platform.nvme_disk_len(),
+            Self::Target => platform.nvme_second_namespace_disk_len().unwrap_or(0),
+        }
+    }
+}
+
+fn persist_nvme_media(
+    platform: &mut VirtPlatform,
+    media: &WritableMedia,
+    namespace: NvmePersistNamespace,
+) -> Vec<MediaWrite> {
+    if let Some(image) = namespace.image_if_memory(platform) {
+        return media
+            .persist(image)
+            .unwrap_or_else(|e| panic!("persist {}: {e}", namespace.subject()));
+    }
+
+    let mut writes = Vec::new();
+    if let Some(path) = media.snapshot_path.as_ref() {
+        let bytes = namespace
+            .export_snapshot(platform, path)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "export {} snapshot {}: {e}",
+                    namespace.subject(),
+                    path.display()
+                )
+            });
+        writes.push(MediaWrite {
+            kind: MediaWriteKind::Snapshot,
+            path: path.clone(),
+            bytes: usize::try_from(bytes).unwrap_or(usize::MAX),
+        });
+    }
+    if media.write_back {
+        namespace.flush(platform).unwrap_or_else(|e| {
+            panic!(
+                "flush {} {}: {e}",
+                namespace.subject(),
+                media.path.display()
+            )
+        });
+        writes.push(MediaWrite {
+            kind: MediaWriteKind::WriteBack,
+            path: media.path.clone(),
+            bytes: usize::try_from(namespace.disk_len(platform)).unwrap_or(usize::MAX),
+        });
+    }
+    writes
 }
 
 fn print_block_media_stats(label: &str, stats: VirtioMmioBlockStats) {
@@ -792,6 +1162,7 @@ impl RunLoopDrainStats {
         }
 
         platform.drain_xhci_setup_input_reports(mem);
+        platform.drain_xhci_pointer_input_reports(mem);
         let spi = deliver_pending_spis(platform, trace.spi);
         let msix = deliver_pending_msix(platform, trace.msix);
         self.last_drain_location = Some(context.location.as_str());
@@ -1162,6 +1533,13 @@ unsafe fn emulate_debug_os_lock_sysreg(vcpu: HvVcpuT, trap: SysRegTrap) -> bool 
 
 fn main() {
     let media = VirtBootMediaConfig::from_probe_env();
+    let platform_cfg = VirtPlatformConfig {
+        fdt: VirtFdtConfig {
+            cpu_count: 1,
+            ram_size: media.ram_size,
+        },
+        devices: media.platform_devices,
+    };
     let ram_size = usize::try_from(media.ram_size).expect("guest RAM size does not fit usize");
     assert!(
         ram_size >= 128 * 1024 * 1024,
@@ -1265,15 +1643,25 @@ fn main() {
             .flash_vars
             .read_bounded(machine::FLASH_VARS.size as usize)
             .unwrap_or_else(|e| panic!("read UEFI vars {}: {e}", media.flash_vars.path.display()));
+        let mut platform = VirtPlatform::new_with_config(platform_cfg);
+        if platform_cfg.devices.ramfb_present {
+            println!("ramfb fw_cfg: enabled");
+        } else if env_flag("BRIDGEVM_RAMFB") {
+            println!("ramfb fw_cfg: disabled by BRIDGEVM_DISABLE_RAMFB_DEVICE");
+        } else {
+            println!("ramfb fw_cfg: disabled");
+        }
+        if !platform_cfg.devices.xhci_present {
+            println!("qemu-xhci: disabled by BRIDGEVM_DISABLE_XHCI");
+        }
+        if !platform_cfg.devices.virtio_boot_media_present {
+            println!("virtio installer ISO surfaces: disabled by BRIDGEVM_DISABLE_VIRTIO_ISO");
+        }
 
         let ram_layout = Layout::from_size_align(ram_size, 0x1_0000).unwrap();
         let ram = alloc_zeroed(ram_layout);
-        let dtb = build_virt_fdt(&VirtFdtConfig {
-            cpu_count: 1,
-            ram_size: media.ram_size,
-        });
-        assert!(dtb.len() < ram_size, "DTB must fit in guest RAM");
-        std::ptr::copy_nonoverlapping(dtb.as_ptr(), ram, dtb.len());
+        let boot_dtb = platform.dtb().to_vec();
+        assert!(boot_dtb.len() < ram_size, "DTB must fit in guest RAM");
         assert_eq!(
             hv_vm_map(
                 ram as *mut c_void,
@@ -1293,29 +1681,6 @@ fn main() {
             "hv_vcpu_create"
         );
         let _vcpu_guard = HvVcpuGuard { vcpu };
-        // MPIDR_EL1 affinity 0 (bit 31 RES1) — Apple hv_gic associates this vCPU's
-        // redistributor frame from its MPIDR, so this must be set before the GIC
-        // redistributor MMIO is served or hv_gic_get_redistributor_base is called.
-        const HV_SYS_REG_MPIDR_EL1: u16 = 0xc005;
-        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, 0x8000_0000);
-        let mut dfr0_before = 0u64;
-        let dfr0_read_status =
-            hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_ID_AA64DFR0_EL1, &mut dfr0_before);
-        let dfr0_after = (dfr0_before & !(0xf << 8)) | (0x1 << 8);
-        let dfr0_set_status = hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_ID_AA64DFR0_EL1, dfr0_after);
-        println!(
-            "ID_AA64DFR0_EL1 PMUVer: before={dfr0_before:#x} read={dfr0_read_status:#x} after={dfr0_after:#x} set={dfr0_set_status:#x}"
-        );
-        let mut rdbase = 0u64;
-        let rdr = hv_gic_get_redistributor_base(vcpu, &mut rdbase);
-        println!("hv_gic_get_redistributor_base(vcpu0) = {rdr:#x} -> {rdbase:#x}");
-        hv_vcpu_set_reg(vcpu, HV_REG_PC, 0x0);
-        hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5);
-        hv_vcpu_set_reg(vcpu, HV_REG_X0, machine::RAM_BASE);
-        // Unmask the virtual timer at the HVF level so it can fire (and hv_gic can
-        // route the timer PPI). It is masked by default, which is why no
-        // VTIMER_ACTIVATED ever arrived and the firmware spun on its ISR flag.
-        hv_vcpu_set_vtimer_mask(vcpu, false);
 
         // Hardware watchpoint on a firmware address (default the poll target
         // 0x5ffdf798): route guest debug exceptions to the host, then arm
@@ -1332,80 +1697,6 @@ fn main() {
             }
         });
         let watch_target = watch_addr.unwrap_or(WATCH_TARGET);
-        if let Some(addr) = watch_addr {
-            hv_vcpu_set_trap_debug_exceptions(vcpu, true);
-            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWVR0_EL1, addr);
-            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWCR0_EL1, DBGWCR_STORE_8B);
-            let mut mdscr = 0u64;
-            hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, &mut mdscr);
-            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, mdscr | (1 << 15)); // MDE
-            println!("watchpoint armed on {addr:#x} (store)");
-        }
-
-        let watchdog_fired = Arc::new(AtomicBool::new(false));
-        let watchdog_fired_for_thread = Arc::clone(&watchdog_fired);
-        let vcpu_for_wd = vcpu;
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(watchdog_ms));
-            watchdog_fired_for_thread.store(true, Ordering::SeqCst);
-            let v = vcpu_for_wd;
-            hv_vcpus_exit(&v, 1);
-        });
-
-        let platform_cfg = VirtFdtConfig {
-            cpu_count: 1,
-            ram_size: media.ram_size,
-        };
-        let mut platform = if env_flag("BRIDGEVM_RAMFB") {
-            println!("ramfb fw_cfg: enabled");
-            VirtPlatform::new_with_ramfb(platform_cfg)
-        } else {
-            println!("ramfb fw_cfg: disabled");
-            VirtPlatform::new(platform_cfg)
-        };
-        if let Ok(input) = std::env::var("BRIDGEVM_UART_RX") {
-            platform.push_uart_input(input.as_bytes());
-            println!("UART RX preloaded: {} bytes", input.len());
-        }
-        let mut uart_triggers = Vec::new();
-        if let Some(trigger) = SerialTriggeredUartInput::from_env(
-            "cd-prompt",
-            "BRIDGEVM_UART_RX_ON_CD_PROMPT",
-            b"Press any key to boot from CD or DVD",
-        ) {
-            uart_triggers.push(trigger);
-        }
-        if let Some(trigger) = SerialTriggeredUartInput::from_env_with_marker_env(
-            "serial-marker",
-            "BRIDGEVM_UART_RX_ON_SERIAL_MARKER",
-            "BRIDGEVM_UART_RX_SERIAL_MARKER",
-        ) {
-            uart_triggers.push(trigger);
-        }
-        let mut xhci_hid_boot_key_triggers = Vec::new();
-        if let Some(trigger) =
-            XhciHidBootKeyTrigger::from_env("cd-prompt", "BRIDGEVM_XHCI_BOOT_KEY_ON_CD_PROMPT")
-        {
-            xhci_hid_boot_key_triggers.push(trigger);
-        }
-        if let Some(trigger) = XhciHidBootKeyTrigger::from_env_with_marker_env(
-            "serial-marker",
-            "BRIDGEVM_XHCI_BOOT_KEY_ON_SERIAL_MARKER",
-            "BRIDGEVM_XHCI_BOOT_KEY_SERIAL_MARKER",
-        ) {
-            xhci_hid_boot_key_triggers.push(trigger);
-        }
-        let mut xhci_setup_input_triggers = Vec::new();
-        if let Some(trigger_result) = XhciSetupInputTrigger::from_env(
-            "setup-input",
-            "BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS",
-            "BRIDGEVM_XHCI_SETUP_INPUT_SERIAL_MARKER",
-        ) {
-            match trigger_result {
-                Ok(trigger) => xhci_setup_input_triggers.push(trigger),
-                Err(error) => print_setup_input_rejection("setup-input", &error),
-            }
-        }
         platform.load_flash_vars(&vars_data);
         if let Some(nvme) = media.nvme_disk.as_ref() {
             platform
@@ -1430,34 +1721,48 @@ fn main() {
                 target.write_back
             );
         }
+        let mut pci_installer_iso_attached = false;
+        let mut legacy_mmio_installer_iso_attached = false;
         if let Some(path) = media.installer_iso_path.as_ref() {
             match media.installer_iso_transport {
-                InstallerIsoTransport::Pci => {
+                InstallerIsoTransport::Pci if platform_cfg.devices.virtio_boot_media_present => {
                     platform.attach_pci_boot_media(path).unwrap_or_else(|e| {
                         panic!("attach PCI installer ISO {}: {e}", path.display())
                     });
+                    pci_installer_iso_attached = true;
                     println!(
                         "Installer ISO attached on PCI boot media 00:03.0: {}",
                         path.display()
                     );
                 }
-                InstallerIsoTransport::Mmio => {
+                InstallerIsoTransport::Pci => {
+                    println!(
+                        "Installer ISO PCI boot media disabled; not attaching {}",
+                        path.display()
+                    );
+                }
+                InstallerIsoTransport::Mmio if platform_cfg.devices.legacy_virtio_mmio_present => {
                     platform.attach_virtio_iso(path).unwrap_or_else(|e| {
                         panic!("attach legacy MMIO installer ISO {}: {e}", path.display())
                     });
+                    legacy_mmio_installer_iso_attached = true;
                     println!(
                         "Installer ISO attached on legacy virtio-mmio slot {INSTALLER_ISO_SLOT}: {}",
                         path.display()
                     );
                 }
+                InstallerIsoTransport::Mmio => {
+                    println!(
+                        "Installer ISO legacy virtio-mmio disabled; not attaching {}",
+                        path.display()
+                    );
+                }
             }
         }
-        let installer_iso_attached = media.installer_iso_path.is_some();
-        let legacy_mmio_fallback_active =
-            installer_iso_attached && media.installer_iso_transport == InstallerIsoTransport::Mmio;
         device_shape::print_device_shape(
-            installer_iso_attached && media.installer_iso_transport == InstallerIsoTransport::Pci,
-            legacy_mmio_fallback_active,
+            platform_cfg.devices,
+            pci_installer_iso_attached,
+            legacy_mmio_installer_iso_attached,
             platform.nvme_disk_len(),
         );
         if let Some(linux) = media.linux_boot.as_ref() {
@@ -1491,667 +1796,840 @@ fn main() {
             ptr: ram,
             len: ram_size,
         };
-        let mut mmio_traces: BTreeMap<&'static str, MmioTrace> = BTreeMap::new();
-        let mut recent_pcie_mmio = RecentMmio::new(
-            "pcie-mmio-32",
-            usize::try_from(env_u64("BRIDGEVM_RECENT_PCIE_MMIO", 32)).unwrap_or(32),
-        );
-        let mut recent_pcie_pio = RecentMmio::new(
-            "pcie-pio",
-            usize::try_from(env_u64("BRIDGEVM_RECENT_PCIE_PIO", 32)).unwrap_or(32),
-        );
-        let mut recent_pcie_ecam = RecentPcieEcam::new(
-            usize::try_from(env_u64("BRIDGEVM_RECENT_PCIE_ECAM", 128)).unwrap_or(128),
-        );
-        let mut recent_xhci = XhciBringupTrace::new(
-            usize::try_from(env_u64("BRIDGEVM_RECENT_XHCI", 160)).unwrap_or(160),
-        );
-        recent_xhci.print_events_immediately(trace_xhci_bringup);
-        let mut unimpl: BTreeMap<&'static str, u64> = BTreeMap::new();
-        let mut redist_lo = u64::MAX;
-        let mut redist_hi = 0u64;
-        let mut exits = 0u64;
-        let mut vtimer_exits = 0u64;
-        let mut psci_calls = 0u64;
-        let mut last_pc = 0u64;
-        let mut last_pre_run_pc: u64;
-        let mut watch_hits = 0u32;
-        let mut last_watch_pc = 0u64;
-        let mut last_watch_lr = 0u64;
-        let mut fwcfg_trace_count = 0u32;
-        let mut drain_stats = RunLoopDrainStats::new(trace_run_loop);
-        let mut ramfb_sample_loop = RamfbSampleLoop::from_env();
-        let mut setup_input_host_wake = SetupInputHostWake::new();
-        let drain_trace = DrainTrace {
-            msix: trace_msix,
-            spi: trace_spi,
-        };
-        let stop_reason;
-        let mut stop_reason_code = None;
+        reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
+        let reboot_plan = RebootPlan::from_env();
+        println!("PSCI SYSTEM_RESET max reboots: {}", reboot_plan.max_reboots);
+        let watchdog_generation = Arc::new(AtomicU64::new(0));
+        let mut reboot_count = 0u64;
+        reset_vcpu_for_boot(vcpu);
+        arm_watchpoint_for_boot(vcpu, watch_addr);
 
-        loop {
-            let mut drain_pc = 0u64;
-            hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
-            last_pre_run_pc = drain_pc;
-            drain_stats.drain_pending(
-                &mut platform,
-                &mut guest_ram,
-                drain_trace,
-                DrainContext {
-                    location: DrainLocation::PreRun,
-                    exit: exits,
-                    pc: drain_pc,
-                },
+        'reboot: loop {
+            let boot_generation = begin_watchdog_generation(&watchdog_generation);
+            let watchdog_fired = Arc::new(AtomicBool::new(false));
+            spawn_boot_watchdog(
+                vcpu,
+                watchdog_ms,
+                Arc::clone(&watchdog_generation),
+                boot_generation,
+                Arc::clone(&watchdog_fired),
             );
-            let r = hv_vcpu_run(vcpu);
-            if r != 0 {
-                hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
-                stop_reason = format!("hv_vcpu_run error {r:#x}");
-                break;
+
+            if let Ok(input) = std::env::var("BRIDGEVM_UART_RX") {
+                platform.push_uart_input(input.as_bytes());
+                println!("UART RX preloaded: {} bytes", input.len());
             }
-            exits += 1;
-            let reason = (*exit).reason;
-            stop_reason_code = Some(reason);
-            let sample_tick_canceled =
-                ramfb_sample_loop.canceled_by_sample_tick(reason, &watchdog_fired);
-            let setup_input_wake_canceled =
-                setup_input_host_wake.canceled_by_host_wake(reason, &watchdog_fired);
-            let automation_tick_canceled = sample_tick_canceled || setup_input_wake_canceled;
-            if reason == EXIT_CANCELED && !automation_tick_canceled {
-                hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
-                stop_reason = "watchdog (CANCELED)".into();
-                break;
+            let mut uart_triggers = Vec::new();
+            if let Some(trigger) = SerialTriggeredUartInput::from_env(
+                "cd-prompt",
+                "BRIDGEVM_UART_RX_ON_CD_PROMPT",
+                b"Press any key to boot from CD or DVD",
+            ) {
+                uart_triggers.push(trigger);
             }
-            if !automation_tick_canceled && reason == EXIT_VTIMER {
-                hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
-                vtimer_exits += 1;
-                hv_vcpu_set_vtimer_mask(vcpu, true);
+            if let Some(trigger) = SerialTriggeredUartInput::from_env_with_marker_env(
+                "serial-marker",
+                "BRIDGEVM_UART_RX_ON_SERIAL_MARKER",
+                "BRIDGEVM_UART_RX_SERIAL_MARKER",
+            ) {
+                uart_triggers.push(trigger);
+            }
+            let mut xhci_hid_boot_key_triggers = Vec::new();
+            if let Some(trigger) =
+                XhciHidBootKeyTrigger::from_env("cd-prompt", "BRIDGEVM_XHCI_BOOT_KEY_ON_CD_PROMPT")
+            {
+                xhci_hid_boot_key_triggers.push(trigger);
+            }
+            if let Some(trigger) = XhciHidBootKeyTrigger::from_env_with_marker_env(
+                "serial-marker",
+                "BRIDGEVM_XHCI_BOOT_KEY_ON_SERIAL_MARKER",
+                "BRIDGEVM_XHCI_BOOT_KEY_SERIAL_MARKER",
+            ) {
+                xhci_hid_boot_key_triggers.push(trigger);
+            }
+            let mut xhci_setup_input_triggers = Vec::new();
+            if let Some(trigger_result) = XhciSetupInputTrigger::from_env(
+                "setup-input",
+                "BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS",
+                "BRIDGEVM_XHCI_SETUP_INPUT_SERIAL_MARKER",
+            ) {
+                match trigger_result {
+                    Ok(trigger) => xhci_setup_input_triggers.push(trigger),
+                    Err(error) => print_setup_input_rejection("setup-input", &error),
+                }
+            }
+            if let Some(trigger_result) = XhciSetupInputTrigger::from_env_with_timing_envs(
+                "setup-input-2",
+                "BRIDGEVM_XHCI_SETUP_INPUT2_ACTIONS",
+                "BRIDGEVM_XHCI_SETUP_INPUT2_SERIAL_MARKER",
+                "BRIDGEVM_XHCI_SETUP_INPUT2_FIRE_DELAY_MS",
+                "BRIDGEVM_XHCI_SETUP_INPUT2_RAMFB_DELAY_MS",
+            ) {
+                match trigger_result {
+                    Ok(trigger) => xhci_setup_input_triggers.push(trigger),
+                    Err(error) => print_setup_input_rejection("setup-input-2", &error),
+                }
+            }
+            if let Some(trigger_result) = XhciSetupInputTrigger::from_env_with_timing_envs(
+                "setup-input-3",
+                "BRIDGEVM_XHCI_SETUP_INPUT3_ACTIONS",
+                "BRIDGEVM_XHCI_SETUP_INPUT3_SERIAL_MARKER",
+                "BRIDGEVM_XHCI_SETUP_INPUT3_FIRE_DELAY_MS",
+                "BRIDGEVM_XHCI_SETUP_INPUT3_RAMFB_DELAY_MS",
+            ) {
+                match trigger_result {
+                    Ok(trigger) => xhci_setup_input_triggers.push(trigger),
+                    Err(error) => print_setup_input_rejection("setup-input-3", &error),
+                }
+            }
+            let mut xhci_pointer_input_triggers = Vec::new();
+            if let Some(trigger_result) = XhciPointerInputTrigger::from_env(
+                "pointer-input",
+                "BRIDGEVM_XHCI_POINTER_INPUT_ACTIONS",
+                "BRIDGEVM_XHCI_POINTER_INPUT_SERIAL_MARKER",
+            ) {
+                match trigger_result {
+                    Ok(trigger) => xhci_pointer_input_triggers.push(trigger),
+                    Err(error) => print_pointer_input_rejection("pointer-input", &error),
+                }
+            }
+            let mut mmio_traces: BTreeMap<&'static str, MmioTrace> = BTreeMap::new();
+            let mut recent_pcie_mmio = RecentMmio::new(
+                "pcie-mmio-32",
+                usize::try_from(env_u64("BRIDGEVM_RECENT_PCIE_MMIO", 32)).unwrap_or(32),
+            );
+            let mut recent_pcie_pio = RecentMmio::new(
+                "pcie-pio",
+                usize::try_from(env_u64("BRIDGEVM_RECENT_PCIE_PIO", 32)).unwrap_or(32),
+            );
+            let mut recent_pcie_ecam = RecentPcieEcam::new(
+                usize::try_from(env_u64("BRIDGEVM_RECENT_PCIE_ECAM", 128)).unwrap_or(128),
+            );
+            let mut recent_xhci = XhciBringupTrace::new(
+                usize::try_from(env_u64("BRIDGEVM_RECENT_XHCI", 160)).unwrap_or(160),
+            );
+            recent_xhci.print_events_immediately(trace_xhci_bringup);
+            let mut unimpl: BTreeMap<&'static str, u64> = BTreeMap::new();
+            let mut redist_lo = u64::MAX;
+            let mut redist_hi = 0u64;
+            let mut exits = 0u64;
+            let mut vtimer_exits = 0u64;
+            let mut psci_calls = 0u64;
+            let mut last_pc = 0u64;
+            let mut last_pre_run_pc: u64;
+            let mut watch_hits = 0u32;
+            let mut last_watch_pc = 0u64;
+            let mut last_watch_lr = 0u64;
+            let mut fwcfg_trace_count = 0u32;
+            let mut drain_stats = RunLoopDrainStats::new(trace_run_loop);
+            let mut ramfb_sample_loop = RamfbSampleLoop::from_env();
+            let mut setup_input_host_wake = SetupInputHostWake::new();
+            let drain_trace = DrainTrace {
+                msix: trace_msix,
+                spi: trace_spi,
+            };
+            let mut stop_reason;
+            let mut stop_reason_code = None;
+            let mut requested_system_reset = false;
+
+            loop {
+                let mut drain_pc = 0u64;
+                hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
+                last_pre_run_pc = drain_pc;
+                drain_stats.drain_pending(
+                    &mut platform,
+                    &mut guest_ram,
+                    drain_trace,
+                    DrainContext {
+                        location: DrainLocation::PreRun,
+                        exit: exits,
+                        pc: drain_pc,
+                    },
+                );
+                let r = hv_vcpu_run(vcpu);
+                if r != 0 {
+                    hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
+                    stop_reason = format!("hv_vcpu_run error {r:#x}");
+                    break;
+                }
+                exits += 1;
+                let reason = (*exit).reason;
+                stop_reason_code = Some(reason);
+                let sample_tick_canceled =
+                    ramfb_sample_loop.canceled_by_sample_tick(reason, &watchdog_fired);
+                let setup_input_wake_canceled =
+                    setup_input_host_wake.canceled_by_host_wake(reason, &watchdog_fired);
+                let automation_tick_canceled = sample_tick_canceled || setup_input_wake_canceled;
+                if reason == EXIT_CANCELED && !automation_tick_canceled {
+                    hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
+                    stop_reason = "watchdog (CANCELED)".into();
+                    break;
+                }
+                if !automation_tick_canceled && reason == EXIT_VTIMER {
+                    hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
+                    vtimer_exits += 1;
+                    hv_vcpu_set_vtimer_mask(vcpu, true);
+                    if exits >= MAX_EXITS {
+                        stop_reason = format!("exit cap {MAX_EXITS}");
+                        break;
+                    }
+                    continue;
+                }
+                if !automation_tick_canceled && reason != EXIT_EXCEPTION {
+                    hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
+                    stop_reason = format!("exit reason {reason}");
+                    break;
+                }
+                if !automation_tick_canceled {
+                    let esr = (*exit).exception.syndrome;
+                    let ec = (esr >> 26) & 0x3f;
+                    hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
+                    match ec {
+                        EC_DATA_ABORT => {
+                            let ipa = (*exit).exception.physical_address;
+                            let size = 1u8 << ((esr >> 22) & 0x3);
+                            let srt = ((esr >> 16) & 0x1f) as u32;
+                            let is_write = (esr >> 6) & 1 == 1;
+                            let op = if is_write {
+                                let mut v = 0u64;
+                                hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v);
+                                MmioOp::Write { size, value: v }
+                            } else {
+                                MmioOp::Read { size }
+                            };
+                            let trace_this_fwcfg = trace_fwcfg
+                                && machine::FW_CFG.contains(ipa)
+                                && fwcfg_trace_count < 512;
+                            if trace_this_fwcfg {
+                                fwcfg_trace_count += 1;
+                                println!(
+                                "FWCFG[{fwcfg_trace_count:03}] pc={last_pc:#x} off={:#x} op={op:?}",
+                                ipa - machine::FW_CFG.base
+                            );
+                            }
+                            let device = machine::device_at(ipa).unwrap_or("<unmapped>");
+                            let pcie_target = match device {
+                                "pcie-mmio-32" => {
+                                    platform.pcie_mmio_target(ipa).map(PcieTraceTarget::Mmio)
+                                }
+                                "pcie-pio" => {
+                                    platform.pcie_pio_target(ipa).map(PcieTraceTarget::Pio)
+                                }
+                                _ => None,
+                            };
+                            let xhci_target = match pcie_target {
+                                Some(PcieTraceTarget::Mmio(target)) => Some(target),
+                                Some(PcieTraceTarget::Pio(_)) | None => None,
+                            };
+                            recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
+                            let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
+                            let pcie_ecam_owner_context = PcieEcamOwnerContext {
+                                exit: exits,
+                                ipa,
+                                esr,
+                                ec,
+                                srt,
+                                serial_phase: PcieEcamOwnerContext::serial_phase_from_uart(
+                                    platform.uart_output(),
+                                ),
+                            };
+                            recent_pcie_ecam.record_after_with_context(
+                                &mut platform,
+                                &mut guest_ram,
+                                PcieEcamAccess {
+                                    pc: last_pc,
+                                    ipa,
+                                    op: &op,
+                                    outcome: &outcome,
+                                    owner_context: pcie_ecam_owner_context,
+                                },
+                            );
+                            let pcie_context = targetless_xhci_trace_context(
+                                &mut platform,
+                                &mut guest_ram,
+                                device,
+                                ipa,
+                                pcie_target,
+                                &outcome,
+                            );
+                            recent_pcie_mmio.record_with_context(
+                                device,
+                                last_pc,
+                                ipa,
+                                pcie_target,
+                                &op,
+                                &outcome,
+                                pcie_context,
+                            );
+                            recent_pcie_pio.record(
+                                device,
+                                last_pc,
+                                ipa,
+                                pcie_target,
+                                &op,
+                                &outcome,
+                            );
+                            record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
+                            if trace_this_fwcfg {
+                                println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
+                            }
+                            match outcome {
+                                MmioOutcome::ReadValue(v) if !is_write => {
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
+                                }
+                                MmioOutcome::ReadValue(_) | MmioOutcome::WriteAck => {}
+                                MmioOutcome::KnownUnimplemented(name) => {
+                                    *unimpl.entry(name).or_insert(0) += 1;
+                                    if name == "gic-redist" {
+                                        redist_lo = redist_lo.min(ipa);
+                                        redist_hi = redist_hi.max(ipa);
+                                    }
+                                    if !is_write {
+                                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
+                                    }
+                                }
+                                MmioOutcome::Unmapped => {
+                                    *unimpl.entry("<unmapped>").or_insert(0) += 1;
+                                    if !is_write {
+                                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
+                                    }
+                                }
+                            }
+                            drain_stats.drain_pending(
+                                &mut platform,
+                                &mut guest_ram,
+                                drain_trace,
+                                DrainContext {
+                                    location: DrainLocation::DataAbort,
+                                    exit: exits,
+                                    pc: last_pc,
+                                },
+                            );
+                            hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
+                        }
+                        EC_HVC => {
+                            // SMCCC: PSCI (DTB method = "hvc") + ARM TRNG (RngDxe uses it).
+                            let mut func = 0u64;
+                            hv_vcpu_get_reg(vcpu, HV_REG_X0, &mut func);
+                            match func & 0xffff_ffff {
+                                0x8000_0000 => {
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0001);
+                                } // SMCCC_VERSION 1.1
+                                0x8400_0000 => {
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0001_0001);
+                                } // PSCI_VERSION 1.1
+                                0x8400_000A => {
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
+                                } // PSCI_FEATURES
+                                0x8400_0050 => {
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0000);
+                                } // TRNG_VERSION 1.0
+                                0x8400_0051 => {
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
+                                } // TRNG_FEATURES: present
+                                0x8400_0052 => {
+                                    // TRNG_GET_UUID
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0b0a_0908);
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, 0x0f0e_0d0c);
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, 0x0302_0100);
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, 0x0706_0504);
+                                }
+                                0x8400_0053 | 0xc400_0053 => {
+                                    // TRNG_RND_32 / _64
+                                    let r = exits
+                                        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                        .wrapping_add(0xD1B5_4A32);
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, 0); // SUCCESS
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, r);
+                                    hv_vcpu_set_reg(
+                                        vcpu,
+                                        HV_REG_X0 + 2,
+                                        r.rotate_left(17) ^ 0xA5A5_5A5A,
+                                    );
+                                    hv_vcpu_set_reg(
+                                        vcpu,
+                                        HV_REG_X0 + 3,
+                                        r.rotate_left(41) ^ 0x1234_5678,
+                                    );
+                                }
+                                value
+                                    if psci_terminal_action(value)
+                                        == Some(PsciTerminalAction::SystemOff) =>
+                                {
+                                    psci_calls += 1;
+                                    stop_reason = format!("PSCI {PSCI_SYSTEM_OFF:#x} (system off)");
+                                    break;
+                                }
+                                value
+                                    if psci_terminal_action(value)
+                                        == Some(PsciTerminalAction::SystemReset) =>
+                                {
+                                    psci_calls += 1;
+                                    requested_system_reset = true;
+                                    stop_reason =
+                                        format!("PSCI {PSCI_SYSTEM_RESET:#x} (system reset)");
+                                    break;
+                                }
+                                _ => {
+                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, (-1i64) as u64);
+                                } // NOT_SUPPORTED
+                            }
+                            // HVF reports the HVC exit PC already PAST the `hvc` instruction
+                            // (unlike a data abort, where the PC is AT the faulting insn). So
+                            // do NOT advance again: +4 would skip the next instruction — e.g.
+                            // ArmCallHvc's `ldr x9, [sp], #0x10`, which was the RngDxe crash.
+                            hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc);
+                            psci_calls += 1;
+                        }
+                        EC_SYS_REG_TRAP => {
+                            let trap = SysRegTrap::decode(esr);
+                            if emulate_debug_os_lock_sysreg(vcpu, trap) {
+                                hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
+                            } else {
+                                stop_reason = format!(
+                            "unsupported system register trap {} ESR {esr:#x} @ PC {last_pc:#x}",
+                            trap.describe()
+                        );
+                                break;
+                            }
+                        }
+                        EC_WATCHPOINT_LOWER | EC_WATCHPOINT_SAME => {
+                            watch_hits += 1;
+                            let mut lr = 0u64;
+                            hv_vcpu_get_reg(vcpu, HV_REG_X0 + 30, &mut lr);
+                            last_watch_pc = last_pc;
+                            last_watch_lr = lr;
+                            print!("WATCH #{watch_hits}: store @ PC {last_pc:#x} LR {lr:#x}");
+                            // Single-step over the store: disable the watchpoint and arm
+                            // PSTATE.SS so the store retires and we can read the new value.
+                            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWCR0_EL1, 0);
+                            let mut md = 0u64;
+                            hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, &mut md);
+                            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, md | 1); // SS
+                            let mut cp = 0u64;
+                            hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cp);
+                            hv_vcpu_set_reg(vcpu, HV_REG_CPSR, cp | (1 << 21)); // PSTATE.SS
+                                                                                // do NOT advance PC: re-execute the store under single-step.
+                        }
+                        EC_SOFTSTEP_LOWER | EC_SOFTSTEP_SAME => {
+                            let cur = guest_ram
+                                .read_bytes(watch_target, 8)
+                                .map(|b| u64::from_le_bytes(b.try_into().unwrap()))
+                                .unwrap_or(0);
+                            println!(" -> {watch_target:#x} = {cur:#x}");
+                            // Clear single-step; re-arm the watchpoint unless we have enough.
+                            let mut md = 0u64;
+                            hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, &mut md);
+                            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, md & !1);
+                            let mut cp = 0u64;
+                            hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cp);
+                            hv_vcpu_set_reg(vcpu, HV_REG_CPSR, cp & !(1 << 21));
+                            if watch_hits < 40 {
+                                hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWCR0_EL1, DBGWCR_STORE_8B);
+                            }
+                            // do NOT advance PC: the step already retired the instruction.
+                        }
+                        _ => {
+                            stop_reason =
+                                format!("exception EC {ec:#x} ESR {esr:#x} @ PC {last_pc:#x}");
+                            break;
+                        }
+                    }
+                }
                 if exits >= MAX_EXITS {
                     stop_reason = format!("exit cap {MAX_EXITS}");
                     break;
                 }
-                continue;
-            }
-            if !automation_tick_canceled && reason != EXIT_EXCEPTION {
-                hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
-                stop_reason = format!("exit reason {reason}");
-                break;
-            }
-            if !automation_tick_canceled {
-                let esr = (*exit).exception.syndrome;
-                let ec = (esr >> 26) & 0x3f;
-                hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
-                match ec {
-                    EC_DATA_ABORT => {
-                        let ipa = (*exit).exception.physical_address;
-                        let size = 1u8 << ((esr >> 22) & 0x3);
-                        let srt = ((esr >> 16) & 0x1f) as u32;
-                        let is_write = (esr >> 6) & 1 == 1;
-                        let op = if is_write {
-                            let mut v = 0u64;
-                            hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v);
-                            MmioOp::Write { size, value: v }
-                        } else {
-                            MmioOp::Read { size }
-                        };
-                        let trace_this_fwcfg =
-                            trace_fwcfg && machine::FW_CFG.contains(ipa) && fwcfg_trace_count < 512;
-                        if trace_this_fwcfg {
-                            fwcfg_trace_count += 1;
-                            println!(
-                                "FWCFG[{fwcfg_trace_count:03}] pc={last_pc:#x} off={:#x} op={op:?}",
-                                ipa - machine::FW_CFG.base
-                            );
+                if serial_reached_linux_panic(platform.uart_output()) {
+                    stop_reason = "serial reached Linux kernel panic".into();
+                    break;
+                }
+                for trigger in &mut uart_triggers {
+                    trigger.maybe_fire(&mut platform);
+                }
+                for trigger in &mut xhci_hid_boot_key_triggers {
+                    trigger.maybe_fire(&mut platform);
+                }
+                for trigger in &mut xhci_setup_input_triggers {
+                    let ramfb_config = platform.ramfb_config();
+                    let now = std::time::Instant::now();
+                    trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
+                        &mut platform,
+                        &mut guest_ram,
+                        now,
+                        |label, mem| {
+                            ramfb_dump::print_checkpoint(label, ramfb_config, mem);
+                        },
+                    );
+                    if let Some(deadline) = trigger.pending_host_wake_deadline_at(&platform, now) {
+                        let v = vcpu;
+                        let wake_generation = Arc::clone(&watchdog_generation);
+                        let wake_boot_generation = boot_generation;
+                        if setup_input_host_wake.arm(deadline, move || {
+                            if watchdog_generation_matches(&wake_generation, wake_boot_generation) {
+                                hv_vcpus_exit(&v, 1);
+                            }
+                        }) {
+                            println!("xHCI setup-input host wake armed for delayed trigger");
                         }
-                        let device = machine::device_at(ipa).unwrap_or("<unmapped>");
-                        let pcie_target = match device {
-                            "pcie-mmio-32" => {
-                                platform.pcie_mmio_target(ipa).map(PcieTraceTarget::Mmio)
-                            }
-                            "pcie-pio" => platform.pcie_pio_target(ipa).map(PcieTraceTarget::Pio),
-                            _ => None,
-                        };
-                        let xhci_target = match pcie_target {
-                            Some(PcieTraceTarget::Mmio(target)) => Some(target),
-                            Some(PcieTraceTarget::Pio(_)) | None => None,
-                        };
-                        recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
-                        let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
-                        let pcie_ecam_owner_context = PcieEcamOwnerContext {
-                            exit: exits,
-                            ipa,
-                            esr,
-                            ec,
-                            srt,
-                            serial_phase: PcieEcamOwnerContext::serial_phase_from_uart(
-                                platform.uart_output(),
-                            ),
-                        };
-                        recent_pcie_ecam.record_after_with_context(
-                            &mut platform,
-                            &mut guest_ram,
-                            PcieEcamAccess {
-                                pc: last_pc,
-                                ipa,
-                                op: &op,
-                                outcome: &outcome,
-                                owner_context: pcie_ecam_owner_context,
-                            },
-                        );
-                        let pcie_context = targetless_xhci_trace_context(
-                            &mut platform,
-                            &mut guest_ram,
-                            device,
-                            ipa,
-                            pcie_target,
-                            &outcome,
-                        );
-                        recent_pcie_mmio.record_with_context(
-                            device,
-                            last_pc,
-                            ipa,
-                            pcie_target,
-                            &op,
-                            &outcome,
-                            pcie_context,
-                        );
-                        recent_pcie_pio.record(device, last_pc, ipa, pcie_target, &op, &outcome);
-                        record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
-                        if trace_this_fwcfg {
-                            println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
-                        }
-                        match outcome {
-                            MmioOutcome::ReadValue(v) if !is_write => {
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
-                            }
-                            MmioOutcome::ReadValue(_) | MmioOutcome::WriteAck => {}
-                            MmioOutcome::KnownUnimplemented(name) => {
-                                *unimpl.entry(name).or_insert(0) += 1;
-                                if name == "gic-redist" {
-                                    redist_lo = redist_lo.min(ipa);
-                                    redist_hi = redist_hi.max(ipa);
-                                }
-                                if !is_write {
-                                    hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
-                                }
-                            }
-                            MmioOutcome::Unmapped => {
-                                *unimpl.entry("<unmapped>").or_insert(0) += 1;
-                                if !is_write {
-                                    hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
-                                }
-                            }
-                        }
-                        drain_stats.drain_pending(
-                            &mut platform,
-                            &mut guest_ram,
-                            drain_trace,
-                            DrainContext {
-                                location: DrainLocation::DataAbort,
-                                exit: exits,
-                                pc: last_pc,
-                            },
-                        );
-                        hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
                     }
-                    EC_HVC => {
-                        // SMCCC: PSCI (DTB method = "hvc") + ARM TRNG (RngDxe uses it).
-                        let mut func = 0u64;
-                        hv_vcpu_get_reg(vcpu, HV_REG_X0, &mut func);
-                        match func & 0xffff_ffff {
-                            0x8000_0000 => {
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0001);
-                            } // SMCCC_VERSION 1.1
-                            0x8400_0000 => {
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0001_0001);
-                            } // PSCI_VERSION 1.1
-                            0x8400_000A => {
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
-                            } // PSCI_FEATURES
-                            0x8400_0050 => {
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0000);
-                            } // TRNG_VERSION 1.0
-                            0x8400_0051 => {
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
-                            } // TRNG_FEATURES: present
-                            0x8400_0052 => {
-                                // TRNG_GET_UUID
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0b0a_0908);
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, 0x0f0e_0d0c);
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, 0x0302_0100);
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, 0x0706_0504);
+                }
+                for trigger in &mut xhci_pointer_input_triggers {
+                    let ramfb_config = platform.ramfb_config();
+                    let now = std::time::Instant::now();
+                    trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
+                        &mut platform,
+                        &mut guest_ram,
+                        now,
+                        |label, mem| {
+                            ramfb_dump::print_checkpoint(label, ramfb_config, mem);
+                        },
+                    );
+                    if let Some(deadline) = trigger.pending_host_wake_deadline_at(&platform, now) {
+                        let v = vcpu;
+                        let wake_generation = Arc::clone(&watchdog_generation);
+                        let wake_boot_generation = boot_generation;
+                        if setup_input_host_wake.arm(deadline, move || {
+                            if watchdog_generation_matches(&wake_generation, wake_boot_generation) {
+                                hv_vcpus_exit(&v, 1);
                             }
-                            0x8400_0053 | 0xc400_0053 => {
-                                // TRNG_RND_32 / _64
-                                let r = exits
-                                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-                                    .wrapping_add(0xD1B5_4A32);
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0, 0); // SUCCESS
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, r);
-                                hv_vcpu_set_reg(
-                                    vcpu,
-                                    HV_REG_X0 + 2,
-                                    r.rotate_left(17) ^ 0xA5A5_5A5A,
-                                );
-                                hv_vcpu_set_reg(
-                                    vcpu,
-                                    HV_REG_X0 + 3,
-                                    r.rotate_left(41) ^ 0x1234_5678,
-                                );
-                            }
-                            0x8400_0008 | 0x8400_0009 => {
-                                stop_reason =
-                                    format!("PSCI {:#x} (system off/reset)", func & 0xffff_ffff);
-                                break;
-                            }
-                            _ => {
-                                hv_vcpu_set_reg(vcpu, HV_REG_X0, (-1i64) as u64);
-                            } // NOT_SUPPORTED
+                        }) {
+                            println!("xHCI pointer-input host wake armed for delayed trigger");
                         }
-                        // HVF reports the HVC exit PC already PAST the `hvc` instruction
-                        // (unlike a data abort, where the PC is AT the faulting insn). So
-                        // do NOT advance again: +4 would skip the next instruction — e.g.
-                        // ArmCallHvc's `ldr x9, [sp], #0x10`, which was the RngDxe crash.
-                        hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc);
-                        psci_calls += 1;
                     }
-                    EC_SYS_REG_TRAP => {
-                        let trap = SysRegTrap::decode(esr);
-                        if emulate_debug_os_lock_sysreg(vcpu, trap) {
-                            hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
-                        } else {
-                            stop_reason = format!(
-                            "unsupported system register trap {} ESR {esr:#x} @ PC {last_pc:#x}",
-                            trap.describe()
-                        );
+                }
+                let ramfb_config = platform.ramfb_config();
+                ramfb_sample_loop.emit_due(vcpu, |label| {
+                    ramfb_dump::print_checkpoint(label, ramfb_config, &guest_ram);
+                });
+                if stop_on_linux && serial_reached_linux_early_boot(platform.uart_output()) {
+                    stop_reason = "serial reached Linux early boot".into();
+                    break;
+                }
+                if serial_reached_shell(platform.uart_output()) {
+                    match ramfb_sample_loop.observe_shell(vcpu) {
+                        RamfbSampleShellAction::Continue => {}
+                        RamfbSampleShellAction::StopNow { reason } => {
+                            stop_reason = reason.into();
                             break;
                         }
                     }
-                    EC_WATCHPOINT_LOWER | EC_WATCHPOINT_SAME => {
-                        watch_hits += 1;
-                        let mut lr = 0u64;
-                        hv_vcpu_get_reg(vcpu, HV_REG_X0 + 30, &mut lr);
-                        last_watch_pc = last_pc;
-                        last_watch_lr = lr;
-                        print!("WATCH #{watch_hits}: store @ PC {last_pc:#x} LR {lr:#x}");
-                        // Single-step over the store: disable the watchpoint and arm
-                        // PSTATE.SS so the store retires and we can read the new value.
-                        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWCR0_EL1, 0);
-                        let mut md = 0u64;
-                        hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, &mut md);
-                        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, md | 1); // SS
-                        let mut cp = 0u64;
-                        hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cp);
-                        hv_vcpu_set_reg(vcpu, HV_REG_CPSR, cp | (1 << 21)); // PSTATE.SS
-                                                                            // do NOT advance PC: re-execute the store under single-step.
-                    }
-                    EC_SOFTSTEP_LOWER | EC_SOFTSTEP_SAME => {
-                        let cur = guest_ram
-                            .read_bytes(watch_target, 8)
-                            .map(|b| u64::from_le_bytes(b.try_into().unwrap()))
-                            .unwrap_or(0);
-                        println!(" -> {watch_target:#x} = {cur:#x}");
-                        // Clear single-step; re-arm the watchpoint unless we have enough.
-                        let mut md = 0u64;
-                        hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, &mut md);
-                        hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MDSCR_EL1, md & !1);
-                        let mut cp = 0u64;
-                        hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cp);
-                        hv_vcpu_set_reg(vcpu, HV_REG_CPSR, cp & !(1 << 21));
-                        if watch_hits < 40 {
-                            hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_DBGWCR0_EL1, DBGWCR_STORE_8B);
+                }
+            }
+
+            invalidate_watchdog_generation(&watchdog_generation);
+            if requested_system_reset {
+                match decide_system_reset(reboot_count, reboot_plan) {
+                    SystemResetDecision::Reboot {
+                        next_reboot_count,
+                        actions,
+                    } => {
+                        reboot_count = next_reboot_count;
+                        println!(
+                            "PSCI SYSTEM_RESET: reboot {reboot_count}/{}",
+                            reboot_plan.max_reboots
+                        );
+                        if actions.reset_platform {
+                            platform.reset();
                         }
-                        // do NOT advance PC: the step already retired the instruction.
+                        if actions.reset_guest_ram {
+                            reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
+                        }
+                        if actions.reset_vcpu {
+                            reset_vcpu_for_boot(vcpu);
+                            arm_watchpoint_for_boot(vcpu, watch_addr);
+                        }
+                        if actions.continue_run_loop {
+                            continue 'reboot;
+                        }
                     }
-                    _ => {
-                        stop_reason =
-                            format!("exception EC {ec:#x} ESR {esr:#x} @ PC {last_pc:#x}");
-                        break;
-                    }
-                }
-            }
-            if exits >= MAX_EXITS {
-                stop_reason = format!("exit cap {MAX_EXITS}");
-                break;
-            }
-            if serial_reached_linux_panic(platform.uart_output()) {
-                stop_reason = "serial reached Linux kernel panic".into();
-                break;
-            }
-            for trigger in &mut uart_triggers {
-                trigger.maybe_fire(&mut platform);
-            }
-            for trigger in &mut xhci_hid_boot_key_triggers {
-                trigger.maybe_fire(&mut platform);
-            }
-            for trigger in &mut xhci_setup_input_triggers {
-                let ramfb_config = platform.ramfb_config();
-                let now = std::time::Instant::now();
-                trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
-                    &mut platform,
-                    &mut guest_ram,
-                    now,
-                    |label, mem| {
-                        ramfb_dump::print_checkpoint(label, ramfb_config, mem);
-                    },
-                );
-                if let Some(deadline) = trigger.pending_host_wake_deadline_at(&platform, now) {
-                    let v = vcpu;
-                    if setup_input_host_wake.arm(deadline, move || {
-                        hv_vcpus_exit(&v, 1);
-                    }) {
-                        println!("xHCI setup-input host wake armed for delayed trigger");
+                    SystemResetDecision::Stop { reason } => {
+                        stop_reason = reason;
                     }
                 }
             }
-            let ramfb_config = platform.ramfb_config();
-            ramfb_sample_loop.emit_due(vcpu, |label| {
-                ramfb_dump::print_checkpoint(label, ramfb_config, &guest_ram);
-            });
-            if stop_on_linux && serial_reached_linux_early_boot(platform.uart_output()) {
-                stop_reason = "serial reached Linux early boot".into();
-                break;
-            }
-            if serial_reached_shell(platform.uart_output()) {
-                match ramfb_sample_loop.observe_shell(vcpu) {
-                    RamfbSampleShellAction::Continue => {}
-                    RamfbSampleShellAction::StopNow { reason } => {
-                        stop_reason = reason.into();
-                        break;
-                    }
-                }
-            }
-        }
 
-        let serial = platform.uart_output().to_vec();
-        let vars_writes = media
-            .flash_vars
-            .persist(platform.flash_vars_image())
-            .unwrap_or_else(|e| panic!("persist UEFI vars: {e}"));
-        print_media_writes("UEFI vars", &vars_writes);
-        if let Some(nvme) = media.nvme_disk.as_ref() {
-            let writes = if let Some(image) = platform.nvme_disk_if_memory() {
-                nvme.persist(image)
-                    .unwrap_or_else(|e| panic!("persist NVMe disk: {e}"))
-            } else {
-                let mut writes = Vec::new();
-                if let Some(path) = nvme.snapshot_path.as_ref() {
-                    let bytes = platform.export_nvme_disk(path).unwrap_or_else(|e| {
-                        panic!("export NVMe disk snapshot {}: {e}", path.display())
-                    });
-                    writes.push(MediaWrite {
-                        kind: MediaWriteKind::Snapshot,
-                        path: path.clone(),
-                        bytes: usize::try_from(bytes).unwrap_or(usize::MAX),
-                    });
-                }
-                if nvme.write_back {
-                    platform
-                        .flush_nvme_disk()
-                        .unwrap_or_else(|e| panic!("flush NVMe disk {}: {e}", nvme.path.display()));
-                    writes.push(MediaWrite {
-                        kind: MediaWriteKind::WriteBack,
-                        path: nvme.path.clone(),
-                        bytes: usize::try_from(platform.nvme_disk_len()).unwrap_or(usize::MAX),
-                    });
-                }
-                writes
-            };
-            print_media_writes("NVMe disk", &writes);
-        }
-        storage_effect_receipt::maybe_write_probe_storage_effect_receipt(
-            media.nvme_disk.as_ref(),
-            &platform,
-        );
-        maybe_write_file("BRIDGEVM_BOOT_PROBE_SERIAL_OUT", &serial, "serial log");
-        let symbols = symbol_lines(&serial);
-        if !symbols.is_empty() {
-            let text = symbols.join("\n") + "\n";
-            maybe_write_file(
-                "BRIDGEVM_BOOT_PROBE_SYMBOLS_OUT",
-                text.as_bytes(),
-                "symbol log",
+            let serial = platform.uart_output().to_vec();
+            let vars_writes = media
+                .flash_vars
+                .persist(platform.flash_vars_image())
+                .unwrap_or_else(|e| panic!("persist UEFI vars: {e}"));
+            print_media_writes("UEFI vars", &vars_writes);
+            if let Some(nvme) = media.nvme_disk.as_ref() {
+                let writes = persist_nvme_media(&mut platform, nvme, NvmePersistNamespace::Primary);
+                print_media_writes(NvmePersistNamespace::Primary.subject(), &writes);
+            }
+            if let Some(target) = media.nvme_target.as_ref() {
+                let writes =
+                    persist_nvme_media(&mut platform, target, NvmePersistNamespace::Target);
+                print_media_writes(NvmePersistNamespace::Target.subject(), &writes);
+            }
+            storage_effect_receipt::maybe_write_probe_storage_effect_receipt(
+                media.nvme_disk.as_ref(),
+                &platform,
             );
-        }
+            maybe_write_file("BRIDGEVM_BOOT_PROBE_SERIAL_OUT", &serial, "serial log");
+            let symbols = symbol_lines(&serial);
+            if !symbols.is_empty() {
+                let text = symbols.join("\n") + "\n";
+                maybe_write_file(
+                    "BRIDGEVM_BOOT_PROBE_SYMBOLS_OUT",
+                    text.as_bytes(),
+                    "symbol log",
+                );
+            }
 
-        let fp = read_reg(vcpu, HV_REG_FP);
-        let lr = read_reg(vcpu, HV_REG_LR);
-        let sp_el0 = read_sys_reg(vcpu, HV_SYS_REG_SP_EL0);
-        let sp_el1 = read_sys_reg(vcpu, HV_SYS_REG_SP_EL1);
-        let vbar_el1 = read_sys_reg(vcpu, HV_SYS_REG_VBAR_EL1);
-        let elr_el1 = read_sys_reg(vcpu, HV_SYS_REG_ELR_EL1);
-        let esr_el1 = read_sys_reg(vcpu, HV_SYS_REG_ESR_EL1);
-        let far_el1 = read_sys_reg(vcpu, HV_SYS_REG_FAR_EL1);
-        let spsr_el1 = read_sys_reg(vcpu, HV_SYS_REG_SPSR_EL1);
-        let stage1_ctx = Stage1Context {
-            sctlr_el1: read_sys_reg(vcpu, HV_SYS_REG_SCTLR_EL1),
-            tcr_el1: read_sys_reg(vcpu, HV_SYS_REG_TCR_EL1),
-            ttbr0_el1: read_sys_reg(vcpu, HV_SYS_REG_TTBR0_EL1),
-            ttbr1_el1: read_sys_reg(vcpu, HV_SYS_REG_TTBR1_EL1),
-            mair_el1: read_sys_reg(vcpu, HV_SYS_REG_MAIR_EL1),
-        };
-        println!(
-            "REGS: pc={last_pc:#x} lr={lr:#x} fp={fp:#x} sp_el0={sp_el0:#x} sp_el1={sp_el1:#x}"
-        );
-        print_gpr_context(vcpu);
-        println!(
-            "STAGE1: SCTLR={:#x} MMU={} TCR={:#x} TTBR0={:#x} TTBR1={:#x} MAIR={:#x}",
-            stage1_ctx.sctlr_el1,
-            stage1_ctx.sctlr_el1 & 1 != 0,
-            stage1_ctx.tcr_el1,
-            stage1_ctx.ttbr0_el1,
-            stage1_ctx.ttbr1_el1,
-            stage1_ctx.mair_el1
-        );
-        let pc_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "pc", last_pc);
-        let lr_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "lr", lr);
-        let elr_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "elr", elr_el1);
-        let _vbar_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "vbar", vbar_el1);
-        let _far_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "far", far_el1);
-        let fp_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "fp", fp);
-        let _sp_el0_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "sp_el0", sp_el0);
-        let sp_el1_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "sp_el1", sp_el1);
-        print_pe_owner(&guest_ram, "pc", last_pc);
-        print_pe_owner(&guest_ram, "lr", lr);
-        print_translated_pe_owner(&guest_ram, "pc", pc_ipa);
-        print_translated_pe_owner(&guest_ram, "lr", lr_ipa);
-        print_translated_pe_owner(&guest_ram, "elr", elr_ipa);
-        if last_watch_pc != 0 {
-            print_pe_owner(&guest_ram, "watch-pc", last_watch_pc);
-            print_pe_owner(&guest_ram, "watch-lr", last_watch_lr);
-            let watch_pc_ipa =
-                print_stage1_translation(&guest_ram, &stage1_ctx, "watch-pc", last_watch_pc);
-            let watch_lr_ipa =
-                print_stage1_translation(&guest_ram, &stage1_ctx, "watch-lr", last_watch_lr);
-            print_translated_pe_owner(&guest_ram, "watch-pc", watch_pc_ipa);
-            print_translated_pe_owner(&guest_ram, "watch-lr", watch_lr_ipa);
-        }
-        dump_guest_bytes(&guest_ram, "CODE[pc]", last_pc, 0x20, 0x60);
-        dump_guest_bytes(&guest_ram, "CODE[lr]", lr, 0x28, 0x60);
-        dump_translated_guest_bytes(&guest_ram, "CODE[pc]", pc_ipa, 0x20, 0x60);
-        dump_translated_guest_bytes(&guest_ram, "CODE[lr]", lr_ipa, 0x28, 0x60);
-        print_translated_instruction_words(&guest_ram, "CODE[pc]", last_pc, pc_ipa, 0x20, 0x60);
-        print_translated_instruction_words(&guest_ram, "CODE[lr]", lr, lr_ipa, 0x28, 0x60);
-        if fp != 0 {
-            dump_guest_bytes(&guest_ram, "FRAME[fp]", fp, 0, 0x80);
-            dump_translated_guest_bytes(&guest_ram, "FRAME[fp]", fp_ipa, 0, 0x80);
-            let frame_limit =
-                usize::try_from(env_u64("BRIDGEVM_FRAME_CHAIN_LIMIT", 12)).unwrap_or(12);
-            print_frame_chain(&guest_ram, &stage1_ctx, fp, frame_limit.min(64));
-        }
-        if sp_el1 != 0 {
-            dump_guest_bytes(&guest_ram, "STACK[sp_el1]", sp_el1, 0, 0x100);
-            dump_translated_guest_bytes(&guest_ram, "STACK[sp_el1]", sp_el1_ipa, 0, 0x100);
-        }
-        dump_env_guest_bytes(&guest_ram);
+            let fp = read_reg(vcpu, HV_REG_FP);
+            let lr = read_reg(vcpu, HV_REG_LR);
+            let sp_el0 = read_sys_reg(vcpu, HV_SYS_REG_SP_EL0);
+            let sp_el1 = read_sys_reg(vcpu, HV_SYS_REG_SP_EL1);
+            let vbar_el1 = read_sys_reg(vcpu, HV_SYS_REG_VBAR_EL1);
+            let elr_el1 = read_sys_reg(vcpu, HV_SYS_REG_ELR_EL1);
+            let esr_el1 = read_sys_reg(vcpu, HV_SYS_REG_ESR_EL1);
+            let far_el1 = read_sys_reg(vcpu, HV_SYS_REG_FAR_EL1);
+            let spsr_el1 = read_sys_reg(vcpu, HV_SYS_REG_SPSR_EL1);
+            let stage1_ctx = Stage1Context {
+                sctlr_el1: read_sys_reg(vcpu, HV_SYS_REG_SCTLR_EL1),
+                tcr_el1: read_sys_reg(vcpu, HV_SYS_REG_TCR_EL1),
+                ttbr0_el1: read_sys_reg(vcpu, HV_SYS_REG_TTBR0_EL1),
+                ttbr1_el1: read_sys_reg(vcpu, HV_SYS_REG_TTBR1_EL1),
+                mair_el1: read_sys_reg(vcpu, HV_SYS_REG_MAIR_EL1),
+            };
+            println!(
+                "REGS: pc={last_pc:#x} lr={lr:#x} fp={fp:#x} sp_el0={sp_el0:#x} sp_el1={sp_el1:#x}"
+            );
+            print_gpr_context(vcpu);
+            println!(
+                "STAGE1: SCTLR={:#x} MMU={} TCR={:#x} TTBR0={:#x} TTBR1={:#x} MAIR={:#x}",
+                stage1_ctx.sctlr_el1,
+                stage1_ctx.sctlr_el1 & 1 != 0,
+                stage1_ctx.tcr_el1,
+                stage1_ctx.ttbr0_el1,
+                stage1_ctx.ttbr1_el1,
+                stage1_ctx.mair_el1
+            );
+            let pc_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "pc", last_pc);
+            let lr_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "lr", lr);
+            let elr_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "elr", elr_el1);
+            let _vbar_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "vbar", vbar_el1);
+            let _far_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "far", far_el1);
+            let fp_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "fp", fp);
+            let _sp_el0_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "sp_el0", sp_el0);
+            let sp_el1_ipa = print_stage1_translation(&guest_ram, &stage1_ctx, "sp_el1", sp_el1);
+            print_pe_owner(&guest_ram, "pc", last_pc);
+            print_pe_owner(&guest_ram, "lr", lr);
+            print_translated_pe_owner(&guest_ram, "pc", pc_ipa);
+            print_translated_pe_owner(&guest_ram, "lr", lr_ipa);
+            print_translated_pe_owner(&guest_ram, "elr", elr_ipa);
+            if last_watch_pc != 0 {
+                print_pe_owner(&guest_ram, "watch-pc", last_watch_pc);
+                print_pe_owner(&guest_ram, "watch-lr", last_watch_lr);
+                let watch_pc_ipa =
+                    print_stage1_translation(&guest_ram, &stage1_ctx, "watch-pc", last_watch_pc);
+                let watch_lr_ipa =
+                    print_stage1_translation(&guest_ram, &stage1_ctx, "watch-lr", last_watch_lr);
+                print_translated_pe_owner(&guest_ram, "watch-pc", watch_pc_ipa);
+                print_translated_pe_owner(&guest_ram, "watch-lr", watch_lr_ipa);
+            }
+            dump_guest_bytes(&guest_ram, "CODE[pc]", last_pc, 0x20, 0x60);
+            dump_guest_bytes(&guest_ram, "CODE[lr]", lr, 0x28, 0x60);
+            dump_translated_guest_bytes(&guest_ram, "CODE[pc]", pc_ipa, 0x20, 0x60);
+            dump_translated_guest_bytes(&guest_ram, "CODE[lr]", lr_ipa, 0x28, 0x60);
+            print_translated_instruction_words(&guest_ram, "CODE[pc]", last_pc, pc_ipa, 0x20, 0x60);
+            print_translated_instruction_words(&guest_ram, "CODE[lr]", lr, lr_ipa, 0x28, 0x60);
+            if fp != 0 {
+                dump_guest_bytes(&guest_ram, "FRAME[fp]", fp, 0, 0x80);
+                dump_translated_guest_bytes(&guest_ram, "FRAME[fp]", fp_ipa, 0, 0x80);
+                let frame_limit =
+                    usize::try_from(env_u64("BRIDGEVM_FRAME_CHAIN_LIMIT", 12)).unwrap_or(12);
+                print_frame_chain(&guest_ram, &stage1_ctx, fp, frame_limit.min(64));
+            }
+            if sp_el1 != 0 {
+                dump_guest_bytes(&guest_ram, "STACK[sp_el1]", sp_el1, 0, 0x100);
+                dump_translated_guest_bytes(&guest_ram, "STACK[sp_el1]", sp_el1_ipa, 0, 0x100);
+            }
+            dump_env_guest_bytes(&guest_ram);
 
-        let mut rx = [0u64; 4];
-        for (i, r) in [HV_REG_X0, HV_REG_X0 + 1, HV_REG_X0 + 2, HV_REG_X0 + 9]
-            .iter()
-            .enumerate()
-        {
-            hv_vcpu_get_reg(vcpu, *r, &mut rx[i]);
-        }
-        println!(
-            "REG-HINTS: x0={:#x} x1={:#x} x2={:#x} x9={:#x}  (x0 device: {:?})",
-            rx[0],
-            rx[1],
-            rx[2],
-            rx[3],
-            machine::device_at(rx[0])
-        );
-        dump_guest_bytes_if_mapped(&guest_ram, "REG-HINT[x0]", rx[0], 0x40, 0x100);
-        // Legacy late-DXE poll convention: x22 = polled address, x21 = expected value,
-        // x20 = last read. These registers are still useful breadcrumbs, but Windows
-        // high-VA/SVC stops must be read through the full GPR dump above.
-        let mut ry = [0u64; 3];
-        for (i, r) in [HV_REG_X0 + 20, HV_REG_X0 + 21, HV_REG_X0 + 22]
-            .iter()
-            .enumerate()
-        {
-            hv_vcpu_get_reg(vcpu, *r, &mut ry[i]);
-        }
-        println!(
-            "LEGACY-POLL-HINT: x22(addr)={:#x} (dev {:?})  x21(expect)={:#x}  x20(last)={:#x}",
-            ry[2],
-            machine::device_at(ry[2]),
-            ry[1],
-            ry[0]
-        );
-        dump_guest_bytes_if_mapped(&guest_ram, "LEGACY-POLL[x22]", ry[2], 0, 0x100);
-        if ry[1] != ry[2] {
-            dump_guest_bytes_if_mapped(&guest_ram, "LEGACY-POLL[x21]", ry[1], 0, 0x100);
-        }
-        if ry[0] != ry[1] && ry[0] != ry[2] {
-            dump_guest_bytes_if_mapped(&guest_ram, "LEGACY-POLL[x20]", ry[0], 0, 0x100);
-        }
-        let mut cpsr = 0u64;
-        hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cpsr);
-        println!(
-            "CPSR={cpsr:#x}  DAIF: D={} A={} I(irq-masked)={} F={}  EL={}",
-            (cpsr >> 9) & 1,
-            (cpsr >> 8) & 1,
-            (cpsr >> 7) & 1,
-            (cpsr >> 6) & 1,
-            (cpsr >> 2) & 3
-        );
-        println!(
+            let mut rx = [0u64; 4];
+            for (i, r) in [HV_REG_X0, HV_REG_X0 + 1, HV_REG_X0 + 2, HV_REG_X0 + 9]
+                .iter()
+                .enumerate()
+            {
+                hv_vcpu_get_reg(vcpu, *r, &mut rx[i]);
+            }
+            println!(
+                "REG-HINTS: x0={:#x} x1={:#x} x2={:#x} x9={:#x}  (x0 device: {:?})",
+                rx[0],
+                rx[1],
+                rx[2],
+                rx[3],
+                machine::device_at(rx[0])
+            );
+            dump_guest_bytes_if_mapped(&guest_ram, "REG-HINT[x0]", rx[0], 0x40, 0x100);
+            // Legacy late-DXE poll convention: x22 = polled address, x21 = expected value,
+            // x20 = last read. These registers are still useful breadcrumbs, but Windows
+            // high-VA/SVC stops must be read through the full GPR dump above.
+            let mut ry = [0u64; 3];
+            for (i, r) in [HV_REG_X0 + 20, HV_REG_X0 + 21, HV_REG_X0 + 22]
+                .iter()
+                .enumerate()
+            {
+                hv_vcpu_get_reg(vcpu, *r, &mut ry[i]);
+            }
+            println!(
+                "LEGACY-POLL-HINT: x22(addr)={:#x} (dev {:?})  x21(expect)={:#x}  x20(last)={:#x}",
+                ry[2],
+                machine::device_at(ry[2]),
+                ry[1],
+                ry[0]
+            );
+            dump_guest_bytes_if_mapped(&guest_ram, "LEGACY-POLL[x22]", ry[2], 0, 0x100);
+            if ry[1] != ry[2] {
+                dump_guest_bytes_if_mapped(&guest_ram, "LEGACY-POLL[x21]", ry[1], 0, 0x100);
+            }
+            if ry[0] != ry[1] && ry[0] != ry[2] {
+                dump_guest_bytes_if_mapped(&guest_ram, "LEGACY-POLL[x20]", ry[0], 0, 0x100);
+            }
+            let mut cpsr = 0u64;
+            hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cpsr);
+            println!(
+                "CPSR={cpsr:#x}  DAIF: D={} A={} I(irq-masked)={} F={}  EL={}",
+                (cpsr >> 9) & 1,
+                (cpsr >> 8) & 1,
+                (cpsr >> 7) & 1,
+                (cpsr >> 6) & 1,
+                (cpsr >> 2) & 3
+            );
+            println!(
             "EL1_EXC: VBAR={vbar_el1:#x} ELR={elr_el1:#x} ESR={esr_el1:#x} ({}) FAR={far_el1:#x} SPSR={spsr_el1:#x}",
             describe_esr(esr_el1)
         );
-        print_pe_owner(&guest_ram, "elr", elr_el1);
-        print_translated_pe_owner(&guest_ram, "elr", elr_ipa);
-        dump_guest_bytes_if_mapped(&guest_ram, "CODE[elr]", elr_el1, 0x20, 0x60);
-        dump_translated_guest_bytes(&guest_ram, "CODE[elr]", elr_ipa, 0x20, 0x60);
-        print_translated_instruction_words(&guest_ram, "CODE[elr]", elr_el1, elr_ipa, 0x20, 0x60);
-        // Timer state: CTL bit0=ENABLE, bit1=IMASK, bit2=ISTATUS(fired).
-        let mut tr = [0u64; 4];
-        for (i, r) in [0xdf19u16, 0xdf1a, 0xdf11, 0xdf12].iter().enumerate() {
-            hv_vcpu_get_sys_reg(vcpu, *r, &mut tr[i]);
-        }
-        println!(
-            "TIMERS: CNTV_CTL={:#x} CNTV_CVAL={:#x} | CNTP_CTL={:#x} CNTP_CVAL={:#x}",
-            tr[0], tr[1], tr[2], tr[3]
-        );
-        let mut voff = 0u64;
-        hv_vcpu_get_vtimer_offset(vcpu, &mut voff);
-        let mut cntvoff = 0u64;
-        hv_vcpu_get_sys_reg(vcpu, 0xe703, &mut cntvoff); // CNTVOFF_EL2
-        let hcnt = host_cntvct();
-        let guest_cnt = hcnt.wrapping_sub(cntvoff);
-        let gap = (tr[1] as i128) - (guest_cnt as i128);
-        println!(
+            print_pe_owner(&guest_ram, "elr", elr_el1);
+            print_translated_pe_owner(&guest_ram, "elr", elr_ipa);
+            dump_guest_bytes_if_mapped(&guest_ram, "CODE[elr]", elr_el1, 0x20, 0x60);
+            dump_translated_guest_bytes(&guest_ram, "CODE[elr]", elr_ipa, 0x20, 0x60);
+            print_translated_instruction_words(
+                &guest_ram,
+                "CODE[elr]",
+                elr_el1,
+                elr_ipa,
+                0x20,
+                0x60,
+            );
+            // Timer state: CTL bit0=ENABLE, bit1=IMASK, bit2=ISTATUS(fired).
+            let mut tr = [0u64; 4];
+            for (i, r) in [0xdf19u16, 0xdf1a, 0xdf11, 0xdf12].iter().enumerate() {
+                hv_vcpu_get_sys_reg(vcpu, *r, &mut tr[i]);
+            }
+            println!(
+                "TIMERS: CNTV_CTL={:#x} CNTV_CVAL={:#x} | CNTP_CTL={:#x} CNTP_CVAL={:#x}",
+                tr[0], tr[1], tr[2], tr[3]
+            );
+            let mut voff = 0u64;
+            hv_vcpu_get_vtimer_offset(vcpu, &mut voff);
+            let mut cntvoff = 0u64;
+            hv_vcpu_get_sys_reg(vcpu, 0xe703, &mut cntvoff); // CNTVOFF_EL2
+            let hcnt = host_cntvct();
+            let guest_cnt = hcnt.wrapping_sub(cntvoff);
+            let gap = (tr[1] as i128) - (guest_cnt as i128);
+            println!(
             "CNTVCT: host={hcnt:#x} CNTVOFF_EL2={cntvoff:#x} vtimer_off={voff:#x} guest~={guest_cnt:#x}  CVAL={:#x}  gap={gap} ticks (~{} s @24MHz)",
             tr[1],
             gap / 24_000_000
         );
 
-        println!("=== EDK2 boot probe (with Apple hv_gic) ===");
-        println!("stop: {stop_reason}");
-        println!(
-            "exits: {exits} (vtimer {vtimer_exits}, psci {psci_calls}), last PC: {last_pc:#x}"
-        );
-        drain_stats.print_summary();
-        let last_prerun_pc_ipa = translated_ipa(&guest_ram, &stage1_ctx, last_pre_run_pc).ok();
-        let last_nonzero_irq_drain_pc_ipa = drain_stats
-            .last_nonzero_pc
-            .and_then(|pc| translated_ipa(&guest_ram, &stage1_ctx, pc).ok());
-        WfiWakeSummary {
-            stop_reason: &stop_reason,
-            stop_reason_code,
-            exits,
-            vtimer_exits,
-            final_pc: last_pc,
-            last_prerun_pc: Some(last_pre_run_pc),
-            final_pc_observation: wfi_pc_observation(&guest_ram, pc_ipa),
-            last_prerun_pc_observation: wfi_pc_observation(&guest_ram, last_prerun_pc_ipa),
-            last_nonzero_irq_drain_pc_observation: last_nonzero_irq_drain_pc_ipa
-                .map(|ipa| wfi_pc_observation(&guest_ram, Some(ipa))),
-        }
-        .print(&drain_stats);
-        println!("unmodelled MMIO touched: {unimpl:?}");
-        print_mmio_traces(&mmio_traces);
-        recent_pcie_ecam.print();
-        recent_pcie_mmio.print();
-        recent_pcie_pio.print();
-        recent_xhci.print();
-        print_nvme_command_trace(&platform);
-        println!("UART RX remaining bytes: {}", platform.uart_input_len());
-        for trigger in &uart_triggers {
+            println!("=== EDK2 boot probe (with Apple hv_gic) ===");
+            println!("stop: {stop_reason}");
             println!(
-                "UART RX injection {}: fired={} bytes={}",
-                trigger.name(),
-                trigger.fired(),
-                trigger.bytes_len()
+                "exits: {exits} (vtimer {vtimer_exits}, psci {psci_calls}), last PC: {last_pc:#x}"
             );
-        }
-        for trigger in &xhci_hid_boot_key_triggers {
-            trigger.print_summary(&platform);
-        }
-        for trigger in &xhci_setup_input_triggers {
-            trigger.print_summary(&platform);
-        }
-        if let Some(stats) = platform.pci_boot_media_stats() {
-            print_block_media_stats("PCI boot-media stats", stats);
-        }
-        if let Some(trace) = platform.pci_boot_media_request_trace() {
-            print_block_request_trace("recent PCI boot-media requests", &trace);
-        }
-        if let Some(stats) = platform.virtio_iso_stats() {
-            print_block_media_stats("legacy virtio-mmio ISO stats", stats);
-        }
-        if let Some(trace) = platform.virtio_iso_request_trace() {
-            print_block_request_trace("recent legacy virtio-mmio ISO requests", &trace);
-        }
-        let ramfb_config = platform.ramfb_config();
-        match ramfb_config {
-            Some(config) => println!(
-                "ramfb config: addr={:#x} fourcc={:#010x} xrgb8888={} {}x{} stride={}",
-                config.addr,
-                config.fourcc,
-                config.is_xrgb8888(),
-                config.width,
-                config.height,
-                config.stride
-            ),
-            None => println!("ramfb config: inactive"),
-        }
-        ramfb_dump::print_and_dump(ramfb_config, &guest_ram);
-        println!("symbol lines: {}", symbols.len());
-        for line in symbols.iter().rev().take(8).rev() {
-            println!("{line}");
-        }
-        if redist_hi != 0 {
-            println!(
+            drain_stats.print_summary();
+            let last_prerun_pc_ipa = translated_ipa(&guest_ram, &stage1_ctx, last_pre_run_pc).ok();
+            let last_nonzero_irq_drain_pc_ipa = drain_stats
+                .last_nonzero_pc
+                .and_then(|pc| translated_ipa(&guest_ram, &stage1_ctx, pc).ok());
+            WfiWakeSummary {
+                stop_reason: &stop_reason,
+                stop_reason_code,
+                exits,
+                vtimer_exits,
+                final_pc: last_pc,
+                last_prerun_pc: Some(last_pre_run_pc),
+                final_pc_observation: wfi_pc_observation(&guest_ram, pc_ipa),
+                last_prerun_pc_observation: wfi_pc_observation(&guest_ram, last_prerun_pc_ipa),
+                last_nonzero_irq_drain_pc_observation: last_nonzero_irq_drain_pc_ipa
+                    .map(|ipa| wfi_pc_observation(&guest_ram, Some(ipa))),
+            }
+            .print(&drain_stats);
+            println!("unmodelled MMIO touched: {unimpl:?}");
+            print_mmio_traces(&mmio_traces);
+            recent_pcie_ecam.print();
+            recent_pcie_mmio.print();
+            recent_pcie_pio.print();
+            recent_xhci.print(platform.xhci_event_lifecycle_stats());
+            print_hid_semantic_summary(&platform);
+            print_nvme_command_trace(&platform);
+            println!("UART RX remaining bytes: {}", platform.uart_input_len());
+            for trigger in &uart_triggers {
+                println!(
+                    "UART RX injection {}: fired={} bytes={}",
+                    trigger.name(),
+                    trigger.fired(),
+                    trigger.bytes_len()
+                );
+            }
+            for trigger in &xhci_hid_boot_key_triggers {
+                trigger.print_summary(&platform);
+            }
+            for trigger in &xhci_setup_input_triggers {
+                trigger.print_summary(&platform);
+            }
+            for trigger in &xhci_pointer_input_triggers {
+                trigger.print_summary(&platform);
+            }
+            if let Some(stats) = platform.pci_boot_media_stats() {
+                print_block_media_stats("PCI boot-media stats", stats);
+            }
+            if let Some(trace) = platform.pci_boot_media_request_trace() {
+                print_block_request_trace("recent PCI boot-media requests", &trace);
+            }
+            if let Some(stats) = platform.virtio_iso_stats() {
+                print_block_media_stats("legacy virtio-mmio ISO stats", stats);
+            }
+            if let Some(trace) = platform.virtio_iso_request_trace() {
+                print_block_request_trace("recent legacy virtio-mmio ISO requests", &trace);
+            }
+            let ramfb_config = platform.ramfb_config();
+            match ramfb_config {
+                Some(config) => println!(
+                    "ramfb config: addr={:#x} fourcc={:#010x} xrgb8888={} {}x{} stride={}",
+                    config.addr,
+                    config.fourcc,
+                    config.is_xrgb8888(),
+                    config.width,
+                    config.height,
+                    config.stride
+                ),
+                None => println!("ramfb config: inactive"),
+            }
+            ramfb_dump::print_and_dump(ramfb_config, &guest_ram);
+            println!("symbol lines: {}", symbols.len());
+            for line in symbols.iter().rev().take(8).rev() {
+                println!("{line}");
+            }
+            if redist_hi != 0 {
+                println!(
                 "gic-redist IPA range: {redist_lo:#x}..={redist_hi:#x} (redist base {:#x}, frame0 ends {:#x})",
                 machine::GIC_REDIST.base,
                 machine::GIC_REDIST.base + 0x20000
             );
+            }
+            println!("serial bytes: {}", serial.len());
+            println!(
+                "--- serial (tail) ---\n{}\n--- end ---",
+                String::from_utf8_lossy(&serial)
+            );
+            break 'reboot;
         }
-        println!("serial bytes: {}", serial.len());
-        println!(
-            "--- serial (tail) ---\n{}\n--- end ---",
-            String::from_utf8_lossy(&serial)
-        );
     }
 }

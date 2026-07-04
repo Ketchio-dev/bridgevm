@@ -13,14 +13,17 @@ pub(crate) const EVENT_RING: u64 = machine::RAM_BASE + 0x3000;
 pub(crate) const DCBAA: u64 = machine::RAM_BASE + 0x4000;
 pub(crate) const INPUT_CONTEXT: u64 = machine::RAM_BASE + 0x5000;
 pub(crate) const DCI3_RING: u64 = machine::RAM_BASE + 0x8000;
+pub(crate) const DCI5_RING: u64 = machine::RAM_BASE + 0x8400;
 pub(crate) const DCI3_KEY_BUFFER: u64 = machine::RAM_BASE + 0x8800;
 pub(crate) const DCI3_RELEASE_BUFFER: u64 = machine::RAM_BASE + 0x8820;
+pub(crate) const DCI5_POINTER_BUFFER: u64 = machine::RAM_BASE + 0x8860;
 pub(crate) const OUTPUT_CONTEXT: u64 = machine::RAM_BASE + 0x9000;
 pub(crate) const TRB_SIZE: u64 = 16;
 
 const XHCI_BAR0: u64 = machine::PCIE_MMIO_32.base + 0x2_0000;
 const ENABLE_SLOT_ID: u32 = 1;
 const DCI3: u32 = 3;
+const DCI5: u32 = 5;
 const TRB_TYPE_CONFIGURE_ENDPOINT: u32 = 12;
 const TRB_TYPE_COMMAND_COMPLETION_EVENT: u32 = 33;
 const TRB_TYPE_PORT_STATUS_CHANGE_EVENT: u32 = 34;
@@ -29,11 +32,13 @@ const TRB_TYPE_NORMAL: u32 = 1;
 const COMPLETION_CODE_SUCCESS: u32 = 1;
 const PORT_STATUS_CHANGE_EVENT_PARAMETER: u64 = 1 << 24;
 const DCI3_INPUT_CONTEXT_OFFSET: u64 = 0x80;
+const DCI5_INPUT_CONTEXT_OFFSET: u64 = 0xc0;
 const INPUT_CONTROL_ADD_CONTEXT_OFFSET: u64 = 0x04;
 const EP_CONTEXT_DWORD1_OFFSET: u64 = 0x04;
 const EP_TR_DEQUEUE_OFFSET: u64 = 0x08;
 const EP_CONTEXT_DWORD4_OFFSET: u64 = 0x10;
 const DCI3_ADD_CONTEXT_FLAG: u32 = 1 << DCI3;
+const DCI5_ADD_CONTEXT_FLAG: u32 = 1 << DCI5;
 const DCI3_DWORD1: u32 = (3 << 1) | (3 << 3) | (8 << 16);
 const DCI3_DWORD4: u32 = 8;
 const TRB_CYCLE: u64 = 1;
@@ -152,6 +157,53 @@ pub(crate) fn configure_dci3_interrupt_in_over_bar0(
     command_completion_event_index + 1
 }
 
+pub(crate) fn configure_dci3_and_dci5_interrupt_in_over_bar0(
+    platform: &mut VirtPlatform,
+    mem: &mut FlatGuestRam,
+) -> u64 {
+    write_event_ring_table(mem);
+    write_u64(mem, DCBAA + (u64::from(ENABLE_SLOT_ID) * 8), OUTPUT_CONTEXT);
+    write_u32(
+        mem,
+        INPUT_CONTEXT + INPUT_CONTROL_ADD_CONTEXT_OFFSET,
+        DCI3_ADD_CONTEXT_FLAG | DCI5_ADD_CONTEXT_FLAG,
+    );
+    write_endpoint_context(mem, DCI3_INPUT_CONTEXT_OFFSET, DCI3_RING);
+    write_endpoint_context(mem, DCI5_INPUT_CONTEXT_OFFSET, DCI5_RING);
+    write_command_trb_with_parameter(
+        mem,
+        INPUT_CONTEXT,
+        command_control(TRB_TYPE_CONFIGURE_ENDPOINT, ENABLE_SLOT_ID),
+    );
+    for (offset, size, value) in [
+        (0x58, 8, COMMAND_RING | TRB_CYCLE),
+        (0x70, 8, DCBAA),
+        (0x78, 4, 1),
+        (0x1020, 4, 2),
+        (0x1028, 4, 1),
+        (0x1030, 8, ERST),
+        (0x1038, 8, EVENT_RING),
+        (0x2000, 4, 0),
+    ] {
+        write_xhci_bar0(platform, mem, offset, size, value);
+    }
+    let first_event_control = read_u32(mem, EVENT_RING + 12);
+    let command_completion_event_index =
+        if ((first_event_control >> 10) & 0x3f) == TRB_TYPE_PORT_STATUS_CHANGE_EVENT {
+            assert_eq!(
+                read_u64(mem, EVENT_RING),
+                PORT_STATUS_CHANGE_EVENT_PARAMETER
+            );
+            assert_eq!(read_u32(mem, EVENT_RING + 8), 0);
+            assert_eq!(first_event_control & 1, 1);
+            1
+        } else {
+            0
+        };
+    assert_success_completion(mem, command_completion_event_index, ENABLE_SLOT_ID);
+    command_completion_event_index + 1
+}
+
 pub(crate) fn reset_xhci_host_controller_over_bar0(
     platform: &mut VirtPlatform,
     mem: &mut FlatGuestRam,
@@ -163,6 +215,10 @@ pub(crate) fn write_dci3_normal_trb(mem: &mut FlatGuestRam, trb_gpa: u64, buffer
     write_u64(mem, trb_gpa, buffer_gpa);
     write_u32(mem, trb_gpa + 8, 8);
     write_u32(mem, trb_gpa + 12, (TRB_TYPE_NORMAL << 10) | 1);
+}
+
+pub(crate) fn write_dci5_normal_trb(mem: &mut FlatGuestRam, trb_gpa: u64, buffer_gpa: u64) {
+    write_dci3_normal_trb(mem, trb_gpa, buffer_gpa);
 }
 
 pub(crate) fn ring_dci3_doorbell(platform: &mut VirtPlatform, mem: &mut FlatGuestRam) {
@@ -197,6 +253,21 @@ pub(crate) fn assert_success_dci3_transfer_event_for_trb(
     assert_eq!(control & 1, 1);
 }
 
+pub(crate) fn assert_success_dci5_transfer_event_for_trb(
+    mem: &FlatGuestRam,
+    event_gpa: u64,
+    trb_gpa: u64,
+) {
+    assert_eq!(read_u64(mem, event_gpa), trb_gpa);
+    assert_eq!(read_u32(mem, event_gpa + 8) & 0x00ff_ffff, 3);
+    assert_eq!(read_u32(mem, event_gpa + 8) >> 24, 13);
+    let control = read_u32(mem, event_gpa + 12);
+    assert_eq!((control >> 10) & 0x3f, TRB_TYPE_TRANSFER_EVENT);
+    assert_eq!((control >> 16) & 0x1f, DCI5);
+    assert_eq!(control >> 24, ENABLE_SLOT_ID);
+    assert_eq!(control & 1, 1);
+}
+
 pub(crate) fn read_bytes(mem: &FlatGuestRam, gpa: u64, len: usize) -> Vec<u8> {
     mem.read_bytes(gpa, len).unwrap()
 }
@@ -223,6 +294,24 @@ fn write_command_trb_with_parameter(mem: &mut FlatGuestRam, parameter: u64, comm
 fn write_event_ring_table(mem: &mut FlatGuestRam) {
     assert!(mem.write_bytes(ERST, &EVENT_RING.to_le_bytes()));
     assert!(mem.write_bytes(ERST + 8, &16u32.to_le_bytes()));
+}
+
+fn write_endpoint_context(mem: &mut FlatGuestRam, offset: u64, ring: u64) {
+    write_u32(
+        mem,
+        INPUT_CONTEXT + offset + EP_CONTEXT_DWORD1_OFFSET,
+        DCI3_DWORD1,
+    );
+    write_u64(
+        mem,
+        INPUT_CONTEXT + offset + EP_TR_DEQUEUE_OFFSET,
+        ring | TRB_CYCLE,
+    );
+    write_u32(
+        mem,
+        INPUT_CONTEXT + offset + EP_CONTEXT_DWORD4_OFFSET,
+        DCI3_DWORD4,
+    );
 }
 
 fn assert_success_completion(mem: &FlatGuestRam, event_index: u64, expected_slot_id: u32) {

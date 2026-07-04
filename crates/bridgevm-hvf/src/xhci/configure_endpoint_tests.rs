@@ -19,6 +19,7 @@ pub(super) const DCBAA: u64 = 0x4000;
 pub(super) const DCI3: u32 = 3;
 pub(super) const DCI3_INPUT_CONTEXT_OFFSET: u64 = 0x80;
 pub(super) const DCI3_OUTPUT_CONTEXT_OFFSET: u64 = 0x60;
+pub(super) const INPUT_CONTROL_DROP_CONTEXT_OFFSET: u64 = 0x00;
 pub(super) const INPUT_CONTROL_ADD_CONTEXT_OFFSET: u64 = 0x04;
 pub(super) const EP_CONTEXT_DWORD1_OFFSET: u64 = 0x04;
 pub(super) const EP_TR_DEQUEUE_OFFSET: u64 = 0x08;

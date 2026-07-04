@@ -1,8 +1,13 @@
 use super::{trace, XhciController};
 
+#[path = "setup_input_report/kind.rs"]
+mod kind;
+
+use kind::SetupInputReportKind;
+
 pub(super) const HID_BOOT_KEYBOARD_REPORT_LEN: u32 = 8;
 pub(super) const HID_BOOT_KEYBOARD_NO_KEY_REPORT: [u8; 8] = [0; 8];
-const MAX_SETUP_INPUT_ACTIONS: usize = 8;
+const MAX_SETUP_INPUT_ACTIONS: usize = 32;
 const MAX_SETUP_INPUT_REPORTS: usize = MAX_SETUP_INPUT_ACTIONS * 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10,6 +15,11 @@ pub enum SetupInputAction {
     Tab,
     Enter,
     Space,
+    Key {
+        name: &'static str,
+        modifier: u8,
+        usage: u8,
+    },
 }
 
 impl SetupInputAction {
@@ -18,6 +28,7 @@ impl SetupInputAction {
             Self::Tab => "tab",
             Self::Enter => "enter",
             Self::Space => "space",
+            Self::Key { name, .. } => name,
         }
     }
 
@@ -26,11 +37,16 @@ impl SetupInputAction {
             Self::Tab => 0x2b,
             Self::Enter => 0x28,
             Self::Space => 0x2c,
+            Self::Key { usage, .. } => usage,
         }
     }
 
     const fn key_report(self) -> [u8; 8] {
-        [0, 0, self.usage(), 0, 0, 0, 0, 0]
+        let modifier = match self {
+            Self::Key { modifier, .. } => modifier,
+            Self::Tab | Self::Enter | Self::Space => 0,
+        };
+        [modifier, 0, self.usage(), 0, 0, 0, 0, 0]
     }
 }
 
@@ -43,6 +59,7 @@ pub enum XhciSetupInputQueueError {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct XhciSetupInputReportStats {
+    pub controller_reset_generation: u64,
     pub queued_actions: u64,
     pub queued_reports: u64,
     pub emitted_key_reports: u64,
@@ -50,12 +67,6 @@ pub struct XhciSetupInputReportStats {
     pub empty_sequence_rejections: u64,
     pub too_many_action_rejections: u64,
     pub busy_rejections: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SetupInputReportKind {
-    Key,
-    Release,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,11 +112,7 @@ impl BootKeyboardReportQueue {
     }
 
     pub(super) fn peek(&self) -> Option<SetupInputReport> {
-        if self.len == 0 {
-            None
-        } else {
-            Some(self.reports[self.head])
-        }
+        (!self.is_empty()).then_some(self.reports[self.head])
     }
 
     pub(super) fn pop_front(&mut self) {
@@ -261,15 +268,6 @@ impl XhciController {
                     .busy_rejections
                     .saturating_add(1);
             }
-        }
-    }
-}
-
-impl SetupInputReportKind {
-    const fn name(self) -> &'static str {
-        match self {
-            Self::Key => "key",
-            Self::Release => "release",
         }
     }
 }

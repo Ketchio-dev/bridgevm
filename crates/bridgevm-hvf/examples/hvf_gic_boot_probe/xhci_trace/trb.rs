@@ -49,6 +49,10 @@ impl Trb {
         (self.control >> 24) & 0xff
     }
 
+    pub(super) const fn endpoint_id(self) -> u32 {
+        (self.control >> 16) & 0x1f
+    }
+
     pub(super) fn kind_name(self) -> String {
         match self.kind() {
             TYPE_NORMAL => "normal".to_string(),

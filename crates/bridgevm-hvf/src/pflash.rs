@@ -71,6 +71,10 @@ impl P30NorFlash {
         &self.bytes
     }
 
+    pub fn reset_runtime_state(&mut self) {
+        self.mode = Mode::ReadArray;
+    }
+
     pub fn access(&mut self, gpa: u64, op: MmioOp) -> MmioOutcome {
         let Some(offset) = self.offset(gpa) else {
             return MmioOutcome::Unmapped;

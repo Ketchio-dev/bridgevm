@@ -38,6 +38,12 @@ pub(crate) use super::trace_dci3_drain::{dci3_drain_blocked, Dci3DrainBlockedTra
 pub(crate) use super::trace_dci3_input_capture::{
     dci3_input_capture, Dci3InputCaptureTrace, Dci3InputContextField,
 };
+#[cfg(test)]
+pub(crate) use super::trace_dci5_drain::assert_dci5_drain_blocked_trace_format_includes_parseable_state;
+pub(crate) use super::trace_dci5_drain::{dci5_drain_blocked, Dci5DrainBlockedTrace};
+pub(crate) use super::trace_dci5_input_capture::{
+    dci5_input_capture, Dci5InputCaptureTrace, Dci5InputContextField,
+};
 pub(crate) use super::trace_host_controller_reset::host_controller_reset;
 
 pub(crate) fn bringup_enabled() -> bool {

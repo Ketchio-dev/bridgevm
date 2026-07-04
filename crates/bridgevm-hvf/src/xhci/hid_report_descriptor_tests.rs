@@ -18,6 +18,9 @@ const HID_REPORT_DESCRIPTOR_LENGTH: u16 = 63;
 const HID_REPORT_DESCRIPTOR_LENGTH_USIZE: usize = 63;
 const HID_REPORT_DESCRIPTOR_OVERLENGTH: u16 = 255;
 const HID_REPORT_DESCRIPTOR_OVERLENGTH_USIZE: usize = 255;
+const HID_CLASS_DESCRIPTOR_LENGTH: u16 = 9;
+const HID_CLASS_DESCRIPTOR_LENGTH_USIZE: usize = 9;
+const HID_CLASS_DESCRIPTOR_TYPE: u8 = 0x21;
 const HID_REPORT_DESCRIPTOR_TYPE: u8 = 0x22;
 
 const BOOT_KEYBOARD_HID_REPORT_DESCRIPTOR: [u8; HID_REPORT_DESCRIPTOR_LENGTH_USIZE] = [
@@ -26,6 +29,9 @@ const BOOT_KEYBOARD_HID_REPORT_DESCRIPTOR: [u8; HID_REPORT_DESCRIPTOR_LENGTH_USI
     0x05, 0x08, 0x19, 0x01, 0x29, 0x05, 0x91, 0x02, 0x95, 0x01, 0x75, 0x03, 0x91, 0x03, 0x95, 0x06,
     0x75, 0x08, 0x15, 0x00, 0x25, 0x65, 0x05, 0x07, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00, 0xc0,
 ];
+
+const BOOT_POINTER_HID_CLASS_DESCRIPTOR: [u8; HID_CLASS_DESCRIPTOR_LENGTH_USIZE] =
+    [9, 0x21, 0x11, 0x01, 0, 1, HID_REPORT_DESCRIPTOR_TYPE, 51, 0];
 
 #[test]
 fn ep0_get_descriptor_hid_report_returns_boot_keyboard_report_descriptor() {
@@ -122,6 +128,55 @@ fn ep0_get_descriptor_hid_report_short_completes_overlength_request() {
     assert_eq!(xhci.slot1_ep0_dequeue, EP0_RING + (TRB_SIZE * 3));
 }
 
+#[test]
+fn ep0_get_descriptor_hid_class_returns_pointer_hid_descriptor_for_interface_one() {
+    // Given: Windows asks interface 1 for its HID class descriptor independently of config.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x9000);
+    prepare_addressed_hid_descriptor_transfer(
+        &mut xhci,
+        &mut mem,
+        HID_CLASS_DESCRIPTOR_TYPE,
+        1,
+        HID_CLASS_DESCRIPTOR_LENGTH,
+    );
+    assert!(mem.write_bytes(
+        DATA_STAGE_BUFFER,
+        &[0xaa; HID_CLASS_DESCRIPTOR_LENGTH_USIZE + 1],
+    ));
+
+    // When: the guest rings slot 1 endpoint 0.
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
+
+    // Then: the interface-1 HID descriptor matches the advertised pointer report length.
+    assert_eq!(
+        mem.read_bytes(DATA_STAGE_BUFFER, HID_CLASS_DESCRIPTOR_LENGTH_USIZE)
+            .unwrap(),
+        BOOT_POINTER_HID_CLASS_DESCRIPTOR
+    );
+    assert_eq!(
+        mem.read_bytes(
+            DATA_STAGE_BUFFER + u64::from(HID_CLASS_DESCRIPTOR_LENGTH),
+            1
+        )
+        .unwrap(),
+        [0xaa]
+    );
+    assert_success_transfer_event_for_trb(&mem, EVENT_RING + TRB_SIZE, EP0_RING);
+    assert_success_transfer_event_with_residual(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 2),
+        EP0_RING + TRB_SIZE,
+        0,
+    );
+    assert_success_transfer_event_with_residual(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 3),
+        EP0_RING + (TRB_SIZE * 2),
+        0,
+    );
+}
+
 fn prepare_addressed_hid_report_descriptor_transfer(
     xhci: &mut XhciController,
     mem: &mut TestRam,
@@ -138,14 +193,41 @@ fn prepare_addressed_hid_report_descriptor_transfer(
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, mem));
 }
 
+fn prepare_addressed_hid_descriptor_transfer(
+    xhci: &mut XhciController,
+    mem: &mut TestRam,
+    descriptor_type: u8,
+    interface_index: u16,
+    length: u16,
+) {
+    mem.write_u64(INPUT_CONTEXT + 0x40 + 8, EP0_RING | 1);
+    setup_command_rings_with_parameter(
+        xhci,
+        mem,
+        INPUT_CONTEXT,
+        command_control(TRB_TYPE_ADDRESS_DEVICE, ENABLE_SLOT_ID),
+    );
+    write_hid_descriptor_transfer(mem, descriptor_type, interface_index, length);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, mem));
+}
+
 fn write_hid_report_descriptor_transfer(mem: &mut TestRam, length: u16) {
+    write_hid_descriptor_transfer(mem, HID_REPORT_DESCRIPTOR_TYPE, 0, length);
+}
+
+fn write_hid_descriptor_transfer(
+    mem: &mut TestRam,
+    descriptor_type: u8,
+    interface_index: u16,
+    length: u16,
+) {
     mem.write_u64(
         EP0_RING,
         setup_packet_parameter(SetupPacketFields {
             bm_request_type: 0x81,
             request: 0x06,
-            value: u16::from(HID_REPORT_DESCRIPTOR_TYPE) << 8,
-            index: 0,
+            value: u16::from(descriptor_type) << 8,
+            index: interface_index,
             length,
         }),
     );

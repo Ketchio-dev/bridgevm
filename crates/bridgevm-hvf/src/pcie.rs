@@ -766,6 +766,21 @@ pub struct PcieNvmeEndpointState {
     pub bar0_assigned: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PcieEcamConfig {
+    pub xhci_present: bool,
+    pub virtio_blk_present: bool,
+}
+
+impl Default for PcieEcamConfig {
+    fn default() -> Self {
+        Self {
+            xhci_present: true,
+            virtio_blk_present: true,
+        }
+    }
+}
+
 impl Default for PcieEcam {
     fn default() -> Self {
         Self::new()
@@ -776,14 +791,18 @@ impl PcieEcam {
     /// A fresh root complex: one host bridge at `00:00.0`, one NVMe endpoint at
     /// `00:01.0`, and the QEMU-oracle installer media endpoint at `00:03.0`.
     pub fn new() -> Self {
-        Self {
-            functions: vec![
-                Function::host_bridge(),
-                Function::nvme(),
-                Function::xhci(),
-                Function::virtio_blk(),
-            ],
+        Self::new_with_config(PcieEcamConfig::default())
+    }
+
+    pub fn new_with_config(config: PcieEcamConfig) -> Self {
+        let mut functions = vec![Function::host_bridge(), Function::nvme()];
+        if config.xhci_present {
+            functions.push(Function::xhci());
         }
+        if config.virtio_blk_present {
+            functions.push(Function::virtio_blk());
+        }
+        Self { functions }
     }
 
     /// The size of the ECAM window this model decodes.

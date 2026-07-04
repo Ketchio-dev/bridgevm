@@ -10,6 +10,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::platform_virt::VirtPlatformDeviceConfig;
+
 // The default firmware code volume is vendored in-repo: a current
 // tianocore/edk2 ArmVirtQemu build. Homebrew's stale qemu-11.0.1
 // `edk2-aarch64-code.fd` does NOT bind our NVMe endpoint (its older
@@ -188,6 +190,7 @@ pub struct VirtBootMediaConfig {
     /// backed by a host raw file so a large sparse target avoids resident RAM.
     pub nvme_target: Option<WritableMedia>,
     pub linux_boot: Option<LinuxBootMedia>,
+    pub platform_devices: VirtPlatformDeviceConfig,
 }
 
 impl VirtBootMediaConfig {
@@ -201,6 +204,7 @@ impl VirtBootMediaConfig {
             nvme_disk: None,
             nvme_target: None,
             linux_boot: None,
+            platform_devices: VirtPlatformDeviceConfig::default(),
         }
     }
 
@@ -248,6 +252,13 @@ impl VirtBootMediaConfig {
                 .with_initrd_path(env::var("BRIDGEVM_LINUX_INITRD").ok())
                 .with_cmdline(cmdline)
         });
+
+        cfg.platform_devices.xhci_present = !env_flag("BRIDGEVM_DISABLE_XHCI");
+        let virtio_iso_present = !env_flag("BRIDGEVM_DISABLE_VIRTIO_ISO");
+        cfg.platform_devices.virtio_boot_media_present = virtio_iso_present;
+        cfg.platform_devices.legacy_virtio_mmio_present = virtio_iso_present;
+        cfg.platform_devices.ramfb_present =
+            env_flag("BRIDGEVM_RAMFB") && !env_flag("BRIDGEVM_DISABLE_RAMFB_DEVICE");
         cfg
     }
 }
@@ -270,16 +281,23 @@ pub fn read_bounded_file(path: impl AsRef<Path>, max_bytes: usize) -> io::Result
 }
 
 fn env_flag(name: &str) -> bool {
-    matches!(
-        env::var(name).ok().as_deref(),
-        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
-    )
+    let Ok(value) = env::var(name) else {
+        return false;
+    };
+    let value = value.trim();
+    value == "1"
+        || value.eq_ignore_ascii_case("true")
+        || value.eq_ignore_ascii_case("yes")
+        || value.eq_ignore_ascii_case("on")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn temp_path(name: &str) -> PathBuf {
         let nanos = SystemTime::now()
@@ -290,6 +308,17 @@ mod tests {
             "bridgevm-hvf-media-{name}-{}-{nanos}",
             std::process::id()
         ))
+    }
+
+    fn clear_probe_disable_env() {
+        for name in [
+            "BRIDGEVM_DISABLE_XHCI",
+            "BRIDGEVM_DISABLE_VIRTIO_ISO",
+            "BRIDGEVM_RAMFB",
+            "BRIDGEVM_DISABLE_RAMFB_DEVICE",
+        ] {
+            env::remove_var(name);
+        }
     }
 
     #[test]
@@ -357,6 +386,46 @@ mod tests {
         assert_eq!(cfg.installer_iso_transport, InstallerIsoTransport::Pci);
         assert!(cfg.nvme_disk.is_none());
         assert!(cfg.linux_boot.is_none());
+        assert_eq!(
+            cfg.platform_devices,
+            crate::platform_virt::VirtPlatformDeviceConfig::default()
+        );
+    }
+
+    #[test]
+    fn probe_disable_env_parses_device_omission_switches() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_probe_disable_env();
+        env::set_var("BRIDGEVM_DISABLE_XHCI", "true");
+        env::set_var("BRIDGEVM_DISABLE_VIRTIO_ISO", "yes");
+        env::set_var("BRIDGEVM_RAMFB", "1");
+        env::set_var("BRIDGEVM_DISABLE_RAMFB_DEVICE", "on");
+
+        let cfg = VirtBootMediaConfig::from_probe_env();
+
+        assert!(!cfg.platform_devices.xhci_present);
+        assert!(!cfg.platform_devices.virtio_boot_media_present);
+        assert!(!cfg.platform_devices.legacy_virtio_mmio_present);
+        assert!(!cfg.platform_devices.ramfb_present);
+        clear_probe_disable_env();
+    }
+
+    #[test]
+    fn probe_disable_env_keeps_devices_for_falsey_values() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_probe_disable_env();
+        env::set_var("BRIDGEVM_DISABLE_XHCI", "0");
+        env::set_var("BRIDGEVM_DISABLE_VIRTIO_ISO", "false");
+        env::set_var("BRIDGEVM_RAMFB", "1");
+        env::set_var("BRIDGEVM_DISABLE_RAMFB_DEVICE", "no");
+
+        let cfg = VirtBootMediaConfig::from_probe_env();
+
+        assert!(cfg.platform_devices.xhci_present);
+        assert!(cfg.platform_devices.virtio_boot_media_present);
+        assert!(cfg.platform_devices.legacy_virtio_mmio_present);
+        assert!(cfg.platform_devices.ramfb_present);
+        clear_probe_disable_env();
     }
 
     #[test]

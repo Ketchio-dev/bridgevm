@@ -29,6 +29,8 @@ const COMMAND_SLOT_ID_MASK: u32 = 0xff;
 const COMMAND_ENDPOINT_ID_SHIFT: u32 = 16;
 const COMMAND_ENDPOINT_ID_MASK: u32 = 0x1f;
 const ENDPOINT_ID_EP0: u32 = 1;
+const ENDPOINT_ID_DCI3: u32 = 3;
+const ENDPOINT_ID_DCI5: u32 = 5;
 const TR_DEQUEUE_POINTER_MASK: u64 = !0xf;
 const MAX_LINK_TRBS_PER_DOORBELL: usize = 8;
 
@@ -109,11 +111,28 @@ impl XhciController {
                         return false;
                     };
                     let slot_id = command_slot_id(command_control);
-                    if slot_id == SLOT_ID && command_endpoint_id(command_control) == ENDPOINT_ID_EP0
-                    {
-                        self.slot1_ep0_dequeue = raw_dequeue & TR_DEQUEUE_POINTER_MASK;
-                        self.slot1_ep0_dcs = raw_dequeue & 1 != 0;
-                        self.write_slot1_ep0_output_dequeue(mem);
+                    if slot_id == SLOT_ID {
+                        match command_endpoint_id(command_control) {
+                            ENDPOINT_ID_EP0 => {
+                                self.slot1_ep0_dequeue = raw_dequeue & TR_DEQUEUE_POINTER_MASK;
+                                self.slot1_ep0_dcs = raw_dequeue & 1 != 0;
+                                self.write_slot1_ep0_output_dequeue(mem);
+                            }
+                            ENDPOINT_ID_DCI3 => {
+                                self.slot1_dci3_dequeue = raw_dequeue & TR_DEQUEUE_POINTER_MASK;
+                                self.slot1_dci3_ring_base = self.slot1_dci3_dequeue;
+                                self.slot1_dci3_dcs = raw_dequeue & 1 != 0;
+                                self.slot1_dci3_two_entry_queue_rearm = false;
+                                self.write_slot1_dci3_output_dequeue(mem);
+                            }
+                            ENDPOINT_ID_DCI5 => {
+                                self.slot1_dci5_dequeue = raw_dequeue & TR_DEQUEUE_POINTER_MASK;
+                                self.slot1_dci5_ring_base = self.slot1_dci5_dequeue;
+                                self.slot1_dci5_dcs = raw_dequeue & 1 != 0;
+                                self.write_slot1_dci5_output_dequeue(mem);
+                            }
+                            _ => {}
+                        }
                     }
                     let posted = self.post_command_completion(mem, command_trb, slot_id);
                     if posted {
@@ -171,6 +190,7 @@ impl XhciController {
                         if slot_id == SLOT_ID {
                             self.usb_configuration = 0;
                             self.invalidate_slot1_dci3_endpoint_state();
+                            self.invalidate_slot1_dci5_endpoint_state();
                         }
                         self.advance_command_dequeue(command_trb);
                     }

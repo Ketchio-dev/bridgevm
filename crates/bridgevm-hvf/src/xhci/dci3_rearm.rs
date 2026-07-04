@@ -83,7 +83,11 @@ impl XhciController {
                     self.slot1_dci3_dequeue = self.slot1_dci3_ring_base;
                     Dci3RearmResult::Rearmed
                 }
-                _ => Dci3RearmResult::Refused("rearm_refused_unsupported_ring_base_trb_type"),
+                _ => self
+                    .rearm_slot1_dci3_to_last_dequeue_if_queued(mem, rearm_policy)
+                    .unwrap_or(Dci3RearmResult::Refused(
+                        "rearm_refused_unsupported_ring_base_trb_type",
+                    )),
             };
         }
         let Some(minimum_consumed_trbs) =
@@ -109,7 +113,10 @@ impl XhciController {
         };
         let expected_cycle = if self.slot1_dci3_dcs { TRB_CYCLE } else { 0 };
         if interrupt_transfer.control & TRB_CYCLE != expected_cycle {
-            if !wrapped_base_rearm {
+            let reusable_two_entry_cycle_resync =
+                matches!(rearm_policy, Dci3RearmPolicy::ReusableQueueDrain)
+                    && self.slot1_dci3_two_entry_queue_rearm;
+            if !wrapped_base_rearm && !reusable_two_entry_cycle_resync {
                 return Dci3RearmResult::Refused("rearm_refused_cycle_mismatch");
             }
             self.slot1_dci3_dcs = interrupt_transfer.control & TRB_CYCLE != 0;
@@ -119,8 +126,35 @@ impl XhciController {
                 self.slot1_dci3_dequeue = self.slot1_dci3_ring_base;
                 Dci3RearmResult::Rearmed
             }
-            _ => Dci3RearmResult::Refused("rearm_refused_unsupported_ring_base_trb_type"),
+            _ => self
+                .rearm_slot1_dci3_to_last_dequeue_if_queued(mem, rearm_policy)
+                .unwrap_or(Dci3RearmResult::Refused(
+                    "rearm_refused_unsupported_ring_base_trb_type",
+                )),
         }
+    }
+
+    fn rearm_slot1_dci3_to_last_dequeue_if_queued(
+        &mut self,
+        mem: &dyn GuestMemoryMut,
+        rearm_policy: Dci3RearmPolicy,
+    ) -> Option<Dci3RearmResult> {
+        if !matches!(rearm_policy, Dci3RearmPolicy::ReusableQueueDrain)
+            || !self.slot1_dci3_two_entry_queue_rearm
+            || !self.slot1_dci3_last_reusable
+            || self.slot1_dci3_last_dequeue == 0
+            || self.slot1_dci3_last_dequeue == self.slot1_dci3_ring_base
+            || self.slot1_dci3_last_ring_base != self.slot1_dci3_ring_base
+        {
+            return None;
+        }
+
+        self.reacquire_slot1_dci3_from_dequeue(
+            mem,
+            self.slot1_dci3_last_dequeue,
+            self.slot1_dci3_last_dcs,
+        )
+        .then_some(Dci3RearmResult::Rearmed)
     }
 
     pub(super) fn trace_dci3_drain_blocked(

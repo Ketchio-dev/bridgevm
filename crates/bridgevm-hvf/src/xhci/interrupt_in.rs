@@ -3,8 +3,8 @@ use crate::fwcfg::GuestMemoryMut;
 use super::{
     dci3_rearm::{Dci3RearmPolicy, Dci3RearmResult},
     interrupt_trb::{
-        read_transfer_trb, transfer_event_control, trb_interrupter_target, trb_transfer_length,
-        trb_type, InterruptTransferTrb, COMPLETION_CODE_SHIFT, COMPLETION_CODE_SUCCESS,
+        read_chained_event_data, read_transfer_trb, transfer_event_control, trb_interrupter_target,
+        trb_transfer_length, trb_type, COMPLETION_CODE_SHIFT, COMPLETION_CODE_SUCCESS,
         LINK_TRB_POINTER_MASK, TRB_CYCLE, TRB_LINK_TOGGLE_CYCLE, TRB_SIZE_BYTES, TRB_TYPE_LINK,
         TRB_TYPE_NORMAL,
     },
@@ -16,9 +16,6 @@ use super::{
 const SLOT_ID: u32 = 1;
 const ENDPOINT_ID_DCI3: u32 = 3;
 const MAX_LINK_TRBS_PER_DOORBELL: usize = 8;
-const TRB_CHAIN: u32 = 1 << 4;
-const TRB_IOC: u32 = 1 << 5;
-const TRB_TYPE_EVENT_DATA: u32 = 7;
 const TRANSFER_EVENT_ED: u32 = 1 << 2;
 /// QEMU oracle: a TD that moves fewer bytes than requested completes with
 /// Short Packet, not Success.
@@ -212,7 +209,7 @@ impl XhciController {
         self.reacquire_slot1_dci3_from_dequeue(mem, dequeue, dcs)
     }
 
-    fn reacquire_slot1_dci3_from_dequeue(
+    pub(super) fn reacquire_slot1_dci3_from_dequeue(
         &mut self,
         mem: &dyn GuestMemoryMut,
         dequeue: u64,
@@ -236,26 +233,6 @@ impl XhciController {
             _ => false,
         }
     }
-}
-
-fn read_chained_event_data(
-    mem: &dyn GuestMemoryMut,
-    normal: &InterruptTransferTrb,
-    dcs: bool,
-) -> Option<InterruptTransferTrb> {
-    if normal.control & TRB_CHAIN == 0 {
-        return None;
-    }
-    let event_data_gpa = normal.gpa.checked_add(TRB_SIZE_BYTES)?;
-    let event_data = read_transfer_trb(mem, event_data_gpa)?;
-    let expected_cycle = if dcs { TRB_CYCLE } else { 0 };
-    if event_data.control & TRB_CYCLE != expected_cycle
-        || trb_type(event_data.control) != TRB_TYPE_EVENT_DATA
-        || event_data.control & TRB_IOC == 0
-    {
-        return None;
-    }
-    Some(event_data)
 }
 
 fn trace_blocked_trb(

@@ -8,14 +8,14 @@ use crate::EXIT_CANCELED;
 
 pub(crate) struct SetupInputHostWake {
     fired: Arc<AtomicBool>,
-    armed_deadline: Option<Instant>,
+    armed_deadlines: Vec<Instant>,
 }
 
 impl SetupInputHostWake {
     pub(crate) fn new() -> Self {
         Self {
             fired: Arc::new(AtomicBool::new(false)),
-            armed_deadline: None,
+            armed_deadlines: Vec::new(),
         }
     }
 
@@ -23,10 +23,10 @@ impl SetupInputHostWake {
     where
         F: FnOnce() + Send + 'static,
     {
-        if self.armed_deadline == Some(deadline) {
+        if self.armed_deadlines.contains(&deadline) {
             return false;
         }
-        self.armed_deadline = Some(deadline);
+        self.armed_deadlines.push(deadline);
         let delay = deadline.saturating_duration_since(Instant::now());
         let fired = Arc::clone(&self.fired);
         std::thread::spawn(move || {

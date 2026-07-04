@@ -8,6 +8,9 @@ pub(super) const TRB_TYPE_NORMAL: u32 = 1;
 pub(super) const LINK_TRB_POINTER_MASK: u64 = !0xf;
 pub(super) const COMPLETION_CODE_SUCCESS: u32 = 1;
 pub(super) const COMPLETION_CODE_SHIFT: u32 = 24;
+const TRB_CHAIN: u32 = 1 << 4;
+const TRB_IOC: u32 = 1 << 5;
+const TRB_TYPE_EVENT_DATA: u32 = 7;
 
 const TRB_SIZE: usize = 16;
 const TRB_TYPE_SHIFT: u32 = 10;
@@ -54,6 +57,26 @@ pub(super) const fn transfer_event_control(slot_id: u32, endpoint_id: u32) -> u3
     (slot_id << EVENT_SLOT_ID_SHIFT)
         | (endpoint_id << EVENT_ENDPOINT_ID_SHIFT)
         | (TRB_TYPE_TRANSFER_EVENT << TRB_TYPE_SHIFT)
+}
+
+pub(super) fn read_chained_event_data(
+    mem: &dyn GuestMemoryMut,
+    normal: &InterruptTransferTrb,
+    dcs: bool,
+) -> Option<InterruptTransferTrb> {
+    if normal.control & TRB_CHAIN == 0 {
+        return None;
+    }
+    let event_data_gpa = normal.gpa.checked_add(TRB_SIZE_BYTES)?;
+    let event_data = read_transfer_trb(mem, event_data_gpa)?;
+    let expected_cycle = if dcs { TRB_CYCLE } else { 0 };
+    if event_data.control & TRB_CYCLE != expected_cycle
+        || trb_type(event_data.control) != TRB_TYPE_EVENT_DATA
+        || event_data.control & TRB_IOC == 0
+    {
+        return None;
+    }
+    Some(event_data)
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {

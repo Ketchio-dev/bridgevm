@@ -1,12 +1,16 @@
-use bridgevm_hvf::{machine, pcie, virtio_blk::INSTALLER_ISO_SLOT};
+use bridgevm_hvf::{
+    machine, pcie, platform_virt::VirtPlatformDeviceConfig, virtio_blk::INSTALLER_ISO_SLOT,
+};
 
 pub(super) fn print_device_shape(
+    devices: VirtPlatformDeviceConfig,
     pci_installer_iso_attached: bool,
     legacy_mmio_installer_iso_attached: bool,
     nvme_namespace_bytes: u64,
 ) {
     println!("BridgeVM device shape:");
     for line in device_shape_lines(
+        devices,
         pci_installer_iso_attached,
         legacy_mmio_installer_iso_attached,
         nvme_namespace_bytes,
@@ -16,6 +20,7 @@ pub(super) fn print_device_shape(
 }
 
 fn device_shape_lines(
+    devices: VirtPlatformDeviceConfig,
     pci_installer_iso_attached: bool,
     legacy_mmio_installer_iso_attached: bool,
     nvme_namespace_bytes: u64,
@@ -28,6 +33,49 @@ fn device_shape_lines(
     };
     let iso_spi = machine::virtio_mmio_spi(iso_slot);
     let iso_intid = machine::spi_to_intid(iso_spi);
+
+    let xhci = if devices.xhci_present {
+        format!(
+            "qemu-xhci: {bus:02x}:{dev:02x}.{func} vendor={vendor:#06x} device={device:#06x} class={class:#08x} bar0_mmio64_size={bar0:#x}",
+            bus = pcie::XHCI_BDF.0,
+            dev = pcie::XHCI_BDF.1,
+            func = pcie::XHCI_BDF.2,
+            vendor = pcie::XHCI_VENDOR_ID,
+            device = pcie::XHCI_DEVICE_ID,
+            class = pcie::XHCI_CLASS_CODE,
+            bar0 = pcie::XHCI_BAR0_SIZE,
+        )
+    } else {
+        "qemu-xhci: disabled".to_string()
+    };
+    let legacy_virtio = if devices.legacy_virtio_mmio_present {
+        format!(
+            "boot-media installer ISO fallback: virtio-mmio slot {INSTALLER_ISO_SLOT} base={iso_base:#x} spi={iso_spi} intid={iso_intid} attached={legacy_mmio_installer_iso_attached}"
+        )
+    } else {
+        "boot-media installer ISO fallback: legacy virtio-mmio disabled".to_string()
+    };
+    let pci_virtio = if devices.virtio_boot_media_present {
+        format!(
+            "boot-media installer ISO: {bus:02x}:{dev:02x}.{func} virtio-blk-pci vendor={vendor:#06x} device={device:#06x} class={class:#08x} bar0_io_size={bar0:#x} bar1_msix_size={bar1:#x} bar4_modern_mmio_size={bar4:#x} attached={pci_installer_iso_attached}",
+            bus = pcie::VIRTIO_BLK_BDF.0,
+            dev = pcie::VIRTIO_BLK_BDF.1,
+            func = pcie::VIRTIO_BLK_BDF.2,
+            vendor = pcie::VIRTIO_BLK_VENDOR_ID,
+            device = pcie::VIRTIO_BLK_DEVICE_ID,
+            class = pcie::VIRTIO_BLK_CLASS_CODE,
+            bar0 = pcie::VIRTIO_BLK_BAR0_SIZE,
+            bar1 = pcie::VIRTIO_BLK_BAR1_SIZE,
+            bar4 = pcie::VIRTIO_BLK_BAR4_SIZE,
+        )
+    } else {
+        "boot-media installer ISO: virtio-blk-pci disabled".to_string()
+    };
+    let legacy_parity = if devices.legacy_virtio_mmio_present {
+        "qemu oracle parity: legacy virtio-mmio slot 31 kept as installer ISO fallback"
+    } else {
+        "qemu oracle parity: legacy virtio-mmio slot 31 omitted by disable switch"
+    };
 
     vec![
         format!(
@@ -43,43 +91,27 @@ fn device_shape_lines(
             pcie::NVME_CLASS_CODE
         ),
         format!("boot-media nvme namespace bytes={nvme_namespace_bytes}"),
-        format!(
-            "qemu-xhci: {bus:02x}:{dev:02x}.{func} vendor={vendor:#06x} device={device:#06x} class={class:#08x} bar0_mmio64_size={bar0:#x}",
-            bus = pcie::XHCI_BDF.0,
-            dev = pcie::XHCI_BDF.1,
-            func = pcie::XHCI_BDF.2,
-            vendor = pcie::XHCI_VENDOR_ID,
-            device = pcie::XHCI_DEVICE_ID,
-            class = pcie::XHCI_CLASS_CODE,
-            bar0 = pcie::XHCI_BAR0_SIZE,
-        ),
-        format!(
-            "boot-media installer ISO fallback: virtio-mmio slot {INSTALLER_ISO_SLOT} base={iso_base:#x} spi={iso_spi} intid={iso_intid} attached={legacy_mmio_installer_iso_attached}"
-        ),
-        format!(
-            "boot-media installer ISO: {bus:02x}:{dev:02x}.{func} virtio-blk-pci vendor={vendor:#06x} device={device:#06x} class={class:#08x} bar0_io_size={bar0:#x} bar1_msix_size={bar1:#x} bar4_modern_mmio_size={bar4:#x} attached={pci_installer_iso_attached}",
-            bus = pcie::VIRTIO_BLK_BDF.0,
-            dev = pcie::VIRTIO_BLK_BDF.1,
-            func = pcie::VIRTIO_BLK_BDF.2,
-            vendor = pcie::VIRTIO_BLK_VENDOR_ID,
-            device = pcie::VIRTIO_BLK_DEVICE_ID,
-            class = pcie::VIRTIO_BLK_CLASS_CODE,
-            bar0 = pcie::VIRTIO_BLK_BAR0_SIZE,
-            bar1 = pcie::VIRTIO_BLK_BAR1_SIZE,
-            bar4 = pcie::VIRTIO_BLK_BAR4_SIZE,
-        ),
+        xhci,
+        legacy_virtio,
+        pci_virtio,
         "qemu oracle parity: virtio-net-pci 00:01.0 absent (BridgeVM uses NVMe at 00:01.0)"
             .to_string(),
-        "qemu oracle parity: legacy virtio-mmio slot 31 kept as installer ISO fallback"
-            .to_string(),
+        legacy_parity.to_string(),
     ]
 }
 
 #[cfg(test)]
 mod tests {
+    use bridgevm_hvf::platform_virt::VirtPlatformDeviceConfig;
+
     #[test]
     fn summary_names_pci_boot_media_and_legacy_mmio_fallback() {
-        let lines = super::device_shape_lines(true, false, 16 * 1024 * 1024);
+        let lines = super::device_shape_lines(
+            VirtPlatformDeviceConfig::default(),
+            true,
+            false,
+            16 * 1024 * 1024,
+        );
 
         assert!(lines
             .iter()
@@ -100,7 +132,12 @@ mod tests {
             && line.contains("bar0_io_size=0x80")
             && line.contains("bar4_modern_mmio_size=0x4000")
             && line.contains("attached=true")));
-        let fallback_lines = super::device_shape_lines(false, true, 16 * 1024 * 1024);
+        let fallback_lines = super::device_shape_lines(
+            VirtPlatformDeviceConfig::default(),
+            false,
+            true,
+            16 * 1024 * 1024,
+        );
         assert!(fallback_lines
             .iter()
             .any(|line| line.contains("virtio-mmio slot 31") && line.contains("attached=true")));
@@ -110,5 +147,28 @@ mod tests {
                 .any(|line| line.contains("00:03.0 virtio-blk-pci")
                     && line.contains("attached=false"))
         );
+    }
+
+    #[test]
+    fn summary_marks_disabled_devices_absent() {
+        let lines = super::device_shape_lines(
+            VirtPlatformDeviceConfig {
+                xhci_present: false,
+                virtio_boot_media_present: false,
+                legacy_virtio_mmio_present: false,
+                ramfb_present: false,
+            },
+            true,
+            true,
+            16 * 1024 * 1024,
+        );
+
+        assert!(lines.iter().any(|line| line == "qemu-xhci: disabled"));
+        assert!(lines
+            .iter()
+            .any(|line| line == "boot-media installer ISO fallback: legacy virtio-mmio disabled"));
+        assert!(lines
+            .iter()
+            .any(|line| line == "boot-media installer ISO: virtio-blk-pci disabled"));
     }
 }

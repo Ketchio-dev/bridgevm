@@ -20,7 +20,13 @@ pub(super) struct RamfbDelayCheckpoint {
 
 pub(super) fn parse_setup_input_ramfb_delay_env(
 ) -> Result<Vec<RamfbDelayCheckpoint>, XhciSetupInputEnvError> {
-    match std::env::var(SETUP_INPUT_RAMFB_DELAY_ENV) {
+    parse_setup_input_ramfb_delay_named_env(SETUP_INPUT_RAMFB_DELAY_ENV)
+}
+
+pub(super) fn parse_setup_input_ramfb_delay_named_env(
+    env_name: &'static str,
+) -> Result<Vec<RamfbDelayCheckpoint>, XhciSetupInputEnvError> {
+    match std::env::var(env_name) {
         Ok(value) => parse_setup_input_ramfb_delay_value(&value),
         Err(std::env::VarError::NotPresent) => Ok(default_ramfb_delay_checkpoints()),
         Err(std::env::VarError::NotUnicode(_)) => Err(XhciSetupInputEnvError::RamfbDelayInvalid {
@@ -30,7 +36,13 @@ pub(super) fn parse_setup_input_ramfb_delay_env(
 }
 
 pub(super) fn parse_setup_input_fire_delay_env() -> Result<Duration, XhciSetupInputEnvError> {
-    match std::env::var(SETUP_INPUT_FIRE_DELAY_ENV) {
+    parse_setup_input_fire_delay_named_env(SETUP_INPUT_FIRE_DELAY_ENV)
+}
+
+pub(super) fn parse_setup_input_fire_delay_named_env(
+    env_name: &'static str,
+) -> Result<Duration, XhciSetupInputEnvError> {
+    match std::env::var(env_name) {
         Ok(value) => parse_setup_input_fire_delay_value(&value),
         Err(std::env::VarError::NotPresent) => Ok(Duration::ZERO),
         Err(std::env::VarError::NotUnicode(_)) => Err(XhciSetupInputEnvError::FireDelayInvalid {

@@ -4,6 +4,8 @@ use super::XhciController;
 
 mod completion;
 mod control;
+mod control_data;
+mod control_setup;
 mod trb;
 
 const DOORBELL_BASE: u64 = 0x2000;
@@ -11,6 +13,7 @@ const DOORBELL_STRIDE: u64 = 4;
 const SLOT_ID: u32 = 1;
 const ENDPOINT_ID_EP0: u32 = 1;
 const ENDPOINT_ID_DCI3: u32 = 3;
+const ENDPOINT_ID_DCI5: u32 = 5;
 
 pub(super) const fn is_slot_doorbell(offset: u64, size: u8) -> bool {
     offset == DOORBELL_BASE + DOORBELL_STRIDE && size == 4
@@ -38,6 +41,7 @@ impl XhciController {
         match target {
             ENDPOINT_ID_EP0 => self.process_ep0_control_transfer(mem),
             ENDPOINT_ID_DCI3 => self.process_dci3_interrupt_in_transfer_after_doorbell(mem),
+            ENDPOINT_ID_DCI5 => self.process_dci5_interrupt_in_transfer_after_doorbell(mem),
             _ => false,
         }
     }

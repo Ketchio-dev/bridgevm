@@ -13,7 +13,7 @@ use super::marker::MARKER_MAX_BYTES;
 
 const SETUP_INPUT_DEFAULT_MARKER: &[u8] = b"BdsDxe: starting Boot0001";
 const SETUP_INPUT_ENV_MAX_BYTES: usize = 128;
-const SETUP_INPUT_MAX_ACTIONS: usize = 8;
+const SETUP_INPUT_MAX_ACTIONS: usize = 32;
 
 const _: () = {
     assert!(!SETUP_INPUT_DEFAULT_MARKER.is_empty());

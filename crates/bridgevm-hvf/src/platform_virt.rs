@@ -23,7 +23,7 @@ mod bootorder;
 use std::{io, path::Path};
 
 use crate::acpi::{build_acpi, ACPI_LOADER_FILE, ACPI_RSDP_FILE, ACPI_TABLE_FILE};
-use crate::dtb::{build_virt_fdt, VirtFdtConfig};
+use crate::dtb::{build_virt_fdt_with_devices, VirtFdtConfig, VirtFdtDeviceConfig};
 use crate::fwcfg::{
     FwCfg, GuestMemoryMut, KEY_CMDLINE_DATA, KEY_CMDLINE_SIZE, KEY_INITRD_DATA, KEY_INITRD_SIZE,
     KEY_KERNEL_DATA, KEY_KERNEL_SIZE,
@@ -34,7 +34,8 @@ use crate::nvme::{
     NvmeCommandTrace, NvmeCompletionEvent, NvmeController, REG_CC, REG_DOORBELL_BASE,
 };
 use crate::pcie::{
-    CfgAddr, PcieEcam, PcieMmioTarget, PciePioTarget, NVME_BDF, VIRTIO_BLK_BDF, XHCI_BDF,
+    CfgAddr, PcieEcam, PcieEcamConfig, PcieMmioTarget, PciePioTarget, NVME_BDF, VIRTIO_BLK_BDF,
+    XHCI_BDF,
 };
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
@@ -46,7 +47,9 @@ use crate::virtio_blk::{
     VirtioPciBlock, VirtioPciBlockOp, INSTALLER_ISO_SLOT,
 };
 use crate::xhci::{
-    SetupInputAction, XhciController, XhciSetupInputQueueError, XhciSetupInputReportStats,
+    PointerInputAction, SetupInputAction, XhciController, XhciEventLifecycleStats,
+    XhciHidSemanticStats, XhciPointerInputQueueError, XhciPointerInputReportStats,
+    XhciSetupInputQueueError, XhciSetupInputReportStats,
 };
 
 const DEFAULT_NVME_DISK_BYTES: usize = 16 * 1024 * 1024;
@@ -54,9 +57,43 @@ const HID_BOOT_KEYBOARD_USAGE_SPACE: u8 = 0x2c;
 const MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RamfbFwCfg {
-    Absent,
-    Present,
+pub struct VirtPlatformDeviceConfig {
+    pub xhci_present: bool,
+    pub virtio_boot_media_present: bool,
+    pub legacy_virtio_mmio_present: bool,
+    pub ramfb_present: bool,
+}
+
+impl Default for VirtPlatformDeviceConfig {
+    fn default() -> Self {
+        Self {
+            xhci_present: true,
+            virtio_boot_media_present: true,
+            legacy_virtio_mmio_present: true,
+            ramfb_present: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VirtPlatformConfig {
+    pub fdt: VirtFdtConfig,
+    pub devices: VirtPlatformDeviceConfig,
+}
+
+impl VirtPlatformConfig {
+    pub fn new(fdt: VirtFdtConfig) -> Self {
+        Self {
+            fdt,
+            devices: VirtPlatformDeviceConfig::default(),
+        }
+    }
+
+    pub fn with_ramfb(fdt: VirtFdtConfig) -> Self {
+        let mut config = Self::new(fdt);
+        config.devices.ramfb_present = true;
+        config
+    }
 }
 
 /// A guest MMIO access as decoded from an HVF data-abort exit.
@@ -123,6 +160,7 @@ pub struct NvmePcieLiveness {
 #[derive(Debug)]
 pub struct VirtPlatform {
     cfg: VirtFdtConfig,
+    devices: VirtPlatformDeviceConfig,
     fw_cfg: FwCfg,
     uart: Pl011,
     rtc: Pl031,
@@ -148,43 +186,51 @@ impl VirtPlatform {
     /// stand up `fw_cfg` with its standard control entries and generated ACPI
     /// table-loader blobs.
     pub fn new(cfg: VirtFdtConfig) -> Self {
-        Self::new_with_ramfb_state(cfg, RamfbFwCfg::Absent)
+        Self::new_with_config(VirtPlatformConfig::new(cfg))
     }
 
     /// Build the platform with QEMU's `ramfb` fw_cfg file registered. QEMU only
     /// exposes this surface when a framebuffer device is requested, not for
     /// `-display none`, so the default constructor leaves it absent.
     pub fn new_with_ramfb(cfg: VirtFdtConfig) -> Self {
-        Self::new_with_ramfb_state(cfg, RamfbFwCfg::Present)
+        Self::new_with_config(VirtPlatformConfig::with_ramfb(cfg))
     }
 
-    fn new_with_ramfb_state(cfg: VirtFdtConfig, ramfb: RamfbFwCfg) -> Self {
-        let dtb = build_virt_fdt(&cfg);
+    pub fn new_with_config(config: VirtPlatformConfig) -> Self {
+        let dtb = build_virt_fdt_with_devices(
+            &config.fdt,
+            VirtFdtDeviceConfig {
+                legacy_virtio_mmio_present: config.devices.legacy_virtio_mmio_present,
+            },
+        );
         let mut fw_cfg = FwCfg::new();
         // Minimal real control entries the firmware/OS consult.
-        fw_cfg.add_file("bootorder", bootorder::qemu_virtio_blk_pci_bootorder());
+        if config.devices.virtio_boot_media_present {
+            fw_cfg.add_file("bootorder", bootorder::qemu_virtio_blk_pci_bootorder());
+        }
         // `etc/system-states` advertises which ACPI S-states are enabled; the
         // firmware may write it back, so it is writable. 6 bytes: S3, S4, ... .
         fw_cfg.add_writable_file("etc/system-states", vec![0u8; 6]);
-        match ramfb {
-            RamfbFwCfg::Absent => {}
-            RamfbFwCfg::Present => {
-                fw_cfg.add_writable_file(RAMFB_FW_CFG_FILE, vec![0u8; RAMFB_CONFIG_SIZE]);
-            }
+        if config.devices.ramfb_present {
+            fw_cfg.add_writable_file(RAMFB_FW_CFG_FILE, vec![0u8; RAMFB_CONFIG_SIZE]);
         }
-        let acpi = build_acpi(cfg.cpu_count);
+        let acpi = build_acpi(config.fdt.cpu_count);
         fw_cfg.add_file(ACPI_RSDP_FILE, acpi.rsdp);
         fw_cfg.add_file(ACPI_TABLE_FILE, acpi.tables);
         fw_cfg.add_file(ACPI_LOADER_FILE, acpi.loader);
-        let smbios = build_smbios(cfg.cpu_count, cfg.ram_size);
+        let smbios = build_smbios(config.fdt.cpu_count, config.fdt.ram_size);
         fw_cfg.add_file(SMBIOS_ANCHOR_FILE, smbios.anchor);
         fw_cfg.add_file(SMBIOS_TABLE_FILE, smbios.tables);
         Self {
-            cfg,
+            cfg: config.fdt,
+            devices: config.devices,
             fw_cfg,
             uart: Pl011::new(),
             rtc: Pl031::new(),
-            pcie: PcieEcam::new(),
+            pcie: PcieEcam::new_with_config(PcieEcamConfig {
+                xhci_present: config.devices.xhci_present,
+                virtio_blk_present: config.devices.virtio_boot_media_present,
+            }),
             nvme: NvmeController::new(DEFAULT_NVME_DISK_BYTES),
             xhci: XhciController::new(),
             virtio_iso: None,
@@ -211,6 +257,54 @@ impl VirtPlatform {
     /// being treated as plain RAM stores.
     pub fn load_flash_vars(&mut self, data: &[u8]) {
         self.flash_vars.load(data);
+    }
+
+    pub fn reset(&mut self) {
+        let virtio_iso_irq_was_high = self
+            .virtio_iso
+            .as_ref()
+            .is_some_and(VirtioMmioBlock::interrupt_line_level);
+        let pci_boot_media_irq_was_high = self
+            .pci_boot_media
+            .as_ref()
+            .is_some_and(VirtioPciBlock::interrupt_line_level);
+        self.fw_cfg.reset_runtime_state();
+        if self.devices.ramfb_present {
+            self.fw_cfg.reset_file_bytes(RAMFB_FW_CFG_FILE, 0);
+        }
+        self.uart = Pl011::new();
+        self.rtc = Pl031::new();
+        self.pcie = PcieEcam::new_with_config(PcieEcamConfig {
+            xhci_present: self.devices.xhci_present,
+            virtio_blk_present: self.devices.virtio_boot_media_present,
+        });
+        self.nvme.reset_registers_keep_disks();
+        self.xhci = XhciController::new();
+        self.ramfb = Ramfb::new();
+        self.flash_vars.reset_runtime_state();
+        if let Some(dev) = self.virtio_iso.as_mut() {
+            dev.reset_runtime_state();
+        }
+        if let Some(dev) = self.pci_boot_media.as_mut() {
+            dev.reset_runtime_state();
+        }
+        self.pending_msix.clear();
+        self.pending_spi_levels.clear();
+        if virtio_iso_irq_was_high && self.devices.legacy_virtio_mmio_present {
+            self.pending_spi_levels.push((
+                machine::spi_to_intid(machine::virtio_mmio_spi(INSTALLER_ISO_SLOT as u32)),
+                false,
+            ));
+        }
+        if pci_boot_media_irq_was_high && self.devices.virtio_boot_media_present {
+            self.pending_spi_levels
+                .push((machine::spi_to_intid(machine::SPI_PCIE_INTA), false));
+        }
+        self.xhci_hid_boot_key_report_stats = XhciHidBootKeyReportStats::default();
+        self.nvme_ecam_touched = false;
+        self.nvme_mmio_reached = false;
+        self.nvme_cc_enabled = false;
+        self.nvme_admin_doorbell_rung = false;
     }
 
     /// Snapshot the writable pflash variable bank, including guest writes
@@ -256,11 +350,17 @@ impl VirtPlatform {
     /// virtio-mmio transport slot. QEMU's own `virtio-blk-device` oracle uses
     /// slot 31 (`0x0a003e00`) for an explicitly added MMIO block device.
     pub fn attach_virtio_iso(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
+        if !self.devices.legacy_virtio_mmio_present {
+            return Ok(());
+        }
         self.virtio_iso = Some(VirtioMmioBlock::open_read_only(path)?);
         Ok(())
     }
 
     pub fn attach_pci_boot_media(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
+        if !self.devices.virtio_boot_media_present {
+            return Ok(());
+        }
         self.pci_boot_media = Some(VirtioPciBlock::open_read_only(path)?);
         Ok(())
     }
@@ -291,6 +391,13 @@ impl VirtPlatform {
         &mut self,
         usage: u8,
     ) -> Result<(), XhciHidBootKeyQueueError> {
+        if !self.devices.xhci_present {
+            self.xhci_hid_boot_key_report_stats.busy_rejections = self
+                .xhci_hid_boot_key_report_stats
+                .busy_rejections
+                .saturating_add(1);
+            return Err(XhciHidBootKeyQueueError::Busy);
+        }
         if usage != HID_BOOT_KEYBOARD_USAGE_SPACE {
             self.xhci_hid_boot_key_report_stats
                 .unsupported_usage_rejections = self
@@ -316,6 +423,13 @@ impl VirtPlatform {
         &mut self,
         actions: &[SetupInputAction],
     ) -> Result<(), XhciSetupInputQueueError> {
+        if !self.devices.xhci_present {
+            self.xhci_hid_boot_key_report_stats.busy_rejections = self
+                .xhci_hid_boot_key_report_stats
+                .busy_rejections
+                .saturating_add(1);
+            return Err(XhciSetupInputQueueError::Busy);
+        }
         match self.xhci.queue_setup_input_actions(actions) {
             Ok(()) => Ok(()),
             Err(XhciSetupInputQueueError::Busy) => {
@@ -340,6 +454,9 @@ impl VirtPlatform {
     }
 
     pub fn drain_xhci_setup_input_reports(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
+        if !self.devices.xhci_present {
+            return false;
+        }
         let mut posted_completion = false;
         let stats = self.xhci.setup_input_report_stats();
         let emitted_reports = stats
@@ -367,7 +484,66 @@ impl VirtPlatform {
         self.xhci.setup_input_report_stats()
     }
 
+    pub fn queue_xhci_pointer_input_actions(
+        &mut self,
+        actions: &[PointerInputAction],
+    ) -> Result<(), XhciPointerInputQueueError> {
+        if !self.devices.xhci_present {
+            return Err(XhciPointerInputQueueError::Busy);
+        }
+        self.xhci.queue_pointer_input_actions(actions)
+    }
+
+    pub fn queue_xhci_pointer_input_actions_with_mem(
+        &mut self,
+        actions: &[PointerInputAction],
+        mem: &mut dyn GuestMemoryMut,
+    ) -> Result<(), XhciPointerInputQueueError> {
+        self.queue_xhci_pointer_input_actions(actions)?;
+        self.drain_xhci_pointer_input_reports(mem);
+        Ok(())
+    }
+
+    pub fn drain_xhci_pointer_input_reports(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
+        if !self.devices.xhci_present {
+            return false;
+        }
+        let mut posted_completion = false;
+        let stats = self.xhci.pointer_input_report_stats();
+        let emitted_reports = stats
+            .emitted_move_reports
+            .saturating_add(stats.emitted_button_reports)
+            .saturating_add(stats.emitted_release_reports);
+        let pending_reports = stats.queued_reports.saturating_sub(emitted_reports);
+        for _ in 0..pending_reports.min(MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS as u64) {
+            if !self.xhci.process_queued_dci5_pointer_input(mem) {
+                break;
+            }
+            posted_completion = true;
+            self.queue_xhci_completion_msix();
+        }
+        if posted_completion {
+            self.flush_xhci_pending_msix();
+        }
+        posted_completion
+    }
+
+    pub fn xhci_pointer_input_report_stats(&self) -> XhciPointerInputReportStats {
+        self.xhci.pointer_input_report_stats()
+    }
+
+    pub fn xhci_event_lifecycle_stats(&self) -> XhciEventLifecycleStats {
+        self.xhci.event_lifecycle_stats()
+    }
+
+    pub fn xhci_hid_semantic_stats(&self) -> XhciHidSemanticStats {
+        self.xhci.hid_semantic_stats()
+    }
+
     pub fn ramfb_config(&self) -> Option<RamfbConfig> {
+        if !self.devices.ramfb_present {
+            return None;
+        }
         self.ramfb.config()
     }
 
@@ -382,9 +558,17 @@ impl VirtPlatform {
         self.nvme.disk_image_if_memory()
     }
 
+    pub fn nvme_second_namespace_disk_if_memory(&self) -> Option<&[u8]> {
+        self.nvme.second_namespace_disk_image_if_memory()
+    }
+
     /// Export current NVMe media to a raw file, applying sparse overlay writes.
     pub fn export_nvme_disk(&mut self, path: impl AsRef<Path>) -> io::Result<u64> {
         self.nvme.export_disk_image(path)
+    }
+
+    pub fn export_nvme_second_namespace_disk(&mut self, path: impl AsRef<Path>) -> io::Result<u64> {
+        self.nvme.export_second_namespace_disk_image(path)
     }
 
     /// Flush write-through NVMe media.
@@ -392,9 +576,17 @@ impl VirtPlatform {
         self.nvme.flush_disk()
     }
 
+    pub fn flush_nvme_second_namespace_disk(&mut self) -> io::Result<()> {
+        self.nvme.flush_second_namespace_disk()
+    }
+
     /// Current byte length of the NVMe namespace backing media.
     pub fn nvme_disk_len(&self) -> u64 {
         self.nvme.disk_len()
+    }
+
+    pub fn nvme_second_namespace_disk_len(&self) -> Option<u64> {
+        self.nvme.second_namespace_disk_len()
     }
 
     /// Recent NVMe commands processed by the controller, oldest first. Live
@@ -458,12 +650,12 @@ impl VirtPlatform {
             "Linux fw_cfg cmdline blob must be NUL-terminated"
         );
         let initrd = initrd.unwrap_or_default();
-        let kernel_len =
-            u32::try_from(kernel.len()).expect("Linux kernel fw_cfg blob exceeds 4 GiB");
-        let initrd_len =
-            u32::try_from(initrd.len()).expect("Linux initrd fw_cfg blob exceeds 4 GiB");
-        let cmdline_len =
-            u32::try_from(cmdline.len()).expect("Linux cmdline fw_cfg blob exceeds 4 GiB");
+        // SAFE-EXPECT: fw_cfg direct-boot size registers are u32 by QEMU contract.
+        let kernel_len = u32::try_from(kernel.len()).expect("kernel blob >4 GiB");
+        // SAFE-EXPECT: fw_cfg direct-boot size registers are u32 by QEMU contract.
+        let initrd_len = u32::try_from(initrd.len()).expect("initrd blob >4 GiB");
+        // SAFE-EXPECT: fw_cfg direct-boot size registers are u32 by QEMU contract.
+        let cmdline_len = u32::try_from(cmdline.len()).expect("cmdline blob >4 GiB");
         self.fw_cfg
             .add_item(KEY_KERNEL_SIZE, kernel_len.to_le_bytes().to_vec());
         self.fw_cfg.add_item(KEY_KERNEL_DATA, kernel);
@@ -552,6 +744,9 @@ impl VirtPlatform {
         op: MmioOp,
         mem: &mut dyn GuestMemoryMut,
     ) -> MmioOutcome {
+        if !self.devices.legacy_virtio_mmio_present {
+            return MmioOutcome::Unmapped;
+        }
         let slot = slot_offset / machine::VIRTIO_MMIO_SLOT_SIZE;
         let reg = slot_offset % machine::VIRTIO_MMIO_SLOT_SIZE;
         if slot == INSTALLER_ISO_SLOT {
@@ -778,6 +973,9 @@ impl VirtPlatform {
     }
 
     fn queue_xhci_completion_msix(&mut self) {
+        if !self.devices.xhci_present {
+            return;
+        }
         let control = self.pcie.xhci_msix_control();
         self.pending_msix.extend(
             self.xhci
@@ -786,6 +984,9 @@ impl VirtPlatform {
     }
 
     fn flush_xhci_pending_msix(&mut self) {
+        if !self.devices.xhci_present {
+            return;
+        }
         let control = self.pcie.xhci_msix_control();
         self.pending_msix.extend(
             self.xhci
@@ -847,6 +1048,9 @@ impl VirtPlatform {
     }
 
     fn refresh_ramfb(&mut self) {
+        if !self.devices.ramfb_present {
+            return;
+        }
         if let Some(bytes) = self.fw_cfg.file_bytes(RAMFB_FW_CFG_FILE) {
             self.ramfb.update_from_fw_cfg(bytes);
         }
@@ -919,6 +1123,13 @@ mod tests {
         VirtPlatform::new_with_ramfb(VirtFdtConfig::default())
     }
 
+    fn platform_with_devices(devices: VirtPlatformDeviceConfig) -> VirtPlatform {
+        VirtPlatform::new_with_config(VirtPlatformConfig {
+            fdt: VirtFdtConfig::default(),
+            devices,
+        })
+    }
+
     fn pcie_cfg_gpa(device: u8, function: u8, reg: u16) -> u64 {
         machine::PCIE_ECAM.base
             + (u64::from(device) << 15)
@@ -951,6 +1162,146 @@ mod tests {
         assert!(mem.write_bytes(gpa + 8, &len.to_le_bytes()));
         assert!(mem.write_bytes(gpa + 12, &flags.to_le_bytes()));
         assert!(mem.write_bytes(gpa + 14, &next.to_le_bytes()));
+    }
+
+    fn write_valid_ramfb_config(p: &mut VirtPlatform, mem: &mut FlatGuestRam) {
+        let (selector, size) = fw_cfg_file_entry(p, b"etc/ramfb");
+        let src = machine::RAM_BASE + 0x100;
+        let ctrl = machine::RAM_BASE + 0x200;
+        let mut config = [0u8; RAMFB_CONFIG_SIZE];
+        config[0..8].copy_from_slice(&0x4010_0000u64.to_be_bytes());
+        config[8..12].copy_from_slice(&DRM_FORMAT_XRGB8888.to_be_bytes());
+        config[12..16].copy_from_slice(&0u32.to_be_bytes());
+        config[16..20].copy_from_slice(&1024u32.to_be_bytes());
+        config[20..24].copy_from_slice(&768u32.to_be_bytes());
+        config[24..28].copy_from_slice(&(1024u32 * 4).to_be_bytes());
+        let control = (u32::from(selector) << 16) | DMA_CTL_SELECT | DMA_CTL_WRITE;
+        let mut dma = Vec::new();
+        dma.extend_from_slice(&control.to_be_bytes());
+        dma.extend_from_slice(&(size as u32).to_be_bytes());
+        dma.extend_from_slice(&src.to_be_bytes());
+        assert!(mem.write_bytes(src, &config));
+        assert!(mem.write_bytes(ctrl, &dma));
+
+        assert_eq!(
+            p.on_mmio(
+                machine::FW_CFG.base + REG_DMA,
+                MmioOp::Write {
+                    size: 8,
+                    value: ctrl.swap_bytes(),
+                },
+                mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+    }
+
+    fn read_virtio_iso_sector(
+        p: &mut VirtPlatform,
+        mem: &mut FlatGuestRam,
+        sector: u64,
+        expected_prefix_len: usize,
+    ) -> Vec<u8> {
+        const REG_GUEST_PAGE_SIZE: u64 = 0x28;
+        const REG_QUEUE_NUM: u64 = 0x38;
+        const REG_QUEUE_ALIGN: u64 = 0x3c;
+        const REG_QUEUE_PFN: u64 = 0x40;
+        const REG_QUEUE_NOTIFY: u64 = 0x50;
+        const DESC_F_NEXT: u16 = 1;
+        const DESC_F_WRITE: u16 = 2;
+        const VIRTIO_BLK_T_IN: u32 = 0;
+
+        let slot_base = machine::virtio_mmio_slot(INSTALLER_ISO_SLOT).base;
+        let desc = machine::RAM_BASE + 0x9000;
+        let avail = desc + 8 * 16;
+        let header = machine::RAM_BASE + 0xb000;
+        let data = machine::RAM_BASE + 0xc000;
+        let status = machine::RAM_BASE + 0xd000;
+        assert!(mem.write_bytes(header, &VIRTIO_BLK_T_IN.to_le_bytes()));
+        assert!(mem.write_bytes(header + 8, &sector.to_le_bytes()));
+        write_vring_desc(mem, desc, 0, header, 16, DESC_F_NEXT, 1);
+        write_vring_desc(mem, desc, 1, data, 512, DESC_F_NEXT | DESC_F_WRITE, 2);
+        write_vring_desc(mem, desc, 2, status, 1, DESC_F_WRITE, 0);
+        assert!(mem.write_bytes(avail + 2, &1u16.to_le_bytes()));
+        assert!(mem.write_bytes(avail + 4, &0u16.to_le_bytes()));
+
+        for (reg, value) in [
+            (REG_QUEUE_NUM, 8),
+            (REG_GUEST_PAGE_SIZE, 4096),
+            (REG_QUEUE_ALIGN, 4096),
+            (REG_QUEUE_PFN, desc >> 12),
+        ] {
+            assert_eq!(
+                p.on_mmio(slot_base + reg, MmioOp::Write { size: 4, value }, mem),
+                MmioOutcome::WriteAck
+            );
+        }
+        assert_eq!(
+            p.on_mmio(
+                slot_base + REG_QUEUE_NOTIFY,
+                MmioOp::Write { size: 4, value: 0 },
+                mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+
+        mem.read_bytes(data, expected_prefix_len).unwrap()
+    }
+
+    fn read_pci_boot_media_sector(
+        p: &mut VirtPlatform,
+        mem: &mut FlatGuestRam,
+        bar: u64,
+        sector: u64,
+        expected_prefix_len: usize,
+    ) -> Vec<u8> {
+        const PCI_NOTIFY_CFG_OFFSET: u64 = 0x3000;
+        const REG_QUEUE_NUM: u64 = 0x038;
+        const REG_QUEUE_READY: u64 = 0x044;
+        const REG_QUEUE_NOTIFY: u64 = 0x050;
+        const REG_QUEUE_DESC_LOW: u64 = 0x080;
+        const REG_QUEUE_DRIVER_LOW: u64 = 0x090;
+        const REG_QUEUE_DEVICE_LOW: u64 = 0x0a0;
+        const DESC_F_NEXT: u16 = 1;
+        const DESC_F_WRITE: u16 = 2;
+        const VIRTIO_BLK_T_IN: u32 = 0;
+
+        let desc = machine::RAM_BASE + 0x10000;
+        let avail = machine::RAM_BASE + 0x11000;
+        let used = machine::RAM_BASE + 0x12000;
+        let header = machine::RAM_BASE + 0x13000;
+        let data = machine::RAM_BASE + 0x14000;
+        let status = machine::RAM_BASE + 0x15000;
+        assert!(mem.write_bytes(header, &VIRTIO_BLK_T_IN.to_le_bytes()));
+        assert!(mem.write_bytes(header + 8, &sector.to_le_bytes()));
+        write_vring_desc(mem, desc, 0, header, 16, DESC_F_NEXT, 1);
+        write_vring_desc(mem, desc, 1, data, 512, DESC_F_NEXT | DESC_F_WRITE, 2);
+        write_vring_desc(mem, desc, 2, status, 1, DESC_F_WRITE, 0);
+        assert!(mem.write_bytes(avail + 2, &1u16.to_le_bytes()));
+        assert!(mem.write_bytes(avail + 4, &0u16.to_le_bytes()));
+
+        for (reg, value) in [
+            (REG_QUEUE_NUM, 8),
+            (REG_QUEUE_DESC_LOW, desc),
+            (REG_QUEUE_DRIVER_LOW, avail),
+            (REG_QUEUE_DEVICE_LOW, used),
+            (REG_QUEUE_READY, 1),
+        ] {
+            assert_eq!(
+                p.on_mmio(bar + reg, MmioOp::Write { size: 4, value }, mem),
+                MmioOutcome::WriteAck
+            );
+        }
+        assert_eq!(
+            p.on_mmio(
+                bar + PCI_NOTIFY_CFG_OFFSET + REG_QUEUE_NOTIFY,
+                MmioOp::Write { size: 4, value: 0 },
+                mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+
+        mem.read_bytes(data, expected_prefix_len).unwrap()
     }
 
     fn program_nvme_bar0(p: &mut VirtPlatform, mem: &mut FlatGuestRam) {
@@ -1269,6 +1620,92 @@ mod tests {
             ),
             MmioOutcome::ReadValue(0xFFFF_FFFF)
         );
+    }
+
+    #[test]
+    fn platform_device_disable_omits_xhci_from_pci_and_mmio_surfaces() {
+        let mut p = platform_with_devices(VirtPlatformDeviceConfig {
+            xhci_present: false,
+            ..VirtPlatformDeviceConfig::default()
+        });
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+        let xhci_base = machine::PCIE_MMIO_32.base + 0x2_0000;
+
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(crate::pcie::XHCI_BDF.1, crate::pcie::XHCI_BDF.2, 0),
+                MmioOp::Read { size: 4 },
+                &mut mem
+            ),
+            MmioOutcome::ReadValue(crate::pcie::NO_DEVICE)
+        );
+        for (reg, value) in [
+            (crate::pcie::REG_BAR0, xhci_base),
+            (crate::pcie::REG_BAR0 + 4, 0),
+            (
+                crate::pcie::REG_COMMAND_STATUS,
+                u64::from(crate::pcie::CMD_MEMORY_SPACE),
+            ),
+        ] {
+            assert_eq!(
+                p.on_mmio(
+                    pcie_cfg_gpa(crate::pcie::XHCI_BDF.1, crate::pcie::XHCI_BDF.2, reg),
+                    MmioOp::Write {
+                        size: if reg == crate::pcie::REG_COMMAND_STATUS {
+                            2
+                        } else {
+                            4
+                        },
+                        value,
+                    },
+                    &mut mem,
+                ),
+                MmioOutcome::WriteAck
+            );
+        }
+
+        assert_eq!(p.pcie_mmio_target(xhci_base), None);
+        assert_eq!(
+            p.on_mmio(xhci_base, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::KnownUnimplemented("pcie-mmio-32")
+        );
+        assert!(!String::from_utf8_lossy(p.dtb()).contains("xhci"));
+    }
+
+    #[test]
+    fn platform_device_disable_omits_virtio_iso_from_dtb_pci_and_mmio_surfaces() {
+        let mut p = platform_with_devices(VirtPlatformDeviceConfig {
+            virtio_boot_media_present: false,
+            legacy_virtio_mmio_present: false,
+            ..VirtPlatformDeviceConfig::default()
+        });
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+        let pci_bar = machine::PCIE_MMIO_32.base + 0x8_0000;
+        let legacy_slot = machine::virtio_mmio_slot(INSTALLER_ISO_SLOT);
+        let dtb_body = String::from_utf8_lossy(p.dtb());
+
+        assert!(!dtb_body.contains("virtio_mmio@"));
+        assert_eq!(find_fw_cfg_file_entry(&mut p, b"bootorder"), None);
+        assert_eq!(
+            p.on_mmio(
+                pcie_cfg_gpa(
+                    crate::pcie::VIRTIO_BLK_BDF.1,
+                    crate::pcie::VIRTIO_BLK_BDF.2,
+                    0
+                ),
+                MmioOp::Read { size: 4 },
+                &mut mem
+            ),
+            MmioOutcome::ReadValue(crate::pcie::NO_DEVICE)
+        );
+        program_virtio_blk_bar4(&mut p, &mut mem, pci_bar);
+        assert_eq!(p.pcie_mmio_target(pci_bar), None);
+        assert_eq!(
+            p.on_mmio(legacy_slot.base, MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::Unmapped
+        );
+        assert_eq!(p.virtio_iso_stats(), None);
+        assert_eq!(p.pci_boot_media_stats(), None);
     }
 
     #[test]
@@ -2091,6 +2528,263 @@ mod tests {
     }
 
     #[test]
+    fn platform_reset_preserving_media_and_vars_clears_runtime_state() {
+        const ASQ: u64 = machine::RAM_BASE + 0x1000;
+        const ACQ: u64 = machine::RAM_BASE + 0x2000;
+        const IO_SQ: u64 = machine::RAM_BASE + 0x3000;
+        const IO_CQ: u64 = machine::RAM_BASE + 0x4000;
+        const DATA: u64 = machine::RAM_BASE + 0x5000;
+        const MSI_ADDRESS: u64 = machine::GIC_ITS.base + 0x40;
+        const MSI_DATA: u32 = 35;
+
+        // Given: persistent media, virtio installer media, RAMFB fw_cfg bytes,
+        // and UEFI vars have guest-visible writes, while device runtime state
+        // and pending interrupts are dirty.
+        let virtio_iso_path = temp_path("reset-virtio-iso");
+        let pci_boot_media_path = temp_path("reset-pci-boot-media");
+        let mut installer_media = vec![0u8; 1024];
+        installer_media[512..520].copy_from_slice(b"WINSETUP");
+        fs::write(&virtio_iso_path, &installer_media).unwrap();
+        fs::write(&pci_boot_media_path, &installer_media).unwrap();
+
+        let mut p = platform_with_ramfb();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x18000);
+        p.attach_virtio_iso(&virtio_iso_path).unwrap();
+        p.attach_pci_boot_media(&pci_boot_media_path).unwrap();
+        write_valid_ramfb_config(&mut p, &mut mem);
+        assert!(p.ramfb_config().is_some());
+        p.load_nvme_disk(vec![0u8; crate::nvme::LBA_SIZE * 16]);
+        p.attach_nvme_second_namespace(crate::nvme::LBA_SIZE * 8);
+        program_nvme_bar0(&mut p, &mut mem);
+        enable_nvme_msix_vector0(&mut p, &mut mem, MSI_ADDRESS, MSI_DATA);
+        enable_nvme_controller(&mut p, &mut mem, ASQ, ACQ);
+
+        let cdw10 = (3u32 << 16) | 1;
+        let create_cq = encode_nvme_sqe(0x05, 1, 0, IO_CQ, cdw10, 1, 0);
+        submit_admin_sqe(&mut p, &mut mem, ASQ, 0, &create_cq);
+        let create_sq = encode_nvme_sqe(0x01, 2, 0, IO_SQ, cdw10, 1u32 << 16, 0);
+        submit_admin_sqe(&mut p, &mut mem, ASQ, 1, &create_sq);
+
+        let ns1_pattern: Vec<u8> = (0..crate::nvme::LBA_SIZE)
+            .map(|i| 0x20 | ((i % 0x20) as u8))
+            .collect();
+        assert!(mem.write_bytes(DATA, &ns1_pattern));
+        let ns1_write = encode_nvme_sqe(0x01, 0x31, crate::nvme::NSID, DATA, 2, 0, 0);
+        assert!(mem.write_bytes(IO_SQ, &ns1_write));
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_MMIO_32.base + crate::nvme::REG_DOORBELL_BASE + 2 * 4,
+                MmioOp::Write { size: 4, value: 1 },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+
+        let ns2_pattern: Vec<u8> = (0..crate::nvme::LBA_SIZE)
+            .map(|i| 0x80 | ((i % 0x40) as u8))
+            .collect();
+        assert!(mem.write_bytes(DATA, &ns2_pattern));
+        let ns2_write = encode_nvme_sqe(0x01, 0x32, crate::nvme::NSID2, DATA, 0, 0, 0);
+        assert!(mem.write_bytes(IO_SQ + crate::nvme::SQ_ENTRY_SIZE, &ns2_write));
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_MMIO_32.base + crate::nvme::REG_DOORBELL_BASE + 2 * 4,
+                MmioOp::Write { size: 4, value: 2 },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+
+        let identify_controller = encode_nvme_sqe(0x06, 0x33, 0, DATA, 0x01, 0, 0);
+        submit_admin_sqe(&mut p, &mut mem, ASQ, 2, &identify_controller);
+        assert!(!p.pending_msix.is_empty());
+        assert!(p.nvme_pcie_liveness().nvme_admin_doorbell_rung);
+        assert!(!p.nvme_command_trace().is_empty());
+
+        assert_eq!(read_virtio_iso_sector(&mut p, &mut mem, 1, 8), b"WINSETUP");
+        let pci_boot_media_bar = machine::PCIE_MMIO_32.base + 0x8000;
+        let pci_boot_media_msix_bar = machine::PCIE_MMIO_32.base + 0x1_8000;
+        program_virtio_blk_bar4(&mut p, &mut mem, pci_boot_media_bar);
+        assert_eq!(
+            read_pci_boot_media_sector(&mut p, &mut mem, pci_boot_media_bar, 1, 8),
+            b"WINSETUP"
+        );
+        program_virtio_blk_bar1(&mut p, &mut mem, pci_boot_media_msix_bar);
+        assert_eq!(
+            p.on_mmio(
+                pci_boot_media_msix_bar,
+                MmioOp::Write {
+                    size: 4,
+                    value: 0xfee0_0000,
+                },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(
+                pci_boot_media_msix_bar + 8,
+                MmioOp::Write {
+                    size: 4,
+                    value: 0x45,
+                },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(pci_boot_media_msix_bar, MmioOp::Read { size: 4 }, &mut mem,),
+            MmioOutcome::ReadValue(0xfee0_0000)
+        );
+        assert_eq!(
+            p.on_mmio(
+                pci_boot_media_msix_bar + 8,
+                MmioOp::Read { size: 4 },
+                &mut mem,
+            ),
+            MmioOutcome::ReadValue(0x45)
+        );
+        assert!(!p.virtio_iso_request_trace().unwrap().is_empty());
+        assert!(!p.pci_boot_media_request_trace().unwrap().is_empty());
+
+        p.load_flash_vars(&[0xff; 8]);
+        assert_eq!(
+            p.on_mmio(
+                machine::FLASH_VARS.base,
+                MmioOp::Write {
+                    size: 4,
+                    value: 0x0040_0040,
+                },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(
+                machine::FLASH_VARS.base,
+                MmioOp::Write {
+                    size: 4,
+                    value: 0x1234_5678,
+                },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        let flash_after_program = p.flash_vars_image()[0..8].to_vec();
+
+        // When: the probe reboot loop asks the platform to reset runtime state.
+        p.reset();
+
+        // Then: persistent media and vars survive, while PCIe/NVMe runtime state
+        // no longer carries over to the next boot.
+        let ns1_start = 2 * crate::nvme::LBA_SIZE;
+        assert_eq!(
+            &p.nvme_disk()[ns1_start..ns1_start + crate::nvme::LBA_SIZE],
+            ns1_pattern.as_slice()
+        );
+        assert_eq!(&p.flash_vars_image()[0..8], flash_after_program.as_slice());
+        assert_eq!(
+            p.take_pending_msix(),
+            Vec::<crate::msix::MsixMessage>::new()
+        );
+        assert_eq!(
+            p.take_pending_spi_levels(),
+            vec![
+                (
+                    machine::spi_to_intid(machine::virtio_mmio_spi(INSTALLER_ISO_SLOT as u32)),
+                    false,
+                ),
+                (machine::spi_to_intid(machine::SPI_PCIE_INTA), false),
+            ]
+        );
+        assert_eq!(p.take_pending_spi_levels(), Vec::<(u32, bool)>::new());
+        assert_eq!(p.fw_cfg.read_data(4), b"QEMU");
+        let (_, ramfb_size_after_reset) = fw_cfg_file_entry(&mut p, b"etc/ramfb");
+        assert_eq!(ramfb_size_after_reset, RAMFB_CONFIG_SIZE);
+        p.refresh_ramfb();
+        assert_eq!(p.ramfb_config(), None);
+        let virtio_iso_stats = p.virtio_iso_stats().unwrap();
+        assert_eq!(virtio_iso_stats.request_count, 0);
+        assert_eq!(virtio_iso_stats.read_count, 0);
+        assert_eq!(virtio_iso_stats.notify_count, 0);
+        assert_eq!(virtio_iso_stats.queue_ready, false);
+        assert_eq!(virtio_iso_stats.status, 0);
+        assert!(p.virtio_iso_request_trace().unwrap().is_empty());
+        let pci_boot_media_stats = p.pci_boot_media_stats().unwrap();
+        assert_eq!(pci_boot_media_stats.request_count, 0);
+        assert_eq!(pci_boot_media_stats.read_count, 0);
+        assert_eq!(pci_boot_media_stats.notify_count, 0);
+        assert_eq!(pci_boot_media_stats.queue_ready, false);
+        assert_eq!(pci_boot_media_stats.status, 0);
+        assert!(p.pci_boot_media_request_trace().unwrap().is_empty());
+        program_virtio_blk_bar1(&mut p, &mut mem, pci_boot_media_msix_bar);
+        assert_eq!(
+            p.on_mmio(pci_boot_media_msix_bar, MmioOp::Read { size: 4 }, &mut mem,),
+            MmioOutcome::ReadValue(0)
+        );
+        assert_eq!(
+            p.on_mmio(
+                pci_boot_media_msix_bar + 8,
+                MmioOp::Read { size: 4 },
+                &mut mem,
+            ),
+            MmioOutcome::ReadValue(0)
+        );
+        assert_eq!(
+            p.on_mmio(
+                pci_boot_media_msix_bar + 12,
+                MmioOp::Read { size: 4 },
+                &mut mem,
+            ),
+            MmioOutcome::ReadValue(1)
+        );
+        let reset_liveness = p.nvme_pcie_liveness();
+        assert!(reset_liveness.nvme_advertised);
+        assert!(!reset_liveness.nvme_ecam_touched);
+        assert!(!reset_liveness.nvme_command_memory_enabled);
+        assert!(!reset_liveness.nvme_command_bus_master_enabled);
+        assert!(!reset_liveness.nvme_bar0_assigned);
+        assert!(!reset_liveness.nvme_mmio_reached);
+        assert!(!reset_liveness.nvme_cc_enabled);
+        assert!(!reset_liveness.nvme_admin_doorbell_rung);
+        assert_eq!(p.pcie_mmio_target(machine::PCIE_MMIO_32.base), None);
+        assert!(p.nvme_command_trace().is_empty());
+
+        program_nvme_bar0(&mut p, &mut mem);
+        enable_nvme_controller(&mut p, &mut mem, ASQ, ACQ);
+        let cdw10 = (3u32 << 16) | 1;
+        let create_cq = encode_nvme_sqe(0x05, 3, 0, IO_CQ, cdw10, 1, 0);
+        submit_admin_sqe(&mut p, &mut mem, ASQ, 0, &create_cq);
+        let create_sq = encode_nvme_sqe(0x01, 4, 0, IO_SQ, cdw10, 1u32 << 16, 0);
+        submit_admin_sqe(&mut p, &mut mem, ASQ, 1, &create_sq);
+        assert!(mem.write_bytes(DATA, &[0u8; crate::nvme::LBA_SIZE]));
+        let ns2_read = encode_nvme_sqe(0x02, 0x34, crate::nvme::NSID2, DATA, 0, 0, 0);
+        assert!(mem.write_bytes(IO_SQ, &ns2_read));
+        assert_eq!(
+            p.on_mmio(
+                machine::PCIE_MMIO_32.base + crate::nvme::REG_DOORBELL_BASE + 2 * 4,
+                MmioOp::Write { size: 4, value: 1 },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            mem.read_bytes(DATA, crate::nvme::LBA_SIZE).unwrap(),
+            ns2_pattern
+        );
+        assert_eq!(read_virtio_iso_sector(&mut p, &mut mem, 1, 8), b"WINSETUP");
+        let pci_boot_media_bar = machine::PCIE_MMIO_32.base + 0x8000;
+        program_virtio_blk_bar4(&mut p, &mut mem, pci_boot_media_bar);
+        assert_eq!(
+            read_pci_boot_media_sector(&mut p, &mut mem, pci_boot_media_bar, 1, 8),
+            b"WINSETUP"
+        );
+
+        fs::remove_file(virtio_iso_path).ok();
+        fs::remove_file(pci_boot_media_path).ok();
+    }
+
+    #[test]
     fn uart_writes_are_captured_via_mmio() {
         let mut p = platform();
         let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
@@ -2263,6 +2957,32 @@ mod tests {
         let (_, size) = fw_cfg_file_entry(&mut p, b"etc/ramfb");
 
         assert_eq!(size, RAMFB_CONFIG_SIZE);
+        assert_eq!(p.ramfb_config(), None);
+    }
+
+    #[test]
+    fn platform_device_disable_omits_ramfb_fw_cfg_surface() {
+        let mut p = platform_with_devices(VirtPlatformDeviceConfig {
+            ramfb_present: false,
+            ..VirtPlatformDeviceConfig::default()
+        });
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x1000);
+        let ctrl = machine::RAM_BASE + 0x200;
+        let config = [0u8; RAMFB_CONFIG_SIZE];
+
+        assert_eq!(find_fw_cfg_file_entry(&mut p, b"etc/ramfb"), None);
+        assert!(mem.write_bytes(ctrl, &config));
+        assert_eq!(
+            p.on_mmio(
+                machine::FW_CFG.base + REG_DMA,
+                MmioOp::Write {
+                    size: 8,
+                    value: ctrl.swap_bytes()
+                },
+                &mut mem
+            ),
+            MmioOutcome::WriteAck
+        );
         assert_eq!(p.ramfb_config(), None);
     }
 

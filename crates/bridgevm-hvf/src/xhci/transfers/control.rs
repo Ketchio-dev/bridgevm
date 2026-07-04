@@ -3,13 +3,16 @@ use crate::fwcfg::GuestMemoryMut;
 use super::super::{
     trace,
     usb::{
-        data_in_for_setup_packet, is_clear_endpoint_halt_request, is_hid_set_idle_request,
-        is_hid_set_protocol_request, is_hid_set_report_request, parse_setup_packet,
-        set_configuration_value, ControlInData,
+        data_in_for_setup_packet, is_clear_endpoint_halt_request,
+        is_hid_class_descriptor_get_request, is_hid_report_descriptor_get_request,
+        is_hid_set_idle_request, is_hid_set_protocol_request, is_hid_set_report_request,
+        is_supported_setup_packet, parse_setup_packet, set_configuration_value,
     },
     XhciController,
 };
 use super::completion::{find_control_completion, ControlEventRequest};
+use super::control_data::write_control_in_data;
+use super::control_setup::{control_setup_start, ControlSetupStart};
 use super::trb::{
     read_transfer_trb, trace_transfer_trb, trb_transfer_length, trb_type, TransferTrb,
 };
@@ -23,12 +26,19 @@ const STATUS_STAGE_OFFSET: u64 = TRB_SIZE_BYTES * 2;
 
 impl XhciController {
     pub(super) fn process_ep0_control_transfer(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
-        let transfer_ring = self.slot1_ep0_dequeue;
-        trace::ep0_handler_entered(transfer_ring);
-        if transfer_ring == 0 {
+        let current_dequeue = self.slot1_ep0_dequeue;
+        trace::ep0_handler_entered(current_dequeue);
+        if current_dequeue == 0 {
             trace::ep0_reject("no_ep0_dequeue");
             return false;
         }
+        let transfer_ring = match control_setup_start(mem, current_dequeue) {
+            ControlSetupStart::Ready(gpa) => gpa,
+            ControlSetupStart::ReadFailed(gpa) => {
+                trace::ep0_reject_with_gpa("setup_trb_read_failed", gpa);
+                return false;
+            }
+        };
         let Some(setup) = read_transfer_trb(mem, transfer_ring) else {
             trace::ep0_reject_with_gpa("setup_trb_read_failed", transfer_ring);
             return false;
@@ -47,12 +57,16 @@ impl XhciController {
             trace::ep0_reject_with_value("unexpected_setup_trb_type", setup_type);
             return false;
         }
+        self.record_ep0_setup_packet(setup_packet);
         let set_configuration = set_configuration_value(setup_packet);
-        if set_configuration.is_some()
-            || is_hid_set_protocol_request(setup_packet)
-            || is_hid_set_idle_request(setup_packet)
-            || is_clear_endpoint_halt_request(setup_packet)
-        {
+        let set_protocol = is_hid_set_protocol_request(setup_packet);
+        let set_idle = is_hid_set_idle_request(setup_packet);
+        let clear_endpoint_halt = is_clear_endpoint_halt_request(setup_packet);
+        let set_report = is_hid_set_report_request(setup_packet);
+        if !is_supported_setup_packet(setup_packet, self.usb_configuration) {
+            self.record_unsupported_setup_packet(setup_packet);
+        }
+        if set_configuration.is_some() || set_protocol || set_idle || clear_endpoint_halt {
             let Some(completion_gpa) = transfer_ring.checked_add(DATA_STAGE_OFFSET) else {
                 trace::ep0_reject_with_gpa("completion_trbs_overflow", transfer_ring);
                 return false;
@@ -75,11 +89,24 @@ impl XhciController {
                 if let Some(value) = set_configuration {
                     self.usb_configuration = value;
                 }
+                if set_protocol {
+                    self.record_hid_set_protocol(setup_packet.index, setup_packet.value);
+                }
+                if set_idle {
+                    self.record_hid_set_idle(setup_packet.index);
+                }
+                if clear_endpoint_halt {
+                    self.record_clear_endpoint_halt();
+                }
             }
             return posted;
         }
-        if is_hid_set_report_request(setup_packet) {
-            return self.process_ep0_data_out_control_transfer(mem, transfer_ring, setup);
+        if set_report {
+            let posted = self.process_ep0_data_out_control_transfer(mem, transfer_ring, setup);
+            if posted {
+                self.record_hid_set_report(setup_packet.index);
+            }
+            return posted;
         }
         self.process_ep0_data_in_control_transfer(mem, transfer_ring, setup)
     }
@@ -166,6 +193,8 @@ impl XhciController {
             return false;
         };
         let setup_packet = parse_setup_packet(setup.parameter);
+        let hid_report_descriptor_get = is_hid_report_descriptor_get_request(setup_packet);
+        let hid_class_descriptor_get = is_hid_class_descriptor_get_request(setup_packet);
         let Some(data_in) = data_in_for_setup_packet(setup_packet, self.usb_configuration) else {
             trace::ep0_reject("unsupported_setup_packet");
             return false;
@@ -203,7 +232,7 @@ impl XhciController {
             return false;
         }
         trace::ep0_descriptor_write_success(data.parameter, write_length);
-        self.post_control_completion_events(
+        let posted = self.post_control_completion_events(
             mem,
             ControlEventRequest {
                 setup,
@@ -212,21 +241,13 @@ impl XhciController {
                 residual_length,
                 transferred_length: transfer_length,
             },
-        )
-    }
-}
-
-fn write_control_in_data(
-    mem: &mut dyn GuestMemoryMut,
-    gpa: u64,
-    data: ControlInData,
-    len: usize,
-) -> bool {
-    match data {
-        ControlInData::Static(bytes) => mem.write_bytes(gpa, &bytes[..len]),
-        ControlInData::Byte(value) => {
-            let bytes = [value];
-            mem.write_bytes(gpa, &bytes[..len])
+        );
+        if posted && hid_report_descriptor_get {
+            self.record_hid_report_descriptor_get(setup_packet.index, setup_packet.length);
         }
+        if posted && hid_class_descriptor_get {
+            self.record_hid_class_descriptor_get(setup_packet.index, setup_packet.length);
+        }
+        posted
     }
 }

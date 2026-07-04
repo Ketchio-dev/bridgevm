@@ -558,6 +558,10 @@ impl RawFileDisk {
     }
 }
 
+fn second_namespace_missing() -> io::Error {
+    io::Error::new(io::ErrorKind::NotFound, "NVMe NSID 2 is not attached")
+}
+
 /// A modelled minimal NVMe controller.
 #[derive(Debug)]
 pub struct NvmeController {
@@ -656,6 +660,13 @@ impl NvmeController {
         Ok(())
     }
 
+    pub fn reset_registers_keep_disks(&mut self) {
+        let disk = std::mem::replace(&mut self.disk, DiskBackend::memory(Vec::new()));
+        let disk2 = self.disk2.take();
+        *self = Self::with_disk_backend(disk);
+        self.disk2 = disk2;
+    }
+
     /// Attach a blank NSID-2 target namespace backed by `disk_bytes` of in-memory
     /// storage (rounded to a whole LBA). Windows sees a second, empty disk.
     pub fn attach_second_namespace(&mut self, disk_bytes: usize) {
@@ -727,10 +738,24 @@ impl NvmeController {
         self.disk.memory_image()
     }
 
+    pub fn second_namespace_disk_image_if_memory(&self) -> Option<&[u8]> {
+        self.disk2.as_ref().and_then(DiskBackend::memory_image)
+    }
+
     /// Export the full current disk image to `path`, applying any sparse overlay
     /// writes on top of the source raw file.
     pub fn export_disk_image(&mut self, path: impl AsRef<Path>) -> io::Result<u64> {
         self.disk.export_to_path(path)
+    }
+
+    pub fn export_second_namespace_disk_image(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> io::Result<u64> {
+        self.disk2
+            .as_mut()
+            .ok_or_else(second_namespace_missing)?
+            .export_to_path(path)
     }
 
     /// Flush host-file-backed write-through media.
@@ -738,9 +763,20 @@ impl NvmeController {
         self.disk.flush()
     }
 
+    pub fn flush_second_namespace_disk(&mut self) -> io::Result<()> {
+        self.disk2
+            .as_mut()
+            .ok_or_else(second_namespace_missing)?
+            .flush()
+    }
+
     /// Current byte length of the backing disk.
     pub fn disk_len(&self) -> u64 {
         self.disk.byte_len()
+    }
+
+    pub fn second_namespace_disk_len(&self) -> Option<u64> {
+        self.disk2.as_ref().map(DiskBackend::byte_len)
     }
 
     /// Number of `LBA_SIZE`-byte logical blocks in the backing disk.
@@ -1187,7 +1223,7 @@ impl NvmeController {
         };
         let start = offset as usize;
         let data = &log[start..start + byte_count];
-        if mem.write_bytes(cmd.prp1, &data) {
+        if mem.write_bytes(cmd.prp1, data) {
             SC_SUCCESS
         } else {
             SC_INVALID_FIELD
@@ -2199,6 +2235,93 @@ mod tests {
     }
 
     #[test]
+    fn second_namespace_raw_file_overlay_exports_snapshot() {
+        let source = temp_path("raw-nsid2-overlay-source");
+        let snapshot = temp_path("raw-nsid2-overlay-snapshot");
+        let slba = 2u64;
+        let start = slba as usize * LBA_SIZE;
+        let original: Vec<u8> = (0..LBA_SIZE).map(|i| 0x10 | (i % 0x10) as u8).collect();
+        let replacement: Vec<u8> = (0..LBA_SIZE).map(|i| 0x90 | (i % 0x30) as u8).collect();
+        let mut disk = vec![0u8; LBA_SIZE * 8];
+        disk[start..start + LBA_SIZE].copy_from_slice(&original);
+        fs::write(&source, &disk).unwrap();
+
+        let (mut ctrl, mut mem) = enabled_controller_with_mem_len(0x10000);
+        ctrl.attach_second_namespace_raw_file(&source, false)
+            .unwrap();
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        assert!(mem.write_bytes(DATA_BASE, &replacement));
+        let write = encode_sqe(
+            NVM_OP_WRITE,
+            0x72,
+            NSID2,
+            DATA_BASE,
+            slba as u32,
+            (slba >> 32) as u32,
+            0,
+        );
+        assert!(mem.write_bytes(IO_SQ_BASE, &write));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+
+        assert_eq!(
+            &fs::read(&source).unwrap()[start..start + LBA_SIZE],
+            original.as_slice(),
+            "read-only NSID2 raw file keeps guest writes in the overlay"
+        );
+        assert_eq!(
+            ctrl.export_second_namespace_disk_image(&snapshot).unwrap(),
+            disk.len() as u64
+        );
+        assert_eq!(
+            &fs::read(&snapshot).unwrap()[start..start + LBA_SIZE],
+            replacement.as_slice(),
+            "NSID2 snapshot export applies overlay writes"
+        );
+
+        fs::remove_file(source).ok();
+        fs::remove_file(snapshot).ok();
+    }
+
+    #[test]
+    fn second_namespace_raw_file_write_back_updates_source_file() {
+        let source = temp_path("raw-nsid2-writeback-source");
+        let slba = 4u64;
+        let start = slba as usize * LBA_SIZE;
+        fs::write(&source, vec![0u8; LBA_SIZE * 8]).unwrap();
+
+        let (mut ctrl, mut mem) = enabled_controller_with_mem_len(0x10000);
+        ctrl.attach_second_namespace_raw_file(&source, true)
+            .unwrap();
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        let replacement: Vec<u8> = (0..LBA_SIZE).map(|i| 0x50 | (i % 0x20) as u8).collect();
+        assert!(mem.write_bytes(DATA_BASE, &replacement));
+        let write = encode_sqe(
+            NVM_OP_WRITE,
+            0x73,
+            NSID2,
+            DATA_BASE,
+            slba as u32,
+            (slba >> 32) as u32,
+            0,
+        );
+        assert!(mem.write_bytes(IO_SQ_BASE, &write));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+        ctrl.flush_second_namespace_disk().unwrap();
+
+        assert_eq!(
+            &fs::read(&source).unwrap()[start..start + LBA_SIZE],
+            replacement.as_slice(),
+            "NSID2 write-back raw file persists guest writes to the source"
+        );
+
+        fs::remove_file(source).ok();
+    }
+
+    #[test]
     fn enabling_cc_sets_csts_rdy() {
         let mut ctrl = NvmeController::new(0);
         assert_eq!(
@@ -2445,6 +2568,77 @@ mod tests {
         assert_eq!(trace[0].status, SC_SUCCESS);
         assert!(!trace[0].completion_posted);
         assert_eq!(trace[0].completion, None);
+    }
+
+    #[test]
+    fn nvme_reset_preserving_media_clears_controller_state() {
+        // Given: both namespaces carry guest-written data and volatile controller
+        // state is dirty.
+        let (mut ctrl, mut mem) = enabled_controller();
+        ctrl.attach_second_namespace(LBA_SIZE * 8);
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        let ns1_pattern: Vec<u8> = (0..LBA_SIZE).map(|i| 0x40 | (i % 0x20) as u8).collect();
+        assert!(mem.write_bytes(DATA_BASE, &ns1_pattern));
+        let ns1_write = encode_sqe(NVM_OP_WRITE, 0x41, NSID, DATA_BASE, 3, 0, 0);
+        assert!(mem.write_bytes(IO_SQ_BASE, &ns1_write));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 0)),
+            SC_SUCCESS
+        );
+
+        let ns2_pattern: Vec<u8> = (0..LBA_SIZE).map(|i| 0x80 | (i % 0x40) as u8).collect();
+        ctrl.backend_for_nsid_mut(NSID2)
+            .expect("NSID 2 attached")
+            .write_at(0, &ns2_pattern)
+            .unwrap();
+
+        let aer = encode_sqe(ADMIN_OP_ASYNC_EVENT_REQUEST, 0x42, 0, 0, 0, 0, 0);
+        assert!(mem.write_bytes(ASQ_BASE + 2 * SQ_ENTRY_SIZE, &aer));
+        ctrl.mmio_write(REG_DOORBELL_BASE, 4, 3);
+        ctrl.process(&mut mem);
+        assert_eq!(ctrl.pending_async_event_requests, 1);
+        ctrl.mmio_write(NVME_MSIX_TABLE_OFFSET.into(), 8, 0x0808_0000);
+        ctrl.mmio_write(u64::from(NVME_MSIX_TABLE_OFFSET) + 8, 4, 35);
+        assert_eq!(ctrl.raise_msix(0, true, false), None);
+        assert!(!ctrl.recent_command_trace().is_empty());
+
+        // When: the platform reboot path resets controller registers without
+        // replacing namespace backing stores.
+        ctrl.reset_registers_keep_disks();
+
+        // Then: namespace contents survive but controller-visible volatile state
+        // returns to power-on defaults.
+        let ns1_start = 3 * LBA_SIZE;
+        assert_eq!(
+            &ctrl.disk_image()[ns1_start..ns1_start + LBA_SIZE],
+            ns1_pattern.as_slice()
+        );
+        assert_eq!(
+            ctrl.backend_for_nsid_mut(NSID2)
+                .expect("NSID 2 attached")
+                .read_at(0, LBA_SIZE)
+                .unwrap(),
+            ns2_pattern
+        );
+        assert_eq!(ctrl.mmio_read(REG_CC, 4), 0);
+        assert_eq!(ctrl.mmio_read(REG_CSTS, 4) & u64::from(CSTS_RDY_BIT), 0);
+        assert_eq!(ctrl.mmio_read(REG_AQA, 4), 0);
+        assert_eq!(ctrl.mmio_read(REG_ASQ, 8), 0);
+        assert_eq!(ctrl.mmio_read(REG_ACQ, 8), 0);
+        assert_eq!(ctrl.sqs.len(), 1);
+        assert!(ctrl.sqs[0].is_none());
+        assert_eq!(ctrl.cqs.len(), 1);
+        assert!(ctrl.cqs[0].is_none());
+        assert_eq!(ctrl.pending_async_event_requests, 0);
+        assert!(ctrl.recent_command_trace().is_empty());
+        assert_eq!(
+            ctrl.drain_pending_msix(true, false),
+            Vec::<MsixMessage>::new()
+        );
+        assert!(ctrl.volatile_write_cache_enabled);
     }
 
     #[test]

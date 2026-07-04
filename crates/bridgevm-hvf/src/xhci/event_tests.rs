@@ -74,3 +74,50 @@ fn erdp_ehb_write_consumes_pending_event_interrupt() {
     assert_eq!(xhci.mmio_read(0x44, 4) & u64::from(USB_STS_EINT), 0);
     assert_eq!(xhci.mmio_read(0x1038, 4), EVENT_RING + TRB_SIZE);
 }
+
+#[test]
+fn event_lifecycle_stats_count_post_results_and_erdp_consumption() {
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x5000);
+
+    assert!(!xhci.post_event(&mut mem, 0x1111, 0, 33 << 10));
+    let failed = xhci.event_lifecycle_stats();
+    assert_eq!(failed.event_post_attempts, 1);
+    assert_eq!(failed.event_post_failures, 1);
+    assert_eq!(failed.event_post_successes, 0);
+
+    setup_command_rings(
+        &mut xhci,
+        &mut mem,
+        command_control(TRB_TYPE_ENABLE_SLOT, ENABLE_SLOT_ID),
+    );
+    let before_completion = xhci.event_lifecycle_stats();
+    xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem);
+    let after_completion = xhci.event_lifecycle_stats();
+    assert_eq!(
+        after_completion.event_post_attempts,
+        before_completion.event_post_attempts + 1
+    );
+    assert_eq!(
+        after_completion.event_post_successes,
+        before_completion.event_post_successes + 1
+    );
+    assert_eq!(
+        after_completion.command_completion_event_posts,
+        before_completion.command_completion_event_posts + 1
+    );
+    assert_eq!(
+        after_completion.last_event_parameter,
+        super::test_support::CMD_RING
+    );
+    assert_eq!(after_completion.last_event_gpa, EVENT_RING);
+
+    xhci.mmio_write(0x1038, 8, (EVENT_RING + TRB_SIZE) | 0x8);
+    let after_erdp = xhci.event_lifecycle_stats();
+    assert_eq!(after_erdp.erdp_updates, after_completion.erdp_updates + 2);
+    assert_eq!(
+        after_erdp.erdp_ehb_consumed,
+        after_completion.erdp_ehb_consumed + 1
+    );
+    assert_eq!(after_erdp.last_erdp, EVENT_RING + TRB_SIZE);
+}

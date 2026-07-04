@@ -74,7 +74,7 @@ fn nvme_and_xhci_command_events_are_bdf_specific() {
     assert!(nvme_line.contains("command=0x0000"));
     assert!(nvme_line.contains("memory=false"));
     assert!(nvme_line.contains("bus_master=false"));
-    assert!(nvme_line.contains("bar0=0x00000000"));
+    assert!(nvme_line.contains("bar0=0x00000004"));
     assert!(nvme_line.contains("bar1=0x00000000"));
     assert!(nvme_line.contains("base=0x0"));
     assert!(nvme_line.contains("msix_ctrl="));

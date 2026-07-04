@@ -186,7 +186,7 @@ impl FdtBuilder {
 }
 
 /// Configuration for [`build_virt_fdt`].
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VirtFdtConfig {
     pub cpu_count: u64,
     pub ram_size: u64,
@@ -197,6 +197,19 @@ impl Default for VirtFdtConfig {
         Self {
             cpu_count: 4,
             ram_size: 6 * 1024 * 1024 * 1024,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VirtFdtDeviceConfig {
+    pub legacy_virtio_mmio_present: bool,
+}
+
+impl Default for VirtFdtDeviceConfig {
+    fn default() -> Self {
+        Self {
+            legacy_virtio_mmio_present: true,
         }
     }
 }
@@ -213,6 +226,10 @@ const IRQ_LEVEL_HI: u32 = 4;
 
 /// Build a QEMU-`virt`-shaped device tree from [`crate::machine`].
 pub fn build_virt_fdt(cfg: &VirtFdtConfig) -> Vec<u8> {
+    build_virt_fdt_with_devices(cfg, VirtFdtDeviceConfig::default())
+}
+
+pub fn build_virt_fdt_with_devices(cfg: &VirtFdtConfig, devices: VirtFdtDeviceConfig) -> Vec<u8> {
     assert!(
         machine::redist_fits(cfg.cpu_count),
         "cpu_count {} exceeds GICv3 redistributor window",
@@ -378,16 +395,18 @@ pub fn build_virt_fdt(cfg: &VirtFdtConfig) -> Vec<u8> {
     b.end_node();
 
     // /virtio_mmio × 32
-    for i in 0..machine::VIRTIO_MMIO_COUNT {
-        let slot = machine::virtio_mmio_slot(i);
-        b.begin_node(&format!("virtio_mmio@{:x}", slot.base));
-        b.prop_str_list("compatible", &["virtio,mmio"]);
-        b.prop_reg64("reg", slot.base, slot.size);
-        b.prop_cells(
-            "interrupts",
-            &[IRQ_SPI, machine::virtio_mmio_spi(i as u32), IRQ_LEVEL_HI],
-        );
-        b.end_node();
+    if devices.legacy_virtio_mmio_present {
+        for i in 0..machine::VIRTIO_MMIO_COUNT {
+            let slot = machine::virtio_mmio_slot(i);
+            b.begin_node(&format!("virtio_mmio@{:x}", slot.base));
+            b.prop_str_list("compatible", &["virtio,mmio"]);
+            b.prop_reg64("reg", slot.base, slot.size);
+            b.prop_cells(
+                "interrupts",
+                &[IRQ_SPI, machine::virtio_mmio_spi(i as u32), IRQ_LEVEL_HI],
+            );
+            b.end_node();
+        }
     }
 
     // /pcie — ECAM root complex with INTx interrupt-map and MSI via the frame.

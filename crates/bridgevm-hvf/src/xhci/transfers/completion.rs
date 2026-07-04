@@ -8,6 +8,7 @@ use super::trb::{
 const TRB_SIZE_BYTES: u64 = 16;
 const TRB_TYPE_SHIFT: u32 = 10;
 const TRB_TYPE_STATUS_STAGE: u32 = 4;
+const TRB_TYPE_LINK: u32 = 6;
 const TRB_TYPE_EVENT_DATA: u32 = 7;
 const TRB_TYPE_TRANSFER_EVENT: u32 = 32;
 const TRB_IOC: u32 = 1 << 5;
@@ -22,6 +23,7 @@ const SLOT_ID: u32 = 1;
 const ENDPOINT_ID_EP0: u32 = 1;
 const EVENT_ENDPOINT_ID_SHIFT: u32 = 16;
 const EVENT_SLOT_ID_SHIFT: u32 = 24;
+const LINK_TRB_POINTER_MASK: u64 = !0xf;
 
 #[derive(Clone, Copy)]
 pub(super) struct ControlCompletion {
@@ -53,7 +55,7 @@ impl XhciController {
             .trailing_event_data
             .map(|trailing| trailing.gpa)
             .unwrap_or(request.completion.status_stage.gpa);
-        let Some(next_dequeue) = last_td_trb_gpa.checked_add(TRB_SIZE_BYTES) else {
+        let Some(next_dequeue) = next_control_dequeue(mem, last_td_trb_gpa) else {
             trace::ep0_reject_with_gpa("status_stage_next_overflow", last_td_trb_gpa);
             return false;
         };
@@ -140,11 +142,23 @@ impl XhciController {
     }
 }
 
+fn next_control_dequeue(mem: &dyn GuestMemoryMut, last_td_trb_gpa: u64) -> Option<u64> {
+    let next_gpa = last_td_trb_gpa.checked_add(TRB_SIZE_BYTES)?;
+    let Some(next_trb) = read_transfer_trb(mem, next_gpa) else {
+        return Some(next_gpa);
+    };
+    if trb_type(next_trb.control) == TRB_TYPE_LINK {
+        trace_transfer_trb("link", next_trb);
+        return Some(next_trb.parameter & LINK_TRB_POINTER_MASK);
+    }
+    Some(next_gpa)
+}
+
 pub(super) fn find_control_completion(
     mem: &dyn GuestMemoryMut,
     first_gpa: u64,
 ) -> Option<ControlCompletion> {
-    let first = read_transfer_trb(mem, first_gpa)?;
+    let first = control_completion_start(mem, first_gpa)?;
     match trb_type(first.control) {
         TRB_TYPE_STATUS_STAGE => {
             trace_transfer_trb("status", first);
@@ -157,8 +171,8 @@ pub(super) fn find_control_completion(
         }
         TRB_TYPE_EVENT_DATA => {
             trace_transfer_trb("event_data", first);
-            let Some(second_gpa) = first_gpa.checked_add(TRB_SIZE_BYTES) else {
-                trace::ep0_reject_with_gpa("completion_second_overflow", first_gpa);
+            let Some(second_gpa) = first.gpa.checked_add(TRB_SIZE_BYTES) else {
+                trace::ep0_reject_with_gpa("completion_second_overflow", first.gpa);
                 return None;
             };
             let second = read_transfer_trb(mem, second_gpa)?;
@@ -189,6 +203,15 @@ pub(super) fn find_control_completion(
             None
         }
     }
+}
+
+fn control_completion_start(mem: &dyn GuestMemoryMut, first_gpa: u64) -> Option<TransferTrb> {
+    let first = read_transfer_trb(mem, first_gpa)?;
+    if trb_type(first.control) == TRB_TYPE_LINK {
+        trace_transfer_trb("completion_link", first);
+        return read_transfer_trb(mem, first.parameter & LINK_TRB_POINTER_MASK);
+    }
+    Some(first)
 }
 
 fn find_trailing_event_data(

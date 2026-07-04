@@ -17,6 +17,10 @@ const ERDP_EHB: u32 = 1 << 3;
 pub(super) const IMAN_INTERRUPT_ENABLE: u32 = 1 << 1;
 const PORT_STATUS_CHANGE_EVENT_PORT_ID: u64 = 1 << 24;
 const TRB_TYPE_PORT_STATUS_CHANGE_EVENT: u32 = 34;
+const TRB_TYPE_TRANSFER_EVENT: u32 = 32;
+const TRB_TYPE_COMMAND_COMPLETION_EVENT: u32 = 33;
+const TRB_TYPE_SHIFT: u32 = 10;
+const TRB_TYPE_MASK: u32 = 0x3f;
 const TRB_SIZE: usize = 16;
 const TRB_SIZE_BYTES: u64 = 16;
 const TRB_CYCLE: u32 = 1;
@@ -132,11 +136,16 @@ impl XhciController {
     }
 
     pub(super) fn write_erdp_low(&mut self, index: usize, value: u32) {
-        let interrupter = &mut self.interrupters[index];
-        let next_erdp = (interrupter.erdp & !0xffff_ffff) | u64::from(value & !ERDP_EHB);
+        let next_erdp =
+            (self.interrupters[index].erdp & !0xffff_ffff) | u64::from(value & !ERDP_EHB);
+        self.record_erdp_update(next_erdp);
         if value & ERDP_EHB != 0 {
-            interrupter.event_handler_busy = false;
-            interrupter.iman &= !IMAN_INTERRUPT_PENDING;
+            self.event_lifecycle_stats.erdp_ehb_consumed = self
+                .event_lifecycle_stats
+                .erdp_ehb_consumed
+                .saturating_add(1);
+            self.interrupters[index].event_handler_busy = false;
+            self.interrupters[index].iman &= !IMAN_INTERRUPT_PENDING;
             trace::erdp_ehb_consumed(
                 next_erdp,
                 index,
@@ -152,8 +161,9 @@ impl XhciController {
     }
 
     pub(super) fn write_erdp_high(&mut self, index: usize, value: u32) {
-        let interrupter = &mut self.interrupters[index];
-        interrupter.erdp = (interrupter.erdp & 0xffff_ffff) | (u64::from(value) << 32);
+        let next_erdp = (self.interrupters[index].erdp & 0xffff_ffff) | (u64::from(value) << 32);
+        self.record_erdp_update(next_erdp);
+        self.interrupters[index].erdp = next_erdp;
     }
 
     pub(super) fn post_event(
@@ -187,13 +197,16 @@ impl XhciController {
         } else {
             PRIMARY_INTERRUPTER
         };
+        self.record_event_post_attempt();
         let interrupter = self.interrupters[index];
         if interrupter.erstsz == 0 {
             trace::event_post_reject("erst_size_zero");
+            self.record_event_post_failure();
             return false;
         }
         let Some(raw_erst) = mem.read_bytes(interrupter.erstba, 16) else {
             trace::event_post_reject_with_gpa("erst_read_failed", interrupter.erstba);
+            self.record_event_post_failure();
             return false;
         };
         let Some(segment_base) = read_u64(&raw_erst, 0) else {
@@ -201,6 +214,7 @@ impl XhciController {
                 "erst_segment_base_decode_failed",
                 interrupter.erstba,
             );
+            self.record_event_post_failure();
             return false;
         };
         let Some(segment_trbs) = read_u32(&raw_erst, 8) else {
@@ -208,6 +222,7 @@ impl XhciController {
                 "erst_segment_size_decode_failed",
                 interrupter.erstba,
             );
+            self.record_event_post_failure();
             return false;
         };
         if segment_base == 0 || segment_trbs == 0 || interrupter.event_enqueue >= segment_trbs {
@@ -221,6 +236,7 @@ impl XhciController {
                     interrupter: index,
                 },
             );
+            self.record_event_post_failure();
             return false;
         }
 
@@ -250,6 +266,7 @@ impl XhciController {
         event[12..16].copy_from_slice(&control.to_le_bytes());
         if !mem.write_bytes(event_gpa, &event) {
             trace::event_post_reject_with_event("event_write_failed", trace);
+            self.record_event_post_failure();
             return false;
         }
         let interrupter = &mut self.interrupters[index];
@@ -260,6 +277,7 @@ impl XhciController {
         }
         interrupter.event_handler_busy = true;
         interrupter.iman |= IMAN_INTERRUPT_PENDING;
+        self.record_event_post_success(trace);
         trace::event_post_success(
             trace,
             EventPostStateTrace {
@@ -270,6 +288,67 @@ impl XhciController {
         );
         true
     }
+
+    pub fn event_lifecycle_stats(&self) -> super::XhciEventLifecycleStats {
+        self.event_lifecycle_stats
+    }
+
+    fn record_erdp_update(&mut self, erdp: u64) {
+        self.event_lifecycle_stats.erdp_updates =
+            self.event_lifecycle_stats.erdp_updates.saturating_add(1);
+        self.event_lifecycle_stats.last_erdp = erdp;
+    }
+
+    fn record_event_post_attempt(&mut self) {
+        self.event_lifecycle_stats.event_post_attempts = self
+            .event_lifecycle_stats
+            .event_post_attempts
+            .saturating_add(1);
+    }
+
+    fn record_event_post_failure(&mut self) {
+        self.event_lifecycle_stats.event_post_failures = self
+            .event_lifecycle_stats
+            .event_post_failures
+            .saturating_add(1);
+    }
+
+    fn record_event_post_success(&mut self, trace: EventPostTrace) {
+        self.event_lifecycle_stats.event_post_successes = self
+            .event_lifecycle_stats
+            .event_post_successes
+            .saturating_add(1);
+        match event_type(trace.control) {
+            TRB_TYPE_TRANSFER_EVENT => {
+                self.event_lifecycle_stats.transfer_event_posts = self
+                    .event_lifecycle_stats
+                    .transfer_event_posts
+                    .saturating_add(1);
+            }
+            TRB_TYPE_COMMAND_COMPLETION_EVENT => {
+                self.event_lifecycle_stats.command_completion_event_posts = self
+                    .event_lifecycle_stats
+                    .command_completion_event_posts
+                    .saturating_add(1);
+            }
+            TRB_TYPE_PORT_STATUS_CHANGE_EVENT => {
+                self.event_lifecycle_stats.port_status_change_event_posts = self
+                    .event_lifecycle_stats
+                    .port_status_change_event_posts
+                    .saturating_add(1);
+            }
+            _ => {}
+        }
+        self.event_lifecycle_stats.last_event_interrupter = trace.ring.interrupter;
+        self.event_lifecycle_stats.last_event_gpa = trace.event_gpa;
+        self.event_lifecycle_stats.last_event_parameter = trace.parameter;
+        self.event_lifecycle_stats.last_event_status = trace.status;
+        self.event_lifecycle_stats.last_event_control = trace.control;
+    }
+}
+
+fn event_type(control: u32) -> u32 {
+    (control >> TRB_TYPE_SHIFT) & TRB_TYPE_MASK
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {

@@ -59,8 +59,18 @@ fn dci3_drain_blocked_trace_format_includes_parseable_state() {
 }
 
 #[test]
+fn dci5_drain_blocked_trace_format_includes_parseable_state() {
+    super::trace::assert_dci5_drain_blocked_trace_format_includes_parseable_state();
+}
+
+#[test]
 fn dci3_input_capture_trace_format_includes_parseable_context_state() {
     super::trace_dci3_input_capture::assert_dci3_input_capture_trace_format_includes_parseable_context_state();
+}
+
+#[test]
+fn dci5_input_capture_trace_format_includes_parseable_context_state() {
+    super::trace_dci5_input_capture::assert_dci5_input_capture_trace_format_includes_parseable_context_state();
 }
 
 #[test]

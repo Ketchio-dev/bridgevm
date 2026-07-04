@@ -193,6 +193,10 @@ impl VirtioMmioBlock {
         self.backend.len
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.backend.len == 0
+    }
+
     pub fn stats(&self) -> VirtioMmioBlockStats {
         let mut stats = self.stats;
         stats.transport_version = self.transport.version();
@@ -213,6 +217,26 @@ impl VirtioMmioBlock {
 
     pub fn recent_request_trace(&self) -> Vec<VirtioBlockRequestTrace> {
         self.request_trace.snapshot()
+    }
+
+    pub fn reset_runtime_state(&mut self) {
+        self.stats = VirtioMmioBlockStats::default();
+        self.device_features_sel = 0;
+        self.driver_features_sel = 0;
+        self.driver_features = [0; 2];
+        self.guest_page_size = 4096;
+        self.queue_sel = 0;
+        self.queue_num = 0;
+        self.queue_align = 4096;
+        self.queue_ready = false;
+        self.queue_desc = 0;
+        self.queue_driver = 0;
+        self.queue_device = 0;
+        self.status = 0;
+        self.interrupt_status = 0;
+        self.last_avail_idx = 0;
+        self.request_sequence = 0;
+        self.request_trace = RecentVirtioBlockRequests::default();
     }
 
     pub fn access(
@@ -507,9 +531,12 @@ impl VirtioMmioBlock {
             Some(bytes) if bytes.len() == 16 => bytes,
             _ => return RequestCompletion::write_status(mem, descs.last(), VIRTIO_BLK_S_IOERR, 1),
         };
-        let req_type = u32::from_le_bytes(header[0..4].try_into().unwrap());
-        let sector = u64::from_le_bytes(header[8..16].try_into().unwrap());
-        let status = *descs.last().unwrap();
+        let req_type = u32::from_le_bytes([header[0], header[1], header[2], header[3]]);
+        let sector = u64::from_le_bytes([
+            header[8], header[9], header[10], header[11], header[12], header[13], header[14],
+            header[15],
+        ]);
+        let status = descs[descs.len() - 1];
         let data_descs = &descs[1..descs.len() - 1];
         let data_len = data_descs
             .iter()
@@ -626,6 +653,11 @@ impl VirtioPciBlock {
 
     pub fn recent_request_trace(&self) -> Vec<VirtioBlockRequestTrace> {
         self.block.recent_request_trace()
+    }
+
+    pub fn reset_runtime_state(&mut self) {
+        self.block.reset_runtime_state();
+        self.msix = MsixTable::new(VIRTIO_BLK_MSIX_VECTOR_COUNT);
     }
 
     pub fn access(

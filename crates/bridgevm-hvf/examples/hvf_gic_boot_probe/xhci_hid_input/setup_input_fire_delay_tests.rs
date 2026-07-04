@@ -141,6 +141,77 @@ fn xhci_setup_input_fire_delay_exposes_host_wake_deadline_after_marker_seen() {
 }
 
 #[test]
+fn xhci_setup_input_secondary_fire_delay_uses_dedicated_envs() {
+    // Given: the primary setup-input delay env is different from a secondary trigger delay.
+    let _guard = ENV_LOCK.lock().unwrap();
+    let actions_env = "BRIDGEVM_TEST_XHCI_SETUP_INPUT2_ACTIONS_FIRE_DELAY";
+    let marker_env = "BRIDGEVM_TEST_XHCI_SETUP_INPUT2_MARKER_FIRE_DELAY";
+    let primary_ramfb_delay_env = "BRIDGEVM_XHCI_SETUP_INPUT_RAMFB_DELAY_MS";
+    let primary_fire_delay_env = "BRIDGEVM_XHCI_SETUP_INPUT_FIRE_DELAY_MS";
+    let secondary_ramfb_delay_env = "BRIDGEVM_TEST_XHCI_SETUP_INPUT2_RAMFB_DELAY_MS";
+    let secondary_fire_delay_env = "BRIDGEVM_TEST_XHCI_SETUP_INPUT2_FIRE_DELAY_MS";
+    std::env::set_var(actions_env, "text:g021keys");
+    std::env::remove_var(marker_env);
+    std::env::set_var(primary_ramfb_delay_env, "5000");
+    std::env::set_var(primary_fire_delay_env, "10");
+    std::env::set_var(secondary_ramfb_delay_env, "7");
+    std::env::set_var(secondary_fire_delay_env, "75");
+    let mut trigger = XhciSetupInputTrigger::from_env_with_timing_envs(
+        "setup-input-2",
+        actions_env,
+        marker_env,
+        secondary_fire_delay_env,
+        secondary_ramfb_delay_env,
+    )
+    .unwrap()
+    .unwrap();
+    std::env::remove_var(actions_env);
+    std::env::remove_var(primary_ramfb_delay_env);
+    std::env::remove_var(primary_fire_delay_env);
+    std::env::remove_var(secondary_ramfb_delay_env);
+    std::env::remove_var(secondary_fire_delay_env);
+    let mut platform = new_platform();
+    emit_uart(&mut platform, b"BdsDxe: starting Boot0001");
+    let start = Instant::now();
+    let mut checkpoints = Vec::new();
+
+    // When: the trigger polls at the primary delay and then at the secondary delay.
+    trigger.maybe_fire_with_ramfb_checkpoints_at(&mut platform, start, |label: &str| {
+        checkpoints.push(label.to_string());
+    });
+    trigger.maybe_fire_with_ramfb_checkpoints_at(
+        &mut platform,
+        start + Duration::from_millis(10),
+        |label: &str| {
+            checkpoints.push(label.to_string());
+        },
+    );
+    let queued_at_primary_delay = platform.xhci_setup_input_report_stats().queued_actions;
+    trigger.maybe_fire_with_ramfb_checkpoints_at(
+        &mut platform,
+        start + Duration::from_millis(75),
+        |label: &str| {
+            checkpoints.push(label.to_string());
+        },
+    );
+
+    // Then: only the secondary delay and secondary RAMFB checkpoint config are used.
+    assert_eq!(queued_at_primary_delay, 0);
+    assert_eq!(platform.xhci_setup_input_report_stats().queued_actions, 8);
+    assert_eq!(
+        checkpoints,
+        [
+            "setup-input-before".to_string(),
+            "setup-input-after".to_string()
+        ]
+    );
+    println!(
+        "secondary fire delay queued_at_primary_delay={queued_at_primary_delay} labels={}",
+        checkpoints.join(",")
+    );
+}
+
+#[test]
 fn xhci_setup_input_host_wake_canceled_exit_is_not_watchdog_when_flagged() {
     // Given: a setup-input host wake fired before the watchdog did.
     let wake = SetupInputHostWake::fired_for_test();
@@ -175,6 +246,21 @@ fn xhci_setup_input_host_wake_arm_invokes_wake_and_marks_canceled_exit() {
     // Then: the following EXIT_CANCELED is attributed to the setup-input wake.
     let watchdog_fired = AtomicBool::new(false);
     assert!(wake.canceled_by_host_wake(EXIT_CANCELED, &watchdog_fired));
+}
+
+#[test]
+fn xhci_setup_input_host_wake_does_not_rearm_prior_deadline_after_second_deadline() {
+    // Given: two delayed setup-input triggers expose distinct host wake deadlines.
+    let mut wake = SetupInputHostWake::new();
+    let first_deadline = Instant::now() + Duration::from_secs(60);
+    let second_deadline = first_deadline + Duration::from_secs(1);
+
+    // When: both deadlines are armed and the first deadline is observed again.
+    assert!(wake.arm(first_deadline, || {}));
+    assert!(wake.arm(second_deadline, || {}));
+
+    // Then: the previously armed first deadline is not armed a second time.
+    assert!(!wake.arm(first_deadline, || {}));
 }
 
 #[test]

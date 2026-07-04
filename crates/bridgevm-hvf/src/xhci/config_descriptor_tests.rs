@@ -14,9 +14,10 @@ const TRB_TYPE_SETUP_STAGE: u32 = 2;
 const TRB_TYPE_DATA_STAGE: u32 = 3;
 const TRB_TYPE_STATUS_STAGE: u32 = 4;
 const TRB_DATA_STAGE_DIRECTION_IN: u32 = 1 << 16;
-const CONFIG_DESCRIPTOR: [u8; 34] = [
-    9, 2, 34, 0, 1, 1, 0, 0x80, 50, 9, 4, 0, 0, 1, 0x03, 0x01, 0x01, 0, 9, 0x21, 0x11, 0x01, 0, 1,
-    0x22, 63, 0, 7, 5, 0x81, 0x03, 8, 0, 10,
+const CONFIG_DESCRIPTOR: [u8; 59] = [
+    9, 2, 59, 0, 2, 1, 0, 0x80, 50, 9, 4, 0, 0, 1, 0x03, 0x01, 0x01, 0, 9, 0x21, 0x11, 0x01, 0, 1,
+    0x22, 63, 0, 7, 5, 0x81, 0x03, 8, 0, 10, 9, 4, 1, 0, 1, 0x03, 0x00, 0x00, 0, 9, 0x21, 0x11,
+    0x01, 0, 1, 0x22, 51, 0, 7, 5, 0x82, 0x03, 8, 0, 10,
 ];
 
 #[test]
@@ -55,12 +56,12 @@ fn ep0_get_descriptor_configuration_returns_full_descriptor_tree() {
         u16::try_from(CONFIG_DESCRIPTOR.len()).unwrap(),
         0x0200,
     );
-    assert!(mem.write_bytes(DATA_STAGE_BUFFER, &[0xaa; 48]));
+    assert!(mem.write_bytes(DATA_STAGE_BUFFER, &[0xaa; 80]));
 
     // When: the guest rings slot 1 endpoint 0.
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
 
-    // Then: the whole HID keyboard-capable descriptor tree is copied.
+    // Then: the whole keyboard plus absolute-pointer descriptor tree is copied.
     assert_eq!(
         mem.read_bytes(DATA_STAGE_BUFFER, CONFIG_DESCRIPTOR.len())
             .unwrap(),

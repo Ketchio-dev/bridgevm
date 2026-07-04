@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::platform_virt::VirtPlatform;
+#[cfg(test)]
 use bridgevm_hvf::xhci::{SetupInputAction, XhciSetupInputQueueError};
 
 use super::XhciSetupInputTrigger;
@@ -72,6 +73,7 @@ impl XhciSetupInputTrigger {
         if !self.fire_delay_elapsed_at(platform, now) {
             return false;
         }
+        self.mark_attempted_at_controller_generation(platform);
         let before_stats = platform.xhci_setup_input_report_stats();
         match platform.queue_xhci_setup_input_actions_with_mem(&self.actions, mem) {
             Ok(()) => {
@@ -87,16 +89,18 @@ impl XhciSetupInputTrigger {
                 if emitted_report_delta > 0 {
                     self.record_fire(platform)
                 } else {
+                    self.note_queue_success_without_immediate_emit(before_stats);
                     false
                 }
             }
             Err(error) => {
-                self.report_queue_rejection(error);
+                self.report_queue_rejection(platform, error);
                 false
             }
         }
     }
 
+    #[cfg(test)]
     fn maybe_fire_with_ramfb_checkpoint_context_at<C, Q, F>(
         &mut self,
         platform: &mut VirtPlatform,
