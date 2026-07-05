@@ -1072,10 +1072,17 @@ fn run_secondary_until_parked(
                 let size = 1u8 << ((esr >> 22) & 0x3);
                 let srt = ((esr >> 16) & 0x1f) as u32;
                 let is_write = (esr >> 6) & 1 == 1;
+                // srt=31 is WZR/XZR: stores write zero, loads discard. It must
+                // never index the HV register file, where slot 31 is the PC —
+                // Linux emits `str wzr` for zero MMIO writes (e.g. virtio
+                // device_feature_select=0) and the store leaked the guest PC
+                // into the device register.
                 let op = if is_write {
                     let mut v = 0u64;
-                    unsafe {
-                        hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v);
+                    if srt != 31 {
+                        unsafe {
+                            hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v);
+                        }
                     }
                     MmioOp::Write { size, value: v }
                 } else {
@@ -1102,12 +1109,16 @@ fn run_secondary_until_parked(
                     outcome
                 };
                 match outcome {
-                    MmioOutcome::ReadValue(v) if !is_write => unsafe {
-                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
-                    },
+                    MmioOutcome::ReadValue(v) if !is_write => {
+                        if srt != 31 {
+                            unsafe {
+                                hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
+                            }
+                        }
+                    }
                     MmioOutcome::ReadValue(_) | MmioOutcome::WriteAck => {}
                     MmioOutcome::KnownUnimplemented(_) | MmioOutcome::Unmapped => {
-                        if !is_write {
+                        if !is_write && srt != 31 {
                             unsafe {
                                 hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
                             }
@@ -3196,9 +3207,16 @@ fn main() {
                             let size = 1u8 << ((esr >> 22) & 0x3);
                             let srt = ((esr >> 16) & 0x1f) as u32;
                             let is_write = (esr >> 6) & 1 == 1;
+                            // srt=31 is WZR/XZR (stores write zero, loads
+                            // discard) — never index the HV register file,
+                            // where slot 31 is the PC. Linux emits `str wzr`
+                            // for zero MMIO writes; this leaked the guest PC
+                            // into device registers (virtio feature_select).
                             let op = if is_write {
                                 let mut v = 0u64;
-                                hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v);
+                                if srt != 31 {
+                                    hv_vcpu_get_reg(vcpu, HV_REG_X0 + srt, &mut v);
+                                }
                                 MmioOp::Write { size, value: v }
                             } else {
                                 MmioOp::Read { size }
@@ -3307,7 +3325,9 @@ fn main() {
                             }
                             match outcome {
                                 MmioOutcome::ReadValue(v) if !is_write => {
-                                    hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
+                                    if srt != 31 {
+                                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, v);
+                                    }
                                 }
                                 MmioOutcome::ReadValue(_) | MmioOutcome::WriteAck => {}
                                 MmioOutcome::KnownUnimplemented(name) => {
@@ -3316,13 +3336,13 @@ fn main() {
                                         redist_lo = redist_lo.min(ipa);
                                         redist_hi = redist_hi.max(ipa);
                                     }
-                                    if !is_write {
+                                    if !is_write && srt != 31 {
                                         hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
                                     }
                                 }
                                 MmioOutcome::Unmapped => {
                                     *unimpl.entry("<unmapped>").or_insert(0) += 1;
-                                    if !is_write {
+                                    if !is_write && srt != 31 {
                                         hv_vcpu_set_reg(vcpu, HV_REG_X0 + srt, 0);
                                     }
                                 }

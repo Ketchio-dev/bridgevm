@@ -707,13 +707,20 @@ impl VirtioGpu {
     }
 
     fn config_read(&self, offset: u64, size: u8) -> u64 {
+        // struct virtio_gpu_config: le32 events_read @0, le32 events_clear @4,
+        // le32 num_scanouts @8, le32 num_capsets @12. num_capsets was being
+        // written into the num_scanouts slot, so Linux saw "number of cap
+        // sets: 0" and never queried the venus capset (and a 2D-only device
+        // reported zero scanouts).
         let mut config = [0u8; 16];
+        config[4..8].copy_from_slice(&self.events_clear.to_le_bytes());
+        config[8..12].copy_from_slice(&1u32.to_le_bytes());
         let num_capsets = if self.three_d.has_backend() {
             1u32
         } else {
             0u32
         };
-        config[8..12].copy_from_slice(&num_capsets.to_le_bytes());
+        config[12..16].copy_from_slice(&num_capsets.to_le_bytes());
         read_le_from_bytes(&config, offset, size).unwrap_or(0)
     }
 
@@ -2217,8 +2224,13 @@ mod tests {
                     | VIRTIO_GPU_F_CONTEXT_INIT
             )
         );
+        // num_scanouts @8 stays 1; num_capsets @12 is 1 with a backend.
         assert_eq!(
             pci_read(&mut dev, PCI_DEVICE_CFG_OFFSET + 8, 4, &mut mem),
+            1
+        );
+        assert_eq!(
+            pci_read(&mut dev, PCI_DEVICE_CFG_OFFSET + 12, 4, &mut mem),
             1
         );
         let mut info = ctrl_req(VIRTIO_GPU_CMD_GET_CAPSET_INFO);
@@ -2248,8 +2260,13 @@ mod tests {
     fn two_d_only_rejects_three_d_and_reports_zero_capsets() {
         let mut dev = VirtioPciGpu::new(1280, 800);
         let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        // virtio_gpu_config: num_scanouts @8 (always 1), num_capsets @12.
         assert_eq!(
             pci_read(&mut dev, PCI_DEVICE_CFG_OFFSET + 8, 4, &mut mem),
+            1
+        );
+        assert_eq!(
+            pci_read(&mut dev, PCI_DEVICE_CFG_OFFSET + 12, 4, &mut mem),
             0
         );
         let mut info = ctrl_req(VIRTIO_GPU_CMD_GET_CAPSET_INFO);
