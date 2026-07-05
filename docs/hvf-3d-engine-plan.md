@@ -63,6 +63,17 @@ in-tree on Linux) — that is our de-risking order, not an afterthought.
   loop; completions flushed via existing pending_msix infra.
 - **Gate**: harness renders correct frames. **Kill**: virglrenderer/KosmicKrisp
   fundamentally broken on macOS-arm64 → re-scope to MoltenVK subset or stop.
+- **✅ P0 RESULT (2026-07-05, gate PASSED)**: upstream virglrenderer (2a173ee)
+  builds CLEAN on macOS arm64 with `-Dvenus=true` (the libkrun macOS work is
+  upstream; Metal/Foundation detected natively). Architecture: venus lives in
+  the separate `virgl_render_server` process (crash isolation, crosvm model),
+  the lib is a proxy, the server dlopens MoltenVK. Our probe
+  (`tools/venus-host-probe`, gate `scripts/run-venus-host-probe.sh`) got
+  `VENUS_CAPSET_OK`: capset id 4, 160 bytes, wire-format v1, venus protocol
+  spec v4, supports_blob_id_0, multiple timelines; context create/destroy OK.
+  Init flags 0x3c2 (VENUS|NO_VIRGL|RENDER_SERVER|THREAD_SYNC|ASYNC_FENCE_CB),
+  callbacks v4 (write_fence + write_context_fence). MoltenVK first;
+  KosmicKrisp evaluation deferred to P2 benchmarking.
 
 ### Phase 1 — Device model: 3D virtio-gpu (the core VMM build) [3-6w]
 Extend `src/virtio_gpu.rs` (2D stays intact and default):
