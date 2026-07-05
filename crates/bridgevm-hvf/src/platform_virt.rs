@@ -54,6 +54,7 @@ use crate::virtio_blk::{
 use crate::virtio_gpu::{
     VirtioGpuResult, VirtioGpuScanout, VirtioGpuStats, VirtioPciGpu, VirtioPciGpuOp,
 };
+use crate::virtio_gpu_3d::GpuShmMapPort;
 use crate::virtio_net::{
     LoopbackTestBackend, NetBackend, VirtioNetResult, VirtioNetStats, VirtioPciNet, VirtioPciNetOp,
 };
@@ -90,6 +91,10 @@ fn make_virtio_gpu() -> VirtioPciGpu {
         }
     }
     VirtioPciGpu::new(width, height)
+}
+
+fn virtio_gpu_3d_enabled_for_pcie() -> bool {
+    cfg!(feature = "venus") && env_flag("BRIDGEVM_VIRTIO_GPU_3D")
 }
 
 fn virtio_gpu_resolution_from_env() -> (u32, u32) {
@@ -395,6 +400,7 @@ impl VirtPlatform {
                 virtio_blk_present: config.devices.virtio_boot_media_present,
                 virtio_net_present: config.devices.virtio_net_present,
                 virtio_gpu_present: config.devices.virtio_gpu_present,
+                virtio_gpu_3d_enabled: virtio_gpu_3d_enabled_for_pcie(),
             }),
             nvme: NvmeController::new(DEFAULT_NVME_DISK_BYTES),
             xhci: XhciController::new(),
@@ -468,6 +474,7 @@ impl VirtPlatform {
             virtio_blk_present: self.devices.virtio_boot_media_present,
             virtio_net_present: self.devices.virtio_net_present,
             virtio_gpu_present: self.devices.virtio_gpu_present,
+            virtio_gpu_3d_enabled: virtio_gpu_3d_enabled_for_pcie(),
         });
         self.nvme.reset_registers_keep_disks();
         self.xhci = XhciController::new();
@@ -598,6 +605,21 @@ impl VirtPlatform {
 
     pub fn virtio_gpu_scanout(&self) -> Option<VirtioGpuScanout<'_>> {
         self.virtio_gpu.as_ref().and_then(VirtioPciGpu::scanout)
+    }
+
+    pub fn set_virtio_gpu_shm_map_port(&mut self, port: Box<dyn GpuShmMapPort>) -> bool {
+        let Some(window_size) = self.pcie.virtio_gpu_host_visible_bar_size() else {
+            return false;
+        };
+        let Some(gpu) = self.virtio_gpu.as_mut() else {
+            return false;
+        };
+        gpu.set_shm_map_port(port, window_size);
+        true
+    }
+
+    pub fn virtio_gpu_host_visible_bar_base(&self) -> Option<u64> {
+        self.pcie.virtio_gpu_host_visible_bar_base()
     }
 
     pub fn pump_virtio_net_receive(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {

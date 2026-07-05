@@ -15,11 +15,13 @@ use crate::{
     },
     ramfb::DRM_FORMAT_XRGB8888,
     virtio_gpu_3d::{
-        self, CompletedFence, CtrlHdr3d, VirtioGpu3d, VirtioGpu3dBackend, VirtioGpu3dStats,
-        VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE, VIRTIO_GPU_CMD_CTX_CREATE, VIRTIO_GPU_CMD_CTX_DESTROY,
-        VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE, VIRTIO_GPU_CMD_GET_CAPSET,
-        VIRTIO_GPU_CMD_GET_CAPSET_INFO, VIRTIO_GPU_CMD_SUBMIT_3D, VIRTIO_GPU_FLAG_FENCE,
-        VIRTIO_GPU_F_CONTEXT_INIT, VIRTIO_GPU_F_VIRGL,
+        self, CompletedFence, CtrlHdr3d, GpuShmMapPort, VirtioGpu3d, VirtioGpu3dBackend,
+        VirtioGpu3dStats, VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE, VIRTIO_GPU_CMD_CTX_CREATE,
+        VIRTIO_GPU_CMD_CTX_DESTROY, VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE, VIRTIO_GPU_CMD_GET_CAPSET,
+        VIRTIO_GPU_CMD_GET_CAPSET_INFO, VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB,
+        VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB, VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB,
+        VIRTIO_GPU_CMD_SUBMIT_3D, VIRTIO_GPU_FLAG_FENCE, VIRTIO_GPU_F_CONTEXT_INIT,
+        VIRTIO_GPU_F_RESOURCE_BLOB, VIRTIO_GPU_F_VIRGL,
     },
 };
 
@@ -288,6 +290,10 @@ impl VirtioGpu {
         gpu
     }
 
+    pub fn set_shm_map_port(&mut self, port: Box<dyn GpuShmMapPort>, window_size: u64) {
+        self.three_d.set_shm_map_port(port, window_size);
+    }
+
     pub fn new_from_env() -> Self {
         let (width, height) = parse_resolution_env();
         Self::new(width, height)
@@ -465,7 +471,8 @@ impl VirtioGpu {
             0 => {
                 let mut features = VIRTIO_GPU_F_EDID;
                 if self.three_d.has_backend() {
-                    features |= VIRTIO_GPU_F_VIRGL | VIRTIO_GPU_F_CONTEXT_INIT;
+                    features |=
+                        VIRTIO_GPU_F_VIRGL | VIRTIO_GPU_F_RESOURCE_BLOB | VIRTIO_GPU_F_CONTEXT_INIT;
                 }
                 features
             }
@@ -824,11 +831,14 @@ impl VirtioGpu {
             VIRTIO_GPU_CMD_RESOURCE_FLUSH => self.resource_flush(request, Some(hdr)),
             VIRTIO_GPU_CMD_GET_CAPSET_INFO
             | VIRTIO_GPU_CMD_GET_CAPSET
+            | VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB
             | VIRTIO_GPU_CMD_CTX_CREATE
             | VIRTIO_GPU_CMD_CTX_DESTROY
             | VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE
             | VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE
-            | VIRTIO_GPU_CMD_SUBMIT_3D => {
+            | VIRTIO_GPU_CMD_SUBMIT_3D
+            | VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB
+            | VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => {
                 let hdr3d = CtrlHdr3d::parse(request).unwrap();
                 self.three_d.handle(request, hdr3d).unwrap_or_else(|| {
                     virtio_gpu_3d::response_hdr(
@@ -936,6 +946,7 @@ impl VirtioGpu {
     fn resource_unref(&mut self, request: &[u8], hdr: Option<CtrlHdr>) -> Vec<u8> {
         if let Some(resource_id) = read_le_u32(request, 24) {
             self.resources.remove(&resource_id);
+            self.three_d.unref_resource(resource_id);
             if self.scanout_resource == Some(resource_id) {
                 self.scanout_resource = None;
             }
@@ -1134,6 +1145,25 @@ impl VirtioPciGpu {
             gpu: VirtioGpu::with_3d_backend(width, height, backend),
             msix: MsixTable::new(VIRTIO_GPU_MSIX_VECTOR_COUNT),
         }
+    }
+
+    pub fn with_3d_backend_and_shm_map_port(
+        width: u32,
+        height: u32,
+        backend: Box<dyn VirtioGpu3dBackend>,
+        map_port: Box<dyn GpuShmMapPort>,
+        shm_window_size: u64,
+    ) -> Self {
+        let mut gpu = VirtioGpu::with_3d_backend(width, height, backend);
+        gpu.set_shm_map_port(map_port, shm_window_size);
+        Self {
+            gpu,
+            msix: MsixTable::new(VIRTIO_GPU_MSIX_VECTOR_COUNT),
+        }
+    }
+
+    pub fn set_shm_map_port(&mut self, port: Box<dyn GpuShmMapPort>, window_size: u64) {
+        self.gpu.set_shm_map_port(port, window_size);
     }
 
     pub fn new_from_env() -> Self {
@@ -2180,7 +2210,12 @@ mod tests {
         pci_write(&mut dev, COMMON_DEVICE_FEATURE_SELECT, 4, 0, &mut mem);
         assert_eq!(
             pci_read(&mut dev, COMMON_DEVICE_FEATURE, 4, &mut mem),
-            u64::from(VIRTIO_GPU_F_EDID | VIRTIO_GPU_F_VIRGL | VIRTIO_GPU_F_CONTEXT_INIT)
+            u64::from(
+                VIRTIO_GPU_F_EDID
+                    | VIRTIO_GPU_F_VIRGL
+                    | VIRTIO_GPU_F_RESOURCE_BLOB
+                    | VIRTIO_GPU_F_CONTEXT_INIT
+            )
         );
         assert_eq!(
             pci_read(&mut dev, PCI_DEVICE_CFG_OFFSET + 8, 4, &mut mem),

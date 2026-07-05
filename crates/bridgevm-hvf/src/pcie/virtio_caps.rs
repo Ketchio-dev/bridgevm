@@ -5,12 +5,14 @@ const VIRTIO_PCI_CAP_COMMON_CFG: u8 = 1;
 const VIRTIO_PCI_CAP_NOTIFY_CFG: u8 = 2;
 const VIRTIO_PCI_CAP_ISR_CFG: u8 = 3;
 const VIRTIO_PCI_CAP_DEVICE_CFG: u8 = 4;
+const VIRTIO_PCI_CAP_SHARED_MEMORY_CFG: u8 = 8;
 
 const VIRTIO_PCI_BAR4: u8 = 4;
 const VIRTIO_PCI_CAP_COMMON_OFFSET: u8 = 0x40;
 const VIRTIO_PCI_CAP_NOTIFY_OFFSET: u8 = 0x50;
 const VIRTIO_PCI_CAP_ISR_OFFSET: u8 = 0x64;
 const VIRTIO_PCI_CAP_DEVICE_OFFSET: u8 = 0x74;
+const VIRTIO_PCI_CAP_SHARED_MEMORY_OFFSET: u8 = 0x90;
 
 const VIRTIO_PCI_COMMON_CFG_OFFSET: u32 = 0x0000;
 const VIRTIO_PCI_ISR_CFG_OFFSET: u32 = 0x1000;
@@ -59,11 +61,76 @@ impl VirtioPciCap {
     }
 }
 
+#[derive(Clone, Copy)]
+struct VirtioPciCap64 {
+    offset: u8,
+    next: u8,
+    cfg_type: u8,
+    bar: u8,
+    id: u8,
+    region_offset: u64,
+    region_length: u64,
+}
+
+impl VirtioPciCap64 {
+    const fn bytes(self) -> [u8; 24] {
+        let offset = self.region_offset.to_le_bytes();
+        let length = self.region_length.to_le_bytes();
+        [
+            VIRTIO_PCI_CAP_VENDOR,
+            self.next,
+            24,
+            self.cfg_type,
+            self.bar,
+            self.id,
+            0,
+            0,
+            offset[0],
+            offset[1],
+            offset[2],
+            offset[3],
+            length[0],
+            length[1],
+            length[2],
+            length[3],
+            offset[4],
+            offset[5],
+            offset[6],
+            offset[7],
+            length[4],
+            length[5],
+            length[6],
+            length[7],
+        ]
+    }
+}
+
 pub(super) fn boot_media_capability_list() -> VirtioCapabilityList {
     capability_list(VIRTIO_BLK_MSIX_CAP_OFFSET)
 }
 
 pub(super) fn capability_list(msix_cap_offset: u8) -> VirtioCapabilityList {
+    capability_list_inner(msix_cap_offset, None)
+}
+
+pub(super) fn capability_list_with_shared_memory(
+    msix_cap_offset: u8,
+    shmid: u8,
+    bar: u8,
+    length: u64,
+) -> VirtioCapabilityList {
+    capability_list_inner(msix_cap_offset, Some((shmid, bar, length)))
+}
+
+fn capability_list_inner(
+    msix_cap_offset: u8,
+    shared_memory: Option<(u8, u8, u64)>,
+) -> VirtioCapabilityList {
+    let device_next = if shared_memory.is_some() {
+        VIRTIO_PCI_CAP_SHARED_MEMORY_OFFSET
+    } else {
+        msix_cap_offset
+    };
     let common = VirtioPciCap {
         offset: VIRTIO_PCI_CAP_COMMON_OFFSET,
         next: VIRTIO_PCI_CAP_NOTIFY_OFFSET,
@@ -90,14 +157,14 @@ pub(super) fn capability_list(msix_cap_offset: u8) -> VirtioCapabilityList {
     };
     let device = VirtioPciCap {
         offset: VIRTIO_PCI_CAP_DEVICE_OFFSET,
-        next: msix_cap_offset,
+        next: device_next,
         cfg_type: VIRTIO_PCI_CAP_DEVICE_CFG,
         bar: VIRTIO_PCI_BAR4,
         region_offset: VIRTIO_PCI_DEVICE_CFG_OFFSET,
         region_length: VIRTIO_PCI_CFG_REGION_SIZE,
     };
 
-    let mut cap_bytes = Vec::with_capacity(68);
+    let mut cap_bytes = Vec::with_capacity(92);
     push_bytes(&mut cap_bytes, common.offset, &common.bytes());
     let mut notify_bytes = [0u8; 20];
     notify_bytes[..16].copy_from_slice(&notify.bytes());
@@ -106,6 +173,18 @@ pub(super) fn capability_list(msix_cap_offset: u8) -> VirtioCapabilityList {
     push_bytes(&mut cap_bytes, notify.offset, &notify_bytes);
     push_bytes(&mut cap_bytes, isr.offset, &isr.bytes());
     push_bytes(&mut cap_bytes, device.offset, &device.bytes());
+    if let Some((shmid, bar, length)) = shared_memory {
+        let shm = VirtioPciCap64 {
+            offset: VIRTIO_PCI_CAP_SHARED_MEMORY_OFFSET,
+            next: msix_cap_offset,
+            cfg_type: VIRTIO_PCI_CAP_SHARED_MEMORY_CFG,
+            bar,
+            id: shmid,
+            region_offset: 0,
+            region_length: length,
+        };
+        push_bytes(&mut cap_bytes, shm.offset, &shm.bytes());
+    }
 
     VirtioCapabilityList {
         cap_ptr: VIRTIO_PCI_CAP_COMMON_OFFSET,

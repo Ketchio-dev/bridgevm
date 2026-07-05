@@ -6,6 +6,7 @@ fn main() {
 #[cfg(feature = "venus")]
 mod smoke {
     use std::{
+        sync::{Arc, Mutex},
         thread,
         time::{Duration, Instant},
     };
@@ -15,10 +16,12 @@ mod smoke {
         venus_backend::VenusBackend,
         virtio_gpu::{VirtioGpuResult, VirtioPciGpu, VirtioPciGpuOp},
         virtio_gpu_3d::{
-            VIRTIO_GPU_CMD_CTX_CREATE, VIRTIO_GPU_CMD_CTX_DESTROY, VIRTIO_GPU_CMD_GET_CAPSET,
-            VIRTIO_GPU_CMD_GET_CAPSET_INFO, VIRTIO_GPU_CMD_SUBMIT_3D, VIRTIO_GPU_FLAG_FENCE,
+            GpuShmMapPort, VIRTIO_GPU_BLOB_MEM_HOST3D, VIRTIO_GPU_CMD_CTX_CREATE,
+            VIRTIO_GPU_CMD_CTX_DESTROY, VIRTIO_GPU_CMD_GET_CAPSET, VIRTIO_GPU_CMD_GET_CAPSET_INFO,
+            VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB, VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB,
+            VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB, VIRTIO_GPU_CMD_SUBMIT_3D, VIRTIO_GPU_FLAG_FENCE,
             VIRTIO_GPU_FLAG_INFO_RING_IDX, VIRTIO_GPU_RESP_OK_CAPSET,
-            VIRTIO_GPU_RESP_OK_CAPSET_INFO, VIRTIO_GPU_RESP_OK_NODATA,
+            VIRTIO_GPU_RESP_OK_CAPSET_INFO, VIRTIO_GPU_RESP_OK_MAP_INFO, VIRTIO_GPU_RESP_OK_NODATA,
         },
     };
 
@@ -32,6 +35,10 @@ mod smoke {
     const DESC_SIZE: u64 = 16;
     const DESC_F_NEXT: u16 = 1;
     const DESC_F_WRITE: u16 = 2;
+    const VIRTIO_GPU_CMD_RESOURCE_UNREF: u32 = 0x0102;
+    const VIRTIO_GPU_BLOB_FLAG_USE_MAPPABLE: u32 = 1;
+    const SHM_WINDOW_SIZE: u64 = 1024 * 1024 * 1024;
+    const HVF_PAGE_SIZE: usize = 16 * 1024;
 
     #[derive(Debug)]
     struct TestMem {
@@ -78,9 +85,51 @@ mod smoke {
         }
     }
 
+    #[derive(Debug, Default)]
+    struct RecordingMapPort {
+        maps: Vec<(usize, usize, u64)>,
+        unmaps: Vec<(u64, usize)>,
+    }
+
+    #[derive(Debug, Clone)]
+    struct RecordingMapPortHandle(Arc<Mutex<RecordingMapPort>>);
+
+    impl GpuShmMapPort for RecordingMapPortHandle {
+        fn map(&mut self, host_ptr: *mut u8, size: usize, shm_offset: u64) -> Result<(), i32> {
+            assert!(!host_ptr.is_null());
+            assert_eq!((host_ptr as usize) % HVF_PAGE_SIZE, 0);
+            assert!(size >= 65_536);
+            assert_eq!(size % HVF_PAGE_SIZE, 0);
+            unsafe {
+                let old = host_ptr.read();
+                host_ptr.write(old.wrapping_add(1));
+                assert_eq!(host_ptr.read(), old.wrapping_add(1));
+                host_ptr.write(old);
+            }
+            self.0
+                .lock()
+                .unwrap()
+                .maps
+                .push((host_ptr as usize, size, shm_offset));
+            Ok(())
+        }
+
+        fn unmap(&mut self, shm_offset: u64, size: usize) -> Result<(), i32> {
+            self.0.lock().unwrap().unmaps.push((shm_offset, size));
+            Ok(())
+        }
+    }
+
     pub(super) fn main() {
         let backend = VenusBackend::new().expect("VenusBackend init");
-        let mut dev = VirtioPciGpu::with_3d_backend(1280, 800, Box::new(backend));
+        let map_port = Arc::new(Mutex::new(RecordingMapPort::default()));
+        let mut dev = VirtioPciGpu::with_3d_backend_and_shm_map_port(
+            1280,
+            800,
+            Box::new(backend),
+            Box::new(RecordingMapPortHandle(map_port.clone())),
+            SHM_WINDOW_SIZE,
+        );
         let mut mem = TestMem::new(0x4000_0000, 0x40000);
 
         let mut info = ctrl_req(VIRTIO_GPU_CMD_GET_CAPSET_INFO, 0);
@@ -129,6 +178,41 @@ mod smoke {
             }
             thread::sleep(Duration::from_millis(10));
         }
+
+        let resp = submit_control(
+            &mut dev,
+            &mut mem,
+            &create_blob_req(
+                11,
+                VIRTIO_GPU_BLOB_MEM_HOST3D,
+                VIRTIO_GPU_BLOB_FLAG_USE_MAPPABLE,
+                0,
+                65_536,
+                1,
+            ),
+            24,
+        );
+        assert_eq!(read_u32(&resp, 0), VIRTIO_GPU_RESP_OK_NODATA);
+
+        let resp = submit_control(&mut dev, &mut mem, &map_blob_req(11, 0), 32);
+        assert_eq!(read_u32(&resp, 0), VIRTIO_GPU_RESP_OK_MAP_INFO);
+        let map_info = read_u32(&resp, 24);
+        let (ptr_aligned, mapped_size) = {
+            let guard = map_port.lock().unwrap();
+            let (ptr, size, offset) = guard.maps.last().copied().expect("blob map call");
+            assert_eq!(offset, 0);
+            (usize::from(ptr % HVF_PAGE_SIZE == 0), size)
+        };
+
+        let resp = submit_control(&mut dev, &mut mem, &unmap_blob_req(11), 24);
+        assert_eq!(read_u32(&resp, 0), VIRTIO_GPU_RESP_OK_NODATA);
+
+        let resp = submit_control(&mut dev, &mut mem, &resource_unref_req(11), 24);
+        assert_eq!(read_u32(&resp, 0), VIRTIO_GPU_RESP_OK_NODATA);
+        println!(
+            "VENUS_BLOB_OK ptr_aligned={} size={} map_info={:#x}",
+            ptr_aligned, mapped_size, map_info
+        );
 
         let resp = submit_control(
             &mut dev,
@@ -213,6 +297,46 @@ mod smoke {
         req.extend_from_slice(&(cmdbuf.len() as u32).to_le_bytes());
         req.extend_from_slice(&0u32.to_le_bytes());
         req.extend_from_slice(cmdbuf);
+        req
+    }
+
+    fn create_blob_req(
+        resource_id: u32,
+        blob_mem: u32,
+        blob_flags: u32,
+        blob_id: u64,
+        size: u64,
+        ctx_id: u32,
+    ) -> Vec<u8> {
+        let mut req = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB, ctx_id);
+        req.extend_from_slice(&resource_id.to_le_bytes());
+        req.extend_from_slice(&blob_mem.to_le_bytes());
+        req.extend_from_slice(&blob_flags.to_le_bytes());
+        req.extend_from_slice(&0u32.to_le_bytes());
+        req.extend_from_slice(&blob_id.to_le_bytes());
+        req.extend_from_slice(&size.to_le_bytes());
+        req
+    }
+
+    fn map_blob_req(resource_id: u32, offset: u64) -> Vec<u8> {
+        let mut req = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB, 0);
+        req.extend_from_slice(&resource_id.to_le_bytes());
+        req.extend_from_slice(&0u32.to_le_bytes());
+        req.extend_from_slice(&offset.to_le_bytes());
+        req
+    }
+
+    fn unmap_blob_req(resource_id: u32) -> Vec<u8> {
+        let mut req = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB, 0);
+        req.extend_from_slice(&resource_id.to_le_bytes());
+        req.extend_from_slice(&0u32.to_le_bytes());
+        req
+    }
+
+    fn resource_unref_req(resource_id: u32) -> Vec<u8> {
+        let mut req = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_UNREF, 0);
+        req.extend_from_slice(&resource_id.to_le_bytes());
+        req.extend_from_slice(&0u32.to_le_bytes());
         req
     }
 

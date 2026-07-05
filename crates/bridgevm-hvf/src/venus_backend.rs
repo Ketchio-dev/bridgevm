@@ -10,7 +10,8 @@ use std::{
 };
 
 use crate::virtio_gpu_3d::{
-    CapsetInfo, CompletedFence, VirtioGpu3dBackend, VIRTIO_GPU_RESP_ERR_UNSPEC,
+    BlobMemEntry, CapsetInfo, CompletedFence, CreateBlobArgs, MappedBlob, VirtioGpu3dBackend,
+    VIRTIO_GPU_RESP_ERR_UNSPEC,
 };
 
 type virgl_renderer_gl_context = *mut c_void;
@@ -69,9 +70,14 @@ pub struct virgl_renderer_resource_create_blob_args {
     pub blob_flags: u32,
     pub blob_id: u64,
     pub size: u64,
-    pub pad: u32,
-    pub cmd_size: u32,
-    pub cmd: *const c_void,
+    pub iovecs: *const iovec,
+    pub num_iovs: u32,
+}
+
+#[repr(C)]
+pub struct iovec {
+    pub iov_base: *mut c_void,
+    pub iov_len: usize,
 }
 
 unsafe extern "C" {
@@ -220,6 +226,78 @@ impl VirtioGpu3dBackend for VenusBackend {
             );
         }
         ret == 0
+    }
+
+    fn create_blob(&mut self, args: CreateBlobArgs<'_>) -> bool {
+        let iovecs: Vec<iovec> = args
+            .iovecs
+            .iter()
+            .map(|entry: &BlobMemEntry| iovec {
+                iov_base: entry.addr as usize as *mut c_void,
+                iov_len: entry.len as usize,
+            })
+            .collect();
+        let create = virgl_renderer_resource_create_blob_args {
+            res_handle: args.resource_id,
+            ctx_id: args.ctx_id,
+            blob_mem: args.blob_mem,
+            blob_flags: args.blob_flags,
+            blob_id: args.blob_id,
+            size: args.size,
+            iovecs: if iovecs.is_empty() {
+                ptr::null()
+            } else {
+                iovecs.as_ptr()
+            },
+            num_iovs: iovecs.len() as u32,
+        };
+        let ret = unsafe { virgl_renderer_resource_create_blob(&create) };
+        if ret != 0 {
+            eprintln!(
+                "venus: resource_create_blob ctx={} res={} blob_mem={} blob_id={} size={} ret={ret}",
+                args.ctx_id, args.resource_id, args.blob_mem, args.blob_id, args.size
+            );
+        }
+        ret == 0
+    }
+
+    fn map_blob(&mut self, resource_id: u32) -> Option<MappedBlob> {
+        let mut ptr_out: *mut c_void = ptr::null_mut();
+        let mut size = 0u64;
+        let ret = unsafe { virgl_renderer_resource_map(resource_id, &mut ptr_out, &mut size) };
+        if ret != 0 || ptr_out.is_null() {
+            eprintln!(
+                "venus: resource_map res={resource_id} ret={ret} ptr={ptr_out:p} size={size}"
+            );
+            return None;
+        }
+        let mut map_info = 0u32;
+        let info_ret = unsafe { virgl_renderer_resource_get_map_info(resource_id, &mut map_info) };
+        if info_ret != 0 {
+            eprintln!("venus: resource_get_map_info res={resource_id} ret={info_ret}");
+            unsafe {
+                virgl_renderer_resource_unmap(resource_id);
+            }
+            return None;
+        }
+        Some(MappedBlob {
+            host_ptr: ptr_out.cast::<u8>(),
+            size: usize::try_from(size).ok()?,
+            map_info,
+        })
+    }
+
+    fn unmap_blob(&mut self, resource_id: u32) {
+        let ret = unsafe { virgl_renderer_resource_unmap(resource_id) };
+        if ret != 0 {
+            eprintln!("venus: resource_unmap res={resource_id} ret={ret}");
+        }
+    }
+
+    fn destroy_resource(&mut self, resource_id: u32) {
+        unsafe {
+            virgl_renderer_resource_unref(resource_id);
+        }
     }
 
     fn create_fence(&mut self, ctx_id: u32, ring_idx: u8, fence_id: u64) -> bool {

@@ -62,6 +62,7 @@ use bridgevm_hvf::net_nat::NatStats;
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome, VirtPlatform, VirtPlatformConfig};
 use bridgevm_hvf::stage1::{self, Stage1Context, Stage1WalkStep};
 use bridgevm_hvf::virtio_blk::{VirtioBlockRequestTrace, VirtioMmioBlockStats, INSTALLER_ISO_SLOT};
+use bridgevm_hvf::virtio_gpu_3d::GpuShmMapPort;
 
 #[path = "hvf_gic_boot_probe/arm64_trace.rs"]
 mod arm64_trace;
@@ -111,6 +112,61 @@ struct MappedRam {
     base: u64,
     ptr: *mut u8,
     len: usize,
+}
+
+#[derive(Debug, Default)]
+struct HvGpuShmMapState {
+    bar2_base: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+struct HvGpuShmMapPort {
+    state: Arc<Mutex<HvGpuShmMapState>>,
+}
+
+impl GpuShmMapPort for HvGpuShmMapPort {
+    fn map(&mut self, host_ptr: *mut u8, size: usize, shm_offset: u64) -> Result<(), i32> {
+        let Some(bar2_base) = self.state.lock().unwrap().bar2_base else {
+            eprintln!(
+                "virtio-gpu hv shm map: BAR2 unassigned offset={shm_offset:#x} size={size:#x}"
+            );
+            return Err(-12);
+        };
+        if (host_ptr as usize) % 0x4000 != 0 || (size % 0x4000) != 0 || shm_offset % 0x4000 != 0 {
+            eprintln!(
+                "virtio-gpu hv shm map: unaligned host_ptr={host_ptr:p} offset={shm_offset:#x} size={size:#x}"
+            );
+            return Err(-22);
+        }
+        let guest_pa = bar2_base.checked_add(shm_offset).ok_or(-12)?;
+        let ret = unsafe {
+            hv_vm_map(
+                host_ptr.cast::<c_void>(),
+                guest_pa,
+                size,
+                HV_MEMORY_READ | HV_MEMORY_WRITE,
+            )
+        };
+        eprintln!(
+            "virtio-gpu hv shm map: offset={shm_offset:#x} size={size:#x} host_ptr={host_ptr:p} guest_pa={guest_pa:#x} ret={ret:#x}"
+        );
+        (ret == 0).then_some(()).ok_or(ret as i32)
+    }
+
+    fn unmap(&mut self, shm_offset: u64, size: usize) -> Result<(), i32> {
+        let Some(bar2_base) = self.state.lock().unwrap().bar2_base else {
+            eprintln!(
+                "virtio-gpu hv shm unmap: BAR2 unassigned offset={shm_offset:#x} size={size:#x}"
+            );
+            return Err(-12);
+        };
+        let guest_pa = bar2_base.checked_add(shm_offset).ok_or(-12)?;
+        let ret = unsafe { hv_vm_unmap(guest_pa, size) };
+        eprintln!(
+            "virtio-gpu hv shm unmap: offset={shm_offset:#x} size={size:#x} guest_pa={guest_pa:#x} ret={ret:#x}"
+        );
+        (ret == 0).then_some(()).ok_or(ret as i32)
+    }
 }
 impl GuestMemoryMut for MappedRam {
     fn write_bytes(&mut self, gpa: u64, data: &[u8]) -> bool {
@@ -222,6 +278,7 @@ extern "C" {
     fn hv_vm_config_set_el2_enabled(config: *mut c_void, el2_enabled: bool) -> HvReturn;
     fn hv_vm_destroy() -> HvReturn;
     fn hv_vm_map(addr: *mut c_void, ipa: u64, size: usize, flags: u64) -> HvReturn;
+    fn hv_vm_unmap(ipa: u64, size: usize) -> HvReturn;
     fn hv_vcpu_create(
         vcpu: *mut HvVcpuT,
         exit: *mut *mut HvVcpuExit,
@@ -2906,6 +2963,14 @@ fn main() {
         let mut reboot_count = 0u64;
         reset_vcpu_for_boot(vcpu);
         arm_watchpoint_for_boot(vcpu, watch_addr);
+        let hv_gpu_shm_state = Arc::new(Mutex::new(HvGpuShmMapState::default()));
+        let installed_hv_gpu_shm_port =
+            platform.set_virtio_gpu_shm_map_port(Box::new(HvGpuShmMapPort {
+                state: Arc::clone(&hv_gpu_shm_state),
+            }));
+        if installed_hv_gpu_shm_port {
+            println!("virtio-gpu host-visible shm map port: hv_vm_map enabled");
+        }
         let platform = Arc::new(Mutex::new(platform));
 
         'reboot: loop {
@@ -3172,6 +3237,10 @@ fn main() {
                                 };
                                 recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
                                 let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
+                                if device == "pcie-ecam" && matches!(op, MmioOp::Write { .. }) {
+                                    hv_gpu_shm_state.lock().unwrap().bar2_base =
+                                        platform.virtio_gpu_host_visible_bar_base();
+                                }
                                 recent_pcie_ecam.record_after_with_context(
                                     platform,
                                     &mut guest_ram,
