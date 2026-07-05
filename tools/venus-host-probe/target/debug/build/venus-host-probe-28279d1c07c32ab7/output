@@ -1,0 +1,3 @@
+cargo:rustc-link-search=native=/Users/user/BridgeVM/3d/prefix/lib
+cargo:rustc-link-lib=dylib=virglrenderer
+cargo:rustc-link-arg=-Wl,-rpath,/Users/user/BridgeVM/3d/prefix/lib

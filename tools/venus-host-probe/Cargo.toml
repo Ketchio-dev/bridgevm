@@ -1,0 +1,11 @@
+[package]
+name = "venus-host-probe"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[workspace]
+
+[[bin]]
+name = "venus_capset_probe"
+path = "src/main.rs"
