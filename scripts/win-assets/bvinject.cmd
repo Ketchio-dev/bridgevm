@@ -35,6 +35,21 @@ if errorlevel 1 (
 echo BVINJECT VERIFY
 dism /Image:%WIN%\ /Get-Drivers | find /i "oem"
 
+rem --- when injecting the virtio-gpu display driver, reset the persisted
+rem     display topology so Windows re-detects monitors on next boot and makes
+rem     the (now sole) virtio-gpu adapter primary — otherwise the taskbar stays
+rem     assigned to the removed Basic Display and never renders. Harmless: the
+rem     GraphicsDrivers Configuration/Connectivity keys are rebuilt on boot. ---
+if exist %DRV%\viogpudo\viogpudo.inf (
+  echo BVINJECT DISPLAY-CONFIG RESET
+  reg load HKLM\BVSYS %WIN%\Windows\System32\config\SYSTEM
+  reg delete "HKLM\BVSYS\ControlSet001\Control\GraphicsDrivers\Configuration" /f 2>nul
+  reg delete "HKLM\BVSYS\ControlSet001\Control\GraphicsDrivers\Connectivity" /f 2>nul
+  reg delete "HKLM\BVSYS\ControlSet001\Control\GraphicsDrivers\ScaleFactors" /f 2>nul
+  reg unload HKLM\BVSYS
+  echo BVINJECT DISPLAY-CONFIG RESET DONE
+)
+
 echo BVINJECT DONE
 :end
 wpeutil shutdown

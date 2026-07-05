@@ -1266,9 +1266,15 @@ fn copy_backing_to_resource(
     let x_end = rect.x.saturating_add(rect.width).min(resource.width);
     let y_end = rect.y.saturating_add(rect.height).min(resource.height);
     let stride = u64::from(resource.width) * 4;
+    // Per the virtio-gpu spec (and QEMU), `offset` locates the box's top-left
+    // (rect.x, rect.y) in the backing; source rows advance by `stride` from
+    // there. So the backing offset for absolute pixel (x, y) is
+    // offset + (y - rect.y) * stride + (x - rect.x) * 4 — NOT offset + y*stride
+    // + x*4, which double-counts rect.{x,y} and sends every non-origin partial
+    // update (taskbar, clock, cursor) out of bounds so it silently vanishes.
     for y in rect.y..y_end {
         for x in rect.x..x_end {
-            let guest_off = offset + u64::from(y) * stride + u64::from(x) * 4;
+            let guest_off = offset + u64::from(y - rect.y) * stride + u64::from(x - rect.x) * 4;
             let Some(pixel) = read_from_backing(mem, &resource.backing, guest_off, 4) else {
                 continue;
             };
@@ -1867,7 +1873,10 @@ mod tests {
                 height: 1,
             },
         );
-        transfer.extend_from_slice(&0u64.to_le_bytes());
+        // offset locates the box top-left (0, 1) in the backing: y*stride =
+        // 1 * (width 4 * 4bpp) = 16, matching a full-surface backing where the
+        // guest points offset at the dirty region's origin (Convention B).
+        transfer.extend_from_slice(&16u64.to_le_bytes());
         transfer.extend_from_slice(&1u32.to_le_bytes());
         transfer.extend_from_slice(&0u32.to_le_bytes());
         chains.push(transfer);
