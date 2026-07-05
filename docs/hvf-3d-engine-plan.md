@@ -166,6 +166,44 @@ The honest hard part. Base = fork `anonymix007/kvm-guest-drivers-windows-venus`
 - **S4 (D3D12 via vkd3d-proton)**: any DX12 title running = capability
   Parallels has never shipped.
 
+## 7. Licensing (clean-by-construction for a commercial, closed VMM)
+
+The stack was chosen so the proprietary core stays proprietary and every reused
+layer is permissive. Rules and per-component status:
+
+| Component | License | Our use | Verdict |
+|---|---|---|---|
+| Our VMM / device models | ours | proprietary core | — |
+| Mesa (Venus ICD, KosmicKrisp) | MIT | guest ICD (redistribute) / host Vulkan (link) | ✅ attribution only |
+| virglrenderer (venus) | MIT | host lib, FFI-linked into our VMM | ✅ attribution only |
+| MoltenVK (fallback) | Apache-2.0 | host lib | ✅ attribution + NOTICE; patent grant is a plus |
+| DXVK (D3D9/10/11→VK) | zlib | guest DLLs (redistribute) | ✅ no obligations beyond no-misrepresentation |
+| virtio-win drivers (viogpudo, netkvm) | BSD-3-Clause (relicensed by Red Hat for redistribution) | guest drivers | ✅ attribution; may also build+sign our own from source |
+| venus WDDM driver fork (anonymix007 → us) | expect BSD-3 + MIT (inherits virtio-win + Mesa) | guest KMD/ICD | ✅ expected; **verify exact terms at Phase-3 entry**; keep OUR fork open-source (strategically desirable anyway — upstream collaboration is how the ARM64 driver matures) |
+| vkd3d-proton (D3D12→VK) | **LGPL-2.1** | guest d3d12 DLLs | ⚠️ OK if shipped as SEPARATE, user-replaceable DLLs + license text + source offer (standard practice). If we ever refuse LGPL entirely, we defer D3D12 — Vulkan/DX11 story is unaffected |
+| EDK2 firmware (vendored) | BSD-2-Clause-Patent | redistributed blob | ✅ keep license text |
+| wimlib, hdiutil, WDK | (LGPLv3 / Apple / MS EULA) | host/build TOOLS only, never linked | ✅ tool use imposes nothing on our binaries |
+| Windows 11 itself | Microsoft EULA | user-provided ISO/license | ✅ we never redistribute Windows bits |
+
+Hard rules (already our practice, now explicit):
+1. **Never copy GPL code into the engine or drivers** — no QEMU source, no Wine
+   source, no Parallels guest-tools source (their prl_* Linux drivers are
+   GPL/proprietary — we copied only the architectural *pattern*, never code).
+   Everything we implement is spec-driven (virtio spec, PCIe, NVMe, WDDM DDI),
+   which is exactly how the engine was built so far.
+2. **Host-linked libraries must be MIT/Apache/BSD only** (virglrenderer, Mesa,
+   MoltenVK qualify). Copyleft components may only ever be separate processes
+   or guest-side artifacts, never linked into the VMM.
+3. **Guest-side open components stay cleanly separated** from any proprietary
+   guest agent we later write; ship a third-party-licenses file with exact
+   texts and per-component source links.
+4. **Apple GPTK / D3DMetal is license-banned** (evaluation-only, no
+   redistribution) — irrelevant to our chosen stack; noting it so nobody
+   "helpfully" adds it later.
+5. Phase-3 entry checklist gains one item: read the exact LICENSE files of the
+   venus-WDDM fork tree and each virtio-win driver we redistribute, and record
+   them in the third-party manifest.
+
 _Grounding: 2026-07-05 research pass (Parallels DX11.1-only/no-DX12/no-Vulkan;
 Venus stable VK1.3+ since 2023; KosmicKrisp upstreamed to Mesa late 2025;
 libkrun/krunkit venus→MoltenVK precedent on Apple Silicon; viogpu3d stalled &
