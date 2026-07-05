@@ -67,6 +67,56 @@ const DEFAULT_NVME_DISK_BYTES: usize = 16 * 1024 * 1024;
 const HID_BOOT_KEYBOARD_USAGE_SPACE: u8 = 0x2c;
 const MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS: usize = 16;
 
+fn make_virtio_gpu() -> VirtioPciGpu {
+    let (width, height) = virtio_gpu_resolution_from_env();
+    if env_flag("BRIDGEVM_VIRTIO_GPU_3D") {
+        #[cfg(feature = "venus")]
+        {
+            match crate::venus_backend::VenusBackend::new() {
+                Ok(backend) => {
+                    eprintln!("virtio-gpu: venus 3D backend enabled");
+                    return VirtioPciGpu::with_3d_backend(width, height, Box::new(backend));
+                }
+                Err(error) => {
+                    eprintln!(
+                        "virtio-gpu: venus 3D backend init failed: {error}; continuing 2D-only"
+                    );
+                }
+            }
+        }
+        #[cfg(not(feature = "venus"))]
+        {
+            eprintln!("virtio-gpu: BRIDGEVM_VIRTIO_GPU_3D requested but probe built without venus feature; continuing 2D-only");
+        }
+    }
+    VirtioPciGpu::new(width, height)
+}
+
+fn virtio_gpu_resolution_from_env() -> (u32, u32) {
+    let value = std::env::var("BRIDGEVM_VIRTIO_GPU_RES").unwrap_or_else(|_| "1280x800".into());
+    let Some((width, height)) = value.trim().split_once('x').and_then(|(width, height)| {
+        Some((width.parse::<u32>().ok()?, height.parse::<u32>().ok()?))
+    }) else {
+        panic!("BRIDGEVM_VIRTIO_GPU_RES must be WIDTHxHEIGHT, for example 1600x900");
+    };
+    assert!(
+        width > 0 && height > 0,
+        "virtio-gpu resolution must be non-zero"
+    );
+    (width, height)
+}
+
+fn env_flag(name: &str) -> bool {
+    let Ok(value) = std::env::var(name) else {
+        return false;
+    };
+    let value = value.trim();
+    value == "1"
+        || value.eq_ignore_ascii_case("true")
+        || value.eq_ignore_ascii_case("yes")
+        || value.eq_ignore_ascii_case("on")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VirtPlatformDeviceConfig {
     pub xhci_present: bool,
@@ -353,10 +403,7 @@ impl VirtPlatform {
             virtio_net: config.devices.virtio_net_present.then(|| {
                 VirtioPciNet::new(make_virtio_net_backend(config.devices.virtio_net_backend))
             }),
-            virtio_gpu: config
-                .devices
-                .virtio_gpu_present
-                .then(VirtioPciGpu::new_from_env),
+            virtio_gpu: config.devices.virtio_gpu_present.then(make_virtio_gpu),
             ramfb: Ramfb::new(),
             flash_vars: P30NorFlash::new(
                 machine::FLASH_VARS.base,
@@ -1198,6 +1245,7 @@ impl VirtPlatform {
                 dev.access(offset, VirtioPciGpuOp::Write { size, value }, mem)
             }
         };
+        dev.drain_completed_fences(mem);
         self.flush_virtio_gpu_pending_msix();
         match result {
             VirtioGpuResult::ReadValue(v) => MmioOutcome::ReadValue(v),

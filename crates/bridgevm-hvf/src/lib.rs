@@ -25,8 +25,11 @@ pub mod platform_virt;
 pub mod ramfb;
 pub mod smbios;
 pub mod stage1;
+#[cfg(feature = "venus")]
+pub mod venus_backend;
 pub mod virtio_blk;
 pub mod virtio_gpu;
+pub mod virtio_gpu_3d;
 pub mod virtio_net;
 mod windows_arm_xhci_hid_boot_key_probe;
 pub mod xhci;

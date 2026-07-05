@@ -14,6 +14,13 @@ use crate::{
         VIRTIO_GPU_MSIX_PBA_OFFSET, VIRTIO_GPU_MSIX_TABLE_OFFSET, VIRTIO_GPU_MSIX_VECTOR_COUNT,
     },
     ramfb::DRM_FORMAT_XRGB8888,
+    virtio_gpu_3d::{
+        self, CompletedFence, CtrlHdr3d, VirtioGpu3d, VirtioGpu3dBackend, VirtioGpu3dStats,
+        VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE, VIRTIO_GPU_CMD_CTX_CREATE, VIRTIO_GPU_CMD_CTX_DESTROY,
+        VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE, VIRTIO_GPU_CMD_GET_CAPSET,
+        VIRTIO_GPU_CMD_GET_CAPSET_INFO, VIRTIO_GPU_CMD_SUBMIT_3D, VIRTIO_GPU_FLAG_FENCE,
+        VIRTIO_GPU_F_CONTEXT_INIT, VIRTIO_GPU_F_VIRGL,
+    },
 };
 
 const MAGIC_VALUE: u32 = 0x7472_6976;
@@ -80,7 +87,6 @@ const DESC_SIZE: u64 = 16;
 const DESC_F_NEXT: u16 = 1;
 const DESC_F_WRITE: u16 = 2;
 
-const VIRTIO_GPU_FLAG_FENCE: u32 = 1;
 const VIRTIO_GPU_CMD_GET_DISPLAY_INFO: u32 = 0x0100;
 const VIRTIO_GPU_CMD_RESOURCE_CREATE_2D: u32 = 0x0101;
 const VIRTIO_GPU_CMD_RESOURCE_UNREF: u32 = 0x0102;
@@ -139,6 +145,8 @@ pub struct VirtioGpu {
     resources: BTreeMap<u32, GpuResource>,
     scanout_resource: Option<u32>,
     scanout: Vec<u8>,
+    three_d: VirtioGpu3d,
+    pending_fenced: Vec<PendingFencedResponse>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,6 +203,7 @@ pub struct VirtioGpuStats {
     pub driver_features: u64,
     pub resources: usize,
     pub scanout_active: bool,
+    pub three_d: VirtioGpu3dStats,
     pub queues: [VirtioGpuQueueStats; QUEUE_COUNT],
 }
 
@@ -211,6 +220,22 @@ struct GpuResource {
 struct BackingEntry {
     addr: u64,
     len: u32,
+}
+
+#[derive(Debug, Clone)]
+struct PendingFencedResponse {
+    queue_index: usize,
+    queue: VirtioGpuQueue,
+    head: u16,
+    descs: Vec<Descriptor>,
+    response: Vec<u8>,
+    fence: CompletedFence,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ChainCompletion {
+    Immediate(u32),
+    Parked,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -252,7 +277,15 @@ impl VirtioGpu {
             resources: BTreeMap::new(),
             scanout_resource: None,
             scanout: vec![0; len],
+            three_d: VirtioGpu3d::new(),
+            pending_fenced: Vec::new(),
         }
+    }
+
+    pub fn with_3d_backend(width: u32, height: u32, backend: Box<dyn VirtioGpu3dBackend>) -> Self {
+        let mut gpu = Self::new(width, height);
+        gpu.three_d = VirtioGpu3d::with_backend(backend);
+        gpu
     }
 
     pub fn new_from_env() -> Self {
@@ -268,6 +301,7 @@ impl VirtioGpu {
                 | (u64::from(self.driver_features[1]) << 32),
             resources: self.resources.len(),
             scanout_active: self.scanout_resource.is_some(),
+            three_d: self.three_d.stats(self.pending_fenced.len()),
             queues: [VirtioGpuQueueStats::default(); QUEUE_COUNT],
         };
         for (out, queue) in stats.queues.iter_mut().zip(self.queues) {
@@ -307,6 +341,8 @@ impl VirtioGpu {
         self.resources.clear();
         self.scanout_resource = None;
         self.scanout = vec![0; scanout_len(width, height)];
+        self.three_d.reset();
+        self.pending_fenced.clear();
     }
 
     pub fn scanout(&self) -> Option<VirtioGpuScanout<'_>> {
@@ -347,7 +383,7 @@ impl VirtioGpu {
             REG_VERSION => u64::from(VERSION_MODERN),
             REG_DEVICE_ID => u64::from(DEVICE_ID_GPU),
             REG_VENDOR_ID => u64::from(VENDOR_ID_QEMU),
-            REG_DEVICE_FEATURES => u64::from(offered_features_word(self.device_features_sel)),
+            REG_DEVICE_FEATURES => u64::from(self.offered_features_word(self.device_features_sel)),
             REG_DRIVER_FEATURES => {
                 u64::from(self.driver_features[self.driver_features_sel.min(1) as usize])
             }
@@ -420,7 +456,21 @@ impl VirtioGpu {
     fn write_driver_features(&mut self, value: u64) {
         if self.driver_features_sel < 2 {
             let index = self.driver_features_sel as usize;
-            self.driver_features[index] = (value as u32) & offered_features_word(index as u32);
+            self.driver_features[index] = (value as u32) & self.offered_features_word(index as u32);
+        }
+    }
+
+    fn offered_features_word(&self, select: u32) -> u32 {
+        match select {
+            0 => {
+                let mut features = VIRTIO_GPU_F_EDID;
+                if self.three_d.has_backend() {
+                    features |= VIRTIO_GPU_F_VIRGL | VIRTIO_GPU_F_CONTEXT_INIT;
+                }
+                features
+            }
+            1 => VIRTIO_F_VERSION_1,
+            _ => 0,
         }
     }
 
@@ -438,7 +488,7 @@ impl VirtioGpu {
             (
                 COMMON_DEVICE_FEATURE,
                 4,
-                u64::from(offered_features_word(self.device_features_sel)),
+                u64::from(self.offered_features_word(self.device_features_sel)),
             ),
             (
                 COMMON_DRIVER_FEATURE_SELECT,
@@ -651,7 +701,12 @@ impl VirtioGpu {
 
     fn config_read(&self, offset: u64, size: u8) -> u64 {
         let mut config = [0u8; 16];
-        config[8..12].copy_from_slice(&1u32.to_le_bytes());
+        let num_capsets = if self.three_d.has_backend() {
+            1u32
+        } else {
+            0u32
+        };
+        config[8..12].copy_from_slice(&num_capsets.to_le_bytes());
         read_le_from_bytes(&config, offset, size).unwrap_or(0)
     }
 
@@ -692,22 +747,26 @@ impl VirtioGpu {
             let Some(head) = read_u16(mem, queue.driver + ring_off) else {
                 return;
             };
-            let used_len = self.process_chain(mem, &queue, head, control);
-            Self::write_used(mem, &queue, head, used_len);
+            let completion = self.process_chain(mem, &queue, queue_index, head, control);
             self.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
-            self.mark_queue_interrupt(queue_index);
+            if let ChainCompletion::Immediate(used_len) = completion {
+                Self::write_used(mem, &queue, head, used_len);
+                self.mark_queue_interrupt(queue_index);
+            }
         }
+        self.drain_completed_fences(mem);
     }
 
     fn process_chain(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
         queue: &VirtioGpuQueue,
+        queue_index: usize,
         head: u16,
         control: bool,
-    ) -> u32 {
+    ) -> ChainCompletion {
         let Some(descs) = Self::descriptor_chain(mem, queue, head) else {
-            return 0;
+            return ChainCompletion::Immediate(0);
         };
         let request = Self::gather_readable(mem, &descs);
         let response = if control {
@@ -715,7 +774,28 @@ impl VirtioGpu {
         } else {
             self.handle_cursor_request(&request)
         };
-        Self::scatter_write(mem, &descs, &response)
+        let Some(hdr) = CtrlHdr::parse(&request) else {
+            return ChainCompletion::Immediate(Self::scatter_write(mem, &descs, &response));
+        };
+        if control && hdr.flags & VIRTIO_GPU_FLAG_FENCE != 0 && self.three_d.has_backend() {
+            let fence = CompletedFence {
+                ctx_id: hdr.ctx_id,
+                ring_idx: hdr.ring_idx(),
+                fence_id: hdr.fence_id,
+            };
+            if self.three_d.create_fence(fence) {
+                self.pending_fenced.push(PendingFencedResponse {
+                    queue_index,
+                    queue: *queue,
+                    head,
+                    descs,
+                    response,
+                    fence,
+                });
+                return ChainCompletion::Parked;
+            }
+        }
+        ChainCompletion::Immediate(Self::scatter_write(mem, &descs, &response))
     }
 
     fn handle_cursor_request(&mut self, request: &[u8]) -> Vec<u8> {
@@ -742,8 +822,53 @@ impl VirtioGpu {
             VIRTIO_GPU_CMD_SET_SCANOUT => self.set_scanout(request, Some(hdr)),
             VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D => self.transfer_to_host_2d(mem, request, Some(hdr)),
             VIRTIO_GPU_CMD_RESOURCE_FLUSH => self.resource_flush(request, Some(hdr)),
+            VIRTIO_GPU_CMD_GET_CAPSET_INFO
+            | VIRTIO_GPU_CMD_GET_CAPSET
+            | VIRTIO_GPU_CMD_CTX_CREATE
+            | VIRTIO_GPU_CMD_CTX_DESTROY
+            | VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE
+            | VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE
+            | VIRTIO_GPU_CMD_SUBMIT_3D => {
+                let hdr3d = CtrlHdr3d::parse(request).unwrap();
+                self.three_d.handle(request, hdr3d).unwrap_or_else(|| {
+                    virtio_gpu_3d::response_hdr(
+                        virtio_gpu_3d::VIRTIO_GPU_RESP_ERR_UNSPEC,
+                        Some(hdr3d),
+                    )
+                })
+            }
             _ => response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr)),
         }
+    }
+
+    pub fn drain_completed_fences(&mut self, mem: &mut dyn GuestMemoryMut) {
+        let completed = self.three_d.drain_completed_fences();
+        if completed.is_empty() || self.pending_fenced.is_empty() {
+            return;
+        }
+        let mut remaining = Vec::with_capacity(self.pending_fenced.len());
+        let pending = std::mem::take(&mut self.pending_fenced);
+        for pending_response in pending {
+            let ready = completed.iter().any(|completed| {
+                completed.ctx_id == pending_response.fence.ctx_id
+                    && completed.ring_idx == pending_response.fence.ring_idx
+                    && completed.fence_id >= pending_response.fence.fence_id
+            });
+            if ready {
+                let used_len =
+                    Self::scatter_write(mem, &pending_response.descs, &pending_response.response);
+                Self::write_used(
+                    mem,
+                    &pending_response.queue,
+                    pending_response.head,
+                    used_len,
+                );
+                self.mark_queue_interrupt(pending_response.queue_index);
+            } else {
+                remaining.push(pending_response);
+            }
+        }
+        self.pending_fenced = remaining;
     }
 
     fn response_display_info(&self, hdr: Option<CtrlHdr>) -> Vec<u8> {
@@ -1004,6 +1129,13 @@ impl VirtioPciGpu {
         }
     }
 
+    pub fn with_3d_backend(width: u32, height: u32, backend: Box<dyn VirtioGpu3dBackend>) -> Self {
+        Self {
+            gpu: VirtioGpu::with_3d_backend(width, height, backend),
+            msix: MsixTable::new(VIRTIO_GPU_MSIX_VECTOR_COUNT),
+        }
+    }
+
     pub fn new_from_env() -> Self {
         let (width, height) = parse_resolution_env();
         Self::new(width, height)
@@ -1020,6 +1152,10 @@ impl VirtioPciGpu {
     pub fn reset_runtime_state(&mut self) {
         self.gpu.reset_runtime_state();
         self.msix = MsixTable::new(VIRTIO_GPU_MSIX_VECTOR_COUNT);
+    }
+
+    pub fn drain_completed_fences(&mut self, mem: &mut dyn GuestMemoryMut) {
+        self.gpu.drain_completed_fences(mem);
     }
 
     pub fn scanout(&self) -> Option<VirtioGpuScanout<'_>> {
@@ -1039,8 +1175,11 @@ impl VirtioPciGpu {
                     self.gpu.access_common(common_offset, false, size, 0, mem)
                 }
                 VirtioPciGpuOp::Write { size, value } => {
-                    self.gpu
-                        .access_common(common_offset, true, size, value, mem)
+                    let result = self
+                        .gpu
+                        .access_common(common_offset, true, size, value, mem);
+                    self.gpu.drain_completed_fences(mem);
+                    result
                 }
             };
         }
@@ -1187,7 +1326,7 @@ fn notify_queue_index(offset: u64) -> Option<u16> {
     (rel < PCI_CFG_REGION_SIZE).then_some((rel / 4) as u16)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Descriptor {
     addr: u64,
     len: u32,
@@ -1229,6 +1368,14 @@ impl CtrlHdr {
             },
             ctx_id: self.ctx_id,
             padding: self.padding,
+        }
+    }
+
+    fn ring_idx(self) -> u8 {
+        if self.flags & virtio_gpu_3d::VIRTIO_GPU_FLAG_INFO_RING_IDX != 0 {
+            (self.padding & 0xff) as u8
+        } else {
+            0
         }
     }
 
@@ -1494,14 +1641,6 @@ fn set_high(current: u64, value: u64) -> u64 {
     (current & 0xffff_ffff) | ((value & 0xffff_ffff) << 32)
 }
 
-fn offered_features_word(select: u32) -> u32 {
-    match select {
-        0 => VIRTIO_GPU_F_EDID,
-        1 => VIRTIO_F_VERSION_1,
-        _ => 0,
-    }
-}
-
 fn is_supported_common_access_size(size: u8) -> bool {
     matches!(size, 1 | 2 | 4 | 8)
 }
@@ -1609,6 +1748,8 @@ fn read_le_u64(bytes: &[u8], offset: usize) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::virtio_gpu_3d::MockBackend;
+    use std::sync::{Arc, Mutex};
 
     #[derive(Debug)]
     struct TestMem {
@@ -1713,6 +1854,30 @@ mod tests {
         out
     }
 
+    fn ctrl_req_ctx(typ: u32, ctx_id: u32) -> Vec<u8> {
+        let mut out = ctrl_req(typ);
+        out[16..20].copy_from_slice(&ctx_id.to_le_bytes());
+        out
+    }
+
+    fn ctrl_req_fenced(typ: u32, ctx_id: u32, ring_idx: u8, fence_id: u64) -> Vec<u8> {
+        let mut out = ctrl_req_ctx(typ, ctx_id);
+        out[4..8].copy_from_slice(
+            &(VIRTIO_GPU_FLAG_FENCE | virtio_gpu_3d::VIRTIO_GPU_FLAG_INFO_RING_IDX).to_le_bytes(),
+        );
+        out[8..16].copy_from_slice(&fence_id.to_le_bytes());
+        out[20] = ring_idx;
+        out
+    }
+
+    fn dev_with_mock() -> (VirtioPciGpu, Arc<Mutex<MockBackend>>) {
+        let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
+        (
+            VirtioPciGpu::with_3d_backend(1280, 800, Box::new(backend.clone())),
+            backend,
+        )
+    }
+
     fn submit_control(
         dev: &mut VirtioPciGpu,
         mem: &mut TestMem,
@@ -1725,17 +1890,83 @@ mod tests {
         let req = 0x4000_4000;
         let resp = 0x4000_5000;
         setup_queue(dev, mem, 0, desc, avail, used, 0);
+        let next_avail = dev.stats().queues[0].last_avail_idx.wrapping_add(1);
+        let ring_slot = dev.stats().queues[0].last_avail_idx % 16;
         mem.write(req, request);
         write_desc(mem, desc, 0, req, request.len() as u32, DESC_F_NEXT, 1);
         write_desc(mem, desc, 1, resp, response_len, DESC_F_WRITE, 0);
-        mem.write(avail + 2, &1u16.to_le_bytes());
-        mem.write(avail + 4, &0u16.to_le_bytes());
+        mem.write(avail + 2, &next_avail.to_le_bytes());
+        mem.write(avail + 4 + u64::from(ring_slot) * 2, &0u16.to_le_bytes());
         pci_write(dev, PCI_NOTIFY_CFG_OFFSET, 4, 0, mem);
         assert_eq!(
             u16::from_le_bytes(mem.read(used + 2, 2).try_into().unwrap()),
-            1
+            next_avail
         );
         mem.read(resp, response_len as usize)
+    }
+
+    fn submit_control_readable_descs(
+        dev: &mut VirtioPciGpu,
+        mem: &mut TestMem,
+        readable: &[&[u8]],
+        response_len: u32,
+    ) -> (Vec<u8>, u16) {
+        let desc = 0x4000_1000;
+        let avail = 0x4000_2000;
+        let used = 0x4000_3000;
+        let req = 0x4000_4000;
+        let resp = 0x4000_9000;
+        setup_queue(dev, mem, 0, desc, avail, used, 0);
+        let next_avail = dev.stats().queues[0].last_avail_idx.wrapping_add(1);
+        let ring_slot = dev.stats().queues[0].last_avail_idx % 16;
+        let mut addr = req;
+        for (i, bytes) in readable.iter().enumerate() {
+            mem.write(addr, bytes);
+            let next = (i + 1) as u16;
+            write_desc(
+                mem,
+                desc,
+                i as u16,
+                addr,
+                bytes.len() as u32,
+                DESC_F_NEXT,
+                next,
+            );
+            addr += 0x100;
+        }
+        let response_index = readable.len() as u16;
+        write_desc(
+            mem,
+            desc,
+            response_index,
+            resp,
+            response_len,
+            DESC_F_WRITE,
+            0,
+        );
+        mem.write(avail + 2, &next_avail.to_le_bytes());
+        mem.write(avail + 4 + u64::from(ring_slot) * 2, &0u16.to_le_bytes());
+        pci_write(dev, PCI_NOTIFY_CFG_OFFSET, 4, 0, mem);
+        let used_idx = u16::from_le_bytes(mem.read(used + 2, 2).try_into().unwrap());
+        (mem.read(resp, response_len as usize), used_idx)
+    }
+
+    fn ctx_create_req(ctx_id: u32, context_init: u32, name: &[u8]) -> Vec<u8> {
+        let mut req = ctrl_req_ctx(VIRTIO_GPU_CMD_CTX_CREATE, ctx_id);
+        req.extend_from_slice(&(name.len() as u32).to_le_bytes());
+        req.extend_from_slice(&context_init.to_le_bytes());
+        let mut debug_name = [0u8; 64];
+        debug_name[..name.len().min(64)].copy_from_slice(&name[..name.len().min(64)]);
+        req.extend_from_slice(&debug_name);
+        req
+    }
+
+    fn submit_3d_req(ctx_id: u32, cmdbuf: &[u8]) -> Vec<u8> {
+        let mut req = ctrl_req_ctx(VIRTIO_GPU_CMD_SUBMIT_3D, ctx_id);
+        req.extend_from_slice(&(cmdbuf.len() as u32).to_le_bytes());
+        req.extend_from_slice(&0u32.to_le_bytes());
+        req.extend_from_slice(cmdbuf);
+        req
     }
 
     #[test]
@@ -1940,5 +2171,161 @@ mod tests {
         let resp = submit_control(&mut dev, &mut mem, &ctrl_req(0xdead_beef), 24);
         assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_ERR_UNSPEC));
         assert_eq!(dev.stats().queues[0].last_avail_idx, 1);
+    }
+
+    #[test]
+    fn three_d_backend_advertises_features_and_capsets() {
+        let (mut dev, _) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        pci_write(&mut dev, COMMON_DEVICE_FEATURE_SELECT, 4, 0, &mut mem);
+        assert_eq!(
+            pci_read(&mut dev, COMMON_DEVICE_FEATURE, 4, &mut mem),
+            u64::from(VIRTIO_GPU_F_EDID | VIRTIO_GPU_F_VIRGL | VIRTIO_GPU_F_CONTEXT_INIT)
+        );
+        assert_eq!(
+            pci_read(&mut dev, PCI_DEVICE_CFG_OFFSET + 8, 4, &mut mem),
+            1
+        );
+        let mut info = ctrl_req(VIRTIO_GPU_CMD_GET_CAPSET_INFO);
+        info.extend_from_slice(&0u32.to_le_bytes());
+        info.extend_from_slice(&0u32.to_le_bytes());
+        let resp = submit_control(&mut dev, &mut mem, &info, 40);
+        assert_eq!(
+            read_le_u32(&resp, 0),
+            Some(virtio_gpu_3d::VIRTIO_GPU_RESP_OK_CAPSET_INFO)
+        );
+        assert_eq!(read_le_u32(&resp, 24), Some(4));
+        assert_eq!(read_le_u32(&resp, 28), Some(1));
+        assert_eq!(read_le_u32(&resp, 32), Some(160));
+
+        let mut get = ctrl_req(VIRTIO_GPU_CMD_GET_CAPSET);
+        get.extend_from_slice(&4u32.to_le_bytes());
+        get.extend_from_slice(&1u32.to_le_bytes());
+        let resp = submit_control(&mut dev, &mut mem, &get, 24 + 160);
+        assert_eq!(
+            read_le_u32(&resp, 0),
+            Some(virtio_gpu_3d::VIRTIO_GPU_RESP_OK_CAPSET)
+        );
+        assert_eq!(read_le_u32(&resp, 24), Some(1));
+    }
+
+    #[test]
+    fn two_d_only_rejects_three_d_and_reports_zero_capsets() {
+        let mut dev = VirtioPciGpu::new(1280, 800);
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        assert_eq!(
+            pci_read(&mut dev, PCI_DEVICE_CFG_OFFSET + 8, 4, &mut mem),
+            0
+        );
+        let mut info = ctrl_req(VIRTIO_GPU_CMD_GET_CAPSET_INFO);
+        info.extend_from_slice(&0u32.to_le_bytes());
+        info.extend_from_slice(&0u32.to_le_bytes());
+        let resp = submit_control(&mut dev, &mut mem, &info, 24);
+        assert_eq!(
+            read_le_u32(&resp, 0),
+            Some(virtio_gpu_3d::VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER)
+        );
+    }
+
+    #[test]
+    fn ctx_lifecycle_and_unknown_ctx_errors() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        let resp = submit_control(&mut dev, &mut mem, &ctx_create_req(7, 4, b"ctx"), 24);
+        assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+        assert_eq!(dev.stats().three_d.ctx_active, 1);
+        assert_eq!(backend.lock().unwrap().created[0], (7, 4, b"ctx".to_vec()));
+
+        let resp = submit_control(&mut dev, &mut mem, &submit_3d_req(9, &[]), 24);
+        assert_eq!(
+            read_le_u32(&resp, 0),
+            Some(virtio_gpu_3d::VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER)
+        );
+
+        let resp = submit_control(
+            &mut dev,
+            &mut mem,
+            &ctrl_req_ctx(VIRTIO_GPU_CMD_CTX_DESTROY, 7),
+            24,
+        );
+        assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+        assert_eq!(dev.stats().three_d.ctx_active, 0);
+        assert_eq!(backend.lock().unwrap().destroyed, vec![7]);
+    }
+
+    #[test]
+    fn submit_3d_gathers_split_readable_descriptors() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let _ = submit_control(&mut dev, &mut mem, &ctx_create_req(1, 4, b"ctx"), 24);
+        let mut prefix = ctrl_req_ctx(VIRTIO_GPU_CMD_SUBMIT_3D, 1);
+        prefix.extend_from_slice(&6u32.to_le_bytes());
+        prefix.extend_from_slice(&0u32.to_le_bytes());
+        let suffix = [1u8, 2, 3, 4, 5, 6];
+        let (resp, used_idx) =
+            submit_control_readable_descs(&mut dev, &mut mem, &[&prefix, &suffix], 24);
+        assert_eq!(used_idx, 2);
+        assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+        assert_eq!(backend.lock().unwrap().submits, vec![(1, suffix.to_vec())]);
+    }
+
+    #[test]
+    fn fence_defers_used_ring_until_mock_signals_with_ring_idx() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let _ = submit_control(&mut dev, &mut mem, &ctx_create_req(1, 4, b"ctx"), 24);
+        let mut req = ctrl_req_fenced(VIRTIO_GPU_CMD_SUBMIT_3D, 1, 3, 42);
+        req.extend_from_slice(&0u32.to_le_bytes());
+        req.extend_from_slice(&0u32.to_le_bytes());
+        let (_resp, used_idx) = submit_control_readable_descs(&mut dev, &mut mem, &[&req], 24);
+        assert_eq!(used_idx, 1);
+        assert_eq!(dev.stats().three_d.fences_pending, 1);
+        assert_eq!(
+            backend.lock().unwrap().fences,
+            vec![CompletedFence {
+                ctx_id: 1,
+                ring_idx: 3,
+                fence_id: 42
+            }]
+        );
+
+        backend.lock().unwrap().completed.push(CompletedFence {
+            ctx_id: 1,
+            ring_idx: 2,
+            fence_id: 42,
+        });
+        dev.drain_completed_fences(&mut mem);
+        assert_eq!(dev.stats().three_d.fences_pending, 1);
+
+        backend.lock().unwrap().completed.push(CompletedFence {
+            ctx_id: 1,
+            ring_idx: 3,
+            fence_id: 42,
+        });
+        dev.drain_completed_fences(&mut mem);
+        assert_eq!(dev.stats().three_d.fences_pending, 0);
+        assert_eq!(
+            u16::from_le_bytes(mem.read(0x4000_3000 + 2, 2).try_into().unwrap()),
+            2
+        );
+    }
+
+    #[test]
+    fn reset_drops_parked_fences_without_stale_used_write() {
+        let (mut dev, _backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let _ = submit_control(&mut dev, &mut mem, &ctx_create_req(1, 4, b"ctx"), 24);
+        let mut req = ctrl_req_fenced(VIRTIO_GPU_CMD_SUBMIT_3D, 1, 0, 9);
+        req.extend_from_slice(&0u32.to_le_bytes());
+        req.extend_from_slice(&0u32.to_le_bytes());
+        let (_resp, used_idx) = submit_control_readable_descs(&mut dev, &mut mem, &[&req], 24);
+        assert_eq!(used_idx, 1);
+        assert_eq!(dev.stats().three_d.fences_pending, 1);
+        pci_write(&mut dev, COMMON_DEVICE_STATUS, 1, 0, &mut mem);
+        assert_eq!(dev.stats().three_d.fences_pending, 0);
+        assert_eq!(
+            u16::from_le_bytes(mem.read(0x4000_3000 + 2, 2).try_into().unwrap()),
+            1
+        );
     }
 }
