@@ -61,8 +61,9 @@ done
 # Plant the guest agent at the source root; bvinject.cmd copies it to C:\ and
 # registers an HKLM Run key. Enabled by default; set PLANT_AGENT=0 to skip.
 if [[ "${PLANT_AGENT:-1}" == "1" && -f "$ASSETS/bvagent.ps1" ]]; then
-  log "staging guest agent \\bvagent.ps1"
+  log "staging guest agent \\bvagent.ps1 (+ startup launcher)"
   cp "$ASSETS/bvagent.ps1" "$DST_VOL/bvagent.ps1"
+  [[ -f "$ASSETS/bvagent.bat" ]] && cp "$ASSETS/bvagent.bat" "$DST_VOL/bvagent.bat"
 fi
 
 log "injecting bvinject payload into boot.wim image 2"

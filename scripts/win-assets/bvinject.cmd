@@ -61,7 +61,16 @@ if exist %DRV%\..\bvagent.ps1 (
   rem the Run value must use the RUNTIME path (installed Windows is C: to
   rem itself), not the WinPE-assigned injection-time letter in %WIN%.
   reg add "HKLM\BVSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMAgent /t REG_SZ /d "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\bvagent.ps1" /f
+  rem The first user is an Administrator but UAC filters its token, so a
+  rem Run/Startup-launched agent runs unelevated and CANNOT open the
+  rem virtio-serial port (access denied). Disable UAC (dev/build VM) so the
+  rem agent gets the full admin token and can open the port on first boot.
+  reg add "HKLM\BVSW\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA /t REG_DWORD /d 0 /f
   reg unload HKLM\BVSW
+  rem also drop a launcher in the all-users Startup folder (belt-and-suspenders
+  rem vs the Run key; a plain file we can verify offline). Use %WIN% inline (a
+  rem var set inside this block would not expand without delayed expansion).
+  if exist %DRV%\..\bvagent.bat copy /y %DRV%\..\bvagent.bat "%WIN%\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\bvagent.bat" >nul
   echo BVINJECT AGENT PLANT DONE
 )
 
