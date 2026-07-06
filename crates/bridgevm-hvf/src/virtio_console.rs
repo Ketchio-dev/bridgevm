@@ -95,6 +95,7 @@ const VIRTIO_CONSOLE_RESIZE: u16 = 5;
 const VIRTIO_CONSOLE_PORT_OPEN: u16 = 6;
 const VIRTIO_CONSOLE_PORT_NAME: u16 = 7;
 const CONTROL_LEN: usize = 8;
+const HOST_OPEN_RESEND_BUDGET: u8 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VirtioConsoleResult {
@@ -130,6 +131,7 @@ struct PortState {
     ready: bool,
     guest_open: bool,
     host_open: bool,
+    host_open_resends_remaining: u8,
 }
 
 impl PortState {
@@ -138,6 +140,7 @@ impl PortState {
             ready: false,
             guest_open: false,
             host_open: false,
+            host_open_resends_remaining: 0,
         }
     }
 }
@@ -658,6 +661,7 @@ impl VirtioConsole {
     fn notify_queue(&mut self, queue_index: u16, mem: &mut dyn GuestMemoryMut) {
         match usize::from(queue_index) {
             QUEUE_CONTROL_RX => {
+                self.enqueue_deferred_host_open();
                 self.flush_pending_control(mem);
             }
             QUEUE_CONTROL_TX => {
@@ -721,6 +725,7 @@ impl VirtioConsole {
                     name.extend_from_slice(AGENT_PORT_NAME);
                     self.enqueue_control(name);
                     self.ports[1].host_open = true;
+                    self.ports[1].host_open_resends_remaining = HOST_OPEN_RESEND_BUDGET;
                     self.enqueue_control(
                         Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_OPEN, 1).bytes(),
                     );
@@ -745,6 +750,15 @@ impl VirtioConsole {
         self.pending_control.push_back(message.into());
     }
 
+    fn enqueue_deferred_host_open(&mut self) {
+        let port = &mut self.ports[AGENT_PORT_ID as usize];
+        if !port.ready || !port.host_open || port.host_open_resends_remaining == 0 {
+            return;
+        }
+        port.host_open_resends_remaining -= 1;
+        self.enqueue_control(Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_OPEN, 1).bytes());
+    }
+
     fn flush_pending_control(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
         let mut progressed = false;
         while let Some(message) = self.pending_control.pop_front() {
@@ -759,7 +773,13 @@ impl VirtioConsole {
     }
 
     fn deliver_agent_rx(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
-        if !self.ports[1].guest_open || self.host_to_guest.is_empty() {
+        // Deliver host->guest bytes whenever the guest has posted receive
+        // buffers on the agent RX queue. We intentionally do NOT gate on
+        // ports[1].guest_open: the real vioser driver does not reliably emit a
+        // guest PORT_OPEN we can observe (its VIOSerialPortCreate can
+        // short-circuit), yet it still posts RX buffers once the app opens the
+        // port. Gating on an unobservable guest_open deadlocked the channel.
+        if self.host_to_guest.is_empty() {
             return false;
         }
         let bytes: Vec<u8> = self.host_to_guest.iter().copied().collect();
@@ -1533,7 +1553,7 @@ mod tests {
     }
 
     #[test]
-    fn vioser_sequence_accepts_agent_tx_without_guest_port_open_control() {
+    fn vioser_sequence_resends_host_open_before_agent_tx_without_guest_open_control() {
         let mut dev = VirtioPciConsole::new();
         let mut mem = TestMem::new(0x4000_0000, 0x70000);
         let crx_desc = 0x4000_1000;
@@ -1549,9 +1569,15 @@ mod tests {
         setup_queue(&mut dev, &mut mem, 2, crx_desc, crx_avail, crx_used, 2);
         setup_queue(&mut dev, &mut mem, 3, ctx_desc, ctx_avail, ctx_used, 3);
         setup_queue(&mut dev, &mut mem, 5, atx_desc, atx_avail, atx_used, 5);
-        for (idx, out) in [0x4000_a000, 0x4000_a100, 0x4000_a200, 0x4000_a300]
-            .into_iter()
-            .enumerate()
+        for (idx, out) in [
+            0x4000_a000,
+            0x4000_a100,
+            0x4000_a200,
+            0x4000_a300,
+            0x4000_a400,
+        ]
+        .into_iter()
+        .enumerate()
         {
             post_rx(&mut mem, crx_desc, crx_avail, out, 64, idx as u16);
         }
@@ -1597,6 +1623,18 @@ mod tests {
         );
         assert_eq!(
             mem.read(0x4000_a300, 8),
+            control_bytes(1, VIRTIO_CONSOLE_PORT_OPEN, 1)
+        );
+
+        pci_write(
+            &mut dev,
+            PCI_NOTIFY_CFG_OFFSET + u64::from(QUEUE_CONTROL_RX as u16) * 4,
+            4,
+            0,
+            &mut mem,
+        );
+        assert_eq!(
+            mem.read(0x4000_a400, 8),
             control_bytes(1, VIRTIO_CONSOLE_PORT_OPEN, 1)
         );
 

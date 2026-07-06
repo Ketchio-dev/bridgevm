@@ -5,6 +5,11 @@
 #   host->guest:  RUN <base64(utf8 cmd)>\n | PS <base64(utf8 script)>\n | PING\n
 #   guest->host:  READY <hostname>\n | OUT <exit> <base64(utf8 out)>\n | PONG\n
 $ErrorActionPreference = 'Continue'
+# Single-instance guard: the Run key and Startup launcher can both fire; a
+# second opener would collide on the single-open virtio-serial port.
+$bvCreated = $false
+$bvMutex = New-Object System.Threading.Mutex($true, 'Global\BridgeVMAgentSingleton', [ref]$bvCreated)
+if (-not $bvCreated) { exit 0 }
 $portPath = '\\.\Global\org.bridgevm.agent.0'
 
 $sig = @'

@@ -15,7 +15,10 @@ pub struct AgentConsoleHarness {
     framer: LineFramer,
     state: AgentConsoleState,
     commands: Vec<String>,
+    last_ping: Option<Instant>,
 }
+
+const PING_INTERVAL: Duration = Duration::from_secs(3);
 
 enum AgentConsoleState {
     WaitingReady,
@@ -33,6 +36,7 @@ impl AgentConsoleHarness {
             framer: LineFramer::new(),
             state: AgentConsoleState::WaitingReady,
             commands: agent_commands_from_env(),
+            last_ping: None,
         })
     }
 
@@ -55,8 +59,25 @@ impl AgentConsoleHarness {
             self.handle_line(&line, platform, mem, now);
         }
 
-        if matches!(self.state, AgentConsoleState::WaitingReady)
-            && now.duration_since(self.start) >= self.timeout
+        // Proactively PING while waiting to connect. The agent may have sent
+        // its one-shot READY before the guest driver's host-open latched (that
+        // write is silently dropped), so waiting passively for READY can
+        // deadlock. A PING the agent echoes as PONG breaks that: any inbound
+        // line (READY or PONG) advances us to the command phase.
+        if matches!(self.state, AgentConsoleState::WaitingReady) {
+            let due = self
+                .last_ping
+                .is_none_or(|t| now.duration_since(t) >= PING_INTERVAL);
+            if due {
+                platform.virtio_console_agent_send(b"PING\n", mem);
+                self.last_ping = Some(now);
+            }
+        }
+
+        if matches!(
+            self.state,
+            AgentConsoleState::WaitingReady | AgentConsoleState::WaitingPong
+        ) && now.duration_since(self.start) >= self.timeout
         {
             println!("BVAGENT TIMEOUT waiting for READY");
             self.state = AgentConsoleState::TimedOut;
@@ -72,16 +93,23 @@ impl AgentConsoleHarness {
     ) {
         match self.state {
             AgentConsoleState::WaitingReady => {
-                let Some(hostname) = line.strip_prefix("READY ") else {
-                    return;
-                };
-                println!(
-                    "BVAGENT READY host={} t={}",
-                    hostname,
-                    now.duration_since(self.start).as_millis()
-                );
-                platform.virtio_console_agent_send(b"PING\n", mem);
-                self.state = AgentConsoleState::WaitingPong;
+                // Connect on READY (agent hello) OR PONG (reply to a proactive
+                // PING when READY was lost). Either proves the channel is live.
+                if let Some(hostname) = line.strip_prefix("READY ") {
+                    println!(
+                        "BVAGENT READY host={} t={}",
+                        hostname,
+                        now.duration_since(self.start).as_millis()
+                    );
+                    platform.virtio_console_agent_send(b"PING\n", mem);
+                    self.state = AgentConsoleState::WaitingPong;
+                } else if line == "PONG" {
+                    println!(
+                        "BVAGENT PONG (proactive) t={}",
+                        now.duration_since(self.start).as_millis()
+                    );
+                    self.send_next_command_or_done(0, platform, mem);
+                }
             }
             AgentConsoleState::WaitingPong => {
                 if line != "PONG" {
