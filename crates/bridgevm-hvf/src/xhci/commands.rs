@@ -20,6 +20,7 @@ const TRB_TYPE_EVALUATE_CONTEXT: u32 = 13;
 const TRB_TYPE_STOP_ENDPOINT: u32 = 15;
 const TRB_TYPE_SET_TR_DEQUEUE_POINTER: u32 = 16;
 const TRB_TYPE_RESET_DEVICE: u32 = 17;
+const TRB_TYPE_NO_OP_COMMAND: u32 = 23;
 const TRB_TYPE_COMMAND_COMPLETION_EVENT: u32 = 33;
 const COMPLETION_CODE_SUCCESS: u32 = 1;
 const ADDRESS_DEVICE_BSR: u32 = 1 << 9;
@@ -192,6 +193,13 @@ impl XhciController {
                             self.invalidate_slot1_dci3_endpoint_state();
                             self.invalidate_slot1_dci5_endpoint_state();
                         }
+                        self.advance_command_dequeue(command_trb);
+                    }
+                    return posted;
+                }
+                TRB_TYPE_NO_OP_COMMAND => {
+                    let posted = self.post_command_completion(mem, command_trb, 0);
+                    if posted {
                         self.advance_command_dequeue(command_trb);
                     }
                     return posted;

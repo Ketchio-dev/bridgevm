@@ -6,6 +6,7 @@ const TRB_TYPE_LINK: u32 = 6;
 const TRB_TYPE_DISABLE_SLOT: u32 = 10;
 const TRB_TYPE_EVALUATE_CONTEXT: u32 = 13;
 const TRB_TYPE_SET_TR_DEQUEUE_POINTER: u32 = 16;
+const TRB_TYPE_NO_OP_COMMAND: u32 = 23;
 const STOP_ENDPOINT_OBSERVED_CONTROL: u32 = 0x0101_3c01;
 const RESET_DEVICE_OBSERVED_CONTROL: u32 = 0x0100_4601;
 const ADDRESS_DEVICE_SLOT_ID: u32 = 7;
@@ -71,6 +72,23 @@ fn enable_slot_command_posts_success_completion_event() {
     xhci.mmio_write(0x1020, 4, 1);
     assert_eq!(xhci.mmio_read(0x1020, 4) & 1, 0);
     assert_eq!(xhci.mmio_read(0x44, 4) & u64::from(USB_STS_EINT), 0);
+}
+
+#[test]
+fn no_op_command_posts_success_completion_event_for_linux_command_waits() {
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x5000);
+    setup_command_rings(
+        &mut xhci,
+        &mut mem,
+        command_control(TRB_TYPE_NO_OP_COMMAND, 0),
+    );
+
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+
+    assert_success_completion(&mem, EVENT_RING, CMD_RING, 0);
+    assert_eq!(xhci.mmio_read(0x58, 8), CMD_RING + TRB_SIZE + 1);
+    assert_eq!(xhci.mmio_read(0x1020, 4) & 1, 1);
 }
 
 #[test]
