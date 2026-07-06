@@ -1,3 +1,29 @@
+diff --git a/src/venus/venus-protocol/vn_protocol_renderer_dispatches.h b/src/venus/venus-protocol/vn_protocol_renderer_dispatches.h
+index a29a4fc..d1a1200 100644
+--- a/src/venus/venus-protocol/vn_protocol_renderer_dispatches.h
++++ b/src/venus/venus-protocol/vn_protocol_renderer_dispatches.h
+@@ -7,6 +7,7 @@
+ 
+ #ifndef VN_PROTOCOL_RENDERER_DISPATCHES_H
+ #define VN_PROTOCOL_RENDERER_DISPATCHES_H
++#include <stdio.h>
+ 
+ #include "vn_protocol_renderer_structs.h"
+ #include "vn_protocol_renderer_transport.h"
+@@ -736,8 +737,12 @@ static inline void vn_dispatch_command(struct vn_dispatch_context *ctx)
+             vn_cs_decoder_set_fatal(ctx->decoder);
+     }
+ 
+-    if (vn_cs_decoder_get_fatal(ctx->decoder))
++    if (vn_cs_decoder_get_fatal(ctx->decoder)) {
++        /* BridgeVM: always surface CS errors — silent ring death is undebuggable. */
++        fprintf(stderr, "venus: dispatch CS error cmd=%d %s\n", (int)cmd_type,
++                vn_dispatch_command_name(cmd_type));
+         vn_dispatch_debug_log(ctx, "%s resulted in CS error", vn_dispatch_command_name(cmd_type));
++    }
+ }
+ 
+ #endif /* VN_PROTOCOL_RENDERER_DISPATCHES_H */
 diff --git a/src/venus/vkr_device.c b/src/venus/vkr_device.c
 index 3e943bf..22439b2 100644
 --- a/src/venus/vkr_device.c
