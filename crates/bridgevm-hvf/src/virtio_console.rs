@@ -84,7 +84,7 @@ const DESC_F_WRITE: u16 = 2;
 
 const PORT_COUNT: usize = 2;
 const AGENT_PORT_ID: u32 = 1;
-pub const AGENT_PORT_NAME: &[u8] = b"org.bridgevm.agent.0\0";
+pub const AGENT_PORT_NAME: &[u8] = b"org.bridgevm.agent.0";
 
 const VIRTIO_CONSOLE_DEVICE_READY: u16 = 0;
 const VIRTIO_CONSOLE_DEVICE_ADD: u16 = 1;
@@ -1521,11 +1521,96 @@ mod tests {
         expected_name.extend_from_slice(AGENT_PORT_NAME);
         assert_eq!(mem.read(out2, expected_name.len()), expected_name);
         assert_eq!(
+            u32::from_le_bytes(mem.read(crx_used + 4 + 2 * 8 + 4, 4).try_into().unwrap()),
+            expected_name.len() as u32
+        );
+        assert_eq!(
             mem.read(out3, 8),
             control_bytes(1, VIRTIO_CONSOLE_PORT_OPEN, 1)
         );
         assert!(dev.stats().queues[2].pending_msix);
         assert!(dev.stats().queues[3].pending_msix);
+    }
+
+    #[test]
+    fn vioser_sequence_accepts_agent_tx_without_guest_port_open_control() {
+        let mut dev = VirtioPciConsole::new();
+        let mut mem = TestMem::new(0x4000_0000, 0x70000);
+        let crx_desc = 0x4000_1000;
+        let crx_avail = 0x4000_2000;
+        let crx_used = 0x4000_3000;
+        let ctx_desc = 0x4000_4000;
+        let ctx_avail = 0x4000_5000;
+        let ctx_used = 0x4000_6000;
+        let atx_desc = 0x4000_7000;
+        let atx_avail = 0x4000_8000;
+        let atx_used = 0x4000_9000;
+
+        setup_queue(&mut dev, &mut mem, 2, crx_desc, crx_avail, crx_used, 2);
+        setup_queue(&mut dev, &mut mem, 3, ctx_desc, ctx_avail, ctx_used, 3);
+        setup_queue(&mut dev, &mut mem, 5, atx_desc, atx_avail, atx_used, 5);
+        for (idx, out) in [0x4000_a000, 0x4000_a100, 0x4000_a200, 0x4000_a300]
+            .into_iter()
+            .enumerate()
+        {
+            post_rx(&mut mem, crx_desc, crx_avail, out, 64, idx as u16);
+        }
+
+        send_tx(
+            &mut dev,
+            &mut mem,
+            3,
+            ctx_desc,
+            ctx_avail,
+            0x4000_b000,
+            &control_bytes(0xffff_ffff, VIRTIO_CONSOLE_DEVICE_READY, 1),
+            0,
+        );
+        send_tx(
+            &mut dev,
+            &mut mem,
+            3,
+            ctx_desc,
+            ctx_avail,
+            0x4000_b100,
+            &control_bytes(0, VIRTIO_CONSOLE_PORT_READY, 1),
+            1,
+        );
+        send_tx(
+            &mut dev,
+            &mut mem,
+            3,
+            ctx_desc,
+            ctx_avail,
+            0x4000_b200,
+            &control_bytes(1, VIRTIO_CONSOLE_PORT_READY, 1),
+            2,
+        );
+
+        assert!(!dev.stats().port1_guest_open);
+        let mut expected_name = control_bytes(1, VIRTIO_CONSOLE_PORT_NAME, 0).to_vec();
+        expected_name.extend_from_slice(AGENT_PORT_NAME);
+        assert_eq!(mem.read(0x4000_a200, expected_name.len()), expected_name);
+        assert_eq!(
+            u32::from_le_bytes(mem.read(crx_used + 4 + 2 * 8 + 4, 4).try_into().unwrap()),
+            expected_name.len() as u32
+        );
+        assert_eq!(
+            mem.read(0x4000_a300, 8),
+            control_bytes(1, VIRTIO_CONSOLE_PORT_OPEN, 1)
+        );
+
+        send_tx(
+            &mut dev,
+            &mut mem,
+            5,
+            atx_desc,
+            atx_avail,
+            0x4000_c000,
+            b"READY",
+            0,
+        );
+        assert_eq!(dev.take_inbound(), b"READY");
     }
 
     #[test]
