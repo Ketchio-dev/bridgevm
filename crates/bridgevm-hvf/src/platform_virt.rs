@@ -1376,6 +1376,18 @@ impl VirtPlatform {
             .extend(dev.drain_pending_msix(control.enabled, control.function_masked));
     }
 
+    /// Retire venus fences and flush their interrupts without guest MMIO.
+    /// Fence completion must not depend on the guest touching the device: a
+    /// guest blocked in vkWaitForFences sits in WFI generating no virtio-gpu
+    /// accesses, so the per-exit drain path calls this (timer exits keep it
+    /// running) — otherwise queue-timeline fences would never signal.
+    pub fn poll_virtio_gpu_fences(&mut self, mem: &mut dyn GuestMemoryMut) {
+        if let Some(dev) = self.virtio_gpu.as_mut() {
+            dev.drain_completed_fences(mem);
+            self.flush_virtio_gpu_pending_msix();
+        }
+    }
+
     fn flush_virtio_gpu_pending_msix(&mut self) {
         if !self.devices.virtio_gpu_present {
             return;
