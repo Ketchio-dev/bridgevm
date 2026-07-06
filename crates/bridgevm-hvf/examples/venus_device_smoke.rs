@@ -159,25 +159,9 @@ mod smoke {
         let resp = submit_control(&mut dev, &mut mem, &submit_3d_req(1, &[]), 24);
         println!("empty submit_3d response={:#x}", read_u32(&resp, 0));
 
-        let mut fenced = ctrl_req(VIRTIO_GPU_CMD_SUBMIT_3D, 1);
-        fenced[4..8].copy_from_slice(
-            &(VIRTIO_GPU_FLAG_FENCE | VIRTIO_GPU_FLAG_INFO_RING_IDX).to_le_bytes(),
-        );
-        fenced[8..16].copy_from_slice(&99u64.to_le_bytes());
-        fenced[20] = 0;
-        fenced.extend_from_slice(&0u32.to_le_bytes());
-        fenced.extend_from_slice(&0u32.to_le_bytes());
-        let before = used_idx(&mem);
-        let _ = submit_control(&mut dev, &mut mem, &fenced, 24);
-        assert_eq!(used_idx(&mem), before, "fenced request completed too early");
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while used_idx(&mem) == before {
-            dev.drain_completed_fences(&mut mem);
-            if Instant::now() > deadline {
-                panic!("timed out waiting for venus fence");
-            }
-            thread::sleep(Duration::from_millis(10));
-        }
+        wait_for_fenced_submit(&mut dev, &mut mem, 1, 0, 99, "ring0 fence");
+        assert_rejected_fenced_submit_completes(&mut dev, &mut mem, 1, 3, 100, "ring3 fence");
+        println!("VENUS_FENCE_OK ring0=retired invalid_ring=completed");
 
         let resp = submit_control(
             &mut dev,
@@ -222,7 +206,7 @@ mod smoke {
         );
         assert_eq!(read_u32(&resp, 0), VIRTIO_GPU_RESP_OK_NODATA);
         println!(
-            "PASS: venus_device_smoke capset_size=160 fence_used_idx={}",
+            "PASS: venus_device_smoke capset_size=160 fenced_used_idx={}",
             used_idx(&mem)
         );
     }
@@ -298,6 +282,64 @@ mod smoke {
         req.extend_from_slice(&0u32.to_le_bytes());
         req.extend_from_slice(cmdbuf);
         req
+    }
+
+    fn fenced_submit_3d_req(ctx_id: u32, ring_idx: u8, fence_id: u64, cmdbuf: &[u8]) -> Vec<u8> {
+        let mut req = ctrl_req(VIRTIO_GPU_CMD_SUBMIT_3D, ctx_id);
+        req[4..8].copy_from_slice(
+            &(VIRTIO_GPU_FLAG_FENCE | VIRTIO_GPU_FLAG_INFO_RING_IDX).to_le_bytes(),
+        );
+        req[8..16].copy_from_slice(&fence_id.to_le_bytes());
+        req[20] = ring_idx;
+        req.extend_from_slice(&(cmdbuf.len() as u32).to_le_bytes());
+        req.extend_from_slice(&0u32.to_le_bytes());
+        req.extend_from_slice(cmdbuf);
+        req
+    }
+
+    fn wait_for_fenced_submit(
+        dev: &mut VirtioPciGpu,
+        mem: &mut TestMem,
+        ctx_id: u32,
+        ring_idx: u8,
+        fence_id: u64,
+        label: &str,
+    ) {
+        let before = used_idx(mem);
+        let req = fenced_submit_3d_req(ctx_id, ring_idx, fence_id, &[]);
+        let _ = submit_control(dev, mem, &req, 24);
+        assert_eq!(
+            used_idx(mem),
+            before,
+            "{label} completed before async fence callback"
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while used_idx(mem) == before {
+            dev.drain_completed_fences(mem);
+            if Instant::now() > deadline {
+                panic!("timed out waiting for venus {label}");
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn assert_rejected_fenced_submit_completes(
+        dev: &mut VirtioPciGpu,
+        mem: &mut TestMem,
+        ctx_id: u32,
+        ring_idx: u8,
+        fence_id: u64,
+        label: &str,
+    ) {
+        let before = used_idx(mem);
+        let req = fenced_submit_3d_req(ctx_id, ring_idx, fence_id, &[]);
+        let resp = submit_control(dev, mem, &req, 24);
+        assert_eq!(read_u32(&resp, 0), VIRTIO_GPU_RESP_OK_NODATA);
+        assert_eq!(
+            used_idx(mem),
+            before.wrapping_add(1),
+            "{label} did not complete immediately"
+        );
     }
 
     fn create_blob_req(

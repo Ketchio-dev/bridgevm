@@ -78,6 +78,7 @@ pub trait VirtioGpu3dBackend: Send {
     fn scanout_unmap(&mut self, resource_id: u32);
     fn destroy_resource(&mut self, resource_id: u32);
     fn create_fence(&mut self, ctx_id: u32, ring_idx: u8, fence_id: u64) -> bool;
+    fn poll_fences(&mut self);
     fn drain_completed_fences(&mut self) -> Vec<CompletedFence>;
     fn reset(&mut self);
 }
@@ -298,6 +299,10 @@ impl VirtioGpu3d {
         let Some(backend) = self.backend.as_mut() else {
             return Vec::new();
         };
+        // Venus on macOS retires fences synchronously: polling the backend may
+        // invoke the fence callback inline, then drain_completed_fences takes
+        // the callbacks queued by that poll.
+        backend.poll_fences();
         let completed = backend.drain_completed_fences();
         self.fences_completed = self.fences_completed.saturating_add(completed.len() as u64);
         completed
@@ -732,6 +737,7 @@ pub struct MockBackend {
     pub destroyed_resources: Vec<u32>,
     pub fences: Vec<CompletedFence>,
     pub completed: Vec<CompletedFence>,
+    pub reject_fence_ring: Option<u8>,
 }
 
 #[cfg(test)]
@@ -831,13 +837,16 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
     }
 
     fn create_fence(&mut self, ctx_id: u32, ring_idx: u8, fence_id: u64) -> bool {
-        self.lock().unwrap().fences.push(CompletedFence {
+        let mut inner = self.lock().unwrap();
+        inner.fences.push(CompletedFence {
             ctx_id,
             ring_idx,
             fence_id,
         });
-        true
+        inner.reject_fence_ring != Some(ring_idx)
     }
+
+    fn poll_fences(&mut self) {}
 
     fn drain_completed_fences(&mut self) -> Vec<CompletedFence> {
         std::mem::take(&mut self.lock().unwrap().completed)

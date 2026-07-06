@@ -55,10 +55,8 @@ pub struct virgl_renderer_callbacks {
     pub get_egl_display: Option<extern "C" fn(cookie: *mut c_void) -> *mut c_void>,
 }
 
-const VIRGL_RENDERER_THREAD_SYNC: c_int = 2;
 const VIRGL_RENDERER_VENUS: c_int = 1 << 6;
 const VIRGL_RENDERER_NO_VIRGL: c_int = 1 << 7;
-const VIRGL_RENDERER_ASYNC_FENCE_CB: c_int = 1 << 8;
 const VIRGL_RENDERER_RENDER_SERVER: c_int = 1 << 9;
 const VIRGL_RENDERER_USE_GUEST_VRAM: c_int = 1 << 14;
 const VIRGL_RENDERER_CONTEXT_FLAG_CAPSET_ID_MASK: u32 = 0xff;
@@ -88,8 +86,6 @@ unsafe extern "C" {
         flags: c_int,
         cb: *mut virgl_renderer_callbacks,
     ) -> c_int;
-    fn virgl_renderer_poll();
-    fn virgl_renderer_get_poll_fd() -> c_int;
     fn virgl_renderer_get_cap_set(set: u32, max_ver: *mut u32, max_size: *mut u32);
     fn virgl_renderer_fill_caps(set: u32, version: u32, caps: *mut c_void);
     fn virgl_renderer_context_create_with_flags(
@@ -101,8 +97,6 @@ unsafe extern "C" {
     fn virgl_renderer_context_destroy(handle: u32);
     fn virgl_renderer_ctx_attach_resource(ctx_id: c_int, res_handle: c_int);
     fn virgl_renderer_ctx_detach_resource(ctx_id: c_int, res_handle: c_int);
-    fn virgl_renderer_context_poll(ctx_id: u32);
-    fn virgl_renderer_context_get_poll_fd(ctx_id: u32) -> c_int;
     fn virgl_renderer_submit_cmd(buffer: *mut c_void, ctx_id: c_int, ndw: c_int) -> c_int;
     fn virgl_renderer_context_create_fence(
         ctx_id: u32,
@@ -110,6 +104,7 @@ unsafe extern "C" {
         ring_idx: u32,
         fence_id: u64,
     ) -> c_int;
+    fn virgl_renderer_context_poll(ctx_id: u32);
     fn virgl_renderer_resource_create_blob(
         args: *const virgl_renderer_resource_create_blob_args,
     ) -> c_int;
@@ -135,7 +130,7 @@ static SHARED: OnceLock<Arc<Mutex<VenusShared>>> = OnceLock::new();
 pub struct VenusBackend {
     shared: Arc<Mutex<VenusShared>>,
     contexts: Vec<u32>,
-    ring0_deferred: Vec<CompletedFence>,
+    outstanding_fences: BTreeMap<u32, usize>,
     mapped_resources: BTreeMap<u32, VenusMappedResource>,
 }
 
@@ -160,7 +155,7 @@ impl VenusBackend {
         Ok(Self {
             shared,
             contexts: Vec::new(),
-            ring0_deferred: Vec::new(),
+            outstanding_fences: BTreeMap::new(),
             mapped_resources: BTreeMap::new(),
         })
     }
@@ -208,6 +203,7 @@ impl VirtioGpu3dBackend for VenusBackend {
         };
         if ret == 0 {
             self.contexts.push(ctx_id);
+            self.outstanding_fences.entry(ctx_id).or_default();
             true
         } else {
             eprintln!("venus: context_create_with_flags ctx={ctx_id} ret={ret}");
@@ -220,6 +216,7 @@ impl VirtioGpu3dBackend for VenusBackend {
             virgl_renderer_context_destroy(ctx_id);
         }
         self.contexts.retain(|ctx| *ctx != ctx_id);
+        self.outstanding_fences.remove(&ctx_id);
     }
 
     fn ctx_attach_resource(&mut self, ctx_id: u32, resource_id: u32) {
@@ -324,32 +321,42 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn create_fence(&mut self, ctx_id: u32, ring_idx: u8, fence_id: u64) -> bool {
+        if ring_idx != 0 {
+            eprintln!(
+                "venus: rejecting unbound fence ring ctx={ctx_id} ring={ring_idx} fence={fence_id}"
+            );
+            return false;
+        }
         let ret =
             unsafe { virgl_renderer_context_create_fence(ctx_id, 0, ring_idx.into(), fence_id) };
         if ret != 0 {
             eprintln!("venus: context_create_fence ctx={ctx_id} ring={ring_idx} fence={fence_id} ret={ret}");
         }
-        if ret == 0 && ring_idx == 0 {
-            self.ring0_deferred.push(CompletedFence {
-                ctx_id,
-                ring_idx,
-                fence_id,
-            });
+        if ret == 0 {
+            *self.outstanding_fences.entry(ctx_id).or_default() += 1;
         }
         ret == 0
     }
 
-    fn drain_completed_fences(&mut self) -> Vec<CompletedFence> {
-        unsafe {
-            virgl_renderer_poll();
+    fn poll_fences(&mut self) {
+        let pending_contexts: Vec<u32> = self
+            .outstanding_fences
+            .iter()
+            .filter_map(|(ctx_id, outstanding)| (*outstanding > 0).then_some(*ctx_id))
+            .collect();
+        for ctx_id in pending_contexts {
+            unsafe {
+                virgl_renderer_context_poll(ctx_id);
+            }
         }
+    }
+
+    fn drain_completed_fences(&mut self) -> Vec<CompletedFence> {
         let completed = std::mem::take(&mut self.shared.lock().unwrap().completed);
-        if !self.ring0_deferred.is_empty() {
-            self.shared
-                .lock()
-                .unwrap()
-                .completed
-                .extend(self.ring0_deferred.drain(..));
+        for fence in &completed {
+            if let Some(outstanding) = self.outstanding_fences.get_mut(&fence.ctx_id) {
+                *outstanding = outstanding.saturating_sub(1);
+            }
         }
         completed
     }
@@ -366,8 +373,8 @@ impl VirtioGpu3dBackend for VenusBackend {
                 virgl_renderer_context_destroy(ctx_id);
             }
         }
+        self.outstanding_fences.clear();
         self.shared.lock().unwrap().completed.clear();
-        self.ring0_deferred.clear();
     }
 }
 
@@ -439,7 +446,7 @@ fn init_renderer(shared: Arc<Mutex<VenusShared>>) -> Result<(), String> {
     // virglrenderer stores the callback cookie process-globally. Leak one Arc
     // clone so the raw cookie remains stable for callbacks until process exit.
     let cookie = Arc::into_raw(shared) as *mut c_void;
-    let mut callbacks = virgl_renderer_callbacks {
+    let callbacks = Box::leak(Box::new(virgl_renderer_callbacks {
         version: VIRGL_RENDERER_CALLBACKS_VERSION,
         write_fence: Some(write_fence),
         create_gl_context: None,
@@ -449,14 +456,9 @@ fn init_renderer(shared: Arc<Mutex<VenusShared>>) -> Result<(), String> {
         write_context_fence: Some(write_context_fence),
         get_server_fd: None,
         get_egl_display: None,
-    };
-    let flags = VIRGL_RENDERER_VENUS
-        | VIRGL_RENDERER_NO_VIRGL
-        | VIRGL_RENDERER_RENDER_SERVER
-        | VIRGL_RENDERER_USE_GUEST_VRAM
-        | VIRGL_RENDERER_THREAD_SYNC
-        | VIRGL_RENDERER_ASYNC_FENCE_CB;
-    let ret = unsafe { virgl_renderer_init(cookie, flags, &mut callbacks) };
+    }));
+    let flags = VIRGL_RENDERER_VENUS | VIRGL_RENDERER_NO_VIRGL | VIRGL_RENDERER_RENDER_SERVER;
+    let ret = unsafe { virgl_renderer_init(cookie, flags, callbacks) };
     if ret == 0 {
         Ok(())
     } else {

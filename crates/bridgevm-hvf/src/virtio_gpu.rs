@@ -835,6 +835,8 @@ impl VirtioGpu {
                 });
                 return ChainCompletion::Parked;
             }
+            // If virgl rejects the requested timeline, the command response is
+            // still delivered; there is no backend fence that can retire it.
         }
         ChainCompletion::Immediate(Self::scatter_write(mem, &descs, &response))
     }
@@ -3017,6 +3019,31 @@ mod tests {
         assert_eq!(
             u16::from_le_bytes(mem.read(0x4000_3000 + 2, 2).try_into().unwrap()),
             2
+        );
+    }
+
+    #[test]
+    fn rejected_fence_completes_immediately_without_pending_response() {
+        let (mut dev, backend) = dev_with_mock();
+        backend.lock().unwrap().reject_fence_ring = Some(3);
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let _ = submit_control(&mut dev, &mut mem, &ctx_create_req(1, 4, b"ctx"), 24);
+        let mut req = ctrl_req_fenced(VIRTIO_GPU_CMD_SUBMIT_3D, 1, 3, 43);
+        req.extend_from_slice(&0u32.to_le_bytes());
+        req.extend_from_slice(&0u32.to_le_bytes());
+
+        let (resp, used_idx) = submit_control_readable_descs(&mut dev, &mut mem, &[&req], 24);
+
+        assert_eq!(used_idx, 2);
+        assert_eq!(dev.stats().three_d.fences_pending, 0);
+        assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+        assert_eq!(
+            backend.lock().unwrap().fences,
+            vec![CompletedFence {
+                ctx_id: 1,
+                ring_idx: 3,
+                fence_id: 43,
+            }]
         );
     }
 
