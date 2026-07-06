@@ -28,6 +28,7 @@ pub mod stage1;
 #[cfg(feature = "venus")]
 pub mod venus_backend;
 pub mod virtio_blk;
+pub mod virtio_console;
 pub mod virtio_gpu;
 pub mod virtio_gpu_3d;
 pub mod virtio_net;

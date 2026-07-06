@@ -227,6 +227,7 @@ mod tests {
                 virtio_boot_media_present: false,
                 virtio_net_present: false,
                 virtio_gpu_present: false,
+                virtio_console_present: false,
                 virtio_gpu_pci_device_id: bridgevm_hvf::pcie::VIRTIO_GPU_DEVICE_ID,
                 virtio_net_backend: bridgevm_hvf::platform_virt::VirtioNetBackendKind::Nat,
                 legacy_virtio_mmio_present: false,

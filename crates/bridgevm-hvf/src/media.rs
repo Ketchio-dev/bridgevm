@@ -258,6 +258,7 @@ impl VirtBootMediaConfig {
         cfg.platform_devices.virtio_boot_media_present = virtio_iso_present;
         cfg.platform_devices.virtio_net_present = env_flag("BRIDGEVM_VIRTIO_NET");
         cfg.platform_devices.virtio_gpu_present = env_flag("BRIDGEVM_VIRTIO_GPU");
+        cfg.platform_devices.virtio_console_present = env_flag("BRIDGEVM_VIRTIO_CONSOLE");
         cfg.platform_devices.virtio_gpu_pci_device_id =
             parse_optional_u16_env("BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID")
                 .unwrap_or(crate::pcie::VIRTIO_GPU_DEVICE_ID);
@@ -337,6 +338,7 @@ mod tests {
             "BRIDGEVM_DISABLE_VIRTIO_ISO",
             "BRIDGEVM_VIRTIO_NET",
             "BRIDGEVM_VIRTIO_GPU",
+            "BRIDGEVM_VIRTIO_CONSOLE",
             "BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID",
             "BRIDGEVM_VIRTIO_NET_BACKEND",
             "BRIDGEVM_RAMFB",
@@ -476,6 +478,18 @@ mod tests {
         let cfg = VirtBootMediaConfig::from_probe_env();
 
         assert!(cfg.platform_devices.virtio_gpu_present);
+        clear_probe_disable_env();
+    }
+
+    #[test]
+    fn probe_env_enables_virtio_console_when_truthy() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_probe_disable_env();
+        env::set_var("BRIDGEVM_VIRTIO_CONSOLE", "yes");
+
+        let cfg = VirtBootMediaConfig::from_probe_env();
+
+        assert!(cfg.platform_devices.virtio_console_present);
         clear_probe_disable_env();
     }
 

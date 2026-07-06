@@ -296,6 +296,33 @@ pub const VIRTIO_GPU_MSIX_TABLE_OFFSET: u32 = 0x0000;
 /// Offset of the virtio-gpu MSI-X Pending Bit Array in BAR1.
 pub const VIRTIO_GPU_MSIX_PBA_OFFSET: u32 = 0x0800;
 
+// ---- The modern virtio-console endpoint (00:06.0) --------------------------
+
+/// Bus/device/function for the opt-in modern-only `virtio-serial-pci` endpoint.
+pub const VIRTIO_CONSOLE_BDF: (u8, u8, u8) = (0, 6, 0);
+/// Red Hat virtio vendor id.
+pub const VIRTIO_CONSOLE_VENDOR_ID: u16 = 0x1af4;
+/// Modern virtio console device id (`0x1040 + virtio device id 3`).
+pub const VIRTIO_CONSOLE_DEVICE_ID: u16 = 0x1043;
+/// Class code `0x078000`: simple communications controller / other.
+pub const VIRTIO_CONSOLE_CLASS_CODE: u32 = 0x0007_8000;
+/// Modern virtio PCI revision id.
+pub const VIRTIO_CONSOLE_REVISION: u8 = 0x01;
+pub const VIRTIO_CONSOLE_SUBSYSTEM_VENDOR_ID: u16 = 0x1af4;
+pub const VIRTIO_CONSOLE_SUBSYSTEM_ID: u16 = 0x1100;
+/// MSI-X table/PBA memory BAR.
+pub const VIRTIO_CONSOLE_BAR1_SIZE: u32 = 0x1000;
+/// Modern virtio PCI transport memory BAR.
+pub const VIRTIO_CONSOLE_BAR4_SIZE: u32 = 0x4000;
+/// PCI capability-list offset for the virtio-console MSI-X capability.
+pub const VIRTIO_CONSOLE_MSIX_CAP_OFFSET: u8 = 0x84;
+/// One vector per virtio-console queue.
+pub const VIRTIO_CONSOLE_MSIX_VECTOR_COUNT: u16 = 6;
+/// Offset of the virtio-console MSI-X table in BAR1.
+pub const VIRTIO_CONSOLE_MSIX_TABLE_OFFSET: u32 = 0x0000;
+/// Offset of the virtio-console MSI-X Pending Bit Array in BAR1.
+pub const VIRTIO_CONSOLE_MSIX_PBA_OFFSET: u32 = 0x0800;
+
 /// The value an ECAM read returns when no device answers: all-ones. Firmware
 /// treats a `0xFFFF_FFFF` vendor/device read as "slot empty".
 pub const NO_DEVICE: u64 = 0xFFFF_FFFF;
@@ -685,6 +712,39 @@ impl Function {
         }
     }
 
+    /// Modern-only virtio console endpoint at `00:06.0`.
+    fn virtio_console() -> Self {
+        let mut bars = [Bar::default(); NUM_BARS];
+        bars[1] = Bar::memory32(VIRTIO_CONSOLE_BAR1_SIZE);
+        bars[4] = Bar::memory32(VIRTIO_CONSOLE_BAR4_SIZE);
+        let caps = virtio_caps::capability_list(VIRTIO_CONSOLE_MSIX_CAP_OFFSET);
+        let msix = MsixCapability::new(
+            VIRTIO_CONSOLE_MSIX_VECTOR_COUNT,
+            1,
+            VIRTIO_CONSOLE_MSIX_TABLE_OFFSET,
+            VIRTIO_CONSOLE_MSIX_PBA_OFFSET,
+        );
+        let mut cap_bytes = caps.cap_bytes;
+        cap_bytes.extend(
+            msix.to_bytes(0)
+                .into_iter()
+                .enumerate()
+                .map(|(i, byte)| (u16::from(VIRTIO_CONSOLE_MSIX_CAP_OFFSET) + i as u16, byte)),
+        );
+        Self {
+            bdf: VIRTIO_CONSOLE_BDF,
+            vendor_device: (u32::from(VIRTIO_CONSOLE_DEVICE_ID) << 16)
+                | u32::from(VIRTIO_CONSOLE_VENDOR_ID),
+            revision_class: (VIRTIO_CONSOLE_CLASS_CODE << 8) | u32::from(VIRTIO_CONSOLE_REVISION),
+            subsystem_ids: (u32::from(VIRTIO_CONSOLE_SUBSYSTEM_ID) << 16)
+                | u32::from(VIRTIO_CONSOLE_SUBSYSTEM_VENDOR_ID),
+            command: 0,
+            bars,
+            cap_ptr: caps.cap_ptr,
+            cap_bytes,
+        }
+    }
+
     fn xhci() -> Self {
         let mut bars = [Bar::default(); NUM_BARS];
         let (bar0, bar1) = Bar::memory64(XHCI_BAR0_SIZE);
@@ -919,6 +979,7 @@ pub struct PcieEcamConfig {
     pub virtio_blk_present: bool,
     pub virtio_net_present: bool,
     pub virtio_gpu_present: bool,
+    pub virtio_console_present: bool,
     pub virtio_gpu_pci_device_id: u16,
     pub virtio_gpu_3d_enabled: bool,
 }
@@ -930,6 +991,7 @@ impl Default for PcieEcamConfig {
             virtio_blk_present: true,
             virtio_net_present: false,
             virtio_gpu_present: false,
+            virtio_console_present: false,
             virtio_gpu_pci_device_id: VIRTIO_GPU_DEVICE_ID,
             virtio_gpu_3d_enabled: false,
         }
@@ -969,6 +1031,9 @@ impl PcieEcam {
                 host_visible_bar_size,
                 config.virtio_gpu_pci_device_id,
             ));
+        }
+        if config.virtio_console_present {
+            functions.push(Function::virtio_console());
         }
         Self { functions }
     }
@@ -1104,6 +1169,13 @@ impl PcieEcam {
     /// Function-level MSI-X control for the virtio-gpu endpoint.
     pub fn virtio_gpu_msix_control(&self) -> MsixFunctionControl {
         self.function_at(VIRTIO_GPU_BDF)
+            .and_then(Function::msix_control)
+            .unwrap_or_default()
+    }
+
+    /// Function-level MSI-X control for the virtio-console endpoint.
+    pub fn virtio_console_msix_control(&self) -> MsixFunctionControl {
+        self.function_at(VIRTIO_CONSOLE_BDF)
             .and_then(Function::msix_control)
             .unwrap_or_default()
     }
@@ -1718,6 +1790,109 @@ mod tests {
             (subsystem >> 16) & 0xffff,
             u64::from(VIRTIO_GPU_SUBSYSTEM_ID)
         );
+    }
+
+    #[test]
+    fn virtio_console_endpoint_is_absent_by_default_and_gated_on_without_regressing_other_virtio() {
+        let baseline = PcieEcam::new_with_config(PcieEcamConfig {
+            virtio_net_present: true,
+            virtio_gpu_present: true,
+            ..PcieEcamConfig::default()
+        });
+        assert_eq!(
+            baseline.cfg_read(bdf_ecam_offset(VIRTIO_CONSOLE_BDF, REG_VENDOR_DEVICE), 4),
+            NO_DEVICE
+        );
+        let baseline_blk = read_config_bytes(&baseline, VIRTIO_BLK_BDF, 256);
+        let baseline_net = read_config_bytes(&baseline, VIRTIO_NET_BDF, 256);
+        let baseline_gpu = read_config_bytes(&baseline, VIRTIO_GPU_BDF, 256);
+
+        let mut ecam = PcieEcam::new_with_config(PcieEcamConfig {
+            virtio_net_present: true,
+            virtio_gpu_present: true,
+            virtio_console_present: true,
+            ..PcieEcamConfig::default()
+        });
+        assert_eq!(read_config_bytes(&ecam, VIRTIO_BLK_BDF, 256), baseline_blk);
+        assert_eq!(read_config_bytes(&ecam, VIRTIO_NET_BDF, 256), baseline_net);
+        assert_eq!(read_config_bytes(&ecam, VIRTIO_GPU_BDF, 256), baseline_gpu);
+
+        let (bus, dev, func) = VIRTIO_CONSOLE_BDF;
+        let vd = ecam.cfg_read(ecam_offset(bus, dev, func, REG_VENDOR_DEVICE), 4);
+        assert_eq!(vd & 0xffff, u64::from(VIRTIO_CONSOLE_VENDOR_ID));
+        assert_eq!((vd >> 16) & 0xffff, u64::from(VIRTIO_CONSOLE_DEVICE_ID));
+        let rc = ecam.cfg_read(ecam_offset(bus, dev, func, REG_REVISION_CLASS), 4);
+        assert_eq!(rc >> 8, u64::from(VIRTIO_CONSOLE_CLASS_CODE));
+        assert_eq!(rc & 0xff, u64::from(VIRTIO_CONSOLE_REVISION));
+        let subsystem = ecam.cfg_read(ecam_offset(bus, dev, func, REG_SUBSYSTEM_IDS), 4);
+        assert_eq!(
+            subsystem & 0xffff,
+            u64::from(VIRTIO_CONSOLE_SUBSYSTEM_VENDOR_ID)
+        );
+        assert_eq!(
+            (subsystem >> 16) & 0xffff,
+            u64::from(VIRTIO_CONSOLE_SUBSYSTEM_ID)
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(bus, dev, func, REG_CAP_PTR), 1),
+            0x40
+        );
+
+        let bar1 = ecam_offset(bus, dev, func, REG_BAR0 + 4);
+        ecam.cfg_write(bar1, 4, 0xffff_ffff);
+        let bar1_readback = ecam.cfg_read(bar1, 4) as u32;
+        assert_eq!(bar1_readback & 0xf, 0);
+        assert_eq!(
+            (!(bar1_readback & !0xf)).wrapping_add(1),
+            VIRTIO_CONSOLE_BAR1_SIZE
+        );
+
+        let bar4 = ecam_offset(bus, dev, func, REG_BAR0 + 4 * 4);
+        ecam.cfg_write(bar4, 4, 0xffff_ffff);
+        let bar4_readback = ecam.cfg_read(bar4, 4) as u32;
+        assert_eq!(bar4_readback & 0xf, 0);
+        assert_eq!(
+            (!(bar4_readback & !0xf)).wrapping_add(1),
+            VIRTIO_CONSOLE_BAR4_SIZE
+        );
+
+        let msix = u16::from(VIRTIO_CONSOLE_MSIX_CAP_OFFSET);
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(bus, dev, func, msix), 1),
+            u64::from(CAP_ID_MSIX)
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(bus, dev, func, msix + 2), 2),
+            u64::from(VIRTIO_CONSOLE_MSIX_VECTOR_COUNT - 1)
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(bus, dev, func, msix + 4), 4),
+            u64::from(VIRTIO_CONSOLE_MSIX_TABLE_OFFSET | 1)
+        );
+        assert_eq!(
+            ecam.cfg_read(ecam_offset(bus, dev, func, msix + 8), 4),
+            u64::from(VIRTIO_CONSOLE_MSIX_PBA_OFFSET | 1)
+        );
+        assert!(cap_chain_contains_vendor_cfg_type(
+            &ecam,
+            VIRTIO_CONSOLE_BDF,
+            1
+        ));
+        assert!(cap_chain_contains_vendor_cfg_type(
+            &ecam,
+            VIRTIO_CONSOLE_BDF,
+            2
+        ));
+        assert!(cap_chain_contains_vendor_cfg_type(
+            &ecam,
+            VIRTIO_CONSOLE_BDF,
+            3
+        ));
+        assert!(cap_chain_contains_vendor_cfg_type(
+            &ecam,
+            VIRTIO_CONSOLE_BDF,
+            4
+        ));
     }
 
     #[test]
