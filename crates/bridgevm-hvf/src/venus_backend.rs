@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 use std::{
+    collections::BTreeMap,
     env,
     ffi::CString,
     os::raw::{c_char, c_int, c_uint, c_void},
@@ -10,7 +11,7 @@ use std::{
 };
 
 use crate::virtio_gpu_3d::{
-    CapsetInfo, CompletedFence, CreateBlobArgs, MappedBlob, VirtioGpu3dBackend,
+    CapsetInfo, CompletedFence, CreateBlobArgs, MappedBlob, ScanoutMappedBlob, VirtioGpu3dBackend,
     VIRTIO_GPU_RESP_ERR_UNSPEC,
 };
 
@@ -135,7 +136,18 @@ pub struct VenusBackend {
     shared: Arc<Mutex<VenusShared>>,
     contexts: Vec<u32>,
     ring0_deferred: Vec<CompletedFence>,
+    mapped_resources: BTreeMap<u32, VenusMappedResource>,
 }
+
+#[derive(Clone, Copy)]
+struct VenusMappedResource {
+    host_ptr: *mut u8,
+    size: usize,
+    map_info: u32,
+    refs: usize,
+}
+
+unsafe impl Send for VenusMappedResource {}
 
 impl VenusBackend {
     pub fn new() -> Result<Self, String> {
@@ -149,6 +161,7 @@ impl VenusBackend {
             shared,
             contexts: Vec::new(),
             ring0_deferred: Vec::new(),
+            mapped_resources: BTreeMap::new(),
         })
     }
 }
@@ -277,39 +290,34 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn map_blob(&mut self, resource_id: u32) -> Option<MappedBlob> {
-        let mut ptr_out: *mut c_void = ptr::null_mut();
-        let mut size = 0u64;
-        let ret = unsafe { virgl_renderer_resource_map(resource_id, &mut ptr_out, &mut size) };
-        if ret != 0 || ptr_out.is_null() {
-            eprintln!(
-                "venus: resource_map res={resource_id} ret={ret} ptr={ptr_out:p} size={size}"
-            );
-            return None;
-        }
-        let mut map_info = 0u32;
-        let info_ret = unsafe { virgl_renderer_resource_get_map_info(resource_id, &mut map_info) };
-        if info_ret != 0 {
-            eprintln!("venus: resource_get_map_info res={resource_id} ret={info_ret}");
-            unsafe {
-                virgl_renderer_resource_unmap(resource_id);
-            }
-            return None;
-        }
+        let mapped = self.map_resource_ref(resource_id)?;
         Some(MappedBlob {
-            host_ptr: ptr_out.cast::<u8>(),
-            size: usize::try_from(size).ok()?,
-            map_info,
+            host_ptr: mapped.host_ptr,
+            size: mapped.size,
+            map_info: mapped.map_info,
         })
     }
 
     fn unmap_blob(&mut self, resource_id: u32) {
-        let ret = unsafe { virgl_renderer_resource_unmap(resource_id) };
-        if ret != 0 {
-            eprintln!("venus: resource_unmap res={resource_id} ret={ret}");
-        }
+        self.unmap_resource_ref(resource_id);
+    }
+
+    fn scanout_map(&mut self, resource_id: u32) -> Option<ScanoutMappedBlob> {
+        let mapped = self.map_resource_ref(resource_id)?;
+        Some(ScanoutMappedBlob {
+            host_ptr: mapped.host_ptr.cast_const(),
+            size: mapped.size,
+        })
+    }
+
+    fn scanout_unmap(&mut self, resource_id: u32) {
+        self.unmap_resource_ref(resource_id);
     }
 
     fn destroy_resource(&mut self, resource_id: u32) {
+        while self.mapped_resources.contains_key(&resource_id) {
+            self.unmap_resource_ref(resource_id);
+        }
         unsafe {
             virgl_renderer_resource_unref(resource_id);
         }
@@ -347,6 +355,12 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn reset(&mut self) {
+        let resource_ids: Vec<u32> = self.mapped_resources.keys().copied().collect();
+        for resource_id in resource_ids {
+            while self.mapped_resources.contains_key(&resource_id) {
+                self.unmap_resource_ref(resource_id);
+            }
+        }
         for ctx_id in std::mem::take(&mut self.contexts) {
             unsafe {
                 virgl_renderer_context_destroy(ctx_id);
@@ -354,6 +368,56 @@ impl VirtioGpu3dBackend for VenusBackend {
         }
         self.shared.lock().unwrap().completed.clear();
         self.ring0_deferred.clear();
+    }
+}
+
+impl VenusBackend {
+    fn map_resource_ref(&mut self, resource_id: u32) -> Option<VenusMappedResource> {
+        if let Some(mapped) = self.mapped_resources.get_mut(&resource_id) {
+            mapped.refs = mapped.refs.saturating_add(1);
+            return Some(*mapped);
+        }
+        let mut ptr_out: *mut c_void = ptr::null_mut();
+        let mut size = 0u64;
+        let ret = unsafe { virgl_renderer_resource_map(resource_id, &mut ptr_out, &mut size) };
+        if ret != 0 || ptr_out.is_null() {
+            eprintln!(
+                "venus: resource_map res={resource_id} ret={ret} ptr={ptr_out:p} size={size}"
+            );
+            return None;
+        }
+        let mut map_info = 0u32;
+        let info_ret = unsafe { virgl_renderer_resource_get_map_info(resource_id, &mut map_info) };
+        if info_ret != 0 {
+            eprintln!("venus: resource_get_map_info res={resource_id} ret={info_ret}");
+            unsafe {
+                virgl_renderer_resource_unmap(resource_id);
+            }
+            return None;
+        }
+        let mapped = VenusMappedResource {
+            host_ptr: ptr_out.cast::<u8>(),
+            size: usize::try_from(size).ok()?,
+            map_info,
+            refs: 1,
+        };
+        self.mapped_resources.insert(resource_id, mapped);
+        Some(mapped)
+    }
+
+    fn unmap_resource_ref(&mut self, resource_id: u32) {
+        let Some(mapped) = self.mapped_resources.get_mut(&resource_id) else {
+            return;
+        };
+        if mapped.refs > 1 {
+            mapped.refs -= 1;
+            return;
+        }
+        self.mapped_resources.remove(&resource_id);
+        let ret = unsafe { virgl_renderer_resource_unmap(resource_id) };
+        if ret != 0 {
+            eprintln!("venus: resource_unmap res={resource_id} ret={ret}");
+        }
     }
 }
 

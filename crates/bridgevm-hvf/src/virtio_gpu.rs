@@ -16,8 +16,9 @@ use crate::{
     ramfb::DRM_FORMAT_XRGB8888,
     virtio_gpu_3d::{
         self, CompletedFence, CtrlHdr3d, GpuShmMapPort, VirtioGpu3d, VirtioGpu3dBackend,
-        VirtioGpu3dStats, VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE, VIRTIO_GPU_CMD_CTX_CREATE,
-        VIRTIO_GPU_CMD_CTX_DESTROY, VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE, VIRTIO_GPU_CMD_GET_CAPSET,
+        VirtioGpu3dStats, VIRTIO_GPU_BLOB_MEM_GUEST, VIRTIO_GPU_BLOB_MEM_HOST3D,
+        VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE, VIRTIO_GPU_CMD_CTX_CREATE, VIRTIO_GPU_CMD_CTX_DESTROY,
+        VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE, VIRTIO_GPU_CMD_GET_CAPSET,
         VIRTIO_GPU_CMD_GET_CAPSET_INFO, VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB,
         VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB, VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB,
         VIRTIO_GPU_CMD_SUBMIT_3D, VIRTIO_GPU_FLAG_FENCE, VIRTIO_GPU_F_CONTEXT_INIT,
@@ -98,6 +99,7 @@ const VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D: u32 = 0x0105;
 const VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING: u32 = 0x0106;
 const VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING: u32 = 0x0107;
 const VIRTIO_GPU_CMD_GET_EDID: u32 = 0x010a;
+const VIRTIO_GPU_CMD_SET_SCANOUT_BLOB: u32 = 0x010d;
 const VIRTIO_GPU_CMD_UPDATE_CURSOR: u32 = 0x0300;
 const VIRTIO_GPU_CMD_MOVE_CURSOR: u32 = 0x0301;
 const VIRTIO_GPU_RESP_OK_NODATA: u32 = 0x1100;
@@ -109,6 +111,7 @@ const FORMAT_B8G8R8A8_UNORM: u32 = 1;
 const FORMAT_B8G8R8X8_UNORM: u32 = 2;
 const FORMAT_X8R8G8B8_UNORM: u32 = 3;
 const FORMAT_R8G8B8X8_UNORM: u32 = 4;
+const SET_SCANOUT_BLOB_LEN: usize = 24 + 16 + 4 + 4 + 4 + 4 + 4 + 4 + 16 + 16;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VirtioGpuResult {
@@ -146,6 +149,7 @@ pub struct VirtioGpu {
     events_clear: u32,
     resources: BTreeMap<u32, GpuResource>,
     scanout_resource: Option<u32>,
+    blob_scanout: Option<BlobScanout>,
     scanout: Vec<u8>,
     three_d: VirtioGpu3d,
     pending_fenced: Vec<PendingFencedResponse>,
@@ -224,6 +228,25 @@ struct BackingEntry {
     len: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BlobScanout {
+    resource_id: u32,
+    width: u32,
+    height: u32,
+    format: u32,
+    stride: u32,
+    offset: u32,
+    mapping: Option<BlobScanoutMapping>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BlobScanoutMapping {
+    ptr: *const u8,
+    len: usize,
+}
+
+unsafe impl Send for BlobScanoutMapping {}
+
 #[derive(Debug, Clone)]
 struct PendingFencedResponse {
     queue_index: usize,
@@ -278,6 +301,7 @@ impl VirtioGpu {
             events_clear: 0,
             resources: BTreeMap::new(),
             scanout_resource: None,
+            blob_scanout: None,
             scanout: vec![0; len],
             three_d: VirtioGpu3d::new(),
             pending_fenced: Vec::new(),
@@ -306,7 +330,7 @@ impl VirtioGpu {
             driver_features: u64::from(self.driver_features[0])
                 | (u64::from(self.driver_features[1]) << 32),
             resources: self.resources.len(),
-            scanout_active: self.scanout_resource.is_some(),
+            scanout_active: self.scanout_resource.is_some() || self.blob_scanout.is_some(),
             three_d: self.three_d.stats(self.pending_fenced.len()),
             queues: [VirtioGpuQueueStats::default(); QUEUE_COUNT],
         };
@@ -346,19 +370,22 @@ impl VirtioGpu {
         self.events_clear = 0;
         self.resources.clear();
         self.scanout_resource = None;
+        self.unbind_blob_scanout();
         self.scanout = vec![0; scanout_len(width, height)];
         self.three_d.reset();
         self.pending_fenced.clear();
     }
 
     pub fn scanout(&self) -> Option<VirtioGpuScanout<'_>> {
-        self.scanout_resource.map(|_| VirtioGpuScanout {
-            bytes: &self.scanout,
-            width: self.width,
-            height: self.height,
-            stride: self.width * 4,
-            fourcc: DRM_FORMAT_XRGB8888,
-        })
+        (self.scanout_resource.is_some() || self.blob_scanout.is_some()).then_some(
+            VirtioGpuScanout {
+                bytes: &self.scanout,
+                width: self.width,
+                height: self.height,
+                stride: self.width * 4,
+                fourcc: DRM_FORMAT_XRGB8888,
+            },
+        )
     }
 
     fn access_common(
@@ -834,8 +861,9 @@ impl VirtioGpu {
             VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING => self.attach_backing(request, Some(hdr)),
             VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING => self.detach_backing(request, Some(hdr)),
             VIRTIO_GPU_CMD_SET_SCANOUT => self.set_scanout(request, Some(hdr)),
+            VIRTIO_GPU_CMD_SET_SCANOUT_BLOB => self.set_scanout_blob(request, Some(hdr)),
             VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D => self.transfer_to_host_2d(mem, request, Some(hdr)),
-            VIRTIO_GPU_CMD_RESOURCE_FLUSH => self.resource_flush(request, Some(hdr)),
+            VIRTIO_GPU_CMD_RESOURCE_FLUSH => self.resource_flush(mem, request, Some(hdr)),
             VIRTIO_GPU_CMD_GET_CAPSET_INFO
             | VIRTIO_GPU_CMD_GET_CAPSET
             | VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB
@@ -847,6 +875,17 @@ impl VirtioGpu {
             | VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB
             | VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => {
                 let hdr3d = CtrlHdr3d::parse(request).unwrap();
+                if hdr3d.typ == VIRTIO_GPU_CMD_CTX_DESTROY {
+                    if let Some(resource_id) = self
+                        .blob_scanout
+                        .as_ref()
+                        .map(|scanout| scanout.resource_id)
+                    {
+                        if self.three_d.ctx_has_resource(hdr3d.ctx_id, resource_id) {
+                            self.unbind_blob_scanout();
+                        }
+                    }
+                }
                 self.three_d
                     .handle_with_mem(Some(mem), request, hdr3d)
                     .unwrap_or_else(|| {
@@ -955,6 +994,14 @@ impl VirtioGpu {
 
     fn resource_unref(&mut self, request: &[u8], hdr: Option<CtrlHdr>) -> Vec<u8> {
         if let Some(resource_id) = read_le_u32(request, 24) {
+            if self
+                .blob_scanout
+                .as_ref()
+                .map(|scanout| scanout.resource_id)
+                == Some(resource_id)
+            {
+                self.unbind_blob_scanout();
+            }
             self.resources.remove(&resource_id);
             self.three_d.unref_resource(resource_id);
             if self.scanout_resource == Some(resource_id) {
@@ -1005,11 +1052,86 @@ impl VirtioGpu {
         }
         if resource_id == 0 {
             self.scanout_resource = None;
+            self.unbind_blob_scanout();
         } else if self.resources.contains_key(&resource_id) {
+            self.unbind_blob_scanout();
             self.scanout_resource = Some(resource_id);
         } else {
             return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
         }
+        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr)
+    }
+
+    fn set_scanout_blob(&mut self, request: &[u8], hdr: Option<CtrlHdr>) -> Vec<u8> {
+        if request.len() < SET_SCANOUT_BLOB_LEN {
+            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+        }
+        let scanout_id = read_le_u32(request, 40).unwrap_or(u32::MAX);
+        let resource_id = read_le_u32(request, 44).unwrap_or(0);
+        if scanout_id != 0 {
+            return response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr);
+        }
+        if resource_id == 0 {
+            self.unbind_blob_scanout();
+            self.scanout_resource = None;
+            return response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr);
+        }
+
+        let width = read_le_u32(request, 48).unwrap_or(0);
+        let height = read_le_u32(request, 52).unwrap_or(0);
+        let format = read_le_u32(request, 56).unwrap_or(0);
+        let stride = read_le_u32(request, 64).unwrap_or(0);
+        let offset = read_le_u32(request, 80).unwrap_or(0);
+        if width == 0
+            || height == 0
+            || width > self.width
+            || height > self.height
+            || !format_supported(format)
+            || stride < width.saturating_mul(4)
+        {
+            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+        }
+
+        let Some(info) = self.three_d.blob_resource_info(resource_id) else {
+            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+        };
+        if info.blob_mem != VIRTIO_GPU_BLOB_MEM_GUEST && info.blob_mem != VIRTIO_GPU_BLOB_MEM_HOST3D
+        {
+            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+        }
+        let Some(footprint) = blob_surface_footprint(width, height, stride, offset) else {
+            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+        };
+        if footprint > info.size {
+            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+        }
+
+        self.unbind_blob_scanout();
+        let mapping = if info.blob_mem == VIRTIO_GPU_BLOB_MEM_HOST3D {
+            let Some(mapped) = self.three_d.scanout_map_blob(resource_id) else {
+                return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            };
+            if mapped.host_ptr.is_null() || (mapped.size as u64) < footprint {
+                self.three_d.scanout_unmap_blob(resource_id);
+                return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            }
+            Some(BlobScanoutMapping {
+                ptr: mapped.host_ptr,
+                len: mapped.size,
+            })
+        } else {
+            None
+        };
+        self.scanout_resource = None;
+        self.blob_scanout = Some(BlobScanout {
+            resource_id,
+            width,
+            height,
+            format,
+            stride,
+            offset,
+            mapping,
+        });
         response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr)
     }
 
@@ -1034,7 +1156,12 @@ impl VirtioGpu {
         response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr)
     }
 
-    fn resource_flush(&mut self, request: &[u8], hdr: Option<CtrlHdr>) -> Vec<u8> {
+    fn resource_flush(
+        &mut self,
+        mem: &dyn GuestMemoryMut,
+        request: &[u8],
+        hdr: Option<CtrlHdr>,
+    ) -> Vec<u8> {
         let rect = read_rect(request, 24).unwrap_or(Rect {
             x: 0,
             y: 0,
@@ -1052,8 +1179,70 @@ impl VirtioGpu {
                     rect,
                 );
             }
+        } else if self
+            .blob_scanout
+            .as_ref()
+            .is_some_and(|scanout| scanout.resource_id == resource_id)
+        {
+            self.composite_blob_scanout(mem, rect);
         }
         response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr)
+    }
+
+    fn composite_blob_scanout(&mut self, mem: &dyn GuestMemoryMut, rect: Rect) {
+        let Some(scanout) = self.blob_scanout.as_ref() else {
+            return;
+        };
+        let Some(info) = self.three_d.blob_resource_info(scanout.resource_id) else {
+            return;
+        };
+        let x_end = rect
+            .x
+            .saturating_add(rect.width)
+            .min(self.width)
+            .min(scanout.width);
+        let y_end = rect
+            .y
+            .saturating_add(rect.height)
+            .min(self.height)
+            .min(scanout.height);
+
+        match info.blob_mem {
+            VIRTIO_GPU_BLOB_MEM_GUEST => composite_guest_blob_to_scanout(
+                mem,
+                &info.backing,
+                &mut self.scanout,
+                self.width,
+                scanout,
+                rect,
+                x_end,
+                y_end,
+            ),
+            VIRTIO_GPU_BLOB_MEM_HOST3D => {
+                let Some(mapping) = scanout.mapping else {
+                    return;
+                };
+                let pixels = unsafe { std::slice::from_raw_parts(mapping.ptr, mapping.len) };
+                composite_host_blob_to_scanout(
+                    pixels,
+                    &mut self.scanout,
+                    self.width,
+                    scanout,
+                    rect,
+                    x_end,
+                    y_end,
+                );
+            }
+            _ => {}
+        }
+    }
+
+    fn unbind_blob_scanout(&mut self) {
+        if let Some(scanout) = self.blob_scanout.take() {
+            if scanout.mapping.is_some() {
+                self.three_d.scanout_unmap_blob(scanout.resource_id);
+            }
+        }
     }
 
     fn mark_queue_interrupt(&mut self, queue_index: usize) {
@@ -1498,6 +1687,52 @@ fn composite_resource_to_scanout(
     }
 }
 
+fn composite_guest_blob_to_scanout(
+    mem: &dyn GuestMemoryMut,
+    backing: &[virtio_gpu_3d::BlobMemEntry],
+    scanout: &mut [u8],
+    scanout_width: u32,
+    blob: &BlobScanout,
+    rect: Rect,
+    x_end: u32,
+    y_end: u32,
+) {
+    for y in rect.y..y_end {
+        for x in rect.x..x_end {
+            let src =
+                u64::from(blob.offset) + u64::from(y) * u64::from(blob.stride) + u64::from(x) * 4;
+            let Some(pixel) = read_from_blob_backing(mem, backing, src, 4) else {
+                continue;
+            };
+            let dst = ((y as usize) * (scanout_width as usize) + (x as usize)) * 4;
+            scanout[dst..dst + 4].copy_from_slice(&to_xrgb8888(&pixel, blob.format));
+        }
+    }
+}
+
+fn composite_host_blob_to_scanout(
+    pixels: &[u8],
+    scanout: &mut [u8],
+    scanout_width: u32,
+    blob: &BlobScanout,
+    rect: Rect,
+    x_end: u32,
+    y_end: u32,
+) {
+    for y in rect.y..y_end {
+        for x in rect.x..x_end {
+            let src = (blob.offset as usize)
+                .saturating_add((y as usize).saturating_mul(blob.stride as usize))
+                .saturating_add((x as usize).saturating_mul(4));
+            if src.checked_add(4).is_none_or(|end| end > pixels.len()) {
+                continue;
+            }
+            let dst = ((y as usize) * (scanout_width as usize) + (x as usize)) * 4;
+            scanout[dst..dst + 4].copy_from_slice(&to_xrgb8888(&pixels[src..src + 4], blob.format));
+        }
+    }
+}
+
 fn to_xrgb8888(pixel: &[u8], format: u32) -> [u8; 4] {
     match format {
         FORMAT_B8G8R8A8_UNORM | FORMAT_B8G8R8X8_UNORM => [pixel[0], pixel[1], pixel[2], 0],
@@ -1505,6 +1740,25 @@ fn to_xrgb8888(pixel: &[u8], format: u32) -> [u8; 4] {
         FORMAT_R8G8B8X8_UNORM => [pixel[2], pixel[1], pixel[0], 0],
         _ => [0, 0, 0, 0],
     }
+}
+
+fn read_from_blob_backing(
+    mem: &dyn GuestMemoryMut,
+    backing: &[virtio_gpu_3d::BlobMemEntry],
+    offset: u64,
+    len: usize,
+) -> Option<Vec<u8>> {
+    let mut base = 0u64;
+    for entry in backing {
+        let end = base.checked_add(u64::from(entry.len))?;
+        let len_u64 = u64::try_from(len).ok()?;
+        if offset >= base && offset.checked_add(len_u64)? <= end {
+            let rel = offset - base;
+            return mem.read_bytes(entry.addr + rel, len);
+        }
+        base = end;
+    }
+    None
 }
 
 fn read_from_backing(
@@ -1524,6 +1778,12 @@ fn read_from_backing(
         base = end;
     }
     None
+}
+
+fn blob_surface_footprint(width: u32, height: u32, stride: u32, offset: u32) -> Option<u64> {
+    u64::from(offset)
+        .checked_add(u64::from(height.saturating_sub(1)).checked_mul(u64::from(stride))?)?
+        .checked_add(u64::from(width).checked_mul(4)?)
 }
 
 fn build_edid(width: u32, height: u32) -> [u8; 128] {
@@ -1834,6 +2094,12 @@ mod tests {
             let end = off.checked_add(len)?;
             (end <= self.bytes.len()).then(|| self.bytes[off..end].to_vec())
         }
+
+        fn host_ptr(&self, gpa: u64, len: usize) -> Option<*mut u8> {
+            let off = gpa.checked_sub(self.base)? as usize;
+            let end = off.checked_add(len)?;
+            (end <= self.bytes.len()).then(|| self.bytes.as_ptr().wrapping_add(off) as *mut u8)
+        }
     }
 
     fn pci_write(dev: &mut VirtioPciGpu, offset: u64, size: u8, value: u64, mem: &mut TestMem) {
@@ -1897,6 +2163,68 @@ mod tests {
     fn ctrl_req_ctx(typ: u32, ctx_id: u32) -> Vec<u8> {
         let mut out = ctrl_req(typ);
         out[16..20].copy_from_slice(&ctx_id.to_le_bytes());
+        out
+    }
+
+    fn create_blob_req(
+        resource_id: u32,
+        blob_mem: u32,
+        size: u64,
+        entries: &[(u64, u32)],
+    ) -> Vec<u8> {
+        let mut out = ctrl_req_ctx(VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB, 1);
+        out.extend_from_slice(&resource_id.to_le_bytes());
+        out.extend_from_slice(&blob_mem.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.extend_from_slice(&(entries.len() as u32).to_le_bytes());
+        out.extend_from_slice(&0u64.to_le_bytes());
+        out.extend_from_slice(&size.to_le_bytes());
+        for (addr, len) in entries {
+            out.extend_from_slice(&addr.to_le_bytes());
+            out.extend_from_slice(&len.to_le_bytes());
+            out.extend_from_slice(&0u32.to_le_bytes());
+        }
+        out
+    }
+
+    fn set_scanout_blob_req(
+        resource_id: u32,
+        width: u32,
+        height: u32,
+        format: u32,
+        stride: u32,
+        offset: u32,
+    ) -> Vec<u8> {
+        let mut out = ctrl_req(VIRTIO_GPU_CMD_SET_SCANOUT_BLOB);
+        push_rect(
+            &mut out,
+            Rect {
+                x: 0,
+                y: 0,
+                width,
+                height,
+            },
+        );
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.extend_from_slice(&resource_id.to_le_bytes());
+        out.extend_from_slice(&width.to_le_bytes());
+        out.extend_from_slice(&height.to_le_bytes());
+        out.extend_from_slice(&format.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        for index in 0..4 {
+            out.extend_from_slice(&(if index == 0 { stride } else { 0 }).to_le_bytes());
+        }
+        for index in 0..4 {
+            out.extend_from_slice(&(if index == 0 { offset } else { 0 }).to_le_bytes());
+        }
+        out
+    }
+
+    fn flush_req(resource_id: u32, rect: Rect) -> Vec<u8> {
+        let mut out = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_FLUSH);
+        push_rect(&mut out, rect);
+        out.extend_from_slice(&resource_id.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
         out
     }
 
@@ -2202,6 +2530,333 @@ mod tests {
             &scanout.bytes[row1],
             &[0x33, 0x22, 0x11, 0, 0x66, 0x55, 0x44, 0]
         );
+    }
+
+    #[test]
+    fn set_scanout_blob_guest_flush_presents_pixels_with_stride_and_offset() {
+        let (mut dev, _) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let backing = 0x4000_8000;
+        let mut backing_bytes = vec![0u8; 64];
+        backing_bytes[4..8].copy_from_slice(&[0x10, 0x20, 0x30, 0xff]);
+        backing_bytes[8..12].copy_from_slice(&[0x40, 0x50, 0x60, 0xee]);
+        backing_bytes[20..24].copy_from_slice(&[0x70, 0x80, 0x90, 0xdd]);
+        backing_bytes[24..28].copy_from_slice(&[0xa0, 0xb0, 0xc0, 0xcc]);
+        mem.write(backing, &backing_bytes);
+
+        let create = create_blob_req(7, VIRTIO_GPU_BLOB_MEM_GUEST, 64, &[(backing, 64)]);
+        let resp = submit_control(&mut dev, &mut mem, &create, 24);
+        assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+
+        let set_scanout = set_scanout_blob_req(7, 2, 2, FORMAT_B8G8R8A8_UNORM, 16, 4);
+        let resp = submit_control(&mut dev, &mut mem, &set_scanout, 24);
+        assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+
+        let flush = flush_req(
+            7,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 2,
+            },
+        );
+        let resp = submit_control(&mut dev, &mut mem, &flush, 24);
+        assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+
+        let scanout = dev.scanout().unwrap();
+        assert_eq!(
+            &scanout.bytes[0..8],
+            &[0x10, 0x20, 0x30, 0, 0x40, 0x50, 0x60, 0]
+        );
+        let row1 = scanout.stride as usize;
+        assert_eq!(
+            &scanout.bytes[row1..row1 + 8],
+            &[0x70, 0x80, 0x90, 0, 0xa0, 0xb0, 0xc0, 0]
+        );
+    }
+
+    #[test]
+    fn set_scanout_blob_host3d_flush_presents_pixels_from_mock_mapping() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let mut host_pixels = vec![0u8; 32];
+        host_pixels[0..4].copy_from_slice(&[0x11, 0x22, 0x33, 0xff]);
+        host_pixels[4..8].copy_from_slice(&[0x44, 0x55, 0x66, 0xee]);
+        backend.lock().unwrap().mapped.insert(
+            9,
+            virtio_gpu_3d::MappedBlob {
+                host_ptr: host_pixels.as_mut_ptr(),
+                size: host_pixels.len(),
+                map_info: 0,
+            },
+        );
+
+        let create = create_blob_req(9, VIRTIO_GPU_BLOB_MEM_HOST3D, 32, &[]);
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &create, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        let set_scanout = set_scanout_blob_req(9, 2, 1, FORMAT_B8G8R8A8_UNORM, 8, 0);
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &set_scanout, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        let flush = flush_req(
+            9,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 1,
+            },
+        );
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &flush, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        assert_eq!(
+            &dev.scanout().unwrap().bytes[0..8],
+            &[0x11, 0x22, 0x33, 0, 0x44, 0x55, 0x66, 0]
+        );
+        assert!(backend.lock().unwrap().unmapped.is_empty());
+    }
+
+    #[test]
+    fn set_scanout_blob_unknown_resource_errors() {
+        let (mut dev, _) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        let set_scanout = set_scanout_blob_req(99, 2, 1, FORMAT_B8G8R8A8_UNORM, 8, 0);
+        let resp = submit_control(&mut dev, &mut mem, &set_scanout, 24);
+        assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_ERR_UNSPEC));
+    }
+
+    #[test]
+    fn set_scanout_blob_resource_zero_unbinds() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let mut host_pixels = vec![0u8; 16];
+        backend.lock().unwrap().mapped.insert(
+            10,
+            virtio_gpu_3d::MappedBlob {
+                host_ptr: host_pixels.as_mut_ptr(),
+                size: host_pixels.len(),
+                map_info: 0,
+            },
+        );
+        let create = create_blob_req(10, VIRTIO_GPU_BLOB_MEM_HOST3D, 16, &[]);
+        let set_scanout = set_scanout_blob_req(10, 1, 1, FORMAT_B8G8R8A8_UNORM, 4, 0);
+        let unbind = set_scanout_blob_req(0, 1, 1, FORMAT_B8G8R8A8_UNORM, 4, 0);
+
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &create, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &set_scanout, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        assert!(dev.scanout().is_some());
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &unbind, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        assert!(dev.scanout().is_none());
+        assert_eq!(backend.lock().unwrap().unmapped, vec![10]);
+    }
+
+    #[test]
+    fn two_d_scanout_still_works_after_blob_unbind() {
+        let (mut dev, _) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let blob_backing = 0x4000_7000;
+        mem.write(blob_backing, &[0u8; 16]);
+        let create_blob = create_blob_req(12, VIRTIO_GPU_BLOB_MEM_GUEST, 16, &[(blob_backing, 16)]);
+        let set_blob = set_scanout_blob_req(12, 1, 1, FORMAT_B8G8R8A8_UNORM, 4, 0);
+        let unbind = set_scanout_blob_req(0, 1, 1, FORMAT_B8G8R8A8_UNORM, 4, 0);
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &create_blob, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &set_blob, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &unbind, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let backing = 0x4000_8000;
+        mem.write(backing, &[0x21, 0x32, 0x43, 0xff]);
+        let mut create_2d = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_CREATE_2D);
+        create_2d.extend_from_slice(&1u32.to_le_bytes());
+        create_2d.extend_from_slice(&FORMAT_B8G8R8A8_UNORM.to_le_bytes());
+        create_2d.extend_from_slice(&1u32.to_le_bytes());
+        create_2d.extend_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &create_2d, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        let mut attach = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING);
+        attach.extend_from_slice(&1u32.to_le_bytes());
+        attach.extend_from_slice(&1u32.to_le_bytes());
+        attach.extend_from_slice(&backing.to_le_bytes());
+        attach.extend_from_slice(&4u32.to_le_bytes());
+        attach.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &attach, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        let mut set_2d = ctrl_req(VIRTIO_GPU_CMD_SET_SCANOUT);
+        push_rect(
+            &mut set_2d,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+        );
+        set_2d.extend_from_slice(&0u32.to_le_bytes());
+        set_2d.extend_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &set_2d, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        let mut transfer = ctrl_req(VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D);
+        push_rect(
+            &mut transfer,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+        );
+        transfer.extend_from_slice(&0u64.to_le_bytes());
+        transfer.extend_from_slice(&1u32.to_le_bytes());
+        transfer.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &transfer, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        let flush = flush_req(
+            1,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+        );
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &flush, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        assert_eq!(&dev.scanout().unwrap().bytes[0..4], &[0x21, 0x32, 0x43, 0]);
+    }
+
+    #[test]
+    fn reset_clears_blob_scanout_and_unmaps() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let mut host_pixels = vec![0u8; 16];
+        backend.lock().unwrap().mapped.insert(
+            13,
+            virtio_gpu_3d::MappedBlob {
+                host_ptr: host_pixels.as_mut_ptr(),
+                size: host_pixels.len(),
+                map_info: 0,
+            },
+        );
+        let create = create_blob_req(13, VIRTIO_GPU_BLOB_MEM_HOST3D, 16, &[]);
+        let set_scanout = set_scanout_blob_req(13, 1, 1, FORMAT_B8G8R8A8_UNORM, 4, 0);
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &create, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &set_scanout, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        dev.reset_runtime_state();
+
+        assert!(dev.scanout().is_none());
+        assert_eq!(backend.lock().unwrap().unmapped, vec![13]);
+        assert!(!dev.stats().scanout_active);
+    }
+
+    #[test]
+    fn resource_unref_unbinds_bound_host3d_blob_scanout() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let mut host_pixels = vec![0u8; 16];
+        backend.lock().unwrap().mapped.insert(
+            14,
+            virtio_gpu_3d::MappedBlob {
+                host_ptr: host_pixels.as_mut_ptr(),
+                size: host_pixels.len(),
+                map_info: 0,
+            },
+        );
+        let create = create_blob_req(14, VIRTIO_GPU_BLOB_MEM_HOST3D, 16, &[]);
+        let set_scanout = set_scanout_blob_req(14, 1, 1, FORMAT_B8G8R8A8_UNORM, 4, 0);
+        let mut unref = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_UNREF);
+        unref.extend_from_slice(&14u32.to_le_bytes());
+        unref.extend_from_slice(&0u32.to_le_bytes());
+
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &create, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &set_scanout, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &unref, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        assert!(dev.scanout().is_none());
+        assert_eq!(backend.lock().unwrap().unmapped, vec![14]);
+        assert_eq!(backend.lock().unwrap().destroyed_resources, vec![14]);
+    }
+
+    #[test]
+    fn ctx_destroy_unbinds_attached_blob_scanout_before_teardown() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let mut host_pixels = vec![0u8; 16];
+        backend.lock().unwrap().mapped.insert(
+            15,
+            virtio_gpu_3d::MappedBlob {
+                host_ptr: host_pixels.as_mut_ptr(),
+                size: host_pixels.len(),
+                map_info: 0,
+            },
+        );
+        let create_ctx = ctx_create_req(1, 4, b"ctx");
+        let create_blob = create_blob_req(15, VIRTIO_GPU_BLOB_MEM_HOST3D, 16, &[]);
+        let mut attach = ctrl_req_ctx(VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE, 1);
+        attach.extend_from_slice(&15u32.to_le_bytes());
+        attach.extend_from_slice(&0u32.to_le_bytes());
+        let set_scanout = set_scanout_blob_req(15, 1, 1, FORMAT_B8G8R8A8_UNORM, 4, 0);
+        let destroy = ctrl_req_ctx(VIRTIO_GPU_CMD_CTX_DESTROY, 1);
+
+        for request in [&create_ctx, &create_blob, &attach, &set_scanout, &destroy] {
+            assert_eq!(
+                read_le_u32(&submit_control(&mut dev, &mut mem, request, 24), 0),
+                Some(VIRTIO_GPU_RESP_OK_NODATA)
+            );
+        }
+
+        assert!(dev.scanout().is_none());
+        assert_eq!(backend.lock().unwrap().unmapped, vec![15]);
+        assert_eq!(backend.lock().unwrap().destroyed, vec![1]);
     }
 
     #[test]

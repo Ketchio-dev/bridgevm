@@ -74,6 +74,8 @@ pub trait VirtioGpu3dBackend: Send {
     fn create_blob(&mut self, args: CreateBlobArgs<'_>) -> bool;
     fn map_blob(&mut self, resource_id: u32) -> Option<MappedBlob>;
     fn unmap_blob(&mut self, resource_id: u32);
+    fn scanout_map(&mut self, resource_id: u32) -> Option<ScanoutMappedBlob>;
+    fn scanout_unmap(&mut self, resource_id: u32);
     fn destroy_resource(&mut self, resource_id: u32);
     fn create_fence(&mut self, ctx_id: u32, ring_idx: u8, fence_id: u64) -> bool;
     fn drain_completed_fences(&mut self) -> Vec<CompletedFence>;
@@ -111,6 +113,21 @@ pub struct MappedBlob {
 }
 
 unsafe impl Send for MappedBlob {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScanoutMappedBlob {
+    pub host_ptr: *const u8,
+    pub size: usize,
+}
+
+unsafe impl Send for ScanoutMappedBlob {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlobResourceInfo {
+    pub blob_mem: u32,
+    pub size: u64,
+    pub backing: Vec<BlobMemEntry>,
+}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct VirtioGpu3dStats {
@@ -244,6 +261,31 @@ impl VirtioGpu3d {
                 backend.destroy_resource(resource_id);
             }
         }
+    }
+
+    pub fn blob_resource_info(&self, resource_id: u32) -> Option<BlobResourceInfo> {
+        let resource = self.blob_resources.get(&resource_id)?;
+        Some(BlobResourceInfo {
+            blob_mem: resource.blob_mem,
+            size: resource.size,
+            backing: resource.backing.clone(),
+        })
+    }
+
+    pub fn scanout_map_blob(&mut self, resource_id: u32) -> Option<ScanoutMappedBlob> {
+        self.backend.as_mut()?.scanout_map(resource_id)
+    }
+
+    pub fn scanout_unmap_blob(&mut self, resource_id: u32) {
+        if let Some(backend) = self.backend.as_mut() {
+            backend.scanout_unmap(resource_id);
+        }
+    }
+
+    pub fn ctx_has_resource(&self, ctx_id: u32, resource_id: u32) -> bool {
+        self.ctx_resources
+            .get(&ctx_id)
+            .is_some_and(|resources| resources.contains(&resource_id))
     }
 
     pub fn register_2d_resource(&mut self, resource_id: u32) {
@@ -766,6 +808,21 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
     }
 
     fn unmap_blob(&mut self, resource_id: u32) {
+        self.lock().unwrap().unmapped.push(resource_id);
+    }
+
+    fn scanout_map(&mut self, resource_id: u32) -> Option<ScanoutMappedBlob> {
+        self.lock()
+            .unwrap()
+            .mapped
+            .get(&resource_id)
+            .map(|mapped| ScanoutMappedBlob {
+                host_ptr: mapped.host_ptr.cast_const(),
+                size: mapped.size,
+            })
+    }
+
+    fn scanout_unmap(&mut self, resource_id: u32) {
         self.lock().unwrap().unmapped.push(resource_id);
     }
 
