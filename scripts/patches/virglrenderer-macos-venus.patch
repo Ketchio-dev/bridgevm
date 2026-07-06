@@ -1,0 +1,110 @@
+diff --git a/src/venus/vkr_device.c b/src/venus/vkr_device.c
+index 3e943bf..22439b2 100644
+--- a/src/venus/vkr_device.c
++++ b/src/venus/vkr_device.c
+@@ -132,6 +132,7 @@ vkr_dispatch_vkCreateDevice(struct vn_dispatch_context *dispatch,
+    const char **exts = NULL;
+    uint32_t ext_count = args->pCreateInfo->enabledExtensionCount;
+    ext_count += physical_dev->EXT_external_memory_metal;
++   ext_count += physical_dev->EXT_external_memory_host;
+    ext_count += physical_dev->EXT_metal_objects;
+    ext_count += physical_dev->KHR_portability_subset;
+    ext_count += physical_dev->KHR_external_memory_fd;
+@@ -150,6 +151,8 @@ vkr_dispatch_vkCreateDevice(struct vn_dispatch_context *dispatch,
+ 
+       if (physical_dev->EXT_external_memory_metal)
+          exts[ext_count++] = "VK_EXT_external_memory_metal";
++      if (physical_dev->EXT_external_memory_host)
++         exts[ext_count++] = "VK_EXT_external_memory_host";
+       if (physical_dev->EXT_metal_objects)
+          exts[ext_count++] = "VK_EXT_metal_objects";
+       if (physical_dev->KHR_portability_subset)
+diff --git a/src/venus/vkr_device_memory.c b/src/venus/vkr_device_memory.c
+index 57a108d..b630190 100644
+--- a/src/venus/vkr_device_memory.c
++++ b/src/venus/vkr_device_memory.c
+@@ -300,6 +300,7 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+    struct vkr_mtl_shm *mtl_shm = NULL;
+    VkExportMemoryAllocateInfo local_export_info;
+    VkImportMemoryMetalHandleInfoEXT local_metal_import;
++   VkImportMemoryHostPointerInfoEXT local_host_import;
+ 
+    if ((property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && !res_info) {
+       /* An implementation can support dma_buf import along with opaque fd export/import.
+@@ -357,13 +358,18 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+             return;
+          }
+ 
+-         local_metal_import = (VkImportMemoryMetalHandleInfoEXT){
+-            .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_METAL_HANDLE_INFO_EXT,
++         /* BridgeVM: MoltenVK 1.4.1's MTLBuffer import does not alias the
++          * imported buffer (GPU writes land elsewhere; proven by a minimal
++          * repro). Import the shm HOST POINTER via
++          * VK_EXT_external_memory_host instead — MoltenVK wraps it NoCopy
++          * internally and GPU writes then land in the shm pages. */
++         local_host_import = (VkImportMemoryHostPointerInfoEXT){
++            .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT,
+             .pNext = alloc_info->pNext,
+-            .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLBUFFER_BIT_EXT,
+-            .handle = mtl_shm->mtl_buffer,
++            .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT,
++            .pHostPointer = mtl_shm->shm_ptr,
+          };
+-         alloc_info->pNext = &local_metal_import;
++         alloc_info->pNext = &local_host_import;
+          alloc_info->allocationSize = mtl_shm->shm_size;
+          valid_fd_types = 1 << VIRGL_RESOURCE_FD_SHM;
+       } else if (physical_dev->EXT_external_memory_dma_buf) {
+diff --git a/src/venus/vkr_library.c b/src/venus/vkr_library.c
+index dc1f42c..41add3e 100644
+--- a/src/venus/vkr_library.c
++++ b/src/venus/vkr_library.c
+@@ -6,6 +6,7 @@
+ #include "vkr_common.h"
+ 
+ #include <dlfcn.h>
++#include <stdlib.h>
+ 
+ #include "vkr_library.h"
+ 
+@@ -43,7 +44,14 @@ vkr_library_load(struct vulkan_library *lib)
+       return true;
+ 
+ #ifdef __APPLE__
+-   lib->handle = dlopen("libvulkan.dylib", RTLD_NOW | RTLD_LOCAL);
++   /* BridgeVM: absolute-path override that survives DYLD env stripping in
++    * entitled host processes (loads MoltenVK directly, bypassing the Vulkan
++    * loader's portability filtering). */
++   const char *bv_lib = getenv("BRIDGEVM_VULKAN_LIB");
++   if (bv_lib)
++      lib->handle = dlopen(bv_lib, RTLD_NOW | RTLD_LOCAL);
++   if (lib->handle == NULL)
++      lib->handle = dlopen("libvulkan.dylib", RTLD_NOW | RTLD_LOCAL);
+    if (lib->handle == NULL)
+       lib->handle = dlopen("libvulkan.1.dylib", RTLD_NOW | RTLD_LOCAL);
+    if (lib->handle == NULL)
+diff --git a/src/venus/vkr_physical_device.c b/src/venus/vkr_physical_device.c
+index 65fdf4c..38e8462 100644
+--- a/src/venus/vkr_physical_device.c
++++ b/src/venus/vkr_physical_device.c
+@@ -284,6 +284,8 @@ vkr_physical_device_init_extensions(struct vkr_physical_device *physical_dev)
+          physical_dev->KHR_external_fence_fd = true;
+       else if (!strcmp(props->extensionName, "VK_EXT_external_memory_metal"))
+          physical_dev->EXT_external_memory_metal = true;
++      else if (!strcmp(props->extensionName, "VK_EXT_external_memory_host"))
++         physical_dev->EXT_external_memory_host = true;
+       else if (!strcmp(props->extensionName, "VK_EXT_metal_objects"))
+          physical_dev->EXT_metal_objects = true;
+       else if (!strcmp(props->extensionName, "VK_KHR_portability_subset"))
+diff --git a/src/venus/vkr_physical_device.h b/src/venus/vkr_physical_device.h
+index 139b11a..6e0d08a 100644
+--- a/src/venus/vkr_physical_device.h
++++ b/src/venus/vkr_physical_device.h
+@@ -29,6 +29,7 @@ struct vkr_physical_device {
+    bool KHR_external_semaphore_fd;
+ 
+    bool EXT_external_memory_metal;
++   bool EXT_external_memory_host;
+    bool EXT_metal_objects;
+ 
+    VkPhysicalDeviceMemoryProperties memory_properties;

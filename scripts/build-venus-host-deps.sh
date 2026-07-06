@@ -47,6 +47,19 @@ meson_args=(
 )
 
 if [[ -d "$BUILD_DIR" ]]; then
+# Apply BridgeVM's local venus patches (MoltenVK-direct dlopen override via
+# BRIDGEVM_VULKAN_LIB, and host-pointer memory import working around MoltenVK
+# 1.4.1's non-aliasing MTLBuffer import).
+PATCH_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/patches/virglrenderer-macos-venus.patch"
+if [[ -f "$PATCH_FILE" ]]; then
+  if git -C "$SRC_DIR" apply --check "$PATCH_FILE" 2>/dev/null; then
+    git -C "$SRC_DIR" apply "$PATCH_FILE"
+    log "applied virglrenderer-macos-venus.patch"
+  else
+    log "virglrenderer-macos-venus.patch already applied or conflicts (continuing)"
+  fi
+fi
+
   meson setup "${meson_args[@]}" --reconfigure
 else
   meson setup "${meson_args[@]}"

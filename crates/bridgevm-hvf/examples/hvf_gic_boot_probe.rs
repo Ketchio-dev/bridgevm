@@ -139,6 +139,18 @@ impl GpuShmMapPort for HvGpuShmMapPort {
             return Err(-22);
         }
         let guest_pa = bar2_base.checked_add(shm_offset).ok_or(-12)?;
+        // Pre-touch every page with a WRITE before hv_vm_map: fresh anonymous
+        // host memory is backed by the shared zero page until first write, and
+        // hv_vm_map pins whatever physical page backs the VA at map time. A
+        // later HOST write would COW onto a new page the guest never sees —
+        // the guest then reads stale zeros forever (host-written venus fence
+        // feedback slots and GPU results were invisible to the guest).
+        for off in (0..size).step_by(0x4000) {
+            unsafe {
+                let p = host_ptr.add(off);
+                p.write_volatile(p.read_volatile());
+            }
+        }
         let ret = unsafe {
             hv_vm_map(
                 host_ptr.cast::<c_void>(),

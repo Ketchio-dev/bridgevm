@@ -55,6 +55,7 @@ pub struct virgl_renderer_callbacks {
     pub get_egl_display: Option<extern "C" fn(cookie: *mut c_void) -> *mut c_void>,
 }
 
+const VIRGL_RENDERER_USE_EXTERNAL_BLOB: c_int = 1 << 5;
 const VIRGL_RENDERER_VENUS: c_int = 1 << 6;
 const VIRGL_RENDERER_NO_VIRGL: c_int = 1 << 7;
 const VIRGL_RENDERER_RENDER_SERVER: c_int = 1 << 9;
@@ -339,12 +340,15 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn poll_fences(&mut self) {
-        let pending_contexts: Vec<u32> = self
-            .outstanding_fences
-            .iter()
-            .filter_map(|(ctx_id, outstanding)| (*outstanding > 0).then_some(*ctx_id))
-            .collect();
-        for ctx_id in pending_contexts {
+        // Poll EVERY live context, not just those with outstanding virtqueue
+        // fences: venus guests mostly synchronize via renderer-side fence
+        // FEEDBACK slots (Mesa spins on a shmem slot the renderer writes at
+        // retire time), which never involve virtqueue fences at all. On macOS
+        // there is no sync thread (no eventfd), so this poll is the only
+        // thing that retires renderer fences and writes those slots — gating
+        // it on outstanding_fences left vkWaitForFences spinning forever.
+        let contexts: Vec<u32> = self.outstanding_fences.keys().copied().collect();
+        for ctx_id in contexts {
             unsafe {
                 virgl_renderer_context_poll(ctx_id);
             }
@@ -457,7 +461,10 @@ fn init_renderer(shared: Arc<Mutex<VenusShared>>) -> Result<(), String> {
         get_server_fd: None,
         get_egl_display: None,
     }));
-    let flags = VIRGL_RENDERER_VENUS | VIRGL_RENDERER_NO_VIRGL | VIRGL_RENDERER_RENDER_SERVER;
+    let flags = VIRGL_RENDERER_USE_EXTERNAL_BLOB
+        | VIRGL_RENDERER_VENUS
+        | VIRGL_RENDERER_NO_VIRGL
+        | VIRGL_RENDERER_RENDER_SERVER;
     let ret = unsafe { virgl_renderer_init(cookie, flags, callbacks) };
     if ret == 0 {
         Ok(())
