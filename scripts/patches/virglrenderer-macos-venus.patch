@@ -46,10 +46,18 @@ index 3e943bf..22439b2 100644
           exts[ext_count++] = "VK_EXT_metal_objects";
        if (physical_dev->KHR_portability_subset)
 diff --git a/src/venus/vkr_device_memory.c b/src/venus/vkr_device_memory.c
-index 57a108d..b630190 100644
+index 57a108d..44f2e77 100644
 --- a/src/venus/vkr_device_memory.c
 +++ b/src/venus/vkr_device_memory.c
-@@ -300,6 +300,7 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+@@ -281,6 +281,7 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+    /* track if driver has requested export allocation */
+    const bool might_export = export_info && export_info->handleTypes;
+ 
++
+    /* XXX Force dma_buf/opaque fd export or gbm bo import until a new extension that
+     * supports direct export from host visible memory
+     *
+@@ -300,6 +301,7 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
     struct vkr_mtl_shm *mtl_shm = NULL;
     VkExportMemoryAllocateInfo local_export_info;
     VkImportMemoryMetalHandleInfoEXT local_metal_import;
@@ -57,7 +65,7 @@ index 57a108d..b630190 100644
  
     if ((property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && !res_info) {
        /* An implementation can support dma_buf import along with opaque fd export/import.
-@@ -357,13 +358,18 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+@@ -357,13 +359,18 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
              return;
           }
  
