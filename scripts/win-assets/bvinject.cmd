@@ -50,6 +50,21 @@ if exist %DRV%\viogpudo\viogpudo.inf (
   echo BVINJECT DISPLAY-CONFIG RESET DONE
 )
 
+rem --- plant the BridgeVM guest agent (if bvagent.ps1 is on the source) and
+rem     auto-start it at logon via an HKLM Run key. The image autologons to the
+rem     desktop, so the agent opens the virtio-serial port shortly after boot.
+rem     The agent is a pure-PowerShell command loop (no compiled binary). ---
+if exist %DRV%\..\bvagent.ps1 (
+  echo BVINJECT AGENT PLANT
+  copy /y %DRV%\..\bvagent.ps1 %WIN%\bvagent.ps1 >nul
+  reg load HKLM\BVSW %WIN%\Windows\System32\config\SOFTWARE
+  rem the Run value must use the RUNTIME path (installed Windows is C: to
+  rem itself), not the WinPE-assigned injection-time letter in %WIN%.
+  reg add "HKLM\BVSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMAgent /t REG_SZ /d "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\bvagent.ps1" /f
+  reg unload HKLM\BVSW
+  echo BVINJECT AGENT PLANT DONE
+)
+
 echo BVINJECT DONE
 :end
 wpeutil shutdown

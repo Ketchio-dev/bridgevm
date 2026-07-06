@@ -26,6 +26,9 @@
 //!   BRIDGEVM_RAMFB_SAMPLE_MS=1000,5000,15000 ...       # symmetric elapsed RAMFB checkpoints for no-input/setup-input probes
 //!   BRIDGEVM_RAMFB_SAMPLE_UNTIL_COMPLETE=1 ...         # proof mode: observe UEFI shell but continue until RAMFB samples complete
 //!   BRIDGEVM_UART_RX_ON_SERIAL_MARKER=' ' BRIDGEVM_UART_RX_SERIAL_MARKER='BdsDxe: starting Boot0001' ...
+//!   BRIDGEVM_VIRTIO_CONSOLE=1 BRIDGEVM_VIRTIO_CONSOLE_TEST=1 ... # drive bvagent.ps1 over virtio-console
+//!   BRIDGEVM_VIRTIO_CONSOLE_CMDS='whoami|ver|ipconfig' ...
+//!   BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=180000 ...
 //!
 //! Optional QEMU-style Linux direct boot:
 //!   BRIDGEVM_LINUX_KERNEL=/path/to/Image ...
@@ -64,6 +67,9 @@ use bridgevm_hvf::stage1::{self, Stage1Context, Stage1WalkStep};
 use bridgevm_hvf::virtio_blk::{VirtioBlockRequestTrace, VirtioMmioBlockStats, INSTALLER_ISO_SLOT};
 use bridgevm_hvf::virtio_gpu_3d::GpuShmMapPort;
 
+#[path = "hvf_gic_boot_probe/agent_console.rs"]
+mod agent_console;
+use agent_console::AgentConsoleHarness;
 #[path = "hvf_gic_boot_probe/arm64_trace.rs"]
 mod arm64_trace;
 use arm64_trace::print_translated_instruction_words;
@@ -2305,6 +2311,7 @@ impl RunLoopDrainStats {
         platform.drain_xhci_setup_input_reports(mem);
         platform.drain_xhci_pointer_input_reports(mem);
         platform.poll_virtio_net(mem);
+        platform.poll_virtio_console(mem);
         platform.poll_virtio_gpu_fences(mem);
         let spi = deliver_pending_spis(platform, trace.spi);
         let msix = deliver_pending_msix(platform, trace.msix);
@@ -3158,6 +3165,8 @@ fn main() {
             let mut drain_stats = RunLoopDrainStats::new(trace_run_loop);
             let mut ramfb_sample_loop = RamfbSampleLoop::from_env();
             let mut setup_input_host_wake = SetupInputHostWake::new();
+            let boot_started = Instant::now();
+            let mut agent_console = AgentConsoleHarness::from_env(boot_started);
             let mut serial_stop_scans = SerialStopScans::default();
             let mut stop_reason;
             let mut stop_reason_code = None;
@@ -3560,6 +3569,10 @@ fn main() {
                         }
                         for trigger in &mut xhci_hid_boot_key_triggers {
                             trigger.maybe_fire(platform);
+                        }
+                        let now = std::time::Instant::now();
+                        if let Some(agent_console) = agent_console.as_mut() {
+                            agent_console.tick(platform, &mut guest_ram, now);
                         }
                         for trigger in &mut xhci_setup_input_triggers {
                             let ramfb_config = platform.ramfb_config();

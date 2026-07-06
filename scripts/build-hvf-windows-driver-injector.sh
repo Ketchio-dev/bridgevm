@@ -58,6 +58,13 @@ for spec in $DRIVER_DIRS; do
   cp "$src"/* "$DST_VOL/drivers/$name/"
 done
 
+# Plant the guest agent at the source root; bvinject.cmd copies it to C:\ and
+# registers an HKLM Run key. Enabled by default; set PLANT_AGENT=0 to skip.
+if [[ "${PLANT_AGENT:-1}" == "1" && -f "$ASSETS/bvagent.ps1" ]]; then
+  log "staging guest agent \\bvagent.ps1"
+  cp "$ASSETS/bvagent.ps1" "$DST_VOL/bvagent.ps1"
+fi
+
 log "injecting bvinject payload into boot.wim image 2"
 wimlib-imagex update "$DST_VOL/sources/boot.wim" 2 <<UPDATE
 add "$ASSETS/winpeshl-inject.ini" /Windows/System32/winpeshl.ini
