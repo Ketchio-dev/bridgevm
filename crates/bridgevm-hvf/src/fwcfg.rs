@@ -83,6 +83,12 @@ pub trait GuestMemoryMut {
     /// Read `len` bytes starting at guest-physical address `gpa`, or `None` if
     /// the range is not backed.
     fn read_bytes(&self, gpa: u64, len: usize) -> Option<Vec<u8>>;
+    /// Resolve a guest-physical span to its stable host pointer. Device models
+    /// use this only when a backend must retain guest RAM iovecs for a resource
+    /// lifetime; live callers point at the fixed HVF guest RAM mapping.
+    fn host_ptr(&self, _gpa: u64, _len: usize) -> Option<*mut u8> {
+        None
+    }
 }
 
 /// A decoded `FWCfgDmaAccess` control structure (all fields big-endian on the

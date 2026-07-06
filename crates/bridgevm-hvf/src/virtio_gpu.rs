@@ -847,12 +847,14 @@ impl VirtioGpu {
             | VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB
             | VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => {
                 let hdr3d = CtrlHdr3d::parse(request).unwrap();
-                self.three_d.handle(request, hdr3d).unwrap_or_else(|| {
-                    virtio_gpu_3d::response_hdr(
-                        virtio_gpu_3d::VIRTIO_GPU_RESP_ERR_UNSPEC,
-                        Some(hdr3d),
-                    )
-                })
+                self.three_d
+                    .handle_with_mem(Some(mem), request, hdr3d)
+                    .unwrap_or_else(|| {
+                        virtio_gpu_3d::response_hdr(
+                            virtio_gpu_3d::VIRTIO_GPU_RESP_ERR_UNSPEC,
+                            Some(hdr3d),
+                        )
+                    })
             }
             _ => response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr)),
         }
@@ -947,6 +949,7 @@ impl VirtioGpu {
                 backing: Vec::new(),
             },
         );
+        self.three_d.register_2d_resource(resource_id);
         response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr)
     }
 

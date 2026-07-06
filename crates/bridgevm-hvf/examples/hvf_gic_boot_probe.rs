@@ -201,6 +201,20 @@ impl GuestMemoryMut for MappedRam {
         unsafe { std::ptr::copy_nonoverlapping(self.ptr.add(off), v.as_mut_ptr(), len) };
         Some(v)
     }
+
+    fn host_ptr(&self, gpa: u64, len: usize) -> Option<*mut u8> {
+        let off = gpa
+            .checked_sub(self.base)
+            .and_then(|value| usize::try_from(value).ok())?;
+        let end = off.checked_add(len)?;
+        if end > self.len {
+            return None;
+        }
+        // SAFETY: Category 10/11 - `off..end` was checked to stay inside the
+        // fixed live HVF RAM mapping. The returned pointer is valid for the
+        // guest RAM mapping lifetime; virglrenderer drops it on resource unref.
+        Some(unsafe { self.ptr.add(off) })
+    }
 }
 
 fn reset_guest_ram_for_boot(guest_ram: &mut MappedRam, dtb: &[u8]) {

@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::virtio_gpu_3d::{
-    BlobMemEntry, CapsetInfo, CompletedFence, CreateBlobArgs, MappedBlob, VirtioGpu3dBackend,
+    CapsetInfo, CompletedFence, CreateBlobArgs, MappedBlob, VirtioGpu3dBackend,
     VIRTIO_GPU_RESP_ERR_UNSPEC,
 };
 
@@ -59,6 +59,7 @@ const VIRGL_RENDERER_VENUS: c_int = 1 << 6;
 const VIRGL_RENDERER_NO_VIRGL: c_int = 1 << 7;
 const VIRGL_RENDERER_ASYNC_FENCE_CB: c_int = 1 << 8;
 const VIRGL_RENDERER_RENDER_SERVER: c_int = 1 << 9;
+const VIRGL_RENDERER_USE_GUEST_VRAM: c_int = 1 << 14;
 const VIRGL_RENDERER_CONTEXT_FLAG_CAPSET_ID_MASK: u32 = 0xff;
 const VIRTIO_GPU_CAPSET_VENUS: u32 = 4;
 
@@ -97,6 +98,8 @@ unsafe extern "C" {
         name: *const c_char,
     ) -> c_int;
     fn virgl_renderer_context_destroy(handle: u32);
+    fn virgl_renderer_ctx_attach_resource(ctx_id: c_int, res_handle: c_int);
+    fn virgl_renderer_ctx_detach_resource(ctx_id: c_int, res_handle: c_int);
     fn virgl_renderer_context_poll(ctx_id: u32);
     fn virgl_renderer_context_get_poll_fd(ctx_id: u32) -> c_int;
     fn virgl_renderer_submit_cmd(buffer: *mut c_void, ctx_id: c_int, ndw: c_int) -> c_int;
@@ -206,6 +209,18 @@ impl VirtioGpu3dBackend for VenusBackend {
         self.contexts.retain(|ctx| *ctx != ctx_id);
     }
 
+    fn ctx_attach_resource(&mut self, ctx_id: u32, resource_id: u32) {
+        unsafe {
+            virgl_renderer_ctx_attach_resource(ctx_id as c_int, resource_id as c_int);
+        }
+    }
+
+    fn ctx_detach_resource(&mut self, ctx_id: u32, resource_id: u32) {
+        unsafe {
+            virgl_renderer_ctx_detach_resource(ctx_id as c_int, resource_id as c_int);
+        }
+    }
+
     fn submit_3d(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> bool {
         let ndw = cmdbuf.len().div_ceil(4);
         let ret = if cmdbuf.is_empty() {
@@ -232,9 +247,9 @@ impl VirtioGpu3dBackend for VenusBackend {
         let iovecs: Vec<iovec> = args
             .iovecs
             .iter()
-            .map(|entry: &BlobMemEntry| iovec {
-                iov_base: entry.addr as usize as *mut c_void,
-                iov_len: entry.len as usize,
+            .map(|entry| iovec {
+                iov_base: entry.host_ptr.cast::<c_void>(),
+                iov_len: entry.len,
             })
             .collect();
         let create = virgl_renderer_resource_create_blob_args {
@@ -374,6 +389,7 @@ fn init_renderer(shared: Arc<Mutex<VenusShared>>) -> Result<(), String> {
     let flags = VIRGL_RENDERER_VENUS
         | VIRGL_RENDERER_NO_VIRGL
         | VIRGL_RENDERER_RENDER_SERVER
+        | VIRGL_RENDERER_USE_GUEST_VRAM
         | VIRGL_RENDERER_THREAD_SYNC
         | VIRGL_RENDERER_ASYNC_FENCE_CB;
     let ret = unsafe { virgl_renderer_init(cookie, flags, &mut callbacks) };

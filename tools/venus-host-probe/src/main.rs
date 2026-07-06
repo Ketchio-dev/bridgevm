@@ -126,7 +126,8 @@ fn main() {
         get_egl_display: None,
     };
 
-    let flags = VIRGL_RENDERER_VENUS
+    let flags = (1 << 14) // VIRGL_RENDERER_USE_GUEST_VRAM
+        | VIRGL_RENDERER_VENUS
         | VIRGL_RENDERER_NO_VIRGL
         | VIRGL_RENDERER_RENDER_SERVER
         | VIRGL_RENDERER_THREAD_SYNC

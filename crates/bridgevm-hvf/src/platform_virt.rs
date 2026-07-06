@@ -1495,6 +1495,15 @@ impl GuestMemoryMut for FlatGuestRam {
         }
         Some(self.bytes[start..end].to_vec())
     }
+
+    fn host_ptr(&self, gpa: u64, len: usize) -> Option<*mut u8> {
+        let start = self.offset(gpa)?;
+        let end = start.checked_add(len)?;
+        if end > self.bytes.len() {
+            return None;
+        }
+        Some(self.bytes.as_ptr().wrapping_add(start) as *mut u8)
+    }
 }
 
 /// Report-pacing decision. A zero interval or a not-yet-emitted endpoint always
