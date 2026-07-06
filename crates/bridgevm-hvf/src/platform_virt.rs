@@ -40,7 +40,7 @@ use crate::nvme::{
 };
 use crate::pcie::{
     CfgAddr, PcieEcam, PcieEcamConfig, PcieMmioTarget, PciePioTarget, NVME_BDF, VIRTIO_BLK_BDF,
-    VIRTIO_GPU_BDF, VIRTIO_NET_BDF, XHCI_BDF,
+    VIRTIO_GPU_BDF, VIRTIO_GPU_DEVICE_ID, VIRTIO_NET_BDF, XHCI_BDF,
 };
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
@@ -128,6 +128,7 @@ pub struct VirtPlatformDeviceConfig {
     pub virtio_boot_media_present: bool,
     pub virtio_net_present: bool,
     pub virtio_gpu_present: bool,
+    pub virtio_gpu_pci_device_id: u16,
     pub virtio_net_backend: VirtioNetBackendKind,
     pub legacy_virtio_mmio_present: bool,
     pub ramfb_present: bool,
@@ -140,6 +141,7 @@ impl Default for VirtPlatformDeviceConfig {
             virtio_boot_media_present: true,
             virtio_net_present: false,
             virtio_gpu_present: false,
+            virtio_gpu_pci_device_id: VIRTIO_GPU_DEVICE_ID,
             virtio_net_backend: VirtioNetBackendKind::Nat,
             legacy_virtio_mmio_present: true,
             ramfb_present: false,
@@ -400,6 +402,7 @@ impl VirtPlatform {
                 virtio_blk_present: config.devices.virtio_boot_media_present,
                 virtio_net_present: config.devices.virtio_net_present,
                 virtio_gpu_present: config.devices.virtio_gpu_present,
+                virtio_gpu_pci_device_id: config.devices.virtio_gpu_pci_device_id,
                 virtio_gpu_3d_enabled: virtio_gpu_3d_enabled_for_pcie(),
             }),
             nvme: NvmeController::new(DEFAULT_NVME_DISK_BYTES),
@@ -474,6 +477,7 @@ impl VirtPlatform {
             virtio_blk_present: self.devices.virtio_boot_media_present,
             virtio_net_present: self.devices.virtio_net_present,
             virtio_gpu_present: self.devices.virtio_gpu_present,
+            virtio_gpu_pci_device_id: self.devices.virtio_gpu_pci_device_id,
             virtio_gpu_3d_enabled: virtio_gpu_3d_enabled_for_pcie(),
         });
         self.nvme.reset_registers_keep_disks();

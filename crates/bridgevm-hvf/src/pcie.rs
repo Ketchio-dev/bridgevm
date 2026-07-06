@@ -638,7 +638,7 @@ impl Function {
     }
 
     /// Modern-only virtio GPU endpoint at `00:05.0`.
-    fn virtio_gpu(host_visible_bar_size: Option<u64>) -> Self {
+    fn virtio_gpu(host_visible_bar_size: Option<u64>, pci_device_id: u16) -> Self {
         let mut bars = [Bar::default(); NUM_BARS];
         bars[1] = Bar::memory32(VIRTIO_GPU_BAR1_SIZE);
         if let Some(size) = host_visible_bar_size {
@@ -674,8 +674,7 @@ impl Function {
         );
         Self {
             bdf: VIRTIO_GPU_BDF,
-            vendor_device: (u32::from(VIRTIO_GPU_DEVICE_ID) << 16)
-                | u32::from(VIRTIO_GPU_VENDOR_ID),
+            vendor_device: (u32::from(pci_device_id) << 16) | u32::from(VIRTIO_GPU_VENDOR_ID),
             revision_class: (VIRTIO_GPU_CLASS_CODE << 8) | u32::from(VIRTIO_GPU_REVISION),
             subsystem_ids: (u32::from(VIRTIO_GPU_SUBSYSTEM_ID) << 16)
                 | u32::from(VIRTIO_GPU_SUBSYSTEM_VENDOR_ID),
@@ -920,6 +919,7 @@ pub struct PcieEcamConfig {
     pub virtio_blk_present: bool,
     pub virtio_net_present: bool,
     pub virtio_gpu_present: bool,
+    pub virtio_gpu_pci_device_id: u16,
     pub virtio_gpu_3d_enabled: bool,
 }
 
@@ -930,6 +930,7 @@ impl Default for PcieEcamConfig {
             virtio_blk_present: true,
             virtio_net_present: false,
             virtio_gpu_present: false,
+            virtio_gpu_pci_device_id: VIRTIO_GPU_DEVICE_ID,
             virtio_gpu_3d_enabled: false,
         }
     }
@@ -964,7 +965,10 @@ impl PcieEcam {
                 .virtio_gpu_3d_enabled
                 .then(parse_virtio_gpu_hostmem_size)
                 .filter(|size| *size != 0);
-            functions.push(Function::virtio_gpu(host_visible_bar_size));
+            functions.push(Function::virtio_gpu(
+                host_visible_bar_size,
+                config.virtio_gpu_pci_device_id,
+            ));
         }
         Self { functions }
     }
@@ -1717,6 +1721,53 @@ mod tests {
     }
 
     #[test]
+    fn virtio_gpu_pci_device_id_defaults_and_can_be_overridden_without_changing_device_shape() {
+        let default_ecam = PcieEcam::new_with_config(PcieEcamConfig {
+            virtio_net_present: true,
+            virtio_gpu_present: true,
+            ..PcieEcamConfig::default()
+        });
+        let override_ecam = PcieEcam::new_with_config(PcieEcamConfig {
+            virtio_net_present: true,
+            virtio_gpu_present: true,
+            virtio_gpu_pci_device_id: 0x10f7,
+            ..PcieEcamConfig::default()
+        });
+
+        assert_eq!(
+            default_ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, REG_VENDOR_DEVICE + 2), 2),
+            u64::from(VIRTIO_GPU_DEVICE_ID)
+        );
+        assert_eq!(
+            override_ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, REG_VENDOR_DEVICE + 2), 2),
+            0x10f7
+        );
+
+        let mut default_gpu = read_config_bytes(&default_ecam, VIRTIO_GPU_BDF, 256);
+        let mut override_gpu = read_config_bytes(&override_ecam, VIRTIO_GPU_BDF, 256);
+        assert_eq!(
+            &default_gpu[0..2],
+            &override_gpu[0..2],
+            "virtio-gpu vendor id must not change"
+        );
+        assert_ne!(&default_gpu[2..4], &override_gpu[2..4]);
+        default_gpu[2..4].copy_from_slice(&[0, 0]);
+        override_gpu[2..4].copy_from_slice(&[0, 0]);
+        assert_eq!(
+            default_gpu, override_gpu,
+            "only the virtio-gpu PCI device-id field may differ"
+        );
+
+        for bdf in [NVME_BDF, XHCI_BDF, VIRTIO_BLK_BDF, VIRTIO_NET_BDF] {
+            assert_eq!(
+                read_config_bytes(&default_ecam, bdf, 256),
+                read_config_bytes(&override_ecam, bdf, 256),
+                "non-GPU PCI function {bdf:?} changed"
+            );
+        }
+    }
+
+    #[test]
     fn virtio_gpu_modern_bars_and_capabilities_match_stage_g1_shape() {
         let mut ecam = PcieEcam::new_with_config(PcieEcamConfig {
             virtio_gpu_present: true,
@@ -1816,51 +1867,53 @@ mod tests {
 
     #[test]
     fn virtio_gpu_3d_exposes_prefetchable_bar2_and_host_visible_shm_capability() {
-        let mut ecam = PcieEcam::new_with_config(PcieEcamConfig {
-            virtio_gpu_present: true,
-            virtio_gpu_3d_enabled: true,
-            ..PcieEcamConfig::default()
-        });
-        let bar2 = bdf_ecam_offset(VIRTIO_GPU_BDF, REG_BAR0 + 4 * 2);
-        let bar3 = bdf_ecam_offset(VIRTIO_GPU_BDF, REG_BAR0 + 4 * 3);
-        ecam.cfg_write(bar2, 4, 0xffff_ffff);
-        ecam.cfg_write(bar3, 4, 0xffff_ffff);
-        assert_eq!(ecam.cfg_read(bar2, 4), 0xc000_000c);
-        assert_eq!(ecam.cfg_read(bar3, 4), 0xffff_ffff);
-        assert_eq!(
-            ecam.virtio_gpu_host_visible_bar_size(),
-            Some(VIRTIO_GPU_HOSTMEM_DEFAULT_SIZE)
-        );
+        with_hostmem_mib_env("1024", || {
+            let mut ecam = PcieEcam::new_with_config(PcieEcamConfig {
+                virtio_gpu_present: true,
+                virtio_gpu_3d_enabled: true,
+                ..PcieEcamConfig::default()
+            });
+            let bar2 = bdf_ecam_offset(VIRTIO_GPU_BDF, REG_BAR0 + 4 * 2);
+            let bar3 = bdf_ecam_offset(VIRTIO_GPU_BDF, REG_BAR0 + 4 * 3);
+            ecam.cfg_write(bar2, 4, 0xffff_ffff);
+            ecam.cfg_write(bar3, 4, 0xffff_ffff);
+            assert_eq!(ecam.cfg_read(bar2, 4), 0xc000_000c);
+            assert_eq!(ecam.cfg_read(bar3, 4), 0xffff_ffff);
+            assert_eq!(
+                ecam.virtio_gpu_host_visible_bar_size(),
+                Some(VIRTIO_GPU_HOSTMEM_DEFAULT_SIZE)
+            );
 
-        let cap = find_vendor_cfg_type(&ecam, VIRTIO_GPU_BDF, 8).expect("shared-memory cap");
-        assert_eq!(
-            ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 2), 1),
-            24
-        );
-        assert_eq!(
-            ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 4), 1),
-            2
-        );
-        assert_eq!(
-            ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 5), 1),
-            u64::from(VIRTIO_GPU_SHM_ID_HOST_VISIBLE)
-        );
-        assert_eq!(
-            ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 8), 4),
-            0
-        );
-        assert_eq!(
-            ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 12), 4),
-            VIRTIO_GPU_HOSTMEM_DEFAULT_SIZE & 0xffff_ffff
-        );
-        assert_eq!(
-            ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 16), 4),
-            0
-        );
-        assert_eq!(
-            ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 20), 4),
-            0
-        );
+            let cap = find_vendor_cfg_type(&ecam, VIRTIO_GPU_BDF, 8).expect("shared-memory cap");
+            assert_eq!(
+                ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 2), 1),
+                24
+            );
+            assert_eq!(
+                ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 4), 1),
+                2
+            );
+            assert_eq!(
+                ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 5), 1),
+                u64::from(VIRTIO_GPU_SHM_ID_HOST_VISIBLE)
+            );
+            assert_eq!(
+                ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 8), 4),
+                0
+            );
+            assert_eq!(
+                ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 12), 4),
+                VIRTIO_GPU_HOSTMEM_DEFAULT_SIZE & 0xffff_ffff
+            );
+            assert_eq!(
+                ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 16), 4),
+                0
+            );
+            assert_eq!(
+                ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 20), 4),
+                0
+            );
+        });
     }
 
     #[test]

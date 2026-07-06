@@ -258,6 +258,9 @@ impl VirtBootMediaConfig {
         cfg.platform_devices.virtio_boot_media_present = virtio_iso_present;
         cfg.platform_devices.virtio_net_present = env_flag("BRIDGEVM_VIRTIO_NET");
         cfg.platform_devices.virtio_gpu_present = env_flag("BRIDGEVM_VIRTIO_GPU");
+        cfg.platform_devices.virtio_gpu_pci_device_id =
+            parse_optional_u16_env("BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID")
+                .unwrap_or(crate::pcie::VIRTIO_GPU_DEVICE_ID);
         cfg.platform_devices.virtio_net_backend = VirtioNetBackendKind::from_env_value(
             env::var("BRIDGEVM_VIRTIO_NET_BACKEND").ok().as_deref(),
         );
@@ -296,6 +299,19 @@ fn env_flag(name: &str) -> bool {
         || value.eq_ignore_ascii_case("on")
 }
 
+fn parse_optional_u16_env(name: &str) -> Option<u16> {
+    let value = env::var(name).ok()?;
+    let trimmed = value.trim();
+    let digits = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"));
+    let parsed = match digits {
+        Some(hex) => u16::from_str_radix(hex, 16),
+        None => trimmed.parse(),
+    };
+    Some(parsed.unwrap_or_else(|_| panic!("{name} must be a hex/decimal u16")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,6 +337,7 @@ mod tests {
             "BRIDGEVM_DISABLE_VIRTIO_ISO",
             "BRIDGEVM_VIRTIO_NET",
             "BRIDGEVM_VIRTIO_GPU",
+            "BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID",
             "BRIDGEVM_VIRTIO_NET_BACKEND",
             "BRIDGEVM_RAMFB",
             "BRIDGEVM_DISABLE_RAMFB_DEVICE",
@@ -459,6 +476,18 @@ mod tests {
         let cfg = VirtBootMediaConfig::from_probe_env();
 
         assert!(cfg.platform_devices.virtio_gpu_present);
+        clear_probe_disable_env();
+    }
+
+    #[test]
+    fn probe_env_parses_virtio_gpu_pci_device_id_override() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_probe_disable_env();
+        env::set_var("BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID", "0x10F7");
+
+        let cfg = VirtBootMediaConfig::from_probe_env();
+
+        assert_eq!(cfg.platform_devices.virtio_gpu_pci_device_id, 0x10f7);
         clear_probe_disable_env();
     }
 

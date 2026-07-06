@@ -93,7 +93,7 @@ fn device_shape_lines(
             dev = pcie::VIRTIO_GPU_BDF.1,
             func = pcie::VIRTIO_GPU_BDF.2,
             vendor = pcie::VIRTIO_GPU_VENDOR_ID,
-            device = pcie::VIRTIO_GPU_DEVICE_ID,
+            device = devices.virtio_gpu_pci_device_id,
             class = pcie::VIRTIO_GPU_CLASS_CODE,
             bar1 = pcie::VIRTIO_GPU_BAR1_SIZE,
             bar4 = pcie::VIRTIO_GPU_BAR4_SIZE,
@@ -205,6 +205,18 @@ mod tests {
             .contains("virtio-gpu-pci: 00:05.0 vendor=0x1af4 device=0x1050 class=0x038000")
             && line.contains("bar1_msix_size=0x1000")
             && line.contains("bar4_modern_mmio_size=0x4000")));
+        let gpu_override_lines = super::device_shape_lines(
+            VirtPlatformDeviceConfig {
+                virtio_gpu_present: true,
+                virtio_gpu_pci_device_id: 0x10f7,
+                ..VirtPlatformDeviceConfig::default()
+            },
+            false,
+            false,
+            16 * 1024 * 1024,
+        );
+        assert!(gpu_override_lines.iter().any(|line| line
+            .contains("virtio-gpu-pci: 00:05.0 vendor=0x1af4 device=0x10f7 class=0x038000")));
     }
 
     #[test]
@@ -215,6 +227,7 @@ mod tests {
                 virtio_boot_media_present: false,
                 virtio_net_present: false,
                 virtio_gpu_present: false,
+                virtio_gpu_pci_device_id: bridgevm_hvf::pcie::VIRTIO_GPU_DEVICE_ID,
                 virtio_net_backend: bridgevm_hvf::platform_virt::VirtioNetBackendKind::Nat,
                 legacy_virtio_mmio_present: false,
                 ramfb_present: false,
