@@ -871,6 +871,36 @@ mod tests {
     }
 
     #[test]
+    fn host3d_blob_map_rejects_zero_shm_window_without_shm_port() {
+        let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
+        let mut gpu = VirtioGpu3d::with_backend(Box::new(backend.clone()));
+
+        let create = create_blob_req(7, VIRTIO_GPU_BLOB_MEM_HOST3D, 0, 0x4000, 1);
+        let hdr = CtrlHdr3d::parse(&create).unwrap();
+        assert_eq!(
+            read_le_u32(&gpu.handle(&create, hdr).unwrap(), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let map = map_blob_req(7, 0);
+        let hdr = CtrlHdr3d::parse(&map).unwrap();
+        assert_eq!(
+            read_le_u32(&gpu.handle(&map, hdr).unwrap(), 0),
+            Some(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER)
+        );
+        assert!(backend.lock().unwrap().unmapped.is_empty());
+
+        let mut info = ctrl_req(VIRTIO_GPU_CMD_GET_CAPSET_INFO, 0);
+        info.extend_from_slice(&0u32.to_le_bytes());
+        info.extend_from_slice(&0u32.to_le_bytes());
+        let hdr = CtrlHdr3d::parse(&info).unwrap();
+        assert_eq!(
+            read_le_u32(&gpu.handle(&info, hdr).unwrap(), 0),
+            Some(VIRTIO_GPU_RESP_OK_CAPSET_INFO)
+        );
+    }
+
+    #[test]
     fn ctx_attach_detach_blob_resource_without_live_context_forwards_to_backend() {
         let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
         let mut gpu = VirtioGpu3d::with_backend(Box::new(backend.clone()));

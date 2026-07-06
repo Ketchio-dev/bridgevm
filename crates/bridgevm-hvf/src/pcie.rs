@@ -962,7 +962,8 @@ impl PcieEcam {
         if config.virtio_gpu_present {
             let host_visible_bar_size = config
                 .virtio_gpu_3d_enabled
-                .then(parse_virtio_gpu_hostmem_size);
+                .then(parse_virtio_gpu_hostmem_size)
+                .filter(|size| *size != 0);
             functions.push(Function::virtio_gpu(host_visible_bar_size));
         }
         Self { functions }
@@ -1122,6 +1123,9 @@ pub fn parse_virtio_gpu_hostmem_size() -> u64 {
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(1024);
+    if mib == 0 {
+        return 0;
+    }
     assert!(
         mib.is_power_of_two(),
         "BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB must be a power of two"
@@ -1299,6 +1303,7 @@ impl MsixCapability {
 mod tests {
     use super::*;
     use crate::machine;
+    use std::sync::{Mutex, OnceLock};
 
     /// Build a raw ECAM offset for a (bus, dev, fn, reg) tuple, the way the run
     /// loop derives it from a guest fault address minus the window base.
@@ -1346,6 +1351,19 @@ mod tests {
         cfg_type: u8,
     ) -> bool {
         find_vendor_cfg_type(ecam, bdf, cfg_type).is_some()
+    }
+
+    fn with_hostmem_mib_env<R>(value: &str, f: impl FnOnce() -> R) -> R {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let _guard = LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let previous = std::env::var_os("BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB");
+        std::env::set_var("BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB", value);
+        let result = f();
+        match previous {
+            Some(previous) => std::env::set_var("BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB", previous),
+            None => std::env::remove_var("BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB"),
+        }
+        result
     }
 
     #[test]
@@ -1843,6 +1861,36 @@ mod tests {
             ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 20), 4),
             0
         );
+    }
+
+    #[test]
+    fn virtio_gpu_3d_with_zero_hostmem_omits_bar2_and_shared_memory_capability() {
+        with_hostmem_mib_env("0", || {
+            assert_eq!(parse_virtio_gpu_hostmem_size(), 0);
+            let mut ecam = PcieEcam::new_with_config(PcieEcamConfig {
+                virtio_gpu_present: true,
+                virtio_gpu_3d_enabled: true,
+                ..PcieEcamConfig::default()
+            });
+            let before = read_config_bytes(&ecam, VIRTIO_GPU_BDF, 256);
+            let bar2 = bdf_ecam_offset(VIRTIO_GPU_BDF, REG_BAR0 + 4 * 2);
+            let bar3 = bdf_ecam_offset(VIRTIO_GPU_BDF, REG_BAR0 + 4 * 3);
+            ecam.cfg_write(bar2, 4, 0xffff_ffff);
+            ecam.cfg_write(bar3, 4, 0xffff_ffff);
+            assert_eq!(ecam.cfg_read(bar2, 4), 0);
+            assert_eq!(ecam.cfg_read(bar3, 4), 0);
+            assert_eq!(ecam.virtio_gpu_host_visible_bar_size(), None);
+            assert!(!cap_chain_contains_vendor_cfg_type(
+                &ecam,
+                VIRTIO_GPU_BDF,
+                8
+            ));
+            assert_eq!(
+                before,
+                read_config_bytes(&ecam, VIRTIO_GPU_BDF, 256),
+                "zero-hostmem BAR2/BAR3 sizing must not mutate config bytes"
+            );
+        });
     }
 
     #[test]
