@@ -6,6 +6,11 @@ VIRGL_COMMIT="${VIRGL_COMMIT:-2a173ee}"
 PREFIX="$BRIDGEVM_3D_DIR/prefix"
 SRC_DIR="$BRIDGEVM_3D_DIR/virglrenderer"
 BUILD_DIR="$SRC_DIR/build-venus"
+PATCH_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/patches/virglrenderer-macos-venus.patch"
+
+log() {
+  printf 'build-venus-host-deps: %s\n' "$*"
+}
 
 missing=()
 for dep in meson ninja pkgconf libepoxy molten-vk vulkan-loader vulkan-headers; do
@@ -36,6 +41,21 @@ git -C "$SRC_DIR" fetch origin
 git -C "$SRC_DIR" checkout --detach "$VIRGL_COMMIT"
 git -C "$SRC_DIR" submodule update --init --recursive
 
+# Apply BridgeVM's local Venus patches before both first setup and reconfigure
+# builds. The patches provide MoltenVK-direct dlopen via BRIDGEVM_VULKAN_LIB
+# and host-pointer memory import for MoltenVK's non-aliasing MTLBuffer path.
+if [[ -f "$PATCH_FILE" ]]; then
+  if git -C "$SRC_DIR" apply --check "$PATCH_FILE" 2>/dev/null; then
+    git -C "$SRC_DIR" apply "$PATCH_FILE"
+    log "applied virglrenderer-macos-venus.patch"
+  elif git -C "$SRC_DIR" apply --reverse --check "$PATCH_FILE" 2>/dev/null; then
+    log "virglrenderer-macos-venus.patch already applied"
+  else
+    printf 'Failed to apply %s against %s at %s\n' "$PATCH_FILE" "$SRC_DIR" "$VIRGL_COMMIT" >&2
+    exit 1
+  fi
+fi
+
 meson_args=(
   "$BUILD_DIR"
   "$SRC_DIR"
@@ -47,19 +67,6 @@ meson_args=(
 )
 
 if [[ -d "$BUILD_DIR" ]]; then
-# Apply BridgeVM's local venus patches (MoltenVK-direct dlopen override via
-# BRIDGEVM_VULKAN_LIB, and host-pointer memory import working around MoltenVK
-# 1.4.1's non-aliasing MTLBuffer import).
-PATCH_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/patches/virglrenderer-macos-venus.patch"
-if [[ -f "$PATCH_FILE" ]]; then
-  if git -C "$SRC_DIR" apply --check "$PATCH_FILE" 2>/dev/null; then
-    git -C "$SRC_DIR" apply "$PATCH_FILE"
-    log "applied virglrenderer-macos-venus.patch"
-  else
-    log "virglrenderer-macos-venus.patch already applied or conflicts (continuing)"
-  fi
-fi
-
   meson setup "${meson_args[@]}" --reconfigure
 else
   meson setup "${meson_args[@]}"
