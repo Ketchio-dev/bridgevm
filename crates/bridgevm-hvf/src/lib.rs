@@ -31,10 +31,16 @@ pub mod virtio_blk;
 pub mod virtio_console;
 pub mod virtio_gpu;
 pub mod virtio_gpu_3d;
+pub mod virtio_gpu_3d_preflight;
+mod virtio_gpu_trace;
 pub mod virtio_net;
 mod windows_arm_xhci_hid_boot_key_probe;
 pub mod xhci;
 
+pub use virtio_gpu_3d_preflight::{
+    probe_virtio_gpu_3d_host_preflight, probe_virtio_gpu_3d_host_preflight_for,
+    VirtioGpu3dHostPreflight, VirtioGpu3dHostPreflightProtocol,
+};
 pub use windows_arm_xhci_hid_boot_key_probe::{
     probe_windows_11_arm_xhci_hid_boot_key_report, WindowsArmXhciHidBootKeyReportProbe,
 };

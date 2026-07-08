@@ -6,6 +6,17 @@ nonnegative_integer() {
   [[ "$1" =~ ^[0-9]+$ ]]
 }
 
+normalize_virtio_gpu_device_id() {
+  local value="$1"
+  local upper
+  upper="$(printf '%s\n' "$value" | tr '[:lower:]' '[:upper:]')"
+  upper="${upper#0X}"
+  case "$upper" in
+    1050|10F7) printf '%s\n' "$upper" ;;
+    *) return 1 ;;
+  esac
+}
+
 ramfb_sample_list() {
   [[ "$1" =~ ^[1-9][0-9]*(,[1-9][0-9]*)*$ ]] || return 1
 

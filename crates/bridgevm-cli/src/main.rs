@@ -37,15 +37,16 @@ use bridgevm_hvf::{
     probe_hvf_mmio_write_emulation, probe_hvf_vcpu_create, probe_hvf_vcpu_run, probe_hvf_vm_create,
     probe_hvf_vtimer_exit, probe_virtio_block_file_backing, probe_virtio_block_iso_backing,
     probe_virtio_block_request_model, probe_virtio_block_writable_file_backing,
-    probe_windows_11_arm_boot_disk_layout, probe_windows_11_arm_platform_description,
-    probe_windows_11_arm_uefi_firmware_device_discovery,
+    probe_virtio_gpu_3d_host_preflight_for, probe_windows_11_arm_boot_disk_layout,
+    probe_windows_11_arm_platform_description, probe_windows_11_arm_uefi_firmware_device_discovery,
     probe_windows_11_arm_uefi_firmware_handoff, probe_windows_11_arm_uefi_firmware_run_loop,
     probe_windows_11_arm_uefi_pflash_hvf_map, probe_windows_11_arm_uefi_pflash_map,
     probe_windows_11_arm_uefi_reset_vector_entry, probe_windows_11_arm_xhci_hid_boot_key_report,
-    query_hvf_host_capabilities, HvfMachinePlanOptions, WindowsArmBootDiskLayoutOptions,
-    WindowsArmPlatformDescriptionOptions, WindowsArmUefiFirmwareHandoffOptions,
-    WindowsArmUefiFirmwareRunLoopExecutionOptions, WindowsArmUefiFirmwareRunLoopOptions,
-    WindowsArmUefiPflashMapOptions, WINDOWS_ARM_BOOT_DISK_DEFAULT_SIZE_GIB,
+    query_hvf_host_capabilities, HvfMachinePlanOptions, VirtioGpu3dHostPreflightProtocol,
+    WindowsArmBootDiskLayoutOptions, WindowsArmPlatformDescriptionOptions,
+    WindowsArmUefiFirmwareHandoffOptions, WindowsArmUefiFirmwareRunLoopExecutionOptions,
+    WindowsArmUefiFirmwareRunLoopOptions, WindowsArmUefiPflashMapOptions,
+    WINDOWS_ARM_BOOT_DISK_DEFAULT_SIZE_GIB,
 };
 use bridgevm_qemu::{
     build_compatibility_command, cont as qmp_cont, is_qmp_status_unavailable, qmp_socket_path,
@@ -197,6 +198,14 @@ enum HvfCommand {
     VirtioBlockWritableFileBackingProbe(HvfVirtioBlockFileBackingProbeArgs),
     /// Exercise a read-only ISO-backed VirtIO block read request descriptor model.
     VirtioBlockIsoBackingProbe(HvfVirtioBlockIsoBackingProbeArgs),
+    /// Exercise the synthetic virtio-gpu 3D host-visible blob map/submit/fence path.
+    #[command(
+        name = "virtio-gpu-3d-host-preflight",
+        alias = "virtio-gpu3d-host-preflight"
+    )]
+    VirtioGpu3dHostPreflight(HvfVirtioGpu3dHostPreflightArgs),
+    /// Summarize a BridgeVM HVF virtio-gpu JSONL trace and optionally enforce the P3 gate.
+    VirtioGpuTraceReport(HvfVirtioGpuTraceReportArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -431,6 +440,54 @@ struct HvfVirtioBlockFileBackingProbeArgs {
 struct HvfVirtioBlockIsoBackingProbeArgs {
     #[arg(long, value_name = "PATH")]
     iso: PathBuf,
+}
+
+#[derive(Debug, Parser)]
+struct HvfVirtioGpu3dHostPreflightArgs {
+    #[arg(long, value_enum, default_value_t = VirtioGpu3dHostPreflightProtocolChoice::Venus)]
+    protocol: VirtioGpu3dHostPreflightProtocolChoice,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum VirtioGpu3dHostPreflightProtocolChoice {
+    Venus,
+    Virgl,
+}
+
+impl From<VirtioGpu3dHostPreflightProtocolChoice> for VirtioGpu3dHostPreflightProtocol {
+    fn from(value: VirtioGpu3dHostPreflightProtocolChoice) -> Self {
+        match value {
+            VirtioGpu3dHostPreflightProtocolChoice::Venus => Self::Venus,
+            VirtioGpu3dHostPreflightProtocolChoice::Virgl => Self::Virgl,
+        }
+    }
+}
+
+#[derive(Debug, Parser)]
+struct HvfVirtioGpuTraceReportArgs {
+    #[arg(long, value_name = "PATH")]
+    trace: PathBuf,
+    #[arg(long, value_enum, default_value_t = VirtioGpuTraceProtocolChoice::Auto)]
+    protocol: VirtioGpuTraceProtocolChoice,
+    #[arg(long)]
+    require_p3_gate: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum VirtioGpuTraceProtocolChoice {
+    Auto,
+    Venus,
+    Virgl,
+}
+
+impl VirtioGpuTraceProtocolChoice {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Venus => "venus",
+            Self::Virgl => "virgl",
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -4511,7 +4568,454 @@ fn hvf(command: HvfCommand) -> Result<()> {
             print!("{}", probe.render_text());
             Ok(())
         }
+        HvfCommand::VirtioGpu3dHostPreflight(args) => {
+            let probe = probe_virtio_gpu_3d_host_preflight_for(args.protocol.into());
+            print!("{}", probe.render_text());
+            Ok(())
+        }
+        HvfCommand::VirtioGpuTraceReport(args) => {
+            let report = analyze_virtio_gpu_trace(&args.trace)?;
+            let blockers = report.p3_blockers(args.protocol);
+            print_virtio_gpu_trace_report(&args.trace, args.protocol, &report, &blockers);
+            if args.require_p3_gate && !blockers.is_empty() {
+                bail!("virtio-gpu P3 trace gate failed: {}", blockers.join("; "));
+            }
+            Ok(())
+        }
     }
+}
+
+const VIRTIO_GPU_TRACE_FEATURE_VIRGL: u64 = 1 << 0;
+const VIRTIO_GPU_TRACE_FEATURE_RESOURCE_BLOB: u64 = 1 << 3;
+const VIRTIO_GPU_TRACE_FEATURE_CONTEXT_INIT: u64 = 1 << 4;
+const VIRTIO_TRACE_FEATURE_VERSION_1: u64 = 1 << 0;
+const VIRTIO_GPU_TRACE_CAPSET_VIRGL: u64 = 1;
+const VIRTIO_GPU_TRACE_CAPSET_VIRGL2: u64 = 2;
+const VIRTIO_GPU_TRACE_CAPSET_VENUS: u64 = 4;
+
+#[derive(Debug, Default)]
+struct VirtioGpuTraceReport {
+    lines: usize,
+    events: usize,
+    invalid_lines: Vec<usize>,
+    device_init: bool,
+    backend_3d: bool,
+    backend_attached: bool,
+    queue_notify: bool,
+    device_features_word0: Option<u64>,
+    device_features_word1: Option<u64>,
+    driver_features_word0: Option<u64>,
+    driver_features_word1: Option<u64>,
+    capset_info_ok: bool,
+    virgl_capset_info_ok: bool,
+    venus_capset_info_ok: bool,
+    capset_ok: bool,
+    virgl_capset_ok: bool,
+    venus_capset_ok: bool,
+    blob_create_ok: bool,
+    ctx_create_ok: bool,
+    virgl_ctx_create_ok: bool,
+    venus_ctx_create_ok: bool,
+    submit_3d_ok: bool,
+    submit_3d_nonzero_ok: bool,
+    fenced_command: bool,
+    fence_create: bool,
+    backend_fence_parked: bool,
+    fence_complete: bool,
+    fence_deliver: bool,
+    error_responses: Vec<String>,
+}
+
+impl VirtioGpuTraceReport {
+    fn observe(&mut self, value: &serde_json::Value, line_number: usize) {
+        match json_str(value, "event") {
+            Some("device_init") => {
+                self.device_init = true;
+                self.backend_3d |= json_bool(value, "backend_3d").unwrap_or(false);
+            }
+            Some("backend_attached") => {
+                self.backend_attached = true;
+            }
+            Some("common_read") => {
+                if json_str(value, "field") == Some("device_features") {
+                    match json_u64(value, "device_features_sel") {
+                        Some(0) => self.device_features_word0 = json_u64(value, "value"),
+                        Some(1) => self.device_features_word1 = json_u64(value, "value"),
+                        _ => {}
+                    }
+                }
+            }
+            Some("driver_features") => match json_u64(value, "select") {
+                Some(0) => self.driver_features_word0 = json_u64(value, "accepted"),
+                Some(1) => self.driver_features_word1 = json_u64(value, "accepted"),
+                _ => {}
+            },
+            Some("queue_notify") => {
+                self.queue_notify |= json_bool(value, "valid").unwrap_or(true);
+            }
+            Some("command") => self.observe_command(value, line_number),
+            Some("fence_create") => {
+                self.fence_create = true;
+                self.backend_fence_parked |= json_bool(value, "backend_accepted").unwrap_or(false)
+                    && json_str(value, "outcome") == Some("parked");
+            }
+            Some("fence_complete") => self.fence_complete = true,
+            Some("fence_deliver") => self.fence_deliver = true,
+            _ => {}
+        }
+    }
+
+    fn observe_command(&mut self, value: &serde_json::Value, line_number: usize) {
+        let name = json_str(value, "name").unwrap_or("UNKNOWN");
+        let response = json_str(value, "response_name").unwrap_or("UNKNOWN");
+        if json_bool(value, "fenced").unwrap_or(false) {
+            self.fenced_command = true;
+        }
+        match (name, response) {
+            ("GET_CAPSET_INFO", "OK_CAPSET_INFO") => {
+                self.capset_info_ok = true;
+                if let Some(capset_id) = json_u64(value, "response_capset_id") {
+                    self.virgl_capset_info_ok |= is_virgl_capset(capset_id);
+                    self.venus_capset_info_ok |= capset_id == VIRTIO_GPU_TRACE_CAPSET_VENUS;
+                }
+            }
+            ("GET_CAPSET", "OK_CAPSET") => {
+                self.capset_ok = true;
+                if let Some(capset_id) = json_u64(value, "capset_id") {
+                    self.virgl_capset_ok |= is_virgl_capset(capset_id);
+                    self.venus_capset_ok |= capset_id == VIRTIO_GPU_TRACE_CAPSET_VENUS;
+                }
+            }
+            ("RESOURCE_CREATE_BLOB", "OK_NODATA") => self.blob_create_ok = true,
+            ("CTX_CREATE", "OK_NODATA") => {
+                self.ctx_create_ok = true;
+                if let Some(context_init) = json_u64(value, "context_init") {
+                    let capset_id = context_init & 0xff;
+                    self.virgl_ctx_create_ok |= is_virgl_capset(capset_id);
+                    self.venus_ctx_create_ok |= capset_id == VIRTIO_GPU_TRACE_CAPSET_VENUS;
+                }
+            }
+            ("SUBMIT_3D", "OK_NODATA") => {
+                self.submit_3d_ok = true;
+                self.submit_3d_nonzero_ok |=
+                    json_u64(value, "submit_size").is_some_and(|size| size > 0);
+            }
+            _ => {}
+        }
+        if response.starts_with("ERR_") {
+            let seq = json_u64(value, "seq")
+                .map(|seq| seq.to_string())
+                .unwrap_or_else(|| "?".to_string());
+            self.error_responses.push(format!(
+                "line {line_number}, seq {seq}: {name} -> {response}"
+            ));
+        }
+    }
+
+    fn has_3d_backend(&self) -> bool {
+        self.backend_3d || self.backend_attached
+    }
+
+    fn accepted_3d_features(&self) -> bool {
+        let required = VIRTIO_GPU_TRACE_FEATURE_VIRGL
+            | VIRTIO_GPU_TRACE_FEATURE_RESOURCE_BLOB
+            | VIRTIO_GPU_TRACE_FEATURE_CONTEXT_INIT;
+        self.driver_features_word0
+            .is_some_and(|features| features & required == required)
+    }
+
+    fn accepted_version_1(&self) -> bool {
+        self.driver_features_word1
+            .is_some_and(|features| features & VIRTIO_TRACE_FEATURE_VERSION_1 != 0)
+    }
+
+    fn fence_lifecycle_observed(&self) -> bool {
+        self.fenced_command && self.fence_create && (self.fence_complete || self.fence_deliver)
+    }
+
+    fn p3_blockers(&self, protocol: VirtioGpuTraceProtocolChoice) -> Vec<String> {
+        let mut blockers = Vec::new();
+        if !self.invalid_lines.is_empty() {
+            blockers.push(format!(
+                "invalid JSONL trace lines present: {}",
+                self.invalid_lines
+                    .iter()
+                    .map(|line| line.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        if self.events == 0 {
+            blockers.push("trace contains no parsed events".to_string());
+        }
+        if !self.device_init {
+            blockers.push("missing device_init event".to_string());
+        }
+        if !self.has_3d_backend() {
+            blockers.push("3D backend not attached in trace".to_string());
+        }
+        if !self.accepted_3d_features() {
+            blockers
+                .push("driver did not accept VIRGL, RESOURCE_BLOB, and CONTEXT_INIT".to_string());
+        }
+        if !self.accepted_version_1() {
+            blockers.push("driver did not accept VIRTIO_F_VERSION_1".to_string());
+        }
+        if !self.queue_notify {
+            blockers.push("missing valid virtio-gpu queue_notify".to_string());
+        }
+        if !self.capset_info_ok {
+            blockers.push("missing successful GET_CAPSET_INFO".to_string());
+        }
+        if !self.capset_ok {
+            blockers.push("missing successful GET_CAPSET".to_string());
+        }
+        if !self.blob_create_ok {
+            blockers.push("missing successful RESOURCE_CREATE_BLOB".to_string());
+        }
+        if !self.ctx_create_ok {
+            blockers.push("missing successful CTX_CREATE".to_string());
+        }
+        if !self.submit_3d_ok {
+            blockers.push("missing successful SUBMIT_3D".to_string());
+        }
+        if !self.submit_3d_nonzero_ok {
+            blockers.push("missing successful non-empty SUBMIT_3D".to_string());
+        }
+        if !self.backend_fence_parked {
+            blockers.push("missing backend-parked renderer fence".to_string());
+        }
+        if !self.fence_lifecycle_observed() {
+            blockers
+                .push("missing fenced command plus fence create/completion/delivery".to_string());
+        }
+        blockers.extend(self.protocol_blockers(protocol));
+        blockers
+    }
+
+    fn protocol_blockers(&self, protocol: VirtioGpuTraceProtocolChoice) -> Vec<String> {
+        match protocol {
+            VirtioGpuTraceProtocolChoice::Venus => self.venus_protocol_blockers(),
+            VirtioGpuTraceProtocolChoice::Virgl => self.virgl_protocol_blockers(),
+            VirtioGpuTraceProtocolChoice::Auto => {
+                let venus = self.venus_protocol_blockers();
+                let virgl = self.virgl_protocol_blockers();
+                if venus.is_empty() || virgl.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![format!(
+                        "trace did not satisfy VENUS or VIRGL protocol identity (VENUS: {}; VIRGL: {})",
+                        venus.join(", "),
+                        virgl.join(", ")
+                    )]
+                }
+            }
+        }
+    }
+
+    fn venus_protocol_blockers(&self) -> Vec<String> {
+        let mut blockers = Vec::new();
+        if !self.venus_capset_info_ok {
+            blockers.push("GET_CAPSET_INFO did not report VENUS capset id 4".to_string());
+        }
+        if !self.venus_capset_ok {
+            blockers.push("missing successful GET_CAPSET for VENUS capset id 4".to_string());
+        }
+        if !self.venus_ctx_create_ok {
+            blockers.push("missing CTX_CREATE with VENUS context_init low byte 4".to_string());
+        }
+        blockers
+    }
+
+    fn virgl_protocol_blockers(&self) -> Vec<String> {
+        let mut blockers = Vec::new();
+        if !self.virgl_capset_info_ok {
+            blockers
+                .push("GET_CAPSET_INFO did not report VIRGL/VIRGL2 capset id 1 or 2".to_string());
+        }
+        if !self.virgl_capset_ok {
+            blockers.push(
+                "missing successful GET_CAPSET for VIRGL/VIRGL2 capset id 1 or 2".to_string(),
+            );
+        }
+        if !self.virgl_ctx_create_ok {
+            blockers.push(
+                "missing CTX_CREATE with VIRGL/VIRGL2 context_init low byte 1 or 2".to_string(),
+            );
+        }
+        blockers
+    }
+
+    fn selected_protocol(&self, protocol: VirtioGpuTraceProtocolChoice) -> &'static str {
+        let venus_ok = self.venus_protocol_blockers().is_empty();
+        let virgl_ok = self.virgl_protocol_blockers().is_empty();
+        match protocol {
+            VirtioGpuTraceProtocolChoice::Venus if venus_ok => "venus",
+            VirtioGpuTraceProtocolChoice::Venus => "venus-missing",
+            VirtioGpuTraceProtocolChoice::Virgl if virgl_ok => "virgl",
+            VirtioGpuTraceProtocolChoice::Virgl => "virgl-missing",
+            VirtioGpuTraceProtocolChoice::Auto if venus_ok && virgl_ok => "venus+virgl",
+            VirtioGpuTraceProtocolChoice::Auto if venus_ok => "venus",
+            VirtioGpuTraceProtocolChoice::Auto if virgl_ok => "virgl",
+            VirtioGpuTraceProtocolChoice::Auto => "unknown",
+        }
+    }
+}
+
+fn is_virgl_capset(capset_id: u64) -> bool {
+    capset_id == VIRTIO_GPU_TRACE_CAPSET_VIRGL || capset_id == VIRTIO_GPU_TRACE_CAPSET_VIRGL2
+}
+
+fn analyze_virtio_gpu_trace(path: &Path) -> Result<VirtioGpuTraceReport> {
+    let file = fs::File::open(path)
+        .with_context(|| format!("failed to open virtio-gpu trace {}", path.display()))?;
+    let mut report = VirtioGpuTraceReport::default();
+    for (index, line) in BufReader::new(file).lines().enumerate() {
+        let line_number = index + 1;
+        let line = line.with_context(|| format!("failed to read trace line {line_number}"))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        report.lines += 1;
+        match serde_json::from_str::<serde_json::Value>(&line) {
+            Ok(value) => {
+                report.events += 1;
+                report.observe(&value, line_number);
+            }
+            Err(_) => report.invalid_lines.push(line_number),
+        }
+    }
+    Ok(report)
+}
+
+fn print_virtio_gpu_trace_report(
+    path: &Path,
+    protocol: VirtioGpuTraceProtocolChoice,
+    report: &VirtioGpuTraceReport,
+    blockers: &[String],
+) {
+    println!("BridgeVM HVF virtio-gpu trace report");
+    println!("Trace: {}", path.display());
+    println!("Requested protocol: {}", protocol.label());
+    println!("Selected protocol: {}", report.selected_protocol(protocol));
+    println!("Non-empty lines: {}", report.lines);
+    println!("Parsed events: {}", report.events);
+    println!("Invalid lines: {}", report.invalid_lines.len());
+    println!("Device initialized: {}", report.device_init);
+    println!("3D backend attached: {}", report.has_3d_backend());
+    println!(
+        "Device feature word0: {}",
+        hex_option(report.device_features_word0)
+    );
+    println!(
+        "Device feature word1: {}",
+        hex_option(report.device_features_word1)
+    );
+    println!(
+        "Driver feature word0: {}",
+        hex_option(report.driver_features_word0)
+    );
+    println!(
+        "Driver feature word1: {}",
+        hex_option(report.driver_features_word1)
+    );
+    println!("3D features accepted: {}", report.accepted_3d_features());
+    println!(
+        "VIRTIO_F_VERSION_1 accepted: {}",
+        report.accepted_version_1()
+    );
+    println!("Queue notify observed: {}", report.queue_notify);
+    println!("GET_CAPSET_INFO OK: {}", report.capset_info_ok);
+    println!(
+        "GET_CAPSET_INFO VIRGL/VIRGL2 id 1/2: {}",
+        report.virgl_capset_info_ok
+    );
+    println!(
+        "GET_CAPSET_INFO VENUS id 4: {}",
+        report.venus_capset_info_ok
+    );
+    println!("GET_CAPSET OK: {}", report.capset_ok);
+    println!("GET_CAPSET VIRGL/VIRGL2 id 1/2: {}", report.virgl_capset_ok);
+    println!("GET_CAPSET VENUS id 4: {}", report.venus_capset_ok);
+    println!("RESOURCE_CREATE_BLOB OK: {}", report.blob_create_ok);
+    println!("CTX_CREATE OK: {}", report.ctx_create_ok);
+    println!(
+        "CTX_CREATE VIRGL/VIRGL2 context_init: {}",
+        report.virgl_ctx_create_ok
+    );
+    println!(
+        "CTX_CREATE VENUS context_init: {}",
+        report.venus_ctx_create_ok
+    );
+    println!("SUBMIT_3D OK: {}", report.submit_3d_ok);
+    println!("SUBMIT_3D non-empty: {}", report.submit_3d_nonzero_ok);
+    println!("Fenced command observed: {}", report.fenced_command);
+    println!("Fence create observed: {}", report.fence_create);
+    println!(
+        "Backend-parked fence observed: {}",
+        report.backend_fence_parked
+    );
+    println!("Fence complete observed: {}", report.fence_complete);
+    println!("Fence deliver observed: {}", report.fence_deliver);
+    if report.error_responses.is_empty() {
+        println!("Error responses: none");
+    } else {
+        println!("Error responses: {}", report.error_responses.len());
+        for response in report.error_responses.iter().take(5) {
+            println!("- {response}");
+        }
+    }
+    println!(
+        "P3 Windows 3D trace gate: {}",
+        if blockers.is_empty() { "PASS" } else { "FAIL" }
+    );
+    if blockers.is_empty() {
+        println!("Blockers: none");
+    } else {
+        println!("Blockers:");
+        for blocker in blockers {
+            println!("- {blocker}");
+        }
+    }
+}
+
+fn json_str<'a>(value: &'a serde_json::Value, key: &str) -> Option<&'a str> {
+    value.get(key)?.as_str()
+}
+
+fn json_bool(value: &serde_json::Value, key: &str) -> Option<bool> {
+    match value.get(key)? {
+        serde_json::Value::Bool(value) => Some(*value),
+        serde_json::Value::String(value) => match value.trim().to_ascii_lowercase().as_str() {
+            "true" | "1" | "yes" | "on" => Some(true),
+            "false" | "0" | "no" | "off" => Some(false),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn json_u64(value: &serde_json::Value, key: &str) -> Option<u64> {
+    match value.get(key)? {
+        serde_json::Value::Number(value) => value
+            .as_u64()
+            .or_else(|| value.as_i64().and_then(|signed| signed.try_into().ok())),
+        serde_json::Value::String(value) => {
+            let value = value.trim();
+            value
+                .strip_prefix("0x")
+                .or_else(|| value.strip_prefix("0X"))
+                .map(|hex| u64::from_str_radix(hex, 16).ok())
+                .unwrap_or_else(|| value.parse().ok())
+        }
+        _ => None,
+    }
+}
+
+fn hex_option(value: Option<u64>) -> String {
+    value
+        .map(|value| format!("{value:#x}"))
+        .unwrap_or_else(|| "missing".to_string())
 }
 
 fn env_truthy(name: &str) -> bool {
@@ -4983,6 +5487,19 @@ mod tests {
         let mut path = PathBuf::from("/tmp");
         path.push(format!(
             "{prefix}-{}-{}.sock",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        path
+    }
+
+    fn unique_trace_path(prefix: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "{prefix}-{}-{}.jsonl",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -5803,6 +6320,187 @@ mod tests {
         };
 
         assert_eq!(args.iso, PathBuf::from("/tmp/Win11_Arm64.iso"));
+    }
+
+    #[test]
+    fn hvf_virtio_gpu_trace_report_cli_accepts_trace_and_gate_flag() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "virtio-gpu-trace-report",
+            "--trace",
+            "/tmp/bridgevm-virtio-gpu.jsonl",
+            "--protocol",
+            "virgl",
+            "--require-p3-gate",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::VirtioGpuTraceReport(args)) = cli.command else {
+            panic!("expected hvf virtio-gpu-trace-report command");
+        };
+
+        assert_eq!(args.trace, PathBuf::from("/tmp/bridgevm-virtio-gpu.jsonl"));
+        assert_eq!(args.protocol, VirtioGpuTraceProtocolChoice::Virgl);
+        assert!(args.require_p3_gate);
+    }
+
+    #[test]
+    fn hvf_virtio_gpu_3d_host_preflight_cli_accepts_command() {
+        let cli = Cli::try_parse_from(["bridgevm", "hvf", "virtio-gpu-3d-host-preflight"]).unwrap();
+
+        let Command::Hvf(HvfCommand::VirtioGpu3dHostPreflight(args)) = cli.command else {
+            panic!("expected hvf virtio-gpu-3d-host-preflight command");
+        };
+
+        assert_eq!(args.protocol, VirtioGpu3dHostPreflightProtocolChoice::Venus);
+    }
+
+    #[test]
+    fn hvf_virtio_gpu_3d_host_preflight_cli_accepts_virgl_protocol() {
+        let cli = Cli::try_parse_from([
+            "bridgevm",
+            "hvf",
+            "virtio-gpu-3d-host-preflight",
+            "--protocol",
+            "virgl",
+        ])
+        .unwrap();
+
+        let Command::Hvf(HvfCommand::VirtioGpu3dHostPreflight(args)) = cli.command else {
+            panic!("expected hvf virtio-gpu-3d-host-preflight command");
+        };
+
+        assert_eq!(args.protocol, VirtioGpu3dHostPreflightProtocolChoice::Virgl);
+    }
+
+    #[test]
+    fn virtio_gpu_trace_report_passes_p3_gate_on_complete_trace() {
+        let path = unique_trace_path("bridgevm-cli-virtio-gpu-pass");
+        fs::write(&path, complete_virtio_gpu_trace_sample()).unwrap();
+
+        let report = analyze_virtio_gpu_trace(&path).unwrap();
+        let _ = fs::remove_file(path);
+
+        assert_eq!(report.events, 13);
+        assert!(report.device_init);
+        assert!(report.has_3d_backend());
+        assert!(report.accepted_3d_features());
+        assert!(report.accepted_version_1());
+        assert!(report.capset_info_ok);
+        assert!(report.venus_capset_info_ok);
+        assert!(report.capset_ok);
+        assert!(report.venus_capset_ok);
+        assert!(report.blob_create_ok);
+        assert!(report.ctx_create_ok);
+        assert!(report.venus_ctx_create_ok);
+        assert!(report.submit_3d_ok);
+        assert!(report.submit_3d_nonzero_ok);
+        assert!(report.backend_fence_parked);
+        assert!(report.fence_lifecycle_observed());
+        assert!(report
+            .p3_blockers(VirtioGpuTraceProtocolChoice::Auto)
+            .is_empty());
+        assert!(report
+            .p3_blockers(VirtioGpuTraceProtocolChoice::Venus)
+            .is_empty());
+    }
+
+    #[test]
+    fn virtio_gpu_trace_report_flags_missing_submit_and_fence() {
+        let path = unique_trace_path("bridgevm-cli-virtio-gpu-missing");
+        fs::write(
+            &path,
+            r#"{"seq":1,"event":"device_init","backend_3d":true}
+{"seq":2,"event":"driver_features","select":0,"accepted":25}
+{"seq":3,"event":"driver_features","select":1,"accepted":1}
+{"seq":4,"event":"queue_notify","valid":true}
+{"seq":5,"event":"command","name":"GET_CAPSET_INFO","response_name":"OK_CAPSET_INFO","response_capset_id":4,"response_capset_max_version":1,"response_capset_max_size":64}
+{"seq":6,"event":"command","name":"GET_CAPSET","response_name":"OK_CAPSET","capset_id":4,"capset_version":1}
+{"seq":7,"event":"command","name":"RESOURCE_CREATE_BLOB","response_name":"OK_NODATA"}
+{"seq":8,"event":"command","name":"CTX_CREATE","response_name":"OK_NODATA","context_init":4}
+"#,
+        )
+        .unwrap();
+
+        let report = analyze_virtio_gpu_trace(&path).unwrap();
+        let _ = fs::remove_file(path);
+        let blockers = report.p3_blockers(VirtioGpuTraceProtocolChoice::Auto);
+
+        assert!(blockers
+            .iter()
+            .any(|blocker| blocker == "missing successful SUBMIT_3D"));
+        assert!(blockers.iter().any(|blocker| {
+            blocker == "missing fenced command plus fence create/completion/delivery"
+        }));
+    }
+
+    #[test]
+    fn virtio_gpu_trace_report_protocol_gate_distinguishes_venus_and_virgl() {
+        let path = unique_trace_path("bridgevm-cli-virtio-gpu-non-venus");
+        fs::write(
+            &path,
+            r#"{"seq":1,"event":"device_init","backend_3d":true}
+{"seq":2,"event":"driver_features","select":0,"accepted":25}
+{"seq":3,"event":"driver_features","select":1,"accepted":1}
+{"seq":4,"event":"queue_notify","valid":true}
+{"seq":5,"event":"command","name":"GET_CAPSET_INFO","response_name":"OK_CAPSET_INFO","response_capset_id":1,"response_capset_max_version":1,"response_capset_max_size":64}
+{"seq":6,"event":"command","name":"GET_CAPSET","response_name":"OK_CAPSET","capset_id":1,"capset_version":1}
+{"seq":7,"event":"command","name":"RESOURCE_CREATE_BLOB","response_name":"OK_NODATA"}
+{"seq":8,"event":"command","name":"CTX_CREATE","response_name":"OK_NODATA","context_init":1}
+{"seq":9,"event":"command","name":"SUBMIT_3D","response_name":"OK_NODATA","fenced":true,"submit_size":16}
+{"seq":10,"event":"fence_create","ctx_id":1,"ring_idx":0,"fence_id":9,"backend_accepted":true,"outcome":"parked"}
+{"seq":11,"event":"fence_deliver","ctx_id":1,"ring_idx":0,"fence_id":9,"used_len":24}
+"#,
+        )
+        .unwrap();
+
+        let report = analyze_virtio_gpu_trace(&path).unwrap();
+        let _ = fs::remove_file(path);
+
+        assert!(report.capset_info_ok);
+        assert!(report.capset_ok);
+        assert!(report.ctx_create_ok);
+        assert!(!report.venus_capset_info_ok);
+        assert!(!report.venus_capset_ok);
+        assert!(!report.venus_ctx_create_ok);
+        assert!(report.virgl_capset_info_ok);
+        assert!(report.virgl_capset_ok);
+        assert!(report.virgl_ctx_create_ok);
+        assert!(report
+            .p3_blockers(VirtioGpuTraceProtocolChoice::Auto)
+            .is_empty());
+        assert!(report
+            .p3_blockers(VirtioGpuTraceProtocolChoice::Virgl)
+            .is_empty());
+
+        let venus_blockers = report.p3_blockers(VirtioGpuTraceProtocolChoice::Venus);
+        assert!(venus_blockers
+            .iter()
+            .any(|blocker| blocker == "GET_CAPSET_INFO did not report VENUS capset id 4"));
+        assert!(venus_blockers
+            .iter()
+            .any(|blocker| blocker == "missing successful GET_CAPSET for VENUS capset id 4"));
+        assert!(venus_blockers
+            .iter()
+            .any(|blocker| { blocker == "missing CTX_CREATE with VENUS context_init low byte 4" }));
+    }
+
+    fn complete_virtio_gpu_trace_sample() -> &'static str {
+        r#"{"seq":1,"event":"device_init","width":1280,"height":720,"backend_3d":true}
+{"seq":2,"event":"common_read","field":"device_features","device_features_sel":0,"value":27}
+{"seq":3,"event":"common_read","field":"device_features","device_features_sel":1,"value":1}
+{"seq":4,"event":"driver_features","select":0,"accepted":25}
+{"seq":5,"event":"driver_features","select":1,"accepted":1}
+{"seq":6,"event":"queue_notify","queue":0,"valid":true}
+{"seq":7,"event":"command","name":"GET_CAPSET_INFO","response_name":"OK_CAPSET_INFO","response_capset_id":4,"response_capset_max_version":1,"response_capset_max_size":64}
+{"seq":8,"event":"command","name":"GET_CAPSET","response_name":"OK_CAPSET","capset_id":4,"capset_version":1}
+{"seq":9,"event":"command","name":"RESOURCE_CREATE_BLOB","response_name":"OK_NODATA"}
+{"seq":10,"event":"command","name":"CTX_CREATE","response_name":"OK_NODATA","context_init":4}
+{"seq":11,"event":"command","name":"SUBMIT_3D","response_name":"OK_NODATA","fenced":true,"submit_size":16}
+{"seq":12,"event":"fence_create","ctx_id":1,"ring_idx":0,"fence_id":9,"backend_accepted":true,"outcome":"parked"}
+{"seq":13,"event":"fence_deliver","ctx_id":1,"ring_idx":0,"fence_id":9,"used_len":24}
+"#
     }
 
     #[test]

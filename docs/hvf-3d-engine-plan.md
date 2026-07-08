@@ -48,7 +48,7 @@ in-tree on Linux) — that is our de-risking order, not an afterthought.
 | **HVF host-GPU-memory mapping (blob/HOSTMEM BAR)** | **BUILD (us)** | hv_vm_map of Metal shared memory into guest PA — novel, hard, ours |
 | **Windows ARM64 WDDM KMD + ICD maturity** | **CO-BUILD (fork + harden)** | anonymix007's venus WDDM driver exists but is experimental, unmerged, unproven on ARM64 — we become its ARM64 proving ground |
 | Shader compile (DXBC/DXIL→SPIRV→MSL) | REUSE (DXVK's compiler + KosmicKrisp/MoltenVK) | An entire compiler stack we skip |
-| GL/virgl path | SKIP entirely | Venus-only; GL apps ride Zink-on-Vulkan if ever needed |
+| GL/virgl path | REUSE when required | PR #943 uses VirGL/D3D10; Venus stays the Vulkan-first path, but VirGL is now an active P3 bring-up backend |
 
 ## 3. Phases (each independently valuable; strict gates)
 

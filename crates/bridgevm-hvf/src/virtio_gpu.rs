@@ -24,6 +24,7 @@ use crate::{
         VIRTIO_GPU_CMD_SUBMIT_3D, VIRTIO_GPU_FLAG_FENCE, VIRTIO_GPU_F_CONTEXT_INIT,
         VIRTIO_GPU_F_RESOURCE_BLOB, VIRTIO_GPU_F_VIRGL,
     },
+    virtio_gpu_trace::{json_string, VirtioGpuTraceRecorder},
 };
 
 const MAGIC_VALUE: u32 = 0x7472_6976;
@@ -153,6 +154,7 @@ pub struct VirtioGpu {
     scanout: Vec<u8>,
     three_d: VirtioGpu3d,
     pending_fenced: Vec<PendingFencedResponse>,
+    trace: VirtioGpuTraceRecorder,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -287,7 +289,7 @@ impl VirtioGpu {
             "virtio-gpu resolution must be non-zero"
         );
         let len = scanout_len(width, height);
-        Self {
+        let mut gpu = Self {
             width,
             height,
             device_features_sel: 0,
@@ -305,12 +307,17 @@ impl VirtioGpu {
             scanout: vec![0; len],
             three_d: VirtioGpu3d::new(),
             pending_fenced: Vec::new(),
-        }
+            trace: VirtioGpuTraceRecorder::from_env(),
+        };
+        gpu.trace_device_init(false);
+        gpu
     }
 
     pub fn with_3d_backend(width: u32, height: u32, backend: Box<dyn VirtioGpu3dBackend>) -> Self {
         let mut gpu = Self::new(width, height);
         gpu.three_d = VirtioGpu3d::with_backend(backend);
+        gpu.trace
+            .record("backend_attached", ",\"backend\":\"virtio-gpu-3d\"");
         gpu
     }
 
@@ -397,7 +404,9 @@ impl VirtioGpu {
         mem: &mut dyn GuestMemoryMut,
     ) -> VirtioGpuResult {
         if !is_write {
-            return VirtioGpuResult::ReadValue(self.read_common(offset, size));
+            let value = self.read_common(offset, size);
+            self.trace_common_read(offset, size, value);
+            return VirtioGpuResult::ReadValue(value);
         }
         self.write_common(offset, size, value, mem);
         VirtioGpuResult::WriteAck
@@ -490,6 +499,16 @@ impl VirtioGpu {
         if self.driver_features_sel < 2 {
             let index = self.driver_features_sel as usize;
             self.driver_features[index] = (value as u32) & self.offered_features_word(index as u32);
+            self.trace.record(
+                "driver_features",
+                format!(
+                    ",\"select\":{},\"raw\":{},\"accepted\":{},\"accepted_hex\":{}",
+                    self.driver_features_sel,
+                    value as u32,
+                    self.driver_features[index],
+                    json_string(&format!("{:#x}", self.driver_features[index]))
+                ),
+            );
         }
     }
 
@@ -717,6 +736,14 @@ impl VirtioGpu {
     }
 
     fn write_status(&mut self, value: u64) {
+        self.trace.record(
+            "device_status",
+            format!(
+                ",\"raw\":{},\"raw_hex\":{}",
+                value as u32,
+                json_string(&format!("{:#x}", value as u32))
+            ),
+        );
         self.status = value as u32;
         if value == 0 {
             self.reset_runtime_state();
@@ -742,11 +769,7 @@ impl VirtioGpu {
         let mut config = [0u8; 16];
         config[4..8].copy_from_slice(&self.events_clear.to_le_bytes());
         config[8..12].copy_from_slice(&1u32.to_le_bytes());
-        let num_capsets = if self.three_d.has_backend() {
-            1u32
-        } else {
-            0u32
-        };
+        let num_capsets = self.three_d.capset_count();
         config[12..16].copy_from_slice(&num_capsets.to_le_bytes());
         read_le_from_bytes(&config, offset, size).unwrap_or(0)
     }
@@ -759,6 +782,7 @@ impl VirtioGpu {
     }
 
     fn notify_queue(&mut self, queue_index: u16, mem: &mut dyn GuestMemoryMut) {
+        self.trace_queue_notify(queue_index);
         match usize::from(queue_index) {
             QUEUE_CONTROL => self.process_control_queue(mem),
             QUEUE_CURSOR => self.process_cursor_queue(mem),
@@ -816,8 +840,19 @@ impl VirtioGpu {
             self.handle_cursor_request(&request)
         };
         let Some(hdr) = CtrlHdr::parse(&request) else {
+            self.trace.record(
+                "command_parse_error",
+                format!(
+                    ",\"queue\":{},\"head\":{},\"request_len\":{},\"response_len\":{}",
+                    queue_index,
+                    head,
+                    request.len(),
+                    response.len()
+                ),
+            );
             return ChainCompletion::Immediate(Self::scatter_write(mem, &descs, &response));
         };
+        self.trace_command(queue_index, head, control, &request, hdr, &response);
         if control && hdr.flags & VIRTIO_GPU_FLAG_FENCE != 0 && self.three_d.has_backend() {
             let fence = CompletedFence {
                 ctx_id: hdr.ctx_id,
@@ -825,6 +860,7 @@ impl VirtioGpu {
                 fence_id: hdr.fence_id,
             };
             if self.three_d.create_fence(fence) {
+                self.trace_fence_create(fence, true, "parked");
                 self.pending_fenced.push(PendingFencedResponse {
                     queue_index,
                     queue: *queue,
@@ -837,6 +873,7 @@ impl VirtioGpu {
             }
             // If virgl rejects the requested timeline, the command response is
             // still delivered; there is no backend fence that can retire it.
+            self.trace_fence_create(fence, false, "immediate");
         }
         ChainCompletion::Immediate(Self::scatter_write(mem, &descs, &response))
     }
@@ -904,7 +941,13 @@ impl VirtioGpu {
     pub fn drain_completed_fences(&mut self, mem: &mut dyn GuestMemoryMut) {
         let completed = self.three_d.drain_completed_fences();
         if completed.is_empty() || self.pending_fenced.is_empty() {
+            for fence in completed {
+                self.trace_fence_complete(fence);
+            }
             return;
+        }
+        for fence in &completed {
+            self.trace_fence_complete(*fence);
         }
         let mut remaining = Vec::with_capacity(self.pending_fenced.len());
         let pending = std::mem::take(&mut self.pending_fenced);
@@ -917,6 +960,7 @@ impl VirtioGpu {
             if ready {
                 let used_len =
                     Self::scatter_write(mem, &pending_response.descs, &pending_response.response);
+                self.trace_fence_delivery(pending_response.fence, used_len);
                 Self::write_used(
                     mem,
                     &pending_response.queue,
@@ -1245,6 +1289,150 @@ impl VirtioGpu {
                 self.three_d.scanout_unmap_blob(scanout.resource_id);
             }
         }
+    }
+
+    fn trace_device_init(&mut self, backend_3d: bool) {
+        self.trace.record(
+            "device_init",
+            format!(
+                ",\"width\":{},\"height\":{},\"device_id\":{},\"vendor_id\":{},\"queue_count\":{},\"queue_max\":{},\"msix_vectors\":{},\"backend_3d\":{},\"common_cfg_offset\":{},\"device_cfg_offset\":{},\"notify_cfg_offset\":{}",
+                self.width,
+                self.height,
+                DEVICE_ID_GPU,
+                VENDOR_ID_QEMU,
+                QUEUE_COUNT,
+                QUEUE_MAX,
+                VIRTIO_GPU_MSIX_VECTOR_COUNT,
+                backend_3d,
+                PCI_COMMON_CFG_OFFSET,
+                PCI_DEVICE_CFG_OFFSET,
+                PCI_NOTIFY_CFG_OFFSET
+            ),
+        );
+    }
+
+    fn trace_common_read(&mut self, offset: u64, size: u8, value: u64) {
+        if !self.trace.enabled() {
+            return;
+        }
+        let field = match offset {
+            COMMON_DEVICE_FEATURE | REG_DEVICE_FEATURES => "device_features",
+            COMMON_DRIVER_FEATURE | REG_DRIVER_FEATURES => "driver_features",
+            COMMON_DEVICE_STATUS | REG_STATUS => "device_status",
+            COMMON_QUEUE_SIZE | REG_QUEUE_NUM => "queue_size",
+            COMMON_QUEUE_ENABLE | REG_QUEUE_READY => "queue_enable",
+            _ => return,
+        };
+        self.trace.record(
+            "common_read",
+            format!(
+                ",\"field\":{},\"offset\":{},\"size\":{},\"value\":{},\"value_hex\":{},\"device_features_sel\":{},\"driver_features_sel\":{},\"queue_sel\":{}",
+                json_string(field),
+                offset,
+                size,
+                value,
+                json_string(&format!("{value:#x}")),
+                self.device_features_sel,
+                self.driver_features_sel,
+                self.queue_sel
+            ),
+        );
+    }
+
+    fn trace_queue_notify(&mut self, queue_index: u16) {
+        if !self.trace.enabled() {
+            return;
+        }
+        let Some(queue) = self.queues.get(queue_index as usize) else {
+            self.trace.record(
+                "queue_notify",
+                format!(",\"queue\":{},\"valid\":false", queue_index),
+            );
+            return;
+        };
+        self.trace.record(
+            "queue_notify",
+            format!(
+                ",\"queue\":{},\"valid\":true,\"size\":{},\"ready\":{},\"desc\":{},\"driver\":{},\"device\":{},\"msix_vector\":{},\"last_avail_idx\":{}",
+                queue_index,
+                queue.size,
+                queue.ready,
+                queue.desc,
+                queue.driver,
+                queue.device,
+                queue.msix_vector,
+                queue.last_avail_idx
+            ),
+        );
+    }
+
+    fn trace_command(
+        &mut self,
+        queue_index: usize,
+        head: u16,
+        control: bool,
+        request: &[u8],
+        hdr: CtrlHdr,
+        response: &[u8],
+    ) {
+        if !self.trace.enabled() {
+            return;
+        }
+        let response_type = read_le_u32(response, 0).unwrap_or(0);
+        let fields = format!(
+            ",\"queue\":{},\"head\":{},\"control\":{},\"typ\":{},\"name\":{},\"flags\":{},\"fenced\":{},\"fence_id\":{},\"ctx_id\":{},\"ring_idx\":{},\"request_len\":{},\"response_type\":{},\"response_name\":{},\"response_len\":{}{}{}",
+            queue_index,
+            head,
+            control,
+            hdr.typ,
+            json_string(command_name(hdr.typ)),
+            hdr.flags,
+            hdr.flags & VIRTIO_GPU_FLAG_FENCE != 0,
+            hdr.fence_id,
+            hdr.ctx_id,
+            hdr.ring_idx(),
+            request.len(),
+            response_type,
+            json_string(response_name(response_type)),
+            response.len(),
+            trace_command_details(request, hdr),
+            trace_command_response_details(response_type, response)
+        );
+        self.trace.record("command", fields);
+    }
+
+    fn trace_fence_create(&mut self, fence: CompletedFence, backend_accepted: bool, outcome: &str) {
+        self.trace.record(
+            "fence_create",
+            format!(
+                ",\"ctx_id\":{},\"ring_idx\":{},\"fence_id\":{},\"backend_accepted\":{},\"outcome\":{}",
+                fence.ctx_id,
+                fence.ring_idx,
+                fence.fence_id,
+                backend_accepted,
+                json_string(outcome)
+            ),
+        );
+    }
+
+    fn trace_fence_complete(&mut self, fence: CompletedFence) {
+        self.trace.record(
+            "fence_complete",
+            format!(
+                ",\"ctx_id\":{},\"ring_idx\":{},\"fence_id\":{}",
+                fence.ctx_id, fence.ring_idx, fence.fence_id
+            ),
+        );
+    }
+
+    fn trace_fence_delivery(&mut self, fence: CompletedFence, used_len: u32) {
+        self.trace.record(
+            "fence_deliver",
+            format!(
+                ",\"ctx_id\":{},\"ring_idx\":{},\"fence_id\":{},\"used_len\":{}",
+                fence.ctx_id, fence.ring_idx, fence.fence_id, used_len
+            ),
+        );
     }
 
     fn mark_queue_interrupt(&mut self, queue_index: usize) {
@@ -1632,6 +1820,228 @@ fn response_hdr(typ: u32, request: Option<CtrlHdr>) -> Vec<u8> {
     );
     let mut out = Vec::with_capacity(24);
     hdr.append_to(&mut out);
+    out
+}
+
+fn command_name(typ: u32) -> &'static str {
+    match typ {
+        VIRTIO_GPU_CMD_GET_DISPLAY_INFO => "GET_DISPLAY_INFO",
+        VIRTIO_GPU_CMD_RESOURCE_CREATE_2D => "RESOURCE_CREATE_2D",
+        VIRTIO_GPU_CMD_RESOURCE_UNREF => "RESOURCE_UNREF",
+        VIRTIO_GPU_CMD_SET_SCANOUT => "SET_SCANOUT",
+        VIRTIO_GPU_CMD_RESOURCE_FLUSH => "RESOURCE_FLUSH",
+        VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D => "TRANSFER_TO_HOST_2D",
+        VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING => "RESOURCE_ATTACH_BACKING",
+        VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING => "RESOURCE_DETACH_BACKING",
+        VIRTIO_GPU_CMD_GET_CAPSET_INFO => "GET_CAPSET_INFO",
+        VIRTIO_GPU_CMD_GET_CAPSET => "GET_CAPSET",
+        VIRTIO_GPU_CMD_GET_EDID => "GET_EDID",
+        VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB => "RESOURCE_CREATE_BLOB",
+        VIRTIO_GPU_CMD_SET_SCANOUT_BLOB => "SET_SCANOUT_BLOB",
+        VIRTIO_GPU_CMD_CTX_CREATE => "CTX_CREATE",
+        VIRTIO_GPU_CMD_CTX_DESTROY => "CTX_DESTROY",
+        VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE => "CTX_ATTACH_RESOURCE",
+        VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE => "CTX_DETACH_RESOURCE",
+        VIRTIO_GPU_CMD_SUBMIT_3D => "SUBMIT_3D",
+        VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB => "RESOURCE_MAP_BLOB",
+        VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => "RESOURCE_UNMAP_BLOB",
+        VIRTIO_GPU_CMD_UPDATE_CURSOR => "UPDATE_CURSOR",
+        VIRTIO_GPU_CMD_MOVE_CURSOR => "MOVE_CURSOR",
+        _ => "UNKNOWN",
+    }
+}
+
+fn response_name(typ: u32) -> &'static str {
+    match typ {
+        VIRTIO_GPU_RESP_OK_NODATA => "OK_NODATA",
+        VIRTIO_GPU_RESP_OK_DISPLAY_INFO => "OK_DISPLAY_INFO",
+        virtio_gpu_3d::VIRTIO_GPU_RESP_OK_CAPSET_INFO => "OK_CAPSET_INFO",
+        virtio_gpu_3d::VIRTIO_GPU_RESP_OK_CAPSET => "OK_CAPSET",
+        VIRTIO_GPU_RESP_OK_EDID => "OK_EDID",
+        virtio_gpu_3d::VIRTIO_GPU_RESP_OK_MAP_INFO => "OK_MAP_INFO",
+        VIRTIO_GPU_RESP_ERR_UNSPEC => "ERR_UNSPEC",
+        virtio_gpu_3d::VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY => "ERR_OUT_OF_MEMORY",
+        virtio_gpu_3d::VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER => "ERR_INVALID_PARAMETER",
+        _ => "UNKNOWN",
+    }
+}
+
+fn trace_command_details(request: &[u8], hdr: CtrlHdr) -> String {
+    match hdr.typ {
+        VIRTIO_GPU_CMD_RESOURCE_CREATE_2D => format!(
+            ",\"resource_id\":{},\"format\":{},\"width\":{},\"height\":{}",
+            read_le_u32(request, 24).unwrap_or(0),
+            read_le_u32(request, 28).unwrap_or(0),
+            read_le_u32(request, 32).unwrap_or(0),
+            read_le_u32(request, 36).unwrap_or(0)
+        ),
+        VIRTIO_GPU_CMD_RESOURCE_UNREF
+        | VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING
+        | VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => format!(
+            ",\"resource_id\":{}",
+            read_le_u32(request, 24).unwrap_or(0)
+        ),
+        VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING => format!(
+            ",\"resource_id\":{},\"nr_entries\":{}",
+            read_le_u32(request, 24).unwrap_or(0),
+            read_le_u32(request, 28).unwrap_or(0)
+        ),
+        VIRTIO_GPU_CMD_SET_SCANOUT => {
+            let rect = read_rect(request, 24).unwrap_or(Rect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            });
+            format!(
+                ",\"scanout_id\":{},\"resource_id\":{},\"rect_x\":{},\"rect_y\":{},\"rect_w\":{},\"rect_h\":{}",
+                read_le_u32(request, 40).unwrap_or(u32::MAX),
+                read_le_u32(request, 44).unwrap_or(0),
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height
+            )
+        }
+        VIRTIO_GPU_CMD_RESOURCE_FLUSH => {
+            let rect = read_rect(request, 24).unwrap_or(Rect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            });
+            format!(
+                ",\"resource_id\":{},\"rect_x\":{},\"rect_y\":{},\"rect_w\":{},\"rect_h\":{}",
+                read_le_u32(request, 40).unwrap_or(0),
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height
+            )
+        }
+        VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D => {
+            let rect = read_rect(request, 24).unwrap_or(Rect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            });
+            format!(
+                ",\"resource_id\":{},\"offset\":{},\"rect_x\":{},\"rect_y\":{},\"rect_w\":{},\"rect_h\":{}",
+                read_le_u32(request, 48).unwrap_or(0),
+                read_le_u64(request, 40).unwrap_or(0),
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height
+            )
+        }
+        VIRTIO_GPU_CMD_GET_CAPSET_INFO => format!(
+            ",\"capset_index\":{}",
+            read_le_u32(request, 24).unwrap_or(u32::MAX)
+        ),
+        VIRTIO_GPU_CMD_GET_CAPSET => format!(
+            ",\"capset_id\":{},\"capset_version\":{}",
+            read_le_u32(request, 24).unwrap_or(0),
+            read_le_u32(request, 28).unwrap_or(0)
+        ),
+        VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB => format!(
+            ",\"resource_id\":{},\"blob_mem\":{},\"blob_flags\":{},\"nr_entries\":{},\"blob_id\":{},\"blob_size\":{}",
+            read_le_u32(request, 24).unwrap_or(0),
+            read_le_u32(request, 28).unwrap_or(0),
+            read_le_u32(request, 32).unwrap_or(0),
+            read_le_u32(request, 36).unwrap_or(0),
+            read_le_u64(request, 40).unwrap_or(0),
+            read_le_u64(request, 48).unwrap_or(0)
+        ),
+        VIRTIO_GPU_CMD_SET_SCANOUT_BLOB => {
+            let rect = read_rect(request, 24).unwrap_or(Rect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            });
+            format!(
+                ",\"scanout_id\":{},\"resource_id\":{},\"width\":{},\"height\":{},\"format\":{},\"stride0\":{},\"offset0\":{},\"rect_x\":{},\"rect_y\":{},\"rect_w\":{},\"rect_h\":{}",
+                read_le_u32(request, 40).unwrap_or(u32::MAX),
+                read_le_u32(request, 44).unwrap_or(0),
+                read_le_u32(request, 48).unwrap_or(0),
+                read_le_u32(request, 52).unwrap_or(0),
+                read_le_u32(request, 56).unwrap_or(0),
+                read_le_u32(request, 64).unwrap_or(0),
+                read_le_u32(request, 80).unwrap_or(0),
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height
+            )
+        }
+        VIRTIO_GPU_CMD_CTX_CREATE => {
+            let nlen = read_le_u32(request, 24).unwrap_or(0).min(64) as usize;
+            let name_end = 32usize.saturating_add(nlen).min(request.len());
+            let name = request
+                .get(32..name_end)
+                .map(|bytes| String::from_utf8_lossy(bytes).to_string())
+                .unwrap_or_default();
+            format!(
+                ",\"context_init\":{},\"name_len\":{},\"debug_name\":{}",
+                read_le_u32(request, 28).unwrap_or(0),
+                nlen,
+                json_string(&name)
+            )
+        }
+        VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE | VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE => format!(
+            ",\"resource_id\":{}",
+            read_le_u32(request, 24).unwrap_or(0)
+        ),
+        VIRTIO_GPU_CMD_SUBMIT_3D => {
+            let size = read_le_u32(request, 24).unwrap_or(0) as usize;
+            let payload_start = 32usize.min(request.len());
+            let payload_end = payload_start.saturating_add(size).min(request.len());
+            let payload = request.get(payload_start..payload_end).unwrap_or(&[]);
+            format!(
+                ",\"submit_size\":{},\"submit_dwords\":{},\"submit_prefix_hex\":{}",
+                size,
+                size.div_ceil(4),
+                json_string(&hex_prefix(payload, 32))
+            )
+        }
+        VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB => format!(
+            ",\"resource_id\":{},\"shm_offset\":{}",
+            read_le_u32(request, 24).unwrap_or(0),
+            read_le_u64(request, 32).unwrap_or(0)
+        ),
+        _ => String::new(),
+    }
+}
+
+fn trace_command_response_details(response_type: u32, response: &[u8]) -> String {
+    match response_type {
+        virtio_gpu_3d::VIRTIO_GPU_RESP_OK_CAPSET_INFO => format!(
+            ",\"response_capset_id\":{},\"response_capset_max_version\":{},\"response_capset_max_size\":{}",
+            read_le_u32(response, 24).unwrap_or(0),
+            read_le_u32(response, 28).unwrap_or(0),
+            read_le_u32(response, 32).unwrap_or(0)
+        ),
+        virtio_gpu_3d::VIRTIO_GPU_RESP_OK_CAPSET => format!(
+            ",\"response_capset_bytes\":{}",
+            response.len().saturating_sub(24)
+        ),
+        _ => String::new(),
+    }
+}
+
+fn hex_prefix(bytes: &[u8], max_len: usize) -> String {
+    let mut out = String::new();
+    for (index, byte) in bytes.iter().take(max_len).enumerate() {
+        if index > 0 {
+            out.push(' ');
+        }
+        out.push_str(&format!("{byte:02x}"));
+    }
+    if bytes.len() > max_len {
+        out.push_str(" ...");
+    }
     out
 }
 
@@ -2248,6 +2658,17 @@ mod tests {
         )
     }
 
+    fn trace_test_path(label: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "bridgevm-virtio-gpu-{label}-{}-{nanos}.jsonl",
+            std::process::id()
+        ))
+    }
+
     fn submit_control(
         dev: &mut VirtioPciGpu,
         mem: &mut TestMem,
@@ -2384,6 +2805,54 @@ mod tests {
         assert!(stats.queues[0].ready);
         assert_eq!(stats.queues[1].size, 16);
         assert!(stats.queues[1].ready);
+    }
+
+    #[test]
+    fn trace_recorder_writes_command_details_for_p3_gpu_bringup() {
+        let path = trace_test_path("p3-command-details");
+        let (mut dev, _backend) = dev_with_mock();
+        dev.gpu.trace = crate::virtio_gpu_trace::VirtioGpuTraceRecorder::test_file(&path);
+        let mut mem = TestMem::new(0x4000_0000, 0x10000);
+
+        let capset_req = {
+            let mut req = ctrl_req(VIRTIO_GPU_CMD_GET_CAPSET_INFO);
+            req.extend_from_slice(&0u32.to_le_bytes());
+            req.extend_from_slice(&0u32.to_le_bytes());
+            req
+        };
+        let _ = submit_control(&mut dev, &mut mem, &capset_req, 40);
+        let _ = submit_control(&mut dev, &mut mem, &ctx_create_req(1, 4, b"venus"), 24);
+        let _ = submit_control(
+            &mut dev,
+            &mut mem,
+            &create_blob_req(7, VIRTIO_GPU_BLOB_MEM_HOST3D, 4096, &[]),
+            24,
+        );
+        let _ = submit_control(
+            &mut dev,
+            &mut mem,
+            &submit_3d_req(1, &[0xaa, 0xbb, 0xcc, 0xdd]),
+            24,
+        );
+        drop(dev);
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(path);
+        assert!(contents.contains("\"event\":\"queue_notify\""));
+        assert!(contents.contains("\"name\":\"GET_CAPSET_INFO\""));
+        assert!(contents.contains("\"capset_index\":0"));
+        assert!(contents.contains("\"response_name\":\"OK_CAPSET_INFO\""));
+        assert!(contents.contains("\"response_capset_id\":4"));
+        assert!(contents.contains("\"response_capset_max_size\""));
+        assert!(contents.contains("\"name\":\"CTX_CREATE\""));
+        assert!(contents.contains("\"context_init\":4"));
+        assert!(contents.contains("\"debug_name\":\"venus\""));
+        assert!(contents.contains("\"name\":\"RESOURCE_CREATE_BLOB\""));
+        assert!(contents.contains("\"resource_id\":7"));
+        assert!(contents.contains("\"blob_mem\":2"));
+        assert!(contents.contains("\"blob_size\":4096"));
+        assert!(contents.contains("\"name\":\"SUBMIT_3D\""));
+        assert!(contents.contains("\"submit_prefix_hex\":\"aa bb cc dd\""));
     }
 
     #[test]

@@ -3,7 +3,7 @@
 Concise "where are we" snapshot. Full plan/roadmap/scaffold log lives in
 [PLAN.md](PLAN.md); this file is the fast scan.
 
-_Last updated: 2026-07-04._
+_Last updated: 2026-07-07._
 
 ## Current usability judgment
 Local/debug BridgeVM is usable for the verified Phase 0 flows: the app bundle
@@ -44,6 +44,136 @@ For a current evidence-backed gate report, run:
 ```sh
 tests/integration/product-gates-report.sh
 ```
+
+## Current P3 Windows 3D direction
+The active 3D-engine path is now Windows ARM64 `viogpu3d` bring-up rather than
+guest-agent polish. The next concrete gate is **driver bind + first GPU trace**:
+BridgeVM should boot the test-signed Windows driver far enough to observe
+virtio-gpu feature negotiation and at least one capset/blob/context/fence event
+from the host. BridgeVM keeps the default virtio-gpu PCI id at `DEV_1050` for
+the proven 2D `viogpudo` path. P3 runs still default to the experimental
+`BRIDGEVM_VIRTIO_GPU_3D_BIND_ID=1` alias (`DEV_10F7`), but the installed boot
+wrapper can now expose `DEV_1050` explicitly with `--virtio-gpu-device-id 1050`
+for PR #943-style packages. To support the same gate, the HVF virtio-gpu device
+now has a thin, env-gated JSONL recorder:
+
+```sh
+BRIDGEVM_VIRTIO_GPU_TRACE_JSONL=/tmp/bridgevm-virtio-gpu.jsonl ...
+```
+
+The recorder captures device shape, common-config feature reads/writes, queue
+notify state, control command request/response names, capset/blob/context/submit
+fields, and fence create/complete/deliver events. This is intentionally not a
+full replay system yet; full replay waits until a real Windows driver command
+stream exists. The matching gate report is now:
+
+```sh
+bridgevm hvf virtio-gpu-trace-report \
+  --trace /tmp/bridgevm-virtio-gpu.jsonl \
+  --protocol auto \
+  --require-p3-gate
+```
+
+It fails the command when the trace is missing the P3 bring-up shape: 3D backend,
+virtio feature acceptance, queue notify, a coherent `venus` or `virgl` capset
+identity, matching `context_init`, successful blob/non-empty submit, and a
+backend-parked fenced command with fence delivery. Use `--protocol venus` or
+`--protocol virgl` to pin the expected driver path; `auto` accepts either
+complete identity and prints the selected protocol. A synthetic host preflight
+now exercises the same device-model host-visible blob map/unmap, non-empty
+submit, and renderer-fence callback path without booting Windows:
+
+```sh
+bridgevm hvf virtio-gpu-3d-host-preflight
+bridgevm hvf virtio-gpu-3d-host-preflight --protocol virgl
+```
+
+The default remains the current `venus` contract. The `virgl` mode is a
+synthetic device-model check for capset 1/context-init/submit/fence plumbing;
+it does not by itself mark the Windows end-to-end 3D gate as passed.
+
+The host renderer probe now separates that device-model result from the real
+renderer backend. A live `scripts/run-venus-host-probe.sh` still reports
+`host_renderer_venus=AVAILABLE` and `VENUS_CAPSET_OK ver=0 size=160`; a live
+`scripts/run-virgl-host-probe.sh` reports `host_renderer_virgl=AVAILABLE` using
+macOS CGL/OpenGL callbacks (`gl_context_callbacks=cgl-opengl`) and
+`VIRGL_CAPSET_OK ver=1 size=308`. PR #943 therefore no longer appears blocked by
+host VirGL renderer creation or HVF runtime selection: the installed boot path
+can select the CGL-backed VirGL backend with
+`BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=virgl`, and the installed boot wrapper sets that
+when `--gpu-trace-protocol virgl` is requested.
+
+The no-VM P3 readiness script can now include that live renderer evidence when
+requested:
+
+```sh
+scripts/check-hvf-windows-p3-gpu-readiness.sh \
+  --driver-dir /path/to/viogpu3d \
+  --probe-host-renderer
+```
+
+Without `--probe-host-renderer`, it keeps the deterministic static result
+(`host_renderer_virgl=NOT_PROBED`) for a VirGL package. With the live probe
+enabled and `BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=virgl`, the same package records the
+real probe result, e.g. `host_renderer_virgl=AVAILABLE`, reports
+`host_backend_virgl_runtime=WIRED`, and can pass the no-VM readiness gate. The
+default installed runtime remains `venus`, so a `virgl` package still fails fast
+unless the VirGL runtime is explicitly selected.
+
+A standalone package checker plus P3-specific injector wrapper now preflight a
+test-signed `viogpu3d` package, reject missing catalogs or non-ARM64 PE
+`.sys`/`.dll` binaries, accept audited `DEV_1050` or `DEV_10F7` INF HWIDs,
+require protocol identification (`venus`/`virgl` by auto scan or
+`VIOGPU3D_PROTOCOL=...` override), auto-load
+`bridgevm-package-provenance.env` when an external build includes it, stage it
+into the WinPE injector, and plant an offline BCD test-signing marker:
+
+```sh
+scripts/check-hvf-windows-viogpu3d-package.sh /path/to/viogpu3d
+
+scripts/check-hvf-windows-viogpu3d-package.sh \
+  --manifest /tmp/viogpu3d-package-manifest.txt \
+  --pci-device-id 1050 \
+  /path/to/viogpu3d
+
+scripts/find-hvf-windows-viogpu3d-packages.sh \
+  --root "$HOME/BridgeVM" \
+  --out-dir /tmp/bridgevm-viogpu3d-inventory \
+  --require-found
+
+scripts/check-hvf-windows-p3-gpu-readiness.sh \
+  --driver-dir /path/to/viogpu3d \
+  --pci-device-id 1050 \
+  --require-driver-package
+
+VIOGPU3D_DIR=/path/to/viogpu3d \
+  scripts/build-hvf-windows-viogpu3d-injector.sh
+
+scripts/prepare-hvf-windows-viogpu3d-build-kit.sh \
+  --source-dir "$HOME/BridgeVM/viogpu3d-pr943" \
+  --out-dir /tmp/bridgevm-viogpu3d-pr943-build-kit \
+  --no-fetch
+```
+
+The installed Windows boot harness has a matching `--virtio-gpu-3d
+--gpu-trace PATH --gpu-trace-protocol auto|venus|virgl --require-gpu-trace-gate`
+policy that builds the probe with the selected host runtime, exposes `DEV_10F7`
+by default or an explicit `--virtio-gpu-device-id`, writes the trace, and stores
+`p3-gpu-readiness.txt`, `viogpu3d-package-manifest.txt`,
+`virtio-gpu-trace-report.txt`, and `virtio-gpu-trace-gate.txt` in the evidence directory when
+`--viogpu3d-dir DIR --require-viogpu3d-readiness` is supplied. The readiness
+script blocks a `virgl` package against the default `venus` host path, but passes
+that package when `--gpu-trace-protocol virgl` selects the VirGL runtime. We
+checked out PR #943 source at `/Users/user/BridgeVM/viogpu3d-pr943`;
+the build-kit report identifies it as `protocol=virgl`,
+`hwids=PCI\VEN_1AF4&DEV_1050`, with ARM64 configuration present and Mesa DLLs
+required. A live inventory scan on 2026-07-07 now finds that source directory as
+one rejected candidate (`candidate_count=1`, `ready_count=0`,
+`candidate_reject_reason=FAIL: no .inf found ...`), so the external artifact
+blocker is still real. The Windows
+virtio-console/vioser agent path is useful for automation but is no longer
+treated as a hard dependency for P3: if revisited, it should be a short KD/WPP or
+QEMU byte-comparison diagnostic spike.
 
 ## BridgeVM HVF Windows engine — boots Windows 11 ARM64 to an interactive desktop
 The from-scratch VMM (`crates/bridgevm-hvf`, directly on Apple Hypervisor.framework,

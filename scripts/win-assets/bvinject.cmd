@@ -35,6 +35,27 @@ if errorlevel 1 (
 echo BVINJECT VERIFY
 dism /Image:%WIN%\ /Get-Drivers | find /i "oem"
 
+rem --- optionally enable test-signing for test-signed driver packages such as
+rem     viogpu3d. The host builder plants this marker only when
+rem     ENABLE_TESTSIGNING=1, so the default injector path leaves BCD alone. ---
+if exist %DRV%\..\bridgevm-enable-testsigning.txt (
+  echo BVINJECT TESTSIGNING REQUESTED
+  set BCD=
+  for %%D in (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do if exist %%D:\EFI\Microsoft\Boot\BCD set BCD=%%D:\EFI\Microsoft\Boot\BCD
+  if "%BCD%"=="" (
+    echo BVINJECT ERROR: EFI BCD store not found for test-signing
+    goto :end
+  )
+  echo BVINJECT TESTSIGNING BCD=%BCD%
+  bcdedit /store "%BCD%" /set {default} testsigning on
+  if errorlevel 1 (
+    echo BVINJECT ERROR: bcdedit testsigning failed
+    goto :end
+  )
+  bcdedit /store "%BCD%" /enum {default} | find /i "testsigning"
+  echo BVINJECT TESTSIGNING DONE
+)
+
 rem --- when injecting the virtio-gpu display driver, reset the persisted
 rem     display topology so Windows re-detects monitors on next boot and makes
 rem     the (now sole) virtio-gpu adapter primary — otherwise the taskbar stays

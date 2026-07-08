@@ -64,6 +64,9 @@ pub struct CompletedFence {
 }
 
 pub trait VirtioGpu3dBackend: Send {
+    fn capset_count(&self) -> u32 {
+        1
+    }
     fn capset_info(&mut self, capset_index: u32) -> Option<CapsetInfo>;
     fn capset(&mut self, capset_id: u32, version: u32) -> Option<Vec<u8>>;
     fn ctx_create(&mut self, ctx_id: u32, context_init: u32, name: &[u8]) -> bool;
@@ -227,6 +230,12 @@ impl VirtioGpu3d {
 
     pub fn has_backend(&self) -> bool {
         self.backend.is_some()
+    }
+
+    pub fn capset_count(&self) -> u32 {
+        self.backend
+            .as_ref()
+            .map_or(0, |backend| backend.capset_count())
     }
 
     pub fn stats(&self, fences_pending: usize) -> VirtioGpu3dStats {

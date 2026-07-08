@@ -25,6 +25,7 @@ pub const DEFAULT_QEMU_AARCH64_VARS: &str =
 pub const DEFAULT_LINUX_CMDLINE: &str = "console=ttyAMA0 earlycon=pl011,0x09000000 acpi=force";
 pub const DEFAULT_RAM_MIB: u64 = 512;
 pub const MIB: u64 = 1024 * 1024;
+pub const VIRTIO_GPU_3D_DRIVER_PCI_DEVICE_ID: u16 = 0x10f7;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaWriteKind {
@@ -259,9 +260,7 @@ impl VirtBootMediaConfig {
         cfg.platform_devices.virtio_net_present = env_flag("BRIDGEVM_VIRTIO_NET");
         cfg.platform_devices.virtio_gpu_present = env_flag("BRIDGEVM_VIRTIO_GPU");
         cfg.platform_devices.virtio_console_present = env_flag("BRIDGEVM_VIRTIO_CONSOLE");
-        cfg.platform_devices.virtio_gpu_pci_device_id =
-            parse_optional_u16_env("BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID")
-                .unwrap_or(crate::pcie::VIRTIO_GPU_DEVICE_ID);
+        cfg.platform_devices.virtio_gpu_pci_device_id = virtio_gpu_pci_device_id_from_env();
         cfg.platform_devices.virtio_net_backend = VirtioNetBackendKind::from_env_value(
             env::var("BRIDGEVM_VIRTIO_NET_BACKEND").ok().as_deref(),
         );
@@ -313,6 +312,16 @@ fn parse_optional_u16_env(name: &str) -> Option<u16> {
     Some(parsed.unwrap_or_else(|_| panic!("{name} must be a hex/decimal u16")))
 }
 
+fn virtio_gpu_pci_device_id_from_env() -> u16 {
+    parse_optional_u16_env("BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID").unwrap_or_else(|| {
+        if env_flag("BRIDGEVM_VIRTIO_GPU_3D_BIND_ID") {
+            VIRTIO_GPU_3D_DRIVER_PCI_DEVICE_ID
+        } else {
+            crate::pcie::VIRTIO_GPU_DEVICE_ID
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,6 +349,7 @@ mod tests {
             "BRIDGEVM_VIRTIO_GPU",
             "BRIDGEVM_VIRTIO_CONSOLE",
             "BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID",
+            "BRIDGEVM_VIRTIO_GPU_3D_BIND_ID",
             "BRIDGEVM_VIRTIO_NET_BACKEND",
             "BRIDGEVM_RAMFB",
             "BRIDGEVM_DISABLE_RAMFB_DEVICE",
@@ -502,6 +512,37 @@ mod tests {
         let cfg = VirtBootMediaConfig::from_probe_env();
 
         assert_eq!(cfg.platform_devices.virtio_gpu_pci_device_id, 0x10f7);
+        clear_probe_disable_env();
+    }
+
+    #[test]
+    fn probe_env_uses_3d_bind_id_alias_for_viogpu3d() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_probe_disable_env();
+        env::set_var("BRIDGEVM_VIRTIO_GPU_3D_BIND_ID", "1");
+
+        let cfg = VirtBootMediaConfig::from_probe_env();
+
+        assert_eq!(
+            cfg.platform_devices.virtio_gpu_pci_device_id,
+            VIRTIO_GPU_3D_DRIVER_PCI_DEVICE_ID
+        );
+        clear_probe_disable_env();
+    }
+
+    #[test]
+    fn explicit_virtio_gpu_pci_device_id_override_wins_over_3d_bind_alias() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_probe_disable_env();
+        env::set_var("BRIDGEVM_VIRTIO_GPU_3D_BIND_ID", "1");
+        env::set_var("BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID", "0x1050");
+
+        let cfg = VirtBootMediaConfig::from_probe_env();
+
+        assert_eq!(
+            cfg.platform_devices.virtio_gpu_pci_device_id,
+            crate::pcie::VIRTIO_GPU_DEVICE_ID
+        );
         clear_probe_disable_env();
     }
 

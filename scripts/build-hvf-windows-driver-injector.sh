@@ -13,6 +13,10 @@ ASSETS="${ASSETS:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/win-assets}"
 # under \drivers\<name>. Default: just netkvm. Example for viogpudo:
 #   DRIVER_DIRS="viogpudo:$HOME/BridgeVM/drivers/viogpudo"
 DRIVER_DIRS="${DRIVER_DIRS:-netkvm:$HOME/BridgeVM/drivers/netkvm}"
+# Set ENABLE_TESTSIGNING=1 when staging test-signed drivers such as viogpu3d.
+# This plants a marker file consumed by bvinject.cmd inside WinPE; existing
+# driver-injection runs leave Windows BCD untouched by default.
+ENABLE_TESTSIGNING="${ENABLE_TESTSIGNING:-0}"
 OUT="${OUT:-$HOME/BridgeVM/win-injector.raw}"
 SIZE_BYTES="${SIZE_BYTES:-1610612736}" # 1.5 GiB
 
@@ -66,6 +70,12 @@ if [[ "${PLANT_AGENT:-1}" == "1" && -f "$ASSETS/bvagent.ps1" ]]; then
   [[ -f "$ASSETS/bvagent.bat" ]] && cp "$ASSETS/bvagent.bat" "$DST_VOL/bvagent.bat"
 fi
 
+if [[ "$ENABLE_TESTSIGNING" == "1" ]]; then
+  log "staging testsigning marker \\bridgevm-enable-testsigning.txt"
+  printf 'BridgeVM WinPE injector: enable offline Windows test-signing\n' \
+    > "$DST_VOL/bridgevm-enable-testsigning.txt"
+fi
+
 log "injecting bvinject payload into boot.wim image 2"
 wimlib-imagex update "$DST_VOL/sources/boot.wim" 2 <<UPDATE
 add "$ASSETS/winpeshl-inject.ini" /Windows/System32/winpeshl.ini
@@ -77,6 +87,10 @@ wimlib-imagex dir "$DST_VOL/sources/boot.wim" 2 | grep -E 'bvinject.cmd|winpeshl
   echo "FAIL: payload not in boot.wim" >&2; exit 1; }
 [[ -f "$DST_VOL/efi/boot/bootaa64.efi" ]] || { echo "FAIL: bootaa64.efi missing" >&2; exit 1; }
 ls "$DST_VOL"/drivers/*/*.inf >/dev/null 2>&1 || { echo "FAIL: no staged drivers" >&2; exit 1; }
+if [[ "$ENABLE_TESTSIGNING" == "1" ]]; then
+  [[ -f "$DST_VOL/bridgevm-enable-testsigning.txt" ]] || {
+    echo "FAIL: testsigning marker missing" >&2; exit 1; }
+fi
 
 sync
 hdiutil detach "$DST_DEV" -quiet; DST_DEV=""

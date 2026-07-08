@@ -17,4 +17,7 @@ fn main() {
     println!("cargo:rustc-link-search=native={lib_dir}");
     println!("cargo:rustc-link-lib=dylib=virglrenderer");
     println!("cargo:rustc-link-arg=-Wl,-rpath,{lib_dir}");
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rustc-link-lib=framework=OpenGL");
+    }
 }

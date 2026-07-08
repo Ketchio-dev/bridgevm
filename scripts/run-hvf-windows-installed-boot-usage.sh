@@ -17,6 +17,29 @@ Options:
   --enable-xhci           Leave xHCI present for desktop input diagnosis.
   --virtio-net            Attach the virtio-net NIC (BRIDGEVM_VIRTIO_NET=1)
                           with the userspace NAT backend.
+  --virtio-gpu-3d         Attach the virtio-gpu PCI device with the selected
+                          3D backend, expose the viogpu3d bind-id alias
+                          DEV_10F7 by default, build hvf_gic_boot_probe with
+                          --features venus, and enable JSONL GPU tracing.
+  --virtio-gpu-device-id ID
+                          Override the virtio-gpu PCI device id for
+                          --virtio-gpu-3d. Supported IDs: 1050, 10f7.
+                          Use 1050 for PR #943-style VirGL viogpu3d packages.
+  --gpu-trace PATH        JSONL trace path for --virtio-gpu-3d. Default:
+                          <evidence-dir>/virtio-gpu.jsonl.
+  --gpu-trace-protocol P  Trace gate protocol: auto, venus, or virgl.
+                          Default: auto. Explicit virgl also selects the
+                          CGL-backed VirGL host runtime.
+  --require-gpu-trace-gate
+                          After boot, run bridgevm hvf virtio-gpu-trace-report
+                          with --require-p3-gate and fail the script if the P3
+                          GPU trace gate fails.
+  --viogpu3d-dir DIR      Optional test-signed viogpu3d package directory. When
+                          present, run the no-VM P3 readiness check before
+                          boot and write p3-gpu-readiness.txt.
+  --require-viogpu3d-readiness
+                          Require a viogpu3d package and a passing readiness
+                          check before booting. Requires --virtio-gpu-3d.
   --daily                 Opt-in daily-driver preset. Changes defaults only
                           when not explicitly overridden: --ram-mib 6144 and
                           --watchdog-ms 86400000. Also sets

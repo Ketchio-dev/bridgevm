@@ -41,6 +41,12 @@ write_installed_boot_preflight() {
     printf 'build_profile=%s\n' "$BUILD_PROFILE"
     printf 'daily_preset=%s\n' "$DAILY"
     printf 'smp_cpus=%s\n' "${SMP_CPUS:-<unset>}"
+    printf 'virtio_gpu_3d=%s\n' "$VIRTIO_GPU_3D"
+    printf 'virtio_gpu_pci_device_id=%s\n' "${VIRTIO_GPU_PCI_DEVICE_ID:-10F7 (BRIDGEVM_VIRTIO_GPU_3D_BIND_ID alias)}"
+    printf 'virtio_gpu_trace_jsonl=%s\n' "${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}"
+    printf 'gpu_trace_protocol=%s\n' "$GPU_TRACE_PROTOCOL"
+    printf 'viogpu3d_dir=%s\n' "${VIOGPU3D_DIR:-<unset>}"
+    printf 'require_viogpu3d_readiness=%s\n' "$REQUIRE_VIOGPU3D_READINESS"
     printf 'policy=%s %s writable-target\n' "$XHCI_POLICY" "$BOOT_MODE"
     printf 'ramfb_samples=%s\n' "$RAMFB_SAMPLES"
     print_input_summary
@@ -82,14 +88,26 @@ print_media_stat() {
   du -h "$2"
 }
 
+virtio_gpu_trace_path() {
+  printf '%s\n' "${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}"
+}
+
 build_and_sign_probe_if_needed() {
   [[ "$SKIP_BUILD" != "1" ]] || return 0
   {
     printf '\ncargo_build:\n'
     if [[ "$BUILD_PROFILE" == "release" ]]; then
-      cargo build --release -p bridgevm-hvf --example hvf_gic_boot_probe
+      if [[ "$VIRTIO_GPU_3D" == "1" ]]; then
+        cargo build --release -p bridgevm-hvf --features venus --example hvf_gic_boot_probe
+      else
+        cargo build --release -p bridgevm-hvf --example hvf_gic_boot_probe
+      fi
     else
-      cargo build -p bridgevm-hvf --example hvf_gic_boot_probe
+      if [[ "$VIRTIO_GPU_3D" == "1" ]]; then
+        cargo build -p bridgevm-hvf --features venus --example hvf_gic_boot_probe
+      else
+        cargo build -p bridgevm-hvf --example hvf_gic_boot_probe
+      fi
     fi
     printf '\ncodesign_force:\n'
     codesign --sign - --entitlements apps/macos/HvfRunner.entitlements --force "$BIN"
@@ -122,6 +140,19 @@ build_installed_boot_env_args() {
   fi
   if [[ "${VIRTIO_NET:-0}" == "1" ]]; then
     ENV_ARGS+=('BRIDGEVM_VIRTIO_NET=1' 'BRIDGEVM_VIRTIO_NET_BACKEND=nat')
+  fi
+  if [[ "${VIRTIO_GPU_3D:-0}" == "1" ]]; then
+    ENV_ARGS+=(
+      'BRIDGEVM_VIRTIO_GPU=1'
+      'BRIDGEVM_VIRTIO_GPU_3D=1'
+      "BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=$(virtio_gpu_3d_runtime_protocol)"
+    )
+    if [[ -n "${VIRTIO_GPU_PCI_DEVICE_ID:-}" ]]; then
+      ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID=0x$VIRTIO_GPU_PCI_DEVICE_ID")
+    else
+      ENV_ARGS+=('BRIDGEVM_VIRTIO_GPU_3D_BIND_ID=1')
+    fi
+    ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_TRACE_JSONL=${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}")
   fi
   printf '%s\n' "${ENV_ARGS[@]}"
 }
@@ -157,6 +188,47 @@ write_probe_command_env() {
   } >> "$EVIDENCE_DIR/preflight.txt" 2>&1
 }
 
+write_p3_gpu_readiness() {
+  [[ "${VIRTIO_GPU_3D:-0}" == "1" ]] || return 0
+  [[ -n "${VIOGPU3D_DIR:-}" || "${REQUIRE_VIOGPU3D_READINESS:-0}" == "1" ]] || return 0
+
+  local readiness
+  local -a args
+  local status
+  readiness="$EVIDENCE_DIR/p3-gpu-readiness.txt"
+  args=("$ROOT/scripts/check-hvf-windows-p3-gpu-readiness.sh")
+  if [[ -n "${VIOGPU3D_DIR:-}" ]]; then
+    args+=(--driver-dir "$VIOGPU3D_DIR")
+    args+=(--manifest "$EVIDENCE_DIR/viogpu3d-package-manifest.txt")
+  fi
+  args+=(--pci-device-id "${VIRTIO_GPU_PCI_DEVICE_ID:-10F7}")
+  if [[ "${REQUIRE_VIOGPU3D_READINESS:-0}" == "1" ]]; then
+    args+=(--require-driver-package)
+  fi
+
+  {
+    date -u
+    printf 'command=%q' "${args[0]}"
+    local arg
+    for arg in "${args[@]:1}"; do
+      printf ' %q' "$arg"
+    done
+    printf '\n'
+  } > "$readiness"
+
+  set +e
+  BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL="$(virtio_gpu_3d_runtime_protocol)" \
+    "${args[@]}" >> "$readiness" 2>&1
+  status="$?"
+  set -e
+
+  printf 'status=%s\n' "$status" >> "$readiness"
+  if [[ "$status" != "0" && "${RUN_STATUS:-0}" == "0" ]]; then
+    RUN_STATUS="$status"
+  fi
+  [[ "$status" == "0" ]]
+}
+
 run_probe_process() {
   set +e
   env "${ENV_ARGS[@]}" "$BIN" > "$EVIDENCE_DIR/run.log" 2>&1 &
@@ -167,10 +239,71 @@ run_probe_process() {
   set -e
 }
 
+write_virtio_gpu_trace_report() {
+  [[ "${VIRTIO_GPU_3D:-0}" == "1" ]] || return 0
+
+  local trace
+  local report
+  local gate
+  local status
+  trace="$(virtio_gpu_trace_path)"
+  report="$EVIDENCE_DIR/virtio-gpu-trace-report.txt"
+  gate="$EVIDENCE_DIR/virtio-gpu-trace-gate.txt"
+
+  {
+    date -u
+    printf 'trace=%s\n' "$trace"
+    printf 'gpu_trace_protocol=%s\n' "$GPU_TRACE_PROTOCOL"
+    printf 'require_gpu_trace_gate=%s\n' "$REQUIRE_GPU_TRACE_GATE"
+  } > "$report"
+
+  if [[ ! -s "$trace" ]]; then
+    {
+      printf 'Trace missing or empty: %s\n' "$trace"
+      printf 'P3 Windows 3D trace gate: FAIL\n'
+      printf 'Blocker: missing virtio-gpu JSONL trace\n'
+    } >> "$report"
+    status=1
+  else
+    local -a args=(
+      cargo run -q -p bridgevm-cli --
+      hvf virtio-gpu-trace-report
+      --trace "$trace"
+      --protocol "$GPU_TRACE_PROTOCOL"
+    )
+    if [[ "$REQUIRE_GPU_TRACE_GATE" == "1" ]]; then
+      args+=(--require-p3-gate)
+    fi
+    set +e
+    "${args[@]}" >> "$report" 2>&1
+    status="$?"
+    set -e
+  fi
+
+  {
+    printf 'trace=%s\n' "$trace"
+    printf 'report=%s\n' "$report"
+    printf 'protocol=%s\n' "$GPU_TRACE_PROTOCOL"
+    printf 'required=%s\n' "$REQUIRE_GPU_TRACE_GATE"
+    printf 'status=%s\n' "$status"
+  } > "$gate"
+
+  if [[ "$REQUIRE_GPU_TRACE_GATE" == "1" && "$status" != "0" && "${RUN_STATUS:-0}" == "0" ]]; then
+    RUN_STATUS="$status"
+  fi
+}
+
 write_installed_boot_target_stat() {
   {
     printf 'run_status=%s\n' "$RUN_STATUS"
     date -u
+    if [[ "${VIRTIO_GPU_3D:-0}" == "1" ]]; then
+      printf 'virtio_gpu_trace=%s\n' "$(virtio_gpu_trace_path)"
+      printf 'virtio_gpu_trace_report=%s\n' "$EVIDENCE_DIR/virtio-gpu-trace-report.txt"
+      printf 'virtio_gpu_trace_gate=%s\n' "$EVIDENCE_DIR/virtio-gpu-trace-gate.txt"
+      printf 'p3_gpu_readiness=%s\n' "$EVIDENCE_DIR/p3-gpu-readiness.txt"
+      printf 'viogpu3d_package_manifest=%s\n' "$EVIDENCE_DIR/viogpu3d-package-manifest.txt"
+    fi
     print_media_stat after_target_stat "$TARGET"
     printf 'after_vars_stat:\n'
     ls -lh "$VARS"
@@ -184,6 +317,9 @@ write_installed_boot_target_stat() {
 run_installed_boot_probe() {
   cd "$ROOT"
   install -d "$EVIDENCE_DIR/ramfb"
+  if [[ "$VIRTIO_GPU_3D" == "1" ]]; then
+    install -d "$(dirname "${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}")"
+  fi
   BOOT_MODE="target-as-only-nvme"
   if [[ -n "$PLACEHOLDER_NSID1" ]]; then
     BOOT_MODE="placeholder-nsid1-target-as-nsid2"
@@ -197,8 +333,13 @@ run_installed_boot_probe() {
   fi
   trap cleanup EXIT
   write_installed_boot_preflight
+  if ! write_p3_gpu_readiness; then
+    write_installed_boot_target_stat
+    return 0
+  fi
   build_and_sign_probe_if_needed
   write_probe_command_env
   run_probe_process
+  write_virtio_gpu_trace_report
   write_installed_boot_target_stat
 }

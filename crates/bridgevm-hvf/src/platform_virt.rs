@@ -78,13 +78,12 @@ fn make_virtio_gpu() -> VirtioPciGpu {
         {
             match crate::venus_backend::VenusBackend::new() {
                 Ok(backend) => {
-                    eprintln!("virtio-gpu: venus 3D backend enabled");
+                    let protocol = backend.protocol();
+                    eprintln!("virtio-gpu: {} 3D backend enabled", protocol.label());
                     return VirtioPciGpu::with_3d_backend(width, height, Box::new(backend));
                 }
                 Err(error) => {
-                    eprintln!(
-                        "virtio-gpu: venus 3D backend init failed: {error}; continuing 2D-only"
-                    );
+                    eprintln!("virtio-gpu: 3D backend init failed: {error}; continuing 2D-only");
                 }
             }
         }

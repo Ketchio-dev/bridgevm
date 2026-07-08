@@ -9,6 +9,13 @@ init_installed_boot_defaults() {
   RAMFB_SAMPLES="1000,5000,15000,30000,60000,90000,120000"
   ENABLE_XHCI="0"
   VIRTIO_NET="0"
+  VIRTIO_GPU_3D="0"
+  VIRTIO_GPU_PCI_DEVICE_ID=""
+  VIRTIO_GPU_TRACE_JSONL=""
+  GPU_TRACE_PROTOCOL="auto"
+  REQUIRE_GPU_TRACE_GATE="0"
+  VIOGPU3D_DIR=""
+  REQUIRE_VIOGPU3D_READINESS="0"
   SETUP_INPUT_ACTIONS=""
   SETUP_INPUT_MARKER=""
   SETUP_INPUT_FIRE_DELAY_MS=""
@@ -65,6 +72,33 @@ parse_installed_boot_args() {
         ;;
       --enable-xhci) ENABLE_XHCI="1"; shift ;;
       --virtio-net) VIRTIO_NET="1"; shift ;;
+      --virtio-gpu-3d) VIRTIO_GPU_3D="1"; shift ;;
+      --virtio-gpu-device-id)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        normalize_virtio_gpu_device_id "$2" >/dev/null || { echo "FAIL: --virtio-gpu-device-id must be 1050 or 10f7" >&2; exit 2; }
+        VIRTIO_GPU_PCI_DEVICE_ID="$(normalize_virtio_gpu_device_id "$2")"
+        shift 2
+        ;;
+      --require-gpu-trace-gate) REQUIRE_GPU_TRACE_GATE="1"; shift ;;
+      --gpu-trace)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        [[ -n "$2" ]] || { echo "FAIL: --gpu-trace requires a non-empty path" >&2; exit 2; }
+        VIRTIO_GPU_TRACE_JSONL="$2"; shift 2
+        ;;
+      --gpu-trace-protocol)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        case "$2" in
+          auto|venus|virgl) GPU_TRACE_PROTOCOL="$2" ;;
+          *) echo "FAIL: --gpu-trace-protocol must be auto, venus, or virgl" >&2; exit 2 ;;
+        esac
+        shift 2
+        ;;
+      --viogpu3d-dir)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        [[ -n "$2" ]] || { echo "FAIL: --viogpu3d-dir requires a non-empty path" >&2; exit 2; }
+        VIOGPU3D_DIR="$2"; shift 2
+        ;;
+      --require-viogpu3d-readiness) REQUIRE_VIOGPU3D_READINESS="1"; shift ;;
       --setup-input-actions)
         [[ $# -ge 2 ]] || { usage; exit 2; }
         setup_input_actions_list "$2" || { echo "FAIL: --setup-input-actions requires 1-32 comma-separated actions from: tab, enter, space, win+r, lgui+r, text:<[a-z0-9/.-]+>" >&2; exit 2; }
@@ -123,6 +157,30 @@ validate_installed_boot_option_combinations() {
     echo "FAIL: --pointer-input-actions requires --enable-xhci" >&2
     exit 2
   fi
+  if [[ -n "$VIRTIO_GPU_TRACE_JSONL" && "$VIRTIO_GPU_3D" != "1" ]]; then
+    echo "FAIL: --gpu-trace requires --virtio-gpu-3d" >&2
+    exit 2
+  fi
+  if [[ "$REQUIRE_GPU_TRACE_GATE" == "1" && "$VIRTIO_GPU_3D" != "1" ]]; then
+    echo "FAIL: --require-gpu-trace-gate requires --virtio-gpu-3d" >&2
+    exit 2
+  fi
+  if [[ "$GPU_TRACE_PROTOCOL" != "auto" && "$VIRTIO_GPU_3D" != "1" ]]; then
+    echo "FAIL: --gpu-trace-protocol requires --virtio-gpu-3d" >&2
+    exit 2
+  fi
+  if [[ -n "$VIRTIO_GPU_PCI_DEVICE_ID" && "$VIRTIO_GPU_3D" != "1" ]]; then
+    echo "FAIL: --virtio-gpu-device-id requires --virtio-gpu-3d" >&2
+    exit 2
+  fi
+  if [[ -n "$VIOGPU3D_DIR" && "$VIRTIO_GPU_3D" != "1" ]]; then
+    echo "FAIL: --viogpu3d-dir requires --virtio-gpu-3d" >&2
+    exit 2
+  fi
+  if [[ "$REQUIRE_VIOGPU3D_READINESS" == "1" && "$VIRTIO_GPU_3D" != "1" ]]; then
+    echo "FAIL: --require-viogpu3d-readiness requires --virtio-gpu-3d" >&2
+    exit 2
+  fi
   if [[ -z "$SETUP_INPUT_ACTIONS" && ( -n "$SETUP_INPUT_MARKER" || -n "$SETUP_INPUT_FIRE_DELAY_MS" || -n "$SETUP_INPUT_RAMFB_DELAY_MS" ) ]]; then
     echo "FAIL: setup-input marker/delay options require --setup-input-actions" >&2
     exit 2
@@ -138,6 +196,14 @@ validate_installed_boot_option_combinations() {
   if [[ -z "$POINTER_INPUT_ACTIONS" && ( -n "$POINTER_INPUT_MARKER" || -n "$POINTER_INPUT_FIRE_DELAY_MS" || -n "$POINTER_INPUT_RAMFB_DELAY_MS" ) ]]; then
     echo "FAIL: pointer-input marker/delay options require --pointer-input-actions" >&2
     exit 2
+  fi
+}
+
+virtio_gpu_3d_runtime_protocol() {
+  if [[ "${GPU_TRACE_PROTOCOL:-auto}" == "virgl" ]]; then
+    printf 'virgl\n'
+  else
+    printf 'venus\n'
   fi
 }
 
@@ -157,6 +223,9 @@ validate_installed_boot_required_paths() {
     [[ -f "$PLACEHOLDER_NSID1" ]] || { echo "FAIL: placeholder NSID-1 image not found: $PLACEHOLDER_NSID1" >&2; exit 1; }
   fi
   [[ -f "$VARS" ]] || { echo "FAIL: vars file not found: $VARS" >&2; exit 1; }
+  if [[ -n "$VIOGPU3D_DIR" ]]; then
+    [[ -d "$VIOGPU3D_DIR" ]] || { echo "FAIL: viogpu3d driver directory not found: $VIOGPU3D_DIR" >&2; exit 1; }
+  fi
   require_not_preserved_source_media target "$TARGET"
   require_not_preserved_source_media vars "$VARS"
   if [[ -n "$PLACEHOLDER_NSID1" ]]; then
@@ -165,10 +234,34 @@ validate_installed_boot_required_paths() {
 }
 
 print_installed_boot_policy() {
+  local gpu_enabled_policy="<unset>"
+  local gpu_bind_policy="<unset>"
+  local gpu_trace_policy="<unset>"
+  local gpu_3d_protocol="<unset>"
+  if [[ "$VIRTIO_GPU_3D" == "1" ]]; then
+    gpu_enabled_policy="1"
+    gpu_3d_protocol="$(virtio_gpu_3d_runtime_protocol)"
+    if [[ -n "$VIRTIO_GPU_PCI_DEVICE_ID" ]]; then
+      gpu_bind_policy="<unset> (explicit device id 0x$VIRTIO_GPU_PCI_DEVICE_ID)"
+    else
+      gpu_bind_policy="1"
+    fi
+    gpu_trace_policy="${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}"
+  fi
   printf '%s\n' \
     "$XHCI_POLICY" \
     "DAILY_PRESET=$DAILY" \
     "BRIDGEVM_SMP_CPUS=${SMP_CPUS:-<unset> (probe default 1)}" \
+    "BRIDGEVM_VIRTIO_GPU=$gpu_enabled_policy" \
+    "BRIDGEVM_VIRTIO_GPU_3D=$VIRTIO_GPU_3D" \
+    "BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=$gpu_3d_protocol" \
+    "BRIDGEVM_VIRTIO_GPU_3D_BIND_ID=$gpu_bind_policy" \
+    "BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID=${VIRTIO_GPU_PCI_DEVICE_ID:+0x$VIRTIO_GPU_PCI_DEVICE_ID}" \
+    "BRIDGEVM_VIRTIO_GPU_TRACE_JSONL=$gpu_trace_policy" \
+    "BRIDGEVM_GPU_TRACE_PROTOCOL=$GPU_TRACE_PROTOCOL" \
+    "BRIDGEVM_REQUIRE_GPU_TRACE_GATE=$REQUIRE_GPU_TRACE_GATE" \
+    "BRIDGEVM_VIOGPU3D_DIR=${VIOGPU3D_DIR:-<unset>}" \
+    "BRIDGEVM_REQUIRE_VIOGPU3D_READINESS=$REQUIRE_VIOGPU3D_READINESS" \
     "BRIDGEVM_RAMFB_SAMPLE_MS=$RAMFB_SAMPLES" \
     "BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS=${SETUP_INPUT_ACTIONS:-<unset>}" \
     "BRIDGEVM_XHCI_SETUP_INPUT_SERIAL_MARKER=${SETUP_INPUT_MARKER:-<probe-default>}" \
