@@ -1615,6 +1615,20 @@ impl GuestMemoryMut for FlatGuestRam {
         Some(self.bytes[start..end].to_vec())
     }
 
+    fn read_into(&self, gpa: u64, dst: &mut [u8]) -> bool {
+        let Some(start) = self.offset(gpa) else {
+            return false;
+        };
+        let Some(end) = start.checked_add(dst.len()) else {
+            return false;
+        };
+        if end > self.bytes.len() {
+            return false;
+        }
+        dst.copy_from_slice(&self.bytes[start..end]);
+        true
+    }
+
     fn host_ptr(&self, gpa: u64, len: usize) -> Option<*mut u8> {
         let start = self.offset(gpa)?;
         let end = start.checked_add(len)?;

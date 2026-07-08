@@ -946,11 +946,10 @@ impl NvmeController {
                 return; // queue empty
             }
             let entry_gpa = base + u64::from(head) * SQ_ENTRY_SIZE;
-            let Some(raw) = mem.read_bytes(entry_gpa, SQ_ENTRY_SIZE as usize) else {
+            let mut buf = [0u8; SQ_ENTRY_SIZE as usize];
+            if !mem.read_into(entry_gpa, &mut buf) {
                 return; // unbacked SQ memory; stop draining
-            };
-            let mut buf = [0u8; 64];
-            buf.copy_from_slice(&raw);
+            }
             let cmd = SubmissionEntry::from_bytes(&buf);
 
             // Advance the SQ head (wrapping at queue size).
@@ -1683,7 +1682,12 @@ fn prp_spans(
             return None;
         }
 
-        let raw = mem.read_bytes(list_gpa, PAGE_SIZE - list_offset)?;
+        let list_len = PAGE_SIZE - list_offset;
+        let mut list_buf = [0u8; PAGE_SIZE];
+        if !mem.read_into(list_gpa, &mut list_buf[..list_len]) {
+            return None;
+        }
+        let raw = &list_buf[..list_len];
         let mut followed_chain = false;
         let entries_in_page = raw.len() / 8;
         for (idx, chunk) in raw.chunks_exact(8).enumerate() {
@@ -1869,6 +1873,11 @@ mod tests {
     struct FakeMem {
         base: u64,
         bytes: Vec<u8>,
+        /// When set, [`GuestMemoryMut::host_ptr`] resolves spans to real pointers
+        /// into `bytes`, so the NVMe data path takes its zero-copy direct-DMA
+        /// branch instead of the reusable-scratch fallback. Off by default so the
+        /// existing suite keeps covering the buffered path.
+        expose_host_ptr: bool,
     }
 
     impl FakeMem {
@@ -1876,10 +1885,15 @@ mod tests {
             Self {
                 base,
                 bytes: vec![0u8; len],
+                expose_host_ptr: false,
             }
         }
         fn at(&self, gpa: u64) -> usize {
             (gpa - self.base) as usize
+        }
+        /// Expose stable host pointers so IO takes the direct-DMA branch.
+        fn enable_host_ptr(&mut self) {
+            self.expose_host_ptr = true;
         }
     }
 
@@ -1900,6 +1914,28 @@ mod tests {
                 return None;
             }
             Some(self.bytes[start..end].to_vec())
+        }
+        fn read_into(&self, gpa: u64, dst: &mut [u8]) -> bool {
+            let start = self.at(gpa);
+            let Some(end) = start.checked_add(dst.len()) else {
+                return false;
+            };
+            if end > self.bytes.len() {
+                return false;
+            }
+            dst.copy_from_slice(&self.bytes[start..end]);
+            true
+        }
+        fn host_ptr(&self, gpa: u64, len: usize) -> Option<*mut u8> {
+            if !self.expose_host_ptr {
+                return None;
+            }
+            let start = self.at(gpa);
+            let end = start.checked_add(len)?;
+            if end > self.bytes.len() {
+                return None;
+            }
+            Some(self.bytes.as_ptr().wrapping_add(start) as *mut u8)
         }
     }
 
@@ -3593,5 +3629,29 @@ mod tests {
         assert_eq!(completion_status(&cqe), SC_INVALID_OPCODE);
         // Completion still references the submitting command id.
         assert_eq!(u16::from_le_bytes([cqe[12], cqe[13]]), 0x99);
+    }
+
+    #[test]
+    fn read_into_matches_read_bytes_and_rejects_unbacked() {
+        let mut mem = FakeMem::new(MEM_BASE, 0x2000);
+        let pattern: Vec<u8> = (0..0x400u32).map(|i| (i * 7) as u8).collect();
+        assert!(mem.write_bytes(MEM_BASE + 0x100, &pattern));
+
+        // Zero-copy fill matches the allocating accessor byte-for-byte.
+        let mut dst = vec![0u8; pattern.len()];
+        assert!(mem.read_into(MEM_BASE + 0x100, &mut dst));
+        assert_eq!(dst, mem.read_bytes(MEM_BASE + 0x100, pattern.len()).unwrap());
+        assert_eq!(dst, pattern);
+
+        // The default trait implementation (routed through read_bytes) agrees.
+        let mut via_default = vec![0u8; pattern.len()];
+        assert!(GuestMemoryMut::read_bytes(&mem, MEM_BASE + 0x100, pattern.len())
+            .map(|bytes| via_default.copy_from_slice(&bytes))
+            .is_some());
+        assert_eq!(via_default, pattern);
+
+        // Out-of-range spans are rejected, not truncated.
+        let mut oob = vec![0u8; 0x10];
+        assert!(!mem.read_into(MEM_BASE + 0x1ff8, &mut oob));
     }
 }

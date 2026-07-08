@@ -83,6 +83,21 @@ pub trait GuestMemoryMut {
     /// Read `len` bytes starting at guest-physical address `gpa`, or `None` if
     /// the range is not backed.
     fn read_bytes(&self, gpa: u64, len: usize) -> Option<Vec<u8>>;
+    /// Read `dst.len()` bytes starting at guest-physical address `gpa` into
+    /// `dst`. Returns `false` if the range is not backed. Unlike [`read_bytes`]
+    /// this fills a caller-owned buffer, so hot paths (NVMe SQE/PRP-list fetch)
+    /// avoid a per-read heap allocation. The default routes through `read_bytes`
+    /// for correctness; live guest-RAM views override it to copy straight out of
+    /// the mapping.
+    fn read_into(&self, gpa: u64, dst: &mut [u8]) -> bool {
+        match self.read_bytes(gpa, dst.len()) {
+            Some(bytes) => {
+                dst.copy_from_slice(&bytes);
+                true
+            }
+            None => false,
+        }
+    }
     /// Resolve a guest-physical span to its stable host pointer. Device models
     /// use this only when a backend must retain guest RAM iovecs for a resource
     /// lifetime; live callers point at the fixed HVF guest RAM mapping.

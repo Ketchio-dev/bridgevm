@@ -220,6 +220,26 @@ impl GuestMemoryMut for MappedRam {
         Some(v)
     }
 
+    fn read_into(&self, gpa: u64, dst: &mut [u8]) -> bool {
+        let Some(off) = gpa
+            .checked_sub(self.base)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return false;
+        };
+        let Some(end) = off.checked_add(dst.len()) else {
+            return false;
+        };
+        if end > self.len {
+            return false;
+        }
+        // SAFETY: Category 10/11 - `off..end` was checked to stay inside the
+        // live HVF RAM mapping, so copying `dst.len()` bytes from `ptr.add(off)`
+        // is in-bounds.
+        unsafe { std::ptr::copy_nonoverlapping(self.ptr.add(off), dst.as_mut_ptr(), dst.len()) };
+        true
+    }
+
     fn host_ptr(&self, gpa: u64, len: usize) -> Option<*mut u8> {
         let off = gpa
             .checked_sub(self.base)
