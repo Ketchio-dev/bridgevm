@@ -14,6 +14,17 @@ use crate::{
     },
 };
 
+/// Env-gated (`BRIDGEVM_VIRTIO_CONSOLE_TRACE=1`) one-line trace of control-plane
+/// events. Collapses to a cached bool check when disabled. Defined before first
+/// use so the whole module can call it.
+macro_rules! console_trace {
+    ($($arg:tt)*) => {
+        if console_trace_enabled() {
+            eprintln!("[vcon] {}", format_args!($($arg)*));
+        }
+    };
+}
+
 const MAGIC_VALUE: u32 = 0x7472_6976;
 const VERSION_MODERN: u32 = 2;
 const DEVICE_ID_CONSOLE: u32 = 3;
@@ -95,7 +106,6 @@ const VIRTIO_CONSOLE_RESIZE: u16 = 5;
 const VIRTIO_CONSOLE_PORT_OPEN: u16 = 6;
 const VIRTIO_CONSOLE_PORT_NAME: u16 = 7;
 const CONTROL_LEN: usize = 8;
-const HOST_OPEN_RESEND_BUDGET: u8 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VirtioConsoleResult {
@@ -124,6 +134,12 @@ pub struct VirtioConsole {
     pending_control: VecDeque<Vec<u8>>,
     host_to_guest: VecDeque<u8>,
     host_inbound: Vec<u8>,
+    // Set once the guest driver has actually pushed bytes on the agent TX
+    // queue. Guest TX only flows after vioser latches HostConnected=TRUE (its
+    // WillWriteBlock gate), so the first inbound byte is our only host-side
+    // proof that our PORT_OPEN(host) took effect. Until then we keep
+    // re-asserting PORT_OPEN; afterwards we stop (see maybe_reassert_host_open).
+    agent_connected_confirmed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,7 +147,6 @@ struct PortState {
     ready: bool,
     guest_open: bool,
     host_open: bool,
-    host_open_resends_remaining: u8,
 }
 
 impl PortState {
@@ -140,7 +155,6 @@ impl PortState {
             ready: false,
             guest_open: false,
             host_open: false,
-            host_open_resends_remaining: 0,
         }
     }
 }
@@ -156,6 +170,17 @@ struct VirtioConsoleQueue {
     notify_off: u16,
     last_avail_idx: u16,
     pending_msix: bool,
+    // Diagnostics (never reset by the queue's own reset; cleared only on a full
+    // device reset). notify_count = guest doorbells; last_avail_seen = the most
+    // recent avail->idx we read; used_produced = used entries we published;
+    // rx_no_buffers = delivery attempts that found no fresh avail buffer. If the
+    // guest keeps kicking (notify_count climbs) and posting (last_avail_seen
+    // climbs) but delivery stalls, the bug is our consume path; if last_avail
+    // stops climbing, the guest stopped replenishing.
+    notify_count: u64,
+    last_avail_seen: u16,
+    used_produced: u64,
+    rx_no_buffers: u64,
 }
 
 impl VirtioConsoleQueue {
@@ -170,6 +195,10 @@ impl VirtioConsoleQueue {
             notify_off,
             last_avail_idx: 0,
             pending_msix: false,
+            notify_count: 0,
+            last_avail_seen: 0,
+            used_produced: 0,
+            rx_no_buffers: 0,
         }
     }
 
@@ -190,6 +219,10 @@ pub struct VirtioConsoleQueueStats {
     pub notify_off: u16,
     pub last_avail_idx: u16,
     pub pending_msix: bool,
+    pub notify_count: u64,
+    pub last_avail_seen: u16,
+    pub used_produced: u64,
+    pub rx_no_buffers: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,6 +232,8 @@ pub struct VirtioConsoleStats {
     pub driver_features: u64,
     pub port1_ready: bool,
     pub port1_guest_open: bool,
+    pub port1_host_open: bool,
+    pub agent_connected_confirmed: bool,
     pub pending_control: usize,
     pub host_to_guest_len: usize,
     pub host_inbound_len: usize,
@@ -213,6 +248,8 @@ impl Default for VirtioConsoleStats {
             driver_features: 0,
             port1_ready: false,
             port1_guest_open: false,
+            port1_host_open: false,
+            agent_connected_confirmed: false,
             pending_control: 0,
             host_to_guest_len: 0,
             host_inbound_len: 0,
@@ -244,6 +281,7 @@ impl VirtioConsole {
             pending_control: VecDeque::new(),
             host_to_guest: VecDeque::new(),
             host_inbound: Vec::new(),
+            agent_connected_confirmed: false,
         }
     }
 
@@ -255,6 +293,8 @@ impl VirtioConsole {
             u64::from(self.driver_features[0]) | (u64::from(self.driver_features[1]) << 32);
         stats.port1_ready = self.ports[1].ready;
         stats.port1_guest_open = self.ports[1].guest_open;
+        stats.port1_host_open = self.ports[1].host_open;
+        stats.agent_connected_confirmed = self.agent_connected_confirmed;
         stats.pending_control = self.pending_control.len();
         stats.host_to_guest_len = self.host_to_guest.len();
         stats.host_inbound_len = self.host_inbound.len();
@@ -269,6 +309,10 @@ impl VirtioConsole {
                 notify_off: queue.notify_off,
                 last_avail_idx: queue.last_avail_idx,
                 pending_msix: queue.pending_msix,
+                notify_count: queue.notify_count,
+                last_avail_seen: queue.last_avail_seen,
+                used_produced: queue.used_produced,
+                rx_no_buffers: queue.rx_no_buffers,
             };
         }
         stats
@@ -294,10 +338,17 @@ impl VirtioConsole {
         self.pending_control.clear();
         self.host_to_guest.clear();
         self.host_inbound.clear();
+        self.agent_connected_confirmed = false;
     }
 
     pub fn agent_send(&mut self, data: &[u8]) {
         self.host_to_guest.extend(data.iter().copied());
+        // Every host->guest send is also a retry heartbeat: if the channel has
+        // not been confirmed yet, re-assert PORT_OPEN(host) so a driver whose
+        // port stabilized after our initial burst still latches HostConnected.
+        // Delivered on the next poll()/control-RX notify; self-terminates once
+        // the guest sends any TX byte (see maybe_reassert_host_open).
+        self.maybe_reassert_host_open();
     }
 
     pub fn take_inbound(&mut self) -> Vec<u8> {
@@ -659,9 +710,28 @@ impl VirtioConsole {
     }
 
     fn notify_queue(&mut self, queue_index: u16, mem: &mut dyn GuestMemoryMut) {
+        if let Some(queue) = self.queues.get_mut(usize::from(queue_index)) {
+            queue.notify_count = queue.notify_count.saturating_add(1);
+        }
+        if console_trace_enabled() {
+            let avail = self
+                .queues
+                .get(usize::from(queue_index))
+                .and_then(|queue| read_u16(mem, queue.driver + 2));
+            let last = self
+                .queues
+                .get(usize::from(queue_index))
+                .map(|queue| queue.last_avail_idx);
+            eprintln!("[vcon] notify q{queue_index} avail_idx={avail:?} last_consumed={last:?}");
+        }
         match usize::from(queue_index) {
             QUEUE_CONTROL_RX => {
-                self.enqueue_deferred_host_open();
+                // Only drain what is genuinely queued. We must NOT synthesize a
+                // PORT_OPEN re-assert here: delivering one makes vioser consume
+                // and refill the control-RX ring, which kicks this very queue,
+                // which would re-assert again -> a self-sustaining MSI-X storm
+                // that livelocks the guest. Re-assertion is driven only by the
+                // bounded triggers (agent_send heartbeat, PORT_READY epoch).
                 self.flush_pending_control(mem);
             }
             QUEUE_CONTROL_TX => {
@@ -687,6 +757,7 @@ impl VirtioConsole {
         let Some(avail_idx) = read_u16(mem, queue.driver + 2) else {
             return false;
         };
+        self.queues[queue_index].last_avail_seen = avail_idx;
         let mut progressed = false;
         while self.queues[queue_index].last_avail_idx != avail_idx {
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
@@ -699,6 +770,8 @@ impl VirtioConsole {
             }
             Self::write_used(mem, &queue, head, 0);
             self.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
+            self.queues[queue_index].used_produced =
+                self.queues[queue_index].used_produced.saturating_add(1);
             self.mark_queue_interrupt(queue_index);
             progressed = true;
         }
@@ -709,6 +782,12 @@ impl VirtioConsole {
         let Some(control) = Control::parse(bytes) else {
             return;
         };
+        console_trace!(
+            "ctrl<-guest id={} event={} value={}",
+            control.id,
+            control.event,
+            control.value
+        );
         match control.event {
             VIRTIO_CONSOLE_DEVICE_READY if control.value == 1 => {
                 self.enqueue_control(Control::new(0, VIRTIO_CONSOLE_DEVICE_ADD, 0).bytes());
@@ -725,7 +804,10 @@ impl VirtioConsole {
                     name.extend_from_slice(AGENT_PORT_NAME);
                     self.enqueue_control(name);
                     self.ports[1].host_open = true;
-                    self.ports[1].host_open_resends_remaining = HOST_OPEN_RESEND_BUDGET;
+                    // A fresh PORT_READY means the port (re)entered D0; vioser
+                    // clears HostConnected on every D0 exit, so treat this as a
+                    // new connection epoch and resume re-asserting PORT_OPEN.
+                    self.agent_connected_confirmed = false;
                     self.enqueue_control(
                         Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_OPEN, 1).bytes(),
                     );
@@ -747,16 +829,47 @@ impl VirtioConsole {
     }
 
     fn enqueue_control(&mut self, message: impl Into<Vec<u8>>) {
-        self.pending_control.push_back(message.into());
+        let message = message.into();
+        if console_trace_enabled() {
+            if let Some(control) = Control::parse(&message) {
+                eprintln!(
+                    "[vcon] ctrl->guest id={} event={} value={} bytes={}",
+                    control.id,
+                    control.event,
+                    control.value,
+                    message.len()
+                );
+            }
+        }
+        self.pending_control.push_back(message);
     }
 
-    fn enqueue_deferred_host_open(&mut self) {
-        let port = &mut self.ports[AGENT_PORT_ID as usize];
-        if !port.ready || !port.host_open || port.host_open_resends_remaining == 0 {
+    /// Re-assert PORT_OPEN(host) toward the agent port while the connection is
+    /// still unconfirmed. This replaces the old fixed-count resend budget: a
+    /// one-shot burst permanently gives up if the guest's port only stabilizes
+    /// (e.g. after a PnP resource rebalance / D0 bounce) *after* the burst is
+    /// spent, which strands HostConnected=FALSE forever. Instead we keep
+    /// re-asserting on every control-RX rearm and every host->guest send, but
+    /// only ever leave one re-assert in flight (no flooding) and stop entirely
+    /// once the guest proves the link by sending a TX byte. vioser's PORT_OPEN
+    /// handler is idempotent (`if HostConnected != Connected`), so a redundant
+    /// PORT_OPEN after the latch is a harmless no-op.
+    fn maybe_reassert_host_open(&mut self) {
+        let port = self.ports[AGENT_PORT_ID as usize];
+        if !port.ready || !port.host_open || self.agent_connected_confirmed {
             return;
         }
-        port.host_open_resends_remaining -= 1;
+        if self.host_open_reassert_pending() {
+            return;
+        }
         self.enqueue_control(Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_OPEN, 1).bytes());
+    }
+
+    fn host_open_reassert_pending(&self) -> bool {
+        let target = Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_OPEN, 1).bytes();
+        self.pending_control
+            .iter()
+            .any(|message| message.as_slice() == target)
     }
 
     fn flush_pending_control(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
@@ -799,6 +912,7 @@ impl VirtioConsole {
         let Some(avail_idx) = read_u16(mem, queue.driver + 2) else {
             return false;
         };
+        self.queues[queue_index].last_avail_seen = avail_idx;
         let mut progressed = false;
         while self.queues[queue_index].last_avail_idx != avail_idx {
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
@@ -807,10 +921,19 @@ impl VirtioConsole {
                 return progressed;
             };
             if let Some(mut bytes) = self.read_chain(mem, &queue, head) {
+                // Any guest TX proves vioser latched HostConnected (its
+                // WillWriteBlock gate blocks writes until then), so we can stop
+                // re-asserting PORT_OPEN from here on.
+                if !bytes.is_empty() {
+                    self.agent_connected_confirmed = true;
+                }
+                console_trace!("agent-tx<-guest len={}", bytes.len());
                 self.host_inbound.append(&mut bytes);
             }
             Self::write_used(mem, &queue, head, 0);
             self.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
+            self.queues[queue_index].used_produced =
+                self.queues[queue_index].used_produced.saturating_add(1);
             self.mark_queue_interrupt(queue_index);
             progressed = true;
         }
@@ -838,14 +961,36 @@ impl VirtioConsole {
             return None;
         }
         let avail_idx = read_u16(mem, queue.driver + 2)?;
-        if self.queues[queue_index].last_avail_idx == avail_idx {
+        self.queues[queue_index].last_avail_seen = avail_idx;
+        let last_avail_idx = self.queues[queue_index].last_avail_idx;
+        if last_avail_idx == avail_idx {
+            // The guest has not published a fresh avail buffer since we last
+            // consumed. If this keeps firing while notify_count / last_avail_seen
+            // stay flat, the guest stopped replenishing (not our consume path).
+            self.queues[queue_index].rx_no_buffers =
+                self.queues[queue_index].rx_no_buffers.saturating_add(1);
+            console_trace!(
+                "rx q{queue_index} NO-BUFFERS last_consumed={last_avail_idx} avail_idx={avail_idx} bytes={}",
+                bytes.len()
+            );
             return None;
         }
-        let last_avail_idx = self.queues[queue_index].last_avail_idx;
         let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
         let head = read_u16(mem, queue.driver + ring_off)?;
-        let descs = Self::descriptor_chain(mem, &queue, head)?;
-        let written = Self::scatter_write_partial(mem, &descs, bytes)?;
+        let Some(descs) = Self::descriptor_chain(mem, &queue, head) else {
+            // avail advanced but we could not walk the chain (head >= size, or a
+            // bad next link). This is the "replenished buffers are invisible to
+            // us" signature -> our consume path or a size mismatch.
+            console_trace!(
+                "rx q{queue_index} CHAIN-FAIL head={head} size={} last_consumed={last_avail_idx} avail_idx={avail_idx}",
+                queue.size
+            );
+            return None;
+        };
+        let Some(written) = Self::scatter_write_partial(mem, &descs, bytes) else {
+            console_trace!("rx q{queue_index} SCATTER-FAIL head={head} descs={}", descs.len());
+            return None;
+        };
         Self::write_used(
             mem,
             &queue,
@@ -853,7 +998,13 @@ impl VirtioConsole {
             u32::try_from(written).unwrap_or(u32::MAX),
         );
         self.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
+        self.queues[queue_index].used_produced =
+            self.queues[queue_index].used_produced.saturating_add(1);
         self.mark_queue_interrupt(queue_index);
+        console_trace!(
+            "rx q{queue_index} DELIVER head={head} len={written} last_consumed->{} avail_idx={avail_idx}",
+            last_avail_idx.wrapping_add(1)
+        );
         Some(written)
     }
 
@@ -1333,6 +1484,21 @@ fn read_u16(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u16> {
     Some(u16::from_le_bytes(bytes.try_into().ok()?))
 }
 
+/// Whether the env-gated control-plane trace is on. Read once; when off the
+/// per-event trace sites collapse to a single cached bool check.
+fn console_trace_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        matches!(
+            std::env::var("BRIDGEVM_VIRTIO_CONSOLE_TRACE")
+                .as_deref()
+                .map(str::trim),
+            Ok("1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON")
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1626,6 +1792,9 @@ mod tests {
             control_bytes(1, VIRTIO_CONSOLE_PORT_OPEN, 1)
         );
 
+        // The host retry heartbeat (any host->guest send) re-asserts PORT_OPEN
+        // while the link is still unconfirmed. A bare control-RX rearm must NOT
+        // (that path storms; see control_rx_notifies_alone_never_reassert...).
         pci_write(
             &mut dev,
             PCI_NOTIFY_CFG_OFFSET + u64::from(QUEUE_CONTROL_RX as u16) * 4,
@@ -1633,6 +1802,13 @@ mod tests {
             0,
             &mut mem,
         );
+        assert_eq!(
+            mem.read(0x4000_a400, 8),
+            [0u8; 8],
+            "a control-RX notify alone must not synthesize a PORT_OPEN"
+        );
+        dev.agent_send(b"PING");
+        dev.poll(&mut mem);
         assert_eq!(
             mem.read(0x4000_a400, 8),
             control_bytes(1, VIRTIO_CONSOLE_PORT_OPEN, 1)
@@ -1754,5 +1930,426 @@ mod tests {
         assert_eq!(stats.pending_control, 0);
         assert_eq!(stats.host_to_guest_len, 0);
         assert_eq!(stats.host_inbound_len, 0);
+    }
+
+    // ---- Faithful guest (vioser) model ---------------------------------
+    //
+    // These tests replay the control messages our device delivers on the
+    // control-RX queue through a small state machine that mirrors the parts of
+    // vioser that gate the data plane: VIOSerialFindPortById (a port is only
+    // resolvable after PORT_ADD created it), the PORT_NAME name handler, and
+    // the PORT_OPEN -> HostConnected latch. Modeling the real driver contract
+    // (rather than poking device internals) is what catches the netkvm-class
+    // bug where bytes move but the driver-visible state never advances.
+
+    #[derive(Default)]
+    struct GuestModel {
+        present: std::collections::BTreeSet<u32>,
+        named: std::collections::BTreeSet<u32>,
+        host_conn: std::collections::BTreeMap<u32, bool>,
+    }
+
+    impl GuestModel {
+        fn apply(&mut self, raw: &[u8]) {
+            let control = Control::parse(raw).expect("control message");
+            match control.event {
+                VIRTIO_CONSOLE_DEVICE_ADD => {
+                    // vioser's PORT_ADD handler: the port becomes findable.
+                    self.present.insert(control.id);
+                    self.host_conn.entry(control.id).or_insert(false);
+                }
+                VIRTIO_CONSOLE_PORT_NAME => {
+                    // VIOSerialPortCreateName only runs if the port resolves.
+                    if self.present.contains(&control.id) {
+                        self.named.insert(control.id);
+                    }
+                }
+                VIRTIO_CONSOLE_PORT_OPEN => {
+                    // VIOSerialHandleCtrlMsg PORT_OPEN: only latches when the
+                    // port resolves; value drives HostConnected.
+                    if self.present.contains(&control.id) {
+                        self.host_conn.insert(control.id, control.value != 0);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        fn host_connected(&self, id: u32) -> bool {
+            self.host_conn.get(&id).copied().unwrap_or(false)
+        }
+    }
+
+    fn setup_queue_sized(
+        dev: &mut VirtioPciConsole,
+        mem: &mut TestMem,
+        queue: u16,
+        desc: u64,
+        avail: u64,
+        used: u64,
+        vector: u16,
+        size: u16,
+    ) {
+        pci_write(dev, COMMON_QUEUE_SELECT, 2, u64::from(queue), mem);
+        pci_write(dev, COMMON_QUEUE_SIZE, 2, u64::from(size), mem);
+        pci_write(dev, COMMON_QUEUE_DESC, 8, desc, mem);
+        pci_write(dev, COMMON_QUEUE_DRIVER, 8, avail, mem);
+        pci_write(dev, COMMON_QUEUE_DEVICE, 8, used, mem);
+        pci_write(dev, COMMON_QUEUE_MSIX_VECTOR, 2, u64::from(vector), mem);
+        pci_write(dev, COMMON_QUEUE_ENABLE, 2, 1, mem);
+    }
+
+    fn post_control_rx(mem: &mut TestMem, desc: u64, avail: u64, data: u64, size: u16, n: u16) {
+        let slot = n % size;
+        write_desc(mem, desc, slot, data, 64, DESC_F_WRITE, 0);
+        mem.write(avail + 4 + u64::from(slot) * 2, &slot.to_le_bytes());
+        mem.write(avail + 2, &n.wrapping_add(1).to_le_bytes());
+    }
+
+    /// Read every control-RX buffer the device has newly published, returning
+    /// the raw message bytes in order and advancing `seen`.
+    fn drain_control_rx(
+        mem: &TestMem,
+        desc: u64,
+        used: u64,
+        size: u16,
+        seen: &mut u16,
+    ) -> Vec<Vec<u8>> {
+        let used_idx = u16::from_le_bytes(mem.read(used + 2, 2).try_into().unwrap());
+        let mut messages = Vec::new();
+        while *seen != used_idx {
+            let slot = u64::from(*seen % size);
+            let entry = used + 4 + slot * 8;
+            let head = u32::from_le_bytes(mem.read(entry, 4).try_into().unwrap());
+            let len = u32::from_le_bytes(mem.read(entry + 4, 4).try_into().unwrap()) as usize;
+            let addr =
+                u64::from_le_bytes(mem.read(desc + u64::from(head) * DESC_SIZE, 8).try_into().unwrap());
+            messages.push(mem.read(addr, len));
+            *seen = seen.wrapping_add(1);
+        }
+        messages
+    }
+
+    fn guest_control(
+        dev: &mut VirtioPciConsole,
+        mem: &mut TestMem,
+        data_addr: u64,
+        message: &[u8],
+        idx: u16,
+    ) {
+        send_tx(dev, mem, 3, 0x4000_4000, 0x4000_5000, data_addr, message, idx);
+    }
+
+    #[test]
+    fn guest_model_latches_host_connected_and_relatches_after_d0_bounce() {
+        let mut dev = VirtioPciConsole::new();
+        let mut mem = TestMem::new(0x4000_0000, 0x100000);
+        let size: u16 = 32;
+        setup_queue_sized(&mut dev, &mut mem, 2, 0x4000_1000, 0x4000_2000, 0x4000_3000, 2, size);
+        setup_queue_sized(&mut dev, &mut mem, 3, 0x4000_4000, 0x4000_5000, 0x4000_6000, 3, size);
+        for n in 0..24u16 {
+            post_control_rx(
+                &mut mem,
+                0x4000_1000,
+                0x4000_2000,
+                0x4004_0000 + u64::from(n) * 0x100,
+                size,
+                n,
+            );
+        }
+        let mut seen = 0u16;
+        let mut guest = GuestModel::default();
+
+        // Boot handshake exactly as vioser emits it: DEVICE_READY(BAD_ID),
+        // then a PORT_READY per port as each PDO enters D0.
+        guest_control(
+            &mut dev,
+            &mut mem,
+            0x4005_0000,
+            &control_bytes(0xffff_ffff, VIRTIO_CONSOLE_DEVICE_READY, 1),
+            0,
+        );
+        guest_control(
+            &mut dev,
+            &mut mem,
+            0x4005_0100,
+            &control_bytes(0, VIRTIO_CONSOLE_PORT_READY, 1),
+            1,
+        );
+        guest_control(
+            &mut dev,
+            &mut mem,
+            0x4005_0200,
+            &control_bytes(1, VIRTIO_CONSOLE_PORT_READY, 1),
+            2,
+        );
+        for message in drain_control_rx(&mem, 0x4000_1000, 0x4000_3000, size, &mut seen) {
+            guest.apply(&message);
+        }
+
+        assert!(guest.present.contains(&1), "PORT_ADD must create port 1");
+        assert!(guest.named.contains(&1), "PORT_NAME must resolve port 1");
+        assert!(
+            guest.host_connected(1),
+            "PORT_OPEN must latch HostConnected in the same drain PORT_NAME resolved"
+        );
+        assert!(!guest.host_connected(0), "host never opens port 0");
+
+        // A PnP resource rebalance / D0 bounce: vioser clears HostConnected in
+        // VIOSerialPortEvtDeviceD0Exit, then re-enters D0 and re-emits
+        // PORT_READY(1). The device must re-assert PORT_OPEN so the link heals.
+        guest.host_conn.insert(1, false);
+        guest_control(
+            &mut dev,
+            &mut mem,
+            0x4005_0300,
+            &control_bytes(1, VIRTIO_CONSOLE_PORT_READY, 1),
+            3,
+        );
+        for message in drain_control_rx(&mem, 0x4000_1000, 0x4000_3000, size, &mut seen) {
+            guest.apply(&message);
+        }
+        assert!(
+            guest.host_connected(1),
+            "a fresh PORT_READY after a D0 bounce must re-latch HostConnected"
+        );
+    }
+
+    #[test]
+    fn host_open_reassert_is_sustained_until_agent_tx_then_stops() {
+        let mut dev = VirtioPciConsole::new();
+        let mut mem = TestMem::new(0x4000_0000, 0x100000);
+        let size: u16 = 32;
+        setup_queue_sized(&mut dev, &mut mem, 2, 0x4000_1000, 0x4000_2000, 0x4000_3000, 2, size);
+        setup_queue_sized(&mut dev, &mut mem, 3, 0x4000_4000, 0x4000_5000, 0x4000_6000, 3, size);
+        setup_queue_sized(&mut dev, &mut mem, 5, 0x4000_7000, 0x4000_8000, 0x4000_9000, 5, size);
+        for n in 0..28u16 {
+            post_control_rx(
+                &mut mem,
+                0x4000_1000,
+                0x4000_2000,
+                0x4004_0000 + u64::from(n) * 0x100,
+                size,
+                n,
+            );
+        }
+        let mut seen = 0u16;
+
+        guest_control(
+            &mut dev,
+            &mut mem,
+            0x4005_0000,
+            &control_bytes(0xffff_ffff, VIRTIO_CONSOLE_DEVICE_READY, 1),
+            0,
+        );
+        guest_control(
+            &mut dev,
+            &mut mem,
+            0x4005_0100,
+            &control_bytes(1, VIRTIO_CONSOLE_PORT_READY, 1),
+            1,
+        );
+        let _ = drain_control_rx(&mem, 0x4000_1000, 0x4000_3000, size, &mut seen);
+        assert!(dev.stats().port1_host_open);
+        assert!(!dev.stats().agent_connected_confirmed);
+
+        // The host retry heartbeat (harness PINGs, or any host->guest send)
+        // re-asserts PORT_OPEN while the link is still unconfirmed, so a port
+        // that only stabilizes after the boot burst still latches. Exactly one
+        // re-assert is in flight at a time (no control-queue flooding).
+        let open = control_bytes(1, VIRTIO_CONSOLE_PORT_OPEN, 1).to_vec();
+        for _ in 0..4 {
+            dev.agent_send(b"PING");
+            dev.poll(&mut mem);
+            let delivered = drain_control_rx(&mem, 0x4000_1000, 0x4000_3000, size, &mut seen);
+            assert_eq!(
+                delivered
+                    .iter()
+                    .filter(|message| message.as_slice() == open.as_slice())
+                    .count(),
+                1,
+                "each heartbeat re-asserts exactly one PORT_OPEN while unconfirmed"
+            );
+        }
+
+        // First guest TX byte proves vioser latched HostConnected (its
+        // WillWriteBlock gate blocks writes until then).
+        send_tx(&mut dev, &mut mem, 5, 0x4000_7000, 0x4000_8000, 0x4006_0000, b"READY", 0);
+        assert!(dev.stats().agent_connected_confirmed);
+        assert_eq!(dev.take_inbound(), b"READY");
+
+        // Re-assertion stops once the link is proven.
+        dev.agent_send(b"PING");
+        dev.poll(&mut mem);
+        let delivered = drain_control_rx(&mem, 0x4000_1000, 0x4000_3000, size, &mut seen);
+        assert_eq!(
+            delivered
+                .iter()
+                .filter(|message| message.as_slice() == open.as_slice())
+                .count(),
+            0,
+            "re-assertion stops after the agent proves the link is live"
+        );
+    }
+
+    #[test]
+    fn control_rx_notifies_alone_never_reassert_port_open_no_storm() {
+        // Regression for the MSI-X storm: delivering a PORT_OPEN makes vioser
+        // consume + refill the control-RX ring and kick control-RX. If that
+        // kick re-asserts another PORT_OPEN, the cycle runs at full interrupt
+        // speed and livelocks the guest. A bare control-RX notify must produce
+        // no work at all so the loop cannot sustain itself.
+        let mut dev = VirtioPciConsole::new();
+        let mut mem = TestMem::new(0x4000_0000, 0x100000);
+        let size: u16 = 32;
+        setup_queue_sized(&mut dev, &mut mem, 2, 0x4000_1000, 0x4000_2000, 0x4000_3000, 2, size);
+        setup_queue_sized(&mut dev, &mut mem, 3, 0x4000_4000, 0x4000_5000, 0x4000_6000, 3, size);
+        for n in 0..30u16 {
+            post_control_rx(
+                &mut mem,
+                0x4000_1000,
+                0x4000_2000,
+                0x4004_0000 + u64::from(n) * 0x100,
+                size,
+                n,
+            );
+        }
+        let mut seen = 0u16;
+
+        guest_control(
+            &mut dev,
+            &mut mem,
+            0x4005_0000,
+            &control_bytes(0xffff_ffff, VIRTIO_CONSOLE_DEVICE_READY, 1),
+            0,
+        );
+        guest_control(
+            &mut dev,
+            &mut mem,
+            0x4005_0100,
+            &control_bytes(1, VIRTIO_CONSOLE_PORT_READY, 1),
+            1,
+        );
+        let _ = drain_control_rx(&mem, 0x4000_1000, 0x4000_3000, size, &mut seen);
+        assert!(dev.stats().port1_host_open);
+        assert!(!dev.stats().agent_connected_confirmed);
+        assert_eq!(dev.stats().pending_control, 0);
+
+        // Replay the vioser "consumed + refilled -> kick control-RX" many times
+        // with no agent TX. Each kick must manufacture nothing: no control
+        // message delivered, nothing queued, so nothing to interrupt on.
+        let open = control_bytes(1, VIRTIO_CONSOLE_PORT_OPEN, 1).to_vec();
+        for _ in 0..64 {
+            pci_write(
+                &mut dev,
+                PCI_NOTIFY_CFG_OFFSET + u64::from(QUEUE_CONTROL_RX as u16) * 4,
+                4,
+                0,
+                &mut mem,
+            );
+            let delivered = drain_control_rx(&mem, 0x4000_1000, 0x4000_3000, size, &mut seen);
+            assert!(
+                delivered.is_empty(),
+                "a bare control-RX notify must not deliver any control message"
+            );
+            assert_eq!(
+                dev.stats().pending_control,
+                0,
+                "a bare control-RX notify must not enqueue a PORT_OPEN"
+            );
+        }
+
+        // The bounded heartbeat trigger still re-asserts exactly once.
+        dev.agent_send(b"PING");
+        dev.poll(&mut mem);
+        let delivered = drain_control_rx(&mem, 0x4000_1000, 0x4000_3000, size, &mut seen);
+        assert_eq!(
+            delivered
+                .iter()
+                .filter(|message| message.as_slice() == open.as_slice())
+                .count(),
+            1,
+            "agent_send remains the bounded re-assert trigger"
+        );
+    }
+
+    fn post_rx_buffer(
+        mem: &mut TestMem,
+        desc: u64,
+        avail: u64,
+        size: u16,
+        avail_idx: u16,
+        slot: u16,
+        buf: u64,
+        buf_len: u32,
+    ) {
+        write_desc(mem, desc, slot, buf, buf_len, DESC_F_WRITE, 0);
+        mem.write(avail + 4 + u64::from(avail_idx % size) * 2, &slot.to_le_bytes());
+        mem.write(avail + 2, &avail_idx.wrapping_add(1).to_le_bytes());
+    }
+
+    #[test]
+    fn agent_rx_delivery_resumes_after_ring_consumed_and_replenished() {
+        // Replenishment regression for the "stops after the first lap" wall:
+        // consume a full RX ring, then have the guest re-post buffers past the
+        // initial size (wrapping the ring slots) with NO doorbell, and assert
+        // the periodic poll picks them up. Exercises absolute-avail-idx tracking
+        // across a lap and delivery via poll rather than only via notify.
+        let mut dev = VirtioPciConsole::new();
+        let mut mem = TestMem::new(0x4000_0000, 0x100000);
+        let size: u16 = 4;
+        setup_queue_sized(&mut dev, &mut mem, 4, 0x4000_1000, 0x4000_2000, 0x4000_3000, 4, size);
+
+        // Lap 1: guest fills the whole ring (avail 0..4, descriptor slots 0..4).
+        for k in 0..4u16 {
+            post_rx_buffer(
+                &mut mem,
+                0x4000_1000,
+                0x4000_2000,
+                size,
+                k,
+                k,
+                0x4004_0000 + u64::from(k) * 0x100,
+                64,
+            );
+        }
+
+        // Consume the entire ring (one host->guest message per buffer).
+        for k in 0..4u16 {
+            dev.agent_send(format!("m{k}").as_bytes());
+            dev.poll(&mut mem);
+        }
+        assert_eq!(dev.stats().queues[4].last_avail_idx, 4);
+        assert_eq!(dev.stats().queues[4].used_produced, 4);
+        assert_eq!(mem.read(0x4004_0000, 2), b"m0");
+        assert_eq!(mem.read(0x4004_0300, 2), b"m3");
+
+        // Ring drained: a further send finds no buffer and is retained.
+        let no_buf_before = dev.stats().queues[4].rx_no_buffers;
+        dev.agent_send(b"stall");
+        dev.poll(&mut mem);
+        assert!(dev.stats().queues[4].rx_no_buffers > no_buf_before);
+        assert_eq!(dev.stats().host_to_guest_len, 5, "undeliverable bytes are held");
+
+        // Lap 2: guest replenishes past the initial size (avail 4..8) reusing
+        // ring slots 0..4, and does NOT ring the doorbell.
+        for (i, k) in (4..8u16).enumerate() {
+            post_rx_buffer(
+                &mut mem,
+                0x4000_1000,
+                0x4000_2000,
+                size,
+                k,
+                i as u16,
+                0x4005_0000 + u64::from(i as u16) * 0x100,
+                64,
+            );
+        }
+
+        // The periodic poll (no notify) must resume delivery into lap-2 buffers.
+        assert!(dev.poll(&mut mem), "poll must consume replenished buffers");
+        assert_eq!(dev.stats().queues[4].last_avail_idx, 5);
+        assert_eq!(mem.read(0x4005_0000, 5), b"stall");
+        assert_eq!(dev.stats().host_to_guest_len, 0);
     }
 }

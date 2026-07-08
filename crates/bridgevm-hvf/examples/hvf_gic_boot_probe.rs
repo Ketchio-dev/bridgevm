@@ -4018,6 +4018,46 @@ fn main() {
             if let Some(stats) = platform.virtio_net_nat_stats() {
                 print_net_nat_stats(stats);
             }
+            if let Some(stats) = platform.virtio_console_stats() {
+                const QNAME: [&str; 6] = [
+                    "port0-rx", "port0-tx", "ctrl-rx", "ctrl-tx", "port1-rx", "port1-tx",
+                ];
+                println!(
+                    "virtio-console stats: status={:#x} driver_features={:#x} interrupt_status={:#x} \
+                     port1(ready={} guest_open={} host_open={}) agent_confirmed={} \
+                     pending_control={} host_to_guest_len={} host_inbound_len={}",
+                    stats.status,
+                    stats.driver_features,
+                    stats.interrupt_status,
+                    stats.port1_ready,
+                    stats.port1_guest_open,
+                    stats.port1_host_open,
+                    stats.agent_connected_confirmed,
+                    stats.pending_control,
+                    stats.host_to_guest_len,
+                    stats.host_inbound_len,
+                );
+                for (i, q) in stats.queues.iter().enumerate() {
+                    // For an RX queue a healthy replenishment loop shows
+                    // notify/last_avail_seen/used_produced all climbing together;
+                    // a stall with last_avail_seen > last_avail_idx means the
+                    // guest posted buffers we failed to consume.
+                    println!(
+                        "virtio-console queue[{i}] {name}: ready={ready} size={size} \
+                         notify={notify} avail_seen={seen} last_consumed={consumed} \
+                         used_produced={used} rx_no_buffers={nobuf} msix_vector={vec}",
+                        name = QNAME[i],
+                        ready = q.ready,
+                        size = q.size,
+                        notify = q.notify_count,
+                        seen = q.last_avail_seen,
+                        consumed = q.last_avail_idx,
+                        used = q.used_produced,
+                        nobuf = q.rx_no_buffers,
+                        vec = q.msix_vector,
+                    );
+                }
+            }
             if let Some(trace) = platform.virtio_iso_request_trace() {
                 print_block_request_trace("recent legacy virtio-mmio ISO requests", &trace);
             }

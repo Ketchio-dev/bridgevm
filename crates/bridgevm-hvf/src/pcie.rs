@@ -279,7 +279,7 @@ pub const VIRTIO_GPU_CLASS_CODE: u32 = 0x0003_8000;
 /// Modern virtio PCI revision id.
 pub const VIRTIO_GPU_REVISION: u8 = 0x01;
 pub const VIRTIO_GPU_SUBSYSTEM_VENDOR_ID: u16 = 0x1af4;
-pub const VIRTIO_GPU_SUBSYSTEM_ID: u16 = 0x0010;
+pub const VIRTIO_GPU_SUBSYSTEM_ID: u16 = 0x1100;
 /// MSI-X table/PBA memory BAR.
 pub const VIRTIO_GPU_BAR1_SIZE: u32 = 0x1000;
 /// Host-visible virtio-gpu shared-memory BAR default size (1 GiB).
