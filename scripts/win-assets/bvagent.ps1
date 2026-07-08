@@ -58,6 +58,16 @@ $K = Add-Type -MemberDefinition $sig -Name 'BvKernel32' -Namespace 'BridgeVM' -P
 
 function Gle { return [System.Runtime.InteropServices.Marshal]::GetLastWin32Error() }
 
+# CreateFile access rights as EXPLICIT [uint32] decimals. PowerShell 5.1 parses
+# the hex literals 0x80000000 / 0xC0000000 as a NEGATIVE [int] (int-min etc.),
+# and binding a negative int to the P/Invoke's `uint access` parameter mangles
+# the value so CreateFile fails for EVERYTHING (even \\.\C:) with a bogus/stale
+# GetLastError. Decimal [uint32] literals avoid the signed-hex trap entirely.
+$GENERIC_READ = [uint32]2147483648   # 0x80000000
+$GENERIC_RW = [uint32]3221225472     # 0xC0000000 (GENERIC_READ | GENERIC_WRITE)
+$FILE_SHARE_RW = [uint32]3           # FILE_SHARE_READ | FILE_SHARE_WRITE
+$OPEN_EXISTING = [uint32]3
+
 function Is-BadHandle($handle) {
     if ($null -eq $handle) { return $true }
     $v = $handle.ToInt64()
@@ -112,9 +122,9 @@ function Log-PortInfo($handle, [string]$when) {
 # name symlinks. Logs every candidate + result so the log reveals the real path.
 function Try-OpenPort {
     foreach ($path in @(Get-PortInterfacePaths)) {
-        $handle = $K::CreateFile($path, 0xC0000000, 3, [IntPtr]::Zero, 3, 0, [IntPtr]::Zero)
+        $handle = $K::CreateFile($path, $GENERIC_RW, $FILE_SHARE_RW, [IntPtr]::Zero, $OPEN_EXISTING, 0, [IntPtr]::Zero)
         $gle = Gle
-        if (Is-BadHandle $handle) { Log "PORT try iface FAILED gle=$gle path=$path"; continue }
+        if (Is-BadHandle $handle) { Log "PORT try iface FAILED gle=$gle ($(Win32Msg $gle)) path=$path"; continue }
         $info = Get-PortInfoRaw $handle
         if ($null -ne $info) {
             Log "PORT try iface OPENED id=$($info.Id) name='$($info.Name)' Host=$($info.Host) path=$path"
@@ -128,9 +138,9 @@ function Try-OpenPort {
         [void]$K::CloseHandle($handle)
     }
     foreach ($path in @('\\.\Global\org.bridgevm.agent.0', '\\.\org.bridgevm.agent.0')) {
-        $handle = $K::CreateFile($path, 0xC0000000, 3, [IntPtr]::Zero, 3, 0, [IntPtr]::Zero)
+        $handle = $K::CreateFile($path, $GENERIC_RW, $FILE_SHARE_RW, [IntPtr]::Zero, $OPEN_EXISTING, 0, [IntPtr]::Zero)
         $gle = Gle
-        if (Is-BadHandle $handle) { Log "PORT try symlink FAILED gle=$gle path=$path"; continue }
+        if (Is-BadHandle $handle) { Log "PORT try symlink FAILED gle=$gle ($(Win32Msg $gle)) path=$path"; continue }
         Log "PORT PATH FOUND $path"
         return $handle
     }
@@ -185,6 +195,32 @@ function Invoke-B64([string]$b64, [bool]$usePwsh) {
     }
     if ($null -eq $out) { $out = '' }
     return @{ Exit = $LASTEXITCODE; Out = $out }
+}
+
+# One-shot sanity probe: does CreateFile work AT ALL in this process context, and
+# what does the port's GetLastError actually mean? Opening \\.\C: (a known-good
+# device) isolates a vioser-specific open failure from a general P/Invoke / token
+# problem. FormatMessage turns the numeric gle (e.g. 203) into readable text.
+function Win32Msg([int]$code) {
+    try { return (New-Object System.ComponentModel.Win32Exception($code)).Message } catch { return "?" }
+}
+# Test a plain file first (ntdll.dll always exists) to prove the P/Invoke itself
+# works with the [uint32] access constants; then \\.\C: for device access.
+$probeF = $K::CreateFile('C:\Windows\System32\ntdll.dll', $GENERIC_READ, $FILE_SHARE_RW, [IntPtr]::Zero, $OPEN_EXISTING, 0, [IntPtr]::Zero)
+$probeFGle = Gle
+if (Is-BadHandle $probeF) {
+    Log "SANITY open ntdll.dll FAILED gle=$probeFGle ($(Win32Msg $probeFGle)) -- CreateFile P/Invoke is broken"
+} else {
+    Log "SANITY open ntdll.dll OK -- CreateFile P/Invoke works"
+    [void]$K::CloseHandle($probeF)
+}
+$probeC = $K::CreateFile('\\.\C:', $GENERIC_READ, $FILE_SHARE_RW, [IntPtr]::Zero, $OPEN_EXISTING, 0, [IntPtr]::Zero)
+$probeGle = Gle
+if (Is-BadHandle $probeC) {
+    Log "SANITY open \\.\C: FAILED gle=$probeGle ($(Win32Msg $probeGle))"
+} else {
+    Log "SANITY open \\.\C: OK -- device CreateFile works; a port failure is vioser-specific"
+    [void]$K::CloseHandle($probeC)
 }
 
 # Open the port (retry forever; throwing would kill the process and release the
