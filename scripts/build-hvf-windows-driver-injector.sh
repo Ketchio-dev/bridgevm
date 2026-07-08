@@ -65,9 +65,21 @@ done
 # Plant the guest agent at the source root; bvinject.cmd copies it to C:\ and
 # registers an HKLM Run key. Enabled by default; set PLANT_AGENT=0 to skip.
 if [[ "${PLANT_AGENT:-1}" == "1" && -f "$ASSETS/bvagent.ps1" ]]; then
-  log "staging guest agent \\bvagent.ps1 (+ startup launcher)"
+  log "staging guest agent \\bvagent.ps1 (single HKLM Run autostart)"
   cp "$ASSETS/bvagent.ps1" "$DST_VOL/bvagent.ps1"
-  [[ -f "$ASSETS/bvagent.bat" ]] && cp "$ASSETS/bvagent.bat" "$DST_VOL/bvagent.bat"
+  # Deliberately do NOT stage bvagent.bat: a Startup-folder launcher would be a
+  # second autostart racing the Run key, and the loser's port open/close churns
+  # vioser's single-open port. One autostart only.
+fi
+
+# Plant the first-boot GPU driver activation script at the source root. When a
+# viogpu3d package is staged, bvinject.cmd copies it to C:\BridgeVM and registers
+# an elevated HKLM RunOnce that trusts the test cert and forces pnputil install.
+# Offline dism only STAGES the test-signed package; it neither trusts the
+# self-signed publisher nor re-triggers a driver search for the present device.
+if [[ -f "$ASSETS/bvgpu-firstboot.cmd" ]]; then
+  log "staging first-boot GPU activation \\bvgpu-firstboot.cmd"
+  cp "$ASSETS/bvgpu-firstboot.cmd" "$DST_VOL/bvgpu-firstboot.cmd"
 fi
 
 if [[ "$ENABLE_TESTSIGNING" == "1" ]]; then
