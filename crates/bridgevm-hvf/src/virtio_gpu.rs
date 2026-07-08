@@ -189,6 +189,19 @@ impl VirtioGpuQueue {
         let notify_off = self.notify_off;
         *self = Self::new(notify_off);
     }
+
+    /// Queue size the device must actually run at. The virtio driver may enable
+    /// a queue without ever writing COMMON_QUEUE_SIZE, in which case the queue
+    /// operates at the advertised maximum (`QUEUE_MAX`) rather than the reset
+    /// value of 0. Reads of COMMON_QUEUE_SIZE already report this effective
+    /// value, so descriptor processing must agree with it.
+    fn effective_size(&self) -> u16 {
+        if self.size == 0 {
+            QUEUE_MAX
+        } else {
+            self.size
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -800,15 +813,21 @@ impl VirtioGpu {
 
     fn process_queue(&mut self, queue_index: usize, mem: &mut dyn GuestMemoryMut, control: bool) {
         let queue = self.queues[queue_index];
-        if !queue.ready || queue.size == 0 || queue.desc == 0 {
+        if !queue.ready || queue.desc == 0 || queue.driver == 0 {
             return;
         }
+        // A driver may enable the queue without writing COMMON_QUEUE_SIZE (EDK2's
+        // VirtioGpuDxe reads the advertised size but never writes it back). Gating
+        // on the raw stored size left `queue.size == 0`, so the control queue was
+        // never drained: firmware submitted GET_DISPLAY_INFO, polled the used ring
+        // forever, and the guest hung before reaching the boot manager.
+        let queue_size = queue.effective_size();
         let Some(avail_idx) = read_u16(mem, queue.driver + 2) else {
             return;
         };
         while self.queues[queue_index].last_avail_idx != avail_idx {
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
-            let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
+            let ring_off = 4 + u64::from(last_avail_idx % queue_size) * 2;
             let Some(head) = read_u16(mem, queue.driver + ring_off) else {
                 return;
             };
@@ -853,7 +872,18 @@ impl VirtioGpu {
             return ChainCompletion::Immediate(Self::scatter_write(mem, &descs, &response));
         };
         self.trace_command(queue_index, head, control, &request, hdr, &response);
-        if control && hdr.flags & VIRTIO_GPU_FLAG_FENCE != 0 && self.three_d.has_backend() {
+        // Only defer commands that were dispatched to the 3D backend behind a
+        // backend fence. 2D display bring-up commands (GET_DISPLAY_INFO, GET_EDID,
+        // RESOURCE_CREATE_2D, SET_SCANOUT, RESOURCE_FLUSH, ...) are executed
+        // synchronously here, so their fence is already satisfied and the response
+        // must complete on the used ring in this same notify. Firmware sets the
+        // fence flag but never issues a follow-up notify — parking a 2D command on
+        // a backend fence that no context will ever retire hangs the boot.
+        if control
+            && hdr.flags & VIRTIO_GPU_FLAG_FENCE != 0
+            && self.three_d.has_backend()
+            && command_targets_3d_backend(hdr.typ)
+        {
             let fence = CompletedFence {
                 ctx_id: hdr.ctx_id,
                 ring_idx: hdr.ring_idx(),
@@ -1447,12 +1477,13 @@ impl VirtioGpu {
         queue: &VirtioGpuQueue,
         head: u16,
     ) -> Option<Vec<Descriptor>> {
-        if head >= queue.size {
+        let queue_size = queue.effective_size();
+        if head >= queue_size {
             return None;
         }
         let mut out = Vec::new();
         let mut index = head;
-        for _ in 0..queue.size {
+        for _ in 0..queue_size {
             let desc = Descriptor::read(mem, queue.desc + u64::from(index) * DESC_SIZE)?;
             let has_next = desc.flags & DESC_F_NEXT != 0;
             out.push(desc);
@@ -1460,7 +1491,7 @@ impl VirtioGpu {
                 return Some(out);
             }
             index = desc.next;
-            if index >= queue.size {
+            if index >= queue_size {
                 return None;
             }
         }
@@ -1502,13 +1533,14 @@ impl VirtioGpu {
     }
 
     fn write_used(mem: &mut dyn GuestMemoryMut, queue: &VirtioGpuQueue, id: u16, len: u32) {
-        if queue.size == 0 || queue.device == 0 {
+        if queue.device == 0 {
             return;
         }
+        let queue_size = queue.effective_size();
         let Some(used_idx) = read_u16(mem, queue.device + 2) else {
             return;
         };
-        let elem = queue.device + 4 + u64::from(used_idx % queue.size) * 8;
+        let elem = queue.device + 4 + u64::from(used_idx % queue_size) * 8;
         let _ = mem.write_bytes(elem, &u32::from(id).to_le_bytes());
         let _ = mem.write_bytes(elem + 4, &len.to_le_bytes());
         let _ = mem.write_bytes(queue.device + 2, &used_idx.wrapping_add(1).to_le_bytes());
@@ -1821,6 +1853,25 @@ fn response_hdr(typ: u32, request: Option<CtrlHdr>) -> Vec<u8> {
     let mut out = Vec::with_capacity(24);
     hdr.append_to(&mut out);
     out
+}
+
+/// Commands routed to the 3D backend (`handle_control_request`'s 3D arm). Only
+/// these may be deferred behind a backend fence; every other control command is
+/// a synchronous 2D operation whose fence is satisfied the moment it returns.
+fn command_targets_3d_backend(typ: u32) -> bool {
+    matches!(
+        typ,
+        VIRTIO_GPU_CMD_GET_CAPSET_INFO
+            | VIRTIO_GPU_CMD_GET_CAPSET
+            | VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB
+            | VIRTIO_GPU_CMD_CTX_CREATE
+            | VIRTIO_GPU_CMD_CTX_DESTROY
+            | VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE
+            | VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE
+            | VIRTIO_GPU_CMD_SUBMIT_3D
+            | VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB
+            | VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB
+    )
 }
 
 fn command_name(typ: u32) -> &'static str {
@@ -3533,5 +3584,100 @@ mod tests {
             u16::from_le_bytes(mem.read(0x4000_3000 + 2, 2).try_into().unwrap()),
             1
         );
+    }
+
+    #[test]
+    fn controlq_drains_when_driver_never_writes_queue_size_with_3d_backend() {
+        // Reproduces the EDK2 VirtioGpuDxe boot hang: firmware programs the rings
+        // and enables the control queue but never writes COMMON_QUEUE_SIZE, so the
+        // device's stored size stays at its reset value of 0 even though it reports
+        // QUEUE_MAX on read. The control queue must still drain at the advertised
+        // maximum; otherwise GET_DISPLAY_INFO never completes and the guest hangs.
+        let (mut dev, _backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+
+        let desc = 0x4000_1000;
+        let avail = 0x4000_2000;
+        let used = 0x4000_3000;
+        let req = 0x4000_4000;
+        let resp = 0x4000_5000;
+
+        // Enable the queue the way firmware does: rings + enable, no size write.
+        pci_write(&mut dev, COMMON_QUEUE_SELECT, 2, 0, &mut mem);
+        pci_write(&mut dev, COMMON_QUEUE_DESC, 8, desc, &mut mem);
+        pci_write(&mut dev, COMMON_QUEUE_DRIVER, 8, avail, &mut mem);
+        pci_write(&mut dev, COMMON_QUEUE_DEVICE, 8, used, &mut mem);
+        pci_write(&mut dev, COMMON_QUEUE_ENABLE, 2, 1, &mut mem);
+
+        // The device advertises the max size but has recorded nothing internally.
+        assert_eq!(
+            pci_read(&mut dev, COMMON_QUEUE_SIZE, 2, &mut mem),
+            u64::from(QUEUE_MAX)
+        );
+        assert_eq!(dev.stats().queues[0].size, 0);
+
+        // GET_DISPLAY_INFO: readable request desc chained to a writable response.
+        let request = ctrl_req(VIRTIO_GPU_CMD_GET_DISPLAY_INFO);
+        let display_info_len = 24 + 16 * 24;
+        mem.write(req, &request);
+        write_desc(&mut mem, desc, 0, req, request.len() as u32, DESC_F_NEXT, 1);
+        write_desc(&mut mem, desc, 1, resp, display_info_len, DESC_F_WRITE, 0);
+        mem.write(avail + 2, &1u16.to_le_bytes());
+        mem.write(avail + 4, &0u16.to_le_bytes());
+        pci_write(&mut dev, PCI_NOTIFY_CFG_OFFSET, 4, 0, &mut mem);
+
+        // Used ring advanced, response written, and the used-buffer interrupt set.
+        assert_eq!(
+            u16::from_le_bytes(mem.read(used + 2, 2).try_into().unwrap()),
+            1
+        );
+        let response = mem.read(resp, 24);
+        assert_eq!(
+            read_le_u32(&response, 0),
+            Some(VIRTIO_GPU_RESP_OK_DISPLAY_INFO)
+        );
+        assert!(dev.interrupt_line_level());
+
+        // A second bring-up command on the same queue also completes.
+        let mut create = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_CREATE_2D);
+        create.extend_from_slice(&1u32.to_le_bytes());
+        create.extend_from_slice(&FORMAT_B8G8R8X8_UNORM.to_le_bytes());
+        create.extend_from_slice(&64u32.to_le_bytes());
+        create.extend_from_slice(&64u32.to_le_bytes());
+        mem.write(req, &create);
+        write_desc(&mut mem, desc, 2, req, create.len() as u32, DESC_F_NEXT, 3);
+        write_desc(&mut mem, desc, 3, resp, 24, DESC_F_WRITE, 0);
+        mem.write(avail + 2, &2u16.to_le_bytes());
+        mem.write(avail + 4 + 2, &2u16.to_le_bytes());
+        pci_write(&mut dev, PCI_NOTIFY_CFG_OFFSET, 4, 0, &mut mem);
+
+        assert_eq!(
+            u16::from_le_bytes(mem.read(used + 2, 2).try_into().unwrap()),
+            2
+        );
+        let response = mem.read(resp, 24);
+        assert_eq!(read_le_u32(&response, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+        assert_eq!(dev.stats().resources, 1);
+    }
+
+    #[test]
+    fn fenced_2d_bringup_command_completes_immediately_with_3d_backend() {
+        // Firmware sets VIRTIO_GPU_FLAG_FENCE on its 2D bring-up commands. With the
+        // 3D backend attached those must still complete on the used ring in the
+        // same notify (they are synchronous), rather than being parked behind a
+        // backend fence that no context would retire.
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        let req = ctrl_req_fenced(VIRTIO_GPU_CMD_GET_DISPLAY_INFO, 0, 0, 7);
+        let (resp, used_idx) =
+            submit_control_readable_descs(&mut dev, &mut mem, &[&req], 24 + 16 * 24);
+        assert_eq!(used_idx, 1);
+        assert_eq!(
+            read_le_u32(&resp, 0),
+            Some(VIRTIO_GPU_RESP_OK_DISPLAY_INFO)
+        );
+        assert_eq!(dev.stats().three_d.fences_pending, 0);
+        // A 2D command must not have been handed to the backend as a fence.
+        assert!(backend.lock().unwrap().fences.is_empty());
     }
 }
