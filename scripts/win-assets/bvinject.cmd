@@ -35,25 +35,40 @@ if errorlevel 1 (
 echo BVINJECT VERIFY
 dism /Image:%WIN%\ /Get-Drivers | find /i "oem"
 
-rem --- optionally enable test-signing for test-signed driver packages such as
-rem     viogpu3d. The host builder plants this marker only when
-rem     ENABLE_TESTSIGNING=1, so the default injector path leaves BCD alone. ---
-if exist %DRV%\..\bridgevm-enable-testsigning.txt (
-  echo BVINJECT TESTSIGNING REQUESTED
-  set BCD=
-  for %%D in (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do if exist %%D:\EFI\Microsoft\Boot\BCD set BCD=%%D:\EFI\Microsoft\Boot\BCD
-  if "%BCD%"=="" (
-    echo BVINJECT ERROR: EFI BCD store not found for test-signing
-    goto :end
-  )
-  echo BVINJECT TESTSIGNING BCD=%BCD%
-  bcdedit /store "%BCD%" /set {default} testsigning on
-  if errorlevel 1 (
-    echo BVINJECT ERROR: bcdedit testsigning failed
-    goto :end
-  )
-  bcdedit /store "%BCD%" /enum {default} | find /i "testsigning"
-  echo BVINJECT TESTSIGNING DONE
+rem --- test-signing for test-signed packages (viogpu3d) is handled LIVE by
+rem     bvgpu-firstboot.cmd (`bcdedit /set {current} testsigning on` + a guarded
+rem     reboot), NOT offline here: the target ESP has no drive letter in WinPE so
+rem     an offline `bcdedit /store <ESP>\BCD` is unreliable and previously aborted
+rem     the whole injector. The marker file (bridgevm-enable-testsigning.txt) is
+rem     retained only as an intent flag; nothing offline acts on it now. ---
+
+rem --- viogpu3d is a TEST-SIGNED third-party display driver. Offline dism only
+rem     STAGES it into the DriverStore: it neither trusts the self-signed test
+rem     publisher (so silent PnP install of the package is REFUSED) nor re-runs a
+rem     driver search for the already-present virtio-gpu device. BCD testsigning
+rem     (above) only lets the kernel LOAD test-signed code once installed; it does
+rem     not make PnP TRUST the publisher for install. So copy the package + cert +
+rem     activation script to C:\BridgeVM and register an elevated HKLM RunOnce
+rem     that, on first boot, imports the cert into the machine Root +
+rem     TrustedPublisher stores and forces `pnputil /add-driver /install` to bind
+rem     PCI\VEN_1AF4&DEV_1050. UAC is disabled so RunOnce gets the full admin
+rem     token; output is logged to C:\BridgeVM\viogpu3d-firstboot.log. ---
+if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
+  echo BVINJECT VIOGPU3D FIRSTBOOT PLANT
+  if not exist %WIN%\BridgeVM\viogpu3d\ mkdir %WIN%\BridgeVM\viogpu3d
+  copy /y %DRV%\viogpu3d\* %WIN%\BridgeVM\viogpu3d\ >nul
+  copy /y %DRV%\..\bvgpu-firstboot.cmd %WIN%\BridgeVM\bvgpu-firstboot.cmd >nul
+  reg load HKLM\BVGPUSW %WIN%\Windows\System32\config\SOFTWARE
+  rem RunOnce runs once at first interactive logon. The value uses the RUNTIME
+  rem path (installed Windows is C: to itself), not the WinPE %WIN% letter. The
+  rem "!" name prefix defers deletion until the command completes, so a reboot
+  rem mid-activation retries instead of silently dropping it.
+  reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\RunOnce" /v !BridgeVMGpu3D /t REG_SZ /d "cmd /c C:\BridgeVM\bvgpu-firstboot.cmd" /f
+  rem Ensure the admin autologon gets an un-filtered token so certutil/pnputil in
+  rem the RunOnce run elevated (idempotent with the agent block below).
+  reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA /t REG_DWORD /d 0 /f
+  reg unload HKLM\BVGPUSW
+  echo BVINJECT VIOGPU3D FIRSTBOOT PLANT DONE
 )
 
 rem --- when injecting the virtio-gpu display driver, reset the persisted
@@ -61,7 +76,10 @@ rem     display topology so Windows re-detects monitors on next boot and makes
 rem     the (now sole) virtio-gpu adapter primary — otherwise the taskbar stays
 rem     assigned to the removed Basic Display and never renders. Harmless: the
 rem     GraphicsDrivers Configuration/Connectivity keys are rebuilt on boot. ---
-if exist %DRV%\viogpudo\viogpudo.inf (
+set GPUDISP=
+if exist %DRV%\viogpudo\viogpudo.inf set GPUDISP=1
+if exist %DRV%\viogpu3d\viogpu3d.inf set GPUDISP=1
+if defined GPUDISP (
   echo BVINJECT DISPLAY-CONFIG RESET
   reg load HKLM\BVSYS %WIN%\Windows\System32\config\SYSTEM
   reg delete "HKLM\BVSYS\ControlSet001\Control\GraphicsDrivers\Configuration" /f 2>nul
@@ -83,15 +101,16 @@ if exist %DRV%\..\bvagent.ps1 (
   rem itself), not the WinPE-assigned injection-time letter in %WIN%.
   reg add "HKLM\BVSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMAgent /t REG_SZ /d "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\bvagent.ps1" /f
   rem The first user is an Administrator but UAC filters its token, so a
-  rem Run/Startup-launched agent runs unelevated and CANNOT open the
-  rem virtio-serial port (access denied). Disable UAC (dev/build VM) so the
-  rem agent gets the full admin token and can open the port on first boot.
+  rem Run-launched agent runs unelevated and CANNOT open the virtio-serial
+  rem port (access denied). Disable UAC (dev/build VM) so the agent gets the
+  rem full admin token and can open the port on first boot.
   reg add "HKLM\BVSW\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA /t REG_DWORD /d 0 /f
   reg unload HKLM\BVSW
-  rem also drop a launcher in the all-users Startup folder (belt-and-suspenders
-  rem vs the Run key; a plain file we can verify offline). Use %WIN% inline (a
-  rem var set inside this block would not expand without delayed expansion).
-  if exist %DRV%\..\bvagent.bat copy /y %DRV%\..\bvagent.bat "%WIN%\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\bvagent.bat" >nul
+  rem NOTE: exactly ONE autostart. We deliberately do NOT also drop a Startup
+  rem launcher: two autostarts race two agent instances, and the loser's
+  rem CreateFile/close churns vioser's single-open port (resetting
+  rem HostConnected) every few seconds. The HKLM Run key above is the single
+  rem source of truth; bvagent.ps1's mutex is only a belt-and-suspenders guard.
   echo BVINJECT AGENT PLANT DONE
 )
 
