@@ -369,7 +369,7 @@ set -e
   printf 'ramfb_files:\n'
   find "$EVIDENCE_DIR/ramfb" -maxdepth 1 -type f -print | sort
   printf 'run_log_summary_grep:\n'
-  rg -n 'DRIVER_PNP_WATCHDOG|0x1D5|bugcheck|BridgeVM scripted install|Source drive|diskpart|DiskPart|dism|Apply-Image|op=0x01|nsid=2|storage target effect|exact_target_storage_evidence|target_effect_class|panic|HV_DENIED|hv_vm_create|watchdog|SYSTEM_RESET|SYSTEM_OFF|PSCI' "$EVIDENCE_DIR/run.log" || true
+  grep -nE 'DRIVER_PNP_WATCHDOG|0x1D5|bugcheck|BridgeVM scripted install|Source drive|diskpart|DiskPart|dism|Apply-Image|op=0x01|nsid=2|storage target effect|exact_target_storage_evidence|target_effect_class|panic|HV_DENIED|hv_vm_create|watchdog|SYSTEM_RESET|SYSTEM_OFF|PSCI' "$EVIDENCE_DIR/run.log" || true
 } > "$EVIDENCE_DIR/target-stat.txt" 2>&1
 
 exit "$RUN_STATUS"
