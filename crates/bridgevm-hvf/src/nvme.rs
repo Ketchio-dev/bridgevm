@@ -432,13 +432,26 @@ impl DiskBackend {
     }
 
     fn read_at(&mut self, offset: u64, len: usize) -> io::Result<Vec<u8>> {
-        self.validate_range(offset, len)?;
+        let mut out = vec![0u8; len];
+        self.read_at_into(offset, &mut out)?;
+        Ok(out)
+    }
+
+    /// Read `dst.len()` bytes at `offset` directly into `dst`. Both backends are
+    /// bounds-checked against the namespace size, so a guest-supplied range that
+    /// runs past the image is rejected rather than reading adjacent bytes. This is
+    /// the coalesced data-path primitive: the NVMe engine issues one call per
+    /// physically-contiguous guest segment (often the whole transfer) instead of
+    /// one allocation + `pread` per 4 KiB PRP page.
+    fn read_at_into(&mut self, offset: u64, dst: &mut [u8]) -> io::Result<()> {
+        self.validate_range(offset, dst.len())?;
         match self {
             Self::Memory(disk) => {
                 let start = offset as usize;
-                Ok(disk[start..start + len].to_vec())
+                dst.copy_from_slice(&disk[start..start + dst.len()]);
+                Ok(())
             }
-            Self::RawFile(disk) => disk.read_at(offset, len),
+            Self::RawFile(disk) => disk.read_at_into(offset, dst),
         }
     }
 
@@ -493,14 +506,17 @@ impl DiskBackend {
 }
 
 impl RawFileDisk {
-    fn read_at(&mut self, offset: u64, len: usize) -> io::Result<Vec<u8>> {
-        let mut out = vec![0u8; len];
-        if len == 0 {
-            return Ok(out);
+    /// Read `dst.len()` bytes at `offset`: one `pread` of the whole span from the
+    /// backing file, then the sparse write overlay merged on top. Merging over the
+    /// whole span (rather than page-by-page) keeps the coalesced read a single
+    /// syscall while preserving the COW-overlay read semantics exactly.
+    fn read_at_into(&mut self, offset: u64, dst: &mut [u8]) -> io::Result<()> {
+        if dst.is_empty() {
+            return Ok(());
         }
-        let end = offset + len as u64;
+        let end = offset + dst.len() as u64;
         self.file.seek(SeekFrom::Start(offset))?;
-        self.file.read_exact(&mut out)?;
+        self.file.read_exact(dst)?;
         let overlay_start = offset.saturating_sub(FILE_OVERLAY_CHUNK_SIZE - 1);
         for (&chunk_base, chunk) in self.overlay.range(overlay_start..end) {
             let chunk_end = chunk_base + chunk.len() as u64;
@@ -510,11 +526,11 @@ impl RawFileDisk {
             let copy_start = offset.max(chunk_base);
             let copy_end = end.min(chunk_end);
             let src = (copy_start - chunk_base) as usize;
-            let dst = (copy_start - offset) as usize;
+            let dst_off = (copy_start - offset) as usize;
             let copy_len = (copy_end - copy_start) as usize;
-            out[dst..dst + copy_len].copy_from_slice(&chunk[src..src + copy_len]);
+            dst[dst_off..dst_off + copy_len].copy_from_slice(&chunk[src..src + copy_len]);
         }
-        Ok(out)
+        Ok(())
     }
 
     fn write_at(&mut self, offset: u64, data: &[u8]) -> io::Result<()> {
@@ -596,6 +612,12 @@ pub struct NvmeController {
     msix: MsixTable,
     /// Recent command/completion history for live Windows bring-up.
     command_trace: VecDeque<NvmeCommandTrace>,
+    /// Reusable staging buffer for the data path's buffered fallback (used when
+    /// the guest-memory view exposes no stable host pointer for direct DMA). Kept
+    /// at its high-water mark across commands so a steady stream of IO reuses one
+    /// allocation instead of allocating per PRP page. Holds no state between
+    /// commands; each command fully overwrites the prefix it reads.
+    io_scratch: Vec<u8>,
     /// Outstanding AER commands that should complete only when an async event is
     /// raised. This minimal controller does not raise events yet, so it only
     /// tracks the advertised limit and leaves accepted requests pending.
@@ -646,6 +668,7 @@ impl NvmeController {
             volatile_write_cache_enabled: true,
             msix: MsixTable::new(NVME_MSIX_VECTOR_COUNT),
             command_trace: VecDeque::with_capacity(COMMAND_TRACE_CAPACITY),
+            io_scratch: Vec::new(),
             pending_async_event_requests: 0,
         }
     }
@@ -1481,6 +1504,13 @@ impl NvmeController {
 
     /// NVM READ (0x02). SLBA in CDW10/11 (64-bit), NLB in CDW12 bits 15:0
     /// (0-based). Data is scattered through PRP1/PRP2 or a PRP list.
+    ///
+    /// The transfer is decoded once into physically-contiguous guest segments,
+    /// then either DMA'd straight from the backing store into guest RAM (when the
+    /// memory view exposes stable host pointers) or staged through the reusable
+    /// scratch buffer. Both paths issue at most one disk read per contiguous guest
+    /// segment — commonly one for the whole command — where the old path did one
+    /// allocation + `pread` per 4 KiB PRP page.
     fn io_read(&mut self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
         let Some(byte_len) = self.backend_for_nsid(cmd.nsid).map(DiskBackend::byte_len) else {
             return SC_INVALID_FIELD;
@@ -1491,23 +1521,98 @@ impl NvmeController {
         let Some(spans) = prp_spans(cmd, len, mem) else {
             return SC_INVALID_FIELD;
         };
-        let Some(backend) = self.backend_for_nsid_mut(cmd.nsid) else {
-            return SC_INVALID_FIELD;
-        };
-        let mut disk_off = start;
-        for (gpa, span_len) in spans {
-            let Ok(data) = backend.read_at(disk_off, span_len) else {
-                return SC_INVALID_FIELD;
-            };
-            if !mem.write_bytes(gpa, &data) {
-                return SC_INVALID_FIELD;
-            }
-            disk_off += span_len as u64;
+        let segments = coalesce_spans(&spans);
+        if let Some(status) = self.io_read_direct(cmd.nsid, start, &segments, mem) {
+            return status;
         }
-        SC_SUCCESS
+        self.io_read_buffered(cmd.nsid, start, len, &segments, mem)
+    }
+
+    /// Zero-copy read fast path: `pread` the backing store straight into guest
+    /// RAM through [`GuestMemoryMut::host_ptr`]. Returns `None` (so the caller
+    /// falls back to the buffered path) when the memory view exposes no host
+    /// pointer, without having touched guest RAM.
+    fn io_read_direct(
+        &mut self,
+        nsid: u32,
+        start: u64,
+        segments: &[(u64, usize)],
+        mem: &mut dyn GuestMemoryMut,
+    ) -> Option<u16> {
+        let first = segments.first()?;
+        // Probe before writing anything: an all-or-nothing host_ptr view either
+        // resolves the first span or the whole memory lacks direct pointers.
+        mem.host_ptr(first.0, first.1)?;
+        let mut disk_off = start;
+        for &(gpa, seg_len) in segments {
+            let Some(ptr) = mem.host_ptr(gpa, seg_len) else {
+                return Some(SC_INVALID_FIELD);
+            };
+            // SAFETY: host_ptr validated [gpa, gpa+seg_len) lies inside the guest
+            // RAM mapping. process() runs under the platform lock, so no vCPU
+            // accesses this span concurrently, and segments are processed one at a
+            // time so at most one mutable view is live.
+            let dst = unsafe { std::slice::from_raw_parts_mut(ptr, seg_len) };
+            let Some(backend) = self.backend_for_nsid_mut(nsid) else {
+                return Some(SC_INVALID_FIELD);
+            };
+            if backend.read_at_into(disk_off, dst).is_err() {
+                return Some(SC_INVALID_FIELD);
+            }
+            disk_off += seg_len as u64;
+        }
+        Some(SC_SUCCESS)
+    }
+
+    /// Buffered read path: one coalesced `read_at_into` per contiguous guest
+    /// segment through the reusable scratch buffer, then scattered into guest RAM
+    /// with `write_bytes`. Used when direct DMA is unavailable (unit tests, any
+    /// memory view without `host_ptr`).
+    fn io_read_buffered(
+        &mut self,
+        nsid: u32,
+        start: u64,
+        len: usize,
+        segments: &[(u64, usize)],
+        mem: &mut dyn GuestMemoryMut,
+    ) -> u16 {
+        if len == 0 {
+            return SC_SUCCESS;
+        }
+        let mut scratch = std::mem::take(&mut self.io_scratch);
+        if scratch.len() < len {
+            scratch.resize(len, 0);
+        }
+        let status = if let Some(backend) = self.backend_for_nsid_mut(nsid) {
+            if backend.read_at_into(start, &mut scratch[..len]).is_err() {
+                SC_INVALID_FIELD
+            } else {
+                let mut off = 0usize;
+                let mut ok = true;
+                for &(gpa, seg_len) in segments {
+                    if !mem.write_bytes(gpa, &scratch[off..off + seg_len]) {
+                        ok = false;
+                        break;
+                    }
+                    off += seg_len;
+                }
+                if ok {
+                    SC_SUCCESS
+                } else {
+                    SC_INVALID_FIELD
+                }
+            }
+        } else {
+            SC_INVALID_FIELD
+        };
+        self.io_scratch = scratch;
+        status
     }
 
     /// NVM WRITE (0x01). Same addressing as READ; copies guest data into disk.
+    ///
+    /// Synchronous write-back is preserved exactly: in write-through mode each
+    /// segment's `write_at` lands in the host file before the command completes.
     fn io_write(&mut self, cmd: &SubmissionEntry, mem: &mut dyn GuestMemoryMut) -> u16 {
         let Some(byte_len) = self.backend_for_nsid(cmd.nsid).map(DiskBackend::byte_len) else {
             return SC_INVALID_FIELD;
@@ -1518,20 +1623,86 @@ impl NvmeController {
         let Some(spans) = prp_spans(cmd, len, mem) else {
             return SC_INVALID_FIELD;
         };
-        let Some(backend) = self.backend_for_nsid_mut(cmd.nsid) else {
-            return SC_INVALID_FIELD;
-        };
-        let mut disk_off = start;
-        for (gpa, span_len) in spans {
-            let Some(data) = mem.read_bytes(gpa, span_len) else {
-                return SC_INVALID_FIELD;
-            };
-            if backend.write_at(disk_off, &data).is_err() {
-                return SC_INVALID_FIELD;
-            }
-            disk_off += span_len as u64;
+        let segments = coalesce_spans(&spans);
+        if let Some(status) = self.io_write_direct(cmd.nsid, start, &segments, mem) {
+            return status;
         }
-        SC_SUCCESS
+        self.io_write_buffered(cmd.nsid, start, len, &segments, mem)
+    }
+
+    /// Zero-copy write fast path: `pwrite` guest RAM straight to the backing store
+    /// through [`GuestMemoryMut::host_ptr`]. Returns `None` (fall back to buffered)
+    /// when no host pointer is available, without having written anything.
+    fn io_write_direct(
+        &mut self,
+        nsid: u32,
+        start: u64,
+        segments: &[(u64, usize)],
+        mem: &mut dyn GuestMemoryMut,
+    ) -> Option<u16> {
+        let first = segments.first()?;
+        mem.host_ptr(first.0, first.1)?;
+        let mut disk_off = start;
+        for &(gpa, seg_len) in segments {
+            let Some(ptr) = mem.host_ptr(gpa, seg_len) else {
+                return Some(SC_INVALID_FIELD);
+            };
+            // SAFETY: host_ptr validated [gpa, gpa+seg_len) lies inside the guest
+            // RAM mapping; this is a read-only view for the disk write, and
+            // process() holds the platform lock so the span is not mutated
+            // concurrently.
+            let src = unsafe { std::slice::from_raw_parts(ptr, seg_len) };
+            let Some(backend) = self.backend_for_nsid_mut(nsid) else {
+                return Some(SC_INVALID_FIELD);
+            };
+            if backend.write_at(disk_off, src).is_err() {
+                return Some(SC_INVALID_FIELD);
+            }
+            disk_off += seg_len as u64;
+        }
+        Some(SC_SUCCESS)
+    }
+
+    /// Buffered write path: gather the contiguous guest segments into the reusable
+    /// scratch buffer with `read_into`, then one `write_at` for the whole
+    /// contiguous disk range. Used when direct DMA is unavailable.
+    fn io_write_buffered(
+        &mut self,
+        nsid: u32,
+        start: u64,
+        len: usize,
+        segments: &[(u64, usize)],
+        mem: &mut dyn GuestMemoryMut,
+    ) -> u16 {
+        if len == 0 {
+            return SC_SUCCESS;
+        }
+        let mut scratch = std::mem::take(&mut self.io_scratch);
+        if scratch.len() < len {
+            scratch.resize(len, 0);
+        }
+        let mut off = 0usize;
+        let mut gathered = true;
+        for &(gpa, seg_len) in segments {
+            if !mem.read_into(gpa, &mut scratch[off..off + seg_len]) {
+                gathered = false;
+                break;
+            }
+            off += seg_len;
+        }
+        let status = if !gathered {
+            SC_INVALID_FIELD
+        } else if let Some(backend) = self.backend_for_nsid_mut(nsid) {
+            if backend.write_at(start, &scratch[..len]).is_ok() {
+                SC_SUCCESS
+            } else {
+                SC_INVALID_FIELD
+            }
+        } else {
+            SC_INVALID_FIELD
+        };
+        self.io_scratch = scratch;
+        status
     }
 
     /// Post a 16-byte completion-queue entry for `cmd` into completion queue
@@ -1805,6 +1976,31 @@ fn transfer_range(cmd: &SubmissionEntry, byte_len: u64) -> Option<(u64, usize)> 
         return None;
     }
     Some((start, len as usize))
+}
+
+/// Merge physically-contiguous PRP spans into larger segments. The spans arrive
+/// in transfer order and the disk range is contiguous, so any run whose guest
+/// addresses abut collapses into one segment — turning a 128 KiB scatter of
+/// thirty-two 4 KiB pages into a single segment when the guest allocated the
+/// buffer contiguously. `checked_add` keeps a guest-controlled address near the
+/// top of the space from overflowing (and, under overflow-checks, panicking).
+fn coalesce_spans(spans: &[(u64, usize)]) -> Vec<(u64, usize)> {
+    let mut out: Vec<(u64, usize)> = Vec::with_capacity(spans.len());
+    for &(gpa, len) in spans {
+        if len == 0 {
+            continue;
+        }
+        if let Some(last) = out.last_mut() {
+            if last.0.checked_add(last.1 as u64) == Some(gpa) {
+                // Segment length is bounded by the transfer length, which
+                // transfer_range already validated fits the namespace.
+                last.1 += len;
+                continue;
+            }
+        }
+        out.push((gpa, len));
+    }
+    out
 }
 
 /// Merge a partial write into a 64-bit register. `high` selects the upper
@@ -3653,5 +3849,396 @@ mod tests {
         // Out-of-range spans are rejected, not truncated.
         let mut oob = vec![0u8; 0x10];
         assert!(!mem.read_into(MEM_BASE + 0x1ff8, &mut oob));
+    }
+
+    // ---- Stage 3 DMA path: coalescing + direct DMA + persistence ----------
+
+    #[test]
+    fn coalesce_spans_merges_contiguous_and_splits_on_gaps() {
+        // Three abutting pages collapse into one segment.
+        assert_eq!(
+            coalesce_spans(&[(0x1000, 0x1000), (0x2000, 0x1000), (0x3000, 0x1000)]),
+            vec![(0x1000, 0x3000)]
+        );
+        // A hole between spans keeps them separate.
+        assert_eq!(
+            coalesce_spans(&[(0x1000, 0x1000), (0x3000, 0x1000)]),
+            vec![(0x1000, 0x1000), (0x3000, 0x1000)]
+        );
+        // A partial first span (PRP1 mid-page offset) followed by whole pages.
+        assert_eq!(
+            coalesce_spans(&[(0x1e00, 0x200), (0x2000, 0x1000), (0x3000, 0x1000)]),
+            vec![(0x1e00, 0x2200)]
+        );
+        // Degenerate inputs.
+        assert_eq!(coalesce_spans(&[(0x1000, 0x200)]), vec![(0x1000, 0x200)]);
+        assert_eq!(coalesce_spans(&[]), Vec::<(u64, usize)>::new());
+        // Zero-length spans are dropped, not treated as a break.
+        assert_eq!(
+            coalesce_spans(&[(0x1000, 0), (0x1000, 0x1000)]),
+            vec![(0x1000, 0x1000)]
+        );
+    }
+
+    /// Read `pages` disk pages scattered across non-adjacent guest pages (so the
+    /// segments do NOT coalesce), returning the bytes gathered from guest RAM in
+    /// transfer order. `expose_host_ptr` selects the direct-DMA vs buffered path.
+    fn scatter_read_gathered(pages: usize, expose_host_ptr: bool) -> (Vec<u8>, Vec<u8>) {
+        let disk: Vec<u8> = (0..PAGE_SIZE * pages)
+            .map(|i| (i.wrapping_mul(31).wrapping_add(7)) as u8)
+            .collect();
+        let (mut ctrl, mut mem) =
+            enabled_controller_with_disk_and_mem_len(disk.clone(), 0x40000);
+        if expose_host_ptr {
+            mem.enable_host_ptr();
+        }
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        // Data pages every other page => neighbours never abut => 1 segment/page.
+        let data_gpas: Vec<u64> = (0..pages as u64)
+            .map(|i| DATA_BASE + 0x2000 + i * 2 * PAGE_SIZE_U64)
+            .collect();
+        let list_base = DATA_BASE;
+        let mut list = vec![0u8; (pages - 1) * 8];
+        for k in 1..pages {
+            let off = (k - 1) * 8;
+            list[off..off + 8].copy_from_slice(&data_gpas[k].to_le_bytes());
+        }
+        assert!(mem.write_bytes(list_base, &list));
+
+        let blocks = pages as u32 * (PAGE_SIZE as u32 / LBA_SIZE as u32);
+        let read_cmd =
+            encode_sqe_with_prps(NVM_OP_READ, 0x60, NSID, data_gpas[0], list_base, 0, 0, blocks - 1);
+        assert!(mem.write_bytes(IO_SQ_BASE, &read_cmd));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 0)),
+            SC_SUCCESS
+        );
+
+        let mut gathered = Vec::with_capacity(PAGE_SIZE * pages);
+        for &g in &data_gpas {
+            gathered.extend_from_slice(&mem.read_bytes(g, PAGE_SIZE).unwrap());
+        }
+        (gathered, disk)
+    }
+
+    #[test]
+    fn scatter_read_buffered_is_byte_identical_to_disk() {
+        let (gathered, disk) = scatter_read_gathered(5, false);
+        assert_eq!(gathered, disk, "buffered scatter read must reproduce the disk exactly");
+    }
+
+    #[test]
+    fn scatter_read_direct_dma_is_byte_identical_to_disk() {
+        let (gathered, disk) = scatter_read_gathered(5, true);
+        assert_eq!(gathered, disk, "direct-DMA scatter read must reproduce the disk exactly");
+    }
+
+    #[test]
+    fn scatter_read_direct_and_buffered_agree() {
+        let (buffered, _) = scatter_read_gathered(6, false);
+        let (direct, _) = scatter_read_gathered(6, true);
+        assert_eq!(buffered, direct, "direct DMA and buffered fallback must be byte-identical");
+    }
+
+    /// Write `pages` distinct guest pages scattered across non-adjacent guest
+    /// pages into a fresh disk, returning (disk_image, expected_concatenation).
+    fn scatter_write_result(pages: usize, expose_host_ptr: bool) -> (Vec<u8>, Vec<u8>) {
+        let (mut ctrl, mut mem) =
+            enabled_controller_with_disk_and_mem_len(vec![0u8; PAGE_SIZE * pages], 0x40000);
+        if expose_host_ptr {
+            mem.enable_host_ptr();
+        }
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        let data_gpas: Vec<u64> = (0..pages as u64)
+            .map(|i| DATA_BASE + 0x2000 + i * 2 * PAGE_SIZE_U64)
+            .collect();
+        let mut expected = Vec::with_capacity(PAGE_SIZE * pages);
+        for (page, &g) in data_gpas.iter().enumerate() {
+            let chunk: Vec<u8> = (0..PAGE_SIZE)
+                .map(|i| (0x40 | (page as u8 & 0x0f)).wrapping_add((i % 0x20) as u8))
+                .collect();
+            assert!(mem.write_bytes(g, &chunk));
+            expected.extend_from_slice(&chunk);
+        }
+        let list_base = DATA_BASE;
+        let mut list = vec![0u8; (pages - 1) * 8];
+        for k in 1..pages {
+            let off = (k - 1) * 8;
+            list[off..off + 8].copy_from_slice(&data_gpas[k].to_le_bytes());
+        }
+        assert!(mem.write_bytes(list_base, &list));
+
+        let blocks = pages as u32 * (PAGE_SIZE as u32 / LBA_SIZE as u32);
+        let write_cmd =
+            encode_sqe_with_prps(NVM_OP_WRITE, 0x61, NSID, data_gpas[0], list_base, 0, 0, blocks - 1);
+        assert!(mem.write_bytes(IO_SQ_BASE, &write_cmd));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 0)),
+            SC_SUCCESS
+        );
+        (ctrl.disk_image()[..PAGE_SIZE * pages].to_vec(), expected)
+    }
+
+    #[test]
+    fn scatter_write_buffered_is_byte_identical() {
+        let (disk, expected) = scatter_write_result(5, false);
+        assert_eq!(disk, expected, "buffered scatter write must land byte-identical");
+    }
+
+    #[test]
+    fn scatter_write_direct_dma_is_byte_identical() {
+        let (disk, expected) = scatter_write_result(5, true);
+        assert_eq!(disk, expected, "direct-DMA scatter write must land byte-identical");
+    }
+
+    #[test]
+    fn single_sector_read_write_direct_dma_roundtrips() {
+        let (mut ctrl, mut mem) =
+            enabled_controller_with_disk_and_mem_len(vec![0u8; LBA_SIZE * 8], 0x10000);
+        mem.enable_host_ptr();
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        let payload: Vec<u8> = (0..LBA_SIZE).map(|i| 0xc0 | (i % 0x20) as u8).collect();
+        assert!(mem.write_bytes(DATA_BASE, &payload));
+        let write = encode_sqe(NVM_OP_WRITE, 0x62, NSID, DATA_BASE, 2, 0, 0);
+        assert!(mem.write_bytes(IO_SQ_BASE, &write));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+
+        let read_gpa = DATA_BASE + PAGE_SIZE_U64;
+        let read = encode_sqe(NVM_OP_READ, 0x63, NSID, read_gpa, 2, 0, 0);
+        assert!(mem.write_bytes(IO_SQ_BASE + SQ_ENTRY_SIZE, &read));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 2);
+        ctrl.process(&mut mem);
+        assert_eq!(mem.read_bytes(read_gpa, LBA_SIZE).unwrap(), payload);
+    }
+
+    #[test]
+    fn read_crossing_prp_list_page_boundary_reproduces_disk() {
+        // A tiny PRP list page (offset near end of a page => 2 slots) forces the
+        // list to chain into a second list page mid-transfer.
+        let pages = 4usize;
+        let disk: Vec<u8> = (0..PAGE_SIZE * pages)
+            .map(|i| (i % 0xf1) as u8)
+            .collect();
+        let (mut ctrl, mut mem) =
+            enabled_controller_with_disk_and_mem_len(disk.clone(), 0x40000);
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        let data0 = DATA_BASE + 0x8000;
+        let data1 = data0 + PAGE_SIZE_U64;
+        let data2 = data1 + PAGE_SIZE_U64;
+        let data3 = data2 + PAGE_SIZE_U64;
+        // list A: 2 slots (16 bytes) at the tail of its page.
+        let list_a = DATA_BASE + (PAGE_SIZE_U64 - 16);
+        // list B: page-aligned second list page.
+        let list_b = DATA_BASE + PAGE_SIZE_U64;
+        // list A: [data1, ->list_b]; list B: [data2, data3].
+        let mut a = [0u8; 16];
+        a[0..8].copy_from_slice(&data1.to_le_bytes());
+        a[8..16].copy_from_slice(&list_b.to_le_bytes());
+        assert!(mem.write_bytes(list_a, &a));
+        let mut b = [0u8; 16];
+        b[0..8].copy_from_slice(&data2.to_le_bytes());
+        b[8..16].copy_from_slice(&data3.to_le_bytes());
+        assert!(mem.write_bytes(list_b, &b));
+
+        let blocks = pages as u32 * (PAGE_SIZE as u32 / LBA_SIZE as u32);
+        let read_cmd = encode_sqe_with_prps(NVM_OP_READ, 0x64, NSID, data0, list_a, 0, 0, blocks - 1);
+        assert!(mem.write_bytes(IO_SQ_BASE, &read_cmd));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 0)),
+            SC_SUCCESS
+        );
+        for (page, &g) in [data0, data1, data2, data3].iter().enumerate() {
+            let s = page * PAGE_SIZE;
+            assert_eq!(
+                mem.read_bytes(g, PAGE_SIZE).unwrap(),
+                disk[s..s + PAGE_SIZE],
+                "page {page} across the chained PRP list"
+            );
+        }
+    }
+
+    #[test]
+    fn transfer_crossing_namespace_end_is_rejected_but_last_sector_succeeds() {
+        let sectors = 8usize;
+        let (mut ctrl, mut mem) =
+            enabled_controller_with_disk_and_mem_len(vec![0u8; LBA_SIZE * sectors], 0x10000);
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        // Reading the exact last sector is in range.
+        let last = (sectors - 1) as u32;
+        let ok = encode_sqe(NVM_OP_READ, 0x65, NSID, DATA_BASE, last, 0, 0);
+        assert!(mem.write_bytes(IO_SQ_BASE, &ok));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 0)),
+            SC_SUCCESS
+        );
+
+        // Two sectors starting at the last sector runs one sector past the end.
+        let over = encode_sqe(NVM_OP_READ, 0x66, NSID, DATA_BASE, last, 0, 1);
+        assert!(mem.write_bytes(IO_SQ_BASE + SQ_ENTRY_SIZE, &over));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 2);
+        ctrl.process(&mut mem);
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 1)),
+            SC_INVALID_FIELD
+        );
+
+        // Writes past the end are likewise rejected.
+        assert!(mem.write_bytes(DATA_BASE, &vec![0xffu8; LBA_SIZE * 2]));
+        let over_w = encode_sqe(NVM_OP_WRITE, 0x67, NSID, DATA_BASE, last, 0, 1);
+        assert!(mem.write_bytes(IO_SQ_BASE + 2 * SQ_ENTRY_SIZE, &over_w));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 3);
+        ctrl.process(&mut mem);
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 2)),
+            SC_INVALID_FIELD
+        );
+    }
+
+    #[test]
+    fn write_back_persists_to_source_file_synchronously_without_flush() {
+        let source = temp_path("dma-writeback-sync");
+        fs::write(&source, vec![0u8; LBA_SIZE * 64]).unwrap();
+        let (mut ctrl, mut mem) = enabled_controller_with_raw_file(&source, true, 0x20000);
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        // Two contiguous pages (coalesce to a single pwrite of 8 KiB).
+        let payload: Vec<u8> = (0..PAGE_SIZE * 2)
+            .map(|i| 0xa0u8.wrapping_add((i % 0x33) as u8))
+            .collect();
+        assert!(mem.write_bytes(DATA_BASE, &payload));
+        let slba = 4u64;
+        let blocks = (PAGE_SIZE * 2 / LBA_SIZE) as u32;
+        let write = encode_sqe_with_prps(
+            NVM_OP_WRITE,
+            0x71,
+            NSID,
+            DATA_BASE,
+            DATA_BASE + PAGE_SIZE_U64,
+            slba as u32,
+            (slba >> 32) as u32,
+            blocks - 1,
+        );
+        assert!(mem.write_bytes(IO_SQ_BASE, &write));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 0)),
+            SC_SUCCESS
+        );
+
+        // Read the source through an independent handle WITHOUT flushing first:
+        // the write-through contract requires bytes to already be on disk.
+        let start = slba as usize * LBA_SIZE;
+        let on_disk = fs::read(&source).unwrap();
+        assert_eq!(
+            &on_disk[start..start + payload.len()],
+            payload.as_slice(),
+            "write-back must reach the host file synchronously, before any flush"
+        );
+        fs::remove_file(source).ok();
+    }
+
+    #[test]
+    fn overlay_write_merges_into_coalesced_read() {
+        let source = temp_path("dma-overlay-merge");
+        let sectors = 32usize;
+        let base: Vec<u8> = (0..LBA_SIZE * sectors).map(|i| (i % 253) as u8).collect();
+        fs::write(&source, &base).unwrap();
+        let (mut ctrl, mut mem) = enabled_controller_with_raw_file(&source, false, 0x20000);
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        // Overwrite sector 5 through the sparse overlay (read-only backend).
+        let repl: Vec<u8> = (0..LBA_SIZE).map(|i| 0xf0 | (i % 0x0f) as u8).collect();
+        assert!(mem.write_bytes(DATA_BASE, &repl));
+        let w = encode_sqe(NVM_OP_WRITE, 0x81, NSID, DATA_BASE, 5, 0, 0);
+        assert!(mem.write_bytes(IO_SQ_BASE, &w));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
+        ctrl.process(&mut mem);
+
+        // Coalesced 2-page read over sectors 0..16 must reflect the overlay at 5.
+        let read_gpa = DATA_BASE + 0x4000;
+        let blocks = (PAGE_SIZE * 2 / LBA_SIZE) as u32;
+        let read = encode_sqe_with_prps(
+            NVM_OP_READ,
+            0x82,
+            NSID,
+            read_gpa,
+            read_gpa + PAGE_SIZE_U64,
+            0,
+            0,
+            blocks - 1,
+        );
+        assert!(mem.write_bytes(IO_SQ_BASE + SQ_ENTRY_SIZE, &read));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 2);
+        ctrl.process(&mut mem);
+        assert_eq!(
+            completion_status(&read_completion(&mem, IO_CQ_BASE, 1)),
+            SC_SUCCESS
+        );
+
+        let mut expected = base[0..PAGE_SIZE * 2].to_vec();
+        expected[5 * LBA_SIZE..6 * LBA_SIZE].copy_from_slice(&repl);
+        assert_eq!(
+            mem.read_bytes(read_gpa, PAGE_SIZE * 2).unwrap(),
+            expected,
+            "coalesced read must merge the sparse overlay over the whole span"
+        );
+        fs::remove_file(source).ok();
+    }
+
+    #[test]
+    #[ignore = "micro-benchmark; run with `--ignored --nocapture`"]
+    fn bench_dma_disk_read_coalescing() {
+        let path = temp_path("dma-bench");
+        let total = 4 * 1024 * 1024usize; // 4 MiB per transfer
+        fs::write(&path, vec![0x5au8; total]).unwrap();
+        let iters = 200usize;
+        let mut backend = DiskBackend::raw_file(&path, false).unwrap();
+        let mut dst = vec![0u8; total];
+
+        // Old shape: one allocation + one pread + one copy per 4 KiB PRP page.
+        let t0 = std::time::Instant::now();
+        for _ in 0..iters {
+            let mut off = 0u64;
+            while (off as usize) < total {
+                let page = backend.read_at(off, PAGE_SIZE).unwrap();
+                let s = off as usize;
+                dst[s..s + PAGE_SIZE].copy_from_slice(&page);
+                off += PAGE_SIZE_U64;
+            }
+        }
+        let old = t0.elapsed();
+
+        // New shape: one coalesced pread into the destination, no allocations.
+        let t1 = std::time::Instant::now();
+        for _ in 0..iters {
+            backend.read_at_into(0, &mut dst).unwrap();
+        }
+        let new = t1.elapsed();
+
+        let mb = (total * iters) as f64 / (1024.0 * 1024.0);
+        eprintln!(
+            "nvme dma read {total_kib} KiB/xfer: old per-page {old_mbps:.0} MB/s ({pages} allocs+syscalls/xfer) -> new coalesced {new_mbps:.0} MB/s (1 syscall/xfer), speedup {ratio:.2}x",
+            total_kib = total / 1024,
+            old_mbps = mb / old.as_secs_f64(),
+            pages = total / PAGE_SIZE,
+            new_mbps = mb / new.as_secs_f64(),
+            ratio = old.as_secs_f64() / new.as_secs_f64(),
+        );
+        fs::remove_file(path).ok();
     }
 }
