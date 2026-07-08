@@ -798,15 +798,12 @@ impl VirtioConsole {
                     port.ready = true;
                 }
                 if control.id == AGENT_PORT_ID {
-                    let mut name = Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_NAME, 0)
-                        .bytes()
-                        .to_vec();
-                    name.extend_from_slice(AGENT_PORT_NAME);
-                    self.enqueue_control(name);
+                    self.enqueue_control(Self::agent_port_name_message());
                     self.ports[1].host_open = true;
                     // A fresh PORT_READY means the port (re)entered D0; vioser
                     // clears HostConnected on every D0 exit, so treat this as a
-                    // new connection epoch and resume re-asserting PORT_OPEN.
+                    // new connection epoch and resume re-asserting PORT_NAME +
+                    // PORT_OPEN.
                     self.agent_connected_confirmed = false;
                     self.enqueue_control(
                         Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_OPEN, 1).bytes(),
@@ -862,7 +859,30 @@ impl VirtioConsole {
         if self.host_open_reassert_pending() {
             return;
         }
+        // Re-send PORT_NAME as well as PORT_OPEN. vioser's VIOSerialFindPortById
+        // drops control messages that arrive before the port PDO fully resolves;
+        // the same race that made the first PORT_OPEN need re-sending also drops
+        // the first PORT_NAME. If PORT_NAME is lost, vioser never sets the port's
+        // NameString, so it never creates the `\DosDevices\<name>` symbolic link
+        // and the guest agent's CreateFile on `\\.\<name>` fails (the port has
+        // only its default `vportNpM` desc, no friendly name). vioser's
+        // VIOSerialPortCreateName is idempotent (`if (!NameString.Buffer)`), so a
+        // redundant PORT_NAME after the name is set is a harmless no-op. Bounded
+        // to the PING heartbeat with one pair in flight, so no control-queue flood.
+        self.enqueue_control(Self::agent_port_name_message());
         self.enqueue_control(Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_OPEN, 1).bytes());
+    }
+
+    /// The PORT_NAME control message for the agent port: an 8-byte control
+    /// header followed by the port name bytes (no trailing NUL — vioser's
+    /// VIOSerialPortCreateName derives the length from the used-ring length and
+    /// appends its own NUL, per virtio 1.2 5.3).
+    fn agent_port_name_message() -> Vec<u8> {
+        let mut name = Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_NAME, 0)
+            .bytes()
+            .to_vec();
+        name.extend_from_slice(AGENT_PORT_NAME);
+        name
     }
 
     fn host_open_reassert_pending(&self) -> bool {
@@ -1741,6 +1761,7 @@ mod tests {
             0x4000_a200,
             0x4000_a300,
             0x4000_a400,
+            0x4000_a500,
         ]
         .into_iter()
         .enumerate()
@@ -1809,8 +1830,13 @@ mod tests {
         );
         dev.agent_send(b"PING");
         dev.poll(&mut mem);
+        // The retry heartbeat re-sends PORT_NAME (in case vioser dropped the
+        // first) followed by PORT_OPEN, so the next two RX buffers carry the pair.
+        let mut expected_name = control_bytes(1, VIRTIO_CONSOLE_PORT_NAME, 0).to_vec();
+        expected_name.extend_from_slice(AGENT_PORT_NAME);
+        assert_eq!(mem.read(0x4000_a400, expected_name.len()), expected_name);
         assert_eq!(
-            mem.read(0x4000_a400, 8),
+            mem.read(0x4000_a500, 8),
             control_bytes(1, VIRTIO_CONSOLE_PORT_OPEN, 1)
         );
 
