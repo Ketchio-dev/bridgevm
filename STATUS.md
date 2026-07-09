@@ -188,7 +188,7 @@ it with keyboard and pointer. Progress against the completion-plan milestone lad
 | **M3** Installed Windows reaches the desktop (OOBE auto-skip, `bridge` autologon) | ✅ done |
 | **M4** Interactive desktop (keyboard + pointer + display) | ✅ substantively done — visible typing into apps + pointer move/click, all ramfb-proven with xHCI enabled |
 | **M5** Connected · persistent · fast enough | 🟡 partial (see below) |
-| **M6** Integration polish (clipboard / resize / shared folders) | ⬜ not started |
+| **M6** Integration polish (clipboard / resize / shared folders) | 🟡 in progress — M6-1 bidirectional clipboard verbs, M6-2 file transfer (LS / chunked GET / PUT), M6-3 resident host service loop + macOS pasteboard auto-sync + control-file command injection, all live-proven over the virtio-console guest channel; resize/shared-folder UX still open |
 
 The old "late-DXE stall / firmware won't bind NVMe" wall is **resolved**: root cause
 was the stale Homebrew `edk2-aarch64-code.fd`; a current tianocore/edk2 ArmVirtQemu
