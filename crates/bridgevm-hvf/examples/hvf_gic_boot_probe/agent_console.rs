@@ -1,13 +1,23 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
+use std::path::{Path, PathBuf};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::{Duration, Instant};
 
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::platform_virt::VirtPlatform;
 
+use super::{hv_vcpus_exit, HvVcpuT, EXIT_CANCELED};
+
 #[path = "host_pasteboard.rs"]
 mod host_pasteboard;
+#[path = "share_sync.rs"]
+mod share_sync;
 
 use host_pasteboard::HostPasteboard;
+use share_sync::{GuestFileOutcome, HostFile, ShareSync, SkipReason, SyncAction};
 
 const TEST_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_TEST";
 const CMDS_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_CMDS";
@@ -15,11 +25,19 @@ const TIMEOUT_MS_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS";
 const SERVICE_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_SERVICE";
 const CLIPSYNC_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC";
 const CLIPSYNC_MS_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC_MS";
+const CLIPSYNC_MAX_KB_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC_MAX_KB";
 const CTL_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_CTL";
+const SHARE_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_SHARE";
+const SHARE_MS_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS";
+const SHARE_MAX_KB_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MAX_KB";
 const DEFAULT_CMDS: &str = "whoami|ver|ipconfig";
 const DEFAULT_TIMEOUT_MS: u64 = 180_000;
 const DEFAULT_CLIPSYNC_MS: u64 = 1000;
+const DEFAULT_CLIPSYNC_MAX_KB: u64 = 8;
 const CLIPSYNC_MS_FLOOR: u64 = 100;
+const DEFAULT_SHARE_MS: u64 = 3000;
+const SHARE_MS_FLOOR: u64 = 500;
+const DEFAULT_SHARE_MAX_KB: u64 = 512;
 
 pub struct AgentConsoleHarness {
     start: Instant,
@@ -36,6 +54,8 @@ pub struct AgentConsoleHarness {
     clipsync: bool,
     /// CLIPGET poll cadence (also the pasteboard thread poll interval).
     clip_interval: Duration,
+    /// Host->guest clipboard payload ceiling (bytes); see the skip print for why.
+    clip_max_bytes: usize,
     /// Pending service requests. The guest agent is a single-threaded
     /// read-dispatch loop, so at most one request is on the wire at a time
     /// (strict lockstep; see `in_flight`).
@@ -62,6 +82,12 @@ pub struct AgentConsoleHarness {
     last_clip_poll: Option<Instant>,
     /// Last time anything was sent to the guest (heartbeat cadence).
     last_send: Option<Instant>,
+    /// Last "SERVICE alive" heartbeat print (30s cadence in service mode).
+    last_alive: Option<Instant>,
+    /// Optional top-level shared-folder sync. Host-side only because the guest
+    /// agent is already deployed and frozen; all behavior is expressed through
+    /// the existing LS/GET/PUT verbs.
+    share: Option<ShareState>,
 }
 
 /// Reassembly state for a chunked GET reply (GETBEG -> GETCHUNK* -> GETEND).
@@ -73,10 +99,34 @@ struct GetAccum {
     chunks_seen: usize,
 }
 
+struct FinishedGet {
+    path: String,
+    total: usize,
+    nchunks: usize,
+    bytes: Vec<u8>,
+    chunks_seen: usize,
+}
+
+struct ShareState {
+    engine: ShareSync,
+    host_dir: PathBuf,
+    guest_dir: String,
+    interval: Duration,
+    last_poll: Option<Instant>,
+    host_skip_seen: HashSet<(String, u128, HostSkipKind)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum HostSkipKind {
+    Dir,
+    TooLarge,
+}
+
 const PING_INTERVAL: Duration = Duration::from_secs(3);
 /// Drop a service request whose reply never arrives after this long (agent
 /// wedged or mid-restart), so a single lost reply can't freeze the queue.
 const SERVICE_TIMEOUT: Duration = Duration::from_secs(20);
+const SHARE_SERVICE_TIMEOUT: Duration = Duration::from_secs(90);
 /// With clipsync off there is no CLIPGET keeping the channel warm, so ping this
 /// often when otherwise idle. With clipsync on, CLIPGET is the heartbeat.
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
@@ -106,6 +156,16 @@ enum ServiceReq {
     Ctl(String),
     /// Keepalive when clipsync is off.
     Ping,
+    /// Poll the guest shared directory.
+    ShareLs,
+    /// Pull one top-level guest file into the host shared directory.
+    ShareGet { name: String },
+    /// Push one captured host file payload into the guest shared directory.
+    SharePut {
+        name: String,
+        bytes: Vec<u8>,
+        hash: u64,
+    },
 }
 
 /// Outcome of interpreting one guest reply line against the in-flight request.
@@ -119,6 +179,19 @@ enum ReplyProgress {
 }
 
 impl AgentConsoleHarness {
+    /// Milliseconds since boot for the BVAGENT evidence prints, so live-run
+    /// latencies are measurable straight from run.log.
+    fn t_ms(&self, now: Instant) -> u128 {
+        now.duration_since(self.start).as_millis()
+    }
+
+    /// Whether the main loop should run the ServiceWake ticker: resident
+    /// service mode is host-driven, so it must not depend on guest activity
+    /// for its tick cadence.
+    pub fn service_wake_needed(&self) -> bool {
+        self.service
+    }
+
     pub fn from_env(start: Instant) -> Option<Self> {
         if !env_flag(TEST_ENV) {
             return None;
@@ -131,6 +204,7 @@ impl AgentConsoleHarness {
         // rate, so host and guest are sampled in step.
         let pasteboard = clipsync.then(|| HostPasteboard::spawn(clip_ms));
         let ctl_path = std::env::var(CTL_ENV).ok().filter(|s| !s.is_empty());
+        let share = service.then(init_share_from_env).flatten();
         Some(Self {
             start,
             timeout: Duration::from_millis(env_u64(TIMEOUT_MS_ENV, DEFAULT_TIMEOUT_MS)),
@@ -142,6 +216,8 @@ impl AgentConsoleHarness {
             service,
             clipsync,
             clip_interval: Duration::from_millis(clip_ms),
+            clip_max_bytes: (env_u64(CLIPSYNC_MAX_KB_ENV, DEFAULT_CLIPSYNC_MAX_KB).max(1) * 1024)
+                as usize,
             queue: VecDeque::new(),
             in_flight: None,
             last_synced: None,
@@ -152,6 +228,8 @@ impl AgentConsoleHarness {
             ctl_last_poll: None,
             last_clip_poll: None,
             last_send: None,
+            last_alive: None,
+            share,
         })
     }
 
@@ -203,6 +281,13 @@ impl AgentConsoleHarness {
         if matches!(self.state, AgentConsoleState::Service) {
             self.service_tick(platform, mem, now);
         }
+
+        // BVAGENT lines are the greppable live evidence, and run.log is a shell
+        // redirect (not a tty) — live-observed to lag by minutes without an
+        // explicit flush, which breaks log-tailing proof drivers. Flushing an
+        // empty buffer is a no-op, so doing it every tick is cheap.
+        use std::io::Write as _;
+        let _ = std::io::stdout().flush();
     }
 
     fn handle_line(
@@ -253,7 +338,7 @@ impl AgentConsoleHarness {
                 }
             }
             AgentConsoleState::Service => {
-                self.handle_service_reply(line);
+                self.handle_service_reply(line, now);
             }
             AgentConsoleState::Done | AgentConsoleState::TimedOut => {}
         }
@@ -357,7 +442,7 @@ impl AgentConsoleHarness {
     fn next_command_line(&mut self, index: usize, now: Instant) -> Option<String> {
         let Some(command) = self.commands.get(index) else {
             if self.service {
-                println!("BVAGENT SERVICE start");
+                println!("BVAGENT SERVICE start t={}", self.t_ms(now));
                 // Anchor the heartbeat clock at service entry so the first ping
                 // is a full interval away rather than immediate.
                 self.last_send = Some(now);
@@ -408,7 +493,7 @@ impl AgentConsoleHarness {
     /// the requesting command, and if BRIDGEVM_VIRTIO_CONSOLE_GET_DIR is set,
     /// write the file there.
     fn finish_get(&mut self, label: &str, _rest: &str) {
-        let Some(accum) = self.get_accum.take() else {
+        let Some(accum) = self.take_finished_get() else {
             return;
         };
         let ok = accum.bytes.len() == accum.total;
@@ -439,6 +524,16 @@ impl AgentConsoleHarness {
         );
     }
 
+    fn take_finished_get(&mut self) -> Option<FinishedGet> {
+        self.get_accum.take().map(|accum| FinishedGet {
+            path: accum.path,
+            total: accum.total,
+            nchunks: accum.nchunks,
+            bytes: accum.bytes,
+            chunks_seen: accum.chunks_seen,
+        })
+    }
+
     // --- Service mode -------------------------------------------------------
 
     fn service_tick(
@@ -447,6 +542,16 @@ impl AgentConsoleHarness {
         mem: &mut dyn GuestMemoryMut,
         now: Instant,
     ) {
+        // 30s liveness heartbeat in the log: distinguishes "service quiet, all
+        // healthy" from "ticks starved" (live-diagnosed once: an idle guest
+        // stopped producing vCPU exits and the whole service froze silently).
+        let due = self
+            .last_alive
+            .is_none_or(|t| now.duration_since(t) >= Duration::from_secs(30));
+        if due {
+            self.last_alive = Some(now);
+            println!("BVAGENT SERVICE alive t={}", self.t_ms(now));
+        }
         self.service_enqueue(now);
         self.service_pump(platform, mem, now);
     }
@@ -466,8 +571,21 @@ impl AgentConsoleHarness {
             if let Some(text) = latest {
                 let normalized = normalize_clip(&text);
                 if self.last_synced.as_deref() != Some(normalized.as_str()) {
-                    self.last_synced = Some(normalized);
-                    self.enqueue_clip_push(text);
+                    // Oversized copies are marked seen but never pushed: the
+                    // guest agent reads the wire with per-call P/Invoke cost, so
+                    // a huge CLIPSET line wedges the whole channel (every later
+                    // request piles into the port and times out).
+                    if text.len() > self.clip_max_bytes {
+                        println!(
+                            "BVAGENT CLIPSYNC skip bytes={} too-large t={}",
+                            text.len(),
+                            self.t_ms(now)
+                        );
+                        self.last_synced = Some(normalized);
+                    } else {
+                        self.last_synced = Some(normalized);
+                        self.enqueue_clip_push(text);
+                    }
                 }
             }
         }
@@ -498,6 +616,21 @@ impl AgentConsoleHarness {
                 self.queue.push_back(ServiceReq::Ping);
             }
         }
+
+        // 5. Shared-folder sync is also lockstep: one LS/GET/PUT at a time.
+        //    The engine compares guest mtimes as strings because the frozen
+        //    PowerShell agent already emits a stable ISO form and the host does
+        //    not need to understand Windows timestamp semantics.
+        let share_due = self.share.as_ref().is_some_and(|share| {
+            share
+                .last_poll
+                .is_none_or(|t| now.duration_since(t) >= share.interval)
+        });
+        if share_due && !self.share_pending() {
+            if !self.enqueue_one_share_host_change() {
+                self.queue.push_back(ServiceReq::ShareLs);
+            }
+        }
     }
 
     /// Timeout the in-flight request if its reply is overdue, then — lockstep —
@@ -509,8 +642,12 @@ impl AgentConsoleHarness {
         now: Instant,
     ) {
         if let Some((req, sent_at)) = self.in_flight.as_ref() {
-            if now.duration_since(*sent_at) >= SERVICE_TIMEOUT {
-                println!("BVAGENT SERVICE timeout {}", req_kind(req));
+            if now.duration_since(*sent_at) >= service_timeout(req) {
+                println!(
+                    "BVAGENT SERVICE timeout {} t={}",
+                    req_kind(req),
+                    now.duration_since(self.start).as_millis()
+                );
                 self.in_flight = None;
                 // A half-received chunked GET is now orphaned; drop it so the
                 // next GET starts from a clean slate.
@@ -536,6 +673,33 @@ impl AgentConsoleHarness {
             }
             ServiceReq::Ctl(command) => command_wire_line(command),
             ServiceReq::Ping => "PING\n".to_string(),
+            ServiceReq::ShareLs => {
+                if let Some(share) = self.share.as_mut() {
+                    share.last_poll = Some(now);
+                    format!("LS {}\n", base64_encode(share.guest_dir.as_bytes()))
+                } else {
+                    return;
+                }
+            }
+            ServiceReq::ShareGet { name } => {
+                let Some(share) = self.share.as_ref() else {
+                    return;
+                };
+                format!(
+                    "GET {}\n",
+                    base64_encode(share_guest_path(&share.guest_dir, name).as_bytes())
+                )
+            }
+            ServiceReq::SharePut { name, bytes, .. } => {
+                let Some(share) = self.share.as_ref() else {
+                    return;
+                };
+                format!(
+                    "PUT {} {}\n",
+                    base64_encode(share_guest_path(&share.guest_dir, name).as_bytes()),
+                    base64_encode(bytes)
+                )
+            }
         };
         platform.virtio_console_agent_send(line.as_bytes(), mem);
         self.last_send = Some(now);
@@ -559,6 +723,47 @@ impl AgentConsoleHarness {
             }
         }
         self.queue.iter().any(|req| pred(req))
+    }
+
+    fn share_pending(&self) -> bool {
+        self.any_pending(is_share_req)
+    }
+
+    fn enqueue_one_share_host_change(&mut self) -> bool {
+        let Some(share) = self.share.as_mut() else {
+            return false;
+        };
+        let files = scan_share_host_dir(share);
+        for name in share.engine.on_host_scan(files) {
+            let path = share.host_dir.join(&name);
+            let Ok(bytes) = std::fs::read(&path) else {
+                continue;
+            };
+            if bytes.len() as u64 > share.engine.max_bytes() {
+                if let Some(mtime_ms) = file_mtime_ms(&path) {
+                    print_host_skip_once(
+                        share,
+                        &name,
+                        mtime_ms,
+                        HostSkipKind::TooLarge,
+                        bytes.len() as u64,
+                    );
+                }
+                continue;
+            }
+            let Some(mtime_ms) = file_mtime_ms(&path) else {
+                continue;
+            };
+            if let Some(push) = share.engine.on_host_file(name.clone(), bytes, mtime_ms) {
+                self.queue.push_back(ServiceReq::SharePut {
+                    name,
+                    bytes: push.bytes,
+                    hash: push.hash,
+                });
+                return true;
+            }
+        }
+        false
     }
 
     fn complete_in_flight(&mut self) {
@@ -612,14 +817,14 @@ impl AgentConsoleHarness {
     /// the in-flight request is completed; unrelated lines are ignored (they
     /// stay in-flight until a matching reply or the stall timeout). A re-emitted
     /// READY while idle means the agent restarted, and is just noted.
-    fn handle_service_reply(&mut self, line: &str) {
+    fn handle_service_reply(&mut self, line: &str, now: Instant) {
         // Snapshot the kind so the &mut self helpers below don't clash with the
         // borrow on self.in_flight.
         let kind = match self.in_flight.as_ref() {
             Some((req, _)) => req.clone(),
             None => {
                 if let Some(hostname) = line.strip_prefix("READY ") {
-                    println!("BVAGENT re-READY {hostname}");
+                    println!("BVAGENT re-READY {hostname} t={}", self.t_ms(now));
                 }
                 return;
             }
@@ -639,7 +844,10 @@ impl AgentConsoleHarness {
                         if let Some(pasteboard) = self.pasteboard.as_ref() {
                             pasteboard.set(normalized);
                         }
-                        println!("BVAGENT CLIPSYNC guest->host bytes={bytes}");
+                        println!(
+                            "BVAGENT CLIPSYNC guest->host bytes={bytes} t={}",
+                            self.t_ms(now)
+                        );
                     }
                     self.complete_in_flight();
                 } else if line.starts_with("ERR") {
@@ -650,8 +858,9 @@ impl AgentConsoleHarness {
             ServiceReq::ClipPush(text) => {
                 if line.starts_with("OK") {
                     println!(
-                        "BVAGENT CLIPSYNC host->guest bytes={}",
-                        to_guest_crlf(&text).len()
+                        "BVAGENT CLIPSYNC host->guest bytes={} t={}",
+                        to_guest_crlf(&text).len(),
+                        self.t_ms(now)
                     );
                     self.complete_in_flight();
                 } else if line.starts_with("ERR") {
@@ -668,7 +877,169 @@ impl AgentConsoleHarness {
                     self.complete_in_flight();
                 }
             }
+            ServiceReq::ShareLs => {
+                if let Some(b64) = line.strip_prefix("LSOK ") {
+                    match base64_decode(b64) {
+                        Ok(bytes) => {
+                            let listing = String::from_utf8_lossy(&bytes);
+                            let actions = self
+                                .share
+                                .as_mut()
+                                .map(|share| {
+                                    share
+                                        .engine
+                                        .on_guest_listing(share_sync::parse_ls(&listing))
+                                })
+                                .unwrap_or_default();
+                            for action in actions {
+                                match action {
+                                    SyncAction::Get { name } => {
+                                        self.queue.push_back(ServiceReq::ShareGet { name });
+                                    }
+                                    SyncAction::Skip { name, reason } => {
+                                        print_guest_skip(&name, reason);
+                                    }
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            println!("BVAGENT SHARE ls-error <base64 decode error: {error:?}>");
+                        }
+                    }
+                    self.complete_in_flight();
+                } else if line.starts_with("ERR") {
+                    println!("BVAGENT SHARE ls-error {line}");
+                    self.complete_in_flight();
+                }
+            }
+            ServiceReq::ShareGet { name } => {
+                if line.starts_with("GETBEG ") || line.starts_with("GETCHUNK ") {
+                    match self.handle_reply_line(line, "") {
+                        ReplyProgress::Incomplete
+                        | ReplyProgress::Complete
+                        | ReplyProgress::Ignored => {}
+                    }
+                } else if let Some(rest) = line.strip_prefix("GETEND ") {
+                    self.handle_share_get_end(&name, rest, now);
+                    self.complete_in_flight();
+                } else if line.starts_with("ERR") {
+                    println!("BVAGENT SHARE get-error {name} {line}");
+                    self.complete_in_flight();
+                }
+            }
+            ServiceReq::SharePut { name, bytes, hash } => {
+                if let Some(rest) = line.strip_prefix("PUTOK ") {
+                    let written = rest
+                        .split_once(' ')
+                        .and_then(|(_, n)| n.parse::<u64>().ok())
+                        .unwrap_or(bytes.len() as u64);
+                    if let Some(share) = self.share.as_mut() {
+                        share
+                            .engine
+                            .on_put_ok(name.clone(), bytes.len() as u64, hash);
+                    }
+                    println!(
+                        "BVAGENT SHARE host->guest {name} bytes={written} t={}",
+                        self.t_ms(now)
+                    );
+                    self.complete_in_flight();
+                } else if line.starts_with("ERR") {
+                    println!("BVAGENT SHARE put-error {name} {line}");
+                    self.complete_in_flight();
+                }
+            }
         }
+    }
+
+    fn handle_share_get_end(&mut self, name: &str, _rest: &str, now: Instant) {
+        let Some(finished) = self.take_finished_get() else {
+            return;
+        };
+        // Never adopt a short read: a truncated transfer would poison both the
+        // host copy and the recorded hash. The next LS poll simply retries.
+        if finished.bytes.len() != finished.total {
+            println!(
+                "BVAGENT SHARE get-short {name} got={} expected={}",
+                finished.bytes.len(),
+                finished.total
+            );
+            return;
+        }
+        let Some(share) = self.share.as_mut() else {
+            return;
+        };
+        match share
+            .engine
+            .on_guest_file(name.to_string(), finished.bytes, None)
+        {
+            GuestFileOutcome::AlreadySynced => {}
+            GuestFileOutcome::WriteHost(bytes) => {
+                let path = share.host_dir.join(name);
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                match std::fs::write(&path, &bytes) {
+                    Ok(()) => {
+                        if let Some(mtime_ms) = file_mtime_ms(&path) {
+                            share.engine.note_host_stat(name, mtime_ms);
+                        }
+                        println!(
+                            "BVAGENT SHARE guest->host {name} bytes={} t={}",
+                            bytes.len(),
+                            self.t_ms(now)
+                        );
+                    }
+                    Err(e) => println!("BVAGENT SHARE write-error {name} {e}"),
+                }
+            }
+        }
+    }
+}
+
+/// Periodic vCPU waker for service mode. The probe's main loop blocks inside
+/// hv_vcpu_run, and with the in-kernel GIC an idle desktop guest can go MINUTES
+/// without a userspace exit — so host-initiated service work (CLIPGET/LS polls,
+/// pasteboard pushes, ctl commands, even stdout flushing) froze until the guest
+/// happened to kick a virtqueue (live-observed as 5-minute log/service stalls).
+/// A steady hv_vcpus_exit heartbeat bounds tick latency the same way
+/// RamfbSampleLoop's sample tick does; the fired flag lets the exit dispatcher
+/// tell this benign wake apart from the watchdog's EXIT_CANCELED.
+pub struct ServiceWake {
+    fired: Arc<AtomicBool>,
+    started: bool,
+}
+
+impl ServiceWake {
+    pub fn new() -> Self {
+        Self {
+            fired: Arc::new(AtomicBool::new(false)),
+            started: false,
+        }
+    }
+
+    /// Idempotently start the ticker thread. Runs for the probe's lifetime
+    /// (the vCPU handle stays valid across the reboot loop's resets).
+    pub fn ensure_started(&mut self, vcpu: HvVcpuT, interval: Duration) {
+        if self.started {
+            return;
+        }
+        self.started = true;
+        let fired = Arc::clone(&self.fired);
+        std::thread::spawn(move || loop {
+            std::thread::sleep(interval);
+            fired.store(true, Ordering::SeqCst);
+            let v = vcpu;
+            // SAFETY: Category 8 - `v` is the live HVF vCPU handle owned by
+            // the probe loop, and the pointer is valid for this synchronous
+            // call that requests one vCPU to leave `hv_vcpu_run`.
+            unsafe { hv_vcpus_exit(&v, 1) };
+        });
+    }
+
+    pub fn canceled_by_service_wake(&self, exit_reason: u32, watchdog_fired: &AtomicBool) -> bool {
+        exit_reason == EXIT_CANCELED
+            && self.fired.swap(false, Ordering::SeqCst)
+            && !watchdog_fired.load(Ordering::SeqCst)
     }
 }
 
@@ -817,7 +1188,136 @@ fn req_kind(req: &ServiceReq) -> &'static str {
         ServiceReq::ClipPush(_) => "clip-push",
         ServiceReq::Ctl(_) => "ctl",
         ServiceReq::Ping => "ping",
+        ServiceReq::ShareLs => "share-ls",
+        ServiceReq::ShareGet { .. } => "share-get",
+        ServiceReq::SharePut { .. } => "share-put",
     }
+}
+
+fn service_timeout(req: &ServiceReq) -> Duration {
+    if is_share_req(req) {
+        SHARE_SERVICE_TIMEOUT
+    } else {
+        SERVICE_TIMEOUT
+    }
+}
+
+fn is_share_req(req: &ServiceReq) -> bool {
+    matches!(
+        req,
+        ServiceReq::ShareLs | ServiceReq::ShareGet { .. } | ServiceReq::SharePut { .. }
+    )
+}
+
+fn init_share_from_env() -> Option<ShareState> {
+    let spec = match std::env::var(SHARE_ENV) {
+        Ok(value) if !value.is_empty() => value,
+        _ => return None,
+    };
+    let Some((host, guest)) = parse_share_spec(&spec) else {
+        println!("BVAGENT SHARE bad spec");
+        return None;
+    };
+    let interval_ms = env_u64(SHARE_MS_ENV, DEFAULT_SHARE_MS).max(SHARE_MS_FLOOR);
+    let max_kb = env_u64(SHARE_MAX_KB_ENV, DEFAULT_SHARE_MAX_KB);
+    Some(ShareState {
+        engine: ShareSync::new(max_kb),
+        host_dir: PathBuf::from(host),
+        guest_dir: guest,
+        interval: Duration::from_millis(interval_ms),
+        last_poll: None,
+        host_skip_seen: HashSet::new(),
+    })
+}
+
+fn parse_share_spec(spec: &str) -> Option<(String, String)> {
+    let (host, guest) = spec.split_once("::")?;
+    if host.is_empty() || guest.is_empty() {
+        return None;
+    }
+    Some((host.to_string(), guest.to_string()))
+}
+
+fn scan_share_host_dir(share: &mut ShareState) -> Vec<HostFile> {
+    let Ok(entries) = std::fs::read_dir(&share.host_dir) else {
+        return Vec::new();
+    };
+    let mut files = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        let mtime_ms = file_mtime_ms_from_meta(&meta).unwrap_or(0);
+        if meta.is_dir() {
+            print_host_skip_once(share, &name, mtime_ms, HostSkipKind::Dir, 0);
+            continue;
+        }
+        if !meta.is_file() {
+            continue;
+        }
+        let size = meta.len();
+        if size > share.engine.max_bytes() {
+            print_host_skip_once(share, &name, mtime_ms, HostSkipKind::TooLarge, size);
+            continue;
+        }
+        // Re-stat through the path only after the directory entry has proven
+        // file-like; this keeps the host scan top-level and cheap.
+        let mtime_ms = file_mtime_ms(&path).unwrap_or(mtime_ms);
+        files.push(HostFile {
+            name,
+            size,
+            mtime_ms,
+        });
+    }
+    files
+}
+
+fn file_mtime_ms(path: &Path) -> Option<u128> {
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|meta| file_mtime_ms_from_meta(&meta))
+}
+
+fn file_mtime_ms_from_meta(meta: &std::fs::Metadata) -> Option<u128> {
+    meta.modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_millis())
+}
+
+fn print_host_skip_once(
+    share: &mut ShareState,
+    name: &str,
+    mtime_ms: u128,
+    kind: HostSkipKind,
+    size: u64,
+) {
+    if !share
+        .host_skip_seen
+        .insert((name.to_string(), mtime_ms, kind))
+    {
+        return;
+    }
+    match kind {
+        HostSkipKind::Dir => println!("BVAGENT SHARE skip {name} dir"),
+        HostSkipKind::TooLarge => println!("BVAGENT SHARE skip {name} too-large {size}"),
+    }
+}
+
+fn print_guest_skip(name: &str, reason: SkipReason) {
+    match reason {
+        SkipReason::Dir => println!("BVAGENT SHARE skip {name} dir"),
+        SkipReason::TooLarge { size } => {
+            println!("BVAGENT SHARE skip {name} too-large {size}")
+        }
+    }
+}
+
+fn share_guest_path(dir: &str, name: &str) -> String {
+    format!("{dir}\\{name}")
 }
 
 /// Fold CRLF to LF (the host/macOS convention). `last_synced` always stores this
@@ -892,6 +1392,7 @@ mod tests {
             service: false,
             clipsync: false,
             clip_interval: Duration::from_millis(1000),
+            clip_max_bytes: 8 * 1024,
             queue: VecDeque::new(),
             in_flight: None,
             last_synced: None,
@@ -902,6 +1403,8 @@ mod tests {
             ctl_last_poll: None,
             last_clip_poll: None,
             last_send: None,
+            last_alive: None,
+            share: None,
         }
     }
 
@@ -913,6 +1416,11 @@ mod tests {
                 ServiceReq::ClipPush(t) => format!("push:{t}"),
                 ServiceReq::Ctl(c) => format!("ctl:{c}"),
                 ServiceReq::Ping => "ping".to_string(),
+                ServiceReq::ShareLs => "share-ls".to_string(),
+                ServiceReq::ShareGet { name } => format!("share-get:{name}"),
+                ServiceReq::SharePut { name, bytes, .. } => {
+                    format!("share-put:{name}:{}", String::from_utf8_lossy(bytes))
+                }
             })
             .collect()
     }
@@ -1154,7 +1662,7 @@ mod tests {
         // Guest clipboard "hello\r\n" -> normalized "hello\n" adopted; no panic
         // even though pasteboard is None (the host set is simply skipped).
         let b64 = base64_encode(b"hello\r\n");
-        h.handle_service_reply(&format!("CLIP {b64}"));
+        h.handle_service_reply(&format!("CLIP {b64}"), Instant::now());
 
         assert_eq!(h.last_synced.as_deref(), Some("hello\n"));
         assert!(h.in_flight.is_none(), "reply completes the in-flight poll");
@@ -1172,5 +1680,114 @@ mod tests {
             !h.queue.iter().any(|r| matches!(r, ServiceReq::ClipPoll)),
             "ClipPoll must never be queued when clipsync is off"
         );
+    }
+
+    #[test]
+    fn parse_share_spec_accepts_windows_guest_paths() {
+        assert_eq!(
+            parse_share_spec("a::C:\\x"),
+            Some(("a".to_string(), "C:\\x".to_string()))
+        );
+        assert_eq!(parse_share_spec("a:C:\\x"), None);
+        assert_eq!(parse_share_spec("::C:\\x"), None);
+        assert_eq!(parse_share_spec("a::"), None);
+    }
+
+    #[test]
+    fn share_ls_not_enqueued_while_share_request_pending() {
+        let mut h = harness();
+        h.state = AgentConsoleState::Service;
+        h.last_send = Some(Instant::now());
+        h.share = Some(test_share_state("pending"));
+        h.in_flight = Some((
+            ServiceReq::ShareGet {
+                name: "x.txt".into(),
+            },
+            Instant::now(),
+        ));
+
+        h.service_enqueue(Instant::now());
+
+        assert!(
+            !h.queue.iter().any(|r| matches!(r, ServiceReq::ShareLs)),
+            "ShareLs must wait until all Share requests leave the system"
+        );
+
+        h.in_flight = None;
+        h.queue.push_back(ServiceReq::SharePut {
+            name: "queued.txt".into(),
+            bytes: b"queued".to_vec(),
+            hash: share_sync::fnv1a64(b"queued"),
+        });
+        h.service_enqueue(Instant::now());
+        assert_eq!(
+            h.queue
+                .iter()
+                .filter(|r| matches!(r, ServiceReq::ShareLs))
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn share_put_captures_bytes_at_enqueue_time() {
+        let dir = std::env::temp_dir().join(format!(
+            "bvagent-share-capture-{}-{}",
+            std::process::id(),
+            "file"
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("x.txt");
+        std::fs::write(&path, b"first").unwrap();
+
+        let mut h = harness();
+        h.state = AgentConsoleState::Service;
+        h.last_send = Some(Instant::now());
+        h.share = Some(ShareState {
+            engine: ShareSync::new(512),
+            host_dir: dir.clone(),
+            guest_dir: "C:\\share".into(),
+            interval: Duration::from_millis(500),
+            last_poll: None,
+            host_skip_seen: HashSet::new(),
+        });
+
+        h.service_enqueue(Instant::now());
+        std::fs::write(&path, b"second").unwrap();
+
+        let put = h
+            .queue
+            .iter()
+            .find_map(|req| match req {
+                ServiceReq::SharePut { name, bytes, hash } => {
+                    Some((name.clone(), bytes.clone(), *hash))
+                }
+                _ => None,
+            })
+            .expect("SharePut queued");
+        assert_eq!(put.0, "x.txt");
+        assert_eq!(put.1, b"first");
+        assert_eq!(put.2, share_sync::fnv1a64(b"first"));
+        assert!(
+            !h.queue.iter().any(|r| matches!(r, ServiceReq::ShareLs)),
+            "ShareLs waits until the captured SharePut leaves the queue"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn test_share_state(label: &str) -> ShareState {
+        let dir =
+            std::env::temp_dir().join(format!("bvagent-share-{label}-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        ShareState {
+            engine: ShareSync::new(512),
+            host_dir: dir,
+            guest_dir: "C:\\share".into(),
+            interval: Duration::from_millis(500),
+            last_poll: None,
+            host_skip_seen: HashSet::new(),
+        }
     }
 }

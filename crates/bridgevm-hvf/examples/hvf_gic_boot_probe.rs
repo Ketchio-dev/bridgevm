@@ -3037,6 +3037,13 @@ fn main() {
             println!("virtio-gpu host-visible shm map port: hv_vm_map enabled");
         }
         let platform = Arc::new(Mutex::new(platform));
+        // Probe-lifetime instance, deliberately OUTSIDE the reboot loop: its
+        // ticker thread keeps firing across guest reboots, and the SAME fired
+        // flag must be the one each boot generation's exit dispatcher consumes.
+        // (A per-boot instance turned the first post-reset EXIT_CANCELED from
+        // the previous generation's ticker into a bogus "watchdog (CANCELED)"
+        // stop — live-observed as the reboot loop dying at reboot 1/8.)
+        let mut agent_service_wake = agent_console::ServiceWake::new();
 
         'reboot: loop {
             // Secondary vCPUs are intentionally scoped to one boot generation in
@@ -3187,6 +3194,16 @@ fn main() {
             let mut setup_input_host_wake = SetupInputHostWake::new();
             let boot_started = Instant::now();
             let mut agent_console = AgentConsoleHarness::from_env(boot_started);
+            // Resident service mode is host-driven: without a steady waker the
+            // main loop sleeps in hv_vcpu_run while the desktop idles and the
+            // service tick starves (see ServiceWake docs). ensure_started is
+            // idempotent, so re-entering here after a guest reboot is fine.
+            if agent_console
+                .as_ref()
+                .is_some_and(|harness| harness.service_wake_needed())
+            {
+                agent_service_wake.ensure_started(vcpu, Duration::from_millis(250));
+            }
             let mut serial_stop_scans = SerialStopScans::default();
             let mut stop_reason;
             let mut stop_reason_code = None;
@@ -3232,7 +3249,10 @@ fn main() {
                     ramfb_sample_loop.canceled_by_sample_tick(reason, &watchdog_fired);
                 let setup_input_wake_canceled =
                     setup_input_host_wake.canceled_by_host_wake(reason, &watchdog_fired);
-                let automation_tick_canceled = sample_tick_canceled || setup_input_wake_canceled;
+                let service_wake_canceled =
+                    agent_service_wake.canceled_by_service_wake(reason, &watchdog_fired);
+                let automation_tick_canceled =
+                    sample_tick_canceled || setup_input_wake_canceled || service_wake_canceled;
                 if reason == EXIT_CANCELED && !automation_tick_canceled {
                     hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                     stop_reason = "watchdog (CANCELED)".into();
