@@ -16,6 +16,16 @@ pub struct AgentConsoleHarness {
     state: AgentConsoleState,
     commands: Vec<String>,
     last_ping: Option<Instant>,
+    get_accum: Option<GetAccum>,
+}
+
+/// Reassembly state for a chunked GET reply (GETBEG -> GETCHUNK* -> GETEND).
+struct GetAccum {
+    path: String,
+    total: usize,
+    nchunks: usize,
+    bytes: Vec<u8>,
+    chunks_seen: usize,
 }
 
 const PING_INTERVAL: Duration = Duration::from_secs(3);
@@ -37,6 +47,7 @@ impl AgentConsoleHarness {
             state: AgentConsoleState::WaitingReady,
             commands: agent_commands_from_env(),
             last_ping: None,
+            get_accum: None,
         })
     }
 
@@ -119,7 +130,46 @@ impl AgentConsoleHarness {
                 self.send_next_command_or_done(0, platform, mem);
             }
             AgentConsoleState::WaitingOut { index } => {
+                // Chunked GET: GETBEG -> GETCHUNK* -> GETEND spans several lines,
+                // so it does NOT advance to the next command until GETEND. All
+                // other replies are single-line and advance immediately.
+                if let Some(rest) = line.strip_prefix("GETBEG ") {
+                    self.begin_get(rest);
+                    return;
+                }
+                if let Some(rest) = line.strip_prefix("GETCHUNK ") {
+                    self.accum_get_chunk(rest);
+                    return;
+                }
+                if let Some(rest) = line.strip_prefix("GETEND ") {
+                    self.finish_get(index, rest);
+                    self.send_next_command_or_done(index + 1, platform, mem);
+                    return;
+                }
                 let command = &self.commands[index];
+                if let Some(b64) = line.strip_prefix("LSOK ") {
+                    match base64_decode(b64) {
+                        Ok(bytes) => println!(
+                            "BVAGENT LS {command}\n{}BVAGENT END {command}",
+                            String::from_utf8_lossy(&bytes)
+                        ),
+                        Err(error) => println!(
+                            "BVAGENT LS {command}\n<base64 decode error: {error:?}>\nBVAGENT END {command}"
+                        ),
+                    }
+                    self.send_next_command_or_done(index + 1, platform, mem);
+                    return;
+                }
+                if let Some(rest) = line.strip_prefix("PUTOK ") {
+                    // PUTOK <b64(path)> <bytes>
+                    let (path_b64, written) = rest.split_once(' ').unwrap_or((rest, "?"));
+                    let path = base64_decode(path_b64)
+                        .map(|b| String::from_utf8_lossy(&b).into_owned())
+                        .unwrap_or_else(|_| "<?>".into());
+                    println!("BVAGENT PUT {command} -> path={path} bytes={written}");
+                    self.send_next_command_or_done(index + 1, platform, mem);
+                    return;
+                }
                 // A command's reply is one of: OUT <exit> <b64> (RUN/PS),
                 // CLIP <b64> (CLIPGET), OK <...> / ERR <...> (CLIPSET & other
                 // verbs). Anything else on this line is stray and ignored.
@@ -181,6 +231,72 @@ impl AgentConsoleHarness {
         };
         platform.virtio_console_agent_send(line.as_bytes(), mem);
         self.state = AgentConsoleState::WaitingOut { index };
+    }
+
+    /// GETBEG <b64(path)> <total> <nchunks> — start reassembly.
+    fn begin_get(&mut self, rest: &str) {
+        let mut it = rest.split(' ');
+        let path = it
+            .next()
+            .and_then(|b| base64_decode(b).ok())
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .unwrap_or_default();
+        let total = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        let nchunks = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        self.get_accum = Some(GetAccum {
+            path,
+            total,
+            nchunks,
+            bytes: Vec::with_capacity(total),
+            chunks_seen: 0,
+        });
+    }
+
+    /// GETCHUNK <seq> <b64(rawbytes)> — append one chunk.
+    fn accum_get_chunk(&mut self, rest: &str) {
+        let Some(accum) = self.get_accum.as_mut() else {
+            return;
+        };
+        let payload = rest.split_once(' ').map_or(rest, |(_, b64)| b64);
+        if let Ok(bytes) = base64_decode(payload) {
+            accum.bytes.extend_from_slice(&bytes);
+            accum.chunks_seen += 1;
+        }
+    }
+
+    /// GETEND <seq> — finalize: verify byte count, print a summary, and if
+    /// BRIDGEVM_VIRTIO_CONSOLE_GET_DIR is set, write the file there.
+    fn finish_get(&mut self, index: usize, _rest: &str) {
+        let command = self.commands.get(index).cloned().unwrap_or_default();
+        let Some(accum) = self.get_accum.take() else {
+            return;
+        };
+        let ok = accum.bytes.len() == accum.total;
+        let head: String = accum
+            .bytes
+            .iter()
+            .take(48)
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let mut written_note = String::new();
+        if let Ok(dir) = std::env::var("BRIDGEVM_VIRTIO_CONSOLE_GET_DIR") {
+            let name = accum
+                .path
+                .rsplit(['\\', '/'])
+                .next()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("bvagent-get.bin");
+            let _ = std::fs::create_dir_all(&dir);
+            let out = std::path::Path::new(&dir).join(name);
+            match std::fs::write(&out, &accum.bytes) {
+                Ok(()) => written_note = format!(" wrote={}", out.display()),
+                Err(e) => written_note = format!(" write-error={e}"),
+            }
+        }
+        println!(
+            "BVAGENT GET {command} path={} bytes={} expected={} chunks={}/{} ok={ok}{written_note} head={head}",
+            accum.path, accum.bytes.len(), accum.total, accum.chunks_seen, accum.nchunks
+        );
     }
 }
 
@@ -328,6 +444,67 @@ fn env_flag(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn harness() -> AgentConsoleHarness {
+        AgentConsoleHarness {
+            start: Instant::now(),
+            timeout: Duration::from_secs(1),
+            framer: LineFramer::new(),
+            state: AgentConsoleState::WaitingOut { index: 0 },
+            commands: vec!["GET Zm9v".to_string()],
+            last_ping: None,
+            get_accum: None,
+        }
+    }
+
+    #[test]
+    fn is_raw_verb_covers_protocol_verbs_only() {
+        for v in ["CLIPGET", "CLIPSET", "LS", "GET", "PUT", "PING"] {
+            assert!(is_raw_verb(v), "{v} should be raw");
+        }
+        for v in ["whoami", "PS", "RUN", "ipconfig", ""] {
+            assert!(!is_raw_verb(v), "{v} should be RUN-wrapped");
+        }
+    }
+
+    #[test]
+    fn reassembles_get_chunks_across_lines() {
+        let mut h = harness();
+        let payload: Vec<u8> = (0u8..=255).cycle().take(600).collect();
+        let path_b64 = base64_encode(b"C:\\Windows\\Temp\\x.bin");
+        h.begin_get(&format!("{path_b64} {} 3", payload.len()));
+        for (seq, chunk) in payload.chunks(256).enumerate() {
+            h.accum_get_chunk(&format!("{seq} {}", base64_encode(chunk)));
+        }
+        let accum = h.get_accum.as_ref().expect("accum present before end");
+        assert_eq!(accum.bytes, payload);
+        assert_eq!(accum.chunks_seen, 3);
+        assert_eq!(accum.total, payload.len());
+        assert_eq!(accum.path, "C:\\Windows\\Temp\\x.bin");
+    }
+
+    #[test]
+    fn empty_get_reassembles_to_zero_bytes() {
+        let mut h = harness();
+        h.begin_get(&format!("{} 0 0", base64_encode(b"C:\\empty.txt")));
+        // no GETCHUNK lines for an empty file
+        let accum = h.get_accum.as_ref().unwrap();
+        assert_eq!(accum.total, 0);
+        assert!(accum.bytes.is_empty());
+        assert_eq!(accum.nchunks, 0);
+    }
+
+    #[test]
+    fn get_accum_ignores_bad_chunk_base64_but_keeps_good_ones() {
+        let mut h = harness();
+        h.begin_get(&format!("{} 6 2", base64_encode(b"C:\\f")));
+        h.accum_get_chunk(&format!("0 {}", base64_encode(b"foo")));
+        h.accum_get_chunk("1 not-valid-b64!!!"); // bad -> ignored
+        h.accum_get_chunk(&format!("2 {}", base64_encode(b"bar")));
+        let accum = h.get_accum.as_ref().unwrap();
+        assert_eq!(accum.bytes, b"foobar");
+        assert_eq!(accum.chunks_seen, 2);
+    }
 
     #[test]
     fn base64_known_vectors_encode_and_decode() {

@@ -270,6 +270,54 @@ while ($true) {
                         Write-Line $h 'OK CLIPSET' 'OK'
                     } catch { Write-Line $h ("ERR CLIPSET " + $_.Exception.Message) 'ERR' }
                 }
+                'LS' {
+                    # LS <b64(path)> -> LSOK <b64(listing)>; one entry per line as
+                    # name|size|isDir(0/1)|mtimeUtc(ISO). Errors -> ERR LS <msg>.
+                    try {
+                        $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg))
+                        $sb = New-Object System.Text.StringBuilder
+                        foreach ($e in Get-ChildItem -LiteralPath $path -Force -ErrorAction Stop) {
+                            $sz = if ($e.PSIsContainer) { 0 } else { $e.Length }
+                            [void]$sb.AppendLine(('{0}|{1}|{2}|{3}' -f $e.Name, $sz, [int]$e.PSIsContainer, $e.LastWriteTimeUtc.ToString('o')))
+                        }
+                        Write-Line $h ('LSOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($sb.ToString()))) 'LSOK'
+                    } catch { Write-Line $h ('ERR LS ' + $_.Exception.Message) 'ERR' }
+                }
+                'GET' {
+                    # GET <b64(path)> -> GETBEG <b64(path)> <total> <nchunks>,
+                    # then N x GETCHUNK <seq> <b64(rawbytes)>, then GETEND <seq>.
+                    # Chunks are 24 KiB raw so each base64 line stays reasonable.
+                    try {
+                        $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg))
+                        $bytes = [System.IO.File]::ReadAllBytes($path)
+                        $total = $bytes.Length
+                        $chunk = 24576
+                        $n = [int][System.Math]::Ceiling($total / [double]$chunk)
+                        Write-Line $h ('GETBEG ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($path)) + ' ' + $total + ' ' + $n) 'GETBEG'
+                        $seq = 0; $off = 0
+                        while ($off -lt $total) {
+                            $len = [System.Math]::Min($chunk, $total - $off)
+                            $slice = New-Object byte[] $len
+                            [System.Array]::Copy($bytes, $off, $slice, 0, $len)
+                            Write-Line $h ('GETCHUNK ' + $seq + ' ' + [System.Convert]::ToBase64String($slice)) 'GETCHUNK'
+                            $off += $len; $seq++
+                        }
+                        Write-Line $h ('GETEND ' + $seq) 'GETEND'
+                    } catch { Write-Line $h ('ERR GET ' + $_.Exception.Message) 'ERR' }
+                }
+                'PUT' {
+                    # PUT <b64(path)> <b64(rawbytes)> -> PUTOK <b64(path)> <bytes>.
+                    # Single-chunk write; the host sends the whole file in one line.
+                    try {
+                        $parts = $arg.Split(' ')
+                        $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))
+                        $data = if ($parts.Length -ge 2 -and $parts[1]) { [System.Convert]::FromBase64String($parts[1]) } else { New-Object byte[] 0 }
+                        $dir = [System.IO.Path]::GetDirectoryName($path)
+                        if ($dir -and -not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+                        [System.IO.File]::WriteAllBytes($path, $data)
+                        Write-Line $h ('PUTOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($path)) + ' ' + $data.Length) 'PUTOK'
+                    } catch { Write-Line $h ('ERR PUT ' + $_.Exception.Message) 'ERR' }
+                }
                 default { Write-Line $h ("OUT 255 " + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes("unknown token: $tok"))) 'OUT' }
             }
         }
