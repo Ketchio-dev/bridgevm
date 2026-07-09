@@ -188,7 +188,7 @@ it with keyboard and pointer. Progress against the completion-plan milestone lad
 | **M3** Installed Windows reaches the desktop (OOBE auto-skip, `bridge` autologon) | ✅ done |
 | **M4** Interactive desktop (keyboard + pointer + display) | ✅ substantively done — visible typing into apps + pointer move/click, all ramfb-proven with xHCI enabled |
 | **M5** Connected · persistent · fast enough | 🟡 partial (see below) |
-| **M6** Integration polish (clipboard / resize / shared folders) | 🟡 in progress — M6-1 bidirectional clipboard verbs, M6-2 file transfer (LS / chunked GET / PUT), M6-3 resident host service loop + macOS pasteboard auto-sync + control-file command injection, all live-proven over the virtio-console guest channel; resize/shared-folder UX still open |
+| **M6** Integration polish (clipboard / resize / shared folders) | ✅ substantively done — M6-1 clipboard verbs, M6-2 file transfer (LS / chunked GET / PUT), M6-3 resident service loop + macOS pasteboard auto-sync + control-file injection, M6-4 bidirectional shared-folder sync (incl. guest-agent self-update over its own channel), all live-proven over virtio-console with an 11-min zero-timeout soak. Resize is formally BLOCKED on a real WDDM driver (ramfb + Basic Display enumerates zero display modes — probed in-guest). Gotchas fixed along the way: idle-guest vCPU-exit starvation (ServiceWake 250ms heartbeat) and the guest power plan sleeping the VM at desktop+5min (powercfg, persisted; bake into inject flow for fresh images) |
 
 The old "late-DXE stall / firmware won't bind NVMe" wall is **resolved**: root cause
 was the stale Homebrew `edk2-aarch64-code.fd`; a current tianocore/edk2 ArmVirtQemu
