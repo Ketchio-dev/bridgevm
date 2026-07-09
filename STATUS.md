@@ -187,7 +187,7 @@ it with keyboard and pointer. Progress against the completion-plan milestone lad
 | **M2** Scripted install completes (WIM applied, bootable) | ✅ done |
 | **M3** Installed Windows reaches the desktop (OOBE auto-skip, `bridge` autologon) | ✅ done |
 | **M4** Interactive desktop (keyboard + pointer + display) | ✅ substantively done — visible typing into apps + pointer move/click, all ramfb-proven with xHCI enabled |
-| **M5** Connected · persistent · fast enough | 🟡 partial (see below) |
+| **M5** Connected · persistent · fast enough | 🟡 partial — **networking live-proven 2026-07-09**: `--virtio-net` (NAT) boots the installed desktop with the in-box netkvm bound ("Red Hat VirtIO Ethernet Adapter"), DHCP lease 10.0.2.15/gw 10.0.2.2, gateway ping 3/3, DNS resolves, HTTP GET example.com → 200 (guest internet works; outbound ICMP is NAT-dropped as with QEMU slirp — known cosmetic gap). Remaining: SMP (single vCPU today), suspend/resume |
 | **M6** Integration polish (clipboard / resize / shared folders) | ✅ substantively done — M6-1 clipboard verbs, M6-2 file transfer (LS / chunked GET / PUT), M6-3 resident service loop + macOS pasteboard auto-sync + control-file injection, M6-4 bidirectional shared-folder sync (incl. guest-agent self-update over its own channel), all live-proven over virtio-console with an 11-min zero-timeout soak. Resize is formally BLOCKED on a real WDDM driver (ramfb + Basic Display enumerates zero display modes — probed in-guest). Gotchas fixed along the way: idle-guest vCPU-exit starvation (ServiceWake 250ms heartbeat) and the guest power plan sleeping the VM at desktop+5min (powercfg, persisted; bake into inject flow for fresh images) |
 
 The old "late-DXE stall / firmware won't bind NVMe" wall is **resolved**: root cause
