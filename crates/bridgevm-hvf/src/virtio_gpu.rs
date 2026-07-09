@@ -3672,10 +3672,7 @@ mod tests {
         let (resp, used_idx) =
             submit_control_readable_descs(&mut dev, &mut mem, &[&req], 24 + 16 * 24);
         assert_eq!(used_idx, 1);
-        assert_eq!(
-            read_le_u32(&resp, 0),
-            Some(VIRTIO_GPU_RESP_OK_DISPLAY_INFO)
-        );
+        assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_DISPLAY_INFO));
         assert_eq!(dev.stats().three_d.fences_pending, 0);
         // A 2D command must not have been handed to the backend as a fence.
         assert!(backend.lock().unwrap().fences.is_empty());

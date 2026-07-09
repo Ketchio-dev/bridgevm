@@ -3836,14 +3836,19 @@ mod tests {
         // Zero-copy fill matches the allocating accessor byte-for-byte.
         let mut dst = vec![0u8; pattern.len()];
         assert!(mem.read_into(MEM_BASE + 0x100, &mut dst));
-        assert_eq!(dst, mem.read_bytes(MEM_BASE + 0x100, pattern.len()).unwrap());
+        assert_eq!(
+            dst,
+            mem.read_bytes(MEM_BASE + 0x100, pattern.len()).unwrap()
+        );
         assert_eq!(dst, pattern);
 
         // The default trait implementation (routed through read_bytes) agrees.
         let mut via_default = vec![0u8; pattern.len()];
-        assert!(GuestMemoryMut::read_bytes(&mem, MEM_BASE + 0x100, pattern.len())
-            .map(|bytes| via_default.copy_from_slice(&bytes))
-            .is_some());
+        assert!(
+            GuestMemoryMut::read_bytes(&mem, MEM_BASE + 0x100, pattern.len())
+                .map(|bytes| via_default.copy_from_slice(&bytes))
+                .is_some()
+        );
         assert_eq!(via_default, pattern);
 
         // Out-of-range spans are rejected, not truncated.
@@ -3887,8 +3892,7 @@ mod tests {
         let disk: Vec<u8> = (0..PAGE_SIZE * pages)
             .map(|i| (i.wrapping_mul(31).wrapping_add(7)) as u8)
             .collect();
-        let (mut ctrl, mut mem) =
-            enabled_controller_with_disk_and_mem_len(disk.clone(), 0x40000);
+        let (mut ctrl, mut mem) = enabled_controller_with_disk_and_mem_len(disk.clone(), 0x40000);
         if expose_host_ptr {
             mem.enable_host_ptr();
         }
@@ -3907,8 +3911,16 @@ mod tests {
         assert!(mem.write_bytes(list_base, &list));
 
         let blocks = pages as u32 * (PAGE_SIZE as u32 / LBA_SIZE as u32);
-        let read_cmd =
-            encode_sqe_with_prps(NVM_OP_READ, 0x60, NSID, data_gpas[0], list_base, 0, 0, blocks - 1);
+        let read_cmd = encode_sqe_with_prps(
+            NVM_OP_READ,
+            0x60,
+            NSID,
+            data_gpas[0],
+            list_base,
+            0,
+            0,
+            blocks - 1,
+        );
         assert!(mem.write_bytes(IO_SQ_BASE, &read_cmd));
         ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
         ctrl.process(&mut mem);
@@ -3927,20 +3939,29 @@ mod tests {
     #[test]
     fn scatter_read_buffered_is_byte_identical_to_disk() {
         let (gathered, disk) = scatter_read_gathered(5, false);
-        assert_eq!(gathered, disk, "buffered scatter read must reproduce the disk exactly");
+        assert_eq!(
+            gathered, disk,
+            "buffered scatter read must reproduce the disk exactly"
+        );
     }
 
     #[test]
     fn scatter_read_direct_dma_is_byte_identical_to_disk() {
         let (gathered, disk) = scatter_read_gathered(5, true);
-        assert_eq!(gathered, disk, "direct-DMA scatter read must reproduce the disk exactly");
+        assert_eq!(
+            gathered, disk,
+            "direct-DMA scatter read must reproduce the disk exactly"
+        );
     }
 
     #[test]
     fn scatter_read_direct_and_buffered_agree() {
         let (buffered, _) = scatter_read_gathered(6, false);
         let (direct, _) = scatter_read_gathered(6, true);
-        assert_eq!(buffered, direct, "direct DMA and buffered fallback must be byte-identical");
+        assert_eq!(
+            buffered, direct,
+            "direct DMA and buffered fallback must be byte-identical"
+        );
     }
 
     /// Write `pages` distinct guest pages scattered across non-adjacent guest
@@ -3973,8 +3994,16 @@ mod tests {
         assert!(mem.write_bytes(list_base, &list));
 
         let blocks = pages as u32 * (PAGE_SIZE as u32 / LBA_SIZE as u32);
-        let write_cmd =
-            encode_sqe_with_prps(NVM_OP_WRITE, 0x61, NSID, data_gpas[0], list_base, 0, 0, blocks - 1);
+        let write_cmd = encode_sqe_with_prps(
+            NVM_OP_WRITE,
+            0x61,
+            NSID,
+            data_gpas[0],
+            list_base,
+            0,
+            0,
+            blocks - 1,
+        );
         assert!(mem.write_bytes(IO_SQ_BASE, &write_cmd));
         ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
         ctrl.process(&mut mem);
@@ -3988,13 +4017,19 @@ mod tests {
     #[test]
     fn scatter_write_buffered_is_byte_identical() {
         let (disk, expected) = scatter_write_result(5, false);
-        assert_eq!(disk, expected, "buffered scatter write must land byte-identical");
+        assert_eq!(
+            disk, expected,
+            "buffered scatter write must land byte-identical"
+        );
     }
 
     #[test]
     fn scatter_write_direct_dma_is_byte_identical() {
         let (disk, expected) = scatter_write_result(5, true);
-        assert_eq!(disk, expected, "direct-DMA scatter write must land byte-identical");
+        assert_eq!(
+            disk, expected,
+            "direct-DMA scatter write must land byte-identical"
+        );
     }
 
     #[test]
@@ -4024,11 +4059,8 @@ mod tests {
         // A tiny PRP list page (offset near end of a page => 2 slots) forces the
         // list to chain into a second list page mid-transfer.
         let pages = 4usize;
-        let disk: Vec<u8> = (0..PAGE_SIZE * pages)
-            .map(|i| (i % 0xf1) as u8)
-            .collect();
-        let (mut ctrl, mut mem) =
-            enabled_controller_with_disk_and_mem_len(disk.clone(), 0x40000);
+        let disk: Vec<u8> = (0..PAGE_SIZE * pages).map(|i| (i % 0xf1) as u8).collect();
+        let (mut ctrl, mut mem) = enabled_controller_with_disk_and_mem_len(disk.clone(), 0x40000);
         create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
 
         let data0 = DATA_BASE + 0x8000;
@@ -4050,7 +4082,8 @@ mod tests {
         assert!(mem.write_bytes(list_b, &b));
 
         let blocks = pages as u32 * (PAGE_SIZE as u32 / LBA_SIZE as u32);
-        let read_cmd = encode_sqe_with_prps(NVM_OP_READ, 0x64, NSID, data0, list_a, 0, 0, blocks - 1);
+        let read_cmd =
+            encode_sqe_with_prps(NVM_OP_READ, 0x64, NSID, data0, list_a, 0, 0, blocks - 1);
         assert!(mem.write_bytes(IO_SQ_BASE, &read_cmd));
         ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
         ctrl.process(&mut mem);

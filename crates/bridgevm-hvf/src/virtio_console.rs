@@ -1008,7 +1008,10 @@ impl VirtioConsole {
             return None;
         };
         let Some(written) = Self::scatter_write_partial(mem, &descs, bytes) else {
-            console_trace!("rx q{queue_index} SCATTER-FAIL head={head} descs={}", descs.len());
+            console_trace!(
+                "rx q{queue_index} SCATTER-FAIL head={head} descs={}",
+                descs.len()
+            );
             return None;
         };
         Self::write_used(
@@ -2048,8 +2051,11 @@ mod tests {
             let entry = used + 4 + slot * 8;
             let head = u32::from_le_bytes(mem.read(entry, 4).try_into().unwrap());
             let len = u32::from_le_bytes(mem.read(entry + 4, 4).try_into().unwrap()) as usize;
-            let addr =
-                u64::from_le_bytes(mem.read(desc + u64::from(head) * DESC_SIZE, 8).try_into().unwrap());
+            let addr = u64::from_le_bytes(
+                mem.read(desc + u64::from(head) * DESC_SIZE, 8)
+                    .try_into()
+                    .unwrap(),
+            );
             messages.push(mem.read(addr, len));
             *seen = seen.wrapping_add(1);
         }
@@ -2063,7 +2069,16 @@ mod tests {
         message: &[u8],
         idx: u16,
     ) {
-        send_tx(dev, mem, 3, 0x4000_4000, 0x4000_5000, data_addr, message, idx);
+        send_tx(
+            dev,
+            mem,
+            3,
+            0x4000_4000,
+            0x4000_5000,
+            data_addr,
+            message,
+            idx,
+        );
     }
 
     #[test]
@@ -2071,8 +2086,26 @@ mod tests {
         let mut dev = VirtioPciConsole::new();
         let mut mem = TestMem::new(0x4000_0000, 0x100000);
         let size: u16 = 32;
-        setup_queue_sized(&mut dev, &mut mem, 2, 0x4000_1000, 0x4000_2000, 0x4000_3000, 2, size);
-        setup_queue_sized(&mut dev, &mut mem, 3, 0x4000_4000, 0x4000_5000, 0x4000_6000, 3, size);
+        setup_queue_sized(
+            &mut dev,
+            &mut mem,
+            2,
+            0x4000_1000,
+            0x4000_2000,
+            0x4000_3000,
+            2,
+            size,
+        );
+        setup_queue_sized(
+            &mut dev,
+            &mut mem,
+            3,
+            0x4000_4000,
+            0x4000_5000,
+            0x4000_6000,
+            3,
+            size,
+        );
         for n in 0..24u16 {
             post_control_rx(
                 &mut mem,
@@ -2146,9 +2179,36 @@ mod tests {
         let mut dev = VirtioPciConsole::new();
         let mut mem = TestMem::new(0x4000_0000, 0x100000);
         let size: u16 = 32;
-        setup_queue_sized(&mut dev, &mut mem, 2, 0x4000_1000, 0x4000_2000, 0x4000_3000, 2, size);
-        setup_queue_sized(&mut dev, &mut mem, 3, 0x4000_4000, 0x4000_5000, 0x4000_6000, 3, size);
-        setup_queue_sized(&mut dev, &mut mem, 5, 0x4000_7000, 0x4000_8000, 0x4000_9000, 5, size);
+        setup_queue_sized(
+            &mut dev,
+            &mut mem,
+            2,
+            0x4000_1000,
+            0x4000_2000,
+            0x4000_3000,
+            2,
+            size,
+        );
+        setup_queue_sized(
+            &mut dev,
+            &mut mem,
+            3,
+            0x4000_4000,
+            0x4000_5000,
+            0x4000_6000,
+            3,
+            size,
+        );
+        setup_queue_sized(
+            &mut dev,
+            &mut mem,
+            5,
+            0x4000_7000,
+            0x4000_8000,
+            0x4000_9000,
+            5,
+            size,
+        );
         for n in 0..28u16 {
             post_control_rx(
                 &mut mem,
@@ -2200,7 +2260,16 @@ mod tests {
 
         // First guest TX byte proves vioser latched HostConnected (its
         // WillWriteBlock gate blocks writes until then).
-        send_tx(&mut dev, &mut mem, 5, 0x4000_7000, 0x4000_8000, 0x4006_0000, b"READY", 0);
+        send_tx(
+            &mut dev,
+            &mut mem,
+            5,
+            0x4000_7000,
+            0x4000_8000,
+            0x4006_0000,
+            b"READY",
+            0,
+        );
         assert!(dev.stats().agent_connected_confirmed);
         assert_eq!(dev.take_inbound(), b"READY");
 
@@ -2228,8 +2297,26 @@ mod tests {
         let mut dev = VirtioPciConsole::new();
         let mut mem = TestMem::new(0x4000_0000, 0x100000);
         let size: u16 = 32;
-        setup_queue_sized(&mut dev, &mut mem, 2, 0x4000_1000, 0x4000_2000, 0x4000_3000, 2, size);
-        setup_queue_sized(&mut dev, &mut mem, 3, 0x4000_4000, 0x4000_5000, 0x4000_6000, 3, size);
+        setup_queue_sized(
+            &mut dev,
+            &mut mem,
+            2,
+            0x4000_1000,
+            0x4000_2000,
+            0x4000_3000,
+            2,
+            size,
+        );
+        setup_queue_sized(
+            &mut dev,
+            &mut mem,
+            3,
+            0x4000_4000,
+            0x4000_5000,
+            0x4000_6000,
+            3,
+            size,
+        );
         for n in 0..30u16 {
             post_control_rx(
                 &mut mem,
@@ -2310,7 +2397,10 @@ mod tests {
         buf_len: u32,
     ) {
         write_desc(mem, desc, slot, buf, buf_len, DESC_F_WRITE, 0);
-        mem.write(avail + 4 + u64::from(avail_idx % size) * 2, &slot.to_le_bytes());
+        mem.write(
+            avail + 4 + u64::from(avail_idx % size) * 2,
+            &slot.to_le_bytes(),
+        );
         mem.write(avail + 2, &avail_idx.wrapping_add(1).to_le_bytes());
     }
 
@@ -2324,7 +2414,16 @@ mod tests {
         let mut dev = VirtioPciConsole::new();
         let mut mem = TestMem::new(0x4000_0000, 0x100000);
         let size: u16 = 4;
-        setup_queue_sized(&mut dev, &mut mem, 4, 0x4000_1000, 0x4000_2000, 0x4000_3000, 4, size);
+        setup_queue_sized(
+            &mut dev,
+            &mut mem,
+            4,
+            0x4000_1000,
+            0x4000_2000,
+            0x4000_3000,
+            4,
+            size,
+        );
 
         // Lap 1: guest fills the whole ring (avail 0..4, descriptor slots 0..4).
         for k in 0..4u16 {
@@ -2355,7 +2454,11 @@ mod tests {
         dev.agent_send(b"stall");
         dev.poll(&mut mem);
         assert!(dev.stats().queues[4].rx_no_buffers > no_buf_before);
-        assert_eq!(dev.stats().host_to_guest_len, 5, "undeliverable bytes are held");
+        assert_eq!(
+            dev.stats().host_to_guest_len,
+            5,
+            "undeliverable bytes are held"
+        );
 
         // Lap 2: guest replenishes past the initial size (avail 4..8) reusing
         // ring slots 0..4, and does NOT ring the doorbell.
