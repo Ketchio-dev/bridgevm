@@ -204,11 +204,12 @@ impl XhciController {
             self.record_event_post_failure();
             return false;
         }
-        let Some(raw_erst) = mem.read_bytes(interrupter.erstba, 16) else {
+        let mut raw_erst = [0u8; 16];
+        if !mem.read_into(interrupter.erstba, &mut raw_erst) {
             trace::event_post_reject_with_gpa("erst_read_failed", interrupter.erstba);
             self.record_event_post_failure();
             return false;
-        };
+        }
         let Some(segment_base) = read_u64(&raw_erst, 0) else {
             trace::event_post_reject_with_gpa(
                 "erst_segment_base_decode_failed",

@@ -527,10 +527,10 @@ impl VirtioMmioBlock {
         if descs.len() < 3 {
             return RequestCompletion::write_status(mem, descs.last(), VIRTIO_BLK_S_IOERR, 1);
         }
-        let header = match mem.read_bytes(descs[0].addr, 16) {
-            Some(bytes) if bytes.len() == 16 => bytes,
-            _ => return RequestCompletion::write_status(mem, descs.last(), VIRTIO_BLK_S_IOERR, 1),
-        };
+        let mut header = [0u8; 16];
+        if !mem.read_into(descs[0].addr, &mut header) {
+            return RequestCompletion::write_status(mem, descs.last(), VIRTIO_BLK_S_IOERR, 1);
+        }
         let req_type = u32::from_le_bytes([header[0], header[1], header[2], header[3]]);
         let sector = u64::from_le_bytes([
             header[8], header[9], header[10], header[11], header[12], header[13], header[14],
@@ -805,12 +805,15 @@ struct Descriptor {
 
 impl Descriptor {
     fn read(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<Self> {
-        let bytes = mem.read_bytes(gpa, DESC_SIZE as usize)?;
+        let mut bytes = [0u8; 16];
+        if !mem.read_into(gpa, &mut bytes) {
+            return None;
+        }
         Some(Self {
-            addr: u64::from_le_bytes(bytes[0..8].try_into().ok()?),
-            len: u32::from_le_bytes(bytes[8..12].try_into().ok()?),
-            flags: u16::from_le_bytes(bytes[12..14].try_into().ok()?),
-            next: u16::from_le_bytes(bytes[14..16].try_into().ok()?),
+            addr: u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            len: u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
+            flags: u16::from_le_bytes(bytes[12..14].try_into().unwrap()),
+            next: u16::from_le_bytes(bytes[14..16].try_into().unwrap()),
         })
     }
 }
@@ -877,8 +880,11 @@ fn read_le_from_bytes(bytes: &[u8], offset: u64, size: u8) -> Option<u64> {
 }
 
 fn read_u16(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u16> {
-    let bytes = mem.read_bytes(gpa, 2)?;
-    Some(u16::from_le_bytes(bytes.try_into().ok()?))
+    let mut bytes = [0u8; 2];
+    if !mem.read_into(gpa, &mut bytes) {
+        return None;
+    }
+    Some(u16::from_le_bytes(bytes))
 }
 
 #[cfg(test)]

@@ -17,7 +17,10 @@ pub(super) struct TransferTrb {
 }
 
 pub(super) fn read_transfer_trb(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<TransferTrb> {
-    let raw = mem.read_bytes(gpa, TRB_SIZE)?;
+    let mut raw = [0u8; TRB_SIZE];
+    if !mem.read_into(gpa, &mut raw) {
+        return None;
+    }
     Some(TransferTrb {
         gpa,
         parameter: read_u64(&raw, 0)?,

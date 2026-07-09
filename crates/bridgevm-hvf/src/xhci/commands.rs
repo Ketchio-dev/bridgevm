@@ -56,9 +56,10 @@ impl XhciController {
             if command_trb == 0 {
                 return false;
             }
-            let Some(raw_command) = mem.read_bytes(command_trb, TRB_SIZE) else {
+            let mut raw_command = [0u8; TRB_SIZE];
+            if !mem.read_into(command_trb, &mut raw_command) {
                 return false;
-            };
+            }
             let Some(command_control) = read_u32(&raw_command, 12) else {
                 return false;
             };
