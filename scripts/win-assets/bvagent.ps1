@@ -1,4 +1,4 @@
-# BridgeVM guest agent — runs host commands over the virtio-serial port.
+# BridgeVM guest agent - runs host commands over the virtio-serial port.
 # No compiled binary: PowerShell + kernel32/cfgmgr32 P/Invoke. Uses RAW IntPtr
 # handles (SafeFileHandle mis-reports INVALID_HANDLE_VALUE as valid on
 # Win-ARM64 / PS 5.1) with a manual INVALID_HANDLE_VALUE check. The port is
@@ -39,7 +39,7 @@ $PortGuid = [System.Guid]'6FDE7521-1B65-48AE-B628-80BE62016026'
 # IOCTL_GET_INFORMATION_BUFFERED: CTL_CODE(FILE_DEVICE_UNKNOWN=0x22, 0x800,
 # METHOD_BUFFERED=0, FILE_ANY_ACCESS=0). Returns VIRTIO_PORT_INFO
 # { UINT Id; BOOLEAN OutVqFull; BOOLEAN HostConnected; BOOLEAN GuestConnected;
-#   CHAR Name[1]; } — default packing: Id@0-3, OutVqFull@4, HostConnected@5,
+#   CHAR Name[1]; } - default packing: Id@0-3, OutVqFull@4, HostConnected@5,
 # GuestConnected@6, Name@7.
 $IOCTL_GET_INFORMATION_BUFFERED = 0x222000
 
@@ -82,7 +82,7 @@ function Is-BadHandle($handle) {
 }
 
 # Enumerate present vioser port device-interface paths via cfgmgr32 (returns a
-# REG_MULTI_SZ of \\?\... paths; simpler than SetupDi* — no interop structs).
+# REG_MULTI_SZ of \\?\... paths; simpler than SetupDi* - no interop structs).
 function Get-PortInterfacePaths {
     $result = @()
     $g = $PortGuid
@@ -177,6 +177,23 @@ $script:BvClipSeq = [uint32]4294967295
 $script:BvClipCache = ''
 Log 'Read-Line buffered reader init size=16384'
 
+$script:BvPutStream = $null
+$script:BvPutPath = ''
+$script:BvPutTotal = [int64]0
+$script:BvPutWritten = [int64]0
+$script:BvPutSeq = 0
+
+function Close-PutStream {
+    if ($null -ne $script:BvPutStream) {
+        try { $script:BvPutStream.Close() } catch { }
+        $script:BvPutStream = $null
+    }
+    $script:BvPutPath = ''
+    $script:BvPutTotal = [int64]0
+    $script:BvPutWritten = [int64]0
+    $script:BvPutSeq = 0
+}
+
 function Read-Line($handle) {
     # Full line, or $null after ~2s idle so the caller can poll port state.
     if ($script:BvLines.Count -gt 0) { return $script:BvLines.Dequeue() }
@@ -260,7 +277,7 @@ while ($true) {
     Start-Sleep -Milliseconds 500
 }
 
-Write-Line $h ("READY " + $env:COMPUTERNAME + " v2-bufread") 'READY'
+Write-Line $h ("READY " + $env:COMPUTERNAME + " v3-share2") 'READY'
 Log 'READY sent'
 Log-PortInfo $h 'after-ready'
 
@@ -324,6 +341,26 @@ while ($true) {
                         Write-Line $h ('LSOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($sb.ToString()))) 'LSOK'
                     } catch { Write-Line $h ('ERR LS ' + $_.Exception.Message) 'ERR' }
                 }
+                'LSR' {
+                    # LSR <b64(root)> -> LSOK <b64(listing)>; recursive entries
+                    # are relpath|size|isDir(0/1)|mtimeUtc(ISO), with relpath
+                    # rooted below <root> and using backslash separators.
+                    try {
+                        $root = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg))
+                        $rootFull = [System.IO.Path]::GetFullPath($root)
+                        if (-not $rootFull.EndsWith('\')) { $rootFull = $rootFull + '\' }
+                        $sb = New-Object System.Text.StringBuilder
+                        foreach ($e in Get-ChildItem -LiteralPath $rootFull -Recurse -Force -ErrorAction Stop) {
+                            $full = [System.IO.Path]::GetFullPath($e.FullName)
+                            if (-not $full.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+                            $rel = $full.Substring($rootFull.Length)
+                            if ([string]::IsNullOrEmpty($rel)) { continue }
+                            $sz = if ($e.PSIsContainer) { 0 } else { $e.Length }
+                            [void]$sb.AppendLine(('{0}|{1}|{2}|{3}' -f $rel, $sz, [int]$e.PSIsContainer, $e.LastWriteTimeUtc.ToString('o')))
+                        }
+                        Write-Line $h ('LSOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($sb.ToString()))) 'LSOK'
+                    } catch { Write-Line $h ('ERR LSR ' + $_.Exception.Message) 'ERR' }
+                }
                 'GET' {
                     # GET <b64(path)> -> GETBEG <b64(path)> <total> <nchunks>,
                     # then N x GETCHUNK <seq> <b64(rawbytes)>, then GETEND <seq>.
@@ -358,6 +395,84 @@ while ($true) {
                         [System.IO.File]::WriteAllBytes($path, $data)
                         Write-Line $h ('PUTOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($path)) + ' ' + $data.Length) 'PUTOK'
                     } catch { Write-Line $h ('ERR PUT ' + $_.Exception.Message) 'ERR' }
+                }
+                'PUTBEG' {
+                    # PUTBEG <b64(path)> <total> <nchunks> -> OK PUTBEG.
+                    # Opens/truncates a stream; PUTCHUNK/PUTEND complete it.
+                    try {
+                        Close-PutStream
+                        $parts = $arg.Split(' ')
+                        $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))
+                        $total = [int64]$parts[1]
+                        $dir = [System.IO.Path]::GetDirectoryName($path)
+                        if ($dir -and -not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+                        $script:BvPutStream = [System.IO.File]::Open($path, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+                        $script:BvPutPath = $path
+                        $script:BvPutTotal = $total
+                        $script:BvPutWritten = [int64]0
+                        $script:BvPutSeq = 0
+                        Write-Line $h 'OK PUTBEG' 'OK'
+                    } catch {
+                        Close-PutStream
+                        Write-Line $h ('ERR PUTBEG ' + $_.Exception.Message) 'ERR'
+                    }
+                }
+                'PUTCHUNK' {
+                    # PUTCHUNK <seq> <b64(rawbytes)> -> OK PUTCHUNK <seq>.
+                    try {
+                        if ($null -eq $script:BvPutStream) { throw 'no-open-put' }
+                        $sp2 = $arg.IndexOf(' ')
+                        $seqText = if ($sp2 -lt 0) { $arg } else { $arg.Substring(0, $sp2) }
+                        $payload = if ($sp2 -lt 0) { '' } else { $arg.Substring($sp2 + 1) }
+                        $seq = [int]$seqText
+                        if ($seq -ne $script:BvPutSeq) {
+                            Write-Line $h 'ERR PUTCHUNK seq' 'ERR'
+                        } else {
+                            $data = if (-not [string]::IsNullOrEmpty($payload)) { [System.Convert]::FromBase64String($payload) } else { New-Object byte[] 0 }
+                            $script:BvPutStream.Write($data, 0, $data.Length)
+                            $script:BvPutWritten += [int64]$data.Length
+                            $script:BvPutSeq++
+                            Write-Line $h ('OK PUTCHUNK ' + $seq) 'OK'
+                        }
+                    } catch { Write-Line $h ('ERR PUTCHUNK ' + $_.Exception.Message) 'ERR' }
+                }
+                'PUTEND' {
+                    # PUTEND <seq> -> PUTOK <b64(path)> <bytes> after byte-count
+                    # verification. The terminal reply matches legacy PUT.
+                    try {
+                        if ($null -eq $script:BvPutStream) { throw 'no-open-put' }
+                        $seq = [int]$arg
+                        $path = $script:BvPutPath
+                        $written = $script:BvPutWritten
+                        $total = $script:BvPutTotal
+                        $expectedSeq = $script:BvPutSeq
+                        Close-PutStream
+                        if ($seq -ne $expectedSeq) {
+                            Write-Line $h 'ERR PUTEND seq' 'ERR'
+                        } elseif ($written -ne $total) {
+                            Write-Line $h 'ERR PUTEND short' 'ERR'
+                        } else {
+                            Write-Line $h ('PUTOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($path)) + ' ' + $written) 'PUTOK'
+                        }
+                    } catch {
+                        Close-PutStream
+                        Write-Line $h ('ERR PUTEND ' + $_.Exception.Message) 'ERR'
+                    }
+                }
+                'DEL' {
+                    # DEL <b64(path)> deletes files only. Directories are never
+                    # removed recursively by the shared-folder protocol.
+                    try {
+                        $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg))
+                        if (Test-Path -LiteralPath $path -PathType Container) {
+                            Write-Line $h 'ERR DEL is-dir' 'ERR'
+                        } elseif (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+                            Write-Line $h 'OK DEL absent' 'OK'
+                        } else {
+                            Remove-Item -LiteralPath $path -Force -ErrorAction Stop
+                            Write-Line $h 'OK DEL' 'OK'
+                        }
+                    } catch { Write-Line $h ('ERR DEL ' + $_.Exception.Message) 'ERR' }
                 }
                 default { Write-Line $h ("OUT 255 " + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes("unknown token: $tok"))) 'OUT' }
             }

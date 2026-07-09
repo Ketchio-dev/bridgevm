@@ -37,7 +37,8 @@ const DEFAULT_CLIPSYNC_MAX_KB: u64 = 8;
 const CLIPSYNC_MS_FLOOR: u64 = 100;
 const DEFAULT_SHARE_MS: u64 = 3000;
 const SHARE_MS_FLOOR: u64 = 500;
-const DEFAULT_SHARE_MAX_KB: u64 = 512;
+const DEFAULT_SHARE_MAX_KB: u64 = 8192;
+const SHARE_PUT_CHUNK_BYTES: usize = 24 * 1024;
 
 pub struct AgentConsoleHarness {
     start: Instant,
@@ -84,10 +85,10 @@ pub struct AgentConsoleHarness {
     last_send: Option<Instant>,
     /// Last "SERVICE alive" heartbeat print (30s cadence in service mode).
     last_alive: Option<Instant>,
-    /// Optional top-level shared-folder sync. Host-side only because the guest
-    /// agent is already deployed and frozen; all behavior is expressed through
-    /// the existing LS/GET/PUT verbs.
+    /// Optional shared-folder sync. Empty directories are not represented in
+    /// the engine: file parent directories are created implicitly on write.
     share: Option<ShareState>,
+    share_old_agent_warned: bool,
 }
 
 /// Reassembly state for a chunked GET reply (GETBEG -> GETCHUNK* -> GETEND).
@@ -118,15 +119,27 @@ struct ShareState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum HostSkipKind {
-    Dir,
     TooLarge,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShareDelDirection {
+    HostToGuest,
+    GuestToHost,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SharePutPhase {
+    Legacy,
+    Beg,
+    Chunk,
+    End,
 }
 
 const PING_INTERVAL: Duration = Duration::from_secs(3);
 /// Drop a service request whose reply never arrives after this long (agent
 /// wedged or mid-restart), so a single lost reply can't freeze the queue.
 const SERVICE_TIMEOUT: Duration = Duration::from_secs(20);
-const SHARE_SERVICE_TIMEOUT: Duration = Duration::from_secs(90);
 /// With clipsync off there is no CLIPGET keeping the channel warm, so ping this
 /// often when otherwise idle. With clipsync on, CLIPGET is the heartbeat.
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
@@ -158,13 +171,20 @@ enum ServiceReq {
     Ping,
     /// Poll the guest shared directory.
     ShareLs,
-    /// Pull one top-level guest file into the host shared directory.
+    /// Pull one guest file into the host shared directory.
     ShareGet { name: String },
     /// Push one captured host file payload into the guest shared directory.
     SharePut {
         name: String,
         bytes: Vec<u8>,
         hash: u64,
+        next_chunk: usize,
+        phase: SharePutPhase,
+    },
+    /// Propagate a confirmed tombstone in one direction.
+    ShareDel {
+        name: String,
+        direction: ShareDelDirection,
     },
 }
 
@@ -204,6 +224,16 @@ impl AgentConsoleHarness {
         // rate, so host and guest are sampled in step.
         let pasteboard = clipsync.then(|| HostPasteboard::spawn(clip_ms));
         let ctl_path = std::env::var(CTL_ENV).ok().filter(|s| !s.is_empty());
+        // Start the ctl tail at the file's CURRENT end, not offset 0: the
+        // harness is re-created per boot generation, and re-ingesting old ctl
+        // content replayed already-executed commands after every guest reboot
+        // (live-observed: the PUT and the `shutdown /r` that caused the reboot
+        // ran again — a self-sustaining reboot loop in the worst case).
+        let ctl_offset = ctl_path
+            .as_deref()
+            .and_then(|p| std::fs::metadata(p).ok())
+            .map(|m| m.len())
+            .unwrap_or(0);
         let share = service.then(init_share_from_env).flatten();
         Some(Self {
             start,
@@ -223,13 +253,14 @@ impl AgentConsoleHarness {
             last_synced: None,
             pasteboard,
             ctl_path,
-            ctl_offset: 0,
+            ctl_offset,
             ctl_framer: LineFramer::new(),
             ctl_last_poll: None,
             last_clip_poll: None,
             last_send: None,
             last_alive: None,
             share,
+            share_old_agent_warned: false,
         })
     }
 
@@ -338,7 +369,7 @@ impl AgentConsoleHarness {
                 }
             }
             AgentConsoleState::Service => {
-                self.handle_service_reply(line, now);
+                self.handle_service_reply(line, Some(platform), Some(mem), now);
             }
             AgentConsoleState::Done | AgentConsoleState::TimedOut => {}
         }
@@ -660,50 +691,75 @@ impl AgentConsoleHarness {
         let Some(req) = self.queue.pop_front() else {
             return;
         };
-        let line = match &req {
-            ServiceReq::ClipPoll => {
-                self.last_clip_poll = Some(now);
-                "CLIPGET\n".to_string()
-            }
-            ServiceReq::ClipPush(text) => {
-                format!(
-                    "CLIPSET {}\n",
-                    base64_encode(to_guest_crlf(text).as_bytes())
-                )
-            }
-            ServiceReq::Ctl(command) => command_wire_line(command),
-            ServiceReq::Ping => "PING\n".to_string(),
-            ServiceReq::ShareLs => {
-                if let Some(share) = self.share.as_mut() {
-                    share.last_poll = Some(now);
-                    format!("LS {}\n", base64_encode(share.guest_dir.as_bytes()))
-                } else {
-                    return;
-                }
-            }
-            ServiceReq::ShareGet { name } => {
-                let Some(share) = self.share.as_ref() else {
-                    return;
-                };
-                format!(
-                    "GET {}\n",
-                    base64_encode(share_guest_path(&share.guest_dir, name).as_bytes())
-                )
-            }
-            ServiceReq::SharePut { name, bytes, .. } => {
-                let Some(share) = self.share.as_ref() else {
-                    return;
-                };
-                format!(
-                    "PUT {} {}\n",
-                    base64_encode(share_guest_path(&share.guest_dir, name).as_bytes()),
-                    base64_encode(bytes)
-                )
-            }
+        let Some(line) = self.service_req_line(&req, now) else {
+            return;
         };
         platform.virtio_console_agent_send(line.as_bytes(), mem);
         self.last_send = Some(now);
         self.in_flight = Some((req, now));
+    }
+
+    fn service_req_line(&mut self, req: &ServiceReq, now: Instant) -> Option<String> {
+        match req {
+            ServiceReq::ClipPoll => {
+                self.last_clip_poll = Some(now);
+                Some("CLIPGET\n".to_string())
+            }
+            ServiceReq::ClipPush(text) => Some(format!(
+                "CLIPSET {}\n",
+                base64_encode(to_guest_crlf(text).as_bytes())
+            )),
+            ServiceReq::Ctl(command) => Some(command_wire_line(command)),
+            ServiceReq::Ping => Some("PING\n".to_string()),
+            ServiceReq::ShareLs => {
+                let share = self.share.as_mut()?;
+                share.last_poll = Some(now);
+                Some(format!(
+                    "LSR {}\n",
+                    base64_encode(share.guest_dir.as_bytes())
+                ))
+            }
+            ServiceReq::ShareGet { name } => {
+                let share = self.share.as_ref()?;
+                Some(format!(
+                    "GET {}\n",
+                    base64_encode(share_guest_path(&share.guest_dir, name).as_bytes())
+                ))
+            }
+            ServiceReq::SharePut {
+                name, bytes, phase, ..
+            } => {
+                let share = self.share.as_ref()?;
+                let path = share_guest_path(&share.guest_dir, name);
+                match phase {
+                    SharePutPhase::Legacy => Some(format!(
+                        "PUT {} {}\n",
+                        base64_encode(path.as_bytes()),
+                        base64_encode(bytes)
+                    )),
+                    SharePutPhase::Beg => Some(format!(
+                        "PUTBEG {} {} {}\n",
+                        base64_encode(path.as_bytes()),
+                        bytes.len(),
+                        bytes.len().div_ceil(SHARE_PUT_CHUNK_BYTES)
+                    )),
+                    SharePutPhase::Chunk | SharePutPhase::End => None,
+                }
+            }
+            ServiceReq::ShareDel { name, direction } => match direction {
+                ShareDelDirection::HostToGuest => {
+                    let share = self.share.as_ref()?;
+                    Some(format!(
+                        "DEL {}\n",
+                        base64_encode(share_guest_path(&share.guest_dir, name).as_bytes())
+                    ))
+                }
+                ShareDelDirection::GuestToHost => {
+                    self.handle_share_delete(name, *direction, now);
+                    None
+                }
+            },
+        }
     }
 
     /// Coalesce host->guest clipboard pushes: a newer host value obsoletes any
@@ -734,33 +790,42 @@ impl AgentConsoleHarness {
             return false;
         };
         let files = scan_share_host_dir(share);
-        for name in share.engine.on_host_scan(files) {
-            let path = share.host_dir.join(&name);
-            let Ok(bytes) = std::fs::read(&path) else {
-                continue;
-            };
-            if bytes.len() as u64 > share.engine.max_bytes() {
-                if let Some(mtime_ms) = file_mtime_ms(&path) {
-                    print_host_skip_once(
-                        share,
-                        &name,
-                        mtime_ms,
-                        HostSkipKind::TooLarge,
-                        bytes.len() as u64,
-                    );
+        for action in share.engine.on_host_scan(files) {
+            match action {
+                SyncAction::Get { name } => {
+                    let path = share.host_dir.join(&name);
+                    let Ok(bytes) = std::fs::read(&path) else {
+                        continue;
+                    };
+                    if bytes.len() as u64 > share.engine.max_bytes() {
+                        if let Some(mtime_ms) = file_mtime_ms(&path) {
+                            print_host_skip_once(
+                                share,
+                                &name,
+                                mtime_ms,
+                                HostSkipKind::TooLarge,
+                                bytes.len() as u64,
+                            );
+                        }
+                        continue;
+                    }
+                    let Some(mtime_ms) = file_mtime_ms(&path) else {
+                        continue;
+                    };
+                    if let Some(push) = share.engine.on_host_file(name.clone(), bytes, mtime_ms) {
+                        self.queue
+                            .push_back(share_put_req(name, push.bytes, push.hash));
+                        return true;
+                    }
                 }
-                continue;
-            }
-            let Some(mtime_ms) = file_mtime_ms(&path) else {
-                continue;
-            };
-            if let Some(push) = share.engine.on_host_file(name.clone(), bytes, mtime_ms) {
-                self.queue.push_back(ServiceReq::SharePut {
-                    name,
-                    bytes: push.bytes,
-                    hash: push.hash,
-                });
-                return true;
+                SyncAction::DeleteGuest { name } => {
+                    self.queue.push_back(ServiceReq::ShareDel {
+                        name,
+                        direction: ShareDelDirection::HostToGuest,
+                    });
+                    return true;
+                }
+                SyncAction::DeleteHost { .. } | SyncAction::Skip { .. } => {}
             }
         }
         false
@@ -817,7 +882,13 @@ impl AgentConsoleHarness {
     /// the in-flight request is completed; unrelated lines are ignored (they
     /// stay in-flight until a matching reply or the stall timeout). A re-emitted
     /// READY while idle means the agent restarted, and is just noted.
-    fn handle_service_reply(&mut self, line: &str, now: Instant) {
+    fn handle_service_reply(
+        &mut self,
+        line: &str,
+        platform: Option<&mut VirtPlatform>,
+        mem: Option<&mut dyn GuestMemoryMut>,
+        now: Instant,
+    ) {
         // Snapshot the kind so the &mut self helpers below don't clash with the
         // borrow on self.in_flight.
         let kind = match self.in_flight.as_ref() {
@@ -896,6 +967,18 @@ impl AgentConsoleHarness {
                                     SyncAction::Get { name } => {
                                         self.queue.push_back(ServiceReq::ShareGet { name });
                                     }
+                                    SyncAction::DeleteHost { name } => {
+                                        self.queue.push_back(ServiceReq::ShareDel {
+                                            name,
+                                            direction: ShareDelDirection::GuestToHost,
+                                        });
+                                    }
+                                    SyncAction::DeleteGuest { name } => {
+                                        self.queue.push_back(ServiceReq::ShareDel {
+                                            name,
+                                            direction: ShareDelDirection::HostToGuest,
+                                        });
+                                    }
                                     SyncAction::Skip { name, reason } => {
                                         print_guest_skip(&name, reason);
                                     }
@@ -909,6 +992,14 @@ impl AgentConsoleHarness {
                     self.complete_in_flight();
                 } else if line.starts_with("ERR") {
                     println!("BVAGENT SHARE ls-error {line}");
+                    self.complete_in_flight();
+                } else if parse_out_line(line).is_some_and(|(exit, _)| exit == 255) {
+                    if !self.share_old_agent_warned {
+                        println!("BVAGENT SHARE agent-too-old (needs v3-share2); share disabled");
+                        self.share_old_agent_warned = true;
+                    }
+                    self.share = None;
+                    self.queue.retain(|req| !is_share_req(req));
                     self.complete_in_flight();
                 }
             }
@@ -927,26 +1018,183 @@ impl AgentConsoleHarness {
                     self.complete_in_flight();
                 }
             }
-            ServiceReq::SharePut { name, bytes, hash } => {
-                if let Some(rest) = line.strip_prefix("PUTOK ") {
-                    let written = rest
-                        .split_once(' ')
-                        .and_then(|(_, n)| n.parse::<u64>().ok())
-                        .unwrap_or(bytes.len() as u64);
-                    if let Some(share) = self.share.as_mut() {
-                        share
-                            .engine
-                            .on_put_ok(name.clone(), bytes.len() as u64, hash);
+            ServiceReq::SharePut { .. } => {
+                self.handle_share_put_reply(line, platform, mem, now);
+            }
+            ServiceReq::ShareDel { .. } => {
+                if line.starts_with("OK DEL") {
+                    if let Some((ServiceReq::ShareDel { name, direction }, _)) =
+                        self.in_flight.as_ref()
+                    {
+                        if *direction == ShareDelDirection::HostToGuest {
+                            if let Some(share) = self.share.as_mut() {
+                                share.engine.on_guest_deleted(name);
+                            }
+                            println!("BVAGENT SHARE del host->guest {name} t={}", self.t_ms(now));
+                        }
                     }
-                    println!(
-                        "BVAGENT SHARE host->guest {name} bytes={written} t={}",
-                        self.t_ms(now)
-                    );
                     self.complete_in_flight();
                 } else if line.starts_with("ERR") {
-                    println!("BVAGENT SHARE put-error {name} {line}");
+                    if let Some((ServiceReq::ShareDel { name, .. }, _)) = self.in_flight.as_ref() {
+                        println!("BVAGENT SHARE del-error {name} {line}");
+                    }
                     self.complete_in_flight();
                 }
+            }
+        }
+    }
+
+    fn handle_share_put_reply(
+        &mut self,
+        line: &str,
+        platform: Option<&mut VirtPlatform>,
+        mem: Option<&mut dyn GuestMemoryMut>,
+        now: Instant,
+    ) {
+        let Some((
+            ServiceReq::SharePut {
+                name, bytes, hash, ..
+            },
+            _,
+        )) = self.in_flight.as_ref()
+        else {
+            return;
+        };
+        let name = name.clone();
+        let len = bytes.len();
+        let hash = *hash;
+
+        if let Some(rest) = line.strip_prefix("PUTOK ") {
+            let written = rest
+                .split_once(' ')
+                .and_then(|(_, n)| n.parse::<u64>().ok())
+                .unwrap_or(len as u64);
+            if let Some(share) = self.share.as_mut() {
+                share.engine.on_put_ok(name.clone(), len as u64, hash);
+            }
+            println!(
+                "BVAGENT SHARE host->guest {name} bytes={written} t={}",
+                self.t_ms(now)
+            );
+            self.complete_in_flight();
+            return;
+        }
+
+        if line.starts_with("ERR") {
+            println!("BVAGENT SHARE put-error {name} {line}");
+            self.complete_in_flight();
+            return;
+        }
+
+        if line == "OK PUTBEG" {
+            self.send_next_share_put_chunk(platform, mem, now);
+            return;
+        }
+
+        if let Some(seq) = line
+            .strip_prefix("OK PUTCHUNK ")
+            .and_then(|s| s.parse::<usize>().ok())
+        {
+            self.advance_share_put_after_chunk(seq, platform, mem, now);
+        }
+    }
+
+    fn send_next_share_put_chunk(
+        &mut self,
+        platform: Option<&mut VirtPlatform>,
+        mem: Option<&mut dyn GuestMemoryMut>,
+        now: Instant,
+    ) {
+        let Some((
+            ServiceReq::SharePut {
+                bytes,
+                next_chunk,
+                phase,
+                ..
+            },
+            sent_at,
+        )) = self.in_flight.as_mut()
+        else {
+            return;
+        };
+        let seq = *next_chunk;
+        let start = seq.saturating_mul(SHARE_PUT_CHUNK_BYTES);
+        let end = (start + SHARE_PUT_CHUNK_BYTES).min(bytes.len());
+        if start > end || start >= bytes.len() {
+            return;
+        }
+        let line = format!("PUTCHUNK {seq} {}\n", base64_encode(&bytes[start..end]));
+        *next_chunk = seq + 1;
+        *phase = SharePutPhase::Chunk;
+        *sent_at = now;
+        self.last_send = Some(now);
+        if let (Some(platform), Some(mem)) = (platform, mem) {
+            platform.virtio_console_agent_send(line.as_bytes(), mem);
+        }
+    }
+
+    fn advance_share_put_after_chunk(
+        &mut self,
+        seq: usize,
+        platform: Option<&mut VirtPlatform>,
+        mem: Option<&mut dyn GuestMemoryMut>,
+        now: Instant,
+    ) {
+        let Some((
+            ServiceReq::SharePut {
+                bytes,
+                next_chunk,
+                phase,
+                ..
+            },
+            sent_at,
+        )) = self.in_flight.as_mut()
+        else {
+            return;
+        };
+        if seq + 1 != *next_chunk {
+            return;
+        }
+        let nchunks = bytes.len().div_ceil(SHARE_PUT_CHUNK_BYTES);
+        let line = if *next_chunk < nchunks {
+            let send_seq = *next_chunk;
+            let start = send_seq * SHARE_PUT_CHUNK_BYTES;
+            let end = (start + SHARE_PUT_CHUNK_BYTES).min(bytes.len());
+            *next_chunk = send_seq + 1;
+            *phase = SharePutPhase::Chunk;
+            format!(
+                "PUTCHUNK {send_seq} {}\n",
+                base64_encode(&bytes[start..end])
+            )
+        } else {
+            *phase = SharePutPhase::End;
+            format!("PUTEND {nchunks}\n")
+        };
+        *sent_at = now;
+        self.last_send = Some(now);
+        if let (Some(platform), Some(mem)) = (platform, mem) {
+            platform.virtio_console_agent_send(line.as_bytes(), mem);
+        }
+    }
+
+    fn handle_share_delete(&mut self, name: &str, direction: ShareDelDirection, now: Instant) {
+        match direction {
+            ShareDelDirection::HostToGuest => {}
+            ShareDelDirection::GuestToHost => {
+                let Some(share) = self.share.as_mut() else {
+                    return;
+                };
+                let path = share.host_dir.join(name);
+                match std::fs::remove_file(&path) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => {
+                        println!("BVAGENT SHARE del-error {name} {e}");
+                        return;
+                    }
+                }
+                share.engine.on_host_deleted(name);
+                println!("BVAGENT SHARE del guest->host {name} t={}", self.t_ms(now));
             }
         }
     }
@@ -1147,7 +1395,20 @@ fn base64_decode(text: &str) -> Result<Vec<u8>, Base64DecodeError> {
 /// Verbs the guest agent handles directly (not shell commands). These are sent
 /// to the agent verbatim; everything else is wrapped as `RUN <base64>`.
 fn is_raw_verb(token: &str) -> bool {
-    matches!(token, "CLIPGET" | "CLIPSET" | "LS" | "GET" | "PUT" | "PING")
+    matches!(
+        token,
+        "CLIPGET"
+            | "CLIPSET"
+            | "LS"
+            | "LSR"
+            | "GET"
+            | "PUT"
+            | "PUTBEG"
+            | "PUTCHUNK"
+            | "PUTEND"
+            | "DEL"
+            | "PING"
+    )
 }
 
 /// Build the wire line for a command string using the scripted-command rule: a
@@ -1191,21 +1452,22 @@ fn req_kind(req: &ServiceReq) -> &'static str {
         ServiceReq::ShareLs => "share-ls",
         ServiceReq::ShareGet { .. } => "share-get",
         ServiceReq::SharePut { .. } => "share-put",
+        ServiceReq::ShareDel { .. } => "share-del",
     }
 }
 
 fn service_timeout(req: &ServiceReq) -> Duration {
-    if is_share_req(req) {
-        SHARE_SERVICE_TIMEOUT
-    } else {
-        SERVICE_TIMEOUT
-    }
+    let _ = req;
+    SERVICE_TIMEOUT
 }
 
 fn is_share_req(req: &ServiceReq) -> bool {
     matches!(
         req,
-        ServiceReq::ShareLs | ServiceReq::ShareGet { .. } | ServiceReq::SharePut { .. }
+        ServiceReq::ShareLs
+            | ServiceReq::ShareGet { .. }
+            | ServiceReq::SharePut { .. }
+            | ServiceReq::ShareDel { .. }
     )
 }
 
@@ -1239,39 +1501,55 @@ fn parse_share_spec(spec: &str) -> Option<(String, String)> {
 }
 
 fn scan_share_host_dir(share: &mut ShareState) -> Vec<HostFile> {
-    let Ok(entries) = std::fs::read_dir(&share.host_dir) else {
-        return Vec::new();
-    };
     let mut files = Vec::new();
+    scan_share_host_dir_inner(share, &share.host_dir.clone(), &mut files);
+    files
+}
+
+fn scan_share_host_dir_inner(share: &mut ShareState, dir: &Path, files: &mut Vec<HostFile>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
         let path = entry.path();
-        let Ok(meta) = entry.metadata() else {
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
             continue;
         };
-        let mtime_ms = file_mtime_ms_from_meta(&meta).unwrap_or(0);
+        if meta.file_type().is_symlink() {
+            continue;
+        }
         if meta.is_dir() {
-            print_host_skip_once(share, &name, mtime_ms, HostSkipKind::Dir, 0);
+            scan_share_host_dir_inner(share, &path, files);
             continue;
         }
         if !meta.is_file() {
             continue;
         }
+        let Some(name) = host_rel_path(&share.host_dir, &path) else {
+            continue;
+        };
+        let mtime_ms = file_mtime_ms_from_meta(&meta).unwrap_or(0);
         let size = meta.len();
         if size > share.engine.max_bytes() {
             print_host_skip_once(share, &name, mtime_ms, HostSkipKind::TooLarge, size);
             continue;
         }
-        // Re-stat through the path only after the directory entry has proven
-        // file-like; this keeps the host scan top-level and cheap.
-        let mtime_ms = file_mtime_ms(&path).unwrap_or(mtime_ms);
         files.push(HostFile {
             name,
             size,
             mtime_ms,
         });
     }
-    files
+}
+
+fn host_rel_path(root: &Path, path: &Path) -> Option<String> {
+    let rel = path.strip_prefix(root).ok()?;
+    Some(
+        rel.components()
+            .map(|component| component.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/"),
+    )
 }
 
 fn file_mtime_ms(path: &Path) -> Option<u128> {
@@ -1302,14 +1580,12 @@ fn print_host_skip_once(
         return;
     }
     match kind {
-        HostSkipKind::Dir => println!("BVAGENT SHARE skip {name} dir"),
         HostSkipKind::TooLarge => println!("BVAGENT SHARE skip {name} too-large {size}"),
     }
 }
 
 fn print_guest_skip(name: &str, reason: SkipReason) {
     match reason {
-        SkipReason::Dir => println!("BVAGENT SHARE skip {name} dir"),
         SkipReason::TooLarge { size } => {
             println!("BVAGENT SHARE skip {name} too-large {size}")
         }
@@ -1317,7 +1593,22 @@ fn print_guest_skip(name: &str, reason: SkipReason) {
 }
 
 fn share_guest_path(dir: &str, name: &str) -> String {
-    format!("{dir}\\{name}")
+    format!("{dir}\\{}", share_sync::to_guest_rel(name))
+}
+
+fn share_put_req(name: String, bytes: Vec<u8>, hash: u64) -> ServiceReq {
+    let phase = if bytes.len() <= SHARE_PUT_CHUNK_BYTES {
+        SharePutPhase::Legacy
+    } else {
+        SharePutPhase::Beg
+    };
+    ServiceReq::SharePut {
+        name,
+        bytes,
+        hash,
+        next_chunk: 0,
+        phase,
+    }
 }
 
 /// Fold CRLF to LF (the host/macOS convention). `last_synced` always stores this
@@ -1405,6 +1696,7 @@ mod tests {
             last_send: None,
             last_alive: None,
             share: None,
+            share_old_agent_warned: false,
         }
     }
 
@@ -1420,6 +1712,9 @@ mod tests {
                 ServiceReq::ShareGet { name } => format!("share-get:{name}"),
                 ServiceReq::SharePut { name, bytes, .. } => {
                     format!("share-put:{name}:{}", String::from_utf8_lossy(bytes))
+                }
+                ServiceReq::ShareDel { name, direction } => {
+                    format!("share-del:{direction:?}:{name}")
                 }
             })
             .collect()
@@ -1437,7 +1732,10 @@ mod tests {
 
     #[test]
     fn is_raw_verb_covers_protocol_verbs_only() {
-        for v in ["CLIPGET", "CLIPSET", "LS", "GET", "PUT", "PING"] {
+        for v in [
+            "CLIPGET", "CLIPSET", "LS", "LSR", "GET", "PUT", "PUTBEG", "PUTCHUNK", "PUTEND", "DEL",
+            "PING",
+        ] {
             assert!(is_raw_verb(v), "{v} should be raw");
         }
         for v in ["whoami", "PS", "RUN", "ipconfig", ""] {
@@ -1662,7 +1960,7 @@ mod tests {
         // Guest clipboard "hello\r\n" -> normalized "hello\n" adopted; no panic
         // even though pasteboard is None (the host set is simply skipped).
         let b64 = base64_encode(b"hello\r\n");
-        h.handle_service_reply(&format!("CLIP {b64}"), Instant::now());
+        h.handle_service_reply(&format!("CLIP {b64}"), None, None, Instant::now());
 
         assert_eq!(h.last_synced.as_deref(), Some("hello\n"));
         assert!(h.in_flight.is_none(), "reply completes the in-flight poll");
@@ -1714,11 +2012,11 @@ mod tests {
         );
 
         h.in_flight = None;
-        h.queue.push_back(ServiceReq::SharePut {
-            name: "queued.txt".into(),
-            bytes: b"queued".to_vec(),
-            hash: share_sync::fnv1a64(b"queued"),
-        });
+        h.queue.push_back(share_put_req(
+            "queued.txt".into(),
+            b"queued".to_vec(),
+            share_sync::fnv1a64(b"queued"),
+        ));
         h.service_enqueue(Instant::now());
         assert_eq!(
             h.queue
@@ -1760,9 +2058,9 @@ mod tests {
             .queue
             .iter()
             .find_map(|req| match req {
-                ServiceReq::SharePut { name, bytes, hash } => {
-                    Some((name.clone(), bytes.clone(), *hash))
-                }
+                ServiceReq::SharePut {
+                    name, bytes, hash, ..
+                } => Some((name.clone(), bytes.clone(), *hash)),
                 _ => None,
             })
             .expect("SharePut queued");
@@ -1775,6 +2073,164 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recursive_host_scan_finds_nested_files_and_skips_symlinks() {
+        let dir =
+            std::env::temp_dir().join(format!("bvagent-share-recursive-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("sub/dir")).unwrap();
+        std::fs::write(dir.join("sub/dir/x.txt"), b"x").unwrap();
+
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dir.join("sub/dir/x.txt"), dir.join("link.txt")).unwrap();
+
+        let mut share = ShareState {
+            engine: ShareSync::new(512),
+            host_dir: dir.clone(),
+            guest_dir: "C:\\share".into(),
+            interval: Duration::from_millis(500),
+            last_poll: None,
+            host_skip_seen: HashSet::new(),
+        };
+        let files = scan_share_host_dir(&mut share);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name, "sub/dir/x.txt");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn share_put_small_payload_uses_legacy_single_line() {
+        let mut h = harness();
+        h.share = Some(test_share_state("small-put"));
+        let req = share_put_req(
+            "sub/x.txt".into(),
+            b"small".to_vec(),
+            share_sync::fnv1a64(b"small"),
+        );
+        let line = h.service_req_line(&req, Instant::now()).unwrap();
+        assert!(line.starts_with("PUT "));
+        assert!(!line.starts_with("PUTBEG "));
+        match req {
+            ServiceReq::SharePut { phase, .. } => assert_eq!(phase, SharePutPhase::Legacy),
+            _ => panic!("expected SharePut"),
+        }
+    }
+
+    #[test]
+    fn share_put_chunked_sequence_restamps_each_step() {
+        let mut h = harness();
+        h.share = Some(test_share_state("chunk-put"));
+        let bytes = vec![7u8; SHARE_PUT_CHUNK_BYTES * 2 + 1];
+        let hash = share_sync::fnv1a64(&bytes);
+        let req = share_put_req("big.bin".into(), bytes, hash);
+        let t0 = Instant::now();
+        let line = h.service_req_line(&req, t0).unwrap();
+        assert!(line.starts_with("PUTBEG "));
+        h.in_flight = Some((req, t0));
+
+        let t1 = t0 + Duration::from_millis(1);
+        h.handle_share_put_reply("OK PUTBEG", None, None, t1);
+        match h.in_flight.as_ref().unwrap() {
+            (
+                ServiceReq::SharePut {
+                    next_chunk, phase, ..
+                },
+                sent_at,
+            ) => {
+                assert_eq!(*next_chunk, 1);
+                assert_eq!(*phase, SharePutPhase::Chunk);
+                assert_eq!(*sent_at, t1);
+            }
+            _ => panic!("expected SharePut"),
+        }
+
+        let t2 = t0 + Duration::from_millis(2);
+        h.handle_share_put_reply("OK PUTCHUNK 0", None, None, t2);
+        match h.in_flight.as_ref().unwrap() {
+            (
+                ServiceReq::SharePut {
+                    next_chunk, phase, ..
+                },
+                sent_at,
+            ) => {
+                assert_eq!(*next_chunk, 2);
+                assert_eq!(*phase, SharePutPhase::Chunk);
+                assert_eq!(*sent_at, t2);
+            }
+            _ => panic!("expected SharePut"),
+        }
+
+        let t3 = t0 + Duration::from_millis(3);
+        h.handle_share_put_reply("OK PUTCHUNK 1", None, None, t3);
+        match h.in_flight.as_ref().unwrap() {
+            (
+                ServiceReq::SharePut {
+                    next_chunk, phase, ..
+                },
+                sent_at,
+            ) => {
+                assert_eq!(*next_chunk, 3);
+                assert_eq!(*phase, SharePutPhase::Chunk);
+                assert_eq!(*sent_at, t3);
+            }
+            _ => panic!("expected SharePut"),
+        }
+
+        let t4 = t0 + Duration::from_millis(4);
+        h.handle_share_put_reply("OK PUTCHUNK 2", None, None, t4);
+        match h.in_flight.as_ref().unwrap() {
+            (ServiceReq::SharePut { phase, .. }, sent_at) => {
+                assert_eq!(*phase, SharePutPhase::End);
+                assert_eq!(*sent_at, t4);
+            }
+            _ => panic!("expected SharePut"),
+        }
+
+        h.handle_share_put_reply(
+            &format!(
+                "PUTOK {} {}",
+                base64_encode(b"C:\\share\\big.bin"),
+                SHARE_PUT_CHUNK_BYTES * 2 + 1
+            ),
+            None,
+            None,
+            t4 + Duration::from_millis(1),
+        );
+        assert!(h.in_flight.is_none());
+    }
+
+    #[test]
+    fn old_agent_out_255_to_lsr_disables_share_once() {
+        let mut h = harness();
+        h.state = AgentConsoleState::Service;
+        h.share = Some(test_share_state("old-agent"));
+        h.in_flight = Some((ServiceReq::ShareLs, Instant::now()));
+        h.queue.push_back(ServiceReq::ShareGet {
+            name: "x.txt".into(),
+        });
+        h.handle_service_reply(
+            &format!("OUT 255 {}", base64_encode(b"unknown token: LSR")),
+            None,
+            None,
+            Instant::now(),
+        );
+        assert!(h.share.is_none());
+        assert!(h.share_old_agent_warned);
+        assert!(h.queue.is_empty());
+
+        h.share = Some(test_share_state("old-agent-again"));
+        h.in_flight = Some((ServiceReq::ShareLs, Instant::now()));
+        h.handle_service_reply(
+            &format!("OUT 255 {}", base64_encode(b"unknown token: LSR")),
+            None,
+            None,
+            Instant::now(),
+        );
+        assert!(h.share.is_none());
+        assert!(h.share_old_agent_warned);
     }
 
     fn test_share_state(label: &str) -> ShareState {
