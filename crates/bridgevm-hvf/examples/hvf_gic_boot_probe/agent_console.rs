@@ -119,22 +119,38 @@ impl AgentConsoleHarness {
                 self.send_next_command_or_done(0, platform, mem);
             }
             AgentConsoleState::WaitingOut { index } => {
-                let Some((exit_code, output)) = parse_out_line(line) else {
-                    return;
-                };
                 let command = &self.commands[index];
-                match base64_decode(output) {
-                    Ok(bytes) => {
-                        let text = String::from_utf8_lossy(&bytes);
-                        println!(
-                            "BVAGENT CMD {command} exit={exit_code}\n{text}\nBVAGENT END {command}"
-                        );
+                // A command's reply is one of: OUT <exit> <b64> (RUN/PS),
+                // CLIP <b64> (CLIPGET), OK <...> / ERR <...> (CLIPSET & other
+                // verbs). Anything else on this line is stray and ignored.
+                if let Some((exit_code, output)) = parse_out_line(line) {
+                    match base64_decode(output) {
+                        Ok(bytes) => {
+                            let text = String::from_utf8_lossy(&bytes);
+                            println!(
+                                "BVAGENT CMD {command} exit={exit_code}\n{text}\nBVAGENT END {command}"
+                            );
+                        }
+                        Err(error) => {
+                            println!(
+                                "BVAGENT CMD {command} exit={exit_code}\n<base64 decode error: {error:?}>\nBVAGENT END {command}"
+                            );
+                        }
                     }
-                    Err(error) => {
-                        println!(
-                            "BVAGENT CMD {command} exit={exit_code}\n<base64 decode error: {error:?}>\nBVAGENT END {command}"
-                        );
+                } else if let Some(b64) = line.strip_prefix("CLIP ") {
+                    match base64_decode(b64) {
+                        Ok(bytes) => println!(
+                            "BVAGENT CLIP {command}\n{}\nBVAGENT END {command}",
+                            String::from_utf8_lossy(&bytes)
+                        ),
+                        Err(error) => println!(
+                            "BVAGENT CLIP {command}\n<base64 decode error: {error:?}>\nBVAGENT END {command}"
+                        ),
                     }
+                } else if line.starts_with("OK") || line.starts_with("ERR") {
+                    println!("BVAGENT {command} -> {line}");
+                } else {
+                    return;
                 }
                 self.send_next_command_or_done(index + 1, platform, mem);
             }
@@ -153,8 +169,16 @@ impl AgentConsoleHarness {
             self.state = AgentConsoleState::Done;
             return;
         };
-        let encoded = base64_encode(command.as_bytes());
-        let line = format!("RUN {encoded}\n");
+        // Protocol verbs (CLIPGET/CLIPSET/LS/GET/PUT/PING) are sent RAW; anything
+        // else is a shell command line wrapped as RUN <base64(cmd)>. This lets
+        // BRIDGEVM_VIRTIO_CONSOLE_CMDS drive clipboard/file verbs directly, e.g.
+        // "CLIPSET <b64>|CLIPGET".
+        let first = command.split_whitespace().next().unwrap_or("");
+        let line = if is_raw_verb(first) {
+            format!("{command}\n")
+        } else {
+            format!("RUN {}\n", base64_encode(command.as_bytes()))
+        };
         platform.virtio_console_agent_send(line.as_bytes(), mem);
         self.state = AgentConsoleState::WaitingOut { index };
     }
@@ -259,6 +283,12 @@ fn base64_decode(text: &str) -> Result<Vec<u8>, Base64DecodeError> {
         }
     }
     Ok(out)
+}
+
+/// Verbs the guest agent handles directly (not shell commands). These are sent
+/// to the agent verbatim; everything else is wrapped as `RUN <base64>`.
+fn is_raw_verb(token: &str) -> bool {
+    matches!(token, "CLIPGET" | "CLIPSET" | "LS" | "GET" | "PUT" | "PING")
 }
 
 fn parse_out_line(line: &str) -> Option<(i32, &str)> {

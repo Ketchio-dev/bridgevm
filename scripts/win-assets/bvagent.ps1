@@ -254,6 +254,22 @@ while ($true) {
                 'PING' { Write-Line $h 'PONG' 'PONG' }
                 'RUN'  { $r = Invoke-B64 $arg $false; Write-Line $h ("OUT " + $r.Exit + " " + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($r.Out))) 'OUT' }
                 'PS'   { $r = Invoke-B64 $arg $true;  Write-Line $h ("OUT " + $r.Exit + " " + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($r.Out))) 'OUT' }
+                'CLIPGET' {
+                    # Return the guest Windows clipboard text as CLIP <base64(utf8)>.
+                    # Get-Clipboard -Raw gives the whole (possibly multi-line) text;
+                    # empty clipboard -> empty payload.
+                    $clip = ''
+                    try { $c = Get-Clipboard -Raw -ErrorAction SilentlyContinue; if ($null -ne $c) { $clip = [string]$c } } catch { }
+                    Write-Line $h ("CLIP " + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($clip))) 'CLIP'
+                }
+                'CLIPSET' {
+                    # Set the guest Windows clipboard from CLIPSET <base64(utf8)>.
+                    try {
+                        $txt = if ([string]::IsNullOrEmpty($arg)) { '' } else { [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg)) }
+                        Set-Clipboard -Value $txt -ErrorAction SilentlyContinue
+                        Write-Line $h 'OK CLIPSET' 'OK'
+                    } catch { Write-Line $h ("ERR CLIPSET " + $_.Exception.Message) 'ERR' }
+                }
                 default { Write-Line $h ("OUT 255 " + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes("unknown token: $tok"))) 'OUT' }
             }
         }
