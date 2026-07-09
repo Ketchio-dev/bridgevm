@@ -8,6 +8,11 @@
 # \n-terminated):
 #   host->guest:  RUN <base64(utf8 cmd)>\n | PS <base64(utf8 script)>\n | PING\n
 #   guest->host:  READY <hostname>\n | OUT <exit> <base64(utf8 out)>\n | PONG\n
+# Reader note: PowerShell 5.1 P/Invoke marshaling is very expensive per call,
+# so reading one byte at a time makes multi-KB CLIPSET / PUT protocol lines
+# stall the channel for tens of seconds. Read-Line therefore reads up to 16 KiB
+# per ReadFile call, decodes ASCII slices natively, queues complete LF-terminated
+# lines, and keeps a trailing partial line across idle polls.
 $ErrorActionPreference = 'Continue'
 
 $bvLog = 'C:\bvagent.log'
@@ -53,6 +58,8 @@ public static extern bool CloseHandle(IntPtr h);
 public static extern int CM_Get_Device_Interface_List_Size(out uint size, ref System.Guid guid, IntPtr deviceID, uint flags);
 [DllImport("cfgmgr32.dll", EntryPoint="CM_Get_Device_Interface_ListW", CharSet=CharSet.Unicode)]
 public static extern int CM_Get_Device_Interface_List(ref System.Guid guid, IntPtr deviceID, byte[] buffer, uint bufferLen, uint flags);
+[DllImport("user32.dll")]
+public static extern uint GetClipboardSequenceNumber();
 '@
 $K = Add-Type -MemberDefinition $sig -Name 'BvKernel32' -Namespace 'BridgeVM' -PassThru
 
@@ -160,18 +167,26 @@ function Write-Bytes($handle, [byte[]]$data, [string]$what) {
 function Write-Line($handle, [string]$line, [string]$what) {
     Write-Bytes $handle ([System.Text.Encoding]::ASCII.GetBytes($line + "`n")) $what
 }
+
+$script:BvReadBuffer = New-Object byte[] 16384
+$script:BvPending = New-Object System.Text.StringBuilder
+$script:BvLines = New-Object 'System.Collections.Generic.Queue[string]'
+# CLIPGET cache: only re-open the clipboard when the sequence number moved.
+# 4294967295 = [uint32]::MaxValue sentinel so the first CLIPGET always reads.
+$script:BvClipSeq = [uint32]4294967295
+$script:BvClipCache = ''
+Log 'Read-Line buffered reader init size=16384'
+
 function Read-Line($handle) {
-    # Full line, or $null after ~2s idle (only when no partial line buffered) so
-    # the caller can poll port state.
-    $sb = New-Object System.Text.StringBuilder
-    $one = New-Object byte[] 1
+    # Full line, or $null after ~2s idle so the caller can poll port state.
+    if ($script:BvLines.Count -gt 0) { return $script:BvLines.Dequeue() }
     $spins = 0
     while ($true) {
         if (Is-BadHandle $handle) { return $null }
         $read = 0
-        $ok = $K::ReadFile($handle, $one, 1, [ref]$read, [IntPtr]::Zero)
+        $ok = $K::ReadFile($handle, $script:BvReadBuffer, [uint32]$script:BvReadBuffer.Length, [ref]$read, [IntPtr]::Zero)
         if (-not $ok -or $read -eq 0) {
-            if ($sb.Length -eq 0) {
+            if ($script:BvLines.Count -eq 0) {
                 $spins++
                 if ($spins -ge 133) { return $null }
             }
@@ -179,12 +194,22 @@ function Read-Line($handle) {
             continue
         }
         $spins = 0
-        $b = $one[0]
-        if ($b -eq 10) { break }        # \n
-        if ($b -eq 13) { continue }     # \r
-        [void]$sb.Append([char]$b)
+        $chunk = [System.Text.Encoding]::ASCII.GetString($script:BvReadBuffer, 0, [int]$read)
+        [void]$script:BvPending.Append($chunk)
+        if ($chunk.Contains("`n")) {
+            $text = $script:BvPending.ToString()
+            $parts = $text.Split([char]10)
+            $last = $parts.Length - 1
+            for ($i = 0; $i -lt $last; $i++) {
+                $line = $parts[$i]
+                if ($line.EndsWith("`r")) { $line = $line.Substring(0, $line.Length - 1) }
+                $script:BvLines.Enqueue($line)
+            }
+            $script:BvPending.Length = 0
+            [void]$script:BvPending.Append($parts[$last])
+            if ($script:BvLines.Count -gt 0) { return $script:BvLines.Dequeue() }
+        }
     }
-    return $sb.ToString()
 }
 function Invoke-B64([string]$b64, [bool]$usePwsh) {
     $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
@@ -235,7 +260,7 @@ while ($true) {
     Start-Sleep -Milliseconds 500
 }
 
-Write-Line $h ("READY " + $env:COMPUTERNAME) 'READY'
+Write-Line $h ("READY " + $env:COMPUTERNAME + " v2-bufread") 'READY'
 Log 'READY sent'
 Log-PortInfo $h 'after-ready'
 
@@ -256,17 +281,33 @@ while ($true) {
                 'PS'   { $r = Invoke-B64 $arg $true;  Write-Line $h ("OUT " + $r.Exit + " " + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($r.Out))) 'OUT' }
                 'CLIPGET' {
                     # Return the guest Windows clipboard text as CLIP <base64(utf8)>.
-                    # Get-Clipboard -Raw gives the whole (possibly multi-line) text;
-                    # empty clipboard -> empty payload.
-                    $clip = ''
-                    try { $c = Get-Clipboard -Raw -ErrorAction SilentlyContinue; if ($null -ne $c) { $clip = [string]$c } } catch { }
-                    Write-Line $h ("CLIP " + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($clip))) 'CLIP'
+                    # The host polls CLIPGET every second, and repeatedly opening
+                    # the OLE clipboard from PS 5.1 wedges after a few hundred
+                    # calls (live-observed: the agent froze inside Get-Clipboard
+                    # ~5-6 min into every clipsync run, killing the channel). So
+                    # gate the actual Get-Clipboard behind user32's
+                    # GetClipboardSequenceNumber - a cheap, never-blocking query
+                    # that bumps on every clipboard change - and serve a cached
+                    # copy while the sequence is unchanged (idle polls open the
+                    # clipboard zero times).
+                    $seq = $K::GetClipboardSequenceNumber()
+                    if ($seq -ne $script:BvClipSeq) {
+                        $clip = ''
+                        try { $c = Get-Clipboard -Raw -ErrorAction SilentlyContinue; if ($null -ne $c) { $clip = [string]$c } } catch { }
+                        $script:BvClipCache = $clip
+                        $script:BvClipSeq = $seq
+                    }
+                    Write-Line $h ("CLIP " + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipCache))) 'CLIP'
                 }
                 'CLIPSET' {
                     # Set the guest Windows clipboard from CLIPSET <base64(utf8)>.
+                    # Refresh the CLIPGET cache to the text we just wrote so the
+                    # following poll serves it without reopening the clipboard.
                     try {
                         $txt = if ([string]::IsNullOrEmpty($arg)) { '' } else { [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg)) }
                         Set-Clipboard -Value $txt -ErrorAction SilentlyContinue
+                        $script:BvClipCache = $txt
+                        $script:BvClipSeq = $K::GetClipboardSequenceNumber()
                         Write-Line $h 'OK CLIPSET' 'OK'
                     } catch { Write-Line $h ("ERR CLIPSET " + $_.Exception.Message) 'ERR' }
                 }
