@@ -105,6 +105,13 @@ if exist %DRV%\..\bvagent.ps1 (
   rem port (access denied). Disable UAC (dev/build VM) so the agent gets the
   rem full admin token and can open the port on first boot.
   reg add "HKLM\BVSW\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA /t REG_DWORD /d 0 /f
+  rem Disable the guest power plan ONCE at first logon (RunOnce). The default
+  rem plan sleeps the VM at desktop+5min, which freezes the guest agent and
+  rem kills the host service channel (live-diagnosed as a hard t~360s wall in
+  rem every clipboard/share soak until powercfg was applied over the channel).
+  rem The ampersands are inside the quoted /d string, so cmd passes them to
+  rem the RunOnce value literally and they chain at first-logon execution.
+  reg add "HKLM\BVSW\Microsoft\Windows\CurrentVersion\RunOnce" /v BridgeVMPower /t REG_SZ /d "cmd.exe /c powercfg /change standby-timeout-ac 0 & powercfg /change standby-timeout-dc 0 & powercfg /change monitor-timeout-ac 0 & powercfg /change monitor-timeout-dc 0 & powercfg /h off" /f
   reg unload HKLM\BVSW
   rem NOTE: exactly ONE autostart. We deliberately do NOT also drop a Startup
   rem launcher: two autostarts race two agent instances, and the loser's
