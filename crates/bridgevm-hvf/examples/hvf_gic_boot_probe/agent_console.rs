@@ -3,6 +3,10 @@ use std::time::{Duration, Instant};
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::platform_virt::VirtPlatform;
 
+#[allow(dead_code)]
+#[path = "host_pasteboard.rs"]
+mod host_pasteboard;
+
 const TEST_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_TEST";
 const CMDS_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_CMDS";
 const TIMEOUT_MS_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS";
