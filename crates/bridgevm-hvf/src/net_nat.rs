@@ -133,6 +133,8 @@ pub struct NatStats {
     pub dhcp_acks: u64,
     pub dns_replies: u64,
     pub icmp_replies: u64,
+    pub icmp_forwarded: u64,
+    pub icmp_external_replies: u64,
     pub tcp_segments_out: u64,
     pub udp_datagrams_out: u64,
     pub dhcp_lease_ip: Ipv4Addr,
@@ -360,32 +362,35 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
     }
 
     fn handle_icmp(&mut self, packet: &Ipv4Packet<'_>) {
-        if packet.dst != GATEWAY_IP || packet.payload.len() < 8 {
-            self.stats.other = self.stats.other.saturating_add(1);
-            return;
-        }
-        if packet.payload[0] != 8 || packet.payload[1] != 0 {
-            self.stats.other = self.stats.other.saturating_add(1);
-            return;
-        }
-        self.stats.icmp_echo = self.stats.icmp_echo.saturating_add(1);
+        match classify_icmp_echo(packet.dst, packet.payload) {
+            IcmpEchoRoute::Gateway => {
+                self.stats.icmp_echo = self.stats.icmp_echo.saturating_add(1);
+                let mut reply = packet.payload.to_vec();
+                reply[0] = 0;
+                reply[2] = 0;
+                reply[3] = 0;
+                let checksum = icmp_checksum(&reply);
+                reply[2..4].copy_from_slice(&checksum.to_be_bytes());
 
-        let mut reply = packet.payload.to_vec();
-        reply[0] = 0;
-        reply[2] = 0;
-        reply[3] = 0;
-        let checksum = icmp_checksum(&reply);
-        reply[2..4].copy_from_slice(&checksum.to_be_bytes());
-
-        let ipv4 = build_ipv4_packet_with_id(
-            GATEWAY_IP,
-            packet.src,
-            IPV4_PROTOCOL_ICMP,
-            &reply,
-            packet.identification,
-        );
-        self.queue_ethernet(ETHERTYPE_IPV4, &ipv4);
-        self.stats.icmp_replies = self.stats.icmp_replies.saturating_add(1);
+                let ipv4 = build_ipv4_packet_with_id(
+                    GATEWAY_IP,
+                    packet.src,
+                    IPV4_PROTOCOL_ICMP,
+                    &reply,
+                    packet.identification,
+                );
+                self.queue_ethernet(ETHERTYPE_IPV4, &ipv4);
+                self.stats.icmp_replies = self.stats.icmp_replies.saturating_add(1);
+            }
+            IcmpEchoRoute::External => {
+                self.stats.icmp_echo = self.stats.icmp_echo.saturating_add(1);
+                self.stats.icmp_forwarded = self.stats.icmp_forwarded.saturating_add(1);
+                self.outbound_ipv4.handle_outbound_ipv4(packet);
+            }
+            IcmpEchoRoute::Other => {
+                self.stats.other = self.stats.other.saturating_add(1);
+            }
+        }
     }
 
     fn queue_ethernet(&mut self, ethertype: u16, payload: &[u8]) {
@@ -412,11 +417,14 @@ impl NatBackend<HostSocketOutboundIpv4Handler> {
 pub struct HostSocketOutboundIpv4Handler {
     udp_flows: HashMap<UdpFlowKey, UdpFlow>,
     tcp_flows: HashMap<TcpFlowKey, TcpFlow>,
+    icmp_flows: HashMap<IcmpFlowKey, IcmpFlow>,
     pending_tcp_resets: VecDeque<PendingTcpReset>,
+    pending_socket_errors: u64,
     dns_resolver: StdIpv4Addr,
     tick: u64,
     idle_timeout_ticks: u64,
     max_flows: usize,
+    max_icmp_flows: usize,
     tcp_isn_counter: u32,
 }
 
@@ -429,6 +437,8 @@ impl Default for HostSocketOutboundIpv4Handler {
 impl HostSocketOutboundIpv4Handler {
     const DEFAULT_IDLE_TIMEOUT_TICKS: u64 = 30_000;
     const DEFAULT_MAX_FLOWS: usize = 256;
+    const DEFAULT_MAX_ICMP_FLOWS: usize = 32;
+    const MAX_ICMP_RECV_PER_POLL: usize = 64;
 
     pub fn new() -> Self {
         Self::with_dns_resolver(
@@ -440,11 +450,14 @@ impl HostSocketOutboundIpv4Handler {
         Self {
             udp_flows: HashMap::new(),
             tcp_flows: HashMap::new(),
+            icmp_flows: HashMap::new(),
             pending_tcp_resets: VecDeque::new(),
+            pending_socket_errors: 0,
             dns_resolver,
             tick: 0,
             idle_timeout_ticks: Self::DEFAULT_IDLE_TIMEOUT_TICKS,
             max_flows: Self::DEFAULT_MAX_FLOWS,
+            max_icmp_flows: Self::DEFAULT_MAX_ICMP_FLOWS,
             tcp_isn_counter: 0x4256_0000,
         }
     }
@@ -477,8 +490,44 @@ impl HostSocketOutboundIpv4Handler {
             .retain(|_, flow| now.saturating_sub(flow.last_activity) <= timeout);
         self.tcp_flows
             .retain(|_, flow| now.saturating_sub(flow.last_activity) <= timeout);
+        self.icmp_flows
+            .retain(|_, flow| now.saturating_sub(flow.last_activity) <= timeout);
         evict_lru(&mut self.udp_flows, self.max_flows);
         evict_lru(&mut self.tcp_flows, self.max_flows);
+        evict_lru(&mut self.icmp_flows, self.max_icmp_flows);
+    }
+
+    fn get_or_create_icmp_flow(
+        &mut self,
+        key: IcmpFlowKey,
+        guest_ip: Ipv4Addr,
+        now: u64,
+    ) -> io::Result<&mut IcmpFlow> {
+        get_or_insert_lru(&mut self.icmp_flows, key, self.max_icmp_flows, || {
+            RawIcmpSocket::new_nonblocking().map(|socket| IcmpFlow {
+                socket,
+                guest_ip,
+                last_activity: now,
+            })
+        })?
+        .ok_or_else(|| io::Error::other("icmp flow missing after insert"))
+    }
+
+    fn handle_icmp(&mut self, packet: &Ipv4Packet<'_>) -> io::Result<()> {
+        let now = self.bump_tick();
+        let guest_identifier = read_u16_be(packet.payload, 4)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "short icmp echo"))?;
+        let key = IcmpFlowKey {
+            guest_identifier,
+            dst_ip: packet.dst,
+        };
+        let flow = self.get_or_create_icmp_flow(key, packet.src, now)?;
+        flow.guest_ip = packet.src;
+        flow.last_activity = now;
+        flow.socket
+            .send_to(packet.payload, StdIpv4Addr::from(packet.dst))?;
+        self.evict_idle_flows();
+        Ok(())
     }
 
     fn handle_udp(&mut self, packet: &Ipv4Packet<'_>, udp: &UdpDatagram<'_>) {
@@ -767,6 +816,46 @@ impl HostSocketOutboundIpv4Handler {
             self.tcp_flows.remove(&key);
         }
     }
+
+    fn poll_icmp(
+        &mut self,
+        guest_mac: Option<MacAddr>,
+        reply_queue: &mut VecDeque<Vec<u8>>,
+        stats: &mut NatStats,
+    ) {
+        let Some(guest_mac) = guest_mac else {
+            return;
+        };
+        let now = self.tick;
+        let mut buf = [0u8; 2048];
+        for (key, flow) in &mut self.icmp_flows {
+            for _ in 0..Self::MAX_ICMP_RECV_PER_POLL {
+                match flow.socket.recv_from(&mut buf) {
+                    Ok((len, _)) => {
+                        flow.last_activity = now;
+                        if let Some(reply) =
+                            rewrite_icmp_echo_reply_identifier(&buf[..len], key.guest_identifier)
+                        {
+                            queue_icmp_reply(
+                                reply_queue,
+                                guest_mac,
+                                key.dst_ip,
+                                flow.guest_ip,
+                                &reply,
+                            );
+                            stats.icmp_external_replies =
+                                stats.icmp_external_replies.saturating_add(1);
+                        }
+                    }
+                    Err(e) if would_block(&e) => break,
+                    Err(_) => {
+                        stats.socket_errors = stats.socket_errors.saturating_add(1);
+                        break;
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
@@ -782,6 +871,11 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
                     self.handle_tcp(packet, &tcp);
                 }
             }
+            IPV4_PROTOCOL_ICMP => {
+                if self.handle_icmp(packet).is_err() {
+                    self.pending_socket_errors = self.pending_socket_errors.saturating_add(1);
+                }
+            }
             _ => {}
         }
     }
@@ -792,9 +886,16 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
         reply_queue: &mut VecDeque<Vec<u8>>,
         stats: &mut NatStats,
     ) {
+        if self.pending_socket_errors != 0 {
+            stats.socket_errors = stats
+                .socket_errors
+                .saturating_add(self.pending_socket_errors);
+            self.pending_socket_errors = 0;
+        }
         self.bump_tick();
         self.poll_udp(guest_mac, reply_queue, stats);
         self.poll_tcp(guest_mac, reply_queue, stats);
+        self.poll_icmp(guest_mac, reply_queue, stats);
         self.evict_idle_flows();
     }
 
@@ -816,6 +917,19 @@ struct UdpFlowKey {
 #[derive(Debug)]
 struct UdpFlow {
     socket: UdpSocket,
+    last_activity: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct IcmpFlowKey {
+    guest_identifier: u16,
+    dst_ip: Ipv4Addr,
+}
+
+#[derive(Debug)]
+struct IcmpFlow {
+    socket: RawIcmpSocket,
+    guest_ip: Ipv4Addr,
     last_activity: u64,
 }
 
@@ -1310,6 +1424,39 @@ fn is_non_local_ipv4_destination(dst: Ipv4Addr) -> bool {
     dst[0..3] != [10, 0, 2]
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IcmpEchoRoute {
+    Gateway,
+    External,
+    Other,
+}
+
+fn classify_icmp_echo(dst: Ipv4Addr, payload: &[u8]) -> IcmpEchoRoute {
+    if payload.len() < 8 || payload[0] != 8 || payload[1] != 0 {
+        return IcmpEchoRoute::Other;
+    }
+    if dst == GATEWAY_IP {
+        IcmpEchoRoute::Gateway
+    } else if is_non_local_ipv4_destination(dst) {
+        IcmpEchoRoute::External
+    } else {
+        IcmpEchoRoute::Other
+    }
+}
+
+fn rewrite_icmp_echo_reply_identifier(reply: &[u8], guest_identifier: u16) -> Option<Vec<u8>> {
+    if reply.len() < 8 || reply[0] != 0 || reply[1] != 0 {
+        return None;
+    }
+    let mut rewritten = reply.to_vec();
+    rewritten[2] = 0;
+    rewritten[3] = 0;
+    rewritten[4..6].copy_from_slice(&guest_identifier.to_be_bytes());
+    let checksum = icmp_checksum(&rewritten);
+    rewritten[2..4].copy_from_slice(&checksum.to_be_bytes());
+    Some(rewritten)
+}
+
 fn first_resolv_conf_nameserver() -> Option<StdIpv4Addr> {
     let contents = std::fs::read_to_string("/etc/resolv.conf").ok()?;
     for line in contents.lines() {
@@ -1372,6 +1519,22 @@ fn queue_tcp_reply(
     ));
 }
 
+fn queue_icmp_reply(
+    reply_queue: &mut VecDeque<Vec<u8>>,
+    guest_mac: MacAddr,
+    src_ip: Ipv4Addr,
+    dst_ip: Ipv4Addr,
+    payload: &[u8],
+) {
+    let ipv4 = build_ipv4_packet(src_ip, dst_ip, IPV4_PROTOCOL_ICMP, payload);
+    reply_queue.push_back(EthernetFrame::build(
+        guest_mac,
+        GATEWAY_MAC,
+        ETHERTYPE_IPV4,
+        &ipv4,
+    ));
+}
+
 fn evict_lru<K: Copy + Eq + std::hash::Hash, V: HasLastActivity>(
     map: &mut HashMap<K, V>,
     cap: usize,
@@ -1382,6 +1545,24 @@ fn evict_lru<K: Copy + Eq + std::hash::Hash, V: HasLastActivity>(
         };
         map.remove(&key);
     }
+}
+
+fn get_or_insert_lru<K, V, E, F>(
+    map: &mut HashMap<K, V>,
+    key: K,
+    cap: usize,
+    create: F,
+) -> Result<Option<&mut V>, E>
+where
+    K: Copy + Eq + std::hash::Hash,
+    V: HasLastActivity,
+    F: FnOnce() -> Result<V, E>,
+{
+    if !map.contains_key(&key) {
+        map.insert(key, create()?);
+        evict_lru(map, cap);
+    }
+    Ok(map.get_mut(&key))
 }
 
 trait HasLastActivity {
@@ -1395,6 +1576,12 @@ impl HasLastActivity for UdpFlow {
 }
 
 impl HasLastActivity for TcpFlow {
+    fn last_activity(&self) -> u64 {
+        self.last_activity
+    }
+}
+
+impl HasLastActivity for IcmpFlow {
     fn last_activity(&self) -> u64 {
         self.last_activity
     }
@@ -1419,6 +1606,125 @@ fn tcp_connect_error(stream: &TcpStream) -> io::Result<Option<i32>> {
                 Err(err) => Ok(Some(err.raw_os_error().unwrap_or(1))),
             }
         }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug)]
+struct RawIcmpSocket {
+    fd: RawFd,
+}
+
+#[cfg(target_os = "macos")]
+impl RawIcmpSocket {
+    fn new_nonblocking() -> io::Result<Self> {
+        // SAFETY: socket is called with valid constants; errors are returned via errno.
+        let fd = unsafe { socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP) };
+        if fd < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if let Err(err) = set_raw_icmp_socket_nonblocking(fd) {
+            let _ = raw_close(fd);
+            return Err(err);
+        }
+        Ok(Self { fd })
+    }
+
+    fn send_to(&self, message: &[u8], dst: StdIpv4Addr) -> io::Result<usize> {
+        let addr = RawSockAddrIn::new(dst, 0);
+        // SAFETY: message and addr point to valid memory for the duration of the call.
+        let rc = unsafe {
+            sendto(
+                self.fd,
+                message.as_ptr().cast(),
+                message.len(),
+                0,
+                (&addr as *const RawSockAddrIn).cast::<RawSockAddr>(),
+                std::mem::size_of::<RawSockAddrIn>() as RawSockLen,
+            )
+        };
+        if rc >= 0 {
+            Ok(rc as usize)
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+
+    fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, StdIpv4Addr)> {
+        // SAFETY: zeroed sockaddr_in is a valid writable buffer for recvfrom.
+        let mut addr = unsafe { std::mem::zeroed::<RawSockAddrIn>() };
+        let mut len = std::mem::size_of::<RawSockAddrIn>() as RawSockLen;
+        // SAFETY: buf and addr point to valid writable memory for the duration of the call.
+        let rc = unsafe {
+            recvfrom(
+                self.fd,
+                buf.as_mut_ptr().cast(),
+                buf.len(),
+                0,
+                (&mut addr as *mut RawSockAddrIn).cast::<RawSockAddr>(),
+                &mut len,
+            )
+        };
+        if rc >= 0 {
+            Ok((rc as usize, StdIpv4Addr::from(addr.sin_addr.to_ne_bytes())))
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn raw_icmp_nonblocking_flags(flags: i32) -> i32 {
+    flags | O_NONBLOCK
+}
+
+#[cfg(target_os = "macos")]
+fn set_raw_icmp_socket_nonblocking(fd: RawFd) -> io::Result<()> {
+    // SAFETY: this ICMP-only fcntl binding is declared with C's variadic ABI,
+    // which is required for F_SETFL on arm64 macOS.
+    let flags = unsafe { fcntl_icmp(fd, F_GETFL) };
+    if flags < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: fcntl operates on the socket fd created above.
+    if unsafe { fcntl_icmp(fd, F_SETFL, raw_icmp_nonblocking_flags(flags)) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for RawIcmpSocket {
+    fn drop(&mut self) {
+        let _ = raw_close(self.fd);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+#[derive(Debug)]
+struct RawIcmpSocket;
+
+#[cfg(not(target_os = "macos"))]
+impl RawIcmpSocket {
+    fn new_nonblocking() -> io::Result<Self> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "unprivileged ICMP datagram sockets are only enabled on macOS",
+        ))
+    }
+
+    fn send_to(&self, _message: &[u8], _dst: StdIpv4Addr) -> io::Result<usize> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "icmp unsupported",
+        ))
+    }
+
+    fn recv_from(&self, _buf: &mut [u8]) -> io::Result<(usize, StdIpv4Addr)> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "icmp unsupported",
+        ))
     }
 }
 
@@ -1564,6 +1870,10 @@ const AF_INET: i32 = 2;
 const AF_INET: i32 = 2;
 #[cfg(unix)]
 const SOCK_STREAM: i32 = 1;
+#[cfg(target_os = "macos")]
+const SOCK_DGRAM: i32 = 2;
+#[cfg(target_os = "macos")]
+const IPPROTO_ICMP: i32 = 1;
 #[cfg(unix)]
 const F_GETFL: i32 = 3;
 #[cfg(unix)]
@@ -1590,7 +1900,29 @@ unsafe extern "C" {
     fn socket(domain: i32, ty: i32, protocol: i32) -> RawFd;
     fn connect(fd: RawFd, addr: *const RawSockAddr, len: RawSockLen) -> i32;
     fn fcntl(fd: RawFd, cmd: i32, arg: i32) -> i32;
+    #[cfg(target_os = "macos")]
+    #[allow(clashing_extern_declarations)]
+    #[link_name = "fcntl"]
+    fn fcntl_icmp(fd: RawFd, cmd: i32, ...) -> i32;
     fn close(fd: RawFd) -> i32;
+    #[cfg(target_os = "macos")]
+    fn sendto(
+        fd: RawFd,
+        buf: *const std::ffi::c_void,
+        len: usize,
+        flags: i32,
+        addr: *const RawSockAddr,
+        addr_len: RawSockLen,
+    ) -> isize;
+    #[cfg(target_os = "macos")]
+    fn recvfrom(
+        fd: RawFd,
+        buf: *mut std::ffi::c_void,
+        len: usize,
+        flags: i32,
+        addr: *mut RawSockAddr,
+        addr_len: *mut RawSockLen,
+    ) -> isize;
 }
 
 fn read_u16_be(bytes: &[u8], offset: usize) -> Option<u16> {
@@ -1625,11 +1957,16 @@ mod tests {
     }
 
     fn icmp_echo_request() -> Vec<u8> {
+        icmp_echo_frame(GATEWAY_IP, 0x1234)
+    }
+
+    fn icmp_echo_frame(dst_ip: Ipv4Addr, identifier: u16) -> Vec<u8> {
         let mut icmp = vec![8, 0, 0, 0, 0x12, 0x34, 0x00, 0x01];
+        icmp[4..6].copy_from_slice(&identifier.to_be_bytes());
         icmp.extend_from_slice(b"hello");
         let checksum = icmp_checksum(&icmp);
         icmp[2..4].copy_from_slice(&checksum.to_be_bytes());
-        let ipv4 = build_ipv4_packet(GUEST_IP, GATEWAY_IP, IPV4_PROTOCOL_ICMP, &icmp);
+        let ipv4 = build_ipv4_packet(GUEST_IP, dst_ip, IPV4_PROTOCOL_ICMP, &icmp);
         EthernetFrame::build(GATEWAY_MAC, GUEST_MAC, ETHERTYPE_IPV4, &ipv4)
     }
 
@@ -1742,6 +2079,122 @@ mod tests {
         assert_eq!(icmp_checksum(&icmp), 0xa1f8);
         icmp[2..4].copy_from_slice(&0xa1f8u16.to_be_bytes());
         assert_eq!(icmp_checksum(&icmp), 0);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn raw_icmp_nonblocking_uses_variadic_fcntl_setfl_argument() {
+        let _setup_path: fn(RawFd) -> io::Result<()> = set_raw_icmp_socket_nonblocking;
+        assert_eq!(raw_icmp_nonblocking_flags(0), O_NONBLOCK);
+        assert_eq!(raw_icmp_nonblocking_flags(0x20), 0x20 | O_NONBLOCK);
+    }
+
+    #[test]
+    fn icmp_echo_classification_routes_gateway_and_external_only() {
+        let external_frame = icmp_echo_frame([1, 1, 1, 1], 0x2345);
+        let external = EthernetFrame::parse(&external_frame).unwrap();
+        let external_ip = Ipv4Packet::parse(external.payload).unwrap();
+        assert_eq!(
+            classify_icmp_echo(external_ip.dst, external_ip.payload),
+            IcmpEchoRoute::External
+        );
+
+        let gateway_frame = icmp_echo_request();
+        let gateway = EthernetFrame::parse(&gateway_frame).unwrap();
+        let gateway_ip = Ipv4Packet::parse(gateway.payload).unwrap();
+        assert_eq!(
+            classify_icmp_echo(gateway_ip.dst, gateway_ip.payload),
+            IcmpEchoRoute::Gateway
+        );
+
+        let mut non_echo = gateway_ip.payload.to_vec();
+        non_echo[0] = 3;
+        assert_eq!(
+            classify_icmp_echo([1, 1, 1, 1], &non_echo),
+            IcmpEchoRoute::Other
+        );
+        assert_eq!(
+            classify_icmp_echo([10, 0, 2, 99], gateway_ip.payload),
+            IcmpEchoRoute::Other
+        );
+    }
+
+    #[test]
+    fn icmp_echo_reply_identifier_rewrite_recomputes_checksum() {
+        let mut reply = vec![0, 0, 0, 0, 0xab, 0xcd, 0x00, 0x02];
+        reply.extend_from_slice(b"payload");
+        let checksum = icmp_checksum(&reply);
+        reply[2..4].copy_from_slice(&checksum.to_be_bytes());
+
+        let rewritten = rewrite_icmp_echo_reply_identifier(&reply, 0x1234).unwrap();
+        assert_eq!(rewritten[0], 0);
+        assert_eq!(rewritten[1], 0);
+        assert_eq!(read_u16_be(&rewritten, 4), Some(0x1234));
+        assert_eq!(
+            &rewritten[6..],
+            &[0x00, 0x02, b'p', b'a', b'y', b'l', b'o', b'a', b'd']
+        );
+        assert_eq!(icmp_checksum(&rewritten), 0);
+        assert_ne!(read_u16_be(&rewritten, 2), read_u16_be(&reply, 2));
+    }
+
+    #[derive(Debug)]
+    struct TestFlow {
+        last_activity: u64,
+    }
+
+    impl HasLastActivity for TestFlow {
+        fn last_activity(&self) -> u64 {
+            self.last_activity
+        }
+    }
+
+    #[test]
+    fn icmp_flow_table_get_or_create_expires_and_caps_lru() {
+        let mut flows = HashMap::<IcmpFlowKey, TestFlow>::new();
+        let key1 = IcmpFlowKey {
+            guest_identifier: 1,
+            dst_ip: [1, 1, 1, 1],
+        };
+        let key2 = IcmpFlowKey {
+            guest_identifier: 2,
+            dst_ip: [8, 8, 8, 8],
+        };
+        let key3 = IcmpFlowKey {
+            guest_identifier: 3,
+            dst_ip: [9, 9, 9, 9],
+        };
+
+        let first = get_or_insert_lru(&mut flows, key1, 2, || {
+            Ok::<_, io::Error>(TestFlow { last_activity: 10 })
+        })
+        .unwrap()
+        .unwrap() as *mut TestFlow;
+        let again = get_or_insert_lru(&mut flows, key1, 2, || {
+            Ok::<_, io::Error>(TestFlow { last_activity: 99 })
+        })
+        .unwrap()
+        .unwrap() as *mut TestFlow;
+        assert_eq!(first, again);
+        assert_eq!(flows[&key1].last_activity, 10);
+
+        get_or_insert_lru(&mut flows, key2, 2, || {
+            Ok::<_, io::Error>(TestFlow { last_activity: 20 })
+        })
+        .unwrap();
+        get_or_insert_lru(&mut flows, key3, 2, || {
+            Ok::<_, io::Error>(TestFlow { last_activity: 30 })
+        })
+        .unwrap();
+        assert!(!flows.contains_key(&key1));
+        assert!(flows.contains_key(&key2));
+        assert!(flows.contains_key(&key3));
+
+        let now = 53;
+        let timeout = 25;
+        flows.retain(|_, flow| now - flow.last_activity <= timeout);
+        assert!(!flows.contains_key(&key2));
+        assert!(flows.contains_key(&key3));
     }
 
     #[test]
