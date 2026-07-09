@@ -5,6 +5,8 @@ import Combine
 /// each (cached), so every VM polls and is controlled independently.
 @MainActor
 final class LibraryModel: ObservableObject {
+    static let hvfEngineSelectionID = "__bridgevm_hvf_engine_experimental__"
+
     @Published var vms: [VMConfig] = []
     @Published var selectedID: String?
     @Published var showingCreate = false
@@ -29,7 +31,7 @@ final class LibraryModel: ObservableObject {
         vms = VMLibrary.list()
         let slugs = Set(vms.map { $0.slug })
         modelCache = modelCache.filter { slugs.contains($0.key) }
-        if let sel = selectedID, !slugs.contains(sel) { selectedID = vms.first?.slug }
+        if let sel = selectedID, sel != Self.hvfEngineSelectionID, !slugs.contains(sel) { selectedID = vms.first?.slug }
     }
 
     func model(for cfg: VMConfig) -> ControlModel {

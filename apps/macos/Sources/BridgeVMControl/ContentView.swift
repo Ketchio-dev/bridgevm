@@ -13,6 +13,8 @@ struct ContentView: View {
         } detail: {
             if library.proMode {
                 FleetTableView(library: library)
+            } else if library.selectedID == LibraryModel.hvfEngineSelectionID {
+                HvfEngineView()
             } else if let model = library.selectedModel {
                 VMDetailPanel(model: model, library: library)
                     .id(model.config.slug)
@@ -59,6 +61,10 @@ struct LibrarySidebar: View {
                                 Button(role: .destructive) { library.delete(cfg) } label: { Label("삭제", systemImage: "trash") }
                             }
                     }
+                }
+                Section("실험") {
+                    Label("HVF Engine", systemImage: "cpu")
+                        .tag(LibraryModel.hvfEngineSelectionID)
                 }
             }
             Divider()
@@ -107,7 +113,7 @@ struct LibrarySidebar: View {
             Text("엔진").font(.caption).foregroundColor(.secondary)
             legendRow(.green, "리눅스 (Fast VZ)", "사용 가능")
             legendRow(.gray, "윈도우 (QEMU)", "준비중")
-            legendRow(.gray, "윈도우 (HVF 엔진)", "준비중")
+            legendRow(.orange, "윈도우 (HVF 엔진)", "실험")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
