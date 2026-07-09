@@ -123,8 +123,15 @@ build_installed_boot_env_args() {
     "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=$WATCHDOG_MS"
     "BRIDGEVM_BOOT_PROBE_MAX_REBOOTS=$MAX_REBOOTS"
     'BRIDGEVM_RECENT_NVME_COMMANDS=4096' 'BRIDGEVM_RECENT_PCIE_MMIO=2048'
-    'BRIDGEVM_RECENT_PCIE_PIO=1024' 'BRIDGEVM_TRACE_MSIX=1' 'BRIDGEVM_TRACE_SPI=1'
+    'BRIDGEVM_RECENT_PCIE_PIO=1024'
   )
+  # Per-interrupt MSIX/SPI tracing is opt-in: always-on it emitted 50k+ lines
+  # per run and drowned the BVAGENT evidence (service-mode logs must stay
+  # greppable). Use --trace-irq (or ambient BRIDGEVM_TRACE_MSIX/SPI) when
+  # debugging interrupt delivery.
+  if [[ "${TRACE_IRQ:-0}" == "1" ]]; then
+    COMMON_ENV+=('BRIDGEVM_TRACE_MSIX=1' 'BRIDGEVM_TRACE_SPI=1')
+  fi
   if [[ -n "$PLACEHOLDER_NSID1" ]]; then
     DISK_ENV=("BRIDGEVM_NVME_DISK=$PLACEHOLDER_NSID1" "BRIDGEVM_NVME_DISK2=$TARGET" 'BRIDGEVM_NVME_DISK2_WRITABLE=1')
   else

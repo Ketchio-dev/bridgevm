@@ -41,6 +41,7 @@ init_installed_boot_defaults() {
   SMP_CPUS=""
   XHCI_POLICY=""
   XHCI_REASON=""
+  TRACE_IRQ="0"
 }
 
 parse_installed_boot_args() {
@@ -72,6 +73,7 @@ parse_installed_boot_args() {
         ;;
       --enable-xhci) ENABLE_XHCI="1"; shift ;;
       --virtio-net) VIRTIO_NET="1"; shift ;;
+      --trace-irq) TRACE_IRQ="1"; shift ;;
       --virtio-gpu-3d) VIRTIO_GPU_3D="1"; shift ;;
       --virtio-gpu-device-id)
         [[ $# -ge 2 ]] || { usage; exit 2; }

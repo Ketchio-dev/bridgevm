@@ -49,7 +49,7 @@ use std::path::Path;
 use std::ptr::null_mut;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc, Condvar, Mutex, MutexGuard, TryLockError,
+    Arc, Condvar, Mutex, MutexGuard, OnceLock, TryLockError,
 };
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -1573,6 +1573,11 @@ fn env_flag_default(name: &str, default: bool) -> bool {
     }
 }
 
+fn trace_msix_enabled() -> bool {
+    static TRACE_MSIX: OnceLock<bool> = OnceLock::new();
+    *TRACE_MSIX.get_or_init(|| env_flag("BRIDGEVM_TRACE_MSIX"))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RebootPlan {
     max_reboots: u64,
@@ -2648,10 +2653,11 @@ fn parse_xhci_report_interval_env() -> std::time::Duration {
 
 fn deliver_pending_msix(platform: &mut VirtPlatform, trace: bool) -> DeliveryCounts {
     let mut counts = DeliveryCounts::default();
+    let trace = trace || trace_msix_enabled();
     for message in platform.take_pending_msix() {
         let status = unsafe { hv_gic_send_msi(message.address, message.data) };
         counts.record_status(status);
-        if trace || status != 0 {
+        if trace {
             println!(
                 "MSIX vector {} -> addr {:#x} intid {} status {status:#x}",
                 message.vector, message.address, message.data
@@ -2663,10 +2669,11 @@ fn deliver_pending_msix(platform: &mut VirtPlatform, trace: bool) -> DeliveryCou
 
 fn deliver_pending_spis(platform: &mut VirtPlatform, trace: bool) -> DeliveryCounts {
     let mut counts = DeliveryCounts::default();
+    let trace_msix = trace_msix_enabled();
     for (intid, level) in platform.take_pending_spi_levels() {
         let status = unsafe { hv_gic_set_spi(intid, level) };
         counts.record_status(status);
-        if trace || status != 0 {
+        if trace || (status != 0 && trace_msix) {
             println!("SPI intid {intid} level={level} status {status:#x}");
         }
     }
