@@ -12,6 +12,7 @@ use std::{
     io::{self, Read, Write},
     net::{IpAddr, Ipv4Addr as StdIpv4Addr, Shutdown, SocketAddrV4, TcpStream, UdpSocket},
     os::fd::{FromRawFd, RawFd},
+    sync::OnceLock,
 };
 
 use crate::virtio_net::NetBackend;
@@ -525,7 +526,15 @@ impl HostSocketOutboundIpv4Handler {
         flow.guest_ip = packet.src;
         flow.last_activity = now;
         flow.socket
-            .send_to(packet.payload, StdIpv4Addr::from(packet.dst))?;
+            .send_to(packet.payload, StdIpv4Addr::from(packet.dst))
+            .inspect(|bytes_sent| {
+                if trace_icmp_enabled() {
+                    eprintln!(
+                        "bridgevm icmp forward dst={} guest_id=0x{guest_identifier:04x} bytes={bytes_sent}",
+                        StdIpv4Addr::from(packet.dst),
+                    );
+                }
+            })?;
         self.evict_idle_flows();
         Ok(())
     }
@@ -833,9 +842,15 @@ impl HostSocketOutboundIpv4Handler {
                 match flow.socket.recv_from(&mut buf) {
                     Ok((len, _)) => {
                         flow.last_activity = now;
+                        let recv = &buf[..len];
+                        let first_byte = recv.first().copied().unwrap_or(0);
+                        let trace_icmp = trace_icmp_enabled();
                         if let Some(reply) =
-                            rewrite_icmp_echo_reply_identifier(&buf[..len], key.guest_identifier)
+                            rewrite_icmp_echo_reply_identifier(recv, key.guest_identifier)
                         {
+                            if trace_icmp {
+                                trace_icmp_recv(len, first_byte, "accepted");
+                            }
                             queue_icmp_reply(
                                 reply_queue,
                                 guest_mac,
@@ -845,6 +860,8 @@ impl HostSocketOutboundIpv4Handler {
                             );
                             stats.icmp_external_replies =
                                 stats.icmp_external_replies.saturating_add(1);
+                        } else if trace_icmp {
+                            trace_icmp_recv(len, first_byte, icmp_reply_rejection_reason(recv));
                         }
                     }
                     Err(e) if would_block(&e) => break,
@@ -1444,17 +1461,55 @@ fn classify_icmp_echo(dst: Ipv4Addr, payload: &[u8]) -> IcmpEchoRoute {
     }
 }
 
-fn rewrite_icmp_echo_reply_identifier(reply: &[u8], guest_identifier: u16) -> Option<Vec<u8>> {
-    if reply.len() < 8 || reply[0] != 0 || reply[1] != 0 {
+fn icmp_reply_payload_offset(buf: &[u8]) -> Option<usize> {
+    let first = *buf.first()?;
+    if first >> 4 != 4 {
+        return (buf.len() >= 8).then_some(0);
+    }
+
+    let header_len = usize::from(first & 0x0f) * 4;
+    if header_len < 20 || buf.len() < header_len + 8 {
         return None;
     }
-    let mut rewritten = reply.to_vec();
+    Some(header_len)
+}
+
+fn rewrite_icmp_echo_reply_identifier(reply: &[u8], guest_identifier: u16) -> Option<Vec<u8>> {
+    let offset = icmp_reply_payload_offset(reply)?;
+    let icmp = &reply[offset..];
+    if icmp[0] != 0 || icmp[1] != 0 {
+        return None;
+    }
+    let mut rewritten = icmp.to_vec();
     rewritten[2] = 0;
     rewritten[3] = 0;
     rewritten[4..6].copy_from_slice(&guest_identifier.to_be_bytes());
     let checksum = icmp_checksum(&rewritten);
     rewritten[2..4].copy_from_slice(&checksum.to_be_bytes());
     Some(rewritten)
+}
+
+fn icmp_reply_rejection_reason(reply: &[u8]) -> &'static str {
+    let Some(offset) = icmp_reply_payload_offset(reply) else {
+        return "malformed";
+    };
+    let icmp = &reply[offset..];
+    if icmp[0] != 0 {
+        return "not_echo_reply";
+    }
+    if icmp[1] != 0 {
+        return "nonzero_code";
+    }
+    "rejected"
+}
+
+fn trace_icmp_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("BRIDGEVM_TRACE_ICMP").is_some())
+}
+
+fn trace_icmp_recv(len: usize, first_byte: u8, outcome: &str) {
+    eprintln!("bridgevm icmp recv bytes={len} first=0x{first_byte:02x} {outcome}");
 }
 
 fn first_resolv_conf_nameserver() -> Option<StdIpv4Addr> {
@@ -2136,6 +2191,43 @@ mod tests {
         );
         assert_eq!(icmp_checksum(&rewritten), 0);
         assert_ne!(read_u16_be(&rewritten, 2), read_u16_be(&reply, 2));
+    }
+
+    #[test]
+    fn icmp_reply_payload_offset_accepts_ipv4_prefixed_and_raw_replies() {
+        let icmp = [0, 0, 0, 0, 0xab, 0xcd, 0x00, 0x02];
+        let ipv4 = build_ipv4_packet([1, 1, 1, 1], GUEST_IP, IPV4_PROTOCOL_ICMP, &icmp);
+        assert_eq!(icmp_reply_payload_offset(&ipv4), Some(20));
+
+        let mut ipv4_with_options = Vec::from([
+            0x46, 0x00, 0x00, 0x20, 0x00, 0x00, 0x40, 0x00, 0x40, 0x01, 0x00, 0x00, 0x01, 0x01,
+            0x01, 0x01, 0x0a, 0x00, 0x02, 0x0f, 0x01, 0x02, 0x03, 0x04,
+        ]);
+        ipv4_with_options.extend_from_slice(&icmp);
+        assert_eq!(icmp_reply_payload_offset(&ipv4_with_options), Some(24));
+
+        assert_eq!(icmp_reply_payload_offset(&icmp), Some(0));
+        assert_eq!(icmp_reply_payload_offset(&[0, 0, 0]), None);
+        assert_eq!(icmp_reply_payload_offset(&ipv4[..27]), None);
+    }
+
+    #[test]
+    fn icmp_echo_reply_identifier_rewrite_skips_ipv4_header_prefix() {
+        let mut reply = vec![0, 0, 0, 0, 0xab, 0xcd, 0x00, 0x02];
+        reply.extend_from_slice(b"payload");
+        let checksum = icmp_checksum(&reply);
+        reply[2..4].copy_from_slice(&checksum.to_be_bytes());
+        let ipv4 = build_ipv4_packet([1, 1, 1, 1], GUEST_IP, IPV4_PROTOCOL_ICMP, &reply);
+
+        let rewritten = rewrite_icmp_echo_reply_identifier(&ipv4, 0x1234).unwrap();
+        assert_eq!(rewritten[0], 0);
+        assert_eq!(rewritten[1], 0);
+        assert_eq!(read_u16_be(&rewritten, 4), Some(0x1234));
+        assert_eq!(
+            &rewritten[6..],
+            &[0x00, 0x02, b'p', b'a', b'y', b'l', b'o', b'a', b'd']
+        );
+        assert_eq!(icmp_checksum(&rewritten), 0);
     }
 
     #[derive(Debug)]
