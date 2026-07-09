@@ -137,6 +137,32 @@ extension VMLibrary {
         save(cfg)
         return cfg
     }
+
+    /// Create a library VM for the native from-scratch HVF Windows engine. The
+    /// target is a raw disk because the engine boots the installed Windows image
+    /// directly through scripts/run-hvf-windows-installed-boot.sh.
+    static func createWindowsHVF(name: String, template: VMConfig,
+                                 storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
+                                 diskGiB: Int = 64) -> VMConfig? {
+        let slug = uniqueSlug(name)
+        let bundle = (storageDir ?? root).appendingPathComponent(slug, isDirectory: true).appendingPathComponent("bundle.vmbridge", isDirectory: true)
+        for sub in ["disks", "metadata", "logs/hvf"] {
+            try? FileManager.default.createDirectory(at: bundle.appendingPathComponent(sub), withIntermediateDirectories: true)
+        }
+        let b = bundle.path
+        let disk = "\(b)/disks/hvf-target.raw"
+        let r = Shell.run("/usr/bin/truncate", ["-s", "\(diskGiB)G", disk])
+        if r.code != 0 { return nil }
+        FileManager.default.createFile(atPath: "\(b)/metadata/hvf.ctl", contents: nil)
+        let cfg = VMConfig(id: slug, name: name, displayName: name, backendKind: "hvf-engine",
+                           bootMode: "windows-hvf", bundlePath: b, runnerPath: "",
+                           launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
+                           leasesPath: template.leasesPath, guestName: slug,
+                           displayWidth: width, displayHeight: height, installPending: true,
+                           isoPath: nil, diskPath: disk, memMiB: 4096, cpuCount: 1)
+        save(cfg)
+        return cfg
+    }
 }
 
 // MARK: - Create sheet (gallery)
@@ -154,7 +180,7 @@ struct CreateVMSheet: View {
     @State private var error = ""
 
     private let resolutions = [(1280, 800), (1440, 900), (1920, 1080), (2560, 1440)]
-    enum Mode { case ubuntu, iso, windows }
+    enum Mode { case ubuntu, iso, windows, windowsHVF }
 
     private var template: VMConfig? {
         library.vms.first { $0.backendKind == "fast-vz" && ($0.bootMode ?? "direct-kernel") == "direct-kernel" }
@@ -168,11 +194,15 @@ struct CreateVMSheet: View {
             HStack(spacing: 12) {
                 tile("Ubuntu", "checkmark.seal.fill", selected: mode == .ubuntu) { mode = .ubuntu }
                 tile("Linux ISO", "opticaldisc", selected: mode == .iso) { mode = .iso }
-                tile("Windows 11", "macwindow", selected: mode == .windows) { mode = .windows; autofillWin11() }
+                tile("Windows QEMU", "macwindow", selected: mode == .windows) { mode = .windows; autofillWin11() }
+                tile("Windows HVF", "cpu", selected: mode == .windowsHVF) { mode = .windowsHVF; isoPath = "" }
             }
 
             if mode == .ubuntu {
                 Text("기본 Ubuntu 데스크톱을 즉시 복제합니다 (APFS 클론, 추가 용량 없음).")
+                    .font(.callout).foregroundColor(.secondary)
+            } else if mode == .windowsHVF {
+                Text("Native (HVF · Preview) 엔진용 Windows ARM 원시 디스크 VM을 만듭니다.")
                     .font(.callout).foregroundColor(.secondary)
             } else {
                 Text(mode == .windows
@@ -216,7 +246,7 @@ struct CreateVMSheet: View {
                 Button("취소") { dismiss() }
                 Button(working ? "생성 중…" : "생성") { create() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(working || name.trimmingCharacters(in: .whitespaces).isEmpty || (mode != .ubuntu && isoPath.isEmpty) || template == nil)
+                    .disabled(working || name.trimmingCharacters(in: .whitespaces).isEmpty || ((mode == .iso || mode == .windows) && isoPath.isEmpty) || template == nil)
             }
         }
         .padding(20)
@@ -278,6 +308,7 @@ struct CreateVMSheet: View {
             case .ubuntu: cfg = VMLibrary.cloneUbuntu(name: nm, template: template, storageDir: sd, width: w, height: h)
             case .iso: cfg = VMLibrary.createFromISO(name: nm, isoPath: iso, template: template, storageDir: sd, width: w, height: h)
             case .windows: cfg = VMLibrary.createWindows(name: nm, isoPath: iso, template: template, storageDir: sd, width: w, height: h)
+            case .windowsHVF: cfg = VMLibrary.createWindowsHVF(name: nm, template: template, storageDir: sd, width: w, height: h)
             }
             await MainActor.run {
                 working = false

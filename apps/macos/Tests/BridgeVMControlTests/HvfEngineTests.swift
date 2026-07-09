@@ -153,3 +153,58 @@ final class TailOffsetReaderTests: XCTestCase {
         XCTAssertEqual(reader.readNewLines(from: file), ["reset"])
     }
 }
+
+final class HvfWindowsBackendTests: XCTestCase {
+    func testPathKindAndDisplayNameDerivation() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
+        let backend = HvfWindowsBackend(cfg)
+
+        XCTAssertEqual(backend.displayName, "Windows Preview")
+        XCTAssertEqual(backend.kind, "hvf-engine")
+        XCTAssertTrue(backend.supportsGuestCommands)
+        XCTAssertEqual(backend.targetDiskPath, cfg.bundlePath + "/disks/hvf-target.raw")
+        XCTAssertEqual(backend.uefiVarsPath, cfg.bundlePath + "/metadata/hvf-vars.fd")
+        XCTAssertEqual(backend.evidenceDir, cfg.bundlePath + "/logs/hvf")
+        XCTAssertEqual(backend.ctlFilePath, cfg.bundlePath + "/metadata/hvf.ctl")
+    }
+
+    func testRunInGuestAppendsCtlAndParsesReply() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
+        let backend = HvfWindowsBackend(cfg)
+        let log = URL(fileURLWithPath: backend.evidenceDir).appendingPathComponent("run.log")
+
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) {
+            try? FileManager.default.createDirectory(atPath: backend.evidenceDir, withIntermediateDirectories: true)
+            try? """
+            BVAGENT CMD foo exit=0
+            hello
+            world
+            BVAGENT END foo
+
+            """.write(to: log, atomically: true, encoding: .utf8)
+        }
+
+        let result = backend.runInGuest("foo")
+        XCTAssertEqual(result.output, "hello\nworld")
+        XCTAssertEqual(result.code, 0)
+        XCTAssertEqual(try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8), "foo\n")
+    }
+
+    private func makeTempDir() throws -> URL {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private func makeConfig(bundlePath: String, diskPath: String? = nil) -> VMConfig {
+        VMConfig(id: "win-hvf", name: "Win HVF", displayName: "Windows Preview", backendKind: "hvf-engine",
+                 bootMode: "windows-hvf", bundlePath: bundlePath, runnerPath: "", launchSpecPath: "",
+                 handoffPath: "", sshKeyPath: "", sshUser: "", leasesPath: "",
+                 guestName: "win-hvf", displayWidth: 1280, displayHeight: 800,
+                 diskPath: diskPath, memMiB: 4096, cpuCount: 1)
+    }
+}

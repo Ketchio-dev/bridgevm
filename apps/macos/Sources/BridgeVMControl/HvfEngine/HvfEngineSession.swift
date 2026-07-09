@@ -28,7 +28,11 @@ final class HvfEngineSession: ObservableObject {
     private var tailReader = TailOffsetReader()
     private var lastHeartbeatDate: Date?
 
-    init(config: HvfEngineConfig, repoRoot: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).deletingLastPathComponent().deletingLastPathComponent()) {
+    nonisolated static func defaultRepoRoot(currentDirectoryPath: String = FileManager.default.currentDirectoryPath) -> URL {
+        URL(fileURLWithPath: currentDirectoryPath).deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    init(config: HvfEngineConfig, repoRoot: URL = HvfEngineSession.defaultRepoRoot()) {
         self.config = config
         self.repoRoot = repoRoot
     }

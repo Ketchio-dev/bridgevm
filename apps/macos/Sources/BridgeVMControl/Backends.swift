@@ -71,15 +71,16 @@ enum BackendKind: String {
         }
     }
     /// Whether this engine is actually selectable/usable today.
-    var available: Bool { self == .fastVZ || self == .qemuCompat }
+    var available: Bool { self == .fastVZ || self == .qemuCompat || self == .hvfEngine }
 }
 
 extension VMConfig {
     /// Resolve the concrete backend for this VM (the engine seam).
     func makeBackend() -> VMBackend {
         switch engineKind {
+        case .fastVZ: return FastVZBackend(self)
         case .qemuCompat: return QemuCompatBackend(self)
-        default: return FastVZBackend(self)
+        case .hvfEngine: return HvfWindowsBackend(self)
         }
     }
 }
@@ -148,6 +149,10 @@ enum Shell {
     static func killProcesses(matching pattern: String) {
         guard !pattern.isEmpty else { return }
         run("/usr/bin/pkill", ["-f", eregEscape(pattern)])
+    }
+
+    static func shQuote(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
 
@@ -322,6 +327,151 @@ final class QemuCompatBackend: VMBackend {
     func setResources(memMiB: Int, cpu: Int) -> Bool { false }
     func runInGuest(_ command: String) -> (output: String, code: Int32) {
         ("Windows 게스트는 SSH 제어를 지원하지 않습니다 (QEMU).", -1)
+    }
+}
+
+// MARK: - Native HVF engine backend (Windows 11 ARM)
+
+final class HvfWindowsBackend: VMBackend {
+    private(set) var config: VMConfig
+    init(_ config: VMConfig) { self.config = config }
+
+    var displayName: String { config.displayName }
+    let kind = "hvf-engine"
+    let supportsGuestCommands = true
+
+    var targetDiskPath: String { config.diskPath ?? (config.bundlePath + "/disks/hvf-target.raw") }
+    var uefiVarsPath: String { config.bundlePath + "/metadata/hvf-vars.fd" }
+    var evidenceDir: String { config.bundlePath + "/logs/hvf" }
+    var ctlFilePath: String { config.bundlePath + "/metadata/hvf.ctl" }
+    var repoRoot: URL { HvfEngineSession.defaultRepoRoot() }
+
+    private var wrapperName: String { "scripts/run-hvf-windows-installed-boot.sh" }
+    private var runLogPath: String { evidenceDir + "/run.log" }
+
+    func isRunning() -> Bool { Shell.isProcessRunning(matching: targetDiskPath) }
+    func currentIP() -> String? { isRunning() ? "NAT (HVF)" : nil }
+
+    func start() {
+        ensureDirectories()
+        let hvfConfig = makeHvfEngineConfig()
+        let env = hvfConfig.environment()
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\(Shell.shQuote($0.value))" }
+            .joined(separator: " ")
+        let args = hvfConfig.wrapperArguments().map(Shell.shQuote).joined(separator: " ")
+        let cmd = "cd \(Shell.shQuote(repoRoot.path)) && \(env) nohup /usr/bin/env \(args) >\(Shell.shQuote(runLogPath)) 2>&1 &"
+        Shell.launchDetached(cmd)
+    }
+
+    func stop() {
+        Shell.killProcesses(matching: targetDiskPath)
+        Shell.killProcesses(matching: "\(wrapperName) --target \(targetDiskPath)")
+    }
+
+    func resources() -> (memMiB: Int, cpu: Int) {
+        (config.memMiB ?? 4096, config.cpuCount ?? 1)
+    }
+
+    func setResources(memMiB: Int, cpu: Int) -> Bool {
+        config.memMiB = memMiB
+        config.cpuCount = cpu
+        VMLibrary.save(config)
+        return true
+    }
+
+    func runInGuest(_ command: String) -> (output: String, code: Int32) {
+        ensureDirectories()
+        let offset = fileSize(at: runLogPath)
+        appendCtl(command)
+        return waitForCommandReply(command: command, offset: offset, timeout: 15)
+    }
+
+    private func makeHvfEngineConfig() -> HvfEngineConfig {
+        HvfEngineConfig(targetDiskPath: targetDiskPath,
+                        uefiVarsPath: uefiVarsPath,
+                        evidenceDir: evidenceDir,
+                        watchdogMs: 900_000,
+                        clipboardSync: true,
+                        shareHostDir: nil,
+                        shareGuestDir: nil,
+                        virtioNet: true,
+                        ctlFilePath: ctlFilePath)
+    }
+
+    private func ensureDirectories() {
+        for path in [
+            config.bundlePath + "/disks",
+            config.bundlePath + "/metadata",
+            config.bundlePath + "/logs",
+            evidenceDir
+        ] {
+            try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        }
+    }
+
+    private func appendCtl(_ command: String) {
+        let cleaned = command.trimmingCharacters(in: .newlines)
+        guard !cleaned.isEmpty else { return }
+        if !FileManager.default.fileExists(atPath: ctlFilePath) {
+            FileManager.default.createFile(atPath: ctlFilePath, contents: nil)
+        }
+        guard let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: ctlFilePath)) else { return }
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd()
+        if let data = "\(cleaned)\n".data(using: .utf8) {
+            try? handle.write(contentsOf: data)
+        }
+    }
+
+    private func waitForCommandReply(command: String, offset: UInt64, timeout: TimeInterval) -> (output: String, code: Int32) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let reply = parseCommandReply(command: command, from: logSlice(startingAt: offset)) {
+                return reply
+            }
+            usleep(100_000)
+        }
+        return ("HVF 게스트 명령 응답 시간 초과: \(command)", -1)
+    }
+
+    private func parseCommandReply(command: String, from text: String) -> (output: String, code: Int32)? {
+        let lines = text.components(separatedBy: .newlines)
+        var collecting = false
+        var body: [String] = []
+        var exitCode: Int32 = -1
+        let startPrefix = "BVAGENT CMD \(command) exit="
+        let endLine = "BVAGENT END \(command)"
+
+        for line in lines {
+            if collecting {
+                if line == endLine {
+                    return (body.joined(separator: "\n"), exitCode)
+                }
+                body.append(line)
+            } else if line.hasPrefix(startPrefix) {
+                let rawCode = line.dropFirst(startPrefix.count).prefix { $0 == "-" || $0.isNumber }
+                exitCode = Int32(String(rawCode)) ?? -1
+                collecting = true
+            }
+        }
+        return nil
+    }
+
+    private func fileSize(at path: String) -> UInt64 {
+        ((try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.uint64Value) ?? 0
+    }
+
+    private func logSlice(startingAt offset: UInt64) -> String {
+        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: runLogPath)) else { return "" }
+        defer { try? handle.close() }
+        do {
+            try handle.seek(toOffset: min(offset, try handle.seekToEnd()))
+            let data = handle.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8) ?? ""
+        } catch {
+            return ""
+        }
     }
 }
 

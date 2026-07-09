@@ -26,8 +26,9 @@ final class BackendKindTests: XCTestCase {
         XCTAssertEqual(BackendKind.fastVZ.shortLabel, "Fast VZ")
         XCTAssertEqual(BackendKind.qemuCompat.shortLabel, "QEMU")
         XCTAssertEqual(BackendKind.fastVZ.detailLabel, "Fast (Apple VZ)")
+        XCTAssertEqual(BackendKind.hvfEngine.detailLabel, "Native (HVF · Preview)")
         XCTAssertTrue(BackendKind.fastVZ.available)
-        XCTAssertFalse(BackendKind.hvfEngine.available)
+        XCTAssertTrue(BackendKind.hvfEngine.available)
     }
 
     func testConfigEngineKindFallsBackToFastVZForUnknown() {
@@ -40,5 +41,13 @@ final class BackendKindTests: XCTestCase {
         cfg.backendKind = "qemu-compat"
         XCTAssertEqual(cfg.engineKind, .qemuCompat)
         XCTAssertEqual(cfg.engineDetailLabel, "Compatibility (QEMU)")
+    }
+
+    func testMakeBackendReturnsHvfWindowsBackend() {
+        let cfg = VMConfig(id: "win", name: "Windows", displayName: "Windows VM", backendKind: "hvf-engine",
+                           bootMode: nil, bundlePath: "/tmp/win.vmbridge", runnerPath: "", launchSpecPath: "",
+                           handoffPath: "", sshKeyPath: "", sshUser: "", leasesPath: "",
+                           guestName: "win", displayWidth: 1280, displayHeight: 800)
+        XCTAssertTrue(cfg.makeBackend() is HvfWindowsBackend)
     }
 }
