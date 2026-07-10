@@ -42,7 +42,9 @@ Environment:
                      DLLs plus active INF
                      UserModeDriverName, OpenGLDriverName, OpenGLVersion,
                      OpenGLFlags, and InstalledDisplayDrivers registrations,
-                     with the registered DLLs actively copied to DirID 11.
+                     with the registered DLLs actively copied to DirID 11 and
+                     every source named by the selected DDInstall CopyFiles
+                     path present in the package.
                      Default: 0, so KMD-only packages remain valid injection
                      candidates.
   VIOGPU3D_SOURCE_REPO / VIOGPU3D_SOURCE_REF / VIOGPU3D_BUILD_ID /
@@ -107,6 +109,18 @@ reject_whitespace_path() {
   case "$2" in
     *[[:space:]]*) fail "$1 path contains whitespace, unsupported by DRIVER_DIRS: $2" ;;
   esac
+}
+
+reject_windows_unsafe_basename() {
+  local path="$1"
+  local name="${path##*/}"
+
+  if [[ -z "$name" || "$name" == "." || "$name" == ".." ||
+        "$name" == *$'\n'* || "$name" == *$'\r'* ||
+        "$name" == *' ' || "$name" == *'.' ]] ||
+    LC_ALL=C printf '%s' "$name" | grep -Eq '[<>:"/\\|?*]|[[:cntrl:]]'; then
+    fail "package filename is not Windows-safe: $name"
+  fi
 }
 
 apply_provenance_default() {
@@ -187,18 +201,53 @@ append_unique_hwid() {
 
 detect_hwid_device_ids() {
   local inf
-  local match
   local id
   viogpu3d_hwids=""
   for inf in "${viogpu3d_infs[@]}"; do
-    while IFS= read -r match; do
-      [[ -n "$match" ]] || continue
-      id="$(printf '%s\n' "$match" | grep -Eio 'DEV_[0-9A-F]{4}' | head -n 1 | cut -d_ -f2 | tr '[:lower:]' '[:upper:]')"
+    while IFS= read -r id; do
+      [[ -n "$id" ]] || continue
       case "$id" in
         1050|10F7) append_unique_hwid "$id" ;;
       esac
     done < <(
-      LC_ALL=C grep -Eio 'VEN_1AF4[^[:space:],;]*DEV_(1050|10F7)|DEV_(1050|10F7)[^[:space:],;]*VEN_1AF4' "$inf" 2>/dev/null || true
+      LC_ALL=C awk '
+        function strip_inf_comment(value,    i, char, quoted, percent_token, result) {
+          quoted = 0
+          percent_token = 0
+          result = ""
+          for (i = 1; i <= length(value); i++) {
+            char = substr(value, i, 1)
+            if (char == "\"") quoted = !quoted
+            else if (char == "%" && !quoted) percent_token = !percent_token
+            else if (char == ";" && !quoted && !percent_token) break
+            result = result char
+          }
+          return result
+        }
+        function raw_component(value, component,    offset, relative, position, before, after) {
+          value = tolower(value)
+          component = tolower(component)
+          offset = 1
+          while (offset <= length(value)) {
+            relative = index(substr(value, offset), component)
+            if (relative == 0) return 0
+            position = offset + relative - 1
+            before = position == 1 ? "" : substr(value, position - 1, 1)
+            after = substr(value, position + length(component), 1)
+            if ((before == "" || before == "\\" || before == "&") &&
+                (after == "" || after == "&" || after ~ /[[:space:],;\"]/) ) return 1
+            offset = position + 1
+          }
+          return 0
+        }
+        {
+          count = split(strip_inf_comment($0), field, ",")
+          for (i = 1; i <= count; i++) {
+            if (raw_component(field[i], "ven_1af4") && raw_component(field[i], "dev_1050")) print "1050"
+            if (raw_component(field[i], "ven_1af4") && raw_component(field[i], "dev_10f7")) print "10F7"
+          }
+        }
+      ' "$inf" 2>/dev/null || true
     )
   done
 }
@@ -247,10 +296,12 @@ detect_protocol() {
 active_umd_contract_for_inf() {
   local inf="$1"
   local payload_names="$2"
+  local dll_payload_names="$3"
 
   LC_ALL=C awk \
     -v expected_id="$(printf '%s' "$VIOGPU3D_PCI_DEVICE_ID" | tr '[:upper:]' '[:lower:]')" \
     -v payload_names="$payload_names" \
+    -v dll_payload_names="$dll_payload_names" \
     '
       function trim(value) {
         sub(/^[[:space:]]+/, "", value)
@@ -258,14 +309,17 @@ active_umd_contract_for_inf() {
         return value
       }
 
-      function strip_comment(value,    i, char, quoted, result) {
+      function strip_comment(value,    i, char, quoted, percent_token, result) {
         quoted = 0
+        percent_token = 0
         result = ""
         for (i = 1; i <= length(value); i++) {
           char = substr(value, i, 1)
           if (char == "\"") {
             quoted = !quoted
-          } else if (char == ";" && !quoted) {
+          } else if (char == "%" && !quoted) {
+            percent_token = !percent_token
+          } else if (char == ";" && !quoted && !percent_token) {
             break
           }
           result = result char
@@ -277,18 +331,31 @@ active_umd_contract_for_inf() {
         for (key in csv_field) {
           delete csv_field[key]
         }
+        for (key in csv_field_quoted) {
+          delete csv_field_quoted[key]
+        }
       }
 
-      function parse_csv(value,    i, char, quoted, count, field) {
+      function parse_csv(value,    i, char, quoted, percent_token, count, field) {
         clear_csv()
         quoted = 0
+        percent_token = 0
         count = 1
         field = ""
         for (i = 1; i <= length(value); i++) {
           char = substr(value, i, 1)
-          if (char == "\"") {
+          if (char == "\"" && !percent_token) {
+            csv_field_quoted[count] = 1
             quoted = !quoted
-          } else if (char == "," && !quoted) {
+          } else if (char == "%" && !quoted) {
+            if (substr(value, i + 1, 1) == "%") {
+              field = field "%%"
+              i++
+            } else {
+              percent_token = !percent_token
+              field = field char
+            }
+          } else if (char == "," && !quoted && !percent_token) {
             csv_field[count++] = trim(field)
             field = ""
           } else {
@@ -296,23 +363,241 @@ active_umd_contract_for_inf() {
           }
         }
         csv_field[count] = trim(field)
+        if (quoted || percent_token) inf_syntax_invalid = 1
         return count
+      }
+
+      function unquoted_equals(value,    i, char, quoted) {
+        quoted = 0
+        for (i = 1; i <= length(value); i++) {
+          char = substr(value, i, 1)
+          if (char == "\"") quoted = !quoted
+          else if (char == "=" && !quoted) return i
+        }
+        return 0
+      }
+
+      function normalize_lhs(value) {
+        value = trim(value)
+        if (length(value) >= 2 && substr(value, 1, 1) == "\"" && substr(value, length(value), 1) == "\"") {
+          value = substr(value, 2, length(value) - 2)
+        }
+        return tolower(trim(value))
+      }
+
+      function strip_strings_comment(value,    i, char, quoted, equals_seen, result) {
+        if (trim(value) ~ /^;/) return ""
+        quoted = 0
+        equals_seen = 0
+        result = ""
+        for (i = 1; i <= length(value); i++) {
+          char = substr(value, i, 1)
+          if (char == "\"") quoted = !quoted
+          else if (char == "=" && !quoted) equals_seen = 1
+          else if (char == ";" && !quoted && equals_seen) break
+          result = result char
+        }
+        if (quoted) inf_syntax_invalid = 1
+        return result
+      }
+
+      function record_string_definition(section_name, key, value,    localized) {
+        key = tolower(trim(key))
+        value = trim(value)
+        if (key == "") {
+          inf_syntax_invalid = 1
+          return
+        }
+        if (substr(value, 1, 1) == "\"") {
+          if (length(value) < 2 || substr(value, length(value), 1) != "\"") {
+            inf_syntax_invalid = 1
+            return
+          }
+          value = substr(value, 2, length(value) - 2)
+        } else if (index(value, "\"") != 0) {
+          inf_syntax_invalid = 1
+          return
+        }
+        localized = section_name != "strings"
+        if (localized) {
+          localized_string_present[key] = 1
+          return
+        }
+        if (string_present[key]) string_ambiguous[key] = 1
+        string_present[key] = 1
+        string_value[key] = value
+      }
+
+      function load_strings(    section_name, i, line, equals_at) {
+        for (section_name in section_present) {
+          if (section_name != "strings" && section_name !~ /^strings[.]/) continue
+          for (i = 1; i <= section_line_count[section_name]; i++) {
+            line = section_line[section_name SUBSEP i]
+            equals_at = unquoted_equals(line)
+            if (equals_at == 0) {
+              inf_syntax_invalid = 1
+              continue
+            }
+            record_string_definition(section_name, substr(line, 1, equals_at - 1), substr(line, equals_at + 1))
+          }
+        }
+      }
+
+      function source_disk_description_is_unsafe(value, quoted,    key, expanded) {
+        if (quoted) return value == ""
+        if (length(value) < 3 || substr(value, 1, 1) != "%" || substr(value, length(value), 1) != "%") return 1
+        key = tolower(substr(value, 2, length(value) - 2))
+        if (key == "" || index(key, "%") != 0) return 1
+        if (!string_present[key] || string_ambiguous[key] || localized_string_present[key]) return 1
+        expanded = string_value[key]
+        return expanded == "" || expanded ~ /[,;\"%]/
+      }
+
+      function valid_disk_id(diskid) {
+        return diskid ~ /^(0|[1-9][0-9]*)$/ && (diskid + 0) <= 4294967295
+      }
+
+      function valid_destination_dirid(dirid) {
+        return dirid ~ /^[1-9][0-9]*$/ &&
+          dirid != "65535" &&
+          (dirid + 0) <= 4294967294
+      }
+
+      function record_source_disk_file(kind, source, diskid, subdir) {
+        source = normalize_lhs(source)
+        diskid = tolower(trim(diskid))
+        subdir = trim(subdir)
+        if (source == "" || !valid_disk_id(diskid)) {
+          source_contract_invalid = 1
+          return
+        }
+        if (kind == "arm64") {
+          if (source_arm64_present[source]) source_arm64_ambiguous[source] = 1
+          source_arm64_present[source] = 1
+          source_arm64_diskid[source] = diskid
+          source_arm64_subdir[source] = subdir
+        } else {
+          if (source_base_present[source]) source_base_ambiguous[source] = 1
+          source_base_present[source] = 1
+          source_base_diskid[source] = diskid
+          source_base_subdir[source] = subdir
+        }
+      }
+
+      function record_source_disk_name(kind, diskid, description, description_quoted, tag_or_cab, basepath, flags, tag_file,    nonflat) {
+        diskid = normalize_lhs(diskid)
+        tag_or_cab = trim(tag_or_cab)
+        basepath = trim(basepath)
+        flags = trim(flags)
+        tag_file = trim(tag_file)
+        nonflat = source_disk_description_is_unsafe(description, description_quoted) ||
+          tag_or_cab != "" || basepath != "" || flags != "" || tag_file != ""
+        if (!valid_disk_id(diskid)) {
+          source_contract_invalid = 1
+          return
+        }
+        if (kind == "arm64") {
+          if (disk_name_arm64_present[diskid]) disk_name_arm64_ambiguous[diskid] = 1
+          disk_name_arm64_present[diskid] = 1
+          disk_name_arm64_nonflat[diskid] = nonflat
+        } else {
+          if (disk_name_base_present[diskid]) disk_name_base_ambiguous[diskid] = 1
+          disk_name_base_present[diskid] = 1
+          disk_name_base_nonflat[diskid] = nonflat
+        }
+      }
+
+      function load_source_disk_files(source_section, kind,    i, line, equals_at, source, count, diskid, subdir) {
+        for (i = 1; i <= section_line_count[source_section]; i++) {
+          line = section_line[source_section SUBSEP i]
+          equals_at = unquoted_equals(line)
+          if (equals_at == 0) {
+            source_contract_invalid = 1
+            continue
+          }
+          source = substr(line, 1, equals_at - 1)
+          count = parse_csv(substr(line, equals_at + 1))
+          diskid = count >= 1 ? csv_field[1] : ""
+          subdir = count >= 2 ? csv_field[2] : ""
+          record_source_disk_file(kind, source, diskid, subdir)
+        }
+      }
+
+      function load_source_disk_names(source_section, kind,    i, line, equals_at, diskid, count, description, description_quoted, tag_or_cab, basepath, flags, tag_file) {
+        for (i = 1; i <= section_line_count[source_section]; i++) {
+          line = section_line[source_section SUBSEP i]
+          equals_at = unquoted_equals(line)
+          if (equals_at == 0) {
+            source_contract_invalid = 1
+            continue
+          }
+          diskid = substr(line, 1, equals_at - 1)
+          count = parse_csv(substr(line, equals_at + 1))
+          description = count >= 1 ? csv_field[1] : ""
+          description_quoted = csv_field_quoted[1] ? 1 : 0
+          tag_or_cab = count >= 2 ? csv_field[2] : ""
+          basepath = count >= 4 ? csv_field[4] : ""
+          flags = count >= 5 ? csv_field[5] : ""
+          tag_file = count >= 6 ? csv_field[6] : ""
+          record_source_disk_name(kind, diskid, description, description_quoted, tag_or_cab, basepath, flags, tag_file)
+        }
+      }
+
+      function load_source_disk_mappings(    source_section) {
+        for (source_section in section_present) {
+          if (source_section ~ /^sourcedisksfiles([.]|$)/ ||
+              source_section ~ /^sourcedisksnames([.]|$)/) source_contract_present = 1
+          if (source_section == "sourcedisksfiles") load_source_disk_files(source_section, "base")
+          else if (source_section == "sourcedisksfiles.arm64") load_source_disk_files(source_section, "arm64")
+          else if (source_section == "sourcedisksnames") load_source_disk_names(source_section, "base")
+          else if (source_section == "sourcedisksnames.arm64") load_source_disk_names(source_section, "arm64")
+        }
+      }
+
+      function source_disk_name_is_not_flat(diskid) {
+        if (disk_name_arm64_ambiguous[diskid]) return 1
+        if (disk_name_arm64_present[diskid]) return disk_name_arm64_nonflat[diskid]
+        if (disk_name_base_ambiguous[diskid]) return 1
+        if (disk_name_base_present[diskid]) return disk_name_base_nonflat[diskid]
+        return 1
+      }
+
+      function source_disk_mapping_is_not_flat(source,    diskid, subdir) {
+        source = tolower(trim(source))
+        if (!source_contract_present) return 1
+        if (source_contract_invalid) return 1
+        if (source_arm64_ambiguous[source]) return 1
+        if (source_arm64_present[source]) {
+          diskid = source_arm64_diskid[source]
+          subdir = source_arm64_subdir[source]
+        } else {
+          if (source_base_ambiguous[source] || !source_base_present[source]) return 1
+          diskid = source_base_diskid[source]
+          subdir = source_base_subdir[source]
+        }
+        if (subdir != "") return 1
+        return source_disk_name_is_not_flat(diskid)
       }
 
       function clear_path_state(    key) {
         for (key in addreg_section) delete addreg_section[key]
         for (key in copy_section) delete copy_section[key]
         for (key in copy_source) delete copy_source[key]
+        for (key in copy_target_present) delete copy_target_present[key]
         for (key in copy_dirid) delete copy_dirid[key]
         for (key in copy_subdir) delete copy_subdir[key]
         for (key in destination_dirid) delete destination_dirid[key]
         for (key in destination_subdir) delete destination_subdir[key]
+        for (key in destination_present) delete destination_present[key]
         path_user_seen = 0
         path_open_gl_seen = 0
         path_display_seen = 0
         path_open_gl_version_seen = 0
         path_open_gl_flags_seen = 0
-        path_resolution_failed = 0
+        path_copyfiles_payload_failed = 0
+        path_registration_failed = 0
+        path_direct_copy_count = 0
+        path_section_copy_count = 0
       }
 
       function registered_dll_target(value, key,    count, part, target) {
@@ -333,25 +618,42 @@ active_umd_contract_for_inf() {
         return substr(normalized, 1, 5) == "%11%/" ? "11" : ""
       }
 
-      function record_copy_mapping(target, source, dirid, subdir,    old_source, old_dirid, old_subdir) {
+      function record_copy_mapping(target, source, dirid, subdir, flags) {
         target = tolower(trim(target))
         source = tolower(trim(source))
         dirid = tolower(trim(dirid))
         subdir = trim(subdir)
-        sub(/^@/, "", target)
-        sub(/^@/, "", source)
+        flags = tolower(trim(flags))
         if (source == "") source = target
-        if (target ~ /[.]dll$/ && source ~ /[.]dll$/) {
-          old_source = copy_source[target]
-          old_dirid = copy_dirid[target]
-          old_subdir = copy_subdir[target]
-          if (old_source != "" &&
-              (old_source != source || old_dirid != dirid || old_subdir != subdir)) {
-            path_resolution_failed = 1
-          }
+        if (target == "" ||
+            substr(target, 1, 1) == "@" ||
+            substr(source, 1, 1) == "@" ||
+            index(target, "%") != 0 ||
+            index(source, "%") != 0) {
+          path_copyfiles_payload_failed = 1
+          path_registration_failed = 1
+        }
+        if (flags != "" &&
+            flags != "0" &&
+            flags != "0x00000000" &&
+            flags != "2" &&
+            flags != "0x2" &&
+            flags != "0x00000002") {
+          path_copyfiles_payload_failed = 1
+          path_registration_failed = 1
+        }
+        if (!valid_destination_dirid(dirid)) path_copyfiles_payload_failed = 1
+        if (copy_target_present[target]) {
+          path_copyfiles_payload_failed = 1
+          path_registration_failed = 1
+        } else {
+          copy_target_present[target] = 1
           copy_source[target] = source
           copy_dirid[target] = dirid
           copy_subdir[target] = subdir
+        }
+        if (source == "" || !payload[source] || source_disk_mapping_is_not_flat(source)) {
+          path_copyfiles_payload_failed = 1
         }
       }
 
@@ -363,21 +665,51 @@ active_umd_contract_for_inf() {
         return ""
       }
 
+      function register_model_path(base, model,    key) {
+        base = tolower(trim(base))
+        model = tolower(trim(model))
+        key = base SUBSEP model
+        if (!model_path_seen[key]) {
+          model_path_seen[key] = 1
+          model_path_count[base]++
+        }
+        model_path_base[model] = base
+        model_section[model] = 1
+      }
+
+      function hwid_component_present(value, component,    offset, relative, position, before, after) {
+        value = tolower(value)
+        component = tolower(component)
+        offset = 1
+        while (offset <= length(value)) {
+          relative = index(substr(value, offset), component)
+          if (relative == 0) return 0
+          position = offset + relative - 1
+          before = position == 1 ? "" : substr(value, position - 1, 1)
+          after = substr(value, position + length(component), 1)
+          if ((before == "" || before == "\\" || before == "&") &&
+              (after == "" || after == "&")) return 1
+          offset = position + 1
+        }
+        return 0
+      }
+
       function model_hwid_matches(count,    i, value, wanted) {
         wanted = expected_id == "" ? "" : "dev_" expected_id
         for (i = 2; i <= count; i++) {
           value = tolower(csv_field[i])
-          if (index(value, "ven_1af4") == 0) continue
+          if (!hwid_component_present(value, "ven_1af4")) continue
           if (wanted != "") {
-            if (index(value, wanted) != 0) return 1
-          } else if (index(value, "dev_1050") != 0 || index(value, "dev_10f7") != 0) {
+            if (hwid_component_present(value, wanted)) return 1
+          } else if (hwid_component_present(value, "dev_1050") ||
+                     hwid_component_present(value, "dev_10f7")) {
             return 1
           }
         }
         return 0
       }
 
-      function evaluate_install_path(install, model,    i, line, equals_at, key, count, value, section_name, target, source, dirid, subdir, registry_section, root, registry_subkey, registry_key, registry_flags, registry_kind, expected_target, expected_value, expected_data_count, data_count, data_index, valid) {
+      function evaluate_install_path(install, model,    i, line, equals_at, key, count, value, direct_source, section_name, target, source, dirid, subdir, copy_flags, registry_section, root, registry_subkey, registry_key, registry_flags, registry_kind, expected_target, expected_value, expected_data_count, data_count, data_index, valid) {
         clear_path_state()
         any_selected_install = 1
         if (first_selected_install == "") first_selected_install = install
@@ -388,6 +720,12 @@ active_umd_contract_for_inf() {
           if (equals_at == 0) continue
           key = tolower(trim(substr(line, 1, equals_at - 1)))
           count = parse_csv(substr(line, equals_at + 1))
+          if (key == "" || destination_present[key]) {
+            path_copyfiles_payload_failed = 1
+            path_registration_failed = 1
+            continue
+          }
+          destination_present[key] = 1
           destination_dirid[key] = count >= 1 ? tolower(trim(csv_field[1])) : ""
           destination_subdir[key] = count >= 2 ? trim(csv_field[2]) : ""
         }
@@ -398,7 +736,14 @@ active_umd_contract_for_inf() {
           if (equals_at == 0) continue
           key = tolower(trim(substr(line, 1, equals_at - 1)))
           count = parse_csv(substr(line, equals_at + 1))
-          if (key == "addreg") {
+          if (key == "needs") {
+            for (data_index = 1; data_index <= count; data_index++) {
+              if (trim(csv_field[data_index]) != "") {
+                path_copyfiles_payload_failed = 1
+                path_registration_failed = 1
+              }
+            }
+          } else if (key == "addreg") {
             for (data_index = 1; data_index <= count; data_index++) {
               section_name = tolower(trim(csv_field[data_index]))
               if (section_name != "") addreg_section[section_name] = 1
@@ -407,17 +752,30 @@ active_umd_contract_for_inf() {
             for (data_index = 1; data_index <= count; data_index++) {
               value = trim(csv_field[data_index])
               if (substr(value, 1, 1) == "@") {
-                record_copy_mapping(value, value, destination_dirid["defaultdestdir"], destination_subdir["defaultdestdir"])
+                path_direct_copy_count++
+                direct_source = substr(value, 2)
+                record_copy_mapping(direct_source, direct_source, destination_dirid["defaultdestdir"], destination_subdir["defaultdestdir"], "")
               } else if (value != "") {
-                copy_section[tolower(value)] = 1
+                path_section_copy_count++
+                section_name = tolower(value)
+                if (copy_section[section_name]) {
+                  path_copyfiles_payload_failed = 1
+                  path_registration_failed = 1
+                }
+                copy_section[section_name] = 1
               }
+            }
+            if (path_direct_copy_count > 0 &&
+                (path_direct_copy_count != 1 || path_section_copy_count != 0)) {
+              path_copyfiles_payload_failed = 1
+              path_registration_failed = 1
             }
           }
         }
 
         for (section_name in copy_section) {
           if (!section_present[section_name]) {
-            path_resolution_failed = 1
+            path_copyfiles_payload_failed = 1
             continue
           }
           dirid = destination_dirid[section_name]
@@ -431,13 +789,14 @@ active_umd_contract_for_inf() {
             count = parse_csv(line)
             target = csv_field[1]
             source = count >= 2 ? csv_field[2] : ""
-            record_copy_mapping(target, source, dirid, subdir)
+            copy_flags = count >= 4 ? csv_field[4] : ""
+            record_copy_mapping(target, source, dirid, subdir, copy_flags)
           }
         }
 
         for (registry_section in addreg_section) {
           if (!section_present[registry_section]) {
-            path_resolution_failed = 1
+            path_registration_failed = 1
             continue
           }
           for (i = 1; i <= section_line_count[registry_section]; i++) {
@@ -479,14 +838,14 @@ active_umd_contract_for_inf() {
 
             registry_flags = count >= 4 ? tolower(trim(csv_field[4])) : ""
             if (registry_subkey != "") {
-              path_resolution_failed = 1
+              path_registration_failed = 1
             }
             if (registry_kind == "dll" &&
                 registry_flags != "0x00010000" &&
-                registry_flags != "%reg_multi_sz%") path_resolution_failed = 1
+                registry_flags != "%reg_multi_sz%") path_registration_failed = 1
             if (registry_kind == "dword" &&
                 registry_flags != "0x00010001" &&
-                registry_flags != "%reg_dword%") path_resolution_failed = 1
+                registry_flags != "%reg_dword%") path_registration_failed = 1
             data_count = 0
             for (data_index = 5; data_index <= count; data_index++) {
               value = trim(csv_field[data_index])
@@ -501,13 +860,14 @@ active_umd_contract_for_inf() {
                     copy_dirid[target] != "11" ||
                     copy_subdir[target] != "" ||
                     source == "" ||
-                    !payload[source]) path_resolution_failed = 1
+                    !payload[source] ||
+                    !dll_payload[source]) path_registration_failed = 1
               } else if (value != expected_value) {
-                path_resolution_failed = 1
+                path_registration_failed = 1
               }
             }
             if (data_count != expected_data_count) {
-              path_resolution_failed = 1
+              path_registration_failed = 1
             }
           }
         }
@@ -517,14 +877,15 @@ active_umd_contract_for_inf() {
         if (path_display_seen) any_display_seen = 1
         if (path_open_gl_version_seen) any_open_gl_version_seen = 1
         if (path_open_gl_flags_seen) any_open_gl_flags_seen = 1
-        if (path_resolution_failed) any_resolution_failed = 1
-
-        valid = path_user_seen &&
+        registration_valid = path_user_seen &&
           path_open_gl_seen &&
           path_display_seen &&
           path_open_gl_version_seen &&
           path_open_gl_flags_seen &&
-          !path_resolution_failed
+          !path_registration_failed
+        if (registration_valid) any_registered_dlls_resolved = 1
+
+        valid = registration_valid && !path_copyfiles_payload_failed
         if (valid) {
           contract_valid = 1
           valid_model = model
@@ -539,12 +900,22 @@ active_umd_contract_for_inf() {
             payload[tolower(payload_item[payload_index])] = 1
           }
         }
+        dll_payload_count = split(dll_payload_names, dll_payload_item, "|")
+        for (dll_payload_index = 1; dll_payload_index <= dll_payload_count; dll_payload_index++) {
+          if (dll_payload_item[dll_payload_index] != "") {
+            dll_payload[tolower(dll_payload_item[dll_payload_index])] = 1
+          }
+        }
         section = ""
       }
 
       {
         sub(/\r$/, "")
-        line = trim(strip_comment($0))
+        if (section == "strings" || section ~ /^strings[.]/) {
+          line = trim(strip_strings_comment($0))
+        } else {
+          line = trim(strip_comment($0))
+        }
         if (line == "") next
         if (line ~ /^\[[^]]+\]$/) {
           section = tolower(trim(substr(line, 2, length(line) - 2)))
@@ -558,6 +929,8 @@ active_umd_contract_for_inf() {
       }
 
       END {
+        load_strings()
+        load_source_disk_mappings()
         for (i = 1; i <= section_line_count["manufacturer"]; i++) {
           line = section_line["manufacturer" SUBSEP i]
           equals_at = index(line, "=")
@@ -565,11 +938,11 @@ active_umd_contract_for_inf() {
           count = parse_csv(substr(line, equals_at + 1))
           model_base = tolower(trim(csv_field[1]))
           if (model_base == "") continue
-          if (count == 1) model_section[model_base] = 1
+          if (count == 1) register_model_path(model_base, model_base)
           for (field_index = 2; field_index <= count; field_index++) {
             decoration = tolower(trim(csv_field[field_index]))
             if (decoration == "ntarm64" || decoration ~ /^ntarm64[.]/) {
-              model_section[model_base "." decoration] = 1
+              register_model_path(model_base, model_base "." decoration)
             }
           }
         }
@@ -583,9 +956,21 @@ active_umd_contract_for_inf() {
             count = parse_csv(substr(line, equals_at + 1))
             if (count < 2 || !model_hwid_matches(count)) continue
             any_selected_model = 1
+            selected_model_entry_count++
+            selected_model_base[model_path_base[model]] = 1
             install = select_arm64_install_section(csv_field[1])
             if (install != "") evaluate_install_path(install, model)
           }
+        }
+
+        for (model_base in selected_model_base) {
+          if (model_path_count[model_base] != 1) model_path_ambiguous = 1
+        }
+        if (selected_model_entry_count != 1) model_path_ambiguous = 1
+
+        if (inf_syntax_invalid || model_path_ambiguous) {
+          contract_valid = 0
+          any_registered_dlls_resolved = 0
         }
 
         printf "contract_valid=%s\n", contract_valid ? "true" : "false"
@@ -594,7 +979,8 @@ active_umd_contract_for_inf() {
         printf "installed_display_drivers_registered=%s\n", any_display_seen ? "true" : "false"
         printf "open_gl_version_registered=%s\n", any_open_gl_version_seen ? "true" : "false"
         printf "open_gl_flags_registered=%s\n", any_open_gl_flags_seen ? "true" : "false"
-        printf "registered_dlls_resolved=%s\n", contract_valid ? "true" : "false"
+        printf "registered_dlls_resolved=%s\n", any_registered_dlls_resolved ? "true" : "false"
+        printf "active_copyfiles_payload_resolved=%s\n", contract_valid ? "true" : "false"
         printf "selected_model_found=%s\n", any_selected_model ? "true" : "false"
         printf "selected_install_found=%s\n", any_selected_install ? "true" : "false"
         printf "model_section=%s\n", contract_valid ? valid_model : "<none>"
@@ -605,12 +991,19 @@ active_umd_contract_for_inf() {
 
 classify_render_capability() {
   local payload_names=""
-  local dll
+  local dll_payload_names=""
+  local file
   local inf
   local analysis
   local key
   local value
   local contract_valid=false
+  local inf_contract_valid=false
+  local inf_selected_model_found=false
+  local inf_model_section="<none>"
+  local inf_install_section="<none>"
+  local selected_inf_count=0
+  local valid_inf_count=0
 
   umd_user_mode_driver_name_registered=false
   umd_open_gl_driver_name_registered=false
@@ -618,21 +1011,33 @@ classify_render_capability() {
   umd_open_gl_version_registered=false
   umd_open_gl_flags_registered=false
   umd_registered_dlls_resolved=false
+  umd_active_copyfiles_payload_resolved=false
   umd_registration_inf="<none>"
   umd_registration_model_section="<none>"
   umd_registration_install_section="<none>"
 
+  # CopyFiles may contain non-DLL runtime data (for example Vulkan ICD JSON),
+  # so its source closure must be checked against every packaged file. DLL PE
+  # validation remains the separate viogpu3d_dlls gate below.
+  for file in "${viogpu3d_package_files[@]}"; do
+    value="$(basename "$file" | tr '[:upper:]' '[:lower:]')"
+    payload_names="${payload_names:+$payload_names|}$value"
+  done
   if (( ${#viogpu3d_dlls[@]} > 0 )); then
-    for dll in "${viogpu3d_dlls[@]}"; do
-      value="$(basename "$dll" | tr '[:upper:]' '[:lower:]')"
-      payload_names="${payload_names:+$payload_names|}$value"
+    for file in "${viogpu3d_dlls[@]}"; do
+      value="$(basename "$file" | tr '[:upper:]' '[:lower:]')"
+      dll_payload_names="${dll_payload_names:+$dll_payload_names|}$value"
     done
     for inf in "${viogpu3d_infs[@]}"; do
-      analysis="$(active_umd_contract_for_inf "$inf" "$payload_names")"
+      inf_contract_valid=false
+      inf_selected_model_found=false
+      inf_model_section="<none>"
+      inf_install_section="<none>"
+      analysis="$(active_umd_contract_for_inf "$inf" "$payload_names" "$dll_payload_names")"
       while IFS='=' read -r key value; do
         case "$key" in
           contract_valid)
-            if [[ "$value" == "true" ]]; then contract_valid=true; fi
+            if [[ "$value" == "true" ]]; then inf_contract_valid=true; fi
             ;;
           user_mode_driver_name_registered)
             if [[ "$value" == "true" ]]; then umd_user_mode_driver_name_registered=true; fi
@@ -652,25 +1057,47 @@ classify_render_capability() {
           registered_dlls_resolved)
             if [[ "$value" == "true" ]]; then umd_registered_dlls_resolved=true; fi
             ;;
+          active_copyfiles_payload_resolved)
+            if [[ "$value" == "true" ]]; then umd_active_copyfiles_payload_resolved=true; fi
+            ;;
+          selected_model_found)
+            if [[ "$value" == "true" ]]; then inf_selected_model_found=true; fi
+            ;;
           model_section)
-            if [[ "$value" != "<none>" ]]; then umd_registration_model_section="$value"; fi
+            if [[ "$value" != "<none>" ]]; then inf_model_section="$value"; fi
             ;;
           install_section)
-            if [[ "$value" != "<none>" ]]; then umd_registration_install_section="$value"; fi
+            if [[ "$value" != "<none>" ]]; then inf_install_section="$value"; fi
             ;;
         esac
       done <<<"$analysis"
-      if [[ "$contract_valid" == "true" ]]; then
+      if [[ "$inf_selected_model_found" == "true" ]]; then
+        selected_inf_count=$((selected_inf_count + 1))
+      fi
+      if [[ "$inf_contract_valid" == "true" ]]; then
+        valid_inf_count=$((valid_inf_count + 1))
         umd_registration_inf="$inf"
-        umd_user_mode_driver_name_registered=true
-        umd_open_gl_driver_name_registered=true
-        umd_installed_display_drivers_registered=true
-        umd_open_gl_version_registered=true
-        umd_open_gl_flags_registered=true
-        umd_registered_dlls_resolved=true
-        break
+        umd_registration_model_section="$inf_model_section"
+        umd_registration_install_section="$inf_install_section"
       fi
     done
+    if (( selected_inf_count == 1 && valid_inf_count == 1 )); then
+      contract_valid=true
+      umd_user_mode_driver_name_registered=true
+      umd_open_gl_driver_name_registered=true
+      umd_installed_display_drivers_registered=true
+      umd_open_gl_version_registered=true
+      umd_open_gl_flags_registered=true
+      umd_registered_dlls_resolved=true
+      umd_active_copyfiles_payload_resolved=true
+    elif (( selected_inf_count != 1 || valid_inf_count > 1 )); then
+      contract_valid=false
+      umd_registered_dlls_resolved=false
+      umd_active_copyfiles_payload_resolved=false
+      umd_registration_inf="<none>"
+      umd_registration_model_section="<none>"
+      umd_registration_install_section="<none>"
+    fi
   fi
 
   if (( ${#viogpu3d_dlls[@]} == 0 )); then
@@ -689,11 +1116,12 @@ classify_render_capability() {
           "$umd_installed_display_drivers_registered" == "true" &&
           "$umd_open_gl_version_registered" == "true" &&
           "$umd_open_gl_flags_registered" == "true" &&
-          "$umd_registered_dlls_resolved" == "true" ]]; then
+          "$umd_registered_dlls_resolved" == "true" &&
+          "$umd_active_copyfiles_payload_resolved" == "true" ]]; then
     package_capability="umd-registered"
     umd_registration="complete"
     render_candidate=true
-    render_candidate_reason="active-wddm-umd-registration-and-packaged-dlls-present"
+    render_candidate_reason="active-wddm-umd-registration-and-copyfiles-payload-present"
   elif [[ "$umd_user_mode_driver_name_registered" == "false" &&
           "$umd_open_gl_driver_name_registered" == "false" &&
           "$umd_installed_display_drivers_registered" == "false" &&
@@ -703,6 +1131,12 @@ classify_render_capability() {
     umd_registration="absent"
     render_candidate=false
     render_candidate_reason="user-mode-dlls-present-but-inf-registration-missing"
+  elif [[ "$umd_registered_dlls_resolved" == "true" &&
+          "$umd_active_copyfiles_payload_resolved" != "true" ]]; then
+    package_capability="umd-registration-active-payload-unresolved"
+    umd_registration="complete-but-active-payload-unresolved"
+    render_candidate=false
+    render_candidate_reason="active-copyfiles-source-payload-unresolved"
   elif [[ "$umd_user_mode_driver_name_registered" == "true" &&
           "$umd_open_gl_driver_name_registered" == "true" &&
           "$umd_installed_display_drivers_registered" == "true" &&
@@ -765,6 +1199,7 @@ write_manifest() {
     printf 'umd_open_gl_version_registered=%s\n' "$umd_open_gl_version_registered"
     printf 'umd_open_gl_flags_registered=%s\n' "$umd_open_gl_flags_registered"
     printf 'umd_registered_dlls_resolved=%s\n' "$umd_registered_dlls_resolved"
+    printf 'umd_active_copyfiles_payload_resolved=%s\n' "$umd_active_copyfiles_payload_resolved"
     printf 'umd_registration_inf=%s\n' "$umd_registration_inf"
     printf 'umd_registration_model_section=%s\n' "$umd_registration_model_section"
     printf 'umd_registration_install_section=%s\n' "$umd_registration_install_section"
@@ -852,13 +1287,20 @@ viogpu3d_infs=()
 viogpu3d_sys=()
 viogpu3d_cats=()
 viogpu3d_dlls=()
+viogpu3d_package_files=()
 viogpu3d_hwids=""
-shopt -s nullglob
-for file in "$VIOGPU3D_DIR"/*.inf "$VIOGPU3D_DIR"/*.INF; do viogpu3d_infs+=("$file"); done
-for file in "$VIOGPU3D_DIR"/*.sys "$VIOGPU3D_DIR"/*.SYS; do viogpu3d_sys+=("$file"); done
-for file in "$VIOGPU3D_DIR"/*.cat "$VIOGPU3D_DIR"/*.CAT; do viogpu3d_cats+=("$file"); done
-for file in "$VIOGPU3D_DIR"/*.dll "$VIOGPU3D_DIR"/*.DLL; do viogpu3d_dlls+=("$file"); done
-shopt -u nullglob
+for file in "$VIOGPU3D_DIR"/*; do
+  [[ -f "$file" ]] || continue
+  reject_windows_unsafe_basename "$file"
+  viogpu3d_package_files+=("$file")
+  extension="$(printf '%s\n' "${file##*.}" | tr '[:upper:]' '[:lower:]')"
+  case "$extension" in
+    inf) viogpu3d_infs+=("$file") ;;
+    sys) viogpu3d_sys+=("$file") ;;
+    cat) viogpu3d_cats+=("$file") ;;
+    dll) viogpu3d_dlls+=("$file") ;;
+  esac
+done
 
 (( ${#viogpu3d_infs[@]} > 0 )) || fail "no .inf found in $VIOGPU3D_DIR"
 (( ${#viogpu3d_sys[@]} > 0 )) || fail "no .sys found in $VIOGPU3D_DIR"
@@ -932,6 +1374,7 @@ printf 'umd_installed_display_drivers_registered=%s\n' "$umd_installed_display_d
 printf 'umd_open_gl_version_registered=%s\n' "$umd_open_gl_version_registered"
 printf 'umd_open_gl_flags_registered=%s\n' "$umd_open_gl_flags_registered"
 printf 'umd_registered_dlls_resolved=%s\n' "$umd_registered_dlls_resolved"
+printf 'umd_active_copyfiles_payload_resolved=%s\n' "$umd_active_copyfiles_payload_resolved"
 printf 'umd_registration_inf=%s\n' "$umd_registration_inf"
 printf 'umd_registration_model_section=%s\n' "$umd_registration_model_section"
 printf 'umd_registration_install_section=%s\n' "$umd_registration_install_section"
@@ -942,7 +1385,7 @@ fi
 if (( ${#viogpu3d_dlls[@]} == 0 )); then
   printf 'warning=no viogpu3d .dll files found; package appears KMD-only\n'
 elif [[ "$render_candidate" != "true" ]]; then
-  printf 'warning=user-mode DLL payload is present but required INF UMD registration is incomplete; package is not a render candidate\n'
+  printf 'warning=user-mode DLL payload is present but required INF UMD registration or active CopyFiles payload closure is incomplete; package is not a render candidate\n'
 fi
 if [[ "$VIOGPU3D_REQUIRE_RENDER_CANDIDATE" == "1" && "$render_candidate" != "true" ]]; then
   fail "viogpu3d package is injection-ready but not a render candidate: $render_candidate_reason"

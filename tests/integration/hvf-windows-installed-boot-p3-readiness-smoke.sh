@@ -66,6 +66,13 @@ AddReg=VioGpu3D_DeviceSettings
 viogpu_d3d10.dll,viogpu_d3d10_arm64.dll,,0
 viogpu_wgl.dll,viogpu_wgl_arm64.dll,,0
 
+[SourceDisksNames.arm64]
+1="fixture disk",,,
+
+[SourceDisksFiles.arm64]
+viogpu_d3d10_arm64.dll=1,,
+viogpu_wgl_arm64.dll=1,,
+
 [VioGpu3D_DeviceSettings]
 HKR,,UserModeDriverName,0x00010000,%11%\viogpu_d3d10.dll,%11%\viogpu_d3d10.dll,%11%\viogpu_d3d10.dll,%11%\viogpu_d3d10.dll
 HKR,,OpenGLDriverName,0x00010000,%11%\viogpu_wgl.dll

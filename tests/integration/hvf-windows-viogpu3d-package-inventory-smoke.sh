@@ -88,6 +88,13 @@ AddReg=VioGpu3D_DeviceSettings
 [VioGpu3D_Files.Usermode]
 viogpu_d3d10.dll,viogpu_d3d10_arm64.dll,,0
 viogpu_wgl.dll,viogpu_wgl_arm64.dll,,0
+
+[SourceDisksNames.arm64]
+1="fixture disk",,,
+
+[SourceDisksFiles.arm64]
+viogpu_d3d10_arm64.dll=1,,
+viogpu_wgl_arm64.dll=1,,
 INF
   if [[ "$registration" == "registered" ]]; then
     cat >>"$dir/viogpu3d.inf" <<'INF'
