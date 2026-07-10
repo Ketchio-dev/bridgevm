@@ -23,6 +23,40 @@ metadata_value() {
   awk -F= -v key="$key" '$1 == key { print substr($0, length(key) + 2); exit }' "$file"
 }
 
+canonical_u64_literal() {
+  local value="$1"
+  local normalized
+  local decimal
+
+  case "$value" in
+    ""|unknown|\<unset\>)
+      printf '%s\n' "$value"
+      return 0
+      ;;
+    0x*|0X*)
+      [[ "${value#??}" =~ ^[0-9a-fA-F]{1,16}$ ]] || {
+        printf '<invalid-u64>\n'
+        return 0
+      }
+      ;;
+    *)
+      [[ "$value" =~ ^[0-9]+$ ]] || {
+        printf '<invalid-u64>\n'
+        return 0
+      }
+      decimal="${value#"${value%%[!0]*}"}"
+      [[ -n "$decimal" ]] || decimal=0
+      value="$decimal"
+      ;;
+  esac
+
+  if normalized="$(printf '0x%016x' "$value" 2>/dev/null)"; then
+    printf '%s\n' "$normalized"
+  else
+    printf '<invalid-u64>\n'
+  fi
+}
+
 sanitize_label() {
   tr '\t ' '__'
 }
@@ -100,6 +134,8 @@ derive_run_metadata() {
   local status_file
   local target_stat
   local expected_vcpus=""
+  local expected_desktop_agent=""
+  local expected_desktop_checksum64=""
   local run_status="unknown"
 
   if [[ -d "$input" ]]; then
@@ -111,6 +147,9 @@ derive_run_metadata() {
   status_file="$evidence_dir/matrix-status.txt"
   target_stat="$evidence_dir/target-stat.txt"
   expected_vcpus="$(metadata_value "$preflight" smp_cpus)"
+  expected_desktop_agent="$(metadata_value "$preflight" boot_timer_desktop_agent)"
+  expected_desktop_checksum64="$(metadata_value "$preflight" boot_timer_desktop_checksum64)"
+  expected_desktop_checksum64="$(canonical_u64_literal "$expected_desktop_checksum64")"
   if [[ -f "$status_file" ]]; then
     run_status="$(metadata_value "$status_file" status)"
   elif [[ -f "$target_stat" ]]; then
@@ -118,7 +157,11 @@ derive_run_metadata() {
   elif [[ -f "$preflight" ]]; then
     run_status="$(metadata_value "$preflight" matrix_status)"
   fi
-  printf '%s\t%s\n' "${expected_vcpus:-unknown}" "${run_status:-unknown}"
+  printf '%s\t%s\t%s\t%s\n' \
+    "${expected_vcpus:-unknown}" \
+    "${run_status:-unknown}" \
+    "${expected_desktop_agent:-unknown}" \
+    "${expected_desktop_checksum64:-unknown}"
 }
 
 emit_run_row() {
@@ -126,12 +169,14 @@ emit_run_row() {
   local log
   local config
   local expected_vcpus
+  local expected_desktop_agent
+  local expected_desktop_checksum64
   local run_status
 
   log="$(resolve_log_path "$input")"
   config="$(derive_config_label "$input" "$log")"
-  IFS=$'\t' read -r expected_vcpus run_status < <(derive_run_metadata "$input" "$log")
-  awk -v config="$config" -v source="$log" -v expected_vcpus="$expected_vcpus" -v run_status="$run_status" '
+  IFS=$'\t' read -r expected_vcpus run_status expected_desktop_agent expected_desktop_checksum64 < <(derive_run_metadata "$input" "$log")
+  awk -v config="$config" -v source="$log" -v expected_vcpus="$expected_vcpus" -v run_status="$run_status" -v expected_desktop_agent="$expected_desktop_agent" -v expected_desktop_checksum64="$expected_desktop_checksum64" '
     function field_value(key, pos, rest) {
       pos = index($0, key "=")
       if (!pos) {
@@ -147,45 +192,87 @@ emit_run_row() {
       found_start = 0
       summary_elapsed = ""
       desktop_elapsed = ""
+      desktop_source = ""
+      desktop_checksum = ""
+      start_desktop_agent = ""
+      start_desktop_checksum = ""
       desktop_reached = ""
       milestones = ""
       total_exits = 0
       total_exit_rate = 0
       vcpu_count = 0
+      vcpu_ids_valid = 1
+      metric_fields_valid = 1
+      any_hv_vcpu_run_error = 0
+    }
+
+    index($0, "hv_vcpu_run error ") > 0 {
+      any_hv_vcpu_run_error = 1
     }
 
     index($0, "BOOT_TIMER ") > 0 {
       if (index($0, "BOOT_TIMER start ") > 0) {
+        for (cpu_id in seen_vcpu) {
+          delete seen_vcpu[cpu_id]
+        }
         generation += 1
         found_start = 1
         summary_elapsed = ""
         desktop_elapsed = ""
+        desktop_source = ""
+        desktop_checksum = ""
+        start_desktop_agent = field_value("desktop_agent")
+        start_desktop_checksum = field_value("desktop_checksum")
         desktop_reached = ""
         milestones = ""
         total_exits = 0
         total_exit_rate = 0
         vcpu_count = 0
+        vcpu_ids_valid = 1
+        metric_fields_valid = 1
         next
       }
       if (index($0, "BOOT_TIMER milestone name=desktop") > 0) {
         value = field_value("elapsed_ms")
         if (value != "") {
           desktop_elapsed = value
+          if (value !~ /^[0-9]+$/) {
+            metric_fields_valid = 0
+          }
         }
+        desktop_source = field_value("source")
+        desktop_checksum = field_value("checksum64")
       }
       if (index($0, "BOOT_TIMER summary ") > 0) {
         summary_elapsed = field_value("elapsed_ms")
+        if (summary_elapsed != "" && summary_elapsed !~ /^[0-9]+$/) {
+          metric_fields_valid = 0
+        }
         desktop_reached = field_value("desktop_reached")
         milestones = field_value("milestones")
       }
       if (index($0, "BOOT_TIMER vcpu ") > 0) {
+        cpu = field_value("cpu")
         exits = field_value("exits")
         rate = field_value("exits_per_sec")
-        if (exits != "") {
-          total_exits += exits + 0
+        if (cpu !~ /^[0-9]+$/) {
+          vcpu_ids_valid = 0
+        } else {
+          cpu_id = sprintf("%d", cpu + 0)
+          if (cpu_id in seen_vcpu) {
+            vcpu_ids_valid = 0
+          }
+          seen_vcpu[cpu_id] = 1
         }
-        if (rate != "") {
+        if (exits ~ /^[0-9]+$/) {
+          total_exits += exits + 0
+        } else {
+          metric_fields_valid = 0
+        }
+        if (rate ~ /^[0-9]+([.][0-9]+)?$/) {
           total_exit_rate += rate + 0
+        } else {
+          metric_fields_valid = 0
         }
         vcpu_count += 1
       }
@@ -205,11 +292,47 @@ emit_run_row() {
       if (desktop_reached != "true" || desktop_elapsed == "") {
         reason = reason (reason == "" ? "" : ",") "desktop_not_reached"
       }
-      if (expected_vcpus ~ /^[0-9]+$/ && vcpu_count != expected_vcpus + 0) {
+      oracle_valid = 1
+      if (found_start && desktop_elapsed != "") {
+        if (expected_desktop_agent == "1" && (start_desktop_agent != "true" || desktop_source != "agent")) {
+          oracle_valid = 0
+        }
+        if (expected_desktop_agent == "0" && (start_desktop_agent == "true" || desktop_source == "agent")) {
+          oracle_valid = 0
+        }
+        checksum_expected = expected_desktop_checksum64 != "" && expected_desktop_checksum64 != "<unset>" && expected_desktop_checksum64 != "unknown"
+        if (checksum_expected && (start_desktop_checksum == "" || start_desktop_checksum == "<unset>" || tolower(start_desktop_checksum) != tolower(expected_desktop_checksum64) || desktop_source == "agent" || desktop_checksum == "" || tolower(desktop_checksum) != tolower(start_desktop_checksum))) {
+          oracle_valid = 0
+        }
+      }
+      if (!oracle_valid) {
+        reason = reason (reason == "" ? "" : ",") "desktop_oracle_mismatch"
+      }
+      if (vcpu_count == 0 || (expected_vcpus ~ /^[0-9]+$/ && vcpu_count != expected_vcpus + 0)) {
         reason = reason (reason == "" ? "" : ",") "vcpu_count_mismatch"
+      } else if (expected_vcpus ~ /^[0-9]+$/) {
+        for (cpu_id = 0; cpu_id < expected_vcpus + 0; cpu_id += 1) {
+          if (!(sprintf("%d", cpu_id) in seen_vcpu)) {
+            vcpu_ids_valid = 0
+          }
+        }
+        for (cpu_id in seen_vcpu) {
+          if (cpu_id + 0 >= expected_vcpus + 0) {
+            vcpu_ids_valid = 0
+          }
+        }
+      }
+      if (!vcpu_ids_valid) {
+        reason = reason (reason == "" ? "" : ",") "vcpu_ids_mismatch"
+      }
+      if (!metric_fields_valid) {
+        reason = reason (reason == "" ? "" : ",") "metric_fields_invalid"
       }
       if (run_status ~ /^[0-9]+$/ && run_status + 0 != 0) {
         reason = reason (reason == "" ? "" : ",") "run_status_nonzero"
+      }
+      if (any_hv_vcpu_run_error) {
+        reason = reason (reason == "" ? "" : ",") "hv_vcpu_run_error"
       }
       valid = reason == "" ? "true" : "false"
       printf "run\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%.2f\t%d\t%d\t%s\t%s\t%s\n", \

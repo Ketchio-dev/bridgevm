@@ -132,6 +132,12 @@ impl RamfbSampleSchedule {
         }
     }
 
+    pub fn has_due_checkpoint(&self, elapsed: Duration) -> bool {
+        self.checkpoints
+            .iter()
+            .any(|checkpoint| !checkpoint.emitted && elapsed >= checkpoint.delay)
+    }
+
     pub fn is_complete(&self) -> bool {
         self.checkpoints.iter().all(|checkpoint| checkpoint.emitted)
     }

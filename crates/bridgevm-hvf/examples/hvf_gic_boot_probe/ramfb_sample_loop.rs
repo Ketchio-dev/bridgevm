@@ -53,10 +53,6 @@ impl RamfbSampleLoop {
             && !watchdog_fired.load(Ordering::SeqCst)
     }
 
-    pub fn automation_tick_needed(&self) -> bool {
-        self.schedule.is_some()
-    }
-
     pub fn emit_due<F>(&mut self, vcpu: HvVcpuT, emit_checkpoint: F)
     where
         F: FnMut(&str),
@@ -73,6 +69,18 @@ impl RamfbSampleLoop {
                 self.arm_sample_tick(elapsed, deadline, vcpu);
             }
         }
+    }
+
+    /// Cheap pre-lock gate for scheduled framebuffer checkpoints. The caller
+    /// can inspect this on every exit and acquire the platform mutex only when
+    /// a checkpoint has actually become due.
+    pub fn checkpoint_due_at(&self, now: Instant) -> bool {
+        let Some(elapsed) = now.checked_duration_since(self.start) else {
+            return false;
+        };
+        self.schedule
+            .as_ref()
+            .is_some_and(|schedule| schedule.has_due_checkpoint(elapsed))
     }
 
     pub fn observe_shell(&mut self, vcpu: HvVcpuT) -> RamfbSampleShellAction {

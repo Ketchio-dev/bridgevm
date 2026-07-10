@@ -46,6 +46,7 @@ use std::alloc::{alloc_zeroed, Layout};
 use std::collections::BTreeMap;
 use std::os::raw::c_void;
 use std::path::Path;
+use std::process::ExitCode;
 use std::ptr::null_mut;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -652,8 +653,12 @@ struct VcpuControl {
     condvar: Condvar,
     entry: AtomicU64,
     context: AtomicU64,
-    vcpu: AtomicU64,
+    /// Live HVF handle published by the secondary thread. The mutex is also
+    /// the handle-lifetime barrier: shutdown holds it while requesting an
+    /// exit, and the owner clears it before dropping `HvVcpuGuard`.
+    vcpu: Mutex<Option<HvVcpuT>>,
     exits: AtomicU64,
+    run_error: AtomicBool,
     mpidr: u64,
     index: u64,
 }
@@ -665,8 +670,9 @@ impl VcpuControl {
             condvar: Condvar::new(),
             entry: AtomicU64::new(0),
             context: AtomicU64::new(0),
-            vcpu: AtomicU64::new(0),
+            vcpu: Mutex::new(None),
             exits: AtomicU64::new(0),
+            run_error: AtomicBool::new(false),
             mpidr: 0x8000_0000 | machine::cpu_mpidr(index),
             index,
         }
@@ -674,6 +680,38 @@ impl VcpuControl {
 
     fn notify_shutdown(&self) {
         self.condvar.notify_all();
+    }
+
+    fn publish_vcpu(&self, vcpu: HvVcpuT) {
+        let mut published = self.vcpu.lock().expect("secondary vCPU handle mutex");
+        assert!(
+            published.replace(vcpu).is_none(),
+            "secondary vCPU{} handle published twice",
+            self.index
+        );
+    }
+
+    fn withdraw_vcpu(&self, vcpu: HvVcpuT) {
+        let mut published = self.vcpu.lock().expect("secondary vCPU handle mutex");
+        assert_eq!(
+            *published,
+            Some(vcpu),
+            "secondary vCPU{} handle withdrawal mismatch",
+            self.index
+        );
+        *published = None;
+    }
+
+    fn with_published_vcpu<R>(&self, action: impl FnOnce(HvVcpuT) -> R) -> Option<R> {
+        let published = self.vcpu.lock().expect("secondary vCPU handle mutex");
+        let vcpu = (*published)?;
+        Some(action(vcpu))
+    }
+
+    fn request_exit_if_published(&self) {
+        // Keep the publication lock held across the synchronous request. The
+        // owner cannot withdraw and destroy this handle until the call returns.
+        let _ = self.with_published_vcpu(|vcpu| unsafe { hv_vcpus_exit(&vcpu, 1) });
     }
 }
 
@@ -769,6 +807,21 @@ mod automation_gate_tests {
         gate.note_checked();
         assert!(gate.should_check(false));
     }
+
+    #[test]
+    fn periodic_timer_gate_skips_ordinary_cpu0_exits_between_host_wakes() {
+        let mut gate = AutomationGate::new(false);
+
+        assert!(gate.should_check(false));
+        gate.note_checked();
+        for _ in 0..1_000 {
+            assert!(!gate.should_check(false));
+        }
+
+        assert!(gate.should_check(true));
+        gate.note_checked();
+        assert!(!gate.should_check(false));
+    }
 }
 
 #[cfg(test)]
@@ -861,29 +914,27 @@ impl SecondaryVcpuSet {
         }
     }
 
-    fn shutdown_and_join(self) -> Vec<(u64, u64)> {
+    fn shutdown_and_join(self) -> (Vec<(u64, u64)>, bool) {
         self.shutdown.store(true, Ordering::SeqCst);
         for control in &self.controls {
             control.notify_shutdown();
         }
-        let vcpus: Vec<_> = self
-            .controls
-            .iter()
-            .map(|control| control.vcpu.load(Ordering::SeqCst))
-            .filter(|vcpu| *vcpu != 0)
-            .collect();
-        if !vcpus.is_empty() {
-            unsafe {
-                hv_vcpus_exit(vcpus.as_ptr(), u32::try_from(vcpus.len()).unwrap());
-            }
+        for control in &self.controls {
+            control.request_exit_if_published();
         }
         for handle in self.handles {
             handle.join().expect("join secondary vCPU thread");
         }
-        self.controls
+        let run_error = self
+            .controls
+            .iter()
+            .any(|control| control.run_error.load(Ordering::SeqCst));
+        let exit_counts = self
+            .controls
             .iter()
             .map(|control| (control.index, control.exits.load(Ordering::SeqCst)))
-            .collect()
+            .collect();
+        (exit_counts, run_error)
     }
 }
 
@@ -942,6 +993,7 @@ fn secondary_vcpu_thread(
                     vcpu = created_vcpu;
                     exit = created_exit;
                     _vcpu_guard = Some(guard);
+                    control.publish_vcpu(vcpu);
                     if let Some(trace) = smp_trace.as_deref() {
                         trace.secondary_vcpu_created(control.index, vcpu, exit);
                     }
@@ -1010,6 +1062,13 @@ fn secondary_vcpu_thread(
             }
         }
     }
+    drop(state);
+    if vcpu != 0 {
+        // Withdraw under the same mutex used by shutdown before the guard can
+        // destroy the HVF object. This closes both the stale-value and
+        // load-versus-destroy races on early secondary-thread exits.
+        control.withdraw_vcpu(vcpu);
+    }
 }
 
 fn create_secondary_hvf_vcpu(control: &VcpuControl) -> (HvVcpuT, *mut HvVcpuExit, HvVcpuGuard) {
@@ -1022,14 +1081,16 @@ fn create_secondary_hvf_vcpu(control: &VcpuControl) -> (HvVcpuT, *mut HvVcpuExit
             "hv_vcpu_create secondary vCPU{}",
             control.index
         );
-        control.vcpu.store(vcpu, Ordering::SeqCst);
+    }
+    let guard = HvVcpuGuard { vcpu };
+    unsafe {
         assert_eq!(
             hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, control.mpidr),
             0,
             "set secondary MPIDR_EL1"
         );
     }
-    (vcpu, exit, HvVcpuGuard { vcpu })
+    (vcpu, exit, guard)
 }
 
 fn normalized_mpidr(value: u64) -> u64 {
@@ -1231,6 +1292,7 @@ fn run_secondary_until_parked(
             {
                 let r = run_status;
                 println!("secondary vCPU{} hv_vcpu_run error {r:#x}", control.index);
+                control.run_error.store(true, Ordering::SeqCst);
                 return true;
             }
         };
@@ -1459,7 +1521,7 @@ mod vcpu_control_tests {
         assert_eq!(*control.state.lock().unwrap(), PsciState::Off);
         assert_eq!(control.entry.load(Ordering::SeqCst), 0);
         assert_eq!(control.context.load(Ordering::SeqCst), 0);
-        assert_eq!(control.vcpu.load(Ordering::SeqCst), 0);
+        assert_eq!(*control.vcpu.lock().unwrap(), None);
         assert_eq!(control.index, 17);
         assert_eq!(control.mpidr, 0x8000_0000 | machine::cpu_mpidr(17));
     }
@@ -1537,7 +1599,52 @@ mod vcpu_control_tests {
         assert_eq!(*control.state.lock().unwrap(), PsciState::OnPending);
         assert_eq!(control.entry.load(Ordering::SeqCst), 0x8000);
         assert_eq!(control.context.load(Ordering::SeqCst), 0xfeed);
-        assert_eq!(control.vcpu.load(Ordering::SeqCst), 0);
+        assert_eq!(*control.vcpu.lock().unwrap(), None);
+    }
+
+    #[test]
+    fn secondary_vcpu_handle_cannot_withdraw_during_shutdown_action() {
+        let control = Arc::new(VcpuControl::new(1));
+        let fake_handle = 0x1234;
+        let (action_entered_tx, action_entered_rx) = std::sync::mpsc::channel();
+        let (release_action_tx, release_action_rx) = std::sync::mpsc::channel();
+        let (withdraw_started_tx, withdraw_started_rx) = std::sync::mpsc::channel();
+        let (withdraw_done_tx, withdraw_done_rx) = std::sync::mpsc::channel();
+
+        control.publish_vcpu(fake_handle);
+        let action_control = Arc::clone(&control);
+        let action_thread = thread::spawn(move || {
+            let _ = action_control.with_published_vcpu(|vcpu| {
+                assert_eq!(vcpu, fake_handle);
+                action_entered_tx.send(()).unwrap();
+                release_action_rx.recv().unwrap();
+            });
+        });
+        action_entered_rx.recv().unwrap();
+
+        let withdraw_control = Arc::clone(&control);
+        let withdraw_thread = thread::spawn(move || {
+            withdraw_started_tx.send(()).unwrap();
+            withdraw_control.withdraw_vcpu(fake_handle);
+            withdraw_done_tx.send(()).unwrap();
+        });
+        withdraw_started_rx.recv().unwrap();
+        let withdrawal_while_locked = withdraw_done_rx.recv_timeout(Duration::from_millis(25));
+
+        release_action_tx.send(()).unwrap();
+        action_thread.join().unwrap();
+        if withdrawal_while_locked.is_err() {
+            withdraw_done_rx.recv().unwrap();
+        }
+        withdraw_thread.join().unwrap();
+        assert!(
+            matches!(
+                withdrawal_while_locked,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ),
+            "withdrawal completed while a shutdown action held the handle"
+        );
+        assert_eq!(*control.vcpu.lock().unwrap(), None);
     }
 
     #[test]
@@ -2398,6 +2505,8 @@ struct BootTimerSerialMilestone {
 }
 
 impl BootTimer {
+    const MAX_SERVICE_WAKE_INTERVAL: Duration = Duration::from_millis(250);
+
     fn from_env() -> Self {
         if !env_flag("BRIDGEVM_BOOT_TIMER") {
             return Self::disabled();
@@ -2562,8 +2671,9 @@ impl BootTimer {
         }
     }
 
-    const fn automation_tick_needed(&self) -> bool {
+    fn service_wake_interval(&self) -> Option<Duration> {
         self.enabled
+            .then(|| self.display_interval.min(Self::MAX_SERVICE_WAKE_INTERVAL))
     }
 }
 
@@ -2695,6 +2805,23 @@ mod boot_timer_tests {
         timer.observe_agent_ready(now + Duration::from_millis(25), 7);
 
         assert!(timer.desktop_reached);
+    }
+
+    #[test]
+    fn service_wake_honors_short_display_interval_without_slowing_default_polling() {
+        let now = Instant::now();
+        let short = BootTimer::new(true, now, Duration::from_millis(100), None, Vec::new());
+        let long = BootTimer::new(true, now, Duration::from_secs(1), None, Vec::new());
+
+        assert_eq!(
+            short.service_wake_interval(),
+            Some(Duration::from_millis(100))
+        );
+        assert_eq!(
+            long.service_wake_interval(),
+            Some(Duration::from_millis(250))
+        );
+        assert_eq!(BootTimer::disabled().service_wake_interval(), None);
     }
 }
 
@@ -3296,7 +3423,8 @@ unsafe fn emulate_debug_os_lock_sysreg(vcpu: HvVcpuT, trap: SysRegTrap) -> bool 
     }
 }
 
-fn main() {
+fn main() -> ExitCode {
+    let mut fatal_vcpu_run_error = false;
     let media = VirtBootMediaConfig::from_probe_env();
     let smp_cpus = env_u64("BRIDGEVM_SMP_CPUS", 1).clamp(1, machine::MAX_CPUS);
     let smp_cpus = if machine::redist_fits(smp_cpus) {
@@ -3759,20 +3887,25 @@ fn main() {
                 || !xhci_hid_boot_key_triggers.is_empty()
                 || !xhci_setup_input_triggers.is_empty()
                 || !xhci_pointer_input_triggers.is_empty()
-                || ramfb_sample_loop.automation_tick_needed()
-                || boot_timer.automation_tick_needed()
-                || agent_console.is_some();
+                || agent_console
+                    .as_ref()
+                    .is_some_and(AgentConsoleHarness::per_exit_tick_needed);
             let mut automation_gate = AutomationGate::new(automation_always_check);
             // Resident service mode is host-driven: without a steady waker the
             // main loop sleeps in hv_vcpu_run while the desktop idles and the
-            // service tick starves (see ServiceWake docs). ensure_started is
+            // service tick starves (see ServiceWake docs). BOOT_TIMER uses a
+            // wake no slower than 250 ms and honors a shorter requested RAMFB
+            // interval. These sources deliberately do not force the automation
+            // block's platform mutex on every CPU0 exit. ensure_started is
             // idempotent, so re-entering here after a guest reboot is fine.
-            if boot_timer.automation_tick_needed()
-                || agent_console
+            let service_wake_interval = boot_timer.service_wake_interval().or_else(|| {
+                agent_console
                     .as_ref()
                     .is_some_and(|harness| harness.service_wake_needed())
-            {
-                agent_service_wake.ensure_started(vcpu, Duration::from_millis(250));
+                    .then_some(Duration::from_millis(250))
+            });
+            if let Some(interval) = service_wake_interval {
+                agent_service_wake.ensure_started(vcpu, interval);
             }
             let mut serial_stop_scans = SerialStopScans::default();
             let mut stop_reason;
@@ -3807,6 +3940,7 @@ fn main() {
                     Ok(reason) => reason,
                     Err(r) => {
                         hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
+                        fatal_vcpu_run_error = true;
                         stop_reason = format!("hv_vcpu_run error {r:#x}");
                         break;
                     }
@@ -4166,8 +4300,10 @@ fn main() {
                     stop_reason = format!("exit cap {MAX_EXITS}");
                     break;
                 }
+                let ramfb_checkpoint_due =
+                    ramfb_sample_loop.checkpoint_due_at(std::time::Instant::now());
                 let automation_stop_reason = if automation_gate
-                    .should_check(automation_tick_canceled)
+                    .should_check(automation_tick_canceled || ramfb_checkpoint_due)
                 {
                     let mut platform_guard = lock_platform(
                         &platform,
@@ -4290,9 +4426,10 @@ fn main() {
             // guest boot time.
             let boot_timer_elapsed = boot_timer.elapsed();
             invalidate_watchdog_generation(&watchdog_generation);
-            let secondary_exit_counts = secondary_vcpus
+            let (secondary_exit_counts, secondary_vcpu_run_error) = secondary_vcpus
                 .map(SecondaryVcpuSet::shutdown_and_join)
                 .unwrap_or_default();
+            fatal_vcpu_run_error |= secondary_vcpu_run_error;
             if requested_system_reset {
                 match decide_system_reset(reboot_count, reboot_plan) {
                     SystemResetDecision::Reboot {
@@ -4678,5 +4815,11 @@ fn main() {
             );
             break 'reboot;
         }
+    }
+
+    if fatal_vcpu_run_error {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
     }
 }

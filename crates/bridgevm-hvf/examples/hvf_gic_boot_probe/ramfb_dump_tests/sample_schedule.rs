@@ -38,6 +38,17 @@ fn ramfb_sample_default_schedule_emits_each_label_once_when_elapsed() {
 }
 
 #[test]
+fn ramfb_sample_due_gate_closes_again_after_checkpoint_emission() {
+    let mut schedule = RamfbSampleSchedule::from_millis_values(&[1_000, 5_000]).unwrap();
+
+    assert!(!schedule.has_due_checkpoint(Duration::from_millis(999)));
+    assert!(schedule.has_due_checkpoint(Duration::from_millis(1_000)));
+    schedule.emit_due(Duration::from_millis(1_000), |_| {});
+    assert!(!schedule.has_due_checkpoint(Duration::from_millis(1_001)));
+    assert!(schedule.has_due_checkpoint(Duration::from_millis(5_000)));
+}
+
+#[test]
 fn ramfb_sample_default_shell_observation_stops_without_proof_mode() {
     // Given: a default RAMFB sample schedule has not completed.
     let schedule = RamfbSampleSchedule::from_millis_values(&[1_000, 5_000]).unwrap();

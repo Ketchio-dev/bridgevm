@@ -45,6 +45,11 @@ const SHARE_PUT_CHUNK_BYTES: usize = 24 * 1024;
 pub struct AgentConsoleHarness {
     start: Instant,
     timeout: Duration,
+    /// Scripted console tests intentionally preserve their historical
+    /// per-vCPU-exit polling cadence. The BOOT_TIMER-only desktop oracle uses
+    /// the probe's periodic ServiceWake instead, so measurement does not add a
+    /// platform-mutex acquisition to every CPU0 exit.
+    scripted_test: bool,
     framer: LineFramer,
     inbound_scratch: Vec<u8>,
     line_scratch: Vec<String>,
@@ -277,6 +282,12 @@ impl AgentConsoleHarness {
         self.service
     }
 
+    /// Whether this harness must retain the legacy every-exit automation tick.
+    /// Agent-only BOOT_TIMER runs are driven by ServiceWake and return false.
+    pub const fn per_exit_tick_needed(&self) -> bool {
+        self.scripted_test
+    }
+
     /// A READY hello or proactive PONG is emitted by the logon agent, making
     /// it a stable desktop oracle that is not invalidated by clock pixels.
     pub fn desktop_ready(&self) -> bool {
@@ -314,6 +325,7 @@ impl AgentConsoleHarness {
         Some(Self {
             start,
             timeout: Duration::from_millis(env_u64(TIMEOUT_MS_ENV, DEFAULT_TIMEOUT_MS)),
+            scripted_test,
             framer: LineFramer::new(),
             inbound_scratch: Vec::new(),
             line_scratch: Vec::new(),
@@ -2009,6 +2021,7 @@ mod tests {
         AgentConsoleHarness {
             start: Instant::now(),
             timeout: Duration::from_secs(1),
+            scripted_test: true,
             framer: LineFramer::new(),
             inbound_scratch: Vec::new(),
             line_scratch: Vec::new(),
@@ -2050,6 +2063,15 @@ mod tests {
         assert!(h.desktop_ready());
         h.state = AgentConsoleState::TimedOut;
         assert!(!h.desktop_ready());
+    }
+
+    #[test]
+    fn only_scripted_harness_requires_per_exit_ticks() {
+        let mut h = harness();
+        assert!(h.per_exit_tick_needed());
+
+        h.scripted_test = false;
+        assert!(!h.per_exit_tick_needed());
     }
 
     fn queue_kinds(h: &AgentConsoleHarness) -> Vec<String> {
