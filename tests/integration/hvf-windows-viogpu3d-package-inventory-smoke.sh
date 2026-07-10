@@ -9,10 +9,11 @@ SCAN_ROOT="$STORE/scan-root"
 OUT="$STORE/out"
 GOOD="$SCAN_ROOT/good/driver"
 GOOD1050="$SCAN_ROOT/good1050/driver"
+UNREGISTERED="$SCAN_ROOT/unregistered/driver"
 BAD="$SCAN_ROOT/bad/driver"
 EMPTY="$STORE/empty-root"
 
-mkdir -p "$GOOD" "$GOOD1050" "$BAD" "$EMPTY"
+mkdir -p "$GOOD" "$GOOD1050" "$UNREGISTERED" "$BAD" "$EMPTY"
 
 write_minimal_pe() {
   local path="$1"
@@ -62,7 +63,7 @@ write_package() {
 %RedHat% = RedHat,NTarm64
 
 [RedHat.NTarm64]
-%VirtioGpu3D.DeviceDesc% = viogpu3d_Device, PCI\\VEN_1AF4&DEV_$pci_device_id
+%VirtioGpu3D.DeviceDesc% = VioGpu3D_Inst, PCI\\VEN_1AF4&DEV_$pci_device_id
 
 ; BridgeVMProtocol=$protocol
 INF
@@ -70,9 +71,46 @@ INF
   printf 'fake catalog\n' >"$dir/viogpu3d.cat"
 }
 
+add_umd_payload() {
+  local dir="$1"
+  local registration="$2"
+  local dll
+
+  cat >>"$dir/viogpu3d.inf" <<'INF'
+
+[DestinationDirs]
+VioGpu3D_Files.Usermode=11
+
+[VioGpu3D_Inst.NT]
+CopyFiles=VioGpu3D_Files.Usermode
+AddReg=VioGpu3D_DeviceSettings
+
+[VioGpu3D_Files.Usermode]
+viogpu_d3d10.dll,viogpu_d3d10_arm64.dll,,0
+viogpu_wgl.dll,viogpu_wgl_arm64.dll,,0
+INF
+  if [[ "$registration" == "registered" ]]; then
+    cat >>"$dir/viogpu3d.inf" <<'INF'
+
+[VioGpu3D_DeviceSettings]
+HKR,,UserModeDriverName,0x00010000,%11%\viogpu_d3d10.dll,%11%\viogpu_d3d10.dll,%11%\viogpu_d3d10.dll,%11%\viogpu_d3d10.dll
+HKR,,OpenGLDriverName,0x00010000,%11%\viogpu_wgl.dll
+HKR,,InstalledDisplayDrivers,0x00010000,viogpu_d3d10,viogpu_d3d10,viogpu_d3d10
+HKR,,OpenGLVersion,%REG_DWORD%,4096
+HKR,,OpenGLFlags,%REG_DWORD%,3
+INF
+  fi
+  for dll in viogpu_d3d10_arm64.dll viogpu_wgl_arm64.dll; do
+    write_minimal_pe "$dir/$dll" 144 252
+  done
+}
+
 write_package "$GOOD" venus 144 252
 write_package "$GOOD1050" virgl 144 252 1050
+write_package "$UNREGISTERED" virgl 144 252 1050
 write_package "$BAD" virgl 144 206
+add_umd_payload "$GOOD1050" registered
+add_umd_payload "$UNREGISTERED" unregistered
 
 output="$(
   scripts/find-hvf-windows-viogpu3d-packages.sh \
@@ -82,23 +120,41 @@ output="$(
 )" || fail "inventory scan failed: $output"
 
 assert_contains "$output" "BridgeVM viogpu3d package inventory" "inventory output"
-assert_contains "$output" "candidate_count=3" "inventory output"
-assert_contains "$output" "ready_count=2" "inventory output"
+assert_contains "$output" "candidate_count=4" "inventory output"
+assert_contains "$output" "ready_count=3" "inventory output"
+assert_contains "$output" "render_candidate_count=1" "inventory output"
 assert_contains "$output" "candidate=$GOOD" "inventory output"
 assert_contains "$output" "candidate_status=ready" "inventory output"
 assert_contains "$output" "candidate_protocol=venus" "inventory output"
 assert_contains "$output" "candidate=$GOOD1050" "inventory output"
 assert_contains "$output" "candidate_protocol=virgl" "inventory output"
+assert_contains "$output" "candidate_capability=umd-registered" "inventory output"
+assert_contains "$output" "candidate_render_candidate=true" "inventory output"
+assert_contains "$output" "candidate=$UNREGISTERED" "inventory output"
+assert_contains "$output" "candidate_capability=umd-payload-unregistered" "inventory output"
+assert_contains "$output" "candidate_render_candidate=false" "inventory output"
 assert_contains "$output" "candidate=$BAD" "inventory output"
 assert_contains "$output" "candidate_status=rejected" "inventory output"
 assert_contains "$output" "is not ARM64 PE" "inventory output"
 assert_contains "$output" "PASS: injection-ready viogpu3d package found" "inventory output"
-assert_file_contains "$OUT/inventory.txt" "ready_count=2" "inventory file"
+assert_contains "$output" "PASS: UMD-registered viogpu3d render candidate found" "inventory output"
+assert_file_contains "$OUT/inventory.txt" "ready_count=3" "inventory file"
+assert_file_contains "$OUT/inventory.txt" "render_candidate_count=1" "inventory file"
 assert_file_contains "$OUT/candidates.txt" "$GOOD" "candidates file"
 assert_file_contains "$OUT/candidates.txt" "$GOOD1050" "candidates file"
+assert_file_contains "$OUT/candidates.txt" "$UNREGISTERED" "candidates file"
 assert_file_contains "$OUT/candidates.txt" "$BAD" "candidates file"
 grep -Fq $'file=sys\tsha256=' "$OUT"/*-manifest.txt ||
   fail "no generated manifest contains a sys sha256 entry"
+
+required_render_output="$(
+  scripts/find-hvf-windows-viogpu3d-packages.sh \
+    --root "$SCAN_ROOT" \
+    --out-dir "$STORE/render-required-out" \
+    --require-render-candidate 2>&1
+)" || fail "inventory with a required render candidate failed: $required_render_output"
+
+assert_contains "$required_render_output" "render_candidate_count=1" "required render inventory"
 
 empty_output="$(
   scripts/find-hvf-windows-viogpu3d-packages.sh \
@@ -109,6 +165,18 @@ empty_output="$(
 
 assert_contains "$empty_output" "candidate_count=0" "empty inventory"
 assert_contains "$empty_output" "ready_count=0" "empty inventory"
+assert_contains "$empty_output" "render_candidate_count=0" "empty inventory"
 assert_contains "$empty_output" "no injection-ready viogpu3d package found" "empty inventory"
+
+no_render_output="$(
+  scripts/find-hvf-windows-viogpu3d-packages.sh \
+    --root "$GOOD" \
+    --out-dir "$STORE/no-render-out" \
+    --require-render-candidate 2>&1
+)" && fail "KMD-only inventory unexpectedly passed the render-candidate requirement: $no_render_output"
+
+assert_contains "$no_render_output" "ready_count=1" "KMD-only required render inventory"
+assert_contains "$no_render_output" "render_candidate_count=0" "KMD-only required render inventory"
+assert_contains "$no_render_output" "no UMD-registered viogpu3d render candidate found" "KMD-only required render inventory"
 
 echo "PASS: viogpu3d package inventory smoke ($STORE)"

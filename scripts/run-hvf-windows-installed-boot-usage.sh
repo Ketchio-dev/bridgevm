@@ -50,11 +50,13 @@ Options:
                           with --require-p3-gate and fail the script if the P3
                           GPU trace gate fails.
   --viogpu3d-dir DIR      Optional test-signed viogpu3d package directory. When
-                          present, run the no-VM P3 readiness check before
-                          boot and write p3-gpu-readiness.txt.
+                          present, require its UMD-registered render-candidate
+                          classification before boot and write
+                          p3-gpu-readiness.txt.
   --require-viogpu3d-readiness
-                          Require a viogpu3d package and a passing readiness
-                          check before booting. Requires --virtio-gpu-3d.
+                          Require a viogpu3d render candidate and a passing
+                          readiness check before booting. Requires
+                          --virtio-gpu-3d.
   --daily                 Opt-in daily-driver preset. Changes defaults only
                           when not explicitly overridden: --ram-mib 6144 and
                           --watchdog-ms 86400000. Also sets --smp-cpus 4

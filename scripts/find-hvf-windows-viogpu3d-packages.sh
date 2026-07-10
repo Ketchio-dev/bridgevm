@@ -7,10 +7,11 @@ CHECK_PACKAGE="${CHECK_PACKAGE:-"$ROOT/scripts/check-hvf-windows-viogpu3d-packag
 OUT_DIR="${OUT_DIR:-}"
 MAX_DEPTH="${MAX_DEPTH:-8}"
 REQUIRE_FOUND="${REQUIRE_FOUND:-0}"
+REQUIRE_RENDER_CANDIDATE="${REQUIRE_RENDER_CANDIDATE:-0}"
 
 usage() {
   cat >&2 <<'EOF'
-usage: scripts/find-hvf-windows-viogpu3d-packages.sh [--root DIR ...] [--out-dir DIR] [--require-found]
+usage: scripts/find-hvf-windows-viogpu3d-packages.sh [--root DIR ...] [--out-dir DIR] [--require-found] [--require-render-candidate]
 
 Options:
   --root DIR        Root to scan. Repeatable. Default: $HOME/BridgeVM.
@@ -18,6 +19,9 @@ Options:
                     Default: /tmp/bridgevm-viogpu3d-inventory.<pid>.
   --max-depth N     find(1) depth limit. Default: 8.
   --require-found   Exit non-zero when no injection-ready package is found.
+  --require-render-candidate
+                    Exit non-zero when no injection-ready package also has
+                    ARM64 UMD DLLs and complete WDDM INF registration.
 
 The scanner looks for directories hinted by viogpu3d filenames or viogpu3d INFs
 that advertise PCI\VEN_1AF4&DEV_1050 or PCI\VEN_1AF4&DEV_10F7, then runs the
@@ -70,6 +74,10 @@ while [[ $# -gt 0 ]]; do
       REQUIRE_FOUND="1"
       shift
       ;;
+    --require-render-candidate)
+      REQUIRE_RENDER_CANDIDATE="1"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -84,6 +92,10 @@ done
 case "$REQUIRE_FOUND" in
   0|1) ;;
   *) fail "REQUIRE_FOUND must be 0 or 1" ;;
+esac
+case "$REQUIRE_RENDER_CANDIDATE" in
+  0|1) ;;
+  *) fail "REQUIRE_RENDER_CANDIDATE must be 0 or 1" ;;
 esac
 
 if (( ${#roots[@]} == 0 )); then
@@ -130,6 +142,7 @@ done
 sort -u "$CANDIDATES_RAW" > "$CANDIDATES"
 
 ready_count=0
+render_candidate_count=0
 candidate_count=0
 {
   printf 'BridgeVM viogpu3d package inventory\n'
@@ -155,8 +168,16 @@ candidate_count=0
     if "$CHECK_PACKAGE" --manifest "$manifest" "$candidate" > "$log" 2>&1; then
       ready_count=$((ready_count + 1))
       protocol="$(awk -F= '$1 == "protocol" { print $2; exit }' "$log")"
+      capability="$(awk -F= '$1 == "package_capability" { print $2; exit }' "$log")"
+      render_candidate="$(awk -F= '$1 == "render_candidate" { print $2; exit }' "$log")"
+      if [[ "$render_candidate" == "true" ]]; then
+        render_candidate_count=$((render_candidate_count + 1))
+      fi
       printf 'candidate_status=ready\n'
+      printf 'candidate_injection_ready=true\n'
       printf 'candidate_protocol=%s\n' "${protocol:-unknown}"
+      printf 'candidate_capability=%s\n' "${capability:-unknown}"
+      printf 'candidate_render_candidate=%s\n' "${render_candidate:-unknown}"
     else
       printf 'candidate_status=rejected\n'
       first_fail="$(awk '/^FAIL:/ { print; exit }' "$log")"
@@ -166,15 +187,24 @@ candidate_count=0
 
   printf 'candidate_count=%s\n' "$candidate_count"
   printf 'ready_count=%s\n' "$ready_count"
+  printf 'render_candidate_count=%s\n' "$render_candidate_count"
   if (( ready_count == 0 )); then
     printf 'Blocker: no injection-ready viogpu3d package found\n'
   else
     printf 'PASS: injection-ready viogpu3d package found\n'
+  fi
+  if (( render_candidate_count == 0 )); then
+    printf 'Blocker: no UMD-registered viogpu3d render candidate found\n'
+  else
+    printf 'PASS: UMD-registered viogpu3d render candidate found\n'
   fi
 } > "$INVENTORY"
 
 cat "$INVENTORY"
 
 if [[ "$REQUIRE_FOUND" == "1" && "$ready_count" == "0" ]]; then
+  exit 1
+fi
+if [[ "$REQUIRE_RENDER_CANDIDATE" == "1" && "$render_candidate_count" == "0" ]]; then
   exit 1
 fi

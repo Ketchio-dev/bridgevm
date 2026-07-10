@@ -44,8 +44,12 @@ Environment:
 
 This is a no-VM preflight: it runs the synthetic host 3D preflight and, when a
 driver package is provided, checks that the package protocol is compatible with
-the selected HVF 3D runtime. The live host renderer probe is optional because
-it builds and runs host renderer tooling.
+the selected HVF 3D runtime. Unlike the injection inventory, this render gate
+also requires a VirGL package with ARM64 user-mode DLLs, active WDDM/OpenGL INF
+registrations, and CopyFiles mappings that place the registered DLLs in DirID
+11. A KMD-only Venus package remains injection-ready but is not classified as a
+render candidate. The live host renderer probe is optional because it builds
+and runs host renderer tooling.
 EOF
 }
 
@@ -269,18 +273,24 @@ package_output="$(
     checker_args+=(--manifest "$VIOGPU3D_MANIFEST")
   fi
   checker_args+=(--pci-device-id "$VIOGPU3D_PCI_DEVICE_ID")
+  checker_args+=(--require-render-candidate)
   checker_args+=("$VIOGPU3D_DIR")
   VIOGPU3D_PROTOCOL="${VIOGPU3D_PROTOCOL:-auto}" "${checker_args[@]}" 2>&1
 )" || {
   printf '%s\n' "$package_output"
+  printf 'end_to_end_windows_3d=NOT_PASSED\n'
+  printf 'boot_ready=false\n'
   fail "viogpu3d package check failed"
 }
 printf '%s\n' "$package_output"
 package_protocol="$(awk -F= '$1 == "protocol" { print $2; exit }' <<<"$package_output")"
 [[ -n "$package_protocol" ]] || fail "package checker did not report protocol"
+package_render_candidate="$(awk -F= '$1 == "render_candidate" { print $2; exit }' <<<"$package_output")"
+[[ "$package_render_candidate" == "true" ]] || fail "package checker did not prove a render candidate"
 
 printf 'driver_package=present\n'
 printf 'driver_protocol=%s\n' "$package_protocol"
+printf 'driver_render_candidate=%s\n' "$package_render_candidate"
 printf 'recommended_gpu_trace_protocol=%s\n' "$package_protocol"
 if [[ "$package_protocol" == "$HOST_PROTOCOL" ]]; then
   printf 'package_protocol_device_model_preflight=PASS\n'

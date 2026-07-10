@@ -7,8 +7,9 @@ cd "$ROOT"
 STORE="$(mktemp -d "/tmp/bridgevm-p3-gpu-readiness.XXXXXX")"
 VENUS="$STORE/venus"
 VIRGL="$STORE/virgl"
+UNREGISTERED="$STORE/virgl-unregistered"
 
-mkdir -p "$VENUS" "$VIRGL"
+mkdir -p "$VENUS" "$VIRGL" "$UNREGISTERED"
 
 write_minimal_pe() {
   local path="$1"
@@ -49,22 +50,52 @@ assert_file_contains() {
 write_package() {
   local dir="$1"
   local protocol="$2"
+  local capability="${3:-kmd-only}"
 
   cat >"$dir/viogpu3d.inf" <<INF
 [Manufacturer]
 %RedHat% = RedHat,NTarm64
 
 [RedHat.NTarm64]
-%VirtioGpu3D.DeviceDesc% = viogpu3d_Device, PCI\\VEN_1AF4&DEV_10F7
+%VirtioGpu3D.DeviceDesc% = VioGpu3D_Inst, PCI\\VEN_1AF4&DEV_10F7
 
 ; BridgeVMProtocol=$protocol
 INF
   write_minimal_pe "$dir/viogpu3d.sys" 144 252
   printf 'fake catalog\n' >"$dir/viogpu3d.cat"
+  if [[ "$capability" != "kmd-only" ]]; then
+    cat >>"$dir/viogpu3d.inf" <<'INF'
+
+[DestinationDirs]
+VioGpu3D_Files.Usermode=11
+
+[VioGpu3D_Inst.NT]
+CopyFiles=VioGpu3D_Files.Usermode
+AddReg=VioGpu3D_DeviceSettings
+
+[VioGpu3D_Files.Usermode]
+viogpu_d3d10.dll,viogpu_d3d10_arm64.dll,,0
+viogpu_wgl.dll,viogpu_wgl_arm64.dll,,0
+INF
+    if [[ "$capability" == "registered" ]]; then
+      cat >>"$dir/viogpu3d.inf" <<'INF'
+
+[VioGpu3D_DeviceSettings]
+HKR,,UserModeDriverName,0x00010000,%11%\viogpu_d3d10.dll,%11%\viogpu_d3d10.dll,%11%\viogpu_d3d10.dll,%11%\viogpu_d3d10.dll
+HKR,,OpenGLDriverName,0x00010000,%11%\viogpu_wgl.dll
+HKR,,InstalledDisplayDrivers,0x00010000,viogpu_d3d10,viogpu_d3d10,viogpu_d3d10
+HKR,,OpenGLVersion,%REG_DWORD%,4096
+HKR,,OpenGLFlags,%REG_DWORD%,3
+INF
+    fi
+    write_minimal_pe "$dir/viogpu_d3d10_arm64.dll" 144 252
+    write_minimal_pe "$dir/viogpu_wgl_arm64.dll" 144 252
+  fi
 }
 
 write_package "$VENUS" venus
-write_package "$VIRGL" virgl
+write_package "$VIRGL" virgl registered
+write_package "$UNREGISTERED" virgl unregistered
 
 FAKE_VENUS_PROBE="$STORE/fake-venus-host-probe.sh"
 cat >"$FAKE_VENUS_PROBE" <<'SH'
@@ -104,37 +135,19 @@ missing_required_output="$(scripts/check-hvf-windows-p3-gpu-readiness.sh --requi
 assert_contains "$missing_required_output" "missing viogpu3d package" "missing required readiness"
 
 VENUS_MANIFEST="$STORE/venus-manifest.txt"
-venus_output="$(scripts/check-hvf-windows-p3-gpu-readiness.sh --driver-dir "$VENUS" --manifest "$VENUS_MANIFEST" 2>&1)" ||
-  fail "venus readiness failed: $venus_output"
+venus_output="$(scripts/check-hvf-windows-p3-gpu-readiness.sh --driver-dir "$VENUS" --manifest "$VENUS_MANIFEST" 2>&1)" &&
+  fail "KMD-only Venus package unexpectedly passed render readiness: $venus_output"
 
 assert_contains "$venus_output" "host_protocol=venus" "venus readiness"
 assert_contains "$venus_output" "expected_hwid=PCI\\VEN_1AF4&DEV_10F7" "venus readiness"
 assert_contains "$venus_output" "manifest=$VENUS_MANIFEST" "venus readiness"
-assert_contains "$venus_output" "driver_protocol=venus" "venus readiness"
-assert_contains "$venus_output" "recommended_gpu_trace_protocol=venus" "venus readiness"
-assert_contains "$venus_output" "package_protocol_device_model_preflight=PASS" "venus readiness"
-assert_contains "$venus_output" "package_protocol_device_model_expected_capset_id=4" "venus readiness"
-assert_contains "$venus_output" "host_backend_protocol=venus" "venus readiness"
-assert_contains "$venus_output" "host_backend_venus_runtime=WIRED" "venus readiness"
-assert_contains "$venus_output" "end_to_end_windows_3d=NOT_PASSED" "venus readiness"
-assert_contains "$venus_output" "boot_ready=true" "venus readiness"
-assert_contains "$venus_output" "PASS: P3 Windows GPU readiness" "venus readiness"
+assert_contains "$venus_output" "package_capability=kmd-only" "venus readiness"
+assert_contains "$venus_output" "render_candidate=false" "venus readiness"
+assert_contains "$venus_output" "injection-ready but not a render candidate" "venus readiness"
+assert_contains "$venus_output" "boot_ready=false" "venus readiness"
 assert_file_contains "$VENUS_MANIFEST" "protocol=venus" "venus manifest"
 assert_file_contains "$VENUS_MANIFEST" "expected_hwid=PCI\\VEN_1AF4&DEV_10F7" "venus manifest"
 assert_file_contains "$VENUS_MANIFEST" $'file=sys\tsha256=' "venus manifest"
-
-venus_probe_output="$(
-  PROBE_HOST_RENDERER=1 \
-    VENUS_HOST_RENDERER_PROBE="$FAKE_VENUS_PROBE" \
-    scripts/check-hvf-windows-p3-gpu-readiness.sh --driver-dir "$VENUS" 2>&1
-)" || fail "venus readiness with host renderer probe failed: $venus_probe_output"
-
-assert_contains "$venus_probe_output" "host_renderer_venus_probe=REQUESTED" "venus probed readiness"
-assert_contains "$venus_probe_output" "host_renderer_venus_probe_command=$FAKE_VENUS_PROBE" "venus probed readiness"
-assert_contains "$venus_probe_output" "host_renderer_venus_probe_exit_status=0" "venus probed readiness"
-assert_contains "$venus_probe_output" "host_renderer_venus=AVAILABLE" "venus probed readiness"
-assert_contains "$venus_probe_output" "host_renderer_venus_available=true" "venus probed readiness"
-assert_contains "$venus_probe_output" "boot_ready=true" "venus probed readiness"
 
 id_mismatch_output="$(
   scripts/check-hvf-windows-p3-gpu-readiness.sh --driver-dir "$VENUS" --pci-device-id 1050 2>&1
@@ -142,6 +155,17 @@ id_mismatch_output="$(
 
 assert_contains "$id_mismatch_output" "expected_hwid=PCI\\VEN_1AF4&DEV_1050" "HWID mismatch readiness"
 assert_contains "$id_mismatch_output" "does not advertise expected PCI\\VEN_1AF4&DEV_1050" "HWID mismatch readiness"
+
+unregistered_output="$(
+  BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=virgl \
+    scripts/check-hvf-windows-p3-gpu-readiness.sh --driver-dir "$UNREGISTERED" 2>&1
+)" && fail "unregistered UMD package unexpectedly passed render readiness: $unregistered_output"
+
+assert_contains "$unregistered_output" "package_capability=umd-payload-unregistered" "unregistered readiness"
+assert_contains "$unregistered_output" "render_candidate=false" "unregistered readiness"
+assert_contains "$unregistered_output" "user-mode-dlls-present-but-inf-registration-missing" "unregistered readiness"
+assert_contains "$unregistered_output" "injection-ready but not a render candidate" "unregistered readiness"
+assert_contains "$unregistered_output" "boot_ready=false" "unregistered readiness"
 
 virgl_output="$(scripts/check-hvf-windows-p3-gpu-readiness.sh --driver-dir "$VIRGL" 2>&1)" &&
   fail "virgl readiness unexpectedly passed: $virgl_output"
@@ -190,6 +214,7 @@ assert_contains "$virgl_runtime_output" "driver_protocol=virgl" "virgl runtime r
 assert_contains "$virgl_runtime_output" "host_backend_protocol=virgl" "virgl runtime readiness"
 assert_contains "$virgl_runtime_output" "host_backend_virgl_runtime=WIRED" "virgl runtime readiness"
 assert_contains "$virgl_runtime_output" "host_renderer_virgl=AVAILABLE" "virgl runtime readiness"
+assert_contains "$virgl_runtime_output" "driver_render_candidate=true" "virgl runtime readiness"
 assert_contains "$virgl_runtime_output" "end_to_end_windows_3d=NOT_PASSED" "virgl runtime readiness"
 assert_contains "$virgl_runtime_output" "boot_ready=true" "virgl runtime readiness"
 assert_contains "$virgl_runtime_output" "PASS: P3 Windows GPU readiness" "virgl runtime readiness"
