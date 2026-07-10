@@ -3,7 +3,7 @@
 Concise "where are we" snapshot. Full plan/roadmap/scaffold log lives in
 [PLAN.md](PLAN.md); this file is the fast scan.
 
-_Last updated: 2026-07-07._
+_Last updated: 2026-07-10._
 
 ## Current usability judgment
 Local/debug BridgeVM is usable for the verified Phase 0 flows: the app bundle
@@ -126,7 +126,9 @@ test-signed `viogpu3d` package, reject missing catalogs or non-ARM64 PE
 require protocol identification (`venus`/`virgl` by auto scan or
 `VIOGPU3D_PROTOCOL=...` override), auto-load
 `bridgevm-package-provenance.env` when an external build includes it, stage it
-into the WinPE injector, and plant an offline BCD test-signing marker:
+into the WinPE injector, and install a fail-closed three-stage firstboot flow
+that enables test signing, trusts the certificate, installs the INF, reboots,
+and then verifies the bound device and OEM INF:
 
 ```sh
 scripts/check-hvf-windows-viogpu3d-package.sh /path/to/viogpu3d
@@ -163,14 +165,16 @@ by default or an explicit `--virtio-gpu-device-id`, writes the trace, and stores
 `virtio-gpu-trace-report.txt`, and `virtio-gpu-trace-gate.txt` in the evidence directory when
 `--viogpu3d-dir DIR --require-viogpu3d-readiness` is supplied. The readiness
 script blocks a `virgl` package against the default `venus` host path, but passes
-that package when `--gpu-trace-protocol virgl` selects the VirGL runtime. We
-checked out PR #943 source at `/Users/user/BridgeVM/viogpu3d-pr943`;
-the build-kit report identifies it as `protocol=virgl`,
-`hwids=PCI\VEN_1AF4&DEV_1050`, with ARM64 configuration present and Mesa DLLs
-required. A live inventory scan on 2026-07-07 now finds that source directory as
-one rejected candidate (`candidate_count=1`, `ready_count=0`,
-`candidate_reject_reason=FAIL: no .inf found ...`), so the external artifact
-blocker is still real. The Windows
+that package when `--gpu-trace-protocol virgl` selects the VirGL runtime. The
+2026-07-10 local inventory closes the old package-absence blocker: the checker
+passes the test-signed ARM64 Venus KMD package at
+`/Users/user/BridgeVM/venus-wddm-arm64` and three VirGL candidates under
+`/Users/user/BridgeVM/viogpu3d-prebuilt-candidates/arm64-ci/`, including
+`viogpu3d-full` with five ARM64 Mesa DLLs. These are CI/test-signing artifacts,
+not production-signed releases. The immediate wall is now live guest proof:
+certificate trust and test signing, PnP install, a present `DEV_1050`/`DEV_10F7`
+device with Status OK bound to the intended OEM INF, followed by a coherent
+boot-bound capset/blob/context/submit/fence trace and rendered workload. The Windows
 virtio-console/vioser agent path is useful for automation but is no longer
 treated as a hard dependency for P3: if revisited, it should be a short KD/WPP or
 QEMU byte-comparison diagnostic spike.
@@ -187,7 +191,7 @@ it with keyboard and pointer. Progress against the completion-plan milestone lad
 | **M2** Scripted install completes (WIM applied, bootable) | ✅ done |
 | **M3** Installed Windows reaches the desktop (OOBE auto-skip, `bridge` autologon) | ✅ done |
 | **M4** Interactive desktop (keyboard + pointer + display) | ✅ substantively done — visible typing into apps + pointer move/click, all ramfb-proven with xHCI enabled |
-| **M5** Connected · persistent · fast enough | 🟡 partial — **networking live-proven 2026-07-09**: `--virtio-net` (NAT) boots the installed desktop with the in-box netkvm bound ("Red Hat VirtIO Ethernet Adapter"), DHCP lease 10.0.2.15/gw 10.0.2.2, gateway ping 3/3, DNS resolves, HTTP GET example.com → 200 (guest internet works; outbound ICMP is now forwarded through unprivileged macOS ICMP sockets: ping 1.1.1.1 = 4/4 replies, 0% loss). **SMP live-proven 2026-07-09 evening**: BRIDGEVM_SMP_CPUS=4 boots the installed desktop with the guest reporting 4 logical processors (%NUMBER_OF_PROCESSORS% + CIM) and the full service channel healthy (2-min soak, zero timeouts). Remaining: suspend/resume |
+| **M5** Connected · persistent · fast enough | 🟡 partial — **networking live-proven 2026-07-09**: `--virtio-net` (NAT) boots the installed desktop with the in-box netkvm bound ("Red Hat VirtIO Ethernet Adapter"), DHCP lease 10.0.2.15/gw 10.0.2.2, gateway ping 3/3, DNS resolves, HTTP GET example.com → 200 (guest internet works; outbound ICMP is now forwarded through unprivileged macOS ICMP sockets: ping 1.1.1.1 = 4/4 replies, 0% loss). **SMP live-proven 2026-07-09 evening**: BRIDGEVM_SMP_CPUS=4 boots the installed desktop with the guest reporting 4 logical processors (%NUMBER_OF_PROCESSORS% + CIM) and the full service channel healthy (2-min soak, zero timeouts). Remaining: a fresh smp=1/2/4 performance matrix, clean in-guest shutdown + flush proof, suspend/resume, and packaged setup |
 | **M6** Integration polish (clipboard / resize / shared folders) | ✅ substantively done — M6-1 clipboard verbs, M6-2 file transfer (LS / chunked GET / PUT), M6-3 resident service loop + macOS pasteboard auto-sync + control-file injection, M6-4 bidirectional shared-folder sync (incl. guest-agent self-update over its own channel), all live-proven over virtio-console with an 11-min zero-timeout soak. Resize is formally BLOCKED on a real WDDM driver (ramfb + Basic Display enumerates zero display modes — probed in-guest). Gotchas fixed along the way: idle-guest vCPU-exit starvation (ServiceWake 250ms heartbeat) and the guest power plan sleeping the VM at desktop+5min (powercfg, persisted; bake into inject flow for fresh images) |
 
 The old "late-DXE stall / firmware won't bind NVMe" wall is **resolved**: root cause
@@ -203,22 +207,24 @@ vars. The whole install→desktop pipeline is reproducible from the Win11 ARM64 
 
 M5 status (the remaining work to "usable"):
 - **Network (D3)** — a `virtio-net-pci` device model + an in-process userspace slirp-style
-  NAT (ARP/DHCP/DNS/ICMP + host-socket TCP/UDP proxy) are implemented and unit-tested; the
-  in-box `netkvm` ARM64 driver is injected offline via WinPE+DISM and **binds + completes
-  virtio feature negotiation** against our device. Live IP is not yet up — the guest driver
-  doesn't finish programming the virtqueues (two virtio-1.0 common-config bugs are precisely
-  diagnosed and in progress). No modelled NIC works driverless on Windows-ARM, so virtio-net +
-  driver injection is the chosen path.
-- **Performance (E1 / SMP)** — the probe runs a **single vCPU**, so first-boot OOBE takes tens
-  of minutes and the desktop is sluggish. This is the single largest usability gap; a staged
-  multi-vCPU design (per-vCPU threads, PSCI `CPU_ON`, a global platform lock per MMIO exit,
-  `BRIDGEVM_SMP_CPUS`) is planned but not started.
+  NAT (ARP/DHCP/DNS/ICMP + host-socket TCP/UDP proxy) are implemented, unit-tested, and
+  **live-proven** on 2026-07-09 with the in-box `netkvm` ARM64 driver bound to the device,
+  DHCP/DNS/HTTP working, gateway ping passing, and outbound unprivileged ICMP ping passing.
+  No modelled NIC works driverless on Windows-ARM, so virtio-net + driver injection remains
+  the chosen path.
+- **Performance (E1 / SMP)** — multi-vCPU boot is implemented and **live-proven** on
+  2026-07-09: `BRIDGEVM_SMP_CPUS=4` reaches the installed desktop, reports four logical
+  processors in the guest, and keeps the virtio-console service channel healthy through a
+  2-minute soak. The remaining performance work is measurement and tuning, not initial SMP
+  enablement: keep the boot-timer matrix honest, compare smp=1/2/4 medians on the
+  installed target, and continue reducing per-exit allocation/lock overhead.
 - **Persistence (D4)** — NVMe write-back to the host image is proven (installed changes survive
   reboot); a clean in-guest shutdown + flush proof is pending.
 
 Honest framing: this is an impressive from-scratch VMM result, but it is **not yet a usable
-daily product** — no working network, single-core, and it still needs the scripted harness +
-injected drivers rather than a clean UX. The project's own strategy note flags this as the
+daily product** — networking and SMP are now proven, but suspend/resume, live perf matrix
+evidence, packaged setup, and a clean UX still need work, and Windows still needs injected
+drivers rather than a turnkey driver story. The project's own strategy note flags this as the
 highest-cost / lowest-user-value track (QEMU+HVF already boots Windows 11 ARM today). Full
 history + reproduction recipes live in the assistant memory status file; strategy/gap context
 in [docs/hvf-windows-engine-strategy.md](docs/hvf-windows-engine-strategy.md) and
@@ -231,7 +237,7 @@ not all at the same maturity:
 | Axis | Current BridgeVM state | Honest next gate |
 | --- | --- | --- |
 | macOS-native integration / Coherence | Clipboard and display-resize effects are live-proven; Linux app/window command backends now reach `.desktop`, `gio`/`gtk-launch`, and `wmctrl` boundaries, including a preserved live Ubuntu arm64 QEMU/HVF pass of `guest-tools-app-window-live-gui-opt-in-smoke.sh` on June 17, 2026. The Apple VZ display helper can optionally export its `VZVirtualMachineView` as a raw RGBA file at `<bundle>/metadata/apple-vz-display-framebuffer.rgba`; the daemon can attach host-side `metadata/proxy-windows/<id>.json` crop summaries to real `wmctrl` window payloads when given a host RGBA framebuffer source, cache those window crop targets, and refresh the `.rgba` artifacts when that framebuffer file changes; when no explicit framebuffer env is set, daemon-owned, CLI, and app-direct Show Display runner metadata can now supply that Apple VZ framebuffer path and dimensions automatically once the file exists. The real-backend socket smoke now verifies that env-unset app-direct metadata fallback against the default `metadata/apple-vz-display-framebuffer.rgba` path, including crop refresh after the framebuffer file changes. The macOS app can open a proxy shell sized from guest bounds, render the refreshable raw RGBA crop artifact, re-read the crop summary on refresh so changed crop dimensions/output paths do not break the proxy, forward pointer/key events through guest-tools to the Linux `xdotool` boundary when available, send debounced host proxy move/resize changes back through the tested `SetWindowBounds` path (`wmctrl -ir ... -e ...` on X11), map user-closing the proxy shell to guest `CloseWindow` while suppressing that command for internal proxy replacement, keep one background refresh loop alive while proxy shells are open so it dispatches `ListWindows` and reconciles changed/missing windows, surface tracked proxy count/refresh state, tracked-window summaries, and crop-backed proxy count plus a host-only "Close Proxies" cleanup action in the Guest Tools panel, refresh an already-open proxy shell when a later `windows` payload changes its bounds/crop-summary path or reports it closed, and reconcile tracked proxy shells on inventory refresh so removed/stopped VMs close their host shells and renamed VMs reopen under the new title/key. Proxy retention is keyed by VM + guest window id to avoid collisions across VMs. The demo script now has a preserved local `--prove-proxy-crop` pass for the visible app-direct framebuffer-to-crop path at `~/bridgevm-live-evidence/apple-vz-proxy-crop-2026-06-18-auto-verified/`, including verifier output. This is **Coherence-lite plumbing**, not real host-window Coherence. | Drive the crop path from a real guest desktop window and move beyond the current file-backed proxy loop toward compositor-grade host-window integration. |
-| Apple Silicon hypervisor optimization | Fast Mode uses Apple Virtualization.framework through the signed `AppleVzRunner` helper for Linux/macOS Arm paths. The live Linux helper path is intentionally narrow today: `linux-kernel` boot, `raw` primary disk, NAT networking, entitlement, and explicit opt-in. Known Linux Arm64 boot/suspend/resume/display fixtures are proven under that shape; installer ISO and `qcow2` plans are not live-ready. It is not just a QEMU preset, but it is also not a Windows fast path. | Broaden supported VZ Linux/macOS boot shapes, tighten app-runner IPC, and keep Windows in Compatibility/restricted QEMU-HVF paths until a custom Windows VMM exists. |
+| Apple Silicon hypervisor optimization | Fast Mode uses Apple Virtualization.framework through the signed `AppleVzRunner` helper for Linux/macOS Arm paths. The live Linux helper path is intentionally narrow today: `linux-kernel` boot, `raw` primary disk, NAT networking, entitlement, and explicit opt-in. Separately, the BridgeVM-owned Hypervisor.framework VMM now has preserved live Windows 11 ARM64 desktop/network/SMP evidence, but it remains a scripted experimental harness rather than an app-integrated product path. | Broaden supported VZ Linux/macOS boot shapes, tighten app-runner IPC, and turn the experimental Windows HVF harness into a measured, packaged path only after its performance, lifecycle, and driver gates close. |
 | Intelligent resources / battery | Launch-time `auto` CPU/RAM policy and runtime foreground/background/battery policy metadata are implemented and tested. `displayd` can consume `metadata/runtime-resources.json` as a file-backed display pacing policy, and the windowed Apple VZ display process now exposes a Unix control socket for `status`/`stop`/`policy`/`pacing` that local CLI, daemon socket, and the macOS app can drive. Runtime reapply also records `runtime_control_acknowledged` when that live helper reads the refreshed policy. | Live Apple VZ CPU/RAM control must apply the policy to a running VM; today `live_applied` remains false. |
 | Graphics acceleration / Metal | Fast/VZ display now renders real GUI pixels in a `VZVirtualMachineView` and can optionally export that AppKit view to a raw RGBA file for proxy-crop experiments. The long-term plan still calls for a Metal compositor/display pipeline. | Metal/displayd integration and frame pacing first; Direct3D-to-Metal or WDDM work remains long-term R&D, not a current claim. |
 

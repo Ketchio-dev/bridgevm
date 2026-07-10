@@ -1,5 +1,10 @@
 # BridgeVM HVF vs Parallels — Graphics/Integration Gap & Roadmap
 
+> Historical strategy snapshot. Its guest-feature and Windows ARM64 driver
+> availability claims are superseded by `STATUS.md` and
+> `docs/hvf-p3-windows-3d-plan.md`; as of 2026-07-10 test-signed injection-ready
+> ARM64 viogpu3d packages exist, while live bind/trace/render proof remains open.
+
 Honest, engineering-grounded analysis of the distance between our from-scratch
 HVF VMM and Parallels Desktop's engine, and a phased plan to close what is
 realistically closable. Grounded in a research pass on Parallels' architecture,
