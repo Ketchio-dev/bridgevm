@@ -10,8 +10,8 @@ SOCKET_VM_NAME="socket-ready-report"
 COMPAT_VM_NAME="compat-ready-report"
 SOCKET_COMPAT_VM_NAME="socket-compat-ready-report"
 BUNDLE="$STORE/vms/$VM_NAME.vmbridge"
-DISK="$BUNDLE/disks/root.qcow2"
-INSTALLER="$BUNDLE/media/ubuntu.iso"
+DISK="$BUNDLE/disks/root.raw"
+KERNEL="$BUNDLE/boot/vmlinuz"
 SOCKET="$STORE/run/bridgevmd.sock"
 DAEMON_LOG="$STORE/bridgevmd.log"
 DAEMON_PID=""
@@ -71,7 +71,7 @@ assert_blocked_readiness_report() {
   local output="$1"
   local vm="$2"
   local disk="$3"
-  local installer="$4"
+  local kernel="$4"
   local label="$5"
 
   assert_contains "$output" "Readiness report for $vm" "$label"
@@ -81,14 +81,14 @@ assert_blocked_readiness_report() {
   assert_contains "$output" "live-boot: required=true proven=false" "$label"
   assert_contains "$output" "console: required=true proven=false" "$label"
   assert_contains "$output" "guest-tools-effects: required=true proven=false" "$label"
-  assert_contains "$output" "boot-media-missing:installer-image:$installer" "$label"
+  assert_contains "$output" "boot-media-missing:kernel:$kernel" "$label"
   assert_contains "$output" "active-disk-missing:$disk" "$label"
   assert_contains "$output" "Pre-run launch readiness:" "$label"
   assert_contains "$output" "Launch ready: false" "$label"
   assert_contains "$output" "missing-primary-disk" "$label"
-  assert_contains "$output" "missing-installer-image" "$label"
+  assert_contains "$output" "missing-kernel" "$label"
   assert_contains "$output" "launch-readiness-blocker:missing-primary-disk" "$label"
-  assert_contains "$output" "launch-readiness-blocker:missing-installer-image" "$label"
+  assert_contains "$output" "launch-readiness-blocker:missing-kernel" "$label"
   assert_not_contains "$output" "runner-metadata-missing" "$label"
   assert_contains "$output" "metadata-only preflight report; no VM, QEMU, Apple VZ, console, or guest workload was started" "$label"
   assert_contains "$output" "live E2E boot, console, and guest-tools effects still require the explicit opt-in live smoke evidence path" "$label"
@@ -306,19 +306,20 @@ make_fast_vm() {
     --os ubuntu \
     --arch arm64 \
     --mode fast \
-    --boot-mode linux-installer \
-    --installer-image media/ubuntu.iso >/dev/null
+    --boot-mode linux-kernel \
+    --kernel-path boot/vmlinuz \
+    --disk-format raw >/dev/null
 }
 
 prepare_fast_metadata_inputs() {
   local vm="$1"
   local bundle="$STORE/vms/$vm.vmbridge"
-  local disk="$bundle/disks/root.qcow2"
-  local installer="$bundle/media/ubuntu.iso"
+  local disk="$bundle/disks/root.raw"
+  local kernel="$bundle/boot/vmlinuz"
 
-  mkdir -p "$(dirname "$disk")" "$(dirname "$installer")"
+  mkdir -p "$(dirname "$disk")" "$(dirname "$kernel")"
   : >"$disk"
-  : >"$installer"
+  : >"$kernel"
 }
 
 make_live_evidence_bundle() {
@@ -594,7 +595,7 @@ rebase_apple_live_evidence_bundle_paths() {
 make_fast_vm bridgevm "$VM_NAME"
 
 blocked_output="$(bridgevm readiness "$VM_NAME")"
-assert_blocked_readiness_report "$blocked_output" "$VM_NAME" "$DISK" "$INSTALLER" "local blocked readiness"
+assert_blocked_readiness_report "$blocked_output" "$VM_NAME" "$DISK" "$KERNEL" "local blocked readiness"
 
 prepare_fast_metadata_inputs "$VM_NAME"
 
@@ -920,8 +921,8 @@ done
 [[ -S "$SOCKET" ]] || fail "daemon socket was not ready"
 
 SOCKET_BUNDLE="$STORE/vms/$SOCKET_VM_NAME.vmbridge"
-SOCKET_DISK="$SOCKET_BUNDLE/disks/root.qcow2"
-SOCKET_INSTALLER="$SOCKET_BUNDLE/media/ubuntu.iso"
+SOCKET_DISK="$SOCKET_BUNDLE/disks/root.raw"
+SOCKET_KERNEL="$SOCKET_BUNDLE/boot/vmlinuz"
 
 make_fast_vm bridgevm_socket "$SOCKET_VM_NAME"
 
@@ -930,7 +931,7 @@ assert_blocked_readiness_report \
   "$socket_blocked_output" \
   "$SOCKET_VM_NAME" \
   "$SOCKET_DISK" \
-  "$SOCKET_INSTALLER" \
+  "$SOCKET_KERNEL" \
   "socket blocked readiness"
 
 prepare_fast_metadata_inputs "$SOCKET_VM_NAME"
