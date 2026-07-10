@@ -2,9 +2,13 @@
 
 Goal: GPU-accelerated 3D for the Windows 11 ARM64 guest on our from-scratch VMM,
 reusing the host virtio-gpu 3D stack already exercised with Linux. Injection-ready
-Windows ARM64 `viogpu3d` packages now exist locally; the remaining piece is a
-live, boot-bound proof that the selected package installs, binds, and speaks the
-expected protocol: `venus` when it really
+Windows ARM64 `viogpu3d` packages now exist locally, but none is currently a
+render candidate. The VirGL full package carries five ARM64 Mesa DLLs and
+`CopyFiles` entries, while its INF omits `UserModeDriverName`,
+`OpenGLDriverName`, `OpenGLVersion`, `OpenGLFlags`, and
+`InstalledDisplayDrivers`. The next piece is therefore a
+regenerated/test-signed UMD-registered package, followed by live, boot-bound
+proof that it installs, binds, and speaks the expected protocol: `venus` when it really
 uses capset 4, or `virgl`/`virgl2` when it follows the older D3D10/GL path.
 
 ## The good news: our device is close to feature-compatible
@@ -43,7 +47,7 @@ up capset 1, and the installed boot path can select the CGL-backed VirGL runtime
    source/package audit. Do not boot a package under a gate for the wrong
    protocol.
 
-## The old build wall is closed; the real wall is live bind + trace
+## The binary build wall is closed; the INF/UMD registration wall is not
 `viogpu3d` is a WDDM kernel driver whose reproducible full build still requires:
 1. **Mesa built on Windows** (`meson -Dgallium-drivers=virgl -Dgallium-d3d10umd`)
    producing the user-mode DLLs — a major build in its own right, and
@@ -52,17 +56,24 @@ up capset 1, and the installed boot path can select the CGL-backed VirGL runtime
    interactive, multi-GB installers.
 3. Test-signing setup, then inject + boot.
 
-That build was completed by CI. On 2026-07-10 the repository checker passed four
-local ARM64 packages: a Venus KMD-only package at
+That binary build was completed by CI. On 2026-07-10 the repository checker
+found four injection-ready local ARM64 packages: a Venus KMD-only package at
 `/Users/user/BridgeVM/venus-wddm-arm64`, two VirGL KMD-only candidates, and a
 VirGL full package at
 `/Users/user/BridgeVM/viogpu3d-prebuilt-candidates/arm64-ci/viogpu3d-full` with
 five ARM64 Mesa DLLs. The full package records source
 `akre@4c27e477e6560cea724d848b98149f03cb1f2083`, Mesa
 `cb531c440ff34a9c6334859dda0848132be49ec3`, and build id `28945386687-8`.
-All are self-signed test artifacts, not production-distributable drivers.
+All are self-signed test artifacts, not production-distributable drivers. The
+three KMD-only packages have no UMD payload. The full package copies its five
+DLLs but does not register the WDDM/OpenGL UMD names, so Windows has no INF
+contract that selects those DLLs for rendering. The source
+`viogpu3d_arm64.inx` does contain all five registrations; the package must be
+regenerated from that source, then cataloged and test-signed as one immutable
+unit. Merely editing the signed out-of-tree INF would invalidate its catalog.
 
-The immediate wall is therefore live Windows evidence: certificate trust and
+The immediate wall is therefore a checker-accepted UMD-registered render
+candidate. The following wall is live Windows evidence: certificate trust and
 testsigning, `pnputil` install, a present `DEV_1050`/`DEV_10F7` device with
 Status OK bound to the intended OEM INF, then a coherent capset/blob/context/
 submit/fence trace tied to that same boot and a rendered workload.
@@ -82,8 +93,10 @@ drives):
    the certificate, installs the INF, reboots, and verifies the bound device,
    boot with `--virtio-gpu-3d`, `--virtio-gpu-device-id 1050`, and
    `--gpu-trace-protocol virgl`, then require the readiness + trace gates. Today
-   The current package is no longer blocked by host VirGL support, runtime
-   selection, package availability, or package HWID.
+   the current package is no longer blocked by host VirGL support, runtime
+   selection, kernel binary availability, or package HWID; it is blocked by its
+   stripped fallback INF and the catalog/signature regeneration that an INF fix
+   requires.
 Could be partly automated with an unattended VS/WDK install image, but expect
 interactive iteration.
 
@@ -105,7 +118,9 @@ ARM64 dev machine. The live source report generated on 2026-07-07 reports
 `protocol=virgl`, `hwids=PCI\VEN_1AF4&DEV_1050`, `arm64_configuration_present=true`,
 `bridgevm_default_installed_host_protocol=venus`,
 `bridgevm_required_installed_host_protocol=virgl`,
-`boot_runtime_selector=--gpu-trace-protocol virgl`, and `boot_blocker=none`.
+and `boot_runtime_selector=--gpu-trace-protocol virgl`. Its historical
+`boot_blocker=none` field predates the UMD-registration audit and must not be
+read as render-readiness evidence.
 
 ## Where WE have the edge (the reason this is worth doing)
 The community driver is stalled largely because guest-side crashes are
@@ -163,8 +178,14 @@ undebuggable in a black box. We are not a black box:
   `scripts/check-hvf-windows-p3-gpu-readiness.sh --driver-dir /path/to/test-signed/viogpu3d --pci-device-id 1050 --require-driver-package`.
   It runs the synthetic host preflight, runs the package checker, and reports
   package-protocol device-model evidence separately from the current host
-  backend. The default installed runtime remains `venus`, so a `virgl` package
-  still fails fast unless the VirGL runtime is selected. With
+  backend. It also invokes the package checker's stricter
+  `--require-render-candidate` contract: KMD-only packages and DLL-bearing
+  packages without complete `UserModeDriverName`, `OpenGLDriverName`,
+  `OpenGLVersion`, `OpenGLFlags`, and `InstalledDisplayDrivers` INF registration
+  fail before boot. The registered DLL names must also resolve through active
+  `CopyFiles` entries into DirID 11. The default
+  installed runtime remains `venus`, so a valid `virgl` package still fails fast
+  unless the VirGL runtime is selected. With
   `BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=virgl` or installed boot
   `--gpu-trace-protocol virgl`, the same package can report
   `host_backend_virgl_runtime=WIRED`. Add `--probe-host-renderer` when live host
@@ -175,21 +196,26 @@ undebuggable in a black box. We are not a black box:
   `scripts/find-hvf-windows-viogpu3d-packages.sh --root "$HOME/BridgeVM" --out-dir /tmp/bridgevm-viogpu3d-inventory --require-found`.
   It discovers candidate directories from viogpu3d `DEV_1050`/`DEV_10F7` INFs or
   `viogpu3d` SYS filenames, runs the package checker, writes per-candidate
-  manifests, and reports how many packages are injection-ready. The earlier
+  manifests, and reports `ready_count` for injection-ready packages separately
+  from `render_candidate_count`; `--require-render-candidate` enforces the
+  latter without hiding KMD-only inventory. The earlier
   2026-07-07 source-only scan (`ready_count=0`) is superseded: the 2026-07-10
   checker passes the Venus KMD package and three VirGL packages, including the
-  full ARM64 SYS/INF/CAT + five-DLL candidate described above.
+  full ARM64 SYS/INF/CAT + five-DLL package described above. The current
+  render-candidate count is nevertheless zero because that full INF lacks all
+  five UMD/OpenGL registrations.
 - The injector/boot harness now has a P3 path for those real driver packages:
 
   ```sh
   scripts/find-hvf-windows-viogpu3d-packages.sh \
     --root "$HOME/BridgeVM" \
     --out-dir /tmp/bridgevm-viogpu3d-inventory \
-    --require-found
+    --require-render-candidate
 
   scripts/check-hvf-windows-viogpu3d-package.sh \
     --manifest /tmp/bridgevm-p3-gpu/viogpu3d-package-manifest.txt \
     --pci-device-id 1050 \
+    --require-render-candidate \
     /path/to/test-signed/viogpu3d
 
   scripts/check-hvf-windows-p3-gpu-readiness.sh \
@@ -225,7 +251,9 @@ undebuggable in a black box. We are not a black box:
   rejects non-ARM64 PE `.sys`/`.dll` binaries,
   requires a `venus`/`virgl` protocol identification, and can write a package
   manifest with source metadata, file sizes, SHA-256 hashes, and PE machine
-  fields. Externally built packages can carry
+  fields. Its default `package_capability` preserves KMD-only packages as
+  injection-ready inventory; `--require-render-candidate` requires a VirGL UMD
+  payload plus complete active INF registration. Externally built packages can carry
   `bridgevm-package-provenance.env`; the checker auto-loads it to recover the
   PR source commit, build id, signing note, protocol, and expected HWID before
   package validation. The injector stages `viogpu3d` under `\drivers\viogpu3d`
@@ -239,17 +267,18 @@ undebuggable in a black box. We are not a black box:
   directory when `--require-gpu-trace-gate` is set. When `--viogpu3d-dir` is
   provided, it runs the same readiness check before building/running the VM and
   writes `p3-gpu-readiness.txt` plus `viogpu3d-package-manifest.txt`; with
-  `--require-viogpu3d-readiness`, a missing or incompatible package stops the
-  boot before guest execution. The installed boot wrapper maps
+  `--require-viogpu3d-readiness`, a missing, KMD-only, UMD-unregistered, or
+  protocol-incompatible package stops the boot before guest execution. The installed boot wrapper maps
   `--gpu-trace-protocol virgl` to `BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=virgl`.
   `PROBE_HOST_RENDERER=1` can be used with the readiness script to add the live
   Venus/VirGL renderer probe result to the evidence.
-- BLOCKED on one concrete immediate item before real Windows 3D bring-up: a
+- BLOCKED first on regenerating the VirGL full package from an INF with active
+  UMD registrations, then rebuilding its catalog and test signature. Once the
+  checker reports `render_candidate=true`, the next concrete blocker is a
   verifier-accepted live run proving test-sign trust, PnP bind/Status OK and the
   intended OEM INF, followed by a trace from that same run that passes the
-  protocol-coherent feature/capset/blob/context/submit/fence gate. Package
-  production is no longer the immediate blocker. Production signing,
-  licensing, stability, and workload/render proof remain later gates.
+  protocol-coherent feature/capset/blob/context/submit/fence gate. Production
+  signing, licensing, stability, and workload/render proof remain later gates.
 
 _Updated 2026-07-10. See [[bridgevm-hvf-engine-status]] and
 docs/hvf-3d-engine-plan.md._

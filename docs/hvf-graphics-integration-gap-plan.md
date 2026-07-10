@@ -3,7 +3,10 @@
 > Historical strategy snapshot. Its guest-feature and Windows ARM64 driver
 > availability claims are superseded by `STATUS.md` and
 > `docs/hvf-p3-windows-3d-plan.md`; as of 2026-07-10 test-signed injection-ready
-> ARM64 viogpu3d packages exist, while live bind/trace/render proof remains open.
+> ARM64 viogpu3d packages exist, but none is a render candidate. The five-DLL
+> VirGL package omits `UserModeDriverName`, `OpenGLDriverName`, `OpenGLVersion`,
+> `OpenGLFlags`, and `InstalledDisplayDrivers` INF registration. Regenerated
+> package/catalog/signing, then live bind/trace/render proof, remain open.
 
 Honest, engineering-grounded analysis of the distance between our from-scratch
 HVF VMM and Parallels Desktop's engine, and a phased plan to close what is
@@ -76,13 +79,14 @@ graceful shutdown**. Needs a guest agent we write (Windows service) — moderate
 effort, but one device model buys many features. Prior art to reuse:
 `crates/bridgevm-agentd`, `bridgevm-agent-protocol`.
 
-### Tier C — the real 3D: only reachable for LINUX guests
-- **Windows-ARM64 guest 3D is a dead end right now** — not because of our engine,
-  but because no working guest driver exists: viogpu3d (virgl GL) is stalled,
-  x64-oriented, and crashes on ARM64; the successor Venus/Vulkan WDDM driver is
-  experimental, unmerged, and unproven on ARM64. Nothing to integrate. Track it;
-  adopt if it matures. This is the wall Parallels only cleared by writing their
-  own proprietary WDDM driver — out of scope for us near-term.
+### Tier C — the real 3D: Linux proven, Windows still experimental
+- **Windows-ARM64 guest 3D now has kernel artifacts, not a render-ready driver.**
+  Test-signed ARM64 Venus/VirGL kernel packages exist, and one VirGL package
+  carries five ARM64 Mesa DLLs. Its fallback INF copies but never registers
+  those DLLs, so it remains injection-ready rather than render-ready. Rebuild
+  the package from the source ARM64 INX, regenerate its catalog/signature, then
+  prove PnP bind and a real render trace. This is narrower than “nothing to
+  integrate,” but it remains an experimental WDDM path, not a product claim.
 - **Linux guest 3D is genuinely reachable** from a from-scratch HVF VMM: a
   virtio-gpu device with the VIRGL/Venus capsets, host-side **libvirglrenderer**
   (builds on macOS) rendering to **MoltenVK** or Mesa's newer **KosmicKrisp**
@@ -107,13 +111,16 @@ effort, but one device model buys many features. Prior art to reuse:
 3. **Audio (in-box HDA).** Round out the "feels like a real PC" experience.
 4. **Linux-guest 3D via virtio-gpu VIRGL/Venus + libvirglrenderer→MoltenVK/
    KosmicKrisp (Tier C).** The genuine GPU-acceleration story — Linux first.
-5. **Watch/adopt the Venus WDDM Windows-ARM driver** for Windows guest 3D if it
-   becomes real. Balloon, USB passthrough, snapshots as follow-ons.
+5. **Continue the viogpu3d Windows-ARM bring-up** from an UMD-registered,
+   re-signed package through live bind/trace/render proof. Balloon, USB
+   passthrough, snapshots as follow-ons.
 
 ## Honest verdict
-- We will **not** match Parallels' Windows DirectX-over-Metal near-term — it's a
-  years-long proprietary WDDM effort and the open Windows-ARM 3D driver doesn't
-  exist. Don't budget for Windows guest 3D.
+- We will **not** match Parallels' Windows DirectX-over-Metal near-term — its
+  polished stack is a years-long proprietary WDDM effort. The open ARM64
+  viogpu3d artifacts are now concrete, but the current package still lacks UMD
+  registration and any live render proof. Treat it as bring-up research, not a
+  schedulable product feature.
 - We **can** reach the best-available Windows-ARM *display* (virtio-gpu 2D:
   native Retina resolution, HW cursor, dirty-rect) and real *integration*
   (clipboard/folders/resolution via a guest agent) — that closes most of the

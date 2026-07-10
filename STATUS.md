@@ -47,8 +47,13 @@ tests/integration/product-gates-report.sh
 
 ## Current P3 Windows 3D direction
 The active 3D-engine path is now Windows ARM64 `viogpu3d` bring-up rather than
-guest-agent polish. The next concrete gate is **driver bind + first GPU trace**:
-BridgeVM should boot the test-signed Windows driver far enough to observe
+guest-agent polish. The next concrete gate is **a UMD-registered package, then
+driver bind + first GPU trace**. The discovered VirGL full package contains five
+ARM64 Mesa DLLs and copies them through the INF, but does not register
+`UserModeDriverName`, `OpenGLDriverName`, `OpenGLVersion`, `OpenGLFlags`, or
+`InstalledDisplayDrivers`; it is therefore injection-ready, not a render
+candidate. After regenerating and
+test-signing that package, BridgeVM should boot it far enough to observe
 virtio-gpu feature negotiation and at least one capset/blob/context/fence event
 from the host. BridgeVM keeps the default virtio-gpu PCI id at `DEV_1050` for
 the proven 2D `viogpudo` path. P3 runs still default to the experimental
@@ -114,11 +119,13 @@ scripts/check-hvf-windows-p3-gpu-readiness.sh \
 
 Without `--probe-host-renderer`, it keeps the deterministic static result
 (`host_renderer_virgl=NOT_PROBED`) for a VirGL package. With the live probe
-enabled and `BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=virgl`, the same package records the
-real probe result, e.g. `host_renderer_virgl=AVAILABLE`, reports
-`host_backend_virgl_runtime=WIRED`, and can pass the no-VM readiness gate. The
-default installed runtime remains `venus`, so a `virgl` package still fails fast
-unless the VirGL runtime is explicitly selected.
+enabled and `BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=virgl`, a UMD-registered render
+candidate records the real probe result, e.g. `host_renderer_virgl=AVAILABLE`,
+reports `host_backend_virgl_runtime=WIRED`, and can pass the no-VM readiness
+gate. The currently discovered five-DLL package fails earlier at the INF UMD
+registration gate. The default installed runtime remains `venus`, so a valid
+`virgl` package still fails fast unless the VirGL runtime is explicitly
+selected.
 
 A standalone package checker plus P3-specific injector wrapper now preflight a
 test-signed `viogpu3d` package, reject missing catalogs or non-ARM64 PE
@@ -128,7 +135,13 @@ require protocol identification (`venus`/`virgl` by auto scan or
 `bridgevm-package-provenance.env` when an external build includes it, stage it
 into the WinPE injector, and install a fail-closed three-stage firstboot flow
 that enables test signing, trusts the certificate, installs the INF, reboots,
-and then verifies the bound device and OEM INF:
+and then verifies the bound device and OEM INF. Its default result is an
+injection capability classification, so KMD-only packages still inventory
+cleanly. `--require-render-candidate` additionally requires a VirGL UMD payload
+and active `UserModeDriverName`, `OpenGLDriverName`, `OpenGLVersion`,
+`OpenGLFlags`, and `InstalledDisplayDrivers` INF registrations. Their exact
+source-contract values must resolve through active `CopyFiles` entries into
+DirID 11; the P3 readiness gate always applies that stricter contract:
 
 ```sh
 scripts/check-hvf-windows-viogpu3d-package.sh /path/to/viogpu3d
@@ -136,12 +149,13 @@ scripts/check-hvf-windows-viogpu3d-package.sh /path/to/viogpu3d
 scripts/check-hvf-windows-viogpu3d-package.sh \
   --manifest /tmp/viogpu3d-package-manifest.txt \
   --pci-device-id 1050 \
+  --require-render-candidate \
   /path/to/viogpu3d
 
 scripts/find-hvf-windows-viogpu3d-packages.sh \
   --root "$HOME/BridgeVM" \
   --out-dir /tmp/bridgevm-viogpu3d-inventory \
-  --require-found
+  --require-render-candidate
 
 scripts/check-hvf-windows-p3-gpu-readiness.sh \
   --driver-dir /path/to/viogpu3d \
@@ -164,17 +178,24 @@ by default or an explicit `--virtio-gpu-device-id`, writes the trace, and stores
 `p3-gpu-readiness.txt`, `viogpu3d-package-manifest.txt`,
 `virtio-gpu-trace-report.txt`, and `virtio-gpu-trace-gate.txt` in the evidence directory when
 `--viogpu3d-dir DIR --require-viogpu3d-readiness` is supplied. The readiness
-script blocks a `virgl` package against the default `venus` host path, but passes
-that package when `--gpu-trace-protocol virgl` selects the VirGL runtime. The
-2026-07-10 local inventory closes the old package-absence blocker: the checker
-passes the test-signed ARM64 Venus KMD package at
+script first requires a UMD-registered render candidate, then blocks a `virgl`
+package against the default `venus` host path, but can pass that package when
+`--gpu-trace-protocol virgl` selects the VirGL runtime. The 2026-07-10 local
+inventory closes only the old kernel-package-absence blocker: the checker finds
+the test-signed ARM64 Venus KMD package at
 `/Users/user/BridgeVM/venus-wddm-arm64` and three VirGL candidates under
 `/Users/user/BridgeVM/viogpu3d-prebuilt-candidates/arm64-ci/`, including
-`viogpu3d-full` with five ARM64 Mesa DLLs. These are CI/test-signing artifacts,
-not production-signed releases. The immediate wall is now live guest proof:
-certificate trust and test signing, PnP install, a present `DEV_1050`/`DEV_10F7`
-device with Status OK bound to the intended OEM INF, followed by a coherent
-boot-bound capset/blob/context/submit/fence trace and rendered workload. The Windows
+`viogpu3d-full` with five ARM64 Mesa DLLs. All four are injection-ready, but the
+three KMD-only packages have no UMD payload and the full package's INF omits all
+five required UMD/OpenGL registrations. Consequently
+`render_candidate_count=0` for
+the current local set. These are CI/test-signing artifacts, not
+production-signed releases. The immediate wall is to regenerate the full INF,
+catalog, and test signature as one UMD-registered render candidate; only then is
+the next wall live guest proof: certificate trust and test signing, PnP install,
+a present `DEV_1050`/`DEV_10F7` device with Status OK bound to the intended OEM
+INF, followed by a coherent boot-bound capset/blob/context/submit/fence trace
+and rendered workload. The Windows
 virtio-console/vioser agent path is useful for automation but is no longer
 treated as a hard dependency for P3: if revisited, it should be a short KD/WPP or
 QEMU byte-comparison diagnostic spike.
