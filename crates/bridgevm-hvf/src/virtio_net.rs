@@ -80,11 +80,20 @@ const DESC_SIZE: u64 = 16;
 const DESC_F_NEXT: u16 = 1;
 const DESC_F_WRITE: u16 = 2;
 const VIRTIO_NET_HDR_LEN: usize = 12;
+const MAX_TX_PACKET_LEN: usize = VIRTIO_NET_HDR_LEN + 65_535;
 const DEFAULT_MAC: [u8; 6] = [0x52, 0x54, 0x00, 0x42, 0x56, 0x01];
 
 pub trait NetBackend: Send {
     fn transmit(&mut self, frame: &[u8]);
     fn poll_receive(&mut self) -> Option<Vec<u8>>;
+    fn poll_receive_into(&mut self, out: &mut Vec<u8>) -> bool {
+        let Some(mut frame) = self.poll_receive() else {
+            return false;
+        };
+        out.clear();
+        out.append(&mut frame);
+        true
+    }
     fn poll_host_sockets(&mut self) {}
     #[cfg(test)]
     fn test_transmitted_frames(&self) -> Option<&[Vec<u8>]> {
@@ -99,6 +108,10 @@ impl NetBackend for Box<dyn NetBackend> {
 
     fn poll_receive(&mut self) -> Option<Vec<u8>> {
         self.as_mut().poll_receive()
+    }
+
+    fn poll_receive_into(&mut self, out: &mut Vec<u8>) -> bool {
+        self.as_mut().poll_receive_into(out)
     }
 
     fn poll_host_sockets(&mut self) {
@@ -142,6 +155,15 @@ impl NetBackend for LoopbackTestBackend {
         self.receive.pop_front()
     }
 
+    fn poll_receive_into(&mut self, out: &mut Vec<u8>) -> bool {
+        let Some(mut frame) = self.receive.pop_front() else {
+            return false;
+        };
+        out.clear();
+        out.append(&mut frame);
+        true
+    }
+
     #[cfg(test)]
     fn test_transmitted_frames(&self) -> Option<&[Vec<u8>]> {
         Some(self.transmitted_frames())
@@ -171,9 +193,13 @@ pub struct VirtioNet<B: NetBackend> {
     config_msix_vector: u16,
     queue_sel: u32,
     queues: [VirtioNetQueue; QUEUE_COUNT],
+    pending_msix_queue_bits: u8,
     status: u32,
     interrupt_status: u32,
     pending_rx_frame: Option<Vec<u8>>,
+    descriptor_scratch: Vec<Descriptor>,
+    tx_packet_scratch: Vec<u8>,
+    rx_frame_scratch: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,9 +275,13 @@ impl<B: NetBackend> VirtioNet<B> {
             config_msix_vector: VIRTIO_MSI_NO_VECTOR,
             queue_sel: 0,
             queues: [VirtioNetQueue::new(0), VirtioNetQueue::new(1)],
+            pending_msix_queue_bits: 0,
             status: 0,
             interrupt_status: 0,
             pending_rx_frame: None,
+            descriptor_scratch: Vec::new(),
+            tx_packet_scratch: Vec::new(),
+            rx_frame_scratch: Vec::new(),
         }
     }
 
@@ -300,9 +330,13 @@ impl<B: NetBackend> VirtioNet<B> {
         for queue in &mut self.queues {
             queue.reset();
         }
+        self.pending_msix_queue_bits = 0;
         self.status = 0;
         self.interrupt_status = 0;
         self.pending_rx_frame = None;
+        self.descriptor_scratch.clear();
+        self.tx_packet_scratch.clear();
+        self.rx_frame_scratch.clear();
     }
 
     fn access_common(
@@ -656,14 +690,19 @@ impl<B: NetBackend> VirtioNet<B> {
     }
 
     pub fn pump_receive(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
-        let Some(frame) = self
-            .pending_rx_frame
-            .take()
-            .or_else(|| self.backend.poll_receive())
-        else {
-            return false;
+        let mut frame = if let Some(frame) = self.pending_rx_frame.take() {
+            frame
+        } else {
+            let mut frame = std::mem::take(&mut self.rx_frame_scratch);
+            if !self.backend.poll_receive_into(&mut frame) {
+                self.rx_frame_scratch = frame;
+                return false;
+            }
+            frame
         };
         if self.deliver_rx_frame(&frame, mem) {
+            frame.clear();
+            self.rx_frame_scratch = frame;
             return true;
         }
         self.pending_rx_frame = Some(frame);
@@ -679,39 +718,58 @@ impl<B: NetBackend> VirtioNet<B> {
         let Some(avail_idx) = read_u16(mem, queue.driver + 2) else {
             return;
         };
+        let mut descs = std::mem::take(&mut self.descriptor_scratch);
+        let mut packet = std::mem::take(&mut self.tx_packet_scratch);
         while self.queues[queue_index].last_avail_idx != avail_idx {
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
             let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
             let Some(head) = read_u16(mem, queue.driver + ring_off) else {
-                return;
+                break;
             };
-            if let Some(frame) = self.tx_frame_from_chain(mem, &queue, head) {
+            if Self::tx_frame_from_chain_into(mem, &queue, head, &mut descs, &mut packet) {
+                let frame = &packet[VIRTIO_NET_HDR_LEN..];
                 self.stats.tx_count = self.stats.tx_count.saturating_add(1);
                 self.stats.tx_bytes = self.stats.tx_bytes.saturating_add(frame.len() as u64);
-                self.backend.transmit(&frame);
+                self.backend.transmit(frame);
             }
             Self::write_used(mem, &queue, head, 0);
             self.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
             self.mark_queue_interrupt(queue_index);
         }
+        descs.clear();
+        packet.clear();
+        self.descriptor_scratch = descs;
+        self.tx_packet_scratch = packet;
     }
 
-    fn tx_frame_from_chain(
-        &self,
+    fn tx_frame_from_chain_into(
         mem: &dyn GuestMemoryMut,
         queue: &VirtioNetQueue,
         head: u16,
-    ) -> Option<Vec<u8>> {
-        let descs = Self::descriptor_chain(mem, queue, head)?;
-        let mut packet = Vec::new();
-        for desc in descs {
-            if desc.flags & DESC_F_WRITE != 0 {
-                return None;
-            }
-            let mut bytes = mem.read_bytes(desc.addr, desc.len as usize)?;
-            packet.append(&mut bytes);
+        descs: &mut Vec<Descriptor>,
+        packet: &mut Vec<u8>,
+    ) -> bool {
+        packet.clear();
+        if !Self::descriptor_chain_into(mem, queue, head, descs) {
+            return false;
         }
-        (packet.len() >= VIRTIO_NET_HDR_LEN).then(|| packet[VIRTIO_NET_HDR_LEN..].to_vec())
+        for desc in descs.iter() {
+            if desc.flags & DESC_F_WRITE != 0 {
+                return false;
+            }
+            let start = packet.len();
+            let Some(end) = start.checked_add(desc.len as usize) else {
+                return false;
+            };
+            if end > MAX_TX_PACKET_LEN {
+                return false;
+            }
+            let Some(bytes) = mem.read_bytes(desc.addr, desc.len as usize) else {
+                return false;
+            };
+            packet.extend_from_slice(&bytes);
+        }
+        packet.len() >= VIRTIO_NET_HDR_LEN
     }
 
     fn deliver_rx_frame(&mut self, frame: &[u8], mem: &mut dyn GuestMemoryMut) -> bool {
@@ -731,18 +789,22 @@ impl<B: NetBackend> VirtioNet<B> {
         let Some(head) = read_u16(mem, queue.driver + ring_off) else {
             return false;
         };
-        let Some(descs) = Self::descriptor_chain(mem, &queue, head) else {
-            return false;
-        };
-        let mut packet = Vec::with_capacity(VIRTIO_NET_HDR_LEN + frame.len());
-        let mut hdr = [0u8; VIRTIO_NET_HDR_LEN];
-        hdr[10..12].copy_from_slice(&1u16.to_le_bytes());
-        packet.extend_from_slice(&hdr);
-        packet.extend_from_slice(frame);
-        if !Self::scatter_write(mem, &descs, &packet) {
+        let mut descs = std::mem::take(&mut self.descriptor_scratch);
+        let delivered = Self::descriptor_chain_into(mem, &queue, head, &mut descs);
+        if !delivered {
+            self.descriptor_scratch = descs;
             return false;
         }
-        let used_len = u32::try_from(packet.len()).unwrap_or(u32::MAX);
+        let mut hdr = [0u8; VIRTIO_NET_HDR_LEN];
+        hdr[10..12].copy_from_slice(&1u16.to_le_bytes());
+        if !Self::scatter_write_slices(mem, &descs, &[&hdr, frame]) {
+            self.descriptor_scratch = descs;
+            return false;
+        }
+        let used_len =
+            u32::try_from(VIRTIO_NET_HDR_LEN.saturating_add(frame.len())).unwrap_or(u32::MAX);
+        descs.clear();
+        self.descriptor_scratch = descs;
         Self::write_used(mem, &queue, head, used_len);
         self.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
         self.stats.rx_count = self.stats.rx_count.saturating_add(1);
@@ -751,57 +813,96 @@ impl<B: NetBackend> VirtioNet<B> {
         true
     }
 
-    fn scatter_write(mem: &mut dyn GuestMemoryMut, descs: &[Descriptor], packet: &[u8]) -> bool {
-        let mut offset = 0usize;
+    fn scatter_write_slices(
+        mem: &mut dyn GuestMemoryMut,
+        descs: &[Descriptor],
+        slices: &[&[u8]],
+    ) -> bool {
+        let total_len = slices
+            .iter()
+            .try_fold(0usize, |sum, slice| sum.checked_add(slice.len()));
+        let Some(total_len) = total_len else {
+            return false;
+        };
+        if total_len == 0 {
+            return true;
+        }
+
+        let mut slice_index = 0usize;
+        let mut slice_offset = 0usize;
+        let mut written = 0usize;
+
         for desc in descs {
             if desc.flags & DESC_F_WRITE == 0 {
                 return false;
             }
-            let writable = (desc.len as usize).min(packet.len().saturating_sub(offset));
-            if writable == 0 {
-                continue;
-            }
-            if !mem.write_bytes(desc.addr, &packet[offset..offset + writable]) {
-                return false;
-            }
-            offset += writable;
-            if offset == packet.len() {
-                return true;
+            let mut desc_offset = 0usize;
+            let desc_len = desc.len as usize;
+            while desc_offset < desc_len && written < total_len {
+                while slice_index < slices.len() && slice_offset == slices[slice_index].len() {
+                    slice_index += 1;
+                    slice_offset = 0;
+                }
+                if slice_index == slices.len() {
+                    return written == total_len;
+                }
+
+                let slice = slices[slice_index];
+                let copy_len = (desc_len - desc_offset).min(slice.len() - slice_offset);
+                let Some(gpa) = desc.addr.checked_add(desc_offset as u64) else {
+                    return false;
+                };
+                if !mem.write_bytes(gpa, &slice[slice_offset..slice_offset + copy_len]) {
+                    return false;
+                }
+                desc_offset += copy_len;
+                slice_offset += copy_len;
+                written += copy_len;
             }
         }
-        false
+        written == total_len
     }
 
     fn mark_queue_interrupt(&mut self, queue_index: usize) {
         if let Some(queue) = self.queues.get_mut(queue_index) {
             queue.pending_msix = true;
+            if let Some(bit) = queue_bit(queue_index) {
+                self.pending_msix_queue_bits |= bit;
+            }
         }
         self.interrupt_status |= 1;
     }
 
-    fn descriptor_chain(
+    fn descriptor_chain_into(
         mem: &dyn GuestMemoryMut,
         queue: &VirtioNetQueue,
         head: u16,
-    ) -> Option<Vec<Descriptor>> {
+        out: &mut Vec<Descriptor>,
+    ) -> bool {
+        out.clear();
         if head >= queue.size {
-            return None;
+            return false;
         }
-        let mut out = Vec::new();
         let mut index = head;
         for _ in 0..queue.size {
-            let desc = Descriptor::read(mem, queue.desc + u64::from(index) * DESC_SIZE)?;
+            let Some(desc) = Descriptor::read(mem, queue.desc + u64::from(index) * DESC_SIZE)
+            else {
+                out.clear();
+                return false;
+            };
             let has_next = desc.flags & DESC_F_NEXT != 0;
             out.push(desc);
             if !has_next {
-                return Some(out);
+                return true;
             }
             index = desc.next;
             if index >= queue.size {
-                return None;
+                out.clear();
+                return false;
             }
         }
-        None
+        out.clear();
+        false
     }
 
     fn write_used(mem: &mut dyn GuestMemoryMut, queue: &VirtioNetQueue, id: u16, len: u32) {
@@ -960,20 +1061,31 @@ impl<B: NetBackend> VirtioPciNet<B> {
         function_masked: bool,
     ) -> Vec<MsixMessage> {
         let mut messages = Vec::new();
-        for queue_index in 0..self.net.queues.len() {
-            if !self.net.queues[queue_index].pending_msix {
-                continue;
-            }
+        self.raise_pending_msix_into(function_enabled, function_masked, &mut messages);
+        messages
+    }
+
+    pub fn raise_pending_msix_into(
+        &mut self,
+        function_enabled: bool,
+        function_masked: bool,
+        out: &mut Vec<MsixMessage>,
+    ) {
+        let mut pending = self.net.pending_msix_queue_bits;
+        while pending != 0 {
+            let queue_index = pending.trailing_zeros() as usize;
             let vector = self.net.queues[queue_index].msix_vector;
             if vector == VIRTIO_MSI_NO_VECTOR {
+                pending &= !(1u8 << queue_index);
                 continue;
             }
             if let Some(message) = self.msix.raise(vector, function_enabled, function_masked) {
                 self.net.queues[queue_index].pending_msix = false;
-                messages.push(message);
+                self.net.pending_msix_queue_bits &= !(1u8 << queue_index);
+                out.push(message);
             }
+            pending &= !(1u8 << queue_index);
         }
-        messages
     }
 
     pub fn drain_pending_msix(
@@ -981,18 +1093,33 @@ impl<B: NetBackend> VirtioPciNet<B> {
         function_enabled: bool,
         function_masked: bool,
     ) -> Vec<MsixMessage> {
-        let mut messages = self.msix.drain_pending(function_enabled, function_masked);
-        for message in &messages {
-            self.clear_pending_queue_for_vector(message.vector);
-        }
-        messages.extend(self.raise_pending_msix(function_enabled, function_masked));
+        let mut messages = Vec::new();
+        self.drain_pending_msix_into(function_enabled, function_masked, &mut messages);
         messages
     }
 
+    pub fn drain_pending_msix_into(
+        &mut self,
+        function_enabled: bool,
+        function_masked: bool,
+        out: &mut Vec<MsixMessage>,
+    ) {
+        let start = out.len();
+        self.msix
+            .drain_pending_into(function_enabled, function_masked, out);
+        for message in &out[start..] {
+            self.clear_pending_queue_for_vector(message.vector);
+        }
+        self.raise_pending_msix_into(function_enabled, function_masked, out);
+    }
+
     fn clear_pending_queue_for_vector(&mut self, vector: u16) {
-        for queue in &mut self.net.queues {
+        for (queue_index, queue) in self.net.queues.iter_mut().enumerate() {
             if queue.msix_vector == vector {
                 queue.pending_msix = false;
+                if let Some(bit) = queue_bit(queue_index) {
+                    self.net.pending_msix_queue_bits &= !bit;
+                }
             }
         }
     }
@@ -1023,6 +1150,10 @@ fn device_cfg_offset(offset: u64) -> Option<u64> {
 fn notify_queue_index(offset: u64) -> Option<u16> {
     let rel = offset.checked_sub(PCI_NOTIFY_CFG_OFFSET)?;
     (rel < PCI_CFG_REGION_SIZE).then_some((rel / 4) as u16)
+}
+
+fn queue_bit(index: usize) -> Option<u8> {
+    (index < u8::BITS as usize).then(|| 1u8 << index)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1205,6 +1336,20 @@ mod tests {
             let off = gpa.checked_sub(self.base)? as usize;
             let end = off.checked_add(len)?;
             (end <= self.bytes.len()).then(|| self.bytes[off..end].to_vec())
+        }
+
+        fn read_into(&self, gpa: u64, dst: &mut [u8]) -> bool {
+            let Some(off) = gpa.checked_sub(self.base).map(|v| v as usize) else {
+                return false;
+            };
+            let Some(end) = off.checked_add(dst.len()) else {
+                return false;
+            };
+            if end > self.bytes.len() {
+                return false;
+            }
+            dst.copy_from_slice(&self.bytes[off..end]);
+            true
         }
     }
 
@@ -1626,6 +1771,93 @@ mod tests {
     }
 
     #[test]
+    fn tx_notify_reuses_descriptor_and_packet_scratch_across_frames() {
+        let mut dev = VirtioPciNet::new_loopback();
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        let desc = 0x4000_1000;
+        let avail = 0x4000_2000;
+        let used = 0x4000_3000;
+        let hdr = 0x4000_4000;
+        let payload = 0x4000_5000;
+        let frame1 = b"\x02\x00\x00\x00\x00\x01\x52\x54\x00\x42\x56\x01\x08\x00first";
+        let frame2 = b"\x02\x00\x00\x00\x00\x01\x52\x54\x00\x42\x56\x01\x08\x00again";
+
+        setup_queue(&mut dev, &mut mem, 1, desc, avail, used, 1);
+        mem.write(hdr, &[0; VIRTIO_NET_HDR_LEN]);
+        mem.write(payload, frame1);
+        write_desc(
+            &mut mem,
+            desc,
+            0,
+            hdr,
+            VIRTIO_NET_HDR_LEN as u32,
+            DESC_F_NEXT,
+            1,
+        );
+        write_desc(&mut mem, desc, 1, payload, frame1.len() as u32, 0, 0);
+        mem.write(avail + 2, &1u16.to_le_bytes());
+        mem.write(avail + 4, &0u16.to_le_bytes());
+
+        pci_write(&mut dev, PCI_NOTIFY_CFG_OFFSET + 4, 4, 0, &mut mem);
+
+        let desc_cap = dev.net.descriptor_scratch.capacity();
+        let desc_ptr = dev.net.descriptor_scratch.as_ptr();
+        let packet_cap = dev.net.tx_packet_scratch.capacity();
+        let packet_ptr = dev.net.tx_packet_scratch.as_ptr();
+        assert!(desc_cap >= 2);
+        assert!(packet_cap >= VIRTIO_NET_HDR_LEN + frame1.len());
+
+        mem.write(hdr, &[0; VIRTIO_NET_HDR_LEN]);
+        mem.write(payload, frame2);
+        write_desc(
+            &mut mem,
+            desc,
+            2,
+            hdr,
+            VIRTIO_NET_HDR_LEN as u32,
+            DESC_F_NEXT,
+            3,
+        );
+        write_desc(&mut mem, desc, 3, payload, frame2.len() as u32, 0, 0);
+        mem.write(avail + 2, &2u16.to_le_bytes());
+        mem.write(avail + 6, &2u16.to_le_bytes());
+
+        pci_write(&mut dev, PCI_NOTIFY_CFG_OFFSET + 4, 4, 0, &mut mem);
+
+        assert_eq!(
+            dev.backend().transmitted_frames(),
+            &[frame1.to_vec(), frame2.to_vec()]
+        );
+        assert_eq!(dev.net.descriptor_scratch.capacity(), desc_cap);
+        assert_eq!(dev.net.descriptor_scratch.as_ptr(), desc_ptr);
+        assert_eq!(dev.net.tx_packet_scratch.capacity(), packet_cap);
+        assert_eq!(dev.net.tx_packet_scratch.as_ptr(), packet_ptr);
+    }
+
+    #[test]
+    fn tx_chain_rejects_oversized_guest_length_before_growing_scratch() {
+        let mut mem = TestMem::new(0x4000_0000, 0x1000);
+        let desc_table = 0x4000_0100;
+        write_desc(&mut mem, desc_table, 0, 0x4000_0800, u32::MAX, 0, 0);
+        let mut queue = VirtioNetQueue::new(0);
+        queue.size = 1;
+        queue.desc = desc_table;
+        let mut descs = Vec::new();
+        let mut packet = Vec::with_capacity(32);
+        let capacity = packet.capacity();
+
+        assert!(!VirtioNet::<LoopbackTestBackend>::tx_frame_from_chain_into(
+            &mem,
+            &queue,
+            0,
+            &mut descs,
+            &mut packet,
+        ));
+        assert!(packet.is_empty());
+        assert_eq!(packet.capacity(), capacity);
+    }
+
+    #[test]
     fn rx_pump_prepends_header_posts_used_and_raises_msix() {
         let mut dev = VirtioPciNet::new_loopback();
         let mut mem = TestMem::new(0x4000_0000, 0x20000);
@@ -1671,6 +1903,174 @@ mod tests {
     }
 
     #[test]
+    fn rx_pending_msix_survives_until_vector_is_programmed() {
+        let mut dev = VirtioPciNet::new_loopback();
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        let desc = 0x4000_1000;
+        let avail = 0x4000_2000;
+        let used = 0x4000_3000;
+        let buf = 0x4000_4000;
+        let frame = b"\x52\x54\x00\x42\x56\x01\x02\x00\x00\x00\x00\x01\x08\x00late-vector";
+
+        setup_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
+        write_desc(&mut mem, desc, 0, buf, 128, DESC_F_WRITE, 0);
+        mem.write(avail + 2, &1u16.to_le_bytes());
+        mem.write(avail + 4, &0u16.to_le_bytes());
+        dev.backend_mut().push_receive(frame.to_vec());
+
+        assert!(dev.pump_receive(&mut mem));
+        assert!(dev.stats().queues[0].pending_msix);
+        assert_eq!(dev.drain_pending_msix(true, false), Vec::new());
+        assert!(dev.stats().queues[0].pending_msix);
+
+        program_msix_vector(&mut dev, 0, 0xfee0_0000, 0x50);
+
+        assert_eq!(
+            dev.drain_pending_msix(true, false),
+            vec![MsixMessage {
+                vector: 0,
+                address: 0xfee0_0000,
+                data: 0x50,
+            }]
+        );
+        assert!(!dev.stats().queues[0].pending_msix);
+    }
+
+    #[test]
+    fn rx_pump_scatters_header_and_frame_across_split_descriptors() {
+        let mut dev = VirtioPciNet::new_loopback();
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        let desc = 0x4000_1000;
+        let avail = 0x4000_2000;
+        let used = 0x4000_3000;
+        let header_prefix = 0x4000_4000;
+        let header_suffix = 0x4000_4100;
+        let payload_buf = 0x4000_4200;
+        let frame = b"\x52\x54\x00\x42\x56\x01\x02\x00\x00\x00\x00\x01\x08\x00split-rx";
+
+        setup_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
+        write_desc(
+            &mut mem,
+            desc,
+            0,
+            header_prefix,
+            10,
+            DESC_F_WRITE | DESC_F_NEXT,
+            1,
+        );
+        write_desc(
+            &mut mem,
+            desc,
+            1,
+            header_suffix,
+            4,
+            DESC_F_WRITE | DESC_F_NEXT,
+            2,
+        );
+        write_desc(&mut mem, desc, 2, payload_buf, 128, DESC_F_WRITE, 0);
+        mem.write(avail + 2, &1u16.to_le_bytes());
+        mem.write(avail + 4, &0u16.to_le_bytes());
+        dev.backend_mut().push_receive(frame.to_vec());
+
+        assert!(dev.pump_receive(&mut mem));
+
+        assert_eq!(mem.read(header_prefix, 10), [0; 10]);
+        assert_eq!(&mem.read(header_suffix, 4)[..2], &1u16.to_le_bytes());
+        assert_eq!(&mem.read(header_suffix + 2, 2), &frame[..2]);
+        assert_eq!(&mem.read(payload_buf, frame.len() - 2), &frame[2..]);
+        assert_eq!(
+            u32::from_le_bytes(mem.read(used + 8, 4).try_into().unwrap()),
+            (VIRTIO_NET_HDR_LEN + frame.len()) as u32
+        );
+    }
+
+    #[test]
+    fn rx_pump_reuses_descriptor_scratch_across_frames_without_packet_copy() {
+        let mut dev = VirtioPciNet::new_loopback();
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        let desc = 0x4000_1000;
+        let avail = 0x4000_2000;
+        let used = 0x4000_3000;
+        let buf1 = 0x4000_4000;
+        let buf2 = 0x4000_5000;
+        let frame1 = b"\x52\x54\x00\x42\x56\x01\x02\x00\x00\x00\x00\x01\x08\x00one";
+        let frame2 = b"\x52\x54\x00\x42\x56\x01\x02\x00\x00\x00\x00\x01\x08\x00two";
+
+        setup_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
+        write_desc(&mut mem, desc, 0, buf1, 128, DESC_F_WRITE, 0);
+        mem.write(avail + 2, &1u16.to_le_bytes());
+        mem.write(avail + 4, &0u16.to_le_bytes());
+        dev.backend_mut().push_receive(frame1.to_vec());
+
+        assert!(dev.pump_receive(&mut mem));
+
+        let desc_cap = dev.net.descriptor_scratch.capacity();
+        let desc_ptr = dev.net.descriptor_scratch.as_ptr();
+        assert!(desc_cap >= 1);
+
+        write_desc(&mut mem, desc, 1, buf2, 128, DESC_F_WRITE, 0);
+        mem.write(avail + 2, &2u16.to_le_bytes());
+        mem.write(avail + 6, &1u16.to_le_bytes());
+        dev.backend_mut().push_receive(frame2.to_vec());
+
+        assert!(dev.pump_receive(&mut mem));
+
+        assert_eq!(
+            &mem.read(buf1 + VIRTIO_NET_HDR_LEN as u64, frame1.len()),
+            frame1
+        );
+        assert_eq!(
+            &mem.read(buf2 + VIRTIO_NET_HDR_LEN as u64, frame2.len()),
+            frame2
+        );
+        assert_eq!(dev.net.descriptor_scratch.capacity(), desc_cap);
+        assert_eq!(dev.net.descriptor_scratch.as_ptr(), desc_ptr);
+    }
+
+    #[test]
+    fn rx_pump_reuses_backend_receive_scratch_across_frames() {
+        let mut dev = VirtioPciNet::new_loopback();
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        let desc = 0x4000_1000;
+        let avail = 0x4000_2000;
+        let used = 0x4000_3000;
+        let buf1 = 0x4000_4000;
+        let buf2 = 0x4000_5000;
+        let frame1 = [0x33u8; 96];
+        let frame2 = [0x44u8; 64];
+
+        setup_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
+        write_desc(&mut mem, desc, 0, buf1, 160, DESC_F_WRITE, 0);
+        mem.write(avail + 2, &1u16.to_le_bytes());
+        mem.write(avail + 4, &0u16.to_le_bytes());
+        dev.backend_mut().push_receive(frame1);
+
+        assert!(dev.pump_receive(&mut mem));
+        let rx_cap = dev.net.rx_frame_scratch.capacity();
+        let rx_ptr = dev.net.rx_frame_scratch.as_ptr();
+        assert!(rx_cap >= frame1.len());
+        assert!(dev.net.rx_frame_scratch.is_empty());
+
+        write_desc(&mut mem, desc, 1, buf2, 160, DESC_F_WRITE, 0);
+        mem.write(avail + 2, &2u16.to_le_bytes());
+        mem.write(avail + 6, &1u16.to_le_bytes());
+        dev.backend_mut().push_receive(frame2);
+
+        assert!(dev.pump_receive(&mut mem));
+        assert_eq!(dev.net.rx_frame_scratch.capacity(), rx_cap);
+        assert_eq!(dev.net.rx_frame_scratch.as_ptr(), rx_ptr);
+        assert!(dev.net.rx_frame_scratch.is_empty());
+        assert_eq!(
+            &mem.read(buf1 + VIRTIO_NET_HDR_LEN as u64, frame1.len()),
+            &frame1
+        );
+        assert_eq!(
+            &mem.read(buf2 + VIRTIO_NET_HDR_LEN as u64, frame2.len()),
+            &frame2
+        );
+    }
+
+    #[test]
     fn rx_without_buffers_holds_one_frame_until_buffer_is_posted() {
         let mut dev = VirtioPciNet::new_loopback();
         let mut mem = TestMem::new(0x4000_0000, 0x20000);
@@ -1683,6 +2083,7 @@ mod tests {
         dev.backend_mut().push_receive(frame.to_vec());
         assert!(!dev.pump_receive(&mut mem));
         assert!(dev.stats().pending_rx_frame);
+        assert!(dev.net.rx_frame_scratch.is_empty());
 
         setup_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
         write_desc(&mut mem, desc, 0, buf, 64, DESC_F_WRITE, 0);
@@ -1691,6 +2092,8 @@ mod tests {
 
         assert!(dev.pump_receive(&mut mem));
         assert!(!dev.stats().pending_rx_frame);
+        assert!(dev.net.rx_frame_scratch.capacity() >= frame.len());
+        assert!(dev.net.rx_frame_scratch.is_empty());
         assert_eq!(
             &mem.read(buf + VIRTIO_NET_HDR_LEN as u64, frame.len()),
             frame

@@ -55,12 +55,41 @@ impl RamfbSnapshot {
         config: RamfbConfig,
         bytes: Vec<u8>,
     ) -> Result<Self, RamfbSnapshotError> {
+        let summary = Self::summarize_xrgb8888_bytes(config, &bytes)?;
+        Ok(Self {
+            config,
+            bytes,
+            summary,
+        })
+    }
+
+    pub fn summarize_xrgb8888_bytes(
+        config: RamfbConfig,
+        bytes: &[u8],
+    ) -> Result<RamfbSnapshotSummary, RamfbSnapshotError> {
         ensure_xrgb8888(config)?;
         let geometry = framebuffer_geometry(config)?;
         if bytes.len() != geometry.byte_len {
             return Err(RamfbSnapshotError::GuestMemoryOutOfRange {
                 addr: config.addr,
                 len: geometry.byte_len,
+            });
+        }
+        summarize_xrgb8888(config, geometry, bytes)
+    }
+
+    pub fn read_from(
+        mem: &dyn GuestMemoryMut,
+        config: RamfbConfig,
+    ) -> Result<Self, RamfbSnapshotError> {
+        ensure_xrgb8888(config)?;
+        let geometry = framebuffer_geometry(config)?;
+        let len = geometry.byte_len;
+        let mut bytes = vec![0u8; len];
+        if !mem.read_into(config.addr, &mut bytes) {
+            return Err(RamfbSnapshotError::GuestMemoryOutOfRange {
+                addr: config.addr,
+                len,
             });
         }
         let summary = summarize_xrgb8888(config, geometry, &bytes)?;
@@ -71,47 +100,40 @@ impl RamfbSnapshot {
         })
     }
 
-    pub fn read_from(
-        mem: &dyn GuestMemoryMut,
-        config: RamfbConfig,
-    ) -> Result<Self, RamfbSnapshotError> {
-        ensure_xrgb8888(config)?;
-        let geometry = framebuffer_geometry(config)?;
-        let len = geometry.byte_len;
-        let Some(bytes) = mem.read_bytes(config.addr, len) else {
-            return Err(RamfbSnapshotError::GuestMemoryOutOfRange {
-                addr: config.addr,
-                len,
-            });
-        };
-        let summary = summarize_xrgb8888(config, geometry, &bytes)?;
-        Ok(Self {
-            config,
-            bytes,
-            summary,
-        })
+    pub fn ppm_bytes(&self) -> Result<Vec<u8>, RamfbSnapshotError> {
+        Self::ppm_bytes_from_xrgb8888(self.config, &self.bytes)
     }
 
-    pub fn ppm_bytes(&self) -> Result<Vec<u8>, RamfbSnapshotError> {
-        ensure_xrgb8888(self.config)?;
-        let geometry = framebuffer_geometry(self.config)?;
-        let rgb_len = u64::from(self.config.width)
-            .checked_mul(u64::from(self.config.height))
+    pub fn ppm_bytes_from_xrgb8888(
+        config: RamfbConfig,
+        bytes: &[u8],
+    ) -> Result<Vec<u8>, RamfbSnapshotError> {
+        ensure_xrgb8888(config)?;
+        let geometry = framebuffer_geometry(config)?;
+        if bytes.len() != geometry.byte_len {
+            return Err(RamfbSnapshotError::GuestMemoryOutOfRange {
+                addr: config.addr,
+                len: geometry.byte_len,
+            });
+        }
+        let rgb_len = u64::from(config.width)
+            .checked_mul(u64::from(config.height))
             .and_then(|pixels| pixels.checked_mul(RGB888_BYTES_PER_PIXEL))
             .ok_or(RamfbSnapshotError::SizeOverflow)?;
         let rgb_len = usize::try_from(rgb_len).map_err(|_| RamfbSnapshotError::SizeOverflow)?;
-        let header = format!("P6\n{} {}\n255\n", self.config.width, self.config.height);
+        let header = format!("P6\n{} {}\n255\n", config.width, config.height);
         let mut out = Vec::with_capacity(header.len() + rgb_len);
         out.extend_from_slice(header.as_bytes());
         for row in 0..geometry.height {
             let row_start = row * geometry.stride;
             let row_end = row_start + geometry.row_bytes;
-            let row_bytes = self.bytes.get(row_start..row_end).ok_or(
-                RamfbSnapshotError::GuestMemoryOutOfRange {
-                    addr: self.config.addr,
-                    len: geometry.byte_len,
-                },
-            )?;
+            let row_bytes =
+                bytes
+                    .get(row_start..row_end)
+                    .ok_or(RamfbSnapshotError::GuestMemoryOutOfRange {
+                        addr: config.addr,
+                        len: geometry.byte_len,
+                    })?;
             for pixel in row_bytes.chunks_exact(4) {
                 out.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
             }

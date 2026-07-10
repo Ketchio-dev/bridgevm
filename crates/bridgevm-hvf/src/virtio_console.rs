@@ -106,6 +106,12 @@ const VIRTIO_CONSOLE_RESIZE: u16 = 5;
 const VIRTIO_CONSOLE_PORT_OPEN: u16 = 6;
 const VIRTIO_CONSOLE_PORT_NAME: u16 = 7;
 const CONTROL_LEN: usize = 8;
+const MAX_CONTROL_MESSAGE_LEN: usize = CONTROL_LEN + AGENT_PORT_NAME.len();
+// Agent replies are line-oriented. The largest current wire line is one
+// base64-encoded 24 KiB file chunk, so 64 KiB leaves protocol headroom while
+// preventing a guest-controlled descriptor length from growing host memory
+// without bound.
+const MAX_AGENT_MESSAGE_LEN: usize = 64 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VirtioConsoleResult {
@@ -127,13 +133,16 @@ pub struct VirtioConsole {
     config_msix_vector: u16,
     queue_sel: u32,
     queues: [VirtioConsoleQueue; QUEUE_COUNT],
+    pending_msix_queue_bits: u8,
     status: u32,
     interrupt_status: u32,
     emerg_wr: u32,
     ports: [PortState; PORT_COUNT],
-    pending_control: VecDeque<Vec<u8>>,
+    pending_control: VecDeque<PendingControlMessage>,
     host_to_guest: VecDeque<u8>,
     host_inbound: Vec<u8>,
+    descriptor_scratch: Vec<Descriptor>,
+    read_scratch: Vec<u8>,
     // Set once the guest driver has actually pushed bytes on the agent TX
     // queue. Guest TX only flows after vioser latches HostConnected=TRUE (its
     // WillWriteBlock gate), so the first inbound byte is our only host-side
@@ -274,6 +283,7 @@ impl VirtioConsole {
                 VirtioConsoleQueue::new(4),
                 VirtioConsoleQueue::new(5),
             ],
+            pending_msix_queue_bits: 0,
             status: 0,
             interrupt_status: 0,
             emerg_wr: 0,
@@ -281,6 +291,8 @@ impl VirtioConsole {
             pending_control: VecDeque::new(),
             host_to_guest: VecDeque::new(),
             host_inbound: Vec::new(),
+            descriptor_scratch: Vec::new(),
+            read_scratch: Vec::new(),
             agent_connected_confirmed: false,
         }
     }
@@ -331,6 +343,7 @@ impl VirtioConsole {
         for queue in &mut self.queues {
             queue.reset();
         }
+        self.pending_msix_queue_bits = 0;
         self.status = 0;
         self.interrupt_status = 0;
         self.emerg_wr = 0;
@@ -338,6 +351,8 @@ impl VirtioConsole {
         self.pending_control.clear();
         self.host_to_guest.clear();
         self.host_inbound.clear();
+        self.descriptor_scratch.clear();
+        self.read_scratch.clear();
         self.agent_connected_confirmed = false;
     }
 
@@ -353,6 +368,10 @@ impl VirtioConsole {
 
     pub fn take_inbound(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.host_inbound)
+    }
+
+    pub fn drain_inbound_into(&mut self, out: &mut Vec<u8>) {
+        out.append(&mut self.host_inbound);
     }
 
     pub fn poll(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
@@ -759,13 +778,22 @@ impl VirtioConsole {
         };
         self.queues[queue_index].last_avail_seen = avail_idx;
         let mut progressed = false;
+        let mut descs = std::mem::take(&mut self.descriptor_scratch);
+        let mut bytes = std::mem::take(&mut self.read_scratch);
         while self.queues[queue_index].last_avail_idx != avail_idx {
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
             let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
             let Some(head) = read_u16(mem, queue.driver + ring_off) else {
-                return progressed;
+                break;
             };
-            if let Some(bytes) = self.read_chain(mem, &queue, head) {
+            if Self::read_chain_into(
+                mem,
+                &queue,
+                head,
+                &mut descs,
+                &mut bytes,
+                MAX_CONTROL_MESSAGE_LEN,
+            ) {
                 self.handle_control_tx(&bytes);
             }
             Self::write_used(mem, &queue, head, 0);
@@ -775,6 +803,10 @@ impl VirtioConsole {
             self.mark_queue_interrupt(queue_index);
             progressed = true;
         }
+        descs.clear();
+        bytes.clear();
+        self.descriptor_scratch = descs;
+        self.read_scratch = bytes;
         progressed
     }
 
@@ -790,8 +822,8 @@ impl VirtioConsole {
         );
         match control.event {
             VIRTIO_CONSOLE_DEVICE_READY if control.value == 1 => {
-                self.enqueue_control(Control::new(0, VIRTIO_CONSOLE_DEVICE_ADD, 0).bytes());
-                self.enqueue_control(Control::new(1, VIRTIO_CONSOLE_DEVICE_ADD, 0).bytes());
+                self.enqueue_control(Control::new(0, VIRTIO_CONSOLE_DEVICE_ADD, 0));
+                self.enqueue_control(Control::new(1, VIRTIO_CONSOLE_DEVICE_ADD, 0));
             }
             VIRTIO_CONSOLE_PORT_READY if control.value == 1 => {
                 if let Some(port) = self.ports.get_mut(control.id as usize) {
@@ -805,9 +837,7 @@ impl VirtioConsole {
                     // new connection epoch and resume re-asserting PORT_NAME +
                     // PORT_OPEN.
                     self.agent_connected_confirmed = false;
-                    self.enqueue_control(
-                        Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_OPEN, 1).bytes(),
-                    );
+                    self.enqueue_control(Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_OPEN, 1));
                 }
             }
             VIRTIO_CONSOLE_PORT_OPEN => {
@@ -825,10 +855,10 @@ impl VirtioConsole {
         }
     }
 
-    fn enqueue_control(&mut self, message: impl Into<Vec<u8>>) {
+    fn enqueue_control(&mut self, message: impl Into<PendingControlMessage>) {
         let message = message.into();
         if console_trace_enabled() {
-            if let Some(control) = Control::parse(&message) {
+            if let Some(control) = Control::parse(message.as_slice()) {
                 eprintln!(
                     "[vcon] ctrl->guest id={} event={} value={} bytes={}",
                     control.id,
@@ -870,32 +900,29 @@ impl VirtioConsole {
         // redundant PORT_NAME after the name is set is a harmless no-op. Bounded
         // to the PING heartbeat with one pair in flight, so no control-queue flood.
         self.enqueue_control(Self::agent_port_name_message());
-        self.enqueue_control(Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_OPEN, 1).bytes());
+        self.enqueue_control(Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_OPEN, 1));
     }
 
     /// The PORT_NAME control message for the agent port: an 8-byte control
     /// header followed by the port name bytes (no trailing NUL — vioser's
     /// VIOSerialPortCreateName derives the length from the used-ring length and
     /// appends its own NUL, per virtio 1.2 5.3).
-    fn agent_port_name_message() -> Vec<u8> {
-        let mut name = Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_NAME, 0)
-            .bytes()
-            .to_vec();
-        name.extend_from_slice(AGENT_PORT_NAME);
-        name
+    fn agent_port_name_message() -> PendingControlMessage {
+        PendingControlMessage::agent_port_name()
     }
 
     fn host_open_reassert_pending(&self) -> bool {
-        let target = Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_OPEN, 1).bytes();
+        let target =
+            PendingControlMessage::from(Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_OPEN, 1));
         self.pending_control
             .iter()
-            .any(|message| message.as_slice() == target)
+            .any(|message| message.as_slice() == target.as_slice())
     }
 
     fn flush_pending_control(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
         let mut progressed = false;
         while let Some(message) = self.pending_control.pop_front() {
-            if self.deliver_to_rx_queue(QUEUE_CONTROL_RX, &message, mem) {
+            if self.deliver_to_rx_queue(QUEUE_CONTROL_RX, message.as_slice(), mem) {
                 progressed = true;
             } else {
                 self.pending_control.push_front(message);
@@ -915,8 +942,17 @@ impl VirtioConsole {
         if self.host_to_guest.is_empty() {
             return false;
         }
-        let bytes: Vec<u8> = self.host_to_guest.iter().copied().collect();
-        let Some(written) = self.deliver_partial_to_rx_queue(QUEUE_AGENT_RX, &bytes, mem) else {
+        let (front, back) = self.host_to_guest.as_slices();
+        let Some(written) = Self::deliver_partial_slices_to_rx_queue(
+            &mut self.queues,
+            &mut self.pending_msix_queue_bits,
+            &mut self.interrupt_status,
+            &mut self.descriptor_scratch,
+            QUEUE_AGENT_RX,
+            front,
+            back,
+            mem,
+        ) else {
             return false;
         };
         self.host_to_guest.drain(..written);
@@ -934,13 +970,22 @@ impl VirtioConsole {
         };
         self.queues[queue_index].last_avail_seen = avail_idx;
         let mut progressed = false;
+        let mut descs = std::mem::take(&mut self.descriptor_scratch);
+        let mut bytes = std::mem::take(&mut self.read_scratch);
         while self.queues[queue_index].last_avail_idx != avail_idx {
             let last_avail_idx = self.queues[queue_index].last_avail_idx;
             let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
             let Some(head) = read_u16(mem, queue.driver + ring_off) else {
-                return progressed;
+                break;
             };
-            if let Some(mut bytes) = self.read_chain(mem, &queue, head) {
+            if Self::read_chain_into(
+                mem,
+                &queue,
+                head,
+                &mut descs,
+                &mut bytes,
+                MAX_AGENT_MESSAGE_LEN,
+            ) {
                 // Any guest TX proves vioser latched HostConnected (its
                 // WillWriteBlock gate blocks writes until then), so we can stop
                 // re-asserting PORT_OPEN from here on.
@@ -948,7 +993,7 @@ impl VirtioConsole {
                     self.agent_connected_confirmed = true;
                 }
                 console_trace!("agent-tx<-guest len={}", bytes.len());
-                self.host_inbound.append(&mut bytes);
+                self.host_inbound.extend_from_slice(&bytes);
             }
             Self::write_used(mem, &queue, head, 0);
             self.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
@@ -957,6 +1002,10 @@ impl VirtioConsole {
             self.mark_queue_interrupt(queue_index);
             progressed = true;
         }
+        descs.clear();
+        bytes.clear();
+        self.descriptor_scratch = descs;
+        self.read_scratch = bytes;
         progressed
     }
 
@@ -976,28 +1025,53 @@ impl VirtioConsole {
         bytes: &[u8],
         mem: &mut dyn GuestMemoryMut,
     ) -> Option<usize> {
-        let queue = self.queues[queue_index];
-        if !queue.ready || queue.size == 0 || queue.desc == 0 || bytes.is_empty() {
+        Self::deliver_partial_slices_to_rx_queue(
+            &mut self.queues,
+            &mut self.pending_msix_queue_bits,
+            &mut self.interrupt_status,
+            &mut self.descriptor_scratch,
+            queue_index,
+            bytes,
+            &[],
+            mem,
+        )
+    }
+
+    fn deliver_partial_slices_to_rx_queue(
+        queues: &mut [VirtioConsoleQueue; QUEUE_COUNT],
+        pending_msix_queue_bits: &mut u8,
+        interrupt_status: &mut u32,
+        descriptor_scratch: &mut Vec<Descriptor>,
+        queue_index: usize,
+        first: &[u8],
+        second: &[u8],
+        mem: &mut dyn GuestMemoryMut,
+    ) -> Option<usize> {
+        let bytes_len = first.len().checked_add(second.len())?;
+        let queue = queues[queue_index];
+        if !queue.ready || queue.size == 0 || queue.desc == 0 || bytes_len == 0 {
             return None;
         }
         let avail_idx = read_u16(mem, queue.driver + 2)?;
-        self.queues[queue_index].last_avail_seen = avail_idx;
-        let last_avail_idx = self.queues[queue_index].last_avail_idx;
+        queues[queue_index].last_avail_seen = avail_idx;
+        let last_avail_idx = queues[queue_index].last_avail_idx;
         if last_avail_idx == avail_idx {
             // The guest has not published a fresh avail buffer since we last
             // consumed. If this keeps firing while notify_count / last_avail_seen
             // stay flat, the guest stopped replenishing (not our consume path).
-            self.queues[queue_index].rx_no_buffers =
-                self.queues[queue_index].rx_no_buffers.saturating_add(1);
+            queues[queue_index].rx_no_buffers = queues[queue_index].rx_no_buffers.saturating_add(1);
             console_trace!(
                 "rx q{queue_index} NO-BUFFERS last_consumed={last_avail_idx} avail_idx={avail_idx} bytes={}",
-                bytes.len()
+                bytes_len
             );
             return None;
         }
         let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
         let head = read_u16(mem, queue.driver + ring_off)?;
-        let Some(descs) = Self::descriptor_chain(mem, &queue, head) else {
+        let mut descs = std::mem::take(descriptor_scratch);
+        if !Self::descriptor_chain_into(mem, &queue, head, &mut descs) {
+            descs.clear();
+            *descriptor_scratch = descs;
             // avail advanced but we could not walk the chain (head >= size, or a
             // bad next link). This is the "replenished buffers are invisible to
             // us" signature -> our consume path or a size mismatch.
@@ -1006,24 +1080,31 @@ impl VirtioConsole {
                 queue.size
             );
             return None;
-        };
-        let Some(written) = Self::scatter_write_partial(mem, &descs, bytes) else {
+        }
+        let Some(written) = Self::scatter_write_partial_slices(mem, &descs, first, second) else {
             console_trace!(
                 "rx q{queue_index} SCATTER-FAIL head={head} descs={}",
                 descs.len()
             );
+            descs.clear();
+            *descriptor_scratch = descs;
             return None;
         };
+        descs.clear();
+        *descriptor_scratch = descs;
         Self::write_used(
             mem,
             &queue,
             head,
             u32::try_from(written).unwrap_or(u32::MAX),
         );
-        self.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
-        self.queues[queue_index].used_produced =
-            self.queues[queue_index].used_produced.saturating_add(1);
-        self.mark_queue_interrupt(queue_index);
+        queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
+        queues[queue_index].used_produced = queues[queue_index].used_produced.saturating_add(1);
+        queues[queue_index].pending_msix = true;
+        if let Some(bit) = queue_bit(queue_index) {
+            *pending_msix_queue_bits |= bit;
+        }
+        *interrupt_status |= 1;
         console_trace!(
             "rx q{queue_index} DELIVER head={head} len={written} last_consumed->{} avail_idx={avail_idx}",
             last_avail_idx.wrapping_add(1)
@@ -1031,79 +1112,122 @@ impl VirtioConsole {
         Some(written)
     }
 
-    fn read_chain(
-        &self,
+    fn read_chain_into(
         mem: &dyn GuestMemoryMut,
         queue: &VirtioConsoleQueue,
         head: u16,
-    ) -> Option<Vec<u8>> {
-        let descs = Self::descriptor_chain(mem, queue, head)?;
-        let mut out = Vec::new();
-        for desc in descs {
-            if desc.flags & DESC_F_WRITE != 0 {
-                return None;
-            }
-            let mut bytes = mem.read_bytes(desc.addr, desc.len as usize)?;
-            out.append(&mut bytes);
+        descs: &mut Vec<Descriptor>,
+        out: &mut Vec<u8>,
+        max_len: usize,
+    ) -> bool {
+        out.clear();
+        if !Self::descriptor_chain_into(mem, queue, head, descs) {
+            return false;
         }
-        Some(out)
+        for desc in descs.iter() {
+            if desc.flags & DESC_F_WRITE != 0 {
+                return false;
+            }
+            let start = out.len();
+            let Some(end) = start.checked_add(desc.len as usize) else {
+                return false;
+            };
+            if end > max_len {
+                return false;
+            }
+            // `read_bytes` validates the guest range before allocating in the
+            // live RAM implementation. Only append after that validation so an
+            // unbacked, oversized descriptor cannot resize reusable scratch.
+            let Some(bytes) = mem.read_bytes(desc.addr, desc.len as usize) else {
+                return false;
+            };
+            out.extend_from_slice(&bytes);
+        }
+        true
     }
 
-    fn scatter_write_partial(
+    fn scatter_write_partial_slices(
         mem: &mut dyn GuestMemoryMut,
         descs: &[Descriptor],
-        bytes: &[u8],
+        first: &[u8],
+        second: &[u8],
     ) -> Option<usize> {
+        let bytes_len = first.len().checked_add(second.len())?;
         let mut offset = 0usize;
         for desc in descs {
             if desc.flags & DESC_F_WRITE == 0 {
                 return None;
             }
-            let writable = (desc.len as usize).min(bytes.len().saturating_sub(offset));
-            if writable == 0 {
-                continue;
+            let mut desc_addr = desc.addr;
+            let mut desc_remaining = desc.len as usize;
+            while desc_remaining > 0 && offset < bytes_len {
+                let chunk = Self::slice_pair_chunk(first, second, offset)?;
+                let writable = desc_remaining.min(chunk.len());
+                if writable == 0 {
+                    break;
+                }
+                if !mem.write_bytes(desc_addr, &chunk[..writable]) {
+                    return None;
+                }
+                offset += writable;
+                desc_addr = desc_addr.checked_add(writable as u64)?;
+                desc_remaining -= writable;
             }
-            if !mem.write_bytes(desc.addr, &bytes[offset..offset + writable]) {
-                return None;
-            }
-            offset += writable;
-            if offset == bytes.len() {
+            if offset == bytes_len {
                 break;
             }
         }
         (offset > 0).then_some(offset)
     }
 
+    fn slice_pair_chunk<'a>(first: &'a [u8], second: &'a [u8], offset: usize) -> Option<&'a [u8]> {
+        if offset < first.len() {
+            return Some(&first[offset..]);
+        }
+        let second_offset = offset.checked_sub(first.len())?;
+        (second_offset < second.len()).then_some(&second[second_offset..])
+    }
+
     fn mark_queue_interrupt(&mut self, queue_index: usize) {
         if let Some(queue) = self.queues.get_mut(queue_index) {
             queue.pending_msix = true;
+            if let Some(bit) = queue_bit(queue_index) {
+                self.pending_msix_queue_bits |= bit;
+            }
         }
         self.interrupt_status |= 1;
     }
 
-    fn descriptor_chain(
+    fn descriptor_chain_into(
         mem: &dyn GuestMemoryMut,
         queue: &VirtioConsoleQueue,
         head: u16,
-    ) -> Option<Vec<Descriptor>> {
+        out: &mut Vec<Descriptor>,
+    ) -> bool {
+        out.clear();
         if head >= queue.size {
-            return None;
+            return false;
         }
-        let mut out = Vec::new();
         let mut index = head;
         for _ in 0..queue.size {
-            let desc = Descriptor::read(mem, queue.desc + u64::from(index) * DESC_SIZE)?;
+            let Some(desc) = Descriptor::read(mem, queue.desc + u64::from(index) * DESC_SIZE)
+            else {
+                out.clear();
+                return false;
+            };
             let has_next = desc.flags & DESC_F_NEXT != 0;
             out.push(desc);
             if !has_next {
-                return Some(out);
+                return true;
             }
             index = desc.next;
             if index >= queue.size {
-                return None;
+                out.clear();
+                return false;
             }
         }
-        None
+        out.clear();
+        false
     }
 
     fn write_used(mem: &mut dyn GuestMemoryMut, queue: &VirtioConsoleQueue, id: u16, len: u32) {
@@ -1159,6 +1283,10 @@ impl VirtioPciConsole {
 
     pub fn take_inbound(&mut self) -> Vec<u8> {
         self.console.take_inbound()
+    }
+
+    pub fn drain_inbound_into(&mut self, out: &mut Vec<u8>) {
+        self.console.drain_inbound_into(out);
     }
 
     pub fn poll(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
@@ -1260,40 +1388,56 @@ impl VirtioPciConsole {
         function_enabled: bool,
         function_masked: bool,
     ) -> Vec<MsixMessage> {
-        let mut messages = self.msix.drain_pending(function_enabled, function_masked);
-        for message in &messages {
-            self.clear_pending_queue_for_vector(message.vector);
-        }
-        messages.extend(self.raise_pending_msix(function_enabled, function_masked));
+        let mut messages = Vec::new();
+        self.drain_pending_msix_into(function_enabled, function_masked, &mut messages);
         messages
     }
 
-    fn raise_pending_msix(
+    pub fn drain_pending_msix_into(
         &mut self,
         function_enabled: bool,
         function_masked: bool,
-    ) -> Vec<MsixMessage> {
-        let mut messages = Vec::new();
-        for queue_index in 0..self.console.queues.len() {
-            if !self.console.queues[queue_index].pending_msix {
-                continue;
-            }
+        out: &mut Vec<MsixMessage>,
+    ) {
+        let start = out.len();
+        self.msix
+            .drain_pending_into(function_enabled, function_masked, out);
+        for message in &out[start..] {
+            self.clear_pending_queue_for_vector(message.vector);
+        }
+        self.raise_pending_msix_into(function_enabled, function_masked, out);
+    }
+
+    fn raise_pending_msix_into(
+        &mut self,
+        function_enabled: bool,
+        function_masked: bool,
+        out: &mut Vec<MsixMessage>,
+    ) {
+        let mut pending = self.console.pending_msix_queue_bits;
+        while pending != 0 {
+            let queue_index = pending.trailing_zeros() as usize;
             let vector = self.console.queues[queue_index].msix_vector;
             if vector == VIRTIO_MSI_NO_VECTOR {
+                pending &= !(1u8 << queue_index);
                 continue;
             }
             if let Some(message) = self.msix.raise(vector, function_enabled, function_masked) {
                 self.console.queues[queue_index].pending_msix = false;
-                messages.push(message);
+                self.console.pending_msix_queue_bits &= !(1u8 << queue_index);
+                out.push(message);
             }
+            pending &= !(1u8 << queue_index);
         }
-        messages
     }
 
     fn clear_pending_queue_for_vector(&mut self, vector: u16) {
-        for queue in &mut self.console.queues {
+        for (queue_index, queue) in self.console.queues.iter_mut().enumerate() {
             if queue.msix_vector == vector {
                 queue.pending_msix = false;
+                if let Some(bit) = queue_bit(queue_index) {
+                    self.console.pending_msix_queue_bits &= !bit;
+                }
             }
         }
     }
@@ -1330,6 +1474,10 @@ fn device_cfg_offset(offset: u64) -> Option<u64> {
 fn notify_queue_index(offset: u64) -> Option<u16> {
     let rel = offset.checked_sub(PCI_NOTIFY_CFG_OFFSET)?;
     (rel < PCI_CFG_REGION_SIZE).then_some((rel / 4) as u16)
+}
+
+fn queue_bit(index: usize) -> Option<u8> {
+    (index < u8::BITS as usize).then(|| 1u8 << index)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1384,6 +1532,49 @@ impl Control {
         out[4..6].copy_from_slice(&self.event.to_le_bytes());
         out[6..8].copy_from_slice(&self.value.to_le_bytes());
         out
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PendingControlMessage {
+    len: usize,
+    bytes: [u8; MAX_CONTROL_MESSAGE_LEN],
+}
+
+impl PendingControlMessage {
+    fn from_slice(bytes: &[u8]) -> Self {
+        assert!(bytes.len() <= MAX_CONTROL_MESSAGE_LEN);
+        let mut out = [0u8; MAX_CONTROL_MESSAGE_LEN];
+        out[..bytes.len()].copy_from_slice(bytes);
+        Self {
+            len: bytes.len(),
+            bytes: out,
+        }
+    }
+
+    fn agent_port_name() -> Self {
+        let mut out = [0u8; MAX_CONTROL_MESSAGE_LEN];
+        out[..CONTROL_LEN]
+            .copy_from_slice(&Control::new(AGENT_PORT_ID, VIRTIO_CONSOLE_PORT_NAME, 0).bytes());
+        out[CONTROL_LEN..MAX_CONTROL_MESSAGE_LEN].copy_from_slice(AGENT_PORT_NAME);
+        Self {
+            len: MAX_CONTROL_MESSAGE_LEN,
+            bytes: out,
+        }
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
+impl From<Control> for PendingControlMessage {
+    fn from(control: Control) -> Self {
+        Self::from_slice(&control.bytes())
     }
 }
 
@@ -1575,6 +1766,20 @@ mod tests {
             let end = off.checked_add(len)?;
             (end <= self.bytes.len()).then(|| self.bytes[off..end].to_vec())
         }
+
+        fn read_into(&self, gpa: u64, dst: &mut [u8]) -> bool {
+            let Some(off) = gpa.checked_sub(self.base).map(|v| v as usize) else {
+                return false;
+            };
+            let Some(end) = off.checked_add(dst.len()) else {
+                return false;
+            };
+            if end > self.bytes.len() {
+                return false;
+            }
+            dst.copy_from_slice(&self.bytes[off..end]);
+            true
+        }
     }
 
     fn pci_write(dev: &mut VirtioPciConsole, offset: u64, size: u8, value: u64, mem: &mut TestMem) {
@@ -1623,6 +1828,34 @@ mod tests {
         pci_write(dev, COMMON_QUEUE_DEVICE, 8, used, mem);
         pci_write(dev, COMMON_QUEUE_MSIX_VECTOR, 2, u64::from(vector), mem);
         pci_write(dev, COMMON_QUEUE_ENABLE, 2, 1, mem);
+    }
+
+    fn program_msix_vector(dev: &mut VirtioPciConsole, vector: u16, address: u64, data: u32) {
+        let off = u64::from(VIRTIO_CONSOLE_MSIX_TABLE_OFFSET) + u64::from(vector) * 16;
+        assert_eq!(
+            dev.msix_bar_access(
+                off,
+                VirtioPciConsoleOp::Write {
+                    size: 8,
+                    value: address,
+                },
+            ),
+            VirtioConsoleResult::WriteAck
+        );
+        assert_eq!(
+            dev.msix_bar_access(
+                off + 8,
+                VirtioPciConsoleOp::Write {
+                    size: 4,
+                    value: u64::from(data),
+                },
+            ),
+            VirtioConsoleResult::WriteAck
+        );
+        assert_eq!(
+            dev.msix_bar_access(off + 12, VirtioPciConsoleOp::Write { size: 4, value: 0 },),
+            VirtioConsoleResult::WriteAck
+        );
     }
 
     fn post_rx(mem: &mut TestMem, desc: u64, avail: u64, data: u64, len: u32, idx: u16) {
@@ -1905,6 +2138,176 @@ mod tests {
     }
 
     #[test]
+    fn drain_inbound_into_preserves_buffers() {
+        let mut dev = VirtioPciConsole::new();
+        dev.console.host_inbound.reserve(64);
+        dev.console.host_inbound.extend_from_slice(b"READY\nPONG\n");
+        let internal_capacity = dev.console.host_inbound.capacity();
+
+        let mut out = Vec::with_capacity(32);
+        let out_capacity = out.capacity();
+        out.extend_from_slice(b"prefix:");
+        dev.drain_inbound_into(&mut out);
+
+        assert_eq!(out, b"prefix:READY\nPONG\n");
+        assert_eq!(dev.console.host_inbound.len(), 0);
+        assert_eq!(dev.console.host_inbound.capacity(), internal_capacity);
+        assert_eq!(out.capacity(), out_capacity);
+
+        dev.drain_inbound_into(&mut out);
+        assert_eq!(out, b"prefix:READY\nPONG\n");
+        assert_eq!(dev.console.host_inbound.capacity(), internal_capacity);
+    }
+
+    #[test]
+    fn tx_queues_reuse_descriptor_and_read_scratch_across_messages() {
+        let mut dev = VirtioPciConsole::new();
+        let mut mem = TestMem::new(0x4000_0000, 0x70000);
+        let ctx_desc = 0x4000_1000;
+        let ctx_avail = 0x4000_2000;
+        let ctx_used = 0x4000_3000;
+        let atx_desc = 0x4000_4000;
+        let atx_avail = 0x4000_5000;
+        let atx_used = 0x4000_6000;
+
+        setup_queue(&mut dev, &mut mem, 3, ctx_desc, ctx_avail, ctx_used, 3);
+        setup_queue(&mut dev, &mut mem, 5, atx_desc, atx_avail, atx_used, 5);
+
+        send_tx(
+            &mut dev,
+            &mut mem,
+            3,
+            ctx_desc,
+            ctx_avail,
+            0x4000_7000,
+            &control_bytes(1, VIRTIO_CONSOLE_PORT_OPEN, 1),
+            0,
+        );
+
+        let desc_cap = dev.console.descriptor_scratch.capacity();
+        let desc_ptr = dev.console.descriptor_scratch.as_ptr();
+        let read_cap = dev.console.read_scratch.capacity();
+        let read_ptr = dev.console.read_scratch.as_ptr();
+        assert!(desc_cap >= 1);
+        assert!(read_cap >= CONTROL_LEN);
+
+        send_tx(
+            &mut dev,
+            &mut mem,
+            5,
+            atx_desc,
+            atx_avail,
+            0x4000_7100,
+            b"READY",
+            0,
+        );
+
+        assert_eq!(dev.take_inbound(), b"READY");
+        assert_eq!(dev.console.descriptor_scratch.capacity(), desc_cap);
+        assert_eq!(dev.console.descriptor_scratch.as_ptr(), desc_ptr);
+        assert_eq!(dev.console.read_scratch.capacity(), read_cap);
+        assert_eq!(dev.console.read_scratch.as_ptr(), read_ptr);
+    }
+
+    #[test]
+    fn tx_chain_rejects_oversized_guest_length_before_growing_scratch() {
+        let mut mem = TestMem::new(0x4000_0000, 0x1000);
+        let desc_table = 0x4000_0100;
+        write_desc(&mut mem, desc_table, 0, 0x4000_0800, u32::MAX, 0, 0);
+        let mut queue = VirtioConsoleQueue::new(0);
+        queue.size = 1;
+        queue.desc = desc_table;
+        let mut descs = Vec::new();
+        let mut bytes = Vec::with_capacity(32);
+        let capacity = bytes.capacity();
+
+        assert!(!VirtioConsole::read_chain_into(
+            &mem,
+            &queue,
+            0,
+            &mut descs,
+            &mut bytes,
+            MAX_AGENT_MESSAGE_LEN,
+        ));
+        assert!(bytes.is_empty());
+        assert_eq!(bytes.capacity(), capacity);
+    }
+
+    #[test]
+    fn agent_rx_delivers_wrapped_host_queue_and_reuses_descriptor_scratch() {
+        let mut dev = VirtioPciConsole::new();
+        let mut mem = TestMem::new(0x4000_0000, 0x50000);
+        let arx_desc = 0x4000_1000;
+        let arx_avail = 0x4000_2000;
+        let arx_used = 0x4000_3000;
+        let out0 = 0x4000_4000;
+        let out1 = 0x4000_4100;
+
+        setup_queue(&mut dev, &mut mem, 4, arx_desc, arx_avail, arx_used, 4);
+        post_rx(&mut mem, arx_desc, arx_avail, out0, 16, 0);
+        let mut wrapped = VecDeque::with_capacity(8);
+        wrapped.extend(b"ABCDEFGH".iter().copied());
+        for _ in 0..6 {
+            assert!(wrapped.pop_front().is_some());
+        }
+        wrapped.extend(b"IJKL".iter().copied());
+        assert_eq!(wrapped.iter().copied().collect::<Vec<_>>(), b"GHIJKL");
+        assert!(
+            !wrapped.as_slices().0.is_empty() && !wrapped.as_slices().1.is_empty(),
+            "test setup must exercise VecDeque's split-slice layout"
+        );
+        dev.console.host_to_guest = wrapped;
+
+        assert!(dev.poll(&mut mem));
+        assert_eq!(mem.read(out0, 6), b"GHIJKL");
+        assert_eq!(dev.stats().host_to_guest_len, 0);
+
+        let desc_cap = dev.console.descriptor_scratch.capacity();
+        let desc_ptr = dev.console.descriptor_scratch.as_ptr();
+        assert!(desc_cap >= 1);
+
+        post_rx(&mut mem, arx_desc, arx_avail, out1, 16, 1);
+        dev.agent_send(b"pong");
+
+        assert!(dev.poll(&mut mem));
+        assert_eq!(mem.read(out1, 4), b"pong");
+        assert_eq!(dev.console.descriptor_scratch.capacity(), desc_cap);
+        assert_eq!(dev.console.descriptor_scratch.as_ptr(), desc_ptr);
+    }
+
+    #[test]
+    fn agent_rx_pending_msix_survives_until_table_entry_is_programmed() {
+        let mut dev = VirtioPciConsole::new();
+        let mut mem = TestMem::new(0x4000_0000, 0x50000);
+        let arx_desc = 0x4000_1000;
+        let arx_avail = 0x4000_2000;
+        let arx_used = 0x4000_3000;
+        let out = 0x4000_4000;
+
+        setup_queue(&mut dev, &mut mem, 4, arx_desc, arx_avail, arx_used, 4);
+        post_rx(&mut mem, arx_desc, arx_avail, out, 16, 0);
+        dev.agent_send(b"PING");
+
+        assert!(dev.poll(&mut mem));
+        assert_eq!(mem.read(out, 4), b"PING");
+        assert!(dev.stats().queues[4].pending_msix);
+        assert_eq!(dev.drain_pending_msix(true, false), Vec::new());
+        assert!(dev.stats().queues[4].pending_msix);
+
+        program_msix_vector(&mut dev, 4, 0xfee0_0000, 0x54);
+
+        assert_eq!(
+            dev.drain_pending_msix(true, false),
+            vec![MsixMessage {
+                vector: 4,
+                address: 0xfee0_0000,
+                data: 0x54,
+            }]
+        );
+        assert!(!dev.stats().queues[4].pending_msix);
+    }
+
+    #[test]
     fn control_backpressure_queues_until_rx_buffer_is_posted() {
         let mut dev = VirtioPciConsole::new();
         let mut mem = TestMem::new(0x4000_0000, 0x30000);
@@ -1953,7 +2356,9 @@ mod tests {
         let mut dev = VirtioPciConsole::new();
         dev.console.ports[1].ready = true;
         dev.console.ports[1].guest_open = true;
-        dev.console.pending_control.push_back(vec![1, 2, 3]);
+        dev.console
+            .pending_control
+            .push_back(PendingControlMessage::from_slice(&[1, 2, 3]));
         dev.agent_send(b"ping");
         dev.console.host_inbound.extend_from_slice(b"pong");
 

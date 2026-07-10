@@ -132,7 +132,7 @@ fn xhci_pointer_input_ramfb_emits_before_after_and_delays_when_trigger_fires() {
         &mut platform,
         &mut mem,
         start,
-        |label: &str, _mem| {
+        |_platform, label: &str, _mem| {
             checkpoints.push(label.to_string());
         },
     );
@@ -140,7 +140,7 @@ fn xhci_pointer_input_ramfb_emits_before_after_and_delays_when_trigger_fires() {
         &mut platform,
         &mut mem,
         start + Duration::from_millis(5),
-        |label: &str, _mem| {
+        |_platform, label: &str, _mem| {
             checkpoints.push(label.to_string());
         },
     );
@@ -148,7 +148,7 @@ fn xhci_pointer_input_ramfb_emits_before_after_and_delays_when_trigger_fires() {
         &mut platform,
         &mut mem,
         start + Duration::from_millis(20),
-        |label: &str, _mem| {
+        |_platform, label: &str, _mem| {
             checkpoints.push(label.to_string());
         },
     );

@@ -76,6 +76,7 @@ const SECTOR_SIZE: u64 = 512;
 const DESC_SIZE: u64 = 16;
 const DESC_F_NEXT: u16 = 1;
 const DESC_F_WRITE: u16 = 2;
+const READ_CHUNK_BYTES: usize = 64 * 1024;
 
 const VIRTIO_BLK_T_IN: u32 = 0;
 const VIRTIO_BLK_S_OK: u8 = 0;
@@ -130,6 +131,8 @@ pub struct VirtioMmioBlock {
     last_avail_idx: u16,
     request_sequence: u64,
     request_trace: RecentVirtioBlockRequests,
+    descriptor_scratch: Vec<Descriptor>,
+    read_scratch: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -186,6 +189,8 @@ impl VirtioMmioBlock {
             last_avail_idx: 0,
             request_sequence: 0,
             request_trace: RecentVirtioBlockRequests::default(),
+            descriptor_scratch: Vec::new(),
+            read_scratch: Vec::new(),
         })
     }
 
@@ -237,6 +242,8 @@ impl VirtioMmioBlock {
         self.last_avail_idx = 0;
         self.request_sequence = 0;
         self.request_trace = RecentVirtioBlockRequests::default();
+        self.descriptor_scratch.clear();
+        self.read_scratch.clear();
     }
 
     pub fn access(
@@ -504,26 +511,34 @@ impl VirtioMmioBlock {
         let Some(avail_idx) = read_u16(mem, self.queue_driver + 2) else {
             return;
         };
+        let mut descs = std::mem::take(&mut self.descriptor_scratch);
+        let mut read_buf = std::mem::take(&mut self.read_scratch);
         while self.last_avail_idx != avail_idx {
             let ring_off = 4 + u64::from(self.last_avail_idx % self.queue_num) * 2;
             let Some(head) = read_u16(mem, self.queue_driver + ring_off) else {
-                return;
+                break;
             };
-            let completion = self.process_descriptor_chain(mem, head);
+            let completion = self.process_descriptor_chain(mem, head, &mut descs, &mut read_buf);
             self.write_used(mem, head, completion.written_len);
             self.last_avail_idx = self.last_avail_idx.wrapping_add(1);
             self.interrupt_status |= 1;
         }
+        descs.clear();
+        read_buf.clear();
+        self.descriptor_scratch = descs;
+        self.read_scratch = read_buf;
     }
 
     fn process_descriptor_chain(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
         head: u16,
+        descs: &mut Vec<Descriptor>,
+        read_buf: &mut Vec<u8>,
     ) -> RequestCompletion {
-        let Some(descs) = self.descriptor_chain(mem, head) else {
+        if !Self::descriptor_chain_into(mem, self.queue_num, self.queue_desc, head, descs) {
             return RequestCompletion::status_only(mem, 0, VIRTIO_BLK_S_IOERR);
-        };
+        }
         if descs.len() < 3 {
             return RequestCompletion::write_status(mem, descs.last(), VIRTIO_BLK_S_IOERR, 1);
         }
@@ -538,9 +553,16 @@ impl VirtioMmioBlock {
         ]);
         let status = descs[descs.len() - 1];
         let data_descs = &descs[1..descs.len() - 1];
-        let data_len = data_descs
+        let data_len_u64 = match data_descs
             .iter()
-            .fold(0u32, |sum, desc| sum.saturating_add(desc.len));
+            .try_fold(0u64, |sum, desc| sum.checked_add(u64::from(desc.len)))
+        {
+            Some(len) => len,
+            None => {
+                return RequestCompletion::write_status(mem, Some(&status), VIRTIO_BLK_S_IOERR, 1);
+            }
+        };
+        let data_len = u32::try_from(data_len_u64).unwrap_or(u32::MAX);
         self.stats.request_count = self.stats.request_count.saturating_add(1);
         self.stats.last_sector = Some(sector);
 
@@ -561,6 +583,16 @@ impl VirtioMmioBlock {
                 return RequestCompletion::write_status(mem, Some(&status), VIRTIO_BLK_S_IOERR, 1);
             }
         };
+        let media_len = self.backend.capacity_sectors().saturating_mul(SECTOR_SIZE);
+        if byte_offset
+            .checked_add(data_len_u64)
+            .map_or(true, |end| end > media_len)
+        {
+            self.stats.io_error_count = self.stats.io_error_count.saturating_add(1);
+            self.stats.last_status = Some(VIRTIO_BLK_S_IOERR);
+            self.record_request_trace(req_type, sector, data_len, VIRTIO_BLK_S_IOERR);
+            return RequestCompletion::write_status(mem, Some(&status), VIRTIO_BLK_S_IOERR, 1);
+        }
         let mut written_len = 0u32;
         for desc in data_descs {
             if desc.flags & DESC_F_WRITE == 0 {
@@ -569,20 +601,54 @@ impl VirtioMmioBlock {
                 self.record_request_trace(req_type, sector, data_len, VIRTIO_BLK_S_IOERR);
                 return RequestCompletion::write_status(mem, Some(&status), VIRTIO_BLK_S_IOERR, 1);
             }
-            let len = desc.len as usize;
-            let Ok(data) = self.backend.read_at(byte_offset, len) else {
-                self.stats.io_error_count = self.stats.io_error_count.saturating_add(1);
-                self.stats.last_status = Some(VIRTIO_BLK_S_IOERR);
-                self.record_request_trace(req_type, sector, data_len, VIRTIO_BLK_S_IOERR);
-                return RequestCompletion::write_status(mem, Some(&status), VIRTIO_BLK_S_IOERR, 1);
-            };
-            if !mem.write_bytes(desc.addr, &data) {
-                self.stats.io_error_count = self.stats.io_error_count.saturating_add(1);
-                self.stats.last_status = Some(VIRTIO_BLK_S_IOERR);
-                self.record_request_trace(req_type, sector, data_len, VIRTIO_BLK_S_IOERR);
-                return RequestCompletion::write_status(mem, Some(&status), VIRTIO_BLK_S_IOERR, 1);
+            let mut remaining = desc.len as usize;
+            let mut guest_addr = desc.addr;
+            while remaining > 0 {
+                let chunk_len = remaining.min(READ_CHUNK_BYTES);
+                read_buf.resize(chunk_len, 0);
+                if self.backend.read_at_into(byte_offset, read_buf).is_err()
+                    || !mem.write_bytes(guest_addr, read_buf.as_slice())
+                {
+                    self.stats.io_error_count = self.stats.io_error_count.saturating_add(1);
+                    self.stats.last_status = Some(VIRTIO_BLK_S_IOERR);
+                    self.record_request_trace(req_type, sector, data_len, VIRTIO_BLK_S_IOERR);
+                    return RequestCompletion::write_status(
+                        mem,
+                        Some(&status),
+                        VIRTIO_BLK_S_IOERR,
+                        1,
+                    );
+                }
+                byte_offset = match byte_offset.checked_add(chunk_len as u64) {
+                    Some(next) => next,
+                    None => {
+                        self.stats.io_error_count = self.stats.io_error_count.saturating_add(1);
+                        self.stats.last_status = Some(VIRTIO_BLK_S_IOERR);
+                        self.record_request_trace(req_type, sector, data_len, VIRTIO_BLK_S_IOERR);
+                        return RequestCompletion::write_status(
+                            mem,
+                            Some(&status),
+                            VIRTIO_BLK_S_IOERR,
+                            1,
+                        );
+                    }
+                };
+                guest_addr = match guest_addr.checked_add(chunk_len as u64) {
+                    Some(next) => next,
+                    None => {
+                        self.stats.io_error_count = self.stats.io_error_count.saturating_add(1);
+                        self.stats.last_status = Some(VIRTIO_BLK_S_IOERR);
+                        self.record_request_trace(req_type, sector, data_len, VIRTIO_BLK_S_IOERR);
+                        return RequestCompletion::write_status(
+                            mem,
+                            Some(&status),
+                            VIRTIO_BLK_S_IOERR,
+                            1,
+                        );
+                    }
+                };
+                remaining -= chunk_len;
             }
-            byte_offset = byte_offset.saturating_add(u64::from(desc.len));
             written_len = written_len.saturating_add(desc.len);
             self.stats.bytes_read = self.stats.bytes_read.saturating_add(u64::from(desc.len));
         }
@@ -597,22 +663,37 @@ impl VirtioMmioBlock {
         )
     }
 
-    fn descriptor_chain(&self, mem: &dyn GuestMemoryMut, head: u16) -> Option<Vec<Descriptor>> {
-        let mut out = Vec::new();
+    fn descriptor_chain_into(
+        mem: &dyn GuestMemoryMut,
+        queue_num: u16,
+        queue_desc: u64,
+        head: u16,
+        out: &mut Vec<Descriptor>,
+    ) -> bool {
+        out.clear();
+        if head >= queue_num {
+            return false;
+        }
         let mut index = head;
-        for _ in 0..self.queue_num {
-            let desc = Descriptor::read(mem, self.queue_desc + u64::from(index) * DESC_SIZE)?;
+        for _ in 0..queue_num {
+            let Some(desc) = Descriptor::read(mem, queue_desc + u64::from(index) * DESC_SIZE)
+            else {
+                out.clear();
+                return false;
+            };
             let has_next = desc.flags & DESC_F_NEXT != 0;
             out.push(desc);
             if !has_next {
-                return Some(out);
+                return true;
             }
             index = desc.next;
-            if index >= self.queue_num {
-                return None;
+            if index >= queue_num {
+                out.clear();
+                return false;
             }
         }
-        None
+        out.clear();
+        false
     }
 
     fn write_used(&self, mem: &mut dyn GuestMemoryMut, id: u16, len: u32) {
@@ -775,9 +856,9 @@ impl RawFileBackend {
         self.len.div_ceil(SECTOR_SIZE)
     }
 
-    fn read_at(&mut self, byte_offset: u64, len: usize) -> io::Result<Vec<u8>> {
+    fn read_at_into(&mut self, byte_offset: u64, dst: &mut [u8]) -> io::Result<()> {
         let end = byte_offset
-            .checked_add(len as u64)
+            .checked_add(dst.len() as u64)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "read offset overflow"))?;
         if end > self.capacity_sectors() * SECTOR_SIZE {
             return Err(io::Error::new(
@@ -785,13 +866,17 @@ impl RawFileBackend {
                 "virtio block read past media",
             ));
         }
-        let mut data = vec![0u8; len];
-        if byte_offset < self.len {
-            let readable = (self.len - byte_offset).min(len as u64) as usize;
-            self.file.seek(SeekFrom::Start(byte_offset))?;
-            self.file.read_exact(&mut data[..readable])?;
+        if byte_offset >= self.len {
+            dst.fill(0);
+            return Ok(());
         }
-        Ok(data)
+        let readable = (self.len - byte_offset).min(dst.len() as u64) as usize;
+        self.file.seek(SeekFrom::Start(byte_offset))?;
+        self.file.read_exact(&mut dst[..readable])?;
+        if readable < dst.len() {
+            dst[readable..].fill(0);
+        }
+        Ok(())
     }
 }
 

@@ -49,12 +49,27 @@ struct FileRecord {
     awaiting_guest_stamp: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct HostFileStat {
+    size: u64,
+    mtime_ms: u128,
+}
+
+#[derive(Debug, Clone)]
+struct GuestFileStat {
+    size: u64,
+    mtime: String,
+}
+
 pub struct ShareSync {
     records: HashMap<String, FileRecord>,
     max_bytes: u64,
     guest_skip_seen: HashSet<(String, String, SkipKey)>,
     pending_guest_mtime: HashMap<String, String>,
     pending_host_changed: HashSet<String>,
+    present_scratch: HashSet<String>,
+    guest_file_entries_scratch: HashMap<String, GuestFileStat>,
+    host_files_scratch: HashMap<String, HostFileStat>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -70,6 +85,9 @@ impl ShareSync {
             guest_skip_seen: HashSet::new(),
             pending_guest_mtime: HashMap::new(),
             pending_host_changed: HashSet::new(),
+            present_scratch: HashSet::new(),
+            guest_file_entries_scratch: HashMap::new(),
+            host_files_scratch: HashMap::new(),
         }
     }
 
@@ -77,26 +95,59 @@ impl ShareSync {
         self.max_bytes
     }
 
-    pub fn on_guest_listing(&mut self, entries: Vec<LsEntry>) -> Vec<SyncAction> {
+    #[cfg(test)]
+    pub fn on_guest_listing<I>(&mut self, entries: I) -> Vec<SyncAction>
+    where
+        I: IntoIterator<Item = LsEntry>,
+    {
+        self.on_guest_listing_with(entries, true)
+    }
+
+    pub fn on_guest_listing_normalized<I>(&mut self, entries: I) -> Vec<SyncAction>
+    where
+        I: IntoIterator<Item = LsEntry>,
+    {
+        self.on_guest_listing_with(entries, false)
+    }
+
+    fn on_guest_listing_with<I>(&mut self, entries: I, normalize_names: bool) -> Vec<SyncAction>
+    where
+        I: IntoIterator<Item = LsEntry>,
+    {
         let mut actions = Vec::new();
-        let mut present = HashSet::new();
-        let mut file_entries = HashMap::new();
+        self.present_scratch.clear();
+        self.guest_file_entries_scratch.clear();
 
         for entry in entries {
-            let name = normalize_rel(&entry.name);
+            let LsEntry {
+                name,
+                size,
+                is_dir,
+                mtime,
+            } = entry;
+            let name = if normalize_names {
+                normalize_rel(&name)
+            } else {
+                name
+            };
             if name.is_empty() {
                 continue;
             }
-            present.insert(name.clone());
-            if entry.is_dir {
+            self.present_scratch.insert(name.clone());
+            if is_dir {
                 continue;
             }
-            file_entries.insert(name, entry);
+            self.guest_file_entries_scratch
+                .insert(name, GuestFileStat { size, mtime });
         }
 
-        for (name, entry) in &file_entries {
+        for (name, entry) in &self.guest_file_entries_scratch {
             if entry.size > self.max_bytes {
-                if self.remember_guest_skip(name, &entry.mtime, SkipKey::TooLarge) {
+                if self.guest_skip_seen.insert((
+                    name.clone(),
+                    entry.mtime.clone(),
+                    SkipKey::TooLarge,
+                )) {
                     actions.push(SyncAction::Skip {
                         name: name.clone(),
                         reason: SkipReason::TooLarge { size: entry.size },
@@ -127,7 +178,7 @@ impl ShareSync {
         }
 
         for (name, record) in &self.records {
-            if present.contains(name) {
+            if self.present_scratch.contains(name) {
                 continue;
             }
             if record.hash == 0 {
@@ -183,21 +234,47 @@ impl ShareSync {
         }
     }
 
-    pub fn on_host_scan(&mut self, files: Vec<HostFile>) -> Vec<SyncAction> {
+    #[cfg(test)]
+    pub fn on_host_scan<I>(&mut self, files: I) -> Vec<SyncAction>
+    where
+        I: IntoIterator<Item = HostFile>,
+    {
+        self.on_host_scan_with(files, true)
+    }
+
+    pub fn on_host_scan_normalized<I>(&mut self, files: I) -> Vec<SyncAction>
+    where
+        I: IntoIterator<Item = HostFile>,
+    {
+        self.on_host_scan_with(files, false)
+    }
+
+    fn on_host_scan_with<I>(&mut self, files: I, normalize_names: bool) -> Vec<SyncAction>
+    where
+        I: IntoIterator<Item = HostFile>,
+    {
         let mut actions = Vec::new();
-        let mut present = HashSet::new();
-        let mut host_files = HashMap::new();
+        self.host_files_scratch.clear();
 
         for file in files {
-            let name = normalize_rel(&file.name);
+            let HostFile {
+                name,
+                size,
+                mtime_ms,
+            } = file;
+            let name = if normalize_names {
+                normalize_rel(&name)
+            } else {
+                name
+            };
             if name.is_empty() {
                 continue;
             }
-            present.insert(name.clone());
-            host_files.insert(name, file);
+            self.host_files_scratch
+                .insert(name, HostFileStat { size, mtime_ms });
         }
 
-        for (name, file) in &host_files {
+        for (name, file) in &self.host_files_scratch {
             if self.records.get(name).is_none_or(|record| {
                 record.size != file.size || record.host_mtime_ms != Some(file.mtime_ms)
             }) {
@@ -207,7 +284,7 @@ impl ShareSync {
         }
 
         for (name, record) in &self.records {
-            if present.contains(name) {
+            if self.host_files_scratch.contains_key(name) {
                 continue;
             }
             if record.hash == 0 {
@@ -271,53 +348,87 @@ impl ShareSync {
         self.pending_host_changed.remove(&name);
         self.pending_guest_mtime.remove(&name);
     }
-
-    fn remember_guest_skip(&mut self, name: &str, mtime: &str, key: SkipKey) -> bool {
-        self.guest_skip_seen
-            .insert((name.to_string(), mtime.to_string(), key))
-    }
 }
 
 /// Internal share keys are relative paths with forward slashes. Host joins on
 /// macOS accept '/', while Windows guest paths are converted at the wire edge.
 pub fn normalize_rel(name: &str) -> String {
-    name.replace('\\', "/")
-        .split('/')
-        .filter(|part| !part.is_empty() && *part != ".")
-        .collect::<Vec<_>>()
-        .join("/")
+    normalize_rel_with_sep(name, '/')
 }
 
+#[cfg(test)]
 pub fn to_guest_rel(name: &str) -> String {
-    normalize_rel(name).replace('/', "\\")
+    normalize_rel_with_sep(name, '\\')
+}
+
+pub fn append_guest_rel_into(name: &str, out: &mut String) {
+    append_rel_with_sep_into(name, '\\', out);
 }
 
 pub fn from_guest_rel(name: &str) -> String {
     normalize_rel(name)
 }
 
+fn normalize_rel_with_sep(name: &str, sep: char) -> String {
+    let mut out = String::with_capacity(name.len());
+    normalize_rel_with_sep_into(name, sep, &mut out);
+    out
+}
+
+fn normalize_rel_with_sep_into(name: &str, sep: char, out: &mut String) {
+    out.clear();
+    append_rel_with_sep_into(name, sep, out);
+}
+
+fn append_rel_with_sep_into(name: &str, sep: char, out: &mut String) {
+    out.reserve(name.len());
+    let mut wrote_part = false;
+    for part in name.split(|ch| ch == '/' || ch == '\\') {
+        if part.is_empty() || part == "." {
+            continue;
+        }
+        if wrote_part {
+            out.push(sep);
+        }
+        out.push_str(part);
+        wrote_part = true;
+    }
+}
+
 /// Parse the guest LS/LSR format `relpath|size|isDir|mtime`. The split is from
 /// the right so a pathological file name containing `|` still round-trips; the
 /// numeric fields and ISO mtime emitted by the guest agent never contain that
 /// separator.
-pub fn parse_ls(listing: &str) -> Vec<LsEntry> {
-    listing
-        .lines()
-        .filter(|line| !line.is_empty())
-        .filter_map(|line| {
-            let mut parts = line.rsplitn(4, '|');
-            let mtime = parts.next()?.to_string();
-            let is_dir = parts.next()? == "1";
-            let size = parts.next()?.parse().ok()?;
-            let name = from_guest_rel(parts.next()?);
-            Some(LsEntry {
-                name,
-                size,
-                is_dir,
-                mtime,
-            })
-        })
-        .collect()
+#[cfg(test)]
+fn parse_ls(listing: &str) -> Vec<LsEntry> {
+    let mut entries = Vec::new();
+    parse_ls_into(listing, &mut entries);
+    entries
+}
+
+pub fn parse_ls_into(listing: &str, out: &mut Vec<LsEntry>) {
+    out.clear();
+    for line in listing.lines().filter(|line| !line.is_empty()) {
+        let mut parts = line.rsplitn(4, '|');
+        let Some(mtime) = parts.next() else {
+            continue;
+        };
+        let Some(is_dir) = parts.next() else {
+            continue;
+        };
+        let Some(size) = parts.next().and_then(|part| part.parse().ok()) else {
+            continue;
+        };
+        let Some(name) = parts.next() else {
+            continue;
+        };
+        out.push(LsEntry {
+            name: from_guest_rel(name),
+            size,
+            is_dir: is_dir == "1",
+            mtime: mtime.to_string(),
+        });
+    }
 }
 
 pub fn fnv1a64(bytes: &[u8]) -> u64 {
@@ -368,13 +479,38 @@ mod tests {
     }
 
     #[test]
+    fn parse_ls_into_reuses_output_vec_and_clears_old_entries() {
+        let mut entries = Vec::with_capacity(4);
+        entries.push(ls_file("old.txt", 1, "old"));
+        let capacity = entries.capacity();
+
+        parse_ls_into(
+            "a.txt|3|0|2026-01-01T00:00:00.0000000Z\n\
+             malformed\n\
+             sub\\dir|0|1|2026-01-01T00:00:01.0000000Z\n",
+            &mut entries,
+        );
+
+        assert_eq!(entries.capacity(), capacity);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].name, "a.txt");
+        assert_eq!(entries[1].name, "sub/dir");
+        assert!(entries[1].is_dir);
+    }
+
+    #[test]
     fn rel_path_helpers_round_trip_guest_and_host_forms() {
         assert_eq!(from_guest_rel("sub\\dir\\file.txt"), "sub/dir/file.txt");
         assert_eq!(to_guest_rel("sub/dir/file.txt"), "sub\\dir\\file.txt");
+        let mut prefixed = String::from("C:\\share\\");
+        append_guest_rel_into("./sub//./dir\\file.txt", &mut prefixed);
+        assert_eq!(prefixed, "C:\\share\\sub\\dir\\file.txt");
         assert_eq!(
             from_guest_rel(&to_guest_rel("sub/dir/file.txt")),
             "sub/dir/file.txt"
         );
+        assert_eq!(normalize_rel("./sub//./dir\\file.txt"), "sub/dir/file.txt");
+        assert_eq!(to_guest_rel("./sub//./dir\\file.txt"), "sub\\dir\\file.txt");
     }
 
     #[test]
@@ -529,6 +665,39 @@ mod tests {
         let mut sync = ShareSync::new(512);
         assert!(sync.on_host_scan(Vec::new()).is_empty());
         assert!(sync.on_guest_listing(Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn listing_scratch_tables_reuse_capacity() {
+        let mut sync = ShareSync::new(512);
+
+        let _ = sync.on_guest_listing(vec![
+            ls_file("a.txt", 1, "g1"),
+            LsEntry {
+                name: "dir".into(),
+                size: 0,
+                is_dir: true,
+                mtime: "d1".into(),
+            },
+        ]);
+        let guest_present_capacity = sync.present_scratch.capacity();
+        let guest_entries_capacity = sync.guest_file_entries_scratch.capacity();
+        assert!(guest_present_capacity > 0);
+        assert!(guest_entries_capacity > 0);
+
+        let _ = sync.on_guest_listing(Vec::new());
+        assert_eq!(sync.present_scratch.capacity(), guest_present_capacity);
+        assert_eq!(
+            sync.guest_file_entries_scratch.capacity(),
+            guest_entries_capacity
+        );
+
+        let _ = sync.on_host_scan_normalized(vec![host_file("b.txt", 1, 10)]);
+        let host_files_capacity = sync.host_files_scratch.capacity();
+        assert!(host_files_capacity > 0);
+
+        let _ = sync.on_host_scan_normalized(Vec::new());
+        assert_eq!(sync.host_files_scratch.capacity(), host_files_capacity);
     }
 
     #[test]

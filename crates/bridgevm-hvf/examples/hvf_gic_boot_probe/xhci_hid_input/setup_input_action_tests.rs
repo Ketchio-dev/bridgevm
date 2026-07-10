@@ -69,7 +69,7 @@ fn xhci_setup_input_text_punctuation_maps_to_hid_usages() {
         &mut platform,
         &mut mem,
         Instant::now(),
-        |_label, _mem| {},
+        |_platform, _label, _mem| {},
     ));
 
     assert_eq!(trigger.action_names(), "a,/,b,-,c,.,d");

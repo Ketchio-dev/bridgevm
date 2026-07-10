@@ -47,20 +47,22 @@ impl XhciSetupInputTrigger {
         mut emit_checkpoint: F,
     ) -> bool
     where
-        F: FnMut(&str, &dyn GuestMemoryMut),
+        F: FnMut(&VirtPlatform, &str, &dyn GuestMemoryMut),
     {
         let can_checkpoint = self.ready_for_ramfb_checkpoints_at(platform, now);
         if can_checkpoint {
-            emit_checkpoint("setup-input-before", mem);
+            emit_checkpoint(platform, "setup-input-before", mem);
         }
         let fired = self.maybe_fire_with_mem_at(platform, mem, now);
         if fired {
             self.fired_at = Some(now);
             if can_checkpoint {
-                emit_checkpoint("setup-input-after", mem);
+                emit_checkpoint(platform, "setup-input-after", mem);
             }
         }
-        self.emit_due_ramfb_delay_checkpoints(now, &mut |label| emit_checkpoint(label, mem));
+        self.emit_due_ramfb_delay_checkpoints(now, &mut |label| {
+            emit_checkpoint(platform, label, mem)
+        });
         fired
     }
 

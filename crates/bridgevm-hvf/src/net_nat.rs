@@ -56,6 +56,9 @@ const DHCP_OFFER: u8 = 2;
 const DHCP_REQUEST: u8 = 3;
 const DHCP_ACK: u8 = 5;
 const DHCP_LEASE_SECONDS: u32 = 86_400;
+const DHCP_REPLY_FIXED_LEN: usize = 240;
+const DHCP_REPLY_OPTIONS_LEN: usize = 3 + (5 * 6) + 1;
+const DHCP_REPLY_PAYLOAD_LEN: usize = DHCP_REPLY_FIXED_LEN + DHCP_REPLY_OPTIONS_LEN;
 #[cfg(test)]
 const DHCP_OPT_REQUESTED_IP: u8 = 50;
 
@@ -236,6 +239,15 @@ impl<H: OutboundIpv4Handler + Send> NetBackend for NatBackend<H> {
         self.reply_queue.pop_front()
     }
 
+    fn poll_receive_into(&mut self, out: &mut Vec<u8>) -> bool {
+        let Some(mut frame) = self.reply_queue.pop_front() else {
+            return false;
+        };
+        out.clear();
+        out.append(&mut frame);
+        true
+    }
+
     fn poll_host_sockets(&mut self) {
         self.outbound_ipv4.poll_host_sockets(
             self.guest_mac,
@@ -262,17 +274,17 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
         }
         let reply_ip = request.target_ip;
 
-        let mut payload = Vec::with_capacity(28);
-        payload.extend_from_slice(&ARP_HARDWARE_ETHERNET.to_be_bytes());
-        payload.extend_from_slice(&ETHERTYPE_IPV4.to_be_bytes());
-        payload.push(6);
-        payload.push(4);
-        payload.extend_from_slice(&ARP_OPCODE_REPLY.to_be_bytes());
-        payload.extend_from_slice(&GATEWAY_MAC);
-        payload.extend_from_slice(&reply_ip);
-        payload.extend_from_slice(&request.sender_mac);
-        payload.extend_from_slice(&request.sender_ip);
-        self.queue_ethernet(ETHERTYPE_ARP, &payload);
+        let Some(dst_mac) = self.guest_mac else {
+            self.stats.dropped_no_guest_mac = self.stats.dropped_no_guest_mac.saturating_add(1);
+            return;
+        };
+        self.reply_queue.push_back(build_arp_reply_frame(
+            dst_mac,
+            GATEWAY_MAC,
+            reply_ip,
+            request.sender_mac,
+            request.sender_ip,
+        ));
         self.stats.arp_replies = self.stats.arp_replies.saturating_add(1);
     }
 
@@ -337,23 +349,22 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
             _ => return,
         };
 
-        let payload = build_dhcp_reply(&request, reply_type);
         let dst_ip = dhcp_reply_destination(&request);
-        let udp = build_udp_datagram(
-            DHCP_SERVER_IP,
+        let Some(dst_mac) = self.guest_mac else {
+            self.stats.dropped_no_guest_mac = self.stats.dropped_no_guest_mac.saturating_add(1);
+            return;
+        };
+        let Some(frame) = build_dhcp_reply_frame(
+            dst_mac,
+            GATEWAY_MAC,
             dst_ip,
-            DHCP_SERVER_PORT,
-            DHCP_CLIENT_PORT,
-            &payload,
-        );
-        let ipv4 = build_ipv4_packet_with_id(
-            DHCP_SERVER_IP,
-            dst_ip,
-            IPV4_PROTOCOL_UDP,
-            &udp,
+            &request,
+            reply_type,
             packet.identification,
-        );
-        self.queue_ethernet(ETHERTYPE_IPV4, &ipv4);
+        ) else {
+            return;
+        };
+        self.reply_queue.push_back(frame);
         self.stats.dhcp_lease_ip = GUEST_IP;
         if reply_type == DHCP_OFFER {
             self.stats.dhcp_offers = self.stats.dhcp_offers.saturating_add(1);
@@ -366,22 +377,9 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
         match classify_icmp_echo(packet.dst, packet.payload) {
             IcmpEchoRoute::Gateway => {
                 self.stats.icmp_echo = self.stats.icmp_echo.saturating_add(1);
-                let mut reply = packet.payload.to_vec();
-                reply[0] = 0;
-                reply[2] = 0;
-                reply[3] = 0;
-                let checksum = icmp_checksum(&reply);
-                reply[2..4].copy_from_slice(&checksum.to_be_bytes());
-
-                let ipv4 = build_ipv4_packet_with_id(
-                    GATEWAY_IP,
-                    packet.src,
-                    IPV4_PROTOCOL_ICMP,
-                    &reply,
-                    packet.identification,
-                );
-                self.queue_ethernet(ETHERTYPE_IPV4, &ipv4);
-                self.stats.icmp_replies = self.stats.icmp_replies.saturating_add(1);
+                if self.queue_gateway_icmp_echo_reply(packet) {
+                    self.stats.icmp_replies = self.stats.icmp_replies.saturating_add(1);
+                }
             }
             IcmpEchoRoute::External => {
                 self.stats.icmp_echo = self.stats.icmp_echo.saturating_add(1);
@@ -394,17 +392,23 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
         }
     }
 
-    fn queue_ethernet(&mut self, ethertype: u16, payload: &[u8]) {
+    fn queue_gateway_icmp_echo_reply(&mut self, packet: &Ipv4Packet<'_>) -> bool {
         let Some(dst_mac) = self.guest_mac else {
             self.stats.dropped_no_guest_mac = self.stats.dropped_no_guest_mac.saturating_add(1);
-            return;
+            return false;
         };
-        self.reply_queue.push_back(EthernetFrame::build(
+        let Some(frame) = build_icmp_echo_reply_frame(
             dst_mac,
             GATEWAY_MAC,
-            ethertype,
-            payload,
-        ));
+            GATEWAY_IP,
+            packet.src,
+            packet.payload,
+            packet.identification,
+        ) else {
+            return false;
+        };
+        self.reply_queue.push_back(frame);
+        true
     }
 }
 
@@ -420,6 +424,10 @@ pub struct HostSocketOutboundIpv4Handler {
     tcp_flows: HashMap<TcpFlowKey, TcpFlow>,
     icmp_flows: HashMap<IcmpFlowKey, IcmpFlow>,
     pending_tcp_resets: VecDeque<PendingTcpReset>,
+    tcp_remove_scratch: Vec<TcpFlowKey>,
+    udp_recv_scratch: [u8; HOST_SOCKET_UDP_RECV_SCRATCH_LEN],
+    tcp_read_scratch: [u8; HOST_SOCKET_TCP_READ_SCRATCH_LEN],
+    icmp_recv_scratch: [u8; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
     pending_socket_errors: u64,
     dns_resolver: StdIpv4Addr,
     tick: u64,
@@ -428,6 +436,10 @@ pub struct HostSocketOutboundIpv4Handler {
     max_icmp_flows: usize,
     tcp_isn_counter: u32,
 }
+
+const HOST_SOCKET_UDP_RECV_SCRATCH_LEN: usize = 2048;
+const HOST_SOCKET_TCP_READ_SCRATCH_LEN: usize = 1460;
+const HOST_SOCKET_ICMP_RECV_SCRATCH_LEN: usize = 2048;
 
 impl Default for HostSocketOutboundIpv4Handler {
     fn default() -> Self {
@@ -453,6 +465,10 @@ impl HostSocketOutboundIpv4Handler {
             tcp_flows: HashMap::new(),
             icmp_flows: HashMap::new(),
             pending_tcp_resets: VecDeque::new(),
+            tcp_remove_scratch: Vec::new(),
+            udp_recv_scratch: [0; HOST_SOCKET_UDP_RECV_SCRATCH_LEN],
+            tcp_read_scratch: [0; HOST_SOCKET_TCP_READ_SCRATCH_LEN],
+            icmp_recv_scratch: [0; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
             pending_socket_errors: 0,
             dns_resolver,
             tick: 0,
@@ -653,10 +669,10 @@ impl HostSocketOutboundIpv4Handler {
             return;
         };
         let now = self.tick;
-        let mut buf = [0u8; 2048];
+        let recv_scratch = &mut self.udp_recv_scratch;
         for (key, flow) in &mut self.udp_flows {
             loop {
-                match flow.socket.recv(&mut buf) {
+                match flow.socket.recv(recv_scratch) {
                     Ok(len) => {
                         flow.last_activity = now;
                         queue_udp_reply(
@@ -666,7 +682,7 @@ impl HostSocketOutboundIpv4Handler {
                             key.guest_ip,
                             key.public_dst_port,
                             key.guest_port,
-                            &buf[..len],
+                            &recv_scratch[..len],
                         );
                         if key.public_dst == DNS_IP && key.public_dst_port == 53 {
                             stats.dns_replies = stats.dns_replies.saturating_add(1);
@@ -709,119 +725,123 @@ impl HostSocketOutboundIpv4Handler {
             stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
         }
         let now = self.tick;
-        let mut remove = Vec::new();
-        for (key, flow) in &mut self.tcp_flows {
-            flow.last_activity = now;
-            if flow.state == TcpProxyState::Connecting {
-                match tcp_connect_error(&flow.stream) {
-                    Ok(Some(0)) => {
-                        flow.state = TcpProxyState::Established;
-                        queue_tcp_reply(
-                            reply_queue,
-                            guest_mac,
-                            key,
-                            flow.our_seq,
-                            flow.guest_next,
-                            TCP_FLAG_SYN | TCP_FLAG_ACK,
-                            &[],
-                        );
-                        stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
-                    }
-                    Ok(Some(_)) | Err(_) => {
-                        queue_tcp_reply(
-                            reply_queue,
-                            guest_mac,
-                            key,
-                            flow.our_seq,
-                            flow.guest_next,
-                            TCP_FLAG_RST | TCP_FLAG_ACK,
-                            &[],
-                        );
-                        stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
-                        stats.socket_errors = stats.socket_errors.saturating_add(1);
-                        remove.push(*key);
-                        continue;
-                    }
-                    Ok(None) => {
-                        stats.tcp_connect_again = stats.tcp_connect_again.saturating_add(1);
-                    }
-                }
-            }
-            if flow.state != TcpProxyState::Connecting {
-                flow.flush_host_write();
-                if flow.pending_ack {
-                    queue_tcp_reply(
-                        reply_queue,
-                        guest_mac,
-                        key,
-                        flow.our_next,
-                        flow.guest_next,
-                        TCP_FLAG_ACK,
-                        &[],
-                    );
-                    stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
-                    flow.pending_ack = false;
-                }
-                let mut buf = [0u8; 1460];
-                loop {
-                    match flow.stream.read(&mut buf) {
-                        Ok(0) => {
-                            if !flow.host_fin_sent {
-                                queue_tcp_reply(
-                                    reply_queue,
-                                    guest_mac,
-                                    key,
-                                    flow.our_next,
-                                    flow.guest_next,
-                                    TCP_FLAG_FIN | TCP_FLAG_ACK,
-                                    &[],
-                                );
-                                stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
-                                flow.our_next = flow.our_next.wrapping_add(1);
-                                flow.host_fin_sent = true;
-                            }
-                            break;
-                        }
-                        Ok(len) => {
+        {
+            let remove_scratch = &mut self.tcp_remove_scratch;
+            let read_scratch = &mut self.tcp_read_scratch;
+            remove_scratch.clear();
+            for (key, flow) in &mut self.tcp_flows {
+                flow.last_activity = now;
+                if flow.state == TcpProxyState::Connecting {
+                    match tcp_connect_error(&flow.stream) {
+                        Ok(Some(0)) => {
+                            flow.state = TcpProxyState::Established;
                             queue_tcp_reply(
                                 reply_queue,
                                 guest_mac,
                                 key,
-                                flow.our_next,
+                                flow.our_seq,
                                 flow.guest_next,
-                                TCP_FLAG_PSH | TCP_FLAG_ACK,
-                                &buf[..len],
+                                TCP_FLAG_SYN | TCP_FLAG_ACK,
+                                &[],
                             );
                             stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
-                            flow.our_next = flow.our_next.wrapping_add(len as u32);
                         }
-                        Err(e) if would_block(&e) => {
-                            stats.tcp_read_again = stats.tcp_read_again.saturating_add(1);
-                            break;
-                        }
-                        Err(_) => {
+                        Ok(Some(_)) | Err(_) => {
                             queue_tcp_reply(
                                 reply_queue,
                                 guest_mac,
                                 key,
-                                flow.our_next,
+                                flow.our_seq,
                                 flow.guest_next,
                                 TCP_FLAG_RST | TCP_FLAG_ACK,
                                 &[],
                             );
                             stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
                             stats.socket_errors = stats.socket_errors.saturating_add(1);
-                            remove.push(*key);
-                            break;
+                            remove_scratch.push(*key);
+                            continue;
+                        }
+                        Ok(None) => {
+                            stats.tcp_connect_again = stats.tcp_connect_again.saturating_add(1);
                         }
                     }
                 }
-            }
-            if flow.closed() {
-                remove.push(*key);
+                if flow.state != TcpProxyState::Connecting {
+                    flow.flush_host_write();
+                    if flow.pending_ack {
+                        queue_tcp_reply(
+                            reply_queue,
+                            guest_mac,
+                            key,
+                            flow.our_next,
+                            flow.guest_next,
+                            TCP_FLAG_ACK,
+                            &[],
+                        );
+                        stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
+                        flow.pending_ack = false;
+                    }
+                    loop {
+                        match flow.stream.read(read_scratch) {
+                            Ok(0) => {
+                                if !flow.host_fin_sent {
+                                    queue_tcp_reply(
+                                        reply_queue,
+                                        guest_mac,
+                                        key,
+                                        flow.our_next,
+                                        flow.guest_next,
+                                        TCP_FLAG_FIN | TCP_FLAG_ACK,
+                                        &[],
+                                    );
+                                    stats.tcp_segments_out =
+                                        stats.tcp_segments_out.saturating_add(1);
+                                    flow.our_next = flow.our_next.wrapping_add(1);
+                                    flow.host_fin_sent = true;
+                                }
+                                break;
+                            }
+                            Ok(len) => {
+                                queue_tcp_reply(
+                                    reply_queue,
+                                    guest_mac,
+                                    key,
+                                    flow.our_next,
+                                    flow.guest_next,
+                                    TCP_FLAG_PSH | TCP_FLAG_ACK,
+                                    &read_scratch[..len],
+                                );
+                                stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
+                                flow.our_next = flow.our_next.wrapping_add(len as u32);
+                            }
+                            Err(e) if would_block(&e) => {
+                                stats.tcp_read_again = stats.tcp_read_again.saturating_add(1);
+                                break;
+                            }
+                            Err(_) => {
+                                queue_tcp_reply(
+                                    reply_queue,
+                                    guest_mac,
+                                    key,
+                                    flow.our_next,
+                                    flow.guest_next,
+                                    TCP_FLAG_RST | TCP_FLAG_ACK,
+                                    &[],
+                                );
+                                stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
+                                stats.socket_errors = stats.socket_errors.saturating_add(1);
+                                remove_scratch.push(*key);
+                                break;
+                            }
+                        }
+                    }
+                }
+                if flow.closed() {
+                    remove_scratch.push(*key);
+                }
             }
         }
-        for key in remove {
+        for key in self.tcp_remove_scratch.drain(..) {
             self.tcp_flows.remove(&key);
         }
     }
@@ -836,28 +856,27 @@ impl HostSocketOutboundIpv4Handler {
             return;
         };
         let now = self.tick;
-        let mut buf = [0u8; 2048];
+        let recv_scratch = &mut self.icmp_recv_scratch;
         for (key, flow) in &mut self.icmp_flows {
             for _ in 0..Self::MAX_ICMP_RECV_PER_POLL {
-                match flow.socket.recv_from(&mut buf) {
+                match flow.socket.recv_from(recv_scratch) {
                     Ok((len, _)) => {
                         flow.last_activity = now;
-                        let recv = &buf[..len];
+                        let recv = &recv_scratch[..len];
                         let first_byte = recv.first().copied().unwrap_or(0);
                         let trace_icmp = trace_icmp_enabled();
-                        if let Some(reply) =
-                            rewrite_icmp_echo_reply_identifier(recv, key.guest_identifier)
-                        {
+                        if let Some(frame) = build_rewritten_icmp_echo_reply_frame(
+                            guest_mac,
+                            GATEWAY_MAC,
+                            key.dst_ip,
+                            flow.guest_ip,
+                            recv,
+                            key.guest_identifier,
+                        ) {
                             if trace_icmp {
                                 trace_icmp_recv(len, first_byte, "accepted");
                             }
-                            queue_icmp_reply(
-                                reply_queue,
-                                guest_mac,
-                                key.dst_ip,
-                                flow.guest_ip,
-                                &reply,
-                            );
+                            reply_queue.push_back(frame);
                             stats.icmp_external_replies =
                                 stats.icmp_external_replies.saturating_add(1);
                         } else if trace_icmp {
@@ -1096,6 +1115,29 @@ impl<'a> EthernetFrame<'a> {
     }
 }
 
+fn build_arp_reply_frame(
+    dst_mac: MacAddr,
+    src_mac: MacAddr,
+    sender_ip: Ipv4Addr,
+    target_mac: MacAddr,
+    target_ip: Ipv4Addr,
+) -> Vec<u8> {
+    let mut frame = Vec::with_capacity(42);
+    frame.extend_from_slice(&dst_mac);
+    frame.extend_from_slice(&src_mac);
+    frame.extend_from_slice(&ETHERTYPE_ARP.to_be_bytes());
+    frame.extend_from_slice(&ARP_HARDWARE_ETHERNET.to_be_bytes());
+    frame.extend_from_slice(&ETHERTYPE_IPV4.to_be_bytes());
+    frame.push(6);
+    frame.push(4);
+    frame.extend_from_slice(&ARP_OPCODE_REPLY.to_be_bytes());
+    frame.extend_from_slice(&src_mac);
+    frame.extend_from_slice(&sender_ip);
+    frame.extend_from_slice(&target_mac);
+    frame.extend_from_slice(&target_ip);
+    frame
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ArpPacket {
     opcode: u16,
@@ -1261,6 +1303,269 @@ fn build_ipv4_packet_with_id(
     packet
 }
 
+fn build_icmp_echo_reply_frame(
+    dst_mac: MacAddr,
+    src_mac: MacAddr,
+    src_ip: Ipv4Addr,
+    dst_ip: Ipv4Addr,
+    request_payload: &[u8],
+    identification: u16,
+) -> Option<Vec<u8>> {
+    if request_payload.len() < 8 {
+        return None;
+    }
+    let ipv4_len = 20usize.checked_add(request_payload.len())?;
+    let total_len = u16::try_from(ipv4_len).ok()?;
+    let mut frame = Vec::with_capacity(14 + ipv4_len);
+    frame.extend_from_slice(&dst_mac);
+    frame.extend_from_slice(&src_mac);
+    frame.extend_from_slice(&ETHERTYPE_IPV4.to_be_bytes());
+    frame.push(0x45);
+    frame.push(0);
+    frame.extend_from_slice(&total_len.to_be_bytes());
+    frame.extend_from_slice(&identification.to_be_bytes());
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.push(64);
+    frame.push(IPV4_PROTOCOL_ICMP);
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.extend_from_slice(&src_ip);
+    frame.extend_from_slice(&dst_ip);
+    let ipv4_header_start = 14;
+    let ipv4_payload_start = ipv4_header_start + 20;
+    let checksum = ipv4_header_checksum(&frame[ipv4_header_start..ipv4_payload_start]);
+    frame[ipv4_header_start + 10..ipv4_header_start + 12].copy_from_slice(&checksum.to_be_bytes());
+
+    frame.extend_from_slice(request_payload);
+    frame[ipv4_payload_start] = 0;
+    frame[ipv4_payload_start + 2] = 0;
+    frame[ipv4_payload_start + 3] = 0;
+    let checksum = icmp_checksum(&frame[ipv4_payload_start..]);
+    frame[ipv4_payload_start + 2..ipv4_payload_start + 4].copy_from_slice(&checksum.to_be_bytes());
+    Some(frame)
+}
+
+fn build_rewritten_icmp_echo_reply_frame(
+    dst_mac: MacAddr,
+    src_mac: MacAddr,
+    src_ip: Ipv4Addr,
+    dst_ip: Ipv4Addr,
+    reply: &[u8],
+    guest_identifier: u16,
+) -> Option<Vec<u8>> {
+    let offset = icmp_reply_payload_offset(reply)?;
+    let icmp = &reply[offset..];
+    if icmp[0] != 0 || icmp[1] != 0 {
+        return None;
+    }
+    let ipv4_len = 20usize.checked_add(icmp.len())?;
+    let total_len = u16::try_from(ipv4_len).ok()?;
+    let mut frame = Vec::with_capacity(14 + ipv4_len);
+    frame.extend_from_slice(&dst_mac);
+    frame.extend_from_slice(&src_mac);
+    frame.extend_from_slice(&ETHERTYPE_IPV4.to_be_bytes());
+    frame.push(0x45);
+    frame.push(0);
+    frame.extend_from_slice(&total_len.to_be_bytes());
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.push(64);
+    frame.push(IPV4_PROTOCOL_ICMP);
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.extend_from_slice(&src_ip);
+    frame.extend_from_slice(&dst_ip);
+    let ipv4_header_start = 14;
+    let ipv4_payload_start = ipv4_header_start + 20;
+    let checksum = ipv4_header_checksum(&frame[ipv4_header_start..ipv4_payload_start]);
+    frame[ipv4_header_start + 10..ipv4_header_start + 12].copy_from_slice(&checksum.to_be_bytes());
+
+    frame.extend_from_slice(icmp);
+    frame[ipv4_payload_start + 2] = 0;
+    frame[ipv4_payload_start + 3] = 0;
+    frame[ipv4_payload_start + 4..ipv4_payload_start + 6]
+        .copy_from_slice(&guest_identifier.to_be_bytes());
+    let checksum = icmp_checksum(&frame[ipv4_payload_start..]);
+    frame[ipv4_payload_start + 2..ipv4_payload_start + 4].copy_from_slice(&checksum.to_be_bytes());
+    Some(frame)
+}
+
+fn build_udp_reply_frame(
+    dst_mac: MacAddr,
+    src_mac: MacAddr,
+    src_ip: Ipv4Addr,
+    dst_ip: Ipv4Addr,
+    src_port: u16,
+    dst_port: u16,
+    payload: &[u8],
+) -> Option<Vec<u8>> {
+    build_udp_reply_frame_with_id(
+        dst_mac, src_mac, src_ip, dst_ip, src_port, dst_port, payload, 0,
+    )
+}
+
+fn build_udp_reply_frame_with_id(
+    dst_mac: MacAddr,
+    src_mac: MacAddr,
+    src_ip: Ipv4Addr,
+    dst_ip: Ipv4Addr,
+    src_port: u16,
+    dst_port: u16,
+    payload: &[u8],
+    identification: u16,
+) -> Option<Vec<u8>> {
+    let udp_len = 8usize.checked_add(payload.len())?;
+    let udp_len_u16 = u16::try_from(udp_len).ok()?;
+    let ipv4_len = 20usize.checked_add(udp_len)?;
+    let total_len = u16::try_from(ipv4_len).ok()?;
+    let mut frame = Vec::with_capacity(14 + ipv4_len);
+    frame.extend_from_slice(&dst_mac);
+    frame.extend_from_slice(&src_mac);
+    frame.extend_from_slice(&ETHERTYPE_IPV4.to_be_bytes());
+    frame.push(0x45);
+    frame.push(0);
+    frame.extend_from_slice(&total_len.to_be_bytes());
+    frame.extend_from_slice(&identification.to_be_bytes());
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.push(64);
+    frame.push(IPV4_PROTOCOL_UDP);
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.extend_from_slice(&src_ip);
+    frame.extend_from_slice(&dst_ip);
+    let ipv4_header_start = 14;
+    let ipv4_payload_start = ipv4_header_start + 20;
+    let checksum = ipv4_header_checksum(&frame[ipv4_header_start..ipv4_payload_start]);
+    frame[ipv4_header_start + 10..ipv4_header_start + 12].copy_from_slice(&checksum.to_be_bytes());
+
+    frame.extend_from_slice(&src_port.to_be_bytes());
+    frame.extend_from_slice(&dst_port.to_be_bytes());
+    frame.extend_from_slice(&udp_len_u16.to_be_bytes());
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.extend_from_slice(payload);
+    let checksum = match udp_checksum(src_ip, dst_ip, &frame[ipv4_payload_start..]) {
+        0 => 0xffff,
+        checksum => checksum,
+    };
+    frame[ipv4_payload_start + 6..ipv4_payload_start + 8].copy_from_slice(&checksum.to_be_bytes());
+    Some(frame)
+}
+
+fn build_dhcp_reply_frame(
+    dst_mac: MacAddr,
+    src_mac: MacAddr,
+    dst_ip: Ipv4Addr,
+    request: &DhcpRequest,
+    message_type: u8,
+    identification: u16,
+) -> Option<Vec<u8>> {
+    let udp_len = 8usize.checked_add(DHCP_REPLY_PAYLOAD_LEN)?;
+    let udp_len_u16 = u16::try_from(udp_len).ok()?;
+    let ipv4_len = 20usize.checked_add(udp_len)?;
+    let total_len = u16::try_from(ipv4_len).ok()?;
+    let mut frame = Vec::with_capacity(14 + ipv4_len);
+    frame.extend_from_slice(&dst_mac);
+    frame.extend_from_slice(&src_mac);
+    frame.extend_from_slice(&ETHERTYPE_IPV4.to_be_bytes());
+    frame.push(0x45);
+    frame.push(0);
+    frame.extend_from_slice(&total_len.to_be_bytes());
+    frame.extend_from_slice(&identification.to_be_bytes());
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.push(64);
+    frame.push(IPV4_PROTOCOL_UDP);
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.extend_from_slice(&DHCP_SERVER_IP);
+    frame.extend_from_slice(&dst_ip);
+    let ipv4_header_start = 14;
+    let ipv4_payload_start = ipv4_header_start + 20;
+    let checksum = ipv4_header_checksum(&frame[ipv4_header_start..ipv4_payload_start]);
+    frame[ipv4_header_start + 10..ipv4_header_start + 12].copy_from_slice(&checksum.to_be_bytes());
+
+    frame.extend_from_slice(&DHCP_SERVER_PORT.to_be_bytes());
+    frame.extend_from_slice(&DHCP_CLIENT_PORT.to_be_bytes());
+    frame.extend_from_slice(&udp_len_u16.to_be_bytes());
+    frame.extend_from_slice(&0u16.to_be_bytes());
+
+    let dhcp_start = frame.len();
+    frame.resize(dhcp_start + DHCP_REPLY_FIXED_LEN, 0);
+    frame[dhcp_start] = 2;
+    frame[dhcp_start + 1] = request.htype;
+    frame[dhcp_start + 2] = request.hlen;
+    frame[dhcp_start + 4..dhcp_start + 8].copy_from_slice(&request.xid);
+    frame[dhcp_start + 10..dhcp_start + 12].copy_from_slice(&request.flags.to_be_bytes());
+    frame[dhcp_start + 16..dhcp_start + 20].copy_from_slice(&GUEST_IP);
+    frame[dhcp_start + 20..dhcp_start + 24].copy_from_slice(&DHCP_SERVER_IP);
+    frame[dhcp_start + 28..dhcp_start + 44].copy_from_slice(&request.chaddr);
+    frame[dhcp_start + 236..dhcp_start + 240].copy_from_slice(&DHCP_MAGIC_COOKIE);
+    push_dhcp_option(&mut frame, DHCP_OPT_MESSAGE_TYPE, &[message_type]);
+    push_dhcp_option(&mut frame, DHCP_OPT_SERVER_ID, &DHCP_SERVER_IP);
+    push_dhcp_option(
+        &mut frame,
+        DHCP_OPT_LEASE_TIME,
+        &DHCP_LEASE_SECONDS.to_be_bytes(),
+    );
+    push_dhcp_option(&mut frame, DHCP_OPT_SUBNET_MASK, &SUBNET_MASK);
+    push_dhcp_option(&mut frame, DHCP_OPT_ROUTER, &GATEWAY_IP);
+    push_dhcp_option(&mut frame, DHCP_OPT_DNS, &DNS_IP);
+    frame.push(DHCP_OPT_END);
+    debug_assert_eq!(frame.len(), 14 + ipv4_len);
+
+    let checksum = match udp_checksum(DHCP_SERVER_IP, dst_ip, &frame[ipv4_payload_start..]) {
+        0 => 0xffff,
+        checksum => checksum,
+    };
+    frame[ipv4_payload_start + 6..ipv4_payload_start + 8].copy_from_slice(&checksum.to_be_bytes());
+    Some(frame)
+}
+
+fn build_tcp_reply_frame(
+    dst_mac: MacAddr,
+    src_mac: MacAddr,
+    src_ip: Ipv4Addr,
+    dst_ip: Ipv4Addr,
+    src_port: u16,
+    dst_port: u16,
+    seq: u32,
+    ack: u32,
+    flags: u8,
+    payload: &[u8],
+) -> Option<Vec<u8>> {
+    let tcp_len = 20usize.checked_add(payload.len())?;
+    let ipv4_len = 20usize.checked_add(tcp_len)?;
+    let total_len = u16::try_from(ipv4_len).ok()?;
+    let mut frame = Vec::with_capacity(14 + ipv4_len);
+    frame.extend_from_slice(&dst_mac);
+    frame.extend_from_slice(&src_mac);
+    frame.extend_from_slice(&ETHERTYPE_IPV4.to_be_bytes());
+    frame.push(0x45);
+    frame.push(0);
+    frame.extend_from_slice(&total_len.to_be_bytes());
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.push(64);
+    frame.push(IPV4_PROTOCOL_TCP);
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.extend_from_slice(&src_ip);
+    frame.extend_from_slice(&dst_ip);
+    let ipv4_header_start = 14;
+    let ipv4_payload_start = ipv4_header_start + 20;
+    let checksum = ipv4_header_checksum(&frame[ipv4_header_start..ipv4_payload_start]);
+    frame[ipv4_header_start + 10..ipv4_header_start + 12].copy_from_slice(&checksum.to_be_bytes());
+
+    frame.extend_from_slice(&src_port.to_be_bytes());
+    frame.extend_from_slice(&dst_port.to_be_bytes());
+    frame.extend_from_slice(&seq.to_be_bytes());
+    frame.extend_from_slice(&ack.to_be_bytes());
+    frame.push(5 << 4);
+    frame.push(flags);
+    frame.extend_from_slice(&65535u16.to_be_bytes());
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.extend_from_slice(&0u16.to_be_bytes());
+    frame.extend_from_slice(payload);
+    let checksum = tcp_checksum(src_ip, dst_ip, &frame[ipv4_payload_start..]);
+    frame[ipv4_payload_start + 16..ipv4_payload_start + 18]
+        .copy_from_slice(&checksum.to_be_bytes());
+    Some(frame)
+}
+
 pub fn build_udp_datagram(
     src_ip: Ipv4Addr,
     dst_ip: Ipv4Addr,
@@ -1365,32 +1670,6 @@ fn checksum_finalize(mut sum: u32) -> u16 {
     !(sum as u16)
 }
 
-fn build_dhcp_reply(request: &DhcpRequest, message_type: u8) -> Vec<u8> {
-    let mut msg = vec![0u8; 240];
-    msg[0] = 2;
-    msg[1] = request.htype;
-    msg[2] = request.hlen;
-    msg[4..8].copy_from_slice(&request.xid);
-    msg[10..12].copy_from_slice(&request.flags.to_be_bytes());
-    msg[16..20].copy_from_slice(&GUEST_IP);
-    msg[20..24].copy_from_slice(&DHCP_SERVER_IP);
-    msg[28..44].copy_from_slice(&request.chaddr);
-    msg[236..240].copy_from_slice(&DHCP_MAGIC_COOKIE);
-
-    push_dhcp_option(&mut msg, DHCP_OPT_MESSAGE_TYPE, &[message_type]);
-    push_dhcp_option(&mut msg, DHCP_OPT_SERVER_ID, &DHCP_SERVER_IP);
-    push_dhcp_option(
-        &mut msg,
-        DHCP_OPT_LEASE_TIME,
-        &DHCP_LEASE_SECONDS.to_be_bytes(),
-    );
-    push_dhcp_option(&mut msg, DHCP_OPT_SUBNET_MASK, &SUBNET_MASK);
-    push_dhcp_option(&mut msg, DHCP_OPT_ROUTER, &GATEWAY_IP);
-    push_dhcp_option(&mut msg, DHCP_OPT_DNS, &DNS_IP);
-    msg.push(DHCP_OPT_END);
-    msg
-}
-
 fn push_dhcp_option(msg: &mut Vec<u8>, code: u8, value: &[u8]) {
     let len = u8::try_from(value.len()).expect("DHCP option too long");
     msg.push(code);
@@ -1474,6 +1753,7 @@ fn icmp_reply_payload_offset(buf: &[u8]) -> Option<usize> {
     Some(header_len)
 }
 
+#[cfg(test)]
 fn rewrite_icmp_echo_reply_identifier(reply: &[u8], guest_identifier: u16) -> Option<Vec<u8>> {
     let offset = icmp_reply_payload_offset(reply)?;
     let icmp = &reply[offset..];
@@ -1536,14 +1816,18 @@ fn queue_udp_reply(
     dst_port: u16,
     payload: &[u8],
 ) {
-    let udp = build_udp_datagram(src_ip, dst_ip, src_port, dst_port, payload);
-    let ipv4 = build_ipv4_packet(src_ip, dst_ip, IPV4_PROTOCOL_UDP, &udp);
-    reply_queue.push_back(EthernetFrame::build(
+    let Some(frame) = build_udp_reply_frame(
         guest_mac,
         GATEWAY_MAC,
-        ETHERTYPE_IPV4,
-        &ipv4,
-    ));
+        src_ip,
+        dst_ip,
+        src_port,
+        dst_port,
+        payload,
+    ) else {
+        return;
+    };
+    reply_queue.push_back(frame);
 }
 
 fn queue_tcp_reply(
@@ -1555,7 +1839,9 @@ fn queue_tcp_reply(
     flags: u8,
     payload: &[u8],
 ) {
-    let tcp = build_tcp_segment(
+    let Some(frame) = build_tcp_reply_frame(
+        guest_mac,
+        GATEWAY_MAC,
         key.dst_ip,
         key.guest_ip,
         key.dst_port,
@@ -1564,30 +1850,10 @@ fn queue_tcp_reply(
         ack,
         flags,
         payload,
-    );
-    let ipv4 = build_ipv4_packet(key.dst_ip, key.guest_ip, IPV4_PROTOCOL_TCP, &tcp);
-    reply_queue.push_back(EthernetFrame::build(
-        guest_mac,
-        GATEWAY_MAC,
-        ETHERTYPE_IPV4,
-        &ipv4,
-    ));
-}
-
-fn queue_icmp_reply(
-    reply_queue: &mut VecDeque<Vec<u8>>,
-    guest_mac: MacAddr,
-    src_ip: Ipv4Addr,
-    dst_ip: Ipv4Addr,
-    payload: &[u8],
-) {
-    let ipv4 = build_ipv4_packet(src_ip, dst_ip, IPV4_PROTOCOL_ICMP, payload);
-    reply_queue.push_back(EthernetFrame::build(
-        guest_mac,
-        GATEWAY_MAC,
-        ETHERTYPE_IPV4,
-        &ipv4,
-    ));
+    ) else {
+        return;
+    };
+    reply_queue.push_back(frame);
 }
 
 fn evict_lru<K: Copy + Eq + std::hash::Hash, V: HasLastActivity>(
@@ -2043,6 +2309,15 @@ mod tests {
     }
 
     fn dhcp_frame(message_type: u8, xid: [u8; 4], chaddr: MacAddr) -> Vec<u8> {
+        dhcp_frame_with_ipv4_id(message_type, xid, chaddr, 0)
+    }
+
+    fn dhcp_frame_with_ipv4_id(
+        message_type: u8,
+        xid: [u8; 4],
+        chaddr: MacAddr,
+        identification: u16,
+    ) -> Vec<u8> {
         let payload = dhcp_payload(message_type, xid, chaddr);
         let udp = build_udp_datagram(
             [0, 0, 0, 0],
@@ -2051,7 +2326,13 @@ mod tests {
             DHCP_SERVER_PORT,
             &payload,
         );
-        let ipv4 = build_ipv4_packet([0, 0, 0, 0], IPV4_BROADCAST, IPV4_PROTOCOL_UDP, &udp);
+        let ipv4 = build_ipv4_packet_with_id(
+            [0, 0, 0, 0],
+            IPV4_BROADCAST,
+            IPV4_PROTOCOL_UDP,
+            &udp,
+            identification,
+        );
         EthernetFrame::build(BROADCAST_MAC, chaddr, ETHERTYPE_IPV4, &ipv4)
     }
 
@@ -2230,6 +2511,41 @@ mod tests {
         assert_eq!(icmp_checksum(&rewritten), 0);
     }
 
+    #[test]
+    fn rewritten_icmp_echo_reply_frame_skips_ipv4_header_prefix() {
+        let mut reply = vec![0, 0, 0, 0, 0xab, 0xcd, 0x00, 0x02];
+        reply.extend_from_slice(b"payload");
+        let checksum = icmp_checksum(&reply);
+        reply[2..4].copy_from_slice(&checksum.to_be_bytes());
+        let ipv4 = build_ipv4_packet([1, 1, 1, 1], GUEST_IP, IPV4_PROTOCOL_ICMP, &reply);
+
+        let frame = build_rewritten_icmp_echo_reply_frame(
+            GUEST_MAC,
+            GATEWAY_MAC,
+            [1, 1, 1, 1],
+            GUEST_IP,
+            &ipv4,
+            0x1234,
+        )
+        .unwrap();
+
+        let eth = EthernetFrame::parse(&frame).unwrap();
+        assert_eq!(eth.dst, GUEST_MAC);
+        assert_eq!(eth.src, GATEWAY_MAC);
+        assert_eq!(eth.ethertype, ETHERTYPE_IPV4);
+        let ip = Ipv4Packet::parse(eth.payload).unwrap();
+        assert_eq!(ip.src, [1, 1, 1, 1]);
+        assert_eq!(ip.dst, GUEST_IP);
+        assert_eq!(ip.protocol, IPV4_PROTOCOL_ICMP);
+        assert_eq!(ipv4_header_checksum(&ip.bytes[..ip.header_len]), 0);
+        assert_eq!(read_u16_be(ip.payload, 4), Some(0x1234));
+        assert_eq!(
+            &ip.payload[6..],
+            &[0x00, 0x02, b'p', b'a', b'y', b'l', b'o', b'a', b'd']
+        );
+        assert_eq!(icmp_checksum(ip.payload), 0);
+    }
+
     #[derive(Debug)]
     struct TestFlow {
         last_activity: u64,
@@ -2297,6 +2613,7 @@ mod tests {
         let reply = backend.poll_receive().unwrap();
         assert!(backend.poll_receive().is_none());
 
+        assert_eq!(reply.len(), 42);
         let eth = EthernetFrame::parse(&reply).unwrap();
         assert_eq!(eth.dst, GUEST_MAC);
         assert_eq!(eth.src, GATEWAY_MAC);
@@ -2324,6 +2641,29 @@ mod tests {
         assert!(backend.poll_receive().is_none());
     }
 
+    #[test]
+    fn dhcp_reply_preserves_request_ipv4_identification() {
+        let mut backend = NatBackend::new();
+
+        backend.transmit(&dhcp_frame_with_ipv4_id(
+            DHCP_DISCOVER,
+            [0x45, 0x67, 0x89, 0xab],
+            GUEST_MAC,
+            0x4567,
+        ));
+        let offer = backend.poll_receive().unwrap();
+        assert!(backend.poll_receive().is_none());
+
+        let (_, ip, udp) = parse_ipv4_udp_payload(&offer);
+        assert_eq!(ip.identification, 0x4567);
+        assert_eq!(ip.src, DHCP_SERVER_IP);
+        assert_eq!(ip.dst, GUEST_IP);
+        assert_eq!(udp.src_port, DHCP_SERVER_PORT);
+        assert_eq!(udp.dst_port, DHCP_CLIENT_PORT);
+        assert_eq!(ipv4_header_checksum(&ip.bytes[..ip.header_len]), 0);
+        assert_eq!(udp_checksum(ip.src, ip.dst, udp.segment), 0);
+    }
+
     fn assert_dhcp_reply(frame: &[u8], expected_type: u8, xid: [u8; 4], chaddr: MacAddr) {
         let (eth, ip, udp) = parse_ipv4_udp_payload(frame);
         assert_eq!(eth.dst, chaddr);
@@ -2338,6 +2678,7 @@ mod tests {
         assert_eq!(udp_checksum(ip.src, ip.dst, udp.segment), 0);
 
         let payload = udp.payload;
+        assert_eq!(payload.len(), DHCP_REPLY_PAYLOAD_LEN);
         assert_eq!(payload[0], 2);
         assert_eq!(payload[1], 1);
         assert_eq!(payload[2], 6);
@@ -2414,6 +2755,7 @@ mod tests {
         let reply = backend.poll_receive().unwrap();
         assert!(backend.poll_receive().is_none());
 
+        assert_eq!(reply.len(), 42);
         let eth = EthernetFrame::parse(&reply).unwrap();
         assert_eq!(eth.dst, GUEST_MAC);
         assert_eq!(eth.src, GATEWAY_MAC);
@@ -2674,7 +3016,20 @@ mod tests {
             TCP_FLAG_ACK | TCP_FLAG_PSH,
             b"ping",
         ));
-        let mut server = server.unwrap();
+        let mut server = loop {
+            if let Some(stream) = server.take() {
+                break stream;
+            }
+            backend.poll_host_sockets();
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    stream.set_nonblocking(true).unwrap();
+                    break stream;
+                }
+                Err(e) if would_block(&e) => {}
+                Err(e) => panic!("tcp accept failed: {e}"),
+            }
+        };
         let mut buf = [0u8; 16];
         loop {
             backend.poll_host_sockets();
@@ -2753,5 +3108,41 @@ mod tests {
         };
         let (_, _, tcp) = parse_ipv4_tcp(&rst);
         assert_ne!(tcp.flags & TCP_FLAG_RST, 0);
+    }
+
+    #[test]
+    fn host_socket_tcp_poll_reuses_remove_scratch() {
+        let Some(listener) = loopback_tcp_listener() else {
+            return;
+        };
+        let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (_server, _) = listener.accept().unwrap();
+        stream.set_nonblocking(true).unwrap();
+
+        let mut handler = HostSocketOutboundIpv4Handler::new();
+        handler.tcp_remove_scratch.reserve(8);
+        let scratch_capacity = handler.tcp_remove_scratch.capacity();
+        let scratch_ptr = handler.tcp_remove_scratch.as_ptr();
+        let key = TcpFlowKey {
+            guest_ip: GUEST_IP,
+            guest_port: 49155,
+            dst_ip: [127, 0, 0, 1],
+            dst_port: listener.local_addr().unwrap().port(),
+        };
+        let mut flow = TcpFlow::new(stream, 0, 0, 0);
+        flow.state = TcpProxyState::Established;
+        flow.guest_fin = true;
+        flow.host_fin_sent = true;
+        flow.host_fin_acked = true;
+        handler.tcp_flows.insert(key, flow);
+
+        let mut replies = VecDeque::new();
+        let mut stats = NatStats::default();
+        handler.poll_tcp(Some(GUEST_MAC), &mut replies, &mut stats);
+
+        assert!(handler.tcp_flows.is_empty());
+        assert!(handler.tcp_remove_scratch.is_empty());
+        assert_eq!(handler.tcp_remove_scratch.capacity(), scratch_capacity);
+        assert_eq!(handler.tcp_remove_scratch.as_ptr(), scratch_ptr);
     }
 }

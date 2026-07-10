@@ -29,7 +29,10 @@ pub(super) struct Trb {
 
 impl Trb {
     pub(super) fn read_from(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<Self> {
-        let raw = mem.read_bytes(gpa, BYTES)?;
+        let mut raw = [0u8; BYTES];
+        if !mem.read_into(gpa, &mut raw) {
+            return None;
+        }
         Some(Self {
             parameter: read_u64(&raw, 0)?,
             status: read_u32(&raw, 8)?,
@@ -89,11 +92,15 @@ impl Trb {
 }
 
 pub(super) fn read_guest_u64(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u64> {
-    mem.read_bytes(gpa, 8).and_then(|bytes| read_u64(&bytes, 0))
+    let mut bytes = [0u8; 8];
+    mem.read_into(gpa, &mut bytes)
+        .then(|| u64::from_le_bytes(bytes))
 }
 
 pub(super) fn read_guest_u32(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u32> {
-    mem.read_bytes(gpa, 4).and_then(|bytes| read_u32(&bytes, 0))
+    let mut bytes = [0u8; 4];
+    mem.read_into(gpa, &mut bytes)
+        .then(|| u32::from_le_bytes(bytes))
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {

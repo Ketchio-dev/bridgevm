@@ -62,21 +62,18 @@ pub(super) fn is_event_ring_programming_write(offset: u64, size: u8) -> bool {
 
 impl XhciController {
     pub(super) fn write_iman(&mut self, index: usize, value: u32) {
-        let interrupter = &mut self.interrupters[index];
+        let old_iman = self.interrupters[index].iman;
         let pending = if value & IMAN_INTERRUPT_PENDING != 0 {
             0
         } else {
-            interrupter.iman & IMAN_INTERRUPT_PENDING
+            old_iman & IMAN_INTERRUPT_PENDING
         };
-        interrupter.iman = pending | (value & IMAN_INTERRUPT_ENABLE);
+        self.interrupters[index].iman = pending | (value & IMAN_INTERRUPT_ENABLE);
+        self.refresh_interrupter_pending_bits(index);
     }
 
     pub(super) fn usb_status(&self) -> u32 {
-        let event_interrupt = if self
-            .interrupters
-            .iter()
-            .any(|interrupter| interrupter.iman & IMAN_INTERRUPT_PENDING != 0)
-        {
+        let event_interrupt = if self.pending_interrupter_bits != 0 {
             USB_STS_EINT
         } else {
             0
@@ -89,10 +86,46 @@ impl XhciController {
     }
 
     pub(super) fn interrupt_pending_and_enabled(&self) -> bool {
-        let enabled_pending = IMAN_INTERRUPT_PENDING | IMAN_INTERRUPT_ENABLE;
-        self.interrupters
-            .iter()
-            .any(|interrupter| interrupter.iman & enabled_pending == enabled_pending)
+        self.pending_enabled_interrupter_bits != 0
+    }
+
+    pub(super) fn pending_enabled_interrupter_bits(&self) -> u32 {
+        self.pending_enabled_interrupter_bits
+    }
+
+    pub(super) fn set_interrupter_pending(&mut self, index: usize) {
+        if index >= XHCI_INTERRUPTER_COUNT {
+            return;
+        }
+        self.interrupters[index].iman |= IMAN_INTERRUPT_PENDING;
+        self.refresh_interrupter_pending_bits(index);
+    }
+
+    pub(super) fn clear_interrupter_pending(&mut self, index: usize) {
+        if index >= XHCI_INTERRUPTER_COUNT {
+            return;
+        }
+        self.interrupters[index].iman &= !IMAN_INTERRUPT_PENDING;
+        self.refresh_interrupter_pending_bits(index);
+    }
+
+    fn refresh_interrupter_pending_bits(&mut self, index: usize) {
+        let Some(bit) = interrupter_bit(index) else {
+            return;
+        };
+        let iman = self.interrupters[index].iman;
+        if iman & IMAN_INTERRUPT_PENDING != 0 {
+            self.pending_interrupter_bits |= bit;
+        } else {
+            self.pending_interrupter_bits &= !bit;
+        }
+        if iman & (IMAN_INTERRUPT_PENDING | IMAN_INTERRUPT_ENABLE)
+            == (IMAN_INTERRUPT_PENDING | IMAN_INTERRUPT_ENABLE)
+        {
+            self.pending_enabled_interrupter_bits |= bit;
+        } else {
+            self.pending_enabled_interrupter_bits &= !bit;
+        }
     }
 
     pub(super) fn reset_event_ring(&mut self, index: usize) {
@@ -145,7 +178,7 @@ impl XhciController {
                 .erdp_ehb_consumed
                 .saturating_add(1);
             self.interrupters[index].event_handler_busy = false;
-            self.interrupters[index].iman &= !IMAN_INTERRUPT_PENDING;
+            self.clear_interrupter_pending(index);
             trace::erdp_ehb_consumed(
                 next_erdp,
                 index,
@@ -277,7 +310,7 @@ impl XhciController {
             interrupter.event_cycle = !interrupter.event_cycle;
         }
         interrupter.event_handler_busy = true;
-        interrupter.iman |= IMAN_INTERRUPT_PENDING;
+        self.set_interrupter_pending(index);
         self.record_event_post_success(trace);
         trace::event_post_success(
             trace,
@@ -350,6 +383,10 @@ impl XhciController {
 
 fn event_type(control: u32) -> u32 {
     (control >> TRB_TYPE_SHIFT) & TRB_TYPE_MASK
+}
+
+fn interrupter_bit(index: usize) -> Option<u32> {
+    (index < u32::BITS as usize).then(|| 1u32 << index)
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {

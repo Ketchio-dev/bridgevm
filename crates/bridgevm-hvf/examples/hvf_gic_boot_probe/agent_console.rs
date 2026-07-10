@@ -1,4 +1,5 @@
 use std::collections::{HashSet, VecDeque};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -17,9 +18,10 @@ mod host_pasteboard;
 mod share_sync;
 
 use host_pasteboard::HostPasteboard;
-use share_sync::{GuestFileOutcome, HostFile, ShareSync, SkipReason, SyncAction};
+use share_sync::{GuestFileOutcome, HostFile, LsEntry, ShareSync, SkipReason, SyncAction};
 
 const TEST_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_TEST";
+const BOOT_TIMER_AGENT_ENV: &str = "BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT";
 const CMDS_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_CMDS";
 const TIMEOUT_MS_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS";
 const SERVICE_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_SERVICE";
@@ -44,6 +46,8 @@ pub struct AgentConsoleHarness {
     start: Instant,
     timeout: Duration,
     framer: LineFramer,
+    inbound_scratch: Vec<u8>,
+    line_scratch: Vec<String>,
     state: AgentConsoleState,
     commands: Vec<String>,
     last_ping: Option<Instant>,
@@ -77,6 +81,16 @@ pub struct AgentConsoleHarness {
     ctl_offset: u64,
     /// Line reassembly for control-file bytes (independent of the wire framer).
     ctl_framer: LineFramer,
+    /// Reused byte buffer for control-file tail reads.
+    ctl_read_scratch: Vec<u8>,
+    /// Reused framed-line buffer for control-file commands.
+    ctl_line_scratch: Vec<String>,
+    /// Reused host->guest service request line buffer.
+    service_line_scratch: String,
+    /// Reused CRLF-normalized clipboard text for CLIPSET encoding.
+    clip_crlf_scratch: String,
+    /// Reused absolute Windows guest path for shared-folder service requests.
+    share_guest_path_scratch: String,
     /// Throttle for control-file stat/reads.
     ctl_last_poll: Option<Instant>,
     /// Last time a CLIPGET was sent (clip poll cadence).
@@ -115,6 +129,8 @@ struct ShareState {
     interval: Duration,
     last_poll: Option<Instant>,
     host_skip_seen: HashSet<(String, u128, HostSkipKind)>,
+    guest_ls_scratch: Vec<LsEntry>,
+    host_scan_scratch: Vec<HostFile>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -134,6 +150,17 @@ enum SharePutPhase {
     Beg,
     Chunk,
     End,
+}
+
+enum SharePutWireLine {
+    Chunk {
+        seq: usize,
+        start: usize,
+        end: usize,
+    },
+    End {
+        nchunks: usize,
+    },
 }
 
 const PING_INTERVAL: Duration = Duration::from_secs(3);
@@ -198,6 +225,44 @@ enum ReplyProgress {
     Ignored,
 }
 
+enum InFlightSnapshot {
+    ClipPoll,
+    ClipPush {
+        guest_bytes: usize,
+    },
+    Ctl(String),
+    Ping,
+    ShareLs,
+    ShareGet {
+        name: String,
+    },
+    SharePut,
+    ShareDel {
+        name: String,
+        direction: ShareDelDirection,
+    },
+}
+
+impl InFlightSnapshot {
+    fn from_req(req: &ServiceReq) -> Self {
+        match req {
+            ServiceReq::ClipPoll => Self::ClipPoll,
+            ServiceReq::ClipPush(text) => Self::ClipPush {
+                guest_bytes: to_guest_crlf_len(text),
+            },
+            ServiceReq::Ctl(command) => Self::Ctl(command.clone()),
+            ServiceReq::Ping => Self::Ping,
+            ServiceReq::ShareLs => Self::ShareLs,
+            ServiceReq::ShareGet { name } => Self::ShareGet { name: name.clone() },
+            ServiceReq::SharePut { .. } => Self::SharePut,
+            ServiceReq::ShareDel { name, direction } => Self::ShareDel {
+                name: name.clone(),
+                direction: *direction,
+            },
+        }
+    }
+}
+
 impl AgentConsoleHarness {
     /// Milliseconds since boot for the BVAGENT evidence prints, so live-run
     /// latencies are measurable straight from run.log.
@@ -212,8 +277,19 @@ impl AgentConsoleHarness {
         self.service
     }
 
+    /// A READY hello or proactive PONG is emitted by the logon agent, making
+    /// it a stable desktop oracle that is not invalidated by clock pixels.
+    pub fn desktop_ready(&self) -> bool {
+        !matches!(
+            self.state,
+            AgentConsoleState::WaitingReady | AgentConsoleState::TimedOut
+        )
+    }
+
     pub fn from_env(start: Instant) -> Option<Self> {
-        if !env_flag(TEST_ENV) {
+        let scripted_test = env_flag(TEST_ENV);
+        let boot_timer_agent = env_flag(BOOT_TIMER_AGENT_ENV);
+        if !scripted_test && !boot_timer_agent {
             return None;
         }
         let service = env_flag(SERVICE_ENV);
@@ -239,8 +315,14 @@ impl AgentConsoleHarness {
             start,
             timeout: Duration::from_millis(env_u64(TIMEOUT_MS_ENV, DEFAULT_TIMEOUT_MS)),
             framer: LineFramer::new(),
+            inbound_scratch: Vec::new(),
+            line_scratch: Vec::new(),
             state: AgentConsoleState::WaitingReady,
-            commands: agent_commands_from_env(),
+            commands: if scripted_test {
+                agent_commands_from_env()
+            } else {
+                Vec::new()
+            },
             last_ping: None,
             get_accum: None,
             service,
@@ -255,6 +337,11 @@ impl AgentConsoleHarness {
             ctl_path,
             ctl_offset,
             ctl_framer: LineFramer::new(),
+            ctl_read_scratch: Vec::new(),
+            ctl_line_scratch: Vec::new(),
+            service_line_scratch: String::new(),
+            clip_crlf_scratch: String::new(),
+            share_guest_path_scratch: String::new(),
             ctl_last_poll: None,
             last_clip_poll: None,
             last_send: None,
@@ -277,11 +364,17 @@ impl AgentConsoleHarness {
             return;
         }
 
-        let inbound = platform.virtio_console_agent_take_inbound();
-        let lines = self.framer.push(&inbound);
-        for line in lines {
+        self.inbound_scratch.clear();
+        platform.virtio_console_agent_drain_inbound_into(&mut self.inbound_scratch);
+        self.line_scratch.clear();
+        self.framer
+            .push_into(&self.inbound_scratch, &mut self.line_scratch);
+        self.inbound_scratch.clear();
+        let mut lines = std::mem::take(&mut self.line_scratch);
+        for line in lines.drain(..) {
             self.handle_line(&line, platform, mem, now);
         }
+        self.line_scratch = lines;
 
         // Proactively PING while waiting to connect. The agent may have sent
         // its one-shot READY before the guest driver's host-open latched (that
@@ -360,8 +453,13 @@ impl AgentConsoleHarness {
                 // complete single-line reply advances to the next command; a
                 // chunked GET stays in-flight until GETEND; a stray line is
                 // ignored.
-                let command = self.commands[index].clone();
-                match self.handle_reply_line(line, &command) {
+                let progress = if let Some(progress) = self.handle_unlabelled_get_fragment(line) {
+                    progress
+                } else {
+                    let command = self.commands[index].clone();
+                    self.handle_reply_line(line, &command)
+                };
+                match progress {
                     ReplyProgress::Complete => {
                         self.send_next_command_or_done(index + 1, platform, mem, now);
                     }
@@ -386,13 +484,8 @@ impl AgentConsoleHarness {
     /// (LS), PUTOK <b64(path)> <bytes> (PUT), CLIP <b64> (CLIPGET), or
     /// OK <...> / ERR <...> (CLIPSET & other verbs). Anything else is stray.
     fn handle_reply_line(&mut self, line: &str, command: &str) -> ReplyProgress {
-        if let Some(rest) = line.strip_prefix("GETBEG ") {
-            self.begin_get(rest);
-            return ReplyProgress::Incomplete;
-        }
-        if let Some(rest) = line.strip_prefix("GETCHUNK ") {
-            self.accum_get_chunk(rest);
-            return ReplyProgress::Incomplete;
+        if let Some(progress) = self.handle_unlabelled_get_fragment(line) {
+            return progress;
         }
         if let Some(rest) = line.strip_prefix("GETEND ") {
             self.finish_get(command, rest);
@@ -452,6 +545,18 @@ impl AgentConsoleHarness {
             return ReplyProgress::Complete;
         }
         ReplyProgress::Ignored
+    }
+
+    fn handle_unlabelled_get_fragment(&mut self, line: &str) -> Option<ReplyProgress> {
+        if let Some(rest) = line.strip_prefix("GETBEG ") {
+            self.begin_get(rest);
+            return Some(ReplyProgress::Incomplete);
+        }
+        if let Some(rest) = line.strip_prefix("GETCHUNK ") {
+            self.accum_get_chunk(rest);
+            return Some(ReplyProgress::Incomplete);
+        }
+        None
     }
 
     fn send_next_command_or_done(
@@ -528,12 +633,11 @@ impl AgentConsoleHarness {
             return;
         };
         let ok = accum.bytes.len() == accum.total;
-        let head: String = accum
-            .bytes
-            .iter()
-            .take(48)
-            .map(|b| format!("{b:02x}"))
-            .collect();
+        let preview_len = accum.bytes.len().min(48);
+        let mut head = String::with_capacity(preview_len * 2);
+        for byte in &accum.bytes[..preview_len] {
+            let _ = write!(&mut head, "{byte:02x}");
+        }
         let mut written_note = String::new();
         if let Ok(dir) = std::env::var("BRIDGEVM_VIRTIO_CONSOLE_GET_DIR") {
             let name = accum
@@ -691,72 +795,134 @@ impl AgentConsoleHarness {
         let Some(req) = self.queue.pop_front() else {
             return;
         };
-        let Some(line) = self.service_req_line(&req, now) else {
+        if !self.write_service_req_line(&req, now) {
             return;
-        };
-        platform.virtio_console_agent_send(line.as_bytes(), mem);
+        }
+        platform.virtio_console_agent_send(self.service_line_scratch.as_bytes(), mem);
         self.last_send = Some(now);
         self.in_flight = Some((req, now));
     }
 
-    fn service_req_line(&mut self, req: &ServiceReq, now: Instant) -> Option<String> {
+    #[cfg(test)]
+    fn service_req_line(&mut self, req: &ServiceReq, now: Instant) -> Option<&str> {
+        self.write_service_req_line(req, now)
+            .then_some(self.service_line_scratch.as_str())
+    }
+
+    fn write_service_req_line(&mut self, req: &ServiceReq, now: Instant) -> bool {
+        self.service_line_scratch.clear();
         match req {
             ServiceReq::ClipPoll => {
                 self.last_clip_poll = Some(now);
-                Some("CLIPGET\n".to_string())
+                self.service_line_scratch.push_str("CLIPGET\n");
+                true
             }
-            ServiceReq::ClipPush(text) => Some(format!(
-                "CLIPSET {}\n",
-                base64_encode(to_guest_crlf(text).as_bytes())
-            )),
-            ServiceReq::Ctl(command) => Some(command_wire_line(command)),
-            ServiceReq::Ping => Some("PING\n".to_string()),
+            ServiceReq::ClipPush(text) => {
+                self.service_line_scratch.push_str("CLIPSET ");
+                to_guest_crlf_into(text, &mut self.clip_crlf_scratch);
+                base64_encode_into(
+                    self.clip_crlf_scratch.as_bytes(),
+                    &mut self.service_line_scratch,
+                );
+                self.service_line_scratch.push('\n');
+                true
+            }
+            ServiceReq::Ctl(command) => {
+                write_command_wire_line_into(command, &mut self.service_line_scratch);
+                true
+            }
+            ServiceReq::Ping => {
+                self.service_line_scratch.push_str("PING\n");
+                true
+            }
             ServiceReq::ShareLs => {
-                let share = self.share.as_mut()?;
+                let Some(share) = self.share.as_mut() else {
+                    return false;
+                };
                 share.last_poll = Some(now);
-                Some(format!(
-                    "LSR {}\n",
-                    base64_encode(share.guest_dir.as_bytes())
-                ))
+                self.service_line_scratch.push_str("LSR ");
+                base64_encode_into(share.guest_dir.as_bytes(), &mut self.service_line_scratch);
+                self.service_line_scratch.push('\n');
+                true
             }
             ServiceReq::ShareGet { name } => {
-                let share = self.share.as_ref()?;
-                Some(format!(
-                    "GET {}\n",
-                    base64_encode(share_guest_path(&share.guest_dir, name).as_bytes())
-                ))
+                let Some(share) = self.share.as_ref() else {
+                    return false;
+                };
+                write_share_guest_path_into(
+                    &share.guest_dir,
+                    name,
+                    &mut self.share_guest_path_scratch,
+                );
+                self.service_line_scratch.push_str("GET ");
+                base64_encode_into(
+                    self.share_guest_path_scratch.as_bytes(),
+                    &mut self.service_line_scratch,
+                );
+                self.service_line_scratch.push('\n');
+                true
             }
             ServiceReq::SharePut {
                 name, bytes, phase, ..
             } => {
-                let share = self.share.as_ref()?;
-                let path = share_guest_path(&share.guest_dir, name);
+                let Some(share) = self.share.as_ref() else {
+                    return false;
+                };
+                write_share_guest_path_into(
+                    &share.guest_dir,
+                    name,
+                    &mut self.share_guest_path_scratch,
+                );
                 match phase {
-                    SharePutPhase::Legacy => Some(format!(
-                        "PUT {} {}\n",
-                        base64_encode(path.as_bytes()),
-                        base64_encode(bytes)
-                    )),
-                    SharePutPhase::Beg => Some(format!(
-                        "PUTBEG {} {} {}\n",
-                        base64_encode(path.as_bytes()),
-                        bytes.len(),
-                        bytes.len().div_ceil(SHARE_PUT_CHUNK_BYTES)
-                    )),
-                    SharePutPhase::Chunk | SharePutPhase::End => None,
+                    SharePutPhase::Legacy => {
+                        self.service_line_scratch.push_str("PUT ");
+                        base64_encode_into(
+                            self.share_guest_path_scratch.as_bytes(),
+                            &mut self.service_line_scratch,
+                        );
+                        self.service_line_scratch.push(' ');
+                        base64_encode_into(bytes, &mut self.service_line_scratch);
+                        self.service_line_scratch.push('\n');
+                        true
+                    }
+                    SharePutPhase::Beg => {
+                        self.service_line_scratch.push_str("PUTBEG ");
+                        base64_encode_into(
+                            self.share_guest_path_scratch.as_bytes(),
+                            &mut self.service_line_scratch,
+                        );
+                        let _ = writeln!(
+                            &mut self.service_line_scratch,
+                            " {} {}",
+                            bytes.len(),
+                            bytes.len().div_ceil(SHARE_PUT_CHUNK_BYTES)
+                        );
+                        true
+                    }
+                    SharePutPhase::Chunk | SharePutPhase::End => false,
                 }
             }
             ServiceReq::ShareDel { name, direction } => match direction {
                 ShareDelDirection::HostToGuest => {
-                    let share = self.share.as_ref()?;
-                    Some(format!(
-                        "DEL {}\n",
-                        base64_encode(share_guest_path(&share.guest_dir, name).as_bytes())
-                    ))
+                    let Some(share) = self.share.as_ref() else {
+                        return false;
+                    };
+                    write_share_guest_path_into(
+                        &share.guest_dir,
+                        name,
+                        &mut self.share_guest_path_scratch,
+                    );
+                    self.service_line_scratch.push_str("DEL ");
+                    base64_encode_into(
+                        self.share_guest_path_scratch.as_bytes(),
+                        &mut self.service_line_scratch,
+                    );
+                    self.service_line_scratch.push('\n');
+                    true
                 }
                 ShareDelDirection::GuestToHost => {
                     self.handle_share_delete(name, *direction, now);
-                    None
+                    false
                 }
             },
         }
@@ -789,8 +955,11 @@ impl AgentConsoleHarness {
         let Some(share) = self.share.as_mut() else {
             return false;
         };
-        let files = scan_share_host_dir(share);
-        for action in share.engine.on_host_scan(files) {
+        scan_share_host_dir(share);
+        for action in share
+            .engine
+            .on_host_scan_normalized(share.host_scan_scratch.drain(..))
+        {
             match action {
                 SyncAction::Get { name } => {
                     let path = share.host_dir.join(&name);
@@ -853,10 +1022,10 @@ impl AgentConsoleHarness {
     /// offset to 0 so fresh content isn't skipped. Split from the poll cadence
     /// so it is unit-testable without a clock.
     fn ingest_ctl(&mut self) {
-        let Some(path) = self.ctl_path.clone() else {
+        let Some(path) = self.ctl_path.as_deref() else {
             return;
         };
-        match std::fs::metadata(&path) {
+        match std::fs::metadata(path) {
             Ok(meta) if meta.len() < self.ctl_offset => {
                 self.ctl_offset = 0;
                 self.ctl_framer = LineFramer::new();
@@ -865,12 +1034,17 @@ impl AgentConsoleHarness {
             // Missing/unreadable: no commands yet. Silent retry, no error spam.
             Err(_) => return,
         }
-        let appended = match read_ctl_appended(&path, self.ctl_offset) {
-            Some(bytes) if !bytes.is_empty() => bytes,
-            _ => return,
-        };
-        self.ctl_offset += appended.len() as u64;
-        for line in self.ctl_framer.push(&appended) {
+        if !read_ctl_appended_into(path, self.ctl_offset, &mut self.ctl_read_scratch)
+            || self.ctl_read_scratch.is_empty()
+        {
+            return;
+        }
+        self.ctl_offset += self.ctl_read_scratch.len() as u64;
+        self.ctl_line_scratch.clear();
+        self.ctl_framer
+            .push_into(&self.ctl_read_scratch, &mut self.ctl_line_scratch);
+        self.ctl_read_scratch.clear();
+        for line in self.ctl_line_scratch.drain(..) {
             let command = line.trim();
             if !command.is_empty() {
                 self.queue.push_back(ServiceReq::Ctl(command.to_string()));
@@ -889,10 +1063,19 @@ impl AgentConsoleHarness {
         mem: Option<&mut dyn GuestMemoryMut>,
         now: Instant,
     ) {
+        if matches!(
+            self.in_flight.as_ref().map(|(req, _)| req),
+            Some(ServiceReq::Ctl(_) | ServiceReq::ShareGet { .. })
+        ) {
+            if self.handle_unlabelled_get_fragment(line).is_some() {
+                return;
+            }
+        }
+
         // Snapshot the kind so the &mut self helpers below don't clash with the
         // borrow on self.in_flight.
         let kind = match self.in_flight.as_ref() {
-            Some((req, _)) => req.clone(),
+            Some((req, _)) => InFlightSnapshot::from_req(req),
             None => {
                 if let Some(hostname) = line.strip_prefix("READY ") {
                     println!("BVAGENT re-READY {hostname} t={}", self.t_ms(now));
@@ -901,7 +1084,7 @@ impl AgentConsoleHarness {
             }
         };
         match kind {
-            ServiceReq::ClipPoll => {
+            InFlightSnapshot::ClipPoll => {
                 if let Some(b64) = line.strip_prefix("CLIP ") {
                     let text = base64_decode(b64)
                         .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
@@ -926,11 +1109,11 @@ impl AgentConsoleHarness {
                     self.complete_in_flight();
                 }
             }
-            ServiceReq::ClipPush(text) => {
+            InFlightSnapshot::ClipPush { guest_bytes } => {
                 if line.starts_with("OK") {
                     println!(
                         "BVAGENT CLIPSYNC host->guest bytes={} t={}",
-                        to_guest_crlf(&text).len(),
+                        guest_bytes,
                         self.t_ms(now)
                     );
                     self.complete_in_flight();
@@ -939,16 +1122,16 @@ impl AgentConsoleHarness {
                     self.complete_in_flight();
                 }
             }
-            ServiceReq::Ctl(command) => match self.handle_reply_line(line, &command) {
+            InFlightSnapshot::Ctl(command) => match self.handle_reply_line(line, &command) {
                 ReplyProgress::Complete => self.complete_in_flight(),
                 ReplyProgress::Incomplete | ReplyProgress::Ignored => {}
             },
-            ServiceReq::Ping => {
+            InFlightSnapshot::Ping => {
                 if line == "PONG" {
                     self.complete_in_flight();
                 }
             }
-            ServiceReq::ShareLs => {
+            InFlightSnapshot::ShareLs => {
                 if let Some(b64) = line.strip_prefix("LSOK ") {
                     match base64_decode(b64) {
                         Ok(bytes) => {
@@ -957,9 +1140,13 @@ impl AgentConsoleHarness {
                                 .share
                                 .as_mut()
                                 .map(|share| {
-                                    share
-                                        .engine
-                                        .on_guest_listing(share_sync::parse_ls(&listing))
+                                    share_sync::parse_ls_into(
+                                        &listing,
+                                        &mut share.guest_ls_scratch,
+                                    );
+                                    share.engine.on_guest_listing_normalized(
+                                        share.guest_ls_scratch.drain(..),
+                                    )
                                 })
                                 .unwrap_or_default();
                             for action in actions {
@@ -1003,14 +1190,8 @@ impl AgentConsoleHarness {
                     self.complete_in_flight();
                 }
             }
-            ServiceReq::ShareGet { name } => {
-                if line.starts_with("GETBEG ") || line.starts_with("GETCHUNK ") {
-                    match self.handle_reply_line(line, "") {
-                        ReplyProgress::Incomplete
-                        | ReplyProgress::Complete
-                        | ReplyProgress::Ignored => {}
-                    }
-                } else if let Some(rest) = line.strip_prefix("GETEND ") {
+            InFlightSnapshot::ShareGet { name } => {
+                if let Some(rest) = line.strip_prefix("GETEND ") {
                     self.handle_share_get_end(&name, rest, now);
                     self.complete_in_flight();
                 } else if line.starts_with("ERR") {
@@ -1018,26 +1199,20 @@ impl AgentConsoleHarness {
                     self.complete_in_flight();
                 }
             }
-            ServiceReq::SharePut { .. } => {
+            InFlightSnapshot::SharePut => {
                 self.handle_share_put_reply(line, platform, mem, now);
             }
-            ServiceReq::ShareDel { .. } => {
+            InFlightSnapshot::ShareDel { name, direction } => {
                 if line.starts_with("OK DEL") {
-                    if let Some((ServiceReq::ShareDel { name, direction }, _)) =
-                        self.in_flight.as_ref()
-                    {
-                        if *direction == ShareDelDirection::HostToGuest {
-                            if let Some(share) = self.share.as_mut() {
-                                share.engine.on_guest_deleted(name);
-                            }
-                            println!("BVAGENT SHARE del host->guest {name} t={}", self.t_ms(now));
+                    if direction == ShareDelDirection::HostToGuest {
+                        if let Some(share) = self.share.as_mut() {
+                            share.engine.on_guest_deleted(&name);
                         }
+                        println!("BVAGENT SHARE del host->guest {name} t={}", self.t_ms(now));
                     }
                     self.complete_in_flight();
                 } else if line.starts_with("ERR") {
-                    if let Some((ServiceReq::ShareDel { name, .. }, _)) = self.in_flight.as_ref() {
-                        println!("BVAGENT SHARE del-error {name} {line}");
-                    }
+                    println!("BVAGENT SHARE del-error {name} {line}");
                     self.complete_in_flight();
                 }
             }
@@ -1051,41 +1226,6 @@ impl AgentConsoleHarness {
         mem: Option<&mut dyn GuestMemoryMut>,
         now: Instant,
     ) {
-        let Some((
-            ServiceReq::SharePut {
-                name, bytes, hash, ..
-            },
-            _,
-        )) = self.in_flight.as_ref()
-        else {
-            return;
-        };
-        let name = name.clone();
-        let len = bytes.len();
-        let hash = *hash;
-
-        if let Some(rest) = line.strip_prefix("PUTOK ") {
-            let written = rest
-                .split_once(' ')
-                .and_then(|(_, n)| n.parse::<u64>().ok())
-                .unwrap_or(len as u64);
-            if let Some(share) = self.share.as_mut() {
-                share.engine.on_put_ok(name.clone(), len as u64, hash);
-            }
-            println!(
-                "BVAGENT SHARE host->guest {name} bytes={written} t={}",
-                self.t_ms(now)
-            );
-            self.complete_in_flight();
-            return;
-        }
-
-        if line.starts_with("ERR") {
-            println!("BVAGENT SHARE put-error {name} {line}");
-            self.complete_in_flight();
-            return;
-        }
-
         if line == "OK PUTBEG" {
             self.send_next_share_put_chunk(platform, mem, now);
             return;
@@ -1096,6 +1236,39 @@ impl AgentConsoleHarness {
             .and_then(|s| s.parse::<usize>().ok())
         {
             self.advance_share_put_after_chunk(seq, platform, mem, now);
+            return;
+        }
+
+        if let Some(rest) = line.strip_prefix("PUTOK ") {
+            let Some((
+                ServiceReq::SharePut {
+                    name, bytes, hash, ..
+                },
+                _,
+            )) = self.in_flight.take()
+            else {
+                return;
+            };
+            let len = bytes.len();
+            let written = rest
+                .split_once(' ')
+                .and_then(|(_, n)| n.parse::<u64>().ok())
+                .unwrap_or(len as u64);
+            println!(
+                "BVAGENT SHARE host->guest {name} bytes={written} t={}",
+                self.t_ms(now)
+            );
+            if let Some(share) = self.share.as_mut() {
+                share.engine.on_put_ok(name, len as u64, hash);
+            }
+            return;
+        }
+
+        if line.starts_with("ERR") {
+            let Some((ServiceReq::SharePut { name, .. }, _)) = self.in_flight.take() else {
+                return;
+            };
+            println!("BVAGENT SHARE put-error {name} {line}");
         }
     }
 
@@ -1105,6 +1278,22 @@ impl AgentConsoleHarness {
         mem: Option<&mut dyn GuestMemoryMut>,
         now: Instant,
     ) {
+        let Some((seq, start, end)) = self.prepare_next_share_put_chunk_payload(now) else {
+            return;
+        };
+        if !self.write_share_put_chunk_line(seq, start, end) {
+            return;
+        }
+        self.last_send = Some(now);
+        if let (Some(platform), Some(mem)) = (platform, mem) {
+            platform.virtio_console_agent_send(self.service_line_scratch.as_bytes(), mem);
+        }
+    }
+
+    fn prepare_next_share_put_chunk_payload(
+        &mut self,
+        now: Instant,
+    ) -> Option<(usize, usize, usize)> {
         let Some((
             ServiceReq::SharePut {
                 bytes,
@@ -1115,22 +1304,18 @@ impl AgentConsoleHarness {
             sent_at,
         )) = self.in_flight.as_mut()
         else {
-            return;
+            return None;
         };
         let seq = *next_chunk;
         let start = seq.saturating_mul(SHARE_PUT_CHUNK_BYTES);
         let end = (start + SHARE_PUT_CHUNK_BYTES).min(bytes.len());
         if start > end || start >= bytes.len() {
-            return;
+            return None;
         }
-        let line = format!("PUTCHUNK {seq} {}\n", base64_encode(&bytes[start..end]));
         *next_chunk = seq + 1;
         *phase = SharePutPhase::Chunk;
         *sent_at = now;
-        self.last_send = Some(now);
-        if let (Some(platform), Some(mem)) = (platform, mem) {
-            platform.virtio_console_agent_send(line.as_bytes(), mem);
-        }
+        Some((seq, start, end))
     }
 
     fn advance_share_put_after_chunk(
@@ -1140,6 +1325,23 @@ impl AgentConsoleHarness {
         mem: Option<&mut dyn GuestMemoryMut>,
         now: Instant,
     ) {
+        let Some(line) = self.prepare_share_put_line_after_chunk(seq, now) else {
+            return;
+        };
+        if !self.write_share_put_wire_line(line) {
+            return;
+        }
+        self.last_send = Some(now);
+        if let (Some(platform), Some(mem)) = (platform, mem) {
+            platform.virtio_console_agent_send(self.service_line_scratch.as_bytes(), mem);
+        }
+    }
+
+    fn prepare_share_put_line_after_chunk(
+        &mut self,
+        seq: usize,
+        now: Instant,
+    ) -> Option<SharePutWireLine> {
         let Some((
             ServiceReq::SharePut {
                 bytes,
@@ -1150,10 +1352,10 @@ impl AgentConsoleHarness {
             sent_at,
         )) = self.in_flight.as_mut()
         else {
-            return;
+            return None;
         };
         if seq + 1 != *next_chunk {
-            return;
+            return None;
         }
         let nchunks = bytes.len().div_ceil(SHARE_PUT_CHUNK_BYTES);
         let line = if *next_chunk < nchunks {
@@ -1162,19 +1364,44 @@ impl AgentConsoleHarness {
             let end = (start + SHARE_PUT_CHUNK_BYTES).min(bytes.len());
             *next_chunk = send_seq + 1;
             *phase = SharePutPhase::Chunk;
-            format!(
-                "PUTCHUNK {send_seq} {}\n",
-                base64_encode(&bytes[start..end])
-            )
+            SharePutWireLine::Chunk {
+                seq: send_seq,
+                start,
+                end,
+            }
         } else {
             *phase = SharePutPhase::End;
-            format!("PUTEND {nchunks}\n")
+            SharePutWireLine::End { nchunks }
         };
         *sent_at = now;
-        self.last_send = Some(now);
-        if let (Some(platform), Some(mem)) = (platform, mem) {
-            platform.virtio_console_agent_send(line.as_bytes(), mem);
+        Some(line)
+    }
+
+    fn write_share_put_wire_line(&mut self, line: SharePutWireLine) -> bool {
+        match line {
+            SharePutWireLine::Chunk { seq, start, end } => {
+                self.write_share_put_chunk_line(seq, start, end)
+            }
+            SharePutWireLine::End { nchunks } => {
+                self.service_line_scratch.clear();
+                let _ = writeln!(&mut self.service_line_scratch, "PUTEND {nchunks}");
+                true
+            }
         }
+    }
+
+    fn write_share_put_chunk_line(&mut self, seq: usize, start: usize, end: usize) -> bool {
+        let Some((ServiceReq::SharePut { bytes, .. }, _)) = self.in_flight.as_ref() else {
+            return false;
+        };
+        if start > end || end > bytes.len() {
+            return false;
+        }
+        self.service_line_scratch.clear();
+        let _ = write!(&mut self.service_line_scratch, "PUTCHUNK {seq} ");
+        base64_encode_into(&bytes[start..end], &mut self.service_line_scratch);
+        self.service_line_scratch.push('\n');
+        true
     }
 
     fn handle_share_delete(&mut self, name: &str, direction: ShareDelDirection, now: Instant) {
@@ -1303,18 +1530,27 @@ impl LineFramer {
         }
     }
 
-    fn push(&mut self, bytes: &[u8]) -> Vec<String> {
+    fn push_into(&mut self, bytes: &[u8], lines: &mut Vec<String>) {
         self.pending.extend_from_slice(bytes);
-        let mut lines = Vec::new();
-        while let Some(newline) = self.pending.iter().position(|byte| *byte == b'\n') {
-            let mut raw = self.pending.drain(..=newline).collect::<Vec<_>>();
-            raw.pop();
-            if raw.last() == Some(&b'\r') {
-                raw.pop();
-            }
-            lines.push(String::from_utf8_lossy(&raw).into_owned());
+
+        let mut consumed = 0usize;
+        while let Some(relative_newline) = self.pending[consumed..]
+            .iter()
+            .position(|byte| *byte == b'\n')
+        {
+            let newline = consumed + relative_newline;
+            let line_end = if newline > consumed && self.pending[newline - 1] == b'\r' {
+                newline - 1
+            } else {
+                newline
+            };
+            lines.push(String::from_utf8_lossy(&self.pending[consumed..line_end]).into_owned());
+            consumed = newline + 1;
         }
-        lines
+
+        if consumed > 0 {
+            self.pending.drain(..consumed);
+        }
     }
 }
 
@@ -1325,9 +1561,16 @@ enum Base64DecodeError {
     InvalidPadding,
 }
 
+#[cfg(test)]
 fn base64_encode(bytes: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    base64_encode_into(bytes, &mut out);
+    out
+}
+
+fn base64_encode_into(bytes: &[u8], out: &mut String) {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    out.reserve(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
         let b0 = chunk[0];
         let b1 = chunk.get(1).copied().unwrap_or(0);
@@ -1345,7 +1588,6 @@ fn base64_encode(bytes: &[u8]) -> String {
             out.push('=');
         }
     }
-    out
 }
 
 fn base64_decode(text: &str) -> Result<Vec<u8>, Base64DecodeError> {
@@ -1417,11 +1659,20 @@ fn is_raw_verb(token: &str) -> bool {
 /// BRIDGEVM_VIRTIO_CONSOLE_CMDS and the control file drive clipboard/file verbs
 /// directly, e.g. "CLIPSET <b64>" or "CLIPGET".
 fn command_wire_line(command: &str) -> String {
+    let mut line = String::new();
+    write_command_wire_line_into(command, &mut line);
+    line
+}
+
+fn write_command_wire_line_into(command: &str, out: &mut String) {
     let first = command.split_whitespace().next().unwrap_or("");
     if is_raw_verb(first) {
-        format!("{command}\n")
+        out.push_str(command);
+        out.push('\n');
     } else {
-        format!("RUN {}\n", base64_encode(command.as_bytes()))
+        out.push_str("RUN ");
+        base64_encode_into(command.as_bytes(), out);
+        out.push('\n');
     }
 }
 
@@ -1431,15 +1682,18 @@ fn parse_out_line(line: &str) -> Option<(i32, &str)> {
     Some((exit_code.parse().ok()?, output))
 }
 
-/// Read control-file bytes from `offset` to EOF. None on any IO error, which the
-/// caller treats as "nothing new yet".
-fn read_ctl_appended(path: &str, offset: u64) -> Option<Vec<u8>> {
+/// Read control-file bytes from `offset` to EOF into caller-owned storage.
+/// Returns false on any IO error, which the caller treats as "nothing new yet".
+fn read_ctl_appended_into(path: &str, offset: u64, out: &mut Vec<u8>) -> bool {
     use std::io::{Read, Seek, SeekFrom};
-    let mut file = std::fs::File::open(path).ok()?;
-    file.seek(SeekFrom::Start(offset)).ok()?;
-    let mut buf = Vec::new();
-    file.read_to_end(&mut buf).ok()?;
-    Some(buf)
+    out.clear();
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    if file.seek(SeekFrom::Start(offset)).is_err() {
+        return false;
+    }
+    file.read_to_end(out).is_ok()
 }
 
 /// Short label for a service request, used in the stall-timeout print.
@@ -1489,6 +1743,8 @@ fn init_share_from_env() -> Option<ShareState> {
         interval: Duration::from_millis(interval_ms),
         last_poll: None,
         host_skip_seen: HashSet::new(),
+        guest_ls_scratch: Vec::new(),
+        host_scan_scratch: Vec::new(),
     })
 }
 
@@ -1500,13 +1756,27 @@ fn parse_share_spec(spec: &str) -> Option<(String, String)> {
     Some((host.to_string(), guest.to_string()))
 }
 
-fn scan_share_host_dir(share: &mut ShareState) -> Vec<HostFile> {
-    let mut files = Vec::new();
-    scan_share_host_dir_inner(share, &share.host_dir.clone(), &mut files);
-    files
+fn scan_share_host_dir(share: &mut ShareState) {
+    share.host_scan_scratch.clear();
+    let root = &share.host_dir;
+    let max_bytes = share.engine.max_bytes();
+    let host_skip_seen = &mut share.host_skip_seen;
+    scan_share_host_dir_inner(
+        root,
+        root,
+        max_bytes,
+        host_skip_seen,
+        &mut share.host_scan_scratch,
+    );
 }
 
-fn scan_share_host_dir_inner(share: &mut ShareState, dir: &Path, files: &mut Vec<HostFile>) {
+fn scan_share_host_dir_inner(
+    root: &Path,
+    dir: &Path,
+    max_bytes: u64,
+    host_skip_seen: &mut HashSet<(String, u128, HostSkipKind)>,
+    files: &mut Vec<HostFile>,
+) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -1519,19 +1789,25 @@ fn scan_share_host_dir_inner(share: &mut ShareState, dir: &Path, files: &mut Vec
             continue;
         }
         if meta.is_dir() {
-            scan_share_host_dir_inner(share, &path, files);
+            scan_share_host_dir_inner(root, &path, max_bytes, host_skip_seen, files);
             continue;
         }
         if !meta.is_file() {
             continue;
         }
-        let Some(name) = host_rel_path(&share.host_dir, &path) else {
+        let Some(name) = host_rel_path(root, &path) else {
             continue;
         };
         let mtime_ms = file_mtime_ms_from_meta(&meta).unwrap_or(0);
         let size = meta.len();
-        if size > share.engine.max_bytes() {
-            print_host_skip_once(share, &name, mtime_ms, HostSkipKind::TooLarge, size);
+        if size > max_bytes {
+            print_host_skip_once_seen(
+                host_skip_seen,
+                &name,
+                mtime_ms,
+                HostSkipKind::TooLarge,
+                size,
+            );
             continue;
         }
         files.push(HostFile {
@@ -1544,12 +1820,21 @@ fn scan_share_host_dir_inner(share: &mut ShareState, dir: &Path, files: &mut Vec
 
 fn host_rel_path(root: &Path, path: &Path) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;
-    Some(
-        rel.components()
-            .map(|component| component.as_os_str().to_string_lossy())
-            .collect::<Vec<_>>()
-            .join("/"),
-    )
+    let mut out = String::new();
+    for component in rel.components() {
+        let component = component.as_os_str().to_string_lossy();
+        // A literal backslash is legal in a macOS filename but is a path
+        // separator in the Windows guest. Treating it as a normal byte here
+        // creates two different sync keys and repeats PUT/tombstone actions.
+        if component.contains('\\') {
+            return None;
+        }
+        if !out.is_empty() {
+            out.push('/');
+        }
+        out.push_str(&component);
+    }
+    Some(out)
 }
 
 fn file_mtime_ms(path: &Path) -> Option<u128> {
@@ -1573,10 +1858,17 @@ fn print_host_skip_once(
     kind: HostSkipKind,
     size: u64,
 ) {
-    if !share
-        .host_skip_seen
-        .insert((name.to_string(), mtime_ms, kind))
-    {
+    print_host_skip_once_seen(&mut share.host_skip_seen, name, mtime_ms, kind, size);
+}
+
+fn print_host_skip_once_seen(
+    host_skip_seen: &mut HashSet<(String, u128, HostSkipKind)>,
+    name: &str,
+    mtime_ms: u128,
+    kind: HostSkipKind,
+    size: u64,
+) {
+    if !host_skip_seen.insert((name.to_string(), mtime_ms, kind)) {
         return;
     }
     match kind {
@@ -1592,8 +1884,12 @@ fn print_guest_skip(name: &str, reason: SkipReason) {
     }
 }
 
-fn share_guest_path(dir: &str, name: &str) -> String {
-    format!("{dir}\\{}", share_sync::to_guest_rel(name))
+fn write_share_guest_path_into(dir: &str, name: &str, out: &mut String) {
+    out.clear();
+    out.reserve(dir.len() + 1 + name.len());
+    out.push_str(dir);
+    out.push('\\');
+    share_sync::append_guest_rel_into(name, out);
 }
 
 fn share_put_req(name: String, bytes: Vec<u8>, hash: u64) -> ServiceReq {
@@ -1621,8 +1917,46 @@ fn normalize_clip(s: &str) -> String {
 /// Convert to the guest/Windows CRLF convention WITHOUT doubling existing CRLFs:
 /// normalize to LF first, then expand every LF. (A naive \n -> \r\n over text
 /// that already had \r\n would yield \r\r\n.)
+#[cfg(test)]
 fn to_guest_crlf(s: &str) -> String {
-    normalize_clip(s).replace('\n', "\r\n")
+    let mut out = String::with_capacity(to_guest_crlf_len(s));
+    to_guest_crlf_into(s, &mut out);
+    out
+}
+
+fn to_guest_crlf_into(s: &str, out: &mut String) {
+    out.clear();
+    out.reserve(to_guest_crlf_len(s));
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\r' && chars.peek() == Some(&'\n') {
+            out.push_str("\r\n");
+            let _ = chars.next();
+        } else if ch == '\n' {
+            out.push_str("\r\n");
+        } else {
+            out.push(ch);
+        }
+    }
+}
+
+fn to_guest_crlf_len(s: &str) -> usize {
+    let bytes = s.as_bytes();
+    let mut len = 0usize;
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if bytes[index] == b'\r' && bytes.get(index + 1) == Some(&b'\n') {
+            len += 2;
+            index += 2;
+        } else if bytes[index] == b'\n' {
+            len += 2;
+            index += 1;
+        } else {
+            len += 1;
+            index += 1;
+        }
+    }
+    len
 }
 
 /// Decide whether a guest clipboard snapshot should be adopted host-side.
@@ -1676,6 +2010,8 @@ mod tests {
             start: Instant::now(),
             timeout: Duration::from_secs(1),
             framer: LineFramer::new(),
+            inbound_scratch: Vec::new(),
+            line_scratch: Vec::new(),
             state: AgentConsoleState::WaitingOut { index: 0 },
             commands: vec!["GET Zm9v".to_string()],
             last_ping: None,
@@ -1691,6 +2027,11 @@ mod tests {
             ctl_path: None,
             ctl_offset: 0,
             ctl_framer: LineFramer::new(),
+            ctl_read_scratch: Vec::new(),
+            ctl_line_scratch: Vec::new(),
+            service_line_scratch: String::new(),
+            clip_crlf_scratch: String::new(),
+            share_guest_path_scratch: String::new(),
             ctl_last_poll: None,
             last_clip_poll: None,
             last_send: None,
@@ -1698,6 +2039,17 @@ mod tests {
             share: None,
             share_old_agent_warned: false,
         }
+    }
+
+    #[test]
+    fn desktop_ready_requires_agent_handshake() {
+        let mut h = harness();
+        h.state = AgentConsoleState::WaitingReady;
+        assert!(!h.desktop_ready());
+        h.state = AgentConsoleState::WaitingPong;
+        assert!(h.desktop_ready());
+        h.state = AgentConsoleState::TimedOut;
+        assert!(!h.desktop_ready());
     }
 
     fn queue_kinds(h: &AgentConsoleHarness) -> Vec<String> {
@@ -1728,6 +2080,57 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn service_req_lines_reuse_output_scratch() {
+        let mut h = harness();
+        let now = Instant::now();
+        let long = ServiceReq::ClipPush("x".repeat(256));
+        assert!(h.write_service_req_line(&long, now));
+        assert!(h.service_line_scratch.starts_with("CLIPSET "));
+        let ptr = h.service_line_scratch.as_ptr();
+        let capacity = h.service_line_scratch.capacity();
+        let crlf_ptr = h.clip_crlf_scratch.as_ptr();
+        let crlf_capacity = h.clip_crlf_scratch.capacity();
+
+        let short = ServiceReq::Ctl("whoami".into());
+        assert!(h.write_service_req_line(&short, now));
+        assert!(h.service_line_scratch.starts_with("RUN "));
+        assert_eq!(h.service_line_scratch.as_ptr(), ptr);
+        assert_eq!(h.service_line_scratch.capacity(), capacity);
+
+        let shorter = ServiceReq::ClipPush("y".into());
+        assert!(h.write_service_req_line(&shorter, now));
+        assert_eq!(h.clip_crlf_scratch.as_ptr(), crlf_ptr);
+        assert_eq!(h.clip_crlf_scratch.capacity(), crlf_capacity);
+    }
+
+    #[test]
+    fn share_service_lines_reuse_guest_path_scratch() {
+        let mut h = harness();
+        h.share = Some(test_share_state("path-scratch"));
+        let now = Instant::now();
+
+        let long = ServiceReq::ShareGet {
+            name: "long/nested/path/that/should/grow/the/buffer.txt".into(),
+        };
+        assert!(h.write_service_req_line(&long, now));
+        assert_eq!(
+            h.share_guest_path_scratch,
+            "C:\\share\\long\\nested\\path\\that\\should\\grow\\the\\buffer.txt"
+        );
+        let path_ptr = h.share_guest_path_scratch.as_ptr();
+        let path_capacity = h.share_guest_path_scratch.capacity();
+
+        let short = ServiceReq::ShareDel {
+            name: "x.txt".into(),
+            direction: ShareDelDirection::HostToGuest,
+        };
+        assert!(h.write_service_req_line(&short, now));
+        assert_eq!(h.share_guest_path_scratch, "C:\\share\\x.txt");
+        assert_eq!(h.share_guest_path_scratch.as_ptr(), path_ptr);
+        assert_eq!(h.share_guest_path_scratch.capacity(), path_capacity);
     }
 
     #[test]
@@ -1818,14 +2221,33 @@ mod tests {
     #[test]
     fn line_framer_handles_partial_crlf_and_multiple_lines() {
         let mut framer = LineFramer::new();
+        let mut lines = Vec::new();
 
-        assert!(framer.push(b"REA").is_empty());
-        assert_eq!(
-            framer.push(b"DY host\r\nPONG\nOUT"),
-            vec!["READY host", "PONG"]
-        );
-        assert!(framer.push(b" 0 Zm9v").is_empty());
-        assert_eq!(framer.push(b"\n").as_slice(), ["OUT 0 Zm9v"]);
+        framer.push_into(b"REA", &mut lines);
+        assert!(lines.is_empty());
+        framer.push_into(b"DY host\r\nPONG\nOUT", &mut lines);
+        assert_eq!(lines.as_slice(), ["READY host", "PONG"]);
+        lines.clear();
+        framer.push_into(b" 0 Zm9v", &mut lines);
+        assert!(lines.is_empty());
+        framer.push_into(b"\n", &mut lines);
+        assert_eq!(lines.as_slice(), ["OUT 0 Zm9v"]);
+    }
+
+    #[test]
+    fn line_framer_push_into_reuses_output_vec_and_keeps_tail() {
+        let mut framer = LineFramer::new();
+        let mut lines = Vec::with_capacity(4);
+        let initial_capacity = lines.capacity();
+
+        framer.push_into(b"one\r\ntwo\npartial", &mut lines);
+        assert_eq!(lines.as_slice(), ["one", "two"]);
+        assert_eq!(lines.capacity(), initial_capacity);
+
+        lines.clear();
+        framer.push_into(b"-done\r\n", &mut lines);
+        assert_eq!(lines.as_slice(), ["partial-done"]);
+        assert_eq!(lines.capacity(), initial_capacity);
     }
 
     #[test]
@@ -1849,6 +2271,23 @@ mod tests {
             to_guest_crlf("mixed\r\nand\nlf\r\n"),
             "mixed\r\nand\r\nlf\r\n"
         );
+    }
+
+    #[test]
+    fn to_guest_crlf_len_matches_conversion_without_allocating_result() {
+        for text in [
+            "",
+            "plain",
+            "a\nb",
+            "a\r\nb",
+            "a\r\nb\nc",
+            "trailing\n",
+            "mixed\r\nand\nlf\r\n",
+            "lone\rcarriage",
+            "emoji \u{1f642}\n",
+        ] {
+            assert_eq!(to_guest_crlf_len(text), to_guest_crlf(text).len());
+        }
     }
 
     #[test]
@@ -1908,6 +2347,14 @@ mod tests {
         drop(f);
         h.ingest_ctl();
         assert_eq!(ctl_cmds(&h), vec!["whoami", "partial", "CLIPGET"]);
+        let read_capacity = h.ctl_read_scratch.capacity();
+        let line_capacity = h.ctl_line_scratch.capacity();
+        assert!(read_capacity > 0);
+        assert!(line_capacity > 0);
+
+        h.ingest_ctl();
+        assert_eq!(h.ctl_read_scratch.capacity(), read_capacity);
+        assert_eq!(h.ctl_line_scratch.capacity(), line_capacity);
 
         // Truncation (shrink below offset) restarts from the top.
         std::fs::write(&path, b"ver\n").unwrap();
@@ -2049,6 +2496,8 @@ mod tests {
             interval: Duration::from_millis(500),
             last_poll: None,
             host_skip_seen: HashSet::new(),
+            guest_ls_scratch: Vec::new(),
+            host_scan_scratch: Vec::new(),
         });
 
         h.service_enqueue(Instant::now());
@@ -2093,11 +2542,43 @@ mod tests {
             interval: Duration::from_millis(500),
             last_poll: None,
             host_skip_seen: HashSet::new(),
+            guest_ls_scratch: Vec::new(),
+            host_scan_scratch: Vec::new(),
         };
-        let files = scan_share_host_dir(&mut share);
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].name, "sub/dir/x.txt");
+        scan_share_host_dir(&mut share);
+        assert_eq!(share.host_scan_scratch.len(), 1);
+        assert_eq!(share.host_scan_scratch[0].name, "sub/dir/x.txt");
+        let capacity = share.host_scan_scratch.capacity();
+        assert!(capacity > 0);
 
+        scan_share_host_dir(&mut share);
+        assert_eq!(share.host_scan_scratch.capacity(), capacity);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn host_scan_rejects_literal_backslash_names_that_windows_would_split() {
+        let dir =
+            std::env::temp_dir().join(format!("bvagent-share-backslash-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a\\b.txt"), b"ambiguous").unwrap();
+
+        let mut share = ShareState {
+            engine: ShareSync::new(512),
+            host_dir: dir.clone(),
+            guest_dir: "C:\\share".into(),
+            interval: Duration::from_millis(500),
+            last_poll: None,
+            host_skip_seen: HashSet::new(),
+            guest_ls_scratch: Vec::new(),
+            host_scan_scratch: Vec::new(),
+        };
+
+        scan_share_host_dir(&mut share);
+        assert!(share.host_scan_scratch.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -2133,6 +2614,9 @@ mod tests {
 
         let t1 = t0 + Duration::from_millis(1);
         h.handle_share_put_reply("OK PUTBEG", None, None, t1);
+        assert!(h.service_line_scratch.starts_with("PUTCHUNK 0 "));
+        let chunk_ptr = h.service_line_scratch.as_ptr();
+        let chunk_capacity = h.service_line_scratch.capacity();
         match h.in_flight.as_ref().unwrap() {
             (
                 ServiceReq::SharePut {
@@ -2149,6 +2633,9 @@ mod tests {
 
         let t2 = t0 + Duration::from_millis(2);
         h.handle_share_put_reply("OK PUTCHUNK 0", None, None, t2);
+        assert!(h.service_line_scratch.starts_with("PUTCHUNK 1 "));
+        assert_eq!(h.service_line_scratch.as_ptr(), chunk_ptr);
+        assert_eq!(h.service_line_scratch.capacity(), chunk_capacity);
         match h.in_flight.as_ref().unwrap() {
             (
                 ServiceReq::SharePut {
@@ -2165,6 +2652,9 @@ mod tests {
 
         let t3 = t0 + Duration::from_millis(3);
         h.handle_share_put_reply("OK PUTCHUNK 1", None, None, t3);
+        assert!(h.service_line_scratch.starts_with("PUTCHUNK 2 "));
+        assert_eq!(h.service_line_scratch.as_ptr(), chunk_ptr);
+        assert_eq!(h.service_line_scratch.capacity(), chunk_capacity);
         match h.in_flight.as_ref().unwrap() {
             (
                 ServiceReq::SharePut {
@@ -2181,6 +2671,9 @@ mod tests {
 
         let t4 = t0 + Duration::from_millis(4);
         h.handle_share_put_reply("OK PUTCHUNK 2", None, None, t4);
+        assert_eq!(h.service_line_scratch, "PUTEND 3\n");
+        assert_eq!(h.service_line_scratch.as_ptr(), chunk_ptr);
+        assert_eq!(h.service_line_scratch.capacity(), chunk_capacity);
         match h.in_flight.as_ref().unwrap() {
             (ServiceReq::SharePut { phase, .. }, sent_at) => {
                 assert_eq!(*phase, SharePutPhase::End);
@@ -2233,6 +2726,38 @@ mod tests {
         assert!(h.share_old_agent_warned);
     }
 
+    #[test]
+    fn share_ls_reuses_guest_listing_scratch() {
+        let mut h = harness();
+        h.state = AgentConsoleState::Service;
+        h.share = Some(test_share_state("ls-scratch"));
+        h.in_flight = Some((ServiceReq::ShareLs, Instant::now()));
+
+        h.handle_service_reply(
+            &format!(
+                "LSOK {}",
+                base64_encode(b"a.txt|1|0|2026-01-01T00:00:00.0000000Z\n")
+            ),
+            None,
+            None,
+            Instant::now(),
+        );
+        let capacity = h.share.as_ref().unwrap().guest_ls_scratch.capacity();
+        assert!(capacity > 0);
+
+        h.in_flight = Some((ServiceReq::ShareLs, Instant::now()));
+        h.handle_service_reply(
+            &format!("LSOK {}", base64_encode(b"")),
+            None,
+            None,
+            Instant::now(),
+        );
+        assert_eq!(
+            h.share.as_ref().unwrap().guest_ls_scratch.capacity(),
+            capacity
+        );
+    }
+
     fn test_share_state(label: &str) -> ShareState {
         let dir =
             std::env::temp_dir().join(format!("bvagent-share-{label}-{}", std::process::id()));
@@ -2244,6 +2769,8 @@ mod tests {
             interval: Duration::from_millis(500),
             last_poll: None,
             host_skip_seen: HashSet::new(),
+            guest_ls_scratch: Vec::new(),
+            host_scan_scratch: Vec::new(),
         }
     }
 }

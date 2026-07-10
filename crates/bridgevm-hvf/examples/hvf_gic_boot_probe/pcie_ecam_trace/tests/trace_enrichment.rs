@@ -32,7 +32,9 @@ fn nvme_command_disable_event_includes_owner_context_fields() {
                 esr: 0x9341_0045,
                 ec: 0x24,
                 srt: 1,
-                serial_phase: "Boot0001\\r\\n".to_string(),
+                serial_phase: super::super::context::PcieEcamSerialPhase::from_uart(
+                    b"Boot0001\r\n",
+                ),
             }),
         },
     );

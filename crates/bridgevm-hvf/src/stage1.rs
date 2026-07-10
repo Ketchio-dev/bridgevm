@@ -272,8 +272,9 @@ pub fn translate(
 }
 
 fn read_descriptor(mem: &dyn GuestMemoryMut, ipa: u64) -> Option<u64> {
-    let bytes = mem.read_bytes(ipa, 8)?;
-    Some(u64::from_le_bytes(bytes.try_into().ok()?))
+    let mut bytes = [0u8; 8];
+    mem.read_into(ipa, &mut bytes)
+        .then_some(u64::from_le_bytes(bytes))
 }
 
 #[cfg(test)]

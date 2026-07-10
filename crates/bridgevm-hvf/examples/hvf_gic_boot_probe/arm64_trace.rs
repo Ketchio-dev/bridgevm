@@ -115,10 +115,11 @@ pub(super) fn print_translated_instruction_words(
     if aligned_len == 0 {
         return;
     }
-    let Some(bytes) = mem.read_bytes(base_ipa, aligned_len) else {
+    let mut bytes = vec![0u8; aligned_len];
+    if !mem.read_into(base_ipa, &mut bytes) {
         println!("INSN[{label}->ipa]@{base_ipa:#x}: <not in guest RAM view>");
         return;
-    };
+    }
     for (index, chunk) in bytes.chunks_exact(4).enumerate() {
         let Ok(index) = u64::try_from(index) else {
             break;

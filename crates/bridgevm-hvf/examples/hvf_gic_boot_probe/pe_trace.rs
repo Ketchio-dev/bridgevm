@@ -18,19 +18,21 @@ struct PeImageOwner {
     pdb_path: Option<String>,
 }
 
+fn read_guest_array<const N: usize>(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<[u8; N]> {
+    let mut bytes = [0u8; N];
+    mem.read_into(gpa, &mut bytes).then_some(bytes)
+}
+
 fn read_le_u16(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u16> {
-    let bytes = mem.read_bytes(gpa, 2)?;
-    Some(u16::from_le_bytes(bytes.try_into().ok()?))
+    Some(u16::from_le_bytes(read_guest_array(mem, gpa)?))
 }
 
 fn read_le_u32(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u32> {
-    let bytes = mem.read_bytes(gpa, 4)?;
-    Some(u32::from_le_bytes(bytes.try_into().ok()?))
+    Some(u32::from_le_bytes(read_guest_array(mem, gpa)?))
 }
 
 fn read_le_u64(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u64> {
-    let bytes = mem.read_bytes(gpa, 8)?;
-    Some(u64::from_le_bytes(bytes.try_into().ok()?))
+    Some(u64::from_le_bytes(read_guest_array(mem, gpa)?))
 }
 
 fn codeview_path(bytes: &[u8]) -> Option<String> {
@@ -81,8 +83,12 @@ fn pe_debug_pdb_path(
         if size < 4 || addr == 0 {
             continue;
         }
-        let bytes = mem.read_bytes(base + u64::from(addr), (size as usize).min(512))?;
-        if let Some(path) = codeview_path(&bytes) {
+        let len = usize::try_from(size).ok()?.min(512);
+        let mut bytes = [0u8; 512];
+        if !mem.read_into(base + u64::from(addr), &mut bytes[..len]) {
+            return None;
+        }
+        if let Some(path) = codeview_path(&bytes[..len]) {
             return Some(path);
         }
     }
@@ -90,7 +96,7 @@ fn pe_debug_pdb_path(
 }
 
 fn pe_image_at(mem: &dyn GuestMemoryMut, base: u64) -> Option<PeImageOwner> {
-    if mem.read_bytes(base, 2)?.as_slice() != b"MZ" {
+    if read_guest_array::<2>(mem, base)? != *b"MZ" {
         return None;
     }
     let e_lfanew = u64::from(read_le_u32(mem, base + 0x3c)?);
@@ -98,7 +104,7 @@ fn pe_image_at(mem: &dyn GuestMemoryMut, base: u64) -> Option<PeImageOwner> {
         return None;
     }
     let pe = base + e_lfanew;
-    if mem.read_bytes(pe, 4)?.as_slice() != b"PE\0\0" {
+    if read_guest_array::<4>(mem, pe)? != *b"PE\0\0" {
         return None;
     }
     let machine = read_le_u16(mem, pe + 4)?;

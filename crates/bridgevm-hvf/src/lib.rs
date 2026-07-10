@@ -5539,8 +5539,8 @@ impl VirtioMmioBlockDevice {
                         VIRTIO_BLK_S_OK
                     }
                     VIRTIO_BLK_T_OUT => {
-                        let data = memory.read_bytes(data_desc.addr, data_desc.len as usize)?;
-                        match backend.write_exact_at(byte_offset, &data) {
+                        let data = memory.read_slice(data_desc.addr, data_desc.len as usize)?;
+                        match backend.write_exact_at(byte_offset, data) {
                             Ok(()) => VIRTIO_BLK_S_OK,
                             Err(VirtioBlockRequestError::StorageWriteRejected { .. }) => {
                                 VIRTIO_BLK_S_IOERR
@@ -5616,25 +5616,30 @@ impl<'a> VirtioGuestMemory<'a> {
     }
 
     fn read_bytes(&self, ipa: u64, len: usize) -> Result<Vec<u8>, VirtioBlockRequestError> {
+        Ok(self.read_slice(ipa, len)?.to_vec())
+    }
+
+    fn read_slice(&self, ipa: u64, len: usize) -> Result<&[u8], VirtioBlockRequestError> {
         let range = self.range(ipa, len)?;
-        Ok(self.bytes[range].to_vec())
+        Ok(&self.bytes[range])
+    }
+
+    fn read_array<const N: usize>(&self, ipa: u64) -> Result<[u8; N], VirtioBlockRequestError> {
+        let mut bytes = [0u8; N];
+        bytes.copy_from_slice(self.read_slice(ipa, N)?);
+        Ok(bytes)
     }
 
     fn read_u16(&self, ipa: u64) -> Result<u16, VirtioBlockRequestError> {
-        let bytes = self.read_bytes(ipa, 2)?;
-        Ok(u16::from_le_bytes([bytes[0], bytes[1]]))
+        Ok(u16::from_le_bytes(self.read_array(ipa)?))
     }
 
     fn read_u32(&self, ipa: u64) -> Result<u32, VirtioBlockRequestError> {
-        let bytes = self.read_bytes(ipa, 4)?;
-        Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+        Ok(u32::from_le_bytes(self.read_array(ipa)?))
     }
 
     fn read_u64(&self, ipa: u64) -> Result<u64, VirtioBlockRequestError> {
-        let bytes = self.read_bytes(ipa, 8)?;
-        Ok(u64::from_le_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-        ]))
+        Ok(u64::from_le_bytes(self.read_array(ipa)?))
     }
 
     fn write_bytes(&mut self, ipa: u64, bytes: &[u8]) -> Result<(), VirtioBlockRequestError> {

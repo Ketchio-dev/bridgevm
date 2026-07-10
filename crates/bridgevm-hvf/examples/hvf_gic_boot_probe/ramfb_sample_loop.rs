@@ -53,6 +53,10 @@ impl RamfbSampleLoop {
             && !watchdog_fired.load(Ordering::SeqCst)
     }
 
+    pub fn automation_tick_needed(&self) -> bool {
+        self.schedule.is_some()
+    }
+
     pub fn emit_due<F>(&mut self, vcpu: HvVcpuT, emit_checkpoint: F)
     where
         F: FnMut(&str),

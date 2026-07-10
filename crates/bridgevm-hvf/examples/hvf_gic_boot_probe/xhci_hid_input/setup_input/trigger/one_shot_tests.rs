@@ -52,7 +52,7 @@ fn xhci_setup_input_delayed_report_emit_marks_fired_and_blocks_hcrst_retry() {
         &mut platform,
         &mut ram,
         now,
-        |_label, _mem| {},
+        |_platform, _label, _mem| {},
     );
 
     // Then: that attempt is terminal and later polls do not turn it into Busy retry noise.
@@ -75,7 +75,7 @@ fn xhci_setup_input_delayed_report_emit_marks_fired_and_blocks_hcrst_retry() {
         &mut platform,
         &mut ram,
         now,
-        |_label, _mem| {}
+        |_platform, _label, _mem| {}
     ));
     let after_second = platform.xhci_setup_input_report_stats();
     assert_eq!(after_second.queued_actions, 1);
@@ -89,7 +89,7 @@ fn xhci_setup_input_delayed_report_emit_marks_fired_and_blocks_hcrst_retry() {
         &mut platform,
         &mut ram,
         now,
-        |_label, _mem| {}
+        |_platform, _label, _mem| {}
     ));
     let after_reset = platform.xhci_setup_input_report_stats();
     assert_eq!(after_reset.queued_actions, 1);

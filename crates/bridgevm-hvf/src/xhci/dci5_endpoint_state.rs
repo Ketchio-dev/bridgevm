@@ -1,7 +1,7 @@
 use crate::fwcfg::GuestMemoryMut;
 
 use super::device_context_mem::{
-    output_context_for_slot, read_mem_u32, read_mem_u64, read_u64, write_mem_u64,
+    output_context_for_slot, read_mem_array, read_mem_u32, read_mem_u64, read_u64, write_mem_u64,
 };
 use super::trace::{self, Dci5InputCaptureTrace, Dci5InputContextField};
 use super::XhciController;
@@ -74,7 +74,8 @@ impl XhciController {
             }
         };
         capture_trace.dci5_context = Dci5InputContextField::Value(dci5_input_gpa);
-        let Some(dci5_input_context) = mem.read_bytes(dci5_input_gpa, EP_CONTEXT_BYTES) else {
+        let Some(dci5_input_context) = read_mem_array::<EP_CONTEXT_BYTES>(mem, dci5_input_gpa)
+        else {
             capture_trace.dci5_context = Dci5InputContextField::Unreadable;
             capture_trace.reason = "dci5_context_unreadable";
             trace::dci5_input_capture(capture_trace);

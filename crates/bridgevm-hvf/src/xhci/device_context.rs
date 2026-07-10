@@ -1,8 +1,8 @@
 use crate::fwcfg::GuestMemoryMut;
 
 use super::device_context_mem::{
-    output_context_for_slot, read_mem_u64, read_u64, write_ep_context_state, write_mem_u32,
-    write_mem_u64,
+    output_context_for_slot, read_mem_array, read_mem_u64, read_u64, write_ep_context_state,
+    write_mem_u32, write_mem_u64,
 };
 use super::XhciController;
 
@@ -45,11 +45,11 @@ impl XhciController {
         let input_context = input_context & DEVICE_CONTEXT_POINTER_MASK;
         let slot_input_context = input_context
             .checked_add(SLOT_INPUT_CONTEXT_OFFSET)
-            .and_then(|gpa| mem.read_bytes(gpa, SLOT_CONTEXT_DWORD0_TO_DWORD2_BYTES));
+            .and_then(|gpa| read_mem_array::<SLOT_CONTEXT_DWORD0_TO_DWORD2_BYTES>(mem, gpa));
         let Some(ep0_input_gpa) = input_context.checked_add(EP0_INPUT_CONTEXT_OFFSET) else {
             return;
         };
-        let Some(ep0_input_context) = mem.read_bytes(ep0_input_gpa, EP_CONTEXT_BYTES) else {
+        let Some(ep0_input_context) = read_mem_array::<EP_CONTEXT_BYTES>(mem, ep0_input_gpa) else {
             return;
         };
         let Some(raw_dequeue) = read_u64(&ep0_input_context, EP_TR_DEQUEUE_OFFSET as usize) else {
@@ -72,8 +72,8 @@ impl XhciController {
         let Some(ep0_dequeue_output_gpa) = ep0_output_gpa.checked_add(EP_TR_DEQUEUE_OFFSET) else {
             return;
         };
-        if mem.read_bytes(slot_dword3_gpa, 4).is_none()
-            || mem.read_bytes(ep0_output_gpa, EP_CONTEXT_BYTES).is_none()
+        if read_mem_array::<4>(mem, slot_dword3_gpa).is_none()
+            || read_mem_array::<EP_CONTEXT_BYTES>(mem, ep0_output_gpa).is_none()
         {
             return;
         }
@@ -166,7 +166,7 @@ impl XhciController {
         let Some(ep0_dequeue_gpa) = ep0_output_gpa.checked_add(EP_TR_DEQUEUE_OFFSET) else {
             return;
         };
-        if mem.read_bytes(ep0_output_gpa, EP_CONTEXT_BYTES).is_none() {
+        if read_mem_array::<EP_CONTEXT_BYTES>(mem, ep0_output_gpa).is_none() {
             return;
         }
         write_mem_u64(
@@ -184,7 +184,7 @@ impl XhciController {
         let Some(ep0_output_gpa) = output_context.checked_add(EP0_OUTPUT_CONTEXT_OFFSET) else {
             return;
         };
-        if mem.read_bytes(ep0_output_gpa, EP_CONTEXT_BYTES).is_none() {
+        if read_mem_array::<EP_CONTEXT_BYTES>(mem, ep0_output_gpa).is_none() {
             return;
         }
         if !write_ep_context_state(mem, ep0_output_gpa, EP_STATE_STOPPED) {
@@ -213,7 +213,7 @@ impl XhciController {
             let Some(dequeue_gpa) = endpoint_gpa.checked_add(EP_TR_DEQUEUE_OFFSET) else {
                 continue;
             };
-            if mem.read_bytes(endpoint_gpa, EP_CONTEXT_BYTES).is_none() {
+            if read_mem_array::<EP_CONTEXT_BYTES>(mem, endpoint_gpa).is_none() {
                 continue;
             }
             if !write_ep_context_state(mem, endpoint_gpa, EP_STATE_DISABLED) {

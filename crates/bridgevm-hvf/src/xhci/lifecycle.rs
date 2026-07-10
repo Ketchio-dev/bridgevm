@@ -26,6 +26,8 @@ impl XhciController {
             dcbaap: 0,
             config: 0,
             interrupters: [Interrupter::new(); XHCI_INTERRUPTER_COUNT],
+            pending_interrupter_bits: 0,
+            pending_enabled_interrupter_bits: 0,
             port_status_change_pending: false,
             slot1_ep0_dequeue: 0,
             slot1_ep0_dcs: false,

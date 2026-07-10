@@ -149,3 +149,74 @@ fn ramfb_sample_checkpoint_lines_parse_when_inactive_or_unavailable() {
     );
     assert_eq!(field_value(&unavailable.line, "state"), "unavailable");
 }
+
+#[test]
+fn virtio_gpu_checkpoint_uses_scanout_without_ramfb_config() {
+    // Given: an active virtio-gpu scanout and no RAMFB config.
+    let bytes = [0x03, 0x02, 0x01, 0x00];
+    let scanout = VirtioGpuScanout {
+        bytes: &bytes,
+        width: 1,
+        height: 1,
+        stride: 4,
+        fourcc: DRM_FORMAT_XRGB8888,
+    };
+    let ram = TestRam {
+        base: 0,
+        bytes: Vec::new(),
+    };
+
+    // When: the display checkpoint emits with artifact dumps disabled.
+    let record = DisplayCheckpoint::new("gpu-sample", Some(scanout), None, &ram)
+        .emit(None)
+        .unwrap();
+
+    // Then: the line is still parseable and uses the virtio-gpu scanout summary.
+    println!("{}", record.line);
+    assert_eq!(field_value(&record.line, "label"), "gpu-sample");
+    assert_eq!(field_value(&record.line, "state"), "captured-dump-disabled");
+    assert!(field_value(&record.line, "checksum64").starts_with("0x"));
+    assert_eq!(field_value(&record.line, "raw"), "none");
+    assert_eq!(field_value(&record.line, "ppm"), "none");
+}
+
+#[test]
+fn virtio_gpu_checkpoint_writes_artifacts_from_scanout_without_ramfb_config() {
+    // Given: an active virtio-gpu scanout, no RAMFB config, and an empty artifact dir.
+    let dir = checkpoint_test_dir();
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let bytes = [0x03, 0x02, 0x01, 0x00];
+    let scanout = VirtioGpuScanout {
+        bytes: &bytes,
+        width: 1,
+        height: 1,
+        stride: 4,
+        fourcc: DRM_FORMAT_XRGB8888,
+    };
+    let ram = TestRam {
+        base: 0,
+        bytes: Vec::new(),
+    };
+
+    // When: the display checkpoint emits with artifact dumps enabled.
+    let record = DisplayCheckpoint::new("gpu-sample", Some(scanout), None, &ram)
+        .emit(Some(&dir))
+        .unwrap();
+
+    // Then: the artifacts are written from the virtio-gpu scanout.
+    println!("{}", record.line);
+    assert_eq!(field_value(&record.line, "label"), "gpu-sample");
+    assert_eq!(field_value(&record.line, "state"), "captured");
+    let paths = record.paths.unwrap();
+    assert_eq!(
+        paths.raw.file_name().unwrap(),
+        "virtio-gpu-checkpoint-gpu-sample-0000.xrgb8888"
+    );
+    assert_eq!(std::fs::read(paths.raw).unwrap(), bytes);
+    assert_eq!(
+        std::fs::read(paths.ppm).unwrap(),
+        b"P6\n1 1\n255\n\x01\x02\x03"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}

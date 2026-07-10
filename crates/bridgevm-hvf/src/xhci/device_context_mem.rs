@@ -36,14 +36,20 @@ pub(super) fn write_ep_context_state(
     write_mem_u32(mem, dword0_gpa, (dword0 & !EP_STATE_MASK) | state)
 }
 
+pub(super) fn read_mem_array<const N: usize>(
+    mem: &dyn GuestMemoryMut,
+    gpa: u64,
+) -> Option<[u8; N]> {
+    let mut raw = [0u8; N];
+    mem.read_into(gpa, &mut raw).then_some(raw)
+}
+
 pub(super) fn read_mem_u32(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u32> {
-    let raw = mem.read_bytes(gpa, 4)?;
-    read_u32(&raw, 0)
+    Some(u32::from_le_bytes(read_mem_array::<4>(mem, gpa)?))
 }
 
 pub(super) fn read_mem_u64(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u64> {
-    let raw = mem.read_bytes(gpa, 8)?;
-    read_u64(&raw, 0)
+    Some(u64::from_le_bytes(read_mem_array::<8>(mem, gpa)?))
 }
 
 pub(super) fn write_mem_u64(mem: &mut dyn GuestMemoryMut, gpa: u64, value: u64) -> bool {
@@ -54,10 +60,4 @@ pub(super) fn read_u64(bytes: &[u8], offset: usize) -> Option<u64> {
     let raw = bytes.get(offset..offset + 8)?;
     let array: [u8; 8] = raw.try_into().ok()?;
     Some(u64::from_le_bytes(array))
-}
-
-fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
-    let raw = bytes.get(offset..offset + 4)?;
-    let array: [u8; 4] = raw.try_into().ok()?;
-    Some(u32::from_le_bytes(array))
 }

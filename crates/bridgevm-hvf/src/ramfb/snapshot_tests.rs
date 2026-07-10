@@ -69,6 +69,72 @@ fn snapshot_summarizes_xrgb8888_framebuffer() {
 }
 
 #[test]
+fn borrowed_summary_matches_owned_snapshot_without_requiring_snapshot_bytes() {
+    let config = RamfbConfig {
+        addr: 0x4008_0000,
+        fourcc: DRM_FORMAT_XRGB8888,
+        flags: 0,
+        width: 2,
+        height: 1,
+        stride: 8,
+    };
+    let bytes = [0x03, 0x02, 0x01, 0x00, 0x06, 0x05, 0x04, 0x00];
+
+    let borrowed = RamfbSnapshot::summarize_xrgb8888_bytes(config, &bytes).unwrap();
+    let owned = RamfbSnapshot::from_xrgb8888_bytes(config, bytes.to_vec())
+        .unwrap()
+        .summary;
+
+    assert_eq!(borrowed, owned);
+    assert_eq!(borrowed.nonzero_pixels, 2);
+    assert_eq!(borrowed.unique_colors, 2);
+}
+
+#[test]
+fn borrowed_ppm_matches_owned_snapshot_without_requiring_snapshot_bytes() {
+    let config = RamfbConfig {
+        addr: 0x4008_0000,
+        fourcc: DRM_FORMAT_XRGB8888,
+        flags: 0,
+        width: 2,
+        height: 1,
+        stride: 8,
+    };
+    let bytes = [0x03, 0x02, 0x01, 0x00, 0x06, 0x05, 0x04, 0x00];
+    let owned = RamfbSnapshot::from_xrgb8888_bytes(config, bytes.to_vec()).unwrap();
+
+    assert_eq!(
+        RamfbSnapshot::ppm_bytes_from_xrgb8888(config, &bytes).unwrap(),
+        owned.ppm_bytes().unwrap()
+    );
+}
+
+#[test]
+fn borrowed_ppm_requires_the_exact_framebuffer_length() {
+    let config = RamfbConfig {
+        addr: 0x4008_0000,
+        fourcc: DRM_FORMAT_XRGB8888,
+        flags: 0,
+        width: 1,
+        height: 2,
+        stride: 8,
+    };
+    let expected = Err(RamfbSnapshotError::GuestMemoryOutOfRange {
+        addr: config.addr,
+        len: 16,
+    });
+
+    assert_eq!(
+        RamfbSnapshot::ppm_bytes_from_xrgb8888(config, &[0; 15]),
+        expected
+    );
+    assert_eq!(
+        RamfbSnapshot::ppm_bytes_from_xrgb8888(config, &[0; 17]),
+        expected
+    );
+}
+
+#[test]
 fn snapshot_ignores_x_byte_when_counting_nonzero_pixels() {
     let config = RamfbConfig {
         addr: 0x4008_0000,

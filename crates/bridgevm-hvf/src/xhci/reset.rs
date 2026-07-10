@@ -25,5 +25,7 @@ impl XhciController {
             .saturating_add(1);
         self.usb_configuration = 0;
         self.interrupters = [Interrupter::new(); super::event::XHCI_INTERRUPTER_COUNT];
+        self.pending_interrupter_bits = 0;
+        self.pending_enabled_interrupter_bits = 0;
     }
 }

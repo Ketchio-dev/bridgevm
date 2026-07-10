@@ -390,11 +390,10 @@ impl FwCfg {
     /// Read a `FWCfgDmaAccess` structure from guest RAM at `ctrl_gpa`, run it, and
     /// write the resulting control word back (big-endian) at the same address.
     fn run_dma_at(&mut self, ctrl_gpa: u64, mem: &mut dyn GuestMemoryMut) {
-        let Some(raw) = mem.read_bytes(ctrl_gpa, 16) else {
-            return;
-        };
         let mut buf = [0u8; 16];
-        buf.copy_from_slice(&raw);
+        if !mem.read_into(ctrl_gpa, &mut buf) {
+            return;
+        }
         let access = FwCfgDmaAccess::from_bytes(&buf);
         let result = self.dma_execute(access, mem);
         let _ = mem.write_bytes(ctrl_gpa, &result.to_be_bytes());
@@ -422,15 +421,12 @@ impl FwCfg {
             if !writable {
                 return DMA_CTL_ERROR;
             }
-            let Some(src) = mem.read_bytes(access.address, length) else {
+            if !guest_range_readable(mem, access.address, length) {
                 return DMA_CTL_ERROR;
-            };
+            }
             if let Some(entry) = self.entries.get_mut(&self.selector) {
-                for (i, byte) in src.into_iter().enumerate() {
-                    let pos = self.offset + i;
-                    if pos < entry.data.len() {
-                        entry.data[pos] = byte;
-                    }
+                if !copy_guest_prefix_into_entry(mem, access.address, length, self.offset, entry) {
+                    return DMA_CTL_ERROR;
                 }
             }
             self.offset = self.offset.saturating_add(length);
@@ -441,6 +437,55 @@ impl FwCfg {
         control = 0; // success: device clears all bits
         control
     }
+}
+
+fn guest_range_readable(mem: &dyn GuestMemoryMut, mut gpa: u64, mut len: usize) -> bool {
+    let mut scratch = [0u8; 256];
+    while len != 0 {
+        let chunk = len.min(scratch.len());
+        if !mem.read_into(gpa, &mut scratch[..chunk]) {
+            return false;
+        }
+        let Some(next_gpa) = gpa.checked_add(chunk as u64) else {
+            return false;
+        };
+        gpa = next_gpa;
+        len -= chunk;
+    }
+    true
+}
+
+fn copy_guest_prefix_into_entry(
+    mem: &dyn GuestMemoryMut,
+    mut gpa: u64,
+    mut remaining: usize,
+    entry_offset: usize,
+    entry: &mut Entry,
+) -> bool {
+    let mut consumed = 0usize;
+    let mut scratch = [0u8; 256];
+    while remaining != 0 {
+        let Some(pos) = entry_offset.checked_add(consumed) else {
+            return true;
+        };
+        if pos >= entry.data.len() {
+            return true;
+        }
+        let chunk = remaining
+            .min(scratch.len())
+            .min(entry.data.len().saturating_sub(pos));
+        if !mem.read_into(gpa, &mut scratch[..chunk]) {
+            return false;
+        }
+        entry.data[pos..pos + chunk].copy_from_slice(&scratch[..chunk]);
+        let Some(next_gpa) = gpa.checked_add(chunk as u64) else {
+            return false;
+        };
+        gpa = next_gpa;
+        consumed += chunk;
+        remaining -= chunk;
+    }
+    true
 }
 
 #[cfg(test)]

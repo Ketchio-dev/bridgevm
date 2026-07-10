@@ -25,6 +25,8 @@
 //! the `pci-host-ecam-generic` device-tree binding, and QEMU
 //! `hw/pci-host/gpex.c` / `hw/pci/pci_host.c`.
 
+use std::cell::Cell;
+
 use crate::machine::PCIE_ECAM;
 
 mod virtio_caps;
@@ -510,12 +512,6 @@ impl Bar {
         (offset < size).then_some(offset)
     }
 
-    fn mmio_offset_of(&self, gpa: u64) -> Option<u64> {
-        (self.kind == BarKind::Memory32)
-            .then(|| self.offset_of(gpa))
-            .flatten()
-    }
-
     fn pio_offset_of(&self, port: u64) -> Option<u64> {
         (self.kind == BarKind::Io)
             .then(|| self.offset_of(port))
@@ -781,22 +777,28 @@ impl Function {
         }
     }
 
-    fn mmio_offset_of_bar(&self, idx: usize, gpa: u64) -> Option<u64> {
+    fn mmio_target_of_bar(&self, idx: usize, gpa: u64) -> Option<PcieMmioTargetMru> {
         let bar = self.bars.get(idx)?;
-        match bar.kind {
-            BarKind::Memory32 => bar.mmio_offset_of(gpa),
+        let (base, size) = match bar.kind {
+            BarKind::Memory32 => (bar.assigned_base()?, bar.size()),
             BarKind::Memory64Low => {
-                // Use assigned_base(), not base(), so a BAR still holding a
-                // firmware sizing latch (all-ones write-back) does not spuriously
-                // decode — matching the 32-bit path.
                 let low = bar.assigned_base()?;
                 let high = u64::from(self.bars.get(idx + 1)?.value);
-                let base = (high << 32) | low;
-                let offset = gpa.checked_sub(base)?;
-                (offset < bar.size()).then_some(offset)
+                ((high << 32) | low, bar.size())
             }
-            BarKind::Memory64High | BarKind::Io => None,
-        }
+            BarKind::Memory64High | BarKind::Io => return None,
+        };
+        let end = base.checked_add(size)?;
+        let offset = gpa.checked_sub(base)?;
+        (offset < size).then_some(PcieMmioTargetMru {
+            base,
+            end,
+            target: PcieMmioTarget {
+                bdf: self.bdf,
+                bar_index: idx,
+                offset,
+            },
+        })
     }
 
     /// 32-bit dword read of register `reg` (already dword-aligned at the dword
@@ -947,6 +949,7 @@ impl Function {
 #[derive(Debug, Clone)]
 pub struct PcieEcam {
     functions: Vec<Function>,
+    mmio_mru: Cell<Option<PcieMmioTargetMru>>,
 }
 
 /// A decoded memory-space access into a programmed PCI BAR.
@@ -955,6 +958,24 @@ pub struct PcieMmioTarget {
     pub bdf: (u8, u8, u8),
     pub bar_index: usize,
     pub offset: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PcieMmioTargetMru {
+    base: u64,
+    end: u64,
+    target: PcieMmioTarget,
+}
+
+impl PcieMmioTargetMru {
+    fn target_for(self, gpa: u64) -> Option<PcieMmioTarget> {
+        (self.base..self.end)
+            .contains(&gpa)
+            .then(|| PcieMmioTarget {
+                offset: gpa - self.base,
+                ..self.target
+            })
+    }
 }
 
 /// A decoded I/O-space access into a programmed PCI BAR.
@@ -1035,7 +1056,10 @@ impl PcieEcam {
         if config.virtio_console_present {
             functions.push(Function::virtio_console());
         }
-        Self { functions }
+        Self {
+            functions,
+            mmio_mru: Cell::new(None),
+        }
     }
 
     /// The size of the ECAM window this model decodes.
@@ -1086,6 +1110,7 @@ impl PcieEcam {
     /// sub-dword write only touches the addressed bytes (the command register and
     /// BARs are word/dword-aligned in practice).
     pub fn cfg_write(&mut self, ecam_offset: u64, size: u8, value: u64) {
+        self.mmio_mru.set(None);
         let addr = CfgAddr::from_ecam_offset(ecam_offset);
         let Some(func) = self.function_at_mut(addr.bdf()) else {
             return;
@@ -1107,17 +1132,19 @@ impl PcieEcam {
     /// programmed endpoint BAR that decodes it. Only functions with Memory Space
     /// enabled in the PCI command register are allowed to answer.
     pub fn mmio_target(&self, gpa: u64) -> Option<PcieMmioTarget> {
+        if let Some(mru) = self.mmio_mru.get() {
+            if let Some(target) = mru.target_for(gpa) {
+                return Some(target);
+            }
+        }
         for func in &self.functions {
             if func.command & CMD_MEMORY_SPACE == 0 {
                 continue;
             }
             for idx in 0..func.bars.len() {
-                if let Some(offset) = func.mmio_offset_of_bar(idx, gpa) {
-                    return Some(PcieMmioTarget {
-                        bdf: func.bdf,
-                        bar_index: idx,
-                        offset,
-                    });
+                if let Some(mru) = func.mmio_target_of_bar(idx, gpa) {
+                    self.mmio_mru.set(Some(mru));
+                    return Some(mru.target);
                 }
             }
         }
@@ -2503,6 +2530,47 @@ mod tests {
             ecam.mmio_target(machine::PCIE_MMIO_32.base + u64::from(NVME_BAR0_SIZE)),
             None
         );
+    }
+
+    #[test]
+    fn mmio_target_mru_hits_same_bar_and_invalidates_on_config_write() {
+        let mut ecam = PcieEcam::new();
+        let bar0 = ecam_offset(0, 1, 0, REG_BAR0);
+        let bar1 = ecam_offset(0, 1, 0, REG_BAR0 + 4);
+        let cmd = ecam_offset(0, 1, 0, REG_COMMAND_STATUS);
+        let base = machine::PCIE_MMIO_32.base;
+
+        ecam.cfg_write(bar0, 4, base);
+        ecam.cfg_write(bar1, 4, 0);
+        ecam.cfg_write(cmd, 2, u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER));
+        assert_eq!(ecam.mmio_mru.get(), None);
+
+        assert_eq!(
+            ecam.mmio_target(base),
+            Some(PcieMmioTarget {
+                bdf: NVME_BDF,
+                bar_index: 0,
+                offset: 0,
+            })
+        );
+        let cached = ecam.mmio_mru.get().expect("mmio target cache populated");
+        assert_eq!(cached.base, base);
+        assert_eq!(cached.end, base + u64::from(NVME_BAR0_SIZE));
+        assert_eq!(ecam.mmio_target(base - 0x10), None);
+
+        assert_eq!(
+            ecam.mmio_target(base + 0x40),
+            Some(PcieMmioTarget {
+                bdf: NVME_BDF,
+                bar_index: 0,
+                offset: 0x40,
+            })
+        );
+        assert_eq!(ecam.mmio_mru.get(), Some(cached));
+
+        ecam.cfg_write(cmd, 2, 0);
+        assert_eq!(ecam.mmio_mru.get(), None);
+        assert_eq!(ecam.mmio_target(base), None);
     }
 
     #[test]

@@ -153,7 +153,7 @@ impl XhciController {
             trace::ep0_reject_with_value("unexpected_data_length", data_length);
             return false;
         };
-        if mem.read_bytes(data.parameter, data_len).is_none() {
+        if !guest_range_readable(mem, data.parameter, data_len) {
             trace::ep0_reject_with_gpa("data_read_failed", data.parameter);
             return false;
         }
@@ -250,4 +250,23 @@ impl XhciController {
         }
         posted
     }
+}
+
+fn guest_range_readable(mem: &dyn GuestMemoryMut, mut gpa: u64, mut len: usize) -> bool {
+    let mut scratch = [0u8; 256];
+    while len != 0 {
+        let chunk = len.min(scratch.len());
+        if !mem.read_into(gpa, &mut scratch[..chunk]) {
+            return false;
+        }
+        let Ok(chunk_u64) = u64::try_from(chunk) else {
+            return false;
+        };
+        let Some(next_gpa) = gpa.checked_add(chunk_u64) else {
+            return false;
+        };
+        gpa = next_gpa;
+        len -= chunk;
+    }
+    true
 }

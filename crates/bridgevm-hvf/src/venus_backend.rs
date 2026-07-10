@@ -85,6 +85,8 @@ pub struct iovec {
     pub iov_len: usize,
 }
 
+unsafe impl Send for iovec {}
+
 unsafe extern "C" {
     fn virgl_renderer_init(
         cookie: *mut c_void,
@@ -197,13 +199,28 @@ impl VirtioGpuRendererProtocol {
     }
 }
 
-#[derive(Clone)]
 pub struct VenusBackend {
     protocol: VirtioGpuRendererProtocol,
     shared: Arc<Mutex<VenusShared>>,
     contexts: Vec<u32>,
     outstanding_fences: BTreeMap<u32, usize>,
     mapped_resources: BTreeMap<u32, VenusMappedResource>,
+    iovecs_scratch: Vec<iovec>,
+    resource_ids_scratch: Vec<u32>,
+}
+
+impl Clone for VenusBackend {
+    fn clone(&self) -> Self {
+        Self {
+            protocol: self.protocol,
+            shared: self.shared.clone(),
+            contexts: self.contexts.clone(),
+            outstanding_fences: self.outstanding_fences.clone(),
+            mapped_resources: self.mapped_resources.clone(),
+            iovecs_scratch: Vec::new(),
+            resource_ids_scratch: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -244,6 +261,8 @@ impl VenusBackend {
             contexts: Vec::new(),
             outstanding_fences: BTreeMap::new(),
             mapped_resources: BTreeMap::new(),
+            iovecs_scratch: Vec::new(),
+            resource_ids_scratch: Vec::new(),
         })
     }
 
@@ -288,8 +307,14 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn capset(&mut self, capset_id: u32, version: u32) -> Option<Vec<u8>> {
+        let mut capset = Vec::new();
+        self.capset_into(capset_id, version, &mut capset)
+            .then_some(capset)
+    }
+
+    fn capset_into(&mut self, capset_id: u32, version: u32, out: &mut Vec<u8>) -> bool {
         if !self.protocol.supports_capset_id(capset_id) {
-            return None;
+            return false;
         }
         let mut max_version = 0u32;
         let mut max_size = 0u32;
@@ -297,16 +322,21 @@ impl VirtioGpu3dBackend for VenusBackend {
             virgl_renderer_get_cap_set(capset_id, &mut max_version, &mut max_size);
         }
         if max_size == 0 {
-            return None;
+            return false;
         }
         if version > max_version {
-            return None;
+            return false;
         }
-        let mut capset = vec![0u8; max_size as usize];
+        let start = out.len();
+        out.resize(start + max_size as usize, 0);
         unsafe {
-            virgl_renderer_fill_caps(capset_id, version, capset.as_mut_ptr().cast::<c_void>());
+            virgl_renderer_fill_caps(
+                capset_id,
+                version,
+                out[start..].as_mut_ptr().cast::<c_void>(),
+            );
         }
-        Some(capset)
+        true
     }
 
     fn ctx_create(&mut self, ctx_id: u32, context_init: u32, name: &[u8]) -> bool {
@@ -378,14 +408,12 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn create_blob(&mut self, args: CreateBlobArgs<'_>) -> bool {
-        let iovecs: Vec<iovec> = args
-            .iovecs
-            .iter()
-            .map(|entry| iovec {
+        self.iovecs_scratch.clear();
+        self.iovecs_scratch
+            .extend(args.iovecs.iter().map(|entry| iovec {
                 iov_base: entry.host_ptr.cast::<c_void>(),
                 iov_len: entry.len,
-            })
-            .collect();
+            }));
         let create = virgl_renderer_resource_create_blob_args {
             res_handle: args.resource_id,
             ctx_id: args.ctx_id,
@@ -393,14 +421,15 @@ impl VirtioGpu3dBackend for VenusBackend {
             blob_flags: args.blob_flags,
             blob_id: args.blob_id,
             size: args.size,
-            iovecs: if iovecs.is_empty() {
+            iovecs: if self.iovecs_scratch.is_empty() {
                 ptr::null()
             } else {
-                iovecs.as_ptr()
+                self.iovecs_scratch.as_ptr()
             },
-            num_iovs: iovecs.len() as u32,
+            num_iovs: self.iovecs_scratch.len() as u32,
         };
         let ret = unsafe { virgl_renderer_resource_create_blob(&create) };
+        self.iovecs_scratch.clear();
         if ret != 0 {
             eprintln!(
                 "{}: resource_create_blob ctx={} res={} blob_mem={} blob_id={} size={} ret={ret}",
@@ -479,31 +508,34 @@ impl VirtioGpu3dBackend for VenusBackend {
         // there is no sync thread (no eventfd), so this poll is the only
         // thing that retires renderer fences and writes those slots — gating
         // it on outstanding_fences left vkWaitForFences spinning forever.
-        let contexts: Vec<u32> = self.outstanding_fences.keys().copied().collect();
-        for ctx_id in contexts {
+        for &ctx_id in &self.contexts {
             unsafe {
                 virgl_renderer_context_poll(ctx_id);
             }
         }
     }
 
-    fn drain_completed_fences(&mut self) -> Vec<CompletedFence> {
-        let completed = std::mem::take(&mut self.shared.lock().unwrap().completed);
-        for fence in &completed {
+    fn drain_completed_fences_into(&mut self, out: &mut Vec<CompletedFence>) {
+        let start = out.len();
+        out.append(&mut self.shared.lock().unwrap().completed);
+        for fence in &out[start..] {
             if let Some(outstanding) = self.outstanding_fences.get_mut(&fence.ctx_id) {
                 *outstanding = outstanding.saturating_sub(1);
             }
         }
-        completed
     }
 
     fn reset(&mut self) {
-        let resource_ids: Vec<u32> = self.mapped_resources.keys().copied().collect();
-        for resource_id in resource_ids {
+        self.resource_ids_scratch.clear();
+        self.resource_ids_scratch
+            .extend(self.mapped_resources.keys().copied());
+        let mut resource_ids = std::mem::take(&mut self.resource_ids_scratch);
+        for resource_id in resource_ids.drain(..) {
             while self.mapped_resources.contains_key(&resource_id) {
                 self.unmap_resource_ref(resource_id);
             }
         }
+        self.resource_ids_scratch = resource_ids;
         for ctx_id in std::mem::take(&mut self.contexts) {
             unsafe {
                 virgl_renderer_context_destroy(ctx_id);

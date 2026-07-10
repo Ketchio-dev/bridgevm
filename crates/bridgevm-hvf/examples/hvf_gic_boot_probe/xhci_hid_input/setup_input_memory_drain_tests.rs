@@ -34,7 +34,7 @@ fn xhci_setup_input_trigger_memory_drain_delivers_pending_dci3_when_fired() {
         &mut platform,
         &mut mem,
         Instant::now(),
-        |label: &str, _mem| {
+        |_platform, label: &str, _mem| {
             checkpoints.push(label.to_string());
         },
     ));
@@ -118,7 +118,7 @@ fn xhci_setup_input_shared_marker_triggers_wait_for_prior_sequence_to_drain() {
                 &mut platform,
                 &mut mem,
                 base + Duration::from_millis(10 * tick),
-                |_label: &str, _mem| {},
+                |_platform, _label: &str, _mem| {},
             );
         }
         platform.drain_xhci_setup_input_reports(&mut mem);
@@ -167,7 +167,7 @@ fn xhci_setup_input_trigger_records_fire_after_partial_memory_drain() {
         &mut platform,
         &mut mem,
         Instant::now(),
-        |label: &str, _mem| {
+        |_platform, label: &str, _mem| {
             checkpoints.push(label.to_string());
         },
     );
@@ -196,7 +196,7 @@ fn xhci_setup_input_trigger_records_fire_after_partial_memory_drain() {
             &mut platform,
             &mut mem,
             Instant::now(),
-            |label: &str, _mem| {
+            |_platform, label: &str, _mem| {
                 checkpoints.push(label.to_string());
             },
         ),
@@ -269,7 +269,7 @@ fn xhci_setup_input_trigger_retries_after_hcrst_clears_queued_but_unemitted_repo
         &mut platform,
         &mut mem,
         Instant::now(),
-        |label: &str, _mem| {
+        |_platform, label: &str, _mem| {
             checkpoints.push(label.to_string());
         },
     );
@@ -296,7 +296,7 @@ fn xhci_setup_input_trigger_retries_after_hcrst_clears_queued_but_unemitted_repo
             &mut platform,
             &mut mem,
             Instant::now(),
-            |label: &str, _mem| {
+            |_platform, label: &str, _mem| {
                 checkpoints.push(label.to_string());
             },
         ),

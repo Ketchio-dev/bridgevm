@@ -106,6 +106,30 @@ fn guest_iman_write_one_to_clear_stops_further_messages_without_new_event() {
 }
 
 #[test]
+fn pending_event_becomes_deliverable_when_iman_is_enabled_later() {
+    // Given: an event is posted while the interrupter is pending but disabled.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x5000);
+    setup_event_ring(&mut xhci, &mut mem);
+    program_vector0(&mut xhci);
+    unmask_vector0(&mut xhci);
+    xhci.mmio_write(IMAN_INTERRUPTER0, 4, 0);
+    assert!(xhci.post_event(&mut mem, 0x4444, 0, TRANSFER_EVENT_CONTROL));
+    assert_eq!(xhci.mmio_read(IMAN_INTERRUPTER0, 4), 0x1);
+    assert_eq!(xhci.raise_pending_interrupter_msix(true, false), Vec::new());
+
+    // When: the guest enables that interrupter without clearing the pending bit.
+    xhci.mmio_write(IMAN_INTERRUPTER0, 4, 0x2);
+
+    // Then: the cached pending+enabled bit is refreshed and the message is sent.
+    assert_eq!(
+        xhci.raise_pending_interrupter_msix(true, false),
+        vec![expected_message()]
+    );
+    assert_eq!(xhci.mmio_read(IMAN_INTERRUPTER0, 4), 0x2);
+}
+
+#[test]
 fn two_events_each_raise_exactly_one_message() {
     // Given: an unmasked, enabled interrupter.
     let mut xhci = XhciController::new();

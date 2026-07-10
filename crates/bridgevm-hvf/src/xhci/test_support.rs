@@ -83,6 +83,20 @@ impl GuestMemoryMut for TestRam {
         }
         Some(self.bytes[start..end].to_vec())
     }
+
+    fn read_into(&self, gpa: u64, dst: &mut [u8]) -> bool {
+        let Ok(start) = usize::try_from(gpa) else {
+            return false;
+        };
+        let Some(end) = start.checked_add(dst.len()) else {
+            return false;
+        };
+        if end > self.bytes.len() {
+            return false;
+        }
+        dst.copy_from_slice(&self.bytes[start..end]);
+        true
+    }
 }
 
 pub(super) fn setup_command_rings(

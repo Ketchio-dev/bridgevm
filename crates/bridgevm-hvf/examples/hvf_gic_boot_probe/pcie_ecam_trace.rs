@@ -166,7 +166,7 @@ fn owner_context(platform: &VirtPlatform, access: &PcieEcamAccess<'_>) -> PcieEc
         esr: access.esr,
         ec: access.ec,
         srt: access.srt,
-        serial_phase: PcieEcamOwnerContext::serial_phase_from_uart(platform.uart_output()),
+        serial_phase: context::PcieEcamSerialPhase::from_uart(platform.uart_output()),
     }
 }
 

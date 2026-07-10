@@ -122,21 +122,40 @@ impl MsixTable {
         function_enabled: bool,
         function_masked: bool,
     ) -> Vec<MsixMessage> {
-        if !function_enabled || function_masked {
-            return Vec::new();
-        }
         let mut messages = Vec::new();
-        for vector in 0..self.vector_count() {
-            if !self.pending(vector) || self.vector_masked(vector) {
-                continue;
-            }
-            let Some(message) = self.message(vector) else {
-                continue;
-            };
-            self.clear_pending(vector);
-            messages.push(message);
-        }
+        self.drain_pending_into(function_enabled, function_masked, &mut messages);
         messages
+    }
+
+    /// Deliver pending vectors into caller-owned storage.
+    pub fn drain_pending_into(
+        &mut self,
+        function_enabled: bool,
+        function_masked: bool,
+        out: &mut Vec<MsixMessage>,
+    ) {
+        if !function_enabled || function_masked {
+            return;
+        }
+        let vector_count = usize::from(self.vector_count());
+        for word_idx in 0..self.pending_bits.len() {
+            let mut pending_word = self.pending_bits[word_idx];
+            while pending_word != 0 {
+                let bit = pending_word.trailing_zeros() as usize;
+                let vector_idx = word_idx * 64 + bit;
+                if vector_idx >= vector_count {
+                    break;
+                }
+                let vector = vector_idx as u16;
+                if !self.vector_masked(vector) {
+                    if let Some(message) = self.message(vector) {
+                        self.clear_pending(vector);
+                        out.push(message);
+                    }
+                }
+                pending_word &= !(1u64 << bit);
+            }
+        }
     }
 
     pub fn pending(&self, vector: u16) -> bool {
@@ -243,6 +262,89 @@ mod tests {
             }]
         );
         assert_eq!(table.pba_read(0, 8), 0);
+    }
+
+    #[test]
+    fn drain_pending_into_appends_to_caller_storage() {
+        let mut table = MsixTable::new(2);
+        table.table_write(0, 8, 0x0808_0000);
+        table.table_write(8, 4, 35);
+        table.table_write(16, 8, 0x0808_1000);
+        table.table_write(24, 4, 36);
+
+        assert_eq!(table.raise(0, true, false), None);
+        assert_eq!(table.raise(1, true, false), None);
+        table.table_write(12, 4, 0);
+        table.table_write(28, 4, 0);
+
+        let sentinel = MsixMessage {
+            vector: 99,
+            address: 0xfeed,
+            data: 1,
+        };
+        let mut out = Vec::with_capacity(4);
+        out.push(sentinel);
+        let ptr = out.as_ptr();
+        let capacity = out.capacity();
+
+        table.drain_pending_into(true, false, &mut out);
+
+        assert_eq!(out.capacity(), capacity);
+        assert_eq!(out.as_ptr(), ptr);
+        assert_eq!(
+            out,
+            vec![
+                sentinel,
+                MsixMessage {
+                    vector: 0,
+                    address: 0x0808_0000,
+                    data: 35,
+                },
+                MsixMessage {
+                    vector: 1,
+                    address: 0x0808_1000,
+                    data: 36,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn drain_pending_into_walks_sparse_pending_bits_and_preserves_undeliverable_vectors() {
+        let mut table = MsixTable::new(130);
+        table.table_write(0, 8, 0x0808_0000);
+        table.table_write(8, 4, 35);
+        table.table_write(129 * MsixTable::ENTRY_BYTES, 8, 0x0808_2000);
+        table.table_write(129 * MsixTable::ENTRY_BYTES + 8, 4, 36);
+
+        assert_eq!(table.raise(0, true, false), None);
+        assert_eq!(table.raise(64, true, false), None);
+        assert_eq!(table.raise(129, true, false), None);
+        table.table_write(12, 4, 0);
+        table.table_write(129 * MsixTable::ENTRY_BYTES + 12, 4, 0);
+
+        let mut out = Vec::new();
+        table.drain_pending_into(true, false, &mut out);
+
+        assert_eq!(
+            out,
+            vec![
+                MsixMessage {
+                    vector: 0,
+                    address: 0x0808_0000,
+                    data: 35,
+                },
+                MsixMessage {
+                    vector: 129,
+                    address: 0x0808_2000,
+                    data: 36,
+                },
+            ]
+        );
+        assert_eq!(table.pba_read(0, 8), 0);
+        assert!(table.pending(64));
+        assert_eq!(table.pba_read(8, 8), 1);
+        assert_eq!(table.pba_read(16, 8), 0);
     }
 
     #[test]

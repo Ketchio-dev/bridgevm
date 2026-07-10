@@ -1,7 +1,7 @@
 use crate::fwcfg::GuestMemoryMut;
 
 use super::super::device_context_mem::{
-    output_context_for_slot, read_mem_u32, write_ep_context_state, write_mem_u64,
+    output_context_for_slot, read_mem_array, read_mem_u32, write_ep_context_state, write_mem_u64,
 };
 use super::super::XhciController;
 use super::{
@@ -47,7 +47,7 @@ impl XhciController {
         let Some(dequeue_gpa) = endpoint_gpa.checked_add(EP_TR_DEQUEUE_OFFSET) else {
             return;
         };
-        if mem.read_bytes(endpoint_gpa, EP_CONTEXT_BYTES).is_none() {
+        if read_mem_array::<EP_CONTEXT_BYTES>(mem, endpoint_gpa).is_none() {
             return;
         }
         if !write_ep_context_state(mem, endpoint_gpa, EP_STATE_DISABLED) {

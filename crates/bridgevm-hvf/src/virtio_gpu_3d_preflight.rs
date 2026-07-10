@@ -485,12 +485,19 @@ impl VirtioGpu3dBackend for Arc<Mutex<PreflightBackend>> {
     }
 
     fn capset(&mut self, capset_id: u32, version: u32) -> Option<Vec<u8>> {
+        let mut capset = Vec::new();
+        self.capset_into(capset_id, version, &mut capset)
+            .then_some(capset)
+    }
+
+    fn capset_into(&mut self, capset_id: u32, version: u32, out: &mut Vec<u8>) -> bool {
         if capset_id != self.lock().unwrap().capset_id || version != 1 {
-            return None;
+            return false;
         }
-        let mut capset = vec![0u8; 160];
-        capset[0..4].copy_from_slice(&1u32.to_le_bytes());
-        Some(capset)
+        let start = out.len();
+        out.resize(start + 160, 0);
+        out[start..start + 4].copy_from_slice(&1u32.to_le_bytes());
+        true
     }
 
     fn ctx_create(&mut self, _ctx_id: u32, context_init: u32, _name: &[u8]) -> bool {
@@ -554,8 +561,8 @@ impl VirtioGpu3dBackend for Arc<Mutex<PreflightBackend>> {
 
     fn poll_fences(&mut self) {}
 
-    fn drain_completed_fences(&mut self) -> Vec<CompletedFence> {
-        std::mem::take(&mut self.lock().unwrap().completed)
+    fn drain_completed_fences_into(&mut self, out: &mut Vec<CompletedFence>) {
+        out.append(&mut self.lock().unwrap().completed);
     }
 
     fn reset(&mut self) {

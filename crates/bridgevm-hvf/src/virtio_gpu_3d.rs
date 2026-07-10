@@ -69,6 +69,13 @@ pub trait VirtioGpu3dBackend: Send {
     }
     fn capset_info(&mut self, capset_index: u32) -> Option<CapsetInfo>;
     fn capset(&mut self, capset_id: u32, version: u32) -> Option<Vec<u8>>;
+    fn capset_into(&mut self, capset_id: u32, version: u32, out: &mut Vec<u8>) -> bool {
+        let Some(capset) = self.capset(capset_id, version) else {
+            return false;
+        };
+        out.extend_from_slice(&capset);
+        true
+    }
     fn ctx_create(&mut self, ctx_id: u32, context_init: u32, name: &[u8]) -> bool;
     fn ctx_destroy(&mut self, ctx_id: u32);
     fn ctx_attach_resource(&mut self, ctx_id: u32, resource_id: u32);
@@ -82,7 +89,12 @@ pub trait VirtioGpu3dBackend: Send {
     fn destroy_resource(&mut self, resource_id: u32);
     fn create_fence(&mut self, ctx_id: u32, ring_idx: u8, fence_id: u64) -> bool;
     fn poll_fences(&mut self);
-    fn drain_completed_fences(&mut self) -> Vec<CompletedFence>;
+    fn drain_completed_fences_into(&mut self, out: &mut Vec<CompletedFence>);
+    fn drain_completed_fences(&mut self) -> Vec<CompletedFence> {
+        let mut completed = Vec::new();
+        self.drain_completed_fences_into(&mut completed);
+        completed
+    }
     fn reset(&mut self);
 }
 
@@ -109,6 +121,8 @@ pub struct BlobHostIovec {
     pub len: usize,
 }
 
+unsafe impl Send for BlobHostIovec {}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MappedBlob {
     pub host_ptr: *mut u8,
@@ -131,6 +145,13 @@ pub struct BlobResourceInfo {
     pub blob_mem: u32,
     pub size: u64,
     pub backing: Vec<BlobMemEntry>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BlobResourceInfoRef<'a> {
+    pub blob_mem: u32,
+    pub size: u64,
+    pub backing: &'a [BlobMemEntry],
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -183,6 +204,8 @@ pub struct VirtioGpu3d {
     resource_2d_ids: BTreeSet<u32>,
     blob_resources: BTreeMap<u32, BlobResource>,
     mapped_intervals: BTreeMap<u64, (u64, u32)>,
+    host_iovecs_scratch: Vec<BlobHostIovec>,
+    blob_unmap_ids_scratch: Vec<u32>,
     submits: u64,
     fences_completed: u64,
 }
@@ -274,11 +297,23 @@ impl VirtioGpu3d {
     }
 
     pub fn blob_resource_info(&self, resource_id: u32) -> Option<BlobResourceInfo> {
-        let resource = self.blob_resources.get(&resource_id)?;
+        let info = self.blob_resource_info_ref(resource_id)?;
         Some(BlobResourceInfo {
+            blob_mem: info.blob_mem,
+            size: info.size,
+            backing: info.backing.to_vec(),
+        })
+    }
+
+    pub(crate) fn blob_resource_info_ref(
+        &self,
+        resource_id: u32,
+    ) -> Option<BlobResourceInfoRef<'_>> {
+        let resource = self.blob_resources.get(&resource_id)?;
+        Some(BlobResourceInfoRef {
             blob_mem: resource.blob_mem,
             size: resource.size,
-            backing: resource.backing.clone(),
+            backing: &resource.backing,
         })
     }
 
@@ -305,16 +340,24 @@ impl VirtioGpu3d {
     }
 
     pub fn drain_completed_fences(&mut self) -> Vec<CompletedFence> {
+        let mut completed = Vec::new();
+        self.drain_completed_fences_into(&mut completed);
+        completed
+    }
+
+    pub fn drain_completed_fences_into(&mut self, out: &mut Vec<CompletedFence>) {
         let Some(backend) = self.backend.as_mut() else {
-            return Vec::new();
+            return;
         };
         // Venus on macOS retires fences synchronously: polling the backend may
         // invoke the fence callback inline, then drain_completed_fences takes
         // the callbacks queued by that poll.
         backend.poll_fences();
-        let completed = backend.drain_completed_fences();
-        self.fences_completed = self.fences_completed.saturating_add(completed.len() as u64);
-        completed
+        let start = out.len();
+        backend.drain_completed_fences_into(out);
+        self.fences_completed = self
+            .fences_completed
+            .saturating_add((out.len() - start) as u64);
     }
 
     pub fn create_fence(&mut self, fence: CompletedFence) -> bool {
@@ -334,98 +377,120 @@ impl VirtioGpu3d {
         request: &[u8],
         hdr: CtrlHdr3d,
     ) -> Option<Vec<u8>> {
-        match hdr.typ {
-            VIRTIO_GPU_CMD_GET_CAPSET_INFO => Some(self.get_capset_info(request, hdr)),
-            VIRTIO_GPU_CMD_GET_CAPSET => Some(self.get_capset(request, hdr)),
-            VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB => {
-                Some(self.resource_create_blob(mem, request, hdr))
-            }
-            VIRTIO_GPU_CMD_CTX_CREATE => Some(self.ctx_create(request, hdr)),
-            VIRTIO_GPU_CMD_CTX_DESTROY => Some(self.ctx_destroy(hdr)),
-            VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE => Some(self.ctx_attach_resource(request, hdr)),
-            VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE => Some(self.ctx_detach_resource(request, hdr)),
-            VIRTIO_GPU_CMD_SUBMIT_3D => Some(self.submit_3d(request, hdr)),
-            VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB => Some(self.resource_map_blob(request, hdr)),
-            VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => Some(self.resource_unmap_blob(request, hdr)),
-            _ => None,
-        }
+        let mut out = Vec::new();
+        self.handle_with_mem_into(mem, request, hdr, &mut out)
+            .then_some(out)
     }
 
-    fn get_capset_info(&mut self, request: &[u8], hdr: CtrlHdr3d) -> Vec<u8> {
+    pub fn handle_with_mem_into(
+        &mut self,
+        mem: Option<&dyn GuestMemoryMut>,
+        request: &[u8],
+        hdr: CtrlHdr3d,
+        out: &mut Vec<u8>,
+    ) -> bool {
+        match hdr.typ {
+            VIRTIO_GPU_CMD_GET_CAPSET_INFO => self.get_capset_info_into(request, hdr, out),
+            VIRTIO_GPU_CMD_GET_CAPSET => self.get_capset_into(request, hdr, out),
+            VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB => {
+                self.resource_create_blob_into(mem, request, hdr, out)
+            }
+            VIRTIO_GPU_CMD_CTX_CREATE => self.ctx_create_into(request, hdr, out),
+            VIRTIO_GPU_CMD_CTX_DESTROY => self.ctx_destroy_into(hdr, out),
+            VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE => self.ctx_attach_resource_into(request, hdr, out),
+            VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE => self.ctx_detach_resource_into(request, hdr, out),
+            VIRTIO_GPU_CMD_SUBMIT_3D => self.submit_3d_into(request, hdr, out),
+            VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB => self.resource_map_blob_into(request, hdr, out),
+            VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => self.resource_unmap_blob_into(request, hdr, out),
+            _ => return false,
+        }
+        true
+    }
+
+    fn get_capset_info_into(&mut self, request: &[u8], hdr: CtrlHdr3d, out: &mut Vec<u8>) {
         let Some(backend) = self.backend.as_mut() else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         };
         let Some(index) = read_le_u32(request, 24) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         };
         let Some(info) = backend.capset_info(index) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         };
-        let mut out = response_hdr(VIRTIO_GPU_RESP_OK_CAPSET_INFO, Some(hdr));
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_CAPSET_INFO, Some(hdr));
         out.extend_from_slice(&info.capset_id.to_le_bytes());
         out.extend_from_slice(&info.max_version.to_le_bytes());
         out.extend_from_slice(&info.max_size.to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
-        out
     }
 
-    fn get_capset(&mut self, request: &[u8], hdr: CtrlHdr3d) -> Vec<u8> {
+    fn get_capset_into(&mut self, request: &[u8], hdr: CtrlHdr3d, out: &mut Vec<u8>) {
         let Some(backend) = self.backend.as_mut() else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         };
         let Some(capset_id) = read_le_u32(request, 24) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         };
         let Some(version) = read_le_u32(request, 28) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         };
-        let Some(bytes) = backend.capset(capset_id, version) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
-        };
-        let mut out = response_hdr(VIRTIO_GPU_RESP_OK_CAPSET, Some(hdr));
-        out.extend_from_slice(&bytes);
-        out
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_CAPSET, Some(hdr));
+        if !backend.capset_into(capset_id, version, out) {
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+        }
     }
 
-    fn ctx_create(&mut self, request: &[u8], hdr: CtrlHdr3d) -> Vec<u8> {
+    fn ctx_create_into(&mut self, request: &[u8], hdr: CtrlHdr3d, out: &mut Vec<u8>) {
         let Some(backend) = self.backend.as_mut() else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         };
         if request.len() < CTX_CREATE_LEN
             || hdr.ctx_id == 0
             || self.live_contexts.contains(&hdr.ctx_id)
         {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         let nlen = read_le_u32(request, 24).unwrap_or(0).min(64) as usize;
         let context_init = read_le_u32(request, 28).unwrap_or(0);
         let name = &request[32..32 + nlen];
         if !backend.ctx_create(hdr.ctx_id, context_init, name) {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr));
+            return;
         }
         self.live_contexts.insert(hdr.ctx_id);
         self.ctx_resources.entry(hdr.ctx_id).or_default();
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, Some(hdr))
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
     }
 
-    fn ctx_destroy(&mut self, hdr: CtrlHdr3d) -> Vec<u8> {
+    fn ctx_destroy_into(&mut self, hdr: CtrlHdr3d, out: &mut Vec<u8>) {
         if !self.live_contexts.remove(&hdr.ctx_id) {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         self.ctx_resources.remove(&hdr.ctx_id);
         if let Some(backend) = self.backend.as_mut() {
             backend.ctx_destroy(hdr.ctx_id);
         }
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, Some(hdr))
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
     }
 
-    fn ctx_attach_resource(&mut self, request: &[u8], hdr: CtrlHdr3d) -> Vec<u8> {
+    fn ctx_attach_resource_into(&mut self, request: &[u8], hdr: CtrlHdr3d, out: &mut Vec<u8>) {
         if request.len() < CTX_RESOURCE_LEN {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         let resource_id = read_le_u32(request, 24).unwrap_or(0);
         if !self.resource_exists(resource_id) {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         if let Some(resources) = self.ctx_resources.get_mut(&hdr.ctx_id) {
             resources.insert(resource_id);
@@ -433,16 +498,18 @@ impl VirtioGpu3d {
         if let Some(backend) = self.backend.as_mut() {
             backend.ctx_attach_resource(hdr.ctx_id, resource_id);
         }
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, Some(hdr))
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
     }
 
-    fn ctx_detach_resource(&mut self, request: &[u8], hdr: CtrlHdr3d) -> Vec<u8> {
+    fn ctx_detach_resource_into(&mut self, request: &[u8], hdr: CtrlHdr3d, out: &mut Vec<u8>) {
         if request.len() < CTX_RESOURCE_LEN {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         let resource_id = read_le_u32(request, 24).unwrap_or(0);
         if !self.resource_exists(resource_id) {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         if let Some(resources) = self.ctx_resources.get_mut(&hdr.ctx_id) {
             resources.remove(&resource_id);
@@ -450,39 +517,46 @@ impl VirtioGpu3d {
         if let Some(backend) = self.backend.as_mut() {
             backend.ctx_detach_resource(hdr.ctx_id, resource_id);
         }
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, Some(hdr))
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
     }
 
-    fn submit_3d(&mut self, request: &[u8], hdr: CtrlHdr3d) -> Vec<u8> {
+    fn submit_3d_into(&mut self, request: &[u8], hdr: CtrlHdr3d, out: &mut Vec<u8>) {
         let Some(backend) = self.backend.as_mut() else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         };
         if !self.live_contexts.contains(&hdr.ctx_id) || request.len() < SUBMIT_3D_LEN {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         let size = read_le_u32(request, 24).unwrap_or(0) as usize;
         if size > MAX_SUBMIT_3D_BYTES || request.len().saturating_sub(SUBMIT_3D_LEN) < size {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         let cmdbuf = &request[SUBMIT_3D_LEN..SUBMIT_3D_LEN + size];
         if !backend.submit_3d(hdr.ctx_id, cmdbuf) {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr));
+            return;
         }
         self.submits = self.submits.saturating_add(1);
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, Some(hdr))
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
     }
 
-    fn resource_create_blob(
+    fn resource_create_blob_into(
         &mut self,
         mem: Option<&dyn GuestMemoryMut>,
         request: &[u8],
         hdr: CtrlHdr3d,
-    ) -> Vec<u8> {
+        out: &mut Vec<u8>,
+    ) {
         if request.len() < RESOURCE_CREATE_BLOB_LEN {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         if self.backend.is_none() {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         let resource_id = read_le_u32(request, 24).unwrap_or(0);
         let blob_mem = read_le_u32(request, 28).unwrap_or(0);
@@ -491,43 +565,50 @@ impl VirtioGpu3d {
         let blob_id = read_le_u64(request, 40).unwrap_or(0);
         let size = read_le_u64(request, 48).unwrap_or(0);
         if resource_id == 0 || size == 0 || self.blob_resources.contains_key(&resource_id) {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         if blob_mem == VIRTIO_GPU_BLOB_MEM_HOST3D_GUEST {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         if blob_mem != VIRTIO_GPU_BLOB_MEM_HOST3D && blob_mem != VIRTIO_GPU_BLOB_MEM_GUEST {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         let Some(entries_len) = (nr_entries as usize).checked_mul(MEM_ENTRY_LEN) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         };
         if request.len().saturating_sub(RESOURCE_CREATE_BLOB_LEN) < entries_len {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         let mut backing = Vec::with_capacity(nr_entries as usize);
         let mut offset = RESOURCE_CREATE_BLOB_LEN;
         for _ in 0..nr_entries {
             let Some(addr) = read_le_u64(request, offset) else {
-                return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+                response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+                return;
             };
             let Some(len) = read_le_u32(request, offset + 8) else {
-                return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+                response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+                return;
             };
             backing.push(BlobMemEntry { addr, len });
             offset += MEM_ENTRY_LEN;
         }
-        let host_iovecs = if blob_mem == VIRTIO_GPU_BLOB_MEM_GUEST {
+        self.host_iovecs_scratch.clear();
+        if blob_mem == VIRTIO_GPU_BLOB_MEM_GUEST {
             let Some(mem) = mem else {
-                return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+                response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+                return;
             };
-            let Some(iovecs) = resolve_blob_iovecs(mem, &backing) else {
-                return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
-            };
-            iovecs
-        } else {
-            Vec::new()
-        };
+            if !resolve_blob_iovecs_into(mem, &backing, &mut self.host_iovecs_scratch) {
+                response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+                return;
+            }
+        }
         if blob_mem == VIRTIO_GPU_BLOB_MEM_HOST3D || blob_mem == VIRTIO_GPU_BLOB_MEM_GUEST {
             let args = CreateBlobArgs {
                 ctx_id: hdr.ctx_id,
@@ -536,10 +617,13 @@ impl VirtioGpu3d {
                 blob_flags,
                 blob_id,
                 size,
-                iovecs: &host_iovecs,
+                iovecs: &self.host_iovecs_scratch,
             };
-            if !self.backend.as_mut().unwrap().create_blob(args) {
-                return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr));
+            let created = self.backend.as_mut().unwrap().create_blob(args);
+            self.host_iovecs_scratch.clear();
+            if !created {
+                response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr));
+                return;
             }
         }
         self.blob_resources.insert(
@@ -551,20 +635,23 @@ impl VirtioGpu3d {
                 backing,
             },
         );
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, Some(hdr))
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
     }
 
-    fn resource_map_blob(&mut self, request: &[u8], hdr: CtrlHdr3d) -> Vec<u8> {
+    fn resource_map_blob_into(&mut self, request: &[u8], hdr: CtrlHdr3d, out: &mut Vec<u8>) {
         if request.len() < RESOURCE_MAP_BLOB_LEN {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         let resource_id = read_le_u32(request, 24).unwrap_or(0);
         let shm_offset = read_le_u64(request, 32).unwrap_or(u64::MAX);
         let Some(resource) = self.blob_resources.get(&resource_id) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         };
         if resource.mapped.is_some() || resource.blob_mem != VIRTIO_GPU_BLOB_MEM_HOST3D {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         let size = resource.size;
         // Validate against the page-rounded footprint the mapping will occupy.
@@ -575,13 +662,16 @@ impl VirtioGpu3d {
                 .map_or(true, |end| end > self.shm_window_size)
             || self.interval_overlaps(shm_offset, rounded_size)
         {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         let Some(backend) = self.backend.as_mut() else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         };
         let Some(mapped) = backend.map_blob(resource_id) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, Some(hdr));
+            return;
         };
         // Guests may create blobs at their own (4 KiB) page granularity while
         // hv_vm_map needs 16 KiB pages. The host allocation backing a Vulkan
@@ -595,37 +685,41 @@ impl VirtioGpu3d {
             || (mapped.size as u64) < size
         {
             backend.unmap_blob(resource_id);
-            return response_hdr(VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, Some(hdr));
+            return;
         }
         let Some(port) = self.shm_port.as_mut() else {
             backend.unmap_blob(resource_id);
-            return response_hdr(VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, Some(hdr));
+            return;
         };
         if port.map(mapped.host_ptr, map_size, shm_offset).is_err() {
             backend.unmap_blob(resource_id);
-            return response_hdr(VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, Some(hdr));
+            return;
         }
         if let Some(resource) = self.blob_resources.get_mut(&resource_id) {
             resource.mapped = Some((shm_offset, map_size));
         }
         self.mapped_intervals
             .insert(shm_offset, (map_size as u64, resource_id));
-        let mut out = response_hdr(VIRTIO_GPU_RESP_OK_MAP_INFO, Some(hdr));
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_MAP_INFO, Some(hdr));
         out.extend_from_slice(&(mapped.map_info & VIRTIO_GPU_MAP_CACHE_MASK).to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
-        out
     }
 
-    fn resource_unmap_blob(&mut self, request: &[u8], hdr: CtrlHdr3d) -> Vec<u8> {
+    fn resource_unmap_blob_into(&mut self, request: &[u8], hdr: CtrlHdr3d, out: &mut Vec<u8>) {
         if request.len() < RESOURCE_UNMAP_BLOB_LEN {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         let resource_id = read_le_u32(request, 24).unwrap_or(0);
         if !self.blob_resources.contains_key(&resource_id) {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
         }
         self.unmap_blob_resource(resource_id);
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, Some(hdr))
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
     }
 
     fn unmap_blob_resource(&mut self, resource_id: u32) {
@@ -646,10 +740,14 @@ impl VirtioGpu3d {
     }
 
     fn unmap_all_blobs(&mut self) {
-        let ids: Vec<u32> = self.blob_resources.keys().copied().collect();
-        for resource_id in ids {
+        self.blob_unmap_ids_scratch.clear();
+        self.blob_unmap_ids_scratch
+            .extend(self.blob_resources.keys().copied());
+        let mut ids = std::mem::take(&mut self.blob_unmap_ids_scratch);
+        for resource_id in ids.drain(..) {
             self.unmap_blob_resource(resource_id);
         }
+        self.blob_unmap_ids_scratch = ids;
     }
 
     fn interval_overlaps(&self, start: u64, size: u64) -> bool {
@@ -673,6 +771,11 @@ impl VirtioGpu3d {
 
 pub fn response_hdr(typ: u32, request: Option<CtrlHdr3d>) -> Vec<u8> {
     let mut out = Vec::with_capacity(CTRL_HDR_LEN);
+    response_hdr_into(&mut out, typ, request);
+    out
+}
+
+pub fn response_hdr_into(out: &mut Vec<u8>, typ: u32, request: Option<CtrlHdr3d>) {
     let (flags, fence_id, ctx_id, padding) = request.map_or((0, 0, 0, 0), |hdr| {
         (
             hdr.flags & (VIRTIO_GPU_FLAG_FENCE | VIRTIO_GPU_FLAG_INFO_RING_IDX),
@@ -681,12 +784,13 @@ pub fn response_hdr(typ: u32, request: Option<CtrlHdr3d>) -> Vec<u8> {
             hdr.padding,
         )
     });
+    out.clear();
+    out.reserve(CTRL_HDR_LEN);
     out.extend_from_slice(&typ.to_le_bytes());
     out.extend_from_slice(&flags.to_le_bytes());
     out.extend_from_slice(&fence_id.to_le_bytes());
     out.extend_from_slice(&ctx_id.to_le_bytes());
     out.extend_from_slice(&padding.to_le_bytes());
-    out
 }
 
 fn read_le_u32(bytes: &[u8], offset: usize) -> Option<u32> {
@@ -713,20 +817,26 @@ fn aligned_usize(value: usize, align: usize) -> bool {
     value % align == 0
 }
 
-fn resolve_blob_iovecs(
+fn resolve_blob_iovecs_into(
     mem: &dyn GuestMemoryMut,
     backing: &[BlobMemEntry],
-) -> Option<Vec<BlobHostIovec>> {
-    let mut iovecs = Vec::with_capacity(backing.len());
+    out: &mut Vec<BlobHostIovec>,
+) -> bool {
+    let start = out.len();
+    out.reserve(backing.len());
     for entry in backing {
         let len = entry.len as usize;
-        let host_ptr = mem.host_ptr(entry.addr, len)?;
+        let Some(host_ptr) = mem.host_ptr(entry.addr, len) else {
+            out.truncate(start);
+            return false;
+        };
         if host_ptr.is_null() {
-            return None;
+            out.truncate(start);
+            return false;
         }
-        iovecs.push(BlobHostIovec { host_ptr, len });
+        out.push(BlobHostIovec { host_ptr, len });
     }
-    Some(iovecs)
+    true
 }
 
 #[cfg(test)]
@@ -734,6 +844,7 @@ fn resolve_blob_iovecs(
 pub struct MockBackend {
     pub capset_info: Option<CapsetInfo>,
     pub capset: Vec<u8>,
+    pub capset_calls: u32,
     pub created: Vec<(u32, u32, Vec<u8>)>,
     pub destroyed: Vec<u32>,
     pub attached: Vec<(u32, u32)>,
@@ -775,9 +886,19 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
     }
 
     fn capset(&mut self, capset_id: u32, _version: u32) -> Option<Vec<u8>> {
-        let inner = self.lock().unwrap();
+        let mut inner = self.lock().unwrap();
+        inner.capset_calls += 1;
         (inner.capset_info.map(|info| info.capset_id) == Some(capset_id))
             .then(|| inner.capset.clone())
+    }
+
+    fn capset_into(&mut self, capset_id: u32, _version: u32, out: &mut Vec<u8>) -> bool {
+        let inner = self.lock().unwrap();
+        if inner.capset_info.map(|info| info.capset_id) != Some(capset_id) {
+            return false;
+        }
+        out.extend_from_slice(&inner.capset);
+        true
     }
 
     fn ctx_create(&mut self, ctx_id: u32, context_init: u32, name: &[u8]) -> bool {
@@ -857,8 +978,8 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
 
     fn poll_fences(&mut self) {}
 
-    fn drain_completed_fences(&mut self) -> Vec<CompletedFence> {
-        std::mem::take(&mut self.lock().unwrap().completed)
+    fn drain_completed_fences_into(&mut self, out: &mut Vec<CompletedFence>) {
+        out.append(&mut self.lock().unwrap().completed);
     }
 
     fn reset(&mut self) {
@@ -976,6 +1097,71 @@ mod tests {
     }
 
     #[test]
+    fn get_capset_uses_backend_capset_into_without_cloning_capset_vec() {
+        let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
+        let mut gpu = VirtioGpu3d::with_backend(Box::new(backend.clone()));
+        let mut get = ctrl_req(VIRTIO_GPU_CMD_GET_CAPSET, 0);
+        get.extend_from_slice(&4u32.to_le_bytes());
+        get.extend_from_slice(&1u32.to_le_bytes());
+        let hdr = CtrlHdr3d::parse(&get).unwrap();
+
+        let mut out = Vec::with_capacity(24 + 160);
+        let response_ptr = out.as_ptr();
+        assert!(gpu.handle_with_mem_into(None, &get, hdr, &mut out));
+
+        assert_eq!(read_le_u32(&out, 0), Some(VIRTIO_GPU_RESP_OK_CAPSET));
+        assert_eq!(read_le_u32(&out, 24), Some(1));
+        assert_eq!(out.as_ptr(), response_ptr);
+        assert_eq!(backend.lock().unwrap().capset_calls, 0);
+    }
+
+    #[test]
+    fn drain_completed_fences_into_reuses_caller_storage_and_counts() {
+        let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
+        let mut gpu = VirtioGpu3d::with_backend(Box::new(backend.clone()));
+        let sentinel = CompletedFence {
+            ctx_id: 99,
+            ring_idx: 0,
+            fence_id: 1,
+        };
+        let completed = [
+            CompletedFence {
+                ctx_id: 1,
+                ring_idx: 2,
+                fence_id: 3,
+            },
+            CompletedFence {
+                ctx_id: 4,
+                ring_idx: 5,
+                fence_id: 6,
+            },
+        ];
+        backend.lock().unwrap().completed.extend(completed);
+
+        let mut out = Vec::with_capacity(4);
+        out.push(sentinel);
+        let out_ptr = out.as_ptr();
+        let out_capacity = out.capacity();
+
+        gpu.drain_completed_fences_into(&mut out);
+
+        assert_eq!(out.as_ptr(), out_ptr);
+        assert_eq!(out.capacity(), out_capacity);
+        assert_eq!(out, vec![sentinel, completed[0], completed[1]]);
+        assert_eq!(gpu.stats(0).fences_completed, 2);
+        assert!(backend.lock().unwrap().completed.is_empty());
+
+        let wrapper_fence = CompletedFence {
+            ctx_id: 7,
+            ring_idx: 8,
+            fence_id: 9,
+        };
+        backend.lock().unwrap().completed.push(wrapper_fence);
+        assert_eq!(gpu.drain_completed_fences(), vec![wrapper_fence]);
+        assert_eq!(gpu.stats(0).fences_completed, 3);
+    }
+
+    #[test]
     fn ctx_attach_detach_blob_resource_without_live_context_forwards_to_backend() {
         let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
         let mut gpu = VirtioGpu3d::with_backend(Box::new(backend.clone()));
@@ -1073,6 +1259,55 @@ mod tests {
             vec![(19, VIRTIO_GPU_BLOB_MEM_GUEST, 77, 0x3000)]
         );
         assert_eq!(backend.blob_iovecs, vec![(19, 2, 0x3000)]);
+    }
+
+    #[test]
+    fn guest_blob_create_reuses_host_iovec_scratch() {
+        let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
+        let mut gpu = VirtioGpu3d::with_backend(Box::new(backend.clone()));
+        let mem = TestMem::new(0x8000_0000, 0x20_000);
+        let entries = [
+            BlobMemEntry {
+                addr: 0x8000_1000,
+                len: 0x1000,
+            },
+            BlobMemEntry {
+                addr: 0x8000_4000,
+                len: 0x2000,
+            },
+        ];
+
+        let mut previous_scratch = None;
+        for resource_id in [29, 30] {
+            let create = create_blob_req_with_entries(
+                resource_id,
+                VIRTIO_GPU_BLOB_MEM_GUEST,
+                77,
+                0x3000,
+                3,
+                &entries,
+            );
+            let hdr = CtrlHdr3d::parse(&create).unwrap();
+            assert_eq!(
+                read_le_u32(&gpu.handle_with_mem(Some(&mem), &create, hdr).unwrap(), 0),
+                Some(VIRTIO_GPU_RESP_OK_NODATA)
+            );
+            assert!(gpu.host_iovecs_scratch.is_empty());
+            let scratch = (
+                gpu.host_iovecs_scratch.as_ptr() as usize,
+                gpu.host_iovecs_scratch.capacity(),
+            );
+            assert!(scratch.1 >= entries.len());
+            if let Some(previous) = previous_scratch {
+                assert_eq!(scratch, previous);
+            }
+            previous_scratch = Some(scratch);
+        }
+
+        assert_eq!(
+            backend.lock().unwrap().blob_iovecs,
+            vec![(29, 2, 0x3000), (30, 2, 0x3000)]
+        );
     }
 
     #[derive(Debug)]

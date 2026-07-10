@@ -82,6 +82,8 @@ pub struct XhciController {
     dcbaap: u64,
     config: u32,
     interrupters: [event::Interrupter; event::XHCI_INTERRUPTER_COUNT],
+    pending_interrupter_bits: u32,
+    pending_enabled_interrupter_bits: u32,
     port_status_change_pending: bool,
     slot1_ep0_dequeue: u64,
     slot1_ep0_dcs: bool,

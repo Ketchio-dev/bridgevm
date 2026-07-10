@@ -11,10 +11,11 @@
 //! - [`crate::nvme`] — the first PCIe storage endpoint behind BAR0.
 //!
 //! The live wiring is small and lives at the data-abort (MMIO) exit of
-//! `hv_vcpu_run`: on a guest MMIO fault the run loop calls [`VirtPlatform::on_mmio`]
-//! with the fault address, access, and a [`GuestMemoryMut`] view of guest RAM, and
-//! applies the [`MmioOutcome`]. Everything in this module is host-only and
-//! unit-testable; only the `hv_vcpu_run` call itself needs an entitled,
+//! `hv_vcpu_run`: on a guest MMIO fault the run loop calls
+//! [`VirtPlatform::on_mmio_with_post_drain`] with the fault address, access, and a
+//! [`GuestMemoryMut`] view of guest RAM, then applies the [`MmioOutcome`].
+//! Everything in this module is host-only and unit-testable; only the `hv_vcpu_run`
+//! call itself needs an entitled,
 //! code-signed Apple Silicon host (the step-6 Linux ACPI-only bring-up in
 //! `docs/hvf-windows-engine-strategy.md`).
 
@@ -233,6 +234,13 @@ impl NetBackend for PlatformNetBackend {
         }
     }
 
+    fn poll_receive_into(&mut self, out: &mut Vec<u8>) -> bool {
+        match self {
+            Self::Nat(backend) => backend.poll_receive_into(out),
+            Self::Loopback(backend) => backend.poll_receive_into(out),
+        }
+    }
+
     fn poll_host_sockets(&mut self) {
         if let Self::Nat(backend) = self {
             backend.poll_host_sockets();
@@ -272,6 +280,25 @@ pub enum MmioOutcome {
     KnownUnimplemented(&'static str),
     /// The address belongs to no device in the machine map.
     Unmapped,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MmioPostDrain {
+    xhci_setup_input_attempted: bool,
+}
+
+impl MmioPostDrain {
+    pub const NONE: Self = Self {
+        xhci_setup_input_attempted: false,
+    };
+
+    pub const XHCI_SETUP_INPUT: Self = Self {
+        xhci_setup_input_attempted: true,
+    };
+
+    pub fn xhci_setup_input_attempted(self) -> bool {
+        self.xhci_setup_input_attempted
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -332,6 +359,7 @@ pub struct VirtPlatform {
     flash_vars: P30NorFlash,
     pending_msix: Vec<MsixMessage>,
     pending_spi_levels: Vec<(u32, bool)>,
+    nvme_completion_scratch: Vec<NvmeCompletionEvent>,
     xhci_hid_boot_key_report_stats: XhciHidBootKeyReportStats,
     nvme_ecam_touched: bool,
     nvme_mmio_reached: bool,
@@ -431,6 +459,7 @@ impl VirtPlatform {
             ),
             pending_msix: Vec::new(),
             pending_spi_levels: Vec::new(),
+            nvme_completion_scratch: Vec::new(),
             xhci_hid_boot_key_report_stats: XhciHidBootKeyReportStats::default(),
             nvme_ecam_touched: false,
             nvme_mmio_reached: false,
@@ -674,6 +703,13 @@ impl VirtPlatform {
             .as_mut()
             .map(VirtioPciConsole::take_inbound)
             .unwrap_or_default()
+    }
+
+    pub fn virtio_console_agent_drain_inbound_into(&mut self, out: &mut Vec<u8>) {
+        let Some(dev) = self.virtio_console.as_mut() else {
+            return;
+        };
+        dev.drain_inbound_into(out);
     }
 
     pub fn poll_virtio_console(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
@@ -955,13 +991,31 @@ impl VirtPlatform {
     /// HVF run loop turns these into `hv_gic_send_msi` calls after configuring
     /// Apple `hv_gic`'s MSI frame.
     pub fn take_pending_msix(&mut self) -> Vec<MsixMessage> {
-        std::mem::take(&mut self.pending_msix)
+        if self.pending_msix.is_empty() {
+            Vec::new()
+        } else {
+            self.pending_msix.drain(..).collect()
+        }
+    }
+
+    /// Drain pending MSI-X messages into caller-owned storage.
+    pub fn drain_pending_msix_into(&mut self, out: &mut Vec<MsixMessage>) {
+        out.append(&mut self.pending_msix);
     }
 
     /// Drain level changes for legacy SPI-backed devices such as virtio-mmio.
     /// The live HVF loop turns these into `hv_gic_set_spi(intid, level)`.
     pub fn take_pending_spi_levels(&mut self) -> Vec<(u32, bool)> {
-        std::mem::take(&mut self.pending_spi_levels)
+        if self.pending_spi_levels.is_empty() {
+            Vec::new()
+        } else {
+            self.pending_spi_levels.drain(..).collect()
+        }
+    }
+
+    /// Drain pending SPI level changes into caller-owned storage.
+    pub fn drain_pending_spi_levels_into(&mut self, out: &mut Vec<(u32, bool)>) {
+        out.append(&mut self.pending_spi_levels);
     }
 
     /// Register QEMU direct-Linux-boot payloads in the fixed fw_cfg slots that
@@ -1029,15 +1083,30 @@ impl VirtPlatform {
         }
     }
 
-    /// Dispatch a guest MMIO access. This is the single entry point the live HVF
-    /// run loop calls from its data-abort exit handler.
+    /// Dispatch a guest MMIO access and return only the guest-visible result.
     pub fn on_mmio(&mut self, gpa: u64, op: MmioOp, mem: &mut dyn GuestMemoryMut) -> MmioOutcome {
+        self.on_mmio_with_post_drain(gpa, op, mem).0
+    }
+
+    /// Dispatch a guest MMIO access and report which post-dispatch drains ran.
+    /// Live HVF data-abort handling uses this to avoid repeating an empty drain in
+    /// the same platform-lock hold.
+    pub fn on_mmio_with_post_drain(
+        &mut self,
+        gpa: u64,
+        op: MmioOp,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> (MmioOutcome, MmioPostDrain) {
         let Some(device) = machine::device_at(gpa) else {
-            return MmioOutcome::Unmapped;
+            return (MmioOutcome::Unmapped, MmioPostDrain::NONE);
+        };
+        let pcie_mmio_target = match device {
+            "pcie-mmio-32" | "pcie-mmio-64" => self.pcie.mmio_target(gpa),
+            _ => None,
         };
         let retry_setup_input_after_mmio = match device {
             "pcie-mmio-32" | "pcie-mmio-64" => !matches!(
-                self.pcie.mmio_target(gpa),
+                pcie_mmio_target,
                 Some(target) if target.bdf == XHCI_BDF && target.bar_index == 0
             ),
             _ => true,
@@ -1047,8 +1116,8 @@ impl VirtPlatform {
             "uart" => self.uart_access(gpa - machine::UART.base, op),
             "rtc" => self.rtc_access(gpa - machine::RTC.base, op),
             "pcie-ecam" => self.pcie_access(gpa - machine::PCIE_ECAM.base, op),
-            "pcie-mmio-32" => self.pcie_mmio_access("pcie-mmio-32", gpa, op, mem),
-            "pcie-mmio-64" => self.pcie_mmio_access("pcie-mmio-64", gpa, op, mem),
+            "pcie-mmio-32" => self.pcie_mmio_access("pcie-mmio-32", pcie_mmio_target, op, mem),
+            "pcie-mmio-64" => self.pcie_mmio_access("pcie-mmio-64", pcie_mmio_target, op, mem),
             "pcie-pio" => self.pcie_pio_access(gpa, op, mem),
             "virtio-mmio" => self.virtio_mmio_access(gpa - machine::VIRTIO_MMIO.base, op, mem),
             "flash-vars" => self.flash_vars.access(gpa, op),
@@ -1058,8 +1127,9 @@ impl VirtPlatform {
         };
         if retry_setup_input_after_mmio {
             self.drain_xhci_setup_input_reports(mem);
+            return (outcome, MmioPostDrain::XHCI_SETUP_INPUT);
         }
-        outcome
+        (outcome, MmioPostDrain::NONE)
     }
 
     /// Empty virtio-mmio transport slot. Advertise a valid legacy register block with
@@ -1151,11 +1221,11 @@ impl VirtPlatform {
     fn pcie_mmio_access(
         &mut self,
         aperture: &'static str,
-        gpa: u64,
+        target: Option<PcieMmioTarget>,
         op: MmioOp,
         mem: &mut dyn GuestMemoryMut,
     ) -> MmioOutcome {
-        let Some(target) = self.pcie.mmio_target(gpa) else {
+        let Some(target) = target else {
             return MmioOutcome::KnownUnimplemented(aperture);
         };
         if target.bdf == NVME_BDF && target.bar_index == 0 {
@@ -1409,17 +1479,19 @@ impl VirtPlatform {
             MmioOp::Read { size } => MmioOutcome::ReadValue(self.nvme.mmio_read(offset, size)),
             MmioOp::Write { size, value } => {
                 self.nvme.mmio_write(offset, size, value);
-                let completions = self.nvme.process(mem);
-                self.queue_nvme_completion_msix(completions);
+                self.nvme_completion_scratch.clear();
+                self.nvme
+                    .process_into(mem, &mut self.nvme_completion_scratch);
+                self.queue_nvme_completion_msix();
                 self.flush_nvme_pending_msix();
                 MmioOutcome::WriteAck
             }
         }
     }
 
-    fn queue_nvme_completion_msix(&mut self, completions: Vec<NvmeCompletionEvent>) {
+    fn queue_nvme_completion_msix(&mut self) {
         let control = self.pcie.nvme_msix_control();
-        for completion in completions {
+        for completion in &self.nvme_completion_scratch {
             if let Some(message) =
                 self.nvme
                     .raise_msix(completion.vector, control.enabled, control.function_masked)
@@ -1427,13 +1499,15 @@ impl VirtPlatform {
                 self.pending_msix.push(message);
             }
         }
+        self.nvme_completion_scratch.clear();
     }
 
     fn flush_nvme_pending_msix(&mut self) {
         let control = self.pcie.nvme_msix_control();
-        self.pending_msix.extend(
-            self.nvme
-                .drain_pending_msix(control.enabled, control.function_masked),
+        self.nvme.drain_pending_msix_into(
+            control.enabled,
+            control.function_masked,
+            &mut self.pending_msix,
         );
     }
 
@@ -1442,9 +1516,10 @@ impl VirtPlatform {
             return;
         }
         let control = self.pcie.xhci_msix_control();
-        self.pending_msix.extend(
-            self.xhci
-                .raise_pending_interrupter_msix(control.enabled, control.function_masked),
+        self.xhci.raise_pending_interrupter_msix_into(
+            control.enabled,
+            control.function_masked,
+            &mut self.pending_msix,
         );
     }
 
@@ -1453,9 +1528,10 @@ impl VirtPlatform {
             return;
         }
         let control = self.pcie.xhci_msix_control();
-        self.pending_msix.extend(
-            self.xhci
-                .drain_pending_msix(control.enabled, control.function_masked),
+        self.xhci.drain_pending_msix_into(
+            control.enabled,
+            control.function_masked,
+            &mut self.pending_msix,
         );
     }
 
@@ -1467,8 +1543,11 @@ impl VirtPlatform {
             return;
         };
         let control = self.pcie.virtio_net_msix_control();
-        self.pending_msix
-            .extend(dev.drain_pending_msix(control.enabled, control.function_masked));
+        dev.drain_pending_msix_into(
+            control.enabled,
+            control.function_masked,
+            &mut self.pending_msix,
+        );
     }
 
     /// Retire venus fences and flush their interrupts without guest MMIO.
@@ -1491,8 +1570,11 @@ impl VirtPlatform {
             return;
         };
         let control = self.pcie.virtio_gpu_msix_control();
-        self.pending_msix
-            .extend(dev.drain_pending_msix(control.enabled, control.function_masked));
+        dev.drain_pending_msix_into(
+            control.enabled,
+            control.function_masked,
+            &mut self.pending_msix,
+        );
     }
 
     fn flush_virtio_console_pending_msix(&mut self) {
@@ -1503,8 +1585,11 @@ impl VirtPlatform {
             return;
         };
         let control = self.pcie.virtio_console_msix_control();
-        self.pending_msix
-            .extend(dev.drain_pending_msix(control.enabled, control.function_masked));
+        dev.drain_pending_msix_into(
+            control.enabled,
+            control.function_masked,
+            &mut self.pending_msix,
+        );
     }
 
     fn uart_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {
@@ -1700,6 +1785,124 @@ mod tests {
             + (u64::from(device) << 15)
             + (u64::from(function) << 12)
             + u64::from(reg)
+    }
+
+    #[test]
+    fn pending_irq_drains_preserve_internal_capacity() {
+        let mut p = platform();
+        let message = crate::msix::MsixMessage {
+            vector: 7,
+            address: machine::GIC_ITS.base + 0x40,
+            data: 42,
+        };
+
+        p.pending_msix.reserve(8);
+        p.pending_msix.push(message);
+        let msix_capacity = p.pending_msix.capacity();
+        assert_eq!(p.take_pending_msix(), vec![message]);
+        assert!(p.take_pending_msix().is_empty());
+        assert_eq!(p.pending_msix.capacity(), msix_capacity);
+
+        p.pending_spi_levels.reserve(8);
+        p.pending_spi_levels.push((machine::spi_to_intid(7), true));
+        let spi_capacity = p.pending_spi_levels.capacity();
+        assert_eq!(
+            p.take_pending_spi_levels(),
+            vec![(machine::spi_to_intid(7), true)]
+        );
+        assert!(p.take_pending_spi_levels().is_empty());
+        assert_eq!(p.pending_spi_levels.capacity(), spi_capacity);
+    }
+
+    #[test]
+    fn pending_irq_drain_into_reuses_caller_capacity() {
+        let mut p = platform();
+        let message = crate::msix::MsixMessage {
+            vector: 7,
+            address: machine::GIC_ITS.base + 0x40,
+            data: 42,
+        };
+
+        p.pending_msix.reserve(8);
+        p.pending_msix.push(message);
+        let msix_internal_capacity = p.pending_msix.capacity();
+        let mut msix_out = Vec::with_capacity(8);
+        let msix_out_capacity = msix_out.capacity();
+        let msix_out_ptr = msix_out.as_ptr();
+        p.drain_pending_msix_into(&mut msix_out);
+        assert_eq!(msix_out, vec![message]);
+        assert_eq!(msix_out.capacity(), msix_out_capacity);
+        assert_eq!(msix_out.as_ptr(), msix_out_ptr);
+        assert_eq!(p.pending_msix.capacity(), msix_internal_capacity);
+        msix_out.clear();
+        p.drain_pending_msix_into(&mut msix_out);
+        assert!(msix_out.is_empty());
+        assert_eq!(msix_out.capacity(), msix_out_capacity);
+
+        p.pending_spi_levels.reserve(8);
+        p.pending_spi_levels.push((machine::spi_to_intid(7), true));
+        let spi_internal_capacity = p.pending_spi_levels.capacity();
+        let mut spi_out = Vec::with_capacity(8);
+        let spi_out_capacity = spi_out.capacity();
+        let spi_out_ptr = spi_out.as_ptr();
+        p.drain_pending_spi_levels_into(&mut spi_out);
+        assert_eq!(spi_out, vec![(machine::spi_to_intid(7), true)]);
+        assert_eq!(spi_out.capacity(), spi_out_capacity);
+        assert_eq!(spi_out.as_ptr(), spi_out_ptr);
+        assert_eq!(p.pending_spi_levels.capacity(), spi_internal_capacity);
+        spi_out.clear();
+        p.drain_pending_spi_levels_into(&mut spi_out);
+        assert!(spi_out.is_empty());
+        assert_eq!(spi_out.capacity(), spi_out_capacity);
+    }
+
+    #[test]
+    fn on_mmio_with_post_drain_reports_setup_input_attempts() {
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+
+        let (outcome, post_drain) =
+            p.on_mmio_with_post_drain(machine::UART.base, MmioOp::Read { size: 4 }, &mut mem);
+        assert!(matches!(outcome, MmioOutcome::ReadValue(_)));
+        assert!(post_drain.xhci_setup_input_attempted());
+
+        let (outcome, post_drain) = p.on_mmio_with_post_drain(
+            machine::RAM_BASE - 0x1000,
+            MmioOp::Read { size: 4 },
+            &mut mem,
+        );
+        assert_eq!(outcome, MmioOutcome::Unmapped);
+        assert!(!post_drain.xhci_setup_input_attempted());
+    }
+
+    #[test]
+    fn on_mmio_with_post_drain_skips_setup_input_for_xhci_bar0() {
+        let mut p = platform();
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+        let xhci_base = machine::PCIE_MMIO_32.base + 0x2_0000;
+
+        for (reg, size, value) in [
+            (crate::pcie::REG_BAR0, 4, xhci_base),
+            (
+                crate::pcie::REG_COMMAND_STATUS,
+                2,
+                u64::from(crate::pcie::CMD_MEMORY_SPACE | crate::pcie::CMD_BUS_MASTER),
+            ),
+        ] {
+            assert_eq!(
+                p.on_mmio(
+                    pcie_cfg_gpa(crate::pcie::XHCI_BDF.1, crate::pcie::XHCI_BDF.2, reg),
+                    MmioOp::Write { size, value },
+                    &mut mem,
+                ),
+                MmioOutcome::WriteAck
+            );
+        }
+
+        let (outcome, post_drain) =
+            p.on_mmio_with_post_drain(xhci_base, MmioOp::Read { size: 4 }, &mut mem);
+        assert!(matches!(outcome, MmioOutcome::ReadValue(_)));
+        assert!(!post_drain.xhci_setup_input_attempted());
     }
 
     fn temp_path(name: &str) -> PathBuf {
@@ -2605,9 +2808,18 @@ mod tests {
         program_nvme_bar0(&mut p, &mut mem);
 
         enable_nvme_controller(&mut p, &mut mem, ASQ, ACQ);
+        p.nvme_completion_scratch.reserve(4);
+        let completion_scratch_capacity = p.nvme_completion_scratch.capacity();
+        let completion_scratch_ptr = p.nvme_completion_scratch.as_ptr();
 
         let identify_controller = encode_nvme_sqe(0x06, 7, 0, DATA, 0x01, 0, 0);
         submit_admin_sqe(&mut p, &mut mem, ASQ, 0, &identify_controller);
+        assert!(p.nvme_completion_scratch.is_empty());
+        assert_eq!(
+            p.nvme_completion_scratch.capacity(),
+            completion_scratch_capacity
+        );
+        assert_eq!(p.nvme_completion_scratch.as_ptr(), completion_scratch_ptr);
 
         let identify = mem.read_bytes(DATA, 4096).unwrap();
         assert_eq!(u16::from_le_bytes([identify[0], identify[1]]), 0x1b36);

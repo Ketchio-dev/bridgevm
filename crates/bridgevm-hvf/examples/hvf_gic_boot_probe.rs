@@ -61,8 +61,12 @@ use bridgevm_hvf::media::{
     read_bounded_file, InstallerIsoTransport, MediaWrite, MediaWriteKind, VirtBootMediaConfig,
     WritableMedia,
 };
+use bridgevm_hvf::msix::MsixMessage;
 use bridgevm_hvf::net_nat::NatStats;
-use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome, VirtPlatform, VirtPlatformConfig};
+use bridgevm_hvf::platform_virt::{
+    MmioOp, MmioOutcome, MmioPostDrain, VirtPlatform, VirtPlatformConfig,
+};
+use bridgevm_hvf::ramfb::{RamfbConfig, RamfbSnapshot, RamfbSnapshotError, RamfbSnapshotSummary};
 use bridgevm_hvf::stage1::{self, Stage1Context, Stage1WalkStep};
 use bridgevm_hvf::virtio_blk::{VirtioBlockRequestTrace, VirtioMmioBlockStats, INSTALLER_ISO_SLOT};
 use bridgevm_hvf::virtio_gpu_3d::GpuShmMapPort;
@@ -649,6 +653,7 @@ struct VcpuControl {
     entry: AtomicU64,
     context: AtomicU64,
     vcpu: AtomicU64,
+    exits: AtomicU64,
     mpidr: u64,
     index: u64,
 }
@@ -661,6 +666,7 @@ impl VcpuControl {
             entry: AtomicU64::new(0),
             context: AtomicU64::new(0),
             vcpu: AtomicU64::new(0),
+            exits: AtomicU64::new(0),
             mpidr: 0x8000_0000 | machine::cpu_mpidr(index),
             index,
         }
@@ -677,6 +683,127 @@ struct SecondaryVcpuSet {
     handles: Vec<JoinHandle<()>>,
 }
 
+struct PreRunDrainGate {
+    enabled: bool,
+    secondary_pending: AtomicBool,
+}
+
+impl PreRunDrainGate {
+    fn from_env() -> Self {
+        Self::new(env_flag_default("BRIDGEVM_DRAIN_GATE", true))
+    }
+
+    const fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            secondary_pending: AtomicBool::new(true),
+        }
+    }
+
+    fn should_drain_secondary_pre_run(&self) -> bool {
+        if !self.enabled {
+            return true;
+        }
+        self.secondary_pending.swap(false, Ordering::AcqRel)
+    }
+
+    fn mark_secondary_pending(&self) {
+        if self.enabled {
+            self.secondary_pending.store(true, Ordering::Release);
+        }
+    }
+}
+
+struct AutomationGate {
+    always_check: bool,
+    serial_dirty: bool,
+}
+
+impl AutomationGate {
+    const fn new(always_check: bool) -> Self {
+        Self {
+            always_check,
+            serial_dirty: true,
+        }
+    }
+
+    fn mark_serial_output_dirty(&mut self) {
+        self.serial_dirty = true;
+    }
+
+    fn should_check(&self, automation_tick_canceled: bool) -> bool {
+        self.always_check || automation_tick_canceled || self.serial_dirty
+    }
+
+    fn note_checked(&mut self) {
+        if !self.always_check {
+            self.serial_dirty = false;
+        }
+    }
+}
+
+#[cfg(test)]
+mod automation_gate_tests {
+    use super::*;
+
+    #[test]
+    fn default_gate_runs_initially_then_only_after_serial_or_host_tick() {
+        let mut gate = AutomationGate::new(false);
+
+        assert!(gate.should_check(false));
+        gate.note_checked();
+        assert!(!gate.should_check(false));
+        assert!(gate.should_check(true));
+        gate.note_checked();
+        assert!(!gate.should_check(false));
+
+        gate.mark_serial_output_dirty();
+        assert!(gate.should_check(false));
+    }
+
+    #[test]
+    fn opt_in_automation_preserves_always_check_behavior() {
+        let mut gate = AutomationGate::new(true);
+
+        assert!(gate.should_check(false));
+        gate.note_checked();
+        assert!(gate.should_check(false));
+    }
+}
+
+#[cfg(test)]
+mod pre_run_drain_gate_tests {
+    use super::*;
+
+    #[test]
+    fn enabled_gate_allows_initial_secondary_drain_once() {
+        let gate = PreRunDrainGate::new(true);
+
+        assert!(gate.should_drain_secondary_pre_run());
+        assert!(!gate.should_drain_secondary_pre_run());
+    }
+
+    #[test]
+    fn enabled_gate_allows_drain_after_pending_marker() {
+        let gate = PreRunDrainGate::new(true);
+
+        assert!(gate.should_drain_secondary_pre_run());
+        assert!(!gate.should_drain_secondary_pre_run());
+        gate.mark_secondary_pending();
+        assert!(gate.should_drain_secondary_pre_run());
+        assert!(!gate.should_drain_secondary_pre_run());
+    }
+
+    #[test]
+    fn disabled_gate_preserves_always_drain_behavior() {
+        let gate = PreRunDrainGate::new(false);
+
+        assert!(gate.should_drain_secondary_pre_run());
+        assert!(gate.should_drain_secondary_pre_run());
+        assert!(gate.should_drain_secondary_pre_run());
+    }
+}
+
 impl SecondaryVcpuSet {
     fn spawn(
         cpu_count: u64,
@@ -684,6 +811,7 @@ impl SecondaryVcpuSet {
         ram_size: usize,
         platform: Arc<Mutex<VirtPlatform>>,
         drain_trace: DrainTrace,
+        pre_run_drain_gate: Arc<PreRunDrainGate>,
         smp_trace: Option<Arc<SmpTrace>>,
     ) -> Self {
         if cpu_count <= 1 {
@@ -705,6 +833,7 @@ impl SecondaryVcpuSet {
                 let controls_for_thread = controls.clone();
                 let shutdown = Arc::clone(&shutdown);
                 let platform = Arc::clone(&platform);
+                let pre_run_drain_gate = Arc::clone(&pre_run_drain_gate);
                 let smp_trace = smp_trace.clone();
                 thread::Builder::new()
                     .name(format!("bridgevm-hvf-vcpu{}", control.index))
@@ -716,6 +845,7 @@ impl SecondaryVcpuSet {
                             ram_size,
                             platform,
                             drain_trace,
+                            pre_run_drain_gate,
                             controls_for_thread,
                             smp_trace,
                         )
@@ -731,7 +861,7 @@ impl SecondaryVcpuSet {
         }
     }
 
-    fn shutdown_and_join(self) {
+    fn shutdown_and_join(self) -> Vec<(u64, u64)> {
         self.shutdown.store(true, Ordering::SeqCst);
         for control in &self.controls {
             control.notify_shutdown();
@@ -750,6 +880,10 @@ impl SecondaryVcpuSet {
         for handle in self.handles {
             handle.join().expect("join secondary vCPU thread");
         }
+        self.controls
+            .iter()
+            .map(|control| (control.index, control.exits.load(Ordering::SeqCst)))
+            .collect()
     }
 }
 
@@ -760,6 +894,7 @@ fn secondary_vcpu_thread(
     ram_size: usize,
     platform: Arc<Mutex<VirtPlatform>>,
     drain_trace: DrainTrace,
+    pre_run_drain_gate: Arc<PreRunDrainGate>,
     controls: Vec<Arc<VcpuControl>>,
     smp_trace: Option<Arc<SmpTrace>>,
 ) {
@@ -834,6 +969,7 @@ fn secondary_vcpu_thread(
                     &controls,
                     &shutdown,
                     &mut exits,
+                    &pre_run_drain_gate,
                     smp_trace.as_deref(),
                 );
                 state = lock_vcpu_state(
@@ -859,6 +995,7 @@ fn secondary_vcpu_thread(
                     &controls,
                     &shutdown,
                     &mut exits,
+                    &pre_run_drain_gate,
                     smp_trace.as_deref(),
                 );
                 state = lock_vcpu_state(
@@ -1027,6 +1164,7 @@ fn run_secondary_until_parked(
     controls: &[Arc<VcpuControl>],
     shutdown: &AtomicBool,
     exits: &mut u64,
+    pre_run_drain_gate: &PreRunDrainGate,
     smp_trace: Option<&SmpTrace>,
 ) -> bool {
     if let Some(trace) = smp_trace {
@@ -1052,28 +1190,35 @@ fn run_secondary_until_parked(
                 }
                 trace.secondary_before_first_run(control.index, drain_pc, cpsr, x0, mpidr);
             }
-            trace.secondary_pre_run_drain(control.index, *exits, drain_pc);
         }
-        {
-            let mut platform_guard = lock_platform(
-                platform,
-                smp_trace,
-                control.index,
-                "secondary pre-run platform mutex",
-            );
-            drain_stats.drain_pending(
-                &mut platform_guard,
-                guest_ram,
-                drain_trace,
-                DrainContext {
-                    location: DrainLocation::PreRun,
-                    exit: *exits,
-                    pc: drain_pc,
-                },
-            );
-        }
-        if let Some(trace) = smp_trace {
-            trace.secondary_post_run_drain(control.index, *exits);
+        if pre_run_drain_gate.should_drain_secondary_pre_run() {
+            if let Some(trace) = smp_trace {
+                trace.secondary_pre_run_drain(control.index, *exits, drain_pc);
+            }
+            let pending = {
+                let mut platform_guard = lock_platform(
+                    platform,
+                    smp_trace,
+                    control.index,
+                    "secondary pre-run platform mutex",
+                );
+                drain_stats.prepare_pending_delivery(
+                    &mut platform_guard,
+                    guest_ram,
+                    drain_trace,
+                    DrainContext {
+                        location: DrainLocation::PreRun,
+                        exit: *exits,
+                        pc: drain_pc,
+                    },
+                )
+            };
+            drain_stats.complete_pending_delivery(pending, drain_trace);
+            if let Some(trace) = smp_trace {
+                trace.secondary_post_run_drain(control.index, *exits);
+            }
+        } else {
+            drain_stats.record_pre_run_skip();
         }
         let run_index = *exits + 1;
         let run_status = unsafe { hv_vcpu_run(vcpu) };
@@ -1090,6 +1235,7 @@ fn run_secondary_until_parked(
             }
         };
         *exits += 1;
+        control.exits.store(*exits, Ordering::Relaxed);
         if let Some(trace) = smp_trace {
             trace.secondary_progress();
         }
@@ -1140,15 +1286,17 @@ fn run_secondary_until_parked(
                 } else {
                     MmioOp::Read { size }
                 };
-                let outcome = {
+                let (outcome, pending) = {
                     let mut platform_guard = lock_platform(
                         platform,
                         smp_trace,
                         control.index,
                         "secondary data-abort platform mutex",
                     );
-                    let outcome = platform_guard.on_mmio(ipa, op, guest_ram);
-                    drain_stats.drain_pending(
+                    platform_guard.set_host_now(std::time::Instant::now());
+                    let (outcome, post_drain) =
+                        platform_guard.on_mmio_with_post_drain(ipa, op, guest_ram);
+                    let pending = drain_stats.prepare_pending_delivery_after_mmio(
                         &mut platform_guard,
                         guest_ram,
                         drain_trace,
@@ -1157,9 +1305,12 @@ fn run_secondary_until_parked(
                             exit: *exits,
                             pc,
                         },
+                        post_drain,
                     );
-                    outcome
+                    (outcome, pending)
                 };
+                drain_stats.complete_pending_delivery(pending, drain_trace);
+                pre_run_drain_gate.mark_secondary_pending();
                 match outcome {
                     MmioOutcome::ReadValue(v) if !is_write => {
                         if srt != 31 {
@@ -1553,23 +1704,40 @@ fn env_u64(name: &str, default: u64) -> u64 {
         .unwrap_or(default)
 }
 
+fn env_optional_u64(name: &str) -> Option<u64> {
+    std::env::var(name).ok().and_then(|s| parse_u64(&s))
+}
+
 fn env_flag(name: &str) -> bool {
-    let Ok(value) = std::env::var(name) else {
-        return false;
-    };
-    let value = value.trim();
-    value == "1"
-        || value.eq_ignore_ascii_case("true")
-        || value.eq_ignore_ascii_case("yes")
-        || value.eq_ignore_ascii_case("on")
+    std::env::var(name)
+        .ok()
+        .and_then(|value| parse_flag(&value))
+        .unwrap_or(false)
 }
 
 fn env_flag_default(name: &str, default: bool) -> bool {
-    match std::env::var(name).ok().as_deref() {
-        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES") | Some("on")
-        | Some("ON") => true,
-        Some("0") | Some("false") | Some("FALSE") | Some("no") | Some("NO") => false,
-        _ => default,
+    std::env::var(name)
+        .ok()
+        .and_then(|value| parse_flag(&value))
+        .unwrap_or(default)
+}
+
+fn parse_flag(value: &str) -> Option<bool> {
+    let value = value.trim();
+    if value == "1"
+        || value.eq_ignore_ascii_case("true")
+        || value.eq_ignore_ascii_case("yes")
+        || value.eq_ignore_ascii_case("on")
+    {
+        Some(true)
+    } else if value == "0"
+        || value.eq_ignore_ascii_case("false")
+        || value.eq_ignore_ascii_case("no")
+        || value.eq_ignore_ascii_case("off")
+    {
+        Some(false)
+    } else {
+        None
     }
 }
 
@@ -2211,6 +2379,325 @@ impl IncrementalSerialScan {
     }
 }
 
+struct BootTimer {
+    enabled: bool,
+    start: Instant,
+    next_display_sample: Instant,
+    display_interval: Duration,
+    expected_desktop_checksum: Option<u64>,
+    desktop_agent: bool,
+    desktop_reached: bool,
+    milestones: Vec<BootTimerSerialMilestone>,
+}
+
+struct BootTimerSerialMilestone {
+    name: &'static str,
+    needle: &'static [u8],
+    scan: IncrementalSerialScan,
+    emitted: bool,
+}
+
+impl BootTimer {
+    fn from_env() -> Self {
+        if !env_flag("BRIDGEVM_BOOT_TIMER") {
+            return Self::disabled();
+        }
+        let now = Instant::now();
+        let display_interval =
+            Duration::from_millis(env_u64("BRIDGEVM_BOOT_TIMER_RAMFB_MS", 1000).clamp(100, 60_000));
+        let expected_desktop_checksum = env_optional_u64("BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64");
+        let desktop_agent = env_flag("BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT");
+        println!(
+            "BOOT_TIMER start ramfb_sample_ms={} desktop_checksum={} desktop_agent={}",
+            display_interval.as_millis(),
+            format_optional_u64_hex(expected_desktop_checksum),
+            desktop_agent
+        );
+        let mut timer = Self::new(
+            true,
+            now,
+            display_interval,
+            expected_desktop_checksum,
+            boot_timer_default_milestones(),
+        );
+        timer.desktop_agent = desktop_agent;
+        timer
+    }
+
+    fn disabled() -> Self {
+        let now = Instant::now();
+        Self::new(false, now, Duration::from_secs(1), None, Vec::new())
+    }
+
+    fn new(
+        enabled: bool,
+        start: Instant,
+        display_interval: Duration,
+        expected_desktop_checksum: Option<u64>,
+        milestones: Vec<BootTimerSerialMilestone>,
+    ) -> Self {
+        Self {
+            enabled,
+            start,
+            next_display_sample: start,
+            display_interval,
+            expected_desktop_checksum,
+            desktop_agent: false,
+            desktop_reached: false,
+            milestones,
+        }
+    }
+
+    fn tick(&mut self, platform: &VirtPlatform, mem: &dyn GuestMemoryMut, exit: u64, cpu0_pc: u64) {
+        if !self.enabled {
+            return;
+        }
+        let now = Instant::now();
+        let elapsed = now.saturating_duration_since(self.start);
+        self.scan_serial(platform.uart_output(), elapsed, exit);
+        if now >= self.next_display_sample {
+            self.next_display_sample = now + self.display_interval;
+            self.sample_display(platform, mem, elapsed, exit, cpu0_pc);
+        }
+    }
+
+    fn scan_serial(&mut self, serial: &[u8], elapsed: Duration, exit: u64) {
+        for milestone in &mut self.milestones {
+            if !milestone.emitted && milestone.scan.contains_new(serial, milestone.needle) {
+                milestone.emitted = true;
+                println!(
+                    "BOOT_TIMER milestone name={} source=serial elapsed_ms={} exit={}",
+                    milestone.name,
+                    elapsed.as_millis(),
+                    exit
+                );
+            }
+        }
+    }
+
+    fn sample_display(
+        &mut self,
+        platform: &VirtPlatform,
+        mem: &dyn GuestMemoryMut,
+        elapsed: Duration,
+        exit: u64,
+        cpu0_pc: u64,
+    ) {
+        match boot_timer_display_summary(platform, mem) {
+            Ok((source, summary)) => {
+                let desktop_match =
+                    self.expected_desktop_checksum == Some(summary.checksum64);
+                if desktop_match && !self.desktop_reached {
+                    self.desktop_reached = true;
+                    println!(
+                        "BOOT_TIMER milestone name=desktop source={} elapsed_ms={} exit={} checksum64={:#018x}",
+                        source,
+                        elapsed.as_millis(),
+                        exit,
+                        summary.checksum64
+                    );
+                }
+                println!(
+                    "BOOT_TIMER ramfb source={} state=captured elapsed_ms={} exit={} pc={:#x} checksum64={:#018x} nonzero_pixels={} unique_colors={} desktop_match={}",
+                    source,
+                    elapsed.as_millis(),
+                    exit,
+                    cpu0_pc,
+                    summary.checksum64,
+                    summary.nonzero_pixels,
+                    summary.unique_colors,
+                    desktop_match
+                );
+            }
+            Err(BootTimerDisplayState::Inactive) => println!(
+                "BOOT_TIMER ramfb source=none state=inactive elapsed_ms={} exit={} pc={:#x}",
+                elapsed.as_millis(),
+                exit,
+                cpu0_pc
+            ),
+            Err(BootTimerDisplayState::Unavailable { source, error }) => println!(
+                "BOOT_TIMER ramfb source={} state=unavailable elapsed_ms={} exit={} pc={:#x} error={:?}",
+                source,
+                elapsed.as_millis(),
+                exit,
+                cpu0_pc,
+                error
+            ),
+        }
+    }
+
+    fn elapsed(&self) -> Duration {
+        self.start.elapsed()
+    }
+
+    fn observe_agent_ready(&mut self, now: Instant, exit: u64) {
+        if !self.enabled || !self.desktop_agent || self.desktop_reached {
+            return;
+        }
+        self.desktop_reached = true;
+        println!(
+            "BOOT_TIMER milestone name=desktop source=agent elapsed_ms={} exit={}",
+            now.saturating_duration_since(self.start).as_millis(),
+            exit
+        );
+    }
+
+    fn print_summary(&self, elapsed: Duration, cpu0_exits: u64, secondary_exits: &[(u64, u64)]) {
+        if !self.enabled {
+            return;
+        }
+        println!(
+            "BOOT_TIMER summary elapsed_ms={} desktop_reached={} milestones={}/{}",
+            elapsed.as_millis(),
+            self.desktop_reached,
+            self.milestones
+                .iter()
+                .filter(|milestone| milestone.emitted)
+                .count(),
+            self.milestones.len()
+        );
+        print_boot_timer_vcpu_rate(0, cpu0_exits, elapsed);
+        for (cpu, exits) in secondary_exits {
+            print_boot_timer_vcpu_rate(*cpu, *exits, elapsed);
+        }
+    }
+
+    const fn automation_tick_needed(&self) -> bool {
+        self.enabled
+    }
+}
+
+impl BootTimerSerialMilestone {
+    fn new(name: &'static str, needle: &'static [u8]) -> Self {
+        Self {
+            name,
+            needle,
+            scan: IncrementalSerialScan::default(),
+            emitted: false,
+        }
+    }
+}
+
+enum BootTimerDisplayState {
+    Inactive,
+    Unavailable {
+        source: &'static str,
+        error: RamfbSnapshotError,
+    },
+}
+
+fn boot_timer_default_milestones() -> Vec<BootTimerSerialMilestone> {
+    [
+        ("edk2-bds", b"BdsDxe: starting" as &[u8]),
+        ("cdboot-prompt", b"Press any key to boot from CD or DVD"),
+        ("uefi-shell", b"UEFI Interactive Shell"),
+        ("linux-early", b"Booting Linux on physical CPU"),
+        ("linux-version", b"Linux version"),
+        ("windows-boot-manager", b"Windows Boot Manager"),
+        ("windows-kernel", b"Windows Boot Loader"),
+        ("bvagent", b"BVAGENT"),
+    ]
+    .into_iter()
+    .map(|(name, needle)| BootTimerSerialMilestone::new(name, needle))
+    .collect()
+}
+
+fn boot_timer_display_summary(
+    platform: &VirtPlatform,
+    mem: &dyn GuestMemoryMut,
+) -> Result<(&'static str, RamfbSnapshotSummary), BootTimerDisplayState> {
+    if let Some(scanout) = platform.virtio_gpu_scanout() {
+        let config = RamfbConfig {
+            addr: 1,
+            fourcc: scanout.fourcc,
+            flags: 0,
+            width: scanout.width,
+            height: scanout.height,
+            stride: scanout.stride,
+        };
+        return RamfbSnapshot::summarize_xrgb8888_bytes(config, scanout.bytes)
+            .map(|summary| ("virtio-gpu", summary))
+            .map_err(|error| BootTimerDisplayState::Unavailable {
+                source: "virtio-gpu",
+                error,
+            });
+    }
+    let Some(config) = platform.ramfb_config() else {
+        return Err(BootTimerDisplayState::Inactive);
+    };
+    RamfbSnapshot::read_from(mem, config)
+        .map(|snapshot| ("ramfb", snapshot.summary))
+        .map_err(|error| BootTimerDisplayState::Unavailable {
+            source: "ramfb",
+            error,
+        })
+}
+
+fn print_boot_timer_vcpu_rate(cpu: u64, exits: u64, elapsed: Duration) {
+    let seconds = elapsed.as_secs_f64();
+    let exits_per_sec = if seconds > 0.0 {
+        exits as f64 / seconds
+    } else {
+        0.0
+    };
+    println!(
+        "BOOT_TIMER vcpu cpu={} exits={} exits_per_sec={:.2}",
+        cpu, exits, exits_per_sec
+    );
+}
+
+#[cfg(test)]
+mod boot_timer_tests {
+    use super::*;
+
+    #[test]
+    fn flag_parser_trims_and_ignores_ascii_case() {
+        assert_eq!(parse_flag(" False "), Some(false));
+        assert_eq!(parse_flag("\tON\n"), Some(true));
+        assert_eq!(parse_flag("unexpected"), None);
+    }
+
+    #[test]
+    fn boot_timer_serial_milestone_handles_split_marker_once() {
+        let now = Instant::now();
+        let mut timer = BootTimer::new(
+            true,
+            now,
+            Duration::from_secs(1),
+            None,
+            vec![BootTimerSerialMilestone::new("test", b"Boot0001")],
+        );
+
+        timer.scan_serial(b"BdsDxe: starting Boo", Duration::ZERO, 1);
+        assert!(!timer.milestones[0].emitted);
+
+        timer.scan_serial(b"BdsDxe: starting Boot0001", Duration::ZERO, 2);
+        assert!(timer.milestones[0].emitted);
+
+        timer.scan_serial(b"BdsDxe: starting Boot0001", Duration::ZERO, 3);
+        assert!(timer.milestones[0].emitted);
+    }
+
+    #[test]
+    fn disabled_boot_timer_has_no_milestone_work() {
+        let timer = BootTimer::disabled();
+
+        assert!(!timer.enabled);
+        assert!(timer.milestones.is_empty());
+    }
+
+    #[test]
+    fn agent_oracle_marks_desktop_without_exact_frame_checksum() {
+        let now = Instant::now();
+        let mut timer = BootTimer::new(true, now, Duration::from_secs(1), None, Vec::new());
+        timer.desktop_agent = true;
+
+        timer.observe_agent_ready(now + Duration::from_millis(25), 7);
+
+        assert!(timer.desktop_reached);
+    }
+}
+
 #[derive(Clone, Copy)]
 enum DrainLocation {
     PreRun,
@@ -2231,6 +2718,11 @@ struct DrainContext {
     location: DrainLocation,
     exit: u64,
     pc: u64,
+}
+
+struct PendingDrainDelivery {
+    context: DrainContext,
+    spi: DeliveryCounts,
 }
 
 #[derive(Clone, Copy)]
@@ -2270,6 +2762,7 @@ impl DeliveryCounts {
 struct RunLoopDrainStats {
     trace: bool,
     pre_run_attempts: u64,
+    pre_run_skips: u64,
     data_abort_attempts: u64,
     msix: DeliveryCounts,
     spi: DeliveryCounts,
@@ -2281,13 +2774,16 @@ struct RunLoopDrainStats {
     last_nonzero_location: Option<&'static str>,
     last_nonzero_exit: Option<u64>,
     last_nonzero_pc: Option<u64>,
+    pending_msix_scratch: Vec<MsixMessage>,
+    pending_spi_scratch: Vec<(u32, bool)>,
 }
 
 impl RunLoopDrainStats {
-    const fn new(trace: bool) -> Self {
+    fn new(trace: bool) -> Self {
         Self {
             trace,
             pre_run_attempts: 0,
+            pre_run_skips: 0,
             data_abort_attempts: 0,
             msix: DeliveryCounts {
                 drained: 0,
@@ -2315,16 +2811,50 @@ impl RunLoopDrainStats {
             last_nonzero_location: None,
             last_nonzero_exit: None,
             last_nonzero_pc: None,
+            pending_msix_scratch: Vec::new(),
+            pending_spi_scratch: Vec::new(),
         }
     }
 
-    fn drain_pending(
+    fn record_pre_run_skip(&mut self) {
+        self.pre_run_skips += 1;
+    }
+
+    fn prepare_pending_delivery(
         &mut self,
         platform: &mut VirtPlatform,
         mem: &mut dyn GuestMemoryMut,
         trace: DrainTrace,
         context: DrainContext,
-    ) {
+    ) -> PendingDrainDelivery {
+        self.prepare_pending_delivery_inner(platform, mem, trace, context, true)
+    }
+
+    fn prepare_pending_delivery_after_mmio(
+        &mut self,
+        platform: &mut VirtPlatform,
+        mem: &mut dyn GuestMemoryMut,
+        trace: DrainTrace,
+        context: DrainContext,
+        post_drain: MmioPostDrain,
+    ) -> PendingDrainDelivery {
+        self.prepare_pending_delivery_inner(
+            platform,
+            mem,
+            trace,
+            context,
+            !post_drain.xhci_setup_input_attempted(),
+        )
+    }
+
+    fn prepare_pending_delivery_inner(
+        &mut self,
+        platform: &mut VirtPlatform,
+        mem: &mut dyn GuestMemoryMut,
+        trace: DrainTrace,
+        context: DrainContext,
+        drain_xhci_setup_input: bool,
+    ) -> PendingDrainDelivery {
         match context.location {
             DrainLocation::PreRun => self.pre_run_attempts += 1,
             DrainLocation::DataAbort => self.data_abort_attempts += 1,
@@ -2333,13 +2863,25 @@ impl RunLoopDrainStats {
         // Feed host time to the platform's HID report pacing (the crate holds no
         // clock of its own). Both PreRun and DataAbort drains route through here.
         platform.set_host_now(std::time::Instant::now());
-        platform.drain_xhci_setup_input_reports(mem);
+        if drain_xhci_setup_input {
+            platform.drain_xhci_setup_input_reports(mem);
+        }
         platform.drain_xhci_pointer_input_reports(mem);
         platform.poll_virtio_net(mem);
         platform.poll_virtio_console(mem);
         platform.poll_virtio_gpu_fences(mem);
-        let spi = deliver_pending_spis(platform, trace.spi);
-        let msix = deliver_pending_msix(platform, trace.msix);
+        let spi = deliver_pending_spis(platform, &mut self.pending_spi_scratch, trace.spi);
+        debug_assert!(self.pending_msix_scratch.is_empty());
+        self.pending_msix_scratch.clear();
+        platform.drain_pending_msix_into(&mut self.pending_msix_scratch);
+        PendingDrainDelivery { context, spi }
+    }
+
+    fn complete_pending_delivery(&mut self, pending: PendingDrainDelivery, trace: DrainTrace) {
+        let context = pending.context;
+        let spi = pending.spi;
+        let msix = deliver_pending_msix(&self.pending_msix_scratch, trace.msix);
+        self.pending_msix_scratch.clear();
         self.last_drain_location = Some(context.location.as_str());
         self.last_drain_exit = Some(context.exit);
         self.last_drain_pc = Some(context.pc);
@@ -2378,8 +2920,8 @@ impl RunLoopDrainStats {
             .map_or_else(|| "<none>".to_string(), |pc| format!("{pc:#x}"));
         let last_nonzero_location = self.last_nonzero_location.unwrap_or("<none>");
         println!(
-            "G004 IRQ drain attempts: pre-run={} data-abort={}",
-            self.pre_run_attempts, self.data_abort_attempts
+            "G004 IRQ drain attempts: pre-run={} data-abort={} pre-run-skipped={}",
+            self.pre_run_attempts, self.data_abort_attempts, self.pre_run_skips
         );
         println!(
             "G004 IRQ drain MSI-X: drained={} success={} failure={}",
@@ -2408,6 +2950,7 @@ const ARM64_WFI: u32 = 0xd503_207f;
 const ARM64_WFE: u32 = 0xd503_205f;
 const G011_INSN_WINDOW_BEFORE: u64 = 0x20;
 const G011_INSN_WINDOW_LEN: usize = 0x60;
+const G011_INSN_WINDOW_ALIGNED_LEN: usize = G011_INSN_WINDOW_LEN & !3;
 
 #[derive(Clone, Copy)]
 struct WfiPcObservation {
@@ -2494,9 +3037,9 @@ fn word_is_wait_instruction(word: Option<u32>) -> bool {
 }
 
 fn read_translated_instruction_word(mem: &dyn GuestMemoryMut, ipa: Option<u64>) -> Option<u32> {
-    let bytes = mem.read_bytes(ipa?, 4)?;
-    let word_bytes: [u8; 4] = bytes.try_into().ok()?;
-    Some(u32::from_le_bytes(word_bytes))
+    let mut word_bytes = [0u8; 4];
+    mem.read_into(ipa?, &mut word_bytes)
+        .then(|| u32::from_le_bytes(word_bytes))
 }
 
 fn translated_word_before(mem: &dyn GuestMemoryMut, center_ipa: Option<u64>) -> Option<u32> {
@@ -2510,9 +3053,10 @@ fn translated_window_has_wfi(mem: &dyn GuestMemoryMut, center_ipa: Option<u64>) 
     let Some(base_ipa) = center_ipa.checked_sub(G011_INSN_WINDOW_BEFORE) else {
         return false;
     };
-    let Some(bytes) = mem.read_bytes(base_ipa, G011_INSN_WINDOW_LEN & !3) else {
+    let mut bytes = [0u8; G011_INSN_WINDOW_ALIGNED_LEN];
+    if !mem.read_into(base_ipa, &mut bytes) {
         return false;
-    };
+    }
     bytes.chunks_exact(4).any(|chunk| {
         let Ok(word_bytes) = <[u8; 4]>::try_from(chunk) else {
             return false;
@@ -2651,10 +3195,10 @@ fn parse_xhci_report_interval_env() -> std::time::Duration {
     std::time::Duration::from_millis(ms)
 }
 
-fn deliver_pending_msix(platform: &mut VirtPlatform, trace: bool) -> DeliveryCounts {
+fn deliver_pending_msix(messages: &[MsixMessage], trace: bool) -> DeliveryCounts {
     let mut counts = DeliveryCounts::default();
     let trace = trace || trace_msix_enabled();
-    for message in platform.take_pending_msix() {
+    for message in messages {
         let status = unsafe { hv_gic_send_msi(message.address, message.data) };
         counts.record_status(status);
         if trace {
@@ -2667,16 +3211,23 @@ fn deliver_pending_msix(platform: &mut VirtPlatform, trace: bool) -> DeliveryCou
     counts
 }
 
-fn deliver_pending_spis(platform: &mut VirtPlatform, trace: bool) -> DeliveryCounts {
+fn deliver_pending_spis(
+    platform: &mut VirtPlatform,
+    scratch: &mut Vec<(u32, bool)>,
+    trace: bool,
+) -> DeliveryCounts {
     let mut counts = DeliveryCounts::default();
     let trace_msix = trace_msix_enabled();
-    for (intid, level) in platform.take_pending_spi_levels() {
+    scratch.clear();
+    platform.drain_pending_spi_levels_into(scratch);
+    for &(intid, level) in scratch.iter() {
         let status = unsafe { hv_gic_set_spi(intid, level) };
         counts.record_status(status);
         if trace || (status != 0 && trace_msix) {
             println!("SPI intid {intid} level={level} status {status:#x}");
         }
     }
+    scratch.clear();
     counts
 }
 
@@ -3061,6 +3612,7 @@ fn main() {
                 spi: trace_spi,
             };
             let smp_trace = (smp_cpus > 1 && smp_trace_enabled).then(|| Arc::new(SmpTrace::new()));
+            let pre_run_drain_gate = Arc::new(PreRunDrainGate::from_env());
             let secondary_vcpus = (smp_cpus > 1).then(|| {
                 SecondaryVcpuSet::spawn(
                     smp_cpus,
@@ -3068,6 +3620,7 @@ fn main() {
                     ram_size,
                     Arc::clone(&platform),
                     drain_trace,
+                    Arc::clone(&pre_run_drain_gate),
                     smp_trace.clone(),
                 )
             });
@@ -3200,14 +3753,24 @@ fn main() {
             let mut ramfb_sample_loop = RamfbSampleLoop::from_env();
             let mut setup_input_host_wake = SetupInputHostWake::new();
             let boot_started = Instant::now();
+            let mut boot_timer = BootTimer::from_env();
             let mut agent_console = AgentConsoleHarness::from_env(boot_started);
+            let automation_always_check = !uart_triggers.is_empty()
+                || !xhci_hid_boot_key_triggers.is_empty()
+                || !xhci_setup_input_triggers.is_empty()
+                || !xhci_pointer_input_triggers.is_empty()
+                || ramfb_sample_loop.automation_tick_needed()
+                || boot_timer.automation_tick_needed()
+                || agent_console.is_some();
+            let mut automation_gate = AutomationGate::new(automation_always_check);
             // Resident service mode is host-driven: without a steady waker the
             // main loop sleeps in hv_vcpu_run while the desktop idles and the
             // service tick starves (see ServiceWake docs). ensure_started is
             // idempotent, so re-entering here after a guest reboot is fine.
-            if agent_console
-                .as_ref()
-                .is_some_and(|harness| harness.service_wake_needed())
+            if boot_timer.automation_tick_needed()
+                || agent_console
+                    .as_ref()
+                    .is_some_and(|harness| harness.service_wake_needed())
             {
                 agent_service_wake.ensure_started(vcpu, Duration::from_millis(250));
             }
@@ -3220,7 +3783,7 @@ fn main() {
                 let mut drain_pc = 0u64;
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
                 last_pre_run_pc = drain_pc;
-                {
+                let pending = {
                     let mut platform_guard = lock_platform(
                         &platform,
                         smp_trace.as_deref(),
@@ -3228,7 +3791,7 @@ fn main() {
                         "cpu0 pre-run platform mutex",
                     );
                     let platform = &mut *platform_guard;
-                    drain_stats.drain_pending(
+                    drain_stats.prepare_pending_delivery(
                         platform,
                         &mut guest_ram,
                         drain_trace,
@@ -3237,8 +3800,9 @@ fn main() {
                             exit: exits,
                             pc: drain_pc,
                         },
-                    );
-                }
+                    )
+                };
+                drain_stats.complete_pending_delivery(pending, drain_trace);
                 let reason = match run_hvf_vcpu_once(vcpu, exit) {
                     Ok(reason) => reason,
                     Err(r) => {
@@ -3314,7 +3878,7 @@ fn main() {
                                 ipa - machine::FW_CFG.base
                             );
                             }
-                            let outcome = {
+                            let (outcome, pending, device, pcie_target, pcie_context) = {
                                 let mut platform_guard = lock_platform(
                                     &platform,
                                     smp_trace.as_deref(),
@@ -3337,7 +3901,9 @@ fn main() {
                                     Some(PcieTraceTarget::Pio(_)) | None => None,
                                 };
                                 recent_xhci.record_mmio(xhci_target, &op, &guest_ram);
-                                let outcome = platform.on_mmio(ipa, op, &mut guest_ram);
+                                platform.set_host_now(std::time::Instant::now());
+                                let (outcome, post_drain) =
+                                    platform.on_mmio_with_post_drain(ipa, op, &mut guest_ram);
                                 if device == "pcie-ecam" && matches!(op, MmioOp::Write { .. }) {
                                     hv_gpu_shm_state.lock().unwrap().bar2_base =
                                         platform.virtio_gpu_host_visible_bar_base();
@@ -3366,32 +3932,7 @@ fn main() {
                                     pcie_target,
                                     &outcome,
                                 );
-                                recent_pcie_mmio.record_with_context(
-                                    device,
-                                    last_pc,
-                                    ipa,
-                                    pcie_target,
-                                    &op,
-                                    &outcome,
-                                    pcie_context,
-                                );
-                                recent_pcie_pio.record(
-                                    device,
-                                    last_pc,
-                                    ipa,
-                                    pcie_target,
-                                    &op,
-                                    &outcome,
-                                );
-                                record_mmio_trace(
-                                    &mut mmio_traces,
-                                    device,
-                                    last_pc,
-                                    ipa,
-                                    op,
-                                    &outcome,
-                                );
-                                drain_stats.drain_pending(
+                                let pending = drain_stats.prepare_pending_delivery_after_mmio(
                                     platform,
                                     &mut guest_ram,
                                     drain_trace,
@@ -3400,9 +3941,32 @@ fn main() {
                                         exit: exits,
                                         pc: last_pc,
                                     },
+                                    post_drain,
                                 );
-                                outcome
+                                (outcome, pending, device, pcie_target, pcie_context)
                             };
+                            recent_pcie_mmio.record_with_context(
+                                device,
+                                last_pc,
+                                ipa,
+                                pcie_target,
+                                &op,
+                                &outcome,
+                                pcie_context,
+                            );
+                            recent_pcie_pio.record(
+                                device,
+                                last_pc,
+                                ipa,
+                                pcie_target,
+                                &op,
+                                &outcome,
+                            );
+                            if device == "uart" && matches!(op, MmioOp::Write { .. }) {
+                                automation_gate.mark_serial_output_dirty();
+                            }
+                            record_mmio_trace(&mut mmio_traces, device, last_pc, ipa, op, &outcome);
+                            drain_stats.complete_pending_delivery(pending, drain_trace);
                             if trace_this_fwcfg {
                                 println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
                             }
@@ -3572,10 +4136,12 @@ fn main() {
                                                                                 // do NOT advance PC: re-execute the store under single-step.
                         }
                         EC_SOFTSTEP_LOWER | EC_SOFTSTEP_SAME => {
-                            let cur = guest_ram
-                                .read_bytes(watch_target, 8)
-                                .map(|b| u64::from_le_bytes(b.try_into().unwrap()))
-                                .unwrap_or(0);
+                            let mut bytes = [0u8; 8];
+                            let cur = if guest_ram.read_into(watch_target, &mut bytes) {
+                                u64::from_le_bytes(bytes)
+                            } else {
+                                0
+                            };
                             println!(" -> {watch_target:#x} = {cur:#x}");
                             // Clear single-step; re-arm the watchpoint unless we have enough.
                             let mut md = 0u64;
@@ -3600,7 +4166,9 @@ fn main() {
                     stop_reason = format!("exit cap {MAX_EXITS}");
                     break;
                 }
-                let automation_stop_reason = {
+                let automation_stop_reason = if automation_gate
+                    .should_check(automation_tick_canceled)
+                {
                     let mut platform_guard = lock_platform(
                         &platform,
                         smp_trace.as_deref(),
@@ -3608,6 +4176,7 @@ fn main() {
                         "cpu0 automation platform mutex",
                     );
                     let platform = &mut *platform_guard;
+                    automation_gate.note_checked();
                     if serial_reached_linux_panic(platform.uart_output(), &mut serial_stop_scans) {
                         Some("serial reached Linux kernel panic".into())
                     } else {
@@ -3620,24 +4189,18 @@ fn main() {
                         let now = std::time::Instant::now();
                         if let Some(agent_console) = agent_console.as_mut() {
                             agent_console.tick(platform, &mut guest_ram, now);
+                            if agent_console.desktop_ready() {
+                                boot_timer.observe_agent_ready(now, exits);
+                            }
                         }
                         for trigger in &mut xhci_setup_input_triggers {
-                            let ramfb_config = platform.ramfb_config();
-                            let virtio_gpu_scanout = platform
-                                .virtio_gpu_scanout()
-                                .map(ramfb_dump::OwnedGpuScanout::from_scanout);
                             let now = std::time::Instant::now();
                             trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
                                 platform,
                                 &mut guest_ram,
                                 now,
-                                |label, mem| {
-                                    ramfb_dump::print_checkpoint_with_virtio_gpu(
-                                        label,
-                                        virtio_gpu_scanout.clone(),
-                                        ramfb_config,
-                                        mem,
-                                    );
+                                |platform, label, mem| {
+                                    ramfb_dump::print_checkpoint_for_platform(label, platform, mem);
                                 },
                             );
                             if let Some(deadline) =
@@ -3661,22 +4224,13 @@ fn main() {
                             }
                         }
                         for trigger in &mut xhci_pointer_input_triggers {
-                            let ramfb_config = platform.ramfb_config();
-                            let virtio_gpu_scanout = platform
-                                .virtio_gpu_scanout()
-                                .map(ramfb_dump::OwnedGpuScanout::from_scanout);
                             let now = std::time::Instant::now();
                             trigger.maybe_fire_with_mem_and_ramfb_checkpoints_at(
                                 platform,
                                 &mut guest_ram,
                                 now,
-                                |label, mem| {
-                                    ramfb_dump::print_checkpoint_with_virtio_gpu(
-                                        label,
-                                        virtio_gpu_scanout.clone(),
-                                        ramfb_config,
-                                        mem,
-                                    );
+                                |platform, label, mem| {
+                                    ramfb_dump::print_checkpoint_for_platform(label, platform, mem);
                                 },
                             );
                             if let Some(deadline) =
@@ -3699,18 +4253,10 @@ fn main() {
                                 }
                             }
                         }
-                        let ramfb_config = platform.ramfb_config();
-                        let virtio_gpu_scanout = platform
-                            .virtio_gpu_scanout()
-                            .map(ramfb_dump::OwnedGpuScanout::from_scanout);
                         ramfb_sample_loop.emit_due(vcpu, |label| {
-                            ramfb_dump::print_checkpoint_with_virtio_gpu(
-                                label,
-                                virtio_gpu_scanout.clone(),
-                                ramfb_config,
-                                &guest_ram,
-                            );
+                            ramfb_dump::print_checkpoint_for_platform(label, platform, &guest_ram);
                         });
+                        boot_timer.tick(platform, &guest_ram, exits, last_pc);
                         if stop_on_linux
                             && serial_reached_linux_early_boot(
                                 platform.uart_output(),
@@ -3730,6 +4276,8 @@ fn main() {
                             None
                         }
                     }
+                } else {
+                    None
                 };
                 if let Some(reason) = automation_stop_reason {
                     stop_reason = reason;
@@ -3737,10 +4285,14 @@ fn main() {
                 }
             }
 
+            // Freeze the measured duration at the VM stop boundary. Media
+            // persistence and diagnostic dumps below are evidence work, not
+            // guest boot time.
+            let boot_timer_elapsed = boot_timer.elapsed();
             invalidate_watchdog_generation(&watchdog_generation);
-            if let Some(secondary_vcpus) = secondary_vcpus {
-                secondary_vcpus.shutdown_and_join();
-            }
+            let secondary_exit_counts = secondary_vcpus
+                .map(SecondaryVcpuSet::shutdown_and_join)
+                .unwrap_or_default();
             if requested_system_reset {
                 match decide_system_reset(reboot_count, reboot_plan) {
                     SystemResetDecision::Reboot {
@@ -3969,6 +4521,7 @@ fn main() {
             println!(
                 "exits: {exits} (vtimer {vtimer_exits}, psci {psci_calls}), last PC: {last_pc:#x}"
             );
+            boot_timer.print_summary(boot_timer_elapsed, exits, &secondary_exit_counts);
             drain_stats.print_summary();
             let last_prerun_pc_ipa = translated_ipa(&guest_ram, &stage1_ctx, last_pre_run_pc).ok();
             let last_nonzero_irq_drain_pc_ipa = drain_stats
@@ -4089,9 +4642,7 @@ fn main() {
                 print_block_request_trace("recent legacy virtio-mmio ISO requests", &trace);
             }
             let ramfb_config = platform.ramfb_config();
-            let virtio_gpu_scanout = platform
-                .virtio_gpu_scanout()
-                .map(ramfb_dump::OwnedGpuScanout::from_scanout);
+            let virtio_gpu_scanout = platform.virtio_gpu_scanout();
             match ramfb_config {
                 Some(config) => println!(
                     "ramfb config: addr={:#x} fourcc={:#010x} xrgb8888={} {}x{} stride={}",

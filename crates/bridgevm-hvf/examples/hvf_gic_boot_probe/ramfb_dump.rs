@@ -6,7 +6,8 @@ use std::{
 
 use bridgevm_hvf::{
     fwcfg::GuestMemoryMut,
-    ramfb::{RamfbConfig, RamfbSnapshot, RamfbSnapshotError},
+    platform_virt::VirtPlatform,
+    ramfb::{RamfbConfig, RamfbSnapshot, RamfbSnapshotError, RamfbSnapshotSummary},
     virtio_gpu::VirtioGpuScanout,
 };
 
@@ -19,15 +20,28 @@ pub fn print_and_dump(config: Option<RamfbConfig>, mem: &dyn GuestMemoryMut) {
 }
 
 pub fn print_and_dump_with_virtio_gpu(
-    gpu: Option<OwnedGpuScanout>,
+    gpu: Option<VirtioGpuScanout<'_>>,
     config: Option<RamfbConfig>,
     mem: &dyn GuestMemoryMut,
 ) {
     if let Some(gpu) = gpu {
-        print_and_dump_snapshot(FrameSnapshot::from_gpu(&gpu));
+        print_and_dump_gpu(gpu);
     } else {
         print_and_dump(config, mem);
     }
+}
+
+pub fn print_checkpoint_for_platform(
+    label: &str,
+    platform: &VirtPlatform,
+    mem: &dyn GuestMemoryMut,
+) {
+    print_checkpoint_with_virtio_gpu(
+        label,
+        platform.virtio_gpu_scanout(),
+        platform.ramfb_config(),
+        mem,
+    );
 }
 
 fn print_and_dump_snapshot(frame: FrameSnapshot) {
@@ -67,7 +81,7 @@ pub fn print_checkpoint(label: &str, config: Option<RamfbConfig>, mem: &dyn Gues
 
 pub fn print_checkpoint_with_virtio_gpu(
     label: &str,
-    gpu: Option<OwnedGpuScanout>,
+    gpu: Option<VirtioGpuScanout<'_>>,
     config: Option<RamfbConfig>,
     mem: &dyn GuestMemoryMut,
 ) {
@@ -89,8 +103,10 @@ fn dump_dir() -> Option<PathBuf> {
 }
 
 fn print_summary(snapshot: &RamfbSnapshot) {
-    let config = snapshot.config;
-    let summary = snapshot.summary;
+    print_summary_parts(snapshot.config, snapshot.summary);
+}
+
+fn print_summary_parts(config: RamfbConfig, summary: RamfbSnapshotSummary) {
     println!(
         "ramfb framebuffer summary: addr={:#x} fourcc={:#010x} xrgb8888={} {}x{} stride={} bytes={} pixels={} nonzero_bytes={} nonzero_pixels={} zero_pixels={} unique_colors={} first_nonzero_pixel={:?} checksum64={:#018x}",
         config.addr,
@@ -122,38 +138,6 @@ struct ArtifactPaths {
     ppm: PathBuf,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OwnedGpuScanout {
-    bytes: Vec<u8>,
-    width: u32,
-    height: u32,
-    stride: u32,
-    fourcc: u32,
-}
-
-impl OwnedGpuScanout {
-    pub fn from_scanout(scanout: VirtioGpuScanout<'_>) -> Self {
-        Self {
-            bytes: scanout.bytes.to_vec(),
-            width: scanout.width,
-            height: scanout.height,
-            stride: scanout.stride,
-            fourcc: scanout.fourcc,
-        }
-    }
-
-    fn config(&self) -> RamfbConfig {
-        RamfbConfig {
-            addr: 1,
-            fourcc: self.fourcc,
-            flags: 0,
-            width: self.width,
-            height: self.height,
-            stride: self.stride,
-        }
-    }
-}
-
 enum FrameSnapshot {
     Captured(RamfbSnapshot),
     Unavailable {
@@ -174,19 +158,44 @@ impl FrameSnapshot {
         }
     }
 
-    fn from_gpu(gpu: &OwnedGpuScanout) -> Self {
-        let config = gpu.config();
-        match RamfbSnapshot::from_xrgb8888_bytes(config, gpu.bytes.clone()) {
-            Ok(snapshot) => Self::Captured(snapshot),
-            Err(error) => Self::Unavailable { config, error },
-        }
-    }
-
     fn source_label(&self) -> &'static str {
         match self {
-            Self::Captured(snapshot) if snapshot.config.addr == 1 => "virtio-gpu",
             Self::Captured(_) | Self::Unavailable { .. } | Self::Inactive => "ramfb",
         }
+    }
+}
+
+fn print_and_dump_gpu(gpu: VirtioGpuScanout<'_>) {
+    let config = gpu_config(gpu);
+    let summary = match RamfbSnapshot::summarize_xrgb8888_bytes(config, gpu.bytes) {
+        Ok(summary) => summary,
+        Err(error) => {
+            print_error(config, error);
+            return;
+        }
+    };
+    print_summary_parts(config, summary);
+    if let Some(dir) = dump_dir() {
+        match write_artifacts_from_bytes(&dir, "virtio-gpu", config, summary, gpu.bytes) {
+            Ok(paths) => {
+                println!("ramfb framebuffer artifact: raw={}", paths.raw.display());
+                println!("ramfb framebuffer artifact: ppm={}", paths.ppm.display());
+            }
+            Err(error) => println!("ramfb framebuffer dump error: {error}"),
+        }
+    } else {
+        println!("ramfb framebuffer dump: disabled");
+    }
+}
+
+fn gpu_config(gpu: VirtioGpuScanout<'_>) -> RamfbConfig {
+    RamfbConfig {
+        addr: 1,
+        fourcc: gpu.fourcc,
+        flags: 0,
+        width: gpu.width,
+        height: gpu.height,
+        stride: gpu.stride,
     }
 }
 
@@ -264,7 +273,7 @@ impl<'a> RamfbCheckpoint<'a> {
 
 struct DisplayCheckpoint<'a> {
     label: &'a str,
-    gpu: Option<OwnedGpuScanout>,
+    gpu: Option<VirtioGpuScanout<'a>>,
     config: Option<RamfbConfig>,
     mem: &'a dyn GuestMemoryMut,
 }
@@ -272,7 +281,7 @@ struct DisplayCheckpoint<'a> {
 impl<'a> DisplayCheckpoint<'a> {
     const fn new(
         label: &'a str,
-        gpu: Option<OwnedGpuScanout>,
+        gpu: Option<VirtioGpuScanout<'a>>,
         config: Option<RamfbConfig>,
         mem: &'a dyn GuestMemoryMut,
     ) -> Self {
@@ -285,31 +294,37 @@ impl<'a> DisplayCheckpoint<'a> {
     }
 
     fn emit(&self, dir: Option<&Path>) -> io::Result<CheckpointRecord> {
-        if let Some(gpu) = self.gpu.as_ref() {
-            return self.emit_frame(FrameSnapshot::from_gpu(gpu), dir);
+        if let Some(gpu) = self.gpu {
+            return self.emit_gpu(gpu, dir);
         }
         RamfbCheckpoint::new(self.label, self.config, self.mem).emit(dir)
     }
 
-    fn emit_frame(&self, frame: FrameSnapshot, dir: Option<&Path>) -> io::Result<CheckpointRecord> {
-        let source = frame.source_label();
-        let snapshot = match frame {
-            FrameSnapshot::Captured(snapshot) => snapshot,
-            FrameSnapshot::Unavailable { error, .. } => {
+    fn emit_gpu(
+        &self,
+        gpu: VirtioGpuScanout<'_>,
+        dir: Option<&Path>,
+    ) -> io::Result<CheckpointRecord> {
+        let config = gpu_config(gpu);
+        let summary = match RamfbSnapshot::summarize_xrgb8888_bytes(config, gpu.bytes) {
+            Ok(summary) => summary,
+            Err(error) => {
                 return Ok(RamfbCheckpoint::new(self.label, self.config, self.mem)
                     .record_unavailable(error));
             }
-            FrameSnapshot::Inactive => {
-                return Ok(RamfbCheckpoint::new(self.label, self.config, self.mem)
-                    .record_without_artifacts("inactive", "none"));
-            }
         };
-        let checksum = format!("{:#018x}", snapshot.summary.checksum64);
+        let checksum = format!("{:#018x}", summary.checksum64);
         let Some(dir) = dir else {
             return Ok(RamfbCheckpoint::new(self.label, self.config, self.mem)
                 .record_without_artifacts("captured-dump-disabled", &checksum));
         };
-        let paths = write_checkpoint_artifacts(dir, source, self.label, &snapshot)?;
+        let paths = write_checkpoint_artifacts_from_bytes(
+            dir,
+            "virtio-gpu",
+            self.label,
+            config,
+            gpu.bytes,
+        )?;
         let line = format!(
             "ramfb checkpoint: label={} state=captured checksum64={} raw={} ppm={}",
             sanitize_checkpoint_label(self.label),
@@ -330,18 +345,34 @@ fn write_artifacts(
     source: &str,
     snapshot: &RamfbSnapshot,
 ) -> io::Result<ArtifactPaths> {
+    write_artifacts_from_bytes(
+        dir,
+        source,
+        snapshot.config,
+        snapshot.summary,
+        &snapshot.bytes,
+    )
+}
+
+fn write_artifacts_from_bytes(
+    dir: &Path,
+    source: &str,
+    config: RamfbConfig,
+    summary: RamfbSnapshotSummary,
+    bytes: &[u8],
+) -> io::Result<ArtifactPaths> {
     fs::create_dir_all(dir)?;
     let stem = format!(
         "{source}-{}x{}-{:x}-{:016x}",
-        snapshot.config.width,
-        snapshot.config.height,
-        snapshot.config.addr,
-        snapshot.summary.checksum64
+        config.width, config.height, config.addr, summary.checksum64
     );
     let raw = dir.join(format!("{stem}.xrgb8888"));
     let ppm = dir.join(format!("{stem}.ppm"));
-    fs::write(&raw, &snapshot.bytes)?;
-    fs::write(&ppm, snapshot.ppm_bytes().map_err(snapshot_io_error)?)?;
+    fs::write(&raw, bytes)?;
+    fs::write(
+        &ppm,
+        RamfbSnapshot::ppm_bytes_from_xrgb8888(config, bytes).map_err(snapshot_io_error)?,
+    )?;
     Ok(ArtifactPaths { raw, ppm })
 }
 
@@ -350,6 +381,16 @@ fn write_checkpoint_artifacts(
     source: &str,
     label: &str,
     snapshot: &RamfbSnapshot,
+) -> io::Result<ArtifactPaths> {
+    write_checkpoint_artifacts_from_bytes(dir, source, label, snapshot.config, &snapshot.bytes)
+}
+
+fn write_checkpoint_artifacts_from_bytes(
+    dir: &Path,
+    source: &str,
+    label: &str,
+    config: RamfbConfig,
+    bytes: &[u8],
 ) -> io::Result<ArtifactPaths> {
     fs::create_dir_all(dir)?;
     let label = sanitize_checkpoint_label(label);
@@ -360,8 +401,11 @@ fn write_checkpoint_artifacts(
         if raw.exists() || ppm.exists() {
             continue;
         }
-        write_new_file(&raw, &snapshot.bytes)?;
-        write_new_file(&ppm, &snapshot.ppm_bytes().map_err(snapshot_io_error)?)?;
+        write_new_file(&raw, bytes)?;
+        write_new_file(
+            &ppm,
+            &RamfbSnapshot::ppm_bytes_from_xrgb8888(config, bytes).map_err(snapshot_io_error)?,
+        )?;
         return Ok(ArtifactPaths { raw, ppm });
     }
     Err(io::Error::new(

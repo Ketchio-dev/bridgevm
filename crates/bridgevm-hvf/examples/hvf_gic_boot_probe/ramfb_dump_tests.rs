@@ -1,12 +1,16 @@
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use super::{
-    print_checkpoint, RamfbCheckpoint, RamfbSampleEnvError, RamfbSampleSchedule,
+    print_checkpoint, DisplayCheckpoint, RamfbCheckpoint, RamfbSampleEnvError, RamfbSampleSchedule,
     RamfbShellObservation,
 };
 use bridgevm_hvf::{
     fwcfg::GuestMemoryMut,
     ramfb::{RamfbConfig, DRM_FORMAT_XRGB8888},
+    virtio_gpu::VirtioGpuScanout,
 };
 
 struct TestRam {
@@ -42,9 +46,11 @@ impl GuestMemoryMut for TestRam {
 }
 
 fn checkpoint_test_dir() -> PathBuf {
+    static NEXT_DIR: AtomicU64 = AtomicU64::new(0);
+    let id = NEXT_DIR.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!(
-        "bridgevm-ramfb-checkpoint-test-{}",
-        std::process::id()
+        "bridgevm-ramfb-checkpoint-test-{}-{id}",
+        std::process::id(),
     ))
 }
 

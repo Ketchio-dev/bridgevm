@@ -49,12 +49,14 @@ pub const CQ_ENTRY_SIZE: u64 = 16;
 pub const LBA_SIZE: usize = 512;
 /// Guest-visible memory page size assumed for PRP transfers (single page).
 pub const PAGE_SIZE: usize = 4096;
+type NvmePage = [u8; PAGE_SIZE];
 const PAGE_SIZE_U64: u64 = PAGE_SIZE as u64;
 const FILE_OVERLAY_CHUNK_SIZE: u64 = PAGE_SIZE_U64;
 const EXPORT_CHUNK_SIZE: usize = 1024 * 1024;
+const ZERO_APST_FEATURE_DATA: [u8; 256] = [0u8; 256];
 /// Maximum number of submission/completion queue entries we advertise
 /// (`CAP.MQES` is 0-based, so the wire value is `MAX_QUEUE_ENTRIES - 1`).
-pub const MAX_QUEUE_ENTRIES: u16 = 64;
+pub const MAX_QUEUE_ENTRIES: u16 = 1024;
 /// I/O queue-pair capacity advertised to SET FEATURES (NUMBER OF QUEUES). The
 /// model only drives one, but exposes a small pool so a multi-queue guest gets
 /// a sane non-zero allocation back.
@@ -594,6 +596,7 @@ pub struct NvmeController {
     // --- Queues. Index 0 is the admin queue; 1.. are I/O queues. ---
     sqs: Vec<Option<SubmissionQueue>>,
     cqs: Vec<Option<CompletionQueue>>,
+    pending_sq_bits: Vec<u64>,
 
     // --- Backend ---
     /// Raw disk backing store for NSID 1, `LBA_SIZE`-byte logical blocks.
@@ -618,6 +621,11 @@ pub struct NvmeController {
     /// allocation instead of allocating per PRP page. Holds no state between
     /// commands; each command fully overwrites the prefix it reads.
     io_scratch: Vec<u8>,
+    /// Reusable PRP decode output for NVM READ/WRITE. The hot I/O path fills this
+    /// per command instead of allocating a span vector for every transfer.
+    prp_spans_scratch: Vec<(u64, usize)>,
+    /// Reusable physically-contiguous guest segments derived from PRP spans.
+    io_segments_scratch: Vec<(u64, usize)>,
     /// Outstanding AER commands that should complete only when an async event is
     /// raised. This minimal controller does not raise events yet, so it only
     /// tracks the advertised limit and leaves accepted requests pending.
@@ -658,6 +666,7 @@ impl NvmeController {
             // Slot 0 reserved for the admin queue; grow lazily for I/O queues.
             sqs: vec![None],
             cqs: vec![None],
+            pending_sq_bits: vec![0],
             disk,
             disk2: None,
             // Capacity for SET FEATURES (NUMBER OF QUEUES) to negotiate against.
@@ -669,6 +678,8 @@ impl NvmeController {
             msix: MsixTable::new(NVME_MSIX_VECTOR_COUNT),
             command_trace: VecDeque::with_capacity(COMMAND_TRACE_CAPACITY),
             io_scratch: Vec::new(),
+            prp_spans_scratch: Vec::new(),
+            io_segments_scratch: Vec::new(),
             pending_async_event_requests: 0,
         }
     }
@@ -910,11 +921,15 @@ impl NvmeController {
                 interrupt_vector: 0,
                 interrupts_enabled: true,
             });
+            self.pending_sq_bits.clear();
+            self.pending_sq_bits.push(0);
             self.csts |= CSTS_RDY_BIT;
         } else if !now_enabled && was_enabled {
             // Reset: drop all queues and clear ready.
             self.sqs = vec![None];
             self.cqs = vec![None];
+            self.pending_sq_bits.clear();
+            self.pending_sq_bits.push(0);
             self.csts &= !CSTS_RDY_BIT;
             self.pending_async_event_requests = 0;
         }
@@ -932,8 +947,17 @@ impl NvmeController {
             if let Some(Some(cq)) = self.cqs.get_mut(qid) {
                 cq.head = val;
             }
-        } else if let Some(Some(sq)) = self.sqs.get_mut(qid) {
-            sq.tail_doorbell = val;
+        } else {
+            let mut has_work = None;
+            if let Some(Some(sq)) = self.sqs.get_mut(qid) {
+                sq.tail_doorbell = val;
+                has_work = Some(sq.head != sq.tail_doorbell);
+            }
+            match has_work {
+                Some(true) => self.mark_sq_pending(qid),
+                Some(false) => self.clear_sq_pending(qid),
+                None => {}
+            }
         }
     }
 
@@ -944,13 +968,57 @@ impl NvmeController {
     /// guest RAM. The run loop calls this after each doorbell write (and may
     /// call it speculatively — it is a no-op when nothing is pending).
     pub fn process(&mut self, mem: &mut dyn GuestMemoryMut) -> Vec<NvmeCompletionEvent> {
-        // Admin queue (index 0) first, then I/O queues.
         let mut completions = Vec::new();
-        let sq_count = self.sqs.len();
-        for qid in 0..sq_count {
-            self.process_sq(qid, mem, &mut completions);
-        }
+        self.process_into(mem, &mut completions);
         completions
+    }
+
+    /// Drain pending submission queues, appending completion interrupt events to
+    /// caller-owned storage.
+    pub fn process_into(
+        &mut self,
+        mem: &mut dyn GuestMemoryMut,
+        completions: &mut Vec<NvmeCompletionEvent>,
+    ) {
+        // Admin queue (index 0) first, then I/O queues whose tail doorbell has
+        // advanced. The run loop calls this speculatively, so avoid scanning the
+        // whole advertised queue space when no SQ has work.
+        let mut word_idx = 0usize;
+        while word_idx < self.pending_sq_bits.len() {
+            let mut pending_word = self.pending_sq_bits[word_idx];
+            while pending_word != 0 {
+                let bit = pending_word.trailing_zeros() as usize;
+                let qid = word_idx * 64 + bit;
+                self.process_sq(qid, mem, completions);
+                if !self.sq_has_work(qid) {
+                    self.clear_sq_pending(qid);
+                }
+                pending_word &= !(1u64 << bit);
+            }
+            word_idx += 1;
+        }
+    }
+
+    fn mark_sq_pending(&mut self, qid: usize) {
+        let word_idx = qid / 64;
+        if self.pending_sq_bits.len() <= word_idx {
+            self.pending_sq_bits.resize(word_idx + 1, 0);
+        }
+        self.pending_sq_bits[word_idx] |= 1u64 << (qid % 64);
+    }
+
+    fn clear_sq_pending(&mut self, qid: usize) {
+        let word_idx = qid / 64;
+        if let Some(word) = self.pending_sq_bits.get_mut(word_idx) {
+            *word &= !(1u64 << (qid % 64));
+        }
+    }
+
+    fn sq_has_work(&self, qid: usize) -> bool {
+        self.sqs
+            .get(qid)
+            .and_then(Option::as_ref)
+            .is_some_and(|sq| sq.head != sq.tail_doorbell)
     }
 
     /// Drain submission queue `qid` until its head catches the guest's tail.
@@ -1104,7 +1172,7 @@ impl NvmeController {
                     self.identify_namespace(cmd.nsid)
                 } else {
                     // Unallocated namespace ⇒ a zeroed structure (NVMe 1.4).
-                    vec![0u8; PAGE_SIZE]
+                    [0u8; PAGE_SIZE]
                 }
             }
             _ => return SC_INVALID_FIELD,
@@ -1128,8 +1196,8 @@ impl NvmeController {
     }
 
     /// Build a 4 KiB Identify Controller structure (NVMe 1.4 §5.15.2.2).
-    fn identify_controller(&self) -> Vec<u8> {
-        let mut d = vec![0u8; PAGE_SIZE];
+    fn identify_controller(&self) -> NvmePage {
+        let mut d = [0u8; PAGE_SIZE];
         // VID (0..2) / SSVID (2..4): a recognisable but inert vendor id.
         d[0..2].copy_from_slice(&0x1b36u16.to_le_bytes()); // Red Hat / QEMU
         d[2..4].copy_from_slice(&0x1b36u16.to_le_bytes());
@@ -1170,13 +1238,13 @@ impl NvmeController {
     /// NVM command set (CNS=0x06, CSI=0). QEMU answers this Windows probe with
     /// an otherwise boring `NvmeIdCtrlNvm`; keep the BridgeVM page conservative
     /// rather than advertising optional NVM commands that are not implemented.
-    fn identify_command_set_controller(&self) -> Vec<u8> {
-        vec![0u8; PAGE_SIZE]
+    fn identify_command_set_controller(&self) -> NvmePage {
+        [0u8; PAGE_SIZE]
     }
 
     /// Build a 4 KiB Identify Namespace structure (NVMe 1.4 §5.15.2.1).
-    fn identify_namespace(&self, nsid: u32) -> Vec<u8> {
-        let mut d = vec![0u8; PAGE_SIZE];
+    fn identify_namespace(&self, nsid: u32) -> NvmePage {
+        let mut d = [0u8; PAGE_SIZE];
         let nsze = self.block_count_for(nsid);
         // NSZE (0..8), NCAP (8..16), NUSE (16..24): all in logical blocks.
         d[0..8].copy_from_slice(&nsze.to_le_bytes());
@@ -1199,8 +1267,8 @@ impl NvmeController {
     /// Build a 4 KiB Identify Active Namespace ID List (CNS=0x02). The list
     /// contains active namespace IDs greater than the command NSID, in ascending
     /// order, terminated by zero.
-    fn identify_active_namespace_list(&self, after_nsid: u32) -> Vec<u8> {
-        let mut d = vec![0u8; PAGE_SIZE];
+    fn identify_active_namespace_list(&self, after_nsid: u32) -> NvmePage {
+        let mut d = [0u8; PAGE_SIZE];
         let mut off = 0usize;
         for nsid in [NSID, NSID2] {
             if nsid > after_nsid && self.backend_for_nsid(nsid).is_some() {
@@ -1215,8 +1283,8 @@ impl NvmeController {
     /// (CNS=0x03). UUID, NGUID and EUI64 descriptors mirror the stable namespace
     /// identifiers in Identify Namespace, followed by a zero descriptor header to
     /// terminate the list.
-    fn identify_namespace_descriptor_list(&self, nsid: u32) -> Vec<u8> {
-        let mut d = vec![0u8; PAGE_SIZE];
+    fn identify_namespace_descriptor_list(&self, nsid: u32) -> NvmePage {
+        let mut d = [0u8; PAGE_SIZE];
         let mut off = 0usize;
         let (nguid, eui64, uuid) = namespace_identifiers(nsid);
         append_namespace_id_descriptor(&mut d, &mut off, 0x03, &uuid);
@@ -1254,8 +1322,8 @@ impl NvmeController {
         }
     }
 
-    fn smart_health_log(&self) -> Vec<u8> {
-        let mut d = vec![0u8; PAGE_SIZE];
+    fn smart_health_log(&self) -> NvmePage {
+        let mut d = [0u8; PAGE_SIZE];
         // Composite temperature in Kelvin, little-endian at bytes 1..3.
         // 300K is boring and healthy.
         d[1..3].copy_from_slice(&300u16.to_le_bytes());
@@ -1264,16 +1332,16 @@ impl NvmeController {
         d
     }
 
-    fn firmware_slot_info_log(&self) -> Vec<u8> {
-        let mut d = vec![0u8; PAGE_SIZE];
+    fn firmware_slot_info_log(&self) -> NvmePage {
+        let mut d = [0u8; PAGE_SIZE];
         // Active Firmware Info: active slot 1, no pending activation slot.
         d[0] = 1;
         write_ascii(&mut d[8..72], "BridgeVM NVMe firmware slot 1");
         d
     }
 
-    fn command_effects_log(&self) -> Vec<u8> {
-        let mut d = vec![0u8; PAGE_SIZE];
+    fn command_effects_log(&self) -> NvmePage {
+        let mut d = [0u8; PAGE_SIZE];
         let mut set_admin = |opcode: u8, effects: u32| {
             let off = usize::from(opcode) * 4;
             d[off..off + 4].copy_from_slice(&effects.to_le_bytes());
@@ -1342,12 +1410,16 @@ impl NvmeController {
     /// vector bits 31:16. PRP1 is the queue base.
     fn admin_create_io_cq(&mut self, cmd: &SubmissionEntry) -> u16 {
         let qid = (cmd.cdw10 & 0xffff) as usize;
-        let qsize = ((cmd.cdw10 >> 16) & 0xffff) as u16 + 1;
+        let qsize_zero_based = ((cmd.cdw10 >> 16) & 0xffff) as u16;
         let interrupt_vector = ((cmd.cdw11 >> CREATE_IO_CQ_IV_SHIFT) & 0xffff) as u16;
         let interrupts_enabled = cmd.cdw11 & CREATE_IO_CQ_IEN_BIT != 0;
-        if qid == 0 {
-            return SC_INVALID_FIELD; // QID 0 is the admin queue
+        if qid == 0 || qid > usize::from(self.max_io_queues) {
+            return SC_INVALID_FIELD; // QID 0 is admin; higher QIDs lack doorbells.
         }
+        if qsize_zero_based >= MAX_QUEUE_ENTRIES {
+            return SC_INVALID_FIELD;
+        }
+        let qsize = qsize_zero_based + 1;
         if cmd.cdw11 & CREATE_IO_CQ_PC_BIT == 0 {
             return SC_INVALID_FIELD; // CAP.CQR requires physically contiguous queues.
         }
@@ -1371,11 +1443,15 @@ impl NvmeController {
     /// the CQ; CDW11 bits 31:16 carry the associated CQID. PRP1 is the base.
     fn admin_create_io_sq(&mut self, cmd: &SubmissionEntry) -> u16 {
         let qid = (cmd.cdw10 & 0xffff) as usize;
-        let qsize = ((cmd.cdw10 >> 16) & 0xffff) as u16 + 1;
+        let qsize_zero_based = ((cmd.cdw10 >> 16) & 0xffff) as u16;
         let cqid = ((cmd.cdw11 >> 16) & 0xffff) as u16;
-        if qid == 0 {
+        if qid == 0 || qid > usize::from(self.max_io_queues) {
             return SC_INVALID_FIELD;
         }
+        if qsize_zero_based >= MAX_QUEUE_ENTRIES {
+            return SC_INVALID_FIELD;
+        }
+        let qsize = qsize_zero_based + 1;
         // The completion queue this SQ targets must already exist.
         if self.cqs.get(cqid as usize).map(Option::is_some) != Some(true) {
             return SC_INVALID_FIELD;
@@ -1388,6 +1464,7 @@ impl NvmeController {
             tail_doorbell: 0,
             cqid,
         });
+        self.clear_sq_pending(qid);
         SC_SUCCESS
     }
 
@@ -1459,7 +1536,7 @@ impl NvmeController {
             FEATURE_WRITE_ATOMICITY_NORMAL => 0,
             FEATURE_ASYNC_EVENT_CONFIGURATION => 0,
             FEATURE_AUTONOMOUS_POWER_STATE_TRANSITION => {
-                if cmd.prp1 != 0 && !mem.write_bytes(cmd.prp1, &vec![0u8; 256]) {
+                if cmd.prp1 != 0 && !mem.write_bytes(cmd.prp1, &ZERO_APST_FEATURE_DATA) {
                     return SC_INVALID_FIELD;
                 }
                 0
@@ -1518,14 +1595,25 @@ impl NvmeController {
         let Some((start, len)) = transfer_range(cmd, byte_len) else {
             return SC_INVALID_FIELD;
         };
-        let Some(spans) = prp_spans(cmd, len, mem) else {
+        let mut spans = std::mem::take(&mut self.prp_spans_scratch);
+        spans.clear();
+        if !prp_spans_into(cmd, len, mem, &mut spans) {
+            self.prp_spans_scratch = spans;
             return SC_INVALID_FIELD;
-        };
-        let segments = coalesce_spans(&spans);
-        if let Some(status) = self.io_read_direct(cmd.nsid, start, &segments, mem) {
-            return status;
         }
-        self.io_read_buffered(cmd.nsid, start, len, &segments, mem)
+        let mut segments = std::mem::take(&mut self.io_segments_scratch);
+        segments.clear();
+        coalesce_spans_into(&spans, &mut segments);
+        let status = if let Some(status) = self.io_read_direct(cmd.nsid, start, &segments, mem) {
+            status
+        } else {
+            self.io_read_buffered(cmd.nsid, start, len, &segments, mem)
+        };
+        spans.clear();
+        segments.clear();
+        self.prp_spans_scratch = spans;
+        self.io_segments_scratch = segments;
+        status
     }
 
     /// Zero-copy read fast path: `pread` the backing store straight into guest
@@ -1620,14 +1708,25 @@ impl NvmeController {
         let Some((start, len)) = transfer_range(cmd, byte_len) else {
             return SC_INVALID_FIELD;
         };
-        let Some(spans) = prp_spans(cmd, len, mem) else {
+        let mut spans = std::mem::take(&mut self.prp_spans_scratch);
+        spans.clear();
+        if !prp_spans_into(cmd, len, mem, &mut spans) {
+            self.prp_spans_scratch = spans;
             return SC_INVALID_FIELD;
-        };
-        let segments = coalesce_spans(&spans);
-        if let Some(status) = self.io_write_direct(cmd.nsid, start, &segments, mem) {
-            return status;
         }
-        self.io_write_buffered(cmd.nsid, start, len, &segments, mem)
+        let mut segments = std::mem::take(&mut self.io_segments_scratch);
+        segments.clear();
+        coalesce_spans_into(&spans, &mut segments);
+        let status = if let Some(status) = self.io_write_direct(cmd.nsid, start, &segments, mem) {
+            status
+        } else {
+            self.io_write_buffered(cmd.nsid, start, len, &segments, mem)
+        };
+        spans.clear();
+        segments.clear();
+        self.prp_spans_scratch = spans;
+        self.io_segments_scratch = segments;
+        status
     }
 
     /// Zero-copy write fast path: `pwrite` guest RAM straight to the backing store
@@ -1787,6 +1886,16 @@ impl NvmeController {
         self.msix.drain_pending(function_enabled, function_masked)
     }
 
+    pub fn drain_pending_msix_into(
+        &mut self,
+        function_enabled: bool,
+        function_masked: bool,
+        out: &mut Vec<MsixMessage>,
+    ) {
+        self.msix
+            .drain_pending_into(function_enabled, function_masked, out);
+    }
+
     fn msix_table_offset(&self, offset: u64) -> Option<u64> {
         let base = u64::from(NVME_MSIX_TABLE_OFFSET);
         let rel = offset.checked_sub(base)?;
@@ -1806,38 +1915,41 @@ impl NvmeController {
 /// list containing little-endian entries. The command's PRP2 list pointer may
 /// itself include an offset into the first list page; chained list-page pointers
 /// and data-page entries must be page-aligned.
-fn prp_spans(
+fn prp_spans_into(
     cmd: &SubmissionEntry,
     len: usize,
     mem: &dyn GuestMemoryMut,
-) -> Option<Vec<(u64, usize)>> {
+    out: &mut Vec<(u64, usize)>,
+) -> bool {
+    let start = out.len();
     if len == 0 {
-        return Some(Vec::new());
+        return true;
     }
     if cmd.prp1 == 0 {
-        return None;
+        return false;
     }
 
-    let mut spans = Vec::new();
     let mut remaining = len;
     let first_page_left = (PAGE_SIZE_U64 - (cmd.prp1 % PAGE_SIZE_U64)) as usize;
     let first_len = remaining.min(first_page_left);
-    spans.push((cmd.prp1, first_len));
+    out.push((cmd.prp1, first_len));
     remaining -= first_len;
 
     if remaining == 0 {
-        return Some(spans);
+        return true;
     }
     if cmd.prp2 == 0 {
-        return None;
+        out.truncate(start);
+        return false;
     }
 
     if remaining <= PAGE_SIZE {
         if cmd.prp2 % PAGE_SIZE_U64 != 0 {
-            return None;
+            out.truncate(start);
+            return false;
         }
-        spans.push((cmd.prp2, remaining));
-        return Some(spans);
+        out.push((cmd.prp2, remaining));
+        return true;
     }
 
     let mut list_gpa = cmd.prp2;
@@ -1846,17 +1958,20 @@ fn prp_spans(
     while remaining > 0 {
         let list_offset = (list_gpa % PAGE_SIZE_U64) as usize;
         if list_offset % 8 != 0 {
-            return None;
+            out.truncate(start);
+            return false;
         }
         list_pages_seen += 1;
         if list_pages_seen > 16 {
-            return None;
+            out.truncate(start);
+            return false;
         }
 
         let list_len = PAGE_SIZE - list_offset;
         let mut list_buf = [0u8; PAGE_SIZE];
         if !mem.read_into(list_gpa, &mut list_buf[..list_len]) {
-            return None;
+            out.truncate(start);
+            return false;
         }
         let raw = &list_buf[..list_len];
         let mut followed_chain = false;
@@ -1864,12 +1979,14 @@ fn prp_spans(
         for (idx, chunk) in raw.chunks_exact(8).enumerate() {
             let entry = u64::from_le_bytes(chunk.try_into().unwrap());
             if entry == 0 {
-                return None;
+                out.truncate(start);
+                return false;
             }
 
             if idx == entries_in_page - 1 && remaining > PAGE_SIZE {
                 if entry % PAGE_SIZE_U64 != 0 {
-                    return None;
+                    out.truncate(start);
+                    return false;
                 }
                 list_gpa = entry;
                 followed_chain = true;
@@ -1877,22 +1994,24 @@ fn prp_spans(
             }
 
             if entry % PAGE_SIZE_U64 != 0 {
-                return None;
+                out.truncate(start);
+                return false;
             }
             let span_len = remaining.min(PAGE_SIZE);
-            spans.push((entry, span_len));
+            out.push((entry, span_len));
             remaining -= span_len;
             if remaining == 0 {
-                return Some(spans);
+                return true;
             }
         }
 
         if !followed_chain {
-            return None;
+            out.truncate(start);
+            return false;
         }
     }
 
-    Some(spans)
+    true
 }
 
 // ---- small helpers --------------------------------------------------------
@@ -1984,8 +2103,15 @@ fn transfer_range(cmd: &SubmissionEntry, byte_len: u64) -> Option<(u64, usize)> 
 /// thirty-two 4 KiB pages into a single segment when the guest allocated the
 /// buffer contiguously. `checked_add` keeps a guest-controlled address near the
 /// top of the space from overflowing (and, under overflow-checks, panicking).
+#[cfg(test)]
 fn coalesce_spans(spans: &[(u64, usize)]) -> Vec<(u64, usize)> {
-    let mut out: Vec<(u64, usize)> = Vec::with_capacity(spans.len());
+    let mut out = Vec::with_capacity(spans.len());
+    coalesce_spans_into(spans, &mut out);
+    out
+}
+
+fn coalesce_spans_into(spans: &[(u64, usize)], out: &mut Vec<(u64, usize)>) {
+    out.reserve(spans.len());
     for &(gpa, len) in spans {
         if len == 0 {
             continue;
@@ -2000,7 +2126,6 @@ fn coalesce_spans(spans: &[(u64, usize)]) -> Vec<(u64, usize)> {
         }
         out.push((gpa, len));
     }
-    out
 }
 
 /// Merge a partial write into a 64-bit register. `high` selects the upper
@@ -2285,7 +2410,7 @@ mod tests {
     }
 
     #[test]
-    fn cap_advertises_small_mqes_and_zero_dstrd() {
+    fn cap_advertises_configured_mqes_and_zero_dstrd() {
         let ctrl = NvmeController::new(0);
         let cap = ctrl.mmio_read(REG_CAP, 8);
         // MQES is 0-based; we advertise MAX_QUEUE_ENTRIES.
@@ -2709,6 +2834,107 @@ mod tests {
             trace[0].completion,
             Some(NvmeCompletionTrace { cqid: 0, vector: 0 })
         );
+    }
+
+    #[test]
+    fn process_into_reuses_caller_completion_storage() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let sqe = encode_sqe(
+            ADMIN_OP_IDENTIFY,
+            0x57,
+            0,
+            DATA_BASE,
+            IDENTIFY_CNS_CONTROLLER,
+            0,
+            0,
+        );
+        assert!(mem.write_bytes(ASQ_BASE, &sqe));
+        ctrl.mmio_write(REG_DOORBELL_BASE, 4, 1);
+
+        let mut completions = Vec::with_capacity(4);
+        let completion_capacity = completions.capacity();
+        let completion_ptr = completions.as_ptr();
+        ctrl.process_into(&mut mem, &mut completions);
+
+        assert_eq!(
+            completions,
+            vec![NvmeCompletionEvent { cqid: 0, vector: 0 }]
+        );
+        assert_eq!(completions.capacity(), completion_capacity);
+        assert_eq!(completions.as_ptr(), completion_ptr);
+
+        completions.clear();
+        ctrl.process_into(&mut mem, &mut completions);
+        assert!(completions.is_empty());
+        assert_eq!(completions.capacity(), completion_capacity);
+        assert_eq!(completions.as_ptr(), completion_ptr);
+    }
+
+    #[test]
+    fn process_into_drains_only_pending_doorbelled_submission_queue() {
+        let qid = MAX_IO_QUEUE_PAIRS;
+        let high_io_cq = 0x4000_8000;
+        let high_io_sq = 0x4000_9000;
+        let (mut ctrl, mut mem) = enabled_controller_with_mem_len(0x20000);
+        let cdw10 = (u32::from(QDEPTH - 1) << 16) | u32::from(qid);
+        let cq_cdw11 = CREATE_IO_CQ_PC_BIT | CREATE_IO_CQ_IEN_BIT | (1u32 << CREATE_IO_CQ_IV_SHIFT);
+
+        submit_admin(
+            &mut ctrl,
+            &mut mem,
+            0,
+            &encode_sqe(ADMIN_OP_CREATE_IO_CQ, 1, 0, high_io_cq, cdw10, cq_cdw11, 0),
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_SUCCESS
+        );
+        submit_admin(
+            &mut ctrl,
+            &mut mem,
+            1,
+            &encode_sqe(
+                ADMIN_OP_CREATE_IO_SQ,
+                2,
+                0,
+                high_io_sq,
+                cdw10,
+                u32::from(qid) << 16,
+                0,
+            ),
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 1)),
+            SC_SUCCESS
+        );
+
+        let read_cmd = encode_sqe(NVM_OP_READ, 0x70, NSID, DATA_BASE, 0, 0, 0);
+        assert!(mem.write_bytes(high_io_sq, &read_cmd));
+        let mut completions = Vec::new();
+        ctrl.process_into(&mut mem, &mut completions);
+        assert!(
+            completions.is_empty(),
+            "no SQ doorbell means no pending work"
+        );
+
+        ctrl.mmio_write(REG_DOORBELL_BASE + u64::from(qid) * 8, 4, 1);
+        ctrl.process_into(&mut mem, &mut completions);
+
+        assert_eq!(
+            completions,
+            vec![NvmeCompletionEvent {
+                cqid: qid,
+                vector: 1,
+            }]
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, high_io_cq, 0)),
+            SC_SUCCESS
+        );
+
+        completions.clear();
+        ctrl.process_into(&mut mem, &mut completions);
+        assert!(completions.is_empty(), "drained SQ bit is cleared");
     }
 
     #[test]
@@ -3616,6 +3842,171 @@ mod tests {
     }
 
     #[test]
+    fn create_io_queues_reject_depth_beyond_advertised_mqes() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let oversized_cdw10 = (u32::from(MAX_QUEUE_ENTRIES) << 16) | 1;
+        submit_admin(
+            &mut ctrl,
+            &mut mem,
+            0,
+            &encode_sqe(
+                ADMIN_OP_CREATE_IO_CQ,
+                1,
+                0,
+                IO_CQ_BASE,
+                oversized_cdw10,
+                CREATE_IO_CQ_PC_BIT,
+                0,
+            ),
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_INVALID_FIELD
+        );
+
+        let valid_cdw10 = (u32::from(QDEPTH - 1) << 16) | 1;
+        submit_admin(
+            &mut ctrl,
+            &mut mem,
+            1,
+            &encode_sqe(
+                ADMIN_OP_CREATE_IO_CQ,
+                1,
+                0,
+                IO_CQ_BASE,
+                valid_cdw10,
+                CREATE_IO_CQ_PC_BIT,
+                0,
+            ),
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 1)),
+            SC_SUCCESS
+        );
+
+        submit_admin(
+            &mut ctrl,
+            &mut mem,
+            2,
+            &encode_sqe(
+                ADMIN_OP_CREATE_IO_SQ,
+                2,
+                0,
+                IO_SQ_BASE,
+                (u32::from(MAX_QUEUE_ENTRIES) << 16) | 2,
+                1u32 << 16,
+                0,
+            ),
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 2)),
+            SC_INVALID_FIELD
+        );
+
+        submit_admin(
+            &mut ctrl,
+            &mut mem,
+            3,
+            &encode_sqe(
+                ADMIN_OP_CREATE_IO_CQ,
+                3,
+                0,
+                IO_CQ_BASE,
+                (u32::from(u16::MAX) << 16) | 1,
+                CREATE_IO_CQ_PC_BIT,
+                0,
+            ),
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 3)),
+            SC_INVALID_FIELD
+        );
+
+        submit_admin(
+            &mut ctrl,
+            &mut mem,
+            4,
+            &encode_sqe(
+                ADMIN_OP_CREATE_IO_SQ,
+                4,
+                0,
+                IO_SQ_BASE,
+                (u32::from(u16::MAX) << 16) | 2,
+                1u32 << 16,
+                0,
+            ),
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 4)),
+            SC_INVALID_FIELD
+        );
+    }
+
+    #[test]
+    fn create_io_queues_reject_qids_beyond_doorbell_aperture() {
+        let (mut ctrl, mut mem) = enabled_controller();
+        let invalid_qid = u32::from(MAX_IO_QUEUE_PAIRS) + 1;
+        let cdw10 = (u32::from(QDEPTH - 1) << 16) | invalid_qid;
+
+        submit_admin(
+            &mut ctrl,
+            &mut mem,
+            0,
+            &encode_sqe(
+                ADMIN_OP_CREATE_IO_CQ,
+                1,
+                0,
+                IO_CQ_BASE,
+                cdw10,
+                CREATE_IO_CQ_PC_BIT,
+                0,
+            ),
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 0)),
+            SC_INVALID_FIELD
+        );
+
+        let valid_cdw10 = (u32::from(QDEPTH - 1) << 16) | 1;
+        submit_admin(
+            &mut ctrl,
+            &mut mem,
+            1,
+            &encode_sqe(
+                ADMIN_OP_CREATE_IO_CQ,
+                2,
+                0,
+                IO_CQ_BASE,
+                valid_cdw10,
+                CREATE_IO_CQ_PC_BIT,
+                0,
+            ),
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 1)),
+            SC_SUCCESS
+        );
+        submit_admin(
+            &mut ctrl,
+            &mut mem,
+            2,
+            &encode_sqe(
+                ADMIN_OP_CREATE_IO_SQ,
+                3,
+                0,
+                IO_SQ_BASE,
+                cdw10,
+                1u32 << 16,
+                0,
+            ),
+        );
+        assert_eq!(
+            completion_status(&read_completion(&mem, ACQ_BASE, 2)),
+            SC_INVALID_FIELD
+        );
+    }
+
+    #[test]
     fn read_uses_prp2_for_two_page_transfer() {
         let disk: Vec<u8> = (0..PAGE_SIZE * 4).map(|i| (i % 251) as u8).collect();
         let (mut ctrl, mut mem) = enabled_controller_with_disk_and_mem_len(disk.clone(), 0x10000);
@@ -3964,6 +4355,96 @@ mod tests {
         );
     }
 
+    #[test]
+    fn io_read_write_reuses_prp_span_and_segment_scratch() {
+        let pages = 3usize;
+        let disk: Vec<u8> = (0..PAGE_SIZE * pages)
+            .map(|i| (i.wrapping_mul(17).wrapping_add(3)) as u8)
+            .collect();
+        let mut ctrl = NvmeController::with_disk_image(disk.clone());
+        let mut mem = FakeMem::new(MEM_BASE, 0x40000);
+        let data_gpas = [
+            DATA_BASE + 0x2000,
+            DATA_BASE + 0x2000 + 2 * PAGE_SIZE_U64,
+            DATA_BASE + 0x2000 + 4 * PAGE_SIZE_U64,
+        ];
+        let list_base = DATA_BASE;
+        let mut list = [0u8; 16];
+        list[0..8].copy_from_slice(&data_gpas[1].to_le_bytes());
+        list[8..16].copy_from_slice(&data_gpas[2].to_le_bytes());
+        assert!(mem.write_bytes(list_base, &list));
+
+        let blocks = pages as u32 * (PAGE_SIZE as u32 / LBA_SIZE as u32);
+        let read_cmd = encode_sqe_with_prps(
+            NVM_OP_READ,
+            0x70,
+            NSID,
+            data_gpas[0],
+            list_base,
+            0,
+            0,
+            blocks - 1,
+        );
+        let read_cmd = SubmissionEntry::from_bytes(&read_cmd);
+        assert_eq!(ctrl.io_read(&read_cmd, &mut mem), SC_SUCCESS);
+        assert!(ctrl.prp_spans_scratch.is_empty());
+        assert!(ctrl.io_segments_scratch.is_empty());
+        assert!(ctrl.prp_spans_scratch.capacity() >= pages);
+        assert!(ctrl.io_segments_scratch.capacity() >= pages);
+        let span_scratch = (
+            ctrl.prp_spans_scratch.as_ptr(),
+            ctrl.prp_spans_scratch.capacity(),
+        );
+        let segment_scratch = (
+            ctrl.io_segments_scratch.as_ptr(),
+            ctrl.io_segments_scratch.capacity(),
+        );
+
+        let mut gathered = Vec::with_capacity(PAGE_SIZE * pages);
+        for &gpa in &data_gpas {
+            gathered.extend_from_slice(&mem.read_bytes(gpa, PAGE_SIZE).unwrap());
+        }
+        assert_eq!(gathered, disk);
+
+        let mut expected = Vec::with_capacity(PAGE_SIZE * pages);
+        for (page, &gpa) in data_gpas.iter().enumerate() {
+            let chunk: Vec<u8> = (0..PAGE_SIZE)
+                .map(|i| (0x80 | (page as u8 & 0x0f)).wrapping_add((i % 0x20) as u8))
+                .collect();
+            assert!(mem.write_bytes(gpa, &chunk));
+            expected.extend_from_slice(&chunk);
+        }
+        let write_cmd = encode_sqe_with_prps(
+            NVM_OP_WRITE,
+            0x71,
+            NSID,
+            data_gpas[0],
+            list_base,
+            0,
+            0,
+            blocks - 1,
+        );
+        let write_cmd = SubmissionEntry::from_bytes(&write_cmd);
+        assert_eq!(ctrl.io_write(&write_cmd, &mut mem), SC_SUCCESS);
+        assert!(ctrl.prp_spans_scratch.is_empty());
+        assert!(ctrl.io_segments_scratch.is_empty());
+        assert_eq!(
+            (
+                ctrl.prp_spans_scratch.as_ptr(),
+                ctrl.prp_spans_scratch.capacity()
+            ),
+            span_scratch
+        );
+        assert_eq!(
+            (
+                ctrl.io_segments_scratch.as_ptr(),
+                ctrl.io_segments_scratch.capacity()
+            ),
+            segment_scratch
+        );
+        assert_eq!(&ctrl.disk_image()[..PAGE_SIZE * pages], expected.as_slice());
+    }
+
     /// Write `pages` distinct guest pages scattered across non-adjacent guest
     /// pages into a fresh disk, returning (disk_image, expected_concatenation).
     fn scatter_write_result(pages: usize, expose_host_ptr: bool) -> (Vec<u8>, Vec<u8>) {
@@ -4229,6 +4710,32 @@ mod tests {
             mem.read_bytes(read_gpa, PAGE_SIZE * 2).unwrap(),
             expected,
             "coalesced read must merge the sparse overlay over the whole span"
+        );
+        fs::remove_file(source).ok();
+    }
+
+    #[test]
+    fn overlay_chunk_starting_before_read_offset_merges_into_partial_read() {
+        let source = temp_path("dma-overlay-partial-read");
+        let sectors = 16usize;
+        let base: Vec<u8> = (0..LBA_SIZE * sectors)
+            .map(|i| 0x10u8.wrapping_add((i % 0x6d) as u8))
+            .collect();
+        fs::write(&source, &base).unwrap();
+        let mut backend = DiskBackend::raw_file(&source, false).unwrap();
+        let offset = (LBA_SIZE * 5) as u64;
+        let replacement: Vec<u8> = (0..LBA_SIZE)
+            .map(|i| 0xc0u8.wrapping_add((i % 0x21) as u8))
+            .collect();
+
+        backend.write_at(offset, &replacement).unwrap();
+
+        let mut readback = vec![0u8; LBA_SIZE];
+        backend.read_at_into(offset, &mut readback).unwrap();
+
+        assert_eq!(
+            readback, replacement,
+            "overlay chunk base is before the read offset and must still merge"
         );
         fs::remove_file(source).ok();
     }

@@ -6,6 +6,7 @@
 //! paths keep their validated behavior.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use crate::{
     fwcfg::GuestMemoryMut,
@@ -24,7 +25,7 @@ use crate::{
         VIRTIO_GPU_CMD_SUBMIT_3D, VIRTIO_GPU_FLAG_FENCE, VIRTIO_GPU_F_CONTEXT_INIT,
         VIRTIO_GPU_F_RESOURCE_BLOB, VIRTIO_GPU_F_VIRGL,
     },
-    virtio_gpu_trace::{json_string, VirtioGpuTraceRecorder},
+    virtio_gpu_trace::{write_json_string, VirtioGpuTraceRecorder},
 };
 
 const MAGIC_VALUE: u32 = 0x7472_6976;
@@ -86,10 +87,12 @@ const VIRTIO_MSI_NO_VECTOR: u16 = 0xffff;
 const QUEUE_CONTROL: usize = 0;
 const QUEUE_CURSOR: usize = 1;
 const QUEUE_COUNT: usize = 2;
+const PARKED_FENCE_BUFFER_POOL_LIMIT: usize = 4;
 const QUEUE_MAX: u16 = 64;
 const DESC_SIZE: u64 = 16;
 const DESC_F_NEXT: u16 = 1;
 const DESC_F_WRITE: u16 = 2;
+const MAX_GPU_REQUEST_LEN: usize = 64 * 1024 * 1024;
 
 const VIRTIO_GPU_CMD_GET_DISPLAY_INFO: u32 = 0x0100;
 const VIRTIO_GPU_CMD_RESOURCE_CREATE_2D: u32 = 0x0101;
@@ -145,6 +148,7 @@ pub struct VirtioGpu {
     config_msix_vector: u16,
     queue_sel: u32,
     queues: [VirtioGpuQueue; QUEUE_COUNT],
+    pending_msix_queue_bits: u8,
     status: u32,
     interrupt_status: u32,
     events_clear: u32,
@@ -154,6 +158,14 @@ pub struct VirtioGpu {
     scanout: Vec<u8>,
     three_d: VirtioGpu3d,
     pending_fenced: Vec<PendingFencedResponse>,
+    completed_fences_scratch: Vec<CompletedFence>,
+    descriptor_scratch: Vec<Descriptor>,
+    parked_descriptor_scratch: Vec<Vec<Descriptor>>,
+    request_scratch: Vec<u8>,
+    response_scratch: Vec<u8>,
+    parked_response_scratch: Vec<Vec<u8>>,
+    blob_row_scratch: Vec<u8>,
+    trace_fields_scratch: String,
     trace: VirtioGpuTraceRecorder,
 }
 
@@ -311,6 +323,7 @@ impl VirtioGpu {
             config_msix_vector: VIRTIO_MSI_NO_VECTOR,
             queue_sel: 0,
             queues: [VirtioGpuQueue::new(0), VirtioGpuQueue::new(1)],
+            pending_msix_queue_bits: 0,
             status: 0,
             interrupt_status: 0,
             events_clear: 0,
@@ -320,6 +333,14 @@ impl VirtioGpu {
             scanout: vec![0; len],
             three_d: VirtioGpu3d::new(),
             pending_fenced: Vec::new(),
+            completed_fences_scratch: Vec::new(),
+            descriptor_scratch: Vec::new(),
+            parked_descriptor_scratch: Vec::new(),
+            request_scratch: Vec::new(),
+            response_scratch: Vec::new(),
+            parked_response_scratch: Vec::new(),
+            blob_row_scratch: Vec::new(),
+            trace_fields_scratch: String::new(),
             trace: VirtioGpuTraceRecorder::from_env(),
         };
         gpu.trace_device_init(false);
@@ -385,15 +406,25 @@ impl VirtioGpu {
         for queue in &mut self.queues {
             queue.reset();
         }
+        self.pending_msix_queue_bits = 0;
         self.status = 0;
         self.interrupt_status = 0;
         self.events_clear = 0;
         self.resources.clear();
         self.scanout_resource = None;
         self.unbind_blob_scanout();
-        self.scanout = vec![0; scanout_len(width, height)];
+        self.scanout.clear();
+        self.scanout.resize(scanout_len(width, height), 0);
         self.three_d.reset();
         self.pending_fenced.clear();
+        self.completed_fences_scratch.clear();
+        self.descriptor_scratch.clear();
+        self.parked_descriptor_scratch.clear();
+        self.request_scratch.clear();
+        self.response_scratch.clear();
+        self.parked_response_scratch.clear();
+        self.blob_row_scratch.clear();
+        self.trace_fields_scratch.clear();
     }
 
     pub fn scanout(&self) -> Option<VirtioGpuScanout<'_>> {
@@ -512,16 +543,16 @@ impl VirtioGpu {
         if self.driver_features_sel < 2 {
             let index = self.driver_features_sel as usize;
             self.driver_features[index] = (value as u32) & self.offered_features_word(index as u32);
-            self.trace.record(
-                "driver_features",
-                format!(
-                    ",\"select\":{},\"raw\":{},\"accepted\":{},\"accepted_hex\":{}",
-                    self.driver_features_sel,
-                    value as u32,
-                    self.driver_features[index],
-                    json_string(&format!("{:#x}", self.driver_features[index]))
-                ),
-            );
+            let select = self.driver_features_sel;
+            let raw = value as u32;
+            let accepted = self.driver_features[index];
+            self.record_trace_fields("driver_features", |fields| {
+                let _ = write!(
+                    fields,
+                    ",\"select\":{},\"raw\":{},\"accepted\":{},\"accepted_hex\":\"{:#x}\"",
+                    select, raw, accepted, accepted
+                );
+            });
         }
     }
 
@@ -749,14 +780,10 @@ impl VirtioGpu {
     }
 
     fn write_status(&mut self, value: u64) {
-        self.trace.record(
-            "device_status",
-            format!(
-                ",\"raw\":{},\"raw_hex\":{}",
-                value as u32,
-                json_string(&format!("{:#x}", value as u32))
-            ),
-        );
+        let raw = value as u32;
+        self.record_trace_fields("device_status", |fields| {
+            let _ = write!(fields, ",\"raw\":{},\"raw_hex\":\"{:#x}\"", raw, raw);
+        });
         self.status = value as u32;
         if value == 0 {
             self.reset_runtime_state();
@@ -849,27 +876,33 @@ impl VirtioGpu {
         head: u16,
         control: bool,
     ) -> ChainCompletion {
-        let Some(descs) = Self::descriptor_chain(mem, queue, head) else {
+        let mut descs = self.take_descriptor_scratch();
+        if !Self::descriptor_chain_into(mem, queue, head, &mut descs) {
+            self.descriptor_scratch = descs;
             return ChainCompletion::Immediate(0);
-        };
-        let request = Self::gather_readable(mem, &descs);
-        let response = if control {
-            self.handle_control_request(mem, &request)
+        }
+        let mut request = std::mem::take(&mut self.request_scratch);
+        Self::gather_readable_into(mem, &descs, &mut request);
+        let mut response = self.take_response_scratch();
+        response.clear();
+        if control {
+            self.handle_control_request_into(mem, &request, &mut response);
         } else {
-            self.handle_cursor_request(&request)
-        };
+            self.handle_cursor_request_into(&request, &mut response);
+        }
         let Some(hdr) = CtrlHdr::parse(&request) else {
-            self.trace.record(
-                "command_parse_error",
-                format!(
+            let request_len = request.len();
+            let response_len = response.len();
+            self.record_trace_fields("command_parse_error", |fields| {
+                let _ = write!(
+                    fields,
                     ",\"queue\":{},\"head\":{},\"request_len\":{},\"response_len\":{}",
-                    queue_index,
-                    head,
-                    request.len(),
-                    response.len()
-                ),
-            );
-            return ChainCompletion::Immediate(Self::scatter_write(mem, &descs, &response));
+                    queue_index, head, request_len, response_len
+                );
+            });
+            let used_len = Self::scatter_write(mem, &descs, &response);
+            self.recycle_queue_scratch(descs, request, response);
+            return ChainCompletion::Immediate(used_len);
         };
         self.trace_command(queue_index, head, control, &request, hdr, &response);
         // Only defer commands that were dispatched to the 3D backend behind a
@@ -899,40 +932,128 @@ impl VirtioGpu {
                     response,
                     fence,
                 });
+                request.clear();
+                self.request_scratch = request;
+                self.response_scratch = Vec::new();
                 return ChainCompletion::Parked;
             }
             // If virgl rejects the requested timeline, the command response is
             // still delivered; there is no backend fence that can retire it.
             self.trace_fence_create(fence, false, "immediate");
         }
-        ChainCompletion::Immediate(Self::scatter_write(mem, &descs, &response))
+        let used_len = Self::scatter_write(mem, &descs, &response);
+        self.recycle_queue_scratch(descs, request, response);
+        ChainCompletion::Immediate(used_len)
     }
 
-    fn handle_cursor_request(&mut self, request: &[u8]) -> Vec<u8> {
-        let hdr = CtrlHdr::parse(request);
-        match hdr.map(|h| h.typ) {
-            Some(VIRTIO_GPU_CMD_UPDATE_CURSOR | VIRTIO_GPU_CMD_MOVE_CURSOR) => {
-                response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr)
-            }
-            _ => response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr),
+    fn recycle_queue_scratch(
+        &mut self,
+        mut descs: Vec<Descriptor>,
+        mut request: Vec<u8>,
+        mut response: Vec<u8>,
+    ) {
+        descs.clear();
+        request.clear();
+        response.clear();
+        self.descriptor_scratch = descs;
+        self.request_scratch = request;
+        self.response_scratch = response;
+    }
+
+    fn take_descriptor_scratch(&mut self) -> Vec<Descriptor> {
+        let scratch = std::mem::take(&mut self.descriptor_scratch);
+        if scratch.capacity() == 0 {
+            self.parked_descriptor_scratch.pop().unwrap_or(scratch)
+        } else {
+            scratch
         }
     }
 
-    fn handle_control_request(&mut self, mem: &dyn GuestMemoryMut, request: &[u8]) -> Vec<u8> {
+    fn take_response_scratch(&mut self) -> Vec<u8> {
+        let scratch = std::mem::take(&mut self.response_scratch);
+        if scratch.capacity() == 0 {
+            self.parked_response_scratch.pop().unwrap_or(scratch)
+        } else {
+            scratch
+        }
+    }
+
+    fn recycle_parked_fence_buffers(&mut self, mut descs: Vec<Descriptor>, mut response: Vec<u8>) {
+        descs.clear();
+        response.clear();
+        self.recycle_descriptor_scratch(descs);
+        self.recycle_response_scratch(response);
+    }
+
+    fn recycle_descriptor_scratch(&mut self, mut descs: Vec<Descriptor>) {
+        if descs.capacity() > self.descriptor_scratch.capacity() {
+            std::mem::swap(&mut self.descriptor_scratch, &mut descs);
+        }
+        self.recycle_extra_descriptor_scratch(descs);
+    }
+
+    fn recycle_response_scratch(&mut self, mut response: Vec<u8>) {
+        if response.capacity() > self.response_scratch.capacity() {
+            std::mem::swap(&mut self.response_scratch, &mut response);
+        }
+        self.recycle_extra_response_scratch(response);
+    }
+
+    fn recycle_extra_descriptor_scratch(&mut self, descs: Vec<Descriptor>) {
+        if descs.capacity() != 0
+            && self.parked_descriptor_scratch.len() < PARKED_FENCE_BUFFER_POOL_LIMIT
+        {
+            self.parked_descriptor_scratch.push(descs);
+        }
+    }
+
+    fn recycle_extra_response_scratch(&mut self, response: Vec<u8>) {
+        if response.capacity() != 0
+            && self.parked_response_scratch.len() < PARKED_FENCE_BUFFER_POOL_LIMIT
+        {
+            self.parked_response_scratch.push(response);
+        }
+    }
+
+    fn handle_cursor_request_into(&mut self, request: &[u8], out: &mut Vec<u8>) {
+        let hdr = CtrlHdr::parse(request);
+        match hdr.map(|h| h.typ) {
+            Some(VIRTIO_GPU_CMD_UPDATE_CURSOR | VIRTIO_GPU_CMD_MOVE_CURSOR) => {
+                response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
+            }
+            _ => response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr),
+        }
+    }
+
+    fn handle_control_request_into(
+        &mut self,
+        mem: &dyn GuestMemoryMut,
+        request: &[u8],
+        out: &mut Vec<u8>,
+    ) {
         let Some(hdr) = CtrlHdr::parse(request) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, None);
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, None);
+            return;
         };
         match hdr.typ {
-            VIRTIO_GPU_CMD_GET_DISPLAY_INFO => self.response_display_info(Some(hdr)),
-            VIRTIO_GPU_CMD_GET_EDID => self.response_edid(Some(hdr)),
-            VIRTIO_GPU_CMD_RESOURCE_CREATE_2D => self.resource_create_2d(request, Some(hdr)),
-            VIRTIO_GPU_CMD_RESOURCE_UNREF => self.resource_unref(request, Some(hdr)),
-            VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING => self.attach_backing(request, Some(hdr)),
-            VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING => self.detach_backing(request, Some(hdr)),
-            VIRTIO_GPU_CMD_SET_SCANOUT => self.set_scanout(request, Some(hdr)),
-            VIRTIO_GPU_CMD_SET_SCANOUT_BLOB => self.set_scanout_blob(request, Some(hdr)),
-            VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D => self.transfer_to_host_2d(mem, request, Some(hdr)),
-            VIRTIO_GPU_CMD_RESOURCE_FLUSH => self.resource_flush(mem, request, Some(hdr)),
+            VIRTIO_GPU_CMD_GET_DISPLAY_INFO => self.response_display_info_into(Some(hdr), out),
+            VIRTIO_GPU_CMD_GET_EDID => self.response_edid_into(Some(hdr), out),
+            VIRTIO_GPU_CMD_RESOURCE_CREATE_2D => {
+                self.resource_create_2d_into(request, Some(hdr), out)
+            }
+            VIRTIO_GPU_CMD_RESOURCE_UNREF => self.resource_unref_into(request, Some(hdr), out),
+            VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING => {
+                self.attach_backing_into(request, Some(hdr), out)
+            }
+            VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING => {
+                self.detach_backing_into(request, Some(hdr), out)
+            }
+            VIRTIO_GPU_CMD_SET_SCANOUT => self.set_scanout_into(request, Some(hdr), out),
+            VIRTIO_GPU_CMD_SET_SCANOUT_BLOB => self.set_scanout_blob_into(request, Some(hdr), out),
+            VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D => {
+                self.transfer_to_host_2d_into(mem, request, Some(hdr), out)
+            }
+            VIRTIO_GPU_CMD_RESOURCE_FLUSH => self.resource_flush_into(mem, request, Some(hdr), out),
             VIRTIO_GPU_CMD_GET_CAPSET_INFO
             | VIRTIO_GPU_CMD_GET_CAPSET
             | VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB
@@ -955,62 +1076,72 @@ impl VirtioGpu {
                         }
                     }
                 }
-                self.three_d
-                    .handle_with_mem(Some(mem), request, hdr3d)
-                    .unwrap_or_else(|| {
-                        virtio_gpu_3d::response_hdr(
-                            virtio_gpu_3d::VIRTIO_GPU_RESP_ERR_UNSPEC,
-                            Some(hdr3d),
-                        )
-                    })
+                if !self
+                    .three_d
+                    .handle_with_mem_into(Some(mem), request, hdr3d, out)
+                {
+                    virtio_gpu_3d::response_hdr_into(
+                        out,
+                        virtio_gpu_3d::VIRTIO_GPU_RESP_ERR_UNSPEC,
+                        Some(hdr3d),
+                    );
+                }
             }
-            _ => response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr)),
+            _ => response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr)),
         }
     }
 
     pub fn drain_completed_fences(&mut self, mem: &mut dyn GuestMemoryMut) {
-        let completed = self.three_d.drain_completed_fences();
+        let mut completed = std::mem::take(&mut self.completed_fences_scratch);
+        completed.clear();
+        self.three_d.drain_completed_fences_into(&mut completed);
         if completed.is_empty() || self.pending_fenced.is_empty() {
-            for fence in completed {
-                self.trace_fence_complete(fence);
+            for fence in &completed {
+                self.trace_fence_complete(*fence);
             }
+            completed.clear();
+            self.completed_fences_scratch = completed;
             return;
         }
         for fence in &completed {
             self.trace_fence_complete(*fence);
         }
-        let mut remaining = Vec::with_capacity(self.pending_fenced.len());
-        let pending = std::mem::take(&mut self.pending_fenced);
-        for pending_response in pending {
+        let mut index = 0;
+        while index < self.pending_fenced.len() {
             let ready = completed.iter().any(|completed| {
+                let pending_response = &self.pending_fenced[index];
                 completed.ctx_id == pending_response.fence.ctx_id
                     && completed.ring_idx == pending_response.fence.ring_idx
                     && completed.fence_id >= pending_response.fence.fence_id
             });
-            if ready {
-                let used_len =
-                    Self::scatter_write(mem, &pending_response.descs, &pending_response.response);
-                self.trace_fence_delivery(pending_response.fence, used_len);
-                Self::write_used(
-                    mem,
-                    &pending_response.queue,
-                    pending_response.head,
-                    used_len,
-                );
-                self.mark_queue_interrupt(pending_response.queue_index);
-            } else {
-                remaining.push(pending_response);
+            if !ready {
+                index += 1;
+                continue;
             }
+
+            let pending_response = self.pending_fenced.remove(index);
+            let used_len =
+                Self::scatter_write(mem, &pending_response.descs, &pending_response.response);
+            self.trace_fence_delivery(pending_response.fence, used_len);
+            Self::write_used(
+                mem,
+                &pending_response.queue,
+                pending_response.head,
+                used_len,
+            );
+            self.mark_queue_interrupt(pending_response.queue_index);
+            self.recycle_parked_fence_buffers(pending_response.descs, pending_response.response);
         }
-        self.pending_fenced = remaining;
+        completed.clear();
+        self.completed_fences_scratch = completed;
     }
 
-    fn response_display_info(&self, hdr: Option<CtrlHdr>) -> Vec<u8> {
-        let mut out = response_hdr(VIRTIO_GPU_RESP_OK_DISPLAY_INFO, hdr);
+    fn response_display_info_into(&self, hdr: Option<CtrlHdr>, out: &mut Vec<u8>) {
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_DISPLAY_INFO, hdr);
         for scanout in 0..16 {
             if scanout == 0 {
                 push_rect(
-                    &mut out,
+                    out,
                     Rect {
                         x: 0,
                         y: 0,
@@ -1024,35 +1155,36 @@ impl VirtioGpu {
                 out.extend_from_slice(&[0u8; 24]);
             }
         }
-        out
     }
 
-    fn response_edid(&self, hdr: Option<CtrlHdr>) -> Vec<u8> {
-        let mut out = response_hdr(VIRTIO_GPU_RESP_OK_EDID, hdr);
+    fn response_edid_into(&self, hdr: Option<CtrlHdr>, out: &mut Vec<u8>) {
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_EDID, hdr);
         out.extend_from_slice(&128u32.to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
         let edid = build_edid(self.width, self.height);
         out.extend_from_slice(&edid);
         out.resize(out.len() + (1024 - 128), 0);
-        out
     }
 
-    fn resource_create_2d(&mut self, request: &[u8], hdr: Option<CtrlHdr>) -> Vec<u8> {
+    fn resource_create_2d_into(&mut self, request: &[u8], hdr: Option<CtrlHdr>, out: &mut Vec<u8>) {
         let Some(resource_id) = read_le_u32(request, 24) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
         };
         let format = read_le_u32(request, 28).unwrap_or(0);
         let width = read_le_u32(request, 32).unwrap_or(0);
         let height = read_le_u32(request, 36).unwrap_or(0);
         if resource_id == 0 || width == 0 || height == 0 || !format_supported(format) {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
         }
         let Some(len) = u64::from(width)
             .checked_mul(u64::from(height))
             .and_then(|pixels| pixels.checked_mul(4))
             .and_then(|bytes| usize::try_from(bytes).ok())
         else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
         };
         self.resources.insert(
             resource_id,
@@ -1065,10 +1197,10 @@ impl VirtioGpu {
             },
         );
         self.three_d.register_2d_resource(resource_id);
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr)
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
     }
 
-    fn resource_unref(&mut self, request: &[u8], hdr: Option<CtrlHdr>) -> Vec<u8> {
+    fn resource_unref_into(&mut self, request: &[u8], hdr: Option<CtrlHdr>, out: &mut Vec<u8>) {
         if let Some(resource_id) = read_le_u32(request, 24) {
             if self
                 .blob_scanout
@@ -1084,47 +1216,54 @@ impl VirtioGpu {
                 self.scanout_resource = None;
             }
         }
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr)
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
     }
 
-    fn attach_backing(&mut self, request: &[u8], hdr: Option<CtrlHdr>) -> Vec<u8> {
+    fn attach_backing_into(&mut self, request: &[u8], hdr: Option<CtrlHdr>, out: &mut Vec<u8>) {
         let Some(resource_id) = read_le_u32(request, 24) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
         };
         let nr_entries = read_le_u32(request, 28).unwrap_or(0);
-        let Some(resource) = self.resources.get_mut(&resource_id) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+        let Some(entries_len) = (nr_entries as usize).checked_mul(16) else {
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
         };
-        let mut entries = Vec::new();
+        if request.len().saturating_sub(32) < entries_len {
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
+        }
+        let Some(resource) = self.resources.get_mut(&resource_id) else {
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
+        };
+        resource.backing.clear();
+        resource.backing.reserve(nr_entries as usize);
         let mut offset = 32usize;
         for _ in 0..nr_entries {
-            let Some(addr) = read_le_u64(request, offset) else {
-                return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
-            };
-            let Some(len) = read_le_u32(request, offset + 8) else {
-                return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
-            };
-            entries.push(BackingEntry { addr, len });
+            let addr = read_le_u64(request, offset).unwrap();
+            let len = read_le_u32(request, offset + 8).unwrap();
+            resource.backing.push(BackingEntry { addr, len });
             offset += 16;
         }
-        resource.backing = entries;
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr)
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
     }
 
-    fn detach_backing(&mut self, request: &[u8], hdr: Option<CtrlHdr>) -> Vec<u8> {
+    fn detach_backing_into(&mut self, request: &[u8], hdr: Option<CtrlHdr>, out: &mut Vec<u8>) {
         if let Some(resource_id) = read_le_u32(request, 24) {
             if let Some(resource) = self.resources.get_mut(&resource_id) {
                 resource.backing.clear();
             }
         }
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr)
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
     }
 
-    fn set_scanout(&mut self, request: &[u8], hdr: Option<CtrlHdr>) -> Vec<u8> {
+    fn set_scanout_into(&mut self, request: &[u8], hdr: Option<CtrlHdr>, out: &mut Vec<u8>) {
         let scanout_id = read_le_u32(request, 40).unwrap_or(u32::MAX);
         let resource_id = read_le_u32(request, 44).unwrap_or(0);
         if scanout_id != 0 {
-            return response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr);
+            response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
+            return;
         }
         if resource_id == 0 {
             self.scanout_resource = None;
@@ -1133,24 +1272,28 @@ impl VirtioGpu {
             self.unbind_blob_scanout();
             self.scanout_resource = Some(resource_id);
         } else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
         }
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr)
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
     }
 
-    fn set_scanout_blob(&mut self, request: &[u8], hdr: Option<CtrlHdr>) -> Vec<u8> {
+    fn set_scanout_blob_into(&mut self, request: &[u8], hdr: Option<CtrlHdr>, out: &mut Vec<u8>) {
         if request.len() < SET_SCANOUT_BLOB_LEN {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
         }
         let scanout_id = read_le_u32(request, 40).unwrap_or(u32::MAX);
         let resource_id = read_le_u32(request, 44).unwrap_or(0);
         if scanout_id != 0 {
-            return response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr);
+            response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
+            return;
         }
         if resource_id == 0 {
             self.unbind_blob_scanout();
             self.scanout_resource = None;
-            return response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr);
+            response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
+            return;
         }
 
         let width = read_le_u32(request, 48).unwrap_or(0);
@@ -1165,31 +1308,39 @@ impl VirtioGpu {
             || !format_supported(format)
             || stride < width.saturating_mul(4)
         {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
         }
 
-        let Some(info) = self.three_d.blob_resource_info(resource_id) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+        let Some(info) = self.three_d.blob_resource_info_ref(resource_id) else {
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
         };
-        if info.blob_mem != VIRTIO_GPU_BLOB_MEM_GUEST && info.blob_mem != VIRTIO_GPU_BLOB_MEM_HOST3D
-        {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+        let blob_mem = info.blob_mem;
+        let blob_size = info.size;
+        if blob_mem != VIRTIO_GPU_BLOB_MEM_GUEST && blob_mem != VIRTIO_GPU_BLOB_MEM_HOST3D {
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
         }
         let Some(footprint) = blob_surface_footprint(width, height, stride, offset) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
         };
-        if footprint > info.size {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+        if footprint > blob_size {
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
         }
 
         self.unbind_blob_scanout();
-        let mapping = if info.blob_mem == VIRTIO_GPU_BLOB_MEM_HOST3D {
+        let mapping = if blob_mem == VIRTIO_GPU_BLOB_MEM_HOST3D {
             let Some(mapped) = self.three_d.scanout_map_blob(resource_id) else {
-                return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+                response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+                return;
             };
             if mapped.host_ptr.is_null() || (mapped.size as u64) < footprint {
                 self.three_d.scanout_unmap_blob(resource_id);
-                return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+                response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+                return;
             }
             Some(BlobScanoutMapping {
                 ptr: mapped.host_ptr,
@@ -1208,15 +1359,16 @@ impl VirtioGpu {
             offset,
             mapping,
         });
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr)
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
     }
 
-    fn transfer_to_host_2d(
+    fn transfer_to_host_2d_into(
         &mut self,
         mem: &dyn GuestMemoryMut,
         request: &[u8],
         hdr: Option<CtrlHdr>,
-    ) -> Vec<u8> {
+        out: &mut Vec<u8>,
+    ) {
         let rect = read_rect(request, 24).unwrap_or(Rect {
             x: 0,
             y: 0,
@@ -1226,18 +1378,20 @@ impl VirtioGpu {
         let offset = read_le_u64(request, 40).unwrap_or(0);
         let resource_id = read_le_u32(request, 48).unwrap_or(0);
         let Some(resource) = self.resources.get_mut(&resource_id) else {
-            return response_hdr(VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
         };
         copy_backing_to_resource(mem, resource, rect, offset);
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr)
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
     }
 
-    fn resource_flush(
+    fn resource_flush_into(
         &mut self,
         mem: &dyn GuestMemoryMut,
         request: &[u8],
         hdr: Option<CtrlHdr>,
-    ) -> Vec<u8> {
+        out: &mut Vec<u8>,
+    ) {
         let rect = read_rect(request, 24).unwrap_or(Rect {
             x: 0,
             y: 0,
@@ -1262,14 +1416,14 @@ impl VirtioGpu {
         {
             self.composite_blob_scanout(mem, rect);
         }
-        response_hdr(VIRTIO_GPU_RESP_OK_NODATA, hdr)
+        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
     }
 
     fn composite_blob_scanout(&mut self, mem: &dyn GuestMemoryMut, rect: Rect) {
         let Some(scanout) = self.blob_scanout.as_ref() else {
             return;
         };
-        let Some(info) = self.three_d.blob_resource_info(scanout.resource_id) else {
+        let Some(info) = self.three_d.blob_resource_info_ref(scanout.resource_id) else {
             return;
         };
         let x_end = rect
@@ -1286,13 +1440,14 @@ impl VirtioGpu {
         match info.blob_mem {
             VIRTIO_GPU_BLOB_MEM_GUEST => composite_guest_blob_to_scanout(
                 mem,
-                &info.backing,
+                info.backing,
                 &mut self.scanout,
                 self.width,
                 scanout,
                 rect,
                 x_end,
                 y_end,
+                &mut self.blob_row_scratch,
             ),
             VIRTIO_GPU_BLOB_MEM_HOST3D => {
                 let Some(mapping) = scanout.mapping else {
@@ -1322,12 +1477,14 @@ impl VirtioGpu {
     }
 
     fn trace_device_init(&mut self, backend_3d: bool) {
-        self.trace.record(
-            "device_init",
-            format!(
+        let width = self.width;
+        let height = self.height;
+        self.record_trace_fields("device_init", |fields| {
+            let _ = write!(
+                fields,
                 ",\"width\":{},\"height\":{},\"device_id\":{},\"vendor_id\":{},\"queue_count\":{},\"queue_max\":{},\"msix_vectors\":{},\"backend_3d\":{},\"common_cfg_offset\":{},\"device_cfg_offset\":{},\"notify_cfg_offset\":{}",
-                self.width,
-                self.height,
+                width,
+                height,
                 DEVICE_ID_GPU,
                 VENDOR_ID_QEMU,
                 QUEUE_COUNT,
@@ -1337,8 +1494,8 @@ impl VirtioGpu {
                 PCI_COMMON_CFG_OFFSET,
                 PCI_DEVICE_CFG_OFFSET,
                 PCI_NOTIFY_CFG_OFFSET
-            ),
-        );
+            );
+        });
     }
 
     fn trace_common_read(&mut self, offset: u64, size: u8, value: u64) {
@@ -1353,36 +1510,39 @@ impl VirtioGpu {
             COMMON_QUEUE_ENABLE | REG_QUEUE_READY => "queue_enable",
             _ => return,
         };
-        self.trace.record(
-            "common_read",
-            format!(
-                ",\"field\":{},\"offset\":{},\"size\":{},\"value\":{},\"value_hex\":{},\"device_features_sel\":{},\"driver_features_sel\":{},\"queue_sel\":{}",
-                json_string(field),
+        let device_features_sel = self.device_features_sel;
+        let driver_features_sel = self.driver_features_sel;
+        let queue_sel = self.queue_sel;
+        self.record_trace_fields("common_read", |fields| {
+            fields.push_str(",\"field\":");
+            write_json_string(fields, field);
+            let _ = write!(
+                fields,
+                ",\"offset\":{},\"size\":{},\"value\":{},\"value_hex\":\"{:#x}\",\"device_features_sel\":{},\"driver_features_sel\":{},\"queue_sel\":{}",
                 offset,
                 size,
                 value,
-                json_string(&format!("{value:#x}")),
-                self.device_features_sel,
-                self.driver_features_sel,
-                self.queue_sel
-            ),
-        );
+                value,
+                device_features_sel,
+                driver_features_sel,
+                queue_sel
+            );
+        });
     }
 
     fn trace_queue_notify(&mut self, queue_index: u16) {
         if !self.trace.enabled() {
             return;
         }
-        let Some(queue) = self.queues.get(queue_index as usize) else {
-            self.trace.record(
-                "queue_notify",
-                format!(",\"queue\":{},\"valid\":false", queue_index),
-            );
+        let Some(queue) = self.queues.get(queue_index as usize).copied() else {
+            self.record_trace_fields("queue_notify", |fields| {
+                let _ = write!(fields, ",\"queue\":{},\"valid\":false", queue_index);
+            });
             return;
         };
-        self.trace.record(
-            "queue_notify",
-            format!(
+        self.record_trace_fields("queue_notify", |fields| {
+            let _ = write!(
+                fields,
                 ",\"queue\":{},\"valid\":true,\"size\":{},\"ready\":{},\"desc\":{},\"driver\":{},\"device\":{},\"msix_vector\":{},\"last_avail_idx\":{}",
                 queue_index,
                 queue.size,
@@ -1392,8 +1552,20 @@ impl VirtioGpu {
                 queue.device,
                 queue.msix_vector,
                 queue.last_avail_idx
-            ),
-        );
+            );
+        });
+    }
+
+    fn record_trace_fields(&mut self, event: &str, write_fields: impl FnOnce(&mut String)) {
+        if !self.trace.enabled() {
+            return;
+        }
+        let mut fields = std::mem::take(&mut self.trace_fields_scratch);
+        fields.clear();
+        write_fields(&mut fields);
+        self.trace.record(event, &fields);
+        fields.clear();
+        self.trace_fields_scratch = fields;
     }
 
     fn trace_command(
@@ -1409,106 +1581,122 @@ impl VirtioGpu {
             return;
         }
         let response_type = read_le_u32(response, 0).unwrap_or(0);
-        let fields = format!(
-            ",\"queue\":{},\"head\":{},\"control\":{},\"typ\":{},\"name\":{},\"flags\":{},\"fenced\":{},\"fence_id\":{},\"ctx_id\":{},\"ring_idx\":{},\"request_len\":{},\"response_type\":{},\"response_name\":{},\"response_len\":{}{}{}",
-            queue_index,
-            head,
-            control,
-            hdr.typ,
-            json_string(command_name(hdr.typ)),
-            hdr.flags,
-            hdr.flags & VIRTIO_GPU_FLAG_FENCE != 0,
-            hdr.fence_id,
-            hdr.ctx_id,
-            hdr.ring_idx(),
-            request.len(),
-            response_type,
-            json_string(response_name(response_type)),
-            response.len(),
-            trace_command_details(request, hdr),
-            trace_command_response_details(response_type, response)
-        );
-        self.trace.record("command", fields);
+        self.record_trace_fields("command", |fields| {
+            let _ = write!(
+                fields,
+                ",\"queue\":{},\"head\":{},\"control\":{},\"typ\":{},\"name\":",
+                queue_index, head, control, hdr.typ
+            );
+            write_json_string(fields, command_name(hdr.typ));
+            let _ = write!(
+                fields,
+                ",\"flags\":{},\"fenced\":{},\"fence_id\":{},\"ctx_id\":{},\"ring_idx\":{},\"request_len\":{},\"response_type\":{},\"response_name\":",
+                hdr.flags,
+                hdr.flags & VIRTIO_GPU_FLAG_FENCE != 0,
+                hdr.fence_id,
+                hdr.ctx_id,
+                hdr.ring_idx(),
+                request.len(),
+                response_type
+            );
+            write_json_string(fields, response_name(response_type));
+            let _ = write!(fields, ",\"response_len\":{}", response.len());
+            write_trace_command_details(fields, request, hdr);
+            write_trace_command_response_details(fields, response_type, response);
+        });
     }
 
     fn trace_fence_create(&mut self, fence: CompletedFence, backend_accepted: bool, outcome: &str) {
-        self.trace.record(
-            "fence_create",
-            format!(
-                ",\"ctx_id\":{},\"ring_idx\":{},\"fence_id\":{},\"backend_accepted\":{},\"outcome\":{}",
-                fence.ctx_id,
-                fence.ring_idx,
-                fence.fence_id,
-                backend_accepted,
-                json_string(outcome)
-            ),
-        );
+        self.record_trace_fields("fence_create", |fields| {
+            let _ = write!(
+                fields,
+                ",\"ctx_id\":{},\"ring_idx\":{},\"fence_id\":{},\"backend_accepted\":{}",
+                fence.ctx_id, fence.ring_idx, fence.fence_id, backend_accepted
+            );
+            fields.push_str(",\"outcome\":");
+            write_json_string(fields, outcome);
+        });
     }
 
     fn trace_fence_complete(&mut self, fence: CompletedFence) {
-        self.trace.record(
-            "fence_complete",
-            format!(
+        self.record_trace_fields("fence_complete", |fields| {
+            let _ = write!(
+                fields,
                 ",\"ctx_id\":{},\"ring_idx\":{},\"fence_id\":{}",
                 fence.ctx_id, fence.ring_idx, fence.fence_id
-            ),
-        );
+            );
+        });
     }
 
     fn trace_fence_delivery(&mut self, fence: CompletedFence, used_len: u32) {
-        self.trace.record(
-            "fence_deliver",
-            format!(
+        self.record_trace_fields("fence_deliver", |fields| {
+            let _ = write!(
+                fields,
                 ",\"ctx_id\":{},\"ring_idx\":{},\"fence_id\":{},\"used_len\":{}",
                 fence.ctx_id, fence.ring_idx, fence.fence_id, used_len
-            ),
-        );
+            );
+        });
     }
 
     fn mark_queue_interrupt(&mut self, queue_index: usize) {
         if let Some(queue) = self.queues.get_mut(queue_index) {
             queue.pending_msix = true;
+            if let Some(bit) = queue_bit(queue_index) {
+                self.pending_msix_queue_bits |= bit;
+            }
         }
         self.interrupt_status |= 1;
     }
 
-    fn descriptor_chain(
+    fn descriptor_chain_into(
         mem: &dyn GuestMemoryMut,
         queue: &VirtioGpuQueue,
         head: u16,
-    ) -> Option<Vec<Descriptor>> {
+        out: &mut Vec<Descriptor>,
+    ) -> bool {
+        out.clear();
         let queue_size = queue.effective_size();
         if head >= queue_size {
-            return None;
+            return false;
         }
-        let mut out = Vec::new();
         let mut index = head;
         for _ in 0..queue_size {
-            let desc = Descriptor::read(mem, queue.desc + u64::from(index) * DESC_SIZE)?;
+            let Some(desc) = Descriptor::read(mem, queue.desc + u64::from(index) * DESC_SIZE)
+            else {
+                return false;
+            };
             let has_next = desc.flags & DESC_F_NEXT != 0;
             out.push(desc);
             if !has_next {
-                return Some(out);
+                return true;
             }
             index = desc.next;
             if index >= queue_size {
-                return None;
+                return false;
             }
         }
-        None
+        false
     }
 
-    fn gather_readable(mem: &dyn GuestMemoryMut, descs: &[Descriptor]) -> Vec<u8> {
-        let mut out = Vec::new();
+    fn gather_readable_into(mem: &dyn GuestMemoryMut, descs: &[Descriptor], out: &mut Vec<u8>) {
+        out.clear();
         for desc in descs {
             if desc.flags & DESC_F_WRITE != 0 {
                 continue;
             }
-            if let Some(mut bytes) = mem.read_bytes(desc.addr, desc.len as usize) {
-                out.append(&mut bytes);
+            let start = out.len();
+            let Some(end) = start.checked_add(desc.len as usize) else {
+                out.clear();
+                return;
+            };
+            if end > MAX_GPU_REQUEST_LEN {
+                out.clear();
+                return;
+            }
+            if let Some(bytes) = mem.read_bytes(desc.addr, desc.len as usize) {
+                out.extend_from_slice(&bytes);
             }
         }
-        out
     }
 
     fn scatter_write(mem: &mut dyn GuestMemoryMut, descs: &[Descriptor], bytes: &[u8]) -> u32 {
@@ -1712,20 +1900,31 @@ impl VirtioPciGpu {
         function_masked: bool,
     ) -> Vec<MsixMessage> {
         let mut messages = Vec::new();
-        for queue_index in 0..self.gpu.queues.len() {
-            if !self.gpu.queues[queue_index].pending_msix {
-                continue;
-            }
+        self.raise_pending_msix_into(function_enabled, function_masked, &mut messages);
+        messages
+    }
+
+    pub fn raise_pending_msix_into(
+        &mut self,
+        function_enabled: bool,
+        function_masked: bool,
+        out: &mut Vec<MsixMessage>,
+    ) {
+        let mut pending = self.gpu.pending_msix_queue_bits;
+        while pending != 0 {
+            let queue_index = pending.trailing_zeros() as usize;
             let vector = self.gpu.queues[queue_index].msix_vector;
             if vector == VIRTIO_MSI_NO_VECTOR {
+                pending &= !(1u8 << queue_index);
                 continue;
             }
             if let Some(message) = self.msix.raise(vector, function_enabled, function_masked) {
                 self.gpu.queues[queue_index].pending_msix = false;
-                messages.push(message);
+                self.gpu.pending_msix_queue_bits &= !(1u8 << queue_index);
+                out.push(message);
             }
+            pending &= !(1u8 << queue_index);
         }
-        messages
     }
 
     pub fn drain_pending_msix(
@@ -1733,18 +1932,33 @@ impl VirtioPciGpu {
         function_enabled: bool,
         function_masked: bool,
     ) -> Vec<MsixMessage> {
-        let mut messages = self.msix.drain_pending(function_enabled, function_masked);
-        for message in &messages {
-            self.clear_pending_queue_for_vector(message.vector);
-        }
-        messages.extend(self.raise_pending_msix(function_enabled, function_masked));
+        let mut messages = Vec::new();
+        self.drain_pending_msix_into(function_enabled, function_masked, &mut messages);
         messages
     }
 
+    pub fn drain_pending_msix_into(
+        &mut self,
+        function_enabled: bool,
+        function_masked: bool,
+        out: &mut Vec<MsixMessage>,
+    ) {
+        let start = out.len();
+        self.msix
+            .drain_pending_into(function_enabled, function_masked, out);
+        for message in &out[start..] {
+            self.clear_pending_queue_for_vector(message.vector);
+        }
+        self.raise_pending_msix_into(function_enabled, function_masked, out);
+    }
+
     fn clear_pending_queue_for_vector(&mut self, vector: u16) {
-        for queue in &mut self.gpu.queues {
+        for (queue_index, queue) in self.gpu.queues.iter_mut().enumerate() {
             if queue.msix_vector == vector {
                 queue.pending_msix = false;
+                if let Some(bit) = queue_bit(queue_index) {
+                    self.gpu.pending_msix_queue_bits &= !bit;
+                }
             }
         }
     }
@@ -1777,6 +1991,10 @@ fn notify_queue_index(offset: u64) -> Option<u16> {
     (rel < PCI_CFG_REGION_SIZE).then_some((rel / 4) as u16)
 }
 
+fn queue_bit(index: usize) -> Option<u8> {
+    (index < u8::BITS as usize).then(|| 1u8 << index)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Descriptor {
     addr: u64,
@@ -1787,12 +2005,15 @@ struct Descriptor {
 
 impl Descriptor {
     fn read(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<Self> {
-        let bytes = mem.read_bytes(gpa, DESC_SIZE as usize)?;
+        let mut bytes = [0u8; DESC_SIZE as usize];
+        if !mem.read_into(gpa, &mut bytes) {
+            return None;
+        }
         Some(Self {
-            addr: u64::from_le_bytes(bytes[0..8].try_into().ok()?),
-            len: u32::from_le_bytes(bytes[8..12].try_into().ok()?),
-            flags: u16::from_le_bytes(bytes[12..14].try_into().ok()?),
-            next: u16::from_le_bytes(bytes[14..16].try_into().ok()?),
+            addr: u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            len: u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
+            flags: u16::from_le_bytes(bytes[12..14].try_into().unwrap()),
+            next: u16::from_le_bytes(bytes[14..16].try_into().unwrap()),
         })
     }
 }
@@ -1839,7 +2060,7 @@ impl CtrlHdr {
     }
 }
 
-fn response_hdr(typ: u32, request: Option<CtrlHdr>) -> Vec<u8> {
+fn response_hdr_into(out: &mut Vec<u8>, typ: u32, request: Option<CtrlHdr>) {
     let hdr = request.map_or(
         CtrlHdr {
             typ,
@@ -1850,9 +2071,9 @@ fn response_hdr(typ: u32, request: Option<CtrlHdr>) -> Vec<u8> {
         },
         |hdr| hdr.response(typ),
     );
-    let mut out = Vec::with_capacity(24);
-    hdr.append_to(&mut out);
-    out
+    out.clear();
+    out.reserve(24);
+    hdr.append_to(out);
 }
 
 /// Commands routed to the 3D backend (`handle_control_request`'s 3D arm). Only
@@ -1917,26 +2138,35 @@ fn response_name(typ: u32) -> &'static str {
     }
 }
 
-fn trace_command_details(request: &[u8], hdr: CtrlHdr) -> String {
+fn write_trace_command_details(out: &mut String, request: &[u8], hdr: CtrlHdr) {
     match hdr.typ {
-        VIRTIO_GPU_CMD_RESOURCE_CREATE_2D => format!(
-            ",\"resource_id\":{},\"format\":{},\"width\":{},\"height\":{}",
-            read_le_u32(request, 24).unwrap_or(0),
-            read_le_u32(request, 28).unwrap_or(0),
-            read_le_u32(request, 32).unwrap_or(0),
-            read_le_u32(request, 36).unwrap_or(0)
-        ),
+        VIRTIO_GPU_CMD_RESOURCE_CREATE_2D => {
+            let _ = write!(
+                out,
+                ",\"resource_id\":{},\"format\":{},\"width\":{},\"height\":{}",
+                read_le_u32(request, 24).unwrap_or(0),
+                read_le_u32(request, 28).unwrap_or(0),
+                read_le_u32(request, 32).unwrap_or(0),
+                read_le_u32(request, 36).unwrap_or(0)
+            );
+        }
         VIRTIO_GPU_CMD_RESOURCE_UNREF
         | VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING
-        | VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => format!(
-            ",\"resource_id\":{}",
-            read_le_u32(request, 24).unwrap_or(0)
-        ),
-        VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING => format!(
-            ",\"resource_id\":{},\"nr_entries\":{}",
-            read_le_u32(request, 24).unwrap_or(0),
-            read_le_u32(request, 28).unwrap_or(0)
-        ),
+        | VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => {
+            let _ = write!(
+                out,
+                ",\"resource_id\":{}",
+                read_le_u32(request, 24).unwrap_or(0)
+            );
+        }
+        VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING => {
+            let _ = write!(
+                out,
+                ",\"resource_id\":{},\"nr_entries\":{}",
+                read_le_u32(request, 24).unwrap_or(0),
+                read_le_u32(request, 28).unwrap_or(0)
+            );
+        }
         VIRTIO_GPU_CMD_SET_SCANOUT => {
             let rect = read_rect(request, 24).unwrap_or(Rect {
                 x: 0,
@@ -1944,7 +2174,8 @@ fn trace_command_details(request: &[u8], hdr: CtrlHdr) -> String {
                 width: 0,
                 height: 0,
             });
-            format!(
+            let _ = write!(
+                out,
                 ",\"scanout_id\":{},\"resource_id\":{},\"rect_x\":{},\"rect_y\":{},\"rect_w\":{},\"rect_h\":{}",
                 read_le_u32(request, 40).unwrap_or(u32::MAX),
                 read_le_u32(request, 44).unwrap_or(0),
@@ -1952,7 +2183,7 @@ fn trace_command_details(request: &[u8], hdr: CtrlHdr) -> String {
                 rect.y,
                 rect.width,
                 rect.height
-            )
+            );
         }
         VIRTIO_GPU_CMD_RESOURCE_FLUSH => {
             let rect = read_rect(request, 24).unwrap_or(Rect {
@@ -1961,14 +2192,15 @@ fn trace_command_details(request: &[u8], hdr: CtrlHdr) -> String {
                 width: 0,
                 height: 0,
             });
-            format!(
+            let _ = write!(
+                out,
                 ",\"resource_id\":{},\"rect_x\":{},\"rect_y\":{},\"rect_w\":{},\"rect_h\":{}",
                 read_le_u32(request, 40).unwrap_or(0),
                 rect.x,
                 rect.y,
                 rect.width,
                 rect.height
-            )
+            );
         }
         VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D => {
             let rect = read_rect(request, 24).unwrap_or(Rect {
@@ -1977,7 +2209,8 @@ fn trace_command_details(request: &[u8], hdr: CtrlHdr) -> String {
                 width: 0,
                 height: 0,
             });
-            format!(
+            let _ = write!(
+                out,
                 ",\"resource_id\":{},\"offset\":{},\"rect_x\":{},\"rect_y\":{},\"rect_w\":{},\"rect_h\":{}",
                 read_le_u32(request, 48).unwrap_or(0),
                 read_le_u64(request, 40).unwrap_or(0),
@@ -1985,26 +2218,35 @@ fn trace_command_details(request: &[u8], hdr: CtrlHdr) -> String {
                 rect.y,
                 rect.width,
                 rect.height
-            )
+            );
         }
-        VIRTIO_GPU_CMD_GET_CAPSET_INFO => format!(
-            ",\"capset_index\":{}",
-            read_le_u32(request, 24).unwrap_or(u32::MAX)
-        ),
-        VIRTIO_GPU_CMD_GET_CAPSET => format!(
-            ",\"capset_id\":{},\"capset_version\":{}",
-            read_le_u32(request, 24).unwrap_or(0),
-            read_le_u32(request, 28).unwrap_or(0)
-        ),
-        VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB => format!(
-            ",\"resource_id\":{},\"blob_mem\":{},\"blob_flags\":{},\"nr_entries\":{},\"blob_id\":{},\"blob_size\":{}",
-            read_le_u32(request, 24).unwrap_or(0),
-            read_le_u32(request, 28).unwrap_or(0),
-            read_le_u32(request, 32).unwrap_or(0),
-            read_le_u32(request, 36).unwrap_or(0),
-            read_le_u64(request, 40).unwrap_or(0),
-            read_le_u64(request, 48).unwrap_or(0)
-        ),
+        VIRTIO_GPU_CMD_GET_CAPSET_INFO => {
+            let _ = write!(
+                out,
+                ",\"capset_index\":{}",
+                read_le_u32(request, 24).unwrap_or(u32::MAX)
+            );
+        }
+        VIRTIO_GPU_CMD_GET_CAPSET => {
+            let _ = write!(
+                out,
+                ",\"capset_id\":{},\"capset_version\":{}",
+                read_le_u32(request, 24).unwrap_or(0),
+                read_le_u32(request, 28).unwrap_or(0)
+            );
+        }
+        VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB => {
+            let _ = write!(
+                out,
+                ",\"resource_id\":{},\"blob_mem\":{},\"blob_flags\":{},\"nr_entries\":{},\"blob_id\":{},\"blob_size\":{}",
+                read_le_u32(request, 24).unwrap_or(0),
+                read_le_u32(request, 28).unwrap_or(0),
+                read_le_u32(request, 32).unwrap_or(0),
+                read_le_u32(request, 36).unwrap_or(0),
+                read_le_u64(request, 40).unwrap_or(0),
+                read_le_u64(request, 48).unwrap_or(0)
+            );
+        }
         VIRTIO_GPU_CMD_SET_SCANOUT_BLOB => {
             let rect = read_rect(request, 24).unwrap_or(Rect {
                 x: 0,
@@ -2012,7 +2254,8 @@ fn trace_command_details(request: &[u8], hdr: CtrlHdr) -> String {
                 width: 0,
                 height: 0,
             });
-            format!(
+            let _ = write!(
+                out,
                 ",\"scanout_id\":{},\"resource_id\":{},\"width\":{},\"height\":{},\"format\":{},\"stride0\":{},\"offset0\":{},\"rect_x\":{},\"rect_y\":{},\"rect_w\":{},\"rect_h\":{}",
                 read_le_u32(request, 40).unwrap_or(u32::MAX),
                 read_le_u32(request, 44).unwrap_or(0),
@@ -2025,74 +2268,100 @@ fn trace_command_details(request: &[u8], hdr: CtrlHdr) -> String {
                 rect.y,
                 rect.width,
                 rect.height
-            )
+            );
         }
         VIRTIO_GPU_CMD_CTX_CREATE => {
             let nlen = read_le_u32(request, 24).unwrap_or(0).min(64) as usize;
             let name_end = 32usize.saturating_add(nlen).min(request.len());
+            let _ = write!(
+                out,
+                ",\"context_init\":{},\"name_len\":{},\"debug_name\":",
+                read_le_u32(request, 28).unwrap_or(0),
+                nlen
+            );
             let name = request
                 .get(32..name_end)
-                .map(|bytes| String::from_utf8_lossy(bytes).to_string())
+                .map(String::from_utf8_lossy)
                 .unwrap_or_default();
-            format!(
-                ",\"context_init\":{},\"name_len\":{},\"debug_name\":{}",
-                read_le_u32(request, 28).unwrap_or(0),
-                nlen,
-                json_string(&name)
-            )
+            write_json_string(out, name.as_ref());
         }
-        VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE | VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE => format!(
-            ",\"resource_id\":{}",
-            read_le_u32(request, 24).unwrap_or(0)
-        ),
+        VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE | VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE => {
+            let _ = write!(
+                out,
+                ",\"resource_id\":{}",
+                read_le_u32(request, 24).unwrap_or(0)
+            );
+        }
         VIRTIO_GPU_CMD_SUBMIT_3D => {
             let size = read_le_u32(request, 24).unwrap_or(0) as usize;
             let payload_start = 32usize.min(request.len());
             let payload_end = payload_start.saturating_add(size).min(request.len());
             let payload = request.get(payload_start..payload_end).unwrap_or(&[]);
-            format!(
-                ",\"submit_size\":{},\"submit_dwords\":{},\"submit_prefix_hex\":{}",
+            let _ = write!(
+                out,
+                ",\"submit_size\":{},\"submit_dwords\":{},\"submit_prefix_hex\":",
                 size,
-                size.div_ceil(4),
-                json_string(&hex_prefix(payload, 32))
-            )
+                size.div_ceil(4)
+            );
+            write_hex_prefix_json(out, payload, 32);
         }
-        VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB => format!(
-            ",\"resource_id\":{},\"shm_offset\":{}",
-            read_le_u32(request, 24).unwrap_or(0),
-            read_le_u64(request, 32).unwrap_or(0)
-        ),
-        _ => String::new(),
+        VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB => {
+            let _ = write!(
+                out,
+                ",\"resource_id\":{},\"shm_offset\":{}",
+                read_le_u32(request, 24).unwrap_or(0),
+                read_le_u64(request, 32).unwrap_or(0)
+            );
+        }
+        _ => {}
     }
 }
 
-fn trace_command_response_details(response_type: u32, response: &[u8]) -> String {
+fn write_trace_command_response_details(out: &mut String, response_type: u32, response: &[u8]) {
     match response_type {
-        virtio_gpu_3d::VIRTIO_GPU_RESP_OK_CAPSET_INFO => format!(
-            ",\"response_capset_id\":{},\"response_capset_max_version\":{},\"response_capset_max_size\":{}",
-            read_le_u32(response, 24).unwrap_or(0),
-            read_le_u32(response, 28).unwrap_or(0),
-            read_le_u32(response, 32).unwrap_or(0)
-        ),
-        virtio_gpu_3d::VIRTIO_GPU_RESP_OK_CAPSET => format!(
-            ",\"response_capset_bytes\":{}",
-            response.len().saturating_sub(24)
-        ),
-        _ => String::new(),
+        virtio_gpu_3d::VIRTIO_GPU_RESP_OK_CAPSET_INFO => {
+            let _ = write!(
+                out,
+                ",\"response_capset_id\":{},\"response_capset_max_version\":{},\"response_capset_max_size\":{}",
+                read_le_u32(response, 24).unwrap_or(0),
+                read_le_u32(response, 28).unwrap_or(0),
+                read_le_u32(response, 32).unwrap_or(0)
+            );
+        }
+        virtio_gpu_3d::VIRTIO_GPU_RESP_OK_CAPSET => {
+            let _ = write!(
+                out,
+                ",\"response_capset_bytes\":{}",
+                response.len().saturating_sub(24)
+            );
+        }
+        _ => {}
     }
 }
 
-fn hex_prefix(bytes: &[u8], max_len: usize) -> String {
-    let mut out = String::new();
+fn write_hex_prefix_json(out: &mut String, bytes: &[u8], max_len: usize) {
+    out.push('"');
+    write_hex_prefix(out, bytes, max_len);
+    out.push('"');
+}
+
+fn write_hex_prefix(out: &mut String, bytes: &[u8], max_len: usize) {
     for (index, byte) in bytes.iter().take(max_len).enumerate() {
         if index > 0 {
             out.push(' ');
         }
-        out.push_str(&format!("{byte:02x}"));
+        let _ = write!(out, "{byte:02x}");
     }
     if bytes.len() > max_len {
         out.push_str(" ...");
     }
+}
+
+#[cfg(test)]
+fn hex_prefix(bytes: &[u8], max_len: usize) -> String {
+    let prefix_len = bytes.len().min(max_len);
+    let mut out = String::with_capacity(prefix_len.saturating_mul(3).saturating_add(4));
+    write_hex_prefix(&mut out, bytes, max_len);
     out
 }
 
@@ -2104,7 +2373,11 @@ fn copy_backing_to_resource(
 ) {
     let x_end = rect.x.saturating_add(rect.width).min(resource.width);
     let y_end = rect.y.saturating_add(rect.height).min(resource.height);
+    if x_end <= rect.x || y_end <= rect.y {
+        return;
+    }
     let stride = u64::from(resource.width) * 4;
+    let row_bytes = ((x_end - rect.x) as usize) * 4;
     // Per the virtio-gpu spec (and QEMU), `offset` locates the box's top-left
     // (rect.x, rect.y) in the backing; source rows advance by `stride` from
     // there. So the backing offset for absolute pixel (x, y) is
@@ -2112,11 +2385,22 @@ fn copy_backing_to_resource(
     // + x*4, which double-counts rect.{x,y} and sends every non-origin partial
     // update (taskbar, clock, cursor) out of bounds so it silently vanishes.
     for y in rect.y..y_end {
+        let guest_row_off = offset + u64::from(y - rect.y) * stride;
+        let dst_row = ((y as usize) * (resource.width as usize) + (rect.x as usize)) * 4;
+        if read_from_backing_into(
+            mem,
+            &resource.backing,
+            guest_row_off,
+            &mut resource.host_pixels[dst_row..dst_row + row_bytes],
+        ) {
+            continue;
+        }
         for x in rect.x..x_end {
-            let guest_off = offset + u64::from(y - rect.y) * stride + u64::from(x - rect.x) * 4;
-            let Some(pixel) = read_from_backing(mem, &resource.backing, guest_off, 4) else {
+            let guest_off = guest_row_off + u64::from(x - rect.x) * 4;
+            let mut pixel = [0u8; 4];
+            if !read_from_backing_into(mem, &resource.backing, guest_off, &mut pixel) {
                 continue;
-            };
+            }
             let dst = ((y as usize) * (resource.width as usize) + (x as usize)) * 4;
             resource.host_pixels[dst..dst + 4].copy_from_slice(&pixel);
         }
@@ -2159,18 +2443,38 @@ fn composite_guest_blob_to_scanout(
     rect: Rect,
     x_end: u32,
     y_end: u32,
+    row_pixels: &mut Vec<u8>,
 ) {
+    row_pixels.clear();
+    if x_end <= rect.x || y_end <= rect.y {
+        return;
+    }
+    let row_bytes = ((x_end - rect.x) as usize) * 4;
+    row_pixels.resize(row_bytes, 0);
     for y in rect.y..y_end {
+        let row_src =
+            u64::from(blob.offset) + u64::from(y) * u64::from(blob.stride) + u64::from(rect.x) * 4;
+        if read_from_blob_backing_into(mem, backing, row_src, row_pixels) {
+            for x in rect.x..x_end {
+                let src = ((x - rect.x) as usize) * 4;
+                let dst = ((y as usize) * (scanout_width as usize) + (x as usize)) * 4;
+                scanout[dst..dst + 4]
+                    .copy_from_slice(&to_xrgb8888(&row_pixels[src..src + 4], blob.format));
+            }
+            continue;
+        }
         for x in rect.x..x_end {
             let src =
                 u64::from(blob.offset) + u64::from(y) * u64::from(blob.stride) + u64::from(x) * 4;
-            let Some(pixel) = read_from_blob_backing(mem, backing, src, 4) else {
+            let mut pixel = [0u8; 4];
+            if !read_from_blob_backing_into(mem, backing, src, &mut pixel) {
                 continue;
-            };
+            }
             let dst = ((y as usize) * (scanout_width as usize) + (x as usize)) * 4;
             scanout[dst..dst + 4].copy_from_slice(&to_xrgb8888(&pixel, blob.format));
         }
     }
+    row_pixels.clear();
 }
 
 fn composite_host_blob_to_scanout(
@@ -2187,7 +2491,7 @@ fn composite_host_blob_to_scanout(
             let src = (blob.offset as usize)
                 .saturating_add((y as usize).saturating_mul(blob.stride as usize))
                 .saturating_add((x as usize).saturating_mul(4));
-            if src.checked_add(4).is_none_or(|end| end > pixels.len()) {
+            if !matches!(src.checked_add(4), Some(end) if end <= pixels.len()) {
                 continue;
             }
             let dst = ((y as usize) * (scanout_width as usize) + (x as usize)) * 4;
@@ -2205,42 +2509,58 @@ fn to_xrgb8888(pixel: &[u8], format: u32) -> [u8; 4] {
     }
 }
 
-fn read_from_blob_backing(
+fn read_from_blob_backing_into(
     mem: &dyn GuestMemoryMut,
     backing: &[virtio_gpu_3d::BlobMemEntry],
     offset: u64,
-    len: usize,
-) -> Option<Vec<u8>> {
+    dst: &mut [u8],
+) -> bool {
     let mut base = 0u64;
+    let Ok(len_u64) = u64::try_from(dst.len()) else {
+        return false;
+    };
     for entry in backing {
-        let end = base.checked_add(u64::from(entry.len))?;
-        let len_u64 = u64::try_from(len).ok()?;
-        if offset >= base && offset.checked_add(len_u64)? <= end {
+        let Some(entry_end) = base.checked_add(u64::from(entry.len)) else {
+            return false;
+        };
+        if offset >= base
+            && offset
+                .checked_add(len_u64)
+                .is_some_and(|range_end| range_end <= entry_end)
+        {
             let rel = offset - base;
-            return mem.read_bytes(entry.addr + rel, len);
+            return mem.read_into(entry.addr + rel, dst);
         }
-        base = end;
+        base = entry_end;
     }
-    None
+    false
 }
 
-fn read_from_backing(
+fn read_from_backing_into(
     mem: &dyn GuestMemoryMut,
     backing: &[BackingEntry],
     offset: u64,
-    len: usize,
-) -> Option<Vec<u8>> {
+    dst: &mut [u8],
+) -> bool {
     let mut base = 0u64;
+    let Ok(len_u64) = u64::try_from(dst.len()) else {
+        return false;
+    };
     for entry in backing {
-        let end = base.checked_add(u64::from(entry.len))?;
-        let len_u64 = u64::try_from(len).ok()?;
-        if offset >= base && offset.checked_add(len_u64)? <= end {
+        let Some(entry_end) = base.checked_add(u64::from(entry.len)) else {
+            return false;
+        };
+        if offset >= base
+            && offset
+                .checked_add(len_u64)
+                .is_some_and(|range_end| range_end <= entry_end)
+        {
             let rel = offset - base;
-            return mem.read_bytes(entry.addr + rel, len);
+            return mem.read_into(entry.addr + rel, dst);
         }
-        base = end;
+        base = entry_end;
     }
-    None
+    false
 }
 
 fn blob_surface_footprint(width: u32, height: u32, stride: u32, offset: u32) -> Option<u64> {
@@ -2492,8 +2812,9 @@ fn read_le_from_bytes(bytes: &[u8], offset: u64, size: u8) -> Option<u64> {
 }
 
 fn read_u16(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<u16> {
-    let bytes = mem.read_bytes(gpa, 2)?;
-    Some(u16::from_le_bytes(bytes.try_into().ok()?))
+    let mut bytes = [0u8; 2];
+    mem.read_into(gpa, &mut bytes)
+        .then(|| u16::from_le_bytes(bytes))
 }
 
 fn read_le_u32(bytes: &[u8], offset: usize) -> Option<u32> {
@@ -2558,6 +2879,20 @@ mod tests {
             (end <= self.bytes.len()).then(|| self.bytes[off..end].to_vec())
         }
 
+        fn read_into(&self, gpa: u64, dst: &mut [u8]) -> bool {
+            let Some(off) = gpa.checked_sub(self.base).map(|v| v as usize) else {
+                return false;
+            };
+            let Some(end) = off.checked_add(dst.len()) else {
+                return false;
+            };
+            if end > self.bytes.len() {
+                return false;
+            }
+            dst.copy_from_slice(&self.bytes[off..end]);
+            true
+        }
+
         fn host_ptr(&self, gpa: u64, len: usize) -> Option<*mut u8> {
             let off = gpa.checked_sub(self.base)? as usize;
             let end = off.checked_add(len)?;
@@ -2597,6 +2932,34 @@ mod tests {
         pci_write(dev, COMMON_QUEUE_ENABLE, 2, 1, mem);
     }
 
+    fn program_msix_vector(dev: &mut VirtioPciGpu, vector: u16, address: u64, data: u32) {
+        let off = u64::from(VIRTIO_GPU_MSIX_TABLE_OFFSET) + u64::from(vector) * 16;
+        assert_eq!(
+            dev.msix_bar_access(
+                off,
+                VirtioPciGpuOp::Write {
+                    size: 8,
+                    value: address,
+                },
+            ),
+            VirtioGpuResult::WriteAck
+        );
+        assert_eq!(
+            dev.msix_bar_access(
+                off + 8,
+                VirtioPciGpuOp::Write {
+                    size: 4,
+                    value: u64::from(data),
+                },
+            ),
+            VirtioGpuResult::WriteAck
+        );
+        assert_eq!(
+            dev.msix_bar_access(off + 12, VirtioPciGpuOp::Write { size: 4, value: 0 },),
+            VirtioGpuResult::WriteAck
+        );
+    }
+
     fn write_desc(
         mem: &mut TestMem,
         table: u64,
@@ -2627,6 +2990,14 @@ mod tests {
         let mut out = ctrl_req(typ);
         out[16..20].copy_from_slice(&ctx_id.to_le_bytes());
         out
+    }
+
+    #[test]
+    fn hex_prefix_formats_bounded_payloads() {
+        assert_eq!(hex_prefix(&[], 32), "");
+        assert_eq!(hex_prefix(&[0x00, 0x0f, 0xa5], 32), "00 0f a5");
+        assert_eq!(hex_prefix(&[0x00, 0x01, 0x02, 0x03], 3), "00 01 02 ...");
+        assert_eq!(hex_prefix(&[0x7f], 0), " ...");
     }
 
     fn create_blob_req(
@@ -2753,11 +3124,28 @@ mod tests {
         readable: &[&[u8]],
         response_len: u32,
     ) -> (Vec<u8>, u16) {
-        let desc = 0x4000_1000;
+        submit_control_readable_descs_at(
+            dev,
+            mem,
+            readable,
+            response_len,
+            0x4000_1000,
+            0x4000_4000,
+            0x4000_9000,
+        )
+    }
+
+    fn submit_control_readable_descs_at(
+        dev: &mut VirtioPciGpu,
+        mem: &mut TestMem,
+        readable: &[&[u8]],
+        response_len: u32,
+        desc: u64,
+        req: u64,
+        resp: u64,
+    ) -> (Vec<u8>, u16) {
         let avail = 0x4000_2000;
         let used = 0x4000_3000;
-        let req = 0x4000_4000;
-        let resp = 0x4000_9000;
         setup_queue(dev, mem, 0, desc, avail, used, 0);
         let next_avail = dev.stats().queues[0].last_avail_idx.wrapping_add(1);
         let ring_slot = dev.stats().queues[0].last_avail_idx % 16;
@@ -2907,6 +3295,122 @@ mod tests {
     }
 
     #[test]
+    fn trace_command_reuses_field_scratch_across_records() {
+        let path = trace_test_path("command-field-scratch");
+        let (mut dev, _backend) = dev_with_mock();
+        dev.gpu.trace = crate::virtio_gpu_trace::VirtioGpuTraceRecorder::test_file(&path);
+        let mut mem = TestMem::new(0x4000_0000, 0x10000);
+        let req = {
+            let mut req = ctrl_req(VIRTIO_GPU_CMD_GET_CAPSET_INFO);
+            req.extend_from_slice(&0u32.to_le_bytes());
+            req.extend_from_slice(&0u32.to_le_bytes());
+            req
+        };
+
+        let _ = submit_control(&mut dev, &mut mem, &req, 40);
+        let cap = dev.gpu.trace_fields_scratch.capacity();
+        let ptr = dev.gpu.trace_fields_scratch.as_ptr();
+        assert!(cap > 0);
+        assert!(dev.gpu.trace_fields_scratch.is_empty());
+
+        let _ = submit_control(&mut dev, &mut mem, &req, 40);
+
+        assert_eq!(dev.gpu.trace_fields_scratch.capacity(), cap);
+        assert_eq!(dev.gpu.trace_fields_scratch.as_ptr(), ptr);
+        assert!(dev.gpu.trace_fields_scratch.is_empty());
+        drop(dev);
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(path);
+        assert!(contents.matches("\"event\":\"command\"").count() >= 2);
+    }
+
+    #[test]
+    fn trace_non_command_events_reuse_field_scratch() {
+        let path = trace_test_path("non-command-field-scratch");
+        let mut dev = VirtioPciGpu::new(1600, 900);
+        dev.gpu.trace = crate::virtio_gpu_trace::VirtioGpuTraceRecorder::disabled();
+        dev.gpu.trace_fields_scratch = String::new();
+
+        dev.gpu.write_status(1);
+        dev.gpu.write_driver_features(0xffff);
+        dev.gpu.trace_queue_notify(42);
+        assert_eq!(dev.gpu.trace_fields_scratch.capacity(), 0);
+
+        dev.gpu.trace = crate::virtio_gpu_trace::VirtioGpuTraceRecorder::test_file(&path);
+        dev.gpu.write_status(1);
+        dev.gpu.write_driver_features(0xffff);
+        dev.gpu.trace_common_read(REG_STATUS, 4, 1);
+        dev.gpu.trace_queue_notify(42);
+        dev.gpu.trace_fence_create(
+            CompletedFence {
+                ctx_id: 1,
+                ring_idx: 2,
+                fence_id: 3,
+            },
+            true,
+            "accepted",
+        );
+        dev.gpu.trace_fence_complete(CompletedFence {
+            ctx_id: 1,
+            ring_idx: 2,
+            fence_id: 3,
+        });
+        dev.gpu.trace_fence_delivery(
+            CompletedFence {
+                ctx_id: 1,
+                ring_idx: 2,
+                fence_id: 3,
+            },
+            24,
+        );
+        let cap = dev.gpu.trace_fields_scratch.capacity();
+        let ptr = dev.gpu.trace_fields_scratch.as_ptr();
+        assert!(cap > 0);
+        assert!(dev.gpu.trace_fields_scratch.is_empty());
+
+        dev.gpu.write_status(1);
+        dev.gpu.write_driver_features(0xffff);
+        dev.gpu.trace_common_read(REG_STATUS, 4, 1);
+        dev.gpu.trace_queue_notify(42);
+        dev.gpu.trace_fence_create(
+            CompletedFence {
+                ctx_id: 1,
+                ring_idx: 2,
+                fence_id: 3,
+            },
+            true,
+            "accepted",
+        );
+        dev.gpu.trace_fence_complete(CompletedFence {
+            ctx_id: 1,
+            ring_idx: 2,
+            fence_id: 3,
+        });
+        dev.gpu.trace_fence_delivery(
+            CompletedFence {
+                ctx_id: 1,
+                ring_idx: 2,
+                fence_id: 3,
+            },
+            24,
+        );
+
+        assert_eq!(dev.gpu.trace_fields_scratch.capacity(), cap);
+        assert_eq!(dev.gpu.trace_fields_scratch.as_ptr(), ptr);
+        assert!(dev.gpu.trace_fields_scratch.is_empty());
+        drop(dev);
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(path);
+        assert!(contents.contains("\"event\":\"device_status\""));
+        assert!(contents.contains("\"event\":\"driver_features\""));
+        assert!(contents.contains("\"event\":\"common_read\""));
+        assert!(contents.contains("\"event\":\"queue_notify\""));
+        assert!(contents.contains("\"event\":\"fence_create\""));
+        assert!(contents.contains("\"event\":\"fence_complete\""));
+        assert!(contents.contains("\"event\":\"fence_deliver\""));
+    }
+
+    #[test]
     fn get_display_info_reports_configured_scanout() {
         let mut dev = VirtioPciGpu::new(1600, 900);
         let mut mem = TestMem::new(0x4000_0000, 0x20000);
@@ -2923,6 +3427,35 @@ mod tests {
     }
 
     #[test]
+    fn control_queue_pending_msix_survives_until_table_entry_is_programmed() {
+        let mut dev = VirtioPciGpu::new(1600, 900);
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        let resp = submit_control(
+            &mut dev,
+            &mut mem,
+            &ctrl_req(VIRTIO_GPU_CMD_GET_DISPLAY_INFO),
+            408,
+        );
+
+        assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_DISPLAY_INFO));
+        assert!(dev.stats().queues[0].pending_msix);
+        assert_eq!(dev.drain_pending_msix(true, false), Vec::new());
+        assert!(dev.stats().queues[0].pending_msix);
+
+        program_msix_vector(&mut dev, 0, 0xfee0_0000, 0x40);
+
+        assert_eq!(
+            dev.drain_pending_msix(true, false),
+            vec![MsixMessage {
+                vector: 0,
+                address: 0xfee0_0000,
+                data: 0x40,
+            }]
+        );
+        assert!(!dev.stats().queues[0].pending_msix);
+    }
+
+    #[test]
     fn get_edid_returns_checksum_valid_base_block() {
         let mut dev = VirtioPciGpu::new(1280, 800);
         let mut mem = TestMem::new(0x4000_0000, 0x20000);
@@ -2934,6 +3467,203 @@ mod tests {
         assert_eq!(
             edid.iter().fold(0u8, |acc, byte| acc.wrapping_add(*byte)),
             0
+        );
+    }
+
+    #[test]
+    fn gather_readable_skips_writable_and_unbacked_descriptors() {
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        mem.write(0x4000_1000, b"head");
+        mem.write(0x4000_2000, b"skip");
+        mem.write(0x4000_3000, b"tail");
+
+        let mut gathered = Vec::new();
+        VirtioGpu::gather_readable_into(
+            &mem,
+            &[
+                Descriptor {
+                    addr: 0x4000_1000,
+                    len: 4,
+                    flags: 0,
+                    next: 0,
+                },
+                Descriptor {
+                    addr: 0x4000_2000,
+                    len: 4,
+                    flags: DESC_F_WRITE,
+                    next: 0,
+                },
+                Descriptor {
+                    addr: 0x3fff_ff00,
+                    len: 4,
+                    flags: 0,
+                    next: 0,
+                },
+                Descriptor {
+                    addr: 0x4000_3000,
+                    len: 4,
+                    flags: 0,
+                    next: 0,
+                },
+            ],
+            &mut gathered,
+        );
+
+        assert_eq!(gathered, b"headtail");
+    }
+
+    #[test]
+    fn gather_readable_rejects_oversized_guest_length_before_growing_scratch() {
+        let mem = TestMem::new(0x4000_0000, 0x1000);
+        let mut gathered = Vec::with_capacity(32);
+        let capacity = gathered.capacity();
+
+        VirtioGpu::gather_readable_into(
+            &mem,
+            &[Descriptor {
+                addr: 0x4000_0800,
+                len: u32::MAX,
+                flags: 0,
+                next: 0,
+            }],
+            &mut gathered,
+        );
+
+        assert!(gathered.is_empty());
+        assert_eq!(gathered.capacity(), capacity);
+    }
+
+    #[test]
+    fn control_queue_reuses_descriptor_request_and_response_scratch_for_immediate_commands() {
+        let mut dev = VirtioPciGpu::new(4, 3);
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        let request = ctrl_req(VIRTIO_GPU_CMD_GET_DISPLAY_INFO);
+
+        let first = submit_control(&mut dev, &mut mem, &request, 408);
+        assert_eq!(
+            read_le_u32(&first, 0),
+            Some(VIRTIO_GPU_RESP_OK_DISPLAY_INFO)
+        );
+        let first_desc_capacity = dev.gpu.descriptor_scratch.capacity();
+        let first_request_capacity = dev.gpu.request_scratch.capacity();
+        let first_response_capacity = dev.gpu.response_scratch.capacity();
+        let first_response_ptr = dev.gpu.response_scratch.as_ptr();
+        assert!(dev.gpu.descriptor_scratch.is_empty());
+        assert!(dev.gpu.request_scratch.is_empty());
+        assert!(dev.gpu.response_scratch.is_empty());
+        assert!(first_desc_capacity >= 2);
+        assert!(first_request_capacity >= request.len());
+        assert!(first_response_capacity >= first.len());
+
+        let second = submit_control(&mut dev, &mut mem, &request, 408);
+        assert_eq!(
+            read_le_u32(&second, 0),
+            Some(VIRTIO_GPU_RESP_OK_DISPLAY_INFO)
+        );
+        assert_eq!(dev.gpu.descriptor_scratch.capacity(), first_desc_capacity);
+        assert_eq!(dev.gpu.request_scratch.capacity(), first_request_capacity);
+        assert_eq!(dev.gpu.response_scratch.capacity(), first_response_capacity);
+        assert_eq!(dev.gpu.response_scratch.as_ptr(), first_response_ptr);
+        assert!(dev.gpu.descriptor_scratch.is_empty());
+        assert!(dev.gpu.request_scratch.is_empty());
+        assert!(dev.gpu.response_scratch.is_empty());
+    }
+
+    #[test]
+    fn attach_backing_reuses_resource_backing_and_preserves_on_malformed_request() {
+        let mut gpu = VirtioGpu::new(4, 3);
+        let mut response = Vec::new();
+        let mut create = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_CREATE_2D);
+        create.extend_from_slice(&1u32.to_le_bytes());
+        create.extend_from_slice(&FORMAT_B8G8R8A8_UNORM.to_le_bytes());
+        create.extend_from_slice(&4u32.to_le_bytes());
+        create.extend_from_slice(&3u32.to_le_bytes());
+        let hdr = CtrlHdr::parse(&create).unwrap();
+        gpu.resource_create_2d_into(&create, Some(hdr), &mut response);
+        assert_eq!(read_le_u32(&response, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+
+        let mut attach = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING);
+        attach.extend_from_slice(&1u32.to_le_bytes());
+        attach.extend_from_slice(&2u32.to_le_bytes());
+        attach.extend_from_slice(&0x4000_8000u64.to_le_bytes());
+        attach.extend_from_slice(&4u32.to_le_bytes());
+        attach.extend_from_slice(&0u32.to_le_bytes());
+        attach.extend_from_slice(&0x4000_9000u64.to_le_bytes());
+        attach.extend_from_slice(&8u32.to_le_bytes());
+        attach.extend_from_slice(&0u32.to_le_bytes());
+        let hdr = CtrlHdr::parse(&attach).unwrap();
+        gpu.attach_backing_into(&attach, Some(hdr), &mut response);
+        assert_eq!(read_le_u32(&response, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+        let resource = gpu.resources.get(&1).unwrap();
+        assert_eq!(
+            resource.backing,
+            vec![
+                BackingEntry {
+                    addr: 0x4000_8000,
+                    len: 4
+                },
+                BackingEntry {
+                    addr: 0x4000_9000,
+                    len: 8
+                },
+            ]
+        );
+        let backing_ptr = resource.backing.as_ptr();
+        let backing_capacity = resource.backing.capacity();
+
+        let mut malformed = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING);
+        malformed.extend_from_slice(&1u32.to_le_bytes());
+        malformed.extend_from_slice(&2u32.to_le_bytes());
+        malformed.extend_from_slice(&0x4000_a000u64.to_le_bytes());
+        malformed.extend_from_slice(&4u32.to_le_bytes());
+        malformed.extend_from_slice(&0u32.to_le_bytes());
+        let hdr = CtrlHdr::parse(&malformed).unwrap();
+        gpu.attach_backing_into(&malformed, Some(hdr), &mut response);
+        assert_eq!(read_le_u32(&response, 0), Some(VIRTIO_GPU_RESP_ERR_UNSPEC));
+        let resource = gpu.resources.get(&1).unwrap();
+        assert_eq!(resource.backing.as_ptr(), backing_ptr);
+        assert_eq!(resource.backing.capacity(), backing_capacity);
+        assert_eq!(
+            resource.backing,
+            vec![
+                BackingEntry {
+                    addr: 0x4000_8000,
+                    len: 4
+                },
+                BackingEntry {
+                    addr: 0x4000_9000,
+                    len: 8
+                },
+            ]
+        );
+
+        let mut reattach = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING);
+        reattach.extend_from_slice(&1u32.to_le_bytes());
+        reattach.extend_from_slice(&2u32.to_le_bytes());
+        reattach.extend_from_slice(&0x4000_b000u64.to_le_bytes());
+        reattach.extend_from_slice(&16u32.to_le_bytes());
+        reattach.extend_from_slice(&0u32.to_le_bytes());
+        reattach.extend_from_slice(&0x4000_c000u64.to_le_bytes());
+        reattach.extend_from_slice(&32u32.to_le_bytes());
+        reattach.extend_from_slice(&0u32.to_le_bytes());
+        let hdr = CtrlHdr::parse(&reattach).unwrap();
+        gpu.attach_backing_into(&reattach, Some(hdr), &mut response);
+        assert_eq!(read_le_u32(&response, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+        let resource = gpu.resources.get(&1).unwrap();
+        assert_eq!(resource.backing.as_ptr(), backing_ptr);
+        assert_eq!(resource.backing.capacity(), backing_capacity);
+        assert_eq!(
+            resource.backing,
+            vec![
+                BackingEntry {
+                    addr: 0x4000_b000,
+                    len: 16
+                },
+                BackingEntry {
+                    addr: 0x4000_c000,
+                    len: 32
+                },
+            ]
         );
     }
 
@@ -3055,6 +3785,94 @@ mod tests {
     }
 
     #[test]
+    fn resource_transfer_split_backing_row_falls_back_to_pixel_reads() {
+        let mut dev = VirtioPciGpu::new(2, 1);
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let backing_a = 0x4000_8000;
+        let backing_b = 0x4000_9000;
+        mem.write(backing_a, &[0x11, 0x22, 0x33, 0xff]);
+        mem.write(backing_b, &[0x44, 0x55, 0x66, 0xee]);
+
+        let mut create = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_CREATE_2D);
+        create.extend_from_slice(&1u32.to_le_bytes());
+        create.extend_from_slice(&FORMAT_B8G8R8A8_UNORM.to_le_bytes());
+        create.extend_from_slice(&2u32.to_le_bytes());
+        create.extend_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &create, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let mut attach = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING);
+        attach.extend_from_slice(&1u32.to_le_bytes());
+        attach.extend_from_slice(&2u32.to_le_bytes());
+        attach.extend_from_slice(&backing_a.to_le_bytes());
+        attach.extend_from_slice(&4u32.to_le_bytes());
+        attach.extend_from_slice(&0u32.to_le_bytes());
+        attach.extend_from_slice(&backing_b.to_le_bytes());
+        attach.extend_from_slice(&4u32.to_le_bytes());
+        attach.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &attach, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let mut set_scanout = ctrl_req(VIRTIO_GPU_CMD_SET_SCANOUT);
+        push_rect(
+            &mut set_scanout,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 1,
+            },
+        );
+        set_scanout.extend_from_slice(&0u32.to_le_bytes());
+        set_scanout.extend_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &set_scanout, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let mut transfer = ctrl_req(VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D);
+        push_rect(
+            &mut transfer,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 1,
+            },
+        );
+        transfer.extend_from_slice(&0u64.to_le_bytes());
+        transfer.extend_from_slice(&1u32.to_le_bytes());
+        transfer.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &transfer, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let flush = flush_req(
+            1,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 1,
+            },
+        );
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &flush, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        assert_eq!(
+            &dev.scanout().unwrap().bytes[0..8],
+            &[0x11, 0x22, 0x33, 0, 0x44, 0x55, 0x66, 0]
+        );
+    }
+
+    #[test]
     fn set_scanout_blob_guest_flush_presents_pixels_with_stride_and_offset() {
         let (mut dev, _) = dev_with_mock();
         let mut mem = TestMem::new(0x4000_0000, 0x30000);
@@ -3095,6 +3913,109 @@ mod tests {
         assert_eq!(
             &scanout.bytes[row1..row1 + 8],
             &[0x70, 0x80, 0x90, 0, 0xa0, 0xb0, 0xc0, 0]
+        );
+    }
+
+    #[test]
+    fn set_scanout_blob_guest_flush_reuses_row_scratch() {
+        let (mut dev, _) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let backing = 0x4000_8000;
+        let backing_bytes = [
+            0x10, 0x20, 0x30, 0xff, 0x40, 0x50, 0x60, 0xee, 0x70, 0x80, 0x90, 0xdd, 0xa0, 0xb0,
+            0xc0, 0xcc,
+        ];
+        mem.write(backing, &backing_bytes);
+
+        let create = create_blob_req(17, VIRTIO_GPU_BLOB_MEM_GUEST, 16, &[(backing, 16)]);
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &create, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let set_scanout = set_scanout_blob_req(17, 2, 2, FORMAT_B8G8R8A8_UNORM, 8, 0);
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &set_scanout, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        let flush = flush_req(
+            17,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 2,
+            },
+        );
+
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &flush, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        assert!(dev.gpu.blob_row_scratch.is_empty());
+        assert!(dev.gpu.blob_row_scratch.capacity() >= 8);
+        let row_scratch = (
+            dev.gpu.blob_row_scratch.as_ptr(),
+            dev.gpu.blob_row_scratch.capacity(),
+        );
+
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &flush, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        assert!(dev.gpu.blob_row_scratch.is_empty());
+        assert_eq!(
+            (
+                dev.gpu.blob_row_scratch.as_ptr(),
+                dev.gpu.blob_row_scratch.capacity()
+            ),
+            row_scratch
+        );
+    }
+
+    #[test]
+    fn set_scanout_blob_guest_split_backing_row_falls_back_to_pixel_reads() {
+        let (mut dev, _) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let backing_a = 0x4000_8000;
+        let backing_b = 0x4000_9000;
+        mem.write(backing_a, &[0x12, 0x23, 0x34, 0xff]);
+        mem.write(backing_b, &[0x45, 0x56, 0x67, 0xee]);
+
+        let create = create_blob_req(
+            7,
+            VIRTIO_GPU_BLOB_MEM_GUEST,
+            8,
+            &[(backing_a, 4), (backing_b, 4)],
+        );
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &create, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let set_scanout = set_scanout_blob_req(7, 2, 1, FORMAT_B8G8R8A8_UNORM, 8, 0);
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &set_scanout, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let flush = flush_req(
+            7,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 1,
+            },
+        );
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &flush, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        assert_eq!(
+            &dev.scanout().unwrap().bytes[0..8],
+            &[0x12, 0x23, 0x34, 0, 0x45, 0x56, 0x67, 0]
         );
     }
 
@@ -3303,12 +4224,18 @@ mod tests {
             read_le_u32(&submit_control(&mut dev, &mut mem, &set_scanout, 24), 0),
             Some(VIRTIO_GPU_RESP_OK_NODATA)
         );
+        dev.gpu.scanout[0] = 0xff;
+        let scanout_capacity = dev.gpu.scanout.capacity();
+        let scanout_ptr = dev.gpu.scanout.as_ptr();
 
         dev.reset_runtime_state();
 
         assert!(dev.scanout().is_none());
         assert_eq!(backend.lock().unwrap().unmapped, vec![13]);
         assert!(!dev.stats().scanout_active);
+        assert_eq!(dev.gpu.scanout.capacity(), scanout_capacity);
+        assert_eq!(dev.gpu.scanout.as_ptr(), scanout_ptr);
+        assert!(dev.gpu.scanout.iter().all(|byte| *byte == 0));
     }
 
     #[test]
@@ -3424,6 +4351,7 @@ mod tests {
         assert_eq!(read_le_u32(&resp, 24), Some(4));
         assert_eq!(read_le_u32(&resp, 28), Some(1));
         assert_eq!(read_le_u32(&resp, 32), Some(160));
+        assert!(dev.gpu.response_scratch.is_empty());
 
         let mut get = ctrl_req(VIRTIO_GPU_CMD_GET_CAPSET);
         get.extend_from_slice(&4u32.to_le_bytes());
@@ -3434,6 +4362,19 @@ mod tests {
             Some(virtio_gpu_3d::VIRTIO_GPU_RESP_OK_CAPSET)
         );
         assert_eq!(read_le_u32(&resp, 24), Some(1));
+        let response_capacity = dev.gpu.response_scratch.capacity();
+        let response_ptr = dev.gpu.response_scratch.as_ptr();
+        assert!(response_capacity >= resp.len());
+        assert!(dev.gpu.response_scratch.is_empty());
+
+        let resp = submit_control(&mut dev, &mut mem, &get, 24 + 160);
+        assert_eq!(
+            read_le_u32(&resp, 0),
+            Some(virtio_gpu_3d::VIRTIO_GPU_RESP_OK_CAPSET)
+        );
+        assert_eq!(dev.gpu.response_scratch.capacity(), response_capacity);
+        assert_eq!(dev.gpu.response_scratch.as_ptr(), response_ptr);
+        assert!(dev.gpu.response_scratch.is_empty());
     }
 
     #[test]
@@ -3512,6 +4453,13 @@ mod tests {
         let (_resp, used_idx) = submit_control_readable_descs(&mut dev, &mut mem, &[&req], 24);
         assert_eq!(used_idx, 1);
         assert_eq!(dev.stats().three_d.fences_pending, 1);
+        let pending_capacity = dev.gpu.pending_fenced.capacity();
+        let pending_ptr = dev.gpu.pending_fenced.as_ptr();
+        let parked_desc_capacity = dev.gpu.pending_fenced[0].descs.capacity();
+        let parked_response_capacity = dev.gpu.pending_fenced[0].response.capacity();
+        assert!(pending_capacity >= 1);
+        assert!(parked_desc_capacity >= 2);
+        assert!(parked_response_capacity >= 24);
         assert_eq!(
             backend.lock().unwrap().fences,
             vec![CompletedFence {
@@ -3528,6 +4476,11 @@ mod tests {
         });
         dev.drain_completed_fences(&mut mem);
         assert_eq!(dev.stats().three_d.fences_pending, 1);
+        assert_eq!(dev.gpu.pending_fenced.capacity(), pending_capacity);
+        assert_eq!(dev.gpu.pending_fenced.as_ptr(), pending_ptr);
+        let completed_capacity = dev.gpu.completed_fences_scratch.capacity();
+        let completed_ptr = dev.gpu.completed_fences_scratch.as_ptr();
+        assert!(completed_capacity >= 1);
 
         backend.lock().unwrap().completed.push(CompletedFence {
             ctx_id: 1,
@@ -3536,10 +4489,128 @@ mod tests {
         });
         dev.drain_completed_fences(&mut mem);
         assert_eq!(dev.stats().three_d.fences_pending, 0);
+        assert_eq!(dev.gpu.pending_fenced.capacity(), pending_capacity);
+        assert_eq!(dev.gpu.pending_fenced.as_ptr(), pending_ptr);
+        assert_eq!(
+            dev.gpu.completed_fences_scratch.capacity(),
+            completed_capacity
+        );
+        assert_eq!(dev.gpu.completed_fences_scratch.as_ptr(), completed_ptr);
+        assert!(dev.gpu.descriptor_scratch.capacity() >= parked_desc_capacity);
+        assert!(dev.gpu.response_scratch.capacity() >= parked_response_capacity);
+        assert!(dev.gpu.response_scratch.is_empty());
         assert_eq!(
             u16::from_le_bytes(mem.read(0x4000_3000 + 2, 2).try_into().unwrap()),
             2
         );
+    }
+
+    #[test]
+    fn completed_fence_buffers_pool_reuses_multiple_parked_responses() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x40000);
+        let _ = submit_control(&mut dev, &mut mem, &ctx_create_req(1, 4, b"ctx"), 24);
+
+        let mut req1 = ctrl_req_fenced(VIRTIO_GPU_CMD_SUBMIT_3D, 1, 3, 42);
+        req1.extend_from_slice(&0u32.to_le_bytes());
+        req1.extend_from_slice(&0u32.to_le_bytes());
+        let mut req2 = ctrl_req_fenced(VIRTIO_GPU_CMD_SUBMIT_3D, 1, 3, 43);
+        req2.extend_from_slice(&0u32.to_le_bytes());
+        req2.extend_from_slice(&0u32.to_le_bytes());
+
+        let (_resp, used_idx) = submit_control_readable_descs_at(
+            &mut dev,
+            &mut mem,
+            &[&req1],
+            24,
+            0x4000_1000,
+            0x4000_4000,
+            0x4000_9000,
+        );
+        assert_eq!(used_idx, 1);
+        let (_resp, used_idx) = submit_control_readable_descs_at(
+            &mut dev,
+            &mut mem,
+            &[&req2],
+            24,
+            0x4000_1400,
+            0x4000_6000,
+            0x4000_a000,
+        );
+        assert_eq!(used_idx, 1);
+        assert_eq!(dev.stats().three_d.fences_pending, 2);
+
+        let parked_desc_ptrs = [
+            dev.gpu.pending_fenced[0].descs.as_ptr(),
+            dev.gpu.pending_fenced[1].descs.as_ptr(),
+        ];
+        let parked_response_ptrs = [
+            dev.gpu.pending_fenced[0].response.as_ptr(),
+            dev.gpu.pending_fenced[1].response.as_ptr(),
+        ];
+
+        backend.lock().unwrap().completed.extend([
+            CompletedFence {
+                ctx_id: 1,
+                ring_idx: 3,
+                fence_id: 42,
+            },
+            CompletedFence {
+                ctx_id: 1,
+                ring_idx: 3,
+                fence_id: 43,
+            },
+        ]);
+        dev.drain_completed_fences(&mut mem);
+        assert_eq!(dev.stats().three_d.fences_pending, 0);
+        assert_eq!(dev.gpu.parked_descriptor_scratch.len(), 1);
+        assert_eq!(dev.gpu.parked_response_scratch.len(), 1);
+
+        let mut req3 = ctrl_req_fenced(VIRTIO_GPU_CMD_SUBMIT_3D, 1, 3, 44);
+        req3.extend_from_slice(&0u32.to_le_bytes());
+        req3.extend_from_slice(&0u32.to_le_bytes());
+        let mut req4 = ctrl_req_fenced(VIRTIO_GPU_CMD_SUBMIT_3D, 1, 3, 45);
+        req4.extend_from_slice(&0u32.to_le_bytes());
+        req4.extend_from_slice(&0u32.to_le_bytes());
+
+        let (_resp, used_idx) = submit_control_readable_descs_at(
+            &mut dev,
+            &mut mem,
+            &[&req3],
+            24,
+            0x4000_1800,
+            0x4000_8000,
+            0x4000_b000,
+        );
+        assert_eq!(used_idx, 3);
+        let (_resp, used_idx) = submit_control_readable_descs_at(
+            &mut dev,
+            &mut mem,
+            &[&req4],
+            24,
+            0x4000_1c00,
+            0x4000_c000,
+            0x4000_d000,
+        );
+        assert_eq!(used_idx, 3);
+        assert_eq!(dev.stats().three_d.fences_pending, 2);
+
+        let reused_desc_ptrs = [
+            dev.gpu.pending_fenced[0].descs.as_ptr(),
+            dev.gpu.pending_fenced[1].descs.as_ptr(),
+        ];
+        let reused_response_ptrs = [
+            dev.gpu.pending_fenced[0].response.as_ptr(),
+            dev.gpu.pending_fenced[1].response.as_ptr(),
+        ];
+        for ptr in parked_desc_ptrs {
+            assert!(reused_desc_ptrs.contains(&ptr));
+        }
+        for ptr in parked_response_ptrs {
+            assert!(reused_response_ptrs.contains(&ptr));
+        }
+        assert!(dev.gpu.parked_descriptor_scratch.is_empty());
+        assert!(dev.gpu.parked_response_scratch.is_empty());
     }
 
     #[test]

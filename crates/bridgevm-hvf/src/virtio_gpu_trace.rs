@@ -8,6 +8,7 @@ use std::{
 pub(crate) struct VirtioGpuTraceRecorder {
     sink: Option<TraceSink>,
     seq: u64,
+    line_scratch: String,
 }
 
 enum TraceSink {
@@ -42,6 +43,7 @@ impl VirtioGpuTraceRecorder {
             Ok(value) if trace_truthy(&value) => Self {
                 sink: Some(TraceSink::Stdout),
                 seq: 0,
+                line_scratch: String::new(),
             },
             Ok(value) if !value.trim().is_empty() && !trace_falsey(&value) => Self::file(value),
             _ => Self::disabled(),
@@ -49,7 +51,11 @@ impl VirtioGpuTraceRecorder {
     }
 
     pub(crate) fn disabled() -> Self {
-        Self { sink: None, seq: 0 }
+        Self {
+            sink: None,
+            seq: 0,
+            line_scratch: String::new(),
+        }
     }
 
     fn file(path: impl AsRef<Path>) -> Self {
@@ -61,6 +67,7 @@ impl VirtioGpuTraceRecorder {
             Ok(file) => Self {
                 sink: Some(TraceSink::File(file)),
                 seq: 0,
+                line_scratch: String::new(),
             },
             Err(error) => {
                 eprintln!(
@@ -86,26 +93,34 @@ impl VirtioGpuTraceRecorder {
             return;
         }
         self.seq = self.seq.saturating_add(1);
-        let line = format!(
-            "{{\"seq\":{},\"event\":{}{} }}\n",
-            self.seq,
-            json_string(event),
-            fields.as_ref()
+        self.line_scratch.clear();
+        let _ = fmt::write(
+            &mut self.line_scratch,
+            format_args!("{{\"seq\":{},\"event\":", self.seq),
         );
+        write_json_string(&mut self.line_scratch, event);
+        self.line_scratch.push_str(fields.as_ref());
+        self.line_scratch.push_str(" }\n");
         match self.sink.as_mut().unwrap() {
             TraceSink::Stdout => {
-                print!("{line}");
+                print!("{}", self.line_scratch);
             }
             TraceSink::File(file) => {
-                let _ = file.write_all(line.as_bytes());
+                let _ = file.write_all(self.line_scratch.as_bytes());
                 let _ = file.flush();
             }
         }
     }
 }
 
-pub(crate) fn json_string(value: &str) -> String {
+#[cfg(test)]
+fn json_string(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
+    write_json_string(&mut out, value);
+    out
+}
+
+pub(crate) fn write_json_string(out: &mut String, value: &str) {
     out.push('"');
     for ch in value.chars() {
         match ch {
@@ -117,13 +132,12 @@ pub(crate) fn json_string(value: &str) -> String {
             '\u{08}' => out.push_str("\\b"),
             '\u{0c}' => out.push_str("\\f"),
             ch if ch.is_control() => {
-                out.push_str(&format!("\\u{:04x}", ch as u32));
+                let _ = fmt::write(out, format_args!("\\u{:04x}", ch as u32));
             }
             ch => out.push(ch),
         }
     }
     out.push('"');
-    out
 }
 
 fn trace_truthy(value: &str) -> bool {
@@ -166,6 +180,29 @@ mod tests {
         assert!(contents.contains("\"event\":\"command\""));
         assert!(contents.contains("\"typ\":256"));
         assert!(contents.ends_with('\n'));
+    }
+
+    #[test]
+    fn file_recorder_reuses_line_scratch_across_records() {
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-virtio-gpu-trace-reuse-{}-{}.jsonl",
+            std::process::id(),
+            unique_suffix()
+        ));
+        let mut recorder = VirtioGpuTraceRecorder::test_file(&path);
+        recorder.record("first", ",\"payload\":\"abcdefghijklmnopqrstuvwxyz\"");
+        let cap = recorder.line_scratch.capacity();
+        let ptr = recorder.line_scratch.as_ptr();
+
+        recorder.record("second", ",\"payload\":\"x\"");
+
+        assert_eq!(recorder.line_scratch.capacity(), cap);
+        assert_eq!(recorder.line_scratch.as_ptr(), ptr);
+        drop(recorder);
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(path);
+        assert_eq!(contents.lines().count(), 2);
+        assert!(contents.contains("\"event\":\"second\""));
     }
 
     fn unique_suffix() -> u128 {
