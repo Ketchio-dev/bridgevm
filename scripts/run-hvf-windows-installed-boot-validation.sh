@@ -6,6 +6,47 @@ nonnegative_integer() {
   [[ "$1" =~ ^[0-9]+$ ]]
 }
 
+truthy_env_value() {
+  local value
+  value="${1:-}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+  case "$value" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+smp_cpu_count() {
+  positive_integer "$1" || return 1
+  (( ${#1} <= 3 )) || return 1
+  (( 10#$1 <= 123 ))
+}
+
+boot_timer_ramfb_ms() {
+  positive_integer "$1" || return 1
+  (( ${#1} <= 5 )) || return 1
+  (( 10#$1 >= 100 && 10#$1 <= 60000 ))
+}
+
+u64_literal() {
+  local value="$1"
+  local trimmed
+  case "$value" in
+    0x*|0X*)
+      [[ "${value#??}" =~ ^[0-9a-fA-F]{1,16}$ ]]
+      ;;
+    *)
+      [[ "$value" =~ ^[0-9]+$ ]] || return 1
+      trimmed="${value#"${value%%[!0]*}"}"
+      [[ -n "$trimmed" ]] || trimmed="0"
+      (( ${#trimmed} < 20 )) && return 0
+      [[ ${#trimmed} -eq 20 && "$trimmed" < "18446744073709551616" ]]
+      ;;
+  esac
+}
+
 normalize_virtio_gpu_device_id() {
   local value="$1"
   local upper

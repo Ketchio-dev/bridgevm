@@ -40,7 +40,14 @@ write_installed_boot_preflight() {
     printf 'evidence_dir=%s\n' "$EVIDENCE_DIR"
     printf 'build_profile=%s\n' "$BUILD_PROFILE"
     printf 'daily_preset=%s\n' "$DAILY"
+    printf 'ram_mib=%s\n' "$RAM_MIB"
+    printf 'watchdog_ms=%s\n' "$WATCHDOG_MS"
     printf 'smp_cpus=%s\n' "${SMP_CPUS:-<unset>}"
+    printf 'xhci_report_interval_ms=%s\n' "$([[ "$DAILY" == "1" ]] && printf '30' || printf '<probe-default 30>')"
+    printf 'boot_timer=%s\n' "$BOOT_TIMER"
+    printf 'boot_timer_ramfb_ms=%s\n' "${BOOT_TIMER_RAMFB_MS:-<probe-default 1000>}"
+    printf 'boot_timer_desktop_checksum64=%s\n' "${BOOT_TIMER_DESKTOP_CHECKSUM64:-<unset>}"
+    printf 'boot_timer_desktop_agent=%s\n' "$BOOT_TIMER_DESKTOP_AGENT"
     printf 'virtio_gpu_3d=%s\n' "$VIRTIO_GPU_3D"
     printf 'virtio_gpu_pci_device_id=%s\n' "${VIRTIO_GPU_PCI_DEVICE_ID:-10F7 (BRIDGEVM_VIRTIO_GPU_3D_BIND_ID alias)}"
     printf 'virtio_gpu_trace_jsonl=%s\n' "${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}"
@@ -132,6 +139,9 @@ build_installed_boot_env_args() {
   if [[ "${TRACE_IRQ:-0}" == "1" ]]; then
     COMMON_ENV+=('BRIDGEVM_TRACE_MSIX=1' 'BRIDGEVM_TRACE_SPI=1')
   fi
+  if [[ "${DAILY:-0}" == "1" ]]; then
+    COMMON_ENV+=('BRIDGEVM_XHCI_REPORT_INTERVAL_MS=30')
+  fi
   if [[ -n "$PLACEHOLDER_NSID1" ]]; then
     DISK_ENV=("BRIDGEVM_NVME_DISK=$PLACEHOLDER_NSID1" "BRIDGEVM_NVME_DISK2=$TARGET" 'BRIDGEVM_NVME_DISK2_WRITABLE=1')
   else
@@ -140,6 +150,12 @@ build_installed_boot_env_args() {
   ENV_ARGS=("${COMMON_ENV[@]}" "${DISK_ENV[@]}")
   if [[ -n "$SMP_CPUS" ]]; then
     ENV_ARGS+=("BRIDGEVM_SMP_CPUS=$SMP_CPUS")
+  fi
+  if [[ "$BOOT_TIMER" == "1" ]]; then
+    ENV_ARGS+=('BRIDGEVM_BOOT_TIMER=1')
+    [[ -z "$BOOT_TIMER_RAMFB_MS" ]] || ENV_ARGS+=("BRIDGEVM_BOOT_TIMER_RAMFB_MS=$BOOT_TIMER_RAMFB_MS")
+    [[ -z "$BOOT_TIMER_DESKTOP_CHECKSUM64" ]] || ENV_ARGS+=("BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64=$BOOT_TIMER_DESKTOP_CHECKSUM64")
+    [[ "$BOOT_TIMER_DESKTOP_AGENT" != "1" ]] || ENV_ARGS+=('BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=1')
   fi
   append_input_env_args
   if [[ "$ENABLE_XHCI" != "1" ]]; then
@@ -237,8 +253,21 @@ write_p3_gpu_readiness() {
 }
 
 run_probe_process() {
+  local name
+  local -a env_command=(env)
+  # CLI-owned settings must not leak in from a developer shell. Explicit
+  # ENV_ARGS below are applied after these removals.
+  for name in \
+    BRIDGEVM_SMP_CPUS \
+    BRIDGEVM_BOOT_TIMER \
+    BRIDGEVM_BOOT_TIMER_RAMFB_MS \
+    BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64 \
+    BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT
+  do
+    env_command+=(-u "$name")
+  done
   set +e
-  env "${ENV_ARGS[@]}" "$BIN" > "$EVIDENCE_DIR/run.log" 2>&1 &
+  "${env_command[@]}" "${ENV_ARGS[@]}" "$BIN" > "$EVIDENCE_DIR/run.log" 2>&1 &
   PROBE_PID="$!"
   wait "$PROBE_PID"
   RUN_STATUS="$?"

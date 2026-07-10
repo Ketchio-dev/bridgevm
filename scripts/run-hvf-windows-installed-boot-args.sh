@@ -39,6 +39,11 @@ init_installed_boot_defaults() {
   WATCHDOG_MS_EXPLICIT="0"
   PRINT_POLICY="0"
   SMP_CPUS=""
+  SMP_CPUS_EXPLICIT="0"
+  BOOT_TIMER="0"
+  BOOT_TIMER_RAMFB_MS=""
+  BOOT_TIMER_DESKTOP_CHECKSUM64=""
+  BOOT_TIMER_DESKTOP_AGENT="0"
   XHCI_POLICY=""
   XHCI_REASON=""
   TRACE_IRQ="0"
@@ -66,10 +71,29 @@ parse_installed_boot_args() {
         positive_integer "$2" || { echo "FAIL: --ram-mib requires a positive integer" >&2; exit 2; }
         RAM_MIB="$2"; RAM_MIB_EXPLICIT="1"; shift 2
         ;;
+      --smp-cpus)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        smp_cpu_count "$2" || { echo "FAIL: --smp-cpus requires an integer from 1 to 123" >&2; exit 2; }
+        SMP_CPUS="$2"; SMP_CPUS_EXPLICIT="1"; shift 2
+        ;;
       --ramfb-samples)
         [[ $# -ge 2 ]] || { usage; exit 2; }
         ramfb_sample_list "$2" || { echo "FAIL: --ramfb-samples requires 1-16 positive comma-separated integers, each <= 120000" >&2; exit 2; }
         RAMFB_SAMPLES="$2"; shift 2
+        ;;
+      --boot-timer) BOOT_TIMER="1"; shift ;;
+      --boot-timer-ramfb-ms)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        boot_timer_ramfb_ms "$2" || { echo "FAIL: --boot-timer-ramfb-ms requires an integer from 100 to 60000" >&2; exit 2; }
+        BOOT_TIMER="1"; BOOT_TIMER_RAMFB_MS="$2"; shift 2
+        ;;
+      --boot-timer-desktop-checksum64)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        u64_literal "$2" || { echo "FAIL: --boot-timer-desktop-checksum64 requires a u64 decimal or 0x-prefixed hex value" >&2; exit 2; }
+        BOOT_TIMER="1"; BOOT_TIMER_DESKTOP_CHECKSUM64="$2"; shift 2
+        ;;
+      --boot-timer-desktop-agent)
+        BOOT_TIMER="1"; BOOT_TIMER_DESKTOP_AGENT="1"; shift
         ;;
       --enable-xhci) ENABLE_XHCI="1"; shift ;;
       --virtio-net) VIRTIO_NET="1"; shift ;;
@@ -136,7 +160,7 @@ apply_installed_boot_daily_defaults() {
   [[ "$DAILY" == "1" ]] || return 0
   [[ "$RAM_MIB_EXPLICIT" == "1" ]] || RAM_MIB="6144"
   [[ "$WATCHDOG_MS_EXPLICIT" == "1" ]] || WATCHDOG_MS="86400000"
-  SMP_CPUS="4"
+  [[ "$SMP_CPUS_EXPLICIT" == "1" ]] || SMP_CPUS="4"
   if [[ "$SKIP_BUILD" != "1" ]]; then
     BUILD_PROFILE="release"
   fi
@@ -181,6 +205,14 @@ validate_installed_boot_option_combinations() {
   fi
   if [[ "$REQUIRE_VIOGPU3D_READINESS" == "1" && "$VIRTIO_GPU_3D" != "1" ]]; then
     echo "FAIL: --require-viogpu3d-readiness requires --virtio-gpu-3d" >&2
+    exit 2
+  fi
+  if [[ "$BOOT_TIMER" == "1" && "${BRIDGEVM_SMP_TRACE+x}" == "x" ]] && truthy_env_value "$BRIDGEVM_SMP_TRACE"; then
+    echo "FAIL: --boot-timer cannot be measured with BRIDGEVM_SMP_TRACE=$BRIDGEVM_SMP_TRACE; unset it or set it to 0" >&2
+    exit 2
+  fi
+  if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" && -n "$BOOT_TIMER_DESKTOP_CHECKSUM64" ]]; then
+    echo "FAIL: choose exactly one BOOT_TIMER desktop oracle: --boot-timer-desktop-agent or --boot-timer-desktop-checksum64" >&2
     exit 2
   fi
   if [[ -z "$SETUP_INPUT_ACTIONS" && ( -n "$SETUP_INPUT_MARKER" || -n "$SETUP_INPUT_FIRE_DELAY_MS" || -n "$SETUP_INPUT_RAMFB_DELAY_MS" ) ]]; then
@@ -253,7 +285,14 @@ print_installed_boot_policy() {
   printf '%s\n' \
     "$XHCI_POLICY" \
     "DAILY_PRESET=$DAILY" \
+    "BRIDGEVM_RAM_MIB=$RAM_MIB" \
+    "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=$WATCHDOG_MS" \
     "BRIDGEVM_SMP_CPUS=${SMP_CPUS:-<unset> (probe default 1)}" \
+    "BRIDGEVM_XHCI_REPORT_INTERVAL_MS=$([[ "$DAILY" == "1" ]] && printf '30' || printf '<probe-default 30>')" \
+    "BRIDGEVM_BOOT_TIMER=${BOOT_TIMER/0/<unset>}" \
+    "BRIDGEVM_BOOT_TIMER_RAMFB_MS=${BOOT_TIMER_RAMFB_MS:-<probe-default 1000>}" \
+    "BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64=${BOOT_TIMER_DESKTOP_CHECKSUM64:-<unset>}" \
+    "BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=${BOOT_TIMER_DESKTOP_AGENT/0/<unset>}" \
     "BRIDGEVM_VIRTIO_GPU=$gpu_enabled_policy" \
     "BRIDGEVM_VIRTIO_GPU_3D=$VIRTIO_GPU_3D" \
     "BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=$gpu_3d_protocol" \

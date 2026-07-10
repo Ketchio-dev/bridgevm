@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use bridgevm_hvf::{
     plan_windows_11_arm_hvf_machine, plan_windows_11_arm_no_qemu, probe_hvf_guest_entry,
     probe_hvf_guest_exit_loop, probe_hvf_interrupt_timer, probe_hvf_memory_map,
@@ -18,7 +18,11 @@ use bridgevm_hvf::{
     WindowsArmUefiPflashMapOptions, WINDOWS_ARM_BOOT_DISK_DEFAULT_SIZE_GIB,
 };
 use clap::Parser;
-use std::{env, path::PathBuf};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -113,6 +117,10 @@ struct Args {
     #[arg(long, value_name = "PATH")]
     disk: Option<PathBuf>,
     #[arg(long, value_name = "PATH")]
+    target: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    placeholder_nsid1: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
     iso: Option<PathBuf>,
     #[arg(long, value_name = "PATH")]
     writable_disk: Option<PathBuf>,
@@ -122,6 +130,10 @@ struct Args {
     vars_template: Option<PathBuf>,
     #[arg(long, value_name = "PATH")]
     vars: Option<PathBuf>,
+    #[arg(long, value_name = "DIR")]
+    evidence_dir: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    repo_root: Option<PathBuf>,
     #[arg(long)]
     create: bool,
     #[arg(long)]
@@ -136,8 +148,48 @@ struct Args {
     max_exits: u32,
     #[arg(long, default_value_t = 64)]
     guest_ram_mib: u32,
-    #[arg(long, default_value_t = 100)]
-    watchdog_ms: u64,
+    #[arg(long)]
+    watchdog_ms: Option<u64>,
+    #[arg(long)]
+    max_reboots: Option<u32>,
+    #[arg(long)]
+    ram_mib: Option<u32>,
+    #[arg(long)]
+    smp_cpus: Option<u8>,
+    #[arg(long)]
+    boot_timer: bool,
+    #[arg(long)]
+    boot_timer_ramfb_ms: Option<u32>,
+    #[arg(long)]
+    boot_timer_desktop_checksum64: Option<String>,
+    #[arg(long)]
+    boot_timer_desktop_agent: bool,
+    #[arg(long)]
+    enable_xhci: bool,
+    #[arg(long)]
+    virtio_net: bool,
+    #[arg(long)]
+    virtio_gpu_3d: bool,
+    #[arg(long)]
+    virtio_gpu_device_id: Option<String>,
+    #[arg(long, value_name = "PATH")]
+    gpu_trace: Option<PathBuf>,
+    #[arg(long)]
+    gpu_trace_protocol: Option<String>,
+    #[arg(long)]
+    require_gpu_trace_gate: bool,
+    #[arg(long, value_name = "DIR")]
+    viogpu3d_dir: Option<PathBuf>,
+    #[arg(long)]
+    require_viogpu3d_readiness: bool,
+    #[arg(long)]
+    daily: bool,
+    #[arg(long)]
+    release: bool,
+    #[arg(long)]
+    skip_build: bool,
+    #[arg(long)]
+    print_policy: bool,
     #[arg(long)]
     map_low_pflash_alias: bool,
     #[arg(long)]
@@ -168,9 +220,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.launch {
-        bail!(
-            "hvf-runner launch is not implemented yet; Windows 11 Arm no-QEMU path is still blocked at the VMM/device-model gates"
-        );
+        return launch_installed_windows(&args);
     }
 
     if args.windows_plan {
@@ -285,7 +335,8 @@ fn main() -> Result<()> {
         if args.guest_ram_mib == 0 {
             bail!("--guest-ram-mib must be greater than zero");
         }
-        if args.watchdog_ms == 0 {
+        let watchdog_ms = args.watchdog_ms.unwrap_or(100);
+        if watchdog_ms == 0 {
             bail!("--watchdog-ms must be greater than zero");
         }
         let firmware = args.firmware.clone().ok_or_else(|| {
@@ -305,7 +356,7 @@ fn main() -> Result<()> {
                     allow_loop,
                     requested_exits: args.max_exits,
                     guest_ram_mib: args.guest_ram_mib,
-                    watchdog_timeout_ms: args.watchdog_ms,
+                    watchdog_timeout_ms: watchdog_ms,
                     map_low_pflash_alias: args.map_low_pflash_alias,
                     seed_diagnostic_vector: args.seed_diagnostic_vector,
                     seed_guest_ram_diagnostic_vector: args.seed_guest_ram_diagnostic_vector,
@@ -335,7 +386,8 @@ fn main() -> Result<()> {
         if args.guest_ram_mib == 0 {
             bail!("--guest-ram-mib must be greater than zero");
         }
-        if args.watchdog_ms == 0 {
+        let watchdog_ms = args.watchdog_ms.unwrap_or(100);
+        if watchdog_ms == 0 {
             bail!("--watchdog-ms must be greater than zero");
         }
         let firmware = args.firmware.clone().ok_or_else(|| {
@@ -355,7 +407,7 @@ fn main() -> Result<()> {
                     allow_loop,
                     requested_exits: args.max_exits,
                     guest_ram_mib: args.guest_ram_mib,
-                    watchdog_timeout_ms: args.watchdog_ms,
+                    watchdog_timeout_ms: watchdog_ms,
                     map_low_pflash_alias: args.map_low_pflash_alias,
                     seed_diagnostic_vector: args.seed_diagnostic_vector,
                     seed_guest_ram_diagnostic_vector: args.seed_guest_ram_diagnostic_vector,
@@ -618,7 +670,198 @@ fn main() -> Result<()> {
     println!("Run: hvf-runner --virtio-block-file-backing-probe --disk <disk.img>");
     println!("Run: hvf-runner --virtio-block-writable-file-backing-probe --disk <disk.img>");
     println!("Run: hvf-runner --virtio-block-iso-backing-probe --iso <installer.iso>");
+    println!(
+        "Run: hvf-runner --launch --target <installed-windows.raw> --vars <vars.fd> --evidence-dir <dir> [--daily|--smp-cpus N|--boot-timer|--print-policy]"
+    );
     Ok(())
+}
+
+fn launch_installed_windows(args: &Args) -> Result<()> {
+    let invocation_dir =
+        env::current_dir().context("resolve current directory for hvf-runner --launch")?;
+    let repo_root = launch_repo_root(args, &invocation_dir);
+    let wrapper = repo_root.join("scripts/run-hvf-windows-installed-boot.sh");
+    if !wrapper.is_file() {
+        bail!(
+            "installed Windows HVF boot wrapper not found at {}; pass --repo-root or run from the repository root",
+            wrapper.display()
+        );
+    }
+
+    let wrapper_args = installed_boot_launch_args(args, &invocation_dir)?;
+    let status = Command::new(&wrapper)
+        .args(&wrapper_args)
+        .current_dir(&repo_root)
+        .status()
+        .with_context(|| format!("launch installed Windows HVF wrapper {}", wrapper.display()))?;
+    if status.success() {
+        Ok(())
+    } else {
+        bail!("installed Windows HVF boot wrapper failed with status {status}")
+    }
+}
+
+fn launch_repo_root(args: &Args, invocation_dir: &Path) -> PathBuf {
+    if let Some(repo_root) = &args.repo_root {
+        return resolve_launch_path(repo_root, invocation_dir);
+    }
+    if let Ok(repo_root) = env::var("BRIDGEVM_REPO_ROOT") {
+        if !repo_root.trim().is_empty() {
+            return resolve_launch_path(Path::new(&repo_root), invocation_dir);
+        }
+    }
+    invocation_dir.to_path_buf()
+}
+
+fn installed_boot_launch_args(args: &Args, invocation_dir: &Path) -> Result<Vec<String>> {
+    if args.boot_timer_desktop_agent && args.boot_timer_desktop_checksum64.is_some() {
+        bail!("choose exactly one BOOT_TIMER desktop oracle: --boot-timer-desktop-agent or --boot-timer-desktop-checksum64");
+    }
+    let mut target_candidates = [
+        args.target.as_ref(),
+        args.disk.as_ref(),
+        args.writable_disk.as_ref(),
+    ]
+    .into_iter()
+    .flatten();
+    let target = target_candidates
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("--launch requires --target, --disk, or --writable-disk"))?;
+    if target_candidates.next().is_some() {
+        bail!("--launch accepts only one of --target, --disk, or --writable-disk");
+    }
+    let vars = args
+        .vars
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("--launch requires --vars"))?;
+    let evidence_dir = args
+        .evidence_dir
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("--launch requires --evidence-dir"))?;
+
+    let mut out = vec![
+        "--target".to_string(),
+        path_arg(target, invocation_dir),
+        "--vars".to_string(),
+        path_arg(vars, invocation_dir),
+        "--evidence-dir".to_string(),
+        path_arg(evidence_dir, invocation_dir),
+    ];
+
+    push_path_arg(
+        &mut out,
+        "--placeholder-nsid1",
+        args.placeholder_nsid1.as_ref(),
+        invocation_dir,
+    );
+    push_num_arg(&mut out, "--watchdog-ms", args.watchdog_ms);
+    push_num_arg(&mut out, "--max-reboots", args.max_reboots);
+    push_num_arg(&mut out, "--ram-mib", args.ram_mib);
+    push_num_arg(&mut out, "--smp-cpus", args.smp_cpus);
+    push_flag(&mut out, args.boot_timer, "--boot-timer");
+    push_num_arg(&mut out, "--boot-timer-ramfb-ms", args.boot_timer_ramfb_ms);
+    push_string_arg(
+        &mut out,
+        "--boot-timer-desktop-checksum64",
+        args.boot_timer_desktop_checksum64.as_deref(),
+    );
+    push_flag(
+        &mut out,
+        args.boot_timer_desktop_agent,
+        "--boot-timer-desktop-agent",
+    );
+    push_flag(&mut out, args.enable_xhci, "--enable-xhci");
+    push_flag(&mut out, args.virtio_net, "--virtio-net");
+    push_flag(&mut out, args.virtio_gpu_3d, "--virtio-gpu-3d");
+    push_string_arg(
+        &mut out,
+        "--virtio-gpu-device-id",
+        args.virtio_gpu_device_id.as_deref(),
+    );
+    push_path_arg(
+        &mut out,
+        "--gpu-trace",
+        args.gpu_trace.as_ref(),
+        invocation_dir,
+    );
+    push_string_arg(
+        &mut out,
+        "--gpu-trace-protocol",
+        args.gpu_trace_protocol.as_deref(),
+    );
+    push_flag(
+        &mut out,
+        args.require_gpu_trace_gate,
+        "--require-gpu-trace-gate",
+    );
+    push_path_arg(
+        &mut out,
+        "--viogpu3d-dir",
+        args.viogpu3d_dir.as_ref(),
+        invocation_dir,
+    );
+    push_flag(
+        &mut out,
+        args.require_viogpu3d_readiness,
+        "--require-viogpu3d-readiness",
+    );
+    push_flag(&mut out, args.daily, "--daily");
+    push_flag(&mut out, args.release, "--release");
+    push_flag(&mut out, args.skip_build, "--skip-build");
+    push_flag(&mut out, args.print_policy, "--print-policy");
+
+    Ok(out)
+}
+
+fn resolve_launch_path(path: &Path, invocation_dir: &Path) -> PathBuf {
+    let resolved = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        invocation_dir.join(path)
+    };
+    // Existing media/repository paths are canonicalized so a relative `..`
+    // does not become ambiguous after the child changes its working directory.
+    // Output paths may not exist yet, so retain their invocation-rooted absolute
+    // spelling when canonicalization is unavailable.
+    resolved.canonicalize().unwrap_or(resolved)
+}
+
+fn path_arg(path: &Path, invocation_dir: &Path) -> String {
+    resolve_launch_path(path, invocation_dir)
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn push_path_arg(
+    out: &mut Vec<String>,
+    flag: &str,
+    value: Option<&PathBuf>,
+    invocation_dir: &Path,
+) {
+    if let Some(value) = value {
+        out.push(flag.to_string());
+        out.push(path_arg(value, invocation_dir));
+    }
+}
+
+fn push_string_arg(out: &mut Vec<String>, flag: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        out.push(flag.to_string());
+        out.push(value.to_string());
+    }
+}
+
+fn push_num_arg<T: ToString>(out: &mut Vec<String>, flag: &str, value: Option<T>) {
+    if let Some(value) = value {
+        out.push(flag.to_string());
+        out.push(value.to_string());
+    }
+}
+
+fn push_flag(out: &mut Vec<String>, enabled: bool, flag: &str) {
+    if enabled {
+        out.push(flag.to_string());
+    }
 }
 
 fn env_truthy(name: &str) -> bool {
@@ -719,7 +962,7 @@ mod tests {
         assert!(args.allow_loop);
         assert_eq!(args.max_exits, 16);
         assert_eq!(args.guest_ram_mib, 128);
-        assert_eq!(args.watchdog_ms, 250);
+        assert_eq!(args.watchdog_ms, Some(250));
         assert!(args.map_low_pflash_alias);
         assert!(args.repair_low_vector_diagnostic_page);
         assert!(args.continue_after_low_vector_repair);
@@ -737,5 +980,159 @@ mod tests {
             Args::try_parse_from(["hvf-runner", "--windows-xhci-hid-boot-key-probe"]).unwrap();
 
         assert!(args.windows_xhci_hid_boot_key_probe);
+    }
+
+    #[test]
+    fn launch_builds_installed_boot_wrapper_args() {
+        let args = Args::try_parse_from([
+            "hvf-runner",
+            "--launch",
+            "--target",
+            "/tmp/win.raw",
+            "--placeholder-nsid1",
+            "/tmp/placeholder.raw",
+            "--vars",
+            "/tmp/vars.fd",
+            "--evidence-dir",
+            "/tmp/evidence",
+            "--watchdog-ms",
+            "12345",
+            "--max-reboots",
+            "3",
+            "--ram-mib",
+            "6144",
+            "--smp-cpus",
+            "4",
+            "--boot-timer-ramfb-ms",
+            "250",
+            "--boot-timer-desktop-agent",
+            "--enable-xhci",
+            "--virtio-net",
+            "--daily",
+            "--release",
+            "--print-policy",
+        ])
+        .unwrap();
+
+        assert!(args.launch);
+        assert_eq!(
+            installed_boot_launch_args(&args, Path::new("/work")).unwrap(),
+            vec![
+                "--target",
+                "/tmp/win.raw",
+                "--vars",
+                "/tmp/vars.fd",
+                "--evidence-dir",
+                "/tmp/evidence",
+                "--placeholder-nsid1",
+                "/tmp/placeholder.raw",
+                "--watchdog-ms",
+                "12345",
+                "--max-reboots",
+                "3",
+                "--ram-mib",
+                "6144",
+                "--smp-cpus",
+                "4",
+                "--boot-timer-ramfb-ms",
+                "250",
+                "--boot-timer-desktop-agent",
+                "--enable-xhci",
+                "--virtio-net",
+                "--daily",
+                "--release",
+                "--print-policy",
+            ]
+        );
+    }
+
+    #[test]
+    fn launch_accepts_disk_as_target_alias() {
+        let args = Args::try_parse_from([
+            "hvf-runner",
+            "--launch",
+            "--disk",
+            "/tmp/win.raw",
+            "--vars",
+            "/tmp/vars.fd",
+            "--evidence-dir",
+            "/tmp/evidence",
+            "--print-policy",
+        ])
+        .unwrap();
+
+        let wrapper_args = installed_boot_launch_args(&args, Path::new("/work")).unwrap();
+        assert_eq!(&wrapper_args[0..2], ["--target", "/tmp/win.raw"]);
+    }
+
+    #[test]
+    fn launch_requires_vars_and_evidence_dir() {
+        let args =
+            Args::try_parse_from(["hvf-runner", "--launch", "--target", "/tmp/win.raw"]).unwrap();
+
+        let error = installed_boot_launch_args(&args, Path::new("/work"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("--vars"));
+    }
+
+    #[test]
+    fn launch_resolves_relative_paths_from_the_invocation_directory() {
+        let args = Args::try_parse_from([
+            "hvf-runner",
+            "--launch",
+            "--repo-root",
+            "../repo",
+            "--target",
+            "media/win.raw",
+            "--vars",
+            "state/vars.fd",
+            "--evidence-dir",
+            "evidence",
+            "--gpu-trace",
+            "evidence/gpu.jsonl",
+        ])
+        .unwrap();
+        let invocation_dir = Path::new("/tmp/invocation");
+
+        assert_eq!(
+            launch_repo_root(&args, invocation_dir),
+            PathBuf::from("/tmp/invocation/../repo")
+        );
+        assert_eq!(
+            installed_boot_launch_args(&args, invocation_dir).unwrap(),
+            vec![
+                "--target",
+                "/tmp/invocation/media/win.raw",
+                "--vars",
+                "/tmp/invocation/state/vars.fd",
+                "--evidence-dir",
+                "/tmp/invocation/evidence",
+                "--gpu-trace",
+                "/tmp/invocation/evidence/gpu.jsonl",
+            ]
+        );
+    }
+
+    #[test]
+    fn launch_rejects_ambiguous_target_aliases() {
+        let args = Args::try_parse_from([
+            "hvf-runner",
+            "--launch",
+            "--target",
+            "/tmp/a.raw",
+            "--disk",
+            "/tmp/b.raw",
+            "--vars",
+            "/tmp/vars.fd",
+            "--evidence-dir",
+            "/tmp/evidence",
+        ])
+        .unwrap();
+
+        let error = installed_boot_launch_args(&args, Path::new("/work"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("only one"));
     }
 }

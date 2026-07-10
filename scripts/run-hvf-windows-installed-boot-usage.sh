@@ -12,8 +12,23 @@ Options:
   --watchdog-ms N         Probe watchdog in milliseconds. Default: 900000.
   --max-reboots N         Maximum PSCI SYSTEM_RESET reboots. Default: 8.
   --ram-mib N             Guest RAM in MiB. Default: 4096.
+  --smp-cpus N            Guest vCPU count, 1..123. Default: unset, so the
+                          probe uses its smp=1 fallback.
   --ramfb-samples LIST    Comma-separated RAMFB sample ms values. Default:
                           1000,5000,15000,30000,60000,90000,120000.
+  --boot-timer            Enable BOOT_TIMER milestone/ramfb/exits-per-sec logs
+                          from hvf_gic_boot_probe.
+  --boot-timer-ramfb-ms N Sample display checksums every N milliseconds for
+                          BOOT_TIMER. Range: 100..60000. Implies
+                          --boot-timer.
+  --boot-timer-desktop-checksum64 N
+                          Desktop checksum64 target as decimal or 0x-prefixed
+                          hex. When matched, BOOT_TIMER reports desktop_reached.
+                          Implies --boot-timer.
+  --boot-timer-desktop-agent
+                          Use the resident Windows logon agent READY/PONG as
+                          the desktop oracle. This is stable across clock and
+                          notification pixel changes. Implies --boot-timer.
   --enable-xhci           Leave xHCI present for desktop input diagnosis.
   --virtio-net            Attach the virtio-net NIC (BRIDGEVM_VIRTIO_NET=1)
                           with the userspace NAT backend.
@@ -42,8 +57,9 @@ Options:
                           check before booting. Requires --virtio-gpu-3d.
   --daily                 Opt-in daily-driver preset. Changes defaults only
                           when not explicitly overridden: --ram-mib 6144 and
-                          --watchdog-ms 86400000. Also sets
-                          BRIDGEVM_SMP_CPUS=4 and implies --release unless
+                          --watchdog-ms 86400000. Also sets --smp-cpus 4
+                          unless --smp-cpus is supplied, pins xHCI report
+                          pacing at 30ms, and implies --release unless
                           --skip-build is set.
   --setup-input-actions LIST
                           Optional comma-separated xHCI setup-input keys:
