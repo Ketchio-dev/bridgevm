@@ -170,6 +170,25 @@ absolute_media_path() {
   printf '%s/%s\n' "$(cd "$dir" && pwd -P)" "$base"
 }
 
+absolute_path_from() {
+  local base_dir="$1"
+  local path="$2"
+  case "$path" in
+    /*) printf '%s\n' "$path" ;;
+    *) printf '%s/%s\n' "$base_dir" "$path" ;;
+  esac
+}
+
+absolutize_installed_boot_paths() {
+  local invocation_dir="$1"
+  [[ -z "$TARGET" ]] || TARGET="$(absolute_path_from "$invocation_dir" "$TARGET")"
+  [[ -z "$PLACEHOLDER_NSID1" ]] || PLACEHOLDER_NSID1="$(absolute_path_from "$invocation_dir" "$PLACEHOLDER_NSID1")"
+  [[ -z "$VARS" ]] || VARS="$(absolute_path_from "$invocation_dir" "$VARS")"
+  [[ -z "$EVIDENCE_DIR" ]] || EVIDENCE_DIR="$(absolute_path_from "$invocation_dir" "$EVIDENCE_DIR")"
+  [[ -z "$VIRTIO_GPU_TRACE_JSONL" ]] || VIRTIO_GPU_TRACE_JSONL="$(absolute_path_from "$invocation_dir" "$VIRTIO_GPU_TRACE_JSONL")"
+  [[ -z "$VIOGPU3D_DIR" ]] || VIOGPU3D_DIR="$(absolute_path_from "$invocation_dir" "$VIOGPU3D_DIR")"
+}
+
 media_identity() {
   stat -L -f '%d:%i' "$1" 2>/dev/null
 }

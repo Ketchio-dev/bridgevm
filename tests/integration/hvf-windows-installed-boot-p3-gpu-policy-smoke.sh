@@ -91,6 +91,7 @@ assert_contains "$output" "BRIDGEVM_BOOT_TIMER=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_TIMER_RAMFB_MS=<probe-default 1000>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=<unset>" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE=<unset>" "installed boot policy"
 assert_contains "$output" "BUILD_PROFILE=debug" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_NVME_DISK_WRITABLE=1 when booting target as only NVMe" "installed boot policy"
 
@@ -117,6 +118,7 @@ agent_timer_output="$(
     --print-policy 2>&1
 )" || fail "installed boot agent timer policy failed: $agent_timer_output"
 assert_contains "$agent_timer_output" "BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=1" "agent timer policy"
+assert_contains "$agent_timer_output" "BRIDGEVM_VIRTIO_CONSOLE=1" "agent timer policy"
 
 boot_timer_env_output="$(
   bash -c '
@@ -138,6 +140,24 @@ boot_timer_env_output="$(
 assert_contains "$boot_timer_env_output" "BRIDGEVM_BOOT_TIMER=1" "boot timer env"
 assert_contains "$boot_timer_env_output" "BRIDGEVM_BOOT_TIMER_RAMFB_MS=250" "boot timer env"
 assert_contains "$boot_timer_env_output" "BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64=0x1234abcd" "boot timer env"
+
+agent_timer_env_output="$(
+  bash -c '
+    set -euo pipefail
+    source scripts/run-hvf-windows-installed-boot-validation.sh
+    source scripts/run-hvf-windows-installed-boot-args.sh
+    source scripts/run-hvf-windows-installed-boot-runner.sh
+    init_installed_boot_defaults
+    parse_installed_boot_args "$@"
+    build_installed_boot_env_args
+  ' _ \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --boot-timer-desktop-agent
+)" || fail "installed boot agent timer env failed: $agent_timer_env_output"
+assert_contains "$agent_timer_env_output" "BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=1" "agent timer env"
+assert_contains "$agent_timer_env_output" "BRIDGEVM_VIRTIO_CONSOLE=1" "agent timer env"
 
 daily_output="$(
   scripts/run-hvf-windows-installed-boot.sh \
@@ -290,6 +310,23 @@ printf 'timer=%s\n' "${BRIDGEVM_BOOT_TIMER-<unset>}"
 printf 'timer_ms=%s\n' "${BRIDGEVM_BOOT_TIMER_RAMFB_MS-<unset>}"
 printf 'desktop=%s\n' "${BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64-<unset>}"
 printf 'desktop_agent=%s\n' "${BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT-<unset>}"
+printf 'nvme=%s\n' "${BRIDGEVM_NVME_DISK-<unset>}"
+printf 'nvme2=%s\n' "${BRIDGEVM_NVME_DISK2-<unset>}"
+printf 'nvme2_writable=%s\n' "${BRIDGEVM_NVME_DISK2_WRITABLE-<unset>}"
+printf 'installer=%s\n' "${BRIDGEVM_INSTALLER_ISO-<unset>}"
+printf 'disable_xhci=%s\n' "${BRIDGEVM_DISABLE_XHCI-<unset>}"
+printf 'xhci_interval=%s\n' "${BRIDGEVM_XHCI_REPORT_INTERVAL_MS-<unset>}"
+printf 'net=%s\n' "${BRIDGEVM_VIRTIO_NET-<unset>}"
+printf 'gpu=%s\n' "${BRIDGEVM_VIRTIO_GPU-<unset>}"
+printf 'console=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE-<unset>}"
+printf 'setup_actions=%s\n' "${BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS-<unset>}"
+printf 'console_test=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_TEST-<unset>}"
+printf 'console_cmds=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_CMDS-<unset>}"
+printf 'console_service=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_SERVICE-<unset>}"
+printf 'console_share=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_SHARE-<unset>}"
+printf 'unknown_poison=%s\n' "${BRIDGEVM_UNKNOWN_POISON-<unset>}"
+printf 'vars=%s\n' "${BRIDGEVM_AARCH64_UEFI_VARS-<unset>}"
+printf 'gpu_trace=%s\n' "${BRIDGEVM_VIRTIO_GPU_TRACE_JSONL-<unset>}"
 PROBE
 chmod +x "$FAKE_PROBE"
 
@@ -299,6 +336,21 @@ sanitized_probe_output="$(
   BRIDGEVM_BOOT_TIMER_RAMFB_MS=777 \
   BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64=0xdead \
   BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=1 \
+  BRIDGEVM_NVME_DISK=/tmp/poison-disk.raw \
+  BRIDGEVM_NVME_DISK2=/tmp/poison-disk2.raw \
+  BRIDGEVM_NVME_DISK2_WRITABLE=1 \
+  BRIDGEVM_INSTALLER_ISO=/tmp/poison.iso \
+  BRIDGEVM_DISABLE_XHCI=1 \
+  BRIDGEVM_XHCI_REPORT_INTERVAL_MS=999 \
+  BRIDGEVM_VIRTIO_NET=1 \
+  BRIDGEVM_VIRTIO_GPU=1 \
+  BRIDGEVM_VIRTIO_CONSOLE=1 \
+  BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS='win+r,text:poison,enter' \
+  BRIDGEVM_VIRTIO_CONSOLE_TEST=1 \
+  BRIDGEVM_VIRTIO_CONSOLE_CMDS=poison \
+  BRIDGEVM_VIRTIO_CONSOLE_SERVICE=1 \
+  BRIDGEVM_VIRTIO_CONSOLE_SHARE=/tmp/poison-share \
+  BRIDGEVM_UNKNOWN_POISON=1 \
   bash -c '
     set -euo pipefail
     source scripts/run-hvf-windows-installed-boot-runner.sh
@@ -315,6 +367,21 @@ assert_contains "$sanitized_probe_output" "timer=<unset>" "ambient timer sanitiz
 assert_contains "$sanitized_probe_output" "timer_ms=<unset>" "ambient timer interval sanitization"
 assert_contains "$sanitized_probe_output" "desktop=<unset>" "ambient desktop checksum sanitization"
 assert_contains "$sanitized_probe_output" "desktop_agent=<unset>" "ambient desktop agent sanitization"
+assert_contains "$sanitized_probe_output" "nvme=<unset>" "ambient primary disk sanitization"
+assert_contains "$sanitized_probe_output" "nvme2=<unset>" "ambient second disk sanitization"
+assert_contains "$sanitized_probe_output" "nvme2_writable=<unset>" "ambient writable second disk sanitization"
+assert_contains "$sanitized_probe_output" "installer=<unset>" "ambient installer sanitization"
+assert_contains "$sanitized_probe_output" "disable_xhci=<unset>" "ambient xHCI policy sanitization"
+assert_contains "$sanitized_probe_output" "xhci_interval=<unset>" "ambient xHCI pacing sanitization"
+assert_contains "$sanitized_probe_output" "net=<unset>" "ambient network sanitization"
+assert_contains "$sanitized_probe_output" "gpu=<unset>" "ambient GPU sanitization"
+assert_contains "$sanitized_probe_output" "console=<unset>" "ambient console sanitization"
+assert_contains "$sanitized_probe_output" "setup_actions=<unset>" "ambient input sanitization"
+assert_contains "$sanitized_probe_output" "console_test=<unset>" "ambient console test sanitization"
+assert_contains "$sanitized_probe_output" "console_cmds=<unset>" "ambient console command sanitization"
+assert_contains "$sanitized_probe_output" "console_service=<unset>" "ambient console service sanitization"
+assert_contains "$sanitized_probe_output" "console_share=<unset>" "ambient console share sanitization"
+assert_contains "$sanitized_probe_output" "unknown_poison=<unset>" "ambient unknown BridgeVM sanitization"
 
 explicit_probe_output="$(
   BRIDGEVM_SMP_CPUS=99 \
@@ -341,6 +408,67 @@ assert_contains "$explicit_probe_output" "smp=2" "explicit SMP env"
 assert_contains "$explicit_probe_output" "timer=1" "explicit timer env"
 assert_contains "$explicit_probe_output" "timer_ms=250" "explicit timer interval env"
 assert_contains "$explicit_probe_output" "desktop=0x1234" "explicit desktop checksum env"
+
+RELATIVE_WRAPPER_ROOT="$STORE/relative-wrapper"
+mkdir -p \
+  "$RELATIVE_WRAPPER_ROOT/media" \
+  "$RELATIVE_WRAPPER_ROOT/state" \
+  "$RELATIVE_WRAPPER_ROOT/evidence" \
+  "$RELATIVE_WRAPPER_ROOT/traces" \
+  "$RELATIVE_WRAPPER_ROOT/driver"
+RELATIVE_WRAPPER_REAL="$(cd "$RELATIVE_WRAPPER_ROOT" && pwd -P)"
+touch \
+  "$RELATIVE_WRAPPER_ROOT/media/windows.raw" \
+  "$RELATIVE_WRAPPER_ROOT/media/placeholder.raw" \
+  "$RELATIVE_WRAPPER_ROOT/state/vars.fd"
+
+relative_wrapper_output="$(
+  cd "$RELATIVE_WRAPPER_ROOT"
+  bash -c '
+    set -euo pipefail
+    root="$1"
+    bin="$2"
+    source "$root/scripts/run-hvf-windows-installed-boot-validation.sh"
+    source "$root/scripts/run-hvf-windows-installed-boot-args.sh"
+    source "$root/scripts/run-hvf-windows-installed-boot-runner.sh"
+    init_installed_boot_defaults
+    parse_installed_boot_args \
+      --target media/windows.raw \
+      --placeholder-nsid1 media/placeholder.raw \
+      --vars state/vars.fd \
+      --evidence-dir evidence \
+      --virtio-gpu-3d \
+      --gpu-trace traces/gpu.jsonl \
+      --viogpu3d-dir driver
+    absolutize_installed_boot_paths "$(pwd -P)"
+    validate_installed_boot_option_combinations
+    validate_installed_boot_required_paths
+    printf "target_path=%s\n" "$TARGET"
+    printf "placeholder_path=%s\n" "$PLACEHOLDER_NSID1"
+    printf "vars_path=%s\n" "$VARS"
+    printf "evidence_path=%s\n" "$EVIDENCE_DIR"
+    printf "trace_path=%s\n" "$VIRTIO_GPU_TRACE_JSONL"
+    printf "driver_path=%s\n" "$VIOGPU3D_DIR"
+    build_installed_boot_env_args >/dev/null
+    cd "$root"
+    BIN="$bin"
+    PROBE_PID=""
+    run_probe_process
+    cat "$EVIDENCE_DIR/run.log"
+  ' _ "$ROOT" "$FAKE_PROBE"
+)" || fail "relative installed-boot path freeze failed: $relative_wrapper_output"
+
+assert_contains "$relative_wrapper_output" "target_path=$RELATIVE_WRAPPER_REAL/media/windows.raw" "relative target path"
+assert_contains "$relative_wrapper_output" "placeholder_path=$RELATIVE_WRAPPER_REAL/media/placeholder.raw" "relative placeholder path"
+assert_contains "$relative_wrapper_output" "vars_path=$RELATIVE_WRAPPER_REAL/state/vars.fd" "relative vars path"
+assert_contains "$relative_wrapper_output" "evidence_path=$RELATIVE_WRAPPER_REAL/evidence" "relative evidence path"
+assert_contains "$relative_wrapper_output" "trace_path=$RELATIVE_WRAPPER_REAL/traces/gpu.jsonl" "relative trace path"
+assert_contains "$relative_wrapper_output" "driver_path=$RELATIVE_WRAPPER_REAL/driver" "relative driver path"
+assert_contains "$relative_wrapper_output" "nvme=$RELATIVE_WRAPPER_REAL/media/placeholder.raw" "relative primary NVMe env"
+assert_contains "$relative_wrapper_output" "nvme2=$RELATIVE_WRAPPER_REAL/media/windows.raw" "relative second NVMe env"
+assert_contains "$relative_wrapper_output" "nvme2_writable=1" "relative second NVMe writable env"
+assert_contains "$relative_wrapper_output" "vars=$RELATIVE_WRAPPER_REAL/state/vars.fd" "relative vars env"
+assert_contains "$relative_wrapper_output" "gpu_trace=$RELATIVE_WRAPPER_REAL/traces/gpu.jsonl" "relative GPU trace env"
 
 explicit_id_output="$(
   scripts/run-hvf-windows-installed-boot.sh \

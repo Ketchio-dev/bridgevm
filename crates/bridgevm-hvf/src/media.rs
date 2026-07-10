@@ -259,7 +259,11 @@ impl VirtBootMediaConfig {
         cfg.platform_devices.virtio_boot_media_present = virtio_iso_present;
         cfg.platform_devices.virtio_net_present = env_flag("BRIDGEVM_VIRTIO_NET");
         cfg.platform_devices.virtio_gpu_present = env_flag("BRIDGEVM_VIRTIO_GPU");
-        cfg.platform_devices.virtio_console_present = env_flag("BRIDGEVM_VIRTIO_CONSOLE");
+        // The BOOT_TIMER agent oracle communicates exclusively over the
+        // virtio-console agent port. Make the oracle self-contained even for
+        // direct probe invocations that do not use the installed-boot wrapper.
+        cfg.platform_devices.virtio_console_present =
+            env_flag("BRIDGEVM_VIRTIO_CONSOLE") || env_flag("BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT");
         cfg.platform_devices.virtio_gpu_pci_device_id = virtio_gpu_pci_device_id_from_env();
         cfg.platform_devices.virtio_net_backend = VirtioNetBackendKind::from_env_value(
             env::var("BRIDGEVM_VIRTIO_NET_BACKEND").ok().as_deref(),
@@ -348,6 +352,7 @@ mod tests {
             "BRIDGEVM_VIRTIO_NET",
             "BRIDGEVM_VIRTIO_GPU",
             "BRIDGEVM_VIRTIO_CONSOLE",
+            "BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT",
             "BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID",
             "BRIDGEVM_VIRTIO_GPU_3D_BIND_ID",
             "BRIDGEVM_VIRTIO_NET_BACKEND",
@@ -456,12 +461,14 @@ mod tests {
         env::set_var("BRIDGEVM_DISABLE_VIRTIO_ISO", "false");
         env::set_var("BRIDGEVM_RAMFB", "1");
         env::set_var("BRIDGEVM_DISABLE_RAMFB_DEVICE", "no");
+        env::set_var("BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT", "false");
 
         let cfg = VirtBootMediaConfig::from_probe_env();
 
         assert!(cfg.platform_devices.xhci_present);
         assert!(cfg.platform_devices.virtio_boot_media_present);
         assert!(!cfg.platform_devices.virtio_net_present);
+        assert!(!cfg.platform_devices.virtio_console_present);
         assert!(cfg.platform_devices.legacy_virtio_mmio_present);
         assert!(cfg.platform_devices.ramfb_present);
         clear_probe_disable_env();
@@ -496,6 +503,18 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap();
         clear_probe_disable_env();
         env::set_var("BRIDGEVM_VIRTIO_CONSOLE", "yes");
+
+        let cfg = VirtBootMediaConfig::from_probe_env();
+
+        assert!(cfg.platform_devices.virtio_console_present);
+        clear_probe_disable_env();
+    }
+
+    #[test]
+    fn boot_timer_agent_oracle_implies_virtio_console() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_probe_disable_env();
+        env::set_var("BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT", "yes");
 
         let cfg = VirtBootMediaConfig::from_probe_env();
 

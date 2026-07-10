@@ -88,6 +88,19 @@ summary_ms=$((1000 + smp * 100 + run_index * 10))
 desktop_ms=$((summary_ms - 100))
 exits=$((smp * 1000 + run_index))
 rate="$(awk -v exits="$exits" 'BEGIN { printf "%.2f", exits / 10 }')"
+desktop_source="ramfb"
+desktop_agent_log="false"
+desktop_suffix=" checksum64=$desktop_checksum"
+desktop_checksum_log="$desktop_checksum"
+if [[ "$desktop_checksum" != "<unset>" ]]; then
+  printf -v desktop_checksum_log '0x%016x' "$desktop_checksum"
+  desktop_suffix=" checksum64=$desktop_checksum_log"
+fi
+if [[ "$desktop_agent" == "1" ]]; then
+  desktop_source="agent"
+  desktop_agent_log="true"
+  desktop_suffix=""
+fi
 
 cat > "$evidence/preflight.txt" <<EOF
 target=$target
@@ -109,8 +122,8 @@ virtio_net=$virtio_net
 EOF
 
 cat > "$evidence/run.log" <<EOF
-BOOT_TIMER start ramfb_sample_ms=$boot_timer_ramfb_ms desktop_checksum=$desktop_checksum
-BOOT_TIMER milestone name=desktop source=ramfb elapsed_ms=$desktop_ms exit=20 checksum64=0x1
+BOOT_TIMER start ramfb_sample_ms=$boot_timer_ramfb_ms desktop_checksum=$desktop_checksum_log desktop_agent=$desktop_agent_log
+BOOT_TIMER milestone name=desktop source=$desktop_source elapsed_ms=$desktop_ms exit=20$desktop_suffix
 BOOT_TIMER summary elapsed_ms=$summary_ms desktop_reached=true milestones=4/4
 BOOT_TIMER vcpu cpu=0 exits=$exits exits_per_sec=$rate
 EOF
@@ -176,6 +189,34 @@ agent_preflight="$(cat "$AGENT_EVIDENCE/smp-1/run-1/preflight.txt")"
 assert_contains "$agent_preflight" "boot_timer_desktop_agent=1" "default agent oracle"
 agent_invocation="$(cat "$AGENT_EVIDENCE/smp-1/run-1/matrix-invocation.txt")"
 assert_contains "$agent_invocation" "--boot-timer-desktop-agent" "default agent invocation"
+
+RELATIVE_MATRIX_ROOT="$STORE/relative-matrix"
+mkdir -p "$RELATIVE_MATRIX_ROOT"
+RELATIVE_MATRIX_REAL="$(cd "$RELATIVE_MATRIX_ROOT" && pwd -P)"
+printf 'relative target\n' > "$RELATIVE_MATRIX_ROOT/target.raw"
+printf 'relative vars\n' > "$RELATIVE_MATRIX_ROOT/vars.fd"
+ln -s "$FAKE_WRAPPER" "$RELATIVE_MATRIX_ROOT/wrapper.sh"
+relative_matrix_output="$(
+  cd "$RELATIVE_MATRIX_ROOT"
+  "$ROOT/scripts/run-hvf-boot-timer-matrix.sh" \
+    --target target.raw \
+    --vars vars.fd \
+    --evidence-dir evidence \
+    --report reports/report.tsv \
+    --runs 1 \
+    --smp-cpus 1 \
+    --boot-timer-desktop-checksum64 0x1234abcd \
+    --wrapper wrapper.sh \
+    --no-clone-media
+)" || fail "relative-path boot timer matrix failed: $relative_matrix_output"
+assert_contains "$relative_matrix_output" "Wrote boot timer matrix report: $RELATIVE_MATRIX_REAL/reports/report.tsv" "relative matrix output"
+relative_preflight="$(cat "$RELATIVE_MATRIX_ROOT/evidence/smp-1/run-1/preflight.txt")"
+assert_contains "$relative_preflight" "target=$RELATIVE_MATRIX_REAL/target.raw" "relative matrix target"
+assert_contains "$relative_preflight" "vars=$RELATIVE_MATRIX_REAL/vars.fd" "relative matrix vars"
+assert_contains "$relative_preflight" "evidence_dir=$RELATIVE_MATRIX_REAL/evidence/smp-1/run-1" "relative matrix evidence"
+relative_invocation="$(cat "$RELATIVE_MATRIX_ROOT/evidence/smp-1/run-1/matrix-invocation.txt")"
+assert_contains "$relative_invocation" "wrapper=$RELATIVE_MATRIX_REAL/wrapper.sh" "relative matrix wrapper"
+[[ -f "$RELATIVE_MATRIX_ROOT/reports/report.tsv" ]] || fail "relative matrix report path was not created"
 
 FAIL_EVIDENCE="$STORE/fail-evidence"
 set +e

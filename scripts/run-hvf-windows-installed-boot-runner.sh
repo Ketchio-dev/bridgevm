@@ -48,6 +48,7 @@ write_installed_boot_preflight() {
     printf 'boot_timer_ramfb_ms=%s\n' "${BOOT_TIMER_RAMFB_MS:-<probe-default 1000>}"
     printf 'boot_timer_desktop_checksum64=%s\n' "${BOOT_TIMER_DESKTOP_CHECKSUM64:-<unset>}"
     printf 'boot_timer_desktop_agent=%s\n' "$BOOT_TIMER_DESKTOP_AGENT"
+    printf 'virtio_console=%s\n' "$BOOT_TIMER_DESKTOP_AGENT"
     printf 'virtio_gpu_3d=%s\n' "$VIRTIO_GPU_3D"
     printf 'virtio_gpu_pci_device_id=%s\n' "${VIRTIO_GPU_PCI_DEVICE_ID:-10F7 (BRIDGEVM_VIRTIO_GPU_3D_BIND_ID alias)}"
     printf 'virtio_gpu_trace_jsonl=%s\n' "${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}"
@@ -134,8 +135,7 @@ build_installed_boot_env_args() {
   )
   # Per-interrupt MSIX/SPI tracing is opt-in: always-on it emitted 50k+ lines
   # per run and drowned the BVAGENT evidence (service-mode logs must stay
-  # greppable). Use --trace-irq (or ambient BRIDGEVM_TRACE_MSIX/SPI) when
-  # debugging interrupt delivery.
+  # greppable). Use --trace-irq when debugging interrupt delivery.
   if [[ "${TRACE_IRQ:-0}" == "1" ]]; then
     COMMON_ENV+=('BRIDGEVM_TRACE_MSIX=1' 'BRIDGEVM_TRACE_SPI=1')
   fi
@@ -155,7 +155,9 @@ build_installed_boot_env_args() {
     ENV_ARGS+=('BRIDGEVM_BOOT_TIMER=1')
     [[ -z "$BOOT_TIMER_RAMFB_MS" ]] || ENV_ARGS+=("BRIDGEVM_BOOT_TIMER_RAMFB_MS=$BOOT_TIMER_RAMFB_MS")
     [[ -z "$BOOT_TIMER_DESKTOP_CHECKSUM64" ]] || ENV_ARGS+=("BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64=$BOOT_TIMER_DESKTOP_CHECKSUM64")
-    [[ "$BOOT_TIMER_DESKTOP_AGENT" != "1" ]] || ENV_ARGS+=('BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=1')
+    if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" ]]; then
+      ENV_ARGS+=('BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=1' 'BRIDGEVM_VIRTIO_CONSOLE=1')
+    fi
   fi
   append_input_env_args
   if [[ "$ENABLE_XHCI" != "1" ]]; then
@@ -255,17 +257,17 @@ write_p3_gpu_readiness() {
 run_probe_process() {
   local name
   local -a env_command=(env)
-  # CLI-owned settings must not leak in from a developer shell. Explicit
-  # ENV_ARGS below are applied after these removals.
-  for name in \
-    BRIDGEVM_SMP_CPUS \
-    BRIDGEVM_BOOT_TIMER \
-    BRIDGEVM_BOOT_TIMER_RAMFB_MS \
-    BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64 \
-    BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT
-  do
-    env_command+=(-u "$name")
-  done
+  # An installed-boot run is a closed, auditable configuration boundary.
+  # Remove every inherited BridgeVM probe knob, then apply only ENV_ARGS built
+  # from this wrapper's validated CLI. This prevents an old developer shell
+  # from attaching a second writable disk, changing PCI topology, injecting
+  # guest input, or enabling agent share/clipboard commands behind the
+  # recorded policy.
+  while IFS= read -r name; do
+    case "$name" in
+      BRIDGEVM_*) env_command+=(-u "$name") ;;
+    esac
+  done < <(compgen -e)
   set +e
   "${env_command[@]}" "${ENV_ARGS[@]}" "$BIN" > "$EVIDENCE_DIR/run.log" 2>&1 &
   PROBE_PID="$!"

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+INVOCATION_DIR="$(pwd -P)"
 
 usage() {
   cat >&2 <<'EOF'
@@ -43,6 +44,13 @@ EOF
 fail() {
   echo "FAIL: $*" >&2
   exit 1
+}
+
+absolute_path_from_invocation() {
+  case "$1" in
+    /*) printf '%s\n' "$1" ;;
+    *) printf '%s/%s\n' "$INVOCATION_DIR" "$1" ;;
+  esac
 }
 
 positive_integer() {
@@ -235,6 +243,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$TARGET" && -n "$VARS" && -n "$EVIDENCE_DIR" ]] || { usage; exit 2; }
+TARGET="$(absolute_path_from_invocation "$TARGET")"
+VARS="$(absolute_path_from_invocation "$VARS")"
+EVIDENCE_DIR="$(absolute_path_from_invocation "$EVIDENCE_DIR")"
+WRAPPER="$(absolute_path_from_invocation "$WRAPPER")"
+[[ -z "$PLACEHOLDER_NSID1" ]] || PLACEHOLDER_NSID1="$(absolute_path_from_invocation "$PLACEHOLDER_NSID1")"
+[[ -z "$REPORT" ]] || REPORT="$(absolute_path_from_invocation "$REPORT")"
+
 if (( ${#PASSTHROUGH_ARGS[@]} > 0 )); then
   reject_matrix_owned_passthrough_args "${PASSTHROUGH_ARGS[@]}"
 fi
