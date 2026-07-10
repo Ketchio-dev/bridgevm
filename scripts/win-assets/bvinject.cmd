@@ -46,12 +46,13 @@ rem --- viogpu3d is a TEST-SIGNED third-party display driver. Offline dism only
 rem     STAGES it into the DriverStore: it neither trusts the self-signed test
 rem     publisher (so silent PnP install of the package is REFUSED) nor re-runs a
 rem     driver search for the already-present virtio-gpu device. BCD testsigning
-rem     (above) only lets the kernel LOAD test-signed code once installed; it does
+rem     (on first boot) only lets the kernel LOAD test-signed code once installed; it does
 rem     not make PnP TRUST the publisher for install. So copy the package + cert +
 rem     activation script to C:\BridgeVM and register an elevated HKLM RunOnce
 rem     that, on first boot, imports the cert into the machine Root +
 rem     TrustedPublisher stores and forces `pnputil /add-driver /install` to bind
-rem     PCI\VEN_1AF4&DEV_1050. UAC is disabled so RunOnce gets the full admin
+rem     PCI\VEN_1AF4&DEV_1050 or PCI\VEN_1AF4&DEV_10F7, as declared by the package.
+rem     UAC is disabled so RunOnce gets the full admin
 rem     token; output is logged to C:\BridgeVM\viogpu3d-firstboot.log. ---
 if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   echo BVINJECT VIOGPU3D FIRSTBOOT PLANT
@@ -60,6 +61,8 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   rem from an older package skip the trust or bind stages.
   del /f /q %WIN%\BridgeVM\stage1.flag 2>nul
   del /f /q %WIN%\BridgeVM\stage2.flag 2>nul
+  del /f /q %WIN%\BridgeVM\stage1.boot 2>nul
+  del /f /q %WIN%\BridgeVM\stage2.boot 2>nul
   del /f /q %WIN%\BridgeVM\gpu-rebooted.flag 2>nul
   del /f /q %WIN%\BridgeVM\viogpu3d-firstboot.log 2>nul
   copy /y %DRV%\viogpu3d\* %WIN%\BridgeVM\viogpu3d\ >nul
@@ -67,8 +70,8 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   reg load HKLM\BVGPUSW %WIN%\Windows\System32\config\SOFTWARE
   rem RunOnce runs once at first interactive logon. The value uses the RUNTIME
   rem path (installed Windows is C: to itself), not the WinPE %WIN% letter. The
-  rem "!" name prefix defers deletion until the command completes, so a reboot
-  rem mid-activation retries instead of silently dropping it.
+  rem "!" name prefix keeps the initial entry until stage 1 finishes creating
+  rem the persistent delayed ONSTART continuation task.
   reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\RunOnce" /v !BridgeVMGpu3DStage1 /t REG_SZ /d "cmd /c C:\BridgeVM\bvgpu-firstboot.cmd" /f
   rem Ensure the admin autologon gets an un-filtered token so certutil/pnputil in
   rem the RunOnce run elevated (idempotent with the agent block below).
