@@ -56,6 +56,12 @@ rem     token; output is logged to C:\BridgeVM\viogpu3d-firstboot.log. ---
 if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   echo BVINJECT VIOGPU3D FIRSTBOOT PLANT
   if not exist %WIN%\BridgeVM\viogpu3d\ mkdir %WIN%\BridgeVM\viogpu3d
+  rem Reinjection means a new package/activation attempt. Never let markers
+  rem from an older package skip the trust or bind stages.
+  del /f /q %WIN%\BridgeVM\stage1.flag 2>nul
+  del /f /q %WIN%\BridgeVM\stage2.flag 2>nul
+  del /f /q %WIN%\BridgeVM\gpu-rebooted.flag 2>nul
+  del /f /q %WIN%\BridgeVM\viogpu3d-firstboot.log 2>nul
   copy /y %DRV%\viogpu3d\* %WIN%\BridgeVM\viogpu3d\ >nul
   copy /y %DRV%\..\bvgpu-firstboot.cmd %WIN%\BridgeVM\bvgpu-firstboot.cmd >nul
   reg load HKLM\BVGPUSW %WIN%\Windows\System32\config\SOFTWARE
@@ -63,7 +69,7 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   rem path (installed Windows is C: to itself), not the WinPE %WIN% letter. The
   rem "!" name prefix defers deletion until the command completes, so a reboot
   rem mid-activation retries instead of silently dropping it.
-  reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\RunOnce" /v !BridgeVMGpu3D /t REG_SZ /d "cmd /c C:\BridgeVM\bvgpu-firstboot.cmd" /f
+  reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\RunOnce" /v !BridgeVMGpu3DStage1 /t REG_SZ /d "cmd /c C:\BridgeVM\bvgpu-firstboot.cmd" /f
   rem Ensure the admin autologon gets an un-filtered token so certutil/pnputil in
   rem the RunOnce run elevated (idempotent with the agent block below).
   reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA /t REG_DWORD /d 0 /f
