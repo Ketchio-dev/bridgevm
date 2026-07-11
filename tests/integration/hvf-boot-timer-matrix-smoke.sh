@@ -125,6 +125,7 @@ boot_timer_desktop_checksum64=$desktop_checksum
 boot_timer_desktop_agent=$desktop_agent
 shutdown_after_agent_ready=$shutdown_after_agent_ready
 virtio_console_test_periodic=$shutdown_after_agent_ready
+host_pause_resume_proof_ms=<unset>
 virtio_gpu_3d=0
 virtio_net=$virtio_net
 EOF
@@ -176,10 +177,10 @@ assert_contains "$(cat "$EVIDENCE/smp-1/run-1/matrix-invocation.txt")" \
   "matrix_order=round-robin" "matrix invocation order"
 
 report="$(cat "$EVIDENCE/boot-timer-report.tsv")"
-assert_contains "$report" $'run\tprofile=release,smp=1,daily=0,ram=2048,watchdog=900000,xhci_ms=<probe-default_30>,gpu3d=0,timer=1,timer_ms=250,desktop=0x1234abcd,desktop_agent=0,shutdown=0,console_periodic=0' "smp1 run row"
-assert_contains "$report" $'run\tprofile=release,smp=4,daily=0,ram=2048,watchdog=900000,xhci_ms=<probe-default_30>,gpu3d=0,timer=1,timer_ms=250,desktop=0x1234abcd,desktop_agent=0,shutdown=0,console_periodic=0' "smp4 run row"
-assert_contains "$report" $'median\tprofile=release,smp=1,daily=0,ram=2048,watchdog=900000,xhci_ms=<probe-default_30>,gpu3d=0,timer=1,timer_ms=250,desktop=0x1234abcd,desktop_agent=0,shutdown=0,console_periodic=0\t2\t1115.00\t1015.00\t1001.50\t100.15' "smp1 median"
-assert_contains "$report" $'median\tprofile=release,smp=4,daily=0,ram=2048,watchdog=900000,xhci_ms=<probe-default_30>,gpu3d=0,timer=1,timer_ms=250,desktop=0x1234abcd,desktop_agent=0,shutdown=0,console_periodic=0\t2\t1415.00\t1315.00\t4001.50\t400.15' "smp4 median"
+assert_contains "$report" $'run\tprofile=release,smp=1,daily=0,ram=2048,watchdog=900000,xhci_ms=<probe-default_30>,gpu3d=0,timer=1,timer_ms=250,desktop=0x1234abcd,desktop_agent=0,shutdown=0,console_periodic=0,host_pause_ms=<unset>' "smp1 run row"
+assert_contains "$report" $'run\tprofile=release,smp=4,daily=0,ram=2048,watchdog=900000,xhci_ms=<probe-default_30>,gpu3d=0,timer=1,timer_ms=250,desktop=0x1234abcd,desktop_agent=0,shutdown=0,console_periodic=0,host_pause_ms=<unset>' "smp4 run row"
+assert_contains "$report" $'median\tprofile=release,smp=1,daily=0,ram=2048,watchdog=900000,xhci_ms=<probe-default_30>,gpu3d=0,timer=1,timer_ms=250,desktop=0x1234abcd,desktop_agent=0,shutdown=0,console_periodic=0,host_pause_ms=<unset>\t2\t1115.00\t1015.00\t1001.50\t100.15' "smp1 median"
+assert_contains "$report" $'median\tprofile=release,smp=4,daily=0,ram=2048,watchdog=900000,xhci_ms=<probe-default_30>,gpu3d=0,timer=1,timer_ms=250,desktop=0x1234abcd,desktop_agent=0,shutdown=0,console_periodic=0,host_pause_ms=<unset>\t2\t1415.00\t1315.00\t4001.50\t400.15' "smp4 median"
 
 run_target="$(awk -F= '$1 == "target" { print substr($0, 8); exit }' "$EVIDENCE/smp-1/run-1/preflight.txt")"
 run_vars="$(awk -F= '$1 == "vars" { print substr($0, 6); exit }' "$EVIDENCE/smp-1/run-1/preflight.txt")"
@@ -255,7 +256,7 @@ assert_contains "$fail_output" "Wrote boot timer matrix report: $FAIL_EVIDENCE/b
 [[ -f "$FAIL_EVIDENCE/smp-2/run-1/run.log" ]] || fail "failed matrix should synthesize run.log"
 [[ -f "$FAIL_EVIDENCE/smp-2/run-1/preflight.txt" ]] || fail "failed matrix should synthesize preflight"
 fail_report="$(cat "$FAIL_EVIDENCE/boot-timer-report.tsv")"
-assert_contains "$fail_report" $'run\tprofile=debug,smp=2,daily=unknown,ram=unknown,watchdog=unknown,xhci_ms=unknown,gpu3d=unknown,timer=1,timer_ms=<probe-default_1000>,desktop=0x1234abcd,desktop_agent=0,shutdown=unknown,console_periodic=unknown' "failed run row"
+assert_contains "$fail_report" $'run\tprofile=debug,smp=2,daily=unknown,ram=unknown,watchdog=unknown,xhci_ms=unknown,gpu3d=unknown,timer=1,timer_ms=<probe-default_1000>,desktop=0x1234abcd,desktop_agent=0,shutdown=unknown,console_periodic=unknown,host_pause_ms=unknown' "failed run row"
 assert_contains "$fail_report" $'\tfalse\t\t0\t0.00\t0\t0\t17\tfalse\tmissing_start,missing_summary,desktop_not_reached,vcpu_count_mismatch,run_status_nonzero' "failed run validity"
 
 set +e

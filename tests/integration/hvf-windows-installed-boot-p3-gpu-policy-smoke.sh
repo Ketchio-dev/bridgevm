@@ -92,11 +92,14 @@ assert_contains "$output" "BRIDGEVM_BOOT_TIMER_RAMFB_MS=<probe-default 1000>" "i
 assert_contains "$output" "BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=<unset>" "installed boot policy"
 assert_contains "$output" "SHUTDOWN_AFTER_AGENT_READY=0" "installed boot policy"
+assert_contains "$output" "HOST_PAUSE_RESUME_PROOF_MS=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_TEST=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_CMDS=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=<unset>" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_SERVICE=<unset>" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_CTL=<unset>" "installed boot policy"
 assert_contains "$output" "BUILD_PROFILE=debug" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_NVME_DISK_WRITABLE=1 when booting target as only NVMe" "installed boot policy"
 
@@ -140,6 +143,24 @@ assert_contains "$shutdown_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST=1" "agen
 assert_contains "$shutdown_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=1" "agent shutdown policy"
 assert_contains "$shutdown_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CMDS=shutdown.exe /p /f" "agent shutdown policy"
 assert_contains "$shutdown_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=234567" "agent shutdown policy"
+
+pause_policy_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --watchdog-ms 234567 \
+    --host-pause-resume-proof-ms 1500 \
+    --print-policy 2>&1
+)" || fail "installed boot host pause/resume policy failed: $pause_policy_output"
+assert_contains "$pause_policy_output" "HOST_PAUSE_RESUME_PROOF_MS=1500" "host pause/resume policy"
+assert_contains "$pause_policy_output" "BRIDGEVM_VIRTIO_CONSOLE=1" "host pause/resume policy"
+assert_contains "$pause_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST=1" "host pause/resume policy"
+assert_contains "$pause_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=1" "host pause/resume policy"
+assert_contains "$pause_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CMDS=ver" "host pause/resume policy"
+assert_contains "$pause_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=234567" "host pause/resume policy"
+assert_contains "$pause_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_SERVICE=1" "host pause/resume policy"
+assert_contains "$pause_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CTL=$EVIDENCE/host-pause-resume-control.txt" "host pause/resume policy"
 
 boot_timer_env_output="$(
   bash -c '
@@ -201,6 +222,29 @@ assert_contains "$shutdown_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST=1" "agent s
 assert_contains "$shutdown_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=1" "agent shutdown env"
 assert_contains "$shutdown_env_output" "BRIDGEVM_VIRTIO_CONSOLE_CMDS=shutdown.exe /p /f" "agent shutdown env"
 assert_contains "$shutdown_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=234567" "agent shutdown env"
+
+pause_env_output="$(
+  bash -c '
+    set -euo pipefail
+    source scripts/run-hvf-windows-installed-boot-validation.sh
+    source scripts/run-hvf-windows-installed-boot-args.sh
+    source scripts/run-hvf-windows-installed-boot-runner.sh
+    init_installed_boot_defaults
+    parse_installed_boot_args "$@"
+    build_installed_boot_env_args
+  ' _ \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --watchdog-ms 234567 \
+    --host-pause-resume-proof-ms 1500
+)" || fail "installed boot host pause/resume env failed: $pause_env_output"
+assert_contains "$pause_env_output" "BRIDGEVM_VIRTIO_CONSOLE=1" "host pause/resume env"
+assert_contains "$pause_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST=1" "host pause/resume env"
+assert_contains "$pause_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=1" "host pause/resume env"
+assert_contains "$pause_env_output" "BRIDGEVM_VIRTIO_CONSOLE_CMDS=ver" "host pause/resume env"
+assert_contains "$pause_env_output" "BRIDGEVM_VIRTIO_CONSOLE_SERVICE=1" "host pause/resume env"
+assert_contains "$pause_env_output" "BRIDGEVM_VIRTIO_CONSOLE_CTL=$EVIDENCE/host-pause-resume-control.txt" "host pause/resume env"
 
 daily_output="$(
   scripts/run-hvf-windows-installed-boot.sh \
@@ -267,6 +311,27 @@ bad_boot_timer_ms_output="$(
 )" && fail "installed boot unexpectedly accepted invalid boot timer interval: $bad_boot_timer_ms_output"
 
 assert_contains "$bad_boot_timer_ms_output" "--boot-timer-ramfb-ms requires an integer from 100 to 60000" "invalid boot timer interval policy"
+
+bad_pause_ms_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --host-pause-resume-proof-ms 99 \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted invalid host pause interval: $bad_pause_ms_output"
+assert_contains "$bad_pause_ms_output" "--host-pause-resume-proof-ms requires an integer from 100 to 60000" "invalid host pause interval policy"
+
+conflicting_shutdown_pause_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --shutdown-after-agent-ready \
+    --host-pause-resume-proof-ms 1000 \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted conflicting shutdown/pause controls: $conflicting_shutdown_pause_output"
+assert_contains "$conflicting_shutdown_pause_output" "controls its own post-resume shutdown" "shutdown/pause conflict policy"
 
 huge_boot_timer_ms_output="$(
   scripts/run-hvf-windows-installed-boot.sh \
@@ -368,6 +433,7 @@ printf 'console_test_periodic=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC-<un
 printf 'console_cmds=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_CMDS-<unset>}"
 printf 'console_timeout=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS-<unset>}"
 printf 'console_service=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_SERVICE-<unset>}"
+printf 'console_ctl=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_CTL-<unset>}"
 printf 'console_share=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_SHARE-<unset>}"
 printf 'unknown_poison=%s\n' "${BRIDGEVM_UNKNOWN_POISON-<unset>}"
 printf 'vars=%s\n' "${BRIDGEVM_AARCH64_UEFI_VARS-<unset>}"
@@ -396,6 +462,7 @@ sanitized_probe_output="$(
   BRIDGEVM_VIRTIO_CONSOLE_CMDS=poison \
   BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=777 \
   BRIDGEVM_VIRTIO_CONSOLE_SERVICE=1 \
+  BRIDGEVM_VIRTIO_CONSOLE_CTL=/tmp/poison-control \
   BRIDGEVM_VIRTIO_CONSOLE_SHARE=/tmp/poison-share \
   BRIDGEVM_UNKNOWN_POISON=1 \
   bash -c '
@@ -429,6 +496,7 @@ assert_contains "$sanitized_probe_output" "console_test_periodic=<unset>" "ambie
 assert_contains "$sanitized_probe_output" "console_cmds=<unset>" "ambient console command sanitization"
 assert_contains "$sanitized_probe_output" "console_timeout=<unset>" "ambient console timeout sanitization"
 assert_contains "$sanitized_probe_output" "console_service=<unset>" "ambient console service sanitization"
+assert_contains "$sanitized_probe_output" "console_ctl=<unset>" "ambient console control sanitization"
 assert_contains "$sanitized_probe_output" "console_share=<unset>" "ambient console share sanitization"
 assert_contains "$sanitized_probe_output" "unknown_poison=<unset>" "ambient unknown BridgeVM sanitization"
 

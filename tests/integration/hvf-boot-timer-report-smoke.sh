@@ -87,6 +87,7 @@ boot_timer_desktop_checksum64=$desktop_checksum
 boot_timer_desktop_agent=$desktop_agent
 shutdown_after_agent_ready=0
 virtio_console_test_periodic=0
+host_pause_resume_proof_ms=<unset>
 virtio_gpu_3d=$gpu3d
 EOF
   cat >"$dir/run.log" <<EOF
@@ -117,15 +118,15 @@ output="$(
 )" || fail "boot timer report failed: $output"
 
 assert_contains "$output" $'section\tconfig\tsource\tsummary_elapsed_ms' "report header"
-assert_contains "$output" $'run\tprofile=release,smp=1,daily=0,ram=4096,watchdog=900000,xhci_ms=30,gpu3d=0,timer=1,timer_ms=1000,desktop=<unset>,desktop_agent=0,shutdown=0,console_periodic=0' "smp1 run row"
-assert_contains "$output" $'run\tprofile=release,smp=4,daily=1,ram=4096,watchdog=900000,xhci_ms=30,gpu3d=1,timer=1,timer_ms=1000,desktop=<unset>,desktop_agent=0,shutdown=0,console_periodic=0' "smp4 run row"
-assert_contains "$output" $'median\tprofile=release,smp=1,daily=0,ram=4096,watchdog=900000,xhci_ms=30,gpu3d=0,timer=1,timer_ms=1000,desktop=<unset>,desktop_agent=0,shutdown=0,console_periodic=0\t2\t1100.00\t950.00\t125.00\t12.50\t2\t0' "smp1 median"
-assert_contains "$output" $'median\tprofile=release,smp=4,daily=1,ram=4096,watchdog=900000,xhci_ms=30,gpu3d=1,timer=1,timer_ms=1000,desktop=<unset>,desktop_agent=0,shutdown=0,console_periodic=0\t1\t800\t700\t900\t90.00' "smp4 median"
+assert_contains "$output" $'run\tprofile=release,smp=1,daily=0,ram=4096,watchdog=900000,xhci_ms=30,gpu3d=0,timer=1,timer_ms=1000,desktop=<unset>,desktop_agent=0,shutdown=0,console_periodic=0,host_pause_ms=<unset>' "smp1 run row"
+assert_contains "$output" $'run\tprofile=release,smp=4,daily=1,ram=4096,watchdog=900000,xhci_ms=30,gpu3d=1,timer=1,timer_ms=1000,desktop=<unset>,desktop_agent=0,shutdown=0,console_periodic=0,host_pause_ms=<unset>' "smp4 run row"
+assert_contains "$output" $'median\tprofile=release,smp=1,daily=0,ram=4096,watchdog=900000,xhci_ms=30,gpu3d=0,timer=1,timer_ms=1000,desktop=<unset>,desktop_agent=0,shutdown=0,console_periodic=0,host_pause_ms=<unset>\t2\t1100.00\t950.00\t125.00\t12.50\t2\t0' "smp1 median"
+assert_contains "$output" $'median\tprofile=release,smp=4,daily=1,ram=4096,watchdog=900000,xhci_ms=30,gpu3d=1,timer=1,timer_ms=1000,desktop=<unset>,desktop_agent=0,shutdown=0,console_periodic=0,host_pause_ms=<unset>\t1\t800\t700\t900\t90.00' "smp4 median"
 
 make_run agent-valid release 1 0 0 900 800 90 0 10.00 0.00 1 agent
 agent_output="$(scripts/report-hvf-boot-timer-metrics.sh "$STORE/agent-valid")" \
   || fail "valid agent-oracle report failed: $agent_output"
-assert_contains "$agent_output" $'desktop_agent=1,shutdown=0,console_periodic=0\t'"$STORE"$'/agent-valid/run.log\t900\t800\ttrue\t4/4\t90\t10.00\t1\t1\tunknown\ttrue\t' "valid agent oracle"
+assert_contains "$agent_output" $'desktop_agent=1,shutdown=0,console_periodic=0,host_pause_ms=<unset>\t'"$STORE"$'/agent-valid/run.log\t900\t800\ttrue\t4/4\t90\t10.00\t1\t1\tunknown\ttrue\t' "valid agent oracle"
 
 INVALID="$STORE/invalid"
 mkdir -p "$INVALID"
@@ -169,11 +170,11 @@ set -e
 [[ "$validity_status" == "1" ]] \
   || fail "oracle/stop/vCPU-invalid report should fail, got $validity_status: $validity_output"
 assert_contains "$validity_output" $'false\tdesktop_oracle_mismatch' "agent oracle mismatch"
-assert_contains "$validity_output" $'desktop_agent=0,shutdown=0,console_periodic=0\t'"$STORE"$'/disabled-agent-source/run.log\t900\t800\ttrue\t4/4\t90\t10.00\t1\t1\tunknown\tfalse\tdesktop_oracle_mismatch' "disabled agent source mismatch"
+assert_contains "$validity_output" $'desktop_agent=0,shutdown=0,console_periodic=0,host_pause_ms=<unset>\t'"$STORE"$'/disabled-agent-source/run.log\t900\t800\ttrue\t4/4\t90\t10.00\t1\t1\tunknown\tfalse\tdesktop_oracle_mismatch' "disabled agent source mismatch"
 assert_contains "$validity_output" $'false\thv_vcpu_run_error' "hv_vcpu_run error"
 assert_contains "$validity_output" $'false\tvcpu_ids_mismatch' "duplicate vCPU id"
 assert_contains "$validity_output" $'false\tdesktop_oracle_mismatch' "checksum oracle mismatch"
-assert_contains "$validity_output" $'desktop=0x1234,desktop_agent=0,shutdown=0,console_periodic=0\t'"$STORE"$'/checksum-start-mismatch/run.log\t900\t800\ttrue\t4/4\t90\t10.00\t1\t1\tunknown\tfalse\tdesktop_oracle_mismatch' "recorded checksum mismatch"
+assert_contains "$validity_output" $'desktop=0x1234,desktop_agent=0,shutdown=0,console_periodic=0,host_pause_ms=<unset>\t'"$STORE"$'/checksum-start-mismatch/run.log\t900\t800\ttrue\t4/4\t90\t10.00\t1\t1\tunknown\tfalse\tdesktop_oracle_mismatch' "recorded checksum mismatch"
 assert_contains "$validity_output" $'false\tmetric_fields_invalid' "invalid metric fields"
 
 echo "PASS: HVF boot timer report smoke ($STORE)"

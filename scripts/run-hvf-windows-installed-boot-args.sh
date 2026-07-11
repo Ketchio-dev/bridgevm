@@ -45,6 +45,7 @@ init_installed_boot_defaults() {
   BOOT_TIMER_DESKTOP_CHECKSUM64=""
   BOOT_TIMER_DESKTOP_AGENT="0"
   SHUTDOWN_AFTER_AGENT_READY="0"
+  HOST_PAUSE_RESUME_PROOF_MS=""
   XHCI_POLICY=""
   XHCI_REASON=""
   TRACE_IRQ="0"
@@ -97,6 +98,11 @@ parse_installed_boot_args() {
         BOOT_TIMER="1"; BOOT_TIMER_DESKTOP_AGENT="1"; shift
         ;;
       --shutdown-after-agent-ready) SHUTDOWN_AFTER_AGENT_READY="1"; shift ;;
+      --host-pause-resume-proof-ms)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        host_pause_resume_proof_ms "$2" || { echo "FAIL: --host-pause-resume-proof-ms requires an integer from 100 to 60000" >&2; exit 2; }
+        HOST_PAUSE_RESUME_PROOF_MS="$2"; shift 2
+        ;;
       --enable-xhci) ENABLE_XHCI="1"; shift ;;
       --virtio-net) VIRTIO_NET="1"; shift ;;
       --trace-irq) TRACE_IRQ="1"; shift ;;
@@ -217,6 +223,10 @@ validate_installed_boot_option_combinations() {
     echo "FAIL: choose exactly one BOOT_TIMER desktop oracle: --boot-timer-desktop-agent or --boot-timer-desktop-checksum64" >&2
     exit 2
   fi
+  if [[ -n "$HOST_PAUSE_RESUME_PROOF_MS" && "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
+    echo "FAIL: --host-pause-resume-proof-ms controls its own post-resume shutdown and cannot be combined with --shutdown-after-agent-ready" >&2
+    exit 2
+  fi
   if [[ -z "$SETUP_INPUT_ACTIONS" && ( -n "$SETUP_INPUT_MARKER" || -n "$SETUP_INPUT_FIRE_DELAY_MS" || -n "$SETUP_INPUT_RAMFB_DELAY_MS" ) ]]; then
     echo "FAIL: setup-input marker/delay options require --setup-input-actions" >&2
     exit 2
@@ -279,6 +289,8 @@ print_installed_boot_policy() {
   local console_test_periodic_policy="<unset>"
   local console_commands_policy="<unset>"
   local console_timeout_policy="<unset>"
+  local console_service_policy="<unset>"
+  local console_control_policy="<unset>"
   if [[ "$VIRTIO_GPU_3D" == "1" ]]; then
     gpu_enabled_policy="1"
     gpu_3d_protocol="$(virtio_gpu_3d_runtime_protocol)"
@@ -289,7 +301,7 @@ print_installed_boot_policy() {
     fi
     gpu_trace_policy="${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}"
   fi
-  if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
+  if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" ]]; then
     virtio_console_policy="1"
   fi
   if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
@@ -297,6 +309,14 @@ print_installed_boot_policy() {
     console_test_periodic_policy="1"
     console_commands_policy="shutdown.exe /p /f"
     console_timeout_policy="$WATCHDOG_MS"
+  fi
+  if [[ -n "$HOST_PAUSE_RESUME_PROOF_MS" ]]; then
+    console_test_policy="1"
+    console_test_periodic_policy="1"
+    console_commands_policy="ver"
+    console_timeout_policy="$WATCHDOG_MS"
+    console_service_policy="1"
+    console_control_policy="$EVIDENCE_DIR/host-pause-resume-control.txt"
   fi
   printf '%s\n' \
     "$XHCI_POLICY" \
@@ -310,11 +330,14 @@ print_installed_boot_policy() {
     "BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64=${BOOT_TIMER_DESKTOP_CHECKSUM64:-<unset>}" \
     "BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=${BOOT_TIMER_DESKTOP_AGENT/0/<unset>}" \
     "SHUTDOWN_AFTER_AGENT_READY=$SHUTDOWN_AFTER_AGENT_READY" \
+    "HOST_PAUSE_RESUME_PROOF_MS=${HOST_PAUSE_RESUME_PROOF_MS:-<unset>}" \
     "BRIDGEVM_VIRTIO_CONSOLE=$virtio_console_policy" \
     "BRIDGEVM_VIRTIO_CONSOLE_TEST=$console_test_policy" \
     "BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=$console_test_periodic_policy" \
     "BRIDGEVM_VIRTIO_CONSOLE_CMDS=$console_commands_policy" \
     "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=$console_timeout_policy" \
+    "BRIDGEVM_VIRTIO_CONSOLE_SERVICE=$console_service_policy" \
+    "BRIDGEVM_VIRTIO_CONSOLE_CTL=$console_control_policy" \
     "BRIDGEVM_VIRTIO_GPU=$gpu_enabled_policy" \
     "BRIDGEVM_VIRTIO_GPU_3D=$VIRTIO_GPU_3D" \
     "BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=$gpu_3d_protocol" \

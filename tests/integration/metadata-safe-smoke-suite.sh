@@ -119,6 +119,7 @@ SMOKES=(
   "tests/integration/performance-cli-smoke.sh"
   "tests/integration/hvf-boot-timer-report-smoke.sh"
   "tests/integration/hvf-boot-timer-matrix-smoke.sh"
+  "tests/integration/hvf-host-pause-resume-proof-smoke.sh"
   "tests/integration/hvf-runner-installed-boot-launch-policy-smoke.sh"
   "tests/integration/resource-profile-readiness-smoke.sh"
   "tests/integration/runtime-resource-policy-cli-smoke.sh"

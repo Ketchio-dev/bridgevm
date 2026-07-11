@@ -30,6 +30,12 @@ boot_timer_ramfb_ms() {
   (( 10#$1 >= 100 && 10#$1 <= 60000 ))
 }
 
+host_pause_resume_proof_ms() {
+  positive_integer "$1" || return 1
+  (( ${#1} <= 5 )) || return 1
+  (( 10#$1 >= 100 && 10#$1 <= 60000 ))
+}
+
 u64_literal() {
   local value="$1"
   local trimmed

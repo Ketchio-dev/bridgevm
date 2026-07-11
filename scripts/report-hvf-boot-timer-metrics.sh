@@ -91,6 +91,7 @@ derive_config_label() {
   local boot_timer_desktop_agent
   local shutdown_after_agent_ready
   local virtio_console_test_periodic
+  local host_pause_resume_proof_ms
 
   if [[ -d "$input" ]]; then
     evidence_dir="$input"
@@ -113,7 +114,8 @@ derive_config_label() {
     boot_timer_desktop_agent="$(metadata_value "$preflight" boot_timer_desktop_agent)"
     shutdown_after_agent_ready="$(metadata_value "$preflight" shutdown_after_agent_ready)"
     virtio_console_test_periodic="$(metadata_value "$preflight" virtio_console_test_periodic)"
-    printf 'profile=%s,smp=%s,daily=%s,ram=%s,watchdog=%s,xhci_ms=%s,gpu3d=%s,timer=%s,timer_ms=%s,desktop=%s,desktop_agent=%s,shutdown=%s,console_periodic=%s\n' \
+    host_pause_resume_proof_ms="$(metadata_value "$preflight" host_pause_resume_proof_ms)"
+    printf 'profile=%s,smp=%s,daily=%s,ram=%s,watchdog=%s,xhci_ms=%s,gpu3d=%s,timer=%s,timer_ms=%s,desktop=%s,desktop_agent=%s,shutdown=%s,console_periodic=%s,host_pause_ms=%s\n' \
       "${build_profile:-unknown}" \
       "${smp_cpus:-<unset>}" \
       "${daily_preset:-unknown}" \
@@ -126,7 +128,8 @@ derive_config_label() {
       "${boot_timer_desktop_checksum64:-unknown}" \
       "${boot_timer_desktop_agent:-unknown}" \
       "${shutdown_after_agent_ready:-unknown}" \
-      "${virtio_console_test_periodic:-unknown}" | sanitize_label
+      "${virtio_console_test_periodic:-unknown}" \
+      "${host_pause_resume_proof_ms:-unknown}" | sanitize_label
   else
     basename "$evidence_dir" | sanitize_label
   fi

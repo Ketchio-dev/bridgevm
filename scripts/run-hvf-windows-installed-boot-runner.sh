@@ -1,6 +1,9 @@
 terminate_owned_probe() {
   [[ -n "$PROBE_PID" ]] || return 0
   kill -0 "$PROBE_PID" 2>/dev/null || return 0
+  # A SIGSTOP-based host-pause proof cannot receive TERM until continued.
+  # Always release a possibly stopped child before the normal TERM/KILL path.
+  kill -CONT "$PROBE_PID" 2>/dev/null || true
   pkill -TERM -P "$PROBE_PID" 2>/dev/null || true
   kill -TERM "$PROBE_PID" 2>/dev/null || true
   local wait_count=0
@@ -49,8 +52,13 @@ write_installed_boot_preflight() {
     printf 'boot_timer_desktop_checksum64=%s\n' "${BOOT_TIMER_DESKTOP_CHECKSUM64:-<unset>}"
     printf 'boot_timer_desktop_agent=%s\n' "$BOOT_TIMER_DESKTOP_AGENT"
     printf 'shutdown_after_agent_ready=%s\n' "$SHUTDOWN_AFTER_AGENT_READY"
-    printf 'virtio_console_test_periodic=%s\n' "$SHUTDOWN_AFTER_AGENT_READY"
-    if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
+    printf 'host_pause_resume_proof_ms=%s\n' "${HOST_PAUSE_RESUME_PROOF_MS:-<unset>}"
+    if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" ]]; then
+      printf 'virtio_console_test_periodic=1\n'
+    else
+      printf 'virtio_console_test_periodic=0\n'
+    fi
+    if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" ]]; then
       printf 'virtio_console=1\n'
     else
       printf 'virtio_console=0\n'
@@ -165,7 +173,7 @@ build_installed_boot_env_args() {
       ENV_ARGS+=('BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=1')
     fi
   fi
-  if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
+  if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" ]]; then
     ENV_ARGS+=('BRIDGEVM_VIRTIO_CONSOLE=1')
   fi
   if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
@@ -174,6 +182,16 @@ build_installed_boot_env_args() {
       'BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=1'
       'BRIDGEVM_VIRTIO_CONSOLE_CMDS=shutdown.exe /p /f'
       "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=$WATCHDOG_MS"
+    )
+  fi
+  if [[ -n "$HOST_PAUSE_RESUME_PROOF_MS" ]]; then
+    ENV_ARGS+=(
+      'BRIDGEVM_VIRTIO_CONSOLE_TEST=1'
+      'BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=1'
+      'BRIDGEVM_VIRTIO_CONSOLE_CMDS=ver'
+      "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=$WATCHDOG_MS"
+      'BRIDGEVM_VIRTIO_CONSOLE_SERVICE=1'
+      "BRIDGEVM_VIRTIO_CONSOLE_CTL=$(host_pause_resume_control_path)"
     )
   fi
   append_input_env_args
@@ -271,6 +289,138 @@ write_p3_gpu_readiness() {
   [[ "$status" == "0" ]]
 }
 
+host_pause_resume_control_path() {
+  printf '%s/host-pause-resume-control.txt\n' "$EVIDENCE_DIR"
+}
+
+host_pause_resume_observation_path() {
+  printf '%s/host-pause-resume-observation.txt\n' "$EVIDENCE_DIR"
+}
+
+probe_log_match_count() {
+  local pattern="$1"
+  local count
+  count="$(rg -c "$pattern" "$EVIDENCE_DIR/run.log" 2>/dev/null || true)"
+  printf '%s\n' "${count:-0}"
+}
+
+wait_for_probe_log_count() {
+  local pattern="$1"
+  local expected="$2"
+  local timeout_ms="${WATCHDOG_MS:-900000}"
+  local timeout_seconds=$(( (10#$timeout_ms + 999) / 1000 ))
+  local deadline=$((SECONDS + timeout_seconds))
+  local count
+
+  while (( SECONDS <= deadline )); do
+    count="$(probe_log_match_count "$pattern")"
+    if (( 10#$count >= expected )); then
+      return 0
+    fi
+    if ! kill -0 "$PROBE_PID" 2>/dev/null; then
+      return 1
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
+fail_host_pause_resume_control() {
+  local reason="$1"
+  local observation
+  observation="$(host_pause_resume_observation_path)"
+  kill -CONT "$PROBE_PID" 2>/dev/null || true
+  {
+    printf 'failure_reason=%s\n' "$reason"
+    printf 'control_status=1\n'
+  } >> "$observation"
+  return 1
+}
+
+drive_host_pause_resume_proof() {
+  local control
+  local observation
+  local pause_seconds
+  local state=""
+  local paused_start_bytes
+  local paused_end_bytes
+  local initial_ver_count
+  local resumed_ver_target
+  local stable="false"
+  local state_wait
+
+  control="$(host_pause_resume_control_path)"
+  observation="$(host_pause_resume_observation_path)"
+  pause_seconds="$(printf '%d.%03d' \
+    "$((10#$HOST_PAUSE_RESUME_PROOF_MS / 1000))" \
+    "$((10#$HOST_PAUSE_RESUME_PROOF_MS % 1000))")"
+
+  {
+    date -u
+    printf 'configured_pause_ms=%s\n' "$HOST_PAUSE_RESUME_PROOF_MS"
+    printf 'probe_pid=%s\n' "$PROBE_PID"
+    printf 'control_path=%s\n' "$control"
+  } > "$observation"
+
+  if ! wait_for_probe_log_count '^BVAGENT SERVICE start' 1; then
+    fail_host_pause_resume_control service_ready_timeout
+    return 1
+  fi
+  printf 'service_ready=true\n' >> "$observation"
+
+  if ! kill -STOP "$PROBE_PID" 2>/dev/null; then
+    fail_host_pause_resume_control sigstop_failed
+    return 1
+  fi
+  for state_wait in $(seq 1 20); do
+    state="$(ps -o state= -p "$PROBE_PID" 2>/dev/null | tr -d '[:space:]')"
+    [[ "$state" == T* ]] && break
+    sleep 0.05
+  done
+  if [[ "$state" != T* ]]; then
+    fail_host_pause_resume_control process_did_not_stop
+    return 1
+  fi
+
+  paused_start_bytes="$(stat -f %z "$EVIDENCE_DIR/run.log")"
+  sleep "$pause_seconds"
+  state="$(ps -o state= -p "$PROBE_PID" 2>/dev/null | tr -d '[:space:]')"
+  paused_end_bytes="$(stat -f %z "$EVIDENCE_DIR/run.log")"
+  [[ "$paused_start_bytes" == "$paused_end_bytes" ]] && stable="true"
+  {
+    printf 'during_state=%s\n' "$state"
+    printf 'paused_start_log_bytes=%s\n' "$paused_start_bytes"
+    printf 'paused_end_log_bytes=%s\n' "$paused_end_bytes"
+    printf 'log_stable_while_stopped=%s\n' "$stable"
+  } >> "$observation"
+  if [[ "$state" != T* || "$stable" != "true" ]]; then
+    fail_host_pause_resume_control pause_observation_failed
+    return 1
+  fi
+
+  if ! kill -CONT "$PROBE_PID" 2>/dev/null; then
+    fail_host_pause_resume_control sigcont_failed
+    return 1
+  fi
+  printf 'continue_signal_sent=true\n' >> "$observation"
+
+  initial_ver_count="$(probe_log_match_count '^BVAGENT CMD ver exit=0')"
+  resumed_ver_target=$((10#$initial_ver_count + 1))
+  printf 'ver\n' >> "$control"
+  printf 'post_resume_command_sent=true\n' >> "$observation"
+  if ! wait_for_probe_log_count '^BVAGENT CMD ver exit=0' "$resumed_ver_target"; then
+    fail_host_pause_resume_control post_resume_agent_timeout
+    return 1
+  fi
+  printf 'post_resume_command_ok=true\n' >> "$observation"
+
+  printf 'shutdown.exe /p /f\n' >> "$control"
+  {
+    printf 'shutdown_command_sent=true\n'
+    printf 'control_status=0\n'
+  } >> "$observation"
+}
+
 run_probe_process() {
   local name
   local -a env_command=(env)
@@ -285,13 +435,73 @@ run_probe_process() {
       BRIDGEVM_*) env_command+=(-u "$name") ;;
     esac
   done < <(compgen -e)
+  HOST_PAUSE_RESUME_CONTROL_STATUS=0
+  if [[ -n "${HOST_PAUSE_RESUME_PROOF_MS:-}" ]]; then
+    : > "$(host_pause_resume_control_path)"
+  fi
   set +e
   "${env_command[@]}" "${ENV_ARGS[@]}" "$BIN" > "$EVIDENCE_DIR/run.log" 2>&1 &
   PROBE_PID="$!"
+  if [[ -n "${HOST_PAUSE_RESUME_PROOF_MS:-}" ]]; then
+    if ! drive_host_pause_resume_proof; then
+      HOST_PAUSE_RESUME_CONTROL_STATUS=1
+      terminate_owned_probe
+    fi
+  fi
   wait "$PROBE_PID"
   RUN_STATUS="$?"
   PROBE_PID=""
   set -e
+}
+
+write_host_pause_resume_gate() {
+  [[ -n "$HOST_PAUSE_RESUME_PROOF_MS" ]] || return 0
+
+  local observation
+  local service_ready="false"
+  local stopped="false"
+  local stable="false"
+  local continued="false"
+  local agent_round_trip="false"
+  local guest_system_off="false"
+  local nvme_writeback="false"
+  local probe_status="$RUN_STATUS"
+  local status="0"
+  observation="$(host_pause_resume_observation_path)"
+
+  [[ -f "$observation" ]] && rg -q '^service_ready=true$' "$observation" && service_ready="true"
+  [[ -f "$observation" ]] && rg -q '^during_state=T' "$observation" && stopped="true"
+  [[ -f "$observation" ]] && rg -q '^log_stable_while_stopped=true$' "$observation" && stable="true"
+  [[ -f "$observation" ]] && rg -q '^continue_signal_sent=true$' "$observation" && continued="true"
+  [[ -f "$observation" ]] && rg -q '^post_resume_command_ok=true$' "$observation" && agent_round_trip="true"
+  rg -q '^stop: PSCI .*\(system off\)' "$EVIDENCE_DIR/run.log" && guest_system_off="true"
+  rg -q '^NVMe (second namespace )?disk written back:' "$EVIDENCE_DIR/run.log" && nvme_writeback="true"
+
+  if [[ "${HOST_PAUSE_RESUME_CONTROL_STATUS:-1}" != "0" || "$probe_status" != "0" || \
+        "$service_ready" != "true" || "$stopped" != "true" || "$stable" != "true" || \
+        "$continued" != "true" || "$agent_round_trip" != "true" || \
+        "$guest_system_off" != "true" || "$nvme_writeback" != "true" ]]; then
+    status="1"
+  fi
+
+  {
+    printf 'scope=process-resident-host-pause-resume\n'
+    printf 'disk_backed_suspend=false\n'
+    printf 'configured_pause_ms=%s\n' "$HOST_PAUSE_RESUME_PROOF_MS"
+    printf 'service_ready=%s\n' "$service_ready"
+    printf 'process_stopped=%s\n' "$stopped"
+    printf 'log_stable_while_stopped=%s\n' "$stable"
+    printf 'continue_signal_sent=%s\n' "$continued"
+    printf 'post_resume_agent_round_trip=%s\n' "$agent_round_trip"
+    printf 'guest_system_off=%s\n' "$guest_system_off"
+    printf 'nvme_writeback=%s\n' "$nvme_writeback"
+    printf 'probe_status=%s\n' "$probe_status"
+    printf 'status=%s\n' "$status"
+  } > "$EVIDENCE_DIR/host-pause-resume-gate.txt"
+
+  if [[ "$status" != "0" && "$RUN_STATUS" == "0" ]]; then
+    RUN_STATUS="$status"
+  fi
 }
 
 write_agent_shutdown_gate() {
@@ -390,6 +600,10 @@ write_installed_boot_target_stat() {
     if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
       printf 'agent_shutdown_gate=%s\n' "$EVIDENCE_DIR/agent-shutdown-gate.txt"
     fi
+    if [[ -n "$HOST_PAUSE_RESUME_PROOF_MS" ]]; then
+      printf 'host_pause_resume_gate=%s\n' "$EVIDENCE_DIR/host-pause-resume-gate.txt"
+      printf 'host_pause_resume_observation=%s\n' "$(host_pause_resume_observation_path)"
+    fi
     print_media_stat after_target_stat "$TARGET"
     printf 'after_vars_stat:\n'
     ls -lh "$VARS"
@@ -427,6 +641,7 @@ run_installed_boot_probe() {
   write_probe_command_env
   run_probe_process
   write_agent_shutdown_gate
+  write_host_pause_resume_gate
   write_virtio_gpu_trace_report
   write_installed_boot_target_stat
 }

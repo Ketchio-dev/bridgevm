@@ -174,6 +174,7 @@ ensure_run_report_artifacts() {
       printf 'boot_timer_desktop_agent=%s\n' "$BOOT_TIMER_DESKTOP_AGENT"
       printf 'shutdown_after_agent_ready=unknown\n'
       printf 'virtio_console_test_periodic=unknown\n'
+      printf 'host_pause_resume_proof_ms=unknown\n'
       printf 'virtio_gpu_3d=unknown\n'
     } > "$run_dir/preflight.txt"
   fi

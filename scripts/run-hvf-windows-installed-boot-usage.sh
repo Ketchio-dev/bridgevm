@@ -36,6 +36,13 @@ Options:
                           intended for clean, repeatable evidence runs. Agent
                           polling uses a periodic host wake so it does not add
                           an every-vCPU-exit automation lock to boot timing.
+  --host-pause-resume-proof-ms N
+                          After the agent service is ready, stop the complete
+                          probe process for N ms (100..60000), continue it,
+                          require a post-resume agent command round trip, then
+                          request clean guest shutdown. The gate proves only
+                          process-resident host pause/resume; it is not a
+                          disk-backed suspend image.
   --enable-xhci           Leave xHCI present for desktop input diagnosis.
   --virtio-net            Attach the virtio-net NIC (BRIDGEVM_VIRTIO_NET=1)
                           with the userspace NAT backend.

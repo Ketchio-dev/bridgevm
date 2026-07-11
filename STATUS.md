@@ -238,7 +238,7 @@ it with keyboard and pointer. Progress against the completion-plan milestone lad
 | **M2** Scripted install completes (WIM applied, bootable) | ✅ done |
 | **M3** Installed Windows reaches the desktop (OOBE auto-skip, `bridge` autologon) | ✅ done |
 | **M4** Interactive desktop (keyboard + pointer + display) | ✅ substantively done — visible typing into apps + pointer move/click, all ramfb-proven with xHCI enabled |
-| **M5** Connected · persistent · fast enough | 🟡 partial — **networking live-proven 2026-07-09**: `--virtio-net` (NAT) boots the installed desktop with the in-box netkvm bound ("Red Hat VirtIO Ethernet Adapter"), DHCP lease 10.0.2.15/gw 10.0.2.2, gateway ping 3/3, DNS resolves, HTTP GET example.com → 200 (guest internet works; outbound ICMP is now forwarded through unprivileged macOS ICMP sockets: ping 1.1.1.1 = 4/4 replies, 0% loss). **SMP/performance/lifecycle live-proven 2026-07-11**: a release/daily, fresh-clone, round-robin smp=1/2/4 matrix produced 9/9 valid agent READY + PSCI SYSTEM_OFF runs; READY medians are 40.372/31.193/26.137s, and every run completed NVMe sync/write-back. A synced run image was then reopened, booted, and shut down successfully again. Remaining: suspend/resume, packaged setup, and clean product UX |
+| **M5** Connected · persistent · fast enough | 🟡 partial — **networking live-proven 2026-07-09**: `--virtio-net` (NAT) boots the installed desktop with the in-box netkvm bound ("Red Hat VirtIO Ethernet Adapter"), DHCP lease 10.0.2.15/gw 10.0.2.2, gateway ping 3/3, DNS resolves, HTTP GET example.com → 200 (guest internet works; outbound ICMP is now forwarded through unprivileged macOS ICMP sockets: ping 1.1.1.1 = 4/4 replies, 0% loss). **SMP/performance/lifecycle live-proven 2026-07-11**: a release/daily, fresh-clone, round-robin smp=1/2/4 matrix produced 9/9 valid agent READY + PSCI SYSTEM_OFF runs; READY medians are 40.372/31.193/26.137s, and every run completed NVMe sync/write-back. A synced run image was then reopened, booted, and shut down successfully again. A full-process 10s host pause/resume also preserved a frozen log, recovered the agent channel, and cleanly powered off with write-back. This is process-resident pause, not a disk-backed suspend image. Remaining: an honest guest-sleep/durable-suspend decision, packaged setup, and clean product UX |
 | **M6** Integration polish (clipboard / resize / shared folders) | ✅ substantively done — M6-1 clipboard verbs, M6-2 file transfer (LS / chunked GET / PUT), M6-3 resident service loop + macOS pasteboard auto-sync + control-file injection, M6-4 bidirectional shared-folder sync (incl. guest-agent self-update over its own channel), all live-proven over virtio-console with an 11-min zero-timeout soak. Resize is formally BLOCKED on a real WDDM driver (ramfb + Basic Display enumerates zero display modes — probed in-guest). Gotchas fixed along the way: idle-guest vCPU-exit starvation (ServiceWake 250ms heartbeat) and the guest power plan sleeping the VM at desktop+5min (powercfg, persisted; bake into inject flow for fresh images) |
 
 The old "late-DXE stall / firmware won't bind NVMe" wall is **resolved**: root cause
@@ -278,12 +278,23 @@ M5 status (the remaining work to "usable"):
   chained proof is at `/Users/user/BridgeVM/post-exit-reopen-boot-20260711-v1/`.
 - **Lifecycle contract** — the FADT no longer advertises
   `LOW_POWER_S0_IDLE_CAPABLE`: BridgeVM has no matching platform idle/power engine, so that
-  bit described support the VMM did not provide. Real suspend/resume remains the next
-  lifecycle wall and must be implemented explicitly.
+  bit described support the VMM did not provide. A live 2026-07-11 `powercfg /a` probe
+  reports no available Windows sleep state: Graphics disables S1/S2/S3, hibernation is
+  disabled, and firmware does not support S0 Low Power Idle. The exact guest result is in
+  `/Users/user/BridgeVM/powercfg-capabilities-20260711-v1/run.log`.
+  `--host-pause-resume-proof-ms 10000` now supplies a narrower, automated host-side proof:
+  it waits for the resident agent, stops the complete HVF process, verifies that its log is
+  frozen while stopped, continues it, requires a second agent command, then requires PSCI
+  SYSTEM_OFF and NVMe write-back. The live gate passed at
+  `/Users/user/BridgeVM/host-pause-resume-wrapper-proof-20260711-v1/`. Its gate deliberately
+  records `scope=process-resident-host-pause-resume` and `disk_backed_suspend=false`.
+  Durable state serialization/restoration—and, if desired, a real guest ACPI sleep/wake
+  contract plus the Graphics blocker—remain the lifecycle wall.
 
 Honest framing: this is an impressive from-scratch VMM result, but it is **not yet a usable
-daily product** — networking, persistence, SMP, clean shutdown, and the performance floor are
-now proven, but suspend/resume, packaged setup, and a clean UX still need work, and Windows
+daily product** — networking, persistence, SMP, clean shutdown, the performance floor, and
+process-resident host pause/resume are now proven, but durable suspend or an explicit no-suspend
+v1 contract, packaged setup, and a clean UX still need work, and Windows
 still needs injected drivers rather than a turnkey driver story. The project's own strategy note flags this as the
 highest-cost / lowest-user-value track (QEMU+HVF already boots Windows 11 ARM today). Full
 history + reproduction recipes live in the assistant memory status file; strategy/gap context

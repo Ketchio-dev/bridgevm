@@ -258,6 +258,24 @@ Method for each: reach the surface, capture ramfb/trace evidence, fix, prove.
 - Acceptance achieved: installed changes survive reboot, and the explicit post-exit reopen
   chain is preserved under `/Users/user/BridgeVM/post-exit-reopen-boot-20260711-v1/`.
 
+### D5. Lifecycle / pause and resume *(process-resident proof landed; durable suspend open)*
+- A live 2026-07-11 `powercfg /a` probe reports no available guest sleep state. Graphics
+  disables S1/S2/S3, hibernation is disabled, and firmware does not support S0 Low Power
+  Idle. The FADT correctly leaves `LOW_POWER_S0_IDLE_CAPABLE` clear because this platform
+  has no matching low-power engine.
+- `run-hvf-windows-installed-boot.sh --host-pause-resume-proof-ms 10000` now stops the
+  complete running HVF process after the resident agent is ready, verifies the log stays
+  frozen for 10 seconds, continues the process, requires another successful agent command,
+  and then requires clean PSCI SYSTEM_OFF plus NVMe write-back. The live proof is preserved
+  under `/Users/user/BridgeVM/host-pause-resume-wrapper-proof-20260711-v1/`.
+- This gate is intentionally labelled `process-resident-host-pause-resume` and records
+  `disk_backed_suspend=false`. It proves host pause/continue integrity only; it does not
+  serialize RAM, vCPU, interrupt-controller, timer, or device state for later restoration.
+- Remaining product decision: either define v1 as having no durable suspend, or implement
+  and validate disk-backed state save/restore. If guest-initiated sleep is required too,
+  it additionally needs an honest ACPI sleep/wake contract and resolution of the Windows
+  Graphics/WDDM blocker.
+
 ## Workstream E — Performance & scale   *(measure first — start only after an install completes)*
 Profile and fix *measured* bottlenecks, not guessed ones.
 - **E1. SMP / multi-vCPU** — implemented with per-vCPU run-loop threads, GIC
@@ -289,8 +307,9 @@ Not required for "usable Windows". Sequence after D+E only if the product needs 
    autologon, desktop rendered.
 4. ✅ **M4 — Interactive desktop** (D1 + D2): keyboard + pointer work, display usable.
 5. 🟡 **M5 — Connected, persistent, fast enough** (D3 + D4 + E): the core network,
-   persistence, clean-shutdown, and measured multi-vCPU gates pass; suspend/resume and
-   packaged setup remain product gates.
+   persistence, clean-shutdown, measured multi-vCPU, and process-resident host-pause gates
+   pass; durable suspend (or an explicit no-suspend v1 contract) and packaged setup remain
+   product gates.
 6. ✅ **M6 — Integration polish** (F, optional): clipboard and shared folders are
    substantive; dynamic resize remains gated on the WDDM path.
 
@@ -305,7 +324,9 @@ evidence-driven — expect a new wall at each rung.
   `DRIVER_PNP_WATCHDOG`; the probe reboots on SYSTEM_RESET with NVMe + UEFI vars preserved.
 - **M3:** installed Windows desktop in a ramfb screenshot.
 - **M4:** type text + move/click on the desktop (ramfb proof).
-- **M5:** Windows online (IP + page load), files persist across reboot, multi-vCPU active.
+- **M5:** Windows online (IP + page load), files persist across reboot, multi-vCPU active,
+  clean shutdown/write-back, and host pause/continue recover the resident agent. Durable
+  suspend is a separate acceptance gate unless explicitly excluded from v1.
 
 ## Suggested order
 **A1→A2→A3** (unblock install) ∥ **B1→B2→B3** (reboots) → **C** (⇒ M3) → **D1, D2** (⇒ M4)
