@@ -717,8 +717,36 @@ impl VcpuControl {
 
 struct SecondaryVcpuSet {
     shutdown: Arc<AtomicBool>,
+    terminal: Arc<SecondaryTerminalSignal>,
     controls: Vec<Arc<VcpuControl>>,
     handles: Vec<JoinHandle<()>>,
+}
+
+/// Carries a terminal PSCI request made by any secondary vCPU back to the
+/// primary run loop. PSCI permits SYSTEM_OFF/SYSTEM_RESET on any online CPU;
+/// terminating only the calling secondary leaves CPU0 and the VM alive.
+struct SecondaryTerminalSignal {
+    function: AtomicU64,
+}
+
+impl SecondaryTerminalSignal {
+    const fn new() -> Self {
+        Self {
+            function: AtomicU64::new(0),
+        }
+    }
+
+    fn record(&self, function: u64) -> bool {
+        let function = function & 0xffff_ffff;
+        debug_assert!(psci_terminal_action(function).is_some());
+        self.function
+            .compare_exchange(0, function, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+
+    fn action(&self) -> Option<PsciTerminalAction> {
+        psci_terminal_action(self.function.load(Ordering::SeqCst))
+    }
 }
 
 struct PreRunDrainGate {
@@ -860,6 +888,7 @@ mod pre_run_drain_gate_tests {
 impl SecondaryVcpuSet {
     fn spawn(
         cpu_count: u64,
+        primary_vcpu: HvVcpuT,
         ram_base: usize,
         ram_size: usize,
         platform: Arc<Mutex<VirtPlatform>>,
@@ -870,12 +899,14 @@ impl SecondaryVcpuSet {
         if cpu_count <= 1 {
             return Self {
                 shutdown: Arc::new(AtomicBool::new(false)),
+                terminal: Arc::new(SecondaryTerminalSignal::new()),
                 controls: Vec::new(),
                 handles: Vec::new(),
             };
         }
 
         let shutdown = Arc::new(AtomicBool::new(false));
+        let terminal = Arc::new(SecondaryTerminalSignal::new());
         let controls: Vec<_> = (1..cpu_count)
             .map(|index| Arc::new(VcpuControl::new(index)))
             .collect();
@@ -885,6 +916,7 @@ impl SecondaryVcpuSet {
                 let control = Arc::clone(control);
                 let controls_for_thread = controls.clone();
                 let shutdown = Arc::clone(&shutdown);
+                let terminal = Arc::clone(&terminal);
                 let platform = Arc::clone(&platform);
                 let pre_run_drain_gate = Arc::clone(&pre_run_drain_gate);
                 let smp_trace = smp_trace.clone();
@@ -894,6 +926,8 @@ impl SecondaryVcpuSet {
                         secondary_vcpu_thread(
                             control,
                             shutdown,
+                            terminal,
+                            primary_vcpu,
                             ram_base,
                             ram_size,
                             platform,
@@ -909,9 +943,14 @@ impl SecondaryVcpuSet {
 
         Self {
             shutdown,
+            terminal,
             controls,
             handles,
         }
+    }
+
+    fn terminal_action(&self) -> Option<PsciTerminalAction> {
+        self.terminal.action()
     }
 
     fn shutdown_and_join(self) -> (Vec<(u64, u64)>, bool) {
@@ -941,6 +980,8 @@ impl SecondaryVcpuSet {
 fn secondary_vcpu_thread(
     control: Arc<VcpuControl>,
     shutdown: Arc<AtomicBool>,
+    terminal: Arc<SecondaryTerminalSignal>,
+    primary_vcpu: HvVcpuT,
     ram_base: usize,
     ram_size: usize,
     platform: Arc<Mutex<VirtPlatform>>,
@@ -1020,6 +1061,8 @@ fn secondary_vcpu_thread(
                     &control,
                     &controls,
                     &shutdown,
+                    &terminal,
+                    primary_vcpu,
                     &mut exits,
                     &pre_run_drain_gate,
                     smp_trace.as_deref(),
@@ -1046,6 +1089,8 @@ fn secondary_vcpu_thread(
                     &control,
                     &controls,
                     &shutdown,
+                    &terminal,
+                    primary_vcpu,
                     &mut exits,
                     &pre_run_drain_gate,
                     smp_trace.as_deref(),
@@ -1224,6 +1269,8 @@ fn run_secondary_until_parked(
     control: &Arc<VcpuControl>,
     controls: &[Arc<VcpuControl>],
     shutdown: &AtomicBool,
+    terminal: &SecondaryTerminalSignal,
+    primary_vcpu: HvVcpuT,
     exits: &mut u64,
     pre_run_drain_gate: &PreRunDrainGate,
     smp_trace: Option<&SmpTrace>,
@@ -1448,7 +1495,22 @@ fn run_secondary_until_parked(
                             hv_vcpu_set_reg(vcpu, HV_REG_X0, psci_affinity_info(controls, target));
                         }
                     }
-                    PSCI_SYSTEM_OFF | PSCI_SYSTEM_RESET => return true,
+                    value if psci_terminal_action(value).is_some() => {
+                        if terminal.record(value) {
+                            println!(
+                                "secondary vCPU{} forwarded PSCI {:#x} to the primary run loop",
+                                control.index,
+                                value & 0xffff_ffff
+                            );
+                        }
+                        // SAFETY: `primary_vcpu` remains owned by the probe
+                        // until all secondary threads are joined. Waking it is
+                        // required so CPU0 can observe the terminal request.
+                        unsafe {
+                            hv_vcpus_exit(&primary_vcpu, 1);
+                        }
+                        return true;
+                    }
                     TRNG_VERSION => unsafe {
                         hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0000);
                     },
@@ -1645,6 +1707,24 @@ mod vcpu_control_tests {
             "withdrawal completed while a shutdown action held the handle"
         );
         assert_eq!(*control.vcpu.lock().unwrap(), None);
+    }
+
+    #[test]
+    fn secondary_terminal_signal_preserves_the_first_system_request() {
+        let signal = SecondaryTerminalSignal::new();
+
+        assert_eq!(signal.action(), None);
+        assert!(signal.record(PSCI_SYSTEM_OFF));
+        assert!(!signal.record(PSCI_SYSTEM_RESET));
+        assert_eq!(signal.action(), Some(PsciTerminalAction::SystemOff));
+    }
+
+    #[test]
+    fn secondary_terminal_signal_accepts_a_system_reset_request() {
+        let signal = SecondaryTerminalSignal::new();
+
+        assert!(signal.record(PSCI_SYSTEM_RESET));
+        assert_eq!(signal.action(), Some(PsciTerminalAction::SystemReset));
     }
 
     #[test]
@@ -3744,6 +3824,7 @@ fn main() -> ExitCode {
             let secondary_vcpus = (smp_cpus > 1).then(|| {
                 SecondaryVcpuSet::spawn(
                     smp_cpus,
+                    vcpu,
                     ram as usize,
                     ram_size,
                     Arc::clone(&platform),
@@ -3891,13 +3972,14 @@ fn main() -> ExitCode {
                     .as_ref()
                     .is_some_and(AgentConsoleHarness::per_exit_tick_needed);
             let mut automation_gate = AutomationGate::new(automation_always_check);
-            // Resident service mode is host-driven: without a steady waker the
-            // main loop sleeps in hv_vcpu_run while the desktop idles and the
-            // service tick starves (see ServiceWake docs). BOOT_TIMER uses a
-            // wake no slower than 250 ms and honors a shorter requested RAMFB
-            // interval. These sources deliberately do not force the automation
-            // block's platform mutex on every CPU0 exit. ensure_started is
-            // idempotent, so re-entering here after a guest reboot is fine.
+            // Resident service mode and measurement-safe scripted commands are
+            // host-driven: without a steady waker the main loop sleeps in
+            // hv_vcpu_run while the desktop idles and their tick starves (see
+            // ServiceWake docs). BOOT_TIMER uses a wake no slower than 250 ms
+            // and honors a shorter requested RAMFB interval. These sources
+            // deliberately do not force the automation block's platform mutex
+            // on every CPU0 exit. ensure_started is idempotent, so re-entering
+            // here after a guest reboot is fine.
             let service_wake_interval = boot_timer.service_wake_interval().or_else(|| {
                 agent_console
                     .as_ref()
@@ -3950,6 +4032,22 @@ fn main() -> ExitCode {
                     trace.cpu0_progress(exits);
                 }
                 stop_reason_code = Some(reason);
+                if let Some(action) = secondary_vcpus
+                    .as_ref()
+                    .and_then(SecondaryVcpuSet::terminal_action)
+                {
+                    psci_calls += 1;
+                    match action {
+                        PsciTerminalAction::SystemOff => {
+                            stop_reason = format!("PSCI {PSCI_SYSTEM_OFF:#x} (system off)");
+                        }
+                        PsciTerminalAction::SystemReset => {
+                            requested_system_reset = true;
+                            stop_reason = format!("PSCI {PSCI_SYSTEM_RESET:#x} (system reset)");
+                        }
+                    }
+                    break;
+                }
                 let sample_tick_canceled =
                     ramfb_sample_loop.canceled_by_sample_tick(reason, &watchdog_fired);
                 let setup_input_wake_canceled =

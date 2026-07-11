@@ -48,7 +48,13 @@ write_installed_boot_preflight() {
     printf 'boot_timer_ramfb_ms=%s\n' "${BOOT_TIMER_RAMFB_MS:-<probe-default 1000>}"
     printf 'boot_timer_desktop_checksum64=%s\n' "${BOOT_TIMER_DESKTOP_CHECKSUM64:-<unset>}"
     printf 'boot_timer_desktop_agent=%s\n' "$BOOT_TIMER_DESKTOP_AGENT"
-    printf 'virtio_console=%s\n' "$BOOT_TIMER_DESKTOP_AGENT"
+    printf 'shutdown_after_agent_ready=%s\n' "$SHUTDOWN_AFTER_AGENT_READY"
+    printf 'virtio_console_test_periodic=%s\n' "$SHUTDOWN_AFTER_AGENT_READY"
+    if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
+      printf 'virtio_console=1\n'
+    else
+      printf 'virtio_console=0\n'
+    fi
     printf 'virtio_gpu_3d=%s\n' "$VIRTIO_GPU_3D"
     printf 'virtio_gpu_pci_device_id=%s\n' "${VIRTIO_GPU_PCI_DEVICE_ID:-10F7 (BRIDGEVM_VIRTIO_GPU_3D_BIND_ID alias)}"
     printf 'virtio_gpu_trace_jsonl=%s\n' "${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}"
@@ -156,8 +162,19 @@ build_installed_boot_env_args() {
     [[ -z "$BOOT_TIMER_RAMFB_MS" ]] || ENV_ARGS+=("BRIDGEVM_BOOT_TIMER_RAMFB_MS=$BOOT_TIMER_RAMFB_MS")
     [[ -z "$BOOT_TIMER_DESKTOP_CHECKSUM64" ]] || ENV_ARGS+=("BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64=$BOOT_TIMER_DESKTOP_CHECKSUM64")
     if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" ]]; then
-      ENV_ARGS+=('BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=1' 'BRIDGEVM_VIRTIO_CONSOLE=1')
+      ENV_ARGS+=('BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=1')
     fi
+  fi
+  if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
+    ENV_ARGS+=('BRIDGEVM_VIRTIO_CONSOLE=1')
+  fi
+  if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
+    ENV_ARGS+=(
+      'BRIDGEVM_VIRTIO_CONSOLE_TEST=1'
+      'BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=1'
+      'BRIDGEVM_VIRTIO_CONSOLE_CMDS=shutdown.exe /p /f'
+      "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=$WATCHDOG_MS"
+    )
   fi
   append_input_env_args
   if [[ "$ENABLE_XHCI" != "1" ]]; then
@@ -277,6 +294,34 @@ run_probe_process() {
   set -e
 }
 
+write_agent_shutdown_gate() {
+  [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]] || return 0
+
+  local ready="false"
+  local system_off="false"
+  local status="0"
+  if rg -q '^BVAGENT (READY|PONG \(proactive\))' "$EVIDENCE_DIR/run.log"; then
+    ready="true"
+  fi
+  if rg -q 'stop: PSCI .*\(system off\)' "$EVIDENCE_DIR/run.log"; then
+    system_off="true"
+  fi
+  if [[ "$ready" != "true" || "$system_off" != "true" ]]; then
+    status="1"
+  fi
+
+  {
+    printf 'configured_command=shutdown.exe /p /f\n'
+    printf 'agent_handshake=%s\n' "$ready"
+    printf 'guest_system_off=%s\n' "$system_off"
+    printf 'status=%s\n' "$status"
+  } > "$EVIDENCE_DIR/agent-shutdown-gate.txt"
+
+  if [[ "$status" != "0" && "$RUN_STATUS" == "0" ]]; then
+    RUN_STATUS="$status"
+  fi
+}
+
 write_virtio_gpu_trace_report() {
   [[ "${VIRTIO_GPU_3D:-0}" == "1" ]] || return 0
 
@@ -342,13 +387,16 @@ write_installed_boot_target_stat() {
       printf 'p3_gpu_readiness=%s\n' "$EVIDENCE_DIR/p3-gpu-readiness.txt"
       printf 'viogpu3d_package_manifest=%s\n' "$EVIDENCE_DIR/viogpu3d-package-manifest.txt"
     fi
+    if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
+      printf 'agent_shutdown_gate=%s\n' "$EVIDENCE_DIR/agent-shutdown-gate.txt"
+    fi
     print_media_stat after_target_stat "$TARGET"
     printf 'after_vars_stat:\n'
     ls -lh "$VARS"
     printf 'ramfb_files:\n'
     find "$EVIDENCE_DIR/ramfb" -maxdepth 1 -type f -print | sort
     printf 'run_log_summary_grep:\n'
-    rg -n 'Windows|Boot Manager|UEFI|EFI|Bds|Boot####|NVMe|xHCI|qemu-xhci|HID|USB|PNP|INTERNAL_POWER_ERROR|DRIVER_PNP_WATCHDOG|0x1D5|bugcheck|panic|HV_DENIED|hv_vm_create|watchdog|SYSTEM_RESET|SYSTEM_OFF|PSCI|storage target effect|exact_target_storage_evidence|target_effect_class' "$EVIDENCE_DIR/run.log" || true
+    rg -n 'Windows|Boot Manager|UEFI|EFI|Bds|Boot####|NVMe|xHCI|qemu-xhci|HID|USB|PNP|BVAGENT|INTERNAL_POWER_ERROR|DRIVER_PNP_WATCHDOG|0x1D5|bugcheck|panic|HV_DENIED|hv_vm_create|watchdog|SYSTEM_RESET|SYSTEM_OFF|PSCI|storage target effect|exact_target_storage_evidence|target_effect_class' "$EVIDENCE_DIR/run.log" || true
   } > "$EVIDENCE_DIR/target-stat.txt" 2>&1
 }
 
@@ -378,6 +426,7 @@ run_installed_boot_probe() {
   build_and_sign_probe_if_needed
   write_probe_command_env
   run_probe_process
+  write_agent_shutdown_gate
   write_virtio_gpu_trace_report
   write_installed_boot_target_stat
 }

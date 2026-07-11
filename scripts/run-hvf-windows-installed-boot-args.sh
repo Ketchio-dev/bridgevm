@@ -44,6 +44,7 @@ init_installed_boot_defaults() {
   BOOT_TIMER_RAMFB_MS=""
   BOOT_TIMER_DESKTOP_CHECKSUM64=""
   BOOT_TIMER_DESKTOP_AGENT="0"
+  SHUTDOWN_AFTER_AGENT_READY="0"
   XHCI_POLICY=""
   XHCI_REASON=""
   TRACE_IRQ="0"
@@ -95,6 +96,7 @@ parse_installed_boot_args() {
       --boot-timer-desktop-agent)
         BOOT_TIMER="1"; BOOT_TIMER_DESKTOP_AGENT="1"; shift
         ;;
+      --shutdown-after-agent-ready) SHUTDOWN_AFTER_AGENT_READY="1"; shift ;;
       --enable-xhci) ENABLE_XHCI="1"; shift ;;
       --virtio-net) VIRTIO_NET="1"; shift ;;
       --trace-irq) TRACE_IRQ="1"; shift ;;
@@ -272,6 +274,11 @@ print_installed_boot_policy() {
   local gpu_bind_policy="<unset>"
   local gpu_trace_policy="<unset>"
   local gpu_3d_protocol="<unset>"
+  local virtio_console_policy="<unset>"
+  local console_test_policy="<unset>"
+  local console_test_periodic_policy="<unset>"
+  local console_commands_policy="<unset>"
+  local console_timeout_policy="<unset>"
   if [[ "$VIRTIO_GPU_3D" == "1" ]]; then
     gpu_enabled_policy="1"
     gpu_3d_protocol="$(virtio_gpu_3d_runtime_protocol)"
@@ -281,6 +288,15 @@ print_installed_boot_policy() {
       gpu_bind_policy="1"
     fi
     gpu_trace_policy="${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}"
+  fi
+  if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
+    virtio_console_policy="1"
+  fi
+  if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
+    console_test_policy="1"
+    console_test_periodic_policy="1"
+    console_commands_policy="shutdown.exe /p /f"
+    console_timeout_policy="$WATCHDOG_MS"
   fi
   printf '%s\n' \
     "$XHCI_POLICY" \
@@ -293,7 +309,12 @@ print_installed_boot_policy() {
     "BRIDGEVM_BOOT_TIMER_RAMFB_MS=${BOOT_TIMER_RAMFB_MS:-<probe-default 1000>}" \
     "BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64=${BOOT_TIMER_DESKTOP_CHECKSUM64:-<unset>}" \
     "BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=${BOOT_TIMER_DESKTOP_AGENT/0/<unset>}" \
-    "BRIDGEVM_VIRTIO_CONSOLE=${BOOT_TIMER_DESKTOP_AGENT/0/<unset>}" \
+    "SHUTDOWN_AFTER_AGENT_READY=$SHUTDOWN_AFTER_AGENT_READY" \
+    "BRIDGEVM_VIRTIO_CONSOLE=$virtio_console_policy" \
+    "BRIDGEVM_VIRTIO_CONSOLE_TEST=$console_test_policy" \
+    "BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=$console_test_periodic_policy" \
+    "BRIDGEVM_VIRTIO_CONSOLE_CMDS=$console_commands_policy" \
+    "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=$console_timeout_policy" \
     "BRIDGEVM_VIRTIO_GPU=$gpu_enabled_policy" \
     "BRIDGEVM_VIRTIO_GPU_3D=$VIRTIO_GPU_3D" \
     "BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=$gpu_3d_protocol" \

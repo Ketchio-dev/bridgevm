@@ -244,29 +244,27 @@ Method for each: reach the surface, capture ramfb/trace evidence, fix, prove.
   smoothly enough to use.
 
 ### D3. Network
-- Current: **no NIC is modelled**. Windows runs offline but activation/updates/browsing
-  need a NIC.
-- Real design choice: model a NIC Windows 11 ARM can drive **in-box**, OR a paravirtual
-  `virtio-net` + inject its ARM64 driver into the image. virtio-net is the natural
-  paravirtual fit but needs the driver injected; an in-box-driver NIC avoids injection but
-  Windows-ARM in-box NIC coverage is thin — evaluate before committing.
-- Wire host networking (reuse `crates/bridgevm-network` / `runners/networkd` if they fit,
-  else a minimal user-mode NAT).
-- Acceptance: Windows gets an IP and reaches the internet (ping + a browser page), by ramfb.
+- Implemented and live-proven: `virtio-net-pci` with the injected ARM64 netkvm driver and
+  an in-process userspace NAT provides DHCP, DNS, ICMP, TCP, and UDP. Windows obtains
+  10.0.2.15 and reaches the internet; driver injection remains part of image preparation.
+- Acceptance achieved 2026-07-09: gateway/external ping, DNS, and HTTP all passed in-guest.
 
-### D4. Storage persistence *(mostly already done)*
+### D4. Storage persistence *(live-proven)*
 - The NSID-2 target is a persistent host file (write-back), so the installed OS persists.
   Raw write-back `FLUSH` now issues `File::sync_data()`, and the common final persistence
-  hook uses the same path. Confirm the remaining live boundary: observe PSCI SYSTEM_OFF,
-  exit through that hook without an error, reopen the image, and verify the guest change.
-- Acceptance: create files in session 1, reboot, they exist in session 2.
+  hook uses the same path. On 2026-07-11, 9/9 clean agent-driven shutdowns reached PSCI
+  SYSTEM_OFF and final write-back; a changed post-exit image was then reopened, booted to
+  agent READY, and shut down successfully again.
+- Acceptance achieved: installed changes survive reboot, and the explicit post-exit reopen
+  chain is preserved under `/Users/user/BridgeVM/post-exit-reopen-boot-20260711-v1/`.
 
 ## Workstream E — Performance & scale   *(measure first — start only after an install completes)*
 Profile and fix *measured* bottlenecks, not guessed ones.
-- **E1. SMP / multi-vCPU** — the probe runs **1 vCPU** (`VirtFdtConfig.cpu_count`). A
-  Windows desktop is painful on one core; this is the single largest responsiveness lever.
-  Needs per-vCPU run-loop threads, a GIC redistributor per CPU, MPIDR affinity, PSCI
-  `CPU_ON`, and MMIO/interrupt thread-safety — a real concurrency change to the platform.
+- **E1. SMP / multi-vCPU** — implemented with per-vCPU run-loop threads, GIC
+  redistributors, MPIDR affinity, PSCI CPU_ON, and synchronized platform access. A
+  2026-07-11 round-robin release matrix produced 9/9 valid runs; median desktop READY was
+  40.372s/31.193s/26.137s at 1/2/4 vCPUs. Secondary-vCPU terminal PSCI requests now wake
+  and terminate/reset through CPU0 instead of leaving the VM alive.
 - **E2. NVMe throughput** — the WIM apply and general IO go through the emulated NVMe.
   Profile the command path (per-command allocations, PRP copies, doorbell handling); batch
   / zero-copy the hot paths.
@@ -285,14 +283,16 @@ Not required for "usable Windows". Sequence after D+E only if the product needs 
 
 ## Milestone ladder — "완성" = a usable Windows 11 ARM on the HVF engine
 1. ✅ **M1 — Setup boots from NVMe** (done this session).
-2. **M2 — Scripted/unattended install completes** (A + B + C): WIM applied, bootable,
+2. ✅ **M2 — Scripted/unattended install completes** (A + B + C): WIM applied, bootable,
    reboots into the installed OS.
-3. **M3 — Installed Windows reaches the desktop** (C3 + reboot-loop): OOBE auto-skipped,
+3. ✅ **M3 — Installed Windows reaches the desktop** (C3 + reboot-loop): OOBE auto-skipped,
    autologon, desktop rendered.
-4. **M4 — Interactive desktop** (D1 + D2): keyboard + pointer work, display usable.
-5. **M5 — Connected, persistent, fast enough** (D3 + D4 + E): network up, changes persist,
-   multi-vCPU responsiveness.
-6. **M6 — Integration polish** (F, optional): resize / clipboard / shared folders.
+4. ✅ **M4 — Interactive desktop** (D1 + D2): keyboard + pointer work, display usable.
+5. 🟡 **M5 — Connected, persistent, fast enough** (D3 + D4 + E): the core network,
+   persistence, clean-shutdown, and measured multi-vCPU gates pass; suspend/resume and
+   packaged setup remain product gates.
+6. ✅ **M6 — Integration polish** (F, optional): clipboard and shared folders are
+   substantive; dynamic resize remains gated on the WDDM path.
 
 **"Usable Windows" = M4 plus basic M5.** Everything past M3 is entry-condition-gated and
 evidence-driven — expect a new wall at each rung.

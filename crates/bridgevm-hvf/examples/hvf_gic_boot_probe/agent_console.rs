@@ -21,6 +21,7 @@ use host_pasteboard::HostPasteboard;
 use share_sync::{GuestFileOutcome, HostFile, LsEntry, ShareSync, SkipReason, SyncAction};
 
 const TEST_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_TEST";
+const TEST_PERIODIC_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC";
 const BOOT_TIMER_AGENT_ENV: &str = "BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT";
 const CMDS_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_CMDS";
 const TIMEOUT_MS_ENV: &str = "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS";
@@ -50,6 +51,10 @@ pub struct AgentConsoleHarness {
     /// the probe's periodic ServiceWake instead, so measurement does not add a
     /// platform-mutex acquisition to every CPU0 exit.
     scripted_test: bool,
+    /// Run scripted commands from the periodic host wake instead of taking the
+    /// automation lock on every CPU0 exit. This keeps boot measurements honest
+    /// while still allowing a deterministic command after agent handshake.
+    periodic_test: bool,
     framer: LineFramer,
     inbound_scratch: Vec<u8>,
     line_scratch: Vec<String>,
@@ -276,16 +281,17 @@ impl AgentConsoleHarness {
     }
 
     /// Whether the main loop should run the ServiceWake ticker: resident
-    /// service mode is host-driven, so it must not depend on guest activity
-    /// for its tick cadence.
+    /// service mode and measurement-safe scripted tests are host-driven, so
+    /// they must not depend on guest activity for their tick cadence.
     pub fn service_wake_needed(&self) -> bool {
-        self.service
+        self.service || self.periodic_test
     }
 
     /// Whether this harness must retain the legacy every-exit automation tick.
-    /// Agent-only BOOT_TIMER runs are driven by ServiceWake and return false.
+    /// Agent-only BOOT_TIMER runs and measurement-safe periodic tests are driven
+    /// by ServiceWake and return false.
     pub const fn per_exit_tick_needed(&self) -> bool {
-        self.scripted_test
+        self.scripted_test && !self.periodic_test
     }
 
     /// A READY hello or proactive PONG is emitted by the logon agent, making
@@ -299,6 +305,7 @@ impl AgentConsoleHarness {
 
     pub fn from_env(start: Instant) -> Option<Self> {
         let scripted_test = env_flag(TEST_ENV);
+        let periodic_test = scripted_test && env_flag(TEST_PERIODIC_ENV);
         let boot_timer_agent = env_flag(BOOT_TIMER_AGENT_ENV);
         if !scripted_test && !boot_timer_agent {
             return None;
@@ -326,6 +333,7 @@ impl AgentConsoleHarness {
             start,
             timeout: Duration::from_millis(env_u64(TIMEOUT_MS_ENV, DEFAULT_TIMEOUT_MS)),
             scripted_test,
+            periodic_test,
             framer: LineFramer::new(),
             inbound_scratch: Vec::new(),
             line_scratch: Vec::new(),
@@ -2022,6 +2030,7 @@ mod tests {
             start: Instant::now(),
             timeout: Duration::from_secs(1),
             scripted_test: true,
+            periodic_test: false,
             framer: LineFramer::new(),
             inbound_scratch: Vec::new(),
             line_scratch: Vec::new(),
@@ -2070,6 +2079,11 @@ mod tests {
         let mut h = harness();
         assert!(h.per_exit_tick_needed());
 
+        h.periodic_test = true;
+        assert!(!h.per_exit_tick_needed());
+        assert!(h.service_wake_needed());
+
+        h.periodic_test = false;
         h.scripted_test = false;
         assert!(!h.per_exit_tick_needed());
     }

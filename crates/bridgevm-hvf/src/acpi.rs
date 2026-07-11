@@ -143,8 +143,6 @@ impl Table {
 /// `HW_REDUCED_ACPI` — there is no ACPI register hardware; events and power
 /// control go through alternative mechanisms (mandatory on ARM).
 const FADT_FLAG_HW_REDUCED_ACPI: u32 = 1 << 20;
-/// `LOW_POWER_S0_IDLE_CAPABLE` — advertised so the OS prefers low-power idle.
-const FADT_FLAG_LOW_POWER_S0_IDLE: u32 = 1 << 21;
 
 /// ARM boot architecture flags (FADT offset 129).
 const FADT_ARM_BOOT_PSCI_COMPLIANT: u16 = 1 << 0;
@@ -463,6 +461,9 @@ fn build_xsdt(entries: &[u64]) -> Vec<u8> {
 
 /// FADT (Fixed ACPI Description Table), revision 6. Hardware-reduced ACPI with
 /// PSCI-via-HVC declared through the ARM boot flags; `X_Dsdt` points at the DSDT.
+/// `LOW_POWER_S0_IDLE_CAPABLE` stays clear because BridgeVM has no platform
+/// power engine/idle implementation, so advertising that platform contract
+/// would describe power-management support the VMM does not provide.
 fn build_fadt(dsdt_address: u64) -> Vec<u8> {
     let mut t = Table::new(b"FACP", 6); // FADT signature is "FACP"
     t.u32(0); // FIRMWARE_CTRL (FACS) — none under HW-reduced ACPI
@@ -502,7 +503,7 @@ fn build_fadt(dsdt_address: u64) -> Vec<u8> {
     t.u8(0); // CENTURY
     t.u16(0); // IAPC_BOOT_ARCH (x86-only, zero on ARM)
     t.u8(0); // reserved
-    t.u32(FADT_FLAG_HW_REDUCED_ACPI | FADT_FLAG_LOW_POWER_S0_IDLE); // Flags
+    t.u32(FADT_FLAG_HW_REDUCED_ACPI); // Flags
     t.gas_null(); // RESET_REG
     t.u8(0); // RESET_VALUE
     t.u16(FADT_ARM_BOOT_PSCI_COMPLIANT | FADT_ARM_BOOT_PSCI_USE_HVC); // ARM_BOOT_ARCH
@@ -1486,6 +1487,11 @@ mod tests {
             flags & FADT_FLAG_HW_REDUCED_ACPI,
             0,
             "HW_REDUCED_ACPI flag must be set on ARM",
+        );
+        assert_eq!(
+            flags & (1 << 21),
+            0,
+            "LOW_POWER_S0_IDLE_CAPABLE must stay clear without platform idle support",
         );
         // ARM_BOOT_ARCH (u16) is at offset 129.
         let arm_boot = u16::from_le_bytes([fadt[129], fadt[130]]);

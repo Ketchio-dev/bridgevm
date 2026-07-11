@@ -9,7 +9,8 @@ usage() {
 usage: scripts/run-hvf-boot-timer-matrix.sh --target RAW --vars FD --evidence-dir DIR [options] [-- wrapper args...]
 
 Run the installed Windows HVF boot wrapper repeatedly with BOOT_TIMER enabled,
-then summarize the resulting run.log files with report-hvf-boot-timer-metrics.sh.
+interleaving SMP configurations by run number to reduce order bias, then
+summarize the resulting run.log files with report-hvf-boot-timer-metrics.sh.
 
 Required:
   --target RAW            Installed Windows raw disk to boot.
@@ -171,6 +172,8 @@ ensure_run_report_artifacts() {
       printf 'boot_timer_ramfb_ms=%s\n' "${BOOT_TIMER_RAMFB_MS:-<probe-default 1000>}"
       printf 'boot_timer_desktop_checksum64=%s\n' "${BOOT_TIMER_DESKTOP_CHECKSUM64:-<unset>}"
       printf 'boot_timer_desktop_agent=%s\n' "$BOOT_TIMER_DESKTOP_AGENT"
+      printf 'shutdown_after_agent_ready=unknown\n'
+      printf 'virtio_console_test_periodic=unknown\n'
       printf 'virtio_gpu_3d=unknown\n'
     } > "$run_dir/preflight.txt"
   fi
@@ -272,8 +275,8 @@ IFS=,
 read -r -a SMP_VALUES <<< "$SMP_CPUS_LIST"
 IFS="$old_ifs"
 
-for smp in "${SMP_VALUES[@]}"; do
-  for (( run = 1; run <= RUNS; run++ )); do
+for (( run = 1; run <= RUNS; run++ )); do
+  for smp in "${SMP_VALUES[@]}"; do
     run_dir="$EVIDENCE_DIR/smp-$smp/run-$run"
     media_dir="$run_dir/media"
     [[ ! -e "$run_dir" ]] || fail "run evidence already exists; refusing to mix stale and fresh samples: $run_dir"
@@ -321,6 +324,7 @@ for smp in "${SMP_VALUES[@]}"; do
       date -u
       printf 'matrix_smp_cpus=%s\n' "$smp"
       printf 'matrix_run=%s\n' "$run"
+      printf 'matrix_order=round-robin\n'
       printf 'clone_media=%s\n' "$CLONE_MEDIA"
       printf 'wrapper='
       shell_quote_command "$WRAPPER" "${args[@]}"

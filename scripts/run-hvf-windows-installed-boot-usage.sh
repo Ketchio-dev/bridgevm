@@ -29,6 +29,13 @@ Options:
                           Use the resident Windows logon agent READY/PONG as
                           the desktop oracle. This is stable across clock and
                           notification pixel changes. Implies --boot-timer.
+  --shutdown-after-agent-ready
+                          After the resident agent handshake, send the fixed
+                          `shutdown.exe /p /f` command and require a guest
+                          PSCI SYSTEM_OFF. This enables virtio-console and is
+                          intended for clean, repeatable evidence runs. Agent
+                          polling uses a periodic host wake so it does not add
+                          an every-vCPU-exit automation lock to boot timing.
   --enable-xhci           Leave xHCI present for desktop input diagnosis.
   --virtio-net            Attach the virtio-net NIC (BRIDGEVM_VIRTIO_NET=1)
                           with the userspace NAT backend.

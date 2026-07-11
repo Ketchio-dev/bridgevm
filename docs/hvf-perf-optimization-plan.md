@@ -1,10 +1,10 @@
 # BridgeVM HVF VMM — Performance / Policy Optimization Campaign
 
 Risk-ordered, independently-shippable stages. The from-scratch HVF VMM boots a
-networked multi-core Windows 11 to the desktop, but every live boot to date used
-the **debug (opt-level=0) build** with a **single global platform Mutex**, so it
-is far slower than it needs to be. This campaign establishes the performance
-floor (PERF track) before tuning defaults (POLICY track).
+networked multi-core Windows 11 to the desktop. The platform still has a single
+global platform Mutex, but the release/daily path now has a clean, valid
+smp=1/2/4 performance floor. The campaign uses that evidence to decide whether
+more invasive locking work is justified before tuning defaults.
 
 Debug `smp=1` remains the default, proven fallback throughout. Every wrapper/env
 change is opt-in; every behavioural change has a kill switch; `cargo test -p
@@ -18,12 +18,19 @@ bridgevm-hvf` must stay green at every stage boundary.
   three-run matrix; it reads each `run.log` plus `preflight.txt` and emits
   per-run BOOT_TIMER rows and config-group medians.
 - Use `scripts/run-hvf-boot-timer-matrix.sh --target <raw> --vars <fd>
-  --evidence-dir <fresh-dir> --release --boot-timer-ramfb-ms <ms>` to run the
-  default smp=1/2/4,
-  3-run BOOT_TIMER matrix with per-run cloned media and an automatic median
-  report. The default desktop oracle is the injected Windows logon agent's
-  READY/PONG handshake; unlike an exact whole-frame checksum it is not changed
-  by clock or notification pixels. The legacy
+  --evidence-dir <fresh-dir> --release -- --daily --watchdog-ms 120000
+  --virtio-net --enable-xhci --shutdown-after-agent-ready` to run the default
+  smp=1/2/4, 3-run BOOT_TIMER matrix with per-run cloned media and an automatic
+  median report. Runs are interleaved by repetition (1→2→4, three times) rather
+  than grouped by vCPU count, reducing order/thermal bias. The default desktop
+  oracle is the injected Windows logon agent's READY/PONG handshake; unlike an
+  exact whole-frame checksum it is not changed by clock or notification pixels.
+  `--shutdown-after-agent-ready` sends the fixed `shutdown.exe /p /f` command
+  from the periodic host-wake path, so it does not reintroduce an every-exit
+  automation lock, and requires both the agent handshake and PSCI SYSTEM_OFF.
+  A failed shutdown gate makes the wrapper/report row invalid; report labels
+  include `shutdown` and `console_periodic` so incompatible evidence is not
+  silently combined. The legacy
   `--boot-timer-desktop-checksum64 <checksum>` oracle remains available for
   agent-free images. Stale run/report paths are rejected, and
   failed/incomplete/non-desktop runs are marked invalid instead of entering the
@@ -46,17 +53,31 @@ bridgevm-hvf` must stay green at every stage boundary.
   `checksum64` at `BRIDGEVM_BOOT_TIMER_RAMFB_MS` intervals, reports
   `desktop_reached` when the requested agent oracle connects or the optional
   exact `BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64` matches, and
-  prints exits/sec per vCPU at shutdown. Keep it SMALL (a prior profiling
-  attempt wedged the probe).
+  prints exits/sec per vCPU at shutdown. The installed-boot wrapper supplies the
+  separate clean-shutdown gate described above. Keep the probe instrumentation
+  SMALL (a prior profiling attempt wedged the probe).
 - **Stage 1 — release build** (biggest low-risk candidate): implemented. Root
   `Cargo.toml` `[profile.release]`
   has opt-level=3, lto="thin", **codegen-units=1**, **overflow-checks=true**,
   debug=1, and panic stays unwind. Windows/Linux boot wrappers accept
   `--release` while defaulting to debug; P3 GPU mode implies release unless
-  `--debug-build`. A historical manual observation suggested roughly
-  90s→45s boot-to-desktop, but it predates the current BOOT_TIMER validity
-  contract and is not accepted as a campaign result; the fresh matrix above is
-  the decision evidence. Cheap experiment still pending: does DRIVER_PNP_WATCHDOG
+  `--debug-build`. The 2026-07-11 release/daily matrix at 6144 MiB used the
+  agent oracle, periodic shutdown command, round-robin order, fresh APFS clones,
+  and produced 9/9 valid READY+SYSTEM_OFF runs:
+
+  | vCPUs | Median desktop READY | Median full lifecycle | Valid |
+  | ---: | ---: | ---: | ---: |
+  | 1 | 40.372 s | 64.112 s | 3/3 |
+  | 2 | 31.193 s | 52.044 s | 3/3 |
+  | 4 | 26.137 s | 56.100 s | 3/3 |
+
+  Desktop READY is the performance decision metric; full lifecycle includes a
+  variable Windows shutdown interval. Four vCPUs improve READY by 35.3% versus
+  one and 16.2% versus two. The report is preserved at
+  `/Users/user/BridgeVM/perf-matrix-final-periodic-round-robin-20260711-v1/boot-timer-report.tsv`.
+  A historical manual observation suggested roughly 90s→45s but predates this
+  validity contract and is not used as campaign evidence. Cheap experiment
+  still pending: does DRIVER_PNP_WATCHDOG
   (0x1D5) dissolve at 5-30x faster emulation? If so it MASKS, not root-causes —
   keep the debug repro.
 - **Stage 2 — per-exit overhead hygiene** (LOW risk, trace/diagnostic paths):
@@ -71,8 +92,9 @@ bridgevm-hvf` must stay green at every stage boundary.
   recording reuses retained line/field buffers and writes event names plus
   common/queue/fence/command detail fields directly into those buffers. Do NOT
   touch `record_command_trace`.
-- **Stage 3 — DMA path** (HIGH impact, MEDIUM risk): code implemented; live
-  performance validation remains pending. The
+- **Stage 3 — DMA path** (HIGH impact, MEDIUM risk): code implemented and the
+  final live matrix covers its current-path correctness; isolated before/after
+  performance attribution remains pending. The
   guest-memory trait has default `read_into(&mut [u8])`, live RAM overrides it,
   NVMe SQE/PRP/list paths use caller-owned buffers, the NVMe backend has
   `read_at_into` plus coalesced buffered/direct host-pointer read/write paths,
@@ -178,11 +200,13 @@ bridgevm-hvf` must stay green at every stage boundary.
   drains skip the full SQ vector when no submission queue has advanced;
   4d resolves each platform MMIO target once and caches the most recent BAR;
   4c moves platform-independent probe recorders out of the data-abort lock scope;
-  4d skips the redundant setup-input drain after `on_mmio` already ran it. **STOP
-  RULE: if smp=2 ≤ smp=1 wall time after Stage 4, Stage 5 is not
-  justified — go to POLICY.**
+  4d skips the redundant setup-input drain after `on_mmio` already ran it.
+  **STOP RULE reached:** the valid matrix has smp=2 and smp=4 desktop READY
+  below smp=1, so Stage 5 is not justified by current evidence; proceed to
+  POLICY.
 - **Stage 5 — finer-grained locking** (ENV-GATED `BRIDGEVM_FINE_LOCKING=1`,
-  highest correctness risk, LAST, only if Stage 4 shows residual lock-wait): 5a
+  highest correctness risk, DEFERRED, only if future profiling shows residual
+  lock-wait): 5a
   RwLock read fast path for NVMe/xHCI BAR0 reads (both `mmio_read` are `&self`;
   liveness breadcrumbs → atomics); 5b per-device Mutex split only after 5a
   profiling shows cross-device concurrent MMIO. Heaviest live matrix; gate-off
@@ -202,7 +226,9 @@ bridgevm-hvf` must stay green at every stage boundary.
   advertised `CAP.MQES` (prep for async IO). `--daily` already opts into
   `BRIDGEVM_SMP_CPUS=4`, and the installed-boot wrapper now has
   `--smp-cpus` for controlled smp=1/2/4 live boot comparisons. Making 4
-  vCPUs the non-daily default still requires that measured comparison.
+  vCPUs the non-daily default is now a policy/UX decision rather than a missing
+  measurement; the default debug path was not part of this release matrix and
+  keeps its explicit smp=1 fallback.
 - **P3 — 1080p display** (firmware, not VMM code): rebuild vendored ArmVirtQemu
   GOP at 1920x1080 or persist via vars flash; host ramfb handles any geometry.
   ~4.3x pixel traffic on unaccelerated CPU drawing — do last.

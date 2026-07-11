@@ -91,7 +91,12 @@ assert_contains "$output" "BRIDGEVM_BOOT_TIMER=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_TIMER_RAMFB_MS=<probe-default 1000>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=<unset>" "installed boot policy"
+assert_contains "$output" "SHUTDOWN_AFTER_AGENT_READY=0" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE=<unset>" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_TEST=<unset>" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=<unset>" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_CMDS=<unset>" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=<unset>" "installed boot policy"
 assert_contains "$output" "BUILD_PROFILE=debug" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_NVME_DISK_WRITABLE=1 when booting target as only NVMe" "installed boot policy"
 
@@ -119,6 +124,22 @@ agent_timer_output="$(
 )" || fail "installed boot agent timer policy failed: $agent_timer_output"
 assert_contains "$agent_timer_output" "BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=1" "agent timer policy"
 assert_contains "$agent_timer_output" "BRIDGEVM_VIRTIO_CONSOLE=1" "agent timer policy"
+
+shutdown_policy_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --watchdog-ms 234567 \
+    --shutdown-after-agent-ready \
+    --print-policy 2>&1
+)" || fail "installed boot agent shutdown policy failed: $shutdown_policy_output"
+assert_contains "$shutdown_policy_output" "SHUTDOWN_AFTER_AGENT_READY=1" "agent shutdown policy"
+assert_contains "$shutdown_policy_output" "BRIDGEVM_VIRTIO_CONSOLE=1" "agent shutdown policy"
+assert_contains "$shutdown_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST=1" "agent shutdown policy"
+assert_contains "$shutdown_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=1" "agent shutdown policy"
+assert_contains "$shutdown_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CMDS=shutdown.exe /p /f" "agent shutdown policy"
+assert_contains "$shutdown_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=234567" "agent shutdown policy"
 
 boot_timer_env_output="$(
   bash -c '
@@ -158,6 +179,28 @@ agent_timer_env_output="$(
 )" || fail "installed boot agent timer env failed: $agent_timer_env_output"
 assert_contains "$agent_timer_env_output" "BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=1" "agent timer env"
 assert_contains "$agent_timer_env_output" "BRIDGEVM_VIRTIO_CONSOLE=1" "agent timer env"
+
+shutdown_env_output="$(
+  bash -c '
+    set -euo pipefail
+    source scripts/run-hvf-windows-installed-boot-validation.sh
+    source scripts/run-hvf-windows-installed-boot-args.sh
+    source scripts/run-hvf-windows-installed-boot-runner.sh
+    init_installed_boot_defaults
+    parse_installed_boot_args "$@"
+    build_installed_boot_env_args
+  ' _ \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --watchdog-ms 234567 \
+    --shutdown-after-agent-ready
+)" || fail "installed boot agent shutdown env failed: $shutdown_env_output"
+assert_contains "$shutdown_env_output" "BRIDGEVM_VIRTIO_CONSOLE=1" "agent shutdown env"
+assert_contains "$shutdown_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST=1" "agent shutdown env"
+assert_contains "$shutdown_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=1" "agent shutdown env"
+assert_contains "$shutdown_env_output" "BRIDGEVM_VIRTIO_CONSOLE_CMDS=shutdown.exe /p /f" "agent shutdown env"
+assert_contains "$shutdown_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=234567" "agent shutdown env"
 
 daily_output="$(
   scripts/run-hvf-windows-installed-boot.sh \
@@ -321,7 +364,9 @@ printf 'gpu=%s\n' "${BRIDGEVM_VIRTIO_GPU-<unset>}"
 printf 'console=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE-<unset>}"
 printf 'setup_actions=%s\n' "${BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS-<unset>}"
 printf 'console_test=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_TEST-<unset>}"
+printf 'console_test_periodic=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC-<unset>}"
 printf 'console_cmds=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_CMDS-<unset>}"
+printf 'console_timeout=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS-<unset>}"
 printf 'console_service=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_SERVICE-<unset>}"
 printf 'console_share=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_SHARE-<unset>}"
 printf 'unknown_poison=%s\n' "${BRIDGEVM_UNKNOWN_POISON-<unset>}"
@@ -347,7 +392,9 @@ sanitized_probe_output="$(
   BRIDGEVM_VIRTIO_CONSOLE=1 \
   BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS='win+r,text:poison,enter' \
   BRIDGEVM_VIRTIO_CONSOLE_TEST=1 \
+  BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=1 \
   BRIDGEVM_VIRTIO_CONSOLE_CMDS=poison \
+  BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=777 \
   BRIDGEVM_VIRTIO_CONSOLE_SERVICE=1 \
   BRIDGEVM_VIRTIO_CONSOLE_SHARE=/tmp/poison-share \
   BRIDGEVM_UNKNOWN_POISON=1 \
@@ -378,7 +425,9 @@ assert_contains "$sanitized_probe_output" "gpu=<unset>" "ambient GPU sanitizatio
 assert_contains "$sanitized_probe_output" "console=<unset>" "ambient console sanitization"
 assert_contains "$sanitized_probe_output" "setup_actions=<unset>" "ambient input sanitization"
 assert_contains "$sanitized_probe_output" "console_test=<unset>" "ambient console test sanitization"
+assert_contains "$sanitized_probe_output" "console_test_periodic=<unset>" "ambient periodic console test sanitization"
 assert_contains "$sanitized_probe_output" "console_cmds=<unset>" "ambient console command sanitization"
+assert_contains "$sanitized_probe_output" "console_timeout=<unset>" "ambient console timeout sanitization"
 assert_contains "$sanitized_probe_output" "console_service=<unset>" "ambient console service sanitization"
 assert_contains "$sanitized_probe_output" "console_share=<unset>" "ambient console share sanitization"
 assert_contains "$sanitized_probe_output" "unknown_poison=<unset>" "ambient unknown BridgeVM sanitization"
@@ -408,6 +457,49 @@ assert_contains "$explicit_probe_output" "smp=2" "explicit SMP env"
 assert_contains "$explicit_probe_output" "timer=1" "explicit timer env"
 assert_contains "$explicit_probe_output" "timer_ms=250" "explicit timer interval env"
 assert_contains "$explicit_probe_output" "desktop=0x1234" "explicit desktop checksum env"
+
+SHUTDOWN_GATE_OK="$STORE/shutdown-gate-ok"
+mkdir -p "$SHUTDOWN_GATE_OK"
+cat > "$SHUTDOWN_GATE_OK/run.log" <<'EOF'
+BVAGENT READY host=BRIDGEVM v3-share2 t=1234
+stop: PSCI 0x84000008 (system off)
+EOF
+shutdown_gate_ok_output="$(
+  bash -c '
+    set -euo pipefail
+    source scripts/run-hvf-windows-installed-boot-runner.sh
+    EVIDENCE_DIR="$1"
+    SHUTDOWN_AFTER_AGENT_READY=1
+    RUN_STATUS=0
+    write_agent_shutdown_gate
+    cat "$EVIDENCE_DIR/agent-shutdown-gate.txt"
+    printf "run_status=%s\n" "$RUN_STATUS"
+  ' _ "$SHUTDOWN_GATE_OK"
+)" || fail "successful agent shutdown gate failed: $shutdown_gate_ok_output"
+assert_contains "$shutdown_gate_ok_output" "agent_handshake=true" "successful agent shutdown gate"
+assert_contains "$shutdown_gate_ok_output" "guest_system_off=true" "successful agent shutdown gate"
+assert_contains "$shutdown_gate_ok_output" "status=0" "successful agent shutdown gate"
+assert_contains "$shutdown_gate_ok_output" "run_status=0" "successful agent shutdown gate"
+
+SHUTDOWN_GATE_FAIL="$STORE/shutdown-gate-fail"
+mkdir -p "$SHUTDOWN_GATE_FAIL"
+printf 'BVAGENT READY host=BRIDGEVM v3-share2 t=1234\n' > "$SHUTDOWN_GATE_FAIL/run.log"
+shutdown_gate_fail_output="$(
+  bash -c '
+    set -euo pipefail
+    source scripts/run-hvf-windows-installed-boot-runner.sh
+    EVIDENCE_DIR="$1"
+    SHUTDOWN_AFTER_AGENT_READY=1
+    RUN_STATUS=0
+    write_agent_shutdown_gate
+    cat "$EVIDENCE_DIR/agent-shutdown-gate.txt"
+    printf "run_status=%s\n" "$RUN_STATUS"
+  ' _ "$SHUTDOWN_GATE_FAIL"
+)" || fail "failed agent shutdown gate evaluation errored: $shutdown_gate_fail_output"
+assert_contains "$shutdown_gate_fail_output" "agent_handshake=true" "failed agent shutdown gate"
+assert_contains "$shutdown_gate_fail_output" "guest_system_off=false" "failed agent shutdown gate"
+assert_contains "$shutdown_gate_fail_output" "status=1" "failed agent shutdown gate"
+assert_contains "$shutdown_gate_fail_output" "run_status=1" "failed agent shutdown gate"
 
 RELATIVE_WRAPPER_ROOT="$STORE/relative-wrapper"
 mkdir -p \
