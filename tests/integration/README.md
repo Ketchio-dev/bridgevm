@@ -212,12 +212,21 @@ smokes, the disk create/inspect/verify/compact smokes,
 `diagnostics-cli-smoke.sh`, `performance-cli-smoke.sh`,
 `resource-profile-readiness-smoke.sh`, `runtime-resource-policy-cli-smoke.sh`,
 `vz-display-demo-cli-smoke.sh`, `vz-proxy-crop-evidence-verifier-smoke.sh`,
+the Windows viogpu3d package/build-kit/render-stage smokes,
 `product-gates-report-smoke.sh`,
 `tests/sleep-wake/metadata-baseline-smoke.sh`,
 `apple-vz-live-evidence-verifier-smoke.sh`,
 `qemu-live-evidence-verifier-smoke.sh`, and
 the Apple VZ, QEMU, and guest-tools app/window live opt-in skip smokes
 sequentially and stops at the first failure.
+
+`hvf-windows-viogpu3d-render-stage-smoke.sh` is intentionally parser-only: it
+uses synthetic ARM64 PE headers and a dummy catalog to prove the pinned staging,
+INF registration, CopyFiles, stale-metadata rejection, and finalizer ordering
+contracts. It does not claim InfVerif, Inf2Cat, SignTool, or live Windows proof.
+`hvf-windows-viogpu3d-build-kit-smoke.sh` statically verifies the pinned x64
+Windows → ARM64 clang-cl build kit; the actual PowerShell/WDK run remains an
+external gate.
 
 The HVF VM probe live opt-in smoke is intentionally outside the metadata-safe
 suite. Set `BRIDGEVM_HVF_ALLOW_VM_CREATE=1` and run

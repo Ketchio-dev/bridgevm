@@ -129,6 +129,7 @@ SMOKES=(
   "tests/integration/hvf-windows-viogpu3d-package-inventory-smoke.sh"
   "tests/integration/hvf-windows-viogpu3d-injector-wrapper-smoke.sh"
   "tests/integration/hvf-windows-viogpu3d-build-kit-smoke.sh"
+  "tests/integration/hvf-windows-viogpu3d-render-stage-smoke.sh"
   "tests/integration/hvf-virtio-gpu-3d-host-preflight-cli-smoke.sh"
   "tests/integration/hvf-virtio-gpu-trace-report-cli-smoke.sh"
   "tests/integration/hvf-windows-p3-gpu-readiness-smoke.sh"

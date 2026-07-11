@@ -3,11 +3,14 @@
 Goal: GPU-accelerated 3D for the Windows 11 ARM64 guest on our from-scratch VMM,
 reusing the host virtio-gpu 3D stack already exercised with Linux. Injection-ready
 Windows ARM64 `viogpu3d` packages now exist locally, but none is currently a
-render candidate. The VirGL full package carries five ARM64 Mesa DLLs and
+finalized render candidate. The preserved VirGL full package carries five ARM64 Mesa DLLs and
 `CopyFiles` entries, while its INF omits `UserModeDriverName`,
 `OpenGLDriverName`, `OpenGLVersion`, `OpenGLFlags`, and
-`InstalledDisplayDrivers`. The next piece is therefore a
-regenerated/test-signed UMD-registered package, followed by live, boot-bound
+`InstalledDisplayDrivers`. A pinned local stage now replaces that fallback INF
+with a canonical, UMD-registered minimal profile and strips the stale CAT/CER.
+Its parser-only fixture passes the repository INF/CopyFiles gate, but is not a
+signed artifact. The next piece is therefore Windows WDK finalization of that
+exact stage, followed by the real render-candidate gate and live, boot-bound
 proof that it installs, binds, and speaks the expected protocol: `venus` when it really
 uses capset 4, or `virgl`/`virgl2` when it follows the older D3D10/GL path.
 
@@ -47,8 +50,10 @@ up capset 1, and the installed boot path can select the CGL-backed VirGL runtime
    source/package audit. Do not boot a package under a gate for the wrong
    protocol.
 
-## The binary build wall is closed; the INF/UMD registration wall is not
+## The binary/INF inputs are closed; WDK finalization is the current wall
+
 `viogpu3d` is a WDDM kernel driver whose reproducible full build still requires:
+
 1. **Mesa built on Windows** (`meson -Dgallium-drivers=virgl -Dgallium-d3d10umd`)
    producing the user-mode DLLs — a major build in its own right, and
    Mesa-on-Windows-**ARM64** is not a beaten path.
@@ -68,59 +73,74 @@ All are self-signed test artifacts, not production-distributable drivers. The
 three KMD-only packages have no UMD payload. The full package copies its five
 DLLs but does not register the WDDM/OpenGL UMD names, so Windows has no INF
 contract that selects those DLLs for rendering. The source
-`viogpu3d_arm64.inx` does contain all five registrations; the package must be
-regenerated from that source, then cataloged and test-signed as one immutable
-unit. Merely editing the signed out-of-tree INF would invalidate its catalog.
+`viogpu3d_arm64.inx` does contain all five registrations. BridgeVM now stages a
+fixed five-DLL profile from that contract, pins the source HEAD, source-INX hash,
+and all seven original CI inputs, and refuses stale signed metadata. Merely
+editing the signed out-of-tree INF would invalidate its catalog, so the stage is
+deliberately unsigned and must be finalized as a new immutable package.
 
-The immediate wall is therefore a checker-accepted UMD-registered render
-candidate. The following wall is live Windows evidence: certificate trust and
+The immediate wall is therefore executing the Windows WDK finalizer with a
+trusted code-signing PFX, then returning `package-finalized` to the Mac and
+requiring the repository's real render-candidate gate. The following wall is live Windows evidence: certificate trust and
 testsigning, `pnputil` install, a present `DEV_1050`/`DEV_10F7` device with
 Status OK bound to the intended OEM INF, then a coherent capset/blob/context/
 submit/fence trace tied to that same boot and a rendered workload.
 
 ## Reproducing or replacing the package
-Two options remain for future rebuilds, in preference order:
 
-**Option A — build inside our own Windows 11 ARM64 guest (we already boot one).**
-Our `--daily` Windows desktop works (networked, 4-core, 6 GB). Steps (multi-
-session, mostly interactive setup that a human or a scripted unattended install
-drives):
-1. In the guest: install VS 2022 Build Tools + WDK (ARM64), Python, meson, ninja,
-   git; build Mesa (virgl + d3d10umd, static CRT) -> `MESA_PREFIX`.
-2. Build PR #943 `viogpu/viogpu.sln` for `Win10 Release|ARM64` -> `viogpu3d.sys`,
-   INF, CAT, and Mesa user-mode DLLs. The generated build kit below codifies this.
-3. Inject the driver; the three-stage firstboot flow enables testsigning, trusts
-   the certificate, installs the INF, reboots, and verifies the bound device,
-   boot with `--virtio-gpu-3d`, `--virtio-gpu-device-id 1050`, and
-   `--gpu-trace-protocol virgl`, then require the readiness + trace gates. Today
-   the current package is no longer blocked by host VirGL support, runtime
-   selection, kernel binary availability, or package HWID; it is blocked by its
-   stripped fallback INF and the catalog/signature regeneration that an INF fix
-   requires.
-Could be partly automated with an unattended VS/WDK install image, but expect
-interactive iteration.
+The shortest path reuses the audited CI binaries and regenerates only the
+package contract and signed metadata:
 
-**Option B — cross-build / external.** Provide a prebuilt `viogpu3d.sys` (ARM64,
-test-signed) from any Windows ARM64 dev box; then this project injects + boots +
-debugs — the parts our harness IS good at.
+```sh
+scripts/stage-hvf-windows-viogpu3d-render-package.sh \
+  --input-dir "$HOME/BridgeVM/viogpu3d-prebuilt-candidates/arm64-ci/viogpu3d-full" \
+  --source-inx "$HOME/BridgeVM/viogpu3d-arehnman/viogpu/viogpu3d/viogpu3d_arm64.inx" \
+  --out-dir /tmp/bridgevm-viogpu3d-render-finalization-kit
+```
 
-BridgeVM now generates the external build kit for this path:
+Copy that complete kit to an x64 Windows WDK environment. The signing
+certificate must already be trusted there so kernel-policy verification can
+pass. Run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\finalize-viogpu3d-package.ps1 `
+  -PackageDir .\package `
+  -PreFinalizationManifest .\pre-finalization-sha256.txt `
+  -CertificatePfx C:\path\BridgeVM-Test.pfx
+```
+
+The finalizer validates the exact flat input set, manifest, canonical INF hash,
+ARM64 PE machine fields, and code-signing EKU. It writes through a temporary
+directory, runs InfVerif → all-PE sign → Inf2Cat → CAT sign → SignTool `/pa` and
+`/kp`, and only then renames the result to `package-finalized`. The unsigned
+`package` directory is never mutated. After copying `package-finalized` back:
+
+```sh
+scripts/check-hvf-windows-viogpu3d-package.sh \
+  --pci-device-id 1050 \
+  --require-render-candidate \
+  /path/to/package-finalized
+```
+
+If the pinned binaries must be rebuilt, BridgeVM also generates the proven x64
+Windows → ARM64 cross-build kit:
 
 ```sh
 scripts/prepare-hvf-windows-viogpu3d-build-kit.sh \
-  --source-dir "$HOME/BridgeVM/viogpu3d-pr943" \
-  --out-dir /tmp/bridgevm-viogpu3d-pr943-build-kit \
+  --source-dir "$HOME/BridgeVM/viogpu3d-arehnman" \
+  --out-dir /tmp/bridgevm-viogpu3d-akre-build-kit \
   --no-fetch
 ```
 
-The generated `build-viogpu3d-arm64.ps1` is intended for an external Windows
-ARM64 dev machine. The live source report generated on 2026-07-07 reports
-`protocol=virgl`, `hwids=PCI\VEN_1AF4&DEV_1050`, `arm64_configuration_present=true`,
-`bridgevm_default_installed_host_protocol=venus`,
-`bridgevm_required_installed_host_protocol=virgl`,
-and `boot_runtime_selector=--gpu-trace-protocol virgl`. Its historical
-`boot_blocker=none` field predates the UMD-registration audit and must not be
-read as render-readiness evidence.
+That kit pins driver `4c27e477e6560cea724d848b98149f03cb1f2083` and
+modified Mesa `cb531c440ff34a9c6334859dda0848132be49ec3`. Its builder reproduces
+the successful x64-hosted `clang-cl --target=arm64-pc-windows-msvc` path,
+including the absolute VirtIO link path, WDK D3D headers, ARM64 import libraries,
+Mesa interlocked-intrinsic mappings, and the `float16_t` conflict fix. Vulkan and
+GLES1 are intentionally disabled because the minimal VirGL profile neither
+registers nor ships them. Run it from an x64 Visual Studio developer PowerShell
+with WDK, ARM64 C++ tools, LLVM, Git, Meson, and Ninja. A native ARM64 guest build
+remains possible, but it is no longer the preferred or evidence-backed route.
 
 ## Where WE have the edge (the reason this is worth doing)
 The community driver is stalled largely because guest-side crashes are
@@ -204,6 +224,12 @@ undebuggable in a black box. We are not a black box:
   full ARM64 SYS/INF/CAT + five-DLL package described above. The current
   render-candidate count is nevertheless zero because that full INF lacks all
   five UMD/OpenGL registrations.
+- The repository now has a pinned unsigned render-package stage plus a
+  transactional WDK finalizer. The stage's parser-only checker fixture proves
+  that the canonical INF resolves every registered UMD through active CopyFiles
+  into DirID 11; its dummy catalog is deliberately not treated as signature or
+  injection evidence. A real Windows finalization run and returned
+  `--require-render-candidate` pass are still required.
 - The injector/boot harness now has a P3 path for those real driver packages:
 
   ```sh
@@ -272,13 +298,14 @@ undebuggable in a black box. We are not a black box:
   `--gpu-trace-protocol virgl` to `BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=virgl`.
   `PROBE_HOST_RENDERER=1` can be used with the readiness script to add the live
   Venus/VirGL renderer probe result to the evidence.
-- BLOCKED first on regenerating the VirGL full package from an INF with active
-  UMD registrations, then rebuilding its catalog and test signature. Once the
-  checker reports `render_candidate=true`, the next concrete blocker is a
+- BLOCKED first on executing the WDK finalizer against the pinned unsigned stage
+  with a trusted code-signing PFX, then returning the new CAT/CER/signatures for
+  the real repository render-candidate check. Once the checker reports
+  `render_candidate=true`, the next concrete blocker is a
   verifier-accepted live run proving test-sign trust, PnP bind/Status OK and the
   intended OEM INF, followed by a trace from that same run that passes the
   protocol-coherent feature/capset/blob/context/submit/fence gate. Production
   signing, licensing, stability, and workload/render proof remain later gates.
 
-_Updated 2026-07-10. See [[bridgevm-hvf-engine-status]] and
+_Updated 2026-07-11. See [[bridgevm-hvf-engine-status]] and
 docs/hvf-3d-engine-plan.md._

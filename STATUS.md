@@ -47,13 +47,19 @@ tests/integration/product-gates-report.sh
 
 ## Current P3 Windows 3D direction
 The active 3D-engine path is now Windows ARM64 `viogpu3d` bring-up rather than
-guest-agent polish. The next concrete gate is **a UMD-registered package, then
-driver bind + first GPU trace**. The discovered VirGL full package contains five
-ARM64 Mesa DLLs and copies them through the INF, but does not register
+guest-agent polish. The preserved VirGL full package contains five ARM64 Mesa
+DLLs and copies them through the INF, but does not register
 `UserModeDriverName`, `OpenGLDriverName`, `OpenGLVersion`, `OpenGLFlags`, or
 `InstalledDisplayDrivers`; it is therefore injection-ready, not a render
-candidate. After regenerating and
-test-signing that package, BridgeVM should boot it far enough to observe
+candidate. BridgeVM now has a pinned, hash-checked staging path that combines
+those exact ARM64 payloads with a canonical minimal INF containing all five UMD
+registrations, deliberately drops the stale CAT/CER, and emits a pre-finalization
+manifest. Its parser-only smoke passes the repository's INF/CopyFiles render
+contract, but that fixture uses a dummy catalog and is not signature evidence.
+The immediate external gate is to run the transactional Windows WDK finalizer
+with a trusted code-signing PFX, return its separate finalized directory, and
+pass `--require-render-candidate` against the real regenerated CAT and signatures.
+After that, BridgeVM should boot the package far enough to observe
 virtio-gpu feature negotiation and at least one capset/blob/context/fence event
 from the host. BridgeVM keeps the default virtio-gpu PCI id at `DEV_1050` for
 the proven 2D `viogpudo` path. P3 runs still default to the experimental
@@ -166,10 +172,28 @@ VIOGPU3D_DIR=/path/to/viogpu3d \
   scripts/build-hvf-windows-viogpu3d-injector.sh
 
 scripts/prepare-hvf-windows-viogpu3d-build-kit.sh \
-  --source-dir "$HOME/BridgeVM/viogpu3d-pr943" \
-  --out-dir /tmp/bridgevm-viogpu3d-pr943-build-kit \
+  --source-dir "$HOME/BridgeVM/viogpu3d-arehnman" \
+  --out-dir /tmp/bridgevm-viogpu3d-akre-build-kit \
   --no-fetch
+
+scripts/stage-hvf-windows-viogpu3d-render-package.sh \
+  --input-dir "$HOME/BridgeVM/viogpu3d-prebuilt-candidates/arm64-ci/viogpu3d-full" \
+  --source-inx "$HOME/BridgeVM/viogpu3d-arehnman/viogpu/viogpu3d/viogpu3d_arm64.inx" \
+  --out-dir /tmp/bridgevm-viogpu3d-render-finalization-kit
 ```
+
+The build kit pins driver commit
+`4c27e477e6560cea724d848b98149f03cb1f2083` and modified Mesa commit
+`cb531c440ff34a9c6334859dda0848132be49ec3`. It reproduces the preserved
+successful x64-Windows `clang-cl` ARM64 cross-build, including the required
+link-path and Mesa intrinsic/`float16_t` fixes. The faster staging command reuses
+the already audited CI binaries through their exact SHA-256 allowlist. On a
+Windows WDK machine, run the kit's `finalize-viogpu3d-package.ps1` with
+`-PackageDir .\package`, `-PreFinalizationManifest
+.\pre-finalization-sha256.txt`, and a trusted code-signing PFX. The finalizer
+never mutates the unsigned input: it writes `package-finalized`, runs InfVerif,
+signs the SYS and UMD DLLs, regenerates and signs the CAT, and requires SignTool
+`/pa` and `/kp` verification before emitting its report.
 
 The installed Windows boot harness has a matching `--virtio-gpu-3d
 --gpu-trace PATH --gpu-trace-protocol auto|venus|virgl --require-gpu-trace-gate`
@@ -190,9 +214,11 @@ three KMD-only packages have no UMD payload and the full package's INF omits all
 five required UMD/OpenGL registrations. Consequently
 `render_candidate_count=0` for
 the current local set. These are CI/test-signing artifacts, not
-production-signed releases. The immediate wall is to regenerate the full INF,
-catalog, and test signature as one UMD-registered render candidate; only then is
-the next wall live guest proof: certificate trust and test signing, PnP install,
+production-signed releases. The new pinned stage closes the INF generation and
+payload-selection work locally, but it is intentionally unsigned and therefore
+does not change that inventory count. The immediate wall is Windows WDK
+finalization with a trusted PFX followed by the real repository render-candidate
+check; only then is the next wall live guest proof: certificate trust and test signing, PnP install,
 a present `DEV_1050`/`DEV_10F7` device with Status OK bound to the intended OEM
 INF, followed by a coherent boot-bound capset/blob/context/submit/fence trace
 and rendered workload. The Windows

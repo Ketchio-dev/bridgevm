@@ -1,0 +1,98 @@
+; BridgeVM arehnman-arm64-minimal render package.
+; The UMD registration values and payload mapping are derived from the pinned
+; akre viogpu3d_arm64.inx; Vulkan/GLES1 entries are intentionally omitted
+; because those binaries are absent from the pinned CI input set.
+
+[Version]
+Signature="$Windows NT$"
+Class=Display
+ClassGUID={4d36e968-e325-11ce-bfc1-08002be10318}
+Provider=%HARDSOFT%
+DriverVer=09/05/2018,1.01.01.0002
+CatalogFile=viogpu3d.cat
+PnpLockdown=1
+
+[DestinationDirs]
+VioGpu3D_Files.Driver=13
+VioGpu3D_Files.Usermode=11
+
+[SourceDisksNames]
+1=%DiskId1%,,,
+
+[SourceDisksFiles]
+viogpu3d.sys=1,,f
+viogpu_d3d10_arm64.dll=1,,
+viogpu_wgl_arm64.dll=1,,
+opengl32_arm64.dll=1,,
+libEGL_arm64.dll=1,,
+libGLESv2_arm64.dll=1,,
+
+[Manufacturer]
+%HARDSOFT%=HARDSOFT,NTARM64.10.0...16299
+
+[HARDSOFT.NTARM64.10.0...16299]
+%VioGpu3D.DeviceDesc%=VioGpu3D_Inst,PCI\VEN_1AF4&DEV_1050&SUBSYS_11001AF4&REV_01
+
+[VioGpu3D_Files.Driver]
+viogpu3d.sys,,,2
+
+[VioGpu3D_Files.Usermode]
+viogpu_d3d10.dll,viogpu_d3d10_arm64.dll,,0
+viogpu_wgl.dll,viogpu_wgl_arm64.dll,,0
+opengl32.dll,opengl32_arm64.dll,,0
+libEGL.dll,libEGL_arm64.dll,,0
+libGLESv2.dll,libGLESv2_arm64.dll,,0
+
+[VioGpu3D_Inst.NT]
+Include=msdv.inf
+FeatureScore=F9
+CopyFiles=VioGpu3D_Files.Driver,VioGpu3D_Files.Usermode
+AddReg=VioGpu3D_DeviceSettings
+
+[VioGpu3D_Inst.NT.Services]
+AddService=VioGpu3D,0x00000002,VioGpu3D_Service_Inst,VioGpu3D_EventLog_Inst
+
+[VioGpu3D_Inst.NT.HW]
+AddReg=VioGpu3D_PCI_MSIX
+
+[VioGpu3D_Service_Inst]
+ServiceType=%SERVICE_KERNEL_DRIVER%
+StartType=%SERVICE_DEMAND_START%
+ErrorControl=%SERVICE_ERROR_IGNORE%
+ServiceBinary=%13%\viogpu3d.sys
+
+[VioGpu3D_EventLog_Inst]
+AddReg=VioGpu3D_EventLog_Inst.AddReg
+
+[VioGpu3D_EventLog_Inst.AddReg]
+HKR,,EventMessageFile,%REG_EXPAND_SZ%,"%%SystemRoot%%\System32\IoLogMsg.dll"
+HKR,,TypesSupported,%REG_DWORD%,7
+
+[VioGpu3D_DeviceSettings]
+HKR,,HWCursor,%REG_DWORD%,0
+HKR,,FlexResolution,%REG_DWORD%,1
+HKR,,UsePhysicalMemory,%REG_DWORD%,0
+HKR,,UserModeDriverName,%REG_MULTI_SZ%,%11%\viogpu_d3d10.dll,%11%\viogpu_d3d10.dll,%11%\viogpu_d3d10.dll,%11%\viogpu_d3d10.dll
+HKR,,OpenGLDriverName,%REG_MULTI_SZ%,%11%\viogpu_wgl.dll
+HKR,,OpenGLFlags,%REG_DWORD%,3
+HKR,,OpenGLVersion,%REG_DWORD%,4096
+HKR,,InstalledDisplayDrivers,%REG_MULTI_SZ%,viogpu_d3d10,viogpu_d3d10,viogpu_d3d10
+HKLM,"SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Scheduler",EnablePreemption,%REG_DWORD%,1
+HKLM,"SYSTEM\CurrentControlSet\Control\GraphicsDrivers",TdrDebugMode,%REG_DWORD%,1
+
+[VioGpu3D_PCI_MSIX]
+HKR,"Interrupt Management",,0x00000010
+HKR,"Interrupt Management\MessageSignaledInterruptProperties",,0x00000010
+HKR,"Interrupt Management\MessageSignaledInterruptProperties",MSISupported,0x00010001,0
+HKR,"Interrupt Management\MessageSignaledInterruptProperties",MessageNumberLimit,0x00010001,4
+
+[Strings]
+DiskId1="Hardsoft VirtIO GPU controller Installation Disk"
+VioGpu3D.DeviceDesc="Hardsoft VirtIO GPU 3D controller (BridgeVM VirGL test)"
+HARDSOFT="Hardsoft Swed."
+SERVICE_KERNEL_DRIVER=0x1
+SERVICE_DEMAND_START=0x3
+SERVICE_ERROR_IGNORE=0x0
+REG_MULTI_SZ=0x00010000
+REG_EXPAND_SZ=0x00020000
+REG_DWORD=0x00010001
