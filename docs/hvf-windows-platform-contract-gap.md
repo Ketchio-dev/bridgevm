@@ -184,7 +184,9 @@ fails the guest page-table walk at an invalid L0 descriptor. The
 volatile write cache surface now follows QEMU's observed behaviour: Identify
 Controller advertises VWC `0x7`, `Get Features` FID `0x06` reports the current
 cache enabled, and NVM Flush (`0x00`) succeeds for namespace and broadcast-NSID
-requests. The latest PCIe MMIO register-summary pass shows Windows repeatedly
+requests. Write-back raw namespaces now back that completion with `File::sync_data()`;
+tests cover both namespace selectors, broadcast fan-out, read-only COW no-op, and
+host-sync error reporting. The latest PCIe MMIO register-summary pass shows Windows repeatedly
 ringing NVMe queue doorbells, polling `CSTS`/`CC`/`ASQ`, and reading optional
 no-CMB registers `CMBLOC`/`CMBSZ` as zero. Its NVMe summary has only the
 expected pending Asynchronous Event Requests and no other pending commands, so

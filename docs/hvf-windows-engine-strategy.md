@@ -373,7 +373,9 @@ The remaining OS-boot contract work is now narrower:
   volatile write cache surface now matches QEMU's observed shape: Identify
   Controller advertises VWC `0x7`, `Get Features` FID `0x06` reports the current
   cache enabled, and NVM Flush (`0x00`) completes for both namespace and
-  broadcast-NSID requests. Later 60 s register-summary runs reach the same
+  broadcast-NSID requests. For write-back raw namespaces those completions now
+  require a successful `File::sync_data()`; unit tests cover selected/broadcast
+  synchronization and host-error completion propagation. Later 60 s register-summary runs reach the same
   Windows high-VA/SVC frontier class, with stops resolving into `ntkrnlmp.pdb`
   RVAs such as `0x481cdc` and `0x4e0d78`, only the expected four pending
   Asynchronous Event Requests, and no other pending NVMe commands. The current

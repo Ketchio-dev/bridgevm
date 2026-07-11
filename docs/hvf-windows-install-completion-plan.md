@@ -256,8 +256,9 @@ Method for each: reach the surface, capture ramfb/trace evidence, fix, prove.
 
 ### D4. Storage persistence *(mostly already done)*
 - The NSID-2 target is a persistent host file (write-back), so the installed OS persists.
-  Confirm user changes survive shutdown/reboot, and make PSCI SYSTEM_OFF flush the NVMe
-  backing on clean shutdown.
+  Raw write-back `FLUSH` now issues `File::sync_data()`, and the common final persistence
+  hook uses the same path. Confirm the remaining live boundary: observe PSCI SYSTEM_OFF,
+  exit through that hook without an error, reopen the image, and verify the guest change.
 - Acceptance: create files in session 1, reboot, they exist in session 2.
 
 ## Workstream E — Performance & scale   *(measure first — start only after an install completes)*

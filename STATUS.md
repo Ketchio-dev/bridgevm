@@ -240,7 +240,10 @@ M5 status (the remaining work to "usable"):
   enablement: keep the boot-timer matrix honest, compare smp=1/2/4 medians on the
   installed target, and continue reducing per-exit allocation/lock overhead.
 - **Persistence (D4)** — NVMe write-back to the host image is proven (installed changes survive
-  reboot); a clean in-guest shutdown + flush proof is pending.
+  reboot). Raw write-back namespaces now make guest `FLUSH` and the host final persistence hook
+  issue `File::sync_data()`; selected-namespace, broadcast, read-only-overlay, and sync-error
+  propagation paths are unit-tested. A live clean in-guest `SYSTEM_OFF` receipt plus post-exit
+  reopen/durability proof is still pending.
 
 Honest framing: this is an impressive from-scratch VMM result, but it is **not yet a usable
 daily product** — networking and SMP are now proven, but suspend/resume, live perf matrix

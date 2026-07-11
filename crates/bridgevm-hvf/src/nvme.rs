@@ -195,6 +195,9 @@ const SECURITY_PROTOCOL_INFO_LIST_LEN: usize = 10;
 const SC_SUCCESS: u16 = 0x0000;
 /// Invalid Field in Command.
 const SC_INVALID_FIELD: u16 = 0x0002;
+/// Internal Device Error. Used when a valid command reaches the backend but
+/// the host cannot complete the requested I/O operation.
+const SC_INTERNAL_DEVICE_ERROR: u16 = 0x0006;
 /// Do Not Retry bit, carried in the NVMe completion status code field.
 const SC_DNR: u16 = 0x4000;
 /// QEMU's default for unsupported optional/vendor command surfaces.
@@ -389,6 +392,10 @@ struct RawFileDisk {
     len: u64,
     overlay: BTreeMap<u64, Vec<u8>>,
     write_back: bool,
+    #[cfg(test)]
+    sync_failure: Option<io::ErrorKind>,
+    #[cfg(test)]
+    sync_attempts: usize,
 }
 
 impl DiskBackend {
@@ -416,6 +423,10 @@ impl DiskBackend {
             len,
             overlay: BTreeMap::new(),
             write_back,
+            #[cfg(test)]
+            sync_failure: None,
+            #[cfg(test)]
+            sync_attempts: 0,
         }))
     }
 
@@ -472,7 +483,7 @@ impl DiskBackend {
     fn flush(&mut self) -> io::Result<()> {
         match self {
             Self::Memory(_) => Ok(()),
-            Self::RawFile(disk) => disk.file.flush(),
+            Self::RawFile(disk) => disk.flush(),
         }
     }
 
@@ -508,6 +519,25 @@ impl DiskBackend {
 }
 
 impl RawFileDisk {
+    /// Make prior write-through writes durable on the backing storage. A
+    /// read-only raw backend keeps guest writes in its volatile COW overlay, so
+    /// it has no host-file data to synchronize.
+    fn flush(&mut self) -> io::Result<()> {
+        if !self.write_back {
+            return Ok(());
+        }
+
+        #[cfg(test)]
+        {
+            self.sync_attempts += 1;
+            if let Some(kind) = self.sync_failure {
+                return Err(io::Error::new(kind, "injected raw-file sync failure"));
+            }
+        }
+
+        self.file.sync_data()
+    }
+
     /// Read `dst.len()` bytes at `offset`: one `pread` of the whole span from the
     /// backing file, then the sparse write overlay merged on top. Merging over the
     /// whole span (rather than page-by-page) keeps the coalesced read a single
@@ -1560,7 +1590,7 @@ impl NvmeController {
 
     /// NVM FLUSH (0x00). QEMU accepts both NSID 1 and broadcast NSID for a
     /// single-NVM-namespace controller. Memory-backed media is already coherent;
-    /// host-file media uses the existing flush hook.
+    /// write-through host-file media issues a durable data sync.
     fn io_flush(&mut self, cmd: &SubmissionEntry) -> u16 {
         // Broadcast NSID flushes every active namespace.
         if cmd.nsid == u32::MAX {
@@ -1568,14 +1598,18 @@ impl NvmeController {
             if let Some(disk2) = self.disk2.as_mut() {
                 ok &= disk2.flush().is_ok();
             }
-            return if ok { SC_SUCCESS } else { SC_INVALID_FIELD };
+            return if ok {
+                SC_SUCCESS
+            } else {
+                SC_INTERNAL_DEVICE_ERROR
+            };
         }
         let Some(backend) = self.backend_for_nsid_mut(cmd.nsid) else {
             return SC_INVALID_FIELD;
         };
         match backend.flush() {
             Ok(()) => SC_SUCCESS,
-            Err(_) => SC_INVALID_FIELD,
+            Err(_) => SC_INTERNAL_DEVICE_ERROR,
         }
     }
 
@@ -2315,6 +2349,20 @@ mod tests {
         ))
     }
 
+    fn raw_file_sync_attempts(backend: &DiskBackend) -> usize {
+        match backend {
+            DiskBackend::RawFile(disk) => disk.sync_attempts,
+            DiskBackend::Memory(_) => panic!("expected raw-file disk backend"),
+        }
+    }
+
+    fn set_raw_file_sync_failure(backend: &mut DiskBackend, failure: Option<io::ErrorKind>) {
+        match backend {
+            DiskBackend::RawFile(disk) => disk.sync_failure = failure,
+            DiskBackend::Memory(_) => panic!("expected raw-file disk backend"),
+        }
+    }
+
     /// Enable a fresh controller with admin queues installed.
     fn enabled_controller_with_disk_and_mem_len(
         disk: Vec<u8>,
@@ -2361,6 +2409,14 @@ mod tests {
         // Ring SQ0 tail doorbell (offset 0x1000) with new tail = slot + 1.
         ctrl.mmio_write(REG_DOORBELL_BASE, 4, u64::from(slot + 1));
         ctrl.process(mem);
+    }
+
+    fn submit_io(ctrl: &mut NvmeController, mem: &mut FakeMem, slot: u16, sqe: &[u8; 64]) -> u16 {
+        let gpa = IO_SQ_BASE + u64::from(slot) * SQ_ENTRY_SIZE;
+        assert!(mem.write_bytes(gpa, sqe));
+        ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, u64::from(slot + 1));
+        ctrl.process(mem);
+        completion_status(&read_completion(mem, IO_CQ_BASE, slot))
     }
 
     fn read_completion(mem: &FakeMem, cq_base: u64, slot: u16) -> [u8; 16] {
@@ -3765,6 +3821,134 @@ mod tests {
             completion_status(&read_completion(&mem, IO_CQ_BASE, 1)),
             SC_SUCCESS
         );
+    }
+
+    #[test]
+    fn raw_file_flush_syncs_selected_and_broadcast_write_back_namespaces() {
+        let primary = temp_path("flush-primary");
+        let secondary = temp_path("flush-secondary");
+        fs::write(&primary, vec![0u8; LBA_SIZE * 8]).unwrap();
+        fs::write(&secondary, vec![0u8; LBA_SIZE * 8]).unwrap();
+
+        let (mut ctrl, mut mem) = enabled_controller_with_raw_file(&primary, true, 0x10000);
+        ctrl.attach_second_namespace_raw_file(&secondary, true)
+            .unwrap();
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        assert_eq!(
+            submit_io(
+                &mut ctrl,
+                &mut mem,
+                0,
+                &encode_sqe(NVM_OP_FLUSH, 0x76, NSID, 0, 0, 0, 0),
+            ),
+            SC_SUCCESS
+        );
+        assert_eq!(raw_file_sync_attempts(&ctrl.disk), 1);
+        assert_eq!(raw_file_sync_attempts(ctrl.disk2.as_ref().unwrap()), 0);
+
+        assert_eq!(
+            submit_io(
+                &mut ctrl,
+                &mut mem,
+                1,
+                &encode_sqe(NVM_OP_FLUSH, 0x77, NSID2, 0, 0, 0, 0),
+            ),
+            SC_SUCCESS
+        );
+        assert_eq!(raw_file_sync_attempts(&ctrl.disk), 1);
+        assert_eq!(raw_file_sync_attempts(ctrl.disk2.as_ref().unwrap()), 1);
+
+        assert_eq!(
+            submit_io(
+                &mut ctrl,
+                &mut mem,
+                2,
+                &encode_sqe(NVM_OP_FLUSH, 0x78, u32::MAX, 0, 0, 0, 0),
+            ),
+            SC_SUCCESS
+        );
+        assert_eq!(raw_file_sync_attempts(&ctrl.disk), 2);
+        assert_eq!(raw_file_sync_attempts(ctrl.disk2.as_ref().unwrap()), 2);
+
+        drop(ctrl);
+        fs::remove_file(primary).ok();
+        fs::remove_file(secondary).ok();
+    }
+
+    #[test]
+    fn raw_file_flush_skips_read_only_overlay_without_failing_guest_command() {
+        let source = temp_path("flush-read-only-overlay");
+        fs::write(&source, vec![0u8; LBA_SIZE * 8]).unwrap();
+        let (mut ctrl, mut mem) = enabled_controller_with_raw_file(&source, false, 0x10000);
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+
+        assert_eq!(
+            submit_io(
+                &mut ctrl,
+                &mut mem,
+                0,
+                &encode_sqe(NVM_OP_FLUSH, 0x79, NSID, 0, 0, 0, 0),
+            ),
+            SC_SUCCESS
+        );
+        assert_eq!(raw_file_sync_attempts(&ctrl.disk), 0);
+        ctrl.flush_disk().unwrap();
+        assert_eq!(raw_file_sync_attempts(&ctrl.disk), 0);
+
+        drop(ctrl);
+        fs::remove_file(source).ok();
+    }
+
+    #[test]
+    fn raw_file_sync_failures_reach_host_and_guest_flush_callers() {
+        let primary = temp_path("flush-failure-primary");
+        let secondary = temp_path("flush-failure-secondary");
+        fs::write(&primary, vec![0u8; LBA_SIZE * 8]).unwrap();
+        fs::write(&secondary, vec![0u8; LBA_SIZE * 8]).unwrap();
+
+        let (mut ctrl, mut mem) = enabled_controller_with_raw_file(&primary, true, 0x10000);
+        ctrl.attach_second_namespace_raw_file(&secondary, true)
+            .unwrap();
+        set_raw_file_sync_failure(&mut ctrl.disk, Some(io::ErrorKind::Other));
+
+        let error = ctrl.flush_disk().unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert_eq!(raw_file_sync_attempts(&ctrl.disk), 1);
+
+        create_io_queue_pair(&mut ctrl, &mut mem, 0, CREATE_IO_CQ_PC_BIT);
+        assert_eq!(
+            submit_io(
+                &mut ctrl,
+                &mut mem,
+                0,
+                &encode_sqe(NVM_OP_FLUSH, 0x7a, NSID, 0, 0, 0, 0),
+            ),
+            SC_INTERNAL_DEVICE_ERROR
+        );
+
+        // A broadcast must still try every namespace even when the primary
+        // namespace fails, then report the aggregate failure to the guest.
+        assert_eq!(
+            submit_io(
+                &mut ctrl,
+                &mut mem,
+                1,
+                &encode_sqe(NVM_OP_FLUSH, 0x7b, u32::MAX, 0, 0, 0, 0),
+            ),
+            SC_INTERNAL_DEVICE_ERROR
+        );
+        assert_eq!(raw_file_sync_attempts(&ctrl.disk), 3);
+        assert_eq!(raw_file_sync_attempts(ctrl.disk2.as_ref().unwrap()), 1);
+
+        set_raw_file_sync_failure(&mut ctrl.disk, None);
+        set_raw_file_sync_failure(ctrl.disk2.as_mut().unwrap(), Some(io::ErrorKind::Other));
+        let error = ctrl.flush_second_namespace_disk().unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+
+        drop(ctrl);
+        fs::remove_file(primary).ok();
+        fs::remove_file(secondary).ok();
     }
 
     #[test]
