@@ -66,6 +66,10 @@ The first app milestone should be a native dashboard that calls the Rust daemon 
   latest JSON response
 - persisted Settings controls for the daemon socket path, mock-inventory mode,
   and local Apple VZ live-start opt-in
+- a packaged **Windows HVF Lab** launcher in Settings. The isolated
+  `BridgeVMControl.app` imports an already-installed Windows ARM RAW disk and
+  matching writable UEFI vars, then uses the bundled, Hypervisor-entitled
+  release probe and wrapper scripts without Cargo or a repository checkout
 
 The source is intentionally thin: VM lifecycle state should continue to live in
 `bridgevmd`, while the macOS app presents inventory and sends user actions.
@@ -187,6 +191,16 @@ the visible Settings state.
 
 `apps/macos/Package.swift` builds the prototype as Swift Package executables for
 quick local validation. `BridgeVMApp` remains the daemon-backed UI shell.
+`BridgeVMControl` is the isolated experimental installed-Windows HVF surface.
+Production packaging nests it at
+`BridgeVMApp.app/Contents/Applications/BridgeVMControl.app`, supplies the five
+installed-boot wrapper scripts and release `hvf_gic_boot_probe` as resources,
+and derives the nested bundle identifier from the parent. The main app's
+Settings button resolves and opens exactly that nested app. The HVF surface
+clones or copies selected source media into a managed VM bundle before launch,
+uses explicit CLI policy for RAM, vCPUs, service control, clipboard/share, and
+networking, and requests guest shutdown through BVAGENT before a bounded forced
+termination fallback.
 `AppleVzRunner` is a separate helper boundary for the limited Fast Mode backend:
 it decodes `AppleVzLaunchHandoff` JSON from a file or stdin, validates the
 handoff/readiness contract, links against Virtualization.framework when
@@ -227,6 +241,6 @@ configuration-validation, unsupported-input, or missing-opt-in paths. For local
 manual live E2E, run `apps/macos/scripts/build-sign-apple-vz-runner.sh` after
 each rebuild to sign the helper with `apps/macos/AppleVzRunner.entitlements`.
 `AppleVzRunner --stop-after-seconds N` is available for bounded live fixtures
-that should request guest shutdown after startup. A future Xcode project can
-wrap the same `Sources/BridgeVMApp` target once signing, app icons,
-entitlements, and release packaging are ready.
+that should request guest shutdown after startup. An Xcode project remains an
+optional IDE wrapper around the same SwiftPM products; the shell packaging path
+owns current app icons, entitlements, nested code, signing, and release gates.

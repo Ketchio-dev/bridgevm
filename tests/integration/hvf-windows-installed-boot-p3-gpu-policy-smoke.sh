@@ -10,9 +10,11 @@ VARS="$STORE/vars.fd"
 EVIDENCE="$STORE/evidence"
 TRACE="$STORE/evidence/p3-gpu.jsonl"
 VIOGPU3D="$STORE/viogpu3d"
+SHARE="$STORE/share"
+CONTROL="$EVIDENCE/app.ctl"
 
 touch "$TARGET" "$VARS"
-mkdir -p "$EVIDENCE" "$VIOGPU3D"
+mkdir -p "$EVIDENCE" "$VIOGPU3D" "$SHARE"
 
 cleanup() {
   rm -rf "$STORE"
@@ -100,6 +102,9 @@ assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_CMDS=<unset>" "installed boot
 assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_SERVICE=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_CTL=<unset>" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC=<unset>" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE=<unset>" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS=<unset>" "installed boot policy"
 assert_contains "$output" "BUILD_PROFILE=debug" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_NVME_DISK_WRITABLE=1 when booting target as only NVMe" "installed boot policy"
 
@@ -161,6 +166,35 @@ assert_contains "$pause_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CMDS=ver" "host 
 assert_contains "$pause_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=234567" "host pause/resume policy"
 assert_contains "$pause_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_SERVICE=1" "host pause/resume policy"
 assert_contains "$pause_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CTL=$EVIDENCE/host-pause-resume-control.txt" "host pause/resume policy"
+
+service_policy_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --watchdog-ms 345678 \
+    --ram-mib 6144 \
+    --smp-cpus 4 \
+    --agent-service-control "$CONTROL" \
+    --agent-service-command "whoami /user" \
+    --agent-clipboard-sync \
+    --agent-share-host "$SHARE" \
+    --agent-share-guest 'C:\bridgevm-share' \
+    --agent-share-ms 2500 \
+    --print-policy 2>&1
+)" || fail "installed boot app service policy failed: $service_policy_output"
+assert_contains "$service_policy_output" "BRIDGEVM_RAM_MIB=6144" "app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_SMP_CPUS=4" "app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE=1" "app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST=1" "app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=1" "app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CMDS=whoami /user" "app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=345678" "app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_SERVICE=1" "app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CTL=$CONTROL" "app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC=1" "app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE=$SHARE::C:\bridgevm-share" "app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS=2500" "app service policy"
 
 boot_timer_env_output="$(
   bash -c '
@@ -245,6 +279,38 @@ assert_contains "$pause_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=1" "h
 assert_contains "$pause_env_output" "BRIDGEVM_VIRTIO_CONSOLE_CMDS=ver" "host pause/resume env"
 assert_contains "$pause_env_output" "BRIDGEVM_VIRTIO_CONSOLE_SERVICE=1" "host pause/resume env"
 assert_contains "$pause_env_output" "BRIDGEVM_VIRTIO_CONSOLE_CTL=$EVIDENCE/host-pause-resume-control.txt" "host pause/resume env"
+
+service_env_output="$(
+  bash -c '
+    set -euo pipefail
+    source scripts/run-hvf-windows-installed-boot-validation.sh
+    source scripts/run-hvf-windows-installed-boot-args.sh
+    source scripts/run-hvf-windows-installed-boot-runner.sh
+    init_installed_boot_defaults
+    parse_installed_boot_args "$@"
+    build_installed_boot_env_args
+  ' _ \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --watchdog-ms 345678 \
+    --agent-service-control "$CONTROL" \
+    --agent-service-command "whoami /user" \
+    --agent-clipboard-sync \
+    --agent-share-host "$SHARE" \
+    --agent-share-guest 'C:\bridgevm-share' \
+    --agent-share-ms 2500
+)" || fail "installed boot app service env failed: $service_env_output"
+assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE=1" "app service env"
+assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST=1" "app service env"
+assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=1" "app service env"
+assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_CMDS=whoami /user" "app service env"
+assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=345678" "app service env"
+assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_SERVICE=1" "app service env"
+assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_CTL=$CONTROL" "app service env"
+assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC=1" "app service env"
+assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE=$SHARE::C:\bridgevm-share" "app service env"
+assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS=2500" "app service env"
 
 daily_output="$(
   scripts/run-hvf-windows-installed-boot.sh \
@@ -332,6 +398,84 @@ conflicting_shutdown_pause_output="$(
     --print-policy 2>&1
 )" && fail "installed boot unexpectedly accepted conflicting shutdown/pause controls: $conflicting_shutdown_pause_output"
 assert_contains "$conflicting_shutdown_pause_output" "controls its own post-resume shutdown" "shutdown/pause conflict policy"
+
+orphan_agent_option_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --agent-clipboard-sync \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted an agent option without service control: $orphan_agent_option_output"
+assert_contains "$orphan_agent_option_output" "require --agent-service-control" "orphan agent option policy"
+
+conflicting_service_shutdown_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --agent-service-control "$CONTROL" \
+    --shutdown-after-agent-ready \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted service and one-shot shutdown: $conflicting_service_shutdown_output"
+assert_contains "$conflicting_service_shutdown_output" "cannot be combined with one-shot shutdown" "service/shutdown conflict policy"
+
+orphan_share_path_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --agent-service-control "$CONTROL" \
+    --agent-share-host "$SHARE" \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted an unpaired share path: $orphan_share_path_output"
+assert_contains "$orphan_share_path_output" "must be provided together" "unpaired share path policy"
+
+bad_share_interval_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --agent-service-control "$CONTROL" \
+    --agent-share-ms 499 \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted a short share interval: $bad_share_interval_output"
+assert_contains "$bad_share_interval_output" "--agent-share-ms requires an integer from 500 to 60000" "share interval policy"
+
+orphan_share_interval_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --agent-service-control "$CONTROL" \
+    --agent-share-ms 2500 \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted a share interval without share paths: $orphan_share_interval_output"
+assert_contains "$orphan_share_interval_output" "requires --agent-share-host and --agent-share-guest" "orphan share interval policy"
+
+bad_agent_command_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --agent-service-control "$CONTROL" \
+    --agent-service-command 'whoami|shutdown.exe /p /f' \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted an agent command delimiter: $bad_agent_command_output"
+assert_contains "$bad_agent_command_output" "without CR, LF, or |" "agent command delimiter policy"
+
+MISSING_SHARE="$STORE/missing-share"
+missing_share_dir_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --agent-service-control "$CONTROL" \
+    --agent-share-host "$MISSING_SHARE" \
+    --agent-share-guest 'C:\missing' \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted a missing host share directory: $missing_share_dir_output"
+assert_contains "$missing_share_dir_output" "agent share host directory not found" "missing host share directory policy"
 
 huge_boot_timer_ms_output="$(
   scripts/run-hvf-windows-installed-boot.sh \
@@ -434,7 +578,9 @@ printf 'console_cmds=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_CMDS-<unset>}"
 printf 'console_timeout=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS-<unset>}"
 printf 'console_service=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_SERVICE-<unset>}"
 printf 'console_ctl=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_CTL-<unset>}"
+printf 'console_clipsync=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC-<unset>}"
 printf 'console_share=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_SHARE-<unset>}"
+printf 'console_share_ms=%s\n' "${BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS-<unset>}"
 printf 'unknown_poison=%s\n' "${BRIDGEVM_UNKNOWN_POISON-<unset>}"
 printf 'vars=%s\n' "${BRIDGEVM_AARCH64_UEFI_VARS-<unset>}"
 printf 'gpu_trace=%s\n' "${BRIDGEVM_VIRTIO_GPU_TRACE_JSONL-<unset>}"
@@ -463,7 +609,9 @@ sanitized_probe_output="$(
   BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=777 \
   BRIDGEVM_VIRTIO_CONSOLE_SERVICE=1 \
   BRIDGEVM_VIRTIO_CONSOLE_CTL=/tmp/poison-control \
+  BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC=1 \
   BRIDGEVM_VIRTIO_CONSOLE_SHARE=/tmp/poison-share \
+  BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS=777 \
   BRIDGEVM_UNKNOWN_POISON=1 \
   bash -c '
     set -euo pipefail
@@ -497,7 +645,9 @@ assert_contains "$sanitized_probe_output" "console_cmds=<unset>" "ambient consol
 assert_contains "$sanitized_probe_output" "console_timeout=<unset>" "ambient console timeout sanitization"
 assert_contains "$sanitized_probe_output" "console_service=<unset>" "ambient console service sanitization"
 assert_contains "$sanitized_probe_output" "console_ctl=<unset>" "ambient console control sanitization"
+assert_contains "$sanitized_probe_output" "console_clipsync=<unset>" "ambient console clipboard sanitization"
 assert_contains "$sanitized_probe_output" "console_share=<unset>" "ambient console share sanitization"
+assert_contains "$sanitized_probe_output" "console_share_ms=<unset>" "ambient console share interval sanitization"
 assert_contains "$sanitized_probe_output" "unknown_poison=<unset>" "ambient unknown BridgeVM sanitization"
 
 explicit_probe_output="$(
@@ -569,13 +719,69 @@ assert_contains "$shutdown_gate_fail_output" "guest_system_off=false" "failed ag
 assert_contains "$shutdown_gate_fail_output" "status=1" "failed agent shutdown gate"
 assert_contains "$shutdown_gate_fail_output" "run_status=1" "failed agent shutdown gate"
 
+SERVICE_GATE_OK="$STORE/service-gate-ok"
+mkdir -p "$SERVICE_GATE_OK"
+cat > "$SERVICE_GATE_OK/run.log" <<'EOF'
+BVAGENT READY host=BRIDGEVM v3-share2 t=1234
+BVAGENT CMD whoami exit=0
+bridgevm\user
+BVAGENT END whoami
+BVAGENT SERVICE start t=1300
+stop: PSCI 0x84000008 (system off)
+NVMe disk written back: /tmp/windows.raw
+EOF
+service_gate_ok_output="$(
+  bash -c '
+    set -euo pipefail
+    source scripts/run-hvf-windows-installed-boot-runner.sh
+    EVIDENCE_DIR="$1"
+    AGENT_SERVICE_CONTROL="$1/app.ctl"
+    AGENT_SERVICE_COMMAND=whoami
+    RUN_STATUS=0
+    write_agent_service_gate
+    cat "$EVIDENCE_DIR/agent-service-gate.txt"
+    printf "run_status=%s\n" "$RUN_STATUS"
+  ' _ "$SERVICE_GATE_OK"
+)" || fail "successful agent service gate failed: $service_gate_ok_output"
+assert_contains "$service_gate_ok_output" "agent_handshake=true" "successful agent service gate"
+assert_contains "$service_gate_ok_output" "initial_command_exit_zero=true" "successful agent service gate"
+assert_contains "$service_gate_ok_output" "initial_command_complete=true" "successful agent service gate"
+assert_contains "$service_gate_ok_output" "service_started=true" "successful agent service gate"
+assert_contains "$service_gate_ok_output" "guest_system_off=true" "successful agent service gate"
+assert_contains "$service_gate_ok_output" "nvme_writeback=true" "successful agent service gate"
+assert_contains "$service_gate_ok_output" "status=0" "successful agent service gate"
+assert_contains "$service_gate_ok_output" "run_status=0" "successful agent service gate"
+
+SERVICE_GATE_FAIL="$STORE/service-gate-fail"
+mkdir -p "$SERVICE_GATE_FAIL"
+printf 'BVAGENT READY host=BRIDGEVM v3-share2 t=1234\nBVAGENT SERVICE start t=1300\n' > "$SERVICE_GATE_FAIL/run.log"
+service_gate_fail_output="$(
+  bash -c '
+    set -euo pipefail
+    source scripts/run-hvf-windows-installed-boot-runner.sh
+    EVIDENCE_DIR="$1"
+    AGENT_SERVICE_CONTROL="$1/app.ctl"
+    AGENT_SERVICE_COMMAND=whoami
+    RUN_STATUS=0
+    write_agent_service_gate
+    cat "$EVIDENCE_DIR/agent-service-gate.txt"
+    printf "run_status=%s\n" "$RUN_STATUS"
+  ' _ "$SERVICE_GATE_FAIL"
+)" || fail "failed agent service gate evaluation errored: $service_gate_fail_output"
+assert_contains "$service_gate_fail_output" "initial_command_exit_zero=false" "failed agent service gate"
+assert_contains "$service_gate_fail_output" "guest_system_off=false" "failed agent service gate"
+assert_contains "$service_gate_fail_output" "nvme_writeback=false" "failed agent service gate"
+assert_contains "$service_gate_fail_output" "status=1" "failed agent service gate"
+assert_contains "$service_gate_fail_output" "run_status=1" "failed agent service gate"
+
 RELATIVE_WRAPPER_ROOT="$STORE/relative-wrapper"
 mkdir -p \
   "$RELATIVE_WRAPPER_ROOT/media" \
   "$RELATIVE_WRAPPER_ROOT/state" \
   "$RELATIVE_WRAPPER_ROOT/evidence" \
   "$RELATIVE_WRAPPER_ROOT/traces" \
-  "$RELATIVE_WRAPPER_ROOT/driver"
+  "$RELATIVE_WRAPPER_ROOT/driver" \
+  "$RELATIVE_WRAPPER_ROOT/share"
 RELATIVE_WRAPPER_REAL="$(cd "$RELATIVE_WRAPPER_ROOT" && pwd -P)"
 touch \
   "$RELATIVE_WRAPPER_ROOT/media/windows.raw" \
@@ -599,7 +805,11 @@ relative_wrapper_output="$(
       --evidence-dir evidence \
       --virtio-gpu-3d \
       --gpu-trace traces/gpu.jsonl \
-      --viogpu3d-dir driver
+      --viogpu3d-dir driver \
+      --agent-service-control state/app.ctl \
+      --agent-clipboard-sync \
+      --agent-share-host share \
+      --agent-share-guest "C:\\bridgevm-share"
     absolutize_installed_boot_paths "$(pwd -P)"
     validate_installed_boot_option_combinations
     validate_installed_boot_required_paths
@@ -624,6 +834,9 @@ assert_contains "$relative_wrapper_output" "vars_path=$RELATIVE_WRAPPER_REAL/sta
 assert_contains "$relative_wrapper_output" "evidence_path=$RELATIVE_WRAPPER_REAL/evidence" "relative evidence path"
 assert_contains "$relative_wrapper_output" "trace_path=$RELATIVE_WRAPPER_REAL/traces/gpu.jsonl" "relative trace path"
 assert_contains "$relative_wrapper_output" "driver_path=$RELATIVE_WRAPPER_REAL/driver" "relative driver path"
+assert_contains "$relative_wrapper_output" "console_ctl=$RELATIVE_WRAPPER_REAL/state/app.ctl" "relative agent control path"
+assert_contains "$relative_wrapper_output" "console_clipsync=1" "relative agent clipboard env"
+assert_contains "$relative_wrapper_output" "console_share=$RELATIVE_WRAPPER_REAL/share::C:\bridgevm-share" "relative agent share env"
 assert_contains "$relative_wrapper_output" "nvme=$RELATIVE_WRAPPER_REAL/media/placeholder.raw" "relative primary NVMe env"
 assert_contains "$relative_wrapper_output" "nvme2=$RELATIVE_WRAPPER_REAL/media/windows.raw" "relative second NVMe env"
 assert_contains "$relative_wrapper_output" "nvme2_writable=1" "relative second NVMe writable env"

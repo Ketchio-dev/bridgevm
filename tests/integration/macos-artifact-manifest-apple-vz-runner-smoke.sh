@@ -11,6 +11,9 @@ APP_ONLY_MANIFEST="$WORKDIR/BridgeVM-app-artifacts.txt"
 RUNNER="$APP/Contents/Helpers/AppleVzRunner"
 BRIDGEVMD="$APP/Contents/Helpers/bridgevmd"
 LIGHTVM_RUNNER="$APP/Contents/Helpers/lightvm-runner"
+HVF_LAB="$APP/Contents/Applications/BridgeVMControl.app"
+HVF_LAB_EXECUTABLE="$HVF_LAB/Contents/MacOS/BridgeVMControl"
+HVF_WINDOWS_PROBE="$HVF_LAB/Contents/Resources/target/release/examples/hvf_gic_boot_probe"
 APP_NOTARY_SUBMIT_JSON="$WORKDIR/app-notary-submit.json"
 APP_NOTARY_LOG_JSON="$WORKDIR/app-notary-log.json"
 DMG_NOTARY_SUBMIT_JSON="$WORKDIR/dmg-notary-submit.json"
@@ -44,7 +47,11 @@ assert_not_contains_file() {
 
 [[ -x "$SCRIPT" ]] || fail "missing executable manifest script: $SCRIPT"
 
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers"
+mkdir -p \
+  "$APP/Contents/MacOS" \
+  "$APP/Contents/Helpers" \
+  "$HVF_LAB/Contents/MacOS" \
+  "$(dirname "$HVF_WINDOWS_PROBE")"
 cat >"$APP/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -69,7 +76,15 @@ printf '#!/bin/sh\necho BridgeVMApp smoke\n' >"$APP/Contents/MacOS/BridgeVMApp"
 printf '#!/bin/sh\necho AppleVzRunner smoke\n' >"$RUNNER"
 printf '#!/bin/sh\necho bridgevmd smoke\n' >"$BRIDGEVMD"
 printf '#!/bin/sh\necho lightvm-runner smoke\n' >"$LIGHTVM_RUNNER"
-chmod +x "$APP/Contents/MacOS/BridgeVMApp" "$RUNNER" "$BRIDGEVMD" "$LIGHTVM_RUNNER"
+printf '#!/bin/sh\necho BridgeVMControl smoke\n' >"$HVF_LAB_EXECUTABLE"
+printf '#!/bin/sh\necho hvf_gic_boot_probe smoke\n' >"$HVF_WINDOWS_PROBE"
+chmod +x \
+  "$APP/Contents/MacOS/BridgeVMApp" \
+  "$RUNNER" \
+  "$BRIDGEVMD" \
+  "$LIGHTVM_RUNNER" \
+  "$HVF_LAB_EXECUTABLE" \
+  "$HVF_WINDOWS_PROBE"
 printf 'not a real dmg, manifest command recording smoke\n' >"$DMG"
 printf '{"id":"app-submit-smoke"}\n' >"$APP_NOTARY_SUBMIT_JSON"
 printf '{"status":"Accepted","target":"app"}\n' >"$APP_NOTARY_LOG_JSON"
@@ -108,6 +123,15 @@ assert_contains_file "$MANIFEST" "lightvm_runner.present=true" "lightvm-runner m
 assert_contains_file "$MANIFEST" "lightvm_runner.executable=true" "lightvm-runner metadata"
 assert_contains_file "$MANIFEST" "lightvm_runner.sha256=" "lightvm-runner metadata"
 assert_contains_file "$MANIFEST" "lightvm_runner_codesign_verify.exit=" "lightvm-runner signature recording"
+assert_contains_file "$MANIFEST" "windows_hvf_lab.path=$HVF_LAB" "Windows HVF Lab metadata"
+assert_contains_file "$MANIFEST" "windows_hvf_lab.present=true" "Windows HVF Lab metadata"
+assert_contains_file "$MANIFEST" "windows_hvf_lab_executable.path=$HVF_LAB_EXECUTABLE" "Windows HVF Lab executable metadata"
+assert_contains_file "$MANIFEST" "windows_hvf_lab_executable.sha256=" "Windows HVF Lab executable metadata"
+assert_contains_file "$MANIFEST" "windows_hvf_probe.path=$HVF_WINDOWS_PROBE" "Windows HVF probe metadata"
+assert_contains_file "$MANIFEST" "windows_hvf_probe.sha256=" "Windows HVF probe metadata"
+assert_contains_file "$MANIFEST" "windows_hvf_lab_codesign_verify.exit=" "Windows HVF Lab signature recording"
+assert_contains_file "$MANIFEST" "windows_hvf_probe_codesign_verify.exit=" "Windows HVF probe signature recording"
+assert_contains_file "$MANIFEST" "windows_hvf_probe_entitlements.exit=" "Windows HVF probe entitlement recording"
 assert_contains_file "$MANIFEST" "dmg_codesign_verify.exit=" "DMG signature recording"
 assert_contains_file "$MANIFEST" "dmg_codesign_details.exit=" "DMG signature recording"
 
@@ -144,6 +168,8 @@ assert_contains_file "$APP_ONLY_MANIFEST" "app.path=$APP" "app-only app metadata
 assert_contains_file "$APP_ONLY_MANIFEST" "apple_vz_runner.path=$RUNNER" "app-only AppleVzRunner metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "bridgevmd.path=$BRIDGEVMD" "app-only bridgevmd metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "lightvm_runner.path=$LIGHTVM_RUNNER" "app-only lightvm-runner metadata"
+assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_lab.path=$HVF_LAB" "app-only Windows HVF Lab metadata"
+assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_probe.path=$HVF_WINDOWS_PROBE" "app-only Windows HVF probe metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "app_codesign_verify.exit=" "app-only app signature recording"
 assert_contains_file "$APP_ONLY_MANIFEST" "app_notary_submit_json.id=app-submit-smoke" "app-only app notary submit metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "app_notary_log_json.status=Accepted" "app-only app notary log metadata"

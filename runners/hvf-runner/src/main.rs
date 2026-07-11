@@ -165,6 +165,22 @@ struct Args {
     #[arg(long)]
     boot_timer_desktop_agent: bool,
     #[arg(long)]
+    shutdown_after_agent_ready: bool,
+    #[arg(long)]
+    host_pause_resume_proof_ms: Option<u32>,
+    #[arg(long, value_name = "PATH")]
+    agent_service_control: Option<PathBuf>,
+    #[arg(long, value_name = "COMMAND")]
+    agent_service_command: Option<String>,
+    #[arg(long)]
+    agent_clipboard_sync: bool,
+    #[arg(long, value_name = "DIR")]
+    agent_share_host: Option<PathBuf>,
+    #[arg(long, value_name = "DIR")]
+    agent_share_guest: Option<String>,
+    #[arg(long)]
+    agent_share_ms: Option<u64>,
+    #[arg(long)]
     enable_xhci: bool,
     #[arg(long)]
     virtio_net: bool,
@@ -717,6 +733,26 @@ fn installed_boot_launch_args(args: &Args, invocation_dir: &Path) -> Result<Vec<
     if args.boot_timer_desktop_agent && args.boot_timer_desktop_checksum64.is_some() {
         bail!("choose exactly one BOOT_TIMER desktop oracle: --boot-timer-desktop-agent or --boot-timer-desktop-checksum64");
     }
+    let agent_service = args.agent_service_control.is_some();
+    let agent_extras = args.agent_service_command.is_some()
+        || args.agent_clipboard_sync
+        || args.agent_share_host.is_some()
+        || args.agent_share_guest.is_some()
+        || args.agent_share_ms.is_some();
+    if !agent_service && agent_extras {
+        bail!("agent command, clipboard, and share options require --agent-service-control");
+    }
+    if agent_service
+        && (args.shutdown_after_agent_ready || args.host_pause_resume_proof_ms.is_some())
+    {
+        bail!("--agent-service-control cannot be combined with one-shot shutdown or host pause/resume proof controls");
+    }
+    if args.agent_share_host.is_some() != args.agent_share_guest.is_some() {
+        bail!("--agent-share-host and --agent-share-guest must be provided together");
+    }
+    if args.agent_share_ms.is_some() && args.agent_share_host.is_none() {
+        bail!("--agent-share-ms requires --agent-share-host and --agent-share-guest");
+    }
     let mut target_candidates = [
         args.target.as_ref(),
         args.disk.as_ref(),
@@ -770,6 +806,44 @@ fn installed_boot_launch_args(args: &Args, invocation_dir: &Path) -> Result<Vec<
         args.boot_timer_desktop_agent,
         "--boot-timer-desktop-agent",
     );
+    push_flag(
+        &mut out,
+        args.shutdown_after_agent_ready,
+        "--shutdown-after-agent-ready",
+    );
+    push_num_arg(
+        &mut out,
+        "--host-pause-resume-proof-ms",
+        args.host_pause_resume_proof_ms,
+    );
+    push_path_arg(
+        &mut out,
+        "--agent-service-control",
+        args.agent_service_control.as_ref(),
+        invocation_dir,
+    );
+    push_string_arg(
+        &mut out,
+        "--agent-service-command",
+        args.agent_service_command.as_deref(),
+    );
+    push_flag(
+        &mut out,
+        args.agent_clipboard_sync,
+        "--agent-clipboard-sync",
+    );
+    push_path_arg(
+        &mut out,
+        "--agent-share-host",
+        args.agent_share_host.as_ref(),
+        invocation_dir,
+    );
+    push_string_arg(
+        &mut out,
+        "--agent-share-guest",
+        args.agent_share_guest.as_deref(),
+    );
+    push_num_arg(&mut out, "--agent-share-ms", args.agent_share_ms);
     push_flag(&mut out, args.enable_xhci, "--enable-xhci");
     push_flag(&mut out, args.virtio_net, "--virtio-net");
     push_flag(&mut out, args.virtio_gpu_3d, "--virtio-gpu-3d");
@@ -1006,6 +1080,17 @@ mod tests {
             "--boot-timer-ramfb-ms",
             "250",
             "--boot-timer-desktop-agent",
+            "--agent-service-control",
+            "/tmp/app.ctl",
+            "--agent-service-command",
+            "whoami /user",
+            "--agent-clipboard-sync",
+            "--agent-share-host",
+            "/tmp/share",
+            "--agent-share-guest",
+            "C:\\bridgevm-share",
+            "--agent-share-ms",
+            "2500",
             "--enable-xhci",
             "--virtio-net",
             "--daily",
@@ -1037,6 +1122,17 @@ mod tests {
                 "--boot-timer-ramfb-ms",
                 "250",
                 "--boot-timer-desktop-agent",
+                "--agent-service-control",
+                "/tmp/app.ctl",
+                "--agent-service-command",
+                "whoami /user",
+                "--agent-clipboard-sync",
+                "--agent-share-host",
+                "/tmp/share",
+                "--agent-share-guest",
+                "C:\\bridgevm-share",
+                "--agent-share-ms",
+                "2500",
                 "--enable-xhci",
                 "--virtio-net",
                 "--daily",
@@ -1066,6 +1162,28 @@ mod tests {
     }
 
     #[test]
+    fn launch_forwards_pause_resume_proof_control() {
+        let args = Args::try_parse_from([
+            "hvf-runner",
+            "--launch",
+            "--target",
+            "/tmp/win.raw",
+            "--vars",
+            "/tmp/vars.fd",
+            "--evidence-dir",
+            "/tmp/evidence",
+            "--host-pause-resume-proof-ms",
+            "1500",
+        ])
+        .unwrap();
+
+        let wrapper_args = installed_boot_launch_args(&args, Path::new("/work")).unwrap();
+        assert!(wrapper_args
+            .windows(2)
+            .any(|pair| pair == ["--host-pause-resume-proof-ms", "1500"]));
+    }
+
+    #[test]
     fn launch_requires_vars_and_evidence_dir() {
         let args =
             Args::try_parse_from(["hvf-runner", "--launch", "--target", "/tmp/win.raw"]).unwrap();
@@ -1091,6 +1209,12 @@ mod tests {
             "evidence",
             "--gpu-trace",
             "evidence/gpu.jsonl",
+            "--agent-service-control",
+            "state/app.ctl",
+            "--agent-share-host",
+            "share",
+            "--agent-share-guest",
+            "C:\\share",
         ])
         .unwrap();
         let invocation_dir = Path::new("/tmp/invocation");
@@ -1108,6 +1232,12 @@ mod tests {
                 "/tmp/invocation/state/vars.fd",
                 "--evidence-dir",
                 "/tmp/invocation/evidence",
+                "--agent-service-control",
+                "/tmp/invocation/state/app.ctl",
+                "--agent-share-host",
+                "/tmp/invocation/share",
+                "--agent-share-guest",
+                "C:\\share",
                 "--gpu-trace",
                 "/tmp/invocation/evidence/gpu.jsonl",
             ]
@@ -1134,5 +1264,50 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("only one"));
+    }
+
+    #[test]
+    fn launch_rejects_agent_extras_without_service_control() {
+        let args = Args::try_parse_from([
+            "hvf-runner",
+            "--launch",
+            "--target",
+            "/tmp/win.raw",
+            "--vars",
+            "/tmp/vars.fd",
+            "--evidence-dir",
+            "/tmp/evidence",
+            "--agent-clipboard-sync",
+        ])
+        .unwrap();
+
+        let error = installed_boot_launch_args(&args, Path::new("/work"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("require --agent-service-control"));
+    }
+
+    #[test]
+    fn launch_rejects_unpaired_agent_share_paths() {
+        let args = Args::try_parse_from([
+            "hvf-runner",
+            "--launch",
+            "--target",
+            "/tmp/win.raw",
+            "--vars",
+            "/tmp/vars.fd",
+            "--evidence-dir",
+            "/tmp/evidence",
+            "--agent-service-control",
+            "/tmp/app.ctl",
+            "--agent-share-host",
+            "/tmp/share",
+        ])
+        .unwrap();
+
+        let error = installed_boot_launch_args(&args, Path::new("/work"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("must be provided together"));
     }
 }

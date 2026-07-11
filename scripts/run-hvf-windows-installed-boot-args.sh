@@ -46,6 +46,14 @@ init_installed_boot_defaults() {
   BOOT_TIMER_DESKTOP_AGENT="0"
   SHUTDOWN_AFTER_AGENT_READY="0"
   HOST_PAUSE_RESUME_PROOF_MS=""
+  AGENT_SERVICE_CONTROL=""
+  AGENT_SERVICE_COMMAND="whoami"
+  AGENT_SERVICE_COMMAND_EXPLICIT="0"
+  AGENT_CLIPBOARD_SYNC="0"
+  AGENT_SHARE_HOST=""
+  AGENT_SHARE_GUEST=""
+  AGENT_SHARE_MS="2000"
+  AGENT_SHARE_MS_EXPLICIT="0"
   XHCI_POLICY=""
   XHCI_REASON=""
   TRACE_IRQ="0"
@@ -102,6 +110,32 @@ parse_installed_boot_args() {
         [[ $# -ge 2 ]] || { usage; exit 2; }
         host_pause_resume_proof_ms "$2" || { echo "FAIL: --host-pause-resume-proof-ms requires an integer from 100 to 60000" >&2; exit 2; }
         HOST_PAUSE_RESUME_PROOF_MS="$2"; shift 2
+        ;;
+      --agent-service-control)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        agent_service_control_path_value "$2" || { echo "FAIL: --agent-service-control requires a non-empty path of at most 4096 bytes without CR or LF" >&2; exit 2; }
+        AGENT_SERVICE_CONTROL="$2"; shift 2
+        ;;
+      --agent-service-command)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        agent_service_command_value "$2" || { echo "FAIL: --agent-service-command requires 1-1024 bytes without CR, LF, or |" >&2; exit 2; }
+        AGENT_SERVICE_COMMAND="$2"; AGENT_SERVICE_COMMAND_EXPLICIT="1"; shift 2
+        ;;
+      --agent-clipboard-sync) AGENT_CLIPBOARD_SYNC="1"; shift ;;
+      --agent-share-host)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        agent_share_path_value "$2" || { echo "FAIL: --agent-share-host requires a non-empty path of at most 4096 bytes without CR, LF, or ::" >&2; exit 2; }
+        AGENT_SHARE_HOST="$2"; shift 2
+        ;;
+      --agent-share-guest)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        agent_share_path_value "$2" || { echo "FAIL: --agent-share-guest requires a non-empty path of at most 4096 bytes without CR, LF, or ::" >&2; exit 2; }
+        AGENT_SHARE_GUEST="$2"; shift 2
+        ;;
+      --agent-share-ms)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        agent_share_interval_ms "$2" || { echo "FAIL: --agent-share-ms requires an integer from 500 to 60000" >&2; exit 2; }
+        AGENT_SHARE_MS="$2"; AGENT_SHARE_MS_EXPLICIT="1"; shift 2
         ;;
       --enable-xhci) ENABLE_XHCI="1"; shift ;;
       --virtio-net) VIRTIO_NET="1"; shift ;;
@@ -227,6 +261,22 @@ validate_installed_boot_option_combinations() {
     echo "FAIL: --host-pause-resume-proof-ms controls its own post-resume shutdown and cannot be combined with --shutdown-after-agent-ready" >&2
     exit 2
   fi
+  if [[ -z "$AGENT_SERVICE_CONTROL" && ( "$AGENT_SERVICE_COMMAND_EXPLICIT" == "1" || "$AGENT_CLIPBOARD_SYNC" == "1" || -n "$AGENT_SHARE_HOST" || -n "$AGENT_SHARE_GUEST" || "$AGENT_SHARE_MS_EXPLICIT" == "1" ) ]]; then
+    echo "FAIL: agent command, clipboard, and share options require --agent-service-control" >&2
+    exit 2
+  fi
+  if [[ -n "$AGENT_SERVICE_CONTROL" && ( "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" ) ]]; then
+    echo "FAIL: --agent-service-control cannot be combined with one-shot shutdown or host pause/resume proof controls" >&2
+    exit 2
+  fi
+  if [[ -n "$AGENT_SHARE_HOST" && -z "$AGENT_SHARE_GUEST" ]] || [[ -z "$AGENT_SHARE_HOST" && -n "$AGENT_SHARE_GUEST" ]]; then
+    echo "FAIL: --agent-share-host and --agent-share-guest must be provided together" >&2
+    exit 2
+  fi
+  if [[ "$AGENT_SHARE_MS_EXPLICIT" == "1" && -z "$AGENT_SHARE_HOST" ]]; then
+    echo "FAIL: --agent-share-ms requires --agent-share-host and --agent-share-guest" >&2
+    exit 2
+  fi
   if [[ -z "$SETUP_INPUT_ACTIONS" && ( -n "$SETUP_INPUT_MARKER" || -n "$SETUP_INPUT_FIRE_DELAY_MS" || -n "$SETUP_INPUT_RAMFB_DELAY_MS" ) ]]; then
     echo "FAIL: setup-input marker/delay options require --setup-input-actions" >&2
     exit 2
@@ -272,6 +322,9 @@ validate_installed_boot_required_paths() {
   if [[ -n "$VIOGPU3D_DIR" ]]; then
     [[ -d "$VIOGPU3D_DIR" ]] || { echo "FAIL: viogpu3d driver directory not found: $VIOGPU3D_DIR" >&2; exit 1; }
   fi
+  if [[ -n "$AGENT_SHARE_HOST" ]]; then
+    [[ -d "$AGENT_SHARE_HOST" ]] || { echo "FAIL: agent share host directory not found: $AGENT_SHARE_HOST" >&2; exit 1; }
+  fi
   require_not_preserved_source_media target "$TARGET"
   require_not_preserved_source_media vars "$VARS"
   if [[ -n "$PLACEHOLDER_NSID1" ]]; then
@@ -291,6 +344,9 @@ print_installed_boot_policy() {
   local console_timeout_policy="<unset>"
   local console_service_policy="<unset>"
   local console_control_policy="<unset>"
+  local console_clipsync_policy="<unset>"
+  local console_share_policy="<unset>"
+  local console_share_ms_policy="<unset>"
   if [[ "$VIRTIO_GPU_3D" == "1" ]]; then
     gpu_enabled_policy="1"
     gpu_3d_protocol="$(virtio_gpu_3d_runtime_protocol)"
@@ -301,7 +357,7 @@ print_installed_boot_policy() {
     fi
     gpu_trace_policy="${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}"
   fi
-  if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" ]]; then
+  if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" || -n "$AGENT_SERVICE_CONTROL" ]]; then
     virtio_console_policy="1"
   fi
   if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
@@ -317,6 +373,19 @@ print_installed_boot_policy() {
     console_timeout_policy="$WATCHDOG_MS"
     console_service_policy="1"
     console_control_policy="$EVIDENCE_DIR/host-pause-resume-control.txt"
+  fi
+  if [[ -n "$AGENT_SERVICE_CONTROL" ]]; then
+    console_test_policy="1"
+    console_test_periodic_policy="1"
+    console_commands_policy="$AGENT_SERVICE_COMMAND"
+    console_timeout_policy="$WATCHDOG_MS"
+    console_service_policy="1"
+    console_control_policy="$AGENT_SERVICE_CONTROL"
+    [[ "$AGENT_CLIPBOARD_SYNC" == "1" ]] && console_clipsync_policy="1"
+    if [[ -n "$AGENT_SHARE_HOST" ]]; then
+      console_share_policy="$AGENT_SHARE_HOST::$AGENT_SHARE_GUEST"
+      console_share_ms_policy="$AGENT_SHARE_MS"
+    fi
   fi
   printf '%s\n' \
     "$XHCI_POLICY" \
@@ -338,6 +407,9 @@ print_installed_boot_policy() {
     "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=$console_timeout_policy" \
     "BRIDGEVM_VIRTIO_CONSOLE_SERVICE=$console_service_policy" \
     "BRIDGEVM_VIRTIO_CONSOLE_CTL=$console_control_policy" \
+    "BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC=$console_clipsync_policy" \
+    "BRIDGEVM_VIRTIO_CONSOLE_SHARE=$console_share_policy" \
+    "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS=$console_share_ms_policy" \
     "BRIDGEVM_VIRTIO_GPU=$gpu_enabled_policy" \
     "BRIDGEVM_VIRTIO_GPU_3D=$VIRTIO_GPU_3D" \
     "BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=$gpu_3d_protocol" \

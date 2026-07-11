@@ -43,6 +43,19 @@ Options:
                           request clean guest shutdown. The gate proves only
                           process-resident host pause/resume; it is not a
                           disk-backed suspend image.
+  --agent-service-control PATH
+                          Keep the resident Windows agent channel active and
+                          tail PATH for app-injected commands. This is the
+                          explicit, audited app-service boundary; inherited
+                          BRIDGEVM_* variables remain ignored.
+  --agent-service-command COMMAND
+                          Initial command before entering service mode
+                          (default: whoami; no CR, LF, or |).
+  --agent-clipboard-sync  Enable bidirectional macOS/guest clipboard sync in
+                          agent service mode.
+  --agent-share-host DIR  Host directory for bidirectional agent sharing.
+  --agent-share-guest DIR Guest directory paired with --agent-share-host.
+  --agent-share-ms N      Share scan interval, 500..60000 (default: 2000).
   --enable-xhci           Leave xHCI present for desktop input diagnosis.
   --virtio-net            Attach the virtio-net NIC (BRIDGEVM_VIRTIO_NET=1)
                           with the userspace NAT backend.

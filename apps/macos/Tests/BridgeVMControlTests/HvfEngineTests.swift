@@ -2,11 +2,13 @@ import XCTest
 @testable import BridgeVMControl
 
 final class HvfEngineConfigTests: XCTestCase {
-    func testArgumentsAndBaseEnvironment() {
+    func testBaseArgumentsUseExplicitServiceCLI() {
         let cfg = HvfEngineConfig(targetDiskPath: "/vm/win.raw",
                                   uefiVarsPath: "/vm/vars.fd",
                                   evidenceDir: "/tmp/evidence",
                                   watchdogMs: 123_000,
+                                  ramMiB: 6144,
+                                  smpCpus: 4,
                                   clipboardSync: false,
                                   shareHostDir: nil,
                                   shareGuestDir: nil,
@@ -17,47 +19,96 @@ final class HvfEngineConfigTests: XCTestCase {
             "--target", "/vm/win.raw",
             "--vars", "/vm/vars.fd",
             "--evidence-dir", "/tmp/evidence",
-            "--watchdog-ms", "123000"
-        ])
-        XCTAssertEqual(cfg.environment(), [
-            "BRIDGEVM_VIRTIO_CONSOLE": "1",
-            "BRIDGEVM_VIRTIO_CONSOLE_TEST": "1",
-            "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS": "480000",
-            "BRIDGEVM_VIRTIO_CONSOLE_CMDS": "whoami",
-            "BRIDGEVM_VIRTIO_CONSOLE_SERVICE": "1",
-            "BRIDGEVM_VIRTIO_CONSOLE_CTL": "/tmp/evidence/ctl"
+            "--watchdog-ms", "123000",
+            "--ram-mib", "6144",
+            "--smp-cpus", "4",
+            "--release",
+            "--skip-build",
+            "--agent-service-control", "/tmp/evidence/ctl",
+            "--agent-service-command", "whoami"
         ])
     }
 
-    func testArgumentsAndEnvironmentWithAllToggles() {
+    func testArgumentsWithAllToggles() {
         let cfg = HvfEngineConfig(targetDiskPath: "/vm/win.raw",
                                   uefiVarsPath: "/vm/vars.fd",
                                   evidenceDir: "/tmp/evidence",
                                   watchdogMs: 480_000,
+                                  ramMiB: 8192,
+                                  smpCpus: 8,
                                   clipboardSync: true,
                                   shareHostDir: "/Users/me/share",
                                   shareGuestDir: "C:\\share",
                                   virtioNet: true,
                                   ctlFilePath: "/tmp/evidence/ctl")
-        XCTAssertTrue(cfg.wrapperArguments().contains("--virtio-net"))
-        let env = cfg.environment()
-        XCTAssertEqual(env["BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC"], "1")
-        XCTAssertEqual(env["BRIDGEVM_VIRTIO_CONSOLE_SHARE"], "/Users/me/share::C:\\share")
-        XCTAssertEqual(env["BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS"], "2000")
+        let args = cfg.wrapperArguments()
+        XCTAssertTrue(args.contains("--virtio-net"))
+        XCTAssertTrue(args.contains("--agent-clipboard-sync"))
+        XCTAssertTrue(args.contains("--release"))
+        XCTAssertTrue(args.contains("--skip-build"))
+        XCTAssertEqual(value(after: "--ram-mib", in: args), "8192")
+        XCTAssertEqual(value(after: "--smp-cpus", in: args), "8")
+        XCTAssertEqual(value(after: "--agent-share-host", in: args), "/Users/me/share")
+        XCTAssertEqual(value(after: "--agent-share-guest", in: args), "C:\\share")
+        XCTAssertEqual(value(after: "--agent-share-ms", in: args), "2000")
     }
 
-    func testPartialShareDoesNotEmitShareEnvironment() {
+    func testPartialShareDoesNotEmitShareArguments() {
         let cfg = HvfEngineConfig(targetDiskPath: "t",
                                   uefiVarsPath: "v",
                                   evidenceDir: "e",
                                   watchdogMs: 1,
+                                  ramMiB: 4096,
+                                  smpCpus: 1,
                                   clipboardSync: false,
                                   shareHostDir: "/host",
                                   shareGuestDir: nil,
                                   virtioNet: false,
                                   ctlFilePath: "c")
-        XCTAssertNil(cfg.environment()["BRIDGEVM_VIRTIO_CONSOLE_SHARE"])
-        XCTAssertNil(cfg.environment()["BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS"])
+        XCTAssertFalse(cfg.wrapperArguments().contains("--agent-share-host"))
+        XCTAssertFalse(cfg.wrapperArguments().contains("--agent-share-ms"))
+    }
+
+    private func value(after flag: String, in args: [String]) -> String? {
+        guard let index = args.firstIndex(of: flag), args.indices.contains(index + 1) else { return nil }
+        return args[index + 1]
+    }
+}
+
+final class HvfEngineSessionPathTests: XCTestCase {
+    func testFindsRepositoryAncestorAndHonorsValidOverride() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let discoveredRoot = temp.appendingPathComponent("discovered", isDirectory: true)
+        let overrideRoot = temp.appendingPathComponent("override", isDirectory: true)
+        let nested = discoveredRoot.appendingPathComponent("apps/macos/.build/debug", isDirectory: true)
+        try makeWrapper(at: discoveredRoot)
+        try makeWrapper(at: overrideRoot)
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+
+        let discovered = HvfEngineSession.defaultRepoRoot(
+            currentDirectoryPath: nested.path,
+            environment: [:],
+            executablePath: nil,
+            resourcePath: nil
+        )
+        XCTAssertEqual(discovered.path, discoveredRoot.resolvingSymlinksInPath().path)
+
+        let overridden = HvfEngineSession.defaultRepoRoot(
+            currentDirectoryPath: nested.path,
+            environment: ["BRIDGEVM_REPO_ROOT": overrideRoot.path],
+            executablePath: nil,
+            resourcePath: nil
+        )
+        XCTAssertEqual(overridden.path, overrideRoot.resolvingSymlinksInPath().path)
+    }
+
+    private func makeWrapper(at root: URL) throws {
+        let scripts = root.appendingPathComponent("scripts", isDirectory: true)
+        try FileManager.default.createDirectory(at: scripts, withIntermediateDirectories: true)
+        let wrapper = scripts.appendingPathComponent("run-hvf-windows-installed-boot.sh")
+        try "#!/usr/bin/env bash\n".write(to: wrapper, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: wrapper.path)
     }
 }
 
@@ -164,10 +215,28 @@ final class HvfWindowsBackendTests: XCTestCase {
         XCTAssertEqual(backend.displayName, "Windows Preview")
         XCTAssertEqual(backend.kind, "hvf-engine")
         XCTAssertTrue(backend.supportsGuestCommands)
+        XCTAssertFalse(backend.supportsPackageInstall)
+        XCTAssertTrue(backend.supportsClipboard)
+        XCTAssertFalse(backend.supportsSSH)
         XCTAssertEqual(backend.targetDiskPath, cfg.bundlePath + "/disks/hvf-target.raw")
         XCTAssertEqual(backend.uefiVarsPath, cfg.bundlePath + "/metadata/hvf-vars.fd")
         XCTAssertEqual(backend.evidenceDir, cfg.bundlePath + "/logs/hvf")
         XCTAssertEqual(backend.ctlFilePath, cfg.bundlePath + "/metadata/hvf.ctl")
+    }
+
+    func testLaunchCommandUsesExplicitCLIResourcesAndSeparateLauncherLog() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
+        let backend = HvfWindowsBackend(cfg)
+
+        let command = backend.launchCommand()
+        XCTAssertTrue(command.contains("'--agent-service-control' '\(backend.ctlFilePath)'"))
+        XCTAssertTrue(command.contains("'--ram-mib' '4096'"))
+        XCTAssertTrue(command.contains("'--smp-cpus' '1'"))
+        XCTAssertTrue(command.contains(">\(Shell.shQuote(backend.launcherLogPath)) 2>&1"))
+        XCTAssertFalse(command.contains(">\(Shell.shQuote(backend.evidenceDir + "/run.log")) 2>&1"))
+        XCTAssertFalse(command.contains("BRIDGEVM_VIRTIO_CONSOLE="))
     }
 
     func testRunInGuestAppendsCtlAndParsesReply() throws {
@@ -192,6 +261,20 @@ final class HvfWindowsBackendTests: XCTestCase {
         XCTAssertEqual(result.output, "hello\nworld")
         XCTAssertEqual(result.code, 0)
         XCTAssertEqual(try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8), "foo\n")
+    }
+
+    func testGracefulStopRequestUsesAgentControlChannel() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
+        let backend = HvfWindowsBackend(cfg)
+
+        backend.requestGracefulStop()
+
+        XCTAssertEqual(
+            try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8),
+            "shutdown.exe /p /f\n"
+        )
     }
 
     private func makeTempDir() throws -> URL {

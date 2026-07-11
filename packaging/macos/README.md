@@ -22,8 +22,10 @@ target/macos/BridgeVMApp.app
 The script:
 
 ```text
-builds the BridgeVMApp SwiftPM product
+builds the BridgeVMApp and BridgeVMControl SwiftPM products
 wraps the executable in a minimal .app bundle
+writes BridgeVMControl.app as an isolated nested Windows HVF Lab
+bundles the installed-Windows wrappers and signed release hvf_gic_boot_probe
 writes a local debug Info.plist
 codesigns the bundle, using ad-hoc signing by default
 verifies the resulting bundle signature and executable metadata
@@ -63,7 +65,14 @@ set, the script copies that `.icns` into `Contents/Resources` and records it as
 `CFBundleIconFile`. By default the debug bundle also builds, ad-hoc signs, and
 copies `bridgevmd`, `lightvm-runner`, and `AppleVzRunner` into
 `Contents/Helpers` so the local app contains the same helper boundary that
-release packaging verifies. Set
+release packaging verifies. It also always places the Windows HVF Lab at
+`Contents/Applications/BridgeVMControl.app`, with its wrapper scripts under
+the nested app's `Contents/Resources/scripts` and its release probe under
+`Contents/Resources/target/release/examples`. The probe has the
+`com.apple.security.hypervisor` entitlement and the Lab always invokes it with
+`--release --skip-build`, so a packaged run does not need Cargo, Homebrew, or a
+repository checkout. Open the Lab from BridgeVM Settings after selecting an
+already-installed Windows ARM RAW disk and its matching UEFI vars. Set
 `BRIDGEVM_MACOS_SKIP_APPLE_VZ_RUNNER=1` only for narrow packaging diagnostics
 that intentionally do not need the helper. The DMG helper packages the app using
 the basename of `BRIDGEVM_MACOS_APP`, or the name built from
@@ -84,7 +93,10 @@ Verify-only also checks that `Contents/Helpers/bridgevmd` and
 `Contents/Helpers/lightvm-runner` exist and are signed. If the bundle contains
 `Contents/Helpers/AppleVzRunner`, verify-only also checks that helper's
 signature and `com.apple.security.virtualization` entitlement. A bundled helper
-without that entitlement is rejected.
+without that entitlement is rejected. Verify-only also requires the nested
+Windows HVF Lab, all five non-symlink wrapper scripts, a signed executable
+release probe with the Hypervisor entitlement, the Lab bundle identifier derived
+from the parent identifier, and valid nested/parent signatures.
 
 Launch the local bundle through macOS LaunchServices:
 
@@ -157,7 +169,9 @@ verification, Gatekeeper assessment, stapled notarization tickets for both the
 app and DMG, Developer ID signatures, hardened runtime flags, bundled
 `Contents/Helpers/bridgevmd` and `Contents/Helpers/lightvm-runner` signatures,
 and bundled `Contents/Helpers/AppleVzRunner` signature plus
-`com.apple.security.virtualization` entitlement checks. The verifier repeats
+`com.apple.security.virtualization` entitlement checks. It also requires
+Developer ID and hardened-runtime signatures for the nested Windows HVF Lab and
+its probe, plus the probe's `com.apple.security.hypervisor` entitlement. The verifier repeats
 the helper checks against both the app bundle and the app mounted from the DMG.
 Set `BRIDGEVM_RELEASE_TEAM_ID` when a release host should enforce a specific
 Developer ID team identifier. Successful public verification prints
@@ -239,7 +253,8 @@ packaging/macos/write-artifact-manifest.sh \
 
 The manifest records artifact paths, sizes, SHA-256 digests, bundle metadata,
 bundled helper presence/signature details, `AppleVzRunner` entitlement details
-when present, optional notarytool JSON sidecars, codesign details, Gatekeeper
+when present, Windows HVF Lab/probe paths and digests, probe entitlement details,
+optional notarytool JSON sidecars, codesign details, Gatekeeper
 assessment output, and stapler validation output.
 It is intentionally a record, not a release gate; use
 `verify-release-candidate.sh` to decide whether an artifact may be published.
@@ -269,6 +284,9 @@ Expected credentialed release inputs:
 - `BRIDGEVM_APPLE_VZ_ENTITLEMENTS`: optional release entitlements override for
   the Apple VZ runner. By default, the release script uses
   `apps/macos/AppleVzRunner.release.entitlements`.
+- `BRIDGEVM_HVF_PROBE_ENTITLEMENTS`: optional release entitlements override for
+  the installed-Windows probe. By default, the release script uses
+  `apps/macos/HvfRunner.release.entitlements`.
 
 Preview the release command plan without using credentials:
 
@@ -312,6 +330,7 @@ Remove `--dry-run` only on the credentialed release host. The script builds the
 renamed release app bundle with SwiftPM/Cargo release configuration, builds
 `AppleVzRunner` with SwiftPM release configuration, signs it with the release
 virtualization entitlement, copies it to `Contents/Helpers/AppleVzRunner`,
+builds and signs the release Windows HVF probe, signs the nested Windows HVF Lab,
 applies hardened-runtime signing to nested helpers and the app, notarizes and
 staples the app, creates and signs the DMG, notarizes and staples the DMG,
 preserves app/DMG notarytool submit and log JSON sidecars, writes the artifact

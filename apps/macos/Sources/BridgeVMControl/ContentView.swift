@@ -197,8 +197,10 @@ struct VMDetailPanel: View {
                 statusCard
                 if lens == .advanced {
                     resourcesCard
-                    if model.backend.supportsGuestCommands {
+                    if model.backend.supportsPackageInstall {
                         softwareCard
+                    }
+                    if model.backend.supportsGuestCommands {
                         terminalCard
                     }
                     detailsCard
@@ -234,8 +236,8 @@ struct VMDetailPanel: View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 18) {
-                    integrationBadge("클립보드", model.backend.supportsGuestCommands)
-                    integrationBadge("SSH", model.backend.supportsGuestCommands)
+                    integrationBadge("클립보드", model.backend.supportsClipboard)
+                    integrationBadge("SSH", model.backend.supportsSSH)
                     integrationBadge("NAT 네트워크", true)
                 }
                 Divider()
@@ -262,7 +264,9 @@ struct VMDetailPanel: View {
                 detailRow("엔진", model.config.engineDetailLabel)
                 detailRow("부팅 모드", model.config.effectiveBootMode)
                 detailRow("번들", model.config.bundlePath)
-                detailRow("SSH", "\(model.config.sshUser)@\(model.ip)")
+                detailRow("제어", model.backend.supportsSSH
+                          ? "SSH · \(model.config.sshUser)@\(model.ip)"
+                          : (model.backend.supportsGuestCommands ? "BVAGENT · virtio-console" : "없음"))
                 Divider()
                 Button(role: .destructive) { library.delete(model.config) } label: {
                     Label("이 VM 삭제", systemImage: "trash")

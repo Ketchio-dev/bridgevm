@@ -8,6 +8,8 @@ APP_NAME="${BRIDGEVM_MACOS_APP_NAME:-BridgeVM}"
 bridgevm_validate_macos_app_name "$APP_NAME" BRIDGEVM_MACOS_APP_NAME || exit 2
 APP="$OUT_DIR/$APP_NAME.app"
 APPLE_VZ_RUNNER="$APP/Contents/Helpers/AppleVzRunner"
+HVF_LAB="$APP/Contents/Applications/BridgeVMControl.app"
+HVF_WINDOWS_PROBE="$HVF_LAB/Contents/Resources/target/release/examples/hvf_gic_boot_probe"
 DMG="${BRIDGEVM_MACOS_DMG:-$OUT_DIR/BridgeVM.dmg}"
 MANIFEST="${BRIDGEVM_MACOS_ARTIFACT_MANIFEST:-$OUT_DIR/BridgeVM-artifacts.txt}"
 APP_NOTARY_ZIP="${BRIDGEVM_MACOS_APP_NOTARY_ZIP:-$OUT_DIR/$APP_NAME-notary.zip}"
@@ -59,6 +61,8 @@ Optional environment:
   BRIDGEVM_BUNDLE_COPYRIGHT           optional copyright string
   BRIDGEVM_APPLE_VZ_ENTITLEMENTS      AppleVzRunner release entitlements path,
                                       defaults to apps/macos/AppleVzRunner.release.entitlements
+  BRIDGEVM_HVF_PROBE_ENTITLEMENTS     Windows HVF probe release entitlements,
+                                      defaults to apps/macos/HvfRunner.release.entitlements
 EOF
 }
 
@@ -254,6 +258,14 @@ run env \
   --output "$APPLE_VZ_RUNNER"
 
 run "$ROOT/apps/macos/scripts/build-sign-apple-vz-runner.sh" --verify-only "$APPLE_VZ_RUNNER"
+run env \
+  "BRIDGEVM_CODESIGN_IDENTITY=$IDENTITY" \
+  "BRIDGEVM_HVF_PROBE_ENTITLEMENTS=${BRIDGEVM_HVF_PROBE_ENTITLEMENTS:-$ROOT/apps/macos/HvfRunner.release.entitlements}" \
+  "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" \
+  --release \
+  --output "$HVF_WINDOWS_PROBE"
+run "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" --verify-only "$HVF_WINDOWS_PROBE"
+run codesign --force --options runtime --sign "$IDENTITY" "$HVF_LAB"
 run codesign --force --options runtime --sign "$IDENTITY" "$APP/Contents/Helpers/bridgevmd"
 run codesign --force --options runtime --sign "$IDENTITY" "$APP/Contents/Helpers/lightvm-runner"
 run codesign --force --options runtime --sign "$IDENTITY" "$APP"

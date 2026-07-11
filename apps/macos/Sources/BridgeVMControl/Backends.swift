@@ -175,6 +175,9 @@ protocol VMBackend: AnyObject {
     /// True when a control channel into the guest (e.g. SSH) is available — gates
     /// the in-app terminal and software-install UI.
     var supportsGuestCommands: Bool { get }
+    var supportsPackageInstall: Bool { get }
+    var supportsClipboard: Bool { get }
+    var supportsSSH: Bool { get }
 }
 
 // MARK: - Fast Mode (Apple Virtualization.framework) backend
@@ -186,6 +189,9 @@ final class FastVZBackend: VMBackend {
     var displayName: String { config.displayName }
     let kind = "fast-vz"
     let supportsGuestCommands = true
+    let supportsPackageInstall = true
+    let supportsClipboard = true
+    let supportsSSH = true
 
     // Per-VM identity: match THIS VM's UNIQUE handoff path on the runner's command
     // line, so start/stop/status never touch another VM's runner.
@@ -286,6 +292,9 @@ final class QemuCompatBackend: VMBackend {
     var displayName: String { config.displayName }
     let kind = "qemu-compat"
     let supportsGuestCommands = false
+    let supportsPackageInstall = false
+    let supportsClipboard = false
+    let supportsSSH = false
 
     private let qemu = "/opt/homebrew/bin/qemu-system-aarch64"
     private let edk2 = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
@@ -339,6 +348,9 @@ final class HvfWindowsBackend: VMBackend {
     var displayName: String { config.displayName }
     let kind = "hvf-engine"
     let supportsGuestCommands = true
+    let supportsPackageInstall = false
+    let supportsClipboard = true
+    let supportsSSH = false
 
     var targetDiskPath: String { config.diskPath ?? (config.bundlePath + "/disks/hvf-target.raw") }
     var uefiVarsPath: String { config.bundlePath + "/metadata/hvf-vars.fd" }
@@ -348,25 +360,46 @@ final class HvfWindowsBackend: VMBackend {
 
     private var wrapperName: String { "scripts/run-hvf-windows-installed-boot.sh" }
     private var runLogPath: String { evidenceDir + "/run.log" }
+    var launcherLogPath: String { evidenceDir + "/launcher.log" }
 
     func isRunning() -> Bool { Shell.isProcessRunning(matching: targetDiskPath) }
     func currentIP() -> String? { isRunning() ? "NAT (HVF)" : nil }
 
     func start() {
+        guard !isRunning() else { return }
         ensureDirectories()
-        let hvfConfig = makeHvfEngineConfig()
-        let env = hvfConfig.environment()
-            .sorted { $0.key < $1.key }
-            .map { "\($0.key)=\(Shell.shQuote($0.value))" }
-            .joined(separator: " ")
-        let args = hvfConfig.wrapperArguments().map(Shell.shQuote).joined(separator: " ")
-        let cmd = "cd \(Shell.shQuote(repoRoot.path)) && \(env) nohup /usr/bin/env \(args) >\(Shell.shQuote(runLogPath)) 2>&1 &"
-        Shell.launchDetached(cmd)
+        if !FileManager.default.fileExists(atPath: ctlFilePath) {
+            FileManager.default.createFile(atPath: ctlFilePath, contents: nil)
+        }
+        Shell.launchDetached(launchCommand())
+    }
+
+    func launchCommand() -> String {
+        let args = makeHvfEngineConfig().wrapperArguments().map(Shell.shQuote).joined(separator: " ")
+        return "cd \(Shell.shQuote(repoRoot.path)) && nohup /usr/bin/env \(args) >\(Shell.shQuote(launcherLogPath)) 2>&1 &"
     }
 
     func stop() {
+        guard isRunning() else { return }
+        ensureDirectories()
+        let deadline = Date().addingTimeInterval(180)
+        while isRunning(), !serviceHasStarted(), Date() < deadline {
+            usleep(250_000)
+        }
+        if isRunning(), serviceHasStarted() {
+            requestGracefulStop()
+        }
+        while isRunning(), Date() < deadline {
+            usleep(500_000)
+        }
+        guard isRunning() else { return }
         Shell.killProcesses(matching: targetDiskPath)
         Shell.killProcesses(matching: "\(wrapperName) --target \(targetDiskPath)")
+    }
+
+    func requestGracefulStop() {
+        ensureDirectories()
+        appendCtl("shutdown.exe /p /f")
     }
 
     func resources() -> (memMiB: Int, cpu: Int) {
@@ -392,6 +425,8 @@ final class HvfWindowsBackend: VMBackend {
                         uefiVarsPath: uefiVarsPath,
                         evidenceDir: evidenceDir,
                         watchdogMs: 900_000,
+                        ramMiB: config.memMiB ?? 6144,
+                        smpCpus: config.cpuCount ?? 4,
                         clipboardSync: true,
                         shareHostDir: nil,
                         shareGuestDir: nil,
@@ -408,6 +443,11 @@ final class HvfWindowsBackend: VMBackend {
         ] {
             try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
         }
+    }
+
+    private func serviceHasStarted() -> Bool {
+        guard let data = FileManager.default.contents(atPath: runLogPath) else { return false }
+        return data.range(of: Data("BVAGENT SERVICE start".utf8)) != nil
     }
 
     private func appendCtl(_ command: String) {

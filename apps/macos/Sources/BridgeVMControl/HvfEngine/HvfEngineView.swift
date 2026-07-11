@@ -9,6 +9,8 @@ struct HvfEngineView: View {
     @State private var uefiVarsPath = ""
     @State private var evidenceDir = ""
     @State private var watchdogMs = 900_000
+    @State private var ramMiB = 6144
+    @State private var smpCpus = 4
     @State private var clipboardSync = true
     @State private var shareEnabled = false
     @State private var shareHostDir = ""
@@ -56,6 +58,13 @@ struct HvfEngineView: View {
                         .font(.body.monospaced())
                     Spacer()
                 }
+                HStack(spacing: 24) {
+                    Stepper("RAM \(ramMiB) MiB", value: $ramMiB, in: 1024...65_536, step: 1024)
+                        .font(.body.monospaced())
+                    Stepper("CPU \(smpCpus)", value: $smpCpus, in: 1...123)
+                        .font(.body.monospaced())
+                    Spacer()
+                }
                 HStack(spacing: 18) {
                     Toggle("Clipboard sync", isOn: $clipboardSync)
                     Toggle("Virtio net", isOn: $virtioNet)
@@ -83,7 +92,7 @@ struct HvfEngineView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Button(action: start) { Label("Start", systemImage: "play.fill") }
-                        .disabled(targetDiskPath.isEmpty || uefiVarsPath.isEmpty || evidenceDir.isEmpty)
+                        .disabled(!bootConfigReady)
                     Button(action: session.stop) { Label("Stop", systemImage: "stop.fill") }
                     Button(action: sendCtl) { Label("Send", systemImage: "paperplane.fill") }
                         .disabled(ctlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -166,6 +175,7 @@ struct HvfEngineView: View {
         case .stopped: return "Stopped"
         case .booting: return "Booting"
         case let .connected(host): return "Connected: \(host)"
+        case .stopping: return "Stopping"
         case .timedOut: return "Timed out"
         }
     }
@@ -175,6 +185,7 @@ struct HvfEngineView: View {
         case .stopped: return .secondary
         case .booting: return .orange
         case .connected: return .green
+        case .stopping: return .orange
         case .timedOut: return .red
         }
     }
@@ -182,6 +193,20 @@ struct HvfEngineView: View {
     private var heartbeatText: String {
         guard let age = session.lastHeartbeatAge else { return "-" }
         return String(format: "%.1fs ago", age)
+    }
+
+    private var bootConfigReady: Bool {
+        guard !targetDiskPath.isEmpty, !uefiVarsPath.isEmpty,
+              !evidenceDir.isEmpty, !ctlFilePath.isEmpty,
+              FileManager.default.fileExists(atPath: targetDiskPath),
+              FileManager.default.fileExists(atPath: uefiVarsPath) else { return false }
+        if shareEnabled {
+            var isDirectory: ObjCBool = false
+            guard !shareGuestDir.isEmpty,
+                  FileManager.default.fileExists(atPath: shareHostDir, isDirectory: &isDirectory),
+                  isDirectory.boolValue else { return false }
+        }
+        return true
     }
 
     private func pathRow(_ label: String, text: Binding<String>, chooseDirectory: Bool) -> some View {
@@ -219,6 +244,8 @@ struct HvfEngineView: View {
                         uefiVarsPath: uefiVarsPath,
                         evidenceDir: evidenceDir,
                         watchdogMs: watchdogMs,
+                        ramMiB: ramMiB,
+                        smpCpus: smpCpus,
                         clipboardSync: clipboardSync,
                         shareHostDir: shareEnabled ? shareHostDir : nil,
                         shareGuestDir: shareEnabled ? shareGuestDir : nil,
@@ -232,6 +259,8 @@ struct HvfEngineView: View {
         uefiVarsPath = cfg.uefiVarsPath
         evidenceDir = cfg.evidenceDir
         watchdogMs = cfg.watchdogMs
+        ramMiB = cfg.ramMiB
+        smpCpus = cfg.smpCpus
         clipboardSync = cfg.clipboardSync
         shareEnabled = cfg.shareHostDir != nil && cfg.shareGuestDir != nil
         shareHostDir = cfg.shareHostDir ?? ""
@@ -259,6 +288,8 @@ struct HvfEngineView: View {
                                uefiVarsPath: "",
                                evidenceDir: evidence,
                                watchdogMs: 900_000,
+                               ramMiB: 6144,
+                               smpCpus: 4,
                                clipboardSync: true,
                                shareHostDir: nil,
                                shareGuestDir: nil,

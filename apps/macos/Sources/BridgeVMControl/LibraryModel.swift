@@ -47,10 +47,16 @@ final class LibraryModel: ObservableObject {
     }
 
     func delete(_ cfg: VMConfig) {
-        modelCache[cfg.slug]?.backend.stop()
-        modelCache[cfg.slug] = nil
-        VMLibrary.delete(cfg.slug)
-        reload()
+        let slug = cfg.slug
+        let backend = modelCache[slug]?.backend ?? cfg.makeBackend()
+        modelCache[slug] = nil
+        vms.removeAll { $0.slug == slug }
+        if selectedID == slug { selectedID = vms.first?.slug }
+        Task.detached {
+            backend.stop()
+            VMLibrary.delete(slug)
+            await MainActor.run { self.reload() }
+        }
     }
 
     /// Add an already-built VMConfig to the library (used by the create flow).

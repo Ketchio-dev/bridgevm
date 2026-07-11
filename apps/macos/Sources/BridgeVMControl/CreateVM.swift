@@ -15,6 +15,19 @@ extension VMLibrary {
         return slug
     }
 
+    private static func cloneOrCopyFile(from source: String, to destination: String) -> Bool {
+        let fm = FileManager.default
+        let clone = Shell.run("/bin/cp", ["-c", source, destination])
+        if clone.code == 0 { return true }
+        try? fm.removeItem(atPath: destination)
+        do {
+            try fm.copyItem(atPath: source, toPath: destination)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Create a brand-new Linux VM that boots an arbitrary ISO installer via EFI.
     /// The blank target disk is where the user installs the distro.
     static func createFromISO(name: String, isoPath: String, template: VMConfig,
@@ -138,29 +151,59 @@ extension VMLibrary {
         return cfg
     }
 
-    /// Create a library VM for the native from-scratch HVF Windows engine. The
-    /// target is a raw disk because the engine boots the installed Windows image
-    /// directly through scripts/run-hvf-windows-installed-boot.sh.
-    static func createWindowsHVF(name: String, template: VMConfig,
+    /// Import a proven installed Windows raw disk and its matching writable UEFI
+    /// vars store. A blank raw disk is not selectable because this engine does
+    /// not implement the Windows installer path yet.
+    static func createWindowsHVF(name: String, targetDiskPath: String, varsPath: String,
                                  storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
-                                 diskGiB: Int = 64) -> VMConfig? {
-        let slug = uniqueSlug(name)
-        let bundle = (storageDir ?? root).appendingPathComponent(slug, isDirectory: true).appendingPathComponent("bundle.vmbridge", isDirectory: true)
-        for sub in ["disks", "metadata", "logs/hvf"] {
-            try? FileManager.default.createDirectory(at: bundle.appendingPathComponent(sub), withIntermediateDirectories: true)
+                                 persist: Bool = true) -> VMConfig? {
+        let fm = FileManager.default
+        var targetIsDirectory: ObjCBool = false
+        var varsIsDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: targetDiskPath, isDirectory: &targetIsDirectory), !targetIsDirectory.boolValue,
+              fm.fileExists(atPath: varsPath, isDirectory: &varsIsDirectory), !varsIsDirectory.boolValue else { return nil }
+
+        let storageBase = storageDir ?? root
+        let baseSlug = uniqueSlug(name)
+        var slug = baseSlug
+        var suffix = 2
+        while fm.fileExists(atPath: storageBase.appendingPathComponent(slug, isDirectory: true).path) {
+            slug = "\(baseSlug)-\(suffix)"
+            suffix += 1
         }
+        let destinationRoot = storageBase.appendingPathComponent(slug, isDirectory: true)
+        let bundle = destinationRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true)
+        let disk = bundle.appendingPathComponent("disks/hvf-target.raw").path
+        let vars = bundle.appendingPathComponent("metadata/hvf-vars.fd").path
+        let sourceDisk = URL(fileURLWithPath: targetDiskPath).resolvingSymlinksInPath().standardizedFileURL
+        let sourceVars = URL(fileURLWithPath: varsPath).resolvingSymlinksInPath().standardizedFileURL
+        guard sourceDisk.path != URL(fileURLWithPath: disk).standardizedFileURL.path,
+              sourceVars.path != URL(fileURLWithPath: vars).standardizedFileURL.path else { return nil }
+
+        var succeeded = false
+        defer {
+            if !succeeded { try? fm.removeItem(at: destinationRoot) }
+        }
+        do {
+            for sub in ["disks", "metadata", "logs/hvf"] {
+                try fm.createDirectory(at: bundle.appendingPathComponent(sub), withIntermediateDirectories: true)
+            }
+        } catch {
+            return nil
+        }
+        guard cloneOrCopyFile(from: sourceDisk.path, to: disk),
+              cloneOrCopyFile(from: sourceVars.path, to: vars) else { return nil }
+        guard fm.createFile(atPath: bundle.appendingPathComponent("metadata/hvf.ctl").path, contents: nil) else { return nil }
+
         let b = bundle.path
-        let disk = "\(b)/disks/hvf-target.raw"
-        let r = Shell.run("/usr/bin/truncate", ["-s", "\(diskGiB)G", disk])
-        if r.code != 0 { return nil }
-        FileManager.default.createFile(atPath: "\(b)/metadata/hvf.ctl", contents: nil)
         let cfg = VMConfig(id: slug, name: name, displayName: name, backendKind: "hvf-engine",
                            bootMode: "windows-hvf", bundlePath: b, runnerPath: "",
                            launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
-                           leasesPath: template.leasesPath, guestName: slug,
-                           displayWidth: width, displayHeight: height, installPending: true,
-                           isoPath: nil, diskPath: disk, memMiB: 4096, cpuCount: 1)
-        save(cfg)
+                           leasesPath: "", guestName: slug,
+                           displayWidth: width, displayHeight: height, installPending: false,
+                           isoPath: nil, diskPath: disk, memMiB: 6144, cpuCount: 4)
+        if persist { save(cfg) }
+        succeeded = true
         return cfg
     }
 }
@@ -174,6 +217,8 @@ struct CreateVMSheet: View {
     @State private var mode: Mode = .ubuntu
     @State private var name = ""
     @State private var isoPath: String = ""
+    @State private var hvfTargetPath: String = ""
+    @State private var hvfVarsPath: String = ""
     @State private var storageDir: URL? = nil
     @State private var resIndex = 1
     @State private var working = false
@@ -202,8 +247,18 @@ struct CreateVMSheet: View {
                 Text("기본 Ubuntu 데스크톱을 즉시 복제합니다 (APFS 클론, 추가 용량 없음).")
                     .font(.callout).foregroundColor(.secondary)
             } else if mode == .windowsHVF {
-                Text("Native (HVF · Preview) 엔진용 Windows ARM 원시 디스크 VM을 만듭니다.")
+                Text("이미 설치되어 정상 부팅한 Windows ARM RAW 디스크와 그 부팅에 사용한 UEFI vars를 가져옵니다. 원본은 변경하지 않고 라이브러리에 복제합니다.")
                     .font(.callout).foregroundColor(.secondary)
+                HStack {
+                    Button("설치된 RAW 선택…") { pickHVFTarget() }
+                    Text(hvfTargetPath.isEmpty ? "선택된 디스크 없음" : (hvfTargetPath as NSString).lastPathComponent)
+                        .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                }
+                HStack {
+                    Button("UEFI vars 선택…") { pickHVFVars() }
+                    Text(hvfVarsPath.isEmpty ? "선택된 vars 없음" : (hvfVarsPath as NSString).lastPathComponent)
+                        .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                }
             } else {
                 Text(mode == .windows
                      ? "Windows 11 ARM ISO를 선택하면 QEMU + TPM 2.0으로 설치 마법사를 부팅합니다."
@@ -246,7 +301,7 @@ struct CreateVMSheet: View {
                 Button("취소") { dismiss() }
                 Button(working ? "생성 중…" : "생성") { create() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(working || name.trimmingCharacters(in: .whitespaces).isEmpty || ((mode == .iso || mode == .windows) && isoPath.isEmpty) || template == nil)
+                    .disabled(!canCreate)
             }
         }
         .padding(20)
@@ -274,6 +329,26 @@ struct CreateVMSheet: View {
         if let url = chooseFile(directories: true) { storageDir = url }
     }
 
+    private func pickHVFTarget() {
+        if let url = chooseFile(directories: false, extensions: ["raw", "img"]) { hvfTargetPath = url.path }
+    }
+
+    private func pickHVFVars() {
+        if let url = chooseFile(directories: false, extensions: ["fd", "vars"]) { hvfVarsPath = url.path }
+    }
+
+    private var canCreate: Bool {
+        guard !working, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        switch mode {
+        case .windowsHVF:
+            return !hvfTargetPath.isEmpty && !hvfVarsPath.isEmpty
+        case .iso, .windows:
+            return !isoPath.isEmpty && template != nil
+        case .ubuntu:
+            return template != nil
+        }
+    }
+
     private func chooseFile(directories: Bool, extensions: [String]? = nil) -> URL? {
         #if canImport(AppKit)
         let panel = NSOpenPanel()
@@ -297,18 +372,25 @@ struct CreateVMSheet: View {
     }
 
     private func create() {
-        guard let template = template else { error = "템플릿 VM이 없습니다"; return }
+        let selectedTemplate = template
+        if mode != .windowsHVF, selectedTemplate == nil { error = "템플릿 VM이 없습니다"; return }
         working = true; error = ""
         let nm = name.trimmingCharacters(in: .whitespaces)
         let m = mode; let iso = isoPath
+        let hvfTarget = hvfTargetPath; let hvfVars = hvfVarsPath
         let sd = storageDir; let w = resolutions[resIndex].0; let h = resolutions[resIndex].1
         Task.detached {
             let cfg: VMConfig?
             switch m {
-            case .ubuntu: cfg = VMLibrary.cloneUbuntu(name: nm, template: template, storageDir: sd, width: w, height: h)
-            case .iso: cfg = VMLibrary.createFromISO(name: nm, isoPath: iso, template: template, storageDir: sd, width: w, height: h)
-            case .windows: cfg = VMLibrary.createWindows(name: nm, isoPath: iso, template: template, storageDir: sd, width: w, height: h)
-            case .windowsHVF: cfg = VMLibrary.createWindowsHVF(name: nm, template: template, storageDir: sd, width: w, height: h)
+            case .ubuntu:
+                cfg = selectedTemplate.flatMap { VMLibrary.cloneUbuntu(name: nm, template: $0, storageDir: sd, width: w, height: h) }
+            case .iso:
+                cfg = selectedTemplate.flatMap { VMLibrary.createFromISO(name: nm, isoPath: iso, template: $0, storageDir: sd, width: w, height: h) }
+            case .windows:
+                cfg = selectedTemplate.flatMap { VMLibrary.createWindows(name: nm, isoPath: iso, template: $0, storageDir: sd, width: w, height: h) }
+            case .windowsHVF:
+                cfg = VMLibrary.createWindowsHVF(name: nm, targetDiskPath: hvfTarget, varsPath: hvfVars,
+                                                 storageDir: sd, width: w, height: h)
             }
             await MainActor.run {
                 working = false

@@ -9,6 +9,9 @@ APPLE_VZ_RUNNER="$APP/Contents/Helpers/AppleVzRunner"
 BRIDGEVMD="$APP/Contents/Helpers/bridgevmd"
 LIGHTVM_RUNNER="$APP/Contents/Helpers/lightvm-runner"
 APP_EXECUTABLE="$APP/Contents/MacOS/BridgeVMApp"
+HVF_LAB="$APP/Contents/Applications/BridgeVMControl.app"
+HVF_LAB_EXECUTABLE="$HVF_LAB/Contents/MacOS/BridgeVMControl"
+HVF_WINDOWS_PROBE="$HVF_LAB/Contents/Resources/target/release/examples/hvf_gic_boot_probe"
 APP_NOTARY_SUBMIT_JSON="${BRIDGEVM_MACOS_APP_NOTARY_SUBMIT_JSON:-}"
 APP_NOTARY_LOG_JSON="${BRIDGEVM_MACOS_APP_NOTARY_LOG_JSON:-}"
 DMG_NOTARY_SUBMIT_JSON="${BRIDGEVM_MACOS_DMG_NOTARY_SUBMIT_JSON:-}"
@@ -80,6 +83,9 @@ if [[ "${#POSITIONAL[@]}" -ge 1 ]]; then
   BRIDGEVMD="$APP/Contents/Helpers/bridgevmd"
   LIGHTVM_RUNNER="$APP/Contents/Helpers/lightvm-runner"
   APP_EXECUTABLE="$APP/Contents/MacOS/BridgeVMApp"
+  HVF_LAB="$APP/Contents/Applications/BridgeVMControl.app"
+  HVF_LAB_EXECUTABLE="$HVF_LAB/Contents/MacOS/BridgeVMControl"
+  HVF_WINDOWS_PROBE="$HVF_LAB/Contents/Resources/target/release/examples/hvf_gic_boot_probe"
 fi
 if [[ "$APP_ONLY" == "1" && "${#POSITIONAL[@]}" -ge 2 ]]; then
   OUT="${POSITIONAL[1]}"
@@ -205,6 +211,15 @@ mkdir -p "$(dirname "$OUT")"
   record_helper_artifact apple_vz_runner "$APPLE_VZ_RUNNER"
   record_helper_artifact bridgevmd "$BRIDGEVMD"
   record_helper_artifact lightvm_runner "$LIGHTVM_RUNNER"
+  printf 'windows_hvf_lab.path=%s\n' "$HVF_LAB"
+  if [[ -d "$HVF_LAB" ]]; then
+    printf 'windows_hvf_lab.present=true\n'
+    printf 'windows_hvf_lab.size_bytes=%s\n' "$(du -sk "$HVF_LAB" | awk '{ print $1 * 1024 }')"
+  else
+    printf 'windows_hvf_lab.present=false\n'
+  fi
+  record_helper_artifact windows_hvf_lab_executable "$HVF_LAB_EXECUTABLE"
+  record_helper_artifact windows_hvf_probe "$HVF_WINDOWS_PROBE"
   if [[ "$APP_ONLY" == "0" ]]; then
     printf 'dmg.path=%s\n' "$DMG"
     printf 'dmg.size_bytes=%s\n' "$(size_bytes "$DMG")"
@@ -241,6 +256,15 @@ fi
 if [[ -f "$LIGHTVM_RUNNER" ]]; then
   record_command lightvm_runner_codesign_verify codesign --verify --strict "$LIGHTVM_RUNNER"
   record_command lightvm_runner_codesign_details codesign -dv --verbose=4 "$LIGHTVM_RUNNER"
+fi
+if [[ -d "$HVF_LAB" ]]; then
+  record_command windows_hvf_lab_codesign_verify codesign --verify --strict "$HVF_LAB"
+  record_command windows_hvf_lab_codesign_details codesign -dv --verbose=4 "$HVF_LAB"
+fi
+if [[ -f "$HVF_WINDOWS_PROBE" ]]; then
+  record_command windows_hvf_probe_codesign_verify codesign --verify --strict "$HVF_WINDOWS_PROBE"
+  record_command windows_hvf_probe_codesign_details codesign -dv --verbose=4 "$HVF_WINDOWS_PROBE"
+  record_command windows_hvf_probe_entitlements codesign -d --entitlements :- "$HVF_WINDOWS_PROBE"
 fi
 record_command app_gatekeeper spctl --assess --type execute --verbose=4 "$APP"
 record_command app_stapler xcrun stapler validate "$APP"

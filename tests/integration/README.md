@@ -131,7 +131,10 @@ tests/integration/macos-app-start-path-smoke.sh
 tests/integration/macos-release-candidate-dry-run-smoke.sh
 tests/integration/macos-release-verifier-custom-app-smoke.sh
 tests/integration/macos-artifact-manifest-apple-vz-runner-smoke.sh
+tests/integration/macos-debug-app-clean-build-smoke.sh
 tests/integration/macos-debug-dmg-custom-app-name-smoke.sh
+tests/integration/hvf-windows-installed-boot-p3-gpu-policy-smoke.sh
+tests/integration/hvf-runner-installed-boot-launch-policy-smoke.sh
 ```
 
 To run the current metadata/socket-safe subset without a real VM, real QEMU
@@ -145,7 +148,8 @@ tests/integration/metadata-safe-smoke-suite.sh
 To run the local release-readiness lane that combines Rust formatting, Rust
 workspace tests, macOS Swift tests, local `.app` bundle build/signature
 verification including the default bundled AppleVzRunner helper, clean app
-rebuild coverage, the macOS metadata override smoke, bundled AppleVzRunner
+rebuild coverage, the nested Windows HVF Lab, its wrapper resources and signed
+release probe, the macOS metadata override smoke, bundled AppleVzRunner
 helper verification smoke, bundled `bridgevmd` supervisor smoke, local debug
 DMG build/mounted-content verification, custom app-name DMG coverage that
 rejects stale default app bundles, release-candidate command dry-run coverage,
@@ -595,10 +599,11 @@ debug bundle, packages it into a disposable DMG under that same basename, and
 verifies that `verify-release-candidate.sh --expect-debug-boundary` checks the
 app name supplied by the caller rather than assuming `BridgeVMApp.app`.
 
-The macOS artifact manifest AppleVzRunner smoke is credential-free. It writes a
-disposable app fixture with `Contents/Helpers/AppleVzRunner` and verifies that
-the artifact manifest records helper path, presence, executability, size,
-SHA-256, codesign, and entitlement command sections.
+The macOS artifact manifest smoke is credential-free. It writes a disposable
+app fixture with `Contents/Helpers/AppleVzRunner` and nested Windows HVF Lab
+artifacts, then verifies that the manifest records their paths, presence,
+executability, sizes, SHA-256 values, codesign sections, and entitlement command
+sections.
 
 Manifest schema coverage asserts that `bridgevm metadata manifest-schema`
 prints the VM manifest JSON Schema v1 contract and that

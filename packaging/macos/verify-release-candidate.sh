@@ -542,6 +542,24 @@ verify_mounted_dmg_app_release_gates() {
   run_release_gate "Mounted app AppleVzRunner hardened runtime" \
     verify_hardened_runtime "$mount_dir/$app_basename/Contents/Helpers/AppleVzRunner" \
     || failures=$((failures + 1))
+  local mounted_hvf_lab="$mount_dir/$app_basename/Contents/Applications/BridgeVMControl.app"
+  local mounted_hvf_probe="$mounted_hvf_lab/Contents/Resources/target/release/examples/hvf_gic_boot_probe"
+  run_release_gate "Mounted Windows HVF Lab Developer ID signature" \
+    verify_developer_id_signature "$mounted_hvf_lab" \
+    || failures=$((failures + 1))
+  run_release_gate "Mounted Windows HVF Lab hardened runtime" \
+    verify_hardened_runtime "$mounted_hvf_lab" \
+    || failures=$((failures + 1))
+  run_release_gate "Mounted Windows HVF probe signature and entitlement" \
+    "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" \
+    --verify-only "$mounted_hvf_probe" \
+    || failures=$((failures + 1))
+  run_release_gate "Mounted Windows HVF probe Developer ID signature" \
+    verify_developer_id_signature "$mounted_hvf_probe" \
+    || failures=$((failures + 1))
+  run_release_gate "Mounted Windows HVF probe hardened runtime" \
+    verify_hardened_runtime "$mounted_hvf_probe" \
+    || failures=$((failures + 1))
   run_release_gate "Mounted app bridgevmd helper signature" \
     codesign --verify --strict "$mount_dir/$app_basename/Contents/Helpers/bridgevmd" \
     || failures=$((failures + 1))
@@ -766,6 +784,24 @@ run_release_gate "Bundled AppleVzRunner helper Developer ID signature" \
   || release_failures=$((release_failures + 1))
 run_release_gate "Bundled AppleVzRunner helper hardened runtime" \
   verify_hardened_runtime "$APP/Contents/Helpers/AppleVzRunner" \
+  || release_failures=$((release_failures + 1))
+HVF_LAB="$APP/Contents/Applications/BridgeVMControl.app"
+HVF_WINDOWS_PROBE="$HVF_LAB/Contents/Resources/target/release/examples/hvf_gic_boot_probe"
+run_release_gate "Bundled Windows HVF Lab Developer ID signature" \
+  verify_developer_id_signature "$HVF_LAB" \
+  || release_failures=$((release_failures + 1))
+run_release_gate "Bundled Windows HVF Lab hardened runtime" \
+  verify_hardened_runtime "$HVF_LAB" \
+  || release_failures=$((release_failures + 1))
+run_release_gate "Bundled Windows HVF probe signature and entitlement" \
+  "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" \
+  --verify-only "$HVF_WINDOWS_PROBE" \
+  || release_failures=$((release_failures + 1))
+run_release_gate "Bundled Windows HVF probe Developer ID signature" \
+  verify_developer_id_signature "$HVF_WINDOWS_PROBE" \
+  || release_failures=$((release_failures + 1))
+run_release_gate "Bundled Windows HVF probe hardened runtime" \
+  verify_hardened_runtime "$HVF_WINDOWS_PROBE" \
   || release_failures=$((release_failures + 1))
 run_release_gate "Bundled bridgevmd helper signature" \
   codesign --verify --strict "$APP/Contents/Helpers/bridgevmd" \

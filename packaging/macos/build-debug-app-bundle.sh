@@ -12,6 +12,12 @@ CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 HELPERS="$CONTENTS/Helpers"
+APPLICATIONS="$CONTENTS/Applications"
+HVF_LAB_APP="$APPLICATIONS/BridgeVMControl.app"
+HVF_LAB_CONTENTS="$HVF_LAB_APP/Contents"
+HVF_LAB_MACOS="$HVF_LAB_CONTENTS/MacOS"
+HVF_LAB_RESOURCES="$HVF_LAB_CONTENTS/Resources"
+HVF_WINDOWS_PROBE="$HVF_LAB_RESOURCES/target/release/examples/hvf_gic_boot_probe"
 IDENTITY="${BRIDGEVM_CODESIGN_IDENTITY:--}"
 BUILD_CONFIGURATION="${BRIDGEVM_MACOS_BUILD_CONFIGURATION:-debug}"
 BUNDLE_DISPLAY_NAME="${BRIDGEVM_BUNDLE_DISPLAY_NAME:-BridgeVM}"
@@ -51,6 +57,11 @@ Environment:
   BRIDGEVM_MACOS_SKIP_APPLE_VZ_RUNNER
                                set to 1 to omit the signed AppleVzRunner helper
                                from the local debug bundle
+
+Bundled Windows HVF runtime:
+  Every bundle includes BridgeVMControl.app under Contents/Applications, the
+  installed-Windows wrapper scripts, and a release hvf_gic_boot_probe signed
+  with com.apple.security.hypervisor. The nested app never invokes Cargo.
 
 Signing note:
   This debug helper only runs codesign. It does not notarize, staple, enable a
@@ -147,6 +158,53 @@ verify_bundle() {
     "$ROOT/apps/macos/scripts/build-sign-apple-vz-runner.sh" \
       --verify-only "$apple_vz_runner" >/dev/null
   fi
+  local hvf_lab="$app/Contents/Applications/BridgeVMControl.app"
+  local hvf_lab_executable="$hvf_lab/Contents/MacOS/BridgeVMControl"
+  local hvf_lab_plist="$hvf_lab/Contents/Info.plist"
+  local hvf_lab_resources="$hvf_lab/Contents/Resources"
+  local hvf_probe="$hvf_lab_resources/target/release/examples/hvf_gic_boot_probe"
+  [[ -d "$hvf_lab" ]] || {
+    echo "BridgeVM Windows HVF Lab bundle is missing: $hvf_lab" >&2
+    exit 1
+  }
+  [[ -x "$hvf_lab_executable" ]] || {
+    echo "BridgeVM Windows HVF Lab executable is missing: $hvf_lab_executable" >&2
+    exit 1
+  }
+  [[ -f "$hvf_lab_plist" ]] || {
+    echo "BridgeVM Windows HVF Lab Info.plist is missing: $hvf_lab_plist" >&2
+    exit 1
+  }
+  local hvf_lab_bundle_executable
+  hvf_lab_bundle_executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$hvf_lab_plist" 2>/dev/null || true)"
+  [[ "$hvf_lab_bundle_executable" == "BridgeVMControl" ]] || {
+    echo "BridgeVM Windows HVF Lab Info.plist has the wrong CFBundleExecutable" >&2
+    exit 1
+  }
+  local hvf_lab_bundle_identifier
+  hvf_lab_bundle_identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$hvf_lab_plist" 2>/dev/null || true)"
+  [[ "$hvf_lab_bundle_identifier" == "$bundle_identifier.hvf-lab" ]] || {
+    echo "BridgeVM Windows HVF Lab Info.plist has the wrong CFBundleIdentifier" >&2
+    exit 1
+  }
+  local hvf_script
+  for hvf_script in \
+    run-hvf-windows-installed-boot.sh \
+    run-hvf-windows-installed-boot-usage.sh \
+    run-hvf-windows-installed-boot-validation.sh \
+    run-hvf-windows-installed-boot-args.sh \
+    run-hvf-windows-installed-boot-runner.sh; do
+    [[ -x "$hvf_lab_resources/scripts/$hvf_script" && ! -L "$hvf_lab_resources/scripts/$hvf_script" ]] || {
+      echo "BridgeVM Windows HVF runtime script is missing, non-executable, or a symlink: $hvf_script" >&2
+      exit 1
+    }
+  done
+  "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" \
+    --verify-only "$hvf_probe" >/dev/null
+  codesign --verify --strict "$hvf_lab" >/dev/null 2>&1 || {
+    echo "BridgeVM Windows HVF Lab signature verification failed: $hvf_lab" >&2
+    exit 1
+  }
   local helper
   for helper in bridgevmd lightvm-runner; do
     local helper_path="$app/Contents/Helpers/$helper"
@@ -180,7 +238,10 @@ case "$BUILD_CONFIGURATION" in
 esac
 
 swift build --package-path "$MACOS_DIR" --configuration "$BUILD_CONFIGURATION" --quiet --product BridgeVMApp
-BIN="$(swift build --package-path "$MACOS_DIR" --configuration "$BUILD_CONFIGURATION" --show-bin-path)/BridgeVMApp"
+swift build --package-path "$MACOS_DIR" --configuration "$BUILD_CONFIGURATION" --quiet --product BridgeVMControl
+SWIFT_BIN_DIR="$(swift build --package-path "$MACOS_DIR" --configuration "$BUILD_CONFIGURATION" --show-bin-path)"
+BIN="$SWIFT_BIN_DIR/BridgeVMApp"
+HVF_LAB_BIN="$SWIFT_BIN_DIR/BridgeVMControl"
 cargo_args=(build --quiet --bin bridgevmd --bin lightvm-runner)
 cargo_profile_dir="debug"
 if [[ "$BUILD_CONFIGURATION" == "release" ]]; then
@@ -192,8 +253,9 @@ BRIDGEVMD_BIN="$ROOT/target/$cargo_profile_dir/bridgevmd"
 LIGHTVM_RUNNER_BIN="$ROOT/target/$cargo_profile_dir/lightvm-runner"
 
 rm -rf "$APP"
-install -d "$MACOS" "$RESOURCES" "$HELPERS"
+install -d "$MACOS" "$RESOURCES" "$HELPERS" "$HVF_LAB_MACOS" "$HVF_LAB_RESOURCES/scripts"
 install -m 755 "$BIN" "$MACOS/BridgeVMApp"
+install -m 755 "$HVF_LAB_BIN" "$HVF_LAB_MACOS/BridgeVMControl"
 install -m 755 "$BRIDGEVMD_BIN" "$HELPERS/bridgevmd"
 install -m 755 "$LIGHTVM_RUNNER_BIN" "$HELPERS/lightvm-runner"
 codesign --force --sign "$IDENTITY" "$HELPERS/bridgevmd" >/dev/null
@@ -238,6 +300,53 @@ PLIST
 if [[ -n "$BUNDLE_COPYRIGHT" ]]; then
   /usr/libexec/PlistBuddy -c "Add :NSHumanReadableCopyright string $BUNDLE_COPYRIGHT" "$CONTENTS/Info.plist"
 fi
+
+cat >"$HVF_LAB_CONTENTS/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>BridgeVM Windows HVF Lab</string>
+  <key>CFBundleExecutable</key>
+  <string>BridgeVMControl</string>
+  <key>CFBundleIdentifier</key>
+  <string></string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>BridgeVMControl</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string></string>
+  <key>CFBundleVersion</key>
+  <string></string>
+  <key>LSMinimumSystemVersion</key>
+  <string>14.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>
+PLIST
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_IDENTIFIER.hvf-lab" "$HVF_LAB_CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $BUNDLE_SHORT_VERSION" "$HVF_LAB_CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUNDLE_VERSION" "$HVF_LAB_CONTENTS/Info.plist"
+
+for hvf_script in \
+  run-hvf-windows-installed-boot.sh \
+  run-hvf-windows-installed-boot-usage.sh \
+  run-hvf-windows-installed-boot-validation.sh \
+  run-hvf-windows-installed-boot-args.sh \
+  run-hvf-windows-installed-boot-runner.sh; do
+  install -m 755 "$ROOT/scripts/$hvf_script" "$HVF_LAB_RESOURCES/scripts/$hvf_script"
+done
+
+"$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" \
+  --release \
+  --output "$HVF_WINDOWS_PROBE" >/dev/null
 if [[ -n "$ICON_FILE" ]]; then
   [[ -f "$ICON_FILE" ]] || {
     echo "BridgeVM icon file is missing: $ICON_FILE" >&2
@@ -261,6 +370,12 @@ if [[ "$SKIP_APPLE_VZ_RUNNER" != "1" ]]; then
     --output "$HELPERS/AppleVzRunner" >/dev/null
 fi
 
-codesign --force --sign "$IDENTITY" "$APP" >/dev/null
+if [[ "$BUILD_CONFIGURATION" == "release" ]]; then
+  codesign --force --options runtime --sign "$IDENTITY" "$HVF_LAB_APP" >/dev/null
+  codesign --force --options runtime --sign "$IDENTITY" "$APP" >/dev/null
+else
+  codesign --force --sign "$IDENTITY" "$HVF_LAB_APP" >/dev/null
+  codesign --force --sign "$IDENTITY" "$APP" >/dev/null
+fi
 verify_bundle "$APP"
 printf '%s\n' "$APP"

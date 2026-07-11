@@ -9,10 +9,31 @@ This creates three separate engine tracks:
 | --- | --- | --- |
 | Compatibility Engine | QEMU + HVF/TCG | Keep broad OS compatibility and current Windows installer evidence. |
 | Apple VZ Engine | Apple Virtualization.framework | Fast Mode for Linux/macOS Arm guests. |
-| BridgeVM HVF Engine | Apple Hypervisor.framework + BridgeVM VMM | Future Windows 11 Arm non-QEMU path. |
+| BridgeVM HVF Engine | Apple Hypervisor.framework + BridgeVM VMM | Experimental no-QEMU installed-Windows path; installer and product-completion work remains. |
 
 QEMU remains supported for compatibility. It is not the final Windows 11 Arm
 performance architecture.
+
+## Current Proven Boundary (2026-07-12)
+
+The BridgeVM-owned HVF engine is no longer only a firmware research scaffold.
+On preserved, cloned media it has booted an already-installed Windows 11 ARM64
+desktop with four vCPUs, RAM framebuffer/input, virtio-net, writable NVMe, and
+the resident BVAGENT virtio-console service without QEMU. The app-service live
+run proved `whoami`, Windows version reporting, a host-to-guest shared-file read,
+guest-requested `shutdown.exe /p /f`, PSCI system-off, 190 successful NVMe
+writes, 18 flushes, and final disk/vars writeback. See the
+[2026-07-12 evidence index](evidence/installed-app-service-20260712.md).
+
+The shipped macOS bundle now contains an isolated `BridgeVMControl.app`, the
+installed-Windows wrappers, and a release probe signed with
+`com.apple.security.hypervisor`; Settings exposes it as **Windows HVF Lab**.
+The lab imports an installed RAW disk and its matching writable UEFI vars by
+clone/copy, leaving the selected source files unchanged.
+
+This is still an experimental installed-image path. A from-scratch installer,
+TPM 2.0/Secure Boot, distributable Windows 3D/WDDM, durable disk-backed suspend,
+and polished single-surface product UX remain open.
 
 ## Local Installer Baseline
 
@@ -28,7 +49,7 @@ path already reaches Windows Setup and exposes what Windows expects from
 firmware, display, input, storage, TPM, and Secure Boot. Those observations feed
 the BridgeVM HVF VMM design; they do not make QEMU the target engine.
 
-## Development Order
+## Development Order (historical sequence)
 
 1. **Lock the product boundary**
    - Windows 11 Arm auto-selection must stay out of Apple VZ Fast Mode.
@@ -517,10 +538,10 @@ the BridgeVM HVF VMM design; they do not make QEMU the target engine.
 
 ## Current Gate Status
 
-`Pass` below means the named boundary or opt-in proof is implemented and tested.
-It does **not** mean the Windows 11 ARM fast path is usable yet. There is still
-no UEFI Boot Manager handoff, installer boot, Windows boot, GUI/network,
-TPM/Secure Boot, or Parallels-like Windows mode on the BridgeVM HVF engine.
+`Pass` below means the named boundary or live proof is implemented and tested.
+It does **not** mean the Windows 11 ARM path is product-complete: the proven
+route imports an already-installed image, while installer, security, 3D,
+durable suspend, and UX gates remain.
 
 | Gate | Status |
 | --- | --- |
@@ -558,9 +579,13 @@ TPM/Secure Boot, or Parallels-like Windows mode on the BridgeVM HVF engine.
 | HVF runner `com.apple.security.hypervisor` signing helper | Pass |
 | Restricted QEMU/HVF installer command shape | Pass |
 | Windows Setup reachability through QEMU/HVF | Preserved evidence exists |
-| BridgeVM HVF AArch64 vCPU run/exit loop | Research |
-| BridgeVM-owned UEFI/boot device path | Blocked |
-| BridgeVM-owned persistent boot disk/network/display devices | Blocked |
+| BridgeVM HVF AArch64 vCPU run/exit loop | Pass |
+| Installed Windows boot without QEMU | Pass (preserved live evidence) |
+| BridgeVM-owned UEFI/boot device path for installed media | Pass (preserved live evidence) |
+| Writable NVMe, ramfb/input, and virtio-net installed-media path | Pass (preserved live evidence) |
+| Resident BVAGENT command/share/shutdown service | Pass (preserved live evidence) |
+| Packaged macOS Windows HVF Lab, wrappers, and signed release probe | Pass |
 | TPM/Secure Boot in custom HVF path | Blocked |
-| Windows guest tools/drivers | Blocked |
+| Windows guest tools/drivers | Partial: resident agent proven; distributable 3D driver remains |
 | Windows installer without QEMU | Blocked |
+| Disk-backed suspend/resume | Blocked; process-resident pause/resume only |

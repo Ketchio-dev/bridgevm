@@ -66,4 +66,17 @@ set -e
   fail "bundle verify-only did not report the missing AppleVzRunner entitlement"
 }
 
+"$ROOT/apps/macos/scripts/build-sign-apple-vz-runner.sh" --output "$RUNNER" >/dev/null
+codesign --force --sign - "$APP" >/dev/null
+
+set +e
+output="$("$ROOT/packaging/macos/build-debug-app-bundle.sh" --verify-only "$APP" 2>&1)"
+status=$?
+set -e
+
+[[ "$status" -ne 0 ]] || fail "bundle verify-only accepted an app without the Windows HVF Lab"
+[[ "$output" == *"BridgeVM Windows HVF Lab bundle is missing"* ]] || {
+  fail "bundle verify-only did not report the missing Windows HVF Lab"
+}
+
 echo "PASS: macOS bundle helper verify smoke"

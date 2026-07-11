@@ -53,12 +53,18 @@ write_installed_boot_preflight() {
     printf 'boot_timer_desktop_agent=%s\n' "$BOOT_TIMER_DESKTOP_AGENT"
     printf 'shutdown_after_agent_ready=%s\n' "$SHUTDOWN_AFTER_AGENT_READY"
     printf 'host_pause_resume_proof_ms=%s\n' "${HOST_PAUSE_RESUME_PROOF_MS:-<unset>}"
-    if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" ]]; then
+    printf 'agent_service_control=%s\n' "${AGENT_SERVICE_CONTROL:-<unset>}"
+    printf 'agent_service_command=%s\n' "${AGENT_SERVICE_COMMAND:-<unset>}"
+    printf 'agent_clipboard_sync=%s\n' "$AGENT_CLIPBOARD_SYNC"
+    printf 'agent_share_host=%s\n' "${AGENT_SHARE_HOST:-<unset>}"
+    printf 'agent_share_guest=%s\n' "${AGENT_SHARE_GUEST:-<unset>}"
+    printf 'agent_share_ms=%s\n' "${AGENT_SHARE_MS:-<unset>}"
+    if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" || -n "$AGENT_SERVICE_CONTROL" ]]; then
       printf 'virtio_console_test_periodic=1\n'
     else
       printf 'virtio_console_test_periodic=0\n'
     fi
-    if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" ]]; then
+    if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" || -n "$AGENT_SERVICE_CONTROL" ]]; then
       printf 'virtio_console=1\n'
     else
       printf 'virtio_console=0\n'
@@ -173,7 +179,7 @@ build_installed_boot_env_args() {
       ENV_ARGS+=('BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT=1')
     fi
   fi
-  if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" ]]; then
+  if [[ "$BOOT_TIMER_DESKTOP_AGENT" == "1" || "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" || -n "$AGENT_SERVICE_CONTROL" ]]; then
     ENV_ARGS+=('BRIDGEVM_VIRTIO_CONSOLE=1')
   fi
   if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
@@ -193,6 +199,23 @@ build_installed_boot_env_args() {
       'BRIDGEVM_VIRTIO_CONSOLE_SERVICE=1'
       "BRIDGEVM_VIRTIO_CONSOLE_CTL=$(host_pause_resume_control_path)"
     )
+  fi
+  if [[ -n "$AGENT_SERVICE_CONTROL" ]]; then
+    ENV_ARGS+=(
+      'BRIDGEVM_VIRTIO_CONSOLE_TEST=1'
+      'BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC=1'
+      "BRIDGEVM_VIRTIO_CONSOLE_CMDS=$AGENT_SERVICE_COMMAND"
+      "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=$WATCHDOG_MS"
+      'BRIDGEVM_VIRTIO_CONSOLE_SERVICE=1'
+      "BRIDGEVM_VIRTIO_CONSOLE_CTL=$AGENT_SERVICE_CONTROL"
+    )
+    [[ "$AGENT_CLIPBOARD_SYNC" == "1" ]] && ENV_ARGS+=('BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC=1')
+    if [[ -n "$AGENT_SHARE_HOST" ]]; then
+      ENV_ARGS+=(
+        "BRIDGEVM_VIRTIO_CONSOLE_SHARE=$AGENT_SHARE_HOST::$AGENT_SHARE_GUEST"
+        "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS=$AGENT_SHARE_MS"
+      )
+    fi
   fi
   append_input_env_args
   if [[ "$ENABLE_XHCI" != "1" ]]; then
@@ -300,7 +323,7 @@ host_pause_resume_observation_path() {
 probe_log_match_count() {
   local pattern="$1"
   local count
-  count="$(rg -c "$pattern" "$EVIDENCE_DIR/run.log" 2>/dev/null || true)"
+  count="$(grep -cE "$pattern" "$EVIDENCE_DIR/run.log" 2>/dev/null || true)"
   printf '%s\n' "${count:-0}"
 }
 
@@ -469,13 +492,13 @@ write_host_pause_resume_gate() {
   local status="0"
   observation="$(host_pause_resume_observation_path)"
 
-  [[ -f "$observation" ]] && rg -q '^service_ready=true$' "$observation" && service_ready="true"
-  [[ -f "$observation" ]] && rg -q '^during_state=T' "$observation" && stopped="true"
-  [[ -f "$observation" ]] && rg -q '^log_stable_while_stopped=true$' "$observation" && stable="true"
-  [[ -f "$observation" ]] && rg -q '^continue_signal_sent=true$' "$observation" && continued="true"
-  [[ -f "$observation" ]] && rg -q '^post_resume_command_ok=true$' "$observation" && agent_round_trip="true"
-  rg -q '^stop: PSCI .*\(system off\)' "$EVIDENCE_DIR/run.log" && guest_system_off="true"
-  rg -q '^NVMe (second namespace )?disk written back:' "$EVIDENCE_DIR/run.log" && nvme_writeback="true"
+  [[ -f "$observation" ]] && grep -Eq '^service_ready=true$' "$observation" && service_ready="true"
+  [[ -f "$observation" ]] && grep -Eq '^during_state=T' "$observation" && stopped="true"
+  [[ -f "$observation" ]] && grep -Eq '^log_stable_while_stopped=true$' "$observation" && stable="true"
+  [[ -f "$observation" ]] && grep -Eq '^continue_signal_sent=true$' "$observation" && continued="true"
+  [[ -f "$observation" ]] && grep -Eq '^post_resume_command_ok=true$' "$observation" && agent_round_trip="true"
+  grep -Eq '^stop: PSCI .*\(system off\)' "$EVIDENCE_DIR/run.log" && guest_system_off="true"
+  grep -Eq '^NVMe (second namespace )?disk written back:' "$EVIDENCE_DIR/run.log" && nvme_writeback="true"
 
   if [[ "${HOST_PAUSE_RESUME_CONTROL_STATUS:-1}" != "0" || "$probe_status" != "0" || \
         "$service_ready" != "true" || "$stopped" != "true" || "$stable" != "true" || \
@@ -510,10 +533,10 @@ write_agent_shutdown_gate() {
   local ready="false"
   local system_off="false"
   local status="0"
-  if rg -q '^BVAGENT (READY|PONG \(proactive\))' "$EVIDENCE_DIR/run.log"; then
+  if grep -Eq '^BVAGENT (READY|PONG \(proactive\))' "$EVIDENCE_DIR/run.log"; then
     ready="true"
   fi
-  if rg -q 'stop: PSCI .*\(system off\)' "$EVIDENCE_DIR/run.log"; then
+  if grep -Eq 'stop: PSCI .*\(system off\)' "$EVIDENCE_DIR/run.log"; then
     system_off="true"
   fi
   if [[ "$ready" != "true" || "$system_off" != "true" ]]; then
@@ -526,6 +549,49 @@ write_agent_shutdown_gate() {
     printf 'guest_system_off=%s\n' "$system_off"
     printf 'status=%s\n' "$status"
   } > "$EVIDENCE_DIR/agent-shutdown-gate.txt"
+
+  if [[ "$status" != "0" && "$RUN_STATUS" == "0" ]]; then
+    RUN_STATUS="$status"
+  fi
+}
+
+write_agent_service_gate() {
+  [[ -n "$AGENT_SERVICE_CONTROL" ]] || return 0
+
+  local ready="false"
+  local initial_command_exit_zero="false"
+  local initial_command_complete="false"
+  local service_started="false"
+  local guest_system_off="false"
+  local nvme_writeback="false"
+  local probe_status="$RUN_STATUS"
+  local status="0"
+  grep -Eq '^BVAGENT (READY|PONG \(proactive\))' "$EVIDENCE_DIR/run.log" && ready="true"
+  grep -Fq "BVAGENT CMD $AGENT_SERVICE_COMMAND exit=0" "$EVIDENCE_DIR/run.log" && initial_command_exit_zero="true"
+  grep -Fq "BVAGENT END $AGENT_SERVICE_COMMAND" "$EVIDENCE_DIR/run.log" && initial_command_complete="true"
+  grep -Eq '^BVAGENT SERVICE start' "$EVIDENCE_DIR/run.log" && service_started="true"
+  grep -Eq '^stop: PSCI .*\(system off\)' "$EVIDENCE_DIR/run.log" && guest_system_off="true"
+  grep -Eq '^NVMe (second namespace )?disk written back:' "$EVIDENCE_DIR/run.log" && nvme_writeback="true"
+
+  if [[ "$probe_status" != "0" || "$ready" != "true" || \
+        "$initial_command_exit_zero" != "true" || "$initial_command_complete" != "true" || \
+        "$service_started" != "true" || "$guest_system_off" != "true" || \
+        "$nvme_writeback" != "true" ]]; then
+    status="1"
+  fi
+
+  {
+    printf 'configured_command=%s\n' "$AGENT_SERVICE_COMMAND"
+    printf 'control_path=%s\n' "$AGENT_SERVICE_CONTROL"
+    printf 'agent_handshake=%s\n' "$ready"
+    printf 'initial_command_exit_zero=%s\n' "$initial_command_exit_zero"
+    printf 'initial_command_complete=%s\n' "$initial_command_complete"
+    printf 'service_started=%s\n' "$service_started"
+    printf 'guest_system_off=%s\n' "$guest_system_off"
+    printf 'nvme_writeback=%s\n' "$nvme_writeback"
+    printf 'probe_status=%s\n' "$probe_status"
+    printf 'status=%s\n' "$status"
+  } > "$EVIDENCE_DIR/agent-service-gate.txt"
 
   if [[ "$status" != "0" && "$RUN_STATUS" == "0" ]]; then
     RUN_STATUS="$status"
@@ -600,6 +666,9 @@ write_installed_boot_target_stat() {
     if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
       printf 'agent_shutdown_gate=%s\n' "$EVIDENCE_DIR/agent-shutdown-gate.txt"
     fi
+    if [[ -n "$AGENT_SERVICE_CONTROL" ]]; then
+      printf 'agent_service_gate=%s\n' "$EVIDENCE_DIR/agent-service-gate.txt"
+    fi
     if [[ -n "$HOST_PAUSE_RESUME_PROOF_MS" ]]; then
       printf 'host_pause_resume_gate=%s\n' "$EVIDENCE_DIR/host-pause-resume-gate.txt"
       printf 'host_pause_resume_observation=%s\n' "$(host_pause_resume_observation_path)"
@@ -610,7 +679,7 @@ write_installed_boot_target_stat() {
     printf 'ramfb_files:\n'
     find "$EVIDENCE_DIR/ramfb" -maxdepth 1 -type f -print | sort
     printf 'run_log_summary_grep:\n'
-    rg -n 'Windows|Boot Manager|UEFI|EFI|Bds|Boot####|NVMe|xHCI|qemu-xhci|HID|USB|PNP|BVAGENT|INTERNAL_POWER_ERROR|DRIVER_PNP_WATCHDOG|0x1D5|bugcheck|panic|HV_DENIED|hv_vm_create|watchdog|SYSTEM_RESET|SYSTEM_OFF|PSCI|storage target effect|exact_target_storage_evidence|target_effect_class' "$EVIDENCE_DIR/run.log" || true
+    grep -En 'Windows|Boot Manager|UEFI|EFI|Bds|Boot####|NVMe|xHCI|qemu-xhci|HID|USB|PNP|BVAGENT|INTERNAL_POWER_ERROR|DRIVER_PNP_WATCHDOG|0x1D5|bugcheck|panic|HV_DENIED|hv_vm_create|watchdog|SYSTEM_RESET|SYSTEM_OFF|PSCI|storage target effect|exact_target_storage_evidence|target_effect_class' "$EVIDENCE_DIR/run.log" || true
   } > "$EVIDENCE_DIR/target-stat.txt" 2>&1
 }
 
@@ -641,6 +710,7 @@ run_installed_boot_probe() {
   write_probe_command_env
   run_probe_process
   write_agent_shutdown_gate
+  write_agent_service_gate
   write_host_pause_resume_gate
   write_virtio_gpu_trace_report
   write_installed_boot_target_stat

@@ -39,6 +39,17 @@ assert_plist_value() {
   }
 }
 
+assert_hvf_lab_plist_value() {
+  local key="$1"
+  local expected="$2"
+  local plist="$APP/Contents/Applications/BridgeVMControl.app/Contents/Info.plist"
+  local actual
+  actual="$(/usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null || true)"
+  [[ "$actual" == "$expected" ]] || {
+    fail "Windows HVF Lab Info.plist $key expected '$expected'; got '$actual'"
+  }
+}
+
 [[ -x "$BUILD_SCRIPT" ]] || fail "missing build script: $BUILD_SCRIPT"
 printf 'icns metadata smoke fixture\n' >"$ICON_FILE"
 
@@ -73,6 +84,9 @@ assert_plist_value CFBundleShortVersionString "$SHORT_VERSION"
 assert_plist_value CFBundleVersion "$BUNDLE_VERSION"
 assert_plist_value NSHumanReadableCopyright "$COPYRIGHT"
 assert_plist_value CFBundleIconFile "$(basename "$ICON_FILE")"
+assert_hvf_lab_plist_value CFBundleIdentifier "$BUNDLE_IDENTIFIER.hvf-lab"
+assert_hvf_lab_plist_value CFBundleShortVersionString "$SHORT_VERSION"
+assert_hvf_lab_plist_value CFBundleVersion "$BUNDLE_VERSION"
 [[ -f "$APP/Contents/Resources/$(basename "$ICON_FILE")" ]] || {
   fail "icon file was not copied into app resources"
 }

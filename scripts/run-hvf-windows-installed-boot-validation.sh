@@ -36,6 +36,31 @@ host_pause_resume_proof_ms() {
   (( 10#$1 >= 100 && 10#$1 <= 60000 ))
 }
 
+agent_service_command_value() {
+  local LC_ALL=C
+  [[ -n "$1" ]] || return 1
+  (( ${#1} <= 1024 )) || return 1
+  [[ "$1" != *$'\n'* && "$1" != *$'\r'* && "$1" != *'|'* ]]
+}
+
+agent_service_control_path_value() {
+  local LC_ALL=C
+  [[ -n "$1" ]] || return 1
+  (( ${#1} <= 4096 )) || return 1
+  [[ "$1" != *$'\n'* && "$1" != *$'\r'* ]]
+}
+
+agent_share_path_value() {
+  agent_service_control_path_value "$1" || return 1
+  [[ "$1" != *'::'* ]]
+}
+
+agent_share_interval_ms() {
+  positive_integer "$1" || return 1
+  (( ${#1} <= 5 )) || return 1
+  (( 10#$1 >= 500 && 10#$1 <= 60000 ))
+}
+
 u64_literal() {
   local value="$1"
   local trimmed
@@ -193,6 +218,8 @@ absolutize_installed_boot_paths() {
   [[ -z "$EVIDENCE_DIR" ]] || EVIDENCE_DIR="$(absolute_path_from "$invocation_dir" "$EVIDENCE_DIR")"
   [[ -z "$VIRTIO_GPU_TRACE_JSONL" ]] || VIRTIO_GPU_TRACE_JSONL="$(absolute_path_from "$invocation_dir" "$VIRTIO_GPU_TRACE_JSONL")"
   [[ -z "$VIOGPU3D_DIR" ]] || VIOGPU3D_DIR="$(absolute_path_from "$invocation_dir" "$VIOGPU3D_DIR")"
+  [[ -z "$AGENT_SERVICE_CONTROL" ]] || AGENT_SERVICE_CONTROL="$(absolute_path_from "$invocation_dir" "$AGENT_SERVICE_CONTROL")"
+  [[ -z "$AGENT_SHARE_HOST" ]] || AGENT_SHARE_HOST="$(absolute_path_from "$invocation_dir" "$AGENT_SHARE_HOST")"
 }
 
 media_identity() {

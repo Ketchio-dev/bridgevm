@@ -13,9 +13,11 @@ EVIDENCE="$STORE/evidence"
 TRACE="$STORE/evidence/virtio-gpu.jsonl"
 VIOGPU3D="$STORE/viogpu3d"
 FAKE_REPO="$STORE/fake-repo"
+SHARE="$STORE/share"
+CONTROL="$EVIDENCE/app.ctl"
 
 touch "$TARGET" "$PLACEHOLDER" "$VARS"
-mkdir -p "$EVIDENCE" "$VIOGPU3D" "$FAKE_REPO/scripts"
+mkdir -p "$EVIDENCE" "$VIOGPU3D" "$FAKE_REPO/scripts" "$SHARE"
 FAKE_REPO_REAL="$(cd "$FAKE_REPO" && pwd -P)"
 
 cleanup() {
@@ -104,6 +106,12 @@ delegate_output="$(
     --boot-timer \
     --boot-timer-ramfb-ms 250 \
     --boot-timer-desktop-checksum64 0x1234abcd \
+    --agent-service-control "$CONTROL" \
+    --agent-service-command "whoami /user" \
+    --agent-clipboard-sync \
+    --agent-share-host "$SHARE" \
+    --agent-share-guest 'C:\bridgevm-share' \
+    --agent-share-ms 2500 \
     --enable-xhci \
     --virtio-net \
     --virtio-gpu-3d \
@@ -132,6 +140,12 @@ assert_args_exact "$delegate_output" "fake-wrapper delegation" \
   --boot-timer \
   --boot-timer-ramfb-ms 250 \
   --boot-timer-desktop-checksum64 0x1234abcd \
+  --agent-service-control "$CONTROL" \
+  --agent-service-command "whoami /user" \
+  --agent-clipboard-sync \
+  --agent-share-host "$SHARE" \
+  --agent-share-guest 'C:\bridgevm-share' \
+  --agent-share-ms 2500 \
   --enable-xhci \
   --virtio-net \
   --virtio-gpu-3d \
@@ -165,8 +179,9 @@ assert_args_exact "$alias_output" "disk alias delegation" \
 INVOKE="$STORE/invoke"
 REL_EVIDENCE="$STORE/relative-evidence"
 REL_TRACE="$REL_EVIDENCE/virtio-gpu.jsonl"
-mkdir -p "$INVOKE" "$REL_EVIDENCE"
-touch "$REL_TRACE"
+REL_SHARE="$STORE/relative-share"
+mkdir -p "$INVOKE" "$REL_EVIDENCE" "$REL_SHARE"
+touch "$REL_TRACE" "$REL_EVIDENCE/app.ctl"
 relative_output="$(
   cd "$INVOKE"
   run_hvf_runner \
@@ -176,6 +191,9 @@ relative_output="$(
     --vars ../vars.fd \
     --evidence-dir ../relative-evidence \
     --gpu-trace ../relative-evidence/virtio-gpu.jsonl \
+    --agent-service-control ../relative-evidence/app.ctl \
+    --agent-share-host ../relative-share \
+    --agent-share-guest 'C:\relative-share' \
     --print-policy 2>&1
 )" || fail "hvf-runner relative launch failed: $relative_output"
 assert_line "$relative_output" "cwd=$FAKE_REPO_REAL" "relative launch cwd"
@@ -183,6 +201,9 @@ assert_args_exact "$relative_output" "relative launch arguments" \
   --target "$TARGET" \
   --vars "$VARS" \
   --evidence-dir "$REL_EVIDENCE" \
+  --agent-service-control "$REL_EVIDENCE/app.ctl" \
+  --agent-share-host "$REL_SHARE" \
+  --agent-share-guest 'C:\relative-share' \
   --gpu-trace "$REL_TRACE" \
   --print-policy
 
@@ -225,6 +246,32 @@ assert_contains "$real_policy_output" "BRIDGEVM_VIOGPU3D_DIR=$VIOGPU3D" "real-wr
 assert_contains "$real_policy_output" "BRIDGEVM_REQUIRE_VIOGPU3D_READINESS=1" "real-wrapper policy"
 assert_contains "$real_policy_output" "BUILD_PROFILE=release" "real-wrapper policy"
 
+service_policy_output="$(
+  run_hvf_runner \
+    --launch \
+    --repo-root "$ROOT" \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --ram-mib 6144 \
+    --smp-cpus 4 \
+    --watchdog-ms 345678 \
+    --agent-service-control "$CONTROL" \
+    --agent-service-command "whoami /user" \
+    --agent-clipboard-sync \
+    --agent-share-host "$SHARE" \
+    --agent-share-guest 'C:\bridgevm-share' \
+    --agent-share-ms 2500 \
+    --print-policy 2>&1
+)" || fail "hvf-runner app service policy failed: $service_policy_output"
+assert_contains "$service_policy_output" "BRIDGEVM_RAM_MIB=6144" "runner app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_SMP_CPUS=4" "runner app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_SERVICE=1" "runner app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CTL=$CONTROL" "runner app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC=1" "runner app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE=$SHARE::C:\bridgevm-share" "runner app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS=2500" "runner app service policy"
+
 bad_smp_output="$(
   run_hvf_runner \
     --launch \
@@ -259,5 +306,16 @@ ambiguous_output="$(
     --evidence-dir "$EVIDENCE" 2>&1
 )" && fail "hvf-runner launch unexpectedly accepted ambiguous targets: $ambiguous_output"
 assert_contains "$ambiguous_output" "accepts only one of --target, --disk, or --writable-disk" "ambiguous target validation"
+
+orphan_agent_output="$(
+  run_hvf_runner \
+    --launch \
+    --repo-root "$FAKE_REPO" \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --agent-clipboard-sync 2>&1
+)" && fail "hvf-runner unexpectedly accepted an agent option without service control: $orphan_agent_output"
+assert_contains "$orphan_agent_output" "require --agent-service-control" "orphan runner agent validation"
 
 echo "PASS: hvf-runner installed boot launch policy smoke ($STORE)"

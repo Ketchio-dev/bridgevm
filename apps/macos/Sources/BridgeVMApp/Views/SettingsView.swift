@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
+    @State private var windowsHVFLabMessage: String?
+    @State private var windowsHVFLabFailed = false
     var storeDoctorState: BridgeVMAppModel.StoreDoctorState = .idle
     var bundledDaemonLaunchReport: BundledDaemonLaunchReport?
     var onApply: () -> Void
@@ -102,6 +104,35 @@ struct SettingsView: View {
                 }
                 .disabled(storeDoctorState == .checking || !settings.hasValidDaemonSettings)
                 .help("Ask the daemon for store metadata without launching a VM")
+            }
+
+            Section("Windows on HVF") {
+                Text("Import a proven installed Windows ARM RAW disk and its matching UEFI variables into the bundled experimental HVF runtime.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button("Open Windows HVF Lab") {
+                    do {
+                        try WindowsHVFLabLauncher.open()
+                        windowsHVFLabMessage = "Windows HVF Lab opened."
+                        windowsHVFLabFailed = false
+                    } catch {
+                        windowsHVFLabMessage = error.localizedDescription
+                        windowsHVFLabFailed = true
+                    }
+                }
+                .help("Open the separately isolated Windows HVF control surface bundled inside BridgeVM")
+
+                if let windowsHVFLabMessage {
+                    Label(
+                        windowsHVFLabMessage,
+                        systemImage: windowsHVFLabFailed ? "exclamationmark.triangle" : "checkmark.circle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(windowsHVFLabFailed ? Color.red : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .formStyle(.grouped)
