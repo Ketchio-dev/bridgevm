@@ -11,6 +11,8 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+const MAX_SERIAL_LOG_BYTES: usize = 64 * 1024 * 1024;
+
 #[derive(Debug, Clone)]
 struct LoadedImage {
     dll_path: PathBuf,
@@ -54,8 +56,11 @@ fn parse_symbol_line(line: &str) -> Option<LoadedImage> {
 }
 
 fn load_images(serial_log: &str) -> Vec<LoadedImage> {
-    let mut images = std::fs::read_to_string(serial_log)
-        .unwrap_or_else(|e| panic!("read {serial_log}: {e}"))
+    let bytes = bridgevm_hvf::media::read_bounded_file(serial_log, MAX_SERIAL_LOG_BYTES)
+        .unwrap_or_else(|e| panic!("read {serial_log}: {e}"));
+    let contents = String::from_utf8(bytes)
+        .unwrap_or_else(|e| panic!("read {serial_log}: serial log is not valid UTF-8: {e}"));
+    let mut images = contents
         .lines()
         .filter_map(parse_symbol_line)
         .collect::<Vec<_>>();

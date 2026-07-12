@@ -68,8 +68,8 @@ const MAX_EXITS: u64 = 2_000_000;
 const WATCHDOG_MS: u64 = 4000;
 
 fn map_file(path: &str, ipa: u64, region_bytes: usize, flags: u64) {
-    let data = std::fs::read(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
-    assert!(data.len() <= region_bytes, "{path} larger than region");
+    let data = bridgevm_hvf::media::read_bounded_file(path, region_bytes)
+        .unwrap_or_else(|e| panic!("read {path}: {e}"));
     let layout = Layout::from_size_align(region_bytes, 0x1_0000).unwrap();
     unsafe {
         let mem = alloc_zeroed(layout);
