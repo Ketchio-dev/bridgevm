@@ -89,4 +89,22 @@ final class VMLibraryPersistenceTests: XCTestCase {
 
         XCTAssertFalse(VMLibrary.save(config(), rootURL: root))
     }
+
+    func testDeleteReportsSuccessAndRemovesOnlyNormalizedChild() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let vm = root.appendingPathComponent("safe-vm")
+        try FileManager.default.createDirectory(at: vm, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertTrue(VMLibrary.delete("../safe/vm", rootURL: root))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: vm.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.path))
+    }
+
+    func testDeleteReportsMissingLibraryEntry() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertFalse(VMLibrary.delete("missing", rootURL: root))
+    }
 }

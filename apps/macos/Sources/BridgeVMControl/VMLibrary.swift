@@ -53,9 +53,15 @@ enum VMLibrary {
         }
     }
 
-    static func delete(_ slug: String) {
-        let dir = root.appendingPathComponent(VMConfig.slugify(slug), isDirectory: true)
-        try? FileManager.default.removeItem(at: dir)
+    @discardableResult
+    static func delete(_ slug: String, rootURL: URL = root) -> Bool {
+        let dir = rootURL.appendingPathComponent(VMConfig.slugify(slug), isDirectory: true)
+        do {
+            try FileManager.default.removeItem(at: dir)
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// One-time import of the legacy single ~/.bridgevm-control/config.json into

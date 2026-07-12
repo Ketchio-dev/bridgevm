@@ -33,6 +33,34 @@ struct ContentView: View {
         .sheet(isPresented: $showPalette) {
             CommandPaletteView(library: library)
         }
+        .confirmationDialog(
+            "VM을 삭제하시겠습니까?",
+            isPresented: Binding(
+                get: { library.pendingDeletion != nil },
+                set: { if !$0 { library.pendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let cfg = library.pendingDeletion {
+                Button("\(cfg.name) 삭제", role: .destructive) { library.confirmDeletion(cfg) }
+            }
+            Button("취소", role: .cancel) { library.pendingDeletion = nil }
+        } message: {
+            if let cfg = library.pendingDeletion {
+                Text("실행 중이면 먼저 안전하게 정지합니다. 이 작업은 \(cfg.name)의 라이브러리 등록을 제거하며 되돌릴 수 없습니다.")
+            }
+        }
+        .alert(
+            "VM 삭제 실패",
+            isPresented: Binding(
+                get: { library.deletionError != nil },
+                set: { if !$0 { library.deletionError = nil } }
+            )
+        ) {
+            Button("확인") { library.deletionError = nil }
+        } message: {
+            Text(library.deletionError ?? "알 수 없는 오류")
+        }
         .background(
             Button("") { showPalette = true }
                 .keyboardShortcut("k", modifiers: .command)
@@ -63,7 +91,8 @@ struct LibrarySidebar: View {
                         VMRow(model: library.model(for: cfg))
                             .tag(cfg.slug)
                             .contextMenu {
-                                Button(role: .destructive) { library.delete(cfg) } label: { Label("삭제", systemImage: "trash") }
+                                Button(role: .destructive) { library.requestDeletion(cfg) } label: { Label("삭제", systemImage: "trash") }
+                                    .disabled(library.deletingSlugs.contains(cfg.slug))
                             }
                     }
                 }
@@ -273,9 +302,10 @@ struct VMDetailPanel: View {
                           ? "SSH · \(model.config.sshUser)@\(model.ip)"
                           : (model.backend.supportsGuestCommands ? "BVAGENT · virtio-console" : "없음"))
                 Divider()
-                Button(role: .destructive) { library.delete(model.config) } label: {
+                Button(role: .destructive) { library.requestDeletion(model.config) } label: {
                     Label("이 VM 삭제", systemImage: "trash")
                 }
+                .disabled(library.deletingSlugs.contains(model.config.slug))
             }.padding(6)
         } label: { Label("상세 / 관리", systemImage: "gearshape") }
     }

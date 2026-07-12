@@ -11,6 +11,9 @@ final class LibraryModel: ObservableObject {
     @Published var selectedID: String?
     @Published var showingCreate = false
     @Published var proMode = false
+    @Published var pendingDeletion: VMConfig?
+    @Published var deletionError: String?
+    @Published private(set) var deletingSlugs: Set<String> = []
 
     private var modelCache: [String: ControlModel] = [:]
 
@@ -46,16 +49,32 @@ final class LibraryModel: ObservableObject {
         return model(for: cfg)
     }
 
-    func delete(_ cfg: VMConfig) {
+    func requestDeletion(_ cfg: VMConfig) {
+        guard !deletingSlugs.contains(cfg.slug) else { return }
+        pendingDeletion = cfg
+    }
+
+    func confirmDeletion(_ cfg: VMConfig) {
+        pendingDeletion = nil
         let slug = cfg.slug
+        guard !deletingSlugs.contains(slug) else { return }
+        deletingSlugs.insert(slug)
         let backend = modelCache[slug]?.backend ?? cfg.makeBackend()
-        modelCache[slug] = nil
-        vms.removeAll { $0.slug == slug }
-        if selectedID == slug { selectedID = vms.first?.slug }
         Task.detached {
             backend.stop()
-            VMLibrary.delete(slug)
-            await MainActor.run { self.reload() }
+            let stillRunning = backend.isRunning()
+            let deleted = !stillRunning && VMLibrary.delete(slug)
+            await MainActor.run {
+                self.deletingSlugs.remove(slug)
+                if deleted {
+                    self.modelCache[slug] = nil
+                    self.reload()
+                } else {
+                    self.deletionError = stillRunning
+                        ? "\(cfg.name)을(를) 정지하지 못해 삭제하지 않았습니다."
+                        : "\(cfg.name)의 라이브러리 항목을 디스크에서 삭제하지 못했습니다."
+                }
+            }
         }
     }
 
