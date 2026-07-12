@@ -169,6 +169,11 @@ pub struct VirtioGpu {
     blob_row_scratch: Vec<u8>,
     trace_fields_scratch: String,
     trace: VirtioGpuTraceRecorder,
+    trace_queue_notify_count: u64,
+    trace_submit_success_count: u64,
+    trace_fence_create_count: u64,
+    trace_fence_complete_count: u64,
+    trace_fence_deliver_count: u64,
     scanout_readback_interval: Duration,
     last_3d_scanout_readback: Option<Instant>,
     scanout_readback_count: u64,
@@ -348,6 +353,11 @@ impl VirtioGpu {
             blob_row_scratch: Vec::new(),
             trace_fields_scratch: String::new(),
             trace: VirtioGpuTraceRecorder::from_env(),
+            trace_queue_notify_count: 0,
+            trace_submit_success_count: 0,
+            trace_fence_create_count: 0,
+            trace_fence_complete_count: 0,
+            trace_fence_deliver_count: 0,
             scanout_readback_interval: Duration::ZERO,
             last_3d_scanout_readback: None,
             scanout_readback_count: 0,
@@ -1612,6 +1622,10 @@ impl VirtioGpu {
         if !self.trace.enabled() {
             return;
         }
+        self.trace_queue_notify_count = self.trace_queue_notify_count.saturating_add(1);
+        if !trace_sample(self.trace_queue_notify_count) {
+            return;
+        }
         let Some(queue) = self.queues.get(queue_index as usize).copied() else {
             self.record_trace_fields("queue_notify", |fields| {
                 let _ = write!(fields, ",\"queue\":{},\"valid\":false", queue_index);
@@ -1659,6 +1673,12 @@ impl VirtioGpu {
             return;
         }
         let response_type = read_le_u32(response, 0).unwrap_or(0);
+        if hdr.typ == VIRTIO_GPU_CMD_SUBMIT_3D && response_type == VIRTIO_GPU_RESP_OK_NODATA {
+            self.trace_submit_success_count = self.trace_submit_success_count.saturating_add(1);
+            if !trace_sample(self.trace_submit_success_count) {
+                return;
+            }
+        }
         self.record_trace_fields("command", |fields| {
             let _ = write!(
                 fields,
@@ -1685,6 +1705,10 @@ impl VirtioGpu {
     }
 
     fn trace_fence_create(&mut self, fence: CompletedFence, backend_accepted: bool, outcome: &str) {
+        self.trace_fence_create_count = self.trace_fence_create_count.saturating_add(1);
+        if !trace_sample(self.trace_fence_create_count) {
+            return;
+        }
         self.record_trace_fields("fence_create", |fields| {
             let _ = write!(
                 fields,
@@ -1697,6 +1721,10 @@ impl VirtioGpu {
     }
 
     fn trace_fence_complete(&mut self, fence: CompletedFence) {
+        self.trace_fence_complete_count = self.trace_fence_complete_count.saturating_add(1);
+        if !trace_sample(self.trace_fence_complete_count) {
+            return;
+        }
         self.record_trace_fields("fence_complete", |fields| {
             let _ = write!(
                 fields,
@@ -1707,6 +1735,10 @@ impl VirtioGpu {
     }
 
     fn trace_fence_delivery(&mut self, fence: CompletedFence, used_len: u32) {
+        self.trace_fence_deliver_count = self.trace_fence_deliver_count.saturating_add(1);
+        if !trace_sample(self.trace_fence_deliver_count) {
+            return;
+        }
         self.record_trace_fields("fence_deliver", |fields| {
             let _ = write!(
                 fields,
@@ -2199,6 +2231,10 @@ fn command_name(typ: u32) -> &'static str {
         VIRTIO_GPU_CMD_MOVE_CURSOR => "MOVE_CURSOR",
         _ => "UNKNOWN",
     }
+}
+
+fn trace_sample(count: u64) -> bool {
+    count <= 64 || count % 1024 == 0
 }
 
 fn response_name(typ: u32) -> &'static str {
@@ -2946,6 +2982,16 @@ mod tests {
     use super::*;
     use crate::virtio_gpu_3d::MockBackend;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn trace_sampling_keeps_initial_evidence_and_sparse_long_run_checkpoints() {
+        assert!(trace_sample(1));
+        assert!(trace_sample(64));
+        assert!(!trace_sample(65));
+        assert!(!trace_sample(1023));
+        assert!(trace_sample(1024));
+        assert!(!trace_sample(1025));
+    }
 
     #[derive(Debug)]
     struct TestMem {
