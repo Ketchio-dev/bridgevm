@@ -53,6 +53,7 @@ const QMP_SUPERVISOR_DRAIN_LIMIT: usize = 16;
 const GUEST_TOOLS_DRAIN_LIMIT: usize = 16;
 const GUEST_TOOLS_COMMAND_RESULT_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_DAEMON_FRAME_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_PROXY_FRAMEBUFFER_BYTES: usize = 256 * 1024 * 1024;
 const DAEMON_CLIENT_IO_TIMEOUT: Duration = Duration::from_secs(2);
 const DAEMON_RESPONSE_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_CONCURRENT_DAEMON_CLIENTS: usize = 32;
@@ -2543,13 +2544,29 @@ fn materialize_proxy_window_crop(
     clipped: &ProxyWindowClippedRect,
     output_path: &Path,
 ) -> Result<(), String> {
-    let framebuffer = fs::read(&config.framebuffer_rgba_file).map_err(|error| {
-        format!(
-            "failed to read proxy framebuffer RGBA {}: {error}",
-            config.framebuffer_rgba_file.display()
-        )
-    })?;
     let expected = rgba_byte_len(config.framebuffer_width, config.framebuffer_height)?;
+    if expected > MAX_PROXY_FRAMEBUFFER_BYTES {
+        return Err(format!(
+            "proxy framebuffer RGBA dimensions {}x{} require {} bytes, exceeding the {}-byte limit",
+            config.framebuffer_width,
+            config.framebuffer_height,
+            expected,
+            MAX_PROXY_FRAMEBUFFER_BYTES
+        ));
+    }
+    let read_limit = u64::try_from(expected)
+        .ok()
+        .and_then(|expected| expected.checked_add(1))
+        .ok_or_else(|| "proxy framebuffer RGBA read limit overflowed".to_string())?;
+    let mut framebuffer = Vec::new();
+    fs::File::open(&config.framebuffer_rgba_file)
+        .and_then(|file| file.take(read_limit).read_to_end(&mut framebuffer))
+        .map_err(|error| {
+            format!(
+                "failed to read proxy framebuffer RGBA {}: {error}",
+                config.framebuffer_rgba_file.display()
+            )
+        })?;
     if framebuffer.len() != expected {
         return Err(format!(
             "proxy framebuffer RGBA {} has {} bytes, expected {}",
@@ -3051,6 +3068,38 @@ mod tests {
         let error = read_daemon_request(&server).unwrap_err();
         assert!(error.to_string().contains("exceeded 16777216 bytes"));
         writer.join().unwrap();
+    }
+
+    #[test]
+    fn proxy_window_crop_bounds_oversized_framebuffer_reads() {
+        let store = temp_store();
+        fs::create_dir_all(store.root()).unwrap();
+        let framebuffer = store.root().join("oversized-framebuffer.rgba");
+        let file = fs::File::create(&framebuffer).unwrap();
+        file.set_len(512 * 1024 * 1024).unwrap();
+        let output = store.root().join("crop.rgba");
+        let mut config = ProxyWindowCropConfig {
+            artifact_dir: store.root().join("artifacts"),
+            framebuffer_rgba_file: framebuffer,
+            framebuffer_width: 1,
+            framebuffer_height: 1,
+            backing_scale: 1,
+        };
+        let clipped = ProxyWindowClippedRect {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+        };
+
+        let error = materialize_proxy_window_crop(&config, &clipped, &output).unwrap_err();
+        assert!(error.contains("has 5 bytes, expected 4"));
+        assert!(!output.exists());
+
+        config.framebuffer_width = 8193;
+        config.framebuffer_height = 8193;
+        let error = materialize_proxy_window_crop(&config, &clipped, &output).unwrap_err();
+        assert!(error.contains("exceeding the 268435456-byte limit"));
     }
 
     #[test]
