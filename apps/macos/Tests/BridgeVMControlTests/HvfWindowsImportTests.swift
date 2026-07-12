@@ -79,6 +79,38 @@ final class HvfWindowsImportTests: XCTestCase {
         XCTAssertTrue(VMLibrary.windowsHVFImportError(targetDiskPath: raw.path, varsPath: vars.path)?.contains("VHDX") == true)
     }
 
+    func testRejectsSameResolvedFileForDiskAndVars() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let shared = temp.appendingPathComponent("shared.raw")
+        let alias = temp.appendingPathComponent("shared-vars.fd")
+        XCTAssertTrue(FileManager.default.createFile(atPath: shared.path, contents: Data([1])))
+        let handle = try FileHandle(forWritingTo: shared)
+        try handle.truncate(atOffset: VMLibrary.windowsHVFVarsBytes)
+        try handle.close()
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: shared)
+
+        let error = VMLibrary.windowsHVFImportError(targetDiskPath: shared.path, varsPath: alias.path)
+
+        XCTAssertTrue(error?.contains("서로 다른 파일") == true)
+    }
+
+    func testRejectsFIFOMediaWithoutAttemptingToReadIt() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let fifo = temp.appendingPathComponent("disk.raw")
+        let vars = temp.appendingPathComponent("vars.fd")
+        XCTAssertEqual(Shell.run("/usr/bin/mkfifo", [fifo.path]).code, 0)
+        XCTAssertTrue(FileManager.default.createFile(atPath: vars.path, contents: Data()))
+        let handle = try FileHandle(forWritingTo: vars)
+        try handle.truncate(atOffset: VMLibrary.windowsHVFVarsBytes)
+        try handle.close()
+
+        let error = VMLibrary.windowsHVFImportError(targetDiskPath: fifo.path, varsPath: vars.path)
+
+        XCTAssertTrue(error?.contains("RAW 디스크 파일") == true)
+    }
+
     func testRejectsMissingImportMediaWithoutCreatingVMDirectory() throws {
         let temp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: temp) }

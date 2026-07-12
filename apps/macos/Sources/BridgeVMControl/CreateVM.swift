@@ -12,21 +12,24 @@ extension VMLibrary {
 
     static func windowsHVFImportError(targetDiskPath: String, varsPath: String) -> String? {
         let fm = FileManager.default
-        var targetIsDirectory: ObjCBool = false
-        var varsIsDirectory: ObjCBool = false
-        guard fm.fileExists(atPath: targetDiskPath, isDirectory: &targetIsDirectory), !targetIsDirectory.boolValue else {
+        let targetURL = URL(fileURLWithPath: targetDiskPath).resolvingSymlinksInPath().standardizedFileURL
+        let varsURL = URL(fileURLWithPath: varsPath).resolvingSymlinksInPath().standardizedFileURL
+        guard isReadableRegularFile(targetURL.path) else {
             return "설치된 Windows RAW 디스크 파일을 찾을 수 없습니다."
         }
-        guard fm.fileExists(atPath: varsPath, isDirectory: &varsIsDirectory), !varsIsDirectory.boolValue else {
+        guard isReadableRegularFile(varsURL.path) else {
             return "이 VM과 함께 사용한 UEFI vars 파일을 찾을 수 없습니다."
         }
-        let targetBytes = ((try? fm.attributesOfItem(atPath: targetDiskPath)[.size] as? NSNumber)?.uint64Value) ?? 0
+        guard targetURL != varsURL else {
+            return "Windows RAW 디스크와 UEFI vars는 서로 다른 파일이어야 합니다."
+        }
+        let targetBytes = ((try? fm.attributesOfItem(atPath: targetURL.path)[.size] as? NSNumber)?.uint64Value) ?? 0
         guard targetBytes > 0 else { return "Windows RAW 디스크가 비어 있습니다." }
-        let varsBytes = ((try? fm.attributesOfItem(atPath: varsPath)[.size] as? NSNumber)?.uint64Value) ?? 0
+        let varsBytes = ((try? fm.attributesOfItem(atPath: varsURL.path)[.size] as? NSNumber)?.uint64Value) ?? 0
         guard varsBytes == windowsHVFVarsBytes else {
             return "UEFI vars는 정확히 64 MiB여야 합니다 (현재 \(varsBytes)바이트)."
         }
-        if let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: targetDiskPath)) {
+        if let handle = try? FileHandle(forReadingFrom: targetURL) {
             defer { try? handle.close() }
             let header = (try? handle.read(upToCount: 8)) ?? Data()
             if header.starts(with: Data([0x51, 0x46, 0x49, 0xfb])) {
@@ -112,10 +115,11 @@ extension VMLibrary {
     }
 
     private static func isReadableRegularFile(_ path: String) -> Bool {
-        var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
-            && !isDirectory.boolValue
-            && FileManager.default.isReadableFile(atPath: path)
+        let url = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL
+        guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+            return false
+        }
+        return FileManager.default.isReadableFile(atPath: url.path)
     }
 
     private static func isReadableDirectory(_ path: String) -> Bool {
