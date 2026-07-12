@@ -23,6 +23,12 @@ pub enum StorageError {
     AlreadyExists(String),
     #[error("VM not found: {0}")]
     NotFound(String),
+    #[error("metadata file {path:?} is {actual} bytes, exceeding the {maximum}-byte limit")]
+    MetadataTooLarge {
+        path: PathBuf,
+        actual: u64,
+        maximum: u64,
+    },
     #[error("snapshot already exists for {vm}: {snapshot}")]
     SnapshotAlreadyExists { vm: String, snapshot: String },
     #[error("snapshot not found for {vm}: {snapshot}")]
@@ -1403,8 +1409,7 @@ impl VmStore {
                 if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
                     continue;
                 }
-                let mut disk: SnapshotDiskMetadata =
-                    serde_json::from_str(&fs::read_to_string(path)?)?;
+                let mut disk: SnapshotDiskMetadata = read_json_required(&path)?;
                 disk.overlay_exists = disk.overlay_path.exists();
                 disk.backing_exists = disk.backing_path.exists();
                 disks.push(disk);
@@ -1787,7 +1792,7 @@ impl VmStore {
         if !path.exists() {
             return Ok(None);
         }
-        Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
+        Ok(Some(read_json_required(&path)?))
     }
 
     pub fn snapshot_suspend_image_metadata(
@@ -1800,7 +1805,7 @@ impl VmStore {
         if !path.exists() {
             return Ok(None);
         }
-        Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
+        Ok(Some(read_json_required(&path)?))
     }
 
     /// Record that a Fast Mode suspend image now exists at `image_path`,
@@ -1836,7 +1841,7 @@ impl VmStore {
         if !path.exists() {
             return Ok(None);
         }
-        Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
+        Ok(Some(read_json_required(&path)?))
     }
 
     pub fn application_consistent_snapshot_preflight_metadata(
@@ -1849,7 +1854,7 @@ impl VmStore {
         if !path.exists() {
             return Ok(None);
         }
-        Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
+        Ok(Some(read_json_required(&path)?))
     }
 
     pub fn create_snapshot_disk(
@@ -1947,7 +1952,7 @@ impl VmStore {
         if !path.exists() {
             return Ok(Vec::new());
         }
-        Ok(serde_json::from_str(&fs::read_to_string(path)?)?)
+        read_json_required(&path)
     }
 
     pub fn restore_snapshot(
@@ -2024,7 +2029,7 @@ impl VmStore {
         if !path.exists() {
             return Ok(None);
         }
-        Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
+        Ok(Some(read_json_required(&path)?))
     }
 
     pub fn runner_metadata(&self, vm_name: &str) -> Result<Option<RunnerMetadata>, StorageError> {
@@ -2033,7 +2038,7 @@ impl VmStore {
         if !path.exists() {
             return Ok(None);
         }
-        Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
+        Ok(Some(read_json_required(&path)?))
     }
 
     pub fn guest_tools_token(
@@ -2068,7 +2073,7 @@ impl VmStore {
         if !path.exists() {
             return Ok(None);
         }
-        Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
+        Ok(Some(read_json_required(&path)?))
     }
 
     pub fn write_guest_tools_runtime_metadata(
@@ -2089,7 +2094,7 @@ impl VmStore {
         if !path.exists() {
             return Ok(None);
         }
-        Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
+        Ok(Some(read_json_required(&path)?))
     }
 
     pub fn write_runtime_resource_policy_metadata(
@@ -2110,7 +2115,7 @@ impl VmStore {
         if !path.exists() {
             return Ok(None);
         }
-        Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
+        Ok(Some(read_json_required(&path)?))
     }
 
     pub fn write_qmp_supervisor_metadata(
@@ -2131,7 +2136,7 @@ impl VmStore {
         if !path.exists() {
             return Ok(None);
         }
-        Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
+        Ok(Some(read_json_required(&path)?))
     }
 
     pub fn import_live_evidence_bundle(
@@ -2218,13 +2223,11 @@ impl VmStore {
                     .and_then(|name| name.to_str())
                     .is_some_and(|name| name.ends_with("-create.json"))
                 {
-                    let mut metadata: SnapshotDiskCreateMetadata =
-                        serde_json::from_str(&fs::read_to_string(&path)?)?;
+                    let mut metadata: SnapshotDiskCreateMetadata = read_json_required(&path)?;
                     rebase_snapshot_disk_metadata(&mut metadata.disk, source, output);
                     write_json_pretty_atomic(&path, &metadata)?;
                 } else {
-                    let mut metadata: SnapshotDiskMetadata =
-                        serde_json::from_str(&fs::read_to_string(&path)?)?;
+                    let mut metadata: SnapshotDiskMetadata = read_json_required(&path)?;
                     rebase_snapshot_disk_metadata(&mut metadata, source, output);
                     write_json_pretty_atomic(&path, &metadata)?;
                 }
@@ -2238,8 +2241,7 @@ impl VmStore {
                 if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
                     continue;
                 }
-                let mut metadata: SnapshotSuspendImageMetadata =
-                    serde_json::from_str(&fs::read_to_string(&path)?)?;
+                let mut metadata: SnapshotSuspendImageMetadata = read_json_required(&path)?;
                 metadata.image_path = rebase_copied_path(&metadata.image_path, source, output);
                 metadata.image_exists = metadata.image_path.exists();
                 write_json_pretty_atomic(&path, &metadata)?;
@@ -2362,7 +2364,7 @@ impl VmStore {
         if !path.exists() {
             return self.write_state_at(bundle, VmRuntimeState::Stopped);
         }
-        Ok(serde_json::from_str(&fs::read_to_string(path)?)?)
+        read_json_required(&path)
     }
 
     fn write_state_at(
@@ -2499,7 +2501,7 @@ impl VmStore {
     ) -> Result<ApplicationConsistentSnapshotPreflightMetadata, StorageError> {
         let runtime_path = guest_tools_runtime_path(bundle);
         let runtime: Option<GuestToolsRuntimeMetadata> = if runtime_path.exists() {
-            Some(serde_json::from_str(&fs::read_to_string(runtime_path)?)?)
+            Some(read_json_required(&runtime_path)?)
         } else {
             None
         };
@@ -2548,7 +2550,7 @@ impl VmStore {
             return Ok(self.primary_active_disk_at(bundle, manifest));
         }
 
-        let mut active_disk: ActiveDiskMetadata = serde_json::from_str(&fs::read_to_string(path)?)?;
+        let mut active_disk: ActiveDiskMetadata = read_json_required(&path)?;
         active_disk.exists = active_disk.path.exists();
         Ok(active_disk)
     }
@@ -2608,7 +2610,7 @@ impl VmStore {
     fn guest_tools_token_at(&self, bundle: &Path) -> Result<GuestToolsTokenMetadata, StorageError> {
         let path = guest_tools_token_path(bundle);
         if path.exists() {
-            return Ok(serde_json::from_str(&fs::read_to_string(path)?)?);
+            return read_json_required(&path);
         }
 
         let metadata = new_guest_tools_token()?;
@@ -2657,7 +2659,24 @@ fn read_json_file<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, Storage
     if !path.exists() {
         return Ok(None);
     }
-    Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
+    Ok(Some(read_json_required(path)?))
+}
+
+const MAX_METADATA_JSON_BYTES: u64 = 16 * 1024 * 1024;
+
+fn read_json_required<T: DeserializeOwned>(path: &Path) -> Result<T, StorageError> {
+    let mut bytes = Vec::new();
+    fs::File::open(path)?
+        .take(MAX_METADATA_JSON_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_METADATA_JSON_BYTES {
+        return Err(StorageError::MetadataTooLarge {
+            path: path.to_path_buf(),
+            actual: bytes.len() as u64,
+            maximum: MAX_METADATA_JSON_BYTES,
+        });
+    }
+    Ok(serde_json::from_slice(&bytes)?)
 }
 
 fn metadata_repair_action(
@@ -4524,6 +4543,24 @@ mod tests {
 
         store.clear_runner_metadata("dev").unwrap();
         assert_eq!(store.runner_metadata("dev").unwrap(), None);
+    }
+
+    #[test]
+    fn runner_metadata_rejects_oversized_json_before_decode() {
+        let store = temp_store();
+        let bundle = store.create_vm(&manifest("dev")).unwrap();
+        let path = bundle.join("metadata").join("runner.json");
+        fs::write(&path, vec![b'x'; MAX_METADATA_JSON_BYTES as usize + 1]).unwrap();
+
+        let error = store.runner_metadata("dev").unwrap_err();
+        assert!(matches!(
+            error,
+            StorageError::MetadataTooLarge {
+                path: error_path,
+                actual,
+                maximum: MAX_METADATA_JSON_BYTES
+            } if error_path == path && actual == MAX_METADATA_JSON_BYTES + 1
+        ));
     }
 
     #[test]
