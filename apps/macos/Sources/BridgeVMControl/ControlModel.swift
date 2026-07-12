@@ -3,6 +3,8 @@ import Combine
 
 @MainActor
 final class ControlModel: ObservableObject {
+    static let terminalLogCharacterLimit = 200_000
+    static let softwareLogCharacterLimit = 100_000
     // Status
     @Published var running = false
     @Published var ip: String = "—"
@@ -207,17 +209,21 @@ final class ControlModel: ObservableObject {
         guard !busy, !lifecycleBusy, running, backend.supportsGuestCommands else { return }
         let cmd = terminalInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cmd.isEmpty else { return }
-        terminalLog += "dev@guest$ \(cmd)\n"
+        terminalLog = Self.boundedLog(terminalLog + "dev@guest$ \(cmd)\n", limit: Self.terminalLogCharacterLimit)
         terminalInput = ""
         busy = true
         let backend = self.backend
         Task.detached {
             let r = backend.runInGuest(cmd)
             await MainActor.run {
-                self.terminalLog += r.output
-                if !r.output.hasSuffix("\n") { self.terminalLog += "\n" }
-                if r.code != 0 { self.terminalLog += "[exit \(r.code)]\n" }
-                self.terminalLog += "\n"
+                var addition = r.output
+                if !r.output.hasSuffix("\n") { addition += "\n" }
+                if r.code != 0 { addition += "[exit \(r.code)]\n" }
+                addition += "\n"
+                self.terminalLog = Self.boundedLog(
+                    self.terminalLog + addition,
+                    limit: Self.terminalLogCharacterLimit
+                )
                 self.busy = false
             }
         }
@@ -232,11 +238,19 @@ final class ControlModel: ObservableObject {
         Task.detached {
             let r = backend.runInGuest("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \(pkgList) 2>&1 | tail -25")
             await MainActor.run {
-                self.softwareLog += r.output
-                self.softwareLog += (r.code == 0) ? "\n✅ 설치 완료: \(label)\n" : "\n❌ 실패 (exit \(r.code))\n"
+                let result = r.output + ((r.code == 0) ? "\n✅ 설치 완료: \(label)\n" : "\n❌ 실패 (exit \(r.code))\n")
+                self.softwareLog = Self.boundedLog(
+                    self.softwareLog + result,
+                    limit: Self.softwareLogCharacterLimit
+                )
                 self.busy = false
             }
         }
+    }
+
+    static func boundedLog(_ value: String, limit: Int) -> String {
+        guard limit > 0, value.count > limit else { return value }
+        return "… 이전 로그 생략 …\n" + String(value.suffix(limit))
     }
 
     private func scheduleRefreshBurst() {

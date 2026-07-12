@@ -6,11 +6,15 @@ final class HvfCommandReplyReader {
     private var pending = Data()
     private var collecting = false
     private var body: [String] = []
+    private var bodyBytes = 0
+    private var outputTruncated = false
     private var exitCode: Int32 = -1
+    private let outputLimitBytes: Int
 
-    init(command: String, offset: UInt64) {
+    init(command: String, offset: UInt64, outputLimitBytes: Int = 4 * 1024 * 1024) {
         self.command = command
         self.offset = offset
+        self.outputLimitBytes = max(1, outputLimitBytes)
     }
 
     func readReply(from url: URL) -> (output: String, code: Int32)? {
@@ -21,19 +25,31 @@ final class HvfCommandReplyReader {
             pending.removeAll(keepingCapacity: true)
             collecting = false
             body.removeAll(keepingCapacity: true)
+            bodyBytes = 0
+            outputTruncated = false
             exitCode = -1
         }
         guard size > offset, let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         do {
             try handle.seek(toOffset: offset)
-            let data = try handle.readToEnd() ?? Data()
-            offset += UInt64(data.count)
-            pending.append(data)
+            while let data = try handle.read(upToCount: 64 * 1024), !data.isEmpty {
+                offset += UInt64(data.count)
+                pending.append(data)
+                if let reply = consumePendingLines() { return reply }
+                let pendingLimit = min(outputLimitBytes, 256 * 1024)
+                if pending.count > pendingLimit {
+                    pending.removeFirst(pending.count - pendingLimit)
+                    outputTruncated = true
+                }
+            }
         } catch {
             return nil
         }
+        return consumePendingLines()
+    }
 
+    private func consumePendingLines() -> (output: String, code: Int32)? {
         while let newline = pending.firstIndex(of: 10) {
             var lineData = Data(pending[..<newline])
             if lineData.last == 13 { lineData.removeLast() }
@@ -47,9 +63,10 @@ final class HvfCommandReplyReader {
     private func consume(_ line: String) -> (output: String, code: Int32)? {
         if collecting {
             if line == "BVAGENT END \(command)" {
-                return (body.joined(separator: "\n"), exitCode)
+                let output = body.joined(separator: "\n")
+                return (outputTruncated ? "[출력 일부 생략]\n" + output : output, exitCode)
             }
-            body.append(line)
+            appendBody(line)
             return nil
         }
 
@@ -59,5 +76,21 @@ final class HvfCommandReplyReader {
         exitCode = Int32(String(rawCode)) ?? -1
         collecting = true
         return nil
+    }
+
+    private func appendBody(_ line: String) {
+        var retained = line
+        let lineBytes = retained.utf8.count
+        if lineBytes > outputLimitBytes {
+            retained = String(retained.suffix(outputLimitBytes))
+            outputTruncated = true
+        }
+        body.append(retained)
+        bodyBytes += retained.utf8.count + (body.count > 1 ? 1 : 0)
+        while bodyBytes > outputLimitBytes, body.count > 1 {
+            let removed = body.removeFirst()
+            bodyBytes -= removed.utf8.count + 1
+            outputTruncated = true
+        }
     }
 }

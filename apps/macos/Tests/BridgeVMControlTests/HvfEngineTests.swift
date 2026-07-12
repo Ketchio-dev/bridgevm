@@ -954,6 +954,25 @@ final class HvfCommandReplyReaderTests: XCTestCase {
         XCTAssertEqual(reply.output, "ok")
         XCTAssertEqual(reply.code, 0)
     }
+
+    func testBoundsLargeGuestReplyWhileStillFindingEndMarker() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = dir.appendingPathComponent("run.log")
+        let payload = (0..<100).map { "line-\($0)-" + String(repeating: "x", count: 40) }.joined(separator: "\n")
+        let contents = "BVAGENT CMD bounded exit=0\n\(payload)\nBVAGENT END bounded\n"
+        try Data(contents.utf8).write(to: log)
+        let reader = HvfCommandReplyReader(command: "bounded", offset: 0, outputLimitBytes: 128)
+
+        let reply = try XCTUnwrap(reader.readReply(from: log))
+
+        XCTAssertEqual(reply.code, 0)
+        XCTAssertTrue(reply.output.hasPrefix("[출력 일부 생략]\n"))
+        XCTAssertTrue(reply.output.contains("line-99-"))
+        XCTAssertFalse(reply.output.contains("line-0-"))
+        XCTAssertLessThan(reply.output.utf8.count, 200)
+    }
 }
 
 final class HvfIncrementalMarkerReaderTests: XCTestCase {

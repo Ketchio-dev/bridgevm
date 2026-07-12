@@ -160,4 +160,38 @@ final class ShellCommandSafetyTests: XCTestCase {
         XCTAssertEqual(result.code, -1)
         XCTAssertTrue(result.output.contains("SSH 사용자 이름"))
     }
+
+    func testShellRunDrainsButRetainsOnlyBoundedOutputTail() {
+        let result = Shell.run(
+            "/usr/bin/printf",
+            [String(repeating: "x", count: 10_000)],
+            outputLimitBytes: 256
+        )
+
+        XCTAssertEqual(result.code, 0)
+        XCTAssertTrue(result.output.hasPrefix("[출력 일부 생략"))
+        XCTAssertTrue(result.output.hasSuffix(String(repeating: "x", count: 256)))
+        XCTAssertLessThan(result.output.utf8.count, 400)
+    }
+
+    func testShellRunClosesPipeInheritedByGrandchild() {
+        let started = Date()
+        let result = Shell.run("/bin/sh", ["-c", "(/bin/sleep 2) & /usr/bin/printf done"], timeout: 1)
+
+        XCTAssertEqual(result.code, 0)
+        XCTAssertEqual(result.output, "done")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.5)
+    }
+}
+
+@MainActor
+final class ControlModelLogBoundTests: XCTestCase {
+    func testBoundedLogKeepsNewestContentAndMarksOmission() {
+        let value = "old-" + String(repeating: "n", count: 100)
+        let bounded = ControlModel.boundedLog(value, limit: 12)
+
+        XCTAssertTrue(bounded.hasPrefix("… 이전 로그 생략 …\n"))
+        XCTAssertTrue(bounded.hasSuffix(String(repeating: "n", count: 12)))
+        XCTAssertFalse(bounded.contains("old-"))
+    }
 }

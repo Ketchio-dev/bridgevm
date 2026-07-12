@@ -91,11 +91,52 @@ extension VMConfig {
 // MARK: - Shell helper
 
 enum Shell {
+    private final class BoundedOutputCollector {
+        private let lock = NSLock()
+        private let limit: Int
+        private var chunks: [Data] = []
+        private var byteCount = 0
+        private var truncated = false
+
+        init(limit: Int) { self.limit = max(1, limit) }
+
+        func append(_ data: Data) {
+            guard !data.isEmpty else { return }
+            lock.lock()
+            defer { lock.unlock() }
+            chunks.append(data)
+            byteCount += data.count
+            while byteCount > limit, !chunks.isEmpty {
+                truncated = true
+                let excess = byteCount - limit
+                if chunks[0].count <= excess {
+                    byteCount -= chunks.removeFirst().count
+                } else {
+                    chunks[0].removeFirst(excess)
+                    byteCount -= excess
+                }
+            }
+        }
+
+        func snapshot() -> (data: Data, truncated: Bool) {
+            lock.lock()
+            defer { lock.unlock() }
+            var data = Data(capacity: byteCount)
+            for chunk in chunks { data.append(chunk) }
+            return (data, truncated)
+        }
+    }
+
     /// Run a command to completion (bounded by `timeout`) and return its combined
     /// stdout+stderr and exit code. Output is drained on a background queue so a
     /// child that writes more than the pipe buffer can never block/deadlock.
     @discardableResult
-    static func run(_ launchPath: String, _ args: [String], timeout: Double = 30) -> (output: String, code: Int32) {
+    static func run(
+        _ launchPath: String,
+        _ args: [String],
+        timeout: Double = 30,
+        outputLimitBytes: Int = 4 * 1024 * 1024
+    ) -> (output: String, code: Int32) {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: launchPath)
         proc.arguments = args
@@ -103,18 +144,32 @@ enum Shell {
         proc.standardOutput = pipe
         proc.standardError = pipe
 
-        var collected = Data()
+        let collector = BoundedOutputCollector(limit: outputLimitBytes)
+        let readHandle = pipe.fileHandleForReading
         let group = DispatchGroup()
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
-            collected = pipe.fileHandleForReading.readDataToEndOfFile()  // blocks until EOF (child exit)
+            do {
+                while let chunk = try readHandle.read(upToCount: 64 * 1024), !chunk.isEmpty {
+                    collector.append(chunk)
+                }
+            } catch {
+                // Closing the handle is the intentional escape hatch when a
+                // grandchild keeps the inherited write descriptor alive.
+            }
             group.leave()
         }
         do {
             try proc.run()
         } catch {
+            try? pipe.fileHandleForWriting.close()
+            try? readHandle.close()
+            _ = group.wait(timeout: .now() + 1)
             return ("실행 실패: \(error.localizedDescription)", -1)
         }
+        // Process has inherited/duplicated the write descriptor; the parent copy
+        // must close or EOF can never arrive after the child exits.
+        try? pipe.fileHandleForWriting.close()
         let deadline = Date().addingTimeInterval(timeout)
         while proc.isRunning && Date() < deadline { usleep(50_000) }
         if proc.isRunning {
@@ -123,8 +178,18 @@ enum Shell {
             if proc.isRunning { kill(proc.processIdentifier, SIGKILL) }
         }
         proc.waitUntilExit()
-        _ = group.wait(timeout: .now() + 2)   // let the reader hit EOF after the pipe's write end closes
-        return (String(data: collected, encoding: .utf8) ?? "", proc.terminationStatus)
+        if group.wait(timeout: .now() + 0.25) == .timedOut {
+            // A grandchild may have inherited stdout. Do not leave a reader
+            // mutating shared output after this function returns.
+            try? readHandle.close()
+            _ = group.wait(timeout: .now() + 1)
+        }
+        let snapshot = collector.snapshot()
+        let body = String(decoding: snapshot.data, as: UTF8.self)
+        let output = snapshot.truncated
+            ? "[출력 일부 생략 — 마지막 \(snapshot.data.count)바이트]\n" + body
+            : body
+        return (output, proc.terminationStatus)
     }
 
     /// Launch a long-running process fully detached from this app (its own window).
