@@ -21,6 +21,24 @@ use crate::virtio_net::NetBackend;
 pub type MacAddr = [u8; 6];
 pub type Ipv4Addr = [u8; 4];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Ipv4Endpoint {
+    pub address: Ipv4Addr,
+    pub port: u16,
+}
+
+impl Ipv4Endpoint {
+    pub const fn new(address: Ipv4Addr, port: u16) -> Self {
+        Self { address, port }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EthernetIpv4Endpoint {
+    mac: MacAddr,
+    network: Ipv4Endpoint,
+}
+
 pub const ETHERTYPE_IPV4: u16 = 0x0800;
 pub const ETHERTYPE_ARP: u16 = 0x0806;
 
@@ -1394,21 +1412,6 @@ fn build_udp_reply_frame(
     dst_port: u16,
     payload: &[u8],
 ) -> Option<Vec<u8>> {
-    build_udp_reply_frame_with_id(
-        dst_mac, src_mac, src_ip, dst_ip, src_port, dst_port, payload, 0,
-    )
-}
-
-fn build_udp_reply_frame_with_id(
-    dst_mac: MacAddr,
-    src_mac: MacAddr,
-    src_ip: Ipv4Addr,
-    dst_ip: Ipv4Addr,
-    src_port: u16,
-    dst_port: u16,
-    payload: &[u8],
-    identification: u16,
-) -> Option<Vec<u8>> {
     let udp_len = 8usize.checked_add(payload.len())?;
     let udp_len_u16 = u16::try_from(udp_len).ok()?;
     let ipv4_len = 20usize.checked_add(udp_len)?;
@@ -1420,7 +1423,7 @@ fn build_udp_reply_frame_with_id(
     frame.push(0x45);
     frame.push(0);
     frame.extend_from_slice(&total_len.to_be_bytes());
-    frame.extend_from_slice(&identification.to_be_bytes());
+    frame.extend_from_slice(&0u16.to_be_bytes());
     frame.extend_from_slice(&0u16.to_be_bytes());
     frame.push(64);
     frame.push(IPV4_PROTOCOL_UDP);
@@ -1514,12 +1517,8 @@ fn build_dhcp_reply_frame(
 }
 
 fn build_tcp_reply_frame(
-    dst_mac: MacAddr,
-    src_mac: MacAddr,
-    src_ip: Ipv4Addr,
-    dst_ip: Ipv4Addr,
-    src_port: u16,
-    dst_port: u16,
+    source: EthernetIpv4Endpoint,
+    destination: EthernetIpv4Endpoint,
     seq: u32,
     ack: u32,
     flags: u8,
@@ -1529,8 +1528,8 @@ fn build_tcp_reply_frame(
     let ipv4_len = 20usize.checked_add(tcp_len)?;
     let total_len = u16::try_from(ipv4_len).ok()?;
     let mut frame = Vec::with_capacity(14 + ipv4_len);
-    frame.extend_from_slice(&dst_mac);
-    frame.extend_from_slice(&src_mac);
+    frame.extend_from_slice(&destination.mac);
+    frame.extend_from_slice(&source.mac);
     frame.extend_from_slice(&ETHERTYPE_IPV4.to_be_bytes());
     frame.push(0x45);
     frame.push(0);
@@ -1540,15 +1539,15 @@ fn build_tcp_reply_frame(
     frame.push(64);
     frame.push(IPV4_PROTOCOL_TCP);
     frame.extend_from_slice(&0u16.to_be_bytes());
-    frame.extend_from_slice(&src_ip);
-    frame.extend_from_slice(&dst_ip);
+    frame.extend_from_slice(&source.network.address);
+    frame.extend_from_slice(&destination.network.address);
     let ipv4_header_start = 14;
     let ipv4_payload_start = ipv4_header_start + 20;
     let checksum = ipv4_header_checksum(&frame[ipv4_header_start..ipv4_payload_start]);
     frame[ipv4_header_start + 10..ipv4_header_start + 12].copy_from_slice(&checksum.to_be_bytes());
 
-    frame.extend_from_slice(&src_port.to_be_bytes());
-    frame.extend_from_slice(&dst_port.to_be_bytes());
+    frame.extend_from_slice(&source.network.port.to_be_bytes());
+    frame.extend_from_slice(&destination.network.port.to_be_bytes());
     frame.extend_from_slice(&seq.to_be_bytes());
     frame.extend_from_slice(&ack.to_be_bytes());
     frame.push(5 << 4);
@@ -1557,7 +1556,11 @@ fn build_tcp_reply_frame(
     frame.extend_from_slice(&0u16.to_be_bytes());
     frame.extend_from_slice(&0u16.to_be_bytes());
     frame.extend_from_slice(payload);
-    let checksum = tcp_checksum(src_ip, dst_ip, &frame[ipv4_payload_start..]);
+    let checksum = tcp_checksum(
+        source.network.address,
+        destination.network.address,
+        &frame[ipv4_payload_start..],
+    );
     frame[ipv4_payload_start + 16..ipv4_payload_start + 18]
         .copy_from_slice(&checksum.to_be_bytes());
     Some(frame)
@@ -1589,18 +1592,16 @@ pub fn build_udp_datagram(
 }
 
 pub fn build_tcp_segment(
-    src_ip: Ipv4Addr,
-    dst_ip: Ipv4Addr,
-    src_port: u16,
-    dst_port: u16,
+    source: Ipv4Endpoint,
+    destination: Ipv4Endpoint,
     seq: u32,
     ack: u32,
     flags: u8,
     payload: &[u8],
 ) -> Vec<u8> {
     let mut segment = Vec::with_capacity(20 + payload.len());
-    segment.extend_from_slice(&src_port.to_be_bytes());
-    segment.extend_from_slice(&dst_port.to_be_bytes());
+    segment.extend_from_slice(&source.port.to_be_bytes());
+    segment.extend_from_slice(&destination.port.to_be_bytes());
     segment.extend_from_slice(&seq.to_be_bytes());
     segment.extend_from_slice(&ack.to_be_bytes());
     segment.push(5 << 4);
@@ -1609,7 +1610,7 @@ pub fn build_tcp_segment(
     segment.extend_from_slice(&0u16.to_be_bytes());
     segment.extend_from_slice(&0u16.to_be_bytes());
     segment.extend_from_slice(payload);
-    let checksum = tcp_checksum(src_ip, dst_ip, &segment);
+    let checksum = tcp_checksum(source.address, destination.address, &segment);
     segment[16..18].copy_from_slice(&checksum.to_be_bytes());
     segment
 }
@@ -1852,12 +1853,14 @@ fn queue_tcp_reply(
     payload: &[u8],
 ) {
     let Some(frame) = build_tcp_reply_frame(
-        guest_mac,
-        GATEWAY_MAC,
-        key.dst_ip,
-        key.guest_ip,
-        key.dst_port,
-        key.guest_port,
+        EthernetIpv4Endpoint {
+            mac: GATEWAY_MAC,
+            network: Ipv4Endpoint::new(key.dst_ip, key.dst_port),
+        },
+        EthernetIpv4Endpoint {
+            mac: guest_mac,
+            network: Ipv4Endpoint::new(key.guest_ip, key.guest_port),
+        },
         seq,
         ack,
         flags,
@@ -2422,7 +2425,12 @@ mod tests {
         payload: &[u8],
     ) -> Vec<u8> {
         let tcp = build_tcp_segment(
-            GUEST_IP, dst_ip, src_port, dst_port, seq, ack, flags, payload,
+            Ipv4Endpoint::new(GUEST_IP, src_port),
+            Ipv4Endpoint::new(dst_ip, dst_port),
+            seq,
+            ack,
+            flags,
+            payload,
         );
         let ipv4 = build_ipv4_packet(GUEST_IP, dst_ip, IPV4_PROTOCOL_TCP, &tcp);
         EthernetFrame::build(GATEWAY_MAC, GUEST_MAC, ETHERTYPE_IPV4, &ipv4)
