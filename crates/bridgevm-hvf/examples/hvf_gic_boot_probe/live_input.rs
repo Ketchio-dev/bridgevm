@@ -22,6 +22,12 @@ enum LiveInputCommand {
     Pointer(String),
 }
 
+impl LiveInputCommand {
+    fn is_pointer_move(&self) -> bool {
+        matches!(self, Self::Pointer(value) if value.starts_with("move:"))
+    }
+}
+
 pub struct LiveInputController {
     path: Option<PathBuf>,
     offset: u64,
@@ -160,10 +166,6 @@ impl LiveInputController {
         if line.is_empty() || line.len() > MAX_COMMAND_BYTES {
             return;
         }
-        if self.pending.len() >= MAX_PENDING_COMMANDS {
-            eprintln!("live input rejected: queue_full");
-            return;
-        }
         let command = if let Some(value) = line.strip_prefix("KEY ") {
             LiveInputCommand::Key(value.to_string())
         } else if let Some(value) = line.strip_prefix("POINTER ") {
@@ -172,6 +174,32 @@ impl LiveInputController {
             eprintln!("live input rejected: unknown_command");
             return;
         };
+        if command.is_pointer_move()
+            && self
+                .pending
+                .back()
+                .is_some_and(LiveInputCommand::is_pointer_move)
+        {
+            self.pending.pop_back();
+            self.pending.push_back(command);
+            return;
+        }
+        if self.pending.len() >= MAX_PENDING_COMMANDS {
+            if command.is_pointer_move() {
+                eprintln!("live input rejected: queue_full kind=pointer_move");
+                return;
+            }
+            if let Some(index) = self
+                .pending
+                .iter()
+                .position(LiveInputCommand::is_pointer_move)
+            {
+                self.pending.remove(index);
+            } else {
+                eprintln!("live input rejected: queue_full kind=critical");
+                return;
+            }
+        }
         self.pending.push_back(command);
     }
 }
@@ -203,6 +231,38 @@ mod tests {
         assert_eq!(input.pending.len(), 2);
         assert!(matches!(input.pending[0], LiveInputCommand::Key(_)));
         assert!(matches!(input.pending[1], LiveInputCommand::Pointer(_)));
+    }
+
+    #[test]
+    fn live_input_coalesces_adjacent_pointer_moves() {
+        let mut input = controller();
+        input.push_line("POINTER move:1x2");
+        input.push_line("POINTER move:3x4");
+
+        assert_eq!(input.pending.len(), 1);
+        assert!(matches!(
+            &input.pending[0],
+            LiveInputCommand::Pointer(value) if value == "move:3x4"
+        ));
+    }
+
+    #[test]
+    fn live_input_evicts_move_to_preserve_critical_input_when_full() {
+        let mut input = controller();
+        input.push_line("POINTER move:1x2");
+        for index in 1..64 {
+            input.push_line(&format!("KEY text:critical-{index}"));
+        }
+        assert_eq!(input.pending.len(), 64);
+
+        input.push_line("POINTER release:10x20");
+
+        assert_eq!(input.pending.len(), 64);
+        assert!(!input.pending.iter().any(LiveInputCommand::is_pointer_move));
+        assert!(matches!(
+            input.pending.back(),
+            Some(LiveInputCommand::Pointer(value)) if value == "release:10x20"
+        ));
     }
 
     #[test]
