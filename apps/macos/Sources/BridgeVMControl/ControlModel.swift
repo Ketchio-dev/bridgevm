@@ -27,6 +27,7 @@ final class ControlModel: ObservableObject {
     let backend: VMBackend
     private var timer: Timer?
     private var startConfirmationDeadline: Date?
+    private var refreshGeneration: UInt64 = 0
 
     init(config: VMConfig, backend: VMBackend? = nil, startsAutomatically: Bool = true) {
         self.config = config
@@ -59,11 +60,14 @@ final class ControlModel: ObservableObject {
     /// Lean periodic refresh: process liveness (+ IP only while running). Skips the
     /// static resources spec, which only changes via applyResources().
     func refreshStatus() {
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
         let backend = self.backend
         Task.detached {
             let running = backend.isRunning()
             let ip = running ? backend.currentIP() : nil
             await MainActor.run {
+                guard self.refreshGeneration == generation else { return }
                 self.applyRuntimeStatus(running: running, ip: ip)
             }
         }
@@ -71,12 +75,15 @@ final class ControlModel: ObservableObject {
 
     /// Full refresh including the resources spec — for init and post-action bursts.
     func refresh() {
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
         let backend = self.backend
         Task.detached {
             let running = backend.isRunning()
             let ip = running ? backend.currentIP() : nil
             let res = backend.resources()
             await MainActor.run {
+                guard self.refreshGeneration == generation else { return }
                 self.applyRuntimeStatus(running: running, ip: ip)
                 if res.memMiB > 0 { self.memGiB = Double(res.memMiB) / 1024.0 }
                 if res.cpu > 0 { self.cpu = res.cpu }
@@ -86,6 +93,7 @@ final class ControlModel: ObservableObject {
 
     func start() {
         guard !lifecycleBusy, !running else { return }
+        invalidateRefreshes()
         lifecycleBusy = true
         statusNote = "VM 시작 중…"
         startConfirmationDeadline = Date().addingTimeInterval(10)
@@ -110,6 +118,7 @@ final class ControlModel: ObservableObject {
 
     func stop() {
         guard !lifecycleBusy, running else { return }
+        invalidateRefreshes()
         lifecycleBusy = true
         let wasStarting = startConfirmationDeadline != nil
         startConfirmationDeadline = nil
@@ -144,6 +153,7 @@ final class ControlModel: ObservableObject {
             statusNote = "메모리와 CPU 값이 올바르지 않습니다."
             return
         }
+        invalidateRefreshes()
         busy = true
         lifecycleBusy = true
         statusNote = "리소스 적용 중 (\(Int(pendingMemGiB))GB / \(cpus)코어)… VM 재시작"
@@ -233,6 +243,10 @@ final class ControlModel: ObservableObject {
         for delay in [1.0, 3.0, 6.0, 10.5] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.refresh() }
         }
+    }
+
+    private func invalidateRefreshes() {
+        refreshGeneration &+= 1
     }
 
     private func applyRuntimeStatus(running: Bool, ip: String?) {
