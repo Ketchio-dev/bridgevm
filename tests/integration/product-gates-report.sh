@@ -5,6 +5,20 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEFAULT_EVIDENCE_DIR="$HOME/bridgevm-live-evidence/apple-vz-proxy-crop-2026-06-18-auto-verified"
 EVIDENCE_DIR="${BRIDGEVM_PRODUCT_GATE_VZ_PROXY_CROP_EVIDENCE_DIR:-$DEFAULT_EVIDENCE_DIR}"
 LIVE_AGENT="${BRIDGEVM_LIVE_GUEST_TOOLS_AGENT_BINARY:-$ROOT/target/aarch64-unknown-linux-gnu/release/bridgevm-tools-linux}"
+BRIDGEVM_CLI_BIN="${BRIDGEVM_PRODUCT_GATE_CLI_BIN:-$ROOT/target/debug/bridgevm}"
+HVF_RUNNER_BIN="${BRIDGEVM_PRODUCT_GATE_HVF_RUNNER_BIN:-$ROOT/target/debug/hvf-runner}"
+
+ensure_product_gate_binaries() {
+  command cargo build -q -p bridgevm-cli -p hvf-runner
+  [[ -x "$BRIDGEVM_CLI_BIN" ]] || {
+    echo "product gate CLI is not executable: $BRIDGEVM_CLI_BIN" >&2
+    return 1
+  }
+  [[ -x "$HVF_RUNNER_BIN" ]] || {
+    echo "product gate HVF runner is not executable: $HVF_RUNNER_BIN" >&2
+    return 1
+  }
+}
 
 status_line() {
   local status="$1"
@@ -120,7 +134,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p bridgevm-cli -- hvf machine-plan --installer "$installer" 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf machine-plan --installer "$installer" 2>&1
   )" || {
     printf 'bridgevm hvf machine-plan failed: %s' "$cli_output"
     return 1
@@ -130,7 +144,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p hvf-runner -- --machine-plan --installer "$installer" 2>&1
+    "$HVF_RUNNER_BIN" --machine-plan --installer "$installer" 2>&1
   )" || {
     printf 'hvf-runner --machine-plan failed: %s' "$runner_output"
     return 1
@@ -200,7 +214,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p bridgevm-cli -- hvf windows-boot-disk-layout-probe --disk "$cli_disk" --size-gib 8 --create 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf windows-boot-disk-layout-probe --disk "$cli_disk" --size-gib 8 --create 2>&1
   )" || {
     printf 'bridgevm hvf windows-boot-disk-layout-probe failed: %s' "$cli_output"
     return 1
@@ -210,7 +224,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p hvf-runner -- --windows-boot-disk-layout-probe --disk "$runner_disk" --size-gib 8 --create 2>&1
+    "$HVF_RUNNER_BIN" --windows-boot-disk-layout-probe --disk "$runner_disk" --size-gib 8 --create 2>&1
   )" || {
     printf 'hvf-runner --windows-boot-disk-layout-probe failed: %s' "$runner_output"
     return 1
@@ -292,7 +306,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p bridgevm-cli -- hvf windows-xhci-hid-boot-key-probe 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf windows-xhci-hid-boot-key-probe 2>&1
   )" || {
     fail_xhci_hid_boot_key_metadata "bridgevm hvf windows-xhci-hid-boot-key-probe failed: $cli_output"
     return 1
@@ -302,7 +316,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p hvf-runner -- --windows-xhci-hid-boot-key-probe 2>&1
+    "$HVF_RUNNER_BIN" --windows-xhci-hid-boot-key-probe 2>&1
   )" || {
     fail_xhci_hid_boot_key_metadata "hvf-runner --windows-xhci-hid-boot-key-probe failed: $runner_output"
     return 1
@@ -388,7 +402,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p bridgevm-cli -- hvf windows-firmware-handoff-probe --firmware "$cli_firmware" --vars-template "$cli_vars_template" --vars "$cli_vars" --create-vars 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf windows-firmware-handoff-probe --firmware "$cli_firmware" --vars-template "$cli_vars_template" --vars "$cli_vars" --create-vars 2>&1
   )" || {
     printf 'bridgevm hvf windows-firmware-handoff-probe failed: %s' "$cli_output"
     return 1
@@ -398,7 +412,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p hvf-runner -- --windows-firmware-handoff-probe --firmware "$runner_firmware" --vars-template "$runner_vars_template" --vars "$runner_vars" --create-vars 2>&1
+    "$HVF_RUNNER_BIN" --windows-firmware-handoff-probe --firmware "$runner_firmware" --vars-template "$runner_vars_template" --vars "$runner_vars" --create-vars 2>&1
   )" || {
     printf 'hvf-runner --windows-firmware-handoff-probe failed: %s' "$runner_output"
     return 1
@@ -486,7 +500,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p bridgevm-cli -- hvf windows-pflash-map-probe --firmware "$cli_firmware" --vars-template "$cli_vars_template" --vars "$cli_vars" --create-vars 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf windows-pflash-map-probe --firmware "$cli_firmware" --vars-template "$cli_vars_template" --vars "$cli_vars" --create-vars 2>&1
   )" || {
     printf 'bridgevm hvf windows-pflash-map-probe failed: %s' "$cli_output"
     return 1
@@ -496,7 +510,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p hvf-runner -- --windows-pflash-map-probe --firmware "$runner_firmware" --vars-template "$runner_vars_template" --vars "$runner_vars" --create-vars 2>&1
+    "$HVF_RUNNER_BIN" --windows-pflash-map-probe --firmware "$runner_firmware" --vars-template "$runner_vars_template" --vars "$runner_vars" --create-vars 2>&1
   )" || {
     printf 'hvf-runner --windows-pflash-map-probe failed: %s' "$runner_output"
     return 1
@@ -603,7 +617,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_UEFI_PFLASH_MAP= \
-    cargo run -q -p bridgevm-cli -- hvf windows-pflash-hvf-map-probe --firmware "$cli_firmware" --vars-template "$cli_vars_template" --vars "$cli_vars" --create-vars 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf windows-pflash-hvf-map-probe --firmware "$cli_firmware" --vars-template "$cli_vars_template" --vars "$cli_vars" --create-vars 2>&1
   )" || {
     printf 'bridgevm hvf windows-pflash-hvf-map-probe failed: %s' "$cli_output"
     return 1
@@ -614,7 +628,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_UEFI_PFLASH_MAP= \
-    cargo run -q -p hvf-runner -- --windows-pflash-hvf-map-probe --firmware "$runner_firmware" --vars-template "$runner_vars_template" --vars "$runner_vars" --create-vars 2>&1
+    "$HVF_RUNNER_BIN" --windows-pflash-hvf-map-probe --firmware "$runner_firmware" --vars-template "$runner_vars_template" --vars "$runner_vars" --create-vars 2>&1
   )" || {
     printf 'hvf-runner --windows-pflash-hvf-map-probe failed: %s' "$runner_output"
     return 1
@@ -715,7 +729,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_UEFI_RESET_VECTOR_ENTRY= \
-    cargo run -q -p bridgevm-cli -- hvf windows-reset-vector-entry-probe --firmware "$cli_firmware" --vars-template "$cli_vars_template" --vars "$cli_vars" --create-vars 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf windows-reset-vector-entry-probe --firmware "$cli_firmware" --vars-template "$cli_vars_template" --vars "$cli_vars" --create-vars 2>&1
   )" || {
     printf 'bridgevm hvf windows-reset-vector-entry-probe failed: %s' "$cli_output"
     return 1
@@ -726,7 +740,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_UEFI_RESET_VECTOR_ENTRY= \
-    cargo run -q -p hvf-runner -- --windows-reset-vector-entry-probe --firmware "$runner_firmware" --vars-template "$runner_vars_template" --vars "$runner_vars" --create-vars 2>&1
+    "$HVF_RUNNER_BIN" --windows-reset-vector-entry-probe --firmware "$runner_firmware" --vars-template "$runner_vars_template" --vars "$runner_vars" --create-vars 2>&1
   )" || {
     printf 'hvf-runner --windows-reset-vector-entry-probe failed: %s' "$runner_output"
     return 1
@@ -843,7 +857,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_UEFI_FIRMWARE_RUN_LOOP= \
-    cargo run -q -p bridgevm-cli -- hvf windows-firmware-run-loop-probe --firmware "$cli_firmware" --vars-template "$cli_vars_template" --vars "$cli_vars" --create-vars --iso "$cli_iso" --writable-disk "$cli_disk" 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf windows-firmware-run-loop-probe --firmware "$cli_firmware" --vars-template "$cli_vars_template" --vars "$cli_vars" --create-vars --iso "$cli_iso" --writable-disk "$cli_disk" 2>&1
   )" || {
     printf 'bridgevm hvf windows-firmware-run-loop-probe failed: %s' "$cli_output"
     return 1
@@ -854,7 +868,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_UEFI_FIRMWARE_RUN_LOOP= \
-    cargo run -q -p hvf-runner -- --windows-firmware-run-loop-probe --firmware "$runner_firmware" --vars-template "$runner_vars_template" --vars "$runner_vars" --create-vars --iso "$runner_iso" --writable-disk "$runner_disk" 2>&1
+    "$HVF_RUNNER_BIN" --windows-firmware-run-loop-probe --firmware "$runner_firmware" --vars-template "$runner_vars_template" --vars "$runner_vars" --create-vars --iso "$runner_iso" --writable-disk "$runner_disk" 2>&1
   )" || {
     printf 'hvf-runner --windows-firmware-run-loop-probe failed: %s' "$runner_output"
     return 1
@@ -865,7 +879,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_UEFI_FIRMWARE_RUN_LOOP= \
-    cargo run -q -p bridgevm-cli -- hvf windows-firmware-run-loop-probe --firmware "$cli_firmware" --vars-template "$cli_vars_template" --vars "$cli_continue_vars" --create-vars --iso "$cli_iso" --writable-disk "$cli_disk" --map-low-pflash-alias --repair-low-vector-diagnostic-page --continue-after-low-vector-repair 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf windows-firmware-run-loop-probe --firmware "$cli_firmware" --vars-template "$cli_vars_template" --vars "$cli_continue_vars" --create-vars --iso "$cli_iso" --writable-disk "$cli_disk" --map-low-pflash-alias --repair-low-vector-diagnostic-page --continue-after-low-vector-repair 2>&1
   )" || {
     printf 'bridgevm hvf windows-firmware-run-loop-probe continue failed: %s' "$cli_continue_output"
     return 1
@@ -876,7 +890,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_UEFI_FIRMWARE_RUN_LOOP= \
-    cargo run -q -p hvf-runner -- --windows-firmware-run-loop-probe --firmware "$runner_firmware" --vars-template "$runner_vars_template" --vars "$runner_continue_vars" --create-vars --iso "$runner_iso" --writable-disk "$runner_disk" --map-low-pflash-alias --repair-low-vector-diagnostic-page --continue-after-low-vector-repair 2>&1
+    "$HVF_RUNNER_BIN" --windows-firmware-run-loop-probe --firmware "$runner_firmware" --vars-template "$runner_vars_template" --vars "$runner_continue_vars" --create-vars --iso "$runner_iso" --writable-disk "$runner_disk" --map-low-pflash-alias --repair-low-vector-diagnostic-page --continue-after-low-vector-repair 2>&1
   )" || {
     printf 'hvf-runner --windows-firmware-run-loop-probe continue failed: %s' "$runner_continue_output"
     return 1
@@ -1257,7 +1271,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_UEFI_FIRMWARE_RUN_LOOP= \
-    cargo run -q -p bridgevm-cli -- hvf windows-firmware-device-discovery-probe --firmware "$cli_firmware" --vars-template "$cli_vars_template" --vars "$cli_vars" --create-vars --iso "$cli_iso" --writable-disk "$cli_disk" 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf windows-firmware-device-discovery-probe --firmware "$cli_firmware" --vars-template "$cli_vars_template" --vars "$cli_vars" --create-vars --iso "$cli_iso" --writable-disk "$cli_disk" 2>&1
   )" || {
     printf 'bridgevm hvf windows-firmware-device-discovery-probe failed: %s' "$cli_output"
     return 1
@@ -1268,7 +1282,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_UEFI_FIRMWARE_RUN_LOOP= \
-    cargo run -q -p hvf-runner -- --windows-firmware-device-discovery-probe --firmware "$runner_firmware" --vars-template "$runner_vars_template" --vars "$runner_vars" --create-vars --iso "$runner_iso" --writable-disk "$runner_disk" 2>&1
+    "$HVF_RUNNER_BIN" --windows-firmware-device-discovery-probe --firmware "$runner_firmware" --vars-template "$runner_vars_template" --vars "$runner_vars" --create-vars --iso "$runner_iso" --writable-disk "$runner_disk" 2>&1
   )" || {
     printf 'hvf-runner --windows-firmware-device-discovery-probe failed: %s' "$runner_output"
     return 1
@@ -1361,7 +1375,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p bridgevm-cli -- hvf windows-platform-description-probe --memory-gib 8 --vcpus 6 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf windows-platform-description-probe --memory-gib 8 --vcpus 6 2>&1
   )" || {
     printf 'bridgevm hvf windows-platform-description-probe failed: %s' "$cli_output"
     return 1
@@ -1371,7 +1385,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p hvf-runner -- --windows-platform-description-probe --memory-gib 8 --vcpus 6 2>&1
+    "$HVF_RUNNER_BIN" --windows-platform-description-probe --memory-gib 8 --vcpus 6 2>&1
   )" || {
     printf 'hvf-runner --windows-platform-description-probe failed: %s' "$runner_output"
     return 1
@@ -1500,7 +1514,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_VM_CREATE= \
-    cargo run -q -p bridgevm-cli -- hvf vm-probe 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf vm-probe 2>&1
   )" || {
     printf 'bridgevm hvf vm-probe failed: %s' "$cli_output"
     return 1
@@ -1511,7 +1525,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_VM_CREATE= \
-    cargo run -q -p hvf-runner -- --vm-probe 2>&1
+    "$HVF_RUNNER_BIN" --vm-probe 2>&1
   )" || {
     printf 'hvf-runner --vm-probe failed: %s' "$runner_output"
     return 1
@@ -1568,7 +1582,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_VM_CREATE= \
-    cargo run -q -p bridgevm-cli -- hvf vcpu-probe 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf vcpu-probe 2>&1
   )" || {
     printf 'bridgevm hvf vcpu-probe failed: %s' "$cli_output"
     return 1
@@ -1579,7 +1593,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_VM_CREATE= \
-    cargo run -q -p hvf-runner -- --vcpu-probe 2>&1
+    "$HVF_RUNNER_BIN" --vcpu-probe 2>&1
   )" || {
     printf 'hvf-runner --vcpu-probe failed: %s' "$runner_output"
     return 1
@@ -1637,7 +1651,7 @@ SH
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_VM_CREATE= \
     BRIDGEVM_HVF_ALLOW_VCPU_RUN= \
-    cargo run -q -p bridgevm-cli -- hvf vcpu-run-probe 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf vcpu-run-probe 2>&1
   )" || {
     printf 'bridgevm hvf vcpu-run-probe failed: %s' "$cli_output"
     return 1
@@ -1649,7 +1663,7 @@ SH
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_VM_CREATE= \
     BRIDGEVM_HVF_ALLOW_VCPU_RUN= \
-    cargo run -q -p hvf-runner -- --vcpu-run-probe 2>&1
+    "$HVF_RUNNER_BIN" --vcpu-run-probe 2>&1
   )" || {
     printf 'hvf-runner --vcpu-run-probe failed: %s' "$runner_output"
     return 1
@@ -1710,7 +1724,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_INTERRUPT_TIMER= \
-    cargo run -q -p bridgevm-cli -- hvf interrupt-timer-probe 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf interrupt-timer-probe 2>&1
   )" || {
     printf 'bridgevm hvf interrupt-timer-probe failed: %s' "$cli_output"
     return 1
@@ -1721,7 +1735,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_INTERRUPT_TIMER= \
-    cargo run -q -p hvf-runner -- --interrupt-timer-probe 2>&1
+    "$HVF_RUNNER_BIN" --interrupt-timer-probe 2>&1
   )" || {
     printf 'hvf-runner --interrupt-timer-probe failed: %s' "$runner_output"
     return 1
@@ -1786,7 +1800,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_VTIMER_EXIT= \
-    cargo run -q -p bridgevm-cli -- hvf vtimer-exit-probe 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf vtimer-exit-probe 2>&1
   )" || {
     printf 'bridgevm hvf vtimer-exit-probe failed: %s' "$cli_output"
     return 1
@@ -1797,7 +1811,7 @@ SH
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
     BRIDGEVM_HVF_ALLOW_VTIMER_EXIT= \
-    cargo run -q -p hvf-runner -- --vtimer-exit-probe 2>&1
+    "$HVF_RUNNER_BIN" --vtimer-exit-probe 2>&1
   )" || {
     printf 'hvf-runner --vtimer-exit-probe failed: %s' "$runner_output"
     return 1
@@ -1886,7 +1900,7 @@ SH
     BRIDGEVM_HVF_ALLOW_VM_CREATE= \
     BRIDGEVM_HVF_ALLOW_VCPU_RUN= \
     BRIDGEVM_HVF_ALLOW_MEMORY_MAP= \
-    cargo run -q -p bridgevm-cli -- hvf memory-map-probe 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf memory-map-probe 2>&1
   )" || {
     printf 'bridgevm hvf memory-map-probe failed: %s' "$cli_output"
     return 1
@@ -1899,7 +1913,7 @@ SH
     BRIDGEVM_HVF_ALLOW_VM_CREATE= \
     BRIDGEVM_HVF_ALLOW_VCPU_RUN= \
     BRIDGEVM_HVF_ALLOW_MEMORY_MAP= \
-    cargo run -q -p hvf-runner -- --memory-map-probe 2>&1
+    "$HVF_RUNNER_BIN" --memory-map-probe 2>&1
   )" || {
     printf 'hvf-runner --memory-map-probe failed: %s' "$runner_output"
     return 1
@@ -1965,7 +1979,7 @@ SH
     BRIDGEVM_HVF_ALLOW_VCPU_RUN= \
     BRIDGEVM_HVF_ALLOW_MEMORY_MAP= \
     BRIDGEVM_HVF_ALLOW_GUEST_ENTRY= \
-    cargo run -q -p bridgevm-cli -- hvf guest-entry-probe 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf guest-entry-probe 2>&1
   )" || {
     printf 'bridgevm hvf guest-entry-probe failed: %s' "$cli_output"
     return 1
@@ -1979,7 +1993,7 @@ SH
     BRIDGEVM_HVF_ALLOW_VCPU_RUN= \
     BRIDGEVM_HVF_ALLOW_MEMORY_MAP= \
     BRIDGEVM_HVF_ALLOW_GUEST_ENTRY= \
-    cargo run -q -p hvf-runner -- --guest-entry-probe 2>&1
+    "$HVF_RUNNER_BIN" --guest-entry-probe 2>&1
   )" || {
     printf 'hvf-runner --guest-entry-probe failed: %s' "$runner_output"
     return 1
@@ -2046,7 +2060,7 @@ SH
     BRIDGEVM_HVF_ALLOW_MEMORY_MAP= \
     BRIDGEVM_HVF_ALLOW_GUEST_ENTRY= \
     BRIDGEVM_HVF_ALLOW_EXIT_LOOP= \
-    cargo run -q -p bridgevm-cli -- hvf guest-exit-loop-probe 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf guest-exit-loop-probe 2>&1
   )" || {
     printf 'bridgevm hvf guest-exit-loop-probe failed: %s' "$cli_output"
     return 1
@@ -2061,7 +2075,7 @@ SH
     BRIDGEVM_HVF_ALLOW_MEMORY_MAP= \
     BRIDGEVM_HVF_ALLOW_GUEST_ENTRY= \
     BRIDGEVM_HVF_ALLOW_EXIT_LOOP= \
-    cargo run -q -p hvf-runner -- --guest-exit-loop-probe 2>&1
+    "$HVF_RUNNER_BIN" --guest-exit-loop-probe 2>&1
   )" || {
     printf 'hvf-runner --guest-exit-loop-probe failed: %s' "$runner_output"
     return 1
@@ -2131,7 +2145,7 @@ SH
     BRIDGEVM_HVF_ALLOW_GUEST_ENTRY= \
     BRIDGEVM_HVF_ALLOW_EXIT_LOOP= \
     BRIDGEVM_HVF_ALLOW_MMIO_READ= \
-    cargo run -q -p bridgevm-cli -- hvf mmio-read-probe 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf mmio-read-probe 2>&1
   )" || {
     printf 'bridgevm hvf mmio-read-probe failed: %s' "$cli_output"
     return 1
@@ -2147,7 +2161,7 @@ SH
     BRIDGEVM_HVF_ALLOW_GUEST_ENTRY= \
     BRIDGEVM_HVF_ALLOW_EXIT_LOOP= \
     BRIDGEVM_HVF_ALLOW_MMIO_READ= \
-    cargo run -q -p hvf-runner -- --mmio-read-probe 2>&1
+    "$HVF_RUNNER_BIN" --mmio-read-probe 2>&1
   )" || {
     printf 'hvf-runner --mmio-read-probe failed: %s' "$runner_output"
     return 1
@@ -2216,7 +2230,7 @@ SH
     BRIDGEVM_HVF_ALLOW_EXIT_LOOP= \
     BRIDGEVM_HVF_ALLOW_MMIO_READ= \
     BRIDGEVM_HVF_ALLOW_MMIO_EMULATION= \
-    cargo run -q -p bridgevm-cli -- hvf mmio-read-emulation-probe 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf mmio-read-emulation-probe 2>&1
   )" || {
     printf 'bridgevm hvf mmio-read-emulation-probe failed: %s' "$cli_output"
     return 1
@@ -2233,7 +2247,7 @@ SH
     BRIDGEVM_HVF_ALLOW_EXIT_LOOP= \
     BRIDGEVM_HVF_ALLOW_MMIO_READ= \
     BRIDGEVM_HVF_ALLOW_MMIO_EMULATION= \
-    cargo run -q -p hvf-runner -- --mmio-read-emulation-probe 2>&1
+    "$HVF_RUNNER_BIN" --mmio-read-emulation-probe 2>&1
   )" || {
     printf 'hvf-runner --mmio-read-emulation-probe failed: %s' "$runner_output"
     return 1
@@ -2303,7 +2317,7 @@ SH
     BRIDGEVM_HVF_ALLOW_MMIO_READ= \
     BRIDGEVM_HVF_ALLOW_MMIO_EMULATION= \
     BRIDGEVM_HVF_ALLOW_MMIO_WRITE_EMULATION= \
-    cargo run -q -p bridgevm-cli -- hvf mmio-write-emulation-probe 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf mmio-write-emulation-probe 2>&1
   )" || {
     printf 'bridgevm hvf mmio-write-emulation-probe failed: %s' "$cli_output"
     return 1
@@ -2321,7 +2335,7 @@ SH
     BRIDGEVM_HVF_ALLOW_MMIO_READ= \
     BRIDGEVM_HVF_ALLOW_MMIO_EMULATION= \
     BRIDGEVM_HVF_ALLOW_MMIO_WRITE_EMULATION= \
-    cargo run -q -p hvf-runner -- --mmio-write-emulation-probe 2>&1
+    "$HVF_RUNNER_BIN" --mmio-write-emulation-probe 2>&1
   )" || {
     printf 'hvf-runner --mmio-write-emulation-probe failed: %s' "$runner_output"
     return 1
@@ -2392,7 +2406,7 @@ SH
     BRIDGEVM_HVF_ALLOW_MMIO_EMULATION= \
     BRIDGEVM_HVF_ALLOW_MMIO_WRITE_EMULATION= \
     BRIDGEVM_HVF_ALLOW_MMIO_SERIAL_DEVICE= \
-    cargo run -q -p bridgevm-cli -- hvf mmio-serial-device-probe 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf mmio-serial-device-probe 2>&1
   )" || {
     printf 'bridgevm hvf mmio-serial-device-probe failed: %s' "$cli_output"
     return 1
@@ -2411,7 +2425,7 @@ SH
     BRIDGEVM_HVF_ALLOW_MMIO_EMULATION= \
     BRIDGEVM_HVF_ALLOW_MMIO_WRITE_EMULATION= \
     BRIDGEVM_HVF_ALLOW_MMIO_SERIAL_DEVICE= \
-    cargo run -q -p hvf-runner -- --mmio-serial-device-probe 2>&1
+    "$HVF_RUNNER_BIN" --mmio-serial-device-probe 2>&1
   )" || {
     printf 'hvf-runner --mmio-serial-device-probe failed: %s' "$runner_output"
     return 1
@@ -2499,7 +2513,7 @@ SH
     BRIDGEVM_HVF_ALLOW_MMIO_WRITE_EMULATION= \
     BRIDGEVM_HVF_ALLOW_MMIO_SERIAL_DEVICE= \
     BRIDGEVM_HVF_ALLOW_MMIO_RTC_DEVICE= \
-    cargo run -q -p bridgevm-cli -- hvf mmio-rtc-device-probe 2>&1
+    "$BRIDGEVM_CLI_BIN" hvf mmio-rtc-device-probe 2>&1
   )" || {
     printf 'bridgevm hvf mmio-rtc-device-probe failed: %s' "$cli_output"
     return 1
@@ -2519,7 +2533,7 @@ SH
     BRIDGEVM_HVF_ALLOW_MMIO_WRITE_EMULATION= \
     BRIDGEVM_HVF_ALLOW_MMIO_SERIAL_DEVICE= \
     BRIDGEVM_HVF_ALLOW_MMIO_RTC_DEVICE= \
-    cargo run -q -p hvf-runner -- --mmio-rtc-device-probe 2>&1
+    "$HVF_RUNNER_BIN" --mmio-rtc-device-probe 2>&1
   )" || {
     printf 'hvf-runner --mmio-rtc-device-probe failed: %s' "$runner_output"
     return 1
@@ -2702,7 +2716,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p bridgevm-cli -- --store "$store" templates 2>&1
+    "$BRIDGEVM_CLI_BIN" --store "$store" templates 2>&1
   )" || {
     printf 'bridgevm templates failed: %s' "$template_output"
     return 1
@@ -2726,7 +2740,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p bridgevm-cli -- --store "$store" create "$vm" --template "$template_id" 2>&1
+    "$BRIDGEVM_CLI_BIN" --store "$store" create "$vm" --template "$template_id" 2>&1
   )" || {
     printf 'bridgevm create from Apple VZ Linux template failed: %s' "$create_output"
     return 1
@@ -2739,7 +2753,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p bridgevm-cli -- --store "$store" create "$ubuntu_vm" --template "$ubuntu_template_id" 2>&1
+    "$BRIDGEVM_CLI_BIN" --store "$store" create "$ubuntu_vm" --template "$ubuntu_template_id" 2>&1
   )" || {
     printf 'bridgevm create from Ubuntu Apple VZ Linux template failed: %s' "$ubuntu_create_output"
     return 1
@@ -2761,7 +2775,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p bridgevm-cli -- --store "$store" prepare-run "$vm" 2>&1
+    "$BRIDGEVM_CLI_BIN" --store "$store" prepare-run "$vm" 2>&1
   )" || {
     printf 'bridgevm prepare-run for Apple VZ Linux template failed: %s' "$prepare_output"
     return 1
@@ -2771,7 +2785,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p bridgevm-cli -- --store "$store" prepare-run "$ubuntu_vm" 2>&1
+    "$BRIDGEVM_CLI_BIN" --store "$store" prepare-run "$ubuntu_vm" 2>&1
   )" || {
     printf 'bridgevm prepare-run for Ubuntu Apple VZ Linux template failed: %s' "$ubuntu_prepare_output"
     return 1
@@ -2782,7 +2796,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p bridgevm-cli -- --store "$store" runner-status "$vm" 2>&1
+    "$BRIDGEVM_CLI_BIN" --store "$store" runner-status "$vm" 2>&1
   )" || {
     printf 'bridgevm runner-status for Apple VZ Linux template failed: %s' "$runner_status"
     return 1
@@ -2792,7 +2806,7 @@ SH
     PATH="$fake_bin:$PATH" \
     BRIDGEVM_FAKE_BACKEND_LOG="$backend_log" \
     BRIDGEVM_APPLE_VZ_RUNNER="$fake_bin/AppleVzRunner" \
-    cargo run -q -p bridgevm-cli -- --store "$store" runner-status "$ubuntu_vm" 2>&1
+    "$BRIDGEVM_CLI_BIN" --store "$store" runner-status "$ubuntu_vm" 2>&1
   )" || {
     printf 'bridgevm runner-status for Ubuntu Apple VZ Linux template failed: %s' "$ubuntu_runner_status"
     return 1
@@ -2898,9 +2912,19 @@ main() {
   local output=""
   local line=""
 
+  ensure_product_gate_binaries
+
   line="BridgeVM product gates report"
   output+="$line"$'\n'
   line="No percentage estimate: this report distinguishes locally verified metadata from explicitly labelled preserved live evidence."
+  output+="$line"$'\n'
+  line="Current wall: convert preserved live proofs into a turnkey, distributable product."
+  output+="$line"$'\n'
+  line="Next engineering gate: finalize a signed ARM64 viogpu3d render package, then capture verifier-accepted live bind and render traces."
+  output+="$line"$'\n'
+  line="Product decision gate: choose and document whether durable disk-backed suspend is required; process-resident pause/resume is already proven but is not durable suspend."
+  output+="$line"$'\n'
+  line="Release gate: package and notarize the app, signed helpers, drivers, fixtures, and first-run UX as one repeatable installation path."
   output+="$line"$'\n'
 
   if verify_vz_proxy_crop_evidence; then

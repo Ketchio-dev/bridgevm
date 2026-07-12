@@ -37,6 +37,10 @@ output="$(
 
 assert_contains "$output" "BridgeVM product gates report" "product gates report"
 assert_contains "$output" "No percentage estimate" "product gates report"
+assert_contains "$output" "Current wall: convert preserved live proofs into a turnkey, distributable product." "product gates report"
+assert_contains "$output" "Next engineering gate: finalize a signed ARM64 viogpu3d render package" "product gates report"
+assert_contains "$output" "Product decision gate: choose and document whether durable disk-backed suspend is required" "product gates report"
+assert_contains "$output" "Release gate: package and notarize the app" "product gates report"
 assert_contains "$output" "Fast/VZ GUI display" "product gates report"
 assert_contains "$output" "Apple VZ Linux template/staging" "product gates report"
 assert_contains "$output" "debian-arm64-apple-vz-linux-kernel-raw and ubuntu-arm64-apple-vz-linux-kernel-raw create Fast Mode linux-kernel/raw-disk VMs" "product gates report"
