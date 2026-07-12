@@ -53,6 +53,7 @@ const MAX_PERFORMANCE_SAMPLE_ITERATIONS: u16 = 100;
 const MAX_PERFORMANCE_SAMPLE_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
 const DEFAULT_LOG_VIEW_BYTES: u64 = 8 * 1024;
 const MAX_LOG_VIEW_BYTES: u64 = 1024 * 1024;
+const MAX_RUNTIME_CONTROL_RESPONSE_BYTES: u64 = 64 * 1024;
 
 pub const BRIDGEVM_API_SCHEMA_ID: &str = "bridgevm.api/v1";
 pub const BRIDGEVM_API_CONTRACT_VERSION: u16 = 1;
@@ -6263,14 +6264,24 @@ fn send_runtime_control_command(socket: &Path, command: &str) -> Result<serde_js
         .write_all(&request)
         .map_err(|error| format!("failed to write runtime control request: {error}"))?;
 
-    let mut line = String::new();
+    let mut response = Vec::new();
     BufReader::new(stream)
-        .read_line(&mut line)
+        .take(MAX_RUNTIME_CONTROL_RESPONSE_BYTES + 1)
+        .read_until(b'\n', &mut response)
         .map_err(|error| format!("failed to read runtime control response: {error}"))?;
-    if line.trim().is_empty() {
+    if response.is_empty() {
         return Err("runtime control socket returned an empty response".to_string());
     }
-    serde_json::from_str(&line)
+    if response.len() as u64 > MAX_RUNTIME_CONTROL_RESPONSE_BYTES {
+        return Err(format!(
+            "runtime control response exceeded {} bytes",
+            MAX_RUNTIME_CONTROL_RESPONSE_BYTES
+        ));
+    }
+    if response.last() != Some(&b'\n') {
+        return Err("runtime control socket returned an incomplete response frame".to_string());
+    }
+    serde_json::from_slice(&response)
         .map_err(|error| format!("invalid runtime control response JSON: {error}"))
 }
 
@@ -12660,6 +12671,71 @@ mod tests {
         );
         server.join().unwrap();
         let _ = fs::remove_file(socket_path);
+    }
+
+    #[test]
+    fn runtime_control_reader_accepts_fragmented_response() {
+        let socket_path = unique_runtime_control_test_socket("fragmented");
+        let listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+        let server = std::thread::spawn({
+            let socket_path = socket_path.clone();
+            move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut request)
+                    .unwrap();
+                stream.write_all(br#"{"ok":true,"state":"run"#).unwrap();
+                std::thread::sleep(Duration::from_millis(10));
+                stream.write_all(b"ning\"}\n").unwrap();
+                drop(stream);
+                let _ = fs::remove_file(socket_path);
+            }
+        });
+
+        let response = send_runtime_control_command(&socket_path, "status").unwrap();
+        assert_eq!(
+            response.get("state").and_then(serde_json::Value::as_str),
+            Some("running")
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn runtime_control_reader_rejects_oversized_response() {
+        let socket_path = unique_runtime_control_test_socket("oversized");
+        let listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+        let server = std::thread::spawn({
+            let socket_path = socket_path.clone();
+            move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut request)
+                    .unwrap();
+                let oversized = vec![b'x'; MAX_RUNTIME_CONTROL_RESPONSE_BYTES as usize + 1];
+                let _ = stream.write_all(&oversized);
+                drop(stream);
+                let _ = fs::remove_file(socket_path);
+            }
+        });
+
+        let error = send_runtime_control_command(&socket_path, "status").unwrap_err();
+        assert!(error.contains("exceeded 65536 bytes"), "{error}");
+        server.join().unwrap();
+    }
+
+    fn unique_runtime_control_test_socket(label: &str) -> PathBuf {
+        let mut path = PathBuf::from("/tmp");
+        path.push(format!(
+            "bridgevm-api-rc-{label}-{}-{}.sock",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        path
     }
 
     #[test]

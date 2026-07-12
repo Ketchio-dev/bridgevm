@@ -3097,8 +3097,14 @@ mod tests {
 
         let _listener = bind_daemon_listener(&socket_path).unwrap();
 
-        assert_eq!(fs::metadata(&run_dir).unwrap().permissions().mode() & 0o777, 0o700);
-        assert_eq!(fs::metadata(&socket_path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            fs::metadata(&run_dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(&socket_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 
     #[test]
