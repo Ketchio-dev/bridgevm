@@ -1,11 +1,17 @@
 import Foundation
 
 final class HvfIncrementalMarkerReader {
+    private struct FileGeneration: Equatable {
+        let device: UInt64
+        let inode: UInt64
+    }
+
     private let marker: Data
     private let lock = NSLock()
     private var offset: UInt64 = 0
     private var carry = Data()
     private var found = false
+    private var generation: FileGeneration?
 
     init(marker: String) {
         self.marker = Data(marker.utf8)
@@ -17,14 +23,25 @@ final class HvfIncrementalMarkerReader {
         offset = 0
         carry.removeAll(keepingCapacity: true)
         found = false
+        generation = nil
     }
 
     func containsMarker(in url: URL) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        if found { return true }
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               let size = (attributes[.size] as? NSNumber)?.uint64Value else { return false }
+        let currentGeneration = FileGeneration(
+            device: (attributes[.systemNumber] as? NSNumber)?.uint64Value ?? 0,
+            inode: (attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
+        )
+        if let generation, generation != currentGeneration {
+            offset = 0
+            carry.removeAll(keepingCapacity: true)
+            found = false
+        }
+        generation = currentGeneration
+        if found { return true }
         if size < offset {
             offset = 0
             carry.removeAll(keepingCapacity: true)

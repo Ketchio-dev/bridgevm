@@ -862,6 +862,20 @@ final class HvfIncrementalMarkerReaderTests: XCTestCase {
         try Data("ready\n".utf8).write(to: log, options: .atomic)
         XCTAssertTrue(reader.containsMarker(in: log))
     }
+
+    func testAtomicLogReplacementInvalidatesCachedMarkerWithoutExplicitReset() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = dir.appendingPathComponent("run.log")
+        let reader = HvfIncrementalMarkerReader(marker: "ready")
+        try Data("ready\n".utf8).write(to: log)
+        XCTAssertTrue(reader.containsMarker(in: log))
+
+        try Data("new generation is still booting\n".utf8).write(to: log, options: .atomic)
+
+        XCTAssertFalse(reader.containsMarker(in: log))
+    }
 }
 
 private extension Result {
