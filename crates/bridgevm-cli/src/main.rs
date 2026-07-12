@@ -61,12 +61,16 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::{
     env,
     fs::{self, OpenOptions},
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     os::unix::fs::PermissionsExt,
     os::unix::net::UnixStream,
     path::{Path, PathBuf},
     process::{Command as ProcessCommand, Stdio},
+    time::Duration,
 };
+
+const MAX_DAEMON_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
+const DAEMON_IO_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Parser)]
 #[command(name = "bridgevm", about = "BridgeVM developer CLI")]
@@ -1884,15 +1888,34 @@ fn create_args_are_plain_template_request(args: &CreateArgs) -> bool {
 fn send_request(socket: &Path, request: BridgeVmRequest) -> Result<BridgeVmResponse> {
     let mut stream = UnixStream::connect(socket)
         .with_context(|| format!("failed to connect to daemon socket {}", socket.display()))?;
+    stream
+        .set_read_timeout(Some(DAEMON_IO_TIMEOUT))
+        .context("failed to configure daemon response timeout")?;
+    stream
+        .set_write_timeout(Some(DAEMON_IO_TIMEOUT))
+        .context("failed to configure daemon request timeout")?;
     serde_json::to_writer(&mut stream, &request).context("failed to write daemon request")?;
     stream.write_all(b"\n")?;
 
-    let mut line = String::new();
+    let mut response_frame = Vec::new();
     BufReader::new(stream)
-        .read_line(&mut line)
+        .take(MAX_DAEMON_RESPONSE_BYTES + 1)
+        .read_until(b'\n', &mut response_frame)
         .context("failed to read daemon response")?;
-    let response =
-        serde_json::from_str::<BridgeVmResponse>(&line).context("invalid daemon response JSON")?;
+    if response_frame.is_empty() {
+        bail!("daemon returned an empty response")
+    }
+    if response_frame.len() as u64 > MAX_DAEMON_RESPONSE_BYTES {
+        bail!(
+            "daemon response exceeded {} bytes",
+            MAX_DAEMON_RESPONSE_BYTES
+        )
+    }
+    if response_frame.last() != Some(&b'\n') {
+        bail!("daemon returned an incomplete response frame")
+    }
+    let response = serde_json::from_slice::<BridgeVmResponse>(&response_frame)
+        .context("invalid daemon response JSON")?;
     response.into_result().map_err(anyhow::Error::msg)
 }
 
@@ -7301,6 +7324,45 @@ mod tests {
         store.write_runner_metadata("dev", &metadata).unwrap();
 
         run_runtime_control_command(&store, "dev", "status").unwrap();
+        server.join().unwrap();
+        let _ = fs::remove_file(socket_path);
+    }
+
+    #[test]
+    fn daemon_client_rejects_oversized_response() {
+        let socket_path = unique_socket_path("bridgevm-cli-oversized-response");
+        let listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = String::new();
+            BufReader::new(stream.try_clone().unwrap())
+                .read_line(&mut request)
+                .unwrap();
+            let oversized = vec![b'x'; MAX_DAEMON_RESPONSE_BYTES as usize + 1];
+            let _ = stream.write_all(&oversized);
+        });
+
+        let error = send_request(&socket_path, BridgeVmRequest::Doctor).unwrap_err();
+        assert!(error.to_string().contains("exceeded 16777216 bytes"));
+        server.join().unwrap();
+        let _ = fs::remove_file(socket_path);
+    }
+
+    #[test]
+    fn daemon_client_rejects_incomplete_response_frame() {
+        let socket_path = unique_socket_path("bridgevm-cli-incomplete-response");
+        let listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = String::new();
+            BufReader::new(stream.try_clone().unwrap())
+                .read_line(&mut request)
+                .unwrap();
+            stream.write_all(b"{}").unwrap();
+        });
+
+        let error = send_request(&socket_path, BridgeVmRequest::Doctor).unwrap_err();
+        assert!(error.to_string().contains("incomplete response frame"));
         server.join().unwrap();
         let _ = fs::remove_file(socket_path);
     }
