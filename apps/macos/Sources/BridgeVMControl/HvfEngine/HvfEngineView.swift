@@ -4,7 +4,7 @@ import AppKit
 #endif
 
 struct HvfEngineView: View {
-    @StateObject private var session = HvfEngineSession(config: HvfEngineView.defaultConfig())
+    @StateObject private var session: HvfEngineSession
     @State private var targetDiskPath = ""
     @State private var uefiVarsPath = ""
     @State private var evidenceDir = ""
@@ -22,6 +22,10 @@ struct HvfEngineView: View {
     @State private var ctlFilePath = ""
     @State private var ctlInput = ""
     @State private var keyboardInput = ""
+
+    init(config: HvfEngineConfig = HvfEngineView.defaultConfig()) {
+        _session = StateObject(wrappedValue: HvfEngineSession(config: config))
+    }
 
     var body: some View {
         ScrollView {
@@ -322,7 +326,7 @@ struct HvfEngineView: View {
         #endif
     }
 
-    private static func defaultConfig() -> HvfEngineConfig {
+    static func defaultConfig() -> HvfEngineConfig {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let evidence = home.appendingPathComponent("BridgeVM/HVF/evidence", isDirectory: true).path
         return HvfEngineConfig(targetDiskPath: "",

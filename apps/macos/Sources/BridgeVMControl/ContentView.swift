@@ -16,8 +16,13 @@ struct ContentView: View {
             } else if library.selectedID == LibraryModel.hvfEngineSelectionID {
                 HvfEngineView()
             } else if let model = library.selectedModel {
-                VMDetailPanel(model: model, library: library)
-                    .id(model.config.slug)
+                if let hvfConfig = HvfEngineConfig.libraryVM(model.config) {
+                    HvfEngineView(config: hvfConfig)
+                        .id(model.config.slug)
+                } else {
+                    VMDetailPanel(model: model, library: library)
+                        .id(model.config.slug)
+                }
             } else {
                 emptyState
             }

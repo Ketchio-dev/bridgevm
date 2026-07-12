@@ -2,6 +2,40 @@ import XCTest
 @testable import BridgeVMControl
 
 final class HvfEngineConfigTests: XCTestCase {
+    func testLibraryWindowsVMBuildsTurnkeyControlConfiguration() {
+        let vm = VMConfig(
+            id: "win11", name: "Windows 11", displayName: "Windows 11",
+            backendKind: "hvf-engine", bootMode: "windows-hvf",
+            bundlePath: "/library/win11/bundle.vmbridge", runnerPath: "",
+            launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
+            leasesPath: "", guestName: "win11", displayWidth: 1280, displayHeight: 800,
+            installPending: false, isoPath: nil, diskPath: "/custom/windows.raw",
+            memMiB: 8192, cpuCount: 8
+        )
+
+        let config = HvfEngineConfig.libraryVM(vm)
+
+        XCTAssertEqual(config?.targetDiskPath, "/custom/windows.raw")
+        XCTAssertEqual(config?.uefiVarsPath, "/library/win11/bundle.vmbridge/metadata/hvf-vars.fd")
+        XCTAssertEqual(config?.evidenceDir, "/library/win11/bundle.vmbridge/logs/hvf")
+        XCTAssertEqual(config?.ctlFilePath, "/library/win11/bundle.vmbridge/metadata/hvf.ctl")
+        XCTAssertEqual(config?.ramMiB, 8192)
+        XCTAssertEqual(config?.smpCpus, 8)
+        XCTAssertEqual(config?.virtioNet, true)
+        XCTAssertEqual(config?.virtioGpu3d, true)
+        XCTAssertNil(config?.watchdogMs)
+    }
+
+    func testLibraryConfigurationRejectsNonHVFVM() {
+        let vm = VMConfig(
+            id: "linux", name: "Linux", displayName: "Linux", backendKind: "fast-vz",
+            bootMode: "direct-kernel", bundlePath: "/library/linux", runnerPath: "",
+            launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
+            leasesPath: "", guestName: "linux", displayWidth: 1280, displayHeight: 800
+        )
+        XCTAssertNil(HvfEngineConfig.libraryVM(vm))
+    }
+
     func testBaseArgumentsUseExplicitServiceCLI() {
         let cfg = HvfEngineConfig(targetDiskPath: "/vm/win.raw",
                                   uefiVarsPath: "/vm/vars.fd",

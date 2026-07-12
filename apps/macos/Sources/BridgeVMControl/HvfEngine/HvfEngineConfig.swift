@@ -19,6 +19,26 @@ struct HvfEngineConfig: Equatable {
     var nvmeBufferedIO: Bool
     var ctlFilePath: String
 
+    static func libraryVM(_ config: VMConfig) -> HvfEngineConfig? {
+        guard config.engineKind == .hvfEngine else { return nil }
+        let evidenceDir = config.bundlePath + "/logs/hvf"
+        return HvfEngineConfig(
+            targetDiskPath: config.diskPath ?? (config.bundlePath + "/disks/hvf-target.raw"),
+            uefiVarsPath: config.bundlePath + "/metadata/hvf-vars.fd",
+            evidenceDir: evidenceDir,
+            watchdogMs: nil,
+            ramMiB: config.memMiB ?? 6144,
+            smpCpus: config.cpuCount ?? 4,
+            clipboardSync: true,
+            shareHostDir: nil,
+            shareGuestDir: nil,
+            virtioNet: true,
+            virtioGpu3d: true,
+            nvmeBufferedIO: true,
+            ctlFilePath: config.bundlePath + "/metadata/hvf.ctl"
+        )
+    }
+
     func wrapperArguments() -> [String] {
         var args = [
             "scripts/run-hvf-windows-installed-boot.sh",
