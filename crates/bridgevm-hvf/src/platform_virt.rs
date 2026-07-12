@@ -71,6 +71,8 @@ use crate::xhci::{
 const DEFAULT_NVME_DISK_BYTES: usize = 16 * 1024 * 1024;
 const HID_BOOT_KEYBOARD_USAGE_SPACE: u8 = 0x2c;
 const MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS: usize = 16;
+#[cfg(any(feature = "venus", test))]
+const DEFAULT_VIRTIO_GPU_3D_SCANOUT_READBACK_MS: u64 = 16;
 
 fn make_virtio_gpu() -> VirtioPciGpu {
     let (width, height) = virtio_gpu_resolution_from_env();
@@ -82,15 +84,16 @@ fn make_virtio_gpu() -> VirtioPciGpu {
                     let protocol = backend.protocol();
                     eprintln!("virtio-gpu: {} 3D backend enabled", protocol.label());
                     let mut gpu = VirtioPciGpu::with_3d_backend(width, height, Box::new(backend));
-                    if let Some(interval_ms) =
+                    let interval = virtio_gpu_3d_scanout_readback_interval_from_value(
                         std::env::var("BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS")
                             .ok()
-                            .and_then(|value| value.parse::<u64>().ok())
-                    {
-                        gpu.set_3d_scanout_readback_interval(std::time::Duration::from_millis(
-                            interval_ms,
-                        ));
-                    }
+                            .as_deref(),
+                    );
+                    gpu.set_3d_scanout_readback_interval(interval);
+                    eprintln!(
+                        "virtio-gpu: 3D scanout readback pacing={}ms",
+                        interval.as_millis()
+                    );
                     return gpu;
                 }
                 Err(error) => {
@@ -110,6 +113,14 @@ fn make_virtio_gpu() -> VirtioPciGpu {
 
 fn virtio_gpu_3d_enabled_for_pcie() -> bool {
     cfg!(feature = "venus") && env_flag("BRIDGEVM_VIRTIO_GPU_3D")
+}
+
+#[cfg(any(feature = "venus", test))]
+fn virtio_gpu_3d_scanout_readback_interval_from_value(value: Option<&str>) -> Duration {
+    let interval_ms = value
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_VIRTIO_GPU_3D_SCANOUT_READBACK_MS);
+    Duration::from_millis(interval_ms)
 }
 
 fn virtio_gpu_resolution_from_env() -> (u32, u32) {
@@ -4241,5 +4252,29 @@ mod tests {
         let interval = Duration::from_millis(30);
         let last = base + Duration::from_millis(100);
         assert!(!report_pacing_allows_emission(interval, Some(last), base));
+    }
+
+    #[test]
+    fn three_d_scanout_readback_defaults_to_display_cadence() {
+        assert_eq!(
+            virtio_gpu_3d_scanout_readback_interval_from_value(None),
+            Duration::from_millis(DEFAULT_VIRTIO_GPU_3D_SCANOUT_READBACK_MS)
+        );
+        assert_eq!(
+            virtio_gpu_3d_scanout_readback_interval_from_value(Some("invalid")),
+            Duration::from_millis(DEFAULT_VIRTIO_GPU_3D_SCANOUT_READBACK_MS)
+        );
+    }
+
+    #[test]
+    fn three_d_scanout_readback_allows_explicit_pacing_and_unpaced_debugging() {
+        assert_eq!(
+            virtio_gpu_3d_scanout_readback_interval_from_value(Some("33")),
+            Duration::from_millis(33)
+        );
+        assert_eq!(
+            virtio_gpu_3d_scanout_readback_interval_from_value(Some("0")),
+            Duration::ZERO
+        );
     }
 }

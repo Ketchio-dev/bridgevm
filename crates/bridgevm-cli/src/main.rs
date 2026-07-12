@@ -4648,6 +4648,11 @@ struct VirtioGpuTraceReport {
     backend_fence_parked: bool,
     fence_complete: bool,
     fence_deliver: bool,
+    scanout_readbacks: u64,
+    scanout_readback_throttled: u64,
+    scanout_readback_bytes: u64,
+    scanout_readback_nanoseconds: u64,
+    scanout_readback_max_nanoseconds: u64,
     error_responses: Vec<String>,
 }
 
@@ -4686,6 +4691,21 @@ impl VirtioGpuTraceReport {
             }
             Some("fence_complete") => self.fence_complete = true,
             Some("fence_deliver") => self.fence_deliver = true,
+            Some("scanout_readback") => {
+                self.scanout_readbacks = self.scanout_readbacks.saturating_add(1);
+                self.scanout_readback_bytes = self
+                    .scanout_readback_bytes
+                    .saturating_add(json_u64(value, "bytes").unwrap_or(0));
+                let duration_ns = json_u64(value, "duration_ns").unwrap_or(0);
+                self.scanout_readback_nanoseconds = self
+                    .scanout_readback_nanoseconds
+                    .saturating_add(duration_ns);
+                self.scanout_readback_max_nanoseconds =
+                    self.scanout_readback_max_nanoseconds.max(duration_ns);
+            }
+            Some("scanout_readback_throttled") => {
+                self.scanout_readback_throttled = self.scanout_readback_throttled.saturating_add(1);
+            }
             _ => {}
         }
     }
@@ -4758,6 +4778,30 @@ impl VirtioGpuTraceReport {
 
     fn fence_lifecycle_observed(&self) -> bool {
         self.fenced_command && self.fence_create && (self.fence_complete || self.fence_deliver)
+    }
+
+    fn scanout_readback_average_us(&self) -> f64 {
+        if self.scanout_readbacks == 0 {
+            return 0.0;
+        }
+        self.scanout_readback_nanoseconds as f64 / self.scanout_readbacks as f64 / 1_000.0
+    }
+
+    fn scanout_readback_effective_gbps(&self) -> f64 {
+        if self.scanout_readback_nanoseconds == 0 {
+            return 0.0;
+        }
+        self.scanout_readback_bytes as f64 / self.scanout_readback_nanoseconds as f64
+    }
+
+    fn scanout_throttle_percent(&self) -> f64 {
+        let observed = self
+            .scanout_readbacks
+            .saturating_add(self.scanout_readback_throttled);
+        if observed == 0 {
+            return 0.0;
+        }
+        self.scanout_readback_throttled as f64 / observed as f64 * 100.0
     }
 
     fn p3_blockers(&self, protocol: VirtioGpuTraceProtocolChoice) -> Vec<String> {
@@ -4998,6 +5042,32 @@ fn print_virtio_gpu_trace_report(
     );
     println!("Fence complete observed: {}", report.fence_complete);
     println!("Fence deliver observed: {}", report.fence_deliver);
+    println!("Scanout readbacks: {}", report.scanout_readbacks);
+    println!(
+        "Scanout throttled flushes: {}",
+        report.scanout_readback_throttled
+    );
+    println!("Scanout readback bytes: {}", report.scanout_readback_bytes);
+    println!(
+        "Scanout readback duration ns: {}",
+        report.scanout_readback_nanoseconds
+    );
+    println!(
+        "Scanout readback average us: {:.3}",
+        report.scanout_readback_average_us()
+    );
+    println!(
+        "Scanout readback max us: {:.3}",
+        report.scanout_readback_max_nanoseconds as f64 / 1_000.0
+    );
+    println!(
+        "Scanout readback effective GB/s: {:.3}",
+        report.scanout_readback_effective_gbps()
+    );
+    println!(
+        "Scanout throttle ratio: {:.2}%",
+        report.scanout_throttle_percent()
+    );
     if report.error_responses.is_empty() {
         println!("Error responses: none");
     } else {
@@ -6474,6 +6544,31 @@ mod tests {
         assert!(blockers.iter().any(|blocker| {
             blocker == "missing fenced command plus fence create/completion/delivery"
         }));
+    }
+
+    #[test]
+    fn virtio_gpu_trace_report_aggregates_scanout_readbacks() {
+        let path = unique_trace_path("bridgevm-cli-virtio-gpu-scanout");
+        fs::write(
+            &path,
+            r#"{"event":"scanout_readback","bytes":4096000,"duration_ns":800000}
+{"event":"scanout_readback_throttled"}
+{"event":"scanout_readback","bytes":4096000,"duration_ns":1200000}
+"#,
+        )
+        .unwrap();
+
+        let report = analyze_virtio_gpu_trace(&path).unwrap();
+        let _ = fs::remove_file(path);
+
+        assert_eq!(report.scanout_readbacks, 2);
+        assert_eq!(report.scanout_readback_throttled, 1);
+        assert_eq!(report.scanout_readback_bytes, 8_192_000);
+        assert_eq!(report.scanout_readback_nanoseconds, 2_000_000);
+        assert_eq!(report.scanout_readback_max_nanoseconds, 1_200_000);
+        assert!((report.scanout_readback_average_us() - 1_000.0).abs() < f64::EPSILON);
+        assert!((report.scanout_readback_effective_gbps() - 4.096).abs() < f64::EPSILON);
+        assert!((report.scanout_throttle_percent() - 100.0 / 3.0).abs() < 1e-12);
     }
 
     #[test]
