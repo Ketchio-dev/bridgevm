@@ -305,6 +305,7 @@ struct GuestWindowProxyRGBAFrame: Equatable {
 struct GuestWindowProxyCropFrameArtifact: Equatable {
   enum ArtifactError: LocalizedError, Equatable {
     case missingCropFrame
+    case summaryTooLarge(maximumByteCount: Int)
     case unsupportedPixelFormat(String)
     case invalidDimensions(width: Int, height: Int)
 
@@ -312,6 +313,8 @@ struct GuestWindowProxyCropFrameArtifact: Equatable {
       switch self {
       case .missingCropFrame:
         return "displayd summary does not contain a window_crop_frame artifact."
+      case .summaryTooLarge(let maximumByteCount):
+        return "displayd summary exceeds the \(maximumByteCount)-byte limit."
       case let .unsupportedPixelFormat(pixelFormat):
         return "Unsupported proxy crop pixel format '\(pixelFormat)'; expected rgba8."
       case let .invalidDimensions(width, height):
@@ -354,7 +357,13 @@ struct GuestWindowProxyCropFrameArtifact: Equatable {
   }
 
   static func decode(fromDisplaydSummaryAt url: URL) throws -> GuestWindowProxyCropFrameArtifact {
-    try decode(fromDisplaydSummary: Data(contentsOf: url))
+    let maximumByteCount = 1024 * 1024
+    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+    let byteCount = (attributes[.size] as? NSNumber)?.intValue ?? Int.max
+    guard byteCount <= maximumByteCount else {
+      throw ArtifactError.summaryTooLarge(maximumByteCount: maximumByteCount)
+    }
+    return try decode(fromDisplaydSummary: Data(contentsOf: url, options: .mappedIfSafe))
   }
 
   func loadFrame() throws -> GuestWindowProxyRGBAFrame {

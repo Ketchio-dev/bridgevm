@@ -89,6 +89,23 @@ private func performanceBaselineFieldsJSON(createdAtUnix: UInt64) -> String {
 }
 
 final class DaemonDTOTests: XCTestCase {
+  func testNDJSONAccumulatorRejectsResponseBeyondLimit() throws {
+    var accumulator = NDJSONLineAccumulator(maximumByteCount: 5)
+    XCTAssertNil(try accumulator.append(Data("abc".utf8)))
+    XCTAssertThrowsError(try accumulator.append(Data("def\nignored".utf8))) { error in
+      guard case DaemonTransportError.responseTooLarge(let limit) = error else {
+        return XCTFail("unexpected error: \(error)")
+      }
+      XCTAssertEqual(limit, 5)
+    }
+  }
+
+  func testNDJSONAccumulatorReturnsOnlyBoundedLineBeforeNewline() throws {
+    var accumulator = NDJSONLineAccumulator(maximumByteCount: 5)
+    XCTAssertNil(try accumulator.append(Data("ab".utf8)))
+    XCTAssertEqual(try accumulator.append(Data("cde\ntrailing".utf8)), Data("abcde".utf8))
+  }
+
   func testDoctorRequestAndResponseMatchBridgeVmDaemonWireFormat() throws {
     let data = try JSONEncoder().encode(DaemonStoreDoctorRequest())
     let object = try JSONSerialization.jsonObject(with: data) as? [String: String]

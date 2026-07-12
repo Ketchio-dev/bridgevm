@@ -14,6 +14,22 @@ final class GuestWindowProxyFrameTests: XCTestCase {
     }
   }
 
+  func testCropFrameArtifactRejectsOversizedSummaryFileBeforeReading() throws {
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("oversized-displayd-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    try Data(repeating: 0x20, count: 1024 * 1024 + 1).write(to: url)
+
+    XCTAssertThrowsError(
+      try GuestWindowProxyCropFrameArtifact.decode(fromDisplaydSummaryAt: url)
+    ) { error in
+      XCTAssertEqual(
+        error as? GuestWindowProxyCropFrameArtifact.ArtifactError,
+        .summaryTooLarge(maximumByteCount: 1024 * 1024)
+      )
+    }
+  }
+
   func testExpectedByteCountUsesRGBA8Dimensions() throws {
     XCTAssertEqual(
       try GuestWindowProxyRGBAFrame.expectedByteCount(width: 3, height: 2),

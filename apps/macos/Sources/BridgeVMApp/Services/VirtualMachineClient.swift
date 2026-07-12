@@ -1977,6 +1977,7 @@ enum DaemonTransportError: LocalizedError {
   case daemonError(String)
   case responseClosed
   case responseEncodingInvalid
+  case responseTooLarge(maximumByteCount: Int)
   case requestTimedOut
 
   var errorDescription: String? {
@@ -1989,9 +1990,39 @@ enum DaemonTransportError: LocalizedError {
       return "The daemon closed the socket before returning a response."
     case .responseEncodingInvalid:
       return "The daemon response was not valid UTF-8 newline-delimited JSON."
+    case .responseTooLarge(let maximumByteCount):
+      return "The daemon response exceeded the \(maximumByteCount)-byte limit."
     case .requestTimedOut:
       return "The daemon request timed out."
     }
+  }
+}
+
+struct NDJSONLineAccumulator {
+  static let defaultMaximumByteCount = 16 * 1024 * 1024
+
+  private(set) var buffer = Data()
+  let maximumByteCount: Int
+
+  init(maximumByteCount: Int = Self.defaultMaximumByteCount) {
+    self.maximumByteCount = max(1, maximumByteCount)
+  }
+
+  mutating func append(_ chunk: Data) throws -> Data? {
+    let lineFragment: Data.SubSequence
+    let completed: Bool
+    if let newlineIndex = chunk.firstIndex(of: 0x0A) {
+      lineFragment = chunk[..<newlineIndex]
+      completed = true
+    } else {
+      lineFragment = chunk[...]
+      completed = false
+    }
+    guard lineFragment.count <= maximumByteCount - buffer.count else {
+      throw DaemonTransportError.responseTooLarge(maximumByteCount: maximumByteCount)
+    }
+    buffer.append(lineFragment)
+    return completed ? buffer : nil
   }
 }
 
@@ -2122,7 +2153,7 @@ extension NWConnection {
   }
 
   fileprivate func receiveLine() async throws -> Data {
-    var buffer = Data()
+    var accumulator = NDJSONLineAccumulator()
 
     while true {
       let chunk = try await receiveChunk()
@@ -2131,12 +2162,7 @@ extension NWConnection {
         throw DaemonTransportError.responseClosed
       }
 
-      if let newlineIndex = chunk.firstIndex(of: 0x0A) {
-        buffer.append(chunk[..<newlineIndex])
-        return buffer
-      }
-
-      buffer.append(chunk)
+      if let line = try accumulator.append(chunk) { return line }
     }
   }
 
