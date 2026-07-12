@@ -5,7 +5,7 @@ import Foundation
 /// One controllable VM. Persisted per-VM as vm.json inside the library so the
 /// app manages MANY VMs. `id`/`bootMode` are optional for backward-compat with
 /// the legacy single ~/.bridgevm-control/config.json.
-struct VMConfig: Codable, Identifiable {
+struct VMConfig: Codable, Identifiable, Equatable {
     var id: String?                  // stable slug; falls back to slug(name)
     var name: String
     var displayName: String

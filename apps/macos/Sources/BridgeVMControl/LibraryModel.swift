@@ -18,6 +18,7 @@ final class LibraryModel: ObservableObject {
 
     private var modelCache: [String: ControlModel] = [:]
     private let libraryRoot: URL
+    private let modelFactory: @MainActor (VMConfig) -> ControlModel
 
     // Host-capacity accounting (sum of RUNNING VMs vs host totals) to warn on oversubscription.
     var hostMemGiB: Double { Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824.0 }
@@ -30,8 +31,13 @@ final class LibraryModel: ObservableObject {
         VMLibrary.deletionImpact(for: cfg, rootURL: libraryRoot)
     }
 
-    init(rootURL: URL = VMLibrary.root, migrateLegacy: Bool = true) {
+    init(
+        rootURL: URL = VMLibrary.root,
+        migrateLegacy: Bool = true,
+        modelFactory: @escaping @MainActor (VMConfig) -> ControlModel = { ControlModel(config: $0) }
+    ) {
         libraryRoot = rootURL
+        self.modelFactory = modelFactory
         if migrateLegacy {
             VMLibrary.migrateLegacyIfNeeded(rootURL: rootURL, legacy: VMConfig.loadLegacy())
         }
@@ -43,14 +49,22 @@ final class LibraryModel: ObservableObject {
         let scan = VMLibrary.scan(rootURL: libraryRoot)
         vms = scan.configs
         libraryIssues = scan.issues
-        let slugs = Set(vms.map { $0.slug })
-        modelCache = modelCache.filter { slugs.contains($0.key) }
-        if let sel = selectedID, sel != Self.hvfEngineSelectionID, !slugs.contains(sel) { selectedID = vms.first?.slug }
+        let configsBySlug = Dictionary(vms.map { ($0.slug, $0) }, uniquingKeysWith: { first, _ in first })
+        modelCache = modelCache.filter { slug, model in
+            guard let current = configsBySlug[slug] else { return false }
+            if model.config == current { return true }
+            // Keep the old control handle while it may still own a live process
+            // or operation. Replacing it now could make that VM impossible to stop.
+            return model.running || model.lifecycleBusy || model.busy
+        }
+        if let sel = selectedID, sel != Self.hvfEngineSelectionID, configsBySlug[sel] == nil {
+            selectedID = vms.first?.slug
+        }
     }
 
     func model(for cfg: VMConfig) -> ControlModel {
         if let m = modelCache[cfg.slug] { return m }
-        let m = ControlModel(config: cfg)
+        let m = modelFactory(cfg)
         modelCache[cfg.slug] = m
         return m
     }

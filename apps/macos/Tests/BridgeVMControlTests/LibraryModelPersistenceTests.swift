@@ -3,6 +3,58 @@ import XCTest
 
 @MainActor
 final class LibraryModelPersistenceTests: XCTestCase {
+    func testReloadReplacesIdleModelWhenPersistedConfigChanges() throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = makeConfig()
+        XCTAssertTrue(VMLibrary.save(original, rootURL: root))
+        let library = makeLibrary(root: root)
+        let first = library.model(for: try XCTUnwrap(library.vms.first))
+        var changed = original
+        changed.backendKind = "qemu-compat"
+        changed.bundlePath = "/tmp/changed.vmbridge"
+        XCTAssertTrue(VMLibrary.save(changed, rootURL: root))
+
+        library.reload()
+        let second = library.model(for: try XCTUnwrap(library.vms.first))
+
+        XCTAssertFalse(first === second)
+        XCTAssertEqual(second.config, changed)
+        XCTAssertEqual(second.backend.kind, "qemu-compat")
+    }
+
+    func testReloadPreservesChangedModelUntilActiveVMBecomesIdle() throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = makeConfig()
+        XCTAssertTrue(VMLibrary.save(original, rootURL: root))
+        let library = makeLibrary(root: root)
+        let active = library.model(for: try XCTUnwrap(library.vms.first))
+        active.running = true
+        var changed = original
+        changed.bundlePath = "/tmp/new-target.vmbridge"
+        XCTAssertTrue(VMLibrary.save(changed, rootURL: root))
+
+        library.reload()
+        XCTAssertTrue(library.model(for: try XCTUnwrap(library.vms.first)) === active)
+
+        active.running = false
+        library.reload()
+        XCTAssertFalse(library.model(for: try XCTUnwrap(library.vms.first)) === active)
+    }
+
+    func testReloadKeepsUnchangedModelIdentity() throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertTrue(VMLibrary.save(makeConfig(), rootURL: root))
+        let library = makeLibrary(root: root)
+        let first = library.model(for: try XCTUnwrap(library.vms.first))
+
+        library.reload()
+
+        XCTAssertTrue(library.model(for: try XCTUnwrap(library.vms.first)) === first)
+    }
+
     func testAddAdoptsPersistedConfigWithoutWritingAgain() throws {
         let root = try makeTempDir()
         defer {
@@ -41,6 +93,14 @@ final class LibraryModelPersistenceTests: XCTestCase {
                  bundlePath: "/tmp/persisted.vmbridge", runnerPath: "",
                  launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
                  leasesPath: "", guestName: "persisted", displayWidth: 1440, displayHeight: 900)
+    }
+
+    private func makeLibrary(root: URL) -> LibraryModel {
+        LibraryModel(
+            rootURL: root,
+            migrateLegacy: false,
+            modelFactory: { ControlModel(config: $0, startsAutomatically: false) }
+        )
     }
 
     private func makeTempDir() throws -> URL {
