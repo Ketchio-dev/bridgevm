@@ -196,6 +196,7 @@ protocol VMBackend: AnyObject {
     var supportsPackageInstall: Bool { get }
     var supportsClipboard: Bool { get }
     var supportsSSH: Bool { get }
+    var supportsResourceChanges: Bool { get }
 }
 
 // MARK: - Fast Mode (Apple Virtualization.framework) backend
@@ -210,6 +211,7 @@ final class FastVZBackend: VMBackend {
     let supportsPackageInstall = true
     let supportsClipboard = true
     let supportsSSH = true
+    let supportsResourceChanges = true
 
     // Per-VM identity: match THIS VM's UNIQUE handoff path on the runner's command
     // line, so start/stop/status never touch another VM's runner.
@@ -342,6 +344,7 @@ final class QemuCompatBackend: VMBackend {
     let supportsPackageInstall = false
     let supportsClipboard = false
     let supportsSSH = false
+    let supportsResourceChanges = false
 
     private let qemu = "/opt/homebrew/bin/qemu-system-aarch64"
     private let edk2 = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
@@ -429,6 +432,7 @@ final class HvfWindowsBackend: VMBackend {
     let supportsPackageInstall = false
     let supportsClipboard = true
     let supportsSSH = false
+    let supportsResourceChanges = true
 
     var targetDiskPath: String { config.diskPath ?? (config.bundlePath + "/disks/hvf-target.raw") }
     var uefiVarsPath: String { config.bundlePath + "/metadata/hvf-vars.fd" }

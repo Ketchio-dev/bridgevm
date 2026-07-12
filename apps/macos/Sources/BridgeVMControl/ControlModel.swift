@@ -27,11 +27,13 @@ final class ControlModel: ObservableObject {
     private var timer: Timer?
     private var startConfirmationDeadline: Date?
 
-    init(config: VMConfig) {
+    init(config: VMConfig, backend: VMBackend? = nil, startsAutomatically: Bool = true) {
         self.config = config
-        self.backend = config.makeBackend()
-        refresh()
-        startPolling()
+        self.backend = backend ?? config.makeBackend()
+        if startsAutomatically {
+            refresh()
+            startPolling()
+        }
     }
 
     deinit { timer?.invalidate() }
@@ -116,15 +118,39 @@ final class ControlModel: ObservableObject {
     func applyResources() {
         let mem = Int((pendingMemGiB * 1024).rounded())
         let cpus = Int(pendingCPU)
+        guard backend.supportsResourceChanges else {
+            statusNote = "이 엔진은 리소스 변경을 지원하지 않습니다."
+            return
+        }
+        guard mem >= 1024, cpus > 0 else {
+            statusNote = "메모리와 CPU 값이 올바르지 않습니다."
+            return
+        }
         busy = true
         statusNote = "리소스 적용 중 (\(Int(pendingMemGiB))GB / \(cpus)코어)… VM 재시작"
         let backend = self.backend
         Task.detached {
             let ok = backend.setResources(memMiB: mem, cpu: cpus)
+            guard ok else {
+                await MainActor.run {
+                    self.busy = false
+                    self.statusNote = "리소스 적용 실패 — VM은 재시작하지 않았습니다."
+                }
+                return
+            }
             let wasRunning = backend.isRunning()
             if wasRunning {
                 backend.stop()
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
+                if backend.isRunning() {
+                    await MainActor.run {
+                        self.busy = false
+                        self.running = true
+                        self.statusNote = "리소스 적용됨, VM 정지 실패 — 재시작하지 않았습니다."
+                        self.scheduleRefreshBurst()
+                    }
+                    return
+                }
                 if !backend.start() {
                     await MainActor.run {
                         self.busy = false
@@ -138,7 +164,7 @@ final class ControlModel: ObservableObject {
             }
             await MainActor.run {
                 self.busy = false
-                self.statusNote = ok ? "리소스 적용됨: \(Int(self.pendingMemGiB))GB / \(cpus)코어" : "리소스 적용 실패"
+                self.statusNote = "리소스 적용됨: \(Int(self.pendingMemGiB))GB / \(cpus)코어"
                 self.scheduleRefreshBurst()
             }
         }

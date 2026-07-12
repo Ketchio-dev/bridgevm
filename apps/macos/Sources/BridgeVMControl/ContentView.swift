@@ -362,7 +362,8 @@ struct VMDetailPanel: View {
 
     private var resourcesCard: some View {
         GroupBox {
-            VStack(alignment: .leading, spacing: 12) {
+            if model.backend.supportsResourceChanges {
+                VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("메모리").frame(width: 60, alignment: .leading)
                     Slider(value: $model.pendingMemGiB, in: 1...32, step: 1)
@@ -378,7 +379,12 @@ struct VMDetailPanel: View {
                     Text("적용하면 VM이 재시작됩니다").font(.caption).foregroundColor(.secondary)
                     Spacer()
                 }
-            }.padding(6)
+                }.padding(6)
+            } else {
+                Label("이 엔진은 앱에서 CPU/RAM 변경을 지원하지 않습니다.", systemImage: "info.circle")
+                    .foregroundColor(.secondary)
+                    .padding(6)
+            }
         } label: { Label("리소스 설정", systemImage: "slider.horizontal.3") }
         .onAppear {
             model.pendingMemGiB = max(1, model.memGiB)
