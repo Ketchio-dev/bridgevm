@@ -1,5 +1,26 @@
 use serde::{Deserialize, Serialize};
 
+const MAX_PMSET_OUTPUT_BYTES: usize = 64 * 1024;
+
+fn drain_bounded(
+    reader: &mut impl std::io::Read,
+    max_bytes: usize,
+) -> std::io::Result<(Vec<u8>, bool)> {
+    let mut captured = Vec::new();
+    let mut chunk = [0_u8; 4096];
+    let mut exceeded = false;
+    loop {
+        let read = reader.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        let keep = read.min(max_bytes.saturating_sub(captured.len()));
+        captured.extend_from_slice(&chunk[..keep]);
+        exceeded |= keep < read;
+    }
+    Ok((captured, exceeded))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ResourceProfile {
@@ -143,7 +164,6 @@ pub fn read_on_battery() -> bool {
 /// unbounded external command on the launch path is a liability if `powerd`/
 /// IORegistry ever wedges.
 fn pmset_battery_output(timeout: std::time::Duration) -> Option<String> {
-    use std::io::Read;
     use std::process::{Command, Stdio};
     let mut child = Command::new("pmset")
         .args(["-g", "batt"])
@@ -152,6 +172,8 @@ fn pmset_battery_output(timeout: std::time::Duration) -> Option<String> {
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
+    let mut stdout = child.stdout.take()?;
+    let drain = std::thread::spawn(move || drain_bounded(&mut stdout, MAX_PMSET_OUTPUT_BYTES));
     let deadline = std::time::Instant::now() + timeout;
     loop {
         match child.try_wait() {
@@ -172,11 +194,11 @@ fn pmset_battery_output(timeout: std::time::Duration) -> Option<String> {
             Err(_) => return None,
         }
     }
-    // pmset's output is small (well under the pipe buffer), so reading after exit
-    // cannot have deadlocked it.
-    let mut out = String::new();
-    child.stdout.take()?.read_to_string(&mut out).ok()?;
-    Some(out)
+    let (bytes, exceeded) = drain.join().ok()?.ok()?;
+    if exceeded {
+        return None;
+    }
+    String::from_utf8(bytes).ok()
 }
 
 pub fn resolve_memory(manifest_memory: &str, decision: &ResourceDecision) -> String {
@@ -198,6 +220,18 @@ pub fn resolve_vcpu(manifest_cpu: &str, decision: &ResourceDecision) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_drain_caps_capture_and_consumes_to_eof() {
+        let input = vec![0x41; MAX_PMSET_OUTPUT_BYTES * 2];
+        let mut reader = std::io::Cursor::new(input.clone());
+
+        let (captured, exceeded) = drain_bounded(&mut reader, MAX_PMSET_OUTPUT_BYTES).unwrap();
+
+        assert!(exceeded);
+        assert_eq!(captured, input[..MAX_PMSET_OUTPUT_BYTES]);
+        assert_eq!(reader.position(), input.len() as u64);
+    }
 
     #[test]
     fn parses_profiles_and_decides_resources() {
