@@ -13,6 +13,10 @@ struct HvfEngineConfig: Equatable {
     var shareHostDir: String?
     var shareGuestDir: String?
     var virtioNet: Bool
+    /// Enable the normal Windows display path proven by the live VirGL
+    /// evidence run. When disabled, the wrapper retains its legacy 2D device.
+    var virtioGpu3d: Bool
+    var nvmeBufferedIO: Bool
     var ctlFilePath: String
 
     func wrapperArguments() -> [String] {
@@ -33,7 +37,9 @@ struct HvfEngineConfig: Equatable {
             "--release",
             "--skip-build",
             "--agent-service-control", ctlFilePath,
-            "--agent-service-command", "whoami"
+            "--agent-service-command", "whoami",
+            "--display-export-ppm", "\(evidenceDir)/display.ppm",
+            "--display-export-ms", "500"
         ])
         if clipboardSync {
             args.append("--agent-clipboard-sync")
@@ -48,6 +54,16 @@ struct HvfEngineConfig: Equatable {
         }
         if virtioNet {
             args.append("--virtio-net")
+        }
+        if nvmeBufferedIO {
+            args.append("--nvme-buffered-io")
+        }
+        if virtioGpu3d {
+            args.append(contentsOf: [
+                "--virtio-gpu-3d",
+                "--virtio-gpu-device-id", "1050",
+                "--gpu-trace-protocol", "virgl"
+            ])
         }
         return args
     }

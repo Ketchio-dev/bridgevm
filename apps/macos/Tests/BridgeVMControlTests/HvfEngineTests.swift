@@ -13,6 +13,8 @@ final class HvfEngineConfigTests: XCTestCase {
                                   shareHostDir: nil,
                                   shareGuestDir: nil,
                                   virtioNet: false,
+                                  virtioGpu3d: false,
+                                  nvmeBufferedIO: false,
                                   ctlFilePath: "/tmp/evidence/ctl")
         XCTAssertEqual(cfg.wrapperArguments(), [
             "scripts/run-hvf-windows-installed-boot.sh",
@@ -25,7 +27,9 @@ final class HvfEngineConfigTests: XCTestCase {
             "--release",
             "--skip-build",
             "--agent-service-control", "/tmp/evidence/ctl",
-            "--agent-service-command", "whoami"
+            "--agent-service-command", "whoami",
+            "--display-export-ppm", "/tmp/evidence/display.ppm",
+            "--display-export-ms", "500"
         ])
     }
 
@@ -40,12 +44,18 @@ final class HvfEngineConfigTests: XCTestCase {
                                   shareHostDir: "/Users/me/share",
                                   shareGuestDir: "C:\\share",
                                   virtioNet: true,
+                                  virtioGpu3d: true,
+                                  nvmeBufferedIO: true,
                                   ctlFilePath: "/tmp/evidence/ctl")
         let args = cfg.wrapperArguments()
         XCTAssertTrue(args.contains("--virtio-net"))
         XCTAssertTrue(args.contains("--agent-clipboard-sync"))
         XCTAssertTrue(args.contains("--release"))
         XCTAssertTrue(args.contains("--skip-build"))
+        XCTAssertTrue(args.contains("--nvme-buffered-io"))
+        XCTAssertTrue(args.contains("--virtio-gpu-3d"))
+        XCTAssertEqual(value(after: "--virtio-gpu-device-id", in: args), "1050")
+        XCTAssertEqual(value(after: "--gpu-trace-protocol", in: args), "virgl")
         XCTAssertEqual(value(after: "--ram-mib", in: args), "8192")
         XCTAssertEqual(value(after: "--smp-cpus", in: args), "8")
         XCTAssertEqual(value(after: "--agent-share-host", in: args), "/Users/me/share")
@@ -65,6 +75,8 @@ final class HvfEngineConfigTests: XCTestCase {
                                   shareHostDir: "/host",
                                   shareGuestDir: nil,
                                   virtioNet: false,
+                                  virtioGpu3d: false,
+                                  nvmeBufferedIO: false,
                                   ctlFilePath: "c")
         XCTAssertFalse(cfg.wrapperArguments().contains("--agent-share-host"))
         XCTAssertFalse(cfg.wrapperArguments().contains("--agent-share-ms"))
@@ -82,6 +94,8 @@ final class HvfEngineConfigTests: XCTestCase {
                                   shareHostDir: nil,
                                   shareGuestDir: nil,
                                   virtioNet: false,
+                                  virtioGpu3d: false,
+                                  nvmeBufferedIO: false,
                                   ctlFilePath: "c")
         let args = cfg.wrapperArguments()
         XCTAssertTrue(args.contains("--no-watchdog"))

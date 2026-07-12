@@ -17,6 +17,8 @@ struct HvfEngineView: View {
     @State private var shareHostDir = ""
     @State private var shareGuestDir = "C:\\bridgevm-share"
     @State private var virtioNet = false
+    @State private var virtioGpu3d = true
+    @State private var nvmeBufferedIO = true
     @State private var ctlFilePath = ""
     @State private var ctlInput = ""
 
@@ -72,6 +74,8 @@ struct HvfEngineView: View {
                 HStack(spacing: 18) {
                     Toggle("Clipboard sync", isOn: $clipboardSync)
                     Toggle("Virtio net", isOn: $virtioNet)
+                    Toggle("VirGL 3D", isOn: $virtioGpu3d)
+                    Toggle("Buffered NVMe", isOn: $nvmeBufferedIO)
                     Toggle("Shared folder", isOn: $shareEnabled)
                     Spacer()
                 }
@@ -130,7 +134,7 @@ struct HvfEngineView: View {
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "display").font(.system(size: 36)).foregroundColor(.secondary)
-                    Text("No RAMFB screenshot yet").foregroundColor(.secondary)
+                    Text("Waiting for the live display").foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 280)
             }
@@ -138,7 +142,7 @@ struct HvfEngineView: View {
             Text("Screenshots require AppKit").foregroundColor(.secondary)
             #endif
         } label: {
-            Label("RAMFB Screenshot", systemImage: "display")
+            Label("Live Display", systemImage: "display")
         }
     }
 
@@ -254,6 +258,8 @@ struct HvfEngineView: View {
                         shareHostDir: shareEnabled ? shareHostDir : nil,
                         shareGuestDir: shareEnabled ? shareGuestDir : nil,
                         virtioNet: virtioNet,
+                        virtioGpu3d: virtioGpu3d,
+                        nvmeBufferedIO: nvmeBufferedIO,
                         ctlFilePath: ctlFilePath)
     }
 
@@ -271,6 +277,8 @@ struct HvfEngineView: View {
         shareHostDir = cfg.shareHostDir ?? ""
         shareGuestDir = cfg.shareGuestDir ?? "C:\\bridgevm-share"
         virtioNet = cfg.virtioNet
+        virtioGpu3d = cfg.virtioGpu3d
+        nvmeBufferedIO = cfg.nvmeBufferedIO
         ctlFilePath = cfg.ctlFilePath
     }
 
@@ -299,6 +307,8 @@ struct HvfEngineView: View {
                                shareHostDir: nil,
                                shareGuestDir: nil,
                                virtioNet: false,
+                               virtioGpu3d: true,
+                               nvmeBufferedIO: true,
                                ctlFilePath: "\(evidence)/bvagent.ctl")
     }
 }

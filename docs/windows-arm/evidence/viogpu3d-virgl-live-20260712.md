@@ -63,3 +63,21 @@ status zero, and the 30-second desktop PNG has SHA-256
 `bd2405652d121ec9e088363810927f1f97196b3e9600d6dfd6cf8ab454078575`.
 The agent completed an exit-zero guest shutdown and the gate confirmed PSCI
 system-off and NVMe writeback.
+
+## Normal app live-display closure
+
+The v19 app-path run is preserved at
+`/Users/user/BridgeVM/app-virgl-live-display-proof-20260712-v19`. The normal
+macOS HVF configuration now launches Windows with VirGL, PCI device ID 1050,
+and buffered NVMe enabled by default. The runtime atomically replaces one
+bounded `display.ppm` artifact every 500 ms, and the app's Live Display view
+decodes that file before falling back to diagnostic RAMFB checkpoints.
+
+During the live Windows run the 3,072,016-byte 1280x800 artifact changed both
+modification time and SHA-256 across consecutive observations. The final frame
+captured the Windows shutdown spinner after the app-equivalent control command,
+showing that export continued through guest shutdown. The final PPM SHA-256 is
+`b818efec7a2f6d871d819cddf8759194af56f9fbcdfcb452ce1dbafda7213ff5`.
+The run recorded zero virtio-gpu error responses; its VirGL trace gate,
+resident-agent gate, PSCI system-off, NVMe writeback, and cleanup all returned
+status zero.

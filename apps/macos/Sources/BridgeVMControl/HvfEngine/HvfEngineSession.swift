@@ -92,6 +92,11 @@ final class HvfEngineSession: ObservableObject {
         timer = nil
         process = nil
         try? FileManager.default.createDirectory(atPath: config.evidenceDir, withIntermediateDirectories: true)
+        for name in ["display.ppm", "display.ppm.tmp"] {
+            try? FileManager.default.removeItem(
+                atPath: URL(fileURLWithPath: config.evidenceDir).appendingPathComponent(name).path
+            )
+        }
         try? FileManager.default.createDirectory(atPath: (config.ctlFilePath as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         if !FileManager.default.fileExists(atPath: config.ctlFilePath) {
             FileManager.default.createFile(atPath: config.ctlFilePath, contents: nil)
@@ -235,6 +240,11 @@ final class HvfEngineSession: ObservableObject {
 
     private func refreshScreenshot() {
         #if canImport(AppKit)
+        let live = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("display.ppm")
+        if let image = PpmDecoder.decodeImage(at: live) {
+            latestScreenshot = image
+            return
+        }
         let dir = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("ramfb", isDirectory: true)
         guard let urls = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
         let newest = urls

@@ -104,6 +104,9 @@ mod ramfb_dump;
 #[path = "hvf_gic_boot_probe/ramfb_sample_loop.rs"]
 mod ramfb_sample_loop;
 use ramfb_sample_loop::{RamfbSampleLoop, RamfbSampleShellAction};
+#[path = "hvf_gic_boot_probe/live_display_export.rs"]
+mod live_display_export;
+use live_display_export::LiveDisplayExporter;
 #[path = "hvf_gic_boot_probe/serial_input.rs"]
 mod serial_input;
 use serial_input::SerialTriggeredUartInput;
@@ -3987,6 +3990,7 @@ fn main() -> ExitCode {
             let mut fwcfg_trace_count = 0u32;
             let mut drain_stats = RunLoopDrainStats::new(trace_run_loop);
             let mut ramfb_sample_loop = RamfbSampleLoop::from_env();
+            let mut live_display_exporter = LiveDisplayExporter::from_env();
             let mut setup_input_host_wake = SetupInputHostWake::new();
             let boot_started = Instant::now();
             let mut boot_timer = BootTimer::from_env();
@@ -4432,9 +4436,10 @@ fn main() -> ExitCode {
                 }
                 let ramfb_checkpoint_due =
                     ramfb_sample_loop.checkpoint_due_at(std::time::Instant::now());
-                let automation_stop_reason = if automation_gate
-                    .should_check(automation_tick_canceled || ramfb_checkpoint_due)
-                {
+                let live_display_due = live_display_exporter.due(std::time::Instant::now());
+                let automation_stop_reason = if automation_gate.should_check(
+                    automation_tick_canceled || ramfb_checkpoint_due || live_display_due,
+                ) {
                     let mut platform_guard = lock_platform(
                         &platform,
                         smp_trace.as_deref(),
@@ -4522,6 +4527,7 @@ fn main() -> ExitCode {
                         ramfb_sample_loop.emit_due(vcpu, |label| {
                             ramfb_dump::print_checkpoint_for_platform(label, platform, &guest_ram);
                         });
+                        live_display_exporter.export_due(platform, std::time::Instant::now());
                         boot_timer.tick(platform, &guest_ram, exits, last_pc);
                         if stop_on_linux
                             && serial_reached_linux_early_boot(

@@ -14,6 +14,8 @@ init_installed_boot_defaults() {
   VIRTIO_GPU_3D="0"
   VIRTIO_GPU_PCI_DEVICE_ID=""
   VIRTIO_GPU_TRACE_JSONL=""
+  DISPLAY_EXPORT_PPM=""
+  DISPLAY_EXPORT_MS="500"
   GPU_TRACE_PROTOCOL="auto"
   REQUIRE_GPU_TRACE_GATE="0"
   VIOGPU3D_DIR=""
@@ -171,6 +173,15 @@ parse_installed_boot_args() {
           *) echo "FAIL: --gpu-trace-protocol must be auto, venus, or virgl" >&2; exit 2 ;;
         esac
         shift 2
+        ;;
+      --display-export-ppm)
+        [[ $# -ge 2 && -n "$2" ]] || { echo "FAIL: --display-export-ppm requires a non-empty path" >&2; exit 2; }
+        DISPLAY_EXPORT_PPM="$2"; shift 2
+        ;;
+      --display-export-ms)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        [[ "$2" =~ ^[0-9]+$ ]] && (( 10#$2 >= 100 && 10#$2 <= 60000 )) || { echo "FAIL: --display-export-ms requires an integer from 100 to 60000" >&2; exit 2; }
+        DISPLAY_EXPORT_MS="$2"; shift 2
         ;;
       --viogpu3d-dir)
         [[ $# -ge 2 ]] || { usage; exit 2; }

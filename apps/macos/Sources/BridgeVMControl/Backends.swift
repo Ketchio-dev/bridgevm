@@ -467,6 +467,8 @@ final class HvfWindowsBackend: VMBackend {
                         shareHostDir: nil,
                         shareGuestDir: nil,
                         virtioNet: true,
+                        virtioGpu3d: true,
+                        nvmeBufferedIO: true,
                         ctlFilePath: ctlFilePath)
     }
 

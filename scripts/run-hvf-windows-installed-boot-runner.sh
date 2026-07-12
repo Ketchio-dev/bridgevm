@@ -275,6 +275,12 @@ build_installed_boot_env_args() {
     fi
     ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_TRACE_JSONL=${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}")
   fi
+  if [[ -n "${DISPLAY_EXPORT_PPM:-}" ]]; then
+    ENV_ARGS+=(
+      "BRIDGEVM_DISPLAY_EXPORT_PPM=$DISPLAY_EXPORT_PPM"
+      "BRIDGEVM_DISPLAY_EXPORT_MS=$DISPLAY_EXPORT_MS"
+    )
+  fi
   printf '%s\n' "${ENV_ARGS[@]}"
 }
 
