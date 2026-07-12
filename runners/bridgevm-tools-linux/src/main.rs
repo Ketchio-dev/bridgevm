@@ -29,6 +29,68 @@ const EFFECT_COMMAND_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
 /// Hard cap so a configured effect command that hangs (e.g. a daemonizing child)
 /// can't wedge the single-threaded agent forever.
 const EFFECT_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_DESKTOP_COMMAND_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_CLIPBOARD_OUTPUT_BYTES: usize = 512 * 1024;
+const OUTPUT_DRAIN_BUFFER_BYTES: usize = 64 * 1024;
+const MAX_DESKTOP_FILE_BYTES: usize = 1024 * 1024;
+const MAX_TOKEN_FILE_BYTES: usize = 64 * 1024;
+const MAX_PROC_TEXT_BYTES: usize = 1024 * 1024;
+
+fn read_utf8_file_bounded(path: &Path, max_bytes: usize) -> std::io::Result<String> {
+    let file = fs::File::open(path)?;
+    let max_u64 = u64::try_from(max_bytes)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "limit too large"))?;
+    let size = file.metadata()?.len();
+    if size > max_u64 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("file is {size} bytes, larger than the {max_bytes} byte limit"),
+        ));
+    }
+    let read_limit = max_u64
+        .checked_add(1)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "limit too large"))?;
+    let capacity = usize::try_from(size).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "file size exceeds host address space",
+        )
+    })?;
+    let mut bytes = Vec::with_capacity(capacity);
+    file.take(read_limit).read_to_end(&mut bytes)?;
+    if bytes.len() > max_bytes {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("file grew beyond the {max_bytes} byte limit while being read"),
+        ));
+    }
+    String::from_utf8(bytes).map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("file is not valid UTF-8: {error}"),
+        )
+    })
+}
+
+fn drain_output_bounded(
+    reader: &mut impl Read,
+    max_bytes: usize,
+) -> std::io::Result<(Vec<u8>, bool)> {
+    let mut captured = Vec::new();
+    let mut chunk = [0_u8; OUTPUT_DRAIN_BUFFER_BYTES];
+    let mut exceeded = false;
+    loop {
+        let read = reader.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        let remaining = max_bytes.saturating_sub(captured.len());
+        let keep = read.min(remaining);
+        captured.extend_from_slice(&chunk[..keep]);
+        exceeded |= keep < read;
+    }
+    Ok((captured, exceeded))
+}
 
 /// Wait for `child` up to `EFFECT_COMMAND_TIMEOUT`, killing + reaping it on
 /// timeout. Returns the exit status, or an error string on timeout/wait failure.
@@ -907,7 +969,7 @@ fn read_desktop_applications() -> Result<Vec<DesktopApplication>, String> {
 }
 
 fn parse_desktop_application(path: &Path) -> Option<DesktopApplication> {
-    let contents = fs::read_to_string(path).ok()?;
+    let contents = read_utf8_file_bounded(path, MAX_DESKTOP_FILE_BYTES).ok()?;
     let mut name = None;
     let mut app_type = None;
     let mut no_display = false;
@@ -1060,16 +1122,19 @@ fn run_command_output(program: &Path, args: &[&str]) -> Result<String, String> {
         .stdout
         .take()
         .ok_or_else(|| format!("failed to open stdout for {}", program.display()))?;
-    let drain = thread::spawn(move || {
-        let mut buffer = Vec::new();
-        let _ = stdout.read_to_end(&mut buffer);
-        buffer
-    });
+    let drain =
+        thread::spawn(move || drain_output_bounded(&mut stdout, MAX_DESKTOP_COMMAND_OUTPUT_BYTES));
     let label = format!("desktop command {}", program.display());
     let status = wait_bounded(&mut child, &label);
-    let buffer = drain.join().unwrap_or_default();
+    let drained = drain
+        .join()
+        .map_err(|_| format!("{label} stdout drain panicked"))?
+        .map_err(|error| format!("{label} stdout read failed: {error}"))?;
     match status {
-        Ok(status) if status.success() => Ok(String::from_utf8_lossy(&buffer).to_string()),
+        Ok(status) if status.success() && drained.1 => Err(format!(
+            "{label} output exceeded {MAX_DESKTOP_COMMAND_OUTPUT_BYTES} bytes"
+        )),
+        Ok(status) if status.success() => Ok(String::from_utf8_lossy(&drained.0).to_string()),
         Ok(status) => Err(format!("{label} failed: exit status {status}")),
         Err(error) => Err(error),
     }
@@ -2356,18 +2421,21 @@ fn run_clipboard_read_command(program: &Path, args: &[String]) -> Result<Option<
             program.display()
         )
     })?;
-    let drain = thread::spawn(move || {
-        let mut buffer = Vec::new();
-        let _ = stdout.read_to_end(&mut buffer);
-        buffer
-    });
+    let drain =
+        thread::spawn(move || drain_output_bounded(&mut stdout, MAX_CLIPBOARD_OUTPUT_BYTES));
 
     let label = format!("clipboard read command {}", program.display());
     let status = wait_bounded(&mut child, &label);
-    let buffer = drain.join().unwrap_or_default();
+    let drained = drain
+        .join()
+        .map_err(|_| format!("{label} stdout drain panicked"))?
+        .map_err(|error| format!("{label} stdout read failed: {error}"))?;
     match status {
+        Ok(status) if status.success() && drained.1 => Err(format!(
+            "{label} output exceeded {MAX_CLIPBOARD_OUTPUT_BYTES} bytes"
+        )),
         Ok(status) if status.success() => {
-            let text = String::from_utf8_lossy(&buffer)
+            let text = String::from_utf8_lossy(&drained.0)
                 .trim_end_matches(['\r', '\n'])
                 .to_string();
             if text.is_empty() {
@@ -2981,7 +3049,7 @@ fn resolve_token(token: Option<String>, token_file: Option<PathBuf>) -> Result<S
         (Some(_), Some(_)) => anyhow::bail!("use either --token or --token-file, not both"),
         (Some(token), None) => validate_token(&token),
         (None, Some(path)) => {
-            let contents = std::fs::read_to_string(&path)
+            let contents = read_utf8_file_bounded(&path, MAX_TOKEN_FILE_BYTES)
                 .with_context(|| format!("failed to read token file {}", path.display()))?;
             parse_token_file(&contents)
         }
@@ -3199,11 +3267,11 @@ impl TelemetryConfig {
 /// read or parsed (e.g. when running off-Linux for unit tests), so the caller
 /// can fall back to the configured synthetic values.
 fn read_proc_metrics() -> Option<GuestMetricsConfig> {
-    let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
+    let meminfo = read_utf8_file_bounded(Path::new("/proc/meminfo"), MAX_PROC_TEXT_BYTES).ok()?;
     let memory_used_mib = parse_memory_used_mib(&meminfo)?;
     // CPU load is approximated from the 1-minute load average over the online
     // CPU count; clamped to 0..=100 to satisfy the protocol invariant.
-    let loadavg = fs::read_to_string("/proc/loadavg").ok();
+    let loadavg = read_utf8_file_bounded(Path::new("/proc/loadavg"), MAX_PROC_TEXT_BYTES).ok();
     let cpu_percent = loadavg
         .as_deref()
         .and_then(parse_loadavg_one_minute)
@@ -3764,6 +3832,58 @@ mod tests {
         );
         // Same simulated value again -> dedup.
         assert_eq!(state.observe(reader.read_text().unwrap()), None);
+    }
+
+    #[test]
+    fn output_drain_caps_capture_but_consumes_reader_to_eof() {
+        let input = vec![0x5a; OUTPUT_DRAIN_BUFFER_BYTES * 3];
+        let mut reader = std::io::Cursor::new(input.clone());
+
+        let (captured, exceeded) =
+            drain_output_bounded(&mut reader, OUTPUT_DRAIN_BUFFER_BYTES + 17).unwrap();
+
+        assert!(exceeded);
+        assert_eq!(captured, input[..OUTPUT_DRAIN_BUFFER_BYTES + 17]);
+        assert_eq!(reader.position(), input.len() as u64);
+    }
+
+    #[test]
+    fn output_drain_preserves_complete_bounded_output() {
+        let input = b"bounded output".to_vec();
+        let mut reader = std::io::Cursor::new(input.clone());
+
+        let (captured, exceeded) = drain_output_bounded(&mut reader, input.len()).unwrap();
+
+        assert!(!exceeded);
+        assert_eq!(captured, input);
+    }
+
+    #[test]
+    fn bounded_utf8_reader_rejects_sparse_oversized_file_before_allocation() {
+        let root = unique_temp_dir("bridgevm-tools-bounded-text");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("oversized.txt");
+        let file = fs::File::create(&path).unwrap();
+        file.set_len(512 * 1024 * 1024).unwrap();
+
+        let error = read_utf8_file_bounded(&path, 4096).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("536870912 bytes"));
+        assert!(error.to_string().contains("4096 byte limit"));
+    }
+
+    #[test]
+    fn bounded_utf8_reader_rejects_invalid_utf8() {
+        let root = unique_temp_dir("bridgevm-tools-invalid-text");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("invalid.txt");
+        fs::write(&path, [0xff, 0xfe]).unwrap();
+
+        let error = read_utf8_file_bounded(&path, 4096).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("not valid UTF-8"));
     }
 
     #[test]
