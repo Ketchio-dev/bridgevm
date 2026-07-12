@@ -4454,7 +4454,7 @@ impl GicV3DistributorDevice {
     }
 
     fn irouter_interrupt_id(offset: u64) -> Option<usize> {
-        if offset < GICD_IROUTER_BASE_OFFSET || offset >= GICD_IROUTER_BASE_OFFSET + 0x2000 {
+        if !(GICD_IROUTER_BASE_OFFSET..GICD_IROUTER_BASE_OFFSET + 0x2000).contains(&offset) {
             return None;
         }
         let relative = offset - GICD_IROUTER_BASE_OFFSET;
@@ -7583,11 +7583,7 @@ fn acknowledge_windows_arm_firmware_gic_irq(
         .find_device_mut_at::<GicV3DistributorDevice>(WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA)
         .and_then(|gicd| gicd.pending_interrupt_for_cpu(priority_mask));
 
-    let Some(interrupt) =
-        select_highest_priority_interrupt(redistributor_pending, distributor_pending)
-    else {
-        return None;
-    };
+    let interrupt = select_highest_priority_interrupt(redistributor_pending, distributor_pending)?;
 
     if interrupt.interrupt_id < 32 {
         if bus

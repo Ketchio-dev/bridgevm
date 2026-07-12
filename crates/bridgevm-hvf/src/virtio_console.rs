@@ -298,18 +298,20 @@ impl VirtioConsole {
     }
 
     pub fn stats(&self) -> VirtioConsoleStats {
-        let mut stats = VirtioConsoleStats::default();
-        stats.status = self.status;
-        stats.interrupt_status = self.interrupt_status;
-        stats.driver_features =
-            u64::from(self.driver_features[0]) | (u64::from(self.driver_features[1]) << 32);
-        stats.port1_ready = self.ports[1].ready;
-        stats.port1_guest_open = self.ports[1].guest_open;
-        stats.port1_host_open = self.ports[1].host_open;
-        stats.agent_connected_confirmed = self.agent_connected_confirmed;
-        stats.pending_control = self.pending_control.len();
-        stats.host_to_guest_len = self.host_to_guest.len();
-        stats.host_inbound_len = self.host_inbound.len();
+        let mut stats = VirtioConsoleStats {
+            status: self.status,
+            interrupt_status: self.interrupt_status,
+            driver_features: u64::from(self.driver_features[0])
+                | (u64::from(self.driver_features[1]) << 32),
+            port1_ready: self.ports[1].ready,
+            port1_guest_open: self.ports[1].guest_open,
+            port1_host_open: self.ports[1].host_open,
+            agent_connected_confirmed: self.agent_connected_confirmed,
+            pending_control: self.pending_control.len(),
+            host_to_guest_len: self.host_to_guest.len(),
+            host_inbound_len: self.host_inbound.len(),
+            ..VirtioConsoleStats::default()
+        };
         for (out, queue) in stats.queues.iter_mut().zip(self.queues) {
             *out = VirtioConsoleQueueStats {
                 size: queue.size,

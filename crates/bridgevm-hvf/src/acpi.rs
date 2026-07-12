@@ -184,7 +184,7 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     let off_xsdt = 0u64;
     let off_dsdt = off_xsdt + xsdt_len;
     let off_fadt = off_dsdt + dsdt.len() as u64;
-    let off_madt = off_fadt + fadt_len() as u64;
+    let off_madt = off_fadt + fadt_len();
     let off_pptt = off_madt + madt.len() as u64;
     let off_gtdt = off_pptt + pptt.len() as u64;
     let off_mcfg = off_gtdt + gtdt.len() as u64;

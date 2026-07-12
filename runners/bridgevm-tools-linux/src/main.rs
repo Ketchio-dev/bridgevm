@@ -425,9 +425,7 @@ impl DesktopEnv for SystemDesktopEnv {
     }
 
     fn program_path(&self, program: &str) -> Option<PathBuf> {
-        let Some(path) = std::env::var_os("PATH") else {
-            return None;
-        };
+        let path = std::env::var_os("PATH")?;
         std::env::split_paths(&path)
             .map(|dir| dir.join(program))
             .find(|path| path.is_file())
@@ -500,10 +498,8 @@ fn detect_desktop_controller(
     let app_launcher = if applications {
         if let Some(program) = env.program_path("gio") {
             Some(AppLauncher::Gio(program))
-        } else if let Some(program) = env.program_path("gtk-launch") {
-            Some(AppLauncher::GtkLaunch(program))
         } else {
-            None
+            env.program_path("gtk-launch").map(AppLauncher::GtkLaunch)
         }
     } else {
         None
