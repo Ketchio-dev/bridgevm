@@ -8,6 +8,16 @@ pub struct LiveDisplayExporter {
     path: Option<PathBuf>,
     interval: Duration,
     next_due: Instant,
+    last_frame: Option<FrameIdentity>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FrameIdentity {
+    width: u32,
+    height: u32,
+    stride: u32,
+    fourcc: u32,
+    checksum: u64,
 }
 
 impl LiveDisplayExporter {
@@ -24,6 +34,7 @@ impl LiveDisplayExporter {
             path,
             interval: Duration::from_millis(interval_ms),
             next_due: Instant::now(),
+            last_frame: None,
         }
     }
 
@@ -42,6 +53,16 @@ impl LiveDisplayExporter {
         let Some(scanout) = platform.virtio_gpu_scanout() else {
             return;
         };
+        let identity = FrameIdentity::new(
+            scanout.width,
+            scanout.height,
+            scanout.stride,
+            scanout.fourcc,
+            scanout.bytes,
+        );
+        if self.last_frame == Some(identity) && path.exists() {
+            return;
+        }
         let config = RamfbConfig {
             addr: 1,
             fourcc: scanout.fourcc,
@@ -58,6 +79,25 @@ impl LiveDisplayExporter {
                 "live display export failed: path={} error={error}",
                 path.display()
             );
+        } else {
+            self.last_frame = Some(identity);
+        }
+    }
+}
+
+impl FrameIdentity {
+    fn new(width: u32, height: u32, stride: u32, fourcc: u32, bytes: &[u8]) -> Self {
+        let mut checksum = 0xcbf2_9ce4_8422_2325u64;
+        for byte in bytes {
+            checksum ^= u64::from(*byte);
+            checksum = checksum.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        Self {
+            width,
+            height,
+            stride,
+            fourcc,
+            checksum,
         }
     }
 }
@@ -73,7 +113,7 @@ fn replace_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::replace_file;
+    use super::{replace_file, FrameIdentity};
 
     #[test]
     fn live_frame_replace_overwrites_one_bounded_artifact() {
@@ -88,5 +128,22 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"second");
         assert!(!path.with_extension("ppm.tmp").exists());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn live_frame_identity_changes_with_pixels_or_geometry() {
+        let first = FrameIdentity::new(2, 1, 8, 1, &[0, 1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(
+            first,
+            FrameIdentity::new(2, 1, 8, 1, &[0, 1, 2, 3, 4, 5, 6, 7])
+        );
+        assert_ne!(
+            first,
+            FrameIdentity::new(2, 1, 8, 1, &[0, 1, 2, 3, 4, 5, 6, 8])
+        );
+        assert_ne!(
+            first,
+            FrameIdentity::new(1, 2, 8, 1, &[0, 1, 2, 3, 4, 5, 6, 7])
+        );
     }
 }
