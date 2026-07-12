@@ -888,6 +888,53 @@ final class HvfWindowsBackendTests: XCTestCase {
         XCTAssertTrue(command.contains("BRIDGEVM_DISK_GROW_OK state="))
     }
 
+    func testResourceSaveFailureKeepsBackendConfigurationUnchanged() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let unusableRoot = temp.appendingPathComponent("not-a-directory")
+        try Data("blocked".utf8).write(to: unusableRoot)
+        let backend = HvfWindowsBackend(
+            makeConfig(bundlePath: temp.appendingPathComponent("bundle.vmbridge").path),
+            libraryRoot: unusableRoot
+        )
+
+        XCTAssertFalse(backend.setResources(memMiB: 8192, cpu: 4))
+        XCTAssertEqual(backend.resources().memMiB, 4096)
+        XCTAssertEqual(backend.resources().cpu, 1)
+        XCTAssertEqual(backend.config.memMiB, 4096)
+        XCTAssertEqual(backend.config.cpuCount, 1)
+    }
+
+    func testResourceSaveCommitsMemoryAndPersistedConfigurationTogether() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let library = temp.appendingPathComponent("library", isDirectory: true)
+        let original = makeConfig(bundlePath: temp.appendingPathComponent("bundle.vmbridge").path)
+        XCTAssertTrue(VMLibrary.save(original, rootURL: library))
+        let backend = HvfWindowsBackend(original, libraryRoot: library)
+
+        XCTAssertTrue(backend.setResources(memMiB: 8192, cpu: 4))
+
+        XCTAssertEqual(backend.resources().memMiB, 8192)
+        XCTAssertEqual(backend.resources().cpu, 4)
+        let persisted = try XCTUnwrap(VMLibrary.scan(rootURL: library).configs.first)
+        XCTAssertEqual(persisted.memMiB, 8192)
+        XCTAssertEqual(persisted.cpuCount, 4)
+    }
+
+    func testResourceSaveRejectsInvalidValuesWithoutMutation() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let backend = HvfWindowsBackend(
+            makeConfig(bundlePath: temp.appendingPathComponent("bundle.vmbridge").path),
+            libraryRoot: temp.appendingPathComponent("library")
+        )
+
+        XCTAssertFalse(backend.setResources(memMiB: 0, cpu: 0))
+        XCTAssertEqual(backend.resources().memMiB, 4096)
+        XCTAssertEqual(backend.resources().cpu, 1)
+    }
+
     private func makeTempDir() throws -> URL {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

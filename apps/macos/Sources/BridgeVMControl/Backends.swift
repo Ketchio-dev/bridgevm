@@ -483,12 +483,15 @@ final class QemuCompatBackend: VMBackend {
 final class HvfWindowsBackend: VMBackend {
     private(set) var config: VMConfig
     private let processIsRunning: (String) -> Bool
+    private let libraryRoot: URL
     init(
         _ config: VMConfig,
-        processIsRunning: @escaping (String) -> Bool = { Shell.isProcessRunning(matching: $0) }
+        processIsRunning: @escaping (String) -> Bool = { Shell.isProcessRunning(matching: $0) },
+        libraryRoot: URL = VMLibrary.root
     ) {
         self.config = config
         self.processIsRunning = processIsRunning
+        self.libraryRoot = libraryRoot
     }
 
     var displayName: String { config.displayName }
@@ -598,9 +601,13 @@ final class HvfWindowsBackend: VMBackend {
     }
 
     func setResources(memMiB: Int, cpu: Int) -> Bool {
-        config.memMiB = memMiB
-        config.cpuCount = cpu
-        return VMLibrary.save(config)
+        guard memMiB >= 1024, cpu > 0 else { return false }
+        var updated = config
+        updated.memMiB = memMiB
+        updated.cpuCount = cpu
+        guard VMLibrary.save(updated, rootURL: libraryRoot) else { return false }
+        config = updated
+        return true
     }
 
     func runInGuest(_ command: String) -> (output: String, code: Int32) {
