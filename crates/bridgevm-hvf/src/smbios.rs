@@ -108,11 +108,12 @@ fn append_type0(tables: &mut Vec<u8>) {
 }
 
 fn append_type1(tables: &mut Vec<u8>) {
-    let mut f = Vec::new();
-    f.push(1); // Manufacturer
-    f.push(2); // Product Name
-    f.push(3); // Version
-    f.push(4); // Serial Number
+    let mut f = vec![
+        1, // Manufacturer
+        2, // Product Name
+        3, // Version
+        4, // Serial Number
+    ];
     f.extend_from_slice(&[0; 16]); // UUID unknown
     f.push(0x06); // Wake-up type: power switch
     f.push(0); // SKU
@@ -133,16 +134,17 @@ fn append_type1(tables: &mut Vec<u8>) {
 }
 
 fn append_type3(tables: &mut Vec<u8>) {
-    let mut f = Vec::new();
-    f.push(1); // Manufacturer
-    f.push(0x01); // Type: Other
-    f.push(2); // Version
-    f.push(3); // Serial Number
-    f.push(0); // Asset Tag
-    f.push(0x03); // Boot-up state: safe
-    f.push(0x03); // Power supply state: safe
-    f.push(0x03); // Thermal state: safe
-    f.push(0x02); // Security status: unknown
+    let mut f = vec![
+        1,    // Manufacturer
+        0x01, // Type: Other
+        2,    // Version
+        3,    // Serial Number
+        0,    // Asset Tag
+        0x03, // Boot-up state: safe
+        0x03, // Power supply state: safe
+        0x03, // Thermal state: safe
+        0x02, // Security status: unknown
+    ];
     f.extend_from_slice(&0u32.to_le_bytes());
     f.push(0); // Height
     f.push(0); // Number of power cords
@@ -156,11 +158,12 @@ fn append_type4(tables: &mut Vec<u8>, cpu_count: u64) {
     let visible = cpu_count.min(u64::from(u16::MAX)) as u16;
     let visible_u8 = cpu_count.min(u64::from(u8::MAX)) as u8;
 
-    let mut f = Vec::new();
-    f.push(1); // Socket designation
-    f.push(0x03); // Processor type: CPU
-    f.push(0x01); // Processor family: Other
-    f.push(2); // Processor manufacturer
+    let mut f = vec![
+        1,    // Socket designation
+        0x03, // Processor type: CPU
+        0x01, // Processor family: Other
+        2,    // Processor manufacturer
+    ];
     f.extend_from_slice(&0u32.to_le_bytes()); // Processor ID
     f.extend_from_slice(&0u32.to_le_bytes());
     f.push(3); // Processor version
