@@ -6454,54 +6454,72 @@ fn send_runtime_control_command(socket: &Path, command: &str) -> Result<serde_js
         .map_err(|error| format!("invalid runtime control response JSON: {error}"))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FastRunnerDisplayConfig<'a> {
+    pub size: Option<(u32, u32)>,
+    pub runtime_control_socket: Option<&'a Path>,
+    pub proxy_framebuffer_rgba_file: Option<&'a Path>,
+    pub proxy_framebuffer_capture_interval_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FastRunnerConfig<'a> {
+    pub launch_spec_path: &'a Path,
+    pub apple_vz_runner: &'a Path,
+    pub restore_state: Option<&'a Path>,
+    pub display: Option<FastRunnerDisplayConfig<'a>>,
+}
+
+impl<'a> FastRunnerConfig<'a> {
+    pub fn new(launch_spec_path: &'a Path, apple_vz_runner: &'a Path) -> Self {
+        Self {
+            launch_spec_path,
+            apple_vz_runner,
+            restore_state: None,
+            display: None,
+        }
+    }
+}
+
 /// Build the `lightvm-runner` argv used to launch a Fast Mode Apple VZ VM.
 ///
 /// Shared by the Fast cold-start (`run_backend`) and resume (`resume_backend`)
 /// paths. The only difference is the optional saved-state restore: a cold start
 /// passes `restore_state == None` (fresh boot), while resume passes the saved
 /// state file so the runner appends `--apple-vz-restore-state <file>`.
-pub fn fast_runner_args(
-    launch_spec_path: &Path,
-    apple_vz_runner: &Path,
-    restore_state: Option<&Path>,
-    display: bool,
-    display_size: Option<(u32, u32)>,
-    runtime_control_socket: Option<&Path>,
-    proxy_framebuffer_rgba_file: Option<&Path>,
-    proxy_framebuffer_capture_interval_ms: Option<u64>,
-) -> Vec<String> {
+pub fn fast_runner_args(config: FastRunnerConfig<'_>) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "--launch-spec".to_string(),
-        launch_spec_path.display().to_string(),
+        config.launch_spec_path.display().to_string(),
         "--require-ready".to_string(),
         "--launch".to_string(),
         "--apple-vz-runner".to_string(),
-        apple_vz_runner.display().to_string(),
+        config.apple_vz_runner.display().to_string(),
         "--apple-vz-allow-real-start".to_string(),
     ];
-    if let Some(state_path) = restore_state {
+    if let Some(state_path) = config.restore_state {
         args.push("--apple-vz-restore-state".to_string());
         args.push(state_path.display().to_string());
     }
     // Embedded display: lightvm-runner forwards this as `--display` to the
     // AppleVzRunner, which boots with a graphics device + hosts a window.
-    if display {
+    if let Some(display) = config.display {
         args.push("--apple-vz-display".to_string());
-        if let Some((width, height)) = display_size {
+        if let Some((width, height)) = display.size {
             args.push("--apple-vz-display-width".to_string());
             args.push(width.to_string());
             args.push("--apple-vz-display-height".to_string());
             args.push(height.to_string());
         }
-        if let Some(socket_path) = runtime_control_socket {
+        if let Some(socket_path) = display.runtime_control_socket {
             args.push("--apple-vz-runtime-control-socket".to_string());
             args.push(socket_path.display().to_string());
         }
-        if let Some(path) = proxy_framebuffer_rgba_file {
+        if let Some(path) = display.proxy_framebuffer_rgba_file {
             args.push("--apple-vz-proxy-framebuffer-rgba-file".to_string());
             args.push(path.display().to_string());
         }
-        if let Some(interval_ms) = proxy_framebuffer_capture_interval_ms {
+        if let Some(interval_ms) = display.proxy_framebuffer_capture_interval_ms {
             args.push("--apple-vz-proxy-framebuffer-capture-interval-ms".to_string());
             args.push(interval_ms.to_string());
         }
@@ -6566,18 +6584,19 @@ fn spawn_fast_backend(
     });
     let proxy_framebuffer_rgba_file =
         display.then(|| apple_vz_display_framebuffer_rgba_path(bundle));
-    let args = fast_runner_args(
-        &launch_spec_path,
-        &apple_vz_runner,
+    let args = fast_runner_args(FastRunnerConfig {
+        launch_spec_path: &launch_spec_path,
+        apple_vz_runner: &apple_vz_runner,
         restore_state,
-        display,
-        display_size,
-        runtime_control
-            .as_ref()
-            .map(|control| control.socket_path.as_path()),
-        proxy_framebuffer_rgba_file.as_deref(),
-        None,
-    );
+        display: display.then_some(FastRunnerDisplayConfig {
+            size: display_size,
+            runtime_control_socket: runtime_control
+                .as_ref()
+                .map(|control| control.socket_path.as_path()),
+            proxy_framebuffer_rgba_file: proxy_framebuffer_rgba_file.as_deref(),
+            proxy_framebuffer_capture_interval_ms: None,
+        }),
+    });
 
     let mut runner_command = Command::new(&lightvm_runner);
     runner_command
@@ -13162,7 +13181,7 @@ mod tests {
     fn fast_runner_args_cold_start_omits_restore_state() {
         let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
         let runner = Path::new("/helpers/AppleVzRunner");
-        let args = fast_runner_args(launch_spec, runner, None, false, None, None, None, None);
+        let args = fast_runner_args(FastRunnerConfig::new(launch_spec, runner));
         assert_eq!(
             args,
             vec![
@@ -13185,7 +13204,14 @@ mod tests {
     fn fast_runner_args_display_appends_display_flag() {
         let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
         let runner = Path::new("/helpers/AppleVzRunner");
-        let args = fast_runner_args(launch_spec, runner, None, true, None, None, None, None);
+        let mut config = FastRunnerConfig::new(launch_spec, runner);
+        config.display = Some(FastRunnerDisplayConfig {
+            size: None,
+            runtime_control_socket: None,
+            proxy_framebuffer_rgba_file: None,
+            proxy_framebuffer_capture_interval_ms: None,
+        });
+        let args = fast_runner_args(config);
         assert!(args.iter().any(|arg| arg == "--apple-vz-display"));
         assert!(!args.iter().any(|arg| arg == "--apple-vz-restore-state"));
     }
@@ -13194,16 +13220,17 @@ mod tests {
     fn fast_runner_args_display_appends_display_dimensions() {
         let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
         let runner = Path::new("/helpers/AppleVzRunner");
-        let args = fast_runner_args(
-            launch_spec,
-            runner,
-            None,
-            true,
-            Some((1440, 900)),
-            None,
-            None,
-            None,
-        );
+        let args = fast_runner_args(FastRunnerConfig {
+            launch_spec_path: launch_spec,
+            apple_vz_runner: runner,
+            restore_state: None,
+            display: Some(FastRunnerDisplayConfig {
+                size: Some((1440, 900)),
+                runtime_control_socket: None,
+                proxy_framebuffer_rgba_file: None,
+                proxy_framebuffer_capture_interval_ms: None,
+            }),
+        });
         assert_eq!(
             args,
             vec![
@@ -13228,16 +13255,17 @@ mod tests {
         let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
         let runner = Path::new("/helpers/AppleVzRunner");
         let socket = Path::new("/bundle/run/apple-vz-display-control.sock");
-        let args = fast_runner_args(
-            launch_spec,
-            runner,
-            None,
-            true,
-            None,
-            Some(socket),
-            None,
-            None,
-        );
+        let args = fast_runner_args(FastRunnerConfig {
+            launch_spec_path: launch_spec,
+            apple_vz_runner: runner,
+            restore_state: None,
+            display: Some(FastRunnerDisplayConfig {
+                size: None,
+                runtime_control_socket: Some(socket),
+                proxy_framebuffer_rgba_file: None,
+                proxy_framebuffer_capture_interval_ms: None,
+            }),
+        });
 
         assert!(args.iter().any(|arg| arg == "--apple-vz-display"));
         assert!(args.windows(2).any(|pair| pair
@@ -13252,16 +13280,17 @@ mod tests {
         let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
         let runner = Path::new("/helpers/AppleVzRunner");
         let framebuffer = Path::new("/bundle/metadata/apple-vz-display-framebuffer.rgba");
-        let args = fast_runner_args(
-            launch_spec,
-            runner,
-            None,
-            true,
-            None,
-            None,
-            Some(framebuffer),
-            Some(250),
-        );
+        let args = fast_runner_args(FastRunnerConfig {
+            launch_spec_path: launch_spec,
+            apple_vz_runner: runner,
+            restore_state: None,
+            display: Some(FastRunnerDisplayConfig {
+                size: None,
+                runtime_control_socket: None,
+                proxy_framebuffer_rgba_file: Some(framebuffer),
+                proxy_framebuffer_capture_interval_ms: Some(250),
+            }),
+        });
 
         assert!(args.iter().any(|arg| arg == "--apple-vz-display"));
         assert!(args.windows(2).any(|pair| pair
@@ -13288,16 +13317,9 @@ mod tests {
         let launch_spec = Path::new("/bundle/metadata/launch-spec.json");
         let runner = Path::new("/helpers/AppleVzRunner");
         let state = Path::new("/bundle/metadata/suspend-images/fast.bin");
-        let args = fast_runner_args(
-            launch_spec,
-            runner,
-            Some(state),
-            false,
-            None,
-            None,
-            None,
-            None,
-        );
+        let mut config = FastRunnerConfig::new(launch_spec, runner);
+        config.restore_state = Some(state);
+        let args = fast_runner_args(config);
         assert_eq!(
             args,
             vec![
