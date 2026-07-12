@@ -460,7 +460,7 @@ final class QemuCompatBackend: VMBackend {
         let qemuCommand = "nohup \(Shell.shellCommand(qemu, qemuArgs)) >\(Shell.shQuote(config.bundlePath + "/logs/qemu.log")) 2>&1 &"
         // swtpm must listen before QEMU connects → start it, brief wait, then QEMU.
         let mkdir = Shell.shellCommand("/bin/mkdir", ["-p", swtpmState, config.bundlePath + "/logs"])
-        let probe = Shell.shellCommand("/usr/bin/pgrep", ["-f", swtpmSock])
+        let probe = Shell.shellCommand("/usr/bin/pgrep", ["-f", Shell.eregEscape(swtpmSock)])
         let swtpmArgs = ["socket", "--tpmstate", "dir=\(swtpmState)",
                          "--ctrl", "type=unixio,path=\(swtpmSock)", "--tpm2"]
         let startTPM = "nohup \(Shell.shellCommand(swtpm, swtpmArgs)) >/dev/null 2>&1 &"

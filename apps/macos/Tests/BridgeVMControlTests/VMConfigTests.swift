@@ -248,6 +248,36 @@ final class VMLibraryPersistenceTests: XCTestCase {
 }
 
 final class ShellCommandSafetyTests: XCTestCase {
+    func testProcessLookupTreatsRegexMetacharactersAsLiteralData() throws {
+        let suffix = UUID().uuidString
+        let literalMarker = "bridgevm-[abc]-\(suffix)"
+        let regexOnlyMatch = "bridgevm-a-\(suffix)"
+        let decoy = try launchMarkerProcess(regexOnlyMatch)
+        defer { terminate(decoy) }
+
+        XCTAssertFalse(Shell.isProcessRunning(matching: literalMarker))
+
+        let exact = try launchMarkerProcess(literalMarker)
+        defer { terminate(exact) }
+        XCTAssertTrue(Shell.isProcessRunning(matching: literalMarker))
+    }
+
+    func testQemuTPMProbeEscapesMetacharactersInSocketPath() {
+        let bundle = "/tmp/vm.[prod]+(one)"
+        let config = VMConfig(id: "qemu", name: "QEMU", displayName: "QEMU",
+                              backendKind: "qemu-compat", bootMode: "windows-iso",
+                              bundlePath: bundle, runnerPath: "", launchSpecPath: "",
+                              handoffPath: "", sshKeyPath: "", sshUser: "", leasesPath: "",
+                              guestName: "qemu", displayWidth: 1280, displayHeight: 800,
+                              diskPath: bundle + "/disks/win.qcow2")
+
+        let command = QemuCompatBackend(config).launchCommand()
+        let socket = bundle + "/metadata/swtpm.sock"
+
+        XCTAssertTrue(command.contains(Shell.shQuote(Shell.eregEscape(socket))))
+        XCTAssertFalse(command.contains(Shell.shQuote(socket) + " >/dev/null"))
+    }
+
     func testShellCommandPreservesHostileArgumentsAsData() {
         let hostile = "quote' $(printf INJECTED) ; touch /tmp/never"
         let command = Shell.shellCommand("/usr/bin/printf", ["%s", hostile])
@@ -319,6 +349,20 @@ final class ShellCommandSafetyTests: XCTestCase {
         XCTAssertEqual(result.code, 0)
         XCTAssertEqual(result.output, "done")
         XCTAssertLessThan(Date().timeIntervalSince(started), 1.5)
+    }
+
+    private func launchMarkerProcess(_ marker: String) throws -> Process {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "sleep 5; :", marker]
+        try process.run()
+        usleep(100_000)
+        return process
+    }
+
+    private func terminate(_ process: Process) {
+        if process.isRunning { process.terminate() }
+        process.waitUntilExit()
     }
 }
 
