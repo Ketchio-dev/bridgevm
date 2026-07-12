@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use std::time::{Duration, Instant};
 
 use crate::{
     fwcfg::GuestMemoryMut,
@@ -168,6 +169,9 @@ pub struct VirtioGpu {
     blob_row_scratch: Vec<u8>,
     trace_fields_scratch: String,
     trace: VirtioGpuTraceRecorder,
+    scanout_readback_interval: Duration,
+    last_3d_scanout_readback: Option<Instant>,
+    scanout_readback_count: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -237,6 +241,7 @@ pub struct VirtioGpuStats {
     pub driver_features: u64,
     pub resources: usize,
     pub scanout_active: bool,
+    pub scanout_readbacks: u64,
     pub three_d: VirtioGpu3dStats,
     pub queues: [VirtioGpuQueueStats; QUEUE_COUNT],
 }
@@ -343,6 +348,9 @@ impl VirtioGpu {
             blob_row_scratch: Vec::new(),
             trace_fields_scratch: String::new(),
             trace: VirtioGpuTraceRecorder::from_env(),
+            scanout_readback_interval: Duration::ZERO,
+            last_3d_scanout_readback: None,
+            scanout_readback_count: 0,
         };
         gpu.trace_device_init(false);
         gpu
@@ -360,6 +368,11 @@ impl VirtioGpu {
         self.three_d.set_shm_map_port(port, window_size);
     }
 
+    pub fn set_3d_scanout_readback_interval(&mut self, interval: Duration) {
+        self.scanout_readback_interval = interval;
+        self.last_3d_scanout_readback = None;
+    }
+
     pub fn new_from_env() -> Self {
         let (width, height) = parse_resolution_env();
         Self::new(width, height)
@@ -373,6 +386,7 @@ impl VirtioGpu {
                 | (u64::from(self.driver_features[1]) << 32),
             resources: self.resources.len(),
             scanout_active: self.scanout_resource.is_some() || self.blob_scanout.is_some(),
+            scanout_readbacks: self.scanout_readback_count,
             three_d: self.three_d.stats(self.pending_fenced.len()),
             queues: [VirtioGpuQueueStats::default(); QUEUE_COUNT],
         };
@@ -426,6 +440,8 @@ impl VirtioGpu {
         self.parked_response_scratch.clear();
         self.blob_row_scratch.clear();
         self.trace_fields_scratch.clear();
+        self.last_3d_scanout_readback = None;
+        self.scanout_readback_count = 0;
     }
 
     pub fn scanout(&self) -> Option<VirtioGpuScanout<'_>> {
@@ -1446,12 +1462,30 @@ impl VirtioGpu {
                     rect,
                 );
             } else if self.three_d.is_3d_resource(resource_id) {
-                let _ = self.three_d.read_3d_scanout(
-                    resource_id,
-                    self.width,
-                    self.height,
-                    &mut self.scanout,
-                );
+                let now = Instant::now();
+                let readback_due = self.last_3d_scanout_readback.is_none_or(|last| {
+                    now.saturating_duration_since(last) >= self.scanout_readback_interval
+                });
+                if readback_due
+                    && self.three_d.read_3d_scanout(
+                        resource_id,
+                        self.width,
+                        self.height,
+                        &mut self.scanout,
+                    )
+                {
+                    self.last_3d_scanout_readback = Some(now);
+                    self.scanout_readback_count = self.scanout_readback_count.saturating_add(1);
+                    let count = self.scanout_readback_count;
+                    let width = self.width;
+                    let height = self.height;
+                    self.record_trace_fields("scanout_readback", |fields| {
+                        let _ = write!(
+                            fields,
+                            ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"count\":{count}"
+                        );
+                    });
+                }
             }
         } else if self
             .blob_scanout
@@ -1817,6 +1851,10 @@ impl VirtioPciGpu {
 
     pub fn set_shm_map_port(&mut self, port: Box<dyn GpuShmMapPort>, window_size: u64) {
         self.gpu.set_shm_map_port(port, window_size);
+    }
+
+    pub fn set_3d_scanout_readback_interval(&mut self, interval: Duration) {
+        self.gpu.set_3d_scanout_readback_interval(interval);
     }
 
     pub fn new_from_env() -> Self {
@@ -4562,6 +4600,48 @@ mod tests {
         assert_eq!(backend.lock().unwrap().scanout_reads, vec![(31, 1280, 800)]);
         let scanout = dev.gpu.scanout().expect("3D scanout should be active");
         assert_eq!(&scanout.bytes[..8], &[0, 1, 2, 3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn legacy_virgl_scanout_readback_can_be_throttled_to_display_pacing() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+
+        let mut create = ctrl_req_ctx(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0);
+        for field in [
+            31u32,
+            2,
+            FORMAT_B8G8R8A8_UNORM,
+            0x8a,
+            1280,
+            800,
+            1,
+            1,
+            0,
+            1,
+            0,
+            0,
+        ] {
+            create.extend_from_slice(&field.to_le_bytes());
+        }
+        submit_control(&mut dev, &mut mem, &create, 24);
+        let mut set_scanout = ctrl_req(VIRTIO_GPU_CMD_SET_SCANOUT);
+        for field in [0u32, 0, 1280, 800, 0, 31] {
+            set_scanout.extend_from_slice(&field.to_le_bytes());
+        }
+        submit_control(&mut dev, &mut mem, &set_scanout, 24);
+        dev.gpu
+            .set_3d_scanout_readback_interval(Duration::from_secs(60));
+
+        let mut flush = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_FLUSH);
+        for field in [0u32, 0, 1280, 800, 31, 0] {
+            flush.extend_from_slice(&field.to_le_bytes());
+        }
+        submit_control(&mut dev, &mut mem, &flush, 24);
+        submit_control(&mut dev, &mut mem, &flush, 24);
+
+        assert_eq!(backend.lock().unwrap().scanout_reads, vec![(31, 1280, 800)]);
+        assert_eq!(dev.stats().scanout_readbacks, 1);
     }
 
     #[test]

@@ -81,3 +81,14 @@ showing that export continued through guest shutdown. The final PPM SHA-256 is
 The run recorded zero virtio-gpu error responses; its VirGL trace gate,
 resident-agent gate, PSCI system-off, NVMe writeback, and cleanup all returned
 status zero.
+
+The paced v21 follow-up is preserved at
+`/Users/user/BridgeVM/app-virgl-paced-display-proof-20260712-v21`. Windows uses
+triple-buffered scanout resources, so the pacing clock deliberately survives
+`SET_SCANOUT` resource rotation. With the app's 500 ms display interval, the
+run coalesced 432 guest `RESOURCE_FLUSH` commands into 25 renderer readbacks,
+eliminating 94.21% of full 1280x800 GPU-to-CPU copies. The bounded live frame
+continued updating through the Windows shutdown spinner and ended with PPM
+SHA-256 `fe53e51bb2c556c84034403bb911b25bb9e2a1a32c181eba6b9315b749a9140d`.
+There were zero virtio-gpu error responses, and the agent, VirGL trace, PSCI
+system-off, NVMe writeback, and cleanup gates all returned status zero.

@@ -279,6 +279,7 @@ build_installed_boot_env_args() {
     ENV_ARGS+=(
       "BRIDGEVM_DISPLAY_EXPORT_PPM=$DISPLAY_EXPORT_PPM"
       "BRIDGEVM_DISPLAY_EXPORT_MS=$DISPLAY_EXPORT_MS"
+      "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=$DISPLAY_EXPORT_MS"
     )
   fi
   printf '%s\n' "${ENV_ARGS[@]}"

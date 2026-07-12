@@ -81,7 +81,17 @@ fn make_virtio_gpu() -> VirtioPciGpu {
                 Ok(backend) => {
                     let protocol = backend.protocol();
                     eprintln!("virtio-gpu: {} 3D backend enabled", protocol.label());
-                    return VirtioPciGpu::with_3d_backend(width, height, Box::new(backend));
+                    let mut gpu = VirtioPciGpu::with_3d_backend(width, height, Box::new(backend));
+                    if let Some(interval_ms) =
+                        std::env::var("BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS")
+                            .ok()
+                            .and_then(|value| value.parse::<u64>().ok())
+                    {
+                        gpu.set_3d_scanout_readback_interval(std::time::Duration::from_millis(
+                            interval_ms,
+                        ));
+                    }
+                    return gpu;
                 }
                 Err(error) => {
                     panic!("virtio-gpu: requested 3D backend failed to initialize: {error}");
