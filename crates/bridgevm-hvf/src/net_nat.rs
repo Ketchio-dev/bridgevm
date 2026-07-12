@@ -8,7 +8,7 @@
 //! model.
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{hash_map::Entry, HashMap, VecDeque},
     io::{self, Read, Write},
     net::{IpAddr, Ipv4Addr as StdIpv4Addr, Shutdown, SocketAddrV4, TcpStream, UdpSocket},
     os::fd::{FromRawFd, RawFd},
@@ -575,30 +575,27 @@ impl HostSocketOutboundIpv4Handler {
             socket_dst,
             socket_dst_port: dst_port,
         };
-        if !self.udp_flows.contains_key(&key) {
-            match UdpSocket::bind(SocketAddrV4::new(StdIpv4Addr::UNSPECIFIED, 0)).and_then(
-                |socket| {
-                    socket.set_nonblocking(true)?;
-                    socket.connect(SocketAddrV4::new(StdIpv4Addr::from(socket_dst), dst_port))?;
-                    Ok(socket)
-                },
-            ) {
-                Ok(socket) => {
-                    self.udp_flows.insert(
-                        key,
-                        UdpFlow {
-                            socket,
-                            last_activity: now,
-                        },
-                    );
-                }
-                Err(_) => return,
+        let flow = match self.udp_flows.entry(key) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let socket = match UdpSocket::bind(SocketAddrV4::new(StdIpv4Addr::UNSPECIFIED, 0))
+                    .and_then(|socket| {
+                        socket.set_nonblocking(true)?;
+                        socket
+                            .connect(SocketAddrV4::new(StdIpv4Addr::from(socket_dst), dst_port))?;
+                        Ok(socket)
+                    }) {
+                    Ok(socket) => socket,
+                    Err(_) => return,
+                };
+                entry.insert(UdpFlow {
+                    socket,
+                    last_activity: now,
+                })
             }
-        }
-        if let Some(flow) = self.udp_flows.get_mut(&key) {
-            flow.last_activity = now;
-            let _ = flow.socket.send(udp.payload);
-        }
+        };
+        flow.last_activity = now;
+        let _ = flow.socket.send(udp.payload);
         self.evict_idle_flows();
     }
 
@@ -642,13 +639,11 @@ impl HostSocketOutboundIpv4Handler {
         if tcp.flags & TCP_FLAG_ACK != 0 {
             flow.observe_guest_ack(tcp.ack);
         }
-        if !tcp.payload.is_empty() {
-            if tcp.seq == flow.guest_next {
-                flow.guest_next = flow.guest_next.wrapping_add(tcp.payload.len() as u32);
-                flow.write_buf.extend(tcp.payload);
-                flow.pending_ack = true;
-                flow.flush_host_write();
-            }
+        if !tcp.payload.is_empty() && tcp.seq == flow.guest_next {
+            flow.guest_next = flow.guest_next.wrapping_add(tcp.payload.len() as u32);
+            flow.write_buf.extend(tcp.payload);
+            flow.pending_ack = true;
+            flow.flush_host_write();
             // Out-of-order payload is intentionally dropped; the guest TCP stack
             // will retransmit from the last ACKed byte.
         }
@@ -1896,8 +1891,8 @@ where
     V: HasLastActivity,
     F: FnOnce() -> Result<V, E>,
 {
-    if !map.contains_key(&key) {
-        map.insert(key, create()?);
+    if let Entry::Vacant(entry) = map.entry(key) {
+        entry.insert(create()?);
         evict_lru(map, cap);
     }
     Ok(map.get_mut(&key))
