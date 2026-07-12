@@ -2522,8 +2522,11 @@ pub fn view_vm_log(
     let start = bytes.saturating_sub(bytes_to_read);
     file.seek(SeekFrom::Start(start))
         .map_err(|error| format!("failed to seek log file: {error}"))?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)
+    let capacity = usize::try_from(bytes_to_read)
+        .map_err(|_| "log read limit exceeds host address space".to_string())?;
+    let mut buffer = Vec::with_capacity(capacity);
+    file.take(bytes_to_read)
+        .read_to_end(&mut buffer)
         .map_err(|error| format!("failed to read log file: {error}"))?;
     let returned_bytes = buffer.len() as u64;
     Ok(VmLogViewRecord {
