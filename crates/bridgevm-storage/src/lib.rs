@@ -2665,9 +2665,23 @@ fn read_json_file<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, Storage
 const MAX_METADATA_JSON_BYTES: u64 = 16 * 1024 * 1024;
 
 fn read_json_required<T: DeserializeOwned>(path: &Path) -> Result<T, StorageError> {
-    let mut bytes = Vec::new();
-    fs::File::open(path)?
-        .take(MAX_METADATA_JSON_BYTES + 1)
+    let file = fs::File::open(path)?;
+    let size = file.metadata()?.len();
+    if size > MAX_METADATA_JSON_BYTES {
+        return Err(StorageError::MetadataTooLarge {
+            path: path.to_path_buf(),
+            actual: size,
+            maximum: MAX_METADATA_JSON_BYTES,
+        });
+    }
+    let capacity = usize::try_from(size).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "metadata size exceeds host address space",
+        )
+    })?;
+    let mut bytes = Vec::with_capacity(capacity);
+    file.take(MAX_METADATA_JSON_BYTES + 1)
         .read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_METADATA_JSON_BYTES {
         return Err(StorageError::MetadataTooLarge {
@@ -4560,6 +4574,26 @@ mod tests {
                 actual,
                 maximum: MAX_METADATA_JSON_BYTES
             } if error_path == path && actual == MAX_METADATA_JSON_BYTES + 1
+        ));
+    }
+
+    #[test]
+    fn runner_metadata_rejects_sparse_oversized_json_before_allocation() {
+        let store = temp_store();
+        let bundle = store.create_vm(&manifest("dev")).unwrap();
+        let path = bundle.join("metadata").join("runner.json");
+        let file = fs::File::create(&path).unwrap();
+        file.set_len(512 * 1024 * 1024).unwrap();
+
+        let error = store.runner_metadata("dev").unwrap_err();
+
+        assert!(matches!(
+            error,
+            StorageError::MetadataTooLarge {
+                path: error_path,
+                actual: 536_870_912,
+                maximum: MAX_METADATA_JSON_BYTES
+            } if error_path == path
         ));
     }
 

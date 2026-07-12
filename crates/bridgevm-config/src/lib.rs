@@ -8,10 +8,22 @@ pub const MANIFEST_JSON_SCHEMA_ID: &str = "https://bridgevm.io/schemas/vm-manife
 pub const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 
 pub fn read_manifest_bytes(path: &Path) -> Result<Vec<u8>, ConfigError> {
-    let mut bytes = Vec::new();
-    fs::File::open(path)?
-        .take(MAX_MANIFEST_BYTES + 1)
-        .read_to_end(&mut bytes)?;
+    let file = fs::File::open(path)?;
+    let size = file.metadata()?.len();
+    if size > MAX_MANIFEST_BYTES {
+        return Err(ConfigError::ManifestTooLarge {
+            actual: size,
+            maximum: MAX_MANIFEST_BYTES,
+        });
+    }
+    let capacity = usize::try_from(size).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "manifest size exceeds host address space",
+        )
+    })?;
+    let mut bytes = Vec::with_capacity(capacity);
+    file.take(MAX_MANIFEST_BYTES + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_MANIFEST_BYTES {
         return Err(ConfigError::ManifestTooLarge {
             actual: bytes.len() as u64,
@@ -1395,5 +1407,30 @@ security:
         ));
 
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn read_rejects_sparse_oversized_manifest_before_allocation() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-config-sparse-oversized-{}-{nanos}.yaml",
+            std::process::id()
+        ));
+        let file = fs::File::create(&path).unwrap();
+        file.set_len(512 * 1024 * 1024).unwrap();
+
+        let error = read_manifest_bytes(&path).unwrap_err();
+        let _ = fs::remove_file(&path);
+
+        assert!(matches!(
+            error,
+            ConfigError::ManifestTooLarge {
+                actual: 536_870_912,
+                maximum: MAX_MANIFEST_BYTES
+            }
+        ));
     }
 }
