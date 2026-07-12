@@ -22,6 +22,19 @@ assert_file_contains() {
 }
 
 mkdir -p "$(dirname "$TRACE")"
+source scripts/run-hvf-windows-installed-boot-runner.sh
+
+EVIDENCE_DIR="$STORE/evidence"
+VIRTIO_GPU_3D="1"
+VIRTIO_GPU_TRACE_JSONL="$TRACE"
+GPU_TRACE_PROTOCOL="auto"
+REQUIRE_GPU_TRACE_GATE="1"
+RUN_STATUS="0"
+
+printf 'stale-success\n' > "$TRACE"
+prepare_virtio_gpu_trace
+[[ ! -s "$TRACE" ]] || fail "GPU trace preparation preserved stale evidence"
+
 cat >"$TRACE" <<'JSONL'
 {"seq":1,"event":"device_init","width":1280,"height":720,"backend_3d":true}
 {"seq":2,"event":"common_read","field":"device_features","device_features_sel":0,"value":27}
@@ -37,15 +50,6 @@ cat >"$TRACE" <<'JSONL'
 {"seq":12,"event":"fence_create","ctx_id":1,"ring_idx":0,"fence_id":9,"backend_accepted":true,"outcome":"parked"}
 {"seq":13,"event":"fence_deliver","ctx_id":1,"ring_idx":0,"fence_id":9,"used_len":24}
 JSONL
-
-source scripts/run-hvf-windows-installed-boot-runner.sh
-
-EVIDENCE_DIR="$STORE/evidence"
-VIRTIO_GPU_3D="1"
-VIRTIO_GPU_TRACE_JSONL="$TRACE"
-GPU_TRACE_PROTOCOL="auto"
-REQUIRE_GPU_TRACE_GATE="1"
-RUN_STATUS="0"
 
 write_virtio_gpu_trace_report
 

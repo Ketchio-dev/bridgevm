@@ -494,6 +494,16 @@ drive_host_pause_resume_proof() {
   } >> "$observation"
 }
 
+prepare_virtio_gpu_trace() {
+  [[ "${VIRTIO_GPU_3D:-0}" == "1" ]] || return 0
+  local trace
+  trace="$(virtio_gpu_trace_path)"
+  install -d "$(dirname "$trace")"
+  # A trace is proof for exactly one probe generation. Appending would allow
+  # stale P3 success events from an earlier boot to satisfy the current gate.
+  : > "$trace"
+}
+
 run_probe_process() {
   local name
   local -a env_command=(env)
@@ -512,6 +522,7 @@ run_probe_process() {
   if [[ -n "${HOST_PAUSE_RESUME_PROOF_MS:-}" ]]; then
     : > "$(host_pause_resume_control_path)"
   fi
+  prepare_virtio_gpu_trace
   set +e
   "${env_command[@]}" "${ENV_ARGS[@]}" "$BIN" > "$EVIDENCE_DIR/run.log" 2>&1 &
   PROBE_PID="$!"
