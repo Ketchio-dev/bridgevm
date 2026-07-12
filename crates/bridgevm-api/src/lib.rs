@@ -54,6 +54,7 @@ const MAX_PERFORMANCE_SAMPLE_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
 const DEFAULT_LOG_VIEW_BYTES: u64 = 8 * 1024;
 const MAX_LOG_VIEW_BYTES: u64 = 1024 * 1024;
 const MAX_BOOT_MEDIA_METADATA_BYTES: u64 = 1024 * 1024;
+const MAX_EVIDENCE_TEXT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_RUNTIME_CONTROL_RESPONSE_BYTES: u64 = 64 * 1024;
 
 pub const BRIDGEVM_API_SCHEMA_ID: &str = "bridgevm.api/v1";
@@ -4491,12 +4492,7 @@ fn verify_apple_vz_live_evidence_bundle(
         }
         let serial_log_path =
             evidence_bundle_file_path(path, &serial_log_path, "Apple VZ serial log")?;
-        let serial_log = fs::read_to_string(&serial_log_path).map_err(|error| {
-            format!(
-                "failed to read serial log evidence {}: {error}",
-                serial_log_path.display()
-            )
-        })?;
+        let serial_log = read_bounded_text_file(&serial_log_path, "serial log evidence")?;
         require_contains(&serial_log, expected, "serial log evidence")?;
         true
     } else {
@@ -4702,12 +4698,7 @@ fn verify_qemu_live_evidence_bundle(
         verify_evidence_artifact_sha256(path, &evidence, &["artifacts", "serial_log"])?;
     let qmp_transcript =
         verify_evidence_artifact_sha256(path, &evidence, &["artifacts", "qmp_transcript"])?;
-    let qemu_log_content = fs::read_to_string(&qemu_log).map_err(|error| {
-        format!(
-            "failed to read QEMU log evidence {}: {error}",
-            qemu_log.display()
-        )
-    })?;
+    let qemu_log_content = read_bounded_text_file(&qemu_log, "QEMU log evidence")?;
     let command_line = command_args.join(" ");
     require_contains(&qemu_log_content, &vm_name, "QEMU log evidence")?;
     require_contains(
@@ -4731,12 +4722,7 @@ fn verify_qemu_live_evidence_bundle(
     let serial_sentinel = json_string(&evidence, &["serial_sentinel"])?;
     let serial_sentinel_required = !serial_sentinel.trim().is_empty();
     let serial_sentinel_proven = if serial_sentinel_required {
-        let serial_content = fs::read_to_string(&serial_log).map_err(|error| {
-            format!(
-                "failed to read QEMU serial evidence {}: {error}",
-                serial_log.display()
-            )
-        })?;
+        let serial_content = read_bounded_text_file(&serial_log, "QEMU serial evidence")?;
         require_contains(
             &serial_content,
             &serial_sentinel,
@@ -4782,12 +4768,7 @@ fn is_supported_qemu_system_executable(executable: &str) -> bool {
 }
 
 fn verify_qmp_transcript_evidence(path: &Path) -> Result<(), String> {
-    let content = fs::read_to_string(path).map_err(|error| {
-        format!(
-            "failed to read QMP transcript evidence {}: {error}",
-            path.display()
-        )
-    })?;
+    let content = read_bounded_text_file(path, "QMP transcript evidence")?;
     let mut saw_greeting = false;
     let mut saw_query_status_command = false;
     let mut saw_running_query_status_response = false;
@@ -5169,16 +5150,33 @@ fn verify_guest_tools_effect_observable(
 }
 
 fn read_evidence_text(root: &Path, name: &str) -> Result<String, String> {
-    fs::read_to_string(root.join(name))
-        .map_err(|error| format!("failed to read evidence {name}: {error}"))
+    read_bounded_text_file(&root.join(name), &format!("evidence {name}"))
 }
 
 fn read_optional_evidence_text(root: &Path, name: &str) -> Result<Option<String>, String> {
-    match fs::read_to_string(root.join(name)) {
-        Ok(content) => Ok(Some(content)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(format!("failed to read evidence {name}: {error}")),
+    let path = root.join(name);
+    if !path.exists() {
+        return Ok(None);
     }
+    read_bounded_text_file(&path, &format!("evidence {name}")).map(Some)
+}
+
+fn read_bounded_text_file(path: &Path, label: &str) -> Result<String, String> {
+    let mut bytes = Vec::new();
+    fs::File::open(path)
+        .and_then(|file| {
+            file.take(MAX_EVIDENCE_TEXT_BYTES + 1)
+                .read_to_end(&mut bytes)
+        })
+        .map_err(|error| format!("failed to read {label} {}: {error}", path.display()))?;
+    if bytes.len() as u64 > MAX_EVIDENCE_TEXT_BYTES {
+        return Err(format!(
+            "{label} {} exceeds the {MAX_EVIDENCE_TEXT_BYTES}-byte limit",
+            path.display()
+        ));
+    }
+    String::from_utf8(bytes)
+        .map_err(|error| format!("{label} {} is not valid UTF-8: {error}", path.display()))
 }
 
 fn read_evidence_json(root: &Path, name: &str) -> Result<serde_json::Value, String> {
@@ -9237,6 +9235,25 @@ mod tests {
         assert!(error.contains(&path.display().to_string()));
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn evidence_text_reader_rejects_oversized_files() {
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-api-oversized-evidence-text-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(&path, vec![b'x'; MAX_EVIDENCE_TEXT_BYTES as usize + 1]).unwrap();
+
+        let error = read_bounded_text_file(&path, "test evidence")
+            .expect_err("oversized evidence must be rejected");
+        assert!(error.contains("exceeds the 16777216-byte limit"));
+        assert!(error.contains(&path.display().to_string()));
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]
