@@ -35,6 +35,8 @@ const OUTPUT_DRAIN_BUFFER_BYTES: usize = 64 * 1024;
 const MAX_DESKTOP_FILE_BYTES: usize = 1024 * 1024;
 const MAX_TOKEN_FILE_BYTES: usize = 64 * 1024;
 const MAX_PROC_TEXT_BYTES: usize = 1024 * 1024;
+const DEFAULT_FSFREEZE_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_FSFREEZE_OUTPUT_BYTES: usize = 64 * 1024;
 
 fn read_utf8_file_bounded(path: &Path, max_bytes: usize) -> std::io::Result<String> {
     let file = fs::File::open(path)?;
@@ -98,7 +100,15 @@ fn wait_bounded(
     child: &mut std::process::Child,
     label: &str,
 ) -> Result<std::process::ExitStatus, String> {
-    let deadline = Instant::now() + EFFECT_COMMAND_TIMEOUT;
+    wait_bounded_for(child, label, EFFECT_COMMAND_TIMEOUT)
+}
+
+fn wait_bounded_for(
+    child: &mut std::process::Child,
+    label: &str,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus, String> {
+    let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => return Ok(status),
@@ -110,7 +120,11 @@ fn wait_bounded(
                 }
                 thread::sleep(Duration::from_millis(20));
             }
-            Err(error) => return Err(format!("failed to wait for {label}: {error}")),
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("failed to wait for {label}: {error}"));
+            }
         }
     }
 }
@@ -2743,33 +2757,74 @@ trait FilesystemFreezeBackend {
 struct CommandFilesystemFreezeBackend;
 
 impl FilesystemFreezeBackend for CommandFilesystemFreezeBackend {
-    fn freeze(&mut self, mount: &Path, _timeout_millis: Option<u64>) -> Result<(), String> {
-        run_fsfreeze_command("-f", mount)
+    fn freeze(&mut self, mount: &Path, timeout_millis: Option<u64>) -> Result<(), String> {
+        let timeout = timeout_millis
+            .map(Duration::from_millis)
+            .unwrap_or(DEFAULT_FSFREEZE_TIMEOUT);
+        run_fsfreeze_command("-f", mount, timeout)
     }
 
     fn thaw(&mut self, mount: &Path) -> Result<(), String> {
-        run_fsfreeze_command("-u", mount)
+        run_fsfreeze_command("-u", mount, DEFAULT_FSFREEZE_TIMEOUT)
     }
 }
 
-fn run_fsfreeze_command(flag: &str, mount: &Path) -> Result<(), String> {
-    let output = ProcessCommand::new("fsfreeze")
+fn run_fsfreeze_command(flag: &str, mount: &Path, timeout: Duration) -> Result<(), String> {
+    let mut child = ProcessCommand::new("fsfreeze")
         .arg(flag)
         .arg(mount)
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|error| format!("failed to execute fsfreeze: {error}"))?;
-    if output.status.success() {
+    let mut stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("failed to capture fsfreeze stdout".to_string());
+        }
+    };
+    let mut stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("failed to capture fsfreeze stderr".to_string());
+        }
+    };
+    let stdout_thread =
+        thread::spawn(move || drain_output_bounded(&mut stdout, MAX_FSFREEZE_OUTPUT_BYTES));
+    let stderr_thread =
+        thread::spawn(move || drain_output_bounded(&mut stderr, MAX_FSFREEZE_OUTPUT_BYTES));
+    let status = wait_bounded_for(&mut child, "fsfreeze", timeout);
+    let (stdout, stdout_exceeded) = stdout_thread
+        .join()
+        .map_err(|_| "fsfreeze stdout drain thread panicked".to_string())?
+        .map_err(|error| format!("failed to read fsfreeze stdout: {error}"))?;
+    let (stderr, stderr_exceeded) = stderr_thread
+        .join()
+        .map_err(|_| "fsfreeze stderr drain thread panicked".to_string())?
+        .map_err(|error| format!("failed to read fsfreeze stderr: {error}"))?;
+    let status = status?;
+    if stdout_exceeded || stderr_exceeded {
+        return Err(format!(
+            "fsfreeze output exceeded {MAX_FSFREEZE_OUTPUT_BYTES}-byte per-stream limit"
+        ));
+    }
+    if status.success() {
         return Ok(());
     }
 
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&stdout).trim().to_string();
     let detail = if !stderr.is_empty() {
         stderr
     } else if !stdout.is_empty() {
         stdout
     } else {
-        format!("exit status {}", output.status)
+        format!("exit status {status}")
     };
     Err(detail)
 }
@@ -3856,6 +3911,23 @@ mod tests {
 
         assert!(!exceeded);
         assert_eq!(captured, input);
+    }
+
+    #[test]
+    fn bounded_wait_terminates_and_reaps_timed_out_process() {
+        let mut child = ProcessCommand::new("/bin/sh")
+            .args(["-c", "sleep 5"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        let error =
+            wait_bounded_for(&mut child, "test command", Duration::from_millis(20)).unwrap_err();
+
+        assert_eq!(error, "test command timed out");
+        assert!(child.try_wait().unwrap().is_some());
     }
 
     #[test]
