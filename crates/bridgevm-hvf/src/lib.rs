@@ -12955,20 +12955,15 @@ fn load_uefi_pflash_slot(
     slot_bytes: u64,
     writable: bool,
 ) -> Result<WindowsArmUefiPflashSlotMap, String> {
-    let source = std::fs::read(path).map_err(|error| error.to_string())?;
+    let slot_len: usize = slot_bytes
+        .try_into()
+        .map_err(|_| "pflash slot is too large to allocate on this host".to_string())?;
+    let source = media::read_bounded_file(path, slot_len).map_err(|error| error.to_string())?;
     if source.is_empty() {
         return Err("file is empty".to_string());
     }
     let source_bytes =
         u64::try_from(source.len()).map_err(|_| "file is too large to map".to_string())?;
-    if source_bytes > slot_bytes {
-        return Err(format!(
-            "file is larger than the planned pflash slot ({source_bytes:#x} > {slot_bytes:#x})"
-        ));
-    }
-    let slot_len: usize = slot_bytes
-        .try_into()
-        .map_err(|_| "pflash slot is too large to allocate on this host".to_string())?;
     let mut slot = vec![0_u8; slot_len];
     slot[..source.len()].copy_from_slice(&source);
     let prefix_verified = slot[..source.len()] == source[..];
@@ -17756,7 +17751,16 @@ mod platform {
             blockers.push(format!("{label} pflash slot was not prepared"));
             return false;
         };
-        let source = match std::fs::read(&slot.path) {
+        let source_limit = match usize::try_from(slot.source_bytes) {
+            Ok(source_limit) => source_limit,
+            Err(_) => {
+                blockers.push(format!(
+                    "{label} pflash source length exceeds host address space"
+                ));
+                return false;
+            }
+        };
+        let source = match crate::media::read_bounded_file(&slot.path, source_limit) {
             Ok(source) => source,
             Err(error) => {
                 blockers.push(format!("{label} pflash source read failed: {error}"));
@@ -29027,6 +29031,27 @@ mod tests {
         assert!(output.contains("Blockers: none"));
         assert!(!output.contains("qemu-system"));
         assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn pflash_slot_load_rejects_oversized_file_before_allocation() {
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-oversized-pflash-{}-{}.fd",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(512 * 1024 * 1024).unwrap();
+
+        let error = load_uefi_pflash_slot("code", &path, WINDOWS_ARM_UEFI_CODE_IPA, 4096, false)
+            .unwrap_err();
+        let _ = std::fs::remove_file(&path);
+
+        assert!(error.contains("536870912 bytes"), "{error}");
+        assert!(error.contains("4096 byte region"), "{error}");
     }
 
     #[test]
