@@ -238,18 +238,20 @@ fn main() -> Result<()> {
             run_tools_session_watched(
                 stream,
                 writer,
-                &token,
-                &args.guest_os,
-                capabilities,
-                telemetry,
-                args.file_drop_dir,
-                filesystem_freezer,
-                clipboard_writer,
+                ToolsSessionConfig {
+                    token: &token,
+                    guest_os: &args.guest_os,
+                    capabilities,
+                    telemetry,
+                    file_drop_dir: args.file_drop_dir,
+                    filesystem_freezer,
+                    clipboard_writer,
+                    display_resizer,
+                    clock_setter,
+                    desktop_controller,
+                    serve_once: args.serve_once,
+                },
                 clipboard_watcher,
-                display_resizer,
-                clock_setter,
-                desktop_controller,
-                args.serve_once,
             )
         }
         GuestToolsTransport::Device(device) => {
@@ -266,18 +268,20 @@ fn main() -> Result<()> {
             run_tools_session_watched(
                 file,
                 writer,
-                &token,
-                &args.guest_os,
-                capabilities,
-                telemetry,
-                args.file_drop_dir,
-                filesystem_freezer,
-                clipboard_writer,
+                ToolsSessionConfig {
+                    token: &token,
+                    guest_os: &args.guest_os,
+                    capabilities,
+                    telemetry,
+                    file_drop_dir: args.file_drop_dir,
+                    filesystem_freezer,
+                    clipboard_writer,
+                    display_resizer,
+                    clock_setter,
+                    desktop_controller,
+                    serve_once: args.serve_once,
+                },
                 clipboard_watcher,
-                display_resizer,
-                clock_setter,
-                desktop_controller,
-                args.serve_once,
             )
         }
     }
@@ -1207,11 +1211,9 @@ fn normalize_absolute_path(path: &Path) -> Result<PathBuf> {
     }
 }
 
-fn run_tools_session(
-    reader: impl Read,
-    writer: &mut impl Write,
-    token: &str,
-    guest_os: &str,
+struct ToolsSessionConfig<'a> {
+    token: &'a str,
+    guest_os: &'a str,
     capabilities: Vec<AgentCapability>,
     telemetry: TelemetryConfig,
     file_drop_dir: Option<PathBuf>,
@@ -1221,7 +1223,26 @@ fn run_tools_session(
     clock_setter: ClockSetter,
     desktop_controller: DesktopController,
     serve_once: bool,
+}
+
+fn run_tools_session(
+    reader: impl Read,
+    writer: &mut impl Write,
+    config: ToolsSessionConfig<'_>,
 ) -> Result<()> {
+    let ToolsSessionConfig {
+        token,
+        guest_os,
+        capabilities,
+        telemetry,
+        file_drop_dir,
+        filesystem_freezer,
+        clipboard_writer,
+        display_resizer,
+        clock_setter,
+        desktop_controller,
+        serve_once,
+    } = config;
     let mut state = GuestToolsState::new(&capabilities)
         .with_file_drop_dir(file_drop_dir)
         .with_filesystem_freezer(filesystem_freezer)
@@ -1260,22 +1281,11 @@ fn run_tools_session(
 /// the command loop never interleave frames, the watcher polls the real reader
 /// on its interval and emits `ClipboardChanged` through the same writer, and the
 /// watcher is signalled to stop and joined before this function returns.
-#[allow(clippy::too_many_arguments)]
 fn run_tools_session_watched<R, W>(
     reader: R,
     mut writer: W,
-    token: &str,
-    guest_os: &str,
-    capabilities: Vec<AgentCapability>,
-    telemetry: TelemetryConfig,
-    file_drop_dir: Option<PathBuf>,
-    filesystem_freezer: FilesystemFreezer,
-    clipboard_writer: ClipboardWriter,
+    config: ToolsSessionConfig<'_>,
     clipboard_watcher: Option<ClipboardWatcher>,
-    display_resizer: DisplayResizer,
-    clock_setter: ClockSetter,
-    desktop_controller: DesktopController,
-    serve_once: bool,
 ) -> Result<()>
 where
     R: Read,
@@ -1283,21 +1293,7 @@ where
 {
     let Some(watcher) = clipboard_watcher else {
         // Disabled watcher: identical to the historical single-threaded path.
-        return run_tools_session(
-            reader,
-            &mut writer,
-            token,
-            guest_os,
-            capabilities,
-            telemetry,
-            file_drop_dir,
-            filesystem_freezer,
-            clipboard_writer,
-            display_resizer,
-            clock_setter,
-            desktop_controller,
-            serve_once,
-        );
+        return run_tools_session(reader, &mut writer, config);
     };
 
     // Share the writer so the watcher thread and the command loop serialize
@@ -1308,21 +1304,7 @@ where
     let watcher_handle =
         spawn_clipboard_watcher(watcher, Arc::clone(&shared_writer), Arc::clone(&stop));
 
-    let result = run_tools_session_shared(
-        reader,
-        &shared_writer,
-        token,
-        guest_os,
-        capabilities,
-        telemetry,
-        file_drop_dir,
-        filesystem_freezer,
-        clipboard_writer,
-        display_resizer,
-        clock_setter,
-        desktop_controller,
-        serve_once,
-    );
+    let result = run_tools_session_shared(reader, &shared_writer, config);
 
     // Signal the watcher to stop and reap it so no thread leaks and no frame is
     // written after the session loop has returned.
@@ -1381,26 +1363,28 @@ where
 
 /// The command loop body, parameterized over a shared writer so the watcher can
 /// safely interleave `ClipboardChanged` frames. Mirrors `run_tools_session`.
-#[allow(clippy::too_many_arguments)]
 fn run_tools_session_shared<R, W>(
     reader: R,
     shared_writer: &Arc<Mutex<W>>,
-    token: &str,
-    guest_os: &str,
-    capabilities: Vec<AgentCapability>,
-    telemetry: TelemetryConfig,
-    file_drop_dir: Option<PathBuf>,
-    filesystem_freezer: FilesystemFreezer,
-    clipboard_writer: ClipboardWriter,
-    display_resizer: DisplayResizer,
-    clock_setter: ClockSetter,
-    desktop_controller: DesktopController,
-    serve_once: bool,
+    config: ToolsSessionConfig<'_>,
 ) -> Result<()>
 where
     R: Read,
     W: Write,
 {
+    let ToolsSessionConfig {
+        token,
+        guest_os,
+        capabilities,
+        telemetry,
+        file_drop_dir,
+        filesystem_freezer,
+        clipboard_writer,
+        display_resizer,
+        clock_setter,
+        desktop_controller,
+        serve_once,
+    } = config;
     let mut state = GuestToolsState::new(&capabilities)
         .with_file_drop_dir(file_drop_dir)
         .with_filesystem_freezer(filesystem_freezer)
@@ -4095,25 +4079,8 @@ mod tests {
             interval: Duration::from_millis(10),
             reader: ClipboardReader::command(command_path),
         };
-        run_tools_session_watched(
-            stream,
-            writer,
-            "token-1",
-            "linux",
-            default_capabilities(),
-            // No --clipboard-text seed: the only ClipboardChanged frames come
-            // from the live watcher, keeping the assertions unambiguous.
-            default_telemetry(),
-            None,
-            FilesystemFreezer::simulated(),
-            ClipboardWriter::simulated(),
-            Some(watcher),
-            DisplayResizer::simulated(),
-            ClockSetter::simulated(),
-            DesktopController::simulated(),
-            false,
-        )
-        .unwrap();
+        run_tools_session_watched(stream, writer, default_session_config(false), Some(watcher))
+            .unwrap();
 
         server.join().unwrap();
         let _ = std::fs::remove_file(socket_path);
@@ -4161,23 +4128,7 @@ mod tests {
 
         let stream = UnixStream::connect(&socket_path).unwrap();
         let writer = stream.try_clone().unwrap();
-        run_tools_session_watched(
-            stream,
-            writer,
-            "token-1",
-            "linux",
-            default_capabilities(),
-            default_telemetry(),
-            None,
-            FilesystemFreezer::simulated(),
-            ClipboardWriter::simulated(),
-            None,
-            DisplayResizer::simulated(),
-            ClockSetter::simulated(),
-            DesktopController::simulated(),
-            true,
-        )
-        .unwrap();
+        run_tools_session_watched(stream, writer, default_session_config(true), None).unwrap();
 
         server.join().unwrap();
         let _ = std::fs::remove_file(socket_path);
@@ -5864,17 +5815,7 @@ mod tests {
         run_tools_session(
             Cursor::new(command.as_bytes()),
             &mut output,
-            "token-1",
-            "linux",
-            default_capabilities(),
-            default_telemetry(),
-            None,
-            FilesystemFreezer::simulated(),
-            ClipboardWriter::simulated(),
-            DisplayResizer::simulated(),
-            ClockSetter::simulated(),
-            DesktopController::simulated(),
-            true,
+            default_session_config(true),
         )
         .unwrap();
 
@@ -5931,17 +5872,7 @@ mod tests {
         run_tools_session(
             Cursor::new(commands.as_bytes()),
             &mut output,
-            "token-1",
-            "linux",
-            default_capabilities(),
-            default_telemetry(),
-            None,
-            FilesystemFreezer::simulated(),
-            ClipboardWriter::simulated(),
-            DisplayResizer::simulated(),
-            ClockSetter::simulated(),
-            DesktopController::simulated(),
-            false,
+            default_session_config(false),
         )
         .unwrap();
 
@@ -6025,22 +5956,7 @@ mod tests {
 
         let stream = UnixStream::connect(&socket_path).unwrap();
         let mut writer = stream.try_clone().unwrap();
-        run_tools_session(
-            stream,
-            &mut writer,
-            "token-1",
-            "linux",
-            default_capabilities(),
-            default_telemetry(),
-            None,
-            FilesystemFreezer::simulated(),
-            ClipboardWriter::simulated(),
-            DisplayResizer::simulated(),
-            ClockSetter::simulated(),
-            DesktopController::simulated(),
-            true,
-        )
-        .unwrap();
+        run_tools_session(stream, &mut writer, default_session_config(true)).unwrap();
 
         server.join().unwrap();
         let _ = std::fs::remove_file(socket_path);
@@ -6247,5 +6163,23 @@ mod tests {
             None,
         )
         .unwrap()
+    }
+
+    fn default_session_config(serve_once: bool) -> ToolsSessionConfig<'static> {
+        ToolsSessionConfig {
+            token: "token-1",
+            guest_os: "linux",
+            capabilities: default_capabilities(),
+            // No clipboard seed: watcher tests can distinguish live updates
+            // from startup telemetry without changing the production path.
+            telemetry: default_telemetry(),
+            file_drop_dir: None,
+            filesystem_freezer: FilesystemFreezer::simulated(),
+            clipboard_writer: ClipboardWriter::simulated(),
+            display_resizer: DisplayResizer::simulated(),
+            clock_setter: ClockSetter::simulated(),
+            desktop_controller: DesktopController::simulated(),
+            serve_once,
+        }
     }
 }
