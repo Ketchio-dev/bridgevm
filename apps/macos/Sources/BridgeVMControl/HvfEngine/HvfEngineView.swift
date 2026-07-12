@@ -39,7 +39,10 @@ struct HvfEngineView: View {
             .padding(20)
         }
         .navigationTitle("HVF Engine")
-        .onAppear(perform: loadStateFromSession)
+        .onAppear {
+            loadStateFromSession()
+            session.attachToRunningVM()
+        }
     }
 
     private var header: some View {

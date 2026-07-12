@@ -172,6 +172,76 @@ final class HvfEngineSessionPathTests: XCTestCase {
         XCTAssertEqual(overridden.path, overrideRoot.resolvingSymlinksInPath().path)
     }
 
+    @MainActor
+    func testAttachesToRunningVMAndUsesItsGracefulControlChannel() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let evidence = temp.appendingPathComponent("evidence", isDirectory: true)
+        let ctl = temp.appendingPathComponent("metadata/hvf.ctl")
+        try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: ctl.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "BVAGENT READY host=WIN11 t=10\nBVAGENT SERVICE start t=20\n".write(
+            to: evidence.appendingPathComponent("run.log"), atomically: true, encoding: .utf8
+        )
+        try Data().write(to: ctl)
+        let config = HvfEngineConfig(
+            targetDiskPath: temp.appendingPathComponent("windows.raw").path,
+            uefiVarsPath: temp.appendingPathComponent("vars.fd").path,
+            evidenceDir: evidence.path,
+            watchdogMs: nil,
+            ramMiB: 6144,
+            smpCpus: 4,
+            clipboardSync: true,
+            shareHostDir: nil,
+            shareGuestDir: nil,
+            virtioNet: true,
+            virtioGpu3d: true,
+            nvmeBufferedIO: true,
+            ctlFilePath: ctl.path
+        )
+        let session = HvfEngineSession(config: config, repoRoot: temp) { _ in true }
+
+        XCTAssertTrue(session.attachToRunningVM())
+        XCTAssertEqual(session.connectionState, .connected(host: "WIN11"))
+
+        session.stop()
+
+        XCTAssertEqual(session.connectionState, .stopping)
+        XCTAssertEqual(try String(contentsOf: ctl, encoding: .utf8), "shutdown.exe /p /f\n")
+        XCTAssertTrue(session.events.contains(.unknown("graceful guest shutdown requested")))
+    }
+
+    @MainActor
+    func testStartAttachesInsteadOfLaunchingDuplicateVM() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let evidence = temp.appendingPathComponent("evidence", isDirectory: true)
+        try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
+        let config = HvfEngineConfig(
+            targetDiskPath: temp.appendingPathComponent("windows.raw").path,
+            uefiVarsPath: temp.appendingPathComponent("vars.fd").path,
+            evidenceDir: evidence.path,
+            watchdogMs: nil,
+            ramMiB: 6144,
+            smpCpus: 4,
+            clipboardSync: true,
+            shareHostDir: nil,
+            shareGuestDir: nil,
+            virtioNet: true,
+            virtioGpu3d: true,
+            nvmeBufferedIO: true,
+            ctlFilePath: temp.appendingPathComponent("hvf.ctl").path
+        )
+        let session = HvfEngineSession(config: config, repoRoot: temp) { _ in true }
+
+        session.start()
+
+        XCTAssertEqual(session.connectionState, .booting)
+        XCTAssertTrue(session.events.contains(.unknown(
+            "attached to the already running HVF engine; duplicate launch prevented"
+        )))
+    }
+
     private func makeWrapper(at root: URL) throws {
         let scripts = root.appendingPathComponent("scripts", isDirectory: true)
         try FileManager.default.createDirectory(at: scripts, withIntermediateDirectories: true)

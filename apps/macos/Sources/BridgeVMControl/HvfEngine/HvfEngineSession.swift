@@ -30,6 +30,8 @@ final class HvfEngineSession: ObservableObject {
     private var serviceStarted = false
     private var stopCommandSent = false
     private var stopDeadline: Date?
+    private var attachedToExistingProcess = false
+    private let processIsRunning: (String) -> Bool
 
     nonisolated static func defaultRepoRoot(
         currentDirectoryPath: String = FileManager.default.currentDirectoryPath,
@@ -73,9 +75,14 @@ final class HvfEngineSession: ObservableObject {
         }
     }
 
-    init(config: HvfEngineConfig, repoRoot: URL = HvfEngineSession.defaultRepoRoot()) {
+    init(
+        config: HvfEngineConfig,
+        repoRoot: URL = HvfEngineSession.defaultRepoRoot(),
+        processIsRunning: @escaping (String) -> Bool = { Shell.isProcessRunning(matching: $0) }
+    ) {
         self.config = config
         self.repoRoot = repoRoot
+        self.processIsRunning = processIsRunning
     }
 
     deinit {
@@ -86,6 +93,10 @@ final class HvfEngineSession: ObservableObject {
     func start() {
         guard process?.isRunning != true else {
             append(.unknown("launch ignored: HVF engine is already running"))
+            return
+        }
+        if attachToRunningVM() {
+            append(.unknown("attached to the already running HVF engine; duplicate launch prevented"))
             return
         }
         timer?.invalidate()
@@ -127,6 +138,7 @@ final class HvfEngineSession: ObservableObject {
         proc.currentDirectoryURL = repoRoot
         proc.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("BRIDGEVM_") }
         process = proc
+        attachedToExistingProcess = false
         connectionState = .booting
         do {
             try proc.run()
@@ -139,7 +151,9 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func stop() {
-        guard process?.isRunning == true else {
+        let ownsRunningProcess = process?.isRunning == true
+        let attachedProcessIsRunning = attachedToExistingProcess && processIsRunning(config.targetDiskPath)
+        guard ownsRunningProcess || attachedProcessIsRunning else {
             markStopped()
             return
         }
@@ -147,6 +161,20 @@ final class HvfEngineSession: ObservableObject {
         stopDeadline = Date().addingTimeInterval(180)
         sendGracefulStopIfReady()
         if timer == nil { startPolling() }
+    }
+
+    @discardableResult
+    func attachToRunningVM() -> Bool {
+        guard process?.isRunning != true else { return false }
+        guard processIsRunning(config.targetDiskPath) else { return false }
+        timer?.invalidate()
+        timer = nil
+        process = nil
+        attachedToExistingProcess = true
+        resetObservedRuntimeState(clearEvents: true)
+        connectionState = .booting
+        startPolling()
+        return true
     }
 
     func sendCtl(_ line: String) {
@@ -219,11 +247,19 @@ final class HvfEngineSession: ObservableObject {
             markStopped()
             return
         }
+        if attachedToExistingProcess && !processIsRunning(config.targetDiskPath) {
+            markStopped()
+            return
+        }
         if case .stopping = connectionState {
             sendGracefulStopIfReady()
             if let stopDeadline, Date() >= stopDeadline {
                 append(.unknown("graceful shutdown timed out; terminating the wrapper"))
-                process?.terminate()
+                if let process {
+                    process.terminate()
+                } else if attachedToExistingProcess {
+                    Shell.killProcesses(matching: config.targetDiskPath)
+                }
                 self.stopDeadline = nil
             }
         }
@@ -258,12 +294,26 @@ final class HvfEngineSession: ObservableObject {
         timer?.invalidate()
         timer = nil
         process = nil
+        attachedToExistingProcess = false
         connectionState = .stopped
         lastHeartbeatDate = nil
         lastHeartbeatAge = nil
         serviceStarted = false
         stopCommandSent = false
         stopDeadline = nil
+    }
+
+    private func resetObservedRuntimeState(clearEvents: Bool) {
+        tailReader = TailOffsetReader()
+        lastHeartbeatDate = nil
+        lastHeartbeatAge = nil
+        serviceStarted = false
+        stopCommandSent = false
+        stopDeadline = nil
+        if clearEvents { events = [] }
+        #if canImport(AppKit)
+        latestScreenshot = nil
+        #endif
     }
 
     private func append(_ event: BvAgentEvent) {
