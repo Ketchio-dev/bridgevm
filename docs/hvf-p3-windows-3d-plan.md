@@ -181,7 +181,10 @@ undebuggable in a black box. We are not a black box:
 ## Status
 - Driver source located + branch identified; device feature-compatibility
   confirmed by reading `viogpu_adapter.cpp`.
-- Host venus stack proven (Linux, P2 + GPU-execution + 117-136 GB/s).
+- Host Venus stack proven (Linux, P2 + GPU execution). The corrected 128 MiB
+  live baseline is 105.91 GB/s for fill and 117.14 GB/s for dependent copy; see
+  [the current wall](hvf-3d-current-wall-20260713.md). The older 136.14 result
+  used a narrow overwrite workload and is not comparable.
 - P3 host-side observability has started: `BRIDGEVM_VIRTIO_GPU_TRACE_JSONL=/path/to/trace.jsonl`
   now enables an env-gated JSONL recorder in the HVF virtio-gpu device. It
   records device shape, feature negotiation, queue notify state, command

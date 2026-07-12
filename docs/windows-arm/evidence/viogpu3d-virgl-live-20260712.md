@@ -34,6 +34,21 @@ The next wall is productization: repeatable package provenance/signing,
 long-duration graphics stress, and integration into the normal app UX rather
 than the Windows HVF lab path.
 
+## 16 ms scanout pacing and durable telemetry
+
+The 2026-07-13 follow-up is preserved at
+`/Users/user/BridgeVM/viogpu3d-scanout-pacing-proof-20260713-v1`. Three-dimensional
+scanout readback now defaults to a 16 ms cadence while an explicit environment
+value of zero retains the unpaced debugging mode. The live run rendered the
+full 1280x800 desktop by 14.419 seconds and reached the resident-agent desktop
+milestone at 40.731 seconds.
+
+Its trace recorded 692 readbacks, 196 throttled flushes, 2,834,432,000 bytes,
+and 504,748,794 ns of readback work. That is a 22.07% coalescing ratio, an
+average 729.406 us readback, and 5.616 GB/s. The trace reporter now aggregates
+these events so the evidence survives the guest's final virtio reset; the
+protocol-specific P3 gate still passes with zero error responses.
+
 ## 3D scanout closure
 
 The follow-up v17 evidence store is
