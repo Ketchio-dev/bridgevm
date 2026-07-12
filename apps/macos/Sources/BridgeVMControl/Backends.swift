@@ -369,6 +369,7 @@ final class HvfWindowsBackend: VMBackend {
     private var runLogPath: String { evidenceDir + "/run.log" }
     private var diskGrowMarkerPath: String { config.bundlePath + "/metadata/hvf-grow-pending" }
     private let ctlWriteLock = NSLock()
+    private let guestCommandLock = NSLock()
     var launcherLogPath: String { evidenceDir + "/launcher.log" }
 
     static let pendingDiskGrowthCommand = [
@@ -454,6 +455,12 @@ final class HvfWindowsBackend: VMBackend {
     }
 
     func runInGuest(_ command: String) -> (output: String, code: Int32) {
+        executeGuestCommand(command, timeout: 900)
+    }
+
+    private func executeGuestCommand(_ command: String, timeout: TimeInterval) -> (output: String, code: Int32) {
+        guestCommandLock.lock()
+        defer { guestCommandLock.unlock() }
         guard isRunning() else {
             return ("HVF VM이 실행 중이 아닙니다.", -1)
         }
@@ -463,7 +470,7 @@ final class HvfWindowsBackend: VMBackend {
         // The guest dispatcher is deliberately lockstep. Driver/tool installs
         // can take minutes, and returning a false timeout while their reply is
         // still in flight invites the next UI command to be misinterpreted.
-        return waitForCommandReply(command: command, offset: offset, timeout: 900)
+        return waitForCommandReply(command: command, offset: offset, timeout: timeout)
     }
 
     private func makeHvfEngineConfig() -> HvfEngineConfig {
@@ -509,9 +516,7 @@ final class HvfWindowsBackend: VMBackend {
             }
             guard self.isRunning(), self.serviceHasStarted() else { return }
             let command = Self.pendingDiskGrowthCommand
-            let offset = self.fileSize(at: self.runLogPath)
-            self.appendCtl(command)
-            let reply = self.waitForCommandReply(command: command, offset: offset, timeout: 300)
+            let reply = self.executeGuestCommand(command, timeout: 300)
             if reply.code == 0, reply.output.contains("BRIDGEVM_DISK_GROW_OK") {
                 try? FileManager.default.removeItem(atPath: self.diskGrowMarkerPath)
             }

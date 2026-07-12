@@ -596,6 +596,44 @@ final class HvfWindowsBackendTests: XCTestCase {
         XCTAssertTrue(lines.allSatisfy { $0 == "shutdown.exe /p /f" })
     }
 
+    func testConcurrentGuestCommandsWaitForPriorReplyBeforeAppending() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
+        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in true })
+        let log = URL(fileURLWithPath: backend.evidenceDir).appendingPathComponent("run.log")
+        let group = DispatchGroup()
+        for command in ["first", "second"] {
+            group.enter()
+            DispatchQueue.global().async {
+                _ = backend.runInGuest(command)
+                group.leave()
+            }
+        }
+
+        let firstCommand = try waitForControlLines(backend, count: 1).first.map(String.init)!
+        usleep(150_000)
+        XCTAssertEqual(try controlLines(backend).count, 1)
+        try FileManager.default.createDirectory(atPath: backend.evidenceDir, withIntermediateDirectories: true)
+        try "BVAGENT CMD \(firstCommand) exit=0\nfirst-ok\nBVAGENT END \(firstCommand)\n"
+            .write(to: log, atomically: true, encoding: .utf8)
+
+        let commands = try waitForControlLines(backend, count: 2).map(String.init)
+        let secondCommand = commands[1]
+        try """
+        BVAGENT CMD \(firstCommand) exit=0
+        first-ok
+        BVAGENT END \(firstCommand)
+        BVAGENT CMD \(secondCommand) exit=0
+        second-ok
+        BVAGENT END \(secondCommand)
+
+        """.write(to: log, atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(group.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(Set(commands), Set(["first", "second"]))
+    }
+
     func testPendingDiskGrowthCommandIsIdempotentOnlyAtDiskEnd() {
         let command = HvfWindowsBackend.pendingDiskGrowthCommand
 
@@ -610,6 +648,23 @@ final class HvfWindowsBackendTests: XCTestCase {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
+    }
+
+    private func controlLines(_ backend: HvfWindowsBackend) throws -> [Substring] {
+        try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8).split(separator: "\n")
+    }
+
+    private func waitForControlLines(_ backend: HvfWindowsBackend, count: Int) throws -> [Substring] {
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            if FileManager.default.fileExists(atPath: backend.ctlFilePath) {
+                let lines = try controlLines(backend)
+                if lines.count >= count { return lines }
+            }
+            usleep(10_000)
+        }
+        XCTFail("timed out waiting for \(count) HVF control lines")
+        return []
     }
 
     private func makeConfig(bundlePath: String, diskPath: String? = nil) -> VMConfig {
