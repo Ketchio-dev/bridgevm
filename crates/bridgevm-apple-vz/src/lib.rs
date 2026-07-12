@@ -6,7 +6,7 @@ use bridgevm_resource_manager::{decide_from_manifest_profile, resolve_memory, re
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     str::FromStr,
@@ -55,6 +55,8 @@ pub enum AppleVzLaunchSpecArtifactError {
         #[source]
         source: std::io::Error,
     },
+    #[error("Fast Mode launch spec {path} exceeds the {maximum}-byte limit")]
+    TooLarge { path: PathBuf, maximum: u64 },
     #[error("failed to deserialize Fast Mode launch spec {path}: {source}")]
     Deserialize {
         path: PathBuf,
@@ -615,10 +617,20 @@ pub fn write_launch_spec_artifact(
 pub fn read_launch_spec_artifact(
     path: &Path,
 ) -> Result<AppleVzLaunchSpec, AppleVzLaunchSpecArtifactError> {
-    let bytes = fs::read(path).map_err(|source| AppleVzLaunchSpecArtifactError::Read {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    const MAX_LAUNCH_SPEC_BYTES: u64 = 1024 * 1024;
+    let mut bytes = Vec::new();
+    fs::File::open(path)
+        .and_then(|file| file.take(MAX_LAUNCH_SPEC_BYTES + 1).read_to_end(&mut bytes))
+        .map_err(|source| AppleVzLaunchSpecArtifactError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    if bytes.len() as u64 > MAX_LAUNCH_SPEC_BYTES {
+        return Err(AppleVzLaunchSpecArtifactError::TooLarge {
+            path: path.to_path_buf(),
+            maximum: MAX_LAUNCH_SPEC_BYTES,
+        });
+    }
     serde_json::from_slice(&bytes).map_err(|source| AppleVzLaunchSpecArtifactError::Deserialize {
         path: path.to_path_buf(),
         source,
@@ -1181,6 +1193,29 @@ mod tests {
 
         assert_eq!(path, launch_spec_path(&temp));
         assert_eq!(decoded, *plan.launch_spec());
+
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn rejects_oversized_launch_spec_artifact_before_decode() {
+        let temp = std::env::temp_dir().join(format!(
+            "bridgevm-apple-vz-oversized-launch-spec-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&temp);
+        std::fs::create_dir_all(&temp).unwrap();
+        let path = temp.join("launch.json");
+        std::fs::write(&path, vec![b'x'; 1024 * 1024 + 1]).unwrap();
+
+        let error = read_launch_spec_artifact(&path).unwrap_err();
+        assert!(matches!(
+            error,
+            AppleVzLaunchSpecArtifactError::TooLarge {
+                path: error_path,
+                maximum: 1_048_576
+            } if error_path == path
+        ));
 
         let _ = std::fs::remove_dir_all(&temp);
     }
