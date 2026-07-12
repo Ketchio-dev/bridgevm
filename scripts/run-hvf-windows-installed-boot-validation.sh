@@ -117,6 +117,7 @@ ramfb_sample_list() {
 }
 
 setup_input_actions_list() {
+  local LC_ALL=C
   (( ${#1} <= 128 )) || return 1
 
   local token
@@ -134,7 +135,7 @@ setup_input_actions_list() {
     [[ -n "$token" ]] || continue
     normalized="$(printf '%s' "$token" | tr '[:upper:]' '[:lower:]')"
     case "$normalized" in
-      tab|enter|space|win+r|lgui+r)
+      tab|enter|space|win+r|lgui+r|ctrl+alt+delete|ctrl+alt+del|esc|escape|backspace|delete|del|left|right|up|down|home|end|pageup|pagedown)
         count=$((count + 1))
         ;;
       text:*)
@@ -142,7 +143,7 @@ setup_input_actions_list() {
           text:*) text="${token#text:}" ;;
           *) return 1 ;;
         esac
-        [[ "$text" =~ ^[a-z0-9/.-]+$ ]] || return 1
+        [[ "$text" =~ ^[[:print:]]+$ && "$text" != *,* ]] || return 1
         count=$((count + ${#text}))
         ;;
       *)

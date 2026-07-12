@@ -107,8 +107,9 @@ Options:
                           --skip-build is set.
   --setup-input-actions LIST
                           Optional comma-separated xHCI setup-input keys:
-                          tab, enter, space,
-                          win+r, lgui+r, text:<[a-z0-9/.-]+>.
+                          tab, enter, space, esc, backspace, delete,
+                          arrows, home/end, pageup/pagedown, ctrl+alt+delete,
+                          win+r, lgui+r, text:<printable ASCII except comma>.
                           Requires --enable-xhci.
   --setup-input-marker TEXT
                           Serial marker that arms setup-input. Default is

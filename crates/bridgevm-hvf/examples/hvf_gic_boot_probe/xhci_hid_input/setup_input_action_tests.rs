@@ -124,25 +124,35 @@ fn xhci_setup_input_rejects_repeats() {
 }
 
 #[test]
-fn xhci_setup_input_rejects_unsupported_text_characters() {
-    for value in ["text:A", "text:hello there", "text:hello!"] {
-        assert_eq!(
-            XhciSetupInputTrigger::from_env_value("setup-input", value).unwrap_err(),
-            XhciSetupInputEnvError::UnsupportedToken {
-                token: value.to_string()
-            }
-        );
-    }
+fn xhci_setup_input_accepts_printable_ascii_text_and_rejects_non_ascii() {
+    let trigger =
+        XhciSetupInputTrigger::from_env_value("setup-input", "text:Hello world!").unwrap();
+    assert_eq!(trigger.action_names(), "H,e,l,l,o,space,w,o,r,l,d,!");
+
+    let value = "text:한글";
+    assert_eq!(
+        XhciSetupInputTrigger::from_env_value("setup-input", value).unwrap_err(),
+        XhciSetupInputEnvError::UnsupportedToken {
+            token: value.to_string()
+        }
+    );
 }
 
 #[test]
-fn xhci_setup_input_rejects_unsupported_tokens_and_usages() {
+fn xhci_setup_input_accepts_navigation_and_secure_attention_keys() {
+    let trigger = XhciSetupInputTrigger::from_env_value(
+        "setup-input",
+        "esc,backspace,delete,left,right,up,down,home,end,pageup,pagedown,ctrl+alt+delete",
+    )
+    .unwrap();
     assert_eq!(
-        XhciSetupInputTrigger::from_env_value("setup-input", "esc").unwrap_err(),
-        XhciSetupInputEnvError::UnsupportedToken {
-            token: "esc".to_string()
-        }
+        trigger.action_names(),
+        "esc,backspace,delete,left,right,up,down,home,end,pageup,pagedown,ctrl+alt+delete"
     );
+}
+
+#[test]
+fn xhci_setup_input_rejects_raw_usages() {
     assert_eq!(
         XhciSetupInputTrigger::from_env_value("setup-input", "0x04").unwrap_err(),
         XhciSetupInputEnvError::UnsupportedUsage {

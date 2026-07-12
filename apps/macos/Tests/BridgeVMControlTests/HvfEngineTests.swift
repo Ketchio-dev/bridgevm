@@ -275,6 +275,31 @@ final class HvfEngineSessionPathTests: XCTestCase {
         XCTAssertEqual(lines[1], "KEY text-hex:" + String(repeating: "78", count: 8))
     }
 
+    @MainActor
+    func testSpecialKeyInputWritesNamedHIDActions() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        let input = temp.appendingPathComponent("input.ctl")
+        try Data().write(to: input)
+        let config = HvfEngineConfig(
+            targetDiskPath: "target", uefiVarsPath: "vars", evidenceDir: temp.path,
+            watchdogMs: nil, ramMiB: 6144, smpCpus: 4, clipboardSync: true,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: true, virtioGpu3d: true,
+            nvmeBufferedIO: true, ctlFilePath: temp.appendingPathComponent("hvf.ctl").path
+        )
+        let session = HvfEngineSession(config: config, repoRoot: temp) { _ in false }
+
+        for key in ["esc", "backspace", "delete", "left", "up", "down", "right", "ctrl+alt+delete"] {
+            session.sendKey(key)
+        }
+
+        XCTAssertEqual(
+            try String(contentsOf: input, encoding: .utf8),
+            "KEY esc\nKEY backspace\nKEY delete\nKEY left\nKEY up\nKEY down\nKEY right\nKEY ctrl+alt+delete\n"
+        )
+    }
+
     private func makeWrapper(at root: URL) throws {
         let scripts = root.appendingPathComponent("scripts", isDirectory: true)
         try FileManager.default.createDirectory(at: scripts, withIntermediateDirectories: true)

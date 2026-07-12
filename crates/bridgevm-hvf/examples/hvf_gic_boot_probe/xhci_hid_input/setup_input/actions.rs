@@ -95,13 +95,68 @@ fn parse_setup_input_token(
             modifier: 0x08,
             usage: 0x15,
         },
+        "ctrl+alt+delete" | "ctrl+alt+del" => SetupInputAction::Key {
+            name: "ctrl+alt+delete",
+            modifier: 0x05,
+            usage: 0x4c,
+        },
+        "esc" | "escape" => SetupInputAction::Key {
+            name: "esc",
+            modifier: 0,
+            usage: 0x29,
+        },
+        "backspace" => SetupInputAction::Key {
+            name: "backspace",
+            modifier: 0,
+            usage: 0x2a,
+        },
+        "delete" | "del" => SetupInputAction::Key {
+            name: "delete",
+            modifier: 0,
+            usage: 0x4c,
+        },
+        "right" => SetupInputAction::Key {
+            name: "right",
+            modifier: 0,
+            usage: 0x4f,
+        },
+        "left" => SetupInputAction::Key {
+            name: "left",
+            modifier: 0,
+            usage: 0x50,
+        },
+        "down" => SetupInputAction::Key {
+            name: "down",
+            modifier: 0,
+            usage: 0x51,
+        },
+        "up" => SetupInputAction::Key {
+            name: "up",
+            modifier: 0,
+            usage: 0x52,
+        },
+        "home" => SetupInputAction::Key {
+            name: "home",
+            modifier: 0,
+            usage: 0x4a,
+        },
+        "end" => SetupInputAction::Key {
+            name: "end",
+            modifier: 0,
+            usage: 0x4d,
+        },
+        "pageup" => SetupInputAction::Key {
+            name: "pageup",
+            modifier: 0,
+            usage: 0x4b,
+        },
+        "pagedown" => SetupInputAction::Key {
+            name: "pagedown",
+            modifier: 0,
+            usage: 0x4e,
+        },
         value if value.contains('+') => {
             return Err(XhciSetupInputEnvError::Modifier {
-                token: token.to_string(),
-            });
-        }
-        "esc" | "escape" | "left" | "right" | "up" | "down" => {
-            return Err(XhciSetupInputEnvError::UnsupportedToken {
                 token: token.to_string(),
             });
         }
@@ -267,5 +322,35 @@ mod tests {
         assert!(parse_setup_input_actions("text-hex:0g").is_err());
         assert!(parse_setup_input_actions("text-hex:0a").is_err());
         assert!(parse_setup_input_actions(&format!("text-hex:{}", "41".repeat(33))).is_err());
+    }
+
+    #[test]
+    fn named_special_keys_map_to_boot_keyboard_usages_and_modifiers() {
+        let actions = parse_setup_input_actions(
+            "esc,backspace,delete,left,right,up,down,home,end,pageup,pagedown,ctrl+alt+delete",
+        )
+        .unwrap();
+        let expected = [
+            (0x29, 0x00),
+            (0x2a, 0x00),
+            (0x4c, 0x00),
+            (0x50, 0x00),
+            (0x4f, 0x00),
+            (0x52, 0x00),
+            (0x51, 0x00),
+            (0x4a, 0x00),
+            (0x4d, 0x00),
+            (0x4b, 0x00),
+            (0x4e, 0x00),
+            (0x4c, 0x05),
+        ];
+        assert_eq!(actions.len(), expected.len());
+        for (action, (usage, modifier)) in actions.iter().zip(expected) {
+            assert_eq!(action.usage(), usage);
+            assert!(matches!(
+                action,
+                SetupInputAction::Key { modifier: actual, .. } if *actual == modifier
+            ));
+        }
     }
 }

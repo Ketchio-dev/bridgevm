@@ -104,6 +104,20 @@ struct HvfEngineView: View {
                     Button("Enter") { session.sendKey("enter") }
                     Button("Space") { session.sendKey("space") }
                 }
+                HStack(spacing: 8) {
+                    Button("Esc") { session.sendKey("esc") }
+                    Button("⌫") { session.sendKey("backspace") }.help("Backspace")
+                    Button("⌦") { session.sendKey("delete") }.help("Delete")
+                    Divider().frame(height: 18)
+                    Button("←") { session.sendKey("left") }
+                    Button("↑") { session.sendKey("up") }
+                    Button("↓") { session.sendKey("down") }
+                    Button("→") { session.sendKey("right") }
+                    Button("Home") { session.sendKey("home") }
+                    Button("End") { session.sendKey("end") }
+                    Spacer()
+                    Button("Ctrl-Alt-Delete") { session.sendKey("ctrl+alt+delete") }
+                }
             }
             .padding(6)
         } label: {
