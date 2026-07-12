@@ -801,6 +801,41 @@ final class HvfCommandReplyReaderTests: XCTestCase {
     }
 }
 
+final class HvfIncrementalMarkerReaderTests: XCTestCase {
+    func testFindsMarkerAcrossAppendsAndChunkBoundary() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = dir.appendingPathComponent("run.log")
+        try Data("noise\nBVAGENT SERV".utf8).write(to: log)
+        let reader = HvfIncrementalMarkerReader(marker: "BVAGENT SERVICE start")
+        XCTAssertFalse(reader.containsMarker(in: log))
+
+        let handle = try FileHandle(forWritingTo: log)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("ICE start t=1\n".utf8))
+        try handle.close()
+        XCTAssertTrue(reader.containsMarker(in: log))
+        XCTAssertTrue(reader.containsMarker(in: log))
+    }
+
+    func testResetAllowsASecondLogGeneration() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = dir.appendingPathComponent("run.log")
+        let reader = HvfIncrementalMarkerReader(marker: "ready")
+        try Data("ready\n".utf8).write(to: log)
+        XCTAssertTrue(reader.containsMarker(in: log))
+
+        reader.reset()
+        try Data("booting\n".utf8).write(to: log, options: .atomic)
+        XCTAssertFalse(reader.containsMarker(in: log))
+        try Data("ready\n".utf8).write(to: log, options: .atomic)
+        XCTAssertTrue(reader.containsMarker(in: log))
+    }
+}
+
 private extension Result {
     var failure: Failure? {
         guard case let .failure(error) = self else { return nil }

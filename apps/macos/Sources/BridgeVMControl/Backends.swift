@@ -370,6 +370,7 @@ final class HvfWindowsBackend: VMBackend {
     private var diskGrowMarkerPath: String { config.bundlePath + "/metadata/hvf-grow-pending" }
     private let ctlWriteLock = NSLock()
     private let guestCommandLock = NSLock()
+    private let serviceStartReader = HvfIncrementalMarkerReader(marker: "BVAGENT SERVICE start")
     var launcherLogPath: String { evidenceDir + "/launcher.log" }
 
     static let pendingDiskGrowthCommand = [
@@ -407,6 +408,7 @@ final class HvfWindowsBackend: VMBackend {
         // pending first-boot action cannot mistake the previous SERVICE marker
         // for the new guest generation and append a command before tailing starts.
         try? FileManager.default.removeItem(atPath: runLogPath)
+        serviceStartReader.reset()
         Shell.launchDetached(launchCommand())
         schedulePendingDiskGrowth()
     }
@@ -508,8 +510,7 @@ final class HvfWindowsBackend: VMBackend {
     }
 
     private func serviceHasStarted() -> Bool {
-        guard let data = FileManager.default.contents(atPath: runLogPath) else { return false }
-        return data.range(of: Data("BVAGENT SERVICE start".utf8)) != nil
+        serviceStartReader.containsMarker(in: URL(fileURLWithPath: runLogPath))
     }
 
     private func schedulePendingDiskGrowth() {
