@@ -195,7 +195,7 @@ pub enum BridgeVmRequest {
     ListVms,
     ListTemplates,
     CreateVm {
-        manifest: VmManifest,
+        manifest: Box<VmManifest>,
     },
     CreateVmFromTemplate {
         name: String,
@@ -449,6 +449,14 @@ pub enum BridgeVmRequest {
     RecommendMode {
         choice: GuestChoice,
     },
+}
+
+impl BridgeVmRequest {
+    pub fn create_vm(manifest: VmManifest) -> Self {
+        Self::CreateVm {
+            manifest: Box::new(manifest),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7461,6 +7469,35 @@ mod tests {
     }
 
     #[test]
+    fn create_vm_request_keeps_wire_shape_while_bounding_enum_size() {
+        let manifest = VmManifest::new(
+            "wire-shape",
+            VmMode::Fast,
+            Guest {
+                os: "ubuntu".to_string(),
+                version: Some("24.04".to_string()),
+                arch: "arm64".to_string(),
+            },
+            "32GiB",
+        );
+        let request = BridgeVmRequest::create_vm(manifest.clone());
+
+        // Box is an in-memory implementation detail: peers still receive the
+        // manifest object directly under the existing `manifest` key.
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["type"], "create_vm");
+        assert_eq!(json["manifest"]["name"], manifest.name);
+        assert_eq!(json["manifest"]["guest"]["os"], manifest.guest.os);
+        assert!(json["manifest"].get("value").is_none());
+        assert_eq!(
+            serde_json::from_value::<BridgeVmRequest>(json).unwrap(),
+            request
+        );
+
+        assert!(std::mem::size_of::<BridgeVmRequest>() <= 256);
+    }
+
+    #[test]
     fn current_runtime_engine_preserves_mode_to_engine_boundary() {
         let fast = CurrentRuntimeEngine::for_mode(VmMode::Fast);
         assert_eq!(fast, CurrentRuntimeEngine::AppleVz);
@@ -8494,7 +8531,7 @@ mod tests {
             "80GiB",
         );
 
-        let response = handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        let response = handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         let BridgeVmResponse::Vm { vm } = response else {
@@ -8525,7 +8562,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -8571,7 +8608,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -8760,7 +8797,7 @@ mod tests {
         );
         manifest.integration.clipboard = false;
         manifest.integration.shared_folders = false;
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -8846,7 +8883,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         store
@@ -8953,7 +8990,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         store
@@ -9044,7 +9081,7 @@ mod tests {
                 host_path_token: None,
             },
         ];
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -9106,7 +9143,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -9181,7 +9218,7 @@ mod tests {
             read_only: false,
             host_path_token: None,
         }];
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -9290,7 +9327,7 @@ mod tests {
         );
         manifest.integration.clipboard = false;
         manifest.integration.shared_folders = false;
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         let token = store.guest_tools_token("dev").unwrap().token;
@@ -9390,7 +9427,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         let token = store.guest_tools_token("dev").unwrap().token;
@@ -9451,7 +9488,7 @@ mod tests {
         );
         manifest.boot =
             boot_template_by_id("ubuntu-arm64-installer").map(|template| template.as_boot());
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -9560,7 +9597,7 @@ mod tests {
         );
         manifest.boot =
             boot_template_by_id("ubuntu-arm64-installer").map(|template| template.as_boot());
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -9682,7 +9719,7 @@ mod tests {
         });
         manifest.firmware.tpm = true;
         manifest.firmware.secure_boot = true;
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -9843,7 +9880,7 @@ mod tests {
         );
         manifest.boot =
             boot_template_by_id("ubuntu-arm64-installer").map(|template| template.as_boot());
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10037,7 +10074,7 @@ mod tests {
             kernel_command_line: None,
             macos_restore_image: None,
         });
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10104,7 +10141,7 @@ mod tests {
         );
         manifest.boot =
             boot_template_by_id("ubuntu-arm64-installer").map(|template| template.as_boot());
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10247,7 +10284,7 @@ mod tests {
             },
             "64GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10304,7 +10341,7 @@ mod tests {
             "64GiB",
         );
         manifest.network.mode = "advanced".to_string();
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10353,7 +10390,7 @@ mod tests {
             "64GiB",
         );
         manifest.network.mode = "advanced".to_string();
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10402,7 +10439,7 @@ mod tests {
             "64GiB",
         );
         manifest.network.mode = "host-only".to_string();
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10445,7 +10482,7 @@ mod tests {
         manifest.storage.primary.format = "raw".to_string();
         manifest.storage.primary.path = "disks/root.raw".to_string();
         manifest.network.mode = "host-only".to_string();
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10492,7 +10529,7 @@ mod tests {
         manifest.storage.primary.format = "raw".to_string();
         manifest.storage.primary.path = "disks/root.raw".to_string();
         manifest.network.mode = "bridged".to_string();
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10537,7 +10574,7 @@ mod tests {
             "64GiB",
         );
         manifest.network.mode = "bridged".to_string();
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10587,7 +10624,7 @@ mod tests {
             "64GiB",
         );
         manifest.network.mode = "host-only".to_string();
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10644,7 +10681,7 @@ mod tests {
             host: 3000,
             guest: 3000,
         });
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10693,7 +10730,7 @@ mod tests {
             },
             "64GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10788,7 +10825,7 @@ mod tests {
             "64GiB",
         );
         manifest.network.mode = "host-only".to_string();
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10833,7 +10870,7 @@ mod tests {
             host: 2222,
             guest: 22,
         });
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10924,7 +10961,7 @@ mod tests {
             host: 18080,
             guest: 80,
         });
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -10972,7 +11009,7 @@ mod tests {
             },
             "64GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -11010,7 +11047,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         store
@@ -11082,7 +11119,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         let (bundle, _) = store.get_vm("legacy").unwrap();
@@ -11136,7 +11173,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -11174,7 +11211,7 @@ mod tests {
             },
             "64GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         let token = store.guest_tools_token("legacy").unwrap().token;
@@ -11323,7 +11360,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         handle_request(
@@ -11445,7 +11482,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -11569,7 +11606,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -11685,7 +11722,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -11738,7 +11775,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         handle_request(
@@ -11812,7 +11849,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -11887,7 +11924,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         handle_request(
@@ -11965,7 +12002,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -12023,7 +12060,7 @@ mod tests {
             },
             "64GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         handle_request(
@@ -12079,7 +12116,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         let disk = store.prepare_primary_disk("dev").unwrap();
@@ -12133,7 +12170,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         store
@@ -12207,7 +12244,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         store
@@ -12271,7 +12308,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         store
@@ -12348,7 +12385,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -12392,7 +12429,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         let bundle = store.bundle_path("dev");
@@ -12435,7 +12472,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&source, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&source, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         handle_request(
@@ -12497,7 +12534,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         handle_request(
@@ -12549,7 +12586,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -12606,7 +12643,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
 
@@ -12680,7 +12717,7 @@ mod tests {
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         (store, name)
@@ -13606,7 +13643,7 @@ exec sleep 60
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         store
@@ -13657,7 +13694,7 @@ exec sleep 60
             },
             "80GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         store
@@ -13727,7 +13764,7 @@ exec sleep 60
             },
             "40GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         // No QMP socket present -> suspend should report the socket is unavailable.
@@ -13752,7 +13789,7 @@ exec sleep 60
             },
             "40GiB",
         );
-        handle_request(&store, BridgeVmRequest::CreateVm { manifest })
+        handle_request(&store, BridgeVmRequest::create_vm(manifest))
             .into_result()
             .unwrap();
         let error = resume_backend(&store, "compat").unwrap_err();

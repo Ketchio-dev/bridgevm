@@ -1866,7 +1866,7 @@ fn request_for_create(args: CreateArgs) -> Result<BridgeVmRequest> {
     }
 
     let manifest = manifest_for_create(args)?;
-    Ok(BridgeVmRequest::CreateVm { manifest })
+    Ok(BridgeVmRequest::create_vm(manifest))
 }
 
 fn create_args_are_plain_template_request(args: &CreateArgs) -> bool {

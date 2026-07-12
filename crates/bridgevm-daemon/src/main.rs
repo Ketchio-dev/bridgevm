@@ -3491,12 +3491,7 @@ mod tests {
             macos_restore_image: None,
         });
 
-        let response = daemon_request(
-            store.clone(),
-            BridgeVmRequest::CreateVm {
-                manifest: manifest.clone(),
-            },
-        );
+        let response = daemon_request(store.clone(), BridgeVmRequest::create_vm(manifest.clone()));
         let BridgeVmResponse::Vm { vm } = response else {
             panic!("expected VM create response");
         };
