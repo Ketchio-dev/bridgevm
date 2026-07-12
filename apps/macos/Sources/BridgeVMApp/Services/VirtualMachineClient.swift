@@ -2032,8 +2032,6 @@ struct NDJSONLineAccumulator {
 final class UnixSocketNDJSONTransport: DaemonTransport {
   static let maximumRequestByteCount = 16 * 1024 * 1024
   private let endpoint: DaemonEndpoint
-  private let encoder = JSONEncoder()
-  private let decoder = JSONDecoder()
 
   init(endpoint: DaemonEndpoint) {
     self.endpoint = endpoint
@@ -2102,6 +2100,7 @@ final class UnixSocketNDJSONTransport: DaemonTransport {
     _ request: Request,
     responseType: Response.Type
   ) async throws -> Response {
+    let requestData = try Self.encodeRequest(request)
     let connection = NWConnection(
       to: .unix(path: endpoint.socketPath),
       using: .tcp
@@ -2110,11 +2109,9 @@ final class UnixSocketNDJSONTransport: DaemonTransport {
 
     try await connection.startAndWait()
 
-    let requestData = try Self.encodeRequest(request, encoder: encoder)
-
     try await connection.sendAndWait(requestData)
     let responseData = try await connection.receiveLine()
-    return try Self.decodeResponse(responseData, as: responseType, decoder: decoder)
+    return try Self.decodeResponse(responseData, as: responseType)
   }
 }
 

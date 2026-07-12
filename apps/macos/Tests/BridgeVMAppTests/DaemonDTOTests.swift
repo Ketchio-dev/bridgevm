@@ -121,6 +121,26 @@ final class DaemonDTOTests: XCTestCase {
     }
   }
 
+  func testDaemonCodecHelpersRemainDeterministicUnderParallelUse() async throws {
+    let responseData = Data(
+      #"{"type":"doctor","store_root":"/tmp/store","vms_dir":"/tmp/store/vms","status":"OK"}"#.utf8
+    )
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      for index in 0..<256 {
+        group.addTask {
+          let encoded = try UnixSocketNDJSONTransport.encodeRequest(["index": index])
+          guard encoded.last == 0x0A else { throw DaemonTransportError.responseEncodingInvalid }
+          let response = try UnixSocketNDJSONTransport.decodeResponse(
+            responseData,
+            as: DaemonStoreDoctorResponse.self
+          )
+          guard response.status == "OK" else { throw DaemonTransportError.responseEncodingInvalid }
+        }
+      }
+      try await group.waitForAll()
+    }
+  }
+
   func testDoctorRequestAndResponseMatchBridgeVmDaemonWireFormat() throws {
     let data = try JSONEncoder().encode(DaemonStoreDoctorRequest())
     let object = try JSONSerialization.jsonObject(with: data) as? [String: String]
