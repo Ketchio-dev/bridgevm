@@ -2,8 +2,8 @@ use bridgevm_hvf::fwcfg::GuestMemoryMut;
 
 use super::super::trb;
 use super::{
-    EndpointContexts, DCI3, DCI5, EP_CONTEXT_DWORD1_OFFSET, EP_CONTEXT_DWORD4_OFFSET,
-    EP_TR_DEQUEUE_OFFSET, TRANSFER_RING_POINTER_MASK,
+    EndpointContexts, InterruptEndpointContext, DCI3, DCI5, EP_CONTEXT_DWORD1_OFFSET,
+    EP_CONTEXT_DWORD4_OFFSET, EP_TR_DEQUEUE_OFFSET, TRANSFER_RING_POINTER_MASK,
 };
 
 impl EndpointContexts {
@@ -13,11 +13,14 @@ impl EndpointContexts {
         input_context: u64,
         drop_context: u32,
         add_context: u32,
-        endpoint: u32,
-        name: &'static str,
-        context_offset: u64,
+        endpoint_context: InterruptEndpointContext,
         mem: &dyn GuestMemoryMut,
     ) -> String {
+        let InterruptEndpointContext {
+            endpoint,
+            name,
+            offset: context_offset,
+        } = endpoint_context;
         let context_mask = 1_u32 << endpoint;
         if drop_context & context_mask != 0 {
             self.set_interrupt_in_context(slot_index, endpoint, 0, false);

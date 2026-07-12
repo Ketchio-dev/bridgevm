@@ -383,7 +383,7 @@ fn normalize_rel_with_sep_into(name: &str, sep: char, out: &mut String) {
 fn append_rel_with_sep_into(name: &str, sep: char, out: &mut String) {
     out.reserve(name.len());
     let mut wrote_part = false;
-    for part in name.split(|ch| ch == '/' || ch == '\\') {
+    for part in name.split(['/', '\\']) {
         if part.is_empty() || part == "." {
             continue;
         }

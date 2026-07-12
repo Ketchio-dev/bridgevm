@@ -174,10 +174,12 @@ impl LiveInputController {
             self.partial.clear();
             eprintln!("live input rejected: command_too_long");
         }
-        if self.offset == len && self.offset >= COMPACT_AFTER_BYTES && self.partial.is_empty() {
-            if file.set_len(0).is_ok() {
-                self.offset = 0;
-            }
+        if self.offset == len
+            && self.offset >= COMPACT_AFTER_BYTES
+            && self.partial.is_empty()
+            && file.set_len(0).is_ok()
+        {
+            self.offset = 0;
         }
     }
 

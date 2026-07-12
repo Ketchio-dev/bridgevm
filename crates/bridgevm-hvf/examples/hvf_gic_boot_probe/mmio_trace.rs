@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use bridgevm_hvf::platform_virt::{MmioOp, MmioOutcome};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(super) struct MmioTrace {
     count: u64,
     reads: u64,
@@ -12,21 +12,6 @@ pub(super) struct MmioTrace {
     last_op: &'static str,
     last_value: Option<u64>,
     last_outcome: &'static str,
-}
-
-impl Default for MmioTrace {
-    fn default() -> Self {
-        Self {
-            count: 0,
-            reads: 0,
-            writes: 0,
-            last_pc: 0,
-            last_ipa: 0,
-            last_op: "",
-            last_value: None,
-            last_outcome: "",
-        }
-    }
 }
 
 pub(super) fn record_mmio_trace(

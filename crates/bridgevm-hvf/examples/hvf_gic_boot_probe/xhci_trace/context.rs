@@ -26,6 +26,12 @@ const SLOT_COUNT: usize = 256;
 const DCI3_CONTEXT_MASK: u32 = 1 << DCI3;
 const DCI5_CONTEXT_MASK: u32 = 1 << DCI5;
 
+pub(super) struct InterruptEndpointContext {
+    endpoint: u32,
+    name: &'static str,
+    offset: u64,
+}
+
 #[derive(Debug)]
 pub(super) struct EndpointContexts {
     ep0_dequeue_by_slot: [u64; SLOT_COUNT],
@@ -183,9 +189,11 @@ impl EndpointContexts {
             input_context,
             drop_context,
             add_context,
-            DCI3,
-            "dci3",
-            DCI3_INPUT_CONTEXT_OFFSET,
+            InterruptEndpointContext {
+                endpoint: DCI3,
+                name: "dci3",
+                offset: DCI3_INPUT_CONTEXT_OFFSET,
+            },
             mem,
         );
         let dci5 = self.capture_interrupt_in_context(
@@ -193,9 +201,11 @@ impl EndpointContexts {
             input_context,
             drop_context,
             add_context,
-            DCI5,
-            "dci5",
-            DCI5_INPUT_CONTEXT_OFFSET,
+            InterruptEndpointContext {
+                endpoint: DCI5,
+                name: "dci5",
+                offset: DCI5_INPUT_CONTEXT_OFFSET,
+            },
             mem,
         );
         Some(format!(

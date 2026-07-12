@@ -931,10 +931,8 @@ impl AgentConsoleHarness {
                 .last_poll
                 .map_or(true, |t| now.duration_since(t) >= share.interval)
         });
-        if share_due && !self.share_pending() {
-            if !self.enqueue_one_share_host_change() {
-                self.queue.push_back(ServiceReq::ShareLs);
-            }
+        if share_due && !self.share_pending() && !self.enqueue_one_share_host_change() {
+            self.queue.push_back(ServiceReq::ShareLs);
         }
     }
 
@@ -1118,7 +1116,7 @@ impl AgentConsoleHarness {
                 return true;
             }
         }
-        self.queue.iter().any(|req| pred(req))
+        self.queue.iter().any(pred)
     }
 
     fn share_pending(&self) -> bool {
@@ -1259,10 +1257,9 @@ impl AgentConsoleHarness {
         if matches!(
             self.in_flight.as_ref().map(|(req, _)| req),
             Some(ServiceReq::Ctl(_) | ServiceReq::ShareGet { .. })
-        ) {
-            if self.handle_unlabelled_get_fragment(line).is_some() {
-                return;
-            }
+        ) && self.handle_unlabelled_get_fragment(line).is_some()
+        {
+            return;
         }
 
         // Snapshot the kind so the &mut self helpers below don't clash with the
@@ -1753,12 +1750,11 @@ impl LineFramer {
                 continue;
             }
             if *byte == b'\n' {
-                let line_end = self
-                    .pending
-                    .last()
-                    .is_some_and(|last| *last == b'\r')
-                    .then(|| self.pending.len() - 1)
-                    .unwrap_or(self.pending.len());
+                let line_end = if self.pending.last().is_some_and(|last| *last == b'\r') {
+                    self.pending.len() - 1
+                } else {
+                    self.pending.len()
+                };
                 if line_end <= maximum {
                     lines.push(String::from_utf8_lossy(&self.pending[..line_end]).into_owned());
                 } else {
@@ -1779,9 +1775,9 @@ impl LineFramer {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Base64DecodeError {
-    InvalidByte,
-    InvalidLength,
-    InvalidPadding,
+    Byte,
+    Length,
+    Padding,
 }
 
 #[cfg(test)]
@@ -1816,7 +1812,7 @@ fn base64_encode_into(bytes: &[u8], out: &mut String) {
 fn base64_decode(text: &str) -> Result<Vec<u8>, Base64DecodeError> {
     let bytes = text.as_bytes();
     if bytes.len() % 4 != 0 {
-        return Err(Base64DecodeError::InvalidLength);
+        return Err(Base64DecodeError::Length);
     }
     let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
     let mut saw_padding = false;
@@ -1834,17 +1830,17 @@ fn base64_decode(text: &str) -> Result<Vec<u8>, Base64DecodeError> {
                     saw_padding = true;
                     padding += 1;
                     if i < 2 {
-                        return Err(Base64DecodeError::InvalidPadding);
+                        return Err(Base64DecodeError::Padding);
                     }
                 }
-                _ => return Err(Base64DecodeError::InvalidByte),
+                _ => return Err(Base64DecodeError::Byte),
             }
         }
         if padding > 2 {
-            return Err(Base64DecodeError::InvalidPadding);
+            return Err(Base64DecodeError::Padding);
         }
         if padding > 0 && chunk[3] != b'=' {
-            return Err(Base64DecodeError::InvalidPadding);
+            return Err(Base64DecodeError::Padding);
         }
         out.push((vals[0] << 2) | (vals[1] >> 4));
         if padding < 2 {

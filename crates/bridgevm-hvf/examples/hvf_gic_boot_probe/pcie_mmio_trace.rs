@@ -55,6 +55,16 @@ pub(super) struct RecentMmio {
     events: VecDeque<RecentMmioEvent>,
 }
 
+pub(super) struct PcieMmioEventInput<'a> {
+    pub(super) device: &'static str,
+    pub(super) pc: u64,
+    pub(super) ipa: u64,
+    pub(super) target: Option<PcieTraceTarget>,
+    pub(super) op: &'a MmioOp,
+    pub(super) outcome: &'a MmioOutcome,
+    pub(super) context: Option<PcieTraceContext>,
+}
+
 impl RecentMmio {
     pub(super) fn new(device: &'static str, max: usize) -> Self {
         Self {
@@ -73,19 +83,27 @@ impl RecentMmio {
         op: &MmioOp,
         outcome: &MmioOutcome,
     ) {
-        self.record_with_context(device, pc, ipa, target, op, outcome, None);
+        self.record_with_context(PcieMmioEventInput {
+            device,
+            pc,
+            ipa,
+            target,
+            op,
+            outcome,
+            context: None,
+        });
     }
 
-    pub(super) fn record_with_context(
-        &mut self,
-        device: &'static str,
-        pc: u64,
-        ipa: u64,
-        target: Option<PcieTraceTarget>,
-        op: &MmioOp,
-        outcome: &MmioOutcome,
-        context: Option<PcieTraceContext>,
-    ) {
+    pub(super) fn record_with_context(&mut self, input: PcieMmioEventInput<'_>) {
+        let PcieMmioEventInput {
+            device,
+            pc,
+            ipa,
+            target,
+            op,
+            outcome,
+            context,
+        } = input;
         if self.max == 0 || device != self.device {
             return;
         }
@@ -235,15 +253,15 @@ mod tests {
         );
 
         // When: the probe records a targetless xHCI-range KnownUnimplemented event.
-        recent.record_with_context(
-            "pcie-mmio-32",
-            0xffff_f803_8e35_9e78,
-            0x3efe_9040,
-            None,
-            &MmioOp::Read { size: 4 },
-            &MmioOutcome::KnownUnimplemented("pcie-mmio-32"),
-            Some(PcieTraceContext::PciConfig(snapshot)),
-        );
+        recent.record_with_context(PcieMmioEventInput {
+            device: "pcie-mmio-32",
+            pc: 0xffff_f803_8e35_9e78,
+            ipa: 0x3efe_9040,
+            target: None,
+            op: &MmioOp::Read { size: 4 },
+            outcome: &MmioOutcome::KnownUnimplemented("pcie-mmio-32"),
+            context: Some(PcieTraceContext::PciConfig(snapshot)),
+        });
 
         // Then: the printed event line carries current xHCI command/BAR state,
         // making a later live trace distinguish decode loss from missing register semantics.

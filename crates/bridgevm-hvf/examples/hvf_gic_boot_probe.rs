@@ -92,7 +92,9 @@ mod nvme_storage_effect;
 mod pcie_mmio_trace;
 #[path = "hvf_gic_boot_probe/storage_effect_receipt.rs"]
 mod storage_effect_receipt;
-use pcie_mmio_trace::{targetless_xhci_trace_context, PcieTraceTarget, RecentMmio};
+use pcie_mmio_trace::{
+    targetless_xhci_trace_context, PcieMmioEventInput, PcieTraceTarget, RecentMmio,
+};
 #[path = "hvf_gic_boot_probe/pcie_ecam_trace.rs"]
 mod pcie_ecam_trace;
 use pcie_ecam_trace::{PcieEcamAccess, RecentPcieEcam};
@@ -892,17 +894,42 @@ mod pre_run_drain_gate_tests {
     }
 }
 
+struct SecondaryVcpuSpawnConfig {
+    cpu_count: u64,
+    primary_vcpu: HvVcpuT,
+    ram_base: usize,
+    ram_size: usize,
+    platform: Arc<Mutex<VirtPlatform>>,
+    drain_trace: DrainTrace,
+    pre_run_drain_gate: Arc<PreRunDrainGate>,
+    smp_trace: Option<Arc<SmpTrace>>,
+}
+
+struct SecondaryVcpuThreadContext {
+    shutdown: Arc<AtomicBool>,
+    terminal: Arc<SecondaryTerminalSignal>,
+    primary_vcpu: HvVcpuT,
+    ram_base: usize,
+    ram_size: usize,
+    platform: Arc<Mutex<VirtPlatform>>,
+    drain_trace: DrainTrace,
+    pre_run_drain_gate: Arc<PreRunDrainGate>,
+    controls: Vec<Arc<VcpuControl>>,
+    smp_trace: Option<Arc<SmpTrace>>,
+}
+
 impl SecondaryVcpuSet {
-    fn spawn(
-        cpu_count: u64,
-        primary_vcpu: HvVcpuT,
-        ram_base: usize,
-        ram_size: usize,
-        platform: Arc<Mutex<VirtPlatform>>,
-        drain_trace: DrainTrace,
-        pre_run_drain_gate: Arc<PreRunDrainGate>,
-        smp_trace: Option<Arc<SmpTrace>>,
-    ) -> Self {
+    fn spawn(config: SecondaryVcpuSpawnConfig) -> Self {
+        let SecondaryVcpuSpawnConfig {
+            cpu_count,
+            primary_vcpu,
+            ram_base,
+            ram_size,
+            platform,
+            drain_trace,
+            pre_run_drain_gate,
+            smp_trace,
+        } = config;
         if cpu_count <= 1 {
             return Self {
                 shutdown: Arc::new(AtomicBool::new(false)),
@@ -932,16 +959,18 @@ impl SecondaryVcpuSet {
                     .spawn(move || {
                         secondary_vcpu_thread(
                             control,
-                            shutdown,
-                            terminal,
-                            primary_vcpu,
-                            ram_base,
-                            ram_size,
-                            platform,
-                            drain_trace,
-                            pre_run_drain_gate,
-                            controls_for_thread,
-                            smp_trace,
+                            SecondaryVcpuThreadContext {
+                                shutdown,
+                                terminal,
+                                primary_vcpu,
+                                ram_base,
+                                ram_size,
+                                platform,
+                                drain_trace,
+                                pre_run_drain_gate,
+                                controls: controls_for_thread,
+                                smp_trace,
+                            },
                         )
                     })
                     .expect("spawn secondary vCPU thread")
@@ -984,19 +1013,19 @@ impl SecondaryVcpuSet {
     }
 }
 
-fn secondary_vcpu_thread(
-    control: Arc<VcpuControl>,
-    shutdown: Arc<AtomicBool>,
-    terminal: Arc<SecondaryTerminalSignal>,
-    primary_vcpu: HvVcpuT,
-    ram_base: usize,
-    ram_size: usize,
-    platform: Arc<Mutex<VirtPlatform>>,
-    drain_trace: DrainTrace,
-    pre_run_drain_gate: Arc<PreRunDrainGate>,
-    controls: Vec<Arc<VcpuControl>>,
-    smp_trace: Option<Arc<SmpTrace>>,
-) {
+fn secondary_vcpu_thread(control: Arc<VcpuControl>, context: SecondaryVcpuThreadContext) {
+    let SecondaryVcpuThreadContext {
+        shutdown,
+        terminal,
+        primary_vcpu,
+        ram_base,
+        ram_size,
+        platform,
+        drain_trace,
+        pre_run_drain_gate,
+        controls,
+        smp_trace,
+    } = context;
     let mut vcpu: HvVcpuT = 0;
     let mut exit: *mut HvVcpuExit = null_mut();
     let mut _vcpu_guard: Option<HvVcpuGuard> = None;
@@ -1058,22 +1087,22 @@ fn secondary_vcpu_thread(
                 );
                 *state = PsciState::On;
                 drop(state);
-                let stop = run_secondary_until_parked(
+                let stop = run_secondary_until_parked(SecondaryRunLoopContext {
                     vcpu,
                     exit,
-                    &mut guest_ram,
-                    &platform,
-                    &mut drain_stats,
+                    guest_ram: &mut guest_ram,
+                    platform: &platform,
+                    drain_stats: &mut drain_stats,
                     drain_trace,
-                    &control,
-                    &controls,
-                    &shutdown,
-                    &terminal,
+                    control: &control,
+                    controls: &controls,
+                    shutdown: &shutdown,
+                    terminal: &terminal,
                     primary_vcpu,
-                    &mut exits,
-                    &pre_run_drain_gate,
-                    smp_trace.as_deref(),
-                );
+                    exits: &mut exits,
+                    pre_run_drain_gate: &pre_run_drain_gate,
+                    smp_trace: smp_trace.as_deref(),
+                });
                 state = lock_vcpu_state(
                     &control,
                     smp_trace.as_deref(),
@@ -1086,22 +1115,22 @@ fn secondary_vcpu_thread(
             }
             PsciState::On => {
                 drop(state);
-                let stop = run_secondary_until_parked(
+                let stop = run_secondary_until_parked(SecondaryRunLoopContext {
                     vcpu,
                     exit,
-                    &mut guest_ram,
-                    &platform,
-                    &mut drain_stats,
+                    guest_ram: &mut guest_ram,
+                    platform: &platform,
+                    drain_stats: &mut drain_stats,
                     drain_trace,
-                    &control,
-                    &controls,
-                    &shutdown,
-                    &terminal,
+                    control: &control,
+                    controls: &controls,
+                    shutdown: &shutdown,
+                    terminal: &terminal,
                     primary_vcpu,
-                    &mut exits,
-                    &pre_run_drain_gate,
-                    smp_trace.as_deref(),
-                );
+                    exits: &mut exits,
+                    pre_run_drain_gate: &pre_run_drain_gate,
+                    smp_trace: smp_trace.as_deref(),
+                });
                 state = lock_vcpu_state(
                     &control,
                     smp_trace.as_deref(),
@@ -1266,22 +1295,40 @@ fn run_hvf_vcpu_once(vcpu: HvVcpuT, exit: *mut HvVcpuExit) -> Result<u32, HvRetu
     Ok(unsafe { (*exit).reason })
 }
 
-fn run_secondary_until_parked(
+struct SecondaryRunLoopContext<'a> {
     vcpu: HvVcpuT,
     exit: *mut HvVcpuExit,
-    guest_ram: &mut MappedRam,
-    platform: &Arc<Mutex<VirtPlatform>>,
-    drain_stats: &mut RunLoopDrainStats,
+    guest_ram: &'a mut MappedRam,
+    platform: &'a Arc<Mutex<VirtPlatform>>,
+    drain_stats: &'a mut RunLoopDrainStats,
     drain_trace: DrainTrace,
-    control: &Arc<VcpuControl>,
-    controls: &[Arc<VcpuControl>],
-    shutdown: &AtomicBool,
-    terminal: &SecondaryTerminalSignal,
+    control: &'a Arc<VcpuControl>,
+    controls: &'a [Arc<VcpuControl>],
+    shutdown: &'a AtomicBool,
+    terminal: &'a SecondaryTerminalSignal,
     primary_vcpu: HvVcpuT,
-    exits: &mut u64,
-    pre_run_drain_gate: &PreRunDrainGate,
-    smp_trace: Option<&SmpTrace>,
-) -> bool {
+    exits: &'a mut u64,
+    pre_run_drain_gate: &'a PreRunDrainGate,
+    smp_trace: Option<&'a SmpTrace>,
+}
+
+fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -> bool {
+    let SecondaryRunLoopContext {
+        vcpu,
+        exit,
+        guest_ram,
+        platform,
+        drain_stats,
+        drain_trace,
+        control,
+        controls,
+        shutdown,
+        terminal,
+        primary_vcpu,
+        exits,
+        pre_run_drain_gate,
+        smp_trace,
+    } = context;
     if let Some(trace) = smp_trace {
         trace.secondary_run_loop_entered(control.index, *exits);
     }
@@ -2247,7 +2294,7 @@ fn dump_env_guest_bytes(mem: &dyn GuestMemoryMut) {
         return;
     };
     for (idx, spec) in extra
-        .split(|c: char| matches!(c, ',' | ';' | ' ' | '\n' | '\t'))
+        .split([',', ';', ' ', '\n', '\t'])
         .filter(|s| !s.trim().is_empty())
         .enumerate()
     {
@@ -3853,16 +3900,16 @@ fn main() -> ExitCode {
             let smp_trace = (smp_cpus > 1 && smp_trace_enabled).then(|| Arc::new(SmpTrace::new()));
             let pre_run_drain_gate = Arc::new(PreRunDrainGate::from_env());
             let secondary_vcpus = (smp_cpus > 1).then(|| {
-                SecondaryVcpuSet::spawn(
-                    smp_cpus,
-                    vcpu,
-                    ram as usize,
+                SecondaryVcpuSet::spawn(SecondaryVcpuSpawnConfig {
+                    cpu_count: smp_cpus,
+                    primary_vcpu: vcpu,
+                    ram_base: ram as usize,
                     ram_size,
-                    Arc::clone(&platform),
+                    platform: Arc::clone(&platform),
                     drain_trace,
-                    Arc::clone(&pre_run_drain_gate),
-                    smp_trace.clone(),
-                )
+                    pre_run_drain_gate: Arc::clone(&pre_run_drain_gate),
+                    smp_trace: smp_trace.clone(),
+                })
             });
             let boot_generation = begin_watchdog_generation(&watchdog_generation);
             let watchdog_fired = Arc::new(AtomicBool::new(false));
@@ -4217,15 +4264,15 @@ fn main() -> ExitCode {
                                 );
                                 (outcome, pending, device, pcie_target, pcie_context)
                             };
-                            recent_pcie_mmio.record_with_context(
+                            recent_pcie_mmio.record_with_context(PcieMmioEventInput {
                                 device,
-                                last_pc,
+                                pc: last_pc,
                                 ipa,
-                                pcie_target,
-                                &op,
-                                &outcome,
-                                pcie_context,
-                            );
+                                target: pcie_target,
+                                op: &op,
+                                outcome: &outcome,
+                                context: pcie_context,
+                            });
                             recent_pcie_pio.record(
                                 device,
                                 last_pc,
