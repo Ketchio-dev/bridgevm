@@ -393,6 +393,22 @@ final class ShellCommandSafetyTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(started), 1.5)
     }
 
+    func testShellRunTimeoutTerminatesChildProcesses() throws {
+        let pidFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bridgevm-child-\(UUID().uuidString).pid")
+        defer { try? FileManager.default.removeItem(at: pidFile) }
+        let command = "/bin/sleep 30 & child=$!; echo $child > \(Shell.shQuote(pidFile.path)); wait $child"
+
+        _ = Shell.run("/bin/sh", ["-c", command], timeout: 0.2)
+
+        let childPID = try XCTUnwrap(
+            pid_t(String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines))
+        )
+        let deadline = Date().addingTimeInterval(2)
+        while kill(childPID, 0) == 0, Date() < deadline { usleep(20_000) }
+        XCTAssertNotEqual(kill(childPID, 0), 0, "timed-out command left child process \(childPID) running")
+    }
+
     private func launchMarkerProcess(_ marker: String) throws -> Process {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")

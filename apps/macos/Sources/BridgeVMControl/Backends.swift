@@ -185,8 +185,11 @@ enum Shell {
         let deadline = Date().addingTimeInterval(timeout)
         while proc.isRunning && Date() < deadline { usleep(50_000) }
         if proc.isRunning {
+            let descendants = descendantProcessIDs(of: proc.processIdentifier)
+            for pid in descendants.reversed() { kill(pid, SIGTERM) }
             proc.terminate()
             usleep(300_000)
+            for pid in descendants.reversed() where kill(pid, 0) == 0 { kill(pid, SIGKILL) }
             if proc.isRunning { kill(proc.processIdentifier, SIGKILL) }
         }
         proc.waitUntilExit()
@@ -202,6 +205,41 @@ enum Shell {
             ? "[출력 일부 생략 — 마지막 \(snapshot.data.count)바이트]\n" + body
             : body
         return (output, proc.terminationStatus)
+    }
+
+    private static func descendantProcessIDs(of root: pid_t) -> [pid_t] {
+        var ordered: [pid_t] = []
+        var visited = Set<pid_t>([root])
+        var queue = [root]
+        while !queue.isEmpty {
+            let parent = queue.removeFirst()
+            for child in directChildProcessIDs(of: parent) where visited.insert(child).inserted {
+                ordered.append(child)
+                queue.append(child)
+            }
+        }
+        return ordered
+    }
+
+    private static func directChildProcessIDs(of parent: pid_t) -> [pid_t] {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        task.arguments = ["-P", String(parent)]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
+            try? pipe.fileHandleForWriting.close()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            task.waitUntilExit()
+            guard task.terminationStatus == 0 else { return [] }
+            return String(decoding: data, as: UTF8.self)
+                .split(whereSeparator: \.isWhitespace)
+                .compactMap { pid_t($0) }
+        } catch {
+            return []
+        }
     }
 
     /// Launch a long-running process fully detached from this app (its own window).
