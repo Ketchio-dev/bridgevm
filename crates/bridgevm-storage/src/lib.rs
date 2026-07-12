@@ -671,15 +671,17 @@ pub struct VmStore {
     root: PathBuf,
 }
 
-impl VmStore {
-    pub fn default() -> Self {
+impl Default for VmStore {
+    fn default() -> Self {
         let root = env::var_os("BRIDGEVM_HOME")
             .map(PathBuf::from)
             .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".bridgevm")))
             .unwrap_or_else(|| PathBuf::from(".bridgevm"));
         Self::new(root)
     }
+}
 
+impl VmStore {
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self {
             root: absolutize(root.into()),
@@ -879,7 +881,7 @@ impl VmStore {
         }
 
         let output = self.bundle_path(&manifest.name);
-        let input_resolved = fs::canonicalize(&input)?;
+        let input_resolved = fs::canonicalize(input)?;
         let output_resolved = resolve_path_for_new(&output)?;
         let store_resolved = fs::canonicalize(&self.root)?;
         if is_same_or_descendant(&output_resolved, &input_resolved)
@@ -895,7 +897,7 @@ impl VmStore {
             return Err(StorageError::AlreadyExists(manifest.name));
         }
 
-        let copy_summary = copy_dir_all(&input, &output)?;
+        let copy_summary = copy_dir_all(input, &output)?;
         manifest.write(&output.join("manifest.yaml"))?;
         let metadata = VmImportMetadata {
             vm: manifest.name,
