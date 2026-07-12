@@ -2400,7 +2400,8 @@ fn valid_guest_ip(address: &str) -> bool {
             !address.is_unspecified() && !address.is_loopback() && !address.is_link_local()
         }
         Ok(IpAddr::V6(address)) => {
-            !address.is_unspecified() && !address.is_loopback() && !address.is_unicast_link_local()
+            let first_segment = address.segments()[0];
+            !address.is_unspecified() && !address.is_loopback() && first_segment & 0xffc0 != 0xfe80
         }
         Err(_) => false,
     }

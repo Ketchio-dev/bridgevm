@@ -4447,7 +4447,7 @@ impl GicV3DistributorDevice {
 
     fn reg_index(offset: u64, base: u64, count: usize) -> Option<usize> {
         let end = base.checked_add((count as u64).checked_mul(4)?)?;
-        if offset < base || offset >= end || !(offset - base).is_multiple_of(4) {
+        if offset < base || offset >= end || (offset - base) % 4 != 0 {
             return None;
         }
         usize::try_from((offset - base) / 4).ok()
@@ -13889,8 +13889,8 @@ fn windows_arm_guest_region_name(address: Option<u64>, guest_ram_bytes: u64) -> 
         && address < WINDOWS_ARM_UEFI_CODE_IPA.saturating_add(WINDOWS_ARM_UEFI_SLOT_BYTES)
     {
         "firmware pflash slot"
-    } else if address >= WINDOWS_ARM_UEFI_LOW_CODE_ALIAS_IPA
-        && address < WINDOWS_ARM_UEFI_LOW_CODE_ALIAS_IPA.saturating_add(WINDOWS_ARM_UEFI_SLOT_BYTES)
+    } else if address
+        < WINDOWS_ARM_UEFI_LOW_CODE_ALIAS_IPA.saturating_add(WINDOWS_ARM_UEFI_SLOT_BYTES)
     {
         "low firmware pflash alias"
     } else if address >= WINDOWS_ARM_UEFI_LOW_VARS_ALIAS_IPA

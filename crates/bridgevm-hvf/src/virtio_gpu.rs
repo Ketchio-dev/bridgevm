@@ -1473,7 +1473,7 @@ impl VirtioGpu {
                 );
             } else if self.three_d.is_3d_resource(resource_id) {
                 let now = Instant::now();
-                let readback_due = self.last_3d_scanout_readback.is_none_or(|last| {
+                let readback_due = self.last_3d_scanout_readback.map_or(true, |last| {
                     now.saturating_duration_since(last) >= self.scanout_readback_interval
                 });
                 if readback_due

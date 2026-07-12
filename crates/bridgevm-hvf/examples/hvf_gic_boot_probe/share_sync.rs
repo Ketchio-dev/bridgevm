@@ -275,7 +275,7 @@ impl ShareSync {
         }
 
         for (name, file) in &self.host_files_scratch {
-            if self.records.get(name).is_none_or(|record| {
+            if self.records.get(name).map_or(true, |record| {
                 record.size != file.size || record.host_mtime_ms != Some(file.mtime_ms)
             }) {
                 self.pending_host_changed.insert(name.clone());

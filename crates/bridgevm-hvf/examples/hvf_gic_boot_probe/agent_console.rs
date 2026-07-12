@@ -424,7 +424,7 @@ impl AgentConsoleHarness {
         if matches!(self.state, AgentConsoleState::WaitingReady) {
             let due = self
                 .last_ping
-                .is_none_or(|t| now.duration_since(t) >= PING_INTERVAL);
+                .map_or(true, |t| now.duration_since(t) >= PING_INTERVAL);
             if due {
                 platform.virtio_console_agent_send(b"PING\n", mem);
                 self.last_ping = Some(now);
@@ -852,7 +852,7 @@ impl AgentConsoleHarness {
         // stopped producing vCPU exits and the whole service froze silently).
         let due = self
             .last_alive
-            .is_none_or(|t| now.duration_since(t) >= Duration::from_secs(30));
+            .map_or(true, |t| now.duration_since(t) >= Duration::from_secs(30));
         if due {
             self.last_alive = Some(now);
             println!("BVAGENT SERVICE alive t={}", self.t_ms(now));
@@ -903,7 +903,7 @@ impl AgentConsoleHarness {
         if self.clipsync {
             let due = self
                 .last_clip_poll
-                .is_none_or(|t| now.duration_since(t) >= self.clip_interval);
+                .map_or(true, |t| now.duration_since(t) >= self.clip_interval);
             if due && !self.any_pending(|r| matches!(r, ServiceReq::ClipPoll)) {
                 self.queue.push_back(ServiceReq::ClipPoll);
             }
@@ -916,7 +916,7 @@ impl AgentConsoleHarness {
         if !self.clipsync {
             let due = self
                 .last_send
-                .is_none_or(|t| now.duration_since(t) >= HEARTBEAT_INTERVAL);
+                .map_or(true, |t| now.duration_since(t) >= HEARTBEAT_INTERVAL);
             if due && !self.any_pending(|r| matches!(r, ServiceReq::Ping)) {
                 self.queue.push_back(ServiceReq::Ping);
             }
@@ -929,7 +929,7 @@ impl AgentConsoleHarness {
         let share_due = self.share.as_ref().is_some_and(|share| {
             share
                 .last_poll
-                .is_none_or(|t| now.duration_since(t) >= share.interval)
+                .map_or(true, |t| now.duration_since(t) >= share.interval)
         });
         if share_due && !self.share_pending() {
             if !self.enqueue_one_share_host_change() {
@@ -1184,7 +1184,7 @@ impl AgentConsoleHarness {
     fn drain_ctl(&mut self, now: Instant) {
         let due = self
             .ctl_last_poll
-            .is_none_or(|t| now.duration_since(t) >= CTL_POLL_INTERVAL);
+            .map_or(true, |t| now.duration_since(t) >= CTL_POLL_INTERVAL);
         if self.ctl_path.is_none() || !due {
             return;
         }

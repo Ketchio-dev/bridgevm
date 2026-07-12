@@ -450,7 +450,7 @@ fn validate_window_input_action(
     allowed: &[&str],
 ) -> Result<(), ProtocolValidationError> {
     validate_non_empty(field, value)?;
-    if !allowed.iter().any(|allowed| *allowed == value) {
+    if !allowed.contains(&value) {
         return Err(ProtocolValidationError::InvalidWindowInputValue {
             field,
             value: value.to_string(),
