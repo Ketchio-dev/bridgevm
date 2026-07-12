@@ -25,6 +25,10 @@ final class LibraryModel: ObservableObject {
     var usedMemGiB: Double { runningModels().reduce(0.0) { $0 + $1.memGiB } }
     var usedCPU: Int { runningModels().reduce(0) { $0 + $1.cpu } }
 
+    func deletionImpact(for cfg: VMConfig) -> VMLibraryDeletionImpact {
+        VMLibrary.deletionImpact(for: cfg)
+    }
+
     init() {
         VMLibrary.migrateLegacyIfNeeded()
         reload()

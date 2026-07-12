@@ -172,6 +172,39 @@ final class VMLibraryPersistenceTests: XCTestCase {
         XCTAssertTrue(scan.issues[0].message.contains("심볼릭 링크"))
         XCTAssertFalse(VMLibrary.save(config(id: "linked"), rootURL: root))
     }
+
+    func testDeletionImpactDistinguishesManagedAndExternalBundles() {
+        let root = URL(fileURLWithPath: "/tmp/bridgevm-library", isDirectory: true)
+        var managed = config(id: "managed")
+        managed.bundlePath = root.appendingPathComponent("managed/bundle.vmbridge").path
+        var external = config(id: "external")
+        external.bundlePath = "/Volumes/VMs/external/bundle.vmbridge"
+
+        XCTAssertEqual(VMLibrary.deletionImpact(for: managed, rootURL: root), .managedBundleDeleted)
+        XCTAssertEqual(VMLibrary.deletionImpact(for: external, rootURL: root), .registrationOnly)
+    }
+
+    func testDeletionImpactDoesNotTreatSiblingPrefixAsManaged() {
+        let root = URL(fileURLWithPath: "/tmp/vms", isDirectory: true)
+        var config = config(id: "win")
+        config.bundlePath = "/tmp/vms/win-copy/bundle.vmbridge"
+
+        XCTAssertEqual(VMLibrary.deletionImpact(for: config, rootURL: root), .registrationOnly)
+    }
+
+    func testDeletionImpactDoesNotClaimSymlinkTargetWillBeDeleted() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = temp.appendingPathComponent("library")
+        let outside = temp.appendingPathComponent("outside")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked"), withDestinationURL: outside)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        var linked = config(id: "linked")
+        linked.bundlePath = outside.appendingPathComponent("bundle.vmbridge").path
+
+        XCTAssertEqual(VMLibrary.deletionImpact(for: linked, rootURL: root), .registrationOnly)
+    }
 }
 
 final class ShellCommandSafetyTests: XCTestCase {

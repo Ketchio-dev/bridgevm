@@ -11,6 +11,11 @@ struct VMLibraryScan {
     let issues: [VMLibraryIssue]
 }
 
+enum VMLibraryDeletionImpact: Equatable {
+    case managedBundleDeleted
+    case registrationOnly
+}
+
 /// Manages MANY VMs on disk: each VM is a `vm.json` under the library dir.
 /// This is the multi-VM substrate — the app enumerates, creates, and deletes
 /// VMs here, and each VMConfig points at its own bundle (disks + metadata).
@@ -108,6 +113,24 @@ enum VMLibrary {
         } catch {
             return false
         }
+    }
+
+    static func deletionImpact(for config: VMConfig, rootURL: URL = root) -> VMLibraryDeletionImpact {
+        let rawEntry = rootURL.appendingPathComponent(config.slug, isDirectory: true)
+        if (try? rawEntry.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
+            return .registrationOnly
+        }
+        let entry = rawEntry
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        let bundle = URL(fileURLWithPath: config.bundlePath)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        let entryPrefix = entry.path.hasSuffix("/") ? entry.path : entry.path + "/"
+        if bundle.path == entry.path || bundle.path.hasPrefix(entryPrefix) {
+            return .managedBundleDeleted
+        }
+        return .registrationOnly
     }
 
     /// One-time import of the legacy single ~/.bridgevm-control/config.json into

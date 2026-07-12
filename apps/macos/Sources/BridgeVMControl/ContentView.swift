@@ -42,12 +42,19 @@ struct ContentView: View {
             titleVisibility: .visible
         ) {
             if let cfg = library.pendingDeletion {
-                Button("\(cfg.name) 삭제", role: .destructive) { library.confirmDeletion(cfg) }
+                let removesBundle = library.deletionImpact(for: cfg) == .managedBundleDeleted
+                Button(removesBundle ? "\(cfg.name) 및 가상 디스크 삭제" : "\(cfg.name) 등록 제거", role: .destructive) {
+                    library.confirmDeletion(cfg)
+                }
             }
             Button("취소", role: .cancel) { library.pendingDeletion = nil }
         } message: {
             if let cfg = library.pendingDeletion {
-                Text("실행 중이면 먼저 안전하게 정지합니다. 이 작업은 \(cfg.name)의 라이브러리 등록을 제거하며 되돌릴 수 없습니다.")
+                if library.deletionImpact(for: cfg) == .managedBundleDeleted {
+                    Text("실행 중이면 먼저 안전하게 정지합니다. VM 설정과 \(cfg.bundlePath)에 있는 가상 디스크 데이터가 모두 영구 삭제되며 되돌릴 수 없습니다.")
+                } else {
+                    Text("실행 중이면 먼저 안전하게 정지합니다. BridgeVM 라이브러리 등록만 제거합니다. 외부 번들 \(cfg.bundlePath)의 가상 디스크 데이터는 유지됩니다.")
+                }
             }
         }
         .alert(
