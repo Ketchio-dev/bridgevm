@@ -45,6 +45,12 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+const BOOT_MEDIA_CURL_CONNECT_TIMEOUT_SECS: u64 = 30;
+const BOOT_MEDIA_CURL_MAX_TIME_SECS: u64 = 6 * 60 * 60;
+const BOOT_MEDIA_CURL_SPEED_TIME_SECS: u64 = 5 * 60;
+const BOOT_MEDIA_CURL_SPEED_LIMIT_BYTES: u64 = 1024;
+const BOOT_MEDIA_CURL_OUTPUT_BYTES: usize = 64 * 1024;
+
 const DEFAULT_GUEST_TOOLS_LINUX_DEVICE: &str = "/dev/virtio-ports/org.bridgevm.guest-tools.0";
 const DEFAULT_PERFORMANCE_SAMPLE_ARTIFACT_BYTES: u64 = 1_048_576;
 const MAX_PERFORMANCE_SAMPLE_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
@@ -3354,22 +3360,19 @@ pub fn download_boot_media(
         "--fail".to_string(),
         "--silent".to_string(),
         "--show-error".to_string(),
+        "--connect-timeout".to_string(),
+        BOOT_MEDIA_CURL_CONNECT_TIMEOUT_SECS.to_string(),
+        "--max-time".to_string(),
+        BOOT_MEDIA_CURL_MAX_TIME_SECS.to_string(),
+        "--speed-time".to_string(),
+        BOOT_MEDIA_CURL_SPEED_TIME_SECS.to_string(),
+        "--speed-limit".to_string(),
+        BOOT_MEDIA_CURL_SPEED_LIMIT_BYTES.to_string(),
         "--output".to_string(),
         temp_path.display().to_string(),
         download_plan.url.clone(),
     ];
-    let output = Command::new("curl")
-        .args([
-            "--location",
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--output",
-        ])
-        .arg(&temp_path)
-        .arg(&download_plan.url)
-        .output()
-        .map_err(|error| format!("failed to execute curl: {error}"))?;
+    let output = run_boot_media_curl(&temp_path, &download_plan.url)?;
     let replaced = destination.exists();
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -3463,6 +3466,106 @@ pub fn download_boot_media(
     };
     write_boot_media_download_result_metadata(&bundle, &metadata)?;
     Ok(metadata)
+}
+
+struct BoundedProcessOutput {
+    status: std::process::ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+fn run_boot_media_curl(temp_path: &Path, url: &str) -> Result<BoundedProcessOutput, String> {
+    let mut child = Command::new("curl")
+        .args([
+            "--location",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--connect-timeout",
+            &BOOT_MEDIA_CURL_CONNECT_TIMEOUT_SECS.to_string(),
+            "--max-time",
+            &BOOT_MEDIA_CURL_MAX_TIME_SECS.to_string(),
+            "--speed-time",
+            &BOOT_MEDIA_CURL_SPEED_TIME_SECS.to_string(),
+            "--speed-limit",
+            &BOOT_MEDIA_CURL_SPEED_LIMIT_BYTES.to_string(),
+            "--output",
+        ])
+        .arg(temp_path)
+        .arg(url)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("failed to execute curl: {error}"))?;
+    let mut stdout = child.stdout.take().ok_or("failed to capture curl stdout")?;
+    let mut stderr = child.stderr.take().ok_or("failed to capture curl stderr")?;
+    let stdout_drain = thread::spawn(move || drain_process_stream(&mut stdout));
+    let stderr_drain = thread::spawn(move || drain_process_stream(&mut stderr));
+    let deadline = Instant::now() + Duration::from_secs(BOOT_MEDIA_CURL_MAX_TIME_SECS + 30);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(100)),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_drain.join();
+                let _ = stderr_drain.join();
+                return Err(format!(
+                    "boot media curl timed out after {} seconds",
+                    BOOT_MEDIA_CURL_MAX_TIME_SECS + 30
+                ));
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_drain.join();
+                let _ = stderr_drain.join();
+                return Err(format!("failed to wait for curl: {error}"));
+            }
+        }
+    };
+    let (stdout, stdout_exceeded) = join_process_stream(stdout_drain, "stdout")?;
+    let (stderr, stderr_exceeded) = join_process_stream(stderr_drain, "stderr")?;
+    if stdout_exceeded || stderr_exceeded {
+        return Err(format!(
+            "curl {} exceeded the {}-byte output limit",
+            if stdout_exceeded { "stdout" } else { "stderr" },
+            BOOT_MEDIA_CURL_OUTPUT_BYTES
+        ));
+    }
+    Ok(BoundedProcessOutput {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+fn drain_process_stream(reader: &mut impl Read) -> std::io::Result<(Vec<u8>, bool)> {
+    let mut captured = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    let mut exceeded = false;
+    loop {
+        let read = reader.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        let keep = read.min(BOOT_MEDIA_CURL_OUTPUT_BYTES.saturating_sub(captured.len()));
+        captured.extend_from_slice(&chunk[..keep]);
+        exceeded |= keep < read;
+    }
+    Ok((captured, exceeded))
+}
+
+fn join_process_stream(
+    drain: thread::JoinHandle<std::io::Result<(Vec<u8>, bool)>>,
+    stream: &str,
+) -> Result<(Vec<u8>, bool), String> {
+    drain
+        .join()
+        .map_err(|_| format!("curl {stream} drain panicked"))?
+        .map_err(|error| format!("failed to read curl {stream}: {error}"))
 }
 
 fn boot_media_destination(
@@ -9946,6 +10049,18 @@ mod tests {
             last_download.actual_sha256.as_deref(),
             Some(expected_sha256.as_str())
         );
+    }
+
+    #[test]
+    fn boot_media_process_drain_caps_capture_and_consumes_to_eof() {
+        let input = vec![0x41; BOOT_MEDIA_CURL_OUTPUT_BYTES * 2];
+        let mut reader = std::io::Cursor::new(input.clone());
+
+        let (captured, exceeded) = drain_process_stream(&mut reader).unwrap();
+
+        assert!(exceeded);
+        assert_eq!(captured, input[..BOOT_MEDIA_CURL_OUTPUT_BYTES]);
+        assert_eq!(reader.position(), input.len() as u64);
     }
 
     fn serve_one_http_response(body: &'static [u8]) -> (String, JoinHandle<()>) {
