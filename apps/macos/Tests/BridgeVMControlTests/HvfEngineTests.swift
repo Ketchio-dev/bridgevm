@@ -466,6 +466,49 @@ final class PpmDecoderTests: XCTestCase {
     }
 }
 
+final class HvfScreenshotSourceTests: XCTestCase {
+    private func temporaryDirectory() throws -> URL {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    func testFingerprintIsStableUntilFileIsReplaced() throws {
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("display.ppm")
+        try Data("first".utf8).write(to: file)
+        let first = try XCTUnwrap(HvfScreenshotSource.fingerprint(of: file))
+
+        XCTAssertEqual(HvfScreenshotSource.fingerprint(of: file), first)
+        try Data("other".utf8).write(to: file, options: .atomic)
+
+        XCTAssertNotEqual(HvfScreenshotSource.fingerprint(of: file), first)
+    }
+
+    func testLiveDisplayTakesPriorityAndRamfbFallsBackToNewestFrame() throws {
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let ramfb = dir.appendingPathComponent("ramfb", isDirectory: true)
+        try FileManager.default.createDirectory(at: ramfb, withIntermediateDirectories: true)
+        let old = ramfb.appendingPathComponent("old.ppm")
+        let newest = ramfb.appendingPathComponent("new.ppm")
+        try Data("old".utf8).write(to: old)
+        try Data("new".utf8).write(to: newest)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSinceNow: -10)],
+            ofItemAtPath: old.path
+        )
+
+        XCTAssertEqual(HvfScreenshotSource.resolve(in: dir)?.0.lastPathComponent, newest.lastPathComponent)
+
+        let live = dir.appendingPathComponent("display.ppm")
+        try Data("live".utf8).write(to: live)
+        XCTAssertEqual(HvfScreenshotSource.resolve(in: dir)?.0.lastPathComponent, live.lastPathComponent)
+    }
+}
+
 final class TailOffsetReaderTests: XCTestCase {
     func testReadsAppendsAndResetsAfterTruncation() throws {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)

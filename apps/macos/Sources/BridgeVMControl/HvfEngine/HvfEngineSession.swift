@@ -33,6 +33,7 @@ final class HvfEngineSession: ObservableObject {
     private var attachedToExistingProcess = false
     private var liveInputHandle: FileHandle?
     private var liveInputPath: URL?
+    private var lastScreenshotFingerprint: HvfScreenshotFingerprint?
     private let processIsRunning: (String) -> Bool
 
     nonisolated static func defaultRepoRoot(
@@ -135,6 +136,7 @@ final class HvfEngineSession: ObservableObject {
         events = []
         #if canImport(AppKit)
         latestScreenshot = nil
+        lastScreenshotFingerprint = nil
         #endif
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -388,6 +390,7 @@ final class HvfEngineSession: ObservableObject {
         if clearEvents { events = [] }
         #if canImport(AppKit)
         latestScreenshot = nil
+        lastScreenshotFingerprint = nil
         #endif
     }
 
@@ -400,21 +403,12 @@ final class HvfEngineSession: ObservableObject {
 
     private func refreshScreenshot() {
         #if canImport(AppKit)
-        let live = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("display.ppm")
-        if let image = PpmDecoder.decodeImage(at: live) {
+        let evidenceDirectory = URL(fileURLWithPath: config.evidenceDir, isDirectory: true)
+        guard let (url, fingerprint) = HvfScreenshotSource.resolve(in: evidenceDirectory),
+              fingerprint != lastScreenshotFingerprint else { return }
+        if let image = PpmDecoder.decodeImage(at: url) {
             latestScreenshot = image
-            return
-        }
-        let dir = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("ramfb", isDirectory: true)
-        guard let urls = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
-        let newest = urls
-            .filter { $0.pathExtension.lowercased() == "ppm" }
-            .max {
-                ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
-                    < ((try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
-            }
-        if let newest, let image = PpmDecoder.decodeImage(at: newest) {
-            latestScreenshot = image
+            lastScreenshotFingerprint = fingerprint
         }
         #endif
     }
