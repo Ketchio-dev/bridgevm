@@ -36,7 +36,7 @@ use std::{
     env, fs,
     io::ErrorKind,
     io::{BufRead, BufReader, Read, Write},
-    os::unix::fs::FileTypeExt,
+    os::unix::fs::{FileTypeExt, PermissionsExt},
     os::unix::io::AsRawFd,
     os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
@@ -153,12 +153,14 @@ fn serve(store: VmStore, socket_path: &Path, reconcile_interval: Duration) -> Re
 fn bind_daemon_listener(socket_path: &Path) -> Result<UnixListener> {
     if let Some(parent) = socket_path.parent() {
         fs::create_dir_all(parent).context("failed to create daemon run directory")?;
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
+            .context("failed to protect daemon run directory")?;
     }
     if socket_path.exists() {
         let metadata = match fs::symlink_metadata(socket_path) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == ErrorKind::NotFound => {
-                return UnixListener::bind(socket_path).context("failed to bind daemon socket");
+                return bind_new_daemon_listener(socket_path);
             }
             Err(error) => {
                 return Err(error).context("failed to inspect existing daemon socket path");
@@ -189,7 +191,17 @@ fn bind_daemon_listener(socket_path: &Path) -> Result<UnixListener> {
         }
     }
 
-    UnixListener::bind(socket_path).context("failed to bind daemon socket")
+    bind_new_daemon_listener(socket_path)
+}
+
+fn bind_new_daemon_listener(socket_path: &Path) -> Result<UnixListener> {
+    let listener = UnixListener::bind(socket_path).context("failed to bind daemon socket")?;
+    if let Err(error) = fs::set_permissions(socket_path, fs::Permissions::from_mode(0o600)) {
+        drop(listener);
+        let _ = fs::remove_file(socket_path);
+        return Err(error).context("failed to protect daemon socket");
+    }
+    Ok(listener)
 }
 
 fn handle_connection(state: &mut DaemonState, mut stream: UnixStream) -> Result<()> {
@@ -3075,6 +3087,18 @@ mod tests {
 
         assert!(error.to_string().contains("already in use"));
         assert!(UnixStream::connect(&socket_path).is_ok());
+    }
+
+    #[test]
+    fn bind_daemon_listener_uses_owner_only_permissions() {
+        let store = temp_store();
+        let run_dir = store.root().join("run");
+        let socket_path = run_dir.join("bridgevmd.sock");
+
+        let _listener = bind_daemon_listener(&socket_path).unwrap();
+
+        assert_eq!(fs::metadata(&run_dir).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(fs::metadata(&socket_path).unwrap().permissions().mode() & 0o777, 0o600);
     }
 
     #[test]

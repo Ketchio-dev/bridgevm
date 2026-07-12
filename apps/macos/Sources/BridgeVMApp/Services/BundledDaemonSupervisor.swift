@@ -336,6 +336,12 @@ final class BundledDaemonSupervisor {
   }
 
   static func isDaemonSocketReady(_ socketPath: String) -> Bool {
+    var socketInfo = stat()
+    guard lstat(socketPath, &socketInfo) == 0,
+      isTrustedDaemonSocket(stat: socketInfo)
+    else {
+      return false
+    }
     let fileDescriptor = socket(AF_UNIX, SOCK_STREAM, 0)
     guard fileDescriptor >= 0 else {
       return false
@@ -368,6 +374,10 @@ final class BundledDaemonSupervisor {
       }
     }
     return result == 0
+  }
+
+  static func isTrustedDaemonSocket(stat socketInfo: stat, effectiveUserID: uid_t = geteuid()) -> Bool {
+    (socketInfo.st_mode & S_IFMT) == S_IFSOCK && socketInfo.st_uid == effectiveUserID
   }
 }
 

@@ -571,6 +571,27 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
     }
 
+    func testBundledDaemonSocketTrustRequiresSocketTypeAndCurrentOwner() {
+        var trusted = stat()
+        trusted.st_mode = mode_t(S_IFSOCK | 0o600)
+        trusted.st_uid = 501
+        XCTAssertTrue(
+            BundledDaemonSupervisor.isTrustedDaemonSocket(stat: trusted, effectiveUserID: 501)
+        )
+
+        var regularFile = trusted
+        regularFile.st_mode = mode_t(S_IFREG | 0o600)
+        XCTAssertFalse(
+            BundledDaemonSupervisor.isTrustedDaemonSocket(stat: regularFile, effectiveUserID: 501)
+        )
+
+        var foreignSocket = trusted
+        foreignSocket.st_uid = 502
+        XCTAssertFalse(
+            BundledDaemonSupervisor.isTrustedDaemonSocket(stat: foreignSocket, effectiveUserID: 501)
+        )
+    }
+
     func testBundledDaemonSupervisorStopTerminatesLaunchedHelper() throws {
         let settings = AppSettings(defaults: isolatedDefaults())
         let supervisor = BundledDaemonSupervisor()
