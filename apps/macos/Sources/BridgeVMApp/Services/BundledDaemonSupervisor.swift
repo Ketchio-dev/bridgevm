@@ -371,13 +371,13 @@ final class BundledDaemonSupervisor {
   }
 }
 
-private final class BundledDaemonOutputCapture {
+final class BundledDaemonOutputCapture {
   private static let maxCapturedBytes = 64 * 1024
   private static let maxTailBytes = 8 * 1024
 
   let pipe = Pipe()
 
-  private let logURL: URL
+  let logURL: URL
   private let writer: FileHandle
   private let queue = DispatchQueue(label: "app.bridgevm.bundled-daemon-output-capture")
   private var capturedData = Data()
@@ -386,7 +386,13 @@ private final class BundledDaemonOutputCapture {
   init() throws {
     logURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("bridgevmd-\(UUID().uuidString).log")
-    FileManager.default.createFile(atPath: logURL.path, contents: nil)
+    guard FileManager.default.createFile(
+      atPath: logURL.path,
+      contents: nil,
+      attributes: [.posixPermissions: 0o600]
+    ) else {
+      throw CocoaError(.fileWriteUnknown)
+    }
     do {
       writer = try FileHandle(forWritingTo: logURL)
     } catch {

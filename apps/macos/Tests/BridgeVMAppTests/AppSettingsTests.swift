@@ -563,6 +563,14 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertNil(launched.stderrTail())
     }
 
+    func testBundledDaemonOutputCaptureUsesOwnerOnlyPermissions() throws {
+        let capture = try BundledDaemonOutputCapture()
+        defer { capture.cleanup() }
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: capture.logURL.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+    }
+
     func testBundledDaemonSupervisorStopTerminatesLaunchedHelper() throws {
         let settings = AppSettings(defaults: isolatedDefaults())
         let supervisor = BundledDaemonSupervisor()
