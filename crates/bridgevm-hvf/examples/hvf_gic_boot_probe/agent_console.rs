@@ -46,6 +46,7 @@ const COMMAND_OUTPUT_CHUNK_BYTES: usize = 24 * 1024;
 const COMMAND_OUTPUT_CHUNK_B64_BYTES: usize = COMMAND_OUTPUT_CHUNK_BYTES.div_ceil(3) * 4;
 const MAX_COMMAND_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_CTL_COMMAND_BYTES: usize = 64 * 1024;
+const MAX_CTL_READ_BYTES_PER_POLL: u64 = 256 * 1024;
 const MAX_SERVICE_QUEUE_DEPTH: usize = 1024;
 
 pub struct AgentConsoleHarness {
@@ -1136,21 +1137,22 @@ impl AgentConsoleHarness {
             match action {
                 SyncAction::Get { name } => {
                     let path = share.host_dir.join(&name);
-                    let Ok(bytes) = std::fs::read(&path) else {
-                        continue;
-                    };
-                    if bytes.len() as u64 > share.engine.max_bytes() {
-                        if let Some(mtime_ms) = file_mtime_ms(&path) {
-                            print_host_skip_once(
-                                share,
-                                &name,
-                                mtime_ms,
-                                HostSkipKind::TooLarge,
-                                bytes.len() as u64,
-                            );
+                    let bytes = match read_share_file_bounded(&path, share.engine.max_bytes()) {
+                        Ok(bytes) => bytes,
+                        Err(ShareFileReadError::TooLarge(size)) => {
+                            if let Some(mtime_ms) = file_mtime_ms(&path) {
+                                print_host_skip_once(
+                                    share,
+                                    &name,
+                                    mtime_ms,
+                                    HostSkipKind::TooLarge,
+                                    size,
+                                );
+                            }
+                            continue;
                         }
-                        continue;
-                    }
+                        Err(ShareFileReadError::Io) => continue,
+                    };
                     let Some(mtime_ms) = file_mtime_ms(&path) else {
                         continue;
                     };
@@ -1903,7 +1905,8 @@ fn parse_out_line(line: &str) -> Option<(i32, &str)> {
     Some((exit_code.parse().ok()?, output))
 }
 
-/// Read control-file bytes from `offset` to EOF into caller-owned storage.
+/// Read at most one bounded chunk of control-file bytes from `offset` into
+/// caller-owned storage. Later polls continue from the updated caller offset.
 /// Returns false on any IO error, which the caller treats as "nothing new yet".
 fn read_ctl_appended_into(path: &str, offset: u64, out: &mut Vec<u8>) -> bool {
     use std::io::{Read, Seek, SeekFrom};
@@ -1914,7 +1917,34 @@ fn read_ctl_appended_into(path: &str, offset: u64, out: &mut Vec<u8>) -> bool {
     if file.seek(SeekFrom::Start(offset)).is_err() {
         return false;
     }
-    file.read_to_end(out).is_ok()
+    file.take(MAX_CTL_READ_BYTES_PER_POLL)
+        .read_to_end(out)
+        .is_ok()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShareFileReadError {
+    Io,
+    TooLarge(u64),
+}
+
+fn read_share_file_bounded(path: &Path, max_bytes: u64) -> Result<Vec<u8>, ShareFileReadError> {
+    use std::io::Read;
+    let file = std::fs::File::open(path).map_err(|_| ShareFileReadError::Io)?;
+    let size = file.metadata().map_err(|_| ShareFileReadError::Io)?.len();
+    if size > max_bytes {
+        return Err(ShareFileReadError::TooLarge(size));
+    }
+    let capacity = usize::try_from(size).map_err(|_| ShareFileReadError::TooLarge(size))?;
+    let read_limit = max_bytes.checked_add(1).ok_or(ShareFileReadError::Io)?;
+    let mut bytes = Vec::with_capacity(capacity);
+    file.take(read_limit)
+        .read_to_end(&mut bytes)
+        .map_err(|_| ShareFileReadError::Io)?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(ShareFileReadError::TooLarge(bytes.len() as u64));
+    }
+    Ok(bytes)
 }
 
 /// Short label for a service request, used in the stall-timeout print.
@@ -3143,6 +3173,49 @@ mod tests {
             h.share.as_ref().unwrap().guest_ls_scratch.capacity(),
             capacity
         );
+    }
+
+    #[test]
+    fn control_file_tail_read_is_bounded_per_poll() {
+        let path = std::env::temp_dir().join(format!(
+            "bvagent-control-bounded-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_CTL_READ_BYTES_PER_POLL * 3).unwrap();
+        let mut bytes = Vec::new();
+
+        assert!(read_ctl_appended_into(
+            path.to_str().unwrap(),
+            0,
+            &mut bytes
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(bytes.len() as u64, MAX_CTL_READ_BYTES_PER_POLL);
+    }
+
+    #[test]
+    fn share_file_read_rejects_oversized_file_before_allocation() {
+        let path = std::env::temp_dir().join(format!(
+            "bvagent-share-bounded-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(512 * 1024 * 1024).unwrap();
+
+        let error = read_share_file_bounded(&path, 4096).unwrap_err();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(error, ShareFileReadError::TooLarge(512 * 1024 * 1024));
     }
 
     fn test_share_state(label: &str) -> ShareState {
