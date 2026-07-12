@@ -14,6 +14,7 @@ final class LibraryModel: ObservableObject {
     @Published var pendingDeletion: VMConfig?
     @Published var deletionError: String?
     @Published private(set) var deletingSlugs: Set<String> = []
+    @Published private(set) var libraryIssues: [VMLibraryIssue] = []
 
     private var modelCache: [String: ControlModel] = [:]
 
@@ -31,7 +32,9 @@ final class LibraryModel: ObservableObject {
     }
 
     func reload() {
-        vms = VMLibrary.list()
+        let scan = VMLibrary.scan()
+        vms = scan.configs
+        libraryIssues = scan.issues
         let slugs = Set(vms.map { $0.slug })
         modelCache = modelCache.filter { slugs.contains($0.key) }
         if let sel = selectedID, sel != Self.hvfEngineSelectionID, !slugs.contains(sel) { selectedID = vms.first?.slug }

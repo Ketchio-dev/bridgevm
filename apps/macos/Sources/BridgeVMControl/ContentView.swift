@@ -96,6 +96,20 @@ struct LibrarySidebar: View {
                             }
                     }
                 }
+                if !library.libraryIssues.isEmpty {
+                    Section("라이브러리 경고") {
+                        Label("읽지 못한 VM 설정 \(library.libraryIssues.count)개", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        ForEach(Array(library.libraryIssues.prefix(3))) { issue in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(URL(fileURLWithPath: issue.path).deletingLastPathComponent().lastPathComponent)
+                                    .font(.caption.bold())
+                                Text(issue.message).font(.caption2).foregroundColor(.secondary)
+                            }
+                            .help(issue.path)
+                        }
+                    }
+                }
                 Section("실험") {
                     Label("HVF Engine", systemImage: "cpu")
                         .tag(LibraryModel.hvfEngineSelectionID)

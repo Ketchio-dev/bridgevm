@@ -107,6 +107,71 @@ final class VMLibraryPersistenceTests: XCTestCase {
 
         XCTAssertFalse(VMLibrary.delete("missing", rootURL: root))
     }
+
+    func testScanReturnsValidVMsAndReportsCorruptOrMissingConfigs() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertTrue(VMLibrary.save(config(id: "valid"), rootURL: root))
+        let corrupt = root.appendingPathComponent("corrupt")
+        let missing = root.appendingPathComponent("missing")
+        try FileManager.default.createDirectory(at: corrupt, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: missing, withIntermediateDirectories: true)
+        try Data("{not-json".utf8).write(to: corrupt.appendingPathComponent("vm.json"))
+
+        let scan = VMLibrary.scan(rootURL: root)
+
+        XCTAssertEqual(scan.configs.map(\.slug), ["valid"])
+        XCTAssertEqual(scan.issues.count, 2)
+        XCTAssertTrue(scan.issues.contains { $0.path.hasSuffix("corrupt/vm.json") })
+        XCTAssertTrue(scan.issues.contains { $0.path.hasSuffix("missing/vm.json") })
+    }
+
+    func testScanReportsLibraryRootThatIsAFile() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data("file".utf8).write(to: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let scan = VMLibrary.scan(rootURL: root)
+
+        XCTAssertTrue(scan.configs.isEmpty)
+        XCTAssertEqual(scan.issues.count, 1)
+        XCTAssertEqual(scan.issues.first?.path, root.path)
+    }
+
+    func testLegacyMigrationRefusesToRunWhenLibraryHasScanIssues() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let corrupt = root.appendingPathComponent("corrupt")
+        try FileManager.default.createDirectory(at: corrupt, withIntermediateDirectories: true)
+        try Data("broken".utf8).write(to: corrupt.appendingPathComponent("vm.json"))
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertFalse(VMLibrary.migrateLegacyIfNeeded(rootURL: root, legacy: config(id: "legacy")))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("legacy/vm.json").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: corrupt.appendingPathComponent("vm.json").path))
+    }
+
+    func testScanAndSaveRejectSymlinkedVMDirectory() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = temp.appendingPathComponent("library")
+        let outside = temp.appendingPathComponent("outside")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        XCTAssertTrue(VMLibrary.save(config(id: "linked"), rootURL: outside.deletingLastPathComponent()))
+        // Move the valid config into the external target, then expose it only via a link.
+        let generated = temp.appendingPathComponent("linked")
+        if generated.path != outside.path {
+            try? FileManager.default.removeItem(at: outside)
+            try FileManager.default.moveItem(at: generated, to: outside)
+        }
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked"), withDestinationURL: outside)
+        defer { try? FileManager.default.removeItem(at: temp) }
+
+        let scan = VMLibrary.scan(rootURL: root)
+        XCTAssertTrue(scan.configs.isEmpty)
+        XCTAssertEqual(scan.issues.count, 1)
+        XCTAssertTrue(scan.issues[0].message.contains("심볼릭 링크"))
+        XCTAssertFalse(VMLibrary.save(config(id: "linked"), rootURL: root))
+    }
 }
 
 final class ShellCommandSafetyTests: XCTestCase {
