@@ -4538,10 +4538,28 @@ final class DashboardViewModelTests: XCTestCase {
     XCTAssertFalse(didSendClipboard)
     XCTAssertEqual(model.alertMessage, "Enter clipboard text to send.")
 
+    let didSendOversizedClipboard = await model.sendClipboardText(
+      String(repeating: "x", count: 1024 * 1024 + 1),
+      for: virtualMachine
+    )
+    XCTAssertFalse(didSendOversizedClipboard)
+    XCTAssertEqual(
+      model.alertMessage,
+      "Clipboard text is too large. Use no more than 1 MiB of UTF-8 text."
+    )
+
     let didResize = await model.resizeDisplay(
       width: "0", height: "900", scale: "2", for: virtualMachine)
     XCTAssertFalse(didResize)
     XCTAssertEqual(model.alertMessage, "Enter a valid display width.")
+
+    let didResizeOversized = await model.resizeDisplay(
+      width: "4096", height: "4096", scale: "2", for: virtualMachine)
+    XCTAssertFalse(didResizeOversized)
+    XCTAssertEqual(
+      model.alertMessage,
+      "Display size is too large. Use no more than 32 megapixels including scale."
+    )
 
     let didLaunch = await model.launchApplication(id: "   ", for: virtualMachine)
     XCTAssertFalse(didLaunch)

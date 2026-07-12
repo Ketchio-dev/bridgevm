@@ -1384,6 +1384,11 @@ final class DashboardViewModel: ObservableObject {
   }
 
   func sendClipboardText(_ text: String, for virtualMachine: VirtualMachine) async -> Bool {
+    let maximumClipboardByteCount = 1024 * 1024
+    guard text.utf8.count <= maximumClipboardByteCount else {
+      alertMessage = "Clipboard text is too large. Use no more than 1 MiB of UTF-8 text."
+      return false
+    }
     let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedText.isEmpty else {
       alertMessage = "Enter clipboard text to send."
@@ -1416,6 +1421,16 @@ final class DashboardViewModel: ObservableObject {
     }
     guard let scale = UInt16(trimmedScale), scale > 0 else {
       alertMessage = "Enter a valid display scale."
+      return false
+    }
+    let maximumPixelCount: UInt64 = 32 * 1024 * 1024
+    let widthPixels = UInt64(width)
+    let heightPixels = UInt64(height)
+    let scalePixels = UInt64(scale)
+    guard heightPixels <= maximumPixelCount / widthPixels,
+      widthPixels * heightPixels <= maximumPixelCount / scalePixels / scalePixels
+    else {
+      alertMessage = "Display size is too large. Use no more than 32 megapixels including scale."
       return false
     }
 

@@ -1978,6 +1978,7 @@ enum DaemonTransportError: LocalizedError {
   case responseClosed
   case responseEncodingInvalid
   case responseTooLarge(maximumByteCount: Int)
+  case requestTooLarge(maximumByteCount: Int)
   case requestTimedOut
 
   var errorDescription: String? {
@@ -1992,6 +1993,8 @@ enum DaemonTransportError: LocalizedError {
       return "The daemon response was not valid UTF-8 newline-delimited JSON."
     case .responseTooLarge(let maximumByteCount):
       return "The daemon response exceeded the \(maximumByteCount)-byte limit."
+    case .requestTooLarge(let maximumByteCount):
+      return "The daemon request exceeded the \(maximumByteCount)-byte limit."
     case .requestTimedOut:
       return "The daemon request timed out."
     }
@@ -2027,6 +2030,7 @@ struct NDJSONLineAccumulator {
 }
 
 final class UnixSocketNDJSONTransport: DaemonTransport {
+  static let maximumRequestByteCount = 16 * 1024 * 1024
   private let endpoint: DaemonEndpoint
   private let encoder = JSONEncoder()
   private let decoder = JSONDecoder()
@@ -2080,6 +2084,20 @@ final class UnixSocketNDJSONTransport: DaemonTransport {
     return try decoder.decode(responseType, from: data)
   }
 
+  static func encodeRequest<Request: Encodable>(
+    _ request: Request,
+    maximumByteCount: Int = maximumRequestByteCount,
+    encoder: JSONEncoder = JSONEncoder()
+  ) throws -> Data {
+    let limit = max(1, maximumByteCount)
+    var data = try encoder.encode(request)
+    guard data.count < limit else {
+      throw DaemonTransportError.requestTooLarge(maximumByteCount: limit)
+    }
+    data.append(0x0A)
+    return data
+  }
+
   private func sendWithoutTimeout<Request: Encodable, Response: Decodable>(
     _ request: Request,
     responseType: Response.Type
@@ -2092,8 +2110,7 @@ final class UnixSocketNDJSONTransport: DaemonTransport {
 
     try await connection.startAndWait()
 
-    var requestData = try encoder.encode(request)
-    requestData.append(0x0A)
+    let requestData = try Self.encodeRequest(request, encoder: encoder)
 
     try await connection.sendAndWait(requestData)
     let responseData = try await connection.receiveLine()

@@ -106,6 +106,21 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertEqual(try accumulator.append(Data("cde\ntrailing".utf8)), Data("abcde".utf8))
   }
 
+  func testDaemonRequestEncodingIncludesNewlineAndEnforcesTotalLimit() throws {
+    let request = ["value": "abc"]
+    let encoded = try UnixSocketNDJSONTransport.encodeRequest(request, maximumByteCount: 32)
+    XCTAssertEqual(encoded.last, 0x0A)
+
+    XCTAssertThrowsError(
+      try UnixSocketNDJSONTransport.encodeRequest(request, maximumByteCount: encoded.count - 1)
+    ) { error in
+      guard case DaemonTransportError.requestTooLarge(let limit) = error else {
+        return XCTFail("unexpected error: \(error)")
+      }
+      XCTAssertEqual(limit, encoded.count - 1)
+    }
+  }
+
   func testDoctorRequestAndResponseMatchBridgeVmDaemonWireFormat() throws {
     let data = try JSONEncoder().encode(DaemonStoreDoctorRequest())
     let object = try JSONSerialization.jsonObject(with: data) as? [String: String]
