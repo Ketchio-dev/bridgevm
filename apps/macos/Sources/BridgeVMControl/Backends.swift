@@ -172,7 +172,9 @@ protocol VMBackend: AnyObject {
     var kind: String { get }
     func isRunning() -> Bool
     func currentIP() -> String?
-    func start()
+    /// Returns true when the host-side launch request was accepted. This does not
+    /// imply that the guest has finished booting, only that startup was dispatched.
+    @discardableResult func start() -> Bool
     func stop()
     func resources() -> (memMiB: Int, cpu: Int)
     func setResources(memMiB: Int, cpu: Int) -> Bool
@@ -218,13 +220,13 @@ final class FastVZBackend: VMBackend {
         return nil
     }
 
-    func start() {
+    @discardableResult func start() -> Bool {
         // Launch the signed AppleVzRunner with its own display window, detached.
         let cmd = "BRIDGEVM_APPLE_VZ_ALLOW_REAL_START=1 nohup \"\(config.runnerPath)\" "
             + "--display --display-width \(config.displayWidth) --display-height \(config.displayHeight) "
             + "--allow-real-vz-start --handoff-json \"\(config.handoffPath)\" "
             + ">/dev/null 2>&1 &"
-        Shell.launchDetached(cmd)
+        return Shell.launchDetached(cmd)
     }
 
     func resources() -> (memMiB: Int, cpu: Int) {
@@ -311,7 +313,7 @@ final class QemuCompatBackend: VMBackend {
     func isRunning() -> Bool { Shell.isProcessRunning(matching: diskPath) }
     func currentIP() -> String? { isRunning() ? "NAT (QEMU)" : nil }
 
-    func start() {
+    @discardableResult func start() -> Bool {
         let mem = config.memMiB ?? 6144
         let cpu = config.cpuCount ?? 4
         var q = "nohup \"\(qemu)\" -name \"\(config.name)\" -machine virt -accel hvf -cpu host "
@@ -331,7 +333,7 @@ final class QemuCompatBackend: VMBackend {
             + "pgrep -f \"\(swtpmSock)\" >/dev/null 2>&1 || "
             + "(nohup swtpm socket --tpmstate dir=\"\(swtpmState)\" --ctrl type=unixio,path=\"\(swtpmSock)\" --tpm2 >/dev/null 2>&1 &); "
             + "sleep 1.5; " + q
-        Shell.launchDetached(script)
+        return Shell.launchDetached(script)
     }
 
     func stop() {
@@ -404,12 +406,12 @@ final class HvfWindowsBackend: VMBackend {
     func isRunning() -> Bool { processIsRunning(targetDiskPath) }
     func currentIP() -> String? { isRunning() ? "NAT (HVF)" : nil }
 
-    func start() {
-        guard !isRunning() else { return }
-        guard ensureDirectories() else { return }
-        guard ensureControlFile() else { return }
+    @discardableResult func start() -> Bool {
+        guard !isRunning() else { return true }
+        guard ensureDirectories() else { return false }
+        guard ensureControlFile() else { return false }
         let wrapper = repoRoot.appendingPathComponent(wrapperName)
-        guard FileManager.default.isExecutableFile(atPath: wrapper.path) else { return }
+        guard FileManager.default.isExecutableFile(atPath: wrapper.path) else { return false }
         // The wrapper replaces run.log on every launch. Remove it first so a
         // pending first-boot action cannot mistake the previous SERVICE marker
         // for the new guest generation and append a command before tailing starts.
@@ -417,12 +419,13 @@ final class HvfWindowsBackend: VMBackend {
             do {
                 try FileManager.default.removeItem(atPath: runLogPath)
             } catch {
-                return
+                return false
             }
         }
         serviceStartReader.reset()
-        guard Shell.launchDetached(launchCommand()) else { return }
+        guard Shell.launchDetached(launchCommand()) else { return false }
         schedulePendingDiskGrowth()
+        return true
     }
 
     func launchCommand() -> String {

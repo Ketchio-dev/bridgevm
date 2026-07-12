@@ -25,6 +25,7 @@ final class ControlModel: ObservableObject {
     let config: VMConfig
     let backend: VMBackend
     private var timer: Timer?
+    private var startConfirmationDeadline: Date?
 
     init(config: VMConfig) {
         self.config = config
@@ -60,8 +61,7 @@ final class ControlModel: ObservableObject {
             let running = backend.isRunning()
             let ip = running ? backend.currentIP() : nil
             await MainActor.run {
-                self.running = running
-                self.ip = ip ?? "—"
+                self.applyRuntimeStatus(running: running, ip: ip)
             }
         }
     }
@@ -74,8 +74,7 @@ final class ControlModel: ObservableObject {
             let ip = running ? backend.currentIP() : nil
             let res = backend.resources()
             await MainActor.run {
-                self.running = running
-                self.ip = ip ?? "—"
+                self.applyRuntimeStatus(running: running, ip: ip)
                 if res.memMiB > 0 { self.memGiB = Double(res.memMiB) / 1024.0 }
                 if res.cpu > 0 { self.cpu = res.cpu }
             }
@@ -84,15 +83,27 @@ final class ControlModel: ObservableObject {
 
     func start() {
         statusNote = "VM 시작 중…"
+        startConfirmationDeadline = Date().addingTimeInterval(10)
         running = true                 // optimistic: the click registers instantly
         let backend = self.backend
         Task.detached {
-            backend.start()            // off the main thread — process spawn no longer hitches the UI
-            await MainActor.run { self.scheduleRefreshBurst() }
+            let launched = backend.start() // off the main thread — process spawn no longer hitches the UI
+            await MainActor.run {
+                if launched {
+                    self.statusNote = "VM 부팅 중…"
+                } else {
+                    self.startConfirmationDeadline = nil
+                    self.running = false
+                    self.ip = "—"
+                    self.statusNote = "VM 시작 실패"
+                }
+                self.scheduleRefreshBurst()
+            }
         }
     }
 
     func stop() {
+        startConfirmationDeadline = nil
         statusNote = "VM 정지 중…"
         running = false                // optimistic
         let backend = self.backend
@@ -114,7 +125,16 @@ final class ControlModel: ObservableObject {
             if wasRunning {
                 backend.stop()
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
-                backend.start()
+                if !backend.start() {
+                    await MainActor.run {
+                        self.busy = false
+                        self.running = false
+                        self.ip = "—"
+                        self.statusNote = "리소스 적용됨, VM 재시작 실패"
+                        self.scheduleRefreshBurst()
+                    }
+                    return
+                }
             }
             await MainActor.run {
                 self.busy = false
@@ -159,8 +179,21 @@ final class ControlModel: ObservableObject {
     }
 
     private func scheduleRefreshBurst() {
-        for delay in [1.0, 3.0, 6.0, 10.0] {
+        for delay in [1.0, 3.0, 6.0, 10.5] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.refresh() }
+        }
+    }
+
+    private func applyRuntimeStatus(running: Bool, ip: String?) {
+        self.running = running
+        self.ip = ip ?? "—"
+        guard let deadline = startConfirmationDeadline else { return }
+        if running {
+            startConfirmationDeadline = nil
+            statusNote = "실행 중"
+        } else if Date() >= deadline {
+            startConfirmationDeadline = nil
+            statusNote = "VM 시작 확인 실패"
         }
     }
 }
