@@ -103,6 +103,15 @@ pub trait VirtioGpu3dBackend: Send {
     fn unmap_blob(&mut self, resource_id: u32);
     fn scanout_map(&mut self, resource_id: u32) -> Option<ScanoutMappedBlob>;
     fn scanout_unmap(&mut self, resource_id: u32);
+    fn scanout_read(
+        &mut self,
+        _resource_id: u32,
+        _width: u32,
+        _height: u32,
+        _out: &mut [u8],
+    ) -> bool {
+        false
+    }
     fn destroy_resource(&mut self, resource_id: u32);
     fn create_fence(&mut self, ctx_id: u32, ring_idx: u8, fence_id: u64) -> bool;
     fn poll_fences(&mut self);
@@ -251,6 +260,7 @@ pub struct VirtioGpu3d {
     ctx_resources: BTreeMap<u32, BTreeSet<u32>>,
     resource_2d_ids: BTreeSet<u32>,
     resource_3d_ids: BTreeSet<u32>,
+    resource_3d_info: BTreeMap<u32, Create3dArgs>,
     blob_resources: BTreeMap<u32, BlobResource>,
     mapped_intervals: BTreeMap<u64, (u64, u32)>,
     host_iovecs_scratch: Vec<BlobHostIovec>,
@@ -277,6 +287,7 @@ impl std::fmt::Debug for VirtioGpu3d {
             .field("ctx_resources", &self.ctx_resources)
             .field("resource_2d_ids", &self.resource_2d_ids)
             .field("resource_3d_ids", &self.resource_3d_ids)
+            .field("resource_3d_info", &self.resource_3d_info)
             .field("blob_resources", &self.blob_resources)
             .field("submits", &self.submits)
             .field("fences_completed", &self.fences_completed)
@@ -328,6 +339,7 @@ impl VirtioGpu3d {
         self.ctx_resources.clear();
         self.resource_2d_ids.clear();
         self.resource_3d_ids.clear();
+        self.resource_3d_info.clear();
         self.unmap_all_blobs();
         self.blob_resources.clear();
         self.mapped_intervals.clear();
@@ -337,6 +349,7 @@ impl VirtioGpu3d {
     pub fn unref_resource(&mut self, resource_id: u32) {
         self.resource_2d_ids.remove(&resource_id);
         let mut destroy_backend_resource = self.resource_3d_ids.remove(&resource_id);
+        self.resource_3d_info.remove(&resource_id);
         if self.blob_resources.contains_key(&resource_id) {
             self.unmap_blob_resource(resource_id);
             self.blob_resources.remove(&resource_id);
@@ -396,6 +409,28 @@ impl VirtioGpu3d {
 
     pub fn is_3d_resource(&self, resource_id: u32) -> bool {
         self.resource_3d_ids.contains(&resource_id)
+    }
+
+    pub fn scanout_3d_info(&self, resource_id: u32) -> Option<Create3dArgs> {
+        self.resource_3d_info.get(&resource_id).copied()
+    }
+
+    pub fn read_3d_scanout(
+        &mut self,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+        out: &mut [u8],
+    ) -> bool {
+        let Some(info) = self.scanout_3d_info(resource_id) else {
+            return false;
+        };
+        if width > info.width || height > info.height {
+            return false;
+        }
+        self.backend
+            .as_mut()
+            .is_some_and(|backend| backend.scanout_read(resource_id, width, height, out))
     }
 
     pub fn attach_3d_backing(
@@ -642,6 +677,7 @@ impl VirtioGpu3d {
             return;
         }
         self.resource_3d_ids.insert(args.resource_id);
+        self.resource_3d_info.insert(args.resource_id, args);
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
     }
 
@@ -1043,6 +1079,7 @@ pub struct MockBackend {
     pub blob_iovecs: Vec<(u32, usize, usize)>,
     pub mapped: BTreeMap<u32, MappedBlob>,
     pub unmapped: Vec<u32>,
+    pub scanout_reads: Vec<(u32, u32, u32)>,
     pub destroyed_resources: Vec<u32>,
     pub fences: Vec<CompletedFence>,
     pub completed: Vec<CompletedFence>,
@@ -1173,6 +1210,17 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
 
     fn scanout_unmap(&mut self, resource_id: u32) {
         self.lock().unwrap().unmapped.push(resource_id);
+    }
+
+    fn scanout_read(&mut self, resource_id: u32, width: u32, height: u32, out: &mut [u8]) -> bool {
+        self.lock()
+            .unwrap()
+            .scanout_reads
+            .push((resource_id, width, height));
+        for (index, byte) in out.iter_mut().enumerate() {
+            *byte = index as u8;
+        }
+        true
     }
 
     fn destroy_resource(&mut self, resource_id: u32) {

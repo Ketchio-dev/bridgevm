@@ -31,5 +31,35 @@ This closes the earlier “driver package / host VirGL / live binding” wall. I
 does not turn the test-signed driver into a production-distributable package,
 and the observed feature ceiling is D3D feature level 10_0 rather than 11/12.
 The next wall is productization: repeatable package provenance/signing,
-eliminating remaining scanout error responses, long-duration graphics stress,
-and integration into the normal app UX rather than the Windows HVF lab path.
+long-duration graphics stress, and integration into the normal app UX rather
+than the Windows HVF lab path.
+
+## 3D scanout closure
+
+The follow-up v17 evidence store is
+`/Users/user/BridgeVM/viogpu3d-dev1050-legacy-virgl-proof-20260712-v17`.
+BridgeVM now accepts a VirGL `RESOURCE_CREATE_3D` resource in `SET_SCANOUT` and
+reads the renderer texture into the app-owned XRGB8888 framebuffer on
+`RESOURCE_FLUSH`. The preserved 60-second 1280x800 image shows the Windows 11
+desktop, taskbar, wallpaper, and icons rather than the all-black v15 output.
+Its PNG conversion has SHA-256
+`b0028d85b7959c2a845422c77b1ebedc2793349bcfc5a4a67597f808b9d54bbe`.
+
+The v17 run observed 429 successful `SET_SCANOUT` commands and zero scanout
+error responses. The Apple path directly uses the successful
+`glGetTexImage` readback rather than first issuing a predictably rejected
+BGRA framebuffer read. Consequently the run contains zero
+`glReadPixels failed` messages. Its 15,652-event required VirGL trace gate,
+agent-service gate, PSCI system-off, NVMe writeback, and cleanup all completed
+with status zero.
+
+The final v18 compatibility run is preserved at
+`/Users/user/BridgeVM/viogpu3d-dev1050-legacy-virgl-proof-20260712-v18`.
+It matches QEMU's legacy VirGL wire behavior by retaining five renderer-side
+submit diagnostics in the host log without converting them into guest-visible
+`SUBMIT_3D` failures. Across 11,846 trace events there were zero virtio-gpu
+error responses, the required trace and resident-agent gates both returned
+status zero, and the 30-second desktop PNG has SHA-256
+`bd2405652d121ec9e088363810927f1f97196b3e9600d6dfd6cf8ab454078575`.
+The agent completed an exit-zero guest shutdown and the gate confirmed PSCI
+system-off and NVMe writeback.

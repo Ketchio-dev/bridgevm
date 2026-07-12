@@ -1297,6 +1297,17 @@ impl VirtioGpu {
         } else if self.resources.contains_key(&resource_id) {
             self.unbind_blob_scanout();
             self.scanout_resource = Some(resource_id);
+        } else if self
+            .three_d
+            .scanout_3d_info(resource_id)
+            .is_some_and(|info| {
+                info.format == FORMAT_B8G8R8A8_UNORM
+                    && info.width >= self.width
+                    && info.height >= self.height
+            })
+        {
+            self.unbind_blob_scanout();
+            self.scanout_resource = Some(resource_id);
         } else {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
             return;
@@ -1433,6 +1444,13 @@ impl VirtioGpu {
                     self.height,
                     resource,
                     rect,
+                );
+            } else if self.three_d.is_3d_resource(resource_id) {
+                let _ = self.three_d.read_3d_scanout(
+                    resource_id,
+                    self.width,
+                    self.height,
+                    &mut self.scanout,
                 );
             }
         } else if self
@@ -4498,6 +4516,55 @@ mod tests {
     }
 
     #[test]
+    fn legacy_virgl_3d_resource_can_drive_cpu_scanout_on_flush() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+
+        let mut create = ctrl_req_ctx(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0);
+        for field in [
+            31u32,
+            2,
+            FORMAT_B8G8R8A8_UNORM,
+            0x8a,
+            1920,
+            1080,
+            1,
+            1,
+            0,
+            1,
+            0,
+            0,
+        ] {
+            create.extend_from_slice(&field.to_le_bytes());
+        }
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &create, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let mut set_scanout = ctrl_req(VIRTIO_GPU_CMD_SET_SCANOUT);
+        for field in [0u32, 0, 1280, 800, 0, 31] {
+            set_scanout.extend_from_slice(&field.to_le_bytes());
+        }
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &set_scanout, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let mut flush = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_FLUSH);
+        for field in [0u32, 0, 1280, 800, 31, 0] {
+            flush.extend_from_slice(&field.to_le_bytes());
+        }
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &flush, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        assert_eq!(backend.lock().unwrap().scanout_reads, vec![(31, 1280, 800)]);
+        let scanout = dev.gpu.scanout().expect("3D scanout should be active");
+        assert_eq!(&scanout.bytes[..8], &[0, 1, 2, 3, 4, 5, 6, 7]);
+    }
+
+    #[test]
     fn two_d_only_rejects_three_d_and_reports_zero_capsets() {
         let mut dev = VirtioPciGpu::new(1280, 800);
         let mut mem = TestMem::new(0x4000_0000, 0x20000);
@@ -4878,8 +4945,7 @@ mod tests {
             req.extend_from_slice(&field.to_le_bytes());
         }
 
-        let (resp, used_idx) =
-            submit_control_readable_descs(&mut dev, &mut mem, &[&req], 24);
+        let (resp, used_idx) = submit_control_readable_descs(&mut dev, &mut mem, &[&req], 24);
 
         assert_eq!(used_idx, 1);
         assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
@@ -4895,8 +4961,7 @@ mod tests {
         req.extend_from_slice(&0u32.to_le_bytes());
         req.extend_from_slice(&0u32.to_le_bytes());
 
-        let (resp, used_idx) =
-            submit_control_readable_descs(&mut dev, &mut mem, &[&req], 24);
+        let (resp, used_idx) = submit_control_readable_descs(&mut dev, &mut mem, &[&req], 24);
 
         assert_eq!(used_idx, 1);
         assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));

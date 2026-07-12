@@ -631,7 +631,12 @@ impl VirtioGpu3dBackend for VenusBackend {
                 cmdbuf.len()
             );
         }
-        ret == 0
+        // QEMU's legacy virgl command path submits the buffer for renderer
+        // diagnostics but does not turn a vrend context error into a virtio
+        // command error. Windows relies on that tolerant wire contract while
+        // probing optional draw paths. Keep Venus strict; match QEMU for the
+        // legacy VirGL protocol and retain the host-side error above.
+        ret == 0 || self.protocol == VirtioGpuRendererProtocol::Virgl
     }
 
     fn create_blob(&mut self, args: CreateBlobArgs<'_>) -> bool {
@@ -704,6 +709,53 @@ impl VirtioGpu3dBackend for VenusBackend {
 
     fn scanout_unmap(&mut self, resource_id: u32) {
         self.unmap_resource_ref(resource_id);
+    }
+
+    fn scanout_read(&mut self, resource_id: u32, width: u32, height: u32, out: &mut [u8]) -> bool {
+        let Some(required) = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|pixels| pixels.checked_mul(4))
+        else {
+            return false;
+        };
+        if out.len() < required {
+            return false;
+        }
+        let mut transfer_box = virgl_box {
+            x: 0,
+            y: 0,
+            z: 0,
+            width,
+            height,
+            depth: 1,
+        };
+        let mut iov = iovec {
+            iov_base: out.as_mut_ptr().cast(),
+            iov_len: required,
+        };
+        if self.protocol == VirtioGpuRendererProtocol::Virgl {
+            unsafe { virgl_renderer_force_ctx_0() };
+        }
+        let ret = unsafe {
+            virgl_renderer_transfer_read_iov(
+                resource_id,
+                0,
+                0,
+                width.saturating_mul(4),
+                width.saturating_mul(height).saturating_mul(4),
+                &mut transfer_box,
+                0,
+                &mut iov,
+                1,
+            )
+        };
+        if ret != 0 {
+            eprintln!(
+                "{}: scanout_read res={resource_id} size={width}x{height} ret={ret}",
+                self.protocol.label()
+            );
+        }
+        ret == 0
     }
 
     fn destroy_resource(&mut self, resource_id: u32) {
