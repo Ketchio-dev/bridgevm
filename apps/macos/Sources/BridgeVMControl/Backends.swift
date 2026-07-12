@@ -753,13 +753,36 @@ final class HvfWindowsBackend: VMBackend {
 // MARK: - JSON file helper
 
 enum JSONFile {
+    static let maximumBytes = 4 * 1_048_576
+
     static func loadDict(_ path: String) -> [String: Any]? {
-        guard let data = FileManager.default.contents(atPath: path) else { return nil }
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        guard hasSafeFileAndParent(url) else { return nil }
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+              values.isRegularFile == true,
+              let size = values.fileSize,
+              size <= maximumBytes,
+              let data = try? Data(contentsOf: url, options: [.mappedIfSafe]) else { return nil }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
+
     @discardableResult
     static func writeDict(_ obj: [String: Any], to path: String) -> Bool {
         guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted]) else { return false }
-        return (try? data.write(to: URL(fileURLWithPath: path), options: [.atomic])) != nil
+        guard data.count <= maximumBytes else { return false }
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        guard hasSafeFileAndParent(url, allowMissingFile: true) else { return false }
+        return (try? data.write(to: url, options: [.atomic])) != nil
+    }
+
+    private static func hasSafeFileAndParent(_ url: URL, allowMissingFile: Bool = false) -> Bool {
+        let parent = url.deletingLastPathComponent()
+        if (try? parent.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
+            return false
+        }
+        if (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
+            return false
+        }
+        return allowMissingFile || FileManager.default.fileExists(atPath: url.path)
     }
 }

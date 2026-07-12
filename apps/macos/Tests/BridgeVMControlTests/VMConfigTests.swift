@@ -408,6 +408,66 @@ final class ShellCommandSafetyTests: XCTestCase {
     }
 }
 
+final class JSONFileSafetyTests: XCTestCase {
+    func testRejectsSymlinkedJSONWithoutReadingOrChangingTarget() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let outside = temp.appendingPathComponent("outside.json")
+        let linked = temp.appendingPathComponent("linked.json")
+        let original = Data(#"{"safe":"external"}"#.utf8)
+        try original.write(to: outside)
+        try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: outside)
+
+        XCTAssertNil(JSONFile.loadDict(linked.path))
+        XCTAssertFalse(JSONFile.writeDict(["changed": true], to: linked.path))
+        XCTAssertEqual(try Data(contentsOf: outside), original)
+    }
+
+    func testRejectsJSONThroughSymlinkedMetadataDirectory() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let outside = temp.appendingPathComponent("outside", isDirectory: true)
+        let metadata = temp.appendingPathComponent("metadata", isDirectory: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try Data(#"{"safe":true}"#.utf8).write(to: outside.appendingPathComponent("launch.json"))
+        try FileManager.default.createSymbolicLink(at: metadata, withDestinationURL: outside)
+        let linkedFile = metadata.appendingPathComponent("launch.json")
+
+        XCTAssertNil(JSONFile.loadDict(linkedFile.path))
+        XCTAssertFalse(JSONFile.writeDict(["changed": true], to: linkedFile.path))
+    }
+
+    func testRejectsOversizedJSONBeforeLoading() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let file = temp.appendingPathComponent("large.json")
+        XCTAssertTrue(FileManager.default.createFile(atPath: file.path, contents: Data()))
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.truncate(atOffset: UInt64(JSONFile.maximumBytes + 1))
+        try handle.close()
+
+        XCTAssertNil(JSONFile.loadDict(file.path))
+    }
+
+    func testLoadsAndAtomicallyRewritesNormalJSON() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let file = temp.appendingPathComponent("normal.json")
+
+        XCTAssertTrue(JSONFile.writeDict(["value": 1], to: file.path))
+        XCTAssertEqual(JSONFile.loadDict(file.path)?["value"] as? Int, 1)
+        XCTAssertTrue(JSONFile.writeDict(["value": 2], to: file.path))
+        XCTAssertEqual(JSONFile.loadDict(file.path)?["value"] as? Int, 2)
+    }
+
+    private func makeTempDir() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+}
+
 @MainActor
 final class ControlModelLogBoundTests: XCTestCase {
     func testBoundedLogKeepsNewestContentAndMarksOmission() {
