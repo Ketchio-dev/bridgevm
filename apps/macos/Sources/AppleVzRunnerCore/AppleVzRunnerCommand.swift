@@ -1,5 +1,13 @@
 import Foundation
 
+enum AppleVzDisplayLimits {
+  static let maximumPixelCount = 32 * 1024 * 1024
+
+  static func supports(width: Int, height: Int) -> Bool {
+    width > 0 && height > 0 && width <= maximumPixelCount / height
+  }
+}
+
 public enum AppleVzRunnerCommand {
   public struct Dependencies {
     public var readStandardInput: () throws -> Data
@@ -374,6 +382,16 @@ public enum AppleVzRunnerCommand {
     if proxyFramebufferRGBAPath != nil && !displayWindow {
       throw AppleVzRunnerCommandError.proxyFramebufferExportRequiresDisplay
     }
+    guard AppleVzDisplayLimits.supports(
+      width: displayWidthInPixels,
+      height: displayHeightInPixels
+    ) else {
+      throw AppleVzRunnerCommandError.displaySizeTooLarge(
+        width: displayWidthInPixels,
+        height: displayHeightInPixels,
+        maximumPixelCount: AppleVzDisplayLimits.maximumPixelCount
+      )
+    }
 
     // Fold the legacy single-share flags (--share-dir/--share-tag/
     // --share-read-only) into one share, prepended so it keeps acting like the
@@ -566,6 +584,7 @@ public enum AppleVzRunnerCommandError: Error, LocalizedError, Equatable {
   case help
   case missingValue(String)
   case invalidPositiveInteger(String, String)
+  case displaySizeTooLarge(width: Int, height: Int, maximumPixelCount: Int)
   case invalidShareValue(String)
   case unknownArgument(String)
   case missingLaunchSpecPath
@@ -584,6 +603,8 @@ public enum AppleVzRunnerCommandError: Error, LocalizedError, Equatable {
       return "\(argument) requires a value"
     case .invalidPositiveInteger(let argument, let value):
       return "\(argument) requires a positive integer, got \(value)"
+    case .displaySizeTooLarge(let width, let height, let maximumPixelCount):
+      return "display size \(width)x\(height) exceeds the \(maximumPixelCount)-pixel limit"
     case .invalidShareValue(let value):
       return "--share requires [ro:]<tag>=<host_path>, got \(value)"
     case .unknownArgument(let argument):

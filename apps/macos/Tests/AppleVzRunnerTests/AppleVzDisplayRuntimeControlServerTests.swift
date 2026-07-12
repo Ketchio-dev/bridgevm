@@ -237,6 +237,14 @@ final class AppleVzDisplayRuntimeControlServerTests: XCTestCase {
     let rgba = try AppleVzDisplayFramebufferExporter.rgbaData(from: image, width: 1, height: 1)
 
     XCTAssertEqual(Array(rgba), [0x11, 0x22, 0x33, 0xFF])
+    XCTAssertThrowsError(
+      try AppleVzDisplayFramebufferExporter.rgbaData(from: image, width: 8192, height: 8192)
+    ) { error in
+      XCTAssertEqual(
+        error as? AppleVzDisplayFramebufferExporter.ExportError,
+        .invalidDimensions(width: 8192, height: 8192)
+      )
+    }
   }
   #endif
 

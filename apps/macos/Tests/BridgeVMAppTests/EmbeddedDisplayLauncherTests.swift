@@ -281,6 +281,25 @@ final class EmbeddedDisplayLauncherTests: XCTestCase {
     }
   }
 
+  func testLaunchRejectsOversizedDisplayBeforeSpawningHelper() {
+    XCTAssertThrowsError(
+      try EmbeddedDisplayLauncher.launch(
+        vmName: "oversized",
+        displaySize: .init(width: 8192, height: 8192),
+        helperResolver: { name in URL(fileURLWithPath: "/Helpers/\(name)") },
+        spawn: { _, _ in
+          XCTFail("oversized display must be rejected before spawn")
+          return Process()
+        }
+      )
+    ) { error in
+      XCTAssertEqual(
+        error as? EmbeddedDisplayLauncher.LaunchError,
+        .invalidDisplaySize(.init(width: 8192, height: 8192))
+      )
+    }
+  }
+
   func testLaunchReusesRunningDisplayProcessForSameVirtualMachine() throws {
     let lightvm = URL(fileURLWithPath: "/Helpers/lightvm-runner")
     let appleVz = URL(fileURLWithPath: "/Helpers/AppleVzRunner")

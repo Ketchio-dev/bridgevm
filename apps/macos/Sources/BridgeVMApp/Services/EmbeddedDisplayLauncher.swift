@@ -16,10 +16,16 @@ enum EmbeddedDisplayLauncher {
   nonisolated(unsafe) private static var activeProcesses: [String: Process] = [:]
 
   struct DisplaySize: Equatable {
+    static let maximumPixelCount = 32 * 1024 * 1024
+
     var width: Int
     var height: Int
 
     static let defaultWindow = DisplaySize(width: 1280, height: 800)
+
+    var isSupported: Bool {
+      width > 0 && height > 0 && width <= Self.maximumPixelCount / height
+    }
   }
 
   struct StoreMetadata: Equatable {
@@ -34,12 +40,15 @@ enum EmbeddedDisplayLauncher {
 
   enum LaunchError: Error, LocalizedError, Equatable {
     case helperMissing(String)
+    case invalidDisplaySize(DisplaySize)
     case spawnFailed(String)
 
     var errorDescription: String? {
       switch self {
       case .helperMissing(let name):
         return "The bundled helper '\(name)' is missing from the app bundle."
+      case .invalidDisplaySize(let size):
+        return "Display size \(size.width)x\(size.height) is too large (maximum 32 megapixels)."
       case .spawnFailed(let message):
         return "Could not open the display window: \(message)"
       }
@@ -185,6 +194,9 @@ enum EmbeddedDisplayLauncher {
     },
     spawn: (URL, [String]) throws -> Process = EmbeddedDisplayLauncher.runDetached
   ) throws -> Process {
+    guard displaySize.isSupported else {
+      throw LaunchError.invalidDisplaySize(displaySize)
+    }
     guard let lightvmRunner = helperResolver("lightvm-runner") else {
       throw LaunchError.helperMissing("lightvm-runner")
     }

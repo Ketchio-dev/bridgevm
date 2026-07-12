@@ -1311,7 +1311,7 @@ final class AppleVzDisplayFramebufferExporter {
     var errorDescription: String? {
       switch self {
       case let .invalidDimensions(width, height):
-        return "framebuffer export dimensions must be positive; got \(width)x\(height)"
+        return "framebuffer export dimensions are unsupported; got \(width)x\(height)"
       case .viewUnavailable:
         return "display view is no longer available"
       case .bitmapCreationFailed:
@@ -1367,7 +1367,7 @@ final class AppleVzDisplayFramebufferExporter {
   }
 
   func writeFrame() throws {
-    guard width > 0, height > 0 else {
+    guard AppleVzDisplayLimits.supports(width: width, height: height) else {
       throw ExportError.invalidDimensions(width: width, height: height)
     }
     guard let view else {
@@ -1391,7 +1391,7 @@ final class AppleVzDisplayFramebufferExporter {
   }
 
   static func rgbaData(from image: CGImage, width: Int, height: Int) throws -> Data {
-    guard width > 0, height > 0 else {
+    guard AppleVzDisplayLimits.supports(width: width, height: height) else {
       throw ExportError.invalidDimensions(width: width, height: height)
     }
     let byteCount = width * height * 4

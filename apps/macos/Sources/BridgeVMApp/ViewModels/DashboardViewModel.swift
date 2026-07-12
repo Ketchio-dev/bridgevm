@@ -3280,9 +3280,13 @@ final class DashboardViewModel: ObservableObject {
       alertMessage = "Enter a valid display window height."
       return
     }
+    let displaySize = EmbeddedDisplayLauncher.DisplaySize(width: width, height: height)
+    guard displaySize.isSupported else {
+      alertMessage = "Display size is too large. Use no more than 32 megapixels."
+      return
+    }
 
     do {
-      let displaySize = EmbeddedDisplayLauncher.DisplaySize(width: width, height: height)
       let storeMetadata =
         (client as? VirtualMachineDisplayMetadataProviding)?
         .displayStoreMetadata(for: virtualMachine.id)

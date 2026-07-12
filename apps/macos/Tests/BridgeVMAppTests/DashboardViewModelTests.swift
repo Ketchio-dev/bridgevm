@@ -4584,6 +4584,9 @@ final class DashboardViewModelTests: XCTestCase {
 
     model.showDisplay(width: "1440", height: "nope", for: virtualMachine)
     XCTAssertEqual(model.alertMessage, "Enter a valid display window height.")
+
+    model.showDisplay(width: "8192", height: "8192", for: virtualMachine)
+    XCTAssertEqual(model.alertMessage, "Display size is too large. Use no more than 32 megapixels.")
   }
 
   func testShowDisplayRefreshesForegroundRuntimeCachesAfterLaunch() async throws {

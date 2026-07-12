@@ -345,6 +345,22 @@ final class AppleVzRunnerCommandTests: XCTestCase {
     XCTAssertEqual(fake.errorLines, ["--display-width requires a positive integer, got 0"])
   }
 
+  func testDisplayDimensionsRejectOversizedFramebuffer() {
+    let fake = FakeRunnerDependencies(standardInput: readyHandoffJSON(launchSpecPath: nil))
+
+    let exitCode = AppleVzRunnerCommand.run(
+      arguments: ["--display-width", "8192", "--display-height", "8192"],
+      dependencies: fake.dependencies()
+    )
+
+    XCTAssertEqual(exitCode, 1)
+    XCTAssertEqual(fake.launchVirtualMachineCallCount, 0)
+    XCTAssertEqual(
+      fake.errorLines,
+      ["display size 8192x8192 exceeds the 33554432-pixel limit"]
+    )
+  }
+
   func testShareDirFlagsThreadSharedDirectoryToLauncher() {
     let launchSpecPath = "/tmp/fast.vmbridge/metadata/apple-vz-launch.json"
     let fake = FakeRunnerDependencies(
