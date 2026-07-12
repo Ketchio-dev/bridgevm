@@ -15,6 +15,7 @@ use std::{
 use thiserror::Error;
 
 const MAX_QMP_ENVELOPE_BYTES: u64 = 1024 * 1024;
+const MAX_QMP_SKIPPED_ENVELOPES: usize = 1024;
 
 #[derive(Debug, Error)]
 pub enum QemuError {
@@ -740,7 +741,7 @@ impl QmpClient {
     pub fn execute(&mut self, command: QmpCommand) -> Result<Value, QemuError> {
         serde_json::to_writer(&mut self.writer, &command)?;
         self.writer.write_all(b"\n")?;
-        loop {
+        for _ in 0..MAX_QMP_SKIPPED_ENVELOPES {
             let envelope = self.read_envelope()?;
             if envelope.event.is_some() {
                 continue;
@@ -752,15 +753,21 @@ impl QmpClient {
                 .result
                 .ok_or_else(|| QemuError::QmpProtocol("missing return".to_string()));
         }
+        Err(QemuError::QmpProtocol(format!(
+            "QMP command skipped more than {MAX_QMP_SKIPPED_ENVELOPES} event envelopes"
+        )))
     }
 
     pub fn read_event(&mut self) -> Result<QmpEvent, QemuError> {
-        loop {
+        for _ in 0..MAX_QMP_SKIPPED_ENVELOPES {
             let envelope = self.read_envelope()?;
             if let Some(event) = envelope.event {
                 return Ok(event);
             }
         }
+        Err(QemuError::QmpProtocol(format!(
+            "QMP event wait skipped more than {MAX_QMP_SKIPPED_ENVELOPES} non-event envelopes"
+        )))
     }
 
     pub fn drain_events(&mut self, max_envelopes: usize) -> Result<QmpEventDrain, QemuError> {
@@ -2146,6 +2153,63 @@ mod tests {
         let mut client = QmpClient::connect(&socket_path).unwrap();
         let error = client.read_envelope().unwrap_err();
         assert!(error.to_string().contains("incomplete envelope"));
+
+        server.join().unwrap();
+        fs::remove_file(socket_path).unwrap();
+    }
+
+    #[test]
+    fn qmp_execute_rejects_event_flood_before_command_return() {
+        let socket_path = temp_socket_path();
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.write_all(b"{\"QMP\":{}}\n").unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut command = String::new();
+            reader.read_line(&mut command).unwrap();
+            assert!(command.contains("qmp_capabilities"));
+            stream.write_all(b"{\"return\":{}}\n").unwrap();
+
+            command.clear();
+            reader.read_line(&mut command).unwrap();
+            assert!(command.contains("query-status"));
+            for _ in 0..MAX_QMP_SKIPPED_ENVELOPES {
+                if stream.write_all(b"{\"event\":\"RESUME\"}\n").is_err() {
+                    break;
+                }
+            }
+        });
+
+        let mut client = QmpClient::connect(&socket_path).unwrap();
+        client.negotiate().unwrap();
+        let error = client.execute(QmpCommand::query_status()).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("skipped more than 1024 event envelopes"));
+
+        server.join().unwrap();
+        fs::remove_file(socket_path).unwrap();
+    }
+
+    #[test]
+    fn qmp_event_wait_rejects_non_event_flood() {
+        let socket_path = temp_socket_path();
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            for _ in 0..MAX_QMP_SKIPPED_ENVELOPES {
+                if stream.write_all(b"{\"return\":{}}\n").is_err() {
+                    break;
+                }
+            }
+        });
+
+        let mut client = QmpClient::connect(&socket_path).unwrap();
+        let error = client.read_event().unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("skipped more than 1024 non-event envelopes"));
 
         server.join().unwrap();
         fs::remove_file(socket_path).unwrap();
