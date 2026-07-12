@@ -204,6 +204,14 @@ fn run_connection_worker(
     mut stream: UnixStream,
     request_sender: mpsc::Sender<PendingDaemonRequest>,
 ) -> Result<()> {
+    // The listener is nonblocking so the supervisor can keep reconciling
+    // children and observe shutdown requests.  On macOS an accepted stream
+    // can inherit O_NONBLOCK from that listener; restore blocking I/O before
+    // applying finite timeouts so a client that has connected but has not yet
+    // written its frame is not rejected with EAGAIN.
+    stream
+        .set_nonblocking(false)
+        .context("failed to configure daemon client blocking mode")?;
     stream
         .set_read_timeout(Some(DAEMON_CLIENT_IO_TIMEOUT))
         .context("failed to configure daemon client read timeout")?;

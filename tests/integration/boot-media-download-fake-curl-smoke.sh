@@ -70,28 +70,33 @@ set -euo pipefail
   done
 } >>"$BRIDGEVM_FAKE_CURL_LOG"
 
-if [[ "$#" -ne 7 ]]; then
-  echo "fake curl expected 7 args, got $#" >&2
+if [[ "$#" -ne 15 ]]; then
+  echo "fake curl expected 15 args, got $#" >&2
   exit 64
 fi
-if [[ "$1" != "--location" || "$2" != "--fail" || "$3" != "--silent" || "$4" != "--show-error" || "$5" != "--output" ]]; then
+if [[ "$1" != "--location" || "$2" != "--fail" || "$3" != "--silent" || "$4" != "--show-error" \
+  || "$5" != "--connect-timeout" || "$6" != "30" \
+  || "$7" != "--max-time" || "$8" != "21600" \
+  || "$9" != "--speed-time" || "${10}" != "300" \
+  || "${11}" != "--speed-limit" || "${12}" != "1024" \
+  || "${13}" != "--output" ]]; then
   echo "fake curl received unexpected options" >&2
   exit 64
 fi
-if [[ "$7" != "$BRIDGEVM_FAKE_CURL_URL" ]]; then
-  echo "fake curl refused unexpected URL: $7" >&2
+if [[ "${15}" != "$BRIDGEVM_FAKE_CURL_URL" ]]; then
+  echo "fake curl refused unexpected URL: ${15}" >&2
   exit 65
 fi
 
-case "$7" in
+case "${15}" in
   http://127.0.0.1:*|http://localhost:*|https://127.0.0.1:*|https://localhost:*)
-    echo "fake curl refused loopback URL in metadata-safe smoke: $7" >&2
+    echo "fake curl refused loopback URL in metadata-safe smoke: ${15}" >&2
     exit 66
     ;;
 esac
 
-mkdir -p "$(dirname "$6")"
-cp "$BRIDGEVM_FAKE_CURL_FIXTURE" "$6"
+mkdir -p "$(dirname "${14}")"
+cp "$BRIDGEVM_FAKE_CURL_FIXTURE" "${14}"
 SH
 chmod +x "$FAKE_BIN/curl"
 
@@ -149,11 +154,15 @@ assert_file_contains "$RESULT_METADATA" '"curl"' "download result metadata"
 [[ ! -e "$BUNDLE/media/.ubuntu.iso.download" ]] \
   || fail "temporary download file was left behind"
 
-assert_file_contains "$FAKE_CURL_LOG" "argc=7" "fake curl log"
+assert_file_contains "$FAKE_CURL_LOG" "argc=15" "fake curl log"
 assert_file_contains "$FAKE_CURL_LOG" "arg=--location" "fake curl log"
 assert_file_contains "$FAKE_CURL_LOG" "arg=--fail" "fake curl log"
 assert_file_contains "$FAKE_CURL_LOG" "arg=--silent" "fake curl log"
 assert_file_contains "$FAKE_CURL_LOG" "arg=--show-error" "fake curl log"
+assert_file_contains "$FAKE_CURL_LOG" "arg=--connect-timeout" "fake curl log"
+assert_file_contains "$FAKE_CURL_LOG" "arg=--max-time" "fake curl log"
+assert_file_contains "$FAKE_CURL_LOG" "arg=--speed-time" "fake curl log"
+assert_file_contains "$FAKE_CURL_LOG" "arg=--speed-limit" "fake curl log"
 assert_file_contains "$FAKE_CURL_LOG" "arg=--output" "fake curl log"
 assert_file_contains "$FAKE_CURL_LOG" "arg=$DOWNLOAD_URL" "fake curl log"
 
