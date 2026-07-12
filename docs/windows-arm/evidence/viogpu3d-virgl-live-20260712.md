@@ -114,3 +114,23 @@ and live-display feedback loop rather than only parser or device-level input.
 The run recorded zero virtio-gpu error responses. Its resident-agent and VirGL
 trace gates, guest system-off, NVMe writeback, and host cleanup all returned
 status zero.
+
+## Relocatable app-bundle closure
+
+The v24 packaged-runtime run is preserved at
+`/Users/user/BridgeVM/app-bundled-runtime-proof-20260712-v24`. The macOS bundle
+now builds the installed-Windows probe with renderer support enabled, embeds
+`libvirglrenderer.1.dylib` and `libepoxy.0.dylib` in the nested HVF app, rewrites
+all development-host install names to `@loader_path`, and signs and verifies the
+complete nested runtime. A loader probe confirmed that both libraries were
+resolved from `BridgeVMControl.app/Contents/Frameworks` with no `/Users` or
+Homebrew dependency path.
+
+The live boot was launched exclusively through the wrapper and probe copied
+inside that app bundle. It reached `BVAGENT READY`, accepted
+`POINTER click:13619x32357`, and changed the exported display from SHA-256
+`445e0c3d549d28e51705c376379802af02df6c600a36ee1970f18018dff62f75` to
+`b9a94a538b0f1ff0fff9f18f3f732550d0a6aa20c0284441d682ffe8ad7407f1`.
+The resident agent then completed an exit-zero shutdown. Guest system-off,
+UEFI-vars and NVMe writeback, and host cleanup all returned status zero, with no
+dynamic-loader, panic, or virtio-gpu error in the run log.
