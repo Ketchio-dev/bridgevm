@@ -182,20 +182,28 @@ final class HvfEngineSession: ObservableObject {
         return true
     }
 
-    func sendCtl(_ line: String) {
-        let cleaned = line.trimmingCharacters(in: .newlines)
-        guard !cleaned.isEmpty else { return }
+    @discardableResult
+    func sendCtl(_ line: String) -> Bool {
+        let cleaned: String
+        switch HvfGuestCommand.normalize(line) {
+        case let .success(command):
+            cleaned = command
+        case let .failure(error):
+            append(.unknown("control command rejected: \(error.message)"))
+            return false
+        }
         let path = config.ctlFilePath
         try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         if !FileManager.default.fileExists(atPath: path) {
             FileManager.default.createFile(atPath: path, contents: nil)
         }
-        guard let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: path)) else { return }
+        guard let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: path)) else { return false }
         defer { try? handle.close() }
         _ = try? handle.seekToEnd()
         if let data = "\(cleaned)\n".data(using: .utf8) {
             try? handle.write(contentsOf: data)
         }
+        return true
     }
 
     func sendKey(_ action: String) {

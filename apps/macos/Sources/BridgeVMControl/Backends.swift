@@ -459,6 +459,13 @@ final class HvfWindowsBackend: VMBackend {
     }
 
     private func executeGuestCommand(_ command: String, timeout: TimeInterval) -> (output: String, code: Int32) {
+        let normalized: String
+        switch HvfGuestCommand.normalize(command) {
+        case let .success(value):
+            normalized = value
+        case let .failure(error):
+            return (error.message, -1)
+        }
         guestCommandLock.lock()
         defer { guestCommandLock.unlock() }
         guard isRunning() else {
@@ -466,11 +473,11 @@ final class HvfWindowsBackend: VMBackend {
         }
         ensureDirectories()
         let offset = fileSize(at: runLogPath)
-        appendCtl(command)
+        appendCtl(normalized)
         // The guest dispatcher is deliberately lockstep. Driver/tool installs
         // can take minutes, and returning a false timeout while their reply is
         // still in flight invites the next UI command to be misinterpreted.
-        return waitForCommandReply(command: command, offset: offset, timeout: timeout)
+        return waitForCommandReply(command: normalized, offset: offset, timeout: timeout)
     }
 
     private func makeHvfEngineConfig() -> HvfEngineConfig {

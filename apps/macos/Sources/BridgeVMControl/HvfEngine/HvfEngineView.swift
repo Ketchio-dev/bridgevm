@@ -335,8 +335,9 @@ struct HvfEngineView: View {
     }
 
     private func sendCtl() {
-        session.sendCtl(ctlInput)
-        ctlInput = ""
+        if session.sendCtl(ctlInput) {
+            ctlInput = ""
+        }
     }
 
     private func sendKeyboardText() {

@@ -326,6 +326,27 @@ final class HvfEngineSessionPathTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testControlInputRejectsMultilineWithoutWritingChannel() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        let ctl = temp.appendingPathComponent("hvf.ctl")
+        let config = HvfEngineConfig(
+            targetDiskPath: "target", uefiVarsPath: "vars", evidenceDir: temp.path,
+            watchdogMs: nil, ramMiB: 6144, smpCpus: 4, clipboardSync: true,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: true, virtioGpu3d: true,
+            nvmeBufferedIO: true, ctlFilePath: ctl.path
+        )
+        let session = HvfEngineSession(config: config, repoRoot: temp) { _ in false }
+
+        XCTAssertFalse(session.sendCtl("one\ntwo"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: ctl.path))
+        XCTAssertTrue(session.events.contains(.unknown(
+            "control command rejected: \(HvfGuestCommandError.multiline.message)"
+        )))
+    }
+
     private func makeWrapper(at root: URL) throws {
         let scripts = root.appendingPathComponent("scripts", isDirectory: true)
         try FileManager.default.createDirectory(at: scripts, withIntermediateDirectories: true)
@@ -474,6 +495,18 @@ final class TailOffsetReaderTests: XCTestCase {
 }
 
 final class HvfWindowsBackendTests: XCTestCase {
+    func testGuestCommandValidationRejectsProtocolBreakingInput() {
+        XCTAssertEqual(try? HvfGuestCommand.normalize("  whoami  ").get(), "whoami")
+        XCTAssertEqual(
+            HvfGuestCommand.normalize("one\ntwo").failure,
+            .multiline
+        )
+        XCTAssertEqual(
+            HvfGuestCommand.normalize(String(repeating: "x", count: HvfGuestCommand.maximumBytes + 1)).failure,
+            .tooLong(actual: HvfGuestCommand.maximumBytes + 1, maximum: HvfGuestCommand.maximumBytes)
+        )
+    }
+
     func testPathKindAndDisplayNameDerivation() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -540,6 +573,19 @@ final class HvfWindowsBackendTests: XCTestCase {
         let result = backend.runInGuest("foo")
 
         XCTAssertEqual(result.output, "HVF VM이 실행 중이 아닙니다.")
+        XCTAssertEqual(result.code, -1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backend.ctlFilePath))
+    }
+
+    func testRunInGuestRejectsMultilineCommandBeforeCheckingVMOrWritingControlFile() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
+        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in true })
+
+        let result = backend.runInGuest("one\ntwo")
+
+        XCTAssertEqual(result.output, HvfGuestCommandError.multiline.message)
         XCTAssertEqual(result.code, -1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: backend.ctlFilePath))
     }
@@ -673,5 +719,12 @@ final class HvfWindowsBackendTests: XCTestCase {
                  handoffPath: "", sshKeyPath: "", sshUser: "", leasesPath: "",
                  guestName: "win-hvf", displayWidth: 1280, displayHeight: 800,
                  diskPath: diskPath, memMiB: 4096, cpuCount: 1)
+    }
+}
+
+private extension Result {
+    var failure: Failure? {
+        guard case let .failure(error) = self else { return nil }
+        return error
     }
 }
