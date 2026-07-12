@@ -163,6 +163,13 @@ enum Shell {
     static func shQuote(_ s: String) -> String {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
+
+    /// Render an executable and argv for `/bin/sh` without allowing any argument
+    /// content to become syntax. Keep shell use at the orchestration boundary;
+    /// all user/config-derived values must enter through this helper.
+    static func shellCommand(_ executable: String, _ args: [String]) -> String {
+        ([executable] + args).map(shQuote).joined(separator: " ")
+    }
 }
 
 // MARK: - Backend abstraction
@@ -218,18 +225,41 @@ final class FastVZBackend: VMBackend {
         for raw in text.split(separator: "\n") {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("name=") { matched = (line == "name=\(config.guestName)") }
-            if matched, line.hasPrefix("ip_address=") { return String(line.dropFirst("ip_address=".count)) }
+            if matched, line.hasPrefix("ip_address=") {
+                let candidate = String(line.dropFirst("ip_address=".count))
+                return Self.isValidIPv4(candidate) ? candidate : nil
+            }
         }
         return nil
     }
 
+    private static func isValidIPv4(_ value: String) -> Bool {
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4 else { return false }
+        return parts.allSatisfy { part in
+            guard !part.isEmpty, part.allSatisfy(\.isNumber), let number = Int(part) else { return false }
+            return number >= 0 && number <= 255
+        }
+    }
+
+    private var hasValidSSHUser: Bool {
+        guard let first = config.sshUser.first, first.isLetter || first.isNumber || first == "_" else { return false }
+        return config.sshUser.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" || $0 == "." }
+    }
+
     @discardableResult func start() -> Bool {
+        guard FileManager.default.isExecutableFile(atPath: config.runnerPath),
+              FileManager.default.isReadableFile(atPath: config.handoffPath),
+              config.displayWidth > 0, config.displayHeight > 0 else { return false }
+        return Shell.launchDetached(launchCommand())
+    }
+
+    func launchCommand() -> String {
         // Launch the signed AppleVzRunner with its own display window, detached.
-        let cmd = "BRIDGEVM_APPLE_VZ_ALLOW_REAL_START=1 nohup \"\(config.runnerPath)\" "
-            + "--display --display-width \(config.displayWidth) --display-height \(config.displayHeight) "
-            + "--allow-real-vz-start --handoff-json \"\(config.handoffPath)\" "
-            + ">/dev/null 2>&1 &"
-        return Shell.launchDetached(cmd)
+        let args = ["--display", "--display-width", String(config.displayWidth),
+                    "--display-height", String(config.displayHeight), "--allow-real-vz-start",
+                    "--handoff-json", config.handoffPath]
+        return "BRIDGEVM_APPLE_VZ_ALLOW_REAL_START=1 nohup \(Shell.shellCommand(config.runnerPath, args)) >/dev/null 2>&1 &"
     }
 
     func resources() -> (memMiB: Int, cpu: Int) {
@@ -275,14 +305,20 @@ final class FastVZBackend: VMBackend {
         let host = "\(config.sshUser)@\(ip)"
         let live = Shell.run("/usr/bin/ssh", ["-O", "check"] + sshBaseOpts(controlPath: controlPath) + [host], timeout: 4)
         if live.code == 0 { return }
-        let opts = "-o ControlPath=\"\(controlPath)\" -o StrictHostKeyChecking=no "
-            + "-o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=8 "
-            + "-o LogLevel=ERROR -o ControlMaster=auto -o ControlPersist=180"
+        let args = ["-fN", "-o", "ControlPath=\(controlPath)",
+                    "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+                    "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "LogLevel=ERROR",
+                    "-o", "ControlMaster=auto", "-o", "ControlPersist=180",
+                    "-i", config.sshKeyPath, host]
         // rm -f clears a stale socket left by a dead master before binding a new one.
-        Shell.launchDetached("rm -f \"\(controlPath)\"; /usr/bin/ssh -fN \(opts) -i \"\(config.sshKeyPath)\" \(host) >/dev/null 2>&1")
+        Shell.launchDetached(
+            "\(Shell.shellCommand("/bin/rm", ["-f", controlPath])); "
+                + "\(Shell.shellCommand("/usr/bin/ssh", args)) >/dev/null 2>&1"
+        )
     }
 
     func runInGuest(_ command: String) -> (output: String, code: Int32) {
+        guard hasValidSSHUser else { return ("SSH 사용자 이름이 안전한 형식이 아닙니다.", -1) }
         guard let ip = currentIP() else { return ("게스트 IP를 찾을 수 없음 (VM이 실행 중인가요?)", -1) }
         let cp = controlPath(ip: ip)
         ensureMaster(ip: ip, controlPath: cp)
@@ -309,9 +345,15 @@ final class QemuCompatBackend: VMBackend {
 
     private let qemu = "/opt/homebrew/bin/qemu-system-aarch64"
     private let edk2 = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
+    private let swtpm = "/opt/homebrew/bin/swtpm"
     private var diskPath: String { config.diskPath ?? (config.bundlePath + "/disks/win.qcow2") }
     private var swtpmSock: String { config.bundlePath + "/metadata/swtpm.sock" }
     private var swtpmState: String { config.bundlePath + "/metadata/swtpm-state" }
+    private func qemuOptionValue(_ value: String) -> String {
+        // QEMU key-value options use commas as separators; doubled commas mean a
+        // literal comma inside a path.
+        value.replacingOccurrences(of: ",", with: ",,")
+    }
 
     func isRunning() -> Bool { Shell.isProcessRunning(matching: diskPath) }
     func currentIP() -> String? { isRunning() ? "NAT (QEMU)" : nil }
@@ -319,24 +361,42 @@ final class QemuCompatBackend: VMBackend {
     @discardableResult func start() -> Bool {
         let mem = config.memMiB ?? 6144
         let cpu = config.cpuCount ?? 4
-        var q = "nohup \"\(qemu)\" -name \"\(config.name)\" -machine virt -accel hvf -cpu host "
-            + "-m \(mem) -smp \(cpu) -bios \"\(edk2)\" "
-            + "-device ramfb -device qemu-xhci,id=usb -device usb-kbd,bus=usb.0 -device usb-tablet,bus=usb.0 "
-            + "-drive if=none,id=disk,format=qcow2,file=\"\(diskPath)\" -device nvme,drive=disk,serial=bridgevm "
-            + "-netdev user,id=net0 -device virtio-net-pci,netdev=net0 "
-            + "-chardev socket,id=chrtpm,path=\"\(swtpmSock)\" -tpmdev emulator,id=tpm0,chardev=chrtpm -device tpm-tis-device,tpmdev=tpm0 "
-            + "-display cocoa "
+        guard mem > 0, cpu > 0,
+              FileManager.default.isExecutableFile(atPath: qemu),
+              FileManager.default.isExecutableFile(atPath: swtpm),
+              FileManager.default.isReadableFile(atPath: edk2),
+              FileManager.default.isReadableFile(atPath: diskPath) else { return false }
         if let iso = config.isoPath, !iso.isEmpty {
-            q += "-drive if=none,id=installer,file=\"\(iso)\",media=cdrom,readonly=on "
-                + "-device usb-storage,bus=usb.0,drive=installer,bootindex=0 "
+            guard FileManager.default.isReadableFile(atPath: iso) else { return false }
         }
-        q += ">\"\(config.bundlePath)/logs/qemu.log\" 2>&1 &"
+        return Shell.launchDetached(launchCommand())
+    }
+
+    func launchCommand() -> String {
+        let mem = config.memMiB ?? 6144
+        let cpu = config.cpuCount ?? 4
+        var qemuArgs = ["-name", config.name, "-machine", "virt", "-accel", "hvf", "-cpu", "host",
+                        "-m", String(mem), "-smp", String(cpu), "-bios", edk2,
+                        "-device", "ramfb", "-device", "qemu-xhci,id=usb",
+                        "-device", "usb-kbd,bus=usb.0", "-device", "usb-tablet,bus=usb.0",
+                        "-drive", "if=none,id=disk,format=qcow2,file=\(qemuOptionValue(diskPath))",
+                        "-device", "nvme,drive=disk,serial=bridgevm", "-netdev", "user,id=net0",
+                        "-device", "virtio-net-pci,netdev=net0",
+                        "-chardev", "socket,id=chrtpm,path=\(qemuOptionValue(swtpmSock))",
+                        "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
+                        "-device", "tpm-tis-device,tpmdev=tpm0", "-display", "cocoa"]
+        if let iso = config.isoPath, !iso.isEmpty {
+            qemuArgs += ["-drive", "if=none,id=installer,file=\(qemuOptionValue(iso)),media=cdrom,readonly=on",
+                         "-device", "usb-storage,bus=usb.0,drive=installer,bootindex=0"]
+        }
+        let qemuCommand = "nohup \(Shell.shellCommand(qemu, qemuArgs)) >\(Shell.shQuote(config.bundlePath + "/logs/qemu.log")) 2>&1 &"
         // swtpm must listen before QEMU connects → start it, brief wait, then QEMU.
-        let script = "mkdir -p \"\(swtpmState)\" \"\(config.bundlePath)/logs\"; "
-            + "pgrep -f \"\(swtpmSock)\" >/dev/null 2>&1 || "
-            + "(nohup swtpm socket --tpmstate dir=\"\(swtpmState)\" --ctrl type=unixio,path=\"\(swtpmSock)\" --tpm2 >/dev/null 2>&1 &); "
-            + "sleep 1.5; " + q
-        return Shell.launchDetached(script)
+        let mkdir = Shell.shellCommand("/bin/mkdir", ["-p", swtpmState, config.bundlePath + "/logs"])
+        let probe = Shell.shellCommand("/usr/bin/pgrep", ["-f", swtpmSock])
+        let swtpmArgs = ["socket", "--tpmstate", "dir=\(swtpmState)",
+                         "--ctrl", "type=unixio,path=\(swtpmSock)", "--tpm2"]
+        let startTPM = "nohup \(Shell.shellCommand(swtpm, swtpmArgs)) >/dev/null 2>&1 &"
+        return "\(mkdir); \(probe) >/dev/null 2>&1 || (\(startTPM)); sleep 1.5; \(qemuCommand)"
     }
 
     func stop() {

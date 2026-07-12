@@ -108,3 +108,56 @@ final class VMLibraryPersistenceTests: XCTestCase {
         XCTAssertFalse(VMLibrary.delete("missing", rootURL: root))
     }
 }
+
+final class ShellCommandSafetyTests: XCTestCase {
+    func testShellCommandPreservesHostileArgumentsAsData() {
+        let hostile = "quote' $(printf INJECTED) ; touch /tmp/never"
+        let command = Shell.shellCommand("/usr/bin/printf", ["%s", hostile])
+        let result = Shell.run("/bin/sh", ["-c", command])
+
+        XCTAssertEqual(result.code, 0)
+        XCTAssertEqual(result.output, hostile)
+    }
+
+    func testBackendLaunchCommandsQuoteImportedConfigValues() {
+        let hostilePath = "/tmp/a'$(touch injected),disk"
+        let config = VMConfig(id: "unsafe", name: "VM'; touch injected; '98", displayName: "Unsafe",
+                              backendKind: "qemu-compat", bootMode: nil, bundlePath: hostilePath,
+                              runnerPath: hostilePath + "/runner", launchSpecPath: "",
+                              handoffPath: hostilePath + "/handoff.json", sshKeyPath: "", sshUser: "",
+                              leasesPath: "", guestName: "", displayWidth: 1280, displayHeight: 800,
+                              isoPath: hostilePath + "/installer.iso", diskPath: hostilePath + "/disk.qcow2",
+                              memMiB: 4096, cpuCount: 4)
+
+        let fast = FastVZBackend(config).launchCommand()
+        let qemu = QemuCompatBackend(config).launchCommand()
+        XCTAssertTrue(fast.contains(Shell.shQuote(config.runnerPath)))
+        XCTAssertTrue(fast.contains(Shell.shQuote(config.handoffPath)))
+        XCTAssertTrue(qemu.contains(Shell.shQuote(config.name)))
+        XCTAssertTrue(qemu.contains("a'\\''$(touch injected),,disk"))
+        XCTAssertFalse(qemu.contains("-name \(config.name)"))
+    }
+
+    func testFastBackendRejectsLeaseContentThatIsNotIPv4() throws {
+        let leases = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: leases) }
+        try Data("name=guest\nip_address=127.0.0.1;touch /tmp/injected\n".utf8).write(to: leases)
+        let config = VMConfig(id: "safe", name: "Safe", displayName: "Safe", backendKind: "fast-vz",
+                              bootMode: nil, bundlePath: "", runnerPath: "", launchSpecPath: "",
+                              handoffPath: "", sshKeyPath: "", sshUser: "user", leasesPath: leases.path,
+                              guestName: "guest", displayWidth: 1, displayHeight: 1)
+
+        XCTAssertNil(FastVZBackend(config).currentIP())
+    }
+
+    func testFastBackendRejectsSSHOptionLikeUserBeforeConnecting() {
+        let config = VMConfig(id: "safe", name: "Safe", displayName: "Safe", backendKind: "fast-vz",
+                              bootMode: nil, bundlePath: "", runnerPath: "", launchSpecPath: "",
+                              handoffPath: "", sshKeyPath: "", sshUser: "-oProxyCommand=bad", leasesPath: "",
+                              guestName: "guest", displayWidth: 1, displayHeight: 1)
+        let result = FastVZBackend(config).runInGuest("true")
+
+        XCTAssertEqual(result.code, -1)
+        XCTAssertTrue(result.output.contains("SSH 사용자 이름"))
+    }
+}
