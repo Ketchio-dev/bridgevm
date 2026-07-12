@@ -101,6 +101,20 @@ extension VMLibrary {
             && FileManager.default.isReadableFile(atPath: path)
     }
 
+    private static func isReadableDirectory(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
+            && FileManager.default.isReadableFile(atPath: path)
+    }
+
+    static func isSameOrDescendant(_ candidate: URL, of ancestor: URL) -> Bool {
+        let candidateComponents = candidate.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+        let ancestorComponents = ancestor.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+        guard candidateComponents.count >= ancestorComponents.count else { return false }
+        return Array(candidateComponents.prefix(ancestorComponents.count)) == ancestorComponents
+    }
+
     static func rewriteCloneMetadata(
         at path: String,
         oldBundlePath: String,
@@ -217,7 +231,12 @@ extension VMLibrary {
     /// machine identity), so a new ready-to-run Ubuntu lands in the library.
     static func cloneUbuntu(name: String, template: VMConfig, storageDir: URL? = nil, width: Int = 1440, height: Int = 900) -> VMConfig? {
         let fm = FileManager.default
-        guard let reserved = reserveDestination(name, storageBase: storageDir ?? root) else { return nil }
+        let sourceBundle = URL(fileURLWithPath: template.bundlePath, isDirectory: true)
+        let storageBase = storageDir ?? root
+        guard width > 0, height > 0,
+              isReadableDirectory(template.bundlePath),
+              !isSameOrDescendant(storageBase, of: sourceBundle),
+              let reserved = reserveDestination(name, storageBase: storageBase) else { return nil }
         let slug = reserved.slug
         let destDir = reserved.root
         var succeeded = false
