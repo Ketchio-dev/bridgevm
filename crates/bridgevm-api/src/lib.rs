@@ -30,7 +30,7 @@ use bridgevm_storage::{
     VmImportMetadata, VmManifestMigrationMetadata, VmMetadataRepairMetadata, VmRuntimeMetadata,
     VmRuntimeState, VmStore,
 };
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -53,6 +53,7 @@ const MAX_PERFORMANCE_SAMPLE_ITERATIONS: u16 = 100;
 const MAX_PERFORMANCE_SAMPLE_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
 const DEFAULT_LOG_VIEW_BYTES: u64 = 8 * 1024;
 const MAX_LOG_VIEW_BYTES: u64 = 1024 * 1024;
+const MAX_BOOT_MEDIA_METADATA_BYTES: u64 = 1024 * 1024;
 const MAX_RUNTIME_CONTROL_RESPONSE_BYTES: u64 = 64 * 1024;
 
 pub const BRIDGEVM_API_SCHEMA_ID: &str = "bridgevm.api/v1";
@@ -3591,15 +3592,7 @@ fn read_boot_media_import_metadata(
     if !path.exists() {
         return Ok(None);
     }
-    let bytes = fs::read(&path).map_err(|error| {
-        format!(
-            "failed to read boot media metadata {}: {error}",
-            path.display()
-        )
-    })?;
-    serde_json::from_slice(&bytes)
-        .map(Some)
-        .map_err(|error| format!("invalid boot media metadata {}: {error}", path.display()))
+    read_boot_media_metadata_json(&path, "boot media metadata").map(Some)
 }
 
 fn boot_media_import_metadata_path(bundle: &std::path::Path, kind: BootMediaKind) -> PathBuf {
@@ -3642,18 +3635,7 @@ fn read_boot_media_verification_metadata(
     if !path.exists() {
         return Ok(None);
     }
-    let bytes = fs::read(&path).map_err(|error| {
-        format!(
-            "failed to read boot media verification metadata {}: {error}",
-            path.display()
-        )
-    })?;
-    serde_json::from_slice(&bytes).map(Some).map_err(|error| {
-        format!(
-            "invalid boot media verification metadata {}: {error}",
-            path.display()
-        )
-    })
+    read_boot_media_metadata_json(&path, "boot media verification metadata").map(Some)
 }
 
 fn boot_media_verification_metadata_path(bundle: &std::path::Path, kind: BootMediaKind) -> PathBuf {
@@ -3696,18 +3678,7 @@ fn read_boot_media_download_plan_metadata(
     if !path.exists() {
         return Ok(None);
     }
-    let bytes = fs::read(&path).map_err(|error| {
-        format!(
-            "failed to read boot media download plan metadata {}: {error}",
-            path.display()
-        )
-    })?;
-    serde_json::from_slice(&bytes).map(Some).map_err(|error| {
-        format!(
-            "invalid boot media download plan metadata {}: {error}",
-            path.display()
-        )
-    })
+    read_boot_media_metadata_json(&path, "boot media download plan metadata").map(Some)
 }
 
 fn boot_media_download_plan_metadata_path(
@@ -3753,18 +3724,28 @@ fn read_boot_media_download_result_metadata(
     if !path.exists() {
         return Ok(None);
     }
-    let bytes = fs::read(&path).map_err(|error| {
-        format!(
-            "failed to read boot media download result metadata {}: {error}",
+    read_boot_media_metadata_json(&path, "boot media download result metadata").map(Some)
+}
+
+fn read_boot_media_metadata_json<T: DeserializeOwned>(
+    path: &Path,
+    label: &str,
+) -> Result<T, String> {
+    let mut bytes = Vec::new();
+    fs::File::open(path)
+        .and_then(|file| {
+            file.take(MAX_BOOT_MEDIA_METADATA_BYTES + 1)
+                .read_to_end(&mut bytes)
+        })
+        .map_err(|error| format!("failed to read {label} {}: {error}", path.display()))?;
+    if bytes.len() as u64 > MAX_BOOT_MEDIA_METADATA_BYTES {
+        return Err(format!(
+            "{label} {} exceeds the {MAX_BOOT_MEDIA_METADATA_BYTES}-byte limit",
             path.display()
-        )
-    })?;
-    serde_json::from_slice(&bytes).map(Some).map_err(|error| {
-        format!(
-            "invalid boot media download result metadata {}: {error}",
-            path.display()
-        )
-    })
+        ));
+    }
+    serde_json::from_slice(&bytes)
+        .map_err(|error| format!("invalid {label} {}: {error}", path.display()))
 }
 
 fn boot_media_download_result_metadata_path(
@@ -9231,6 +9212,31 @@ mod tests {
         let installer = boot.installer_image.expect("expected installer image");
         assert!(installer.path.ends_with("installers/ubuntu-arm64.iso"));
         assert!(!installer.exists);
+    }
+
+    #[test]
+    fn boot_media_metadata_reader_rejects_oversized_json_before_decode() {
+        let root = std::env::temp_dir().join(format!(
+            "bridgevm-api-oversized-boot-media-metadata-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = boot_media_import_metadata_path(&root, BootMediaKind::InstallerImage);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            vec![b'x'; MAX_BOOT_MEDIA_METADATA_BYTES as usize + 1],
+        )
+        .unwrap();
+
+        let error = read_boot_media_import_metadata(&root, BootMediaKind::InstallerImage)
+            .expect_err("oversized metadata must be rejected");
+        assert!(error.contains("exceeds the 1048576-byte limit"));
+        assert!(error.contains(&path.display().to_string()));
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
