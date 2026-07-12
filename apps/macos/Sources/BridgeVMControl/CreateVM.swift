@@ -9,6 +9,17 @@ import UniformTypeIdentifiers
 extension VMLibrary {
     static let minimumImportedWindowsHVFDiskGiB: UInt64 = 64
     static let windowsHVFVarsBytes: UInt64 = 64 * 1024 * 1024
+    static let maximumVMNameCharacters = 128
+    static let maximumVMSlugBytes = 200
+
+    static func normalizedVMName(_ rawName: String) -> String? {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty,
+              name.count <= maximumVMNameCharacters,
+              !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+              VMConfig.slugify(name).utf8.count <= maximumVMSlugBytes else { return nil }
+        return name
+    }
 
     static func windowsHVFImportError(targetDiskPath: String, varsPath: String) -> String? {
         let fm = FileManager.default
@@ -181,7 +192,8 @@ extension VMLibrary {
                               storageDir: URL? = nil, width: Int = 1440, height: Int = 900,
                               diskGiB: Int = 40) -> VMConfig? {
         let fm = FileManager.default
-        guard diskGiB > 0, width > 0, height > 0,
+        guard let name = normalizedVMName(name),
+              diskGiB > 0, width > 0, height > 0,
               isReadableRegularFile(isoPath),
               let reserved = reserveDestination(name, storageBase: storageDir ?? root) else { return nil }
         let slug = reserved.slug
@@ -254,7 +266,8 @@ extension VMLibrary {
         let fm = FileManager.default
         let sourceBundle = URL(fileURLWithPath: template.bundlePath, isDirectory: true)
         let storageBase = storageDir ?? root
-        guard width > 0, height > 0,
+        guard let name = normalizedVMName(name),
+              width > 0, height > 0,
               isReadableDirectory(template.bundlePath),
               !isSameOrDescendant(storageBase, of: sourceBundle),
               let reserved = reserveDestination(name, storageBase: storageBase) else { return nil }
@@ -304,7 +317,8 @@ extension VMLibrary {
                               diskGiB: Int = 64, persist: Bool = true,
                               diskCreator: ((String, Int) -> Bool)? = nil) -> VMConfig? {
         let fm = FileManager.default
-        guard diskGiB > 0, width > 0, height > 0,
+        guard let name = normalizedVMName(name),
+              diskGiB > 0, width > 0, height > 0,
               isReadableRegularFile(isoPath),
               let reserved = reserveDestination(name, storageBase: storageDir ?? root) else { return nil }
         let slug = reserved.slug
@@ -346,7 +360,8 @@ extension VMLibrary {
                                  storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
                                  persist: Bool = true) -> VMConfig? {
         let fm = FileManager.default
-        guard windowsHVFImportError(targetDiskPath: targetDiskPath, varsPath: varsPath) == nil else { return nil }
+        guard let name = normalizedVMName(name),
+              windowsHVFImportError(targetDiskPath: targetDiskPath, varsPath: varsPath) == nil else { return nil }
 
         let storageBase = storageDir ?? root
         guard let reserved = reserveDestination(name, storageBase: storageBase) else { return nil }
@@ -459,6 +474,11 @@ struct CreateVMSheet: View {
                 Text("이름").frame(width: 64, alignment: .leading)
                 TextField(mode == .ubuntu ? "Ubuntu 2" : "Fedora 40", text: $name).textFieldStyle(.roundedBorder)
             }
+            if !name.isEmpty, VMLibrary.normalizedVMName(name) == nil {
+                Text("이름은 제어문자 없이 1~\(VMLibrary.maximumVMNameCharacters)자이며 파일 ID 제한 안이어야 합니다.")
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
 
             HStack {
                 Text("저장 위치").frame(width: 64, alignment: .leading)
@@ -522,7 +542,7 @@ struct CreateVMSheet: View {
     }
 
     private var canCreate: Bool {
-        guard !working, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        guard !working, VMLibrary.normalizedVMName(name) != nil else { return false }
         switch mode {
         case .windowsHVF:
             return !hvfTargetPath.isEmpty && !hvfVarsPath.isEmpty
@@ -559,7 +579,11 @@ struct CreateVMSheet: View {
         let selectedTemplate = template
         if mode != .windowsHVF, selectedTemplate == nil { error = "템플릿 VM이 없습니다"; return }
         working = true; error = ""
-        let nm = name.trimmingCharacters(in: .whitespaces)
+        guard let nm = VMLibrary.normalizedVMName(name) else {
+            error = "VM 이름은 제어문자 없이 1~\(VMLibrary.maximumVMNameCharacters)자이며 파일 ID 제한 안이어야 합니다."
+            working = false
+            return
+        }
         let m = mode; let iso = isoPath
         let hvfTarget = hvfTargetPath; let hvfVars = hvfVarsPath
         if mode == .windowsHVF,

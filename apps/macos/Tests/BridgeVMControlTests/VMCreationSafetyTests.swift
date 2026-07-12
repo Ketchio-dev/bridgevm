@@ -2,6 +2,30 @@ import XCTest
 @testable import BridgeVMControl
 
 final class VMCreationSafetyTests: XCTestCase {
+    func testVMNameNormalizationTrimsAndRejectsUnsafeNames() {
+        XCTAssertEqual(VMLibrary.normalizedVMName("  정상 VM  \n"), "정상 VM")
+        XCTAssertNil(VMLibrary.normalizedVMName(" \n\t "))
+        XCTAssertNil(VMLibrary.normalizedVMName("line\nbreak"))
+        XCTAssertNil(VMLibrary.normalizedVMName("control\u{0000}character"))
+        XCTAssertNil(VMLibrary.normalizedVMName(String(repeating: "a", count: VMLibrary.maximumVMNameCharacters + 1)))
+        XCTAssertNil(VMLibrary.normalizedVMName(String(repeating: "한", count: 100)))
+    }
+
+    func testInvalidVMNameDoesNotReserveStorage() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let source = temp.appendingPathComponent("source.vmbridge", isDirectory: true)
+        let storage = temp.appendingPathComponent("library", isDirectory: true)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+
+        XCTAssertNil(VMLibrary.cloneUbuntu(
+            name: "bad\nname",
+            template: makeTemplate(bundlePath: source.path),
+            storageDir: storage
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: storage.path))
+    }
+
     func testWindowsCreationCopiesISOIntoManagedBundle() throws {
         let temp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: temp) }
