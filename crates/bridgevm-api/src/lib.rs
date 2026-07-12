@@ -55,6 +55,7 @@ const DEFAULT_LOG_VIEW_BYTES: u64 = 8 * 1024;
 const MAX_LOG_VIEW_BYTES: u64 = 1024 * 1024;
 const MAX_BOOT_MEDIA_METADATA_BYTES: u64 = 1024 * 1024;
 const MAX_EVIDENCE_TEXT_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_DIAGNOSTIC_FILE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_RUNTIME_CONTROL_RESPONSE_BYTES: u64 = 64 * 1024;
 
 pub const BRIDGEVM_API_SCHEMA_ID: &str = "bridgevm.api/v1";
@@ -3028,13 +3029,25 @@ fn copy_diagnostic_file(
             )
         })?;
     }
-    let bytes = fs::read(source).map_err(|error| {
+    let mut bytes = Vec::new();
+    fs::File::open(source)
+        .and_then(|file| {
+            file.take(MAX_DIAGNOSTIC_FILE_BYTES + 1)
+                .read_to_end(&mut bytes)
+        })
+        .map_err(|error| {
+            format!(
+                "failed to read diagnostic file {}: {error}",
+                source.display()
+            )
+        })?;
+    let content = if bytes.len() as u64 > MAX_DIAGNOSTIC_FILE_BYTES {
         format!(
-            "failed to read diagnostic file {}: {error}",
-            source.display()
+            "[bridgevm diagnostic file omitted: source exceeded the {MAX_DIAGNOSTIC_FILE_BYTES}-byte safety limit]\n"
         )
-    })?;
-    let content = redact_diagnostic_text(&String::from_utf8_lossy(&bytes), token);
+    } else {
+        redact_diagnostic_text(&String::from_utf8_lossy(&bytes), token)
+    };
     fs::write(destination, content.as_bytes()).map_err(|error| {
         format!(
             "failed to write diagnostic file {}: {error}",
@@ -10926,6 +10939,15 @@ mod tests {
             r#"{"events":[{"event":"RESUME"}],"terminal_event":null,"envelopes_read":1,"limit_reached":false,"updated_at_unix":1}"#,
         )
         .unwrap();
+        let oversized_log = bundle.join("logs").join("oversized.log");
+        let mut oversized = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&oversized_log)
+            .unwrap();
+        oversized.write_all(token.as_bytes()).unwrap();
+        oversized.set_len(MAX_DIAGNOSTIC_FILE_BYTES + 1).unwrap();
         fs::write(bundle.join("metadata").join("diagnostics.lock"), "locked").unwrap();
         fs::create_dir_all(bundle.join("disks")).unwrap();
         fs::write(bundle.join("disks").join("root.qcow2"), "not copied").unwrap();
@@ -10950,6 +10972,7 @@ mod tests {
             .files
             .contains(&PathBuf::from("metadata/guest-tools-token.json")));
         assert!(bundle.files.contains(&PathBuf::from("logs/qemu.log")));
+        assert!(bundle.files.contains(&PathBuf::from("logs/oversized.log")));
         assert!(bundle
             .files
             .contains(&PathBuf::from("metadata/qmp-supervisor.json")));
@@ -10997,6 +11020,10 @@ mod tests {
         assert!(token_metadata.contains("<redacted>"));
         let log = fs::read_to_string(bundle.output.join("logs/qemu.log")).unwrap();
         assert!(log.contains("<redacted>"));
+        let oversized_log = fs::read_to_string(bundle.output.join("logs/oversized.log")).unwrap();
+        assert!(oversized_log.contains("diagnostic file omitted"));
+        assert!(oversized_log.contains("16777216-byte safety limit"));
+        assert!(!oversized_log.contains(&token));
         let secrets = fs::read_to_string(bundle.output.join("metadata/secrets.json")).unwrap();
         assert!(!secrets.contains("open-sesame"));
         assert!(!secrets.contains("Bearer abc"));
