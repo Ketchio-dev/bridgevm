@@ -242,6 +242,39 @@ final class HvfEngineSessionPathTests: XCTestCase {
         )))
     }
 
+    @MainActor
+    func testTextInputPreservesPrintableASCIIAndChunksLongCommands() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        let input = temp.appendingPathComponent("input.ctl")
+        try Data().write(to: input)
+        let config = HvfEngineConfig(
+            targetDiskPath: temp.appendingPathComponent("windows.raw").path,
+            uefiVarsPath: temp.appendingPathComponent("vars.fd").path,
+            evidenceDir: temp.path,
+            watchdogMs: nil,
+            ramMiB: 6144,
+            smpCpus: 4,
+            clipboardSync: true,
+            shareHostDir: nil,
+            shareGuestDir: nil,
+            virtioNet: true,
+            virtioGpu3d: true,
+            nvmeBufferedIO: true,
+            ctlFilePath: temp.appendingPathComponent("hvf.ctl").path
+        )
+        let session = HvfEngineSession(config: config, repoRoot: temp) { _ in false }
+
+        session.sendText("Ab c!@?," + String(repeating: "x", count: 32) + "끝")
+
+        let lines = try String(contentsOf: input, encoding: .utf8)
+            .split(separator: "\n").map(String.init)
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertEqual(lines[0], "KEY text-hex:4162206321403f2c" + String(repeating: "78", count: 24))
+        XCTAssertEqual(lines[1], "KEY text-hex:" + String(repeating: "78", count: 8))
+    }
+
     private func makeWrapper(at root: URL) throws {
         let scripts = root.appendingPathComponent("scripts", isDirectory: true)
         try FileManager.default.createDirectory(at: scripts, withIntermediateDirectories: true)

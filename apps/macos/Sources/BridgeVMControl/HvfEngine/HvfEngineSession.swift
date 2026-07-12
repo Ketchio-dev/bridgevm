@@ -198,9 +198,14 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func sendText(_ value: String) {
-        let allowed = value.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber || "/.-".contains($0)) }
-        guard !allowed.isEmpty else { return }
-        appendLiveInput("KEY text:\(allowed)")
+        let ascii = value.utf8.filter { (0x20...0x7e).contains($0) }
+        for chunkStart in stride(from: 0, to: ascii.count, by: 32) {
+            let chunkEnd = min(chunkStart + 32, ascii.count)
+            let encoded = ascii[chunkStart..<chunkEnd]
+                .map { String(format: "%02x", $0) }
+                .joined()
+            appendLiveInput("KEY text-hex:\(encoded)")
+        }
     }
 
     #if canImport(AppKit)
