@@ -340,10 +340,10 @@ struct VMDetailPanel: View {
                     infoItem("CPU", "\(model.cpu) 코어")
                 }
                 HStack(spacing: 10) {
-                    Button(action: model.start) { Label("시작 / 창 열기", systemImage: "play.fill") }.disabled(model.running)
-                    Button(action: model.stop) { Label("정지", systemImage: "stop.fill") }.disabled(!model.running)
+                    Button(action: model.start) { Label("시작 / 창 열기", systemImage: "play.fill") }.disabled(model.running || model.lifecycleBusy)
+                    Button(action: model.stop) { Label("정지", systemImage: "stop.fill") }.disabled(!model.running || model.lifecycleBusy)
                     Button(action: model.refresh) { Label("새로고침", systemImage: "arrow.clockwise") }
-                    if model.busy { ProgressView().scaleEffect(0.6) }
+                    if model.busy || model.lifecycleBusy { ProgressView().scaleEffect(0.6) }
                     Spacer()
                 }
                 if !model.statusNote.isEmpty {
@@ -375,7 +375,8 @@ struct VMDetailPanel: View {
                     Text("\(Int(model.pendingCPU)) 코어").frame(width: 60, alignment: .trailing).font(.body.monospaced())
                 }
                 HStack {
-                    Button(action: model.applyResources) { Label("적용 (VM 재시작)", systemImage: "checkmark.circle") }.disabled(model.busy)
+                    Button(action: model.applyResources) { Label("적용 (VM 재시작)", systemImage: "checkmark.circle") }
+                        .disabled(model.busy || model.lifecycleBusy)
                     Text("적용하면 VM이 재시작됩니다").font(.caption).foregroundColor(.secondary)
                     Spacer()
                 }
@@ -400,7 +401,7 @@ struct VMDetailPanel: View {
                     Button("브라우저 (Epiphany)") { model.installPackages(["epiphany-browser"], label: "Epiphany 브라우저") }
                     Button("텍스트 에디터 (gedit)") { model.installPackages(["gedit"], label: "gedit") }
                     Button("개발도구 (git)") { model.installPackages(["git", "build-essential"], label: "개발도구") }
-                }.disabled(model.busy || !model.running)
+                }.disabled(model.busy || model.lifecycleBusy || !model.running)
                 if !model.softwareLog.isEmpty { logBox(model.softwareLog, height: 120) }
             }.padding(6)
         } label: { Label("소프트웨어", systemImage: "shippingbox") }
@@ -414,8 +415,8 @@ struct VMDetailPanel: View {
                     Text("dev@guest$").font(.body.monospaced()).foregroundColor(.secondary)
                     TextField("명령 입력 후 Enter", text: $model.terminalInput, onCommit: model.runTerminalCommand)
                         .textFieldStyle(.roundedBorder).font(.body.monospaced())
-                        .disabled(model.busy || !model.running)
-                    Button("실행", action: model.runTerminalCommand).disabled(model.busy || !model.running)
+                        .disabled(model.busy || model.lifecycleBusy || !model.running)
+                    Button("실행", action: model.runTerminalCommand).disabled(model.busy || model.lifecycleBusy || !model.running)
                 }
             }.padding(6)
         } label: { Label("게스트 터미널", systemImage: "terminal") }

@@ -9,6 +9,7 @@ final class ControlModel: ObservableObject {
     @Published var memGiB: Double = 8
     @Published var cpu: Int = 4
     @Published var busy = false
+    @Published private(set) var lifecycleBusy = false
     @Published var statusNote = ""
 
     // Resource editor (pending values until Apply)
@@ -84,6 +85,8 @@ final class ControlModel: ObservableObject {
     }
 
     func start() {
+        guard !lifecycleBusy, !running else { return }
+        lifecycleBusy = true
         statusNote = "VM 시작 중…"
         startConfirmationDeadline = Date().addingTimeInterval(10)
         running = true                 // optimistic: the click registers instantly
@@ -91,6 +94,7 @@ final class ControlModel: ObservableObject {
         Task.detached {
             let launched = backend.start() // off the main thread — process spawn no longer hitches the UI
             await MainActor.run {
+                self.lifecycleBusy = false
                 if launched {
                     self.statusNote = "VM 부팅 중…"
                 } else {
@@ -105,19 +109,33 @@ final class ControlModel: ObservableObject {
     }
 
     func stop() {
+        guard !lifecycleBusy, running else { return }
+        lifecycleBusy = true
+        let wasStarting = startConfirmationDeadline != nil
         startConfirmationDeadline = nil
         statusNote = "VM 정지 중…"
         running = false                // optimistic
         let backend = self.backend
         Task.detached {
-            backend.stop()
-            await MainActor.run { self.statusNote = "정지됨"; self.scheduleRefreshBurst() }
+            if wasStarting {
+                let appearanceDeadline = Date().addingTimeInterval(3)
+                while !backend.isRunning(), Date() < appearanceDeadline { usleep(50_000) }
+            }
+            if backend.isRunning() { backend.stop() }
+            let stillRunning = backend.isRunning()
+            await MainActor.run {
+                self.lifecycleBusy = false
+                self.running = stillRunning
+                self.statusNote = stillRunning ? "VM 정지 실패" : "정지됨"
+                self.scheduleRefreshBurst()
+            }
         }
     }
 
     func applyResources() {
         let mem = Int((pendingMemGiB * 1024).rounded())
         let cpus = Int(pendingCPU)
+        guard !busy, !lifecycleBusy else { return }
         guard backend.supportsResourceChanges else {
             statusNote = "이 엔진은 리소스 변경을 지원하지 않습니다."
             return
@@ -127,6 +145,7 @@ final class ControlModel: ObservableObject {
             return
         }
         busy = true
+        lifecycleBusy = true
         statusNote = "리소스 적용 중 (\(Int(pendingMemGiB))GB / \(cpus)코어)… VM 재시작"
         let backend = self.backend
         Task.detached {
@@ -134,6 +153,7 @@ final class ControlModel: ObservableObject {
             guard ok else {
                 await MainActor.run {
                     self.busy = false
+                    self.lifecycleBusy = false
                     self.statusNote = "리소스 적용 실패 — VM은 재시작하지 않았습니다."
                 }
                 return
@@ -145,6 +165,7 @@ final class ControlModel: ObservableObject {
                 if backend.isRunning() {
                     await MainActor.run {
                         self.busy = false
+                        self.lifecycleBusy = false
                         self.running = true
                         self.statusNote = "리소스 적용됨, VM 정지 실패 — 재시작하지 않았습니다."
                         self.scheduleRefreshBurst()
@@ -154,6 +175,7 @@ final class ControlModel: ObservableObject {
                 if !backend.start() {
                     await MainActor.run {
                         self.busy = false
+                        self.lifecycleBusy = false
                         self.running = false
                         self.ip = "—"
                         self.statusNote = "리소스 적용됨, VM 재시작 실패"
@@ -164,6 +186,7 @@ final class ControlModel: ObservableObject {
             }
             await MainActor.run {
                 self.busy = false
+                self.lifecycleBusy = false
                 self.statusNote = "리소스 적용됨: \(Int(self.pendingMemGiB))GB / \(cpus)코어"
                 self.scheduleRefreshBurst()
             }
@@ -171,6 +194,7 @@ final class ControlModel: ObservableObject {
     }
 
     func runTerminalCommand() {
+        guard !busy, !lifecycleBusy, running, backend.supportsGuestCommands else { return }
         let cmd = terminalInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cmd.isEmpty else { return }
         terminalLog += "dev@guest$ \(cmd)\n"
@@ -190,6 +214,7 @@ final class ControlModel: ObservableObject {
     }
 
     func installPackages(_ packages: [String], label: String) {
+        guard !busy, !lifecycleBusy, running, backend.supportsPackageInstall else { return }
         busy = true
         softwareLog = "\(label) 설치 중… (apt, 잠시 걸립니다)\n"
         let backend = self.backend

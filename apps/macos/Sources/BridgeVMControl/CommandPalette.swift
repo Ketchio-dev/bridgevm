@@ -17,9 +17,9 @@ struct CommandPaletteView: View {
     private var commands: [PaletteCommand] {
         var c: [PaletteCommand] = []
         if let m = library.selectedModel {
-            if !m.running {
+            if !m.running && !m.lifecycleBusy {
                 c.append(.init(title: "시작: \(m.config.name)", subtitle: "VM 시작 / 창 열기", systemImage: "play.fill") { m.start(); dismiss() })
-            } else {
+            } else if m.running && !m.lifecycleBusy {
                 c.append(.init(title: "정지: \(m.config.name)", subtitle: "VM 정지", systemImage: "stop.fill") { m.stop(); dismiss() })
             }
             c.append(.init(title: "새로고침: \(m.config.name)", subtitle: "상태 갱신", systemImage: "arrow.clockwise") { m.refresh(); dismiss() })
