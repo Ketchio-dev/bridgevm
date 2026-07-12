@@ -14,6 +14,11 @@ LIGHTVM_RUNNER="$APP/Contents/Helpers/lightvm-runner"
 HVF_LAB="$APP/Contents/Applications/BridgeVMControl.app"
 HVF_LAB_EXECUTABLE="$HVF_LAB/Contents/MacOS/BridgeVMControl"
 HVF_WINDOWS_PROBE="$HVF_LAB/Contents/Resources/target/release/examples/hvf_gic_boot_probe"
+HVF_VIRGL_RENDERER="$HVF_LAB/Contents/Frameworks/libvirglrenderer.1.dylib"
+HVF_LIBEPOXY="$HVF_LAB/Contents/Frameworks/libepoxy.0.dylib"
+HVF_FIRMWARE="$HVF_LAB/Contents/Resources/firmware/edk2-aarch64-code.fd"
+HVF_FIRMWARE_MANIFEST="$HVF_LAB/Contents/Resources/firmware/manifest.txt"
+HVF_FIRMWARE_LICENSES="$HVF_LAB/Contents/Resources/firmware/licenses.txt"
 APP_NOTARY_SUBMIT_JSON="$WORKDIR/app-notary-submit.json"
 APP_NOTARY_LOG_JSON="$WORKDIR/app-notary-log.json"
 DMG_NOTARY_SUBMIT_JSON="$WORKDIR/dmg-notary-submit.json"
@@ -51,7 +56,9 @@ mkdir -p \
   "$APP/Contents/MacOS" \
   "$APP/Contents/Helpers" \
   "$HVF_LAB/Contents/MacOS" \
-  "$(dirname "$HVF_WINDOWS_PROBE")"
+  "$(dirname "$HVF_WINDOWS_PROBE")" \
+  "$(dirname "$HVF_VIRGL_RENDERER")" \
+  "$(dirname "$HVF_FIRMWARE")"
 cat >"$APP/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -78,6 +85,11 @@ printf '#!/bin/sh\necho bridgevmd smoke\n' >"$BRIDGEVMD"
 printf '#!/bin/sh\necho lightvm-runner smoke\n' >"$LIGHTVM_RUNNER"
 printf '#!/bin/sh\necho BridgeVMControl smoke\n' >"$HVF_LAB_EXECUTABLE"
 printf '#!/bin/sh\necho hvf_gic_boot_probe smoke\n' >"$HVF_WINDOWS_PROBE"
+printf 'virgl renderer smoke\n' >"$HVF_VIRGL_RENDERER"
+printf 'libepoxy smoke\n' >"$HVF_LIBEPOXY"
+printf 'firmware smoke\n' >"$HVF_FIRMWARE"
+printf 'sha256=firmware-smoke\n' >"$HVF_FIRMWARE_MANIFEST"
+printf 'firmware licenses smoke\n' >"$HVF_FIRMWARE_LICENSES"
 chmod +x \
   "$APP/Contents/MacOS/BridgeVMApp" \
   "$RUNNER" \
@@ -129,6 +141,11 @@ assert_contains_file "$MANIFEST" "windows_hvf_lab_executable.path=$HVF_LAB_EXECU
 assert_contains_file "$MANIFEST" "windows_hvf_lab_executable.sha256=" "Windows HVF Lab executable metadata"
 assert_contains_file "$MANIFEST" "windows_hvf_probe.path=$HVF_WINDOWS_PROBE" "Windows HVF probe metadata"
 assert_contains_file "$MANIFEST" "windows_hvf_probe.sha256=" "Windows HVF probe metadata"
+assert_contains_file "$MANIFEST" "windows_hvf_virgl_renderer.sha256=" "Windows HVF VirGL metadata"
+assert_contains_file "$MANIFEST" "windows_hvf_libepoxy.sha256=" "Windows HVF libepoxy metadata"
+assert_contains_file "$MANIFEST" "windows_hvf_firmware.sha256=" "Windows HVF firmware metadata"
+assert_contains_file "$MANIFEST" "windows_hvf_firmware_manifest.sha256=" "Windows HVF firmware manifest metadata"
+assert_contains_file "$MANIFEST" "windows_hvf_firmware_licenses.sha256=" "Windows HVF firmware licenses metadata"
 assert_contains_file "$MANIFEST" "windows_hvf_lab_codesign_verify.exit=" "Windows HVF Lab signature recording"
 assert_contains_file "$MANIFEST" "windows_hvf_probe_codesign_verify.exit=" "Windows HVF probe signature recording"
 assert_contains_file "$MANIFEST" "windows_hvf_probe_entitlements.exit=" "Windows HVF probe entitlement recording"
@@ -170,6 +187,8 @@ assert_contains_file "$APP_ONLY_MANIFEST" "bridgevmd.path=$BRIDGEVMD" "app-only 
 assert_contains_file "$APP_ONLY_MANIFEST" "lightvm_runner.path=$LIGHTVM_RUNNER" "app-only lightvm-runner metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_lab.path=$HVF_LAB" "app-only Windows HVF Lab metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_probe.path=$HVF_WINDOWS_PROBE" "app-only Windows HVF probe metadata"
+assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_virgl_renderer.path=$HVF_VIRGL_RENDERER" "app-only Windows HVF VirGL metadata"
+assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_firmware.path=$HVF_FIRMWARE" "app-only Windows HVF firmware metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "app_codesign_verify.exit=" "app-only app signature recording"
 assert_contains_file "$APP_ONLY_MANIFEST" "app_notary_submit_json.id=app-submit-smoke" "app-only app notary submit metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "app_notary_log_json.status=Accepted" "app-only app notary log metadata"

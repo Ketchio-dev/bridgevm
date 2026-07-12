@@ -544,6 +544,8 @@ verify_mounted_dmg_app_release_gates() {
     || failures=$((failures + 1))
   local mounted_hvf_lab="$mount_dir/$app_basename/Contents/Applications/BridgeVMControl.app"
   local mounted_hvf_probe="$mounted_hvf_lab/Contents/Resources/target/release/examples/hvf_gic_boot_probe"
+  local mounted_hvf_virgl_renderer="$mounted_hvf_lab/Contents/Frameworks/libvirglrenderer.1.dylib"
+  local mounted_hvf_libepoxy="$mounted_hvf_lab/Contents/Frameworks/libepoxy.0.dylib"
   run_release_gate "Mounted Windows HVF Lab Developer ID signature" \
     verify_developer_id_signature "$mounted_hvf_lab" \
     || failures=$((failures + 1))
@@ -559,6 +561,18 @@ verify_mounted_dmg_app_release_gates() {
     || failures=$((failures + 1))
   run_release_gate "Mounted Windows HVF probe hardened runtime" \
     verify_hardened_runtime "$mounted_hvf_probe" \
+    || failures=$((failures + 1))
+  run_release_gate "Mounted Windows HVF VirGL renderer Developer ID signature" \
+    verify_developer_id_signature "$mounted_hvf_virgl_renderer" \
+    || failures=$((failures + 1))
+  run_release_gate "Mounted Windows HVF VirGL renderer hardened runtime" \
+    verify_hardened_runtime "$mounted_hvf_virgl_renderer" \
+    || failures=$((failures + 1))
+  run_release_gate "Mounted Windows HVF libepoxy Developer ID signature" \
+    verify_developer_id_signature "$mounted_hvf_libepoxy" \
+    || failures=$((failures + 1))
+  run_release_gate "Mounted Windows HVF libepoxy hardened runtime" \
+    verify_hardened_runtime "$mounted_hvf_libepoxy" \
     || failures=$((failures + 1))
   run_release_gate "Mounted app bridgevmd helper signature" \
     codesign --verify --strict "$mount_dir/$app_basename/Contents/Helpers/bridgevmd" \
@@ -787,6 +801,8 @@ run_release_gate "Bundled AppleVzRunner helper hardened runtime" \
   || release_failures=$((release_failures + 1))
 HVF_LAB="$APP/Contents/Applications/BridgeVMControl.app"
 HVF_WINDOWS_PROBE="$HVF_LAB/Contents/Resources/target/release/examples/hvf_gic_boot_probe"
+HVF_VIRGL_RENDERER="$HVF_LAB/Contents/Frameworks/libvirglrenderer.1.dylib"
+HVF_LIBEPOXY="$HVF_LAB/Contents/Frameworks/libepoxy.0.dylib"
 run_release_gate "Bundled Windows HVF Lab Developer ID signature" \
   verify_developer_id_signature "$HVF_LAB" \
   || release_failures=$((release_failures + 1))
@@ -802,6 +818,18 @@ run_release_gate "Bundled Windows HVF probe Developer ID signature" \
   || release_failures=$((release_failures + 1))
 run_release_gate "Bundled Windows HVF probe hardened runtime" \
   verify_hardened_runtime "$HVF_WINDOWS_PROBE" \
+  || release_failures=$((release_failures + 1))
+run_release_gate "Bundled Windows HVF VirGL renderer Developer ID signature" \
+  verify_developer_id_signature "$HVF_VIRGL_RENDERER" \
+  || release_failures=$((release_failures + 1))
+run_release_gate "Bundled Windows HVF VirGL renderer hardened runtime" \
+  verify_hardened_runtime "$HVF_VIRGL_RENDERER" \
+  || release_failures=$((release_failures + 1))
+run_release_gate "Bundled Windows HVF libepoxy Developer ID signature" \
+  verify_developer_id_signature "$HVF_LIBEPOXY" \
+  || release_failures=$((release_failures + 1))
+run_release_gate "Bundled Windows HVF libepoxy hardened runtime" \
+  verify_hardened_runtime "$HVF_LIBEPOXY" \
   || release_failures=$((release_failures + 1))
 run_release_gate "Bundled bridgevmd helper signature" \
   codesign --verify --strict "$APP/Contents/Helpers/bridgevmd" \
