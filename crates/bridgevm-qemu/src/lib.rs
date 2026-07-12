@@ -6,13 +6,15 @@ use bridgevm_resource_manager::{decide_from_manifest_profile, resolve_memory, re
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    io::{BufRead, BufReader, ErrorKind, Write},
+    io::{BufRead, BufReader, ErrorKind, Read, Write},
     os::unix::net::UnixStream,
     path::{Path, PathBuf},
     str::FromStr,
     time::Duration,
 };
 use thiserror::Error;
+
+const MAX_QMP_ENVELOPE_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug, Error)]
 pub enum QemuError {
@@ -789,14 +791,28 @@ impl QmpClient {
     }
 
     pub fn read_envelope(&mut self) -> Result<QmpEnvelope, QemuError> {
-        let mut line = String::new();
-        if self.reader.read_line(&mut line)? == 0 {
+        let mut frame = Vec::new();
+        if (&mut self.reader)
+            .take(MAX_QMP_ENVELOPE_BYTES + 1)
+            .read_until(b'\n', &mut frame)?
+            == 0
+        {
             return Err(QemuError::QmpIo(std::io::Error::new(
                 ErrorKind::UnexpectedEof,
                 "QMP stream closed",
             )));
         }
-        let value = serde_json::from_str::<Value>(&line)?;
+        if frame.len() as u64 > MAX_QMP_ENVELOPE_BYTES {
+            return Err(QemuError::QmpProtocol(format!(
+                "QMP envelope exceeded {MAX_QMP_ENVELOPE_BYTES} bytes"
+            )));
+        }
+        if frame.last() != Some(&b'\n') {
+            return Err(QemuError::QmpProtocol(
+                "QMP stream returned an incomplete envelope".to_string(),
+            ));
+        }
+        let value = serde_json::from_slice::<Value>(&frame)?;
         Ok(QmpEnvelope {
             greeting: value.get("QMP").cloned(),
             event: value
@@ -2095,6 +2111,41 @@ mod tests {
         assert_eq!(event.name, "SHUTDOWN");
         assert_eq!(event.data.as_ref().unwrap(), &json!({ "guest": true }));
         assert!(event.is_terminal());
+
+        server.join().unwrap();
+        fs::remove_file(socket_path).unwrap();
+    }
+
+    #[test]
+    fn qmp_client_rejects_oversized_envelope() {
+        let socket_path = temp_socket_path();
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let oversized = vec![b'x'; MAX_QMP_ENVELOPE_BYTES as usize + 1];
+            let _ = stream.write_all(&oversized);
+        });
+
+        let mut client = QmpClient::connect(&socket_path).unwrap();
+        let error = client.read_envelope().unwrap_err();
+        assert!(error.to_string().contains("exceeded 1048576 bytes"));
+
+        server.join().unwrap();
+        fs::remove_file(socket_path).unwrap();
+    }
+
+    #[test]
+    fn qmp_client_rejects_incomplete_envelope() {
+        let socket_path = temp_socket_path();
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.write_all(br#"{"event":"SHUTDOWN"}"#).unwrap();
+        });
+
+        let mut client = QmpClient::connect(&socket_path).unwrap();
+        let error = client.read_envelope().unwrap_err();
+        assert!(error.to_string().contains("incomplete envelope"));
 
         server.join().unwrap();
         fs::remove_file(socket_path).unwrap();
