@@ -76,6 +76,32 @@ final class AppleVzDisplayRuntimeControlServerTests: XCTestCase {
     try FileManager.default.removeItem(atPath: socketPath)
   }
 
+  func testSplitRequestIsReadThroughNewline() throws {
+    let socketPath = makeShortSocketPath()
+    let server = makeServer(socketPath: socketPath)
+    try server.start()
+    defer { server.stop() }
+
+    let response = try sendRawRuntimeControlRequest(
+      [Data(#"{"com"#.utf8), Data("mand\":\"status\"}\n".utf8)],
+      to: socketPath
+    )
+    XCTAssertEqual(response["ok"] as? Bool, true)
+    XCTAssertEqual(response["vm"] as? String, "test-vm")
+  }
+
+  func testOversizedRequestIsRejected() throws {
+    let socketPath = makeShortSocketPath()
+    let server = makeServer(socketPath: socketPath)
+    try server.start()
+    defer { server.stop() }
+
+    let oversized = Data((String(repeating: "x", count: 4_097) + "\n").utf8)
+    let response = try sendRawRuntimeControlRequest([oversized], to: socketPath)
+    XCTAssertEqual(response["ok"] as? Bool, false)
+    XCTAssertEqual(response["error"] as? String, "request-too-large")
+  }
+
   func testStatusAndStopCommandsReturnSnapshot() throws {
     let socketPath = makeShortSocketPath()
     var stopCount = 0
@@ -322,13 +348,15 @@ final class AppleVzDisplayRuntimeControlServerTests: XCTestCase {
       withJSONObject: ["command": command],
       options: []
     )
+    var framedRequest = request
+    framedRequest.append(0x0A)
     let response = try withConnectedSocket(to: socketPath) { fd in
-      try request.withUnsafeBytes { rawBuffer in
+      try framedRequest.withUnsafeBytes { rawBuffer in
         guard let baseAddress = rawBuffer.baseAddress else {
           return
         }
-        let written = write(fd, baseAddress, request.count)
-        guard written == request.count else {
+        let written = write(fd, baseAddress, framedRequest.count)
+        guard written == framedRequest.count else {
           throw RuntimeControlClientError.writeFailed
         }
       }
@@ -346,6 +374,31 @@ final class AppleVzDisplayRuntimeControlServerTests: XCTestCase {
       throw RuntimeControlClientError.invalidJSON
     }
     return dictionary
+  }
+
+  private func sendRawRuntimeControlRequest(
+    _ fragments: [Data],
+    to socketPath: String
+  ) throws -> [String: Any] {
+    let response = try withConnectedSocket(to: socketPath) { fd in
+      for fragment in fragments {
+        try fragment.withUnsafeBytes { bytes in
+          guard let base = bytes.baseAddress else { return }
+          guard write(fd, base, fragment.count) == fragment.count else {
+            throw RuntimeControlClientError.writeFailed
+          }
+        }
+        usleep(10_000)
+      }
+      var buffer = [UInt8](repeating: 0, count: 4096)
+      let count = read(fd, &buffer, buffer.count)
+      guard count > 0 else { throw RuntimeControlClientError.readFailed }
+      return Data(buffer.prefix(count))
+    }
+    guard let object = try JSONSerialization.jsonObject(with: response) as? [String: Any] else {
+      throw RuntimeControlClientError.invalidJSON
+    }
+    return object
   }
 
   private func makeShortSocketPath() -> String {

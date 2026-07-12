@@ -458,6 +458,9 @@ enum AppleVzDisplayRuntimeControlServerError: Error, LocalizedError, Equatable {
 }
 
 final class AppleVzDisplayRuntimeControlServer {
+  private static let maximumRequestBytes = 4096
+  private static let clientIOTimeoutSeconds: Int = 2
+
   private struct SocketIdentity {
     let device: dev_t
     let inode: ino_t
@@ -656,19 +659,60 @@ final class AppleVzDisplayRuntimeControlServer {
       &suppressSIGPIPE,
       socklen_t(MemoryLayout<Int32>.size)
     )
+    var timeout = timeval(tv_sec: Self.clientIOTimeoutSeconds, tv_usec: 0)
+    _ = setsockopt(
+      client,
+      SOL_SOCKET,
+      SO_RCVTIMEO,
+      &timeout,
+      socklen_t(MemoryLayout<timeval>.size)
+    )
+    _ = setsockopt(
+      client,
+      SOL_SOCKET,
+      SO_SNDTIMEO,
+      &timeout,
+      socklen_t(MemoryLayout<timeval>.size)
+    )
 
-    var buffer = [UInt8](repeating: 0, count: 4096)
-    let count = read(client, &buffer, buffer.count)
-    guard count > 0 else {
+    guard let request = readRequest(from: client) else {
       return
     }
-    let request = Data(buffer.prefix(count))
-    let response = handleRequest(request)
-    response.withUnsafeBytes { rawBuffer in
-      guard let baseAddress = rawBuffer.baseAddress else {
-        return
+    let response: Data
+    if request.count > Self.maximumRequestBytes {
+      response = encode(["ok": false, "error": "request-too-large"])
+    } else {
+      response = handleRequest(request)
+    }
+    writeResponse(response, to: client)
+  }
+
+  private func readRequest(from client: Int32) -> Data? {
+    var request = Data()
+    var buffer = [UInt8](repeating: 0, count: 512)
+    while request.count <= Self.maximumRequestBytes {
+      let count = read(client, &buffer, buffer.count)
+      guard count > 0 else {
+        return nil
       }
-      _ = write(client, baseAddress, response.count)
+      if let newline = buffer[..<count].firstIndex(of: 0x0A) {
+        request.append(contentsOf: buffer[..<newline])
+        return request
+      }
+      request.append(contentsOf: buffer[..<count])
+    }
+    return request
+  }
+
+  private func writeResponse(_ response: Data, to client: Int32) {
+    response.withUnsafeBytes { rawBuffer in
+      guard let baseAddress = rawBuffer.baseAddress else { return }
+      var written = 0
+      while written < response.count {
+        let count = write(client, baseAddress.advanced(by: written), response.count - written)
+        guard count > 0 else { return }
+        written += count
+      }
     }
   }
 
