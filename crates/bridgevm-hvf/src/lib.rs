@@ -2,7 +2,7 @@ use std::{
     any::Any,
     fs::{File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 // Modules of the "QEMU virt contract" path (Path A). New platform code lands in
@@ -11639,18 +11639,14 @@ pub fn probe_windows_11_arm_platform_description(
             node_name: "serial@10000000",
             base_ipa: summary.pl011.map(|range| range.base_ipa),
             bytes: summary.pl011.map(|range| range.bytes),
-            inside_device_window: summary
-                .pl011
-                .is_some_and(|range| fdt_range_inside_device_window(range)),
+            inside_device_window: summary.pl011.is_some_and(fdt_range_inside_device_window),
         },
         WindowsArmFdtMmioNodeCheck {
             label: "PL031",
             node_name: "rtc@10001000",
             base_ipa: summary.pl031.map(|range| range.base_ipa),
             bytes: summary.pl031.map(|range| range.bytes),
-            inside_device_window: summary
-                .pl031
-                .is_some_and(|range| fdt_range_inside_device_window(range)),
+            inside_device_window: summary.pl031.is_some_and(fdt_range_inside_device_window),
         },
         WindowsArmFdtMmioNodeCheck {
             label: "VirtIO-MMIO installer ISO",
@@ -11659,7 +11655,7 @@ pub fn probe_windows_11_arm_platform_description(
             bytes: summary.virtio_installer_iso.map(|range| range.bytes),
             inside_device_window: summary
                 .virtio_installer_iso
-                .is_some_and(|range| fdt_range_inside_device_window(range)),
+                .is_some_and(fdt_range_inside_device_window),
         },
         WindowsArmFdtMmioNodeCheck {
             label: "VirtIO-MMIO target disk",
@@ -11668,16 +11664,16 @@ pub fn probe_windows_11_arm_platform_description(
             bytes: summary.virtio_target_disk.map(|range| range.bytes),
             inside_device_window: summary
                 .virtio_target_disk
-                .is_some_and(|range| fdt_range_inside_device_window(range)),
+                .is_some_and(fdt_range_inside_device_window),
         },
     ];
     let mmio_nodes_inside_device_window = mmio_nodes.iter().all(|node| node.inside_device_window);
     let gic_nodes_inside_device_window = summary
         .gic_distributor
-        .is_some_and(|range| fdt_range_inside_device_window(range))
+        .is_some_and(fdt_range_inside_device_window)
         && summary
             .gic_redistributor
-            .is_some_and(|range| fdt_range_inside_device_window(range));
+            .is_some_and(fdt_range_inside_device_window);
     let arch_timer_node_present = !summary.arch_timer_interrupts.is_empty();
     let arch_timer_interrupt_count = summary.arch_timer_interrupts.len();
     let interrupt_nodes = vec![
@@ -12771,7 +12767,7 @@ fn verify_protective_mbr(file: &mut File, total_lbas: u64) -> Result<(), String>
 }
 
 fn build_gpt_entry_array(
-    path: &PathBuf,
+    path: &Path,
     disk_size_bytes: u64,
     partitions: &[WindowsArmBootDiskPartition],
 ) -> Vec<u8> {
@@ -13117,7 +13113,7 @@ fn decode_gpt_partition_name(bytes: &[u8]) -> String {
     String::from_utf16_lossy(&units)
 }
 
-fn stable_guid_bytes(path: &PathBuf, label: &str, disk_size_bytes: u64) -> [u8; 16] {
+fn stable_guid_bytes(path: &Path, label: &str, disk_size_bytes: u64) -> [u8; 16] {
     let mut first = fnv1a64(0xcbf2_9ce4_8422_2325, label.as_bytes());
     first = fnv1a64(first, path.to_string_lossy().as_bytes());
     first = fnv1a64(first, &disk_size_bytes.to_le_bytes());
@@ -14771,7 +14767,7 @@ mod platform {
         }
 
         fn effective_vbar_status(elr_status: HvReturn, vbar_status: Option<HvReturn>) -> HvReturn {
-            vbar_status.unwrap_or_else(|| {
+            vbar_status.unwrap_or({
                 if elr_status == HV_SUCCESS {
                     HV_SUCCESS
                 } else {
@@ -23601,8 +23597,6 @@ mod platform {
         let mut write_value_register_set = false;
         let mut data_address_register_set = false;
         let mut status_address_register_set = false;
-        let device_bus_created;
-        let device_bus_device_count;
         let mut write_run_attempted = false;
         let mut write_exit_observed = false;
         let mut write_handled_by_device = false;
@@ -23674,8 +23668,8 @@ mod platform {
             PROBE_MMIO_IPA,
             SERIAL_MMIO_STATUS_VALUE,
         )));
-        device_bus_created = true;
-        device_bus_device_count = mmio_bus.device_count();
+        let device_bus_created = true;
+        let device_bus_device_count = mmio_bus.device_count();
 
         let status = unsafe { hv_vm_create(ptr::null_mut()) };
         let vm_create_status = Some(status);
@@ -24274,8 +24268,6 @@ mod platform {
         let mut pc_set = false;
         let mut cpsr_set = false;
         let mut rtc_address_register_set = false;
-        let device_bus_created;
-        let device_bus_device_count;
         let mut first_run_attempted = false;
         let mut rtc_exit_observed = false;
         let mut rtc_handled_by_device = false;
@@ -24331,8 +24323,8 @@ mod platform {
             RTC_MMIO_IPA,
             RTC_MMIO_READ_VALUE,
         )));
-        device_bus_created = true;
-        device_bus_device_count = mmio_bus.device_count();
+        let device_bus_created = true;
+        let device_bus_device_count = mmio_bus.device_count();
 
         let status = unsafe { hv_vm_create(ptr::null_mut()) };
         let vm_create_status = Some(status);
@@ -24831,8 +24823,6 @@ mod platform {
         let mut pc_set = false;
         let mut cpsr_set = false;
         let mut register_address_registers_set = false;
-        let device_bus_created;
-        let device_bus_device_count;
         let mut continuation_run_attempted = false;
         let mut continuation_exit_observed = false;
         let mut vendor_value_preserved = false;
@@ -24873,8 +24863,8 @@ mod platform {
             RTC_MMIO_READ_VALUE,
         )));
         mmio_bus.attach(Box::new(VirtioMmioBlockDevice::new(BLOCK_MMIO_IPA)));
-        device_bus_created = true;
-        device_bus_device_count = mmio_bus.device_count();
+        let device_bus_created = true;
+        let device_bus_device_count = mmio_bus.device_count();
 
         let status = unsafe { hv_vm_create(ptr::null_mut()) };
         let vm_create_status = Some(status);
@@ -25568,8 +25558,6 @@ mod platform {
         let mut vcpu_created = false;
         let mut pc_set = false;
         let mut cpsr_set = false;
-        let device_bus_created;
-        let device_bus_device_count;
         let mut continuation_run_attempted = false;
         let mut continuation_exit_observed = false;
         let mut capacity_high_value_preserved = false;
@@ -25635,8 +25623,8 @@ mod platform {
             RTC_MMIO_READ_VALUE,
         )));
         mmio_bus.attach(Box::new(VirtioMmioBlockDevice::new(BLOCK_MMIO_IPA)));
-        device_bus_created = true;
-        device_bus_device_count = mmio_bus.device_count();
+        let device_bus_created = true;
+        let device_bus_device_count = mmio_bus.device_count();
 
         let status = unsafe { hv_vm_create(ptr::null_mut()) };
         let vm_create_status = Some(status);
