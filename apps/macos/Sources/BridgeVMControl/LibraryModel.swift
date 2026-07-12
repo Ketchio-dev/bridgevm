@@ -17,6 +17,7 @@ final class LibraryModel: ObservableObject {
     @Published private(set) var libraryIssues: [VMLibraryIssue] = []
 
     private var modelCache: [String: ControlModel] = [:]
+    private let libraryRoot: URL
 
     // Host-capacity accounting (sum of RUNNING VMs vs host totals) to warn on oversubscription.
     var hostMemGiB: Double { Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824.0 }
@@ -26,17 +27,20 @@ final class LibraryModel: ObservableObject {
     var usedCPU: Int { runningModels().reduce(0) { $0 + $1.cpu } }
 
     func deletionImpact(for cfg: VMConfig) -> VMLibraryDeletionImpact {
-        VMLibrary.deletionImpact(for: cfg)
+        VMLibrary.deletionImpact(for: cfg, rootURL: libraryRoot)
     }
 
-    init() {
-        VMLibrary.migrateLegacyIfNeeded()
+    init(rootURL: URL = VMLibrary.root, migrateLegacy: Bool = true) {
+        libraryRoot = rootURL
+        if migrateLegacy {
+            VMLibrary.migrateLegacyIfNeeded(rootURL: rootURL, legacy: VMConfig.loadLegacy())
+        }
         reload()
         if selectedID == nil { selectedID = vms.first?.slug }
     }
 
     func reload() {
-        let scan = VMLibrary.scan()
+        let scan = VMLibrary.scan(rootURL: libraryRoot)
         vms = scan.configs
         libraryIssues = scan.issues
         let slugs = Set(vms.map { $0.slug })
@@ -67,10 +71,11 @@ final class LibraryModel: ObservableObject {
         guard !deletingSlugs.contains(slug) else { return }
         deletingSlugs.insert(slug)
         let backend = modelCache[slug]?.backend ?? cfg.makeBackend()
+        let libraryRoot = self.libraryRoot
         Task.detached {
             backend.stop()
             let stillRunning = backend.isRunning()
-            let deleted = !stillRunning && VMLibrary.delete(slug)
+            let deleted = !stillRunning && VMLibrary.delete(slug, rootURL: libraryRoot)
             await MainActor.run {
                 self.deletingSlugs.remove(slug)
                 if deleted {
@@ -85,11 +90,15 @@ final class LibraryModel: ObservableObject {
         }
     }
 
-    /// Add an already-built VMConfig to the library (used by the create flow).
+    /// Publish a VMConfig that the create transaction has already persisted.
+    /// Re-saving here would move persistence outside that transaction's rollback
+    /// boundary and could report a false failure after a successful creation.
     @discardableResult
     func add(_ cfg: VMConfig) -> Bool {
-        guard VMLibrary.save(cfg) else { return false }
         reload()
+        guard vms.contains(where: { $0.slug == cfg.slug && $0.bundlePath == cfg.bundlePath }) else {
+            return false
+        }
         selectedID = cfg.slug
         return true
     }
