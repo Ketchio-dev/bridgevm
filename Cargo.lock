@@ -102,6 +102,7 @@ dependencies = [
  "bridgevm-qemu",
  "bridgevm-resource-manager",
  "bridgevm-storage",
+ "libc",
  "serde",
  "serde_json",
  "sha2",

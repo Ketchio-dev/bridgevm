@@ -5972,14 +5972,15 @@ enum ProcessTerminationOutcome {
 /// check, so it reports liveness without disturbing the target.
 #[cfg(unix)]
 fn process_is_alive(pid: u32) -> bool {
-    Command::new("kill")
-        .arg("-0")
-        .arg(pid.to_string())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    // SAFETY: signal 0 performs only the POSIX existence/permission check.
+    let result = unsafe { libc::kill(pid, 0) };
+    if result == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 #[cfg(not(unix))]
@@ -5993,18 +5994,22 @@ fn process_is_alive(_pid: u32) -> bool {
 /// matching the "make stop idempotent" contract.
 #[cfg(unix)]
 fn signal_process(pid: u32, signal: &str) -> Result<(), String> {
-    let status = Command::new("kill")
-        .arg(format!("-{signal}"))
-        .arg(pid.to_string())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map_err(|error| format!("failed to send SIG{signal} to pid {pid}: {error}"))?;
-    // A non-success status almost always means the process already exited
-    // between our liveness check and the signal; treat that as success so stop
-    // stays idempotent.
-    let _ = status;
-    Ok(())
+    let signal_number = match signal {
+        "TERM" => libc::SIGTERM,
+        "KILL" => libc::SIGKILL,
+        _ => return Err(format!("unsupported process signal: {signal}")),
+    };
+    let native_pid = libc::pid_t::try_from(pid)
+        .map_err(|_| format!("pid {pid} is outside the platform pid range"))?;
+    // SAFETY: native_pid was range-checked and signal_number is allowlisted.
+    if unsafe { libc::kill(native_pid, signal_number) } == 0 {
+        return Ok(());
+    }
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        return Ok(());
+    }
+    Err(format!("failed to send SIG{signal} to pid {pid}: {error}"))
 }
 
 #[cfg(not(unix))]
@@ -13417,6 +13422,15 @@ exec sleep 60
         assert!(output.status.success());
         assert!(parse_ps_etime(&String::from_utf8_lossy(&output.stdout)).is_some());
         assert!(output.stdout.len() <= 4096);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_signal_rejects_non_allowlisted_signal() {
+        let error = signal_process(std::process::id(), "STOP").unwrap_err();
+
+        assert_eq!(error, "unsupported process signal: STOP");
+        assert!(process_is_alive(std::process::id()));
     }
 
     #[cfg(unix)]
