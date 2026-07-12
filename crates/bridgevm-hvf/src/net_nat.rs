@@ -12,6 +12,7 @@ use std::{
     io::{self, Read, Write},
     net::{IpAddr, Ipv4Addr as StdIpv4Addr, Shutdown, SocketAddrV4, TcpStream, UdpSocket},
     os::fd::{FromRawFd, RawFd},
+    path::Path,
     sync::OnceLock,
 };
 
@@ -59,6 +60,7 @@ const DHCP_LEASE_SECONDS: u32 = 86_400;
 const DHCP_REPLY_FIXED_LEN: usize = 240;
 const DHCP_REPLY_OPTIONS_LEN: usize = 3 + (5 * 6) + 1;
 const DHCP_REPLY_PAYLOAD_LEN: usize = DHCP_REPLY_FIXED_LEN + DHCP_REPLY_OPTIONS_LEN;
+const MAX_RESOLV_CONF_BYTES: u64 = 64 * 1024;
 #[cfg(test)]
 const DHCP_OPT_REQUESTED_IP: u8 = 50;
 
@@ -1793,7 +1795,22 @@ fn trace_icmp_recv(len: usize, first_byte: u8, outcome: &str) {
 }
 
 fn first_resolv_conf_nameserver() -> Option<StdIpv4Addr> {
-    let contents = std::fs::read_to_string("/etc/resolv.conf").ok()?;
+    first_nameserver_from_path(Path::new("/etc/resolv.conf"))
+}
+
+fn first_nameserver_from_path(path: &Path) -> Option<StdIpv4Addr> {
+    let file = std::fs::File::open(path).ok()?;
+    if file.metadata().ok()?.len() > MAX_RESOLV_CONF_BYTES {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_RESOLV_CONF_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > MAX_RESOLV_CONF_BYTES {
+        return None;
+    }
+    let contents = String::from_utf8(bytes).ok()?;
     for line in contents.lines() {
         let line = line.trim();
         if line.starts_with('#') || !line.starts_with("nameserver") {
@@ -2262,6 +2279,55 @@ mod tests {
     const GUEST_MAC: MacAddr = [0x52, 0x54, 0x00, 0x12, 0x34, 0x56];
     const OTHER_GUEST_MAC: MacAddr = [0x52, 0x54, 0x00, 0xaa, 0xbb, 0xcc];
     const BROADCAST_MAC: MacAddr = [0xff; 6];
+
+    fn temp_resolv_path(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "bridgevm-resolv-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn resolver_reader_parses_first_ipv4_nameserver() {
+        let path = temp_resolv_path("valid");
+        std::fs::write(
+            &path,
+            "# generated\nnameserver 2001:db8::1\nnameserver 9.8.7.6\n",
+        )
+        .unwrap();
+
+        let resolver = first_nameserver_from_path(&path);
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(resolver, Some(StdIpv4Addr::new(9, 8, 7, 6)));
+    }
+
+    #[test]
+    fn resolver_reader_rejects_sparse_oversized_input_before_allocation() {
+        let path = temp_resolv_path("oversized");
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(512 * 1024 * 1024).unwrap();
+
+        let resolver = first_nameserver_from_path(&path);
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(resolver, None);
+    }
+
+    #[test]
+    fn resolver_reader_rejects_invalid_utf8() {
+        let path = temp_resolv_path("invalid-utf8");
+        std::fs::write(&path, [0xff, 0xfe]).unwrap();
+
+        let resolver = first_nameserver_from_path(&path);
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(resolver, None);
+    }
 
     fn arp_request(src_mac: MacAddr, sender_ip: Ipv4Addr, target_ip: Ipv4Addr) -> Vec<u8> {
         let mut payload = Vec::with_capacity(28);
