@@ -29,9 +29,36 @@ The shipped macOS bundle now contains an isolated `BridgeVMControl.app`, the
 installed-Windows wrappers, and a release probe signed with
 `com.apple.security.hypervisor`; Settings exposes it as **Windows HVF Lab**.
 The lab imports an installed RAW disk and its matching writable UEFI vars by
-clone/copy, leaving the selected source files unchanged.
+clone/copy, leaving the selected source files unchanged. Imported disks smaller
+than 64 GiB are extended sparsely, then C: is grown through the resident agent
+on first boot; the retry marker is cleared only after an exit-0 guest proof. See
+the [2026-07-12 disk-growth evidence index](evidence/imported-disk-growth-20260712.md).
 
-This is still an experimental installed-image path. A from-scratch installer,
+The in-process reboot loop now also resets Apple's in-kernel GIC after all
+vCPUs stop. A live Windows restart returned `hv_gic_reset=0`, reached a second
+agent `READY` in the same VMM process, then powered off cleanly with disk and
+vars writeback. See the
+[2026-07-12 reboot evidence index](evidence/reboot-gic-reset-20260712.md).
+
+Resident-agent command output is now bounded and chunked above 24 KiB while
+remaining strict lockstep. A live 131,072-byte response reassembled to the
+exact expected hash, the following command remained aligned, and a separate
+256 MiB NVMe create/flush/offline-read check matched guest and host hashes.
+See the [2026-07-12 agent/output and storage evidence index](evidence/agent-chunked-output-storage-20260712.md).
+
+The isolated buffered-NVMe comparison subsequently completed WDK and Windows
+SDK installation, found native InfVerif/SignTool plus Inf2Cat, shut down with a
+status-0 service gate, and matched both 256 MiB files again from a host-side
+read-only NTFS mount. See the
+[2026-07-12 WDK/SDK and buffered-storage evidence index](evidence/wdk-sdk-buffered-storage-20260712.md).
+
+The test-signed full `viogpu3d` package has also bound live to `DEV_1050` with
+status OK. `dxdiag` identified `viogpu_d3d10.dll`, WDDM 1.3, and feature level
+10_0; the matching 23,421-event VirGL trace passed the protocol-specific P3
+gate before a clean PSCI shutdown and writeback. See the
+[2026-07-12 live VirGL/WDDM evidence index](evidence/viogpu3d-virgl-live-20260712.md).
+
+This is still an experimental installed-image path. A packaged from-scratch installer,
 TPM 2.0/Secure Boot, distributable Windows 3D/WDDM, durable disk-backed suspend,
 and polished single-surface product UX remain open.
 
@@ -585,6 +612,7 @@ durable suspend, and UX gates remain.
 | Writable NVMe, ramfb/input, and virtio-net installed-media path | Pass (preserved live evidence) |
 | Resident BVAGENT command/share/shutdown service | Pass (preserved live evidence) |
 | Packaged macOS Windows HVF Lab, wrappers, and signed release probe | Pass |
+| Imported RAW clone minimum size and first-boot C: growth | Pass (preserved live evidence) |
 | TPM/Secure Boot in custom HVF path | Blocked |
 | Windows guest tools/drivers | Partial: resident agent proven; distributable 3D driver remains |
 | Windows installer without QEMU | Blocked |

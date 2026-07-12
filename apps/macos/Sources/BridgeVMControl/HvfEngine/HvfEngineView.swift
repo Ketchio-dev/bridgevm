@@ -8,6 +8,7 @@ struct HvfEngineView: View {
     @State private var targetDiskPath = ""
     @State private var uefiVarsPath = ""
     @State private var evidenceDir = ""
+    @State private var watchdogEnabled = false
     @State private var watchdogMs = 900_000
     @State private var ramMiB = 6144
     @State private var smpCpus = 4
@@ -54,8 +55,11 @@ struct HvfEngineView: View {
                 pathRow("CTL file", text: $ctlFilePath, chooseDirectory: false)
                 HStack {
                     Text("Watchdog").frame(width: 92, alignment: .leading)
+                    Toggle("Enabled", isOn: $watchdogEnabled)
+                        .toggleStyle(.checkbox)
                     Stepper("\(watchdogMs) ms", value: $watchdogMs, in: 60_000...86_400_000, step: 30_000)
                         .font(.body.monospaced())
+                        .disabled(!watchdogEnabled)
                     Spacer()
                 }
                 HStack(spacing: 24) {
@@ -243,7 +247,7 @@ struct HvfEngineView: View {
         HvfEngineConfig(targetDiskPath: targetDiskPath,
                         uefiVarsPath: uefiVarsPath,
                         evidenceDir: evidenceDir,
-                        watchdogMs: watchdogMs,
+                        watchdogMs: watchdogEnabled ? watchdogMs : nil,
                         ramMiB: ramMiB,
                         smpCpus: smpCpus,
                         clipboardSync: clipboardSync,
@@ -258,7 +262,8 @@ struct HvfEngineView: View {
         targetDiskPath = cfg.targetDiskPath
         uefiVarsPath = cfg.uefiVarsPath
         evidenceDir = cfg.evidenceDir
-        watchdogMs = cfg.watchdogMs
+        watchdogEnabled = cfg.watchdogMs != nil
+        watchdogMs = cfg.watchdogMs ?? 900_000
         ramMiB = cfg.ramMiB
         smpCpus = cfg.smpCpus
         clipboardSync = cfg.clipboardSync
@@ -287,7 +292,7 @@ struct HvfEngineView: View {
         return HvfEngineConfig(targetDiskPath: "",
                                uefiVarsPath: "",
                                evidenceDir: evidence,
-                               watchdogMs: 900_000,
+                               watchdogMs: nil,
                                ramMiB: 6144,
                                smpCpus: 4,
                                clipboardSync: true,

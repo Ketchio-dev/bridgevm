@@ -45,6 +45,7 @@ write_installed_boot_preflight() {
     printf 'daily_preset=%s\n' "$DAILY"
     printf 'ram_mib=%s\n' "$RAM_MIB"
     printf 'watchdog_ms=%s\n' "$WATCHDOG_MS"
+    printf 'watchdog_disabled=%s\n' "$WATCHDOG_DISABLED"
     printf 'smp_cpus=%s\n' "${SMP_CPUS:-<unset>}"
     printf 'xhci_report_interval_ms=%s\n' "$([[ "$DAILY" == "1" ]] && printf '30' || printf '<probe-default 30>')"
     printf 'boot_timer=%s\n' "$BOOT_TIMER"
@@ -59,6 +60,8 @@ write_installed_boot_preflight() {
     printf 'agent_share_host=%s\n' "${AGENT_SHARE_HOST:-<unset>}"
     printf 'agent_share_guest=%s\n' "${AGENT_SHARE_GUEST:-<unset>}"
     printf 'agent_share_ms=%s\n' "${AGENT_SHARE_MS:-<unset>}"
+    printf 'agent_share_max_kb=%s\n' "${AGENT_SHARE_MAX_KB:-<unset>}"
+    printf 'nvme_buffered_io=%s\n' "$NVME_BUFFERED_IO"
     if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" || -n "$AGENT_SERVICE_CONTROL" ]]; then
       printf 'virtio_console_test_periodic=1\n'
     else
@@ -142,6 +145,34 @@ build_and_sign_probe_if_needed() {
   } >> "$EVIDENCE_DIR/preflight.txt" 2>&1
 }
 
+verify_probe_build_capabilities() {
+  [[ "${VIRTIO_GPU_3D:-0}" == "1" ]] || return 0
+
+  local report="$EVIDENCE_DIR/probe-build-capabilities.txt"
+  local output
+  local probe_status
+  local status=0
+  set +e
+  output="$(BRIDGEVM_PROBE_PRINT_CAPABILITIES=1 "$BIN" 2>&1)"
+  probe_status="$?"
+  set -e
+  if [[ "$probe_status" != "0" ]] || ! grep -Fqx 'virtio_gpu_3d_compiled=true' <<<"$output"; then
+    status=1
+  fi
+  {
+    date -u
+    printf 'binary=%s\n' "$BIN"
+    printf '%s\n' "$output"
+    printf 'probe_status=%s\n' "$probe_status"
+    printf 'virtio_gpu_3d_required=true\n'
+    printf 'status=%s\n' "$status"
+  } > "$report"
+  if [[ "$status" != "0" && "${RUN_STATUS:-0}" == "0" ]]; then
+    RUN_STATUS="$status"
+  fi
+  [[ "$status" == "0" ]]
+}
+
 build_installed_boot_env_args() {
   COMMON_ENV=(
     "BRIDGEVM_RAM_MIB=$RAM_MIB" 'BRIDGEVM_RAMFB=1'
@@ -153,6 +184,9 @@ build_installed_boot_env_args() {
     'BRIDGEVM_RECENT_NVME_COMMANDS=4096' 'BRIDGEVM_RECENT_PCIE_MMIO=2048'
     'BRIDGEVM_RECENT_PCIE_PIO=1024'
   )
+  if [[ "${WATCHDOG_DISABLED:-0}" == "1" ]]; then
+    COMMON_ENV+=('BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED=1')
+  fi
   # Per-interrupt MSIX/SPI tracing is opt-in: always-on it emitted 50k+ lines
   # per run and drowned the BVAGENT evidence (service-mode logs must stay
   # greppable). Use --trace-irq when debugging interrupt delivery.
@@ -214,6 +248,7 @@ build_installed_boot_env_args() {
       ENV_ARGS+=(
         "BRIDGEVM_VIRTIO_CONSOLE_SHARE=$AGENT_SHARE_HOST::$AGENT_SHARE_GUEST"
         "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS=$AGENT_SHARE_MS"
+        "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MAX_KB=$AGENT_SHARE_MAX_KB"
       )
     fi
   fi
@@ -223,6 +258,9 @@ build_installed_boot_env_args() {
   fi
   if [[ "${VIRTIO_NET:-0}" == "1" ]]; then
     ENV_ARGS+=('BRIDGEVM_VIRTIO_NET=1' 'BRIDGEVM_VIRTIO_NET_BACKEND=nat')
+  fi
+  if [[ "${NVME_BUFFERED_IO:-0}" == "1" ]]; then
+    ENV_ARGS+=('BRIDGEVM_NVME_BUFFERED_IO=1')
   fi
   if [[ "${VIRTIO_GPU_3D:-0}" == "1" ]]; then
     ENV_ARGS+=(
@@ -658,6 +696,7 @@ write_installed_boot_target_stat() {
     date -u
     if [[ "${VIRTIO_GPU_3D:-0}" == "1" ]]; then
       printf 'virtio_gpu_trace=%s\n' "$(virtio_gpu_trace_path)"
+      printf 'probe_build_capabilities=%s\n' "$EVIDENCE_DIR/probe-build-capabilities.txt"
       printf 'virtio_gpu_trace_report=%s\n' "$EVIDENCE_DIR/virtio-gpu-trace-report.txt"
       printf 'virtio_gpu_trace_gate=%s\n' "$EVIDENCE_DIR/virtio-gpu-trace-gate.txt"
       printf 'p3_gpu_readiness=%s\n' "$EVIDENCE_DIR/p3-gpu-readiness.txt"
@@ -707,6 +746,10 @@ run_installed_boot_probe() {
     return 0
   fi
   build_and_sign_probe_if_needed
+  if ! verify_probe_build_capabilities; then
+    write_installed_boot_target_stat
+    return 0
+  fi
   write_probe_command_env
   run_probe_process
   write_agent_shutdown_gate

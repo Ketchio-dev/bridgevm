@@ -84,13 +84,15 @@ fn make_virtio_gpu() -> VirtioPciGpu {
                     return VirtioPciGpu::with_3d_backend(width, height, Box::new(backend));
                 }
                 Err(error) => {
-                    eprintln!("virtio-gpu: 3D backend init failed: {error}; continuing 2D-only");
+                    panic!("virtio-gpu: requested 3D backend failed to initialize: {error}");
                 }
             }
         }
         #[cfg(not(feature = "venus"))]
         {
-            eprintln!("virtio-gpu: BRIDGEVM_VIRTIO_GPU_3D requested but probe built without venus feature; continuing 2D-only");
+            panic!(
+                "virtio-gpu: BRIDGEVM_VIRTIO_GPU_3D requested but this probe was built without the venus feature"
+            );
         }
     }
     VirtioPciGpu::new(width, height)
@@ -424,6 +426,8 @@ impl VirtPlatform {
         let smbios = build_smbios(config.fdt.cpu_count, config.fdt.ram_size);
         fw_cfg.add_file(SMBIOS_ANCHOR_FILE, smbios.anchor);
         fw_cfg.add_file(SMBIOS_TABLE_FILE, smbios.tables);
+        let mut nvme = NvmeController::new(DEFAULT_NVME_DISK_BYTES);
+        nvme.set_direct_dma_enabled(!env_flag("BRIDGEVM_NVME_BUFFERED_IO"));
         Self {
             cfg: config.fdt,
             devices: config.devices,
@@ -439,7 +443,7 @@ impl VirtPlatform {
                 virtio_gpu_pci_device_id: config.devices.virtio_gpu_pci_device_id,
                 virtio_gpu_3d_enabled: virtio_gpu_3d_enabled_for_pcie(),
             }),
-            nvme: NvmeController::new(DEFAULT_NVME_DISK_BYTES),
+            nvme,
             xhci: XhciController::new(),
             virtio_iso: None,
             pci_boot_media: None,
@@ -583,6 +587,12 @@ impl VirtPlatform {
         write_back: bool,
     ) -> io::Result<()> {
         self.nvme.load_raw_file(path, write_back)
+    }
+
+    /// Whether NVMe reads and writes may use stable guest-RAM host pointers.
+    /// `BRIDGEVM_NVME_BUFFERED_IO=1` disables this for process-local A/B tests.
+    pub fn nvme_direct_dma_enabled(&self) -> bool {
+        self.nvme.direct_dma_enabled()
     }
 
     /// Attach a blank NSID-2 target namespace of `disk_bytes` in-memory storage,

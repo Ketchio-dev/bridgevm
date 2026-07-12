@@ -150,6 +150,8 @@ struct Args {
     guest_ram_mib: u32,
     #[arg(long)]
     watchdog_ms: Option<u64>,
+    #[arg(long, requires = "launch", conflicts_with = "watchdog_ms")]
+    no_watchdog: bool,
     #[arg(long)]
     max_reboots: Option<u32>,
     #[arg(long)]
@@ -181,9 +183,13 @@ struct Args {
     #[arg(long)]
     agent_share_ms: Option<u64>,
     #[arg(long)]
+    agent_share_max_kb: Option<u64>,
+    #[arg(long)]
     enable_xhci: bool,
     #[arg(long)]
     virtio_net: bool,
+    #[arg(long)]
+    nvme_buffered_io: bool,
     #[arg(long)]
     virtio_gpu_3d: bool,
     #[arg(long)]
@@ -738,7 +744,8 @@ fn installed_boot_launch_args(args: &Args, invocation_dir: &Path) -> Result<Vec<
         || args.agent_clipboard_sync
         || args.agent_share_host.is_some()
         || args.agent_share_guest.is_some()
-        || args.agent_share_ms.is_some();
+        || args.agent_share_ms.is_some()
+        || args.agent_share_max_kb.is_some();
     if !agent_service && agent_extras {
         bail!("agent command, clipboard, and share options require --agent-service-control");
     }
@@ -752,6 +759,15 @@ fn installed_boot_launch_args(args: &Args, invocation_dir: &Path) -> Result<Vec<
     }
     if args.agent_share_ms.is_some() && args.agent_share_host.is_none() {
         bail!("--agent-share-ms requires --agent-share-host and --agent-share-guest");
+    }
+    if args
+        .agent_share_max_kb
+        .is_some_and(|max_kb| !(1..=1_048_576).contains(&max_kb))
+    {
+        bail!("--agent-share-max-kb requires an integer from 1 to 1048576");
+    }
+    if args.agent_share_max_kb.is_some() && args.agent_share_host.is_none() {
+        bail!("--agent-share-max-kb requires --agent-share-host and --agent-share-guest");
     }
     let mut target_candidates = [
         args.target.as_ref(),
@@ -791,6 +807,7 @@ fn installed_boot_launch_args(args: &Args, invocation_dir: &Path) -> Result<Vec<
         invocation_dir,
     );
     push_num_arg(&mut out, "--watchdog-ms", args.watchdog_ms);
+    push_flag(&mut out, args.no_watchdog, "--no-watchdog");
     push_num_arg(&mut out, "--max-reboots", args.max_reboots);
     push_num_arg(&mut out, "--ram-mib", args.ram_mib);
     push_num_arg(&mut out, "--smp-cpus", args.smp_cpus);
@@ -844,8 +861,10 @@ fn installed_boot_launch_args(args: &Args, invocation_dir: &Path) -> Result<Vec<
         args.agent_share_guest.as_deref(),
     );
     push_num_arg(&mut out, "--agent-share-ms", args.agent_share_ms);
+    push_num_arg(&mut out, "--agent-share-max-kb", args.agent_share_max_kb);
     push_flag(&mut out, args.enable_xhci, "--enable-xhci");
     push_flag(&mut out, args.virtio_net, "--virtio-net");
+    push_flag(&mut out, args.nvme_buffered_io, "--nvme-buffered-io");
     push_flag(&mut out, args.virtio_gpu_3d, "--virtio-gpu-3d");
     push_string_arg(
         &mut out,
@@ -1091,6 +1110,8 @@ mod tests {
             "C:\\bridgevm-share",
             "--agent-share-ms",
             "2500",
+            "--agent-share-max-kb",
+            "32768",
             "--enable-xhci",
             "--virtio-net",
             "--daily",
@@ -1133,6 +1154,8 @@ mod tests {
                 "C:\\bridgevm-share",
                 "--agent-share-ms",
                 "2500",
+                "--agent-share-max-kb",
+                "32768",
                 "--enable-xhci",
                 "--virtio-net",
                 "--daily",
@@ -1140,6 +1163,27 @@ mod tests {
                 "--print-policy",
             ]
         );
+    }
+
+    #[test]
+    fn launch_forwards_explicit_no_watchdog_policy() {
+        let args = Args::try_parse_from([
+            "hvf-runner",
+            "--launch",
+            "--target",
+            "/tmp/win.raw",
+            "--vars",
+            "/tmp/vars.fd",
+            "--evidence-dir",
+            "/tmp/evidence",
+            "--no-watchdog",
+        ])
+        .unwrap();
+
+        assert!(args.no_watchdog);
+        let wrapper_args = installed_boot_launch_args(&args, Path::new("/work")).unwrap();
+        assert!(wrapper_args.iter().any(|arg| arg == "--no-watchdog"));
+        assert!(!wrapper_args.iter().any(|arg| arg == "--watchdog-ms"));
     }
 
     #[test]
@@ -1162,6 +1206,34 @@ mod tests {
     }
 
     #[test]
+    fn launch_rejects_agent_share_maximum_outside_wrapper_range() {
+        let args = Args::try_parse_from([
+            "hvf-runner",
+            "--launch",
+            "--target",
+            "/tmp/win.raw",
+            "--vars",
+            "/tmp/vars.fd",
+            "--evidence-dir",
+            "/tmp/evidence",
+            "--agent-service-control",
+            "/tmp/app.ctl",
+            "--agent-share-host",
+            "/tmp/share",
+            "--agent-share-guest",
+            "C:\\bridgevm-share",
+            "--agent-share-max-kb",
+            "1048577",
+        ])
+        .unwrap();
+
+        let error = installed_boot_launch_args(&args, Path::new("/work"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("integer from 1 to 1048576"));
+    }
+
+    #[test]
     fn launch_forwards_pause_resume_proof_control() {
         let args = Args::try_parse_from([
             "hvf-runner",
@@ -1181,6 +1253,25 @@ mod tests {
         assert!(wrapper_args
             .windows(2)
             .any(|pair| pair == ["--host-pause-resume-proof-ms", "1500"]));
+    }
+
+    #[test]
+    fn launch_forwards_audited_buffered_nvme_diagnostic() {
+        let args = Args::try_parse_from([
+            "hvf-runner",
+            "--launch",
+            "--target",
+            "/tmp/win.raw",
+            "--vars",
+            "/tmp/vars.fd",
+            "--evidence-dir",
+            "/tmp/evidence",
+            "--nvme-buffered-io",
+        ])
+        .unwrap();
+
+        let wrapper_args = installed_boot_launch_args(&args, Path::new("/work")).unwrap();
+        assert!(wrapper_args.iter().any(|arg| arg == "--nvme-buffered-io"));
     }
 
     #[test]

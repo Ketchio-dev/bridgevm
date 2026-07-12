@@ -41,9 +41,10 @@ git -C "$SRC_DIR" fetch origin
 git -C "$SRC_DIR" checkout --detach "$VIRGL_COMMIT"
 git -C "$SRC_DIR" submodule update --init --recursive
 
-# Apply BridgeVM's local Venus patches before both first setup and reconfigure
-# builds. The patches provide MoltenVK-direct dlopen via BRIDGEVM_VULKAN_LIB
-# and host-pointer memory import for MoltenVK's non-aliasing MTLBuffer path.
+# Apply BridgeVM's local renderer patches before both first setup and reconfigure
+# builds. They provide MoltenVK-direct dlopen via BRIDGEVM_VULKAN_LIB,
+# host-pointer import for MoltenVK's non-aliasing MTLBuffer path, and the Apple
+# core-profile GLSL rule that avoids requiring a UBO extension already in 1.40.
 if [[ -f "$PATCH_FILE" ]]; then
   if git -C "$SRC_DIR" apply --check "$PATCH_FILE" 2>/dev/null; then
     git -C "$SRC_DIR" apply "$PATCH_FILE"

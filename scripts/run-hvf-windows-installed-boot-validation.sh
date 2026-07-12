@@ -61,6 +61,12 @@ agent_share_interval_ms() {
   (( 10#$1 >= 500 && 10#$1 <= 60000 ))
 }
 
+agent_share_max_kb() {
+  positive_integer "$1" || return 1
+  (( ${#1} <= 7 )) || return 1
+  (( 10#$1 <= 1048576 ))
+}
+
 u64_literal() {
   local value="$1"
   local trimmed

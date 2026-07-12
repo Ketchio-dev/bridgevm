@@ -50,7 +50,7 @@ output="$(
 assert_contains "$output" "BridgeVM HVF virtio-gpu trace report" "virtio-gpu trace report"
 assert_contains "$output" "Requested protocol: auto" "virtio-gpu trace report"
 assert_contains "$output" "Selected protocol: venus" "virtio-gpu trace report"
-assert_contains "$output" "3D features accepted: true" "virtio-gpu trace report"
+assert_contains "$output" "VENUS feature set accepted: true" "virtio-gpu trace report"
 assert_contains "$output" "GET_CAPSET OK: true" "virtio-gpu trace report"
 assert_contains "$output" "GET_CAPSET_INFO VENUS id 4: true" "virtio-gpu trace report"
 assert_contains "$output" "GET_CAPSET VENUS id 4: true" "virtio-gpu trace report"
@@ -63,5 +63,35 @@ assert_contains "$output" "Backend-parked fence observed: true" "virtio-gpu trac
 assert_contains "$output" "Fence deliver observed: true" "virtio-gpu trace report"
 assert_contains "$output" "P3 Windows 3D trace gate: PASS" "virtio-gpu trace report"
 assert_contains "$output" "Blockers: none" "virtio-gpu trace report"
+
+cat >"$TRACE" <<'JSONL'
+{"seq":1,"event":"device_init","backend_3d":true}
+{"seq":2,"event":"driver_features","select":0,"accepted":8}
+{"seq":3,"event":"driver_features","select":1,"accepted":1}
+{"seq":4,"event":"queue_notify","valid":true}
+{"seq":5,"event":"command","name":"GET_CAPSET_INFO","response_name":"OK_CAPSET_INFO","response_capset_id":1}
+{"seq":6,"event":"command","name":"GET_CAPSET","response_name":"OK_CAPSET","capset_id":1}
+{"seq":7,"event":"command","name":"RESOURCE_CREATE_3D","response_name":"OK_NODATA"}
+{"seq":8,"event":"command","name":"RESOURCE_ATTACH_BACKING","response_name":"OK_NODATA"}
+{"seq":9,"event":"command","name":"CTX_CREATE","response_name":"OK_NODATA","context_init":1}
+{"seq":10,"event":"command","name":"SUBMIT_3D","response_name":"OK_NODATA","fenced":true,"submit_size":16}
+{"seq":11,"event":"fence_create","backend_accepted":true,"outcome":"parked"}
+{"seq":12,"event":"fence_deliver"}
+JSONL
+
+output="$(
+  cargo run -q -p bridgevm-cli -- \
+    hvf virtio-gpu-trace-report \
+    --trace "$TRACE" \
+    --protocol virgl \
+    --require-p3-gate 2>&1
+)" || fail "legacy VIRGL trace report failed: $output"
+
+assert_contains "$output" "Selected protocol: virgl" "legacy VIRGL trace report"
+assert_contains "$output" "VENUS feature set accepted: false" "legacy VIRGL trace report"
+assert_contains "$output" "RESOURCE_CREATE_3D OK: true" "legacy VIRGL trace report"
+assert_contains "$output" "RESOURCE_ATTACH_BACKING OK: true" "legacy VIRGL trace report"
+assert_contains "$output" "RESOURCE_CREATE_BLOB OK: false" "legacy VIRGL trace report"
+assert_contains "$output" "P3 Windows 3D trace gate: PASS" "legacy VIRGL trace report"
 
 echo "PASS: HVF virtio-gpu trace report CLI smoke ($STORE)"

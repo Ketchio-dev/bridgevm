@@ -872,6 +872,10 @@ fn build_pci_root_dsdt_device() -> Vec<u8> {
         machine::PCIE_MMIO_32.base,
         machine::PCIE_MMIO_32.size,
     ));
+    crs.extend(resource_qword_memory(
+        machine::PCIE_MMIO_64.base,
+        machine::PCIE_MMIO_64.size,
+    ));
     crs.extend(resource_dword_io(
         machine::PCIE_PIO.base,
         machine::PCIE_PIO.size,
@@ -1577,6 +1581,13 @@ mod tests {
                 &resource_dword_memory(machine::PCIE_MMIO_32.base, machine::PCIE_MMIO_32.size),
             ),
             "DSDT must describe the PCI 32-bit MMIO aperture"
+        );
+        assert!(
+            contains_bytes(
+                dsdt,
+                &resource_qword_memory(machine::PCIE_MMIO_64.base, machine::PCIE_MMIO_64.size),
+            ),
+            "DSDT must describe the PCI 64-bit MMIO aperture"
         );
         assert!(
             contains_bytes(

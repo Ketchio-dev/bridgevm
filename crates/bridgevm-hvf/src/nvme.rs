@@ -651,6 +651,10 @@ pub struct NvmeController {
     /// allocation instead of allocating per PRP page. Holds no state between
     /// commands; each command fully overwrites the prefix it reads.
     io_scratch: Vec<u8>,
+    /// Whether the zero-copy host-pointer data path is allowed. The default is
+    /// enabled; `BRIDGEVM_NVME_BUFFERED_IO=1` forces the byte-identical buffered
+    /// path for one-process storage-integrity A/B diagnostics.
+    direct_dma_enabled: bool,
     /// Reusable PRP decode output for NVM READ/WRITE. The hot I/O path fills this
     /// per command instead of allocating a span vector for every transfer.
     prp_spans_scratch: Vec<(u64, usize)>,
@@ -708,6 +712,7 @@ impl NvmeController {
             msix: MsixTable::new(NVME_MSIX_VECTOR_COUNT),
             command_trace: VecDeque::with_capacity(COMMAND_TRACE_CAPACITY),
             io_scratch: Vec::new(),
+            direct_dma_enabled: true,
             prp_spans_scratch: Vec::new(),
             io_segments_scratch: Vec::new(),
             pending_async_event_requests: 0,
@@ -717,20 +722,36 @@ impl NvmeController {
     /// Replace the backing disk image, padding to a full LBA. This resets queue
     /// and controller register state, mirroring a cold-plugged different device.
     pub fn load_disk_image(&mut self, disk: Vec<u8>) {
+        let direct_dma_enabled = self.direct_dma_enabled;
         *self = Self::with_disk_image(disk);
+        self.direct_dma_enabled = direct_dma_enabled;
     }
 
     /// Replace the backing disk with a host raw file and reset controller state.
     pub fn load_raw_file(&mut self, path: impl AsRef<Path>, write_back: bool) -> io::Result<()> {
+        let direct_dma_enabled = self.direct_dma_enabled;
         *self = Self::with_raw_file(path, write_back)?;
+        self.direct_dma_enabled = direct_dma_enabled;
         Ok(())
     }
 
     pub fn reset_registers_keep_disks(&mut self) {
+        let direct_dma_enabled = self.direct_dma_enabled;
         let disk = std::mem::replace(&mut self.disk, DiskBackend::memory(Vec::new()));
         let disk2 = self.disk2.take();
         *self = Self::with_disk_backend(disk);
         self.disk2 = disk2;
+        self.direct_dma_enabled = direct_dma_enabled;
+    }
+
+    /// Select the NVMe data path without changing queue or media state. This is
+    /// primarily useful for deterministic diagnostics and tests.
+    pub fn set_direct_dma_enabled(&mut self, enabled: bool) {
+        self.direct_dma_enabled = enabled;
+    }
+
+    pub fn direct_dma_enabled(&self) -> bool {
+        self.direct_dma_enabled
     }
 
     /// Attach a blank NSID-2 target namespace backed by `disk_bytes` of in-memory
@@ -1638,10 +1659,14 @@ impl NvmeController {
         let mut segments = std::mem::take(&mut self.io_segments_scratch);
         segments.clear();
         coalesce_spans_into(&spans, &mut segments);
-        let status = if let Some(status) = self.io_read_direct(cmd.nsid, start, &segments, mem) {
-            status
+        let direct_status = if self.direct_dma_enabled {
+            self.io_read_direct(cmd.nsid, start, &segments, mem)
         } else {
-            self.io_read_buffered(cmd.nsid, start, len, &segments, mem)
+            None
+        };
+        let status = match direct_status {
+            Some(status) => status,
+            None => self.io_read_buffered(cmd.nsid, start, len, &segments, mem),
         };
         spans.clear();
         segments.clear();
@@ -1751,10 +1776,14 @@ impl NvmeController {
         let mut segments = std::mem::take(&mut self.io_segments_scratch);
         segments.clear();
         coalesce_spans_into(&spans, &mut segments);
-        let status = if let Some(status) = self.io_write_direct(cmd.nsid, start, &segments, mem) {
-            status
+        let direct_status = if self.direct_dma_enabled {
+            self.io_write_direct(cmd.nsid, start, &segments, mem)
         } else {
-            self.io_write_buffered(cmd.nsid, start, len, &segments, mem)
+            None
+        };
+        let status = match direct_status {
+            Some(status) => status,
+            None => self.io_write_buffered(cmd.nsid, start, len, &segments, mem),
         };
         spans.clear();
         segments.clear();
@@ -4537,6 +4566,39 @@ mod tests {
             buffered, direct,
             "direct DMA and buffered fallback must be byte-identical"
         );
+    }
+
+    #[test]
+    fn forced_buffered_io_bypasses_an_available_host_pointer() {
+        let disk: Vec<u8> = (0..PAGE_SIZE)
+            .map(|i| (i.wrapping_mul(13).wrapping_add(5)) as u8)
+            .collect();
+        let mut ctrl = NvmeController::with_disk_image(disk.clone());
+        ctrl.set_direct_dma_enabled(false);
+        let mut mem = FakeMem::new(MEM_BASE, 0x10000);
+        mem.enable_host_ptr();
+
+        let blocks = PAGE_SIZE as u32 / LBA_SIZE as u32;
+        let read = SubmissionEntry::from_bytes(&encode_sqe(
+            NVM_OP_READ,
+            0x6f,
+            NSID,
+            DATA_BASE,
+            0,
+            0,
+            blocks - 1,
+        ));
+        assert_eq!(ctrl.io_read(&read, &mut mem), SC_SUCCESS);
+        assert_eq!(mem.read_bytes(DATA_BASE, PAGE_SIZE).unwrap(), disk);
+        assert!(
+            ctrl.io_scratch.len() >= PAGE_SIZE,
+            "the forced-buffered path must populate reusable staging storage"
+        );
+
+        ctrl.reset_registers_keep_disks();
+        assert!(!ctrl.direct_dma_enabled());
+        ctrl.load_disk_image(vec![0u8; PAGE_SIZE]);
+        assert!(!ctrl.direct_dma_enabled());
     }
 
     #[test]

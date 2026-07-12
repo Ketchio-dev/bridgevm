@@ -1,7 +1,6 @@
-//! Minimal modern virtio-gpu PCI device model.
+//! Modern virtio-gpu PCI device model with a 2D scanout and optional 3D backend.
 //!
-//! This is a 2D-only display device for Windows' Display-Only virtio GPU
-//! driver. It deliberately mirrors the proven modern virtio-pci transport in
+//! It deliberately mirrors the proven modern virtio-pci transport in
 //! `virtio_net.rs` instead of sharing transport code, so existing net/block
 //! paths keep their validated behavior.
 
@@ -16,14 +15,16 @@ use crate::{
     },
     ramfb::DRM_FORMAT_XRGB8888,
     virtio_gpu_3d::{
-        self, CompletedFence, CtrlHdr3d, GpuShmMapPort, VirtioGpu3d, VirtioGpu3dBackend,
-        VirtioGpu3dStats, VIRTIO_GPU_BLOB_MEM_GUEST, VIRTIO_GPU_BLOB_MEM_HOST3D,
-        VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE, VIRTIO_GPU_CMD_CTX_CREATE, VIRTIO_GPU_CMD_CTX_DESTROY,
-        VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE, VIRTIO_GPU_CMD_GET_CAPSET,
-        VIRTIO_GPU_CMD_GET_CAPSET_INFO, VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB,
-        VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB, VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB,
-        VIRTIO_GPU_CMD_SUBMIT_3D, VIRTIO_GPU_FLAG_FENCE, VIRTIO_GPU_F_CONTEXT_INIT,
-        VIRTIO_GPU_F_RESOURCE_BLOB, VIRTIO_GPU_F_VIRGL,
+        self, BlobMemEntry, CompletedFence, CtrlHdr3d, GpuShmMapPort, VirtioGpu3d,
+        VirtioGpu3dBackend, VirtioGpu3dStats, VIRTIO_GPU_BLOB_MEM_GUEST,
+        VIRTIO_GPU_BLOB_MEM_HOST3D, VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE, VIRTIO_GPU_CMD_CTX_CREATE,
+        VIRTIO_GPU_CMD_CTX_DESTROY, VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE, VIRTIO_GPU_CMD_GET_CAPSET,
+        VIRTIO_GPU_CMD_GET_CAPSET_INFO, VIRTIO_GPU_CMD_RESOURCE_CREATE_3D,
+        VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB, VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB,
+        VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB, VIRTIO_GPU_CMD_SUBMIT_3D,
+        VIRTIO_GPU_CMD_TRANSFER_FROM_HOST_3D, VIRTIO_GPU_CMD_TRANSFER_TO_HOST_3D,
+        VIRTIO_GPU_FLAG_FENCE, VIRTIO_GPU_F_CONTEXT_INIT, VIRTIO_GPU_F_RESOURCE_BLOB,
+        VIRTIO_GPU_F_VIRGL,
     },
     virtio_gpu_trace::{write_json_string, VirtioGpuTraceRecorder},
 };
@@ -905,17 +906,16 @@ impl VirtioGpu {
             return ChainCompletion::Immediate(used_len);
         };
         self.trace_command(queue_index, head, control, &request, hdr, &response);
-        // Only defer commands that were dispatched to the 3D backend behind a
-        // backend fence. 2D display bring-up commands (GET_DISPLAY_INFO, GET_EDID,
-        // RESOURCE_CREATE_2D, SET_SCANOUT, RESOURCE_FLUSH, ...) are executed
-        // synchronously here, so their fence is already satisfied and the response
-        // must complete on the used ring in this same notify. Firmware sets the
-        // fence flag but never issues a follow-up notify — parking a 2D command on
-        // a backend fence that no context will ever retire hangs the boot.
+        // Defer only commands that can leave GPU work in flight. Resource/context
+        // lifecycle, capset, and map operations are complete when their backend
+        // call returns, so their fence is already satisfied. In particular,
+        // RESOURCE_CREATE_3D normally carries ctx_id=0; trying to create a context
+        // fence for it is invalid in virglrenderer and floods the host log.
         if control
             && hdr.flags & VIRTIO_GPU_FLAG_FENCE != 0
+            && hdr.ctx_id != 0
             && self.three_d.has_backend()
-            && command_targets_3d_backend(hdr.typ)
+            && command_requires_backend_fence(hdr.typ)
         {
             let fence = CompletedFence {
                 ctx_id: hdr.ctx_id,
@@ -1043,7 +1043,7 @@ impl VirtioGpu {
             }
             VIRTIO_GPU_CMD_RESOURCE_UNREF => self.resource_unref_into(request, Some(hdr), out),
             VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING => {
-                self.attach_backing_into(request, Some(hdr), out)
+                self.attach_backing_into(mem, request, Some(hdr), out)
             }
             VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING => {
                 self.detach_backing_into(request, Some(hdr), out)
@@ -1061,6 +1061,9 @@ impl VirtioGpu {
             | VIRTIO_GPU_CMD_CTX_DESTROY
             | VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE
             | VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE
+            | VIRTIO_GPU_CMD_RESOURCE_CREATE_3D
+            | VIRTIO_GPU_CMD_TRANSFER_TO_HOST_3D
+            | VIRTIO_GPU_CMD_TRANSFER_FROM_HOST_3D
             | VIRTIO_GPU_CMD_SUBMIT_3D
             | VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB
             | VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => {
@@ -1219,7 +1222,13 @@ impl VirtioGpu {
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
     }
 
-    fn attach_backing_into(&mut self, request: &[u8], hdr: Option<CtrlHdr>, out: &mut Vec<u8>) {
+    fn attach_backing_into(
+        &mut self,
+        mem: &dyn GuestMemoryMut,
+        request: &[u8],
+        hdr: Option<CtrlHdr>,
+        out: &mut Vec<u8>,
+    ) {
         let Some(resource_id) = read_le_u32(request, 24) else {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
             return;
@@ -1233,18 +1242,30 @@ impl VirtioGpu {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
             return;
         }
-        let Some(resource) = self.resources.get_mut(&resource_id) else {
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
-            return;
-        };
-        resource.backing.clear();
-        resource.backing.reserve(nr_entries as usize);
+        let mut backing = Vec::with_capacity(nr_entries as usize);
         let mut offset = 32usize;
         for _ in 0..nr_entries {
             let addr = read_le_u64(request, offset).unwrap();
             let len = read_le_u32(request, offset + 8).unwrap();
-            resource.backing.push(BackingEntry { addr, len });
+            backing.push(BlobMemEntry { addr, len });
             offset += 16;
+        }
+        if let Some(resource) = self.resources.get_mut(&resource_id) {
+            resource.backing.clear();
+            resource
+                .backing
+                .extend(backing.iter().map(|entry| BackingEntry {
+                    addr: entry.addr,
+                    len: entry.len,
+                }));
+        } else if self.three_d.is_3d_resource(resource_id) {
+            if !self.three_d.attach_3d_backing(mem, resource_id, &backing) {
+                response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+                return;
+            }
+        } else {
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+            return;
         }
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
     }
@@ -1253,6 +1274,11 @@ impl VirtioGpu {
         if let Some(resource_id) = read_le_u32(request, 24) {
             if let Some(resource) = self.resources.get_mut(&resource_id) {
                 resource.backing.clear();
+            } else if self.three_d.is_3d_resource(resource_id)
+                && !self.three_d.detach_3d_backing(resource_id)
+            {
+                response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+                return;
             }
         }
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
@@ -2076,22 +2102,15 @@ fn response_hdr_into(out: &mut Vec<u8>, typ: u32, request: Option<CtrlHdr>) {
     hdr.append_to(out);
 }
 
-/// Commands routed to the 3D backend (`handle_control_request`'s 3D arm). Only
-/// these may be deferred behind a backend fence; every other control command is
-/// a synchronous 2D operation whose fence is satisfied the moment it returns.
-fn command_targets_3d_backend(typ: u32) -> bool {
+/// Commands whose backend call can leave rendering or transfer work in flight.
+/// Every other command is synchronous and may complete its virtqueue fence as
+/// soon as the call returns, even when it was routed through the 3D backend.
+fn command_requires_backend_fence(typ: u32) -> bool {
     matches!(
         typ,
-        VIRTIO_GPU_CMD_GET_CAPSET_INFO
-            | VIRTIO_GPU_CMD_GET_CAPSET
-            | VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB
-            | VIRTIO_GPU_CMD_CTX_CREATE
-            | VIRTIO_GPU_CMD_CTX_DESTROY
-            | VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE
-            | VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE
+        VIRTIO_GPU_CMD_TRANSFER_TO_HOST_3D
+            | VIRTIO_GPU_CMD_TRANSFER_FROM_HOST_3D
             | VIRTIO_GPU_CMD_SUBMIT_3D
-            | VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB
-            | VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB
     )
 }
 
@@ -2114,6 +2133,9 @@ fn command_name(typ: u32) -> &'static str {
         VIRTIO_GPU_CMD_CTX_DESTROY => "CTX_DESTROY",
         VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE => "CTX_ATTACH_RESOURCE",
         VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE => "CTX_DETACH_RESOURCE",
+        VIRTIO_GPU_CMD_RESOURCE_CREATE_3D => "RESOURCE_CREATE_3D",
+        VIRTIO_GPU_CMD_TRANSFER_TO_HOST_3D => "TRANSFER_TO_HOST_3D",
+        VIRTIO_GPU_CMD_TRANSFER_FROM_HOST_3D => "TRANSFER_FROM_HOST_3D",
         VIRTIO_GPU_CMD_SUBMIT_3D => "SUBMIT_3D",
         VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB => "RESOURCE_MAP_BLOB",
         VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => "RESOURCE_UNMAP_BLOB",
@@ -2290,6 +2312,40 @@ fn write_trace_command_details(out: &mut String, request: &[u8], hdr: CtrlHdr) {
                 out,
                 ",\"resource_id\":{}",
                 read_le_u32(request, 24).unwrap_or(0)
+            );
+        }
+        VIRTIO_GPU_CMD_RESOURCE_CREATE_3D => {
+            let _ = write!(
+                out,
+                ",\"resource_id\":{},\"target\":{},\"format\":{},\"bind\":{},\"width\":{},\"height\":{},\"depth\":{},\"array_size\":{},\"last_level\":{},\"nr_samples\":{},\"resource_flags\":{}",
+                read_le_u32(request, 24).unwrap_or(0),
+                read_le_u32(request, 28).unwrap_or(0),
+                read_le_u32(request, 32).unwrap_or(0),
+                read_le_u32(request, 36).unwrap_or(0),
+                read_le_u32(request, 40).unwrap_or(0),
+                read_le_u32(request, 44).unwrap_or(0),
+                read_le_u32(request, 48).unwrap_or(0),
+                read_le_u32(request, 52).unwrap_or(0),
+                read_le_u32(request, 56).unwrap_or(0),
+                read_le_u32(request, 60).unwrap_or(0),
+                read_le_u32(request, 64).unwrap_or(0)
+            );
+        }
+        VIRTIO_GPU_CMD_TRANSFER_TO_HOST_3D | VIRTIO_GPU_CMD_TRANSFER_FROM_HOST_3D => {
+            let _ = write!(
+                out,
+                ",\"resource_id\":{},\"level\":{},\"stride\":{},\"layer_stride\":{},\"transfer_offset\":{},\"box_x\":{},\"box_y\":{},\"box_z\":{},\"box_w\":{},\"box_h\":{},\"box_d\":{}",
+                read_le_u32(request, 56).unwrap_or(0),
+                read_le_u32(request, 60).unwrap_or(0),
+                read_le_u32(request, 64).unwrap_or(0),
+                read_le_u32(request, 68).unwrap_or(0),
+                read_le_u64(request, 48).unwrap_or(0),
+                read_le_u32(request, 24).unwrap_or(0),
+                read_le_u32(request, 28).unwrap_or(0),
+                read_le_u32(request, 32).unwrap_or(0),
+                read_le_u32(request, 36).unwrap_or(0),
+                read_le_u32(request, 40).unwrap_or(0),
+                read_le_u32(request, 44).unwrap_or(0)
             );
         }
         VIRTIO_GPU_CMD_SUBMIT_3D => {
@@ -3572,6 +3628,7 @@ mod tests {
     #[test]
     fn attach_backing_reuses_resource_backing_and_preserves_on_malformed_request() {
         let mut gpu = VirtioGpu::new(4, 3);
+        let mem = TestMem::new(0x4000_0000, 0x20000);
         let mut response = Vec::new();
         let mut create = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_CREATE_2D);
         create.extend_from_slice(&1u32.to_le_bytes());
@@ -3592,7 +3649,7 @@ mod tests {
         attach.extend_from_slice(&8u32.to_le_bytes());
         attach.extend_from_slice(&0u32.to_le_bytes());
         let hdr = CtrlHdr::parse(&attach).unwrap();
-        gpu.attach_backing_into(&attach, Some(hdr), &mut response);
+        gpu.attach_backing_into(&mem, &attach, Some(hdr), &mut response);
         assert_eq!(read_le_u32(&response, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
         let resource = gpu.resources.get(&1).unwrap();
         assert_eq!(
@@ -3618,7 +3675,7 @@ mod tests {
         malformed.extend_from_slice(&4u32.to_le_bytes());
         malformed.extend_from_slice(&0u32.to_le_bytes());
         let hdr = CtrlHdr::parse(&malformed).unwrap();
-        gpu.attach_backing_into(&malformed, Some(hdr), &mut response);
+        gpu.attach_backing_into(&mem, &malformed, Some(hdr), &mut response);
         assert_eq!(read_le_u32(&response, 0), Some(VIRTIO_GPU_RESP_ERR_UNSPEC));
         let resource = gpu.resources.get(&1).unwrap();
         assert_eq!(resource.backing.as_ptr(), backing_ptr);
@@ -3647,7 +3704,7 @@ mod tests {
         reattach.extend_from_slice(&32u32.to_le_bytes());
         reattach.extend_from_slice(&0u32.to_le_bytes());
         let hdr = CtrlHdr::parse(&reattach).unwrap();
-        gpu.attach_backing_into(&reattach, Some(hdr), &mut response);
+        gpu.attach_backing_into(&mem, &reattach, Some(hdr), &mut response);
         assert_eq!(read_le_u32(&response, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
         let resource = gpu.resources.get(&1).unwrap();
         assert_eq!(resource.backing.as_ptr(), backing_ptr);
@@ -4378,6 +4435,69 @@ mod tests {
     }
 
     #[test]
+    fn legacy_virgl_commands_route_through_common_backing_and_control_queue() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+
+        let mut create = ctrl_req_ctx(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0);
+        for field in [31u32, 2, 1, 0x402, 320, 200, 1, 1, 0, 0, 0, 0] {
+            create.extend_from_slice(&field.to_le_bytes());
+        }
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &create, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let mut backing = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING);
+        backing.extend_from_slice(&31u32.to_le_bytes());
+        backing.extend_from_slice(&1u32.to_le_bytes());
+        backing.extend_from_slice(&0x4002_0000u64.to_le_bytes());
+        backing.extend_from_slice(&0x1000u32.to_le_bytes());
+        backing.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &backing, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        assert_eq!(
+            read_le_u32(
+                &submit_control(&mut dev, &mut mem, &ctx_create_req(7, 0, b""), 24),
+                0
+            ),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        let mut attach = ctrl_req_ctx(VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE, 7);
+        attach.extend_from_slice(&31u32.to_le_bytes());
+        attach.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &attach, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let mut transfer = ctrl_req_ctx(VIRTIO_GPU_CMD_TRANSFER_TO_HOST_3D, 7);
+        for field in [0u32, 0, 0, 32, 16, 1] {
+            transfer.extend_from_slice(&field.to_le_bytes());
+        }
+        transfer.extend_from_slice(&0u64.to_le_bytes());
+        for field in [31u32, 0, 128, 2048] {
+            transfer.extend_from_slice(&field.to_le_bytes());
+        }
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &transfer, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let inner = backend.lock().unwrap();
+        assert_eq!(inner.created_3d.len(), 1);
+        assert_eq!(inner.created_3d[0].resource_id, 31);
+        assert_eq!(inner.backing_attached, vec![(31, 1, 0x1000)]);
+        assert_eq!(inner.attached, vec![(7, 31)]);
+        assert_eq!(inner.transfers_3d.len(), 1);
+        assert!(inner.transfers_3d[0].1);
+        assert_eq!(inner.transfers_3d[0].0.resource_id, 31);
+    }
+
+    #[test]
     fn two_d_only_rejects_three_d_and_reports_zero_capsets() {
         let mut dev = VirtioPciGpu::new(1280, 800);
         let mut mem = TestMem::new(0x4000_0000, 0x20000);
@@ -4746,6 +4866,41 @@ mod tests {
         assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_DISPLAY_INFO));
         assert_eq!(dev.stats().three_d.fences_pending, 0);
         // A 2D command must not have been handed to the backend as a fence.
+        assert!(backend.lock().unwrap().fences.is_empty());
+    }
+
+    #[test]
+    fn fenced_resource_create_3d_completes_without_context_zero_fence() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        let mut req = ctrl_req_fenced(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0, 0, 8);
+        for field in [41u32, 2, 1, 0x402, 640, 480, 1, 1, 0, 0, 0, 0] {
+            req.extend_from_slice(&field.to_le_bytes());
+        }
+
+        let (resp, used_idx) =
+            submit_control_readable_descs(&mut dev, &mut mem, &[&req], 24);
+
+        assert_eq!(used_idx, 1);
+        assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+        assert_eq!(dev.stats().three_d.fences_pending, 0);
+        assert!(backend.lock().unwrap().fences.is_empty());
+    }
+
+    #[test]
+    fn fenced_empty_context_zero_submit_completes_without_backend_fence() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        let mut req = ctrl_req_fenced(VIRTIO_GPU_CMD_SUBMIT_3D, 0, 0, 9);
+        req.extend_from_slice(&0u32.to_le_bytes());
+        req.extend_from_slice(&0u32.to_le_bytes());
+
+        let (resp, used_idx) =
+            submit_control_readable_descs(&mut dev, &mut mem, &[&req], 24);
+
+        assert_eq!(used_idx, 1);
+        assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+        assert_eq!(dev.stats().three_d.fences_pending, 0);
         assert!(backend.lock().unwrap().fences.is_empty());
     }
 }

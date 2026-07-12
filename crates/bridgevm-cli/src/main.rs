@@ -4612,6 +4612,8 @@ struct VirtioGpuTraceReport {
     capset_ok: bool,
     virgl_capset_ok: bool,
     venus_capset_ok: bool,
+    resource_create_3d_ok: bool,
+    resource_attach_backing_ok: bool,
     blob_create_ok: bool,
     ctx_create_ok: bool,
     virgl_ctx_create_ok: bool,
@@ -4687,6 +4689,8 @@ impl VirtioGpuTraceReport {
                 }
             }
             ("RESOURCE_CREATE_BLOB", "OK_NODATA") => self.blob_create_ok = true,
+            ("RESOURCE_CREATE_3D", "OK_NODATA") => self.resource_create_3d_ok = true,
+            ("RESOURCE_ATTACH_BACKING", "OK_NODATA") => self.resource_attach_backing_ok = true,
             ("CTX_CREATE", "OK_NODATA") => {
                 self.ctx_create_ok = true;
                 if let Some(context_init) = json_u64(value, "context_init") {
@@ -4716,7 +4720,7 @@ impl VirtioGpuTraceReport {
         self.backend_3d || self.backend_attached
     }
 
-    fn accepted_3d_features(&self) -> bool {
+    fn accepted_venus_features(&self) -> bool {
         let required = VIRTIO_GPU_TRACE_FEATURE_VIRGL
             | VIRTIO_GPU_TRACE_FEATURE_RESOURCE_BLOB
             | VIRTIO_GPU_TRACE_FEATURE_CONTEXT_INIT;
@@ -4754,10 +4758,6 @@ impl VirtioGpuTraceReport {
         if !self.has_3d_backend() {
             blockers.push("3D backend not attached in trace".to_string());
         }
-        if !self.accepted_3d_features() {
-            blockers
-                .push("driver did not accept VIRGL, RESOURCE_BLOB, and CONTEXT_INIT".to_string());
-        }
         if !self.accepted_version_1() {
             blockers.push("driver did not accept VIRTIO_F_VERSION_1".to_string());
         }
@@ -4769,9 +4769,6 @@ impl VirtioGpuTraceReport {
         }
         if !self.capset_ok {
             blockers.push("missing successful GET_CAPSET".to_string());
-        }
-        if !self.blob_create_ok {
-            blockers.push("missing successful RESOURCE_CREATE_BLOB".to_string());
         }
         if !self.ctx_create_ok {
             blockers.push("missing successful CTX_CREATE".to_string());
@@ -4815,6 +4812,13 @@ impl VirtioGpuTraceReport {
 
     fn venus_protocol_blockers(&self) -> Vec<String> {
         let mut blockers = Vec::new();
+        if !self.accepted_venus_features() {
+            blockers
+                .push("driver did not accept VIRGL, RESOURCE_BLOB, and CONTEXT_INIT".to_string());
+        }
+        if !self.blob_create_ok {
+            blockers.push("missing successful RESOURCE_CREATE_BLOB".to_string());
+        }
         if !self.venus_capset_info_ok {
             blockers.push("GET_CAPSET_INFO did not report VENUS capset id 4".to_string());
         }
@@ -4829,6 +4833,12 @@ impl VirtioGpuTraceReport {
 
     fn virgl_protocol_blockers(&self) -> Vec<String> {
         let mut blockers = Vec::new();
+        if !self.resource_create_3d_ok {
+            blockers.push("missing successful RESOURCE_CREATE_3D".to_string());
+        }
+        if !self.resource_attach_backing_ok {
+            blockers.push("missing successful RESOURCE_ATTACH_BACKING".to_string());
+        }
         if !self.virgl_capset_info_ok {
             blockers
                 .push("GET_CAPSET_INFO did not report VIRGL/VIRGL2 capset id 1 or 2".to_string());
@@ -4919,7 +4929,10 @@ fn print_virtio_gpu_trace_report(
         "Driver feature word1: {}",
         hex_option(report.driver_features_word1)
     );
-    println!("3D features accepted: {}", report.accepted_3d_features());
+    println!(
+        "VENUS feature set accepted: {}",
+        report.accepted_venus_features()
+    );
     println!(
         "VIRTIO_F_VERSION_1 accepted: {}",
         report.accepted_version_1()
@@ -4937,6 +4950,11 @@ fn print_virtio_gpu_trace_report(
     println!("GET_CAPSET OK: {}", report.capset_ok);
     println!("GET_CAPSET VIRGL/VIRGL2 id 1/2: {}", report.virgl_capset_ok);
     println!("GET_CAPSET VENUS id 4: {}", report.venus_capset_ok);
+    println!("RESOURCE_CREATE_3D OK: {}", report.resource_create_3d_ok);
+    println!(
+        "RESOURCE_ATTACH_BACKING OK: {}",
+        report.resource_attach_backing_ok
+    );
     println!("RESOURCE_CREATE_BLOB OK: {}", report.blob_create_ok);
     println!("CTX_CREATE OK: {}", report.ctx_create_ok);
     println!(
@@ -6385,7 +6403,7 @@ mod tests {
         assert_eq!(report.events, 13);
         assert!(report.device_init);
         assert!(report.has_3d_backend());
-        assert!(report.accepted_3d_features());
+        assert!(report.accepted_venus_features());
         assert!(report.accepted_version_1());
         assert!(report.capset_info_ok);
         assert!(report.venus_capset_info_ok);
@@ -6412,7 +6430,7 @@ mod tests {
         fs::write(
             &path,
             r#"{"seq":1,"event":"device_init","backend_3d":true}
-{"seq":2,"event":"driver_features","select":0,"accepted":25}
+{"seq":2,"event":"driver_features","select":0,"accepted":8}
 {"seq":3,"event":"driver_features","select":1,"accepted":1}
 {"seq":4,"event":"queue_notify","valid":true}
 {"seq":5,"event":"command","name":"GET_CAPSET_INFO","response_name":"OK_CAPSET_INFO","response_capset_id":4,"response_capset_max_version":1,"response_capset_max_size":64}
@@ -6446,11 +6464,12 @@ mod tests {
 {"seq":4,"event":"queue_notify","valid":true}
 {"seq":5,"event":"command","name":"GET_CAPSET_INFO","response_name":"OK_CAPSET_INFO","response_capset_id":1,"response_capset_max_version":1,"response_capset_max_size":64}
 {"seq":6,"event":"command","name":"GET_CAPSET","response_name":"OK_CAPSET","capset_id":1,"capset_version":1}
-{"seq":7,"event":"command","name":"RESOURCE_CREATE_BLOB","response_name":"OK_NODATA"}
-{"seq":8,"event":"command","name":"CTX_CREATE","response_name":"OK_NODATA","context_init":1}
-{"seq":9,"event":"command","name":"SUBMIT_3D","response_name":"OK_NODATA","fenced":true,"submit_size":16}
-{"seq":10,"event":"fence_create","ctx_id":1,"ring_idx":0,"fence_id":9,"backend_accepted":true,"outcome":"parked"}
-{"seq":11,"event":"fence_deliver","ctx_id":1,"ring_idx":0,"fence_id":9,"used_len":24}
+{"seq":7,"event":"command","name":"RESOURCE_CREATE_3D","response_name":"OK_NODATA"}
+{"seq":8,"event":"command","name":"RESOURCE_ATTACH_BACKING","response_name":"OK_NODATA"}
+{"seq":9,"event":"command","name":"CTX_CREATE","response_name":"OK_NODATA","context_init":1}
+{"seq":10,"event":"command","name":"SUBMIT_3D","response_name":"OK_NODATA","fenced":true,"submit_size":16}
+{"seq":11,"event":"fence_create","ctx_id":1,"ring_idx":0,"fence_id":9,"backend_accepted":true,"outcome":"parked"}
+{"seq":12,"event":"fence_deliver","ctx_id":1,"ring_idx":0,"fence_id":9,"used_len":24}
 "#,
         )
         .unwrap();
@@ -6467,6 +6486,9 @@ mod tests {
         assert!(report.virgl_capset_info_ok);
         assert!(report.virgl_capset_ok);
         assert!(report.virgl_ctx_create_ok);
+        assert!(report.resource_create_3d_ok);
+        assert!(report.resource_attach_backing_ok);
+        assert!(!report.blob_create_ok);
         assert!(report
             .p3_blockers(VirtioGpuTraceProtocolChoice::Auto)
             .is_empty());

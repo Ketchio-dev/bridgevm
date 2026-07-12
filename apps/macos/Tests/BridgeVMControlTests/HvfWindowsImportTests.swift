@@ -33,12 +33,20 @@ final class HvfWindowsImportTests: XCTestCase {
         XCTAssertEqual(config.cpuCount, 4)
         XCTAssertEqual(config.displayWidth, 1920)
         XCTAssertEqual(config.displayHeight, 1080)
-        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: try XCTUnwrap(config.diskPath))), diskBytes)
+        let importedDisk = URL(fileURLWithPath: try XCTUnwrap(config.diskPath))
+        let importedHandle = try FileHandle(forReadingFrom: importedDisk)
+        defer { try? importedHandle.close() }
+        XCTAssertEqual(try importedHandle.read(upToCount: diskBytes.count), diskBytes)
+        let importedSize = try XCTUnwrap(
+            (try FileManager.default.attributesOfItem(atPath: importedDisk.path)[.size] as? NSNumber)?.uint64Value
+        )
+        XCTAssertEqual(importedSize, VMLibrary.minimumImportedWindowsHVFDiskGiB * 1024 * 1024 * 1024)
         XCTAssertEqual(
             try Data(contentsOf: URL(fileURLWithPath: config.bundlePath).appendingPathComponent("metadata/hvf-vars.fd")),
             varsBytes
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: config.bundlePath + "/metadata/hvf.ctl"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: config.bundlePath + "/metadata/hvf-grow-pending"))
         XCTAssertEqual(try Data(contentsOf: sourceDisk), diskBytes)
         XCTAssertEqual(try Data(contentsOf: sourceVars), varsBytes)
     }

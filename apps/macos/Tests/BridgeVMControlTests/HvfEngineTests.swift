@@ -51,6 +51,7 @@ final class HvfEngineConfigTests: XCTestCase {
         XCTAssertEqual(value(after: "--agent-share-host", in: args), "/Users/me/share")
         XCTAssertEqual(value(after: "--agent-share-guest", in: args), "C:\\share")
         XCTAssertEqual(value(after: "--agent-share-ms", in: args), "2000")
+        XCTAssertEqual(value(after: "--agent-share-max-kb", in: args), "65536")
     }
 
     func testPartialShareDoesNotEmitShareArguments() {
@@ -67,6 +68,24 @@ final class HvfEngineConfigTests: XCTestCase {
                                   ctlFilePath: "c")
         XCTAssertFalse(cfg.wrapperArguments().contains("--agent-share-host"))
         XCTAssertFalse(cfg.wrapperArguments().contains("--agent-share-ms"))
+        XCTAssertFalse(cfg.wrapperArguments().contains("--agent-share-max-kb"))
+    }
+
+    func testDisabledWatchdogEmitsExplicitNoWatchdogPolicy() {
+        let cfg = HvfEngineConfig(targetDiskPath: "t",
+                                  uefiVarsPath: "v",
+                                  evidenceDir: "e",
+                                  watchdogMs: nil,
+                                  ramMiB: 6144,
+                                  smpCpus: 4,
+                                  clipboardSync: false,
+                                  shareHostDir: nil,
+                                  shareGuestDir: nil,
+                                  virtioNet: false,
+                                  ctlFilePath: "c")
+        let args = cfg.wrapperArguments()
+        XCTAssertTrue(args.contains("--no-watchdog"))
+        XCTAssertFalse(args.contains("--watchdog-ms"))
     }
 
     private func value(after flag: String, in args: [String]) -> String? {
@@ -118,14 +137,21 @@ final class BvAgentEventTests: XCTestCase {
             "BVAGENT READY host=WIN11 v3-share2 t=42",
             "BVAGENT SERVICE start t=50",
             "BVAGENT SERVICE alive t=75",
-            "BVAGENT SERVICE timeout CLIPGET t=90"
+            "BVAGENT SERVICE overdue ctl awaiting-reply=true t=90"
         ])
         XCTAssertEqual(events, [
             .ready(host: "WIN11 v3-share2", tMs: 42),
             .serviceStart(tMs: 50),
             .aliveHeartbeat(tMs: 75),
-            .timeout(kind: "CLIPGET", tMs: 90)
+            .overdue(kind: "ctl", awaitingReply: true, tMs: 90)
         ])
+    }
+
+    func testParserMapsLegacyServiceTimeoutToNonfatalOverdueEvent() {
+        XCTAssertEqual(
+            BvAgentEvent.parse(lines: ["BVAGENT SERVICE timeout CLIPGET t=90"]),
+            [.overdue(kind: "CLIPGET", awaitingReply: false, tMs: 90)]
+        )
     }
 
     func testParserGroupsCommandOutput() {
@@ -275,6 +301,32 @@ final class HvfWindowsBackendTests: XCTestCase {
             try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8),
             "shutdown.exe /p /f\n"
         )
+    }
+
+    func testConcurrentControlWritesRemainWholeAndLossless() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
+        let backend = HvfWindowsBackend(cfg)
+
+        DispatchQueue.concurrentPerform(iterations: 32) { _ in
+            backend.requestGracefulStop()
+        }
+
+        let lines = try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8)
+            .split(separator: "\n")
+        XCTAssertEqual(lines.count, 32)
+        XCTAssertTrue(lines.allSatisfy { $0 == "shutdown.exe /p /f" })
+    }
+
+    func testPendingDiskGrowthCommandIsIdempotentOnlyAtDiskEnd() {
+        let command = HvfWindowsBackend.pendingDiskGrowthCommand
+
+        XCTAssertFalse(command.contains("\n"))
+        XCTAssertTrue(command.contains("$tailGap -gt 16777216"))
+        XCTAssertTrue(command.contains("throw 'C: has no contiguous extension space'"))
+        XCTAssertTrue(command.contains("$state='already-max'"))
+        XCTAssertTrue(command.contains("BRIDGEVM_DISK_GROW_OK state="))
     }
 
     private func makeTempDir() throws -> URL {

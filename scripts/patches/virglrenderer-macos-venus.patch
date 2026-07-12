@@ -1,31 +1,46 @@
+diff --git a/src/meson.build b/src/meson.build
+index 6207a74328700371fcf7877ce9f26a85b1a825bc..dd535d1b314bd37ea0e00b7bdbdf42c7711b4b33 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -180,6 +180,10 @@ virgl_depends = [
+    dl_dep,
+ ]
+
++if with_host_darwin
++   virgl_depends += [dependency('appleframeworks', modules: ['OpenGL'], required: true)]
++endif
++
+ if with_tracing == 'perfetto'
+    virgl_depends += [vperfetto_min_dep]
+ endif
 diff --git a/src/venus/venus-protocol/vn_protocol_renderer_dispatches.h b/src/venus/venus-protocol/vn_protocol_renderer_dispatches.h
-index a29a4fc..d1a1200 100644
+index a29a4fc66d13f9480145641f694c4af3196e484b..d1a12004f41b54cf9c8be519a08eefa459adf8d1 100644
 --- a/src/venus/venus-protocol/vn_protocol_renderer_dispatches.h
 +++ b/src/venus/venus-protocol/vn_protocol_renderer_dispatches.h
 @@ -7,6 +7,7 @@
- 
+
  #ifndef VN_PROTOCOL_RENDERER_DISPATCHES_H
  #define VN_PROTOCOL_RENDERER_DISPATCHES_H
 +#include <stdio.h>
- 
+
  #include "vn_protocol_renderer_structs.h"
  #include "vn_protocol_renderer_transport.h"
 @@ -736,8 +737,12 @@ static inline void vn_dispatch_command(struct vn_dispatch_context *ctx)
              vn_cs_decoder_set_fatal(ctx->decoder);
      }
- 
+
 -    if (vn_cs_decoder_get_fatal(ctx->decoder))
 +    if (vn_cs_decoder_get_fatal(ctx->decoder)) {
-+        /* BridgeVM: always surface CS errors; silent ring death is undebuggable. */
++        /* BridgeVM: always surface CS errors — silent ring death is undebuggable. */
 +        fprintf(stderr, "venus: dispatch CS error cmd=%d %s\n", (int)cmd_type,
 +                vn_dispatch_command_name(cmd_type));
          vn_dispatch_debug_log(ctx, "%s resulted in CS error", vn_dispatch_command_name(cmd_type));
 +    }
  }
- 
+
  #endif /* VN_PROTOCOL_RENDERER_DISPATCHES_H */
 diff --git a/src/venus/vkr_device.c b/src/venus/vkr_device.c
-index 3e943bf..22439b2 100644
+index 3e943bfdc7e79f353e71589dd3fa66034ba01d05..22439b2d8dfabe659bf52d9b1854d85fd9efc022 100644
 --- a/src/venus/vkr_device.c
 +++ b/src/venus/vkr_device.c
 @@ -132,6 +132,7 @@ vkr_dispatch_vkCreateDevice(struct vn_dispatch_context *dispatch,
@@ -37,7 +52,7 @@ index 3e943bf..22439b2 100644
     ext_count += physical_dev->KHR_portability_subset;
     ext_count += physical_dev->KHR_external_memory_fd;
 @@ -150,6 +151,8 @@ vkr_dispatch_vkCreateDevice(struct vn_dispatch_context *dispatch,
- 
+
        if (physical_dev->EXT_external_memory_metal)
           exts[ext_count++] = "VK_EXT_external_memory_metal";
 +      if (physical_dev->EXT_external_memory_host)
@@ -46,13 +61,13 @@ index 3e943bf..22439b2 100644
           exts[ext_count++] = "VK_EXT_metal_objects";
        if (physical_dev->KHR_portability_subset)
 diff --git a/src/venus/vkr_device_memory.c b/src/venus/vkr_device_memory.c
-index 57a108d..a375a14 100644
+index 57a108d6a2fc7141241e968521470a772217d62a..a375a144676bad1389ceb69711d60cad10ddebc2 100644
 --- a/src/venus/vkr_device_memory.c
 +++ b/src/venus/vkr_device_memory.c
 @@ -281,6 +281,7 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
     /* track if driver has requested export allocation */
     const bool might_export = export_info && export_info->handleTypes;
- 
+
 +
     /* XXX Force dma_buf/opaque fd export or gbm bo import until a new extension that
      * supports direct export from host visible memory
@@ -63,13 +78,13 @@ index 57a108d..a375a14 100644
     VkExportMemoryAllocateInfo local_export_info;
 -   VkImportMemoryMetalHandleInfoEXT local_metal_import;
 +   VkImportMemoryHostPointerInfoEXT local_host_import;
- 
+
     if ((property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && !res_info) {
        /* An implementation can support dma_buf import along with opaque fd export/import.
 @@ -357,13 +358,18 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
              return;
           }
- 
+
 -         local_metal_import = (VkImportMemoryMetalHandleInfoEXT){
 -            .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_METAL_HANDLE_INFO_EXT,
 +         /* BridgeVM: MoltenVK 1.4.1's MTLBuffer import does not alias the
@@ -91,20 +106,20 @@ index 57a108d..a375a14 100644
           valid_fd_types = 1 << VIRGL_RESOURCE_FD_SHM;
        } else if (physical_dev->EXT_external_memory_dma_buf) {
 diff --git a/src/venus/vkr_library.c b/src/venus/vkr_library.c
-index dc1f42c..41add3e 100644
+index dc1f42c4c306ce36db85706c33bb4872ce9a6051..41add3e8a6e3cf9234b45e99da2fec90c33a7818 100644
 --- a/src/venus/vkr_library.c
 +++ b/src/venus/vkr_library.c
 @@ -6,6 +6,7 @@
  #include "vkr_common.h"
- 
+
  #include <dlfcn.h>
 +#include <stdlib.h>
- 
+
  #include "vkr_library.h"
- 
+
 @@ -43,7 +44,14 @@ vkr_library_load(struct vulkan_library *lib)
        return true;
- 
+
  #ifdef __APPLE__
 -   lib->handle = dlopen("libvulkan.dylib", RTLD_NOW | RTLD_LOCAL);
 +   /* BridgeVM: absolute-path override that survives DYLD env stripping in
@@ -119,7 +134,7 @@ index dc1f42c..41add3e 100644
        lib->handle = dlopen("libvulkan.1.dylib", RTLD_NOW | RTLD_LOCAL);
     if (lib->handle == NULL)
 diff --git a/src/venus/vkr_physical_device.c b/src/venus/vkr_physical_device.c
-index 65fdf4c..38e8462 100644
+index 65fdf4c47d08c4c58754bae278be25105a4845f8..38e8462082589531b1518442b31a8926dde0ee34 100644
 --- a/src/venus/vkr_physical_device.c
 +++ b/src/venus/vkr_physical_device.c
 @@ -284,6 +284,8 @@ vkr_physical_device_init_extensions(struct vkr_physical_device *physical_dev)
@@ -132,14 +147,463 @@ index 65fdf4c..38e8462 100644
           physical_dev->EXT_metal_objects = true;
        else if (!strcmp(props->extensionName, "VK_KHR_portability_subset"))
 diff --git a/src/venus/vkr_physical_device.h b/src/venus/vkr_physical_device.h
-index 139b11a..6e0d08a 100644
+index 139b11ad8e655e0889a150b9a1f8e3e955e3c4ac..6e0d08a0bd1b81e9e45893535276d8c17948ba0d 100644
 --- a/src/venus/vkr_physical_device.h
 +++ b/src/venus/vkr_physical_device.h
 @@ -29,6 +29,7 @@ struct vkr_physical_device {
     bool KHR_external_semaphore_fd;
- 
+
     bool EXT_external_memory_metal;
 +   bool EXT_external_memory_host;
     bool EXT_metal_objects;
- 
+
     VkPhysicalDeviceMemoryProperties memory_properties;
+diff --git a/src/vrend/vrend_decode.c b/src/vrend/vrend_decode.c
+index 7774a253bc4532f95edeb92874a8987bc2e3ddd9..1909b4fbb2f33d4913a26859d1cc7584225e609a 100644
+--- a/src/vrend/vrend_decode.c
++++ b/src/vrend/vrend_decode.c
+@@ -28,6 +28,10 @@
+ #include <epoxy/gl.h>
+ #include <fcntl.h>
+
++#ifdef __APPLE__
++#include <OpenGL/OpenGL.h>
++#endif
++
+ #include "util/u_memory.h"
+ #include "pipe/p_defines.h"
+ #include "pipe/p_state.h"
+@@ -2053,7 +2057,10 @@ static int vrend_decode_ctx_submit_cmd(struct virgl_context *ctx,
+    TRACE_FUNC();
+    struct vrend_decode_ctx *gdctx = (struct vrend_decode_ctx *)ctx;
+    bool bret;
+-   int ret;
++   int ret = 0;
++#ifdef __APPLE__
++   CGLContextObj cgl_ctx = NULL;
++#endif
+
+ #define TRANSFER_HEADER_SIZE 4096
+
+@@ -2061,6 +2068,16 @@ static int vrend_decode_ctx_submit_cmd(struct virgl_context *ctx,
+    if (bret == false)
+       return EINVAL;
+
++#ifdef __APPLE__
++   /* CGL contexts are thread-local, while BridgeVM may service a serialized
++    * virtio-gpu queue notification on any vCPU thread.  Apple requires the
++    * complete use of a context to be bracketed when it can migrate between
++    * threads; merely calling CGLSetCurrentContext is not sufficient. */
++   cgl_ctx = CGLGetCurrentContext();
++   if (!cgl_ctx || CGLLockContext(cgl_ctx) != kCGLNoError)
++      return EINVAL;
++#endif
++
+    if (VREND_DEBUG_ENABLED &&
+        vrend_debug(gdctx->grctx, dbg_dump_cmd_streams) &&
+        size > TRANSFER_HEADER_SIZE) {
+@@ -2078,8 +2095,10 @@ static int vrend_decode_ctx_submit_cmd(struct virgl_context *ctx,
+       uint32_t len = *buf >> 16;
+       uint32_t cmd = *buf & 0xff;
+
+-      if (cmd >= VIRGL_MAX_COMMANDS)
+-         return EINVAL;
++      if (cmd >= VIRGL_MAX_COMMANDS) {
++         ret = EINVAL;
++         goto out;
++      }
+
+       buf_offset += len + 1;
+
+@@ -2103,10 +2122,15 @@ static int vrend_decode_ctx_submit_cmd(struct virgl_context *ctx,
+                gdctx->base.ctx_id, vrend_get_comand_name(cmd), ret);
+          if (ret == EINVAL)
+             vrend_report_buffer_error(gdctx->grctx, *buf);
+-         return ret;
++         goto out;
+       }
+    }
+-   return 0;
++
++out:
++#ifdef __APPLE__
++   CGLUnlockContext(cgl_ctx);
++#endif
++   return ret;
+ }
+
+ static int vrend_decode_ctx_get_fencing_fd(UNUSED struct virgl_context *ctx)
+diff --git a/src/vrend/vrend_renderer.c b/src/vrend/vrend_renderer.c
+index 4bccc44854d58e83e1cceb28758024d9e483c840..b6543039086e92905f0246380b1ac66c7e7d0e28 100644
+--- a/src/vrend/vrend_renderer.c
++++ b/src/vrend/vrend_renderer.c
+@@ -416,6 +416,68 @@ struct sysval_uniform_block {
+
+ static struct global_renderer_state vrend_state;
+
++#ifdef __APPLE__
++/* Apple's OpenGL driver can fault when glBufferData creates a fresh sysval UBO
++ * after a program has been linked.  Allocate one share-group buffer while ctx0
++ * is pristine, then refresh it before every serialized draw. */
++static GLuint vrend_apple_sysval_buffer_id;
++
++struct vrend_apple_buffer_texture_bindings {
++   GLint active_texture;
++   GLuint *textures;
++};
++
++/* Apple's legacy GL driver dereferences a null buffer-texture bind-point while
++ * updating a buffer object's shared-context stamp.  The fault is triggered by
++ * modifying (and, in practice, sometimes merely rebinding) any buffer while a
++ * GL_TEXTURE_BUFFER is bound on any texture unit.  Temporarily unbind every
++ * buffer texture around such operations, then restore the exact GL state so
++ * vrend's sampler binding cache remains truthful for the current draw. */
++static bool
++vrend_apple_buffer_modify_begin(struct vrend_apple_buffer_texture_bindings *saved)
++{
++   const GLuint count = vrend_state.max_texture_units;
++
++   memset(saved, 0, sizeof(*saved));
++   glGetIntegerv(GL_ACTIVE_TEXTURE, &saved->active_texture);
++   if (!count)
++      return true;
++
++   saved->textures = calloc(count, sizeof(*saved->textures));
++   if (!saved->textures) {
++      virgl_error("Unable to save Apple buffer-texture bindings\n");
++      return false;
++   }
++
++   for (GLuint unit = 0; unit < count; unit++) {
++      glActiveTexture(GL_TEXTURE0 + unit);
++      glGetIntegerv(GL_TEXTURE_BINDING_BUFFER,
++                    (GLint *)&saved->textures[unit]);
++      if (saved->textures[unit])
++         glBindTexture(GL_TEXTURE_BUFFER, 0);
++   }
++   glActiveTexture(saved->active_texture);
++   return true;
++}
++
++static void
++vrend_apple_buffer_modify_end(struct vrend_apple_buffer_texture_bindings *saved)
++{
++   if (!saved->textures)
++      return;
++
++   for (GLuint unit = 0; unit < vrend_state.max_texture_units; unit++) {
++      if (!saved->textures[unit])
++         continue;
++      glActiveTexture(GL_TEXTURE0 + unit);
++      glBindTexture(GL_TEXTURE_BUFFER, saved->textures[unit]);
++   }
++   glActiveTexture(saved->active_texture);
++   free(saved->textures);
++   saved->textures = NULL;
++}
++#endif
++
+ static inline bool has_feature(enum features_id feature_id)
+ {
+    int slot = feature_id / 64;
+@@ -1760,8 +1822,12 @@ static void bind_virgl_block_loc(struct vrend_linked_shader_program *sprog,
+       if (sprog->virgl_block_bind == GL_INVALID_INDEX) {
+          sprog->virgl_block_bind = virgl_block_ubo_id;
+          if (sprog->ubo_sysval_buffer_id == GL_INVALID_INDEX) {
++#ifdef __APPLE__
++             sprog->ubo_sysval_buffer_id = vrend_apple_sysval_buffer_id;
++#else
+              glGenBuffers(1, &sprog->ubo_sysval_buffer_id);
+              created_virgl_block_buffer = true;
++#endif
+          }
+       }
+
+@@ -2247,7 +2313,9 @@ static void vrend_destroy_program(struct vrend_linked_shader_program *ent)
+       ent->ref_context->prog = NULL;
+
+    if (ent->ubo_sysval_buffer_id != GL_INVALID_INDEX) {
++#ifndef __APPLE__
+        glDeleteBuffers(1, &ent->ubo_sysval_buffer_id);
++#endif
+    }
+
+    if (ent->is_pipeline)
+@@ -5556,11 +5624,26 @@ vrend_fill_sysval_uniform_block (struct vrend_sub_context *sub_ctx)
+    if (sub_ctx->prog->virgl_block_bind == GL_INVALID_INDEX)
+       return;
+
++#ifdef __APPLE__
++   {
++#else
+    if (sub_ctx->sysvalue_data_cookie != sub_ctx->prog->sysvalue_data_cookie) {
++#endif
++#ifdef __APPLE__
++      struct vrend_apple_buffer_texture_bindings saved;
++      if (!vrend_apple_buffer_modify_begin(&saved))
++         return;
++      glBindBuffer(GL_ARRAY_BUFFER, vrend_apple_sysval_buffer_id);
++      glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(struct sysval_uniform_block),
++                      &sub_ctx->sysvalue_data);
++      glBindBuffer(GL_ARRAY_BUFFER, 0);
++      vrend_apple_buffer_modify_end(&saved);
++#else
+       glBindBuffer(GL_UNIFORM_BUFFER, sub_ctx->prog->ubo_sysval_buffer_id);
+       glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(struct sysval_uniform_block),
+                       &sub_ctx->sysvalue_data);
+       glBindBuffer(GL_UNIFORM_BUFFER, 0);
++#endif
+       sub_ctx->prog->sysvalue_data_cookie = sub_ctx->sysvalue_data_cookie;
+    }
+ }
+@@ -7732,6 +7815,13 @@ int vrend_renderer_init(const struct vrend_if_cbs *cbs, uint32_t flags)
+       goto fail;
+    }
+
++#ifdef __APPLE__
++   glGenBuffers(1, &vrend_apple_sysval_buffer_id);
++   glBindBuffer(GL_ARRAY_BUFFER, vrend_apple_sysval_buffer_id);
++   glBufferData(GL_ARRAY_BUFFER, sizeof(struct sysval_uniform_block), NULL, GL_DYNAMIC_DRAW);
++   glBindBuffer(GL_ARRAY_BUFFER, 0);
++#endif
++
+    vrend_state.eventfd = -1;
+    if (flags & VREND_USE_THREAD_SYNC) {
+       if (flags & VREND_USE_ASYNC_FENCE_CB)
+@@ -7795,6 +7885,14 @@ vrend_renderer_fini(void)
+    vrend_video_fini();
+ #endif
+
++#ifdef __APPLE__
++   if (vrend_apple_sysval_buffer_id) {
++      vrend_clicbs->make_current(vrend_state.ctx0->sub->gl_context);
++      glDeleteBuffers(1, &vrend_apple_sysval_buffer_id);
++      vrend_apple_sysval_buffer_id = 0;
++   }
++#endif
++
+    vrend_destroy_context(vrend_state.ctx0);
+
+    vrend_state.current_ctx = NULL;
+@@ -8290,6 +8388,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+ {
+
+    GLbitfield buffer_storage_flags = 0;
++#ifdef __APPLE__
++   struct vrend_apple_buffer_texture_bindings saved;
++   if (!vrend_apple_buffer_modify_begin(&saved))
++      return;
++#endif
+    if (flags & VIRGL_RESOURCE_FLAG_MAP_PERSISTENT) {
+       buffer_storage_flags |= GL_MAP_PERSISTENT_BIT;
+       /* Gallium's storage_flags_to_buffer_flags seems to drop some information, but we have to
+@@ -8343,7 +8446,7 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+ #endif
+       else {
+          virgl_error("Missing buffer storage and interop extensions\n");
+-         return;
++         goto out;
+       }
+
+       gr->storage_bits |= VREND_STORAGE_GL_IMMUTABLE;
+@@ -8352,7 +8455,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+    } else
+       glBufferData(gr->target, width, NULL, GL_STREAM_DRAW);
+
++out:
+    glBindBufferARB(gr->target, 0);
++#ifdef __APPLE__
++   vrend_apple_buffer_modify_end(&saved);
++#endif
+ }
+
+ static int
+@@ -8943,6 +9050,7 @@ void vrend_renderer_resource_destroy(struct vrend_resource *res)
+    free(res);
+ }
+
++#ifndef __APPLE__
+ struct virgl_sub_upload_data {
+    GLenum target;
+    struct pipe_box *box;
+@@ -8953,6 +9061,7 @@ static void iov_buffer_upload(void *cookie, uint32_t doff, void *src, int len)
+    struct virgl_sub_upload_data *d = cookie;
+    glBufferSubData(d->target, d->box->x + doff, len, src);
+ }
++#endif
+
+ static void vrend_scale_depth(void *ptr, int size, float scale_val)
+ {
+@@ -9301,6 +9410,39 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
+    }
+
+    if (has_bit(res->storage_bits, VREND_STORAGE_GL_BUFFER)) {
++#ifdef __APPLE__
++      /* Apple's legacy OpenGL implementation can crash while updating its
++       * internal buffer binding state from glMapBufferRange.  A CPU staging
++       * allocation plus glBufferSubData exercises the same transfer semantics
++       * without mapping the GL buffer into the process. */
++      if (!info->box->width)
++         return 0;
++
++      data = malloc(info->box->width);
++      if (!data) {
++         virgl_error("Memory allocation failed for %d-byte buffer upload\n",
++                     info->box->width);
++         return ENOMEM;
++      }
++
++      if (vrend_read_from_iovec(iov, num_iovs, info->offset, data,
++                                info->box->width) != (size_t)info->box->width) {
++         free(data);
++         return EINVAL;
++      }
++
++      struct vrend_apple_buffer_texture_bindings saved;
++      if (!vrend_apple_buffer_modify_begin(&saved)) {
++         free(data);
++         return ENOMEM;
++      }
++      glBindBuffer(GL_COPY_WRITE_BUFFER, res->gl_id);
++      glBufferSubData(GL_COPY_WRITE_BUFFER, info->box->x,
++                      info->box->width, data);
++      glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
++      vrend_apple_buffer_modify_end(&saved);
++      free(data);
++#else
+       GLuint map_flags = GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_WRITE_BIT;
+       struct virgl_sub_upload_data d;
+       d.box = info->box;
+@@ -9319,6 +9461,7 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
+          glUnmapBuffer(res->target);
+       }
+       glBindBufferARB(res->target, 0);
++#endif
+    } else {
+       GLenum glformat;
+       GLenum gltype;
+@@ -9970,6 +10113,34 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
+    }
+
+    if (has_bit(res->storage_bits, VREND_STORAGE_GL_BUFFER)) {
++#ifdef __APPLE__
++      if (!info->box->width)
++         return 0;
++
++      void *data = malloc(info->box->width);
++      if (!data) {
++         virgl_error("Memory allocation failed for %d-byte buffer readback\n",
++                     info->box->width);
++         return ENOMEM;
++      }
++
++      struct vrend_apple_buffer_texture_bindings saved;
++      if (!vrend_apple_buffer_modify_begin(&saved)) {
++         free(data);
++         return ENOMEM;
++      }
++      glBindBuffer(GL_COPY_READ_BUFFER, res->gl_id);
++      glGetBufferSubData(GL_COPY_READ_BUFFER, info->box->x,
++                         info->box->width, data);
++      glBindBuffer(GL_COPY_READ_BUFFER, 0);
++      vrend_apple_buffer_modify_end(&saved);
++
++      size_t written = vrend_write_to_iovec(iov, num_iovs, info->offset,
++                                            data, info->box->width);
++      free(data);
++      if (written != (size_t)info->box->width)
++         return EINVAL;
++#else
+       glBindBufferARB(res->target, res->gl_id);
+       void *data = glMapBufferRange(res->target, info->box->x, info->box->width, GL_MAP_READ_BIT);
+       if (!data)
+@@ -9978,6 +10149,7 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
+          vrend_write_to_iovec(iov, num_iovs, info->offset, data, info->box->width);
+       glUnmapBuffer(res->target);
+       glBindBufferARB(res->target, 0);
++#endif
+    } else {
+       int ret = -1;
+       bool can_readpixels = true;
+@@ -10421,12 +10593,43 @@ static void vrend_resource_buffer_copy(UNUSED struct vrend_context *ctx,
+                                        uint32_t dstx, uint32_t srcx,
+                                        uint32_t width)
+ {
++#ifdef __APPLE__
++   /* Apple's OpenGL-on-Metal implementation reports
++    * `gldCopyBufferSubData: NEEDS IMPLEMENTATION` and can leave buffer binding
++    * state corrupted before the next uniform-block bind.  Stage the bytes
++    * through CPU memory instead.  This is deliberately Apple-only: native
++    * glCopyBufferSubData remains the fast path everywhere else. */
++   if (width == 0)
++      return;
++
++   void *data = malloc(width);
++   if (!data) {
++      virgl_error("Buffer copy fallback allocation failed for %u bytes\n", width);
++      return;
++   }
++
++   struct vrend_apple_buffer_texture_bindings saved;
++   if (!vrend_apple_buffer_modify_begin(&saved)) {
++      free(data);
++      return;
++   }
++   glBindBuffer(GL_COPY_READ_BUFFER, src_res->gl_id);
++   glGetBufferSubData(GL_COPY_READ_BUFFER, srcx, width, data);
++   glBindBuffer(GL_COPY_READ_BUFFER, 0);
++
++   glBindBuffer(GL_COPY_WRITE_BUFFER, dst_res->gl_id);
++   glBufferSubData(GL_COPY_WRITE_BUFFER, dstx, width, data);
++   glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
++   vrend_apple_buffer_modify_end(&saved);
++   free(data);
++#else
+    glBindBuffer(GL_COPY_READ_BUFFER, src_res->gl_id);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, dst_res->gl_id);
+
+    glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, srcx, dstx, width);
+    glBindBuffer(GL_COPY_READ_BUFFER, 0);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
++#endif
+ }
+
+ static void vrend_resource_copy_fallback(struct vrend_resource *src_res,
+@@ -11626,8 +11829,14 @@ bool vrend_hw_switch_context(struct vrend_context *ctx, bool now)
+    if (!ctx)
+       return false;
+
+-   if (ctx == vrend_state.current_ctx && ctx->ctx_switch_pending == false)
++   if (ctx == vrend_state.current_ctx && ctx->ctx_switch_pending == false) {
++#ifdef __APPLE__
++      /* Rebind the thread-local CGL context even when vrend's logical context
++       * did not change; MMIO may now be executing on another vCPU thread. */
++      vrend_clicbs->make_current(ctx->sub->gl_context);
++#endif
+       return true;
++   }
+
+    if (ctx->ctx_id != 0 && ctx->in_error) {
+       return false;
+diff --git a/src/vrend/vrend_shader.c b/src/vrend/vrend_shader.c
+index 4fe673c45a52f70509ee42c04f7b2c7f65e743e0..ce282aba4766e1f6a634e69206c40198c724d5fb 100644
+--- a/src/vrend/vrend_shader.c
++++ b/src/vrend/vrend_shader.c
+@@ -6347,7 +6347,11 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
+       if (ctx->prog_type == TGSI_PROCESSOR_FRAGMENT && fs_emit_layout(ctx))
+          emit_ext(glsl_strbufs, "ARB_fragment_coord_conventions", "require");
+
+-      if (ctx->ubo_used_mask)
++      /* Uniform blocks are core in GLSL 1.40. Apple's core-profile compiler
++       * deliberately does not expose GL_ARB_uniform_buffer_object as an
++       * extension and rejects a redundant `#extension ... : require`, even
++       * though the same UBO syntax is valid in the selected language version. */
++      if (ctx->ubo_used_mask && ctx->glsl_ver_required < 140)
+          emit_ext(glsl_strbufs, "ARB_uniform_buffer_object", "require");
+
+       if (ctx->num_cull_dist_prop || ctx->key->num_in_cull || ctx->key->num_out_cull)
+@@ -8583,4 +8587,3 @@ bool vrend_shader_needs_alpha_func(const struct vrend_shader_key *key) {
+       return true;
+    }
+ }
+-

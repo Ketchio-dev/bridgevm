@@ -429,13 +429,14 @@ fn build_pcie_node(b: &mut FdtBuilder) {
     b.prop_cells("msi-parent", &[PHANDLE_GIC_MSI_FRAME]);
     b.prop_reg64("reg", machine::PCIE_ECAM.base, machine::PCIE_ECAM.size);
 
-    // ranges: <pci-addr(3) cpu-addr(2) size(2)> for IO and 32-bit MMIO. The
-    // 64-bit MMIO window (PCIE_MMIO_64 @ 512 GiB) is intentionally omitted: it
-    // ends at 1 TiB, beyond the default HVF IPA size, and CpuDxe faults trying to
-    // map it. An empty bus needs no high BAR space; re-add it once the VM is
-    // created with a larger IPA size.
+    // ranges: <pci-addr(3) cpu-addr(2) size(2)> for I/O, 32-bit MMIO and the
+    // 64-bit MMIO aperture. The HVF probe creates every VM with the host's
+    // maximum IPA size (40 bits on supported Apple Silicon), so the 512 GiB..
+    // 1 TiB aperture is addressable. Firmware needs this window to place large
+    // 64-bit BARs such as virtio-gpu's 1 GiB host-visible memory BAR.
     let io = machine::PCIE_PIO;
     let m32 = machine::PCIE_MMIO_32;
+    let m64 = machine::PCIE_MMIO_64;
     b.prop_cells(
         "ranges",
         &[
@@ -455,6 +456,14 @@ fn build_pcie_node(b: &mut FdtBuilder) {
             m32.base as u32,
             (m32.size >> 32) as u32,
             m32.size as u32,
+            // 64-bit MMIO (0x03000000)
+            0x0300_0000,
+            (m64.base >> 32) as u32,
+            m64.base as u32,
+            (m64.base >> 32) as u32,
+            m64.base as u32,
+            (m64.size >> 32) as u32,
+            m64.size as u32,
         ],
     );
 
@@ -565,6 +574,30 @@ mod tests {
         ] {
             assert!(body.contains(node), "missing node {node}");
         }
+    }
+
+    #[test]
+    fn virt_fdt_advertises_the_64_bit_pcie_mmio_aperture() {
+        let dtb = build_virt_fdt(&VirtFdtConfig::default());
+        let m64 = machine::PCIE_MMIO_64;
+        let cells = [
+            0x0300_0000u32,
+            (m64.base >> 32) as u32,
+            m64.base as u32,
+            (m64.base >> 32) as u32,
+            m64.base as u32,
+            (m64.size >> 32) as u32,
+            m64.size as u32,
+        ];
+        let encoded = cells
+            .iter()
+            .flat_map(|cell| cell.to_be_bytes())
+            .collect::<Vec<_>>();
+
+        assert!(
+            dtb.windows(encoded.len()).any(|window| window == encoded),
+            "PCIe ranges must expose the 512 GiB high-MMIO window for large 64-bit BARs"
+        );
     }
 
     #[test]

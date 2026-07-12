@@ -42,6 +42,9 @@ const DEFAULT_SHARE_MS: u64 = 3000;
 const SHARE_MS_FLOOR: u64 = 500;
 const DEFAULT_SHARE_MAX_KB: u64 = 8192;
 const SHARE_PUT_CHUNK_BYTES: usize = 24 * 1024;
+const COMMAND_OUTPUT_CHUNK_BYTES: usize = 24 * 1024;
+const COMMAND_OUTPUT_CHUNK_B64_BYTES: usize = COMMAND_OUTPUT_CHUNK_BYTES.div_ceil(3) * 4;
+const MAX_COMMAND_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
 pub struct AgentConsoleHarness {
     start: Instant,
@@ -62,6 +65,7 @@ pub struct AgentConsoleHarness {
     commands: Vec<String>,
     last_ping: Option<Instant>,
     get_accum: Option<GetAccum>,
+    out_accum: Option<OutAccum>,
     // --- Service mode (resident host loop; see AgentConsoleState::Service). ---
     /// Stay resident after the scripted commands instead of finishing.
     service: bool,
@@ -75,9 +79,9 @@ pub struct AgentConsoleHarness {
     /// read-dispatch loop, so at most one request is on the wire at a time
     /// (strict lockstep; see `in_flight`).
     queue: VecDeque<ServiceReq>,
-    /// The request currently awaiting a guest reply, with its send time (for the
-    /// stall timeout). None means the wire is idle and the next queued request
-    /// may be sent.
+    /// The request currently awaiting a guest reply, with the last overdue-
+    /// report anchor. None means the wire is idle and the next queued request
+    /// may be sent. An overdue request remains here to preserve wire alignment.
     in_flight: Option<(ServiceReq, Instant)>,
     /// Last clipboard text synced in EITHER direction, stored normalized (LF).
     /// Guards the CRLF/LF ping-pong: a value we just pushed one way must not be
@@ -132,6 +136,17 @@ struct FinishedGet {
     chunks_seen: usize,
 }
 
+/// Reassembly state for a chunked command reply
+/// (OUTBEG -> OUTCHUNK* -> OUTEND).
+struct OutAccum {
+    exit_code: i32,
+    total: usize,
+    nchunks: usize,
+    bytes: Vec<u8>,
+    chunks_seen: usize,
+    valid: bool,
+}
+
 struct ShareState {
     engine: ShareSync,
     host_dir: PathBuf,
@@ -174,9 +189,10 @@ enum SharePutWireLine {
 }
 
 const PING_INTERVAL: Duration = Duration::from_secs(3);
-/// Drop a service request whose reply never arrives after this long (agent
-/// wedged or mid-restart), so a single lost reply can't freeze the queue.
-const SERVICE_TIMEOUT: Duration = Duration::from_secs(20);
+/// Report a service request that has not replied after this long. The guest
+/// dispatcher is single-threaded, so the request must remain in-flight: sending
+/// a second request would only mislabel the eventual first reply.
+const SERVICE_OVERDUE_INTERVAL: Duration = Duration::from_secs(20);
 /// With clipsync off there is no CLIPGET keeping the channel warm, so ping this
 /// often when otherwise idle. With clipsync on, CLIPGET is the heartbeat.
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
@@ -345,6 +361,7 @@ impl AgentConsoleHarness {
             },
             last_ping: None,
             get_accum: None,
+            out_accum: None,
             service,
             clipsync,
             clip_interval: Duration::from_millis(clip_ms),
@@ -498,12 +515,24 @@ impl AgentConsoleHarness {
     /// mode has always produced. Shared by scripted WaitingOut replies and by
     /// service-mode Ctl replies so both render identically.
     ///
-    /// A chunked GET (GETBEG -> GETCHUNK* -> GETEND) spans several lines and
-    /// stays Incomplete until GETEND; every other reply is single-line. A
-    /// command's terminal reply is one of: OUT <exit> <b64> (RUN/PS), LSOK <b64>
-    /// (LS), PUTOK <b64(path)> <bytes> (PUT), CLIP <b64> (CLIPGET), or
-    /// OK <...> / ERR <...> (CLIPSET & other verbs). Anything else is stray.
+    /// Chunked GET and command-output replies span several lines and stay
+    /// Incomplete until GETEND/OUTEND. A command's terminal reply is one of:
+    /// OUT <exit> <b64> or OUTBEG/OUTCHUNK*/OUTEND (RUN/PS), LSOK <b64> (LS),
+    /// PUTOK <b64(path)> <bytes> (PUT), CLIP <b64> (CLIPGET), or OK <...> /
+    /// ERR <...> (CLIPSET & other verbs). Anything else is stray.
     fn handle_reply_line(&mut self, line: &str, command: &str) -> ReplyProgress {
+        if let Some(rest) = line.strip_prefix("OUTBEG ") {
+            self.begin_out(rest);
+            return ReplyProgress::Incomplete;
+        }
+        if let Some(rest) = line.strip_prefix("OUTCHUNK ") {
+            self.accum_out_chunk(rest);
+            return ReplyProgress::Incomplete;
+        }
+        if let Some(rest) = line.strip_prefix("OUTEND ") {
+            self.finish_out(command, rest);
+            return ReplyProgress::Complete;
+        }
         if let Some(progress) = self.handle_unlabelled_get_fragment(line) {
             return progress;
         }
@@ -689,6 +718,124 @@ impl AgentConsoleHarness {
         })
     }
 
+    /// OUTBEG <exit> <total> <nchunks> — start bounded command-output
+    /// reassembly. Oversized declarations are remembered as invalid without
+    /// reserving attacker-controlled memory; OUTEND will still release the
+    /// lockstep wire slot with an explicit protocol error.
+    fn begin_out(&mut self, rest: &str) {
+        let mut fields = rest.split_whitespace();
+        let exit_code = fields.next().and_then(|value| value.parse::<i32>().ok());
+        let total = fields.next().and_then(|value| value.parse::<usize>().ok());
+        let nchunks = fields.next().and_then(|value| value.parse::<usize>().ok());
+        let parsed =
+            exit_code.is_some() && total.is_some() && nchunks.is_some() && fields.next().is_none();
+        let total = total.unwrap_or(0);
+        let expected_chunks = total.div_ceil(COMMAND_OUTPUT_CHUNK_BYTES);
+        let valid = parsed && total <= MAX_COMMAND_OUTPUT_BYTES && nchunks == Some(expected_chunks);
+        self.out_accum = Some(OutAccum {
+            exit_code: exit_code.unwrap_or(-1),
+            total,
+            nchunks: nchunks.unwrap_or(0),
+            bytes: Vec::with_capacity(if valid { total } else { 0 }),
+            chunks_seen: 0,
+            valid,
+        });
+    }
+
+    /// OUTCHUNK <seq> <b64(rawbytes)> — append exactly the expected next
+    /// fragment. Sequence, count, base64, and declared-size errors poison the
+    /// reply rather than silently returning partial command output.
+    fn accum_out_chunk(&mut self, rest: &str) {
+        let Some(accum) = self.out_accum.as_mut() else {
+            return;
+        };
+        let Some((seq, payload)) = rest.split_once(' ') else {
+            accum.valid = false;
+            return;
+        };
+        let Ok(seq) = seq.parse::<usize>() else {
+            accum.valid = false;
+            return;
+        };
+        let expected_seq = accum.chunks_seen;
+        accum.chunks_seen = accum.chunks_seen.saturating_add(1);
+        // Once a declaration or prior fragment has poisoned the envelope, do
+        // not decode or perform offset arithmetic on attacker-controlled
+        // counts. OUTEND will still terminate the wire slot with an error.
+        if !accum.valid {
+            return;
+        }
+        if seq != expected_seq || expected_seq >= accum.nchunks {
+            accum.valid = false;
+            return;
+        }
+        if payload.len() > COMMAND_OUTPUT_CHUNK_B64_BYTES {
+            accum.valid = false;
+            return;
+        }
+        let Ok(bytes) = base64_decode(payload) else {
+            accum.valid = false;
+            return;
+        };
+        let Some(next_len) = accum.bytes.len().checked_add(bytes.len()) else {
+            accum.valid = false;
+            return;
+        };
+        let Some(chunk_offset) = expected_seq.checked_mul(COMMAND_OUTPUT_CHUNK_BYTES) else {
+            accum.valid = false;
+            return;
+        };
+        let expected_len = if expected_seq + 1 == accum.nchunks {
+            let Some(remaining) = accum.total.checked_sub(chunk_offset) else {
+                accum.valid = false;
+                return;
+            };
+            remaining
+        } else {
+            COMMAND_OUTPUT_CHUNK_BYTES
+        };
+        if bytes.len() != expected_len || next_len > accum.total {
+            accum.valid = false;
+            return;
+        }
+        accum.bytes.extend_from_slice(&bytes);
+    }
+
+    /// OUTEND <nchunks> — verify the full frame and render the historical
+    /// BVAGENT CMD/END envelope so existing log consumers remain compatible.
+    fn finish_out(&mut self, command: &str, rest: &str) {
+        let Some(accum) = self.out_accum.take() else {
+            println!(
+                "BVAGENT CMD {command} exit=-1\n<chunked output protocol error: OUTEND without OUTBEG>\nBVAGENT END {command}"
+            );
+            return;
+        };
+        let end_count = rest.trim().parse::<usize>().ok();
+        let valid = accum.valid
+            && end_count == Some(accum.nchunks)
+            && accum.chunks_seen == accum.nchunks
+            && accum.bytes.len() == accum.total;
+        if valid {
+            let text = String::from_utf8_lossy(&accum.bytes);
+            println!(
+                "BVAGENT CMD {command} exit={}\n{text}\nBVAGENT END {command}",
+                accum.exit_code
+            );
+        } else {
+            println!(
+                "BVAGENT CMD {command} exit=-1\n<chunked output protocol error: declared-exit={} bytes={}/{} chunks={}/{} end={}>\nBVAGENT END {command}",
+                accum.exit_code,
+                accum.bytes.len(),
+                accum.total,
+                accum.chunks_seen,
+                accum.nchunks,
+                end_count
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "invalid".to_string())
+            );
+        }
+    }
+
     // --- Service mode -------------------------------------------------------
 
     fn service_tick(
@@ -788,26 +935,19 @@ impl AgentConsoleHarness {
         }
     }
 
-    /// Timeout the in-flight request if its reply is overdue, then — lockstep —
-    /// send at most one queued request.
+    /// Report an overdue in-flight request without abandoning its wire slot,
+    /// then — only when the wire is truly idle — send one queued request.
     fn service_pump(
         &mut self,
         platform: &mut VirtPlatform,
         mem: &mut dyn GuestMemoryMut,
         now: Instant,
     ) {
-        if let Some((req, sent_at)) = self.in_flight.as_ref() {
-            if now.duration_since(*sent_at) >= service_timeout(req) {
-                println!(
-                    "BVAGENT SERVICE timeout {} t={}",
-                    req_kind(req),
-                    now.duration_since(self.start).as_millis()
-                );
-                self.in_flight = None;
-                // A half-received chunked GET is now orphaned; drop it so the
-                // next GET starts from a clean slate.
-                self.get_accum = None;
-            }
+        if let Some(kind) = self.note_service_overdue(now) {
+            println!(
+                "BVAGENT SERVICE overdue {kind} awaiting-reply=true t={}",
+                now.duration_since(self.start).as_millis()
+            );
         }
         if self.in_flight.is_some() {
             return;
@@ -821,6 +961,17 @@ impl AgentConsoleHarness {
         platform.virtio_console_agent_send(self.service_line_scratch.as_bytes(), mem);
         self.last_send = Some(now);
         self.in_flight = Some((req, now));
+    }
+
+    fn note_service_overdue(&mut self, now: Instant) -> Option<&'static str> {
+        let (req, sent_at) = self.in_flight.as_mut()?;
+        if now.duration_since(*sent_at) < SERVICE_OVERDUE_INTERVAL {
+            return None;
+        }
+        // Re-anchor the reporting interval while retaining the request. This
+        // is an overdue heartbeat, not permission to violate lockstep.
+        *sent_at = now;
+        Some(req_kind(req))
     }
 
     #[cfg(test)]
@@ -1073,9 +1224,9 @@ impl AgentConsoleHarness {
     }
 
     /// Route a guest reply in service mode by the in-flight request kind. Only
-    /// the in-flight request is completed; unrelated lines are ignored (they
-    /// stay in-flight until a matching reply or the stall timeout). A re-emitted
-    /// READY while idle means the agent restarted, and is just noted.
+    /// the in-flight request is completed; unrelated lines are ignored and the
+    /// request stays in-flight until its matching reply. A re-emitted READY is
+    /// the explicit agent-restart resynchronization point.
     fn handle_service_reply(
         &mut self,
         line: &str,
@@ -1083,6 +1234,16 @@ impl AgentConsoleHarness {
         mem: Option<&mut dyn GuestMemoryMut>,
         now: Instant,
     ) {
+        if let Some(hostname) = line.strip_prefix("READY ") {
+            println!("BVAGENT re-READY {hostname} t={}", self.t_ms(now));
+            // A fresh guest agent cannot complete the previous process's
+            // request. READY is therefore the only honest resynchronization
+            // point at which the old wire slot may be released.
+            self.in_flight = None;
+            self.get_accum = None;
+            self.out_accum = None;
+            return;
+        }
         if matches!(
             self.in_flight.as_ref().map(|(req, _)| req),
             Some(ServiceReq::Ctl(_) | ServiceReq::ShareGet { .. })
@@ -1096,12 +1257,7 @@ impl AgentConsoleHarness {
         // borrow on self.in_flight.
         let kind = match self.in_flight.as_ref() {
             Some((req, _)) => InFlightSnapshot::from_req(req),
-            None => {
-                if let Some(hostname) = line.strip_prefix("READY ") {
-                    println!("BVAGENT re-READY {hostname} t={}", self.t_ms(now));
-                }
-                return;
-            }
+            None => return,
         };
         match kind {
             InFlightSnapshot::ClipPoll => {
@@ -1730,11 +1886,6 @@ fn req_kind(req: &ServiceReq) -> &'static str {
     }
 }
 
-fn service_timeout(req: &ServiceReq) -> Duration {
-    let _ = req;
-    SERVICE_TIMEOUT
-}
-
 fn is_share_req(req: &ServiceReq) -> bool {
     matches!(
         req,
@@ -2038,6 +2189,7 @@ mod tests {
             commands: vec!["GET Zm9v".to_string()],
             last_ping: None,
             get_accum: None,
+            out_accum: None,
             service: false,
             clipsync: false,
             clip_interval: Duration::from_millis(1000),
@@ -2461,6 +2613,136 @@ mod tests {
             !h.queue.iter().any(|r| matches!(r, ServiceReq::ClipPoll)),
             "ClipPoll must never be queued when clipsync is off"
         );
+    }
+
+    #[test]
+    fn overdue_service_request_keeps_wire_alignment() {
+        let mut h = harness();
+        h.state = AgentConsoleState::Service;
+        let sent_at = Instant::now();
+        h.in_flight = Some((ServiceReq::Ctl("slow-command".into()), sent_at));
+        h.queue.push_back(ServiceReq::Ctl("next-command".into()));
+
+        assert_eq!(
+            h.note_service_overdue(sent_at + SERVICE_OVERDUE_INTERVAL),
+            Some("ctl")
+        );
+        assert!(matches!(
+            h.in_flight.as_ref().map(|(request, _)| request),
+            Some(ServiceReq::Ctl(command)) if command == "slow-command"
+        ));
+        assert!(
+            matches!(h.queue.front(), Some(ServiceReq::Ctl(command)) if command == "next-command")
+        );
+    }
+
+    #[test]
+    fn fresh_ready_is_the_service_resynchronization_point() {
+        let mut h = harness();
+        h.state = AgentConsoleState::Service;
+        h.in_flight = Some((ServiceReq::Ctl("lost-command".into()), Instant::now()));
+        h.get_accum = Some(GetAccum {
+            path: "lost.bin".into(),
+            total: 1,
+            nchunks: 1,
+            bytes: vec![1],
+            chunks_seen: 1,
+        });
+        h.out_accum = Some(OutAccum {
+            exit_code: 0,
+            total: 1,
+            nchunks: 1,
+            bytes: vec![1],
+            chunks_seen: 1,
+            valid: true,
+        });
+
+        h.handle_service_reply("READY rebooted-host", None, None, Instant::now());
+
+        assert!(h.in_flight.is_none());
+        assert!(h.get_accum.is_none());
+        assert!(h.out_accum.is_none());
+    }
+
+    #[test]
+    fn chunked_command_output_keeps_lockstep_until_verified_end() {
+        let mut h = harness();
+        h.state = AgentConsoleState::Service;
+        h.in_flight = Some((ServiceReq::Ctl("large-command".into()), Instant::now()));
+        let first = vec![b'a'; COMMAND_OUTPUT_CHUNK_BYTES];
+        let second = b"second";
+        let total = first.len() + second.len();
+
+        h.handle_service_reply(&format!("OUTBEG 0 {total} 2"), None, None, Instant::now());
+        assert!(h.in_flight.is_some());
+        assert!(h.out_accum.is_some());
+        h.handle_service_reply(
+            &format!("OUTCHUNK 0 {}", base64_encode(&first)),
+            None,
+            None,
+            Instant::now(),
+        );
+        assert!(h.in_flight.is_some());
+        h.handle_service_reply(
+            &format!("OUTCHUNK 1 {}", base64_encode(second)),
+            None,
+            None,
+            Instant::now(),
+        );
+        assert!(h.in_flight.is_some());
+        h.handle_service_reply("OUTEND 2", None, None, Instant::now());
+
+        assert!(h.in_flight.is_none());
+        assert!(h.out_accum.is_none());
+    }
+
+    #[test]
+    fn oversized_chunked_command_output_is_rejected_without_large_reservation() {
+        let mut h = harness();
+        h.begin_out(&format!("0 {} 1", MAX_COMMAND_OUTPUT_BYTES + 1));
+
+        let accum = h.out_accum.as_ref().unwrap();
+        assert!(!accum.valid);
+        assert_eq!(accum.bytes.capacity(), 0);
+    }
+
+    #[test]
+    fn malformed_chunk_offsets_fail_closed_without_unsigned_underflow() {
+        let mut h = harness();
+        h.out_accum = Some(OutAccum {
+            exit_code: 0,
+            total: 1,
+            nchunks: 3,
+            bytes: Vec::new(),
+            chunks_seen: 2,
+            valid: true,
+        });
+
+        // The final chunk's nominal offset is 49,152 while total is one byte.
+        // This must poison the envelope instead of subtracting with wrap/panic.
+        h.accum_out_chunk("2 YQ==");
+
+        let accum = h.out_accum.as_ref().unwrap();
+        assert!(!accum.valid);
+        assert!(accum.bytes.is_empty());
+    }
+
+    #[test]
+    fn guest_agent_emits_chunked_output_and_retries_partial_writes() {
+        let script = include_str!("../../../../scripts/win-assets/bvagent.ps1");
+        for contract in [
+            "function Write-CommandResult",
+            "OUTBEG ",
+            "OUTCHUNK ",
+            "OUTEND ",
+            "$totalWritten += [int]$written",
+            "$remaining = $suffix",
+        ] {
+            assert!(
+                script.contains(contract),
+                "guest agent is missing protocol contract: {contract}"
+            );
+        }
     }
 
     #[test]

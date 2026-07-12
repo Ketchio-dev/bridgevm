@@ -363,6 +363,7 @@ extern "C" {
         intid_count: u32,
     ) -> HvReturn;
     fn hv_gic_create(config: HvGicConfig) -> HvReturn;
+    fn hv_gic_reset() -> HvReturn;
     fn hv_gic_send_msi(address: u64, intid: u32) -> HvReturn;
     fn hv_gic_set_spi(intid: u32, level: bool) -> HvReturn;
     fn hv_gic_get_spi_interrupt_range(intid_base: *mut u32, intid_count: *mut u32) -> HvReturn;
@@ -1956,6 +1957,7 @@ impl RebootPlan {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RebootActions {
+    reset_gic: bool,
     reset_guest_ram: bool,
     reset_platform: bool,
     reset_vcpu: bool,
@@ -1964,6 +1966,7 @@ struct RebootActions {
 
 impl RebootActions {
     const SYSTEM_RESET: Self = Self {
+        reset_gic: true,
         reset_guest_ram: true,
         reset_platform: true,
         reset_vcpu: true,
@@ -2051,7 +2054,7 @@ mod reboot_plan_tests {
     use super::*;
 
     #[test]
-    fn reboot_plan_resets_guest_ram_platform_and_vcpu() {
+    fn reboot_plan_resets_gic_guest_ram_platform_and_vcpu() {
         assert_eq!(
             psci_terminal_action(PSCI_SYSTEM_OFF),
             Some(PsciTerminalAction::SystemOff)
@@ -2065,6 +2068,7 @@ mod reboot_plan_tests {
             SystemResetDecision::Reboot {
                 next_reboot_count: 1,
                 actions: RebootActions {
+                    reset_gic: true,
                     reset_guest_ram: true,
                     reset_platform: true,
                     reset_vcpu: true,
@@ -3504,7 +3508,14 @@ unsafe fn emulate_debug_os_lock_sysreg(vcpu: HvVcpuT, trap: SysRegTrap) -> bool 
 }
 
 fn main() -> ExitCode {
+    if env_flag("BRIDGEVM_PROBE_PRINT_CAPABILITIES") {
+        println!("BridgeVM HVF probe build capabilities");
+        println!("virtio_gpu_3d_compiled={}", cfg!(feature = "venus"));
+        return ExitCode::SUCCESS;
+    }
+
     let mut fatal_vcpu_run_error = false;
+    let mut fatal_reset_error = false;
     let media = VirtBootMediaConfig::from_probe_env();
     let smp_cpus = env_u64("BRIDGEVM_SMP_CPUS", 1).clamp(1, machine::MAX_CPUS);
     let smp_cpus = if machine::redist_fits(smp_cpus) {
@@ -3527,6 +3538,12 @@ fn main() -> ExitCode {
     println!("Guest RAM: {} MiB", media.ram_size / (1024 * 1024));
     println!("SMP CPUs advertised: {smp_cpus}");
     let watchdog_ms = env_u64("BRIDGEVM_BOOT_PROBE_WATCHDOG_MS", WATCHDOG_MS);
+    let watchdog_enabled = !env_flag("BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED");
+    if watchdog_enabled {
+        println!("Boot watchdog: {watchdog_ms} ms per boot generation");
+    } else {
+        println!("Boot watchdog: disabled; guest/user shutdown required");
+    }
     let trace_fwcfg = env_flag("BRIDGEVM_TRACE_FWCFG");
     let trace_msix = env_flag("BRIDGEVM_TRACE_MSIX");
     let trace_spi = env_flag("BRIDGEVM_TRACE_SPI");
@@ -3699,6 +3716,14 @@ fn main() -> ExitCode {
                 platform.nvme_disk_len(),
                 nvme.write_back
             );
+            println!(
+                "NVMe data path: {}",
+                if platform.nvme_direct_dma_enabled() {
+                    "direct-dma"
+                } else {
+                    "buffered (BRIDGEVM_NVME_BUFFERED_IO=1)"
+                }
+            );
         }
         if let Some(target) = media.nvme_target.as_ref() {
             platform
@@ -3835,13 +3860,15 @@ fn main() -> ExitCode {
             });
             let boot_generation = begin_watchdog_generation(&watchdog_generation);
             let watchdog_fired = Arc::new(AtomicBool::new(false));
-            spawn_boot_watchdog(
-                vcpu,
-                watchdog_ms,
-                Arc::clone(&watchdog_generation),
-                boot_generation,
-                Arc::clone(&watchdog_fired),
-            );
+            if watchdog_enabled {
+                spawn_boot_watchdog(
+                    vcpu,
+                    watchdog_ms,
+                    Arc::clone(&watchdog_generation),
+                    boot_generation,
+                    Arc::clone(&watchdog_fired),
+                );
+            }
 
             {
                 let mut platform_guard = lock_platform(
@@ -4058,7 +4085,12 @@ fn main() -> ExitCode {
                     sample_tick_canceled || setup_input_wake_canceled || service_wake_canceled;
                 if reason == EXIT_CANCELED && !automation_tick_canceled {
                     hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
-                    stop_reason = "watchdog (CANCELED)".into();
+                    stop_reason = if watchdog_enabled {
+                        "watchdog (CANCELED)"
+                    } else {
+                        "unexpected CANCELED exit (watchdog disabled)"
+                    }
+                    .into();
                     break;
                 }
                 if !automation_tick_canceled && reason == EXIT_VTIMER {
@@ -4539,20 +4571,38 @@ fn main() -> ExitCode {
                             "PSCI SYSTEM_RESET: reboot {reboot_count}/{}",
                             reboot_plan.max_reboots
                         );
-                        if actions.reset_platform {
-                            let mut platform_guard = platform.lock().expect("platform mutex");
-                            let platform = &mut *platform_guard;
-                            platform.reset();
-                        }
-                        if actions.reset_guest_ram {
-                            reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
-                        }
-                        if actions.reset_vcpu {
-                            reset_vcpu_for_boot(vcpu);
-                            arm_watchpoint_for_boot(vcpu, watch_addr);
-                        }
-                        if actions.continue_run_loop {
-                            continue 'reboot;
+                        let gic_reset_status = if actions.reset_gic {
+                            // All secondary vCPUs have stopped and joined above, and CPU0
+                            // is outside hv_vcpu_run. Apple documents hv_gic_reset as the
+                            // VM-reset operation for the distributor, redistributors, and
+                            // the GIC device's internal state.
+                            let status = hv_gic_reset();
+                            println!("hv_gic_reset = {status:#x}");
+                            status
+                        } else {
+                            0
+                        };
+                        if gic_reset_status != 0 {
+                            fatal_reset_error = true;
+                            stop_reason = format!(
+                                "hv_gic_reset failed during PSCI SYSTEM_RESET: {gic_reset_status:#x}"
+                            );
+                        } else {
+                            if actions.reset_platform {
+                                let mut platform_guard = platform.lock().expect("platform mutex");
+                                let platform = &mut *platform_guard;
+                                platform.reset();
+                            }
+                            if actions.reset_guest_ram {
+                                reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
+                            }
+                            if actions.reset_vcpu {
+                                reset_vcpu_for_boot(vcpu);
+                                arm_watchpoint_for_boot(vcpu, watch_addr);
+                            }
+                            if actions.continue_run_loop {
+                                continue 'reboot;
+                            }
                         }
                     }
                     SystemResetDecision::Stop { reason } => {
@@ -4915,7 +4965,7 @@ fn main() -> ExitCode {
         }
     }
 
-    if fatal_vcpu_run_error {
+    if fatal_vcpu_run_error || fatal_reset_error {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS

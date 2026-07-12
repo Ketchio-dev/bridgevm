@@ -15,24 +15,30 @@ walls at each rung (exactly like `DRIVER_PNP_WATCHDOG` surfaced at the install r
 
 ---
 
-## 0. Where we are (2026-07-02)
+## 0. Where we are (2026-07-12)
 
-Proven & committed:
-- Windows 11 ARM64 **Setup boots from NVMe alone** (no ISO, no keyboard). Root cause of
-  the old "EDK2 won't bind NVMe" wall was the **stale Homebrew firmware**; a current
-  tianocore/edk2 ArmVirtQemu firmware is now vendored in-repo and is the default
-  (`crates/bridgevm-hvf/firmware/edk2-aarch64-code.fd`, commit `ab9c45a`).
-- **Second NVMe namespace** (blank install target) implemented (`029105c`): env
-  `BRIDGEVM_NVME_DISK2` (+`_WRITABLE`), NSID-2 routed through Identify + NVM read/write.
-- **WinPE-scripted install harness** proven: `\sources\boot.wim` (index 2) was edited so
-  `winpeshl.ini` runs a custom `bvinstall.cmd` (diskpart + dism + bcdboot) instead of
-  `setup.exe`. WinPE boots, runs the script, finds the source (`C:`), launches diskpart.
+The historical installer blockers in workstreams A-C are closed. The custom
+Hypervisor.framework VMM now boots an installed Windows 11 ARM64 desktop with
+four vCPUs, persistent NVMe, ramfb/input, userspace-NAT virtio-net, and the
+resident BVAGENT service. The macOS Windows HVF Lab ships the signed runner,
+imports cloned RAW disk/vars media without changing the sources, extends small
+imports to 64 GiB, and grows C: through a fail-closed first-boot action. Normal
+app launches now explicitly disable the diagnostic per-boot watchdog, so a VM
+does not disappear after 15 minutes; the experimental lab retains an opt-in
+bounded watchdog and the resident agent keeps independent overdue telemetry.
 
-The one blocker:
-- **`DRIVER_PNP_WATCHDOG (0x1D5)` bugcheck** the moment diskpart / Virtual Disk Service
-  does a *full PnP device enumeration*. WinPE + basic volume mounting work; VDS's deeper
-  enumeration stalls a PnP IRP on some modelled device → watchdog bugcheck. Reproduces
-  even single-disk (so it is **not** the second namespace).
+Lifecycle evidence covers clean system-off/writeback, post-exit reopen, a
+process-resident host pause/continue, and an in-process Windows restart. The
+restart path resets BridgeVM devices, guest RAM, vCPU registers, and Apple's
+in-kernel GIC; omitting the GIC reset was live-observed to freeze the second
+firmware generation.
+
+The immediate completion wall is no longer basic Windows boot. It is executing
+the WDK finalizer for the pinned ARM64 `viogpu3d` render package, returning the
+new signed package through the real repository gate, then proving certificate
+trust, PnP bind, Status OK, and a protocol-coherent render trace. Separate
+product decisions remain for a packaged from-scratch installer and durable
+disk-backed suspend (or an explicit v1 no-suspend contract).
 
 Assistant memory with the full history: `bridgevm-hvf-engine-status.md`.
 
@@ -44,9 +50,8 @@ Assistant memory with the full history: `bridgevm-hvf-engine-status.md`.
   - VM setup ~L1179–1319: `hv_vm_create` (~1203), firmware `map_file` (~1258),
     `alloc_zeroed` guest RAM (~1270), `hv_vcpu_create` (~1288), initial regs
     `HV_REG_PC=0x0`, `HV_REG_CPSR=0x3c5`, `HV_REG_X0=RAM_BASE` (~1312).
-  - Run loop: `loop { … }` (~L1520). **PSCI handler** at `EC_HVC` (~L1685); `0x8400_0008 |
-    0x8400_0009` (SYSTEM_OFF/RESET) currently does `stop_reason = …; break;` (~L1730) → the
-    probe EXITS instead of rebooting.
+  - The PSCI handler treats SYSTEM_OFF as terminal and SYSTEM_RESET as another
+    bounded boot generation after vCPU join plus GIC/platform/RAM/vCPU reset.
   - Device attach from media (~L1410): `attach_nvme_raw_file`,
     `attach_nvme_second_namespace_raw_file`, `attach_pci_boot_media`, `attach_virtio_iso`.
 - Platform (device container): `crates/bridgevm-hvf/src/platform_virt.rs`
@@ -148,6 +153,15 @@ The first run that lets diskpart partition NSID 2 names the culprit.
 ---
 
 ## Workstream B (P2) — Probe reboot-loop (survive PSCI SYSTEM_RESET)
+
+**Completed and live-proven 2026-07-12.** The reset must include Apple's
+in-kernel GIC, not only BridgeVM-owned devices, RAM, and CPU registers. A
+WDK-triggered reboot exposed the missing step by freezing the second firmware
+generation. The probe now calls `hv_gic_reset()` after all secondary vCPUs
+stop and join; a nonzero status fails closed. A controlled installed-Windows
+restart returned `0x0`, reached a second BVAGENT `READY` in the same process,
+then powered off with NVMe/vars writeback and a status-0 service gate. See
+`docs/windows-arm/evidence/reboot-gic-reset-20260712.md`.
 
 Windows install reboots several times (apply → specialize → OOBE). The probe must reboot
 the **existing** VM, not exit — and must **not** call `hv_vm_create` again (that path is
@@ -276,6 +290,18 @@ Method for each: reach the surface, capture ramfb/trace evidence, fix, prove.
   it additionally needs an honest ACPI sleep/wake contract and resolution of the Windows
   Graphics/WDDM blocker.
 
+### D6. Installed-image capacity on import *(packaged and live-proven)*
+- The Windows HVF Lab clone/copies the selected RAW disk and UEFI vars without mutating
+  the sources, sparsely extends an undersized imported disk to 64 GiB, and records a
+  first-boot retry marker.
+- Once the new BVAGENT service generation is live, the backend refreshes host-storage
+  state and extends C: to Windows' reported supported maximum. The marker is removed only
+  after exit 0 plus `BRIDGEVM_DISK_GROW_OK`; a failure or interrupted boot retains it.
+- A separate live 24 GiB -> 48 GiB proof grew C: from 25,478,299,648 to
+  51,249,135,104 bytes, recovered 24.7 GiB free, cleanly powered off, and left the backup
+  GPT at the new final LBA. See
+  `docs/windows-arm/evidence/imported-disk-growth-20260712.md`.
+
 ## Workstream E — Performance & scale   *(measure first — start only after an install completes)*
 Profile and fix *measured* bottlenecks, not guessed ones.
 - **E1. SMP / multi-vCPU** — implemented with per-vCPU run-loop threads, GIC
@@ -284,8 +310,12 @@ Profile and fix *measured* bottlenecks, not guessed ones.
   40.372s/31.193s/26.137s at 1/2/4 vCPUs. Secondary-vCPU terminal PSCI requests now wake
   and terminate/reset through CPU0 instead of leaving the VM alive.
 - **E2. NVMe throughput** — the WIM apply and general IO go through the emulated NVMe.
-  Profile the command path (per-command allocations, PRP copies, doorbell handling); batch
-  / zero-copy the hot paths.
+  The command path now reuses PRP/segment/scratch storage, coalesces adjacent spans, and
+  uses a zero-copy host-pointer path when guest RAM exposes one. The byte-identical
+  buffered fallback remains independently selectable with
+  `BRIDGEVM_NVME_BUFFERED_IO=1`; the probe prints the selected mode so long storage/hash
+  diagnostics can compare the two paths without changing media or silently changing the
+  production default.
 - **E3. Run-loop / MMIO efficiency** — trim per-exit overhead on hot MMIO (xHCI/NVMe
   doorbells, GIC).
 - Acceptance: install apply completes in a practical time; desktop is responsive enough
@@ -308,8 +338,9 @@ Not required for "usable Windows". Sequence after D+E only if the product needs 
 4. ✅ **M4 — Interactive desktop** (D1 + D2): keyboard + pointer work, display usable.
 5. 🟡 **M5 — Connected, persistent, fast enough** (D3 + D4 + E): the core network,
    persistence, clean-shutdown, measured multi-vCPU, and process-resident host-pause gates
-   pass; durable suspend (or an explicit no-suspend v1 contract) and packaged setup remain
-   product gates.
+   pass. Packaged installed-image import, capacity growth, and app control are present;
+   durable suspend (or an explicit no-suspend v1 contract) and a packaged from-scratch
+   installer remain product gates.
 6. ✅ **M6 — Integration polish** (F, optional): clipboard and shared folders are
    substantive; dynamic resize remains gated on the WDDM path.
 

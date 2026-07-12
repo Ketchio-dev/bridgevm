@@ -10,6 +10,9 @@ Required:
 Options:
   --placeholder-nsid1 RAW Blank NSID-1 disk; when set, target boots as NSID-2.
   --watchdog-ms N         Probe watchdog in milliseconds. Default: 900000.
+  --no-watchdog           Keep the VM running until guest/user shutdown. This
+                          is the normal app mode and cannot be combined with
+                          --watchdog-ms. Agent overdue telemetry remains active.
   --max-reboots N         Maximum PSCI SYSTEM_RESET reboots. Default: 8.
   --ram-mib N             Guest RAM in MiB. Default: 4096.
   --smp-cpus N            Guest vCPU count, 1..123. Default: unset, so the
@@ -56,9 +59,15 @@ Options:
   --agent-share-host DIR  Host directory for bidirectional agent sharing.
   --agent-share-guest DIR Guest directory paired with --agent-share-host.
   --agent-share-ms N      Share scan interval, 500..60000 (default: 2000).
+  --agent-share-max-kb N  Largest file synchronized in KiB, 1..1048576
+                          (default: 8192). Use at least 32768 for the staged
+                          viogpu3d render package.
   --enable-xhci           Leave xHCI present for desktop input diagnosis.
   --virtio-net            Attach the virtio-net NIC (BRIDGEVM_VIRTIO_NET=1)
                           with the userspace NAT backend.
+  --nvme-buffered-io      Force the byte-identical buffered NVMe data path for
+                          an audited storage-integrity A/B diagnostic run.
+                          The production default remains direct DMA.
   --virtio-gpu-3d         Attach the virtio-gpu PCI device with the selected
                           3D backend, expose the viogpu3d bind-id alias
                           DEV_10F7 by default, build hvf_gic_boot_probe with
@@ -86,7 +95,8 @@ Options:
                           --virtio-gpu-3d.
   --daily                 Opt-in daily-driver preset. Changes defaults only
                           when not explicitly overridden: --ram-mib 6144 and
-                          --watchdog-ms 86400000. Also sets --smp-cpus 4
+                          --watchdog-ms 86400000 unless --no-watchdog is set.
+                          Also sets --smp-cpus 4
                           unless --smp-cpus is supplied, pins xHCI report
                           pacing at 30ms, and implies --release unless
                           --skip-build is set.

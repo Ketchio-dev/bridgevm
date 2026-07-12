@@ -7,7 +7,9 @@
 # was processed, and was failing with GetLastError=203). Line protocol (ASCII,
 # \n-terminated):
 #   host->guest:  RUN <base64(utf8 cmd)>\n | PS <base64(utf8 script)>\n | PING\n
-#   guest->host:  READY <hostname>\n | OUT <exit> <base64(utf8 out)>\n | PONG\n
+#   guest->host:  READY <hostname>\n | OUT <exit> <base64(utf8 out)>\n |
+#                 OUTBEG <exit> <bytes> <chunks>\n |
+#                 OUTCHUNK <seq> <base64(raw)>\n | OUTEND <chunks>\n | PONG\n
 # Reader note: PowerShell 5.1 P/Invoke marshaling is very expensive per call,
 # so reading one byte at a time makes multi-KB CLIPSET / PUT protocol lines
 # stall the channel for tens of seconds. Read-Line therefore reads up to 16 KiB
@@ -156,13 +158,33 @@ function Try-OpenPort {
 
 function Write-Bytes($handle, [byte[]]$data, [string]$what) {
     if (Is-BadHandle $handle) { Log "WriteFile[$what] SKIPPED bad handle"; return }
-    $written = 0
-    $ok = $K::WriteFile($handle, $data, [uint32]$data.Length, [ref]$written, [IntPtr]::Zero)
-    $gle = Gle
+    $want = $data.Length
+    $totalWritten = 0
+    $remaining = $data
+    while ($remaining.Length -gt 0) {
+        $written = [uint32]0
+        $ok = $K::WriteFile($handle, $remaining, [uint32]$remaining.Length, [ref]$written, [IntPtr]::Zero)
+        $gle = Gle
+        if (-not $ok -or $written -eq 0) {
+            Log "WriteFile[$what] FAILED ok=$ok written=$written total=$totalWritten want=$want gle=$gle"
+            return
+        }
+        $totalWritten += [int]$written
+        if ($written -lt $remaining.Length) {
+            # Synchronous WriteFile is allowed to complete only a prefix. Keep
+            # writing the suffix; otherwise the missing newline leaves the host
+            # protocol permanently waiting on a partial frame.
+            $suffix = New-Object byte[] ($remaining.Length - [int]$written)
+            [System.Array]::Copy($remaining, [int]$written, $suffix, 0, $suffix.Length)
+            $remaining = $suffix
+        } else {
+            $remaining = New-Object byte[] 0
+        }
+    }
     # Evidence for the HostConnected question: ok=True with written=want yet no
     # host wire traffic (queue[5] notify=0) means vioser's WillWriteBlock
     # silently consumed the write because HostConnected is false.
-    Log "WriteFile[$what] ok=$ok written=$written want=$($data.Length) gle=$gle"
+    Log "WriteFile[$what] complete written=$totalWritten want=$want"
 }
 function Write-Line($handle, [string]$line, [string]$what) {
     Write-Bytes $handle ([System.Text.Encoding]::ASCII.GetBytes($line + "`n")) $what
@@ -239,6 +261,37 @@ function Invoke-B64([string]$b64, [bool]$usePwsh) {
     return @{ Exit = $LASTEXITCODE; Out = $out }
 }
 
+function Write-CommandResult($handle, $result) {
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes([string]$result.Out)
+    $chunk = 24576
+    $max = 16 * 1024 * 1024
+    if ($bytes.Length -gt $max) {
+        $message = [System.Text.Encoding]::UTF8.GetBytes("command output exceeded ${max}-byte protocol limit")
+        Write-Line $handle ("OUT -1 " + [System.Convert]::ToBase64String($message)) 'OUT-LIMIT'
+        return
+    }
+    if ($bytes.Length -le $chunk) {
+        Write-Line $handle ("OUT " + $result.Exit + " " + [System.Convert]::ToBase64String($bytes)) 'OUT'
+        return
+    }
+
+    # Large shell output must not be one unbounded protocol line. The same
+    # 24-KiB raw chunk size used by GET keeps every base64 frame near 32 KiB.
+    $n = [int][System.Math]::Ceiling($bytes.Length / [double]$chunk)
+    Write-Line $handle ("OUTBEG " + $result.Exit + " " + $bytes.Length + " " + $n) 'OUTBEG'
+    $seq = 0
+    $off = 0
+    while ($off -lt $bytes.Length) {
+        $len = [System.Math]::Min($chunk, $bytes.Length - $off)
+        $slice = New-Object byte[] $len
+        [System.Array]::Copy($bytes, $off, $slice, 0, $len)
+        Write-Line $handle ("OUTCHUNK " + $seq + " " + [System.Convert]::ToBase64String($slice)) 'OUTCHUNK'
+        $off += $len
+        $seq++
+    }
+    Write-Line $handle ("OUTEND " + $seq) 'OUTEND'
+}
+
 # One-shot sanity probe: does CreateFile work AT ALL in this process context, and
 # what does the port's GetLastError actually mean? Opening \\.\C: (a known-good
 # device) isolates a vioser-specific open failure from a general P/Invoke / token
@@ -294,8 +347,8 @@ while ($true) {
             $arg = if ($sp -lt 0) { '' } else { $line.Substring($sp + 1) }
             switch ($tok) {
                 'PING' { Write-Line $h 'PONG' 'PONG' }
-                'RUN'  { $r = Invoke-B64 $arg $false; Write-Line $h ("OUT " + $r.Exit + " " + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($r.Out))) 'OUT' }
-                'PS'   { $r = Invoke-B64 $arg $true;  Write-Line $h ("OUT " + $r.Exit + " " + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($r.Out))) 'OUT' }
+                'RUN'  { $r = Invoke-B64 $arg $false; Write-CommandResult $h $r }
+                'PS'   { $r = Invoke-B64 $arg $true;  Write-CommandResult $h $r }
                 'CLIPGET' {
                     # Return the guest Windows clipboard text as CLIP <base64(utf8)>.
                     # The host polls CLIPGET every second, and repeatedly opening

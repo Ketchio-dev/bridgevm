@@ -45,7 +45,8 @@ Options:
 
 The result is deliberately not injection-ready: package/ contains no CAT or
 certificate. Copy the complete kit to Windows and run
-finalize-viogpu3d-package.ps1 with a test-signing PFX on a VS/WDK machine.
+finalize-viogpu3d-test-package.ps1 on an elevated disposable SDK/WDK machine, or
+finalize-viogpu3d-package.ps1 with a separately managed code-signing PFX.
 EOF
 }
 
@@ -284,6 +285,8 @@ EOF
 
 cp "$ROOT/scripts/finalize-hvf-windows-viogpu3d-package.ps1" \
   "$tmp_dir/finalize-viogpu3d-package.ps1"
+cp "$ROOT/scripts/finalize-hvf-windows-viogpu3d-test-package.ps1" \
+  "$tmp_dir/finalize-viogpu3d-test-package.ps1"
 
 {
   printf 'BridgeVM viogpu3d render-package stage\n'
@@ -321,7 +324,18 @@ BridgeVM viogpu3d ARM64 render package finalization kit
 package/ is an unsigned, UMD-registered staging directory. It deliberately has
 no viogpu3d.cat and no certificate; do not inject it yet.
 
-On a Windows machine with Visual Studio/WDK tools in PATH, run:
+On an elevated disposable Windows machine with matching Windows SDK and WDK,
+the shortest test-only path is:
+
+  powershell -ExecutionPolicy Bypass -File .\finalize-viogpu3d-test-package.ps1
+
+That wrapper creates and trusts an ephemeral Code Signing certificate, keeps
+its password inside the PowerShell process, deletes the private PFX, and leaves
+public certificate trust in place for a live install in the same test VM. Its
+report marks test_signing_required=true; enable Windows TESTSIGNING and reboot
+before installing. A self-signed test root is not a Microsoft kernel-policy root.
+
+To use a separately managed code-signing PFX instead, run:
 
   powershell -ExecutionPolicy Bypass -File .\finalize-viogpu3d-package.ps1 `
     -PackageDir .\package `
@@ -329,11 +343,16 @@ On a Windows machine with Visual Studio/WDK tools in PATH, run:
     -CertificatePfx C:\path\BridgeVM-Test.pfx
 
 Set VIOGPU3D_CERTIFICATE_PASSWORD instead of placing a PFX password in shell
-history. The finalizer runs InfVerif, signs viogpu3d.sys and all five UMD DLLs,
+history. Install both kits: the WDK supplies InfVerif and Inf2Cat, and the
+Windows SDK supplies SignTool. The finalizer discovers their Windows Kits
+bin/Tools locations even when the current process PATH predates installation. It
+runs InfVerif, signs viogpu3d.sys and all five UMD DLLs,
 regenerates the catalog with Inf2Cat, signs and verifies the artifacts, exports
-the public CER, and writes the result transactionally to package-finalized/. The PFX certificate
-must already be trusted by the Windows build machine so SignTool /kp can verify
-the kernel-policy signatures. The unsigned package/ input is never modified.
+the public CER, and writes the result transactionally to package-finalized/. By
+default a managed PFX must already chain to a trusted kernel-policy root so
+SignTool /kp can verify it. Pass -TestSigning only for an explicitly test-mode
+package; that path verifies Authenticode and reports /kp as skipped, never passed.
+The unsigned package/ input is never modified.
 
 Copy package-finalized/ back to the Mac, then require the repository gate:
 

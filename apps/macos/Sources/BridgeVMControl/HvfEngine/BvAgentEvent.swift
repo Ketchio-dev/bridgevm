@@ -17,7 +17,7 @@ enum BvAgentEvent: Equatable, Identifiable {
     case aliveHeartbeat(tMs: Int)
     case clipSync(direction: BvAgentDirection, bytes: Int, tMs: Int)
     case shareEvent(kind: BvAgentShareKind, path: String, bytes: Int?, tMs: Int)
-    case timeout(kind: String, tMs: Int)
+    case overdue(kind: String, awaitingReply: Bool, tMs: Int)
     case commandOutput(label: String, body: String)
     case unknown(String)
 
@@ -32,7 +32,8 @@ enum BvAgentEvent: Equatable, Identifiable {
         case let .shareEvent(kind, path, bytes, tMs):
             let byteText = bytes.map { " bytes=\($0)" } ?? ""
             return "SHARE \(kind.rawValue) \(path)\(byteText) t=\(tMs)"
-        case let .timeout(kind, tMs): return "SERVICE timeout \(kind) t=\(tMs)"
+        case let .overdue(kind, awaitingReply, tMs):
+            return "SERVICE overdue \(kind) awaiting-reply=\(awaitingReply) t=\(tMs)"
         case let .commandOutput(label, body): return "CMD \(label)\n\(body)"
         case let .unknown(line): return line
         }
@@ -86,10 +87,17 @@ enum BvAgentEvent: Equatable, Identifiable {
         if line.hasPrefix("BVAGENT SERVICE alive"), let tMs = tMs(in: line) {
             return .aliveHeartbeat(tMs: tMs)
         }
+        if line.hasPrefix("BVAGENT SERVICE overdue "),
+           let tMs = tMs(in: line),
+           let awaitingReply = boolValue(after: "awaiting-reply=", in: line) {
+            let body = String(line.dropFirst("BVAGENT SERVICE overdue ".count))
+            let kind = body.components(separatedBy: " awaiting-reply=").first ?? body
+            return .overdue(kind: kind, awaitingReply: awaitingReply, tMs: tMs)
+        }
         if line.hasPrefix("BVAGENT SERVICE timeout "), let tMs = tMs(in: line) {
             let body = String(line.dropFirst("BVAGENT SERVICE timeout ".count))
             let kind = body.components(separatedBy: " t=").first ?? body
-            return .timeout(kind: kind, tMs: tMs)
+            return .overdue(kind: kind, awaitingReply: false, tMs: tMs)
         }
         if line.hasPrefix("BVAGENT CLIPSYNC "), let event = parseClipSync(line) {
             return event
@@ -148,5 +156,15 @@ enum BvAgentEvent: Equatable, Identifiable {
         let tail = line[range.upperBound...]
         let digits = tail.prefix { $0.isNumber }
         return Int(digits)
+    }
+
+    private static func boolValue(after marker: String, in line: String) -> Bool? {
+        guard let range = line.range(of: marker) else { return nil }
+        let value = line[range.upperBound...].prefix { !$0.isWhitespace }
+        switch value {
+        case "true": return true
+        case "false": return false
+        default: return nil
+        }
     }
 }

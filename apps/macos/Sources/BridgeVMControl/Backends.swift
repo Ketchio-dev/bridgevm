@@ -360,7 +360,31 @@ final class HvfWindowsBackend: VMBackend {
 
     private var wrapperName: String { "scripts/run-hvf-windows-installed-boot.sh" }
     private var runLogPath: String { evidenceDir + "/run.log" }
+    private var diskGrowMarkerPath: String { config.bundlePath + "/metadata/hvf-grow-pending" }
+    private let ctlWriteLock = NSLock()
     var launcherLogPath: String { evidenceDir + "/launcher.log" }
+
+    static let pendingDiskGrowthCommand = [
+        "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"$ErrorActionPreference='Stop';",
+        "Update-HostStorageCache;",
+        "$before=Get-Partition -DriveLetter C;",
+        "$supported=Get-PartitionSupportedSize -DriveLetter C;",
+        "$state='resized';",
+        "if($supported.SizeMax -le $before.Size){",
+        "$disk=Get-Disk -Number $before.DiskNumber;",
+        "$partitionEnd=[UInt64]$before.Offset+[UInt64]$before.Size;",
+        "if($partitionEnd -gt [UInt64]$disk.Size){throw 'C: partition extends beyond its disk'};",
+        "$tailGap=[UInt64]$disk.Size-$partitionEnd;",
+        "if($tailGap -gt 16777216){throw 'C: has no contiguous extension space'};",
+        "$state='already-max';$after=$before;",
+        "}else{",
+        "Resize-Partition -DriveLetter C -Size $supported.SizeMax;",
+        "$after=Get-Partition -DriveLetter C;",
+        "if($after.Size -le $before.Size){throw 'C: partition size did not increase'}",
+        "};",
+        "$volume=Get-Volume -DriveLetter C;",
+        "Write-Output ('BRIDGEVM_DISK_GROW_OK state='+$state+' size='+$after.Size+' free='+$volume.SizeRemaining)\""
+    ].joined()
 
     func isRunning() -> Bool { Shell.isProcessRunning(matching: targetDiskPath) }
     func currentIP() -> String? { isRunning() ? "NAT (HVF)" : nil }
@@ -371,7 +395,12 @@ final class HvfWindowsBackend: VMBackend {
         if !FileManager.default.fileExists(atPath: ctlFilePath) {
             FileManager.default.createFile(atPath: ctlFilePath, contents: nil)
         }
+        // The wrapper replaces run.log on every launch. Remove it first so a
+        // pending first-boot action cannot mistake the previous SERVICE marker
+        // for the new guest generation and append a command before tailing starts.
+        try? FileManager.default.removeItem(atPath: runLogPath)
         Shell.launchDetached(launchCommand())
+        schedulePendingDiskGrowth()
     }
 
     func launchCommand() -> String {
@@ -382,15 +411,19 @@ final class HvfWindowsBackend: VMBackend {
     func stop() {
         guard isRunning() else { return }
         ensureDirectories()
-        let deadline = Date().addingTimeInterval(180)
-        while isRunning(), !serviceHasStarted(), Date() < deadline {
+        let serviceDeadline = Date().addingTimeInterval(180)
+        while isRunning(), !serviceHasStarted(), Date() < serviceDeadline {
             usleep(250_000)
         }
         if isRunning(), serviceHasStarted() {
             requestGracefulStop()
-        }
-        while isRunning(), Date() < deadline {
-            usleep(500_000)
+            // Give the guest a complete grace period after the request. Reusing
+            // the service-discovery deadline could leave only milliseconds when
+            // READY arrived late and turn a valid clean shutdown into a kill.
+            let shutdownDeadline = Date().addingTimeInterval(180)
+            while isRunning(), Date() < shutdownDeadline {
+                usleep(500_000)
+            }
         }
         guard isRunning() else { return }
         Shell.killProcesses(matching: targetDiskPath)
@@ -417,14 +450,17 @@ final class HvfWindowsBackend: VMBackend {
         ensureDirectories()
         let offset = fileSize(at: runLogPath)
         appendCtl(command)
-        return waitForCommandReply(command: command, offset: offset, timeout: 15)
+        // The guest dispatcher is deliberately lockstep. Driver/tool installs
+        // can take minutes, and returning a false timeout while their reply is
+        // still in flight invites the next UI command to be misinterpreted.
+        return waitForCommandReply(command: command, offset: offset, timeout: 900)
     }
 
     private func makeHvfEngineConfig() -> HvfEngineConfig {
         HvfEngineConfig(targetDiskPath: targetDiskPath,
                         uefiVarsPath: uefiVarsPath,
                         evidenceDir: evidenceDir,
-                        watchdogMs: 900_000,
+                        watchdogMs: nil,
                         ramMiB: config.memMiB ?? 6144,
                         smpCpus: config.cpuCount ?? 4,
                         clipboardSync: true,
@@ -450,9 +486,31 @@ final class HvfWindowsBackend: VMBackend {
         return data.range(of: Data("BVAGENT SERVICE start".utf8)) != nil
     }
 
+    private func schedulePendingDiskGrowth() {
+        guard FileManager.default.fileExists(atPath: diskGrowMarkerPath) else { return }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let deadline = Date().addingTimeInterval(300)
+            while Date() < deadline {
+                if self.isRunning(), self.serviceHasStarted() { break }
+                usleep(250_000)
+            }
+            guard self.isRunning(), self.serviceHasStarted() else { return }
+            let command = Self.pendingDiskGrowthCommand
+            let offset = self.fileSize(at: self.runLogPath)
+            self.appendCtl(command)
+            let reply = self.waitForCommandReply(command: command, offset: offset, timeout: 300)
+            if reply.code == 0, reply.output.contains("BRIDGEVM_DISK_GROW_OK") {
+                try? FileManager.default.removeItem(atPath: self.diskGrowMarkerPath)
+            }
+        }
+    }
+
     private func appendCtl(_ command: String) {
         let cleaned = command.trimmingCharacters(in: .newlines)
         guard !cleaned.isEmpty else { return }
+        ctlWriteLock.lock()
+        defer { ctlWriteLock.unlock() }
         if !FileManager.default.fileExists(atPath: ctlFilePath) {
             FileManager.default.createFile(atPath: ctlFilePath, contents: nil)
         }

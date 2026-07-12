@@ -202,10 +202,6 @@ final class HvfEngineSession: ObservableObject {
         case .aliveHeartbeat:
             lastHeartbeatDate = Date()
             lastHeartbeatAge = 0
-        case .timeout:
-            if connectionState != .stopping {
-                connectionState = .timedOut
-            }
         default:
             break
         }

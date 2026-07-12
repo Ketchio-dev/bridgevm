@@ -7,6 +7,8 @@ import UniformTypeIdentifiers
 // MARK: - Create logic (clone Ubuntu / from ISO)
 
 extension VMLibrary {
+    static let minimumImportedWindowsHVFDiskGiB: UInt64 = 64
+
     private static func uniqueSlug(_ base: String) -> String {
         let baseSlug = VMConfig.slugify(base)
         let existing = Set(list().map { $0.slug })
@@ -22,6 +24,21 @@ extension VMLibrary {
         try? fm.removeItem(atPath: destination)
         do {
             try fm.copyItem(atPath: source, toPath: destination)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static func growSparseFileIfNeeded(at path: String, minimumBytes: UInt64) -> Bool {
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.uint64Value else {
+            return false
+        }
+        guard size < minimumBytes else { return true }
+        guard let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: path)) else { return false }
+        defer { try? handle.close() }
+        do {
+            try handle.truncate(atOffset: minimumBytes)
             return true
         } catch {
             return false
@@ -193,6 +210,13 @@ extension VMLibrary {
         }
         guard cloneOrCopyFile(from: sourceDisk.path, to: disk),
               cloneOrCopyFile(from: sourceVars.path, to: vars) else { return nil }
+        let minimumDiskBytes = minimumImportedWindowsHVFDiskGiB * 1024 * 1024 * 1024
+        let importedDiskSize = ((try? fm.attributesOfItem(atPath: disk)[.size] as? NSNumber)?.uint64Value) ?? 0
+        guard growSparseFileIfNeeded(at: disk, minimumBytes: minimumDiskBytes) else { return nil }
+        if importedDiskSize < minimumDiskBytes {
+            let marker = bundle.appendingPathComponent("metadata/hvf-grow-pending")
+            guard fm.createFile(atPath: marker.path, contents: Data("\(minimumDiskBytes)\n".utf8)) else { return nil }
+        }
         guard fm.createFile(atPath: bundle.appendingPathComponent("metadata/hvf.ctl").path, contents: nil) else { return nil }
 
         let b = bundle.path

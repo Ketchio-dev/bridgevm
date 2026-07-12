@@ -2,17 +2,15 @@
 
 Goal: GPU-accelerated 3D for the Windows 11 ARM64 guest on our from-scratch VMM,
 reusing the host virtio-gpu 3D stack already exercised with Linux. Injection-ready
-Windows ARM64 `viogpu3d` packages now exist locally, but none is currently a
-finalized render candidate. The preserved VirGL full package carries five ARM64 Mesa DLLs and
+Windows ARM64 `viogpu3d` packages now exist locally, and a test-signed VirGL
+full package has completed a live render-path proof. The preserved package carries five ARM64 Mesa DLLs and
 `CopyFiles` entries, while its INF omits `UserModeDriverName`,
 `OpenGLDriverName`, `OpenGLVersion`, `OpenGLFlags`, and
 `InstalledDisplayDrivers`. A pinned local stage now replaces that fallback INF
 with a canonical, UMD-registered minimal profile and strips the stale CAT/CER.
-Its parser-only fixture passes the repository INF/CopyFiles gate, but is not a
-signed artifact. The next piece is therefore Windows WDK finalization of that
-exact stage, followed by the real render-candidate gate and live, boot-bound
-proof that it installs, binds, and speaks the expected protocol: `venus` when it really
-uses capset 4, or `virgl`/`virgl2` when it follows the older D3D10/GL path.
+Its finalized test package installed and bound live on 2026-07-12; the guest
+reported WDDM 1.3 and feature level 10_0 while a 23,421-event VirGL trace passed
+the protocol-specific P3 gate. See the [live evidence index](windows-arm/evidence/viogpu3d-virgl-live-20260712.md).
 
 ## The good news: our device is close to feature-compatible
 The concrete VirGL package comes from the ARM64-capable `akre` branch of
@@ -50,7 +48,7 @@ up capset 1, and the installed boot path can select the CGL-backed VirGL runtime
    source/package audit. Do not boot a package under a gate for the wrong
    protocol.
 
-## The binary/INF inputs are closed; WDK finalization is the current wall
+## The live VirGL path is closed; productionization is the current wall
 
 `viogpu3d` is a WDDM kernel driver whose reproducible full build still requires:
 
@@ -79,9 +77,16 @@ and all seven original CI inputs, and refuses stale signed metadata. Merely
 editing the signed out-of-tree INF would invalidate its catalog, so the stage is
 deliberately unsigned and must be finalized as a new immutable package.
 
-The immediate wall is therefore executing the Windows WDK finalizer with a
-trusted code-signing PFX, then returning `package-finalized` to the Mac and
-requiring the repository's real render-candidate gate. The following wall is live Windows evidence: certificate trust and
+The immediate wall is therefore executing the Windows WDK finalizer, then
+returning `package-finalized` to the Mac and requiring the repository's real
+render-candidate gate. The Mac-to-guest prerequisites are now closed: imported
+disks grow to 64 GiB on first boot, the shared-folder ceiling is explicit
+(`--agent-share-max-kb`, with 65536 KiB used by the app), and service-mode
+commands retain strict wire alignment for long-running installers. The kit also
+contains a disposable-test wrapper that creates a Code Signing certificate,
+keeps its random PFX password out of the command line, trusts the public
+certificate, runs the audited finalizer, and deletes the private PFX. The
+following wall is live Windows evidence: certificate trust and
 testsigning, `pnputil` install, a present `DEV_1050`/`DEV_10F7` device with
 Status OK bound to the intended OEM INF, then a coherent capset/blob/context/
 submit/fence trace tied to that same boot and a rendered workload.
@@ -98,9 +103,10 @@ scripts/stage-hvf-windows-viogpu3d-render-package.sh \
   --out-dir /tmp/bridgevm-viogpu3d-render-finalization-kit
 ```
 
-Copy that complete kit to an x64 Windows WDK environment. The signing
-certificate must already be trusted there so kernel-policy verification can
-pass. Run:
+Copy that complete kit to an x64 Windows environment with matching Windows SDK
+and WDK. The WDK supplies InfVerif and Inf2Cat; the Windows SDK supplies
+SignTool. The signing certificate must already be trusted there so kernel-policy
+verification can pass. Run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\finalize-viogpu3d-package.ps1 `
@@ -108,6 +114,16 @@ powershell -ExecutionPolicy Bypass -File .\finalize-viogpu3d-package.ps1 `
   -PreFinalizationManifest .\pre-finalization-sha256.txt `
   -CertificatePfx C:\path\BridgeVM-Test.pfx
 ```
+
+For a disposable elevated test VM, the kit can instead create and trust an
+ephemeral Code Signing identity without exposing its PFX password:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\finalize-viogpu3d-test-package.ps1
+```
+
+Both paths discover Windows Kits bin/Tools locations when the current process
+PATH predates SDK/WDK installation.
 
 The finalizer validates the exact flat input set, manifest, canonical INF hash,
 ARM64 PE machine fields, and code-signing EKU. It writes through a temporary
@@ -307,5 +323,5 @@ undebuggable in a black box. We are not a black box:
   protocol-coherent feature/capset/blob/context/submit/fence gate. Production
   signing, licensing, stability, and workload/render proof remain later gates.
 
-_Updated 2026-07-11. See [[bridgevm-hvf-engine-status]] and
+_Updated 2026-07-12. See [[bridgevm-hvf-engine-status]] and
 docs/hvf-3d-engine-plan.md._

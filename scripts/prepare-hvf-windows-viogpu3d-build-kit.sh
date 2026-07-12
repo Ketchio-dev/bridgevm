@@ -368,7 +368,15 @@ Run from a Visual Studio developer PowerShell:
 
 Without -CertificatePfx the builder creates an exact unsigned staging package
 and a sibling *-pre-finalization.sha256 manifest. Finalize that package before
-injection:
+injection. On an elevated disposable Windows test VM, the bundled test wrapper
+generates and trusts a process-local-password certificate without placing a PFX
+secret in shell history:
+
+  powershell -ExecutionPolicy Bypass -File .\finalize-viogpu3d-test-package.ps1 `
+    -PackageDir C:\path\bridgevm-viogpu3d-arm64-package `
+    -PreFinalizationManifest C:\path\bridgevm-viogpu3d-arm64-package-pre-finalization.sha256
+
+For a separately managed signing identity, invoke the audited finalizer:
 
   powershell -ExecutionPolicy Bypass -File .\finalize-viogpu3d-package.ps1 `
     -PackageDir C:\path\bridgevm-viogpu3d-arm64-package `
@@ -376,8 +384,9 @@ injection:
     -CertificatePfx C:\path\BridgeVM-Test.pfx `
     -Profile arehnman-arm64-minimal
 
-The finalizer requires the PFX certificate to be trusted on the build machine,
-validates the manifest and exact minimal-profile file set, and writes a separate
+The finalizer discovers installed Windows Kits tools even when they are not in
+the current PATH. It requires the PFX certificate to be trusted on the build
+machine, validates the manifest and exact minimal-profile file set, and writes a separate
 bridgevm-viogpu3d-arm64-package-finalized directory. It never mutates the
 unsigned input. Copy only the finalized directory back to the Mac and run:
 
@@ -480,6 +489,8 @@ write_powershell_builder "$OUT_DIR/build-viogpu3d-arm64.ps1"
 write_readme "$OUT_DIR/README.txt"
 cp "$ROOT/scripts/finalize-hvf-windows-viogpu3d-package.ps1" \
   "$OUT_DIR/finalize-viogpu3d-package.ps1"
+cp "$ROOT/scripts/finalize-hvf-windows-viogpu3d-test-package.ps1" \
+  "$OUT_DIR/finalize-viogpu3d-test-package.ps1"
 cp "$ROOT/scripts/win-assets/viogpu3d-arehnman-arm64-minimal.inf" \
   "$OUT_DIR/viogpu3d-arehnman-arm64-minimal.inf"
 cp "$ROOT/scripts/win-assets/build-mesa-arm64.ps1" \
@@ -514,6 +525,7 @@ REPORT="$OUT_DIR/source-report.txt"
   printf 'staged_render_dlls=viogpu_d3d10_arm64.dll,viogpu_wgl_arm64.dll,opengl32_arm64.dll,libEGL_arm64.dll,libGLESv2_arm64.dll\n'
   printf 'windows_build_script=%s\n' "$OUT_DIR/build-viogpu3d-arm64.ps1"
   printf 'windows_finalizer=%s\n' "$OUT_DIR/finalize-viogpu3d-package.ps1"
+  printf 'windows_test_certificate_finalizer=%s\n' "$OUT_DIR/finalize-viogpu3d-test-package.ps1"
   printf 'pre_finalization_manifest_required=true\n'
   printf 'finalizer_mutates_unsigned_input=false\n'
   printf 'windows_finalization_order=InfVerif,PE-sign,Inf2Cat,CAT-sign,SignTool-verify\n'

@@ -112,6 +112,7 @@ delegate_output="$(
     --agent-share-host "$SHARE" \
     --agent-share-guest 'C:\bridgevm-share' \
     --agent-share-ms 2500 \
+    --agent-share-max-kb 32768 \
     --enable-xhci \
     --virtio-net \
     --virtio-gpu-3d \
@@ -146,6 +147,7 @@ assert_args_exact "$delegate_output" "fake-wrapper delegation" \
   --agent-share-host "$SHARE" \
   --agent-share-guest 'C:\bridgevm-share' \
   --agent-share-ms 2500 \
+  --agent-share-max-kb 32768 \
   --enable-xhci \
   --virtio-net \
   --virtio-gpu-3d \
@@ -174,6 +176,22 @@ assert_args_exact "$alias_output" "disk alias delegation" \
   --target "$TARGET" \
   --vars "$VARS" \
   --evidence-dir "$EVIDENCE" \
+  --print-policy
+
+no_watchdog_output="$(
+  BRIDGEVM_REPO_ROOT="$FAKE_REPO" run_hvf_runner \
+    --launch \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --no-watchdog \
+    --print-policy 2>&1
+)" || fail "hvf-runner no-watchdog delegation failed: $no_watchdog_output"
+assert_args_exact "$no_watchdog_output" "no-watchdog delegation" \
+  --target "$TARGET" \
+  --vars "$VARS" \
+  --evidence-dir "$EVIDENCE" \
+  --no-watchdog \
   --print-policy
 
 INVOKE="$STORE/invoke"
@@ -262,6 +280,7 @@ service_policy_output="$(
     --agent-share-host "$SHARE" \
     --agent-share-guest 'C:\bridgevm-share' \
     --agent-share-ms 2500 \
+    --agent-share-max-kb 32768 \
     --print-policy 2>&1
 )" || fail "hvf-runner app service policy failed: $service_policy_output"
 assert_contains "$service_policy_output" "BRIDGEVM_RAM_MIB=6144" "runner app service policy"
@@ -271,6 +290,7 @@ assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CTL=$CONTROL" 
 assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC=1" "runner app service policy"
 assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE=$SHARE::C:\bridgevm-share" "runner app service policy"
 assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS=2500" "runner app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MAX_KB=32768" "runner app service policy"
 
 bad_smp_output="$(
   run_hvf_runner \

@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     env,
     ffi::CString,
     os::raw::{c_char, c_int, c_uint, c_void},
@@ -11,8 +11,8 @@ use std::{
 };
 
 use crate::virtio_gpu_3d::{
-    CapsetInfo, CompletedFence, CreateBlobArgs, MappedBlob, ScanoutMappedBlob, VirtioGpu3dBackend,
-    VIRTIO_GPU_RESP_ERR_UNSPEC,
+    CapsetInfo, CompletedFence, Create3dArgs, CreateBlobArgs, MappedBlob, ScanoutMappedBlob,
+    Transfer3dArgs, VirtioGpu3dBackend, VIRTIO_GPU_RESP_ERR_UNSPEC,
 };
 
 type virgl_renderer_gl_context = *mut c_void;
@@ -80,6 +80,31 @@ pub struct virgl_renderer_resource_create_blob_args {
 }
 
 #[repr(C)]
+pub struct virgl_renderer_resource_create_args {
+    pub handle: u32,
+    pub target: u32,
+    pub format: u32,
+    pub bind: u32,
+    pub width: u32,
+    pub height: u32,
+    pub depth: u32,
+    pub array_size: u32,
+    pub last_level: u32,
+    pub nr_samples: u32,
+    pub flags: u32,
+}
+
+#[repr(C)]
+pub struct virgl_box {
+    pub x: u32,
+    pub y: u32,
+    pub z: u32,
+    pub width: u32,
+    pub height: u32,
+    pub depth: u32,
+}
+
+#[repr(C)]
 pub struct iovec {
     pub iov_base: *mut c_void,
     pub iov_len: usize,
@@ -102,9 +127,47 @@ unsafe extern "C" {
         name: *const c_char,
     ) -> c_int;
     fn virgl_renderer_context_destroy(handle: u32);
+    fn virgl_renderer_force_ctx_0();
     fn virgl_renderer_ctx_attach_resource(ctx_id: c_int, res_handle: c_int);
     fn virgl_renderer_ctx_detach_resource(ctx_id: c_int, res_handle: c_int);
     fn virgl_renderer_submit_cmd(buffer: *mut c_void, ctx_id: c_int, ndw: c_int) -> c_int;
+    fn virgl_renderer_resource_create(
+        args: *mut virgl_renderer_resource_create_args,
+        iov: *mut iovec,
+        num_iovs: u32,
+    ) -> c_int;
+    fn virgl_renderer_resource_attach_iov(
+        res_handle: c_int,
+        iov: *mut iovec,
+        num_iovs: c_int,
+    ) -> c_int;
+    fn virgl_renderer_resource_detach_iov(
+        res_handle: c_int,
+        iov: *mut *mut iovec,
+        num_iovs: *mut c_int,
+    );
+    fn virgl_renderer_transfer_write_iov(
+        handle: u32,
+        ctx_id: u32,
+        level: c_int,
+        stride: u32,
+        layer_stride: u32,
+        transfer_box: *mut virgl_box,
+        offset: u64,
+        iov: *mut iovec,
+        iovec_cnt: c_uint,
+    ) -> c_int;
+    fn virgl_renderer_transfer_read_iov(
+        handle: u32,
+        ctx_id: u32,
+        level: u32,
+        stride: u32,
+        layer_stride: u32,
+        transfer_box: *mut virgl_box,
+        offset: u64,
+        iov: *mut iovec,
+        iovec_cnt: c_int,
+    ) -> c_int;
     fn virgl_renderer_context_create_fence(
         ctx_id: u32,
         flags: u32,
@@ -205,7 +268,11 @@ pub struct VenusBackend {
     contexts: Vec<u32>,
     outstanding_fences: BTreeMap<u32, usize>,
     mapped_resources: BTreeMap<u32, VenusMappedResource>,
-    iovecs_scratch: Vec<iovec>,
+    resources: BTreeSet<u32>,
+    // virglrenderer retains the iovec-array pointer for the resource lifetime.
+    // Each array therefore needs stable, per-resource storage rather than a
+    // reusable scratch vector.
+    resource_iovecs: BTreeMap<u32, Vec<iovec>>,
     resource_ids_scratch: Vec<u32>,
 }
 
@@ -217,7 +284,8 @@ impl Clone for VenusBackend {
             contexts: self.contexts.clone(),
             outstanding_fences: self.outstanding_fences.clone(),
             mapped_resources: self.mapped_resources.clone(),
-            iovecs_scratch: Vec::new(),
+            resources: BTreeSet::new(),
+            resource_iovecs: BTreeMap::new(),
             resource_ids_scratch: Vec::new(),
         }
     }
@@ -261,7 +329,8 @@ impl VenusBackend {
             contexts: Vec::new(),
             outstanding_fences: BTreeMap::new(),
             mapped_resources: BTreeMap::new(),
-            iovecs_scratch: Vec::new(),
+            resources: BTreeSet::new(),
+            resource_iovecs: BTreeMap::new(),
             resource_ids_scratch: Vec::new(),
         })
     }
@@ -342,7 +411,16 @@ impl VirtioGpu3dBackend for VenusBackend {
     fn ctx_create(&mut self, ctx_id: u32, context_init: u32, name: &[u8]) -> bool {
         let default_name = format!("bridgevm-{}", self.protocol.label());
         let name = CString::new(name).unwrap_or_else(|_| CString::new(default_name).unwrap());
-        let flags = context_init & VIRGL_RENDERER_CONTEXT_FLAG_CAPSET_ID_MASK;
+        let requested = context_init & VIRGL_RENDERER_CONTEXT_FLAG_CAPSET_ID_MASK;
+        // When CONTEXT_INIT was not negotiated, virtio-gpu defines the context
+        // as the renderer's default VirGL context. virglrenderer expresses that
+        // default as VIRGL2; passing a literal zero to the newer flags API is an
+        // invalid capset and returns EINVAL.
+        let flags = if self.protocol == VirtioGpuRendererProtocol::Virgl && requested == 0 {
+            VIRTIO_GPU_CAPSET_VIRGL2
+        } else {
+            requested
+        };
         let ret = unsafe {
             virgl_renderer_context_create_with_flags(
                 ctx_id,
@@ -384,6 +462,155 @@ impl VirtioGpu3dBackend for VenusBackend {
         }
     }
 
+    fn create_3d(&mut self, args: Create3dArgs) -> bool {
+        // Resource creation is not tied to a guest renderer context.  On CGL,
+        // the current context is thread-local while a serialized virtio-gpu
+        // notification may arrive on any vCPU thread, so make ctx0 current
+        // before virglrenderer issues glGenBuffers/glBufferData or texture
+        // allocation calls.
+        if self.protocol == VirtioGpuRendererProtocol::Virgl {
+            unsafe {
+                virgl_renderer_force_ctx_0();
+            }
+        }
+        let mut create = virgl_renderer_resource_create_args {
+            handle: args.resource_id,
+            target: args.target,
+            format: args.format,
+            bind: args.bind,
+            width: args.width,
+            height: args.height,
+            depth: args.depth,
+            array_size: args.array_size,
+            last_level: args.last_level,
+            nr_samples: args.nr_samples,
+            flags: args.flags,
+        };
+        let ret = unsafe { virgl_renderer_resource_create(&mut create, ptr::null_mut(), 0) };
+        if ret == 0 {
+            self.resources.insert(args.resource_id);
+        } else {
+            eprintln!(
+                "{}: resource_create_3d res={} target={} format={} bind={:#x} size={}x{}x{} ret={ret}",
+                self.protocol.label(),
+                args.resource_id,
+                args.target,
+                args.format,
+                args.bind,
+                args.width,
+                args.height,
+                args.depth
+            );
+        }
+        ret == 0
+    }
+
+    fn attach_backing(
+        &mut self,
+        resource_id: u32,
+        host_iovecs: &[crate::virtio_gpu_3d::BlobHostIovec],
+    ) -> bool {
+        if !self.resources.contains(&resource_id)
+            || self.resource_iovecs.contains_key(&resource_id)
+            || host_iovecs.is_empty()
+        {
+            return false;
+        }
+        let iovecs = host_iovecs
+            .iter()
+            .map(|entry| iovec {
+                iov_base: entry.host_ptr.cast::<c_void>(),
+                iov_len: entry.len,
+            })
+            .collect::<Vec<_>>();
+        self.resource_iovecs.insert(resource_id, iovecs);
+        let stored = self.resource_iovecs.get_mut(&resource_id).unwrap();
+        let ret = unsafe {
+            virgl_renderer_resource_attach_iov(
+                resource_id as c_int,
+                stored.as_mut_ptr(),
+                stored.len() as c_int,
+            )
+        };
+        if ret != 0 {
+            self.resource_iovecs.remove(&resource_id);
+            eprintln!(
+                "{}: resource_attach_iov res={resource_id} count={} ret={ret}",
+                self.protocol.label(),
+                host_iovecs.len()
+            );
+        }
+        ret == 0
+    }
+
+    fn detach_backing(&mut self, resource_id: u32) -> bool {
+        if !self.resource_iovecs.contains_key(&resource_id) {
+            return false;
+        }
+        let mut detached = ptr::null_mut();
+        let mut count = 0;
+        unsafe {
+            virgl_renderer_resource_detach_iov(resource_id as c_int, &mut detached, &mut count);
+        }
+        self.resource_iovecs.remove(&resource_id);
+        true
+    }
+
+    fn transfer_3d(&mut self, args: Transfer3dArgs, to_host: bool) -> bool {
+        let mut transfer_box = virgl_box {
+            x: args.x,
+            y: args.y,
+            z: args.z,
+            width: args.width,
+            height: args.height,
+            depth: args.depth,
+        };
+        let ret = unsafe {
+            if to_host {
+                virgl_renderer_transfer_write_iov(
+                    args.resource_id,
+                    args.ctx_id,
+                    args.level as c_int,
+                    args.stride,
+                    args.layer_stride,
+                    &mut transfer_box,
+                    args.offset,
+                    ptr::null_mut(),
+                    0,
+                )
+            } else {
+                virgl_renderer_transfer_read_iov(
+                    args.resource_id,
+                    args.ctx_id,
+                    args.level,
+                    args.stride,
+                    args.layer_stride,
+                    &mut transfer_box,
+                    args.offset,
+                    ptr::null_mut(),
+                    0,
+                )
+            }
+        };
+        if ret != 0 {
+            eprintln!(
+                "{}: transfer_3d direction={} ctx={} res={} level={} box={}x{}x{}@{},{},{} ret={ret}",
+                self.protocol.label(),
+                if to_host { "to-host" } else { "from-host" },
+                args.ctx_id,
+                args.resource_id,
+                args.level,
+                args.width,
+                args.height,
+                args.depth,
+                args.x,
+                args.y,
+                args.z
+            );
+        }
+        ret == 0
+    }
+
     fn submit_3d(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> bool {
         let ndw = cmdbuf.len().div_ceil(4);
         let ret = if cmdbuf.is_empty() {
@@ -408,12 +635,23 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn create_blob(&mut self, args: CreateBlobArgs<'_>) -> bool {
-        self.iovecs_scratch.clear();
-        self.iovecs_scratch
-            .extend(args.iovecs.iter().map(|entry| iovec {
+        let iovecs = args
+            .iovecs
+            .iter()
+            .map(|entry| iovec {
                 iov_base: entry.host_ptr.cast::<c_void>(),
                 iov_len: entry.len,
-            }));
+            })
+            .collect::<Vec<_>>();
+        if !iovecs.is_empty() {
+            self.resource_iovecs.insert(args.resource_id, iovecs);
+        }
+        let (iovecs, num_iovs) = self
+            .resource_iovecs
+            .get(&args.resource_id)
+            .map_or((ptr::null(), 0), |iovecs| {
+                (iovecs.as_ptr(), iovecs.len() as u32)
+            });
         let create = virgl_renderer_resource_create_blob_args {
             res_handle: args.resource_id,
             ctx_id: args.ctx_id,
@@ -421,16 +659,12 @@ impl VirtioGpu3dBackend for VenusBackend {
             blob_flags: args.blob_flags,
             blob_id: args.blob_id,
             size: args.size,
-            iovecs: if self.iovecs_scratch.is_empty() {
-                ptr::null()
-            } else {
-                self.iovecs_scratch.as_ptr()
-            },
-            num_iovs: self.iovecs_scratch.len() as u32,
+            iovecs,
+            num_iovs,
         };
         let ret = unsafe { virgl_renderer_resource_create_blob(&create) };
-        self.iovecs_scratch.clear();
         if ret != 0 {
+            self.resource_iovecs.remove(&args.resource_id);
             eprintln!(
                 "{}: resource_create_blob ctx={} res={} blob_mem={} blob_id={} size={} ret={ret}",
                 self.protocol.label(),
@@ -440,6 +674,9 @@ impl VirtioGpu3dBackend for VenusBackend {
                 args.blob_id,
                 args.size
             );
+        }
+        if ret == 0 {
+            self.resources.insert(args.resource_id);
         }
         ret == 0
     }
@@ -473,9 +710,18 @@ impl VirtioGpu3dBackend for VenusBackend {
         while self.mapped_resources.contains_key(&resource_id) {
             self.unmap_resource_ref(resource_id);
         }
+        // Resource destruction is global too and may delete a shared GL object.
+        // Rebind ctx0 for the same thread-local CGL reason as create_3d().
+        if self.protocol == VirtioGpuRendererProtocol::Virgl {
+            unsafe {
+                virgl_renderer_force_ctx_0();
+            }
+        }
         unsafe {
             virgl_renderer_resource_unref(resource_id);
         }
+        self.resource_iovecs.remove(&resource_id);
+        self.resources.remove(&resource_id);
     }
 
     fn create_fence(&mut self, ctx_id: u32, ring_idx: u8, fence_id: u64) -> bool {
@@ -536,6 +782,18 @@ impl VirtioGpu3dBackend for VenusBackend {
             }
         }
         self.resource_ids_scratch = resource_ids;
+        self.resource_ids_scratch.clear();
+        self.resource_ids_scratch
+            .extend(self.resources.iter().copied());
+        let mut resource_ids = std::mem::take(&mut self.resource_ids_scratch);
+        for resource_id in resource_ids.drain(..) {
+            unsafe {
+                virgl_renderer_resource_unref(resource_id);
+            }
+            self.resource_iovecs.remove(&resource_id);
+        }
+        self.resource_ids_scratch = resource_ids;
+        self.resources.clear();
         for ctx_id in std::mem::take(&mut self.contexts) {
             unsafe {
                 virgl_renderer_context_destroy(ctx_id);

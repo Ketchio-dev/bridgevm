@@ -88,6 +88,7 @@ assert_contains "$output" "BRIDGEVM_VIOGPU3D_DIR=$VIOGPU3D" "installed boot poli
 assert_contains "$output" "BRIDGEVM_REQUIRE_VIOGPU3D_READINESS=1" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_RAM_MIB=4096" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=900000" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_SMP_CPUS=<unset> (probe default 1)" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_TIMER=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_TIMER_RAMFB_MS=<probe-default 1000>" "installed boot policy"
@@ -181,6 +182,7 @@ service_policy_output="$(
     --agent-share-host "$SHARE" \
     --agent-share-guest 'C:\bridgevm-share' \
     --agent-share-ms 2500 \
+    --agent-share-max-kb 32768 \
     --print-policy 2>&1
 )" || fail "installed boot app service policy failed: $service_policy_output"
 assert_contains "$service_policy_output" "BRIDGEVM_RAM_MIB=6144" "app service policy"
@@ -195,6 +197,19 @@ assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CTL=$CONTROL" 
 assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC=1" "app service policy"
 assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE=$SHARE::C:\bridgevm-share" "app service policy"
 assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS=2500" "app service policy"
+assert_contains "$service_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MAX_KB=32768" "app service policy"
+
+no_watchdog_policy_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --no-watchdog \
+    --agent-service-control "$CONTROL" \
+    --print-policy 2>&1
+)" || fail "installed boot no-watchdog policy failed: $no_watchdog_policy_output"
+assert_contains "$no_watchdog_policy_output" "BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED=1" "no-watchdog policy"
+assert_contains "$no_watchdog_policy_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=900000" "no-watchdog agent overdue policy"
 
 boot_timer_env_output="$(
   bash -c '
@@ -299,7 +314,8 @@ service_env_output="$(
     --agent-clipboard-sync \
     --agent-share-host "$SHARE" \
     --agent-share-guest 'C:\bridgevm-share' \
-    --agent-share-ms 2500
+    --agent-share-ms 2500 \
+    --agent-share-max-kb 32768
 )" || fail "installed boot app service env failed: $service_env_output"
 assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE=1" "app service env"
 assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST=1" "app service env"
@@ -311,6 +327,26 @@ assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_CTL=$CONTROL" "ap
 assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC=1" "app service env"
 assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE=$SHARE::C:\bridgevm-share" "app service env"
 assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS=2500" "app service env"
+assert_contains "$service_env_output" "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MAX_KB=32768" "app service env"
+
+no_watchdog_env_output="$(
+  bash -c '
+    set -euo pipefail
+    source scripts/run-hvf-windows-installed-boot-validation.sh
+    source scripts/run-hvf-windows-installed-boot-args.sh
+    source scripts/run-hvf-windows-installed-boot-runner.sh
+    init_installed_boot_defaults
+    parse_installed_boot_args "$@"
+    build_installed_boot_env_args
+  ' _ \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --no-watchdog \
+    --agent-service-control "$CONTROL"
+)" || fail "installed boot no-watchdog env failed: $no_watchdog_env_output"
+assert_contains "$no_watchdog_env_output" "BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED=1" "no-watchdog env"
+assert_contains "$no_watchdog_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=900000" "no-watchdog agent overdue env"
 
 daily_output="$(
   scripts/run-hvf-windows-installed-boot.sh \
@@ -327,6 +363,18 @@ assert_contains "$daily_output" "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=86400000" "dail
 assert_contains "$daily_output" "BRIDGEVM_SMP_CPUS=4" "daily policy"
 assert_contains "$daily_output" "BRIDGEVM_XHCI_REPORT_INTERVAL_MS=30" "daily policy"
 assert_contains "$daily_output" "BUILD_PROFILE=release" "daily policy"
+
+daily_no_watchdog_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --daily \
+    --no-watchdog \
+    --print-policy 2>&1
+)" || fail "installed boot daily no-watchdog policy failed: $daily_no_watchdog_output"
+assert_contains "$daily_no_watchdog_output" "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=900000" "daily no-watchdog agent overdue policy"
+assert_contains "$daily_no_watchdog_output" "BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED=1" "daily no-watchdog policy"
 
 daily_override_output="$(
   scripts/run-hvf-windows-installed-boot.sh \
@@ -345,6 +393,17 @@ assert_contains "$daily_override_output" "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=12345"
 assert_contains "$daily_override_output" "BRIDGEVM_SMP_CPUS=1" "daily override policy"
 assert_contains "$daily_override_output" "BRIDGEVM_XHCI_REPORT_INTERVAL_MS=30" "daily override policy"
 assert_contains "$daily_override_output" "BUILD_PROFILE=release" "daily override policy"
+
+conflicting_watchdog_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --no-watchdog \
+    --watchdog-ms 12345 \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted conflicting watchdog policies: $conflicting_watchdog_output"
+assert_contains "$conflicting_watchdog_output" "--no-watchdog cannot be combined with --watchdog-ms" "conflicting watchdog policy"
 
 bad_smp_output="$(
   scripts/run-hvf-windows-installed-boot.sh \
@@ -453,6 +512,28 @@ orphan_share_interval_output="$(
 )" && fail "installed boot unexpectedly accepted a share interval without share paths: $orphan_share_interval_output"
 assert_contains "$orphan_share_interval_output" "requires --agent-share-host and --agent-share-guest" "orphan share interval policy"
 
+bad_share_max_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --agent-service-control "$CONTROL" \
+    --agent-share-max-kb 1048577 \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted an oversized share maximum: $bad_share_max_output"
+assert_contains "$bad_share_max_output" "--agent-share-max-kb requires an integer from 1 to 1048576" "share maximum policy"
+
+orphan_share_max_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --agent-service-control "$CONTROL" \
+    --agent-share-max-kb 32768 \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted a share maximum without share paths: $orphan_share_max_output"
+assert_contains "$orphan_share_max_output" "requires --agent-share-host and --agent-share-guest" "orphan share maximum policy"
+
 bad_agent_command_output="$(
   scripts/run-hvf-windows-installed-boot.sh \
     --target "$TARGET" \
@@ -551,6 +632,16 @@ trimmed_false_smp_trace_output="$(
 )" || fail "installed boot rejected whitespace-padded false SMP trace: $trimmed_false_smp_trace_output"
 assert_contains "$trimmed_false_smp_trace_output" "BRIDGEVM_BOOT_TIMER=1" "trimmed false SMP trace policy"
 
+buffered_nvme_policy_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --nvme-buffered-io \
+    --print-policy 2>&1
+)" || fail "installed boot rejected explicit buffered NVMe diagnostic: $buffered_nvme_policy_output"
+assert_contains "$buffered_nvme_policy_output" "BRIDGEVM_NVME_BUFFERED_IO=1" "buffered NVMe diagnostic policy"
+
 FAKE_PROBE="$STORE/fake-probe.sh"
 SANITIZE_EVIDENCE="$STORE/sanitize-evidence"
 mkdir -p "$SANITIZE_EVIDENCE"
@@ -565,6 +656,7 @@ printf 'desktop_agent=%s\n' "${BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT-<unset>}"
 printf 'nvme=%s\n' "${BRIDGEVM_NVME_DISK-<unset>}"
 printf 'nvme2=%s\n' "${BRIDGEVM_NVME_DISK2-<unset>}"
 printf 'nvme2_writable=%s\n' "${BRIDGEVM_NVME_DISK2_WRITABLE-<unset>}"
+printf 'nvme_buffered=%s\n' "${BRIDGEVM_NVME_BUFFERED_IO-<unset>}"
 printf 'installer=%s\n' "${BRIDGEVM_INSTALLER_ISO-<unset>}"
 printf 'disable_xhci=%s\n' "${BRIDGEVM_DISABLE_XHCI-<unset>}"
 printf 'xhci_interval=%s\n' "${BRIDGEVM_XHCI_REPORT_INTERVAL_MS-<unset>}"
@@ -587,6 +679,61 @@ printf 'gpu_trace=%s\n' "${BRIDGEVM_VIRTIO_GPU_TRACE_JSONL-<unset>}"
 PROBE
 chmod +x "$FAKE_PROBE"
 
+CAPABILITY_OK="$STORE/capability-ok.sh"
+CAPABILITY_MISSING="$STORE/capability-missing.sh"
+CAPABILITY_OK_EVIDENCE="$STORE/capability-ok-evidence"
+CAPABILITY_MISSING_EVIDENCE="$STORE/capability-missing-evidence"
+mkdir -p "$CAPABILITY_OK_EVIDENCE" "$CAPABILITY_MISSING_EVIDENCE"
+cat >"$CAPABILITY_OK" <<'PROBE'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${BRIDGEVM_PROBE_PRINT_CAPABILITIES-}" == "1" ]]
+printf 'BridgeVM HVF probe build capabilities\n'
+printf 'virtio_gpu_3d_compiled=true\n'
+PROBE
+cat >"$CAPABILITY_MISSING" <<'PROBE'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${BRIDGEVM_PROBE_PRINT_CAPABILITIES-}" == "1" ]]
+printf 'BridgeVM HVF probe build capabilities\n'
+printf 'virtio_gpu_3d_compiled=false\n'
+PROBE
+chmod +x "$CAPABILITY_OK" "$CAPABILITY_MISSING"
+
+capability_ok_output="$(
+  bash -c '
+    set -euo pipefail
+    source scripts/run-hvf-windows-installed-boot-runner.sh
+    BIN="$1"
+    EVIDENCE_DIR="$2"
+    VIRTIO_GPU_3D=1
+    RUN_STATUS=0
+    verify_probe_build_capabilities
+    cat "$EVIDENCE_DIR/probe-build-capabilities.txt"
+    printf "run_status=%s\n" "$RUN_STATUS"
+  ' _ "$CAPABILITY_OK" "$CAPABILITY_OK_EVIDENCE"
+)" || fail "3D-capable probe gate failed: $capability_ok_output"
+assert_contains "$capability_ok_output" "virtio_gpu_3d_compiled=true" "3D-capable probe gate"
+assert_contains "$capability_ok_output" "status=0" "3D-capable probe gate"
+assert_contains "$capability_ok_output" "run_status=0" "3D-capable probe gate"
+
+capability_missing_output="$(
+  bash -c '
+    set -euo pipefail
+    source scripts/run-hvf-windows-installed-boot-runner.sh
+    BIN="$1"
+    EVIDENCE_DIR="$2"
+    VIRTIO_GPU_3D=1
+    RUN_STATUS=0
+    verify_probe_build_capabilities || true
+    cat "$EVIDENCE_DIR/probe-build-capabilities.txt"
+    printf "run_status=%s\n" "$RUN_STATUS"
+  ' _ "$CAPABILITY_MISSING" "$CAPABILITY_MISSING_EVIDENCE"
+)" || fail "missing-3D probe gate evaluation errored: $capability_missing_output"
+assert_contains "$capability_missing_output" "virtio_gpu_3d_compiled=false" "missing-3D probe gate"
+assert_contains "$capability_missing_output" "status=1" "missing-3D probe gate"
+assert_contains "$capability_missing_output" "run_status=1" "missing-3D probe gate"
+
 sanitized_probe_output="$(
   BRIDGEVM_SMP_CPUS=99 \
   BRIDGEVM_BOOT_TIMER=1 \
@@ -596,6 +743,7 @@ sanitized_probe_output="$(
   BRIDGEVM_NVME_DISK=/tmp/poison-disk.raw \
   BRIDGEVM_NVME_DISK2=/tmp/poison-disk2.raw \
   BRIDGEVM_NVME_DISK2_WRITABLE=1 \
+  BRIDGEVM_NVME_BUFFERED_IO=1 \
   BRIDGEVM_INSTALLER_ISO=/tmp/poison.iso \
   BRIDGEVM_DISABLE_XHCI=1 \
   BRIDGEVM_XHCI_REPORT_INTERVAL_MS=999 \
@@ -632,6 +780,7 @@ assert_contains "$sanitized_probe_output" "desktop_agent=<unset>" "ambient deskt
 assert_contains "$sanitized_probe_output" "nvme=<unset>" "ambient primary disk sanitization"
 assert_contains "$sanitized_probe_output" "nvme2=<unset>" "ambient second disk sanitization"
 assert_contains "$sanitized_probe_output" "nvme2_writable=<unset>" "ambient writable second disk sanitization"
+assert_contains "$sanitized_probe_output" "nvme_buffered=<unset>" "ambient buffered NVMe sanitization"
 assert_contains "$sanitized_probe_output" "installer=<unset>" "ambient installer sanitization"
 assert_contains "$sanitized_probe_output" "disable_xhci=<unset>" "ambient xHCI policy sanitization"
 assert_contains "$sanitized_probe_output" "xhci_interval=<unset>" "ambient xHCI pacing sanitization"
@@ -665,6 +814,7 @@ explicit_probe_output="$(
       BRIDGEVM_BOOT_TIMER=1
       BRIDGEVM_BOOT_TIMER_RAMFB_MS=250
       BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64=0x1234
+      BRIDGEVM_NVME_BUFFERED_IO=1
     )
     PROBE_PID=""
     run_probe_process
@@ -675,6 +825,7 @@ assert_contains "$explicit_probe_output" "smp=2" "explicit SMP env"
 assert_contains "$explicit_probe_output" "timer=1" "explicit timer env"
 assert_contains "$explicit_probe_output" "timer_ms=250" "explicit timer interval env"
 assert_contains "$explicit_probe_output" "desktop=0x1234" "explicit desktop checksum env"
+assert_contains "$explicit_probe_output" "nvme_buffered=1" "explicit buffered NVMe env"
 
 SHUTDOWN_GATE_OK="$STORE/shutdown-gate-ok"
 mkdir -p "$SHUTDOWN_GATE_OK"

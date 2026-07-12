@@ -4,11 +4,13 @@ init_installed_boot_defaults() {
   VARS=""
   EVIDENCE_DIR=""
   WATCHDOG_MS="900000"
+  WATCHDOG_DISABLED="0"
   MAX_REBOOTS="8"
   RAM_MIB="4096"
   RAMFB_SAMPLES="1000,5000,15000,30000,60000,90000,120000"
   ENABLE_XHCI="0"
   VIRTIO_NET="0"
+  NVME_BUFFERED_IO="0"
   VIRTIO_GPU_3D="0"
   VIRTIO_GPU_PCI_DEVICE_ID=""
   VIRTIO_GPU_TRACE_JSONL=""
@@ -54,6 +56,8 @@ init_installed_boot_defaults() {
   AGENT_SHARE_GUEST=""
   AGENT_SHARE_MS="2000"
   AGENT_SHARE_MS_EXPLICIT="0"
+  AGENT_SHARE_MAX_KB="8192"
+  AGENT_SHARE_MAX_KB_EXPLICIT="0"
   XHCI_POLICY=""
   XHCI_REASON=""
   TRACE_IRQ="0"
@@ -71,6 +75,7 @@ parse_installed_boot_args() {
         positive_integer "$2" || { echo "FAIL: --watchdog-ms requires a positive integer" >&2; exit 2; }
         WATCHDOG_MS="$2"; WATCHDOG_MS_EXPLICIT="1"; shift 2
         ;;
+      --no-watchdog) WATCHDOG_DISABLED="1"; shift ;;
       --max-reboots)
         [[ $# -ge 2 ]] || { usage; exit 2; }
         nonnegative_integer "$2" || { echo "FAIL: --max-reboots requires a non-negative integer" >&2; exit 2; }
@@ -137,8 +142,14 @@ parse_installed_boot_args() {
         agent_share_interval_ms "$2" || { echo "FAIL: --agent-share-ms requires an integer from 500 to 60000" >&2; exit 2; }
         AGENT_SHARE_MS="$2"; AGENT_SHARE_MS_EXPLICIT="1"; shift 2
         ;;
+      --agent-share-max-kb)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        agent_share_max_kb "$2" || { echo "FAIL: --agent-share-max-kb requires an integer from 1 to 1048576" >&2; exit 2; }
+        AGENT_SHARE_MAX_KB="$2"; AGENT_SHARE_MAX_KB_EXPLICIT="1"; shift 2
+        ;;
       --enable-xhci) ENABLE_XHCI="1"; shift ;;
       --virtio-net) VIRTIO_NET="1"; shift ;;
+      --nvme-buffered-io) NVME_BUFFERED_IO="1"; shift ;;
       --trace-irq) TRACE_IRQ="1"; shift ;;
       --virtio-gpu-3d) VIRTIO_GPU_3D="1"; shift ;;
       --virtio-gpu-device-id)
@@ -201,7 +212,9 @@ parse_installed_boot_args() {
 apply_installed_boot_daily_defaults() {
   [[ "$DAILY" == "1" ]] || return 0
   [[ "$RAM_MIB_EXPLICIT" == "1" ]] || RAM_MIB="6144"
-  [[ "$WATCHDOG_MS_EXPLICIT" == "1" ]] || WATCHDOG_MS="86400000"
+  if [[ "$WATCHDOG_MS_EXPLICIT" != "1" && "$WATCHDOG_DISABLED" != "1" ]]; then
+    WATCHDOG_MS="86400000"
+  fi
   [[ "$SMP_CPUS_EXPLICIT" == "1" ]] || SMP_CPUS="4"
   if [[ "$SKIP_BUILD" != "1" ]]; then
     BUILD_PROFILE="release"
@@ -209,6 +222,10 @@ apply_installed_boot_daily_defaults() {
 }
 
 validate_installed_boot_option_combinations() {
+  if [[ "$WATCHDOG_DISABLED" == "1" && "$WATCHDOG_MS_EXPLICIT" == "1" ]]; then
+    echo "FAIL: --no-watchdog cannot be combined with --watchdog-ms" >&2
+    exit 2
+  fi
   if [[ -n "$SETUP_INPUT_ACTIONS" && "$ENABLE_XHCI" != "1" ]]; then
     echo "FAIL: --setup-input-actions requires --enable-xhci" >&2
     exit 2
@@ -261,7 +278,7 @@ validate_installed_boot_option_combinations() {
     echo "FAIL: --host-pause-resume-proof-ms controls its own post-resume shutdown and cannot be combined with --shutdown-after-agent-ready" >&2
     exit 2
   fi
-  if [[ -z "$AGENT_SERVICE_CONTROL" && ( "$AGENT_SERVICE_COMMAND_EXPLICIT" == "1" || "$AGENT_CLIPBOARD_SYNC" == "1" || -n "$AGENT_SHARE_HOST" || -n "$AGENT_SHARE_GUEST" || "$AGENT_SHARE_MS_EXPLICIT" == "1" ) ]]; then
+  if [[ -z "$AGENT_SERVICE_CONTROL" && ( "$AGENT_SERVICE_COMMAND_EXPLICIT" == "1" || "$AGENT_CLIPBOARD_SYNC" == "1" || -n "$AGENT_SHARE_HOST" || -n "$AGENT_SHARE_GUEST" || "$AGENT_SHARE_MS_EXPLICIT" == "1" || "$AGENT_SHARE_MAX_KB_EXPLICIT" == "1" ) ]]; then
     echo "FAIL: agent command, clipboard, and share options require --agent-service-control" >&2
     exit 2
   fi
@@ -275,6 +292,10 @@ validate_installed_boot_option_combinations() {
   fi
   if [[ "$AGENT_SHARE_MS_EXPLICIT" == "1" && -z "$AGENT_SHARE_HOST" ]]; then
     echo "FAIL: --agent-share-ms requires --agent-share-host and --agent-share-guest" >&2
+    exit 2
+  fi
+  if [[ "$AGENT_SHARE_MAX_KB_EXPLICIT" == "1" && -z "$AGENT_SHARE_HOST" ]]; then
+    echo "FAIL: --agent-share-max-kb requires --agent-share-host and --agent-share-guest" >&2
     exit 2
   fi
   if [[ -z "$SETUP_INPUT_ACTIONS" && ( -n "$SETUP_INPUT_MARKER" || -n "$SETUP_INPUT_FIRE_DELAY_MS" || -n "$SETUP_INPUT_RAMFB_DELAY_MS" ) ]]; then
@@ -347,6 +368,7 @@ print_installed_boot_policy() {
   local console_clipsync_policy="<unset>"
   local console_share_policy="<unset>"
   local console_share_ms_policy="<unset>"
+  local console_share_max_kb_policy="<unset>"
   if [[ "$VIRTIO_GPU_3D" == "1" ]]; then
     gpu_enabled_policy="1"
     gpu_3d_protocol="$(virtio_gpu_3d_runtime_protocol)"
@@ -385,6 +407,7 @@ print_installed_boot_policy() {
     if [[ -n "$AGENT_SHARE_HOST" ]]; then
       console_share_policy="$AGENT_SHARE_HOST::$AGENT_SHARE_GUEST"
       console_share_ms_policy="$AGENT_SHARE_MS"
+      console_share_max_kb_policy="$AGENT_SHARE_MAX_KB"
     fi
   fi
   printf '%s\n' \
@@ -392,6 +415,7 @@ print_installed_boot_policy() {
     "DAILY_PRESET=$DAILY" \
     "BRIDGEVM_RAM_MIB=$RAM_MIB" \
     "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=$WATCHDOG_MS" \
+    "BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED=${WATCHDOG_DISABLED/0/<unset>}" \
     "BRIDGEVM_SMP_CPUS=${SMP_CPUS:-<unset> (probe default 1)}" \
     "BRIDGEVM_XHCI_REPORT_INTERVAL_MS=$([[ "$DAILY" == "1" ]] && printf '30' || printf '<probe-default 30>')" \
     "BRIDGEVM_BOOT_TIMER=${BOOT_TIMER/0/<unset>}" \
@@ -410,6 +434,8 @@ print_installed_boot_policy() {
     "BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC=$console_clipsync_policy" \
     "BRIDGEVM_VIRTIO_CONSOLE_SHARE=$console_share_policy" \
     "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS=$console_share_ms_policy" \
+    "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MAX_KB=$console_share_max_kb_policy" \
+    "BRIDGEVM_NVME_BUFFERED_IO=${NVME_BUFFERED_IO/0/<unset>}" \
     "BRIDGEVM_VIRTIO_GPU=$gpu_enabled_policy" \
     "BRIDGEVM_VIRTIO_GPU_3D=$VIRTIO_GPU_3D" \
     "BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=$gpu_3d_protocol" \
