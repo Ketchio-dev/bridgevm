@@ -319,6 +319,18 @@ final class EmbeddedDisplayLauncherTests: XCTestCase {
     XCTAssertEqual(spawnCount, 1)
   }
 
+  func testRunDetachedRejectsHelperThatExitsImmediately() {
+    XCTAssertThrowsError(
+      try EmbeddedDisplayLauncher.runDetached(
+        executableURL: URL(fileURLWithPath: "/usr/bin/false"),
+        arguments: []
+      )
+    ) { error in
+      XCTAssertTrue(error.localizedDescription.contains("exited immediately"))
+      XCTAssertTrue(error.localizedDescription.contains("status 1"))
+    }
+  }
+
   private func containsPair(_ args: [String], _ first: String, _ second: String) -> Bool {
     args.indices.dropLast().contains { index in
       args[index] == first && args[index + 1] == second

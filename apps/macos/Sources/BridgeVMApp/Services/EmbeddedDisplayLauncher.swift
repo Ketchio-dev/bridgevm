@@ -239,6 +239,18 @@ enum EmbeddedDisplayLauncher {
     environment["BRIDGEVM_APPLE_VZ_ALLOW_REAL_START"] = "1"
     process.environment = environment
     try process.run()
+    Thread.sleep(forTimeInterval: 0.1)
+    guard process.isRunning else {
+      process.waitUntilExit()
+      let reason = process.terminationReason == .uncaughtSignal
+        ? "signal \(process.terminationStatus)"
+        : "status \(process.terminationStatus)"
+      throw NSError(
+        domain: "BridgeVM.EmbeddedDisplayLauncher",
+        code: Int(process.terminationStatus),
+        userInfo: [NSLocalizedDescriptionKey: "The display helper exited immediately (\(reason))."]
+      )
+    }
     return process
   }
 
