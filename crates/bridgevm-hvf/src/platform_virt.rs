@@ -211,14 +211,14 @@ impl VirtPlatformConfig {
 
 #[derive(Debug)]
 enum PlatformNetBackend {
-    Nat(NatBackend<HostSocketOutboundIpv4Handler>),
+    Nat(Box<NatBackend<HostSocketOutboundIpv4Handler>>),
     Loopback(LoopbackTestBackend),
 }
 
 impl PlatformNetBackend {
     fn new(kind: VirtioNetBackendKind) -> Self {
         match kind {
-            VirtioNetBackendKind::Nat => Self::Nat(NatBackend::new_host_socket()),
+            VirtioNetBackendKind::Nat => Self::Nat(Box::new(NatBackend::new_host_socket())),
             VirtioNetBackendKind::Loopback => Self::Loopback(LoopbackTestBackend::default()),
         }
     }
