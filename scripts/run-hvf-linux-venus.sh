@@ -22,12 +22,14 @@ Options:
                          Each sample must be <= 120000.
   --watchdog-ms N        Probe watchdog in milliseconds. Default: 360000.
   --max-reboots N        Maximum PSCI SYSTEM_RESET reboots. Default: 2.
+  --with-xhci            Keep qemu-xhci enabled for legacy/proven device layouts.
+                         Default: disabled.
   --no-net               Disable virtio-net. Default: userspace NAT enabled.
   --skip-build           Reuse target/release/examples/hvf_gic_boot_probe.
   -h, --help             Show this help.
 
 Fixed policy:
-  BRIDGEVM_DISABLE_XHCI=1
+  BRIDGEVM_DISABLE_XHCI=1 unless --with-xhci is requested
   BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX=0
   BRIDGEVM_VIRTIO_GPU=1 with 3D/Venus enabled
   Fresh /opt/homebrew/share/qemu/edk2-arm-vars.fd copied to DIR/vars.fd
@@ -83,6 +85,7 @@ init_defaults() {
   RAMFB_SAMPLES="120000"
   WATCHDOG_MS="360000"
   MAX_REBOOTS="2"
+  DISABLE_XHCI="1"
   VIRTIO_NET="1"
   SKIP_BUILD="0"
   BRIDGEVM_VENUS_PREFIX="${BRIDGEVM_VENUS_PREFIX:-"$HOME/BridgeVM/3d/prefix"}"
@@ -130,6 +133,7 @@ parse_args() {
         nonnegative_integer "$2" || { echo "FAIL: --max-reboots requires a non-negative integer" >&2; exit 2; }
         MAX_REBOOTS="$2"; shift 2
         ;;
+      --with-xhci) DISABLE_XHCI="0"; shift ;;
       --no-net) VIRTIO_NET="0"; shift ;;
       --skip-build) SKIP_BUILD="1"; shift ;;
       -h|--help) usage; exit 0 ;;
@@ -210,6 +214,7 @@ write_preflight() {
     printf 'ramfb_samples=%s\n' "$RAMFB_SAMPLES"
     printf 'watchdog_ms=%s\n' "$WATCHDOG_MS"
     printf 'max_reboots=%s\n' "$MAX_REBOOTS"
+    printf 'disable_xhci=%s\n' "$DISABLE_XHCI"
     printf 'virtio_net=%s\n' "$VIRTIO_NET"
     printf 'venus_prefix=%s\n' "$BRIDGEVM_VENUS_PREFIX"
     printf 'vulkan_lib=%s\n' "$BRIDGEVM_VULKAN_LIB"
@@ -239,7 +244,6 @@ build_and_sign_probe_if_needed() {
 
 build_env_args() {
   ENV_ARGS=(
-    'BRIDGEVM_DISABLE_XHCI=1'
     'BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX=0'
     "BRIDGEVM_RAM_MIB=$RAM_MIB"
     "BRIDGEVM_NVME_DISK=$DISK"
@@ -258,6 +262,9 @@ build_env_args() {
     "BRIDGEVM_AARCH64_UEFI_VARS=$EVIDENCE_DIR/vars.fd"
     'BRIDGEVM_AARCH64_UEFI_VARS_WRITABLE=1'
   )
+  if [[ "$DISABLE_XHCI" == "1" ]]; then
+    ENV_ARGS+=('BRIDGEVM_DISABLE_XHCI=1')
+  fi
   if [[ "$VIRTIO_NET" == "1" ]]; then
     ENV_ARGS+=('BRIDGEVM_VIRTIO_NET=1' 'BRIDGEVM_VIRTIO_NET_BACKEND=nat')
   fi

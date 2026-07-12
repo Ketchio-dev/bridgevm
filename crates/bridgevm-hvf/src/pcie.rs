@@ -520,6 +520,21 @@ impl Bar {
 }
 
 impl Function {
+    fn memory64_assigned_base(&self, idx: usize) -> Option<u64> {
+        let low = self.bars.get(idx)?;
+        let high = self.bars.get(idx + 1)?;
+        if low.kind != BarKind::Memory64Low || high.kind != BarKind::Memory64High {
+            return None;
+        }
+        let low_sizing_readback = low.size_mask | low.type_bits;
+        let high_sizing_readback = high.size_mask | high.type_bits;
+        if low.value == low_sizing_readback || high.value == high_sizing_readback {
+            return None;
+        }
+        let base = (u64::from(high.value) << 32) | low.base()?;
+        (base != 0).then_some(base)
+    }
+
     /// The QEMU PCIe host bridge at `00:00.0`: type-0 header, no BARs, no
     /// capabilities. A clean, enumerable root complex.
     fn host_bridge() -> Self {
@@ -781,11 +796,7 @@ impl Function {
         let bar = self.bars.get(idx)?;
         let (base, size) = match bar.kind {
             BarKind::Memory32 => (bar.assigned_base()?, bar.size()),
-            BarKind::Memory64Low => {
-                let low = bar.assigned_base()?;
-                let high = u64::from(self.bars.get(idx + 1)?.value);
-                ((high << 32) | low, bar.size())
-            }
+            BarKind::Memory64Low => (self.memory64_assigned_base(idx)?, bar.size()),
             BarKind::Memory64High | BarKind::Io => return None,
         };
         let end = base.checked_add(size)?;
@@ -1209,9 +1220,7 @@ impl PcieEcam {
 
     pub fn virtio_gpu_host_visible_bar_base(&self) -> Option<u64> {
         let func = self.function_at(VIRTIO_GPU_BDF)?;
-        let low = func.bars[2].assigned_base()?;
-        let high = u64::from(func.bars[3].value);
-        Some((high << 32) | low)
+        func.memory64_assigned_base(2)
     }
 
     pub fn virtio_gpu_host_visible_bar_size(&self) -> Option<u64> {
@@ -2086,6 +2095,11 @@ mod tests {
                 Some(VIRTIO_GPU_HOSTMEM_DEFAULT_SIZE)
             );
 
+            let high_base = machine::PCIE_MMIO_64.base;
+            ecam.cfg_write(bar2, 4, high_base & 0xffff_ffff);
+            ecam.cfg_write(bar3, 4, high_base >> 32);
+            assert_eq!(ecam.virtio_gpu_host_visible_bar_base(), Some(high_base));
+
             let cap = find_vendor_cfg_type(&ecam, VIRTIO_GPU_BDF, 8).expect("shared-memory cap");
             assert_eq!(
                 ecam.cfg_read(bdf_ecam_offset(VIRTIO_GPU_BDF, cap + 2), 1),
@@ -2290,7 +2304,7 @@ mod tests {
         let bar0 = ecam_offset(0, 2, 0, REG_BAR0);
         let bar1 = ecam_offset(0, 2, 0, REG_BAR0 + 4);
         let cmd = ecam_offset(0, 2, 0, REG_COMMAND_STATUS);
-        let base = machine::PCIE_MMIO_64.base + 0x2_0000;
+        let base = machine::PCIE_MMIO_64.base;
 
         ecam.cfg_write(bar0, 4, base & 0xffff_ffff);
         ecam.cfg_write(bar1, 4, base >> 32);
