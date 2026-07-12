@@ -9,7 +9,7 @@ fn xhci_setup_input_uses_default_marker_when_env_is_absent() {
     let trigger = XhciSetupInputTrigger::from_env_value("setup-input", "space").unwrap();
 
     assert_eq!(trigger.marker().source_name(), "default");
-    assert_eq!(trigger.marker().as_bytes(), b"BdsDxe: starting Boot0001");
+    assert_eq!(trigger.marker().as_bytes(), b"BdsDxe: starting Boot");
 }
 
 #[test]

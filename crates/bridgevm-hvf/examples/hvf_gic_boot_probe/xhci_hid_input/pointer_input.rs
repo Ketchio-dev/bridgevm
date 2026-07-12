@@ -9,7 +9,7 @@ use bridgevm_hvf::xhci::{
 use super::marker::{MarkerEnvError, ProbeMarker, MARKER_MAX_BYTES};
 use super::report_text::{contains_bytes, IncrementalMarkerScan};
 
-const POINTER_INPUT_DEFAULT_MARKER: &[u8] = b"BdsDxe: starting Boot0001";
+const POINTER_INPUT_DEFAULT_MARKER: &[u8] = b"BdsDxe: starting Boot";
 const POINTER_INPUT_ENV_MAX_BYTES: usize = 128;
 const POINTER_INPUT_MAX_ACTIONS: usize = 16;
 const POINTER_INPUT_AXIS_MAX: u32 = 0x7fff;
@@ -436,6 +436,11 @@ impl XhciPointerInputTrigger {
     #[cfg(test)]
     pub(crate) fn action_names(&self) -> String {
         format_pointer_action_names(&self.actions)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn marker_bytes(&self) -> &[u8] {
+        self.marker.as_bytes()
     }
 }
 

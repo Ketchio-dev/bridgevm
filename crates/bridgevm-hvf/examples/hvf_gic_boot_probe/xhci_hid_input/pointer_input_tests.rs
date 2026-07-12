@@ -18,6 +18,13 @@ fn xhci_pointer_input_parser_accepts_move_and_click_coordinates() {
 }
 
 #[test]
+fn xhci_pointer_input_default_marker_is_boot_slot_independent() {
+    let trigger = XhciPointerInputTrigger::from_env_value("pointer-input", "click:center").unwrap();
+
+    assert_eq!(trigger.marker_bytes(), b"BdsDxe: starting Boot");
+}
+
+#[test]
 fn xhci_pointer_input_parser_accepts_drag_right_click_and_scroll() {
     let trigger = XhciPointerInputTrigger::from_env_value(
         "pointer-input",
