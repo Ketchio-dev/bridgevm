@@ -16,6 +16,7 @@ init_installed_boot_defaults() {
   VIRTIO_GPU_TRACE_JSONL=""
   DISPLAY_EXPORT_PPM=""
   DISPLAY_EXPORT_MS="500"
+  INPUT_CONTROL=""
   GPU_TRACE_PROTOCOL="auto"
   REQUIRE_GPU_TRACE_GATE="0"
   VIOGPU3D_DIR=""
@@ -183,6 +184,10 @@ parse_installed_boot_args() {
         [[ "$2" =~ ^[0-9]+$ ]] && (( 10#$2 >= 100 && 10#$2 <= 60000 )) || { echo "FAIL: --display-export-ms requires an integer from 100 to 60000" >&2; exit 2; }
         DISPLAY_EXPORT_MS="$2"; shift 2
         ;;
+      --input-control)
+        [[ $# -ge 2 && -n "$2" ]] || { echo "FAIL: --input-control requires a non-empty path" >&2; exit 2; }
+        INPUT_CONTROL="$2"; shift 2
+        ;;
       --viogpu3d-dir)
         [[ $# -ge 2 ]] || { usage; exit 2; }
         [[ -n "$2" ]] || { echo "FAIL: --viogpu3d-dir requires a non-empty path" >&2; exit 2; }
@@ -251,6 +256,10 @@ validate_installed_boot_option_combinations() {
   fi
   if [[ -n "$POINTER_INPUT_ACTIONS" && "$ENABLE_XHCI" != "1" ]]; then
     echo "FAIL: --pointer-input-actions requires --enable-xhci" >&2
+    exit 2
+  fi
+  if [[ -n "$INPUT_CONTROL" && "$ENABLE_XHCI" != "1" ]]; then
+    echo "FAIL: --input-control requires --enable-xhci" >&2
     exit 2
   fi
   if [[ -n "$VIRTIO_GPU_TRACE_JSONL" && "$VIRTIO_GPU_3D" != "1" ]]; then

@@ -224,6 +224,7 @@ absolutize_installed_boot_paths() {
   [[ -z "$EVIDENCE_DIR" ]] || EVIDENCE_DIR="$(absolute_path_from "$invocation_dir" "$EVIDENCE_DIR")"
   [[ -z "$VIRTIO_GPU_TRACE_JSONL" ]] || VIRTIO_GPU_TRACE_JSONL="$(absolute_path_from "$invocation_dir" "$VIRTIO_GPU_TRACE_JSONL")"
   [[ -z "$DISPLAY_EXPORT_PPM" ]] || DISPLAY_EXPORT_PPM="$(absolute_path_from "$invocation_dir" "$DISPLAY_EXPORT_PPM")"
+  [[ -z "$INPUT_CONTROL" ]] || INPUT_CONTROL="$(absolute_path_from "$invocation_dir" "$INPUT_CONTROL")"
   [[ -z "$VIOGPU3D_DIR" ]] || VIOGPU3D_DIR="$(absolute_path_from "$invocation_dir" "$VIOGPU3D_DIR")"
   [[ -z "$AGENT_SERVICE_CONTROL" ]] || AGENT_SERVICE_CONTROL="$(absolute_path_from "$invocation_dir" "$AGENT_SERVICE_CONTROL")"
   [[ -z "$AGENT_SHARE_HOST" ]] || AGENT_SHARE_HOST="$(absolute_path_from "$invocation_dir" "$AGENT_SHARE_HOST")"

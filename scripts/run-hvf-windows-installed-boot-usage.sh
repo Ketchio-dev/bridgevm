@@ -21,6 +21,7 @@ Options:
                           1000,5000,15000,30000,60000,90000,120000.
   --display-export-ppm P  Atomically replace P with the current display frame.
   --display-export-ms N   Live display export interval, 100-60000 ms (default 500).
+  --input-control P       Read live KEY/POINTER commands appended to P.
   --boot-timer            Enable BOOT_TIMER milestone/ramfb/exits-per-sec logs
                           from hvf_gic_boot_probe.
   --boot-timer-ramfb-ms N Sample display checksums every N milliseconds for

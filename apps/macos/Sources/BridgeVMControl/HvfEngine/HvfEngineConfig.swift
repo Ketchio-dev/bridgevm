@@ -39,7 +39,9 @@ struct HvfEngineConfig: Equatable {
             "--agent-service-control", ctlFilePath,
             "--agent-service-command", "whoami",
             "--display-export-ppm", "\(evidenceDir)/display.ppm",
-            "--display-export-ms", "500"
+            "--display-export-ms", "500",
+            "--enable-xhci",
+            "--input-control", "\(evidenceDir)/input.ctl"
         ])
         if clipboardSync {
             args.append("--agent-clipboard-sync")

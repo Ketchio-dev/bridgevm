@@ -452,7 +452,7 @@ pub(crate) fn print_pointer_input_rejection(name: &'static str, error: &XhciPoin
     );
 }
 
-fn parse_pointer_input_actions(
+pub(crate) fn parse_pointer_input_actions(
     value: &str,
 ) -> Result<Vec<PointerInputAction>, XhciPointerInputEnvError> {
     if value.len() > POINTER_INPUT_ENV_MAX_BYTES {

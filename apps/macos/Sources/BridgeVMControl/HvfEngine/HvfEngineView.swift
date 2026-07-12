@@ -21,6 +21,7 @@ struct HvfEngineView: View {
     @State private var nvmeBufferedIO = true
     @State private var ctlFilePath = ""
     @State private var ctlInput = ""
+    @State private var keyboardInput = ""
 
     var body: some View {
         ScrollView {
@@ -88,6 +89,14 @@ struct HvfEngineView: View {
                             .font(.body.monospaced())
                     }
                 }
+                HStack(spacing: 8) {
+                    TextField("Type text into Windows", text: $keyboardInput, onCommit: sendKeyboardText)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Type", action: sendKeyboardText)
+                    Button("Tab") { session.sendKey("tab") }
+                    Button("Enter") { session.sendKey("enter") }
+                    Button("Space") { session.sendKey("space") }
+                }
             }
             .padding(6)
         } label: {
@@ -124,13 +133,27 @@ struct HvfEngineView: View {
         GroupBox {
             #if canImport(AppKit)
             if let image = session.latestScreenshot {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.none)
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity, minHeight: 280, maxHeight: 520)
-                    .background(Color.black)
-                    .cornerRadius(6)
+                GeometryReader { geometry in
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.none)
+                        .scaledToFit()
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onEnded { value in
+                                    session.sendPointerClick(
+                                        location: value.location,
+                                        viewSize: geometry.size,
+                                        imageSize: image.size
+                                    )
+                                }
+                        )
+                }
+                .frame(maxWidth: .infinity, minHeight: 280, maxHeight: 520)
+                .background(Color.black)
+                .cornerRadius(6)
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "display").font(.system(size: 36)).foregroundColor(.secondary)
@@ -245,6 +268,11 @@ struct HvfEngineView: View {
     private func sendCtl() {
         session.sendCtl(ctlInput)
         ctlInput = ""
+    }
+
+    private func sendKeyboardText() {
+        session.sendText(keyboardInput)
+        keyboardInput = ""
     }
 
     private func currentConfig() -> HvfEngineConfig {

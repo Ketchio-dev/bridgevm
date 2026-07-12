@@ -107,6 +107,9 @@ use ramfb_sample_loop::{RamfbSampleLoop, RamfbSampleShellAction};
 #[path = "hvf_gic_boot_probe/live_display_export.rs"]
 mod live_display_export;
 use live_display_export::LiveDisplayExporter;
+#[path = "hvf_gic_boot_probe/live_input.rs"]
+mod live_input;
+use live_input::LiveInputController;
 #[path = "hvf_gic_boot_probe/serial_input.rs"]
 mod serial_input;
 use serial_input::SerialTriggeredUartInput;
@@ -3991,6 +3994,7 @@ fn main() -> ExitCode {
             let mut drain_stats = RunLoopDrainStats::new(trace_run_loop);
             let mut ramfb_sample_loop = RamfbSampleLoop::from_env();
             let mut live_display_exporter = LiveDisplayExporter::from_env();
+            let mut live_input = LiveInputController::from_env();
             let mut setup_input_host_wake = SetupInputHostWake::new();
             let boot_started = Instant::now();
             let mut boot_timer = BootTimer::from_env();
@@ -4437,8 +4441,12 @@ fn main() -> ExitCode {
                 let ramfb_checkpoint_due =
                     ramfb_sample_loop.checkpoint_due_at(std::time::Instant::now());
                 let live_display_due = live_display_exporter.due(std::time::Instant::now());
+                let live_input_due = live_input.poll_due(std::time::Instant::now());
                 let automation_stop_reason = if automation_gate.should_check(
-                    automation_tick_canceled || ramfb_checkpoint_due || live_display_due,
+                    automation_tick_canceled
+                        || ramfb_checkpoint_due
+                        || live_display_due
+                        || live_input_due,
                 ) {
                     let mut platform_guard = lock_platform(
                         &platform,
@@ -4448,6 +4456,7 @@ fn main() -> ExitCode {
                     );
                     let platform = &mut *platform_guard;
                     automation_gate.note_checked();
+                    live_input.tick(platform, &mut guest_ram, std::time::Instant::now());
                     if serial_reached_linux_panic(platform.uart_output(), &mut serial_stop_scans) {
                         Some("serial reached Linux kernel panic".into())
                     } else {

@@ -92,11 +92,15 @@ final class HvfEngineSession: ObservableObject {
         timer = nil
         process = nil
         try? FileManager.default.createDirectory(atPath: config.evidenceDir, withIntermediateDirectories: true)
-        for name in ["display.ppm", "display.ppm.tmp"] {
+        for name in ["display.ppm", "display.ppm.tmp", "input.ctl"] {
             try? FileManager.default.removeItem(
                 atPath: URL(fileURLWithPath: config.evidenceDir).appendingPathComponent(name).path
             )
         }
+        FileManager.default.createFile(
+            atPath: URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("input.ctl").path,
+            contents: nil
+        )
         try? FileManager.default.createDirectory(atPath: (config.ctlFilePath as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         if !FileManager.default.fileExists(atPath: config.ctlFilePath) {
             FileManager.default.createFile(atPath: config.ctlFilePath, contents: nil)
@@ -157,6 +161,37 @@ final class HvfEngineSession: ObservableObject {
         defer { try? handle.close() }
         _ = try? handle.seekToEnd()
         if let data = "\(cleaned)\n".data(using: .utf8) {
+            try? handle.write(contentsOf: data)
+        }
+    }
+
+    func sendKey(_ action: String) {
+        appendLiveInput("KEY \(action)")
+    }
+
+    func sendText(_ value: String) {
+        let allowed = value.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber || "/.-".contains($0)) }
+        guard !allowed.isEmpty else { return }
+        appendLiveInput("KEY text:\(allowed)")
+    }
+
+    #if canImport(AppKit)
+    func sendPointerClick(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
+        guard let point = HvfDisplayCoordinates.absolutePointer(
+            location: location,
+            viewSize: viewSize,
+            imageSize: imageSize
+        ) else { return }
+        appendLiveInput("POINTER click:\(point.x)x\(point.y)")
+    }
+    #endif
+
+    private func appendLiveInput(_ line: String) {
+        let path = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("input.ctl")
+        guard let handle = try? FileHandle(forWritingTo: path) else { return }
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd()
+        if let data = "\(line)\n".data(using: .utf8) {
             try? handle.write(contentsOf: data)
         }
     }
@@ -259,3 +294,28 @@ final class HvfEngineSession: ObservableObject {
         #endif
     }
 }
+
+#if canImport(AppKit)
+enum HvfDisplayCoordinates {
+    static func absolutePointer(
+        location: CGPoint,
+        viewSize: CGSize,
+        imageSize: CGSize
+    ) -> (x: UInt16, y: UInt16)? {
+        guard viewSize.width > 0, viewSize.height > 0,
+              imageSize.width > 0, imageSize.height > 0 else { return nil }
+        let scale = min(viewSize.width / imageSize.width, viewSize.height / imageSize.height)
+        let displayed = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        let origin = CGPoint(
+            x: (viewSize.width - displayed.width) / 2,
+            y: (viewSize.height - displayed.height) / 2
+        )
+        guard location.x >= origin.x, location.y >= origin.y,
+              location.x <= origin.x + displayed.width,
+              location.y <= origin.y + displayed.height else { return nil }
+        let x = ((location.x - origin.x) / displayed.width * 32_767).rounded()
+        let y = ((location.y - origin.y) / displayed.height * 32_767).rounded()
+        return (UInt16(clamping: Int(x)), UInt16(clamping: Int(y)))
+    }
+}
+#endif

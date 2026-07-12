@@ -20,6 +20,7 @@ const _: () = {
     assert!(SETUP_INPUT_DEFAULT_MARKER.len() <= MARKER_MAX_BYTES);
 };
 
+pub(crate) use actions::parse_setup_input_actions;
 pub(crate) use error::{print_setup_input_rejection, XhciSetupInputEnvError};
 pub(crate) use host_wake::SetupInputHostWake;
 pub(crate) use trigger::XhciSetupInputTrigger;

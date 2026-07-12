@@ -92,3 +92,25 @@ continued updating through the Windows shutdown spinner and ended with PPM
 SHA-256 `fe53e51bb2c556c84034403bb911b25bb9e2a1a32c181eba6b9315b749a9140d`.
 There were zero virtio-gpu error responses, and the agent, VirGL trace, PSCI
 system-off, NVMe writeback, and cleanup gates all returned status zero.
+
+## Normal app live-input closure
+
+The v23 app-path run is preserved at
+`/Users/user/BridgeVM/app-live-input-proof-20260712-v23`. The normal macOS app
+now creates an append-only input control channel, enables the emulated xHCI HID
+devices, and maps aspect-fit display clicks into the guest's 0...32767 absolute
+pointer coordinate space. It also exposes bounded text, Tab, Enter, and Space
+keyboard controls while reusing the same validated HID action grammar as the
+installed-boot probe.
+
+The before-click Windows desktop frame has SHA-256
+`e0db758b2616949d755ea70b1db4f2ac6ec243c621278d53f266c0cbad80713e`.
+After the runtime accepted `POINTER click:20966x31783`, the next frame has
+SHA-256 `3488969b99293c09d53c9c7def46a2e6671327cfb9bb13feb1bf70dd77beba20`
+and visibly shows the Microsoft Edge first-run window opened from the taskbar.
+This proves the complete app-control-file, host poller, xHCI queue, guest HID,
+and live-display feedback loop rather than only parser or device-level input.
+
+The run recorded zero virtio-gpu error responses. Its resident-agent and VirGL
+trace gates, guest system-off, NVMe writeback, and host cleanup all returned
+status zero.

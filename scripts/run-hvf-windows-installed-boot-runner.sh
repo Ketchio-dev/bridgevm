@@ -282,6 +282,9 @@ build_installed_boot_env_args() {
       "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=$DISPLAY_EXPORT_MS"
     )
   fi
+  if [[ -n "${INPUT_CONTROL:-}" ]]; then
+    ENV_ARGS+=("BRIDGEVM_INPUT_CONTROL=$INPUT_CONTROL")
+  fi
   printf '%s\n' "${ENV_ARGS[@]}"
 }
 

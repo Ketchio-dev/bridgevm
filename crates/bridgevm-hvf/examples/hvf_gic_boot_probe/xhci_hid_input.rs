@@ -44,7 +44,10 @@ mod test_support;
 
 pub(crate) use boot_key::XhciHidBootKeyTrigger;
 pub(crate) use hid_semantic_summary::print_hid_semantic_summary;
-pub(crate) use pointer_input::{print_pointer_input_rejection, XhciPointerInputTrigger};
+pub(crate) use pointer_input::{
+    parse_pointer_input_actions, print_pointer_input_rejection, XhciPointerInputTrigger,
+};
 pub(crate) use setup_input::{
-    print_setup_input_rejection, SetupInputHostWake, XhciSetupInputTrigger,
+    parse_setup_input_actions, print_setup_input_rejection, SetupInputHostWake,
+    XhciSetupInputTrigger,
 };

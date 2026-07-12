@@ -29,7 +29,9 @@ final class HvfEngineConfigTests: XCTestCase {
             "--agent-service-control", "/tmp/evidence/ctl",
             "--agent-service-command", "whoami",
             "--display-export-ppm", "/tmp/evidence/display.ppm",
-            "--display-export-ms", "500"
+            "--display-export-ms", "500",
+            "--enable-xhci",
+            "--input-control", "/tmp/evidence/input.ctl"
         ])
     }
 
@@ -144,6 +146,29 @@ final class HvfEngineSessionPathTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: wrapper.path)
     }
 }
+
+#if canImport(AppKit)
+final class HvfDisplayCoordinatesTests: XCTestCase {
+    func testAspectFitCoordinatesRejectLetterboxAndMapCorners() {
+        let view = CGSize(width: 1000, height: 1000)
+        let image = CGSize(width: 1280, height: 800)
+        XCTAssertNil(HvfDisplayCoordinates.absolutePointer(
+            location: CGPoint(x: 500, y: 100), viewSize: view, imageSize: image
+        ))
+        XCTAssertEqual(
+            HvfDisplayCoordinates.absolutePointer(
+                location: CGPoint(x: 0, y: 187.5), viewSize: view, imageSize: image
+            )?.x,
+            0
+        )
+        let bottomRight = HvfDisplayCoordinates.absolutePointer(
+            location: CGPoint(x: 1000, y: 812.5), viewSize: view, imageSize: image
+        )
+        XCTAssertEqual(bottomRight?.x, 32_767)
+        XCTAssertEqual(bottomRight?.y, 32_767)
+    }
+}
+#endif
 
 final class BvAgentEventTests: XCTestCase {
     func testParserExtractsReadyAndServiceTiming() {

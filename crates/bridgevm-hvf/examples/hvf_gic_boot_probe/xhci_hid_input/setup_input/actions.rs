@@ -2,7 +2,7 @@ use bridgevm_hvf::xhci::SetupInputAction;
 
 use super::{XhciSetupInputEnvError, SETUP_INPUT_ENV_MAX_BYTES, SETUP_INPUT_MAX_ACTIONS};
 
-pub(super) fn parse_setup_input_actions(
+pub(crate) fn parse_setup_input_actions(
     value: &str,
 ) -> Result<Vec<SetupInputAction>, XhciSetupInputEnvError> {
     if value.len() > SETUP_INPUT_ENV_MAX_BYTES {
