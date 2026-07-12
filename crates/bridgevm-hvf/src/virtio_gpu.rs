@@ -1320,23 +1320,22 @@ impl VirtioGpu {
         if resource_id == 0 {
             self.scanout_resource = None;
             self.unbind_blob_scanout();
-        } else if self.resources.contains_key(&resource_id) {
-            self.unbind_blob_scanout();
-            self.scanout_resource = Some(resource_id);
-        } else if self
-            .three_d
-            .scanout_3d_info(resource_id)
-            .is_some_and(|info| {
-                info.format == FORMAT_B8G8R8A8_UNORM
-                    && info.width >= self.width
-                    && info.height >= self.height
-            })
-        {
-            self.unbind_blob_scanout();
-            self.scanout_resource = Some(resource_id);
         } else {
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
-            return;
+            let valid_resource = self.resources.contains_key(&resource_id)
+                || self
+                    .three_d
+                    .scanout_3d_info(resource_id)
+                    .is_some_and(|info| {
+                        info.format == FORMAT_B8G8R8A8_UNORM
+                            && info.width >= self.width
+                            && info.height >= self.height
+                    });
+            if !valid_resource {
+                response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
+                return;
+            }
+            self.unbind_blob_scanout();
+            self.scanout_resource = Some(resource_id);
         }
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
     }
