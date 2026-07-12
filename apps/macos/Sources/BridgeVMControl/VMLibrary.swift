@@ -20,6 +20,8 @@ enum VMLibraryDeletionImpact: Equatable {
 /// This is the multi-VM substrate — the app enumerates, creates, and deletes
 /// VMs here, and each VMConfig points at its own bundle (disks + metadata).
 enum VMLibrary {
+    static let maximumConfigBytes = 1_048_576
+
     /// ~/Library/Application Support/BridgeVM/vms/<slug>/vm.json
     static var root: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -73,6 +75,21 @@ enum VMLibrary {
             }
             let f = dir.appendingPathComponent("vm.json")
             do {
+                let fileValues = try f.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+                guard fileValues.isSymbolicLink != true, fileValues.isRegularFile == true else {
+                    issues.append(VMLibraryIssue(
+                        path: f.path,
+                        message: "VM 설정이 일반 파일이 아니어서 안전을 위해 불러오지 않았습니다."
+                    ))
+                    continue
+                }
+                guard let fileSize = fileValues.fileSize, fileSize <= maximumConfigBytes else {
+                    issues.append(VMLibraryIssue(
+                        path: f.path,
+                        message: "VM 설정 파일이 너무 큽니다 (최대 \(maximumConfigBytes)바이트)."
+                    ))
+                    continue
+                }
                 let data = try Data(contentsOf: f)
                 var cfg = try JSONDecoder().decode(VMConfig.self, from: data)
                 // The directory is the authoritative library identity. An
@@ -111,14 +128,19 @@ enum VMLibrary {
         var cfg = config
         cfg.id = cfg.slug
         let dir = rootURL.appendingPathComponent(cfg.slug, isDirectory: true)
+        let configURL = dir.appendingPathComponent("vm.json")
         do {
             if (try? dir.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
+                return false
+            }
+            if (try? configURL.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
                 return false
             }
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try enc.encode(cfg)
-            try data.write(to: dir.appendingPathComponent("vm.json"), options: [.atomic])
+            guard data.count <= maximumConfigBytes else { return false }
+            try data.write(to: configURL, options: [.atomic])
             return true
         } catch {
             return false

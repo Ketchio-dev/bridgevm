@@ -213,6 +213,48 @@ final class VMLibraryPersistenceTests: XCTestCase {
         XCTAssertFalse(VMLibrary.save(config(id: "linked"), rootURL: root))
     }
 
+    func testScanAndSaveRejectSymlinkedConfigFileWithoutChangingTarget() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = temp.appendingPathComponent("library", isDirectory: true)
+        let entry = root.appendingPathComponent("linked-config", isDirectory: true)
+        let outside = temp.appendingPathComponent("outside.json")
+        defer { try? FileManager.default.removeItem(at: temp) }
+        try FileManager.default.createDirectory(at: entry, withIntermediateDirectories: true)
+        let original = Data("external data must remain unchanged".utf8)
+        try original.write(to: outside)
+        try FileManager.default.createSymbolicLink(
+            at: entry.appendingPathComponent("vm.json"),
+            withDestinationURL: outside
+        )
+
+        let scan = VMLibrary.scan(rootURL: root)
+
+        XCTAssertTrue(scan.configs.isEmpty)
+        XCTAssertEqual(scan.issues.count, 1)
+        XCTAssertTrue(scan.issues[0].message.contains("일반 파일"))
+        XCTAssertFalse(VMLibrary.save(config(id: "linked-config"), rootURL: root))
+        XCTAssertEqual(try Data(contentsOf: outside), original)
+    }
+
+    func testScanRejectsOversizedConfigBeforeDecoding() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = temp.appendingPathComponent("library", isDirectory: true)
+        let entry = root.appendingPathComponent("oversized", isDirectory: true)
+        let configURL = entry.appendingPathComponent("vm.json")
+        defer { try? FileManager.default.removeItem(at: temp) }
+        try FileManager.default.createDirectory(at: entry, withIntermediateDirectories: true)
+        XCTAssertTrue(FileManager.default.createFile(atPath: configURL.path, contents: Data()))
+        let handle = try FileHandle(forWritingTo: configURL)
+        try handle.truncate(atOffset: UInt64(VMLibrary.maximumConfigBytes + 1))
+        try handle.close()
+
+        let scan = VMLibrary.scan(rootURL: root)
+
+        XCTAssertTrue(scan.configs.isEmpty)
+        XCTAssertEqual(scan.issues.count, 1)
+        XCTAssertTrue(scan.issues[0].message.contains("너무 큽니다"))
+    }
+
     func testDeletionImpactDistinguishesManagedAndExternalBundles() {
         let root = URL(fileURLWithPath: "/tmp/bridgevm-library", isDirectory: true)
         var managed = config(id: "managed")
