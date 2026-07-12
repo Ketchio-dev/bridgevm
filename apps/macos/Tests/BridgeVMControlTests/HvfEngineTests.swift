@@ -327,6 +327,34 @@ final class HvfEngineSessionPathTests: XCTestCase {
     }
 
     @MainActor
+    func testLiveInputHandleReseeksAfterConsumerCompaction() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let input = temp.appendingPathComponent("input.ctl")
+        try Data().write(to: input)
+        let config = HvfEngineConfig(
+            targetDiskPath: "target", uefiVarsPath: "vars", evidenceDir: temp.path,
+            watchdogMs: nil, ramMiB: 6144, smpCpus: 4, clipboardSync: true,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: true, virtioGpu3d: true,
+            nvmeBufferedIO: true, ctlFilePath: temp.appendingPathComponent("hvf.ctl").path
+        )
+        let session = HvfEngineSession(config: config, repoRoot: temp) { _ in false }
+        session.sendKey("esc")
+
+        let consumer = try FileHandle(forWritingTo: input)
+        try consumer.truncate(atOffset: 0)
+        try consumer.close()
+        session.sendKey("delete")
+
+        XCTAssertEqual(try String(contentsOf: input, encoding: .utf8), "KEY delete\n")
+        let size = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: input.path)[.size] as? NSNumber
+        )
+        XCTAssertEqual(size.uint64Value, 11)
+    }
+
+    @MainActor
     func testControlInputRejectsMultilineWithoutWritingChannel() throws {
         let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: temp) }

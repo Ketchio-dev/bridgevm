@@ -1,5 +1,8 @@
 import Foundation
 import Combine
+#if os(macOS)
+import Darwin
+#endif
 #if canImport(AppKit)
 import AppKit
 #endif
@@ -273,6 +276,11 @@ final class HvfEngineSession: ObservableObject {
         guard let data = "\(line)\n".data(using: .utf8) else { return }
         do {
             let handle = try liveInputHandle(for: path)
+            #if os(macOS)
+            guard flock(handle.fileDescriptor, LOCK_EX) == 0 else { return }
+            defer { flock(handle.fileDescriptor, LOCK_UN) }
+            #endif
+            try handle.seekToEnd()
             try handle.write(contentsOf: data)
         } catch {
             closeLiveInput()

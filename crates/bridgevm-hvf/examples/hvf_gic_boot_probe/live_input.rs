@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
+use std::os::fd::AsRawFd;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -13,6 +14,7 @@ use crate::xhci_hid_input::{parse_pointer_input_actions, parse_setup_input_actio
 const POLL_INTERVAL: Duration = Duration::from_millis(16);
 const MAX_PENDING_COMMANDS: usize = 64;
 const MAX_COMMAND_BYTES: usize = 256;
+const COMPACT_AFTER_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug)]
 enum LiveInputCommand {
@@ -103,9 +105,19 @@ impl LiveInputController {
         let Some(path) = self.path.as_deref() else {
             return;
         };
-        let Ok(mut file) = File::open(path) else {
+        let Ok(mut file) = OpenOptions::new().read(true).write(true).open(path) else {
             return;
         };
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
+            return;
+        }
+        self.read_new_commands_locked(&mut file);
+        unsafe {
+            libc::flock(file.as_raw_fd(), libc::LOCK_UN);
+        }
+    }
+
+    fn read_new_commands_locked(&mut self, file: &mut File) {
         let Ok(len) = file.metadata().map(|metadata| metadata.len()) else {
             return;
         };
@@ -137,6 +149,11 @@ impl LiveInputController {
             self.partial.clear();
             eprintln!("live input rejected: command_too_long");
         }
+        if self.offset >= COMPACT_AFTER_BYTES && self.partial.is_empty() {
+            if file.set_len(0).is_ok() {
+                self.offset = 0;
+            }
+        }
     }
 
     fn push_line(&mut self, line: &str) {
@@ -161,8 +178,10 @@ impl LiveInputController {
 
 #[cfg(test)]
 mod tests {
-    use super::{LiveInputCommand, LiveInputController};
+    use super::{LiveInputCommand, LiveInputController, COMPACT_AFTER_BYTES};
     use std::collections::VecDeque;
+    use std::fs;
+    use std::path::PathBuf;
     use std::time::Instant;
 
     fn controller() -> LiveInputController {
@@ -184,5 +203,32 @@ mod tests {
         assert_eq!(input.pending.len(), 2);
         assert!(matches!(input.pending[0], LiveInputCommand::Key(_)));
         assert!(matches!(input.pending[1], LiveInputCommand::Pointer(_)));
+    }
+
+    #[test]
+    fn live_input_compacts_fully_consumed_large_control_file() {
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-live-input-{}-{}.ctl",
+            std::process::id(),
+            Instant::now().elapsed().as_nanos()
+        ));
+        let mut contents = b"POINTER click:1x2\n".to_vec();
+        contents.resize(COMPACT_AFTER_BYTES as usize + 1, b'x');
+        contents.push(b'\n');
+        fs::write(&path, contents).unwrap();
+        let mut input = LiveInputController {
+            path: Some(PathBuf::from(&path)),
+            offset: 0,
+            partial: String::new(),
+            pending: VecDeque::new(),
+            next_poll: Instant::now(),
+        };
+
+        input.read_new_commands();
+
+        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+        assert_eq!(input.offset, 0);
+        assert_eq!(input.pending.len(), 1);
+        fs::remove_file(path).unwrap();
     }
 }
