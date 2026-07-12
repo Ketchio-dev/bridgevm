@@ -375,6 +375,30 @@ final class HvfEngineSessionPathTests: XCTestCase {
         )))
     }
 
+    @MainActor
+    func testControlInputReportsWriteFailure() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let invalidControlPath = temp.appendingPathComponent("control-directory", isDirectory: true)
+        try FileManager.default.createDirectory(at: invalidControlPath, withIntermediateDirectories: true)
+        let config = HvfEngineConfig(
+            targetDiskPath: "target", uefiVarsPath: "vars", evidenceDir: temp.path,
+            watchdogMs: nil, ramMiB: 6144, smpCpus: 4, clipboardSync: true,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: true, virtioGpu3d: true,
+            nvmeBufferedIO: true, ctlFilePath: invalidControlPath.path
+        )
+        let session = HvfEngineSession(config: config, repoRoot: temp) { _ in true }
+
+        XCTAssertFalse(session.sendCtl("whoami"))
+        XCTAssertTrue(session.events.contains { event in
+            if case let .unknown(message) = event {
+                return message.hasPrefix("control command write failed:")
+            }
+            return false
+        })
+    }
+
     private func makeWrapper(at root: URL) throws {
         let scripts = root.appendingPathComponent("scripts", isDirectory: true)
         try FileManager.default.createDirectory(at: scripts, withIntermediateDirectories: true)
@@ -661,6 +685,24 @@ final class HvfWindowsBackendTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: backend.ctlFilePath))
     }
 
+    func testRunInGuestReturnsImmediatelyWhenControlChannelCannotBeWritten() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
+        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in true })
+        try FileManager.default.createDirectory(
+            atPath: backend.ctlFilePath,
+            withIntermediateDirectories: true
+        )
+
+        let started = Date()
+        let result = backend.runInGuest("whoami")
+
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1)
+        XCTAssertEqual(result.code, -1)
+        XCTAssertEqual(result.output, "HVF 제어 채널에 명령을 기록하지 못했습니다: \(backend.ctlFilePath)")
+    }
+
     func testRunInGuestReturnsImmediatelyWhenVMExitsWhileWaiting() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -689,12 +731,26 @@ final class HvfWindowsBackendTests: XCTestCase {
         let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
         let backend = HvfWindowsBackend(cfg)
 
-        backend.requestGracefulStop()
+        XCTAssertTrue(backend.requestGracefulStop())
 
         XCTAssertEqual(
             try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8),
             "shutdown.exe /p /f\n"
         )
+    }
+
+    func testGracefulStopRequestReportsUnwritableControlChannel() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let backend = HvfWindowsBackend(
+            makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
+        )
+        try FileManager.default.createDirectory(
+            atPath: backend.ctlFilePath,
+            withIntermediateDirectories: true
+        )
+
+        XCTAssertFalse(backend.requestGracefulStop())
     }
 
     func testConcurrentControlWritesRemainWholeAndLossless() throws {

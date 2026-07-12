@@ -202,11 +202,15 @@ final class HvfEngineSession: ObservableObject {
         if !FileManager.default.fileExists(atPath: path) {
             FileManager.default.createFile(atPath: path, contents: nil)
         }
-        guard let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: path)) else { return false }
-        defer { try? handle.close() }
-        _ = try? handle.seekToEnd()
-        if let data = "\(cleaned)\n".data(using: .utf8) {
-            try? handle.write(contentsOf: data)
+        guard let data = "\(cleaned)\n".data(using: .utf8) else { return false }
+        do {
+            let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: data)
+        } catch {
+            append(.unknown("control command write failed: \(error.localizedDescription)"))
+            return false
         }
         return true
     }
@@ -369,9 +373,18 @@ final class HvfEngineSession: ObservableObject {
 
     private func sendGracefulStopIfReady() {
         guard case .stopping = connectionState, serviceStarted, !stopCommandSent else { return }
-        sendCtl("shutdown.exe /p /f")
         stopCommandSent = true
-        append(.unknown("graceful guest shutdown requested"))
+        if sendCtl("shutdown.exe /p /f") {
+            append(.unknown("graceful guest shutdown requested"))
+            return
+        }
+        append(.unknown("graceful guest shutdown unavailable; terminating the HVF wrapper"))
+        if let process {
+            process.terminate()
+        } else if attachedToExistingProcess {
+            Shell.killProcesses(matching: config.targetDiskPath)
+        }
+        stopDeadline = nil
     }
 
     private func markStopped() {

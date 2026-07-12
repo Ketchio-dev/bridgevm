@@ -426,13 +426,14 @@ final class HvfWindowsBackend: VMBackend {
             usleep(250_000)
         }
         if isRunning(), serviceHasStarted() {
-            requestGracefulStop()
-            // Give the guest a complete grace period after the request. Reusing
-            // the service-discovery deadline could leave only milliseconds when
-            // READY arrived late and turn a valid clean shutdown into a kill.
-            let shutdownDeadline = Date().addingTimeInterval(180)
-            while isRunning(), Date() < shutdownDeadline {
-                usleep(500_000)
+            if requestGracefulStop() {
+                // Give the guest a complete grace period after the request. Reusing
+                // the service-discovery deadline could leave only milliseconds when
+                // READY arrived late and turn a valid clean shutdown into a kill.
+                let shutdownDeadline = Date().addingTimeInterval(180)
+                while isRunning(), Date() < shutdownDeadline {
+                    usleep(500_000)
+                }
             }
         }
         guard isRunning() else { return }
@@ -440,9 +441,10 @@ final class HvfWindowsBackend: VMBackend {
         Shell.killProcesses(matching: "\(wrapperName) --target \(targetDiskPath)")
     }
 
-    func requestGracefulStop() {
+    @discardableResult
+    func requestGracefulStop() -> Bool {
         ensureDirectories()
-        appendCtl("shutdown.exe /p /f")
+        return appendCtl("shutdown.exe /p /f")
     }
 
     func resources() -> (memMiB: Int, cpu: Int) {
@@ -475,7 +477,9 @@ final class HvfWindowsBackend: VMBackend {
         }
         ensureDirectories()
         let offset = fileSize(at: runLogPath)
-        appendCtl(normalized)
+        guard appendCtl(normalized) else {
+            return ("HVF 제어 채널에 명령을 기록하지 못했습니다: \(ctlFilePath)", -1)
+        }
         // The guest dispatcher is deliberately lockstep. Driver/tool installs
         // can take minutes, and returning a false timeout while their reply is
         // still in flight invites the next UI command to be misinterpreted.
@@ -531,19 +535,25 @@ final class HvfWindowsBackend: VMBackend {
         }
     }
 
-    private func appendCtl(_ command: String) {
+    @discardableResult
+    private func appendCtl(_ command: String) -> Bool {
         let cleaned = command.trimmingCharacters(in: .newlines)
-        guard !cleaned.isEmpty else { return }
+        guard !cleaned.isEmpty, let data = "\(cleaned)\n".data(using: .utf8) else { return false }
         ctlWriteLock.lock()
         defer { ctlWriteLock.unlock() }
         if !FileManager.default.fileExists(atPath: ctlFilePath) {
-            FileManager.default.createFile(atPath: ctlFilePath, contents: nil)
+            guard FileManager.default.createFile(atPath: ctlFilePath, contents: nil) else {
+                return false
+            }
         }
-        guard let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: ctlFilePath)) else { return }
-        defer { try? handle.close() }
-        _ = try? handle.seekToEnd()
-        if let data = "\(cleaned)\n".data(using: .utf8) {
-            try? handle.write(contentsOf: data)
+        do {
+            let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: ctlFilePath))
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: data)
+            return true
+        } catch {
+            return false
         }
     }
 
