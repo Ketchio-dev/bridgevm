@@ -22,6 +22,7 @@ struct HvfEngineView: View {
     @State private var ctlFilePath = ""
     @State private var ctlInput = ""
     @State private var keyboardInput = ""
+    @FocusState private var displayFocused: Bool
 
     init(config: HvfEngineConfig = HvfEngineView.defaultConfig()) {
         _session = StateObject(wrappedValue: HvfEngineSession(config: config))
@@ -161,9 +162,15 @@ struct HvfEngineView: View {
                         .scaledToFit()
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .contentShape(Rectangle())
+                        .focusable()
+                        .focused($displayFocused)
+                        .onKeyPress { press in
+                            handleDisplayKeyPress(press)
+                        }
                         .gesture(
                             DragGesture(minimumDistance: 0)
                                 .onEnded { value in
+                                    displayFocused = true
                                     session.sendPointerClick(
                                         location: value.location,
                                         viewSize: geometry.size,
@@ -174,6 +181,10 @@ struct HvfEngineView: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 280, maxHeight: 520)
                 .background(Color.black)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(displayFocused ? Color.accentColor : Color.clear, lineWidth: 2)
+                )
                 .cornerRadius(6)
             } else {
                 VStack(spacing: 8) {
@@ -296,6 +307,19 @@ struct HvfEngineView: View {
         keyboardInput = ""
     }
 
+    private func handleDisplayKeyPress(_ press: KeyPress) -> KeyPress.Result {
+        switch HvfHostKeyCommand.resolve(characters: press.characters, modifiers: press.modifiers) {
+        case let .key(action):
+            session.sendKey(action)
+            return .handled
+        case let .text(text):
+            session.sendText(text)
+            return .handled
+        case .ignored:
+            return .ignored
+        }
+    }
+
     private func currentConfig() -> HvfEngineConfig {
         HvfEngineConfig(targetDiskPath: targetDiskPath,
                         uefiVarsPath: uefiVarsPath,
@@ -359,5 +383,38 @@ struct HvfEngineView: View {
                                virtioGpu3d: true,
                                nvmeBufferedIO: true,
                                ctlFilePath: "\(evidence)/bvagent.ctl")
+    }
+}
+
+enum HvfHostKeyCommand: Equatable {
+    case key(String)
+    case text(String)
+    case ignored
+
+    static func resolve(characters: String, modifiers: EventModifiers = []) -> HvfHostKeyCommand {
+        if characters == "\u{7f}", modifiers.contains(.control), modifiers.contains(.option) {
+            return .key("ctrl+alt+delete")
+        }
+        switch characters {
+        case "\u{1b}": return .key("esc")
+        case "\u{7f}": return .key("backspace")
+        case "\u{f728}": return .key("delete")
+        case "\u{f700}": return .key("up")
+        case "\u{f701}": return .key("down")
+        case "\u{f702}": return .key("left")
+        case "\u{f703}": return .key("right")
+        case "\u{f729}": return .key("home")
+        case "\u{f72b}": return .key("end")
+        case "\u{f72c}": return .key("pageup")
+        case "\u{f72d}": return .key("pagedown")
+        case "\t": return .key("tab")
+        case "\r", "\n": return .key("enter")
+        default:
+            guard !characters.isEmpty,
+                  !modifiers.contains(.command),
+                  !modifiers.contains(.control),
+                  !modifiers.contains(.option) else { return .ignored }
+            return .text(characters)
+        }
     }
 }

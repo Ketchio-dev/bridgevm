@@ -144,6 +144,32 @@ final class HvfEngineConfigTests: XCTestCase {
     }
 }
 
+final class HvfHostKeyCommandTests: XCTestCase {
+    func testMapsHostNavigationAndEditingKeys() {
+        let cases: [(String, HvfHostKeyCommand)] = [
+            ("\u{1b}", .key("esc")), ("\u{7f}", .key("backspace")),
+            ("\u{f728}", .key("delete")), ("\u{f700}", .key("up")),
+            ("\u{f701}", .key("down")), ("\u{f702}", .key("left")),
+            ("\u{f703}", .key("right")), ("\u{f729}", .key("home")),
+            ("\u{f72b}", .key("end")), ("\u{f72c}", .key("pageup")),
+            ("\u{f72d}", .key("pagedown")), ("\t", .key("tab")),
+            ("\r", .key("enter"))
+        ]
+        for (characters, expected) in cases {
+            XCTAssertEqual(HvfHostKeyCommand.resolve(characters: characters), expected)
+        }
+    }
+
+    func testMapsTextAndSecureAttentionWhileIgnoringHostShortcuts() {
+        XCTAssertEqual(HvfHostKeyCommand.resolve(characters: "A"), .text("A"))
+        XCTAssertEqual(HvfHostKeyCommand.resolve(
+            characters: "\u{7f}", modifiers: [.control, .option]
+        ), .key("ctrl+alt+delete"))
+        XCTAssertEqual(HvfHostKeyCommand.resolve(characters: "c", modifiers: .command), .ignored)
+        XCTAssertEqual(HvfHostKeyCommand.resolve(characters: "", modifiers: []), .ignored)
+    }
+}
+
 final class HvfEngineSessionPathTests: XCTestCase {
     func testFindsRepositoryAncestorAndHonorsValidOverride() throws {
         let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
