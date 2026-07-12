@@ -127,17 +127,17 @@ fn main() -> Result<()> {
                 .stderr(Stdio::from(stderr))
                 .spawn()
                 .with_context(|| format!("failed to spawn {}", command.program))?;
-            let metadata = runner_metadata(
-                engine.name(),
-                Some(child.id()),
-                command.render_shell_words(),
+            let metadata = runner_metadata(RunnerMetadataInput {
+                engine_name: engine.name(),
+                pid: Some(child.id()),
+                command: command.render_shell_words(),
                 log_path,
-                now_unix(),
-                false,
-                Some(guest_tools),
-                Some(disk),
-                Some(active_disk),
-            );
+                started_at_unix: now_unix(),
+                dry_run: false,
+                guest_tools: Some(guest_tools),
+                disk: Some(disk),
+                active_disk: Some(active_disk),
+            });
             store.write_runner_metadata(&vm, &metadata)?;
             store.transition_state(&vm, VmRuntimeState::Running)?;
             println!("started {} with pid {}", vm, child.id());
@@ -147,17 +147,17 @@ fn main() -> Result<()> {
                 .guest_tools_runner_metadata(&vm)
                 .context("failed to prepare guest tools runner metadata")?;
             let command_words = command.render_shell_words();
-            let metadata = runner_metadata(
-                engine.name(),
-                None,
-                command_words,
-                bundle.join("logs").join("qemu.log"),
-                now_unix(),
-                true,
-                Some(guest_tools),
-                Some(disk),
-                Some(active_disk),
-            );
+            let metadata = runner_metadata(RunnerMetadataInput {
+                engine_name: engine.name(),
+                pid: None,
+                command: command_words,
+                log_path: bundle.join("logs").join("qemu.log"),
+                started_at_unix: now_unix(),
+                dry_run: true,
+                guest_tools: Some(guest_tools),
+                disk: Some(disk),
+                active_disk: Some(active_disk),
+            });
             store.write_runner_metadata(&vm, &metadata)?;
             println!("{} dry-run for {}", engine.name(), vm);
             println!("{}", command_line(&metadata.command));
@@ -187,8 +187,8 @@ fn command_line(words: &[String]) -> String {
     words.join(" ")
 }
 
-fn runner_metadata(
-    engine_name: &str,
+struct RunnerMetadataInput<'a> {
+    engine_name: &'a str,
     pid: Option<u32>,
     command: Vec<String>,
     log_path: PathBuf,
@@ -197,18 +197,20 @@ fn runner_metadata(
     guest_tools: Option<GuestToolsRunnerMetadata>,
     disk: Option<DiskPreparationMetadata>,
     active_disk: Option<ActiveDiskMetadata>,
-) -> RunnerMetadata {
+}
+
+fn runner_metadata(input: RunnerMetadataInput<'_>) -> RunnerMetadata {
     RunnerMetadata {
-        engine: engine_name.to_string(),
-        pid,
-        command,
-        log_path,
-        started_at_unix,
-        dry_run,
+        engine: input.engine_name.to_string(),
+        pid: input.pid,
+        command: input.command,
+        log_path: input.log_path,
+        started_at_unix: input.started_at_unix,
+        dry_run: input.dry_run,
         launch_spec_path: None,
-        guest_tools,
-        disk,
-        active_disk,
+        guest_tools: input.guest_tools,
+        disk: input.disk,
+        active_disk: input.active_disk,
         launch_readiness: None,
         runtime_control: None,
     }
@@ -292,17 +294,17 @@ mod tests {
             activated_at_unix: 43,
         };
 
-        let metadata = runner_metadata(
-            "fullvm",
-            None,
-            command.clone(),
-            PathBuf::from("logs/qemu.log"),
-            1234,
-            true,
-            Some(guest_tools),
-            Some(disk),
-            Some(active_disk),
-        );
+        let metadata = runner_metadata(RunnerMetadataInput {
+            engine_name: "fullvm",
+            pid: None,
+            command: command.clone(),
+            log_path: PathBuf::from("logs/qemu.log"),
+            started_at_unix: 1234,
+            dry_run: true,
+            guest_tools: Some(guest_tools),
+            disk: Some(disk),
+            active_disk: Some(active_disk),
+        });
 
         assert_eq!(metadata.engine, "fullvm");
         assert_eq!(metadata.pid, None);

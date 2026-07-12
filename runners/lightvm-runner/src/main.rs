@@ -57,6 +57,42 @@ struct Args {
     require_ready: bool,
 }
 
+#[derive(Default)]
+struct AppleVzLaunchOptions<'a> {
+    runner: Option<&'a std::path::Path>,
+    allow_real_start: bool,
+    stop_after_seconds: Option<u64>,
+    force_stop_grace_seconds: Option<u64>,
+    save_state: Option<&'a std::path::Path>,
+    restore_state: Option<&'a std::path::Path>,
+    display: bool,
+    display_width: Option<u32>,
+    display_height: Option<u32>,
+    runtime_control_socket: Option<&'a std::path::Path>,
+    proxy_framebuffer_rgba_file: Option<&'a std::path::Path>,
+    proxy_framebuffer_capture_interval_ms: Option<u64>,
+}
+
+impl<'a> From<&'a Args> for AppleVzLaunchOptions<'a> {
+    fn from(args: &'a Args) -> Self {
+        Self {
+            runner: args.apple_vz_runner.as_deref(),
+            allow_real_start: args.apple_vz_allow_real_start,
+            stop_after_seconds: args.apple_vz_stop_after_seconds,
+            force_stop_grace_seconds: args.apple_vz_force_stop_grace_seconds,
+            save_state: args.apple_vz_save_state.as_deref(),
+            restore_state: args.apple_vz_restore_state.as_deref(),
+            display: args.apple_vz_display,
+            display_width: args.apple_vz_display_width,
+            display_height: args.apple_vz_display_height,
+            runtime_control_socket: args.apple_vz_runtime_control_socket.as_deref(),
+            proxy_framebuffer_rgba_file: args.apple_vz_proxy_framebuffer_rgba_file.as_deref(),
+            proxy_framebuffer_capture_interval_ms: args
+                .apple_vz_proxy_framebuffer_capture_interval_ms,
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
     let engine = LightVmEngine;
@@ -67,45 +103,31 @@ fn main() -> Result<()> {
             ensure_launch_ready(&spec)?;
         }
         if args.launch {
-            launch_handoff(
-                &spec,
-                Some(path),
-                args.apple_vz_runner.as_deref(),
-                args.apple_vz_allow_real_start,
-                args.apple_vz_stop_after_seconds,
-                args.apple_vz_force_stop_grace_seconds,
-                args.apple_vz_save_state.as_deref(),
-                args.apple_vz_restore_state.as_deref(),
-                args.apple_vz_display,
-                args.apple_vz_display_width,
-                args.apple_vz_display_height,
-                args.apple_vz_runtime_control_socket.as_deref(),
-                args.apple_vz_proxy_framebuffer_rgba_file.as_deref(),
-                args.apple_vz_proxy_framebuffer_capture_interval_ms,
-            )?;
+            launch_handoff(&spec, Some(path), AppleVzLaunchOptions::from(&args))?;
             return Ok(());
         }
         print_launch_spec_or_handoff(&spec, Some(path), args.print_plan, args.print_handoff)?;
         return Ok(());
     }
 
-    let Some(vm) = args.vm else {
+    let Some(vm) = args.vm.as_deref() else {
         println!("{}", runner_ready_line(engine.name()));
         return Ok(());
     };
 
     let store = args
         .store
+        .clone()
         .map(VmStore::new)
         .unwrap_or_else(VmStore::default);
     let (bundle, mut manifest, _) = store
-        .get_vm_with_active_disk(&vm)
+        .get_vm_with_active_disk(vm)
         .context("failed to read VM")?;
     ensure_fast_mode(manifest.mode)?;
 
     if args.write_metadata || args.require_ready || args.launch {
         let (_, active_disk) = store
-            .prepare_active_disk(&vm)
+            .prepare_active_disk(vm)
             .context("failed to prepare active disk")?;
         manifest.storage.primary.path = active_disk.path.display().to_string();
         manifest.storage.primary.format = active_disk.format;
@@ -123,7 +145,7 @@ fn main() -> Result<()> {
 
     if args.write_metadata {
         let (disk, active_disk) = store
-            .prepare_active_disk(&vm)
+            .prepare_active_disk(vm)
             .context("failed to prepare active disk")?;
         let metadata = RunnerMetadata {
             engine: engine.name().to_string(),
@@ -147,7 +169,7 @@ fn main() -> Result<()> {
             runtime_control: None,
         };
         store
-            .write_runner_metadata(&vm, &metadata)
+            .write_runner_metadata(vm, &metadata)
             .context("failed to write runner metadata")?;
     }
     if args.require_ready {
@@ -156,7 +178,7 @@ fn main() -> Result<()> {
     if args.launch {
         record_live_launch_metadata(
             &store,
-            &vm,
+            vm,
             engine.name(),
             &plan,
             launch_spec_path.clone(),
@@ -166,25 +188,14 @@ fn main() -> Result<()> {
         let launch_result = launch_handoff(
             plan.launch_spec(),
             launch_spec_path.as_deref(),
-            args.apple_vz_runner.as_deref(),
-            args.apple_vz_allow_real_start,
-            args.apple_vz_stop_after_seconds,
-            args.apple_vz_force_stop_grace_seconds,
-            args.apple_vz_save_state.as_deref(),
-            args.apple_vz_restore_state.as_deref(),
-            args.apple_vz_display,
-            args.apple_vz_display_width,
-            args.apple_vz_display_height,
-            args.apple_vz_runtime_control_socket.as_deref(),
-            args.apple_vz_proxy_framebuffer_rgba_file.as_deref(),
-            args.apple_vz_proxy_framebuffer_capture_interval_ms,
+            AppleVzLaunchOptions::from(&args),
         );
         if let Err(error) = launch_result {
-            let _ = store.transition_state(&vm, VmRuntimeState::Stopped);
+            let _ = store.transition_state(vm, VmRuntimeState::Stopped);
             return Err(error);
         }
         store
-            .transition_state(&vm, VmRuntimeState::Stopped)
+            .transition_state(vm, VmRuntimeState::Stopped)
             .context("failed to record VM stopped after Fast launch exit")?;
         return Ok(());
     }
@@ -252,69 +263,58 @@ fn record_live_launch_metadata(
 fn launch_handoff(
     spec: &AppleVzLaunchSpec,
     launch_spec_path: Option<&std::path::Path>,
-    apple_vz_runner: Option<&std::path::Path>,
-    apple_vz_allow_real_start: bool,
-    apple_vz_stop_after_seconds: Option<u64>,
-    apple_vz_force_stop_grace_seconds: Option<u64>,
-    apple_vz_save_state: Option<&std::path::Path>,
-    apple_vz_restore_state: Option<&std::path::Path>,
-    apple_vz_display: bool,
-    apple_vz_display_width: Option<u32>,
-    apple_vz_display_height: Option<u32>,
-    apple_vz_runtime_control_socket: Option<&std::path::Path>,
-    apple_vz_proxy_framebuffer_rgba_file: Option<&std::path::Path>,
-    apple_vz_proxy_framebuffer_capture_interval_ms: Option<u64>,
+    options: AppleVzLaunchOptions<'_>,
 ) -> Result<()> {
     let handoff = build_launch_handoff(spec, launch_spec_path);
-    let attempt = if let Some(program) = apple_vz_runner {
+    let attempt = if let Some(program) = options.runner {
         let mut launcher = AppleVzCommandLauncher::new(program);
-        if apple_vz_allow_real_start {
+        if options.allow_real_start {
             launcher = launcher
                 .arg("--allow-real-vz-start")
                 .env("BRIDGEVM_APPLE_VZ_ALLOW_REAL_START", "1");
         }
-        if let Some(seconds) = apple_vz_stop_after_seconds {
+        if let Some(seconds) = options.stop_after_seconds {
             launcher = launcher
                 .arg("--stop-after-seconds")
                 .arg(seconds.to_string());
         }
-        if let Some(seconds) = apple_vz_force_stop_grace_seconds {
+        if let Some(seconds) = options.force_stop_grace_seconds {
             launcher = launcher
                 .arg("--force-stop-grace-seconds")
                 .arg(seconds.to_string());
         }
         // Suspend/resume: forward the saved-state path to AppleVzRunner, which
         // maps these to VZ saveMachineState/restoreMachineState.
-        if let Some(path) = apple_vz_save_state {
+        if let Some(path) = options.save_state {
             launcher = launcher.arg("--save-state").arg(path.display().to_string());
         }
-        if let Some(path) = apple_vz_restore_state {
+        if let Some(path) = options.restore_state {
             launcher = launcher
                 .arg("--restore-state")
                 .arg(path.display().to_string());
         }
         // Embedded display: forward --display so AppleVzRunner boots with a
         // graphics device and hosts the VM in a VZVirtualMachineView window.
-        if apple_vz_display {
+        if options.display {
             launcher = launcher.arg("--display");
         }
-        if let Some(width) = apple_vz_display_width {
+        if let Some(width) = options.display_width {
             launcher = launcher.arg("--display-width").arg(width.to_string());
         }
-        if let Some(height) = apple_vz_display_height {
+        if let Some(height) = options.display_height {
             launcher = launcher.arg("--display-height").arg(height.to_string());
         }
-        if let Some(path) = apple_vz_runtime_control_socket {
+        if let Some(path) = options.runtime_control_socket {
             launcher = launcher
                 .arg("--runtime-control-socket")
                 .arg(path.display().to_string());
         }
-        if let Some(path) = apple_vz_proxy_framebuffer_rgba_file {
+        if let Some(path) = options.proxy_framebuffer_rgba_file {
             launcher = launcher
                 .arg("--proxy-framebuffer-rgba-file")
                 .arg(path.display().to_string());
         }
-        if let Some(interval_ms) = apple_vz_proxy_framebuffer_capture_interval_ms {
+        if let Some(interval_ms) = options.proxy_framebuffer_capture_interval_ms {
             launcher = launcher
                 .arg("--proxy-framebuffer-capture-interval-ms")
                 .arg(interval_ms.to_string());
@@ -724,10 +724,8 @@ mod tests {
             }],
         );
 
-        let error = launch_handoff(
-            &spec, None, None, false, None, None, None, None, false, None, None, None, None, None,
-        )
-        .expect_err("blocked launch must fail");
+        let error = launch_handoff(&spec, None, AppleVzLaunchOptions::default())
+            .expect_err("blocked launch must fail");
         let message = format!("{error:#}");
 
         assert!(message.contains("failed to launch Apple VZ handoff"));
@@ -745,18 +743,7 @@ mod tests {
             Some(&PathBuf::from(
                 "/tmp/dev.vmbridge/metadata/apple-vz-launch.json",
             )),
-            None,
-            false,
-            None,
-            None,
-            None,
-            None,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
+            AppleVzLaunchOptions::default(),
         )
         .expect_err("default Apple VZ launcher must require the Swift helper");
         let message = format!("{error:#}");
@@ -798,18 +785,13 @@ mod tests {
         launch_handoff(
             &spec,
             None,
-            Some(&helper),
-            true,
-            Some(5),
-            Some(2),
-            None,
-            None,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
+            AppleVzLaunchOptions {
+                runner: Some(&helper),
+                allow_real_start: true,
+                stop_after_seconds: Some(5),
+                force_stop_grace_seconds: Some(2),
+                ..AppleVzLaunchOptions::default()
+            },
         )
         .expect("helper launch should succeed");
 
@@ -854,18 +836,13 @@ mod tests {
         launch_handoff(
             &spec,
             None,
-            Some(&helper),
-            true,
-            Some(5),
-            None,
-            Some(&state),
-            None,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
+            AppleVzLaunchOptions {
+                runner: Some(&helper),
+                allow_real_start: true,
+                stop_after_seconds: Some(5),
+                save_state: Some(&state),
+                ..AppleVzLaunchOptions::default()
+            },
         )
         .expect("helper launch should succeed");
 
@@ -908,18 +885,16 @@ mod tests {
         launch_handoff(
             &spec,
             None,
-            Some(&helper),
-            true,
-            None,
-            None,
-            None,
-            None,
-            true,
-            Some(1440),
-            Some(900),
-            None,
-            Some(&framebuffer),
-            Some(250),
+            AppleVzLaunchOptions {
+                runner: Some(&helper),
+                allow_real_start: true,
+                display: true,
+                display_width: Some(1440),
+                display_height: Some(900),
+                proxy_framebuffer_rgba_file: Some(&framebuffer),
+                proxy_framebuffer_capture_interval_ms: Some(250),
+                ..AppleVzLaunchOptions::default()
+            },
         )
         .expect("helper launch should succeed");
 
@@ -988,18 +963,11 @@ mod tests {
         launch_handoff(
             &spec,
             None,
-            Some(&helper),
-            true,
-            None,
-            None,
-            None,
-            None,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
+            AppleVzLaunchOptions {
+                runner: Some(&helper),
+                allow_real_start: true,
+                ..AppleVzLaunchOptions::default()
+            },
         )
         .expect("helper launch should succeed");
 
@@ -1051,18 +1019,11 @@ mod tests {
         launch_handoff(
             &spec,
             None,
-            Some(&helper),
-            true,
-            None,
-            None,
-            None,
-            None,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
+            AppleVzLaunchOptions {
+                runner: Some(&helper),
+                allow_real_start: true,
+                ..AppleVzLaunchOptions::default()
+            },
         )
         .expect("helper launch should succeed");
 
