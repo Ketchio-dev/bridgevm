@@ -81,7 +81,14 @@ final class BundledDaemonSupervisor {
   ) -> BundledDaemonLaunchReport {
     let socketPath = settings.effectiveDaemonSocketPath
     guard !settings.useMockInventory else {
-      _ = stop()
+      guard stop() else {
+        return BundledDaemonLaunchReport(
+          state: .failed,
+          helperPath: process?.executableURL?.path,
+          socketPath: socketPath,
+          detail: "Bundled bridgevmd could not be stopped before enabling mock inventory."
+        )
+      }
       return BundledDaemonLaunchReport(
         state: .disabledByMockInventory,
         helperPath: nil,
@@ -90,7 +97,14 @@ final class BundledDaemonSupervisor {
       )
     }
     guard socketPath == DaemonEndpoint.local.socketPath else {
-      _ = stop()
+      guard stop() else {
+        return BundledDaemonLaunchReport(
+          state: .failed,
+          helperPath: process?.executableURL?.path,
+          socketPath: socketPath,
+          detail: "Bundled bridgevmd could not be stopped before switching daemon sockets."
+        )
+      }
       return BundledDaemonLaunchReport(
         state: .customSocket,
         helperPath: nil,
@@ -107,7 +121,14 @@ final class BundledDaemonSupervisor {
       )
     }
     if process?.isRunning == true {
-      _ = stop()
+      guard stop() else {
+        return BundledDaemonLaunchReport(
+          state: .failed,
+          helperPath: process?.executableURL?.path,
+          socketPath: socketPath,
+          detail: "Bundled bridgevmd could not be stopped before relaunch."
+        )
+      }
     }
     guard let bridgevmd = helperResolver("bridgevmd") else {
       return BundledDaemonLaunchReport(
@@ -195,22 +216,13 @@ final class BundledDaemonSupervisor {
   @discardableResult
   func stop(timeout: TimeInterval = 2.0) -> Bool {
     guard let process else { return true }
-    if process.isRunning {
-      process.terminate()
-      let deadline = Date().addingTimeInterval(timeout)
-      while process.isRunning && Date() < deadline {
-        Thread.sleep(forTimeInterval: 0.05)
-      }
-      if process.isRunning {
-        process.interrupt()
-        Thread.sleep(forTimeInterval: 0.05)
-      }
-    }
+    let stopped = Self.terminateProcess(process, timeout: timeout)
+    guard stopped else { return false }
     self.process = nil
     activeProcessCleanup?()
     activeProcessCleanup = nil
     activeAllowsAppleVzRealStart = false
-    return !process.isRunning
+    return true
   }
 
   static func runDaemonProcess(
@@ -300,9 +312,11 @@ final class BundledDaemonSupervisor {
     } while true
   }
 
-  static func terminateProcess(_ process: Process, timeout: TimeInterval) {
+  @discardableResult
+  static func terminateProcess(_ process: Process, timeout: TimeInterval) -> Bool {
     guard process.isRunning else {
-      return
+      process.waitUntilExit()
+      return true
     }
     process.terminate()
     let deadline = Date().addingTimeInterval(max(0, timeout))
@@ -310,8 +324,15 @@ final class BundledDaemonSupervisor {
       Thread.sleep(forTimeInterval: 0.05)
     }
     if process.isRunning {
-      process.interrupt()
+      kill(process.processIdentifier, SIGKILL)
     }
+    let killDeadline = Date().addingTimeInterval(1)
+    while process.isRunning && Date() < killDeadline {
+      Thread.sleep(forTimeInterval: 0.01)
+    }
+    guard !process.isRunning else { return false }
+    process.waitUntilExit()
+    return true
   }
 
   static func isDaemonSocketReady(_ socketPath: String) -> Bool {

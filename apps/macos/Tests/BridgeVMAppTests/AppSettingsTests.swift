@@ -586,6 +586,40 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(launchedProcess?.isRunning == true)
     }
 
+    func testBundledDaemonSupervisorStopKillsHelperThatIgnoresGracefulSignals() throws {
+        let settings = AppSettings(defaults: isolatedDefaults())
+        let supervisor = BundledDaemonSupervisor()
+        var launchedProcess: Process?
+
+        let report = supervisor.startIfNeeded(
+            settings: settings,
+            helperResolver: { name in
+                URL(fileURLWithPath: "/tmp/BridgeVM.app/Contents/Helpers/\(name)")
+            },
+            launcher: { _, _ in
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/sh")
+                process.arguments = ["-c", "trap '' TERM INT; exec /bin/sleep 60"]
+                try process.run()
+                launchedProcess = process
+                return BundledDaemonProcess(process: process)
+            },
+            livenessProbeDelay: 0.05,
+            socketReadyProbe: { _ in true }
+        )
+        defer {
+            if let launchedProcess, launchedProcess.isRunning {
+                kill(launchedProcess.processIdentifier, SIGKILL)
+                launchedProcess.waitUntilExit()
+            }
+        }
+
+        XCTAssertEqual(report.state, .running)
+        XCTAssertTrue(launchedProcess?.isRunning == true)
+        XCTAssertTrue(supervisor.stop(timeout: 0.05))
+        XCTAssertFalse(launchedProcess?.isRunning == true)
+    }
+
     func testAppModelApplySettingsSwapsDashboardClientAndReloads() async throws {
         let suiteName = "BridgeVMAppTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
