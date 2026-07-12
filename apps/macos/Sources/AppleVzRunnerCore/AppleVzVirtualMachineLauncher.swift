@@ -428,8 +428,12 @@ struct AppleVzDisplayRuntimeControlSnapshot: Equatable {
 enum AppleVzDisplayRuntimeControlServerError: Error, LocalizedError, Equatable {
   case socketPathTooLong(String)
   case socketCreateFailed(String)
+  case socketPathNotSocket(String)
+  case socketAlreadyInUse(String)
+  case socketProbeFailed(String)
   case bindFailed(String)
   case listenFailed(String)
+  case permissionsFailed(String)
 
   var errorDescription: String? {
     switch self {
@@ -437,15 +441,28 @@ enum AppleVzDisplayRuntimeControlServerError: Error, LocalizedError, Equatable {
       return "runtime control socket path is too long: \(path)"
     case .socketCreateFailed(let message):
       return "runtime control socket create failed: \(message)"
+    case .socketPathNotSocket(let path):
+      return "runtime control socket path exists and is not a socket: \(path)"
+    case .socketAlreadyInUse(let path):
+      return "runtime control socket is already in use: \(path)"
+    case .socketProbeFailed(let message):
+      return "runtime control socket probe failed: \(message)"
     case .bindFailed(let message):
       return "runtime control socket bind failed: \(message)"
     case .listenFailed(let message):
       return "runtime control socket listen failed: \(message)"
+    case .permissionsFailed(let message):
+      return "runtime control socket permissions failed: \(message)"
     }
   }
 }
 
 final class AppleVzDisplayRuntimeControlServer {
+  private struct SocketIdentity {
+    let device: dev_t
+    let inode: ino_t
+  }
+
   private let socketPath: String
   private let statusProvider: () -> AppleVzDisplayRuntimeControlSnapshot
   private let stopHandler: () -> Void
@@ -472,21 +489,32 @@ final class AppleVzDisplayRuntimeControlServer {
       at: url.deletingLastPathComponent(),
       withIntermediateDirectories: true
     )
-    try? FileManager.default.removeItem(at: url)
+    try prepareSocketPath(url)
 
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
     guard fd >= 0 else {
       throw AppleVzDisplayRuntimeControlServerError.socketCreateFailed(lastErrnoMessage())
     }
 
+    var socketIdentity: SocketIdentity?
     do {
       try bindSocket(fd)
+      var info = stat()
+      guard fstat(fd, &info) == 0 else {
+        throw AppleVzDisplayRuntimeControlServerError.bindFailed(lastErrnoMessage())
+      }
+      socketIdentity = SocketIdentity(device: info.st_dev, inode: info.st_ino)
+      guard chmod(socketPath, S_IRUSR | S_IWUSR) == 0 else {
+        throw AppleVzDisplayRuntimeControlServerError.permissionsFailed(lastErrnoMessage())
+      }
       guard listen(fd, 8) == 0 else {
         throw AppleVzDisplayRuntimeControlServerError.listenFailed(lastErrnoMessage())
       }
     } catch {
       close(fd)
-      try? FileManager.default.removeItem(at: url)
+      if let socketIdentity {
+        Self.removeSocket(atPath: socketPath, matching: socketIdentity)
+      }
       throw error
     }
 
@@ -495,12 +523,81 @@ final class AppleVzDisplayRuntimeControlServer {
     source.setEventHandler { [weak self] in
       self?.acceptAvailableConnections()
     }
+    let ownedSocketIdentity = socketIdentity!
     source.setCancelHandler { [socketPath] in
       close(fd)
-      try? FileManager.default.removeItem(atPath: socketPath)
+      Self.removeSocket(atPath: socketPath, matching: ownedSocketIdentity)
     }
     self.source = source
     source.resume()
+  }
+
+  private static func removeSocket(atPath path: String, matching identity: SocketIdentity) {
+    var info = stat()
+    guard lstat(path, &info) == 0,
+      (info.st_mode & S_IFMT) == S_IFSOCK,
+      info.st_dev == identity.device,
+      info.st_ino == identity.inode
+    else {
+      return
+    }
+    _ = unlink(path)
+  }
+
+  private func prepareSocketPath(_ url: URL) throws {
+    var info = stat()
+    guard lstat(socketPath, &info) == 0 else {
+      if errno == ENOENT {
+        return
+      }
+      throw AppleVzDisplayRuntimeControlServerError.bindFailed(lastErrnoMessage())
+    }
+    guard (info.st_mode & S_IFMT) == S_IFSOCK else {
+      throw AppleVzDisplayRuntimeControlServerError.socketPathNotSocket(socketPath)
+    }
+
+    let probe = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard probe >= 0 else {
+      throw AppleVzDisplayRuntimeControlServerError.socketProbeFailed(lastErrnoMessage())
+    }
+    defer { close(probe) }
+    if try connectSocket(probe) {
+      throw AppleVzDisplayRuntimeControlServerError.socketAlreadyInUse(socketPath)
+    }
+    try FileManager.default.removeItem(at: url)
+  }
+
+  private func connectSocket(_ fd: Int32) throws -> Bool {
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    let pathBytes = Array(socketPath.utf8)
+    let capacity = MemoryLayout.size(ofValue: address.sun_path)
+    guard pathBytes.count < capacity else {
+      throw AppleVzDisplayRuntimeControlServerError.socketPathTooLong(socketPath)
+    }
+    withUnsafeMutablePointer(to: &address.sun_path) { pointer in
+      pointer.withMemoryRebound(to: CChar.self, capacity: capacity) { path in
+        path.initialize(repeating: 0, count: capacity)
+        for (index, byte) in pathBytes.enumerated() {
+          path[index] = CChar(bitPattern: byte)
+        }
+      }
+    }
+    let result = withUnsafePointer(to: &address) { pointer in
+      pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+      }
+    }
+    guard result == 0 else {
+      let connectionError = errno
+      if connectionError == ECONNREFUSED {
+        return false
+      }
+      throw AppleVzDisplayRuntimeControlServerError.socketProbeFailed(
+        String(cString: strerror(connectionError))
+      )
+    }
+    return true
   }
 
   func stop() {
@@ -551,9 +648,21 @@ final class AppleVzDisplayRuntimeControlServer {
       close(client)
     }
 
+    var suppressSIGPIPE: Int32 = 1
+    _ = setsockopt(
+      client,
+      SOL_SOCKET,
+      SO_NOSIGPIPE,
+      &suppressSIGPIPE,
+      socklen_t(MemoryLayout<Int32>.size)
+    )
+
     var buffer = [UInt8](repeating: 0, count: 4096)
     let count = read(client, &buffer, buffer.count)
-    let request = count > 0 ? Data(buffer.prefix(count)) : Data()
+    guard count > 0 else {
+      return
+    }
+    let request = Data(buffer.prefix(count))
     let response = handleRequest(request)
     response.withUnsafeBytes { rawBuffer in
       guard let baseAddress = rawBuffer.baseAddress else {

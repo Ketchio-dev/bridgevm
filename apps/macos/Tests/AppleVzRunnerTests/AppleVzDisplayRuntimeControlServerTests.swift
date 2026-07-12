@@ -10,6 +10,72 @@ import AppKit
 @testable import AppleVzRunnerCore
 
 final class AppleVzDisplayRuntimeControlServerTests: XCTestCase {
+  func testSocketUsesOwnerOnlyPermissions() throws {
+    let socketPath = makeShortSocketPath()
+    let server = makeServer(socketPath: socketPath)
+    try server.start()
+    defer { server.stop() }
+
+    var info = stat()
+    XCTAssertEqual(lstat(socketPath, &info), 0)
+    XCTAssertEqual(info.st_mode & mode_t(0o777), mode_t(0o600))
+  }
+
+  func testStartPreservesExistingRegularFile() throws {
+    let socketPath = makeShortSocketPath()
+    try Data("do-not-delete".utf8).write(to: URL(fileURLWithPath: socketPath))
+    defer { try? FileManager.default.removeItem(atPath: socketPath) }
+
+    XCTAssertThrowsError(try makeServer(socketPath: socketPath).start()) { error in
+      XCTAssertEqual(
+        error as? AppleVzDisplayRuntimeControlServerError,
+        .socketPathNotSocket(socketPath)
+      )
+    }
+    XCTAssertEqual(try String(contentsOfFile: socketPath, encoding: .utf8), "do-not-delete")
+  }
+
+  func testStartRefusesLiveSocketWithoutDisruptingIt() throws {
+    let socketPath = makeShortSocketPath()
+    let first = makeServer(socketPath: socketPath)
+    try first.start()
+    defer { first.stop() }
+
+    XCTAssertThrowsError(try makeServer(socketPath: socketPath).start()) { error in
+      XCTAssertEqual(
+        error as? AppleVzDisplayRuntimeControlServerError,
+        .socketAlreadyInUse(socketPath)
+      )
+    }
+    XCTAssertEqual(try sendRuntimeControlCommand("status", to: socketPath)["ok"] as? Bool, true)
+  }
+
+  func testStartReclaimsStaleSocket() throws {
+    let socketPath = makeShortSocketPath()
+    let staleFD = socket(AF_UNIX, SOCK_STREAM, 0)
+    XCTAssertGreaterThanOrEqual(staleFD, 0)
+    XCTAssertTrue(connectSocketForTest(staleFD, bindAt: socketPath))
+    close(staleFD)
+
+    let server = makeServer(socketPath: socketPath)
+    try server.start()
+    defer { server.stop() }
+
+    XCTAssertEqual(try sendRuntimeControlCommand("status", to: socketPath)["ok"] as? Bool, true)
+  }
+
+  func testStopPreservesReplacementAtSocketPath() throws {
+    let socketPath = makeShortSocketPath()
+    let server = makeServer(socketPath: socketPath)
+    try server.start()
+    XCTAssertEqual(unlink(socketPath), 0)
+    try Data("replacement".utf8).write(to: URL(fileURLWithPath: socketPath))
+
+    server.stop()
+    XCTAssertEqual(try String(contentsOfFile: socketPath, encoding: .utf8), "replacement")
+    try FileManager.default.removeItem(atPath: socketPath)
+  }
+
   func testStatusAndStopCommandsReturnSnapshot() throws {
     let socketPath = makeShortSocketPath()
     var stopCount = 0
@@ -287,6 +353,22 @@ final class AppleVzDisplayRuntimeControlServerTests: XCTestCase {
     return "/tmp/bvm-rc-\(getpid())-\(suffix).sock"
   }
 
+  private func makeServer(socketPath: String) -> AppleVzDisplayRuntimeControlServer {
+    AppleVzDisplayRuntimeControlServer(
+      socketPath: socketPath,
+      statusProvider: {
+        AppleVzDisplayRuntimeControlSnapshot(
+          vmName: "test-vm",
+          state: "running",
+          displayWidthInPixels: 1024,
+          displayHeightInPixels: 768,
+          isStopping: false
+        )
+      },
+      stopHandler: {}
+    )
+  }
+
   private func withConnectedSocket<T>(
     to socketPath: String,
     _ body: (Int32) throws -> T
@@ -338,6 +420,27 @@ final class AppleVzDisplayRuntimeControlServerTests: XCTestCase {
       }
     }
     return result == 0
+  }
+
+  private func connectSocketForTest(_ fd: Int32, bindAt socketPath: String) -> Bool {
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    let bytes = Array(socketPath.utf8)
+    let capacity = MemoryLayout.size(ofValue: address.sun_path)
+    guard bytes.count < capacity else { return false }
+    withUnsafeMutablePointer(to: &address.sun_path) { pointer in
+      pointer.withMemoryRebound(to: CChar.self, capacity: capacity) { path in
+        path.initialize(repeating: 0, count: capacity)
+        for (index, byte) in bytes.enumerated() {
+          path[index] = CChar(bitPattern: byte)
+        }
+      }
+    }
+    return withUnsafePointer(to: &address) { pointer in
+      pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
+      }
+    }
   }
 }
 
