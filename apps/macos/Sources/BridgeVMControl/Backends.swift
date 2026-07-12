@@ -125,11 +125,17 @@ enum Shell {
     }
 
     /// Launch a long-running process fully detached from this app (its own window).
-    static func launchDetached(_ command: String) {
+    @discardableResult
+    static func launchDetached(_ command: String) -> Bool {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/bin/sh")
         proc.arguments = ["-c", command]
-        try? proc.run()
+        do {
+            try proc.run()
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// Escape ERE metacharacters so a literal string (e.g. a filesystem path) can
@@ -402,12 +408,20 @@ final class HvfWindowsBackend: VMBackend {
         guard !isRunning() else { return }
         guard ensureDirectories() else { return }
         guard ensureControlFile() else { return }
+        let wrapper = repoRoot.appendingPathComponent(wrapperName)
+        guard FileManager.default.isExecutableFile(atPath: wrapper.path) else { return }
         // The wrapper replaces run.log on every launch. Remove it first so a
         // pending first-boot action cannot mistake the previous SERVICE marker
         // for the new guest generation and append a command before tailing starts.
-        try? FileManager.default.removeItem(atPath: runLogPath)
+        if FileManager.default.fileExists(atPath: runLogPath) {
+            do {
+                try FileManager.default.removeItem(atPath: runLogPath)
+            } catch {
+                return
+            }
+        }
         serviceStartReader.reset()
-        Shell.launchDetached(launchCommand())
+        guard Shell.launchDetached(launchCommand()) else { return }
         schedulePendingDiskGrowth()
     }
 
