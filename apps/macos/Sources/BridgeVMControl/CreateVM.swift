@@ -39,27 +39,44 @@ extension VMLibrary {
         return nil
     }
 
-    static func reserveDestination(_ base: String, storageBase: URL) -> (slug: String, root: URL)? {
+    static func reserveDestination(
+        _ base: String,
+        storageBase: URL,
+        libraryRoot: URL = root
+    ) -> (slug: String, root: URL)? {
         let baseSlug = VMConfig.slugify(base)
-        let existing = Set(list().map { $0.slug })
+        let fm = FileManager.default
         do {
-            try FileManager.default.createDirectory(at: storageBase, withIntermediateDirectories: true)
+            try fm.createDirectory(at: libraryRoot, withIntermediateDirectories: true)
+            try fm.createDirectory(at: storageBase, withIntermediateDirectories: true)
         } catch {
             return nil
         }
+        let libraryEntries: [URL]
+        do {
+            libraryEntries = try fm.contentsOfDirectory(at: libraryRoot, includingPropertiesForKeys: nil)
+        } catch {
+            return nil
+        }
+        // Include every on-disk entry, not only successfully decoded VMs. A
+        // corrupt or noncanonical registration must never be overwritten by a
+        // newly created VM that happens to normalize to the same slug.
+        let existing = Set(libraryEntries.flatMap {
+            [$0.lastPathComponent, VMConfig.slugify($0.lastPathComponent)]
+        })
         var slug = baseSlug
         var n = 2
         while true {
             let destination = storageBase.appendingPathComponent(slug, isDirectory: true)
-            if existing.contains(slug) || FileManager.default.fileExists(atPath: destination.path) {
+            if existing.contains(slug) || fm.fileExists(atPath: destination.path) {
                 slug = "\(baseSlug)-\(n)"; n += 1
                 continue
             }
             do {
-                try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false)
+                try fm.createDirectory(at: destination, withIntermediateDirectories: false)
                 return (slug, destination)
             } catch {
-                if FileManager.default.fileExists(atPath: destination.path) {
+                if fm.fileExists(atPath: destination.path) {
                     slug = "\(baseSlug)-\(n)"; n += 1
                     continue
                 }

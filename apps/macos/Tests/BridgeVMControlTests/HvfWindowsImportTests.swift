@@ -110,6 +110,45 @@ final class HvfWindowsImportTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: existing.appendingPathComponent("user-data")), "keep")
     }
 
+    func testDestinationReservationProtectsCorruptLibraryRegistration() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let library = temp.appendingPathComponent("registrations", isDirectory: true)
+        let storage = temp.appendingPathComponent("external-storage", isDirectory: true)
+        let corrupt = library.appendingPathComponent("collision", isDirectory: true)
+        try FileManager.default.createDirectory(at: corrupt, withIntermediateDirectories: true)
+        let original = Data("{broken-registration".utf8)
+        try original.write(to: corrupt.appendingPathComponent("vm.json"))
+
+        let reserved = try XCTUnwrap(VMLibrary.reserveDestination(
+            "Collision",
+            storageBase: storage,
+            libraryRoot: library
+        ))
+
+        XCTAssertEqual(reserved.slug, "collision-2")
+        XCTAssertEqual(try Data(contentsOf: corrupt.appendingPathComponent("vm.json")), original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: storage.appendingPathComponent("collision").path))
+    }
+
+    func testDestinationReservationProtectsNormalizedAliasOfNoncanonicalEntry() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let library = temp.appendingPathComponent("registrations", isDirectory: true)
+        let storage = temp.appendingPathComponent("external-storage", isDirectory: true)
+        let ambiguous = library.appendingPathComponent("safe--vm", isDirectory: true)
+        try FileManager.default.createDirectory(at: ambiguous, withIntermediateDirectories: true)
+
+        let reserved = try XCTUnwrap(VMLibrary.reserveDestination(
+            "Safe VM",
+            storageBase: storage,
+            libraryRoot: library
+        ))
+
+        XCTAssertEqual(reserved.slug, "safe-vm-2")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: ambiguous.path))
+    }
+
     func testISOCreateRejectsMissingOrDirectoryMediaBeforeReservingDestination() throws {
         let temp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: temp) }
