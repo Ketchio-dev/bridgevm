@@ -31,6 +31,8 @@ final class HvfEngineSession: ObservableObject {
     private var stopCommandSent = false
     private var stopDeadline: Date?
     private var attachedToExistingProcess = false
+    private var liveInputHandle: FileHandle?
+    private var liveInputPath: URL?
     private let processIsRunning: (String) -> Bool
 
     nonisolated static func defaultRepoRoot(
@@ -88,6 +90,7 @@ final class HvfEngineSession: ObservableObject {
     deinit {
         timer?.invalidate()
         process?.terminate()
+        try? liveInputHandle?.close()
     }
 
     func start() {
@@ -102,6 +105,7 @@ final class HvfEngineSession: ObservableObject {
         timer?.invalidate()
         timer = nil
         process = nil
+        closeLiveInput()
         try? FileManager.default.createDirectory(atPath: config.evidenceDir, withIntermediateDirectories: true)
         for name in ["display.ppm", "display.ppm.tmp", "input.ctl"] {
             try? FileManager.default.removeItem(
@@ -170,6 +174,7 @@ final class HvfEngineSession: ObservableObject {
         timer?.invalidate()
         timer = nil
         process = nil
+        closeLiveInput()
         attachedToExistingProcess = true
         resetObservedRuntimeState(clearEvents: true)
         connectionState = .booting
@@ -255,12 +260,34 @@ final class HvfEngineSession: ObservableObject {
 
     private func appendLiveInput(_ line: String) {
         let path = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("input.ctl")
-        guard let handle = try? FileHandle(forWritingTo: path) else { return }
-        defer { try? handle.close() }
-        _ = try? handle.seekToEnd()
-        if let data = "\(line)\n".data(using: .utf8) {
-            try? handle.write(contentsOf: data)
+        guard let data = "\(line)\n".data(using: .utf8) else { return }
+        do {
+            let handle = try liveInputHandle(for: path)
+            try handle.write(contentsOf: data)
+        } catch {
+            closeLiveInput()
         }
+    }
+
+    private func liveInputHandle(for path: URL) throws -> FileHandle {
+        if let liveInputHandle, liveInputPath == path {
+            return liveInputHandle
+        }
+        closeLiveInput()
+        if !FileManager.default.fileExists(atPath: path.path) {
+            FileManager.default.createFile(atPath: path.path, contents: nil)
+        }
+        let handle = try FileHandle(forWritingTo: path)
+        try handle.seekToEnd()
+        liveInputHandle = handle
+        liveInputPath = path
+        return handle
+    }
+
+    private func closeLiveInput() {
+        try? liveInputHandle?.close()
+        liveInputHandle = nil
+        liveInputPath = nil
     }
 
     private func startPolling() {
@@ -333,6 +360,7 @@ final class HvfEngineSession: ObservableObject {
         timer?.invalidate()
         timer = nil
         process = nil
+        closeLiveInput()
         attachedToExistingProcess = false
         connectionState = .stopped
         lastHeartbeatDate = nil
