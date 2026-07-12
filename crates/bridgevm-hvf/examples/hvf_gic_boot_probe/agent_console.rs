@@ -45,6 +45,8 @@ const SHARE_PUT_CHUNK_BYTES: usize = 24 * 1024;
 const COMMAND_OUTPUT_CHUNK_BYTES: usize = 24 * 1024;
 const COMMAND_OUTPUT_CHUNK_B64_BYTES: usize = COMMAND_OUTPUT_CHUNK_BYTES.div_ceil(3) * 4;
 const MAX_COMMAND_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_CTL_COMMAND_BYTES: usize = 64 * 1024;
+const MAX_SERVICE_QUEUE_DEPTH: usize = 1024;
 
 pub struct AgentConsoleHarness {
     start: Instant,
@@ -1212,13 +1214,21 @@ impl AgentConsoleHarness {
         }
         self.ctl_offset += self.ctl_read_scratch.len() as u64;
         self.ctl_line_scratch.clear();
-        self.ctl_framer
-            .push_into(&self.ctl_read_scratch, &mut self.ctl_line_scratch);
+        let oversized = self.ctl_framer.push_bounded_into(
+            &self.ctl_read_scratch,
+            &mut self.ctl_line_scratch,
+            MAX_CTL_COMMAND_BYTES,
+        );
+        if oversized > 0 {
+            eprintln!("BVAGENT CTL rejected reason=command_too_long count={oversized}");
+        }
         self.ctl_read_scratch.clear();
         for line in self.ctl_line_scratch.drain(..) {
             let command = line.trim();
-            if !command.is_empty() {
+            if !command.is_empty() && self.queue.len() < MAX_SERVICE_QUEUE_DEPTH {
                 self.queue.push_back(ServiceReq::Ctl(command.to_string()));
+            } else if !command.is_empty() {
+                eprintln!("BVAGENT CTL rejected reason=queue_full");
             }
         }
     }
@@ -1697,12 +1707,14 @@ impl ServiceWake {
 #[derive(Default)]
 struct LineFramer {
     pending: Vec<u8>,
+    discarding_oversized_line: bool,
 }
 
 impl LineFramer {
     fn new() -> Self {
         Self {
             pending: Vec::new(),
+            discarding_oversized_line: false,
         }
     }
 
@@ -1727,6 +1739,39 @@ impl LineFramer {
         if consumed > 0 {
             self.pending.drain(..consumed);
         }
+    }
+
+    fn push_bounded_into(&mut self, bytes: &[u8], lines: &mut Vec<String>, maximum: usize) -> u64 {
+        let mut rejected = 0u64;
+        for byte in bytes {
+            if self.discarding_oversized_line {
+                if *byte == b'\n' {
+                    self.discarding_oversized_line = false;
+                }
+                continue;
+            }
+            if *byte == b'\n' {
+                let line_end = self
+                    .pending
+                    .last()
+                    .is_some_and(|last| *last == b'\r')
+                    .then(|| self.pending.len() - 1)
+                    .unwrap_or(self.pending.len());
+                if line_end <= maximum {
+                    lines.push(String::from_utf8_lossy(&self.pending[..line_end]).into_owned());
+                } else {
+                    rejected = rejected.saturating_add(1);
+                }
+                self.pending.clear();
+            } else if self.pending.len() <= maximum {
+                self.pending.push(*byte);
+            } else {
+                self.pending.clear();
+                self.discarding_oversized_line = true;
+                rejected = rejected.saturating_add(1);
+            }
+        }
+        rejected
     }
 }
 
@@ -2436,6 +2481,30 @@ mod tests {
         framer.push_into(b"-done\r\n", &mut lines);
         assert_eq!(lines.as_slice(), ["partial-done"]);
         assert_eq!(lines.capacity(), initial_capacity);
+    }
+
+    #[test]
+    fn bounded_line_framer_discards_oversized_line_and_resynchronizes() {
+        let mut framer = LineFramer::new();
+        let mut lines = Vec::new();
+
+        assert_eq!(framer.push_bounded_into(b"1234", &mut lines, 4), 0);
+        assert_eq!(framer.push_bounded_into(b"5", &mut lines, 4), 0);
+        assert_eq!(framer.push_bounded_into(b"6", &mut lines, 4), 1);
+        assert!(lines.is_empty());
+        assert!(framer.pending.is_empty());
+        assert!(framer.discarding_oversized_line);
+
+        assert_eq!(
+            framer.push_bounded_into(b"discarded\nok\r\n", &mut lines, 4),
+            0
+        );
+        assert_eq!(lines, ["ok"]);
+        assert!(!framer.discarding_oversized_line);
+
+        lines.clear();
+        assert_eq!(framer.push_bounded_into(b"1234\r\n", &mut lines, 4), 0);
+        assert_eq!(lines, ["1234"]);
     }
 
     #[test]
