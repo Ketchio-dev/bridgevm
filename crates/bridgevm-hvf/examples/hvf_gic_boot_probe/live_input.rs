@@ -33,6 +33,7 @@ pub struct LiveInputController {
     offset: u64,
     partial: String,
     pending: VecDeque<LiveInputCommand>,
+    accepted_pointer_moves: u64,
     next_poll: Instant,
 }
 
@@ -45,6 +46,7 @@ impl LiveInputController {
             offset: 0,
             partial: String::new(),
             pending: VecDeque::new(),
+            accepted_pointer_moves: 0,
             next_poll: Instant::now(),
         }
     }
@@ -95,7 +97,17 @@ impl LiveInputController {
         match result {
             Ok(accepted) => {
                 if accepted {
-                    println!("live input accepted: command={command:?}");
+                    if command.is_pointer_move() {
+                        self.accepted_pointer_moves = self.accepted_pointer_moves.saturating_add(1);
+                        if self.accepted_pointer_moves % 1024 == 0 {
+                            println!(
+                                "live input accepted: kind=pointer_move total={}",
+                                self.accepted_pointer_moves
+                            );
+                        }
+                    } else {
+                        println!("live input accepted: command={command:?}");
+                    }
                 }
                 self.pending.pop_front();
             }
@@ -218,6 +230,7 @@ mod tests {
             offset: 0,
             partial: String::new(),
             pending: VecDeque::new(),
+            accepted_pointer_moves: 0,
             next_poll: Instant::now(),
         }
     }
@@ -281,6 +294,7 @@ mod tests {
             offset: 0,
             partial: String::new(),
             pending: VecDeque::new(),
+            accepted_pointer_moves: 0,
             next_poll: Instant::now(),
         };
 
