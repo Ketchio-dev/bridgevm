@@ -4840,16 +4840,10 @@ fn verify_evidence_artifact_sha256(
         ));
     }
     let artifact_path = relative_evidence_artifact_path(root, &artifact, &path.join("."))?;
-    let bytes = fs::read(&artifact_path).map_err(|error| {
-        format!(
-            "failed to read evidence artifact {}: {error}",
-            artifact_path.display()
-        )
-    })?;
-    if bytes.is_empty() {
+    let (actual_sha256, bytes) = sha256_file_with_bytes(&artifact_path, "evidence artifact")?;
+    if bytes == 0 {
         return Err(format!("{} artifact is empty", path.join(".")));
     }
-    let actual_sha256 = format!("{:x}", Sha256::digest(&bytes));
     if actual_sha256 != sha256 {
         return Err(format!("{}.sha256 does not match artifact", path.join(".")));
     }
@@ -4973,20 +4967,15 @@ fn verify_graphical_png_evidence(
     }
     let artifact = json_string(&evidence, &["artifact"])?;
     let full_artifact_path = relative_evidence_artifact_path(root, &artifact, file_name)?;
-    let bytes = fs::read(&full_artifact_path).map_err(|error| {
-        format!(
-            "failed to read {file_name} artifact {}: {error}",
-            full_artifact_path.display()
-        )
-    })?;
-    if bytes.is_empty() {
+    let (actual_sha256, bytes) =
+        sha256_file_with_bytes(&full_artifact_path, &format!("{file_name} artifact"))?;
+    if bytes == 0 {
         return Err(format!("{file_name} artifact is empty"));
     }
     let expected_sha256 = json_string(&evidence, &["sha256"])?;
     if !is_sha256_hex(&expected_sha256) {
         return Err(format!("{file_name} sha256 is not lowercase SHA-256 hex"));
     }
-    let actual_sha256 = format!("{:x}", Sha256::digest(&bytes));
     if actual_sha256 != expected_sha256 {
         return Err(format!("{file_name} sha256 does not match artifact"));
     }
@@ -4995,8 +4984,17 @@ fn verify_graphical_png_evidence(
     if width == 0 || height == 0 {
         return Err(format!("{file_name} width and height must be nonzero"));
     }
-    let (actual_width, actual_height) =
-        png_dimensions(&bytes).ok_or_else(|| format!("{file_name} artifact is not a PNG image"))?;
+    let mut header = [0u8; 24];
+    fs::File::open(&full_artifact_path)
+        .and_then(|mut file| file.read_exact(&mut header))
+        .map_err(|error| {
+            format!(
+                "failed to read {file_name} artifact header {}: {error}",
+                full_artifact_path.display()
+            )
+        })?;
+    let (actual_width, actual_height) = png_dimensions(&header)
+        .ok_or_else(|| format!("{file_name} artifact is not a PNG image"))?;
     if actual_width != width || actual_height != height {
         return Err(format!(
             "{file_name} width and height do not match artifact pixels"
@@ -5131,13 +5129,8 @@ fn verify_guest_tools_effect_observable(
         }
         let artifact_path =
             evidence_bundle_file_path(root, artifact, &format!("{label} artifact"))?;
-        let bytes = fs::read(&artifact_path).map_err(|error| {
-            format!(
-                "failed to read {label} artifact {}: {error}",
-                artifact_path.display()
-            )
-        })?;
-        let actual_sha256 = format!("{:x}", Sha256::digest(&bytes));
+        let (actual_sha256, _) =
+            sha256_file_with_bytes(&artifact_path, &format!("{label} artifact"))?;
         if actual_sha256 != sha256 {
             return Err(format!("{label} sha256 does not match artifact"));
         }
@@ -5177,6 +5170,27 @@ fn read_bounded_text_file(path: &Path, label: &str) -> Result<String, String> {
     }
     String::from_utf8(bytes)
         .map_err(|error| format!("{label} {} is not valid UTF-8: {error}", path.display()))
+}
+
+fn sha256_file_with_bytes(path: &Path, label: &str) -> Result<(String, u64), String> {
+    let mut file = fs::File::open(path)
+        .map_err(|error| format!("failed to read {label} {}: {error}", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    let mut bytes = 0u64;
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| format!("failed to read {label} {}: {error}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+        bytes = bytes
+            .checked_add(read as u64)
+            .ok_or_else(|| format!("{label} {} size overflow", path.display()))?;
+    }
+    Ok((format!("{:x}", hasher.finalize()), bytes))
 }
 
 fn read_evidence_json(root: &Path, name: &str) -> Result<serde_json::Value, String> {
@@ -5403,20 +5417,7 @@ fn normalize_sha256(value: &str) -> Result<String, String> {
 }
 
 fn sha256_file(path: &std::path::Path) -> Result<String, String> {
-    let mut file = fs::File::open(path)
-        .map_err(|error| format!("failed to open boot media {}: {error}", path.display()))?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 1024 * 64];
-    loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|error| format!("failed to read boot media {}: {error}", path.display()))?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
+    sha256_file_with_bytes(path, "boot media").map(|(sha256, _)| sha256)
 }
 
 fn run_backend(store: &VmStore, name: &str, spawn: bool) -> Result<RunnerMetadata, String> {
@@ -9252,6 +9253,25 @@ mod tests {
             .expect_err("oversized evidence must be rejected");
         assert!(error.contains("exceeds the 16777216-byte limit"));
         assert!(error.contains(&path.display().to_string()));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn evidence_artifact_hashes_across_streaming_chunks() {
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-api-streaming-evidence-hash-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let content: Vec<u8> = (0..200_000).map(|index| (index % 251) as u8).collect();
+        fs::write(&path, &content).unwrap();
+
+        let (actual, bytes) = sha256_file_with_bytes(&path, "test artifact").unwrap();
+        assert_eq!(bytes, content.len() as u64);
+        assert_eq!(actual, format!("{:x}", Sha256::digest(&content)));
 
         let _ = fs::remove_file(path);
     }
