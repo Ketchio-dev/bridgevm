@@ -3500,8 +3500,10 @@ fn run_boot_media_curl(temp_path: &Path, url: &str) -> Result<BoundedProcessOutp
         .map_err(|error| format!("failed to execute curl: {error}"))?;
     let mut stdout = child.stdout.take().ok_or("failed to capture curl stdout")?;
     let mut stderr = child.stderr.take().ok_or("failed to capture curl stderr")?;
-    let stdout_drain = thread::spawn(move || drain_process_stream(&mut stdout));
-    let stderr_drain = thread::spawn(move || drain_process_stream(&mut stderr));
+    let stdout_drain =
+        thread::spawn(move || drain_process_stream(&mut stdout, BOOT_MEDIA_CURL_OUTPUT_BYTES));
+    let stderr_drain =
+        thread::spawn(move || drain_process_stream(&mut stderr, BOOT_MEDIA_CURL_OUTPUT_BYTES));
     let deadline = Instant::now() + Duration::from_secs(BOOT_MEDIA_CURL_MAX_TIME_SECS + 30);
     let status = loop {
         match child.try_wait() {
@@ -3542,7 +3544,10 @@ fn run_boot_media_curl(temp_path: &Path, url: &str) -> Result<BoundedProcessOutp
     })
 }
 
-fn drain_process_stream(reader: &mut impl Read) -> std::io::Result<(Vec<u8>, bool)> {
+fn drain_process_stream(
+    reader: &mut impl Read,
+    output_limit: usize,
+) -> std::io::Result<(Vec<u8>, bool)> {
     let mut captured = Vec::new();
     let mut chunk = [0_u8; 8192];
     let mut exceeded = false;
@@ -3551,7 +3556,7 @@ fn drain_process_stream(reader: &mut impl Read) -> std::io::Result<(Vec<u8>, boo
         if read == 0 {
             break;
         }
-        let keep = read.min(BOOT_MEDIA_CURL_OUTPUT_BYTES.saturating_sub(captured.len()));
+        let keep = read.min(output_limit.saturating_sub(captured.len()));
         captured.extend_from_slice(&chunk[..keep]);
         exceeded |= keep < read;
     }
@@ -6016,11 +6021,7 @@ fn signal_process(_pid: u32, _signal: &str) -> Result<(), String> {
 fn recorded_process_is_ours(pid: u32, started_at_unix: u64) -> bool {
     // macOS `ps` exposes `etime` (elapsed, formatted `[[dd-]hh:]mm:ss`), not the
     // BSD/Linux `etimes` raw-seconds field.
-    let output = match Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "etime="])
-        .stderr(Stdio::null())
-        .output()
-    {
+    let output = match query_process_elapsed_time(pid) {
         Ok(out) if out.status.success() => out,
         // Can't query (process gone, or ps unavailable) -> don't signal it.
         _ => return false,
@@ -6035,6 +6036,59 @@ fn recorded_process_is_ours(pid: u32, started_at_unix: u64) -> bool {
     const TOLERANCE_SECS: u64 = 120;
     actual_start >= started_at_unix.saturating_sub(TOLERANCE_SECS)
         && actual_start <= started_at_unix.saturating_add(TOLERANCE_SECS)
+}
+
+#[cfg(unix)]
+fn query_process_elapsed_time(pid: u32) -> Result<BoundedProcessOutput, String> {
+    const PS_TIMEOUT: Duration = Duration::from_secs(2);
+    const PS_OUTPUT_LIMIT: usize = 4096;
+
+    let mut child = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "etime="])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("failed to execute ps: {error}"))?;
+    let mut stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("failed to capture ps stdout".to_string());
+        }
+    };
+    let stdout_drain = thread::spawn(move || drain_process_stream(&mut stdout, PS_OUTPUT_LIMIT));
+    let deadline = Instant::now() + PS_TIMEOUT;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_drain.join();
+                return Err("ps elapsed-time query timed out".to_string());
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_drain.join();
+                return Err(format!("failed to wait for ps: {error}"));
+            }
+        }
+    };
+    let (stdout, exceeded) = join_process_stream(stdout_drain, "ps stdout")?;
+    if exceeded {
+        return Err(format!(
+            "ps elapsed-time output exceeded {PS_OUTPUT_LIMIT}-byte limit"
+        ));
+    }
+    Ok(BoundedProcessOutput {
+        status,
+        stdout,
+        stderr: Vec::new(),
+    })
 }
 
 /// Parse `ps -o etime` (`[[dd-]hh:]mm:ss`) into elapsed seconds.
@@ -10056,7 +10110,8 @@ mod tests {
         let input = vec![0x41; BOOT_MEDIA_CURL_OUTPUT_BYTES * 2];
         let mut reader = std::io::Cursor::new(input.clone());
 
-        let (captured, exceeded) = drain_process_stream(&mut reader).unwrap();
+        let (captured, exceeded) =
+            drain_process_stream(&mut reader, BOOT_MEDIA_CURL_OUTPUT_BYTES).unwrap();
 
         assert!(exceeded);
         assert_eq!(captured, input[..BOOT_MEDIA_CURL_OUTPUT_BYTES]);
@@ -13352,6 +13407,16 @@ exec sleep 60
         );
         assert_eq!(parse_ps_etime("garbage"), None);
         assert_eq!(parse_ps_etime(""), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_elapsed_time_query_is_bounded_and_parses_current_process() {
+        let output = query_process_elapsed_time(std::process::id()).unwrap();
+
+        assert!(output.status.success());
+        assert!(parse_ps_etime(&String::from_utf8_lossy(&output.stdout)).is_some());
+        assert!(output.stdout.len() <= 4096);
     }
 
     #[cfg(unix)]
