@@ -387,7 +387,12 @@ private final class BundledDaemonOutputCapture {
     logURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("bridgevmd-\(UUID().uuidString).log")
     FileManager.default.createFile(atPath: logURL.path, contents: nil)
-    writer = try FileHandle(forWritingTo: logURL)
+    do {
+      writer = try FileHandle(forWritingTo: logURL)
+    } catch {
+      try? FileManager.default.removeItem(at: logURL)
+      throw error
+    }
     pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
       let data = handle.availableData
       guard !data.isEmpty else { return }
@@ -397,7 +402,8 @@ private final class BundledDaemonOutputCapture {
 
   func stderrTail() -> String? {
     queue.sync {
-      writer.synchronizeFile()
+      guard !didCleanup else { return nil }
+      try? writer.synchronize()
       guard let reader = try? FileHandle(forReadingFrom: logURL) else {
         return nil
       }
@@ -446,7 +452,7 @@ private final class BundledDaemonOutputCapture {
       }
       try? self.writer.truncate(atOffset: 0)
       try? self.writer.seek(toOffset: 0)
-      self.writer.write(self.capturedData)
+      try? self.writer.write(contentsOf: self.capturedData)
     }
   }
 

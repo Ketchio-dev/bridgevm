@@ -551,6 +551,18 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(tail.contains("y"))
     }
 
+    func testBundledDaemonProcessTailIsSafeAfterCleanup() throws {
+        let launched = try BundledDaemonSupervisor.runDaemonProcess(
+            executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+            environment: [:]
+        )
+        launched.process.waitUntilExit()
+        launched.cleanup()
+        launched.cleanup()
+
+        XCTAssertNil(launched.stderrTail())
+    }
+
     func testBundledDaemonSupervisorStopTerminatesLaunchedHelper() throws {
         let settings = AppSettings(defaults: isolatedDefaults())
         let supervisor = BundledDaemonSupervisor()
