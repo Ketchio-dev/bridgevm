@@ -281,6 +281,44 @@ final class EmbeddedDisplayLauncherTests: XCTestCase {
     }
   }
 
+  func testLaunchReusesRunningDisplayProcessForSameVirtualMachine() throws {
+    let lightvm = URL(fileURLWithPath: "/Helpers/lightvm-runner")
+    let appleVz = URL(fileURLWithPath: "/Helpers/AppleVzRunner")
+    let vmName = "duplicate-display-\(UUID().uuidString)"
+    var spawnCount = 0
+    let spawn: (URL, [String]) throws -> Process = { _, _ in
+      spawnCount += 1
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+      process.arguments = ["60"]
+      try process.run()
+      return process
+    }
+    let resolver: (String) -> URL? = { name in
+      name == "lightvm-runner" ? lightvm : (name == "AppleVzRunner" ? appleVz : nil)
+    }
+
+    let first = try EmbeddedDisplayLauncher.launch(
+      vmName: vmName,
+      helperResolver: resolver,
+      spawn: spawn
+    )
+    defer {
+      if first.isRunning {
+        first.terminate()
+        first.waitUntilExit()
+      }
+    }
+    let second = try EmbeddedDisplayLauncher.launch(
+      vmName: vmName,
+      helperResolver: resolver,
+      spawn: spawn
+    )
+
+    XCTAssertTrue(first === second)
+    XCTAssertEqual(spawnCount, 1)
+  }
+
   private func containsPair(_ args: [String], _ first: String, _ second: String) -> Bool {
     args.indices.dropLast().contains { index in
       args[index] == first && args[index + 1] == second

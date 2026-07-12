@@ -12,6 +12,9 @@ import Foundation
 /// runner is launched with that store and the display IPC artifacts are derived
 /// from the same VM bundle; otherwise the default store fallback is preserved.
 enum EmbeddedDisplayLauncher {
+  private static let activeProcessLock = NSLock()
+  nonisolated(unsafe) private static var activeProcesses: [String: Process] = [:]
+
   struct DisplaySize: Equatable {
     var width: Int
     var height: Int
@@ -188,22 +191,41 @@ enum EmbeddedDisplayLauncher {
     guard let appleVzRunner = helperResolver("AppleVzRunner") else {
       throw LaunchError.helperMissing("AppleVzRunner")
     }
+    let runtimeSocketPath = runtimeControlSocketPath(
+      vmName: vmName,
+      storeMetadata: storeMetadata
+    )
     let args = runnerArguments(
       vmName: vmName,
       appleVzRunnerPath: appleVzRunner.path,
       displaySize: displaySize,
       storePath: effectiveStorePath(storeMetadata: storeMetadata),
-      runtimeControlSocketPath: runtimeControlSocketPath(
-        vmName: vmName,
-        storeMetadata: storeMetadata
-      ),
+      runtimeControlSocketPath: runtimeSocketPath,
       proxyFramebufferRGBAPath: proxyFramebufferRGBAPath(
         vmName: vmName,
         storeMetadata: storeMetadata
       )
     )
+    activeProcessLock.lock()
+    defer { activeProcessLock.unlock() }
+    if let active = activeProcesses[runtimeSocketPath], active.isRunning {
+      return active
+    }
+    activeProcesses.removeValue(forKey: runtimeSocketPath)
     do {
-      return try spawn(lightvmRunner, args)
+      let process = try spawn(lightvmRunner, args)
+      guard process.isRunning else { return process }
+      activeProcesses[runtimeSocketPath] = process
+      let previousTerminationHandler = process.terminationHandler
+      process.terminationHandler = { terminated in
+        previousTerminationHandler?(terminated)
+        activeProcessLock.lock()
+        defer { activeProcessLock.unlock() }
+        if activeProcesses[runtimeSocketPath] === terminated {
+          activeProcesses.removeValue(forKey: runtimeSocketPath)
+        }
+      }
+      return process
     } catch {
       throw LaunchError.spawnFailed(error.localizedDescription)
     }
