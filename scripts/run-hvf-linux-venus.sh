@@ -32,6 +32,7 @@ Fixed policy:
   BRIDGEVM_DISABLE_XHCI=1 unless --with-xhci is requested
   BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX=0
   BRIDGEVM_VIRTIO_GPU=1 with 3D/Venus enabled
+  MVK_CONFIG_USE_MTLHEAP=1 unless explicitly overridden
   Fresh /opt/homebrew/share/qemu/edk2-arm-vars.fd copied to DIR/vars.fd
 EOF
 }
@@ -90,6 +91,7 @@ init_defaults() {
   SKIP_BUILD="0"
   BRIDGEVM_VENUS_PREFIX="${BRIDGEVM_VENUS_PREFIX:-"$HOME/BridgeVM/3d/prefix"}"
   BRIDGEVM_VULKAN_LIB="${BRIDGEVM_VULKAN_LIB:-/opt/homebrew/lib/libMoltenVK.dylib}"
+  MVK_CONFIG_USE_MTLHEAP="${MVK_CONFIG_USE_MTLHEAP:-1}"
   VARS_SOURCE="/opt/homebrew/share/qemu/edk2-arm-vars.fd"
   BIN="target/release/examples/hvf_gic_boot_probe"
   RUN_STATUS=0
@@ -144,6 +146,10 @@ parse_args() {
 
 validate_required_paths() {
   [[ -n "$DISK" && -n "$EVIDENCE_DIR" ]] || { usage; exit 2; }
+  [[ "$MVK_CONFIG_USE_MTLHEAP" =~ ^[012]$ ]] || {
+    echo "FAIL: MVK_CONFIG_USE_MTLHEAP must be 0, 1, or 2" >&2
+    exit 2
+  }
   [[ -f "$DISK" ]] || { echo "FAIL: disk image not found: $DISK" >&2; exit 1; }
   if [[ -n "$CIDATA" ]]; then
     [[ -f "$CIDATA" ]] || { echo "FAIL: cidata image not found: $CIDATA" >&2; exit 1; }
@@ -218,6 +224,7 @@ write_preflight() {
     printf 'virtio_net=%s\n' "$VIRTIO_NET"
     printf 'venus_prefix=%s\n' "$BRIDGEVM_VENUS_PREFIX"
     printf 'vulkan_lib=%s\n' "$BRIDGEVM_VULKAN_LIB"
+    printf 'mvk_config_use_mtlheap=%s\n' "$MVK_CONFIG_USE_MTLHEAP"
     printf 'vars_source=%s\n' "$VARS_SOURCE"
     printf 'vars=%s\n' "$EVIDENCE_DIR/vars.fd"
     print_media_stat before_disk_stat "$DISK"
@@ -254,6 +261,7 @@ build_env_args() {
     "BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB=$HOSTMEM_MIB"
     "BRIDGEVM_VENUS_PREFIX=$BRIDGEVM_VENUS_PREFIX"
     "BRIDGEVM_VULKAN_LIB=$BRIDGEVM_VULKAN_LIB"
+    "MVK_CONFIG_USE_MTLHEAP=$MVK_CONFIG_USE_MTLHEAP"
     'BRIDGEVM_RAMFB=1'
     "BRIDGEVM_RAMFB_DUMP_DIR=$EVIDENCE_DIR/ramfb"
     "BRIDGEVM_RAMFB_SAMPLE_MS=$RAMFB_SAMPLES"
