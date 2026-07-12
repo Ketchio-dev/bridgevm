@@ -460,6 +460,7 @@ enum AppleVzDisplayRuntimeControlServerError: Error, LocalizedError, Equatable {
 final class AppleVzDisplayRuntimeControlServer {
   private static let maximumRequestBytes = 4096
   private static let clientIOTimeoutSeconds: Int = 2
+  private static let maximumConcurrentClients = 8
 
   private struct SocketIdentity {
     let device: dev_t
@@ -471,6 +472,11 @@ final class AppleVzDisplayRuntimeControlServer {
   private let stopHandler: () -> Void
   private let runtimePolicyProvider: () -> [String: Any]?
   private let queue = DispatchQueue(label: "com.bridgevm.apple-vz.display-runtime-control")
+  private let clientQueue = DispatchQueue(
+    label: "com.bridgevm.apple-vz.display-runtime-control.clients",
+    attributes: .concurrent
+  )
+  private let clientSlots = DispatchSemaphore(value: maximumConcurrentClients)
   private var socketFD: Int32 = -1
   private var source: DispatchSourceRead?
 
@@ -642,7 +648,14 @@ final class AppleVzDisplayRuntimeControlServer {
   private func acceptAvailableConnections() {
     let client = accept(socketFD, nil, nil)
     if client >= 0 {
-      handle(client)
+      guard clientSlots.wait(timeout: .now()) == .success else {
+        close(client)
+        return
+      }
+      clientQueue.async { [self] in
+        defer { clientSlots.signal() }
+        self.handle(client)
+      }
     }
   }
 

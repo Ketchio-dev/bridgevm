@@ -102,6 +102,22 @@ final class AppleVzDisplayRuntimeControlServerTests: XCTestCase {
     XCTAssertEqual(response["error"] as? String, "request-too-large")
   }
 
+  func testSlowClientDoesNotBlockAnotherRequest() throws {
+    let socketPath = makeShortSocketPath()
+    let server = makeServer(socketPath: socketPath)
+    try server.start()
+    defer { server.stop() }
+
+    let slowClient = try openConnectedSocket(to: socketPath)
+    defer { close(slowClient) }
+    XCTAssertEqual(write(slowClient, "{", 1), 1)
+
+    let started = Date()
+    let response = try sendRuntimeControlCommand("status", to: socketPath)
+    XCTAssertEqual(response["ok"] as? Bool, true)
+    XCTAssertLessThan(Date().timeIntervalSince(started), 0.5)
+  }
+
   func testStatusAndStopCommandsReturnSnapshot() throws {
     let socketPath = makeShortSocketPath()
     var stopCount = 0
@@ -440,6 +456,21 @@ final class AppleVzDisplayRuntimeControlServerTests: XCTestCase {
         return try body(fd)
       }
 
+      lastErrno = errno
+      close(fd)
+      usleep(10_000)
+    }
+    throw RuntimeControlClientError.connectFailed(lastErrno)
+  }
+
+  private func openConnectedSocket(to socketPath: String) throws -> Int32 {
+    var lastErrno: Int32 = 0
+    for _ in 0..<100 {
+      let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+      guard fd >= 0 else { throw RuntimeControlClientError.socketFailed(errno) }
+      if connectSocket(fd, to: socketPath) {
+        return fd
+      }
       lastErrno = errno
       close(fd)
       usleep(10_000)
