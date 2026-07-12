@@ -138,7 +138,8 @@ Options:
                           RAMFB checkpoints after the third setup-input.
   --pointer-input-actions LIST
                           Optional xHCI absolute pointer actions:
-                          move:<x>x<y>, click:<x>x<y>, click:center.
+                          move/press/release/click:<x>x<y>, right-click:<x>x<y>,
+                          scroll:<-127..127>@<x>x<y>; center is also accepted.
                           Coordinates are decimal 0..32767. Requires --enable-xhci.
   --pointer-input-marker TEXT
                           Serial marker that arms pointer-input. Default is

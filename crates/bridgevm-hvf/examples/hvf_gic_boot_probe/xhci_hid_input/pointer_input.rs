@@ -259,7 +259,7 @@ impl XhciPointerInputTrigger {
         let stats = platform.xhci_pointer_input_report_stats();
         let marker_seen = contains_bytes(platform.uart_output(), self.marker.as_bytes());
         println!(
-            "xHCI pointer-input injection {}: fired={} attempted={} marker_seen={} actions={} queued_actions={} queued_reports={} emitted_move_reports={} emitted_button_reports={} emitted_release_reports={} empty_sequence_rejections={} too_many_action_rejections={} busy_rejections={} controller_reset_generation={} endpoint_id=5 report_bytes=5 {}",
+            "xHCI pointer-input injection {}: fired={} attempted={} marker_seen={} actions={} queued_actions={} queued_reports={} emitted_move_reports={} emitted_button_reports={} emitted_release_reports={} empty_sequence_rejections={} too_many_action_rejections={} busy_rejections={} controller_reset_generation={} endpoint_id=5 report_bytes=6 {}",
             self.name,
             self.fired,
             self.attempted,
@@ -329,7 +329,7 @@ impl XhciPointerInputTrigger {
         self.fired = true;
         let stats = platform.xhci_pointer_input_report_stats();
         println!(
-            "xHCI pointer-input injection {} fired: actions={} queued_actions={} queued_reports={} emitted_move_reports={} emitted_button_reports={} emitted_release_reports={} rejected_count=0 endpoint_id=5 report_bytes=5 {}",
+            "xHCI pointer-input injection {} fired: actions={} queued_actions={} queued_reports={} emitted_move_reports={} emitted_button_reports={} emitted_release_reports={} rejected_count=0 endpoint_id=5 report_bytes=6 {}",
             self.name,
             format_pointer_action_names(&self.actions),
             stats.queued_actions,
@@ -353,7 +353,7 @@ impl XhciPointerInputTrigger {
         }
         self.reported_queue_rejection = true;
         println!(
-            "xHCI pointer-input injection {} rejected: actions={} queue_error={} queued_actions=0 queued_reports=0 rejected_count=1 endpoint_id=5 report_bytes=5 {}",
+            "xHCI pointer-input injection {} rejected: actions={} queue_error={} queued_actions=0 queued_reports=0 rejected_count=1 endpoint_id=5 report_bytes=6 {}",
             self.name,
             format_pointer_action_names(&self.actions),
             pointer_queue_error_name(error),
@@ -440,14 +440,14 @@ impl XhciPointerInputTrigger {
 pub(crate) fn print_pointer_input_rejection(name: &'static str, error: &XhciPointerInputEnvError) {
     if let XhciPointerInputEnvError::Marker(marker_error) = error {
         println!(
-            "xHCI pointer-input injection {name} rejected: parse_error={} {} queued_actions=0 queued_reports=0 emitted_move_reports=0 emitted_button_reports=0 emitted_release_reports=0 rejected_count=1 endpoint_id=5 report_bytes=5",
+            "xHCI pointer-input injection {name} rejected: parse_error={} {} queued_actions=0 queued_reports=0 emitted_move_reports=0 emitted_button_reports=0 emitted_release_reports=0 rejected_count=1 endpoint_id=5 report_bytes=6",
             error.name(),
             marker_error.rejection_summary()
         );
         return;
     }
     println!(
-        "xHCI pointer-input injection {name} rejected: parse_error={} queued_actions=0 queued_reports=0 emitted_move_reports=0 emitted_button_reports=0 emitted_release_reports=0 rejected_count=1 endpoint_id=5 report_bytes=5",
+        "xHCI pointer-input injection {name} rejected: parse_error={} queued_actions=0 queued_reports=0 emitted_move_reports=0 emitted_button_reports=0 emitted_release_reports=0 rejected_count=1 endpoint_id=5 report_bytes=6",
         error.name()
     );
 }
@@ -485,6 +485,48 @@ fn parse_pointer_input_token(
     let normalized = token.to_ascii_lowercase();
     let action = if let Some(position) = normalized.strip_prefix("move:") {
         PointerInputAction::Move(parse_pointer_position(position, token)?)
+    } else if let Some(position) = normalized.strip_prefix("press:") {
+        PointerInputAction::Press {
+            position: parse_pointer_position(position, token)?,
+            buttons: 1,
+        }
+    } else if let Some(position) = normalized.strip_prefix("right-press:") {
+        PointerInputAction::Press {
+            position: parse_pointer_position(position, token)?,
+            buttons: 2,
+        }
+    } else if let Some(position) = normalized.strip_prefix("release:") {
+        PointerInputAction::Release(parse_pointer_position(position, token)?)
+    } else if let Some(position) = normalized.strip_prefix("right-click:") {
+        let position = parse_pointer_position(position, token)?;
+        push_pointer_action(
+            actions,
+            PointerInputAction::Press {
+                position,
+                buttons: 2,
+            },
+        )?;
+        PointerInputAction::Release(position)
+    } else if let Some(value) = normalized.strip_prefix("scroll:") {
+        let Some((delta, position)) = value.split_once('@') else {
+            return Err(XhciPointerInputEnvError::UnsupportedToken {
+                token: token.to_string(),
+            });
+        };
+        let Ok(delta) = delta.parse::<i8>() else {
+            return Err(XhciPointerInputEnvError::UnsupportedToken {
+                token: token.to_string(),
+            });
+        };
+        if delta == 0 {
+            return Err(XhciPointerInputEnvError::UnsupportedToken {
+                token: token.to_string(),
+            });
+        }
+        PointerInputAction::Scroll {
+            position: parse_pointer_position(position, token)?,
+            delta,
+        }
     } else if let Some(position) = normalized.strip_prefix("click:") {
         PointerInputAction::Click(parse_pointer_position(position, token)?)
     } else {
@@ -492,6 +534,13 @@ fn parse_pointer_input_token(
             token: token.to_string(),
         });
     };
+    push_pointer_action(actions, action)
+}
+
+fn push_pointer_action(
+    actions: &mut Vec<PointerInputAction>,
+    action: PointerInputAction,
+) -> Result<(), XhciPointerInputEnvError> {
     actions.push(action);
     if actions.len() > POINTER_INPUT_MAX_ACTIONS {
         return Err(XhciPointerInputEnvError::TooManyActions {
@@ -689,6 +738,15 @@ fn format_pointer_action_names(actions: &[PointerInputAction]) -> String {
             PointerInputAction::Click(position) => {
                 format!("click:{}x{}", position.x(), position.y())
             }
+            PointerInputAction::Press { position, buttons } => {
+                format!("press{buttons}:{}x{}", position.x(), position.y())
+            }
+            PointerInputAction::Release(position) => {
+                format!("release:{}x{}", position.x(), position.y())
+            }
+            PointerInputAction::Scroll { position, delta } => {
+                format!("scroll:{delta}@{}x{}", position.x(), position.y())
+            }
         })
         .collect::<Vec<_>>()
         .join(",")
@@ -707,4 +765,5 @@ fn emitted_reports(stats: XhciPointerInputReportStats) -> u64 {
         .emitted_move_reports
         .saturating_add(stats.emitted_button_reports)
         .saturating_add(stats.emitted_release_reports)
+        .saturating_add(stats.emitted_wheel_reports)
 }

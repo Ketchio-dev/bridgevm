@@ -156,7 +156,7 @@ mod tests {
         );
         assert_eq!(
             fields.get("pointer_interrupt_in_report_bytes").copied(),
-            Some("5")
+            Some("6")
         );
     }
 

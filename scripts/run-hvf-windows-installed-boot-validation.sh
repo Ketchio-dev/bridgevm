@@ -179,8 +179,33 @@ pointer_input_actions_list() {
   for token in ${1//,/ }; do
     normalized="$(printf '%s' "$token" | tr '[:upper:]' '[:lower:]')"
     case "$normalized" in
-      move:*|click:*)
+      move:*|click:*|press:*|right-press:*|release:*)
         position="${normalized#*:}"
+        if [[ "$position" != "center" ]]; then
+          [[ "$position" =~ ^[0-9]+x[0-9]+$ ]] || return 1
+          x="${position%x*}"
+          y="${position#*x}"
+          (( 10#$x <= 32767 && 10#$y <= 32767 )) || return 1
+        fi
+        count=$((count + 1))
+        ;;
+      right-click:*)
+        position="${normalized#*:}"
+        if [[ "$position" != "center" ]]; then
+          [[ "$position" =~ ^[0-9]+x[0-9]+$ ]] || return 1
+          x="${position%x*}"
+          y="${position#*x}"
+          (( 10#$x <= 32767 && 10#$y <= 32767 )) || return 1
+        fi
+        count=$((count + 2))
+        ;;
+      scroll:*)
+        local scroll="${normalized#scroll:}"
+        local delta="${scroll%%@*}"
+        local magnitude="${delta#-}"
+        position="${scroll#*@}"
+        [[ "$scroll" == *@* && "$delta" =~ ^-?[0-9]+$ ]] || return 1
+        (( 10#$magnitude > 0 && 10#$magnitude <= 127 )) || return 1
         if [[ "$position" != "center" ]]; then
           [[ "$position" =~ ^[0-9]+x[0-9]+$ ]] || return 1
           x="${position%x*}"

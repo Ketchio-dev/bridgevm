@@ -109,7 +109,9 @@ verify_probe() {
         exit 1
       }
     done
-    if otool -L "$bin" "$frameworks/libvirglrenderer.1.dylib" | grep -E '/Users/|/opt/homebrew/' >/dev/null; then
+    if otool -L "$bin" "$frameworks/libvirglrenderer.1.dylib" \
+      | awk '/^[[:space:]]+\// { print }' \
+      | grep -E '/Users/|/opt/homebrew/' >/dev/null; then
       echo "hvf_gic_boot_probe retains a development-host dylib path" >&2
       exit 1
     fi

@@ -34,8 +34,8 @@ fn queued_pointer_drain_runs_while_setup_input_queue_has_reports() {
         [0, 0, 0x2c, 0, 0, 0, 0, 0]
     );
     assert_eq!(
-        mem.read_bytes(DCI5_BUFFER, 5).unwrap(),
-        [0, 0, 0x30, 0, 0x50]
+        mem.read_bytes(DCI5_BUFFER, 6).unwrap(),
+        [0, 0, 0x30, 0, 0x50, 0]
     );
     assert_short_packet_dci5_transfer_event(&mem, EVENT_RING + (TRB_SIZE * 2), DCI5_RING);
     let setup_stats = xhci.setup_input_report_stats();
@@ -61,8 +61,8 @@ fn slot1_dci5_doorbell_emits_absolute_pointer_move_report() {
 
     // Then: the report encodes buttons=0, little-endian absolute X/Y.
     assert_eq!(
-        mem.read_bytes(DCI5_BUFFER, 5).unwrap(),
-        [0, 0, 0x40, 0, 0x20]
+        mem.read_bytes(DCI5_BUFFER, 6).unwrap(),
+        [0, 0, 0x40, 0, 0x20, 0]
     );
     assert_short_packet_dci5_transfer_event(&mem, EVENT_RING + TRB_SIZE, DCI5_RING);
     assert_eq!(xhci.slot1_dci5_dequeue, DCI5_RING + TRB_SIZE);
@@ -91,12 +91,12 @@ fn slot1_dci5_click_action_emits_button_down_then_release() {
 
     // Then: the first report presses button 1 and the second releases it at the same position.
     assert_eq!(
-        mem.read_bytes(DCI5_BUFFER, 5).unwrap(),
-        [1, 0, 0x04, 0, 0x08]
+        mem.read_bytes(DCI5_BUFFER, 6).unwrap(),
+        [1, 0, 0x04, 0, 0x08, 0]
     );
     assert_eq!(
-        mem.read_bytes(DCI5_BUFFER + 0x20, 5).unwrap(),
-        [0, 0, 0x04, 0, 0x08]
+        mem.read_bytes(DCI5_BUFFER + 0x20, 6).unwrap(),
+        [0, 0, 0x04, 0, 0x08, 0]
     );
     assert_short_packet_dci5_transfer_event(&mem, EVENT_RING + TRB_SIZE, DCI5_RING);
     assert_short_packet_dci5_transfer_event(
@@ -128,8 +128,8 @@ fn queued_dci5_pointer_drain_rearms_reusable_ring_base_cycle() {
 
     // Then: queued-drain re-syncs to the ring base cycle and emits the report.
     assert_eq!(
-        mem.read_bytes(DCI5_BUFFER, 5).unwrap(),
-        [0, 0, 0x10, 0, 0x30]
+        mem.read_bytes(DCI5_BUFFER, 6).unwrap(),
+        [0, 0, 0x10, 0, 0x30, 0]
     );
     assert_short_packet_dci5_transfer_event(&mem, EVENT_RING + TRB_SIZE, DCI5_RING);
     assert_eq!(xhci.slot1_dci5_dequeue, DCI5_RING + TRB_SIZE);
@@ -163,8 +163,8 @@ fn queued_dci5_pointer_drain_reacquires_ready_output_context_after_state_loss() 
 
     // Then: the ready output-context dequeue is reacquired and the report emits.
     assert_eq!(
-        mem.read_bytes(DCI5_BUFFER, 5).unwrap(),
-        [0, 0, 0x20, 0, 0x60]
+        mem.read_bytes(DCI5_BUFFER, 6).unwrap(),
+        [0, 0, 0x20, 0, 0x60, 0]
     );
     assert_short_packet_dci5_transfer_event(&mem, EVENT_RING + TRB_SIZE, DCI5_RING);
     assert_eq!(xhci.slot1_dci5_dequeue, DCI5_RING + TRB_SIZE);
@@ -201,8 +201,8 @@ fn queued_dci5_pointer_drain_waits_for_empty_ring_base() {
     assert!(mem.write_bytes(DCI5_BUFFER, &[0xaa; 8]));
     assert!(xhci.process_queued_dci5_pointer_input(&mut mem));
     assert_eq!(
-        mem.read_bytes(DCI5_BUFFER, 5).unwrap(),
-        [0, 0, 0x40, 0, 0x40]
+        mem.read_bytes(DCI5_BUFFER, 6).unwrap(),
+        [0, 0, 0x40, 0, 0x40, 0]
     );
     let stats = xhci.pointer_input_report_stats();
     assert_eq!(stats.emitted_move_reports, 1);
@@ -226,7 +226,7 @@ fn dci5_doorbell_ignores_inactive_cycle_at_ring_base() {
     assert!(!xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI5), &mut mem));
 
     // Then: after-doorbell processing still treats the TRB as not owned.
-    assert_eq!(mem.read_bytes(DCI5_BUFFER, 5).unwrap(), [0xaa; 5]);
+    assert_eq!(mem.read_bytes(DCI5_BUFFER, 6).unwrap(), [0xaa; 6]);
     assert_eq!(mem.read_u64(EVENT_RING + TRB_SIZE), 0);
     assert_eq!(xhci.slot1_dci5_dequeue, DCI5_RING);
     assert!(xhci.slot1_dci5_dcs);

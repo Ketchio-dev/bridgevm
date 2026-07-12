@@ -47,6 +47,11 @@ fn interface_one_gets_pointer_hid_report_descriptor() {
         .windows(3)
         .any(|window| window == [0x26, 0xff, 0x7f]));
     assert!(descriptor.windows(2).any(|window| window == [0x75, 0x10]));
+    assert!(descriptor.windows(2).any(|window| window == [0x09, 0x38]));
+    assert!(descriptor
+        .windows(4)
+        .any(|window| window == [0x15, 0x81, 0x25, 0x7f]));
+    assert!(descriptor.windows(2).any(|window| window == [0x81, 0x06]));
 }
 
 #[test]

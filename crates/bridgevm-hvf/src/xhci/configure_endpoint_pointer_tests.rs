@@ -122,7 +122,7 @@ pub(super) fn setup_configure_endpoint_with_pointer(xhci: &mut XhciController, m
 
 pub(super) fn assert_short_packet_dci5_transfer_event(mem: &TestRam, event_gpa: u64, trb_gpa: u64) {
     assert_eq!(mem.read_u64(event_gpa), trb_gpa);
-    assert_eq!(mem.read_u32(event_gpa + 8) & 0x00ff_ffff, 3);
+    assert_eq!(mem.read_u32(event_gpa + 8) & 0x00ff_ffff, 2);
     assert_eq!(mem.read_u32(event_gpa + 8) >> 24, 13);
     let control = mem.read_u32(event_gpa + 12);
     assert_eq!((control >> 10) & 0x3f, TRB_TYPE_TRANSFER_EVENT);
@@ -152,8 +152,8 @@ fn slot1_dci5_idle_doorbell_pends_then_queued_drain_completes_the_pointer_report
         .unwrap();
     assert!(xhci.process_queued_dci5_pointer_input(&mut mem));
     assert_eq!(
-        mem.read_bytes(DCI5_BUFFER, 5).unwrap(),
-        [0, 0, 0x30, 0, 0x50]
+        mem.read_bytes(DCI5_BUFFER, 6).unwrap(),
+        [0, 0, 0x30, 0, 0x50, 0]
     );
     assert_short_packet_dci5_transfer_event(&mem, EVENT_RING + TRB_SIZE, DCI5_RING);
     assert_eq!(xhci.slot1_dci5_dequeue, DCI5_RING + TRB_SIZE);

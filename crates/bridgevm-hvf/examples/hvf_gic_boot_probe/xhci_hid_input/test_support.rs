@@ -259,7 +259,7 @@ pub(crate) fn assert_success_dci5_transfer_event_for_trb(
     trb_gpa: u64,
 ) {
     assert_eq!(read_u64(mem, event_gpa), trb_gpa);
-    assert_eq!(read_u32(mem, event_gpa + 8) & 0x00ff_ffff, 3);
+    assert_eq!(read_u32(mem, event_gpa + 8) & 0x00ff_ffff, 2);
     assert_eq!(read_u32(mem, event_gpa + 8) >> 24, 13);
     let control = read_u32(mem, event_gpa + 12);
     assert_eq!((control >> 10) & 0x3f, TRB_TYPE_TRANSFER_EVENT);

@@ -18,6 +18,28 @@ fn xhci_pointer_input_parser_accepts_move_and_click_coordinates() {
 }
 
 #[test]
+fn xhci_pointer_input_parser_accepts_drag_right_click_and_scroll() {
+    let trigger = XhciPointerInputTrigger::from_env_value(
+        "pointer-input",
+        "press:1x2 move:3x4 release:3x4 right-click:center scroll:-3@3x4",
+    )
+    .unwrap();
+
+    assert_eq!(
+        trigger.action_names(),
+        "press1:1x2,move:3x4,release:3x4,press2:16383x16383,release:16383x16383,scroll:-3@3x4"
+    );
+}
+
+#[test]
+fn xhci_pointer_input_parser_rejects_zero_wheel_delta() {
+    let error =
+        XhciPointerInputTrigger::from_env_value("pointer-input", "scroll:0@center").unwrap_err();
+
+    assert_eq!(error.name(), "unsupported_token");
+}
+
+#[test]
 fn xhci_pointer_input_parser_rejects_invalid_coordinates() {
     let error = XhciPointerInputTrigger::from_env_value("pointer-input", "move:left").unwrap_err();
 
@@ -55,8 +77,8 @@ fn xhci_pointer_input_trigger_memory_drain_delivers_pending_dci5_when_fired() {
     assert!(trigger.maybe_fire_with_mem_at(&mut platform, &mut mem, Instant::now()));
 
     assert_eq!(
-        read_bytes(&mem, DCI5_POINTER_BUFFER, 5),
-        [0, 0, 0x40, 0, 0x20]
+        read_bytes(&mem, DCI5_POINTER_BUFFER, 6),
+        [0, 0, 0x40, 0, 0x20, 0]
     );
     assert_success_dci5_transfer_event_for_trb(
         &mem,
@@ -97,8 +119,8 @@ fn xhci_pointer_input_trigger_records_fire_after_delayed_dci5_emit() {
     assert!(!trigger.maybe_fire_with_mem_at(&mut platform, &mut mem, Instant::now()));
     assert!(trigger.fired());
     assert_eq!(
-        read_bytes(&mem, DCI5_POINTER_BUFFER, 5),
-        [1, 0xff, 0x3f, 0xff, 0x3f]
+        read_bytes(&mem, DCI5_POINTER_BUFFER, 6),
+        [1, 0xff, 0x3f, 0xff, 0x3f, 0]
     );
     let stats = platform.xhci_pointer_input_report_stats();
     assert_eq!(stats.emitted_button_reports, 1);

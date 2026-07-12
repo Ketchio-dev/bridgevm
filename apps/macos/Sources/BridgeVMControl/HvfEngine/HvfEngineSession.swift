@@ -210,12 +210,42 @@ final class HvfEngineSession: ObservableObject {
 
     #if canImport(AppKit)
     func sendPointerClick(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
+        sendPointerAction("click", location: location, viewSize: viewSize, imageSize: imageSize)
+    }
+
+    func sendPointerPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
+        sendPointerAction("press", location: location, viewSize: viewSize, imageSize: imageSize)
+    }
+
+    func sendPointerMove(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
+        sendPointerAction("move", location: location, viewSize: viewSize, imageSize: imageSize)
+    }
+
+    func sendPointerRelease(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
+        sendPointerAction("release", location: location, viewSize: viewSize, imageSize: imageSize)
+    }
+
+    func sendPointerRightClick(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
+        sendPointerAction("right-click", location: location, viewSize: viewSize, imageSize: imageSize)
+    }
+
+    func sendPointerScroll(_ delta: Int8, location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
+        guard delta != 0, let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return }
+        appendLiveInput("POINTER scroll:\(delta)@\(point.x)x\(point.y)")
+    }
+
+    private func sendPointerAction(_ action: String, location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
+        guard let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return }
+        appendLiveInput("POINTER \(action):\(point.x)x\(point.y)")
+    }
+
+    private func mappedPointer(_ location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> (x: UInt16, y: UInt16)? {
         guard let point = HvfDisplayCoordinates.absolutePointer(
             location: location,
             viewSize: viewSize,
             imageSize: imageSize
-        ) else { return }
-        appendLiveInput("POINTER click:\(point.x)x\(point.y)")
+        ) else { return nil }
+        return point
     }
     #endif
 

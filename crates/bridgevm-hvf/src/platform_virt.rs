@@ -893,7 +893,8 @@ impl VirtPlatform {
         let emitted_reports = stats
             .emitted_move_reports
             .saturating_add(stats.emitted_button_reports)
-            .saturating_add(stats.emitted_release_reports);
+            .saturating_add(stats.emitted_release_reports)
+            .saturating_add(stats.emitted_wheel_reports);
         let pending_reports = stats.queued_reports.saturating_sub(emitted_reports);
         for _ in 0..pending_reports.min(MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS as u64) {
             if !self.report_pacing_allows_emission(self.xhci_dci5_last_emission) {

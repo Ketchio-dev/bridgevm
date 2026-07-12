@@ -31,7 +31,7 @@ const BOOT_KEYBOARD_HID_REPORT_DESCRIPTOR: [u8; HID_REPORT_DESCRIPTOR_LENGTH_USI
 ];
 
 const BOOT_POINTER_HID_CLASS_DESCRIPTOR: [u8; HID_CLASS_DESCRIPTOR_LENGTH_USIZE] =
-    [9, 0x21, 0x11, 0x01, 0, 1, HID_REPORT_DESCRIPTOR_TYPE, 51, 0];
+    [9, 0x21, 0x11, 0x01, 0, 1, HID_REPORT_DESCRIPTOR_TYPE, 63, 0];
 
 #[test]
 fn ep0_get_descriptor_hid_report_returns_boot_keyboard_report_descriptor() {
