@@ -2,10 +2,14 @@ use clap::{Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    io::Read,
     path::{Path, PathBuf},
     process,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+const MAX_RUNTIME_POLICY_BYTES: usize = 64 * 1024;
+const MAX_FRAME_SAMPLE_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -372,7 +376,7 @@ fn runtime_policy_plan(path: Option<&Path>) -> Result<Option<RuntimePolicyPlan>,
     let Some(path) = path else {
         return Ok(None);
     };
-    let content = fs::read_to_string(path).map_err(|error| {
+    let content = read_bounded_utf8(path, MAX_RUNTIME_POLICY_BYTES).map_err(|error| {
         format!(
             "failed to read runtime resource policy file '{}': {error}",
             path.display()
@@ -446,7 +450,7 @@ fn frame_timing(cli: &Cli, pacing: &FramePacingPlan) -> Result<FrameTimingPlan, 
 }
 
 fn read_frame_sample_file(path: &Path) -> Result<Vec<u32>, String> {
-    let content = fs::read_to_string(path).map_err(|error| {
+    let content = read_bounded_utf8(path, MAX_FRAME_SAMPLE_BYTES).map_err(|error| {
         format!(
             "failed to read frame sample file '{}': {error}",
             path.display()
@@ -464,7 +468,7 @@ fn read_frame_sample_file(path: &Path) -> Result<Vec<u32>, String> {
             path.display()
         ));
     }
-    if samples.iter().any(|sample| *sample == 0) {
+    if samples.contains(&0) {
         return Err(format!(
             "frame sample file '{}' contains a zero duration; durations must be positive microseconds",
             path.display()
@@ -472,6 +476,35 @@ fn read_frame_sample_file(path: &Path) -> Result<Vec<u32>, String> {
     }
 
     Ok(samples)
+}
+
+fn read_bounded_bytes(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
+    let file = fs::File::open(path).map_err(|error| error.to_string())?;
+    let limit_u64 = u64::try_from(limit).map_err(|_| "read limit exceeds u64".to_string())?;
+    let metadata_len = file.metadata().map_err(|error| error.to_string())?.len();
+    if metadata_len > limit_u64 {
+        return Err(format!(
+            "file is {metadata_len} bytes, larger than the {limit} byte limit"
+        ));
+    }
+    let read_limit = limit_u64
+        .checked_add(1)
+        .ok_or_else(|| "read limit is too large".to_string())?;
+    let mut bytes = Vec::with_capacity(metadata_len as usize);
+    file.take(read_limit)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    if bytes.len() > limit {
+        return Err(format!(
+            "file grew beyond the {limit} byte limit while being read"
+        ));
+    }
+    Ok(bytes)
+}
+
+fn read_bounded_utf8(path: &Path, limit: usize) -> Result<String, String> {
+    String::from_utf8(read_bounded_bytes(path, limit)?)
+        .map_err(|error| format!("file is not valid UTF-8: {error}"))
 }
 
 fn mean_u32(values: &[u32]) -> u32 {
@@ -706,18 +739,20 @@ fn rgba_frame_byte_len_usize(width: u32, height: u32) -> Result<usize, String> {
 }
 
 fn materialize_window_crop(plan: &WindowCropFramePlan) -> Result<(), String> {
-    let input = fs::read(&plan.source_path).map_err(|error| {
-        format!(
-            "failed to read RGBA framebuffer '{}': {error}",
-            plan.source_path
-        )
-    })?;
     let expected_input_bytes = usize::try_from(plan.expected_input_bytes).map_err(|_| {
         format!(
             "RGBA framebuffer '{}' is too large for this host",
             plan.source_path
         )
     })?;
+    let input = read_bounded_bytes(Path::new(&plan.source_path), expected_input_bytes).map_err(
+        |error| {
+            format!(
+                "failed to read RGBA framebuffer '{}': {error}",
+                plan.source_path
+            )
+        },
+    )?;
     if input.len() != expected_input_bytes {
         return Err(format!(
             "RGBA framebuffer '{}' has {} bytes, expected {} for {}x{} rgba8",
@@ -1448,5 +1483,25 @@ mod tests {
 
         fs::remove_file(empty_path).unwrap();
         fs::remove_file(zero_path).unwrap();
+    }
+
+    #[test]
+    fn bounded_reader_rejects_sparse_oversized_input_before_allocation() {
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-displayd-oversized-input-{}-{}.bin",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let file = fs::File::create(&path).unwrap();
+        file.set_len(512 * 1024 * 1024).unwrap();
+
+        let error = read_bounded_bytes(&path, 4096).unwrap_err();
+        let _ = fs::remove_file(&path);
+
+        assert!(error.contains("536870912 bytes"), "{error}");
+        assert!(error.contains("4096 byte limit"), "{error}");
     }
 }
