@@ -3,6 +3,37 @@ import XCTest
 
 @MainActor
 final class ControlModelResourceTests: XCTestCase {
+    func testNonFiniteAndOversizedResourcesAreRejectedBeforeBackendCall() {
+        for (memory, cpu) in [
+            (Double.nan, 2.0),
+            (Double.infinity, 2.0),
+            (4.0, Double.nan),
+            (33.0, 2.0),
+            (4.0, 11.0),
+            (4.0, 1.5),
+        ] {
+            let backend = ResourceBackend(supportsChanges: true, setResult: true, running: false)
+            let model = ControlModel(config: makeConfig(), backend: backend, startsAutomatically: false)
+            model.pendingMemGiB = memory
+            model.pendingCPU = cpu
+
+            model.applyResources()
+
+            XCTAssertFalse(model.busy)
+            XCTAssertFalse(model.lifecycleBusy)
+            XCTAssertEqual(backend.setCalls, 0)
+            XCTAssertTrue(model.statusNote.contains("올바르지 않습니다"))
+        }
+    }
+
+    func testSharedResourceLimitsMatchSupportedUIRange() {
+        XCTAssertTrue(VMResourceLimits.contains(memoryMiB: 1_024, cpu: 1))
+        XCTAssertTrue(VMResourceLimits.contains(memoryMiB: 32 * 1_024, cpu: 10))
+        XCTAssertFalse(VMResourceLimits.contains(memoryMiB: 1_023, cpu: 1))
+        XCTAssertFalse(VMResourceLimits.contains(memoryMiB: 32 * 1_024 + 1, cpu: 10))
+        XCTAssertFalse(VMResourceLimits.contains(memoryMiB: 4_096, cpu: 11))
+    }
+
     func testFailedResourceSaveNeverChecksLivenessOrRestartsVM() async {
         let backend = ResourceBackend(supportsChanges: true, setResult: false, running: true)
         let model = ControlModel(config: makeConfig(), backend: backend, startsAutomatically: false)

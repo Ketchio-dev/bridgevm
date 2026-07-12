@@ -1,5 +1,17 @@
 import Foundation
 
+enum VMResourceLimits {
+    static let minimumMemoryMiB = 1_024
+    static let maximumMemoryMiB = 32 * 1_024
+    static let minimumCPU = 1
+    static let maximumCPU = 10
+
+    static func contains(memoryMiB: Int, cpu: Int) -> Bool {
+        (minimumMemoryMiB...maximumMemoryMiB).contains(memoryMiB)
+            && (minimumCPU...maximumCPU).contains(cpu)
+    }
+}
+
 // MARK: - Configuration
 
 /// One controllable VM. Persisted per-VM as vm.json inside the library so the
@@ -338,6 +350,7 @@ final class FastVZBackend: VMBackend {
     }
 
     func setResources(memMiB: Int, cpu: Int) -> Bool {
+        guard VMResourceLimits.contains(memoryMiB: memMiB, cpu: cpu) else { return false }
         guard var obj = JSONFile.loadDict(config.launchSpecPath),
               var res = obj["resources"] as? [String: Any] else { return false }
         res["memory"] = String(memMiB)
@@ -601,7 +614,7 @@ final class HvfWindowsBackend: VMBackend {
     }
 
     func setResources(memMiB: Int, cpu: Int) -> Bool {
-        guard memMiB >= 1024, cpu > 0 else { return false }
+        guard VMResourceLimits.contains(memoryMiB: memMiB, cpu: cpu) else { return false }
         var updated = config
         updated.memMiB = memMiB
         updated.cpuCount = cpu

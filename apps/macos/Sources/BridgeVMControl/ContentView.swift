@@ -387,12 +387,20 @@ struct VMDetailPanel: View {
                 VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("메모리").frame(width: 60, alignment: .leading)
-                    Slider(value: $model.pendingMemGiB, in: 1...32, step: 1)
+                    Slider(
+                        value: $model.pendingMemGiB,
+                        in: Double(VMResourceLimits.minimumMemoryMiB) / 1024...Double(VMResourceLimits.maximumMemoryMiB) / 1024,
+                        step: 1
+                    )
                     Text("\(Int(model.pendingMemGiB)) GB").frame(width: 60, alignment: .trailing).font(.body.monospaced())
                 }
                 HStack {
                     Text("CPU").frame(width: 60, alignment: .leading)
-                    Slider(value: $model.pendingCPU, in: 1...10, step: 1)
+                    Slider(
+                        value: $model.pendingCPU,
+                        in: Double(VMResourceLimits.minimumCPU)...Double(VMResourceLimits.maximumCPU),
+                        step: 1
+                    )
                     Text("\(Int(model.pendingCPU)) 코어").frame(width: 60, alignment: .trailing).font(.body.monospaced())
                 }
                 HStack {

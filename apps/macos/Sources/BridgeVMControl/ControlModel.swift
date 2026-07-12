@@ -144,17 +144,22 @@ final class ControlModel: ObservableObject {
     }
 
     func applyResources() {
-        let mem = Int((pendingMemGiB * 1024).rounded())
-        let cpus = Int(pendingCPU)
         guard !busy, !lifecycleBusy else { return }
         guard backend.supportsResourceChanges else {
             statusNote = "이 엔진은 리소스 변경을 지원하지 않습니다."
             return
         }
-        guard mem >= 1024, cpus > 0 else {
+        guard pendingMemGiB.isFinite, pendingCPU.isFinite,
+              pendingMemGiB >= Double(VMResourceLimits.minimumMemoryMiB) / 1024,
+              pendingMemGiB <= Double(VMResourceLimits.maximumMemoryMiB) / 1024,
+              pendingCPU.rounded() == pendingCPU,
+              pendingCPU >= Double(VMResourceLimits.minimumCPU),
+              pendingCPU <= Double(VMResourceLimits.maximumCPU) else {
             statusNote = "메모리와 CPU 값이 올바르지 않습니다."
             return
         }
+        let mem = Int((pendingMemGiB * 1024).rounded())
+        let cpus = Int(pendingCPU)
         invalidateRefreshes()
         busy = true
         lifecycleBusy = true
