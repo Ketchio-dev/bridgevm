@@ -259,7 +259,7 @@ impl XhciPointerInputTrigger {
         let stats = platform.xhci_pointer_input_report_stats();
         let marker_seen = contains_bytes(platform.uart_output(), self.marker.as_bytes());
         println!(
-            "xHCI pointer-input injection {}: fired={} attempted={} marker_seen={} actions={} queued_actions={} queued_reports={} emitted_move_reports={} emitted_button_reports={} emitted_release_reports={} empty_sequence_rejections={} too_many_action_rejections={} busy_rejections={} controller_reset_generation={} endpoint_id=5 report_bytes=6 {}",
+            "xHCI pointer-input injection {}: fired={} attempted={} marker_seen={} actions={} queued_actions={} queued_reports={} emitted_move_reports={} emitted_button_reports={} emitted_release_reports={} emitted_wheel_reports={} empty_sequence_rejections={} too_many_action_rejections={} busy_rejections={} controller_reset_generation={} endpoint_id=5 report_bytes=6 {}",
             self.name,
             self.fired,
             self.attempted,
@@ -270,6 +270,7 @@ impl XhciPointerInputTrigger {
             stats.emitted_move_reports,
             stats.emitted_button_reports,
             stats.emitted_release_reports,
+            stats.emitted_wheel_reports,
             stats.empty_sequence_rejections,
             stats.too_many_action_rejections,
             stats.busy_rejections,
@@ -329,7 +330,7 @@ impl XhciPointerInputTrigger {
         self.fired = true;
         let stats = platform.xhci_pointer_input_report_stats();
         println!(
-            "xHCI pointer-input injection {} fired: actions={} queued_actions={} queued_reports={} emitted_move_reports={} emitted_button_reports={} emitted_release_reports={} rejected_count=0 endpoint_id=5 report_bytes=6 {}",
+            "xHCI pointer-input injection {} fired: actions={} queued_actions={} queued_reports={} emitted_move_reports={} emitted_button_reports={} emitted_release_reports={} emitted_wheel_reports={} rejected_count=0 endpoint_id=5 report_bytes=6 {}",
             self.name,
             format_pointer_action_names(&self.actions),
             stats.queued_actions,
@@ -337,6 +338,7 @@ impl XhciPointerInputTrigger {
             stats.emitted_move_reports,
             stats.emitted_button_reports,
             stats.emitted_release_reports,
+            stats.emitted_wheel_reports,
             self.marker.log_summary()
         );
         true
@@ -440,14 +442,14 @@ impl XhciPointerInputTrigger {
 pub(crate) fn print_pointer_input_rejection(name: &'static str, error: &XhciPointerInputEnvError) {
     if let XhciPointerInputEnvError::Marker(marker_error) = error {
         println!(
-            "xHCI pointer-input injection {name} rejected: parse_error={} {} queued_actions=0 queued_reports=0 emitted_move_reports=0 emitted_button_reports=0 emitted_release_reports=0 rejected_count=1 endpoint_id=5 report_bytes=6",
+            "xHCI pointer-input injection {name} rejected: parse_error={} {} queued_actions=0 queued_reports=0 emitted_move_reports=0 emitted_button_reports=0 emitted_release_reports=0 emitted_wheel_reports=0 rejected_count=1 endpoint_id=5 report_bytes=6",
             error.name(),
             marker_error.rejection_summary()
         );
         return;
     }
     println!(
-        "xHCI pointer-input injection {name} rejected: parse_error={} queued_actions=0 queued_reports=0 emitted_move_reports=0 emitted_button_reports=0 emitted_release_reports=0 rejected_count=1 endpoint_id=5 report_bytes=6",
+        "xHCI pointer-input injection {name} rejected: parse_error={} queued_actions=0 queued_reports=0 emitted_move_reports=0 emitted_button_reports=0 emitted_release_reports=0 emitted_wheel_reports=0 rejected_count=1 endpoint_id=5 report_bytes=6",
         error.name()
     );
 }
