@@ -1,5 +1,13 @@
 import Foundation
 
+private enum GuestWindowProxyFrameLimits {
+  static let maximumPixelCount = 32 * 1024 * 1024
+
+  static func supports(width: Int, height: Int) -> Bool {
+    width > 0 && height > 0 && width <= maximumPixelCount / height
+  }
+}
+
 #if canImport(AppKit)
 import AppKit
 import SwiftUI
@@ -52,9 +60,11 @@ struct GuestWindowProxyPlan: Equatable {
   }
 
   var minimumFramebufferSize: FramebufferSize {
-    FramebufferSize(
-      width: max(1, max(guestBounds.width, guestBounds.x + guestBounds.width)),
-      height: max(1, max(guestBounds.height, guestBounds.y + guestBounds.height))
+    let right = guestBounds.x.addingReportingOverflow(guestBounds.width)
+    let bottom = guestBounds.y.addingReportingOverflow(guestBounds.height)
+    return FramebufferSize(
+      width: max(1, max(guestBounds.width, right.overflow ? guestBounds.width : right.partialValue)),
+      height: max(1, max(guestBounds.height, bottom.overflow ? guestBounds.height : bottom.partialValue))
     )
   }
 
@@ -185,6 +195,7 @@ struct GuestWindowProxyRGBAFrame: Equatable {
     case invalidDimensions(width: Int, height: Int)
     case byteCountMismatch(expected: Int, actual: Int)
     case byteCountOverflow(width: Int, height: Int)
+    case pixelCountLimitExceeded(width: Int, height: Int)
     case imageCreationFailed
 
     var errorDescription: String? {
@@ -195,6 +206,8 @@ struct GuestWindowProxyRGBAFrame: Equatable {
         return "RGBA proxy frame has \(actual) bytes; expected \(expected)."
       case let .byteCountOverflow(width, height):
         return "RGBA proxy frame dimensions \(width)x\(height) overflow byte-count calculation."
+      case let .pixelCountLimitExceeded(width, height):
+        return "RGBA proxy frame dimensions \(width)x\(height) exceed the 32-megapixel limit."
       case .imageCreationFailed:
         return "RGBA proxy frame could not be converted into a host image."
       }
@@ -217,16 +230,25 @@ struct GuestWindowProxyRGBAFrame: Equatable {
   }
 
   static func load(from url: URL, width: Int, height: Int) throws -> GuestWindowProxyRGBAFrame {
-    try GuestWindowProxyRGBAFrame(
+    let expectedByteCount = try expectedByteCount(width: width, height: height)
+    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+    let actualByteCount = (attributes[.size] as? NSNumber)?.intValue ?? -1
+    guard actualByteCount == expectedByteCount else {
+      throw FrameError.byteCountMismatch(expected: expectedByteCount, actual: actualByteCount)
+    }
+    return try GuestWindowProxyRGBAFrame(
       width: width,
       height: height,
-      data: Data(contentsOf: url)
+      data: Data(contentsOf: url, options: .mappedIfSafe)
     )
   }
 
   static func expectedByteCount(width: Int, height: Int) throws -> Int {
     guard width > 0, height > 0 else {
       throw FrameError.invalidDimensions(width: width, height: height)
+    }
+    guard GuestWindowProxyFrameLimits.supports(width: width, height: height) else {
+      throw FrameError.pixelCountLimitExceeded(width: width, height: height)
     }
 
     let pixelCount = width.multipliedReportingOverflow(by: height)
@@ -366,6 +388,7 @@ enum GuestWindowProxyPlanner {
   enum PlanningError: LocalizedError, Equatable {
     case missingBounds
     case invalidBounds
+    case boundsTooLarge
 
     var errorDescription: String? {
       switch self {
@@ -373,6 +396,8 @@ enum GuestWindowProxyPlanner {
         return "Guest window bounds are required before opening a proxy shell."
       case .invalidBounds:
         return "Guest window bounds must have positive width and height."
+      case .boundsTooLarge:
+        return "Guest window bounds exceed the 32-megapixel proxy limit."
       }
     }
   }
@@ -390,6 +415,13 @@ enum GuestWindowProxyPlanner {
     }
     guard bounds.width > 0 && bounds.height > 0 else {
       throw PlanningError.invalidBounds
+    }
+    let right = bounds.x.addingReportingOverflow(bounds.width)
+    let bottom = bounds.y.addingReportingOverflow(bounds.height)
+    guard !right.overflow, !bottom.overflow,
+      GuestWindowProxyFrameLimits.supports(width: bounds.width, height: bounds.height)
+    else {
+      throw PlanningError.boundsTooLarge
     }
 
     let maxWidth = max(1, maximumHostSize.width)

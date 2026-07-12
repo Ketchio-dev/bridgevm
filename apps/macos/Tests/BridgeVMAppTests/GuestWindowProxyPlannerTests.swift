@@ -3,6 +3,23 @@ import XCTest
 @testable import BridgeVMApp
 
 final class GuestWindowProxyPlannerTests: XCTestCase {
+  func testPlanRejectsOversizedAndOverflowingGuestBounds() {
+    for bounds in [
+      GuestToolsWindowBounds(x: 0, y: 0, width: 8192, height: 8192),
+      GuestToolsWindowBounds(x: Int.max, y: 0, width: 2, height: 1),
+    ] {
+      let window = GuestToolsWindowAction(
+        id: "hostile",
+        title: "Hostile",
+        source: "test",
+        bounds: bounds
+      )
+      XCTAssertThrowsError(try GuestWindowProxyPlanner.plan(vmName: "Dev VM", window: window)) {
+        XCTAssertEqual($0 as? GuestWindowProxyPlanner.PlanningError, .boundsTooLarge)
+      }
+    }
+  }
+
   func testPlanUsesGuestBoundsAtNativeScaleWhenTheyFit() throws {
     let window = GuestToolsWindowAction(
       id: "0x01200007",

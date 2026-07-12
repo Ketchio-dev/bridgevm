@@ -3,6 +3,17 @@ import XCTest
 @testable import BridgeVMApp
 
 final class GuestWindowProxyFrameTests: XCTestCase {
+  func testFrameRejectsDimensionsBeyondMemoryLimit() {
+    XCTAssertThrowsError(
+      try GuestWindowProxyRGBAFrame.expectedByteCount(width: 8192, height: 8192)
+    ) { error in
+      XCTAssertEqual(
+        error as? GuestWindowProxyRGBAFrame.FrameError,
+        .pixelCountLimitExceeded(width: 8192, height: 8192)
+      )
+    }
+  }
+
   func testExpectedByteCountUsesRGBA8Dimensions() throws {
     XCTAssertEqual(
       try GuestWindowProxyRGBAFrame.expectedByteCount(width: 3, height: 2),
