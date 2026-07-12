@@ -127,6 +127,72 @@ int main(void) {
            BENCH_SEGMENTS * BENCH_ROUNDS, bench_flags, sec,
            bench_bytes / 1e9 / sec, bench_bytes / 1073741824.0 / sec); }
 
+  /* ---- throughput: 1 GiB of dependent copies between 128 MiB device-local buffers ---- */
+  VkBuffer copybuf;
+  if (vkCreateBuffer(dev, &bb, 0, &copybuf)) { puts("BV-COPY-BENCH-SKIP create"); goto img; }
+  VkMemoryRequirements cmr; vkGetBufferMemoryRequirements(dev, copybuf, &cmr);
+  if (!(cmr.memoryTypeBits & (1u << bi))) { puts("BV-COPY-BENCH-SKIP memtype"); goto img; }
+  VkMemoryAllocateInfo cmai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+  cmai.allocationSize = cmr.size; cmai.memoryTypeIndex = bi;
+  VkDeviceMemory cmem;
+  if (vkAllocateMemory(dev, &cmai, 0, &cmem)) { puts("BV-COPY-BENCH-SKIP alloc"); goto img; }
+  if (vkBindBufferMemory(dev, copybuf, cmem, 0)) { puts("BV-COPY-BENCH-SKIP bind"); goto img; }
+
+  /* Initialize the source outside the timed region. Each segment has a distinct
+   * value so the final device-local -> host-visible sample proves the copy chain. */
+  VkCommandBuffer cb3; vkAllocateCommandBuffers(dev, &cba, &cb3);
+  vkBeginCommandBuffer(cb3, &cbb);
+  for (uint32_t segment = 0; segment < BENCH_SEGMENTS; segment++)
+    vkCmdFillBuffer(cb3, big, (VkDeviceSize)segment * BENCH_SEGMENT_BYTES,
+                    BENCH_SEGMENT_BYTES, 0xC0000000u | segment);
+  vkEndCommandBuffer(cb3);
+  vkResetFences(dev, 1, &f); si.pCommandBuffers = &cb3;
+  if (vkQueueSubmit(q, 1, &si, f) ||
+      vkWaitForFences(dev, 1, &f, VK_TRUE, 30000000000ull)) {
+    puts("BV-COPY-BENCH-FAIL init"); goto img;
+  }
+
+  VkCommandBuffer cb4; vkAllocateCommandBuffers(dev, &cba, &cb4);
+  vkBeginCommandBuffer(cb4, &cbb);
+  VkBufferCopy full_copy = {.srcOffset = 0, .dstOffset = 0, .size = bench_size};
+  VkBufferMemoryBarrier copy_barrier = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+  copy_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+  copy_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+  copy_barrier.srcQueueFamilyIndex = copy_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  copy_barrier.offset = 0; copy_barrier.size = bench_size;
+  for (uint32_t round = 0; round < BENCH_ROUNDS; round++) {
+    VkBuffer src = (round & 1) ? copybuf : big;
+    VkBuffer dst = (round & 1) ? big : copybuf;
+    vkCmdCopyBuffer(cb4, src, dst, 1, &full_copy);
+    copy_barrier.buffer = dst;
+    vkCmdPipelineBarrier(cb4, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 0, 0, 1, &copy_barrier, 0, 0);
+  }
+  VkBuffer copy_result = (BENCH_ROUNDS & 1) ? copybuf : big;
+  VkBufferCopy copy_sample = {
+    .srcOffset = (VkDeviceSize)(BENCH_SEGMENTS - 1) * BENCH_SEGMENT_BYTES,
+    .dstOffset = 0,
+    .size = 65536,
+  };
+  vkCmdCopyBuffer(cb4, copy_result, buf, 1, &copy_sample);
+  vkEndCommandBuffer(cb4);
+  vkResetFences(dev, 1, &f); clock_gettime(CLOCK_MONOTONIC, &t0);
+  si.pCommandBuffers = &cb4;
+  if (vkQueueSubmit(q, 1, &si, f)) { puts("BV-COPY-BENCH-FAIL submit"); goto img; }
+  if (vkWaitForFences(dev, 1, &f, VK_TRUE, 30000000000ull)) { puts("BV-COPY-BENCH-FAIL fence"); goto img; }
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  CK(vkMapMemory(dev, mem, 0, 65536, 0, &p));
+  w = p; ok = 1;
+  const uint32_t copy_expected = 0xC0000000u | (BENCH_SEGMENTS - 1);
+  for (int i = 0; i < 16384; i++) if (w[i] != copy_expected) { ok = 0; break; }
+  if (!ok) { printf("BV-COPY-BENCH-FAIL verify w0=%08x expected=%08x\n", w[0], copy_expected); return 1; }
+  vkUnmapMemory(dev, mem);
+  { double sec = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
+    printf("BV-COPY-BENCH-OK bytes=%llu workset=%llu copies=%u mem_flags=0x%x sec=%.6f GBps=%.2f GiBps=%.2f\n",
+           (unsigned long long)bench_bytes, (unsigned long long)bench_size,
+           BENCH_ROUNDS, mp.memoryTypes[bi].propertyFlags, sec,
+           bench_bytes / 1e9 / sec, bench_bytes / 1073741824.0 / sec); }
+
 img:;
   /* ---- image: clear an OPTIMAL-tiled image, copy back, verify color ---- */
   VkImageCreateInfo ic = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
