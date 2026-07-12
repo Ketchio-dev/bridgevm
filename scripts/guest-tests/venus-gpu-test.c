@@ -60,21 +60,53 @@ int main(void) {
   else { printf("BV-FB-FAIL verify w0=%08x\n", w[0]); return 1; }
   vkUnmapMemory(dev, mem);
 
-  /* ---- throughput: 64 x 16MB device-local fills in one submit ---- */
+  /* ---- throughput: 1 GiB of fills over a 128 MiB device-local working set ---- */
+  enum { BENCH_SEGMENT_BYTES = 16u<<20, BENCH_SEGMENTS = 8, BENCH_ROUNDS = 8 };
+  const VkDeviceSize bench_size = (VkDeviceSize)BENCH_SEGMENT_BYTES * BENCH_SEGMENTS;
+  const uint64_t bench_bytes = (uint64_t)BENCH_SEGMENT_BYTES * BENCH_SEGMENTS * BENCH_ROUNDS;
   VkBufferCreateInfo bb = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-  bb.size = 16u<<20; bb.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-  VkBuffer big; vkCreateBuffer(dev, &bb, 0, &big);
+  bb.size = bench_size;
+  bb.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+  VkBuffer big; if (vkCreateBuffer(dev, &bb, 0, &big)) { puts("BV-BENCH-SKIP create"); goto img; }
   VkMemoryRequirements bmr; vkGetBufferMemoryRequirements(dev, big, &bmr);
   uint32_t bi = UINT32_MAX;
   for (uint32_t i = 0; i < mp.memoryTypeCount; i++)
-    if (bmr.memoryTypeBits & (1u<<i)) { bi = i; break; }
+    if ((bmr.memoryTypeBits & (1u<<i)) &&
+        (mp.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) &&
+        !(mp.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) { bi = i; break; }
+  if (bi == UINT32_MAX)
+    for (uint32_t i = 0; i < mp.memoryTypeCount; i++)
+      if ((bmr.memoryTypeBits & (1u<<i)) &&
+          (mp.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) { bi = i; break; }
+  if (bi == UINT32_MAX)
+    for (uint32_t i = 0; i < mp.memoryTypeCount; i++)
+      if (bmr.memoryTypeBits & (1u<<i)) { bi = i; break; }
+  if (bi == UINT32_MAX) { puts("BV-BENCH-SKIP memtype"); goto img; }
   VkMemoryAllocateInfo bmai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
   bmai.allocationSize = bmr.size; bmai.memoryTypeIndex = bi;
   VkDeviceMemory bmem; if (vkAllocateMemory(dev, &bmai, 0, &bmem)) { puts("BV-BENCH-SKIP"); goto img; }
-  vkBindBufferMemory(dev, big, bmem, 0);
+  if (vkBindBufferMemory(dev, big, bmem, 0)) { puts("BV-BENCH-SKIP bind"); goto img; }
   VkCommandBuffer cb2; vkAllocateCommandBuffers(dev, &cba, &cb2);
   vkBeginCommandBuffer(cb2, &cbb);
-  for (int i = 0; i < 64; i++) vkCmdFillBuffer(cb2, big, 0, 16u<<20, (uint32_t)i);
+  for (uint32_t round = 0; round < BENCH_ROUNDS; round++)
+    for (uint32_t segment = 0; segment < BENCH_SEGMENTS; segment++)
+      vkCmdFillBuffer(cb2, big, (VkDeviceSize)segment * BENCH_SEGMENT_BYTES,
+                      BENCH_SEGMENT_BYTES, (round << 16) | segment);
+  VkBufferMemoryBarrier bench_barrier = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+  bench_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+  bench_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+  bench_barrier.srcQueueFamilyIndex = bench_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  bench_barrier.buffer = big;
+  bench_barrier.offset = (VkDeviceSize)(BENCH_SEGMENTS - 1) * BENCH_SEGMENT_BYTES;
+  bench_barrier.size = BENCH_SEGMENT_BYTES;
+  vkCmdPipelineBarrier(cb2, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                       0, 0, 0, 1, &bench_barrier, 0, 0);
+  VkBufferCopy bench_copy = {
+    .srcOffset = (VkDeviceSize)(BENCH_SEGMENTS - 1) * BENCH_SEGMENT_BYTES,
+    .dstOffset = 0,
+    .size = 65536,
+  };
+  vkCmdCopyBuffer(cb2, big, buf, 1, &bench_copy);
   vkEndCommandBuffer(cb2);
   vkResetFences(dev, 1, &f);
   struct timespec t0, t1; clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -82,9 +114,18 @@ int main(void) {
   if (vkQueueSubmit(q, 1, &si, f)) { puts("BV-BENCH-FAIL submit"); goto img; }
   if (vkWaitForFences(dev, 1, &f, VK_TRUE, 30000000000ull)) { puts("BV-BENCH-FAIL fence"); goto img; }
   clock_gettime(CLOCK_MONOTONIC, &t1);
+  CK(vkMapMemory(dev, mem, 0, 65536, 0, &p));
+  w = p; ok = 1;
+  const uint32_t bench_expected = ((BENCH_ROUNDS - 1) << 16) | (BENCH_SEGMENTS - 1);
+  for (int i = 0; i < 16384; i++) if (w[i] != bench_expected) { ok = 0; break; }
+  if (!ok) { printf("BV-BENCH-FAIL verify w0=%08x expected=%08x\n", w[0], bench_expected); return 1; }
+  vkUnmapMemory(dev, mem);
   { double sec = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
-    printf("BV-BENCH-OK bytes=%llu sec=%.3f GBps=%.2f\n",
-           (unsigned long long)64*(16u<<20), sec, 64.0*16/1024.0/sec); }
+    VkMemoryPropertyFlags bench_flags = mp.memoryTypes[bi].propertyFlags;
+    printf("BV-BENCH-OK bytes=%llu workset=%llu fills=%u mem_flags=0x%x sec=%.6f GBps=%.2f GiBps=%.2f\n",
+           (unsigned long long)bench_bytes, (unsigned long long)bench_size,
+           BENCH_SEGMENTS * BENCH_ROUNDS, bench_flags, sec,
+           bench_bytes / 1e9 / sec, bench_bytes / 1073741824.0 / sec); }
 
 img:;
   /* ---- image: clear an OPTIMAL-tiled image, copy back, verify color ---- */

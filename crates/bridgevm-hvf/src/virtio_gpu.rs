@@ -176,7 +176,12 @@ pub struct VirtioGpu {
     trace_fence_deliver_count: u64,
     scanout_readback_interval: Duration,
     last_3d_scanout_readback: Option<Instant>,
+    scanout_3d_flush_count: u64,
+    scanout_readback_attempt_count: u64,
     scanout_readback_count: u64,
+    scanout_readback_throttled_count: u64,
+    scanout_readback_bytes: u64,
+    scanout_readback_nanoseconds: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -246,7 +251,12 @@ pub struct VirtioGpuStats {
     pub driver_features: u64,
     pub resources: usize,
     pub scanout_active: bool,
+    pub scanout_3d_flushes: u64,
+    pub scanout_readback_attempts: u64,
     pub scanout_readbacks: u64,
+    pub scanout_readback_throttled: u64,
+    pub scanout_readback_bytes: u64,
+    pub scanout_readback_nanoseconds: u64,
     pub three_d: VirtioGpu3dStats,
     pub queues: [VirtioGpuQueueStats; QUEUE_COUNT],
 }
@@ -360,7 +370,12 @@ impl VirtioGpu {
             trace_fence_deliver_count: 0,
             scanout_readback_interval: Duration::ZERO,
             last_3d_scanout_readback: None,
+            scanout_3d_flush_count: 0,
+            scanout_readback_attempt_count: 0,
             scanout_readback_count: 0,
+            scanout_readback_throttled_count: 0,
+            scanout_readback_bytes: 0,
+            scanout_readback_nanoseconds: 0,
         };
         gpu.trace_device_init(false);
         gpu
@@ -396,7 +411,12 @@ impl VirtioGpu {
                 | (u64::from(self.driver_features[1]) << 32),
             resources: self.resources.len(),
             scanout_active: self.scanout_resource.is_some() || self.blob_scanout.is_some(),
+            scanout_3d_flushes: self.scanout_3d_flush_count,
+            scanout_readback_attempts: self.scanout_readback_attempt_count,
             scanout_readbacks: self.scanout_readback_count,
+            scanout_readback_throttled: self.scanout_readback_throttled_count,
+            scanout_readback_bytes: self.scanout_readback_bytes,
+            scanout_readback_nanoseconds: self.scanout_readback_nanoseconds,
             three_d: self.three_d.stats(self.pending_fenced.len()),
             queues: [VirtioGpuQueueStats::default(); QUEUE_COUNT],
         };
@@ -451,7 +471,12 @@ impl VirtioGpu {
         self.blob_row_scratch.clear();
         self.trace_fields_scratch.clear();
         self.last_3d_scanout_readback = None;
+        self.scanout_3d_flush_count = 0;
+        self.scanout_readback_attempt_count = 0;
         self.scanout_readback_count = 0;
+        self.scanout_readback_throttled_count = 0;
+        self.scanout_readback_bytes = 0;
+        self.scanout_readback_nanoseconds = 0;
     }
 
     pub fn scanout(&self) -> Option<VirtioGpuScanout<'_>> {
@@ -1471,27 +1496,54 @@ impl VirtioGpu {
                     rect,
                 );
             } else if self.three_d.is_3d_resource(resource_id) {
+                self.scanout_3d_flush_count = self.scanout_3d_flush_count.saturating_add(1);
                 let now = Instant::now();
                 let readback_due = self.last_3d_scanout_readback.map_or(true, |last| {
                     now.saturating_duration_since(last) >= self.scanout_readback_interval
                 });
-                if readback_due
-                    && self.three_d.read_3d_scanout(
+                if readback_due {
+                    self.scanout_readback_attempt_count =
+                        self.scanout_readback_attempt_count.saturating_add(1);
+                    let started = Instant::now();
+                    let readback_ok = self.three_d.read_3d_scanout(
                         resource_id,
                         self.width,
                         self.height,
                         &mut self.scanout,
-                    )
-                {
-                    self.last_3d_scanout_readback = Some(now);
-                    self.scanout_readback_count = self.scanout_readback_count.saturating_add(1);
-                    let count = self.scanout_readback_count;
+                    );
+                    let elapsed = started.elapsed();
+                    let duration_ns = elapsed.as_nanos().min(u128::from(u64::MAX)) as u64;
+                    self.scanout_readback_nanoseconds = self
+                        .scanout_readback_nanoseconds
+                        .saturating_add(duration_ns);
+                    if readback_ok {
+                        self.last_3d_scanout_readback = Some(Instant::now());
+                        self.scanout_readback_count = self.scanout_readback_count.saturating_add(1);
+                        let bytes = u64::from(self.width)
+                            .saturating_mul(u64::from(self.height))
+                            .saturating_mul(4);
+                        self.scanout_readback_bytes =
+                            self.scanout_readback_bytes.saturating_add(bytes);
+                        let count = self.scanout_readback_count;
+                        let width = self.width;
+                        let height = self.height;
+                        self.record_trace_fields("scanout_readback", |fields| {
+                            let _ = write!(
+                                fields,
+                                ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"bytes\":{bytes},\"duration_ns\":{duration_ns},\"count\":{count}"
+                            );
+                        });
+                    }
+                } else {
+                    self.scanout_readback_throttled_count =
+                        self.scanout_readback_throttled_count.saturating_add(1);
+                    let throttled = self.scanout_readback_throttled_count;
                     let width = self.width;
                     let height = self.height;
-                    self.record_trace_fields("scanout_readback", |fields| {
+                    self.record_trace_fields("scanout_readback_throttled", |fields| {
                         let _ = write!(
                             fields,
-                            ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"count\":{count}"
+                            ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"count\":{throttled}"
                         );
                     });
                 }
@@ -4659,6 +4711,12 @@ mod tests {
             Some(VIRTIO_GPU_RESP_OK_NODATA)
         );
         assert_eq!(backend.lock().unwrap().scanout_reads, vec![(31, 1280, 800)]);
+        let stats = dev.stats();
+        assert_eq!(stats.scanout_3d_flushes, 1);
+        assert_eq!(stats.scanout_readback_attempts, 1);
+        assert_eq!(stats.scanout_readbacks, 1);
+        assert_eq!(stats.scanout_readback_throttled, 0);
+        assert_eq!(stats.scanout_readback_bytes, 1280 * 800 * 4);
         let scanout = dev.gpu.scanout().expect("3D scanout should be active");
         assert_eq!(&scanout.bytes[..8], &[0, 1, 2, 3, 4, 5, 6, 7]);
     }
@@ -4702,7 +4760,12 @@ mod tests {
         submit_control(&mut dev, &mut mem, &flush, 24);
 
         assert_eq!(backend.lock().unwrap().scanout_reads, vec![(31, 1280, 800)]);
-        assert_eq!(dev.stats().scanout_readbacks, 1);
+        let stats = dev.stats();
+        assert_eq!(stats.scanout_3d_flushes, 2);
+        assert_eq!(stats.scanout_readback_attempts, 1);
+        assert_eq!(stats.scanout_readbacks, 1);
+        assert_eq!(stats.scanout_readback_throttled, 1);
+        assert_eq!(stats.scanout_readback_bytes, 1280 * 800 * 4);
     }
 
     #[test]
