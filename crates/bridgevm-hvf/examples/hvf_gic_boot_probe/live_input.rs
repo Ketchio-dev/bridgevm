@@ -14,6 +14,7 @@ use crate::xhci_hid_input::{parse_pointer_input_actions, parse_setup_input_actio
 const POLL_INTERVAL: Duration = Duration::from_millis(16);
 const MAX_PENDING_COMMANDS: usize = 64;
 const MAX_COMMAND_BYTES: usize = 256;
+const MAX_READ_BYTES_PER_TICK: u64 = 1024 * 1024;
 const COMPACT_AFTER_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug)]
@@ -149,8 +150,14 @@ impl LiveInputController {
         if file.seek(SeekFrom::Start(self.offset)).is_err() {
             return;
         }
-        let mut bytes = Vec::new();
-        if file.read_to_end(&mut bytes).is_err() {
+        let unread = len.saturating_sub(self.offset);
+        let read_limit = unread.min(MAX_READ_BYTES_PER_TICK);
+        let mut bytes = Vec::with_capacity(read_limit as usize);
+        if (&mut *file)
+            .take(read_limit)
+            .read_to_end(&mut bytes)
+            .is_err()
+        {
             return;
         }
         self.offset = self.offset.saturating_add(bytes.len() as u64);
@@ -167,7 +174,7 @@ impl LiveInputController {
             self.partial.clear();
             eprintln!("live input rejected: command_too_long");
         }
-        if self.offset >= COMPACT_AFTER_BYTES && self.partial.is_empty() {
+        if self.offset == len && self.offset >= COMPACT_AFTER_BYTES && self.partial.is_empty() {
             if file.set_len(0).is_ok() {
                 self.offset = 0;
             }
@@ -298,6 +305,9 @@ mod tests {
             next_poll: Instant::now(),
         };
 
+        input.read_new_commands();
+        assert_eq!(input.offset, COMPACT_AFTER_BYTES);
+        assert!(fs::metadata(&path).unwrap().len() > 0);
         input.read_new_commands();
 
         assert_eq!(fs::metadata(&path).unwrap().len(), 0);
