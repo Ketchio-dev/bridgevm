@@ -29,20 +29,32 @@ flushes (22.07%) with the new 16 ms default. Readback work totalled 0.505 second
 at 5.616 GB/s, only about 1.24% of the 40.731-second agent-ready interval.
 Scanout readback was worth bounding, but it is not the dominant Windows wall.
 
+The resident service has now also completed the built-in `winsat d3d` suite
+with exit code zero. WinSAT invoked DX9- and DX10-class batch, alpha, texture,
+ALU, geometry, and constant-buffer assessments. The same boot produced 4,895
+valid VirGL trace events, non-empty `SUBMIT_3D`, completed fences, and no GPU
+error responses, so this is the first repeatable real D3D workload gate rather
+than capability-reporting evidence alone. Every reported subtest result was the
+same 42 F/s, however, so those scores are not accepted as performance numbers.
+
 The remaining Windows work is:
 
-1. add a repeatable guest D3D10/OpenGL workload and result gate rather than
-   relying only on desktop composition and `dxdiag` capability reporting;
-2. run long-duration graphics stress and recover cleanly from renderer/device
+1. add a BridgeVM-owned D3D10/OpenGL correctness workload with known rendered
+   output and readback, then correlate its command interval with trace deltas;
+2. obtain meaningful performance timing rather than WinSAT's flat 42 F/s
+   compatibility result;
+3. run long-duration graphics stress and recover cleanly from renderer/device
    failures;
-3. replace the disposable test-signed package flow with reproducible,
+4. replace the disposable test-signed package flow with reproducible,
    distributable driver provenance/signing and normal product update UX;
-4. move beyond the current feature-level-10_0 ceiling before claiming modern
+5. move beyond the current feature-level-10_0 ceiling before claiming modern
    DX11/DX12 game compatibility.
 
 Live pacing evidence is preserved at
 `~/BridgeVM/viogpu3d-scanout-pacing-proof-20260713-v1`. Its regenerated trace
 report survives device reset and passes the VirGL P3 gate with zero errors.
+The WinSAT D3D workload proof is preserved at
+`~/BridgeVM/viogpu3d-winsat-d3d-proof-20260713-v1`.
 
 ## Linux: the present wall
 
