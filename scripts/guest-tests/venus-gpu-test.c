@@ -4,6 +4,19 @@
 #include <stdlib.h>
 #include <time.h>
 #define CK(x) do { VkResult r_=(x); if (r_) { printf("BV-FB-FAIL %s=%d\n", #x, r_); return 1; } } while(0)
+static double gpu_timestamp_seconds(uint64_t begin, uint64_t end,
+                                    uint32_t valid_bits, float period_ns) {
+  uint64_t delta;
+  if (valid_bits >= 64) {
+    if (end < begin) return 0.0;
+    delta = end - begin;
+  }
+  else {
+    uint64_t mask = (1ull << valid_bits) - 1;
+    delta = (end - begin) & mask;
+  }
+  return delta * (double)period_ns / 1e9;
+}
 int main(void) {
   VkInstance inst; VkApplicationInfo ai = {VK_STRUCTURE_TYPE_APPLICATION_INFO};
   ai.apiVersion = VK_API_VERSION_1_1;
@@ -22,6 +35,21 @@ int main(void) {
   VkDevice dev; CK(vkCreateDevice(pd, &dci, 0, &dev));
   VkQueue q; vkGetDeviceQueue(dev, 0, 0, &q);
   VkPhysicalDeviceMemoryProperties mp; vkGetPhysicalDeviceMemoryProperties(pd, &mp);
+  uint32_t qn = 0; vkGetPhysicalDeviceQueueFamilyProperties(pd, &qn, 0);
+  VkQueueFamilyProperties *qps = calloc(qn, sizeof(*qps));
+  if (qps) vkGetPhysicalDeviceQueueFamilyProperties(pd, &qn, qps);
+  uint32_t timestamp_bits = (qps && qn > 0) ? qps[0].timestampValidBits : 0;
+  free(qps);
+  VkQueryPool timestamp_pool = VK_NULL_HANDLE;
+  if (timestamp_bits) {
+    VkQueryPoolCreateInfo qpci = {VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+    qpci.queryType = VK_QUERY_TYPE_TIMESTAMP; qpci.queryCount = 4;
+    if (vkCreateQueryPool(dev, &qpci, 0, &timestamp_pool)) {
+      timestamp_pool = VK_NULL_HANDLE; timestamp_bits = 0;
+    }
+  }
+  printf("BV-GPU-TIMESTAMP supported=%u valid_bits=%u period_ns=%.6f\n",
+         timestamp_pool != VK_NULL_HANDLE, timestamp_bits, pr.limits.timestampPeriod);
   VkCommandPoolCreateInfo cpc = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
   VkCommandPool cp; CK(vkCreateCommandPool(dev, &cpc, 0, &cp));
   VkCommandBufferAllocateInfo cba = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
@@ -88,6 +116,10 @@ int main(void) {
   if (vkBindBufferMemory(dev, big, bmem, 0)) { puts("BV-BENCH-SKIP bind"); goto img; }
   VkCommandBuffer cb2; vkAllocateCommandBuffers(dev, &cba, &cb2);
   vkBeginCommandBuffer(cb2, &cbb);
+  if (timestamp_pool) {
+    vkCmdResetQueryPool(cb2, timestamp_pool, 0, 2);
+    vkCmdWriteTimestamp(cb2, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, timestamp_pool, 0);
+  }
   for (uint32_t round = 0; round < BENCH_ROUNDS; round++)
     for (uint32_t segment = 0; segment < BENCH_SEGMENTS; segment++)
       vkCmdFillBuffer(cb2, big, (VkDeviceSize)segment * BENCH_SEGMENT_BYTES,
@@ -107,6 +139,8 @@ int main(void) {
     .size = 65536,
   };
   vkCmdCopyBuffer(cb2, big, buf, 1, &bench_copy);
+  if (timestamp_pool)
+    vkCmdWriteTimestamp(cb2, VK_PIPELINE_STAGE_TRANSFER_BIT, timestamp_pool, 1);
   vkEndCommandBuffer(cb2);
   vkResetFences(dev, 1, &f);
   struct timespec t0, t1; clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -120,12 +154,22 @@ int main(void) {
   for (int i = 0; i < 16384; i++) if (w[i] != bench_expected) { ok = 0; break; }
   if (!ok) { printf("BV-BENCH-FAIL verify w0=%08x expected=%08x\n", w[0], bench_expected); return 1; }
   vkUnmapMemory(dev, mem);
+  double fill_gpu_sec = 0.0; uint64_t fill_timestamps[2] = {0, 0};
+  if (timestamp_pool &&
+      !vkGetQueryPoolResults(dev, timestamp_pool, 0, 2, sizeof(fill_timestamps),
+                             fill_timestamps, sizeof(uint64_t),
+                             VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT))
+    fill_gpu_sec = gpu_timestamp_seconds(fill_timestamps[0], fill_timestamps[1],
+                                         timestamp_bits, pr.limits.timestampPeriod);
   { double sec = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
     VkMemoryPropertyFlags bench_flags = mp.memoryTypes[bi].propertyFlags;
-    printf("BV-BENCH-OK bytes=%llu workset=%llu fills=%u mem_flags=0x%x sec=%.6f GBps=%.2f GiBps=%.2f\n",
+    printf("BV-BENCH-OK bytes=%llu workset=%llu fills=%u mem_flags=0x%x sec=%.6f GBps=%.2f GiBps=%.2f gpu_begin=%llu gpu_end=%llu gpu_valid=%u gpu_sec=%.6f gpu_GBps=%.2f\n",
            (unsigned long long)bench_bytes, (unsigned long long)bench_size,
            BENCH_SEGMENTS * BENCH_ROUNDS, bench_flags, sec,
-           bench_bytes / 1e9 / sec, bench_bytes / 1073741824.0 / sec); }
+           bench_bytes / 1e9 / sec, bench_bytes / 1073741824.0 / sec,
+           (unsigned long long)fill_timestamps[0], (unsigned long long)fill_timestamps[1],
+           fill_gpu_sec > 0.0,
+           fill_gpu_sec, fill_gpu_sec > 0.0 ? bench_bytes / 1e9 / fill_gpu_sec : 0.0); }
 
   /* ---- throughput: 1 GiB of dependent copies between 128 MiB device-local buffers ---- */
   VkBuffer copybuf;
@@ -154,6 +198,10 @@ int main(void) {
 
   VkCommandBuffer cb4; vkAllocateCommandBuffers(dev, &cba, &cb4);
   vkBeginCommandBuffer(cb4, &cbb);
+  if (timestamp_pool) {
+    vkCmdResetQueryPool(cb4, timestamp_pool, 2, 2);
+    vkCmdWriteTimestamp(cb4, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, timestamp_pool, 2);
+  }
   VkBufferCopy full_copy = {.srcOffset = 0, .dstOffset = 0, .size = bench_size};
   VkBufferMemoryBarrier copy_barrier = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
   copy_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -175,6 +223,8 @@ int main(void) {
     .size = 65536,
   };
   vkCmdCopyBuffer(cb4, copy_result, buf, 1, &copy_sample);
+  if (timestamp_pool)
+    vkCmdWriteTimestamp(cb4, VK_PIPELINE_STAGE_TRANSFER_BIT, timestamp_pool, 3);
   vkEndCommandBuffer(cb4);
   vkResetFences(dev, 1, &f); clock_gettime(CLOCK_MONOTONIC, &t0);
   si.pCommandBuffers = &cb4;
@@ -187,11 +237,21 @@ int main(void) {
   for (int i = 0; i < 16384; i++) if (w[i] != copy_expected) { ok = 0; break; }
   if (!ok) { printf("BV-COPY-BENCH-FAIL verify w0=%08x expected=%08x\n", w[0], copy_expected); return 1; }
   vkUnmapMemory(dev, mem);
+  double copy_gpu_sec = 0.0; uint64_t copy_timestamps[2] = {0, 0};
+  if (timestamp_pool &&
+      !vkGetQueryPoolResults(dev, timestamp_pool, 2, 2, sizeof(copy_timestamps),
+                             copy_timestamps, sizeof(uint64_t),
+                             VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT))
+    copy_gpu_sec = gpu_timestamp_seconds(copy_timestamps[0], copy_timestamps[1],
+                                         timestamp_bits, pr.limits.timestampPeriod);
   { double sec = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
-    printf("BV-COPY-BENCH-OK bytes=%llu workset=%llu copies=%u mem_flags=0x%x sec=%.6f GBps=%.2f GiBps=%.2f\n",
+    printf("BV-COPY-BENCH-OK bytes=%llu workset=%llu copies=%u mem_flags=0x%x sec=%.6f GBps=%.2f GiBps=%.2f gpu_begin=%llu gpu_end=%llu gpu_valid=%u gpu_sec=%.6f gpu_GBps=%.2f\n",
            (unsigned long long)bench_bytes, (unsigned long long)bench_size,
            BENCH_ROUNDS, mp.memoryTypes[bi].propertyFlags, sec,
-           bench_bytes / 1e9 / sec, bench_bytes / 1073741824.0 / sec); }
+           bench_bytes / 1e9 / sec, bench_bytes / 1073741824.0 / sec,
+           (unsigned long long)copy_timestamps[0], (unsigned long long)copy_timestamps[1],
+           copy_gpu_sec > 0.0,
+           copy_gpu_sec, copy_gpu_sec > 0.0 ? bench_bytes / 1e9 / copy_gpu_sec : 0.0); }
 
 img:;
   /* ---- image: clear an OPTIMAL-tiled image, copy back, verify color ---- */

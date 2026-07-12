@@ -59,10 +59,24 @@ ceiling.
 
 Disabling `MTLHeap` reduced copy throughput to 98.06 GB/s while fill remained
 107.90 GB/s. BridgeVM therefore keeps MoltenVK's heap-backed allocation enabled
-and records the setting in every Linux Venus preflight. The next useful work is
-GPU-timestamp-backed profiling and renderer/Metal transfer-path experiments;
-inflating the old narrow microbenchmark would not be a real improvement.
+and records the setting in every Linux Venus preflight.
+
+The benchmark now also requests Vulkan timestamp queries and preserves the raw
+counter values. The live path reports timestamp support, 64 valid bits, and a
+1 ns period, but only the first query receives a counter; the later query in the
+same submission returns zero for both `BOTTOM_OF_PIPE` and `TRANSFER`. BridgeVM
+therefore reports `gpu_valid=0` instead of converting the underflow into a fake
+GPU bandwidth. Until that Venus/virglrenderer/MoltenVK query-path defect is
+fixed, wall-clock fence timing remains the trustworthy measure. Repeated live
+wall-clock copies reached 120-124 GB/s, while fills varied more widely and are
+not yet a stable optimization target.
+
+The next useful work is to repair or bypass the timestamp-query path, then use
+the resulting GPU/submission-time split for renderer and Metal transfer-path
+experiments; inflating the old narrow microbenchmark would not be a real
+improvement.
 
 Live default evidence is preserved at
 `~/BridgeVM/venus-p2/live-copy-bench-v1/evidence`; the heap-off comparison is at
-`~/BridgeVM/venus-p2/mtlheap-ab/off/evidence-full`.
+`~/BridgeVM/venus-p2/mtlheap-ab/off/evidence-full`; raw timestamp evidence is at
+`~/BridgeVM/venus-p2/live-gpu-timestamp-v1/evidence-transfer-timestamps`.
