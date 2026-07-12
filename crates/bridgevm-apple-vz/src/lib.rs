@@ -10,8 +10,14 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
     str::FromStr,
+    thread,
+    time::{Duration, Instant},
 };
 use thiserror::Error;
+
+const APPLE_VZ_LAUNCH_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_LAUNCHER_STREAM_BYTES: usize = 1024 * 1024;
+const LAUNCHER_DRAIN_CHUNK_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Error)]
 pub enum AppleVzError {
@@ -99,6 +105,14 @@ pub enum AppleVzLaunchError {
         program: PathBuf,
         #[source]
         source: std::io::Error,
+    },
+    #[error("Apple VZ launcher {program} timed out after {seconds} seconds")]
+    LauncherTimeout { program: PathBuf, seconds: u64 },
+    #[error("Apple VZ launcher {program} {stream} exceeded the {maximum}-byte limit")]
+    LauncherOutputTooLarge {
+        program: PathBuf,
+        stream: &'static str,
+        maximum: usize,
     },
     #[error("Apple VZ launcher {program} failed with status {status}: {output}")]
     LauncherFailed {
@@ -356,27 +370,66 @@ impl AppleVzLauncher for AppleVzCommandLauncher {
                 program: self.program.clone(),
                 source,
             })?;
+        let mut stdout = child.stdout.take().expect("piped stdout should be present");
+        let mut stderr = child.stderr.take().expect("piped stderr should be present");
+        let stdout_drain =
+            thread::spawn(move || drain_launcher_stream(&mut stdout, MAX_LAUNCHER_STREAM_BYTES));
+        let stderr_drain =
+            thread::spawn(move || drain_launcher_stream(&mut stderr, MAX_LAUNCHER_STREAM_BYTES));
         let mut stdin = child.stdin.take().expect("piped stdin should be present");
-        stdin
-            .write_all(&input)
-            .map_err(|source| AppleVzLaunchError::LauncherWrite {
+        if let Err(source) = stdin.write_all(&input) {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stdout_drain.join();
+            let _ = stderr_drain.join();
+            return Err(AppleVzLaunchError::LauncherWrite {
                 program: self.program.clone(),
                 source,
-            })?;
+            });
+        }
         drop(stdin);
-        let output =
-            child
-                .wait_with_output()
-                .map_err(|source| AppleVzLaunchError::LauncherSpawn {
-                    program: self.program.clone(),
-                    source,
-                })?;
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        if !output.status.success() {
+        let deadline = Instant::now() + APPLE_VZ_LAUNCH_TIMEOUT;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(20)),
+                Ok(None) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = stdout_drain.join();
+                    let _ = stderr_drain.join();
+                    return Err(AppleVzLaunchError::LauncherTimeout {
+                        program: self.program.clone(),
+                        seconds: APPLE_VZ_LAUNCH_TIMEOUT.as_secs(),
+                    });
+                }
+                Err(source) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = stdout_drain.join();
+                    let _ = stderr_drain.join();
+                    return Err(AppleVzLaunchError::LauncherSpawn {
+                        program: self.program.clone(),
+                        source,
+                    });
+                }
+            }
+        };
+        let (stdout_bytes, stdout_exceeded) = join_launcher_drain(stdout_drain, &self.program)?;
+        let (stderr_bytes, stderr_exceeded) = join_launcher_drain(stderr_drain, &self.program)?;
+        if stdout_exceeded || stderr_exceeded {
+            return Err(AppleVzLaunchError::LauncherOutputTooLarge {
+                program: self.program.clone(),
+                stream: if stdout_exceeded { "stdout" } else { "stderr" },
+                maximum: MAX_LAUNCHER_STREAM_BYTES,
+            });
+        }
+        let stdout = String::from_utf8_lossy(&stdout_bytes).trim().to_string();
+        let stderr = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
+        if !status.success() {
             return Err(AppleVzLaunchError::LauncherFailed {
                 program: self.program.clone(),
-                status: output.status.to_string(),
+                status: status.to_string(),
                 stdout: stdout.clone(),
                 stderr: stderr.clone(),
                 output: format_launcher_output(&stdout, &stderr),
@@ -389,6 +442,41 @@ impl AppleVzLauncher for AppleVzCommandLauncher {
             stderr,
         })
     }
+}
+
+fn drain_launcher_stream(
+    reader: &mut impl Read,
+    maximum: usize,
+) -> std::io::Result<(Vec<u8>, bool)> {
+    let mut captured = Vec::new();
+    let mut chunk = [0_u8; LAUNCHER_DRAIN_CHUNK_BYTES];
+    let mut exceeded = false;
+    loop {
+        let read = reader.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        let keep = read.min(maximum.saturating_sub(captured.len()));
+        captured.extend_from_slice(&chunk[..keep]);
+        exceeded |= keep < read;
+    }
+    Ok((captured, exceeded))
+}
+
+fn join_launcher_drain(
+    drain: thread::JoinHandle<std::io::Result<(Vec<u8>, bool)>>,
+    program: &Path,
+) -> Result<(Vec<u8>, bool), AppleVzLaunchError> {
+    drain
+        .join()
+        .map_err(|_| AppleVzLaunchError::LauncherSpawn {
+            program: program.to_path_buf(),
+            source: std::io::Error::other("launcher output drain panicked"),
+        })?
+        .map_err(|source| AppleVzLaunchError::LauncherSpawn {
+            program: program.to_path_buf(),
+            source,
+        })
 }
 
 fn format_launcher_output(stdout: &str, stderr: &str) -> String {
@@ -1454,6 +1542,65 @@ mod tests {
         }
 
         let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn command_launcher_rejects_oversized_stdout_without_pipe_deadlock() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = std::env::temp_dir().join(format!(
+            "bridgevm-apple-vz-command-launcher-oversized-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&temp);
+        std::fs::create_dir_all(&temp).unwrap();
+        let helper = temp.join("helper.sh");
+        std::fs::write(
+            &helper,
+            format!(
+                "#!/bin/sh\ncat >/dev/null\nhead -c {} /dev/zero\n",
+                MAX_LAUNCHER_STREAM_BYTES + 1
+            ),
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&helper).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&helper, permissions).unwrap();
+
+        let manifest = valid_fast_manifest();
+        let plan = build_fast_plan(&manifest, Path::new("/tmp/ubuntu-fast.vmbridge")).unwrap();
+        let mut handoff = build_launch_handoff(plan.launch_spec(), None);
+        handoff.readiness = AppleVzReadinessSpec {
+            ready: true,
+            blockers: Vec::new(),
+        };
+
+        let error = launch_with_apple_vz(&AppleVzCommandLauncher::new(&helper), handoff)
+            .expect_err("oversized helper output must fail closed");
+
+        assert!(matches!(
+            error,
+            AppleVzLaunchError::LauncherOutputTooLarge {
+                stream: "stdout",
+                maximum: MAX_LAUNCHER_STREAM_BYTES,
+                ..
+            }
+        ));
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn launcher_stream_drain_caps_capture_and_consumes_to_eof() {
+        let input = vec![0x41; LAUNCHER_DRAIN_CHUNK_BYTES * 3];
+        let mut reader = std::io::Cursor::new(input.clone());
+
+        let (captured, exceeded) =
+            drain_launcher_stream(&mut reader, LAUNCHER_DRAIN_CHUNK_BYTES + 7).unwrap();
+
+        assert!(exceeded);
+        assert_eq!(captured, input[..LAUNCHER_DRAIN_CHUNK_BYTES + 7]);
+        assert_eq!(reader.position(), input.len() as u64);
     }
 
     #[test]
