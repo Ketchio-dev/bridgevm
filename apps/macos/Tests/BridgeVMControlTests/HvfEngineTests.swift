@@ -765,6 +765,42 @@ final class HvfWindowsBackendTests: XCTestCase {
     }
 }
 
+final class HvfCommandReplyReaderTests: XCTestCase {
+    func testConsumesAppendedReplyIncrementallyIncludingPartialLines() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = dir.appendingPathComponent("run.log")
+        try Data("old log\n".utf8).write(to: log)
+        let reader = HvfCommandReplyReader(command: "foo", offset: 8)
+
+        let handle = try FileHandle(forWritingTo: log)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("BVAGENT CMD foo exit=7\nfirst\nsec".utf8))
+        XCTAssertNil(reader.readReply(from: log))
+        try handle.write(contentsOf: Data("ond\nBVAGENT END foo\n".utf8))
+        try handle.close()
+
+        let reply = try XCTUnwrap(reader.readReply(from: log))
+        XCTAssertEqual(reply.output, "first\nsecond")
+        XCTAssertEqual(reply.code, 7)
+    }
+
+    func testResetsAfterLogTruncation() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = dir.appendingPathComponent("run.log")
+        try Data(repeating: 120, count: 100).write(to: log)
+        let reader = HvfCommandReplyReader(command: "foo", offset: 100)
+        try Data("BVAGENT CMD foo exit=0\nok\nBVAGENT END foo\n".utf8).write(to: log, options: .atomic)
+
+        let reply = try XCTUnwrap(reader.readReply(from: log))
+        XCTAssertEqual(reply.output, "ok")
+        XCTAssertEqual(reply.code, 0)
+    }
+}
+
 private extension Result {
     var failure: Failure? {
         guard case let .failure(error) = self else { return nil }

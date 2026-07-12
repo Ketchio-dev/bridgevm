@@ -548,8 +548,10 @@ final class HvfWindowsBackend: VMBackend {
 
     private func waitForCommandReply(command: String, offset: UInt64, timeout: TimeInterval) -> (output: String, code: Int32) {
         let deadline = Date().addingTimeInterval(timeout)
+        let reader = HvfCommandReplyReader(command: command, offset: offset)
+        let logURL = URL(fileURLWithPath: runLogPath)
         while Date() < deadline {
-            if let reply = parseCommandReply(command: command, from: logSlice(startingAt: offset)) {
+            if let reply = reader.readReply(from: logURL) {
                 return reply
             }
             if !isRunning() {
@@ -560,44 +562,10 @@ final class HvfWindowsBackend: VMBackend {
         return ("HVF 게스트 명령 응답 시간 초과: \(command)", -1)
     }
 
-    private func parseCommandReply(command: String, from text: String) -> (output: String, code: Int32)? {
-        let lines = text.components(separatedBy: .newlines)
-        var collecting = false
-        var body: [String] = []
-        var exitCode: Int32 = -1
-        let startPrefix = "BVAGENT CMD \(command) exit="
-        let endLine = "BVAGENT END \(command)"
-
-        for line in lines {
-            if collecting {
-                if line == endLine {
-                    return (body.joined(separator: "\n"), exitCode)
-                }
-                body.append(line)
-            } else if line.hasPrefix(startPrefix) {
-                let rawCode = line.dropFirst(startPrefix.count).prefix { $0 == "-" || $0.isNumber }
-                exitCode = Int32(String(rawCode)) ?? -1
-                collecting = true
-            }
-        }
-        return nil
-    }
-
     private func fileSize(at path: String) -> UInt64 {
         ((try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.uint64Value) ?? 0
     }
 
-    private func logSlice(startingAt offset: UInt64) -> String {
-        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: runLogPath)) else { return "" }
-        defer { try? handle.close() }
-        do {
-            try handle.seek(toOffset: min(offset, try handle.seekToEnd()))
-            let data = handle.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8) ?? ""
-        } catch {
-            return ""
-        }
-    }
 }
 
 // MARK: - JSON file helper
