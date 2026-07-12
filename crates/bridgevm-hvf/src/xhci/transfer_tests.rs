@@ -208,7 +208,7 @@ fn ep0_event_data_control_td_publishes_advanced_output_dequeue() {
     // Then: EP0 output context publishes the post-TD dequeue before any StopEndpoint.
     assert_eq!(
         mem.read_u64(0x8000 + 0x20 + 0x8),
-        EP0_RING + (TRB_SIZE * 4) | u64::from(TRB_CYCLE)
+        (EP0_RING + (TRB_SIZE * 4)) | u64::from(TRB_CYCLE)
     );
 }
 

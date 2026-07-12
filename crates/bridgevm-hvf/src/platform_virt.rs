@@ -2237,16 +2237,21 @@ mod tests {
         );
     }
 
+    struct TestVirtQueue {
+        desc: u64,
+        avail: u64,
+        used: u64,
+    }
+
     fn setup_virtio_net_queue(
         p: &mut VirtPlatform,
         mem: &mut FlatGuestRam,
         bar: u64,
         queue: u16,
-        desc: u64,
-        avail: u64,
-        used: u64,
+        layout: TestVirtQueue,
         vector: u16,
     ) {
+        let TestVirtQueue { desc, avail, used } = layout;
         for (offset, size, value) in [
             (NET_COMMON_QUEUE_SELECT, 2, u64::from(queue)),
             (NET_COMMON_QUEUE_SIZE, 2, 8),
@@ -3241,9 +3246,7 @@ mod tests {
             &mut mem,
             bar4,
             NET_TX_QUEUE,
-            desc,
-            avail,
-            used,
+            TestVirtQueue { desc, avail, used },
             NET_TX_QUEUE,
         );
         enable_virtio_net_msix_vector(&mut p, &mut mem, bar1, NET_TX_QUEUE, MSI_ADDRESS, MSI_DATA);
@@ -3784,14 +3787,14 @@ mod tests {
         assert_eq!(virtio_iso_stats.request_count, 0);
         assert_eq!(virtio_iso_stats.read_count, 0);
         assert_eq!(virtio_iso_stats.notify_count, 0);
-        assert_eq!(virtio_iso_stats.queue_ready, false);
+        assert!(!virtio_iso_stats.queue_ready);
         assert_eq!(virtio_iso_stats.status, 0);
         assert!(p.virtio_iso_request_trace().unwrap().is_empty());
         let pci_boot_media_stats = p.pci_boot_media_stats().unwrap();
         assert_eq!(pci_boot_media_stats.request_count, 0);
         assert_eq!(pci_boot_media_stats.read_count, 0);
         assert_eq!(pci_boot_media_stats.notify_count, 0);
-        assert_eq!(pci_boot_media_stats.queue_ready, false);
+        assert!(!pci_boot_media_stats.queue_ready);
         assert_eq!(pci_boot_media_stats.status, 0);
         assert!(p.pci_boot_media_request_trace().unwrap().is_empty());
         program_virtio_blk_bar1(&mut p, &mut mem, pci_boot_media_msix_bar);

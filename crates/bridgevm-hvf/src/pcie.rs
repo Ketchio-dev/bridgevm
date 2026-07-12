@@ -2448,12 +2448,11 @@ mod tests {
             ecam.cfg_read(ecam_offset(0, 1, 0, cap + 8), 4),
             u64::from(NVME_MSIX_PBA_OFFSET)
         );
-        assert!(
-            NVME_MSIX_TABLE_OFFSET
-                + u32::from(NVME_MSIX_VECTOR_COUNT) * MsixCapability::ENTRY_BYTES
+        const _: () = assert!(
+            NVME_MSIX_TABLE_OFFSET + (NVME_MSIX_VECTOR_COUNT as u32) * MsixCapability::ENTRY_BYTES
                 <= NVME_BAR0_SIZE
         );
-        assert!(NVME_MSIX_PBA_OFFSET + 8 <= NVME_BAR0_SIZE);
+        const _: () = assert!(NVME_MSIX_PBA_OFFSET + 8 <= NVME_BAR0_SIZE);
     }
 
     #[test]

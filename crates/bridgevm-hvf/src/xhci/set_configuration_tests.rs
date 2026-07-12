@@ -42,7 +42,7 @@ fn ep0_set_configuration_zero_completes_and_clears_selected_configuration() {
     prepare_addressed_set_configuration(&mut xhci, &mut mem, 1, 0);
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, 1, &mut mem));
     assert_eq!(xhci.usb_configuration, 1);
-    write_ep0_input_context(&mut mem, EP0_RING + (TRB_SIZE * 2) | 1);
+    write_ep0_input_context(&mut mem, (EP0_RING + (TRB_SIZE * 2)) | 1);
     write_set_configuration_transfer(&mut mem, 0, 0);
     xhci.slot1_ep0_dequeue = EP0_RING;
 

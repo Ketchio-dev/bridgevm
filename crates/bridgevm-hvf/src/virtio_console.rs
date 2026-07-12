@@ -1876,16 +1876,28 @@ mod tests {
         mem.write(avail + 4 + u64::from(idx) * 2, &idx.to_le_bytes());
     }
 
+    #[derive(Clone, Copy)]
+    struct TestRing {
+        desc: u64,
+        avail: u64,
+    }
+
+    impl TestRing {
+        const fn new(desc: u64, avail: u64) -> Self {
+            Self { desc, avail }
+        }
+    }
+
     fn send_tx(
         dev: &mut VirtioPciConsole,
         mem: &mut TestMem,
         queue: u16,
-        desc: u64,
-        avail: u64,
+        ring: TestRing,
         data_addr: u64,
         data: &[u8],
         idx: u16,
     ) {
+        let TestRing { desc, avail } = ring;
         mem.write(data_addr, data);
         write_desc(mem, desc, idx, data_addr, data.len() as u32, 0, 0);
         mem.write(avail + 2, &idx.wrapping_add(1).to_le_bytes());
@@ -1952,8 +1964,7 @@ mod tests {
             &mut dev,
             &mut mem,
             3,
-            ctx_desc,
-            ctx_avail,
+            TestRing::new(ctx_desc, ctx_avail),
             0x4000_8000,
             &control_bytes(0, VIRTIO_CONSOLE_DEVICE_READY, 1),
             0,
@@ -1971,8 +1982,7 @@ mod tests {
             &mut dev,
             &mut mem,
             3,
-            ctx_desc,
-            ctx_avail,
+            TestRing::new(ctx_desc, ctx_avail),
             0x4000_8100,
             &control_bytes(1, VIRTIO_CONSOLE_PORT_READY, 1),
             1,
@@ -2027,8 +2037,7 @@ mod tests {
             &mut dev,
             &mut mem,
             3,
-            ctx_desc,
-            ctx_avail,
+            TestRing::new(ctx_desc, ctx_avail),
             0x4000_b000,
             &control_bytes(0xffff_ffff, VIRTIO_CONSOLE_DEVICE_READY, 1),
             0,
@@ -2037,8 +2046,7 @@ mod tests {
             &mut dev,
             &mut mem,
             3,
-            ctx_desc,
-            ctx_avail,
+            TestRing::new(ctx_desc, ctx_avail),
             0x4000_b100,
             &control_bytes(0, VIRTIO_CONSOLE_PORT_READY, 1),
             1,
@@ -2047,8 +2055,7 @@ mod tests {
             &mut dev,
             &mut mem,
             3,
-            ctx_desc,
-            ctx_avail,
+            TestRing::new(ctx_desc, ctx_avail),
             0x4000_b200,
             &control_bytes(1, VIRTIO_CONSOLE_PORT_READY, 1),
             2,
@@ -2098,8 +2105,7 @@ mod tests {
             &mut dev,
             &mut mem,
             5,
-            atx_desc,
-            atx_avail,
+            TestRing::new(atx_desc, atx_avail),
             0x4000_c000,
             b"READY",
             0,
@@ -2140,8 +2146,7 @@ mod tests {
             &mut dev,
             &mut mem,
             5,
-            0x4000_4000,
-            0x4000_5000,
+            TestRing::new(0x4000_4000, 0x4000_5000),
             0x4000_8000,
             b"pong",
             0,
@@ -2189,8 +2194,7 @@ mod tests {
             &mut dev,
             &mut mem,
             3,
-            ctx_desc,
-            ctx_avail,
+            TestRing::new(ctx_desc, ctx_avail),
             0x4000_7000,
             &control_bytes(1, VIRTIO_CONSOLE_PORT_OPEN, 1),
             0,
@@ -2207,8 +2211,7 @@ mod tests {
             &mut dev,
             &mut mem,
             5,
-            atx_desc,
-            atx_avail,
+            TestRing::new(atx_desc, atx_avail),
             0x4000_7100,
             b"READY",
             0,
@@ -2346,8 +2349,7 @@ mod tests {
             &mut dev,
             &mut mem,
             3,
-            0x4000_4000,
-            0x4000_5000,
+            TestRing::new(0x4000_4000, 0x4000_5000),
             0x4000_8000,
             &control_bytes(0, VIRTIO_CONSOLE_DEVICE_READY, 1),
             0,
@@ -2436,12 +2438,12 @@ mod tests {
         dev: &mut VirtioPciConsole,
         mem: &mut TestMem,
         queue: u16,
-        desc: u64,
-        avail: u64,
+        ring: TestRing,
         used: u64,
         vector: u16,
         size: u16,
     ) {
+        let TestRing { desc, avail } = ring;
         pci_write(dev, COMMON_QUEUE_SELECT, 2, u64::from(queue), mem);
         pci_write(dev, COMMON_QUEUE_SIZE, 2, u64::from(size), mem);
         pci_write(dev, COMMON_QUEUE_DESC, 8, desc, mem);
@@ -2496,8 +2498,7 @@ mod tests {
             dev,
             mem,
             3,
-            0x4000_4000,
-            0x4000_5000,
+            TestRing::new(0x4000_4000, 0x4000_5000),
             data_addr,
             message,
             idx,
@@ -2513,8 +2514,7 @@ mod tests {
             &mut dev,
             &mut mem,
             2,
-            0x4000_1000,
-            0x4000_2000,
+            TestRing::new(0x4000_1000, 0x4000_2000),
             0x4000_3000,
             2,
             size,
@@ -2523,8 +2523,7 @@ mod tests {
             &mut dev,
             &mut mem,
             3,
-            0x4000_4000,
-            0x4000_5000,
+            TestRing::new(0x4000_4000, 0x4000_5000),
             0x4000_6000,
             3,
             size,
@@ -2606,8 +2605,7 @@ mod tests {
             &mut dev,
             &mut mem,
             2,
-            0x4000_1000,
-            0x4000_2000,
+            TestRing::new(0x4000_1000, 0x4000_2000),
             0x4000_3000,
             2,
             size,
@@ -2616,8 +2614,7 @@ mod tests {
             &mut dev,
             &mut mem,
             3,
-            0x4000_4000,
-            0x4000_5000,
+            TestRing::new(0x4000_4000, 0x4000_5000),
             0x4000_6000,
             3,
             size,
@@ -2626,8 +2623,7 @@ mod tests {
             &mut dev,
             &mut mem,
             5,
-            0x4000_7000,
-            0x4000_8000,
+            TestRing::new(0x4000_7000, 0x4000_8000),
             0x4000_9000,
             5,
             size,
@@ -2687,8 +2683,7 @@ mod tests {
             &mut dev,
             &mut mem,
             5,
-            0x4000_7000,
-            0x4000_8000,
+            TestRing::new(0x4000_7000, 0x4000_8000),
             0x4006_0000,
             b"READY",
             0,
@@ -2724,8 +2719,7 @@ mod tests {
             &mut dev,
             &mut mem,
             2,
-            0x4000_1000,
-            0x4000_2000,
+            TestRing::new(0x4000_1000, 0x4000_2000),
             0x4000_3000,
             2,
             size,
@@ -2734,8 +2728,7 @@ mod tests {
             &mut dev,
             &mut mem,
             3,
-            0x4000_4000,
-            0x4000_5000,
+            TestRing::new(0x4000_4000, 0x4000_5000),
             0x4000_6000,
             3,
             size,
@@ -2811,14 +2804,14 @@ mod tests {
 
     fn post_rx_buffer(
         mem: &mut TestMem,
-        desc: u64,
-        avail: u64,
+        ring: TestRing,
         size: u16,
         avail_idx: u16,
         slot: u16,
         buf: u64,
         buf_len: u32,
     ) {
+        let TestRing { desc, avail } = ring;
         write_desc(mem, desc, slot, buf, buf_len, DESC_F_WRITE, 0);
         mem.write(
             avail + 4 + u64::from(avail_idx % size) * 2,
@@ -2841,8 +2834,7 @@ mod tests {
             &mut dev,
             &mut mem,
             4,
-            0x4000_1000,
-            0x4000_2000,
+            TestRing::new(0x4000_1000, 0x4000_2000),
             0x4000_3000,
             4,
             size,
@@ -2852,8 +2844,7 @@ mod tests {
         for k in 0..4u16 {
             post_rx_buffer(
                 &mut mem,
-                0x4000_1000,
-                0x4000_2000,
+                TestRing::new(0x4000_1000, 0x4000_2000),
                 size,
                 k,
                 k,
@@ -2888,8 +2879,7 @@ mod tests {
         for (i, k) in (4..8u16).enumerate() {
             post_rx_buffer(
                 &mut mem,
-                0x4000_1000,
-                0x4000_2000,
+                TestRing::new(0x4000_1000, 0x4000_2000),
                 size,
                 k,
                 i as u16,

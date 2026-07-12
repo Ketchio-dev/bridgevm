@@ -2333,7 +2333,7 @@ mod tests {
         cdw11: u32,
         cdw12: u32,
     ) -> [u8; 64] {
-        encode_sqe_with_prps(opcode, command_id, nsid, prp1, 0, cdw10, cdw11, cdw12)
+        encode_sqe_with_prps(opcode, command_id, nsid, prp1, 0, [cdw10, cdw11, cdw12])
     }
 
     fn encode_sqe_with_prps(
@@ -2342,10 +2342,9 @@ mod tests {
         nsid: u32,
         prp1: u64,
         prp2: u64,
-        cdw10: u32,
-        cdw11: u32,
-        cdw12: u32,
+        command_dwords: [u32; 3],
     ) -> [u8; 64] {
+        let [cdw10, cdw11, cdw12] = command_dwords;
         let mut e = [0u8; 64];
         let cdw0 = u32::from(opcode) | (u32::from(command_id) << 16);
         e[0..4].copy_from_slice(&cdw0.to_le_bytes());
@@ -4232,9 +4231,7 @@ mod tests {
             NSID,
             DATA_BASE,
             second_page,
-            0,
-            0,
-            15, // 16 LBAs = 8192 bytes = PRP1 + direct PRP2 page
+            [0, 0, 15], // 16 LBAs = 8192 bytes = PRP1 + direct PRP2 page
         );
         assert!(mem.write_bytes(IO_SQ_BASE, &read_cmd));
         ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
@@ -4274,8 +4271,14 @@ mod tests {
         assert!(mem.write_bytes(list_base, &list));
 
         let blocks = pages as u32 * (PAGE_SIZE as u32 / LBA_SIZE as u32);
-        let read_cmd =
-            encode_sqe_with_prps(NVM_OP_READ, 0x51, NSID, data0, list_base, 0, 0, blocks - 1);
+        let read_cmd = encode_sqe_with_prps(
+            NVM_OP_READ,
+            0x51,
+            NSID,
+            data0,
+            list_base,
+            [0, 0, blocks - 1],
+        );
         assert!(mem.write_bytes(IO_SQ_BASE, &read_cmd));
         ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
         ctrl.process(&mut mem);
@@ -4317,7 +4320,7 @@ mod tests {
 
         let blocks = pages as u32 * (PAGE_SIZE as u32 / LBA_SIZE as u32);
         let read_cmd =
-            encode_sqe_with_prps(NVM_OP_READ, 0x53, NSID, data0, list_ptr, 0, 0, blocks - 1);
+            encode_sqe_with_prps(NVM_OP_READ, 0x53, NSID, data0, list_ptr, [0, 0, blocks - 1]);
         assert!(mem.write_bytes(IO_SQ_BASE, &read_cmd));
         ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
         ctrl.process(&mut mem);
@@ -4361,8 +4364,14 @@ mod tests {
         assert!(mem.write_bytes(list_base, &list));
 
         let blocks = pages as u32 * (PAGE_SIZE as u32 / LBA_SIZE as u32);
-        let write_cmd =
-            encode_sqe_with_prps(NVM_OP_WRITE, 0x52, NSID, data0, list_base, 0, 0, blocks - 1);
+        let write_cmd = encode_sqe_with_prps(
+            NVM_OP_WRITE,
+            0x52,
+            NSID,
+            data0,
+            list_base,
+            [0, 0, blocks - 1],
+        );
         assert!(mem.write_bytes(IO_SQ_BASE, &write_cmd));
         ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
         ctrl.process(&mut mem);
@@ -4508,9 +4517,9 @@ mod tests {
             .collect();
         let list_base = DATA_BASE;
         let mut list = vec![0u8; (pages - 1) * 8];
-        for k in 1..pages {
+        for (k, data_gpa) in data_gpas.iter().enumerate().skip(1) {
             let off = (k - 1) * 8;
-            list[off..off + 8].copy_from_slice(&data_gpas[k].to_le_bytes());
+            list[off..off + 8].copy_from_slice(&data_gpa.to_le_bytes());
         }
         assert!(mem.write_bytes(list_base, &list));
 
@@ -4521,9 +4530,7 @@ mod tests {
             NSID,
             data_gpas[0],
             list_base,
-            0,
-            0,
-            blocks - 1,
+            [0, 0, blocks - 1],
         );
         assert!(mem.write_bytes(IO_SQ_BASE, &read_cmd));
         ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
@@ -4627,9 +4634,7 @@ mod tests {
             NSID,
             data_gpas[0],
             list_base,
-            0,
-            0,
-            blocks - 1,
+            [0, 0, blocks - 1],
         );
         let read_cmd = SubmissionEntry::from_bytes(&read_cmd);
         assert_eq!(ctrl.io_read(&read_cmd, &mut mem), SC_SUCCESS);
@@ -4666,9 +4671,7 @@ mod tests {
             NSID,
             data_gpas[0],
             list_base,
-            0,
-            0,
-            blocks - 1,
+            [0, 0, blocks - 1],
         );
         let write_cmd = SubmissionEntry::from_bytes(&write_cmd);
         assert_eq!(ctrl.io_write(&write_cmd, &mut mem), SC_SUCCESS);
@@ -4714,9 +4717,9 @@ mod tests {
         }
         let list_base = DATA_BASE;
         let mut list = vec![0u8; (pages - 1) * 8];
-        for k in 1..pages {
+        for (k, data_gpa) in data_gpas.iter().enumerate().skip(1) {
             let off = (k - 1) * 8;
-            list[off..off + 8].copy_from_slice(&data_gpas[k].to_le_bytes());
+            list[off..off + 8].copy_from_slice(&data_gpa.to_le_bytes());
         }
         assert!(mem.write_bytes(list_base, &list));
 
@@ -4727,9 +4730,7 @@ mod tests {
             NSID,
             data_gpas[0],
             list_base,
-            0,
-            0,
-            blocks - 1,
+            [0, 0, blocks - 1],
         );
         assert!(mem.write_bytes(IO_SQ_BASE, &write_cmd));
         ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
@@ -4810,7 +4811,7 @@ mod tests {
 
         let blocks = pages as u32 * (PAGE_SIZE as u32 / LBA_SIZE as u32);
         let read_cmd =
-            encode_sqe_with_prps(NVM_OP_READ, 0x64, NSID, data0, list_a, 0, 0, blocks - 1);
+            encode_sqe_with_prps(NVM_OP_READ, 0x64, NSID, data0, list_a, [0, 0, blocks - 1]);
         assert!(mem.write_bytes(IO_SQ_BASE, &read_cmd));
         ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
         ctrl.process(&mut mem);
@@ -4888,9 +4889,7 @@ mod tests {
             NSID,
             DATA_BASE,
             DATA_BASE + PAGE_SIZE_U64,
-            slba as u32,
-            (slba >> 32) as u32,
-            blocks - 1,
+            [slba as u32, (slba >> 32) as u32, blocks - 1],
         );
         assert!(mem.write_bytes(IO_SQ_BASE, &write));
         ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 1);
@@ -4938,9 +4937,7 @@ mod tests {
             NSID,
             read_gpa,
             read_gpa + PAGE_SIZE_U64,
-            0,
-            0,
-            blocks - 1,
+            [0, 0, blocks - 1],
         );
         assert!(mem.write_bytes(IO_SQ_BASE + SQ_ENTRY_SIZE, &read));
         ctrl.mmio_write(REG_DOORBELL_BASE + 2 * 4, 4, 2);

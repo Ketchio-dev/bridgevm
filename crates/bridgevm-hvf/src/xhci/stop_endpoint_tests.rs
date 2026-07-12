@@ -57,7 +57,7 @@ fn stop_endpoint_after_ep0_event_data_td_publishes_stopped_output_context() {
     );
     assert_eq!(
         mem.read_u64(OUTPUT_CONTEXT + EP0_OUTPUT_CONTEXT_OFFSET + EP_TR_DEQUEUE_OFFSET),
-        EP0_RING + (TRB_SIZE * 4) | u64::from(TRB_CYCLE)
+        (EP0_RING + (TRB_SIZE * 4)) | u64::from(TRB_CYCLE)
     );
     assert_success_completion(
         &mem,
