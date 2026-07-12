@@ -41,7 +41,10 @@ use std::{
     os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc, Arc,
+    },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -49,6 +52,15 @@ use std::{
 const QMP_SUPERVISOR_DRAIN_LIMIT: usize = 16;
 const GUEST_TOOLS_DRAIN_LIMIT: usize = 16;
 const GUEST_TOOLS_COMMAND_RESULT_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_DAEMON_FRAME_BYTES: u64 = 16 * 1024 * 1024;
+const DAEMON_CLIENT_IO_TIMEOUT: Duration = Duration::from_secs(2);
+const DAEMON_RESPONSE_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_CONCURRENT_DAEMON_CLIENTS: usize = 32;
+
+struct PendingDaemonRequest {
+    request: BridgeVmRequest,
+    response_sender: mpsc::Sender<BridgeVmResponse>,
+}
 
 /// Set by the SIGTERM/SIGINT handler so the supervisor loop can reap its
 /// spawned QEMU/AppleVzRunner children before exiting. Without this, killing
@@ -121,6 +133,8 @@ fn serve(store: VmStore, socket_path: &Path, reconcile_interval: Duration) -> Re
     install_shutdown_handlers();
     let mut state = DaemonState::new(store);
     let mut last_reconcile = Instant::now();
+    let (request_sender, request_receiver) = mpsc::channel::<PendingDaemonRequest>();
+    let active_clients = Arc::new(AtomicUsize::new(0));
 
     loop {
         if SHUTDOWN_REQUESTED.load(Ordering::SeqCst) {
@@ -130,11 +144,18 @@ fn serve(store: VmStore, socket_path: &Path, reconcile_interval: Duration) -> Re
             return Ok(());
         }
 
+        while let Ok(pending) = request_receiver.try_recv() {
+            let response = state.handle_request(pending.request);
+            let _ = pending.response_sender.send(response);
+        }
+
         match listener.accept() {
             Ok(stream) => {
-                if let Err(error) = handle_connection(&mut state, stream.0) {
-                    eprintln!("bridgevmd request failed: {error:#}");
-                }
+                spawn_connection_worker(
+                    stream.0,
+                    request_sender.clone(),
+                    Arc::clone(&active_clients),
+                );
             }
             Err(error) if error.kind() == ErrorKind::WouldBlock => {}
             Err(error) => eprintln!("bridgevmd accept failed: {error}"),
@@ -148,6 +169,54 @@ fn serve(store: VmStore, socket_path: &Path, reconcile_interval: Duration) -> Re
         }
         thread::sleep(Duration::from_millis(25));
     }
+}
+
+fn spawn_connection_worker(
+    stream: UnixStream,
+    request_sender: mpsc::Sender<PendingDaemonRequest>,
+    active_clients: Arc<AtomicUsize>,
+) {
+    if active_clients.fetch_add(1, Ordering::AcqRel) >= MAX_CONCURRENT_DAEMON_CLIENTS {
+        active_clients.fetch_sub(1, Ordering::AcqRel);
+        return;
+    }
+    let worker_clients = Arc::clone(&active_clients);
+    let spawn_result = thread::Builder::new()
+        .name("bridgevmd-client".to_string())
+        .spawn(move || {
+            if let Err(error) = run_connection_worker(stream, request_sender) {
+                eprintln!("bridgevmd request failed: {error:#}");
+            }
+            worker_clients.fetch_sub(1, Ordering::AcqRel);
+        });
+    if let Err(error) = spawn_result {
+        active_clients.fetch_sub(1, Ordering::AcqRel);
+        eprintln!("bridgevmd failed to spawn client worker: {error}");
+    }
+}
+
+fn run_connection_worker(
+    mut stream: UnixStream,
+    request_sender: mpsc::Sender<PendingDaemonRequest>,
+) -> Result<()> {
+    stream
+        .set_read_timeout(Some(DAEMON_CLIENT_IO_TIMEOUT))
+        .context("failed to configure daemon client read timeout")?;
+    stream
+        .set_write_timeout(Some(DAEMON_CLIENT_IO_TIMEOUT))
+        .context("failed to configure daemon client write timeout")?;
+    let request = read_daemon_request(&stream)?;
+    let (response_sender, response_receiver) = mpsc::channel();
+    request_sender
+        .send(PendingDaemonRequest {
+            request,
+            response_sender,
+        })
+        .context("daemon supervisor stopped before handling request")?;
+    let response = response_receiver
+        .recv_timeout(DAEMON_RESPONSE_WAIT_TIMEOUT)
+        .context("daemon supervisor did not return a response before timeout")?;
+    write_daemon_response(&mut stream, &response)
 }
 
 fn bind_daemon_listener(socket_path: &Path) -> Result<UnixListener> {
@@ -204,19 +273,42 @@ fn bind_new_daemon_listener(socket_path: &Path) -> Result<UnixListener> {
     Ok(listener)
 }
 
+#[cfg(test)]
 fn handle_connection(state: &mut DaemonState, mut stream: UnixStream) -> Result<()> {
-    stream
-        .set_nonblocking(false)
-        .context("failed to configure daemon client stream")?;
-    let mut line = String::new();
-    BufReader::new(stream.try_clone()?)
-        .read_line(&mut line)
-        .context("failed to read daemon request")?;
-    let request = serde_json::from_str::<BridgeVmRequest>(&line).context("invalid request JSON")?;
+    stream.set_read_timeout(Some(DAEMON_CLIENT_IO_TIMEOUT))?;
+    stream.set_write_timeout(Some(DAEMON_CLIENT_IO_TIMEOUT))?;
+    let request = read_daemon_request(&stream)?;
     let response = state.handle_request(request);
-    serde_json::to_writer(&mut stream, &response).context("failed to write daemon response")?;
-    stream.write_all(b"\n")?;
-    Ok(())
+    write_daemon_response(&mut stream, &response)
+}
+
+fn read_daemon_request(stream: &UnixStream) -> Result<BridgeVmRequest> {
+    let mut frame = Vec::new();
+    BufReader::new(stream.try_clone()?)
+        .take(MAX_DAEMON_FRAME_BYTES + 1)
+        .read_until(b'\n', &mut frame)
+        .context("failed to read daemon request")?;
+    if frame.is_empty() {
+        anyhow::bail!("daemon client sent an empty request");
+    }
+    if frame.len() as u64 > MAX_DAEMON_FRAME_BYTES {
+        anyhow::bail!("daemon request exceeded {MAX_DAEMON_FRAME_BYTES} bytes");
+    }
+    if frame.last() != Some(&b'\n') {
+        anyhow::bail!("daemon client sent an incomplete request frame");
+    }
+    serde_json::from_slice::<BridgeVmRequest>(&frame).context("invalid request JSON")
+}
+
+fn write_daemon_response(stream: &mut UnixStream, response: &BridgeVmResponse) -> Result<()> {
+    let mut frame = serde_json::to_vec(response).context("failed to encode daemon response")?;
+    frame.push(b'\n');
+    if frame.len() as u64 > MAX_DAEMON_FRAME_BYTES {
+        anyhow::bail!("daemon response exceeded {MAX_DAEMON_FRAME_BYTES} bytes");
+    }
+    stream
+        .write_all(&frame)
+        .context("failed to write daemon response")
 }
 
 struct DaemonState {
@@ -2909,6 +3001,56 @@ mod tests {
         let mut line = String::new();
         BufReader::new(client).read_line(&mut line).unwrap();
         serde_json::from_str(line.trim_end()).unwrap()
+    }
+
+    #[test]
+    fn daemon_connection_workers_isolate_slow_clients() {
+        let (mut slow_client, slow_server) = UnixStream::pair().unwrap();
+        let (mut fast_client, fast_server) = UnixStream::pair().unwrap();
+        let (request_sender, request_receiver) = mpsc::channel();
+        let active_clients = Arc::new(AtomicUsize::new(0));
+
+        spawn_connection_worker(
+            slow_server,
+            request_sender.clone(),
+            Arc::clone(&active_clients),
+        );
+        slow_client.write_all(b"{").unwrap();
+        spawn_connection_worker(fast_server, request_sender, Arc::clone(&active_clients));
+        serde_json::to_writer(&mut fast_client, &BridgeVmRequest::Doctor).unwrap();
+        fast_client.write_all(b"\n").unwrap();
+
+        let pending = request_receiver
+            .recv_timeout(Duration::from_millis(500))
+            .expect("fast request should not wait for slow client timeout");
+        let mut state = DaemonState::new(temp_store());
+        pending
+            .response_sender
+            .send(state.handle_request(pending.request))
+            .unwrap();
+
+        fast_client
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+        let mut response = String::new();
+        BufReader::new(fast_client)
+            .read_line(&mut response)
+            .unwrap();
+        assert!(!response.is_empty());
+        drop(slow_client);
+    }
+
+    #[test]
+    fn daemon_request_reader_rejects_oversized_frame() {
+        let (mut client, server) = UnixStream::pair().unwrap();
+        let writer = thread::spawn(move || {
+            let oversized = vec![b'x'; MAX_DAEMON_FRAME_BYTES as usize + 1];
+            let _ = client.write_all(&oversized);
+        });
+
+        let error = read_daemon_request(&server).unwrap_err();
+        assert!(error.to_string().contains("exceeded 16777216 bytes"));
+        writer.join().unwrap();
     }
 
     #[test]
