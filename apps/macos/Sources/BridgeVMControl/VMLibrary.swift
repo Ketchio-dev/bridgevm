@@ -26,7 +26,11 @@ enum VMLibrary {
         for dir in entries where (try? dir.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
             let f = dir.appendingPathComponent("vm.json")
             if let data = try? Data(contentsOf: f), var cfg = try? JSONDecoder().decode(VMConfig.self, from: data) {
-                if cfg.id == nil { cfg.id = dir.lastPathComponent }
+                // The directory is the authoritative library identity. An
+                // embedded ID may be stale, duplicated, or path-like after a
+                // manual edit/import; accepting it could target another VM on
+                // save/delete.
+                cfg.id = VMConfig.slugify(dir.lastPathComponent)
                 out.append(cfg)
             }
         }
@@ -36,7 +40,7 @@ enum VMLibrary {
     static func save(_ config: VMConfig) {
         ensureRoot()
         var cfg = config
-        if cfg.id == nil { cfg.id = VMConfig.slugify(cfg.name) }
+        cfg.id = cfg.slug
         let dir = root.appendingPathComponent(cfg.slug, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -46,7 +50,7 @@ enum VMLibrary {
     }
 
     static func delete(_ slug: String) {
-        let dir = root.appendingPathComponent(slug, isDirectory: true)
+        let dir = root.appendingPathComponent(VMConfig.slugify(slug), isDirectory: true)
         try? FileManager.default.removeItem(at: dir)
     }
 

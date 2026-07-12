@@ -19,6 +19,16 @@ final class VMConfigSlugifyTests: XCTestCase {
         XCTAssertEqual(VMConfig.slugify(""), "vm")
         XCTAssertFalse(VMConfig.slugify("@#$%").isEmpty)
     }
+
+    func testPersistedIDCannotEscapeLibraryPath() {
+        let cfg = VMConfig(id: "../../victim/../outside", name: "Safe VM", displayName: "Safe VM",
+                           backendKind: "fast-vz", bootMode: nil, bundlePath: "", runnerPath: "",
+                           launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
+                           leasesPath: "", guestName: "", displayWidth: 0, displayHeight: 0)
+        XCTAssertEqual(cfg.slug, "victim-outside")
+        XCTAssertFalse(cfg.slug.contains("/"))
+        XCTAssertFalse(cfg.slug.contains(".."))
+    }
 }
 
 final class BackendKindTests: XCTestCase {

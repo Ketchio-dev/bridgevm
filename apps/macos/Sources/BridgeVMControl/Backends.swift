@@ -28,7 +28,10 @@ struct VMConfig: Codable, Identifiable {
     var memMiB: Int? = nil
     var cpuCount: Int? = nil
 
-    var slug: String { id ?? VMConfig.slugify(name) }
+    /// A config can be imported or hand-edited, so never trust its persisted ID
+    /// as a filesystem component. Normalizing here keeps every caller inside the
+    /// VM library even when an ID contains separators or traversal components.
+    var slug: String { VMConfig.slugify(id ?? name) }
     var effectiveBootMode: String { bootMode ?? "direct-kernel" }
     var engineKind: BackendKind { BackendKind(rawValue: backendKind) ?? .fastVZ }
     var engineShortLabel: String { engineKind.shortLabel }
