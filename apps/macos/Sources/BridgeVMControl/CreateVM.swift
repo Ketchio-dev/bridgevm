@@ -39,12 +39,33 @@ extension VMLibrary {
         return nil
     }
 
-    private static func uniqueSlug(_ base: String) -> String {
+    static func reserveDestination(_ base: String, storageBase: URL) -> (slug: String, root: URL)? {
         let baseSlug = VMConfig.slugify(base)
         let existing = Set(list().map { $0.slug })
-        var slug = baseSlug; var n = 2
-        while existing.contains(slug) { slug = "\(baseSlug)-\(n)"; n += 1 }
-        return slug
+        do {
+            try FileManager.default.createDirectory(at: storageBase, withIntermediateDirectories: true)
+        } catch {
+            return nil
+        }
+        var slug = baseSlug
+        var n = 2
+        while true {
+            let destination = storageBase.appendingPathComponent(slug, isDirectory: true)
+            if existing.contains(slug) || FileManager.default.fileExists(atPath: destination.path) {
+                slug = "\(baseSlug)-\(n)"; n += 1
+                continue
+            }
+            do {
+                try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false)
+                return (slug, destination)
+            } catch {
+                if FileManager.default.fileExists(atPath: destination.path) {
+                    slug = "\(baseSlug)-\(n)"; n += 1
+                    continue
+                }
+                return nil
+            }
+        }
     }
 
     private static func cloneOrCopyFile(from source: String, to destination: String) -> Bool {
@@ -58,6 +79,50 @@ extension VMLibrary {
         } catch {
             return false
         }
+    }
+
+    private static func cloneOrCopyDirectory(from source: String, to destination: String) -> Bool {
+        let fm = FileManager.default
+        let clone = Shell.run("/bin/cp", ["-c", "-R", source, destination])
+        if clone.code == 0 { return true }
+        try? fm.removeItem(atPath: destination)
+        do {
+            try fm.copyItem(atPath: source, toPath: destination)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static func isReadableRegularFile(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+            && !isDirectory.boolValue
+            && FileManager.default.isReadableFile(atPath: path)
+    }
+
+    static func rewriteCloneMetadata(
+        at path: String,
+        oldBundlePath: String,
+        newBundlePath: String,
+        newName: String
+    ) -> Bool {
+        guard var rootObject = JSONFile.loadDict(path) else { return false }
+
+        func rewrite(_ value: Any) -> Any {
+            if let string = value as? String {
+                return string.replacingOccurrences(of: oldBundlePath, with: newBundlePath)
+            }
+            if let array = value as? [Any] { return array.map(rewrite) }
+            if let dictionary = value as? [String: Any] {
+                return dictionary.mapValues(rewrite)
+            }
+            return value
+        }
+
+        rootObject = rewrite(rootObject) as? [String: Any] ?? rootObject
+        rootObject["vm_name"] = newName
+        return JSONFile.writeDict(rootObject, to: path)
     }
 
     private static func growSparseFileIfNeeded(at path: String, minimumBytes: UInt64) -> Bool {
@@ -80,19 +145,31 @@ extension VMLibrary {
     static func createFromISO(name: String, isoPath: String, template: VMConfig,
                               storageDir: URL? = nil, width: Int = 1440, height: Int = 900,
                               diskGiB: Int = 40) -> VMConfig? {
-        let slug = uniqueSlug(name)
-        let bundle = (storageDir ?? root).appendingPathComponent(slug, isDirectory: true).appendingPathComponent("bundle.vmbridge", isDirectory: true)
         let fm = FileManager.default
-        for sub in ["disks", "metadata", "logs", "nvram"] {
-            try? fm.createDirectory(at: bundle.appendingPathComponent(sub), withIntermediateDirectories: true)
+        guard diskGiB > 0, width > 0, height > 0,
+              isReadableRegularFile(isoPath),
+              let reserved = reserveDestination(name, storageBase: storageDir ?? root) else { return nil }
+        let slug = reserved.slug
+        let destinationRoot = reserved.root
+        var succeeded = false
+        defer {
+            if !succeeded { try? fm.removeItem(at: destinationRoot) }
+        }
+        let bundle = destinationRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true)
+        do {
+            for sub in ["disks", "metadata", "logs", "nvram"] {
+                try fm.createDirectory(at: bundle.appendingPathComponent(sub), withIntermediateDirectories: true)
+            }
+        } catch {
+            return nil
         }
         let b = bundle.path
         let diskPath = "\(b)/disks/root.raw"
         let isoLocal = "\(b)/disks/installer.iso"
         // blank install target (sparse)
-        Shell.run("/usr/bin/truncate", ["-s", "\(diskGiB)G", diskPath])
+        guard Shell.run("/usr/bin/truncate", ["-s", "\(diskGiB)G", diskPath]).code == 0 else { return nil }
         // reference the user's ISO via a clone (instant on APFS) so it is stable
-        Shell.run("/bin/cp", ["-c", isoPath, isoLocal])
+        guard cloneOrCopyFile(from: isoPath, to: isoLocal) else { return nil }
 
         let launchSpecPath = "\(b)/metadata/apple-vz-launch.json"
         let handoffPath = "\(b)/metadata/handoff.json"
@@ -114,7 +191,7 @@ extension VMLibrary {
         launchSpec["devices"] = devices; launchSpec["integration"] = integration
         launchSpec["logs"] = ["runner_log_path": "\(b)/logs/lightvm.log"]
         launchSpec["readiness"] = readiness
-        JSONFile.writeDict(launchSpec, to: launchSpecPath)
+        guard JSONFile.writeDict(launchSpec, to: launchSpecPath) else { return nil }
         var handoff: [String: Any] = [:]
         handoff["backend"] = "apple-virtualization-framework"; handoff["vm_name"] = name
         handoff["bundle_path"] = b; handoff["launch_spec_path"] = launchSpecPath
@@ -123,7 +200,7 @@ extension VMLibrary {
         handoff["runner_log_path"] = "\(b)/logs/lightvm.log"
         handoff["serial_log_path"] = serialLog; handoff["integration"] = integration
         handoff["readiness"] = readiness
-        JSONFile.writeDict(handoff, to: handoffPath)
+        guard JSONFile.writeDict(handoff, to: handoffPath) else { return nil }
 
         let cfg = VMConfig(id: slug, name: name, displayName: name, backendKind: "fast-vz",
                            bootMode: "iso-efi", bundlePath: b, runnerPath: template.runnerPath,
@@ -131,36 +208,38 @@ extension VMLibrary {
                            sshKeyPath: template.sshKeyPath, sshUser: "user", leasesPath: template.leasesPath,
                            guestName: slug, displayWidth: width, displayHeight: height,
                            installPending: true)
-        guard save(cfg) else {
-            try? fm.removeItem(at: bundle.deletingLastPathComponent())
-            return nil
-        }
+        guard save(cfg) else { return nil }
+        succeeded = true
         return cfg
     }
 
     /// Duplicate the default Ubuntu VM (instant APFS clone of the bundle + fresh
     /// machine identity), so a new ready-to-run Ubuntu lands in the library.
     static func cloneUbuntu(name: String, template: VMConfig, storageDir: URL? = nil, width: Int = 1440, height: Int = 900) -> VMConfig? {
-        let slug = uniqueSlug(name)
-        let destDir = (storageDir ?? root).appendingPathComponent(slug, isDirectory: true)
-        try? FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+        let fm = FileManager.default
+        guard let reserved = reserveDestination(name, storageBase: storageDir ?? root) else { return nil }
+        let slug = reserved.slug
+        let destDir = reserved.root
+        var succeeded = false
+        defer { if !succeeded { try? fm.removeItem(at: destDir) } }
         let bundle = destDir.appendingPathComponent("bundle.vmbridge", isDirectory: true).path
         // APFS copy-on-write clone: instant, no extra disk for the 14G rootfs.
-        let r = Shell.run("/bin/cp", ["-c", "-R", template.bundlePath, bundle])
-        if r.code != 0 { return nil }
+        guard cloneOrCopyDirectory(from: template.bundlePath, to: bundle) else { return nil }
         let b = bundle
         // fresh identity so two VMs don't collide on MAC/machine-id
-        try? FileManager.default.removeItem(atPath: "\(b)/metadata/machine-identifier.bin")
-        try? FileManager.default.removeItem(atPath: "\(b)/metadata/network-mac-address.txt")
+        for identity in ["\(b)/metadata/machine-identifier.bin", "\(b)/metadata/network-mac-address.txt"] {
+            if fm.fileExists(atPath: identity) {
+                do { try fm.removeItem(atPath: identity) } catch { return nil }
+            }
+        }
         // rewrite absolute paths inside launch-spec + handoff from old bundle -> new
         for f in ["\(b)/metadata/apple-vz-launch.json", "\(b)/metadata/handoff.json"] {
-            if let data = FileManager.default.contents(atPath: f),
-               var s = String(data: data, encoding: .utf8) {
-                s = s.replacingOccurrences(of: template.bundlePath, with: b)
-                s = s.replacingOccurrences(of: "\"vm_name\" : \"\(template.name)\"", with: "\"vm_name\" : \"\(name)\"")
-                s = s.replacingOccurrences(of: "\"vm_name\": \"\(template.name)\"", with: "\"vm_name\": \"\(name)\"")
-                try? s.write(toFile: f, atomically: true, encoding: .utf8)
-            }
+            guard rewriteCloneMetadata(
+                at: f,
+                oldBundlePath: template.bundlePath,
+                newBundlePath: b,
+                newName: name
+            ) else { return nil }
         }
         var cfg = template
         cfg.id = slug
@@ -173,10 +252,8 @@ extension VMLibrary {
         cfg.installPending = false
         cfg.displayWidth = width
         cfg.displayHeight = height
-        guard save(cfg) else {
-            try? FileManager.default.removeItem(at: destDir)
-            return nil
-        }
+        guard save(cfg) else { return nil }
+        succeeded = true
         return cfg
     }
 
@@ -185,25 +262,34 @@ extension VMLibrary {
     static func createWindows(name: String, isoPath: String, template: VMConfig,
                               storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
                               diskGiB: Int = 64) -> VMConfig? {
-        let slug = uniqueSlug(name)
-        let bundle = (storageDir ?? root).appendingPathComponent(slug, isDirectory: true).appendingPathComponent("bundle.vmbridge", isDirectory: true)
-        for sub in ["disks", "metadata", "logs"] {
-            try? FileManager.default.createDirectory(at: bundle.appendingPathComponent(sub), withIntermediateDirectories: true)
+        let fm = FileManager.default
+        guard diskGiB > 0, width > 0, height > 0,
+              isReadableRegularFile(isoPath),
+              let reserved = reserveDestination(name, storageBase: storageDir ?? root) else { return nil }
+        let slug = reserved.slug
+        let destinationRoot = reserved.root
+        let bundle = destinationRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true)
+        var succeeded = false
+        defer { if !succeeded { try? fm.removeItem(at: destinationRoot) } }
+        do {
+            for sub in ["disks", "metadata", "logs"] {
+                try fm.createDirectory(at: bundle.appendingPathComponent(sub), withIntermediateDirectories: true)
+            }
+        } catch {
+            return nil
         }
         let b = bundle.path
         let disk = "\(b)/disks/win.qcow2"
         let r = Shell.run("/opt/homebrew/bin/qemu-img", ["create", "-f", "qcow2", disk, "\(diskGiB)G"])
-        if r.code != 0 { return nil }
+        if r.code != 0 || !fm.fileExists(atPath: disk) { return nil }
         let cfg = VMConfig(id: slug, name: name, displayName: name, backendKind: "qemu-compat",
                            bootMode: "windows-iso", bundlePath: b, runnerPath: "",
                            launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
                            leasesPath: template.leasesPath, guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: true,
                            isoPath: isoPath, diskPath: disk, memMiB: 6144, cpuCount: 4)
-        guard save(cfg) else {
-            try? FileManager.default.removeItem(at: bundle.deletingLastPathComponent())
-            return nil
-        }
+        guard save(cfg) else { return nil }
+        succeeded = true
         return cfg
     }
 
@@ -217,14 +303,11 @@ extension VMLibrary {
         guard windowsHVFImportError(targetDiskPath: targetDiskPath, varsPath: varsPath) == nil else { return nil }
 
         let storageBase = storageDir ?? root
-        let baseSlug = uniqueSlug(name)
-        var slug = baseSlug
-        var suffix = 2
-        while fm.fileExists(atPath: storageBase.appendingPathComponent(slug, isDirectory: true).path) {
-            slug = "\(baseSlug)-\(suffix)"
-            suffix += 1
-        }
-        let destinationRoot = storageBase.appendingPathComponent(slug, isDirectory: true)
+        guard let reserved = reserveDestination(name, storageBase: storageBase) else { return nil }
+        let slug = reserved.slug
+        let destinationRoot = reserved.root
+        var succeeded = false
+        defer { if !succeeded { try? fm.removeItem(at: destinationRoot) } }
         let bundle = destinationRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true)
         let disk = bundle.appendingPathComponent("disks/hvf-target.raw").path
         let vars = bundle.appendingPathComponent("metadata/hvf-vars.fd").path
@@ -232,11 +315,6 @@ extension VMLibrary {
         let sourceVars = URL(fileURLWithPath: varsPath).resolvingSymlinksInPath().standardizedFileURL
         guard sourceDisk.path != URL(fileURLWithPath: disk).standardizedFileURL.path,
               sourceVars.path != URL(fileURLWithPath: vars).standardizedFileURL.path else { return nil }
-
-        var succeeded = false
-        defer {
-            if !succeeded { try? fm.removeItem(at: destinationRoot) }
-        }
         do {
             for sub in ["disks", "metadata", "logs/hvf"] {
                 try fm.createDirectory(at: bundle.appendingPathComponent(sub), withIntermediateDirectories: true)
