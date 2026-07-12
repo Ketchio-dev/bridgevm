@@ -6245,6 +6245,8 @@ pub fn restart_vm(store: &VmStore, name: &str) -> Result<VmRuntimeMetadata, Stri
 /// Default number of seconds the Fast Mode runner lets the guest run before it
 /// pauses and saves machine state during a suspend.
 const FAST_SUSPEND_RUN_SECONDS: u64 = 20;
+const FAST_SUSPEND_HOST_TIMEOUT: Duration = Duration::from_secs(3 * 60);
+const FAST_SUSPEND_TERMINATION_GRACE: Duration = Duration::from_secs(5);
 
 /// Compute the Apple VZ saved-state file path for a VM.
 ///
@@ -6835,13 +6837,19 @@ pub fn suspend_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, St
         state_path.display().to_string(),
     ];
 
-    let status = Command::new(&lightvm_runner)
+    let mut command = Command::new(&lightvm_runner);
+    command
         .args(&args)
         .env("BRIDGEVM_APPLE_VZ_ALLOW_REAL_START", "1")
+        .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
-        .stderr(Stdio::from(stderr))
-        .status()
+        .stderr(Stdio::from(stderr));
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command
+        .spawn()
         .map_err(|error| format!("failed to run {}: {error}", lightvm_runner.display()))?;
+    let status = wait_fast_suspend_runner(&mut child)?;
     if !status.success() {
         return Err(format!(
             "Fast Mode suspend runner exited with status {status}; see {}",
@@ -6889,6 +6897,80 @@ pub fn suspend_backend(store: &VmStore, name: &str) -> Result<RunnerMetadata, St
         .map_err(|error| error.to_string())?;
 
     Ok(metadata)
+}
+
+fn wait_fast_suspend_runner(child: &mut Child) -> Result<std::process::ExitStatus, String> {
+    wait_process_group_bounded(
+        child,
+        FAST_SUSPEND_HOST_TIMEOUT,
+        FAST_SUSPEND_TERMINATION_GRACE,
+        "Fast Mode suspend runner",
+    )
+}
+
+#[cfg(unix)]
+fn signal_process_group(pid: u32, signal: libc::c_int) -> Result<(), String> {
+    let native_pid = libc::pid_t::try_from(pid)
+        .map_err(|_| format!("pid {pid} is outside the platform pid range"))?;
+    // SAFETY: the child was placed in a new process group whose id is its pid.
+    if unsafe { libc::kill(-native_pid, signal) } == 0 {
+        return Ok(());
+    }
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        return Ok(());
+    }
+    Err(format!("failed to signal process group {pid}: {error}"))
+}
+
+fn wait_process_group_bounded(
+    child: &mut Child,
+    timeout: Duration,
+    termination_grace: Duration,
+    label: &str,
+) -> Result<std::process::ExitStatus, String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(20)),
+            Ok(None) => break,
+            Err(error) => {
+                #[cfg(unix)]
+                let _ = signal_process_group(child.id(), libc::SIGKILL);
+                #[cfg(not(unix))]
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("failed to wait for {label}: {error}"));
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    if let Err(error) = signal_process_group(child.id(), libc::SIGTERM) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
+    }
+    #[cfg(not(unix))]
+    let _ = child.kill();
+    let grace_deadline = Instant::now() + termination_grace;
+    while Instant::now() < grace_deadline {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => thread::sleep(Duration::from_millis(20)),
+            Err(_) => break,
+        }
+    }
+    #[cfg(unix)]
+    let _ = signal_process_group(child.id(), libc::SIGKILL);
+    #[cfg(not(unix))]
+    let _ = child.kill();
+    let _ = child.wait();
+    Err(format!(
+        "{label} timed out after {} seconds and was terminated",
+        timeout.as_secs()
+    ))
 }
 
 /// Resume a previously suspended Fast Mode VM end-to-end.
@@ -13431,6 +13513,30 @@ exec sleep 60
 
         assert_eq!(error, "unsupported process signal: STOP");
         assert!(process_is_alive(std::process::id()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bounded_process_group_wait_terminates_and_reaps_timeout() {
+        let mut command = Command::new("/bin/sh");
+        command
+            .args(["-c", "sleep 5"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0);
+        let mut child = command.spawn().unwrap();
+
+        let error = wait_process_group_bounded(
+            &mut child,
+            Duration::from_millis(20),
+            Duration::from_millis(20),
+            "test runner",
+        )
+        .unwrap_err();
+
+        assert!(error.contains("test runner timed out"));
+        assert!(child.try_wait().unwrap().is_some());
     }
 
     #[cfg(unix)]
