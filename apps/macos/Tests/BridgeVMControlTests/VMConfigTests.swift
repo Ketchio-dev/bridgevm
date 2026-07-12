@@ -126,6 +126,46 @@ final class VMLibraryPersistenceTests: XCTestCase {
         XCTAssertTrue(scan.issues.contains { $0.path.hasSuffix("missing/vm.json") })
     }
 
+    func testScanQuarantinesNoncanonicalDirectoryWithoutConfusingCanonicalVM() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertTrue(VMLibrary.save(config(id: "safe-vm"), rootURL: root))
+        let noncanonical = root.appendingPathComponent("safe--vm", isDirectory: true)
+        try FileManager.default.createDirectory(at: noncanonical, withIntermediateDirectories: true)
+        let encoded = try JSONEncoder().encode(config(id: "safe--vm"))
+        try encoded.write(to: noncanonical.appendingPathComponent("vm.json"))
+
+        let scan = VMLibrary.scan(rootURL: root)
+
+        XCTAssertEqual(scan.configs.map(\.slug), ["safe-vm"])
+        XCTAssertEqual(scan.issues.count, 1)
+        XCTAssertEqual(
+            URL(fileURLWithPath: scan.issues[0].path).resolvingSymlinksInPath(),
+            noncanonical.resolvingSymlinksInPath()
+        )
+        XCTAssertTrue(scan.issues[0].message.contains("비정규"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: noncanonical.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("safe-vm/vm.json").path))
+    }
+
+    func testScanQuarantinesUppercaseDirectoryInsteadOfRetargetingIt() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let noncanonical = root.appendingPathComponent("ManualVM", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: noncanonical, withIntermediateDirectories: true)
+        try JSONEncoder().encode(config(id: "ManualVM"))
+            .write(to: noncanonical.appendingPathComponent("vm.json"))
+
+        let scan = VMLibrary.scan(rootURL: root)
+
+        XCTAssertTrue(scan.configs.isEmpty)
+        XCTAssertEqual(
+            scan.issues.first.map { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath() },
+            noncanonical.resolvingSymlinksInPath()
+        )
+        XCTAssertTrue(scan.issues.first?.message.contains("manualvm") == true)
+    }
+
     func testScanReportsLibraryRootThatIsAFile() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try Data("file".utf8).write(to: root)

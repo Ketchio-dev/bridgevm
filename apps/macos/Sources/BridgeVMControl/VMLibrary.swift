@@ -48,7 +48,7 @@ enum VMLibrary {
                 VMLibraryIssue(path: rootURL.path, message: "라이브러리 목록을 읽을 수 없습니다: \(error.localizedDescription)")
             ])
         }
-        var out: [VMConfig] = []
+        var decoded: [(directory: URL, config: VMConfig)] = []
         var issues: [VMLibraryIssue] = []
         for dir in entries {
             let values: URLResourceValues
@@ -63,6 +63,14 @@ enum VMLibrary {
                 continue
             }
             guard values.isDirectory == true else { continue }
+            let canonicalID = VMConfig.slugify(dir.lastPathComponent)
+            guard dir.lastPathComponent == canonicalID else {
+                issues.append(VMLibraryIssue(
+                    path: dir.path,
+                    message: "비정규 VM 디렉터리 이름입니다. 안전을 위해 불러오지 않았습니다 (정규 이름: \(canonicalID))."
+                ))
+                continue
+            }
             let f = dir.appendingPathComponent("vm.json")
             do {
                 let data = try Data(contentsOf: f)
@@ -71,11 +79,24 @@ enum VMLibrary {
                 // embedded ID may be stale, duplicated, or path-like after a
                 // manual edit/import; accepting it could target another VM on
                 // save/delete.
-                cfg.id = VMConfig.slugify(dir.lastPathComponent)
-                out.append(cfg)
+                cfg.id = canonicalID
+                decoded.append((dir, cfg))
             } catch {
                 issues.append(VMLibraryIssue(path: f.path, message: "VM 설정을 읽을 수 없습니다: \(error.localizedDescription)"))
             }
+        }
+        var out: [VMConfig] = []
+        for (slug, candidates) in Dictionary(grouping: decoded, by: { $0.config.slug }) {
+            guard candidates.count == 1 else {
+                for candidate in candidates {
+                    issues.append(VMLibraryIssue(
+                        path: candidate.directory.path,
+                        message: "정규 VM ID '\(slug)'가 다른 항목과 충돌하여 불러오지 않았습니다."
+                    ))
+                }
+                continue
+            }
+            out.append(candidates[0].config)
         }
         let sorted = out.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
         return VMLibraryScan(configs: sorted, issues: issues.sorted { $0.path < $1.path })
