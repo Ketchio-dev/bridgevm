@@ -217,6 +217,13 @@ impl VirtioConsoleQueue {
     }
 }
 
+struct RxQueueDeliveryState<'a> {
+    queues: &'a mut [VirtioConsoleQueue; QUEUE_COUNT],
+    pending_msix_queue_bits: &'a mut u8,
+    interrupt_status: &'a mut u32,
+    descriptor_scratch: &'a mut Vec<Descriptor>,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct VirtioConsoleQueueStats {
     pub size: u16,
@@ -946,10 +953,12 @@ impl VirtioConsole {
         }
         let (front, back) = self.host_to_guest.as_slices();
         let Some(written) = Self::deliver_partial_slices_to_rx_queue(
-            &mut self.queues,
-            &mut self.pending_msix_queue_bits,
-            &mut self.interrupt_status,
-            &mut self.descriptor_scratch,
+            RxQueueDeliveryState {
+                queues: &mut self.queues,
+                pending_msix_queue_bits: &mut self.pending_msix_queue_bits,
+                interrupt_status: &mut self.interrupt_status,
+                descriptor_scratch: &mut self.descriptor_scratch,
+            },
             QUEUE_AGENT_RX,
             front,
             back,
@@ -1028,10 +1037,12 @@ impl VirtioConsole {
         mem: &mut dyn GuestMemoryMut,
     ) -> Option<usize> {
         Self::deliver_partial_slices_to_rx_queue(
-            &mut self.queues,
-            &mut self.pending_msix_queue_bits,
-            &mut self.interrupt_status,
-            &mut self.descriptor_scratch,
+            RxQueueDeliveryState {
+                queues: &mut self.queues,
+                pending_msix_queue_bits: &mut self.pending_msix_queue_bits,
+                interrupt_status: &mut self.interrupt_status,
+                descriptor_scratch: &mut self.descriptor_scratch,
+            },
             queue_index,
             bytes,
             &[],
@@ -1040,28 +1051,26 @@ impl VirtioConsole {
     }
 
     fn deliver_partial_slices_to_rx_queue(
-        queues: &mut [VirtioConsoleQueue; QUEUE_COUNT],
-        pending_msix_queue_bits: &mut u8,
-        interrupt_status: &mut u32,
-        descriptor_scratch: &mut Vec<Descriptor>,
+        state: RxQueueDeliveryState<'_>,
         queue_index: usize,
         first: &[u8],
         second: &[u8],
         mem: &mut dyn GuestMemoryMut,
     ) -> Option<usize> {
         let bytes_len = first.len().checked_add(second.len())?;
-        let queue = queues[queue_index];
+        let queue = state.queues[queue_index];
         if !queue.ready || queue.size == 0 || queue.desc == 0 || bytes_len == 0 {
             return None;
         }
         let avail_idx = read_u16(mem, queue.driver + 2)?;
-        queues[queue_index].last_avail_seen = avail_idx;
-        let last_avail_idx = queues[queue_index].last_avail_idx;
+        state.queues[queue_index].last_avail_seen = avail_idx;
+        let last_avail_idx = state.queues[queue_index].last_avail_idx;
         if last_avail_idx == avail_idx {
             // The guest has not published a fresh avail buffer since we last
             // consumed. If this keeps firing while notify_count / last_avail_seen
             // stay flat, the guest stopped replenishing (not our consume path).
-            queues[queue_index].rx_no_buffers = queues[queue_index].rx_no_buffers.saturating_add(1);
+            state.queues[queue_index].rx_no_buffers =
+                state.queues[queue_index].rx_no_buffers.saturating_add(1);
             console_trace!(
                 "rx q{queue_index} NO-BUFFERS last_consumed={last_avail_idx} avail_idx={avail_idx} bytes={}",
                 bytes_len
@@ -1070,10 +1079,10 @@ impl VirtioConsole {
         }
         let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
         let head = read_u16(mem, queue.driver + ring_off)?;
-        let mut descs = std::mem::take(descriptor_scratch);
+        let mut descs = std::mem::take(state.descriptor_scratch);
         if !Self::descriptor_chain_into(mem, &queue, head, &mut descs) {
             descs.clear();
-            *descriptor_scratch = descs;
+            *state.descriptor_scratch = descs;
             // avail advanced but we could not walk the chain (head >= size, or a
             // bad next link). This is the "replenished buffers are invisible to
             // us" signature -> our consume path or a size mismatch.
@@ -1089,24 +1098,25 @@ impl VirtioConsole {
                 descs.len()
             );
             descs.clear();
-            *descriptor_scratch = descs;
+            *state.descriptor_scratch = descs;
             return None;
         };
         descs.clear();
-        *descriptor_scratch = descs;
+        *state.descriptor_scratch = descs;
         Self::write_used(
             mem,
             &queue,
             head,
             u32::try_from(written).unwrap_or(u32::MAX),
         );
-        queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
-        queues[queue_index].used_produced = queues[queue_index].used_produced.saturating_add(1);
-        queues[queue_index].pending_msix = true;
+        state.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
+        state.queues[queue_index].used_produced =
+            state.queues[queue_index].used_produced.saturating_add(1);
+        state.queues[queue_index].pending_msix = true;
         if let Some(bit) = queue_bit(queue_index) {
-            *pending_msix_queue_bits |= bit;
+            *state.pending_msix_queue_bits |= bit;
         }
-        *interrupt_status |= 1;
+        *state.interrupt_status |= 1;
         console_trace!(
             "rx q{queue_index} DELIVER head={head} len={written} last_consumed->{} avail_idx={avail_idx}",
             last_avail_idx.wrapping_add(1)

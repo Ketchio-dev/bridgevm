@@ -1526,15 +1526,17 @@ impl VirtioGpu {
 
         match info.blob_mem {
             VIRTIO_GPU_BLOB_MEM_GUEST => composite_guest_blob_to_scanout(
-                mem,
-                info.backing,
-                &mut self.scanout,
-                self.width,
-                scanout,
+                GuestBlobComposite {
+                    mem,
+                    backing: info.backing,
+                    scanout: &mut self.scanout,
+                    scanout_width: self.width,
+                    blob: scanout,
+                    row_pixels: &mut self.blob_row_scratch,
+                },
                 rect,
                 x_end,
                 y_end,
-                &mut self.blob_row_scratch,
             ),
             VIRTIO_GPU_BLOB_MEM_HOST3D => {
                 let Some(mapping) = scanout.mapping else {
@@ -2581,47 +2583,61 @@ fn composite_resource_to_scanout(
     }
 }
 
-fn composite_guest_blob_to_scanout(
-    mem: &dyn GuestMemoryMut,
-    backing: &[virtio_gpu_3d::BlobMemEntry],
-    scanout: &mut [u8],
+struct GuestBlobComposite<'a> {
+    mem: &'a dyn GuestMemoryMut,
+    backing: &'a [virtio_gpu_3d::BlobMemEntry],
+    scanout: &'a mut [u8],
     scanout_width: u32,
-    blob: &BlobScanout,
+    blob: &'a BlobScanout,
+    row_pixels: &'a mut Vec<u8>,
+}
+
+fn composite_guest_blob_to_scanout(
+    composite: GuestBlobComposite<'_>,
     rect: Rect,
     x_end: u32,
     y_end: u32,
-    row_pixels: &mut Vec<u8>,
 ) {
-    row_pixels.clear();
+    composite.row_pixels.clear();
     if x_end <= rect.x || y_end <= rect.y {
         return;
     }
     let row_bytes = ((x_end - rect.x) as usize) * 4;
-    row_pixels.resize(row_bytes, 0);
+    composite.row_pixels.resize(row_bytes, 0);
     for y in rect.y..y_end {
-        let row_src =
-            u64::from(blob.offset) + u64::from(y) * u64::from(blob.stride) + u64::from(rect.x) * 4;
-        if read_from_blob_backing_into(mem, backing, row_src, row_pixels) {
+        let row_src = u64::from(composite.blob.offset)
+            + u64::from(y) * u64::from(composite.blob.stride)
+            + u64::from(rect.x) * 4;
+        if read_from_blob_backing_into(
+            composite.mem,
+            composite.backing,
+            row_src,
+            composite.row_pixels,
+        ) {
             for x in rect.x..x_end {
                 let src = ((x - rect.x) as usize) * 4;
-                let dst = ((y as usize) * (scanout_width as usize) + (x as usize)) * 4;
-                scanout[dst..dst + 4]
-                    .copy_from_slice(&to_xrgb8888(&row_pixels[src..src + 4], blob.format));
+                let dst = ((y as usize) * (composite.scanout_width as usize) + (x as usize)) * 4;
+                composite.scanout[dst..dst + 4].copy_from_slice(&to_xrgb8888(
+                    &composite.row_pixels[src..src + 4],
+                    composite.blob.format,
+                ));
             }
             continue;
         }
         for x in rect.x..x_end {
-            let src =
-                u64::from(blob.offset) + u64::from(y) * u64::from(blob.stride) + u64::from(x) * 4;
+            let src = u64::from(composite.blob.offset)
+                + u64::from(y) * u64::from(composite.blob.stride)
+                + u64::from(x) * 4;
             let mut pixel = [0u8; 4];
-            if !read_from_blob_backing_into(mem, backing, src, &mut pixel) {
+            if !read_from_blob_backing_into(composite.mem, composite.backing, src, &mut pixel) {
                 continue;
             }
-            let dst = ((y as usize) * (scanout_width as usize) + (x as usize)) * 4;
-            scanout[dst..dst + 4].copy_from_slice(&to_xrgb8888(&pixel, blob.format));
+            let dst = ((y as usize) * (composite.scanout_width as usize) + (x as usize)) * 4;
+            composite.scanout[dst..dst + 4]
+                .copy_from_slice(&to_xrgb8888(&pixel, composite.blob.format));
         }
     }
-    row_pixels.clear();
+    composite.row_pixels.clear();
 }
 
 fn composite_host_blob_to_scanout(
