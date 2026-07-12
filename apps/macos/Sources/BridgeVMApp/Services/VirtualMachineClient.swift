@@ -2205,19 +2205,30 @@ extension NWConnection {
   }
 }
 
-private final class ContinuationResumeBox<Value>: @unchecked Sendable {
+final class ContinuationResumeBox<Value>: @unchecked Sendable {
+  private enum State {
+    case waiting
+    case pending(Result<Value, Error>)
+    case installed(CheckedContinuation<Value, Error>)
+    case completed
+  }
+
   private let lock = NSLock()
-  private var continuation: CheckedContinuation<Value, Error>?
-  private var result: Result<Value, Error>?
+  private var state: State = .waiting
 
   func set(_ continuation: CheckedContinuation<Value, Error>) {
     let pendingResult: Result<Value, Error>?
 
     lock.lock()
-    if let result {
+    switch state {
+    case .waiting:
+      state = .installed(continuation)
+      pendingResult = nil
+    case .pending(let result):
+      state = .completed
       pendingResult = result
-    } else {
-      self.continuation = continuation
+    case .installed, .completed:
+      assertionFailure("ContinuationResumeBox continuation installed more than once")
       pendingResult = nil
     }
     lock.unlock()
@@ -2239,13 +2250,14 @@ private final class ContinuationResumeBox<Value>: @unchecked Sendable {
     let continuation: CheckedContinuation<Value, Error>?
 
     lock.lock()
-    if let existingContinuation = self.continuation {
-      continuation = existingContinuation
-      self.continuation = nil
-    } else if self.result == nil {
-      self.result = result
+    switch state {
+    case .waiting:
+      state = .pending(result)
       continuation = nil
-    } else {
+    case .installed(let installed):
+      state = .completed
+      continuation = installed
+    case .pending, .completed:
       continuation = nil
     }
     lock.unlock()

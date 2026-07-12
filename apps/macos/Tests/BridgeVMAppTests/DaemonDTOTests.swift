@@ -141,6 +141,31 @@ final class DaemonDTOTests: XCTestCase {
     }
   }
 
+  func testContinuationResumeBoxDeliversOnlyFirstConcurrentResult() async throws {
+    let box = ContinuationResumeBox<Int>()
+    let value = try await withCheckedThrowingContinuation {
+      (continuation: CheckedContinuation<Int, Error>) in
+      box.set(continuation)
+      DispatchQueue.concurrentPerform(iterations: 256) { index in
+        box.succeed(index)
+      }
+    }
+    XCTAssertTrue((0..<256).contains(value))
+    box.fail(DaemonTransportError.connectionFailed)
+    box.succeed(999)
+  }
+
+  func testContinuationResumeBoxPreservesResultThatArrivesBeforeInstallation() async throws {
+    let box = ContinuationResumeBox<Int>()
+    box.succeed(42)
+    box.fail(DaemonTransportError.connectionFailed)
+    let value = try await withCheckedThrowingContinuation {
+      (continuation: CheckedContinuation<Int, Error>) in
+      box.set(continuation)
+    }
+    XCTAssertEqual(value, 42)
+  }
+
   func testDoctorRequestAndResponseMatchBridgeVmDaemonWireFormat() throws {
     let data = try JSONEncoder().encode(DaemonStoreDoctorRequest())
     let object = try JSONSerialization.jsonObject(with: data) as? [String: String]
