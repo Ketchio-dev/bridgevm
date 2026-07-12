@@ -131,7 +131,10 @@ extension VMLibrary {
                            sshKeyPath: template.sshKeyPath, sshUser: "user", leasesPath: template.leasesPath,
                            guestName: slug, displayWidth: width, displayHeight: height,
                            installPending: true)
-        save(cfg)
+        guard save(cfg) else {
+            try? fm.removeItem(at: bundle.deletingLastPathComponent())
+            return nil
+        }
         return cfg
     }
 
@@ -170,7 +173,10 @@ extension VMLibrary {
         cfg.installPending = false
         cfg.displayWidth = width
         cfg.displayHeight = height
-        save(cfg)
+        guard save(cfg) else {
+            try? FileManager.default.removeItem(at: destDir)
+            return nil
+        }
         return cfg
     }
 
@@ -194,7 +200,10 @@ extension VMLibrary {
                            leasesPath: template.leasesPath, guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: true,
                            isoPath: isoPath, diskPath: disk, memMiB: 6144, cpuCount: 4)
-        save(cfg)
+        guard save(cfg) else {
+            try? FileManager.default.removeItem(at: bundle.deletingLastPathComponent())
+            return nil
+        }
         return cfg
     }
 
@@ -253,7 +262,7 @@ extension VMLibrary {
                            leasesPath: "", guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: false,
                            isoPath: nil, diskPath: disk, memMiB: 6144, cpuCount: 4)
-        if persist { save(cfg) }
+        if persist, !save(cfg) { return nil }
         succeeded = true
         return cfg
     }
@@ -451,8 +460,8 @@ struct CreateVMSheet: View {
             }
             await MainActor.run {
                 working = false
-                if let cfg = cfg { library.add(cfg); dismiss() }
-                else { error = "생성 실패" }
+                if let cfg = cfg, library.add(cfg) { dismiss() }
+                else { error = "생성 또는 VM 라이브러리 저장 실패" }
             }
         }
     }

@@ -37,15 +37,19 @@ enum VMLibrary {
         return out.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
 
-    static func save(_ config: VMConfig) {
-        ensureRoot()
+    @discardableResult
+    static func save(_ config: VMConfig, rootURL: URL = root) -> Bool {
         var cfg = config
         cfg.id = cfg.slug
-        let dir = root.appendingPathComponent(cfg.slug, isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let data = try? enc.encode(cfg) {
-            try? data.write(to: dir.appendingPathComponent("vm.json"))
+        let dir = rootURL.appendingPathComponent(cfg.slug, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try enc.encode(cfg)
+            try data.write(to: dir.appendingPathComponent("vm.json"), options: [.atomic])
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -61,7 +65,6 @@ enum VMLibrary {
         guard list().isEmpty, var legacy = VMConfig.loadLegacy() else { return false }
         if legacy.id == nil { legacy.id = VMConfig.slugify(legacy.name) }
         if legacy.bootMode == nil { legacy.bootMode = "direct-kernel" }
-        save(legacy)
-        return true
+        return save(legacy)
     }
 }

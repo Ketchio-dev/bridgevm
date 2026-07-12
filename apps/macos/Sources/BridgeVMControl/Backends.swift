@@ -41,7 +41,7 @@ struct VMConfig: Codable, Identifiable {
         var out = ""
         for ch in s.lowercased() {
             if ch.isLetter || ch.isNumber { out.append(ch) }
-            else if ch == " " || ch == "-" || ch == "_" || ch == "." { out.append("-") }
+            else { out.append("-") }
         }
         while out.contains("--") { out = out.replacingOccurrences(of: "--", with: "-") }
         let trimmed = out.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
@@ -471,8 +471,7 @@ final class HvfWindowsBackend: VMBackend {
     func setResources(memMiB: Int, cpu: Int) -> Bool {
         config.memMiB = memMiB
         config.cpuCount = cpu
-        VMLibrary.save(config)
-        return true
+        return VMLibrary.save(config)
     }
 
     func runInGuest(_ command: String) -> (output: String, code: Int32) {

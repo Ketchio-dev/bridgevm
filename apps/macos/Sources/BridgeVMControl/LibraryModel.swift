@@ -60,9 +60,11 @@ final class LibraryModel: ObservableObject {
     }
 
     /// Add an already-built VMConfig to the library (used by the create flow).
-    func add(_ cfg: VMConfig) {
-        VMLibrary.save(cfg)
+    @discardableResult
+    func add(_ cfg: VMConfig) -> Bool {
+        guard VMLibrary.save(cfg) else { return false }
         reload()
         selectedID = cfg.slug
+        return true
     }
 }

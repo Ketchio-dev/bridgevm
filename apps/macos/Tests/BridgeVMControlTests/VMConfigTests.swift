@@ -10,6 +10,8 @@ final class VMConfigSlugifyTests: XCTestCase {
     func testCollapsesAndTrimsSeparators() {
         XCTAssertEqual(VMConfig.slugify("  --My  VM--  "), "my-vm")
         XCTAssertEqual(VMConfig.slugify("a..b__c"), "a-b-c")
+        XCTAssertEqual(VMConfig.slugify("saved/vm"), "saved-vm")
+        XCTAssertNotEqual(VMConfig.slugify("saved/vm"), VMConfig.slugify("savedvm"))
     }
 
     func testNeverEmpty() {
@@ -59,5 +61,32 @@ final class BackendKindTests: XCTestCase {
                            handoffPath: "", sshKeyPath: "", sshUser: "", leasesPath: "",
                            guestName: "win", displayWidth: 1280, displayHeight: 800)
         XCTAssertTrue(cfg.makeBackend() is HvfWindowsBackend)
+    }
+}
+
+final class VMLibraryPersistenceTests: XCTestCase {
+    private func config(id: String = "saved-vm") -> VMConfig {
+        VMConfig(id: id, name: "Saved VM", displayName: "Saved VM", backendKind: "fast-vz",
+                 bootMode: nil, bundlePath: "", runnerPath: "", launchSpecPath: "",
+                 handoffPath: "", sshKeyPath: "", sshUser: "", leasesPath: "",
+                 guestName: "", displayWidth: 0, displayHeight: 0)
+    }
+
+    func testSaveWritesNormalizedIdentityAtomically() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertTrue(VMLibrary.save(config(id: "../saved/vm"), rootURL: root))
+        let url = root.appendingPathComponent("saved-vm/vm.json")
+        let decoded = try JSONDecoder().decode(VMConfig.self, from: Data(contentsOf: url))
+        XCTAssertEqual(decoded.id, "saved-vm")
+    }
+
+    func testSaveReportsUnwritableLibraryRoot() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data("not a directory".utf8).write(to: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertFalse(VMLibrary.save(config(), rootURL: root))
     }
 }
