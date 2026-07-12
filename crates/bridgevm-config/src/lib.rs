@@ -1,10 +1,25 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::{fmt, fs, path::Path};
+use std::{fmt, fs, io::Read, path::Path};
 use thiserror::Error;
 
 pub const SCHEMA_VERSION: &str = "bridgevm.io/v1";
 pub const MANIFEST_JSON_SCHEMA_ID: &str = "https://bridgevm.io/schemas/vm-manifest-v1.schema.json";
+pub const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
+
+pub fn read_manifest_bytes(path: &Path) -> Result<Vec<u8>, ConfigError> {
+    let mut bytes = Vec::new();
+    fs::File::open(path)?
+        .take(MAX_MANIFEST_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_MANIFEST_BYTES {
+        return Err(ConfigError::ManifestTooLarge {
+            actual: bytes.len() as u64,
+            maximum: MAX_MANIFEST_BYTES,
+        });
+    }
+    Ok(bytes)
+}
 
 pub fn manifest_json_schema_v1() -> &'static str {
     r#"{
@@ -212,6 +227,8 @@ pub enum ConfigError {
     DuplicateSharedFolderName { name: String },
     #[error("duplicate shared folder token '{token}'")]
     DuplicateSharedFolderToken { token: String },
+    #[error("manifest is {actual} bytes, exceeding the {maximum}-byte limit")]
+    ManifestTooLarge { actual: u64, maximum: u64 },
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("YAML error: {0}")]
@@ -597,7 +614,8 @@ impl VmManifest {
     }
 
     pub fn read(path: &Path) -> Result<Self, ConfigError> {
-        let manifest = serde_yaml::from_str::<Self>(&fs::read_to_string(path)?)?;
+        let bytes = read_manifest_bytes(path)?;
+        let manifest = serde_yaml::from_slice::<Self>(&bytes)?;
         manifest.validate()?;
         Ok(manifest)
     }
@@ -1353,5 +1371,29 @@ security:
             manifest.validate(),
             Err(ConfigError::UnusableName { .. })
         ));
+    }
+
+    #[test]
+    fn read_rejects_oversized_manifest_before_yaml_decode() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-config-oversized-{}-{nanos}.yaml",
+            std::process::id()
+        ));
+        fs::write(&path, vec![b'x'; MAX_MANIFEST_BYTES as usize + 1]).unwrap();
+
+        let error = VmManifest::read(&path).unwrap_err();
+        assert!(matches!(
+            error,
+            ConfigError::ManifestTooLarge {
+                actual,
+                maximum: MAX_MANIFEST_BYTES
+            } if actual == MAX_MANIFEST_BYTES + 1
+        ));
+
+        fs::remove_file(path).unwrap();
     }
 }

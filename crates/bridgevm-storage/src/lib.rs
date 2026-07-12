@@ -1,4 +1,4 @@
-use bridgevm_config::{slug, ConfigError, VmManifest, SCHEMA_VERSION};
+use bridgevm_config::{read_manifest_bytes, slug, ConfigError, VmManifest, SCHEMA_VERSION};
 use bridgevm_qemu::{guest_tools_socket_path, QemuImgCommand, QmpEvent};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
@@ -1237,9 +1237,9 @@ impl VmStore {
             return Err(StorageError::NotFound(name.to_string()));
         }
 
-        let raw_manifest = fs::read_to_string(&manifest_path)?;
+        let raw_manifest = read_manifest_bytes(&manifest_path)?;
         let manifest_value: serde_yaml::Value =
-            serde_yaml::from_str(&raw_manifest).map_err(ConfigError::from)?;
+            serde_yaml::from_slice(&raw_manifest).map_err(ConfigError::from)?;
         let from_schema = manifest_value
             .get("schemaVersion")
             .and_then(serde_yaml::Value::as_str)
@@ -1253,7 +1253,7 @@ impl VmStore {
         }
 
         let manifest: VmManifest =
-            serde_yaml::from_str(&raw_manifest).map_err(ConfigError::from)?;
+            serde_yaml::from_slice(&raw_manifest).map_err(ConfigError::from)?;
         manifest.validate()?;
 
         let metadata_dir = bundle.join("metadata");
@@ -5072,6 +5072,33 @@ mod tests {
         let error = store.migrate_manifest("dev", false).unwrap_err();
 
         assert!(matches!(error, StorageError::Config(ConfigError::Yaml(_))));
+        assert!(!bundle
+            .join("metadata")
+            .join("manifest-before-migration.yaml")
+            .exists());
+        assert!(!bundle
+            .join("metadata")
+            .join("manifest-migration.json")
+            .exists());
+    }
+
+    #[test]
+    fn manifest_migration_rejects_oversized_manifest_without_receipt() {
+        let store = temp_store();
+        store.create_vm(&manifest("dev")).unwrap();
+        let bundle = store.bundle_path("dev");
+        fs::write(
+            bundle.join("manifest.yaml"),
+            vec![b'x'; bridgevm_config::MAX_MANIFEST_BYTES as usize + 1],
+        )
+        .unwrap();
+
+        let error = store.migrate_manifest("dev", false).unwrap_err();
+
+        assert!(matches!(
+            error,
+            StorageError::Config(ConfigError::ManifestTooLarge { .. })
+        ));
         assert!(!bundle
             .join("metadata")
             .join("manifest-before-migration.yaml")
