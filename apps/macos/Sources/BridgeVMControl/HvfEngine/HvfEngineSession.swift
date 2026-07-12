@@ -36,6 +36,7 @@ final class HvfEngineSession: ObservableObject {
     private var attachedToExistingProcess = false
     private var liveInputHandle: FileHandle?
     private var liveInputPath: URL?
+    private var liveInputWriteFailureReported = false
     private var lastScreenshotFingerprint: HvfScreenshotFingerprint?
     private let processIsRunning: (String) -> Bool
 
@@ -137,6 +138,7 @@ final class HvfEngineSession: ObservableObject {
         stopCommandSent = false
         stopDeadline = nil
         events = []
+        liveInputWriteFailureReported = false
         #if canImport(AppKit)
         latestScreenshot = nil
         lastScreenshotFingerprint = nil
@@ -286,8 +288,13 @@ final class HvfEngineSession: ObservableObject {
             #endif
             try handle.seekToEnd()
             try handle.write(contentsOf: data)
+            liveInputWriteFailureReported = false
         } catch {
             closeLiveInput()
+            if !liveInputWriteFailureReported {
+                append(.unknown("live input write failed: \(error.localizedDescription)"))
+                liveInputWriteFailureReported = true
+            }
         }
     }
 
@@ -408,6 +415,7 @@ final class HvfEngineSession: ObservableObject {
         serviceStarted = false
         stopCommandSent = false
         stopDeadline = nil
+        liveInputWriteFailureReported = false
         if clearEvents { events = [] }
         #if canImport(AppKit)
         latestScreenshot = nil

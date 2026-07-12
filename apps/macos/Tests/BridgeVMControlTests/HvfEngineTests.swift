@@ -355,6 +355,33 @@ final class HvfEngineSessionPathTests: XCTestCase {
     }
 
     @MainActor
+    func testLiveInputWriteFailureIsReportedOnceUntilRecovery() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let invalidEvidence = temp.appendingPathComponent("evidence-file")
+        try Data("not a directory".utf8).write(to: invalidEvidence)
+        let config = HvfEngineConfig(
+            targetDiskPath: "target", uefiVarsPath: "vars", evidenceDir: invalidEvidence.path,
+            watchdogMs: nil, ramMiB: 6144, smpCpus: 4, clipboardSync: true,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: true, virtioGpu3d: true,
+            nvmeBufferedIO: true, ctlFilePath: temp.appendingPathComponent("hvf.ctl").path
+        )
+        let session = HvfEngineSession(config: config, repoRoot: temp) { _ in false }
+
+        session.sendKey("esc")
+        session.sendKey("delete")
+
+        let failures = session.events.filter { event in
+            if case let .unknown(message) = event {
+                return message.hasPrefix("live input write failed:")
+            }
+            return false
+        }
+        XCTAssertEqual(failures.count, 1)
+    }
+
+    @MainActor
     func testControlInputRejectsMultilineWithoutWritingChannel() throws {
         let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: temp) }
