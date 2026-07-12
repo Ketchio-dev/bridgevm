@@ -39,6 +39,9 @@ env \
 HVF_LAB="$APP/Contents/Applications/BridgeVMControl.app"
 HVF_PROBE="$HVF_LAB/Contents/Resources/target/release/examples/hvf_gic_boot_probe"
 HVF_FRAMEWORKS="$HVF_LAB/Contents/Frameworks"
+HVF_FIRMWARE="$HVF_LAB/Contents/Resources/firmware/edk2-aarch64-code.fd"
+HVF_FIRMWARE_MANIFEST="$HVF_LAB/Contents/Resources/firmware/manifest.txt"
+HVF_FIRMWARE_LICENSES="$HVF_LAB/Contents/Resources/firmware/licenses.txt"
 [[ -x "$HVF_LAB/Contents/MacOS/BridgeVMControl" ]] || fail "bundled Windows HVF Lab executable missing"
 [[ -x "$HVF_LAB/Contents/Resources/scripts/run-hvf-windows-installed-boot.sh" ]] \
   || fail "bundled Windows HVF wrapper missing"
@@ -46,6 +49,11 @@ HVF_FRAMEWORKS="$HVF_LAB/Contents/Frameworks"
   || fail "bundled Windows HVF VirGL renderer missing"
 [[ -f "$HVF_FRAMEWORKS/libepoxy.0.dylib" ]] \
   || fail "bundled Windows HVF libepoxy dependency missing"
+[[ -f "$HVF_FIRMWARE" && "$(stat -f '%z' "$HVF_FIRMWARE")" == "67108864" ]] \
+  || fail "bundled Windows HVF firmware missing or wrong size"
+grep -Fqx "sha256=$(shasum -a 256 "$HVF_FIRMWARE" | awk '{ print $1 }')" "$HVF_FIRMWARE_MANIFEST" \
+  || fail "bundled Windows HVF firmware manifest mismatch"
+[[ -s "$HVF_FIRMWARE_LICENSES" ]] || fail "bundled Windows HVF firmware license notices missing"
 otool -L "$HVF_PROBE" "$HVF_FRAMEWORKS/libvirglrenderer.1.dylib" \
   | grep -E '/Users/|/opt/homebrew/' >/dev/null \
   && fail "bundled Windows HVF runtime retains a development-host dylib path"

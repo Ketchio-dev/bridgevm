@@ -221,6 +221,7 @@ absolutize_installed_boot_paths() {
   [[ -z "$TARGET" ]] || TARGET="$(absolute_path_from "$invocation_dir" "$TARGET")"
   [[ -z "$PLACEHOLDER_NSID1" ]] || PLACEHOLDER_NSID1="$(absolute_path_from "$invocation_dir" "$PLACEHOLDER_NSID1")"
   [[ -z "$VARS" ]] || VARS="$(absolute_path_from "$invocation_dir" "$VARS")"
+  [[ -z "$FIRMWARE_CODE" ]] || FIRMWARE_CODE="$(absolute_path_from "$invocation_dir" "$FIRMWARE_CODE")"
   [[ -z "$EVIDENCE_DIR" ]] || EVIDENCE_DIR="$(absolute_path_from "$invocation_dir" "$EVIDENCE_DIR")"
   [[ -z "$VIRTIO_GPU_TRACE_JSONL" ]] || VIRTIO_GPU_TRACE_JSONL="$(absolute_path_from "$invocation_dir" "$VIRTIO_GPU_TRACE_JSONL")"
   [[ -z "$DISPLAY_EXPORT_PPM" ]] || DISPLAY_EXPORT_PPM="$(absolute_path_from "$invocation_dir" "$DISPLAY_EXPORT_PPM")"
@@ -228,6 +229,25 @@ absolutize_installed_boot_paths() {
   [[ -z "$VIOGPU3D_DIR" ]] || VIOGPU3D_DIR="$(absolute_path_from "$invocation_dir" "$VIOGPU3D_DIR")"
   [[ -z "$AGENT_SERVICE_CONTROL" ]] || AGENT_SERVICE_CONTROL="$(absolute_path_from "$invocation_dir" "$AGENT_SERVICE_CONTROL")"
   [[ -z "$AGENT_SHARE_HOST" ]] || AGENT_SHARE_HOST="$(absolute_path_from "$invocation_dir" "$AGENT_SHARE_HOST")"
+}
+
+resolve_installed_boot_firmware() {
+  [[ -z "$FIRMWARE_CODE" ]] || return 0
+  local candidate
+  local runtime_root="${ROOT:-}"
+  for candidate in \
+    "${runtime_root:+$runtime_root/firmware/edk2-aarch64-code.fd}" \
+    /opt/homebrew/share/qemu/edk2-aarch64-code.fd \
+    /usr/local/share/qemu/edk2-aarch64-code.fd
+  do
+    [[ -n "$candidate" ]] || continue
+    if [[ -f "$candidate" ]]; then
+      FIRMWARE_CODE="$candidate"
+      return 0
+    fi
+  done
+  echo "FAIL: AArch64 UEFI firmware is unavailable; install QEMU or pass --firmware-code" >&2
+  exit 1
 }
 
 media_identity() {

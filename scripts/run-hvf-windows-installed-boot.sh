@@ -12,6 +12,7 @@ source "$ROOT/scripts/run-hvf-windows-installed-boot-runner.sh"
 init_installed_boot_defaults
 parse_installed_boot_args "$@"
 absolutize_installed_boot_paths "$INVOCATION_DIR"
+resolve_installed_boot_firmware
 validate_installed_boot_option_combinations
 configure_installed_boot_xhci_policy
 validate_installed_boot_required_paths

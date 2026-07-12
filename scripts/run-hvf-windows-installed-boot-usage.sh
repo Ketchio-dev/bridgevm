@@ -5,6 +5,8 @@ usage: scripts/run-hvf-windows-installed-boot.sh --target RAW --vars FD --eviden
 Required:
   --target RAW            Installed Windows raw disk to boot.
   --vars FD               Writable UEFI vars file preserved from install.
+  --firmware-code FD      64 MiB AArch64 EDK2 code image. Defaults to the
+                          bundled image, then a standard QEMU installation.
   --evidence-dir DIR      Directory for preflight.txt, run.log, target-stat.txt, cleanup.txt, ramfb/.
 
 Options:

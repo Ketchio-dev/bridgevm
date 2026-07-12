@@ -18,6 +18,8 @@ HVF_LAB_CONTENTS="$HVF_LAB_APP/Contents"
 HVF_LAB_MACOS="$HVF_LAB_CONTENTS/MacOS"
 HVF_LAB_RESOURCES="$HVF_LAB_CONTENTS/Resources"
 HVF_LAB_FRAMEWORKS="$HVF_LAB_CONTENTS/Frameworks"
+HVF_LAB_FIRMWARE="$HVF_LAB_RESOURCES/firmware/edk2-aarch64-code.fd"
+HVF_LAB_FIRMWARE_MANIFEST="$HVF_LAB_RESOURCES/firmware/manifest.txt"
 HVF_WINDOWS_PROBE="$HVF_LAB_RESOURCES/target/release/examples/hvf_gic_boot_probe"
 IDENTITY="${BRIDGEVM_CODESIGN_IDENTITY:--}"
 BUILD_CONFIGURATION="${BRIDGEVM_MACOS_BUILD_CONFIGURATION:-debug}"
@@ -29,6 +31,8 @@ BUNDLE_VERSION="${BRIDGEVM_BUNDLE_VERSION:-1}"
 BUNDLE_COPYRIGHT="${BRIDGEVM_BUNDLE_COPYRIGHT:-}"
 ICON_FILE="${BRIDGEVM_MACOS_ICON_FILE:-}"
 SKIP_APPLE_VZ_RUNNER="${BRIDGEVM_MACOS_SKIP_APPLE_VZ_RUNNER:-0}"
+FIRMWARE_CODE="${BRIDGEVM_HVF_FIRMWARE_CODE:-/opt/homebrew/share/qemu/edk2-aarch64-code.fd}"
+FIRMWARE_LICENSES="${BRIDGEVM_HVF_FIRMWARE_LICENSES:-$(dirname "$FIRMWARE_CODE")/edk2-licenses.txt}"
 if [[ -z "$ICON_FILE" && -f "$ROOT/packaging/macos/BridgeVM.icns" ]]; then
   ICON_FILE="$ROOT/packaging/macos/BridgeVM.icns"
 fi
@@ -58,6 +62,10 @@ Environment:
   BRIDGEVM_MACOS_SKIP_APPLE_VZ_RUNNER
                                set to 1 to omit the signed AppleVzRunner helper
                                from the local debug bundle
+  BRIDGEVM_HVF_FIRMWARE_CODE    64 MiB AArch64 EDK2 code image embedded in the
+                               nested Windows HVF app
+  BRIDGEVM_HVF_FIRMWARE_LICENSES
+                               license notices corresponding to that image
 
 Bundled Windows HVF runtime:
   Every bundle includes BridgeVMControl.app under Contents/Applications, the
@@ -164,6 +172,9 @@ verify_bundle() {
   local hvf_lab_plist="$hvf_lab/Contents/Info.plist"
   local hvf_lab_resources="$hvf_lab/Contents/Resources"
   local hvf_probe="$hvf_lab_resources/target/release/examples/hvf_gic_boot_probe"
+  local hvf_firmware="$hvf_lab_resources/firmware/edk2-aarch64-code.fd"
+  local hvf_firmware_manifest="$hvf_lab_resources/firmware/manifest.txt"
+  local hvf_firmware_licenses="$hvf_lab_resources/firmware/licenses.txt"
   [[ -d "$hvf_lab" ]] || {
     echo "BridgeVM Windows HVF Lab bundle is missing: $hvf_lab" >&2
     exit 1
@@ -202,6 +213,21 @@ verify_bundle() {
   done
   "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" \
     --verify-only "$hvf_probe" >/dev/null
+  [[ -f "$hvf_firmware" && "$(stat -f '%z' "$hvf_firmware")" == "67108864" ]] || {
+    echo "BridgeVM Windows HVF firmware is missing or not 64 MiB: $hvf_firmware" >&2
+    exit 1
+  }
+  local expected_firmware_sha actual_firmware_sha
+  expected_firmware_sha="$(awk -F= '$1 == "sha256" { print $2; exit }' "$hvf_firmware_manifest" 2>/dev/null || true)"
+  actual_firmware_sha="$(shasum -a 256 "$hvf_firmware" | awk '{ print $1 }')"
+  [[ "$expected_firmware_sha" =~ ^[0-9a-f]{64}$ && "$actual_firmware_sha" == "$expected_firmware_sha" ]] || {
+    echo "BridgeVM Windows HVF firmware manifest is missing or does not match" >&2
+    exit 1
+  }
+  [[ -s "$hvf_firmware_licenses" ]] || {
+    echo "BridgeVM Windows HVF firmware license notices are missing" >&2
+    exit 1
+  }
   codesign --verify --strict "$hvf_lab" >/dev/null 2>&1 || {
     echo "BridgeVM Windows HVF Lab signature verification failed: $hvf_lab" >&2
     exit 1
@@ -238,6 +264,19 @@ case "$BUILD_CONFIGURATION" in
     ;;
 esac
 
+[[ -f "$FIRMWARE_CODE" ]] || {
+  echo "BridgeVM Windows HVF firmware source is missing: $FIRMWARE_CODE" >&2
+  exit 1
+}
+[[ "$(stat -f '%z' "$FIRMWARE_CODE")" == "67108864" ]] || {
+  echo "BridgeVM Windows HVF firmware source must be exactly 64 MiB: $FIRMWARE_CODE" >&2
+  exit 1
+}
+[[ -s "$FIRMWARE_LICENSES" ]] || {
+  echo "BridgeVM Windows HVF firmware license notices are missing: $FIRMWARE_LICENSES" >&2
+  exit 1
+}
+
 swift build --package-path "$MACOS_DIR" --configuration "$BUILD_CONFIGURATION" --quiet --product BridgeVMApp
 swift build --package-path "$MACOS_DIR" --configuration "$BUILD_CONFIGURATION" --quiet --product BridgeVMControl
 SWIFT_BIN_DIR="$(swift build --package-path "$MACOS_DIR" --configuration "$BUILD_CONFIGURATION" --show-bin-path)"
@@ -259,6 +298,17 @@ install -m 755 "$BIN" "$MACOS/BridgeVMApp"
 install -m 755 "$HVF_LAB_BIN" "$HVF_LAB_MACOS/BridgeVMControl"
 install -m 755 "$BRIDGEVMD_BIN" "$HELPERS/bridgevmd"
 install -m 755 "$LIGHTVM_RUNNER_BIN" "$HELPERS/lightvm-runner"
+install -d "$(dirname "$HVF_LAB_FIRMWARE")"
+install -m 644 "$FIRMWARE_CODE" "$HVF_LAB_FIRMWARE"
+install -m 644 "$FIRMWARE_LICENSES" "$(dirname "$HVF_LAB_FIRMWARE")/licenses.txt"
+FIRMWARE_SHA256="$(shasum -a 256 "$HVF_LAB_FIRMWARE" | awk '{ print $1 }')"
+printf '%s\n' \
+  'BridgeVM bundled AArch64 UEFI firmware' \
+  'component=TianoCore EDK II AARCH64 firmware from the QEMU distribution' \
+  'upstream=https://github.com/tianocore/edk2' \
+  'license_notices=licenses.txt' \
+  'bytes=67108864' \
+  "sha256=$FIRMWARE_SHA256" > "$HVF_LAB_FIRMWARE_MANIFEST"
 codesign --force --sign "$IDENTITY" "$HELPERS/bridgevmd" >/dev/null
 codesign --force --sign "$IDENTITY" "$HELPERS/lightvm-runner" >/dev/null
 

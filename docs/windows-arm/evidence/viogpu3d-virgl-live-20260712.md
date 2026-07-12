@@ -134,3 +134,22 @@ inside that app bundle. It reached `BVAGENT READY`, accepted
 The resident agent then completed an exit-zero shutdown. Guest system-off,
 UEFI-vars and NVMe writeback, and host cleanup all returned status zero, with no
 dynamic-loader, panic, or virtio-gpu error in the run log.
+
+## Bundled firmware closure
+
+The v25 packaged-runtime run is preserved at
+`/Users/user/BridgeVM/app-bundled-firmware-proof-20260712-v25`. The nested HVF
+app now carries the 64 MiB AArch64 EDK2 code image, its upstream license
+notices, and a size/SHA-256 manifest. The installed-boot wrapper accepts an
+explicit firmware path, otherwise resolves the bundle before standard QEMU
+install locations, validates the exact pflash size before launch, and records
+the selected path in preflight evidence.
+
+This run deliberately omitted `--firmware-code`. Preflight selected
+`BridgeVMControl.app/Contents/Resources/firmware/edk2-aarch64-code.fd`, whose
+SHA-256 is `47765fe344818cbc464b1c14ae658fb4b854f5c2ceffa982411731eb4865594d`.
+That bundle-owned firmware reached the Windows desktop and `BVAGENT READY` with
+VirGL enabled; the exported display SHA-256 is
+`406813e784bb1b182c6fabf3dedc5fd8ae62e1972b798bd3b1ada03f9572f979`.
+The agent gate, guest system-off, UEFI-vars and NVMe writeback, and cleanup all
+returned status zero, with no loader, panic, or virtio-gpu error.

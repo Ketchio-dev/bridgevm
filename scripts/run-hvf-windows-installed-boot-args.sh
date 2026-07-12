@@ -17,6 +17,7 @@ init_installed_boot_defaults() {
   DISPLAY_EXPORT_PPM=""
   DISPLAY_EXPORT_MS="500"
   INPUT_CONTROL=""
+  FIRMWARE_CODE=""
   GPU_TRACE_PROTOCOL="auto"
   REQUIRE_GPU_TRACE_GATE="0"
   VIOGPU3D_DIR=""
@@ -72,6 +73,7 @@ parse_installed_boot_args() {
       --target) [[ $# -ge 2 ]] || { usage; exit 2; }; TARGET="$2"; shift 2 ;;
       --placeholder-nsid1) [[ $# -ge 2 ]] || { usage; exit 2; }; PLACEHOLDER_NSID1="$2"; shift 2 ;;
       --vars) [[ $# -ge 2 ]] || { usage; exit 2; }; VARS="$2"; shift 2 ;;
+      --firmware-code) [[ $# -ge 2 && -n "$2" ]] || { echo "FAIL: --firmware-code requires a non-empty path" >&2; exit 2; }; FIRMWARE_CODE="$2"; shift 2 ;;
       --evidence-dir) [[ $# -ge 2 ]] || { usage; exit 2; }; EVIDENCE_DIR="$2"; shift 2 ;;
       --watchdog-ms)
         [[ $# -ge 2 ]] || { usage; exit 2; }
@@ -354,12 +356,18 @@ configure_installed_boot_xhci_policy() {
 }
 
 validate_installed_boot_required_paths() {
+  resolve_installed_boot_firmware
   [[ -n "$TARGET" && -n "$VARS" && -n "$EVIDENCE_DIR" ]] || { usage; exit 2; }
   [[ -f "$TARGET" ]] || { echo "FAIL: target image not found: $TARGET" >&2; exit 1; }
   if [[ -n "$PLACEHOLDER_NSID1" ]]; then
     [[ -f "$PLACEHOLDER_NSID1" ]] || { echo "FAIL: placeholder NSID-1 image not found: $PLACEHOLDER_NSID1" >&2; exit 1; }
   fi
   [[ -f "$VARS" ]] || { echo "FAIL: vars file not found: $VARS" >&2; exit 1; }
+  [[ -f "$FIRMWARE_CODE" ]] || { echo "FAIL: AArch64 UEFI firmware not found: $FIRMWARE_CODE" >&2; exit 1; }
+  [[ "$(stat -f '%z' "$FIRMWARE_CODE" 2>/dev/null || true)" == "67108864" ]] || {
+    echo "FAIL: AArch64 UEFI firmware must be exactly 64 MiB: $FIRMWARE_CODE" >&2
+    exit 1
+  }
   if [[ -n "$VIOGPU3D_DIR" ]]; then
     [[ -d "$VIOGPU3D_DIR" ]] || { echo "FAIL: viogpu3d driver directory not found: $VIOGPU3D_DIR" >&2; exit 1; }
   fi
@@ -432,6 +440,7 @@ print_installed_boot_policy() {
   fi
   printf '%s\n' \
     "$XHCI_POLICY" \
+    "BRIDGEVM_AARCH64_UEFI_CODE=$FIRMWARE_CODE" \
     "DAILY_PRESET=$DAILY" \
     "BRIDGEVM_RAM_MIB=$RAM_MIB" \
     "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=$WATCHDOG_MS" \

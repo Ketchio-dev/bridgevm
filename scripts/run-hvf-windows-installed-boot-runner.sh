@@ -40,6 +40,7 @@ write_installed_boot_preflight() {
     printf 'target=%s\n' "$TARGET"
     printf 'placeholder_nsid1=%s\n' "${PLACEHOLDER_NSID1:-<none>}"
     printf 'vars=%s\n' "$VARS"
+    printf 'firmware_code=%s\n' "$FIRMWARE_CODE"
     printf 'evidence_dir=%s\n' "$EVIDENCE_DIR"
     printf 'build_profile=%s\n' "$BUILD_PROFILE"
     printf 'daily_preset=%s\n' "$DAILY"
@@ -179,6 +180,7 @@ build_installed_boot_env_args() {
     "BRIDGEVM_RAMFB_DUMP_DIR=$EVIDENCE_DIR/ramfb"
     "BRIDGEVM_RAMFB_SAMPLE_MS=$RAMFB_SAMPLES"
     "BRIDGEVM_AARCH64_UEFI_VARS=$VARS" 'BRIDGEVM_AARCH64_UEFI_VARS_WRITABLE=1'
+    "BRIDGEVM_AARCH64_UEFI_CODE=$FIRMWARE_CODE"
     "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=$WATCHDOG_MS"
     "BRIDGEVM_BOOT_PROBE_MAX_REBOOTS=$MAX_REBOOTS"
     'BRIDGEVM_RECENT_NVME_COMMANDS=4096' 'BRIDGEVM_RECENT_PCIE_MMIO=2048'
