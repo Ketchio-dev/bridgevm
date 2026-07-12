@@ -14325,6 +14325,22 @@ mod platform {
         guest_ram_bytes: usize,
     }
 
+    #[derive(Debug, Clone, Copy)]
+    struct Stage1TranslationContext {
+        tcr_el1: Option<u64>,
+        ttbr0_el1: Option<u64>,
+        memory: WindowsArmKnownGuestMemory,
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    struct Stage1ExitAddresses {
+        pc: Option<u64>,
+        vbar_el1: Option<u64>,
+        elr_el1: Option<u64>,
+        far_el1: Option<u64>,
+        sp_el1: Option<u64>,
+    }
+
     impl WindowsArmKnownGuestMemory {
         fn read_u32(self, ipa: u64) -> Option<u32> {
             read_known_guest_phys_u32(
@@ -15041,17 +15057,8 @@ mod platform {
     }
 
     fn collect_stage1_descriptor_samples(
-        pc_after_exit: Option<u64>,
-        vbar_el1_after_exit: Option<u64>,
-        elr_el1_after_exit: Option<u64>,
-        far_el1_after_exit: Option<u64>,
-        sp_el1_after_exit: Option<u64>,
-        tcr_el1_after_exit: Option<u64>,
-        ttbr0_el1_after_exit: Option<u64>,
-        firmware_memory: *const c_void,
-        vars_memory: *const c_void,
-        guest_ram_memory: *const c_void,
-        guest_ram_bytes: usize,
+        addresses: Stage1ExitAddresses,
+        translation: Stage1TranslationContext,
     ) -> Vec<WindowsArmUefiStage1DescriptorSample> {
         let mut requests = vec![
             ("low-vector-base", Some(WINDOWS_ARM_UEFI_LOW_CODE_ALIAS_IPA)),
@@ -15084,11 +15091,11 @@ mod platform {
                         + WINDOWS_ARM_DIAGNOSTIC_VECTOR_CURRENT_EL_SPX_SYNC_OFFSET as u64,
                 ),
             ),
-            ("pc-after-exit", pc_after_exit),
-            ("vbar-el1", vbar_el1_after_exit),
-            ("elr-el1", elr_el1_after_exit),
-            ("far-el1", far_el1_after_exit),
-            ("sp-el1", sp_el1_after_exit),
+            ("pc-after-exit", addresses.pc),
+            ("vbar-el1", addresses.vbar_el1),
+            ("elr-el1", addresses.elr_el1),
+            ("far-el1", addresses.far_el1),
+            ("sp-el1", addresses.sp_el1),
         ];
         requests.retain(|(_, va)| va.is_some());
         requests
@@ -15097,29 +15104,15 @@ mod platform {
                 stage1_descriptor_sample(
                     label,
                     va.expect("stage-1 descriptor sample VA is retained as Some"),
-                    tcr_el1_after_exit,
-                    ttbr0_el1_after_exit,
-                    firmware_memory,
-                    vars_memory,
-                    guest_ram_memory,
-                    guest_ram_bytes,
+                    translation,
                 )
             })
             .collect()
     }
 
     fn collect_stage1_walk_entries(
-        pc_after_exit: Option<u64>,
-        vbar_el1_after_exit: Option<u64>,
-        elr_el1_after_exit: Option<u64>,
-        far_el1_after_exit: Option<u64>,
-        sp_el1_after_exit: Option<u64>,
-        tcr_el1_after_exit: Option<u64>,
-        ttbr0_el1_after_exit: Option<u64>,
-        firmware_memory: *const c_void,
-        vars_memory: *const c_void,
-        guest_ram_memory: *const c_void,
-        guest_ram_bytes: usize,
+        addresses: Stage1ExitAddresses,
+        translation: Stage1TranslationContext,
     ) -> Vec<WindowsArmUefiStage1WalkEntry> {
         let mut requests = vec![
             (
@@ -15129,11 +15122,11 @@ mod platform {
                         + WINDOWS_ARM_DIAGNOSTIC_VECTOR_CURRENT_EL_SPX_SYNC_OFFSET as u64,
                 ),
             ),
-            ("pc-after-exit", pc_after_exit),
-            ("vbar-el1", vbar_el1_after_exit),
-            ("elr-el1", elr_el1_after_exit),
-            ("far-el1", far_el1_after_exit),
-            ("sp-el1", sp_el1_after_exit),
+            ("pc-after-exit", addresses.pc),
+            ("vbar-el1", addresses.vbar_el1),
+            ("elr-el1", addresses.elr_el1),
+            ("far-el1", addresses.far_el1),
+            ("sp-el1", addresses.sp_el1),
             (
                 "executable-diagnostic-vector-sync-slot",
                 Some(
@@ -15148,12 +15141,7 @@ mod platform {
             entries.extend(stage1_walk_entries_for_address(
                 label,
                 va.expect("stage-1 walk VA is retained as Some"),
-                tcr_el1_after_exit,
-                ttbr0_el1_after_exit,
-                firmware_memory,
-                vars_memory,
-                guest_ram_memory,
-                guest_ram_bytes,
+                translation,
             ));
         }
         entries
@@ -15162,17 +15150,12 @@ mod platform {
     fn stage1_walk_entries_for_address(
         label: &'static str,
         virtual_address: u64,
-        tcr_el1: Option<u64>,
-        ttbr0_el1: Option<u64>,
-        firmware_memory: *const c_void,
-        vars_memory: *const c_void,
-        guest_ram_memory: *const c_void,
-        guest_ram_bytes: usize,
+        translation: Stage1TranslationContext,
     ) -> Vec<WindowsArmUefiStage1WalkEntry> {
-        let Some(tcr) = tcr_el1 else {
+        let Some(tcr) = translation.tcr_el1 else {
             return Vec::new();
         };
-        let Some(ttbr0) = ttbr0_el1 else {
+        let Some(ttbr0) = translation.ttbr0_el1 else {
             return Vec::new();
         };
         let tg0 = (tcr >> 14) & 0x3;
@@ -15200,10 +15183,10 @@ mod platform {
             };
             let descriptor = read_known_guest_phys_u64(
                 entry_ipa,
-                firmware_memory,
-                vars_memory,
-                guest_ram_memory,
-                guest_ram_bytes,
+                translation.memory.firmware_memory,
+                translation.memory.vars_memory,
+                translation.memory.guest_ram_memory,
+                translation.memory.guest_ram_bytes,
             );
             let descriptor_kind = descriptor
                 .map(|descriptor| stage1_descriptor_kind(descriptor, level as u8))
@@ -15216,7 +15199,7 @@ mod platform {
                 virtual_address,
                 region: windows_arm_guest_region_name(
                     Some(virtual_address),
-                    guest_ram_bytes as u64,
+                    translation.memory.guest_ram_bytes as u64,
                 ),
                 level: level as u8,
                 table_ipa,
@@ -15247,26 +15230,24 @@ mod platform {
     fn stage1_descriptor_sample(
         label: &'static str,
         virtual_address: u64,
-        tcr_el1: Option<u64>,
-        ttbr0_el1: Option<u64>,
-        firmware_memory: *const c_void,
-        vars_memory: *const c_void,
-        guest_ram_memory: *const c_void,
-        guest_ram_bytes: usize,
+        translation: Stage1TranslationContext,
     ) -> WindowsArmUefiStage1DescriptorSample {
         let leaf = read_stage1_leaf_descriptor(
             Some(virtual_address),
-            tcr_el1,
-            ttbr0_el1,
-            firmware_memory,
-            vars_memory,
-            guest_ram_memory,
-            guest_ram_bytes,
+            translation.tcr_el1,
+            translation.ttbr0_el1,
+            translation.memory.firmware_memory,
+            translation.memory.vars_memory,
+            translation.memory.guest_ram_memory,
+            translation.memory.guest_ram_bytes,
         );
         WindowsArmUefiStage1DescriptorSample {
             label,
             virtual_address,
-            region: windows_arm_guest_region_name(Some(virtual_address), guest_ram_bytes as u64),
+            region: windows_arm_guest_region_name(
+                Some(virtual_address),
+                translation.memory.guest_ram_bytes as u64,
+            ),
             level: leaf.map(|leaf| leaf.level),
             descriptor: leaf.map(|leaf| leaf.descriptor),
             descriptor_kind: leaf.map(|leaf| leaf.kind).unwrap_or("not observed"),
@@ -15995,7 +15976,7 @@ mod platform {
         }
     }
 
-    fn prepare_low_vector_diagnostic_page_repair(
+    struct LowVectorDiagnosticPageRepairRequest<'a> {
         firmware_memory: *mut c_void,
         vars_memory: *mut c_void,
         guest_ram_memory: *mut c_void,
@@ -16003,23 +15984,27 @@ mod platform {
         guest_ram_bytes: usize,
         tcr_el1: Option<u64>,
         ttbr0_el1: Option<u64>,
-        location: &str,
-        blockers: &mut Vec<String>,
+        location: &'a str,
+        blockers: &'a mut Vec<String>,
+    }
+
+    fn prepare_low_vector_diagnostic_page_repair(
+        request: LowVectorDiagnosticPageRepairRequest<'_>,
     ) -> LowVectorDiagnosticPageRepairPreparation {
         let diagnostic_slot_snapshot = install_diagnostic_exception_vector_slot_preserving(
-            firmware_memory,
-            slot_bytes,
+            request.firmware_memory,
+            request.slot_bytes,
             0,
-            location,
-            blockers,
+            request.location,
+            request.blockers,
         );
         let patched_descriptor = patch_low_vector_diagnostic_page_descriptor(
-            tcr_el1,
-            ttbr0_el1,
-            firmware_memory,
-            vars_memory,
-            guest_ram_memory,
-            guest_ram_bytes,
+            request.tcr_el1,
+            request.ttbr0_el1,
+            request.firmware_memory,
+            request.vars_memory,
+            request.guest_ram_memory,
+            request.guest_ram_bytes,
         );
         LowVectorDiagnosticPageRepairPreparation {
             diagnostic_slot_snapshot,
@@ -17475,17 +17460,10 @@ mod platform {
                 pflash_map.pflash_map_verified,
                 firmware_source_bytes,
                 vars_source_bytes,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                blockers,
+                PflashHvfMapOutcome {
+                    blockers,
+                    ..PflashHvfMapOutcome::default()
+                },
             );
         }
 
@@ -17501,17 +17479,10 @@ mod platform {
                 false,
                 firmware_source_bytes,
                 vars_source_bytes,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                blockers,
+                PflashHvfMapOutcome {
+                    blockers,
+                    ..PflashHvfMapOutcome::default()
+                },
             );
         }
 
@@ -17524,17 +17495,10 @@ mod platform {
                 true,
                 firmware_source_bytes,
                 vars_source_bytes,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                blockers,
+                PflashHvfMapOutcome {
+                    blockers,
+                    ..PflashHvfMapOutcome::default()
+                },
             );
         }
 
@@ -17569,17 +17533,11 @@ mod platform {
                 true,
                 firmware_source_bytes,
                 vars_source_bytes,
-                Some(vm_create_status),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                blockers,
+                PflashHvfMapOutcome {
+                    vm_create_status: Some(vm_create_status),
+                    blockers,
+                    ..PflashHvfMapOutcome::default()
+                },
             );
         }
 
@@ -18268,13 +18226,8 @@ mod platform {
         }
     }
 
-    fn pflash_hvf_map_result(
-        allowed: bool,
-        attempted: bool,
-        host: HvfHostCapabilities,
-        pflash_map_verified: bool,
-        firmware_source_bytes: Option<u64>,
-        vars_source_bytes: Option<u64>,
+    #[derive(Debug, Default)]
+    struct PflashHvfMapOutcome {
         vm_create_status: Option<i32>,
         firmware_allocate_status: Option<i32>,
         vars_allocate_status: Option<i32>,
@@ -18286,6 +18239,16 @@ mod platform {
         vars_deallocate_status: Option<i32>,
         vm_destroy_status: Option<i32>,
         blockers: Vec<String>,
+    }
+
+    fn pflash_hvf_map_result(
+        allowed: bool,
+        attempted: bool,
+        host: HvfHostCapabilities,
+        pflash_map_verified: bool,
+        firmware_source_bytes: Option<u64>,
+        vars_source_bytes: Option<u64>,
+        outcome: PflashHvfMapOutcome,
     ) -> WindowsArmUefiPflashHvfMapProbe {
         WindowsArmUefiPflashHvfMapProbe {
             allowed,
@@ -18311,17 +18274,17 @@ mod platform {
             vars_source_bytes,
             firmware_map_flags: "read|exec",
             vars_map_flags: "read|write",
-            vm_create_status,
-            firmware_allocate_status,
-            vars_allocate_status,
-            firmware_map_status,
-            vars_map_status,
-            firmware_unmap_status,
-            vars_unmap_status,
-            firmware_deallocate_status,
-            vars_deallocate_status,
-            vm_destroy_status,
-            blockers,
+            vm_create_status: outcome.vm_create_status,
+            firmware_allocate_status: outcome.firmware_allocate_status,
+            vars_allocate_status: outcome.vars_allocate_status,
+            firmware_map_status: outcome.firmware_map_status,
+            vars_map_status: outcome.vars_map_status,
+            firmware_unmap_status: outcome.firmware_unmap_status,
+            vars_unmap_status: outcome.vars_unmap_status,
+            firmware_deallocate_status: outcome.firmware_deallocate_status,
+            vars_deallocate_status: outcome.vars_deallocate_status,
+            vm_destroy_status: outcome.vm_destroy_status,
+            blockers: outcome.blockers,
         }
     }
 
@@ -18934,19 +18897,19 @@ mod platform {
             Ok(bytes) => bytes,
             Err(_) => {
                 blockers.push("guest RAM size does not fit in host usize".to_string());
-                return firmware_run_loop_probe_result(
-                    allow_loop,
-                    false,
+                return firmware_run_loop_probe_result(FirmwareRunLoopProbeResultInput {
+                    allowed: allow_loop,
+                    attempted: false,
                     host,
-                    pflash_map.pflash_map_verified,
+                    pflash_map_verified: pflash_map.pflash_map_verified,
                     guest_ram_bytes,
-                    bounded_requested_exits,
-                    bounded_watchdog_timeout_ms,
-                    &options,
+                    requested_exits: bounded_requested_exits,
+                    watchdog_timeout_ms: bounded_watchdog_timeout_ms,
+                    options: &options,
                     firmware_source_bytes,
                     vars_source_bytes,
                     blockers,
-                );
+                });
             }
         };
         let block_devices = windows_arm_firmware_block_devices(
@@ -18958,19 +18921,19 @@ mod platform {
             blockers.push(
                 "set BRIDGEVM_HVF_ALLOW_UEFI_FIRMWARE_RUN_LOOP=1 or pass --allow-loop to map Windows UEFI pflash plus guest RAM, create one vCPU, and classify bounded firmware exits under a watchdog".to_string(),
             );
-            return firmware_run_loop_probe_result(
-                false,
-                false,
+            return firmware_run_loop_probe_result(FirmwareRunLoopProbeResultInput {
+                allowed: false,
+                attempted: false,
                 host,
-                pflash_map.pflash_map_verified,
+                pflash_map_verified: pflash_map.pflash_map_verified,
                 guest_ram_bytes,
-                bounded_requested_exits,
-                bounded_watchdog_timeout_ms,
-                &options,
+                requested_exits: bounded_requested_exits,
+                watchdog_timeout_ms: bounded_watchdog_timeout_ms,
+                options: &options,
                 firmware_source_bytes,
                 vars_source_bytes,
                 blockers,
-            );
+            });
         }
 
         if !pflash_map.pflash_map_verified {
@@ -18978,36 +18941,36 @@ mod platform {
                 "pflash memory-image mapper did not verify code/vars slots; refusing firmware run-loop entry"
                     .to_string(),
             );
-            return firmware_run_loop_probe_result(
-                true,
-                false,
+            return firmware_run_loop_probe_result(FirmwareRunLoopProbeResultInput {
+                allowed: true,
+                attempted: false,
                 host,
-                false,
+                pflash_map_verified: false,
                 guest_ram_bytes,
-                bounded_requested_exits,
-                bounded_watchdog_timeout_ms,
-                &options,
+                requested_exits: bounded_requested_exits,
+                watchdog_timeout_ms: bounded_watchdog_timeout_ms,
+                options: &options,
                 firmware_source_bytes,
                 vars_source_bytes,
                 blockers,
-            );
+            });
         }
 
         if !host.available {
             blockers.push("Hypervisor.framework host capabilities are not available".to_string());
-            return firmware_run_loop_probe_result(
-                true,
-                false,
+            return firmware_run_loop_probe_result(FirmwareRunLoopProbeResultInput {
+                allowed: true,
+                attempted: false,
                 host,
-                true,
+                pflash_map_verified: true,
                 guest_ram_bytes,
-                bounded_requested_exits,
-                bounded_watchdog_timeout_ms,
-                &options,
+                requested_exits: bounded_requested_exits,
+                watchdog_timeout_ms: bounded_watchdog_timeout_ms,
+                options: &options,
                 firmware_source_bytes,
                 vars_source_bytes,
                 blockers,
-            );
+            });
         }
 
         let slot_bytes_usize: usize = WINDOWS_ARM_UEFI_SLOT_BYTES
@@ -19527,6 +19490,24 @@ mod platform {
                 let ttbr1_el1_after_exit = read_vcpu_sys_reg(vcpu, HV_SYS_REG_TTBR1_EL1);
                 let mair_el1_after_exit = read_vcpu_sys_reg(vcpu, HV_SYS_REG_MAIR_EL1);
                 let sp_el1_after_exit = read_vcpu_sys_reg(vcpu, HV_SYS_REG_SP_EL1);
+                let stage1_memory = WindowsArmKnownGuestMemory {
+                    firmware_memory: firmware_memory.cast_const(),
+                    vars_memory: vars_memory.cast_const(),
+                    guest_ram_memory: guest_ram_memory.cast_const(),
+                    guest_ram_bytes: guest_ram_bytes_usize,
+                };
+                let stage1_translation = Stage1TranslationContext {
+                    tcr_el1: tcr_el1_after_exit,
+                    ttbr0_el1: ttbr0_el1_after_exit,
+                    memory: stage1_memory,
+                };
+                let stage1_addresses = Stage1ExitAddresses {
+                    pc: pc_after_exit,
+                    vbar_el1: vbar_el1_after_exit,
+                    elr_el1: elr_el1_after_exit,
+                    far_el1: far_el1_after_exit,
+                    sp_el1: sp_el1_after_exit,
+                };
                 let pc_stage1_leaf_after_exit = read_stage1_leaf_descriptor(
                     pc_after_exit,
                     tcr_el1_after_exit,
@@ -19536,32 +19517,10 @@ mod platform {
                     guest_ram_memory.cast_const(),
                     guest_ram_bytes_usize,
                 );
-                let stage1_descriptor_samples_after_exit = collect_stage1_descriptor_samples(
-                    pc_after_exit,
-                    vbar_el1_after_exit,
-                    elr_el1_after_exit,
-                    far_el1_after_exit,
-                    sp_el1_after_exit,
-                    tcr_el1_after_exit,
-                    ttbr0_el1_after_exit,
-                    firmware_memory.cast_const(),
-                    vars_memory.cast_const(),
-                    guest_ram_memory.cast_const(),
-                    guest_ram_bytes_usize,
-                );
-                let stage1_walk_entries_after_exit = collect_stage1_walk_entries(
-                    pc_after_exit,
-                    vbar_el1_after_exit,
-                    elr_el1_after_exit,
-                    far_el1_after_exit,
-                    sp_el1_after_exit,
-                    tcr_el1_after_exit,
-                    ttbr0_el1_after_exit,
-                    firmware_memory.cast_const(),
-                    vars_memory.cast_const(),
-                    guest_ram_memory.cast_const(),
-                    guest_ram_bytes_usize,
-                );
+                let stage1_descriptor_samples_after_exit =
+                    collect_stage1_descriptor_samples(stage1_addresses, stage1_translation);
+                let stage1_walk_entries_after_exit =
+                    collect_stage1_walk_entries(stage1_addresses, stage1_translation);
                 let stage1_executable_candidates_after_exit = collect_stage1_executable_candidates(
                     tcr_el1_after_exit,
                     ttbr0_el1_after_exit,
@@ -20311,15 +20270,18 @@ mod platform {
                         if repair_low_vector_diagnostic_page {
                             low_vector_resume.capture_original_context(&run_loop_exit);
                             let low_vector_repair = prepare_low_vector_diagnostic_page_repair(
-                                firmware_memory,
-                                vars_memory,
-                                guest_ram_memory,
-                                slot_bytes_usize,
-                                guest_ram_bytes_usize,
-                                tcr_el1_after_exit,
-                                ttbr0_el1_after_exit,
-                                "recommended-vector VBAR low-vector diagnostic page repair",
-                                &mut blockers,
+                                LowVectorDiagnosticPageRepairRequest {
+                                    firmware_memory,
+                                    vars_memory,
+                                    guest_ram_memory,
+                                    slot_bytes: slot_bytes_usize,
+                                    guest_ram_bytes: guest_ram_bytes_usize,
+                                    tcr_el1: tcr_el1_after_exit,
+                                    ttbr0_el1: ttbr0_el1_after_exit,
+                                    location:
+                                        "recommended-vector VBAR low-vector diagnostic page repair",
+                                    blockers: &mut blockers,
+                                },
                             );
                             low_vector_diagnostic_page_slot_snapshot =
                                 low_vector_repair.diagnostic_slot_snapshot;
@@ -20603,15 +20565,17 @@ mod platform {
                         }
                     }
                     let low_vector_repair = prepare_low_vector_diagnostic_page_repair(
-                        firmware_memory,
-                        vars_memory,
-                        guest_ram_memory,
-                        slot_bytes_usize,
-                        guest_ram_bytes_usize,
-                        tcr_el1_after_exit,
-                        ttbr0_el1_after_exit,
-                        "low-vector diagnostic page repair",
-                        &mut blockers,
+                        LowVectorDiagnosticPageRepairRequest {
+                            firmware_memory,
+                            vars_memory,
+                            guest_ram_memory,
+                            slot_bytes: slot_bytes_usize,
+                            guest_ram_bytes: guest_ram_bytes_usize,
+                            tcr_el1: tcr_el1_after_exit,
+                            ttbr0_el1: ttbr0_el1_after_exit,
+                            location: "low-vector diagnostic page repair",
+                            blockers: &mut blockers,
+                        },
                     );
                     low_vector_diagnostic_page_slot_snapshot =
                         low_vector_repair.diagnostic_slot_snapshot;
@@ -21278,7 +21242,7 @@ mod platform {
         }
     }
 
-    fn firmware_run_loop_probe_result(
+    struct FirmwareRunLoopProbeResultInput<'a> {
         allowed: bool,
         attempted: bool,
         host: HvfHostCapabilities,
@@ -21286,11 +21250,28 @@ mod platform {
         guest_ram_bytes: u64,
         requested_exits: u32,
         watchdog_timeout_ms: u64,
-        options: &WindowsArmUefiFirmwareRunLoopExecutionOptions,
+        options: &'a WindowsArmUefiFirmwareRunLoopExecutionOptions,
         firmware_source_bytes: Option<u64>,
         vars_source_bytes: Option<u64>,
         blockers: Vec<String>,
+    }
+
+    fn firmware_run_loop_probe_result(
+        input: FirmwareRunLoopProbeResultInput<'_>,
     ) -> WindowsArmUefiFirmwareRunLoopProbe {
+        let FirmwareRunLoopProbeResultInput {
+            allowed,
+            attempted,
+            host,
+            pflash_map_verified,
+            guest_ram_bytes,
+            requested_exits,
+            watchdog_timeout_ms,
+            options,
+            firmware_source_bytes,
+            vars_source_bytes,
+            blockers,
+        } = input;
         let map_low_pflash_alias = options.map_low_pflash_alias;
         let seed_diagnostic_vector = options.seed_diagnostic_vector;
         let seed_guest_ram_diagnostic_vector = options.seed_guest_ram_diagnostic_vector;
