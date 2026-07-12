@@ -38,9 +38,17 @@ env \
 [[ -x "$APP/Contents/MacOS/BridgeVMApp" ]] || fail "rebuilt app executable missing"
 HVF_LAB="$APP/Contents/Applications/BridgeVMControl.app"
 HVF_PROBE="$HVF_LAB/Contents/Resources/target/release/examples/hvf_gic_boot_probe"
+HVF_FRAMEWORKS="$HVF_LAB/Contents/Frameworks"
 [[ -x "$HVF_LAB/Contents/MacOS/BridgeVMControl" ]] || fail "bundled Windows HVF Lab executable missing"
 [[ -x "$HVF_LAB/Contents/Resources/scripts/run-hvf-windows-installed-boot.sh" ]] \
   || fail "bundled Windows HVF wrapper missing"
+[[ -f "$HVF_FRAMEWORKS/libvirglrenderer.1.dylib" ]] \
+  || fail "bundled Windows HVF VirGL renderer missing"
+[[ -f "$HVF_FRAMEWORKS/libepoxy.0.dylib" ]] \
+  || fail "bundled Windows HVF libepoxy dependency missing"
+otool -L "$HVF_PROBE" "$HVF_FRAMEWORKS/libvirglrenderer.1.dylib" \
+  | grep -E '/Users/|/opt/homebrew/' >/dev/null \
+  && fail "bundled Windows HVF runtime retains a development-host dylib path"
 "$ROOT/apps/macos/scripts/build-sign-apple-vz-runner.sh" \
   --verify-only "$APP/Contents/Helpers/AppleVzRunner" >/dev/null
 "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" \

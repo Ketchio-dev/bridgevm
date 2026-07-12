@@ -17,6 +17,7 @@ HVF_LAB_APP="$APPLICATIONS/BridgeVMControl.app"
 HVF_LAB_CONTENTS="$HVF_LAB_APP/Contents"
 HVF_LAB_MACOS="$HVF_LAB_CONTENTS/MacOS"
 HVF_LAB_RESOURCES="$HVF_LAB_CONTENTS/Resources"
+HVF_LAB_FRAMEWORKS="$HVF_LAB_CONTENTS/Frameworks"
 HVF_WINDOWS_PROBE="$HVF_LAB_RESOURCES/target/release/examples/hvf_gic_boot_probe"
 IDENTITY="${BRIDGEVM_CODESIGN_IDENTITY:--}"
 BUILD_CONFIGURATION="${BRIDGEVM_MACOS_BUILD_CONFIGURATION:-debug}"
@@ -346,7 +347,8 @@ done
 
 "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" \
   --release \
-  --output "$HVF_WINDOWS_PROBE" >/dev/null
+  --output "$HVF_WINDOWS_PROBE" \
+  --bundle-frameworks "$HVF_LAB_FRAMEWORKS" >/dev/null
 if [[ -n "$ICON_FILE" ]]; then
   [[ -f "$ICON_FILE" ]] || {
     echo "BridgeVM icon file is missing: $ICON_FILE" >&2

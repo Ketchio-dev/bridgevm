@@ -263,7 +263,8 @@ run env \
   "BRIDGEVM_HVF_PROBE_ENTITLEMENTS=${BRIDGEVM_HVF_PROBE_ENTITLEMENTS:-$ROOT/apps/macos/HvfRunner.release.entitlements}" \
   "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" \
   --release \
-  --output "$HVF_WINDOWS_PROBE"
+  --output "$HVF_WINDOWS_PROBE" \
+  --bundle-frameworks "$HVF_LAB/Contents/Frameworks"
 run "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" --verify-only "$HVF_WINDOWS_PROBE"
 run codesign --force --options runtime --sign "$IDENTITY" "$HVF_LAB"
 run codesign --force --options runtime --sign "$IDENTITY" "$APP/Contents/Helpers/bridgevmd"
