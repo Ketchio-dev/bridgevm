@@ -250,15 +250,30 @@ final class ControlModel: ObservableObject {
     }
 
     private func applyRuntimeStatus(running: Bool, ip: String?) {
+        if let deadline = startConfirmationDeadline {
+            self.ip = ip ?? "—"
+            if running {
+                self.running = true
+                startConfirmationDeadline = nil
+                statusNote = "실행 중"
+            } else if Date() >= deadline {
+                self.running = false
+                startConfirmationDeadline = nil
+                statusNote = "VM 시작 확인 실패"
+            }
+            // Before the deadline, keep the optimistic running state. A host
+            // process commonly appears a little after the launch shell exits.
+            return
+        }
+
+        let wasRunning = self.running
         self.running = running
         self.ip = ip ?? "—"
-        guard let deadline = startConfirmationDeadline else { return }
+        guard wasRunning != running, !lifecycleBusy else { return }
         if running {
-            startConfirmationDeadline = nil
             statusNote = "실행 중"
-        } else if Date() >= deadline {
-            startConfirmationDeadline = nil
-            statusNote = "VM 시작 확인 실패"
+        } else {
+            statusNote = "VM이 종료됨"
         }
     }
 }

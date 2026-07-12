@@ -31,12 +31,49 @@ final class ControlModelLifecycleTests: XCTestCase {
         XCTAssertEqual(model.statusNote, "정지됨")
     }
 
+    func testInitialMissingProcessDuringStartConfirmationKeepsOptimisticState() async {
+        let backend = LifecycleBackend(startVisibilityDelay: 0.3)
+        let model = ControlModel(config: makeConfig(), backend: backend, startsAutomatically: false)
+        model.start()
+        await waitForLifecycle(model)
+        let checksBeforeRefresh = backend.livenessChecks
+
+        model.refreshStatus()
+        await waitUntil { backend.livenessChecks > checksBeforeRefresh }
+
+        XCTAssertTrue(model.running)
+        XCTAssertEqual(model.statusNote, "VM 부팅 중…")
+    }
+
+    func testExternalProcessExitUpdatesStatusNote() async {
+        let backend = LifecycleBackend(startVisibilityDelay: 0)
+        backend.setRunning(true)
+        let model = ControlModel(config: makeConfig(), backend: backend, startsAutomatically: false)
+        model.running = true
+        model.statusNote = "실행 중"
+        backend.setRunning(false)
+
+        model.refreshStatus()
+        await waitUntil { model.statusNote == "VM이 종료됨" }
+
+        XCTAssertFalse(model.running)
+        XCTAssertEqual(model.ip, "—")
+    }
+
     private func waitForLifecycle(_ model: ControlModel, timeout: TimeInterval = 1) async {
         let deadline = Date().addingTimeInterval(timeout)
         while model.lifecycleBusy && Date() < deadline {
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
         XCTAssertFalse(model.lifecycleBusy)
+    }
+
+    private func waitUntil(timeout: TimeInterval = 1, _ condition: @escaping () -> Bool) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(condition())
     }
 
     private func makeConfig() -> VMConfig {
@@ -61,6 +98,7 @@ private final class LifecycleBackend: VMBackend {
     private var processRunning = false
     private var _startCalls = 0
     private var _stopCalls = 0
+    private var _livenessChecks = 0
 
     init(startVisibilityDelay: TimeInterval) {
         self.startVisibilityDelay = startVisibilityDelay
@@ -68,7 +106,9 @@ private final class LifecycleBackend: VMBackend {
 
     var startCalls: Int { lock.withLock { _startCalls } }
     var stopCalls: Int { lock.withLock { _stopCalls } }
-    func isRunning() -> Bool { lock.withLock { processRunning } }
+    var livenessChecks: Int { lock.withLock { _livenessChecks } }
+    func isRunning() -> Bool { lock.withLock { _livenessChecks += 1; return processRunning } }
+    func setRunning(_ value: Bool) { lock.withLock { processRunning = value } }
     func currentIP() -> String? { nil }
     func start() -> Bool {
         lock.withLock { _startCalls += 1 }
