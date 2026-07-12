@@ -8,6 +8,36 @@ import UniformTypeIdentifiers
 
 extension VMLibrary {
     static let minimumImportedWindowsHVFDiskGiB: UInt64 = 64
+    static let windowsHVFVarsBytes: UInt64 = 64 * 1024 * 1024
+
+    static func windowsHVFImportError(targetDiskPath: String, varsPath: String) -> String? {
+        let fm = FileManager.default
+        var targetIsDirectory: ObjCBool = false
+        var varsIsDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: targetDiskPath, isDirectory: &targetIsDirectory), !targetIsDirectory.boolValue else {
+            return "설치된 Windows RAW 디스크 파일을 찾을 수 없습니다."
+        }
+        guard fm.fileExists(atPath: varsPath, isDirectory: &varsIsDirectory), !varsIsDirectory.boolValue else {
+            return "이 VM과 함께 사용한 UEFI vars 파일을 찾을 수 없습니다."
+        }
+        let targetBytes = ((try? fm.attributesOfItem(atPath: targetDiskPath)[.size] as? NSNumber)?.uint64Value) ?? 0
+        guard targetBytes > 0 else { return "Windows RAW 디스크가 비어 있습니다." }
+        let varsBytes = ((try? fm.attributesOfItem(atPath: varsPath)[.size] as? NSNumber)?.uint64Value) ?? 0
+        guard varsBytes == windowsHVFVarsBytes else {
+            return "UEFI vars는 정확히 64 MiB여야 합니다 (현재 \(varsBytes)바이트)."
+        }
+        if let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: targetDiskPath)) {
+            defer { try? handle.close() }
+            let header = (try? handle.read(upToCount: 8)) ?? Data()
+            if header.starts(with: Data([0x51, 0x46, 0x49, 0xfb])) {
+                return "QCOW2 이미지는 가져올 수 없습니다. 설치된 RAW 디스크를 선택하세요."
+            }
+            if header.starts(with: Data("vhdxfile".utf8)) {
+                return "VHDX 이미지는 가져올 수 없습니다. 설치된 RAW 디스크를 선택하세요."
+            }
+        }
+        return nil
+    }
 
     private static func uniqueSlug(_ base: String) -> String {
         let baseSlug = VMConfig.slugify(base)
@@ -175,10 +205,7 @@ extension VMLibrary {
                                  storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
                                  persist: Bool = true) -> VMConfig? {
         let fm = FileManager.default
-        var targetIsDirectory: ObjCBool = false
-        var varsIsDirectory: ObjCBool = false
-        guard fm.fileExists(atPath: targetDiskPath, isDirectory: &targetIsDirectory), !targetIsDirectory.boolValue,
-              fm.fileExists(atPath: varsPath, isDirectory: &varsIsDirectory), !varsIsDirectory.boolValue else { return nil }
+        guard windowsHVFImportError(targetDiskPath: targetDiskPath, varsPath: varsPath) == nil else { return nil }
 
         let storageBase = storageDir ?? root
         let baseSlug = uniqueSlug(name)
@@ -402,6 +429,12 @@ struct CreateVMSheet: View {
         let nm = name.trimmingCharacters(in: .whitespaces)
         let m = mode; let iso = isoPath
         let hvfTarget = hvfTargetPath; let hvfVars = hvfVarsPath
+        if mode == .windowsHVF,
+           let importError = VMLibrary.windowsHVFImportError(targetDiskPath: hvfTarget, varsPath: hvfVars) {
+            error = importError
+            working = false
+            return
+        }
         let sd = storageDir; let w = resolutions[resIndex].0; let h = resolutions[resIndex].1
         Task.detached {
             let cfg: VMConfig?

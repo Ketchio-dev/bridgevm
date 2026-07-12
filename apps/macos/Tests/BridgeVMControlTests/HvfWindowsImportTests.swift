@@ -15,6 +15,9 @@ final class HvfWindowsImportTests: XCTestCase {
         let varsBytes = Data("matching-uefi-vars".utf8)
         try diskBytes.write(to: sourceDisk)
         try varsBytes.write(to: sourceVars)
+        let varsHandle = try FileHandle(forWritingTo: sourceVars)
+        try varsHandle.truncate(atOffset: VMLibrary.windowsHVFVarsBytes)
+        try varsHandle.close()
 
         let config = try XCTUnwrap(VMLibrary.createWindowsHVF(
             name: "Imported HVF \(UUID().uuidString)",
@@ -41,14 +44,39 @@ final class HvfWindowsImportTests: XCTestCase {
             (try FileManager.default.attributesOfItem(atPath: importedDisk.path)[.size] as? NSNumber)?.uint64Value
         )
         XCTAssertEqual(importedSize, VMLibrary.minimumImportedWindowsHVFDiskGiB * 1024 * 1024 * 1024)
+        let importedVars = URL(fileURLWithPath: config.bundlePath).appendingPathComponent("metadata/hvf-vars.fd")
+        let importedVarsHandle = try FileHandle(forReadingFrom: importedVars)
+        XCTAssertEqual(try importedVarsHandle.read(upToCount: varsBytes.count), varsBytes)
+        try importedVarsHandle.close()
         XCTAssertEqual(
-            try Data(contentsOf: URL(fileURLWithPath: config.bundlePath).appendingPathComponent("metadata/hvf-vars.fd")),
-            varsBytes
+            (try FileManager.default.attributesOfItem(atPath: importedVars.path)[.size] as? NSNumber)?.uint64Value,
+            VMLibrary.windowsHVFVarsBytes
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: config.bundlePath + "/metadata/hvf.ctl"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: config.bundlePath + "/metadata/hvf-grow-pending"))
         XCTAssertEqual(try Data(contentsOf: sourceDisk), diskBytes)
-        XCTAssertEqual(try Data(contentsOf: sourceVars), varsBytes)
+        XCTAssertEqual(
+            (try FileManager.default.attributesOfItem(atPath: sourceVars.path)[.size] as? NSNumber)?.uint64Value,
+            VMLibrary.windowsHVFVarsBytes
+        )
+    }
+
+    func testRejectsWrongVarsSizeAndContainerDiskFormats() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let raw = temp.appendingPathComponent("installed.raw")
+        let vars = temp.appendingPathComponent("vars.fd")
+        try Data([1]).write(to: raw)
+        try Data([2]).write(to: vars)
+        XCTAssertTrue(VMLibrary.windowsHVFImportError(targetDiskPath: raw.path, varsPath: vars.path)?.contains("64 MiB") == true)
+
+        let varsHandle = try FileHandle(forWritingTo: vars)
+        try varsHandle.truncate(atOffset: VMLibrary.windowsHVFVarsBytes)
+        try varsHandle.close()
+        try Data([0x51, 0x46, 0x49, 0xfb, 0, 0, 0, 3]).write(to: raw)
+        XCTAssertTrue(VMLibrary.windowsHVFImportError(targetDiskPath: raw.path, varsPath: vars.path)?.contains("QCOW2") == true)
+        try Data("vhdxfile".utf8).write(to: raw)
+        XCTAssertTrue(VMLibrary.windowsHVFImportError(targetDiskPath: raw.path, varsPath: vars.path)?.contains("VHDX") == true)
     }
 
     func testRejectsMissingImportMediaWithoutCreatingVMDirectory() throws {
