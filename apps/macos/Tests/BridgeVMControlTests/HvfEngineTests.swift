@@ -269,6 +269,32 @@ final class HvfEngineSessionPathTests: XCTestCase {
     }
 
     @MainActor
+    func testStartFailsBeforeLaunchWhenEvidencePathIsNotDirectory() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let evidenceFile = temp.appendingPathComponent("evidence")
+        try Data("file".utf8).write(to: evidenceFile)
+        let config = HvfEngineConfig(
+            targetDiskPath: "target", uefiVarsPath: "vars", evidenceDir: evidenceFile.path,
+            watchdogMs: nil, ramMiB: 6144, smpCpus: 4, clipboardSync: true,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: true, virtioGpu3d: true,
+            nvmeBufferedIO: true, ctlFilePath: temp.appendingPathComponent("hvf.ctl").path
+        )
+        let session = HvfEngineSession(config: config, repoRoot: temp) { _ in false }
+
+        session.start()
+
+        XCTAssertEqual(session.connectionState, .stopped)
+        XCTAssertTrue(session.events.contains { event in
+            if case let .unknown(message) = event {
+                return message.hasPrefix("launch failed: unable to prepare HVF runtime files:")
+            }
+            return false
+        })
+    }
+
+    @MainActor
     func testTextInputPreservesPrintableASCIIAndChunksLongCommands() throws {
         let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: temp) }
@@ -728,6 +754,24 @@ final class HvfWindowsBackendTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(started), 1)
         XCTAssertEqual(result.code, -1)
         XCTAssertEqual(result.output, "HVF 제어 채널에 명령을 기록하지 못했습니다: \(backend.ctlFilePath)")
+    }
+
+    func testRunInGuestReturnsImmediatelyWhenRuntimeDirectoriesCannotBeCreated() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let blockingFile = dir.appendingPathComponent("not-a-directory")
+        try Data("file".utf8).write(to: blockingFile)
+        let cfg = makeConfig(
+            bundlePath: blockingFile.appendingPathComponent("bundle.vmbridge").path
+        )
+        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in true })
+
+        let started = Date()
+        let result = backend.runInGuest("whoami")
+
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1)
+        XCTAssertEqual(result.code, -1)
+        XCTAssertEqual(result.output, "HVF 런타임 디렉터리를 준비하지 못했습니다: \(cfg.bundlePath)")
     }
 
     func testRunInGuestReturnsImmediatelyWhenVMExitsWhileWaiting() throws {

@@ -400,10 +400,8 @@ final class HvfWindowsBackend: VMBackend {
 
     func start() {
         guard !isRunning() else { return }
-        ensureDirectories()
-        if !FileManager.default.fileExists(atPath: ctlFilePath) {
-            FileManager.default.createFile(atPath: ctlFilePath, contents: nil)
-        }
+        guard ensureDirectories() else { return }
+        guard ensureControlFile() else { return }
         // The wrapper replaces run.log on every launch. Remove it first so a
         // pending first-boot action cannot mistake the previous SERVICE marker
         // for the new guest generation and append a command before tailing starts.
@@ -420,7 +418,6 @@ final class HvfWindowsBackend: VMBackend {
 
     func stop() {
         guard isRunning() else { return }
-        ensureDirectories()
         let serviceDeadline = Date().addingTimeInterval(180)
         while isRunning(), !serviceHasStarted(), Date() < serviceDeadline {
             usleep(250_000)
@@ -443,7 +440,7 @@ final class HvfWindowsBackend: VMBackend {
 
     @discardableResult
     func requestGracefulStop() -> Bool {
-        ensureDirectories()
+        guard ensureDirectories() else { return false }
         return appendCtl("shutdown.exe /p /f")
     }
 
@@ -475,7 +472,9 @@ final class HvfWindowsBackend: VMBackend {
         guard isRunning() else {
             return ("HVF VM이 실행 중이 아닙니다.", -1)
         }
-        ensureDirectories()
+        guard ensureDirectories() else {
+            return ("HVF 런타임 디렉터리를 준비하지 못했습니다: \(config.bundlePath)", -1)
+        }
         let offset = fileSize(at: runLogPath)
         guard appendCtl(normalized) else {
             return ("HVF 제어 채널에 명령을 기록하지 못했습니다: \(ctlFilePath)", -1)
@@ -502,15 +501,32 @@ final class HvfWindowsBackend: VMBackend {
                         ctlFilePath: ctlFilePath)
     }
 
-    private func ensureDirectories() {
+    @discardableResult
+    private func ensureDirectories() -> Bool {
         for path in [
             config.bundlePath + "/disks",
             config.bundlePath + "/metadata",
             config.bundlePath + "/logs",
             evidenceDir
         ] {
-            try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+            do {
+                try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+            } catch {
+                return false
+            }
         }
+        return true
+    }
+
+    private func ensureControlFile() -> Bool {
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: ctlFilePath) {
+            guard let attributes = try? fileManager.attributesOfItem(atPath: ctlFilePath) else {
+                return false
+            }
+            return attributes[.type] as? FileAttributeType == .typeRegular
+        }
+        return fileManager.createFile(atPath: ctlFilePath, contents: nil)
     }
 
     private func serviceHasStarted() -> Bool {

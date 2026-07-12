@@ -111,19 +111,12 @@ final class HvfEngineSession: ObservableObject {
         timer = nil
         process = nil
         closeLiveInput()
-        try? FileManager.default.createDirectory(atPath: config.evidenceDir, withIntermediateDirectories: true)
-        for name in ["display.ppm", "display.ppm.tmp", "input.ctl"] {
-            try? FileManager.default.removeItem(
-                atPath: URL(fileURLWithPath: config.evidenceDir).appendingPathComponent(name).path
-            )
-        }
-        FileManager.default.createFile(
-            atPath: URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("input.ctl").path,
-            contents: nil
-        )
-        try? FileManager.default.createDirectory(atPath: (config.ctlFilePath as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-        if !FileManager.default.fileExists(atPath: config.ctlFilePath) {
-            FileManager.default.createFile(atPath: config.ctlFilePath, contents: nil)
+        do {
+            try prepareRuntimeFiles()
+        } catch {
+            append(.unknown("launch failed: unable to prepare HVF runtime files: \(error.localizedDescription)"))
+            connectionState = .stopped
+            return
         }
         let wrapper = repoRoot.appendingPathComponent("scripts/run-hvf-windows-installed-boot.sh")
         guard FileManager.default.isExecutableFile(atPath: wrapper.path) else {
@@ -324,6 +317,40 @@ final class HvfEngineSession: ObservableObject {
             Task { @MainActor in self?.poll() }
         }
         poll()
+    }
+
+    private func prepareRuntimeFiles() throws {
+        let fileManager = FileManager.default
+        let evidenceDirectory = URL(fileURLWithPath: config.evidenceDir, isDirectory: true)
+        try fileManager.createDirectory(
+            at: evidenceDirectory,
+            withIntermediateDirectories: true
+        )
+        for name in ["display.ppm", "display.ppm.tmp", "input.ctl"] {
+            let url = evidenceDirectory.appendingPathComponent(name)
+            if fileManager.fileExists(atPath: url.path) {
+                try fileManager.removeItem(at: url)
+            }
+        }
+        try Data().write(to: evidenceDirectory.appendingPathComponent("input.ctl"))
+
+        let controlURL = URL(fileURLWithPath: config.ctlFilePath)
+        try fileManager.createDirectory(
+            at: controlURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        if fileManager.fileExists(atPath: controlURL.path) {
+            let attributes = try fileManager.attributesOfItem(atPath: controlURL.path)
+            guard attributes[.type] as? FileAttributeType == .typeRegular else {
+                throw NSError(
+                    domain: "BridgeVM.HvfEngineSession",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "control path is not a regular file: \(controlURL.path)"]
+                )
+            }
+        } else {
+            try Data().write(to: controlURL)
+        }
     }
 
     private func poll() {
