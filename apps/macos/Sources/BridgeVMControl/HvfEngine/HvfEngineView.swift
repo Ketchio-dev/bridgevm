@@ -22,8 +22,6 @@ struct HvfEngineView: View {
     @State private var ctlFilePath = ""
     @State private var ctlInput = ""
     @State private var keyboardInput = ""
-    @State private var pointerDragging = false
-    @State private var lastPointerLocation: CGPoint?
     @FocusState private var displayFocused: Bool
 
     init(config: HvfEngineConfig = HvfEngineView.defaultConfig()) {
@@ -169,59 +167,53 @@ struct HvfEngineView: View {
                         .onKeyPress { press in
                             handleDisplayKeyPress(press)
                         }
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { value in
-                                    displayFocused = true
-                                    lastPointerLocation = value.location
-                                    if pointerDragging {
-                                        session.sendPointerMove(
-                                            location: value.location,
-                                            viewSize: geometry.size,
-                                            imageSize: image.size
-                                        )
-                                    } else {
-                                        pointerDragging = true
-                                        session.sendPointerPress(
-                                            location: value.location,
-                                            viewSize: geometry.size,
-                                            imageSize: image.size
-                                        )
-                                    }
-                                }
-                                .onEnded { value in
-                                    displayFocused = true
-                                    lastPointerLocation = value.location
-                                    session.sendPointerRelease(
-                                        location: value.location,
+                        .overlay {
+                            HvfPointerEventSurface(
+                                onFocus: { displayFocused = true },
+                                onMove: { location in
+                                    session.sendPointerMove(
+                                        location: location,
                                         viewSize: geometry.size,
                                         imageSize: image.size
                                     )
-                                    pointerDragging = false
-                                }
-                        )
-                        .overlay(alignment: .bottomTrailing) {
-                            HStack(spacing: 6) {
-                                Button("Right Click") {
-                                    let location = lastPointerLocation ?? CGPoint(
-                                        x: geometry.size.width / 2,
-                                        y: geometry.size.height / 2
+                                },
+                                onLeftDown: { location in
+                                    session.sendPointerPress(
+                                        location: location,
+                                        viewSize: geometry.size,
+                                        imageSize: image.size
                                     )
-                                    session.sendPointerRightClick(
+                                },
+                                onLeftUp: { location in
+                                    session.sendPointerRelease(
+                                        location: location,
+                                        viewSize: geometry.size,
+                                        imageSize: image.size
+                                    )
+                                },
+                                onRightDown: { location in
+                                    session.sendPointerRightPress(
+                                        location: location,
+                                        viewSize: geometry.size,
+                                        imageSize: image.size
+                                    )
+                                },
+                                onRightUp: { location in
+                                    session.sendPointerRelease(
+                                        location: location,
+                                        viewSize: geometry.size,
+                                        imageSize: image.size
+                                    )
+                                },
+                                onScroll: { delta, location in
+                                    session.sendPointerScroll(
+                                        delta,
                                         location: location,
                                         viewSize: geometry.size,
                                         imageSize: image.size
                                     )
                                 }
-                                Button("Scroll Up") {
-                                    sendDisplayScroll(1, geometry: geometry, image: image)
-                                }
-                                Button("Scroll Down") {
-                                    sendDisplayScroll(-1, geometry: geometry, image: image)
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .padding(8)
+                            )
                         }
                 }
                 .frame(maxWidth: .infinity, minHeight: 280, maxHeight: 520)
@@ -267,21 +259,6 @@ struct HvfEngineView: View {
             Label("BVAGENT Event Feed", systemImage: "list.bullet.rectangle")
         }
     }
-
-    #if canImport(AppKit)
-    private func sendDisplayScroll(_ delta: Int8, geometry: GeometryProxy, image: NSImage) {
-        let location = lastPointerLocation ?? CGPoint(
-            x: geometry.size.width / 2,
-            y: geometry.size.height / 2
-        )
-        session.sendPointerScroll(
-            delta,
-            location: location,
-            viewSize: geometry.size,
-            imageSize: image.size
-        )
-    }
-    #endif
 
     private var statusPill: some View {
         Text(stateText)

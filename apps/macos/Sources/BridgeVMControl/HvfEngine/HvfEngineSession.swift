@@ -229,6 +229,10 @@ final class HvfEngineSession: ObservableObject {
         sendPointerAction("right-click", location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
+    func sendPointerRightPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
+        sendPointerAction("right-press", location: location, viewSize: viewSize, imageSize: imageSize)
+    }
+
     func sendPointerScroll(_ delta: Int8, location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
         guard delta != 0, let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return }
         appendLiveInput("POINTER scroll:\(delta)@\(point.x)x\(point.y)")
