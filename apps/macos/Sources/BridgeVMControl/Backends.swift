@@ -343,7 +343,14 @@ final class QemuCompatBackend: VMBackend {
 
 final class HvfWindowsBackend: VMBackend {
     private(set) var config: VMConfig
-    init(_ config: VMConfig) { self.config = config }
+    private let processIsRunning: (String) -> Bool
+    init(
+        _ config: VMConfig,
+        processIsRunning: @escaping (String) -> Bool = { Shell.isProcessRunning(matching: $0) }
+    ) {
+        self.config = config
+        self.processIsRunning = processIsRunning
+    }
 
     var displayName: String { config.displayName }
     let kind = "hvf-engine"
@@ -386,7 +393,7 @@ final class HvfWindowsBackend: VMBackend {
         "Write-Output ('BRIDGEVM_DISK_GROW_OK state='+$state+' size='+$after.Size+' free='+$volume.SizeRemaining)\""
     ].joined()
 
-    func isRunning() -> Bool { Shell.isProcessRunning(matching: targetDiskPath) }
+    func isRunning() -> Bool { processIsRunning(targetDiskPath) }
     func currentIP() -> String? { isRunning() ? "NAT (HVF)" : nil }
 
     func start() {
@@ -447,6 +454,9 @@ final class HvfWindowsBackend: VMBackend {
     }
 
     func runInGuest(_ command: String) -> (output: String, code: Int32) {
+        guard isRunning() else {
+            return ("HVF VM이 실행 중이 아닙니다.", -1)
+        }
         ensureDirectories()
         let offset = fileSize(at: runLogPath)
         appendCtl(command)
@@ -529,6 +539,9 @@ final class HvfWindowsBackend: VMBackend {
         while Date() < deadline {
             if let reply = parseCommandReply(command: command, from: logSlice(startingAt: offset)) {
                 return reply
+            }
+            if !isRunning() {
+                return ("HVF 게스트 연결이 명령 실행 중 종료되었습니다: \(command)", -1)
             }
             usleep(100_000)
         }

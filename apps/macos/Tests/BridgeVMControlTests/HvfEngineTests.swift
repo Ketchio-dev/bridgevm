@@ -478,7 +478,7 @@ final class HvfWindowsBackendTests: XCTestCase {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
-        let backend = HvfWindowsBackend(cfg)
+        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in true })
 
         XCTAssertEqual(backend.displayName, "Windows Preview")
         XCTAssertEqual(backend.kind, "hvf-engine")
@@ -511,7 +511,7 @@ final class HvfWindowsBackendTests: XCTestCase {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
-        let backend = HvfWindowsBackend(cfg)
+        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in true })
         let log = URL(fileURLWithPath: backend.evidenceDir).appendingPathComponent("run.log")
 
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) {
@@ -528,6 +528,41 @@ final class HvfWindowsBackendTests: XCTestCase {
         let result = backend.runInGuest("foo")
         XCTAssertEqual(result.output, "hello\nworld")
         XCTAssertEqual(result.code, 0)
+        XCTAssertEqual(try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8), "foo\n")
+    }
+
+    func testRunInGuestRejectsStoppedVMWithoutWritingControlFile() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
+        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in false })
+
+        let result = backend.runInGuest("foo")
+
+        XCTAssertEqual(result.output, "HVF VM이 실행 중이 아닙니다.")
+        XCTAssertEqual(result.code, -1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backend.ctlFilePath))
+    }
+
+    func testRunInGuestReturnsImmediatelyWhenVMExitsWhileWaiting() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
+        let lock = NSLock()
+        var checks = 0
+        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in
+            lock.lock()
+            defer { lock.unlock() }
+            checks += 1
+            return checks == 1
+        })
+
+        let started = Date()
+        let result = backend.runInGuest("foo")
+
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1)
+        XCTAssertEqual(result.output, "HVF 게스트 연결이 명령 실행 중 종료되었습니다: foo")
+        XCTAssertEqual(result.code, -1)
         XCTAssertEqual(try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8), "foo\n")
     }
 
