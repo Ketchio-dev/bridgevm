@@ -40,7 +40,7 @@ use std::{
     os::unix::io::AsRawFd,
     os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Child, Command, Output, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc, Arc,
@@ -57,6 +57,10 @@ const MAX_PROXY_FRAMEBUFFER_BYTES: usize = 256 * 1024 * 1024;
 const DAEMON_CLIENT_IO_TIMEOUT: Duration = Duration::from_secs(2);
 const DAEMON_RESPONSE_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_CONCURRENT_DAEMON_CLIENTS: usize = 32;
+#[cfg(target_os = "macos")]
+const CODESIGN_PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(target_os = "macos")]
+const CODESIGN_PREFLIGHT_OUTPUT_LIMIT: usize = 1024 * 1024;
 
 struct PendingDaemonRequest {
     request: BridgeVmRequest,
@@ -477,16 +481,19 @@ fn require_executable(path: &Path, label: &str) -> Result<()> {
 
 #[cfg(target_os = "macos")]
 fn verify_apple_vz_runner_entitlement(path: &Path) -> Result<()> {
-    let output = Command::new("codesign")
-        .args(["-d", "--entitlements", ":-"])
-        .arg(path)
-        .output()
-        .with_context(|| {
-            format!(
-                "failed to inspect AppleVzRunner entitlements: {}",
-                path.display()
-            )
-        })?;
+    let mut command = Command::new("codesign");
+    command.args(["-d", "--entitlements", ":-"]).arg(path);
+    let output = run_bounded_command_output(
+        command,
+        CODESIGN_PREFLIGHT_TIMEOUT,
+        CODESIGN_PREFLIGHT_OUTPUT_LIMIT,
+    )
+    .with_context(|| {
+        format!(
+            "failed to inspect AppleVzRunner entitlements: {}",
+            path.display()
+        )
+    })?;
     if !output.status.success() {
         anyhow::bail!(
             "AppleVzRunner entitlement preflight failed for {}: {}",
@@ -502,6 +509,104 @@ fn verify_apple_vz_runner_entitlement(path: &Path) -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn run_bounded_command_output(
+    mut command: Command,
+    timeout: Duration,
+    output_limit: usize,
+) -> std::io::Result<Output> {
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::other("failed to capture command stdout"));
+        }
+    };
+    let stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::other("failed to capture command stderr"));
+        }
+    };
+    let stdout_thread = thread::spawn(move || drain_command_output(stdout, output_limit));
+    let stderr_thread = thread::spawn(move || drain_command_output(stderr, output_limit));
+
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() < timeout => thread::sleep(Duration::from_millis(10)),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_thread.join();
+                let _ = stderr_thread.join();
+                return Err(std::io::Error::new(
+                    ErrorKind::TimedOut,
+                    format!(
+                        "command exceeded {}-millisecond timeout",
+                        timeout.as_millis()
+                    ),
+                ));
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_thread.join();
+                let _ = stderr_thread.join();
+                return Err(error);
+            }
+        }
+    };
+
+    let (stdout, stdout_exceeded) = join_command_output(stdout_thread, "stdout")?;
+    let (stderr, stderr_exceeded) = join_command_output(stderr_thread, "stderr")?;
+    if stdout_exceeded || stderr_exceeded {
+        return Err(std::io::Error::new(
+            ErrorKind::InvalidData,
+            format!("command output exceeded {output_limit}-byte per-stream limit"),
+        ));
+    }
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+fn drain_command_output<R: Read>(mut stream: R, limit: usize) -> std::io::Result<(Vec<u8>, bool)> {
+    let mut retained = Vec::with_capacity(limit.min(8192));
+    let mut exceeded = false;
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let read = stream.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        let remaining = limit.saturating_sub(retained.len());
+        let keep = remaining.min(read);
+        retained.extend_from_slice(&buffer[..keep]);
+        exceeded |= keep < read;
+    }
+    Ok((retained, exceeded))
+}
+
+fn join_command_output(
+    handle: thread::JoinHandle<std::io::Result<(Vec<u8>, bool)>>,
+    name: &str,
+) -> std::io::Result<(Vec<u8>, bool)> {
+    handle
+        .join()
+        .map_err(|_| std::io::Error::other(format!("command {name} drain thread panicked")))?
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -2923,6 +3028,28 @@ mod tests {
 
     static TEST_ID: AtomicU64 = AtomicU64::new(0);
     static PROXY_WINDOW_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn bounded_command_output_captures_both_streams() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "printf hello; printf warning >&2"]);
+
+        let output = run_bounded_command_output(command, Duration::from_secs(1), 1024).unwrap();
+
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"hello");
+        assert_eq!(output.stderr, b"warning");
+    }
+
+    #[test]
+    fn bounded_command_output_rejects_oversized_stream() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "printf 12345"]);
+
+        let error = run_bounded_command_output(command, Duration::from_secs(1), 4).unwrap_err();
+
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+    }
 
     struct EnvVarGuard {
         saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
