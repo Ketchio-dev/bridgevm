@@ -2,6 +2,75 @@ import XCTest
 @testable import BridgeVMControl
 
 final class VMCreationSafetyTests: XCTestCase {
+    func testWindowsCreationCopiesISOIntoManagedBundle() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let sourceISO = temp.appendingPathComponent("Windows.iso")
+        let storage = temp.appendingPathComponent("library", isDirectory: true)
+        let contents = Data("stable installer media".utf8)
+        try contents.write(to: sourceISO)
+
+        let config = try XCTUnwrap(VMLibrary.createWindows(
+            name: "Self Contained Windows",
+            isoPath: sourceISO.path,
+            template: makeTemplate(bundlePath: temp.path),
+            storageDir: storage,
+            persist: false,
+            diskCreator: makeFakeDisk
+        ))
+
+        let managedISO = try XCTUnwrap(config.isoPath)
+        XCTAssertEqual(managedISO, config.bundlePath + "/disks/installer.iso")
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: managedISO)), contents)
+        try FileManager.default.removeItem(at: sourceISO)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: managedISO)), contents)
+    }
+
+    func testWindowsCreationDereferencesSymlinkedISO() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let sourceISO = temp.appendingPathComponent("actual.iso")
+        let linkedISO = temp.appendingPathComponent("selected.iso")
+        let storage = temp.appendingPathComponent("library", isDirectory: true)
+        try Data("installer".utf8).write(to: sourceISO)
+        try FileManager.default.createSymbolicLink(at: linkedISO, withDestinationURL: sourceISO)
+
+        let config = try XCTUnwrap(VMLibrary.createWindows(
+            name: "Linked ISO",
+            isoPath: linkedISO.path,
+            template: makeTemplate(bundlePath: temp.path),
+            storageDir: storage,
+            persist: false,
+            diskCreator: makeFakeDisk
+        ))
+
+        let managedISO = try XCTUnwrap(config.isoPath)
+        let values = try URL(fileURLWithPath: managedISO).resourceValues(forKeys: [.isSymbolicLinkKey])
+        XCTAssertFalse(values.isSymbolicLink == true)
+        XCTAssertEqual(try String(contentsOfFile: managedISO), "installer")
+    }
+
+    func testWindowsDiskCreationFailureRemovesCopiedISOAndReservation() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let sourceISO = temp.appendingPathComponent("Windows.iso")
+        let storage = temp.appendingPathComponent("library", isDirectory: true)
+        try Data("installer".utf8).write(to: sourceISO)
+
+        let result = VMLibrary.createWindows(
+            name: "Failed Windows",
+            isoPath: sourceISO.path,
+            template: makeTemplate(bundlePath: temp.path),
+            storageDir: storage,
+            persist: false,
+            diskCreator: { _, _ in false }
+        )
+
+        XCTAssertNil(result)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: storage.path), [])
+        XCTAssertEqual(try String(contentsOf: sourceISO), "installer")
+    }
+
     func testCloneRejectsStorageInsideSourceBeforeCreatingAnything() throws {
         let temp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: temp) }
@@ -74,6 +143,10 @@ final class VMCreationSafetyTests: XCTestCase {
                  runnerPath: "", launchSpecPath: "", handoffPath: "", sshKeyPath: "",
                  sshUser: "", leasesPath: "", guestName: "template",
                  displayWidth: 1440, displayHeight: 900)
+    }
+
+    private func makeFakeDisk(at path: String, sizeGiB: Int) -> Bool {
+        FileManager.default.createFile(atPath: path, contents: Data("qcow2-\(sizeGiB)".utf8))
     }
 
     private func makeTempDir() throws -> URL {

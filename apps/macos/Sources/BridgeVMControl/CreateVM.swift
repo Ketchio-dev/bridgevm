@@ -280,7 +280,8 @@ extension VMLibrary {
     /// target; the Win11 ISO boots its installer in a cocoa window.
     static func createWindows(name: String, isoPath: String, template: VMConfig,
                               storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
-                              diskGiB: Int = 64) -> VMConfig? {
+                              diskGiB: Int = 64, persist: Bool = true,
+                              diskCreator: ((String, Int) -> Bool)? = nil) -> VMConfig? {
         let fm = FileManager.default
         guard diskGiB > 0, width > 0, height > 0,
               isReadableRegularFile(isoPath),
@@ -299,15 +300,20 @@ extension VMLibrary {
         }
         let b = bundle.path
         let disk = "\(b)/disks/win.qcow2"
-        let r = Shell.run("/opt/homebrew/bin/qemu-img", ["create", "-f", "qcow2", disk, "\(diskGiB)G"])
-        if r.code != 0 || !fm.fileExists(atPath: disk) { return nil }
+        let isoLocal = "\(b)/disks/installer.iso"
+        let sourceISO = URL(fileURLWithPath: isoPath).resolvingSymlinksInPath().standardizedFileURL.path
+        guard cloneOrCopyFile(from: sourceISO, to: isoLocal) else { return nil }
+        let createdDisk = diskCreator?(disk, diskGiB) ?? {
+            Shell.run("/opt/homebrew/bin/qemu-img", ["create", "-f", "qcow2", disk, "\(diskGiB)G"]).code == 0
+        }()
+        guard createdDisk, fm.fileExists(atPath: disk) else { return nil }
         let cfg = VMConfig(id: slug, name: name, displayName: name, backendKind: "qemu-compat",
                            bootMode: "windows-iso", bundlePath: b, runnerPath: "",
                            launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
                            leasesPath: template.leasesPath, guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: true,
-                           isoPath: isoPath, diskPath: disk, memMiB: 6144, cpuCount: 4)
-        guard save(cfg) else { return nil }
+                           isoPath: isoLocal, diskPath: disk, memMiB: 6144, cpuCount: 4)
+        if persist, !save(cfg) { return nil }
         succeeded = true
         return cfg
     }
