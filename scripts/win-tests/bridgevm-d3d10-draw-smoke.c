@@ -6,6 +6,7 @@
 #include <dxgi.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 struct vertex {
@@ -137,7 +138,23 @@ int main(void) {
     if (FAILED(hr)) return fail_hr("create-vertex-buffer", hr);
   }
 
+  /* BV_DRAW_ITERS>1 repeats draw+copy+readback inside ONE process on the same
+   * device/context. If iteration 2 passes while iteration 1 was black, the
+   * defect is per-first-draw-of-a-context (lazy shader/pipeline/FBO state),
+   * not per-process; if every iteration here fails yet a fresh process passes,
+   * it is per-process / per-vrend-context-lifecycle. */
+  int iters = 1;
   {
+    char iters_env[16] = {0};
+    if (GetEnvironmentVariableA("BV_DRAW_ITERS", iters_env, sizeof(iters_env))) {
+      int parsed = atoi(iters_env);
+      if (parsed >= 1 && parsed <= 8) iters = parsed;
+    }
+  }
+
+  uint32_t magenta = 0, bad = 0;
+  uint8_t center[4] = {0};
+  for (int iter = 0; iter < iters; ++iter) {
     const FLOAT black[4] = {0, 0, 0, 1};
     D3D10_VIEWPORT viewport = {0, 0, 64, 64, 0.0f, 1.0f};
     UINT stride = sizeof(struct vertex), offset = 0;
@@ -154,61 +171,65 @@ int main(void) {
     ID3D10Device_PSSetShader(device, ps);
     ID3D10Device_ClearRenderTargetView(device, view, black);
     ID3D10Device_Draw(device, 3, 0);
-  }
 
-  ID3D10Device_CopyResource(device, (ID3D10Resource *)staging,
-                            (ID3D10Resource *)target);
+    ID3D10Device_CopyResource(device, (ID3D10Resource *)staging,
+                              (ID3D10Resource *)target);
 
-  /* An EVENT query bounds GPU completion of everything above. If it never
-   * signals, the WDDM scheduler never executed the submitted DMA buffers;
-   * if it signals without host-side SUBMIT_3D traffic, completion is being
-   * reported without execution. Either way this splits the search space. */
-  ID3D10Query *event_query = NULL;
-  {
-    D3D10_QUERY_DESC query_desc = {D3D10_QUERY_EVENT, 0};
-    hr = ID3D10Device_CreateQuery(device, &query_desc, &event_query);
-  }
-  if (FAILED(hr)) return fail_hr("create-event-query", hr);
-  ID3D10Asynchronous_End((ID3D10Asynchronous *)event_query);
-  ID3D10Device_Flush(device);
-  {
-    BOOL gpu_done = FALSE;
-    DWORD start_ms = GetTickCount();
-    DWORD waited_ms = 0;
-    HRESULT query_hr = S_FALSE;
-    while (waited_ms < 10000) {
-      query_hr = ID3D10Asynchronous_GetData(
-          (ID3D10Asynchronous *)event_query, &gpu_done, sizeof(gpu_done), 0);
-      if (query_hr == S_OK && gpu_done) break;
-      if (FAILED(query_hr)) break;
-      Sleep(50);
-      waited_ms = GetTickCount() - start_ms;
+    /* An EVENT query bounds GPU completion of everything above. */
+    ID3D10Query *event_query = NULL;
+    {
+      D3D10_QUERY_DESC query_desc = {D3D10_QUERY_EVENT, 0};
+      hr = ID3D10Device_CreateQuery(device, &query_desc, &event_query);
     }
-    printf("BV-D3D10-DRAW-EVENT hr=0x%08lx done=%d waited_ms=%lu\n",
-           (unsigned long)query_hr, gpu_done ? 1 : 0, (unsigned long)waited_ms);
-  }
-  ID3D10Query_Release(event_query);
-
-  hr = ID3D10Texture2D_Map(staging, 0, D3D10_MAP_READ, 0, &mapped);
-  if (FAILED(hr)) return fail_hr("map-staging", hr);
-
-  uint32_t magenta = 0, bad = 0;
-  uint8_t center[4] = {0};
-  for (uint32_t y = 0; y < 64; ++y) {
-    const uint8_t *row = (const uint8_t *)mapped.pData + y * mapped.RowPitch;
-    for (uint32_t x = 0; x < 64; ++x) {
-      const uint8_t *pixel = row + x * 4;
-      if (x == 32 && y == 32) {
-        for (uint32_t i = 0; i < 4; ++i) center[i] = pixel[i];
+    if (FAILED(hr)) return fail_hr("create-event-query", hr);
+    ID3D10Asynchronous_End((ID3D10Asynchronous *)event_query);
+    ID3D10Device_Flush(device);
+    {
+      BOOL gpu_done = FALSE;
+      DWORD start_ms = GetTickCount();
+      DWORD waited_ms = 0;
+      HRESULT query_hr = S_FALSE;
+      while (waited_ms < 10000) {
+        query_hr = ID3D10Asynchronous_GetData(
+            (ID3D10Asynchronous *)event_query, &gpu_done, sizeof(gpu_done), 0);
+        if (query_hr == S_OK && gpu_done) break;
+        if (FAILED(query_hr)) break;
+        Sleep(50);
+        waited_ms = GetTickCount() - start_ms;
       }
-      if (pixel[0] >= 254 && pixel[1] <= 1 &&
-          pixel[2] >= 254 && pixel[3] >= 254)
-        ++magenta;
-      else
-        ++bad;
+      printf("BV-D3D10-DRAW-EVENT iter=%d hr=0x%08lx done=%d waited_ms=%lu\n",
+             iter, (unsigned long)query_hr, gpu_done ? 1 : 0,
+             (unsigned long)waited_ms);
+    }
+    ID3D10Query_Release(event_query);
+
+    hr = ID3D10Texture2D_Map(staging, 0, D3D10_MAP_READ, 0, &mapped);
+    if (FAILED(hr)) return fail_hr("map-staging", hr);
+
+    magenta = 0;
+    bad = 0;
+    for (uint32_t y = 0; y < 64; ++y) {
+      const uint8_t *row = (const uint8_t *)mapped.pData + y * mapped.RowPitch;
+      for (uint32_t x = 0; x < 64; ++x) {
+        const uint8_t *pixel = row + x * 4;
+        if (x == 32 && y == 32) {
+          for (uint32_t i = 0; i < 4; ++i) center[i] = pixel[i];
+        }
+        if (pixel[0] >= 254 && pixel[1] <= 1 &&
+            pixel[2] >= 254 && pixel[3] >= 254)
+          ++magenta;
+        else
+          ++bad;
+      }
+    }
+    ID3D10Texture2D_Unmap(staging, 0);
+    if (iters > 1) {
+      printf("BV-D3D10-DRAW-ITER iter=%d center=%02x%02x%02x%02x "
+             "magenta_pixels=%u bad_pixels=%u\n",
+             iter, center[0], center[1], center[2], center[3], magenta, bad);
     }
   }
-  ID3D10Texture2D_Unmap(staging, 0);
+
   hr = ID3D10Device_GetDeviceRemovedReason(device);
   printf("BV-D3D10-DRAW-RESULT center=%02x%02x%02x%02x "
          "magenta_pixels=%u bad_pixels=%u removed_reason=0x%08lx\n",

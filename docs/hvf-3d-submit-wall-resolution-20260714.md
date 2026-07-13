@@ -63,12 +63,32 @@ Discriminating experiments (all live, preserved under
   (Note: a guest reboot also resets the virglrenderer instance, so this does
   not by itself exonerate host-side state; vrend and the guest reset together.)
 
-Current best hypothesis: something initialized lazily by the first
-`DRAW_VBO`/first app render context in a virglrenderer lifetime on the
-CGL/GL-4.1-core path silently discards the first process's rendering (dwm
-mostly issues transfers, so the owned smoke is plausibly the first real draw
-of each boot). The failing readback returns opaque black (VB variant) or
-transparent black (NOVB variant) — i.e. an untouched render target.
+Two hypotheses tested and FALSIFIED:
+
+- Host CGL stale-context binding (vrend `current_hw_ctx` is process-global but
+  CGL binding is thread-local; a pacing-thread readback could move the bind).
+  Added an unconditional Apple rebind in `vrend_finish_context_switch` +
+  `vrend_hw_switch_context_with_sub` with a `BV-CGL-REBIND` diagnostic.
+  Result: 0 corrections, first run still black. Reverted (0 benefit, hot-path
+  cost). The global bookkeeping was never wrong on this workload.
+- Per-first-draw-of-a-context lazy init (shader compile / VAO / FBO). Ran the
+  full draw+CopyResource+readback THREE times inside one process on the same
+  device/context (`BV_DRAW_ITERS=3`): all three black. Not warm-up, not lazy
+  per-context state.
+
+DECISIVE narrowing: the defect is strictly **per-process / per-first-D3D-device
+after a guest boot**. A second process (fresh device + WDDM context, resource
+ids that increment past the first) reads back correct pixels; the first process
+never does, no matter how many times it redraws. Since the host virglrenderer
+instance and its GL contexts persist across guest PSCI reboots yet the failure
+recurs every boot, and process 2 runs the identical host path successfully, the
+cause is **guest-side (VidMm/dxgkrnl/KMD) first-device-after-boot state**, not a
+host renderer lazy init. Prime suspects: a DEFAULT-pool render-target's guest
+backing (AttachBacking MDL page list, unfenced `QueueBuffer`) not being
+host-visible before the fenced `SUBMIT_3D` that draws into it on the cold path;
+or a one-time per-adapter/first-device initialization the first process triggers
+but does not itself benefit from. Under investigation (gpt-5.6-sol KMD/host
+analysis task-mrjnaq1v).
 
 ## Infrastructure fixed/added along the way (each committed with tests)
 
