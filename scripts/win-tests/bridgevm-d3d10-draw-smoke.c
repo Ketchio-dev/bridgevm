@@ -38,9 +38,19 @@ static HRESULT compile_shader(d3d_compile_fn compile, const char *source,
 }
 
 int main(void) {
+  /* BV_DRAW_NOVB=1 draws the same fullscreen triangle from SV_VertexID with
+   * no vertex buffer, no input layout, and therefore no vertex-data transfer.
+   * It isolates whether a black first-run readback comes from the vertex
+   * upload path or from the draw execution itself. */
+  const int no_vertex_buffer = GetEnvironmentVariableA("BV_DRAW_NOVB", NULL, 0) != 0;
   static const char vs_source[] =
       "float4 main(float2 position : POSITION) : SV_POSITION {"
       "  return float4(position, 0.0, 1.0);"
+      "}";
+  static const char vs_novb_source[] =
+      "float4 main(uint id : SV_VertexID) : SV_POSITION {"
+      "  float2 p = float2(float((id << 1) & 2), float(id & 2));"
+      "  return float4(p * float2(2.0, 2.0) + float2(-1.0, -1.0), 0.0, 1.0);"
       "}";
   static const char ps_source[] =
       "float4 main() : SV_TARGET { return float4(1.0, 0.0, 1.0, 1.0); }";
@@ -92,7 +102,8 @@ int main(void) {
   }
   if (FAILED(hr)) return fail_hr("create-staging", hr);
 
-  hr = compile_shader(compile, vs_source, "main", "vs_4_0", &vs_blob);
+  hr = compile_shader(compile, no_vertex_buffer ? vs_novb_source : vs_source,
+                      "main", "vs_4_0", &vs_blob);
   if (FAILED(hr)) return fail_hr("compile-vs", hr);
   hr = compile_shader(compile, ps_source, "main", "ps_4_0", &ps_blob);
   if (FAILED(hr)) return fail_hr("compile-ps", hr);
@@ -105,17 +116,17 @@ int main(void) {
       ID3D10Blob_GetBufferSize(ps_blob), &ps);
   if (FAILED(hr)) return fail_hr("create-ps", hr);
 
-  {
+  if (!no_vertex_buffer) {
     const D3D10_INPUT_ELEMENT_DESC element = {
         "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
         D3D10_INPUT_PER_VERTEX_DATA, 0};
     hr = ID3D10Device_CreateInputLayout(
         device, &element, 1, ID3D10Blob_GetBufferPointer(vs_blob),
         ID3D10Blob_GetBufferSize(vs_blob), &layout);
+    if (FAILED(hr)) return fail_hr("create-layout", hr);
   }
-  if (FAILED(hr)) return fail_hr("create-layout", hr);
 
-  {
+  if (!no_vertex_buffer) {
     D3D10_BUFFER_DESC desc = {0};
     D3D10_SUBRESOURCE_DATA data = {0};
     desc.ByteWidth = sizeof(vertices);
@@ -123,8 +134,8 @@ int main(void) {
     desc.BindFlags = D3D10_BIND_VERTEX_BUFFER;
     data.pSysMem = vertices;
     hr = ID3D10Device_CreateBuffer(device, &desc, &data, &vertex_buffer);
+    if (FAILED(hr)) return fail_hr("create-vertex-buffer", hr);
   }
-  if (FAILED(hr)) return fail_hr("create-vertex-buffer", hr);
 
   {
     const FLOAT black[4] = {0, 0, 0, 1};
@@ -132,11 +143,13 @@ int main(void) {
     UINT stride = sizeof(struct vertex), offset = 0;
     ID3D10Device_OMSetRenderTargets(device, 1, &view, NULL);
     ID3D10Device_RSSetViewports(device, 1, &viewport);
-    ID3D10Device_IASetInputLayout(device, layout);
     ID3D10Device_IASetPrimitiveTopology(device,
                                         D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    ID3D10Device_IASetVertexBuffers(device, 0, 1, &vertex_buffer, &stride,
-                                    &offset);
+    if (!no_vertex_buffer) {
+      ID3D10Device_IASetInputLayout(device, layout);
+      ID3D10Device_IASetVertexBuffers(device, 0, 1, &vertex_buffer, &stride,
+                                      &offset);
+    }
     ID3D10Device_VSSetShader(device, vs);
     ID3D10Device_PSSetShader(device, ps);
     ID3D10Device_ClearRenderTargetView(device, view, black);
@@ -145,7 +158,37 @@ int main(void) {
 
   ID3D10Device_CopyResource(device, (ID3D10Resource *)staging,
                             (ID3D10Resource *)target);
+
+  /* An EVENT query bounds GPU completion of everything above. If it never
+   * signals, the WDDM scheduler never executed the submitted DMA buffers;
+   * if it signals without host-side SUBMIT_3D traffic, completion is being
+   * reported without execution. Either way this splits the search space. */
+  ID3D10Query *event_query = NULL;
+  {
+    D3D10_QUERY_DESC query_desc = {D3D10_QUERY_EVENT, 0};
+    hr = ID3D10Device_CreateQuery(device, &query_desc, &event_query);
+  }
+  if (FAILED(hr)) return fail_hr("create-event-query", hr);
+  ID3D10Asynchronous_End((ID3D10Asynchronous *)event_query);
   ID3D10Device_Flush(device);
+  {
+    BOOL gpu_done = FALSE;
+    DWORD start_ms = GetTickCount();
+    DWORD waited_ms = 0;
+    HRESULT query_hr = S_FALSE;
+    while (waited_ms < 10000) {
+      query_hr = ID3D10Asynchronous_GetData(
+          (ID3D10Asynchronous *)event_query, &gpu_done, sizeof(gpu_done), 0);
+      if (query_hr == S_OK && gpu_done) break;
+      if (FAILED(query_hr)) break;
+      Sleep(50);
+      waited_ms = GetTickCount() - start_ms;
+    }
+    printf("BV-D3D10-DRAW-EVENT hr=0x%08lx done=%d waited_ms=%lu\n",
+           (unsigned long)query_hr, gpu_done ? 1 : 0, (unsigned long)waited_ms);
+  }
+  ID3D10Query_Release(event_query);
+
   hr = ID3D10Texture2D_Map(staging, 0, D3D10_MAP_READ, 0, &mapped);
   if (FAILED(hr)) return fail_hr("map-staging", hr);
 
@@ -172,8 +215,8 @@ int main(void) {
          center[0], center[1], center[2], center[3], magenta, bad,
          (unsigned long)hr);
 
-  ID3D10Buffer_Release(vertex_buffer);
-  ID3D10InputLayout_Release(layout);
+  if (vertex_buffer) ID3D10Buffer_Release(vertex_buffer);
+  if (layout) ID3D10InputLayout_Release(layout);
   ID3D10PixelShader_Release(ps);
   ID3D10VertexShader_Release(vs);
   ID3D10Blob_Release(ps_blob);
