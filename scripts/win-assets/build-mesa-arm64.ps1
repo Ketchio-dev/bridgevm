@@ -128,6 +128,34 @@ if (Test-Path -LiteralPath $buildDir) {
     throw "Mesa ARM64 build directory already exists; use a clean source checkout: $buildDir"
 }
 
+# meson's VisualStudioLikeCompiler (compilers/mixins/visualstudio.py) turns the
+# clang-cl target triple into the /MACHINE flag handed to llvm-lib and lld-link.
+# For the `arm64-pc-windows-msvc` triple, clang-cl reports the arch string
+# 'arm64'; meson's `elif 'aarch64' in target:` misses that spelling and falls
+# through to `elif 'arm' in target:` -> /MACHINE:arm (32-bit), which the
+# librarian rejects against real arm64 objects. Apply the exact idempotent
+# module rewrite used by the preserved successful CI build.
+$vsPy = (& python -c "import mesonbuild.compilers.mixins.visualstudio as m; print(m.__file__)" | Select-Object -Last 1)
+if ($vsPy) { $vsPy = $vsPy.Trim() }
+if ($vsPy -and (Test-Path -LiteralPath $vsPy)) {
+    $vsPyText = Get-Content -Raw -LiteralPath $vsPy
+    $vsPyOriginal = $vsPyText
+    $vsPyText = $vsPyText.Replace(
+        "self.is_64 = ('x64' in target) or ('x86_64' in target)",
+        "self.is_64 = ('x64' in target) or ('x86_64' in target) or ('arm64' in target) or ('aarch64' in target)")
+    $vsPyText = $vsPyText.Replace(
+        "elif 'aarch64' in target:",
+        "elif 'aarch64' in target or 'arm64' in target:")
+    if ($vsPyText -cne $vsPyOriginal) {
+        [System.IO.File]::WriteAllText($vsPy, $vsPyText, $utf8NoBom)
+        Write-Host "Patched meson arm64 /MACHINE canonicalization: $vsPy"
+    } else {
+        Write-Host "meson arm64 canonicalization patch: no change (already patched or upstream fixed): $vsPy"
+    }
+} else {
+    throw "Could not locate meson visualstudio.py for the arm64 /MACHINE canonicalization patch"
+}
+
 try {
     [System.IO.File]::WriteAllText(
         $generatedCrossFile,
