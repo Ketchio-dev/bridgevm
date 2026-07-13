@@ -25,7 +25,7 @@ set "PATH=C:\Program Files\Git\cmd;C:\Program Files\LLVM\bin;%PYROOT%;%PYROOT%\S
 call "%VSROOT%\Common7\Tools\VsDevCmd.bat" -arch=arm64 -host_arch=x64
 if errorlevel 1 exit /b 13
 
-"%PYROOT%\python.exe" -m pip install --disable-pip-version-check meson==1.7.2 ninja==1.11.1.4 packaging==25.0
+"%PYROOT%\python.exe" -m pip install --disable-pip-version-check meson==1.7.2 ninja==1.11.1.4 packaging==25.0 mako==1.3.10 PyYAML==6.0.2
 if errorlevel 1 exit /b 14
 
 set "WORKDIR=C:\BridgeVMSubmitTraceBuild"
