@@ -34,7 +34,13 @@ set "MANIFEST=%WORKDIR%\bridgevm-viogpu3d-arm64-package-pre-finalization.sha256"
 set "FINALIZED=%WORKDIR%\bridgevm-viogpu3d-arm64-package-finalized"
 set "ARCHIVE=%~dp0bridgevm-viogpu3d-submit-trace-finalized.zip"
 
-powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0build-viogpu3d-arm64.ps1" -WorkDir "%WORKDIR%" -OutputDir "%PACKAGE%"
+rem A pinned prebuilt viogpu3d.sys beside this kit selects the UMD-only rebuild
+rem mode, which does not need the WDK Visual Studio MSBuild toolsets (MSB8020).
+if exist "%~dp0viogpu3d.sys" (
+  powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0build-viogpu3d-arm64.ps1" -WorkDir "%WORKDIR%" -OutputDir "%PACKAGE%" -DriverSysPath "%~dp0viogpu3d.sys"
+) else (
+  powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0build-viogpu3d-arm64.ps1" -WorkDir "%WORKDIR%" -OutputDir "%PACKAGE%"
+)
 if errorlevel 1 exit /b 20
 
 powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0finalize-viogpu3d-test-package.ps1" -PackageDir "%PACKAGE%" -PreFinalizationManifest "%MANIFEST%" -FinalizedDir "%FINALIZED%" -Finalizer "%~dp0finalize-viogpu3d-package.ps1"

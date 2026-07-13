@@ -114,7 +114,8 @@ param(
   [string]$CertificatePfx = "",
   [string]$CertificatePassword = "",
   [switch]$SkipMesa,
-  [switch]$SkipDriverFetch
+  [switch]$SkipDriverFetch,
+  [string]$DriverSysPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -243,6 +244,16 @@ if (@(Get-ChildItem -LiteralPath $OutputDir -Force).Count -ne 0) {
   throw "OutputDir must be empty to prevent stale package reuse: $OutputDir"
 }
 
+if ($DriverSysPath -ne "") {
+  # UMD-only rebuild mode: reuse an already-built pinned KMD payload instead of
+  # requiring the WDK Visual Studio MSBuild toolsets (MSB8020) on this builder.
+  # The provenance line records the reuse explicitly.
+  $DriverSys = [System.IO.Path]::GetFullPath($DriverSysPath)
+  if (-not (Test-Path -LiteralPath $DriverSys -PathType Leaf)) {
+    throw "DriverSysPath does not exist: $DriverSys"
+  }
+  $DriverHead = "$DriverRef(prebuilt-sys)"
+} else {
 $DriverHead = Checkout-PinnedGitRef -Path $DriverSrc -Repo $DriverRepo -Ref $DriverRef -Label "viogpu3d driver" -SkipFetch:$SkipDriverFetch
 # The pinned solution intentionally maps viogpu3d's Win11 ARM64 entry to its
 # Win10 Release project configuration while its VirtIO dependency stays Win11.
@@ -285,6 +296,7 @@ try {
 
 if (-not (Test-Path -LiteralPath $DriverSys -PathType Leaf)) {
   throw "Expected viogpu3d ARM64 miniport is missing after build: $DriverSys"
+}
 }
 
 if (-not $SkipMesa) {
