@@ -19,6 +19,7 @@ init_installed_boot_defaults() {
   INPUT_CONTROL=""
   FIRMWARE_CODE=""
   GPU_TRACE_PROTOCOL="auto"
+  GPU_TRACE_SUBMIT_PREFIX=""
   REQUIRE_GPU_TRACE_GATE="0"
   VIOGPU3D_DIR=""
   REQUIRE_VIOGPU3D_READINESS="0"
@@ -176,6 +177,11 @@ parse_installed_boot_args() {
           *) echo "FAIL: --gpu-trace-protocol must be auto, venus, or virgl" >&2; exit 2 ;;
         esac
         shift 2
+        ;;
+      --gpu-trace-submit-prefix)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        [[ "$2" =~ ^[0-9]+$ ]] && (( 10#$2 >= 1 && 10#$2 <= 1048576 )) || { echo "FAIL: --gpu-trace-submit-prefix requires an integer from 1 to 1048576" >&2; exit 2; }
+        GPU_TRACE_SUBMIT_PREFIX="$2"; shift 2
         ;;
       --display-export-ppm)
         [[ $# -ge 2 && -n "$2" ]] || { echo "FAIL: --display-export-ppm requires a non-empty path" >&2; exit 2; }

@@ -276,6 +276,9 @@ build_installed_boot_env_args() {
       ENV_ARGS+=('BRIDGEVM_VIRTIO_GPU_3D_BIND_ID=1')
     fi
     ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_TRACE_JSONL=${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}")
+    if [[ -n "${GPU_TRACE_SUBMIT_PREFIX:-}" ]]; then
+      ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_TRACE_SUBMIT_PREFIX=$GPU_TRACE_SUBMIT_PREFIX")
+    fi
   fi
   if [[ -n "${DISPLAY_EXPORT_PPM:-}" ]]; then
     ENV_ARGS+=(

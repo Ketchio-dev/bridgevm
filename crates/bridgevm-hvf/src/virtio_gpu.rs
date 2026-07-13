@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crate::{
@@ -2514,7 +2515,7 @@ fn write_trace_command_details(out: &mut String, request: &[u8], hdr: CtrlHdr) {
                 size,
                 size.div_ceil(4)
             );
-            write_hex_prefix_json(out, payload, 32);
+            write_hex_prefix_json(out, payload, submit_trace_prefix_len());
         }
         VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB => {
             let _ = write!(
@@ -2548,6 +2549,21 @@ fn write_trace_command_response_details(out: &mut String, response_type: u32, re
         }
         _ => {}
     }
+}
+
+/// Bytes of SUBMIT_3D payload preserved in the JSONL trace. The 32-byte
+/// default identifies the leading command; raising it via
+/// BRIDGEVM_VIRTIO_GPU_TRACE_SUBMIT_PREFIX captures whole command streams for
+/// offline decoding when diagnosing renderer-level divergence.
+fn submit_trace_prefix_len() -> usize {
+    static LEN: OnceLock<usize> = OnceLock::new();
+    *LEN.get_or_init(|| {
+        std::env::var("BRIDGEVM_VIRTIO_GPU_TRACE_SUBMIT_PREFIX")
+            .ok()
+            .and_then(|value| value.trim().parse::<usize>().ok())
+            .filter(|&value| value > 0)
+            .unwrap_or(32)
+    })
 }
 
 fn write_hex_prefix_json(out: &mut String, bytes: &[u8], max_len: usize) {

@@ -86,6 +86,10 @@ Options:
   --gpu-trace-protocol P  Trace gate protocol: auto, venus, or virgl.
                           Default: auto. Explicit virgl also selects the
                           CGL-backed VirGL host runtime.
+  --gpu-trace-submit-prefix N
+                          Bytes of each SUBMIT_3D payload preserved in the
+                          JSONL trace, 1..1048576 (default 32). Raise to
+                          capture whole command streams for offline decoding.
   --require-gpu-trace-gate
                           After boot, run bridgevm hvf virtio-gpu-trace-report
                           with --require-p3-gate and fail the script if the P3
