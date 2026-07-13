@@ -21,7 +21,7 @@ if not defined PYROOT (
   exit /b 12
 )
 
-set "PATH=C:\Program Files\Git\cmd;C:\Program Files\LLVM\bin;%PYROOT%;%PYROOT%\Scripts;%PATH%"
+set "PATH=C:\Program Files\Git\cmd;C:\Program Files\LLVM\bin;%PYROOT%;%PYROOT%\Scripts;%~dp0winflexbison;%PATH%"
 call "%VSROOT%\Common7\Tools\VsDevCmd.bat" -arch=arm64 -host_arch=x64
 if errorlevel 1 exit /b 13
 

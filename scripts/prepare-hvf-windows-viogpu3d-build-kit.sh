@@ -26,7 +26,8 @@ Options:
   --no-fetch        Do not clone/fetch; inspect --source-dir as-is.
 
 The generated PowerShell script is meant to run from an x64 Visual Studio
-developer PowerShell with WDK, ARM64 C++ tools, LLVM, Git, Meson, and Ninja.
+developer PowerShell with WDK, ARM64 C++ tools, LLVM, Git, Meson, Ninja, and
+                    win_flex/win_bison on PATH.
 It reproduces the proven clang-cl ARM64 cross-build rather than attempting to
 execute ARM64 Mesa tools on the build host. The akre source is a VirGL/DEV_1050
 path; BridgeVM selects its CGL-backed runtime with --gpu-trace-protocol virgl.
@@ -419,7 +420,9 @@ BridgeVM Windows ARM64 viogpu3d build kit
 This kit targets the ARM64-capable arehnman/akre viogpu3d source. It is a
 VirGL/DEV_1050 driver package that binds PCI\VEN_1AF4&DEV_1050 in the source INF.
 Build and finalize it from an x64 Visual Studio developer PowerShell with WDK,
-the ARM64 C++ tools, LLVM (clang-cl/lld-link/llvm-lib), Git, Meson, and Ninja.
+the ARM64 C++ tools, LLVM (clang-cl/lld-link/llvm-lib), Git, Meson, Ninja, and
+win_flex/win_bison (winflexbison) on PATH; a winflexbison directory shipped
+beside the kit is added to PATH automatically by run-submit-trace-build.cmd.
 The builder cross-compiles ARM64 payloads; it does not execute them on the host.
 
 The generated builder defaults to the exact driver and modified Mesa revisions
