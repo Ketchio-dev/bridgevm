@@ -1,0 +1,57 @@
+diff --git a/src/gallium/winsys/virgl/gdi/virgl_gdi_winsys.c b/src/gallium/winsys/virgl/gdi/virgl_gdi_winsys.c
+index b2b64c5ec53..c9aeaf48d93 100644
+--- a/src/gallium/winsys/virgl/gdi/virgl_gdi_winsys.c
++++ b/src/gallium/winsys/virgl/gdi/virgl_gdi_winsys.c
+@@ -858,6 +858,24 @@ virgl_gdi_cmd_buf_destroy(struct virgl_cmd_buf *_cbuf)
+    FREE(cbuf);
+ }
+ 
++/*
++ * Keep this diagnostic visible in release UMD builds.  The Windows smoke
++ * runner captures OutputDebugStringA, allowing us to distinguish an empty
++ * VirGL command buffer from a rejected D3D runtime render callback.
++ */
++static void
++bridgevm_trace_submit(const char *stage, struct virgl_gdi_cmd_buf *cbuf,
++                      unsigned command_length, long status)
++{
++   char message[256];
++   snprintf(message, sizeof(message),
++            "BV-VIRGL-SUBMIT stage=%s cdw=%u driver_length=%u command_length=%u allocations=%u status=0x%08lx cmd_buffer=%u alloc_list=%u patch_list=%u\n",
++            stage, cbuf->base.cdw, cbuf->driver_length, command_length,
++            cbuf->alloc_count, status, cbuf->ctx->CommandBufferSize,
++            cbuf->ctx->AllocationListSize, cbuf->ctx->PatchLocationListSize);
++   OutputDebugStringA(message);
++}
++
+ static int
+ virgl_gdi_winsys_submit_cmd(struct virgl_winsys *qws,
+                             struct virgl_cmd_buf *_cbuf,
+@@ -894,7 +908,10 @@ virgl_gdi_winsys_submit_cmd(struct virgl_winsys *qws,
+       }
+    }
+ 
++   bridgevm_trace_submit("before-render", cbuf, render.CommandLength, 0);
+    NTSTATUS Status = cbuf->ctx->render(cbuf->ctx, &render);
++   bridgevm_trace_submit("after-render", cbuf, render.CommandLength,
++                         (long)Status);
+    if (!NT_SUCCESS(Status)) {
+       _debug_printf(
+          "Failed to submit cmdbuf(D3DKMTRender) with status code: %lx\n",
+diff --git a/src/gallium/frontends/d3d10umd/Debug.h b/src/gallium/frontends/d3d10umd/Debug.h
+index 4777cc8c468..fc02103f729 100644
+--- a/src/gallium/frontends/d3d10umd/Debug.h
++++ b/src/gallium/frontends/d3d10umd/Debug.h
+@@ -60,11 +60,7 @@ AssertFail(const char *expr, const char *file, unsigned line, const char *function
+ #endif
+ 
+ 
+-#if 0 && !defined(NDEBUG)
+-#define LOG_ENTRYPOINT() DebugPrintf("%s\n", __func__)
+-#else
+-#define LOG_ENTRYPOINT() (void)0
+-#endif
++#define LOG_ENTRYPOINT() DebugPrintf("BV-D3D10-ENTRY %s\n", __func__)
+ 
+ #define LOG_UNSUPPORTED_ENTRYPOINT() DebugPrintf("%s XXX\n", __func__)
+ 

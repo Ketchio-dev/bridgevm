@@ -252,6 +252,12 @@ if (-not $SkipMesa) {
   }
   $null = Invoke-NativeCommand -CommandName "git" -Arguments @("-C", $MesaSrc, "apply", "--check", $MesaPatch) -Label "Mesa unbound-clear patch check"
   $null = Invoke-NativeCommand -CommandName "git" -Arguments @("-C", $MesaSrc, "apply", $MesaPatch) -Label "Mesa unbound-clear patch"
+  $MesaSubmitTracePatch = Join-Path $PSScriptRoot "virtio-win-mesa-submit-trace.patch"
+  if (-not (Test-Path -LiteralPath $MesaSubmitTracePatch -PathType Leaf)) {
+    throw "BridgeVM Mesa submit-trace patch is missing: $MesaSubmitTracePatch"
+  }
+  $null = Invoke-NativeCommand -CommandName "git" -Arguments @("-C", $MesaSrc, "apply", "--check", $MesaSubmitTracePatch) -Label "Mesa submit-trace patch check"
+  $null = Invoke-NativeCommand -CommandName "git" -Arguments @("-C", $MesaSrc, "apply", $MesaSubmitTracePatch) -Label "Mesa submit-trace patch"
   $WdkIncludeRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\Include"
   $WdkIncludeVersion = Get-ChildItem -LiteralPath $WdkIncludeRoot -Directory |
     Sort-Object Name -Descending |
@@ -503,8 +509,12 @@ cp "$ROOT/scripts/win-assets/build-mesa-arm64.ps1" \
   "$OUT_DIR/build-mesa-arm64.ps1"
 cp "$ROOT/scripts/win-assets/mesa-cross-arm64.ini" \
   "$OUT_DIR/mesa-cross-arm64.ini"
+cp "$ROOT/scripts/win-assets/run-submit-trace-build.cmd" \
+  "$OUT_DIR/run-submit-trace-build.cmd"
 cp "$ROOT/scripts/patches/virtio-win-mesa-unbound-clear.patch" \
   "$OUT_DIR/virtio-win-mesa-unbound-clear.patch"
+cp "$ROOT/scripts/patches/virtio-win-mesa-submit-trace.patch" \
+  "$OUT_DIR/virtio-win-mesa-submit-trace.patch"
 
 REPORT="$OUT_DIR/source-report.txt"
 {
@@ -532,6 +542,7 @@ REPORT="$OUT_DIR/source-report.txt"
   printf 'required_mesa_dlls=viogpu_d3d10.dll,viogpu_wgl.dll,opengl32.dll,libEGL.dll,libGLESv2.dll\n'
   printf 'staged_render_dlls=viogpu_d3d10_arm64.dll,viogpu_wgl_arm64.dll,opengl32_arm64.dll,libEGL_arm64.dll,libGLESv2_arm64.dll\n'
   printf 'windows_build_script=%s\n' "$OUT_DIR/build-viogpu3d-arm64.ps1"
+  printf 'windows_submit_trace_runner=%s\n' "$OUT_DIR/run-submit-trace-build.cmd"
   printf 'windows_finalizer=%s\n' "$OUT_DIR/finalize-viogpu3d-package.ps1"
   printf 'windows_test_certificate_finalizer=%s\n' "$OUT_DIR/finalize-viogpu3d-test-package.ps1"
   printf 'pre_finalization_manifest_required=true\n'
