@@ -76,8 +76,16 @@ Two hypotheses tested and FALSIFIED:
   device/context (`BV_DRAW_ITERS=3`): all three black. Not warm-up, not lazy
   per-context state.
 
+A `BV_DRAW_WARMUP` variant (create+destroy a throwaway D3D10 device before the
+real one, same process) also stays black — so it is not simply "first
+D3D-device-open per boot" global init: a SECOND device in the same process
+still fails. Only a second separate PROCESS passes. The distinguishing factor
+is the process boundary (full `D3DKMTDestroyDevice`/VidMm process teardown of
+process 1), not device-open count or draw count.
+
 DECISIVE narrowing: the defect is strictly **per-process / per-first-D3D-device
-after a guest boot**. A second process (fresh device + WDDM context, resource
+after a guest boot** (and even per-first-process, since a second in-process
+device does not help). A second process (fresh device + WDDM context, resource
 ids that increment past the first) reads back correct pixels; the first process
 never does, no matter how many times it redraws. Since the host virglrenderer
 instance and its GL contexts persist across guest PSCI reboots yet the failure

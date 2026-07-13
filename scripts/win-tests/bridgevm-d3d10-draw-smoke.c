@@ -71,6 +71,20 @@ int main(void) {
   D3D10_MAPPED_TEXTURE2D mapped;
   HRESULT hr;
 
+  /* BV_DRAW_WARMUP=1 creates and immediately destroys a throwaway D3D10 device
+   * before the real one. If this makes the first process's draw land, the
+   * defect is one-time per-first-device-open global guest state (adapter/VidMm
+   * init) rather than something specific to the drawing device. */
+  if (GetEnvironmentVariableA("BV_DRAW_WARMUP", NULL, 0)) {
+    ID3D10Device *warm = NULL;
+    if (SUCCEEDED(D3D10CreateDevice(NULL, D3D10_DRIVER_TYPE_HARDWARE, NULL, 0,
+                                    D3D10_SDK_VERSION, &warm)) &&
+        warm) {
+      ID3D10Device_Release(warm);
+    }
+    puts("BV-D3D10-DRAW-WARMUP done");
+  }
+
   hr = D3D10CreateDevice(NULL, D3D10_DRIVER_TYPE_HARDWARE, NULL, 0,
                          D3D10_SDK_VERSION, &device);
   if (FAILED(hr)) return fail_hr("create-device", hr);
