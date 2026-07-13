@@ -14,6 +14,7 @@ use std::{
     os::fd::{FromRawFd, RawFd},
     path::Path,
     sync::OnceLock,
+    time::Instant,
 };
 
 use crate::virtio_net::NetBackend;
@@ -450,8 +451,8 @@ pub struct HostSocketOutboundIpv4Handler {
     icmp_recv_scratch: [u8; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
     pending_socket_errors: u64,
     dns_resolver: StdIpv4Addr,
-    tick: u64,
-    idle_timeout_ticks: u64,
+    epoch: Instant,
+    idle_timeout_ms: u64,
     max_flows: usize,
     max_icmp_flows: usize,
     tcp_isn_counter: u32,
@@ -468,7 +469,10 @@ impl Default for HostSocketOutboundIpv4Handler {
 }
 
 impl HostSocketOutboundIpv4Handler {
-    const DEFAULT_IDLE_TIMEOUT_TICKS: u64 = 30_000;
+    // Wall-clock idle sweep. Flow stamps advance only on real activity, so
+    // this must comfortably exceed legitimate quiet periods inside a live
+    // connection (TLS setup, server-side git pack computation).
+    const DEFAULT_IDLE_TIMEOUT_MS: u64 = 300_000;
     const DEFAULT_MAX_FLOWS: usize = 256;
     const DEFAULT_MAX_ICMP_FLOWS: usize = 32;
     const MAX_ICMP_RECV_PER_POLL: usize = 64;
@@ -491,8 +495,8 @@ impl HostSocketOutboundIpv4Handler {
             icmp_recv_scratch: [0; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
             pending_socket_errors: 0,
             dns_resolver,
-            tick: 0,
-            idle_timeout_ticks: Self::DEFAULT_IDLE_TIMEOUT_TICKS,
+            epoch: Instant::now(),
+            idle_timeout_ms: Self::DEFAULT_IDLE_TIMEOUT_MS,
             max_flows: Self::DEFAULT_MAX_FLOWS,
             max_icmp_flows: Self::DEFAULT_MAX_ICMP_FLOWS,
             tcp_isn_counter: 0x4256_0000,
@@ -500,8 +504,8 @@ impl HostSocketOutboundIpv4Handler {
     }
 
     #[cfg(test)]
-    fn with_idle_timeout_ticks(mut self, ticks: u64) -> Self {
-        self.idle_timeout_ticks = ticks;
+    fn with_idle_timeout_ms(mut self, ms: u64) -> Self {
+        self.idle_timeout_ms = ms;
         self
     }
 
@@ -510,9 +514,8 @@ impl HostSocketOutboundIpv4Handler {
         self.udp_flows.len()
     }
 
-    fn bump_tick(&mut self) -> u64 {
-        self.tick = self.tick.saturating_add(1);
-        self.tick
+    fn now_ms(&self) -> u64 {
+        u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 
     fn next_tcp_isn(&mut self) -> u32 {
@@ -521,8 +524,8 @@ impl HostSocketOutboundIpv4Handler {
     }
 
     fn evict_idle_flows(&mut self) {
-        let now = self.tick;
-        let timeout = self.idle_timeout_ticks;
+        let now = self.now_ms();
+        let timeout = self.idle_timeout_ms;
         self.udp_flows
             .retain(|_, flow| now.saturating_sub(flow.last_activity) <= timeout);
         self.tcp_flows
@@ -551,7 +554,7 @@ impl HostSocketOutboundIpv4Handler {
     }
 
     fn handle_icmp(&mut self, packet: &Ipv4Packet<'_>) -> io::Result<()> {
-        let now = self.bump_tick();
+        let now = self.now_ms();
         let guest_identifier = read_u16_be(packet.payload, 4)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "short icmp echo"))?;
         let key = IcmpFlowKey {
@@ -576,7 +579,7 @@ impl HostSocketOutboundIpv4Handler {
     }
 
     fn handle_udp(&mut self, packet: &Ipv4Packet<'_>, udp: &UdpDatagram<'_>) {
-        let now = self.bump_tick();
+        let now = self.now_ms();
         let mut public_dst = packet.dst;
         let mut socket_dst = packet.dst;
         let mut dst_port = udp.dst_port;
@@ -618,7 +621,7 @@ impl HostSocketOutboundIpv4Handler {
     }
 
     fn handle_tcp(&mut self, packet: &Ipv4Packet<'_>, tcp: &TcpSegment<'_>) {
-        let now = self.bump_tick();
+        let now = self.now_ms();
         let key = TcpFlowKey {
             guest_ip: packet.src,
             guest_port: tcp.src_port,
@@ -683,7 +686,7 @@ impl HostSocketOutboundIpv4Handler {
         let Some(guest_mac) = guest_mac else {
             return;
         };
-        let now = self.tick;
+        let now = self.now_ms();
         let recv_scratch = &mut self.udp_recv_scratch;
         for (key, flow) in &mut self.udp_flows {
             loop {
@@ -739,7 +742,7 @@ impl HostSocketOutboundIpv4Handler {
             );
             stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
         }
-        let now = self.tick;
+        let now = self.now_ms();
         {
             let remove_scratch = &mut self.tcp_remove_scratch;
             let read_scratch = &mut self.tcp_read_scratch;
@@ -888,7 +891,7 @@ impl HostSocketOutboundIpv4Handler {
         let Some(guest_mac) = guest_mac else {
             return;
         };
-        let now = self.tick;
+        let now = self.now_ms();
         let recv_scratch = &mut self.icmp_recv_scratch;
         for (key, flow) in &mut self.icmp_flows {
             for _ in 0..Self::MAX_ICMP_RECV_PER_POLL {
@@ -961,7 +964,6 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
                 .saturating_add(self.pending_socket_errors);
             self.pending_socket_errors = 0;
         }
-        self.bump_tick();
         self.poll_udp(guest_mac, reply_queue, stats);
         self.poll_tcp(guest_mac, reply_queue, stats);
         self.poll_icmp(guest_mac, reply_queue, stats);
@@ -3036,13 +3038,12 @@ mod tests {
         };
         let port = echo.local_addr().unwrap().port();
         let handler = HostSocketOutboundIpv4Handler::with_dns_resolver(StdIpv4Addr::LOCALHOST)
-            .with_idle_timeout_ticks(2);
+            .with_idle_timeout_ms(2);
         let mut backend = NatBackend::with_outbound_handler(handler);
 
         backend.transmit(&udp_guest_frame([127, 0, 0, 1], port, 49152, b"hello"));
         assert_eq!(backend.outbound_ipv4_handler().udp_flow_count(), 1);
-        backend.poll_host_sockets();
-        backend.poll_host_sockets();
+        std::thread::sleep(std::time::Duration::from_millis(10));
         backend.poll_host_sockets();
         assert_eq!(backend.outbound_ipv4_handler().udp_flow_count(), 0);
     }
@@ -3207,7 +3208,20 @@ mod tests {
                 break;
             }
         }
-        let mut server = server.expect("accepted host connection");
+        let mut server = loop {
+            if let Some(stream) = server.take() {
+                break stream;
+            }
+            backend.poll_host_sockets();
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    stream.set_nonblocking(true).unwrap();
+                    break stream;
+                }
+                Err(e) if would_block(&e) => {}
+                Err(e) => panic!("tcp accept failed: {e}"),
+            }
+        };
 
         let idle_stamp = {
             let flow = backend.outbound_ipv4.tcp_flows.values().next().expect("tcp flow present");
@@ -3229,6 +3243,7 @@ mod tests {
 
         // Host-to-guest data is real activity and must advance the stamp.
         use std::io::Write as _;
+        std::thread::sleep(std::time::Duration::from_millis(3));
         server.write_all(b"pong").unwrap();
         server.flush().unwrap();
         let mut saw_payload = false;
