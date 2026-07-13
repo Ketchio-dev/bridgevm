@@ -98,6 +98,81 @@ or a one-time per-adapter/first-device initialization the first process triggers
 but does not itself benefit from. Under investigation (gpt-5.6-sol KMD/host
 analysis task-mrjnaq1v).
 
+## Root-cause narrowing — it is host-side, deterministic, guest-identical
+
+Full per-resource lifecycle comparison of the failing (ctx 18) and passing
+(ctx 19) draw-smoke runs *in the same boot* (`run3-truthful` trace):
+
+- The two guest command sequences are **byte-identical except the four
+  incrementing resource ids** (392–395 vs 396–399): same formats (RT bind=2,
+  copy-dest bind=8, vertex fmt=177 24x1, staging-bounce bind=0x80000 1MB×1),
+  same `RESOURCE_ATTACH_BACKING` ordering, same attach/submit/detach/unref.
+- The host **masks no error for the app contexts**. The only masked
+  `virgl_renderer_submit_cmd` errors in every boot are `ctx=6` (dwm) —
+  "Illegal command buffer 786440" (that value decodes to a `DRAW_VBO` len=12
+  header; dwm's own draws are rejected and are unrelated to the app). The
+  app's `DRAW_VBO` submits are accepted.
+
+Therefore the defect is **not guest-side** (identical commands), **not a
+masked draw rejection** (app submits succeed), **not backing** (both sequences
+attach identically), **not CGL binding** (falsified), **not per-context lazy
+init** (3 in-process redraws fail), and **not first-device global init**
+(warmup device fails). It is a **deterministic host virglrenderer/Mesa GL
+execution difference between the first and second identical draw+copy+readback
+sequence after a guest reset** — the first renders/reads black, every
+subsequent one is pixel-exact. The BridgeVM host `reset()` destroys all
+tracked virglrenderer contexts and resources on guest reboot, but the
+process-global virglrenderer singleton and its ctx0 / GL driver state persist,
+so "second sequence works" points at GL-driver/renderer state warmed by the
+first real app draw+copy+readback after a reset.
+
+Sharpest reframe (most valuable clue): `run3-truthful` was a **single boot with
+no guest reboot** between process 1 (ctx 18, black) and process 2 (ctx 19,
+correct). There was therefore **no host `reset()` between them** — the reset
+angle is a red herring. What makes ctx 18 special is that it is the **first
+context in the virglrenderer instance's lifetime to perform a *successful*
+DRAW_VBO + RESOURCE_COPY_REGION + COPY_TRANSFER3D readback cycle**: dwm's ctx 6
+issues `DRAW_VBO` but every one is rejected ("Illegal command buffer", EINVAL),
+so no earlier context actually completes the draw→copy→readback path. This is
+the classic signature of a **one-time, renderer-GLOBAL (not per-sub-context)
+lazy GL-object initialization whose first user does not benefit from it** — the
+object is created/bound during ctx 18's first copy/readback but ctx 18 has
+already captured the pre-init state, while ctx 19 inherits the initialized
+object. The lazy **blitter** was checked and ruled out: this 64×64 same-format
+(`format 67 → 67`) `CopyResource` takes the `glCopyImageSubData` branch
+(`feat_copy_image` is available on Apple GL 4.1), not `glBlitFramebuffer` and
+not `vrend_renderer_blit_gl`/the blitter (`vrend_renderer.c:10953`). The
+readback is a plain `glGetTexImage`; the draw uses the per-sub-context draw FBO.
+None of these has an obvious renderer-global lazy object, so the exact
+first-cycle-vs-second-cycle divergence now needs **runtime GL instrumentation**,
+not static reading: boot with `VREND_DEBUG=copy_resource,tex,cmd` and diff the
+per-GL-call path + a `glGetError` probe between the first (ctx 18) and second
+(ctx 19) cycle; whichever GL call first diverges (or first clears an error) is
+the culprit. (`vrend_destroy_context` was verified to clear
+`current_ctx`/`current_hw_ctx` and force ctx0, so a dangling-current-context
+use-after-free is ruled out; and there is no host `reset()` between the two
+cycles, so this is purely a first-successful-cycle effect.)
+
+Earlier framing (kept for the record): the first app **context** is poisoned
+for its entire lifetime — `BV_DRAW_ITERS=3` (three full draw+copy+readback
+cycles on the same device/context) fails all three, yet a fresh **second
+context** (new process) works first try. So the corruption is bound to the
+first post-reset app context, and only a brand-new context escapes it; repeating
+work inside the poisoned context never recovers. This points at per-context GL
+state established at the first app `CTX_CREATE`/sub-context setup after the host
+`reset()` destroyed the previous boot's contexts (a likely-dangling
+`vrend_state.current_ctx`/`current_hw_ctx` global, or first-context sub-context
+GL objects), not at the draw/copy/readback commands themselves.
+
+Next-session instrumentation (host, virglrenderer or venus_backend): for the
+app context's `RESOURCE_COPY_REGION` and `COPY_TRANSFER3D`/`transfer_3d`
+from-host, log `glCheckFramebufferStatus` of the scratch/blit FBO and a
+first-pixel sample of the `glGetTexImage` result, and test whether a
+`glFinish` (or `virgl_renderer_force_ctx_0` + flush) before the readback makes
+the first sequence pass. gpt-5.6-sol's ranked hypotheses (KMD `VIOGPU_CTX_INIT`
+attachment loss #1, VidMm first-device residency #2) were both weakened by the
+byte-identical trace; the live evidence points squarely at host GL execution.
+
 ## Infrastructure fixed/added along the way (each committed with tests)
 
 - `5e5f711` pinned-commit shallow fetch with retries for guest build kits.
