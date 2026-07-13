@@ -150,6 +150,15 @@ function Assert-CleanGitCheckout {
   }
 }
 
+function Test-PinnedCommitPresent {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Ref
+  )
+  & git -C $Path rev-parse --verify --quiet "${Ref}^{commit}" *> $null
+  return ($LASTEXITCODE -eq 0)
+}
+
 function Checkout-PinnedGitRef {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
@@ -158,15 +167,49 @@ function Checkout-PinnedGitRef {
     [Parameter(Mandatory = $true)][string]$Label,
     [switch]$SkipFetch
   )
+  # A 40-hex pinned commit is content-addressed: once it is present locally a
+  # fetch adds nothing and only re-exposes the build to transient guest-NAT
+  # transport resets, and a fresh checkout needs only that single commit.
+  # Branch/tag refs keep the legacy full clone + prune fetch behavior.
+  $isPinnedSha = ($Ref -match '^[0-9a-fA-F]{40}$')
   if (-not (Test-Path (Join-Path $Path ".git"))) {
     if ($SkipFetch) {
       throw "$Label checkout is missing while fetch is disabled: $Path"
     }
-    $null = Invoke-NativeCommand -CommandName "git" -Arguments @("clone", $Repo, $Path) -Label "$Label clone"
+    if ($isPinnedSha) {
+      New-Item -ItemType Directory -Force -Path $Path | Out-Null
+      $null = Invoke-NativeCommand -CommandName "git" -Arguments @("init", $Path) -Label "$Label init"
+      $null = Invoke-NativeCommand -CommandName "git" -Arguments @("-C", $Path, "remote", "add", "origin", $Repo) -Label "$Label remote"
+    } else {
+      $null = Invoke-NativeCommand -CommandName "git" -Arguments @("clone", $Repo, $Path) -Label "$Label clone"
+    }
   }
   Assert-CleanGitCheckout -Path $Path -Label $Label
   if (-not $SkipFetch) {
-    $null = Invoke-NativeCommand -CommandName "git" -Arguments @("-C", $Path, "fetch", "origin", "--prune") -Label "$Label fetch"
+    if ($isPinnedSha) {
+      if (-not (Test-PinnedCommitPresent -Path $Path -Ref $Ref)) {
+        $null = Invoke-NativeCommand -CommandName "git" -Arguments @("-C", $Path, "config", "http.lowSpeedLimit", "1000") -Label "$Label config low-speed limit"
+        $null = Invoke-NativeCommand -CommandName "git" -Arguments @("-C", $Path, "config", "http.lowSpeedTime", "60") -Label "$Label config low-speed time"
+        $fetched = $false
+        for ($attempt = 1; $attempt -le 8; $attempt++) {
+          # Plain invocation: 2>&1 under $ErrorActionPreference=Stop converts
+          # git's stderr progress into throwing NativeCommandError records on
+          # Windows PowerShell 5.1. Let stderr flow to the process stream.
+          & git -C $Path fetch --depth 1 origin $Ref
+          if ($LASTEXITCODE -eq 0) {
+            $fetched = $true
+            break
+          }
+          Write-Host "$Label pinned fetch attempt $attempt failed (exit code $LASTEXITCODE); retrying"
+          Start-Sleep -Seconds ([Math]::Min(15 * $attempt, 60))
+        }
+        if (-not $fetched) {
+          throw "$Label pinned fetch failed after 8 attempts"
+        }
+      }
+    } else {
+      $null = Invoke-NativeCommand -CommandName "git" -Arguments @("-C", $Path, "fetch", "origin", "--prune") -Label "$Label fetch"
+    }
   }
   $null = Invoke-NativeCommand -CommandName "git" -Arguments @("-C", $Path, "checkout", "--detach", $Ref) -Label "$Label checkout"
   $headOutput = @(Invoke-NativeCommand -CommandName "git" -Arguments @("-C", $Path, "rev-parse", "HEAD") -Label "$Label HEAD")
