@@ -48,7 +48,7 @@ up capset 1, and the installed boot path can select the CGL-backed VirGL runtime
    source/package audit. Do not boot a package under a gate for the wrong
    protocol.
 
-## The live VirGL path is closed; productionization is the current wall
+## Reproducible VirGL package path
 
 `viogpu3d` is a WDDM kernel driver whose reproducible full build still requires:
 
@@ -157,6 +157,9 @@ GLES1 are intentionally disabled because the minimal VirGL profile neither
 registers nor ships them. Run it from an x64 Visual Studio developer PowerShell
 with WDK, ARM64 C++ tools, LLVM, Git, Meson, and Ninja. A native ARM64 guest build
 remains possible, but it is no longer the preferred or evidence-backed route.
+The kit also applies `virtio-win-mesa-unbound-clear.patch` after verifying it
+against that exact Mesa checkout. The patch fixes the VirGL encoder's silent
+no-op when D3D10 clears an RTV that is not currently bound to the framebuffer.
 
 ## Where WE have the edge (the reason this is worth doing)
 The community driver is stalled largely because guest-side crashes are
@@ -317,14 +320,17 @@ undebuggable in a black box. We are not a black box:
   `--gpu-trace-protocol virgl` to `BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=virgl`.
   `PROBE_HOST_RENDERER=1` can be used with the readiness script to add the live
   Venus/VirGL renderer probe result to the evidence.
-- BLOCKED first on executing the WDK finalizer against the pinned unsigned stage
-  with a trusted code-signing PFX, then returning the new CAT/CER/signatures for
-  the real repository render-candidate check. Once the checker reports
-  `render_candidate=true`, the next concrete blocker is a
-  verifier-accepted live run proving test-sign trust, PnP bind/Status OK and the
-  intended OEM INF, followed by a trace from that same run that passes the
-  protocol-coherent feature/capset/blob/context/submit/fence gate. Production
-  signing, licensing, stability, and workload/render proof remain later gates.
+- The finalizer, test-sign trust, PnP bind, intended OEM INF, WDDM 1.3 device,
+  and protocol-coherent live P3 trace have passed. The BridgeVM-owned D3D10
+  probe now passes initialized-texture copy/readback and bound RTV
+  clear/readback (`4080bfff`, zero bad pixels). A stronger owned probe compiles
+  VS/PS 4.0 HLSL and issues a fullscreen triangle draw, but reads back black and
+  its context still contains no non-empty `SUBMIT_3D`. The concrete blocker is
+  therefore the Mesa/WDDM render-submission boundary. A separate
+  `--unbound` mode preserves the newly identified Mesa clear bug; it must pass
+  after rebuilding and installing the patched UMD. Production signing,
+  licensing, stability, performance, and newer feature levels remain later
+  gates.
 
-_Updated 2026-07-12. See [[bridgevm-hvf-engine-status]] and
+_Updated 2026-07-13. See [[bridgevm-hvf-engine-status]] and
 docs/hvf-3d-engine-plan.md._

@@ -246,6 +246,12 @@ if (-not (Test-Path -LiteralPath $DriverSys -PathType Leaf)) {
 
 if (-not $SkipMesa) {
   $MesaHead = Checkout-PinnedGitRef -Path $MesaSrc -Repo $MesaRepo -Ref $MesaRef -Label "Mesa"
+  $MesaPatch = Join-Path $PSScriptRoot "virtio-win-mesa-unbound-clear.patch"
+  if (-not (Test-Path -LiteralPath $MesaPatch -PathType Leaf)) {
+    throw "BridgeVM Mesa unbound-clear patch is missing: $MesaPatch"
+  }
+  $null = Invoke-NativeCommand -CommandName "git" -Arguments @("-C", $MesaSrc, "apply", "--check", $MesaPatch) -Label "Mesa unbound-clear patch check"
+  $null = Invoke-NativeCommand -CommandName "git" -Arguments @("-C", $MesaSrc, "apply", $MesaPatch) -Label "Mesa unbound-clear patch"
   $WdkIncludeRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\Include"
   $WdkIncludeVersion = Get-ChildItem -LiteralPath $WdkIncludeRoot -Directory |
     Sort-Object Name -Descending |
@@ -497,6 +503,8 @@ cp "$ROOT/scripts/win-assets/build-mesa-arm64.ps1" \
   "$OUT_DIR/build-mesa-arm64.ps1"
 cp "$ROOT/scripts/win-assets/mesa-cross-arm64.ini" \
   "$OUT_DIR/mesa-cross-arm64.ini"
+cp "$ROOT/scripts/patches/virtio-win-mesa-unbound-clear.patch" \
+  "$OUT_DIR/virtio-win-mesa-unbound-clear.patch"
 
 REPORT="$OUT_DIR/source-report.txt"
 {

@@ -1,0 +1,26 @@
+diff --git a/src/gallium/drivers/virgl/virgl_context.c b/src/gallium/drivers/virgl/virgl_context.c
+--- a/src/gallium/drivers/virgl/virgl_context.c
++++ b/src/gallium/drivers/virgl/virgl_context.c
+@@ -1020,11 +1020,22 @@ static void virgl_clear_render_target(struct pipe_context *ctx,
+ {
+    struct virgl_context *vctx = virgl_context(ctx);
+ 
+    uint32_t dst_handle = find_cbuf_handle (&vctx->framebuffer, dst);
++   bool temporary_surface = false;
++
++   /* clear_render_target may target a surface that is not currently bound. */
++   if (dst_handle == 0) {
++      dst_handle = virgl_create_surface(ctx, dst->texture, dst);
++      temporary_surface = dst_handle > 0;
++   }
++
+    if (dst_handle > 0)
+       virgl_encode_clear_surface(vctx, dst_handle, PIPE_CLEAR_COLOR0, color,
+                                  dstx, dsty, width, height,
+                                  render_condition_enabled);
++
++   if (temporary_surface)
++      virgl_encode_delete_object(vctx, dst_handle, VIRGL_OBJECT_SURFACE);
+ 
+    /* Mark as dirty, since we are updating the host side resource
+     * without going through the corresponding guest side resource, and

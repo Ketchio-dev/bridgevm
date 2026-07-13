@@ -37,17 +37,39 @@ error responses, so this is the first repeatable real D3D workload gate rather
 than capability-reporting evidence alone. Every reported subtest result was the
 same 42 F/s, however, so those scores are not accepted as performance numbers.
 
+The BridgeVM-owned D3D10 clear probe now separates two behaviors. A
+64x64 default-texture initialization/copy/readback returns the expected
+`112233ff` pixels. With the RTV explicitly bound, clear/copy/readback returns
+the expected `4080bfff` pixels with zero bad pixels and exits zero. This closes
+the owned API-result gate, but the owned context still produces no non-empty
+`SUBMIT_3D` in the host trace, so it is not proof that the host renderer
+executed that clear. A stronger owned draw probe compiles VS/PS 4.0 HLSL in the
+guest, binds a vertex buffer, and draws a fullscreen magenta triangle. Its
+readback remains black (`center=000000ff`, zero magenta pixels), while its
+context creates and attaches the expected target, staging, vertex, and command
+resources but emits no non-empty submit. This makes the active wall the
+Mesa/WDDM command-submission boundary rather than shader compilation, resource
+creation, or host renderer correctness.
+
+Source inspection identified a separate Mesa VirGL correctness defect: its
+`clear_render_target` encoder emits nothing when the target surface is not in
+the current framebuffer. BridgeVM now carries a pinned patch that creates a
+temporary VirGL surface for that legal D3D10 case, and the Windows ARM64 build
+kit applies it with `git apply --check` before compiling Mesa. The probe's
+`--unbound` mode is the regression gate for the rebuilt UMD.
+
 The remaining Windows work is:
 
-1. add a BridgeVM-owned D3D10/OpenGL correctness workload with known rendered
-   output and readback, then correlate its command interval with trace deltas;
-2. obtain meaningful performance timing rather than WinSAT's flat 42 F/s
+1. rebuild/install the patched UMD and make the owned `--unbound` readback pass;
+2. instrument and repair the UMD/KMD render call so the existing owned
+   draw/shader workload emits a non-empty `SUBMIT_3D` and returns magenta;
+3. obtain meaningful performance timing rather than WinSAT's flat 42 F/s
    compatibility result;
-3. run long-duration graphics stress and recover cleanly from renderer/device
+4. run long-duration graphics stress and recover cleanly from renderer/device
    failures;
-4. replace the disposable test-signed package flow with reproducible,
+5. replace the disposable test-signed package flow with reproducible,
    distributable driver provenance/signing and normal product update UX;
-5. move beyond the current feature-level-10_0 ceiling before claiming modern
+6. move beyond the current feature-level-10_0 ceiling before claiming modern
    DX11/DX12 game compatibility.
 
 Live pacing evidence is preserved at
@@ -55,6 +77,10 @@ Live pacing evidence is preserved at
 report survives device reset and passes the VirGL P3 gate with zero errors.
 The WinSAT D3D workload proof is preserved at
 `~/BridgeVM/viogpu3d-winsat-d3d-proof-20260713-v1`.
+The owned bound-clear proof is preserved at
+`~/BridgeVM/viogpu3d-owned-d3d10-smoke-20260713-v8-bound-live`.
+The owned draw failure and exact no-submit trace are preserved at
+`~/BridgeVM/viogpu3d-owned-d3d10-draw-20260713-v1`.
 
 ## Linux: the present wall
 
