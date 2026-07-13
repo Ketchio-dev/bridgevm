@@ -26,3 +26,4 @@
 # Vendored ArmVirtQemu firmware (needed for NVMe boot; see firmware/README.md)
 !crates/bridgevm-hvf/firmware/
 !crates/bridgevm-hvf/firmware/*.fd
+build/
