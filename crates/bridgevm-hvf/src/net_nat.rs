@@ -745,10 +745,18 @@ impl HostSocketOutboundIpv4Handler {
             let read_scratch = &mut self.tcp_read_scratch;
             remove_scratch.clear();
             for (key, flow) in &mut self.tcp_flows {
-                flow.last_activity = now;
+                // Stamp activity only when the flow actually did something
+                // this poll. Refreshing every flow unconditionally disabled
+                // idle eviction and flattened the LRU order, so a saturated
+                // table evicted arbitrary entries - including active bulk
+                // transfers (observed live as mid-download connection
+                // resets). Guest-driven activity is stamped in the packet
+                // handlers.
+                let mut active = false;
                 if flow.state == TcpProxyState::Connecting {
                     match tcp_connect_error(&flow.stream) {
                         Ok(Some(0)) => {
+                            active = true;
                             flow.state = TcpProxyState::Established;
                             queue_tcp_reply(
                                 reply_queue,
@@ -782,7 +790,11 @@ impl HostSocketOutboundIpv4Handler {
                     }
                 }
                 if flow.state != TcpProxyState::Connecting {
+                    let write_backlog = flow.write_buf.len();
                     flow.flush_host_write();
+                    if flow.write_buf.len() != write_backlog {
+                        active = true;
+                    }
                     if flow.pending_ack {
                         queue_tcp_reply(
                             reply_queue,
@@ -795,11 +807,13 @@ impl HostSocketOutboundIpv4Handler {
                         );
                         stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
                         flow.pending_ack = false;
+                        active = true;
                     }
                     loop {
                         match flow.stream.read(read_scratch) {
                             Ok(0) => {
                                 if !flow.host_fin_sent {
+                                    active = true;
                                     queue_tcp_reply(
                                         reply_queue,
                                         guest_mac,
@@ -817,6 +831,7 @@ impl HostSocketOutboundIpv4Handler {
                                 break;
                             }
                             Ok(len) => {
+                                active = true;
                                 queue_tcp_reply(
                                     reply_queue,
                                     guest_mac,
@@ -850,6 +865,9 @@ impl HostSocketOutboundIpv4Handler {
                             }
                         }
                     }
+                }
+                if active {
+                    flow.last_activity = now;
                 }
                 if flow.closed() {
                     remove_scratch.push(*key);
@@ -3149,6 +3167,89 @@ mod tests {
         };
         let (_, _, tcp) = parse_ipv4_tcp(&fin);
         assert_eq!(tcp.ack, guest_isn.wrapping_add(6));
+    }
+
+    #[test]
+    fn host_socket_idle_tcp_flow_is_not_refreshed_by_polling() {
+        let Some(listener) = loopback_tcp_listener() else {
+            return;
+        };
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut backend = NatBackend::<HostSocketOutboundIpv4Handler>::new_host_socket();
+        let guest_isn = 0x2000_0000;
+        let guest_port = 49177;
+
+        backend.transmit(&tcp_guest_frame(
+            [127, 0, 0, 1],
+            port,
+            guest_port,
+            guest_isn,
+            0,
+            TCP_FLAG_SYN,
+            &[],
+        ));
+
+        let mut server = None;
+        loop {
+            backend.poll_host_sockets();
+            if server.is_none() {
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        stream.set_nonblocking(true).unwrap();
+                        server = Some(stream);
+                    }
+                    Err(e) if would_block(&e) => {}
+                    Err(e) => panic!("tcp accept failed: {e}"),
+                }
+            }
+            if backend.poll_receive().is_some() {
+                break;
+            }
+        }
+        let mut server = server.expect("accepted host connection");
+
+        let idle_stamp = {
+            let flow = backend.outbound_ipv4.tcp_flows.values().next().expect("tcp flow present");
+            flow.last_activity
+        };
+
+        // An established flow with no traffic must not be refreshed by bare
+        // polling: the old unconditional refresh disabled idle eviction and
+        // flattened LRU ordering, so full tables evicted active transfers.
+        for _ in 0..32 {
+            backend.poll_host_sockets();
+            while backend.poll_receive().is_some() {}
+        }
+        let polled_stamp = {
+            let flow = backend.outbound_ipv4.tcp_flows.values().next().expect("tcp flow present");
+            flow.last_activity
+        };
+        assert_eq!(polled_stamp, idle_stamp);
+
+        // Host-to-guest data is real activity and must advance the stamp.
+        use std::io::Write as _;
+        server.write_all(b"pong").unwrap();
+        server.flush().unwrap();
+        let mut saw_payload = false;
+        for _ in 0..64 {
+            backend.poll_host_sockets();
+            while let Some(frame) = backend.poll_receive() {
+                let (_, _, tcp) = parse_ipv4_tcp(&frame);
+                if !tcp.payload.is_empty() {
+                    saw_payload = true;
+                }
+            }
+            if saw_payload {
+                break;
+            }
+        }
+        assert!(saw_payload, "expected proxied host payload");
+        let active_stamp = {
+            let flow = backend.outbound_ipv4.tcp_flows.values().next().expect("tcp flow present");
+            flow.last_activity
+        };
+        assert!(active_stamp > polled_stamp);
     }
 
     #[test]

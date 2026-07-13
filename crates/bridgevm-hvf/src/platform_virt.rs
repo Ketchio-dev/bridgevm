@@ -713,7 +713,20 @@ impl VirtPlatform {
             return false;
         };
         dev.poll_host_sockets();
-        let delivered = dev.pump_receive(mem);
+        // Every poll may enqueue an unbounded batch of frames from drained
+        // host sockets, so delivering a single frame per poll lets the shared
+        // reply queue grow without bound under bulk host->guest traffic and
+        // starves newer connections behind it (live guest fetches collapsed
+        // below curl's 1000 B/s abort threshold). Drain a bounded burst; the
+        // loop also stops as soon as the guest has no free RX descriptor.
+        const RX_BURST_FRAMES: usize = 256;
+        let mut delivered = false;
+        for _ in 0..RX_BURST_FRAMES {
+            if !dev.pump_receive(mem) {
+                break;
+            }
+            delivered = true;
+        }
         if delivered {
             self.flush_virtio_net_pending_msix();
         }
