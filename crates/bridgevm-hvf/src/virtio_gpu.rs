@@ -1727,9 +1727,19 @@ impl VirtioGpu {
         }
         let response_type = read_le_u32(response, 0).unwrap_or(0);
         if hdr.typ == VIRTIO_GPU_CMD_SUBMIT_3D && response_type == VIRTIO_GPU_RESP_OK_NODATA {
-            self.trace_submit_success_count = self.trace_submit_success_count.saturating_add(1);
-            if !trace_sample(self.trace_submit_success_count) {
-                return;
+            // Sample only EMPTY submissions: the Windows KMD's 60 Hz vsync
+            // heartbeat floods this counter with size-0 no-ops, and sampling
+            // everything let those consume the un-sampled budget so real
+            // application command buffers vanished from the trace minutes
+            // into a boot. A nonempty SUBMIT_3D is exactly what the P3 gate
+            // exists to witness; record every one of them.
+            let submit_size = read_le_u32(request, 24).unwrap_or(0);
+            if submit_size == 0 {
+                self.trace_submit_success_count =
+                    self.trace_submit_success_count.saturating_add(1);
+                if !trace_sample(self.trace_submit_success_count) {
+                    return;
+                }
             }
         }
         self.record_trace_fields("command", |fields| {
@@ -3517,6 +3527,34 @@ mod tests {
         assert!(contents.contains("\"blob_size\":4096"));
         assert!(contents.contains("\"name\":\"SUBMIT_3D\""));
         assert!(contents.contains("\"submit_prefix_hex\":\"aa bb cc dd\""));
+    }
+
+    #[test]
+    fn trace_never_samples_away_nonempty_submits() {
+        let path = trace_test_path("nonempty-submit-sampling");
+        let (mut dev, _backend) = dev_with_mock();
+        dev.gpu.trace = crate::virtio_gpu_trace::VirtioGpuTraceRecorder::test_file(&path);
+        // Deep past the always-record window: a boot's 60 Hz vsync no-ops put
+        // real application submissions thousands deep into this counter.
+        dev.gpu.trace_submit_success_count = 5000;
+        let mut mem = TestMem::new(0x4000_0000, 0x10000);
+
+        let _ = submit_control(&mut dev, &mut mem, &ctx_create_req(1, 4, b"venus"), 24);
+        let _ = submit_control(&mut dev, &mut mem, &submit_3d_req(0, &[]), 24);
+        let _ = submit_control(
+            &mut dev,
+            &mut mem,
+            &submit_3d_req(1, &[0x11, 0x22, 0x33, 0x44]),
+            24,
+        );
+        drop(dev);
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(path);
+        // The empty synchronization no-op is sampled out at this depth...
+        assert!(!contents.contains("\"submit_size\":0"));
+        // ...but the nonempty application submission must always be recorded.
+        assert!(contents.contains("\"submit_prefix_hex\":\"11 22 33 44\""));
     }
 
     #[test]
