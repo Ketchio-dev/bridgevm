@@ -2865,11 +2865,27 @@ fn build_edid(width: u32, height: u32) -> [u8; 128] {
     edid[35] = 0x81;
     edid[36] = 0x80;
 
-    let dtd = detailed_timing_descriptor(width, height);
+    let dtd = detailed_timing_descriptor(width, height, 120);
+    let pixel_clock_10khz = u16::from_le_bytes([dtd[0], dtd[1]]);
+    let max_pixel_clock_10mhz = pixel_clock_10khz.div_ceil(1_000) as u8;
     edid[54..72].copy_from_slice(&dtd);
     edid[72..90].copy_from_slice(&monitor_descriptor(
         0xfd,
-        &[50, 75, 30, 90, 16, 0, 0, 0, 0, 0, 0, 0, 0],
+        &[
+            48,
+            144,
+            30,
+            160,
+            max_pixel_clock_10mhz,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        ],
     ));
     edid[90..108].copy_from_slice(&monitor_descriptor_text(0xfc, b"BridgeVM GPU"));
     edid[108..126].copy_from_slice(&monitor_descriptor_text(0xfe, b"virtio-gpu"));
@@ -2881,14 +2897,26 @@ fn build_edid(width: u32, height: u32) -> [u8; 128] {
     edid
 }
 
-fn detailed_timing_descriptor(width: u32, height: u32) -> [u8; 18] {
+fn detailed_timing_descriptor(width: u32, height: u32, refresh_hz: u32) -> [u8; 18] {
     let h_blank = 160u32.max(width / 8);
     let v_blank = 45u32.max(height / 20);
     let h_sync_offset = 48u32.min(h_blank / 3);
     let h_sync_width = 32u32.min(h_blank.saturating_sub(h_sync_offset).max(1));
     let v_sync_offset = 3u32;
     let v_sync_width = 5u32;
-    let pixel_clock_10khz = (((width + h_blank) * (height + v_blank) * 60) / 10_000).max(1);
+    let requested_pixel_clock_10khz = ((u64::from(width) + u64::from(h_blank))
+        * (u64::from(height) + u64::from(v_blank))
+        * u64::from(refresh_hz)
+        / 10_000)
+        .max(1);
+    let pixel_clock_10khz = requested_pixel_clock_10khz.min(u64::from(u16::MAX));
+    if requested_pixel_clock_10khz > u64::from(u16::MAX) {
+        eprintln!(
+            "virtio-gpu EDID: {width}x{height}@{refresh_hz} requires pixel clock \
+             {requested_pixel_clock_10khz}0 kHz; clamping to {}0 kHz",
+            u16::MAX
+        );
+    }
 
     let mut dtd = [0u8; 18];
     dtd[0..2].copy_from_slice(&(pixel_clock_10khz as u16).to_le_bytes());
@@ -3268,6 +3296,26 @@ mod tests {
     use super::*;
     use crate::virtio_gpu_3d::MockBackend;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn edid_preferred_timing_is_120_hz_with_valid_ranges_and_checksum() {
+        let edid = build_edid(1280, 800);
+        let dtd = &edid[54..72];
+        let pixel_clock_10khz = u32::from(u16::from_le_bytes([dtd[0], dtd[1]]));
+        let h_active = u32::from(dtd[2]) | (u32::from(dtd[4] >> 4) << 8);
+        let h_blank = u32::from(dtd[3]) | (u32::from(dtd[4] & 0x0f) << 8);
+        let v_active = u32::from(dtd[5]) | (u32::from(dtd[7] >> 4) << 8);
+        let v_blank = u32::from(dtd[6]) | (u32::from(dtd[7] & 0x0f) << 8);
+        let refresh_hz = pixel_clock_10khz * 10_000 / ((h_active + h_blank) * (v_active + v_blank));
+
+        assert_eq!((h_active, v_active), (1280, 800));
+        assert_eq!(refresh_hz, 119); // Integer 10 kHz clock encoding rounds just below 120 Hz.
+        assert_eq!(&edid[75..82], &[0xfd, 0, 48, 144, 30, 160, 15]);
+        assert_eq!(
+            edid.iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)),
+            0
+        );
+    }
 
     #[test]
     fn trace_sampling_keeps_initial_evidence_and_sparse_long_run_checkpoints() {
