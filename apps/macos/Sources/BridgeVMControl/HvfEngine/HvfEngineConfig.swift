@@ -45,7 +45,7 @@ struct HvfEngineConfig: Equatable {
             clipboardSync: true,
             shareHostDir: nil,
             shareGuestDir: nil,
-            virtioNet: true,
+            virtioNet: config.networkEnabled ?? true,
             virtioGpu3d: true,
             nvmeBufferedIO: true,
             ctlFilePath: config.bundlePath + "/metadata/hvf.ctl",

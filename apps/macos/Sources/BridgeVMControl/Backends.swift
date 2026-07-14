@@ -39,6 +39,7 @@ struct VMConfig: Codable, Identifiable, Equatable {
     var diskPath: String? = nil      // qcow2/raw install target
     var memMiB: Int? = nil
     var cpuCount: Int? = nil
+    var networkEnabled: Bool? = nil  // nil == default on; false disables the guest NIC (HVF only)
 
     /// A config can be imported or hand-edited, so never trust its persisted ID
     /// as a filesystem component. Normalizing here keeps every caller inside the

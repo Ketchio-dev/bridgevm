@@ -387,6 +387,7 @@ extension VMLibrary {
                                         storageDir: URL? = nil,
                                         width: Int = 1280, height: Int = 800,
                                         memMiB: Int = 6144, cpuCount: Int = 4,
+                                        networkEnabled: Bool = true,
                                         persist: Bool = true) -> VMConfig? {
         let fm = FileManager.default
         guard let name = normalizedVMName(name),
@@ -419,7 +420,7 @@ extension VMLibrary {
                            leasesPath: "", guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: true,
                            isoPath: nil, diskPath: "\(b)/disks/hvf-target.raw",
-                           memMiB: memMiB, cpuCount: cpuCount)
+                           memMiB: memMiB, cpuCount: cpuCount, networkEnabled: networkEnabled)
         if persist, !save(cfg) { return nil }
         succeeded = true
         return cfg
@@ -458,6 +459,7 @@ extension VMLibrary {
     static func createWindowsHVF(name: String, targetDiskPath: String, varsPath: String,
                                  storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
                                  memMiB: Int = 6144, cpuCount: Int = 4,
+                                 networkEnabled: Bool = true,
                                  persist: Bool = true) -> VMConfig? {
         let fm = FileManager.default
         guard let name = normalizedVMName(name),
@@ -500,7 +502,8 @@ extension VMLibrary {
                            launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
                            leasesPath: "", guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: false,
-                           isoPath: nil, diskPath: disk, memMiB: memMiB, cpuCount: cpuCount)
+                           isoPath: nil, diskPath: disk, memMiB: memMiB, cpuCount: cpuCount,
+                           networkEnabled: networkEnabled)
         if persist, !save(cfg) { return nil }
         succeeded = true
         return cfg
@@ -519,7 +522,8 @@ struct CreateVMSheet: View {
     @State private var isoPath: String = ""
     @State private var hvfTargetPath: String = ""
     @State private var hvfVarsPath: String = ""
-    @State private var hvfDiskGiB = 64
+    @State private var diskGiB = 64
+    @State private var hvfNetwork = true
     @State private var hvfInject = false
     @State private var hvfDriverDir: String = UserDefaults.standard.string(forKey: "hvfViogpu3dPackageDir") ?? ""
     @State private var storageDir: URL? = nil
@@ -556,6 +560,21 @@ struct CreateVMSheet: View {
     }
 
     private var maxCPU: Int { max(1, library.hostCPU - 1) }
+
+    /// Modes that allocate a brand-new blank disk the user can size.
+    private var createsFreshDisk: Bool {
+        mode == .iso || mode == .windows || mode == .windowsHVFInstall
+    }
+
+    /// HVF-engine Windows modes where the guest NIC can be toggled (Fast VZ
+    /// requires NAT, so Linux never shows the toggle).
+    private var isHVFWindows: Bool {
+        mode == .windowsHVFInstall || mode == .windowsHVF
+    }
+
+    private var diskOptions: [Int] {
+        osFamily == .windows ? [64, 96, 128, 256, 512] : [20, 40, 64, 96, 128, 256]
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -614,13 +633,6 @@ struct CreateVMSheet: View {
                     Button("ISO 선택…") { pickISO() }
                     Text(isoPath.isEmpty ? "선택된 ISO 없음" : (isoPath as NSString).lastPathComponent)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
-                }
-                HStack {
-                    Text("디스크").frame(width: 64, alignment: .leading)
-                    Picker("", selection: $hvfDiskGiB) {
-                        ForEach([64, 96, 128, 256], id: \.self) { Text("\($0) GiB").tag($0) }
-                    }.labelsHidden().frame(width: 120)
-                    Spacer()
                 }
                 Toggle("설치 후 3D 그래픽 드라이버(viogpu3d) 자동 설치", isOn: $hvfInject)
                     .font(.callout)
@@ -686,6 +698,24 @@ struct CreateVMSheet: View {
                             .frame(width: 150)
                         Spacer()
                     }
+                    if createsFreshDisk {
+                        HStack {
+                            Text("디스크").frame(width: 64, alignment: .leading)
+                            Picker("", selection: $diskGiB) {
+                                ForEach(diskOptions, id: \.self) { Text("\($0) GiB").tag($0) }
+                            }.labelsHidden().frame(width: 150)
+                            Spacer()
+                        }
+                    }
+                    if isHVFWindows {
+                        Toggle("공유 네트워크 (NAT)", isOn: $hvfNetwork).font(.callout)
+                    } else {
+                        HStack {
+                            Text("네트워크").frame(width: 64, alignment: .leading)
+                            Text("공유 (NAT) — 고정").font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                        }
+                    }
                     Text("호스트: \(String(format: "%.0f", library.hostMemGiB)) GiB · \(library.hostCPU) 코어")
                         .font(.caption).foregroundColor(.secondary)
                 }
@@ -740,11 +770,13 @@ struct CreateVMSheet: View {
         case .windows:
             mode = .windowsHVFInstall
             ramMiB = clampRam(6144)
+            diskGiB = 64
             autofillWin11()
             autofillDriverDir()
         case .linux:
             mode = .ubuntu
             ramMiB = clampRam(4096)
+            diskGiB = 40
         }
     }
 
@@ -843,8 +875,8 @@ struct CreateVMSheet: View {
             return
         }
         let sd = storageDir; let w = resolutions[resIndex].0; let h = resolutions[resIndex].1
-        let inject = hvfInject; let driverDir = hvfDriverDir; let diskGiB = hvfDiskGiB
-        let mem = ramMiB; let cpu = cpuCount
+        let inject = hvfInject; let driverDir = hvfDriverDir; let disk = diskGiB
+        let mem = ramMiB; let cpu = cpuCount; let net = hvfNetwork
         Task.detached {
             var stagingError: String?
             let cfg: VMConfig?
@@ -852,21 +884,22 @@ struct CreateVMSheet: View {
             case .ubuntu:
                 cfg = selectedTemplate.flatMap { VMLibrary.cloneUbuntu(name: nm, template: $0, storageDir: sd, width: w, height: h, memMiB: mem, cpuCount: cpu) }
             case .iso:
-                cfg = selectedTemplate.flatMap { VMLibrary.createFromISO(name: nm, isoPath: iso, template: $0, storageDir: sd, width: w, height: h, memMiB: mem, cpuCount: cpu) }
+                cfg = selectedTemplate.flatMap { VMLibrary.createFromISO(name: nm, isoPath: iso, template: $0, storageDir: sd, width: w, height: h, diskGiB: disk, memMiB: mem, cpuCount: cpu) }
             case .windows:
-                cfg = selectedTemplate.flatMap { VMLibrary.createWindows(name: nm, isoPath: iso, template: $0, storageDir: sd, width: w, height: h, memMiB: mem, cpuCount: cpu) }
+                cfg = selectedTemplate.flatMap { VMLibrary.createWindows(name: nm, isoPath: iso, template: $0, storageDir: sd, width: w, height: h, diskGiB: disk, memMiB: mem, cpuCount: cpu) }
             case .windowsHVF:
                 cfg = VMLibrary.createWindowsHVF(name: nm, targetDiskPath: hvfTarget, varsPath: hvfVars,
-                                                 storageDir: sd, width: w, height: h, memMiB: mem, cpuCount: cpu)
+                                                 storageDir: sd, width: w, height: h, memMiB: mem, cpuCount: cpu,
+                                                 networkEnabled: net)
                 if inject, let created = cfg {
                     stagingError = VMLibrary.stageWindowsHVFInjection(bundlePath: created.bundlePath)
                 }
             case .windowsHVFInstall:
-                cfg = VMLibrary.createWindowsHVFInstall(name: nm, isoPath: iso, diskGiB: diskGiB,
+                cfg = VMLibrary.createWindowsHVFInstall(name: nm, isoPath: iso, diskGiB: disk,
                                                         injectViogpu3d: inject,
                                                         driverPackageDir: inject ? driverDir : nil,
                                                         storageDir: sd, width: w, height: h,
-                                                        memMiB: mem, cpuCount: cpu)
+                                                        memMiB: mem, cpuCount: cpu, networkEnabled: net)
             }
             let injectionWarning = stagingError
             await MainActor.run {

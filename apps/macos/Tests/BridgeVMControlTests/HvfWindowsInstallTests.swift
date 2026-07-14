@@ -161,6 +161,52 @@ final class HvfWindowsInstallTests: XCTestCase {
         XCTAssertEqual(config.cpuCount, 8)
     }
 
+    func testNetworkToggleReachesWrapperArguments() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let iso = temp.appendingPathComponent("win.iso")
+        try Data(count: 1024).write(to: iso)
+        let storage = temp.appendingPathComponent("library", isDirectory: true)
+        try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
+
+        let offline = try XCTUnwrap(VMLibrary.createWindowsHVFInstall(
+            name: "Offline \(UUID().uuidString.prefix(6))",
+            isoPath: iso.path, diskGiB: 64,
+            injectViogpu3d: false, driverPackageDir: nil,
+            storageDir: storage, memMiB: 6144, cpuCount: 4,
+            networkEnabled: false, persist: false))
+        XCTAssertEqual(offline.networkEnabled, false)
+        var offlineReady = offline
+        offlineReady.installPending = false
+        let offlineConfig = try XCTUnwrap(HvfEngineConfig.libraryVM(offlineReady))
+        XCTAssertFalse(offlineConfig.virtioNet)
+        XCTAssertFalse(offlineConfig.wrapperArguments().contains("--virtio-net"))
+
+        let online = try XCTUnwrap(VMLibrary.createWindowsHVFInstall(
+            name: "Online \(UUID().uuidString.prefix(6))",
+            isoPath: iso.path, diskGiB: 64,
+            injectViogpu3d: false, driverPackageDir: nil,
+            storageDir: storage, memMiB: 6144, cpuCount: 4,
+            networkEnabled: true, persist: false))
+        var onlineReady = online
+        onlineReady.installPending = false
+        let onlineConfig = try XCTUnwrap(HvfEngineConfig.libraryVM(onlineReady))
+        XCTAssertTrue(onlineConfig.virtioNet)
+        XCTAssertTrue(onlineConfig.wrapperArguments().contains("--virtio-net"))
+    }
+
+    func testLibraryVMDefaultsNetworkOnWhenUnset() throws {
+        // Existing VMs (no networkEnabled key) must keep the NIC on.
+        let config = VMConfig(
+            id: "vm", name: "vm", displayName: "vm", backendKind: "hvf-engine",
+            bootMode: "windows-hvf", bundlePath: "/tmp/vm-bundle-\(UUID().uuidString)",
+            runnerPath: "", launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
+            leasesPath: "", guestName: "vm", displayWidth: 1280, displayHeight: 800,
+            installPending: false)
+        let engine = try XCTUnwrap(HvfEngineConfig.libraryVM(config))
+        XCTAssertTrue(engine.virtioNet)
+    }
+
     func testApplyResourceOverrideRewritesLaunchSpecResources() throws {
         let temp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: temp) }
