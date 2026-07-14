@@ -234,7 +234,7 @@ index 7774a25..1909b4f 100644
  
  static int vrend_decode_ctx_get_fencing_fd(UNUSED struct virgl_context *ctx)
 diff --git a/src/vrend/vrend_renderer.c b/src/vrend/vrend_renderer.c
-index 4bccc44..6a04e1d 100644
+index 4bccc44..0b92811 100644
 --- a/src/vrend/vrend_renderer.c
 +++ b/src/vrend/vrend_renderer.c
 @@ -416,6 +416,68 @@ struct sysval_uniform_block {
@@ -329,7 +329,40 @@ index 4bccc44..6a04e1d 100644
     }
  
     if (ent->is_pipeline)
-@@ -5556,11 +5624,26 @@ vrend_fill_sysval_uniform_block (struct vrend_sub_context *sub_ctx)
+@@ -5075,7 +5143,8 @@ static GLenum get_xfb_mode(GLenum mode)
+ }
+ 
+ static void vrend_draw_bind_vertex_legacy(struct vrend_context *ctx,
+-                                          struct vrend_vertex_element_array *va)
++                                          struct vrend_vertex_element_array *va,
++                                          uint32_t base_instance)
+ {
+    uint32_t enable_bitmask;
+    uint32_t disable_bitmask;
+@@ -5149,12 +5218,20 @@ static void vrend_draw_bind_vertex_legacy(struct vrend_context *ctx,
+          disable_bitmask |= (1 << loc);
+       } else {
+          GLint size = !vrend_state.use_gles && (va->zyxw_bitmask & (1 << i)) ? GL_BGRA : ve->nr_chan;
++         GLintptr attrib_offset = (GLintptr)ve->base.src_offset + (GLintptr)vbo->base.buffer_offset;
++
++         /* base_instance emulation: hosts without feat_base_instance (e.g. Apple
++          * GL 4.1) reach this legacy path; offset instanced attributes by
++          * base_instance elements so the divisor-based fetch reads from the
++          * right element, matching glDraw*BaseInstance semantics. */
++         if (base_instance && ve->base.instance_divisor)
++            attrib_offset += (GLintptr)base_instance * (GLintptr)vbo->base.stride;
+ 
+          enable_bitmask |= (1 << loc);
+          if (util_format_is_pure_integer(ve->base.src_format)) {
+-            glVertexAttribIPointer(loc, size, ve->type, vbo->base.stride, (void *)(uintptr_t)(ve->base.src_offset + vbo->base.buffer_offset));
++            glVertexAttribIPointer(loc, size, ve->type, vbo->base.stride, (void *)(uintptr_t)attrib_offset);
+          } else {
+-            glVertexAttribPointer(loc, size, ve->type, ve->norm, vbo->base.stride, (void *)(uintptr_t)(ve->base.src_offset + vbo->base.buffer_offset));
++            glVertexAttribPointer(loc, size, ve->type, ve->norm, vbo->base.stride, (void *)(uintptr_t)attrib_offset);
+          }
+          glVertexAttribDivisorARB(loc, ve->base.instance_divisor);
+       }
+@@ -5556,11 +5633,26 @@ vrend_fill_sysval_uniform_block (struct vrend_sub_context *sub_ctx)
     if (sub_ctx->prog->virgl_block_bind == GL_INVALID_INDEX)
        return;
  
@@ -356,7 +389,66 @@ index 4bccc44..6a04e1d 100644
        sub_ctx->prog->sysvalue_data_cookie = sub_ctx->sysvalue_data_cookie;
     }
  }
-@@ -7732,6 +7815,13 @@ int vrend_renderer_init(const struct vrend_if_cbs *cbs, uint32_t flags)
+@@ -5895,6 +5987,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+    struct vrend_resource *indirect_res = NULL;
+    struct vrend_resource *indirect_params_res = NULL;
+    struct vrend_sub_context *sub_ctx = ctx->sub;
++   bool emulate_base_instance = info->start_instance && !has_feature(feat_base_instance);
+ 
+    if (ctx->in_error)
+       return ENOTRECOVERABLE;
+@@ -5902,9 +5995,6 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+    if (info->instance_count && !has_feature(feat_draw_instance))
+       return EINVAL;
+ 
+-   if (info->start_instance && !has_feature(feat_base_instance))
+-      return EINVAL;
+-
+    if (info->indirect.draw_count > 1 && !has_feature(feat_multi_draw_indirect))
+       return EINVAL;
+ 
+@@ -6000,11 +6090,11 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+       }
+    } else {
+       if (sub_ctx->ve) {
+-         vrend_draw_bind_vertex_legacy(ctx, sub_ctx->ve);
++         vrend_draw_bind_vertex_legacy(ctx, sub_ctx->ve, emulate_base_instance ? info->start_instance : 0);
+       } else {
+          struct vrend_vertex_element_array va;
+          va.count = 0;
+-         vrend_draw_bind_vertex_legacy(ctx, &va);
++         vrend_draw_bind_vertex_legacy(ctx, &va, emulate_base_instance ? info->start_instance : 0);
+       }
+    }
+ 
+@@ -6103,7 +6193,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+          else
+             glDrawArraysIndirect(mode, (GLvoid const *)(uintptr_t)info->indirect.offset);
+       } else if (info->instance_count > 0) {
+-         if (info->start_instance > 0)
++         if (info->start_instance > 0 && !emulate_base_instance)
+             glDrawArraysInstancedBaseInstance(mode, start, count, info->instance_count, info->start_instance);
+          else
+             glDrawArraysInstancedARB(mode, start, count, info->instance_count);
+@@ -6135,7 +6225,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+             glDrawElementsIndirect(mode, elsz, (GLvoid const *)(uintptr_t)info->indirect.offset);
+       } else if (info->index_bias) {
+          if (info->instance_count > 0) {
+-            if (info->start_instance > 0)
++            if (info->start_instance > 0 && !emulate_base_instance)
+                glDrawElementsInstancedBaseVertexBaseInstance(mode, info->count, elsz, (void *)(uintptr_t)sub_ctx->ib.offset,
+                                                              info->instance_count, info->index_bias, info->start_instance);
+             else
+@@ -6147,7 +6237,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+          else
+             glDrawElementsBaseVertex(mode, info->count, elsz, (void *)(uintptr_t)sub_ctx->ib.offset, info->index_bias);
+       } else if (info->instance_count > 0) {
+-         if (info->start_instance > 0) {
++         if (info->start_instance > 0 && !emulate_base_instance) {
+             glDrawElementsInstancedBaseInstance(mode, info->count, elsz, (void *)(uintptr_t)sub_ctx->ib.offset, info->instance_count, info->start_instance);
+          } else
+             glDrawElementsInstancedARB(mode, info->count, elsz, (void *)(uintptr_t)sub_ctx->ib.offset, info->instance_count);
+@@ -7732,6 +7822,13 @@ int vrend_renderer_init(const struct vrend_if_cbs *cbs, uint32_t flags)
        goto fail;
     }
  
@@ -370,7 +462,7 @@ index 4bccc44..6a04e1d 100644
     vrend_state.eventfd = -1;
     if (flags & VREND_USE_THREAD_SYNC) {
        if (flags & VREND_USE_ASYNC_FENCE_CB)
-@@ -7795,6 +7885,14 @@ vrend_renderer_fini(void)
+@@ -7795,6 +7892,14 @@ vrend_renderer_fini(void)
     vrend_video_fini();
  #endif
  
@@ -385,7 +477,7 @@ index 4bccc44..6a04e1d 100644
     vrend_destroy_context(vrend_state.ctx0);
  
     vrend_state.current_ctx = NULL;
-@@ -8031,6 +8129,7 @@ struct vrend_context *vrend_create_context(int id, uint32_t nlen, const char *de
+@@ -8031,6 +8136,7 @@ struct vrend_context *vrend_create_context(int id, uint32_t nlen, const char *de
     grctx->shader_cfg.has_texture_shadow_lod = has_feature(feat_texture_shadow_lod);
     grctx->shader_cfg.has_vs_layer = has_feature(feat_vs_layer_viewport);
     grctx->shader_cfg.has_vs_viewport_index = has_feature(feat_vs_viewport_index);
@@ -393,7 +485,7 @@ index 4bccc44..6a04e1d 100644
  
     vrend_renderer_create_sub_ctx(grctx, 0);
     vrend_renderer_set_sub_ctx(grctx, 0);
-@@ -8290,6 +8389,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8290,6 +8396,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
  {
  
     GLbitfield buffer_storage_flags = 0;
@@ -405,7 +497,7 @@ index 4bccc44..6a04e1d 100644
     if (flags & VIRGL_RESOURCE_FLAG_MAP_PERSISTENT) {
        buffer_storage_flags |= GL_MAP_PERSISTENT_BIT;
        /* Gallium's storage_flags_to_buffer_flags seems to drop some information, but we have to
-@@ -8343,7 +8447,7 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8343,7 +8454,7 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
  #endif
        else {
           virgl_error("Missing buffer storage and interop extensions\n");
@@ -414,7 +506,7 @@ index 4bccc44..6a04e1d 100644
        }
  
        gr->storage_bits |= VREND_STORAGE_GL_IMMUTABLE;
-@@ -8352,7 +8456,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8352,7 +8463,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
     } else
        glBufferData(gr->target, width, NULL, GL_STREAM_DRAW);
  
@@ -426,7 +518,7 @@ index 4bccc44..6a04e1d 100644
  }
  
  static int
-@@ -8943,6 +9051,7 @@ void vrend_renderer_resource_destroy(struct vrend_resource *res)
+@@ -8943,6 +9058,7 @@ void vrend_renderer_resource_destroy(struct vrend_resource *res)
     free(res);
  }
  
@@ -434,7 +526,7 @@ index 4bccc44..6a04e1d 100644
  struct virgl_sub_upload_data {
     GLenum target;
     struct pipe_box *box;
-@@ -8953,6 +9062,7 @@ static void iov_buffer_upload(void *cookie, uint32_t doff, void *src, int len)
+@@ -8953,6 +9069,7 @@ static void iov_buffer_upload(void *cookie, uint32_t doff, void *src, int len)
     struct virgl_sub_upload_data *d = cookie;
     glBufferSubData(d->target, d->box->x + doff, len, src);
  }
@@ -442,7 +534,7 @@ index 4bccc44..6a04e1d 100644
  
  static void vrend_scale_depth(void *ptr, int size, float scale_val)
  {
-@@ -9301,6 +9411,49 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
+@@ -9301,6 +9418,49 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
     }
  
     if (has_bit(res->storage_bits, VREND_STORAGE_GL_BUFFER)) {
@@ -492,7 +584,7 @@ index 4bccc44..6a04e1d 100644
        GLuint map_flags = GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_WRITE_BIT;
        struct virgl_sub_upload_data d;
        d.box = info->box;
-@@ -9319,6 +9472,7 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
+@@ -9319,6 +9479,7 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
           glUnmapBuffer(res->target);
        }
        glBindBufferARB(res->target, 0);
@@ -500,7 +592,7 @@ index 4bccc44..6a04e1d 100644
     } else {
        GLenum glformat;
        GLenum gltype;
-@@ -9970,6 +10124,34 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
+@@ -9970,6 +10131,34 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
     }
  
     if (has_bit(res->storage_bits, VREND_STORAGE_GL_BUFFER)) {
@@ -535,7 +627,7 @@ index 4bccc44..6a04e1d 100644
        glBindBufferARB(res->target, res->gl_id);
        void *data = glMapBufferRange(res->target, info->box->x, info->box->width, GL_MAP_READ_BIT);
        if (!data)
-@@ -9978,11 +10160,19 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
+@@ -9978,11 +10167,19 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
           vrend_write_to_iovec(iov, num_iovs, info->offset, data, info->box->width);
        glUnmapBuffer(res->target);
        glBindBufferARB(res->target, 0);
@@ -555,7 +647,7 @@ index 4bccc44..6a04e1d 100644
  
        if (can_readpixels)
           ret = vrend_transfer_send_readpixels(ctx, res, iov, num_iovs, info);
-@@ -10421,12 +10611,43 @@ static void vrend_resource_buffer_copy(UNUSED struct vrend_context *ctx,
+@@ -10421,12 +10618,43 @@ static void vrend_resource_buffer_copy(UNUSED struct vrend_context *ctx,
                                         uint32_t dstx, uint32_t srcx,
                                         uint32_t width)
  {
@@ -599,7 +691,7 @@ index 4bccc44..6a04e1d 100644
  }
  
  static void vrend_resource_copy_fallback(struct vrend_resource *src_res,
-@@ -11626,8 +11847,14 @@ bool vrend_hw_switch_context(struct vrend_context *ctx, bool now)
+@@ -11626,8 +11854,14 @@ bool vrend_hw_switch_context(struct vrend_context *ctx, bool now)
     if (!ctx)
        return false;
  
