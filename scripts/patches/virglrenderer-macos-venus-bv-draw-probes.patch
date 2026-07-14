@@ -234,7 +234,7 @@ index 7774a25..1909b4f 100644
  
  static int vrend_decode_ctx_get_fencing_fd(UNUSED struct virgl_context *ctx)
 diff --git a/src/vrend/vrend_renderer.c b/src/vrend/vrend_renderer.c
-index 4bccc44..70ba11b 100644
+index 4bccc44..e5f4d5c 100644
 --- a/src/vrend/vrend_renderer.c
 +++ b/src/vrend/vrend_renderer.c
 @@ -416,6 +416,68 @@ struct sysval_uniform_block {
@@ -306,7 +306,172 @@ index 4bccc44..70ba11b 100644
  static inline bool has_feature(enum features_id feature_id)
  {
     int slot = feature_id / 64;
-@@ -1760,8 +1822,12 @@ static void bind_virgl_block_loc(struct vrend_linked_shader_program *sprog,
+@@ -897,6 +959,164 @@ static struct vrend_format_table tex_conv_table[VIRGL_FORMAT_MAX_EXTENDED] =  {0
+ 
+ static uint32_t vrend_renderer_get_video_memory(void);
+ 
++/* BridgeVM first-draw probe (env-gated): instrumentation for the per-boot
++ * first-draw black-readback defect. BV_VREND_PROBE=1 enables logging around
++ * small-texture draw/copy/readback cycles; BV_VREND_FINISH=1 additionally
++ * issues a glFinish before small-texture copies and readbacks. */
++static bool bv_probe_enabled(void)
++{
++   static int cached = -1;
++   if (cached < 0) {
++      const char *env = getenv("BV_VREND_PROBE");
++      cached = (env && env[0] == '1') ? 1 : 0;
++   }
++   return cached == 1;
++}
++
++static bool bv_finish_enabled(void)
++{
++   static int cached = -1;
++   if (cached < 0) {
++      const char *env = getenv("BV_VREND_FINISH");
++      cached = (env && env[0] == '1') ? 1 : 0;
++   }
++   return cached == 1;
++}
++
++static bool bv_nocull_enabled(void)
++{
++   static int cached = -1;
++   if (cached < 0) {
++      const char *env = getenv("BV_VREND_NOCULL");
++      cached = (env && env[0] == '1') ? 1 : 0;
++   }
++   return cached == 1;
++}
++
++static bool bv_sysval_orphan_enabled(void)
++{
++   static int cached = -1;
++   if (cached < 0) {
++      const char *env = getenv("BV_VREND_SYSVAL_ORPHAN");
++      cached = (env && env[0] == '1') ? 1 : 0;
++   }
++   return cached == 1;
++}
++
++static bool bv_sysval_flush_enabled(void)
++{
++   static int cached = -1;
++   if (cached < 0) {
++      const char *env = getenv("BV_VREND_SYSVAL_FLUSH");
++      cached = (env && env[0] == '1') ? 1 : 0;
++   }
++   return cached == 1;
++}
++
++static bool bv_buf_flush_enabled(void)
++{
++   static int cached = -1;
++   if (cached < 0) {
++      const char *env = getenv("BV_VREND_BUF_FLUSH");
++      cached = (env && env[0] == '1') ? 1 : 0;
++   }
++   return cached == 1;
++}
++
++static bool bv_sample_enabled(void)
++{
++   static int cached = -1;
++   if (cached < 0) {
++      const char *env = getenv("BV_VREND_SAMPLE");
++      cached = (env && env[0] == '1') ? 1 : 0;
++   }
++   return cached == 1;
++}
++
++static bool bv_probe_res_small(const struct vrend_resource *res)
++{
++   return res->base.width0 <= 256 && res->base.height0 <= 256;
++}
++
++static void bv_probe_gl_errors(const char *where)
++{
++   GLenum err;
++   while ((err = glGetError()) != GL_NO_ERROR)
++      virgl_warn("BV-PROBE %s: GL error 0x%x\n", where, err);
++}
++
++/* Read back a small uncompressed 4-byte-texel 2D texture and log its first
++ * texel and nonzero-byte count, restoring the previous 2D binding. */
++static void bv_probe_sample_texture(const char *tag, struct vrend_resource *res)
++{
++   if (res->base.target == PIPE_BUFFER || res->target != GL_TEXTURE_2D)
++      return;
++   if (util_format_is_compressed(res->base.format))
++      return;
++   if (util_format_get_blocksize(res->base.format) != 4)
++      return;
++   if (!bv_probe_res_small(res))
++      return;
++
++   GLenum format = tex_conv_table[res->base.format].glformat;
++   GLenum type = tex_conv_table[res->base.format].gltype;
++   size_t size = (size_t)res->base.width0 * res->base.height0 * 4;
++   uint8_t *data = calloc(1, size);
++   if (!data)
++      return;
++
++   GLint prev = 0;
++   glGetIntegerv(GL_TEXTURE_BINDING_2D, &prev);
++   glBindTexture(GL_TEXTURE_2D, res->gl_id);
++   glPixelStorei(GL_PACK_ALIGNMENT, 4);
++   glGetTexImage(GL_TEXTURE_2D, 0, format, type, data);
++   glBindTexture(GL_TEXTURE_2D, (GLuint)prev);
++
++   size_t nonzero = 0;
++   for (size_t i = 0; i < size; i++)
++      nonzero += data[i] != 0;
++   virgl_warn("BV-PROBE %s: gl_id=%u %ux%u fmt=%d first=%02x%02x%02x%02x nonzero=%zu/%zu\n",
++              tag, res->gl_id, res->base.width0, res->base.height0,
++              (int)res->base.format, data[0], data[1], data[2], data[3],
++              nonzero, size);
++   bv_probe_gl_errors(tag);
++   free(data);
++}
++
++/* Sample a small 2D texture by raw GL id (generic RGBA read). */
++static void bv_probe_sample_gltex(const char *tag, GLuint tex_id)
++{
++   if (!tex_id)
++      return;
++   GLint prev = 0, w = 0, h = 0;
++   glGetIntegerv(GL_TEXTURE_BINDING_2D, &prev);
++   glBindTexture(GL_TEXTURE_2D, tex_id);
++   glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
++   glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
++   if (w <= 0 || h <= 0 || w > 256 || h > 256) {
++      glBindTexture(GL_TEXTURE_2D, (GLuint)prev);
++      while (glGetError() != GL_NO_ERROR)
++         ;
++      return;
++   }
++   size_t size = (size_t)w * h * 4;
++   uint8_t *data = calloc(1, size);
++   if (!data) {
++      glBindTexture(GL_TEXTURE_2D, (GLuint)prev);
++      return;
++   }
++   glPixelStorei(GL_PACK_ALIGNMENT, 4);
++   glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
++   glBindTexture(GL_TEXTURE_2D, (GLuint)prev);
++   size_t nonzero = 0;
++   for (size_t i = 0; i < size; i++)
++      nonzero += data[i] != 0;
++   virgl_warn("BV-PROBE %s: gl_tex=%u %dx%d first=%02x%02x%02x%02x nonzero=%zu/%zu\n",
++              tag, tex_id, w, h, data[0], data[1], data[2], data[3], nonzero, size);
++   bv_probe_gl_errors(tag);
++   free(data);
++}
++
+ static inline bool vrend_format_can_sample(enum virgl_formats format)
+ {
+    if (tex_conv_table[format].bindings & VIRGL_BIND_SAMPLER_VIEW)
+@@ -1760,8 +1980,12 @@ static void bind_virgl_block_loc(struct vrend_linked_shader_program *sprog,
        if (sprog->virgl_block_bind == GL_INVALID_INDEX) {
           sprog->virgl_block_bind = virgl_block_ubo_id;
           if (sprog->ubo_sysval_buffer_id == GL_INVALID_INDEX) {
@@ -319,7 +484,7 @@ index 4bccc44..70ba11b 100644
           }
        }
  
-@@ -2247,7 +2313,9 @@ static void vrend_destroy_program(struct vrend_linked_shader_program *ent)
+@@ -2247,7 +2471,9 @@ static void vrend_destroy_program(struct vrend_linked_shader_program *ent)
        ent->ref_context->prog = NULL;
  
     if (ent->ubo_sysval_buffer_id != GL_INVALID_INDEX) {
@@ -329,7 +494,7 @@ index 4bccc44..70ba11b 100644
     }
  
     if (ent->is_pipeline)
-@@ -5556,11 +5624,26 @@ vrend_fill_sysval_uniform_block (struct vrend_sub_context *sub_ctx)
+@@ -5556,11 +5782,43 @@ vrend_fill_sysval_uniform_block (struct vrend_sub_context *sub_ctx)
     if (sub_ctx->prog->virgl_block_bind == GL_INVALID_INDEX)
        return;
  
@@ -343,10 +508,27 @@ index 4bccc44..70ba11b 100644
 +      if (!vrend_apple_buffer_modify_begin(&saved))
 +         return;
 +      glBindBuffer(GL_ARRAY_BUFFER, vrend_apple_sysval_buffer_id);
-+      glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(struct sysval_uniform_block),
-+                      &sub_ctx->sysvalue_data);
++      if (bv_sysval_orphan_enabled())
++         glBufferData(GL_ARRAY_BUFFER, sizeof(struct sysval_uniform_block),
++                      &sub_ctx->sysvalue_data, GL_DYNAMIC_DRAW);
++      else
++         glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(struct sysval_uniform_block),
++                         &sub_ctx->sysvalue_data);
++      if (bv_probe_enabled()) {
++         struct sysval_uniform_block bv_back;
++         memset(&bv_back, 0, sizeof(bv_back));
++         glGetBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(bv_back), &bv_back);
++         virgl_warn("BV-PROBE sysval bind=%u wsy_cpu=%.1f wsy_gl=%.1f orphan=%d\n",
++                    sub_ctx->prog->virgl_block_bind,
++                    sub_ctx->sysvalue_data.winsys_adjust_y,
++                    bv_back.winsys_adjust_y,
++                    (int)bv_sysval_orphan_enabled());
++         bv_probe_gl_errors("sysval-fill");
++      }
 +      glBindBuffer(GL_ARRAY_BUFFER, 0);
 +      vrend_apple_buffer_modify_end(&saved);
++      if (bv_sysval_flush_enabled())
++         glFlush();
 +#else
        glBindBuffer(GL_UNIFORM_BUFFER, sub_ctx->prog->ubo_sysval_buffer_id);
        glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(struct sysval_uniform_block),
@@ -356,7 +538,86 @@ index 4bccc44..70ba11b 100644
        sub_ctx->prog->sysvalue_data_cookie = sub_ctx->sysvalue_data_cookie;
     }
  }
-@@ -7732,6 +7815,13 @@ int vrend_renderer_init(const struct vrend_if_cbs *cbs, uint32_t flags)
+@@ -6056,6 +6314,15 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+       }
+    }
+ 
++   bool bv_nocull_forced = false;
++   if (bv_probe_enabled() && bv_nocull_enabled() && info->count <= 4 &&
++       glIsEnabled(GL_CULL_FACE)) {
++      glDisable(GL_CULL_FACE);
++      bv_nocull_forced = true;
++      virgl_warn("BV-PROBE nocull ctx=%d: forced cull off for draw count=%u\n",
++                 ctx->ctx_id, info->count);
++   }
++
+    if (has_feature(feat_indirect_draw)) {
+       GLint buf = indirect_res ? indirect_res->gl_id : 0;
+       glBindBuffer(GL_DRAW_INDIRECT_BUFFER, buf);
+@@ -6176,6 +6443,62 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+ 
+    if (use_advanced_blending)
+       glDisable(GL_BLEND);
++
++   if (bv_probe_enabled()) {
++      GLenum bv_fb = glCheckFramebufferStatus(GL_FRAMEBUFFER);
++      if (bv_fb != GL_FRAMEBUFFER_COMPLETE)
++         virgl_warn("BV-PROBE draw ctx=%d: FBO incomplete 0x%x\n", ctx->ctx_id, bv_fb);
++      bv_probe_gl_errors("draw-exit");
++      virgl_warn("BV-PROBE draw ctx=%d done count=%u\n", ctx->ctx_id, info->count);
++
++      if (info->count <= 4) {
++         GLint vp[4] = {0}, sc[4] = {0}, prog = 0, vao = 0, fbo = 0, att0 = 0, ff = 0;
++         GLboolean cm[4] = {0};
++         glGetIntegerv(GL_VIEWPORT, vp);
++         glGetIntegerv(GL_SCISSOR_BOX, sc);
++         glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
++         glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
++         glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &fbo);
++         glGetIntegerv(GL_FRONT_FACE, &ff);
++         glGetBooleanv(GL_COLOR_WRITEMASK, cm);
++         glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
++                                               GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &att0);
++         virgl_warn("BV-PROBE draw-state ctx=%d vp=%d,%d,%d,%d sc=%d,%d,%d,%d sctest=%d "
++                    "discard=%d cull=%d ff=0x%x cm=%d%d%d%d prog=%d vao=%d fbo=%d att0=%d "
++                    "fccw=%d cullface=%d fboUL=%d vpneg=%d wsy=%.1f nocull=%d\n",
++                    ctx->ctx_id, vp[0], vp[1], vp[2], vp[3], sc[0], sc[1], sc[2], sc[3],
++                    (int)glIsEnabled(GL_SCISSOR_TEST), (int)glIsEnabled(GL_RASTERIZER_DISCARD),
++                    (int)glIsEnabled(GL_CULL_FACE), ff, cm[0], cm[1], cm[2], cm[3],
++                    prog, vao, fbo, att0,
++                    (int)sub_ctx->rs_state.front_ccw, (int)sub_ctx->rs_state.cull_face,
++                    (int)sub_ctx->fbo_origin_upper_left, (int)sub_ctx->viewport_is_negative,
++                    sub_ctx->sysvalue_data.winsys_adjust_y, (int)bv_nocull_forced);
++         bv_probe_gl_errors("draw-state");
++
++         GLint bv_vb = 0;
++         glGetVertexAttribiv(0, GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &bv_vb);
++         if (bv_vb) {
++            struct vrend_apple_buffer_texture_bindings bv_saved;
++            if (vrend_apple_buffer_modify_begin(&bv_saved)) {
++               float v[6] = {0};
++               glBindBuffer(GL_COPY_READ_BUFFER, (GLuint)bv_vb);
++               glGetBufferSubData(GL_COPY_READ_BUFFER, 0, sizeof(v), v);
++               glBindBuffer(GL_COPY_READ_BUFFER, 0);
++               vrend_apple_buffer_modify_end(&bv_saved);
++               virgl_warn("BV-PROBE draw-vb0 ctx=%d buf=%d v0=%.1f,%.1f v1=%.1f,%.1f v2=%.1f,%.1f\n",
++                          ctx->ctx_id, bv_vb, v[0], v[1], v[2], v[3], v[4], v[5]);
++               bv_probe_gl_errors("draw-vb0");
++            }
++         }
++
++         if (bv_finish_enabled())
++            glFinish();
++         if (bv_sample_enabled())
++            bv_probe_sample_gltex("draw-att0-after", (GLuint)att0);
++      }
++      if (bv_nocull_forced)
++         glEnable(GL_CULL_FACE);
++   }
+    return 0;
+ }
+ 
+@@ -7732,6 +8055,13 @@ int vrend_renderer_init(const struct vrend_if_cbs *cbs, uint32_t flags)
        goto fail;
     }
  
@@ -370,7 +631,7 @@ index 4bccc44..70ba11b 100644
     vrend_state.eventfd = -1;
     if (flags & VREND_USE_THREAD_SYNC) {
        if (flags & VREND_USE_ASYNC_FENCE_CB)
-@@ -7795,6 +7885,14 @@ vrend_renderer_fini(void)
+@@ -7795,6 +8125,14 @@ vrend_renderer_fini(void)
     vrend_video_fini();
  #endif
  
@@ -385,7 +646,7 @@ index 4bccc44..70ba11b 100644
     vrend_destroy_context(vrend_state.ctx0);
  
     vrend_state.current_ctx = NULL;
-@@ -8290,6 +8388,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8290,6 +8628,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
  {
  
     GLbitfield buffer_storage_flags = 0;
@@ -397,7 +658,7 @@ index 4bccc44..70ba11b 100644
     if (flags & VIRGL_RESOURCE_FLAG_MAP_PERSISTENT) {
        buffer_storage_flags |= GL_MAP_PERSISTENT_BIT;
        /* Gallium's storage_flags_to_buffer_flags seems to drop some information, but we have to
-@@ -8343,7 +8446,7 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8343,7 +8686,7 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
  #endif
        else {
           virgl_error("Missing buffer storage and interop extensions\n");
@@ -406,7 +667,7 @@ index 4bccc44..70ba11b 100644
        }
  
        gr->storage_bits |= VREND_STORAGE_GL_IMMUTABLE;
-@@ -8352,7 +8455,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8352,7 +8695,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
     } else
        glBufferData(gr->target, width, NULL, GL_STREAM_DRAW);
  
@@ -418,7 +679,7 @@ index 4bccc44..70ba11b 100644
  }
  
  static int
-@@ -8943,6 +9050,7 @@ void vrend_renderer_resource_destroy(struct vrend_resource *res)
+@@ -8943,6 +9290,7 @@ void vrend_renderer_resource_destroy(struct vrend_resource *res)
     free(res);
  }
  
@@ -426,7 +687,7 @@ index 4bccc44..70ba11b 100644
  struct virgl_sub_upload_data {
     GLenum target;
     struct pipe_box *box;
-@@ -8953,6 +9061,7 @@ static void iov_buffer_upload(void *cookie, uint32_t doff, void *src, int len)
+@@ -8953,6 +9301,7 @@ static void iov_buffer_upload(void *cookie, uint32_t doff, void *src, int len)
     struct virgl_sub_upload_data *d = cookie;
     glBufferSubData(d->target, d->box->x + doff, len, src);
  }
@@ -434,7 +695,7 @@ index 4bccc44..70ba11b 100644
  
  static void vrend_scale_depth(void *ptr, int size, float scale_val)
  {
-@@ -9301,6 +9410,49 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
+@@ -9301,6 +9650,61 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
     }
  
     if (has_bit(res->storage_bits, VREND_STORAGE_GL_BUFFER)) {
@@ -467,24 +728,36 @@ index 4bccc44..70ba11b 100644
 +      glBindBuffer(GL_COPY_WRITE_BUFFER, res->gl_id);
 +      glBufferSubData(GL_COPY_WRITE_BUFFER, info->box->x,
 +                      info->box->width, data);
++      if (bv_probe_enabled() && info->box->width <= 64) {
++         float bv_src[2] = {0}, bv_back[2] = {0};
++         memcpy(bv_src, data, MIN2(sizeof(bv_src), (size_t)info->box->width));
++         glGetBufferSubData(GL_COPY_WRITE_BUFFER, info->box->x,
++                            MIN2((GLsizeiptr)sizeof(bv_back), (GLsizeiptr)info->box->width),
++                            bv_back);
++         virgl_warn("BV-PROBE buf-write owner=%d cur=%d gl_id=%u off=%d w=%d src=%.1f,%.1f back=%.1f,%.1f\n",
++                    ctx->ctx_id,
++                    vrend_state.current_ctx ? (int)vrend_state.current_ctx->ctx_id : -1,
++                    res->gl_id, info->box->x, info->box->width,
++                    bv_src[0], bv_src[1], bv_back[0], bv_back[1]);
++         bv_probe_gl_errors("buf-write");
++      }
 +      glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
 +      vrend_apple_buffer_modify_end(&saved);
 +      /* Apple's legacy GL loses same-context ordering between this buffer
-+       * upload and a later draw that sources the buffer: the first D3D
-+       * context after a guest boot reliably rasterizes from the buffer's
-+       * stale (zeroed) GPU-side copy even though a CPU readback returns
++       * upload and a later draw that sources the buffer: the very first
++       * D3D context after a guest boot reliably rasterizes from the
++       * buffer's stale (zeroed) GPU copy even though a CPU readback sees
 +       * the fresh data, so its first draw silently produces nothing
-+       * (the per-boot first-draw black-readback wall, live-proven
-+       * 2026-07-14).  Flushing after the upload publishes the write to
-+       * the GPU-side copy; it is the only probe-independent remedy found
-+       * live, and a fresh-boot first-process draw smoke passes with it. */
++       * (live-proven by the per-boot first-draw black-readback wall).
++       * A flush after the upload publishes the write to the GPU-side copy
++       * and is the only probe-independent remedy found live. */
 +      glFlush();
 +      free(data);
 +#else
        GLuint map_flags = GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_WRITE_BIT;
        struct virgl_sub_upload_data d;
        d.box = info->box;
-@@ -9319,6 +9471,7 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
+@@ -9319,6 +9723,7 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
           glUnmapBuffer(res->target);
        }
        glBindBufferARB(res->target, 0);
@@ -492,7 +765,40 @@ index 4bccc44..70ba11b 100644
     } else {
        GLenum glformat;
        GLenum gltype;
-@@ -9970,6 +10123,34 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
+@@ -9644,6 +10049,13 @@ static int vrend_transfer_send_getteximage(struct vrend_resource *res,
+       break;
+    }
+ 
++   bool bv_probed = bv_probe_enabled() && !compressed && bv_probe_res_small(res);
++   if (bv_probed) {
++      bv_probe_gl_errors("getteximage-entry");
++      if (bv_finish_enabled())
++         glFinish();
++   }
++
+    glBindTexture(res->target, res->gl_id);
+    if (res->target == GL_TEXTURE_CUBE_MAP) {
+       target = GL_TEXTURE_CUBE_MAP_POSITIVE_X + info->box->z;
+@@ -9668,6 +10080,18 @@ static int vrend_transfer_send_getteximage(struct vrend_resource *res,
+       }
+    }
+ 
++   if (bv_probed) {
++      size_t bv_n = 0;
++      for (size_t i = 0; i < (size_t)tex_size; i++)
++         bv_n += ((const uint8_t *)data)[i] != 0;
++      virgl_warn("BV-PROBE getteximage: gl_id=%u lvl=%d %ux%u fmt=%d first=%02x%02x%02x%02x nonzero=%zu/%zu\n",
++                 res->gl_id, info->level, res->base.width0, res->base.height0,
++                 (int)res->base.format,
++                 (uint8_t)data[0], (uint8_t)data[1], (uint8_t)data[2], (uint8_t)data[3],
++                 bv_n, (size_t)tex_size);
++      bv_probe_gl_errors("getteximage-exit");
++   }
++
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+ 
+    write_transfer_data(&res->base, iov, num_iovs, data + send_offset,
+@@ -9970,6 +10394,34 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
     }
  
     if (has_bit(res->storage_bits, VREND_STORAGE_GL_BUFFER)) {
@@ -527,7 +833,7 @@ index 4bccc44..70ba11b 100644
        glBindBufferARB(res->target, res->gl_id);
        void *data = glMapBufferRange(res->target, info->box->x, info->box->width, GL_MAP_READ_BIT);
        if (!data)
-@@ -9978,11 +10159,19 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
+@@ -9978,11 +10430,19 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
           vrend_write_to_iovec(iov, num_iovs, info->offset, data, info->box->width);
        glUnmapBuffer(res->target);
        glBindBufferARB(res->target, 0);
@@ -547,7 +853,7 @@ index 4bccc44..70ba11b 100644
  
        if (can_readpixels)
           ret = vrend_transfer_send_readpixels(ctx, res, iov, num_iovs, info);
-@@ -10421,12 +10610,43 @@ static void vrend_resource_buffer_copy(UNUSED struct vrend_context *ctx,
+@@ -10421,12 +10881,43 @@ static void vrend_resource_buffer_copy(UNUSED struct vrend_context *ctx,
                                         uint32_t dstx, uint32_t srcx,
                                         uint32_t width)
  {
@@ -591,7 +897,38 @@ index 4bccc44..70ba11b 100644
  }
  
  static void vrend_resource_copy_fallback(struct vrend_resource *src_res,
-@@ -11626,8 +11846,14 @@ bool vrend_hw_switch_context(struct vrend_context *ctx, bool now)
+@@ -10724,6 +11215,19 @@ void vrend_renderer_resource_copy_region(struct vrend_context *ctx,
+                                    util_format_name(dst_res->base.format), dst_res->base.nr_samples,
+                                    dstx, dsty, dstz);
+ 
++   bool bv_probed = bv_probe_enabled() && src_res->base.target != PIPE_BUFFER &&
++                    bv_probe_res_small(src_res) && bv_probe_res_small(dst_res);
++   if (bv_probed) {
++      virgl_warn("BV-PROBE copy_region ctx=%d src=%u(gl %u fmt %d) dst=%u(gl %u fmt %d) box=%dx%d\n",
++                 ctx->ctx_id, src_handle, src_res->gl_id, (int)src_res->base.format,
++                 dst_handle, dst_res->gl_id, (int)dst_res->base.format,
++                 src_box->width, src_box->height);
++      bv_probe_gl_errors("copy_region-entry");
++      if (bv_finish_enabled())
++         glFinish();
++      bv_probe_sample_texture("copy_region-src-before", src_res);
++   }
++
+    if (src_res->base.target == PIPE_BUFFER && dst_res->base.target == PIPE_BUFFER) {
+       /* do a buffer copy */
+       VREND_DEBUG(dbg_copy_resource, ctx, "COPY_REGION: buffer copy %d+%d\n",
+@@ -10745,6 +11249,10 @@ void vrend_renderer_resource_copy_region(struct vrend_context *ctx,
+       VREND_DEBUG(dbg_copy_resource, ctx, "COPY_REGION: use glCopyImageSubData\n");
+       vrend_copy_sub_image(src_res, dst_res, src_level, src_box,
+                            dst_level, dstx, dsty, dstz);
++      if (bv_probed) {
++         bv_probe_gl_errors("copy_region-after-glCopyImageSubData");
++         bv_probe_sample_texture("copy_region-dst-after", dst_res);
++      }
+       return;
+    }
+ 
+@@ -11626,8 +12134,14 @@ bool vrend_hw_switch_context(struct vrend_context *ctx, bool now)
     if (!ctx)
        return false;
  

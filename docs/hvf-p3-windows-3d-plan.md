@@ -332,5 +332,17 @@ undebuggable in a black box. We are not a black box:
   licensing, stability, performance, and newer feature levels remain later
   gates.
 
-_Updated 2026-07-13. See [[bridgevm-hvf-engine-status]] and
+- ★ 2026-07-14: the owned D3D10 draw smoke passes end-to-end from the FIRST
+  process of a fresh boot. The first-draw-per-boot black readback was
+  root-caused to Apple legacy GL losing same-context ordering between the
+  staged `GL_BUFFER` vertex upload and the draw that sources it (the first
+  post-boot D3D context rasterizes from the stale zeroed GPU-side copy).
+  Fixed with a `glFlush` after the Apple buffer upload, carried in the
+  regenerated `virglrenderer-macos-venus.patch`; the diagnostic GL probe
+  suite is preserved as `virglrenderer-macos-venus-bv-draw-probes.patch`.
+  See docs/hvf-3d-submit-wall-resolution-20260714.md. The remaining gates
+  are performance re-baselining (truthful tracing + flush cost), stress,
+  production signing, and feature levels beyond 10_0.
+
+_Updated 2026-07-14. See [[bridgevm-hvf-engine-status]] and
 docs/hvf-3d-engine-plan.md._

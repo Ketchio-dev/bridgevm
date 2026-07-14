@@ -1,5 +1,91 @@
 # Windows D3D10 submission wall — resolution and the real wall (2026-07-14)
 
+## ★ RESOLVED (2026-07-14 afternoon): first-draw-per-boot wall root-caused and fixed
+
+The first-draw-per-boot black readback is FIXED. A fresh-boot FIRST
+`bridgevm-d3d10-draw-smoke.exe` process now passes (exit 0, pixel-exact
+magenta), verified live on a probe-free canonical build.
+
+**Root cause.** Apple's legacy GL loses same-context ordering between a
+buffer upload and a later draw that sources that buffer. The Apple-staged
+`GL_BUFFER` upload path in `vrend_renderer_transfer_write_iov`
+(CPU staging + `glBufferSubData` via `GL_COPY_WRITE_BUFFER`) executes in the
+owning context (live-verified `owner==cur`), and a CPU readback
+(`glGetBufferSubData`) returns the fresh bytes — but the first post-boot D3D
+context's draw rasterizes from the buffer's stale zeroed GPU-side copy. The
+smoke's three vertex positions therefore all fetch (0,0): a zero-area
+triangle, zero fragments, zero GL errors. The clear survives (it does not
+read the vertex buffer), which produced the signature black-with-alpha
+`000000ff` readback. A second process passes because the first process's
+teardown publishes the pending writes and its fresh context re-latches the
+(recycled) buffer object.
+
+**The proof (live probe chain, evidence under
+`~/BridgeVM/viogpu3d-firstdraw-fix-20260714-v1/run*` and
+`~/BridgeVM/viogpu3d-submit-trace-draw-20260713-v1/run7-run10`):**
+
+- run7/run8: copy (`glCopyImageSubData`) and readback (`glGetTexImage`) are
+  pixel-faithful in BOTH cycles; the RT is already black at copy time in the
+  failing cycle; the failing draw completes with a complete FBO and zero GL
+  errors. (Also: sampling the RT right after the draw with `glGetTexImage`
+  perturbed the second cycle into failing too — an observer effect worth
+  remembering.)
+- run9: failing vs passing draw-state is IDENTICAL in every queryable value
+  (viewport 0,0,64,64; scissor off; colormask 1111; discard off; program,
+  VAO, FBO, attachment — even the recycled GL object ids match); forcing
+  `glDisable(GL_CULL_FACE)` does not fix the first cycle. CPU-side
+  `winsys_adjust_y=-1.0`, `viewport_is_negative=1` in both.
+- run11: the global Apple sysval UBO is exonerated (`wsy_cpu=-1.0` AND
+  `wsy_gl=-1.0` read back on every fill of both cycles; orphaning the upload
+  changes nothing). The vertex buffer is the smoking gun: at draw time the
+  failing cycle reads `v0=0,0 v1=0,0 v2=0,0` from the SAME GL buffer id that
+  the passing cycle reads `(-1,-1)(-1,3)(3,-1)` from.
+- run12: adding a `glFlush` after the Apple buffer upload makes the FIRST
+  process pass. run13: probes fully disabled, flush unconditional — still
+  passes, so the remedy is probe-independent. run14: canonical rebuilt
+  package (probe code stripped) — passes.
+
+**Falsified fix attempts (recorded so nobody retries them):**
+
+- Re-issuing `glBindBufferRange` of the sysval block after each fill — not
+  only failed to fix the first cycle, it REGRESSED the second cycle into
+  failing (run10). Reverted.
+- Orphaned (`glBufferData`) sysval uploads — no effect (run11).
+- Forced cull-off around small draws — no effect (run9).
+- Earlier session: unconditional CGL rebinds, per-context warm-up draws,
+  in-process device warm-up — all previously falsified.
+
+**The fix.** One unconditional `glFlush()` after the Apple `GL_BUFFER`
+upload in `vrend_renderer_transfer_write_iov`, carried in the regenerated
+`scripts/patches/virglrenderer-macos-venus.patch`. The full diagnostic probe
+suite (env-gated `BV_VREND_PROBE`/`BV_VREND_FINISH`/`BV_VREND_NOCULL`/
+`BV_VREND_SAMPLE`/sysval+buffer content readbacks) is preserved as
+`scripts/patches/virglrenderer-macos-venus-bv-draw-probes.patch` — apply it
+INSTEAD of the canonical patch on a pristine 2a173ee checkout when GL-side
+tracing is needed again.
+
+**Cost note / follow-up.** The flush runs once per guest buffer upload. If
+the perf gates show it, the optimization is batching (one flush per
+transfer-queue drain or per SUBMIT_3D decode) — do not remove the flush
+without re-running the fresh-boot first-process draw gate. Texture uploads
+(`glTexSubImage`) may harbor the same staleness class; no failure observed
+yet, but check there first if a texture-flavored first-use bug appears.
+
+**Ops note.** The submit-trace workspace disk was corrupted by a mid-boot
+process kill during this session (Windows Startup Repair loop). Recovery:
+clone a same-era evidence disk (`viogpu3d-owned-d3d10-draw-20260713-v1`) via
+APFS `cp -c` into `viogpu3d-firstdraw-fix-20260714-v1`, which now also keeps
+`target-pristine.raw`/`vars-pristine.fd` clones for instant restore. Never
+kill a boot mid-flight; always shut down through the agent and wait for NVMe
+writeback.
+
+---
+
+The sections below are the earlier 2026-07-14 morning state, kept for the
+investigation record. Their "prime suspect" framings (host one-time lazy GL
+init, CGL binding, guest VidMm state) are superseded by the root cause
+above.
+
 ## The old wall was a trace artifact
 
 `docs/hvf-3d-current-wall-20260713.md` anchored the Windows wall on "the owned
