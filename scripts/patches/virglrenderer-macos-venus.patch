@@ -234,7 +234,7 @@ index 7774a25..1909b4f 100644
  
  static int vrend_decode_ctx_get_fencing_fd(UNUSED struct virgl_context *ctx)
 diff --git a/src/vrend/vrend_renderer.c b/src/vrend/vrend_renderer.c
-index 4bccc44..0b92811 100644
+index 4bccc44..25173a7 100644
 --- a/src/vrend/vrend_renderer.c
 +++ b/src/vrend/vrend_renderer.c
 @@ -416,6 +416,68 @@ struct sysval_uniform_block {
@@ -691,6 +691,17 @@ index 4bccc44..0b92811 100644
  }
  
  static void vrend_resource_copy_fallback(struct vrend_resource *src_res,
+@@ -11201,8 +11429,8 @@ static void vrend_renderer_blit_int(struct vrend_context *ctx,
+       VREND_DEBUG(dbg_blit, ctx, "BLIT_INT: use FBO blit\n");
+       vrend_renderer_blit_fbo(ctx, src_res, dst_res, &blit_info);
+    } else {
+-      blit_info.has_srgb_write_control = has_feature(feat_texture_srgb_decode);
+-      blit_info.has_texture_srgb_decode = has_feature(feat_srgb_write_control);
++      blit_info.has_srgb_write_control = has_feature(feat_srgb_write_control);
++      blit_info.has_texture_srgb_decode = has_feature(feat_texture_srgb_decode);
+ 
+       VREND_DEBUG(dbg_blit, ctx, "BLIT_INT: use GL fallback\n");
+       vrend_renderer_blit_gl(ctx, src_res, dst_res, &blit_info);
 @@ -11626,8 +11854,14 @@ bool vrend_hw_switch_context(struct vrend_context *ctx, bool now)
     if (!ctx)
        return false;
