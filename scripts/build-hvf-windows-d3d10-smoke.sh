@@ -21,6 +21,12 @@ mkdir -p "$OUT_DIR"
   "$ROOT_DIR/scripts/win-tests/bridgevm-d3d10-draw-smoke.c" \
   -ld3d10 -ldxgi
 
+"$ZIG" cc -target aarch64-windows-gnu -O2 \
+  -o "$OUT_DIR/bridgevm-d3d10-bench.exe" \
+  "$ROOT_DIR/scripts/win-tests/bridgevm-d3d10-bench.c" \
+  -ld3d10 -ldxgi
+
 file "$OUT_DIR/bridgevm-d3d10-smoke.exe"
 file "$OUT_DIR/bridgevm-debug-runner.exe"
 file "$OUT_DIR/bridgevm-d3d10-draw-smoke.exe"
+file "$OUT_DIR/bridgevm-d3d10-bench.exe"
