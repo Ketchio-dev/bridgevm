@@ -22,7 +22,6 @@ struct HvfEngineView: View {
     @State private var ctlFilePath = ""
     @State private var ctlInput = ""
     @State private var keyboardInput = ""
-    @FocusState private var displayFocused: Bool
 
     init(config: HvfEngineConfig = HvfEngineView.defaultConfig()) {
         _session = StateObject(wrappedValue: HvfEngineSession(config: config))
@@ -154,87 +153,26 @@ struct HvfEngineView: View {
     private var screenshotCard: some View {
         GroupBox {
             #if canImport(AppKit)
-            if let image = session.latestScreenshot {
-                GeometryReader { geometry in
-                    Image(nsImage: image)
-                        .resizable()
-                        .interpolation(.none)
-                        .scaledToFit()
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .contentShape(Rectangle())
-                        .focusable()
-                        .focused($displayFocused)
-                        .onKeyPress { press in
-                            handleDisplayKeyPress(press)
-                        }
-                        .overlay {
-                            HvfPointerEventSurface(
-                                onFocus: { displayFocused = true },
-                                onMove: { location in
-                                    session.sendPointerMove(
-                                        location: location,
-                                        viewSize: geometry.size,
-                                        imageSize: image.size
-                                    )
-                                },
-                                onLeftDown: { location in
-                                    session.sendPointerPress(
-                                        location: location,
-                                        viewSize: geometry.size,
-                                        imageSize: image.size
-                                    )
-                                },
-                                onLeftUp: { location in
-                                    session.sendPointerRelease(
-                                        location: location,
-                                        viewSize: geometry.size,
-                                        imageSize: image.size
-                                    )
-                                },
-                                onRightDown: { location in
-                                    session.sendPointerRightPress(
-                                        location: location,
-                                        viewSize: geometry.size,
-                                        imageSize: image.size
-                                    )
-                                },
-                                onRightUp: { location in
-                                    session.sendPointerRelease(
-                                        location: location,
-                                        viewSize: geometry.size,
-                                        imageSize: image.size
-                                    )
-                                },
-                                onScroll: { delta, location in
-                                    session.sendPointerScroll(
-                                        delta,
-                                        location: location,
-                                        viewSize: geometry.size,
-                                        imageSize: image.size
-                                    )
-                                }
-                            )
-                        }
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("게스트 화면은 별도 창에서 열립니다.")
+                    Text("연결 상태: \(displayConnectionStateText)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                .frame(maxWidth: .infinity, minHeight: 280, maxHeight: 520)
-                .background(Color.black)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(displayFocused ? Color.accentColor : Color.clear, lineWidth: 2)
-                )
-                .cornerRadius(6)
-            } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "display").font(.system(size: 36)).foregroundColor(.secondary)
-                    Text("Waiting for the live display").foregroundColor(.secondary)
+                Spacer()
+                Button {
+                    HvfDisplayWindowController.present(session: session, title: displayWindowTitle)
+                } label: {
+                    Label("화면 창 열기", systemImage: "macwindow")
                 }
-                .frame(maxWidth: .infinity, minHeight: 280)
             }
+            .padding(6)
             #else
-            Text("Screenshots require AppKit").foregroundColor(.secondary)
+            Text("스크린샷에는 AppKit이 필요합니다.").foregroundColor(.secondary)
             #endif
         } label: {
-            Label("Live Display", systemImage: "display")
+            Label("라이브 디스플레이", systemImage: "display")
         }
     }
 
@@ -295,6 +233,23 @@ struct HvfEngineView: View {
         return String(format: "%.1fs ago", age)
     }
 
+    private var displayWindowTitle: String {
+        let path = session.config.targetDiskPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else { return "Windows HVF" }
+        let directoryName = URL(fileURLWithPath: path).deletingLastPathComponent().lastPathComponent
+        return directoryName.isEmpty ? "Windows HVF" : directoryName
+    }
+
+    private var displayConnectionStateText: String {
+        switch session.connectionState {
+        case .stopped: return "중지됨"
+        case .booting: return "부팅 중"
+        case let .connected(host): return "연결됨: \(host)"
+        case .stopping: return "종료 중"
+        case .timedOut: return "시간 초과"
+        }
+    }
+
     private var bootConfigReady: Bool {
         guard !targetDiskPath.isEmpty, !uefiVarsPath.isEmpty,
               !evidenceDir.isEmpty, !ctlFilePath.isEmpty,
@@ -332,6 +287,9 @@ struct HvfEngineView: View {
     private func start() {
         session.config = currentConfig()
         session.start()
+        #if canImport(AppKit)
+        HvfDisplayWindowController.present(session: session, title: displayWindowTitle)
+        #endif
     }
 
     private func sendCtl() {
@@ -343,19 +301,6 @@ struct HvfEngineView: View {
     private func sendKeyboardText() {
         session.sendText(keyboardInput)
         keyboardInput = ""
-    }
-
-    private func handleDisplayKeyPress(_ press: KeyPress) -> KeyPress.Result {
-        switch HvfHostKeyCommand.resolve(characters: press.characters, modifiers: press.modifiers) {
-        case let .key(action):
-            session.sendKey(action)
-            return .handled
-        case let .text(text):
-            session.sendText(text)
-            return .handled
-        case .ignored:
-            return .ignored
-        }
     }
 
     private func currentConfig() -> HvfEngineConfig {
