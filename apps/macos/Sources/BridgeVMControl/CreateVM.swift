@@ -190,7 +190,7 @@ extension VMLibrary {
     /// The blank target disk is where the user installs the distro.
     static func createFromISO(name: String, isoPath: String, template: VMConfig,
                               storageDir: URL? = nil, width: Int = 1440, height: Int = 900,
-                              diskGiB: Int = 40) -> VMConfig? {
+                              diskGiB: Int = 40, memMiB: Int = 4096, cpuCount: Int = 4) -> VMConfig? {
         let fm = FileManager.default
         guard let name = normalizedVMName(name),
               diskGiB > 0, width > 0, height > 0,
@@ -222,7 +222,7 @@ extension VMLibrary {
         let handoffPath = "\(b)/metadata/handoff.json"
         let serialLog = "\(b)/logs/serial.log"
 
-        let resources: [String: Any] = ["memory": "4096", "cpu": "4", "display_fps_cap": "adaptive", "rationale": "New ISO VM", "balloon_device": true]
+        let resources: [String: Any] = ["memory": String(memMiB), "cpu": String(cpuCount), "display_fps_cap": "adaptive", "rationale": "New ISO VM", "balloon_device": true]
         let disk: [String: Any] = ["path": diskPath, "format": "raw", "read_only": false]
         let guest: [String: Any] = ["os": "linux", "arch": "arm64"]
         let isoDict: [String: Any] = ["path": isoLocal, "exists": true]
@@ -254,15 +254,32 @@ extension VMLibrary {
                            launchSpecPath: launchSpecPath, handoffPath: handoffPath,
                            sshKeyPath: template.sshKeyPath, sshUser: "user", leasesPath: template.leasesPath,
                            guestName: slug, displayWidth: width, displayHeight: height,
-                           installPending: true)
+                           installPending: true, memMiB: memMiB, cpuCount: cpuCount)
         guard save(cfg) else { return nil }
         succeeded = true
         return cfg
     }
 
+    /// Rewrite the Fast VZ launch-spec/handoff `resources.memory` and
+    /// `resources.cpu` of a bundle to the requested allocation. Returns false
+    /// on any read/write failure so the caller can abort the create.
+    static func applyResourceOverride(bundlePath b: String, memMiB: Int, cpuCount: Int) -> Bool {
+        for file in ["\(b)/metadata/apple-vz-launch.json", "\(b)/metadata/handoff.json"] {
+            guard var root = JSONFile.loadDict(file) else { continue }
+            var resources = (root["resources"] as? [String: Any]) ?? [:]
+            resources["memory"] = String(memMiB)
+            resources["cpu"] = String(cpuCount)
+            root["resources"] = resources
+            guard JSONFile.writeDict(root, to: file) else { return false }
+        }
+        return true
+    }
+
     /// Duplicate the default Ubuntu VM (instant APFS clone of the bundle + fresh
     /// machine identity), so a new ready-to-run Ubuntu lands in the library.
-    static func cloneUbuntu(name: String, template: VMConfig, storageDir: URL? = nil, width: Int = 1440, height: Int = 900) -> VMConfig? {
+    static func cloneUbuntu(name: String, template: VMConfig, storageDir: URL? = nil,
+                            width: Int = 1440, height: Int = 900,
+                            memMiB: Int? = nil, cpuCount: Int? = nil) -> VMConfig? {
         let fm = FileManager.default
         let sourceBundle = URL(fileURLWithPath: template.bundlePath, isDirectory: true)
         let storageBase = storageDir ?? root
@@ -294,6 +311,9 @@ extension VMLibrary {
                 newName: name
             ) else { return nil }
         }
+        if let memMiB, let cpuCount {
+            guard applyResourceOverride(bundlePath: b, memMiB: memMiB, cpuCount: cpuCount) else { return nil }
+        }
         var cfg = template
         cfg.id = slug
         cfg.name = name
@@ -305,6 +325,8 @@ extension VMLibrary {
         cfg.installPending = false
         cfg.displayWidth = width
         cfg.displayHeight = height
+        if let memMiB { cfg.memMiB = memMiB }
+        if let cpuCount { cfg.cpuCount = cpuCount }
         guard save(cfg) else { return nil }
         succeeded = true
         return cfg
@@ -315,6 +337,7 @@ extension VMLibrary {
     static func createWindows(name: String, isoPath: String, template: VMConfig,
                               storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
                               diskGiB: Int = 64, persist: Bool = true,
+                              memMiB: Int = 6144, cpuCount: Int = 4,
                               diskCreator: ((String, Int) -> Bool)? = nil) -> VMConfig? {
         let fm = FileManager.default
         guard let name = normalizedVMName(name),
@@ -347,7 +370,7 @@ extension VMLibrary {
                            launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
                            leasesPath: template.leasesPath, guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: true,
-                           isoPath: isoLocal, diskPath: disk, memMiB: 6144, cpuCount: 4)
+                           isoPath: isoLocal, diskPath: disk, memMiB: memMiB, cpuCount: cpuCount)
         if persist, !save(cfg) { return nil }
         succeeded = true
         return cfg
@@ -363,6 +386,7 @@ extension VMLibrary {
                                         injectViogpu3d: Bool, driverPackageDir: String?,
                                         storageDir: URL? = nil,
                                         width: Int = 1280, height: Int = 800,
+                                        memMiB: Int = 6144, cpuCount: Int = 4,
                                         persist: Bool = true) -> VMConfig? {
         let fm = FileManager.default
         guard let name = normalizedVMName(name),
@@ -395,7 +419,7 @@ extension VMLibrary {
                            leasesPath: "", guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: true,
                            isoPath: nil, diskPath: "\(b)/disks/hvf-target.raw",
-                           memMiB: 6144, cpuCount: 4)
+                           memMiB: memMiB, cpuCount: cpuCount)
         if persist, !save(cfg) { return nil }
         succeeded = true
         return cfg
@@ -433,6 +457,7 @@ extension VMLibrary {
     /// not implement the Windows installer path yet.
     static func createWindowsHVF(name: String, targetDiskPath: String, varsPath: String,
                                  storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
+                                 memMiB: Int = 6144, cpuCount: Int = 4,
                                  persist: Bool = true) -> VMConfig? {
         let fm = FileManager.default
         guard let name = normalizedVMName(name),
@@ -475,7 +500,7 @@ extension VMLibrary {
                            launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
                            leasesPath: "", guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: false,
-                           isoPath: nil, diskPath: disk, memMiB: 6144, cpuCount: 4)
+                           isoPath: nil, diskPath: disk, memMiB: memMiB, cpuCount: cpuCount)
         if persist, !save(cfg) { return nil }
         succeeded = true
         return cfg
@@ -499,6 +524,9 @@ struct CreateVMSheet: View {
     @State private var hvfDriverDir: String = UserDefaults.standard.string(forKey: "hvfViogpu3dPackageDir") ?? ""
     @State private var storageDir: URL? = nil
     @State private var resIndex = 1
+    @State private var showAdvanced = false
+    @State private var ramMiB = 6144
+    @State private var cpuCount = 4
     @State private var working = false
     @State private var error = ""
 
@@ -519,6 +547,15 @@ struct CreateVMSheet: View {
         library.vms.first { $0.backendKind == "fast-vz" && ($0.bootMode ?? "direct-kernel") == "direct-kernel" }
             ?? library.vms.first
     }
+
+    /// Memory choices in MiB, capped just under host physical RAM.
+    private var ramOptions: [Int] {
+        let hostMiB = Int(library.hostMemGiB * 1024)
+        let ceiling = max(4096, hostMiB - 4096) // leave headroom for macOS
+        return [2048, 4096, 6144, 8192, 12288, 16384, 24576, 32768].filter { $0 <= ceiling }
+    }
+
+    private var maxCPU: Int { max(1, library.hostCPU - 1) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -634,6 +671,28 @@ struct CreateVMSheet: View {
                 Spacer()
             }
 
+            DisclosureGroup("고급 설정 (VMware·UTM 스타일)", isExpanded: $showAdvanced) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("메모리").frame(width: 64, alignment: .leading)
+                        Picker("", selection: $ramMiB) {
+                            ForEach(ramOptions, id: \.self) { Text("\($0 / 1024) GiB").tag($0) }
+                        }.labelsHidden().frame(width: 150)
+                        Spacer()
+                    }
+                    HStack {
+                        Text("CPU").frame(width: 64, alignment: .leading)
+                        Stepper("\(cpuCount) 코어", value: $cpuCount, in: 1...maxCPU)
+                            .frame(width: 150)
+                        Spacer()
+                    }
+                    Text("호스트: \(String(format: "%.0f", library.hostMemGiB)) GiB · \(library.hostCPU) 코어")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                .padding(.top, 8)
+            }
+            .font(.callout)
+
             if !error.isEmpty { Text(error).font(.caption).foregroundColor(.red) }
 
             HStack {
@@ -680,11 +739,20 @@ struct CreateVMSheet: View {
         switch family {
         case .windows:
             mode = .windowsHVFInstall
+            ramMiB = clampRam(6144)
             autofillWin11()
             autofillDriverDir()
         case .linux:
             mode = .ubuntu
+            ramMiB = clampRam(4096)
         }
+    }
+
+    /// Snap a desired RAM value to the nearest available host-capped option.
+    private func clampRam(_ desired: Int) -> Int {
+        let options = ramOptions
+        if options.contains(desired) { return desired }
+        return options.last ?? desired
     }
 
     private func pickISO() {
@@ -776,19 +844,20 @@ struct CreateVMSheet: View {
         }
         let sd = storageDir; let w = resolutions[resIndex].0; let h = resolutions[resIndex].1
         let inject = hvfInject; let driverDir = hvfDriverDir; let diskGiB = hvfDiskGiB
+        let mem = ramMiB; let cpu = cpuCount
         Task.detached {
             var stagingError: String?
             let cfg: VMConfig?
             switch m {
             case .ubuntu:
-                cfg = selectedTemplate.flatMap { VMLibrary.cloneUbuntu(name: nm, template: $0, storageDir: sd, width: w, height: h) }
+                cfg = selectedTemplate.flatMap { VMLibrary.cloneUbuntu(name: nm, template: $0, storageDir: sd, width: w, height: h, memMiB: mem, cpuCount: cpu) }
             case .iso:
-                cfg = selectedTemplate.flatMap { VMLibrary.createFromISO(name: nm, isoPath: iso, template: $0, storageDir: sd, width: w, height: h) }
+                cfg = selectedTemplate.flatMap { VMLibrary.createFromISO(name: nm, isoPath: iso, template: $0, storageDir: sd, width: w, height: h, memMiB: mem, cpuCount: cpu) }
             case .windows:
-                cfg = selectedTemplate.flatMap { VMLibrary.createWindows(name: nm, isoPath: iso, template: $0, storageDir: sd, width: w, height: h) }
+                cfg = selectedTemplate.flatMap { VMLibrary.createWindows(name: nm, isoPath: iso, template: $0, storageDir: sd, width: w, height: h, memMiB: mem, cpuCount: cpu) }
             case .windowsHVF:
                 cfg = VMLibrary.createWindowsHVF(name: nm, targetDiskPath: hvfTarget, varsPath: hvfVars,
-                                                 storageDir: sd, width: w, height: h)
+                                                 storageDir: sd, width: w, height: h, memMiB: mem, cpuCount: cpu)
                 if inject, let created = cfg {
                     stagingError = VMLibrary.stageWindowsHVFInjection(bundlePath: created.bundlePath)
                 }
@@ -796,7 +865,8 @@ struct CreateVMSheet: View {
                 cfg = VMLibrary.createWindowsHVFInstall(name: nm, isoPath: iso, diskGiB: diskGiB,
                                                         injectViogpu3d: inject,
                                                         driverPackageDir: inject ? driverDir : nil,
-                                                        storageDir: sd, width: w, height: h)
+                                                        storageDir: sd, width: w, height: h,
+                                                        memMiB: mem, cpuCount: cpu)
             }
             let injectionWarning = stagingError
             await MainActor.run {

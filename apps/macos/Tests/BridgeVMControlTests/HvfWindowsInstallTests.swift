@@ -144,6 +144,46 @@ final class HvfWindowsInstallTests: XCTestCase {
         XCTAssertNil(HvfEngineConfig.libraryVM(config))
     }
 
+    func testCreateWindowsHVFInstallHonorsCustomResources() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let iso = temp.appendingPathComponent("win.iso")
+        try Data(count: 1024).write(to: iso)
+        let storage = temp.appendingPathComponent("library", isDirectory: true)
+        try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
+
+        let config = try XCTUnwrap(VMLibrary.createWindowsHVFInstall(
+            name: "Big Windows \(UUID().uuidString.prefix(8))",
+            isoPath: iso.path, diskGiB: 128,
+            injectViogpu3d: false, driverPackageDir: nil,
+            storageDir: storage, memMiB: 16384, cpuCount: 8, persist: false))
+        XCTAssertEqual(config.memMiB, 16384)
+        XCTAssertEqual(config.cpuCount, 8)
+    }
+
+    func testApplyResourceOverrideRewritesLaunchSpecResources() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let metadata = temp.appendingPathComponent("metadata", isDirectory: true)
+        try FileManager.default.createDirectory(at: metadata, withIntermediateDirectories: true)
+        let launch = metadata.appendingPathComponent("apple-vz-launch.json")
+        let handoff = metadata.appendingPathComponent("handoff.json")
+        let seed: [String: Any] = ["resources": ["memory": "4096", "cpu": "4", "balloon_device": true]]
+        let data = try JSONSerialization.data(withJSONObject: seed)
+        try data.write(to: launch)
+        try data.write(to: handoff)
+
+        XCTAssertTrue(VMLibrary.applyResourceOverride(bundlePath: temp.path, memMiB: 12288, cpuCount: 6))
+        for file in [launch, handoff] {
+            let root = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any]
+            let resources = try XCTUnwrap(root?["resources"] as? [String: Any])
+            XCTAssertEqual(resources["memory"] as? String, "12288")
+            XCTAssertEqual(resources["cpu"] as? String, "6")
+            // unrelated keys are preserved
+            XCTAssertEqual(resources["balloon_device"] as? Bool, true)
+        }
+    }
+
     func testCreateWindowsHVFInstallRejectsSmallDisks() throws {
         let temp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: temp) }
