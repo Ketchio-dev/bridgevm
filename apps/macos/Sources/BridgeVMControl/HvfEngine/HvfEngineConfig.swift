@@ -92,7 +92,7 @@ struct HvfEngineConfig: Equatable {
             "--agent-service-control", ctlFilePath,
             "--agent-service-command", "whoami",
             "--display-export-ppm", "\(evidenceDir)/display.ppm",
-            "--display-export-ms", "500",
+            "--display-export-ms", "100",
             "--enable-xhci",
             "--input-control", "\(evidenceDir)/input.ctl"
         ])

@@ -11,7 +11,7 @@ struct HvfLiveDisplaySurface: View {
             if let image = session.latestScreenshot {
                 Image(nsImage: image)
                     .resizable()
-                    .interpolation(.none)
+                    .interpolation(.high)
                     .scaledToFit()
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .contentShape(Rectangle())

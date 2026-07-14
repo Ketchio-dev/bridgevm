@@ -315,7 +315,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     private func startPolling() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.poll() }
         }
         poll()
