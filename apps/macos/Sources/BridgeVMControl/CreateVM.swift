@@ -488,7 +488,8 @@ struct CreateVMSheet: View {
     @ObservedObject var library: LibraryModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var mode: Mode = .ubuntu
+    @State private var osFamily: OSFamily = .windows
+    @State private var mode: Mode = .windowsHVFInstall
     @State private var name = ""
     @State private var isoPath: String = ""
     @State private var hvfTargetPath: String = ""
@@ -502,7 +503,17 @@ struct CreateVMSheet: View {
     @State private var error = ""
 
     private let resolutions = [(1280, 800), (1440, 900), (1920, 1080), (2560, 1440)]
-    enum Mode { case ubuntu, iso, windows, windowsHVF, windowsHVFInstall }
+    enum OSFamily: Equatable { case windows, linux }
+    enum Mode: Equatable {
+        case ubuntu, iso, windows, windowsHVF, windowsHVFInstall
+
+        var family: OSFamily {
+            switch self {
+            case .ubuntu, .iso: return .linux
+            case .windows, .windowsHVF, .windowsHVFInstall: return .windows
+            }
+        }
+    }
 
     private var template: VMConfig? {
         library.vms.first { $0.backendKind == "fast-vz" && ($0.bootMode ?? "direct-kernel") == "direct-kernel" }
@@ -513,15 +524,27 @@ struct CreateVMSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("새 VM 만들기").font(.title2.bold())
 
+            // 1단계: 운영체제 선택 (Windows / Linux)
             HStack(spacing: 12) {
-                tile("Ubuntu", "checkmark.seal.fill", selected: mode == .ubuntu) { mode = .ubuntu }
-                tile("Linux ISO", "opticaldisc", selected: mode == .iso) { mode = .iso }
-                tile("Windows QEMU", "macwindow", selected: mode == .windows) { mode = .windows; autofillWin11() }
-                tile("Windows HVF", "cpu", selected: mode == .windowsHVF) { mode = .windowsHVF; isoPath = "" }
-                tile("설치 (HVF)", "arrow.down.circle", selected: mode == .windowsHVFInstall) {
-                    mode = .windowsHVFInstall
-                    autofillWin11()
-                    autofillDriverDir()
+                tile("Windows", "pc", selected: osFamily == .windows) { selectFamily(.windows) }
+                tile("Linux", "terminal", selected: osFamily == .linux) { selectFamily(.linux) }
+            }
+
+            // 2단계: 세부 설치 방식
+            HStack(spacing: 8) {
+                if osFamily == .windows {
+                    subTile("ISO에서 설치", selected: mode == .windowsHVFInstall) {
+                        mode = .windowsHVFInstall; autofillWin11(); autofillDriverDir()
+                    }
+                    subTile("설치된 디스크 가져오기", selected: mode == .windowsHVF) {
+                        mode = .windowsHVF; isoPath = ""
+                    }
+                    subTile("QEMU 호환", selected: mode == .windows) {
+                        mode = .windows; autofillWin11()
+                    }
+                } else {
+                    subTile("Ubuntu 즉시 복제", selected: mode == .ubuntu) { mode = .ubuntu }
+                    subTile("Linux ISO 설치", selected: mode == .iso) { mode = .iso }
                 }
             }
 
@@ -585,7 +608,7 @@ struct CreateVMSheet: View {
 
             HStack {
                 Text("이름").frame(width: 64, alignment: .leading)
-                TextField(mode == .ubuntu ? "Ubuntu 2" : "Fedora 40", text: $name).textFieldStyle(.roundedBorder)
+                TextField(osFamily == .windows ? "Windows 11" : "Ubuntu 2", text: $name).textFieldStyle(.roundedBorder)
             }
             if !name.isEmpty, VMLibrary.normalizedVMName(name) == nil {
                 Text("이름은 제어문자 없이 1~\(VMLibrary.maximumVMNameCharacters)자이며 파일 ID 제한 안이어야 합니다.")
@@ -636,6 +659,32 @@ struct CreateVMSheet: View {
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected ? Color.accentColor : .clear, lineWidth: 2))
             .cornerRadius(10)
         }.buttonStyle(.plain)
+    }
+
+    private func subTile(_ title: String, selected: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption)
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .frame(maxWidth: .infinity)
+                .background(selected ? Color.accentColor.opacity(0.18) : Color.gray.opacity(0.08))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? Color.accentColor : .clear, lineWidth: 1.5))
+                .cornerRadius(8)
+        }.buttonStyle(.plain)
+    }
+
+    /// Switch OS family and reset to that family's default install method.
+    private func selectFamily(_ family: OSFamily) {
+        guard osFamily != family else { return }
+        osFamily = family
+        switch family {
+        case .windows:
+            mode = .windowsHVFInstall
+            autofillWin11()
+            autofillDriverDir()
+        case .linux:
+            mode = .ubuntu
+        }
     }
 
     private func pickISO() {

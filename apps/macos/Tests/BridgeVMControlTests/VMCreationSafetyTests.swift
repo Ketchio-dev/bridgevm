@@ -2,6 +2,14 @@ import XCTest
 @testable import BridgeVMControl
 
 final class VMCreationSafetyTests: XCTestCase {
+    func testCreateModeMapsToExpectedOSFamily() {
+        XCTAssertEqual(CreateVMSheet.Mode.ubuntu.family, .linux)
+        XCTAssertEqual(CreateVMSheet.Mode.iso.family, .linux)
+        XCTAssertEqual(CreateVMSheet.Mode.windows.family, .windows)
+        XCTAssertEqual(CreateVMSheet.Mode.windowsHVF.family, .windows)
+        XCTAssertEqual(CreateVMSheet.Mode.windowsHVFInstall.family, .windows)
+    }
+
     func testVMNameNormalizationTrimsAndRejectsUnsafeNames() {
         XCTAssertEqual(VMLibrary.normalizedVMName("  정상 VM  \n"), "정상 VM")
         XCTAssertNil(VMLibrary.normalizedVMName(" \n\t "))
