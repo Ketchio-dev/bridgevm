@@ -234,7 +234,7 @@ index 7774a25..1909b4f 100644
  
  static int vrend_decode_ctx_get_fencing_fd(UNUSED struct virgl_context *ctx)
 diff --git a/src/vrend/vrend_renderer.c b/src/vrend/vrend_renderer.c
-index 4bccc44..70ba11b 100644
+index 4bccc44..6a04e1d 100644
 --- a/src/vrend/vrend_renderer.c
 +++ b/src/vrend/vrend_renderer.c
 @@ -416,6 +416,68 @@ struct sysval_uniform_block {
@@ -385,7 +385,15 @@ index 4bccc44..70ba11b 100644
     vrend_destroy_context(vrend_state.ctx0);
  
     vrend_state.current_ctx = NULL;
-@@ -8290,6 +8388,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8031,6 +8129,7 @@ struct vrend_context *vrend_create_context(int id, uint32_t nlen, const char *de
+    grctx->shader_cfg.has_texture_shadow_lod = has_feature(feat_texture_shadow_lod);
+    grctx->shader_cfg.has_vs_layer = has_feature(feat_vs_layer_viewport);
+    grctx->shader_cfg.has_vs_viewport_index = has_feature(feat_vs_viewport_index);
++   grctx->shader_cfg.has_draw_parameters = has_feature(feat_draw_parameters);
+ 
+    vrend_renderer_create_sub_ctx(grctx, 0);
+    vrend_renderer_set_sub_ctx(grctx, 0);
+@@ -8290,6 +8389,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
  {
  
     GLbitfield buffer_storage_flags = 0;
@@ -397,7 +405,7 @@ index 4bccc44..70ba11b 100644
     if (flags & VIRGL_RESOURCE_FLAG_MAP_PERSISTENT) {
        buffer_storage_flags |= GL_MAP_PERSISTENT_BIT;
        /* Gallium's storage_flags_to_buffer_flags seems to drop some information, but we have to
-@@ -8343,7 +8446,7 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8343,7 +8447,7 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
  #endif
        else {
           virgl_error("Missing buffer storage and interop extensions\n");
@@ -406,7 +414,7 @@ index 4bccc44..70ba11b 100644
        }
  
        gr->storage_bits |= VREND_STORAGE_GL_IMMUTABLE;
-@@ -8352,7 +8455,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8352,7 +8456,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
     } else
        glBufferData(gr->target, width, NULL, GL_STREAM_DRAW);
  
@@ -418,7 +426,7 @@ index 4bccc44..70ba11b 100644
  }
  
  static int
-@@ -8943,6 +9050,7 @@ void vrend_renderer_resource_destroy(struct vrend_resource *res)
+@@ -8943,6 +9051,7 @@ void vrend_renderer_resource_destroy(struct vrend_resource *res)
     free(res);
  }
  
@@ -426,7 +434,7 @@ index 4bccc44..70ba11b 100644
  struct virgl_sub_upload_data {
     GLenum target;
     struct pipe_box *box;
-@@ -8953,6 +9061,7 @@ static void iov_buffer_upload(void *cookie, uint32_t doff, void *src, int len)
+@@ -8953,6 +9062,7 @@ static void iov_buffer_upload(void *cookie, uint32_t doff, void *src, int len)
     struct virgl_sub_upload_data *d = cookie;
     glBufferSubData(d->target, d->box->x + doff, len, src);
  }
@@ -434,7 +442,7 @@ index 4bccc44..70ba11b 100644
  
  static void vrend_scale_depth(void *ptr, int size, float scale_val)
  {
-@@ -9301,6 +9410,49 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
+@@ -9301,6 +9411,49 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
     }
  
     if (has_bit(res->storage_bits, VREND_STORAGE_GL_BUFFER)) {
@@ -484,7 +492,7 @@ index 4bccc44..70ba11b 100644
        GLuint map_flags = GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_WRITE_BIT;
        struct virgl_sub_upload_data d;
        d.box = info->box;
-@@ -9319,6 +9471,7 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
+@@ -9319,6 +9472,7 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
           glUnmapBuffer(res->target);
        }
        glBindBufferARB(res->target, 0);
@@ -492,7 +500,7 @@ index 4bccc44..70ba11b 100644
     } else {
        GLenum glformat;
        GLenum gltype;
-@@ -9970,6 +10123,34 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
+@@ -9970,6 +10124,34 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
     }
  
     if (has_bit(res->storage_bits, VREND_STORAGE_GL_BUFFER)) {
@@ -527,7 +535,7 @@ index 4bccc44..70ba11b 100644
        glBindBufferARB(res->target, res->gl_id);
        void *data = glMapBufferRange(res->target, info->box->x, info->box->width, GL_MAP_READ_BIT);
        if (!data)
-@@ -9978,11 +10159,19 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
+@@ -9978,11 +10160,19 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
           vrend_write_to_iovec(iov, num_iovs, info->offset, data, info->box->width);
        glUnmapBuffer(res->target);
        glBindBufferARB(res->target, 0);
@@ -547,7 +555,7 @@ index 4bccc44..70ba11b 100644
  
        if (can_readpixels)
           ret = vrend_transfer_send_readpixels(ctx, res, iov, num_iovs, info);
-@@ -10421,12 +10610,43 @@ static void vrend_resource_buffer_copy(UNUSED struct vrend_context *ctx,
+@@ -10421,12 +10611,43 @@ static void vrend_resource_buffer_copy(UNUSED struct vrend_context *ctx,
                                         uint32_t dstx, uint32_t srcx,
                                         uint32_t width)
  {
@@ -591,7 +599,7 @@ index 4bccc44..70ba11b 100644
  }
  
  static void vrend_resource_copy_fallback(struct vrend_resource *src_res,
-@@ -11626,8 +11846,14 @@ bool vrend_hw_switch_context(struct vrend_context *ctx, bool now)
+@@ -11626,8 +11847,14 @@ bool vrend_hw_switch_context(struct vrend_context *ctx, bool now)
     if (!ctx)
        return false;
  
@@ -608,10 +616,26 @@ index 4bccc44..70ba11b 100644
     if (ctx->ctx_id != 0 && ctx->in_error) {
        return false;
 diff --git a/src/vrend/vrend_shader.c b/src/vrend/vrend_shader.c
-index 4fe673c..ce282ab 100644
+index 4fe673c..cfc43d6 100644
 --- a/src/vrend/vrend_shader.c
 +++ b/src/vrend/vrend_shader.c
-@@ -6347,7 +6347,11 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
+@@ -1988,7 +1988,14 @@ iter_declaration(struct tgsi_iterate_context *iter,
+             virgl_error("Unsupported system value %d\n", decl->Semantic.Name);
+             return false;
+          }
+-         ctx->shader_req_bits |= svmap->required_ext;
++         if (decl->Semantic.Name == TGSI_SEMANTIC_VERTEXID_NOBASE &&
++             !ctx->cfg->has_draw_parameters) {
++            name_prefix = "gl_VertexID";
++            ctx->shader_req_bits |= svmap->required_ext &
++                                    ~SHADER_REQ_SHADER_DRAW_PARAMETERS;
++         } else {
++            ctx->shader_req_bits |= svmap->required_ext;
++         }
+          ctx->system_values[i].override_no_wm = svmap->override_no_wm;
+          snprintf(ctx->system_values[i].glsl_name, 64, "%s", name_prefix);
+          if (decl->Semantic.Name == TGSI_SEMANTIC_DRAWID)
+@@ -6347,7 +6354,11 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
        if (ctx->prog_type == TGSI_PROCESSOR_FRAGMENT && fs_emit_layout(ctx))
           emit_ext(glsl_strbufs, "ARB_fragment_coord_conventions", "require");
  
@@ -624,8 +648,20 @@ index 4fe673c..ce282ab 100644
           emit_ext(glsl_strbufs, "ARB_uniform_buffer_object", "require");
  
        if (ctx->num_cull_dist_prop || ctx->key->num_in_cull || ctx->key->num_out_cull)
-@@ -8583,4 +8587,3 @@ bool vrend_shader_needs_alpha_func(const struct vrend_shader_key *key) {
+@@ -8583,4 +8594,3 @@ bool vrend_shader_needs_alpha_func(const struct vrend_shader_key *key) {
        return true;
     }
  }
 -
+diff --git a/src/vrend/vrend_shader.h b/src/vrend/vrend_shader.h
+index 7f5897b..25cbed3 100644
+--- a/src/vrend/vrend_shader.h
++++ b/src/vrend/vrend_shader.h
+@@ -259,6 +259,7 @@ struct vrend_shader_cfg {
+    uint32_t has_texture_shadow_lod : 1;
+    uint32_t has_vs_layer : 1;
+    uint32_t has_vs_viewport_index : 1;
++   uint32_t has_draw_parameters : 1;
+ };
+ 
+ struct vrend_context;
