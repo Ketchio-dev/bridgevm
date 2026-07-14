@@ -37,18 +37,31 @@ the per-upload host flush are sustained inside that figure. Use this bench
 (not WinSAT) to judge renderer-side optimizations, e.g. batching the
 upload flush per submit instead of per upload.
 
+## Stress ledger (run19, single continuous boot)
+
+41 consecutive guest processes — one legacy-shader bench, twenty standard
+benches, twenty draw smokes, alternating — all exit 0 with a clean agent
+shutdown and NVMe writeback. Standard-bench distribution: median
+154.9 fps, 18/20 runs in 127–159, plus two latency excursions (67.08 and
+1.35 fps — a ~100x stall on one run). The excursions are a
+perf-stability lead worth chasing with host-side timing once the renderer
+is otherwise idle. The legacy bench ran at 161.56 fps with 16x the fill
+(64 instances), so the workload is draw-call/transport-bound, not
+fill-bound, at this scale.
+
 ## Found along the way (open leads)
 
-- **vrend shader-translation hole:** the bench's first shader pair failed
-  host-side with `vrend_compile_shader: Illegal shader 0` on both fresh
-  contexts, and every draw then failed `DRAW_VBO: 104`. Constructs in the
-  failing pair (any could be the trigger): VS reading `SV_InstanceID` with
-  `fmod`/`floor` grid math and a ternary; PS reading `SV_POSITION`.
-  Replacing them with a CB-driven VS (no instance id, no fmod/floor) and a
-  TEXCOORD-only PS compiles and runs. Real D3D10 titles will hit such
-  constructs — this is a game-compatibility wall to chase with
-  `VREND_DEBUG=shader` (prints the failing TGSI/GLSL) before any DX11
-  ambitions.
+- **Intermittent vrend shader-compile failure:** in run17 the bench's
+  original shader pair (VS reading `SV_InstanceID` with `fmod`/`floor` and
+  a ternary; PS reading `SV_POSITION`) failed host-side with
+  `vrend_compile_shader: Illegal shader 0` on BOTH fresh contexts, and
+  every draw then failed `DRAW_VBO: 104`. The SAME pair, preserved behind
+  `BV_BENCH_SHADER=legacy`, compiled and ran at full speed in run19 — so
+  the failure is state-dependent, not construct-deterministic, which makes
+  it a nastier game-compatibility lead. When it recurs, capture with
+  `VIRGL_LOG_LEVEL=debug VREND_DEBUG=shader` (the dumps are emitted below
+  the release build's default warning threshold — plain `VREND_DEBUG=shader`
+  logs nothing).
 - A large (4 MB) staging readback works: the earlier all-zero reads came
   from the shader failure plus an unfenced `Map`, not from the
   bounce-buffer path.

@@ -71,6 +71,29 @@ int main(void) {
   const int instances = env_int("BV_BENCH_INSTANCES", 64, 1, 65536);
   const int width = 1280, height = 800;
 
+  /* BV_BENCH_SHADER=legacy selects the shader pair that vrend fails to
+   * translate ("Illegal shader 0"): an SV_InstanceID + fmod/floor VS and an
+   * SV_POSITION-reading PS. Kept as the live repro for that compat hole. */
+  static const char vs_legacy_source[] =
+      "cbuffer Params : register(b0) { float4 xform; float4 tint; }"
+      "struct VSIn { float2 pos : POSITION; uint inst : SV_InstanceID; };"
+      "float4 main(VSIn v) : SV_POSITION {"
+      "  float fi = (float)v.inst;"
+      "  float2 cell = float2(fmod(fi, 8.0), floor(fi / 8.0));"
+      "  float2 off = (v.inst == 0) ? float2(0.0, 0.0)"
+      "                             : (cell / 4.0 - 0.875) * 0.8;"
+      "  float2 p = v.pos * 0.1 + off + xform.xy;"
+      "  return float4(p, 0.0, 1.0);"
+      "}";
+  static const char ps_legacy_source[] =
+      "cbuffer Params : register(b0) { float4 xform; float4 tint; }"
+      "float4 main(float4 sp : SV_POSITION) : SV_TARGET {"
+      "  float2 uv = sp.xy * 0.001;"
+      "  float acc = 0.0;"
+      "  [unroll] for (int i = 0; i < 16; ++i)"
+      "    acc = acc * 1.0009 + sin(uv.x * (i + 1)) * cos(uv.y * (i + 2));"
+      "  return float4(saturate(tint.rgb * (0.5 + 0.5 * frac(acc))), 1.0);"
+      "}";
   static const char vs_source[] =
       "cbuffer Params : register(b0) { float4 xform; float4 tint; }"
       "struct VSOut { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };"
@@ -139,9 +162,15 @@ int main(void) {
   }
   if (FAILED(hr)) return fail_hr("create-staging", hr);
 
-  hr = compile_shader(compile, vs_source, "main", "vs_4_0", &vs_blob);
+  char shader_mode[16] = {0};
+  GetEnvironmentVariableA("BV_BENCH_SHADER", shader_mode, sizeof(shader_mode));
+  const int legacy_shaders = strcmp(shader_mode, "legacy") == 0;
+  if (legacy_shaders) puts("BV-D3D10-BENCH shader=legacy (vrend repro)");
+  hr = compile_shader(compile, legacy_shaders ? vs_legacy_source : vs_source,
+                      "main", "vs_4_0", &vs_blob);
   if (FAILED(hr)) return fail_hr("compile-vs", hr);
-  hr = compile_shader(compile, ps_source, "main", "ps_4_0", &ps_blob);
+  hr = compile_shader(compile, legacy_shaders ? ps_legacy_source : ps_source,
+                      "main", "ps_4_0", &ps_blob);
   if (FAILED(hr)) return fail_hr("compile-ps", hr);
   hr = ID3D10Device_CreateVertexShader(
       device, ID3D10Blob_GetBufferPointer(vs_blob),
