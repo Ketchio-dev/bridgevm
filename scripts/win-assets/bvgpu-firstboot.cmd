@@ -63,6 +63,9 @@ pnputil /add-driver "%PKG%\viogpu3d.inf" /install >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
 pnputil /scan-devices >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
+echo [stage2] reset persisted display config so the driver's preferred 120Hz mode is selected >> "%LOG%"
+reg delete "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Configuration" /f >> "%LOG%" 2>&1
+reg delete "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Connectivity" /f >> "%LOG%" 2>&1
 call :write_boot_identity C:\BridgeVM\stage2.boot
 if errorlevel 1 goto :fail
 echo done > C:\BridgeVM\stage2.flag
@@ -79,6 +82,8 @@ if errorlevel 1 goto :fail
 echo [stage3] verify PnP status and bound viogpu3d INF >> "%LOG%"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$expectedInf = 'C:\BridgeVM\viogpu3d\viogpu3d.inf'; $dev = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -match '^PCI\\VEN_1AF4&DEV_(1050|10F7)(?:&|$)' -and $_.Status -eq 'OK' } | Select-Object -First 1; if (-not $dev) { Write-Error 'VirtIO GPU device is not present with Status OK'; exit 1 }; $drv = Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.DeviceID -eq $dev.InstanceId } | Select-Object -First 1; if (-not $drv -or $drv.InfName -notmatch '^oem[0-9]+[.]inf$') { Write-Error 'VirtIO GPU is not bound to an OEM driver package'; exit 2 }; $boundInf = Join-Path $env:windir ('INF\' + $drv.InfName); if (-not (Test-Path -LiteralPath $expectedInf -PathType Leaf) -or -not (Test-Path -LiteralPath $boundInf -PathType Leaf)) { Write-Error ('Expected or bound INF is missing: expected=' + $expectedInf + ' bound=' + $boundInf); exit 3 }; $expectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $expectedInf).Hash; $boundHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $boundInf).Hash; if ($boundHash -ne $expectedHash) { Write-Error ('Bound OEM INF does not match injected viogpu3d INF: bound=' + $boundInf + ' bound_sha256=' + $boundHash + ' expected_sha256=' + $expectedHash); exit 4 }; $dev | Format-List Status,Class,FriendlyName,InstanceId; $drv | Format-List DeviceName,DriverVersion,DriverProviderName,InfName; Write-Output ('expected_inf_sha256=' + $expectedHash); Write-Output ('bound_inf_sha256=' + $boundHash)" >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
+echo [stage3] active refresh rate >> "%LOG%"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$v=Get-CimInstance Win32_VideoController; Write-Output ('refresh CUR=' + $v.CurrentRefreshRate + ' MAX=' + $v.MaxRefreshRate)" >> "%LOG%" 2>&1
 echo [stage3] delete continuation task >> "%LOG%"
 schtasks /Delete /TN "%TASK_NAME%" /F >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
