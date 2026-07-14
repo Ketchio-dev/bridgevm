@@ -288,10 +288,12 @@ build_installed_boot_env_args() {
     )
   fi
   if [[ -n "${DISPLAY_EXPORT_FB:-}" ]]; then
+    # Device-inline shared-framebuffer export (no export thread; publish runs on
+    # the vCPU thread at RESOURCE_FLUSH). READBACK_MS=0 removes the artificial FPS
+    # cap so the display tracks the guest present rate (60-120fps, no limit).
     ENV_ARGS+=(
       "BRIDGEVM_DISPLAY_EXPORT_FB=$DISPLAY_EXPORT_FB"
-      "BRIDGEVM_DISPLAY_EXPORT_FB_MS=16"
-      "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=16"
+      "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=0"
     )
   fi
   if [[ -n "${INPUT_CONTROL:-}" ]]; then

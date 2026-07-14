@@ -7,6 +7,10 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::sync::OnceLock;
+use std::fs::{File, OpenOptions};
+use std::os::unix::io::AsRawFd;
+use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use crate::{
@@ -159,6 +163,7 @@ pub struct VirtioGpu {
     scanout_resource: Option<u32>,
     blob_scanout: Option<BlobScanout>,
     scanout: Vec<u8>,
+    fb_sink: Option<FbSink>,
     three_d: VirtioGpu3d,
     pending_fenced: Vec<PendingFencedResponse>,
     completed_fences_scratch: Vec<CompletedFence>,
@@ -353,6 +358,7 @@ impl VirtioGpu {
             scanout_resource: None,
             blob_scanout: None,
             scanout: vec![0; len],
+            fb_sink: FbSink::from_env(),
             three_d: VirtioGpu3d::new(),
             pending_fenced: Vec::new(),
             completed_fences_scratch: Vec::new(),
@@ -1473,6 +1479,28 @@ impl VirtioGpu {
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
     }
 
+    fn publish_scanout_fb(&mut self) {
+        if self.fb_sink.is_none()
+            || (self.scanout_resource.is_none() && self.blob_scanout.is_none())
+        {
+            return;
+        }
+
+        let width = self.width;
+        let height = self.height;
+        let stride = width * 4;
+        let (fb_sink, scanout) = (&mut self.fb_sink, &self.scanout);
+        if let Some(sink) = fb_sink.as_mut() {
+            sink.write(
+                width,
+                height,
+                stride,
+                DRM_FORMAT_XRGB8888,
+                scanout,
+            );
+        }
+    }
+
     fn resource_flush_into(
         &mut self,
         mem: &dyn GuestMemoryMut,
@@ -1556,6 +1584,7 @@ impl VirtioGpu {
         {
             self.composite_blob_scanout(mem, rect);
         }
+        self.publish_scanout_fb();
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
     }
 
@@ -3068,6 +3097,170 @@ fn read_le_u64(bytes: &[u8], offset: usize) -> Option<u64> {
     Some(u64::from_le_bytes(
         bytes.get(offset..offset + 8)?.try_into().ok()?,
     ))
+}
+
+struct FbSink {
+    path: PathBuf,
+    file: Option<File>,
+    map: *mut u8,
+    map_len: usize,
+    capacity: usize,
+    seq: u64,
+}
+
+// The device owns FbSink single-threadedly on the vCPU thread. The raw mmap
+// pointer is never shared across threads; this only satisfies VirtioGpu's Send bound.
+unsafe impl Send for FbSink {}
+
+impl std::fmt::Debug for FbSink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FbSink")
+            .field("path", &self.path)
+            .field("capacity", &self.capacity)
+            .field("seq", &self.seq)
+            .finish()
+    }
+}
+
+impl FbSink {
+    fn from_env() -> Option<FbSink> {
+        let path = std::env::var_os("BRIDGEVM_DISPLAY_EXPORT_FB")?;
+        if path.is_empty() {
+            return None;
+        }
+
+        Some(FbSink {
+            path: PathBuf::from(path),
+            file: None,
+            map: std::ptr::null_mut(),
+            map_len: 0,
+            capacity: 0,
+            seq: 0,
+        })
+    }
+
+    fn write(
+        &mut self,
+        width: u32,
+        height: u32,
+        stride: u32,
+        fourcc: u32,
+        bytes: &[u8],
+    ) {
+        let needed = 64 + (height as usize) * (stride as usize);
+
+        if self.map.is_null() || self.capacity < needed {
+            if !self.map.is_null() {
+                unsafe {
+                    libc::munmap(self.map.cast(), self.map_len);
+                }
+            }
+            self.map = std::ptr::null_mut();
+            self.map_len = 0;
+            self.capacity = 0;
+            self.file = None;
+
+            if let Some(parent) = self.path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    if let Err(err) = std::fs::create_dir_all(parent) {
+                        eprintln!("virtio-gpu fb export failed: {err}");
+                        return;
+                    }
+                }
+            }
+
+            let file = match OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&self.path)
+            {
+                Ok(file) => file,
+                Err(err) => {
+                    eprintln!("virtio-gpu fb export failed: {err}");
+                    return;
+                }
+            };
+
+            if let Err(err) = file.set_len(needed as u64) {
+                eprintln!("virtio-gpu fb export failed: {err}");
+                return;
+            }
+
+            let map = unsafe {
+                libc::mmap(
+                    std::ptr::null_mut(),
+                    needed,
+                    libc::PROT_READ | libc::PROT_WRITE,
+                    libc::MAP_SHARED,
+                    file.as_raw_fd(),
+                    0,
+                )
+            };
+            if map == libc::MAP_FAILED {
+                eprintln!(
+                    "virtio-gpu fb export failed: {}",
+                    std::io::Error::last_os_error()
+                );
+                self.map = std::ptr::null_mut();
+                self.map_len = 0;
+                self.capacity = 0;
+                self.file = None;
+                return;
+            }
+
+            self.file = Some(file);
+            self.map = map.cast();
+            self.map_len = needed;
+            self.capacity = needed;
+        }
+
+        self.seq = self.seq.wrapping_add(1);
+
+        let mut header = [0u8; 24];
+        header[0..4].copy_from_slice(&0x4256_4642u32.to_le_bytes());
+        header[4..8].copy_from_slice(&1u32.to_le_bytes());
+        header[8..12].copy_from_slice(&width.to_le_bytes());
+        header[12..16].copy_from_slice(&height.to_le_bytes());
+        header[16..20].copy_from_slice(&stride.to_le_bytes());
+        header[20..24].copy_from_slice(&fourcc.to_le_bytes());
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(header.as_ptr(), self.map, header.len());
+            (&*(self.map.add(24) as *const std::sync::atomic::AtomicU64))
+                .store(self.seq, Ordering::Release);
+        }
+        std::sync::atomic::fence(Ordering::Release);
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                self.map.add(64),
+                bytes.len().min(needed - 64),
+            );
+        }
+
+        std::sync::atomic::fence(Ordering::Release);
+        self.seq = self.seq.wrapping_add(1);
+        unsafe {
+            (&*(self.map.add(24) as *const std::sync::atomic::AtomicU64))
+                .store(self.seq, Ordering::Release);
+        }
+    }
+}
+
+impl Drop for FbSink {
+    fn drop(&mut self) {
+        if !self.map.is_null() {
+            unsafe {
+                libc::munmap(self.map.cast(), self.map_len);
+            }
+            self.map = std::ptr::null_mut();
+            self.map_len = 0;
+            self.capacity = 0;
+        }
+    }
 }
 
 #[cfg(test)]
