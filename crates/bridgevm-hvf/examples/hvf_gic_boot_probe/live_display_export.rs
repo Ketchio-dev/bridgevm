@@ -1,3 +1,5 @@
+use std::fs::{File, OpenOptions};
+use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -146,4 +148,124 @@ mod tests {
             FrameIdentity::new(1, 2, 8, 1, &[0, 1, 2, 3, 4, 5, 6, 7])
         );
     }
+}
+
+pub struct FramebufferExporter {
+    path: PathBuf,
+    file: Option<File>,
+    capacity: usize,
+    seq: u64,
+}
+
+impl FramebufferExporter {
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            file: None,
+            capacity: 0,
+            seq: 0,
+        }
+    }
+
+    pub fn interval_from_env() -> Duration {
+        let interval_ms = std::env::var("BRIDGEVM_DISPLAY_EXPORT_FB_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|value| *value >= 1)
+            .unwrap_or(16);
+        Duration::from_millis(interval_ms)
+    }
+
+    pub fn write(
+        &mut self,
+        width: u32,
+        height: u32,
+        stride: u32,
+        fourcc: u32,
+        bytes: &[u8],
+    ) {
+        let needed = 64 + (height as usize) * (stride as usize);
+        if self.file.is_none() || self.capacity < needed {
+            self.file = None;
+            self.capacity = 0;
+            let opened = (|| -> std::io::Result<File> {
+                if let Some(parent) = self.path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                let file = OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .open(&self.path)?;
+                file.set_len(needed as u64)?;
+                Ok(file)
+            })();
+            match opened {
+                Ok(file) => {
+                    self.file = Some(file);
+                    self.capacity = needed;
+                }
+                Err(e) => {
+                    eprintln!(
+                        "live fb export failed: path={} error={e}",
+                        self.path.display()
+                    );
+                    return;
+                }
+            }
+        }
+
+        self.seq = self.seq.wrapping_add(1);
+        let header = framebuffer_header(width, height, stride, fourcc, self.seq);
+        let payload_len = bytes.len().min(needed - 64);
+        let write_result = (|| -> std::io::Result<()> {
+            let file = self.file.as_ref().expect("framebuffer file is open");
+            file.write_all_at(&header, 0)?;
+            file.write_all_at(&bytes[..payload_len], 64)?;
+            Ok(())
+        })();
+        if let Err(e) = write_result {
+            self.seq = self.seq.wrapping_add(1);
+            eprintln!(
+                "live fb export failed: path={} error={e}",
+                self.path.display()
+            );
+            self.file = None;
+            return;
+        }
+
+        self.seq = self.seq.wrapping_add(1);
+        let header = framebuffer_header(width, height, stride, fourcc, self.seq);
+        let write_result = self
+            .file
+            .as_ref()
+            .expect("framebuffer file is open")
+            .write_all_at(&header, 0);
+        if let Err(e) = write_result {
+            eprintln!(
+                "live fb export failed: path={} error={e}",
+                self.path.display()
+            );
+            self.file = None;
+        }
+    }
+}
+
+fn framebuffer_header(
+    width: u32,
+    height: u32,
+    stride: u32,
+    fourcc: u32,
+    seq: u64,
+) -> [u8; 64] {
+    let mut header = [0u8; 64];
+    header[0..4].copy_from_slice(&0x4256_4642u32.to_le_bytes());
+    header[4..8].copy_from_slice(&1u32.to_le_bytes());
+    header[8..12].copy_from_slice(&width.to_le_bytes());
+    header[12..16].copy_from_slice(&height.to_le_bytes());
+    header[16..20].copy_from_slice(&stride.to_le_bytes());
+    header[20..24].copy_from_slice(&fourcc.to_le_bytes());
+    header[24..32].copy_from_slice(&seq.to_le_bytes());
+    header
 }

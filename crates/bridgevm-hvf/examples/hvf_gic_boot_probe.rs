@@ -3881,6 +3881,30 @@ fn main() -> ExitCode {
             println!("virtio-gpu host-visible shm map port: hv_vm_map enabled");
         }
         let platform = Arc::new(Mutex::new(platform));
+        if let Some(fb_path) = std::env::var_os("BRIDGEVM_DISPLAY_EXPORT_FB").filter(|v| !v.is_empty()) {
+            let platform_for_fb = Arc::clone(&platform);
+            let fb_interval = live_display_export::FramebufferExporter::interval_from_env();
+            let _ = thread::Builder::new()
+                .name("bridgevm-fb-export".into())
+                .spawn(move || {
+                    let mut exporter =
+                        live_display_export::FramebufferExporter::new(std::path::PathBuf::from(fb_path));
+                    loop {
+                        thread::sleep(fb_interval);
+                        let frame = {
+                            let guard = platform_for_fb
+                                .lock()
+                                .unwrap_or_else(|poison| poison.into_inner());
+                            guard.virtio_gpu_scanout().map(|s| {
+                                (s.width, s.height, s.stride, s.fourcc, s.bytes.to_vec())
+                            })
+                        };
+                        if let Some((w, h, stride, fourcc, bytes)) = frame {
+                            exporter.write(w, h, stride, fourcc, &bytes);
+                        }
+                    }
+                });
+        }
         // Probe-lifetime instance, deliberately OUTSIDE the reboot loop: its
         // ticker thread keeps firing across guest reboots, and the SAME fired
         // flag must be the one each boot generation's exit dispatcher consumes.

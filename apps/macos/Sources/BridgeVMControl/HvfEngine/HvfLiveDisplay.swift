@@ -4,99 +4,10 @@ import SwiftUI
 
 struct HvfLiveDisplaySurface: View {
     @ObservedObject var session: HvfEngineSession
-    @FocusState private var displayFocused: Bool
 
     var body: some View {
-        GeometryReader { geometry in
-            if let image = session.latestScreenshot {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .contentShape(Rectangle())
-                    .focusable()
-                    .focused($displayFocused)
-                    .onKeyPress { press in
-                        handleDisplayKeyPress(press)
-                    }
-                    .overlay {
-                        HvfPointerEventSurface(
-                            onFocus: { displayFocused = true },
-                            onMove: { location in
-                                session.sendPointerMove(
-                                    location: location,
-                                    viewSize: geometry.size,
-                                    imageSize: image.size
-                                )
-                            },
-                            onLeftDown: { location in
-                                session.sendPointerPress(
-                                    location: location,
-                                    viewSize: geometry.size,
-                                    imageSize: image.size
-                                )
-                            },
-                            onLeftUp: { location in
-                                session.sendPointerRelease(
-                                    location: location,
-                                    viewSize: geometry.size,
-                                    imageSize: image.size
-                                )
-                            },
-                            onRightDown: { location in
-                                session.sendPointerRightPress(
-                                    location: location,
-                                    viewSize: geometry.size,
-                                    imageSize: image.size
-                                )
-                            },
-                            onRightUp: { location in
-                                session.sendPointerRelease(
-                                    location: location,
-                                    viewSize: geometry.size,
-                                    imageSize: image.size
-                                )
-                            },
-                            onScroll: { delta, location in
-                                session.sendPointerScroll(
-                                    delta,
-                                    location: location,
-                                    viewSize: geometry.size,
-                                    imageSize: image.size
-                                )
-                            }
-                        )
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(displayFocused ? Color.accentColor : Color.clear, lineWidth: 2)
-                            .allowsHitTesting(false)
-                    }
-            } else {
-                VStack(spacing: 10) {
-                    Image(systemName: "display")
-                        .font(.system(size: 42))
-                    Text("라이브 디스플레이를 기다리는 중입니다.")
-                }
-                .foregroundStyle(.secondary)
-                .frame(width: geometry.size.width, height: geometry.size.height)
-            }
-        }
-        .background(Color.black)
-    }
-
-    private func handleDisplayKeyPress(_ press: KeyPress) -> KeyPress.Result {
-        switch HvfHostKeyCommand.resolve(characters: press.characters, modifiers: press.modifiers) {
-        case let .key(action):
-            session.sendKey(action)
-            return .handled
-        case let .text(text):
-            session.sendText(text)
-            return .handled
-        case .ignored:
-            return .ignored
-        }
+        HvfFramebufferView(session: session)
+            .background(Color.black)
     }
 }
 
