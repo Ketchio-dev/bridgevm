@@ -134,13 +134,19 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         window.title = title
-        window.contentViewController = NSHostingController(
+        let hostingController = NSHostingController(
             rootView: HvfLiveDisplaySurface(session: session)
+                .frame(minWidth: 640, minHeight: 400)
         )
+        if #available(macOS 13.0, *) {
+            hostingController.sizingOptions = []
+        }
+        window.contentViewController = hostingController
+        window.setContentSize(NSSize(width: 1280, height: 800))
+        window.center()
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.backgroundColor = .black
         window.isReleasedWhenClosed = false
-        window.center()
 
         let controller = HvfDisplayWindowController(
             window: window,
