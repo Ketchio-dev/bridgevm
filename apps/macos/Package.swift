@@ -19,7 +19,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "BridgeVMControl",
-            path: "Sources/BridgeVMControl"
+            path: "Sources/BridgeVMControl",
+            resources: [
+                .copy("Resources/windows-boot-seed-vars.fd.gz")
+            ]
         ),
         .target(
             name: "AppleVzRunnerCore",

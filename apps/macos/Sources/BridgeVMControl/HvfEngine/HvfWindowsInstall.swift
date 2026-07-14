@@ -360,6 +360,16 @@ final class HvfWindowsInstallSession: ObservableObject {
         }
         try replaceItem(at: plan.bundleDiskPath, withItemAt: plan.tmpTargetPath)
         try replaceItem(at: plan.bundleVarsPath, withItemAt: plan.tmpVarsPath)
+        // Seed a Windows Boot Manager NVRAM entry so the first boot reaches
+        // Windows instead of the UEFI shell (WinPE's bcdboot leaves no NVRAM
+        // entry, and the firmware does not auto-enumerate the NVMe ESP).
+        do {
+            try HvfWindowsBootSeed.seedFile(
+                varsPath: plan.bundleVarsPath, diskPath: plan.bundleDiskPath)
+            appendLog("UEFI 부팅 항목을 시드했습니다 (첫 부팅에서 Windows 시작).")
+        } catch {
+            appendLog("경고: 부팅 항목 시드 실패 — 첫 부팅이 UEFI 셸로 떨어질 수 있습니다: \(error)")
+        }
         let installRunLog = URL(fileURLWithPath: plan.tmpEvidenceDir).appendingPathComponent("run.log")
         if fm.fileExists(atPath: installRunLog.path) {
             try? fm.removeItem(atPath: plan.bundleInstallLogPath)
