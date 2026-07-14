@@ -25,6 +25,7 @@ final class FBLayerView: NSView {
     private var mappedLength = 0
     private var frameCopy: [UInt8] = []
     private var guestSize: CGSize = .zero
+    private var lastProcessedSeq: UInt64 = .max
     private var frameDisplayLink: CADisplayLink?
     private var pointerTrackingArea: NSTrackingArea?
 
@@ -86,6 +87,14 @@ final class FBLayerView: NSView {
             return
         }
 
+        // Skip the 8 MB copy + CGImage build when the guest hasn't published a new
+        // frame. The device publishes only on RESOURCE_FLUSH, so an idle desktop
+        // leaves seq unchanged for long stretches; re-decoding the same frame every
+        // CADisplayLink tick just saturates the main thread and stutters interaction.
+        guard sequence0 != lastProcessedSeq else {
+            return
+        }
+
         let widthValue = readUInt32(from: mappedPointer, offset: 8)
         let heightValue = readUInt32(from: mappedPointer, offset: 12)
         let strideValue = readUInt32(from: mappedPointer, offset: 16)
@@ -126,6 +135,7 @@ final class FBLayerView: NSView {
         guard sequence1 == sequence0, sequence1 & 1 == 0 else {
             return
         }
+        lastProcessedSeq = sequence1
 
         let frameData = Data(frameCopy)
         guard let provider = CGDataProvider(data: frameData as CFData) else {
@@ -383,6 +393,7 @@ final class FBLayerView: NSView {
 
         mappedPointer = nil
         mappedLength = 0
+        lastProcessedSeq = .max
 
         if fileDescriptor >= 0 {
             Darwin.close(fileDescriptor)
