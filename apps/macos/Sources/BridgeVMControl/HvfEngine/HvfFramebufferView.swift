@@ -23,7 +23,6 @@ final class FBLayerView: NSView {
     private var fileDescriptor: Int32 = -1
     private var mappedPointer: UnsafeMutableRawPointer?
     private var mappedLength = 0
-    private var frameCopy: [UInt8] = []
     private var guestSize: CGSize = .zero
     private var lastProcessedSeq: UInt64 = .max
     private var frameDisplayLink: CADisplayLink?
@@ -116,29 +115,33 @@ final class FBLayerView: NSView {
         }
 
         let pixelByteCount = height * stride
-        if frameCopy.count != pixelByteCount {
-            frameCopy = [UInt8](repeating: 0, count: pixelByteCount)
-        }
 
-        frameCopy.withUnsafeMutableBytes { destination in
-            guard let destinationAddress = destination.baseAddress else {
-                return
-            }
-            Darwin.memcpy(
-                destinationAddress,
-                mappedPointer.advanced(by: 64),
-                pixelByteCount
-            )
+        // Copy the guest frame exactly ONCE into a fresh, CGDataProvider-owned
+        // buffer. The old path did two 4 MB copies per frame (mmap -> [UInt8]
+        // frameCopy, then Data(frameCopy)); at ~77 fps that was ~300 MB/s of
+        // redundant main-thread memcpy. Now: one memcpy, and the provider frees
+        // the buffer when the CGImage is released.
+        guard let buffer = malloc(pixelByteCount) else {
+            return
         }
+        Darwin.memcpy(buffer, mappedPointer.advanced(by: 64), pixelByteCount)
 
         let sequence1 = readUInt64(from: mappedPointer, offset: 24)
         guard sequence1 == sequence0, sequence1 & 1 == 0 else {
+            free(buffer)
             return
         }
         lastProcessedSeq = sequence1
 
-        let frameData = Data(frameCopy)
-        guard let provider = CGDataProvider(data: frameData as CFData) else {
+        guard let provider = CGDataProvider(
+            dataInfo: buffer,
+            data: buffer,
+            size: pixelByteCount,
+            releaseData: { info, _, _ in
+                if let info { free(info) }
+            }
+        ) else {
+            free(buffer)
             return
         }
 
@@ -170,7 +173,6 @@ final class FBLayerView: NSView {
     func teardown() {
         stopDisplayLink()
         resetMapping()
-        frameCopy.removeAll(keepingCapacity: false)
         guestSize = .zero
         layer?.contents = nil
     }
