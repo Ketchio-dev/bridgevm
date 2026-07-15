@@ -158,6 +158,46 @@ index 139b11a..6e0d08a 100644
     bool EXT_metal_objects;
  
     VkPhysicalDeviceMemoryProperties memory_properties;
+diff --git a/src/vrend/vrend_blitter.c b/src/vrend/vrend_blitter.c
+index eed56e4..afbde6f 100644
+--- a/src/vrend/vrend_blitter.c
++++ b/src/vrend/vrend_blitter.c
+@@ -792,6 +792,7 @@ void vrend_renderer_blit_gl(ASSERTED struct vrend_context *ctx,
+                             const struct vrend_blit_info *info)
+ {
+    struct vrend_blitter_ctx *blit_ctx = &vrend_blit_ctx;
++   GLint saved_swizzle[4];
+ 
+    int dst_z;
+    struct blit_point src0, src1;
+@@ -852,6 +853,13 @@ void vrend_renderer_blit_gl(ASSERTED struct vrend_context *ctx,
+    glDrawBuffers(1, &buffers);
+ 
+    glBindTexture(src_res->target, info->src_view);
++   /* Texture parameters are shared between the blit and renderer contexts.
++    * vrend_set_tex_param() may change the source object's swizzle, while the
++    * renderer context keeps a cached copy and therefore will not necessarily
++    * program it again on the next draw.  Preserve the shared object state so
++    * a format-converting blit cannot poison later sampler alpha reads. */
++   glGetTexParameteriv(src_res->target, GL_TEXTURE_SWIZZLE_RGBA,
++                       saved_swizzle);
+    vrend_set_tex_param(src_res, &info->b,
+                        info->has_texture_srgb_decode &&
+                        !info->needs_manual_srgb_decode);
+@@ -903,6 +911,8 @@ void vrend_renderer_blit_gl(ASSERTED struct vrend_context *ctx,
+                              GL_TEXTURE_2D, 0, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                              GL_TEXTURE_2D, 0, 0);
++   glTexParameteriv(src_res->target, GL_TEXTURE_SWIZZLE_RGBA,
++                    saved_swizzle);
+    glBindTexture(src_res->target, 0);
+ }
+ 
+@@ -919,4 +929,3 @@ void vrend_blitter_fini(void)
+    vrend_clicbs->destroy_gl_context(vrend_blit_ctx.gl_context);
+    memset(&vrend_blit_ctx, 0, sizeof(vrend_blit_ctx));
+ }
+-
 diff --git a/src/vrend/vrend_decode.c b/src/vrend/vrend_decode.c
 index 7774a25..1909b4f 100644
 --- a/src/vrend/vrend_decode.c
@@ -719,7 +759,7 @@ index 4bccc44..25173a7 100644
     if (ctx->ctx_id != 0 && ctx->in_error) {
        return false;
 diff --git a/src/vrend/vrend_shader.c b/src/vrend/vrend_shader.c
-index 4fe673c..cfc43d6 100644
+index 4fe673c..4255287 100644
 --- a/src/vrend/vrend_shader.c
 +++ b/src/vrend/vrend_shader.c
 @@ -1988,7 +1988,14 @@ iter_declaration(struct tgsi_iterate_context *iter,
@@ -738,7 +778,25 @@ index 4fe673c..cfc43d6 100644
           ctx->system_values[i].override_no_wm = svmap->override_no_wm;
           snprintf(ctx->system_values[i].glsl_name, 64, "%s", name_prefix);
           if (decl->Semantic.Name == TGSI_SEMANTIC_DRAWID)
-@@ -6347,7 +6354,11 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
+@@ -5980,7 +5987,16 @@ iter_instruction(struct tgsi_iterate_context *iter,
+       emit_buff(&ctx->glsl_strbufs, "%s = int(floor(%s)%s);\n", dsts[0], srcs[0], writemask);
+       break;
+    case TGSI_OPCODE_UARL:
+-      emit_buff(&ctx->glsl_strbufs, "%s = int(%s);\n", dsts[0], srcs[0]);
++      /* BridgeVM/viogpu3d: the Windows D3D->virgl UMD emits UARL where the address
++       * source is a FLOAT-typed vertex-attribute VALUE (e.g. a palette index like
++       * 10.0), not an integer bit-pattern. The stock `int(floatBitsToInt(src))`
++       * bit-reinterprets 10.0 -> 1092616192, blowing every indirect UBO/const index
++       * out of bounds -> undefined color (0). This silently wiped Windows 11 Quick
++       * Settings tile icons (D2D palette-indexed vector fills). Converting the value
++       * (int(intBitsToFloat(floatBitsToInt(src))) == int(src_as_float)) yields the
++       * intended index. Verified: all QS icons render, and desktop/taskbar/Edge
++       * (chrome + HTML/CSS/SVG/text) are unaffected. */
++      emit_buff(&ctx->glsl_strbufs, "%s = int(intBitsToFloat(%s));\n", dsts[0], srcs[0]);
+       break;
+    case TGSI_OPCODE_XPD:
+       emit_buff(&ctx->glsl_strbufs, "%s = %s(cross(vec3(%s), vec3(%s)));\n", dsts[0], get_string(dinfo.dstconv), srcs[0], srcs[1]);
+@@ -6347,7 +6363,11 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
        if (ctx->prog_type == TGSI_PROCESSOR_FRAGMENT && fs_emit_layout(ctx))
           emit_ext(glsl_strbufs, "ARB_fragment_coord_conventions", "require");
  
@@ -751,7 +809,7 @@ index 4fe673c..cfc43d6 100644
           emit_ext(glsl_strbufs, "ARB_uniform_buffer_object", "require");
  
        if (ctx->num_cull_dist_prop || ctx->key->num_in_cull || ctx->key->num_out_cull)
-@@ -8583,4 +8594,3 @@ bool vrend_shader_needs_alpha_func(const struct vrend_shader_key *key) {
+@@ -8583,4 +8603,3 @@ bool vrend_shader_needs_alpha_func(const struct vrend_shader_key *key) {
        return true;
     }
  }
