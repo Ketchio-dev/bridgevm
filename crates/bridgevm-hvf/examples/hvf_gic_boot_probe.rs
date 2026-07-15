@@ -75,6 +75,8 @@ use bridgevm_hvf::virtio_gpu_3d::GpuShmMapPort;
 #[path = "hvf_gic_boot_probe/agent_console.rs"]
 mod agent_console;
 use agent_console::AgentConsoleHarness;
+#[path = "hvf_gic_boot_probe/checkpoint_glue.rs"]
+mod checkpoint_glue;
 #[path = "hvf_gic_boot_probe/arm64_trace.rs"]
 mod arm64_trace;
 use arm64_trace::print_translated_instruction_words;
@@ -3872,6 +3874,12 @@ fn main() -> ExitCode {
         let mut reboot_count = 0u64;
         reset_vcpu_for_boot(vcpu);
         arm_watchpoint_for_boot(vcpu, watch_addr);
+checkpoint_glue::restore_if_requested(
+    &[vcpu],
+    std::slice::from_raw_parts_mut(ram, ram_size),
+    &mut platform,
+)
+.unwrap_or_else(|error| panic!("restore VM checkpoint: {error}"));
         let hv_gpu_shm_state = Arc::new(Mutex::new(HvGpuShmMapState::default()));
         let installed_hv_gpu_shm_port =
             platform.set_virtio_gpu_shm_map_port(Box::new(HvGpuShmMapPort {
@@ -4518,6 +4526,12 @@ fn main() -> ExitCode {
                             agent_console.tick(platform, &mut guest_ram, now);
                             if agent_console.desktop_ready() {
                                 boot_timer.observe_agent_ready(now, exits);
+checkpoint_glue::checkpoint_if_requested(
+    &[vcpu],
+    std::slice::from_raw_parts(ram, ram_size),
+    platform,
+)
+.unwrap_or_else(|error| panic!("capture VM checkpoint: {error}"));
                             }
                         }
                         for trigger in &mut xhci_setup_input_triggers {

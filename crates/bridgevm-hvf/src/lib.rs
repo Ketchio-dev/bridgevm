@@ -10,6 +10,7 @@ use std::{
 // below. See docs/hvf-windows-engine-strategy.md and
 // docs/hvf-windows-platform-contract-gap.md.
 pub mod acpi;
+pub mod checkpoint;
 pub mod dtb;
 pub mod fwcfg;
 pub mod machine;
