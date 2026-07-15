@@ -204,6 +204,9 @@ build_installed_boot_env_args() {
     DISK_ENV=("BRIDGEVM_NVME_DISK=$TARGET" 'BRIDGEVM_NVME_DISK_WRITABLE=1')
   fi
   ENV_ARGS=("${COMMON_ENV[@]}" "${DISK_ENV[@]}")
+  # Forward host-vblank pacing config from the caller's environment (env-gated
+  # feature in virtio_gpu.rs; absent/0 = legacy immediate completion).
+  [[ -z "${BRIDGEVM_VBLANK_HZ:-}" ]] || ENV_ARGS+=("BRIDGEVM_VBLANK_HZ=$BRIDGEVM_VBLANK_HZ")
   if [[ -n "$SMP_CPUS" ]]; then
     ENV_ARGS+=("BRIDGEVM_SMP_CPUS=$SMP_CPUS")
   fi

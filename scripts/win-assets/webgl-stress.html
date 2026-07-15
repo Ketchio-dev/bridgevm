@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+*{margin:0;padding:0}html,body{width:100%;height:100%;overflow:hidden;background:#000}
+#c{display:block;width:100%;height:100%}
+#fps{position:fixed;top:12px;left:16px;color:#0f0;font:bold 52px monospace;z-index:10;text-shadow:0 0 8px #0a0}
+#fb{position:fixed;bottom:12px;right:12px;width:96px;height:64px;z-index:10;border:1px solid #fff}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fps">0</div>
+<canvas id="fb" width="96" height="64"></canvas>
+<script>
+var C=document.getElementById('c'),gl=C.getContext('webgl')||C.getContext('experimental-webgl');
+var fb=document.getElementById('fb'),ctx=fb.getContext('2d');
+var fpsEl=document.getElementById('fps');
+function resize(){C.width=innerWidth;C.height=innerHeight;if(gl)gl.viewport(0,0,C.width,C.height)}
+addEventListener('resize',resize);resize();
+var frames=0,lastT=performance.now(),prog=null,uTime,uAngle;
+if(gl){
+  function sh(t,s){var o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);return o}
+  var vs=sh(gl.VERTEX_SHADER,[
+    'attribute vec2 aPos;',
+    'attribute float paletteIdx;',
+    'uniform float uTime;',
+    'uniform float uAngle;',
+    'uniform vec4 palette[16];',
+    'varying vec4 vColor;',
+    'void main(){',
+    '  float c=cos(uAngle),s=sin(uAngle);',
+    '  vec2 p=aPos;',
+    '  p.x+=sin(uTime+aPos.y*6.0)*0.04;',
+    '  p.y+=cos(uTime+aPos.x*6.0)*0.04;',
+    '  vec2 r=vec2(c*p.x-s*p.y,s*p.x+c*p.y);',
+    '  gl_Position=vec4(r,0.0,1.0);',
+    '  vColor=palette[int(paletteIdx)];',
+    '}'
+  ].join('\n'));
+  var fs=sh(gl.FRAGMENT_SHADER,'precision mediump float;varying vec4 vColor;void main(){gl_FragColor=vColor;}');
+  prog=gl.createProgram();gl.attachShader(prog,vs);gl.attachShader(prog,fs);gl.linkProgram(prog);gl.useProgram(prog);
+  var cols=20,rows=10,data=[],n=0;
+  for(var j=0;j<rows;j++)for(var i=0;i<cols;i++){
+    var x0=-0.95+i*(1.9/cols),y0=-0.9+j*(1.8/rows);
+    var qw=1.9/cols*0.85,qh=1.8/rows*0.85,pi=n%16;
+    var q=[[x0,y0],[x0+qw,y0],[x0+qw,y0+qh],[x0,y0],[x0+qw,y0+qh],[x0,y0+qh]];
+    for(var k=0;k<6;k++){data.push(q[k][0],q[k][1],pi)}
+    n++;
+  }
+  var buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.STATIC_DRAW);
+  var aPos=gl.getAttribLocation(prog,'aPos'),aPal=gl.getAttribLocation(prog,'paletteIdx');
+  gl.enableVertexAttribArray(aPos);gl.vertexAttribPointer(aPos,2,gl.FLOAT,false,12,0);
+  gl.enableVertexAttribArray(aPal);gl.vertexAttribPointer(aPal,1,gl.FLOAT,false,12,8);
+  uTime=gl.getUniformLocation(prog,'uTime');uAngle=gl.getUniformLocation(prog,'uAngle');
+  var pal=[
+    [1,0,0,1],[0,1,0,1],[0.2,0.4,1,1],[1,1,0,1],
+    [1,0,1,1],[0,1,1,1],[1,0.5,0,1],[0.6,0,1,1],
+    [0,1,0.5,1],[1,0.2,0.5,1],[0.5,1,0,1],[0,0.6,1,1],
+    [1,0.6,0.6,1],[0.6,1,0.6,1],[0.7,0.7,1,1],[1,1,0.4,1]
+  ];
+  for(var p=0;p<16;p++)gl.uniform4fv(gl.getUniformLocation(prog,'palette['+p+']'),pal[p]);
+  gl.clearColor(0.05,0.05,0.08,1);
+}
+var vcount=20*10*6;
+function frame(t){
+  frames++;
+  if(t-lastT>=500){fpsEl.textContent=Math.round(frames*1000/(t-lastT));frames=0;lastT=t}
+  if(gl&&prog){
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.uniform1f(uTime,t*0.001);
+    gl.uniform1f(uAngle,t*0.0004);
+    gl.drawArrays(gl.TRIANGLES,0,vcount);
+  }
+  var h=(t*0.08)%360;
+  ctx.fillStyle='hsl('+h+',100%,50%)';
+  ctx.fillRect(0,0,96,64);
+  ctx.fillStyle='#000';
+  ctx.fillRect(20+Math.sin(t*0.005)*20,16+Math.cos(t*0.007)*12,24,20);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

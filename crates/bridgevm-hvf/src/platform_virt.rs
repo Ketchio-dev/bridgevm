@@ -73,6 +73,7 @@ const HID_BOOT_KEYBOARD_USAGE_SPACE: u8 = 0x2c;
 const MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS: usize = 16;
 #[cfg(any(feature = "venus", test))]
 const DEFAULT_VIRTIO_GPU_3D_SCANOUT_READBACK_MS: u64 = 16;
+const DEFAULT_VIRTIO_GPU_VBLANK_HZ: u64 = 120;
 
 fn make_virtio_gpu() -> VirtioPciGpu {
     let (width, height) = virtio_gpu_resolution_from_env();
@@ -90,6 +91,7 @@ fn make_virtio_gpu() -> VirtioPciGpu {
                             .as_deref(),
                     );
                     gpu.set_3d_scanout_readback_interval(interval);
+                    configure_virtio_gpu_vblank(&mut gpu);
                     eprintln!(
                         "virtio-gpu: 3D scanout readback pacing={}ms",
                         interval.as_millis()
@@ -108,7 +110,35 @@ fn make_virtio_gpu() -> VirtioPciGpu {
             );
         }
     }
-    VirtioPciGpu::new(width, height)
+    let mut gpu = VirtioPciGpu::new(width, height);
+    configure_virtio_gpu_vblank(&mut gpu);
+    gpu
+}
+
+fn configure_virtio_gpu_vblank(gpu: &mut VirtioPciGpu) {
+    let value = std::env::var("BRIDGEVM_VBLANK_HZ").ok();
+    let interval = virtio_gpu_vblank_interval_from_value(value.as_deref());
+    gpu.set_vblank_interval(interval);
+    if !interval.is_zero() {
+        eprintln!(
+            "virtio-gpu: host vblank pacing interval={}ns",
+            interval.as_nanos()
+        );
+    }
+}
+
+fn virtio_gpu_vblank_interval_from_value(value: Option<&str>) -> Duration {
+    let Some(value) = value else {
+        return Duration::ZERO;
+    };
+    let hz = value
+        .trim()
+        .parse::<u64>()
+        .unwrap_or(DEFAULT_VIRTIO_GPU_VBLANK_HZ);
+    if hz == 0 {
+        return Duration::ZERO;
+    }
+    Duration::from_nanos((1_000_000_000 / hz).max(1))
 }
 
 fn virtio_gpu_3d_enabled_for_pcie() -> bool {
@@ -1595,13 +1625,14 @@ impl VirtPlatform {
         );
     }
 
-    /// Retire venus fences and flush their interrupts without guest MMIO.
-    /// Fence completion must not depend on the guest touching the device: a
-    /// guest blocked in vkWaitForFences sits in WFI generating no virtio-gpu
-    /// accesses, so the per-exit drain path calls this (timer exits keep it
-    /// running) — otherwise queue-timeline fences would never signal.
+    /// Retire host-paced vblank NOPs and venus fences, then flush their
+    /// interrupts without guest MMIO. Completion must not depend on the guest
+    /// touching the device: a guest blocked in vkWaitForFences sits in WFI
+    /// generating no virtio-gpu accesses, so the per-exit drain path calls this
+    /// while timer exits keep it running.
     pub fn poll_virtio_gpu_fences(&mut self, mem: &mut dyn GuestMemoryMut) {
         if let Some(dev) = self.virtio_gpu.as_mut() {
+            dev.drain_host_vblank(mem);
             dev.drain_completed_fences(mem);
             self.flush_virtio_gpu_pending_msix();
         }
@@ -4276,6 +4307,26 @@ mod tests {
         assert_eq!(
             virtio_gpu_3d_scanout_readback_interval_from_value(Some("invalid")),
             Duration::from_millis(DEFAULT_VIRTIO_GPU_3D_SCANOUT_READBACK_MS)
+        );
+    }
+
+    #[test]
+    fn host_vblank_pacing_is_opt_in_with_a_120_hz_configured_default() {
+        assert_eq!(
+            virtio_gpu_vblank_interval_from_value(None),
+            Duration::ZERO
+        );
+        assert_eq!(
+            virtio_gpu_vblank_interval_from_value(Some("0")),
+            Duration::ZERO
+        );
+        assert_eq!(
+            virtio_gpu_vblank_interval_from_value(Some("120")),
+            Duration::from_nanos(8_333_333)
+        );
+        assert_eq!(
+            virtio_gpu_vblank_interval_from_value(Some("invalid")),
+            Duration::from_nanos(8_333_333)
         );
     }
 

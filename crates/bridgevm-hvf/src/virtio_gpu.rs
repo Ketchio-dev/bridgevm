@@ -94,7 +94,7 @@ const VIRTIO_MSI_NO_VECTOR: u16 = 0xffff;
 const QUEUE_CONTROL: usize = 0;
 const QUEUE_CURSOR: usize = 1;
 const QUEUE_COUNT: usize = 2;
-const PARKED_FENCE_BUFFER_POOL_LIMIT: usize = 4;
+const PARKED_RESPONSE_BUFFER_POOL_LIMIT: usize = 4;
 const QUEUE_MAX: u16 = 64;
 const DESC_SIZE: u64 = 16;
 const DESC_F_NEXT: u16 = 1;
@@ -166,6 +166,7 @@ pub struct VirtioGpu {
     fb_sink: Option<FbSink>,
     three_d: VirtioGpu3d,
     pending_fenced: Vec<PendingFencedResponse>,
+    pending_vblank: Vec<PendingVblankResponse>,
     completed_fences_scratch: Vec<CompletedFence>,
     descriptor_scratch: Vec<Descriptor>,
     parked_descriptor_scratch: Vec<Vec<Descriptor>>,
@@ -180,6 +181,9 @@ pub struct VirtioGpu {
     trace_fence_create_count: u64,
     trace_fence_complete_count: u64,
     trace_fence_deliver_count: u64,
+    vblank_interval: Duration,
+    last_vblank: Option<Instant>,
+    vblank_paced_count: u64,
     scanout_readback_interval: Duration,
     last_3d_scanout_readback: Option<Instant>,
     scanout_3d_flush_count: u64,
@@ -258,6 +262,7 @@ pub struct VirtioGpuStats {
     pub resources: usize,
     pub scanout_active: bool,
     pub scanout_3d_flushes: u64,
+    pub vblank_paced_count: u64,
     pub scanout_readback_attempts: u64,
     pub scanout_readbacks: u64,
     pub scanout_readback_throttled: u64,
@@ -311,6 +316,15 @@ struct PendingFencedResponse {
     fence: CompletedFence,
 }
 
+#[derive(Debug, Clone)]
+struct PendingVblankResponse {
+    queue_index: usize,
+    queue: VirtioGpuQueue,
+    head: u16,
+    descs: Vec<Descriptor>,
+    response: Vec<u8>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ChainCompletion {
     Immediate(u32),
@@ -361,6 +375,7 @@ impl VirtioGpu {
             fb_sink: FbSink::from_env(),
             three_d: VirtioGpu3d::new(),
             pending_fenced: Vec::new(),
+            pending_vblank: Vec::new(),
             completed_fences_scratch: Vec::new(),
             descriptor_scratch: Vec::new(),
             parked_descriptor_scratch: Vec::new(),
@@ -375,6 +390,9 @@ impl VirtioGpu {
             trace_fence_create_count: 0,
             trace_fence_complete_count: 0,
             trace_fence_deliver_count: 0,
+            vblank_interval: Duration::ZERO,
+            last_vblank: None,
+            vblank_paced_count: 0,
             scanout_readback_interval: Duration::ZERO,
             last_3d_scanout_readback: None,
             scanout_3d_flush_count: 0,
@@ -400,6 +418,19 @@ impl VirtioGpu {
         self.three_d.set_shm_map_port(port, window_size);
     }
 
+    pub fn set_vblank_interval(&mut self, interval: Duration) {
+        self.vblank_interval = interval;
+        self.last_vblank = None;
+        let enabled = !interval.is_zero();
+        let interval_ns = interval.as_nanos();
+        self.record_trace_fields("vblank_pacing_config", |fields| {
+            let _ = write!(
+                fields,
+                ",\"enabled\":{enabled},\"interval_ns\":{interval_ns}"
+            );
+        });
+    }
+
     pub fn set_3d_scanout_readback_interval(&mut self, interval: Duration) {
         self.scanout_readback_interval = interval;
         self.last_3d_scanout_readback = None;
@@ -419,6 +450,7 @@ impl VirtioGpu {
             resources: self.resources.len(),
             scanout_active: self.scanout_resource.is_some() || self.blob_scanout.is_some(),
             scanout_3d_flushes: self.scanout_3d_flush_count,
+            vblank_paced_count: self.vblank_paced_count,
             scanout_readback_attempts: self.scanout_readback_attempt_count,
             scanout_readbacks: self.scanout_readback_count,
             scanout_readback_throttled: self.scanout_readback_throttled_count,
@@ -469,6 +501,7 @@ impl VirtioGpu {
         self.scanout.resize(scanout_len(width, height), 0);
         self.three_d.reset();
         self.pending_fenced.clear();
+        self.pending_vblank.clear();
         self.completed_fences_scratch.clear();
         self.descriptor_scratch.clear();
         self.parked_descriptor_scratch.clear();
@@ -477,6 +510,8 @@ impl VirtioGpu {
         self.parked_response_scratch.clear();
         self.blob_row_scratch.clear();
         self.trace_fields_scratch.clear();
+        self.last_vblank = None;
+        self.vblank_paced_count = 0;
         self.last_3d_scanout_readback = None;
         self.scanout_3d_flush_count = 0;
         self.scanout_readback_attempt_count = 0;
@@ -964,6 +999,29 @@ impl VirtioGpu {
             return ChainCompletion::Immediate(used_len);
         };
         self.trace_command(queue_index, head, control, &request, hdr, &response);
+        // viogpu3d uses an empty context-0 SUBMIT_3D as its control-queue
+        // synchronization NOP. Its used-ring completion drives the guest's
+        // DXGK CRTC_VSYNC notification, so park that completion when host
+        // vblank pacing is enabled.
+        if control
+            && !self.vblank_interval.is_zero()
+            && hdr.typ == VIRTIO_GPU_CMD_SUBMIT_3D
+            && hdr.ctx_id == 0
+            && read_le_u32(&request, 24) == Some(0)
+            && read_le_u32(&response, 0) == Some(VIRTIO_GPU_RESP_OK_NODATA)
+        {
+            self.pending_vblank.push(PendingVblankResponse {
+                queue_index,
+                queue: *queue,
+                head,
+                descs,
+                response,
+            });
+            request.clear();
+            self.request_scratch = request;
+            self.response_scratch = Vec::new();
+            return ChainCompletion::Parked;
+        }
         // Defer only commands that can leave GPU work in flight. Resource/context
         // lifecycle, capset, and map operations are complete when their backend
         // call returns, so their fence is already satisfied. In particular,
@@ -1036,7 +1094,7 @@ impl VirtioGpu {
         }
     }
 
-    fn recycle_parked_fence_buffers(&mut self, mut descs: Vec<Descriptor>, mut response: Vec<u8>) {
+    fn recycle_parked_response_buffers(&mut self, mut descs: Vec<Descriptor>, mut response: Vec<u8>) {
         descs.clear();
         response.clear();
         self.recycle_descriptor_scratch(descs);
@@ -1059,7 +1117,7 @@ impl VirtioGpu {
 
     fn recycle_extra_descriptor_scratch(&mut self, descs: Vec<Descriptor>) {
         if descs.capacity() != 0
-            && self.parked_descriptor_scratch.len() < PARKED_FENCE_BUFFER_POOL_LIMIT
+            && self.parked_descriptor_scratch.len() < PARKED_RESPONSE_BUFFER_POOL_LIMIT
         {
             self.parked_descriptor_scratch.push(descs);
         }
@@ -1067,7 +1125,7 @@ impl VirtioGpu {
 
     fn recycle_extra_response_scratch(&mut self, response: Vec<u8>) {
         if response.capacity() != 0
-            && self.parked_response_scratch.len() < PARKED_FENCE_BUFFER_POOL_LIMIT
+            && self.parked_response_scratch.len() < PARKED_RESPONSE_BUFFER_POOL_LIMIT
         {
             self.parked_response_scratch.push(response);
         }
@@ -1152,6 +1210,50 @@ impl VirtioGpu {
         }
     }
 
+    pub fn drain_host_vblank(&mut self, mem: &mut dyn GuestMemoryMut) {
+        self.drain_host_vblank_at(mem, Instant::now());
+    }
+
+    fn drain_host_vblank_at(&mut self, mem: &mut dyn GuestMemoryMut, now: Instant) {
+        if self.vblank_interval.is_zero() || self.pending_vblank.is_empty() {
+            return;
+        }
+        if self.last_vblank.is_some_and(|last| {
+            now.saturating_duration_since(last) < self.vblank_interval
+        }) {
+            return;
+        }
+
+        // Retire exactly one response. Even if the vCPU did not exit for several
+        // intervals, do not catch up in a burst.
+        let pending_response = self.pending_vblank.remove(0);
+        let used_len =
+            Self::scatter_write(mem, &pending_response.descs, &pending_response.response);
+        Self::write_used(
+            mem,
+            &pending_response.queue,
+            pending_response.head,
+            used_len,
+        );
+        self.mark_queue_interrupt(pending_response.queue_index);
+        self.last_vblank = Some(now);
+        self.vblank_paced_count = self.vblank_paced_count.saturating_add(1);
+
+        let count = self.vblank_paced_count;
+        let interval_ns = self.vblank_interval.as_nanos();
+        let pending = self.pending_vblank.len();
+        self.record_trace_fields("vblank_paced", |fields| {
+            let _ = write!(
+                fields,
+                ",\"vblank_paced_count\":{count},\"interval_ns\":{interval_ns},\"used_len\":{used_len},\"pending\":{pending}"
+            );
+        });
+        self.recycle_parked_response_buffers(
+            pending_response.descs,
+            pending_response.response,
+        );
+    }
+
     pub fn drain_completed_fences(&mut self, mem: &mut dyn GuestMemoryMut) {
         let mut completed = std::mem::take(&mut self.completed_fences_scratch);
         completed.clear();
@@ -1191,7 +1293,7 @@ impl VirtioGpu {
                 used_len,
             );
             self.mark_queue_interrupt(pending_response.queue_index);
-            self.recycle_parked_fence_buffers(pending_response.descs, pending_response.response);
+            self.recycle_parked_response_buffers(pending_response.descs, pending_response.response);
         }
         completed.clear();
         self.completed_fences_scratch = completed;
@@ -1978,6 +2080,10 @@ impl VirtioPciGpu {
         self.gpu.set_shm_map_port(port, window_size);
     }
 
+    pub fn set_vblank_interval(&mut self, interval: Duration) {
+        self.gpu.set_vblank_interval(interval);
+    }
+
     pub fn set_3d_scanout_readback_interval(&mut self, interval: Duration) {
         self.gpu.set_3d_scanout_readback_interval(interval);
     }
@@ -1998,6 +2104,10 @@ impl VirtioPciGpu {
     pub fn reset_runtime_state(&mut self) {
         self.gpu.reset_runtime_state();
         self.msix = MsixTable::new(VIRTIO_GPU_MSIX_VECTOR_COUNT);
+    }
+
+    pub fn drain_host_vblank(&mut self, mem: &mut dyn GuestMemoryMut) {
+        self.gpu.drain_host_vblank(mem);
     }
 
     pub fn drain_completed_fences(&mut self, mem: &mut dyn GuestMemoryMut) {
@@ -5450,6 +5560,81 @@ mod tests {
         assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
         assert_eq!(dev.stats().three_d.fences_pending, 0);
         assert!(backend.lock().unwrap().fences.is_empty());
+    }
+
+    #[test]
+    fn host_vblank_pacing_parks_empty_context_zero_submits_and_retires_one_per_interval() {
+        let (mut dev, backend) = dev_with_mock();
+        let interval = Duration::from_millis(8);
+        dev.set_vblank_interval(interval);
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        let request = submit_3d_req(0, &[]);
+
+        let (_, used_idx) = submit_control_readable_descs_at(
+            &mut dev,
+            &mut mem,
+            &[&request],
+            24,
+            0x4000_1000,
+            0x4000_4000,
+            0x4000_9000,
+        );
+        assert_eq!(used_idx, 0);
+        let (_, used_idx) = submit_control_readable_descs_at(
+            &mut dev,
+            &mut mem,
+            &[&request],
+            24,
+            0x4000_1400,
+            0x4000_6000,
+            0x4000_a000,
+        );
+        assert_eq!(used_idx, 0);
+        let (_, used_idx) = submit_control_readable_descs_at(
+            &mut dev,
+            &mut mem,
+            &[&request],
+            24,
+            0x4000_1800,
+            0x4000_8000,
+            0x4000_b000,
+        );
+        assert_eq!(used_idx, 0);
+        assert_eq!(dev.gpu.pending_vblank.len(), 3);
+        assert!(backend.lock().unwrap().submits.is_empty());
+
+        let base = Instant::now();
+        dev.gpu.drain_host_vblank_at(&mut mem, base);
+        assert_eq!(
+            u16::from_le_bytes(mem.read(0x4000_3000 + 2, 2).try_into().unwrap()),
+            1
+        );
+        assert_eq!(dev.stats().vblank_paced_count, 1);
+        assert_eq!(
+            read_le_u32(&mem.read(0x4000_9000, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        // A late poll may retire one missed interval, but never catch up in a
+        // burst. A second poll at the same host time remains held off.
+        let late = base + interval * 10;
+        dev.gpu.drain_host_vblank_at(&mut mem, late);
+        dev.gpu.drain_host_vblank_at(&mut mem, late);
+        assert_eq!(
+            u16::from_le_bytes(mem.read(0x4000_3000 + 2, 2).try_into().unwrap()),
+            2
+        );
+        assert_eq!(dev.stats().vblank_paced_count, 2);
+        assert_eq!(dev.gpu.pending_vblank.len(), 1);
+
+        dev.gpu
+            .drain_host_vblank_at(&mut mem, late + interval);
+        assert_eq!(
+            u16::from_le_bytes(mem.read(0x4000_3000 + 2, 2).try_into().unwrap()),
+            3
+        );
+        assert_eq!(dev.stats().vblank_paced_count, 3);
+        assert!(dev.gpu.pending_vblank.is_empty());
     }
 
     #[test]
