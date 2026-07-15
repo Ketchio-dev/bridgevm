@@ -207,6 +207,8 @@ build_installed_boot_env_args() {
   # Forward host-vblank pacing config from the caller's environment (env-gated
   # feature in virtio_gpu.rs; absent/0 = legacy immediate completion).
   [[ -z "${BRIDGEVM_VBLANK_HZ:-}" ]] || ENV_ARGS+=("BRIDGEVM_VBLANK_HZ=$BRIDGEVM_VBLANK_HZ")
+  [[ -z "${BRIDGEVM_CHECKPOINT_STATE:-}" ]] || ENV_ARGS+=("BRIDGEVM_CHECKPOINT_STATE=$BRIDGEVM_CHECKPOINT_STATE")
+  [[ -z "${BRIDGEVM_RESTORE_STATE:-}" ]] || ENV_ARGS+=("BRIDGEVM_RESTORE_STATE=$BRIDGEVM_RESTORE_STATE")
   if [[ -n "$SMP_CPUS" ]]; then
     ENV_ARGS+=("BRIDGEVM_SMP_CPUS=$SMP_CPUS")
   fi

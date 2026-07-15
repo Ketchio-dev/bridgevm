@@ -2422,10 +2422,15 @@ pub fn restore_state(&mut self, data: &[u8]) {
         None
     };
     if let Some(resource_id) = self.gpu.scanout_resource {
-        assert!(
-            self.gpu.resources.contains_key(&resource_id),
-            "restored GPU scanout references a missing 2D resource"
-        );
+        if !self.gpu.resources.contains_key(&resource_id) {
+            // The active desktop scanout is normally backed by a 3D/blob resource
+            // whose pixels live in the (non-serializable) virglrenderer host
+            // context, so it is absent from the restored 2D resource map. Drop the
+            // dangling reference rather than panicking; on resume the guest WDDM
+            // driver detects the lost adapter, TDR-resets, and re-establishes the
+            // scanout (the documented "3D contexts lost on restore" behavior).
+            self.gpu.scanout_resource = None;
+        }
     }
     self.gpu.scanout = input.read_blob();
 
