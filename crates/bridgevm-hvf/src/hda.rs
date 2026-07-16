@@ -917,6 +917,12 @@ fn codec_parameter(nid: u8, parameter: u8) -> u32 {
     }
     match (nid, parameter) {
         (CODEC_ROOT, 0x00) => CODEC_VENDOR_ID,
+        // AC_PAR_SUBSYSTEM_ID (0x01). QEMU's output codec exposes it on the
+        // root AND the audio function group; hdaudio.sys queries it during
+        // enumeration and treats a missing/zero value as an invalid codec,
+        // aborting before it reads the AFG's SUBORDINATE_NODE_COUNT (0x04) —
+        // which is exactly the "reads AFG basics then never descends" wall.
+        (CODEC_ROOT, 0x01) => CODEC_IMPLEMENTATION_ID,
         (CODEC_ROOT, 0x02) => CODEC_REVISION_ID,
         (CODEC_ROOT, 0x04) => 0x0001_0001, // node 1, one function group.
         (CODEC_DAC, 0x0a) => CODEC_PCM_SIZE_RATES,
@@ -935,6 +941,7 @@ fn codec_parameter(nid: u8, parameter: u8) -> u32 {
 
 fn afg_parameter(parameter: u8) -> Option<u32> {
     Some(match parameter {
+        0x01 => CODEC_IMPLEMENTATION_ID,    // AC_PAR_SUBSYSTEM_ID (QEMU AFG has it)
         0x04 => CODEC_AFG_CHILD_NODE_COUNT, // NID 2 DAC, NID 3 pin
         0x05 => 0x0000_0001,                // audio function group
         0x08 => CODEC_AFG_CAPABILITIES,
@@ -1137,12 +1144,13 @@ mod tests {
         assert_eq!(first_child, CODEC_DAC);
         assert_eq!(children, CODEC_SPEAKER - CODEC_DAC + 1);
         assert_eq!(first_child + children - 1, CODEC_SPEAKER);
-        for parameter in [0x01, 0x10, 0x13] {
+        for parameter in [0x10, 0x13] {
             assert_eq!(afg_parameter(parameter), None);
             assert_eq!(ctrl.codec_verb(verb(0, CODEC_AFG, 0xf00, parameter)), 0);
         }
 
         let expected = [
+            (0x01, CODEC_IMPLEMENTATION_ID), // AC_PAR_SUBSYSTEM_ID
             (0x04, CODEC_AFG_CHILD_NODE_COUNT),
             (0x05, 0x0000_0001),
             (0x08, CODEC_AFG_CAPABILITIES),
@@ -1168,15 +1176,21 @@ mod tests {
     }
 
     #[test]
-    fn codec_observed_enumeration_commands_decode_without_subsystem_aliasing() {
+    fn codec_enumeration_reports_subsystem_id_on_root_and_afg() {
         let mut ctrl = HdaController::with_pcm_output_path::<&Path>(None);
+        // GET_PARAMETER(0x01) is AC_PAR_SUBSYSTEM_ID (intel-hda-defs.h), NOT a
+        // reserved parameter: hdaudio.sys queries it during enumeration and
+        // rejects a codec whose function group reports 0, so both the root and
+        // the AFG must return a valid subsystem id (matching QEMU's output
+        // codec, which exposes AC_PAR_SUBSYSTEM_ID on both nodes).
         let observed = [
-            (0x000f_0000, CODEC_VENDOR_ID),
-            (0x000f_0002, CODEC_REVISION_ID),
-            (0x000f_0004, 0x0001_0001),
-            (0x001f_0001, 0),
-            (0x001f_0005, 0x0000_0001),
-            (0x001f_0500, 0),
+            (0x000f_0000, CODEC_VENDOR_ID),          // AC_PAR_VENDOR_ID
+            (0x000f_0001, CODEC_IMPLEMENTATION_ID),  // root AC_PAR_SUBSYSTEM_ID
+            (0x000f_0002, CODEC_REVISION_ID),        // AC_PAR_REV_ID
+            (0x000f_0004, 0x0001_0001),              // AC_PAR_NODE_COUNT
+            (0x001f_0001, CODEC_IMPLEMENTATION_ID),  // AFG AC_PAR_SUBSYSTEM_ID
+            (0x001f_0005, 0x0000_0001),              // AC_PAR_FUNCTION_TYPE=audio
+            (0x001f_0500, 0),                        // AFG GET_POWER_STATE (D0)
         ];
 
         for (command, response) in observed {
@@ -1187,9 +1201,7 @@ mod tests {
             );
         }
 
-        // NID 1 GET_PARAMETER(01) and GET_SUBSYSTEM_ID/Implementation ID are
-        // distinct commands.  The former is reserved; the latter is F20/00.
-        assert_eq!(ctrl.codec_verb(0x001f_0001), 0);
+        // The GET_SUBSYSTEM_ID verb (F20) returns the same id as the parameter.
         assert_eq!(ctrl.codec_verb(0x001f_2000), CODEC_IMPLEMENTATION_ID);
         assert_eq!(ctrl.codec_verb(0x000f_2000), 0);
     }
