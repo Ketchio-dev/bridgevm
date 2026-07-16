@@ -116,6 +116,9 @@ mod live_input;
 
 #[path = "hvf_gic_boot_probe/vblank_wake.rs"]
 mod vblank_wake;
+
+#[path = "hvf_gic_boot_probe/kd_serial_bridge.rs"]
+mod kd_serial_bridge;
 use live_input::LiveInputController;
 #[path = "hvf_gic_boot_probe/serial_input.rs"]
 mod serial_input;
@@ -3907,6 +3910,11 @@ checkpoint_glue::restore_if_requested(
             .lock()
             .expect("platform mutex for vblank wake state")
             .virtio_gpu_vblank_wake();
+        // KD (kernel-debug) serial bridge, probe-lifetime like the wakers: it
+        // owns the PL011 for the run when BRIDGEVM_KD_SERIAL_SOCKET is set, so
+        // a WinDbg peer can attach to the guest's KDCOM stream. None otherwise,
+        // leaving the serial to the boot scanner unchanged.
+        let mut kd_serial_bridge = kd_serial_bridge::KdSerialBridge::from_env();
 
         'reboot: loop {
             // Secondary vCPUs are intentionally scoped to one boot generation in
@@ -4082,12 +4090,23 @@ checkpoint_glue::restore_if_requested(
             // deliberately do not force the automation block's platform mutex
             // on every CPU0 exit. ensure_started is idempotent, so re-entering
             // here after a guest reboot is fine.
-            let service_wake_interval = boot_timer.service_wake_interval().or_else(|| {
-                agent_console
-                    .as_ref()
-                    .is_some_and(|harness| harness.service_wake_needed())
-                    .then_some(Duration::from_millis(250))
-            });
+            let service_wake_interval = boot_timer
+                .service_wake_interval()
+                .or_else(|| {
+                    agent_console
+                        .as_ref()
+                        .is_some_and(|harness| harness.service_wake_needed())
+                        .then_some(Duration::from_millis(250))
+                })
+                // A guest halted at a KD breakpoint generates no vCPU exits, so
+                // the pre-run drain (and the KD serial pump with it) would stall
+                // until the debugger's next byte happened to arrive. A steady
+                // wake keeps the debugger<->guest byte pipe flowing while halted.
+                .or_else(|| {
+                    kd_serial_bridge
+                        .is_some()
+                        .then_some(Duration::from_millis(20))
+                });
             if let Some(interval) = service_wake_interval {
                 agent_service_wake.ensure_started(vcpu, interval);
             }
@@ -4111,6 +4130,9 @@ checkpoint_glue::restore_if_requested(
                         "cpu0 pre-run platform mutex",
                     );
                     let platform = &mut *platform_guard;
+                    if let Some(bridge) = kd_serial_bridge.as_mut() {
+                        bridge.pump(platform);
+                    }
                     drain_stats.prepare_pending_delivery(
                         platform,
                         &mut guest_ram,

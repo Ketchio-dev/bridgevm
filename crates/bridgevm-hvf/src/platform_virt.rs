@@ -1774,6 +1774,15 @@ impl VirtPlatform {
         self.uart.output()
     }
 
+    /// Drain and return everything the guest has written to the UART since the
+    /// last drain. Used by the KD serial bridge to forward the guest's
+    /// KDCOM/serial-debug transmit stream to a host socket; unlike
+    /// `uart_output()` (a non-draining borrow the boot scanner reads) this
+    /// consumes the buffer so bytes are forwarded exactly once.
+    pub fn take_uart_output(&mut self) -> Vec<u8> {
+        self.uart.take_output()
+    }
+
     /// Queue bytes that the guest can read from the PL011 UART data register.
     /// Live probes use this to test firmware/loader input paths while the default
     /// platform remains an unattached, receive-empty serial backend.
