@@ -91,9 +91,17 @@ const CODEC_DAC: u8 = 2;
 const CODEC_SPEAKER: u8 = 3;
 // QEMU's hda-duplex codec identity (the output path is nodes 2 -> 3).
 const CODEC_VENDOR_ID: u32 = 0x1af4_0022;
-const CODEC_REVISION_ID: u32 = 0x0010_0100;
+const CODEC_REVISION_ID: u32 = 0x0010_0101;
+const CODEC_AFG_CAPABILITIES: u32 = 0x0000_0808;
 const CODEC_PCM_SIZE_RATES: u32 = 0x0002_01fc; // QEMU: 16..96 kHz, signed 16-bit.
+const CODEC_STREAM_FORMATS: u32 = 0x0000_0001; // PCM.
+const CODEC_POWER_STATES: u32 = 0x0000_000f; // D0, D1, D2, and D3.
+const CODEC_OUTPUT_AMP_CAPS: u32 = 0x8003_4a4a;
+const DAC_WIDGET_CAPABILITIES: u32 = 0x0000_041d;
+const SPEAKER_WIDGET_CAPABILITIES: u32 = 0x0040_0501;
+const SPEAKER_PIN_CAPABILITIES: u32 = 0x0001_0014;
 const SPEAKER_CONFIG_DEFAULT: u32 = 0x9017_0110;
+const SPEAKER_PIN_SENSE: u32 = 0x8000_0000;
 
 #[derive(Debug, Clone, Copy, Default)]
 struct StreamDescriptor {
@@ -122,17 +130,19 @@ struct CodecState {
     converter_format: u16,
     stream_channel: u8,
     pin_ctl: u8,
-    power_state: u8,
+    power_state: [u8; 4],
     connection_select: u8,
     eapd: u8,
+    dac_amp_gain_mute: [u8; 2],
 }
 
 impl CodecState {
     fn new() -> Self {
         Self {
+            converter_format: 0x0011, // 48 kHz, signed 16-bit, stereo.
             pin_ctl: 0x40,
-            power_state: 0,
             eapd: 0x02,
+            dac_amp_gain_mute: [0x4a; 2],
             ..Self::default()
         }
     }
@@ -705,7 +715,7 @@ impl HdaController {
         let codec = ((command >> 28) & 0x0f) as u8;
         let nid = ((command >> 20) & 0xff) as u8;
         let payload20 = command & 0x000f_ffff;
-        if codec != 0 {
+        if codec != 0 || !matches!(nid, CODEC_ROOT | CODEC_AFG | CODEC_DAC | CODEC_SPEAKER) {
             return 0;
         }
         let verb12 = ((payload20 >> 8) & 0x0fff) as u16;
@@ -719,47 +729,70 @@ impl HdaController {
                 }
                 0
             }
-            0x3 => 0, // SET_AMP_GAIN_MUTE: accepted, fixed-gain sink.
+            0x3 => {
+                if nid == CODEC_DAC && payload16 & 0x8000 != 0 {
+                    let gain_mute = payload16 as u8;
+                    if payload16 & 0x2000 != 0 {
+                        self.codec.dac_amp_gain_mute[0] = gain_mute;
+                    }
+                    if payload16 & 0x1000 != 0 {
+                        self.codec.dac_amp_gain_mute[1] = gain_mute;
+                    }
+                }
+                0
+            }
             0xa => (nid == CODEC_DAC)
                 .then_some(u32::from(self.codec.converter_format))
                 .unwrap_or(0),
-            0xb => 0, // GET_AMP_GAIN_MUTE: unmuted, 0 dB stub.
+            0xb => (nid == CODEC_DAC)
+                .then_some(u32::from(
+                    self.codec.dac_amp_gain_mute[usize::from(payload16 & 0x2000 == 0)],
+                ))
+                .unwrap_or(0),
             _ => match verb12 {
                 0xf00 => codec_parameter(nid, payload8),
-                0xf01 => u32::from(self.codec.connection_select),
+                0xf01 if nid == CODEC_SPEAKER => u32::from(self.codec.connection_select),
                 0x701 => {
-                    self.codec.connection_select = payload8;
+                    if nid == CODEC_SPEAKER {
+                        self.codec.connection_select = 0;
+                    }
                     0
                 }
-                0xf02 => (nid == CODEC_SPEAKER)
+                0xf02 => (nid == CODEC_SPEAKER && payload8 == 0)
                     .then_some(u32::from(CODEC_DAC))
                     .unwrap_or(0),
-                0xf05 => {
-                    u32::from(self.codec.power_state) | (u32::from(self.codec.power_state) << 4)
+                0xf05 if nid != CODEC_ROOT => {
+                    power_state_response(self.codec.power_state[nid as usize])
                 }
                 0x705 => {
-                    self.codec.power_state = payload8 & 0x0f;
+                    if nid != CODEC_ROOT {
+                        self.codec.power_state[nid as usize] = payload8 & 0x03;
+                    }
                     0
                 }
-                0xf06 => u32::from(self.codec.stream_channel),
+                0xf06 if nid == CODEC_DAC => u32::from(self.codec.stream_channel),
                 0x706 => {
-                    self.codec.stream_channel = payload8;
+                    if nid == CODEC_DAC {
+                        self.codec.stream_channel = payload8;
+                    }
                     0
                 }
-                0xf07 => u32::from(self.codec.pin_ctl),
+                0xf07 if nid == CODEC_SPEAKER => u32::from(self.codec.pin_ctl),
                 0x707 => {
-                    self.codec.pin_ctl = payload8;
+                    if nid == CODEC_SPEAKER {
+                        self.codec.pin_ctl = payload8 & 0x40;
+                    }
                     0
                 }
-                0xf09 => 0, // Pin sense: fixed-function speaker, not a jack.
-                0xf0c => u32::from(self.codec.eapd),
+                0xf09 if nid == CODEC_SPEAKER => SPEAKER_PIN_SENSE,
+                0xf0c if nid == CODEC_SPEAKER => u32::from(self.codec.eapd),
                 0x70c => {
-                    self.codec.eapd = payload8;
+                    if nid == CODEC_SPEAKER {
+                        self.codec.eapd = payload8 & 0x07;
+                    }
                     0
                 }
-                0xf1c..=0xf1f if nid == CODEC_SPEAKER => {
-                    SPEAKER_CONFIG_DEFAULT >> (u32::from(verb12 - 0xf1c) * 8)
-                }
+                0xf1c if nid == CODEC_SPEAKER => SPEAKER_CONFIG_DEFAULT,
                 0xf20 => CODEC_VENDOR_ID,
                 0x7ff if nid == CODEC_AFG => {
                     self.codec = CodecState::new();
@@ -879,16 +912,25 @@ fn codec_parameter(nid: u8, parameter: u8) -> u32 {
         (CODEC_AFG, 0x04) => 0x0002_0002,  // nodes 2..=3.
         (CODEC_AFG, 0x05) => 0x0000_0001,  // audio function group.
         (CODEC_AFG, 0x01) => CODEC_VENDOR_ID,
-        (CODEC_AFG, 0x08) => 0x0000_0808,
+        (CODEC_AFG, 0x08) => CODEC_AFG_CAPABILITIES,
         (CODEC_AFG, 0x0a) | (CODEC_DAC, 0x0a) => CODEC_PCM_SIZE_RATES,
-        (CODEC_AFG, 0x0b) | (CODEC_DAC, 0x0b) => 1, // PCM stream format.
-        (CODEC_AFG, 0x0f) | (CODEC_DAC, 0x0f) | (CODEC_SPEAKER, 0x0f) => 1,
-        (CODEC_DAC, 0x09) => 0x0000_0011, // stereo output converter, format override.
-        (CODEC_SPEAKER, 0x09) => 0x0040_0101, // stereo pin + connection list.
-        (CODEC_SPEAKER, 0x0c) => 0x0001_0010, // output + EAPD.
-        (CODEC_SPEAKER, 0x0e) => 1,       // one short-form connection.
+        (CODEC_AFG, 0x0b) | (CODEC_DAC, 0x0b) => CODEC_STREAM_FORMATS,
+        (CODEC_AFG, 0x0d | 0x12 | 0x13) => 0, // no function-group default amps/knob.
+        (CODEC_AFG, 0x0f) | (CODEC_DAC, 0x0f) | (CODEC_SPEAKER, 0x0f) => CODEC_POWER_STATES,
+        (CODEC_AFG, 0x10 | 0x11) => 0, // no processing coefficients or GPIOs.
+        (CODEC_DAC, 0x09) => DAC_WIDGET_CAPABILITIES,
+        (CODEC_DAC, 0x0d) => 0,
+        (CODEC_DAC, 0x12) => CODEC_OUTPUT_AMP_CAPS,
+        (CODEC_SPEAKER, 0x09) => SPEAKER_WIDGET_CAPABILITIES,
+        (CODEC_SPEAKER, 0x0c) => SPEAKER_PIN_CAPABILITIES,
+        (CODEC_SPEAKER, 0x0d | 0x12) => 0,
+        (CODEC_SPEAKER, 0x0e) => 1, // one short-form connection.
         _ => 0,
     }
+}
+
+fn power_state_response(state: u8) -> u32 {
+    u32::from(state) | (u32::from(state) << 4)
 }
 
 fn ring_entries(size: u8) -> u16 {
@@ -949,6 +991,13 @@ mod tests {
             | u32::from(payload)
     }
 
+    fn verb16(codec: u8, nid: u8, verb: u8, payload: u16) -> u32 {
+        (u32::from(codec) << 28)
+            | (u32::from(nid) << 20)
+            | (u32::from(verb) << 16)
+            | u32::from(payload)
+    }
+
     fn temp_path(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
             "bridgevm-hda-{label}-{}-{}",
@@ -987,6 +1036,93 @@ mod tests {
         assert_eq!(ctrl.mmio_read(REG_RIRBSIZE, 1), 0xe1);
         write(&mut ctrl, &mut mem, REG_GCTL, 1, 0);
         assert_eq!(ctrl.mmio_read(REG_GCTL, 4), 0);
+    }
+
+    #[test]
+    fn codec_widget_graph_exposes_fixed_speaker_output_path() {
+        let mut ctrl = HdaController::with_pcm_output_path::<&Path>(None);
+
+        assert_eq!(
+            ctrl.codec_verb(verb(0, CODEC_ROOT, 0xf00, 0x00)),
+            CODEC_VENDOR_ID
+        );
+        assert_eq!(
+            ctrl.codec_verb(verb(0, CODEC_ROOT, 0xf00, 0x02)),
+            CODEC_REVISION_ID
+        );
+        assert_eq!(
+            ctrl.codec_verb(verb(0, CODEC_ROOT, 0xf00, 0x04)),
+            0x0001_0001
+        );
+
+        assert_eq!(ctrl.codec_verb(verb(0, CODEC_AFG, 0xf00, 0x05)), 1);
+        assert_eq!(
+            ctrl.codec_verb(verb(0, CODEC_AFG, 0xf00, 0x04)),
+            0x0002_0002
+        );
+        assert_eq!(
+            ctrl.codec_verb(verb(0, CODEC_AFG, 0xf00, 0x08)),
+            CODEC_AFG_CAPABILITIES
+        );
+        assert_eq!(
+            ctrl.codec_verb(verb(0, CODEC_AFG, 0xf00, 0x0a)),
+            CODEC_PCM_SIZE_RATES
+        );
+        assert_eq!(
+            ctrl.codec_verb(verb(0, CODEC_AFG, 0xf00, 0x0b)),
+            CODEC_STREAM_FORMATS
+        );
+
+        assert_eq!(
+            ctrl.codec_verb(verb(0, CODEC_DAC, 0xf00, 0x09)),
+            DAC_WIDGET_CAPABILITIES
+        );
+        assert_eq!(
+            ctrl.codec_verb(verb(0, CODEC_DAC, 0xf00, 0x12)),
+            CODEC_OUTPUT_AMP_CAPS
+        );
+
+        assert_eq!(
+            ctrl.codec_verb(verb(0, CODEC_SPEAKER, 0xf00, 0x09)),
+            SPEAKER_WIDGET_CAPABILITIES
+        );
+        assert_eq!(
+            ctrl.codec_verb(verb(0, CODEC_SPEAKER, 0xf00, 0x0c)),
+            SPEAKER_PIN_CAPABILITIES
+        );
+        assert_eq!(ctrl.codec_verb(verb(0, CODEC_SPEAKER, 0xf00, 0x0e)), 1);
+        assert_eq!(
+            ctrl.codec_verb(verb(0, CODEC_SPEAKER, 0xf02, 0)),
+            u32::from(CODEC_DAC)
+        );
+        assert_eq!(
+            ctrl.codec_verb(verb(0, CODEC_SPEAKER, 0xf1c, 0)),
+            SPEAKER_CONFIG_DEFAULT
+        );
+        assert_eq!(ctrl.codec_verb(verb(0, CODEC_SPEAKER, 0xf07, 0)), 0x40);
+        assert_eq!(
+            ctrl.codec_verb(verb(0, CODEC_SPEAKER, 0xf09, 0)),
+            SPEAKER_PIN_SENSE
+        );
+    }
+
+    #[test]
+    fn codec_output_widget_get_set_verbs_round_trip() {
+        let mut ctrl = HdaController::with_pcm_output_path::<&Path>(None);
+
+        assert_eq!(ctrl.codec_verb(verb(0, CODEC_DAC, 0x706, 0x21)), 0);
+        assert_eq!(ctrl.codec_verb(verb(0, CODEC_DAC, 0xf06, 0)), 0x21);
+        assert_eq!(ctrl.codec_verb(verb16(0, CODEC_DAC, 0x2, 0x4011)), 0);
+        assert_eq!(ctrl.codec_verb(verb16(0, CODEC_DAC, 0xa, 0)), 0x4011);
+
+        assert_eq!(ctrl.codec_verb(verb(0, CODEC_SPEAKER, 0x707, 0)), 0);
+        assert_eq!(ctrl.codec_verb(verb(0, CODEC_SPEAKER, 0xf07, 0)), 0);
+        assert_eq!(ctrl.codec_verb(verb(0, CODEC_SPEAKER, 0x707, 0x40)), 0);
+        assert_eq!(ctrl.codec_verb(verb(0, CODEC_SPEAKER, 0xf07, 0)), 0x40);
+
+        assert_eq!(ctrl.codec_verb(verb(0, CODEC_DAC, 0x705, 3)), 0);
+        assert_eq!(ctrl.codec_verb(verb(0, CODEC_DAC, 0xf05, 0)), 0x33);
+        assert_eq!(ctrl.codec_verb(verb(0, CODEC_SPEAKER, 0xf05, 0)), 0);
     }
 
     #[test]
@@ -1032,7 +1168,7 @@ mod tests {
                 CODEC_VENDOR_ID,
                 0x0001_0001,
                 0x0002_0002,
-                0x0040_0101,
+                SPEAKER_WIDGET_CAPABILITIES,
                 SPEAKER_CONFIG_DEFAULT
             ]
         );
