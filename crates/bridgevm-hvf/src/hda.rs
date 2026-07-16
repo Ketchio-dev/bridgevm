@@ -92,10 +92,15 @@ const CODEC_SPEAKER: u8 = 3;
 // QEMU's hda-duplex codec identity (the output path is nodes 2 -> 3).
 const CODEC_VENDOR_ID: u32 = 0x1af4_0022;
 const CODEC_REVISION_ID: u32 = 0x0010_0101;
+const CODEC_AFG_CHILD_NODE_COUNT: u32 =
+    ((CODEC_DAC as u32) << 16) | (CODEC_SPEAKER - CODEC_DAC + 1) as u32;
 const CODEC_AFG_CAPABILITIES: u32 = 0x0000_0808;
 const CODEC_PCM_SIZE_RATES: u32 = 0x0002_01fc; // QEMU: 16..96 kHz, signed 16-bit.
 const CODEC_STREAM_FORMATS: u32 = 0x0000_0001; // PCM.
-const CODEC_POWER_STATES: u32 = 0x0000_000f; // D0, D1, D2, and D3.
+
+// QEMU's output AFG exposes the required parameter but no explicit Dx bits.
+const CODEC_AFG_POWER_STATES: u32 = 0;
+const CODEC_WIDGET_POWER_STATES: u32 = 0x0000_000f; // D0, D1, D2, and D3.
 const CODEC_OUTPUT_AMP_CAPS: u32 = 0x8003_4a4a;
 const DAC_WIDGET_CAPABILITIES: u32 = 0x0000_041d;
 const SPEAKER_WIDGET_CAPABILITIES: u32 = 0x0040_0501;
@@ -904,20 +909,17 @@ impl HdaController {
 }
 
 fn codec_parameter(nid: u8, parameter: u8) -> u32 {
+    if nid == CODEC_AFG {
+        return afg_parameter(parameter).unwrap_or(0);
+    }
     match (nid, parameter) {
         (CODEC_ROOT, 0x00) => CODEC_VENDOR_ID,
         (CODEC_ROOT, 0x01) => CODEC_VENDOR_ID,
         (CODEC_ROOT, 0x02) => CODEC_REVISION_ID,
         (CODEC_ROOT, 0x04) => 0x0001_0001, // node 1, one function group.
-        (CODEC_AFG, 0x04) => 0x0002_0002,  // nodes 2..=3.
-        (CODEC_AFG, 0x05) => 0x0000_0001,  // audio function group.
-        (CODEC_AFG, 0x01) => CODEC_VENDOR_ID,
-        (CODEC_AFG, 0x08) => CODEC_AFG_CAPABILITIES,
-        (CODEC_AFG, 0x0a) | (CODEC_DAC, 0x0a) => CODEC_PCM_SIZE_RATES,
-        (CODEC_AFG, 0x0b) | (CODEC_DAC, 0x0b) => CODEC_STREAM_FORMATS,
-        (CODEC_AFG, 0x0d | 0x12 | 0x13) => 0, // no function-group default amps/knob.
-        (CODEC_AFG, 0x0f) | (CODEC_DAC, 0x0f) | (CODEC_SPEAKER, 0x0f) => CODEC_POWER_STATES,
-        (CODEC_AFG, 0x10 | 0x11) => 0, // no processing coefficients or GPIOs.
+        (CODEC_DAC, 0x0a) => CODEC_PCM_SIZE_RATES,
+        (CODEC_DAC, 0x0b) => CODEC_STREAM_FORMATS,
+        (CODEC_DAC, 0x0f) | (CODEC_SPEAKER, 0x0f) => CODEC_WIDGET_POWER_STATES,
         (CODEC_DAC, 0x09) => DAC_WIDGET_CAPABILITIES,
         (CODEC_DAC, 0x0d) => 0,
         (CODEC_DAC, 0x12) => CODEC_OUTPUT_AMP_CAPS,
@@ -927,6 +929,24 @@ fn codec_parameter(nid: u8, parameter: u8) -> u32 {
         (CODEC_SPEAKER, 0x0e) => 1, // one short-form connection.
         _ => 0,
     }
+}
+
+fn afg_parameter(parameter: u8) -> Option<u32> {
+    Some(match parameter {
+        0x01 => CODEC_VENDOR_ID,            // subsystem ID
+        0x04 => CODEC_AFG_CHILD_NODE_COUNT, // NID 2 DAC, NID 3 pin
+        0x05 => 0x0000_0001,                // audio function group
+        0x08 => CODEC_AFG_CAPABILITIES,
+        0x0a => CODEC_PCM_SIZE_RATES,
+        0x0b => CODEC_STREAM_FORMATS,
+        0x0d => 0, // default input amp capabilities: none
+        0x0f => CODEC_AFG_POWER_STATES,
+        0x10 => 0, // processing capabilities: none
+        0x11 => 0, // GPIO count: none
+        0x12 => 0, // default output amp capabilities: none
+        0x13 => 0, // volume knob capabilities: none
+        _ => return None,
+    })
 }
 
 fn power_state_response(state: u8) -> u32 {
@@ -1058,7 +1078,7 @@ mod tests {
         assert_eq!(ctrl.codec_verb(verb(0, CODEC_AFG, 0xf00, 0x05)), 1);
         assert_eq!(
             ctrl.codec_verb(verb(0, CODEC_AFG, 0xf00, 0x04)),
-            0x0002_0002
+            CODEC_AFG_CHILD_NODE_COUNT
         );
         assert_eq!(
             ctrl.codec_verb(verb(0, CODEC_AFG, 0xf00, 0x08)),
@@ -1104,6 +1124,47 @@ mod tests {
             ctrl.codec_verb(verb(0, CODEC_SPEAKER, 0xf09, 0)),
             SPEAKER_PIN_SENSE
         );
+    }
+
+    #[test]
+    fn codec_afg_exposes_children_and_all_enumeration_parameters() {
+        let mut ctrl = HdaController::with_pcm_output_path::<&Path>(None);
+        let child_count = ctrl.codec_verb(0x001f_0004);
+        let first_child = ((child_count >> 16) & 0xff) as u8;
+        let children = (child_count & 0xff) as u8;
+
+        // 0x001f0004 is CAD 0, NID 1, GET_PARAMETER (0xf00), parameter 0x04.
+        assert_eq!(child_count, CODEC_AFG_CHILD_NODE_COUNT);
+        assert_eq!(first_child, CODEC_DAC);
+        assert_eq!(children, CODEC_SPEAKER - CODEC_DAC + 1);
+        assert_eq!(first_child + children - 1, CODEC_SPEAKER);
+
+        let expected = [
+            (0x01, CODEC_VENDOR_ID),
+            (0x04, CODEC_AFG_CHILD_NODE_COUNT),
+            (0x05, 0x0000_0001),
+            (0x08, CODEC_AFG_CAPABILITIES),
+            (0x0a, CODEC_PCM_SIZE_RATES),
+            (0x0b, CODEC_STREAM_FORMATS),
+            (0x0d, 0),
+            (0x0f, CODEC_AFG_POWER_STATES),
+            (0x10, 0),
+            (0x11, 0),
+            (0x12, 0),
+            (0x13, 0),
+        ];
+        for (parameter, value) in expected {
+            assert_eq!(
+                afg_parameter(parameter),
+                Some(value),
+                "AFG parameter {parameter:#04x} must be explicitly handled"
+            );
+            assert_eq!(
+                ctrl.codec_verb(verb(0, CODEC_AFG, 0xf00, parameter)),
+                value,
+                "AFG GET_PARAMETER {parameter:#04x}"
+            );
+        }
     }
 
     #[test]
