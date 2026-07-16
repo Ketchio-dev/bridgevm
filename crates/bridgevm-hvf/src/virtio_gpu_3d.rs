@@ -566,8 +566,10 @@ impl VirtioGpu3d {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         };
+        let response_start = out.len();
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_CAPSET, Some(hdr));
         if !backend.capset_into(capset_id, version, out) {
+            out.truncate(response_start);
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
         }
     }
@@ -1370,10 +1372,28 @@ mod tests {
         let response_ptr = out.as_ptr();
         assert!(gpu.handle_with_mem_into(None, &get, hdr, &mut out));
 
+        assert_eq!(out.len(), 24 + 160);
         assert_eq!(read_le_u32(&out, 0), Some(VIRTIO_GPU_RESP_OK_CAPSET));
         assert_eq!(read_le_u32(&out, 24), Some(1));
         assert_eq!(out.as_ptr(), response_ptr);
         assert_eq!(backend.lock().unwrap().capset_calls, 0);
+    }
+
+    #[test]
+    fn invalid_capset_returns_one_header_instead_of_appending_it_to_ok_response() {
+        let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
+        let mut gpu = VirtioGpu3d::with_backend(Box::new(backend));
+        let mut get = ctrl_req(VIRTIO_GPU_CMD_GET_CAPSET, 0);
+        get.extend_from_slice(&99u32.to_le_bytes());
+        get.extend_from_slice(&1u32.to_le_bytes());
+        let hdr = CtrlHdr3d::parse(&get).unwrap();
+
+        let response = gpu.handle(&get, hdr).unwrap();
+        assert_eq!(response.len(), 24);
+        assert_eq!(
+            read_le_u32(&response, 0),
+            Some(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER)
+        );
     }
 
     #[test]

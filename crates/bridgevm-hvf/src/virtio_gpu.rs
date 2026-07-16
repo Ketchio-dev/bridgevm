@@ -874,7 +874,7 @@ impl VirtioGpu {
             return true;
         }
         if common_access_touches(COMMON_CONFIG_MSIX_VECTOR, 2, offset, size) {
-            self.config_msix_vector = write_common_register(
+            let vector = write_common_register(
                 self.config_msix_vector.into(),
                 COMMON_CONFIG_MSIX_VECTOR,
                 2,
@@ -882,6 +882,7 @@ impl VirtioGpu {
                 size,
                 value,
             ) as u16;
+            self.config_msix_vector = valid_msix_vector(vector);
             return true;
         }
         if common_access_touches(COMMON_DEVICE_STATUS, 1, offset, size) {
@@ -923,7 +924,7 @@ impl VirtioGpu {
             return true;
         }
         if common_access_touches(COMMON_QUEUE_MSIX_VECTOR, 2, offset, size) {
-            queue.msix_vector = write_common_register(
+            let vector = write_common_register(
                 u64::from(queue.msix_vector),
                 COMMON_QUEUE_MSIX_VECTOR,
                 2,
@@ -931,6 +932,7 @@ impl VirtioGpu {
                 size,
                 value,
             ) as u16;
+            queue.msix_vector = valid_msix_vector(vector);
             return true;
         }
         if common_access_touches(COMMON_QUEUE_ENABLE, 2, offset, size) {
@@ -3560,6 +3562,14 @@ fn mask_to_size(value: u64, size: u8) -> u64 {
     }
 }
 
+fn valid_msix_vector(vector: u16) -> u16 {
+    if vector < VIRTIO_GPU_MSIX_VECTOR_COUNT || vector == VIRTIO_MSI_NO_VECTOR {
+        vector
+    } else {
+        VIRTIO_MSI_NO_VECTOR
+    }
+}
+
 fn read_le_from_bytes(bytes: &[u8], offset: u64, size: u8) -> Option<u64> {
     let offset = usize::try_from(offset).ok()?;
     let size = usize::from(size);
@@ -4198,6 +4208,45 @@ mod tests {
         assert!(stats.queues[0].ready);
         assert_eq!(stats.queues[1].size, 16);
         assert!(stats.queues[1].ready);
+    }
+
+    #[test]
+    fn viogpu3d_msix_contract_accepts_config_control_and_cursor_vectors() {
+        let mut dev = VirtioPciGpu::new(1280, 800);
+        let mut mem = TestMem::new(0x4000_0000, 0x10000);
+
+        pci_write(&mut dev, COMMON_CONFIG_MSIX_VECTOR, 2, 0, &mut mem);
+        assert_eq!(
+            pci_read(&mut dev, COMMON_CONFIG_MSIX_VECTOR, 2, &mut mem),
+            0
+        );
+
+        for (queue, vector) in [(0u16, 1u16), (1, 2)] {
+            pci_write(&mut dev, COMMON_QUEUE_SELECT, 2, u64::from(queue), &mut mem);
+            pci_write(
+                &mut dev,
+                COMMON_QUEUE_MSIX_VECTOR,
+                2,
+                u64::from(vector),
+                &mut mem,
+            );
+            assert_eq!(
+                pci_read(&mut dev, COMMON_QUEUE_MSIX_VECTOR, 2, &mut mem),
+                u64::from(vector)
+            );
+        }
+
+        pci_write(
+            &mut dev,
+            COMMON_QUEUE_MSIX_VECTOR,
+            2,
+            u64::from(VIRTIO_GPU_MSIX_VECTOR_COUNT),
+            &mut mem,
+        );
+        assert_eq!(
+            pci_read(&mut dev, COMMON_QUEUE_MSIX_VECTOR, 2, &mut mem),
+            u64::from(VIRTIO_MSI_NO_VECTOR)
+        );
     }
 
     #[test]

@@ -301,8 +301,11 @@ pub const VIRTIO_GPU_SHM_ID_HOST_VISIBLE: u8 = 1;
 pub const VIRTIO_GPU_BAR4_SIZE: u32 = 0x4000;
 /// PCI capability-list offset for the virtio-gpu MSI-X capability.
 pub const VIRTIO_GPU_MSIX_CAP_OFFSET: u8 = 0x84;
-/// One vector per virtio-gpu queue (controlq=0, cursorq=1).
-pub const VIRTIO_GPU_MSIX_VECTOR_COUNT: u16 = 2;
+/// One configuration vector plus one vector per virtio-gpu queue.
+///
+/// This matches QEMU's virtio-gpu PCI transport and the viogpu3d KMD's fixed
+/// assignment: config=0, controlq=1, cursorq=2.
+pub const VIRTIO_GPU_MSIX_VECTOR_COUNT: u16 = 3;
 /// Offset of the virtio-gpu MSI-X table in BAR1.
 pub const VIRTIO_GPU_MSIX_TABLE_OFFSET: u32 = 0x0000;
 /// Offset of the virtio-gpu MSI-X Pending Bit Array in BAR1.
@@ -2196,6 +2199,7 @@ mod tests {
 
     #[test]
     fn virtio_gpu_modern_bars_and_capabilities_match_stage_g1_shape() {
+        assert_eq!(VIRTIO_GPU_MSIX_VECTOR_COUNT, 3);
         let mut ecam = PcieEcam::new_with_config(PcieEcamConfig {
             virtio_gpu_present: true,
             ..PcieEcamConfig::default()
