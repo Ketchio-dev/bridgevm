@@ -782,7 +782,7 @@ index 4bccc44..b3cc434 100644
     if (ctx->ctx_id != 0 && ctx->in_error) {
        return false;
 diff --git a/src/vrend/vrend_shader.c b/src/vrend/vrend_shader.c
-index 4fe673c..c420fc4 100644
+index 4fe673c..fd06705 100644
 --- a/src/vrend/vrend_shader.c
 +++ b/src/vrend/vrend_shader.c
 @@ -92,6 +92,7 @@
@@ -900,7 +900,29 @@ index 4fe673c..c420fc4 100644
           emit_ext(glsl_strbufs, "ARB_uniform_buffer_object", "require");
  
        if (ctx->num_cull_dist_prop || ctx->key->num_in_cull || ctx->key->num_out_cull)
-@@ -8010,6 +8047,7 @@ static void emit_required_sysval_uniforms(struct vrend_strbuf *block, uint32_t m
+@@ -6361,10 +6398,19 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
+       }
+ 
+       for (uint32_t i = 0; i < ARRAY_SIZE(shader_req_table); i++) {
+-         if (shader_req_table[i].key == SHADER_REQ_SAMPLER_RECT && ctx->glsl_ver_required >= 140)
++         const uint64_t key = shader_req_table[i].key;
++
++         /* These features are core in GLSL 1.40. Apple's core-profile GL 4.1
++          * compiler exposes the core operation (gl_InstanceID, sampler rect)
++          * but not the redundant ARB extension name, and rejects a
++          * `#extension ... : require` for it. Emitting it poisons DWM's virgl
++          * composition context (DRAW_VBO EINVAL -> ctx in_error), which
++          * silently drops all later per-window composition. */
++         if (ctx->glsl_ver_required >= 140 &&
++             (key == SHADER_REQ_SAMPLER_RECT || key == SHADER_REQ_INSTANCE_ID))
+             continue;
+ 
+-         if (ctx->shader_req_bits & shader_req_table[i].key) {
++         if (ctx->shader_req_bits & key) {
+             emit_ext(glsl_strbufs, shader_req_table[i].string, "require");
+          }
+       }
+@@ -8010,6 +8056,7 @@ static void emit_required_sysval_uniforms(struct vrend_strbuf *block, uint32_t m
     strbuf_append(block, "\tvec4 clipp[8];\n");
     strbuf_appendf(block, "\tuint stipple_pattern[%d];\n", VREND_POLYGON_STIPPLE_SIZE);
     strbuf_append(block, "\tfloat winsys_adjust_y;\n");
@@ -908,7 +930,7 @@ index 4fe673c..c420fc4 100644
     strbuf_append(block, "\tfloat alpha_ref_val;\n");
     strbuf_append(block, "\tbool clip_plane_enabled;\n");
     strbuf_append(block, "\tint drawid_base;\n");
-@@ -8583,4 +8621,3 @@ bool vrend_shader_needs_alpha_func(const struct vrend_shader_key *key) {
+@@ -8583,4 +8630,3 @@ bool vrend_shader_needs_alpha_func(const struct vrend_shader_key *key) {
        return true;
     }
  }
