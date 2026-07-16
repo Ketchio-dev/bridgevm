@@ -209,6 +209,11 @@ build_installed_boot_env_args() {
   [[ -z "${BRIDGEVM_VBLANK_HZ:-}" ]] || ENV_ARGS+=("BRIDGEVM_VBLANK_HZ=$BRIDGEVM_VBLANK_HZ")
   [[ -z "${BRIDGEVM_CHECKPOINT_STATE:-}" ]] || ENV_ARGS+=("BRIDGEVM_CHECKPOINT_STATE=$BRIDGEVM_CHECKPOINT_STATE")
   [[ -z "${BRIDGEVM_RESTORE_STATE:-}" ]] || ENV_ARGS+=("BRIDGEVM_RESTORE_STATE=$BRIDGEVM_RESTORE_STATE")
+  # Forward the opt-in Intel HDA audio device + PCM capture (media.rs gates on
+  # BRIDGEVM_HDA; absent = no audio function, unchanged behavior).
+  [[ -z "${BRIDGEVM_HDA:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA=$BRIDGEVM_HDA")
+  [[ -z "${BRIDGEVM_HDA_PCM_OUT:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_PCM_OUT=$BRIDGEVM_HDA_PCM_OUT")
+  [[ -z "${BRIDGEVM_TRACE_HDA:-}" ]] || ENV_ARGS+=("BRIDGEVM_TRACE_HDA=$BRIDGEVM_TRACE_HDA")
   if [[ -n "$SMP_CPUS" ]]; then
     ENV_ARGS+=("BRIDGEVM_SMP_CPUS=$SMP_CPUS")
   fi
