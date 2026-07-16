@@ -587,6 +587,7 @@ impl HdaController {
         }
         let mask = self.corb_pointer_mask();
         let mut guard = 0usize;
+        let mut produced = false;
         while self.corb_rp != self.corb_wp && guard < usize::from(mask) + 1 {
             let next = self.corb_rp.wrapping_add(1) & mask;
             let mut raw = [0u8; 4];
@@ -600,7 +601,19 @@ impl HdaController {
             if !self.push_rirb(mem, response, (verb >> 28) as u8) {
                 break;
             }
+            produced = true;
             guard += 1;
+        }
+        // Match QEMU: raise the RIRB interrupt once the CORB ring drains, even
+        // if fewer than RINTCNT responses accumulated. Windows' hdaudio.sys
+        // submits small verb batches (e.g. a lone GET_PARAMETER during codec
+        // enumeration) and waits for the RIRB interrupt; without this it would
+        // never be notified for a sub-threshold batch and times out — which is
+        // exactly why it read the AFG basics then stalled before descending to
+        // the DAC/pin widgets.
+        if produced && self.corb_rp == self.corb_wp && self.rirb_ctl & RIRBCTL_RINTCTL != 0 {
+            self.rirb_sts |= RIRBSTS_RINTFL;
+            self.responses_since_irq = 0;
         }
     }
 
