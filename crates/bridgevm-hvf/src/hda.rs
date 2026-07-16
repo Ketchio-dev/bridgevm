@@ -91,6 +91,7 @@ const CODEC_DAC: u8 = 2;
 const CODEC_SPEAKER: u8 = 3;
 // QEMU's hda-duplex codec identity (the output path is nodes 2 -> 3).
 const CODEC_VENDOR_ID: u32 = 0x1af4_0022;
+const CODEC_IMPLEMENTATION_ID: u32 = CODEC_VENDOR_ID;
 const CODEC_REVISION_ID: u32 = 0x0010_0101;
 const CODEC_AFG_CHILD_NODE_COUNT: u32 =
     ((CODEC_DAC as u32) << 16) | (CODEC_SPEAKER - CODEC_DAC + 1) as u32;
@@ -798,7 +799,9 @@ impl HdaController {
                     0
                 }
                 0xf1c if nid == CODEC_SPEAKER => SPEAKER_CONFIG_DEFAULT,
-                0xf20 => CODEC_VENDOR_ID,
+                // The Implementation Identification register belongs to function
+                // groups.  It is a verb (F20), not GET_PARAMETER parameter 01.
+                0xf20 if nid == CODEC_AFG => CODEC_IMPLEMENTATION_ID,
                 0x7ff if nid == CODEC_AFG => {
                     self.codec = CodecState::new();
                     0
@@ -914,7 +917,6 @@ fn codec_parameter(nid: u8, parameter: u8) -> u32 {
     }
     match (nid, parameter) {
         (CODEC_ROOT, 0x00) => CODEC_VENDOR_ID,
-        (CODEC_ROOT, 0x01) => CODEC_VENDOR_ID,
         (CODEC_ROOT, 0x02) => CODEC_REVISION_ID,
         (CODEC_ROOT, 0x04) => 0x0001_0001, // node 1, one function group.
         (CODEC_DAC, 0x0a) => CODEC_PCM_SIZE_RATES,
@@ -933,7 +935,6 @@ fn codec_parameter(nid: u8, parameter: u8) -> u32 {
 
 fn afg_parameter(parameter: u8) -> Option<u32> {
     Some(match parameter {
-        0x01 => CODEC_VENDOR_ID,            // subsystem ID
         0x04 => CODEC_AFG_CHILD_NODE_COUNT, // NID 2 DAC, NID 3 pin
         0x05 => 0x0000_0001,                // audio function group
         0x08 => CODEC_AFG_CAPABILITIES,
@@ -941,10 +942,8 @@ fn afg_parameter(parameter: u8) -> Option<u32> {
         0x0b => CODEC_STREAM_FORMATS,
         0x0d => 0, // default input amp capabilities: none
         0x0f => CODEC_AFG_POWER_STATES,
-        0x10 => 0, // processing capabilities: none
         0x11 => 0, // GPIO count: none
         0x12 => 0, // default output amp capabilities: none
-        0x13 => 0, // volume knob capabilities: none
         _ => return None,
     })
 }
@@ -1138,9 +1137,12 @@ mod tests {
         assert_eq!(first_child, CODEC_DAC);
         assert_eq!(children, CODEC_SPEAKER - CODEC_DAC + 1);
         assert_eq!(first_child + children - 1, CODEC_SPEAKER);
+        for parameter in [0x01, 0x10, 0x13] {
+            assert_eq!(afg_parameter(parameter), None);
+            assert_eq!(ctrl.codec_verb(verb(0, CODEC_AFG, 0xf00, parameter)), 0);
+        }
 
         let expected = [
-            (0x01, CODEC_VENDOR_ID),
             (0x04, CODEC_AFG_CHILD_NODE_COUNT),
             (0x05, 0x0000_0001),
             (0x08, CODEC_AFG_CAPABILITIES),
@@ -1148,10 +1150,8 @@ mod tests {
             (0x0b, CODEC_STREAM_FORMATS),
             (0x0d, 0),
             (0x0f, CODEC_AFG_POWER_STATES),
-            (0x10, 0),
             (0x11, 0),
             (0x12, 0),
-            (0x13, 0),
         ];
         for (parameter, value) in expected {
             assert_eq!(
@@ -1165,6 +1165,33 @@ mod tests {
                 "AFG GET_PARAMETER {parameter:#04x}"
             );
         }
+    }
+
+    #[test]
+    fn codec_observed_enumeration_commands_decode_without_subsystem_aliasing() {
+        let mut ctrl = HdaController::with_pcm_output_path::<&Path>(None);
+        let observed = [
+            (0x000f_0000, CODEC_VENDOR_ID),
+            (0x000f_0002, CODEC_REVISION_ID),
+            (0x000f_0004, 0x0001_0001),
+            (0x001f_0001, 0),
+            (0x001f_0005, 0x0000_0001),
+            (0x001f_0500, 0),
+        ];
+
+        for (command, response) in observed {
+            assert_eq!(
+                ctrl.codec_verb(command),
+                response,
+                "command {command:#010x}"
+            );
+        }
+
+        // NID 1 GET_PARAMETER(01) and GET_SUBSYSTEM_ID/Implementation ID are
+        // distinct commands.  The former is reserved; the latter is F20/00.
+        assert_eq!(ctrl.codec_verb(0x001f_0001), 0);
+        assert_eq!(ctrl.codec_verb(0x001f_2000), CODEC_IMPLEMENTATION_ID);
+        assert_eq!(ctrl.codec_verb(0x000f_2000), 0);
     }
 
     #[test]
