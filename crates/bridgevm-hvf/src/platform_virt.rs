@@ -747,6 +747,21 @@ impl VirtPlatform {
             .and_then(VirtioPciGpu::vblank_wake)
     }
 
+    /// Request a guest scanout resize. Returns true when the geometry changed
+    /// and the DISPLAY event + config-change interrupt were armed; the pending
+    /// MSI-X is delivered by the next `drain_pending_msix_into` on the drain
+    /// path. Returns false when no GPU is present or the size is a no-op.
+    pub fn request_virtio_gpu_resolution(&mut self, width: u32, height: u32) -> bool {
+        self.virtio_gpu
+            .as_mut()
+            .is_some_and(|gpu| gpu.request_display_resolution(width, height))
+    }
+
+    /// Current virtio-gpu scanout geometry, if the device is present.
+    pub fn virtio_gpu_resolution(&self) -> Option<(u32, u32)> {
+        self.virtio_gpu.as_ref().map(VirtioPciGpu::display_resolution)
+    }
+
     pub fn set_virtio_gpu_shm_map_port(&mut self, port: Box<dyn GpuShmMapPort>) -> bool {
         let Some(window_size) = self.pcie.virtio_gpu_host_visible_bar_size() else {
             return false;

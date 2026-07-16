@@ -21,12 +21,19 @@ const COMPACT_AFTER_BYTES: u64 = 1024 * 1024;
 enum LiveInputCommand {
     Key(String),
     Pointer(String),
+    Resize { width: u32, height: u32 },
 }
 
 impl LiveInputCommand {
     fn is_pointer_move(&self) -> bool {
         matches!(self, Self::Pointer(value) if value.starts_with("move:"))
     }
+}
+
+/// Parse a `RESIZE <width>x<height>` argument (e.g. `1920x1080`).
+fn parse_resize(value: &str) -> Option<(u32, u32)> {
+    let (w, h) = value.trim().split_once('x')?;
+    Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
 }
 
 pub struct LiveInputController {
@@ -94,6 +101,16 @@ impl LiveInputController {
                     Ok(false)
                 }
             },
+            LiveInputCommand::Resize { width, height } => {
+                if platform.request_virtio_gpu_resolution(*width, *height) {
+                    println!("live input accepted: resize={width}x{height}");
+                } else {
+                    eprintln!(
+                        "live input rejected: kind=resize {width}x{height} (no-op/no-gpu/out-of-range)"
+                    );
+                }
+                Ok(false)
+            }
         };
         match result {
             Ok(accepted) => {
@@ -191,6 +208,14 @@ impl LiveInputController {
             LiveInputCommand::Key(value.to_string())
         } else if let Some(value) = line.strip_prefix("POINTER ") {
             LiveInputCommand::Pointer(value.to_string())
+        } else if let Some(value) = line.strip_prefix("RESIZE ") {
+            match parse_resize(value) {
+                Some((width, height)) => LiveInputCommand::Resize { width, height },
+                None => {
+                    eprintln!("live input rejected: kind=resize parse_error");
+                    return;
+                }
+            }
         } else {
             eprintln!("live input rejected: unknown_command");
             return;
@@ -285,6 +310,23 @@ mod tests {
             input.pending.back(),
             Some(LiveInputCommand::Pointer(value)) if value == "release:10x20"
         ));
+    }
+
+    #[test]
+    fn live_input_parses_resize_command_and_rejects_malformed() {
+        let mut input = controller();
+        input.push_line("RESIZE 1920x1080");
+        assert!(matches!(
+            input.pending.back(),
+            Some(LiveInputCommand::Resize {
+                width: 1920,
+                height: 1080
+            })
+        ));
+        let before = input.pending.len();
+        input.push_line("RESIZE not-a-size");
+        input.push_line("RESIZE 1920");
+        assert_eq!(input.pending.len(), before, "malformed resizes are dropped");
     }
 
     #[test]

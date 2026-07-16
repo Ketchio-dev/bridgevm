@@ -92,6 +92,13 @@ const VIRTIO_GPU_F_EDID: u32 = 1 << 1;
 const VIRTIO_F_VERSION_1: u32 = 1 << 0;
 const VIRTIO_MSI_NO_VECTOR: u16 = 0xffff;
 
+/// virtio-gpu config `events_read` bit: the host changed the scanout layout
+/// (resolution), so the guest should re-query GET_DISPLAY_INFO/GET_EDID.
+const VIRTIO_GPU_EVENT_DISPLAY: u32 = 1 << 0;
+/// Largest scanout the resize path accepts, matching the EDID/mode range the
+/// viogpu3d driver advertises. Guards the scanout allocation.
+const MAX_SCANOUT_DIMENSION: u32 = 7680;
+
 const QUEUE_CONTROL: usize = 0;
 const QUEUE_CURSOR: usize = 1;
 const QUEUE_COUNT: usize = 2;
@@ -214,7 +221,9 @@ pub struct VirtioGpu {
     pending_msix_queue_bits: u8,
     status: u32,
     interrupt_status: u32,
+    events_read: u32,
     events_clear: u32,
+    pending_config_change: bool,
     resources: BTreeMap<u32, GpuResource>,
     scanout_resource: Option<u32>,
     blob_scanout: Option<BlobScanout>,
@@ -424,7 +433,9 @@ impl VirtioGpu {
             pending_msix_queue_bits: 0,
             status: 0,
             interrupt_status: 0,
+            events_read: 0,
             events_clear: 0,
+            pending_config_change: false,
             resources: BTreeMap::new(),
             scanout_resource: None,
             blob_scanout: None,
@@ -572,7 +583,9 @@ impl VirtioGpu {
         self.pending_msix_queue_bits = 0;
         self.status = 0;
         self.interrupt_status = 0;
+        self.events_read = 0;
         self.events_clear = 0;
+        self.pending_config_change = false;
         self.resources.clear();
         self.scanout_resource = None;
         self.unbind_blob_scanout();
@@ -981,6 +994,7 @@ impl VirtioGpu {
         // sets: 0" and never queried the venus capset (and a 2D-only device
         // reported zero scanouts).
         let mut config = [0u8; 16];
+        config[0..4].copy_from_slice(&self.events_read.to_le_bytes());
         config[4..8].copy_from_slice(&self.events_clear.to_le_bytes());
         config[8..12].copy_from_slice(&1u32.to_le_bytes());
         let num_capsets = self.three_d.capset_count();
@@ -992,7 +1006,41 @@ impl VirtioGpu {
         if common_access_touches(4, 4, offset, size) {
             self.events_clear =
                 write_common_register(self.events_clear.into(), 4, 4, offset, size, value) as u32;
+            // The driver acks a display event by writing its bit to
+            // events_clear; clear the matching events_read bits so the next
+            // GET_DISPLAY_INFO does not re-report a stale change.
+            self.events_read &= !self.events_clear;
         }
+    }
+
+    /// Host-driven scanout resize. Updates the reported resolution and raises a
+    /// virtio-gpu DISPLAY event + config-change interrupt so the guest WDDM
+    /// driver re-queries GET_DISPLAY_INFO/GET_EDID and switches modes. No-op
+    /// (returns false) when the size is unchanged or out of range; the caller
+    /// delivers the config interrupt via the device wrapper's drain path.
+    fn request_display_resolution(&mut self, width: u32, height: u32) -> bool {
+        if width == 0
+            || height == 0
+            || width > MAX_SCANOUT_DIMENSION
+            || height > MAX_SCANOUT_DIMENSION
+        {
+            return false;
+        }
+        if width == self.width && height == self.height {
+            return false;
+        }
+        self.width = width;
+        self.height = height;
+        // Grow the 2D scanout backing to the new geometry; the guest re-creates
+        // its scanout resource after the mode switch, so drop the stale binding.
+        self.scanout.clear();
+        self.scanout.resize(scanout_len(width, height), 0);
+        self.scanout_resource = None;
+        self.unbind_blob_scanout();
+        self.events_read |= VIRTIO_GPU_EVENT_DISPLAY;
+        self.pending_config_change = true;
+        self.interrupt_status |= 2;
+        true
     }
 
     fn notify_queue(&mut self, queue_index: u16, mem: &mut dyn GuestMemoryMut) {
@@ -2188,6 +2236,18 @@ impl VirtioPciGpu {
         self.gpu.set_vblank_interval(interval);
     }
 
+    /// Host-driven scanout resize. Returns true when the geometry changed and a
+    /// DISPLAY event + config-change interrupt were armed; the caller flushes
+    /// the resulting MSI-X via `drain_pending_msix_into`.
+    pub fn request_display_resolution(&mut self, width: u32, height: u32) -> bool {
+        self.gpu.request_display_resolution(width, height)
+    }
+
+    /// Current reported scanout geometry.
+    pub fn display_resolution(&self) -> (u32, u32) {
+        (self.gpu.width, self.gpu.height)
+    }
+
     pub fn set_vblank_wake(&mut self, wake: Arc<VblankWakeState>) {
         self.gpu.set_vblank_wake(wake);
     }
@@ -2339,6 +2399,21 @@ impl VirtioPciGpu {
         function_masked: bool,
         out: &mut Vec<MsixMessage>,
     ) {
+        if self.gpu.pending_config_change {
+            let vector = self.gpu.config_msix_vector;
+            if vector != VIRTIO_MSI_NO_VECTOR {
+                if let Some(message) =
+                    self.msix.raise(vector, function_enabled, function_masked)
+                {
+                    self.gpu.pending_config_change = false;
+                    out.push(message);
+                }
+            } else {
+                // No config vector programmed (INTx path): the ISR config bit
+                // is already set; nothing MSI-X to raise.
+                self.gpu.pending_config_change = false;
+            }
+        }
         let mut pending = self.gpu.pending_msix_queue_bits;
         while pending != 0 {
             let queue_index = pending.trailing_zeros() as usize;
@@ -4331,6 +4406,101 @@ mod tests {
         assert_eq!(read_le_u32(&resp, 24 + 8), Some(1600));
         assert_eq!(read_le_u32(&resp, 24 + 12), Some(900));
         assert_eq!(read_le_u32(&resp, 24 + 16), Some(1));
+    }
+
+    fn program_config_msix_vector(dev: &mut VirtioPciGpu, vector: u16) {
+        let mut mem = TestMem::new(0x4000_0000, 0x1000);
+        assert_eq!(
+            dev.access(
+                PCI_COMMON_CFG_OFFSET + COMMON_CONFIG_MSIX_VECTOR,
+                VirtioPciGpuOp::Write {
+                    size: 2,
+                    value: u64::from(vector),
+                },
+                &mut mem,
+            ),
+            VirtioGpuResult::WriteAck
+        );
+    }
+
+    #[test]
+    fn host_resize_reports_new_geometry_and_raises_config_change_interrupt() {
+        let mut dev = VirtioPciGpu::new(1280, 800);
+        program_config_msix_vector(&mut dev, 0);
+        program_msix_vector(&mut dev, 0, 0xfee0_1000, 0x71);
+
+        // Config reads start with no pending display event.
+        assert_eq!(dev.display_resolution(), (1280, 800));
+
+        assert!(dev.request_display_resolution(1920, 1080));
+        assert_eq!(dev.display_resolution(), (1920, 1080));
+        // ISR config-change bit (0x2) is set and events_read advertises DISPLAY.
+        assert_eq!(dev.stats().interrupt_status & 0x2, 0x2);
+
+        // The armed config-change interrupt is delivered on the config vector.
+        assert_eq!(
+            dev.drain_pending_msix(true, false),
+            vec![MsixMessage {
+                vector: 0,
+                address: 0xfee0_1000,
+                data: 0x71,
+            }]
+        );
+        // Delivered once only.
+        assert!(dev.drain_pending_msix(true, false).is_empty());
+
+        // GET_DISPLAY_INFO now reports the new geometry.
+        let mut mem = TestMem::new(0x4000_0000, 0x40000);
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &ctrl_req(VIRTIO_GPU_CMD_GET_DISPLAY_INFO), 408), 24 + 8),
+            Some(1920)
+        );
+
+        // A no-op resize to the same geometry does not re-arm.
+        assert!(!dev.request_display_resolution(1920, 1080));
+        // Out-of-range is rejected.
+        assert!(!dev.request_display_resolution(0, 1080));
+        assert!(!dev.request_display_resolution(1920, MAX_SCANOUT_DIMENSION + 1));
+    }
+
+    #[test]
+    fn host_resize_display_event_clears_when_guest_acks() {
+        let mut dev = VirtioPciGpu::new(1280, 800);
+        assert!(dev.request_display_resolution(1600, 900));
+
+        let mut mem = TestMem::new(0x4000_0000, 0x1000);
+        // events_read (config offset 0) advertises the DISPLAY event.
+        assert_eq!(
+            dev.access(
+                PCI_DEVICE_CFG_OFFSET + 0,
+                VirtioPciGpuOp::Read { size: 4 },
+                &mut mem,
+            ),
+            VirtioGpuResult::ReadValue(u64::from(VIRTIO_GPU_EVENT_DISPLAY))
+        );
+
+        // The driver acks by writing the bit into events_clear (config offset 4).
+        assert_eq!(
+            dev.access(
+                PCI_DEVICE_CFG_OFFSET + 4,
+                VirtioPciGpuOp::Write {
+                    size: 4,
+                    value: u64::from(VIRTIO_GPU_EVENT_DISPLAY),
+                },
+                &mut mem,
+            ),
+            VirtioGpuResult::WriteAck
+        );
+
+        // events_read no longer reports the acked event.
+        assert_eq!(
+            dev.access(
+                PCI_DEVICE_CFG_OFFSET + 0,
+                VirtioPciGpuOp::Read { size: 4 },
+                &mut mem,
+            ),
+            VirtioGpuResult::ReadValue(0)
+        );
     }
 
     #[test]
