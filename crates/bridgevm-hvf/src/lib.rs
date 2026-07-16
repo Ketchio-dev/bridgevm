@@ -13,6 +13,7 @@ pub mod acpi;
 pub mod checkpoint;
 pub mod dtb;
 pub mod fwcfg;
+pub mod hda;
 pub mod machine;
 pub mod media;
 pub mod msix;

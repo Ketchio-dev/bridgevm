@@ -95,6 +95,8 @@ pub const REG_BAR0: u16 = 0x10;
 /// Capabilities pointer (8-bit at `0x34`).
 pub const REG_CAP_PTR: u16 = 0x34;
 pub const REG_SUBSYSTEM_IDS: u16 = 0x2c;
+/// Interrupt Line (byte 0) and Interrupt Pin (byte 1).
+pub const REG_INTERRUPT_LINE_PIN: u16 = 0x3c;
 
 /// Number of Base Address Registers in a type-0 (endpoint) header.
 pub const NUM_BARS: usize = 6;
@@ -324,6 +326,17 @@ pub const VIRTIO_CONSOLE_MSIX_VECTOR_COUNT: u16 = 6;
 pub const VIRTIO_CONSOLE_MSIX_TABLE_OFFSET: u32 = 0x0000;
 /// Offset of the virtio-console MSI-X Pending Bit Array in BAR1.
 pub const VIRTIO_CONSOLE_MSIX_PBA_OFFSET: u32 = 0x0800;
+
+// ---- Intel ICH6 High Definition Audio endpoint (00:07.0) -----------------
+
+/// Free slot used for the opt-in Intel HDA controller.
+pub const HDA_BDF: (u8, u8, u8) = (0, 7, 0);
+pub const HDA_VENDOR_ID: u16 = 0x8086;
+pub const HDA_DEVICE_ID: u16 = 0x2668;
+/// Multimedia / High Definition Audio / programming interface 0.
+pub const HDA_CLASS_CODE: u32 = 0x0004_0300;
+pub const HDA_REVISION: u8 = 0x01;
+pub const HDA_BAR0_SIZE: u32 = crate::hda::BAR_SIZE;
 
 /// The value an ECAM read returns when no device answers: all-ones. Firmware
 /// treats a `0xFFFF_FFFF` vendor/device read as "slot empty".
@@ -792,6 +805,21 @@ impl Function {
         }
     }
 
+    fn hda() -> Self {
+        let mut bars = [Bar::default(); NUM_BARS];
+        bars[0] = Bar::memory32(HDA_BAR0_SIZE);
+        Self {
+            bdf: HDA_BDF,
+            vendor_device: (u32::from(HDA_DEVICE_ID) << 16) | u32::from(HDA_VENDOR_ID),
+            revision_class: (HDA_CLASS_CODE << 8) | u32::from(HDA_REVISION),
+            subsystem_ids: 0,
+            command: 0,
+            bars,
+            cap_ptr: 0,
+            cap_bytes: Vec::new(),
+        }
+    }
+
     fn mmio_target_of_bar(&self, idx: usize, gpa: u64) -> Option<PcieMmioTargetMru> {
         let bar = self.bars.get(idx)?;
         let (base, size) = match bar.kind {
@@ -832,6 +860,7 @@ impl Function {
             }
             REG_SUBSYSTEM_IDS => self.subsystem_ids,
             REG_CAP_PTR => u32::from(self.cap_ptr),
+            REG_INTERRUPT_LINE_PIN if self.bdf == HDA_BDF => 0x0000_0100, // INTA#.
             _ if (REG_BAR0..REG_BAR0 + (NUM_BARS as u16) * 4).contains(&reg) => {
                 let idx = ((reg - REG_BAR0) / 4) as usize;
                 self.bars[idx].read()
@@ -1008,6 +1037,7 @@ pub struct PcieNvmeEndpointState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PcieEcamConfig {
     pub xhci_present: bool,
+    pub hda_present: bool,
     pub virtio_blk_present: bool,
     pub virtio_net_present: bool,
     pub virtio_gpu_present: bool,
@@ -1020,6 +1050,7 @@ impl Default for PcieEcamConfig {
     fn default() -> Self {
         Self {
             xhci_present: true,
+            hda_present: false,
             virtio_blk_present: true,
             virtio_net_present: false,
             virtio_gpu_present: false,
@@ -1047,6 +1078,9 @@ impl PcieEcam {
         let mut functions = vec![Function::host_bridge(), Function::nvme()];
         if config.xhci_present {
             functions.push(Function::xhci());
+        }
+        if config.hda_present {
+            functions.push(Function::hda());
         }
         if config.virtio_blk_present {
             functions.push(Function::virtio_blk());
@@ -2776,6 +2810,50 @@ mod tests {
         assert_eq!(cap.message_control(), 2047);
         assert_eq!(cap.table_offset_bir() & 0x7, 2);
         assert_eq!(cap.pba_offset_bir() & 0x7, 4);
+    }
+
+    #[test]
+    fn hda_endpoint_is_opt_in_and_matches_ich6_pci_contract() {
+        let ecam = PcieEcam::new();
+        assert_eq!(
+            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, REG_VENDOR_DEVICE), 4),
+            NO_DEVICE
+        );
+
+        let mut ecam = PcieEcam::new_with_config(PcieEcamConfig {
+            hda_present: true,
+            ..PcieEcamConfig::default()
+        });
+        let identity = ecam.cfg_read(bdf_ecam_offset(HDA_BDF, REG_VENDOR_DEVICE), 4);
+        assert_eq!(identity, 0x2668_8086);
+        let class = ecam.cfg_read(bdf_ecam_offset(HDA_BDF, REG_REVISION_CLASS), 4);
+        assert_eq!(class >> 8, u64::from(HDA_CLASS_CODE));
+        assert_eq!(
+            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, REG_INTERRUPT_LINE_PIN), 4),
+            0x100
+        );
+
+        let bar = bdf_ecam_offset(HDA_BDF, REG_BAR0);
+        ecam.cfg_write(bar, 4, 0xffff_ffff);
+        let mask = ecam.cfg_read(bar, 4) as u32;
+        assert_eq!(mask & 0xf, 0, "HDA BAR0 is 32-bit non-prefetchable MMIO");
+        assert_eq!((!(mask & !0xf)).wrapping_add(1), HDA_BAR0_SIZE);
+
+        let base = crate::machine::PCIE_MMIO_32.base + 0x70_000;
+        ecam.cfg_write(bar, 4, base);
+        ecam.cfg_write(
+            bdf_ecam_offset(HDA_BDF, REG_COMMAND_STATUS),
+            2,
+            u64::from(CMD_MEMORY_SPACE | CMD_BUS_MASTER),
+        );
+        assert_eq!(
+            ecam.mmio_target(base),
+            Some(PcieMmioTarget {
+                bdf: HDA_BDF,
+                bar_index: 0,
+                offset: 0,
+            })
+        );
     }
 
     #[test]

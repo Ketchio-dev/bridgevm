@@ -3139,6 +3139,7 @@ impl RunLoopDrainStats {
         platform.poll_virtio_net(mem);
         platform.poll_virtio_console(mem);
         platform.poll_virtio_gpu_fences(mem);
+        platform.poll_hda(mem);
         let spi = deliver_pending_spis(platform, &mut self.pending_spi_scratch, trace.spi);
         debug_assert!(self.pending_msix_scratch.is_empty());
         self.pending_msix_scratch.clear();

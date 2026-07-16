@@ -48,6 +48,20 @@ fn device_shape_lines(
     } else {
         "qemu-xhci: disabled".to_string()
     };
+    let hda = if devices.hda_present {
+        format!(
+            "intel-hda: {bus:02x}:{dev:02x}.{func} vendor={vendor:#06x} device={device:#06x} class={class:#08x} bar0_mmio32_size={bar0:#x} interrupt=INTA",
+            bus = pcie::HDA_BDF.0,
+            dev = pcie::HDA_BDF.1,
+            func = pcie::HDA_BDF.2,
+            vendor = pcie::HDA_VENDOR_ID,
+            device = pcie::HDA_DEVICE_ID,
+            class = pcie::HDA_CLASS_CODE,
+            bar0 = pcie::HDA_BAR0_SIZE,
+        )
+    } else {
+        "intel-hda: disabled".to_string()
+    };
     let legacy_virtio = if devices.legacy_virtio_mmio_present {
         format!(
             "boot-media installer ISO fallback: virtio-mmio slot {INSTALLER_ISO_SLOT} base={iso_base:#x} spi={iso_spi} intid={iso_intid} attached={legacy_mmio_installer_iso_attached}"
@@ -122,6 +136,7 @@ fn device_shape_lines(
         ),
         format!("boot-media nvme namespace bytes={nvme_namespace_bytes}"),
         xhci,
+        hda,
         legacy_virtio,
         pci_virtio,
         virtio_net,
@@ -224,6 +239,7 @@ mod tests {
         let lines = super::device_shape_lines(
             VirtPlatformDeviceConfig {
                 xhci_present: false,
+                hda_present: false,
                 virtio_boot_media_present: false,
                 virtio_net_present: false,
                 virtio_gpu_present: false,

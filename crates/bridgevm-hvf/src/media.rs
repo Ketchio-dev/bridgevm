@@ -256,6 +256,7 @@ impl VirtBootMediaConfig {
         });
 
         cfg.platform_devices.xhci_present = !env_flag("BRIDGEVM_DISABLE_XHCI");
+        cfg.platform_devices.hda_present = env_flag("BRIDGEVM_HDA");
         let virtio_iso_present = !env_flag("BRIDGEVM_DISABLE_VIRTIO_ISO");
         cfg.platform_devices.virtio_boot_media_present = virtio_iso_present;
         cfg.platform_devices.virtio_net_present = env_flag("BRIDGEVM_VIRTIO_NET");
@@ -378,6 +379,7 @@ mod tests {
     fn clear_probe_disable_env() {
         for name in [
             "BRIDGEVM_DISABLE_XHCI",
+            "BRIDGEVM_HDA",
             "BRIDGEVM_DISABLE_VIRTIO_ISO",
             "BRIDGEVM_VIRTIO_NET",
             "BRIDGEVM_VIRTIO_GPU",
@@ -478,6 +480,7 @@ mod tests {
         let cfg = VirtBootMediaConfig::from_probe_env();
 
         assert!(!cfg.platform_devices.xhci_present);
+        assert!(!cfg.platform_devices.hda_present);
         assert!(!cfg.platform_devices.virtio_boot_media_present);
         assert!(!cfg.platform_devices.virtio_net_present);
         assert!(!cfg.platform_devices.legacy_virtio_mmio_present);
@@ -515,6 +518,18 @@ mod tests {
         let cfg = VirtBootMediaConfig::from_probe_env();
 
         assert!(cfg.platform_devices.virtio_net_present);
+        clear_probe_disable_env();
+    }
+
+    #[test]
+    fn probe_env_enables_hda_when_truthy() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_probe_disable_env();
+        env::set_var("BRIDGEVM_HDA", "yes");
+
+        let cfg = VirtBootMediaConfig::from_probe_env();
+
+        assert!(cfg.platform_devices.hda_present);
         clear_probe_disable_env();
     }
 

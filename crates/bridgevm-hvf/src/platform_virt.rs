@@ -34,6 +34,7 @@ use crate::fwcfg::{
     FwCfg, GuestMemoryMut, KEY_CMDLINE_DATA, KEY_CMDLINE_SIZE, KEY_INITRD_DATA, KEY_INITRD_SIZE,
     KEY_KERNEL_DATA, KEY_KERNEL_SIZE,
 };
+use crate::hda::HdaController;
 use crate::machine::{self, Region};
 use crate::msix::MsixMessage;
 use crate::net_nat::{HostSocketOutboundIpv4Handler, NatBackend, NatStats};
@@ -41,8 +42,9 @@ use crate::nvme::{
     NvmeCommandTrace, NvmeCompletionEvent, NvmeController, REG_CC, REG_DOORBELL_BASE,
 };
 use crate::pcie::{
-    CfgAddr, PcieEcam, PcieEcamConfig, PcieMmioTarget, PciePioTarget, NVME_BDF, VIRTIO_BLK_BDF,
-    VIRTIO_CONSOLE_BDF, VIRTIO_GPU_BDF, VIRTIO_GPU_DEVICE_ID, VIRTIO_NET_BDF, XHCI_BDF,
+    CfgAddr, PcieEcam, PcieEcamConfig, PcieMmioTarget, PciePioTarget, HDA_BDF, NVME_BDF,
+    VIRTIO_BLK_BDF, VIRTIO_CONSOLE_BDF, VIRTIO_GPU_BDF, VIRTIO_GPU_DEVICE_ID, VIRTIO_NET_BDF,
+    XHCI_BDF,
 };
 use crate::pflash::P30NorFlash;
 use crate::pl011::Pl011;
@@ -184,6 +186,7 @@ fn env_flag(name: &str) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VirtPlatformDeviceConfig {
     pub xhci_present: bool,
+    pub hda_present: bool,
     pub virtio_boot_media_present: bool,
     pub virtio_net_present: bool,
     pub virtio_gpu_present: bool,
@@ -198,6 +201,7 @@ impl Default for VirtPlatformDeviceConfig {
     fn default() -> Self {
         Self {
             xhci_present: true,
+            hda_present: false,
             virtio_boot_media_present: true,
             virtio_net_present: false,
             virtio_gpu_present: false,
@@ -406,6 +410,7 @@ pub struct VirtPlatform {
     pcie: PcieEcam,
     nvme: NvmeController,
     xhci: XhciController,
+    hda: Option<HdaController>,
     virtio_iso: Option<VirtioMmioBlock>,
     pci_boot_media: Option<VirtioPciBlock>,
     virtio_net: Option<VirtioPciNet<PlatformNetBackend>>,
@@ -490,6 +495,7 @@ impl VirtPlatform {
             rtc: Pl031::new(),
             pcie: PcieEcam::new_with_config(PcieEcamConfig {
                 xhci_present: config.devices.xhci_present,
+                hda_present: config.devices.hda_present,
                 virtio_blk_present: config.devices.virtio_boot_media_present,
                 virtio_net_present: config.devices.virtio_net_present,
                 virtio_gpu_present: config.devices.virtio_gpu_present,
@@ -499,6 +505,7 @@ impl VirtPlatform {
             }),
             nvme,
             xhci: XhciController::new(),
+            hda: config.devices.hda_present.then(HdaController::new),
             virtio_iso: None,
             pci_boot_media: None,
             virtio_net: config.devices.virtio_net_present.then(|| {
@@ -563,6 +570,10 @@ impl VirtPlatform {
             .pci_boot_media
             .as_ref()
             .is_some_and(VirtioPciBlock::interrupt_line_level);
+        let hda_irq_was_high = self
+            .hda
+            .as_ref()
+            .is_some_and(HdaController::interrupt_level);
         self.fw_cfg.reset_runtime_state();
         if self.devices.ramfb_present {
             self.fw_cfg.reset_file_bytes(RAMFB_FW_CFG_FILE, 0);
@@ -571,6 +582,7 @@ impl VirtPlatform {
         self.rtc = Pl031::new();
         self.pcie = PcieEcam::new_with_config(PcieEcamConfig {
             xhci_present: self.devices.xhci_present,
+            hda_present: self.devices.hda_present,
             virtio_blk_present: self.devices.virtio_boot_media_present,
             virtio_net_present: self.devices.virtio_net_present,
             virtio_gpu_present: self.devices.virtio_gpu_present,
@@ -580,6 +592,9 @@ impl VirtPlatform {
         });
         self.nvme.reset_registers_keep_disks();
         self.xhci = XhciController::new();
+        if self.devices.hda_present {
+            self.hda = Some(HdaController::new());
+        }
         self.ramfb = Ramfb::new();
         self.flash_vars.reset_runtime_state();
         if let Some(dev) = self.virtio_iso.as_mut() {
@@ -605,7 +620,9 @@ impl VirtPlatform {
                 false,
             ));
         }
-        if pci_boot_media_irq_was_high && self.devices.virtio_boot_media_present {
+        if (pci_boot_media_irq_was_high || hda_irq_was_high)
+            && (self.devices.virtio_boot_media_present || self.devices.hda_present)
+        {
             self.pending_spi_levels
                 .push((machine::spi_to_intid(machine::SPI_PCIE_INTA), false));
         }
@@ -1328,6 +1345,7 @@ impl VirtPlatform {
         }
         match (target.bdf, target.bar_index) {
             (NVME_BDF, 0) => self.nvme_access(target.offset, op, mem),
+            (HDA_BDF, 0) => self.hda_access(target.offset, op, mem),
             (XHCI_BDF, 0) => match op {
                 MmioOp::Read { size } => {
                     MmioOutcome::ReadValue(self.xhci.mmio_read(target.offset, size))
@@ -1380,14 +1398,16 @@ impl VirtPlatform {
         let Some(dev) = self.pci_boot_media.as_mut() else {
             return MmioOutcome::KnownUnimplemented("virtio-blk-pci");
         };
-        let old_irq = dev.interrupt_line_level();
+        let old_irq = dev.interrupt_line_level()
+            || self.hda.as_ref().is_some_and(HdaController::interrupt_level);
         let result = match op {
             MmioOp::Read { size } => dev.access(offset, VirtioPciBlockOp::Read { size }, mem),
             MmioOp::Write { size, value } => {
                 dev.access(offset, VirtioPciBlockOp::Write { size, value }, mem)
             }
         };
-        let new_irq = dev.interrupt_line_level();
+        let new_irq = dev.interrupt_line_level()
+            || self.hda.as_ref().is_some_and(HdaController::interrupt_level);
         if old_irq != new_irq {
             self.pending_spi_levels
                 .push((machine::spi_to_intid(machine::SPI_PCIE_INTA), new_irq));
@@ -1535,7 +1555,8 @@ impl VirtPlatform {
         let Some(dev) = self.pci_boot_media.as_mut() else {
             return MmioOutcome::KnownUnimplemented("virtio-blk-pci");
         };
-        let old_irq = dev.interrupt_line_level();
+        let old_irq = dev.interrupt_line_level()
+            || self.hda.as_ref().is_some_and(HdaController::interrupt_level);
         let result = match op {
             MmioOp::Read { size } => {
                 dev.legacy_io_access(offset, VirtioPciBlockOp::Read { size }, mem)
@@ -1544,7 +1565,8 @@ impl VirtPlatform {
                 dev.legacy_io_access(offset, VirtioPciBlockOp::Write { size, value }, mem)
             }
         };
-        let new_irq = dev.interrupt_line_level();
+        let new_irq = dev.interrupt_line_level()
+            || self.hda.as_ref().is_some_and(HdaController::interrupt_level);
         if old_irq != new_irq {
             self.pending_spi_levels
                 .push((machine::spi_to_intid(machine::SPI_PCIE_INTA), new_irq));
@@ -1572,6 +1594,44 @@ impl VirtPlatform {
                 self.flush_nvme_pending_msix();
                 MmioOutcome::WriteAck
             }
+        }
+    }
+
+    fn hda_access(
+        &mut self,
+        offset: u64,
+        op: MmioOp,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> MmioOutcome {
+        let old_irq = self.pci_inta_level();
+        let outcome = {
+            let Some(hda) = self.hda.as_mut() else {
+                return MmioOutcome::KnownUnimplemented("intel-hda");
+            };
+            match op {
+                MmioOp::Read { size } => MmioOutcome::ReadValue(hda.mmio_read(offset, size)),
+                MmioOp::Write { size, value } => {
+                    hda.mmio_write(offset, size, value, mem);
+                    MmioOutcome::WriteAck
+                }
+            }
+        };
+        self.queue_pci_inta_change(old_irq);
+        outcome
+    }
+
+    fn pci_inta_level(&self) -> bool {
+        self.pci_boot_media
+            .as_ref()
+            .is_some_and(VirtioPciBlock::interrupt_line_level)
+            || self.hda.as_ref().is_some_and(HdaController::interrupt_level)
+    }
+
+    fn queue_pci_inta_change(&mut self, old_level: bool) {
+        let new_level = self.pci_inta_level();
+        if old_level != new_level {
+            self.pending_spi_levels
+                .push((machine::spi_to_intid(machine::SPI_PCIE_INTA), new_level));
         }
     }
 
@@ -1647,6 +1707,16 @@ impl VirtPlatform {
             dev.drain_completed_fences(mem);
             self.flush_virtio_gpu_pending_msix();
         }
+    }
+
+    /// Advance the host-clock-paced HDA playback stream and deliver legacy
+    /// INTA level changes caused by IOC or DMA errors.
+    pub fn poll_hda(&mut self, mem: &mut dyn GuestMemoryMut) {
+        let old_irq = self.pci_inta_level();
+        if let Some(hda) = self.hda.as_mut() {
+            hda.poll(mem, self.host_now);
+        }
+        self.queue_pci_inta_change(old_irq);
     }
 
     fn flush_virtio_gpu_pending_msix(&mut self) {
@@ -4507,6 +4577,57 @@ mod tests {
         assert_eq!(
             virtio_gpu_3d_scanout_readback_interval_from_value(Some("0")),
             Duration::ZERO
+        );
+    }
+
+    #[test]
+    fn opt_in_hda_pci_bar_routes_controller_mmio() {
+        let mut p = platform_with_devices(VirtPlatformDeviceConfig {
+            hda_present: true,
+            ..VirtPlatformDeviceConfig::default()
+        });
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x10000);
+        let bar = machine::PCIE_MMIO_32.base + 0x70_000;
+        let cfg = |reg| pcie_cfg_gpa(crate::pcie::HDA_BDF.1, crate::pcie::HDA_BDF.2, reg);
+
+        assert_eq!(
+            p.on_mmio(cfg(crate::pcie::REG_VENDOR_DEVICE), MmioOp::Read { size: 4 }, &mut mem),
+            MmioOutcome::ReadValue(0x2668_8086)
+        );
+        assert_eq!(
+            p.on_mmio(
+                cfg(crate::pcie::REG_BAR0),
+                MmioOp::Write { size: 4, value: bar },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(
+                cfg(crate::pcie::REG_COMMAND_STATUS),
+                MmioOp::Write {
+                    size: 2,
+                    value: u64::from(crate::pcie::CMD_MEMORY_SPACE | crate::pcie::CMD_BUS_MASTER),
+                },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(bar + crate::hda::REG_GCAP, MmioOp::Read { size: 2 }, &mut mem),
+            MmioOutcome::ReadValue(0x1001)
+        );
+        assert_eq!(
+            p.on_mmio(
+                bar + crate::hda::REG_GCTL,
+                MmioOp::Write { size: 4, value: 1 },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(bar + crate::hda::REG_STATESTS, MmioOp::Read { size: 2 }, &mut mem),
+            MmioOutcome::ReadValue(1)
         );
     }
 }
