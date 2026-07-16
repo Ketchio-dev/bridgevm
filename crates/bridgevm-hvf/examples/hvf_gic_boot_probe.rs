@@ -113,6 +113,9 @@ mod live_display_export;
 use live_display_export::LiveDisplayExporter;
 #[path = "hvf_gic_boot_probe/live_input.rs"]
 mod live_input;
+
+#[path = "hvf_gic_boot_probe/vblank_wake.rs"]
+mod vblank_wake;
 use live_input::LiveInputController;
 #[path = "hvf_gic_boot_probe/serial_input.rs"]
 mod serial_input;
@@ -3896,6 +3899,13 @@ checkpoint_glue::restore_if_requested(
         // the previous generation's ticker into a bogus "watchdog (CANCELED)"
         // stop — live-observed as the reboot loop dying at reboot 1/8.)
         let mut agent_service_wake = agent_console::ServiceWake::new();
+        // Same probe-lifetime rule as ServiceWake above; the wake-state Arc is
+        // shared with the virtio-gpu device and survives platform resets.
+        let mut gpu_vblank_wake = vblank_wake::VblankWake::new();
+        let gpu_vblank_wake_state = platform
+            .lock()
+            .expect("platform mutex for vblank wake state")
+            .virtio_gpu_vblank_wake();
 
         'reboot: loop {
             // Secondary vCPUs are intentionally scoped to one boot generation in
@@ -4039,6 +4049,7 @@ checkpoint_glue::restore_if_requested(
             let mut redist_hi = 0u64;
             let mut exits = 0u64;
             let mut vtimer_exits = 0u64;
+            let mut surplus_canceled_exits = 0u64;
             let mut psci_calls = 0u64;
             let mut last_pc = 0u64;
             let mut last_pre_run_pc: u64;
@@ -4078,6 +4089,9 @@ checkpoint_glue::restore_if_requested(
             });
             if let Some(interval) = service_wake_interval {
                 agent_service_wake.ensure_started(vcpu, interval);
+            }
+            if let Some(state) = gpu_vblank_wake_state.as_ref() {
+                gpu_vblank_wake.ensure_started(vcpu, Arc::clone(state));
             }
             let mut serial_stop_scans = SerialStopScans::default();
             let mut stop_reason;
@@ -4144,17 +4158,28 @@ checkpoint_glue::restore_if_requested(
                     setup_input_host_wake.canceled_by_host_wake(reason, &watchdog_fired);
                 let service_wake_canceled =
                     agent_service_wake.canceled_by_service_wake(reason, &watchdog_fired);
-                let automation_tick_canceled =
-                    sample_tick_canceled || setup_input_wake_canceled || service_wake_canceled;
+                let vblank_wake_canceled =
+                    gpu_vblank_wake.canceled_by_vblank_wake(reason, &watchdog_fired);
+                let automation_tick_canceled = sample_tick_canceled
+                    || setup_input_wake_canceled
+                    || service_wake_canceled
+                    || vblank_wake_canceled;
                 if reason == EXIT_CANCELED && !automation_tick_canceled {
-                    hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
-                    stop_reason = if watchdog_enabled {
-                        "watchdog (CANCELED)"
-                    } else {
-                        "unexpected CANCELED exit (watchdog disabled)"
+                    // Two automation wakes can merge into ONE canceled exit
+                    // (both hv_vcpus_exit calls land while the vCPU is still
+                    // in guest mode); that single exit consumes BOTH fired
+                    // flags above, and the second, sticky cancel then arrives
+                    // with no flag left to claim it. Attributing such surplus
+                    // cancels to the watchdog killed live boots (b2 86s,
+                    // b5 258s). Only the watchdog's own flag identifies a real
+                    // watchdog stop; an unclaimed cancel without it is benign.
+                    if watchdog_fired.load(Ordering::SeqCst) {
+                        hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
+                        stop_reason = "watchdog (CANCELED)".into();
+                        break;
                     }
-                    .into();
-                    break;
+                    surplus_canceled_exits += 1;
+                    continue;
                 }
                 if !automation_tick_canceled && reason == EXIT_VTIMER {
                     hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
@@ -4880,7 +4905,7 @@ checkpoint_glue::checkpoint_if_requested(
             println!("=== EDK2 boot probe (with Apple hv_gic) ===");
             println!("stop: {stop_reason}");
             println!(
-                "exits: {exits} (vtimer {vtimer_exits}, psci {psci_calls}), last PC: {last_pc:#x}"
+                "exits: {exits} (vtimer {vtimer_exits}, psci {psci_calls}, surplus-canceled {surplus_canceled_exits}), last PC: {last_pc:#x}"
             );
             boot_timer.print_summary(boot_timer_elapsed, exits, &secondary_exit_counts);
             drain_stats.print_summary();

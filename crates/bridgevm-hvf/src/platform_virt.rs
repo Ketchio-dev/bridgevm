@@ -24,6 +24,7 @@ mod bootorder;
 use std::{
     io,
     path::Path,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -56,7 +57,8 @@ use crate::virtio_console::{
     VirtioConsoleResult, VirtioConsoleStats, VirtioPciConsole, VirtioPciConsoleOp,
 };
 use crate::virtio_gpu::{
-    VirtioGpuResult, VirtioGpuScanout, VirtioGpuStats, VirtioPciGpu, VirtioPciGpuOp,
+    VblankWakeState, VirtioGpuResult, VirtioGpuScanout, VirtioGpuStats, VirtioPciGpu,
+    VirtioPciGpuOp,
 };
 use crate::virtio_gpu_3d::GpuShmMapPort;
 use crate::virtio_net::{
@@ -120,6 +122,7 @@ fn configure_virtio_gpu_vblank(gpu: &mut VirtioPciGpu) {
     let interval = virtio_gpu_vblank_interval_from_value(value.as_deref());
     gpu.set_vblank_interval(interval);
     if !interval.is_zero() {
+        gpu.set_vblank_wake(Arc::new(VblankWakeState::new()));
         eprintln!(
             "virtio-gpu: host vblank pacing interval={}ns",
             interval.as_nanos()
@@ -717,6 +720,14 @@ impl VirtPlatform {
 
     pub fn virtio_gpu_scanout(&self) -> Option<VirtioGpuScanout<'_>> {
         self.virtio_gpu.as_ref().and_then(VirtioPciGpu::scanout)
+    }
+
+    /// Wake signal for the host vblank waker thread; `Some` only when
+    /// `BRIDGEVM_VBLANK_HZ` pacing is active on the virtio-gpu device.
+    pub fn virtio_gpu_vblank_wake(&self) -> Option<Arc<VblankWakeState>> {
+        self.virtio_gpu
+            .as_ref()
+            .and_then(VirtioPciGpu::vblank_wake)
     }
 
     pub fn set_virtio_gpu_shm_map_port(&mut self, port: Box<dyn GpuShmMapPort>) -> bool {

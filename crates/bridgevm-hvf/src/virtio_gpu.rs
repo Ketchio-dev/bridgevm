@@ -10,7 +10,8 @@ use std::sync::OnceLock;
 use std::fs::{File, OpenOptions};
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::{
@@ -145,6 +146,61 @@ pub struct VirtioGpuScanout<'a> {
     pub fourcc: u32,
 }
 
+/// Lock-free wake signal for host vblank pacing. The device (behind the
+/// platform mutex, on a vCPU thread) publishes "a parked vsync NOP exists and
+/// becomes due at `deadline_ns`"; a host waker thread reads it WITHOUT any
+/// lock and forces a vCPU exit only when the deadline has passed, so the
+/// per-exit drain retires the NOP even while the guest idles in WFI. This is
+/// the piece the earlier host-pacing attempts lacked: a host thread must never
+/// contend for the platform mutex (vCPU threads hold it almost continuously
+/// under 3D load), and it must never force exits unconditionally (exit storm).
+#[derive(Debug)]
+pub struct VblankWakeState {
+    base: Instant,
+    parked: AtomicBool,
+    deadline_ns: AtomicU64,
+}
+
+impl VblankWakeState {
+    pub fn new() -> Self {
+        Self {
+            base: Instant::now(),
+            parked: AtomicBool::new(false),
+            deadline_ns: AtomicU64::new(0),
+        }
+    }
+
+    fn publish(&self, parked: bool, deadline: Option<Instant>) {
+        let deadline_ns = deadline
+            .map(|d| u64::try_from(d.saturating_duration_since(self.base).as_nanos()).unwrap_or(u64::MAX))
+            .unwrap_or(0);
+        self.deadline_ns.store(deadline_ns, Ordering::SeqCst);
+        self.parked.store(parked, Ordering::SeqCst);
+    }
+
+    pub fn parked(&self) -> bool {
+        self.parked.load(Ordering::SeqCst)
+    }
+
+    /// Time remaining until the parked NOP is due, `Duration::ZERO` when due
+    /// now, or `None` when nothing is parked.
+    pub fn time_to_deadline(&self, now: Instant) -> Option<Duration> {
+        if !self.parked() {
+            return None;
+        }
+        let deadline_ns = self.deadline_ns.load(Ordering::SeqCst);
+        let now_ns =
+            u64::try_from(now.saturating_duration_since(self.base).as_nanos()).unwrap_or(u64::MAX);
+        Some(Duration::from_nanos(deadline_ns.saturating_sub(now_ns)))
+    }
+}
+
+impl Default for VblankWakeState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug)]
 pub struct VirtioGpu {
     width: u32,
@@ -184,6 +240,7 @@ pub struct VirtioGpu {
     vblank_interval: Duration,
     last_vblank: Option<Instant>,
     vblank_paced_count: u64,
+    vblank_wake: Option<Arc<VblankWakeState>>,
     scanout_readback_interval: Duration,
     last_3d_scanout_readback: Option<Instant>,
     scanout_3d_flush_count: u64,
@@ -393,6 +450,7 @@ impl VirtioGpu {
             vblank_interval: Duration::ZERO,
             last_vblank: None,
             vblank_paced_count: 0,
+            vblank_wake: None,
             scanout_readback_interval: Duration::ZERO,
             last_3d_scanout_readback: None,
             scanout_3d_flush_count: 0,
@@ -421,6 +479,7 @@ impl VirtioGpu {
     pub fn set_vblank_interval(&mut self, interval: Duration) {
         self.vblank_interval = interval;
         self.last_vblank = None;
+        self.publish_vblank_wake();
         let enabled = !interval.is_zero();
         let interval_ns = interval.as_nanos();
         self.record_trace_fields("vblank_pacing_config", |fields| {
@@ -429,6 +488,26 @@ impl VirtioGpu {
                 ",\"enabled\":{enabled},\"interval_ns\":{interval_ns}"
             );
         });
+    }
+
+    /// Share the lock-free wake signal a host waker thread polls to bound
+    /// vblank retire latency while the guest idles (no vCPU exits).
+    pub fn set_vblank_wake(&mut self, wake: Arc<VblankWakeState>) {
+        self.vblank_wake = Some(wake);
+        self.publish_vblank_wake();
+    }
+
+    pub fn vblank_wake(&self) -> Option<Arc<VblankWakeState>> {
+        self.vblank_wake.clone()
+    }
+
+    fn publish_vblank_wake(&self) {
+        let Some(wake) = self.vblank_wake.as_ref() else {
+            return;
+        };
+        let parked = !self.vblank_interval.is_zero() && !self.pending_vblank.is_empty();
+        let deadline = self.last_vblank.map(|last| last + self.vblank_interval);
+        wake.publish(parked, deadline);
     }
 
     pub fn set_3d_scanout_readback_interval(&mut self, interval: Duration) {
@@ -512,6 +591,7 @@ impl VirtioGpu {
         self.trace_fields_scratch.clear();
         self.last_vblank = None;
         self.vblank_paced_count = 0;
+        self.publish_vblank_wake();
         self.last_3d_scanout_readback = None;
         self.scanout_3d_flush_count = 0;
         self.scanout_readback_attempt_count = 0;
@@ -1017,6 +1097,7 @@ impl VirtioGpu {
                 descs,
                 response,
             });
+            self.publish_vblank_wake();
             request.clear();
             self.request_scratch = request;
             self.response_scratch = Vec::new();
@@ -1236,8 +1317,21 @@ impl VirtioGpu {
             used_len,
         );
         self.mark_queue_interrupt(pending_response.queue_index);
-        self.last_vblank = Some(now);
+        // Anchor the next deadline on the absolute schedule, not the (late)
+        // retire time, so wake/drain latency does not accumulate into a lower
+        // long-run rate. Re-anchor at `now` only after a gap of more than one
+        // interval (guest asleep) — never catch up in a burst.
+        self.last_vblank = Some(match self.last_vblank {
+            Some(last)
+                if now.saturating_duration_since(last + self.vblank_interval)
+                    <= self.vblank_interval =>
+            {
+                last + self.vblank_interval
+            }
+            _ => now,
+        });
         self.vblank_paced_count = self.vblank_paced_count.saturating_add(1);
+        self.publish_vblank_wake();
 
         let count = self.vblank_paced_count;
         let interval_ns = self.vblank_interval.as_nanos();
@@ -2082,6 +2176,14 @@ impl VirtioPciGpu {
 
     pub fn set_vblank_interval(&mut self, interval: Duration) {
         self.gpu.set_vblank_interval(interval);
+    }
+
+    pub fn set_vblank_wake(&mut self, wake: Arc<VblankWakeState>) {
+        self.gpu.set_vblank_wake(wake);
+    }
+
+    pub fn vblank_wake(&self) -> Option<Arc<VblankWakeState>> {
+        self.gpu.vblank_wake()
     }
 
     pub fn set_3d_scanout_readback_interval(&mut self, interval: Duration) {
@@ -5798,6 +5900,90 @@ mod tests {
         );
         assert_eq!(dev.stats().vblank_paced_count, 3);
         assert!(dev.gpu.pending_vblank.is_empty());
+    }
+
+    #[test]
+    fn host_vblank_wake_state_tracks_parking_and_the_absolute_schedule() {
+        let (mut dev, _backend) = dev_with_mock();
+        let interval = Duration::from_millis(8);
+        dev.set_vblank_interval(interval);
+        let wake = std::sync::Arc::new(VblankWakeState::new());
+        dev.set_vblank_wake(std::sync::Arc::clone(&wake));
+        assert!(!wake.parked());
+        assert_eq!(wake.time_to_deadline(Instant::now()), None);
+
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+        let request = submit_3d_req(0, &[]);
+        let (_, used_idx) = submit_control_readable_descs_at(
+            &mut dev,
+            &mut mem,
+            &[&request],
+            24,
+            0x4000_1000,
+            0x4000_4000,
+            0x4000_9000,
+        );
+        assert_eq!(used_idx, 0);
+        let (_, used_idx) = submit_control_readable_descs_at(
+            &mut dev,
+            &mut mem,
+            &[&request],
+            24,
+            0x4000_1400,
+            0x4000_6000,
+            0x4000_a000,
+        );
+        assert_eq!(used_idx, 0);
+
+        // Parked with no schedule anchor yet: due immediately so the waker
+        // fires and the first retire establishes the anchor.
+        assert!(wake.parked());
+        assert_eq!(
+            wake.time_to_deadline(Instant::now()),
+            Some(Duration::ZERO)
+        );
+
+        let base = Instant::now();
+        dev.gpu.drain_host_vblank_at(&mut mem, base);
+        assert!(wake.parked());
+        assert_eq!(wake.time_to_deadline(base), Some(interval));
+
+        // Retire the second NOP half an interval LATE: the next deadline must
+        // come from the absolute schedule (base + 2*interval), not from the
+        // late retire time, so wake/drain latency cannot lower the long-run
+        // pacing rate.
+        let late = base + interval + interval / 2;
+        dev.gpu.drain_host_vblank_at(&mut mem, late);
+        assert!(!wake.parked());
+        assert_eq!(wake.time_to_deadline(late), None);
+
+        // The two earlier retires advanced the used index to 2; the third NOP
+        // parks again without adding a used entry.
+        let (_, used_idx) = submit_control_readable_descs_at(
+            &mut dev,
+            &mut mem,
+            &[&request],
+            24,
+            0x4000_1800,
+            0x4000_8000,
+            0x4000_b000,
+        );
+        assert_eq!(used_idx, 2);
+        assert_eq!(dev.gpu.pending_vblank.len(), 1);
+        assert!(wake.parked());
+        assert_eq!(
+            wake.time_to_deadline(base + interval * 2),
+            Some(Duration::ZERO)
+        );
+        assert_eq!(
+            wake.time_to_deadline(base + interval + interval * 3 / 4),
+            Some(interval / 4)
+        );
+
+        // Device reset drops parked NOPs and must quiesce the waker.
+        dev.reset_runtime_state();
+        assert!(!wake.parked());
+        assert_eq!(wake.time_to_deadline(Instant::now()), None);
     }
 
     #[test]
