@@ -289,6 +289,14 @@ build_installed_boot_env_args() {
       'BRIDGEVM_VIRTIO_GPU_3D=1'
       "BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=$(virtio_gpu_3d_runtime_protocol)"
     )
+    # The venus (Vulkan-passthrough) host backend needs MoltenVK loaded in
+    # process and a BAR2 sized so EDK2 can still assign it. The virgl path
+    # needs neither. Only wire these for the venus protocol; a caller-supplied
+    # value wins (venus prefix / alt MoltenVK).
+    if [[ "$(virtio_gpu_3d_runtime_protocol)" == "venus" ]]; then
+      ENV_ARGS+=("BRIDGEVM_VULKAN_LIB=${BRIDGEVM_VULKAN_LIB:-/opt/homebrew/lib/libMoltenVK.dylib}")
+      ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB=${BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB:-64}")
+    fi
     if [[ -n "${VIRTIO_GPU_PCI_DEVICE_ID:-}" ]]; then
       ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID=0x$VIRTIO_GPU_PCI_DEVICE_ID")
     else
