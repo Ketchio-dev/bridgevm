@@ -15,31 +15,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{
-    fwcfg::GuestMemoryMut,
-    msix::{MsixMessage, MsixTable},
-};
+use crate::{fwcfg::GuestMemoryMut, msix::MsixMessage};
 
 pub const BAR_SIZE: u32 = 0x4000;
-/// HDA exposes a single message because its native register model has one
-/// aggregate interrupt output and no guest-programmable source/vector mapping.
-pub const MSIX_VECTOR_COUNT: u16 = 1;
-pub const MSIX_TABLE_OFFSET: u32 = 0x0000;
-pub const MSIX_PBA_OFFSET: u32 = 0x0800;
-
-const MSIX_CONTROLLER_VECTOR: u16 = 0;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HdaPciOp {
-    Read { size: u8 },
-    Write { size: u8, value: u64 },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HdaPciResult {
-    ReadValue(u64),
-    WriteAck,
-}
+const MSI_CONTROLLER_VECTOR: u16 = 0;
 
 pub const REG_GCAP: u64 = 0x00;
 pub const REG_GCTL: u64 = 0x08;
@@ -189,9 +168,8 @@ pub struct HdaController {
     last_poll: Option<Instant>,
     byte_time_remainder: u64,
     pcm_out: Option<File>,
-    msix: MsixTable,
-    asserted_msix_vectors: u8,
-    pending_msix_vectors: u8,
+    interrupt_asserted: bool,
+    interrupt_pending: bool,
 }
 
 impl std::fmt::Debug for HdaController {
@@ -207,8 +185,8 @@ impl std::fmt::Debug for HdaController {
             .field("rirb_wp", &self.rirb_wp)
             .field("stream", &self.stream)
             .field("pcm_out", &self.pcm_out.is_some())
-            .field("asserted_msix_vectors", &self.asserted_msix_vectors)
-            .field("pending_msix_vectors", &self.pending_msix_vectors)
+            .field("interrupt_asserted", &self.interrupt_asserted)
+            .field("interrupt_pending", &self.interrupt_pending)
             .finish()
     }
 }
@@ -267,9 +245,8 @@ impl HdaController {
             last_poll: None,
             byte_time_remainder: 0,
             pcm_out,
-            msix: MsixTable::new(MSIX_VECTOR_COUNT),
-            asserted_msix_vectors: 0,
-            pending_msix_vectors: 0,
+            interrupt_asserted: false,
+            interrupt_pending: false,
         }
     }
 
@@ -277,83 +254,30 @@ impl HdaController {
         self.intctl & INTCTL_GIE != 0 && self.interrupt_sources() != 0
     }
 
-    pub fn msix_bar_access(&mut self, offset: u64, op: HdaPciOp) -> HdaPciResult {
-        if let Some(table_offset) = self.msix_table_offset(offset) {
-            return match op {
-                HdaPciOp::Read { size } => {
-                    HdaPciResult::ReadValue(self.msix.table_read(table_offset, size))
-                }
-                HdaPciOp::Write { size, value } => {
-                    self.msix.table_write(table_offset, size, value);
-                    HdaPciResult::WriteAck
-                }
-            };
-        }
-        if let Some(pba_offset) = self.msix_pba_offset(offset) {
-            return match op {
-                HdaPciOp::Read { size } => {
-                    HdaPciResult::ReadValue(self.msix.pba_read(pba_offset, size))
-                }
-                HdaPciOp::Write { size, value } => {
-                    self.msix.pba_write(pba_offset, size, value);
-                    HdaPciResult::WriteAck
-                }
-            };
-        }
-        match op {
-            HdaPciOp::Read { .. } => HdaPciResult::ReadValue(0),
-            HdaPciOp::Write { .. } => HdaPciResult::WriteAck,
-        }
-    }
-
-    pub fn drain_pending_msix_into(
+    /// Latch the controller's single aggregate interrupt source and, when the
+    /// enclosing PCI function has standard MSI enabled, emit one message using
+    /// the address/data programmed in PCI config space.
+    pub fn drain_pending_msi_into(
         &mut self,
-        function_enabled: bool,
-        function_masked: bool,
+        enabled: bool,
+        address: u64,
+        data: u32,
         out: &mut Vec<MsixMessage>,
     ) {
-        self.latch_pending_msix_vectors();
-        let start = out.len();
-        self.msix
-            .drain_pending_into(function_enabled, function_masked, out);
-        for message in &out[start..] {
-            self.pending_msix_vectors &= !(1u8 << message.vector);
+        let active = self.interrupt_level();
+        if active && !self.interrupt_asserted {
+            self.interrupt_pending = true;
         }
+        self.interrupt_asserted = active;
 
-        let mut pending = self.pending_msix_vectors;
-        while pending != 0 {
-            let vector = pending.trailing_zeros() as u16;
-            if let Some(message) = self.msix.raise(vector, function_enabled, function_masked) {
-                self.pending_msix_vectors &= !(1u8 << vector);
-                out.push(message);
-            }
-            pending &= !(1u8 << vector);
+        if enabled && self.interrupt_pending {
+            self.interrupt_pending = false;
+            out.push(MsixMessage {
+                vector: MSI_CONTROLLER_VECTOR,
+                address,
+                data,
+            });
         }
-    }
-
-    fn latch_pending_msix_vectors(&mut self) {
-        let active = self.active_msix_vectors();
-        self.pending_msix_vectors |= active & !self.asserted_msix_vectors;
-        self.asserted_msix_vectors = active;
-    }
-
-    fn active_msix_vectors(&self) -> u8 {
-        if self.intctl & INTCTL_GIE == 0 {
-            return 0;
-        }
-        (self.interrupt_sources() != 0)
-            .then_some(1 << MSIX_CONTROLLER_VECTOR)
-            .unwrap_or(0)
-    }
-
-    fn msix_table_offset(&self, offset: u64) -> Option<u64> {
-        let rel = offset.checked_sub(u64::from(MSIX_TABLE_OFFSET))?;
-        (rel < self.msix.table_byte_len()).then_some(rel)
-    }
-
-    fn msix_pba_offset(&self, offset: u64) -> Option<u64> {
-        let rel = offset.checked_sub(u64::from(MSIX_PBA_OFFSET))?;
-        (rel < self.msix.pba_byte_len()).then_some(rel)
     }
 
     pub fn mmio_read(&self, offset: u64, size: u8) -> u64 {
@@ -593,12 +517,8 @@ impl HdaController {
 
     fn controller_reset(&mut self) {
         let pcm_out = self.pcm_out.take();
-        // CRST resets the HDA register block, not the enclosing PCI function:
-        // keep the guest-programmed MSI-X table across controller resets.
-        let msix = std::mem::replace(&mut self.msix, MsixTable::new(MSIX_VECTOR_COUNT));
         *self = Self::with_pcm_output_path::<&Path>(None);
         self.pcm_out = pcm_out;
-        self.msix = msix;
     }
 
     fn write_stream_ctl(&mut self, next: u32) {
@@ -1037,46 +957,6 @@ mod tests {
         ))
     }
 
-    fn program_msix_vector(
-        ctrl: &mut HdaController,
-        vector: u16,
-        address: u64,
-        data: u32,
-        masked: bool,
-    ) {
-        let offset = u64::from(vector) * MsixTable::ENTRY_BYTES;
-        assert_eq!(
-            ctrl.msix_bar_access(
-                offset,
-                HdaPciOp::Write {
-                    size: 8,
-                    value: address,
-                },
-            ),
-            HdaPciResult::WriteAck
-        );
-        assert_eq!(
-            ctrl.msix_bar_access(
-                offset + 8,
-                HdaPciOp::Write {
-                    size: 4,
-                    value: u64::from(data),
-                },
-            ),
-            HdaPciResult::WriteAck
-        );
-        assert_eq!(
-            ctrl.msix_bar_access(
-                offset + 12,
-                HdaPciOp::Write {
-                    size: 4,
-                    value: u64::from(masked),
-                },
-            ),
-            HdaPciResult::WriteAck
-        );
-    }
-
     #[test]
     fn controller_reset_flow_and_register_semantics() {
         let mut ctrl = HdaController::with_pcm_output_path::<&Path>(None);
@@ -1261,29 +1141,23 @@ mod tests {
     }
 
     #[test]
-    fn controller_and_stream_sources_raise_the_hda_msix_vector() {
+    fn controller_and_stream_sources_raise_one_programmed_hda_msi() {
         let mut ctrl = HdaController::with_pcm_output_path::<&Path>(None);
         let mut mem = FlatGuestRam::new(RAM_BASE, 0x1000);
-        let message_address = 0x0808_2000;
-        program_msix_vector(&mut ctrl, 0, message_address, 0x41, true);
+        let message_address = 0x0000_0001_0808_2000;
 
         ctrl.rirb_sts = RIRBSTS_RINTFL;
         ctrl.rirb_ctl = RIRBCTL_RINTCTL;
         ctrl.intctl = INTCTL_GIE | INTCTL_CIE;
         let mut messages = Vec::new();
-        ctrl.drain_pending_msix_into(true, false, &mut messages);
-        assert!(messages.is_empty(), "masked vector must remain pending");
-        assert_eq!(
-            ctrl.msix_bar_access(u64::from(MSIX_PBA_OFFSET), HdaPciOp::Read { size: 8 }),
-            HdaPciResult::ReadValue(1)
-        );
+        ctrl.drain_pending_msi_into(false, message_address, 0x41, &mut messages);
+        assert!(messages.is_empty(), "disabled MSI must remain pending");
 
-        ctrl.msix_bar_access(12, HdaPciOp::Write { size: 4, value: 0 });
-        ctrl.drain_pending_msix_into(true, false, &mut messages);
+        ctrl.drain_pending_msi_into(true, message_address, 0x41, &mut messages);
         assert_eq!(
             messages,
             vec![MsixMessage {
-                vector: MSIX_CONTROLLER_VECTOR,
+                vector: MSI_CONTROLLER_VECTOR,
                 address: message_address,
                 data: 0x41,
             }]
@@ -1297,27 +1171,20 @@ mod tests {
             u64::from(RIRBSTS_RINTFL),
         );
         messages.clear();
-        ctrl.drain_pending_msix_into(true, false, &mut messages);
+        ctrl.drain_pending_msi_into(true, message_address, 0x41, &mut messages);
         assert!(messages.is_empty());
 
         ctrl.stream.sts = SDSTS_BCIS;
         ctrl.stream.ctl = SDCTL_IOCE;
         ctrl.intctl = INTCTL_GIE | INTCTL_STREAM0;
-        ctrl.drain_pending_msix_into(true, false, &mut messages);
+        ctrl.drain_pending_msi_into(true, message_address, 0x41, &mut messages);
         assert_eq!(
             messages,
             vec![MsixMessage {
-                vector: MSIX_CONTROLLER_VECTOR,
+                vector: MSI_CONTROLLER_VECTOR,
                 address: message_address,
                 data: 0x41,
             }]
-        );
-
-        write(&mut ctrl, &mut mem, REG_GCTL, 4, 0);
-        assert_eq!(
-            ctrl.msix_bar_access(0, HdaPciOp::Read { size: 8 }),
-            HdaPciResult::ReadValue(message_address),
-            "HDA CRST must not reset PCI MSI-X table programming"
         );
     }
 }

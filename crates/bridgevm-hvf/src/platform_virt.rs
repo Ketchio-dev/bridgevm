@@ -34,7 +34,7 @@ use crate::fwcfg::{
     FwCfg, GuestMemoryMut, KEY_CMDLINE_DATA, KEY_CMDLINE_SIZE, KEY_INITRD_DATA, KEY_INITRD_SIZE,
     KEY_KERNEL_DATA, KEY_KERNEL_SIZE,
 };
-use crate::hda::{HdaController, HdaPciOp, HdaPciResult};
+use crate::hda::HdaController;
 use crate::machine::{self, Region};
 use crate::msix::MsixMessage;
 use crate::net_nat::{HostSocketOutboundIpv4Handler, NatBackend, NatStats};
@@ -1307,7 +1307,7 @@ impl VirtPlatform {
                 self.pcie.cfg_write(ecam_offset, size, value);
                 self.flush_nvme_pending_msix();
                 self.flush_xhci_pending_msix();
-                self.flush_hda_pending_msix();
+                self.flush_hda_pending_msi();
                 self.flush_virtio_net_pending_msix();
                 self.flush_virtio_gpu_pending_msix();
                 self.flush_virtio_console_pending_msix();
@@ -1356,7 +1356,6 @@ impl VirtPlatform {
         match (target.bdf, target.bar_index) {
             (NVME_BDF, 0) => self.nvme_access(target.offset, op, mem),
             (HDA_BDF, 0) => self.hda_access(target.offset, op, mem),
-            (HDA_BDF, 1) => self.hda_msix_access(target.offset, op),
             (XHCI_BDF, 0) => match op {
                 MmioOp::Read { size } => {
                     MmioOutcome::ReadValue(self.xhci.mmio_read(target.offset, size))
@@ -1617,28 +1616,8 @@ impl VirtPlatform {
                 }
             }
         };
-        self.flush_hda_pending_msix();
+        self.flush_hda_pending_msi();
         outcome
-    }
-
-    fn hda_msix_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {
-        let Some(hda) = self.hda.as_mut() else {
-            return MmioOutcome::KnownUnimplemented("intel-hda-msix");
-        };
-        let is_write = matches!(op, MmioOp::Write { .. });
-        let result = match op {
-            MmioOp::Read { size } => hda.msix_bar_access(offset, HdaPciOp::Read { size }),
-            MmioOp::Write { size, value } => {
-                hda.msix_bar_access(offset, HdaPciOp::Write { size, value })
-            }
-        };
-        if is_write {
-            self.flush_hda_pending_msix();
-        }
-        match result {
-            HdaPciResult::ReadValue(value) => MmioOutcome::ReadValue(value),
-            HdaPciResult::WriteAck => MmioOutcome::WriteAck,
-        }
     }
 
     fn queue_nvme_completion_msix(&mut self) {
@@ -1715,26 +1694,27 @@ impl VirtPlatform {
         }
     }
 
-    /// Advance the host-clock-paced HDA playback stream and flush MSI-X raised
+    /// Advance the host-clock-paced HDA playback stream and flush standard MSI raised
     /// by IOC or DMA errors into the platform's pending-message aggregation.
     pub fn poll_hda(&mut self, mem: &mut dyn GuestMemoryMut) {
         if let Some(hda) = self.hda.as_mut() {
             hda.poll(mem, self.host_now);
         }
-        self.flush_hda_pending_msix();
+        self.flush_hda_pending_msi();
     }
 
-    fn flush_hda_pending_msix(&mut self) {
+    fn flush_hda_pending_msi(&mut self) {
         if !self.devices.hda_present {
             return;
         }
+        let config = self.pcie.hda_msi_config();
         let Some(hda) = self.hda.as_mut() else {
             return;
         };
-        let control = self.pcie.hda_msix_control();
-        hda.drain_pending_msix_into(
-            control.enabled,
-            control.function_masked,
+        hda.drain_pending_msi_into(
+            config.enabled,
+            config.address,
+            config.data,
             &mut self.pending_msix,
         );
     }
@@ -4652,14 +4632,13 @@ mod tests {
     }
 
     #[test]
-    fn poll_hda_routes_stream_ioc_through_msix_aggregation() {
+    fn poll_hda_routes_stream_ioc_through_standard_msi_aggregation() {
         let mut p = platform_with_devices(VirtPlatformDeviceConfig {
             hda_present: true,
             ..VirtPlatformDeviceConfig::default()
         });
         let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x10000);
         let hda_bar = machine::PCIE_MMIO_32.base + 0x70_000;
-        let msix_bar = hda_bar + u64::from(crate::pcie::HDA_BAR0_SIZE);
         let cfg = |reg| pcie_cfg_gpa(crate::pcie::HDA_BDF.1, crate::pcie::HDA_BDF.2, reg);
 
         assert_eq!(
@@ -4668,17 +4647,6 @@ mod tests {
                 MmioOp::Write {
                     size: 4,
                     value: hda_bar,
-                },
-                &mut mem,
-            ),
-            MmioOutcome::WriteAck
-        );
-        assert_eq!(
-            p.on_mmio(
-                cfg(crate::pcie::REG_BAR0 + 4),
-                MmioOp::Write {
-                    size: 4,
-                    value: msix_bar,
                 },
                 &mut mem,
             ),
@@ -4696,14 +4664,14 @@ mod tests {
             MmioOutcome::WriteAck
         );
 
-        let table_entry = msix_bar;
-        let message_address = 0x0808_4000;
+        let msi = u16::from(crate::pcie::HDA_MSI_CAP_OFFSET);
+        let message_address = 0x0000_0001_0808_4000u64;
         assert_eq!(
             p.on_mmio(
-                table_entry,
+                cfg(msi + 4),
                 MmioOp::Write {
-                    size: 8,
-                    value: message_address,
+                    size: 4,
+                    value: message_address as u32 as u64,
                 },
                 &mut mem,
             ),
@@ -4711,9 +4679,20 @@ mod tests {
         );
         assert_eq!(
             p.on_mmio(
-                table_entry + 8,
+                cfg(msi + 8),
                 MmioOp::Write {
                     size: 4,
+                    value: message_address >> 32,
+                },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(
+                cfg(msi + 12),
+                MmioOp::Write {
+                    size: 2,
                     value: 0x61,
                 },
                 &mut mem,
@@ -4722,22 +4701,10 @@ mod tests {
         );
         assert_eq!(
             p.on_mmio(
-                table_entry + 12,
-                MmioOp::Write { size: 4, value: 0 },
-                &mut mem,
-            ),
-            MmioOutcome::WriteAck
-        );
-        assert_eq!(
-            p.on_mmio(table_entry, MmioOp::Read { size: 8 }, &mut mem),
-            MmioOutcome::ReadValue(message_address)
-        );
-        assert_eq!(
-            p.on_mmio(
-                cfg(u16::from(crate::pcie::HDA_MSIX_CAP_OFFSET) + 2),
+                cfg(msi + 2),
                 MmioOp::Write {
                     size: 2,
-                    value: 0x8000,
+                    value: 0x0001,
                 },
                 &mut mem,
             ),
@@ -4786,7 +4753,7 @@ mod tests {
         );
         assert!(
             p.take_pending_spi_levels().is_empty(),
-            "HDA MSI-X must not touch legacy PCI INTA"
+            "enabled HDA MSI must not touch legacy PCI INTA"
         );
     }
 }

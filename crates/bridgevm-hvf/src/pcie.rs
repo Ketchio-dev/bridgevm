@@ -125,6 +125,14 @@ pub struct MsixFunctionControl {
     pub function_masked: bool,
 }
 
+/// Guest-programmed standard MSI state for the Intel HDA endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct HdaMsiConfig {
+    pub enabled: bool,
+    pub address: u64,
+    pub data: u32,
+}
+
 // ---- The host bridge identity (00:00.0) -------------------------------------
 
 /// Red Hat, Inc. — the vendor QEMU uses for its paravirtual root complex.
@@ -341,12 +349,14 @@ pub const HDA_BAR0_SIZE: u32 = crate::hda::BAR_SIZE;
 /// PCI endpoints rather than claiming a physical Intel board subsystem.
 pub const HDA_SUBSYSTEM_VENDOR_ID: u16 = 0x1af4;
 pub const HDA_SUBSYSTEM_ID: u16 = 0x1100;
-/// Dedicated MSI-X table/PBA memory BAR, leaving the HDA register BAR intact.
-pub const HDA_MSIX_BAR_SIZE: u32 = 0x1000;
-pub const HDA_MSIX_CAP_OFFSET: u8 = 0x40;
-pub const HDA_MSIX_VECTOR_COUNT: u16 = crate::hda::MSIX_VECTOR_COUNT;
-pub const HDA_MSIX_TABLE_OFFSET: u32 = crate::hda::MSIX_TABLE_OFFSET;
-pub const HDA_MSIX_PBA_OFFSET: u32 = crate::hda::MSIX_PBA_OFFSET;
+/// QEMU's intel-hda model and Windows hdaudbus.sys expect the standard MSI
+/// capability at this fixed absolute config-space offset.
+pub const HDA_MSI_CAP_OFFSET: u8 = 0x60;
+/// 64-bit, single-vector standard MSI capability. Message Control starts at
+/// 0x0080 (64-bit address capable, MSI disabled); address and data start zero.
+pub const HDA_MSI_CAP_BYTES: [u8; 14] = [
+    0x05, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
 
 /// The value an ECAM read returns when no device answers: all-ones. Firmware
 /// treats a `0xFFFF_FFFF` vendor/device read as "slot empty".
@@ -367,6 +377,8 @@ struct Function {
     bars: [Bar; NUM_BARS],
     /// Offset of the first capability in config space, or `0` for none.
     cap_ptr: u8,
+    /// PCI Interrupt Pin byte (0 = none, 1 = INTA, ...).
+    interrupt_pin: u8,
     /// Raw capability bytes addressed by `cap_ptr` (sparse, by byte offset).
     cap_bytes: Vec<(u16, u8)>,
 }
@@ -570,6 +582,7 @@ impl Function {
             command: 0,
             bars: [Bar::default(); NUM_BARS],
             cap_ptr: 0,
+            interrupt_pin: 0,
             cap_bytes: Vec::new(),
         }
     }
@@ -627,6 +640,7 @@ impl Function {
             command: 0,
             bars,
             cap_ptr: NVME_MSIX_CAP_OFFSET,
+            interrupt_pin: 0,
             cap_bytes,
         }
     }
@@ -661,6 +675,7 @@ impl Function {
             command: 0,
             bars,
             cap_ptr: caps.cap_ptr,
+            interrupt_pin: 0,
             cap_bytes,
         }
     }
@@ -694,6 +709,7 @@ impl Function {
             command: 0,
             bars,
             cap_ptr: caps.cap_ptr,
+            interrupt_pin: 0,
             cap_bytes,
         }
     }
@@ -742,6 +758,7 @@ impl Function {
             command: 0,
             bars,
             cap_ptr: caps.cap_ptr,
+            interrupt_pin: 0,
             cap_bytes,
         }
     }
@@ -775,6 +792,7 @@ impl Function {
             command: 0,
             bars,
             cap_ptr: caps.cap_ptr,
+            interrupt_pin: 0,
             cap_bytes,
         }
     }
@@ -811,6 +829,7 @@ impl Function {
             command: 0,
             bars,
             cap_ptr: XHCI_MSIX_CAP_OFFSET,
+            interrupt_pin: 0,
             cap_bytes,
         }
     }
@@ -818,18 +837,10 @@ impl Function {
     fn hda() -> Self {
         let mut bars = [Bar::default(); NUM_BARS];
         bars[0] = Bar::memory32(HDA_BAR0_SIZE);
-        bars[1] = Bar::memory32(HDA_MSIX_BAR_SIZE);
-        let msix = MsixCapability::new(
-            HDA_MSIX_VECTOR_COUNT,
-            1,
-            HDA_MSIX_TABLE_OFFSET,
-            HDA_MSIX_PBA_OFFSET,
-        );
-        let cap_bytes = msix
-            .to_bytes(0)
+        let cap_bytes = HDA_MSI_CAP_BYTES
             .into_iter()
             .enumerate()
-            .map(|(i, byte)| (u16::from(HDA_MSIX_CAP_OFFSET) + i as u16, byte))
+            .map(|(i, byte)| (u16::from(HDA_MSI_CAP_OFFSET) + i as u16, byte))
             .collect();
         Self {
             bdf: HDA_BDF,
@@ -838,7 +849,12 @@ impl Function {
             subsystem_ids: (u32::from(HDA_SUBSYSTEM_ID) << 16) | u32::from(HDA_SUBSYSTEM_VENDOR_ID),
             command: 0,
             bars,
-            cap_ptr: HDA_MSIX_CAP_OFFSET,
+            cap_ptr: HDA_MSI_CAP_OFFSET,
+            // MSI-only: our platform describes no legacy INTx GSI routing for
+            // PCI slots (all other functions are pin 0), so advertising INTA —
+            // as QEMU can, because it ships an ACPI _PRT — makes Windows try to
+            // reserve an unroutable IRQ line and fail with a resource conflict.
+            interrupt_pin: 0,
             cap_bytes,
         }
     }
@@ -883,6 +899,7 @@ impl Function {
             }
             REG_SUBSYSTEM_IDS => self.subsystem_ids,
             REG_CAP_PTR => u32::from(self.cap_ptr),
+            REG_INTERRUPT_LINE_PIN => u32::from(self.interrupt_pin) << 8,
             _ if (REG_BAR0..REG_BAR0 + (NUM_BARS as u16) * 4).contains(&reg) => {
                 let idx = ((reg - REG_BAR0) / 4) as usize;
                 self.bars[idx].read()
@@ -937,10 +954,14 @@ impl Function {
         }
     }
 
-    /// Handle writes into the MSI-X capability. Most fields are read-only; the
-    /// guest may only change Message Control bits 14 (function mask) and 15
-    /// (MSI-X enable).
+    /// Handle writes into a standard MSI or MSI-X capability. Standard MSI
+    /// exposes only Enable, the 64-bit message address, and Message Data as
+    /// writable. MSI-X exposes only function mask and enable here; its message
+    /// fields live in the device's MSI-X table BAR.
     fn write_capability_dword(&mut self, reg: u16, value: u32) -> bool {
+        if self.write_msi_capability_dword(reg, value) {
+            return true;
+        }
         let Some(cap) = self.msix_capability_offset() else {
             return false;
         };
@@ -975,6 +996,59 @@ impl Function {
         true
     }
 
+    fn write_msi_capability_dword(&mut self, reg: u16, value: u32) -> bool {
+        let Some(cap) = self.capability_offset(CAP_ID_MSI) else {
+            return false;
+        };
+        let cap_end = cap + HDA_MSI_CAP_BYTES.len() as u16;
+        if reg + 4 <= cap || reg >= cap_end {
+            return false;
+        }
+
+        for (byte, incoming) in value.to_le_bytes().into_iter().enumerate() {
+            let off = reg + byte as u16;
+            match off.checked_sub(cap) {
+                Some(2) => {
+                    let current = self.capability_byte(off);
+                    self.set_capability_byte(off, (current & !0x01) | (incoming & 0x01));
+                }
+                Some(4) => self.set_capability_byte(off, incoming & !0x03),
+                Some(5..=13) => self.set_capability_byte(off, incoming),
+                _ => {}
+            }
+        }
+        true
+    }
+
+    fn msi_config(&self) -> Option<HdaMsiConfig> {
+        let cap = self.capability_offset(CAP_ID_MSI)?;
+        let control = u16::from_le_bytes([
+            self.capability_byte(cap + 2),
+            self.capability_byte(cap + 3),
+        ]);
+        let address_low = u32::from_le_bytes([
+            self.capability_byte(cap + 4),
+            self.capability_byte(cap + 5),
+            self.capability_byte(cap + 6),
+            self.capability_byte(cap + 7),
+        ]);
+        let address_high = u32::from_le_bytes([
+            self.capability_byte(cap + 8),
+            self.capability_byte(cap + 9),
+            self.capability_byte(cap + 10),
+            self.capability_byte(cap + 11),
+        ]);
+        let data = u16::from_le_bytes([
+            self.capability_byte(cap + 12),
+            self.capability_byte(cap + 13),
+        ]);
+        Some(HdaMsiConfig {
+            enabled: control & 0x0001 != 0,
+            address: (u64::from(address_high) << 32) | u64::from(address_low),
+            data: u32::from(data),
+        })
+    }
+
     fn msix_control(&self) -> Option<MsixFunctionControl> {
         let control_off = self.msix_capability_offset()? + 2;
         let control = u16::from_le_bytes([
@@ -988,13 +1062,17 @@ impl Function {
     }
 
     fn msix_capability_offset(&self) -> Option<u16> {
+        self.capability_offset(CAP_ID_MSIX)
+    }
+
+    fn capability_offset(&self, capability_id: u8) -> Option<u16> {
         let mut cap = self.cap_ptr;
         for _ in 0..32 {
             if cap == 0 {
                 return None;
             }
             let off = u16::from(cap);
-            if self.capability_byte(off) == CAP_ID_MSIX {
+            if self.capability_byte(off) == capability_id {
                 return Some(off);
             }
             cap = self.capability_byte(off + 1);
@@ -1253,10 +1331,10 @@ impl PcieEcam {
             .unwrap_or_default()
     }
 
-    /// Function-level MSI-X control for the opt-in HDA endpoint.
-    pub fn hda_msix_control(&self) -> MsixFunctionControl {
+    /// Standard MSI programming for the opt-in HDA endpoint.
+    pub fn hda_msi_config(&self) -> HdaMsiConfig {
         self.function_at(HDA_BDF)
-            .and_then(Function::msix_control)
+            .and_then(Function::msi_config)
             .unwrap_or_default()
     }
 
@@ -1435,6 +1513,8 @@ fn insert(dword: u32, reg: u16, size: u8, value: u64) -> u32 {
 
 // ---- MSI-X capability builder -----------------------------------------------
 
+/// The standard MSI capability id (PCI capability list entry type `0x05`).
+pub const CAP_ID_MSI: u8 = 0x05;
 /// The MSI-X capability id (PCI capability list entry type `0x11`).
 pub const CAP_ID_MSIX: u8 = 0x11;
 
@@ -2863,31 +2943,24 @@ mod tests {
         );
         assert_eq!(
             ecam.cfg_read(bdf_ecam_offset(HDA_BDF, REG_INTERRUPT_LINE_PIN), 4),
-            0,
-            "MSI-X-only HDA must not request a legacy interrupt pin"
+            0x0,
+            "HDA advertises no INTx pin (MSI-only): our platform has no _PRT INTx routing"
         );
         let status = ecam.cfg_read(bdf_ecam_offset(HDA_BDF, REG_COMMAND_STATUS), 4);
         assert_ne!(status & (u64::from(STATUS_CAP_LIST) << 16), 0);
         assert_eq!(
             ecam.cfg_read(bdf_ecam_offset(HDA_BDF, REG_CAP_PTR), 1),
-            u64::from(HDA_MSIX_CAP_OFFSET)
+            u64::from(HDA_MSI_CAP_OFFSET)
         );
-        let msix = u16::from(HDA_MSIX_CAP_OFFSET);
+        let msi = u16::from(HDA_MSI_CAP_OFFSET);
         assert_eq!(
-            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, msix), 1),
-            u64::from(CAP_ID_MSIX)
-        );
-        assert_eq!(
-            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, msix + 2), 2),
-            u64::from(HDA_MSIX_VECTOR_COUNT - 1)
+            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, msi), 1),
+            u64::from(CAP_ID_MSI)
         );
         assert_eq!(
-            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, msix + 4), 4),
-            u64::from(HDA_MSIX_TABLE_OFFSET | 1)
-        );
-        assert_eq!(
-            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, msix + 8), 4),
-            u64::from(HDA_MSIX_PBA_OFFSET | 1)
+            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, msi + 2), 2),
+            0x0080,
+            "64-bit address capable, one vector, MSI initially disabled"
         );
 
         let bar = bdf_ecam_offset(HDA_BDF, REG_BAR0);
@@ -2896,16 +2969,12 @@ mod tests {
         assert_eq!(mask & 0xf, 0, "HDA BAR0 is 32-bit non-prefetchable MMIO");
         assert_eq!((!(mask & !0xf)).wrapping_add(1), HDA_BAR0_SIZE);
 
-        let msix_bar = bdf_ecam_offset(HDA_BDF, REG_BAR0 + 4);
-        ecam.cfg_write(msix_bar, 4, 0xffff_ffff);
-        let msix_mask = ecam.cfg_read(msix_bar, 4) as u32;
-        assert_eq!(msix_mask & 0xf, 0);
-        assert_eq!((!(msix_mask & !0xf)).wrapping_add(1), HDA_MSIX_BAR_SIZE);
+        let bar1 = bdf_ecam_offset(HDA_BDF, REG_BAR0 + 4);
+        ecam.cfg_write(bar1, 4, 0xffff_ffff);
+        assert_eq!(ecam.cfg_read(bar1, 4), 0, "HDA BAR1 is unimplemented");
 
         let base = crate::machine::PCIE_MMIO_32.base + 0x70_000;
-        let msix_base = base + u64::from(HDA_BAR0_SIZE);
         ecam.cfg_write(bar, 4, base);
-        ecam.cfg_write(msix_bar, 4, msix_base);
         ecam.cfg_write(
             bdf_ecam_offset(HDA_BDF, REG_COMMAND_STATUS),
             2,
@@ -2920,25 +2989,47 @@ mod tests {
             })
         );
         assert_eq!(
-            ecam.mmio_target(msix_base),
-            Some(PcieMmioTarget {
-                bdf: HDA_BDF,
-                bar_index: 1,
-                offset: 0,
-            })
+            ecam.mmio_target(base + u64::from(HDA_BAR0_SIZE)),
+            None,
+            "no HDA MSI table BAR may decode after BAR0"
         );
 
+        let message_address = 0x1234_5678_8088_4000u64;
         ecam.cfg_write(
-            bdf_ecam_offset(HDA_BDF, msix + 2),
+            bdf_ecam_offset(HDA_BDF, msi + 4),
+            4,
+            message_address as u32 as u64,
+        );
+        ecam.cfg_write(
+            bdf_ecam_offset(HDA_BDF, msi + 8),
+            4,
+            message_address >> 32,
+        );
+        ecam.cfg_write(bdf_ecam_offset(HDA_BDF, msi + 12), 2, 0x61);
+        ecam.cfg_write(
+            bdf_ecam_offset(HDA_BDF, msi + 2),
             2,
-            u64::from(0xc000 | (HDA_MSIX_VECTOR_COUNT - 1)),
+            0xffff,
         );
         assert_eq!(
-            ecam.hda_msix_control(),
-            MsixFunctionControl {
+            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, msi + 2), 2),
+            0x0081,
+            "only MSI Enable is writable in Message Control"
+        );
+        assert_eq!(
+            ecam.hda_msi_config(),
+            HdaMsiConfig {
                 enabled: true,
-                function_masked: true,
+                address: message_address,
+                data: 0x61,
             }
+        );
+
+        ecam.cfg_write(bdf_ecam_offset(HDA_BDF, msi + 4), 1, 0xff);
+        assert_eq!(
+            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, msi + 4), 1),
+            0xfc,
+            "Message Address Low bits 1:0 are read-only zero"
         );
     }
 
