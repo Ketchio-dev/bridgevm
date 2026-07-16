@@ -1676,15 +1676,25 @@ impl VirtioGpu {
     }
 
     fn publish_scanout_fb(&mut self) {
-        if self.fb_sink.is_none()
-            || (self.scanout_resource.is_none() && self.blob_scanout.is_none())
-        {
+        if self.scanout_resource.is_none() && self.blob_scanout.is_none() {
             return;
         }
+        self.publish_scanout_fb_unconditionally();
+    }
 
+    /// Write the current `scanout` pixels to the export sink even without an
+    /// active scanout binding. Restore uses this: the checkpointed pixels are
+    /// the last frame the guest presented, but the blob scanout that produced
+    /// them is not serializable, so without this one-shot publish the display
+    /// export stays black until the guest's WDDM TDR re-establishes the
+    /// scanout and presents fresh.
+    fn publish_scanout_fb_unconditionally(&mut self) {
         let width = self.width;
         let height = self.height;
         let stride = width * 4;
+        if self.scanout.len() < (stride as usize) * (height as usize) {
+            return;
+        }
         let (fb_sink, scanout) = (&mut self.fb_sink, &self.scanout);
         if let Some(sink) = fb_sink.as_mut() {
             sink.write(
@@ -2549,6 +2559,8 @@ pub fn restore_state(&mut self, data: &[u8]) {
     self.gpu.blob_row_scratch.clear();
     self.gpu.last_vblank = None;
     self.gpu.last_3d_scanout_readback = None;
+    self.gpu.publish_vblank_wake();
+    self.gpu.publish_scanout_fb_unconditionally();
 
     self.msix.restore_state(&input.read_blob());
     input.finish();
