@@ -337,6 +337,16 @@ pub const HDA_DEVICE_ID: u16 = 0x2668;
 pub const HDA_CLASS_CODE: u32 = 0x0004_0300;
 pub const HDA_REVISION: u8 = 0x01;
 pub const HDA_BAR0_SIZE: u32 = crate::hda::BAR_SIZE;
+/// BridgeVM/QEMU-compatible subsystem identity, matching the other emulated
+/// PCI endpoints rather than claiming a physical Intel board subsystem.
+pub const HDA_SUBSYSTEM_VENDOR_ID: u16 = 0x1af4;
+pub const HDA_SUBSYSTEM_ID: u16 = 0x1100;
+/// Dedicated MSI-X table/PBA memory BAR, leaving the HDA register BAR intact.
+pub const HDA_MSIX_BAR_SIZE: u32 = 0x1000;
+pub const HDA_MSIX_CAP_OFFSET: u8 = 0x40;
+pub const HDA_MSIX_VECTOR_COUNT: u16 = crate::hda::MSIX_VECTOR_COUNT;
+pub const HDA_MSIX_TABLE_OFFSET: u32 = crate::hda::MSIX_TABLE_OFFSET;
+pub const HDA_MSIX_PBA_OFFSET: u32 = crate::hda::MSIX_PBA_OFFSET;
 
 /// The value an ECAM read returns when no device answers: all-ones. Firmware
 /// treats a `0xFFFF_FFFF` vendor/device read as "slot empty".
@@ -808,15 +818,28 @@ impl Function {
     fn hda() -> Self {
         let mut bars = [Bar::default(); NUM_BARS];
         bars[0] = Bar::memory32(HDA_BAR0_SIZE);
+        bars[1] = Bar::memory32(HDA_MSIX_BAR_SIZE);
+        let msix = MsixCapability::new(
+            HDA_MSIX_VECTOR_COUNT,
+            1,
+            HDA_MSIX_TABLE_OFFSET,
+            HDA_MSIX_PBA_OFFSET,
+        );
+        let cap_bytes = msix
+            .to_bytes(0)
+            .into_iter()
+            .enumerate()
+            .map(|(i, byte)| (u16::from(HDA_MSIX_CAP_OFFSET) + i as u16, byte))
+            .collect();
         Self {
             bdf: HDA_BDF,
             vendor_device: (u32::from(HDA_DEVICE_ID) << 16) | u32::from(HDA_VENDOR_ID),
             revision_class: (HDA_CLASS_CODE << 8) | u32::from(HDA_REVISION),
-            subsystem_ids: 0,
+            subsystem_ids: (u32::from(HDA_SUBSYSTEM_ID) << 16) | u32::from(HDA_SUBSYSTEM_VENDOR_ID),
             command: 0,
             bars,
-            cap_ptr: 0,
-            cap_bytes: Vec::new(),
+            cap_ptr: HDA_MSIX_CAP_OFFSET,
+            cap_bytes,
         }
     }
 
@@ -860,7 +883,6 @@ impl Function {
             }
             REG_SUBSYSTEM_IDS => self.subsystem_ids,
             REG_CAP_PTR => u32::from(self.cap_ptr),
-            REG_INTERRUPT_LINE_PIN if self.bdf == HDA_BDF => 0x0000_0100, // INTA#.
             _ if (REG_BAR0..REG_BAR0 + (NUM_BARS as u16) * 4).contains(&reg) => {
                 let idx = ((reg - REG_BAR0) / 4) as usize;
                 self.bars[idx].read()
@@ -1227,6 +1249,13 @@ impl PcieEcam {
     /// Function-level MSI-X control for the xHCI endpoint.
     pub fn xhci_msix_control(&self) -> MsixFunctionControl {
         self.function_at(XHCI_BDF)
+            .and_then(Function::msix_control)
+            .unwrap_or_default()
+    }
+
+    /// Function-level MSI-X control for the opt-in HDA endpoint.
+    pub fn hda_msix_control(&self) -> MsixFunctionControl {
+        self.function_at(HDA_BDF)
             .and_then(Function::msix_control)
             .unwrap_or_default()
     }
@@ -2829,8 +2858,36 @@ mod tests {
         let class = ecam.cfg_read(bdf_ecam_offset(HDA_BDF, REG_REVISION_CLASS), 4);
         assert_eq!(class >> 8, u64::from(HDA_CLASS_CODE));
         assert_eq!(
+            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, REG_SUBSYSTEM_IDS), 4),
+            (u64::from(HDA_SUBSYSTEM_ID) << 16) | u64::from(HDA_SUBSYSTEM_VENDOR_ID)
+        );
+        assert_eq!(
             ecam.cfg_read(bdf_ecam_offset(HDA_BDF, REG_INTERRUPT_LINE_PIN), 4),
-            0x100
+            0,
+            "MSI-X-only HDA must not request a legacy interrupt pin"
+        );
+        let status = ecam.cfg_read(bdf_ecam_offset(HDA_BDF, REG_COMMAND_STATUS), 4);
+        assert_ne!(status & (u64::from(STATUS_CAP_LIST) << 16), 0);
+        assert_eq!(
+            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, REG_CAP_PTR), 1),
+            u64::from(HDA_MSIX_CAP_OFFSET)
+        );
+        let msix = u16::from(HDA_MSIX_CAP_OFFSET);
+        assert_eq!(
+            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, msix), 1),
+            u64::from(CAP_ID_MSIX)
+        );
+        assert_eq!(
+            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, msix + 2), 2),
+            u64::from(HDA_MSIX_VECTOR_COUNT - 1)
+        );
+        assert_eq!(
+            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, msix + 4), 4),
+            u64::from(HDA_MSIX_TABLE_OFFSET | 1)
+        );
+        assert_eq!(
+            ecam.cfg_read(bdf_ecam_offset(HDA_BDF, msix + 8), 4),
+            u64::from(HDA_MSIX_PBA_OFFSET | 1)
         );
 
         let bar = bdf_ecam_offset(HDA_BDF, REG_BAR0);
@@ -2839,8 +2896,16 @@ mod tests {
         assert_eq!(mask & 0xf, 0, "HDA BAR0 is 32-bit non-prefetchable MMIO");
         assert_eq!((!(mask & !0xf)).wrapping_add(1), HDA_BAR0_SIZE);
 
+        let msix_bar = bdf_ecam_offset(HDA_BDF, REG_BAR0 + 4);
+        ecam.cfg_write(msix_bar, 4, 0xffff_ffff);
+        let msix_mask = ecam.cfg_read(msix_bar, 4) as u32;
+        assert_eq!(msix_mask & 0xf, 0);
+        assert_eq!((!(msix_mask & !0xf)).wrapping_add(1), HDA_MSIX_BAR_SIZE);
+
         let base = crate::machine::PCIE_MMIO_32.base + 0x70_000;
+        let msix_base = base + u64::from(HDA_BAR0_SIZE);
         ecam.cfg_write(bar, 4, base);
+        ecam.cfg_write(msix_bar, 4, msix_base);
         ecam.cfg_write(
             bdf_ecam_offset(HDA_BDF, REG_COMMAND_STATUS),
             2,
@@ -2853,6 +2918,27 @@ mod tests {
                 bar_index: 0,
                 offset: 0,
             })
+        );
+        assert_eq!(
+            ecam.mmio_target(msix_base),
+            Some(PcieMmioTarget {
+                bdf: HDA_BDF,
+                bar_index: 1,
+                offset: 0,
+            })
+        );
+
+        ecam.cfg_write(
+            bdf_ecam_offset(HDA_BDF, msix + 2),
+            2,
+            u64::from(0xc000 | (HDA_MSIX_VECTOR_COUNT - 1)),
+        );
+        assert_eq!(
+            ecam.hda_msix_control(),
+            MsixFunctionControl {
+                enabled: true,
+                function_masked: true,
+            }
         );
     }
 
