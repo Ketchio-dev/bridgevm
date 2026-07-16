@@ -34,7 +34,7 @@ use crate::fwcfg::{
     FwCfg, GuestMemoryMut, KEY_CMDLINE_DATA, KEY_CMDLINE_SIZE, KEY_INITRD_DATA, KEY_INITRD_SIZE,
     KEY_KERNEL_DATA, KEY_KERNEL_SIZE,
 };
-use crate::hda::HdaController;
+use crate::hda::{HdaController, HdaPcmSink};
 use crate::machine::{self, Region};
 use crate::msix::MsixMessage;
 use crate::net_nat::{HostSocketOutboundIpv4Handler, NatBackend, NatStats};
@@ -589,7 +589,13 @@ impl VirtPlatform {
         self.nvme.reset_registers_keep_disks();
         self.xhci = XhciController::new();
         if self.devices.hda_present {
-            self.hda = Some(HdaController::new());
+            if let Some(hda) = self.hda.as_mut() {
+                hda.reset_runtime_state();
+            } else {
+                self.hda = Some(HdaController::new());
+            }
+        } else {
+            self.hda = None;
         }
         self.ramfb = Ramfb::new();
         self.flash_vars.reset_runtime_state();
@@ -1701,6 +1707,13 @@ impl VirtPlatform {
             hda.poll(mem, self.host_now);
         }
         self.flush_hda_pending_msi();
+    }
+
+    /// Install or clear the host PCM sink for the optional HDA controller.
+    pub fn set_hda_pcm_sink(&mut self, sink: Option<Box<dyn HdaPcmSink>>) {
+        if let Some(hda) = self.hda.as_mut() {
+            hda.set_pcm_sink(sink);
+        }
     }
 
     fn flush_hda_pending_msi(&mut self) {

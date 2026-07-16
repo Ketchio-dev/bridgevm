@@ -4,8 +4,8 @@
 //! used by QEMU's `intel-hda` plus the playback half of `hda-duplex`.  It is
 //! deliberately independent of HVF: CORB/RIRB and stream DMA use
 //! [`GuestMemoryMut`], while the live platform polls [`HdaController::poll`]
-//! once per VM-exit drain.  Captured samples are written as raw interleaved
-//! little-endian PCM (the codec advertises 16-bit PCM only).
+//! once per VM-exit drain. Playback samples are forwarded to an optional sink
+//! as raw interleaved little-endian PCM (the codec advertises 16-bit PCM only).
 
 use std::{
     fs::{File, OpenOptions},
@@ -16,6 +16,42 @@ use std::{
 };
 
 use crate::{fwcfg::GuestMemoryMut, msix::MsixMessage};
+
+/// Host-provided destination for decoded interleaved PCM stream bytes.
+///
+/// Implementations run on the vCPU thread while the platform lock is held, so
+/// live sinks must return promptly and move potentially blocking work elsewhere.
+pub trait HdaPcmSink: Send {
+    fn write_pcm(&mut self, samples: &[u8], rate: u32, channels: u8, bits: u8);
+}
+
+/// Raw PCM file sink used by `BRIDGEVM_HDA_PCM_OUT`.
+pub struct FilePcmSink {
+    file: Option<File>,
+}
+
+impl FilePcmSink {
+    pub fn create<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(path)?;
+        Ok(Self { file: Some(file) })
+    }
+}
+
+impl HdaPcmSink for FilePcmSink {
+    fn write_pcm(&mut self, samples: &[u8], _rate: u32, _channels: u8, _bits: u8) {
+        let Some(file) = self.file.as_mut() else {
+            return;
+        };
+        if let Err(error) = file.write_all(samples) {
+            eprintln!("hda: disabling PCM capture after write error: {error}");
+            self.file = None;
+        }
+    }
+}
 
 pub const BAR_SIZE: u32 = 0x4000;
 const MSI_CONTROLLER_VECTOR: u16 = 0;
@@ -183,7 +219,8 @@ pub struct HdaController {
     codec: CodecState,
     last_poll: Option<Instant>,
     byte_time_remainder: u64,
-    pcm_out: Option<File>,
+    pcm_sink: Option<Box<dyn HdaPcmSink>>,
+    pcm_sink_overridden: bool,
     interrupt_asserted: bool,
     interrupt_pending: bool,
 }
@@ -200,7 +237,7 @@ impl std::fmt::Debug for HdaController {
             .field("rirb_base", &self.rirb_base)
             .field("rirb_wp", &self.rirb_wp)
             .field("stream", &self.stream)
-            .field("pcm_out", &self.pcm_out.is_some())
+            .field("pcm_sink", &self.pcm_sink.is_some())
             .field("interrupt_asserted", &self.interrupt_asserted)
             .field("interrupt_pending", &self.interrupt_pending)
             .finish()
@@ -219,18 +256,13 @@ impl HdaController {
     }
 
     pub fn with_pcm_output_path<P: AsRef<Path>>(path: Option<P>) -> Self {
-        let pcm_out = path.map(|path| {
-            OpenOptions::new()
-                .create(true)
-                .truncate(true)
-                .write(true)
-                .open(path.as_ref())
-                .unwrap_or_else(|error| {
-                    panic!(
-                        "failed to open BRIDGEVM_HDA_PCM_OUT {}: {error}",
-                        path.as_ref().display()
-                    )
-                })
+        let pcm_sink = path.map(|path| {
+            Box::new(FilePcmSink::create(path.as_ref()).unwrap_or_else(|error| {
+                panic!(
+                    "failed to open BRIDGEVM_HDA_PCM_OUT {}: {error}",
+                    path.as_ref().display()
+                )
+            })) as Box<dyn HdaPcmSink>
         });
         Self {
             gctl: 0,
@@ -260,9 +292,27 @@ impl HdaController {
             codec: CodecState::new(),
             last_poll: None,
             byte_time_remainder: 0,
-            pcm_out,
+            pcm_sink,
+            pcm_sink_overridden: false,
             interrupt_asserted: false,
             interrupt_pending: false,
+        }
+    }
+
+    /// Replace the current PCM destination. Passing `None` disables output.
+    pub fn set_pcm_sink(&mut self, sink: Option<Box<dyn HdaPcmSink>>) {
+        self.pcm_sink = sink;
+        self.pcm_sink_overridden = true;
+    }
+
+    /// Reset platform runtime state, retaining an explicitly installed host
+    /// sink while preserving the environment file sink's recreate/truncate
+    /// behavior from before sink abstraction.
+    pub(crate) fn reset_runtime_state(&mut self) {
+        if self.pcm_sink_overridden {
+            self.controller_reset();
+        } else {
+            *self = Self::new();
         }
     }
 
@@ -532,9 +582,11 @@ impl HdaController {
     }
 
     fn controller_reset(&mut self) {
-        let pcm_out = self.pcm_out.take();
+        let pcm_sink = self.pcm_sink.take();
+        let pcm_sink_overridden = self.pcm_sink_overridden;
         *self = Self::with_pcm_output_path::<&Path>(None);
-        self.pcm_out = pcm_out;
+        self.pcm_sink = pcm_sink;
+        self.pcm_sink_overridden = pcm_sink_overridden;
     }
 
     fn write_stream_ctl(&mut self, next: u32) {
@@ -643,6 +695,10 @@ impl HdaController {
         if budget == 0 || self.stream.cbl == 0 || self.stream.bdl == 0 {
             return;
         }
+        let Some((rate, channels, bits)) = stream_pcm_format(self.stream.fmt) else {
+            self.stream.sts |= SDSTS_DESE;
+            return;
+        };
         while budget > 0 && self.stream.ctl & SDCTL_RUN != 0 {
             let descriptor_gpa = self.stream.bdl + u64::from(self.stream.bdl_index) * 16;
             let mut raw = [0u8; 16];
@@ -678,11 +734,8 @@ impl HdaController {
                 self.stream.ctl &= !SDCTL_RUN;
                 break;
             };
-            if let Some(output) = self.pcm_out.as_mut() {
-                if let Err(error) = output.write_all(&bytes) {
-                    eprintln!("hda: disabling PCM capture after write error: {error}");
-                    self.pcm_out = None;
-                }
+            if let Some(output) = self.pcm_sink.as_mut() {
+                output.write_pcm(&bytes, rate, channels, bits);
             }
             self.stream.bdl_offset += chunk_len as u32;
             self.stream.lpib += chunk_len as u32;
@@ -998,6 +1051,13 @@ fn stream_frame_bytes(fmt: u16) -> Option<u16> {
     Some(sample_bytes * channels)
 }
 
+fn stream_pcm_format(fmt: u16) -> Option<(u32, u8, u8)> {
+    let rate = stream_sample_rate(fmt)?;
+    let bits = ((fmt >> 4) & 0x7 == 1).then_some(16)?;
+    let channels = u8::try_from((fmt & 0x0f) + 1).ok()?;
+    Some((rate, channels, bits))
+}
+
 fn stream_bytes_per_second(fmt: u16) -> Option<u64> {
     Some(u64::from(stream_sample_rate(fmt)?) * u64::from(stream_frame_bytes(fmt)?))
 }
@@ -1015,7 +1075,11 @@ fn hda_trace_enabled() -> bool {
 mod tests {
     use super::*;
     use crate::platform_virt::FlatGuestRam;
-    use std::{fs, path::PathBuf};
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::{Arc, Mutex},
+    };
 
     const RAM_BASE: u64 = 0x1000_0000;
 
@@ -1043,6 +1107,29 @@ mod tests {
             std::process::id(),
             std::thread::current().name().unwrap_or("test")
         ))
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct RecordedPcm {
+        samples: Vec<u8>,
+        rate: u32,
+        channels: u8,
+        bits: u8,
+    }
+
+    struct RecordingPcmSink {
+        writes: Arc<Mutex<Vec<RecordedPcm>>>,
+    }
+
+    impl HdaPcmSink for RecordingPcmSink {
+        fn write_pcm(&mut self, samples: &[u8], rate: u32, channels: u8, bits: u8) {
+            self.writes.lock().unwrap().push(RecordedPcm {
+                samples: samples.to_vec(),
+                rate,
+                channels,
+                bits,
+            });
+        }
     }
 
     #[test]
@@ -1345,6 +1432,59 @@ mod tests {
         );
         drop(ctrl);
         assert_eq!(fs::read(&output).unwrap(), expected);
+        fs::remove_file(output).ok();
+    }
+
+    #[test]
+    fn stream_bdl_dma_dispatches_pcm_and_running_format_to_trait_sink() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let mut ctrl = HdaController::with_pcm_output_path::<&Path>(None);
+        ctrl.set_pcm_sink(Some(Box::new(RecordingPcmSink {
+            writes: Arc::clone(&writes),
+        })));
+        let mut mem = FlatGuestRam::new(RAM_BASE, 0x10000);
+        let bdl = RAM_BASE + 0x1000;
+        let pcm = RAM_BASE + 0x2000;
+        let expected: Vec<u8> = (0..192).map(|value| value as u8).collect();
+        assert!(mem.write_bytes(pcm, &expected));
+        let mut descriptor = [0u8; 16];
+        descriptor[..8].copy_from_slice(&pcm.to_le_bytes());
+        descriptor[8..12].copy_from_slice(&(expected.len() as u32).to_le_bytes());
+        assert!(mem.write_bytes(bdl, &descriptor));
+
+        write(&mut ctrl, &mut mem, REG_GCTL, 4, 1);
+        write(&mut ctrl, &mut mem, REG_SD_BDPL, 4, bdl);
+        write(&mut ctrl, &mut mem, REG_SD_CBL, 4, expected.len() as u64);
+        write(&mut ctrl, &mut mem, REG_SD_LVI, 2, 0);
+        write(&mut ctrl, &mut mem, REG_SD_FMT, 2, 0x0011);
+        write(&mut ctrl, &mut mem, REG_SD_CTL, 1, u64::from(SDCTL_RUN));
+        ctrl.poll_for_duration(&mut mem, Duration::from_millis(1));
+
+        assert_eq!(
+            *writes.lock().unwrap(),
+            vec![RecordedPcm {
+                samples: expected,
+                rate: 48_000,
+                channels: 2,
+                bits: 16,
+            }]
+        );
+    }
+
+    #[test]
+    fn file_pcm_sink_preserves_bytes_exactly() {
+        let output = temp_path("file-sink.raw");
+        fs::remove_file(&output).ok();
+        let mut sink = FilePcmSink::create(&output).unwrap();
+
+        sink.write_pcm(&[0x00, 0x7f, 0x80], 48_000, 2, 16);
+        sink.write_pcm(&[0xff, 0x12, 0x34], 44_100, 1, 16);
+        drop(sink);
+
+        assert_eq!(
+            fs::read(&output).unwrap(),
+            [0x00, 0x7f, 0x80, 0xff, 0x12, 0x34]
+        );
         fs::remove_file(output).ok();
     }
 

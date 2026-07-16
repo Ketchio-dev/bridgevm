@@ -29,6 +29,7 @@
 //!   BRIDGEVM_VIRTIO_CONSOLE=1 BRIDGEVM_VIRTIO_CONSOLE_TEST=1 ... # drive bvagent.ps1 over virtio-console
 //!   BRIDGEVM_VIRTIO_CONSOLE_CMDS='whoami|ver|ipconfig' ...
 //!   BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=180000 ...
+//!   BRIDGEVM_HDA=1 BRIDGEVM_HDA_COREAUDIO=1 ...       # play guest HDA PCM on Mac speakers
 //!
 //! Optional QEMU-style Linux direct boot:
 //!   BRIDGEVM_LINUX_KERNEL=/path/to/Image ...
@@ -113,6 +114,10 @@ mod live_display_export;
 use live_display_export::LiveDisplayExporter;
 #[path = "hvf_gic_boot_probe/live_input.rs"]
 mod live_input;
+
+#[cfg(target_os = "macos")]
+#[path = "hvf_gic_boot_probe/hda_coreaudio.rs"]
+mod hda_coreaudio;
 
 #[path = "hvf_gic_boot_probe/vblank_wake.rs"]
 mod vblank_wake;
@@ -3704,6 +3709,23 @@ fn main() -> ExitCode {
             .read_bounded(machine::FLASH_VARS.size as usize)
             .unwrap_or_else(|e| panic!("read UEFI vars {}: {e}", media.flash_vars.path.display()));
         let mut platform = VirtPlatform::new_with_config(platform_cfg);
+        if env_flag("BRIDGEVM_HDA_COREAUDIO") {
+            if !platform_cfg.devices.hda_present {
+                eprintln!(
+                    "BRIDGEVM_HDA_COREAUDIO ignored because BRIDGEVM_HDA is not enabled"
+                );
+            } else {
+                #[cfg(target_os = "macos")]
+                {
+                    let sink = hda_coreaudio::CoreAudioPcmSink::new()
+                        .unwrap_or_else(|error| panic!("initialize HDA CoreAudio output: {error}"));
+                    platform.set_hda_pcm_sink(Some(Box::new(sink)));
+                    println!("HDA CoreAudio output: s16le 48000 Hz stereo, enabled");
+                }
+                #[cfg(not(target_os = "macos"))]
+                panic!("BRIDGEVM_HDA_COREAUDIO is only supported on macOS");
+            }
+        }
         if platform_cfg.devices.ramfb_present {
             println!("ramfb fw_cfg: enabled");
         } else if env_flag("BRIDGEVM_RAMFB") {
