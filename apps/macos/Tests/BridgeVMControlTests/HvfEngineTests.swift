@@ -63,9 +63,11 @@ final class HvfEngineConfigTests: XCTestCase {
             "--agent-service-control", "/tmp/evidence/ctl",
             "--agent-service-command", "whoami",
             "--display-export-ppm", "/tmp/evidence/display.ppm",
-            "--display-export-ms", "500",
+            "--display-export-ms", "100",
+            "--display-export-fb", "/tmp/evidence/display.fb",
             "--enable-xhci",
-            "--input-control", "/tmp/evidence/input.ctl"
+            "--input-control", "/tmp/evidence/input.ctl",
+            "--hda-coreaudio"
         ])
     }
 

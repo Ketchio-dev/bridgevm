@@ -10,6 +10,8 @@ init_installed_boot_defaults() {
   RAMFB_SAMPLES="1000,5000,15000,30000,60000,90000,120000"
   ENABLE_XHCI="0"
   VIRTIO_NET="0"
+  HDA_AUDIO="0"
+  HDA_COREAUDIO="0"
   NVME_BUFFERED_IO="0"
   VIRTIO_GPU_3D="0"
   VIRTIO_GPU_PCI_DEVICE_ID=""
@@ -156,6 +158,8 @@ parse_installed_boot_args() {
         ;;
       --enable-xhci) ENABLE_XHCI="1"; shift ;;
       --virtio-net) VIRTIO_NET="1"; shift ;;
+      --hda) HDA_AUDIO="1"; shift ;;
+      --hda-coreaudio) HDA_AUDIO="1"; HDA_COREAUDIO="1"; shift ;;
       --nvme-buffered-io) NVME_BUFFERED_IO="1"; shift ;;
       --trace-irq) TRACE_IRQ="1"; shift ;;
       --virtio-gpu-3d) VIRTIO_GPU_3D="1"; shift ;;

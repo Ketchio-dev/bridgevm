@@ -13,6 +13,9 @@ struct HvfEngineConfig: Equatable {
     var shareHostDir: String?
     var shareGuestDir: String?
     var virtioNet: Bool
+    /// Attach the Intel HDA audio device and play the guest's sound through the
+    /// Mac speakers via CoreAudio. On by default for parity with a real machine.
+    var audioEnabled: Bool = true
     /// Enable the normal Windows display path proven by the live VirGL
     /// evidence run. When disabled, the wrapper retains its legacy 2D device.
     var virtioGpu3d: Bool
@@ -110,6 +113,9 @@ struct HvfEngineConfig: Equatable {
         }
         if virtioNet {
             args.append("--virtio-net")
+        }
+        if audioEnabled {
+            args.append("--hda-coreaudio")
         }
         if nvmeBufferedIO {
             args.append("--nvme-buffered-io")

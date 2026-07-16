@@ -70,6 +70,10 @@ Options:
   --enable-xhci           Leave xHCI present for desktop input diagnosis.
   --virtio-net            Attach the virtio-net NIC (BRIDGEVM_VIRTIO_NET=1)
                           with the userspace NAT backend.
+  --hda                   Attach the Intel HDA audio device (BRIDGEVM_HDA=1);
+                          Windows binds its in-box hdaudio driver.
+  --hda-coreaudio         --hda plus real-time CoreAudio playback, so the guest
+                          audio comes out the Mac speakers.
   --nvme-buffered-io      Force the byte-identical buffered NVMe data path for
                           an audited storage-integrity A/B diagnostic run.
                           The production default remains direct DMA.

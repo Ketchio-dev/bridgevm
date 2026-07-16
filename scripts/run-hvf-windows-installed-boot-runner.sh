@@ -272,6 +272,14 @@ build_installed_boot_env_args() {
   if [[ "${VIRTIO_NET:-0}" == "1" ]]; then
     ENV_ARGS+=('BRIDGEVM_VIRTIO_NET=1' 'BRIDGEVM_VIRTIO_NET_BACKEND=nat')
   fi
+  # The Intel HDA audio device + CoreAudio playback are opt-in via --hda /
+  # --hda-coreaudio (or the inherited BRIDGEVM_HDA* env forwarded above).
+  if [[ "${HDA_AUDIO:-0}" == "1" ]]; then
+    ENV_ARGS+=('BRIDGEVM_HDA=1')
+  fi
+  if [[ "${HDA_COREAUDIO:-0}" == "1" ]]; then
+    ENV_ARGS+=('BRIDGEVM_HDA_COREAUDIO=1')
+  fi
   if [[ "${NVME_BUFFERED_IO:-0}" == "1" ]]; then
     ENV_ARGS+=('BRIDGEVM_NVME_BUFFERED_IO=1')
   fi
