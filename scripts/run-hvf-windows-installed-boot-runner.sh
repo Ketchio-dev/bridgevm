@@ -209,6 +209,10 @@ build_installed_boot_env_args() {
   [[ -z "${BRIDGEVM_VBLANK_HZ:-}" ]] || ENV_ARGS+=("BRIDGEVM_VBLANK_HZ=$BRIDGEVM_VBLANK_HZ")
   [[ -z "${BRIDGEVM_CHECKPOINT_STATE:-}" ]] || ENV_ARGS+=("BRIDGEVM_CHECKPOINT_STATE=$BRIDGEVM_CHECKPOINT_STATE")
   [[ -z "${BRIDGEVM_RESTORE_STATE:-}" ]] || ENV_ARGS+=("BRIDGEVM_RESTORE_STATE=$BRIDGEVM_RESTORE_STATE")
+  # Forward the KD serial bridge socket (kd_serial_bridge.rs; the bridge owns
+  # the PL011 for the run, so boot-marker serial scanning yields KD protocol
+  # bytes instead of text while a debugger is wired).
+  [[ -z "${BRIDGEVM_KD_SERIAL_SOCKET:-}" ]] || ENV_ARGS+=("BRIDGEVM_KD_SERIAL_SOCKET=$BRIDGEVM_KD_SERIAL_SOCKET")
   # Forward the opt-in Intel HDA audio device + host PCM sinks (media.rs gates on
   # BRIDGEVM_HDA; absent = no audio function, unchanged behavior).
   [[ -z "${BRIDGEVM_HDA:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA=$BRIDGEVM_HDA")
