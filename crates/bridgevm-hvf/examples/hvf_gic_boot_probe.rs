@@ -146,6 +146,32 @@ struct MappedRam {
     len: usize,
 }
 
+/// `BRIDGEVM_TRACE_VENUS_START=1`: flag EC=0x24 exits whose syndrome has
+/// ISV=0 (no valid instruction syndrome — stp/ldp, DC ZVA, NEON, atomics).
+/// The srt/size fields the MMIO decode uses below are meaningless for these,
+/// so a read writes back to a bogus register (typically X0) — silent guest
+/// state corruption. The venus KMD dies with no bugcheck before its first
+/// virtio access; an ISV=0 access into a device window is a prime suspect.
+fn trace_isv0_data_abort(esr: u64, pc: u64, ipa: u64) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let enabled = *ENABLED.get_or_init(|| {
+        std::env::var("BRIDGEVM_TRACE_VENUS_START")
+            .ok()
+            .is_some_and(|v| matches!(v.trim(), "1" | "true" | "yes" | "on"))
+    });
+    if !enabled || (esr >> 24) & 1 == 1 {
+        return;
+    }
+    static COUNT: AtomicU64 = AtomicU64::new(0);
+    let n = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+    if n <= 16 || n % 65536 == 0 {
+        println!(
+            "venus-start: ISV=0 data abort n={n} pc={pc:#x} ipa={ipa:#x} esr={esr:#x} (decode below is garbage)"
+        );
+    }
+}
+
 #[derive(Debug, Default)]
 struct HvGpuShmMapState {
     bar2_base: Option<u64>,
@@ -1446,6 +1472,7 @@ fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -> bool {
                 let size = 1u8 << ((esr >> 22) & 0x3);
                 let srt = ((esr >> 16) & 0x1f) as u32;
                 let is_write = (esr >> 6) & 1 == 1;
+                trace_isv0_data_abort(esr, pc, ipa);
                 // srt=31 is WZR/XZR: stores write zero, loads discard. It must
                 // never index the HV register file, where slot 31 is the PC —
                 // Linux emits `str wzr` for zero MMIO writes (e.g. virtio
@@ -4251,6 +4278,7 @@ checkpoint_glue::restore_if_requested(
                             let size = 1u8 << ((esr >> 22) & 0x3);
                             let srt = ((esr >> 16) & 0x1f) as u32;
                             let is_write = (esr >> 6) & 1 == 1;
+                            trace_isv0_data_abort(esr, last_pc, ipa);
                             // srt=31 is WZR/XZR (stores write zero, loads
                             // discard) — never index the HV register file,
                             // where slot 31 is the PC. Linux emits `str wzr`

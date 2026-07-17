@@ -282,6 +282,22 @@ pub const VIRTIO_NET_MSIX_PBA_OFFSET: u32 = 0x0800;
 
 /// Bus/device/function for the opt-in modern-only `virtio-gpu-pci` endpoint.
 pub const VIRTIO_GPU_BDF: (u8, u8, u8) = (0, 5, 0);
+
+/// `BRIDGEVM_TRACE_VENUS_START=1`: log ECAM config-space accesses to the
+/// virtio-gpu function. The venus KMD crashes before its first virtio
+/// common-config access, so the PCI-config layer is the only device surface
+/// that can still witness its last action. First 256 accesses then sampled.
+fn venus_start_trace_cfg(what: &str, reg: u16, size: u8, value: u64) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    if !crate::virtio_gpu_trace::venus_start_trace_enabled() {
+        return;
+    }
+    static COUNT: AtomicU64 = AtomicU64::new(0);
+    let n = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+    // Unsampled: config traffic is a few hundred accesses per boot and the
+    // KMD's very last pre-crash access must not be sampled away.
+    println!("venus-start: gpu {what} reg={reg:#x} size={size} value={value:#x} n={n}");
+}
 /// Red Hat virtio vendor id.
 pub const VIRTIO_GPU_VENDOR_ID: u16 = 0x1af4;
 /// Modern virtio GPU device id (`0x1040 + virtio device id 16`).
@@ -1250,7 +1266,11 @@ impl PcieEcam {
         };
         let dword_reg = addr.reg & !0x3;
         let dword = func.read_dword(dword_reg);
-        extract(dword, addr.reg, size)
+        let value = extract(dword, addr.reg, size);
+        if addr.bdf() == VIRTIO_GPU_BDF {
+            venus_start_trace_cfg("cfg_read", addr.reg, size, value);
+        }
+        value
     }
 
     /// Write `size` (1, 2 or 4) bytes of config space at `ecam_offset`. Writes to
@@ -1260,6 +1280,9 @@ impl PcieEcam {
     pub fn cfg_write(&mut self, ecam_offset: u64, size: u8, value: u64) {
         self.mmio_mru.set(None);
         let addr = CfgAddr::from_ecam_offset(ecam_offset);
+        if addr.bdf() == VIRTIO_GPU_BDF {
+            venus_start_trace_cfg("cfg_write", addr.reg, size, value);
+        }
         let Some(func) = self.function_at_mut(addr.bdf()) else {
             return;
         };

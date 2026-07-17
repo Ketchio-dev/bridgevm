@@ -22,6 +22,7 @@ init_installed_boot_defaults() {
   INPUT_CONTROL=""
   FIRMWARE_CODE=""
   GPU_TRACE_PROTOCOL="auto"
+  TRACE_VENUS_START=0
   GPU_TRACE_SUBMIT_PREFIX=""
   REQUIRE_GPU_TRACE_GATE="0"
   VIOGPU3D_DIR=""
@@ -183,6 +184,7 @@ parse_installed_boot_args() {
         esac
         shift 2
         ;;
+      --trace-venus-start) TRACE_VENUS_START=1; shift ;;
       --gpu-trace-submit-prefix)
         [[ $# -ge 2 ]] || { usage; exit 2; }
         [[ "$2" =~ ^[0-9]+$ ]] && (( 10#$2 >= 1 && 10#$2 <= 1048576 )) || { echo "FAIL: --gpu-trace-submit-prefix requires an integer from 1 to 1048576" >&2; exit 2; }

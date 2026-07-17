@@ -303,6 +303,12 @@ build_installed_boot_env_args() {
       ENV_ARGS+=('BRIDGEVM_VIRTIO_GPU_3D_BIND_ID=1')
     fi
     ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_TRACE_JSONL=${VIRTIO_GPU_TRACE_JSONL:-$EVIDENCE_DIR/virtio-gpu.jsonl}")
+    if [[ "${TRACE_VENUS_START:-0}" == "1" ]]; then
+      # venus KMD start-path stdout trace (`venus-start:` lines in run.log).
+      # Must be an ENV_ARGS entry: the launcher strips every inherited
+      # BRIDGEVM_* knob before exec'ing the probe.
+      ENV_ARGS+=('BRIDGEVM_TRACE_VENUS_START=1')
+    fi
     if [[ -n "${GPU_TRACE_SUBMIT_PREFIX:-}" ]]; then
       ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_TRACE_SUBMIT_PREFIX=$GPU_TRACE_SUBMIT_PREFIX")
     fi

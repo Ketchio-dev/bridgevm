@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::fwcfg::GuestMemoryMut;
+use crate::virtio_gpu_trace::venus_start_trace_enabled;
 
 pub const VIRTIO_GPU_F_VIRGL: u32 = 1 << 0;
 pub const VIRTIO_GPU_F_RESOURCE_BLOB: u32 = 1 << 3;
@@ -535,14 +536,17 @@ impl VirtioGpu3d {
 
     fn get_capset_info_into(&mut self, request: &[u8], hdr: CtrlHdr3d, out: &mut Vec<u8>) {
         let Some(backend) = self.backend.as_mut() else {
+            venus_start_trace_reject("get_capset_info", "no 3D backend");
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         };
         let Some(index) = read_le_u32(request, 24) else {
+            venus_start_trace_reject("get_capset_info", "short request");
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         };
         let Some(info) = backend.capset_info(index) else {
+            venus_start_trace_reject("get_capset_info", "backend has no capset at index");
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         };
@@ -569,6 +573,7 @@ impl VirtioGpu3d {
         let response_start = out.len();
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_CAPSET, Some(hdr));
         if !backend.capset_into(capset_id, version, out) {
+            venus_start_trace_reject("get_capset", "backend capset_into failed");
             out.truncate(response_start);
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
         }
@@ -791,10 +796,12 @@ impl VirtioGpu3d {
             return;
         }
         if blob_mem == VIRTIO_GPU_BLOB_MEM_HOST3D_GUEST {
+            venus_start_trace_reject("create_blob", "blob_mem HOST3D_GUEST unsupported");
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }
         if blob_mem != VIRTIO_GPU_BLOB_MEM_HOST3D && blob_mem != VIRTIO_GPU_BLOB_MEM_GUEST {
+            venus_start_trace_reject("create_blob", "blob_mem invalid");
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }
@@ -844,6 +851,7 @@ impl VirtioGpu3d {
             let created = self.backend.as_mut().unwrap().create_blob(args);
             self.host_iovecs_scratch.clear();
             if !created {
+                venus_start_trace_reject("create_blob", "backend create_blob failed");
                 response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr));
                 return;
             }
@@ -862,16 +870,35 @@ impl VirtioGpu3d {
 
     fn resource_map_blob_into(&mut self, request: &[u8], hdr: CtrlHdr3d, out: &mut Vec<u8>) {
         if request.len() < RESOURCE_MAP_BLOB_LEN {
+            venus_start_trace_map_blob_reject(0, u64::MAX, 0, self.shm_window_size, "short request");
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }
         let resource_id = read_le_u32(request, 24).unwrap_or(0);
         let shm_offset = read_le_u64(request, 32).unwrap_or(u64::MAX);
         let Some(resource) = self.blob_resources.get(&resource_id) else {
+            venus_start_trace_map_blob_reject(
+                resource_id,
+                shm_offset,
+                0,
+                self.shm_window_size,
+                "unknown blob resource",
+            );
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         };
         if resource.mapped.is_some() || resource.blob_mem != VIRTIO_GPU_BLOB_MEM_HOST3D {
+            venus_start_trace_map_blob_reject(
+                resource_id,
+                shm_offset,
+                resource.size,
+                self.shm_window_size,
+                if resource.mapped.is_some() {
+                    "already mapped"
+                } else {
+                    "blob_mem not HOST3D"
+                },
+            );
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }
@@ -884,14 +911,45 @@ impl VirtioGpu3d {
                 .map_or(true, |end| end > self.shm_window_size)
             || self.interval_overlaps(shm_offset, rounded_size)
         {
+            let reason = if !aligned_u64(shm_offset, HVF_PAGE_SIZE) {
+                "shm_offset not 16KiB aligned"
+            } else if shm_offset
+                .checked_add(rounded_size)
+                .map_or(true, |end| end > self.shm_window_size)
+            {
+                "exceeds shm window"
+            } else {
+                "overlaps mapped interval"
+            };
+            venus_start_trace_map_blob_reject(
+                resource_id,
+                shm_offset,
+                size,
+                self.shm_window_size,
+                reason,
+            );
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }
         let Some(backend) = self.backend.as_mut() else {
+            venus_start_trace_map_blob_reject(
+                resource_id,
+                shm_offset,
+                size,
+                self.shm_window_size,
+                "no 3D backend",
+            );
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         };
         let Some(mapped) = backend.map_blob(resource_id) else {
+            venus_start_trace_map_blob_reject(
+                resource_id,
+                shm_offset,
+                size,
+                self.shm_window_size,
+                "backend map_blob failed",
+            );
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, Some(hdr));
             return;
         };
@@ -906,16 +964,43 @@ impl VirtioGpu3d {
             || !aligned_usize(mapped.host_ptr as usize, HVF_PAGE_SIZE as usize)
             || (mapped.size as u64) < size
         {
+            venus_start_trace_map_blob_reject(
+                resource_id,
+                shm_offset,
+                size,
+                self.shm_window_size,
+                if mapped.host_ptr.is_null() {
+                    "backend host_ptr null"
+                } else if !aligned_usize(mapped.host_ptr as usize, HVF_PAGE_SIZE as usize) {
+                    "backend host_ptr unaligned"
+                } else {
+                    "backend mapping smaller than blob"
+                },
+            );
             backend.unmap_blob(resource_id);
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, Some(hdr));
             return;
         }
         let Some(port) = self.shm_port.as_mut() else {
+            venus_start_trace_map_blob_reject(
+                resource_id,
+                shm_offset,
+                size,
+                self.shm_window_size,
+                "no shm map port",
+            );
             backend.unmap_blob(resource_id);
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, Some(hdr));
             return;
         };
         if port.map(mapped.host_ptr, map_size, shm_offset).is_err() {
+            venus_start_trace_map_blob_reject(
+                resource_id,
+                shm_offset,
+                size,
+                self.shm_window_size,
+                "shm port map failed",
+            );
             backend.unmap_blob(resource_id);
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, Some(hdr));
             return;
@@ -925,6 +1010,12 @@ impl VirtioGpu3d {
         }
         self.mapped_intervals
             .insert(shm_offset, (map_size as u64, resource_id));
+        if venus_start_trace_enabled() {
+            println!(
+                "venus-start: map_blob OK resource={resource_id} shm_offset={shm_offset:#x} size={size} map_size={map_size} map_info={:#x}",
+                mapped.map_info & VIRTIO_GPU_MAP_CACHE_MASK
+            );
+        }
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_MAP_INFO, Some(hdr));
         out.extend_from_slice(&(mapped.map_info & VIRTIO_GPU_MAP_CACHE_MASK).to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
@@ -989,6 +1080,29 @@ impl VirtioGpu3d {
             && (self.resource_2d_ids.contains(&resource_id)
                 || self.resource_3d_ids.contains(&resource_id)
                 || self.blob_resources.contains_key(&resource_id))
+    }
+}
+
+/// `BRIDGEVM_TRACE_VENUS_START=1` rejection-reason lines: the JSONL command
+/// trace records THAT a command failed but not WHICH validation branch fired;
+/// the venus KMD start crash needs the branch.
+fn venus_start_trace_reject(what: &str, reason: &str) {
+    if venus_start_trace_enabled() {
+        println!("venus-start: {what} REJECT: {reason}");
+    }
+}
+
+fn venus_start_trace_map_blob_reject(
+    resource_id: u32,
+    shm_offset: u64,
+    size: u64,
+    shm_window_size: u64,
+    reason: &str,
+) {
+    if venus_start_trace_enabled() {
+        println!(
+            "venus-start: map_blob REJECT resource={resource_id} shm_offset={shm_offset:#x} size={size} window={shm_window_size:#x} reason={reason}"
+        );
     }
 }
 

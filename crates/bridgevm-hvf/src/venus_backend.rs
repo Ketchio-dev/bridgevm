@@ -340,6 +340,38 @@ impl VenusBackend {
     }
 }
 
+/// `BRIDGEVM_TRACE_VENUS_START=1`: print an FFI capset probe only when its
+/// result changed since the last probe of that capset id. `capset_count()`
+/// runs on every guest config read, so the interesting signal is the value
+/// (especially the venus capset flipping 0 -> nonzero after renderer init, or
+/// staying 0 at KMD config-read time), not the poll itself.
+fn venus_start_trace_capset_count_changed(capset_id: u32, max_version: u32, max_size: u32) -> bool {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    if !crate::virtio_gpu_trace::venus_start_trace_enabled() {
+        return false;
+    }
+    static LAST: OnceLock<Mutex<BTreeMap<u32, (u32, u32)>>> = OnceLock::new();
+    let last = LAST.get_or_init(|| Mutex::new(BTreeMap::new()));
+    static PROBES: AtomicU64 = AtomicU64::new(0);
+    PROBES.fetch_add(1, Ordering::Relaxed);
+    let mut last = match last.lock() {
+        Ok(guard) => guard,
+        Err(_) => return false,
+    };
+    let value = (max_version, max_size);
+    if last.get(&capset_id) == Some(&value) {
+        return false;
+    }
+    last.insert(capset_id, value);
+    true
+}
+
+fn venus_start_trace_ffi_reject(what: &str, capset_id: u32, version: u32, reason: &str) {
+    if crate::virtio_gpu_trace::venus_start_trace_enabled() {
+        println!("venus-start: ffi {what} capset_id={capset_id} version={version} REJECT: {reason}");
+    }
+}
+
 impl VirtioGpu3dBackend for VenusBackend {
     fn capset_count(&self) -> u32 {
         let capset_ids: &[u32] = match self.protocol {
@@ -348,7 +380,7 @@ impl VirtioGpu3dBackend for VenusBackend {
                 &[VIRTIO_GPU_CAPSET_VIRGL, VIRTIO_GPU_CAPSET_VIRGL2]
             }
         };
-        capset_ids
+        let count = capset_ids
             .iter()
             .filter(|capset_id| {
                 let mut max_version = 0u32;
@@ -356,9 +388,16 @@ impl VirtioGpu3dBackend for VenusBackend {
                 unsafe {
                     virgl_renderer_get_cap_set(**capset_id, &mut max_version, &mut max_size);
                 }
+                if venus_start_trace_capset_count_changed(**capset_id, max_version, max_size) {
+                    println!(
+                        "venus-start: ffi get_cap_set id={} max_version={max_version} max_size={max_size} (capset_count probe, value changed)",
+                        **capset_id
+                    );
+                }
                 max_size != 0
             })
-            .count() as u32
+            .count() as u32;
+        count
     }
 
     fn capset_info(&mut self, capset_index: u32) -> Option<CapsetInfo> {
@@ -367,6 +406,11 @@ impl VirtioGpu3dBackend for VenusBackend {
         let mut max_size = 0u32;
         unsafe {
             virgl_renderer_get_cap_set(capset_id, &mut max_version, &mut max_size);
+        }
+        if crate::virtio_gpu_trace::venus_start_trace_enabled() {
+            println!(
+                "venus-start: ffi capset_info index={capset_index} -> id={capset_id} max_version={max_version} max_size={max_size}"
+            );
         }
         (max_size != 0).then_some(CapsetInfo {
             capset_id,
@@ -383,6 +427,7 @@ impl VirtioGpu3dBackend for VenusBackend {
 
     fn capset_into(&mut self, capset_id: u32, version: u32, out: &mut Vec<u8>) -> bool {
         if !self.protocol.supports_capset_id(capset_id) {
+            venus_start_trace_ffi_reject("capset_into", capset_id, version, "unsupported capset_id");
             return false;
         }
         let mut max_version = 0u32;
@@ -391,9 +436,11 @@ impl VirtioGpu3dBackend for VenusBackend {
             virgl_renderer_get_cap_set(capset_id, &mut max_version, &mut max_size);
         }
         if max_size == 0 {
+            venus_start_trace_ffi_reject("capset_into", capset_id, version, "max_size == 0");
             return false;
         }
         if version > max_version {
+            venus_start_trace_ffi_reject("capset_into", capset_id, version, "version > max_version");
             return false;
         }
         let start = out.len();

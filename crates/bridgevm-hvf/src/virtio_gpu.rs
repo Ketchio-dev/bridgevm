@@ -33,7 +33,7 @@ use crate::{
         VIRTIO_GPU_FLAG_FENCE, VIRTIO_GPU_F_CONTEXT_INIT, VIRTIO_GPU_F_RESOURCE_BLOB,
         VIRTIO_GPU_F_VIRGL,
     },
-    virtio_gpu_trace::{write_json_string, VirtioGpuTraceRecorder},
+    virtio_gpu_trace::{venus_start_trace_enabled, write_json_string, VirtioGpuTraceRecorder},
 };
 
 const MAGIC_VALUE: u32 = 0x7472_6976;
@@ -733,6 +733,12 @@ impl VirtioGpu {
             let select = self.driver_features_sel;
             let raw = value as u32;
             let accepted = self.driver_features[index];
+            if venus_start_trace_enabled() {
+                println!(
+                    "venus-start: driver_features select={select} raw={raw:#x} accepted={accepted:#x} offered={:#x}",
+                    self.offered_features_word(select)
+                );
+            }
             self.record_trace_fields("driver_features", |fields| {
                 let _ = write!(
                     fields,
@@ -883,6 +889,12 @@ impl VirtioGpu {
                 value,
             ) as u16;
             self.config_msix_vector = valid_msix_vector(vector);
+            if venus_start_trace_enabled() {
+                println!(
+                    "venus-start: config_msix_vector write raw={vector} accepted={}",
+                    self.config_msix_vector
+                );
+            }
             return true;
         }
         if common_access_touches(COMMON_DEVICE_STATUS, 1, offset, size) {
@@ -933,6 +945,12 @@ impl VirtioGpu {
                 value,
             ) as u16;
             queue.msix_vector = valid_msix_vector(vector);
+            if venus_start_trace_enabled() {
+                println!(
+                    "venus-start: queue={} msix_vector write raw={vector} accepted={}",
+                    self.queue_sel, queue.msix_vector
+                );
+            }
             return true;
         }
         if common_access_touches(COMMON_QUEUE_ENABLE, 2, offset, size) {
@@ -947,6 +965,12 @@ impl VirtioGpu {
             queue.ready = enable == 1;
             if !queue.ready {
                 queue.last_avail_idx = 0;
+            }
+            if venus_start_trace_enabled() {
+                println!(
+                    "venus-start: queue={} enable write {} size={} desc={:#x} driver={:#x} device={:#x} msix_vector={}",
+                    self.queue_sel, enable, queue.size, queue.desc, queue.driver, queue.device, queue.msix_vector
+                );
             }
             return true;
         }
@@ -970,6 +994,9 @@ impl VirtioGpu {
 
     fn write_status(&mut self, value: u64) {
         let raw = value as u32;
+        if venus_start_trace_enabled() {
+            println!("venus-start: device_status write {raw:#x}");
+        }
         self.record_trace_fields("device_status", |fields| {
             let _ = write!(fields, ",\"raw\":{},\"raw_hex\":\"{:#x}\"", raw, raw);
         });
@@ -1001,7 +1028,17 @@ impl VirtioGpu {
         config[8..12].copy_from_slice(&1u32.to_le_bytes());
         let num_capsets = self.three_d.capset_count();
         config[12..16].copy_from_slice(&num_capsets.to_le_bytes());
-        read_le_from_bytes(&config, offset, size).unwrap_or(0)
+        let value = read_le_from_bytes(&config, offset, size).unwrap_or(0);
+        if venus_start_trace_enabled() {
+            static COUNT: AtomicU64 = AtomicU64::new(0);
+            let n = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+            if trace_sample(n) {
+                println!(
+                    "venus-start: config_read n={n} off={offset:#x} size={size} value={value:#x} num_capsets={num_capsets}"
+                );
+            }
+        }
+        value
     }
 
     fn config_write(&mut self, offset: u64, size: u8, value: u64) {
@@ -2008,6 +2045,7 @@ impl VirtioGpu {
         hdr: CtrlHdr,
         response: &[u8],
     ) {
+        venus_start_trace_command(request, hdr, response);
         if !self.trace.enabled() {
             return;
         }
@@ -2408,7 +2446,10 @@ impl VirtioPciGpu {
                     self.msix.raise(vector, function_enabled, function_masked)
                 {
                     self.gpu.pending_config_change = false;
+                    venus_start_trace_msix("config raised", vector, function_enabled, function_masked);
                     out.push(message);
+                } else {
+                    venus_start_trace_msix("config held", vector, function_enabled, function_masked);
                 }
             } else {
                 // No config vector programmed (INTx path): the ISR config bit
@@ -2421,13 +2462,17 @@ impl VirtioPciGpu {
             let queue_index = pending.trailing_zeros() as usize;
             let vector = self.gpu.queues[queue_index].msix_vector;
             if vector == VIRTIO_MSI_NO_VECTOR {
+                venus_start_trace_msix_queue("no-vector (ISR path)", queue_index, vector);
                 pending &= !(1u8 << queue_index);
                 continue;
             }
             if let Some(message) = self.msix.raise(vector, function_enabled, function_masked) {
                 self.gpu.queues[queue_index].pending_msix = false;
                 self.gpu.pending_msix_queue_bits &= !(1u8 << queue_index);
+                venus_start_trace_msix_queue("raised", queue_index, vector);
                 out.push(message);
+            } else {
+                venus_start_trace_msix_queue("held (disabled/masked)", queue_index, vector);
             }
             pending &= !(1u8 << queue_index);
         }
@@ -2792,6 +2837,129 @@ fn command_name(typ: u32) -> &'static str {
 
 fn trace_sample(count: u64) -> bool {
     count <= 64 || count % 1024 == 0
+}
+
+fn venus_start_trace_msix(what: &str, vector: u16, enabled: bool, masked: bool) {
+    if !venus_start_trace_enabled() {
+        return;
+    }
+    static COUNT: AtomicU64 = AtomicU64::new(0);
+    let n = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+    if trace_sample(n) {
+        println!(
+            "venus-start: msix {what} vector={vector} fn_enabled={enabled} fn_masked={masked} n={n}"
+        );
+    }
+}
+
+fn venus_start_trace_msix_queue(what: &str, queue_index: usize, vector: u16) {
+    if !venus_start_trace_enabled() {
+        return;
+    }
+    static COUNT: AtomicU64 = AtomicU64::new(0);
+    let n = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+    if trace_sample(n) {
+        println!("venus-start: msix queue={queue_index} {what} vector={vector} n={n}");
+    }
+}
+
+/// Stdout mirror of the command trace for the venus KMD start path
+/// (`BRIDGEVM_TRACE_VENUS_START=1`). Capset/blob/context lifecycle commands
+/// and every error response print unconditionally — those are exactly the
+/// accesses DxgkDdiStartDevice makes before the crash — while the high-rate
+/// steady-state commands (SUBMIT_3D NOPs, transfers, flushes) are sampled.
+fn venus_start_trace_command(request: &[u8], hdr: CtrlHdr, response: &[u8]) {
+    if !venus_start_trace_enabled() {
+        return;
+    }
+    let response_type = read_le_u32(response, 0).unwrap_or(0);
+    let is_error = response_type >= VIRTIO_GPU_RESP_ERR_UNSPEC;
+    let always = is_error
+        || matches!(
+            hdr.typ,
+            VIRTIO_GPU_CMD_GET_CAPSET_INFO
+                | VIRTIO_GPU_CMD_GET_CAPSET
+                | VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB
+                | VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB
+                | VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB
+                | VIRTIO_GPU_CMD_CTX_CREATE
+                | VIRTIO_GPU_CMD_CTX_DESTROY
+        );
+    if !always {
+        static COUNT: AtomicU64 = AtomicU64::new(0);
+        let n = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+        if !trace_sample(n) {
+            return;
+        }
+    }
+    let mut line = format!(
+        "venus-start: cmd {} typ={:#x} ctx={} flags={:#x} -> {} typ={:#x}",
+        command_name(hdr.typ),
+        hdr.typ,
+        hdr.ctx_id,
+        hdr.flags,
+        response_name(response_type),
+        response_type
+    );
+    match hdr.typ {
+        VIRTIO_GPU_CMD_GET_CAPSET_INFO => {
+            let _ = write!(
+                line,
+                " capset_index={}",
+                read_le_u32(request, 24).unwrap_or(u32::MAX)
+            );
+            if response_type == virtio_gpu_3d::VIRTIO_GPU_RESP_OK_CAPSET_INFO {
+                let _ = write!(
+                    line,
+                    " capset_id={} max_version={} max_size={}",
+                    read_le_u32(response, 24).unwrap_or(0),
+                    read_le_u32(response, 28).unwrap_or(0),
+                    read_le_u32(response, 32).unwrap_or(0)
+                );
+            }
+        }
+        VIRTIO_GPU_CMD_GET_CAPSET => {
+            let _ = write!(
+                line,
+                " capset_id={} version={} response_bytes={}",
+                read_le_u32(request, 24).unwrap_or(0),
+                read_le_u32(request, 28).unwrap_or(0),
+                response.len().saturating_sub(24)
+            );
+        }
+        VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB => {
+            let _ = write!(
+                line,
+                " resource_id={} blob_mem={} blob_flags={:#x} blob_id={} size={} nr_entries={}",
+                read_le_u32(request, 24).unwrap_or(0),
+                read_le_u32(request, 28).unwrap_or(0),
+                read_le_u32(request, 32).unwrap_or(0),
+                read_le_u64(request, 40).unwrap_or(0),
+                read_le_u64(request, 48).unwrap_or(0),
+                read_le_u32(request, 36).unwrap_or(0)
+            );
+        }
+        VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB => {
+            let _ = write!(
+                line,
+                " resource_id={} shm_offset={:#x}",
+                read_le_u32(request, 24).unwrap_or(0),
+                read_le_u64(request, 32).unwrap_or(0)
+            );
+            if response_type == virtio_gpu_3d::VIRTIO_GPU_RESP_OK_MAP_INFO {
+                let _ = write!(line, " map_info={:#x}", read_le_u32(response, 24).unwrap_or(0));
+            }
+        }
+        VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => {
+            let _ = write!(
+                line,
+                " resource_id={}",
+                read_le_u32(request, 24).unwrap_or(0)
+            );
+        }
+        _ => {}
+    }
+    println!("{line}");
 }
 
 fn response_name(typ: u32) -> &'static str {

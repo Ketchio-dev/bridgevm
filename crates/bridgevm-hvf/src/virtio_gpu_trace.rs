@@ -140,6 +140,20 @@ pub(crate) fn write_json_string(out: &mut String, value: &str) {
     out.push('"');
 }
 
+/// Env gate for the venus KMD start-path stdout trace. The Windows venus
+/// WDDM miniport crashes during DxgkDdiStartDevice with no bugcheck, so the
+/// only forensic record is the host-side log of every device access the KMD
+/// made and what we returned; `BRIDGEVM_TRACE_VENUS_START=1` prints those as
+/// `venus-start:` lines on stdout (run.log) alongside the JSONL recorder.
+pub(crate) fn venus_start_trace_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("BRIDGEVM_TRACE_VENUS_START")
+            .ok()
+            .is_some_and(|value| matches!(value.trim(), "1" | "true" | "yes" | "on"))
+    })
+}
+
 fn trace_truthy(value: &str) -> bool {
     matches!(
         value.trim(),

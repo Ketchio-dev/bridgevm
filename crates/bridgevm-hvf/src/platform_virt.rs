@@ -327,6 +327,23 @@ pub enum MmioOp {
     Write { size: u8, value: u64 },
 }
 
+/// `BRIDGEVM_TRACE_VENUS_START=1`: log every MMIO access that decodes to any
+/// virtio-gpu BAR (MSI-X table BAR1, shm window BAR2, modern transport BAR4).
+/// The venus KMD dies before its first BAR4 common-config write, so the first
+/// BAR the KMD actually touches — and the last access before the reboot — is
+/// the divergence evidence. First 256 accesses, then sampled.
+fn venus_start_trace_gpu_bar_access(bar_index: usize, offset: u64, op: &MmioOp) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    if !crate::virtio_gpu_trace::venus_start_trace_enabled() {
+        return;
+    }
+    static COUNT: AtomicU64 = AtomicU64::new(0);
+    let n = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+    if n <= 256 || n % 1024 == 0 {
+        println!("venus-start: gpu bar{bar_index} off={offset:#x} {op:?} n={n}");
+    }
+}
+
 /// Result of dispatching a guest MMIO access.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MmioOutcome {
@@ -1359,6 +1376,9 @@ impl VirtPlatform {
                 MmioOp::Read { .. } | MmioOp::Write { .. } => {}
             }
         }
+        if target.bdf == VIRTIO_GPU_BDF {
+            venus_start_trace_gpu_bar_access(target.bar_index, target.offset, &op);
+        }
         match (target.bdf, target.bar_index) {
             (NVME_BDF, 0) => self.nvme_access(target.offset, op, mem),
             (HDA_BDF, 0) => self.hda_access(target.offset, op, mem),
@@ -1382,6 +1402,16 @@ impl VirtPlatform {
             (VIRTIO_NET_BDF, 1) => self.virtio_net_msix_access(target.offset, op),
             (VIRTIO_NET_BDF, 4) => self.virtio_net_access(target.offset, op, mem),
             (VIRTIO_GPU_BDF, 1) => self.virtio_gpu_msix_access(target.offset, op),
+            (VIRTIO_GPU_BDF, 2) => {
+                // Host-visible shm window (BAR2). Real backing appears only via
+                // hv_vm_map when a blob is mapped; a CPU access that exits here
+                // hit a region with no mapped blob. RAZ/WI keeps the guest
+                // alive; the venus-start trace above records it.
+                match op {
+                    MmioOp::Read { .. } => MmioOutcome::ReadValue(0),
+                    MmioOp::Write { .. } => MmioOutcome::WriteAck,
+                }
+            }
             (VIRTIO_GPU_BDF, 4) => self.virtio_gpu_access(target.offset, op, mem),
             (VIRTIO_CONSOLE_BDF, 1) => self.virtio_console_msix_access(target.offset, op),
             (VIRTIO_CONSOLE_BDF, 4) => self.virtio_console_access(target.offset, op, mem),
