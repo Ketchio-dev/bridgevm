@@ -125,6 +125,13 @@ impl KdSerialBridge {
             }
         }
 
+        if std::env::var_os("BRIDGEVM_TRACE_PL011").is_some() && !debugger_rx.is_empty() {
+            eprintln!(
+                "kd-serial: peer.read {} byte(s) from debugger first=0x{:02x}",
+                debugger_rx.len(),
+                debugger_rx[0]
+            );
+        }
         let transfer = KdSerialPump::tick(platform.take_uart_output(), debugger_rx);
         if !transfer.to_guest.is_empty() {
             platform.push_uart_input(&transfer.to_guest);

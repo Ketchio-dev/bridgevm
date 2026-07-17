@@ -4154,7 +4154,7 @@ checkpoint_glue::restore_if_requested(
                 .or_else(|| {
                     kd_serial_bridge
                         .is_some()
-                        .then_some(Duration::from_millis(20))
+                        .then_some(Duration::from_millis(2))
                 });
             if let Some(interval) = service_wake_interval {
                 agent_service_wake.ensure_started(vcpu, interval);

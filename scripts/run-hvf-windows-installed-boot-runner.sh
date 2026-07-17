@@ -219,6 +219,9 @@ build_installed_boot_env_args() {
   [[ -z "${BRIDGEVM_HDA_PCM_OUT:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_PCM_OUT=$BRIDGEVM_HDA_PCM_OUT")
   [[ -z "${BRIDGEVM_HDA_COREAUDIO:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_COREAUDIO=$BRIDGEVM_HDA_COREAUDIO")
   [[ -z "${BRIDGEVM_TRACE_HDA:-}" ]] || ENV_ARGS+=("BRIDGEVM_TRACE_HDA=$BRIDGEVM_TRACE_HDA")
+  # PL011 UART register + KD serial bridge byte-flow trace (pl011.rs /
+  # kd_serial_bridge.rs gate on BRIDGEVM_TRACE_PL011; absent = no trace).
+  [[ -z "${BRIDGEVM_TRACE_PL011:-}" ]] || ENV_ARGS+=("BRIDGEVM_TRACE_PL011=$BRIDGEVM_TRACE_PL011")
   if [[ -n "$SMP_CPUS" ]]; then
     ENV_ARGS+=("BRIDGEVM_SMP_CPUS=$SMP_CPUS")
   fi
