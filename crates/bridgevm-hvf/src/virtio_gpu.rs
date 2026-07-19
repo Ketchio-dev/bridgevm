@@ -241,6 +241,7 @@ pub struct VirtioGpu {
     response_scratch: Vec<u8>,
     parked_response_scratch: Vec<Vec<u8>>,
     blob_row_scratch: Vec<u8>,
+    scanout_readback_scratch: Vec<u8>,
     trace_fields_scratch: String,
     trace: VirtioGpuTraceRecorder,
     trace_queue_notify_count: u64,
@@ -453,6 +454,7 @@ impl VirtioGpu {
             response_scratch: Vec::new(),
             parked_response_scratch: Vec::new(),
             blob_row_scratch: Vec::new(),
+            scanout_readback_scratch: Vec::new(),
             trace_fields_scratch: String::new(),
             trace: VirtioGpuTraceRecorder::from_env(),
             trace_queue_notify_count: 0,
@@ -603,6 +605,7 @@ impl VirtioGpu {
         self.response_scratch.clear();
         self.parked_response_scratch.clear();
         self.blob_row_scratch.clear();
+        self.scanout_readback_scratch.clear();
         self.trace_fields_scratch.clear();
         self.last_vblank = None;
         self.vblank_paced_count = 0;
@@ -1857,6 +1860,23 @@ impl VirtioGpu {
                 );
             } else if self.three_d.is_3d_resource(resource_id) {
                 self.scanout_3d_flush_count = self.scanout_3d_flush_count.saturating_add(1);
+                let flush_count = self.scanout_3d_flush_count;
+                if flush_count <= 8 {
+                    let info = self.three_d.scanout_3d_info(resource_id);
+                    let local_backing = self.three_d.local_3d_backing(resource_id).is_some();
+                    let display_width = self.width;
+                    let display_height = self.height;
+                    self.record_trace_fields("scanout_3d_flush", |fields| {
+                        let _ = write!(
+                            fields,
+                            ",\"resource_id\":{resource_id},\"resource_width\":{},\"resource_height\":{},\"display_width\":{},\"display_height\":{},\"local_backing\":{local_backing},\"count\":{flush_count}",
+                            info.map_or(0, |info| info.width),
+                            info.map_or(0, |info| info.height),
+                            display_width,
+                            display_height
+                        );
+                    });
+                }
                 let local_readback = self
                     .three_d
                     .scanout_3d_info(resource_id)
@@ -1910,11 +1930,28 @@ impl VirtioGpu {
                     self.scanout_readback_attempt_count =
                         self.scanout_readback_attempt_count.saturating_add(1);
                     let started = Instant::now();
+                    let info = self
+                        .three_d
+                        .scanout_3d_info(resource_id)
+                        .expect("3D scanout resource disappeared during flush");
+                    let readback_width = info.width.min(self.width);
+                    let readback_height = info.height.min(self.height);
+                    let readback_len = scanout_len(readback_width, readback_height);
+                    self.scanout_readback_scratch.resize(readback_len, 0);
+                    self.scanout_readback_scratch.fill(0);
                     let readback_ok = self.three_d.read_3d_scanout(
                         resource_id,
+                        readback_width,
+                        readback_height,
+                        &mut self.scanout_readback_scratch,
+                    ) && composite_host_3d_to_scanout(
+                        &self.scanout_readback_scratch,
+                        readback_width,
+                        readback_height,
+                        &mut self.scanout,
                         self.width,
                         self.height,
-                        &mut self.scanout,
+                        rect,
                     );
                     let elapsed = started.elapsed();
                     let duration_ns = elapsed.as_nanos().min(u128::from(u64::MAX)) as u64;
@@ -1924,18 +1961,25 @@ impl VirtioGpu {
                     if readback_ok {
                         self.last_3d_scanout_readback = Some(Instant::now());
                         self.scanout_readback_count = self.scanout_readback_count.saturating_add(1);
-                        let bytes = u64::from(self.width)
-                            .saturating_mul(u64::from(self.height))
+                        let bytes = u64::from(readback_width)
+                            .saturating_mul(u64::from(readback_height))
                             .saturating_mul(4);
                         self.scanout_readback_bytes =
                             self.scanout_readback_bytes.saturating_add(bytes);
                         let count = self.scanout_readback_count;
-                        let width = self.width;
-                        let height = self.height;
+                        let width = readback_width;
+                        let height = readback_height;
                         self.record_trace_fields("scanout_readback", |fields| {
                             let _ = write!(
                                 fields,
                                 ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"bytes\":{bytes},\"duration_ns\":{duration_ns},\"count\":{count}"
+                            );
+                        });
+                    } else if flush_count <= 8 {
+                        self.record_trace_fields("scanout_readback_failed", |fields| {
+                            let _ = write!(
+                                fields,
+                                ",\"resource_id\":{resource_id},\"width\":{readback_width},\"height\":{readback_height},\"count\":{flush_count}"
                             );
                         });
                     }
@@ -3507,6 +3551,43 @@ fn composite_resource_to_scanout(
             scanout[dst..dst + 4].copy_from_slice(&to_xrgb8888(pixel, resource.format));
         }
     }
+}
+
+fn composite_host_3d_to_scanout(
+    pixels: &[u8],
+    resource_width: u32,
+    resource_height: u32,
+    scanout: &mut [u8],
+    scanout_width: u32,
+    scanout_height: u32,
+    rect: Rect,
+) -> bool {
+    if pixels.len() < scanout_len(resource_width, resource_height)
+        || scanout.len() < scanout_len(scanout_width, scanout_height)
+    {
+        return false;
+    }
+    let x_end = rect
+        .x
+        .saturating_add(rect.width)
+        .min(resource_width)
+        .min(scanout_width);
+    let y_end = rect
+        .y
+        .saturating_add(rect.height)
+        .min(resource_height)
+        .min(scanout_height);
+    if x_end <= rect.x || y_end <= rect.y {
+        return false;
+    }
+
+    let row_bytes = ((x_end - rect.x) as usize) * 4;
+    for y in rect.y..y_end {
+        let src = ((y as usize) * (resource_width as usize) + (rect.x as usize)) * 4;
+        let dst = ((y as usize) * (scanout_width as usize) + (rect.x as usize)) * 4;
+        scanout[dst..dst + row_bytes].copy_from_slice(&pixels[src..src + row_bytes]);
+    }
+    true
 }
 
 fn composite_local_3d_to_scanout(
@@ -6080,6 +6161,65 @@ mod tests {
         assert_eq!(stats.scanout_readback_bytes, 1280 * 800 * 4);
         let scanout = dev.gpu.scanout().expect("3D scanout should be active");
         assert_eq!(&scanout.bytes[..8], &[0, 1, 2, 3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn smaller_legacy_3d_scanout_uses_resource_dimensions_and_display_stride() {
+        let (mut dev, backend) = dev_with_mock();
+        dev.gpu = VirtioGpu::with_3d_backend(6, 4, Box::new(backend.clone()));
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+
+        let mut create = ctrl_req_ctx(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0);
+        for field in [
+            31u32,
+            2,
+            FORMAT_B8G8R8A8_UNORM,
+            0x8a,
+            4,
+            3,
+            1,
+            1,
+            0,
+            1,
+            0,
+            0,
+        ] {
+            create.extend_from_slice(&field.to_le_bytes());
+        }
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &create, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let mut set_scanout = ctrl_req(VIRTIO_GPU_CMD_SET_SCANOUT);
+        for field in [0u32, 0, 4, 3, 0, 31] {
+            set_scanout.extend_from_slice(&field.to_le_bytes());
+        }
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &set_scanout, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let mut flush = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_FLUSH);
+        for field in [0u32, 0, 4, 3, 31, 0] {
+            flush.extend_from_slice(&field.to_le_bytes());
+        }
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &flush, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        assert_eq!(backend.lock().unwrap().scanout_reads, vec![(31, 4, 3)]);
+        let scanout = dev.gpu.scanout().expect("3D scanout should be active");
+        assert_eq!(&scanout.bytes[..16], &(0u8..16).collect::<Vec<_>>());
+        assert_eq!(&scanout.bytes[16..24], &[0; 8]);
+        assert_eq!(&scanout.bytes[24..40], &(16u8..32).collect::<Vec<_>>());
+        assert_eq!(&scanout.bytes[40..48], &[0; 8]);
+        assert_eq!(&scanout.bytes[72..], &[0; 24]);
+        let stats = dev.stats();
+        assert_eq!(stats.scanout_readback_attempts, 1);
+        assert_eq!(stats.scanout_readbacks, 1);
+        assert_eq!(stats.scanout_readback_bytes, 4 * 3 * 4);
     }
 
     #[test]
