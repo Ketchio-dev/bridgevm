@@ -38,13 +38,13 @@ Environment:
                      Optional expected virtio-gpu PCI device id, 1050 or 10f7.
                      When unset, either id is accepted and recorded.
   VIOGPU3D_REQUIRE_RENDER_CANDIDATE
-                     Set to 1 to require a VirGL package with ARM64 user-mode
-                     DLLs plus active INF
-                     UserModeDriverName, OpenGLDriverName, OpenGLVersion,
-                     OpenGLFlags, and InstalledDisplayDrivers registrations,
-                     with the registered DLLs actively copied to DirID 11 and
-                     every source named by the selected DDInstall CopyFiles
-                     path present in the package.
+                     Set to 1 to require a protocol-complete ARM64 user-mode
+                     package. VirGL requires its D3D/OpenGL registrations and
+                     DirID 11 payload; Venus requires UserModeDriverName,
+                     InstalledDisplayDrivers, VulkanDriverName, OpenGLVersion,
+                     OpenGLFlags, and a DirID 13 D3D UMD + Vulkan ICD/JSON.
+                     Every source selected by DDInstall CopyFiles must be
+                     present in the package.
                      Default: 0, so KMD-only packages remain valid injection
                      candidates.
   VIOGPU3D_SOURCE_REPO / VIOGPU3D_SOURCE_REF / VIOGPU3D_BUILD_ID /
@@ -300,6 +300,7 @@ active_umd_contract_for_inf() {
 
   LC_ALL=C awk \
     -v expected_id="$(printf '%s' "$VIOGPU3D_PCI_DEVICE_ID" | tr '[:upper:]' '[:lower:]')" \
+    -v protocol="$detected_protocol" \
     -v payload_names="$payload_names" \
     -v dll_payload_names="$dll_payload_names" \
     '
@@ -592,6 +593,7 @@ active_umd_contract_for_inf() {
         path_user_seen = 0
         path_open_gl_seen = 0
         path_display_seen = 0
+        path_vulkan_seen = 0
         path_open_gl_version_seen = 0
         path_open_gl_flags_seen = 0
         path_copyfiles_payload_failed = 0
@@ -612,10 +614,12 @@ active_umd_contract_for_inf() {
       }
 
       function registered_dll_dirid(value, key,    normalized) {
-        if (key == "installeddisplaydrivers") return "11"
+        if (key == "installeddisplaydrivers") return protocol == "venus" ? "13" : "11"
         normalized = tolower(trim(value))
         gsub(/\\/, "/", normalized)
-        return substr(normalized, 1, 5) == "%11%/" ? "11" : ""
+        if (substr(normalized, 1, 5) == "%11%/") return "11"
+        if (substr(normalized, 1, 5) == "%13%/") return "13"
+        return ""
       }
 
       function record_copy_mapping(target, source, dirid, subdir, flags) {
@@ -709,7 +713,7 @@ active_umd_contract_for_inf() {
         return 0
       }
 
-      function evaluate_install_path(install, model,    i, line, equals_at, key, count, value, direct_source, section_name, target, source, dirid, subdir, copy_flags, registry_section, root, registry_subkey, registry_key, registry_flags, registry_kind, expected_target, expected_value, expected_data_count, data_count, data_index, valid) {
+      function evaluate_install_path(install, model,    i, line, equals_at, key, count, value, direct_source, section_name, target, source, dirid, subdir, copy_flags, registry_section, root, registry_subkey, registry_key, registry_flags, registry_kind, expected_target, expected_value, expected_data_count, expected_dirid, data_count, data_index, valid) {
         clear_path_state()
         any_selected_install = 1
         if (first_selected_install == "") first_selected_install = install
@@ -812,16 +816,25 @@ active_umd_contract_for_inf() {
               registry_kind = "dll"
               expected_target = "viogpu_d3d10.dll"
               expected_data_count = 4
+              expected_dirid = protocol == "venus" ? "13" : "11"
             } else if (registry_key == "opengldrivername") {
               path_open_gl_seen = 1
               registry_kind = "dll"
               expected_target = "viogpu_wgl.dll"
               expected_data_count = 1
+              expected_dirid = "11"
             } else if (registry_key == "installeddisplaydrivers") {
               path_display_seen = 1
               registry_kind = "dll"
               expected_target = "viogpu_d3d10.dll"
-              expected_data_count = 3
+              expected_data_count = protocol == "venus" ? 1 : 3
+              expected_dirid = protocol == "venus" ? "13" : "11"
+            } else if (registry_key == "vulkandrivername") {
+              path_vulkan_seen = 1
+              registry_kind = "json"
+              expected_target = "virtio_icd.arm64.json"
+              expected_data_count = 1
+              expected_dirid = "13"
             } else if (registry_key == "openglversion") {
               path_open_gl_version_seen = 1
               registry_kind = "dword"
@@ -843,6 +856,9 @@ active_umd_contract_for_inf() {
             if (registry_kind == "dll" &&
                 registry_flags != "0x00010000" &&
                 registry_flags != "%reg_multi_sz%") path_registration_failed = 1
+            if (registry_kind == "json" &&
+                registry_flags != "0x00000000" &&
+                registry_flags != "%reg_sz%") path_registration_failed = 1
             if (registry_kind == "dword" &&
                 registry_flags != "0x00010001" &&
                 registry_flags != "%reg_dword%") path_registration_failed = 1
@@ -851,17 +867,18 @@ active_umd_contract_for_inf() {
               value = trim(csv_field[data_index])
               if (value == "") continue
               data_count++
-              if (registry_kind == "dll") {
+              if (registry_kind == "dll" || registry_kind == "json") {
                 target = registered_dll_target(value, registry_key)
                 source = copy_source[target]
                 dirid = registered_dll_dirid(value, registry_key)
                 if (target != expected_target ||
-                    dirid != "11" ||
-                    copy_dirid[target] != "11" ||
+                    dirid != expected_dirid ||
+                    copy_dirid[target] != expected_dirid ||
                     copy_subdir[target] != "" ||
                     source == "" ||
                     !payload[source] ||
-                    !dll_payload[source]) path_registration_failed = 1
+                    (registry_kind == "dll" && !dll_payload[source]) ||
+                    (registry_kind == "json" && source !~ /[.]json$/)) path_registration_failed = 1
               } else if (value != expected_value) {
                 path_registration_failed = 1
               }
@@ -875,14 +892,24 @@ active_umd_contract_for_inf() {
         if (path_user_seen) any_user_seen = 1
         if (path_open_gl_seen) any_open_gl_seen = 1
         if (path_display_seen) any_display_seen = 1
+        if (path_vulkan_seen) any_vulkan_seen = 1
         if (path_open_gl_version_seen) any_open_gl_version_seen = 1
         if (path_open_gl_flags_seen) any_open_gl_flags_seen = 1
-        registration_valid = path_user_seen &&
-          path_open_gl_seen &&
-          path_display_seen &&
-          path_open_gl_version_seen &&
-          path_open_gl_flags_seen &&
-          !path_registration_failed
+        if (protocol == "venus") {
+          registration_valid = path_user_seen &&
+            path_display_seen &&
+            path_vulkan_seen &&
+            path_open_gl_version_seen &&
+            path_open_gl_flags_seen &&
+            !path_registration_failed
+        } else {
+          registration_valid = path_user_seen &&
+            path_open_gl_seen &&
+            path_display_seen &&
+            path_open_gl_version_seen &&
+            path_open_gl_flags_seen &&
+            !path_registration_failed
+        }
         if (registration_valid) any_registered_dlls_resolved = 1
 
         valid = registration_valid && !path_copyfiles_payload_failed
@@ -977,6 +1004,7 @@ active_umd_contract_for_inf() {
         printf "user_mode_driver_name_registered=%s\n", any_user_seen ? "true" : "false"
         printf "open_gl_driver_name_registered=%s\n", any_open_gl_seen ? "true" : "false"
         printf "installed_display_drivers_registered=%s\n", any_display_seen ? "true" : "false"
+        printf "vulkan_driver_name_registered=%s\n", any_vulkan_seen ? "true" : "false"
         printf "open_gl_version_registered=%s\n", any_open_gl_version_seen ? "true" : "false"
         printf "open_gl_flags_registered=%s\n", any_open_gl_flags_seen ? "true" : "false"
         printf "registered_dlls_resolved=%s\n", any_registered_dlls_resolved ? "true" : "false"
@@ -1004,10 +1032,12 @@ classify_render_capability() {
   local inf_install_section="<none>"
   local selected_inf_count=0
   local valid_inf_count=0
+  local protocol_registration_valid=false
 
   umd_user_mode_driver_name_registered=false
   umd_open_gl_driver_name_registered=false
   umd_installed_display_drivers_registered=false
+  umd_vulkan_driver_name_registered=false
   umd_open_gl_version_registered=false
   umd_open_gl_flags_registered=false
   umd_registered_dlls_resolved=false
@@ -1048,6 +1078,9 @@ classify_render_capability() {
           installed_display_drivers_registered)
             if [[ "$value" == "true" ]]; then umd_installed_display_drivers_registered=true; fi
             ;;
+          vulkan_driver_name_registered)
+            if [[ "$value" == "true" ]]; then umd_vulkan_driver_name_registered=true; fi
+            ;;
           open_gl_version_registered)
             if [[ "$value" == "true" ]]; then umd_open_gl_version_registered=true; fi
             ;;
@@ -1084,12 +1117,16 @@ classify_render_capability() {
     if (( selected_inf_count == 1 && valid_inf_count == 1 )); then
       contract_valid=true
       umd_user_mode_driver_name_registered=true
-      umd_open_gl_driver_name_registered=true
       umd_installed_display_drivers_registered=true
       umd_open_gl_version_registered=true
       umd_open_gl_flags_registered=true
       umd_registered_dlls_resolved=true
       umd_active_copyfiles_payload_resolved=true
+      if [[ "$detected_protocol" == "venus" ]]; then
+        umd_vulkan_driver_name_registered=true
+      else
+        umd_open_gl_driver_name_registered=true
+      fi
     elif (( selected_inf_count != 1 || valid_inf_count > 1 )); then
       contract_valid=false
       umd_registered_dlls_resolved=false
@@ -1100,24 +1137,25 @@ classify_render_capability() {
     fi
   fi
 
+  if [[ "$detected_protocol" == "venus" && "$umd_vulkan_driver_name_registered" == "true" ]]; then
+    protocol_registration_valid=true
+  elif [[ "$detected_protocol" == "virgl" && "$umd_open_gl_driver_name_registered" == "true" ]]; then
+    protocol_registration_valid=true
+  fi
+
   if (( ${#viogpu3d_dlls[@]} == 0 )); then
     package_capability="kmd-only"
     umd_registration="absent"
     render_candidate=false
     render_candidate_reason="no-user-mode-dll-payload"
-  elif [[ "$detected_protocol" != "virgl" ]]; then
-    package_capability="umd-contract-unverified"
-    umd_registration="protocol-specific"
-    render_candidate=false
-    render_candidate_reason="render-contract-not-defined-for-$detected_protocol"
   elif [[ "$contract_valid" == "true" &&
           "$umd_user_mode_driver_name_registered" == "true" &&
-          "$umd_open_gl_driver_name_registered" == "true" &&
           "$umd_installed_display_drivers_registered" == "true" &&
           "$umd_open_gl_version_registered" == "true" &&
           "$umd_open_gl_flags_registered" == "true" &&
           "$umd_registered_dlls_resolved" == "true" &&
-          "$umd_active_copyfiles_payload_resolved" == "true" ]]; then
+          "$umd_active_copyfiles_payload_resolved" == "true" &&
+          "$protocol_registration_valid" == "true" ]]; then
     package_capability="umd-registered"
     umd_registration="complete"
     render_candidate=true
@@ -1125,6 +1163,7 @@ classify_render_capability() {
   elif [[ "$umd_user_mode_driver_name_registered" == "false" &&
           "$umd_open_gl_driver_name_registered" == "false" &&
           "$umd_installed_display_drivers_registered" == "false" &&
+          "$umd_vulkan_driver_name_registered" == "false" &&
           "$umd_open_gl_version_registered" == "false" &&
           "$umd_open_gl_flags_registered" == "false" ]]; then
     package_capability="umd-payload-unregistered"
@@ -1138,10 +1177,10 @@ classify_render_capability() {
     render_candidate=false
     render_candidate_reason="active-copyfiles-source-payload-unresolved"
   elif [[ "$umd_user_mode_driver_name_registered" == "true" &&
-          "$umd_open_gl_driver_name_registered" == "true" &&
           "$umd_installed_display_drivers_registered" == "true" &&
           "$umd_open_gl_version_registered" == "true" &&
-          "$umd_open_gl_flags_registered" == "true" ]]; then
+          "$umd_open_gl_flags_registered" == "true" &&
+          "$protocol_registration_valid" == "true" ]]; then
     package_capability="umd-registration-dll-payload-unresolved"
     umd_registration="complete-but-unresolved"
     render_candidate=false
@@ -1152,6 +1191,30 @@ classify_render_capability() {
     render_candidate=false
     render_candidate_reason="required-inf-registration-incomplete"
   fi
+}
+
+venus_icd_manifest_valid() {
+  local file
+  local name
+  local manifest=""
+  local manifest_count=0
+  local d3d_found=0
+  local venus_found=0
+
+  for file in "${viogpu3d_package_files[@]}"; do
+    name="$(basename "$file" | tr '[:upper:]' '[:lower:]')"
+    case "$name" in
+      viogpu_d3d10.dll) d3d_found=1 ;;
+      vulkan_virtio.dll) venus_found=1 ;;
+      virtio_icd.arm64.json)
+        manifest="$file"
+        manifest_count=$((manifest_count + 1))
+        ;;
+    esac
+  done
+  (( d3d_found == 1 && venus_found == 1 && manifest_count == 1 )) || return 1
+  LC_ALL=C grep -Eq '"library_path"[[:space:]]*:[[:space:]]*"[.]\\\\vulkan_virtio[.]dll"' "$manifest" || return 1
+  LC_ALL=C grep -Eq '"library_arch"[[:space:]]*:[[:space:]]*"64"' "$manifest" || return 1
 }
 
 sha256_for_file() {
@@ -1196,6 +1259,7 @@ write_manifest() {
     printf 'umd_user_mode_driver_name_registered=%s\n' "$umd_user_mode_driver_name_registered"
     printf 'umd_open_gl_driver_name_registered=%s\n' "$umd_open_gl_driver_name_registered"
     printf 'umd_installed_display_drivers_registered=%s\n' "$umd_installed_display_drivers_registered"
+    printf 'umd_vulkan_driver_name_registered=%s\n' "$umd_vulkan_driver_name_registered"
     printf 'umd_open_gl_version_registered=%s\n' "$umd_open_gl_version_registered"
     printf 'umd_open_gl_flags_registered=%s\n' "$umd_open_gl_flags_registered"
     printf 'umd_registered_dlls_resolved=%s\n' "$umd_registered_dlls_resolved"
@@ -1348,6 +1412,12 @@ case "$detected_protocol" in
   *) fail "could not identify viogpu3d protocol; set VIOGPU3D_PROTOCOL=venus or virgl after package/source audit" ;;
 esac
 classify_render_capability
+if [[ "$detected_protocol" == "venus" && "$render_candidate" == "true" ]] && ! venus_icd_manifest_valid; then
+  package_capability="umd-registration-incomplete"
+  umd_registration="partial"
+  render_candidate=false
+  render_candidate_reason="venus-icd-manifest-or-arm64-payload-invalid"
+fi
 
 printf 'BridgeVM viogpu3d package check\n'
 printf 'dir=%s\n' "$VIOGPU3D_DIR"
@@ -1371,6 +1441,7 @@ printf 'umd_registration=%s\n' "$umd_registration"
 printf 'umd_user_mode_driver_name_registered=%s\n' "$umd_user_mode_driver_name_registered"
 printf 'umd_open_gl_driver_name_registered=%s\n' "$umd_open_gl_driver_name_registered"
 printf 'umd_installed_display_drivers_registered=%s\n' "$umd_installed_display_drivers_registered"
+printf 'umd_vulkan_driver_name_registered=%s\n' "$umd_vulkan_driver_name_registered"
 printf 'umd_open_gl_version_registered=%s\n' "$umd_open_gl_version_registered"
 printf 'umd_open_gl_flags_registered=%s\n' "$umd_open_gl_flags_registered"
 printf 'umd_registered_dlls_resolved=%s\n' "$umd_registered_dlls_resolved"

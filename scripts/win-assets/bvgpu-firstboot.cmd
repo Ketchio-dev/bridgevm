@@ -60,6 +60,15 @@ call :require_new_boot C:\BridgeVM\stage1.boot
 if errorlevel 1 goto :fail
 echo [stage2] pnputil install with testsigning active >> "%LOG%"
 pnputil /add-driver "%PKG%\viogpu3d.inf" /install >> "%LOG%" 2>&1
+if errorlevel 260 goto :fail
+if errorlevel 259 (
+  echo [stage2] pnputil reports the package is already current ^(259^); continuing >> "%LOG%"
+  goto :stage2_scan
+)
+if errorlevel 1 goto :fail
+:stage2_scan
+echo [stage2] release the offline VioGpu3D boot quarantine >> "%LOG%"
+sc.exe config VioGpu3D start= demand >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
 pnputil /scan-devices >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
@@ -79,6 +88,19 @@ goto :done
 set STAGE=stage3
 call :require_new_boot C:\BridgeVM\stage2.boot
 if errorlevel 1 goto :fail
+echo [stage3] exercise Vulkan loader and Venus ICD >> "%LOG%"
+set VN_DEBUG=init,result
+set MESA_LOG_FILE=C:\BridgeVM\bvgpu-mesa-vulkan.log
+if exist C:\BridgeVM\bvgpu-vulkan-probe.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-vulkan-probe.ps1 >> "%LOG%" 2>&1
+set VULKAN_STATUS=%ERRORLEVEL%
+echo [stage3] Vulkan probe errorlevel=%VULKAN_STATUS% >> "%LOG%"
+if "%VULKAN_STATUS%"=="0" goto :vulkan_ok
+cmd /c exit /b %VULKAN_STATUS%
+goto :fail
+
+:vulkan_ok
+echo [stage3] capture PnP, class-registry, DxgKrnl, and SetupAPI diagnostics >> "%LOG%"
+if exist C:\BridgeVM\bvgpu-diagnostics.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-diagnostics.ps1 >> "%LOG%" 2>&1
 echo [stage3] verify PnP status and bound viogpu3d INF >> "%LOG%"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$expectedInf = 'C:\BridgeVM\viogpu3d\viogpu3d.inf'; $dev = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -match '^PCI\\VEN_1AF4&DEV_(1050|10F7)(?:&|$)' -and $_.Status -eq 'OK' } | Select-Object -First 1; if (-not $dev) { Write-Error 'VirtIO GPU device is not present with Status OK'; exit 1 }; $drv = Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.DeviceID -eq $dev.InstanceId } | Select-Object -First 1; if (-not $drv -or $drv.InfName -notmatch '^oem[0-9]+[.]inf$') { Write-Error 'VirtIO GPU is not bound to an OEM driver package'; exit 2 }; $boundInf = Join-Path $env:windir ('INF\' + $drv.InfName); if (-not (Test-Path -LiteralPath $expectedInf -PathType Leaf) -or -not (Test-Path -LiteralPath $boundInf -PathType Leaf)) { Write-Error ('Expected or bound INF is missing: expected=' + $expectedInf + ' bound=' + $boundInf); exit 3 }; $expectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $expectedInf).Hash; $boundHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $boundInf).Hash; if ($boundHash -ne $expectedHash) { Write-Error ('Bound OEM INF does not match injected viogpu3d INF: bound=' + $boundInf + ' bound_sha256=' + $boundHash + ' expected_sha256=' + $expectedHash); exit 4 }; $dev | Format-List Status,Class,FriendlyName,InstanceId; $drv | Format-List DeviceName,DriverVersion,DriverProviderName,InfName; Write-Output ('expected_inf_sha256=' + $expectedHash); Write-Output ('bound_inf_sha256=' + $boundHash)" >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
@@ -101,9 +123,38 @@ endlocal
 exit /b 0
 
 :write_boot_identity
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = 'Stop'; try { $boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToFileTimeUtc().ToString([Globalization.CultureInfo]::InvariantCulture); [IO.File]::WriteAllText('%~1', $boot); Write-Output ('[boot-identity] path=%~1 value=' + $boot) } catch { Write-Error $_; exit 1 }" >> "%LOG%" 2>&1
+call :read_boot_identity
+if errorlevel 1 exit /b 1
+> "%~1" echo %CURRENT_BOOT_ID%
+if errorlevel 1 exit /b 1
+echo [boot-identity] path=%~1 value=%CURRENT_BOOT_ID% >> "%LOG%"
 exit /b %ERRORLEVEL%
 
 :require_new_boot
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = 'Stop'; try { if (-not (Test-Path -LiteralPath '%~1' -PathType Leaf)) { throw 'previous boot identity is missing: %~1' }; $previous = [IO.File]::ReadAllText('%~1').Trim(); if (-not $previous) { throw 'previous boot identity is empty: %~1' }; $current = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToFileTimeUtc().ToString([Globalization.CultureInfo]::InvariantCulture); if ($current -eq $previous) { Write-Error ('stage transition requires a completed reboot: boot_identity=' + $current); exit 1 }; Write-Output ('[boot-gate] previous=' + $previous + ' current=' + $current) } catch { Write-Error $_; exit 1 }" >> "%LOG%" 2>&1
-exit /b %ERRORLEVEL%
+if not exist "%~1" (
+  echo [boot-gate] previous boot identity is missing: %~1 >> "%LOG%"
+  exit /b 1
+)
+set "PREVIOUS_BOOT_ID="
+set /p PREVIOUS_BOOT_ID=<"%~1"
+if not defined PREVIOUS_BOOT_ID (
+  echo [boot-gate] previous boot identity is empty: %~1 >> "%LOG%"
+  exit /b 1
+)
+call :read_boot_identity
+if errorlevel 1 exit /b 1
+if /i "%CURRENT_BOOT_ID%"=="%PREVIOUS_BOOT_ID%" (
+  echo [boot-gate] stage transition requires a completed reboot: boot_identity=%CURRENT_BOOT_ID% >> "%LOG%"
+  exit /b 1
+)
+echo [boot-gate] previous=%PREVIOUS_BOOT_ID% current=%CURRENT_BOOT_ID% >> "%LOG%"
+exit /b 0
+
+:read_boot_identity
+set "CURRENT_BOOT_ID="
+for /f "tokens=1,2,3" %%I in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters" /v BootId 2^>nul') do if /i "%%I"=="BootId" set "CURRENT_BOOT_ID=%%K"
+if not defined CURRENT_BOOT_ID (
+  echo [boot-identity] failed to read PrefetchParameters\BootId >> "%LOG%"
+  exit /b 1
+)
+exit /b 0

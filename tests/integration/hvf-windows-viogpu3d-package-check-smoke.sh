@@ -49,6 +49,8 @@ DUPLICATE_DESTINATION="$STORE/virgl-full-duplicate-destination"
 MULTIPLE_MATCHING_INFS="$STORE/virgl-full-multiple-matching-infs"
 WRONG_UMD_DESTINATION="$STORE/virgl-full-wrong-umd-destination"
 TRUNCATED_UMD_LISTS="$STORE/virgl-full-truncated-umd-lists"
+VENUS_REGISTERED="$STORE/venus-full-registered"
+VENUS_BAD_ICD="$STORE/venus-full-bad-icd"
 PROVENANCE_MANIFEST="$STORE/provenance-manifest.txt"
 UNREGISTERED_MANIFEST="$STORE/unregistered-manifest.txt"
 
@@ -96,7 +98,9 @@ mkdir -p \
   "$DUPLICATE_DESTINATION" \
   "$MULTIPLE_MATCHING_INFS" \
   "$WRONG_UMD_DESTINATION" \
-  "$TRUNCATED_UMD_LISTS"
+  "$TRUNCATED_UMD_LISTS" \
+  "$VENUS_REGISTERED" \
+  "$VENUS_BAD_ICD"
 
 write_minimal_pe() {
   local path="$1"
@@ -353,6 +357,52 @@ INF
   fi
 }
 
+add_venus_payload() {
+  local dir="$1"
+  cat >>"$dir/viogpu3d.inf" <<'INF'
+
+[DestinationDirs]
+VioGpu3D_Files.Usermode=13
+
+[VioGpu3D_Inst.NT]
+CopyFiles=VioGpu3D_Files.Usermode
+AddReg=VioGpu3D_DeviceSettings
+
+[VioGpu3D_Files.Usermode]
+viogpu_d3d10.dll,,,0
+vulkan_virtio.dll,,,0
+virtio_icd.arm64.json,,,0
+
+[VioGpu3D_DeviceSettings]
+HKR,,UserModeDriverName,0x00010000,%13%\viogpu_d3d10.dll,%13%\viogpu_d3d10.dll,%13%\viogpu_d3d10.dll,%13%\viogpu_d3d10.dll
+HKR,,InstalledDisplayDrivers,0x00010000,viogpu_d3d10
+HKR,,VulkanDriverName,0x00000000,%13%\virtio_icd.arm64.json
+HKR,,OpenGLVersion,0x00010001,4096
+HKR,,OpenGLFlags,0x00010001,3
+
+[SourceDisksNames.arm64]
+1="venus fixture disk",,,
+
+[SourceDisksFiles.arm64]
+viogpu_d3d10.dll=1,,
+vulkan_virtio.dll=1,,
+virtio_icd.arm64.json=1,,
+INF
+  write_minimal_pe "$dir/viogpu_d3d10.dll" 144 252
+  write_minimal_pe "$dir/vulkan_virtio.dll" 144 252
+  cat >"$dir/virtio_icd.arm64.json" <<'JSON'
+{"ICD":{"api_version":"1.4.0","library_arch":"64","library_path":".\\vulkan_virtio.dll"},"file_format_version":"1.0.1"}
+JSON
+  cat >"$dir/bridgevm-package-provenance.env" <<'EOF'
+VIOGPU3D_SOURCE_REPO=venus-fixture
+VIOGPU3D_SOURCE_REF=fixture
+VIOGPU3D_BUILD_ID=fixture
+VIOGPU3D_SIGNING_CERT=fixture
+VIOGPU3D_PROTOCOL=venus
+VIOGPU3D_PCI_DEVICE_ID=10f7
+EOF
+}
+
 MANIFEST="$STORE/viogpu3d-manifest.txt"
 
 write_package "$VIOGPU3D" virgl
@@ -399,6 +449,7 @@ write_package "$DUPLICATE_DESTINATION" virgl 1050
 write_package "$MULTIPLE_MATCHING_INFS" virgl 1050
 write_package "$WRONG_UMD_DESTINATION" virgl 1050
 write_package "$TRUNCATED_UMD_LISTS" virgl 1050
+write_package "$VENUS_REGISTERED" venus 10F7
 printf '\n[RedHat.NTarm64.10.0]\n' >>"$AMBIGUOUS_MODEL_PATH/viogpu3d.inf"
 add_umd_payload "$UNREGISTERED" unregistered
 add_umd_payload "$REGISTERED" registered
@@ -441,6 +492,9 @@ add_umd_payload "$DUPLICATE_DESTINATION" registered duplicate-destination
 add_umd_payload "$MULTIPLE_MATCHING_INFS" registered
 add_umd_payload "$WRONG_UMD_DESTINATION" registered wrong-destination
 add_umd_payload "$TRUNCATED_UMD_LISTS" truncated
+add_venus_payload "$VENUS_REGISTERED"
+cp -R "$VENUS_REGISTERED/." "$VENUS_BAD_ICD/"
+printf '%s\n' '{"ICD":{"library_arch":"32","library_path":"missing.dll"}}' >"$VENUS_BAD_ICD/virtio_icd.arm64.json"
 cat >"$MULTIPLE_MATCHING_INFS/shadow.inf" <<'INF'
 [Manufacturer]
 %RedHat% = RedHat,NTarm64
@@ -597,6 +651,30 @@ assert_contains "$registered_output" "umd_registration_inf=$REGISTERED/viogpu3d.
 assert_contains "$registered_output" "umd_registration_model_section=redhat.ntarm64" "registered UMD package"
 assert_contains "$registered_output" "umd_registration_install_section=viogpu3d_inst.nt" "registered UMD package"
 assert_contains "$registered_output" "PASS: viogpu3d package is injection-ready" "registered UMD package"
+
+venus_registered_output="$(
+  scripts/check-hvf-windows-viogpu3d-package.sh \
+    --require-render-candidate \
+    "$VENUS_REGISTERED" 2>&1
+)" || fail "registered Venus package failed the render gate: $venus_registered_output"
+
+assert_contains "$venus_registered_output" "protocol=venus" "registered Venus package"
+assert_contains "$venus_registered_output" "package_capability=umd-registered" "registered Venus package"
+assert_contains "$venus_registered_output" "render_candidate=true" "registered Venus package"
+assert_contains "$venus_registered_output" "umd_user_mode_driver_name_registered=true" "registered Venus package"
+assert_contains "$venus_registered_output" "umd_installed_display_drivers_registered=true" "registered Venus package"
+assert_contains "$venus_registered_output" "umd_vulkan_driver_name_registered=true" "registered Venus package"
+assert_contains "$venus_registered_output" "umd_open_gl_driver_name_registered=false" "registered Venus package"
+assert_contains "$venus_registered_output" "umd_active_copyfiles_payload_resolved=true" "registered Venus package"
+
+venus_bad_icd_output="$(
+  scripts/check-hvf-windows-viogpu3d-package.sh \
+    --require-render-candidate \
+    "$VENUS_BAD_ICD" 2>&1
+)" && fail "invalid Venus ICD manifest unexpectedly passed the render gate: $venus_bad_icd_output"
+
+assert_contains "$venus_bad_icd_output" "venus-icd-manifest-or-arm64-payload-invalid" "invalid Venus ICD manifest"
+assert_contains "$venus_bad_icd_output" "render_candidate=false" "invalid Venus ICD manifest"
 
 orphan_output="$(
   scripts/check-hvf-windows-viogpu3d-package.sh \
