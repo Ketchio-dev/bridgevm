@@ -204,6 +204,11 @@ build_installed_boot_env_args() {
     DISK_ENV=("BRIDGEVM_NVME_DISK=$TARGET" 'BRIDGEVM_NVME_DISK_WRITABLE=1')
   fi
   ENV_ARGS=("${COMMON_ENV[@]}" "${DISK_ENV[@]}")
+  # Preserve the probe's opt-in UEFI-shell continuation mode. This is needed
+  # when setup-input deliberately starts an EFI application from the internal
+  # shell; without it the probe treats the shell banner as a terminal result
+  # before the queued input can fire.
+  [[ -z "${BRIDGEVM_RAMFB_SAMPLE_UNTIL_COMPLETE:-}" ]] || ENV_ARGS+=("BRIDGEVM_RAMFB_SAMPLE_UNTIL_COMPLETE=$BRIDGEVM_RAMFB_SAMPLE_UNTIL_COMPLETE")
   # Forward host-vblank pacing config from the caller's environment (env-gated
   # feature in virtio_gpu.rs; absent/0 = legacy immediate completion).
   [[ -z "${BRIDGEVM_VBLANK_HZ:-}" ]] || ENV_ARGS+=("BRIDGEVM_VBLANK_HZ=$BRIDGEVM_VBLANK_HZ")
@@ -222,6 +227,12 @@ build_installed_boot_env_args() {
   # PL011 UART register + KD serial bridge byte-flow trace (pl011.rs /
   # kd_serial_bridge.rs gate on BRIDGEVM_TRACE_PL011; absent = no trace).
   [[ -z "${BRIDGEVM_TRACE_PL011:-}" ]] || ENV_ARGS+=("BRIDGEVM_TRACE_PL011=$BRIDGEVM_TRACE_PL011")
+  # Crash-survivable reset snapshot channel (hvf_gic_boot_probe.rs): on a guest
+  # PSCI SYSTEM_RESET, dump vCPU regs + full guest RAM to this dir BEFORE the
+  # reboot wipes RAM, so a self-resetting Windows bugcheck (venus StartDevice)
+  # is readable offline. _MAX bounds how many resets are captured (default 1).
+  [[ -z "${BRIDGEVM_DUMP_ON_RESET:-}" ]] || ENV_ARGS+=("BRIDGEVM_DUMP_ON_RESET=$BRIDGEVM_DUMP_ON_RESET")
+  [[ -z "${BRIDGEVM_DUMP_ON_RESET_MAX:-}" ]] || ENV_ARGS+=("BRIDGEVM_DUMP_ON_RESET_MAX=$BRIDGEVM_DUMP_ON_RESET_MAX")
   if [[ -n "$SMP_CPUS" ]]; then
     ENV_ARGS+=("BRIDGEVM_SMP_CPUS=$SMP_CPUS")
   fi

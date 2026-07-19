@@ -76,10 +76,10 @@ use bridgevm_hvf::virtio_gpu_3d::GpuShmMapPort;
 #[path = "hvf_gic_boot_probe/agent_console.rs"]
 mod agent_console;
 use agent_console::AgentConsoleHarness;
-#[path = "hvf_gic_boot_probe/checkpoint_glue.rs"]
-mod checkpoint_glue;
 #[path = "hvf_gic_boot_probe/arm64_trace.rs"]
 mod arm64_trace;
+#[path = "hvf_gic_boot_probe/checkpoint_glue.rs"]
+mod checkpoint_glue;
 use arm64_trace::print_translated_instruction_words;
 #[path = "hvf_gic_boot_probe/device_shape.rs"]
 mod device_shape;
@@ -175,6 +175,8 @@ fn trace_isv0_data_abort(esr: u64, pc: u64, ipa: u64) {
 #[derive(Debug, Default)]
 struct HvGpuShmMapState {
     bar2_base: Option<u64>,
+    ecam_writes: u64,
+    base_changes: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -184,12 +186,15 @@ struct HvGpuShmMapPort {
 
 impl GpuShmMapPort for HvGpuShmMapPort {
     fn map(&mut self, host_ptr: *mut u8, size: usize, shm_offset: u64) -> Result<(), i32> {
-        let Some(bar2_base) = self.state.lock().unwrap().bar2_base else {
+        let state = self.state.lock().unwrap();
+        let Some(bar2_base) = state.bar2_base else {
             eprintln!(
-                "virtio-gpu hv shm map: BAR2 unassigned offset={shm_offset:#x} size={size:#x}"
+                "virtio-gpu hv shm map: BAR2 unassigned offset={shm_offset:#x} size={size:#x} ecam_writes={} base_changes={}",
+                state.ecam_writes, state.base_changes
             );
             return Err(-12);
         };
+        drop(state);
         if (host_ptr as usize) % 0x4000 != 0 || (size % 0x4000) != 0 || shm_offset % 0x4000 != 0 {
             eprintln!(
                 "virtio-gpu hv shm map: unaligned host_ptr={host_ptr:p} offset={shm_offset:#x} size={size:#x}"
@@ -2357,6 +2362,122 @@ fn dump_env_guest_bytes(mem: &dyn GuestMemoryMut) {
     }
 }
 
+/// Directory for the crash-survivable reset snapshot channel, or None if the
+/// `BRIDGEVM_DUMP_ON_RESET` env is unset/empty. Forwarded by the installed-boot
+/// runner (`--dump-on-reset <dir>`); the launcher strips inherited BRIDGEVM_*
+/// so it only arrives via ENV_ARGS.
+fn dump_on_reset_dir() -> Option<String> {
+    std::env::var("BRIDGEVM_DUMP_ON_RESET")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// How many guest resets to snapshot (default 1 = only the first / gen1 crash).
+fn dump_on_reset_max() -> u64 {
+    std::env::var("BRIDGEVM_DUMP_ON_RESET_MAX")
+        .ok()
+        .and_then(|s| parse_u64(&s))
+        .unwrap_or(1)
+}
+
+/// Crash-survivable observation channel. On a guest PSCI SYSTEM_RESET, snapshot
+/// the vCPU register file and the ENTIRE guest RAM to disk BEFORE the reboot
+/// path wipes RAM. Windows bugchecks that self-reset without ever writing a
+/// crash dump (the venus KMD StartDevice crash behaves this way) are still
+/// fully readable offline from this snapshot: walk TTBR1_EL1, resolve
+/// KiBugCheckData, map the faulting PC/params to loaded modules. Best-effort;
+/// any IO error is logged and non-fatal so it never perturbs the reboot path.
+fn dump_guest_state_on_reset(
+    dir: &str,
+    index: u64,
+    vcpu: HvVcpuT,
+    ram_ptr: *const u8,
+    ram_size: usize,
+) {
+    use std::io::Write as _;
+    if let Err(e) = std::fs::create_dir_all(dir) {
+        println!("DUMP_ON_RESET[{index}]: cannot create dir {dir:?}: {e}");
+        return;
+    }
+    let reg = |r: u32| -> u64 {
+        let mut v = 0u64;
+        unsafe {
+            hv_vcpu_get_reg(vcpu, r, &mut v);
+        }
+        v
+    };
+    let sreg = |r: u16| -> u64 {
+        let mut v = 0u64;
+        unsafe {
+            hv_vcpu_get_sys_reg(vcpu, r, &mut v);
+        }
+        v
+    };
+    let mut json = String::new();
+    json.push_str("{\n");
+    json.push_str(&format!("  \"index\": {index},\n"));
+    json.push_str(&format!("  \"ram_base\": {},\n", machine::RAM_BASE));
+    json.push_str(&format!("  \"ram_size\": {ram_size},\n"));
+    json.push_str("  \"x\": [");
+    for i in 0..=30u32 {
+        if i > 0 {
+            json.push_str(", ");
+        }
+        json.push_str(&format!("{}", reg(HV_REG_X0 + i)));
+    }
+    json.push_str("],\n");
+    for (name, v) in [
+        ("pc", reg(HV_REG_PC)),
+        ("cpsr", reg(HV_REG_CPSR)),
+        ("sctlr_el1", sreg(HV_SYS_REG_SCTLR_EL1)),
+        ("ttbr0_el1", sreg(HV_SYS_REG_TTBR0_EL1)),
+        ("ttbr1_el1", sreg(HV_SYS_REG_TTBR1_EL1)),
+        ("tcr_el1", sreg(HV_SYS_REG_TCR_EL1)),
+        ("spsr_el1", sreg(HV_SYS_REG_SPSR_EL1)),
+        ("elr_el1", sreg(HV_SYS_REG_ELR_EL1)),
+        ("esr_el1", sreg(HV_SYS_REG_ESR_EL1)),
+        ("far_el1", sreg(HV_SYS_REG_FAR_EL1)),
+        ("mair_el1", sreg(HV_SYS_REG_MAIR_EL1)),
+        ("vbar_el1", sreg(HV_SYS_REG_VBAR_EL1)),
+        ("sp_el0", sreg(HV_SYS_REG_SP_EL0)),
+        ("sp_el1", sreg(HV_SYS_REG_SP_EL1)),
+    ] {
+        json.push_str(&format!("  \"{name}\": {v},\n"));
+    }
+    json.push_str("  \"_\": 0\n}\n");
+    let regs_path = format!("{dir}/reset-{index}-regs.json");
+    match std::fs::write(&regs_path, json.as_bytes()) {
+        Ok(()) => println!("DUMP_ON_RESET[{index}]: wrote {regs_path}"),
+        Err(e) => println!("DUMP_ON_RESET[{index}]: regs write failed: {e}"),
+    }
+    let ram_path = format!("{dir}/reset-{index}-ram.bin");
+    match std::fs::File::create(&ram_path) {
+        Ok(mut f) => {
+            // SAFETY: ram_ptr/ram_size describe the live guest RAM mapping,
+            // valid for the whole probe run and not concurrently mutated here
+            // (all vCPUs are stopped/joined before the reset dispatcher runs).
+            let slice = unsafe { std::slice::from_raw_parts(ram_ptr, ram_size) };
+            let mut off = 0usize;
+            let mut ok = true;
+            while off < ram_size {
+                let end = (off + (32usize << 20)).min(ram_size);
+                if let Err(e) = f.write_all(&slice[off..end]) {
+                    println!("DUMP_ON_RESET[{index}]: ram write failed at {off:#x}: {e}");
+                    ok = false;
+                    break;
+                }
+                off = end;
+            }
+            if ok {
+                let _ = f.flush();
+                println!("DUMP_ON_RESET[{index}]: wrote {ram_path} ({ram_size} bytes)");
+            }
+        }
+        Err(e) => println!("DUMP_ON_RESET[{index}]: ram create failed: {e}"),
+    }
+}
+
 fn print_stage1_walk_steps(label: &str, steps: &[Stage1WalkStep]) {
     if !env_flag("BRIDGEVM_TRACE_STAGE1_WALKS") {
         return;
@@ -3738,9 +3859,7 @@ fn main() -> ExitCode {
         let mut platform = VirtPlatform::new_with_config(platform_cfg);
         if env_flag("BRIDGEVM_HDA_COREAUDIO") {
             if !platform_cfg.devices.hda_present {
-                eprintln!(
-                    "BRIDGEVM_HDA_COREAUDIO ignored because BRIDGEVM_HDA is not enabled"
-                );
+                eprintln!("BRIDGEVM_HDA_COREAUDIO ignored because BRIDGEVM_HDA is not enabled");
             } else {
                 #[cfg(target_os = "macos")]
                 {
@@ -3928,14 +4047,15 @@ fn main() -> ExitCode {
         println!("PSCI SYSTEM_RESET max reboots: {}", reboot_plan.max_reboots);
         let watchdog_generation = Arc::new(AtomicU64::new(0));
         let mut reboot_count = 0u64;
+        let mut resets_dumped = 0u64;
         reset_vcpu_for_boot(vcpu);
         arm_watchpoint_for_boot(vcpu, watch_addr);
-checkpoint_glue::restore_if_requested(
-    &[vcpu],
-    std::slice::from_raw_parts_mut(ram, ram_size),
-    &mut platform,
-)
-.unwrap_or_else(|error| panic!("restore VM checkpoint: {error}"));
+        checkpoint_glue::restore_if_requested(
+            &[vcpu],
+            std::slice::from_raw_parts_mut(ram, ram_size),
+            &mut platform,
+        )
+        .unwrap_or_else(|error| panic!("restore VM checkpoint: {error}"));
         let hv_gpu_shm_state = Arc::new(Mutex::new(HvGpuShmMapState::default()));
         let installed_hv_gpu_shm_port =
             platform.set_virtio_gpu_shm_map_port(Box::new(HvGpuShmMapPort {
@@ -4330,8 +4450,19 @@ checkpoint_glue::restore_if_requested(
                                 let (outcome, post_drain) =
                                     platform.on_mmio_with_post_drain(ipa, op, &mut guest_ram);
                                 if device == "pcie-ecam" && matches!(op, MmioOp::Write { .. }) {
-                                    hv_gpu_shm_state.lock().unwrap().bar2_base =
-                                        platform.virtio_gpu_host_visible_bar_base();
+                                    let base = platform.virtio_gpu_host_visible_bar_base();
+                                    let mut state = hv_gpu_shm_state.lock().unwrap();
+                                    state.ecam_writes = state.ecam_writes.saturating_add(1);
+                                    if state.bar2_base != base {
+                                        state.base_changes = state.base_changes.saturating_add(1);
+                                        eprintln!(
+                                            "virtio-gpu hv shm BAR2 update: ipa={ipa:#x} old={:?} new={base:?} ecam_writes={} base_changes={}",
+                                            state.bar2_base,
+                                            state.ecam_writes,
+                                            state.base_changes
+                                        );
+                                    }
+                                    state.bar2_base = base;
                                 }
                                 recent_pcie_ecam.record_after_with_context(
                                     platform,
@@ -4624,12 +4755,12 @@ checkpoint_glue::restore_if_requested(
                             agent_console.tick(platform, &mut guest_ram, now);
                             if agent_console.desktop_ready() {
                                 boot_timer.observe_agent_ready(now, exits);
-checkpoint_glue::checkpoint_if_requested(
-    &[vcpu],
-    std::slice::from_raw_parts(ram, ram_size),
-    platform,
-)
-.unwrap_or_else(|error| panic!("capture VM checkpoint: {error}"));
+                                checkpoint_glue::checkpoint_if_requested(
+                                    &[vcpu],
+                                    std::slice::from_raw_parts(ram, ram_size),
+                                    platform,
+                                )
+                                .unwrap_or_else(|error| panic!("capture VM checkpoint: {error}"));
                             }
                         }
                         for trigger in &mut xhci_setup_input_triggers {
@@ -4735,6 +4866,19 @@ checkpoint_glue::checkpoint_if_requested(
                 .unwrap_or_default();
             fatal_vcpu_run_error |= secondary_vcpu_run_error;
             if requested_system_reset {
+                // Crash-survivable snapshot: capture regs + full RAM BEFORE the
+                // reboot arm below wipes guest RAM / resets the vCPU. Gated on
+                // BRIDGEVM_DUMP_ON_RESET; defaults to only the first reset so a
+                // gen1 bugcheck (venus StartDevice) is caught, not later gens.
+                if let Some(dir) = dump_on_reset_dir() {
+                    if resets_dumped < dump_on_reset_max() {
+                        println!(
+                            "DUMP_ON_RESET: capturing reset #{resets_dumped} (reboot_count={reboot_count})"
+                        );
+                        dump_guest_state_on_reset(&dir, resets_dumped, vcpu, ram, ram_size);
+                        resets_dumped += 1;
+                    }
+                }
                 match decide_system_reset(reboot_count, reboot_plan) {
                     SystemResetDecision::Reboot {
                         next_reboot_count,
