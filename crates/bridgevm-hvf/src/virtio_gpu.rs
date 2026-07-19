@@ -6,12 +6,12 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::sync::OnceLock;
 use std::fs::{File, OpenOptions};
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crate::{
@@ -22,7 +22,7 @@ use crate::{
     },
     ramfb::DRM_FORMAT_XRGB8888,
     virtio_gpu_3d::{
-        self, BlobMemEntry, CompletedFence, CtrlHdr3d, GpuShmMapPort, VirtioGpu3d,
+        self, BlobMemEntry, CompletedFence, Create3dArgs, CtrlHdr3d, GpuShmMapPort, VirtioGpu3d,
         VirtioGpu3dBackend, VirtioGpu3dStats, VIRTIO_GPU_BLOB_MEM_GUEST,
         VIRTIO_GPU_BLOB_MEM_HOST3D, VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE, VIRTIO_GPU_CMD_CTX_CREATE,
         VIRTIO_GPU_CMD_CTX_DESTROY, VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE, VIRTIO_GPU_CMD_GET_CAPSET,
@@ -179,7 +179,9 @@ impl VblankWakeState {
 
     fn publish(&self, parked: bool, deadline: Option<Instant>) {
         let deadline_ns = deadline
-            .map(|d| u64::try_from(d.saturating_duration_since(self.base).as_nanos()).unwrap_or(u64::MAX))
+            .map(|d| {
+                u64::try_from(d.saturating_duration_since(self.base).as_nanos()).unwrap_or(u64::MAX)
+            })
             .unwrap_or(0);
         self.deadline_ns.store(deadline_ns, Ordering::SeqCst);
         self.parked.store(parked, Ordering::SeqCst);
@@ -994,11 +996,30 @@ impl VirtioGpu {
 
     fn write_status(&mut self, value: u64) {
         let raw = value as u32;
+        let previous = self.status;
+        let driver_features_word0 = self.driver_features[0];
+        let driver_features_word1 = self.driver_features[1];
+        let resources = self.resources.len();
+        let scanout_active = self.scanout_resource.is_some() || self.blob_scanout.is_some();
         if venus_start_trace_enabled() {
             println!("venus-start: device_status write {raw:#x}");
         }
         self.record_trace_fields("device_status", |fields| {
-            let _ = write!(fields, ",\"raw\":{},\"raw_hex\":\"{:#x}\"", raw, raw);
+            let _ = write!(
+                fields,
+                ",\"raw\":{},\"raw_hex\":\"{:#x}\",\"previous\":{},\"previous_hex\":\"{:#x}\",\"reset\":{},\"driver_features_word0\":{},\"driver_features_word0_hex\":\"{:#x}\",\"driver_features_word1\":{},\"driver_features_word1_hex\":\"{:#x}\",\"resources\":{},\"scanout_active\":{}",
+                raw,
+                raw,
+                previous,
+                previous,
+                raw == 0,
+                driver_features_word0,
+                driver_features_word0,
+                driver_features_word1,
+                driver_features_word1,
+                resources,
+                scanout_active
+            );
         });
         self.status = value as u32;
         if value == 0 {
@@ -1199,6 +1220,11 @@ impl VirtioGpu {
             && hdr.flags & VIRTIO_GPU_FLAG_FENCE != 0
             && hdr.ctx_id != 0
             && self.three_d.has_backend()
+            // The WDDM KMD uses numeric context ids for its display-copy path
+            // before any UMD VIOGPU_CTX_INIT/CTX_CREATE. Those commands are
+            // handled synchronously by the local scanout path and have no
+            // renderer context on which virglrenderer could create a fence.
+            && self.three_d.has_live_context(hdr.ctx_id)
             && command_requires_backend_fence(hdr.typ)
         {
             let fence = CompletedFence {
@@ -1262,7 +1288,11 @@ impl VirtioGpu {
         }
     }
 
-    fn recycle_parked_response_buffers(&mut self, mut descs: Vec<Descriptor>, mut response: Vec<u8>) {
+    fn recycle_parked_response_buffers(
+        &mut self,
+        mut descs: Vec<Descriptor>,
+        mut response: Vec<u8>,
+    ) {
         descs.clear();
         response.clear();
         self.recycle_descriptor_scratch(descs);
@@ -1386,9 +1416,10 @@ impl VirtioGpu {
         if self.vblank_interval.is_zero() || self.pending_vblank.is_empty() {
             return;
         }
-        if self.last_vblank.is_some_and(|last| {
-            now.saturating_duration_since(last) < self.vblank_interval
-        }) {
+        if self
+            .last_vblank
+            .is_some_and(|last| now.saturating_duration_since(last) < self.vblank_interval)
+        {
             return;
         }
 
@@ -1429,10 +1460,7 @@ impl VirtioGpu {
                 ",\"vblank_paced_count\":{count},\"interval_ns\":{interval_ns},\"used_len\":{used_len},\"pending\":{pending}"
             );
         });
-        self.recycle_parked_response_buffers(
-            pending_response.descs,
-            pending_response.response,
-        );
+        self.recycle_parked_response_buffers(pending_response.descs, pending_response.response);
     }
 
     pub fn drain_completed_fences(&mut self, mem: &mut dyn GuestMemoryMut) {
@@ -1626,6 +1654,12 @@ impl VirtioGpu {
     }
 
     fn set_scanout_into(&mut self, request: &[u8], hdr: Option<CtrlHdr>, out: &mut Vec<u8>) {
+        let rect = read_rect(request, 24).unwrap_or(Rect {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+        });
         let scanout_id = read_le_u32(request, 40).unwrap_or(u32::MAX);
         let resource_id = read_le_u32(request, 44).unwrap_or(0);
         if scanout_id != 0 {
@@ -1641,9 +1675,19 @@ impl VirtioGpu {
                     .three_d
                     .scanout_3d_info(resource_id)
                     .is_some_and(|info| {
-                        info.format == FORMAT_B8G8R8A8_UNORM
-                            && info.width >= self.width
-                            && info.height >= self.height
+                        format_supported(info.format)
+                            && rect.width > 0
+                            && rect.height > 0
+                            && rect.width <= self.width
+                            && rect.height <= self.height
+                            && rect
+                                .x
+                                .checked_add(rect.width)
+                                .is_some_and(|end| end <= info.width)
+                            && rect
+                                .y
+                                .checked_add(rect.height)
+                                .is_some_and(|end| end <= info.height)
                     });
             if !valid_resource {
                 response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
@@ -1784,13 +1828,7 @@ impl VirtioGpu {
         }
         let (fb_sink, scanout) = (&mut self.fb_sink, &self.scanout);
         if let Some(sink) = fb_sink.as_mut() {
-            sink.write(
-                width,
-                height,
-                stride,
-                DRM_FORMAT_XRGB8888,
-                scanout,
-            );
+            sink.write(width, height, stride, DRM_FORMAT_XRGB8888, scanout);
         }
     }
 
@@ -1819,6 +1857,51 @@ impl VirtioGpu {
                 );
             } else if self.three_d.is_3d_resource(resource_id) {
                 self.scanout_3d_flush_count = self.scanout_3d_flush_count.saturating_add(1);
+                let local_readback = self
+                    .three_d
+                    .scanout_3d_info(resource_id)
+                    .zip(self.three_d.local_3d_backing(resource_id))
+                    .map(|(info, backing)| {
+                        let started = Instant::now();
+                        let copied = composite_local_3d_to_scanout(
+                            mem,
+                            backing,
+                            info,
+                            &mut self.scanout,
+                            self.width,
+                            self.height,
+                            rect,
+                            &mut self.blob_row_scratch,
+                        );
+                        (copied, started.elapsed())
+                    });
+                if let Some((readback_ok, elapsed)) = local_readback {
+                    self.scanout_readback_attempt_count =
+                        self.scanout_readback_attempt_count.saturating_add(1);
+                    let duration_ns = elapsed.as_nanos().min(u128::from(u64::MAX)) as u64;
+                    self.scanout_readback_nanoseconds = self
+                        .scanout_readback_nanoseconds
+                        .saturating_add(duration_ns);
+                    if readback_ok {
+                        self.scanout_readback_count = self.scanout_readback_count.saturating_add(1);
+                        let bytes = u64::from(rect.width)
+                            .saturating_mul(u64::from(rect.height))
+                            .saturating_mul(4);
+                        self.scanout_readback_bytes =
+                            self.scanout_readback_bytes.saturating_add(bytes);
+                        let count = self.scanout_readback_count;
+                        self.record_trace_fields("scanout_guest_backing", |fields| {
+                            let _ = write!(
+                                fields,
+                                ",\"resource_id\":{resource_id},\"width\":{},\"height\":{},\"bytes\":{bytes},\"duration_ns\":{duration_ns},\"count\":{count}",
+                                rect.width, rect.height
+                            );
+                        });
+                    }
+                    self.publish_scanout_fb();
+                    response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
+                    return;
+                }
                 let now = Instant::now();
                 let readback_due = self.last_3d_scanout_readback.map_or(true, |last| {
                     now.saturating_duration_since(last) >= self.scanout_readback_interval
@@ -2059,8 +2142,7 @@ impl VirtioGpu {
             // exists to witness; record every one of them.
             let submit_size = read_le_u32(request, 24).unwrap_or(0);
             if submit_size == 0 {
-                self.trace_submit_success_count =
-                    self.trace_submit_success_count.saturating_add(1);
+                self.trace_submit_success_count = self.trace_submit_success_count.saturating_add(1);
                 if !trace_sample(self.trace_submit_success_count) {
                     return;
                 }
@@ -2442,14 +2524,22 @@ impl VirtioPciGpu {
         if self.gpu.pending_config_change {
             let vector = self.gpu.config_msix_vector;
             if vector != VIRTIO_MSI_NO_VECTOR {
-                if let Some(message) =
-                    self.msix.raise(vector, function_enabled, function_masked)
-                {
+                if let Some(message) = self.msix.raise(vector, function_enabled, function_masked) {
                     self.gpu.pending_config_change = false;
-                    venus_start_trace_msix("config raised", vector, function_enabled, function_masked);
+                    venus_start_trace_msix(
+                        "config raised",
+                        vector,
+                        function_enabled,
+                        function_masked,
+                    );
                     out.push(message);
                 } else {
-                    venus_start_trace_msix("config held", vector, function_enabled, function_masked);
+                    venus_start_trace_msix(
+                        "config held",
+                        vector,
+                        function_enabled,
+                        function_masked,
+                    );
                 }
             } else {
                 // No config vector programmed (INTx path): the ISR config bit
@@ -2524,170 +2614,173 @@ impl VirtioPciGpu {
         (rel < self.msix.pba_byte_len()).then_some(rel)
     }
 
-pub fn snapshot_state(&self) -> Vec<u8> {
-    let gpu = &self.gpu;
-    let mut out = crate::checkpoint::StateWriter::new();
-    out.write_u32(1);
-    out.write_u32(gpu.width);
-    out.write_u32(gpu.height);
-    out.write_u32(gpu.device_features_sel);
-    out.write_u32(gpu.driver_features_sel);
-    out.write_u32(gpu.driver_features[0]);
-    out.write_u32(gpu.driver_features[1]);
-    out.write_u16(gpu.config_msix_vector);
-    out.write_u16(0);
-    out.write_u32(gpu.queue_sel);
-    out.write_u8(gpu.pending_msix_queue_bits);
-    out.write_u8(0);
-    out.write_u16(0);
-    out.write_u32(gpu.status);
-    out.write_u32(gpu.interrupt_status);
-    out.write_u32(gpu.events_clear);
-
-    for queue in &gpu.queues {
-        out.write_u16(queue.size);
-        out.write_bool(queue.ready);
-        out.write_bool(queue.pending_msix);
-        out.write_u64(queue.desc);
-        out.write_u64(queue.driver);
-        out.write_u64(queue.device);
-        out.write_u16(queue.msix_vector);
-        out.write_u16(queue.notify_off);
-        out.write_u16(queue.last_avail_idx);
+    pub fn snapshot_state(&self) -> Vec<u8> {
+        let gpu = &self.gpu;
+        let mut out = crate::checkpoint::StateWriter::new();
+        out.write_u32(1);
+        out.write_u32(gpu.width);
+        out.write_u32(gpu.height);
+        out.write_u32(gpu.device_features_sel);
+        out.write_u32(gpu.driver_features_sel);
+        out.write_u32(gpu.driver_features[0]);
+        out.write_u32(gpu.driver_features[1]);
+        out.write_u16(gpu.config_msix_vector);
         out.write_u16(0);
-    }
+        out.write_u32(gpu.queue_sel);
+        out.write_u8(gpu.pending_msix_queue_bits);
+        out.write_u8(0);
+        out.write_u16(0);
+        out.write_u32(gpu.status);
+        out.write_u32(gpu.interrupt_status);
+        out.write_u32(gpu.events_clear);
 
-    out.write_u32(gpu.resources.len() as u32);
-    for (&resource_id, resource) in &gpu.resources {
-        out.write_u32(resource_id);
-        out.write_u32(resource.format);
-        out.write_u32(resource.width);
-        out.write_u32(resource.height);
-        out.write_blob(&resource.host_pixels);
-        out.write_u32(resource.backing.len() as u32);
-        for backing in &resource.backing {
-            out.write_u64(backing.addr);
-            out.write_u32(backing.len);
-            out.write_u32(0);
+        for queue in &gpu.queues {
+            out.write_u16(queue.size);
+            out.write_bool(queue.ready);
+            out.write_bool(queue.pending_msix);
+            out.write_u64(queue.desc);
+            out.write_u64(queue.driver);
+            out.write_u64(queue.device);
+            out.write_u16(queue.msix_vector);
+            out.write_u16(queue.notify_off);
+            out.write_u16(queue.last_avail_idx);
+            out.write_u16(0);
         }
+
+        out.write_u32(gpu.resources.len() as u32);
+        for (&resource_id, resource) in &gpu.resources {
+            out.write_u32(resource_id);
+            out.write_u32(resource.format);
+            out.write_u32(resource.width);
+            out.write_u32(resource.height);
+            out.write_blob(&resource.host_pixels);
+            out.write_u32(resource.backing.len() as u32);
+            for backing in &resource.backing {
+                out.write_u64(backing.addr);
+                out.write_u32(backing.len);
+                out.write_u32(0);
+            }
+        }
+
+        out.write_bool(gpu.scanout_resource.is_some());
+        if let Some(resource_id) = gpu.scanout_resource {
+            out.write_u32(resource_id);
+        }
+        out.write_blob(&gpu.scanout);
+        out.write_blob(&self.msix.snapshot_state());
+        out.into_inner()
     }
 
-    out.write_bool(gpu.scanout_resource.is_some());
-    if let Some(resource_id) = gpu.scanout_resource {
-        out.write_u32(resource_id);
-    }
-    out.write_blob(&gpu.scanout);
-    out.write_blob(&self.msix.snapshot_state());
-    out.into_inner()
-}
+    pub fn restore_state(&mut self, data: &[u8]) {
+        let mut input = crate::checkpoint::StateReader::new(data);
+        assert_eq!(
+            input.read_u32(),
+            1,
+            "unsupported virtio-gpu snapshot version"
+        );
 
-pub fn restore_state(&mut self, data: &[u8]) {
-    let mut input = crate::checkpoint::StateReader::new(data);
-    assert_eq!(input.read_u32(), 1, "unsupported virtio-gpu snapshot version");
-
-    let width = input.read_u32();
-    let height = input.read_u32();
-    assert_eq!(
-        (width, height),
-        (self.gpu.width, self.gpu.height),
-        "virtio-gpu resolution mismatch on restore"
-    );
-
-    self.gpu.device_features_sel = input.read_u32();
-    self.gpu.driver_features_sel = input.read_u32();
-    self.gpu.driver_features = [input.read_u32(), input.read_u32()];
-    self.gpu.config_msix_vector = input.read_u16();
-    assert_eq!(input.read_u16(), 0, "invalid virtio-gpu snapshot");
-    self.gpu.queue_sel = input.read_u32();
-    self.gpu.pending_msix_queue_bits = input.read_u8();
-    assert_eq!(input.read_u8(), 0, "invalid virtio-gpu snapshot");
-    assert_eq!(input.read_u16(), 0, "invalid virtio-gpu snapshot");
-    self.gpu.status = input.read_u32();
-    self.gpu.interrupt_status = input.read_u32();
-    self.gpu.events_clear = input.read_u32();
-
-    for queue in &mut self.gpu.queues {
-        queue.size = input.read_u16();
-        queue.ready = input.read_bool();
-        queue.pending_msix = input.read_bool();
-        queue.desc = input.read_u64();
-        queue.driver = input.read_u64();
-        queue.device = input.read_u64();
-        queue.msix_vector = input.read_u16();
-        queue.notify_off = input.read_u16();
-        queue.last_avail_idx = input.read_u16();
-        assert_eq!(input.read_u16(), 0, "invalid virtio-gpu queue snapshot");
-    }
-
-    self.gpu.resources.clear();
-    let resource_count = input.read_u32() as usize;
-    for _ in 0..resource_count {
-        let resource_id = input.read_u32();
-        let format = input.read_u32();
         let width = input.read_u32();
         let height = input.read_u32();
-        let host_pixels = input.read_blob();
-
-        let backing_count = input.read_u32() as usize;
-        let mut backing = Vec::with_capacity(backing_count);
-        for _ in 0..backing_count {
-            backing.push(BackingEntry {
-                addr: input.read_u64(),
-                len: input.read_u32(),
-            });
-            assert_eq!(input.read_u32(), 0, "invalid GPU backing snapshot");
-        }
-
-        self.gpu.resources.insert(
-            resource_id,
-            GpuResource {
-                format,
-                width,
-                height,
-                host_pixels,
-                backing,
-            },
+        assert_eq!(
+            (width, height),
+            (self.gpu.width, self.gpu.height),
+            "virtio-gpu resolution mismatch on restore"
         );
-    }
 
-    self.gpu.scanout_resource = if input.read_bool() {
-        Some(input.read_u32())
-    } else {
-        None
-    };
-    if let Some(resource_id) = self.gpu.scanout_resource {
-        if !self.gpu.resources.contains_key(&resource_id) {
-            // The active desktop scanout is normally backed by a 3D/blob resource
-            // whose pixels live in the (non-serializable) virglrenderer host
-            // context, so it is absent from the restored 2D resource map. Drop the
-            // dangling reference rather than panicking; on resume the guest WDDM
-            // driver detects the lost adapter, TDR-resets, and re-establishes the
-            // scanout (the documented "3D contexts lost on restore" behavior).
-            self.gpu.scanout_resource = None;
+        self.gpu.device_features_sel = input.read_u32();
+        self.gpu.driver_features_sel = input.read_u32();
+        self.gpu.driver_features = [input.read_u32(), input.read_u32()];
+        self.gpu.config_msix_vector = input.read_u16();
+        assert_eq!(input.read_u16(), 0, "invalid virtio-gpu snapshot");
+        self.gpu.queue_sel = input.read_u32();
+        self.gpu.pending_msix_queue_bits = input.read_u8();
+        assert_eq!(input.read_u8(), 0, "invalid virtio-gpu snapshot");
+        assert_eq!(input.read_u16(), 0, "invalid virtio-gpu snapshot");
+        self.gpu.status = input.read_u32();
+        self.gpu.interrupt_status = input.read_u32();
+        self.gpu.events_clear = input.read_u32();
+
+        for queue in &mut self.gpu.queues {
+            queue.size = input.read_u16();
+            queue.ready = input.read_bool();
+            queue.pending_msix = input.read_bool();
+            queue.desc = input.read_u64();
+            queue.driver = input.read_u64();
+            queue.device = input.read_u64();
+            queue.msix_vector = input.read_u16();
+            queue.notify_off = input.read_u16();
+            queue.last_avail_idx = input.read_u16();
+            assert_eq!(input.read_u16(), 0, "invalid virtio-gpu queue snapshot");
         }
+
+        self.gpu.resources.clear();
+        let resource_count = input.read_u32() as usize;
+        for _ in 0..resource_count {
+            let resource_id = input.read_u32();
+            let format = input.read_u32();
+            let width = input.read_u32();
+            let height = input.read_u32();
+            let host_pixels = input.read_blob();
+
+            let backing_count = input.read_u32() as usize;
+            let mut backing = Vec::with_capacity(backing_count);
+            for _ in 0..backing_count {
+                backing.push(BackingEntry {
+                    addr: input.read_u64(),
+                    len: input.read_u32(),
+                });
+                assert_eq!(input.read_u32(), 0, "invalid GPU backing snapshot");
+            }
+
+            self.gpu.resources.insert(
+                resource_id,
+                GpuResource {
+                    format,
+                    width,
+                    height,
+                    host_pixels,
+                    backing,
+                },
+            );
+        }
+
+        self.gpu.scanout_resource = if input.read_bool() {
+            Some(input.read_u32())
+        } else {
+            None
+        };
+        if let Some(resource_id) = self.gpu.scanout_resource {
+            if !self.gpu.resources.contains_key(&resource_id) {
+                // The active desktop scanout is normally backed by a 3D/blob resource
+                // whose pixels live in the (non-serializable) virglrenderer host
+                // context, so it is absent from the restored 2D resource map. Drop the
+                // dangling reference rather than panicking; on resume the guest WDDM
+                // driver detects the lost adapter, TDR-resets, and re-establishes the
+                // scanout (the documented "3D contexts lost on restore" behavior).
+                self.gpu.scanout_resource = None;
+            }
+        }
+        self.gpu.scanout = input.read_blob();
+
+        self.gpu.unbind_blob_scanout();
+        self.gpu.three_d.reset();
+        self.gpu.pending_fenced.clear();
+        self.gpu.pending_vblank.clear();
+        self.gpu.completed_fences_scratch.clear();
+        self.gpu.descriptor_scratch.clear();
+        self.gpu.parked_descriptor_scratch.clear();
+        self.gpu.request_scratch.clear();
+        self.gpu.response_scratch.clear();
+        self.gpu.parked_response_scratch.clear();
+        self.gpu.blob_row_scratch.clear();
+        self.gpu.last_vblank = None;
+        self.gpu.last_3d_scanout_readback = None;
+        self.gpu.publish_vblank_wake();
+        self.gpu.publish_scanout_fb_unconditionally();
+
+        self.msix.restore_state(&input.read_blob());
+        input.finish();
     }
-    self.gpu.scanout = input.read_blob();
-
-    self.gpu.unbind_blob_scanout();
-    self.gpu.three_d.reset();
-    self.gpu.pending_fenced.clear();
-    self.gpu.pending_vblank.clear();
-    self.gpu.completed_fences_scratch.clear();
-    self.gpu.descriptor_scratch.clear();
-    self.gpu.parked_descriptor_scratch.clear();
-    self.gpu.request_scratch.clear();
-    self.gpu.response_scratch.clear();
-    self.gpu.parked_response_scratch.clear();
-    self.gpu.blob_row_scratch.clear();
-    self.gpu.last_vblank = None;
-    self.gpu.last_3d_scanout_readback = None;
-    self.gpu.publish_vblank_wake();
-    self.gpu.publish_scanout_fb_unconditionally();
-
-    self.msix.restore_state(&input.read_blob());
-    input.finish();
-}
-
 }
 
 fn common_cfg_offset(offset: u64) -> Option<u64> {
@@ -2947,7 +3040,11 @@ fn venus_start_trace_command(request: &[u8], hdr: CtrlHdr, response: &[u8]) {
                 read_le_u64(request, 32).unwrap_or(0)
             );
             if response_type == virtio_gpu_3d::VIRTIO_GPU_RESP_OK_MAP_INFO {
-                let _ = write!(line, " map_info={:#x}", read_le_u32(response, 24).unwrap_or(0));
+                let _ = write!(
+                    line,
+                    " map_info={:#x}",
+                    read_le_u32(response, 24).unwrap_or(0)
+                );
             }
         }
         VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => {
@@ -3192,6 +3289,33 @@ fn write_trace_command_details(out: &mut String, request: &[u8], hdr: CtrlHdr) {
 
 fn write_trace_command_response_details(out: &mut String, response_type: u32, response: &[u8]) {
     match response_type {
+        VIRTIO_GPU_RESP_OK_DISPLAY_INFO => {
+            let _ = write!(
+                out,
+                ",\"response_scanout0_x\":{},\"response_scanout0_y\":{},\"response_scanout0_width\":{},\"response_scanout0_height\":{},\"response_scanout0_enabled\":{},\"response_scanout0_flags\":{}",
+                read_le_u32(response, 24).unwrap_or(0),
+                read_le_u32(response, 28).unwrap_or(0),
+                read_le_u32(response, 32).unwrap_or(0),
+                read_le_u32(response, 36).unwrap_or(0),
+                read_le_u32(response, 40).unwrap_or(0),
+                read_le_u32(response, 44).unwrap_or(0)
+            );
+        }
+        VIRTIO_GPU_RESP_OK_EDID => {
+            let edid_size = read_le_u32(response, 24).unwrap_or(0) as usize;
+            let available = response.len().saturating_sub(32);
+            let checksum_valid = edid_size > 0
+                && edid_size <= available
+                && response[32..32 + edid_size]
+                    .iter()
+                    .fold(0u8, |sum, byte| sum.wrapping_add(*byte))
+                    == 0;
+            let _ = write!(
+                out,
+                ",\"response_edid_size\":{},\"response_edid_checksum_valid\":{}",
+                edid_size, checksum_valid
+            );
+        }
         virtio_gpu_3d::VIRTIO_GPU_RESP_OK_CAPSET_INFO => {
             let _ = write!(
                 out,
@@ -3320,6 +3444,64 @@ fn composite_resource_to_scanout(
             scanout[dst..dst + 4].copy_from_slice(&to_xrgb8888(pixel, resource.format));
         }
     }
+}
+
+fn composite_local_3d_to_scanout(
+    mem: &dyn GuestMemoryMut,
+    backing: &[BlobMemEntry],
+    info: Create3dArgs,
+    scanout: &mut [u8],
+    scanout_width: u32,
+    scanout_height: u32,
+    rect: Rect,
+    row_pixels: &mut Vec<u8>,
+) -> bool {
+    if backing.is_empty() || !format_supported(info.format) {
+        return false;
+    }
+    let x_end = rect
+        .x
+        .saturating_add(rect.width)
+        .min(info.width)
+        .min(scanout_width);
+    let y_end = rect
+        .y
+        .saturating_add(rect.height)
+        .min(info.height)
+        .min(scanout_height);
+    if x_end <= rect.x || y_end <= rect.y {
+        return false;
+    }
+
+    let resource_stride = u64::from(info.width) * 4;
+    let row_bytes = ((x_end - rect.x) as usize) * 4;
+    row_pixels.resize(row_bytes, 0);
+    let mut copied_any = false;
+    for y in rect.y..y_end {
+        let row_offset = u64::from(y) * resource_stride + u64::from(rect.x) * 4;
+        if read_from_blob_backing_into(mem, backing, row_offset, row_pixels) {
+            for x in rect.x..x_end {
+                let src = ((x - rect.x) as usize) * 4;
+                let dst = ((y as usize) * (scanout_width as usize) + (x as usize)) * 4;
+                scanout[dst..dst + 4]
+                    .copy_from_slice(&to_xrgb8888(&row_pixels[src..src + 4], info.format));
+            }
+            copied_any = true;
+            continue;
+        }
+        for x in rect.x..x_end {
+            let offset = u64::from(y) * resource_stride + u64::from(x) * 4;
+            let mut pixel = [0u8; 4];
+            if !read_from_blob_backing_into(mem, backing, offset, &mut pixel) {
+                continue;
+            }
+            let dst = ((y as usize) * (scanout_width as usize) + (x as usize)) * 4;
+            scanout[dst..dst + 4].copy_from_slice(&to_xrgb8888(&pixel, info.format));
+            copied_any = true;
+        }
+    }
+    row_pixels.clear();
+    copied_any
 }
 
 struct GuestBlobComposite<'a> {
@@ -3807,14 +3989,7 @@ impl FbSink {
         })
     }
 
-    fn write(
-        &mut self,
-        width: u32,
-        height: u32,
-        stride: u32,
-        fourcc: u32,
-        bytes: &[u8],
-    ) {
+    fn write(&mut self, width: u32, height: u32, stride: u32, fourcc: u32, bytes: &[u8]) {
         let needed = 64 + (height as usize) * (stride as usize);
 
         if self.map.is_null() || self.capacity < needed {
@@ -4625,6 +4800,37 @@ mod tests {
         assert_eq!(read_le_u32(&resp, 24 + 16), Some(1));
     }
 
+    #[test]
+    fn trace_records_display_edid_and_pre_reset_state() {
+        let path = trace_test_path("display-edid-reset-details");
+        let mut dev = VirtioPciGpu::new(1600, 900);
+        dev.gpu.trace = crate::virtio_gpu_trace::VirtioGpuTraceRecorder::test_file(&path);
+        let mut mem = TestMem::new(0x4000_0000, 0x20000);
+
+        let _ = submit_control(
+            &mut dev,
+            &mut mem,
+            &ctrl_req(VIRTIO_GPU_CMD_GET_DISPLAY_INFO),
+            408,
+        );
+        let _ = submit_control(&mut dev, &mut mem, &ctrl_req(VIRTIO_GPU_CMD_GET_EDID), 1056);
+        dev.gpu.write_driver_features(u64::MAX);
+        dev.gpu.write_status(0xf);
+        dev.gpu.write_status(0);
+
+        drop(dev);
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(path);
+        assert!(contents.contains("\"response_scanout0_width\":1600"));
+        assert!(contents.contains("\"response_scanout0_height\":900"));
+        assert!(contents.contains("\"response_scanout0_enabled\":1"));
+        assert!(contents.contains("\"response_edid_size\":128"));
+        assert!(contents.contains("\"response_edid_checksum_valid\":true"));
+        assert!(contents.contains("\"raw\":0,\"raw_hex\":\"0x0\",\"previous\":15"));
+        assert!(contents.contains("\"driver_features_word0_hex\":\"0x2\""));
+        assert!(contents.contains("\"reset\":true"));
+    }
+
     fn program_config_msix_vector(dev: &mut VirtioPciGpu, vector: u16) {
         let mut mem = TestMem::new(0x4000_0000, 0x1000);
         assert_eq!(
@@ -4669,7 +4875,15 @@ mod tests {
         // GET_DISPLAY_INFO now reports the new geometry.
         let mut mem = TestMem::new(0x4000_0000, 0x40000);
         assert_eq!(
-            read_le_u32(&submit_control(&mut dev, &mut mem, &ctrl_req(VIRTIO_GPU_CMD_GET_DISPLAY_INFO), 408), 24 + 8),
+            read_le_u32(
+                &submit_control(
+                    &mut dev,
+                    &mut mem,
+                    &ctrl_req(VIRTIO_GPU_CMD_GET_DISPLAY_INFO),
+                    408
+                ),
+                24 + 8
+            ),
             Some(1920)
         );
 
@@ -5791,6 +6005,95 @@ mod tests {
     }
 
     #[test]
+    fn venus_wddm_primary_uses_guest_backing_with_dual_renderer_backend() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x50_0000);
+
+        let mut create = ctrl_req_ctx(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0);
+        for field in [
+            31u32,
+            2,
+            FORMAT_B8G8R8A8_UNORM,
+            0x4008a,
+            1024,
+            768,
+            1,
+            1,
+            0,
+            0,
+            0,
+            0,
+        ] {
+            create.extend_from_slice(&field.to_le_bytes());
+        }
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &create, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let mut ctx_attach = ctrl_req_ctx(VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE, 3);
+        ctx_attach.extend_from_slice(&31u32.to_le_bytes());
+        ctx_attach.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &ctx_attach, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let backing_addr = 0x4010_0000u64;
+        let backing_len = 1024u32 * 768 * 4;
+        let mut attach = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING);
+        attach.extend_from_slice(&31u32.to_le_bytes());
+        attach.extend_from_slice(&1u32.to_le_bytes());
+        attach.extend_from_slice(&backing_addr.to_le_bytes());
+        attach.extend_from_slice(&backing_len.to_le_bytes());
+        attach.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &attach, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        mem.write(backing_addr, &[1, 2, 3, 4, 5, 6, 7, 8]);
+
+        let mut set_scanout = ctrl_req(VIRTIO_GPU_CMD_SET_SCANOUT);
+        for field in [0u32, 0, 1024, 768, 0, 31] {
+            set_scanout.extend_from_slice(&field.to_le_bytes());
+        }
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &set_scanout, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let flush = flush_req(
+            31,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 1,
+            },
+        );
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &flush, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let inner = backend.lock().unwrap();
+        assert!(inner.created_3d.is_empty());
+        assert!(inner.attached.is_empty());
+        assert!(inner.backing_attached.is_empty());
+        assert!(inner.scanout_reads.is_empty());
+        drop(inner);
+        let scanout = dev
+            .gpu
+            .scanout()
+            .expect("local 3D scanout should be active");
+        assert_eq!(&scanout.bytes[..8], &[1, 2, 3, 0, 5, 6, 7, 0]);
+        let stats = dev.stats();
+        assert_eq!(stats.scanout_3d_flushes, 1);
+        assert_eq!(stats.scanout_readbacks, 1);
+        assert_eq!(stats.scanout_readback_bytes, 8);
+    }
+
+    #[test]
     fn legacy_virgl_scanout_readback_can_be_throttled_to_display_pacing() {
         let (mut dev, backend) = dev_with_mock();
         let mut mem = TestMem::new(0x4000_0000, 0x30000);
@@ -6227,6 +6530,69 @@ mod tests {
     }
 
     #[test]
+    fn fenced_pre_context_local_copy_completes_without_renderer_fence() {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+
+        for resource_id in [51u32, 52] {
+            let mut create = ctrl_req_ctx(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0);
+            for field in [
+                resource_id,
+                2,
+                FORMAT_B8G8R8A8_UNORM,
+                0x40080,
+                2,
+                2,
+                1,
+                1,
+                0,
+                0,
+                0,
+                0,
+            ] {
+                create.extend_from_slice(&field.to_le_bytes());
+            }
+            assert_eq!(
+                read_le_u32(&submit_control(&mut dev, &mut mem, &create, 24), 0),
+                Some(VIRTIO_GPU_RESP_OK_NODATA)
+            );
+
+            let backing_addr = 0x4002_0000 + u64::from(resource_id - 51) * 0x100;
+            let mut attach = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING);
+            attach.extend_from_slice(&resource_id.to_le_bytes());
+            attach.extend_from_slice(&1u32.to_le_bytes());
+            attach.extend_from_slice(&backing_addr.to_le_bytes());
+            attach.extend_from_slice(&16u32.to_le_bytes());
+            attach.extend_from_slice(&0u32.to_le_bytes());
+            assert_eq!(
+                read_le_u32(&submit_control(&mut dev, &mut mem, &attach, 24), 0),
+                Some(VIRTIO_GPU_RESP_OK_NODATA)
+            );
+        }
+        let src_pixels = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        mem.write(0x4002_0100, &src_pixels);
+
+        let mut command = Vec::new();
+        for dword in [17u32 | (13 << 16), 51, 0, 0, 0, 0, 52, 0, 0, 0, 0, 2, 2, 1] {
+            command.extend_from_slice(&dword.to_le_bytes());
+        }
+        let mut submit = ctrl_req_fenced(VIRTIO_GPU_CMD_SUBMIT_3D, 4, 0, 91);
+        submit.extend_from_slice(&(command.len() as u32).to_le_bytes());
+        submit.extend_from_slice(&0u32.to_le_bytes());
+        submit.extend_from_slice(&command);
+
+        let (response, used_idx) =
+            submit_control_readable_descs(&mut dev, &mut mem, &[&submit], 24);
+        assert_eq!(used_idx, 5);
+        assert_eq!(read_le_u32(&response, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+        assert_eq!(mem.read(0x4002_0000, 16), src_pixels);
+        assert_eq!(dev.stats().three_d.fences_pending, 0);
+        let backend = backend.lock().unwrap();
+        assert!(backend.fences.is_empty());
+        assert!(backend.submits.is_empty());
+    }
+
+    #[test]
     fn host_vblank_pacing_parks_empty_context_zero_submits_and_retires_one_per_interval() {
         let (mut dev, backend) = dev_with_mock();
         let interval = Duration::from_millis(8);
@@ -6291,8 +6657,7 @@ mod tests {
         assert_eq!(dev.stats().vblank_paced_count, 2);
         assert_eq!(dev.gpu.pending_vblank.len(), 1);
 
-        dev.gpu
-            .drain_host_vblank_at(&mut mem, late + interval);
+        dev.gpu.drain_host_vblank_at(&mut mem, late + interval);
         assert_eq!(
             u16::from_le_bytes(mem.read(0x4000_3000 + 2, 2).try_into().unwrap()),
             3
@@ -6337,10 +6702,7 @@ mod tests {
         // Parked with no schedule anchor yet: due immediately so the waker
         // fires and the first retire establishes the anchor.
         assert!(wake.parked());
-        assert_eq!(
-            wake.time_to_deadline(Instant::now()),
-            Some(Duration::ZERO)
-        );
+        assert_eq!(wake.time_to_deadline(Instant::now()), Some(Duration::ZERO));
 
         let base = Instant::now();
         dev.gpu.drain_host_vblank_at(&mut mem, base);

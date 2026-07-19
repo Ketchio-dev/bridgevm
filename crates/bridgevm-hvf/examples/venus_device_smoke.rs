@@ -148,6 +148,27 @@ mod smoke {
         assert_eq!(read_u32(&resp, 0), VIRTIO_GPU_RESP_OK_CAPSET);
         assert_eq!(read_u32(&resp, 24), 1);
 
+        for (index, expected_id) in [(1u32, 1u32), (2, 2)] {
+            let mut shadow_info = ctrl_req(VIRTIO_GPU_CMD_GET_CAPSET_INFO, 0);
+            shadow_info.extend_from_slice(&index.to_le_bytes());
+            shadow_info.extend_from_slice(&0u32.to_le_bytes());
+            let resp = submit_control(&mut dev, &mut mem, &shadow_info, 40);
+            assert_eq!(read_u32(&resp, 0), VIRTIO_GPU_RESP_OK_CAPSET_INFO);
+            assert_eq!(read_u32(&resp, 24), expected_id);
+            assert_ne!(read_u32(&resp, 32), 0);
+        }
+
+        let resp = submit_control(
+            &mut dev,
+            &mut mem,
+            &ctx_create_req(2, 2, b"virgl-shadow-win32"),
+            24,
+        );
+        assert_eq!(read_u32(&resp, 0), VIRTIO_GPU_RESP_OK_NODATA);
+        let resp = submit_control(&mut dev, &mut mem, &submit_3d_req(2, &[]), 24);
+        assert_eq!(read_u32(&resp, 0), VIRTIO_GPU_RESP_OK_NODATA);
+        println!("VENUS_VIRGL_SHADOW_OK capsets=4,1,2 ctx=2");
+
         let resp = submit_control(
             &mut dev,
             &mut mem,
@@ -202,6 +223,13 @@ mod smoke {
             &mut dev,
             &mut mem,
             &ctrl_req(VIRTIO_GPU_CMD_CTX_DESTROY, 1),
+            24,
+        );
+        assert_eq!(read_u32(&resp, 0), VIRTIO_GPU_RESP_OK_NODATA);
+        let resp = submit_control(
+            &mut dev,
+            &mut mem,
+            &ctrl_req(VIRTIO_GPU_CMD_CTX_DESTROY, 2),
             24,
         );
         assert_eq!(read_u32(&resp, 0), VIRTIO_GPU_RESP_OK_NODATA);

@@ -49,6 +49,14 @@ const RESOURCE_UNMAP_BLOB_LEN: usize = 24 + 4 + 4;
 const MEM_ENTRY_LEN: usize = 16;
 const MAX_SUBMIT_3D_BYTES: usize = 4 * 1024 * 1024;
 const HVF_PAGE_SIZE: u64 = 16 * 1024;
+const PIPE_TEXTURE_2D: u32 = 2;
+const VIRGL_BIND_DISPLAY_TARGET: u32 = 1 << 7;
+const VIRGL_BIND_SCANOUT: u32 = 1 << 18;
+const MAX_LOCAL_SCANOUT_DIMENSION: u32 = 16_384;
+const VIRGL_CCMD_RESOURCE_COPY_REGION: u32 = 17;
+const VIRGL_RESOURCE_COPY_REGION_PAYLOAD_DWORDS: u32 = 13;
+const VIRGL_RESOURCE_COPY_REGION_DWORDS: usize = 14;
+const VIRGL_RESOURCE_COPY_REGION_BYTES: usize = VIRGL_RESOURCE_COPY_REGION_DWORDS * 4;
 
 pub trait GpuShmMapPort: Send {
     fn map(&mut self, host_ptr: *mut u8, size: usize, shm_offset: u64) -> Result<(), i32>;
@@ -86,6 +94,12 @@ pub trait VirtioGpu3dBackend: Send {
     fn ctx_destroy(&mut self, ctx_id: u32);
     fn ctx_attach_resource(&mut self, ctx_id: u32, resource_id: u32);
     fn ctx_detach_resource(&mut self, ctx_id: u32, resource_id: u32);
+    /// Whether legacy VirGL RESOURCE_CREATE_3D objects can be created in this
+    /// renderer instance. A Venus-only backend may return false; the Windows
+    /// Venus WDDM stack additionally needs a VirGL shadow renderer for present.
+    fn supports_legacy_3d_resources(&self) -> bool {
+        true
+    }
     fn create_3d(&mut self, _args: Create3dArgs) -> bool {
         false
     }
@@ -160,6 +174,25 @@ pub struct Transfer3dArgs {
 pub struct BlobMemEntry {
     pub addr: u64,
     pub len: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LocalResourceCopyRegion {
+    dst_resource_id: u32,
+    dst_x: u32,
+    dst_y: u32,
+    src_resource_id: u32,
+    src_x: u32,
+    src_y: u32,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocalResourceCopyResult {
+    NotApplicable,
+    Invalid,
+    Copied { regions: usize },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -262,10 +295,13 @@ pub struct VirtioGpu3d {
     resource_2d_ids: BTreeSet<u32>,
     resource_3d_ids: BTreeSet<u32>,
     resource_3d_info: BTreeMap<u32, Create3dArgs>,
+    local_3d_backing: BTreeMap<u32, Vec<BlobMemEntry>>,
     blob_resources: BTreeMap<u32, BlobResource>,
     mapped_intervals: BTreeMap<u64, (u64, u32)>,
     host_iovecs_scratch: Vec<BlobHostIovec>,
     blob_unmap_ids_scratch: Vec<u32>,
+    local_copy_scratch: Vec<u8>,
+    local_copy_submits: u64,
     submits: u64,
     fences_completed: u64,
 }
@@ -289,7 +325,9 @@ impl std::fmt::Debug for VirtioGpu3d {
             .field("resource_2d_ids", &self.resource_2d_ids)
             .field("resource_3d_ids", &self.resource_3d_ids)
             .field("resource_3d_info", &self.resource_3d_info)
+            .field("local_3d_backing", &self.local_3d_backing.keys())
             .field("blob_resources", &self.blob_resources)
+            .field("local_copy_submits", &self.local_copy_submits)
             .field("submits", &self.submits)
             .field("fences_completed", &self.fences_completed)
             .finish()
@@ -317,6 +355,10 @@ impl VirtioGpu3d {
         self.backend.is_some()
     }
 
+    pub fn has_live_context(&self, ctx_id: u32) -> bool {
+        self.live_contexts.contains(&ctx_id)
+    }
+
     pub fn capset_count(&self) -> u32 {
         self.backend
             .as_ref()
@@ -341,15 +383,21 @@ impl VirtioGpu3d {
         self.resource_2d_ids.clear();
         self.resource_3d_ids.clear();
         self.resource_3d_info.clear();
+        self.local_3d_backing.clear();
         self.unmap_all_blobs();
         self.blob_resources.clear();
         self.mapped_intervals.clear();
+        self.local_copy_scratch.clear();
+        self.local_copy_submits = 0;
         self.submits = 0;
     }
 
     pub fn unref_resource(&mut self, resource_id: u32) {
         self.resource_2d_ids.remove(&resource_id);
         let mut destroy_backend_resource = self.resource_3d_ids.remove(&resource_id);
+        if self.local_3d_backing.remove(&resource_id).is_some() {
+            destroy_backend_resource = false;
+        }
         self.resource_3d_info.remove(&resource_id);
         if self.blob_resources.contains_key(&resource_id) {
             self.unmap_blob_resource(resource_id);
@@ -416,6 +464,10 @@ impl VirtioGpu3d {
         self.resource_3d_info.get(&resource_id).copied()
     }
 
+    pub fn local_3d_backing(&self, resource_id: u32) -> Option<&[BlobMemEntry]> {
+        self.local_3d_backing.get(&resource_id).map(Vec::as_slice)
+    }
+
     pub fn read_3d_scanout(
         &mut self,
         resource_id: u32,
@@ -447,6 +499,26 @@ impl VirtioGpu3d {
         if !resolve_blob_iovecs_into(mem, backing, &mut self.host_iovecs_scratch) {
             return false;
         }
+        if let Some(local_backing) = self.local_3d_backing.get_mut(&resource_id) {
+            let Some(info) = self.resource_3d_info.get(&resource_id) else {
+                self.host_iovecs_scratch.clear();
+                return false;
+            };
+            let required = u64::from(info.width)
+                .checked_mul(u64::from(info.height))
+                .and_then(|pixels| pixels.checked_mul(4));
+            let available = backing.iter().fold(0u64, |total, entry| {
+                total.saturating_add(u64::from(entry.len))
+            });
+            if !matches!(required, Some(required) if available >= required) {
+                self.host_iovecs_scratch.clear();
+                return false;
+            }
+            local_backing.clear();
+            local_backing.extend_from_slice(backing);
+            self.host_iovecs_scratch.clear();
+            return true;
+        }
         let attached = self
             .backend
             .as_mut()
@@ -456,6 +528,10 @@ impl VirtioGpu3d {
     }
 
     pub fn detach_3d_backing(&mut self, resource_id: u32) -> bool {
+        if let Some(backing) = self.local_3d_backing.get_mut(&resource_id) {
+            backing.clear();
+            return true;
+        }
         self.resource_3d_ids.contains(&resource_id)
             && self
                 .backend
@@ -526,7 +602,7 @@ impl VirtioGpu3d {
             VIRTIO_GPU_CMD_RESOURCE_CREATE_3D => self.resource_create_3d_into(request, hdr, out),
             VIRTIO_GPU_CMD_TRANSFER_TO_HOST_3D => self.transfer_3d_into(request, hdr, true, out),
             VIRTIO_GPU_CMD_TRANSFER_FROM_HOST_3D => self.transfer_3d_into(request, hdr, false, out),
-            VIRTIO_GPU_CMD_SUBMIT_3D => self.submit_3d_into(request, hdr, out),
+            VIRTIO_GPU_CMD_SUBMIT_3D => self.submit_3d_into(mem, request, hdr, out),
             VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB => self.resource_map_blob_into(request, hdr, out),
             VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => self.resource_unmap_blob_into(request, hdr, out),
             _ => return false,
@@ -628,8 +704,10 @@ impl VirtioGpu3d {
         if let Some(resources) = self.ctx_resources.get_mut(&hdr.ctx_id) {
             resources.insert(resource_id);
         }
-        if let Some(backend) = self.backend.as_mut() {
-            backend.ctx_attach_resource(hdr.ctx_id, resource_id);
+        if !self.local_3d_backing.contains_key(&resource_id) {
+            if let Some(backend) = self.backend.as_mut() {
+                backend.ctx_attach_resource(hdr.ctx_id, resource_id);
+            }
         }
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
     }
@@ -647,8 +725,10 @@ impl VirtioGpu3d {
         if let Some(resources) = self.ctx_resources.get_mut(&hdr.ctx_id) {
             resources.remove(&resource_id);
         }
-        if let Some(backend) = self.backend.as_mut() {
-            backend.ctx_detach_resource(hdr.ctx_id, resource_id);
+        if !self.local_3d_backing.contains_key(&resource_id) {
+            if let Some(backend) = self.backend.as_mut() {
+                backend.ctx_detach_resource(hdr.ctx_id, resource_id);
+            }
         }
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
     }
@@ -675,16 +755,33 @@ impl VirtioGpu3d {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }
-        let created = self
-            .backend
-            .as_mut()
-            .is_some_and(|backend| backend.create_3d(args));
+        // The Venus WDDM KMD creates its shared primary before the UMD has
+        // created the context whose numeric id is used by the subsequent
+        // CTX_ATTACH_RESOURCE.  Keep that narrowly identified display resource
+        // in guest backing even when the renderer also supports legacy virgl
+        // resources; otherwise the early attach is lost inside virglrenderer.
+        // Non-scanout render targets continue through the renderer below.
+        let local_scanout = self.backend.is_some() && is_local_scanout_resource(args);
+        let created = local_scanout
+            || self
+                .backend
+                .as_mut()
+                .is_some_and(|backend| backend.create_3d(args));
         if !created {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr));
             return;
         }
         self.resource_3d_ids.insert(args.resource_id);
         self.resource_3d_info.insert(args.resource_id, args);
+        if local_scanout {
+            self.local_3d_backing.insert(args.resource_id, Vec::new());
+            if venus_start_trace_enabled() {
+                println!(
+                    "venus-start: local display resource_create_3d res={} format={} bind={:#x} size={}x{}",
+                    args.resource_id, args.format, args.bind, args.width, args.height
+                );
+            }
+        }
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
     }
 
@@ -721,10 +818,11 @@ impl VirtioGpu3d {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }
-        let transferred = self
-            .backend
-            .as_mut()
-            .is_some_and(|backend| backend.transfer_3d(args, to_host));
+        let transferred = self.local_3d_backing.contains_key(&args.resource_id)
+            || self
+                .backend
+                .as_mut()
+                .is_some_and(|backend| backend.transfer_3d(args, to_host));
         response_hdr_into(
             out,
             if transferred {
@@ -736,11 +834,17 @@ impl VirtioGpu3d {
         );
     }
 
-    fn submit_3d_into(&mut self, request: &[u8], hdr: CtrlHdr3d, out: &mut Vec<u8>) {
-        let Some(backend) = self.backend.as_mut() else {
+    fn submit_3d_into(
+        &mut self,
+        mem: Option<&dyn GuestMemoryMut>,
+        request: &[u8],
+        hdr: CtrlHdr3d,
+        out: &mut Vec<u8>,
+    ) {
+        if self.backend.is_none() {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
-        };
+        }
         if request.len() < SUBMIT_3D_LEN {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
@@ -753,21 +857,167 @@ impl VirtioGpu3d {
             response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
             return;
         }
-        if !self.live_contexts.contains(&hdr.ctx_id) {
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
-            return;
-        }
         if size > MAX_SUBMIT_3D_BYTES || request.len().saturating_sub(SUBMIT_3D_LEN) < size {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }
         let cmdbuf = &request[SUBMIT_3D_LEN..SUBMIT_3D_LEN + size];
+        if !self.live_contexts.contains(&hdr.ctx_id) {
+            if let Some(mem) = mem {
+                match self.try_local_resource_copies(mem, cmdbuf) {
+                    LocalResourceCopyResult::Copied { regions } => {
+                        self.local_copy_submits = self.local_copy_submits.saturating_add(1);
+                        self.submits = self.submits.saturating_add(1);
+                        if venus_start_trace_enabled() && self.local_copy_submits == 1 {
+                            println!(
+                                "venus-start: local pre-context resource_copy_region ctx={} regions={regions}",
+                                hdr.ctx_id
+                            );
+                        }
+                        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
+                        return;
+                    }
+                    LocalResourceCopyResult::Invalid => {
+                        response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+                        return;
+                    }
+                    LocalResourceCopyResult::NotApplicable => {}
+                }
+            }
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
+        }
+        let Some(backend) = self.backend.as_mut() else {
+            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
+            return;
+        };
         if !backend.submit_3d(hdr.ctx_id, cmdbuf) {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr));
             return;
         }
         self.submits = self.submits.saturating_add(1);
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
+    }
+
+    fn try_local_resource_copies(
+        &mut self,
+        mem: &dyn GuestMemoryMut,
+        cmdbuf: &[u8],
+    ) -> LocalResourceCopyResult {
+        if cmdbuf.is_empty() || cmdbuf.len() % VIRGL_RESOURCE_COPY_REGION_BYTES != 0 {
+            return LocalResourceCopyResult::NotApplicable;
+        }
+
+        let mut regions = 0usize;
+        for command in cmdbuf.chunks_exact(VIRGL_RESOURCE_COPY_REGION_BYTES) {
+            let Some(region) = parse_local_resource_copy_region(command) else {
+                return LocalResourceCopyResult::NotApplicable;
+            };
+            let Some(dst_info) = self.resource_3d_info.get(&region.dst_resource_id) else {
+                return LocalResourceCopyResult::NotApplicable;
+            };
+            let Some(src_info) = self.resource_3d_info.get(&region.src_resource_id) else {
+                return LocalResourceCopyResult::NotApplicable;
+            };
+            let Some(dst_backing) = self.local_3d_backing.get(&region.dst_resource_id) else {
+                return LocalResourceCopyResult::NotApplicable;
+            };
+            let Some(src_backing) = self.local_3d_backing.get(&region.src_resource_id) else {
+                return LocalResourceCopyResult::NotApplicable;
+            };
+
+            let compatible = region.dst_resource_id != region.src_resource_id
+                && dst_info.format == src_info.format
+                && matches!(dst_info.format, 1..=4)
+                && dst_info.depth == 1
+                && src_info.depth == 1
+                && region.width != 0
+                && region.height != 0
+                && region
+                    .dst_x
+                    .checked_add(region.width)
+                    .is_some_and(|right| right <= dst_info.width)
+                && region
+                    .dst_y
+                    .checked_add(region.height)
+                    .is_some_and(|bottom| bottom <= dst_info.height)
+                && region
+                    .src_x
+                    .checked_add(region.width)
+                    .is_some_and(|right| right <= src_info.width)
+                && region
+                    .src_y
+                    .checked_add(region.height)
+                    .is_some_and(|bottom| bottom <= src_info.height)
+                && backing_covers_32bpp_resource(dst_backing, *dst_info)
+                && backing_covers_32bpp_resource(src_backing, *src_info);
+            if !compatible {
+                return LocalResourceCopyResult::Invalid;
+            }
+            regions = regions.saturating_add(1);
+        }
+
+        for command in cmdbuf.chunks_exact(VIRGL_RESOURCE_COPY_REGION_BYTES) {
+            let region = parse_local_resource_copy_region(command)
+                .expect("local copy command was validated in the first pass");
+            if !self.copy_local_resource_region(mem, region) {
+                return LocalResourceCopyResult::Invalid;
+            }
+        }
+        LocalResourceCopyResult::Copied { regions }
+    }
+
+    fn copy_local_resource_region(
+        &mut self,
+        mem: &dyn GuestMemoryMut,
+        region: LocalResourceCopyRegion,
+    ) -> bool {
+        let Some(dst_info) = self.resource_3d_info.get(&region.dst_resource_id).copied() else {
+            return false;
+        };
+        let Some(src_info) = self.resource_3d_info.get(&region.src_resource_id).copied() else {
+            return false;
+        };
+        let Some(dst_backing) = self.local_3d_backing.get(&region.dst_resource_id) else {
+            return false;
+        };
+        let Some(src_backing) = self.local_3d_backing.get(&region.src_resource_id) else {
+            return false;
+        };
+        let Some(row_bytes) = usize::try_from(region.width)
+            .ok()
+            .and_then(|width| width.checked_mul(4))
+        else {
+            return false;
+        };
+        self.local_copy_scratch.resize(row_bytes, 0);
+
+        for row in 0..region.height {
+            let Some(src_offset) = resource_32bpp_offset(
+                src_info.width,
+                region.src_x,
+                region.src_y.saturating_add(row),
+            ) else {
+                return false;
+            };
+            let Some(dst_offset) = resource_32bpp_offset(
+                dst_info.width,
+                region.dst_x,
+                region.dst_y.saturating_add(row),
+            ) else {
+                return false;
+            };
+            if !read_scattered_backing_into(
+                mem,
+                src_backing,
+                src_offset,
+                &mut self.local_copy_scratch,
+            ) || !write_scattered_backing(mem, dst_backing, dst_offset, &self.local_copy_scratch)
+            {
+                return false;
+            }
+        }
+        true
     }
 
     fn resource_create_blob_into(
@@ -870,7 +1120,13 @@ impl VirtioGpu3d {
 
     fn resource_map_blob_into(&mut self, request: &[u8], hdr: CtrlHdr3d, out: &mut Vec<u8>) {
         if request.len() < RESOURCE_MAP_BLOB_LEN {
-            venus_start_trace_map_blob_reject(0, u64::MAX, 0, self.shm_window_size, "short request");
+            venus_start_trace_map_blob_reject(
+                0,
+                u64::MAX,
+                0,
+                self.shm_window_size,
+                "short request",
+            );
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }
@@ -1083,6 +1339,138 @@ impl VirtioGpu3d {
     }
 }
 
+fn is_local_scanout_resource(args: Create3dArgs) -> bool {
+    let display_binds = VIRGL_BIND_DISPLAY_TARGET | VIRGL_BIND_SCANOUT;
+    args.target == PIPE_TEXTURE_2D
+        && (1..=4).contains(&args.format)
+        && args.bind & display_binds == display_binds
+        && args.width > 0
+        && args.height > 0
+        && args.width <= MAX_LOCAL_SCANOUT_DIMENSION
+        && args.height <= MAX_LOCAL_SCANOUT_DIMENSION
+        && args.depth == 1
+        && args.array_size == 1
+        && args.last_level == 0
+        && args.nr_samples == 0
+}
+
+fn parse_local_resource_copy_region(command: &[u8]) -> Option<LocalResourceCopyRegion> {
+    if command.len() != VIRGL_RESOURCE_COPY_REGION_BYTES {
+        return None;
+    }
+    let header = read_le_u32(command, 0)?;
+    if header & 0xff != VIRGL_CCMD_RESOURCE_COPY_REGION
+        || (header >> 8) & 0xff != 0
+        || header >> 16 != VIRGL_RESOURCE_COPY_REGION_PAYLOAD_DWORDS
+        || read_le_u32(command, 8)? != 0
+        || read_le_u32(command, 20)? != 0
+        || read_le_u32(command, 28)? != 0
+        || read_le_u32(command, 40)? != 0
+        || read_le_u32(command, 52)? != 1
+    {
+        return None;
+    }
+    Some(LocalResourceCopyRegion {
+        dst_resource_id: read_le_u32(command, 4)?,
+        dst_x: read_le_u32(command, 12)?,
+        dst_y: read_le_u32(command, 16)?,
+        src_resource_id: read_le_u32(command, 24)?,
+        src_x: read_le_u32(command, 32)?,
+        src_y: read_le_u32(command, 36)?,
+        width: read_le_u32(command, 44)?,
+        height: read_le_u32(command, 48)?,
+    })
+}
+
+fn backing_covers_32bpp_resource(backing: &[BlobMemEntry], info: Create3dArgs) -> bool {
+    let Some(required) = u64::from(info.width)
+        .checked_mul(u64::from(info.height))
+        .and_then(|pixels| pixels.checked_mul(4))
+    else {
+        return false;
+    };
+    let available = backing.iter().fold(0u64, |total, entry| {
+        total.saturating_add(u64::from(entry.len))
+    });
+    available >= required
+}
+
+fn resource_32bpp_offset(width: u32, x: u32, y: u32) -> Option<u64> {
+    u64::from(y)
+        .checked_mul(u64::from(width))
+        .and_then(|row| row.checked_add(u64::from(x)))
+        .and_then(|pixels| pixels.checked_mul(4))
+}
+
+fn read_scattered_backing_into(
+    mem: &dyn GuestMemoryMut,
+    backing: &[BlobMemEntry],
+    mut offset: u64,
+    dst: &mut [u8],
+) -> bool {
+    let mut copied = 0usize;
+    for entry in backing {
+        let entry_len = u64::from(entry.len);
+        if offset >= entry_len {
+            offset -= entry_len;
+            continue;
+        }
+        let available = usize::try_from(entry_len - offset).unwrap_or(usize::MAX);
+        let count = available.min(dst.len().saturating_sub(copied));
+        let Some(gpa) = entry.addr.checked_add(offset) else {
+            return false;
+        };
+        if !mem.read_into(gpa, &mut dst[copied..copied + count]) {
+            return false;
+        }
+        copied += count;
+        if copied == dst.len() {
+            return true;
+        }
+        offset = 0;
+    }
+    copied == dst.len()
+}
+
+fn write_scattered_backing(
+    mem: &dyn GuestMemoryMut,
+    backing: &[BlobMemEntry],
+    mut offset: u64,
+    src: &[u8],
+) -> bool {
+    let mut copied = 0usize;
+    for entry in backing {
+        let entry_len = u64::from(entry.len);
+        if offset >= entry_len {
+            offset -= entry_len;
+            continue;
+        }
+        let available = usize::try_from(entry_len - offset).unwrap_or(usize::MAX);
+        let count = available.min(src.len().saturating_sub(copied));
+        let Some(gpa) = entry.addr.checked_add(offset) else {
+            return false;
+        };
+        let Some(host_ptr) = mem.host_ptr(gpa, count) else {
+            return false;
+        };
+        if host_ptr.is_null() {
+            return false;
+        }
+        // `host_ptr` is the GuestMemoryMut contract for a stable writable view
+        // of this exact guest-RAM span. The source is our private scratch row,
+        // so it cannot alias the destination mapping.
+        unsafe {
+            std::ptr::copy_nonoverlapping(src[copied..].as_ptr(), host_ptr, count);
+        }
+        copied += count;
+        if copied == src.len() {
+            return true;
+        }
+        offset = 0;
+    }
+    copied == src.len()
+}
+
 /// `BRIDGEVM_TRACE_VENUS_START=1` rejection-reason lines: the JSONL command
 /// trace records THAT a command failed but not WHICH validation branch fired;
 /// the venus KMD start crash needs the branch.
@@ -1200,6 +1588,7 @@ pub struct MockBackend {
     pub fences: Vec<CompletedFence>,
     pub completed: Vec<CompletedFence>,
     pub reject_fence_ring: Option<u8>,
+    pub reject_legacy_3d: bool,
 }
 
 #[cfg(test)]
@@ -1261,6 +1650,10 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
 
     fn ctx_detach_resource(&mut self, ctx_id: u32, resource_id: u32) {
         self.lock().unwrap().detached.push((ctx_id, resource_id));
+    }
+
+    fn supports_legacy_3d_resources(&self) -> bool {
+        !self.lock().unwrap().reject_legacy_3d
     }
 
     fn create_3d(&mut self, args: Create3dArgs) -> bool {
@@ -1856,6 +2249,91 @@ mod tests {
         assert!(backend.lock().unwrap().submits.is_empty());
     }
 
+    #[test]
+    fn pre_context_wddm_copy_region_updates_scattered_local_scanout_backing() {
+        let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
+        let mut gpu = VirtioGpu3d::with_backend(Box::new(backend.clone()));
+        let mut mem = TestMem::new(0x8000_0000, 0x1000);
+
+        for resource_id in [1, 2] {
+            let create = local_scanout_create_req(resource_id, 4, 3);
+            let hdr = CtrlHdr3d::parse(&create).unwrap();
+            assert_eq!(
+                read_le_u32(&gpu.handle(&create, hdr).unwrap(), 0),
+                Some(VIRTIO_GPU_RESP_OK_NODATA)
+            );
+        }
+
+        let dst_entries = [
+            BlobMemEntry {
+                addr: 0x8000_0100,
+                len: 10,
+            },
+            BlobMemEntry {
+                addr: 0x8000_0180,
+                len: 38,
+            },
+        ];
+        let src_entries = [
+            BlobMemEntry {
+                addr: 0x8000_0200,
+                len: 13,
+            },
+            BlobMemEntry {
+                addr: 0x8000_0280,
+                len: 35,
+            },
+        ];
+        assert!(gpu.attach_3d_backing(&mem, 1, &dst_entries));
+        assert!(gpu.attach_3d_backing(&mem, 2, &src_entries));
+
+        let src_pixels: Vec<u8> = (0..48).map(|value| value + 1).collect();
+        assert!(mem.write_bytes(src_entries[0].addr, &src_pixels[..13]));
+        assert!(mem.write_bytes(src_entries[1].addr, &src_pixels[13..]));
+
+        let submit = resource_copy_submit_req(4, 1, 0, 0, 2, 1, 1, 2, 2);
+        let hdr = CtrlHdr3d::parse(&submit).unwrap();
+        assert_eq!(
+            read_le_u32(&gpu.handle_with_mem(Some(&mem), &submit, hdr).unwrap(), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let mut dst_pixels = vec![0u8; 48];
+        assert!(read_scattered_backing_into(
+            &mem,
+            &dst_entries,
+            0,
+            &mut dst_pixels
+        ));
+        assert_eq!(&dst_pixels[0..8], &src_pixels[20..28]);
+        assert_eq!(&dst_pixels[16..24], &src_pixels[36..44]);
+        assert!(dst_pixels[8..16].iter().all(|byte| *byte == 0));
+        assert!(dst_pixels[24..].iter().all(|byte| *byte == 0));
+        assert_eq!(gpu.local_copy_submits, 1);
+        assert_eq!(gpu.stats(0).submits, 1);
+        let backend = backend.lock().unwrap();
+        assert!(backend.created_3d.is_empty());
+        assert!(backend.submits.is_empty());
+    }
+
+    #[test]
+    fn pre_context_non_copy_submit_remains_rejected() {
+        let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
+        let mut gpu = VirtioGpu3d::with_backend(Box::new(backend.clone()));
+        let mem = TestMem::new(0x8000_0000, 0x1000);
+        let mut submit = ctrl_req(VIRTIO_GPU_CMD_SUBMIT_3D, 4);
+        submit.extend_from_slice(&4u32.to_le_bytes());
+        submit.extend_from_slice(&0u32.to_le_bytes());
+        submit.extend_from_slice(&0x1234_5678u32.to_le_bytes());
+        let hdr = CtrlHdr3d::parse(&submit).unwrap();
+        assert_eq!(
+            read_le_u32(&gpu.handle_with_mem(Some(&mem), &submit, hdr).unwrap(), 0),
+            Some(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER)
+        );
+        assert_eq!(gpu.local_copy_submits, 0);
+        assert!(backend.lock().unwrap().submits.is_empty());
+    }
+
     fn ctrl_req(typ: u32, ctx_id: u32) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(&typ.to_le_bytes());
@@ -1864,6 +2342,65 @@ mod tests {
         out.extend_from_slice(&ctx_id.to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
         out
+    }
+
+    fn local_scanout_create_req(resource_id: u32, width: u32, height: u32) -> Vec<u8> {
+        let mut req = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0);
+        for field in [
+            resource_id,
+            PIPE_TEXTURE_2D,
+            1,
+            0x4008a,
+            width,
+            height,
+            1,
+            1,
+            0,
+            0,
+            0,
+            0,
+        ] {
+            req.extend_from_slice(&field.to_le_bytes());
+        }
+        req
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn resource_copy_submit_req(
+        ctx_id: u32,
+        dst_resource_id: u32,
+        dst_x: u32,
+        dst_y: u32,
+        src_resource_id: u32,
+        src_x: u32,
+        src_y: u32,
+        width: u32,
+        height: u32,
+    ) -> Vec<u8> {
+        let mut command = Vec::with_capacity(VIRGL_RESOURCE_COPY_REGION_BYTES);
+        for dword in [
+            VIRGL_CCMD_RESOURCE_COPY_REGION | (VIRGL_RESOURCE_COPY_REGION_PAYLOAD_DWORDS << 16),
+            dst_resource_id,
+            0,
+            dst_x,
+            dst_y,
+            0,
+            src_resource_id,
+            0,
+            src_x,
+            src_y,
+            0,
+            width,
+            height,
+            1,
+        ] {
+            command.extend_from_slice(&dword.to_le_bytes());
+        }
+        let mut req = ctrl_req(VIRTIO_GPU_CMD_SUBMIT_3D, ctx_id);
+        req.extend_from_slice(&(command.len() as u32).to_le_bytes());
+        req.extend_from_slice(&0u32.to_le_bytes());
+        req.extend_from_slice(&command);
+        req
     }
 
     fn create_blob_req(

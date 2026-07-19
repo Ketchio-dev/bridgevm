@@ -430,13 +430,17 @@ fn build_pcie_node(b: &mut FdtBuilder) {
     b.prop_reg64("reg", machine::PCIE_ECAM.base, machine::PCIE_ECAM.size);
 
     // ranges: <pci-addr(3) cpu-addr(2) size(2)> for I/O, 32-bit MMIO and the
-    // 64-bit MMIO aperture. The HVF probe creates every VM with the host's
+    // non-prefetchable and prefetchable 64-bit MMIO apertures. The HVF probe
+    // creates every VM with the host's
     // maximum IPA size (40 bits on supported Apple Silicon), so the 512 GiB..
     // 1 TiB aperture is addressable. Firmware needs this window to place large
-    // 64-bit BARs such as virtio-gpu's 1 GiB host-visible memory BAR.
+    // 64-bit BARs such as virtio-gpu's 1 GiB host-visible memory BAR. Keep the
+    // two high apertures disjoint so firmware can allocate both ordinary 64-bit
+    // BARs and prefetchable shared-memory BARs.
     let io = machine::PCIE_PIO;
     let m32 = machine::PCIE_MMIO_32;
-    let m64 = machine::PCIE_MMIO_64;
+    let m64_non_prefetch = machine::PCIE_MMIO_64_NON_PREFETCH;
+    let m64_prefetch = machine::PCIE_MMIO_64_PREFETCH;
     b.prop_cells(
         "ranges",
         &[
@@ -456,14 +460,22 @@ fn build_pcie_node(b: &mut FdtBuilder) {
             m32.base as u32,
             (m32.size >> 32) as u32,
             m32.size as u32,
-            // 64-bit MMIO (0x03000000)
+            // 64-bit non-prefetchable MMIO (0x03000000)
             0x0300_0000,
-            (m64.base >> 32) as u32,
-            m64.base as u32,
-            (m64.base >> 32) as u32,
-            m64.base as u32,
-            (m64.size >> 32) as u32,
-            m64.size as u32,
+            (m64_non_prefetch.base >> 32) as u32,
+            m64_non_prefetch.base as u32,
+            (m64_non_prefetch.base >> 32) as u32,
+            m64_non_prefetch.base as u32,
+            (m64_non_prefetch.size >> 32) as u32,
+            m64_non_prefetch.size as u32,
+            // 64-bit prefetchable MMIO (0x43000000)
+            0x4300_0000,
+            (m64_prefetch.base >> 32) as u32,
+            m64_prefetch.base as u32,
+            (m64_prefetch.base >> 32) as u32,
+            m64_prefetch.base as u32,
+            (m64_prefetch.size >> 32) as u32,
+            m64_prefetch.size as u32,
         ],
     );
 
@@ -577,27 +589,39 @@ mod tests {
     }
 
     #[test]
-    fn virt_fdt_advertises_the_64_bit_pcie_mmio_aperture() {
+    fn virt_fdt_advertises_both_64_bit_pcie_mmio_apertures() {
         let dtb = build_virt_fdt(&VirtFdtConfig::default());
-        let m64 = machine::PCIE_MMIO_64;
-        let cells = [
-            0x0300_0000u32,
-            (m64.base >> 32) as u32,
-            m64.base as u32,
-            (m64.base >> 32) as u32,
-            m64.base as u32,
-            (m64.size >> 32) as u32,
-            m64.size as u32,
-        ];
-        let encoded = cells
-            .iter()
-            .flat_map(|cell| cell.to_be_bytes())
-            .collect::<Vec<_>>();
+        for (space_code, aperture, description) in [
+            (
+                0x0300_0000u32,
+                machine::PCIE_MMIO_64_NON_PREFETCH,
+                "non-prefetchable",
+            ),
+            (
+                0x4300_0000u32,
+                machine::PCIE_MMIO_64_PREFETCH,
+                "prefetchable",
+            ),
+        ] {
+            let cells = [
+                space_code,
+                (aperture.base >> 32) as u32,
+                aperture.base as u32,
+                (aperture.base >> 32) as u32,
+                aperture.base as u32,
+                (aperture.size >> 32) as u32,
+                aperture.size as u32,
+            ];
+            let encoded = cells
+                .iter()
+                .flat_map(|cell| cell.to_be_bytes())
+                .collect::<Vec<_>>();
 
-        assert!(
-            dtb.windows(encoded.len()).any(|window| window == encoded),
-            "PCIe ranges must expose the 512 GiB high-MMIO window for large 64-bit BARs"
-        );
+            assert!(
+                dtb.windows(encoded.len()).any(|window| window == encoded),
+                "PCIe ranges must expose the {description} high-MMIO aperture"
+            );
+        }
     }
 
     #[test]

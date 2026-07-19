@@ -814,18 +814,30 @@ fn resource_dword_io(base: u64, size: u64) -> Vec<u8> {
     out
 }
 
-fn resource_qword_memory(base: u64, size: u64) -> Vec<u8> {
+fn resource_qword_memory_with_flags(base: u64, size: u64, type_flags: u8) -> Vec<u8> {
     let max = base
         .checked_add(size)
         .and_then(|v| v.checked_sub(1))
         .expect("QWordMemory range overflow");
-    let mut out = vec![0x8A, 0x2B, 0x00, 0x00, 0x0C, 0x01]; // Memory, min/max fixed, read-write
+    let mut out = vec![0x8A, 0x2B, 0x00, 0x00, 0x0C, type_flags];
     out.extend_from_slice(&0u64.to_le_bytes()); // granularity
     out.extend_from_slice(&base.to_le_bytes());
     out.extend_from_slice(&max.to_le_bytes());
     out.extend_from_slice(&0u64.to_le_bytes()); // translation offset
     out.extend_from_slice(&size.to_le_bytes());
     out
+}
+
+fn resource_qword_memory(base: u64, size: u64) -> Vec<u8> {
+    // Memory, min/max fixed, non-cacheable, read-write.
+    resource_qword_memory_with_flags(base, size, 0x01)
+}
+
+fn resource_qword_prefetchable_memory(base: u64, size: u64) -> Vec<u8> {
+    // Memory, min/max fixed, prefetchable, read-write.  In an ACPI address-space
+    // descriptor bits 2:1 of the memory-specific flags encode cacheability and
+    // 0b11 means prefetchable; bit 0 selects read-write.
+    resource_qword_memory_with_flags(base, size, 0x07)
 }
 
 fn resource_end_tag() -> [u8; 2] {
@@ -873,8 +885,12 @@ fn build_pci_root_dsdt_device() -> Vec<u8> {
         machine::PCIE_MMIO_32.size,
     ));
     crs.extend(resource_qword_memory(
-        machine::PCIE_MMIO_64.base,
-        machine::PCIE_MMIO_64.size,
+        machine::PCIE_MMIO_64_NON_PREFETCH.base,
+        machine::PCIE_MMIO_64_NON_PREFETCH.size,
+    ));
+    crs.extend(resource_qword_prefetchable_memory(
+        machine::PCIE_MMIO_64_PREFETCH.base,
+        machine::PCIE_MMIO_64_PREFETCH.size,
     ));
     crs.extend(resource_dword_io(
         machine::PCIE_PIO.base,
@@ -1585,9 +1601,22 @@ mod tests {
         assert!(
             contains_bytes(
                 dsdt,
-                &resource_qword_memory(machine::PCIE_MMIO_64.base, machine::PCIE_MMIO_64.size),
+                &resource_qword_memory(
+                    machine::PCIE_MMIO_64_NON_PREFETCH.base,
+                    machine::PCIE_MMIO_64_NON_PREFETCH.size,
+                )
             ),
-            "DSDT must describe the PCI 64-bit MMIO aperture"
+            "DSDT must describe the non-prefetchable PCI 64-bit MMIO aperture"
+        );
+        assert!(
+            contains_bytes(
+                dsdt,
+                &resource_qword_prefetchable_memory(
+                    machine::PCIE_MMIO_64_PREFETCH.base,
+                    machine::PCIE_MMIO_64_PREFETCH.size,
+                )
+            ),
+            "DSDT must describe the prefetchable PCI 64-bit MMIO aperture"
         );
         assert!(
             contains_bytes(

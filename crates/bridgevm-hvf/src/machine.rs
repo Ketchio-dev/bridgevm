@@ -95,6 +95,15 @@ pub const PCIE_PIO: Region = Region::new(0x3EFF_0000, 0x1_0000);
 pub const PCIE_MMIO_32: Region = Region::new(0x1000_0000, 0x2EFF_0000);
 /// PCIe 64-bit MMIO window (high BAR space).
 pub const PCIE_MMIO_64: Region = Region::new(0x80_0000_0000, 0x80_0000_0000);
+/// Non-prefetchable half of the PCIe high-MMIO window.  Firmware/OS PCI
+/// allocators must see this separately from the prefetchable aperture: a
+/// prefetchable BAR cannot legally be placed in a non-prefetchable root window.
+pub const PCIE_MMIO_64_NON_PREFETCH: Region = Region::new(PCIE_MMIO_64.base, PCIE_MMIO_64.size / 2);
+/// Prefetchable half of the PCIe high-MMIO window.  virtio-gpu BAR2 (the
+/// host-visible shared-memory BAR) is a 64-bit prefetchable BAR and is allocated
+/// from this aperture.
+pub const PCIE_MMIO_64_PREFETCH: Region =
+    Region::new(PCIE_MMIO_64_NON_PREFETCH.end(), PCIE_MMIO_64.size / 2);
 
 /// Base of system RAM. The only address the legacy probe map already gets right.
 pub const RAM_BASE: u64 = 0x4000_0000;
@@ -229,6 +238,14 @@ mod tests {
         assert_eq!(PCIE_MMIO_32.base, 0x1000_0000);
         assert_eq!(PCIE_ECAM.base, 0x40_1000_0000);
         assert_eq!(RAM_BASE, 0x4000_0000);
+    }
+
+    #[test]
+    fn pcie_high_mmio_subwindows_partition_the_full_aperture() {
+        assert_eq!(PCIE_MMIO_64_NON_PREFETCH.base, PCIE_MMIO_64.base);
+        assert_eq!(PCIE_MMIO_64_NON_PREFETCH.end(), PCIE_MMIO_64_PREFETCH.base);
+        assert_eq!(PCIE_MMIO_64_PREFETCH.end(), PCIE_MMIO_64.end());
+        assert!(!PCIE_MMIO_64_NON_PREFETCH.overlaps(&PCIE_MMIO_64_PREFETCH));
     }
 
     #[test]

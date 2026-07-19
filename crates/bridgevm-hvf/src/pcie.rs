@@ -413,6 +413,10 @@ struct Bar {
     /// Non-writable low type bits (memory/IO, 32/64-bit, prefetch) kept across
     /// a base re-program and the sizing probe.
     type_bits: u32,
+    /// Whether the last write was the all-ones BAR sizing probe.  Inferring
+    /// this from `value == size_mask | type_bits` is incorrect because a valid
+    /// address at the top of an aperture can have exactly that bit pattern.
+    sizing_probe: bool,
     kind: BarKind,
 }
 
@@ -440,6 +444,7 @@ impl Bar {
             value: 0,
             size_mask: !(size - 1),
             type_bits: 0,
+            sizing_probe: false,
             kind: BarKind::Memory32,
         }
     }
@@ -466,12 +471,14 @@ impl Bar {
                 value: 0,
                 size_mask: !(size - 1),
                 type_bits: low_type_bits,
+                sizing_probe: false,
                 kind: BarKind::Memory64Low,
             },
             Self {
                 value: 0,
                 size_mask: 0xFFFF_FFFF,
                 type_bits: 0,
+                sizing_probe: false,
                 kind: BarKind::Memory64High,
             },
         )
@@ -488,6 +495,7 @@ impl Bar {
             value: 0,
             size_mask: !(size - 1),
             type_bits: 0x1,
+            sizing_probe: false,
             kind: BarKind::Io,
         }
     }
@@ -512,9 +520,11 @@ impl Bar {
         }
         if value == 0xFFFF_FFFF {
             // Sizing probe: report `size_mask | type_bits` on read-back.
+            self.sizing_probe = true;
             self.value = self.size_mask | self.type_bits;
         } else {
             // Program a base: only the address bits above the size are kept.
+            self.sizing_probe = false;
             self.value = (value & self.size_mask) | self.type_bits;
         }
     }
@@ -548,12 +558,11 @@ impl Bar {
 
     fn assigned_base(&self) -> Option<u64> {
         let base = self.base()?;
-        let sizing_readback = self.size_mask | self.type_bits;
         match self.kind {
             BarKind::Memory32 | BarKind::Memory64Low => {
-                (base != 0 && self.value != sizing_readback).then_some(base)
+                (base != 0 && !self.sizing_probe).then_some(base)
             }
-            BarKind::Io => (self.value != sizing_readback).then_some(base),
+            BarKind::Io => (!self.sizing_probe).then_some(base),
             BarKind::Memory64High => None,
         }
     }
@@ -580,9 +589,7 @@ impl Function {
         if low.kind != BarKind::Memory64Low || high.kind != BarKind::Memory64High {
             return None;
         }
-        let low_sizing_readback = low.size_mask | low.type_bits;
-        let high_sizing_readback = high.size_mask | high.type_bits;
-        if low.value == low_sizing_readback || high.value == high_sizing_readback {
+        if low.sizing_probe || high.sizing_probe {
             return None;
         }
         let base = (u64::from(high.value) << 32) | low.base()?;
@@ -740,7 +747,13 @@ impl Function {
         if let Some(size) = host_visible_bar_size {
             let size32 = u32::try_from(size)
                 .expect("virtio-gpu host-visible BAR size must currently fit in 32 bits");
-            let (bar2, bar3) = Bar::memory64_prefetchable(size32);
+            let (mut bar2, bar3) = Bar::memory64_prefetchable(size32);
+            // PCI BAR type bits are read-only and visible even while the base
+            // address is zero.  Leaving BAR2 at an all-zero power-on value
+            // makes firmware treat it as a 32-bit/non-prefetchable slot (or
+            // skip it entirely) before the sizing probe, so the 64-bit BAR pair
+            // never receives an address.
+            bar2.value = bar2.type_bits;
             bars[2] = bar2;
             bars[3] = bar3;
         }
@@ -1041,10 +1054,8 @@ impl Function {
 
     fn msi_config(&self) -> Option<HdaMsiConfig> {
         let cap = self.capability_offset(CAP_ID_MSI)?;
-        let control = u16::from_le_bytes([
-            self.capability_byte(cap + 2),
-            self.capability_byte(cap + 3),
-        ]);
+        let control =
+            u16::from_le_bytes([self.capability_byte(cap + 2), self.capability_byte(cap + 3)]);
         let address_low = u32::from_le_bytes([
             self.capability_byte(cap + 4),
             self.capability_byte(cap + 5),
@@ -1396,78 +1407,73 @@ impl PcieEcam {
             .filter(|size| *size != 0)
     }
 
-pub fn snapshot_state(&self) -> Vec<u8> {
-    let mut out = crate::checkpoint::StateWriter::new();
-    out.write_u32(1);
-    out.write_u32(self.functions.len() as u32);
+    pub fn snapshot_state(&self) -> Vec<u8> {
+        let mut out = crate::checkpoint::StateWriter::new();
+        out.write_u32(1);
+        out.write_u32(self.functions.len() as u32);
 
-    for function in &self.functions {
-        out.write_u8(function.bdf.0);
-        out.write_u8(function.bdf.1);
-        out.write_u8(function.bdf.2);
-        out.write_u8(0);
-        out.write_u16(function.command);
-        out.write_u16(0);
-
-        for bar in &function.bars {
-            out.write_u32(bar.value);
-        }
-
-        out.write_u32(function.cap_bytes.len() as u32);
-        for &(offset, value) in &function.cap_bytes {
-            out.write_u16(offset);
-            out.write_u8(value);
+        for function in &self.functions {
+            out.write_u8(function.bdf.0);
+            out.write_u8(function.bdf.1);
+            out.write_u8(function.bdf.2);
             out.write_u8(0);
+            out.write_u16(function.command);
+            out.write_u16(0);
+
+            for bar in &function.bars {
+                out.write_u32(bar.value);
+            }
+
+            out.write_u32(function.cap_bytes.len() as u32);
+            for &(offset, value) in &function.cap_bytes {
+                out.write_u16(offset);
+                out.write_u8(value);
+                out.write_u8(0);
+            }
         }
+
+        out.into_inner()
     }
 
-    out.into_inner()
-}
-
-pub fn restore_state(&mut self, data: &[u8]) {
-    let mut input = crate::checkpoint::StateReader::new(data);
-    assert_eq!(input.read_u32(), 1, "unsupported PCIe snapshot version");
-    assert_eq!(
-        input.read_u32() as usize,
-        self.functions.len(),
-        "PCIe function-count mismatch on restore"
-    );
-
-    for function in &mut self.functions {
-        let bdf = (
-            input.read_u8(),
-            input.read_u8(),
-            input.read_u8(),
-        );
-        assert_eq!(input.read_u8(), 0, "invalid PCIe snapshot");
-        assert_eq!(bdf, function.bdf, "PCIe BDF mismatch on restore");
-
-        function.command = input.read_u16() & CMD_WRITABLE_MASK;
-        assert_eq!(input.read_u16(), 0, "invalid PCIe snapshot");
-
-        for bar in &mut function.bars {
-            bar.value = input.read_u32();
-        }
-
-        let capability_count = input.read_u32() as usize;
+    pub fn restore_state(&mut self, data: &[u8]) {
+        let mut input = crate::checkpoint::StateReader::new(data);
+        assert_eq!(input.read_u32(), 1, "unsupported PCIe snapshot version");
         assert_eq!(
-            capability_count,
-            function.cap_bytes.len(),
-            "PCIe capability shape mismatch on restore"
+            input.read_u32() as usize,
+            self.functions.len(),
+            "PCIe function-count mismatch on restore"
         );
-        for capability in &mut function.cap_bytes {
-            let offset = input.read_u16();
-            let value = input.read_u8();
+
+        for function in &mut self.functions {
+            let bdf = (input.read_u8(), input.read_u8(), input.read_u8());
             assert_eq!(input.read_u8(), 0, "invalid PCIe snapshot");
-            assert_eq!(offset, capability.0, "PCIe capability offset mismatch");
-            capability.1 = value;
+            assert_eq!(bdf, function.bdf, "PCIe BDF mismatch on restore");
+
+            function.command = input.read_u16() & CMD_WRITABLE_MASK;
+            assert_eq!(input.read_u16(), 0, "invalid PCIe snapshot");
+
+            for bar in &mut function.bars {
+                bar.value = input.read_u32();
+            }
+
+            let capability_count = input.read_u32() as usize;
+            assert_eq!(
+                capability_count,
+                function.cap_bytes.len(),
+                "PCIe capability shape mismatch on restore"
+            );
+            for capability in &mut function.cap_bytes {
+                let offset = input.read_u16();
+                let value = input.read_u8();
+                assert_eq!(input.read_u8(), 0, "invalid PCIe snapshot");
+                assert_eq!(offset, capability.0, "PCIe capability offset mismatch");
+                capability.1 = value;
+            }
         }
+
+        self.mmio_mru.set(None);
+        input.finish();
     }
-
-    self.mmio_mru.set(None);
-    input.finish();
-}
-
 }
 
 pub fn parse_virtio_gpu_hostmem_size() -> u64 {
@@ -2329,6 +2335,8 @@ mod tests {
             });
             let bar2 = bdf_ecam_offset(VIRTIO_GPU_BDF, REG_BAR0 + 4 * 2);
             let bar3 = bdf_ecam_offset(VIRTIO_GPU_BDF, REG_BAR0 + 4 * 3);
+            assert_eq!(ecam.cfg_read(bar2, 4), 0x0c);
+            assert_eq!(ecam.cfg_read(bar3, 4), 0);
             ecam.cfg_write(bar2, 4, 0xffff_ffff);
             ecam.cfg_write(bar3, 4, 0xffff_ffff);
             assert_eq!(ecam.cfg_read(bar2, 4), 0xc000_000c);
@@ -2342,6 +2350,14 @@ mod tests {
             ecam.cfg_write(bar2, 4, high_base & 0xffff_ffff);
             ecam.cfg_write(bar3, 4, high_base >> 32);
             assert_eq!(ecam.virtio_gpu_host_visible_bar_base(), Some(high_base));
+
+            // Windows places this 64 MiB BAR at the top of the 40-bit root
+            // aperture.  Its low dword equals the sizing mask, but it is still
+            // a programmed address once the all-ones probe has ended.
+            let top_base = machine::PCIE_MMIO_64.end() - VIRTIO_GPU_HOSTMEM_DEFAULT_SIZE;
+            ecam.cfg_write(bar2, 4, top_base & 0xffff_ffff);
+            ecam.cfg_write(bar3, 4, top_base >> 32);
+            assert_eq!(ecam.virtio_gpu_host_visible_bar_base(), Some(top_base));
 
             let cap = find_vendor_cfg_type(&ecam, VIRTIO_GPU_BDF, 8).expect("shared-memory cap");
             assert_eq!(
@@ -3027,17 +3043,9 @@ mod tests {
             4,
             message_address as u32 as u64,
         );
-        ecam.cfg_write(
-            bdf_ecam_offset(HDA_BDF, msi + 8),
-            4,
-            message_address >> 32,
-        );
+        ecam.cfg_write(bdf_ecam_offset(HDA_BDF, msi + 8), 4, message_address >> 32);
         ecam.cfg_write(bdf_ecam_offset(HDA_BDF, msi + 12), 2, 0x61);
-        ecam.cfg_write(
-            bdf_ecam_offset(HDA_BDF, msi + 2),
-            2,
-            0xffff,
-        );
+        ecam.cfg_write(bdf_ecam_offset(HDA_BDF, msi + 2), 2, 0xffff);
         assert_eq!(
             ecam.cfg_read(bdf_ecam_offset(HDA_BDF, msi + 2), 2),
             0x0081,

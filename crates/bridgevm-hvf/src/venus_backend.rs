@@ -229,6 +229,12 @@ impl VirtioGpuRendererProtocol {
     fn capset_id_for_index(self, capset_index: u32) -> Option<u32> {
         match (self, capset_index) {
             (Self::Venus, 0) => Some(VIRTIO_GPU_CAPSET_VENUS),
+            // The Windows Venus WDDM miniport creates a second VirGL context
+            // named `virgl-shadow-win32` for kernel-mode present/copy work.
+            // Keep Venus first for the Vulkan ICD, then expose both legacy
+            // capsets so that shadow context is actually initialized.
+            (Self::Venus, 1) => Some(VIRTIO_GPU_CAPSET_VIRGL),
+            (Self::Venus, 2) => Some(VIRTIO_GPU_CAPSET_VIRGL2),
             (Self::Virgl, 0) => Some(VIRTIO_GPU_CAPSET_VIRGL),
             (Self::Virgl, 1) => Some(VIRTIO_GPU_CAPSET_VIRGL2),
             _ => None,
@@ -237,7 +243,10 @@ impl VirtioGpuRendererProtocol {
 
     fn supports_capset_id(self, capset_id: u32) -> bool {
         match self {
-            Self::Venus => capset_id == VIRTIO_GPU_CAPSET_VENUS,
+            Self::Venus => matches!(
+                capset_id,
+                VIRTIO_GPU_CAPSET_VENUS | VIRTIO_GPU_CAPSET_VIRGL | VIRTIO_GPU_CAPSET_VIRGL2
+            ),
             Self::Virgl => {
                 capset_id == VIRTIO_GPU_CAPSET_VIRGL || capset_id == VIRTIO_GPU_CAPSET_VIRGL2
             }
@@ -249,8 +258,10 @@ impl VirtioGpuRendererProtocol {
             Self::Venus => {
                 VIRGL_RENDERER_USE_EXTERNAL_BLOB
                     | VIRGL_RENDERER_VENUS
-                    | VIRGL_RENDERER_NO_VIRGL
                     | VIRGL_RENDERER_RENDER_SERVER
+                    | VIRGL_RENDERER_USE_GUEST_VRAM
+                    | VIRGL_RENDERER_THREAD_SYNC
+                    | VIRGL_RENDERER_ASYNC_FENCE_CB
             }
             Self::Virgl => {
                 VIRGL_RENDERER_USE_EXTERNAL_BLOB
@@ -368,14 +379,20 @@ fn venus_start_trace_capset_count_changed(capset_id: u32, max_version: u32, max_
 
 fn venus_start_trace_ffi_reject(what: &str, capset_id: u32, version: u32, reason: &str) {
     if crate::virtio_gpu_trace::venus_start_trace_enabled() {
-        println!("venus-start: ffi {what} capset_id={capset_id} version={version} REJECT: {reason}");
+        println!(
+            "venus-start: ffi {what} capset_id={capset_id} version={version} REJECT: {reason}"
+        );
     }
 }
 
 impl VirtioGpu3dBackend for VenusBackend {
     fn capset_count(&self) -> u32 {
         let capset_ids: &[u32] = match self.protocol {
-            VirtioGpuRendererProtocol::Venus => &[VIRTIO_GPU_CAPSET_VENUS],
+            VirtioGpuRendererProtocol::Venus => &[
+                VIRTIO_GPU_CAPSET_VENUS,
+                VIRTIO_GPU_CAPSET_VIRGL,
+                VIRTIO_GPU_CAPSET_VIRGL2,
+            ],
             VirtioGpuRendererProtocol::Virgl => {
                 &[VIRTIO_GPU_CAPSET_VIRGL, VIRTIO_GPU_CAPSET_VIRGL2]
             }
@@ -427,7 +444,12 @@ impl VirtioGpu3dBackend for VenusBackend {
 
     fn capset_into(&mut self, capset_id: u32, version: u32, out: &mut Vec<u8>) -> bool {
         if !self.protocol.supports_capset_id(capset_id) {
-            venus_start_trace_ffi_reject("capset_into", capset_id, version, "unsupported capset_id");
+            venus_start_trace_ffi_reject(
+                "capset_into",
+                capset_id,
+                version,
+                "unsupported capset_id",
+            );
             return false;
         }
         let mut max_version = 0u32;
@@ -440,7 +462,12 @@ impl VirtioGpu3dBackend for VenusBackend {
             return false;
         }
         if version > max_version {
-            venus_start_trace_ffi_reject("capset_into", capset_id, version, "version > max_version");
+            venus_start_trace_ffi_reject(
+                "capset_into",
+                capset_id,
+                version,
+                "version > max_version",
+            );
             return false;
         }
         let start = out.len();
@@ -509,16 +536,18 @@ impl VirtioGpu3dBackend for VenusBackend {
         }
     }
 
+    fn supports_legacy_3d_resources(&self) -> bool {
+        true
+    }
+
     fn create_3d(&mut self, args: Create3dArgs) -> bool {
         // Resource creation is not tied to a guest renderer context.  On CGL,
         // the current context is thread-local while a serialized virtio-gpu
         // notification may arrive on any vCPU thread, so make ctx0 current
         // before virglrenderer issues glGenBuffers/glBufferData or texture
         // allocation calls.
-        if self.protocol == VirtioGpuRendererProtocol::Virgl {
-            unsafe {
-                virgl_renderer_force_ctx_0();
-            }
+        unsafe {
+            virgl_renderer_force_ctx_0();
         }
         let mut create = virgl_renderer_resource_create_args {
             handle: args.resource_id,
@@ -780,9 +809,10 @@ impl VirtioGpu3dBackend for VenusBackend {
             iov_base: out.as_mut_ptr().cast(),
             iov_len: required,
         };
-        if self.protocol == VirtioGpuRendererProtocol::Virgl {
-            unsafe { virgl_renderer_force_ctx_0() };
-        }
+        // scanout_read is only used for legacy RESOURCE_CREATE_3D objects;
+        // select vrend's CGL context even when the same renderer instance also
+        // hosts Venus blob resources.
+        unsafe { virgl_renderer_force_ctx_0() };
         let ret = unsafe {
             virgl_renderer_transfer_read_iov(
                 resource_id,
@@ -811,10 +841,8 @@ impl VirtioGpu3dBackend for VenusBackend {
         }
         // Resource destruction is global too and may delete a shared GL object.
         // Rebind ctx0 for the same thread-local CGL reason as create_3d().
-        if self.protocol == VirtioGpuRendererProtocol::Virgl {
-            unsafe {
-                virgl_renderer_force_ctx_0();
-            }
+        unsafe {
+            virgl_renderer_force_ctx_0();
         }
         unsafe {
             virgl_renderer_resource_unref(resource_id);
@@ -987,26 +1015,17 @@ fn init_renderer(
             scanout_idx: c_int,
             param: *mut virgl_renderer_gl_ctx_param,
         ) -> virgl_renderer_gl_context,
-    > = match protocol {
-        VirtioGpuRendererProtocol::Venus => None,
-        VirtioGpuRendererProtocol::Virgl => Some(host_gl::create_gl_context),
-    };
+    > = Some(host_gl::create_gl_context);
     let destroy_gl_context: Option<
         extern "C" fn(cookie: *mut c_void, ctx: virgl_renderer_gl_context),
-    > = match protocol {
-        VirtioGpuRendererProtocol::Venus => None,
-        VirtioGpuRendererProtocol::Virgl => Some(host_gl::destroy_gl_context),
-    };
+    > = Some(host_gl::destroy_gl_context);
     let make_current: Option<
         extern "C" fn(
             cookie: *mut c_void,
             scanout_idx: c_int,
             ctx: virgl_renderer_gl_context,
         ) -> c_int,
-    > = match protocol {
-        VirtioGpuRendererProtocol::Venus => None,
-        VirtioGpuRendererProtocol::Virgl => Some(host_gl::make_current),
-    };
+    > = Some(host_gl::make_current);
     let callbacks = Box::leak(Box::new(virgl_renderer_callbacks {
         version: VIRGL_RENDERER_CALLBACKS_VERSION,
         write_fence: Some(write_fence),
@@ -1216,4 +1235,40 @@ fn append_env_default_path(key: &str, value: &str) {
         format!("{value}:{current}")
     };
     env::set_var(key, next);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn venus_advertises_vulkan_and_windows_shadow_capsets() {
+        let protocol = VirtioGpuRendererProtocol::Venus;
+        assert_eq!(
+            (0..4)
+                .map(|index| protocol.capset_id_for_index(index))
+                .collect::<Vec<_>>(),
+            vec![
+                Some(VIRTIO_GPU_CAPSET_VENUS),
+                Some(VIRTIO_GPU_CAPSET_VIRGL),
+                Some(VIRTIO_GPU_CAPSET_VIRGL2),
+                None,
+            ]
+        );
+        for capset_id in [
+            VIRTIO_GPU_CAPSET_VENUS,
+            VIRTIO_GPU_CAPSET_VIRGL,
+            VIRTIO_GPU_CAPSET_VIRGL2,
+        ] {
+            assert!(protocol.supports_capset_id(capset_id));
+        }
+    }
+
+    #[test]
+    fn venus_renderer_keeps_virgl_enabled_for_wddm_present() {
+        let flags = VirtioGpuRendererProtocol::Venus.init_flags();
+        assert_ne!(flags & VIRGL_RENDERER_VENUS, 0);
+        assert_ne!(flags & VIRGL_RENDERER_RENDER_SERVER, 0);
+        assert_eq!(flags & VIRGL_RENDERER_NO_VIRGL, 0);
+    }
 }
