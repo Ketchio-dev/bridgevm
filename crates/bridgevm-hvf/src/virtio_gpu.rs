@@ -1186,7 +1186,7 @@ impl VirtioGpu {
             self.recycle_queue_scratch(descs, request, response);
             return ChainCompletion::Immediate(used_len);
         };
-        self.trace_command(queue_index, head, control, &request, hdr, &response);
+        self.trace_command(queue_index, head, control, &descs, &request, hdr, &response);
         // viogpu3d uses an empty context-0 SUBMIT_3D as its control-queue
         // synchronization NOP. Its used-ring completion drives the guest's
         // DXGK CRTC_VSYNC notification, so park that completion when host
@@ -2124,6 +2124,7 @@ impl VirtioGpu {
         queue_index: usize,
         head: u16,
         control: bool,
+        descs: &[Descriptor],
         request: &[u8],
         hdr: CtrlHdr,
         response: &[u8],
@@ -2148,6 +2149,25 @@ impl VirtioGpu {
                 }
             }
         }
+        let readable_descriptor_count = descs
+            .iter()
+            .filter(|desc| desc.flags & DESC_F_WRITE == 0)
+            .count();
+        let writable_descriptor_count = descs.len().saturating_sub(readable_descriptor_count);
+        let readable_descriptor_bytes = descs
+            .iter()
+            .filter(|desc| desc.flags & DESC_F_WRITE == 0)
+            .fold(0u64, |total, desc| {
+                total.saturating_add(u64::from(desc.len))
+            });
+        let writable_descriptor_bytes = descs
+            .iter()
+            .filter(|desc| desc.flags & DESC_F_WRITE != 0)
+            .fold(0u64, |total, desc| {
+                total.saturating_add(u64::from(desc.len))
+            });
+        let response_planned_write_len = writable_descriptor_bytes.min(response.len() as u64);
+        let response_header = CtrlHdr::parse(response);
         self.record_trace_fields("command", |fields| {
             let _ = write!(
                 fields,
@@ -2167,7 +2187,36 @@ impl VirtioGpu {
                 response_type
             );
             write_json_string(fields, response_name(response_type));
-            let _ = write!(fields, ",\"response_len\":{}", response.len());
+            let _ = write!(
+                fields,
+                ",\"response_len\":{},\"descriptor_count\":{},\"readable_descriptor_count\":{},\"readable_descriptor_bytes\":{},\"writable_descriptor_count\":{},\"writable_descriptor_bytes\":{},\"response_planned_write_len\":{},\"response_truncated\":{}",
+                response.len(),
+                descs.len(),
+                readable_descriptor_count,
+                readable_descriptor_bytes,
+                writable_descriptor_count,
+                writable_descriptor_bytes,
+                response_planned_write_len,
+                response.len() as u64 > writable_descriptor_bytes
+            );
+            fields.push_str(",\"readable_descriptor_lengths\":[");
+            write_descriptor_lengths(fields, descs, false);
+            fields.push_str("],\"writable_descriptor_lengths\":[");
+            write_descriptor_lengths(fields, descs, true);
+            fields.push(']');
+            if let Some(response_header) = response_header {
+                let _ = write!(
+                    fields,
+                    ",\"response_header_valid\":true,\"response_flags\":{},\"response_fenced\":{},\"response_fence_id\":{},\"response_ctx_id\":{},\"response_ring_idx\":{}",
+                    response_header.flags,
+                    response_header.flags & VIRTIO_GPU_FLAG_FENCE != 0,
+                    response_header.fence_id,
+                    response_header.ctx_id,
+                    response_header.ring_idx()
+                );
+            } else {
+                fields.push_str(",\"response_header_valid\":false");
+            }
             write_trace_command_details(fields, request, hdr);
             write_trace_command_response_details(fields, response_type, response);
         });
@@ -3333,6 +3382,20 @@ fn write_trace_command_response_details(out: &mut String, response_type: u32, re
             );
         }
         _ => {}
+    }
+}
+
+fn write_descriptor_lengths(out: &mut String, descs: &[Descriptor], writable: bool) {
+    let mut first = true;
+    for desc in descs {
+        if (desc.flags & DESC_F_WRITE != 0) != writable {
+            continue;
+        }
+        if !first {
+            out.push(',');
+        }
+        first = false;
+        let _ = write!(out, "{}", desc.len);
     }
 }
 
@@ -4813,7 +4876,10 @@ mod tests {
             &ctrl_req(VIRTIO_GPU_CMD_GET_DISPLAY_INFO),
             408,
         );
-        let _ = submit_control(&mut dev, &mut mem, &ctrl_req(VIRTIO_GPU_CMD_GET_EDID), 1056);
+        let mut edid_request = ctrl_req(VIRTIO_GPU_CMD_GET_EDID);
+        edid_request.extend_from_slice(&0u32.to_le_bytes());
+        edid_request.extend_from_slice(&0u32.to_le_bytes());
+        let _ = submit_control(&mut dev, &mut mem, &edid_request, 1056);
         dev.gpu.write_driver_features(u64::MAX);
         dev.gpu.write_status(0xf);
         dev.gpu.write_status(0);
@@ -4826,6 +4892,18 @@ mod tests {
         assert!(contents.contains("\"response_scanout0_enabled\":1"));
         assert!(contents.contains("\"response_edid_size\":128"));
         assert!(contents.contains("\"response_edid_checksum_valid\":true"));
+        assert!(contents.contains(
+            "\"readable_descriptor_lengths\":[24],\"writable_descriptor_lengths\":[408]"
+        ));
+        assert!(contents.contains(
+            "\"readable_descriptor_lengths\":[32],\"writable_descriptor_lengths\":[1056]"
+        ));
+        assert!(contents.contains(
+            "\"writable_descriptor_bytes\":1056,\"response_planned_write_len\":1056,\"response_truncated\":false"
+        ));
+        assert!(contents.contains(
+            "\"response_header_valid\":true,\"response_flags\":0,\"response_fenced\":false,\"response_fence_id\":0,\"response_ctx_id\":0,\"response_ring_idx\":0"
+        ));
         assert!(contents.contains("\"raw\":0,\"raw_hex\":\"0x0\",\"previous\":15"));
         assert!(contents.contains("\"driver_features_word0_hex\":\"0x2\""));
         assert!(contents.contains("\"reset\":true"));
