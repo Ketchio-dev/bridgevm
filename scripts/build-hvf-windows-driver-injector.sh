@@ -158,6 +158,21 @@ if [[ -f "$ASSETS/bvgpu-diagnostics-run.cmd" ]]; then
   log "staging one-shot GPU diagnostics runner \\bvgpu-diagnostics-run.cmd"
   cp "$ASSETS/bvgpu-diagnostics-run.cmd" "$DST_VOL/bvgpu-diagnostics-run.cmd"
 fi
+# The Vulkan draw smoke gives stage 3 an image-level render assertion beyond
+# the enumerate-only probe. It needs the platform-independent vulkan_core.h
+# (brew install vulkan-headers) plus the checked-in embedded SPIR-V header.
+VULKAN_INCLUDE="${VULKAN_INCLUDE:-/opt/homebrew/include}"
+if [[ "$NEEDS_GPU_FIRSTBOOT" == "1" || "$DIAGNOSTICS_ONLY" == "1" ]]; then
+  [[ -f "$VULKAN_INCLUDE/vulkan/vulkan_core.h" ]] || {
+    echo "FAIL: vulkan/vulkan_core.h not under $VULKAN_INCLUDE (brew install vulkan-headers)" >&2
+    exit 1
+  }
+  log "building ARM64 Windows Vulkan draw smoke \\bvgpu-vulkan-draw-smoke.exe"
+  zig cc -target aarch64-windows-gnu -Os -s \
+    -I"$VULKAN_INCLUDE" \
+    "$ASSETS/../win-tests/bridgevm-vulkan-draw-smoke.c" \
+    -o "$DST_VOL/bvgpu-vulkan-draw-smoke.exe"
+fi
 if [[ "$NEEDS_GPU_SERVICE" == "1" ]]; then
   log "building ARM64 Windows GPU handoff service \\bvgpu-diagnostics-service.exe"
   zig cc -target aarch64-windows-gnu -Os -s \
@@ -187,6 +202,8 @@ if [[ "$NEEDS_GPU_FIRSTBOOT" == "1" ]]; then
     echo "FAIL: viogpu3d firstboot runner missing" >&2; exit 1; }
   [[ -f "$DST_VOL/bvgpu-diagnostics-service.exe" ]] || {
     echo "FAIL: viogpu3d firstboot native service missing" >&2; exit 1; }
+  [[ -f "$DST_VOL/bvgpu-vulkan-draw-smoke.exe" ]] || {
+    echo "FAIL: viogpu3d Vulkan draw smoke missing" >&2; exit 1; }
 fi
 
 if [[ "$ENABLE_TESTSIGNING" == "1" ]]; then

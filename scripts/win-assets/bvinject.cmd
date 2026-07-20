@@ -116,6 +116,7 @@ if exist %DRV%\..\bridgevm-diagnostics-only.txt (
   copy /y %DRV%\..\bvgpu-diagnostics-startup.cmd "%WIN%\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup\BridgeVMGpuDiagnostics.cmd" >nul
   del /f /q %WIN%\BridgeVM\bvgpu-diagnostics-latest.log 2>nul
   del /f /q %WIN%\BridgeVM\bvgpu-vulkan-probe.log 2>nul
+  del /f /q %WIN%\BridgeVM\bvgpu-vulkan-probe.log.console 2>nul
   del /f /q %WIN%\BridgeVM\bvgpu-diagnostics-complete.flag 2>nul
   del /f /q %WIN%\BridgeVM\bvgpu-service-entry.log 2>nul
   del /f /q %WIN%\BridgeVM\bvgpu-native-service-entry.log 2>nul
@@ -220,6 +221,7 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   del /f /q %WIN%\BridgeVM\viogpu3d-firstboot.log 2>nul
   del /f /q %WIN%\BridgeVM\bvgpu-native-service-entry.log 2>nul
   del /f /q %WIN%\BridgeVM\bvgpu-runner-entry.log 2>nul
+  del /f /q %WIN%\BridgeVM\bvgpu-vulkan-draw.log 2>nul
   copy /y %DRV%\viogpu3d\* %WIN%\BridgeVM\viogpu3d\ >nul
   copy /y %DRV%\..\bvgpu-firstboot.cmd %WIN%\BridgeVM\bvgpu-firstboot.cmd >nul
   copy /y %DRV%\..\bvgpu-diagnostics-run.cmd %WIN%\BridgeVM\bvgpu-diagnostics-run.cmd >nul
@@ -227,6 +229,7 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   echo pending > %WIN%\BridgeVM\viogpu3d-firstboot-pending.flag
   if exist %DRV%\..\bvgpu-diagnostics.ps1 copy /y %DRV%\..\bvgpu-diagnostics.ps1 %WIN%\BridgeVM\bvgpu-diagnostics.ps1 >nul
   if exist %DRV%\..\bvgpu-vulkan-probe.ps1 copy /y %DRV%\..\bvgpu-vulkan-probe.ps1 %WIN%\BridgeVM\bvgpu-vulkan-probe.ps1 >nul
+  if exist %DRV%\..\bvgpu-vulkan-draw-smoke.exe copy /y %DRV%\..\bvgpu-vulkan-draw-smoke.exe %WIN%\BridgeVM\bvgpu-vulkan-draw-smoke.exe >nul
   reg load HKLM\BVGPUSW %WIN%\Windows\System32\config\SOFTWARE
   rem RunOnce runs once at first interactive logon. The value uses the RUNTIME
   rem path (installed Windows is C: to itself), not the WinPE %WIN% letter. The

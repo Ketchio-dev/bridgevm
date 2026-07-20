@@ -26,7 +26,14 @@ mkdir -p "$OUT_DIR"
   "$ROOT_DIR/scripts/win-tests/bridgevm-d3d10-bench.c" \
   -ld3d10 -ldxgi
 
+VULKAN_INCLUDE=${VULKAN_INCLUDE:-/opt/homebrew/include}
+"$ZIG" cc -target aarch64-windows-gnu -O2 \
+  -I"$VULKAN_INCLUDE" \
+  -o "$OUT_DIR/bridgevm-vulkan-draw-smoke.exe" \
+  "$ROOT_DIR/scripts/win-tests/bridgevm-vulkan-draw-smoke.c"
+
 file "$OUT_DIR/bridgevm-d3d10-smoke.exe"
 file "$OUT_DIR/bridgevm-debug-runner.exe"
 file "$OUT_DIR/bridgevm-d3d10-draw-smoke.exe"
 file "$OUT_DIR/bridgevm-d3d10-bench.exe"
+file "$OUT_DIR/bridgevm-vulkan-draw-smoke.exe"
