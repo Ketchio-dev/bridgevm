@@ -99,6 +99,19 @@ cmd /c exit /b %VULKAN_STATUS%
 goto :fail
 
 :vulkan_ok
+echo [stage3] run Vulkan draw smoke with image-level assertion >> "%LOG%"
+if not exist C:\BridgeVM\bvgpu-vulkan-draw-smoke.exe (
+  echo [stage3] Vulkan draw smoke missing, skipped >> "%LOG%"
+  goto :draw_smoke_done
+)
+C:\BridgeVM\bvgpu-vulkan-draw-smoke.exe >> "%LOG%" 2>&1
+set DRAW_STATUS=%ERRORLEVEL%
+echo [stage3] Vulkan draw smoke errorlevel=%DRAW_STATUS% >> "%LOG%"
+if "%DRAW_STATUS%"=="0" goto :draw_smoke_done
+cmd /c exit /b %DRAW_STATUS%
+goto :fail
+
+:draw_smoke_done
 echo [stage3] capture PnP, class-registry, DxgKrnl, and SetupAPI diagnostics >> "%LOG%"
 if exist C:\BridgeVM\bvgpu-diagnostics.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-diagnostics.ps1 >> "%LOG%" 2>&1
 echo [stage3] verify PnP status and bound viogpu3d INF >> "%LOG%"
@@ -125,7 +138,11 @@ exit /b 0
 :write_boot_identity
 call :read_boot_identity
 if errorlevel 1 exit /b 1
-> "%~1" echo %CURRENT_BOOT_ID%
+rem Write-through + Flush(true) forces the bytes to the virtual disk before
+rem the imminent stage reboot. A plain cmd redirect leaves this tiny file's
+rem NTFS-resident data in cache, and a reboot right after has been observed to
+rem persist a correct-length but NUL-filled file, wedging the next stage gate.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$s = New-Object IO.FileStream('%~1', [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None, 4096, [IO.FileOptions]::WriteThrough); $b = [Text.Encoding]::ASCII.GetBytes('%CURRENT_BOOT_ID%' + [Environment]::NewLine); $s.Write($b, 0, $b.Length); $s.Flush($true); $s.Close()"
 if errorlevel 1 exit /b 1
 echo [boot-identity] path=%~1 value=%CURRENT_BOOT_ID% >> "%LOG%"
 exit /b %ERRORLEVEL%
@@ -135,11 +152,17 @@ if not exist "%~1" (
   echo [boot-gate] previous boot identity is missing: %~1 >> "%LOG%"
   exit /b 1
 )
+rem The boot file is only created immediately before the stage reboot, so its
+rem existence alone proves the reboot handoff. Unreadable content is the
+rem observed reboot cache-loss artifact -- correct length, all NUL bytes --
+rem so warn and let the stage proceed instead of wedging every later boot.
+rem Comments must stay outside the parenthesized block: a paren inside a
+rem block rem line breaks cmd's block parser.
 set "PREVIOUS_BOOT_ID="
 set /p PREVIOUS_BOOT_ID=<"%~1"
 if not defined PREVIOUS_BOOT_ID (
-  echo [boot-gate] previous boot identity is empty: %~1 >> "%LOG%"
-  exit /b 1
+  echo [boot-gate] previous boot identity is unreadable, accepting handoff by file existence: %~1 >> "%LOG%"
+  exit /b 0
 )
 call :read_boot_identity
 if errorlevel 1 exit /b 1
