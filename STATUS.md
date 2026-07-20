@@ -46,6 +46,20 @@ tests/integration/product-gates-report.sh
 ```
 
 ## Current P3 Windows 3D direction
+
+**2026-07-20 update:** the Venus bring-up has advanced far beyond the state
+described below. The Windows ARM64 guest boots to a visible desktop through
+the Venus WDDM render path (display-start wall closed 2026-07-19, driver
+120.35), and guest Vulkan now works end to end: with driver 120.36 plus the
+matching virglrenderer shm-import patch, the in-guest draw smoke allocates,
+maps, renders, and reads back host-visible memory with checksums
+byte-identical to the same smoke run natively against MoltenVK
+(`docs/hvf-venus-wddm-display-resolution-20260719.md`,
+`docs/hvf-venus-hostvisible-map-resolution-20260720.md`). The next ladder
+rungs are a draw/fence timing baseline, DXVK d3d11 → a real DX11 title, then
+vkd3d-proton d3d12. The section below predates this and is kept for the
+package/injection tooling reference.
+
 The active 3D-engine path is now Windows ARM64 `viogpu3d` bring-up rather than
 guest-agent polish. The preserved VirGL full package contains five ARM64 Mesa
 DLLs and copies them through the INF, but does not register
