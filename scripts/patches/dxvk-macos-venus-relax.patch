@@ -1,5 +1,5 @@
 diff --git a/src/dxvk/dxvk_device_info.cpp b/src/dxvk/dxvk_device_info.cpp
-index ac24f84..8cc589a 100644
+index ac24f84..877f601 100644
 --- a/src/dxvk/dxvk_device_info.cpp
 +++ b/src/dxvk/dxvk_device_info.cpp
 @@ -830,7 +830,10 @@ namespace dxvk {
@@ -53,15 +53,3 @@ index ac24f84..8cc589a 100644
  
        /* Sample locations, used to "disable" MSAA rendering */
        ENABLE_EXT(extSampleLocations, false),
-@@ -1055,7 +1067,10 @@ namespace dxvk {
-       ENABLE_EXT_FEATURE(khrShaderUntypedPointers, shaderUntypedPointers, false),
- 
-       /* Swapchain, needed for presentation */
--      ENABLE_EXT(khrSwapchain, true),
-+      /* BridgeVM: the Venus WDDM guest driver gates VK_KHR_swapchain on
-+       * sync-fd semaphore import it does not have yet; accept the device
-+       * for offscreen rendering while the present path is brought up. */
-+      ENABLE_EXT(khrSwapchain, false),
- 
-       /* Swapchain maintenance, used to implement proper synchronization
-        * and dynamic present modes to avoid swapchain recreation */

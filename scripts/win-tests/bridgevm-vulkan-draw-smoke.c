@@ -850,10 +850,28 @@ int main(void) {
           .commandBufferCount = 1,
           .pCommandBuffers = &cmds[1],
       };
+#ifdef _WIN32
+      /* BV_BENCH_TIMER_RES=1 raises the Windows timer resolution to 1 ms for
+       * an A/B against the default ~15.6 ms quantum that the fence-wait
+       * sleep ladder inherits through Sleep(). */
+      if (getenv("BV_BENCH_TIMER_RES")) {
+        HMODULE winmm = LoadLibraryA("winmm.dll");
+        if (winmm) {
+          typedef UINT(WINAPI * time_begin_period_fn)(UINT);
+          time_begin_period_fn begin_period =
+              (time_begin_period_fn)(void *)GetProcAddress(winmm,
+                                                           "timeBeginPeriod");
+          if (begin_period) begin_period(1);
+          logf_line("bench timer_res=1ms");
+        }
+      }
+#endif
       const long warmup = 10;
       uint64_t min_us = UINT64_MAX;
       uint64_t max_us = 0;
       uint64_t bench_start = 0;
+      uint64_t submit_us_total = 0;
+      uint64_t wait_us_total = 0;
       for (long frame = 0; frame < frames + warmup; ++frame) {
         uint64_t frame_start = now_us();
         if (frame == warmup) bench_start = frame_start;
@@ -867,11 +885,17 @@ int main(void) {
         p_vkCmdEndRenderPass(cmds[1]);
         result = p_vkEndCommandBuffer(cmds[1]);
         if (result != VK_SUCCESS) return fail(38, "bench_end_cmd", result);
+        uint64_t submit_start = now_us();
         result = p_vkQueueSubmit(queue, 1, &submit, fence);
         if (result != VK_SUCCESS) return fail(38, "bench_submit", result);
+        uint64_t wait_start = now_us();
         result = p_vkWaitForFences(device, 1, &fence, VK_TRUE,
                                    30ull * 1000000000ull);
         if (result != VK_SUCCESS) return fail(38, "bench_fence", result);
+        if (frame >= warmup) {
+          submit_us_total += wait_start - submit_start;
+          wait_us_total += now_us() - wait_start;
+        }
         result = p_vkResetFences(device, 1, &fence);
         if (result != VK_SUCCESS) return fail(38, "bench_reset_fence", result);
         if (frame >= warmup) {
@@ -888,6 +912,9 @@ int main(void) {
                 (unsigned long long)(frames * 1000000ull / total_us),
                 (unsigned long long)(frames * 100000000ull / total_us % 100),
                 (unsigned long long)min_us, (unsigned long long)max_us);
+      logf_line("bench_phases submit_avg_us=%llu wait_avg_us=%llu",
+                (unsigned long long)(submit_us_total / (uint64_t)frames),
+                (unsigned long long)(wait_us_total / (uint64_t)frames));
 
       /* The image must still be exact after the loop: re-run the draw with a
        * copy-out and hold it to the gate-D assertion. */
