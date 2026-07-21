@@ -35,14 +35,31 @@ static void print_module_path(const char *name) {
   printf("BV-D3D11-DRAW-MODULE %s=%s\n", name, path);
 }
 
+struct vertex {
+  float position[2];
+};
+
 int main(void) {
-  static const char vs_source[] =
+  /* Default draws through a real vertex buffer + input layout; BV_DRAW_NOVB=1
+   * switches to the SV_VertexID fullscreen triangle with no vertex bindings.
+   * On a DXVK built with the nullDescriptor requirement relaxed, comparing the
+   * two isolates whether null-binding handling breaks rasterization. */
+  const int no_vertex_buffer =
+      GetEnvironmentVariableA("BV_DRAW_NOVB", NULL, 0) != 0;
+  static const char vs_vb_source[] =
+      "float4 main(float2 position : POSITION) : SV_POSITION {"
+      "  return float4(position, 0.0, 1.0);"
+      "}";
+  static const char vs_novb_source[] =
       "float4 main(uint id : SV_VertexID) : SV_POSITION {"
       "  float2 p = float2(float((id << 1) & 2), float(id & 2));"
       "  return float4(p * float2(2.0, 2.0) + float2(-1.0, -1.0), 0.0, 1.0);"
       "}";
+  const char *vs_source = no_vertex_buffer ? vs_novb_source : vs_vb_source;
   static const char ps_source[] =
       "float4 main() : SV_TARGET { return float4(1.0, 0.0, 1.0, 1.0); }";
+  static const struct vertex vertices[3] = {
+      {{-1.0f, -1.0f}}, {{-1.0f, 3.0f}}, {{3.0f, -1.0f}}};
 
   ID3D11Device *device = NULL;
   ID3D11DeviceContext *context = NULL;
@@ -50,6 +67,8 @@ int main(void) {
   ID3D11RenderTargetView *view = NULL;
   ID3D11VertexShader *vs = NULL;
   ID3D11PixelShader *ps = NULL;
+  ID3D11InputLayout *layout = NULL;
+  ID3D11Buffer *vertex_buffer = NULL;
   ID3D10Blob *vs_blob = NULL, *ps_blob = NULL;
   D3D_FEATURE_LEVEL got_level = 0;
   HRESULT hr;
@@ -64,7 +83,8 @@ int main(void) {
                          sizeof(levels) / sizeof(levels[0]), D3D11_SDK_VERSION,
                          &device, &got_level, &context);
   if (FAILED(hr)) return fail_hr("create-device", hr);
-  printf("BV-D3D11-DRAW-DEVICE feature_level=0x%04x\n", got_level);
+  printf("BV-D3D11-DRAW-DEVICE feature_level=0x%04x mode=%s\n", got_level,
+         no_vertex_buffer ? "novb" : "vb");
   print_module_path("d3d11.dll");
   print_module_path("dxgi.dll");
 
@@ -108,6 +128,24 @@ int main(void) {
       ID3D10Blob_GetBufferSize(ps_blob), NULL, &ps);
   if (FAILED(hr)) return fail_hr("create-ps", hr);
 
+  if (!no_vertex_buffer) {
+    const D3D11_INPUT_ELEMENT_DESC element = {
+        "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
+        D3D11_INPUT_PER_VERTEX_DATA, 0};
+    hr = ID3D11Device_CreateInputLayout(
+        device, &element, 1, ID3D10Blob_GetBufferPointer(vs_blob),
+        ID3D10Blob_GetBufferSize(vs_blob), &layout);
+    if (FAILED(hr)) return fail_hr("create-layout", hr);
+    D3D11_BUFFER_DESC desc = {0};
+    D3D11_SUBRESOURCE_DATA data = {0};
+    desc.ByteWidth = sizeof(vertices);
+    desc.Usage = D3D11_USAGE_IMMUTABLE;
+    desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    data.pSysMem = vertices;
+    hr = ID3D11Device_CreateBuffer(device, &desc, &data, &vertex_buffer);
+    if (FAILED(hr)) return fail_hr("create-vertex-buffer", hr);
+  }
+
   D3D11_TEXTURE2D_DESC texture_desc = {0};
   texture_desc.Width = 64;
   texture_desc.Height = 64;
@@ -137,6 +175,12 @@ int main(void) {
   ID3D11DeviceContext_RSSetViewports(context, 1, &viewport);
   ID3D11DeviceContext_IASetPrimitiveTopology(
       context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  if (!no_vertex_buffer) {
+    UINT stride = sizeof(struct vertex), offset = 0;
+    ID3D11DeviceContext_IASetInputLayout(context, layout);
+    ID3D11DeviceContext_IASetVertexBuffers(context, 0, 1, &vertex_buffer,
+                                           &stride, &offset);
+  }
   ID3D11DeviceContext_VSSetShader(context, vs, NULL, 0);
   ID3D11DeviceContext_PSSetShader(context, ps, NULL, 0);
   ID3D11DeviceContext_ClearRenderTargetView(context, view, black);
@@ -201,6 +245,8 @@ int main(void) {
          center[0], center[1], center[2], center[3], magenta, bad,
          (unsigned long)hr);
 
+  if (vertex_buffer) ID3D11Buffer_Release(vertex_buffer);
+  if (layout) ID3D11InputLayout_Release(layout);
   ID3D11PixelShader_Release(ps);
   ID3D11VertexShader_Release(vs);
   ID3D10Blob_Release(ps_blob);

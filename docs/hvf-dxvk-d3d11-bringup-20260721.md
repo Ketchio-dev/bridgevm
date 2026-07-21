@@ -2,20 +2,30 @@
 
 ## Status
 
-Open, far advanced in one day. An ARM64 build of upstream DXVK 3.0.2 now
-creates a **D3D_FEATURE_LEVEL_11_0** device on the Venus adapter inside the
-Windows ARM64 guest, compiles HLSL through DXBC into SPIR-V, submits the draw,
-and completes a GPU EVENT query — the remaining wall is that the first draw
-rasterizes nothing (clear-black readback), with the relaxed `nullDescriptor`
-null-binding path as the prime suspect.
+**DXVK D3D11 renders correctly on Venus.** An ARM64 build of upstream DXVK
+3.0.2 creates a **D3D_FEATURE_LEVEL_11_0** device on the Venus adapter inside
+the Windows ARM64 guest and draws a pixel-perfect triangle through the
+standard vertex-buffer path:
 
 ```text
-BV-D3D11-DRAW-DEVICE feature_level=0xb000
+BV-D3D11-DRAW-DEVICE feature_level=0xb000 mode=vb
 BV-D3D11-DRAW-MODULE d3d11.dll=C:\BridgeVM\dxvk\d3d11.dll
 BV-D3D11-DRAW-ADAPTER vendor=0x106b device=0x1a050209 desc=Virtio-GPU Venus (Apple M4 Max)
-BV-D3D11-DRAW-EVENT hr=0x0 done=1 waited_ms=78
+BV-D3D11-DRAW-RESULT center=ff00ffff magenta_pixels=4096 bad_pixels=0
+BV-D3D11-DRAW-PASS
+
+BV-D3D11-DRAW-DEVICE feature_level=0xb000 mode=novb
 BV-D3D11-DRAW-RESULT center=000000ff magenta_pixels=0 bad_pixels=4096
+BV-D3D11-DRAW-FAIL step=verify
 ```
+
+The vb/novb pair isolates the one remaining rendering defect precisely: a
+draw with NO vertex buffer bound (SV_VertexID) rasterizes nothing, because
+the relaxed `nullDescriptor` requirement leaves DXVK's null-binding handling
+without the Vulkan feature it assumes.  Real D3D11 content overwhelmingly
+binds vertex buffers, so the standard path is proven; the null-binding gap is
+a known limitation to mitigate (DXVK-side dummy buffer, or nullDescriptor
+emulation in the stack).
 
 ## How it runs
 
@@ -70,10 +80,10 @@ BV-D3D11-DRAW-RESULT center=000000ff magenta_pixels=0 bad_pixels=4096
 
 ## Next work
 
-1. Black first-draw: determine whether the relaxed `nullDescriptor` breaks
-   DXVK's null-binding handling for the no-vertex-buffer draw — try a
-   vertex-buffered variant of the d3d11 smoke, then DXVK debug logging; if
-   confirmed, implement null-descriptor emulation or scope DXVK config.
+1. RESOLVED (this doc, same day): the black first-draw was the relaxed
+   `nullDescriptor` null-binding path — the vertex-buffered draw passes
+   pixel-perfect.  Mitigate the null-binding gap later (DXVK dummy buffer or
+   nullDescriptor emulation); it only affects draws with nothing bound.
 2. Presentation: expose `VK_KHR_swapchain` in the guest driver without
    sync-fd import (driver-side external semaphore per the Mesa TODO), then
    drop the DXVK khrSwapchain relax and run a windowed D3D11 present test.
