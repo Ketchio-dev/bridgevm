@@ -80,14 +80,29 @@ emulation in the stack).
 
 ## Next work
 
-1. RESOLVED (this doc, same day): the black first-draw was the relaxed
+1. RESOLVED (same day): the black first-draw was the relaxed
    `nullDescriptor` null-binding path — the vertex-buffered draw passes
    pixel-perfect.  Mitigate the null-binding gap later (DXVK dummy buffer or
    nullDescriptor emulation); it only affects draws with nothing bound.
-2. Presentation: expose `VK_KHR_swapchain` in the guest driver without
-   sync-fd import (driver-side external semaphore per the Mesa TODO), then
-   drop the DXVK khrSwapchain relax and run a windowed D3D11 present test.
-3. Then the rung-4 flag: a real DX11 title.
+2. RESOLVED (driver 120.40): **windowed present works.**
+   `bridgevm-d3d11-present-smoke` creates an HWND + legacy DXGI swapchain,
+   renders magenta into the backbuffer (76800/76800 pixels verified by
+   pre-present readback), and presents 30 frames, all S_OK, device alive:
+   DXVK -> VkSwapchainKHR -> Mesa win32 WSI (CPU image + GDI blit) -> HWND.
+   The pieces: guest `mesa-venus-win32-swapchain.patch` (120.39) exposes
+   KHR_swapchain on win32 — acquire semaphores complete via the fd == -1
+   already-signaled import plus renderer-side
+   vkImportSemaphoreResourceMESA(resourceId=0); the BridgeVM render server
+   services that with an empty queue submit when the host lacks sync-fd
+   import (virglrenderer-macos-venus.patch); and 120.40 scopes out the
+   unconditional VK_KHR_external_semaphore_fd renderer-extension request
+   that made 120.39's device creation fail on MoltenVK.
+   The present ran in the session-0 firstboot context (window never
+   visible); the mechanism is identical in the interactive session.
+3. Next: the rung-4 flag — a real DX11 title (plus a visible-desktop present
+   demo via the interactive logon session, and eventually dropping the DXVK
+   khrSwapchain relax since the guest now exposes the extension).
 
-Evidence: `~/BridgeVM/runs/venus-activate-120.38-dxvk4-*` (final run) and the
+Evidence: `~/BridgeVM/runs/venus-activate-120.40-sem-ext-*` (present PASS run),
+`~/BridgeVM/runs/venus-activate-120.38-dxvk4-*`, and the
 `venus-activate-120.37-*`/`-120.38-*` chain before it.

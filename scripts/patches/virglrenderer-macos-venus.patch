@@ -263,6 +263,44 @@ index 139b11a..6e0d08a 100644
     bool EXT_metal_objects;
  
     VkPhysicalDeviceMemoryProperties memory_properties;
+diff --git a/src/venus/vkr_queue.c b/src/venus/vkr_queue.c
+index 61b94be..68ed8ee 100644
+--- a/src/venus/vkr_queue.c
++++ b/src/venus/vkr_queue.c
+@@ -586,6 +586,33 @@ vkr_dispatch_vkImportSemaphoreResourceMESA(
+    /* resourceId 0 is for importing a signaled payload to sync_fd fence */
+    assert(!res_info->resourceId);
+ 
++   /* BridgeVM: MoltenVK has no sync-fd semaphore import.  Signal the binary
++    * semaphore with an empty queue submit instead; ring execution is
++    * sequential, so the signal lands before the guest's next submission
++    * waits on it (WSI acquire-semaphore flow).
++    */
++   if (!vk->ImportSemaphoreFdKHR) {
++      if (list_is_empty(&dev->queues)) {
++         vkr_log("no queue available to signal imported semaphore");
++         vkr_context_set_fatal(ctx);
++         return;
++      }
++      struct vkr_queue *queue =
++         list_first_entry(&dev->queues, struct vkr_queue, base.track_head);
++      const VkSubmitInfo submit = {
++         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
++         .signalSemaphoreCount = 1,
++         .pSignalSemaphores = &res_info->semaphore,
++      };
++      mtx_lock(&queue->vk_mutex);
++      VkResult result =
++         vk->QueueSubmit(queue->base.handle.queue, 1, &submit, VK_NULL_HANDLE);
++      mtx_unlock(&queue->vk_mutex);
++      if (result != VK_SUCCESS)
++         vkr_context_set_fatal(ctx);
++      return;
++   }
++
+    const VkImportSemaphoreFdInfoKHR import_info = {
+       .sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR,
+       .semaphore = res_info->semaphore,
 diff --git a/src/vrend/vrend_blitter.c b/src/vrend/vrend_blitter.c
 index eed56e4..afbde6f 100644
 --- a/src/vrend/vrend_blitter.c
