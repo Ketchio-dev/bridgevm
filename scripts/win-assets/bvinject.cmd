@@ -247,6 +247,18 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
     del /f /q %WIN%\BridgeVM\dxvk\present-demo.log 2>nul
     reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMPresentDemo /t REG_SZ /d "cmd /c C:\BridgeVM\dxvk\bv-present-demo.cmd" /f
   )
+  rem Clear any stale demo autostart from a previous injection so only the
+  rem currently staged demo runs (avoids two GPU apps sharing the shm window).
+  if not exist %DRV%\..\dxvk\bv-present-demo.cmd reg delete "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMPresentDemo /f 2>nul
+  rem Real-title demo: a full app (PPSSPP, native ARM64) with the DXVK dlls
+  rem beside its exe. Same self-delete gate; launched at logon.
+  if exist %DRV%\..\apps\ppsspp\bv-ppsspp-demo.cmd (
+    if not exist %WIN%\BridgeVM\apps\ppsspp\ mkdir %WIN%\BridgeVM\apps\ppsspp
+    xcopy /e /i /y /q %DRV%\..\apps\ppsspp %WIN%\BridgeVM\apps\ppsspp >nul
+    reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMPPSSPPDemo /t REG_SZ /d "cmd /c C:\BridgeVM\apps\ppsspp\bv-ppsspp-demo.cmd" /f
+  ) else (
+    reg delete "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMPPSSPPDemo /f 2>nul
+  )
   rem Ensure the admin autologon gets an un-filtered token so certutil/pnputil in
   rem the RunOnce run elevated (idempotent with the agent block below).
   reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA /t REG_DWORD /d 0 /f

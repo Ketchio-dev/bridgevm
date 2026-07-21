@@ -313,7 +313,7 @@ build_installed_boot_env_args() {
     # value wins (venus prefix / alt MoltenVK).
     if [[ "$(virtio_gpu_3d_runtime_protocol)" == "venus" ]]; then
       ENV_ARGS+=("BRIDGEVM_VULKAN_LIB=${BRIDGEVM_VULKAN_LIB:-/opt/homebrew/lib/libMoltenVK.dylib}")
-      ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB=${BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB:-64}")
+      ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB=${BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB:-512}")
     fi
     if [[ -n "${VIRTIO_GPU_PCI_DEVICE_ID:-}" ]]; then
       ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID=0x$VIRTIO_GPU_PCI_DEVICE_ID")
