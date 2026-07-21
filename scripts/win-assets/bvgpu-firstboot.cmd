@@ -123,6 +123,9 @@ set BV_DRAW_NOVB=1
 C:\BridgeVM\dxvk\bridgevm-d3d11-draw-smoke.exe >> "%LOG%" 2>&1
 echo [stage3] DXVK D3D11 novb errorlevel=%ERRORLEVEL% >> "%LOG%"
 set BV_DRAW_NOVB=
+if not exist C:\BridgeVM\dxvk\bridgevm-d3d11-present-smoke.exe goto :dxvk_done
+C:\BridgeVM\dxvk\bridgevm-d3d11-present-smoke.exe >> "%LOG%" 2>&1
+echo [stage3] DXVK D3D11 present errorlevel=%ERRORLEVEL% >> "%LOG%"
 :dxvk_done
 echo [stage3] capture PnP, class-registry, DxgKrnl, and SetupAPI diagnostics >> "%LOG%"
 if exist C:\BridgeVM\bvgpu-diagnostics.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-diagnostics.ps1 >> "%LOG%" 2>&1
