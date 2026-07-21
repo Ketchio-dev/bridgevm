@@ -327,7 +327,10 @@ int main(void) {
   VkApplicationInfo app = {
       .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
       .pApplicationName = "BridgeVM Venus draw smoke",
-      .apiVersion = VK_MAKE_API_VERSION(0, 1, 1, 0),
+      /* Venus negotiates the renderer instance from the app's request and
+       * caps the advertised device version with it, so ask for 1.3: the
+       * logged device api then reflects what a DXVK-class app would see. */
+      .apiVersion = VK_MAKE_API_VERSION(0, 1, 3, 0),
   };
   VkInstanceCreateInfo instance_info = {
       .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
