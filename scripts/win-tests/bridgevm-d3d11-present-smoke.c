@@ -53,11 +53,20 @@ int main(void) {
   wc.lpszClassName = "BridgeVMPresentSmoke";
   if (!RegisterClassA(&wc))
     return fail_hr("register-class", HRESULT_FROM_WIN32(GetLastError()));
+  /* BV_PRESENT_DEMO=1 runs a longer, visible presentation for scanout
+   * capture: the window is shown on the desktop and frames present with
+   * vsync pacing, so the host-side ramfb samples of the composited desktop
+   * catch the magenta client area. */
+  const int demo = GetEnvironmentVariableA("BV_PRESENT_DEMO", NULL, 0) != 0;
   HWND hwnd = CreateWindowExA(0, wc.lpszClassName, "BridgeVM present smoke",
-                              WS_OVERLAPPEDWINDOW, 0, 0, 320, 240, NULL, NULL,
-                              wc.hInstance, NULL);
+                              WS_OVERLAPPEDWINDOW, 40, 40, 320, 240, NULL,
+                              NULL, wc.hInstance, NULL);
   if (!hwnd)
     return fail_hr("create-window", HRESULT_FROM_WIN32(GetLastError()));
+  if (demo) {
+    ShowWindow(hwnd, SW_SHOWNORMAL);
+    UpdateWindow(hwnd);
+  }
 
   DXGI_SWAP_CHAIN_DESC scd = {0};
   scd.BufferDesc.Width = 320;
@@ -163,7 +172,7 @@ int main(void) {
   const FLOAT black[4] = {0, 0, 0, 1};
   D3D11_VIEWPORT viewport = {0, 0, 320, 240, 0.0f, 1.0f};
   UINT stride = sizeof(vertices[0]), offset = 0;
-  const int frames = 30;
+  const int frames = demo ? 900 : 30;
   uint32_t magenta = 0, bad = 0;
   for (int frame = 0; frame < frames; ++frame) {
     ID3D11DeviceContext_OMSetRenderTargets(context, 1, &view, NULL);
@@ -203,11 +212,19 @@ int main(void) {
              magenta, bad);
     }
 
-    hr = IDXGISwapChain_Present(swapchain, 0, 0);
+    hr = IDXGISwapChain_Present(swapchain, demo ? 1 : 0, 0);
     if (FAILED(hr)) {
       printf("BV-D3D11-PRESENT-FAIL step=present frame=%d hr=0x%08lx\n", frame,
              (unsigned long)hr);
       return 1;
+    }
+    if (demo) {
+      MSG msg;
+      while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
+        TranslateMessage(&msg);
+        DispatchMessageA(&msg);
+      }
+      Sleep(15);
     }
   }
   printf("BV-D3D11-PRESENT-FRAMES presented=%d\n", frames);

@@ -43,7 +43,7 @@ if errorlevel 1 goto :fail
 certutil -f -addstore TrustedPublisher "%CER%" >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
 echo [stage1] create delayed SYSTEM ONSTART continuation task >> "%LOG%"
-schtasks /Create /TN "%TASK_NAME%" /SC ONSTART /DELAY 0001:00 /RU SYSTEM /RL HIGHEST /TR "%ComSpec% /d /c C:\BridgeVM\bvgpu-firstboot.cmd" /F >> "%LOG%" 2>&1
+schtasks /Create /TN "%TASK_NAME%" /SC ONSTART /DELAY 0000:15 /RU SYSTEM /RL HIGHEST /TR "%ComSpec% /d /c C:\BridgeVM\bvgpu-firstboot.cmd" /F >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
 call :write_boot_identity C:\BridgeVM\stage1.boot
 if errorlevel 1 goto :fail

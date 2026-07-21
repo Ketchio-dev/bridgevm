@@ -99,10 +99,19 @@ emulation in the stack).
    that made 120.39's device creation fail on MoltenVK.
    The present ran in the session-0 firstboot context (window never
    visible); the mechanism is identical in the interactive session.
-3. Next: the rung-4 flag — a real DX11 title (plus a visible-desktop present
-   demo via the interactive logon session, and eventually dropping the DXVK
-   khrSwapchain relax since the guest now exposes the extension).
+3. RESOLVED (same day): **visible-desktop present proven.** An HKLM Run
+   entry launches `bv-present-demo.cmd` at interactive logon; it waits for
+   the firstboot task to finish (its ONSTART delay now 15 s), then presents
+   900 vsync-paced frames in a shown window. The host-side virtio-gpu
+   scanout sample at 60 s contains 60,600 magenta pixels — the DXVK window,
+   title bar and all, composited by DWM on the Windows 11 desktop and
+   scanned out through Venus (frame preserved as
+   `present-demo-visible-desktop.ppm` in the evidence dir).
+4. Next: the rung-4 flag — a real DX11 title; cleanup: drop the DXVK
+   khrSwapchain relax since the guest now exposes the extension.
 
-Evidence: `~/BridgeVM/runs/venus-activate-120.40-sem-ext-*` (present PASS run),
+Evidence: `~/BridgeVM/runs/venus-activate-120.40-demo3-*` (visible-desktop
+present frame), `~/BridgeVM/runs/venus-activate-120.40-sem-ext-*` (present
+PASS run),
 `~/BridgeVM/runs/venus-activate-120.38-dxvk4-*`, and the
 `venus-activate-120.37-*`/`-120.38-*` chain before it.

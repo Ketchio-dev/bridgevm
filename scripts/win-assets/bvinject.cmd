@@ -240,6 +240,13 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   rem "!" name prefix keeps the initial entry until stage 1 finishes creating
   rem the persistent delayed ONSTART continuation task.
   reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\RunOnce" /v !BridgeVMGpu3DStage1 /t REG_SZ /d "cmd /c C:\BridgeVM\bvgpu-firstboot.cmd" /f
+  rem Visible present demo: runs at every interactive logon but only presents
+  rem once the firstboot continuation task has deleted itself (stage 3 done),
+  rem so the final generation shows the demo window on the Venus desktop.
+  if exist %DRV%\..\dxvk\bv-present-demo.cmd (
+    del /f /q %WIN%\BridgeVM\dxvk\present-demo.log 2>nul
+    reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMPresentDemo /t REG_SZ /d "cmd /c C:\BridgeVM\dxvk\bv-present-demo.cmd" /f
+  )
   rem Ensure the admin autologon gets an un-filtered token so certutil/pnputil in
   rem the RunOnce run elevated (idempotent with the agent block below).
   reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA /t REG_DWORD /d 0 /f
