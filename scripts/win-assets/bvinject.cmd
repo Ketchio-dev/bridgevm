@@ -223,6 +223,14 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   del /f /q %WIN%\BridgeVM\bvgpu-runner-entry.log 2>nul
   del /f /q %WIN%\BridgeVM\bvgpu-vulkan-draw.log 2>nul
   copy /y %DRV%\viogpu3d\* %WIN%\BridgeVM\viogpu3d\ >nul
+  rem The Khronos loader registry entry can keep pointing at an OLDER
+  rem DriverStore package dir after driver upgrades (entries accumulate,
+  rem stale dirs are never scavenged), so a poisoned ICD keeps loading
+  rem regardless of the bound driver version. Overwrite every stored
+  rem viogpu3d ICD copy with the known-good one being injected.
+  for /d %%D in (%WIN%\Windows\System32\DriverStore\FileRepository\viogpu3d.inf_arm64_*) do (
+    if exist "%%D\vulkan_virtio.dll" copy /y %DRV%\viogpu3d\vulkan_virtio.dll "%%D\vulkan_virtio.dll" >nul
+  )
   copy /y %DRV%\..\bvgpu-firstboot.cmd %WIN%\BridgeVM\bvgpu-firstboot.cmd >nul
   copy /y %DRV%\..\bvgpu-diagnostics-run.cmd %WIN%\BridgeVM\bvgpu-diagnostics-run.cmd >nul
   copy /y %DRV%\..\bvgpu-diagnostics-service.exe %WIN%\BridgeVM\bvgpu-diagnostics-service.exe >nul
@@ -260,6 +268,11 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   if not exist %DRV%\..\dxvk\bv-present-demo.cmd reg delete "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMPresentDemo /f 2>nul
   rem Real-title demo: a full app (PPSSPP, native ARM64) with the DXVK dlls
   rem beside its exe. Same self-delete gate; launched at logon.
+  rem PPSSPP persists a crash-driven backend switch (VULKAN -> D3D11) in
+  rem its user config; a single interrupted launch poisons every later
+  rem run. Reset the config so each injection re-tests the default
+  rem (Vulkan) backend.
+  if exist "%WIN%\Users\bridge\Documents\PPSSPP\PSP\SYSTEM\ppsspp.ini" del /f /q "%WIN%\Users\bridge\Documents\PPSSPP\PSP\SYSTEM\ppsspp.ini"
   if exist %DRV%\..\apps\ppsspp\bv-ppsspp-demo.cmd (
     if not exist %WIN%\BridgeVM\apps\ppsspp\ mkdir %WIN%\BridgeVM\apps\ppsspp
     xcopy /e /i /y /q %DRV%\..\apps\ppsspp %WIN%\BridgeVM\apps\ppsspp >nul
