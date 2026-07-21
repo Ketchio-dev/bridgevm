@@ -261,6 +261,11 @@ pub struct VirtioGpu {
     scanout_readback_throttled_count: u64,
     scanout_readback_bytes: u64,
     scanout_readback_nanoseconds: u64,
+    scanout_3d_deferred: bool,
+    pending_3d_scanout: Option<(u32, Rect)>,
+    pending_3d_scanout_fresh: bool,
+    deferred_scanout_flush_count: u64,
+    deferred_scanout_serviced_count: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -337,6 +342,8 @@ pub struct VirtioGpuStats {
     pub scanout_readback_throttled: u64,
     pub scanout_readback_bytes: u64,
     pub scanout_readback_nanoseconds: u64,
+    pub deferred_scanout_flushes: u64,
+    pub deferred_scanout_serviced: u64,
     pub three_d: VirtioGpu3dStats,
     pub queues: [VirtioGpuQueueStats; QUEUE_COUNT],
 }
@@ -409,6 +416,35 @@ struct CtrlHdr {
     padding: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScanoutReadbackOutcome {
+    Done,
+    NotDue,
+    Gone,
+}
+
+fn union_rect(a: Rect, b: Rect) -> Rect {
+    if a.width == 0 || a.height == 0 {
+        return b;
+    }
+    if b.width == 0 || b.height == 0 {
+        return a;
+    }
+    let x = a.x.min(b.x);
+    let y = a.y.min(b.y);
+    let right = a.x.saturating_add(a.width).max(b.x.saturating_add(b.width));
+    let bottom = a
+        .y
+        .saturating_add(a.height)
+        .max(b.y.saturating_add(b.height));
+    Rect {
+        x,
+        y,
+        width: right - x,
+        height: bottom - y,
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Rect {
     x: u32,
@@ -472,6 +508,11 @@ impl VirtioGpu {
             scanout_readback_attempt_count: 0,
             scanout_readback_count: 0,
             scanout_readback_throttled_count: 0,
+            scanout_3d_deferred: false,
+            pending_3d_scanout: None,
+            pending_3d_scanout_fresh: false,
+            deferred_scanout_flush_count: 0,
+            deferred_scanout_serviced_count: 0,
             scanout_readback_bytes: 0,
             scanout_readback_nanoseconds: 0,
         };
@@ -530,6 +571,148 @@ impl VirtioGpu {
         self.last_3d_scanout_readback = None;
     }
 
+    pub fn set_3d_scanout_deferred(&mut self, deferred: bool) {
+        self.scanout_3d_deferred = deferred;
+        if !deferred {
+            self.pending_3d_scanout = None;
+            self.pending_3d_scanout_fresh = false;
+        }
+    }
+
+    fn defer_3d_scanout(&mut self, resource_id: u32, rect: Rect) {
+        self.deferred_scanout_flush_count = self.deferred_scanout_flush_count.saturating_add(1);
+        let pending = match self.pending_3d_scanout.take() {
+            Some((pending_id, pending_rect)) if pending_id == resource_id => {
+                (resource_id, union_rect(pending_rect, rect))
+            }
+            // A different resource means the scanout switched; the stale
+            // pending frame is superseded, not unioned.
+            _ => (resource_id, rect),
+        };
+        self.pending_3d_scanout = Some(pending);
+        self.pending_3d_scanout_fresh = true;
+        if self.deferred_scanout_flush_count <= 8 {
+            let count = self.deferred_scanout_flush_count;
+            self.record_trace_fields("scanout_readback_deferred", |fields| {
+                let _ = write!(fields, ",\"resource_id\":{resource_id},\"count\":{count}");
+            });
+        }
+    }
+
+    /// Service a flush-deferred 3D scanout readback from the per-exit drain.
+    /// The fresh flag skips the drain pass of the exit that armed the flush,
+    /// so the guest sees its RESOURCE_FLUSH response and the vCPU resumes
+    /// before this thread pays for the GL readback. A pacing-not-due pending
+    /// frame is kept (delayed), never dropped.
+    pub fn service_deferred_3d_scanout(&mut self) {
+        let Some((resource_id, rect)) = self.pending_3d_scanout else {
+            return;
+        };
+        if self.pending_3d_scanout_fresh {
+            self.pending_3d_scanout_fresh = false;
+            return;
+        }
+        if self.scanout_resource != Some(resource_id) || !self.three_d.is_3d_resource(resource_id)
+        {
+            self.pending_3d_scanout = None;
+            return;
+        }
+        match self.try_3d_scanout_readback(resource_id, rect, true) {
+            ScanoutReadbackOutcome::NotDue => {}
+            ScanoutReadbackOutcome::Gone => {
+                self.pending_3d_scanout = None;
+            }
+            ScanoutReadbackOutcome::Done => {
+                self.pending_3d_scanout = None;
+                self.deferred_scanout_serviced_count =
+                    self.deferred_scanout_serviced_count.saturating_add(1);
+                self.publish_scanout_fb();
+            }
+        }
+    }
+
+    fn try_3d_scanout_readback(
+        &mut self,
+        resource_id: u32,
+        rect: Rect,
+        deferred: bool,
+    ) -> ScanoutReadbackOutcome {
+        let now = Instant::now();
+        let readback_due = self.last_3d_scanout_readback.map_or(true, |last| {
+            now.saturating_duration_since(last) >= self.scanout_readback_interval
+        });
+        if !readback_due {
+            return ScanoutReadbackOutcome::NotDue;
+        }
+        self.scanout_readback_attempt_count =
+            self.scanout_readback_attempt_count.saturating_add(1);
+        let started = Instant::now();
+        let Some(info) = self.three_d.scanout_3d_info(resource_id) else {
+            return ScanoutReadbackOutcome::Gone;
+        };
+        let readback_width = info.width.min(self.width);
+        let readback_height = info.height.min(self.height);
+        let readback_len = scanout_len(readback_width, readback_height);
+        self.scanout_readback_scratch.resize(readback_len, 0);
+        self.scanout_readback_scratch.fill(0);
+        let transfer_started = Instant::now();
+        let transfer_ok = self.three_d.read_3d_scanout(
+            resource_id,
+            readback_width,
+            readback_height,
+            &mut self.scanout_readback_scratch,
+        );
+        let transfer_ns = transfer_started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+        let composite_started = Instant::now();
+        let readback_ok = transfer_ok
+            && composite_host_3d_to_scanout(
+                &self.scanout_readback_scratch,
+                readback_width,
+                readback_height,
+                &mut self.scanout,
+                self.width,
+                self.height,
+                rect,
+            );
+        let composite_ns = composite_started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+        let elapsed = started.elapsed();
+        let duration_ns = elapsed.as_nanos().min(u128::from(u64::MAX)) as u64;
+        self.scanout_readback_nanoseconds = self
+            .scanout_readback_nanoseconds
+            .saturating_add(duration_ns);
+        if readback_ok {
+            self.last_3d_scanout_readback = Some(Instant::now());
+            self.scanout_readback_count = self.scanout_readback_count.saturating_add(1);
+            let bytes = u64::from(readback_width)
+                .saturating_mul(u64::from(readback_height))
+                .saturating_mul(4);
+            self.scanout_readback_bytes = self.scanout_readback_bytes.saturating_add(bytes);
+            let count = self.scanout_readback_count;
+            let width = readback_width;
+            let height = readback_height;
+            let deferred_flag = u8::from(deferred);
+            // duration_ns spans scratch prep + GL transfer + CPU composite;
+            // transfer_ns/composite_ns isolate the two phases.
+            self.record_trace_fields("scanout_readback", |fields| {
+                let _ = write!(
+                    fields,
+                    ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"bytes\":{bytes},\"duration_ns\":{duration_ns},\"transfer_ns\":{transfer_ns},\"composite_ns\":{composite_ns},\"deferred\":{deferred_flag},\"count\":{count}"
+                );
+            });
+        } else {
+            let flush_count = self.scanout_3d_flush_count;
+            if flush_count <= 8 {
+                self.record_trace_fields("scanout_readback_failed", |fields| {
+                    let _ = write!(
+                        fields,
+                        ",\"resource_id\":{resource_id},\"width\":{readback_width},\"height\":{readback_height},\"count\":{flush_count}"
+                    );
+                });
+            }
+        }
+        ScanoutReadbackOutcome::Done
+    }
+
     pub fn new_from_env() -> Self {
         let (width, height) = parse_resolution_env();
         Self::new(width, height)
@@ -550,6 +733,8 @@ impl VirtioGpu {
             scanout_readback_throttled: self.scanout_readback_throttled_count,
             scanout_readback_bytes: self.scanout_readback_bytes,
             scanout_readback_nanoseconds: self.scanout_readback_nanoseconds,
+            deferred_scanout_flushes: self.deferred_scanout_flush_count,
+            deferred_scanout_serviced: self.deferred_scanout_serviced_count,
             three_d: self.three_d.stats(self.pending_fenced.len()),
             queues: [VirtioGpuQueueStats::default(); QUEUE_COUNT],
         };
@@ -1922,89 +2107,29 @@ impl VirtioGpu {
                     response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
                     return;
                 }
-                let now = Instant::now();
-                let readback_due = self.last_3d_scanout_readback.map_or(true, |last| {
-                    now.saturating_duration_since(last) >= self.scanout_readback_interval
-                });
-                if readback_due {
-                    self.scanout_readback_attempt_count =
-                        self.scanout_readback_attempt_count.saturating_add(1);
-                    let started = Instant::now();
-                    let info = self
-                        .three_d
-                        .scanout_3d_info(resource_id)
-                        .expect("3D scanout resource disappeared during flush");
-                    let readback_width = info.width.min(self.width);
-                    let readback_height = info.height.min(self.height);
-                    let readback_len = scanout_len(readback_width, readback_height);
-                    self.scanout_readback_scratch.resize(readback_len, 0);
-                    self.scanout_readback_scratch.fill(0);
-                    let transfer_started = Instant::now();
-                    let transfer_ok = self.three_d.read_3d_scanout(
-                        resource_id,
-                        readback_width,
-                        readback_height,
-                        &mut self.scanout_readback_scratch,
-                    );
-                    let transfer_ns =
-                        transfer_started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
-                    let composite_started = Instant::now();
-                    let readback_ok = transfer_ok
-                        && composite_host_3d_to_scanout(
-                            &self.scanout_readback_scratch,
-                            readback_width,
-                            readback_height,
-                            &mut self.scanout,
-                            self.width,
-                            self.height,
-                            rect,
-                        );
-                    let composite_ns =
-                        composite_started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
-                    let elapsed = started.elapsed();
-                    let duration_ns = elapsed.as_nanos().min(u128::from(u64::MAX)) as u64;
-                    self.scanout_readback_nanoseconds = self
-                        .scanout_readback_nanoseconds
-                        .saturating_add(duration_ns);
-                    if readback_ok {
-                        self.last_3d_scanout_readback = Some(Instant::now());
-                        self.scanout_readback_count = self.scanout_readback_count.saturating_add(1);
-                        let bytes = u64::from(readback_width)
-                            .saturating_mul(u64::from(readback_height))
-                            .saturating_mul(4);
-                        self.scanout_readback_bytes =
-                            self.scanout_readback_bytes.saturating_add(bytes);
-                        let count = self.scanout_readback_count;
-                        let width = readback_width;
-                        let height = readback_height;
-                        // duration_ns spans scratch prep + GL transfer + CPU composite;
-                        // transfer_ns/composite_ns isolate the two phases.
-                        self.record_trace_fields("scanout_readback", |fields| {
+                if self.scanout_3d_deferred {
+                    // Decouple the GL readback from the guest's flush: arm a
+                    // pending readback and respond OK now; the per-exit drain
+                    // services it after the vCPU has resumed at least once.
+                    self.defer_3d_scanout(resource_id, rect);
+                    response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
+                    return;
+                }
+                match self.try_3d_scanout_readback(resource_id, rect, false) {
+                    ScanoutReadbackOutcome::Done | ScanoutReadbackOutcome::Gone => {}
+                    ScanoutReadbackOutcome::NotDue => {
+                        self.scanout_readback_throttled_count =
+                            self.scanout_readback_throttled_count.saturating_add(1);
+                        let throttled = self.scanout_readback_throttled_count;
+                        let width = self.width;
+                        let height = self.height;
+                        self.record_trace_fields("scanout_readback_throttled", |fields| {
                             let _ = write!(
                                 fields,
-                                ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"bytes\":{bytes},\"duration_ns\":{duration_ns},\"transfer_ns\":{transfer_ns},\"composite_ns\":{composite_ns},\"count\":{count}"
-                            );
-                        });
-                    } else if flush_count <= 8 {
-                        self.record_trace_fields("scanout_readback_failed", |fields| {
-                            let _ = write!(
-                                fields,
-                                ",\"resource_id\":{resource_id},\"width\":{readback_width},\"height\":{readback_height},\"count\":{flush_count}"
+                                ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"count\":{throttled}"
                             );
                         });
                     }
-                } else {
-                    self.scanout_readback_throttled_count =
-                        self.scanout_readback_throttled_count.saturating_add(1);
-                    let throttled = self.scanout_readback_throttled_count;
-                    let width = self.width;
-                    let height = self.height;
-                    self.record_trace_fields("scanout_readback_throttled", |fields| {
-                        let _ = write!(
-                            fields,
-                            ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"count\":{throttled}"
-                        );
-                    });
                 }
             }
         } else if self
@@ -2483,6 +2608,14 @@ impl VirtioPciGpu {
 
     pub fn set_3d_scanout_readback_interval(&mut self, interval: Duration) {
         self.gpu.set_3d_scanout_readback_interval(interval);
+    }
+
+    pub fn set_3d_scanout_deferred(&mut self, deferred: bool) {
+        self.gpu.set_3d_scanout_deferred(deferred);
+    }
+
+    pub fn service_deferred_3d_scanout(&mut self) {
+        self.gpu.service_deferred_3d_scanout();
     }
 
     pub fn new_from_env() -> Self {
@@ -6366,6 +6499,120 @@ mod tests {
         assert_eq!(stats.scanout_readbacks, 1);
         assert_eq!(stats.scanout_readback_throttled, 1);
         assert_eq!(stats.scanout_readback_bytes, 1280 * 800 * 4);
+    }
+
+    fn deferred_scanout_dev() -> (VirtioPciGpu, Arc<Mutex<MockBackend>>, TestMem) {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let mut create = ctrl_req_ctx(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0);
+        for field in [
+            31u32,
+            2,
+            FORMAT_B8G8R8A8_UNORM,
+            0x8a,
+            1280,
+            800,
+            1,
+            1,
+            0,
+            1,
+            0,
+            0,
+        ] {
+            create.extend_from_slice(&field.to_le_bytes());
+        }
+        submit_control(&mut dev, &mut mem, &create, 24);
+        let mut set_scanout = ctrl_req(VIRTIO_GPU_CMD_SET_SCANOUT);
+        for field in [0u32, 0, 1280, 800, 0, 31] {
+            set_scanout.extend_from_slice(&field.to_le_bytes());
+        }
+        submit_control(&mut dev, &mut mem, &set_scanout, 24);
+        dev.gpu.set_3d_scanout_deferred(true);
+        (dev, backend, mem)
+    }
+
+    fn flush_res_31() -> Vec<u8> {
+        let mut flush = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_FLUSH);
+        for field in [0u32, 0, 1280, 800, 31, 0] {
+            flush.extend_from_slice(&field.to_le_bytes());
+        }
+        flush
+    }
+
+    #[test]
+    fn deferred_scanout_moves_readback_off_the_flush_path() {
+        let (mut dev, backend, mut mem) = deferred_scanout_dev();
+
+        let resp = submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+        // Flush responded OK without any backend readback.
+        assert!(backend.lock().unwrap().scanout_reads.is_empty());
+
+        // The drain pass of the arming exit skips (fresh guard)...
+        dev.gpu.service_deferred_3d_scanout();
+        assert!(backend.lock().unwrap().scanout_reads.is_empty());
+        // ...and the next drain pass services it.
+        dev.gpu.service_deferred_3d_scanout();
+        assert_eq!(backend.lock().unwrap().scanout_reads, vec![(31, 1280, 800)]);
+
+        let stats = dev.stats();
+        assert_eq!(stats.deferred_scanout_flushes, 1);
+        assert_eq!(stats.deferred_scanout_serviced, 1);
+        assert_eq!(stats.scanout_readbacks, 1);
+        assert_eq!(stats.scanout_readback_throttled, 0);
+    }
+
+    #[test]
+    fn deferred_scanout_coalesces_flushes_into_one_readback() {
+        let (mut dev, backend, mut mem) = deferred_scanout_dev();
+
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        assert_eq!(backend.lock().unwrap().scanout_reads.len(), 1);
+
+        let stats = dev.stats();
+        assert_eq!(stats.deferred_scanout_flushes, 3);
+        assert_eq!(stats.deferred_scanout_serviced, 1);
+    }
+
+    #[test]
+    fn deferred_scanout_holds_pending_when_pacing_not_due_instead_of_dropping() {
+        let (mut dev, backend, mut mem) = deferred_scanout_dev();
+
+        // First flush services immediately (no prior readback).
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        assert_eq!(backend.lock().unwrap().scanout_reads.len(), 1);
+
+        // With a long pacing interval, the next flush stays pending —
+        // not dropped, and not counted as throttled.
+        dev.gpu
+            .set_3d_scanout_readback_interval(Duration::from_secs(60));
+        // Re-arm pacing state: interval setter clears last-readback, so
+        // perform one readback to start the pacing window.
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        assert_eq!(backend.lock().unwrap().scanout_reads.len(), 2);
+
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        assert_eq!(backend.lock().unwrap().scanout_reads.len(), 2);
+        assert_eq!(dev.stats().scanout_readback_throttled, 0);
+
+        // Dropping the pacing interval lets the held frame service.
+        dev.gpu
+            .set_3d_scanout_readback_interval(Duration::ZERO);
+        dev.gpu.service_deferred_3d_scanout();
+        assert_eq!(backend.lock().unwrap().scanout_reads.len(), 3);
+        assert_eq!(dev.stats().deferred_scanout_serviced, 3);
     }
 
     #[test]

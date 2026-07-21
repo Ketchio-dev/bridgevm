@@ -95,6 +95,10 @@ fn make_virtio_gpu() -> VirtioPciGpu {
                             .as_deref(),
                     );
                     gpu.set_3d_scanout_readback_interval(interval);
+                    if env_flag("BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT") {
+                        gpu.set_3d_scanout_deferred(true);
+                        eprintln!("virtio-gpu: 3D scanout readback deferred off the flush path");
+                    }
                     configure_virtio_gpu_vblank(&mut gpu);
                     eprintln!(
                         "virtio-gpu: 3D scanout readback pacing={}ms",
@@ -1724,6 +1728,7 @@ impl VirtPlatform {
     /// while timer exits keep it running.
     pub fn poll_virtio_gpu_fences(&mut self, mem: &mut dyn GuestMemoryMut) {
         if let Some(dev) = self.virtio_gpu.as_mut() {
+            dev.service_deferred_3d_scanout();
             dev.drain_host_vblank(mem);
             dev.drain_completed_fences(mem);
             self.flush_virtio_gpu_pending_msix();

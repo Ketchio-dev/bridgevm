@@ -4655,6 +4655,7 @@ struct VirtioGpuTraceReport {
     scanout_readback_max_nanoseconds: u64,
     scanout_readback_transfer_nanoseconds: u64,
     scanout_readback_composite_nanoseconds: u64,
+    scanout_readbacks_deferred: u64,
     error_responses: Vec<String>,
 }
 
@@ -4710,6 +4711,10 @@ impl VirtioGpuTraceReport {
                 self.scanout_readback_composite_nanoseconds = self
                     .scanout_readback_composite_nanoseconds
                     .saturating_add(json_u64(value, "composite_ns").unwrap_or(0));
+                if json_u64(value, "deferred").unwrap_or(0) == 1 {
+                    self.scanout_readbacks_deferred =
+                        self.scanout_readbacks_deferred.saturating_add(1);
+                }
             }
             Some("scanout_readback_throttled") => {
                 self.scanout_readback_throttled = self.scanout_readback_throttled.saturating_add(1);
@@ -5082,6 +5087,10 @@ fn print_virtio_gpu_trace_report(
     println!(
         "Scanout readback composite avg us: {:.3}",
         report.scanout_readback_phase_average_us(report.scanout_readback_composite_nanoseconds)
+    );
+    println!(
+        "Scanout readbacks deferred-serviced: {}",
+        report.scanout_readbacks_deferred
     );
     println!(
         "Scanout readback effective GB/s: {:.3}",

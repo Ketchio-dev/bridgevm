@@ -353,6 +353,10 @@ build_installed_boot_env_args() {
     # display-export defaults so the caller value takes precedence.
     ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=$BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS")
   fi
+  if [[ "${BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT:-0}" == "1" ]]; then
+    # Defer the 3D scanout GL readback off the RESOURCE_FLUSH path (A/B knob).
+    ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT=1")
+  fi
   if [[ -n "${INPUT_CONTROL:-}" ]]; then
     ENV_ARGS+=("BRIDGEVM_INPUT_CONTROL=$INPUT_CONTROL")
   fi
@@ -848,5 +852,25 @@ run_installed_boot_probe() {
   write_agent_service_gate
   write_host_pause_resume_gate
   write_virtio_gpu_trace_report
+  extract_guest_bridgevm_logs
   write_installed_boot_target_stat
+}
+
+# Best-effort: pull C:\BridgeVM\*.log (vulkan probe/draw bench, firstboot)
+# from the target disk into the evidence dir so guest-side measurements are
+# archived with the run instead of living only inside the image.
+extract_guest_bridgevm_logs() {
+  [[ "${VIRTIO_GPU_3D:-0}" == "1" ]] || return 0
+  local attach_out disk mount_point
+  attach_out="$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -readonly "$TARGET" 2>/dev/null)" || return 0
+  disk="$(printf '%s\n' "$attach_out" | awk 'NR==1 {print $1}')"
+  while read -r mount_point; do
+    if [[ -n "$mount_point" && -d "$mount_point/BridgeVM" ]]; then
+      mkdir -p "$EVIDENCE_DIR/guest-logs"
+      cp "$mount_point/BridgeVM/"*.log "$EVIDENCE_DIR/guest-logs/" 2>/dev/null || true
+      break
+    fi
+  done < <(printf '%s\n' "$attach_out" | awk 'match($0, /\/Volumes\/.*$/) {print substr($0, RSTART)}')
+  [[ -n "$disk" ]] && hdiutil detach "$disk" >/dev/null 2>&1
+  return 0
 }
