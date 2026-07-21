@@ -230,6 +230,10 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   if exist %DRV%\..\bvgpu-diagnostics.ps1 copy /y %DRV%\..\bvgpu-diagnostics.ps1 %WIN%\BridgeVM\bvgpu-diagnostics.ps1 >nul
   if exist %DRV%\..\bvgpu-vulkan-probe.ps1 copy /y %DRV%\..\bvgpu-vulkan-probe.ps1 %WIN%\BridgeVM\bvgpu-vulkan-probe.ps1 >nul
   if exist %DRV%\..\bvgpu-vulkan-draw-smoke.exe copy /y %DRV%\..\bvgpu-vulkan-draw-smoke.exe %WIN%\BridgeVM\bvgpu-vulkan-draw-smoke.exe >nul
+  if exist %DRV%\..\dxvk\d3d11.dll (
+    if not exist %WIN%\BridgeVM\dxvk\ mkdir %WIN%\BridgeVM\dxvk
+    copy /y %DRV%\..\dxvk\* %WIN%\BridgeVM\dxvk\ >nul
+  )
   reg load HKLM\BVGPUSW %WIN%\Windows\System32\config\SOFTWARE
   rem RunOnce runs once at first interactive logon. The value uses the RUNTIME
   rem path (installed Windows is C: to itself), not the WinPE %WIN% letter. The

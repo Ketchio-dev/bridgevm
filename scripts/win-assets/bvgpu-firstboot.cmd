@@ -112,6 +112,13 @@ cmd /c exit /b %DRAW_STATUS%
 goto :fail
 
 :draw_smoke_done
+echo [stage3] run DXVK D3D11 draw smoke - experimental, non-gating >> "%LOG%"
+if exist C:\BridgeVM\dxvk\bridgevm-d3d11-draw-smoke.exe (
+  set VK_DRIVER_FILES=C:\BridgeVM\viogpu3d\virtio_icd.arm64.json
+  set DXVK_LOG_LEVEL=info
+  C:\BridgeVM\dxvk\bridgevm-d3d11-draw-smoke.exe >> "%LOG%" 2>&1
+)
+if exist C:\BridgeVM\dxvk\bridgevm-d3d11-draw-smoke.exe echo [stage3] DXVK D3D11 draw smoke errorlevel=%ERRORLEVEL% >> "%LOG%"
 echo [stage3] capture PnP, class-registry, DxgKrnl, and SetupAPI diagnostics >> "%LOG%"
 if exist C:\BridgeVM\bvgpu-diagnostics.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-diagnostics.ps1 >> "%LOG%" 2>&1
 echo [stage3] verify PnP status and bound viogpu3d INF >> "%LOG%"
