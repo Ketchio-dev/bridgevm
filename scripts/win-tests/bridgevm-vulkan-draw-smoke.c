@@ -12,11 +12,18 @@
  * and for the macOS host (clang, MoltenVK via libvulkan) so the Vulkan logic
  * and shaders can be validated without a guest boot.
  *
+ * After the gates pass, an optional present-free timing loop re-records and
+ * submits the draw each frame and waits on the fence, giving a
+ * transport/fence-bound throughput number comparable across driver and
+ * renderer changes (BVGPU_VULKAN_DRAW_BENCH_FRAMES, default 300, 0 skips).
+ * A final readback asserts the image is still exact after the loop.
+ *
  * Exit codes identify the failing gate:
  *   30 loader missing        34 resource setup failed
  *   31 instance failed       35 clear readback mismatch
  *   32 no physical device    36 pipeline creation failed
  *   33 device failed         37 draw readback mismatch
+ *   38 timing loop failed
  */
 
 #include <stdarg.h>
@@ -36,6 +43,7 @@
 #define DEFAULT_ICD_JSON "C:\\BridgeVM\\viogpu3d\\virtio_icd.arm64.json"
 #else
 #include <dlfcn.h>
+#include <time.h>
 #define DEFAULT_LOG_PATH "bvgpu-vulkan-draw.log"
 #endif
 
@@ -73,6 +81,20 @@ static void logf_line(const char *fmt, ...) {
 static int fail(int code, const char *what, long detail) {
   logf_line("FAIL gate=%d what=%s detail=0x%lx", code, what, detail);
   return code;
+}
+
+static uint64_t now_us(void) {
+#ifdef _WIN32
+  static LARGE_INTEGER freq;
+  LARGE_INTEGER counter;
+  if (!freq.QuadPart) QueryPerformanceFrequency(&freq);
+  QueryPerformanceCounter(&counter);
+  return (uint64_t)(counter.QuadPart * 1000000ull / freq.QuadPart);
+#else
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * 1000000ull + (uint64_t)(ts.tv_nsec / 1000);
+#endif
 }
 
 static uint64_t fnv1a64(const uint8_t *data, size_t len) {
@@ -484,6 +506,7 @@ int main(void) {
 
   VkCommandPoolCreateInfo pool_info = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
       .queueFamilyIndex = graphics_family,
   };
   VkCommandPool pool = VK_NULL_HANDLE;
@@ -798,6 +821,96 @@ int main(void) {
     if (green_pixels < total / 4 || green_pixels > (total * 3) / 4)
       return fail(37, "draw_green_share", green_pixels);
     logf_line("gate_draw=PASS");
+  }
+
+  /* ---- present-free draw/fence timing loop ---- */
+  {
+    const char *frames_env = getenv("BVGPU_VULKAN_DRAW_BENCH_FRAMES");
+    long frames = frames_env ? atol(frames_env) : 300;
+    if (frames > 0) {
+      VkClearValue clear_blue = {
+          .color = {.float32 = {0.0f, 0.0f, 1.0f, 1.0f}}};
+      VkRenderPassBeginInfo pass_begin = {
+          .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+          .renderPass = render_pass,
+          .framebuffer = framebuffer,
+          .renderArea = {.extent = {IMG_W, IMG_H}},
+          .clearValueCount = 1,
+          .pClearValues = &clear_blue,
+      };
+      VkCommandBufferBeginInfo begin = {
+          .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+          .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+      };
+      VkSubmitInfo submit = {
+          .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+          .commandBufferCount = 1,
+          .pCommandBuffers = &cmds[1],
+      };
+      const long warmup = 10;
+      uint64_t min_us = UINT64_MAX;
+      uint64_t max_us = 0;
+      uint64_t bench_start = 0;
+      for (long frame = 0; frame < frames + warmup; ++frame) {
+        uint64_t frame_start = now_us();
+        if (frame == warmup) bench_start = frame_start;
+        result = p_vkBeginCommandBuffer(cmds[1], &begin);
+        if (result != VK_SUCCESS) return fail(38, "bench_begin_cmd", result);
+        p_vkCmdBeginRenderPass(cmds[1], &pass_begin,
+                               VK_SUBPASS_CONTENTS_INLINE);
+        p_vkCmdBindPipeline(cmds[1], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            pipeline);
+        p_vkCmdDraw(cmds[1], 3, 1, 0, 0);
+        p_vkCmdEndRenderPass(cmds[1]);
+        result = p_vkEndCommandBuffer(cmds[1]);
+        if (result != VK_SUCCESS) return fail(38, "bench_end_cmd", result);
+        result = p_vkQueueSubmit(queue, 1, &submit, fence);
+        if (result != VK_SUCCESS) return fail(38, "bench_submit", result);
+        result = p_vkWaitForFences(device, 1, &fence, VK_TRUE,
+                                   30ull * 1000000000ull);
+        if (result != VK_SUCCESS) return fail(38, "bench_fence", result);
+        result = p_vkResetFences(device, 1, &fence);
+        if (result != VK_SUCCESS) return fail(38, "bench_reset_fence", result);
+        if (frame >= warmup) {
+          uint64_t frame_us = now_us() - frame_start;
+          if (frame_us < min_us) min_us = frame_us;
+          if (frame_us > max_us) max_us = frame_us;
+        }
+      }
+      uint64_t total_us = now_us() - bench_start;
+      if (total_us == 0) total_us = 1;
+      logf_line("bench frames=%ld total_ms=%llu fps=%llu.%02llu "
+                "min_us=%llu max_us=%llu",
+                frames, (unsigned long long)(total_us / 1000),
+                (unsigned long long)(frames * 1000000ull / total_us),
+                (unsigned long long)(frames * 100000000ull / total_us % 100),
+                (unsigned long long)min_us, (unsigned long long)max_us);
+
+      /* The image must still be exact after the loop: re-run the draw with a
+       * copy-out and hold it to the gate-D assertion. */
+      memset(mapped, 0, IMG_BYTES);
+      result = p_vkBeginCommandBuffer(cmds[1], &begin);
+      if (result != VK_SUCCESS) return fail(38, "bench_verify_begin", result);
+      p_vkCmdBeginRenderPass(cmds[1], &pass_begin, VK_SUBPASS_CONTENTS_INLINE);
+      p_vkCmdBindPipeline(cmds[1], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+      p_vkCmdDraw(cmds[1], 3, 1, 0, 0);
+      p_vkCmdEndRenderPass(cmds[1]);
+      copy_image_to_buffer(cmds[1], image, buffer);
+      result = p_vkEndCommandBuffer(cmds[1]);
+      if (result != VK_SUCCESS) return fail(38, "bench_verify_end", result);
+      if (!submit_and_wait(device, queue, cmds[1], fence, "bench_verify"))
+        return fail(38, "bench_verify_submit", 0);
+      const uint8_t *pixels = (const uint8_t *)mapped;
+      uint64_t checksum = fnv1a64(pixels, IMG_BYTES);
+      logf_line("bench_verify checksum=0x%016llx",
+                (unsigned long long)checksum);
+      const uint8_t *inside = pixels + ((8 * IMG_W) + 8) * 4;
+      const uint8_t *outside = pixels + ((56 * IMG_W) + 56) * 4;
+      if (!pixel_is(inside, 0, 255, 0, 255) ||
+          !pixel_is(outside, 0, 0, 255, 255))
+        return fail(38, "bench_verify_pixels", inside[1]);
+      logf_line("gate_bench=PASS");
+    }
   }
 
   p_vkDeviceWaitIdle(device);
