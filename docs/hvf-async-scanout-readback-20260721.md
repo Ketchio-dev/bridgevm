@@ -49,6 +49,26 @@ zero-copy scanout (P2 in the audit ladder).
   log (`bvgpu-vulkan-draw.log`, e.g. `wait_avg_us=189`) now lives in the
   host evidence tree instead of only inside the image.
 
+## Certification: async + 33 ms pacing (recommended shape)
+
+Run `venus-activate-120.41-asyncscan33-20260721-134356`: 4,053 readbacks
+for 4,281 flushes, all deferred-serviced, 0 throttled, UI clean, gates
+PASS, guest logs auto-archived. Key characterization: **under deferral,
+pacing becomes a pure display-rate cap** — a not-due frame is held and
+serviced the moment the window elapses, so every pacing slot is filled
+(4,053 services vs sync-33 ms's 3,292, which dropped 984 updates into
+empty slots). Consequences:
+
+- Display: steady ~cap-rate updates, always the newest frame, no drops —
+  smoother than sync throttling at the same pacing.
+- Host CPU: set by the pacing value alone (33 ms ≈ the 16 ms sync
+  baseline's total; raise the cap to spend less).
+- Guest latency: decoupled from the readback regardless of pacing.
+
+So: `ASYNC_SCANOUT=1` is a strict improvement for present latency and
+display freshness; choose `READBACK_MS` purely as the host-CPU/display-rate
+trade (e.g. 33 ms ≈ 30 fps display for UI-class workloads).
+
 ## Deferred (with rationale)
 
 - **Host fence-poll thread** (audit P1b): `virgl_renderer_context_poll`

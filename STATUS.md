@@ -47,6 +47,26 @@ tests/integration/product-gates-report.sh
 
 ## Current P3 Windows 3D direction
 
+**2026-07-21 update:** a real third-party title runs on the stack: PPSSPP
+1.20.4 (unmodified ARM64 build, native Vulkan backend) renders its full UI
+stably for 120 s (`docs/hvf-real-title-ppsspp-20260721.md`; host-visible
+window raised 64→512 MiB). Guest fence latency is solved (45→4,343 fps
+offscreen microbench, wait_avg ~181-189 us,
+`docs/hvf-venus-fence-latency-resolution-20260721.md`). A verified perf
+audit then established that the real displayed cadence is ~37 fps and the
+#1 measured host cost is the synchronous GPU→CPU scanout readback inside
+`RESOURCE_FLUSH` (14.09 s of a 120 s run; ~85% of it the GL transfer, per
+the new phase-split instrumentation). Landed since: readback pacing A/B
+knob + phase split (`docs/hvf-scanout-readback-ab-20260721.md`), and
+opt-in deferred scanout (`BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT=1`) that
+decouples the readback from the guest present — validated on PPSSPP,
+4,150/4,150 readbacks deferred-serviced
+(`docs/hvf-async-scanout-readback-20260721.md`). Runners now archive
+`C:\BridgeVM\*.log` into the evidence dir. Next perf rungs: Metal/IOSurface
+zero-copy scanout (kills the ~3 ms GL transfer), GPU-device-thread refactor
+(unblocks a host fence-poll thread), x64 DXVK title under Windows x64
+emulation (build staged).
+
 **2026-07-20 update:** the Venus bring-up has advanced far beyond the state
 described below. The Windows ARM64 guest boots to a visible desktop through
 the Venus WDDM render path (display-start wall closed 2026-07-19, driver
