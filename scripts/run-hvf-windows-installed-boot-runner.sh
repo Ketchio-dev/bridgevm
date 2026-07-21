@@ -347,6 +347,12 @@ build_installed_boot_env_args() {
       "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=0"
     )
   fi
+  if [[ -n "${BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS:-}" ]]; then
+    # Caller-supplied readback pacing wins (A/B knob); the launcher strips
+    # inherited BRIDGEVM_* so it must ride ENV_ARGS. Appended after the
+    # display-export defaults so the caller value takes precedence.
+    ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=$BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS")
+  fi
   if [[ -n "${INPUT_CONTROL:-}" ]]; then
     ENV_ARGS+=("BRIDGEVM_INPUT_CONTROL=$INPUT_CONTROL")
   fi

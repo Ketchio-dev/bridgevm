@@ -1939,20 +1939,28 @@ impl VirtioGpu {
                     let readback_len = scanout_len(readback_width, readback_height);
                     self.scanout_readback_scratch.resize(readback_len, 0);
                     self.scanout_readback_scratch.fill(0);
-                    let readback_ok = self.three_d.read_3d_scanout(
+                    let transfer_started = Instant::now();
+                    let transfer_ok = self.three_d.read_3d_scanout(
                         resource_id,
                         readback_width,
                         readback_height,
                         &mut self.scanout_readback_scratch,
-                    ) && composite_host_3d_to_scanout(
-                        &self.scanout_readback_scratch,
-                        readback_width,
-                        readback_height,
-                        &mut self.scanout,
-                        self.width,
-                        self.height,
-                        rect,
                     );
+                    let transfer_ns =
+                        transfer_started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+                    let composite_started = Instant::now();
+                    let readback_ok = transfer_ok
+                        && composite_host_3d_to_scanout(
+                            &self.scanout_readback_scratch,
+                            readback_width,
+                            readback_height,
+                            &mut self.scanout,
+                            self.width,
+                            self.height,
+                            rect,
+                        );
+                    let composite_ns =
+                        composite_started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
                     let elapsed = started.elapsed();
                     let duration_ns = elapsed.as_nanos().min(u128::from(u64::MAX)) as u64;
                     self.scanout_readback_nanoseconds = self
@@ -1969,10 +1977,12 @@ impl VirtioGpu {
                         let count = self.scanout_readback_count;
                         let width = readback_width;
                         let height = readback_height;
+                        // duration_ns spans scratch prep + GL transfer + CPU composite;
+                        // transfer_ns/composite_ns isolate the two phases.
                         self.record_trace_fields("scanout_readback", |fields| {
                             let _ = write!(
                                 fields,
-                                ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"bytes\":{bytes},\"duration_ns\":{duration_ns},\"count\":{count}"
+                                ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"bytes\":{bytes},\"duration_ns\":{duration_ns},\"transfer_ns\":{transfer_ns},\"composite_ns\":{composite_ns},\"count\":{count}"
                             );
                         });
                     } else if flush_count <= 8 {

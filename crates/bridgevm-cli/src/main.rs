@@ -4653,6 +4653,8 @@ struct VirtioGpuTraceReport {
     scanout_readback_bytes: u64,
     scanout_readback_nanoseconds: u64,
     scanout_readback_max_nanoseconds: u64,
+    scanout_readback_transfer_nanoseconds: u64,
+    scanout_readback_composite_nanoseconds: u64,
     error_responses: Vec<String>,
 }
 
@@ -4702,6 +4704,12 @@ impl VirtioGpuTraceReport {
                     .saturating_add(duration_ns);
                 self.scanout_readback_max_nanoseconds =
                     self.scanout_readback_max_nanoseconds.max(duration_ns);
+                self.scanout_readback_transfer_nanoseconds = self
+                    .scanout_readback_transfer_nanoseconds
+                    .saturating_add(json_u64(value, "transfer_ns").unwrap_or(0));
+                self.scanout_readback_composite_nanoseconds = self
+                    .scanout_readback_composite_nanoseconds
+                    .saturating_add(json_u64(value, "composite_ns").unwrap_or(0));
             }
             Some("scanout_readback_throttled") => {
                 self.scanout_readback_throttled = self.scanout_readback_throttled.saturating_add(1);
@@ -4785,6 +4793,13 @@ impl VirtioGpuTraceReport {
             return 0.0;
         }
         self.scanout_readback_nanoseconds as f64 / self.scanout_readbacks as f64 / 1_000.0
+    }
+
+    fn scanout_readback_phase_average_us(&self, phase_nanoseconds: u64) -> f64 {
+        if self.scanout_readbacks == 0 {
+            return 0.0;
+        }
+        phase_nanoseconds as f64 / self.scanout_readbacks as f64 / 1_000.0
     }
 
     fn scanout_readback_effective_gbps(&self) -> f64 {
@@ -5059,6 +5074,14 @@ fn print_virtio_gpu_trace_report(
     println!(
         "Scanout readback max us: {:.3}",
         report.scanout_readback_max_nanoseconds as f64 / 1_000.0
+    );
+    println!(
+        "Scanout readback transfer avg us: {:.3}",
+        report.scanout_readback_phase_average_us(report.scanout_readback_transfer_nanoseconds)
+    );
+    println!(
+        "Scanout readback composite avg us: {:.3}",
+        report.scanout_readback_phase_average_us(report.scanout_readback_composite_nanoseconds)
     );
     println!(
         "Scanout readback effective GB/s: {:.3}",
