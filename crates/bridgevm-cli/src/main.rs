@@ -4656,6 +4656,10 @@ struct VirtioGpuTraceReport {
     scanout_readback_transfer_nanoseconds: u64,
     scanout_readback_composite_nanoseconds: u64,
     scanout_readbacks_deferred: u64,
+    scanout_blits: u64,
+    scanout_blit_nanoseconds: u64,
+    iosurface_verify_matched: u64,
+    iosurface_verify_mismatched: u64,
     error_responses: Vec<String>,
 }
 
@@ -4718,6 +4722,21 @@ impl VirtioGpuTraceReport {
             }
             Some("scanout_readback_throttled") => {
                 self.scanout_readback_throttled = self.scanout_readback_throttled.saturating_add(1);
+            }
+            Some("scanout_blit") => {
+                self.scanout_blits = self.scanout_blits.saturating_add(1);
+                self.scanout_blit_nanoseconds = self
+                    .scanout_blit_nanoseconds
+                    .saturating_add(json_u64(value, "duration_ns").unwrap_or(0));
+            }
+            Some("scanout_iosurface_verify") => {
+                if json_bool(value, "matched").unwrap_or(false) {
+                    self.iosurface_verify_matched =
+                        self.iosurface_verify_matched.saturating_add(1);
+                } else {
+                    self.iosurface_verify_mismatched =
+                        self.iosurface_verify_mismatched.saturating_add(1);
+                }
             }
             _ => {}
         }
@@ -5091,6 +5110,19 @@ fn print_virtio_gpu_trace_report(
     println!(
         "Scanout readbacks deferred-serviced: {}",
         report.scanout_readbacks_deferred
+    );
+    println!("Scanout IOSurface blits: {}", report.scanout_blits);
+    println!(
+        "Scanout IOSurface blit avg us: {:.3}",
+        if report.scanout_blits == 0 {
+            0.0
+        } else {
+            report.scanout_blit_nanoseconds as f64 / report.scanout_blits as f64 / 1_000.0
+        }
+    );
+    println!(
+        "Scanout IOSurface verify: {} matched / {} mismatched",
+        report.iosurface_verify_matched, report.iosurface_verify_mismatched
     );
     println!(
         "Scanout readback effective GB/s: {:.3}",

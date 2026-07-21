@@ -127,6 +127,24 @@ pub trait VirtioGpu3dBackend: Send {
     ) -> bool {
         false
     }
+    /// GPU-blit the scanout resource into a host-shareable IOSurface and
+    /// return the surface's global ID. Default: unsupported.
+    fn scanout_blit_iosurface(
+        &mut self,
+        _resource_id: u32,
+        _width: u32,
+        _height: u32,
+    ) -> Option<u32> {
+        None
+    }
+    /// Checksum the IOSurface contents (validation only — stalls the GPU).
+    fn scanout_iosurface_checksum(&mut self) -> Option<u64> {
+        None
+    }
+    /// Dump the raw IOSurface pixels to a file (diagnostics only).
+    fn scanout_iosurface_dump(&mut self, _path: &std::path::Path) -> bool {
+        false
+    }
     fn destroy_resource(&mut self, resource_id: u32);
     fn create_fence(&mut self, ctx_id: u32, ring_idx: u8, fence_id: u64) -> bool;
     fn poll_fences(&mut self);
@@ -519,6 +537,33 @@ impl VirtioGpu3d {
         self.backend
             .as_mut()
             .is_some_and(|backend| backend.scanout_read(resource_id, width, height, out))
+    }
+
+    pub fn blit_3d_scanout_iosurface(
+        &mut self,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+    ) -> Option<u32> {
+        let info = self.scanout_3d_info(resource_id)?;
+        if width > info.width || height > info.height {
+            return None;
+        }
+        self.backend
+            .as_mut()
+            .and_then(|backend| backend.scanout_blit_iosurface(resource_id, width, height))
+    }
+
+    pub fn scanout_iosurface_checksum(&mut self) -> Option<u64> {
+        self.backend
+            .as_mut()
+            .and_then(|backend| backend.scanout_iosurface_checksum())
+    }
+
+    pub fn scanout_iosurface_dump(&mut self, path: &std::path::Path) -> bool {
+        self.backend
+            .as_mut()
+            .is_some_and(|backend| backend.scanout_iosurface_dump(path))
     }
 
     pub fn attach_3d_backing(
@@ -1646,6 +1691,7 @@ pub struct MockBackend {
     pub mapped: BTreeMap<u32, MappedBlob>,
     pub unmapped: Vec<u32>,
     pub scanout_reads: Vec<(u32, u32, u32)>,
+    pub scanout_blits: Vec<(u32, u32, u32)>,
     pub destroyed_resources: Vec<u32>,
     pub fences: Vec<CompletedFence>,
     pub completed: Vec<CompletedFence>,
@@ -1792,6 +1838,19 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
             *byte = index as u8;
         }
         true
+    }
+
+    fn scanout_blit_iosurface(
+        &mut self,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+    ) -> Option<u32> {
+        self.lock()
+            .unwrap()
+            .scanout_blits
+            .push((resource_id, width, height));
+        Some(42)
     }
 
     fn destroy_resource(&mut self, resource_id: u32) {

@@ -127,6 +127,23 @@ if not exist C:\BridgeVM\dxvk\bridgevm-d3d11-present-smoke.exe goto :dxvk_done
 C:\BridgeVM\dxvk\bridgevm-d3d11-present-smoke.exe >> "%LOG%" 2>&1
 echo [stage3] DXVK D3D11 present errorlevel=%ERRORLEVEL% >> "%LOG%"
 :dxvk_done
+echo [stage3] run x64 DXVK D3D11 smokes under x64 emulation - experimental, non-gating >> "%LOG%"
+if not exist C:\BridgeVM\dxvk-x64\bridgevm-d3d11-draw-smoke-x64.exe goto :dxvk_x64_done
+set VK_DRIVER_FILES=C:\BridgeVM\dxvk-x64\virtio_icd.x64.json
+set DXVK_LOG_LEVEL=info
+set DXVK_LOG_PATH=C:\BridgeVM\dxvk-x64
+C:\BridgeVM\dxvk-x64\bridgevm-d3d11-draw-smoke-x64.exe >> "%LOG%" 2>&1
+echo [stage3] x64 DXVK D3D11 vb errorlevel=%ERRORLEVEL% >> "%LOG%"
+set BV_DRAW_NOVB=1
+C:\BridgeVM\dxvk-x64\bridgevm-d3d11-draw-smoke-x64.exe >> "%LOG%" 2>&1
+echo [stage3] x64 DXVK D3D11 novb errorlevel=%ERRORLEVEL% >> "%LOG%"
+set BV_DRAW_NOVB=
+if not exist C:\BridgeVM\dxvk-x64\bridgevm-d3d11-present-smoke-x64.exe goto :dxvk_x64_restore
+C:\BridgeVM\dxvk-x64\bridgevm-d3d11-present-smoke-x64.exe >> "%LOG%" 2>&1
+echo [stage3] x64 DXVK D3D11 present errorlevel=%ERRORLEVEL% >> "%LOG%"
+:dxvk_x64_restore
+set VK_DRIVER_FILES=C:\BridgeVM\viogpu3d\virtio_icd.arm64.json
+:dxvk_x64_done
 echo [stage3] capture PnP, class-registry, DxgKrnl, and SetupAPI diagnostics >> "%LOG%"
 if exist C:\BridgeVM\bvgpu-diagnostics.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-diagnostics.ps1 >> "%LOG%" 2>&1
 echo [stage3] verify PnP status and bound viogpu3d INF >> "%LOG%"

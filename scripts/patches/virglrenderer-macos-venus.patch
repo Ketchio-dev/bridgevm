@@ -1,5 +1,5 @@
 diff --git a/src/meson.build b/src/meson.build
-index 6207a74..dd535d1 100644
+index 6207a74..eafa448 100644
 --- a/src/meson.build
 +++ b/src/meson.build
 @@ -180,6 +180,10 @@ virgl_depends = [
@@ -7,7 +7,7 @@ index 6207a74..dd535d1 100644
  ]
  
 +if with_host_darwin
-+   virgl_depends += [dependency('appleframeworks', modules: ['OpenGL'], required: true)]
++   virgl_depends += [dependency('appleframeworks', modules: ['OpenGL', 'IOSurface', 'CoreFoundation'], required: true)]
 +endif
 +
  if with_tracing == 'perfetto'
@@ -301,6 +301,90 @@ index 61b94be..68ed8ee 100644
     const VkImportSemaphoreFdInfoKHR import_info = {
        .sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR,
        .semaphore = res_info->semaphore,
+diff --git a/src/virglrenderer.c b/src/virglrenderer.c
+index fe36775..6d1ac82 100644
+--- a/src/virglrenderer.c
++++ b/src/virglrenderer.c
+@@ -1615,3 +1615,50 @@ int virgl_renderer_get_dev_fd(int ctx_id)
+ 
+    return ctx->get_device_fd(ctx);
+ }
++
++
++int
++virgl_renderer_bridgevm_scanout_blit_iosurface(uint32_t res_handle,
++                                               uint32_t width,
++                                               uint32_t height,
++                                               uint32_t *out_surface_id)
++{
++#ifdef __APPLE__
++   struct virgl_resource *res = virgl_resource_lookup(res_handle);
++   if (!res || !res->pipe_resource || !out_surface_id)
++      return EINVAL;
++   return vrend_bridgevm_scanout_blit_iosurface(res->pipe_resource, width,
++                                                height, out_surface_id);
++#else
++   (void)res_handle;
++   (void)width;
++   (void)height;
++   (void)out_surface_id;
++   return -1;
++#endif
++}
++
++int
++virgl_renderer_bridgevm_scanout_iosurface_checksum(uint64_t *out_checksum)
++{
++#ifdef __APPLE__
++   if (!out_checksum)
++      return EINVAL;
++   return vrend_bridgevm_scanout_iosurface_checksum(out_checksum);
++#else
++   (void)out_checksum;
++   return -1;
++#endif
++}
++
++
++int
++virgl_renderer_bridgevm_scanout_iosurface_dump(const char *path)
++{
++#ifdef __APPLE__
++   return vrend_bridgevm_scanout_iosurface_dump(path);
++#else
++   (void)path;
++   return -1;
++#endif
++}
+diff --git a/src/virglrenderer.h b/src/virglrenderer.h
+index 0bcafef..c75824b 100644
+--- a/src/virglrenderer.h
++++ b/src/virglrenderer.h
+@@ -517,4 +517,24 @@ VIRGL_EXPORT int virgl_renderer_get_dev_fd(int ctx_id);
+ 
+ #endif /* VIRGL_RENDERER_UNSTABLE_APIS */
+ 
++
++/* BridgeVM (macOS): GPU-blit the ctx0 scanout resource into a global
++ * IOSurface so the host window can composite without any CPU readback.
++ * Creates/resizes the cached surface on demand; returns 0 and the surface's
++ * global ID on success. The checksum helper locks the surface and hashes it
++ * (validation only; defeats zero-copy while called). Non-Apple builds
++ * return -1.
++ */
++VIRGL_EXPORT int
++virgl_renderer_bridgevm_scanout_blit_iosurface(uint32_t res_handle,
++                                               uint32_t width,
++                                               uint32_t height,
++                                               uint32_t *out_surface_id);
++
++VIRGL_EXPORT int
++virgl_renderer_bridgevm_scanout_iosurface_checksum(uint64_t *out_checksum);
++
++VIRGL_EXPORT int
++virgl_renderer_bridgevm_scanout_iosurface_dump(const char *path);
++
+ #endif
 diff --git a/src/vrend/vrend_blitter.c b/src/vrend/vrend_blitter.c
 index eed56e4..afbde6f 100644
 --- a/src/vrend/vrend_blitter.c
@@ -417,7 +501,7 @@ index 7774a25..1909b4f 100644
  
  static int vrend_decode_ctx_get_fencing_fd(UNUSED struct virgl_context *ctx)
 diff --git a/src/vrend/vrend_renderer.c b/src/vrend/vrend_renderer.c
-index 4bccc44..b3cc434 100644
+index 4bccc44..e42c23c 100644
 --- a/src/vrend/vrend_renderer.c
 +++ b/src/vrend/vrend_renderer.c
 @@ -409,13 +409,77 @@ struct sysval_uniform_block {
@@ -924,6 +1008,247 @@ index 4bccc44..b3cc434 100644
  
     if (ctx->ctx_id != 0 && ctx->in_error) {
        return false;
+@@ -13819,3 +14056,220 @@ vrend_renderer_pipe_resource_get_layout(UNUSED struct vrend_context *ctx,
+    return EINVAL;
+ }
+ #endif
++
++
++#ifdef __APPLE__
++#include <OpenGL/OpenGL.h>
++#include <OpenGL/CGLIOSurface.h>
++#include <IOSurface/IOSurface.h>
++#include <CoreFoundation/CoreFoundation.h>
++
++/* BridgeVM zero-copy scanout: one cached global IOSurface the display can
++ * composite directly (CALayer.contents), filled by a GPU blit from the
++ * vrend scanout texture. All calls arrive on the thread that owns the CGL
++ * context (the caller brackets with the same force_ctx_0 discipline as the
++ * CPU readback path).
++ */
++static struct {
++   IOSurfaceRef surface;
++   uint32_t surface_id;
++   uint32_t width;
++   uint32_t height;
++   GLuint tex;
++   GLuint dst_fbo;
++   GLuint src_fbo;
++} bv_scanout_iosurface;
++
++static void
++bv_scanout_iosurface_release(void)
++{
++   if (bv_scanout_iosurface.dst_fbo)
++      glDeleteFramebuffers(1, &bv_scanout_iosurface.dst_fbo);
++   if (bv_scanout_iosurface.src_fbo)
++      glDeleteFramebuffers(1, &bv_scanout_iosurface.src_fbo);
++   if (bv_scanout_iosurface.tex)
++      glDeleteTextures(1, &bv_scanout_iosurface.tex);
++   if (bv_scanout_iosurface.surface)
++      CFRelease(bv_scanout_iosurface.surface);
++   memset(&bv_scanout_iosurface, 0, sizeof(bv_scanout_iosurface));
++}
++
++static bool
++bv_scanout_iosurface_ensure(uint32_t width, uint32_t height)
++{
++   if (bv_scanout_iosurface.surface &&
++       bv_scanout_iosurface.width == width &&
++       bv_scanout_iosurface.height == height)
++      return true;
++
++   bv_scanout_iosurface_release();
++
++   const uint32_t bytes_per_element = 4;
++   const uint32_t pixel_format = 'BGRA';
++   const int32_t w = (int32_t)width;
++   const int32_t h = (int32_t)height;
++   CFNumberRef num_width =
++      CFNumberCreate(NULL, kCFNumberSInt32Type, &w);
++   CFNumberRef num_height =
++      CFNumberCreate(NULL, kCFNumberSInt32Type, &h);
++   CFNumberRef num_bpe =
++      CFNumberCreate(NULL, kCFNumberSInt32Type, (const int32_t *)&bytes_per_element);
++   CFNumberRef num_fmt =
++      CFNumberCreate(NULL, kCFNumberSInt32Type, (const int32_t *)&pixel_format);
++   const void *keys[] = {
++      kIOSurfaceWidth, kIOSurfaceHeight, kIOSurfaceBytesPerElement,
++      kIOSurfacePixelFormat, kIOSurfaceIsGlobal,
++   };
++   const void *values[] = {
++      num_width, num_height, num_bpe, num_fmt, kCFBooleanTrue,
++   };
++   CFDictionaryRef props = CFDictionaryCreate(
++      NULL, keys, values, 5, &kCFTypeDictionaryKeyCallBacks,
++      &kCFTypeDictionaryValueCallBacks);
++   CFRelease(num_width);
++   CFRelease(num_height);
++   CFRelease(num_bpe);
++   CFRelease(num_fmt);
++   if (!props)
++      return false;
++   bv_scanout_iosurface.surface = IOSurfaceCreate(props);
++   CFRelease(props);
++   if (!bv_scanout_iosurface.surface)
++      return false;
++   bv_scanout_iosurface.surface_id =
++      IOSurfaceGetID(bv_scanout_iosurface.surface);
++   bv_scanout_iosurface.width = width;
++   bv_scanout_iosurface.height = height;
++
++   CGLContextObj cgl_ctx = CGLGetCurrentContext();
++   if (!cgl_ctx) {
++      bv_scanout_iosurface_release();
++      return false;
++   }
++   glGenTextures(1, &bv_scanout_iosurface.tex);
++   glBindTexture(GL_TEXTURE_RECTANGLE, bv_scanout_iosurface.tex);
++   CGLError err = CGLTexImageIOSurface2D(
++      cgl_ctx, GL_TEXTURE_RECTANGLE, GL_RGBA, (GLsizei)width,
++      (GLsizei)height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
++      bv_scanout_iosurface.surface, 0);
++   glBindTexture(GL_TEXTURE_RECTANGLE, 0);
++   if (err != kCGLNoError) {
++      bv_scanout_iosurface_release();
++      return false;
++   }
++   glGenFramebuffers(1, &bv_scanout_iosurface.dst_fbo);
++   glGenFramebuffers(1, &bv_scanout_iosurface.src_fbo);
++   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bv_scanout_iosurface.dst_fbo);
++   glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
++                          GL_TEXTURE_RECTANGLE, bv_scanout_iosurface.tex, 0);
++   GLenum status = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
++   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
++   if (status != GL_FRAMEBUFFER_COMPLETE) {
++      bv_scanout_iosurface_release();
++      return false;
++   }
++   return true;
++}
++
++int
++vrend_bridgevm_scanout_blit_iosurface(struct pipe_resource *pres,
++                                      uint32_t width, uint32_t height,
++                                      uint32_t *out_surface_id)
++{
++   struct vrend_resource *res = (struct vrend_resource *)pres;
++   CGLContextObj cgl_ctx = CGLGetCurrentContext();
++   if (!cgl_ctx || CGLLockContext(cgl_ctx) != kCGLNoError)
++      return -1;
++
++   int ret = -1;
++   if (!res->gl_id ||
++       (res->target != GL_TEXTURE_2D && res->target != GL_TEXTURE_RECTANGLE))
++      goto out;
++   if (!bv_scanout_iosurface_ensure(width, height))
++      goto out;
++
++   GLint prev_read = 0, prev_draw = 0;
++   glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prev_read);
++   glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prev_draw);
++
++   glBindFramebuffer(GL_READ_FRAMEBUFFER, bv_scanout_iosurface.src_fbo);
++   glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
++                          res->target, res->gl_id, 0);
++   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bv_scanout_iosurface.dst_fbo);
++   if (glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) ==
++       GL_FRAMEBUFFER_COMPLETE) {
++      /* Row K of the source texture maps to row K of the IOSurface: the
++       * existing CPU readback path (glGetTexImage straight into the
++       * scanout) proves texel row 0 is the display's top row, and
++       * glBlitFramebuffer preserves row order.
++       */
++      glBlitFramebuffer(0, 0, (GLint)width, (GLint)height, 0, 0,
++                        (GLint)width, (GLint)height, GL_COLOR_BUFFER_BIT,
++                        GL_NEAREST);
++      glFlush();
++      *out_surface_id = bv_scanout_iosurface.surface_id;
++      ret = 0;
++   }
++   glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prev_read);
++   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)prev_draw);
++
++out:
++   CGLUnlockContext(cgl_ctx);
++   return ret;
++}
++
++int
++vrend_bridgevm_scanout_iosurface_checksum(uint64_t *out_checksum)
++{
++   IOSurfaceRef surface = bv_scanout_iosurface.surface;
++   if (!surface)
++      return -1;
++   /* Drain the pending blit before the CPU looks at the pixels. */
++   glFinish();
++   if (IOSurfaceLock(surface, kIOSurfaceLockReadOnly, NULL) != kIOReturnSuccess)
++      return -1;
++   const uint8_t *base = IOSurfaceGetBaseAddress(surface);
++   const size_t stride = IOSurfaceGetBytesPerRow(surface);
++   const uint32_t width = bv_scanout_iosurface.width;
++   const uint32_t height = bv_scanout_iosurface.height;
++   uint64_t checksum = 0xcbf29ce484222325ull; /* FNV-1a offset basis */
++   for (uint32_t y = 0; y < height; y++) {
++      const uint8_t *row = base + (size_t)y * stride;
++      for (uint32_t x = 0; x < width * 4; x++) {
++         checksum ^= row[x];
++         checksum *= 1099511628211ull;
++      }
++   }
++   IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, NULL);
++   *out_checksum = checksum;
++   return 0;
++}
++
++int
++vrend_bridgevm_scanout_iosurface_dump(const char *path)
++{
++   IOSurfaceRef surface = bv_scanout_iosurface.surface;
++   if (!surface || !path)
++      return -1;
++   glFinish();
++   if (IOSurfaceLock(surface, kIOSurfaceLockReadOnly, NULL) != kIOReturnSuccess)
++      return -1;
++   FILE *f = fopen(path, "wb");
++   int ret = -1;
++   if (f) {
++      const uint8_t *base = IOSurfaceGetBaseAddress(surface);
++      const size_t stride = IOSurfaceGetBytesPerRow(surface);
++      const uint32_t width = bv_scanout_iosurface.width;
++      const uint32_t height = bv_scanout_iosurface.height;
++      fwrite(&width, 4, 1, f);
++      fwrite(&height, 4, 1, f);
++      for (uint32_t y = 0; y < height; y++)
++         fwrite(base + (size_t)y * stride, 1, (size_t)width * 4, f);
++      fclose(f);
++      ret = 0;
++   }
++   IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, NULL);
++   return ret;
++}
++
++#endif /* __APPLE__ */
+diff --git a/src/vrend/vrend_renderer.h b/src/vrend/vrend_renderer.h
+index adb1213..6a8c9b4 100644
+--- a/src/vrend/vrend_renderer.h
++++ b/src/vrend/vrend_renderer.h
+@@ -407,6 +407,15 @@ int vrend_renderer_transfer_iov(struct vrend_context *ctx,
+                                 const struct vrend_transfer_info *info,
+                                 int transfer_mode);
+ 
++#ifdef __APPLE__
++/* BridgeVM: GPU-blit a scanout resource into a cached global IOSurface. */
++int vrend_bridgevm_scanout_blit_iosurface(struct pipe_resource *pres,
++                                          uint32_t width, uint32_t height,
++                                          uint32_t *out_surface_id);
++int vrend_bridgevm_scanout_iosurface_checksum(uint64_t *out_checksum);
++int vrend_bridgevm_scanout_iosurface_dump(const char *path);
++#endif
++
+ int vrend_renderer_transfer_pipe(struct pipe_resource *pres,
+                                  const struct vrend_transfer_info *info,
+                                  int transfer_mode);
 diff --git a/src/vrend/vrend_shader.c b/src/vrend/vrend_shader.c
 index 4fe673c..fd06705 100644
 --- a/src/vrend/vrend_shader.c

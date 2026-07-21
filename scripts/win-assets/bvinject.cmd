@@ -234,6 +234,10 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
     if not exist %WIN%\BridgeVM\dxvk\ mkdir %WIN%\BridgeVM\dxvk
     copy /y %DRV%\..\dxvk\* %WIN%\BridgeVM\dxvk\ >nul
   )
+  if exist %DRV%\..\dxvk-x64\d3d11.dll (
+    if not exist %WIN%\BridgeVM\dxvk-x64\ mkdir %WIN%\BridgeVM\dxvk-x64
+    copy /y %DRV%\..\dxvk-x64\* %WIN%\BridgeVM\dxvk-x64\ >nul
+  )
   reg load HKLM\BVGPUSW %WIN%\Windows\System32\config\SOFTWARE
   rem RunOnce runs once at first interactive logon. The value uses the RUNTIME
   rem path (installed Windows is C: to itself), not the WinPE %WIN% letter. The

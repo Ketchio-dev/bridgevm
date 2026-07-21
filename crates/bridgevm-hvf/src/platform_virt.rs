@@ -99,6 +99,13 @@ fn make_virtio_gpu() -> VirtioPciGpu {
                         gpu.set_3d_scanout_deferred(true);
                         eprintln!("virtio-gpu: 3D scanout readback deferred off the flush path");
                     }
+                    if env_flag("BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT") {
+                        gpu.set_3d_scanout_iosurface(
+                            true,
+                            env_flag("BRIDGEVM_VIRTIO_GPU_IOSURFACE_VERIFY"),
+                        );
+                        eprintln!("virtio-gpu: 3D scanout IOSurface GPU blit enabled");
+                    }
                     configure_virtio_gpu_vblank(&mut gpu);
                     eprintln!(
                         "virtio-gpu: 3D scanout readback pacing={}ms",

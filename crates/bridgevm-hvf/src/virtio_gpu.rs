@@ -264,8 +264,15 @@ pub struct VirtioGpu {
     scanout_3d_deferred: bool,
     pending_3d_scanout: Option<(u32, Rect)>,
     pending_3d_scanout_fresh: bool,
+    pending_3d_scanout_blitted: bool,
     deferred_scanout_flush_count: u64,
     deferred_scanout_serviced_count: u64,
+    scanout_iosurface: bool,
+    scanout_iosurface_verify: bool,
+    scanout_iosurface_id: Option<u32>,
+    scanout_iosurface_dumped: bool,
+    scanout_blit_count: u64,
+    scanout_blit_nanoseconds: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -344,6 +351,7 @@ pub struct VirtioGpuStats {
     pub scanout_readback_nanoseconds: u64,
     pub deferred_scanout_flushes: u64,
     pub deferred_scanout_serviced: u64,
+    pub scanout_blits: u64,
     pub three_d: VirtioGpu3dStats,
     pub queues: [VirtioGpuQueueStats; QUEUE_COUNT],
 }
@@ -421,6 +429,15 @@ enum ScanoutReadbackOutcome {
     Done,
     NotDue,
     Gone,
+}
+
+fn fnv1a64(data: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for &byte in data {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
 }
 
 fn union_rect(a: Rect, b: Rect) -> Rect {
@@ -511,8 +528,15 @@ impl VirtioGpu {
             scanout_3d_deferred: false,
             pending_3d_scanout: None,
             pending_3d_scanout_fresh: false,
+            pending_3d_scanout_blitted: false,
             deferred_scanout_flush_count: 0,
             deferred_scanout_serviced_count: 0,
+            scanout_iosurface: false,
+            scanout_iosurface_verify: false,
+            scanout_iosurface_id: None,
+            scanout_iosurface_dumped: false,
+            scanout_blit_count: 0,
+            scanout_blit_nanoseconds: 0,
             scanout_readback_bytes: 0,
             scanout_readback_nanoseconds: 0,
         };
@@ -579,6 +603,47 @@ impl VirtioGpu {
         }
     }
 
+    pub fn set_3d_scanout_iosurface(&mut self, enabled: bool, verify: bool) {
+        self.scanout_iosurface = enabled;
+        self.scanout_iosurface_verify = enabled && verify;
+    }
+
+    /// GPU-blit the scanout into the shared IOSurface (display path); the
+    /// CPU readback stays as the paced evidence/FbSink feed.
+    fn blit_3d_scanout_iosurface(&mut self, resource_id: u32) {
+        if !self.scanout_iosurface {
+            return;
+        }
+        let Some(info) = self.three_d.scanout_3d_info(resource_id) else {
+            return;
+        };
+        let width = info.width.min(self.width);
+        let height = info.height.min(self.height);
+        let started = Instant::now();
+        let Some(surface_id) = self
+            .three_d
+            .blit_3d_scanout_iosurface(resource_id, width, height)
+        else {
+            return;
+        };
+        let duration_ns = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+        self.scanout_blit_count = self.scanout_blit_count.saturating_add(1);
+        self.scanout_blit_nanoseconds = self
+            .scanout_blit_nanoseconds
+            .saturating_add(duration_ns);
+        if self.scanout_iosurface_id != Some(surface_id) {
+            self.scanout_iosurface_id = Some(surface_id);
+            eprintln!("virtio-gpu: scanout IOSurface global id={surface_id} ({width}x{height})");
+        }
+        let count = self.scanout_blit_count;
+        self.record_trace_fields("scanout_blit", |fields| {
+            let _ = write!(
+                fields,
+                ",\"resource_id\":{resource_id},\"surface_id\":{surface_id},\"width\":{width},\"height\":{height},\"duration_ns\":{duration_ns},\"count\":{count}"
+            );
+        });
+    }
+
     fn defer_3d_scanout(&mut self, resource_id: u32, rect: Rect) {
         self.deferred_scanout_flush_count = self.deferred_scanout_flush_count.saturating_add(1);
         let pending = match self.pending_3d_scanout.take() {
@@ -591,6 +656,7 @@ impl VirtioGpu {
         };
         self.pending_3d_scanout = Some(pending);
         self.pending_3d_scanout_fresh = true;
+        self.pending_3d_scanout_blitted = false;
         if self.deferred_scanout_flush_count <= 8 {
             let count = self.deferred_scanout_flush_count;
             self.record_trace_fields("scanout_readback_deferred", |fields| {
@@ -616,6 +682,15 @@ impl VirtioGpu {
         {
             self.pending_3d_scanout = None;
             return;
+        }
+        if !self.pending_3d_scanout_blitted || self.scanout_iosurface_verify {
+            // One blit per armed frame: retries of a pacing-held pending
+            // frame must not re-blit at vCPU-exit cadence. Verify mode
+            // re-blits so the checksum compares the same frame the CPU
+            // readback is about to capture (the guest animates between an
+            // armed frame's blit and a pacing-held readback).
+            self.blit_3d_scanout_iosurface(resource_id);
+            self.pending_3d_scanout_blitted = true;
         }
         match self.try_3d_scanout_readback(resource_id, rect, true) {
             ScanoutReadbackOutcome::NotDue => {}
@@ -680,6 +755,69 @@ impl VirtioGpu {
         self.scanout_readback_nanoseconds = self
             .scanout_readback_nanoseconds
             .saturating_add(duration_ns);
+        if readback_ok && self.scanout_iosurface_verify {
+            // Hash four orientations of the CPU readback so a single run
+            // identifies the transform the GPU blit applied: identity,
+            // y-flip, R<->B swap, and both.
+            let scratch = &self.scanout_readback_scratch[..readback_len];
+            let row_bytes = readback_width as usize * 4;
+            let rows = readback_height as usize;
+            let cpu_checksum = fnv1a64(scratch);
+            let mut flip = 0xcbf2_9ce4_8422_2325u64;
+            let mut swap = 0xcbf2_9ce4_8422_2325u64;
+            let mut flip_swap = 0xcbf2_9ce4_8422_2325u64;
+            let fnv_byte = |hash: &mut u64, byte: u8| {
+                *hash ^= u64::from(byte);
+                *hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+            };
+            for y in 0..rows {
+                let row = &scratch[y * row_bytes..(y + 1) * row_bytes];
+                let flipped_row = &scratch[(rows - 1 - y) * row_bytes..(rows - y) * row_bytes];
+                for x in (0..row_bytes).step_by(4) {
+                    for (hash, src) in [(&mut swap, row), (&mut flip_swap, flipped_row)] {
+                        fnv_byte(hash, src[x + 2]);
+                        fnv_byte(hash, src[x + 1]);
+                        fnv_byte(hash, src[x]);
+                        fnv_byte(hash, src[x + 3]);
+                    }
+                }
+                for &byte in flipped_row {
+                    fnv_byte(&mut flip, byte);
+                }
+            }
+            if let Some(gpu_checksum) = self.three_d.scanout_iosurface_checksum() {
+                let matched = cpu_checksum == gpu_checksum;
+                let matched_flip = flip == gpu_checksum;
+                let matched_swap = swap == gpu_checksum;
+                let matched_flip_swap = flip_swap == gpu_checksum;
+                if !(matched || matched_flip || matched_swap || matched_flip_swap)
+                    && !self.scanout_iosurface_dumped
+                {
+                    // First unexplained mismatch: dump both buffers beside
+                    // the trace JSONL for offline inspection.
+                    self.scanout_iosurface_dumped = true;
+                    if let Some(dir) = std::env::var("BRIDGEVM_VIRTIO_GPU_TRACE_JSONL")
+                        .ok()
+                        .and_then(|p| std::path::Path::new(&p).parent().map(PathBuf::from))
+                    {
+                        let _ = self
+                            .three_d
+                            .scanout_iosurface_dump(&dir.join("iosurface-gpu.bin"));
+                        let mut cpu_dump = Vec::with_capacity(8 + scratch.len());
+                        cpu_dump.extend_from_slice(&readback_width.to_le_bytes());
+                        cpu_dump.extend_from_slice(&readback_height.to_le_bytes());
+                        cpu_dump.extend_from_slice(scratch);
+                        let _ = std::fs::write(dir.join("iosurface-cpu.bin"), &cpu_dump);
+                    }
+                }
+                self.record_trace_fields("scanout_iosurface_verify", |fields| {
+                    let _ = write!(
+                        fields,
+                        ",\"matched\":{matched},\"matched_flip\":{matched_flip},\"matched_swap\":{matched_swap},\"matched_flip_swap\":{matched_flip_swap},\"cpu\":{cpu_checksum},\"gpu\":{gpu_checksum}"
+                    );
+                });
+            }
+        }
         if readback_ok {
             self.last_3d_scanout_readback = Some(Instant::now());
             self.scanout_readback_count = self.scanout_readback_count.saturating_add(1);
@@ -735,6 +873,7 @@ impl VirtioGpu {
             scanout_readback_nanoseconds: self.scanout_readback_nanoseconds,
             deferred_scanout_flushes: self.deferred_scanout_flush_count,
             deferred_scanout_serviced: self.deferred_scanout_serviced_count,
+            scanout_blits: self.scanout_blit_count,
             three_d: self.three_d.stats(self.pending_fenced.len()),
             queues: [VirtioGpuQueueStats::default(); QUEUE_COUNT],
         };
@@ -1355,11 +1494,13 @@ impl VirtioGpu {
         Self::gather_readable_into(mem, &descs, &mut request);
         let mut response = self.take_response_scratch();
         response.clear();
+        let handle_started = Instant::now();
         if control {
             self.handle_control_request_into(mem, &request, &mut response);
         } else {
             self.handle_cursor_request_into(&request, &mut response);
         }
+        let handle_ns = handle_started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
         let Some(hdr) = CtrlHdr::parse(&request) else {
             let request_len = request.len();
             let response_len = response.len();
@@ -1374,7 +1515,16 @@ impl VirtioGpu {
             self.recycle_queue_scratch(descs, request, response);
             return ChainCompletion::Immediate(used_len);
         };
-        self.trace_command(queue_index, head, control, &descs, &request, hdr, &response);
+        self.trace_command(
+            queue_index,
+            head,
+            control,
+            &descs,
+            &request,
+            hdr,
+            &response,
+            handle_ns,
+        );
         // viogpu3d uses an empty context-0 SUBMIT_3D as its control-queue
         // synchronization NOP. Its used-ring completion drives the guest's
         // DXGK CRTC_VSYNC notification, so park that completion when host
@@ -2115,6 +2265,7 @@ impl VirtioGpu {
                     response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
                     return;
                 }
+                self.blit_3d_scanout_iosurface(resource_id);
                 match self.try_3d_scanout_readback(resource_id, rect, false) {
                     ScanoutReadbackOutcome::Done | ScanoutReadbackOutcome::Gone => {}
                     ScanoutReadbackOutcome::NotDue => {
@@ -2298,6 +2449,7 @@ impl VirtioGpu {
         self.trace_fields_scratch = fields;
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn trace_command(
         &mut self,
         queue_index: usize,
@@ -2307,6 +2459,7 @@ impl VirtioGpu {
         request: &[u8],
         hdr: CtrlHdr,
         response: &[u8],
+        handle_ns: u64,
     ) {
         venus_start_trace_command(request, hdr, response);
         if !self.trace.enabled() {
@@ -2350,7 +2503,7 @@ impl VirtioGpu {
         self.record_trace_fields("command", |fields| {
             let _ = write!(
                 fields,
-                ",\"queue\":{},\"head\":{},\"control\":{},\"typ\":{},\"name\":",
+                ",\"queue\":{},\"head\":{},\"control\":{},\"typ\":{},\"duration_ns\":{handle_ns},\"name\":",
                 queue_index, head, control, hdr.typ
             );
             write_json_string(fields, command_name(hdr.typ));
@@ -2616,6 +2769,10 @@ impl VirtioPciGpu {
 
     pub fn service_deferred_3d_scanout(&mut self) {
         self.gpu.service_deferred_3d_scanout();
+    }
+
+    pub fn set_3d_scanout_iosurface(&mut self, enabled: bool, verify: bool) {
+        self.gpu.set_3d_scanout_iosurface(enabled, verify);
     }
 
     pub fn new_from_env() -> Self {
@@ -6577,6 +6734,50 @@ mod tests {
         let stats = dev.stats();
         assert_eq!(stats.deferred_scanout_flushes, 3);
         assert_eq!(stats.deferred_scanout_serviced, 1);
+    }
+
+    #[test]
+    fn iosurface_scanout_blits_on_every_service_while_readback_stays_paced() {
+        let (mut dev, backend, mut mem) = deferred_scanout_dev();
+        dev.gpu.set_3d_scanout_iosurface(true, false);
+
+        // First frame: blit + readback (readback always due first time).
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        {
+            let inner = backend.lock().unwrap();
+            assert_eq!(inner.scanout_blits, vec![(31, 1280, 800)]);
+            assert_eq!(inner.scanout_reads.len(), 1);
+        }
+
+        // With pacing far out, later frames still blit (fresh display) but
+        // the CPU readback is withheld.
+        dev.gpu
+            .set_3d_scanout_readback_interval(Duration::from_secs(60));
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        let inner = backend.lock().unwrap();
+        assert_eq!(inner.scanout_blits.len(), 3);
+        assert_eq!(inner.scanout_reads.len(), 2);
+        drop(inner);
+        assert_eq!(dev.stats().scanout_blits, 3);
+    }
+
+    #[test]
+    fn iosurface_scanout_blits_on_sync_flush_too() {
+        let (mut dev, backend, mut mem) = deferred_scanout_dev();
+        dev.gpu.set_3d_scanout_deferred(false);
+        dev.gpu.set_3d_scanout_iosurface(true, false);
+
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        let inner = backend.lock().unwrap();
+        assert_eq!(inner.scanout_blits.len(), 1);
+        assert_eq!(inner.scanout_reads.len(), 1);
     }
 
     #[test]

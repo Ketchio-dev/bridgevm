@@ -357,6 +357,13 @@ build_installed_boot_env_args() {
     # Defer the 3D scanout GL readback off the RESOURCE_FLUSH path (A/B knob).
     ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT=1")
   fi
+  if [[ "${BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT:-0}" == "1" ]]; then
+    # GPU-blit the scanout into a shared IOSurface (zero-copy display path).
+    ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1")
+  fi
+  if [[ "${BRIDGEVM_VIRTIO_GPU_IOSURFACE_VERIFY:-0}" == "1" ]]; then
+    ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_IOSURFACE_VERIFY=1")
+  fi
   if [[ -n "${INPUT_CONTROL:-}" ]]; then
     ENV_ARGS+=("BRIDGEVM_INPUT_CONTROL=$INPUT_CONTROL")
   fi

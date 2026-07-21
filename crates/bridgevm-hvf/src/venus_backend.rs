@@ -168,6 +168,14 @@ unsafe extern "C" {
         iov: *mut iovec,
         iovec_cnt: c_int,
     ) -> c_int;
+    fn virgl_renderer_bridgevm_scanout_blit_iosurface(
+        res_handle: u32,
+        width: u32,
+        height: u32,
+        out_surface_id: *mut u32,
+    ) -> c_int;
+    fn virgl_renderer_bridgevm_scanout_iosurface_checksum(out_checksum: *mut u64) -> c_int;
+    fn virgl_renderer_bridgevm_scanout_iosurface_dump(path: *const c_char) -> c_int;
     fn virgl_renderer_context_create_fence(
         ctx_id: u32,
         flags: u32,
@@ -833,6 +841,42 @@ impl VirtioGpu3dBackend for VenusBackend {
             );
         }
         ret == 0
+    }
+
+    fn scanout_blit_iosurface(
+        &mut self,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+    ) -> Option<u32> {
+        // Same ctx0/CGL discipline as scanout_read: the blit runs in vrend's
+        // GL context on whichever vCPU thread services the flush.
+        unsafe { virgl_renderer_force_ctx_0() };
+        let mut surface_id: u32 = 0;
+        let ret = unsafe {
+            virgl_renderer_bridgevm_scanout_blit_iosurface(
+                resource_id,
+                width,
+                height,
+                &mut surface_id,
+            )
+        };
+        (ret == 0).then_some(surface_id)
+    }
+
+    fn scanout_iosurface_checksum(&mut self) -> Option<u64> {
+        unsafe { virgl_renderer_force_ctx_0() };
+        let mut checksum: u64 = 0;
+        let ret = unsafe { virgl_renderer_bridgevm_scanout_iosurface_checksum(&mut checksum) };
+        (ret == 0).then_some(checksum)
+    }
+
+    fn scanout_iosurface_dump(&mut self, path: &std::path::Path) -> bool {
+        let Ok(cpath) = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()) else {
+            return false;
+        };
+        unsafe { virgl_renderer_force_ctx_0() };
+        unsafe { virgl_renderer_bridgevm_scanout_iosurface_dump(cpath.as_ptr()) == 0 }
     }
 
     fn destroy_resource(&mut self, resource_id: u32) {
