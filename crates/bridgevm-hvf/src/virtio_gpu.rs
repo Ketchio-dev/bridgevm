@@ -634,6 +634,15 @@ impl VirtioGpu {
         if self.scanout_iosurface_id != Some(surface_id) {
             self.scanout_iosurface_id = Some(surface_id);
             eprintln!("virtio-gpu: scanout IOSurface global id={surface_id} ({width}x{height})");
+            // Publish the global ID beside the shared framebuffer so a
+            // windowed viewer can IOSurfaceLookup + bind layer.contents
+            // instead of consuming the CPU framebuffer file.
+            if let Ok(fb_path) = std::env::var("BRIDGEVM_DISPLAY_EXPORT_FB") {
+                let _ = std::fs::write(
+                    format!("{fb_path}.iosurface"),
+                    format!("{surface_id} {width} {height}\n"),
+                );
+            }
         }
         let count = self.scanout_blit_count;
         self.record_trace_fields("scanout_blit", |fields| {

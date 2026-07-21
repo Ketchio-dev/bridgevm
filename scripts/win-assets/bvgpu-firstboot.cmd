@@ -130,6 +130,7 @@ echo [stage3] DXVK D3D11 present errorlevel=%ERRORLEVEL% >> "%LOG%"
 echo [stage3] run x64 DXVK D3D11 smokes under x64 emulation - experimental, non-gating >> "%LOG%"
 if not exist C:\BridgeVM\dxvk-x64\bridgevm-d3d11-draw-smoke-x64.exe goto :dxvk_x64_done
 set VK_DRIVER_FILES=C:\BridgeVM\dxvk-x64\virtio_icd.x64.json
+set VK_LOADER_DEBUG=error,warn,driver
 set DXVK_LOG_LEVEL=info
 set DXVK_LOG_PATH=C:\BridgeVM\dxvk-x64
 C:\BridgeVM\dxvk-x64\bridgevm-d3d11-draw-smoke-x64.exe >> "%LOG%" 2>&1
@@ -142,6 +143,7 @@ if not exist C:\BridgeVM\dxvk-x64\bridgevm-d3d11-present-smoke-x64.exe goto :dxv
 C:\BridgeVM\dxvk-x64\bridgevm-d3d11-present-smoke-x64.exe >> "%LOG%" 2>&1
 echo [stage3] x64 DXVK D3D11 present errorlevel=%ERRORLEVEL% >> "%LOG%"
 :dxvk_x64_restore
+set VK_LOADER_DEBUG=
 set VK_DRIVER_FILES=C:\BridgeVM\viogpu3d\virtio_icd.arm64.json
 :dxvk_x64_done
 echo [stage3] capture PnP, class-registry, DxgKrnl, and SetupAPI diagnostics >> "%LOG%"

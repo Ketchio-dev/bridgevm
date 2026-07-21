@@ -239,6 +239,10 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
     copy /y %DRV%\..\dxvk-x64\* %WIN%\BridgeVM\dxvk-x64\ >nul
   )
   reg load HKLM\BVGPUSW %WIN%\Windows\System32\config\SOFTWARE
+  rem Register the x64 venus ICD manifest: elevated processes ignore
+  rem VK_DRIVER_FILES (loader secure-env policy), so the x64 loader must
+  rem find the driver in the registry like the ARM64 one does.
+  if exist %DRV%\..\dxvk-x64\virtio_icd.x64.json reg add "HKLM\BVGPUSW\Khronos\Vulkan\Drivers" /v "C:\BridgeVM\dxvk-x64\virtio_icd.x64.json" /t REG_DWORD /d 0 /f
   rem RunOnce runs once at first interactive logon. The value uses the RUNTIME
   rem path (installed Windows is C: to itself), not the WinPE %WIN% letter. The
   rem "!" name prefix keeps the initial entry until stage 1 finishes creating
