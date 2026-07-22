@@ -5165,6 +5165,38 @@ fn main() -> ExitCode {
             recent_pcie_pio.print();
             recent_xhci.print(platform.xhci_event_lifecycle_stats());
             print_hid_semantic_summary(platform);
+            if let Some(stats) = platform.tpm_tis_stats() {
+                println!(
+                    "TPM2 TIS command summary: commands={} success={} errors={} backend_failures={} malformed_commands={} malformed_responses={} last_command={:#010x} startup={} self_test={} get_capability={} pcr_read={} pcr_extend={} start_auth_session={} create_primary={} read_public={} nv_read_public={} get_random={} other={}",
+                    stats.commands,
+                    stats.successful_responses,
+                    stats.error_responses,
+                    stats.backend_failures,
+                    stats.malformed_commands,
+                    stats.malformed_responses,
+                    stats.last_command_code.unwrap_or_default(),
+                    stats.startup_commands,
+                    stats.self_test_commands,
+                    stats.get_capability_commands,
+                    stats.pcr_read_commands,
+                    stats.pcr_extend_commands,
+                    stats.start_auth_session_commands,
+                    stats.create_primary_commands,
+                    stats.read_public_commands,
+                    stats.nv_read_public_commands,
+                    stats.get_random_commands,
+                    stats.other_commands,
+                );
+            }
+            if let Some(stats) = platform.tpm_ppi_stats() {
+                println!(
+                    "TPM PPI shared-memory summary: reads={} writes={} rejected_accesses={} memory_overwrite_requested={}",
+                    stats.reads,
+                    stats.writes,
+                    stats.rejected_accesses,
+                    platform.tpm_memory_overwrite_requested(),
+                );
+            }
             print_nvme_command_trace(platform);
             println!("UART RX remaining bytes: {}", platform.uart_input_len());
             for trigger in &uart_triggers {

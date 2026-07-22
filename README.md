@@ -129,9 +129,9 @@ still fails closed rather than silently launching Windows without its vTPM.
 
 The remaining Windows HVF walls are concrete, but they are not all “easy”:
 
-1. prove the locally wired TPM 2.0 TIS/PPI/TPM2-log contract, including the
-   now-connected EDK2 PPI request processor, in Windows and capture
-   firmware-populated measured-boot events;
+1. preserve the now-live-proven Windows TPM 2.0 TIS command path, then execute
+   and capture a real PPI operation plus firmware-populated measured-boot
+   events;
 2. validate the now-implemented encrypted recovery package, fresh-identity
    clone, same-ID move, and archive-before-reset lifecycle on a clean second
    Mac and with BitLocker recovery enabled;

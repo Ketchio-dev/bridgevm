@@ -30,7 +30,7 @@ yet a public-production virtualization product.
 | --- | --- | --- |
 | Compatibility / QEMU | Safe plans; explicit image creation and inspection; supervised launch/stop; NAT/forwards; snapshot and diagnostics paths | Privileged macOS vmnet modes, full guest/GUI coverage, public packaging |
 | Apple VZ | Signed Linux Arm runner; raw disk plus direct-kernel boot; display/control socket and framebuffer export | Wider boot media/disk formats, full desktop integration, live CPU/RAM reapply, release packaging |
-| Windows HVF | Installed Windows desktop; 4 vCPUs; writable NVMe/UEFI vars; RAMFB/input; virtio network/audio/agent; clean shutdown/restart; Venus/VirGL experimental 3D and real PPSSPP Vulkan evidence; local TPM TIS/PPI/TPM2 log; signed bundled swtpm; Keychain recovery/clone/reset lifecycle | Windows TPM/measured-boot receipt; clean-second-Mac migration and BitLocker recovery proof; fresh WDK package and production signature; current real-title receipt; public signing/notarization |
+| Windows HVF | Installed Windows desktop; 4 vCPUs; writable NVMe/UEFI vars; RAMFB/input; virtio network/audio/agent; clean shutdown/restart; Venus/VirGL experimental 3D and real PPSSPP Vulkan evidence; live Windows TPM TIS command path; local PPI/TPM2 log; signed bundled swtpm; Keychain recovery/clone/reset lifecycle | Windows PPI action and measured-boot receipt; clean-second-Mac migration and BitLocker recovery proof; fresh WDK package and production signature; current real-title receipt; public signing/notarization |
 
 ## Windows HVF evidence boundary
 
@@ -46,6 +46,9 @@ The installed-Windows path has live evidence for:
   Vulkan backend;
 - deferred scanout/readback instrumentation that identifies synchronous
   GPU-to-CPU readback as a major remaining display cost.
+- a live Windows vTPM run with 1,032 TIS commands, including PCR, capability,
+  session, key-creation, and NV-public operations, with no backend or malformed
+  packet failures.
 
 Those observations are dated evidence, not a promise that an arbitrary Windows
 image or game works. The relevant receipts are indexed under
@@ -69,7 +72,7 @@ It does not weaken security-state handling. See the
 
 | Gate | State | Difficulty judgment | Completion evidence |
 | --- | --- | --- | --- |
-| `SEC-TPM-FRONTEND` | `IN_PROGRESS` | Bounded device-model work | Windows enumerates ACPI `MSFT0101`; TIS commands and PPI actions work |
+| `SEC-TPM-FRONTEND` | `IN_PROGRESS` | Bounded device-model work | Windows ACPI/TIS enumeration and command flow are live proven; a real PPI write/action receipt remains |
 | `SEC-TPM-LIFECYCLE` | `IN_PROGRESS` | Hard security/lifecycle work | Local path now bundles/signs the pinned runtime and implements same-ID move policy, encrypted export/restore, fresh-ID clone, archive-before-reset, and receipts; clean-second-Mac + BitLocker live proof remains |
 | `SEC-SB-MEASURED` | `IN_PROGRESS` | Hard cross-layer work | Pinned Secure Boot + TPM2 EDK2 and fail-closed Microsoft-only PK/KEK/db/dbx provisioning are locally proven; guest proof from `Confirm-SecureBootUEFI`, PCR 7, event log, and recovery/migration workflows remains |
 | `GPU-WDK-SIGN` | `EXTERNAL` | Externally gated | Fresh ARM64 WDK build, catalog, trusted signature, and clean bind |
@@ -80,8 +83,9 @@ The TPM register model and ACPI plumbing are comparatively straightforward.
 Correct identity, migration, BitLocker recovery, signing, and reproducible live
 evidence are not “easy last steps”; they are the release-quality work.
 
-Current `SEC-TPM-FRONTEND` evidence is E2 only: five TIS localities, command
-FIFO, the 1 KiB PPI mailbox, PPI 1.3/reset-mitigation `_DSM`, fixed MMIO
+Current `SEC-TPM-FRONTEND` evidence is E4 for the Windows TIS command path and
+E2/E4-observed-read for PPI: five TIS localities, command FIFO, the 1 KiB PPI
+mailbox, PPI 1.3/reset-mitigation `_DSM`, fixed MMIO
 dispatch, optional ACPI `TPM0/MSFT0101`, and the revision-4 TPM2 table with a
 loader-relocated 64 KiB `etc/tpm/log` area are unit proven. BridgeVM now also
 publishes QEMU's exact packed 6-byte `etc/tpm/config` discovery record only
@@ -95,6 +99,13 @@ per-VM state directory. The app product configuration supplies a per-VM
 256-bit `WhenUnlockedThisDeviceOnly` Keychain key through a one-shot inherited
 FD; swtpm encrypts state with AES-256-CBC plus encrypt-then-MAC, and an existing
 state directory with a missing key is never assigned a silent replacement key.
+On 2026-07-22, a 120-second cloned Windows run reached the desktop and completed
+1,032 TPM commands: 975 successful responses, 186 `StartAuthSession`, three
+`CreatePrimary`, 40 `NV_ReadPublic`, 146 `PCR_Read`, and 81 `PCR_Extend`, with
+zero backend failures and zero malformed commands or responses. The PPI page
+was read 13 times but never written, so the PPI-action half remains open. The
+payload-free receipt and verifier are indexed in the
+[dated evidence](docs/windows-arm/evidence/vtpm-windows-command-path-20260722.md).
 The repository smoke proves exact 32-byte FD delivery, socket/process cleanup,
 and persistent state without putting the key in argv or a disk keyfile.
 The packaged app now carries pinned swtpm 0.10.1/libtpms 0.10.2 plus the entire
@@ -104,7 +115,7 @@ archive-before-reset, and APFS clone with a fresh TPM identity; copied state,
 old state, orphan keys, and prior run evidence are retained with lifecycle
 receipts instead of silently discarded. The standalone package passed a real
 key-FD/socket swtpm startup check on 2026-07-22. Firmware-populated measured-
-boot events, real Windows enumeration and PPI-action receipts, clean-second-Mac
+boot event validation, a real Windows PPI-action receipt, clean-second-Mac
 migration, and BitLocker recovery remain open, so the security gates stay
 `IN_PROGRESS`.
 

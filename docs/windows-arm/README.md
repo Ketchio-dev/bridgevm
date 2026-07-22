@@ -47,6 +47,11 @@ startup check. The app also provides an authenticated recovery package,
 same-ID migration policy, fresh-TPM clone, and archive-before-reset receipts.
 Clean-second-Mac migration and BitLocker recovery are still live release gates;
 failure remains closed rather than falling back to a TPM-less VM.
+The live Windows TIS path is now separately evidenced: a 120-second cloned run
+completed 1,032 TPM commands with no backend or malformed-packet failures and
+exercised PCR, capability, session, key-creation, and NV-public operations. The
+PPI mailbox was read but not written, so a real PPI action remains open. See the
+[2026-07-22 vTPM command-path receipt](evidence/vtpm-windows-command-path-20260722.md).
 The lab imports an installed RAW disk and its matching writable UEFI vars by
 clone/copy, leaving the selected source files unchanged. Imported disks smaller
 than 64 GiB are extended sparsely, then C: is grown through the resident agent
@@ -77,9 +82,10 @@ status OK. `dxdiag` identified `viogpu_d3d10.dll`, WDDM 1.3, and feature level
 gate before a clean PSCI shutdown and writeback. See the
 [2026-07-12 live VirGL/WDDM evidence index](evidence/viogpu3d-virgl-live-20260712.md).
 
-This is still an experimental installed-image path. A packaged from-scratch installer,
-TPM 2.0/Secure Boot, distributable Windows 3D/WDDM, durable disk-backed suspend,
-and polished single-surface product UX remain open.
+This is still an experimental installed-image path. A packaged from-scratch
+installer, the remaining PPI/Secure Boot lifecycle, distributable Windows
+3D/WDDM, durable disk-backed suspend, and polished single-surface product UX
+remain open.
 
 ## Local Installer Baseline
 

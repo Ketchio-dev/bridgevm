@@ -52,7 +52,8 @@ rollback-safe aggressive renderer lane, while vTPM/Secure Boot must ship as a
 per-VM encrypted-state and Keychain-backed lifecycle rather than a
 guest-visible device checkbox.
 
-`SEC-TPM-FRONTEND` has now reached E2/local proof: BridgeVM owns a five-locality
+`SEC-TPM-FRONTEND` has now reached E4 for Windows TIS command flow and E2 plus
+live reads for PPI: BridgeVM owns a five-locality
 TPM 2.0 TIS/FIFO state machine, a bounded swtpm Unix data-socket backend, the
 QEMU `virt` platform-bus MMIO reservation at `0x0c000000`, a persistent 1 KiB
 PPI mailbox at `0x0c005000`, PPI 1.3 and reset-mitigation `_DSM` AML, optional
@@ -85,11 +86,14 @@ finalization fail-closed provisions the exact Microsoft-only ARM64
 `secureboot_objects` v1.6.5 `dbx`, `db`, `KEK`, and `PK` payloads (PK last),
 validates every hash/ESL/provenance field, preserves exact existing state, and
 rejects partial or conflicting state without mutation. Packaging includes the
-policy, firmware build receipt, and license notices. This still does **not**
-close the gates: firmware-populated measured-boot events, clean-second-Mac
-migration, a real Windows PPI-operation receipt,
-`Confirm-SecureBootUEFI`/PCR 7 proof, BitLocker recovery, and a live Windows
-receipt remain.
+policy, firmware build receipt, and license notices. A 2026-07-22 cloned live
+run reached the Windows desktop and completed 1,032 TIS commands with no
+backend or malformed-packet failures, including PCR, session, key-creation, and
+NV-public traffic. The PPI mailbox recorded 13 reads and zero writes; see the
+[dated command-path receipt](windows-arm/evidence/vtpm-windows-command-path-20260722.md).
+This still does **not** close the gates: validated firmware-populated
+measured-boot events, clean-second-Mac migration, a real Windows PPI-operation receipt,
+`Confirm-SecureBootUEFI`/PCR 7 proof, and BitLocker recovery remain.
 
 Windows HVF suspend/resume is explicitly not a v1 product capability; the
 experimental single-vCPU checkpoint path must not be advertised as durable
