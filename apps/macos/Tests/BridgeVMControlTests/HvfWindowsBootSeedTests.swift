@@ -128,6 +128,82 @@ final class HvfWindowsBootSeedTests: XCTestCase {
         XCTAssertNotNil(seed.range(of: wbm))
     }
 
+    // MARK: Secure Boot provisioning
+
+    func testBundledMicrosoftPolicyHasPinnedProvenanceAndPayloads() throws {
+        let policy = try HvfSecureBootProvisioner.bundledPolicy()
+        XCTAssertEqual(policy.schemaVersion, 1)
+        XCTAssertEqual(policy.policy, "microsoft-only-windows-11-2023")
+        XCTAssertEqual(policy.source.tag, "v1.6.5")
+        XCTAssertEqual(
+            policy.source.commit,
+            "798cdc513e0c192fe90e99637105748ed3bb4ca5")
+        XCTAssertEqual(
+            policy.firmware.sha256,
+            "f41c7eb7c1a9dabf8ed10c4e52642378e05df171eecd65ca15ed414d9fabdff9")
+        XCTAssertEqual(policy.variables.map(\.name), ["dbx", "db", "KEK", "PK"])
+        XCTAssertEqual(try HvfSecureBootProvisioner.decodedVariables(policy).count, 4)
+    }
+
+    func testSecureBootProvisioningWritesExactKeysWithPkLast() throws {
+        let store = Self.makeEmptyAuthVarstore()
+        let policy = try HvfSecureBootProvisioner.bundledPolicy()
+        let result = try HvfSecureBootProvisioner.provision(
+            varStore: store,
+            policy: policy,
+            provisionedAt: Date(timeIntervalSince1970: 1_700_000_000))
+
+        XCTAssertEqual(result.varStore.count, store.count)
+        let records = try HvfSecureBootProvisioner.storedVariables(in: result.varStore)
+            .filter { ["dbx", "db", "KEK", "PK"].contains($0.name) }
+            .sorted { $0.offset < $1.offset }
+        XCTAssertEqual(records.map(\.name), ["dbx", "db", "KEK", "PK"])
+        XCTAssertTrue(records.allSatisfy {
+            $0.attributes == HvfSecureBootProvisioner.authenticatedWriteAttributes
+        })
+        XCTAssertEqual(result.receipt.variables.map(\.name), ["dbx", "db", "KEK", "PK"])
+        XCTAssertEqual(result.receipt.provisionedAt, "2023-11-14T22:13:20.000Z")
+    }
+
+    func testSecureBootProvisioningIsIdempotentForAnExactPolicy() throws {
+        let policy = try HvfSecureBootProvisioner.bundledPolicy()
+        let once = try HvfSecureBootProvisioner.provision(
+            varStore: Self.makeEmptyAuthVarstore(), policy: policy)
+        let twice = try HvfSecureBootProvisioner.provision(
+            varStore: once.varStore, policy: policy)
+        XCTAssertEqual(once.varStore, twice.varStore)
+    }
+
+    func testSecureBootProvisioningRejectsPartialExistingPolicyWithoutMutation() throws {
+        let policy = try HvfSecureBootProvisioner.bundledPolicy()
+        let decoded = try HvfSecureBootProvisioner.decodedVariables(policy)
+        let dbx = decoded[0]
+        var partial = Self.makeEmptyAuthVarstore()
+        let record = HvfWindowsBootSeed.authVariable(
+            name: dbx.manifest.name,
+            guid: dbx.guid,
+            data: dbx.payload,
+            attributes: dbx.manifest.attributes)
+        partial.replaceSubrange(0x60..<0x60 + record.count, with: record)
+        let before = partial
+
+        XCTAssertThrowsError(try HvfSecureBootProvisioner.provision(
+            varStore: partial, policy: policy)) { error in
+            guard case HvfWindowsBootSeed.SeedError.secureBootConflict = error else {
+                return XCTFail("expected secureBootConflict, got \(error)")
+            }
+        }
+        XCTAssertEqual(partial, before)
+    }
+
+    func testMalformedEfiSignatureListIsRejected() {
+        var malformed = Data(count: 28)
+        // SignatureListSize claims bytes that do not exist.
+        malformed[16] = 0xff
+        XCTAssertThrowsError(
+            try HvfSecureBootProvisioner.validateSignatureLists(malformed, name: "db"))
+    }
+
     // MARK: fixtures
 
     /// Minimal FV+auth-varstore image matching the edk2-arm-vars.fd shape this

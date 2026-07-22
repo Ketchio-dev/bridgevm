@@ -204,12 +204,17 @@ impl Default for VirtFdtConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VirtFdtDeviceConfig {
     pub legacy_virtio_mmio_present: bool,
+    /// Advertise a TPM 2.0 FIFO/TIS device to PEI. ArmVirtPkg discovers the
+    /// TPM base from this node before ACPI exists, then installs its measured
+    /// boot stack.
+    pub tpm_tis_present: bool,
 }
 
 impl Default for VirtFdtDeviceConfig {
     fn default() -> Self {
         Self {
             legacy_virtio_mmio_present: true,
+            tpm_tis_present: false,
         }
     }
 }
@@ -393,6 +398,16 @@ pub fn build_virt_fdt_with_devices(cfg: &VirtFdtConfig, devices: VirtFdtDeviceCo
     b.prop_str_list("compatible", &["qemu,fw-cfg-mmio"]);
     b.prop_reg64("reg", machine::FW_CFG.base, machine::FW_CFG.size);
     b.end_node();
+
+    // /tpm — consumed by ArmVirtPkg/PlatformPeiLib. ACPI later describes the
+    // same range to Windows, but PEI needs this node early enough to initialize
+    // Tcg2Pei/Tcg2Dxe and measure the firmware boot path.
+    if devices.tpm_tis_present {
+        b.begin_node(&format!("tpm@{:x}", machine::TPM_TIS.base));
+        b.prop_str_list("compatible", &["tcg,tpm-tis-mmio"]);
+        b.prop_reg64("reg", machine::TPM_TIS.base, machine::TPM_TIS.size);
+        b.end_node();
+    }
 
     // /virtio_mmio × 32
     if devices.legacy_virtio_mmio_present {
@@ -586,6 +601,37 @@ mod tests {
         ] {
             assert!(body.contains(node), "missing node {node}");
         }
+    }
+
+    #[test]
+    fn optional_tpm_node_matches_the_mmio_contract_consumed_by_edk2_pei() {
+        let dtb = build_virt_fdt_with_devices(
+            &VirtFdtConfig::default(),
+            VirtFdtDeviceConfig {
+                legacy_virtio_mmio_present: true,
+                tpm_tis_present: true,
+            },
+        );
+        let body = String::from_utf8_lossy(&dtb);
+        assert!(body.contains("tpm@c000000"));
+        assert!(body.contains("tcg,tpm-tis-mmio"));
+
+        let reg = [
+            0u32,
+            machine::TPM_TIS.base as u32,
+            0u32,
+            machine::TPM_TIS.size as u32,
+        ]
+        .into_iter()
+        .flat_map(u32::to_be_bytes)
+        .collect::<Vec<_>>();
+        assert!(dtb.windows(reg.len()).any(|window| window == reg));
+    }
+
+    #[test]
+    fn default_fdt_does_not_claim_a_tpm_without_a_backend() {
+        let dtb = build_virt_fdt(&VirtFdtConfig::default());
+        assert!(!String::from_utf8_lossy(&dtb).contains("tpm@c000000"));
     }
 
     #[test]

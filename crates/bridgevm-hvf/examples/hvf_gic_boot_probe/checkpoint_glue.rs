@@ -3,9 +3,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use bridgevm_hvf::checkpoint::{
-    request_vcpu_exit, HvVcpu, VmCheckpoint,
-};
+use bridgevm_hvf::checkpoint::{request_vcpu_exit, HvVcpu, VmCheckpoint};
 use bridgevm_hvf::platform_virt::VirtPlatform;
 
 const CHECKPOINT_ENV: &str = "BRIDGEVM_CHECKPOINT_STATE";

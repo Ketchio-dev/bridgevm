@@ -10,9 +10,10 @@
 //! All integers in the on-disk format are little-endian.
 
 use std::ffi::c_void;
-use std::fs::File;
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub type HvVcpu = u64;
 
@@ -27,6 +28,7 @@ const SECTION_GIC: [u8; 4] = *b"GIC0";
 const SECTION_DEVICE: [u8; 4] = *b"DEV0";
 const SECTION_COUNT: u32 = 5;
 const MAX_SECTION_BYTES: u64 = 128 * 1024 * 1024 * 1024;
+static CHECKPOINT_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 const HV_SUCCESS: i32 = 0;
 const HV_REG_X0: u32 = 0;
@@ -104,17 +106,13 @@ struct HvSimdValue {
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[link(name = "Hypervisor", kind = "framework")]
 extern "C" {
-    fn hv_vcpus_exit(vcpus: *const HvVcpu, vcpu_count: u32) -> i32;
+    fn hv_vcpus_exit(vcpus: *mut HvVcpu, vcpu_count: u32) -> i32;
 
     fn hv_vcpu_get_reg(vcpu: HvVcpu, reg: u32, value: *mut u64) -> i32;
     fn hv_vcpu_set_reg(vcpu: HvVcpu, reg: u32, value: u64) -> i32;
     fn hv_vcpu_get_sys_reg(vcpu: HvVcpu, reg: u16, value: *mut u64) -> i32;
     fn hv_vcpu_set_sys_reg(vcpu: HvVcpu, reg: u16, value: u64) -> i32;
-    fn hv_vcpu_get_simd_fp_reg(
-        vcpu: HvVcpu,
-        reg: u32,
-        value: *mut HvSimdValue,
-    ) -> i32;
+    fn hv_vcpu_get_simd_fp_reg(vcpu: HvVcpu, reg: u32, value: *mut HvSimdValue) -> i32;
 
     fn hv_vcpu_get_vtimer_mask(vcpu: HvVcpu, masked: *mut bool) -> i32;
     fn hv_vcpu_set_vtimer_mask(vcpu: HvVcpu, masked: bool) -> i32;
@@ -160,7 +158,6 @@ extern "C" {
     #[link_name = "hv_vcpu_set_simd_fp_reg"]
     fn hv_vcpu_set_simd_fp_reg_extern();
 }
-
 
 #[derive(Debug, Clone)]
 pub struct SparseRamChunk {
@@ -280,11 +277,7 @@ impl<'a> StateReader<'a> {
 }
 
 impl VmCheckpoint {
-    pub fn capture(
-        vcpus: &[HvVcpu],
-        ram: &[u8],
-        device_state: Vec<u8>,
-    ) -> io::Result<Self> {
+    pub fn capture(vcpus: &[HvVcpu], ram: &[u8], device_state: Vec<u8>) -> io::Result<Self> {
         if vcpus.is_empty() {
             return Err(invalid("checkpoint requires at least one vCPU"));
         }
@@ -329,7 +322,21 @@ impl VmCheckpoint {
     }
 
     pub fn write_to_path(&self, path: impl AsRef<Path>) -> io::Result<()> {
-        let mut file = File::create(path)?;
+        let path = path.as_ref();
+        let parent = nonempty_parent(path);
+        let (temporary_path, mut file) = create_checkpoint_temp(parent, path)?;
+        let result = self
+            .write_to(&mut file)
+            .and_then(|()| file.sync_all())
+            .and_then(|()| fs::rename(&temporary_path, path))
+            .and_then(|()| sync_directory(parent));
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary_path);
+        }
+        result
+    }
+
+    fn write_to(&self, file: &mut File) -> io::Result<()> {
         file.write_all(&CHECKPOINT_MAGIC)?;
         file.write_all(&CHECKPOINT_VERSION.to_le_bytes())?;
         file.write_all(&SECTION_COUNT.to_le_bytes())?;
@@ -339,11 +346,11 @@ impl VmCheckpoint {
         meta.write_u32(SPARSE_RAM_CHUNK_SIZE as u32);
         meta.write_u32(0);
 
-        write_section(&mut file, SECTION_META, &meta.into_inner())?;
-        write_section(&mut file, SECTION_RAM, &encode_ram_chunks(&self.ram_chunks))?;
-        write_section(&mut file, SECTION_VCPU, &encode_vcpus(&self.vcpus))?;
-        write_section(&mut file, SECTION_GIC, &self.gic_state)?;
-        write_section(&mut file, SECTION_DEVICE, &self.device_state)?;
+        write_section(file, SECTION_META, &meta.into_inner())?;
+        write_section(file, SECTION_RAM, &encode_ram_chunks(&self.ram_chunks))?;
+        write_section(file, SECTION_VCPU, &encode_vcpus(&self.vcpus))?;
+        write_section(file, SECTION_GIC, &self.gic_state)?;
+        write_section(file, SECTION_DEVICE, &self.device_state)?;
         file.flush()
     }
 
@@ -357,9 +364,7 @@ impl VmCheckpoint {
         }
         let version = u32::from_le_bytes(header[8..12].try_into().unwrap());
         if version != CHECKPOINT_VERSION {
-            return Err(invalid(format!(
-                "unsupported checkpoint version {version}"
-            )));
+            return Err(invalid(format!("unsupported checkpoint version {version}")));
         }
         let section_count = u32::from_le_bytes(header[12..16].try_into().unwrap());
         if section_count != SECTION_COUNT {
@@ -408,13 +413,48 @@ impl VmCheckpoint {
                 ram.as_deref().ok_or_else(|| invalid("missing RAM0"))?,
                 ram_len,
             )?,
-            vcpus: decode_vcpus(
-                vcpu.as_deref().ok_or_else(|| invalid("missing VCPU"))?,
-            )?,
+            vcpus: decode_vcpus(vcpu.as_deref().ok_or_else(|| invalid("missing VCPU"))?)?,
             gic_state: gic.ok_or_else(|| invalid("missing GIC0"))?,
             device_state: device.ok_or_else(|| invalid("missing DEV0"))?,
         })
     }
+}
+
+fn nonempty_parent(path: &Path) -> &Path {
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+}
+
+fn create_checkpoint_temp(parent: &Path, destination: &Path) -> io::Result<(PathBuf, File)> {
+    let file_name = destination
+        .file_name()
+        .ok_or_else(|| invalid("checkpoint destination must name a file"))?
+        .to_string_lossy();
+    for _ in 0..64 {
+        let sequence = CHECKPOINT_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temporary_path = parent.join(format!(
+            ".{file_name}.bridgevm-{}-{sequence}.tmp",
+            std::process::id()
+        ));
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary_path)
+        {
+            Ok(file) => return Ok((temporary_path, file)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "could not allocate a unique checkpoint temporary file",
+    ))
+}
+
+fn sync_directory(path: &Path) -> io::Result<()> {
+    File::open(path)?.sync_all()
 }
 
 impl VcpuRegisterBundle {
@@ -457,11 +497,7 @@ impl VcpuRegisterBundle {
             let mut value = HvSimdValue { bytes: [0u8; 16] };
             hv(
                 unsafe {
-                    hv_vcpu_get_simd_fp_reg(
-                        vcpu,
-                        HV_SIMD_FP_REG_Q0 + index as u32,
-                        &mut value,
-                    )
+                    hv_vcpu_get_simd_fp_reg(vcpu, HV_SIMD_FP_REG_Q0 + index as u32, &mut value)
                 },
                 "hv_vcpu_get_simd_fp_reg",
             )?;
@@ -528,11 +564,7 @@ impl VcpuRegisterBundle {
             let value = HvSimdValue { bytes: *bytes };
             hv(
                 unsafe {
-                    hv_vcpu_set_simd_fp_reg_by_value(
-                        vcpu,
-                        HV_SIMD_FP_REG_Q0 + index as u32,
-                        &value,
-                    )
+                    hv_vcpu_set_simd_fp_reg_by_value(vcpu, HV_SIMD_FP_REG_Q0 + index as u32, &value)
                 },
                 "hv_vcpu_set_simd_fp_reg",
             )?;
@@ -563,7 +595,7 @@ pub fn request_vcpu_exit(vcpus: &[HvVcpu]) -> io::Result<()> {
     let count = u32::try_from(vcpus.len())
         .map_err(|_| invalid("vCPU count does not fit Hypervisor API"))?;
     hv(
-        unsafe { hv_vcpus_exit(vcpus.as_ptr(), count) },
+        unsafe { hv_vcpus_exit(vcpus.as_ptr().cast_mut(), count) },
         "hv_vcpus_exit",
     )
 }
@@ -870,8 +902,8 @@ impl<'a> Cursor<'a> {
     }
 
     fn blob(&mut self) -> io::Result<Vec<u8>> {
-        let len = usize::try_from(self.u64()?)
-            .map_err(|_| invalid("blob length does not fit usize"))?;
+        let len =
+            usize::try_from(self.u64()?).map_err(|_| invalid("blob length does not fit usize"))?;
         Ok(self.take(len)?.to_vec())
     }
 
@@ -911,9 +943,73 @@ fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.into())
 }
 
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 fn unsupported() -> io::Error {
     io::Error::new(
         io::ErrorKind::Unsupported,
         "HVF checkpointing requires macOS on arm64",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_checkpoint(device_state: Vec<u8>) -> VmCheckpoint {
+        VmCheckpoint {
+            ram_len: SPARSE_RAM_CHUNK_SIZE as u64,
+            ram_chunks: vec![SparseRamChunk {
+                offset: 0,
+                bytes: vec![1, 2, 3, 4],
+            }],
+            vcpus: vec![VcpuRegisterBundle {
+                x: [0; 31],
+                pc: 0x4000_1000,
+                fpcr: 0,
+                fpsr: 0,
+                cpsr: 0x3c5,
+                sys_regs: vec![(0xc080, 1)],
+                simd: [[0; 16]; 32],
+                gic_icc_regs: vec![(0xc230, 1)],
+                vtimer_offset: 7,
+                vtimer_masked: true,
+            }],
+            gic_state: vec![5, 6, 7],
+            device_state,
+        }
+    }
+
+    fn test_directory(label: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "bridgevm-checkpoint-{label}-{}-{unique}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn durable_write_replaces_checkpoint_without_leaving_temporary_files() {
+        let directory = test_directory("atomic-replace");
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("suspend.bin");
+
+        test_checkpoint(vec![1]).write_to_path(&path).unwrap();
+        test_checkpoint(vec![9, 8, 7]).write_to_path(&path).unwrap();
+
+        let restored = VmCheckpoint::read_from_path(&path).unwrap();
+        assert_eq!(restored.device_state, vec![9, 8, 7]);
+        assert_eq!(restored.ram_len, SPARSE_RAM_CHUNK_SIZE as u64);
+        assert_eq!(restored.vcpus[0].pc, 0x4000_1000);
+        assert!(fs::read_dir(&directory).unwrap().all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .ends_with(".tmp")));
+
+        fs::remove_dir_all(directory).unwrap();
+    }
 }

@@ -28,7 +28,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::acpi::{build_acpi, ACPI_LOADER_FILE, ACPI_RSDP_FILE, ACPI_TABLE_FILE};
+use crate::acpi::{
+    build_acpi_with_devices, AcpiDeviceConfig, ACPI_LOADER_FILE, ACPI_RSDP_FILE, ACPI_TABLE_FILE,
+    ACPI_TPM_LOG_FILE,
+};
 use crate::dtb::{build_virt_fdt_with_devices, VirtFdtConfig, VirtFdtDeviceConfig};
 use crate::fwcfg::{
     FwCfg, GuestMemoryMut, KEY_CMDLINE_DATA, KEY_CMDLINE_SIZE, KEY_INITRD_DATA, KEY_INITRD_SIZE,
@@ -51,6 +54,8 @@ use crate::pl011::Pl011;
 use crate::pl031::Pl031;
 use crate::ramfb::{Ramfb, RamfbConfig, RAMFB_CONFIG_SIZE, RAMFB_FW_CFG_FILE};
 use crate::smbios::{build_smbios, SMBIOS_ANCHOR_FILE, SMBIOS_TABLE_FILE};
+use crate::tpm_ppi::{TpmPpi, TpmPpiStats};
+use crate::tpm_tis::{Tpm2Backend, TpmTis, TpmTisStats};
 use crate::virtio_blk::{
     VirtioBlockRequestTrace, VirtioMmioBlock, VirtioMmioBlockResult, VirtioMmioBlockStats,
     VirtioPciBlock, VirtioPciBlockOp, INSTALLER_ISO_SLOT,
@@ -84,11 +89,32 @@ fn make_virtio_gpu() -> VirtioPciGpu {
     if env_flag("BRIDGEVM_VIRTIO_GPU_3D") {
         #[cfg(feature = "venus")]
         {
-            match crate::venus_backend::VenusBackend::new() {
-                Ok(backend) => {
+            let direct = env_flag("BRIDGEVM_VIRTIO_GPU_DIRECT_RENDERER");
+            let backend = if direct {
+                crate::venus_backend::VenusBackend::new().map(|backend| {
                     let protocol = backend.protocol();
-                    eprintln!("virtio-gpu: {} 3D backend enabled", protocol.label());
-                    let mut gpu = VirtioPciGpu::with_3d_backend(width, height, Box::new(backend));
+                    (
+                        protocol,
+                        Box::new(backend) as Box<dyn crate::virtio_gpu_3d::VirtioGpu3dBackend>,
+                    )
+                })
+            } else {
+                crate::venus_backend::ThreadedVenusBackend::new().map(|backend| {
+                    let protocol = backend.protocol();
+                    (
+                        protocol,
+                        Box::new(backend) as Box<dyn crate::virtio_gpu_3d::VirtioGpu3dBackend>,
+                    )
+                })
+            };
+            match backend {
+                Ok((protocol, backend)) => {
+                    eprintln!(
+                        "virtio-gpu: {} 3D backend enabled mode={}",
+                        protocol.label(),
+                        if direct { "direct-rebind" } else { "threaded" }
+                    );
+                    let mut gpu = VirtioPciGpu::with_3d_backend(width, height, backend);
                     let interval = virtio_gpu_3d_scanout_readback_interval_from_value(
                         std::env::var("BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS")
                             .ok()
@@ -206,6 +232,7 @@ pub struct VirtPlatformDeviceConfig {
     pub virtio_net_backend: VirtioNetBackendKind,
     pub legacy_virtio_mmio_present: bool,
     pub ramfb_present: bool,
+    pub tpm_tis_present: bool,
 }
 
 impl Default for VirtPlatformDeviceConfig {
@@ -221,6 +248,7 @@ impl Default for VirtPlatformDeviceConfig {
             virtio_net_backend: VirtioNetBackendKind::Nat,
             legacy_virtio_mmio_present: true,
             ramfb_present: false,
+            tpm_tis_present: false,
         }
     }
 }
@@ -444,6 +472,8 @@ pub struct VirtPlatform {
     virtio_net: Option<VirtioPciNet<PlatformNetBackend>>,
     virtio_gpu: Option<VirtioPciGpu>,
     virtio_console: Option<VirtioPciConsole>,
+    tpm_tis: Option<TpmTis>,
+    tpm_ppi: Option<TpmPpi>,
     ramfb: Ramfb,
     flash_vars: P30NorFlash,
     pending_msix: Vec<MsixMessage>,
@@ -489,10 +519,26 @@ impl VirtPlatform {
     }
 
     pub fn new_with_config(config: VirtPlatformConfig) -> Self {
+        Self::new_with_config_and_tpm_backend(config, None)
+    }
+
+    /// Build a platform with an optional TPM command backend. Presence is
+    /// explicit in `config.devices.tpm_tis_present`; requiring it to match the
+    /// backend prevents ACPI from advertising a device that cannot execute.
+    pub fn new_with_config_and_tpm_backend(
+        config: VirtPlatformConfig,
+        tpm_backend: Option<Box<dyn Tpm2Backend>>,
+    ) -> Self {
+        assert_eq!(
+            config.devices.tpm_tis_present,
+            tpm_backend.is_some(),
+            "TPM ACPI/MMIO presence must match a concrete TPM backend"
+        );
         let dtb = build_virt_fdt_with_devices(
             &config.fdt,
             VirtFdtDeviceConfig {
                 legacy_virtio_mmio_present: config.devices.legacy_virtio_mmio_present,
+                tpm_tis_present: config.devices.tpm_tis_present,
             },
         );
         let mut fw_cfg = FwCfg::new();
@@ -506,10 +552,18 @@ impl VirtPlatform {
         if config.devices.ramfb_present {
             fw_cfg.add_writable_file(RAMFB_FW_CFG_FILE, vec![0u8; RAMFB_CONFIG_SIZE]);
         }
-        let acpi = build_acpi(config.fdt.cpu_count);
+        let acpi = build_acpi_with_devices(
+            config.fdt.cpu_count,
+            AcpiDeviceConfig {
+                tpm_tis_present: config.devices.tpm_tis_present,
+            },
+        );
         fw_cfg.add_file(ACPI_RSDP_FILE, acpi.rsdp);
         fw_cfg.add_file(ACPI_TABLE_FILE, acpi.tables);
         fw_cfg.add_file(ACPI_LOADER_FILE, acpi.loader);
+        if let Some(tpm_log) = acpi.tpm_log {
+            fw_cfg.add_file(ACPI_TPM_LOG_FILE, tpm_log);
+        }
         let smbios = build_smbios(config.fdt.cpu_count, config.fdt.ram_size);
         fw_cfg.add_file(SMBIOS_ANCHOR_FILE, smbios.anchor);
         fw_cfg.add_file(SMBIOS_TABLE_FILE, smbios.tables);
@@ -544,6 +598,8 @@ impl VirtPlatform {
                 .devices
                 .virtio_console_present
                 .then(VirtioPciConsole::new),
+            tpm_tis: tpm_backend.map(TpmTis::new),
+            tpm_ppi: config.devices.tpm_tis_present.then(TpmPpi::new),
             ramfb: Ramfb::new(),
             flash_vars: P30NorFlash::new(
                 machine::FLASH_VARS.base,
@@ -642,6 +698,12 @@ impl VirtPlatform {
         if let Some(dev) = self.virtio_console.as_mut() {
             dev.reset_runtime_state();
         }
+        if let Some(tpm) = self.tpm_tis.as_mut() {
+            tpm.reset().expect("TPM backend reset failed");
+        }
+        if let Some(ppi) = self.tpm_ppi.as_mut() {
+            ppi.reset_runtime_state();
+        }
         self.pending_msix.clear();
         self.pending_spi_levels.clear();
         if virtio_iso_irq_was_high && self.devices.legacy_virtio_mmio_present {
@@ -669,6 +731,20 @@ impl VirtPlatform {
     /// accepted through the NOR command protocol.
     pub fn flash_vars_image(&self) -> &[u8] {
         self.flash_vars.image()
+    }
+
+    pub fn tpm_tis_stats(&self) -> Option<TpmTisStats> {
+        self.tpm_tis.as_ref().map(TpmTis::stats)
+    }
+
+    pub fn tpm_ppi_stats(&self) -> Option<TpmPpiStats> {
+        self.tpm_ppi.as_ref().map(TpmPpi::stats)
+    }
+
+    pub fn tpm_memory_overwrite_requested(&self) -> bool {
+        self.tpm_ppi
+            .as_ref()
+            .is_some_and(TpmPpi::memory_overwrite_requested)
     }
 
     /// Replace the first NVMe disk image. The image is padded to full 512-byte
@@ -770,9 +846,7 @@ impl VirtPlatform {
     /// Wake signal for the host vblank waker thread; `Some` only when
     /// `BRIDGEVM_VBLANK_HZ` pacing is active on the virtio-gpu device.
     pub fn virtio_gpu_vblank_wake(&self) -> Option<Arc<VblankWakeState>> {
-        self.virtio_gpu
-            .as_ref()
-            .and_then(VirtioPciGpu::vblank_wake)
+        self.virtio_gpu.as_ref().and_then(VirtioPciGpu::vblank_wake)
     }
 
     /// Request a guest scanout resize. Returns true when the geometry changed
@@ -787,7 +861,9 @@ impl VirtPlatform {
 
     /// Current virtio-gpu scanout geometry, if the device is present.
     pub fn virtio_gpu_resolution(&self) -> Option<(u32, u32)> {
-        self.virtio_gpu.as_ref().map(VirtioPciGpu::display_resolution)
+        self.virtio_gpu
+            .as_ref()
+            .map(VirtioPciGpu::display_resolution)
     }
 
     pub fn set_virtio_gpu_shm_map_port(&mut self, port: Box<dyn GpuShmMapPort>) -> bool {
@@ -1266,6 +1342,36 @@ impl VirtPlatform {
             "pcie-mmio-64" => self.pcie_mmio_access("pcie-mmio-64", pcie_mmio_target, op, mem),
             "pcie-pio" => self.pcie_pio_access(gpa, op, mem),
             "virtio-mmio" => self.virtio_mmio_access(gpa - machine::VIRTIO_MMIO.base, op, mem),
+            "tpm-tis" if self.devices.tpm_tis_present => {
+                let tpm = self
+                    .tpm_tis
+                    .as_mut()
+                    .expect("TPM presence requires a backend");
+                let offset = gpa - machine::TPM_TIS.base;
+                match op {
+                    MmioOp::Read { size } => MmioOutcome::ReadValue(tpm.mmio_read(offset, size)),
+                    MmioOp::Write { size, value } => {
+                        tpm.mmio_write(offset, size, value);
+                        MmioOutcome::WriteAck
+                    }
+                }
+            }
+            "tpm-tis" => MmioOutcome::Unmapped,
+            "tpm-ppi" if self.devices.tpm_tis_present => {
+                let ppi = self
+                    .tpm_ppi
+                    .as_mut()
+                    .expect("TPM presence requires a PPI mailbox");
+                let offset = gpa - machine::TPM_PPI.base;
+                match op {
+                    MmioOp::Read { size } => MmioOutcome::ReadValue(ppi.mmio_read(offset, size)),
+                    MmioOp::Write { size, value } => {
+                        ppi.mmio_write(offset, size, value);
+                        MmioOutcome::WriteAck
+                    }
+                }
+            }
+            "tpm-ppi" => MmioOutcome::Unmapped,
             "flash-vars" => self.flash_vars.access(gpa, op),
             // Modelled in the machine map but no device behaviour yet — surfaced
             // precisely so bring-up traces show the next thing to implement.
@@ -1875,162 +1981,161 @@ impl VirtPlatform {
         }
     }
 
-pub fn snapshot_state(&self) -> Vec<u8> {
-    let mut out = crate::checkpoint::StateWriter::new();
-    out.write_u32(1);
+    pub fn snapshot_state(&self) -> Vec<u8> {
+        let mut out = crate::checkpoint::StateWriter::new();
+        out.write_u32(1);
 
-    out.write_blob(&self.pcie.snapshot_state());
-    out.write_blob(&self.nvme.snapshot_state());
-    out.write_blob(&self.flash_vars.snapshot_state());
+        out.write_blob(&self.pcie.snapshot_state());
+        out.write_blob(&self.nvme.snapshot_state());
+        out.write_blob(&self.flash_vars.snapshot_state());
 
-    out.write_bool(self.virtio_iso.is_some());
-    if let Some(device) = &self.virtio_iso {
-        out.write_blob(&device.snapshot_state());
+        out.write_bool(self.virtio_iso.is_some());
+        if let Some(device) = &self.virtio_iso {
+            out.write_blob(&device.snapshot_state());
+        }
+
+        out.write_bool(self.pci_boot_media.is_some());
+        if let Some(device) = &self.pci_boot_media {
+            out.write_blob(&device.snapshot_state());
+        }
+
+        out.write_bool(self.virtio_net.is_some());
+        if let Some(device) = &self.virtio_net {
+            out.write_blob(&device.snapshot_state());
+        }
+
+        out.write_bool(self.virtio_gpu.is_some());
+        if let Some(device) = &self.virtio_gpu {
+            out.write_blob(&device.snapshot_state());
+        }
+
+        out.write_bool(self.virtio_console.is_some());
+        if let Some(device) = &self.virtio_console {
+            out.write_blob(&device.snapshot_state());
+        }
+
+        out.write_u32(self.pending_msix.len() as u32);
+        for message in &self.pending_msix {
+            out.write_u16(message.vector);
+            out.write_u16(0);
+            out.write_u32(message.data);
+            out.write_u64(message.address);
+        }
+
+        out.write_u32(self.pending_spi_levels.len() as u32);
+        for &(intid, level) in &self.pending_spi_levels {
+            out.write_u32(intid);
+            out.write_bool(level);
+            out.write_u8(0);
+            out.write_u16(0);
+        }
+
+        out.write_bool(self.nvme_ecam_touched);
+        out.write_bool(self.nvme_mmio_reached);
+        out.write_bool(self.nvme_cc_enabled);
+        out.write_bool(self.nvme_admin_doorbell_rung);
+        out.into_inner()
     }
 
-    out.write_bool(self.pci_boot_media.is_some());
-    if let Some(device) = &self.pci_boot_media {
-        out.write_blob(&device.snapshot_state());
+    pub fn restore_state(&mut self, data: &[u8]) {
+        let mut input = crate::checkpoint::StateReader::new(data);
+        assert_eq!(
+            input.read_u32(),
+            1,
+            "unsupported VirtPlatform snapshot version"
+        );
+
+        self.pcie.restore_state(&input.read_blob());
+        self.nvme.restore_state(&input.read_blob());
+        self.flash_vars.restore_state(&input.read_blob());
+
+        let has_virtio_iso = input.read_bool();
+        assert_eq!(
+            has_virtio_iso,
+            self.virtio_iso.is_some(),
+            "legacy virtio ISO attachment mismatch on restore"
+        );
+        if let Some(device) = self.virtio_iso.as_mut() {
+            device.restore_state(&input.read_blob());
+        }
+
+        let has_pci_boot_media = input.read_bool();
+        assert_eq!(
+            has_pci_boot_media,
+            self.pci_boot_media.is_some(),
+            "PCI boot-media attachment mismatch on restore"
+        );
+        if let Some(device) = self.pci_boot_media.as_mut() {
+            device.restore_state(&input.read_blob());
+        }
+
+        let has_net = input.read_bool();
+        assert_eq!(
+            has_net,
+            self.virtio_net.is_some(),
+            "virtio-net presence mismatch on restore"
+        );
+        if let Some(device) = self.virtio_net.as_mut() {
+            device.restore_state(&input.read_blob());
+        }
+
+        let has_gpu = input.read_bool();
+        assert_eq!(
+            has_gpu,
+            self.virtio_gpu.is_some(),
+            "virtio-gpu presence mismatch on restore"
+        );
+        if let Some(device) = self.virtio_gpu.as_mut() {
+            device.restore_state(&input.read_blob());
+        }
+
+        let has_console = input.read_bool();
+        assert_eq!(
+            has_console,
+            self.virtio_console.is_some(),
+            "virtio-console presence mismatch on restore"
+        );
+        if let Some(device) = self.virtio_console.as_mut() {
+            device.restore_state(&input.read_blob());
+        }
+
+        self.pending_msix.clear();
+        let pending_msix = input.read_u32() as usize;
+        self.pending_msix.reserve(pending_msix);
+        for _ in 0..pending_msix {
+            let vector = input.read_u16();
+            assert_eq!(input.read_u16(), 0, "invalid pending MSI-X snapshot");
+            let data = input.read_u32();
+            let address = input.read_u64();
+            self.pending_msix.push(MsixMessage {
+                vector,
+                address,
+                data,
+            });
+        }
+
+        self.pending_spi_levels.clear();
+        let pending_spis = input.read_u32() as usize;
+        self.pending_spi_levels.reserve(pending_spis);
+        for _ in 0..pending_spis {
+            let intid = input.read_u32();
+            let level = input.read_bool();
+            assert_eq!(input.read_u8(), 0, "invalid pending SPI snapshot");
+            assert_eq!(input.read_u16(), 0, "invalid pending SPI snapshot");
+            self.pending_spi_levels.push((intid, level));
+        }
+
+        self.nvme_ecam_touched = input.read_bool();
+        self.nvme_mmio_reached = input.read_bool();
+        self.nvme_cc_enabled = input.read_bool();
+        self.nvme_admin_doorbell_rung = input.read_bool();
+
+        self.nvme_completion_scratch.clear();
+        self.host_now = None;
+        self.xhci_dci3_last_emission = None;
+        self.xhci_dci5_last_emission = None;
+        input.finish();
     }
-
-    out.write_bool(self.virtio_net.is_some());
-    if let Some(device) = &self.virtio_net {
-        out.write_blob(&device.snapshot_state());
-    }
-
-    out.write_bool(self.virtio_gpu.is_some());
-    if let Some(device) = &self.virtio_gpu {
-        out.write_blob(&device.snapshot_state());
-    }
-
-    out.write_bool(self.virtio_console.is_some());
-    if let Some(device) = &self.virtio_console {
-        out.write_blob(&device.snapshot_state());
-    }
-
-    out.write_u32(self.pending_msix.len() as u32);
-    for message in &self.pending_msix {
-        out.write_u16(message.vector);
-        out.write_u16(0);
-        out.write_u32(message.data);
-        out.write_u64(message.address);
-    }
-
-    out.write_u32(self.pending_spi_levels.len() as u32);
-    for &(intid, level) in &self.pending_spi_levels {
-        out.write_u32(intid);
-        out.write_bool(level);
-        out.write_u8(0);
-        out.write_u16(0);
-    }
-
-    out.write_bool(self.nvme_ecam_touched);
-    out.write_bool(self.nvme_mmio_reached);
-    out.write_bool(self.nvme_cc_enabled);
-    out.write_bool(self.nvme_admin_doorbell_rung);
-    out.into_inner()
-}
-
-pub fn restore_state(&mut self, data: &[u8]) {
-    let mut input = crate::checkpoint::StateReader::new(data);
-    assert_eq!(
-        input.read_u32(),
-        1,
-        "unsupported VirtPlatform snapshot version"
-    );
-
-    self.pcie.restore_state(&input.read_blob());
-    self.nvme.restore_state(&input.read_blob());
-    self.flash_vars.restore_state(&input.read_blob());
-
-    let has_virtio_iso = input.read_bool();
-    assert_eq!(
-        has_virtio_iso,
-        self.virtio_iso.is_some(),
-        "legacy virtio ISO attachment mismatch on restore"
-    );
-    if let Some(device) = self.virtio_iso.as_mut() {
-        device.restore_state(&input.read_blob());
-    }
-
-    let has_pci_boot_media = input.read_bool();
-    assert_eq!(
-        has_pci_boot_media,
-        self.pci_boot_media.is_some(),
-        "PCI boot-media attachment mismatch on restore"
-    );
-    if let Some(device) = self.pci_boot_media.as_mut() {
-        device.restore_state(&input.read_blob());
-    }
-
-    let has_net = input.read_bool();
-    assert_eq!(
-        has_net,
-        self.virtio_net.is_some(),
-        "virtio-net presence mismatch on restore"
-    );
-    if let Some(device) = self.virtio_net.as_mut() {
-        device.restore_state(&input.read_blob());
-    }
-
-    let has_gpu = input.read_bool();
-    assert_eq!(
-        has_gpu,
-        self.virtio_gpu.is_some(),
-        "virtio-gpu presence mismatch on restore"
-    );
-    if let Some(device) = self.virtio_gpu.as_mut() {
-        device.restore_state(&input.read_blob());
-    }
-
-    let has_console = input.read_bool();
-    assert_eq!(
-        has_console,
-        self.virtio_console.is_some(),
-        "virtio-console presence mismatch on restore"
-    );
-    if let Some(device) = self.virtio_console.as_mut() {
-        device.restore_state(&input.read_blob());
-    }
-
-    self.pending_msix.clear();
-    let pending_msix = input.read_u32() as usize;
-    self.pending_msix.reserve(pending_msix);
-    for _ in 0..pending_msix {
-        let vector = input.read_u16();
-        assert_eq!(input.read_u16(), 0, "invalid pending MSI-X snapshot");
-        let data = input.read_u32();
-        let address = input.read_u64();
-        self.pending_msix.push(MsixMessage {
-            vector,
-            address,
-            data,
-        });
-    }
-
-    self.pending_spi_levels.clear();
-    let pending_spis = input.read_u32() as usize;
-    self.pending_spi_levels.reserve(pending_spis);
-    for _ in 0..pending_spis {
-        let intid = input.read_u32();
-        let level = input.read_bool();
-        assert_eq!(input.read_u8(), 0, "invalid pending SPI snapshot");
-        assert_eq!(input.read_u16(), 0, "invalid pending SPI snapshot");
-        self.pending_spi_levels.push((intid, level));
-    }
-
-    self.nvme_ecam_touched = input.read_bool();
-    self.nvme_mmio_reached = input.read_bool();
-    self.nvme_cc_enabled = input.read_bool();
-    self.nvme_admin_doorbell_rung = input.read_bool();
-
-    self.nvme_completion_scratch.clear();
-    self.host_now = None;
-    self.xhci_dci3_last_emission = None;
-    self.xhci_dci5_last_emission = None;
-    input.finish();
-}
-
 }
 
 /// A flat span of guest RAM implementing [`GuestMemoryMut`]. In live use the run
@@ -2156,6 +2261,75 @@ mod tests {
             fdt: VirtFdtConfig::default(),
             devices,
         })
+    }
+
+    #[derive(Debug)]
+    struct TestTpmBackend;
+
+    impl crate::tpm_tis::Tpm2Backend for TestTpmBackend {
+        fn execute(
+            &mut self,
+            _locality: u8,
+            _command: &[u8],
+        ) -> Result<Vec<u8>, crate::tpm_tis::TpmBackendError> {
+            Ok(vec![0x80, 0x01, 0, 0, 0, 10, 0, 0, 0, 0])
+        }
+    }
+
+    #[test]
+    fn tpm_presence_wires_mmio_and_acpi_as_one_contract() {
+        let mut devices = VirtPlatformDeviceConfig::default();
+        devices.tpm_tis_present = true;
+        let mut p = VirtPlatform::new_with_config_and_tpm_backend(
+            VirtPlatformConfig {
+                fdt: VirtFdtConfig::default(),
+                devices,
+            },
+            Some(Box::new(TestTpmBackend)),
+        );
+        let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0);
+
+        assert_eq!(
+            p.on_mmio(
+                machine::TPM_TIS.base + crate::tpm_tis::REG_DID_VID,
+                MmioOp::Read { size: 4 },
+                &mut mem,
+            ),
+            MmioOutcome::ReadValue(0x0001_1014)
+        );
+        assert_eq!(p.tpm_tis_stats(), Some(TpmTisStats::default()));
+
+        let (selector, size) = fw_cfg_file_entry(&mut p, ACPI_TABLE_FILE.as_bytes());
+        p.fw_cfg.select(selector);
+        let acpi_tables = p.fw_cfg.read_data(size);
+        assert!(acpi_tables.windows(4).any(|bytes| bytes == b"TPM0"));
+        assert!(acpi_tables.windows(8).any(|bytes| bytes == b"MSFT0101"));
+        let (_, tpm_log_size) = fw_cfg_file_entry(&mut p, ACPI_TPM_LOG_FILE.as_bytes());
+        assert_eq!(tpm_log_size, crate::acpi::TPM_LOG_AREA_MINIMUM_SIZE);
+        assert_eq!(
+            p.on_mmio(
+                machine::TPM_PPI.base + crate::tpm_ppi::PPRQ_OFFSET as u64,
+                MmioOp::Write { size: 4, value: 23 },
+                &mut mem,
+            ),
+            MmioOutcome::WriteAck
+        );
+        assert_eq!(
+            p.on_mmio(
+                machine::TPM_PPI.base + crate::tpm_ppi::PPRQ_OFFSET as u64,
+                MmioOp::Read { size: 4 },
+                &mut mem,
+            ),
+            MmioOutcome::ReadValue(23)
+        );
+        assert_eq!(
+            p.tpm_ppi_stats(),
+            Some(TpmPpiStats {
+                reads: 1,
+                writes: 1,
+                rejected_accesses: 0,
+            })
+        );
     }
 
     fn pcie_cfg_gpa(device: u8, function: u8, reg: u16) -> u64 {
@@ -4614,10 +4788,7 @@ mod tests {
 
     #[test]
     fn host_vblank_pacing_is_opt_in_with_a_120_hz_configured_default() {
-        assert_eq!(
-            virtio_gpu_vblank_interval_from_value(None),
-            Duration::ZERO
-        );
+        assert_eq!(virtio_gpu_vblank_interval_from_value(None), Duration::ZERO);
         assert_eq!(
             virtio_gpu_vblank_interval_from_value(Some("0")),
             Duration::ZERO
@@ -4655,13 +4826,20 @@ mod tests {
         let cfg = |reg| pcie_cfg_gpa(crate::pcie::HDA_BDF.1, crate::pcie::HDA_BDF.2, reg);
 
         assert_eq!(
-            p.on_mmio(cfg(crate::pcie::REG_VENDOR_DEVICE), MmioOp::Read { size: 4 }, &mut mem),
+            p.on_mmio(
+                cfg(crate::pcie::REG_VENDOR_DEVICE),
+                MmioOp::Read { size: 4 },
+                &mut mem
+            ),
             MmioOutcome::ReadValue(0x2668_8086)
         );
         assert_eq!(
             p.on_mmio(
                 cfg(crate::pcie::REG_BAR0),
-                MmioOp::Write { size: 4, value: bar },
+                MmioOp::Write {
+                    size: 4,
+                    value: bar
+                },
                 &mut mem,
             ),
             MmioOutcome::WriteAck
@@ -4678,7 +4856,11 @@ mod tests {
             MmioOutcome::WriteAck
         );
         assert_eq!(
-            p.on_mmio(bar + crate::hda::REG_GCAP, MmioOp::Read { size: 2 }, &mut mem),
+            p.on_mmio(
+                bar + crate::hda::REG_GCAP,
+                MmioOp::Read { size: 2 },
+                &mut mem
+            ),
             MmioOutcome::ReadValue(0x1001)
         );
         assert_eq!(
@@ -4690,7 +4872,11 @@ mod tests {
             MmioOutcome::WriteAck
         );
         assert_eq!(
-            p.on_mmio(bar + crate::hda::REG_STATESTS, MmioOp::Read { size: 2 }, &mut mem),
+            p.on_mmio(
+                bar + crate::hda::REG_STATESTS,
+                MmioOp::Read { size: 2 },
+                &mut mem
+            ),
             MmioOutcome::ReadValue(1)
         );
     }
@@ -4788,12 +4974,7 @@ mod tests {
         let hda = p.hda.as_mut().expect("opt-in HDA controller");
         hda.mmio_write(crate::hda::REG_GCTL, 4, 1, &mut mem);
         hda.mmio_write(crate::hda::REG_SD_BDPL, 4, bdl, &mut mem);
-        hda.mmio_write(
-            crate::hda::REG_SD_CBL,
-            4,
-            pcm_bytes.len() as u64,
-            &mut mem,
-        );
+        hda.mmio_write(crate::hda::REG_SD_CBL, 4, pcm_bytes.len() as u64, &mut mem);
         hda.mmio_write(crate::hda::REG_SD_LVI, 2, 0, &mut mem);
         hda.mmio_write(crate::hda::REG_SD_FMT, 2, 0x0011, &mut mem);
         hda.mmio_write(

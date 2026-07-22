@@ -73,6 +73,7 @@ output="$(
     --require-gpu-trace-gate \
     --viogpu3d-dir "$VIOGPU3D" \
     --require-viogpu3d-readiness \
+    --require-real-title-gate \
     --print-policy 2>&1
 )" || fail "installed boot P3 GPU policy failed: $output"
 
@@ -86,6 +87,9 @@ assert_contains "$output" "BRIDGEVM_GPU_TRACE_PROTOCOL=venus" "installed boot po
 assert_contains "$output" "BRIDGEVM_REQUIRE_GPU_TRACE_GATE=1" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_VIOGPU3D_DIR=$VIOGPU3D" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_REQUIRE_VIOGPU3D_READINESS=1" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_REQUIRE_REAL_TITLE_GATE=1" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_TITLE_MANIFESTS=$ROOT/scripts/win-assets/bv-ppsspp-title.json" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_REQUIRE_TITLE_GATES=1" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_RAM_MIB=4096" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=900000" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED=<unset>" "installed boot policy"
@@ -1018,6 +1022,29 @@ id_without_gpu_output="$(
 )" && fail "installed boot unexpectedly accepted GPU PCI ID without --virtio-gpu-3d: $id_without_gpu_output"
 
 assert_contains "$id_without_gpu_output" "--virtio-gpu-device-id requires --virtio-gpu-3d" "GPU PCI ID without GPU policy"
+
+title_without_gpu_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --title-manifest scripts/win-assets/bv-ppsspp-title.json \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted a title manifest without --virtio-gpu-3d: $title_without_gpu_output"
+
+assert_contains "$title_without_gpu_output" "--title-manifest requires --virtio-gpu-3d" "title manifest without GPU policy"
+
+required_without_manifest_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --virtio-gpu-3d \
+    --require-title-gates \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted required title gates without a manifest: $required_without_manifest_output"
+
+assert_contains "$required_without_manifest_output" "--require-title-gates requires at least one --title-manifest" "required title gates without manifest"
 
 virgl_output="$(
   scripts/run-hvf-windows-installed-boot.sh \

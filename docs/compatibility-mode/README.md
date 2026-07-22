@@ -1,5 +1,8 @@
 # Compatibility Mode
 
+Document status: **Current engine guide**
+Last reviewed: **2026-07-22**
+
 Compatibility Mode is the broad QEMU-backed engine path.
 
 It is for legacy operating systems, x86 emulation, research OSes, custom kernels, manual hardware settings, serial consoles, and advanced debugging.

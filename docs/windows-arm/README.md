@@ -1,5 +1,17 @@
 # Windows 11 Arm Direction
 
+Document status: **Current engine guide with preserved history**
+Last reviewed: **2026-07-22**
+
+The BridgeVM-owned HVF engine now boots an installed Windows 11 ARM64 desktop
+without QEMU, including SMP, persistent NVMe, display/input, networking, audio,
+resident guest-agent control, restart, and experimental 3D. The remaining
+release gates are vTPM/Secure Boot lifecycle, a fresh signed ARM64 driver, live
+same-boot product receipts, and distribution signing/notarization. Use
+[STATUS.md](../../STATUS.md) for the concise state and the
+[Windows completion plan](../hvf-windows-install-completion-plan.md) for the
+authoritative sequence.
+
 BridgeVM's Windows 11 Arm goal is a non-QEMU, Mac-lightweight path that can
 eventually feel closer to Parallels than to a generic QEMU frontend.
 
@@ -14,7 +26,7 @@ This creates three separate engine tracks:
 QEMU remains supported for compatibility. It is not the final Windows 11 Arm
 performance architecture.
 
-## Current Proven Boundary (2026-07-12)
+## Preserved live-evidence boundary (2026-07-12)
 
 The BridgeVM-owned HVF engine is no longer only a firmware research scaffold.
 On preserved, cloned media it has booted an already-installed Windows 11 ARM64
@@ -28,6 +40,10 @@ writes, 18 flushes, and final disk/vars writeback. See the
 The shipped macOS bundle now contains an isolated `BridgeVMControl.app`, the
 installed-Windows wrappers, and a release probe signed with
 `com.apple.security.hypervisor`; Settings exposes it as **Windows HVF Lab**.
+The current lab bundle does not yet carry a signed swtpm/libtpms runtime; the
+encrypted vTPM product configuration therefore requires a host-provided swtpm
+and fails launch closed when it is absent. Runtime bundling remains a release
+gate, not an implicit fallback to a TPM-less VM.
 The lab imports an installed RAW disk and its matching writable UEFI vars by
 clone/copy, leaving the selected source files unchanged. Imported disks smaller
 than 64 GiB are extended sparsely, then C: is grown through the resident agent

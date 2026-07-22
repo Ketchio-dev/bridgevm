@@ -450,10 +450,9 @@ fn union_rect(a: Rect, b: Rect) -> Rect {
     let x = a.x.min(b.x);
     let y = a.y.min(b.y);
     let right = a.x.saturating_add(a.width).max(b.x.saturating_add(b.width));
-    let bottom = a
-        .y
-        .saturating_add(a.height)
-        .max(b.y.saturating_add(b.height));
+    let bottom =
+        a.y.saturating_add(a.height)
+            .max(b.y.saturating_add(b.height));
     Rect {
         x,
         y,
@@ -628,9 +627,7 @@ impl VirtioGpu {
         };
         let duration_ns = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
         self.scanout_blit_count = self.scanout_blit_count.saturating_add(1);
-        self.scanout_blit_nanoseconds = self
-            .scanout_blit_nanoseconds
-            .saturating_add(duration_ns);
+        self.scanout_blit_nanoseconds = self.scanout_blit_nanoseconds.saturating_add(duration_ns);
         if self.scanout_iosurface_id != Some(surface_id) {
             self.scanout_iosurface_id = Some(surface_id);
             eprintln!("virtio-gpu: scanout IOSurface global id={surface_id} ({width}x{height})");
@@ -687,8 +684,7 @@ impl VirtioGpu {
             self.pending_3d_scanout_fresh = false;
             return;
         }
-        if self.scanout_resource != Some(resource_id) || !self.three_d.is_3d_resource(resource_id)
-        {
+        if self.scanout_resource != Some(resource_id) || !self.three_d.is_3d_resource(resource_id) {
             self.pending_3d_scanout = None;
             return;
         }
@@ -728,8 +724,7 @@ impl VirtioGpu {
         if !readback_due {
             return ScanoutReadbackOutcome::NotDue;
         }
-        self.scanout_readback_attempt_count =
-            self.scanout_readback_attempt_count.saturating_add(1);
+        self.scanout_readback_attempt_count = self.scanout_readback_attempt_count.saturating_add(1);
         let started = Instant::now();
         let Some(info) = self.three_d.scanout_3d_info(resource_id) else {
             return ScanoutReadbackOutcome::Gone;
@@ -746,7 +741,10 @@ impl VirtioGpu {
             readback_height,
             &mut self.scanout_readback_scratch,
         );
-        let transfer_ns = transfer_started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+        let transfer_ns = transfer_started
+            .elapsed()
+            .as_nanos()
+            .min(u128::from(u64::MAX)) as u64;
         let composite_started = Instant::now();
         let readback_ok = transfer_ok
             && composite_host_3d_to_scanout(
@@ -758,7 +756,10 @@ impl VirtioGpu {
                 self.height,
                 rect,
             );
-        let composite_ns = composite_started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+        let composite_ns = composite_started
+            .elapsed()
+            .as_nanos()
+            .min(u128::from(u64::MAX)) as u64;
         let elapsed = started.elapsed();
         let duration_ns = elapsed.as_nanos().min(u128::from(u64::MAX)) as u64;
         self.scanout_readback_nanoseconds = self
@@ -1483,7 +1484,7 @@ impl VirtioGpu {
                 self.mark_queue_interrupt(queue_index);
             }
         }
-        self.drain_completed_fences(mem);
+        self.drain_completed_fences_after_queue(mem);
     }
 
     fn process_chain(
@@ -1509,7 +1510,10 @@ impl VirtioGpu {
         } else {
             self.handle_cursor_request_into(&request, &mut response);
         }
-        let handle_ns = handle_started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+        let handle_ns = handle_started
+            .elapsed()
+            .as_nanos()
+            .min(u128::from(u64::MAX)) as u64;
         let Some(hdr) = CtrlHdr::parse(&request) else {
             let request_len = request.len();
             let response_len = response.len();
@@ -1811,9 +1815,22 @@ impl VirtioGpu {
     }
 
     pub fn drain_completed_fences(&mut self, mem: &mut dyn GuestMemoryMut) {
+        self.drain_completed_fences_inner(mem, false);
+    }
+
+    fn drain_completed_fences_after_queue(&mut self, mem: &mut dyn GuestMemoryMut) {
+        self.drain_completed_fences_inner(mem, true);
+    }
+
+    fn drain_completed_fences_inner(&mut self, mem: &mut dyn GuestMemoryMut, after_queue: bool) {
         let mut completed = std::mem::take(&mut self.completed_fences_scratch);
         completed.clear();
-        self.three_d.drain_completed_fences_into(&mut completed);
+        if after_queue {
+            self.three_d
+                .drain_completed_fences_after_queue_into(&mut completed);
+        } else {
+            self.three_d.drain_completed_fences_into(&mut completed);
+        }
         if completed.is_empty() || self.pending_fenced.is_empty() {
             for fence in &completed {
                 self.trace_fence_complete(*fence);
@@ -6818,8 +6835,7 @@ mod tests {
         assert_eq!(dev.stats().scanout_readback_throttled, 0);
 
         // Dropping the pacing interval lets the held frame service.
-        dev.gpu
-            .set_3d_scanout_readback_interval(Duration::ZERO);
+        dev.gpu.set_3d_scanout_readback_interval(Duration::ZERO);
         dev.gpu.service_deferred_3d_scanout();
         assert_eq!(backend.lock().unwrap().scanout_reads.len(), 3);
         assert_eq!(dev.stats().deferred_scanout_serviced, 3);

@@ -2918,13 +2918,13 @@ main() {
   output+="$line"$'\n'
   line="No percentage estimate: this report distinguishes locally verified metadata from explicitly labelled preserved live evidence."
   output+="$line"$'\n'
-  line="Current wall: convert preserved live proofs into a turnkey, distributable product."
+  line="Current wall: convert preserved live proofs into a secure, turnkey, distributable product."
   output+="$line"$'\n'
-  line="Next engineering gate: finalize a signed ARM64 viogpu3d render package, then capture verifier-accepted live bind and render traces."
+  line="Next engineering gates: finish Secure Boot/measured-boot receipts and finalize a signed ARM64 viogpu3d render package, then capture verifier-accepted live evidence."
   output+="$line"$'\n'
-  line="Product decision gate: choose and document whether durable disk-backed suspend is required; process-resident pause/resume is already proven but is not durable suspend."
+  line="Product decision: durable disk-backed suspend is explicitly outside Windows HVF v1; process-resident pause/resume remains diagnostic evidence, not suspend."
   output+="$line"$'\n'
-  line="Release gate: package and notarize the app, signed helpers, drivers, fixtures, and first-run UX as one repeatable installation path."
+  line="Release gate: package and notarize the app, signed helpers, swtpm/libtpms, drivers, fixtures, and first-run UX as one repeatable installation path."
   output+="$line"$'\n'
 
   if verify_vz_proxy_crop_evidence; then
@@ -2977,10 +2977,24 @@ main() {
   line="$(status_line "PARTIAL" "Networking" "NAT and live guest package-install paths have opt-in evidence, but this report did not boot a guest or prove current internet reachability.")"
   output+="$line"$'\n'
 
-  line="$(status_line "RESEARCH" "Windows no-QEMU fast path" "The BridgeVM-owned HVF VMM has preserved live evidence for an installed Windows 11 ARM64 desktop, four vCPUs, virtio-net connectivity, the resident service channel, a 9/9 valid smp=1/2/4 performance matrix, clean SYSTEM_OFF/write-back, and a post-exit reopen chain without QEMU. A process-resident host pause/resume proof also survives a full-process stop and post-resume agent round trip, but it is not a disk-backed suspend image. Product readiness remains blocked on packaged setup, clean UX, durable suspend if required, and a distributable ARM64 Windows 3D driver.")"
+  line="$(status_line "RESEARCH" "Windows no-QEMU fast path" "The BridgeVM-owned HVF VMM has preserved live evidence for an installed Windows 11 ARM64 desktop, four vCPUs, virtio-net connectivity, the resident service channel, a 9/9 valid smp=1/2/4 performance matrix, clean SYSTEM_OFF/write-back, and a post-exit reopen chain without QEMU. A process-resident host pause/resume proof also survives a full-process stop and post-resume agent round trip, but it is not a disk-backed suspend image and durable suspend is outside v1. Product readiness remains blocked on secure packaging/UX, vTPM/Secure Boot live receipts, and a distributable ARM64 Windows 3D driver.")"
   output+="$line"$'\n'
 
-  line="$(status_line "PARTIAL" "Windows HVF VMM" "BridgeVM now owns the QEMU-free Hypervisor.framework VMM/device stack and has preserved live proof of installed Windows 11 ARM64 reaching the desktop with four logical processors, virtio-net DHCP/DNS/HTTP/ICMP connectivity, persistent NVMe writes, framebuffer/display input, a resident virtio-console service channel, a 9/9 valid round-robin performance matrix, clean shutdown/write-back, post-exit reopen, and process-resident host pause/resume. Windows powercfg reports no available guest sleep state: S1/S2/S3 are blocked by Graphics and S0 low-power idle is unsupported by firmware. This metadata-only report does not rerun mutable Windows media. The current engineering gates are turnkey packaging and UX, an honest durable-suspend decision/implementation, a finalized UMD-registered viogpu3d render candidate, and then live bind/trace proof.")"
+  line="$(status_line "PARTIAL" "Windows HVF VMM" "BridgeVM now owns the QEMU-free Hypervisor.framework VMM/device stack and has preserved live proof of installed Windows 11 ARM64 reaching the desktop with four logical processors, virtio-net DHCP/DNS/HTTP/ICMP connectivity, persistent NVMe writes, framebuffer/display input, a resident virtio-console service channel, a 9/9 valid round-robin performance matrix, clean shutdown/write-back, post-exit reopen, and process-resident host pause/resume. Windows powercfg reports no available guest sleep state; durable suspend is explicitly outside v1. This metadata-only report does not rerun mutable Windows media. The current engineering gates are secure turnkey packaging/UX, Windows vTPM/Secure Boot receipts, a finalized UMD-registered viogpu3d render candidate, and live bind/trace proof.")"
+  output+="$line"$'\n'
+
+  if bash "$ROOT/tests/integration/hvf-windows-installed-boot-vtpm-lifecycle-smoke.sh" >/dev/null; then
+    line="$(status_line "PARTIAL" "Windows HVF vTPM lifecycle" "TPM TIS/PPI/TPM2-log device plumbing is deterministic-test covered; the launcher smoke proves exact 32-byte key-FD delivery, AES-256-CBC encrypt-then-MAC policy, owned swtpm sockets/process cleanup, and persistent state. The macOS product compiles a per-VM ThisDeviceOnly Keychain provider and forbids silent replacement-key creation for non-empty state. Bundled swtpm/libtpms, migration/reset UX, firmware-populated events, and a live Windows receipt remain open.")"
+  else
+    line="$(status_line "BLOCKED" "Windows HVF vTPM lifecycle" "the deterministic encrypted-state launcher smoke failed")"
+  fi
+  output+="$line"$'\n'
+
+  if bash "$ROOT/tests/integration/hvf-secure-boot-provisioning-smoke.sh" >/dev/null; then
+    line="$(status_line "PARTIAL" "Windows HVF Secure Boot policy" "The checked-in 3 MiB EDK2 image is pinned to an exact Secure Boot + TPM2 build and digest; the official Microsoft-only ARM64 policy validates four ESL payload hashes, provisions dbx/db/KEK/PK with PK last, is idempotent, and fails closed on partial/conflicting state. A packaged fresh-guest Confirm-SecureBootUEFI, PCR 7/event-log, BitLocker recovery, and migration receipt remain required.")"
+  else
+    line="$(status_line "BLOCKED" "Windows HVF Secure Boot policy" "the deterministic pinned-firmware and variable-provisioning smoke failed")"
+  fi
   output+="$line"$'\n'
 
   line="$(status_line "PARTIAL" "Windows ARM64 viogpu3d artifact" "Preserved local CI artifacts include test-signed ARM64 INF/SYS/CAT packages for Venus and VirGL, plus a VirGL full package with five ARM64 Mesa DLLs. They are injection-ready inventory, not equivalent render candidates: three are KMD-only, while the five-DLL package copies its UMD payload but omits UserModeDriverName, OpenGLDriverName, OpenGLVersion, OpenGLFlags, and InstalledDisplayDrivers INF registrations. The repository now pins those five DLLs and the miniport by SHA-256, stages a canonical UMD-registered minimal INF without stale signed metadata, and provides a transactional WDK finalizer. This metadata report does not rescan out-of-tree artifacts or execute Windows signing, and test signing is not a distributable production signature.")"

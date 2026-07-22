@@ -27,6 +27,8 @@ pub mod platform_virt;
 pub mod ramfb;
 pub mod smbios;
 pub mod stage1;
+pub mod tpm_ppi;
+pub mod tpm_tis;
 #[cfg(feature = "venus")]
 pub mod venus_backend;
 pub mod virtio_blk;

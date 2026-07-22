@@ -42,11 +42,12 @@
 //!   BRIDGEVM_AARCH64_UEFI_VARS=/path/to/vars.fd ...
 //!   BRIDGEVM_AARCH64_UEFI_VARS_OUT=/path/to/vars-out.fd ...
 //!   BRIDGEVM_AARCH64_UEFI_VARS_WRITABLE=1 ...        # write back to vars path
+//!   BRIDGEVM_SWTPM_DATA_SOCKET=/path/to/swtpm.sock ... # opt-in TPM2 TIS backend; supervisor owns swtpm lifecycle
 
 use std::alloc::{alloc_zeroed, Layout};
 use std::collections::BTreeMap;
 use std::os::raw::c_void;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::ptr::null_mut;
 use std::sync::{
@@ -70,6 +71,7 @@ use bridgevm_hvf::platform_virt::{
 };
 use bridgevm_hvf::ramfb::{RamfbConfig, RamfbSnapshot, RamfbSnapshotError, RamfbSnapshotSummary};
 use bridgevm_hvf::stage1::{self, Stage1Context, Stage1WalkStep};
+use bridgevm_hvf::tpm_tis::{SwtpmUnixBackend, Tpm2Backend};
 use bridgevm_hvf::virtio_blk::{VirtioBlockRequestTrace, VirtioMmioBlockStats, INSTALLER_ISO_SLOT};
 use bridgevm_hvf::virtio_gpu_3d::GpuShmMapPort;
 
@@ -3738,12 +3740,15 @@ fn main() -> ExitCode {
     } else {
         1
     };
+    let swtpm_data_socket = std::env::var_os("BRIDGEVM_SWTPM_DATA_SOCKET").map(PathBuf::from);
+    let mut platform_devices = media.platform_devices;
+    platform_devices.tpm_tis_present = swtpm_data_socket.is_some();
     let platform_cfg = VirtPlatformConfig {
         fdt: VirtFdtConfig {
             cpu_count: smp_cpus,
             ram_size: media.ram_size,
         },
-        devices: media.platform_devices,
+        devices: platform_devices,
     };
     let ram_size = usize::try_from(media.ram_size).expect("guest RAM size does not fit usize");
     assert!(
@@ -3856,7 +3861,14 @@ fn main() -> ExitCode {
             .flash_vars
             .read_bounded(machine::FLASH_VARS.size as usize)
             .unwrap_or_else(|e| panic!("read UEFI vars {}: {e}", media.flash_vars.path.display()));
-        let mut platform = VirtPlatform::new_with_config(platform_cfg);
+        let tpm_backend: Option<Box<dyn Tpm2Backend>> = swtpm_data_socket.as_ref().map(|path| {
+            println!("TPM2 TIS backend: swtpm data socket {}", path.display());
+            Box::new(
+                SwtpmUnixBackend::connect(path)
+                    .unwrap_or_else(|error| panic!("connect swtpm {}: {error}", path.display())),
+            ) as Box<dyn Tpm2Backend>
+        });
+        let mut platform = VirtPlatform::new_with_config_and_tpm_backend(platform_cfg, tpm_backend);
         if env_flag("BRIDGEVM_HDA_COREAUDIO") {
             if !platform_cfg.devices.hda_present {
                 eprintln!("BRIDGEVM_HDA_COREAUDIO ignored because BRIDGEVM_HDA is not enabled");
@@ -4751,11 +4763,12 @@ fn main() -> ExitCode {
                             trigger.maybe_fire(platform);
                         }
                         let now = std::time::Instant::now();
+                        let mut checkpoint_committed = false;
                         if let Some(agent_console) = agent_console.as_mut() {
                             agent_console.tick(platform, &mut guest_ram, now);
                             if agent_console.desktop_ready() {
                                 boot_timer.observe_agent_ready(now, exits);
-                                checkpoint_glue::checkpoint_if_requested(
+                                checkpoint_committed = checkpoint_glue::checkpoint_if_requested(
                                     &[vcpu],
                                     std::slice::from_raw_parts(ram, ram_size),
                                     platform,
@@ -4828,7 +4841,9 @@ fn main() -> ExitCode {
                         });
                         live_display_exporter.export_due(platform, std::time::Instant::now());
                         boot_timer.tick(platform, &guest_ram, exits, last_pc);
-                        if stop_on_linux
+                        if checkpoint_committed {
+                            Some("VM checkpoint committed; suspended process exiting".into())
+                        } else if stop_on_linux
                             && serial_reached_linux_early_boot(
                                 platform.uart_output(),
                                 &mut serial_stop_scans,

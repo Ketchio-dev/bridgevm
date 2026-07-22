@@ -31,6 +31,10 @@ QUARANTINE_VIOGPU3D="${QUARANTINE_VIOGPU3D:-0}"
 # diagnostics/Vulkan probe and a one-shot live-Windows runner. It deliberately
 # skips DISM driver injection and display-topology mutation in bvinject.cmd.
 DIAGNOSTICS_ONLY="${DIAGNOSTICS_ONLY:-0}"
+# Optional real-title payload. When set, the directory must contain the native
+# ARM64 PPSSPP executable; the checked-in gated launcher replaces any stale
+# launcher in the source directory on the injector image.
+PPSSPP_DIR="${PPSSPP_DIR:-}"
 OUT="${OUT:-$HOME/BridgeVM/win-injector.raw}"
 SIZE_BYTES="${SIZE_BYTES:-1610612736}" # 1.5 GiB
 
@@ -80,9 +84,25 @@ if [[ "$DIAGNOSTICS_ONLY" == "1" ]]; then
   }
 fi
 if [[ "$NEEDS_GPU_FIRSTBOOT" == "1" ]]; then
-  for f in bvgpu-firstboot.cmd bvgpu-diagnostics-run.cmd; do
+  for f in bvgpu-firstboot.cmd bvgpu-clean-driver-state.ps1 bvgpu-diagnostics-run.cmd; do
     [[ -f "$ASSETS/$f" ]] || { echo "FAIL: missing viogpu3d firstboot asset $ASSETS/$f" >&2; exit 1; }
   done
+fi
+if [[ -n "$PPSSPP_DIR" ]]; then
+  [[ "$NEEDS_GPU_FIRSTBOOT" == "1" ]] || {
+    echo "FAIL: PPSSPP_DIR requires a staged viogpu3d package" >&2
+    exit 1
+  }
+  [[ -d "$PPSSPP_DIR" && -f "$PPSSPP_DIR/PPSSPPWindowsARM64.exe" ]] || {
+    echo "FAIL: PPSSPP_DIR must contain PPSSPPWindowsARM64.exe: $PPSSPP_DIR" >&2
+    exit 1
+  }
+  [[ -f "$ASSETS/bv-ppsspp-demo.cmd" && -f "$ASSETS/bv-ppsspp.ini" && \
+        -f "$ASSETS/bv-ppsspp-title.json" && -f "$ASSETS/bvgpu-title-gate.ps1" && \
+        -f "$ASSETS/bvgpu-real-title-gate.ps1" ]] || {
+    echo "FAIL: checked-in PPSSPP promotion-gate assets are missing" >&2
+    exit 1
+  }
 fi
 if [[ "$NEEDS_GPU_SERVICE" == "1" ]]; then
   [[ -f "$ASSETS/bvgpu-diagnostics-service.c" ]] || {
@@ -91,6 +111,16 @@ if [[ "$NEEDS_GPU_SERVICE" == "1" ]]; then
   }
   command -v zig >/dev/null 2>&1 || {
     echo "FAIL: zig is required to build the ARM64 GPU handoff service" >&2
+    exit 1
+  }
+fi
+if [[ "${PLANT_AGENT:-1}" == "1" ]]; then
+  [[ -f "$ASSETS/bvagent.ps1" && -f "$ASSETS/bvagent-install-service.c" ]] || {
+    echo "FAIL: missing guest-agent service assets" >&2
+    exit 1
+  }
+  command -v zig >/dev/null 2>&1 || {
+    echo "FAIL: zig is required to build the ARM64 guest-agent installer service" >&2
     exit 1
   }
 fi
@@ -126,14 +156,35 @@ for spec in $DRIVER_DIRS; do
   cp "$src"/* "$DST_VOL/drivers/$name/"
 done
 
-# Plant the guest agent at the source root; bvinject.cmd copies it to C:\ and
-# registers an HKLM Run key. Enabled by default; set PLANT_AGENT=0 to skip.
+if [[ -n "$PPSSPP_DIR" ]]; then
+  log "staging PPSSPP real-title payload at \\apps\\ppsspp"
+  mkdir -p "$DST_VOL/apps/ppsspp"
+  rsync -a "$PPSSPP_DIR/" "$DST_VOL/apps/ppsspp/"
+  cp "$ASSETS/bv-ppsspp-demo.cmd" "$DST_VOL/apps/ppsspp/bv-ppsspp-demo.cmd"
+  cp "$ASSETS/bv-ppsspp.ini" "$DST_VOL/apps/ppsspp/bv-ppsspp.ini"
+  cp "$ASSETS/bv-ppsspp-title.json" "$DST_VOL/apps/ppsspp/bv-ppsspp-title.json"
+fi
+
+# Plant the guest agent and its one-shot scheduled-task installer service at
+# the source root. Enabled by default; set PLANT_AGENT=0 to skip.
 if [[ "${PLANT_AGENT:-1}" == "1" && -f "$ASSETS/bvagent.ps1" ]]; then
-  log "staging guest agent \\bvagent.ps1 (single HKLM Run autostart)"
+  log "staging guest agent \\bvagent.ps1 (single elevated ONLOGON task)"
   cp "$ASSETS/bvagent.ps1" "$DST_VOL/bvagent.ps1"
+  log "building ARM64 guest-agent scheduled-task installer service"
+  zig cc -target aarch64-windows-gnu -Os -s \
+    "$ASSETS/bvagent-install-service.c" \
+    -o "$DST_VOL/bvagent-install-service.exe" \
+    -municode -ladvapi32
+  {
+    printf 'BVAGENT-PACKAGE version=v3-share2\n'
+    printf 'agent_sha256=%s\n' "$(shasum -a 256 "$ASSETS/bvagent.ps1" | awk '{print $1}')"
+    printf 'installer_sha256=%s\n' "$(shasum -a 256 "$DST_VOL/bvagent-install-service.exe" | awk '{print $1}')"
+    printf 'autostart=scheduled-task:onlogon:highest:interactive\n'
+    printf 'uac_disabled=false\n'
+  } > "$DST_VOL/bvagent-package.log"
   # Deliberately do NOT stage bvagent.bat: a Startup-folder launcher would be a
-  # second autostart racing the Run key, and the loser's port open/close churns
-  # vioser's single-open port. One autostart only.
+  # second autostart racing the scheduled task, and the loser's port open/close
+  # churns vioser's single-open port. One autostart only.
 fi
 
 # Plant the first-boot GPU driver activation script at the source root. When a
@@ -145,6 +196,18 @@ fi
 if [[ -f "$ASSETS/bvgpu-firstboot.cmd" ]]; then
   log "staging first-boot GPU activation \\bvgpu-firstboot.cmd"
   cp "$ASSETS/bvgpu-firstboot.cmd" "$DST_VOL/bvgpu-firstboot.cmd"
+fi
+if [[ -f "$ASSETS/bvgpu-clean-driver-state.ps1" ]]; then
+  log "staging driver-state cleanup \\bvgpu-clean-driver-state.ps1"
+  cp "$ASSETS/bvgpu-clean-driver-state.ps1" "$DST_VOL/bvgpu-clean-driver-state.ps1"
+fi
+if [[ -f "$ASSETS/bvgpu-real-title-gate.ps1" ]]; then
+  log "staging real-title promotion gate \\bvgpu-real-title-gate.ps1"
+  cp "$ASSETS/bvgpu-real-title-gate.ps1" "$DST_VOL/bvgpu-real-title-gate.ps1"
+fi
+if [[ -f "$ASSETS/bvgpu-title-gate.ps1" ]]; then
+  log "staging generic title promotion gate \\bvgpu-title-gate.ps1"
+  cp "$ASSETS/bvgpu-title-gate.ps1" "$DST_VOL/bvgpu-title-gate.ps1"
 fi
 if [[ -f "$ASSETS/bvgpu-diagnostics.ps1" ]]; then
   log "staging first-boot GPU diagnostics \\bvgpu-diagnostics.ps1"
@@ -204,6 +267,8 @@ if [[ "$NEEDS_GPU_FIRSTBOOT" == "1" ]]; then
     echo "FAIL: viogpu3d firstboot native service missing" >&2; exit 1; }
   [[ -f "$DST_VOL/bvgpu-vulkan-draw-smoke.exe" ]] || {
     echo "FAIL: viogpu3d Vulkan draw smoke missing" >&2; exit 1; }
+  [[ -f "$DST_VOL/bvgpu-clean-driver-state.ps1" ]] || {
+    echo "FAIL: viogpu3d driver-state cleanup missing" >&2; exit 1; }
 fi
 
 if [[ "$ENABLE_TESTSIGNING" == "1" ]]; then

@@ -120,10 +120,10 @@ esac
 
 (
   cd "$MACOS_DIR"
-  swift build --configuration "$BUILD_CONFIGURATION" --quiet --product AppleVzRunner
+  swift build --disable-sandbox --configuration "$BUILD_CONFIGURATION" --quiet --product AppleVzRunner
 )
 
-BIN="$(cd "$MACOS_DIR" && swift build --configuration "$BUILD_CONFIGURATION" --show-bin-path)/AppleVzRunner"
+BIN="$(cd "$MACOS_DIR" && swift build --disable-sandbox --configuration "$BUILD_CONFIGURATION" --show-bin-path)/AppleVzRunner"
 CODESIGN_OPTION_ARGS=()
 if [[ -n "$CODESIGN_OPTIONS" ]]; then
   CODESIGN_OPTION_ARGS=(--options "$CODESIGN_OPTIONS")

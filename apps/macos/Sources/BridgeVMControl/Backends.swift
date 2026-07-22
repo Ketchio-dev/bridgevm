@@ -536,14 +536,18 @@ final class HvfWindowsBackend: VMBackend {
     private(set) var config: VMConfig
     private let processIsRunning: (String) -> Bool
     private let libraryRoot: URL
+    private let vtpmKeyProvider: VTPMStateKeyProviding
+    private var launchedProcess: Process?
     init(
         _ config: VMConfig,
         processIsRunning: @escaping (String) -> Bool = { Shell.isProcessRunning(matching: $0) },
-        libraryRoot: URL = VMLibrary.root
+        libraryRoot: URL = VMLibrary.root,
+        vtpmKeyProvider: VTPMStateKeyProviding = KeychainVTPMStateKeyStore()
     ) {
         self.config = config
         self.processIsRunning = processIsRunning
         self.libraryRoot = libraryRoot
+        self.vtpmKeyProvider = vtpmKeyProvider
     }
 
     var displayName: String { config.displayName }
@@ -610,7 +614,40 @@ final class HvfWindowsBackend: VMBackend {
             }
         }
         serviceStartReader.reset()
-        guard Shell.launchDetached(launchCommand()) else { return false }
+        let engineConfig = makeHvfEngineConfig()
+        guard engineConfig.readiness(repoRoot: repoRoot).launchReady else { return false }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = engineConfig.wrapperArguments()
+        process.currentDirectoryURL = repoRoot
+        process.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("BRIDGEVM_") }
+        var keyInput: VTPMProcessKeyInput? = nil
+        do {
+            keyInput = try VTPMStateSecurity.processInput(
+                for: engineConfig,
+                provider: vtpmKeyProvider
+            )
+            keyInput?.attach(to: process)
+            if !FileManager.default.fileExists(atPath: launcherLogPath) {
+                FileManager.default.createFile(atPath: launcherLogPath, contents: nil)
+            }
+            let launcherLog = try FileHandle(forWritingTo: URL(fileURLWithPath: launcherLogPath))
+            defer { try? launcherLog.close() }
+            try launcherLog.seekToEnd()
+            process.standardOutput = launcherLog
+            process.standardError = launcherLog
+            try process.run()
+            do {
+                try keyInput?.deliverAfterLaunch()
+            } catch {
+                process.terminate()
+                return false
+            }
+        } catch {
+            keyInput?.discard()
+            return false
+        }
+        launchedProcess = process
         schedulePendingDiskGrowth()
         return true
     }
@@ -693,19 +730,21 @@ final class HvfWindowsBackend: VMBackend {
     }
 
     private func makeHvfEngineConfig() -> HvfEngineConfig {
-        HvfEngineConfig(targetDiskPath: targetDiskPath,
-                        uefiVarsPath: uefiVarsPath,
-                        evidenceDir: evidenceDir,
-                        watchdogMs: nil,
-                        ramMiB: config.memMiB ?? 6144,
-                        smpCpus: config.cpuCount ?? 4,
-                        clipboardSync: true,
-                        shareHostDir: nil,
-                        shareGuestDir: nil,
-                        virtioNet: true,
-                        virtioGpu3d: true,
-                        nvmeBufferedIO: true,
-                        ctlFilePath: ctlFilePath)
+        HvfEngineConfig.libraryVM(config) ?? HvfEngineConfig(
+            targetDiskPath: targetDiskPath,
+            uefiVarsPath: uefiVarsPath,
+            evidenceDir: evidenceDir,
+            watchdogMs: nil,
+            ramMiB: config.memMiB ?? 6144,
+            smpCpus: config.cpuCount ?? 4,
+            clipboardSync: true,
+            shareHostDir: nil,
+            shareGuestDir: nil,
+            virtioNet: config.networkEnabled ?? true,
+            virtioGpu3d: true,
+            nvmeBufferedIO: true,
+            ctlFilePath: ctlFilePath
+        )
     }
 
     @discardableResult

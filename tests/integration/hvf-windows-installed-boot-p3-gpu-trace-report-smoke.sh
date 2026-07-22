@@ -64,6 +64,66 @@ assert_file_contains "$EVIDENCE_DIR/virtio-gpu-trace-gate.txt" "required=1" "tra
 assert_file_contains "$EVIDENCE_DIR/virtio-gpu-trace-gate.txt" "protocol=auto" "trace gate"
 assert_file_contains "$EVIDENCE_DIR/virtio-gpu-trace-gate.txt" "status=0" "trace gate"
 
+mkdir -p "$EVIDENCE_DIR/guest-logs"
+cat > "$EVIDENCE_DIR/guest-logs/bvgpu-real-title-gate.log" <<'TITLELOG'
+BVGPU-REAL-TITLE-PASS
+elapsed_ms=30000
+main_window_observed=true
+module=vulkan_virtio.dll
+TITLELOG
+printf 'BVGPU-DRIVER-STATE-PASS\n' > "$EVIDENCE_DIR/guest-logs/viogpu3d-cleanup.log"
+for i in $(seq 1 300); do
+  printf '{"seq":%s,"event":"command","name":"RESOURCE_FLUSH"}\n' "$((1000 + i))" >> "$TRACE"
+done
+TITLE_MANIFESTS=("$ROOT/scripts/win-assets/bv-ppsspp-title.json")
+TITLE_MANIFEST_COUNT=1
+REQUIRE_TITLE_GATES="1"
+printf '{"ppsspp-vulkan-arm64":"missing"}\n' > "$EVIDENCE_DIR/title-pre-run-state.json"
+RUN_STATUS="0"
+write_title_gate_report
+[[ "$RUN_STATUS" == "0" ]] || fail "passing generic title gate changed RUN_STATUS to $RUN_STATUS"
+assert_file_contains "$EVIDENCE_DIR/title-gates.txt" "Title: ppsspp-vulkan-arm64" "generic title report"
+assert_file_contains "$EVIDENCE_DIR/title-gates.txt" "Gate: PASS" "generic title report"
+assert_file_contains "$EVIDENCE_DIR/title-gates-gate.txt" "required=1" "generic title gate"
+assert_file_contains "$EVIDENCE_DIR/title-gates-gate.txt" "status=0" "generic title gate"
+assert_file_contains "$EVIDENCE_DIR/title-gates.json" '"passed": true' "generic title JSON"
+
+current_title_sha256="$(shasum -a 256 "$EVIDENCE_DIR/guest-logs/bvgpu-real-title-gate.log" | awk '{print $1}')"
+printf '{"ppsspp-vulkan-arm64":"%s"}\n' "$current_title_sha256" > "$EVIDENCE_DIR/title-pre-run-state.json"
+RUN_STATUS="0"
+write_title_gate_report
+[[ "$RUN_STATUS" == "1" ]] || fail "stale generic title evidence did not fail the required gate"
+assert_file_contains "$EVIDENCE_DIR/title-gates.txt" "guest log was not proven fresh" "stale generic title report"
+assert_file_contains "$EVIDENCE_DIR/title-gates-gate.txt" "status=1" "stale generic title gate"
+
+REQUIRE_REAL_TITLE_GATE="1"
+PRE_RUN_REAL_TITLE_SHA256="missing"
+RUN_STATUS="0"
+write_real_title_gate_report
+[[ "$RUN_STATUS" == "0" ]] || fail "passing real-title gate changed RUN_STATUS to $RUN_STATUS"
+assert_file_contains "$EVIDENCE_DIR/real-title-gate.txt" "guest_title_marker_pass=1" "real-title gate"
+assert_file_contains "$EVIDENCE_DIR/real-title-gate.txt" "guest_title_fresh=1" "real-title gate"
+assert_file_contains "$EVIDENCE_DIR/real-title-gate.txt" "guest_title_pass=1" "real-title gate"
+assert_file_contains "$EVIDENCE_DIR/real-title-gate.txt" "driver_state_pass=1" "real-title gate"
+assert_file_contains "$EVIDENCE_DIR/real-title-gate.txt" "resource_flush_count=300" "real-title gate"
+assert_file_contains "$EVIDENCE_DIR/real-title-gate.txt" "status=0" "real-title gate"
+
+PRE_RUN_REAL_TITLE_SHA256="$(shasum -a 256 "$EVIDENCE_DIR/guest-logs/bvgpu-real-title-gate.log" | awk '{print $1}')"
+RUN_STATUS="0"
+write_real_title_gate_report
+[[ "$RUN_STATUS" == "1" ]] || fail "stale PPSSPP pass did not fail required real-title gate"
+assert_file_contains "$EVIDENCE_DIR/real-title-gate.txt" "guest_title_marker_pass=1" "stale real-title gate"
+assert_file_contains "$EVIDENCE_DIR/real-title-gate.txt" "guest_title_fresh=0" "stale real-title gate"
+assert_file_contains "$EVIDENCE_DIR/real-title-gate.txt" "guest_title_pass=0" "stale real-title gate"
+
+printf 'process crashed before gate\n' > "$EVIDENCE_DIR/guest-logs/bvgpu-real-title-gate.log"
+PRE_RUN_REAL_TITLE_SHA256="missing"
+RUN_STATUS="0"
+write_real_title_gate_report
+[[ "$RUN_STATUS" == "1" ]] || fail "missing PPSSPP pass did not fail required real-title gate"
+assert_file_contains "$EVIDENCE_DIR/real-title-gate.txt" "guest_title_pass=0" "failing real-title gate"
+assert_file_contains "$EVIDENCE_DIR/real-title-gate.txt" "status=1" "failing real-title gate"
+
 EVIDENCE_DIR="$STORE/missing-evidence"
 VIRTIO_GPU_TRACE_JSONL="$STORE/missing.jsonl"
 RUN_STATUS="0"

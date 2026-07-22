@@ -148,6 +148,12 @@ pub trait VirtioGpu3dBackend: Send {
     fn destroy_resource(&mut self, resource_id: u32);
     fn create_fence(&mut self, ctx_id: u32, ring_idx: u8, fence_id: u64) -> bool;
     fn poll_fences(&mut self);
+    /// Poll after one complete virtqueue notification batch. Backends that
+    /// proxy renderer calls to another thread may keep idle polling local but
+    /// must preserve this explicit batch boundary.
+    fn poll_fences_after_queue(&mut self) {
+        self.poll_fences();
+    }
     fn drain_completed_fences_into(&mut self, out: &mut Vec<CompletedFence>);
     fn drain_completed_fences(&mut self) -> Vec<CompletedFence> {
         let mut completed = Vec::new();
@@ -626,13 +632,25 @@ impl VirtioGpu3d {
     }
 
     pub fn drain_completed_fences_into(&mut self, out: &mut Vec<CompletedFence>) {
+        self.drain_completed_fences_inner(out, false);
+    }
+
+    pub fn drain_completed_fences_after_queue_into(&mut self, out: &mut Vec<CompletedFence>) {
+        self.drain_completed_fences_inner(out, true);
+    }
+
+    fn drain_completed_fences_inner(&mut self, out: &mut Vec<CompletedFence>, after_queue: bool) {
         let Some(backend) = self.backend.as_mut() else {
             return;
         };
         // Venus on macOS retires fences synchronously: polling the backend may
         // invoke the fence callback inline, then drain_completed_fences takes
         // the callbacks queued by that poll.
-        backend.poll_fences();
+        if after_queue {
+            backend.poll_fences_after_queue();
+        } else {
+            backend.poll_fences();
+        }
         let start = out.len();
         backend.drain_completed_fences_into(out);
         self.fences_completed = self
@@ -1695,6 +1713,8 @@ pub struct MockBackend {
     pub destroyed_resources: Vec<u32>,
     pub fences: Vec<CompletedFence>,
     pub completed: Vec<CompletedFence>,
+    pub fence_polls: u64,
+    pub fence_after_queue_polls: u64,
     pub reject_fence_ring: Option<u8>,
     pub reject_legacy_3d: bool,
 }
@@ -1840,12 +1860,7 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
         true
     }
 
-    fn scanout_blit_iosurface(
-        &mut self,
-        resource_id: u32,
-        width: u32,
-        height: u32,
-    ) -> Option<u32> {
+    fn scanout_blit_iosurface(&mut self, resource_id: u32, width: u32, height: u32) -> Option<u32> {
         self.lock()
             .unwrap()
             .scanout_blits
@@ -1867,7 +1882,13 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
         inner.reject_fence_ring != Some(ring_idx)
     }
 
-    fn poll_fences(&mut self) {}
+    fn poll_fences(&mut self) {
+        self.lock().unwrap().fence_polls += 1;
+    }
+
+    fn poll_fences_after_queue(&mut self) {
+        self.lock().unwrap().fence_after_queue_polls += 1;
+    }
 
     fn drain_completed_fences_into(&mut self, out: &mut Vec<CompletedFence>) {
         out.append(&mut self.lock().unwrap().completed);
@@ -1980,8 +2001,7 @@ mod tests {
         gpu.set_shm_map_port(Box::new(port.clone()), 0x20_0000);
 
         for (resource_id, offset) in [(7u32, 0x4000u64), (8, 0x1_8000)] {
-            let create =
-                create_blob_req(resource_id, VIRTIO_GPU_BLOB_MEM_HOST3D, 0, 0x1_0000, 1);
+            let create = create_blob_req(resource_id, VIRTIO_GPU_BLOB_MEM_HOST3D, 0, 0x1_0000, 1);
             let hdr = CtrlHdr3d::parse(&create).unwrap();
             assert_eq!(
                 read_le_u32(&gpu.handle(&create, hdr).unwrap(), 0),
@@ -2155,6 +2175,12 @@ mod tests {
         assert_eq!(out, vec![sentinel, completed[0], completed[1]]);
         assert_eq!(gpu.stats(0).fences_completed, 2);
         assert!(backend.lock().unwrap().completed.is_empty());
+        assert_eq!(backend.lock().unwrap().fence_polls, 1);
+        assert_eq!(backend.lock().unwrap().fence_after_queue_polls, 0);
+
+        gpu.drain_completed_fences_after_queue_into(&mut out);
+        assert_eq!(backend.lock().unwrap().fence_polls, 1);
+        assert_eq!(backend.lock().unwrap().fence_after_queue_polls, 1);
 
         let wrapper_fence = CompletedFence {
             ctx_id: 7,

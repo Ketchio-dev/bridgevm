@@ -11,8 +11,10 @@ FAKE_INJECTOR="$STORE/fake-build-injector.sh"
 LOG="$STORE/fake-build-injector.log"
 OUT="$STORE/win-viogpu3d-injector.raw"
 MANIFEST="$STORE/viogpu3d-manifest.txt"
+PPSSPP="$STORE/ppsspp"
 
-mkdir -p "$VIOGPU3D" "$NETKVM"
+mkdir -p "$VIOGPU3D" "$NETKVM" "$PPSSPP"
+touch "$PPSSPP/PPSSPPWindowsARM64.exe"
 
 write_minimal_pe() {
   local path="$1"
@@ -51,6 +53,7 @@ set -euo pipefail
   printf 'ENABLE_TESTSIGNING=%s\n' "${ENABLE_TESTSIGNING:-}"
   printf 'DRIVER_DIRS=%s\n' "${DRIVER_DIRS:-}"
   printf 'OUT=%s\n' "${OUT:-}"
+  printf 'PPSSPP_DIR=%s\n' "${PPSSPP_DIR:-}"
 } >"${BRIDGEVM_FAKE_INJECTOR_LOG:?}"
 SH
 chmod +x "$FAKE_INJECTOR"
@@ -85,6 +88,7 @@ output="$(
   VIOGPU3D_DIR="$VIOGPU3D" \
   VIOGPU3D_MANIFEST="$MANIFEST" \
   NETKVM_DIR="$NETKVM" \
+  PPSSPP_DIR="$PPSSPP" \
   OUT="$OUT" \
     scripts/build-hvf-windows-viogpu3d-injector.sh 2>&1
 )" || fail "viogpu3d injector wrapper failed: $output"
@@ -98,6 +102,7 @@ assert_contains "$output" "driver dirs: netkvm:$NETKVM viogpu3d:$VIOGPU3D" "wrap
 assert_contains "$log" "ENABLE_TESTSIGNING=1" "fake injector env"
 assert_contains "$log" "DRIVER_DIRS=netkvm:$NETKVM viogpu3d:$VIOGPU3D" "fake injector env"
 assert_contains "$log" "OUT=$OUT" "fake injector env"
+assert_contains "$log" "PPSSPP_DIR=$PPSSPP" "fake injector env"
 assert_file_contains "$MANIFEST" "protocol=virgl" "wrapper manifest"
 assert_file_contains "$MANIFEST" $'file=sys\tsha256=' "wrapper manifest"
 

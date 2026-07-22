@@ -3224,7 +3224,12 @@ mod tests {
         };
 
         let idle_stamp = {
-            let flow = backend.outbound_ipv4.tcp_flows.values().next().expect("tcp flow present");
+            let flow = backend
+                .outbound_ipv4
+                .tcp_flows
+                .values()
+                .next()
+                .expect("tcp flow present");
             flow.last_activity
         };
 
@@ -3236,7 +3241,12 @@ mod tests {
             while backend.poll_receive().is_some() {}
         }
         let polled_stamp = {
-            let flow = backend.outbound_ipv4.tcp_flows.values().next().expect("tcp flow present");
+            let flow = backend
+                .outbound_ipv4
+                .tcp_flows
+                .values()
+                .next()
+                .expect("tcp flow present");
             flow.last_activity
         };
         assert_eq!(polled_stamp, idle_stamp);
@@ -3261,7 +3271,12 @@ mod tests {
         }
         assert!(saw_payload, "expected proxied host payload");
         let active_stamp = {
-            let flow = backend.outbound_ipv4.tcp_flows.values().next().expect("tcp flow present");
+            let flow = backend
+                .outbound_ipv4
+                .tcp_flows
+                .values()
+                .next()
+                .expect("tcp flow present");
             flow.last_activity
         };
         assert!(active_stamp > polled_stamp);

@@ -13,14 +13,17 @@ use std::{
 
 use crate::platform_virt::{VirtPlatformDeviceConfig, VirtioNetBackendKind};
 
-// The default firmware code volume is vendored in-repo: a current
-// tianocore/edk2 ArmVirtQemu build. Homebrew's stale qemu-11.0.1
+// The default firmware code volume is vendored in-repo: a pinned
+// tianocore/edk2 ArmVirtQemu build with Secure Boot and TPM2 measurement.
+// Homebrew's stale qemu-11.0.1
 // `edk2-aarch64-code.fd` does NOT bind our NVMe endpoint (its older
 // NvmExpressDxe/PciBus never reads the controller registers), whereas a
 // firmware built from current edk2 binds it and boots Windows from NVMe.
 // The variable store stays on the (version-insensitive) Homebrew template.
-pub const DEFAULT_QEMU_AARCH64_CODE: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/firmware/edk2-aarch64-code.fd");
+pub const DEFAULT_QEMU_AARCH64_CODE: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/firmware/edk2-aarch64-secure-code.fd"
+);
 pub const DEFAULT_QEMU_AARCH64_VARS: &str =
     "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-arm-vars.fd";
 pub const DEFAULT_LINUX_CMDLINE: &str = "console=ttyAMA0 earlycon=pl011,0x09000000 acpi=force";
@@ -444,6 +447,7 @@ mod tests {
             bytes[..0x4000].windows(4).any(|w| w == b"_FVH"),
             "not an EDK2 firmware volume"
         );
+        assert_eq!(bytes.len(), 3 * 1024 * 1024, "unexpected firmware size");
     }
 
     #[test]

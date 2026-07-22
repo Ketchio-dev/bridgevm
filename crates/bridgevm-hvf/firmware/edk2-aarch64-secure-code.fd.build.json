@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "project": "tianocore/edk2",
+  "tag": "edk2-stable202605",
+  "commit": "b03a21a63e3bd001f52c527e5a57feddb53a690b",
+  "sourceDateEpoch": 1778208179,
+  "platform": "ArmVirtPkg/ArmVirtQemu.dsc",
+  "architecture": "AARCH64",
+  "target": "RELEASE",
+  "toolchain": "GCC",
+  "defines": ["SECURE_BOOT_ENABLE=TRUE", "TPM2_ENABLE=TRUE", "TPM2_CONFIG_ENABLE=TRUE"],
+  "gccVersion": "aarch64-elf-gcc (GCC) 16.1.0",
+  "iaslVersion": "20260408",
+  "size": 3145728,
+  "sha256": "f41c7eb7c1a9dabf8ed10c4e52642378e05df171eecd65ca15ed414d9fabdff9",
+  "verifiedModules": ["SecurityStubDxe", "SecureBootConfigDxe", "EnrollDefaultKeys", "Tcg2Dxe"]
+}
