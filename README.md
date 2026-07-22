@@ -33,8 +33,9 @@ Requirements:
 - Rust 1.76 or newer;
 - Xcode/Swift 5.9 or newer for the macOS app;
 - QEMU for Compatibility Engine live runs;
-- `swtpm`/`libtpms` for encrypted Windows HVF vTPM live runs (bundling this
-  runtime into the signed app remains a release gate).
+- Homebrew `swtpm` 0.10.1 / `libtpms` 0.10.2 when producing a Windows HVF app
+  bundle; the resulting app carries its signed runtime and does not require a
+  host installation.
 
 Build and run the deterministic local checks:
 
@@ -118,10 +119,11 @@ apps/macos/scripts/package-hvf-control-app.sh \
   --output /tmp/BridgeVMControl.app
 ```
 
-The packager refuses to overwrite an existing app. It does not yet bundle
-`swtpm`/`libtpms`; until the distribution gate is closed, the host must provide
-the executable or `BRIDGEVM_SWTPM_BIN` must name it. The app fails closed rather
-than silently launching Windows without the configured vTPM.
+The packager refuses to overwrite an existing app. It collects the complete
+non-system dylib closure for the pinned `swtpm`/`libtpms`, rewrites Homebrew
+install names, signs every artifact, embeds component licenses and SHA-256
+inventory, and then verifies that no development-host path remains. The app
+still fails closed rather than silently launching Windows without its vTPM.
 
 ## Current release gates
 
@@ -129,8 +131,9 @@ The remaining Windows HVF walls are concrete, but they are not all “easy”:
 
 1. prove the locally wired TPM 2.0 TIS/PPI/TPM2-log contract in Windows and
    capture firmware-populated measured-boot events;
-2. finish the implemented encrypted-state/Keychain path with explicit
-   move/clone/restore/reset UI and a bundled, signed swtpm runtime;
+2. validate the now-implemented encrypted recovery package, fresh-identity
+   clone, same-ID move, and archive-before-reset lifecycle on a clean second
+   Mac and with BitLocker recovery enabled;
 3. prove the pinned Microsoft-only PK/KEK/db/dbx policy and measured boot from
    inside a fresh guest, then finish migration/recovery lifecycle handling;
 4. produce and sign a fresh ARM64 Windows display-driver package;

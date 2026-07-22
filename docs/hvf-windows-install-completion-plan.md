@@ -64,10 +64,15 @@ uses a stable VM ID to load or atomically create a 256-bit
 `WhenUnlockedThisDeviceOnly` Keychain item, transfers it through a one-shot
 stdin FD, and starts swtpm with AES-256-CBC encrypt-then-MAC state protection.
 No key appears in argv or a disk keyfile; an existing state directory whose
-Keychain item is missing fails closed without minting a replacement key. ACPI
-also emits QEMU's
-revision-4 TPM2 FIFO table and relocates its LASA field to a zero-initialized
-64 KiB `etc/tpm/log` allocation. Construction fails if ACPI presence and backend
+Keychain item is missing fails closed without minting a replacement key. The
+macOS package now embeds signed swtpm 0.10.1/libtpms 0.10.2 and the recursively
+collected non-system dylib closure with rewritten install names, component
+licenses, and a digest manifest. The app implements a separate-code AES-GCM
+recovery package bound to VM ID and exact state fingerprint, fresh-TPM APFS
+clone, and confirmed reset that archives old state/key and emits a receipt.
+ACPI also emits QEMU's revision-4 TPM2 FIFO table and relocates its LASA field
+to a zero-initialized 64 KiB `etc/tpm/log` allocation. Construction fails if
+ACPI presence and backend
 presence disagree. The default EDK2 code volume is now a reproducible,
 commit-pinned 3 MiB build with Secure Boot and TPM2 enabled. Fresh-install
 finalization fail-closed provisions the exact Microsoft-only ARM64
@@ -75,10 +80,10 @@ finalization fail-closed provisions the exact Microsoft-only ARM64
 validates every hash/ESL/provenance field, preserves exact existing state, and
 rejects partial or conflicting state without mutation. Packaging includes the
 policy, firmware build receipt, and license notices. This still does **not**
-close the gates: firmware-populated measured-boot events, a bundled/signed
-swtpm distribution, explicit move/clone/restore/reset UX, firmware processing
-of PPI requests, `Confirm-SecureBootUEFI`/PCR 7 proof, BitLocker recovery, and a
-live Windows receipt remain.
+close the gates: firmware-populated measured-boot events, clean-second-Mac
+migration, firmware processing of PPI requests,
+`Confirm-SecureBootUEFI`/PCR 7 proof, BitLocker recovery, and a live Windows
+receipt remain.
 
 Windows HVF suspend/resume is explicitly not a v1 product capability; the
 experimental single-vCPU checkpoint path must not be advertised as durable

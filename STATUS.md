@@ -30,7 +30,7 @@ yet a public-production virtualization product.
 | --- | --- | --- |
 | Compatibility / QEMU | Safe plans; explicit image creation and inspection; supervised launch/stop; NAT/forwards; snapshot and diagnostics paths | Privileged macOS vmnet modes, full guest/GUI coverage, public packaging |
 | Apple VZ | Signed Linux Arm runner; raw disk plus direct-kernel boot; display/control socket and framebuffer export | Wider boot media/disk formats, full desktop integration, live CPU/RAM reapply, release packaging |
-| Windows HVF | Installed Windows desktop; 4 vCPUs; writable NVMe/UEFI vars; RAMFB/input; virtio network/audio/agent; clean shutdown/restart; Venus/VirGL experimental 3D and real PPSSPP Vulkan evidence; local TPM TIS/PPI/TPM2 log and Keychain-to-swtpm encrypted-state path | Windows TPM/measured-boot receipt; Secure Boot key lifecycle; bundled swtpm; fresh WDK package and production signature; current real-title receipt; public signing/notarization |
+| Windows HVF | Installed Windows desktop; 4 vCPUs; writable NVMe/UEFI vars; RAMFB/input; virtio network/audio/agent; clean shutdown/restart; Venus/VirGL experimental 3D and real PPSSPP Vulkan evidence; local TPM TIS/PPI/TPM2 log; signed bundled swtpm; Keychain recovery/clone/reset lifecycle | Windows TPM/measured-boot receipt; clean-second-Mac migration and BitLocker recovery proof; fresh WDK package and production signature; current real-title receipt; public signing/notarization |
 
 ## Windows HVF evidence boundary
 
@@ -70,7 +70,7 @@ It does not weaken security-state handling. See the
 | Gate | State | Difficulty judgment | Completion evidence |
 | --- | --- | --- | --- |
 | `SEC-TPM-FRONTEND` | `IN_PROGRESS` | Bounded device-model work | Windows enumerates ACPI `MSFT0101`; TIS commands and PPI actions work |
-| `SEC-TPM-LIFECYCLE` | `IN_PROGRESS` | Hard security/lifecycle work | Implemented encrypted per-VM state + Keychain/FD custody; still needs bundled runtime and tested move/clone/restore/reset UI |
+| `SEC-TPM-LIFECYCLE` | `IN_PROGRESS` | Hard security/lifecycle work | Local path now bundles/signs the pinned runtime and implements same-ID move policy, encrypted export/restore, fresh-ID clone, archive-before-reset, and receipts; clean-second-Mac + BitLocker live proof remains |
 | `SEC-SB-MEASURED` | `IN_PROGRESS` | Hard cross-layer work | Pinned Secure Boot + TPM2 EDK2 and fail-closed Microsoft-only PK/KEK/db/dbx provisioning are locally proven; guest proof from `Confirm-SecureBootUEFI`, PCR 7, event log, and recovery/migration workflows remains |
 | `GPU-WDK-SIGN` | `EXTERNAL` | Externally gated | Fresh ARM64 WDK build, catalog, trusted signature, and clean bind |
 | `GPU-LIVE-RECEIPT` | `OPEN` | Live-machine gated | Same-boot bind/title/crash-free/performance evidence from the packaged app |
@@ -91,9 +91,15 @@ FD; swtpm encrypts state with AES-256-CBC plus encrypt-then-MAC, and an existing
 state directory with a missing key is never assigned a silent replacement key.
 The repository smoke proves exact 32-byte FD delivery, socket/process cleanup,
 and persistent state without putting the key in argv or a disk keyfile.
-Firmware-populated measured-boot events, a bundled/signed swtpm runtime,
-move/clone/restore/reset UI, and real Windows enumeration remain open, so both
-security gates stay `IN_PROGRESS`.
+The packaged app now carries pinned swtpm 0.10.1/libtpms 0.10.2 plus the entire
+rewritten non-system dylib closure, signatures, SHA-256 inventory, and license
+notices. The app exposes authenticated recovery-package export/restore,
+archive-before-reset, and APFS clone with a fresh TPM identity; copied state,
+old state, orphan keys, and prior run evidence are retained with lifecycle
+receipts instead of silently discarded. The standalone package passed a real
+key-FD/socket swtpm startup check on 2026-07-22. Firmware-populated measured-
+boot events, real Windows enumeration, clean-second-Mac migration, and
+BitLocker recovery remain open, so the security gates stay `IN_PROGRESS`.
 
 `SEC-SB-MEASURED` also has deterministic local evidence. The default firmware
 is a reproducible EDK2 build pinned to commit

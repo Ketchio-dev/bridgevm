@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#endif
 
 // MARK: - Root (library + detail)
 
@@ -36,6 +39,9 @@ struct ContentView: View {
         .sheet(isPresented: $showPalette) {
             CommandPaletteView(library: library)
         }
+        .sheet(item: $library.pendingWindowsClone) { cfg in
+            CloneWindowsHVFSheet(library: library, config: cfg)
+        }
         .confirmationDialog(
             "VM을 삭제하시겠습니까?",
             isPresented: Binding(
@@ -71,6 +77,28 @@ struct ContentView: View {
         } message: {
             Text(library.deletionError ?? "알 수 없는 오류")
         }
+        .alert(
+            "VM 복제 실패",
+            isPresented: Binding(
+                get: { library.cloneError != nil },
+                set: { if !$0 { library.cloneError = nil } }
+            )
+        ) {
+            Button("확인") { library.cloneError = nil }
+        } message: {
+            Text(library.cloneError ?? "알 수 없는 오류")
+        }
+        .alert(
+            "VM 이동 실패",
+            isPresented: Binding(
+                get: { library.moveError != nil },
+                set: { if !$0 { library.moveError = nil } }
+            )
+        ) {
+            Button("확인") { library.moveError = nil }
+        } message: {
+            Text(library.moveError ?? "알 수 없는 오류")
+        }
         .background(
             Button("") { showPalette = true }
                 .keyboardShortcut("k", modifiers: .command)
@@ -101,8 +129,20 @@ struct LibrarySidebar: View {
                         VMRow(model: library.model(for: cfg))
                             .tag(cfg.slug)
                             .contextMenu {
+                                if cfg.engineKind == .hvfEngine, cfg.installPending != true {
+                                    Button { library.requestWindowsClone(cfg) } label: {
+                                        Label("새 TPM ID로 복제", systemImage: "plus.square.on.square")
+                                    }
+                                    .disabled(library.cloningSlugs.contains(cfg.slug))
+                                    Button { chooseMoveDestination(for: cfg) } label: {
+                                        Label("같은 VM ID로 번들 이동", systemImage: "folder.badge.gearshape")
+                                    }
+                                    .disabled(library.movingSlugs.contains(cfg.slug))
+                                }
                                 Button(role: .destructive) { library.requestDeletion(cfg) } label: { Label("삭제", systemImage: "trash") }
-                                    .disabled(library.deletingSlugs.contains(cfg.slug))
+                                    .disabled(library.deletingSlugs.contains(cfg.slug)
+                                              || library.cloningSlugs.contains(cfg.slug)
+                                              || library.movingSlugs.contains(cfg.slug))
                             }
                     }
                 }
@@ -183,6 +223,49 @@ struct LibrarySidebar: View {
             Spacer()
             Text(s).font(.caption2).foregroundColor(.secondary)
         }
+    }
+
+    private func chooseMoveDestination(for config: VMConfig) {
+        #if canImport(AppKit)
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "여기로 이동"
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        library.moveWindowsHVFBundle(config, to: destination)
+        #endif
+    }
+}
+
+private struct CloneWindowsHVFSheet: View {
+    @ObservedObject var library: LibraryModel
+    let config: VMConfig
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Windows HVF VM 복제").font(.title2.bold())
+            Text("APFS copy-on-write로 번들을 복제합니다. 복제본은 원본의 TPM 키를 공유하지 않으며 새 TPM ID로 시작합니다. 복사된 이전 TPM 상태와 실행 증거는 보관됩니다.")
+                .foregroundColor(.secondary)
+            TextField("새 VM 이름", text: $name)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Spacer()
+                Button("취소") { dismiss() }
+                Button("복제") {
+                    library.cloneWindowsHVF(config, name: name)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(VMLibrary.normalizedVMName(name) == nil)
+            }
+        }
+        .padding(20)
+        .frame(width: 480)
+        .onAppear { name = "\(config.name) Copy" }
     }
 }
 

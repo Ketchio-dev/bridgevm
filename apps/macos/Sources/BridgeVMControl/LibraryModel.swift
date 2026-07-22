@@ -12,8 +12,13 @@ final class LibraryModel: ObservableObject {
     @Published var showingCreate = false
     @Published var proMode = false
     @Published var pendingDeletion: VMConfig?
+    @Published var pendingWindowsClone: VMConfig?
     @Published var deletionError: String?
+    @Published var cloneError: String?
+    @Published var moveError: String?
     @Published private(set) var deletingSlugs: Set<String> = []
+    @Published private(set) var cloningSlugs: Set<String> = []
+    @Published private(set) var movingSlugs: Set<String> = []
     @Published private(set) var libraryIssues: [VMLibraryIssue] = []
 
     private var modelCache: [String: ControlModel] = [:]
@@ -99,6 +104,69 @@ final class LibraryModel: ObservableObject {
                     self.deletionError = stillRunning
                         ? "\(cfg.name)을(를) 정지하지 못해 삭제하지 않았습니다."
                         : "\(cfg.name)의 라이브러리 항목을 디스크에서 삭제하지 못했습니다."
+                }
+            }
+        }
+    }
+
+    func requestWindowsClone(_ cfg: VMConfig) {
+        guard cfg.engineKind == .hvfEngine,
+              cfg.installPending != true,
+              !cloningSlugs.contains(cfg.slug) else { return }
+        pendingWindowsClone = cfg
+    }
+
+    func cloneWindowsHVF(_ cfg: VMConfig, name: String) {
+        pendingWindowsClone = nil
+        guard !cloningSlugs.contains(cfg.slug) else { return }
+        let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend()
+        guard !backend.isRunning() else {
+            cloneError = "실행 중인 VM은 복제할 수 없습니다. 먼저 완전히 정지하세요."
+            return
+        }
+        cloningSlugs.insert(cfg.slug)
+        let libraryRoot = self.libraryRoot
+        Task.detached {
+            let clone = VMLibrary.cloneWindowsHVF(
+                name: name,
+                template: cfg,
+                libraryRoot: libraryRoot
+            )
+            await MainActor.run {
+                self.cloningSlugs.remove(cfg.slug)
+                if let clone {
+                    self.reload()
+                    self.selectedID = clone.slug
+                } else {
+                    self.cloneError = "Windows HVF 번들을 복제하지 못했습니다. 원본 데이터는 변경하지 않았습니다."
+                }
+            }
+        }
+    }
+
+    func moveWindowsHVFBundle(_ cfg: VMConfig, to destinationParent: URL) {
+        guard !movingSlugs.contains(cfg.slug) else { return }
+        let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend()
+        guard !backend.isRunning() else {
+            moveError = "실행 중인 VM은 이동할 수 없습니다. 먼저 완전히 정지하세요."
+            return
+        }
+        movingSlugs.insert(cfg.slug)
+        let libraryRoot = self.libraryRoot
+        Task.detached {
+            let moved = VMLibrary.moveWindowsHVFBundle(
+                cfg,
+                to: destinationParent,
+                rootURL: libraryRoot
+            )
+            await MainActor.run {
+                self.movingSlugs.remove(cfg.slug)
+                if let moved {
+                    self.modelCache[cfg.slug] = nil
+                    self.reload()
+                    self.selectedID = moved.slug
+                } else {
+                    self.moveError = "VM 번들을 이동하지 못했습니다. 원래 위치와 등록 정보를 복구했습니다. 대상 위치가 비어 있고 같은 Mac에서 쓸 수 있는지 확인하세요."
                 }
             }
         }

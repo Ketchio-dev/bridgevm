@@ -287,6 +287,39 @@ final class VMLibraryPersistenceTests: XCTestCase {
 
         XCTAssertEqual(VMLibrary.deletionImpact(for: linked, rootURL: root), .registrationOnly)
     }
+
+    func testWindowsHVFMoveKeepsStableIdentityRebasesPathsAndWritesReceipt() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = temp.appendingPathComponent("library", isDirectory: true)
+        let source = root.appendingPathComponent("win/bundle.vmbridge", isDirectory: true)
+        let destinationParent = temp.appendingPathComponent("moved", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: source.appendingPathComponent("metadata/vtpm", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try Data("disk".utf8).write(to: source.appendingPathComponent("disks-placeholder"))
+        defer { try? FileManager.default.removeItem(at: temp) }
+        var cfg = config(id: "win")
+        cfg.backendKind = "hvf-engine"
+        cfg.bundlePath = source.path
+        cfg.diskPath = source.appendingPathComponent("disks/hvf-target.raw").path
+        XCTAssertTrue(VMLibrary.save(cfg, rootURL: root))
+
+        let moved = try XCTUnwrap(VMLibrary.moveWindowsHVFBundle(
+            cfg,
+            to: destinationParent,
+            rootURL: root
+        ))
+
+        XCTAssertEqual(moved.slug, "win")
+        XCTAssertEqual(moved.bundlePath, destinationParent.appendingPathComponent("bundle.vmbridge").path)
+        XCTAssertEqual(moved.diskPath, destinationParent.appendingPathComponent("bundle.vmbridge/disks/hvf-target.raw").path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+        let receipts = destinationParent.appendingPathComponent("bundle.vmbridge/metadata/vtpm-lifecycle")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: receipts.path).count, 1)
+        XCTAssertEqual(VMLibrary.list(rootURL: root).first?.id, "win")
+        XCTAssertEqual(VMLibrary.list(rootURL: root).first?.bundlePath, moved.bundlePath)
+    }
 }
 
 final class ShellCommandSafetyTests: XCTestCase {
