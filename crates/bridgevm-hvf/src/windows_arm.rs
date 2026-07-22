@@ -5482,3 +5482,2148 @@ pub(crate) fn arm_exception_class_name(class: u64) -> &'static str {
         _ => "unknown",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_firmware_run_loop_exit() -> WindowsArmUefiFirmwareRunLoopExit {
+        WindowsArmUefiFirmwareRunLoopExit {
+            index: 1,
+            run_status: None,
+            exit_reason: None,
+            exit_syndrome: None,
+            exit_exception_class: None,
+            exit_virtual_address: None,
+            exit_physical_address: None,
+            pc_after_exit_status: None,
+            pc_after_exit: None,
+            instruction_word_after_exit: None,
+            instruction_hint_after_exit: "not observed",
+            pc_stage1_leaf_level_after_exit: None,
+            pc_stage1_leaf_descriptor_after_exit: None,
+            pc_stage1_leaf_descriptor_kind_after_exit: "not observed",
+            pc_stage1_leaf_pxn_after_exit: None,
+            pc_stage1_leaf_uxn_after_exit: None,
+            stage1_descriptor_samples_after_exit: Vec::new(),
+            stage1_walk_entries_after_exit: Vec::new(),
+            stage1_executable_candidates_after_exit: Vec::new(),
+            x0_after_exit: None,
+            x1_after_exit: None,
+            x2_after_exit: None,
+            x3_after_exit: None,
+            x4_after_exit: None,
+            cpsr_after_exit: None,
+            vbar_el1_after_exit: None,
+            elr_el1_after_exit: None,
+            esr_el1_after_exit: None,
+            far_el1_after_exit: None,
+            spsr_el1_after_exit: None,
+            sctlr_el1_after_exit: None,
+            tcr_el1_after_exit: None,
+            ttbr0_el1_after_exit: None,
+            ttbr1_el1_after_exit: None,
+            mair_el1_after_exit: None,
+            sp_el1_after_exit: None,
+            watchdog_cancel_status: None,
+            vtimer_auto_mask_get_status: None,
+            vtimer_auto_mask_after_exit: None,
+            vtimer_rearm_cval_value: None,
+            vtimer_rearm_cval_set_status: None,
+            vtimer_ppi_pending_recorded: None,
+            vtimer_irq_line_assertable: None,
+            vtimer_gic_group1_enabled: None,
+            vtimer_gic_priority_mask: None,
+            vtimer_gic_running_priority: None,
+            vtimer_gic_priority_threshold: None,
+            vtimer_gic_pending_intid: None,
+            vtimer_pending_irq_set_status: None,
+            vtimer_unmask_status: None,
+            handled: false,
+        }
+    }
+
+    fn test_uefi_fv_bytes(len: usize) -> Vec<u8> {
+        assert!(len >= UEFI_FV_MIN_HEADER_BYTES);
+        let header_length = 0x48_u16;
+        let mut bytes = vec![0_u8; len];
+        bytes[16..32].copy_from_slice(&[
+            0x8c, 0x8c, 0xf9, 0x61, 0xd2, 0x4b, 0x2c, 0x4f, 0x8a, 0x89, 0x22, 0x4d, 0xaf, 0xdc,
+            0xf1, 0x6f,
+        ]);
+        bytes[UEFI_FV_LENGTH_OFFSET..UEFI_FV_LENGTH_OFFSET + 8]
+            .copy_from_slice(&(len as u64).to_le_bytes());
+        bytes[UEFI_FV_SIGNATURE_OFFSET..UEFI_FV_SIGNATURE_OFFSET + 4]
+            .copy_from_slice(UEFI_FV_SIGNATURE);
+        bytes[0x2c..0x30].copy_from_slice(&0x0004_feff_u32.to_le_bytes());
+        bytes[UEFI_FV_HEADER_LENGTH_OFFSET..UEFI_FV_HEADER_LENGTH_OFFSET + 2]
+            .copy_from_slice(&header_length.to_le_bytes());
+        bytes[0x34..0x36].copy_from_slice(&0_u16.to_le_bytes());
+        bytes[0x36] = 0;
+        bytes[0x37] = 2;
+        bytes[0x38..0x3c].copy_from_slice(&1_u32.to_le_bytes());
+        bytes[0x3c..0x40].copy_from_slice(&(len as u32).to_le_bytes());
+        bytes[0x40..0x44].copy_from_slice(&0_u32.to_le_bytes());
+        bytes[0x44..0x48].copy_from_slice(&0_u32.to_le_bytes());
+        let checksum = 0_u16.wrapping_sub(uefi_checksum16(&bytes[..usize::from(header_length)]));
+        bytes[0x32..0x34].copy_from_slice(&checksum.to_le_bytes());
+        bytes
+    }
+
+    fn sysreg_trap_syndrome(
+        is_read: bool,
+        register: u8,
+        op0: u8,
+        op1: u8,
+        crn: u8,
+        crm: u8,
+        op2: u8,
+    ) -> u64 {
+        (AARCH64_SYSREG_TRAP_EXCEPTION_CLASS << 26)
+            | (u64::from(op0) << 20)
+            | (u64::from(op2) << 17)
+            | (u64::from(op1) << 14)
+            | (u64::from(crn) << 10)
+            | (u64::from(register) << 5)
+            | (u64::from(crm) << 1)
+            | u64::from(is_read as u8)
+    }
+
+    #[test]
+    fn low_vector_remap_target_requires_populated_non_diagnostic_current_el_spx_slot() {
+        let recommendation = |word, base_physical_address| WindowsArmUefiVectorBaseRecommendation {
+            base_virtual_address: WINDOWS_ARM_EXECUTABLE_DIAGNOSTIC_VECTOR_IPA,
+            base_physical_address,
+            current_el_spx_sync_instruction_word: word,
+            current_el_spx_sync_instruction_hint: "unit-test",
+            reason: "unit-test",
+        };
+
+        assert!(recommendation(
+            Some(0xd503_207f),
+            Some(WINDOWS_ARM_EXECUTABLE_DIAGNOSTIC_VECTOR_IPA)
+        )
+        .is_populated_low_vector_remap_target());
+        assert!(
+            !recommendation(Some(0), Some(WINDOWS_ARM_EXECUTABLE_DIAGNOSTIC_VECTOR_IPA))
+                .is_populated_low_vector_remap_target()
+        );
+        assert!(!recommendation(
+            Some(0xffff_ffff),
+            Some(WINDOWS_ARM_EXECUTABLE_DIAGNOSTIC_VECTOR_IPA)
+        )
+        .is_populated_low_vector_remap_target());
+        assert!(!recommendation(
+            Some(AARCH64_HVC_0_INSTRUCTION),
+            Some(WINDOWS_ARM_EXECUTABLE_DIAGNOSTIC_VECTOR_IPA)
+        )
+        .is_populated_low_vector_remap_target());
+        assert!(!recommendation(
+            Some(AARCH64_HVC_1_INSTRUCTION),
+            Some(WINDOWS_ARM_EXECUTABLE_DIAGNOSTIC_VECTOR_IPA)
+        )
+        .is_populated_low_vector_remap_target());
+        assert!(!recommendation(
+            Some(AARCH64_ERET_INSTRUCTION),
+            Some(WINDOWS_ARM_EXECUTABLE_DIAGNOSTIC_VECTOR_IPA)
+        )
+        .is_populated_low_vector_remap_target());
+        assert!(!recommendation(Some(0xd503_207f), None).is_populated_low_vector_remap_target());
+    }
+
+    #[test]
+    fn firmware_post_repair_interaction_classifier_labels_timer_and_virtio_mmio() {
+        let vtimer_exit = WindowsArmUefiFirmwareRunLoopExit {
+            run_status: Some(0),
+            exit_reason: Some(2),
+            ..test_firmware_run_loop_exit()
+        };
+        assert_eq!(
+            windows_arm_firmware_post_repair_interaction_kind(&[], &vtimer_exit),
+            "vtimer"
+        );
+        assert!(!windows_arm_firmware_post_repair_is_device_interaction(
+            "vtimer"
+        ));
+
+        let installer_iso = PathBuf::from("/tmp/Win11_Arm64.iso");
+        let block_devices = windows_arm_firmware_block_devices(Some(installer_iso), None);
+        let virtio_exit = WindowsArmUefiFirmwareRunLoopExit {
+            run_status: Some(0),
+            exit_reason: Some(1),
+            exit_syndrome: Some(0x93c0_8006),
+            exit_physical_address: Some(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA),
+            ..test_firmware_run_loop_exit()
+        };
+        assert_eq!(
+            windows_arm_firmware_post_repair_interaction_kind(&block_devices, &virtio_exit),
+            "mmio:virtio-installer-iso"
+        );
+        assert!(windows_arm_firmware_post_repair_is_device_interaction(
+            "mmio:virtio-installer-iso"
+        ));
+        assert!(windows_arm_firmware_post_repair_is_device_interaction(
+            "sysreg:trap"
+        ));
+        assert!(!windows_arm_firmware_post_repair_is_device_interaction(
+            "exception:non-mmio"
+        ));
+    }
+
+    #[test]
+    fn post_repair_device_interaction_skips_diagnostic_vector_continuation() {
+        let mut telemetry = LowVectorPostRepairTelemetry::default();
+        let diagnostic_exit = WindowsArmUefiFirmwareRunLoopExit {
+            index: 4,
+            run_status: Some(0),
+            exit_reason: Some(1),
+            exit_syndrome: Some(0x5a00_0001),
+            pc_after_exit: Some(0x200204),
+            ..test_firmware_run_loop_exit()
+        };
+        telemetry.observe_first_exit(&[], &diagnostic_exit);
+        telemetry.observe_device_interaction(&[], &diagnostic_exit);
+
+        assert!(telemetry.first_exit.observed);
+        assert_eq!(telemetry.first_exit.index, Some(4));
+        assert_eq!(telemetry.first_exit.interaction_kind, "exception:non-mmio");
+        assert!(!telemetry.first_device_interaction.observed);
+
+        let installer_iso = PathBuf::from("/tmp/Win11_Arm64.iso");
+        let block_devices = windows_arm_firmware_block_devices(Some(installer_iso), None);
+        let virtio_exit = WindowsArmUefiFirmwareRunLoopExit {
+            index: 7,
+            run_status: Some(0),
+            exit_reason: Some(1),
+            exit_syndrome: Some(0x93c0_8006),
+            exit_physical_address: Some(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA),
+            pc_after_exit: Some(0x8001234),
+            ..test_firmware_run_loop_exit()
+        };
+        telemetry.observe_device_interaction(&block_devices, &virtio_exit);
+
+        assert!(telemetry.first_device_interaction.observed);
+        assert_eq!(telemetry.first_device_interaction.index, Some(7));
+        assert_eq!(
+            telemetry.first_device_interaction.interaction_kind,
+            "mmio:virtio-installer-iso"
+        );
+        assert_eq!(telemetry.first_device_interaction.pc, Some(0x8001234));
+    }
+
+    #[test]
+    fn post_repair_exit_telemetry_records_access_metadata() {
+        let installer_iso = PathBuf::from("/tmp/Win11_Arm64.iso");
+        let block_devices = windows_arm_firmware_block_devices(Some(installer_iso), None);
+        let virtio_exit = WindowsArmUefiFirmwareRunLoopExit {
+            index: 9,
+            run_status: Some(HV_SUCCESS_VALUE),
+            exit_reason: Some(HV_EXIT_REASON_EXCEPTION_VALUE),
+            exit_syndrome: Some(0x93c0_8006),
+            exit_physical_address: Some(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA + 0x10),
+            pc_after_exit: Some(0x800_4321),
+            ..test_firmware_run_loop_exit()
+        };
+
+        let telemetry = LowVectorPostRepairExitTelemetry::observed(&block_devices, &virtio_exit);
+        assert_eq!(telemetry.interaction_kind, "mmio:virtio-installer-iso");
+        assert_eq!(telemetry.access.kind, "mmio");
+        assert_eq!(telemetry.access.direction, "read");
+        assert_eq!(
+            telemetry.access.address,
+            Some(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA + 0x10)
+        );
+        assert_eq!(telemetry.access.sysreg, None);
+        assert_eq!(telemetry.access.syndrome, Some(0x93c0_8006));
+
+        let mut output = String::new();
+        append_low_vector_post_repair_exit_telemetry(
+            &mut output,
+            "Post-repair first device interaction",
+            &telemetry,
+            "Post-repair first device interaction kind",
+            Some(&virtio_exit),
+        );
+        assert!(output.contains("Post-repair first device interaction access kind: mmio"));
+        assert!(output.contains("Post-repair first device interaction access direction: read"));
+        assert!(output.contains("Post-repair first device interaction access address: 0x10002010"));
+        assert!(output.contains("Post-repair first device interaction access sysreg: not observed"));
+        assert!(output.contains("Post-repair first device interaction access syndrome: 0x93c08006"));
+
+        let sysreg_exit = WindowsArmUefiFirmwareRunLoopExit {
+            index: 10,
+            run_status: Some(HV_SUCCESS_VALUE),
+            exit_reason: Some(HV_EXIT_REASON_EXCEPTION_VALUE),
+            exit_syndrome: Some(sysreg_trap_syndrome(true, 2, 3, 0, 12, 12, 0)),
+            pc_after_exit: Some(0x800_4567),
+            ..test_firmware_run_loop_exit()
+        };
+        let telemetry = LowVectorPostRepairExitTelemetry::observed(&[], &sysreg_exit);
+        assert_eq!(telemetry.interaction_kind, "sysreg:trap");
+        assert_eq!(telemetry.access.kind, "icc-sysreg");
+        assert_eq!(telemetry.access.direction, "read");
+        assert_eq!(telemetry.access.address, None);
+        assert_eq!(telemetry.access.sysreg, Some(ICC_IAR1_EL1_SYSREG));
+        assert!(telemetry.access.syndrome.is_some());
+    }
+
+    #[test]
+    fn post_repair_unhandled_access_telemetry_records_decode_metadata() {
+        let installer_iso = PathBuf::from("/tmp/Win11_Arm64.iso");
+        let block_devices = windows_arm_firmware_block_devices(Some(installer_iso), None);
+        let virtio_exit = WindowsArmUefiFirmwareRunLoopExit {
+            index: 11,
+            run_status: Some(HV_SUCCESS_VALUE),
+            exit_reason: Some(HV_EXIT_REASON_EXCEPTION_VALUE),
+            exit_syndrome: Some(0x93c0_8006),
+            exit_physical_address: Some(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA + 0x10),
+            pc_after_exit: Some(0x800_6789),
+            ..test_firmware_run_loop_exit()
+        };
+        let mmio_access = decode_mmio_data_abort(virtio_exit.exit_syndrome.unwrap()).unwrap();
+
+        let mut telemetry = LowVectorPostRepairTelemetry::default();
+        telemetry.observe_unhandled_mmio_access(
+            &block_devices,
+            &virtio_exit,
+            mmio_access,
+            WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA + 0x10,
+            None,
+            "device-bus-unhandled-read",
+        );
+
+        assert!(telemetry.first_unhandled_access.observed);
+        assert_eq!(telemetry.first_unhandled_access.index, Some(11));
+        assert_eq!(telemetry.first_unhandled_access.kind, "mmio");
+        assert_eq!(telemetry.first_unhandled_access.access, "read");
+        assert_eq!(
+            telemetry.first_unhandled_access.mmio_ipa,
+            Some(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA + 0x10)
+        );
+        assert_eq!(telemetry.first_unhandled_access.mmio_width, Some(8));
+        assert_eq!(
+            telemetry.first_unhandled_access.mmio_device_kind,
+            "virtio-installer-iso"
+        );
+        assert_eq!(
+            telemetry.first_unhandled_access.handler_result,
+            "device-bus-unhandled-read"
+        );
+
+        let mut output = String::new();
+        append_low_vector_post_repair_unhandled_access_telemetry(
+            &mut output,
+            "Post-repair first unhandled access",
+            &telemetry.first_unhandled_access,
+        );
+        assert!(output.contains("Post-repair first unhandled access observed: true"));
+        assert!(output.contains("Post-repair first unhandled access: 11"));
+        assert!(output.contains("Post-repair first unhandled access kind: mmio"));
+        assert!(output.contains("Post-repair first unhandled access direction: read"));
+        assert!(output.contains("Post-repair first unhandled access MMIO IPA: 0x10002010"));
+        assert!(output
+            .contains("Post-repair first unhandled access MMIO device kind: virtio-installer-iso"));
+
+        let sysreg_exit = WindowsArmUefiFirmwareRunLoopExit {
+            index: 12,
+            run_status: Some(HV_SUCCESS_VALUE),
+            exit_reason: Some(HV_EXIT_REASON_EXCEPTION_VALUE),
+            exit_syndrome: Some(sysreg_trap_syndrome(true, 2, 3, 0, 12, 12, 0)),
+            pc_after_exit: Some(0x800_9876),
+            ..test_firmware_run_loop_exit()
+        };
+        let sysreg_access =
+            decode_system_register_trap(sysreg_exit.exit_syndrome.unwrap()).unwrap();
+        let mut telemetry = LowVectorPostRepairTelemetry::default();
+        telemetry.observe_unhandled_sysreg_access(
+            &sysreg_exit,
+            sysreg_access,
+            None,
+            "sysreg-unhandled",
+        );
+
+        assert!(telemetry.first_unhandled_access.observed);
+        assert_eq!(telemetry.first_unhandled_access.kind, "icc-sysreg");
+        assert_eq!(telemetry.first_unhandled_access.access, "read");
+        assert_eq!(
+            telemetry.first_unhandled_access.sysreg,
+            Some(ICC_IAR1_EL1_SYSREG)
+        );
+        assert_eq!(telemetry.first_unhandled_access.sysreg_name, "ICC_IAR1_EL1");
+        assert_eq!(
+            telemetry.first_unhandled_access.handler_result,
+            "sysreg-unhandled"
+        );
+    }
+
+    #[test]
+    fn windows_11_arm_platform_description_probe_is_fdt_first_and_metadata_safe() {
+        let probe =
+            probe_windows_11_arm_platform_description(WindowsArmPlatformDescriptionOptions {
+                guest_ram_bytes: 8 * 1024 * 1024 * 1024,
+                vcpu_count: 6,
+            });
+        let output = probe.render_text();
+
+        assert!(!probe.qemu_used);
+        assert!(!probe.apple_vz_used);
+        assert!(!probe.hvf_entered);
+        assert_eq!(probe.format, "FDT");
+        assert_eq!(probe.fdt_magic, FDT_MAGIC);
+        assert_eq!(read_be_u32(&probe.fdt_blob, 0), Some(FDT_MAGIC));
+        assert!(probe.fdt_magic_verified);
+        assert_eq!(probe.memory_node_base_ipa, Some(WINDOWS_ARM_GUEST_RAM_IPA));
+        assert!(probe.memory_node_at_guest_ram_base);
+        assert_eq!(probe.requested_cpu_count, 6);
+        assert_eq!(probe.cpu_count, 6);
+        assert!(probe.cpu_count_verified);
+        assert_eq!(probe.device_mmio_start_ipa, WINDOWS_ARM_DEVICE_MMIO_IPA);
+        assert_eq!(
+            probe.device_mmio_end_ipa,
+            WINDOWS_ARM_DEVICE_MMIO_IPA + WINDOWS_ARM_DEVICE_MMIO_BYTES
+        );
+        assert_eq!(probe.mmio_nodes.len(), 4);
+        assert!(probe
+            .mmio_nodes
+            .iter()
+            .all(|node| node.inside_device_window));
+        assert!(probe.mmio_nodes_inside_device_window);
+        assert!(probe.mmio_nodes.iter().any(|node| node.label == "PL011"
+            && node.base_ipa == Some(WINDOWS_ARM_PL011_MMIO_IPA)
+            && node.bytes == Some(PL011_REGISTER_WINDOW_BYTES)));
+        assert!(probe.mmio_nodes.iter().any(|node| node.label == "PL031"
+            && node.base_ipa == Some(WINDOWS_ARM_PL031_MMIO_IPA)
+            && node.bytes == Some(PL031_REGISTER_WINDOW_BYTES)));
+        assert!(probe
+            .mmio_nodes
+            .iter()
+            .any(|node| node.label == "VirtIO-MMIO installer ISO"
+                && node.node_name == "virtio_mmio@10002000"
+                && node.base_ipa == Some(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA)
+                && node.bytes == Some(VIRTIO_MMIO_REGISTER_WINDOW_BYTES)));
+        assert!(probe
+            .mmio_nodes
+            .iter()
+            .any(|node| node.label == "VirtIO-MMIO target disk"
+                && node.node_name == "virtio_mmio@10003000"
+                && node.base_ipa == Some(WINDOWS_ARM_VIRTIO_TARGET_DISK_MMIO_IPA)
+                && node.bytes == Some(VIRTIO_MMIO_REGISTER_WINDOW_BYTES)));
+        assert_eq!(probe.root_interrupt_parent, Some(WINDOWS_ARM_GIC_PHANDLE));
+        assert_eq!(probe.gic_phandle, Some(WINDOWS_ARM_GIC_PHANDLE));
+        assert_eq!(
+            probe.gic_distributor_base_ipa,
+            Some(WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA)
+        );
+        assert_eq!(
+            probe.gic_distributor_bytes,
+            Some(WINDOWS_ARM_GIC_DISTRIBUTOR_BYTES)
+        );
+        assert_eq!(
+            probe.gic_redistributor_base_ipa,
+            Some(WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA)
+        );
+        assert_eq!(
+            probe.gic_redistributor_bytes,
+            Some(windows_arm_gic_redistributor_fdt_bytes(6))
+        );
+        assert!(probe.gic_nodes_inside_device_window);
+        assert!(probe.arch_timer_node_present);
+        assert_eq!(probe.arch_timer_interrupt_count, 4);
+        assert_eq!(probe.interrupt_nodes.len(), 4);
+        assert!(probe.interrupt_nodes_described);
+        assert!(probe
+            .interrupt_nodes
+            .iter()
+            .any(|node| node.label == "PL011"
+                && node.interrupt_type == Some(GIC_SPI)
+                && node.interrupt_number == Some(WINDOWS_ARM_PL011_SPI)
+                && node.trigger == Some(IRQ_TYPE_LEVEL_HIGH)
+                && node.described));
+        assert!(probe
+            .interrupt_nodes
+            .iter()
+            .any(|node| node.label == "PL031"
+                && node.interrupt_type == Some(GIC_SPI)
+                && node.interrupt_number == Some(WINDOWS_ARM_PL031_SPI)
+                && node.trigger == Some(IRQ_TYPE_LEVEL_HIGH)
+                && node.described));
+        assert!(probe
+            .interrupt_nodes
+            .iter()
+            .any(|node| node.label == "VirtIO-MMIO installer ISO"
+                && node.interrupt_type == Some(GIC_SPI)
+                && node.interrupt_number == Some(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_SPI)
+                && node.trigger == Some(IRQ_TYPE_LEVEL_HIGH)
+                && node.described));
+        assert!(probe
+            .interrupt_nodes
+            .iter()
+            .any(|node| node.label == "VirtIO-MMIO target disk"
+                && node.interrupt_type == Some(GIC_SPI)
+                && node.interrupt_number == Some(WINDOWS_ARM_VIRTIO_TARGET_DISK_SPI)
+                && node.trigger == Some(IRQ_TYPE_LEVEL_HIGH)
+                && node.described));
+        assert!(!probe.acpi_implemented);
+        assert!(!probe.fw_cfg_used);
+        assert_eq!(probe.gic_status, "described/not emulated");
+        assert!(!probe.gic_emulated);
+        assert!(probe.blockers.is_empty());
+
+        assert!(output.contains("Windows 11 Arm HVF platform description probe"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Apple VZ: not used"));
+        assert!(output.contains("HVF: not entered"));
+        assert!(output.contains("Format: FDT"));
+        assert!(output.contains("FDT magic: 0xd00dfeed"));
+        assert!(output.contains("Memory node base: 0x40000000"));
+        assert!(output.contains("Memory node at 0x40000000: true"));
+        assert!(output.contains("CPU count: 6"));
+        assert!(output.contains("Device MMIO window: 0x10000000..0x20000000"));
+        assert!(output.contains(
+            "PL011/PL031/VirtIO-MMIO installer ISO/target disk nodes inside device window: true"
+        ));
+        assert!(output.contains("PL011 node inside device window: true"));
+        assert!(output.contains("PL031 node inside device window: true"));
+        assert!(output.contains("VirtIO-MMIO installer ISO node inside device window: true"));
+        assert!(output.contains("VirtIO-MMIO target disk node inside device window: true"));
+        assert!(output.contains("Root interrupt-parent: 0x1"));
+        assert!(output.contains("GIC phandle: 0x1"));
+        assert!(output.contains("GIC distributor base: 0x10010000"));
+        assert!(output.contains("GIC distributor bytes: 0x10000"));
+        assert!(output.contains("GIC redistributor base: 0x10020000"));
+        assert!(output.contains("GIC redistributor bytes: 0xc0000"));
+        assert!(output.contains("GIC nodes inside device window: true"));
+        assert!(output.contains("ARM arch timer node present: true"));
+        assert!(output.contains("ARM arch timer interrupt count: 4"));
+        assert!(output.contains("Interrupt nodes described: true"));
+        assert!(output.contains("PL011 interrupt type: 0x0"));
+        assert!(output.contains("PL011 interrupt number: 0x0"));
+        assert!(output.contains("PL011 interrupt trigger: 0x4"));
+        assert!(output.contains("PL031 interrupt number: 0x1"));
+        assert!(output.contains("VirtIO-MMIO installer ISO interrupt number: 0x2"));
+        assert!(output.contains("VirtIO-MMIO target disk interrupt number: 0x3"));
+        assert!(output.contains("ACPI: not implemented"));
+        assert!(output.contains("fw_cfg: not used"));
+        assert!(output.contains("GIC: described/not emulated"));
+        assert!(output.contains("Blockers: none"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn windows_11_arm_platform_description_probe_reports_zero_cpu_blocker() {
+        let probe =
+            probe_windows_11_arm_platform_description(WindowsArmPlatformDescriptionOptions {
+                guest_ram_bytes: WINDOWS_ARM_PLATFORM_DESCRIPTION_DEFAULT_GUEST_RAM_BYTES,
+                vcpu_count: 0,
+            });
+        let output = probe.render_text();
+
+        assert_eq!(probe.requested_cpu_count, 0);
+        assert_eq!(probe.cpu_count, 0);
+        assert!(probe.cpu_count_verified);
+        assert!(probe
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("FDT CPU count must be non-zero for Windows Arm")));
+        assert!(output.contains("CPU count: 0"));
+        assert!(output.contains("FDT CPU count must be non-zero for Windows Arm"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Apple VZ: not used"));
+        assert!(output.contains("HVF: not entered"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn windows_11_arm_boot_disk_layout_probe_creates_and_verifies_sparse_gpt() {
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-windows-arm-boot-disk-layout-{}-{}.raw",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        let probe = probe_windows_11_arm_boot_disk_layout(WindowsArmBootDiskLayoutOptions {
+            disk_path: path.clone(),
+            size_gib: WINDOWS_ARM_BOOT_DISK_MIN_SIZE_GIB,
+            create: true,
+        });
+        let output = probe.render_text();
+        let metadata = std::fs::metadata(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(probe.disk_path, path);
+        assert_eq!(probe.requested_size_gib, WINDOWS_ARM_BOOT_DISK_MIN_SIZE_GIB);
+        assert_eq!(
+            probe.disk_size_bytes,
+            gib_to_bytes(WINDOWS_ARM_BOOT_DISK_MIN_SIZE_GIB)
+        );
+        assert!(probe.create_requested);
+        assert!(probe.created);
+        assert!(probe.reopened_for_verification);
+        assert!(probe.protective_mbr_verified);
+        assert!(probe.primary_gpt_verified);
+        assert!(probe.backup_gpt_verified);
+        assert!(probe.partition_entries_verified);
+        assert_eq!(
+            metadata.len(),
+            gib_to_bytes(WINDOWS_ARM_BOOT_DISK_MIN_SIZE_GIB).unwrap()
+        );
+        assert_eq!(probe.partitions.len(), 3);
+        assert_eq!(probe.partitions[0].name, "EFI System Partition");
+        assert_eq!(probe.partitions[1].name, "Microsoft Reserved");
+        assert_eq!(probe.partitions[2].name, "Windows Basic Data");
+        assert!(probe.blockers.is_empty());
+        assert!(output.contains("Windows 11 Arm HVF boot disk layout probe"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Apple VZ: not used"));
+        assert!(output.contains("HVF: not entered"));
+        assert!(output.contains("Create requested: true"));
+        assert!(output.contains("Created: true"));
+        assert!(output.contains("Protective MBR verified: true"));
+        assert!(output.contains("Primary GPT verified: true"));
+        assert!(output.contains("Backup GPT verified: true"));
+        assert!(output.contains("Partition entries verified: true"));
+        assert!(output.contains("EFI System Partition"));
+        assert!(output.contains("Microsoft Reserved"));
+        assert!(output.contains("Windows Basic Data"));
+        assert!(output.contains("Blockers: none"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn windows_11_arm_boot_disk_layout_probe_without_create_is_metadata_safe() {
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-windows-arm-boot-disk-layout-missing-{}-{}.raw",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        let probe = probe_windows_11_arm_boot_disk_layout(WindowsArmBootDiskLayoutOptions {
+            disk_path: path,
+            size_gib: WINDOWS_ARM_BOOT_DISK_MIN_SIZE_GIB,
+            create: false,
+        });
+        let output = probe.render_text();
+
+        assert!(!probe.create_requested);
+        assert!(!probe.created);
+        assert!(!probe.reopened_for_verification);
+        assert!(!probe.protective_mbr_verified);
+        assert!(!probe.primary_gpt_verified);
+        assert!(!probe.backup_gpt_verified);
+        assert!(!probe.partition_entries_verified);
+        assert_eq!(probe.partitions.len(), 3);
+        assert!(probe
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("pass --create")));
+        assert!(output.contains("Create requested: false"));
+        assert!(output.contains("Created: false"));
+        assert!(output.contains("disk file does not exist"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn windows_11_arm_uefi_firmware_handoff_probe_creates_and_verifies_vars() {
+        let stem = format!(
+            "bridgevm-windows-arm-uefi-handoff-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let firmware_path = std::env::temp_dir().join(format!("{stem}-code.fd"));
+        let template_path = std::env::temp_dir().join(format!("{stem}-vars-template.fd"));
+        let vars_path = std::env::temp_dir().join(format!("{stem}-vars.fd"));
+        std::fs::write(&firmware_path, test_uefi_fv_bytes(128 * 1024)).unwrap();
+        std::fs::write(&template_path, test_uefi_fv_bytes(64 * 1024)).unwrap();
+        let _ = std::fs::remove_file(&vars_path);
+
+        let probe =
+            probe_windows_11_arm_uefi_firmware_handoff(WindowsArmUefiFirmwareHandoffOptions {
+                firmware_path: firmware_path.clone(),
+                vars_template_path: Some(template_path.clone()),
+                vars_path: Some(vars_path.clone()),
+                create_vars: true,
+            });
+        let output = probe.render_text();
+        let vars_bytes = std::fs::read(&vars_path).unwrap();
+        let template_bytes = std::fs::read(&template_path).unwrap();
+        let _ = std::fs::remove_file(&firmware_path);
+        let _ = std::fs::remove_file(&template_path);
+        let _ = std::fs::remove_file(&vars_path);
+
+        assert_eq!(vars_bytes, template_bytes);
+        assert_eq!(probe.firmware_path, firmware_path);
+        assert_eq!(probe.firmware_bytes, Some(128 * 1024));
+        assert!(probe.firmware_verified);
+        assert_eq!(probe.firmware_slot_ipa, WINDOWS_ARM_UEFI_CODE_IPA);
+        assert_eq!(probe.firmware_slot_bytes, WINDOWS_ARM_UEFI_SLOT_BYTES);
+        assert_eq!(probe.vars_template_path, Some(template_path));
+        assert_eq!(probe.vars_template_bytes, Some(64 * 1024));
+        assert!(probe.vars_template_verified);
+        assert_eq!(probe.vars_path, Some(vars_path));
+        assert_eq!(probe.vars_bytes, Some(64 * 1024));
+        assert_eq!(probe.vars_slot_ipa, WINDOWS_ARM_UEFI_VARS_IPA);
+        assert_eq!(probe.vars_slot_bytes, WINDOWS_ARM_UEFI_SLOT_BYTES);
+        assert!(probe.vars_created);
+        assert!(probe.vars_reopened_for_verification);
+        assert!(probe.vars_verified);
+        assert_eq!(
+            probe.planned_reset_vector_ipa,
+            Some(WINDOWS_ARM_UEFI_CODE_IPA)
+        );
+        assert!(probe
+            .firmware_volume
+            .as_ref()
+            .is_some_and(|volume| volume.checksum_verified));
+        assert!(probe
+            .vars_volume
+            .as_ref()
+            .is_some_and(|volume| volume.checksum_verified));
+        assert!(probe.blockers.is_empty());
+        assert!(output.contains("Windows 11 Arm HVF UEFI firmware handoff probe"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Apple VZ: not used"));
+        assert!(output.contains("HVF: not entered"));
+        assert!(output.contains("AArch64 UEFI firmware and vars pflash handoff"));
+        assert!(output.contains("Firmware verified: true"));
+        assert!(output.contains("Firmware volume detected: true"));
+        assert!(output.contains("Firmware volume checksum verified: true"));
+        assert!(output.contains("Vars template verified: true"));
+        assert!(output.contains("Vars created: true"));
+        assert!(output.contains("Vars reopened for verification: true"));
+        assert!(output.contains("Vars verified: true"));
+        assert!(output.contains("Vars volume checksum verified: true"));
+        assert!(output.contains("Planned reset vector IPA: 0x8000000"));
+        assert!(output.contains("Blockers: none"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn windows_11_arm_uefi_firmware_handoff_probe_requires_vars_store() {
+        let firmware_path = std::env::temp_dir().join(format!(
+            "bridgevm-windows-arm-uefi-handoff-missing-vars-{}-{}.fd",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&firmware_path, test_uefi_fv_bytes(64 * 1024)).unwrap();
+
+        let probe =
+            probe_windows_11_arm_uefi_firmware_handoff(WindowsArmUefiFirmwareHandoffOptions {
+                firmware_path: firmware_path.clone(),
+                vars_template_path: None,
+                vars_path: None,
+                create_vars: false,
+            });
+        let output = probe.render_text();
+        let _ = std::fs::remove_file(&firmware_path);
+
+        assert!(probe.firmware_verified);
+        assert!(!probe.vars_verified);
+        assert_eq!(probe.planned_reset_vector_ipa, None);
+        assert!(probe
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("UEFI variable store is required")));
+        assert!(output.contains("Firmware verified: true"));
+        assert!(output.contains("Vars verified: false"));
+        assert!(output.contains("UEFI variable store is required"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn windows_11_arm_uefi_pflash_map_probe_loads_verified_slots() {
+        let stem = format!(
+            "bridgevm-windows-arm-uefi-pflash-map-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let firmware_path = std::env::temp_dir().join(format!("{stem}-code.fd"));
+        let template_path = std::env::temp_dir().join(format!("{stem}-vars-template.fd"));
+        let vars_path = std::env::temp_dir().join(format!("{stem}-vars.fd"));
+        std::fs::write(&firmware_path, test_uefi_fv_bytes(128 * 1024)).unwrap();
+        std::fs::write(&template_path, test_uefi_fv_bytes(64 * 1024)).unwrap();
+        let _ = std::fs::remove_file(&vars_path);
+
+        let probe = probe_windows_11_arm_uefi_pflash_map(WindowsArmUefiPflashMapOptions {
+            firmware_path: firmware_path.clone(),
+            vars_template_path: Some(template_path.clone()),
+            vars_path: Some(vars_path.clone()),
+            create_vars: true,
+        });
+        let output = probe.render_text();
+        let vars_bytes = std::fs::read(&vars_path).unwrap();
+        let template_bytes = std::fs::read(&template_path).unwrap();
+        let _ = std::fs::remove_file(&firmware_path);
+        let _ = std::fs::remove_file(&template_path);
+        let _ = std::fs::remove_file(&vars_path);
+
+        assert_eq!(vars_bytes, template_bytes);
+        assert_eq!(probe.firmware_path, firmware_path);
+        assert_eq!(probe.vars_path, Some(vars_path));
+        assert!(probe.vars_created);
+        assert!(probe.firmware_verified);
+        assert!(probe.vars_verified);
+        assert!(probe.pflash_slots_non_overlapping);
+        assert!(probe.guest_ram_overlap_verified);
+        assert!(probe.device_mmio_overlap_verified);
+        assert!(probe.pflash_map_verified);
+        assert_eq!(
+            probe.planned_reset_vector_ipa,
+            Some(WINDOWS_ARM_UEFI_CODE_IPA)
+        );
+        let firmware_slot = probe.firmware_slot.as_ref().unwrap();
+        assert_eq!(firmware_slot.name, "code");
+        assert_eq!(firmware_slot.ipa_start, WINDOWS_ARM_UEFI_CODE_IPA);
+        assert_eq!(firmware_slot.ipa_end_exclusive(), WINDOWS_ARM_UEFI_VARS_IPA);
+        assert_eq!(firmware_slot.source_bytes, 128 * 1024);
+        assert_eq!(
+            firmware_slot.zero_padding_bytes,
+            WINDOWS_ARM_UEFI_SLOT_BYTES - 128 * 1024
+        );
+        assert!(!firmware_slot.writable);
+        assert!(firmware_slot.prefix_verified);
+        assert!(firmware_slot.padding_zeroed);
+        let vars_slot = probe.vars_slot.as_ref().unwrap();
+        assert_eq!(vars_slot.name, "vars");
+        assert_eq!(vars_slot.ipa_start, WINDOWS_ARM_UEFI_VARS_IPA);
+        assert_eq!(vars_slot.ipa_end_exclusive(), WINDOWS_ARM_DEVICE_MMIO_IPA);
+        assert_eq!(vars_slot.source_bytes, 64 * 1024);
+        assert!(vars_slot.writable);
+        assert!(vars_slot.prefix_verified);
+        assert!(vars_slot.padding_zeroed);
+        assert!(probe.blockers.is_empty());
+        assert!(output.contains("Windows 11 Arm HVF UEFI pflash map probe"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Apple VZ: not used"));
+        assert!(output.contains("HVF: not entered"));
+        assert!(output.contains("AArch64 UEFI pflash slots loaded into memory images"));
+        assert!(output.contains("Firmware pflash loaded: true"));
+        assert!(output.contains("Firmware pflash IPA range: 0x8000000..0xc000000"));
+        assert!(output.contains("Firmware pflash source bytes: 0x20000"));
+        assert!(output.contains("Firmware pflash prefix verified: true"));
+        assert!(output.contains("Firmware pflash padding zeroed: true"));
+        assert!(output.contains("Vars pflash loaded: true"));
+        assert!(output.contains("Vars pflash IPA range: 0xc000000..0x10000000"));
+        assert!(output.contains("Vars pflash source bytes: 0x10000"));
+        assert!(output.contains("Vars pflash writable: true"));
+        assert!(output.contains("Pflash slots non-overlapping: true"));
+        assert!(output.contains("Guest RAM overlap verified: true"));
+        assert!(output.contains("Device MMIO overlap verified: true"));
+        assert!(output.contains("Pflash map verified: true"));
+        assert!(output.contains("Planned reset vector IPA: 0x8000000"));
+        assert!(output.contains("Blockers: none"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn pflash_slot_load_rejects_oversized_file_before_allocation() {
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-oversized-pflash-{}-{}.fd",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(512 * 1024 * 1024).unwrap();
+
+        let error = load_uefi_pflash_slot("code", &path, WINDOWS_ARM_UEFI_CODE_IPA, 4096, false)
+            .unwrap_err();
+        let _ = std::fs::remove_file(&path);
+
+        assert!(error.contains("536870912 bytes"), "{error}");
+        assert!(error.contains("4096 byte region"), "{error}");
+    }
+
+    #[test]
+    fn windows_11_arm_uefi_pflash_hvf_map_probe_defaults_to_no_live_map() {
+        let stem = format!(
+            "bridgevm-windows-arm-uefi-pflash-hvf-map-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let firmware_path = std::env::temp_dir().join(format!("{stem}-code.fd"));
+        let template_path = std::env::temp_dir().join(format!("{stem}-vars-template.fd"));
+        let vars_path = std::env::temp_dir().join(format!("{stem}-vars.fd"));
+        std::fs::write(&firmware_path, test_uefi_fv_bytes(128 * 1024)).unwrap();
+        std::fs::write(&template_path, test_uefi_fv_bytes(64 * 1024)).unwrap();
+        let _ = std::fs::remove_file(&vars_path);
+
+        let probe = probe_windows_11_arm_uefi_pflash_hvf_map(
+            WindowsArmUefiPflashMapOptions {
+                firmware_path: firmware_path.clone(),
+                vars_template_path: Some(template_path.clone()),
+                vars_path: Some(vars_path.clone()),
+                create_vars: true,
+            },
+            false,
+        );
+        let output = probe.render_text();
+        let _ = std::fs::remove_file(&firmware_path);
+        let _ = std::fs::remove_file(&template_path);
+        let _ = std::fs::remove_file(&vars_path);
+
+        assert!(!probe.allowed);
+        assert!(!probe.attempted);
+        assert!(!probe.vm_created);
+        assert!(!probe.firmware_memory_allocated);
+        assert!(!probe.vars_memory_allocated);
+        assert!(!probe.firmware_memory_mapped);
+        assert!(!probe.vars_memory_mapped);
+        assert!(!probe.vm_destroyed);
+        assert!(probe.pflash_map_verified);
+        assert_eq!(probe.firmware_slot_ipa, WINDOWS_ARM_UEFI_CODE_IPA);
+        assert_eq!(probe.vars_slot_ipa, WINDOWS_ARM_UEFI_VARS_IPA);
+        assert_eq!(probe.slot_bytes, WINDOWS_ARM_UEFI_SLOT_BYTES);
+        assert_eq!(probe.firmware_source_bytes, Some(128 * 1024));
+        assert_eq!(probe.vars_source_bytes, Some(64 * 1024));
+        assert_eq!(probe.firmware_map_flags, "read|exec");
+        assert_eq!(probe.vars_map_flags, "read|write");
+        assert!(probe
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("BRIDGEVM_HVF_ALLOW_UEFI_PFLASH_MAP")));
+        assert!(output.contains("Windows 11 Arm HVF UEFI pflash HVF map/unmap probe"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Apple VZ: not used"));
+        assert!(output.contains("Guest execution: not entered"));
+        assert!(output.contains("Allowed: false"));
+        assert!(output.contains("Attempted: false"));
+        assert!(output.contains("Pflash map verified: true"));
+        assert!(output.contains("Firmware slot IPA: 0x8000000"));
+        assert!(output.contains("Vars slot IPA: 0xc000000"));
+        assert!(output.contains("Slot bytes: 0x4000000"));
+        assert!(output.contains("Firmware source bytes: 0x20000"));
+        assert!(output.contains("Vars source bytes: 0x10000"));
+        assert!(output.contains("Firmware map flags: read|exec"));
+        assert!(output.contains("Vars map flags: read|write"));
+        assert!(output.contains("BRIDGEVM_HVF_ALLOW_UEFI_PFLASH_MAP"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn windows_11_arm_uefi_reset_vector_entry_probe_defaults_to_no_live_entry() {
+        let stem = format!(
+            "bridgevm-windows-arm-uefi-reset-vector-entry-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let firmware_path = std::env::temp_dir().join(format!("{stem}-code.fd"));
+        let template_path = std::env::temp_dir().join(format!("{stem}-vars-template.fd"));
+        let vars_path = std::env::temp_dir().join(format!("{stem}-vars.fd"));
+        std::fs::write(&firmware_path, test_uefi_fv_bytes(128 * 1024)).unwrap();
+        std::fs::write(&template_path, test_uefi_fv_bytes(64 * 1024)).unwrap();
+        let _ = std::fs::remove_file(&vars_path);
+
+        let probe = probe_windows_11_arm_uefi_reset_vector_entry(
+            WindowsArmUefiPflashMapOptions {
+                firmware_path: firmware_path.clone(),
+                vars_template_path: Some(template_path.clone()),
+                vars_path: Some(vars_path.clone()),
+                create_vars: true,
+            },
+            false,
+        );
+        let output = probe.render_text();
+        let _ = std::fs::remove_file(&firmware_path);
+        let _ = std::fs::remove_file(&template_path);
+        let _ = std::fs::remove_file(&vars_path);
+
+        assert!(!probe.allowed);
+        assert!(!probe.attempted);
+        assert!(!probe.vm_created);
+        assert!(!probe.firmware_memory_allocated);
+        assert!(!probe.vars_memory_allocated);
+        assert!(!probe.firmware_memory_mapped);
+        assert!(!probe.vars_memory_mapped);
+        assert!(!probe.vcpu_created);
+        assert!(!probe.pc_set);
+        assert!(!probe.cpsr_set);
+        assert!(!probe.run_attempted);
+        assert!(!probe.reset_vector_entry_observed);
+        assert!(!probe.firmware_progress_observed);
+        assert!(!probe.vm_destroyed);
+        assert!(probe.pflash_map_verified);
+        assert_eq!(probe.reset_vector_ipa, WINDOWS_ARM_UEFI_CODE_IPA);
+        assert_eq!(probe.firmware_slot_ipa, WINDOWS_ARM_UEFI_CODE_IPA);
+        assert_eq!(probe.vars_slot_ipa, WINDOWS_ARM_UEFI_VARS_IPA);
+        assert_eq!(probe.slot_bytes, WINDOWS_ARM_UEFI_SLOT_BYTES);
+        assert_eq!(probe.firmware_source_bytes, Some(128 * 1024));
+        assert_eq!(probe.vars_source_bytes, Some(64 * 1024));
+        assert_eq!(probe.firmware_map_flags, "read|exec");
+        assert_eq!(probe.vars_map_flags, "read|write");
+        assert!(probe
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("BRIDGEVM_HVF_ALLOW_UEFI_RESET_VECTOR_ENTRY")));
+        assert!(output.contains("Windows 11 Arm HVF UEFI reset-vector entry probe"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Apple VZ: not used"));
+        assert!(output.contains("Guest execution: UEFI reset vector entered under watchdog"));
+        assert!(output.contains("Windows boot: not claimed"));
+        assert!(output.contains("Allowed: false"));
+        assert!(output.contains("Attempted: false"));
+        assert!(output.contains("Pflash map verified: true"));
+        assert!(output.contains("Reset vector IPA: 0x8000000"));
+        assert!(output.contains("Firmware source bytes: 0x20000"));
+        assert!(output.contains("Vars source bytes: 0x10000"));
+        assert!(output.contains("VM create status name: not attempted"));
+        assert!(output.contains("Run status name: not attempted"));
+        assert!(output.contains("Firmware progress observed: false"));
+        assert!(output.contains("Exit exception class name: not observed"));
+        assert!(output.contains("BRIDGEVM_HVF_ALLOW_UEFI_RESET_VECTOR_ENTRY"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn windows_11_arm_uefi_firmware_run_loop_probe_defaults_to_no_live_loop() {
+        let stem = format!(
+            "bridgevm-windows-arm-uefi-firmware-run-loop-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let firmware_path = std::env::temp_dir().join(format!("{stem}-code.fd"));
+        let template_path = std::env::temp_dir().join(format!("{stem}-vars-template.fd"));
+        let vars_path = std::env::temp_dir().join(format!("{stem}-vars.fd"));
+        let installer_iso_path = std::env::temp_dir().join(format!("{stem}-win11-arm.iso"));
+        let writable_target_disk_path = std::env::temp_dir().join(format!("{stem}-windows.raw"));
+        std::fs::write(&firmware_path, test_uefi_fv_bytes(128 * 1024)).unwrap();
+        std::fs::write(&template_path, test_uefi_fv_bytes(64 * 1024)).unwrap();
+        let _ = std::fs::remove_file(&vars_path);
+
+        let probe =
+            probe_windows_11_arm_uefi_firmware_run_loop(WindowsArmUefiFirmwareRunLoopOptions {
+                pflash: WindowsArmUefiPflashMapOptions {
+                    firmware_path: firmware_path.clone(),
+                    vars_template_path: Some(template_path.clone()),
+                    vars_path: Some(vars_path.clone()),
+                    create_vars: true,
+                },
+                execution: WindowsArmUefiFirmwareRunLoopExecutionOptions {
+                    allow_loop: false,
+                    requested_exits: 8,
+                    guest_ram_mib: 64,
+                    watchdog_timeout_ms: 100,
+                    map_low_pflash_alias: false,
+                    seed_diagnostic_vector: false,
+                    seed_guest_ram_diagnostic_vector: false,
+                    seed_executable_diagnostic_vector: false,
+                    try_recommended_vector_base_vbar: false,
+                    continue_after_recommended_vector_base_vbar: false,
+                    repair_low_vector_diagnostic_page: false,
+                    remap_low_vector_to_recommended_vector: false,
+                    continue_after_low_vector_repair: false,
+                    restore_low_vector_slot_before_eret: false,
+                    wire_interrupt_timer: false,
+                    stop_at_first_post_repair_device_boundary: false,
+                    installer_iso_path: Some(installer_iso_path.clone()),
+                    writable_target_disk_path: Some(writable_target_disk_path.clone()),
+                },
+            });
+        let output = probe.render_text();
+        let _ = std::fs::remove_file(&firmware_path);
+        let _ = std::fs::remove_file(&template_path);
+        let _ = std::fs::remove_file(&vars_path);
+
+        assert!(!probe.allowed);
+        assert!(!probe.attempted);
+        assert!(!probe.vm_created);
+        assert!(!probe.guest_ram_memory_allocated);
+        assert!(!probe.low_pflash_alias_requested);
+        assert!(!probe.low_firmware_alias_mapped);
+        assert!(!probe.low_vars_alias_mapped);
+        assert!(!probe.guest_ram_memory_mapped);
+        assert!(!probe.platform_dtb_populated);
+        assert!(!probe.diagnostic_vector_seed_requested);
+        assert!(!probe.diagnostic_vector_populated);
+        assert!(!probe.low_vector_diagnostic_page_repair_requested);
+        assert!(!probe.low_vector_diagnostic_page_repaired);
+        assert!(!probe.low_vector_diagnostic_page_slot_restored);
+        assert!(!probe.low_vector_diagnostic_page_restore_before_eret_requested);
+        assert!(!probe.low_vector_diagnostic_page_restore_before_eret_attempted);
+        assert_eq!(probe.low_vector_diagnostic_page_previous_descriptor, None);
+        assert!(!probe.low_vector_diagnostic_page_repeated_fault_observed);
+        assert!(!probe.low_vector_post_repair_continue_requested);
+        assert!(!probe.low_vector_post_repair_continue_attempted);
+        assert!(!probe.low_vector_post_repair_unsupported_exit_observed);
+        assert_eq!(probe.low_vector_post_repair_unsupported_exit_reason, None);
+        assert_eq!(
+            probe.low_vector_post_repair_unsupported_exit_diagnosis,
+            "not observed"
+        );
+        assert!(!probe.low_vector_post_repair_first_exit_observed);
+        assert_eq!(probe.low_vector_post_repair_first_exit_index, None);
+        assert_eq!(probe.low_vector_post_repair_first_exit_reason, None);
+        assert_eq!(
+            probe.low_vector_post_repair_first_exit_diagnosis,
+            "not observed"
+        );
+        assert_eq!(probe.low_vector_post_repair_first_exit_pc, None);
+        assert_eq!(
+            probe.low_vector_post_repair_first_interaction_kind,
+            "not observed"
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_exit_access_kind,
+            "not observed"
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_exit_access_direction,
+            "not observed"
+        );
+        assert_eq!(probe.low_vector_post_repair_first_exit_access_address, None);
+        assert_eq!(probe.low_vector_post_repair_first_exit_access_sysreg, None);
+        assert_eq!(
+            probe.low_vector_post_repair_first_exit_access_syndrome,
+            None
+        );
+        assert!(!probe.low_vector_post_repair_first_device_interaction_observed);
+        assert_eq!(
+            probe.low_vector_post_repair_first_device_interaction_index,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_device_interaction_reason,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_device_interaction_diagnosis,
+            "not observed"
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_device_interaction_pc,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_device_interaction_kind,
+            "not observed"
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_device_interaction_access_kind,
+            "not observed"
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_device_interaction_access_direction,
+            "not observed"
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_device_interaction_access_address,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_device_interaction_access_sysreg,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_device_interaction_access_syndrome,
+            None
+        );
+        assert!(!probe.low_vector_post_repair_first_unhandled_access_observed);
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_index,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_reason,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_diagnosis,
+            "not observed"
+        );
+        assert_eq!(probe.low_vector_post_repair_first_unhandled_access_pc, None);
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_syndrome,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_kind,
+            "not observed"
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_direction,
+            "not observed"
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_register,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_value,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_handler_result,
+            "not observed"
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_mmio_ipa,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_mmio_width,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_mmio_device_kind,
+            "not observed"
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_sysreg,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_sysreg_name,
+            "not observed"
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_sysreg_op0,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_sysreg_op1,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_sysreg_crn,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_sysreg_crm,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_post_repair_first_unhandled_access_sysreg_op2,
+            None
+        );
+        assert!(!probe.low_vector_diagnostic_page_resume_attempted);
+        assert!(!probe.low_vector_diagnostic_page_resume_armed);
+        assert_eq!(probe.low_vector_diagnostic_page_resume_original_pc, None);
+        assert_eq!(
+            probe.low_vector_diagnostic_page_resume_original_elr_el1,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_diagnostic_page_resume_original_esr_el1,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_diagnostic_page_resume_original_far_el1,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_diagnostic_page_resume_original_spsr_el1,
+            None
+        );
+        assert_eq!(probe.low_vector_diagnostic_page_original_slot_bytes, None);
+        assert_eq!(
+            probe.low_vector_diagnostic_page_resume_target_instruction_before_eret,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_diagnostic_page_resume_target_stage1_leaf_descriptor_before_eret,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_diagnostic_page_resume_target_stage1_leaf_kind_before_eret,
+            "not observed"
+        );
+        assert!(
+            !probe.low_vector_diagnostic_page_resume_target_is_installed_diagnostic_hvc_before_eret
+        );
+        assert_eq!(
+            probe.low_vector_diagnostic_page_resume_elr_el1_set_status,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_diagnostic_page_resume_spsr_el1_set_status,
+            None
+        );
+        assert_eq!(
+            probe.low_vector_diagnostic_page_resume_cpsr_set_status,
+            None
+        );
+        assert_eq!(probe.low_vector_diagnostic_page_resume_pc_set_status, None);
+        assert!(!probe.interrupt_timer_wiring_requested);
+        assert!(!probe.interrupt_timer_initialized);
+        assert!(!probe.vcpu_created);
+        assert!(!probe.pc_set);
+        assert!(!probe.x0_dtb_ipa_set);
+        assert!(!probe.cpsr_set);
+        assert!(!probe.sp_el1_set);
+        assert!(!probe.diagnostic_vector_vbar_el1_set);
+        assert!(!probe.recommended_vector_base_vbar_requested);
+        assert!(!probe.recommended_vector_base_vbar_attempted);
+        assert!(!probe.recommended_vector_base_vbar_set);
+        assert!(!probe.recommended_vector_base_vbar_diagnostic_vector_populated);
+        assert_eq!(probe.recommended_vector_base_vbar_source_exit_index, None);
+        assert_eq!(probe.recommended_vector_base_vbar_target, None);
+        assert_eq!(
+            probe.recommended_vector_base_vbar_target_physical_address,
+            None
+        );
+        assert_eq!(probe.recommended_vector_base_vbar_reason, "not requested");
+        assert_eq!(
+            probe.recommended_vector_base_vbar_current_el_spx_sync_instruction_word,
+            None
+        );
+        assert_eq!(
+            probe.recommended_vector_base_vbar_current_el_spx_sync_instruction_hint,
+            "not observed"
+        );
+        assert!(!probe.recommended_vector_base_vbar_followup_exit_observed);
+        assert_eq!(probe.recommended_vector_base_vbar_followup_exit_index, None);
+        assert_eq!(
+            probe.recommended_vector_base_vbar_followup_exit_reason,
+            None
+        );
+        assert_eq!(
+            probe.recommended_vector_base_vbar_followup_exit_diagnosis,
+            "not observed"
+        );
+        assert_eq!(probe.recommended_vector_base_vbar_followup_pc, None);
+        assert_eq!(probe.recommended_vector_base_vbar_followup_vbar_el1, None);
+        assert!(!probe.recommended_vector_base_vbar_followup_target_still_set);
+        assert_eq!(probe.recommended_vector_base_vbar_set_status, None);
+        assert!(!probe.run_loop_attempted);
+        assert!(!probe.firmware_progress_observed);
+        assert!(!probe.unsupported_exit_observed);
+        assert_eq!(probe.requested_exits, 8);
+        assert_eq!(probe.observed_exits, 0);
+        assert_eq!(probe.watchdog_timeout_ms, 100);
+        assert_eq!(probe.vtimer_offset_value, None);
+        assert_eq!(probe.cntv_cval_value, None);
+        assert_eq!(probe.cntv_ctl_value, None);
+        assert_eq!(probe.vtimer_exit_count, 0);
+        assert_eq!(probe.pending_irq_injected_count, 0);
+        assert_eq!(probe.device_irq_injected_count, 0);
+        assert_eq!(probe.device_irq_cleared_count, 0);
+        assert_eq!(probe.handled_mmio_read_count, 0);
+        assert_eq!(probe.handled_mmio_write_count, 0);
+        assert_eq!(probe.handled_pl011_mmio_count, 0);
+        assert_eq!(probe.handled_pl031_mmio_count, 0);
+        assert_eq!(probe.handled_gicd_mmio_count, 0);
+        assert_eq!(probe.handled_gicr_mmio_count, 0);
+        assert_eq!(probe.handled_virtio_installer_iso_mmio_count, 0);
+        assert_eq!(probe.handled_virtio_target_disk_mmio_count, 0);
+        assert_eq!(probe.virtio_queue_notify_count, 0);
+        assert_eq!(probe.virtio_request_completion_count, 0);
+        assert_eq!(probe.guest_ram_ipa, WINDOWS_ARM_GUEST_RAM_IPA);
+        assert_eq!(probe.platform_dtb_ipa, WINDOWS_ARM_PLATFORM_DTB_IPA);
+        assert_eq!(
+            probe.platform_dtb_guest_ram_offset,
+            WINDOWS_ARM_PLATFORM_DTB_GUEST_RAM_OFFSET
+        );
+        assert_eq!(
+            probe.low_firmware_alias_ipa,
+            WINDOWS_ARM_UEFI_LOW_CODE_ALIAS_IPA
+        );
+        assert_eq!(
+            probe.low_vars_alias_ipa,
+            WINDOWS_ARM_UEFI_LOW_VARS_ALIAS_IPA
+        );
+        assert_eq!(probe.guest_ram_bytes, 64 * 1024 * 1024);
+        assert!(probe.platform_dtb_bytes >= 40);
+        assert_eq!(probe.platform_dtb_magic, FDT_MAGIC);
+        assert!(probe.platform_dtb_magic_verified);
+        assert_eq!(
+            probe.sp_el1_seed_ipa,
+            WINDOWS_ARM_GUEST_RAM_IPA + 64 * 1024 * 1024 - 16
+        );
+        assert_eq!(
+            probe.diagnostic_vector_ipa,
+            WINDOWS_ARM_DIAGNOSTIC_VECTOR_IPA
+        );
+        assert_eq!(probe.diagnostic_vector_location, "pflash");
+        assert_eq!(
+            probe.diagnostic_vector_bytes,
+            WINDOWS_ARM_DIAGNOSTIC_VECTOR_BYTES
+        );
+        assert!(probe.pflash_map_verified);
+        assert_eq!(probe.firmware_source_bytes, Some(128 * 1024));
+        assert_eq!(probe.vars_source_bytes, Some(64 * 1024));
+        assert_eq!(probe.installer_iso_path, Some(installer_iso_path.clone()));
+        assert_eq!(
+            probe.writable_target_disk_path,
+            Some(writable_target_disk_path.clone())
+        );
+        assert_eq!(probe.block_devices.len(), 2);
+        let installer_block = probe
+            .block_devices
+            .iter()
+            .find(|device| device.role == "installer-iso")
+            .expect("installer ISO block metadata is present");
+        assert_eq!(installer_block.label, "VirtIO-MMIO installer ISO");
+        assert_eq!(installer_block.node_name, "virtio_mmio@10002000");
+        assert_eq!(
+            installer_block.base_ipa,
+            WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA
+        );
+        assert_eq!(installer_block.bytes, VIRTIO_MMIO_REGISTER_WINDOW_BYTES);
+        assert!(installer_block.read_only);
+        assert_eq!(installer_block.backing_kind, "host-iso-readonly");
+        assert_eq!(
+            installer_block.backing_path,
+            Some(installer_iso_path.clone())
+        );
+        assert_eq!(installer_block.device_features, VIRTIO_BLK_F_RO);
+        let target_block = probe
+            .block_devices
+            .iter()
+            .find(|device| device.role == "target-disk")
+            .expect("target disk block metadata is present");
+        assert_eq!(target_block.label, "VirtIO-MMIO target disk");
+        assert_eq!(target_block.node_name, "virtio_mmio@10003000");
+        assert_eq!(
+            target_block.base_ipa,
+            WINDOWS_ARM_VIRTIO_TARGET_DISK_MMIO_IPA
+        );
+        assert_eq!(target_block.bytes, VIRTIO_MMIO_REGISTER_WINDOW_BYTES);
+        assert!(!target_block.read_only);
+        assert_eq!(target_block.backing_kind, "host-file-writable");
+        assert_eq!(
+            target_block.backing_path,
+            Some(writable_target_disk_path.clone())
+        );
+        assert_eq!(
+            target_block.device_features,
+            VIRTIO_MMIO_BLOCK_DEVICE_FEATURES_VALUE
+        );
+        assert!(probe.exits.is_empty());
+        assert!(probe
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("BRIDGEVM_HVF_ALLOW_UEFI_FIRMWARE_RUN_LOOP")));
+        assert!(output.contains("Windows 11 Arm HVF UEFI firmware run-loop probe"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Apple VZ: not used"));
+        assert!(output.contains("Guest execution: bounded UEFI firmware exit classification loop"));
+        assert!(output.contains("Windows boot: not claimed"));
+        assert!(output.contains("Allowed: false"));
+        assert!(output.contains("Attempted: false"));
+        assert!(output.contains("Low firmware alias mapped: false"));
+        assert!(output.contains("Low vars alias mapped: false"));
+        assert!(output.contains("Low firmware alias IPA: 0x0"));
+        assert!(output.contains("Low vars alias IPA: 0x4000000"));
+        assert!(output.contains("Guest RAM IPA: 0x40000000"));
+        assert!(output.contains("Platform DTB populated: false"));
+        assert!(output.contains("X0 DTB IPA set: false"));
+        assert!(output.contains("Platform DTB IPA: 0x40010000"));
+        assert!(output.contains("Platform DTB guest RAM offset: 0x10000"));
+        assert!(output.contains("Platform DTB bytes: 0x"));
+        assert!(output.contains("Platform DTB magic: 0xd00dfeed"));
+        assert!(output.contains("Platform DTB magic verified: true"));
+        assert!(output.contains("SP_EL1 seed IPA: 0x43fffff0"));
+        assert!(output.contains("Diagnostic vector seed requested: false"));
+        assert!(output.contains("Diagnostic vector populated: false"));
+        assert!(output.contains("Recommended vector-base VBAR requested: false"));
+        assert!(output.contains("Recommended vector-base VBAR attempted: false"));
+        assert!(output.contains("Recommended vector-base VBAR set: false"));
+        assert!(output.contains("Low vector diagnostic page repair requested: false"));
+        assert!(output.contains("Low vector diagnostic page repaired: false"));
+        assert!(output.contains("Low vector diagnostic page slot restored: false"));
+        assert!(output.contains("Low vector diagnostic page restore before ERET requested: false"));
+        assert!(output.contains("Low vector diagnostic page restore before ERET attempted: false"));
+        assert!(output.contains("Low vector diagnostic page previous descriptor: not observed"));
+        assert!(output.contains("Low vector diagnostic page repeated fault observed: false"));
+        assert!(output.contains("Continue after low-vector repair requested: false"));
+        assert!(output.contains("Continue after low-vector repair attempted: false"));
+        assert!(output.contains("Post-repair unsupported exit observed: false"));
+        assert!(output.contains("Post-repair unsupported exit reason name: not observed"));
+        assert!(output.contains("Post-repair unsupported exit classification: not observed"));
+        assert!(output.contains("Post-repair first exit observed: false"));
+        assert!(output.contains("Post-repair first exit: not observed"));
+        assert!(output.contains("Post-repair first exit reason name: not observed"));
+        assert!(output.contains("Post-repair first exit classification: not observed"));
+        assert!(output.contains("Post-repair first exit PC: not observed"));
+        assert!(output.contains("Post-repair first exit instruction: not observed"));
+        assert!(output.contains("Post-repair first exit instruction hint: not observed"));
+        assert!(output.contains("Post-repair first exit VBAR_EL1: not observed"));
+        assert!(output.contains("Post-repair first exit ELR_EL1: not observed"));
+        assert!(output.contains("Post-repair first exit ESR_EL1: not observed"));
+        assert!(output.contains("Post-repair first exit FAR_EL1: not observed"));
+        assert!(output.contains("Post-repair first exit SPSR_EL1: not observed"));
+        assert!(output.contains("Post-repair first exit access kind: not observed"));
+        assert!(output.contains("Post-repair first exit access direction: not observed"));
+        assert!(output.contains("Post-repair first exit access address: not observed"));
+        assert!(output.contains("Post-repair first exit access sysreg: not observed"));
+        assert!(output.contains("Post-repair first exit access syndrome: not observed"));
+        assert!(output.contains("Post-repair first interaction kind: not observed"));
+        assert!(output.contains("Post-repair first device interaction observed: false"));
+        assert!(output.contains("Post-repair first device interaction: not observed"));
+        assert!(output.contains("Post-repair first device interaction reason name: not observed"));
+        assert!(
+            output.contains("Post-repair first device interaction classification: not observed")
+        );
+        assert!(output.contains("Post-repair first device interaction PC: not observed"));
+        assert!(output.contains("Post-repair first device interaction instruction: not observed"));
+        assert!(
+            output.contains("Post-repair first device interaction instruction hint: not observed")
+        );
+        assert!(output.contains("Post-repair first device interaction VBAR_EL1: not observed"));
+        assert!(output.contains("Post-repair first device interaction ELR_EL1: not observed"));
+        assert!(output.contains("Post-repair first device interaction ESR_EL1: not observed"));
+        assert!(output.contains("Post-repair first device interaction FAR_EL1: not observed"));
+        assert!(output.contains("Post-repair first device interaction SPSR_EL1: not observed"));
+        assert!(output.contains("Post-repair first device interaction access kind: not observed"));
+        assert!(
+            output.contains("Post-repair first device interaction access direction: not observed")
+        );
+        assert!(
+            output.contains("Post-repair first device interaction access address: not observed")
+        );
+        assert!(output.contains("Post-repair first device interaction access sysreg: not observed"));
+        assert!(
+            output.contains("Post-repair first device interaction access syndrome: not observed")
+        );
+        assert!(output.contains("Post-repair first device interaction kind: not observed"));
+        assert!(output.contains("Post-repair first unhandled access observed: false"));
+        assert!(output.contains("Post-repair first unhandled access: not observed"));
+        assert!(output.contains("Post-repair first unhandled access reason name: not observed"));
+        assert!(output.contains("Post-repair first unhandled access classification: not observed"));
+        assert!(output.contains("Post-repair first unhandled access PC: not observed"));
+        assert!(output.contains("Post-repair first unhandled access syndrome: not observed"));
+        assert!(output.contains("Post-repair first unhandled access kind: not observed"));
+        assert!(output.contains("Post-repair first unhandled access direction: not observed"));
+        assert!(output.contains("Post-repair first unhandled access register: not observed"));
+        assert!(output.contains("Post-repair first unhandled access value: not observed"));
+        assert!(output.contains("Post-repair first unhandled access handler result: not observed"));
+        assert!(output.contains("Post-repair first unhandled access MMIO IPA: not observed"));
+        assert!(output.contains("Post-repair first unhandled access MMIO width: not observed"));
+        assert!(
+            output.contains("Post-repair first unhandled access MMIO device kind: not observed")
+        );
+        assert!(output.contains("Post-repair first unhandled access sysreg: not observed"));
+        assert!(output.contains("Post-repair first unhandled access sysreg name: not observed"));
+        assert!(output.contains("Post-repair first unhandled access sysreg op0: not observed"));
+        assert!(output.contains("Post-repair first unhandled access sysreg op1: not observed"));
+        assert!(output.contains("Post-repair first unhandled access sysreg crn: not observed"));
+        assert!(output.contains("Post-repair first unhandled access sysreg crm: not observed"));
+        assert!(output.contains("Post-repair first unhandled access sysreg op2: not observed"));
+        assert!(output.contains("Low vector diagnostic page resume attempted: false"));
+        assert!(output.contains("Low vector diagnostic page resume armed: false"));
+        assert!(output.contains("Low vector diagnostic page resume original PC: not observed"));
+        assert!(output.contains("Low vector diagnostic page resume original ELR_EL1: not observed"));
+        assert!(output.contains("Low vector diagnostic page resume original ESR_EL1: not observed"));
+        assert!(output.contains("Low vector diagnostic page resume original FAR_EL1: not observed"));
+        assert!(
+            output.contains("Low vector diagnostic page resume original SPSR_EL1: not observed")
+        );
+        assert!(output.contains("Diagnostic vector VBAR_EL1 set: false"));
+        assert!(output.contains("Interrupt/timer wiring requested: false"));
+        assert!(output.contains("Interrupt/timer initialized: false"));
+        assert!(output.contains("Diagnostic vector location: pflash"));
+        assert!(output.contains("Diagnostic vector IPA: 0x8000000"));
+        assert!(output.contains("Diagnostic vector bytes: 0x800"));
+        assert!(output.contains("Recommended vector-base VBAR source exit: not observed"));
+        assert!(output.contains("Recommended vector-base VBAR target: not observed"));
+        assert!(output.contains("Recommended vector-base VBAR target PA: not observed"));
+        assert!(output.contains("Recommended vector-base VBAR reason: not requested"));
+        assert!(output.contains(
+            "Recommended vector-base VBAR current EL/SPx sync instruction: not observed"
+        ));
+        assert!(
+            output.contains("Recommended vector-base VBAR current EL/SPx sync hint: not observed")
+        );
+        assert!(output.contains("Recommended vector-base VBAR follow-up exit observed: false"));
+        assert!(output.contains("Recommended vector-base VBAR follow-up exit: not observed"));
+        assert!(output
+            .contains("Recommended vector-base VBAR follow-up exit reason name: not observed"));
+        assert!(
+            output.contains("Recommended vector-base VBAR follow-up classification: not observed")
+        );
+        assert!(output.contains("Recommended vector-base VBAR follow-up PC: not observed"));
+        assert!(output.contains("Recommended vector-base VBAR follow-up VBAR_EL1: not observed"));
+        assert!(output.contains("Recommended vector-base VBAR follow-up target still set: false"));
+        assert!(output.contains("Low firmware alias map flags: read|exec"));
+        assert!(output.contains("Low vars alias map flags: read|write"));
+        assert!(output.contains("Low pflash alias requested: false"));
+        assert!(output.contains("Low firmware alias map status name: not attempted"));
+        assert!(output.contains("Low vars alias map status name: not attempted"));
+        assert!(output.contains("Guest RAM bytes: 0x4000000"));
+        assert!(output.contains("Requested exits: 8"));
+        assert!(output.contains("Observed exits: 0"));
+        assert!(output.contains("Watchdog timeout ms: 100"));
+        assert!(output.contains("VTimer offset value: not observed"));
+        assert!(output.contains("CNTV_CVAL_EL0 value: not observed"));
+        assert!(output.contains("CNTV_CTL_EL0 value: not observed"));
+        assert!(output.contains("VTimer exit count: 0"));
+        assert!(output.contains("Pending IRQ injected count: 0"));
+        assert!(output.contains("Device IRQ line asserted count: 0"));
+        assert!(output.contains("Device IRQ line deasserted count: 0"));
+        assert!(output.contains("Handled MMIO read count: 0"));
+        assert!(output.contains("Handled MMIO write count: 0"));
+        assert!(output.contains("Handled PL011 MMIO count: 0"));
+        assert!(output.contains("Handled PL031 MMIO count: 0"));
+        assert!(output.contains("Handled GICD MMIO count: 0"));
+        assert!(output.contains("Handled GICR MMIO count: 0"));
+        assert!(output.contains("Handled VirtIO installer ISO MMIO count: 0"));
+        assert!(output.contains("Handled VirtIO target disk MMIO count: 0"));
+        assert!(output.contains("VirtIO queue_notify count: 0"));
+        assert!(output.contains("VirtIO request completion count: 0"));
+        assert!(output.contains("Handled ICC read count: 0"));
+        assert!(output.contains("Handled ICC write count: 0"));
+        assert!(output.contains("Handled ICC_IAR1 read count: 0"));
+        assert!(output.contains("Handled ICC_EOIR1 write count: 0"));
+        assert!(output.contains("Handled ICC_DIR write count: 0"));
+        assert!(output.contains("Last ICC_IAR1 INTID: not observed"));
+        assert!(output.contains("Last ICC_EOIR1 INTID: not observed"));
+        assert!(output.contains("Last ICC_DIR INTID: not observed"));
+        assert!(output.contains(&format!(
+            "Installer ISO path: {}",
+            installer_iso_path.display()
+        )));
+        assert!(output.contains(&format!(
+            "Writable target disk path: {}",
+            writable_target_disk_path.display()
+        )));
+        assert!(output.contains("Firmware block devices:"));
+        assert!(output.contains(&format!(
+            "- role=installer-iso, label=VirtIO-MMIO installer ISO, node=virtio_mmio@10002000, base=0x10002000, bytes=0x1000, read_only=true, backing_kind=host-iso-readonly, backing_path={}, device_features=0x20",
+            installer_iso_path.display()
+        )));
+        assert!(output.contains(&format!(
+            "- role=target-disk, label=VirtIO-MMIO target disk, node=virtio_mmio@10003000, base=0x10003000, bytes=0x1000, read_only=false, backing_kind=host-file-writable, backing_path={}, device_features=0x0",
+            writable_target_disk_path.display()
+        )));
+        assert!(output.contains("VTimer offset set status name: not attempted"));
+        assert!(output.contains("Recommended vector-base VBAR set status name: not attempted"));
+        assert!(output.contains("Recommended vector-base VBAR resume requested: false"));
+        assert!(output.contains("Recommended vector-base VBAR resume attempted: false"));
+        assert!(output.contains("Recommended vector-base VBAR resume armed: false"));
+        assert!(output.contains("Recommended vector-base VBAR resume original PC: not observed"));
+        assert!(
+            output.contains("Recommended vector-base VBAR resume original ELR_EL1: not observed")
+        );
+        assert!(
+            output.contains("Recommended vector-base VBAR resume original ESR_EL1: not observed")
+        );
+        assert!(
+            output.contains("Recommended vector-base VBAR resume original FAR_EL1: not observed")
+        );
+        assert!(
+            output.contains("Recommended vector-base VBAR resume original SPSR_EL1: not observed")
+        );
+        assert!(output.contains(
+            "Recommended vector-base VBAR resume ELR_EL1 set status name: not attempted"
+        ));
+        assert!(output.contains(
+            "Recommended vector-base VBAR resume VBAR_EL1 set status name: not attempted"
+        ));
+        assert!(output.contains(
+            "Recommended vector-base VBAR resume SPSR_EL1 set status name: not attempted"
+        ));
+        assert!(output
+            .contains("Recommended vector-base VBAR resume PC set status name: not attempted"));
+        assert!(output.contains("X0 DTB IPA set status name: not attempted"));
+        assert!(output.contains("CNTV_CVAL_EL0 set status name: not attempted"));
+        assert!(output.contains("CNTV_CTL_EL0 set status name: not attempted"));
+        assert!(output
+            .contains("Low vector diagnostic page resume ELR_EL1 set status name: not attempted"));
+        assert!(output
+            .contains("Low vector diagnostic page resume SPSR_EL1 set status name: not attempted"));
+        assert!(output
+            .contains("Low vector diagnostic page resume CPSR set status name: not attempted"));
+        assert!(
+            output.contains("Low vector diagnostic page resume PC set status name: not attempted")
+        );
+        assert!(output.contains("Low vector diagnostic page original slot bytes: not observed"));
+        assert!(
+            output.contains("Low vector diagnostic page original sync instruction: not observed")
+        );
+        assert!(output.contains("Low vector diagnostic page original sync hint: not observed"));
+        assert!(output.contains(
+            "Low vector diagnostic page resume target instruction before ERET: not observed"
+        ));
+        assert!(output
+            .contains("Low vector diagnostic page resume target hint before ERET: not observed"));
+        assert!(output.contains(
+            "Low vector diagnostic page resume target stage-1 descriptor before ERET: not observed"
+        ));
+        assert!(output.contains(
+            "Low vector diagnostic page resume target stage-1 kind before ERET: not observed"
+        ));
+        assert!(output.contains(
+            "Low vector diagnostic page resume target is installed diagnostic HVC before ERET: false"
+        ));
+        assert!(output.contains("VTimer initial unmask status name: not attempted"));
+        assert!(output.contains("Last pending IRQ set status name: not attempted"));
+        assert!(output.contains("Last device IRQ line assert status name: not attempted"));
+        assert!(output.contains("Last device IRQ line deassert status name: not attempted"));
+        assert!(output.contains("Last VTimer unmask status name: not attempted"));
+        assert!(output.contains("Run-loop exits:"));
+        assert!(output.contains("- none"));
+        assert!(output.contains("BRIDGEVM_HVF_ALLOW_UEFI_FIRMWARE_RUN_LOOP"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn windows_11_arm_uefi_firmware_device_discovery_probe_defaults_to_not_reached() {
+        let stem = format!(
+            "bridgevm-windows-arm-uefi-firmware-device-discovery-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let firmware_path = std::env::temp_dir().join(format!("{stem}-code.fd"));
+        let template_path = std::env::temp_dir().join(format!("{stem}-vars-template.fd"));
+        let vars_path = std::env::temp_dir().join(format!("{stem}-vars.fd"));
+        let installer_iso_path = std::env::temp_dir().join(format!("{stem}-win11-arm.iso"));
+        let writable_target_disk_path = std::env::temp_dir().join(format!("{stem}-windows.raw"));
+        std::fs::write(&firmware_path, test_uefi_fv_bytes(128 * 1024)).unwrap();
+        std::fs::write(&template_path, test_uefi_fv_bytes(64 * 1024)).unwrap();
+        let _ = std::fs::remove_file(&vars_path);
+
+        let probe = probe_windows_11_arm_uefi_firmware_device_discovery(
+            WindowsArmUefiFirmwareRunLoopOptions {
+                pflash: WindowsArmUefiPflashMapOptions {
+                    firmware_path: firmware_path.clone(),
+                    vars_template_path: Some(template_path.clone()),
+                    vars_path: Some(vars_path.clone()),
+                    create_vars: true,
+                },
+                execution: WindowsArmUefiFirmwareRunLoopExecutionOptions {
+                    allow_loop: false,
+                    requested_exits: 8,
+                    guest_ram_mib: 64,
+                    watchdog_timeout_ms: 100,
+                    map_low_pflash_alias: false,
+                    seed_diagnostic_vector: false,
+                    seed_guest_ram_diagnostic_vector: false,
+                    seed_executable_diagnostic_vector: false,
+                    try_recommended_vector_base_vbar: false,
+                    continue_after_recommended_vector_base_vbar: false,
+                    repair_low_vector_diagnostic_page: false,
+                    remap_low_vector_to_recommended_vector: false,
+                    continue_after_low_vector_repair: false,
+                    restore_low_vector_slot_before_eret: false,
+                    wire_interrupt_timer: false,
+                    stop_at_first_post_repair_device_boundary: false,
+                    installer_iso_path: Some(installer_iso_path.clone()),
+                    writable_target_disk_path: Some(writable_target_disk_path.clone()),
+                },
+            },
+        );
+        let output = probe.render_text();
+        let _ = std::fs::remove_file(&firmware_path);
+        let _ = std::fs::remove_file(&template_path);
+        let _ = std::fs::remove_file(&vars_path);
+
+        assert!(!probe.device_boundary_reached());
+        assert_eq!(probe.boundary_status(), "not reached");
+        assert!(!probe.device_discovery_ready());
+        assert!(!probe.run_loop.allowed);
+        assert!(!probe.run_loop.attempted);
+        assert!(probe.run_loop.low_pflash_alias_requested);
+        assert!(probe.run_loop.low_vector_diagnostic_page_repair_requested);
+        assert!(probe.run_loop.low_vector_post_repair_continue_requested);
+        assert!(probe.run_loop.interrupt_timer_wiring_requested);
+        assert!(
+            probe
+                .run_loop
+                .stop_at_first_post_repair_device_boundary_requested
+        );
+        assert_eq!(probe.run_loop.handled_mmio_read_count, 0);
+        assert_eq!(probe.run_loop.handled_mmio_write_count, 0);
+        assert_eq!(probe.run_loop.handled_icc_read_count, 0);
+        assert_eq!(probe.run_loop.handled_icc_write_count, 0);
+        assert!(output.contains("Windows 11 Arm HVF UEFI firmware device-discovery probe"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Apple VZ: not used"));
+        assert!(output.contains("Windows boot: not claimed"));
+        assert!(output.contains("Underlying probe: windows-firmware-run-loop-probe"));
+        assert!(output.contains("Device discovery boundary reached: false"));
+        assert!(output.contains("Device discovery boundary status: not reached"));
+        assert!(output.contains("Device discovery ready: false"));
+        assert!(output.contains(
+            "Device discovery blocker: firmware has not reached a non-diagnostic MMIO/sysreg boundary yet"
+        ));
+        assert!(output.contains("Handled MMIO access count: 0"));
+        assert!(output.contains("Handled ICC access count: 0"));
+        assert!(output.contains("Low pflash alias requested: true"));
+        assert!(output.contains("Low vector diagnostic page repair requested: true"));
+        assert!(output.contains("Continue after low-vector repair requested: true"));
+        assert!(output.contains("Interrupt/timer wiring requested: true"));
+        assert!(output.contains("Stop at first post-repair device boundary requested: true"));
+        assert!(output.contains(&format!(
+            "Installer ISO path: {}",
+            installer_iso_path.display()
+        )));
+        assert!(output.contains(&format!(
+            "Writable target disk path: {}",
+            writable_target_disk_path.display()
+        )));
+        assert!(output.contains("BRIDGEVM_HVF_ALLOW_UEFI_FIRMWARE_RUN_LOOP"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn windows_11_arm_uefi_firmware_run_loop_no_live_loop_reports_restore_before_eret_request() {
+        let stem = format!(
+            "bridgevm-windows-arm-uefi-firmware-run-loop-restore-before-eret-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let firmware_path = std::env::temp_dir().join(format!("{stem}-code.fd"));
+        let template_path = std::env::temp_dir().join(format!("{stem}-vars-template.fd"));
+        let vars_path = std::env::temp_dir().join(format!("{stem}-vars.fd"));
+        std::fs::write(&firmware_path, test_uefi_fv_bytes(128 * 1024)).unwrap();
+        std::fs::write(&template_path, test_uefi_fv_bytes(64 * 1024)).unwrap();
+        let _ = std::fs::remove_file(&vars_path);
+
+        let probe =
+            probe_windows_11_arm_uefi_firmware_run_loop(WindowsArmUefiFirmwareRunLoopOptions {
+                pflash: WindowsArmUefiPflashMapOptions {
+                    firmware_path: firmware_path.clone(),
+                    vars_template_path: Some(template_path.clone()),
+                    vars_path: Some(vars_path.clone()),
+                    create_vars: true,
+                },
+                execution: WindowsArmUefiFirmwareRunLoopExecutionOptions {
+                    allow_loop: false,
+                    requested_exits: 8,
+                    guest_ram_mib: 64,
+                    watchdog_timeout_ms: 100,
+                    map_low_pflash_alias: true,
+                    seed_diagnostic_vector: false,
+                    seed_guest_ram_diagnostic_vector: false,
+                    seed_executable_diagnostic_vector: false,
+                    try_recommended_vector_base_vbar: false,
+                    continue_after_recommended_vector_base_vbar: false,
+                    repair_low_vector_diagnostic_page: true,
+                    remap_low_vector_to_recommended_vector: false,
+                    continue_after_low_vector_repair: true,
+                    restore_low_vector_slot_before_eret: true,
+                    wire_interrupt_timer: false,
+                    stop_at_first_post_repair_device_boundary: false,
+                    installer_iso_path: None,
+                    writable_target_disk_path: None,
+                },
+            });
+        let output = probe.render_text();
+        let _ = std::fs::remove_file(&firmware_path);
+        let _ = std::fs::remove_file(&template_path);
+        let _ = std::fs::remove_file(&vars_path);
+
+        assert!(!probe.allowed);
+        assert!(!probe.attempted);
+        assert!(probe.low_vector_diagnostic_page_repair_requested);
+        assert!(probe.low_vector_post_repair_continue_requested);
+        assert!(probe.low_vector_diagnostic_page_restore_before_eret_requested);
+        assert!(!probe.low_vector_diagnostic_page_restore_before_eret_attempted);
+        assert!(!probe.low_vector_diagnostic_page_slot_restored);
+        assert!(output.contains("Low vector diagnostic page repair requested: true"));
+        assert!(output.contains("Continue after low-vector repair requested: true"));
+        assert!(output.contains("Low vector diagnostic page restore before ERET requested: true"));
+        assert!(output.contains("Low vector diagnostic page restore before ERET attempted: false"));
+        assert!(output.contains("Low vector diagnostic page slot restored: false"));
+        assert!(output.contains("BRIDGEVM_HVF_ALLOW_UEFI_FIRMWARE_RUN_LOOP"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn windows_11_arm_uefi_firmware_run_loop_no_live_loop_reports_executable_vector_request() {
+        let stem = format!(
+            "bridgevm-windows-arm-uefi-firmware-run-loop-exec-vector-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let firmware_path = std::env::temp_dir().join(format!("{stem}-code.fd"));
+        let template_path = std::env::temp_dir().join(format!("{stem}-vars-template.fd"));
+        let vars_path = std::env::temp_dir().join(format!("{stem}-vars.fd"));
+        std::fs::write(&firmware_path, test_uefi_fv_bytes(128 * 1024)).unwrap();
+        std::fs::write(&template_path, test_uefi_fv_bytes(64 * 1024)).unwrap();
+        let _ = std::fs::remove_file(&vars_path);
+
+        let probe =
+            probe_windows_11_arm_uefi_firmware_run_loop(WindowsArmUefiFirmwareRunLoopOptions {
+                pflash: WindowsArmUefiPflashMapOptions {
+                    firmware_path: firmware_path.clone(),
+                    vars_template_path: Some(template_path.clone()),
+                    vars_path: Some(vars_path.clone()),
+                    create_vars: true,
+                },
+                execution: WindowsArmUefiFirmwareRunLoopExecutionOptions {
+                    allow_loop: false,
+                    requested_exits: 8,
+                    guest_ram_mib: 64,
+                    watchdog_timeout_ms: 100,
+                    map_low_pflash_alias: true,
+                    seed_diagnostic_vector: false,
+                    seed_guest_ram_diagnostic_vector: false,
+                    seed_executable_diagnostic_vector: true,
+                    try_recommended_vector_base_vbar: false,
+                    continue_after_recommended_vector_base_vbar: false,
+                    repair_low_vector_diagnostic_page: false,
+                    remap_low_vector_to_recommended_vector: false,
+                    continue_after_low_vector_repair: false,
+                    restore_low_vector_slot_before_eret: false,
+                    wire_interrupt_timer: false,
+                    stop_at_first_post_repair_device_boundary: false,
+                    installer_iso_path: None,
+                    writable_target_disk_path: None,
+                },
+            });
+        let output = probe.render_text();
+        let _ = std::fs::remove_file(&firmware_path);
+        let _ = std::fs::remove_file(&template_path);
+        let _ = std::fs::remove_file(&vars_path);
+
+        assert!(!probe.allowed);
+        assert!(!probe.attempted);
+        assert!(probe.diagnostic_vector_seed_requested);
+        assert!(!probe.diagnostic_vector_populated);
+        assert!(probe.low_pflash_alias_requested);
+        assert_eq!(
+            probe.diagnostic_vector_ipa,
+            WINDOWS_ARM_EXECUTABLE_DIAGNOSTIC_VECTOR_IPA
+        );
+        assert_eq!(
+            probe.diagnostic_vector_location,
+            "low-pflash-executable-candidate"
+        );
+        assert!(probe.exits.is_empty());
+        assert!(output.contains("Diagnostic vector seed requested: true"));
+        assert!(output.contains("Diagnostic vector location: low-pflash-executable-candidate"));
+        assert!(output.contains("Diagnostic vector IPA: 0x200000"));
+        assert!(output.contains("Low pflash alias requested: true"));
+        assert!(output.contains("Observed exits: 0"));
+        assert!(output.contains("BRIDGEVM_HVF_ALLOW_UEFI_FIRMWARE_RUN_LOOP"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn windows_11_arm_uefi_firmware_run_loop_render_records_vtimer_auto_mask() {
+        let stem = format!(
+            "bridgevm-windows-arm-uefi-firmware-run-loop-vtimer-exit-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let firmware_path = std::env::temp_dir().join(format!("{stem}-code.fd"));
+        let template_path = std::env::temp_dir().join(format!("{stem}-vars-template.fd"));
+        let vars_path = std::env::temp_dir().join(format!("{stem}-vars.fd"));
+        std::fs::write(&firmware_path, test_uefi_fv_bytes(128 * 1024)).unwrap();
+        std::fs::write(&template_path, test_uefi_fv_bytes(64 * 1024)).unwrap();
+        let _ = std::fs::remove_file(&vars_path);
+
+        let mut probe =
+            probe_windows_11_arm_uefi_firmware_run_loop(WindowsArmUefiFirmwareRunLoopOptions {
+                pflash: WindowsArmUefiPflashMapOptions {
+                    firmware_path: firmware_path.clone(),
+                    vars_template_path: Some(template_path.clone()),
+                    vars_path: Some(vars_path.clone()),
+                    create_vars: true,
+                },
+                execution: WindowsArmUefiFirmwareRunLoopExecutionOptions {
+                    allow_loop: false,
+                    requested_exits: 8,
+                    guest_ram_mib: 64,
+                    watchdog_timeout_ms: 100,
+                    map_low_pflash_alias: false,
+                    seed_diagnostic_vector: false,
+                    seed_guest_ram_diagnostic_vector: false,
+                    seed_executable_diagnostic_vector: false,
+                    try_recommended_vector_base_vbar: false,
+                    continue_after_recommended_vector_base_vbar: false,
+                    repair_low_vector_diagnostic_page: false,
+                    remap_low_vector_to_recommended_vector: false,
+                    continue_after_low_vector_repair: false,
+                    restore_low_vector_slot_before_eret: false,
+                    wire_interrupt_timer: true,
+                    stop_at_first_post_repair_device_boundary: false,
+                    installer_iso_path: None,
+                    writable_target_disk_path: None,
+                },
+            });
+        let _ = std::fs::remove_file(&firmware_path);
+        let _ = std::fs::remove_file(&template_path);
+        let _ = std::fs::remove_file(&vars_path);
+
+        probe.vtimer_exit_count = 1;
+        probe.pending_irq_injected_count = 1;
+        probe.device_irq_injected_count = 1;
+        probe.device_irq_cleared_count = 1;
+        probe.last_device_irq_set_status = Some(0);
+        probe.last_device_irq_clear_status = Some(0);
+        probe.exits = vec![WindowsArmUefiFirmwareRunLoopExit {
+            index: 1,
+            run_status: Some(0),
+            exit_reason: Some(2),
+            exit_syndrome: None,
+            exit_exception_class: None,
+            exit_virtual_address: None,
+            exit_physical_address: None,
+            pc_after_exit_status: Some(0),
+            pc_after_exit: Some(WINDOWS_ARM_UEFI_CODE_IPA),
+            instruction_word_after_exit: None,
+            instruction_hint_after_exit: "not observed",
+            pc_stage1_leaf_level_after_exit: None,
+            pc_stage1_leaf_descriptor_after_exit: None,
+            pc_stage1_leaf_descriptor_kind_after_exit: "not observed",
+            pc_stage1_leaf_pxn_after_exit: None,
+            pc_stage1_leaf_uxn_after_exit: None,
+            stage1_descriptor_samples_after_exit: Vec::new(),
+            stage1_walk_entries_after_exit: Vec::new(),
+            stage1_executable_candidates_after_exit: Vec::new(),
+            x0_after_exit: None,
+            x1_after_exit: None,
+            x2_after_exit: None,
+            x3_after_exit: None,
+            x4_after_exit: None,
+            cpsr_after_exit: None,
+            vbar_el1_after_exit: None,
+            elr_el1_after_exit: None,
+            esr_el1_after_exit: None,
+            far_el1_after_exit: None,
+            spsr_el1_after_exit: None,
+            sctlr_el1_after_exit: None,
+            tcr_el1_after_exit: None,
+            ttbr0_el1_after_exit: None,
+            ttbr1_el1_after_exit: None,
+            mair_el1_after_exit: None,
+            sp_el1_after_exit: None,
+            watchdog_cancel_status: None,
+            vtimer_auto_mask_get_status: Some(0),
+            vtimer_auto_mask_after_exit: Some(true),
+            vtimer_rearm_cval_value: Some(0x1234),
+            vtimer_rearm_cval_set_status: Some(0),
+            vtimer_ppi_pending_recorded: Some(true),
+            vtimer_irq_line_assertable: Some(true),
+            vtimer_gic_group1_enabled: Some(true),
+            vtimer_gic_priority_mask: Some(0xff),
+            vtimer_gic_running_priority: Some(0xff),
+            vtimer_gic_priority_threshold: Some(0xff),
+            vtimer_gic_pending_intid: Some(WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID),
+            vtimer_pending_irq_set_status: Some(0),
+            vtimer_unmask_status: Some(0),
+            handled: true,
+        }];
+
+        let output = probe.render_text();
+
+        assert!(output.contains("VTimer exit count: 1"));
+        assert!(output.contains("Pending IRQ injected count: 1"));
+        assert!(output.contains("Device IRQ line asserted count: 1"));
+        assert!(output.contains("Device IRQ line deasserted count: 1"));
+        assert!(output.contains("Handled MMIO read count: 0"));
+        assert!(output.contains("Handled MMIO write count: 0"));
+        assert!(output.contains("VirtIO queue_notify count: 0"));
+        assert!(output.contains("VirtIO request completion count: 0"));
+        assert!(output.contains("Handled ICC read count: 0"));
+        assert!(output.contains("Handled ICC write count: 0"));
+        assert!(output.contains("Last device IRQ line assert status name: HV_SUCCESS"));
+        assert!(output.contains("Last device IRQ line deassert status name: HV_SUCCESS"));
+        assert!(output.contains("CNTV_CVAL_EL0 value: 0x0"));
+        assert!(output.contains("CNTV_CTL_EL0 value: 0x1"));
+        assert!(output.contains("reason=HV_EXIT_REASON_VTIMER_ACTIVATED"));
+        assert!(output.contains("vtimer_auto_mask=true"));
+        assert!(output.contains("vtimer_auto_mask_get=HV_SUCCESS"));
+        assert!(output.contains("vtimer_rearm_cval=0x1234"));
+        assert!(output.contains("vtimer_rearm_cval_set=HV_SUCCESS"));
+        assert!(output.contains("vtimer_ppi_pending_recorded=true"));
+        assert!(output.contains("vtimer_irq_line_assertable=true"));
+        assert!(output.contains("vtimer_gic_group1_enabled=true"));
+        assert!(output.contains("vtimer_gic_priority_mask=0xff"));
+        assert!(output.contains("vtimer_gic_running_priority=0xff"));
+        assert!(output.contains("vtimer_gic_priority_threshold=0xff"));
+        assert!(output.contains("vtimer_gic_pending_intid=27"));
+        assert!(output.contains("vtimer_pending_irq=HV_SUCCESS"));
+        assert!(output.contains("vtimer_unmask=HV_SUCCESS"));
+        assert!(output.contains("handled=true"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn firmware_run_loop_diagnoses_empty_recommended_vector_base_sync_slot() {
+        let mut exit = test_firmware_run_loop_exit();
+        exit.vbar_el1_after_exit = Some(WINDOWS_ARM_EXECUTABLE_DIAGNOSTIC_VECTOR_IPA);
+        exit.pc_after_exit = Some(
+            WINDOWS_ARM_EXECUTABLE_DIAGNOSTIC_VECTOR_IPA
+                + WINDOWS_ARM_DIAGNOSTIC_VECTOR_CURRENT_EL_SPX_SYNC_OFFSET as u64,
+        );
+        exit.instruction_word_after_exit = Some(0);
+        exit.pc_stage1_leaf_level_after_exit = Some(2);
+        exit.pc_stage1_leaf_descriptor_after_exit = Some(0x200f8d);
+        exit.pc_stage1_leaf_descriptor_kind_after_exit = "block";
+        exit.pc_stage1_leaf_pxn_after_exit = Some(false);
+        exit.pc_stage1_leaf_uxn_after_exit = Some(false);
+
+        assert_eq!(
+            windows_arm_firmware_run_loop_exit_diagnosis_kind(&exit),
+            WindowsArmFirmwareRunLoopDiagnosis::RecommendedVectorBaseEmptySyncSlot
+        );
+        assert_eq!(
+            windows_arm_firmware_run_loop_exit_diagnosis(&exit),
+            "recommended-vector-base-empty-sync-slot"
+        );
+    }
+
+    #[test]
+    fn firmware_mmio_data_abort_decoder_handles_aarch64_loads_and_stores() {
+        let read = decode_mmio_data_abort(0x93c0_8006).expect("read data abort decodes");
+        assert!(!read.is_write);
+        assert_eq!(read.access_name(), "read");
+        assert_eq!(read.register, 0);
+        assert_eq!(read.width, 8);
+
+        let write = decode_mmio_data_abort(0x93c0_8046).expect("write data abort decodes");
+        assert!(write.is_write);
+        assert_eq!(write.access_name(), "write");
+        assert_eq!(write.register, 0);
+        assert_eq!(write.width, 8);
+
+        assert_eq!(decode_mmio_data_abort(0x92c0_8006), None);
+        assert_eq!(decode_mmio_data_abort(0x93df_8006), None);
+    }
+}
