@@ -4312,3 +4312,3029 @@ impl MmioDevice for VirtioMmioBlockDevice {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn configure_virtio_block_queue_on_bus(bus: &mut MmioBus, block_base: u64) {
+        for (register, offset, value) in [
+            (
+                "queue_num",
+                VIRTIO_MMIO_QUEUE_NUM_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_NUM_VALUE,
+            ),
+            (
+                "queue_desc_low",
+                VIRTIO_MMIO_QUEUE_DESC_LOW_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DESC_ADDRESS & 0xffff_ffff,
+            ),
+            (
+                "queue_desc_high",
+                VIRTIO_MMIO_QUEUE_DESC_HIGH_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DESC_ADDRESS >> 32,
+            ),
+            (
+                "queue_driver_low",
+                VIRTIO_MMIO_QUEUE_DRIVER_LOW_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DRIVER_ADDRESS & 0xffff_ffff,
+            ),
+            (
+                "queue_driver_high",
+                VIRTIO_MMIO_QUEUE_DRIVER_HIGH_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DRIVER_ADDRESS >> 32,
+            ),
+            (
+                "queue_device_low",
+                VIRTIO_MMIO_QUEUE_DEVICE_LOW_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DEVICE_ADDRESS & 0xffff_ffff,
+            ),
+            (
+                "queue_device_high",
+                VIRTIO_MMIO_QUEUE_DEVICE_HIGH_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DEVICE_ADDRESS >> 32,
+            ),
+            (
+                "queue_ready",
+                VIRTIO_MMIO_QUEUE_READY_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_READY_VALUE,
+            ),
+        ] {
+            write_virtio_block_mmio_bus(bus, block_base, register, offset, value).unwrap();
+        }
+    }
+
+    fn sysreg_trap_syndrome(
+        is_read: bool,
+        register: u8,
+        op0: u8,
+        op1: u8,
+        crn: u8,
+        crm: u8,
+        op2: u8,
+    ) -> u64 {
+        (AARCH64_SYSREG_TRAP_EXCEPTION_CLASS << 26)
+            | (u64::from(op0) << 20)
+            | (u64::from(op2) << 17)
+            | (u64::from(op1) << 14)
+            | (u64::from(crn) << 10)
+            | (u64::from(register) << 5)
+            | (u64::from(crm) << 1)
+            | u64::from(is_read as u8)
+    }
+
+    fn gic_cpu_write(
+        cpu: &mut GicV3CpuInterfaceState,
+        bus: &mut MmioBus,
+        sys_reg: u16,
+        value: u64,
+    ) -> Option<GicV3CpuInterfaceAction> {
+        cpu.handle_system_register_access(
+            bus,
+            DecodedSystemRegisterAccess {
+                is_read: false,
+                register: 0,
+                sys_reg,
+                op0: 3,
+                op1: 0,
+                crn: 0,
+                crm: 0,
+                op2: 0,
+            },
+            Some(value),
+        )
+    }
+
+    fn gic_cpu_read(
+        cpu: &mut GicV3CpuInterfaceState,
+        bus: &mut MmioBus,
+        sys_reg: u16,
+    ) -> Option<GicV3CpuInterfaceAction> {
+        cpu.handle_system_register_access(
+            bus,
+            DecodedSystemRegisterAccess {
+                is_read: true,
+                register: 1,
+                sys_reg,
+                op0: 3,
+                op1: 0,
+                crn: 0,
+                crm: 0,
+                op2: 0,
+            },
+            None,
+        )
+    }
+
+    #[test]
+    fn firmware_mmio_bus_uses_windows_device_window_layout() {
+        let mut bus = windows_arm_firmware_mmio_bus();
+
+        assert_eq!(bus.device_count(), 6);
+        assert!(windows_arm_device_mmio_contains(WINDOWS_ARM_PL011_MMIO_IPA));
+        assert!(windows_arm_device_mmio_contains(WINDOWS_ARM_PL031_MMIO_IPA));
+        assert!(windows_arm_device_mmio_contains(
+            WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA
+        ));
+        assert!(windows_arm_device_mmio_contains(
+            WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA
+        ));
+        assert!(windows_arm_device_mmio_contains(
+            WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA
+        ));
+        assert!(windows_arm_device_mmio_contains(
+            WINDOWS_ARM_VIRTIO_TARGET_DISK_MMIO_IPA
+        ));
+        assert!(!windows_arm_device_mmio_contains(WINDOWS_ARM_GUEST_RAM_IPA));
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_PL011_MMIO_IPA + PL011_FR_OFFSET,
+                4
+            )),
+            MmioAction::ReadValue(WINDOWS_ARM_PL011_FLAG_VALUE)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(WINDOWS_ARM_PL011_MMIO_IPA, 0x141, 4)),
+            MmioAction::WriteAccepted {
+                value: 0x141,
+                byte: 0x41
+            }
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(WINDOWS_ARM_PL031_MMIO_IPA, 4)),
+            MmioAction::ReadValue(WINDOWS_ARM_PL031_READ_VALUE)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_TYPER_OFFSET,
+                4
+            )),
+            MmioAction::ReadValue(GICD_TYPER_VALUE)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_IIDR_OFFSET,
+                4
+            )),
+            MmioAction::ReadValue(GICV3_IIDR_VALUE)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA + GICR_TYPER_OFFSET,
+                4
+            )),
+            MmioAction::ReadValue(GICR_TYPER_VALUE & 0xffff_ffff)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA + GICR_IIDR_OFFSET,
+                4
+            )),
+            MmioAction::ReadValue(GICV3_IIDR_VALUE)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA + VIRTIO_MMIO_MAGIC_VALUE_OFFSET,
+                4
+            )),
+            MmioAction::ReadValue(VIRTIO_MMIO_MAGIC_VALUE)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA + VIRTIO_MMIO_DEVICE_FEATURES_OFFSET,
+                4
+            )),
+            MmioAction::ReadValue(VIRTIO_BLK_F_RO)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_VIRTIO_TARGET_DISK_MMIO_IPA + VIRTIO_MMIO_MAGIC_VALUE_OFFSET,
+                4
+            )),
+            MmioAction::ReadValue(VIRTIO_MMIO_MAGIC_VALUE)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_VIRTIO_TARGET_DISK_MMIO_IPA + VIRTIO_MMIO_DEVICE_FEATURES_OFFSET,
+                4
+            )),
+            MmioAction::ReadValue(VIRTIO_MMIO_BLOCK_DEVICE_FEATURES_VALUE)
+        );
+    }
+
+    #[test]
+    fn gicv3_distributor_mmio_skeleton_tracks_common_firmware_registers() {
+        let mut gic = GicV3DistributorDevice::new(WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA);
+        let base = WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA;
+
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + GICD_TYPER_OFFSET, 4)),
+            MmioAction::ReadValue(GICD_TYPER_VALUE)
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + GICD_IIDR_OFFSET, 4)),
+            MmioAction::ReadValue(GICV3_IIDR_VALUE)
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + GICD_STATUSR_OFFSET, 4)),
+            MmioAction::ReadValue(0)
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::write(base + GICD_STATUSR_OFFSET, 0xff, 4)),
+            MmioAction::WriteAccepted {
+                value: 0xff,
+                byte: 0xff
+            }
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + GICD_STATUSR_OFFSET, 4)),
+            MmioAction::ReadValue(0)
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::write(base + GICD_CTLR_OFFSET, 0x13, 4)),
+            MmioAction::WriteAccepted {
+                value: 0x13,
+                byte: 0x13
+            }
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + GICD_CTLR_OFFSET, 4)),
+            MmioAction::ReadValue(0x13)
+        );
+
+        let spi_enable_offset = GICD_ISENABLER_BASE_OFFSET + 4;
+        let spi_clear_offset = GICD_ICENABLER_BASE_OFFSET + 4;
+        let spi_group_offset = GICD_IGROUPR_BASE_OFFSET + 4;
+        let spi_group_modifier_offset = GICD_IGRPMODR_BASE_OFFSET + 4;
+        assert_eq!(
+            gic.handle(MmioAccess::write(base + spi_group_modifier_offset, 0x4, 4)),
+            MmioAction::WriteAccepted {
+                value: 0x4,
+                byte: 0x4
+            }
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + spi_group_modifier_offset, 4)),
+            MmioAction::ReadValue(0x4)
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::write(base + spi_enable_offset, 0x9, 4)),
+            MmioAction::WriteAccepted {
+                value: 0x9,
+                byte: 0x9
+            }
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + spi_enable_offset, 4)),
+            MmioAction::ReadValue(0x9)
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::write(base + spi_clear_offset, 0x1, 4)),
+            MmioAction::WriteAccepted {
+                value: 0x1,
+                byte: 0x1
+            }
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + spi_enable_offset, 4)),
+            MmioAction::ReadValue(0x8)
+        );
+        assert_eq!(
+            GicV3DistributorDevice::spi_interrupt_id(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_SPI),
+            Some(34)
+        );
+        assert_eq!(GicV3DistributorDevice::interrupt_bit(34), Some((1, 0x4)));
+        assert!(!gic.spi_irq_line_assertable(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_SPI));
+        assert_eq!(
+            gic.handle(MmioAccess::write(base + spi_enable_offset, 0x4, 4)),
+            MmioAction::WriteAccepted {
+                value: 0x4,
+                byte: 0x4
+            }
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + spi_enable_offset, 4)),
+            MmioAction::ReadValue(0xc)
+        );
+        assert_eq!(
+            gic.set_spi_pending(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_SPI, true),
+            Some(())
+        );
+        assert!(!gic.spi_irq_line_assertable(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_SPI));
+        assert_eq!(
+            gic.handle(MmioAccess::write(base + spi_group_offset, 0x4, 4)),
+            MmioAction::WriteAccepted {
+                value: 0x4,
+                byte: 0x4
+            }
+        );
+        assert!(gic.spi_irq_line_assertable(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_SPI));
+        assert_eq!(
+            gic.set_spi_pending(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_SPI, false),
+            Some(())
+        );
+        assert!(!gic.spi_irq_line_assertable(WINDOWS_ARM_VIRTIO_INSTALLER_ISO_SPI));
+
+        let spi_pending_set_offset = GICD_ISPENDR_BASE_OFFSET + 4;
+        let spi_pending_clear_offset = GICD_ICPENDR_BASE_OFFSET + 4;
+        assert_eq!(
+            gic.handle(MmioAccess::write(base + spi_pending_set_offset, 0x2, 4)),
+            MmioAction::WriteAccepted {
+                value: 0x2,
+                byte: 0x2
+            }
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + spi_pending_set_offset, 4)),
+            MmioAction::ReadValue(0x2)
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::write(base + spi_pending_clear_offset, 0x2, 4)),
+            MmioAction::WriteAccepted {
+                value: 0x2,
+                byte: 0x2
+            }
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + spi_pending_set_offset, 4)),
+            MmioAction::ReadValue(0)
+        );
+
+        let priority_byte_offset = GICD_IPRIORITYR_BASE_OFFSET + 35;
+        assert_eq!(
+            gic.handle(MmioAccess::write(base + priority_byte_offset, 0x44, 1)),
+            MmioAction::WriteAccepted {
+                value: 0x44,
+                byte: 0x44
+            }
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + priority_byte_offset, 1)),
+            MmioAction::ReadValue(0x44)
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + GICD_IPRIORITYR_BASE_OFFSET + 32, 4)),
+            MmioAction::ReadValue(0x44a0_a0a0)
+        );
+
+        let router32 = GICD_IROUTER_BASE_OFFSET + (32 * 8);
+        assert_eq!(
+            gic.handle(MmioAccess::write(base + router32, 0x1122_3344, 4)),
+            MmioAction::WriteAccepted {
+                value: 0x1122_3344,
+                byte: 0x44
+            }
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::write(base + router32 + 4, 0x5566_7788, 4)),
+            MmioAction::WriteAccepted {
+                value: 0x5566_7788,
+                byte: 0x88
+            }
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + router32, 4)),
+            MmioAction::ReadValue(0x1122_3344)
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + router32 + 4, 4)),
+            MmioAction::ReadValue(0x5566_7788)
+        );
+    }
+
+    #[test]
+    fn gicv3_distributor_selects_pending_spi_by_priority_not_lowest_intid() {
+        let mut gic = GicV3DistributorDevice::new(WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA);
+        let base = WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA;
+
+        assert_eq!(
+            gic.handle(MmioAccess::write(
+                base + GICD_CTLR_OFFSET,
+                u64::from(GICD_CTLR_ENABLE_GRP1NS),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(GICD_CTLR_ENABLE_GRP1NS),
+                byte: GICD_CTLR_ENABLE_GRP1NS as u8,
+            }
+        );
+        for register_base in [
+            GICD_IGROUPR_BASE_OFFSET,
+            GICD_ISENABLER_BASE_OFFSET,
+            GICD_ISPENDR_BASE_OFFSET,
+        ] {
+            assert_eq!(
+                gic.handle(MmioAccess::write(base + register_base + 4, 0xc, 4)),
+                MmioAction::WriteAccepted {
+                    value: 0xc,
+                    byte: 0xc,
+                }
+            );
+        }
+        assert_eq!(
+            gic.handle(MmioAccess::write(
+                base + GICD_IPRIORITYR_BASE_OFFSET + 34,
+                0xa0,
+                1,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0xa0,
+                byte: 0xa0,
+            }
+        );
+        assert_eq!(
+            gic.handle(MmioAccess::write(
+                base + GICD_IPRIORITYR_BASE_OFFSET + 35,
+                0x20,
+                1,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x20,
+                byte: 0x20,
+            }
+        );
+
+        assert_eq!(gic.pending_interrupt_id_for_cpu(0xff), Some(35));
+        assert_eq!(gic.acknowledge_pending_interrupt(0xff), 35);
+        assert_eq!(
+            gic.handle(MmioAccess::read(base + GICD_ISACTIVER_BASE_OFFSET + 4, 4)),
+            MmioAction::ReadValue(0x8)
+        );
+        assert_eq!(gic.pending_interrupt_id_for_cpu(0xff), Some(34));
+    }
+
+    #[test]
+    fn gicv3_redistributor_mmio_skeleton_tracks_waker_and_ppi_state() {
+        let mut gicr = GicV3RedistributorDevice::new(WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA);
+        let base = WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA;
+
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_TYPER_OFFSET, 4)),
+            MmioAction::ReadValue(GICR_TYPER_VALUE & 0xffff_ffff)
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_IIDR_OFFSET, 4)),
+            MmioAction::ReadValue(GICV3_IIDR_VALUE)
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_STATUSR_OFFSET, 4)),
+            MmioAction::ReadValue(0)
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::write(base + GICR_STATUSR_OFFSET, 0x80, 4)),
+            MmioAction::WriteAccepted {
+                value: 0x80,
+                byte: 0x80
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_WAKER_OFFSET, 4)),
+            MmioAction::ReadValue(0)
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::write(
+                base + GICR_WAKER_OFFSET,
+                GICR_WAKER_PROCESSOR_SLEEP,
+                4
+            )),
+            MmioAction::WriteAccepted {
+                value: GICR_WAKER_PROCESSOR_SLEEP,
+                byte: GICR_WAKER_PROCESSOR_SLEEP as u8
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_WAKER_OFFSET, 4)),
+            MmioAction::ReadValue(GICR_WAKER_PROCESSOR_SLEEP | GICR_WAKER_CHILDREN_ASLEEP)
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::write(base + GICR_WAKER_OFFSET, 0, 4)),
+            MmioAction::WriteAccepted { value: 0, byte: 0 }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_WAKER_OFFSET, 4)),
+            MmioAction::ReadValue(0)
+        );
+
+        assert_eq!(
+            gicr.handle(MmioAccess::write(
+                base + GICR_SGI_ISENABLER0_OFFSET,
+                1 << 13,
+                4
+            )),
+            MmioAction::WriteAccepted {
+                value: 1 << 13,
+                byte: 0
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_SGI_ISENABLER0_OFFSET, 4)),
+            MmioAction::ReadValue(1 << 13)
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::write(
+                base + GICR_SGI_ICENABLER0_OFFSET,
+                1 << 13,
+                4
+            )),
+            MmioAction::WriteAccepted {
+                value: 1 << 13,
+                byte: 0
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_SGI_ISENABLER0_OFFSET, 4)),
+            MmioAction::ReadValue(0)
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::write(
+                base + GICR_SGI_IGRPMODR0_OFFSET,
+                1 << 13,
+                4
+            )),
+            MmioAction::WriteAccepted {
+                value: 1 << 13,
+                byte: 0
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_SGI_IGRPMODR0_OFFSET, 4)),
+            MmioAction::ReadValue(1 << 13)
+        );
+
+        let priority_byte_offset = GICR_SGI_IPRIORITYR_BASE_OFFSET + 13;
+        assert_eq!(
+            gicr.handle(MmioAccess::write(base + priority_byte_offset, 0x55, 1)),
+            MmioAction::WriteAccepted {
+                value: 0x55,
+                byte: 0x55
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + priority_byte_offset, 1)),
+            MmioAction::ReadValue(0x55)
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(
+                base + GICR_SGI_IPRIORITYR_BASE_OFFSET + 12,
+                4
+            )),
+            MmioAction::ReadValue(0xa0a0_55a0)
+        );
+
+        assert_eq!(
+            gicr.handle(MmioAccess::write(
+                base + GICR_PROPBASER_OFFSET,
+                0x4000_0000,
+                4
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x4000_0000,
+                byte: 0
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_PROPBASER_OFFSET, 4)),
+            MmioAction::ReadValue(0x4000_0000)
+        );
+    }
+
+    #[test]
+    fn gicv3_redistributor_tracks_virtual_timer_ppi_delivery_state() {
+        let mut gicr = GicV3RedistributorDevice::new(WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA);
+        let base = WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA;
+        let timer_bit = 1_u32 << WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID;
+        let priority_byte_offset =
+            GICR_SGI_IPRIORITYR_BASE_OFFSET + u64::from(WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID);
+
+        assert_eq!(WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID, 27);
+        assert_eq!(
+            gicr.handle(MmioAccess::write(
+                base + GICR_SGI_ISENABLER0_OFFSET,
+                u64::from(timer_bit),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(timer_bit),
+                byte: 0,
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::write(
+                base + GICR_SGI_ISPENDR0_OFFSET,
+                u64::from(timer_bit),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(timer_bit),
+                byte: 0,
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_SGI_ISPENDR0_OFFSET, 4)),
+            MmioAction::ReadValue(u64::from(timer_bit))
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::write(base + priority_byte_offset, 0x40, 1)),
+            MmioAction::WriteAccepted {
+                value: 0x40,
+                byte: 0x40,
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + priority_byte_offset, 1)),
+            MmioAction::ReadValue(0x40)
+        );
+        assert_eq!(
+            gicr.acknowledge_pending_interrupt(0xff),
+            GICV3_SPURIOUS_INTERRUPT_ID
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::write(
+                base + GICR_SGI_IGROUPR0_OFFSET,
+                u64::from(timer_bit),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(timer_bit),
+                byte: 0,
+            }
+        );
+        assert_eq!(gicr.acknowledge_pending_interrupt(0xff), 27);
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_SGI_ISPENDR0_OFFSET, 4)),
+            MmioAction::ReadValue(0)
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_SGI_ISACTIVER0_OFFSET, 4)),
+            MmioAction::ReadValue(u64::from(timer_bit))
+        );
+        assert!(gicr.end_interrupt(WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID));
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_SGI_ISACTIVER0_OFFSET, 4)),
+            MmioAction::ReadValue(0)
+        );
+        assert!(gicr.set_fdt_ppi_pending(WINDOWS_ARM_VIRTUAL_TIMER_PPI, true));
+        assert_eq!(
+            gicr.handle(MmioAccess::write(
+                base + GICR_SGI_ICPENDR0_OFFSET,
+                u64::from(timer_bit),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(timer_bit),
+                byte: 0,
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_SGI_ISPENDR0_OFFSET, 4)),
+            MmioAction::ReadValue(0)
+        );
+    }
+
+    #[test]
+    fn gicv3_redistributor_selects_pending_ppi_by_priority_not_lowest_intid() {
+        let mut gicr = GicV3RedistributorDevice::new(WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA);
+        let base = WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA;
+        let timer_bit = 1_u32 << WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID;
+        let other_ppi_interrupt_id = WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID + 1;
+        let other_ppi_bit = 1_u32 << other_ppi_interrupt_id;
+        let both_bits = timer_bit | other_ppi_bit;
+
+        assert_eq!(
+            gicr.handle(MmioAccess::write(
+                base + GICR_SGI_IGROUPR0_OFFSET,
+                u64::from(both_bits),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(both_bits),
+                byte: 0,
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::write(
+                base + GICR_SGI_ISENABLER0_OFFSET,
+                u64::from(both_bits),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(both_bits),
+                byte: 0,
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::write(
+                base + GICR_SGI_ISPENDR0_OFFSET,
+                u64::from(both_bits),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(both_bits),
+                byte: 0,
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::write(
+                base + GICR_SGI_IPRIORITYR_BASE_OFFSET
+                    + u64::from(WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID),
+                0xa0,
+                1,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0xa0,
+                byte: 0xa0,
+            }
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::write(
+                base + GICR_SGI_IPRIORITYR_BASE_OFFSET + u64::from(other_ppi_interrupt_id),
+                0x20,
+                1,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x20,
+                byte: 0x20,
+            }
+        );
+
+        assert_eq!(
+            gicr.pending_interrupt_id_for_cpu(0xff),
+            Some(other_ppi_interrupt_id)
+        );
+        assert_eq!(
+            gicr.acknowledge_pending_interrupt(0xff),
+            other_ppi_interrupt_id
+        );
+        assert_eq!(
+            gicr.handle(MmioAccess::read(base + GICR_SGI_ISACTIVER0_OFFSET, 4)),
+            MmioAction::ReadValue(u64::from(other_ppi_bit))
+        );
+        assert_eq!(
+            gicr.pending_interrupt_id_for_cpu(0xff),
+            Some(WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID)
+        );
+    }
+
+    #[test]
+    fn firmware_system_register_trap_decoder_handles_gic_cpu_interface_regs() {
+        let iar = decode_system_register_trap(sysreg_trap_syndrome(true, 2, 3, 0, 12, 12, 0))
+            .expect("ICC_IAR1_EL1 trap decodes");
+        assert!(iar.is_read);
+        assert_eq!(iar.access_name(), "read");
+        assert_eq!(iar.register, 2);
+        assert_eq!(iar.sys_reg, ICC_IAR1_EL1_SYSREG);
+
+        let eoir = decode_system_register_trap(sysreg_trap_syndrome(false, 4, 3, 0, 12, 12, 1))
+            .expect("ICC_EOIR1_EL1 trap decodes");
+        assert!(!eoir.is_read);
+        assert_eq!(eoir.access_name(), "write");
+        assert_eq!(eoir.register, 4);
+        assert_eq!(eoir.sys_reg, ICC_EOIR1_EL1_SYSREG);
+
+        assert_eq!(aarch64_sys_reg_encoding(3, 0, 4, 6, 0), ICC_PMR_EL1_SYSREG);
+        assert_eq!(
+            aarch64_sys_reg_encoding(3, 0, 12, 8, 4),
+            ICC_AP0R0_EL1_SYSREG
+        );
+        assert_eq!(
+            aarch64_sys_reg_encoding(3, 0, 12, 9, 0),
+            ICC_AP1R0_EL1_SYSREG
+        );
+        assert_eq!(
+            aarch64_sys_reg_encoding(3, 0, 12, 11, 3),
+            ICC_RPR_EL1_SYSREG
+        );
+        assert_eq!(
+            aarch64_sys_reg_encoding(3, 0, 12, 12, 5),
+            ICC_SRE_EL1_SYSREG
+        );
+        assert_eq!(
+            aarch64_sys_reg_encoding(3, 0, 12, 12, 6),
+            ICC_IGRPEN0_EL1_SYSREG
+        );
+        assert_eq!(decode_system_register_trap(0x93c0_8006), None);
+    }
+
+    #[test]
+    fn gicv3_cpu_interface_accepts_group0_and_active_priority_registers() {
+        let block_devices = windows_arm_firmware_block_devices(None, None);
+        let mut bus = windows_arm_firmware_mmio_bus_with_block_devices(&block_devices);
+        let mut cpu = GicV3CpuInterfaceState::new();
+
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_RPR_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(0xff))
+        );
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_BPR0_EL1_SYSREG, 0x9),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_BPR0_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(1))
+        );
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_IGRPEN0_EL1_SYSREG, 1),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_IGRPEN0_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(1))
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_HPPIR0_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(u64::from(
+                GICV3_SPURIOUS_INTERRUPT_ID
+            )))
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_IAR0_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(u64::from(
+                GICV3_SPURIOUS_INTERRUPT_ID
+            )))
+        );
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_EOIR0_EL1_SYSREG, 0),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_AP0R0_EL1_SYSREG, 0x1234),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_AP0R0_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(0x1234))
+        );
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_AP1R0_EL1_SYSREG, 0x5678),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_AP1R0_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(0x5678))
+        );
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_SGI1R_EL1_SYSREG, 0),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+    }
+
+    #[test]
+    fn gicv3_cpu_interface_acknowledges_and_eois_pending_device_spis() {
+        let block_devices = windows_arm_firmware_block_devices(None, None);
+        let mut bus = windows_arm_firmware_mmio_bus_with_block_devices(&block_devices);
+        let mut cpu = GicV3CpuInterfaceState::new();
+        let base = WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA;
+
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                base + GICD_CTLR_OFFSET,
+                u64::from(GICD_CTLR_ENABLE_GRP1NS),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(GICD_CTLR_ENABLE_GRP1NS),
+                byte: GICD_CTLR_ENABLE_GRP1NS as u8,
+            }
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                base + GICD_ISENABLER_BASE_OFFSET + 4,
+                0x4,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x4,
+                byte: 0x4,
+            }
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                base + GICD_ISPENDR_BASE_OFFSET + 4,
+                0x4,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x4,
+                byte: 0x4,
+            }
+        );
+        assert!(!cpu.irq_line_should_assert(&mut bus));
+        assert_eq!(
+            cpu.handle_system_register_access(
+                &mut bus,
+                DecodedSystemRegisterAccess {
+                    is_read: false,
+                    register: 0,
+                    sys_reg: ICC_IGRPEN1_EL1_SYSREG,
+                    op0: 3,
+                    op1: 0,
+                    crn: 12,
+                    crm: 12,
+                    op2: 7,
+                },
+                Some(1),
+            ),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert!(!cpu.irq_line_should_assert(&mut bus));
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                base + GICD_IGROUPR_BASE_OFFSET + 4,
+                0x4,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x4,
+                byte: 0x4,
+            }
+        );
+        assert!(cpu.irq_line_should_assert(&mut bus));
+        assert_eq!(
+            cpu.handle_system_register_access(
+                &mut bus,
+                DecodedSystemRegisterAccess {
+                    is_read: false,
+                    register: 0,
+                    sys_reg: ICC_PMR_EL1_SYSREG,
+                    op0: 3,
+                    op1: 0,
+                    crn: 4,
+                    crm: 6,
+                    op2: 0,
+                },
+                Some(0xa0),
+            ),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert!(!cpu.irq_line_should_assert(&mut bus));
+        assert_eq!(
+            cpu.handle_system_register_access(
+                &mut bus,
+                DecodedSystemRegisterAccess {
+                    is_read: false,
+                    register: 0,
+                    sys_reg: ICC_PMR_EL1_SYSREG,
+                    op0: 3,
+                    op1: 0,
+                    crn: 4,
+                    crm: 6,
+                    op2: 0,
+                },
+                Some(0xff),
+            ),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert!(cpu.irq_line_should_assert(&mut bus));
+        assert_eq!(
+            cpu.handle_system_register_access(
+                &mut bus,
+                DecodedSystemRegisterAccess {
+                    is_read: true,
+                    register: 1,
+                    sys_reg: ICC_HPPIR1_EL1_SYSREG,
+                    op0: 3,
+                    op1: 0,
+                    crn: 12,
+                    crm: 12,
+                    op2: 2,
+                },
+                None,
+            ),
+            Some(GicV3CpuInterfaceAction::Read(34))
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_RPR_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(0xff))
+        );
+        assert_eq!(
+            cpu.handle_system_register_access(
+                &mut bus,
+                DecodedSystemRegisterAccess {
+                    is_read: true,
+                    register: 1,
+                    sys_reg: ICC_IAR1_EL1_SYSREG,
+                    op0: 3,
+                    op1: 0,
+                    crn: 12,
+                    crm: 12,
+                    op2: 0,
+                },
+                None,
+            ),
+            Some(GicV3CpuInterfaceAction::Read(34))
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_RPR_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(0xa0))
+        );
+        assert!(!cpu.irq_line_should_assert(&mut bus));
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(base + GICD_ISPENDR_BASE_OFFSET + 4, 4)),
+            MmioAction::ReadValue(0)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(base + GICD_ISACTIVER_BASE_OFFSET + 4, 4)),
+            MmioAction::ReadValue(0x4)
+        );
+        assert_eq!(
+            cpu.handle_system_register_access(
+                &mut bus,
+                DecodedSystemRegisterAccess {
+                    is_read: false,
+                    register: 1,
+                    sys_reg: ICC_EOIR1_EL1_SYSREG,
+                    op0: 3,
+                    op1: 0,
+                    crn: 12,
+                    crm: 12,
+                    op2: 1,
+                },
+                Some(34),
+            ),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: true,
+            })
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(base + GICD_ISACTIVER_BASE_OFFSET + 4, 4)),
+            MmioAction::ReadValue(0)
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_RPR_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(0xff))
+        );
+    }
+
+    #[test]
+    fn gicv3_cpu_interface_acknowledges_and_eois_timer_ppi() {
+        let block_devices = windows_arm_firmware_block_devices(None, None);
+        let mut bus = windows_arm_firmware_mmio_bus_with_block_devices(&block_devices);
+        let mut cpu = GicV3CpuInterfaceState::new();
+        let gicr_base = WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA;
+        let timer_bit = 1_u32 << WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID;
+
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicr_base + GICR_SGI_ISENABLER0_OFFSET,
+                u64::from(timer_bit),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(timer_bit),
+                byte: 0,
+            }
+        );
+        assert!(set_windows_arm_firmware_vtimer_ppi_pending(&mut bus, true));
+        assert!(!cpu.irq_line_should_assert(&mut bus));
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_IGRPEN1_EL1_SYSREG, 1),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert!(!cpu.irq_line_should_assert(&mut bus));
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicr_base + GICR_SGI_IGROUPR0_OFFSET,
+                u64::from(timer_bit),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(timer_bit),
+                byte: 0,
+            }
+        );
+        assert!(cpu.irq_line_should_assert(&mut bus));
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_PMR_EL1_SYSREG, 0xa0),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert!(!cpu.irq_line_should_assert(&mut bus));
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_PMR_EL1_SYSREG, 0xff),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_HPPIR1_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(u64::from(
+                WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID
+            )))
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_IAR1_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(u64::from(
+                WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID
+            )))
+        );
+        assert!(!cpu.irq_line_should_assert(&mut bus));
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(gicr_base + GICR_SGI_ISPENDR0_OFFSET, 4)),
+            MmioAction::ReadValue(0)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(gicr_base + GICR_SGI_ISACTIVER0_OFFSET, 4)),
+            MmioAction::ReadValue(u64::from(timer_bit))
+        );
+        assert_eq!(
+            gic_cpu_write(
+                &mut cpu,
+                &mut bus,
+                ICC_EOIR1_EL1_SYSREG,
+                u64::from(WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID),
+            ),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: true,
+            })
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(gicr_base + GICR_SGI_ISACTIVER0_OFFSET, 4)),
+            MmioAction::ReadValue(0)
+        );
+    }
+
+    #[test]
+    fn gicv3_cpu_interface_irq_line_snapshot_reports_timer_ppi_gates() {
+        let block_devices = windows_arm_firmware_block_devices(None, None);
+        let mut bus = windows_arm_firmware_mmio_bus_with_block_devices(&block_devices);
+        let mut cpu = GicV3CpuInterfaceState::new();
+        let gicr_base = WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA;
+        let timer_bit = 1_u32 << WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID;
+
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicr_base + GICR_SGI_ISENABLER0_OFFSET,
+                u64::from(timer_bit),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(timer_bit),
+                byte: 0,
+            }
+        );
+        assert!(set_windows_arm_firmware_vtimer_ppi_pending(&mut bus, true));
+
+        let snapshot = cpu.irq_line_snapshot(&mut bus);
+        assert!(!snapshot.group1_enabled);
+        assert_eq!(snapshot.priority_mask, 0xff);
+        assert_eq!(snapshot.running_priority, 0xff);
+        assert_eq!(snapshot.priority_threshold, 0xff);
+        assert_eq!(snapshot.pending_intid, GICV3_SPURIOUS_INTERRUPT_ID);
+        assert!(!snapshot.irq_line_should_assert);
+
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_IGRPEN1_EL1_SYSREG, 1),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        let snapshot = cpu.irq_line_snapshot(&mut bus);
+        assert!(snapshot.group1_enabled);
+        assert_eq!(snapshot.pending_intid, GICV3_SPURIOUS_INTERRUPT_ID);
+        assert!(!snapshot.irq_line_should_assert);
+
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicr_base + GICR_SGI_IGROUPR0_OFFSET,
+                u64::from(timer_bit),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(timer_bit),
+                byte: 0,
+            }
+        );
+        let snapshot = cpu.irq_line_snapshot(&mut bus);
+        assert_eq!(
+            snapshot.pending_intid,
+            WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID
+        );
+        assert!(snapshot.irq_line_should_assert);
+
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_PMR_EL1_SYSREG, 0xa0),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        let snapshot = cpu.irq_line_snapshot(&mut bus);
+        assert_eq!(snapshot.priority_mask, 0xa0);
+        assert_eq!(snapshot.priority_threshold, 0xa0);
+        assert_eq!(snapshot.pending_intid, GICV3_SPURIOUS_INTERRUPT_ID);
+        assert!(!snapshot.irq_line_should_assert);
+    }
+
+    #[test]
+    fn gicv3_cpu_interface_timer_ppi_does_not_clear_pending_spi_line() {
+        let block_devices = windows_arm_firmware_block_devices(None, None);
+        let mut bus = windows_arm_firmware_mmio_bus_with_block_devices(&block_devices);
+        let mut cpu = GicV3CpuInterfaceState::new();
+        let gicd_base = WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA;
+        let gicr_base = WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA;
+        let timer_bit = 1_u32 << WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID;
+
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicd_base + GICD_CTLR_OFFSET,
+                u64::from(GICD_CTLR_ENABLE_GRP1NS),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(GICD_CTLR_ENABLE_GRP1NS),
+                byte: GICD_CTLR_ENABLE_GRP1NS as u8,
+            }
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicd_base + GICD_IGROUPR_BASE_OFFSET + 4,
+                0x4,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x4,
+                byte: 0x4,
+            }
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicd_base + GICD_ISENABLER_BASE_OFFSET + 4,
+                0x4,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x4,
+                byte: 0x4,
+            }
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicd_base + GICD_ISPENDR_BASE_OFFSET + 4,
+                0x4,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x4,
+                byte: 0x4,
+            }
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicr_base + GICR_SGI_ISENABLER0_OFFSET,
+                u64::from(timer_bit),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(timer_bit),
+                byte: 0,
+            }
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicr_base + GICR_SGI_IGROUPR0_OFFSET,
+                u64::from(timer_bit),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(timer_bit),
+                byte: 0,
+            }
+        );
+        assert!(set_windows_arm_firmware_vtimer_ppi_pending(&mut bus, true));
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_IGRPEN1_EL1_SYSREG, 1),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_IAR1_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(u64::from(
+                WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID
+            )))
+        );
+        assert!(!cpu.irq_line_should_assert(&mut bus));
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_HPPIR1_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(u64::from(
+                GICV3_SPURIOUS_INTERRUPT_ID
+            )))
+        );
+        assert_eq!(
+            gic_cpu_write(
+                &mut cpu,
+                &mut bus,
+                ICC_EOIR1_EL1_SYSREG,
+                u64::from(WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID),
+            ),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: true,
+            })
+        );
+        assert!(cpu.irq_line_should_assert(&mut bus));
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_HPPIR1_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(34))
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_IAR1_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(34))
+        );
+        assert!(!cpu.irq_line_should_assert(&mut bus));
+    }
+
+    #[test]
+    fn gicv3_cpu_interface_selects_highest_priority_pending_across_ppi_and_spi() {
+        let block_devices = windows_arm_firmware_block_devices(None, None);
+        let mut bus = windows_arm_firmware_mmio_bus_with_block_devices(&block_devices);
+        let mut cpu = GicV3CpuInterfaceState::new();
+        let gicd_base = WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA;
+        let gicr_base = WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA;
+        let timer_bit = 1_u32 << WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID;
+
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicd_base + GICD_CTLR_OFFSET,
+                u64::from(GICD_CTLR_ENABLE_GRP1NS),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(GICD_CTLR_ENABLE_GRP1NS),
+                byte: GICD_CTLR_ENABLE_GRP1NS as u8,
+            }
+        );
+        for register_base in [
+            GICD_IGROUPR_BASE_OFFSET,
+            GICD_ISENABLER_BASE_OFFSET,
+            GICD_ISPENDR_BASE_OFFSET,
+        ] {
+            assert_eq!(
+                bus.dispatch(MmioAccess::write(gicd_base + register_base + 4, 0x4, 4,)),
+                MmioAction::WriteAccepted {
+                    value: 0x4,
+                    byte: 0x4,
+                }
+            );
+        }
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicd_base + GICD_IPRIORITYR_BASE_OFFSET + 34,
+                0x20,
+                1,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x20,
+                byte: 0x20,
+            }
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicr_base + GICR_SGI_IGROUPR0_OFFSET,
+                u64::from(timer_bit),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(timer_bit),
+                byte: 0,
+            }
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicr_base + GICR_SGI_ISENABLER0_OFFSET,
+                u64::from(timer_bit),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(timer_bit),
+                byte: 0,
+            }
+        );
+        assert!(set_windows_arm_firmware_vtimer_ppi_pending(&mut bus, true));
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_IGRPEN1_EL1_SYSREG, 1),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_HPPIR1_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(34))
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_IAR1_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(34))
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_RPR_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(0x20))
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(gicr_base + GICR_SGI_ISPENDR0_OFFSET, 4)),
+            MmioAction::ReadValue(u64::from(timer_bit))
+        );
+    }
+
+    #[test]
+    fn gicv3_cpu_interface_eoi_mode_requires_dir_to_deactivate_spi() {
+        let block_devices = windows_arm_firmware_block_devices(None, None);
+        let mut bus = windows_arm_firmware_mmio_bus_with_block_devices(&block_devices);
+        let mut cpu = GicV3CpuInterfaceState::new();
+        let base = WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA;
+
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                base + GICD_CTLR_OFFSET,
+                u64::from(GICD_CTLR_ENABLE_GRP1NS),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(GICD_CTLR_ENABLE_GRP1NS),
+                byte: GICD_CTLR_ENABLE_GRP1NS as u8,
+            }
+        );
+        for register_base in [
+            GICD_IGROUPR_BASE_OFFSET,
+            GICD_ISENABLER_BASE_OFFSET,
+            GICD_ISPENDR_BASE_OFFSET,
+        ] {
+            assert_eq!(
+                bus.dispatch(MmioAccess::write(base + register_base + 4, 0x4, 4)),
+                MmioAction::WriteAccepted {
+                    value: 0x4,
+                    byte: 0x4,
+                }
+            );
+        }
+        assert_eq!(
+            gic_cpu_write(
+                &mut cpu,
+                &mut bus,
+                ICC_CTLR_EL1_SYSREG,
+                ICC_CTLR_EL1_EOIMODE
+            ),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_IGRPEN1_EL1_SYSREG, 1),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_IAR1_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(34))
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(base + GICD_ISACTIVER_BASE_OFFSET + 4, 4)),
+            MmioAction::ReadValue(0x4)
+        );
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_EOIR1_EL1_SYSREG, 34),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_RPR_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(0xff))
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(base + GICD_ISACTIVER_BASE_OFFSET + 4, 4)),
+            MmioAction::ReadValue(0x4)
+        );
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_DIR_EL1_SYSREG, 34),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: true,
+            })
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(base + GICD_ISACTIVER_BASE_OFFSET + 4, 4)),
+            MmioAction::ReadValue(0)
+        );
+    }
+
+    #[test]
+    fn gicv3_cpu_interface_eoi_mode_requires_dir_to_deactivate_timer_ppi() {
+        let block_devices = windows_arm_firmware_block_devices(None, None);
+        let mut bus = windows_arm_firmware_mmio_bus_with_block_devices(&block_devices);
+        let mut cpu = GicV3CpuInterfaceState::new();
+        let gicr_base = WINDOWS_ARM_GIC_REDISTRIBUTOR_MMIO_IPA;
+        let timer_bit = 1_u32 << WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID;
+
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicr_base + GICR_SGI_IGROUPR0_OFFSET,
+                u64::from(timer_bit),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(timer_bit),
+                byte: 0,
+            }
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                gicr_base + GICR_SGI_ISENABLER0_OFFSET,
+                u64::from(timer_bit),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(timer_bit),
+                byte: 0,
+            }
+        );
+        assert!(set_windows_arm_firmware_vtimer_ppi_pending(&mut bus, true));
+        assert_eq!(
+            gic_cpu_write(
+                &mut cpu,
+                &mut bus,
+                ICC_CTLR_EL1_SYSREG,
+                ICC_CTLR_EL1_EOIMODE
+            ),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert_eq!(
+            gic_cpu_write(&mut cpu, &mut bus, ICC_IGRPEN1_EL1_SYSREG, 1),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_IAR1_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(u64::from(
+                WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID
+            )))
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(gicr_base + GICR_SGI_ISACTIVER0_OFFSET, 4)),
+            MmioAction::ReadValue(u64::from(timer_bit))
+        );
+        assert_eq!(
+            gic_cpu_write(
+                &mut cpu,
+                &mut bus,
+                ICC_EOIR1_EL1_SYSREG,
+                u64::from(WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID),
+            ),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: false,
+            })
+        );
+        assert_eq!(
+            gic_cpu_read(&mut cpu, &mut bus, ICC_RPR_EL1_SYSREG),
+            Some(GicV3CpuInterfaceAction::Read(0xff))
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(gicr_base + GICR_SGI_ISACTIVER0_OFFSET, 4)),
+            MmioAction::ReadValue(u64::from(timer_bit))
+        );
+        assert_eq!(
+            gic_cpu_write(
+                &mut cpu,
+                &mut bus,
+                ICC_DIR_EL1_SYSREG,
+                u64::from(WINDOWS_ARM_VIRTUAL_TIMER_INTERRUPT_ID),
+            ),
+            Some(GicV3CpuInterfaceAction::Write {
+                refresh_level_sources: true,
+            })
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(gicr_base + GICR_SGI_ISACTIVER0_OFFSET, 4)),
+            MmioAction::ReadValue(0)
+        );
+    }
+
+    #[test]
+    fn firmware_block_queue_notify_selects_backing_by_mmio_ipa() {
+        let stem = format!(
+            "bridgevm-hvf-firmware-block-queue-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let iso_path = std::env::temp_dir().join(format!("{stem}.iso"));
+        let disk_path = std::env::temp_dir().join(format!("{stem}.raw"));
+        let sector_start =
+            (VIRTIO_BLOCK_SYNTHETIC_REQUEST_SECTOR * VIRTIO_BLOCK_SECTOR_BYTES) as usize;
+        let mut iso = vec![0_u8; (VIRTIO_BLOCK_SECTOR_BYTES as usize) * 16];
+        let mut disk = vec![0_u8; (VIRTIO_BLOCK_SECTOR_BYTES as usize) * 32];
+        for offset in 0..VIRTIO_BLOCK_SYNTHETIC_REQUEST_DATA_BYTES as usize {
+            iso[sector_start + offset] = 0xc0_u8.wrapping_add(offset as u8);
+            disk[sector_start + offset] = 0xa0_u8.wrapping_add(offset as u8);
+        }
+        std::fs::write(&iso_path, &iso).unwrap();
+        std::fs::write(&disk_path, &disk).unwrap();
+
+        let block_devices =
+            windows_arm_firmware_block_devices(Some(iso_path.clone()), Some(disk_path.clone()));
+        let mut bus = windows_arm_firmware_mmio_bus_with_block_devices(&block_devices);
+        assert_eq!(block_devices[0].capacity_sectors, 16);
+        assert_eq!(block_devices[1].capacity_sectors, 32);
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA + VIRTIO_MMIO_BLOCK_CAPACITY_LOW_OFFSET,
+                4,
+            )),
+            MmioAction::ReadValue(16)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_VIRTIO_TARGET_DISK_MMIO_IPA + VIRTIO_MMIO_BLOCK_CAPACITY_LOW_OFFSET,
+                4,
+            )),
+            MmioAction::ReadValue(32)
+        );
+
+        let installer_notify_ipa =
+            WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA + VIRTIO_MMIO_QUEUE_NOTIFY_OFFSET;
+        let mut installer_backing = vec![0_u8; 16 * 1024];
+        let mut installer_memory =
+            VirtioGuestMemory::new(WINDOWS_ARM_GUEST_RAM_IPA, &mut installer_backing);
+        configure_virtio_block_queue_on_bus(&mut bus, WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA);
+        seed_synthetic_virtio_block_read_request(&mut installer_memory).unwrap();
+        let installer_status_ipa =
+            WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA + VIRTIO_MMIO_STATUS_OFFSET;
+        let gicd_spi_pending_clear_ipa =
+            WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_ICPENDR_BASE_OFFSET + 4;
+        let gicd_spi_pending_set_ipa =
+            WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_ISPENDR_BASE_OFFSET + 4;
+        assert!(windows_arm_firmware_block_irq_source_may_change(
+            &block_devices,
+            installer_status_ipa,
+            0,
+        ));
+        assert!(!windows_arm_firmware_block_irq_source_may_change(
+            &block_devices,
+            installer_status_ipa,
+            VIRTIO_MMIO_BLOCK_STATUS_FEATURES_OK_VALUE,
+        ));
+        assert!(
+            windows_arm_firmware_gicd_pending_clear_may_need_source_refresh(
+                gicd_spi_pending_clear_ipa,
+                0x4,
+                4,
+            )
+        );
+        assert!(
+            !windows_arm_firmware_gicd_pending_clear_may_need_source_refresh(
+                gicd_spi_pending_set_ipa,
+                0x4,
+                4,
+            )
+        );
+        assert!(
+            !windows_arm_firmware_gicd_pending_clear_may_need_source_refresh(
+                gicd_spi_pending_clear_ipa,
+                0,
+                4,
+            )
+        );
+        assert_eq!(
+            complete_windows_arm_firmware_block_queue_notify(
+                &mut bus,
+                &mut installer_memory,
+                &block_devices,
+                installer_status_ipa,
+                VIRTIO_MMIO_BLOCK_QUEUE_NOTIFY_VALUE,
+            ),
+            Err(VirtioBlockRequestError::UnexpectedQueueNotifyIpa {
+                role: "installer-iso",
+                ipa: installer_status_ipa,
+            })
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(installer_notify_ipa, 1, 4)),
+            MmioAction::WriteAccepted { value: 1, byte: 1 }
+        );
+        assert_eq!(
+            complete_windows_arm_firmware_block_queue_notify(
+                &mut bus,
+                &mut installer_memory,
+                &block_devices,
+                installer_notify_ipa,
+                1,
+            ),
+            Err(VirtioBlockRequestError::UnsupportedQueueNotifyValue {
+                role: "installer-iso",
+                value: 1,
+            })
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                installer_notify_ipa,
+                VIRTIO_MMIO_BLOCK_QUEUE_NOTIFY_VALUE,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: VIRTIO_MMIO_BLOCK_QUEUE_NOTIFY_VALUE,
+                byte: VIRTIO_MMIO_BLOCK_QUEUE_NOTIFY_VALUE as u8,
+            }
+        );
+        let installer_completion = complete_windows_arm_firmware_block_queue_notify(
+            &mut bus,
+            &mut installer_memory,
+            &block_devices,
+            installer_notify_ipa,
+            VIRTIO_MMIO_BLOCK_QUEUE_NOTIFY_VALUE,
+        )
+        .unwrap();
+        assert_eq!(installer_completion.role, "installer-iso");
+        assert_eq!(installer_completion.backing_kind, "host-iso-readonly");
+        assert_eq!(
+            installer_completion.base_ipa,
+            WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA
+        );
+        assert_eq!(
+            installer_completion.completion.request_type,
+            VIRTIO_BLK_T_IN
+        );
+        assert_eq!(installer_completion.completion.status, VIRTIO_BLK_S_OK);
+        assert_eq!(installer_completion.byte_offset, 0xe00);
+        assert_eq!(installer_completion.used_len, 513);
+        assert_eq!(
+            installer_memory
+                .read_bytes(VIRTIO_BLOCK_SYNTHETIC_REQUEST_DATA_ADDRESS, 8)
+                .unwrap(),
+            vec![0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7]
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA + VIRTIO_MMIO_INTERRUPT_STATUS_OFFSET,
+                4,
+            )),
+            MmioAction::ReadValue(VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE)
+        );
+        assert!(!refresh_windows_arm_firmware_device_irq_pending(
+            &mut bus,
+            &block_devices
+        ));
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_ISPENDR_BASE_OFFSET + 4,
+                4,
+            )),
+            MmioAction::ReadValue(0x4)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_CTLR_OFFSET,
+                u64::from(GICD_CTLR_ENABLE_GRP1NS),
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: u64::from(GICD_CTLR_ENABLE_GRP1NS),
+                byte: GICD_CTLR_ENABLE_GRP1NS as u8,
+            }
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_IGROUPR_BASE_OFFSET + 4,
+                0x4,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x4,
+                byte: 0x4,
+            }
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_ISENABLER_BASE_OFFSET + 4,
+                0x4,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x4,
+                byte: 0x4,
+            }
+        );
+        assert!(windows_arm_firmware_device_irq_line_assertable(
+            &mut bus,
+            &block_devices
+        ));
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(gicd_spi_pending_clear_ipa, 0x4, 4)),
+            MmioAction::WriteAccepted {
+                value: 0x4,
+                byte: 0x4,
+            }
+        );
+        assert!(!windows_arm_firmware_device_irq_line_assertable(
+            &mut bus,
+            &block_devices
+        ));
+        assert!(refresh_windows_arm_firmware_device_irq_pending(
+            &mut bus,
+            &block_devices
+        ));
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(gicd_spi_pending_set_ipa, 4)),
+            MmioAction::ReadValue(0x4)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                WINDOWS_ARM_VIRTIO_INSTALLER_ISO_MMIO_IPA + VIRTIO_MMIO_INTERRUPT_ACK_OFFSET,
+                VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE,
+                byte: VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE as u8,
+            }
+        );
+        assert!(!refresh_windows_arm_firmware_device_irq_pending(
+            &mut bus,
+            &block_devices
+        ));
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_ISPENDR_BASE_OFFSET + 4,
+                4,
+            )),
+            MmioAction::ReadValue(0)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_ISPENDR_BASE_OFFSET + 4,
+                0x4,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x4,
+                byte: 0x4,
+            }
+        );
+        assert!(windows_arm_firmware_device_irq_line_assertable(
+            &mut bus,
+            &block_devices
+        ));
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_ICPENDR_BASE_OFFSET + 4,
+                0x4,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x4,
+                byte: 0x4,
+            }
+        );
+        assert!(!windows_arm_firmware_device_irq_line_assertable(
+            &mut bus,
+            &block_devices
+        ));
+
+        let target_notify_ipa =
+            WINDOWS_ARM_VIRTIO_TARGET_DISK_MMIO_IPA + VIRTIO_MMIO_QUEUE_NOTIFY_OFFSET;
+        let mut target_backing = vec![0_u8; 16 * 1024];
+        let mut target_memory =
+            VirtioGuestMemory::new(WINDOWS_ARM_GUEST_RAM_IPA, &mut target_backing);
+        configure_virtio_block_queue_on_bus(&mut bus, WINDOWS_ARM_VIRTIO_TARGET_DISK_MMIO_IPA);
+        seed_synthetic_virtio_block_write_request_as_first(&mut target_memory).unwrap();
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                target_notify_ipa,
+                VIRTIO_MMIO_BLOCK_QUEUE_NOTIFY_VALUE,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: VIRTIO_MMIO_BLOCK_QUEUE_NOTIFY_VALUE,
+                byte: VIRTIO_MMIO_BLOCK_QUEUE_NOTIFY_VALUE as u8,
+            }
+        );
+        let target_completion = complete_windows_arm_firmware_block_queue_notify(
+            &mut bus,
+            &mut target_memory,
+            &block_devices,
+            target_notify_ipa,
+            VIRTIO_MMIO_BLOCK_QUEUE_NOTIFY_VALUE,
+        )
+        .unwrap();
+        assert_eq!(target_completion.role, "target-disk");
+        assert_eq!(target_completion.backing_kind, "host-file-writable");
+        assert_eq!(
+            target_completion.base_ipa,
+            WINDOWS_ARM_VIRTIO_TARGET_DISK_MMIO_IPA
+        );
+        assert_eq!(target_completion.completion.request_type, VIRTIO_BLK_T_OUT);
+        assert_eq!(target_completion.completion.status, VIRTIO_BLK_S_OK);
+        assert_eq!(target_completion.byte_offset, 0xe00);
+        assert_eq!(target_completion.used_len, VIRTIO_BLOCK_STATUS_BYTES);
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_VIRTIO_TARGET_DISK_MMIO_IPA + VIRTIO_MMIO_INTERRUPT_STATUS_OFFSET,
+                4,
+            )),
+            MmioAction::ReadValue(VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE)
+        );
+        assert!(!refresh_windows_arm_firmware_device_irq_pending(
+            &mut bus,
+            &block_devices
+        ));
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_ISPENDR_BASE_OFFSET + 4,
+                4,
+            )),
+            MmioAction::ReadValue(0x8)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_IGROUPR_BASE_OFFSET + 4,
+                0xc,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0xc,
+                byte: 0xc,
+            }
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_ISENABLER_BASE_OFFSET + 4,
+                0x8,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: 0x8,
+                byte: 0x8,
+            }
+        );
+        assert!(windows_arm_firmware_device_irq_line_assertable(
+            &mut bus,
+            &block_devices
+        ));
+        assert!(refresh_windows_arm_firmware_device_irq_pending(
+            &mut bus,
+            &block_devices
+        ));
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                WINDOWS_ARM_VIRTIO_TARGET_DISK_MMIO_IPA + VIRTIO_MMIO_INTERRUPT_ACK_OFFSET,
+                VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE,
+                byte: VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE as u8,
+            }
+        );
+        assert!(!refresh_windows_arm_firmware_device_irq_pending(
+            &mut bus,
+            &block_devices
+        ));
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                WINDOWS_ARM_GIC_DISTRIBUTOR_MMIO_IPA + GICD_ISPENDR_BASE_OFFSET + 4,
+                4,
+            )),
+            MmioAction::ReadValue(0)
+        );
+        let persisted = std::fs::read(&disk_path).unwrap();
+        assert_eq!(
+            &persisted[sector_start..sector_start + 8],
+            &[0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7]
+        );
+
+        let _ = std::fs::remove_file(&iso_path);
+        let _ = std::fs::remove_file(&disk_path);
+    }
+
+    #[test]
+    fn mmio_serial_device_probe_render_records_three_exit_device_loop() {
+        let probe = HvfMmioSerialDeviceProbe {
+            allowed: true,
+            attempted: true,
+            vm_created: true,
+            memory_allocated: true,
+            memory_mapped: true,
+            vcpu_created: true,
+            pc_set: true,
+            cpsr_set: true,
+            write_value_register_set: true,
+            data_address_register_set: true,
+            status_address_register_set: true,
+            device_bus_created: true,
+            device_bus_device_count: 1,
+            write_run_attempted: true,
+            write_exit_observed: true,
+            write_handled_by_device: true,
+            write_value_captured: true,
+            pc_advanced_after_write: true,
+            status_run_attempted: true,
+            status_exit_observed: true,
+            status_handled_by_device: true,
+            status_value_injected: true,
+            pc_advanced_after_status: true,
+            continuation_run_attempted: true,
+            continuation_exit_observed: true,
+            status_value_preserved: true,
+            watchdog_cancel_fired: false,
+            vcpu_destroyed: true,
+            memory_unmapped: true,
+            vm_destroyed: true,
+            memory_deallocated: true,
+            host: HvfHostCapabilities {
+                available: true,
+                host: "macos-aarch64",
+                default_ipa_bits: Some(36),
+                max_ipa_bits: Some(40),
+                el2_supported: Some(true),
+                blockers: Vec::new(),
+            },
+            device_model: PL011_UART_MODEL,
+            code_ipa_start: 0x4000_0000,
+            data_ipa: 0x5000_0000,
+            status_ipa: 0x5000_0018,
+            bytes: 16 * 1024,
+            instructions: "STR X0, [X1]; LDR X0, [X2]; HVC #0",
+            serial_write_value: 0x41,
+            serial_status_value: 0x90,
+            captured_write_value: Some(0x41),
+            captured_byte: Some(0x41),
+            vm_create_status: Some(0),
+            allocate_status: Some(0),
+            map_status: Some(0),
+            vcpu_create_status: Some(0),
+            pc_set_status: Some(0),
+            cpsr_set_status: Some(0),
+            write_value_register_set_status: Some(0),
+            data_address_register_set_status: Some(0),
+            status_address_register_set_status: Some(0),
+            write_run_status: Some(0),
+            write_exit_reason: Some(1),
+            write_exit_syndrome: Some(0x93c0_8046),
+            write_exit_virtual_address: Some(0x5000_0000),
+            write_exit_physical_address: Some(0x5000_0000),
+            write_watchdog_cancel_status: None,
+            write_value_capture_status: Some(0),
+            pc_read_after_write_status: Some(0),
+            pc_after_write_exit: Some(0x4000_0000),
+            pc_advance_after_write_status: Some(0),
+            status_run_status: Some(0),
+            status_exit_reason: Some(1),
+            status_exit_syndrome: Some(0x93c0_8006),
+            status_exit_virtual_address: Some(0x5000_0018),
+            status_exit_physical_address: Some(0x5000_0018),
+            status_watchdog_cancel_status: None,
+            status_value_set_status: Some(0),
+            pc_read_after_status_status: Some(0),
+            pc_after_status_exit: Some(0x4000_0004),
+            pc_advance_after_status_status: Some(0),
+            continuation_run_status: Some(0),
+            continuation_exit_reason: Some(1),
+            continuation_exit_syndrome: Some(0x5a00_0000),
+            continuation_exit_virtual_address: Some(0),
+            continuation_exit_physical_address: Some(0),
+            continuation_watchdog_cancel_status: None,
+            status_value_after_continue_status: Some(0),
+            status_value_after_continue: Some(0x90),
+            vcpu_destroy_status: Some(0),
+            unmap_status: Some(0),
+            vm_destroy_status: Some(0),
+            deallocate_status: Some(0),
+            blockers: Vec::new(),
+        };
+        let output = probe.render_text();
+
+        assert!(output.contains("Allowed: true"));
+        assert!(output.contains("Attempted: true"));
+        assert!(output.contains("Device model: PL011 UART skeleton"));
+        assert!(output.contains("Device bus created: true"));
+        assert!(output.contains("Device bus device count: 1"));
+        assert!(output.contains("Write exit observed: true"));
+        assert!(output.contains("Write handled by device: true"));
+        assert!(output.contains("Write value captured: true"));
+        assert!(output.contains("PC advanced after write: true"));
+        assert!(output.contains("Status exit observed: true"));
+        assert!(output.contains("Status handled by device: true"));
+        assert!(output.contains("Status value injected: true"));
+        assert!(output.contains("PC advanced after status: true"));
+        assert!(output.contains("Continuation exit observed: true"));
+        assert!(output.contains("Status value preserved: true"));
+        assert!(output.contains("Captured write value: 0x41"));
+        assert!(output.contains("Captured byte: 0x41"));
+        assert!(output.contains("Write exit syndrome: 0x93c08046"));
+        assert!(output.contains("Write exit virtual address: 0x50000000"));
+        assert!(output.contains("Status exit syndrome: 0x93c08006"));
+        assert!(output.contains("Status exit virtual address: 0x50000018"));
+        assert!(output.contains("Continuation exit syndrome: 0x5a000000"));
+        assert!(output.contains("Status value after continue: 0x90"));
+        assert!(output.contains("Blockers: none"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn mmio_bus_routes_probe_serial_data_write() {
+        let mut bus = MmioBus::default();
+        bus.attach(Box::new(Pl011UartDevice::new(0x5000_0000, 0x90)));
+
+        assert_eq!(bus.device_count(), 1);
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(0x5000_0000, 0x141, 8)),
+            MmioAction::WriteAccepted {
+                value: 0x141,
+                byte: 0x41,
+            }
+        );
+    }
+
+    #[test]
+    fn mmio_bus_routes_probe_serial_status_read() {
+        let mut bus = MmioBus::default();
+        bus.attach(Box::new(Pl011UartDevice::new(0x5000_0000, 0x90)));
+
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(0x5000_0018, 8)),
+            MmioAction::ReadValue(0x90)
+        );
+    }
+
+    #[test]
+    fn mmio_bus_routes_pl031_rtc_read_after_uart_window() {
+        let mut bus = MmioBus::default();
+        bus.attach(Box::new(Pl011UartDevice::new(0x5000_0000, 0x90)));
+        bus.attach(Box::new(Pl031RtcDevice::new(0x5000_1000, 0x2026_0618)));
+
+        assert_eq!(bus.device_count(), 2);
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(0x5000_1000, 8)),
+            MmioAction::ReadValue(0x2026_0618)
+        );
+    }
+
+    #[test]
+    fn mmio_bus_routes_virtio_block_identity_registers_after_boot_devices() {
+        let mut bus = MmioBus::default();
+        let block_base = 0x5000_2000;
+        let block = VirtioMmioBlockDevice::new(0x5000_2000);
+        let magic_ipa = block_base + VIRTIO_MMIO_MAGIC_VALUE_OFFSET;
+        let version_ipa = block_base + VIRTIO_MMIO_VERSION_OFFSET;
+        let device_id_ipa = block_base + VIRTIO_MMIO_DEVICE_ID_OFFSET;
+        let vendor_id_ipa = block_base + VIRTIO_MMIO_VENDOR_ID_OFFSET;
+
+        bus.attach(Box::new(Pl011UartDevice::new(0x5000_0000, 0x90)));
+        bus.attach(Box::new(Pl031RtcDevice::new(0x5000_1000, 0x2026_0618)));
+        bus.attach(Box::new(block));
+
+        assert_eq!(bus.device_count(), 3);
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(magic_ipa, 4)),
+            MmioAction::ReadValue(0x7472_6976)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(version_ipa, 4)),
+            MmioAction::ReadValue(2)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(device_id_ipa, 4)),
+            MmioAction::ReadValue(2)
+        );
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(vendor_id_ipa, 4)),
+            MmioAction::ReadValue(0x4252_564d)
+        );
+    }
+
+    #[test]
+    fn mmio_bus_typed_lookup_skips_overlapping_wrong_type() {
+        let mut bus = MmioBus::default();
+        let block_base = 0x5000_2000;
+        bus.attach(Box::new(Pl011UartDevice::new(block_base, 0x90)));
+        bus.attach(Box::new(VirtioMmioBlockDevice::new(block_base)));
+
+        assert!(bus
+            .find_device_mut_at::<VirtioMmioBlockDevice>(block_base)
+            .is_some());
+    }
+
+    #[test]
+    fn mmio_bus_routes_virtio_block_queue_and_config_registers() {
+        let mut bus = MmioBus::default();
+        let block_base = 0x5000_2000;
+        bus.attach(Box::new(VirtioMmioBlockDevice::new(block_base)));
+
+        let writes = [
+            (
+                VIRTIO_MMIO_DRIVER_FEATURES_OFFSET,
+                VIRTIO_MMIO_BLOCK_DRIVER_FEATURES_VALUE,
+            ),
+            (
+                VIRTIO_MMIO_STATUS_OFFSET,
+                VIRTIO_MMIO_BLOCK_STATUS_ACK_VALUE,
+            ),
+            (
+                VIRTIO_MMIO_STATUS_OFFSET,
+                VIRTIO_MMIO_BLOCK_STATUS_DRIVER_VALUE,
+            ),
+            (
+                VIRTIO_MMIO_STATUS_OFFSET,
+                VIRTIO_MMIO_BLOCK_STATUS_FEATURES_OK_VALUE,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_SEL_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_SEL_VALUE,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_NUM_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_NUM_VALUE,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DESC_LOW_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DESC_ADDRESS & 0xffff_ffff,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DESC_HIGH_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DESC_ADDRESS >> 32,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DRIVER_LOW_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DRIVER_ADDRESS & 0xffff_ffff,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DRIVER_HIGH_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DRIVER_ADDRESS >> 32,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DEVICE_LOW_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DEVICE_ADDRESS & 0xffff_ffff,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DEVICE_HIGH_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DEVICE_ADDRESS >> 32,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_READY_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_READY_VALUE,
+            ),
+            (VIRTIO_MMIO_STATUS_OFFSET, VIRTIO_MMIO_BLOCK_STATUS_VALUE),
+            (
+                VIRTIO_MMIO_QUEUE_NOTIFY_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_NOTIFY_VALUE,
+            ),
+        ];
+
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                block_base + VIRTIO_MMIO_DEVICE_FEATURES_OFFSET,
+                4
+            )),
+            MmioAction::ReadValue(VIRTIO_MMIO_BLOCK_DEVICE_FEATURES_VALUE)
+        );
+
+        for (offset, value) in writes {
+            assert_eq!(
+                bus.dispatch(MmioAccess::write(block_base + offset, value, 4)),
+                MmioAction::WriteAccepted {
+                    value,
+                    byte: (value & 0xff) as u8,
+                }
+            );
+        }
+
+        let reads = [
+            (
+                VIRTIO_MMIO_QUEUE_NUM_MAX_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_NUM_MAX_VALUE,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_READY_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_READY_VALUE,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DESC_LOW_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DESC_ADDRESS & 0xffff_ffff,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DESC_HIGH_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DESC_ADDRESS >> 32,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DRIVER_LOW_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DRIVER_ADDRESS & 0xffff_ffff,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DRIVER_HIGH_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DRIVER_ADDRESS >> 32,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DEVICE_LOW_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DEVICE_ADDRESS & 0xffff_ffff,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DEVICE_HIGH_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DEVICE_ADDRESS >> 32,
+            ),
+            (
+                VIRTIO_MMIO_INTERRUPT_STATUS_OFFSET,
+                VIRTIO_MMIO_BLOCK_INTERRUPT_STATUS_VALUE,
+            ),
+            (VIRTIO_MMIO_STATUS_OFFSET, VIRTIO_MMIO_BLOCK_STATUS_VALUE),
+            (
+                VIRTIO_MMIO_CONFIG_GENERATION_OFFSET,
+                VIRTIO_MMIO_BLOCK_CONFIG_GENERATION_VALUE,
+            ),
+            (
+                VIRTIO_MMIO_BLOCK_CAPACITY_LOW_OFFSET,
+                VIRTIO_MMIO_BLOCK_CAPACITY_SECTORS & 0xffff_ffff,
+            ),
+            (
+                VIRTIO_MMIO_BLOCK_CAPACITY_HIGH_OFFSET,
+                VIRTIO_MMIO_BLOCK_CAPACITY_SECTORS >> 32,
+            ),
+        ];
+
+        for (offset, expected) in reads {
+            assert_eq!(
+                bus.dispatch(MmioAccess::read(block_base + offset, 4)),
+                MmioAction::ReadValue(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn virtio_block_status_zero_resets_queue_state() {
+        let mut bus = MmioBus::default();
+        let block_base = 0x5000_2000;
+        bus.attach(Box::new(VirtioMmioBlockDevice::new(block_base)));
+        let mut backing = vec![0_u8; 16 * 1024];
+        let mut memory = VirtioGuestMemory::new(WINDOWS_ARM_GUEST_RAM_IPA, &mut backing);
+
+        configure_virtio_block_queue_on_bus(&mut bus, block_base);
+        seed_synthetic_virtio_block_read_request(&mut memory).unwrap();
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                block_base + VIRTIO_MMIO_QUEUE_NOTIFY_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_NOTIFY_VALUE,
+                4,
+            )),
+            MmioAction::WriteAccepted {
+                value: VIRTIO_MMIO_BLOCK_QUEUE_NOTIFY_VALUE,
+                byte: VIRTIO_MMIO_BLOCK_QUEUE_NOTIFY_VALUE as u8,
+            }
+        );
+        {
+            let block = bus
+                .find_device_mut_at::<VirtioMmioBlockDevice>(block_base)
+                .unwrap();
+            block
+                .complete_next_available_block_request(&mut memory)
+                .unwrap();
+        }
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(
+                block_base + VIRTIO_MMIO_INTERRUPT_STATUS_OFFSET,
+                4,
+            )),
+            MmioAction::ReadValue(VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE)
+        );
+
+        assert_eq!(
+            bus.dispatch(MmioAccess::write(
+                block_base + VIRTIO_MMIO_STATUS_OFFSET,
+                0,
+                4,
+            )),
+            MmioAction::WriteAccepted { value: 0, byte: 0 }
+        );
+        for (offset, expected) in [
+            (VIRTIO_MMIO_STATUS_OFFSET, 0),
+            (VIRTIO_MMIO_DRIVER_FEATURES_OFFSET, 0),
+            (VIRTIO_MMIO_QUEUE_NUM_OFFSET, 0),
+            (VIRTIO_MMIO_QUEUE_READY_OFFSET, 0),
+            (VIRTIO_MMIO_QUEUE_DESC_LOW_OFFSET, 0),
+            (VIRTIO_MMIO_QUEUE_DRIVER_LOW_OFFSET, 0),
+            (VIRTIO_MMIO_QUEUE_DEVICE_LOW_OFFSET, 0),
+            (
+                VIRTIO_MMIO_INTERRUPT_STATUS_OFFSET,
+                VIRTIO_MMIO_BLOCK_INTERRUPT_STATUS_VALUE,
+            ),
+            (
+                VIRTIO_MMIO_BLOCK_CAPACITY_LOW_OFFSET,
+                VIRTIO_MMIO_BLOCK_CAPACITY_SECTORS & 0xffff_ffff,
+            ),
+        ] {
+            assert_eq!(
+                bus.dispatch(MmioAccess::read(block_base + offset, 4)),
+                MmioAction::ReadValue(expected)
+            );
+        }
+
+        configure_virtio_block_queue_on_bus(&mut bus, block_base);
+        seed_synthetic_virtio_block_read_request(&mut memory).unwrap();
+        let block = bus
+            .find_device_mut_at::<VirtioMmioBlockDevice>(block_base)
+            .unwrap();
+        assert!(block
+            .complete_next_available_block_request(&mut memory)
+            .is_ok());
+    }
+
+    #[test]
+    fn virtio_block_completes_one_available_read_request() {
+        let block_base = 0x5000_2000;
+        let guest_base = 0x4000_0000;
+        let header_ipa = guest_base + 0x80;
+        let data_ipa = guest_base + 0x400;
+        let status_ipa = guest_base + 0x700;
+        let sector = 7;
+        let mut backing = vec![0_u8; 16 * 1024];
+        let mut memory = VirtioGuestMemory::new(guest_base, &mut backing);
+        let mut block = VirtioMmioBlockDevice::new(block_base);
+
+        for (offset, value) in [
+            (
+                VIRTIO_MMIO_QUEUE_NUM_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_NUM_VALUE,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DESC_LOW_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DESC_ADDRESS & 0xffff_ffff,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DESC_HIGH_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DESC_ADDRESS >> 32,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DRIVER_LOW_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DRIVER_ADDRESS & 0xffff_ffff,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DRIVER_HIGH_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DRIVER_ADDRESS >> 32,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DEVICE_LOW_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DEVICE_ADDRESS & 0xffff_ffff,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_DEVICE_HIGH_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_DEVICE_ADDRESS >> 32,
+            ),
+            (
+                VIRTIO_MMIO_QUEUE_READY_OFFSET,
+                VIRTIO_MMIO_BLOCK_QUEUE_READY_VALUE,
+            ),
+        ] {
+            assert!(matches!(
+                block.handle(MmioAccess::write(block_base + offset, value, 4)),
+                MmioAction::WriteAccepted { .. }
+            ));
+        }
+
+        memory.write_u32(header_ipa, VIRTIO_BLK_T_IN).unwrap();
+        memory.write_u32(header_ipa + 4, 0).unwrap();
+        memory.write_u64(header_ipa + 8, sector).unwrap();
+        VirtqDescriptor {
+            addr: header_ipa,
+            len: VIRTIO_BLOCK_REQUEST_HEADER_BYTES,
+            flags: VIRTQ_DESC_F_NEXT,
+            next: 1,
+        }
+        .write(&mut memory, VIRTIO_MMIO_BLOCK_QUEUE_DESC_ADDRESS, 0)
+        .unwrap();
+        VirtqDescriptor {
+            addr: data_ipa,
+            len: 512,
+            flags: VIRTQ_DESC_F_NEXT | VIRTQ_DESC_F_WRITE,
+            next: 2,
+        }
+        .write(&mut memory, VIRTIO_MMIO_BLOCK_QUEUE_DESC_ADDRESS, 1)
+        .unwrap();
+        VirtqDescriptor {
+            addr: status_ipa,
+            len: VIRTIO_BLOCK_STATUS_BYTES,
+            flags: VIRTQ_DESC_F_WRITE,
+            next: 0,
+        }
+        .write(&mut memory, VIRTIO_MMIO_BLOCK_QUEUE_DESC_ADDRESS, 2)
+        .unwrap();
+        memory
+            .write_u16(VIRTIO_MMIO_BLOCK_QUEUE_DRIVER_ADDRESS + 2, 1)
+            .unwrap();
+        memory
+            .write_u16(VIRTIO_MMIO_BLOCK_QUEUE_DRIVER_ADDRESS + 4, 0)
+            .unwrap();
+
+        let completion = block
+            .complete_next_available_block_request(&mut memory)
+            .unwrap();
+
+        assert_eq!(
+            completion,
+            VirtioBlockRequestCompletion {
+                descriptor_index: 0,
+                request_type: VIRTIO_BLK_T_IN,
+                sector,
+                data_bytes: 512,
+                status: VIRTIO_BLK_S_OK,
+                used_index: 1,
+                interrupt_status: VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE,
+            }
+        );
+        assert_eq!(block.completed_requests, 1);
+        assert_eq!(
+            memory.read_bytes(data_ipa, 8).unwrap(),
+            (0..8)
+                .map(|offset| synthetic_block_byte(sector, offset))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            memory.read_bytes(status_ipa, 1).unwrap(),
+            vec![VIRTIO_BLK_S_OK]
+        );
+        assert_eq!(
+            memory
+                .read_u32(VIRTIO_MMIO_BLOCK_QUEUE_DEVICE_ADDRESS + 4)
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            memory
+                .read_u32(VIRTIO_MMIO_BLOCK_QUEUE_DEVICE_ADDRESS + 8)
+                .unwrap(),
+            513
+        );
+        assert_eq!(
+            memory
+                .read_u16(VIRTIO_MMIO_BLOCK_QUEUE_DEVICE_ADDRESS + 2)
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            block.handle(MmioAccess::read(
+                block_base + VIRTIO_MMIO_INTERRUPT_STATUS_OFFSET,
+                4
+            )),
+            MmioAction::ReadValue(VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE)
+        );
+        assert_eq!(
+            block.complete_next_available_block_request(&mut memory),
+            Err(VirtioBlockRequestError::NoAvailableRequest)
+        );
+    }
+
+    #[test]
+    fn virtio_block_request_model_probe_reports_completion() {
+        let probe = probe_virtio_block_request_model();
+        let output = probe.render_text();
+
+        assert!(probe.configured_via_mmio);
+        assert!(probe.configured_via_mmio_bus);
+        assert!(probe.queue_notified);
+        assert_eq!(probe.queue_notify_value, Some(0));
+        assert!(probe.completed_via_device_bus);
+        assert!(probe.completed);
+        assert_eq!(probe.descriptor_index, Some(0));
+        assert_eq!(probe.request_type, Some(VIRTIO_BLK_T_IN));
+        assert_eq!(probe.sector, Some(7));
+        assert_eq!(probe.data_bytes, Some(512));
+        assert_eq!(
+            probe.data_prefix,
+            (0..8)
+                .map(|offset| synthetic_block_byte(7, offset))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(probe.status, Some(VIRTIO_BLK_S_OK));
+        assert_eq!(probe.used_index, Some(1));
+        assert_eq!(probe.used_len, Some(513));
+        assert_eq!(
+            probe.interrupt_status,
+            Some(VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE)
+        );
+        assert!(probe.blockers.is_empty());
+        assert!(output.contains("VirtIO block request model probe"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Apple VZ: not used"));
+        assert!(output.contains("HVF: not entered"));
+        assert!(output
+            .contains("Guest execution: not entered; in-memory VirtIO block descriptor chain"));
+        assert!(output.contains("Configured via MMIO: true"));
+        assert!(output.contains("Configured via MMIO bus: true"));
+        assert!(output.contains("Queue notified: true"));
+        assert!(output.contains("Queue notify value: 0x0"));
+        assert!(output.contains("Completed via device bus: true"));
+        assert!(output.contains("Completed: true"));
+        assert!(output.contains("Descriptor index: 0x0"));
+        assert!(output.contains("Request type: 0x0"));
+        assert!(output.contains("Sector: 0x7"));
+        assert!(output.contains("Data bytes: 0x200"));
+        assert!(output.contains("Data prefix: 0x0708090a0b0c0d0e"));
+        assert!(output.contains("Status byte: 0x0"));
+        assert!(output.contains("Used index: 0x1"));
+        assert!(output.contains("Used length: 0x201"));
+        assert!(output.contains("Interrupt status: 0x1"));
+        assert!(output.contains("Blockers: none"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn virtio_block_file_backing_probe_reads_from_host_file() {
+        let mut disk = vec![0_u8; (VIRTIO_BLOCK_SECTOR_BYTES as usize) * 16];
+        let sector_start =
+            (VIRTIO_BLOCK_SYNTHETIC_REQUEST_SECTOR * VIRTIO_BLOCK_SECTOR_BYTES) as usize;
+        for offset in 0..VIRTIO_BLOCK_SYNTHETIC_REQUEST_DATA_BYTES as usize {
+            disk[sector_start + offset] = 0xa0_u8.wrapping_add(offset as u8);
+        }
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-hvf-file-backed-{}-{}.img",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, &disk).unwrap();
+
+        let probe = probe_virtio_block_file_backing(path.clone());
+        let output = probe.render_text();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(probe.disk_path, path);
+        assert_eq!(probe.backing_kind, "host-file");
+        assert!(probe.configured_via_mmio);
+        assert!(probe.configured_via_mmio_bus);
+        assert!(probe.queue_notified);
+        assert_eq!(probe.queue_notify_value, Some(0));
+        assert!(probe.completed_via_device_bus);
+        assert!(probe.completed);
+        assert_eq!(probe.descriptor_index, Some(0));
+        assert_eq!(probe.request_type, Some(VIRTIO_BLK_T_IN));
+        assert_eq!(probe.sector, Some(VIRTIO_BLOCK_SYNTHETIC_REQUEST_SECTOR));
+        assert_eq!(probe.byte_offset, Some(0xe00));
+        assert_eq!(
+            probe.data_bytes,
+            Some(VIRTIO_BLOCK_SYNTHETIC_REQUEST_DATA_BYTES)
+        );
+        assert_eq!(
+            probe.data_prefix,
+            vec![0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7]
+        );
+        assert_eq!(probe.status, Some(VIRTIO_BLK_S_OK));
+        assert_eq!(probe.used_index, Some(1));
+        assert_eq!(probe.used_len, Some(513));
+        assert_eq!(
+            probe.interrupt_status,
+            Some(VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE)
+        );
+        assert!(probe.blockers.is_empty());
+        assert!(output.contains("VirtIO block file backing probe"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Apple VZ: not used"));
+        assert!(output.contains("HVF: not entered"));
+        assert!(output.contains(
+            "Guest execution: not entered; host file-backed VirtIO block descriptor chain"
+        ));
+        assert!(output.contains("Backing kind: host-file"));
+        assert!(output.contains("Configured via MMIO: true"));
+        assert!(output.contains("Configured via MMIO bus: true"));
+        assert!(output.contains("Queue notified: true"));
+        assert!(output.contains("Completed via device bus: true"));
+        assert!(output.contains("Completed: true"));
+        assert!(output.contains("Descriptor index: 0x0"));
+        assert!(output.contains("Request type: 0x0"));
+        assert!(output.contains("Sector: 0x7"));
+        assert!(output.contains("Byte offset: 0xe00"));
+        assert!(output.contains("Data bytes: 0x200"));
+        assert!(output.contains("Data prefix: 0xa0a1a2a3a4a5a6a7"));
+        assert!(output.contains("Status byte: 0x0"));
+        assert!(output.contains("Used index: 0x1"));
+        assert!(output.contains("Used length: 0x201"));
+        assert!(output.contains("Interrupt status: 0x1"));
+        assert!(output.contains("Blockers: none"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn virtio_block_writable_file_backing_probe_writes_flushes_and_persists() {
+        let mut disk = vec![0_u8; (VIRTIO_BLOCK_SECTOR_BYTES as usize) * 16];
+        let sector_start =
+            (VIRTIO_BLOCK_SYNTHETIC_REQUEST_SECTOR * VIRTIO_BLOCK_SECTOR_BYTES) as usize;
+        for offset in 0..VIRTIO_BLOCK_SYNTHETIC_REQUEST_DATA_BYTES as usize {
+            disk[sector_start + offset] = 0xa0_u8.wrapping_add(offset as u8);
+        }
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-hvf-writable-file-backed-{}-{}.img",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, &disk).unwrap();
+
+        let probe = probe_virtio_block_writable_file_backing(path.clone());
+        let output = probe.render_text();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(probe.disk_path, path);
+        assert_eq!(probe.backing_kind, "host-file-writable");
+        assert!(probe.configured_via_mmio);
+        assert!(probe.configured_via_mmio_bus);
+        assert!(probe.queue_notified);
+        assert_eq!(probe.queue_notify_value, Some(0));
+        assert_eq!(
+            probe.initial_read_prefix,
+            vec![0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7]
+        );
+        assert!(probe.write_completed);
+        assert_eq!(probe.write_request_type, Some(VIRTIO_BLK_T_OUT));
+        assert_eq!(
+            probe.write_sector,
+            Some(VIRTIO_BLOCK_SYNTHETIC_REQUEST_SECTOR)
+        );
+        assert_eq!(probe.write_byte_offset, Some(0xe00));
+        assert_eq!(
+            probe.write_data_bytes,
+            Some(VIRTIO_BLOCK_SYNTHETIC_REQUEST_DATA_BYTES)
+        );
+        assert_eq!(
+            probe.write_data_prefix,
+            vec![0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7]
+        );
+        assert_eq!(probe.write_status, Some(VIRTIO_BLK_S_OK));
+        assert_eq!(probe.write_used_index, Some(2));
+        assert_eq!(probe.write_used_len, Some(VIRTIO_BLOCK_STATUS_BYTES));
+        assert!(probe.flush_completed);
+        assert_eq!(probe.flush_request_type, Some(VIRTIO_BLK_T_FLUSH));
+        assert_eq!(probe.flush_status, Some(VIRTIO_BLK_S_OK));
+        assert_eq!(probe.flush_used_index, Some(3));
+        assert_eq!(probe.flush_used_len, Some(VIRTIO_BLOCK_STATUS_BYTES));
+        assert_eq!(
+            probe.persisted_data_prefix,
+            vec![0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7]
+        );
+        assert_eq!(
+            probe.interrupt_status,
+            Some(VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE)
+        );
+        assert!(probe.blockers.is_empty());
+        assert!(output.contains("VirtIO block writable file backing probe"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Apple VZ: not used"));
+        assert!(output.contains("HVF: not entered"));
+        assert!(output.contains(
+            "Guest execution: not entered; host file-backed VirtIO block write/flush persistence descriptor chain"
+        ));
+        assert!(output.contains("Backing kind: host-file-writable"));
+        assert!(output.contains("Configured via MMIO: true"));
+        assert!(output.contains("Configured via MMIO bus: true"));
+        assert!(output.contains("Queue notified: true"));
+        assert!(output.contains("Initial read data prefix: 0xa0a1a2a3a4a5a6a7"));
+        assert!(output.contains("Write completed: true"));
+        assert!(output.contains("Write request type: 0x1"));
+        assert!(output.contains("Write sector: 0x7"));
+        assert!(output.contains("Write byte offset: 0xe00"));
+        assert!(output.contains("Write data bytes: 0x200"));
+        assert!(output.contains("Write data prefix: 0xe0e1e2e3e4e5e6e7"));
+        assert!(output.contains("Write status byte: 0x0"));
+        assert!(output.contains("Write used index: 0x2"));
+        assert!(output.contains("Write used length: 0x1"));
+        assert!(output.contains("Flush completed: true"));
+        assert!(output.contains("Flush request type: 0x4"));
+        assert!(output.contains("Flush status byte: 0x0"));
+        assert!(output.contains("Flush used index: 0x3"));
+        assert!(output.contains("Flush used length: 0x1"));
+        assert!(output.contains("Persisted data prefix: 0xe0e1e2e3e4e5e6e7"));
+        assert!(output.contains("Interrupt status: 0x1"));
+        assert!(output.contains("Blockers: none"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn virtio_block_iso_backing_probe_reads_from_read_only_iso() {
+        let mut iso = vec![0_u8; (VIRTIO_BLOCK_SECTOR_BYTES as usize) * 16];
+        let sector_start =
+            (VIRTIO_BLOCK_SYNTHETIC_REQUEST_SECTOR * VIRTIO_BLOCK_SECTOR_BYTES) as usize;
+        for offset in 0..VIRTIO_BLOCK_SYNTHETIC_REQUEST_DATA_BYTES as usize {
+            iso[sector_start + offset] = 0xc0_u8.wrapping_add(offset as u8);
+        }
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-hvf-iso-backed-{}-{}.iso",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, &iso).unwrap();
+
+        let probe = probe_virtio_block_iso_backing(path.clone());
+        let output = probe.render_text();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(probe.iso_path, path);
+        assert_eq!(probe.backing_kind, "host-iso-readonly");
+        assert_eq!(probe.media_mode, "read-only");
+        assert!(probe.configured_via_mmio);
+        assert!(probe.configured_via_mmio_bus);
+        assert!(probe.queue_notified);
+        assert_eq!(probe.queue_notify_value, Some(0));
+        assert!(probe.completed_via_device_bus);
+        assert!(probe.completed);
+        assert_eq!(probe.descriptor_index, Some(0));
+        assert_eq!(probe.request_type, Some(VIRTIO_BLK_T_IN));
+        assert_eq!(probe.sector, Some(VIRTIO_BLOCK_SYNTHETIC_REQUEST_SECTOR));
+        assert_eq!(probe.byte_offset, Some(0xe00));
+        assert_eq!(
+            probe.data_bytes,
+            Some(VIRTIO_BLOCK_SYNTHETIC_REQUEST_DATA_BYTES)
+        );
+        assert_eq!(
+            probe.data_prefix,
+            vec![0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7]
+        );
+        assert_eq!(probe.status, Some(VIRTIO_BLK_S_OK));
+        assert_eq!(probe.used_index, Some(1));
+        assert_eq!(probe.used_len, Some(513));
+        assert_eq!(
+            probe.interrupt_status,
+            Some(VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE)
+        );
+        assert!(probe.readonly_write_rejected);
+        assert_eq!(probe.readonly_write_status, Some(VIRTIO_BLK_S_IOERR));
+        assert_eq!(probe.readonly_write_used_index, Some(2));
+        assert_eq!(
+            probe.readonly_write_used_len,
+            Some(VIRTIO_BLOCK_STATUS_BYTES)
+        );
+        assert_eq!(
+            probe.readonly_write_interrupt_status,
+            Some(VIRTIO_MMIO_INTERRUPT_USED_BUFFER_VALUE)
+        );
+        assert!(probe.blockers.is_empty());
+        assert!(output.contains("VirtIO block ISO backing probe"));
+        assert!(output.contains("QEMU: not used"));
+        assert!(output.contains("Apple VZ: not used"));
+        assert!(output.contains("HVF: not entered"));
+        assert!(output.contains(
+            "Guest execution: not entered; read-only ISO-backed VirtIO block descriptor chain"
+        ));
+        assert!(output.contains(&format!("ISO path: {}", path.display())));
+        assert!(output.contains("Backing kind: host-iso-readonly"));
+        assert!(output.contains("Media mode: read-only"));
+        assert!(output.contains("Configured via MMIO: true"));
+        assert!(output.contains("Configured via MMIO bus: true"));
+        assert!(output.contains("Queue notified: true"));
+        assert!(output.contains("Completed via device bus: true"));
+        assert!(output.contains("Completed: true"));
+        assert!(output.contains("Descriptor index: 0x0"));
+        assert!(output.contains("Request type: 0x0"));
+        assert!(output.contains("Sector: 0x7"));
+        assert!(output.contains("Byte offset: 0xe00"));
+        assert!(output.contains("Data bytes: 0x200"));
+        assert!(output.contains("Data prefix: 0xc0c1c2c3c4c5c6c7"));
+        assert!(output.contains("Status byte: 0x0"));
+        assert!(output.contains("Used index: 0x1"));
+        assert!(output.contains("Used length: 0x201"));
+        assert!(output.contains("Interrupt status: 0x1"));
+        assert!(output.contains("Read-only write rejected: true"));
+        assert!(output.contains("Read-only write status byte: 0x1"));
+        assert!(output.contains("Read-only write used index: 0x2"));
+        assert!(output.contains("Read-only write used length: 0x1"));
+        assert!(output.contains("Read-only write interrupt status: 0x1"));
+        assert!(output.contains("Blockers: none"));
+        assert!(!output.contains("qemu-system"));
+        assert!(!output.contains('%'));
+    }
+
+    #[test]
+    fn mmio_bus_reports_unmapped_access_as_unhandled() {
+        let mut bus = MmioBus::default();
+        bus.attach(Box::new(Pl011UartDevice::new(0x5000_0000, 0x90)));
+
+        assert_eq!(
+            bus.dispatch(MmioAccess::read(0x6000_0000, 8)),
+            MmioAction::Unhandled
+        );
+    }
+
+    #[test]
+    fn mmio_rtc_device_probe_render_records_multi_device_continuation() {
+        let probe = HvfMmioRtcDeviceProbe {
+            allowed: true,
+            attempted: true,
+            vm_created: true,
+            memory_allocated: true,
+            memory_mapped: true,
+            vcpu_created: true,
+            pc_set: true,
+            cpsr_set: true,
+            rtc_address_register_set: true,
+            device_bus_created: true,
+            device_bus_device_count: 2,
+            first_run_attempted: true,
+            rtc_exit_observed: true,
+            rtc_handled_by_device: true,
+            rtc_value_injected: true,
+            pc_read_after_rtc_exit: true,
+            pc_advanced: true,
+            second_run_attempted: true,
+            continuation_exit_observed: true,
+            rtc_value_preserved: true,
+            watchdog_cancel_fired: false,
+            vcpu_destroyed: true,
+            memory_unmapped: true,
+            vm_destroyed: true,
+            memory_deallocated: true,
+            host: HvfHostCapabilities {
+                available: true,
+                host: "macos-aarch64",
+                default_ipa_bits: Some(36),
+                max_ipa_bits: Some(40),
+                el2_supported: Some(true),
+                blockers: Vec::new(),
+            },
+            device_models: BOOT_MMIO_DEVICE_MODELS,
+            code_ipa_start: 0x4000_0000,
+            uart_ipa: 0x5000_0000,
+            rtc_ipa: 0x5000_1000,
+            bytes: 16 * 1024,
+            instructions: "LDR X0, [X1]; HVC #0",
+            rtc_value: 0x2026_0618,
+            vm_create_status: Some(0),
+            allocate_status: Some(0),
+            map_status: Some(0),
+            vcpu_create_status: Some(0),
+            pc_set_status: Some(0),
+            cpsr_set_status: Some(0),
+            rtc_address_register_set_status: Some(0),
+            first_run_status: Some(0),
+            rtc_exit_reason: Some(1),
+            rtc_exit_syndrome: Some(0x93c0_8006),
+            rtc_exit_virtual_address: Some(0x5000_1000),
+            rtc_exit_physical_address: Some(0x5000_1000),
+            first_watchdog_cancel_status: None,
+            rtc_value_set_status: Some(0),
+            pc_read_status: Some(0),
+            pc_after_rtc_exit: Some(0x4000_0000),
+            pc_advance_status: Some(0),
+            second_run_status: Some(0),
+            continuation_exit_reason: Some(1),
+            continuation_exit_syndrome: Some(0x5a00_0000),
+            continuation_exit_virtual_address: Some(0),
+            continuation_exit_physical_address: Some(0),
+            second_watchdog_cancel_status: None,
+            rtc_value_after_continue_status: Some(0),
+            rtc_value_after_continue: Some(0x2026_0618),
+            vcpu_destroy_status: Some(0),
+            unmap_status: Some(0),
+            vm_destroy_status: Some(0),
+            deallocate_status: Some(0),
+            blockers: Vec::new(),
+        };
+        let output = probe.render_text();
+
+        assert!(output.contains("Allowed: true"));
+        assert!(output.contains("Attempted: true"));
+        assert!(output.contains("Device models: PL011 UART skeleton; PL031 RTC skeleton"));
+        assert!(output.contains("Device bus created: true"));
+        assert!(output.contains("Device bus device count: 2"));
+        assert!(output.contains("RTC exit observed: true"));
+        assert!(output.contains("RTC handled by device: true"));
+        assert!(output.contains("RTC value injected: true"));
+        assert!(output.contains("PC advanced: true"));
+        assert!(output.contains("Continuation exit observed: true"));
+        assert!(output.contains("RTC value preserved: true"));
+        assert!(output.contains("RTC exit syndrome: 0x93c08006"));
+        assert!(output.contains("RTC exit virtual address: 0x50001000"));
+        assert!(output.contains("Continuation exit syndrome: 0x5a000000"));
+        assert!(output.contains("RTC value after continue: 0x20260618"));
+        assert!(output.contains("Blockers: none"));
+        assert!(!output.contains('%'));
+    }
+}
