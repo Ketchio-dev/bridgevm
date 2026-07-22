@@ -11,9 +11,14 @@
 # Likewise, unsafe sites moving from lib.rs into platform/* is not a reduction.
 #
 # path	max_loc	max_unsafe
-crates/bridgevm-hvf/src/lib.rs	5461	0
+crates/bridgevm-hvf/src/lib.rs	96	0
 crates/bridgevm-hvf/src/platform/apple.rs	12111	296
 crates/bridgevm-hvf/src/platform/unsupported.rs	1632	0
+crates/bridgevm-hvf/src/probes/host_capabilities.rs	810	0
+crates/bridgevm-hvf/src/probes/lifecycle.rs	1382	0
+crates/bridgevm-hvf/src/probes/mmio.rs	2642	0
+crates/bridgevm-hvf/src/probes/mod.rs	12	0
+crates/bridgevm-hvf/src/probes/virtio_block.rs	574	0
 crates/bridgevm-hvf/src/windows_arm.rs	7629	0
 crates/bridgevm-hvf/src/probe_mmio.rs	7340	0
 crates/bridgevm-hvf/src/machine_plan.rs	374	0
