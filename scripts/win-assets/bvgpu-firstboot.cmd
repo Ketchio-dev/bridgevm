@@ -1,17 +1,20 @@
 @echo off
-rem BridgeVM first-boot GPU driver activation, THREE-STAGE. An elevated HKLM
+rem BridgeVM first-boot GPU driver activation, FOUR-STAGE. An elevated HKLM
 rem RunOnce planted by bvinject.cmd enters stage 1. Stage 1 then creates one
 rem persistent, delayed ONSTART task running as SYSTEM; that task owns stages 2
-rem and 3 and deletes itself only after stage 3 succeeds.
+rem through 4 and deletes itself only after stage 4 succeeds.
 rem
-rem WHY THREE STAGES: if pnputil /install runs while BCD testsigning is still OFF
+rem WHY FOUR STAGES: if pnputil /install runs while BCD testsigning is still OFF
 rem (i.e. in the same pass that first enables it), Windows records the device as
 rem CM_PROB_NEED_RESTART (14) because it cannot start the test-signed driver yet,
 rem and that pre-testsigning install state can persist as a failed start
 rem (CM_PROB_FAILED_POST_START / Code 43) even after the reboot. So:
-rem   Stage 1: enable testsigning + trust the cert, then reboot.
-rem   Stage 2: pnputil /install with testsigning ALREADY ACTIVE, then reboot.
-rem   Stage 3: verify the device state (no reboot).
+rem   Stage 1: purge superseded test certs, enable testsigning, trust the current
+rem            cert, then reboot.
+rem   Stage 2: uninstall every published viogpu3d package, then reboot so no
+rem            locked DriverStore generation can survive.
+rem   Stage 3: prove the store is clean, install exactly one package, then reboot.
+rem   Stage 4: verify the bound device, package identity, and clean state.
 rem Each advancing stage records the current Windows boot identity before its
 rem reboot. The next stage refuses to run until LastBootUpTime changes, so a
 rem canceled reboot, repeated logon, or interrupted RunOnce cannot collapse two
@@ -31,11 +34,15 @@ echo [bvgpu-firstboot] invoked %DATE% %TIME% >> "%LOG%"
 
 if not exist C:\BridgeVM\stage1.flag goto :stage1
 if not exist C:\BridgeVM\stage2.flag goto :stage2
-goto :stage3
+if not exist C:\BridgeVM\stage3.flag goto :stage3
+goto :stage4
 
 :stage1
 set STAGE=stage1
-echo [stage1] testsigning on + trust cert >> "%LOG%"
+echo [stage1] purge superseded certs + testsigning on + trust current cert >> "%LOG%"
+if not exist C:\BridgeVM\bvgpu-clean-driver-state.ps1 goto :fail
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-clean-driver-state.ps1 -Phase Certificates -PackageDirectory "%PKG%" >> "%LOG%" 2>&1
+if errorlevel 1 goto :fail
 bcdedit /set {current} testsigning on >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
 certutil -f -addstore Root "%CER%" >> "%LOG%" 2>&1
@@ -43,7 +50,7 @@ if errorlevel 1 goto :fail
 certutil -f -addstore TrustedPublisher "%CER%" >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
 echo [stage1] create delayed SYSTEM ONSTART continuation task >> "%LOG%"
-schtasks /Create /TN "%TASK_NAME%" /SC ONSTART /DELAY 0001:00 /RU SYSTEM /RL HIGHEST /TR "%ComSpec% /d /c C:\BridgeVM\bvgpu-firstboot.cmd" /F >> "%LOG%" 2>&1
+schtasks /Create /TN "%TASK_NAME%" /SC ONSTART /DELAY 0000:15 /RU SYSTEM /RL HIGHEST /TR "%ComSpec% /d /c C:\BridgeVM\bvgpu-firstboot.cmd" /F >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
 call :write_boot_identity C:\BridgeVM\stage1.boot
 if errorlevel 1 goto :fail
@@ -58,29 +65,15 @@ goto :done
 set STAGE=stage2
 call :require_new_boot C:\BridgeVM\stage1.boot
 if errorlevel 1 goto :fail
-echo [stage2] pnputil install with testsigning active >> "%LOG%"
-pnputil /add-driver "%PKG%\viogpu3d.inf" /install >> "%LOG%" 2>&1
-if errorlevel 260 goto :fail
-if errorlevel 259 (
-  echo [stage2] pnputil reports the package is already current ^(259^); continuing >> "%LOG%"
-  goto :stage2_scan
-)
+echo [stage2] remove every superseded viogpu3d DriverStore package >> "%LOG%"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-clean-driver-state.ps1 -Phase DriverStore -PackageDirectory "%PKG%" >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
-:stage2_scan
-echo [stage2] release the offline VioGpu3D boot quarantine >> "%LOG%"
-sc.exe config VioGpu3D start= demand >> "%LOG%" 2>&1
-if errorlevel 1 goto :fail
-pnputil /scan-devices >> "%LOG%" 2>&1
-if errorlevel 1 goto :fail
-echo [stage2] reset persisted display config so the driver's preferred 120Hz mode is selected >> "%LOG%"
-reg delete "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Configuration" /f >> "%LOG%" 2>&1
-reg delete "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Connectivity" /f >> "%LOG%" 2>&1
 call :write_boot_identity C:\BridgeVM\stage2.boot
 if errorlevel 1 goto :fail
 echo done > C:\BridgeVM\stage2.flag
 if errorlevel 1 goto :fail
-echo [stage2] rebooting to start the freshly-installed driver >> "%LOG%"
-shutdown /r /t 5 /c "BridgeVM viogpu3d stage2"
+echo [stage2] rebooting to finish DriverStore cleanup >> "%LOG%"
+shutdown /r /t 5 /c "BridgeVM viogpu3d stage2 cleanup"
 if errorlevel 1 goto :fail
 goto :done
 
@@ -88,28 +81,114 @@ goto :done
 set STAGE=stage3
 call :require_new_boot C:\BridgeVM\stage2.boot
 if errorlevel 1 goto :fail
-echo [stage3] exercise Vulkan loader and Venus ICD >> "%LOG%"
+echo [stage3] verify clean DriverStore before installing current package >> "%LOG%"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-clean-driver-state.ps1 -Phase VerifyClean -PackageDirectory "%PKG%" >> "%LOG%" 2>&1
+if errorlevel 1 goto :fail
+echo [stage3] pnputil install with testsigning active >> "%LOG%"
+pnputil /add-driver "%PKG%\viogpu3d.inf" /install >> "%LOG%" 2>&1
+if errorlevel 260 goto :fail
+if errorlevel 259 (
+  echo [stage3] pnputil reports the package is already current ^(259^); continuing >> "%LOG%"
+  goto :stage3_scan
+)
+if errorlevel 1 goto :fail
+:stage3_scan
+echo [stage3] release the offline VioGpu3D boot quarantine >> "%LOG%"
+sc.exe config VioGpu3D start= demand >> "%LOG%" 2>&1
+if errorlevel 1 goto :fail
+pnputil /scan-devices >> "%LOG%" 2>&1
+if errorlevel 1 goto :fail
+echo [stage3] reset persisted display config so the driver's preferred 120Hz mode is selected >> "%LOG%"
+reg delete "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Configuration" /f >> "%LOG%" 2>&1
+reg delete "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Connectivity" /f >> "%LOG%" 2>&1
+call :write_boot_identity C:\BridgeVM\stage3.boot
+if errorlevel 1 goto :fail
+echo done > C:\BridgeVM\stage3.flag
+if errorlevel 1 goto :fail
+echo [stage3] rebooting to start the sole freshly-installed driver >> "%LOG%"
+shutdown /r /t 5 /c "BridgeVM viogpu3d stage3 install"
+if errorlevel 1 goto :fail
+goto :done
+
+:stage4
+set STAGE=stage4
+call :require_new_boot C:\BridgeVM\stage3.boot
+if errorlevel 1 goto :fail
+echo [stage4] exercise Vulkan loader and Venus ICD >> "%LOG%"
 set VN_DEBUG=init,result
 set MESA_LOG_FILE=C:\BridgeVM\bvgpu-mesa-vulkan.log
 if exist C:\BridgeVM\bvgpu-vulkan-probe.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-vulkan-probe.ps1 >> "%LOG%" 2>&1
 set VULKAN_STATUS=%ERRORLEVEL%
-echo [stage3] Vulkan probe errorlevel=%VULKAN_STATUS% >> "%LOG%"
+echo [stage4] Vulkan probe errorlevel=%VULKAN_STATUS% >> "%LOG%"
 if "%VULKAN_STATUS%"=="0" goto :vulkan_ok
 cmd /c exit /b %VULKAN_STATUS%
 goto :fail
 
 :vulkan_ok
-echo [stage3] capture PnP, class-registry, DxgKrnl, and SetupAPI diagnostics >> "%LOG%"
+echo [stage4] run Vulkan draw smoke with image-level assertion >> "%LOG%"
+if not exist C:\BridgeVM\bvgpu-vulkan-draw-smoke.exe (
+  echo [stage4] Vulkan draw smoke missing, skipped >> "%LOG%"
+  goto :draw_smoke_done
+)
+C:\BridgeVM\bvgpu-vulkan-draw-smoke.exe >> "%LOG%" 2>&1
+set DRAW_STATUS=%ERRORLEVEL%
+echo [stage4] Vulkan draw smoke errorlevel=%DRAW_STATUS% >> "%LOG%"
+if "%DRAW_STATUS%"=="0" goto :draw_smoke_done
+cmd /c exit /b %DRAW_STATUS%
+goto :fail
+
+:draw_smoke_done
+echo [stage4] run DXVK D3D11 draw smoke - experimental, non-gating >> "%LOG%"
+if not exist C:\BridgeVM\dxvk\bridgevm-d3d11-draw-smoke.exe goto :dxvk_done
+set VK_DRIVER_FILES=C:\BridgeVM\viogpu3d\virtio_icd.arm64.json
+set DXVK_LOG_LEVEL=info
+set DXVK_LOG_PATH=C:\BridgeVM\dxvk
+C:\BridgeVM\dxvk\bridgevm-d3d11-draw-smoke.exe >> "%LOG%" 2>&1
+echo [stage4] DXVK D3D11 vb errorlevel=%ERRORLEVEL% >> "%LOG%"
+set BV_DRAW_NOVB=1
+C:\BridgeVM\dxvk\bridgevm-d3d11-draw-smoke.exe >> "%LOG%" 2>&1
+echo [stage4] DXVK D3D11 novb errorlevel=%ERRORLEVEL% >> "%LOG%"
+set BV_DRAW_NOVB=
+if not exist C:\BridgeVM\dxvk\bridgevm-d3d11-present-smoke.exe goto :dxvk_done
+C:\BridgeVM\dxvk\bridgevm-d3d11-present-smoke.exe >> "%LOG%" 2>&1
+echo [stage4] DXVK D3D11 present errorlevel=%ERRORLEVEL% >> "%LOG%"
+:dxvk_done
+echo [stage4] run x64 DXVK D3D11 smokes under x64 emulation - experimental, non-gating >> "%LOG%"
+if not exist C:\BridgeVM\dxvk-x64\bridgevm-d3d11-draw-smoke-x64.exe goto :dxvk_x64_done
+set VK_DRIVER_FILES=C:\BridgeVM\dxvk-x64\virtio_icd.x64.json
+set VK_LOADER_DEBUG=error,warn,driver
+set DXVK_LOG_LEVEL=info
+set DXVK_LOG_PATH=C:\BridgeVM\dxvk-x64
+C:\BridgeVM\dxvk-x64\bridgevm-d3d11-draw-smoke-x64.exe >> "%LOG%" 2>&1
+echo [stage4] x64 DXVK D3D11 vb errorlevel=%ERRORLEVEL% >> "%LOG%"
+set BV_DRAW_NOVB=1
+C:\BridgeVM\dxvk-x64\bridgevm-d3d11-draw-smoke-x64.exe >> "%LOG%" 2>&1
+echo [stage4] x64 DXVK D3D11 novb errorlevel=%ERRORLEVEL% >> "%LOG%"
+set BV_DRAW_NOVB=
+if not exist C:\BridgeVM\dxvk-x64\bridgevm-d3d11-present-smoke-x64.exe goto :dxvk_x64_restore
+C:\BridgeVM\dxvk-x64\bridgevm-d3d11-present-smoke-x64.exe >> "%LOG%" 2>&1
+echo [stage4] x64 DXVK D3D11 present errorlevel=%ERRORLEVEL% >> "%LOG%"
+:dxvk_x64_restore
+set VK_LOADER_DEBUG=
+set VK_DRIVER_FILES=C:\BridgeVM\viogpu3d\virtio_icd.arm64.json
+:dxvk_x64_done
+echo [stage4] capture PnP, class-registry, DxgKrnl, and SetupAPI diagnostics >> "%LOG%"
 if exist C:\BridgeVM\bvgpu-diagnostics.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-diagnostics.ps1 >> "%LOG%" 2>&1
-echo [stage3] verify PnP status and bound viogpu3d INF >> "%LOG%"
+echo [stage4] verify PnP status and bound viogpu3d INF >> "%LOG%"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$expectedInf = 'C:\BridgeVM\viogpu3d\viogpu3d.inf'; $dev = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -match '^PCI\\VEN_1AF4&DEV_(1050|10F7)(?:&|$)' -and $_.Status -eq 'OK' } | Select-Object -First 1; if (-not $dev) { Write-Error 'VirtIO GPU device is not present with Status OK'; exit 1 }; $drv = Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.DeviceID -eq $dev.InstanceId } | Select-Object -First 1; if (-not $drv -or $drv.InfName -notmatch '^oem[0-9]+[.]inf$') { Write-Error 'VirtIO GPU is not bound to an OEM driver package'; exit 2 }; $boundInf = Join-Path $env:windir ('INF\' + $drv.InfName); if (-not (Test-Path -LiteralPath $expectedInf -PathType Leaf) -or -not (Test-Path -LiteralPath $boundInf -PathType Leaf)) { Write-Error ('Expected or bound INF is missing: expected=' + $expectedInf + ' bound=' + $boundInf); exit 3 }; $expectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $expectedInf).Hash; $boundHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $boundInf).Hash; if ($boundHash -ne $expectedHash) { Write-Error ('Bound OEM INF does not match injected viogpu3d INF: bound=' + $boundInf + ' bound_sha256=' + $boundHash + ' expected_sha256=' + $expectedHash); exit 4 }; $dev | Format-List Status,Class,FriendlyName,InstanceId; $drv | Format-List DeviceName,DriverVersion,DriverProviderName,InfName; Write-Output ('expected_inf_sha256=' + $expectedHash); Write-Output ('bound_inf_sha256=' + $boundHash)" >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
-echo [stage3] active refresh rate >> "%LOG%"
+echo [stage4] verify exactly one driver generation and current signing cert >> "%LOG%"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-clean-driver-state.ps1 -Phase VerifyInstalled -PackageDirectory "%PKG%" >> "%LOG%" 2>&1
+if errorlevel 1 goto :fail
+echo [stage4] active refresh rate >> "%LOG%"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$v=Get-CimInstance Win32_VideoController; Write-Output ('refresh CUR=' + $v.CurrentRefreshRate + ' MAX=' + $v.MaxRefreshRate)" >> "%LOG%" 2>&1
-echo [stage3] delete continuation task >> "%LOG%"
+echo [stage4] delete continuation task >> "%LOG%"
+schtasks /Query /TN "%TASK_NAME%" >nul 2>&1
+if errorlevel 1 goto :task_deleted
 schtasks /Delete /TN "%TASK_NAME%" /F >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
-echo [stage3] done %DATE% %TIME% >> "%LOG%"
+:task_deleted
+echo [stage4] done %DATE% %TIME% >> "%LOG%"
 goto :done
 
 :fail
@@ -125,7 +204,11 @@ exit /b 0
 :write_boot_identity
 call :read_boot_identity
 if errorlevel 1 exit /b 1
-> "%~1" echo %CURRENT_BOOT_ID%
+rem Write-through + Flush(true) forces the bytes to the virtual disk before
+rem the imminent stage reboot. A plain cmd redirect leaves this tiny file's
+rem NTFS-resident data in cache, and a reboot right after has been observed to
+rem persist a correct-length but NUL-filled file, wedging the next stage gate.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$s = New-Object IO.FileStream('%~1', [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None, 4096, [IO.FileOptions]::WriteThrough); $b = [Text.Encoding]::ASCII.GetBytes('%CURRENT_BOOT_ID%' + [Environment]::NewLine); $s.Write($b, 0, $b.Length); $s.Flush($true); $s.Close()"
 if errorlevel 1 exit /b 1
 echo [boot-identity] path=%~1 value=%CURRENT_BOOT_ID% >> "%LOG%"
 exit /b %ERRORLEVEL%
@@ -135,11 +218,17 @@ if not exist "%~1" (
   echo [boot-gate] previous boot identity is missing: %~1 >> "%LOG%"
   exit /b 1
 )
+rem The boot file is only created immediately before the stage reboot, so its
+rem existence alone proves the reboot handoff. Unreadable content is the
+rem observed reboot cache-loss artifact -- correct length, all NUL bytes --
+rem so warn and let the stage proceed instead of wedging every later boot.
+rem Comments must stay outside the parenthesized block: a paren inside a
+rem block rem line breaks cmd's block parser.
 set "PREVIOUS_BOOT_ID="
 set /p PREVIOUS_BOOT_ID=<"%~1"
 if not defined PREVIOUS_BOOT_ID (
-  echo [boot-gate] previous boot identity is empty: %~1 >> "%LOG%"
-  exit /b 1
+  echo [boot-gate] previous boot identity is unreadable, accepting handoff by file existence: %~1 >> "%LOG%"
+  exit /b 0
 )
 call :read_boot_identity
 if errorlevel 1 exit /b 1

@@ -15,7 +15,7 @@ walls at each rung (exactly like `DRIVER_PNP_WATCHDOG` surfaced at the install r
 
 ---
 
-## 0. Where we are (2026-07-12)
+## 0. Where we are (2026-07-22)
 
 The historical installer blockers in workstreams A-C are closed. The custom
 Hypervisor.framework VMM now boots an installed Windows 11 ARM64 desktop with
@@ -33,12 +33,56 @@ restart path resets BridgeVM devices, guest RAM, vCPU registers, and Apple's
 in-kernel GIC; omitting the GIC reset was live-observed to freeze the second
 firmware generation.
 
-The immediate completion wall is no longer basic Windows boot. It is executing
-the WDK finalizer for the pinned ARM64 `viogpu3d` render package, returning the
-new signed package through the real repository gate, then proving certificate
-trust, PnP bind, Status OK, and a protocol-coherent render trace. Separate
-product decisions remain for a packaged from-scratch installer and durable
-disk-backed suspend (or an explicit v1 no-suspend contract).
+The normal GPU lifecycle now uses a four-stage, fail-closed cleanup/install/bind
+state machine; the guest agent is installed by a LocalSystem bootstrap service
+as an interactive highest-privilege logon task without disabling UAC. The host
+has a protocol-aware trace gate and a versioned, generic title-manifest gate;
+PPSSPP is the bundled first manifest rather than a one-off evaluator. The macOS
+app consumes structured launch/release readiness, presents the mmap-backed live
+display with keyboard and pointer input, and can be packaged with its signed HVF
+probe, CLI, VirGL runtime, scripts, and explicitly supplied UEFI firmware.
+
+The remaining release walls are live/external evidence and security lifecycle:
+a fresh finalized ARM64 WDK package and same-boot Windows bind/title receipt,
+production driver signing, and completion of vTPM 2.0 + measured/Secure Boot
+migration, recovery, and guest proof.
+The competitive architecture and performance-risk decisions are fixed in
+`docs/hvf-competitive-architecture-and-risk-policy.md`: the app selects a
+rollback-safe aggressive renderer lane, while vTPM/Secure Boot must ship as a
+per-VM encrypted-state and Keychain-backed lifecycle rather than a
+guest-visible device checkbox.
+
+`SEC-TPM-FRONTEND` has now reached E2/local proof: BridgeVM owns a five-locality
+TPM 2.0 TIS/FIFO state machine, a bounded swtpm Unix data-socket backend, the
+QEMU `virt` platform-bus MMIO reservation at `0x0c000000`, a persistent 1 KiB
+PPI mailbox at `0x0c005000`, PPI 1.3 and reset-mitigation `_DSM` AML, optional
+ACPI `TPM0`/`MSFT0101`/`_CRS` emission, and platform/run-loop dispatch selected
+by `BRIDGEVM_SWTPM_DATA_SOCKET`. The installed-boot launcher can own exactly one
+swtpm process with `--vtpm-state-dir`, records socket readiness, fails closed,
+and preserves the state directory after shutdown. The macOS product path now
+uses a stable VM ID to load or atomically create a 256-bit
+`WhenUnlockedThisDeviceOnly` Keychain item, transfers it through a one-shot
+stdin FD, and starts swtpm with AES-256-CBC encrypt-then-MAC state protection.
+No key appears in argv or a disk keyfile; an existing state directory whose
+Keychain item is missing fails closed without minting a replacement key. ACPI
+also emits QEMU's
+revision-4 TPM2 FIFO table and relocates its LASA field to a zero-initialized
+64 KiB `etc/tpm/log` allocation. Construction fails if ACPI presence and backend
+presence disagree. The default EDK2 code volume is now a reproducible,
+commit-pinned 3 MiB build with Secure Boot and TPM2 enabled. Fresh-install
+finalization fail-closed provisions the exact Microsoft-only ARM64
+`secureboot_objects` v1.6.5 `dbx`, `db`, `KEK`, and `PK` payloads (PK last),
+validates every hash/ESL/provenance field, preserves exact existing state, and
+rejects partial or conflicting state without mutation. Packaging includes the
+policy, firmware build receipt, and license notices. This still does **not**
+close the gates: firmware-populated measured-boot events, a bundled/signed
+swtpm distribution, explicit move/clone/restore/reset UX, firmware processing
+of PPI requests, `Confirm-SecureBootUEFI`/PCR 7 proof, BitLocker recovery, and a
+live Windows receipt remain.
+
+Windows HVF suspend/resume is explicitly not a v1 product capability; the
+experimental single-vCPU checkpoint path must not be advertised as durable
+suspend. See `docs/hvf-windows-v1-suspend-decision.md`.
 
 Assistant memory with the full history: `bridgevm-hvf-engine-status.md`.
 

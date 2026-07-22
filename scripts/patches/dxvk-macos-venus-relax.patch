@@ -1,0 +1,55 @@
+diff --git a/src/dxvk/dxvk_device_info.cpp b/src/dxvk/dxvk_device_info.cpp
+index ac24f84..877f601 100644
+--- a/src/dxvk/dxvk_device_info.cpp
++++ b/src/dxvk/dxvk_device_info.cpp
+@@ -830,7 +830,10 @@ namespace dxvk {
+       ENABLE_FEATURE(core.features, fillModeNonSolid, true),
+       ENABLE_FEATURE(core.features, fragmentStoresAndAtomics, true),
+       ENABLE_FEATURE(core.features, fullDrawIndexUint32, true),
+-      ENABLE_FEATURE(core.features, geometryShader, true),
++      /* BridgeVM: unavailable on MoltenVK-backed Venus (Metal has no
++       * geometry stage); expose reduced caps instead of refusing the
++       * device, mirroring DXVK-macOS. */
++      ENABLE_FEATURE(core.features, geometryShader, false),
+       ENABLE_FEATURE(core.features, imageCubeArray, true),
+       ENABLE_FEATURE(core.features, independentBlend, true),
+       ENABLE_FEATURE(core.features, largePoints, false),
+@@ -843,7 +846,10 @@ namespace dxvk {
+       ENABLE_FEATURE(core.features, sampleRateShading, true),
+       ENABLE_FEATURE(core.features, samplerAnisotropy, true),
+       ENABLE_FEATURE(core.features, shaderClipDistance, true),
+-      ENABLE_FEATURE(core.features, shaderCullDistance, true),
++      /* BridgeVM: unavailable on MoltenVK-backed Venus (Metal has no
++       * geometry stage); expose reduced caps instead of refusing the
++       * device, mirroring DXVK-macOS. */
++      ENABLE_FEATURE(core.features, shaderCullDistance, false),
+       ENABLE_FEATURE(core.features, shaderFloat64, false),
+       ENABLE_FEATURE(core.features, shaderImageGatherExtended, true),
+       ENABLE_FEATURE(core.features, shaderInt16, true),
+@@ -928,7 +934,9 @@ namespace dxvk {
+       ENABLE_EXT_FEATURE(extCustomBorderColor, customBorderColorWithoutFormat, false),
+ 
+       /* Depth clip matches D3D semantics where depth clamp does not */
+-      ENABLE_EXT_FEATURE(extDepthClipEnable, depthClipEnable, true),
++      /* BridgeVM: unavailable on MoltenVK-backed Venus; expose reduced
++       * caps instead of refusing the device (first-light bring-up). */
++      ENABLE_EXT_FEATURE(extDepthClipEnable, depthClipEnable, false),
+ 
+       /* Controls depth bias behaviour with emulated depth formats */
+       ENABLE_EXT_FEATURE(extDepthBiasControl, depthBiasControl, false),
+@@ -984,9 +992,13 @@ namespace dxvk {
+       ENABLE_EXT_FEATURE(extPageableDeviceLocalMemory, pageableDeviceLocalMemory, false),
+ 
+       /* Robustness, all features effectively required for correctness */
+-      ENABLE_EXT_FEATURE(extRobustness2, robustBufferAccess2, true),
++      /* BridgeVM: unavailable on MoltenVK-backed Venus; expose reduced
++       * caps instead of refusing the device (first-light bring-up). */
++      ENABLE_EXT_FEATURE(extRobustness2, robustBufferAccess2, false),
+       ENABLE_EXT_FEATURE(extRobustness2, robustImageAccess2, false),
+-      ENABLE_EXT_FEATURE(extRobustness2, nullDescriptor, true),
++      /* BridgeVM: unavailable on MoltenVK-backed Venus; expose reduced
++       * caps instead of refusing the device (first-light bring-up). */
++      ENABLE_EXT_FEATURE(extRobustness2, nullDescriptor, false),
+ 
+       /* Sample locations, used to "disable" MSAA rendering */
+       ENABLE_EXT(extSampleLocations, false),

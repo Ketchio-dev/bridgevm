@@ -42,7 +42,7 @@ impl Region {
 
 /// pflash: two 64 MiB banks (code + vars) at the very bottom of the address space.
 pub const FLASH: Region = Region::new(0x0, 0x0800_0000);
-/// pflash bank 0 — firmware code (`edk2-aarch64-code.fd`), read-only.
+/// pflash bank 0 — firmware code (secure+TPM2 EDK2 by default), read-only.
 pub const FLASH_CODE: Region = Region::new(0x0, 0x0400_0000);
 /// pflash bank 1 — UEFI variable store (`edk2-arm-vars.fd`), writable.
 pub const FLASH_VARS: Region = Region::new(0x0400_0000, 0x0400_0000);
@@ -86,6 +86,15 @@ pub const VIRTIO_MMIO_SLOT_SIZE: u64 = 0x200;
 pub const VIRTIO_MMIO_COUNT: u64 = 32;
 /// virtio-mmio transport array.
 pub const VIRTIO_MMIO: Region = Region::new(0x0A00_0000, VIRTIO_MMIO_SLOT_SIZE * VIRTIO_MMIO_COUNT);
+
+/// TPM 2.0 TIS/FIFO localities. QEMU places sysbus devices inside the
+/// `virt` platform-bus aperture beginning at 0x0c00_0000; reserving the first
+/// five 4 KiB localities keeps BridgeVM's Windows-visible contract stable.
+pub const TPM_TIS: Region = Region::new(0x0C00_0000, 0x5000);
+/// TPM Physical Presence Interface shared-memory page. The first implementation
+/// reserves the QEMU-compatible address immediately after the TIS localities;
+/// AML/PPI semantics are a separate gate from basic TPM enumeration.
+pub const TPM_PPI: Region = Region::new(0x0C00_5000, 0x400);
 
 /// PCIe ECAM config space (`pci-host-ecam-generic`), buses 0..=0xff.
 pub const PCIE_ECAM: Region = Region::new(0x40_1000_0000, 0x1000_0000);
@@ -177,7 +186,7 @@ pub fn virtio_mmio_slot(i: u64) -> Region {
 
 /// The fixed MMIO device regions, in ascending base order. RAM is intentionally
 /// excluded because it is system memory, not a device aperture.
-pub fn mmio_regions() -> [(&'static str, Region); 14] {
+pub fn mmio_regions() -> [(&'static str, Region); 16] {
     [
         ("flash-code", FLASH_CODE),
         ("flash-vars", FLASH_VARS),
@@ -189,6 +198,8 @@ pub fn mmio_regions() -> [(&'static str, Region); 14] {
         ("fw-cfg", FW_CFG),
         ("gpio", GPIO),
         ("virtio-mmio", VIRTIO_MMIO),
+        ("tpm-tis", TPM_TIS),
+        ("tpm-ppi", TPM_PPI),
         ("pcie-mmio-32", PCIE_MMIO_32),
         ("pcie-pio", PCIE_PIO),
         ("pcie-ecam", PCIE_ECAM),
@@ -235,6 +246,9 @@ mod tests {
         assert_eq!(FW_CFG.base, 0x0902_0000);
         assert_eq!(GPIO.base, 0x0903_0000);
         assert_eq!(VIRTIO_MMIO.base, 0x0A00_0000);
+        assert_eq!(TPM_TIS.base, 0x0C00_0000);
+        assert_eq!(TPM_TIS.size, crate::tpm_tis::MMIO_SIZE);
+        assert_eq!(TPM_PPI.base, TPM_TIS.end());
         assert_eq!(PCIE_MMIO_32.base, 0x1000_0000);
         assert_eq!(PCIE_ECAM.base, 0x40_1000_0000);
         assert_eq!(RAM_BASE, 0x4000_0000);
@@ -334,6 +348,8 @@ mod tests {
         assert_eq!(device_at(UART.base), Some("uart"));
         assert_eq!(device_at(FW_CFG.base + 0x8), Some("fw-cfg"));
         assert_eq!(device_at(0x0A00_3E10), Some("virtio-mmio"));
+        assert_eq!(device_at(TPM_TIS.base + 0x24), Some("tpm-tis"));
+        assert_eq!(device_at(TPM_PPI.base + 0x15a), Some("tpm-ppi"));
         assert_eq!(device_at(PCIE_MMIO_64.base), Some("pcie-mmio-64"));
         // A hole between GPIO and the virtio block resolves to nothing.
         assert_eq!(device_at(0x0905_0000), None);

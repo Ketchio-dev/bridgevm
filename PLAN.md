@@ -1,3 +1,11 @@
+# Long-form product architecture and roadmap history
+
+> **Document status: reference/history.** This file preserves the original
+> product thesis and the accumulated roadmap. It is not a current completion
+> report. Start with [README.md](README.md), [STATUS.md](STATUS.md), and the
+> [documentation index](docs/README.md). The authoritative remaining Windows
+> work is [the Windows completion plan](docs/hvf-windows-install-completion-plan.md).
+
 # Final Development Plan: Open-Source Parallels-Class Virtualization App
 
 ## Working name

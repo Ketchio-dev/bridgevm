@@ -1,5 +1,18 @@
 # Fast Mode
 
+Document status: **Current engine guide**
+Last reviewed: **2026-07-22**
+
+Fast Mode in this document means the Apple Virtualization.framework engine for
+Linux/macOS Arm guests. The separate BridgeVM-owned Windows HVF engine now boots
+an installed Windows 11 Arm desktop and is tracked in the
+[Windows guide](../windows-arm/README.md) and [current status](../../STATUS.md).
+It still does not make Windows an Apple VZ guest.
+
+> The detailed implementation ledger below is preserved because its probe and
+> contract history remains useful. Any old “no Windows HVF boot” statement in
+> that ledger is superseded by the current status and Windows completion plan.
+
 Fast Mode is the narrow, optimized engine path.
 
 Initial supported guests:
@@ -9,10 +22,11 @@ Initial supported guests:
 - Debian Arm64
 - macOS Arm guests
 
-Windows is deliberately not listed here: the current Apple Virtualization.framework
+Windows is deliberately not listed in the Apple VZ engine: the current Apple Virtualization.framework
 Fast Mode path targets Linux/macOS Arm guests. Windows 11 Arm uses the restricted
-QEMU/HVF Compatibility Mode path today, with any dedicated non-QEMU Windows fast
-path treated as long-term custom VMM R&D.
+custom Windows HVF engine or the QEMU Compatibility Engine, depending on the
+workflow. The custom engine is an active engineering preview, not a released
+Apple VZ capability.
 
 That distinction is a product boundary, not branding. QEMU/HVF is useful for
 Windows installer reachability and compatibility evidence, but keeping Windows

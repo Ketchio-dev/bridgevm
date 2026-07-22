@@ -28,6 +28,8 @@ Environment:
   OUT                Output raw injector image. Default:
                      $HOME/BridgeVM/win-viogpu3d-injector.raw.
   EXTRA_DRIVER_DIRS  Optional extra "name:path" specs prepended to DRIVER_DIRS.
+  PPSSPP_DIR         Optional native ARM64 PPSSPP directory. Stages the real
+                     title with BridgeVM's 30-second Venus promotion gate.
 
 The wrapper always sets ENABLE_TESTSIGNING=1 for the underlying injector.
 EOF

@@ -16,9 +16,11 @@ HVF_LAB_EXECUTABLE="$HVF_LAB/Contents/MacOS/BridgeVMControl"
 HVF_WINDOWS_PROBE="$HVF_LAB/Contents/Resources/target/release/examples/hvf_gic_boot_probe"
 HVF_VIRGL_RENDERER="$HVF_LAB/Contents/Frameworks/libvirglrenderer.1.dylib"
 HVF_LIBEPOXY="$HVF_LAB/Contents/Frameworks/libepoxy.0.dylib"
-HVF_FIRMWARE="$HVF_LAB/Contents/Resources/firmware/edk2-aarch64-code.fd"
+HVF_FIRMWARE="$HVF_LAB/Contents/Resources/firmware/edk2-aarch64-secure-code.fd"
 HVF_FIRMWARE_MANIFEST="$HVF_LAB/Contents/Resources/firmware/manifest.txt"
 HVF_FIRMWARE_LICENSES="$HVF_LAB/Contents/Resources/firmware/licenses.txt"
+HVF_FIRMWARE_BUILD_RECEIPT="$HVF_FIRMWARE.build.json"
+HVF_SECURE_BOOT_POLICY="$HVF_LAB/Contents/Resources/BridgeVMApp_BridgeVMControl.bundle/secureboot-microsoft-only-aarch64-v1.6.5.json"
 APP_NOTARY_SUBMIT_JSON="$WORKDIR/app-notary-submit.json"
 APP_NOTARY_LOG_JSON="$WORKDIR/app-notary-log.json"
 DMG_NOTARY_SUBMIT_JSON="$WORKDIR/dmg-notary-submit.json"
@@ -58,7 +60,8 @@ mkdir -p \
   "$HVF_LAB/Contents/MacOS" \
   "$(dirname "$HVF_WINDOWS_PROBE")" \
   "$(dirname "$HVF_VIRGL_RENDERER")" \
-  "$(dirname "$HVF_FIRMWARE")"
+  "$(dirname "$HVF_FIRMWARE")" \
+  "$(dirname "$HVF_SECURE_BOOT_POLICY")"
 cat >"$APP/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -90,6 +93,8 @@ printf 'libepoxy smoke\n' >"$HVF_LIBEPOXY"
 printf 'firmware smoke\n' >"$HVF_FIRMWARE"
 printf 'sha256=firmware-smoke\n' >"$HVF_FIRMWARE_MANIFEST"
 printf 'firmware licenses smoke\n' >"$HVF_FIRMWARE_LICENSES"
+printf '{"firmware":"build-receipt-smoke"}\n' >"$HVF_FIRMWARE_BUILD_RECEIPT"
+printf '{"policy":"secure-boot-smoke"}\n' >"$HVF_SECURE_BOOT_POLICY"
 chmod +x \
   "$APP/Contents/MacOS/BridgeVMApp" \
   "$RUNNER" \
@@ -146,6 +151,8 @@ assert_contains_file "$MANIFEST" "windows_hvf_libepoxy.sha256=" "Windows HVF lib
 assert_contains_file "$MANIFEST" "windows_hvf_firmware.sha256=" "Windows HVF firmware metadata"
 assert_contains_file "$MANIFEST" "windows_hvf_firmware_manifest.sha256=" "Windows HVF firmware manifest metadata"
 assert_contains_file "$MANIFEST" "windows_hvf_firmware_licenses.sha256=" "Windows HVF firmware licenses metadata"
+assert_contains_file "$MANIFEST" "windows_hvf_firmware_build_receipt.sha256=" "Windows HVF firmware receipt metadata"
+assert_contains_file "$MANIFEST" "windows_hvf_secure_boot_policy.sha256=" "Windows HVF Secure Boot policy metadata"
 assert_contains_file "$MANIFEST" "windows_hvf_lab_codesign_verify.exit=" "Windows HVF Lab signature recording"
 assert_contains_file "$MANIFEST" "windows_hvf_probe_codesign_verify.exit=" "Windows HVF probe signature recording"
 assert_contains_file "$MANIFEST" "windows_hvf_probe_entitlements.exit=" "Windows HVF probe entitlement recording"
@@ -189,6 +196,7 @@ assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_lab.path=$HVF_LAB" "app-o
 assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_probe.path=$HVF_WINDOWS_PROBE" "app-only Windows HVF probe metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_virgl_renderer.path=$HVF_VIRGL_RENDERER" "app-only Windows HVF VirGL metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_firmware.path=$HVF_FIRMWARE" "app-only Windows HVF firmware metadata"
+assert_contains_file "$APP_ONLY_MANIFEST" "windows_hvf_secure_boot_policy.path=$HVF_SECURE_BOOT_POLICY" "app-only Windows HVF Secure Boot policy metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "app_codesign_verify.exit=" "app-only app signature recording"
 assert_contains_file "$APP_ONLY_MANIFEST" "app_notary_submit_json.id=app-submit-smoke" "app-only app notary submit metadata"
 assert_contains_file "$APP_ONLY_MANIFEST" "app_notary_log_json.status=Accepted" "app-only app notary log metadata"

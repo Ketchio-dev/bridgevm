@@ -17,6 +17,103 @@ terminate_owned_probe() {
   fi
 }
 
+terminate_owned_swtpm() {
+  [[ -n "${SWTPM_PID:-}" ]] || return 0
+  kill -0 "$SWTPM_PID" 2>/dev/null || return 0
+  kill -TERM "$SWTPM_PID" 2>/dev/null || true
+  local wait_count=0
+  while kill -0 "$SWTPM_PID" 2>/dev/null && (( wait_count < 20 )); do
+    sleep 0.1
+    wait_count=$((wait_count + 1))
+  done
+  if kill -0 "$SWTPM_PID" 2>/dev/null; then
+    kill -KILL "$SWTPM_PID" 2>/dev/null || true
+  fi
+  wait "$SWTPM_PID" 2>/dev/null || true
+  SWTPM_PID=""
+}
+
+cleanup_owned_swtpm_runtime() {
+  [[ -n "${SWTPM_RUNTIME_DIR:-}" ]] || return 0
+  [[ -z "${SWTPM_DATA_SOCKET:-}" ]] || rm -f -- "$SWTPM_DATA_SOCKET"
+  [[ -z "${SWTPM_CONTROL_SOCKET:-}" ]] || rm -f -- "$SWTPM_CONTROL_SOCKET"
+  rmdir "$SWTPM_RUNTIME_DIR" 2>/dev/null || true
+  SWTPM_RUNTIME_DIR=""
+}
+
+start_owned_swtpm() {
+  [[ -n "${VTPM_STATE_DIR:-}" ]] || return 0
+  install -d -m 700 "$VTPM_STATE_DIR"
+  SWTPM_RUNTIME_DIR="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-vtpm.XXXXXX")"
+  SWTPM_DATA_SOCKET="$SWTPM_RUNTIME_DIR/data.sock"
+  SWTPM_CONTROL_SOCKET="$SWTPM_RUNTIME_DIR/control.sock"
+  : > "$EVIDENCE_DIR/swtpm.log"
+  : > "$EVIDENCE_DIR/swtpm-launch.log"
+  local -a swtpm_key_args=()
+  if [[ "${SWTPM_KEY_STDIN:-0}" == "1" ]]; then
+    # Bash otherwise redirects stdin of an asynchronous command to /dev/null.
+    # The explicit duplication lets swtpm read the binary key from fd 0. The
+    # parent closes its copy immediately after fork so the key FD cannot leak
+    # into the later HVF probe process.
+    swtpm_key_args=(--key "fd=0,format=binary,mode=aes-256-cbc")
+    "$SWTPM_BIN" socket \
+      --tpm2 \
+      --tpmstate "dir=$VTPM_STATE_DIR" \
+      --server "type=unixio,path=$SWTPM_DATA_SOCKET,mode=0600" \
+      --ctrl "type=unixio,path=$SWTPM_CONTROL_SOCKET,mode=0600" \
+      --flags not-need-init,startup-clear \
+      --log "file=$EVIDENCE_DIR/swtpm.log,level=20" \
+      "${swtpm_key_args[@]}" \
+      <&0 >> "$EVIDENCE_DIR/swtpm-launch.log" 2>&1 &
+    exec 0<&-
+  else
+    "$SWTPM_BIN" socket \
+      --tpm2 \
+      --tpmstate "dir=$VTPM_STATE_DIR" \
+      --server "type=unixio,path=$SWTPM_DATA_SOCKET,mode=0600" \
+      --ctrl "type=unixio,path=$SWTPM_CONTROL_SOCKET,mode=0600" \
+      --flags not-need-init,startup-clear \
+      --log "file=$EVIDENCE_DIR/swtpm.log,level=20" \
+      >> "$EVIDENCE_DIR/swtpm-launch.log" 2>&1 &
+  fi
+  SWTPM_PID="$!"
+
+  local wait_count=0
+  while (( wait_count < 100 )); do
+    if [[ -S "$SWTPM_DATA_SOCKET" && -S "$SWTPM_CONTROL_SOCKET" ]]; then
+      printf 'swtpm_ready=true\nswtpm_pid=%s\ndata_socket=%s\ncontrol_socket=%s\nstate_encryption=%s\n' \
+        "$SWTPM_PID" "$SWTPM_DATA_SOCKET" "$SWTPM_CONTROL_SOCKET" \
+        "$([[ "${SWTPM_KEY_STDIN:-0}" == "1" ]] && printf 'aes-256-cbc-etm/key-fd' || printf 'disabled')" \
+        > "$EVIDENCE_DIR/swtpm-lifecycle.txt"
+      return 0
+    fi
+    if ! kill -0 "$SWTPM_PID" 2>/dev/null; then
+      break
+    fi
+    sleep 0.05
+    wait_count=$((wait_count + 1))
+  done
+
+  {
+    printf 'swtpm_ready=false\n'
+    printf 'swtpm_pid=%s\n' "$SWTPM_PID"
+    printf 'data_socket=%s\n' "$SWTPM_DATA_SOCKET"
+    printf 'control_socket=%s\n' "$SWTPM_CONTROL_SOCKET"
+    printf 'state_encryption=%s\n' "$([[ "${SWTPM_KEY_STDIN:-0}" == "1" ]] && printf 'aes-256-cbc-etm/key-fd' || printf 'disabled')"
+  } > "$EVIDENCE_DIR/swtpm-lifecycle.txt"
+  echo "FAIL: swtpm did not create both Unix sockets; see $EVIDENCE_DIR/swtpm-launch.log" >&2
+  return 1
+}
+
+run_bridgevm_cli() {
+  local packaged_cli="$ROOT/target/release/bridgevm"
+  if [[ -x "$packaged_cli" ]]; then
+    "$packaged_cli" "$@"
+  else
+    cargo run -q -p bridgevm-cli -- "$@"
+  fi
+}
+
 cleanup() {
   local status="$?"
   set +e
@@ -26,6 +123,8 @@ cleanup() {
     printf 'processes_before_cleanup:\n'
     pgrep -fl '[h]vf_gic_boot_probe|qemu-system-aarch64' || true
     terminate_owned_probe
+    terminate_owned_swtpm
+    cleanup_owned_swtpm_runtime
     printf 'processes_after_cleanup:\n'
     pgrep -fl '[h]vf_gic_boot_probe|qemu-system-aarch64' || true
     printf 'tmux_sessions_after_cleanup:\n'
@@ -63,6 +162,11 @@ write_installed_boot_preflight() {
     printf 'agent_share_ms=%s\n' "${AGENT_SHARE_MS:-<unset>}"
     printf 'agent_share_max_kb=%s\n' "${AGENT_SHARE_MAX_KB:-<unset>}"
     printf 'nvme_buffered_io=%s\n' "$NVME_BUFFERED_IO"
+    printf 'vtpm_enabled=%s\n' "$([[ -n "$VTPM_STATE_DIR" ]] && printf '1' || printf '0')"
+    printf 'vtpm_state_dir=%s\n' "${VTPM_STATE_DIR:-<unset>}"
+    printf 'swtpm_bin=%s\n' "$([[ -n "$VTPM_STATE_DIR" ]] && printf '%s' "$SWTPM_BIN" || printf '<unset>')"
+    printf 'swtpm_state_encryption=%s\n' "$([[ "${SWTPM_KEY_STDIN:-0}" == "1" ]] && printf 'aes-256-cbc-etm/key-fd' || printf 'disabled')"
+    printf 'performance_risk=%s\n' "$PERFORMANCE_RISK"
     if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" || -n "$HOST_PAUSE_RESUME_PROOF_MS" || -n "$AGENT_SERVICE_CONTROL" ]]; then
       printf 'virtio_console_test_periodic=1\n'
     else
@@ -79,6 +183,15 @@ write_installed_boot_preflight() {
     printf 'gpu_trace_protocol=%s\n' "$GPU_TRACE_PROTOCOL"
     printf 'viogpu3d_dir=%s\n' "${VIOGPU3D_DIR:-<unset>}"
     printf 'require_viogpu3d_readiness=%s\n' "$REQUIRE_VIOGPU3D_READINESS"
+    printf 'require_real_title_gate=%s\n' "$REQUIRE_REAL_TITLE_GATE"
+    printf 'require_title_gates=%s\n' "$REQUIRE_TITLE_GATES"
+    printf 'title_manifest_count=%s\n' "$TITLE_MANIFEST_COUNT"
+    if (( TITLE_MANIFEST_COUNT > 0 )); then
+      local title_manifest
+      for title_manifest in "${TITLE_MANIFESTS[@]}"; do
+        printf 'title_manifest=%s\n' "$title_manifest"
+      done
+    fi
     printf 'policy=%s %s writable-target\n' "$XHCI_POLICY" "$BOOT_MODE"
     printf 'ramfb_samples=%s\n' "$RAMFB_SAMPLES"
     print_input_summary
@@ -218,6 +331,13 @@ build_installed_boot_env_args() {
   # the PL011 for the run, so boot-marker serial scanning yields KD protocol
   # bytes instead of text while a debugger is wired).
   [[ -z "${BRIDGEVM_KD_SERIAL_SOCKET:-}" ]] || ENV_ARGS+=("BRIDGEVM_KD_SERIAL_SOCKET=$BRIDGEVM_KD_SERIAL_SOCKET")
+  if [[ -n "${VTPM_STATE_DIR:-}" ]]; then
+    [[ -S "${SWTPM_DATA_SOCKET:-}" ]] || {
+      echo "FAIL: vTPM data socket is not ready" >&2
+      return 1
+    }
+    ENV_ARGS+=("BRIDGEVM_SWTPM_DATA_SOCKET=$SWTPM_DATA_SOCKET")
+  fi
   # Forward the opt-in Intel HDA audio device + host PCM sinks (media.rs gates on
   # BRIDGEVM_HDA; absent = no audio function, unchanged behavior).
   [[ -z "${BRIDGEVM_HDA:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA=$BRIDGEVM_HDA")
@@ -307,13 +427,28 @@ build_installed_boot_env_args() {
       'BRIDGEVM_VIRTIO_GPU_3D=1'
       "BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=$(virtio_gpu_3d_runtime_protocol)"
     )
+    if [[ "${BRIDGEVM_VIRTIO_GPU_DIRECT_RENDERER:-0}" == "1" ]]; then
+      ENV_ARGS+=('BRIDGEVM_VIRTIO_GPU_DIRECT_RENDERER=1')
+    fi
+    if [[ "${PERFORMANCE_RISK:-balanced}" == "aggressive" ]]; then
+      # Explicit high-performance lane. These knobs remove the threaded
+      # renderer handoff and synchronous CPU readback from the hot present
+      # path. The policy is visible in preflight evidence and can be rolled
+      # back with --performance-risk balanced without changing VM media.
+      ENV_ARGS+=(
+        'BRIDGEVM_VIRTIO_GPU_DIRECT_RENDERER=1'
+        'BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT=1'
+        'BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1'
+        'BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=0'
+      )
+    fi
     # The venus (Vulkan-passthrough) host backend needs MoltenVK loaded in
     # process and a BAR2 sized so EDK2 can still assign it. The virgl path
     # needs neither. Only wire these for the venus protocol; a caller-supplied
     # value wins (venus prefix / alt MoltenVK).
     if [[ "$(virtio_gpu_3d_runtime_protocol)" == "venus" ]]; then
       ENV_ARGS+=("BRIDGEVM_VULKAN_LIB=${BRIDGEVM_VULKAN_LIB:-/opt/homebrew/lib/libMoltenVK.dylib}")
-      ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB=${BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB:-64}")
+      ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB=${BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB:-512}")
     fi
     if [[ -n "${VIRTIO_GPU_PCI_DEVICE_ID:-}" ]]; then
       ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID=0x$VIRTIO_GPU_PCI_DEVICE_ID")
@@ -346,6 +481,23 @@ build_installed_boot_env_args() {
       "BRIDGEVM_DISPLAY_EXPORT_FB=$DISPLAY_EXPORT_FB"
       "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=0"
     )
+  fi
+  if [[ -n "${BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS:-}" ]]; then
+    # Caller-supplied readback pacing wins (A/B knob); the launcher strips
+    # inherited BRIDGEVM_* so it must ride ENV_ARGS. Appended after the
+    # display-export defaults so the caller value takes precedence.
+    ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=$BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS")
+  fi
+  if [[ "${BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT:-0}" == "1" ]]; then
+    # Defer the 3D scanout GL readback off the RESOURCE_FLUSH path (A/B knob).
+    ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT=1")
+  fi
+  if [[ "${BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT:-0}" == "1" ]]; then
+    # GPU-blit the scanout into a shared IOSurface (zero-copy display path).
+    ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1")
+  fi
+  if [[ "${BRIDGEVM_VIRTIO_GPU_IOSURFACE_VERIFY:-0}" == "1" ]]; then
+    ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_IOSURFACE_VERIFY=1")
   fi
   if [[ -n "${INPUT_CONTROL:-}" ]]; then
     ENV_ARGS+=("BRIDGEVM_INPUT_CONTROL=$INPUT_CONTROL")
@@ -749,7 +901,6 @@ write_virtio_gpu_trace_report() {
     status=1
   else
     local -a args=(
-      cargo run -q -p bridgevm-cli --
       hvf virtio-gpu-trace-report
       --trace "$trace"
       --protocol "$GPU_TRACE_PROTOCOL"
@@ -758,7 +909,7 @@ write_virtio_gpu_trace_report() {
       args+=(--require-p3-gate)
     fi
     set +e
-    "${args[@]}" >> "$report" 2>&1
+    run_bridgevm_cli "${args[@]}" >> "$report" 2>&1
     status="$?"
     set -e
   fi
@@ -787,6 +938,13 @@ write_installed_boot_target_stat() {
       printf 'virtio_gpu_trace_gate=%s\n' "$EVIDENCE_DIR/virtio-gpu-trace-gate.txt"
       printf 'p3_gpu_readiness=%s\n' "$EVIDENCE_DIR/p3-gpu-readiness.txt"
       printf 'viogpu3d_package_manifest=%s\n' "$EVIDENCE_DIR/viogpu3d-package-manifest.txt"
+      printf 'real_title_gate=%s\n' "$EVIDENCE_DIR/real-title-gate.txt"
+      if (( TITLE_MANIFEST_COUNT > 0 )); then
+        printf 'title_gate_report=%s\n' "$EVIDENCE_DIR/title-gates.txt"
+        printf 'title_gate_json=%s\n' "$EVIDENCE_DIR/title-gates.json"
+        printf 'title_gate_status=%s\n' "$EVIDENCE_DIR/title-gates-gate.txt"
+        printf 'title_pre_run_state=%s\n' "$EVIDENCE_DIR/title-pre-run-state.json"
+      fi
     fi
     if [[ "$SHUTDOWN_AFTER_AGENT_READY" == "1" ]]; then
       printf 'agent_shutdown_gate=%s\n' "$EVIDENCE_DIR/agent-shutdown-gate.txt"
@@ -820,6 +978,10 @@ run_installed_boot_probe() {
   fi
   RUN_STATUS=0
   PROBE_PID=""
+  SWTPM_PID=""
+  SWTPM_RUNTIME_DIR=""
+  SWTPM_DATA_SOCKET=""
+  SWTPM_CONTROL_SOCKET=""
   if [[ "$BUILD_PROFILE" == "release" ]]; then
     BIN="target/release/examples/hvf_gic_boot_probe"
   else
@@ -836,11 +998,223 @@ run_installed_boot_probe() {
     write_installed_boot_target_stat
     return 0
   fi
+  start_owned_swtpm
   write_probe_command_env
+  capture_pre_run_real_title_gate_hash
+  capture_pre_run_title_gate_state
   run_probe_process
   write_agent_shutdown_gate
   write_agent_service_gate
   write_host_pause_resume_gate
   write_virtio_gpu_trace_report
+  extract_guest_bridgevm_logs
+  write_title_gate_report
+  write_real_title_gate_report
   write_installed_boot_target_stat
+}
+
+# Snapshot the guest title log before boot. A PASS marker is only evidence for
+# this run when the file changes during the run; otherwise an old successful
+# launch can make a later broken boot look green.
+capture_pre_run_real_title_gate_hash() {
+  PRE_RUN_REAL_TITLE_SHA256="unavailable"
+  [[ "${VIRTIO_GPU_3D:-0}" == "1" ]] || return 0
+  local attach_out disk mount_point gate
+  attach_out="$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -readonly "$TARGET" 2>/dev/null)" || return 0
+  disk="$(printf '%s\n' "$attach_out" | awk 'NR==1 {print $1}')"
+  PRE_RUN_REAL_TITLE_SHA256="missing"
+  while read -r mount_point; do
+    gate="$mount_point/BridgeVM/bvgpu-real-title-gate.log"
+    if [[ -n "$mount_point" && -f "$gate" ]]; then
+      PRE_RUN_REAL_TITLE_SHA256="$(shasum -a 256 "$gate" | awk '{print $1}')"
+      break
+    fi
+  done < <(printf '%s\n' "$attach_out" | awk 'match($0, /\/Volumes\/.*$/) {print substr($0, RSTART)}')
+  [[ -n "$disk" ]] && hdiutil detach "$disk" >/dev/null 2>&1
+  return 0
+}
+
+title_manifest_raw_field() {
+  local manifest="$1"
+  local field="$2"
+  plutil -extract "$field" raw -o - "$manifest" 2>/dev/null
+}
+
+# Record each configured title log before boot. Missing or unreadable state is
+# fail-closed: the Rust evaluator requires an explicit prior hash or "missing"
+# entry before it will accept a post-run log as fresh evidence.
+capture_pre_run_title_gate_state() {
+  local state="$EVIDENCE_DIR/title-pre-run-state.json"
+  printf '{}\n' > "$state"
+  (( TITLE_MANIFEST_COUNT > 0 )) || return 0
+
+  local attach_out disk mount_point bridgevm_dir="" mounted_volume=0
+  attach_out="$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -readonly "$TARGET" 2>/dev/null)" || return 0
+  disk="$(printf '%s\n' "$attach_out" | awk 'NR==1 {print $1}')"
+  while read -r mount_point; do
+    [[ -n "$mount_point" ]] && mounted_volume=1
+    if [[ -n "$mount_point" && -d "$mount_point/BridgeVM" ]]; then
+      bridgevm_dir="$mount_point/BridgeVM"
+      break
+    fi
+  done < <(printf '%s\n' "$attach_out" | awk 'match($0, /\/Volumes\/.*$/) {print substr($0, RSTART)}')
+  if [[ "$mounted_volume" != "1" ]]; then
+    [[ -n "$disk" ]] && hdiutil detach "$disk" >/dev/null 2>&1
+    return 0
+  fi
+
+  local manifest id log prior comma=""
+  {
+    printf '{\n'
+    for manifest in "${TITLE_MANIFESTS[@]}"; do
+      id="$(title_manifest_raw_field "$manifest" id || true)"
+      log="$(title_manifest_raw_field "$manifest" log || true)"
+      [[ "$id" =~ ^[A-Za-z0-9._-]+$ ]] || continue
+      [[ -n "$log" && "$log" == "$(basename "$log")" && "$log" != "." && "$log" != ".." ]] || continue
+      prior="missing"
+      if [[ -n "$bridgevm_dir" && -f "$bridgevm_dir/$log" ]]; then
+        prior="$(shasum -a 256 "$bridgevm_dir/$log" | awk '{print $1}')"
+      fi
+      printf '%s  "%s": "%s"' "$comma" "$id" "$prior"
+      comma=$',\n'
+    done
+    printf '\n}\n'
+  } > "$state"
+  [[ -n "$disk" ]] && hdiutil detach "$disk" >/dev/null 2>&1
+  return 0
+}
+
+# Best-effort: pull C:\BridgeVM\*.log (vulkan probe/draw bench, firstboot)
+# from the target disk into the evidence dir so guest-side measurements are
+# archived with the run instead of living only inside the image.
+extract_guest_bridgevm_logs() {
+  [[ "${VIRTIO_GPU_3D:-0}" == "1" ]] || return 0
+  local attach_out disk mount_point
+  attach_out="$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -readonly "$TARGET" 2>/dev/null)" || return 0
+  disk="$(printf '%s\n' "$attach_out" | awk 'NR==1 {print $1}')"
+  while read -r mount_point; do
+    if [[ -n "$mount_point" && -d "$mount_point/BridgeVM" ]]; then
+      mkdir -p "$EVIDENCE_DIR/guest-logs"
+      cp "$mount_point/BridgeVM/"*.log "$EVIDENCE_DIR/guest-logs/" 2>/dev/null || true
+      break
+    fi
+  done < <(printf '%s\n' "$attach_out" | awk 'match($0, /\/Volumes\/.*$/) {print substr($0, RSTART)}')
+  [[ -n "$disk" ]] && hdiutil detach "$disk" >/dev/null 2>&1
+  return 0
+}
+
+write_title_gate_report() {
+  (( TITLE_MANIFEST_COUNT > 0 )) || return 0
+
+  local report="$EVIDENCE_DIR/title-gates.txt"
+  local json_report="$EVIDENCE_DIR/title-gates.json"
+  local gate="$EVIDENCE_DIR/title-gates-gate.txt"
+  local pre_run_state="$EVIDENCE_DIR/title-pre-run-state.json"
+  local trace
+  local status
+  local manifest
+  trace="$(virtio_gpu_trace_path)"
+
+  local -a args=(
+    hvf title-gate-report
+    --guest-logs "$EVIDENCE_DIR/guest-logs"
+    --trace "$trace"
+    --pre-run-state "$pre_run_state"
+    --json-output "$json_report"
+    --require-title-gates
+  )
+  for manifest in "${TITLE_MANIFESTS[@]}"; do
+    args+=(--title-manifest "$manifest")
+  done
+
+  {
+    date -u
+    printf 'trace=%s\n' "$trace"
+    printf 'pre_run_state=%s\n' "$pre_run_state"
+    printf 'required=%s\n' "$REQUIRE_TITLE_GATES"
+  } > "$report"
+  set +e
+  run_bridgevm_cli "${args[@]}" >> "$report" 2>&1
+  status="$?"
+  set -e
+
+  {
+    printf 'report=%s\n' "$report"
+    printf 'json_report=%s\n' "$json_report"
+    printf 'pre_run_state=%s\n' "$pre_run_state"
+    printf 'manifest_count=%s\n' "$TITLE_MANIFEST_COUNT"
+    for manifest in "${TITLE_MANIFESTS[@]}"; do
+      printf 'manifest=%s\n' "$manifest"
+    done
+    printf 'required=%s\n' "$REQUIRE_TITLE_GATES"
+    printf 'status=%s\n' "$status"
+  } > "$gate"
+
+  if [[ "$REQUIRE_TITLE_GATES" == "1" && "$status" != "0" && "${RUN_STATUS:-0}" == "0" ]]; then
+    RUN_STATUS="$status"
+  fi
+  return 0
+}
+
+write_real_title_gate_report() {
+  [[ "${VIRTIO_GPU_3D:-0}" == "1" ]] || return 0
+
+  local report="$EVIDENCE_DIR/real-title-gate.txt"
+  local guest_gate="$EVIDENCE_DIR/guest-logs/bvgpu-real-title-gate.log"
+  local cleanup_log="$EVIDENCE_DIR/guest-logs/viogpu3d-cleanup.log"
+  local trace
+  local flush_count=0
+  local guest_title_marker_pass=0
+  local guest_title_fresh=0
+  local guest_title_pass=0
+  local current_title_sha256="missing"
+  local pre_run_title_sha256="${PRE_RUN_REAL_TITLE_SHA256:-missing}"
+  local driver_state_pass=0
+  local status=0
+  trace="$(virtio_gpu_trace_path)"
+
+  if [[ -f "$guest_gate" ]]; then
+    current_title_sha256="$(shasum -a 256 "$guest_gate" | awk '{print $1}')"
+    if grep -Fq 'BVGPU-REAL-TITLE-PASS' "$guest_gate"; then
+      guest_title_marker_pass=1
+    fi
+  fi
+  if [[ "$pre_run_title_sha256" != "unavailable" && "$current_title_sha256" != "$pre_run_title_sha256" ]]; then
+    guest_title_fresh=1
+  fi
+  if [[ "$guest_title_marker_pass" == "1" && "$guest_title_fresh" == "1" ]]; then
+    guest_title_pass=1
+  fi
+  if [[ -f "$cleanup_log" ]] && grep -Fq 'BVGPU-DRIVER-STATE-PASS' "$cleanup_log"; then
+    driver_state_pass=1
+  fi
+  if [[ -f "$trace" ]]; then
+    flush_count="$(grep -c '"name":"RESOURCE_FLUSH"' "$trace" 2>/dev/null || true)"
+    flush_count="${flush_count:-0}"
+  fi
+  if [[ "$guest_title_pass" != "1" || "$driver_state_pass" != "1" || "$flush_count" -lt 300 ]]; then
+    status=1
+  fi
+
+  {
+    date -u
+    printf 'required=%s\n' "${REQUIRE_REAL_TITLE_GATE:-0}"
+    printf 'guest_gate_log=%s\n' "$guest_gate"
+    printf 'guest_title_marker_pass=%s\n' "$guest_title_marker_pass"
+    printf 'guest_title_fresh=%s\n' "$guest_title_fresh"
+    printf 'guest_title_pre_run_sha256=%s\n' "$pre_run_title_sha256"
+    printf 'guest_title_current_sha256=%s\n' "$current_title_sha256"
+    printf 'guest_title_pass=%s\n' "$guest_title_pass"
+    printf 'driver_cleanup_log=%s\n' "$cleanup_log"
+    printf 'driver_state_pass=%s\n' "$driver_state_pass"
+    printf 'trace=%s\n' "$trace"
+    printf 'resource_flush_count=%s\n' "$flush_count"
+    printf 'resource_flush_minimum=300\n'
+    printf 'status=%s\n' "$status"
+  } > "$report"
+
+  if [[ "${REQUIRE_REAL_TITLE_GATE:-0}" == "1" && "$status" != "0" && "${RUN_STATUS:-0}" == "0" ]]; then
+    RUN_STATUS="$status"
+  fi
+  return 0
 }

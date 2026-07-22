@@ -187,20 +187,19 @@ impl P30NorFlash {
         offset - (offset % self.block_size)
     }
 
-pub fn snapshot_state(&self) -> Vec<u8> {
-    self.bytes.clone()
-}
+    pub fn snapshot_state(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
 
-pub fn restore_state(&mut self, data: &[u8]) {
-    assert_eq!(
-        data.len(),
-        self.bytes.len(),
-        "pflash bank size mismatch on restore"
-    );
-    self.bytes.copy_from_slice(data);
-    self.mode = Mode::ReadArray;
-}
-
+    pub fn restore_state(&mut self, data: &[u8]) {
+        assert_eq!(
+            data.len(),
+            self.bytes.len(),
+            "pflash bank size mismatch on restore"
+        );
+        self.bytes.copy_from_slice(data);
+        self.mode = Mode::ReadArray;
+    }
 }
 
 fn command_byte(value: u64) -> Option<u8> {

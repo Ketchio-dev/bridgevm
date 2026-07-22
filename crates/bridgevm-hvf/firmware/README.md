@@ -1,24 +1,38 @@
 # Vendored firmware
 
-`edk2-aarch64-code.fd` is an `ArmVirtPkg/ArmVirtQemu.dsc` firmware volume built
-from current [tianocore/edk2](https://github.com/tianocore/edk2) (RELEASE,
-`-a AARCH64 -t GCC`). It replaces Homebrew qemu's older `edk2-aarch64-code.fd`,
-whose NvmExpressDxe/PciBus does **not** bind BridgeVM's NVMe endpoint. A current
-edk2 binds it and boots Windows 11 ARM64 from NVMe.
+Two firmware artifacts are retained deliberately:
+
+- `edk2-aarch64-code.fd` is the earlier known-good NVMe-boot build. Its exact
+  original build revision was not recorded, so it remains as a compatibility
+  and regression artifact instead of being silently replaced.
+- `edk2-aarch64-secure-code.fd` is the product default. It is built from
+  tianocore/edk2 `edk2-stable202605`, commit
+  `b03a21a63e3bd001f52c527e5a57feddb53a690b`, with Secure Boot, TPM2, and the
+  TPM2 configuration UI enabled. Its adjacent `.build.json` is the
+  machine-readable provenance receipt.
+
+Both are `ArmVirtPkg/ArmVirtQemu.dsc` RELEASE AARCH64 firmware volumes. They
+replace Homebrew qemu's older firmware, whose NvmExpressDxe/PciBus does **not**
+bind BridgeVM's NVMe endpoint.
 
 The loader maps this volume at `FLASH_CODE` (0x0); the region beyond the volume
-is zero-filled. The variable store still uses the (version-insensitive) stock
-ArmVirtQemu vars template (see `DEFAULT_QEMU_AARCH64_VARS`).
+is zero-filled. The variable store starts from the stock ArmVirtQemu template
+and is copied per VM. Fresh Windows installs enroll BridgeVM's pinned
+Microsoft-only Secure Boot policy; existing VM varstores are never rewritten
+automatically.
 
 edk2 is licensed BSD-2-Clause-Patent.
 
-## Rebuild
+## Rebuild the product firmware
 ```
-git clone --depth 1 --recurse-submodules --shallow-submodules \
-    https://github.com/tianocore/edk2.git && cd edk2
-make -C BaseTools
-export GCC_AARCH64_PREFIX=aarch64-elf-   # brew: aarch64-elf-gcc
-source ./edksetup.sh BaseTools
-build -a AARCH64 -t GCC -p ArmVirtPkg/ArmVirtQemu.dsc -b RELEASE
-# -> Build/ArmVirtQemu-AArch64/RELEASE_GCC/FV/QEMU_EFI.fd
+git clone --recurse-submodules --branch edk2-stable202605 \
+  https://github.com/tianocore/edk2.git /path/to/edk2
+git -C /path/to/edk2 checkout b03a21a63e3bd001f52c527e5a57feddb53a690b
+brew install aarch64-elf-gcc acpica
+scripts/build-hvf-edk2-secure-firmware.sh /path/to/edk2
 ```
+
+The script pins `SOURCE_DATE_EPOCH`, GCC 16.1.0, iasl 20260408, and the final
+SHA-256. It rejects a dirty/different source revision or mismatched submodules,
+then checks that the resulting firmware contains the Secure Boot and TPM2 DXE
+modules before installing it.

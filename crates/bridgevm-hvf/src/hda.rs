@@ -1007,9 +1007,9 @@ fn codec_parameter(nid: u8, parameter: u8) -> u32 {
 
 fn afg_parameter(parameter: u8) -> Option<u32> {
     Some(match parameter {
-        0x01 => CODEC_IMPLEMENTATION_ID,    // AC_PAR_SUBSYSTEM_ID (QEMU AFG has it)
+        0x01 => CODEC_IMPLEMENTATION_ID, // AC_PAR_SUBSYSTEM_ID (QEMU AFG has it)
         0x04 => CODEC_AFG_CHILD_NODE_COUNT, // NID 2 DAC, NID 3 pin
-        0x05 => 0x0000_0001,                // audio function group
+        0x05 => 0x0000_0001,             // audio function group
         0x08 => CODEC_AFG_CAPABILITIES,
         0x0a => CODEC_PCM_SIZE_RATES,
         0x0b => CODEC_STREAM_FORMATS,
@@ -1284,13 +1284,13 @@ mod tests {
         // the AFG must return a valid subsystem id (matching QEMU's output
         // codec, which exposes AC_PAR_SUBSYSTEM_ID on both nodes).
         let observed = [
-            (0x000f_0000, CODEC_VENDOR_ID),          // AC_PAR_VENDOR_ID
-            (0x000f_0001, CODEC_IMPLEMENTATION_ID),  // root AC_PAR_SUBSYSTEM_ID
-            (0x000f_0002, CODEC_REVISION_ID),        // AC_PAR_REV_ID
-            (0x000f_0004, 0x0001_0001),              // AC_PAR_NODE_COUNT
-            (0x001f_0001, CODEC_IMPLEMENTATION_ID),  // AFG AC_PAR_SUBSYSTEM_ID
-            (0x001f_0005, 0x0000_0001),              // AC_PAR_FUNCTION_TYPE=audio
-            (0x001f_0500, 0),                        // AFG GET_POWER_STATE (D0)
+            (0x000f_0000, CODEC_VENDOR_ID),         // AC_PAR_VENDOR_ID
+            (0x000f_0001, CODEC_IMPLEMENTATION_ID), // root AC_PAR_SUBSYSTEM_ID
+            (0x000f_0002, CODEC_REVISION_ID),       // AC_PAR_REV_ID
+            (0x000f_0004, 0x0001_0001),             // AC_PAR_NODE_COUNT
+            (0x001f_0001, CODEC_IMPLEMENTATION_ID), // AFG AC_PAR_SUBSYSTEM_ID
+            (0x001f_0005, 0x0000_0001),             // AC_PAR_FUNCTION_TYPE=audio
+            (0x001f_0500, 0),                       // AFG GET_POWER_STATE (D0)
         ];
 
         for (command, response) in observed {

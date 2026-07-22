@@ -63,8 +63,8 @@ Optional environment:
                                       defaults to apps/macos/AppleVzRunner.release.entitlements
   BRIDGEVM_HVF_PROBE_ENTITLEMENTS     Windows HVF probe release entitlements,
                                       defaults to apps/macos/HvfRunner.release.entitlements
-  BRIDGEVM_HVF_FIRMWARE_CODE          64 MiB AArch64 EDK2 code image embedded
-                                      in the Windows HVF app
+  BRIDGEVM_HVF_FIRMWARE_CODE          pinned 3 MiB Secure Boot + TPM2 AArch64
+                                      EDK2 code image embedded in the Windows HVF app
   BRIDGEVM_HVF_FIRMWARE_LICENSES      matching firmware license notices
 EOF
 }

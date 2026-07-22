@@ -31,6 +31,7 @@ struct HvfEngineView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                readinessCard
                 configCard
                 statusCard
                 screenshotCard
@@ -122,6 +123,38 @@ struct HvfEngineView: View {
             .padding(6)
         } label: {
             Label("Boot Configuration", systemImage: "gearshape.2")
+        }
+    }
+
+    private var readinessCard: some View {
+        let report = currentConfig().readiness(repoRoot: session.repoRoot)
+        return GroupBox {
+            VStack(alignment: .leading, spacing: 6) {
+                Label(
+                    report.launchReady ? "부팅 준비 완료" : "부팅 차단 \(report.launchBlockers.count)건",
+                    systemImage: report.launchReady ? "checkmark.circle.fill" : "xmark.octagon.fill"
+                )
+                .foregroundColor(report.launchReady ? .green : .red)
+                Text(report.releaseReady
+                     ? "제품 출시 게이트도 통과했습니다."
+                     : "제품 출시 차단 \(report.releaseBlockers.count)건 — 개발 VM 부팅 가능 여부와 별도입니다.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                ForEach(report.issues.prefix(5)) { issue in
+                    Text("[\(issue.scope.rawValue)] \(issue.summary)")
+                        .font(.caption)
+                        .foregroundColor(issue.scope == .launch ? .red : .orange)
+                }
+                ForEach(report.productLimitations, id: \.self) { limitation in
+                    Text("[v1 limitation] \(limitation)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(6)
+        } label: {
+            Label("Windows HVF Readiness", systemImage: "checklist")
         }
     }
 
@@ -251,17 +284,7 @@ struct HvfEngineView: View {
     }
 
     private var bootConfigReady: Bool {
-        guard !targetDiskPath.isEmpty, !uefiVarsPath.isEmpty,
-              !evidenceDir.isEmpty, !ctlFilePath.isEmpty,
-              FileManager.default.fileExists(atPath: targetDiskPath),
-              FileManager.default.fileExists(atPath: uefiVarsPath) else { return false }
-        if shareEnabled {
-            var isDirectory: ObjCBool = false
-            guard !shareGuestDir.isEmpty,
-                  FileManager.default.fileExists(atPath: shareHostDir, isDirectory: &isDirectory),
-                  isDirectory.boolValue else { return false }
-        }
-        return true
+        currentConfig().readiness(repoRoot: session.repoRoot).launchReady
     }
 
     private func pathRow(_ label: String, text: Binding<String>, chooseDirectory: Bool) -> some View {
@@ -316,7 +339,10 @@ struct HvfEngineView: View {
                         virtioNet: virtioNet,
                         virtioGpu3d: virtioGpu3d,
                         nvmeBufferedIO: nvmeBufferedIO,
-                        ctlFilePath: ctlFilePath)
+                        ctlFilePath: ctlFilePath,
+                        vtpmStateDir: session.config.vtpmStateDir,
+                        swtpmBin: session.config.swtpmBin,
+                        vtpmKeyID: session.config.vtpmKeyID)
     }
 
     private func loadStateFromSession() {

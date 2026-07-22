@@ -41,6 +41,9 @@ pub const ACPI_TABLE_FILE: &str = "etc/acpi/tables";
 pub const ACPI_RSDP_FILE: &str = "etc/acpi/rsdp";
 /// QEMU fw_cfg file carrying loader/linker commands.
 pub const ACPI_LOADER_FILE: &str = "etc/table-loader";
+/// QEMU-compatible fw_cfg file allocated as the TPM 2.0 measured-boot log.
+pub const ACPI_TPM_LOG_FILE: &str = "etc/tpm/log";
+pub const TPM_LOG_AREA_MINIMUM_SIZE: usize = 64 * 1024;
 
 /// The three blobs the firmware fetches from `fw_cfg`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,6 +62,9 @@ pub struct AcpiBlobs {
     /// `etc/table-loader` — QEMU loader commands that allocate the two files,
     /// relocate all table-internal pointers, and compute final ACPI checksums.
     pub loader: Vec<u8>,
+    /// Zero-initialized firmware-writable measured-boot log allocation. It is
+    /// present only when the TPM device is advertised.
+    pub tpm_log: Option<Vec<u8>>,
 }
 
 /// One-byte ACPI checksum: the value that makes the sum of every byte in
@@ -151,10 +157,20 @@ const FADT_ARM_BOOT_PSCI_USE_HVC: u16 = 1 << 1;
 
 // ---- Builder ----------------------------------------------------------------
 
-/// Build the `etc/acpi/rsdp` and `etc/acpi/tables` blobs for a `cpu_count`-CPU
-/// guest. Panics if `cpu_count` exceeds what the GICv3 redistributor window can
-/// host (mirrors [`crate::dtb::build_virt_fdt`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AcpiDeviceConfig {
+    pub tpm_tis_present: bool,
+}
+
+/// Build the ACPI blobs for the default device set.
 pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
+    build_acpi_with_devices(cpu_count, AcpiDeviceConfig::default())
+}
+
+/// Build the `etc/acpi/rsdp` and `etc/acpi/tables` blobs for a `cpu_count`-CPU
+/// guest and an explicit optional-device set. Panics if `cpu_count` exceeds
+/// what the GICv3 redistributor window can host.
+pub fn build_acpi_with_devices(cpu_count: u64, devices: AcpiDeviceConfig) -> AcpiBlobs {
     assert!(cpu_count >= 1, "ACPI requires at least one CPU");
     assert!(
         machine::redist_fits(cpu_count),
@@ -167,20 +183,22 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     // via etc/table-loader), but internal pointers must be self-consistent.
     const TABLES_BASE: u64 = 0;
 
-    let dsdt = build_dsdt(cpu_count);
+    let dsdt = build_dsdt(cpu_count, devices);
     let madt = build_madt(cpu_count);
     let pptt = build_pptt(cpu_count);
     let gtdt = build_gtdt();
     let mcfg = build_mcfg();
     let spcr = build_spcr();
     let dbg2 = build_dbg2();
+    let tpm2 = devices.tpm_tis_present.then(build_tpm2);
 
     // The XSDT references FADT/MADT/PPTT/GTDT/MCFG/SPCR/DBG2. The FADT
     // references the DSDT. Compute offsets in concatenation order: XSDT first,
     // then the rest. (Order within the blob is a free choice; we keep XSDT first
     // so its address is easy to reason about, then DSDT, then the XSDT-listed
     // tables.)
-    let xsdt_len = xsdt_len_for(7);
+    let xsdt_entry_count = 7 + usize::from(tpm2.is_some());
+    let xsdt_len = xsdt_len_for(xsdt_entry_count);
     let off_xsdt = 0u64;
     let off_dsdt = off_xsdt + xsdt_len;
     let off_fadt = off_dsdt + dsdt.len() as u64;
@@ -190,11 +208,12 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     let off_mcfg = off_gtdt + gtdt.len() as u64;
     let off_spcr = off_mcfg + mcfg.len() as u64;
     let off_dbg2 = off_spcr + spcr.len() as u64;
+    let off_tpm2 = tpm2.as_ref().map(|_| off_dbg2 + dbg2.len() as u64);
 
     let fadt = build_fadt(TABLES_BASE + off_dsdt);
     debug_assert_eq!(fadt.len() as u64, fadt_len());
 
-    let xsdt = build_xsdt(&[
+    let mut xsdt_entries = vec![
         TABLES_BASE + off_fadt,
         TABLES_BASE + off_madt,
         TABLES_BASE + off_pptt,
@@ -202,10 +221,14 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
         TABLES_BASE + off_mcfg,
         TABLES_BASE + off_spcr,
         TABLES_BASE + off_dbg2,
-    ]);
+    ];
+    if let Some(offset) = off_tpm2 {
+        xsdt_entries.push(TABLES_BASE + offset);
+    }
+    let xsdt = build_xsdt(&xsdt_entries);
     debug_assert_eq!(xsdt.len() as u64, xsdt_len);
 
-    let table_spans = [
+    let mut table_spans = vec![
         TableSpan::new(off_xsdt, xsdt.len() as u64),
         TableSpan::new(off_dsdt, dsdt.len() as u64),
         TableSpan::new(off_fadt, fadt.len() as u64),
@@ -216,6 +239,9 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
         TableSpan::new(off_spcr, spcr.len() as u64),
         TableSpan::new(off_dbg2, dbg2.len() as u64),
     ];
+    if let (Some(offset), Some(table)) = (off_tpm2, tpm2.as_ref()) {
+        table_spans.push(TableSpan::new(offset, table.len() as u64));
+    }
 
     let mut tables = Vec::new();
     tables.extend_from_slice(&xsdt);
@@ -227,6 +253,9 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
     tables.extend_from_slice(&mcfg);
     tables.extend_from_slice(&spcr);
     tables.extend_from_slice(&dbg2);
+    if let Some(table) = tpm2.as_ref() {
+        tables.extend_from_slice(table);
+    }
 
     let mut rsdp = build_rsdp(TABLES_BASE + off_xsdt);
     let loader = build_table_loader(
@@ -236,9 +265,8 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
             xsdt: off_xsdt,
             fadt: off_fadt,
             table_spans: &table_spans,
-            xsdt_entries: &[
-                off_fadt, off_madt, off_pptt, off_gtdt, off_mcfg, off_spcr, off_dbg2,
-            ],
+            xsdt_entries: &xsdt_entries,
+            tpm2_log_area_start: off_tpm2.map(|offset| offset + TPM2_LOG_AREA_START_OFFSET),
         },
     );
 
@@ -246,6 +274,9 @@ pub fn build_acpi(cpu_count: u64) -> AcpiBlobs {
         rsdp,
         tables,
         loader,
+        tpm_log: devices
+            .tpm_tis_present
+            .then(|| vec![0; TPM_LOG_AREA_MINIMUM_SIZE]),
     }
 }
 
@@ -269,6 +300,7 @@ struct LoaderLayout<'a> {
     fadt: u64,
     table_spans: &'a [TableSpan],
     xsdt_entries: &'a [u64],
+    tpm2_log_area_start: Option<u64>,
 }
 
 const LOADER_ENTRY_LEN: usize = 128;
@@ -289,6 +321,7 @@ const RSDP_V1_CHECKSUM_OFFSET: u32 = 8;
 const RSDP_EXT_CHECKSUM_OFFSET: u32 = 32;
 const RSDP_XSDT_OFFSET: u32 = 24;
 const FADT_X_DSDT_OFFSET: u32 = 140;
+const TPM2_LOG_AREA_START_OFFSET: u64 = 68;
 
 fn build_table_loader(rsdp: &mut [u8], tables: &mut [u8], layout: LoaderLayout<'_>) -> Vec<u8> {
     let mut loader = Vec::new();
@@ -305,6 +338,9 @@ fn build_table_loader(rsdp: &mut [u8], tables: &mut [u8], layout: LoaderLayout<'
         TABLE_ALLOC_ALIGN,
         LOADER_ZONE_HIGH,
     ));
+    if layout.tpm2_log_area_start.is_some() {
+        loader.extend(alloc_entry(ACPI_TPM_LOG_FILE, 1, LOADER_ZONE_HIGH));
+    }
 
     loader.extend(add_pointer_entry(
         ACPI_TABLE_FILE,
@@ -328,6 +364,14 @@ fn build_table_loader(rsdp: &mut [u8], tables: &mut [u8], layout: LoaderLayout<'
         8,
         ACPI_TABLE_FILE,
     ));
+    if let Some(offset) = layout.tpm2_log_area_start {
+        loader.extend(add_pointer_entry(
+            ACPI_TABLE_FILE,
+            u32_checked(offset),
+            8,
+            ACPI_TPM_LOG_FILE,
+        ));
+    }
 
     for span in layout.table_spans {
         tables[(span.start + ACPI_CHECKSUM_OFFSET) as usize] = 0;
@@ -540,14 +584,20 @@ const AML_STRING_PREFIX: u8 = 0x0D;
 const AML_NAME_OP: u8 = 0x08;
 const AML_SCOPE_OP: u8 = 0x10;
 const AML_BUFFER_OP: u8 = 0x11;
+const AML_PACKAGE_OP: u8 = 0x12;
 const AML_METHOD_OP: u8 = 0x14;
 const AML_EXT_OP: u8 = 0x5B;
 const AML_DEVICE_OP: u8 = 0x82;
+const AML_OPERATION_REGION_OP: u8 = 0x80;
+const AML_FIELD_OP: u8 = 0x81;
 const AML_LOCAL0_OP: u8 = 0x60;
 const AML_ARG0_OP: u8 = 0x68;
 const AML_STORE_OP: u8 = 0x70;
+const AML_ADD_OP: u8 = 0x72;
 const AML_AND_OP: u8 = 0x7B;
 const AML_OR_OP: u8 = 0x7D;
+const AML_DEREF_OF_OP: u8 = 0x83;
+const AML_INDEX_OP: u8 = 0x88;
 const AML_CREATE_DWORD_FIELD_OP: u8 = 0x8A;
 const AML_LNOT_OP: u8 = 0x92;
 const AML_LEQUAL_OP: u8 = 0x93;
@@ -561,6 +611,12 @@ const EISA_PNP0C02: [u8; 4] = [0x41, 0xD0, 0x0C, 0x02];
 const EISA_PNP0C0C: [u8; 4] = [0x41, 0xD0, 0x0C, 0x0C];
 const PCI_HOST_BRIDGE_OSC_UUID: [u8; 16] = [
     0x5B, 0x4D, 0xDB, 0x33, 0xF7, 0x1F, 0x1C, 0x40, 0x96, 0x57, 0x74, 0x41, 0xC0, 0x3D, 0xD7, 0x66,
+];
+const TPM_PPI_DSM_UUID: [u8; 16] = [
+    0xA6, 0xFA, 0xDD, 0x3D, 0x1B, 0x36, 0xB4, 0x4E, 0xA4, 0x24, 0x8D, 0x10, 0x08, 0x9D, 0x16, 0x53,
+];
+const TPM_RESET_ATTACK_DSM_UUID: [u8; 16] = [
+    0xED, 0x54, 0x60, 0x37, 0x13, 0xCC, 0x75, 0x46, 0x90, 0x1C, 0x47, 0x56, 0xD7, 0xF2, 0xD4, 0x5D,
 ];
 
 fn aml_pkg_length(payload_len: usize) -> Vec<u8> {
@@ -606,6 +662,17 @@ fn aml_name_string(name: &[u8; 4], value: &str) -> Vec<u8> {
     out
 }
 
+fn aml_string(value: &str) -> Vec<u8> {
+    assert!(
+        !value.as_bytes().contains(&0),
+        "AML strings are NUL-terminated"
+    );
+    let mut out = vec![AML_STRING_PREFIX];
+    out.extend_from_slice(value.as_bytes());
+    out.push(0);
+    out
+}
+
 fn aml_name_eisa(name: &[u8; 4], encoded: [u8; 4]) -> Vec<u8> {
     let mut out = vec![AML_NAME_OP];
     out.extend_from_slice(name);
@@ -640,6 +707,38 @@ fn aml_name_buffer(name: &[u8; 4], bytes: &[u8]) -> Vec<u8> {
     out
 }
 
+fn aml_buffer(bytes: &[u8]) -> Vec<u8> {
+    assert!(bytes.len() <= u8::MAX as usize, "small AML buffer expected");
+    let mut out = vec![AML_BUFFER_OP];
+    out.extend(aml_pkg_length(2 + bytes.len()));
+    out.push(AML_BYTE_PREFIX);
+    out.push(bytes.len() as u8);
+    out.extend_from_slice(bytes);
+    out
+}
+
+fn aml_package(elements: &[Vec<u8>]) -> Vec<u8> {
+    assert!(
+        elements.len() <= u8::MAX as usize,
+        "small AML package expected"
+    );
+    let payload_len = 1 + elements.iter().map(Vec::len).sum::<usize>();
+    let mut out = vec![AML_PACKAGE_OP];
+    out.extend(aml_pkg_length(payload_len));
+    out.push(elements.len() as u8);
+    for element in elements {
+        out.extend_from_slice(element);
+    }
+    out
+}
+
+fn aml_name_package(name: &[u8; 4], elements: &[Vec<u8>]) -> Vec<u8> {
+    let mut out = vec![AML_NAME_OP];
+    out.extend_from_slice(name);
+    out.extend(aml_package(elements));
+    out
+}
+
 fn aml_name_ref(name: &[u8; 4]) -> Vec<u8> {
     name.to_vec()
 }
@@ -653,12 +752,23 @@ fn aml_local0() -> Vec<u8> {
     vec![AML_LOCAL0_OP]
 }
 
+fn aml_local(n: u8) -> Vec<u8> {
+    assert!(n <= 7, "AML has only Local0..Local7");
+    vec![AML_LOCAL0_OP + n]
+}
+
 fn aml_byte(value: u8) -> Vec<u8> {
     match value {
         0 => vec![AML_ZERO_OP],
         1 => vec![AML_ONE_OP],
         _ => vec![AML_BYTE_PREFIX, value],
     }
+}
+
+fn aml_dword(value: u32) -> Vec<u8> {
+    let mut out = vec![AML_DWORD_PREFIX];
+    out.extend_from_slice(&value.to_le_bytes());
+    out
 }
 
 fn aml_uuid_buffer(bytes: &[u8; 16]) -> Vec<u8> {
@@ -682,6 +792,26 @@ fn aml_store(source: &[u8], target: &[u8]) -> Vec<u8> {
     let mut out = vec![AML_STORE_OP];
     out.extend_from_slice(source);
     out.extend_from_slice(target);
+    out
+}
+
+fn aml_index(source: &[u8], index: &[u8], target: &[u8]) -> Vec<u8> {
+    let mut out = vec![AML_INDEX_OP];
+    out.extend_from_slice(source);
+    out.extend_from_slice(index);
+    out.extend_from_slice(target);
+    out
+}
+
+fn aml_deref_of(reference: &[u8]) -> Vec<u8> {
+    let mut out = vec![AML_DEREF_OF_OP];
+    out.extend_from_slice(reference);
+    out
+}
+
+fn aml_call1(name: &[u8; 4], arg: &[u8]) -> Vec<u8> {
+    let mut out = name.to_vec();
+    out.extend_from_slice(arg);
     out
 }
 
@@ -725,6 +855,37 @@ fn aml_return(value: &[u8]) -> Vec<u8> {
     let mut out = vec![AML_RETURN_OP];
     out.extend_from_slice(value);
     out
+}
+
+fn aml_operation_region(name: &[u8; 4], base: &[u8], length: &[u8]) -> Vec<u8> {
+    let mut out = vec![AML_EXT_OP, AML_OPERATION_REGION_OP];
+    out.extend_from_slice(name);
+    out.push(0x00); // SystemMemory
+    out.extend_from_slice(base);
+    out.extend_from_slice(length);
+    out
+}
+
+fn aml_field(name: &[u8; 4], flags: u8, fields: &[(&[u8; 4], usize)]) -> Vec<u8> {
+    let mut field_list = Vec::new();
+    for (field_name, bit_length) in fields {
+        field_list.extend_from_slice(*field_name);
+        field_list.extend(aml_field_length(*bit_length));
+    }
+    let mut out = vec![AML_EXT_OP, AML_FIELD_OP];
+    out.extend(aml_pkg_length(name.len() + 1 + field_list.len()));
+    out.extend_from_slice(name);
+    out.push(flags);
+    out.extend(field_list);
+    out
+}
+
+fn aml_field_length(value: usize) -> Vec<u8> {
+    if value <= 0x3f {
+        return vec![value as u8];
+    }
+    assert!(value <= 0x0fff, "small AML field expected");
+    vec![0x40 | (value as u8 & 0x0f), (value >> 4) as u8]
 }
 
 fn aml_scope(name: &[u8; 4], body: &[u8]) -> Vec<u8> {
@@ -967,11 +1128,228 @@ fn build_ecam_reserved_dsdt_device() -> Vec<u8> {
     aml_device(b"RES0", &body)
 }
 
+fn build_tpm_tis_dsdt_device() -> Vec<u8> {
+    let mut crs = Vec::new();
+    crs.extend(resource_memory32_fixed(
+        machine::TPM_TIS.base,
+        machine::TPM_TIS.size,
+    ));
+    crs.extend(resource_end_tag());
+
+    let mut body = Vec::new();
+    body.extend(aml_name_string(b"_HID", "MSFT0101"));
+    body.extend(aml_name_string(b"_STR", "TPM 2.0 Device"));
+    body.extend(aml_name_simple(b"_UID", AML_ZERO_OP));
+    body.extend(aml_name_byte(b"_STA", 0x0f));
+    body.extend(aml_name_buffer(b"_CRS", &crs));
+    body.extend(build_tpm_ppi_aml());
+    aml_device(b"TPM0", &body)
+}
+
+/// TCG PPI 1.3 `_DSM` and the reset-attack-mitigation `_DSM`, following
+/// QEMU's guest ABI. The methods exchange state through the adjacent 0x400-byte
+/// [`crate::tpm_ppi`] shared-memory window.
+fn build_tpm_ppi_aml() -> Vec<u8> {
+    let zero = vec![AML_ZERO_OP];
+    let one = vec![AML_ONE_OP];
+    let pprq = aml_name_ref(b"PPRQ");
+    let pprm = aml_name_ref(b"PPRM");
+    let tpm2 = aml_name_ref(b"TPM2");
+    let tpm3 = aml_name_ref(b"TPM3");
+    let op = aml_local(0);
+    let op_flags = aml_local(1);
+
+    let mut out = Vec::new();
+    out.extend(aml_operation_region(
+        b"TPP2",
+        &aml_dword((machine::TPM_PPI.base + 0x100) as u32),
+        &aml_byte(0x5a),
+    ));
+    out.extend(aml_field(
+        b"TPP2",
+        0x00, // AnyAcc, NoLock, Preserve
+        &[
+            (b"PPIN", 8),
+            (b"PPIP", 32),
+            (b"PPRP", 32),
+            (b"PPRQ", 32),
+            (b"PPRM", 32),
+            (b"LPPR", 32),
+        ],
+    ));
+    out.extend(aml_operation_region(
+        b"TPP3",
+        &aml_dword((machine::TPM_PPI.base + crate::tpm_ppi::MOVV_OFFSET as u64) as u32),
+        &one,
+    ));
+    out.extend(aml_field(
+        b"TPP3",
+        0x01, // ByteAcc, NoLock, Preserve
+        &[(b"MOVV", 8)],
+    ));
+
+    // Windows cannot reliably DerefOf an indexed SystemMemory field. Match
+    // QEMU by creating a one-byte dynamic OperationRegion for FUNC[operation].
+    let mut tpfn = Vec::new();
+    let upper_bits = aml_binary_op(AML_AND_OP, &aml_arg(0), &aml_dword(0xffff_ff00), &zero);
+    tpfn.extend(aml_if(
+        &aml_not_equal(&upper_bits, &zero),
+        &aml_return(&zero),
+    ));
+    let func_addr = aml_binary_op(
+        AML_ADD_OP,
+        &aml_dword(machine::TPM_PPI.base as u32),
+        &aml_arg(0),
+        &zero,
+    );
+    tpfn.extend(aml_operation_region(b"TPP1", &func_addr, &one));
+    tpfn.extend(aml_field(
+        b"TPP1",
+        0x01, // ByteAcc, NoLock, Preserve
+        &[(b"TPPF", 8)],
+    ));
+    tpfn.extend(aml_return(&aml_name_ref(b"TPPF")));
+    out.extend(aml_method(b"TPFN", 1, true, &tpfn));
+
+    out.extend(aml_name_package(b"TPM2", &[zero.clone(), zero.clone()]));
+    out.extend(aml_name_package(
+        b"TPM3",
+        &[zero.clone(), zero.clone(), zero.clone()],
+    ));
+
+    let arguments = aml_arg(3);
+    let argument0 = aml_deref_of(&aml_index(&arguments, &zero, &zero));
+    let mut ppi = Vec::new();
+    ppi.extend(aml_if(
+        &aml_equal(&aml_arg(2), &zero),
+        &aml_return(&aml_buffer(&[0xff, 0x01])),
+    ));
+    ppi.extend(aml_if(
+        &aml_equal(&aml_arg(2), &one),
+        &aml_return(&aml_string("1.3")),
+    ));
+
+    let mut submit = Vec::new();
+    submit.extend(aml_store(&argument0, &op));
+    submit.extend(aml_store(&aml_call1(b"TPFN", &op), &op_flags));
+    let masked_flags = aml_binary_op(
+        AML_AND_OP,
+        &op_flags,
+        &aml_byte(crate::tpm_ppi::FUNC_MASK),
+        &zero,
+    );
+    submit.extend(aml_if(&aml_equal(&masked_flags, &zero), &aml_return(&one)));
+    submit.extend(aml_store(&op, &pprq));
+    submit.extend(aml_store(&zero, &pprm));
+    submit.extend(aml_return(&zero));
+    ppi.extend(aml_if(&aml_equal(&aml_arg(2), &aml_byte(2)), &submit));
+
+    let mut pending = Vec::new();
+    let tpm2_request = aml_index(&tpm2, &one, &zero);
+    let mut revision1 = aml_store(&pprq, &tpm2_request);
+    revision1.extend(aml_return(&tpm2));
+    pending.extend(aml_if(&aml_equal(&aml_arg(1), &one), &revision1));
+    let tpm3_request = aml_index(&tpm3, &one, &zero);
+    let tpm3_parameter = aml_index(&tpm3, &aml_byte(2), &zero);
+    let mut revision2 = aml_store(&pprq, &tpm3_request);
+    revision2.extend(aml_store(&pprm, &tpm3_parameter));
+    revision2.extend(aml_return(&tpm3));
+    pending.extend(aml_if(&aml_equal(&aml_arg(1), &aml_byte(2)), &revision2));
+    ppi.extend(aml_if(&aml_equal(&aml_arg(2), &aml_byte(3)), &pending));
+    ppi.extend(aml_if(
+        &aml_equal(&aml_arg(2), &aml_byte(4)),
+        &aml_return(&aml_byte(2)),
+    ));
+
+    let mut response = aml_store(&aml_name_ref(b"LPPR"), &tpm3_request);
+    response.extend(aml_store(&aml_name_ref(b"PPRP"), &tpm3_parameter));
+    response.extend(aml_return(&tpm3));
+    ppi.extend(aml_if(&aml_equal(&aml_arg(2), &aml_byte(5)), &response));
+    ppi.extend(aml_if(
+        &aml_equal(&aml_arg(2), &aml_byte(6)),
+        &aml_return(&aml_byte(3)),
+    ));
+
+    let mut submit2 = Vec::new();
+    submit2.extend(aml_store(&argument0, &op));
+    submit2.extend(aml_store(&aml_call1(b"TPFN", &op), &op_flags));
+    let masked_flags = aml_binary_op(
+        AML_AND_OP,
+        &op_flags,
+        &aml_byte(crate::tpm_ppi::FUNC_MASK),
+        &zero,
+    );
+    submit2.extend(aml_if(&aml_equal(&masked_flags, &zero), &aml_return(&one)));
+    submit2.extend(aml_if(
+        &aml_equal(&masked_flags, &aml_byte(crate::tpm_ppi::FUNC_BLOCKED)),
+        &aml_return(&aml_byte(3)),
+    ));
+    submit2.extend(aml_store(&op, &pprq));
+    let mut revision1 = aml_store(&zero, &pprm);
+    revision1.extend(aml_return(&zero));
+    submit2.extend(aml_if(&aml_equal(&aml_arg(1), &one), &revision1));
+    let argument1 = aml_deref_of(&aml_index(&arguments, &one, &zero));
+    let mut revision2 = aml_store(&argument1, &pprm);
+    revision2.extend(aml_return(&zero));
+    submit2.extend(aml_if(&aml_equal(&aml_arg(1), &aml_byte(2)), &revision2));
+    submit2.extend(aml_return(&zero));
+    ppi.extend(aml_if(&aml_equal(&aml_arg(2), &aml_byte(7)), &submit2));
+
+    let mut confirmation = aml_store(&argument0, &op);
+    confirmation.extend(aml_store(&aml_call1(b"TPFN", &op), &op_flags));
+    confirmation.extend(aml_return(&aml_binary_op(
+        AML_AND_OP,
+        &op_flags,
+        &aml_byte(crate::tpm_ppi::FUNC_MASK),
+        &zero,
+    )));
+    ppi.extend(aml_if(&aml_equal(&aml_arg(2), &aml_byte(8)), &confirmation));
+    ppi.extend(aml_return(&aml_buffer(&[0])));
+
+    let mut dsm = aml_if(
+        &aml_equal(&aml_arg(0), &aml_uuid_buffer(&TPM_PPI_DSM_UUID)),
+        &ppi,
+    );
+
+    let mut reset_attack = Vec::new();
+    reset_attack.extend(aml_if(
+        &aml_equal(&aml_arg(2), &zero),
+        &aml_return(&aml_buffer(&[0x03])),
+    ));
+    let mut set_movv = aml_store(&argument0, &aml_name_ref(b"MOVV"));
+    set_movv.extend(aml_return(&zero));
+    reset_attack.extend(aml_if(&aml_equal(&aml_arg(2), &one), &set_movv));
+    dsm.extend(aml_if(
+        &aml_equal(&aml_arg(0), &aml_uuid_buffer(&TPM_RESET_ATTACK_DSM_UUID)),
+        &reset_attack,
+    ));
+    dsm.extend(aml_return(&aml_buffer(&[0])));
+    out.extend(aml_method(b"_DSM", 4, true, &dsm));
+    out
+}
+
+/// TPM2 ACPI table for a FIFO/TIS device, matching QEMU's revision-4 client
+/// table and the TCG ACPI layout. The loader relocates LASA (offset 68) to the
+/// separately allocated `etc/tpm/log` buffer.
+fn build_tpm2() -> Vec<u8> {
+    let mut t = Table::new(b"TPM2", 4);
+    t.u16(0); // Platform Class = client
+    t.u16(0); // Reserved
+    t.u64(0); // Control Area address: unused for FIFO/TIS
+    t.u32(6); // Start Method = MMIO
+    t.pad(12); // Platform-specific start-method parameters
+    t.u32(TPM_LOG_AREA_MINIMUM_SIZE as u32); // LAML
+    t.u64(0); // LASA, relocated by the fw_cfg table loader
+    let table = t.finish();
+    debug_assert_eq!(table.len(), 76);
+    table
+}
+
 /// QEMU-like DSDT surface for devices Linux/Windows enumerate through ACPI.
 /// MADT/GTDT/MCFG/SPCR/DBG2 carry the architectural tables, while this AML names
 /// the platform devices the OS driver core expects to bind (`ACPI0007` CPU
 /// devices, `ARMH0011` PL011, `PNP0A08` PCI root bridge and a power button).
-fn build_dsdt(cpu_count: u64) -> Vec<u8> {
+fn build_dsdt(cpu_count: u64, devices: AcpiDeviceConfig) -> Vec<u8> {
     let mut sb = Vec::new();
     for cpu in 0..cpu_count {
         sb.extend(build_cpu_dsdt_device(cpu));
@@ -980,6 +1358,9 @@ fn build_dsdt(cpu_count: u64) -> Vec<u8> {
     sb.extend(build_pci_root_dsdt_device());
     sb.extend(build_ecam_reserved_dsdt_device());
     sb.extend(build_power_button_dsdt_device());
+    if devices.tpm_tis_present {
+        sb.extend(build_tpm_tis_dsdt_device());
+    }
 
     let mut t = Table::new(b"DSDT", 2);
     t.bytes.extend(aml_scope(b"_SB_", &sb));
@@ -1280,6 +1661,8 @@ mod tests {
     fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
         haystack.windows(needle.len()).any(|w| w == needle)
     }
+    const TEST_TPM_LOG_BASE: u64 = 0x4900_0000;
+
     fn replay_loader(blobs: &AcpiBlobs) -> (Vec<u8>, Vec<u8>) {
         const TABLES_BASE: u64 = 0x4800_0000;
         const RSDP_BASE: u64 = 0x000F_0000;
@@ -1305,6 +1688,14 @@ mod tests {
                             assert_eq!(zone, LOADER_ZONE_HIGH);
                             tables = blobs.tables.clone();
                         }
+                        ACPI_TPM_LOG_FILE => {
+                            assert_eq!(align, 1);
+                            assert_eq!(zone, LOADER_ZONE_HIGH);
+                            assert_eq!(
+                                blobs.tpm_log.as_ref().map(Vec::len),
+                                Some(TPM_LOG_AREA_MINIMUM_SIZE)
+                            );
+                        }
                         other => panic!("unexpected ACPI allocation {other}"),
                     }
                 }
@@ -1317,6 +1708,10 @@ mod tests {
                     let (pointee_base, pointee_size) = match pointee_file.as_str() {
                         ACPI_TABLE_FILE => (TABLES_BASE, tables.len()),
                         ACPI_RSDP_FILE => (RSDP_BASE, rsdp.len()),
+                        ACPI_TPM_LOG_FILE => (
+                            TEST_TPM_LOG_BASE,
+                            blobs.tpm_log.as_ref().expect("TPM log allocation").len(),
+                        ),
                         other => panic!("unexpected pointer source {other}"),
                     };
                     let target = match pointer_file.as_str() {
@@ -1632,6 +2027,75 @@ mod tests {
             ),
             "DSDT must reserve the ECAM aperture through PNP0C02"
         );
+    }
+
+    #[test]
+    fn optional_tpm_tis_has_windows_hid_and_mmio_resource() {
+        let blobs = build_acpi_with_devices(
+            2,
+            AcpiDeviceConfig {
+                tpm_tis_present: true,
+            },
+        );
+        let tables = split_tables(&blobs.tables);
+        let dsdt = find(&tables, "DSDT");
+        for needle in [
+            b"TPM0".as_slice(),
+            b"MSFT0101".as_slice(),
+            b"TPM 2.0 Device".as_slice(),
+        ] {
+            assert!(contains_bytes(dsdt, needle), "DSDT missing TPM marker");
+        }
+        assert!(contains_bytes(
+            dsdt,
+            &resource_memory32_fixed(machine::TPM_TIS.base, machine::TPM_TIS.size)
+        ));
+        for marker in [
+            b"_DSM".as_slice(),
+            b"TPFN".as_slice(),
+            b"PPRQ".as_slice(),
+            b"PPRM".as_slice(),
+            b"MOVV".as_slice(),
+        ] {
+            assert!(contains_bytes(dsdt, marker), "DSDT missing PPI AML marker");
+        }
+        assert!(contains_bytes(dsdt, &TPM_PPI_DSM_UUID));
+        assert!(contains_bytes(dsdt, &TPM_RESET_ATTACK_DSM_UUID));
+        assert!(contains_bytes(
+            dsdt,
+            &aml_dword((machine::TPM_PPI.base + 0x100) as u32)
+        ));
+    }
+
+    #[test]
+    fn optional_tpm_emits_tpm2_table_and_relocated_event_log() {
+        let blobs = build_acpi_with_devices(
+            2,
+            AcpiDeviceConfig {
+                tpm_tis_present: true,
+            },
+        );
+        let log = blobs.tpm_log.as_ref().expect("TPM log must be present");
+        assert_eq!(log.len(), TPM_LOG_AREA_MINIMUM_SIZE);
+        assert!(log.iter().all(|byte| *byte == 0));
+
+        let (_, relocated_tables) = replay_loader(&blobs);
+        let tables = split_tables(&relocated_tables);
+        let tpm2 = find(&tables, "TPM2");
+        assert_eq!(tpm2.len(), 76);
+        assert_eq!(tpm2[8], 4, "TPM2 table revision");
+        assert_eq!(le16(tpm2, 36), 0, "client platform class");
+        assert_eq!(le64(tpm2, 40), 0, "FIFO has no control area");
+        assert_eq!(le32(tpm2, 48), 6, "MMIO start method");
+        assert_eq!(le32(tpm2, 64) as usize, TPM_LOG_AREA_MINIMUM_SIZE, "LAML");
+        assert_eq!(le64(tpm2, 68), TEST_TPM_LOG_BASE, "relocated LASA");
+        assert!(sums_to_zero(tpm2));
+
+        let xsdt = find(&tables, "XSDT");
+        assert_eq!((xsdt.len() - ACPI_HEADER_LEN) / 8, 8);
+        assert!(blobs.loader.chunks_exact(LOADER_ENTRY_LEN).any(|entry| {
+            le32(entry, 0) == LOADER_CMD_ALLOCATE && le_name(entry, 4) == ACPI_TPM_LOG_FILE
+        }));
     }
 
     #[test]

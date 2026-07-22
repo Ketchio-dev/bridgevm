@@ -127,9 +127,33 @@ pub trait VirtioGpu3dBackend: Send {
     ) -> bool {
         false
     }
+    /// GPU-blit the scanout resource into a host-shareable IOSurface and
+    /// return the surface's global ID. Default: unsupported.
+    fn scanout_blit_iosurface(
+        &mut self,
+        _resource_id: u32,
+        _width: u32,
+        _height: u32,
+    ) -> Option<u32> {
+        None
+    }
+    /// Checksum the IOSurface contents (validation only — stalls the GPU).
+    fn scanout_iosurface_checksum(&mut self) -> Option<u64> {
+        None
+    }
+    /// Dump the raw IOSurface pixels to a file (diagnostics only).
+    fn scanout_iosurface_dump(&mut self, _path: &std::path::Path) -> bool {
+        false
+    }
     fn destroy_resource(&mut self, resource_id: u32);
     fn create_fence(&mut self, ctx_id: u32, ring_idx: u8, fence_id: u64) -> bool;
     fn poll_fences(&mut self);
+    /// Poll after one complete virtqueue notification batch. Backends that
+    /// proxy renderer calls to another thread may keep idle polling local but
+    /// must preserve this explicit batch boundary.
+    fn poll_fences_after_queue(&mut self) {
+        self.poll_fences();
+    }
     fn drain_completed_fences_into(&mut self, out: &mut Vec<CompletedFence>);
     fn drain_completed_fences(&mut self) -> Vec<CompletedFence> {
         let mut completed = Vec::new();
@@ -298,12 +322,37 @@ pub struct VirtioGpu3d {
     local_3d_backing: BTreeMap<u32, Vec<BlobMemEntry>>,
     blob_resources: BTreeMap<u32, BlobResource>,
     mapped_intervals: BTreeMap<u64, (u64, u32)>,
+    destroyed_blob_mapped_ids: BTreeSet<u32>,
+    destroyed_blob_unmapped_ids: BTreeSet<u32>,
+    unmap_blob_reject_counts: UnmapBlobRejectCounts,
     host_iovecs_scratch: Vec<BlobHostIovec>,
     blob_unmap_ids_scratch: Vec<u32>,
     local_copy_scratch: Vec<u8>,
     local_copy_submits: u64,
     submits: u64,
     fences_completed: u64,
+}
+
+/// Classified `RESOURCE_UNMAP_BLOB` invalid-parameter rejections. The guest
+/// driver's cleanup order determines which class fires: an unmap that arrives
+/// after `RESOURCE_UNREF` of a still-mapped blob is late-but-harmless cleanup
+/// (the host already unmapped at destroy), while `never_created` points at a
+/// real mapping-lifecycle bug or resource-id confusion.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct UnmapBlobRejectCounts {
+    pub short_request: u64,
+    pub destroyed_while_mapped: u64,
+    pub destroyed_after_unmap: u64,
+    pub never_created: u64,
+}
+
+impl UnmapBlobRejectCounts {
+    pub fn total(&self) -> u64 {
+        self.short_request
+            + self.destroyed_while_mapped
+            + self.destroyed_after_unmap
+            + self.never_created
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -387,6 +436,9 @@ impl VirtioGpu3d {
         self.unmap_all_blobs();
         self.blob_resources.clear();
         self.mapped_intervals.clear();
+        self.destroyed_blob_mapped_ids.clear();
+        self.destroyed_blob_unmapped_ids.clear();
+        self.unmap_blob_reject_counts = UnmapBlobRejectCounts::default();
         self.local_copy_scratch.clear();
         self.local_copy_submits = 0;
         self.submits = 0;
@@ -399,7 +451,14 @@ impl VirtioGpu3d {
             destroy_backend_resource = false;
         }
         self.resource_3d_info.remove(&resource_id);
-        if self.blob_resources.contains_key(&resource_id) {
+        if let Some(resource) = self.blob_resources.get(&resource_id) {
+            if resource.mapped.is_some() {
+                self.destroyed_blob_mapped_ids.insert(resource_id);
+                self.destroyed_blob_unmapped_ids.remove(&resource_id);
+            } else {
+                self.destroyed_blob_unmapped_ids.insert(resource_id);
+                self.destroyed_blob_mapped_ids.remove(&resource_id);
+            }
             self.unmap_blob_resource(resource_id);
             self.blob_resources.remove(&resource_id);
             self.mapped_intervals
@@ -486,6 +545,33 @@ impl VirtioGpu3d {
             .is_some_and(|backend| backend.scanout_read(resource_id, width, height, out))
     }
 
+    pub fn blit_3d_scanout_iosurface(
+        &mut self,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+    ) -> Option<u32> {
+        let info = self.scanout_3d_info(resource_id)?;
+        if width > info.width || height > info.height {
+            return None;
+        }
+        self.backend
+            .as_mut()
+            .and_then(|backend| backend.scanout_blit_iosurface(resource_id, width, height))
+    }
+
+    pub fn scanout_iosurface_checksum(&mut self) -> Option<u64> {
+        self.backend
+            .as_mut()
+            .and_then(|backend| backend.scanout_iosurface_checksum())
+    }
+
+    pub fn scanout_iosurface_dump(&mut self, path: &std::path::Path) -> bool {
+        self.backend
+            .as_mut()
+            .is_some_and(|backend| backend.scanout_iosurface_dump(path))
+    }
+
     pub fn attach_3d_backing(
         &mut self,
         mem: &dyn GuestMemoryMut,
@@ -546,13 +632,25 @@ impl VirtioGpu3d {
     }
 
     pub fn drain_completed_fences_into(&mut self, out: &mut Vec<CompletedFence>) {
+        self.drain_completed_fences_inner(out, false);
+    }
+
+    pub fn drain_completed_fences_after_queue_into(&mut self, out: &mut Vec<CompletedFence>) {
+        self.drain_completed_fences_inner(out, true);
+    }
+
+    fn drain_completed_fences_inner(&mut self, out: &mut Vec<CompletedFence>, after_queue: bool) {
         let Some(backend) = self.backend.as_mut() else {
             return;
         };
         // Venus on macOS retires fences synchronously: polling the backend may
         // invoke the fence callback inline, then drain_completed_fences takes
         // the callbacks queued by that poll.
-        backend.poll_fences();
+        if after_queue {
+            backend.poll_fences_after_queue();
+        } else {
+            backend.poll_fences();
+        }
         let start = out.len();
         backend.drain_completed_fences_into(out);
         self.fences_completed = self
@@ -1106,6 +1204,10 @@ impl VirtioGpu3d {
                 return;
             }
         }
+        // A reused id starts a new lifecycle; stale destroyed-id classification
+        // must not label its future late unmaps.
+        self.destroyed_blob_mapped_ids.remove(&resource_id);
+        self.destroyed_blob_unmapped_ids.remove(&resource_id);
         self.blob_resources.insert(
             resource_id,
             BlobResource {
@@ -1279,16 +1381,33 @@ impl VirtioGpu3d {
 
     fn resource_unmap_blob_into(&mut self, request: &[u8], hdr: CtrlHdr3d, out: &mut Vec<u8>) {
         if request.len() < RESOURCE_UNMAP_BLOB_LEN {
+            self.unmap_blob_reject_counts.short_request += 1;
+            venus_start_trace_unmap_blob_reject(0, "short_request");
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }
         let resource_id = read_le_u32(request, 24).unwrap_or(0);
         if !self.blob_resources.contains_key(&resource_id) {
+            let reason = if self.destroyed_blob_mapped_ids.contains(&resource_id) {
+                self.unmap_blob_reject_counts.destroyed_while_mapped += 1;
+                "already_destroyed_was_mapped"
+            } else if self.destroyed_blob_unmapped_ids.contains(&resource_id) {
+                self.unmap_blob_reject_counts.destroyed_after_unmap += 1;
+                "already_destroyed_was_unmapped"
+            } else {
+                self.unmap_blob_reject_counts.never_created += 1;
+                "never_created"
+            };
+            venus_start_trace_unmap_blob_reject(resource_id, reason);
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }
         self.unmap_blob_resource(resource_id);
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
+    }
+
+    pub fn unmap_blob_reject_counts(&self) -> UnmapBlobRejectCounts {
+        self.unmap_blob_reject_counts
     }
 
     fn unmap_blob_resource(&mut self, resource_id: u32) {
@@ -1480,6 +1599,12 @@ fn venus_start_trace_reject(what: &str, reason: &str) {
     }
 }
 
+fn venus_start_trace_unmap_blob_reject(resource_id: u32, reason: &str) {
+    if venus_start_trace_enabled() {
+        println!("venus-start: unmap_blob REJECT resource={resource_id} reason={reason}");
+    }
+}
+
 fn venus_start_trace_map_blob_reject(
     resource_id: u32,
     shm_offset: u64,
@@ -1584,9 +1709,12 @@ pub struct MockBackend {
     pub mapped: BTreeMap<u32, MappedBlob>,
     pub unmapped: Vec<u32>,
     pub scanout_reads: Vec<(u32, u32, u32)>,
+    pub scanout_blits: Vec<(u32, u32, u32)>,
     pub destroyed_resources: Vec<u32>,
     pub fences: Vec<CompletedFence>,
     pub completed: Vec<CompletedFence>,
+    pub fence_polls: u64,
+    pub fence_after_queue_polls: u64,
     pub reject_fence_ring: Option<u8>,
     pub reject_legacy_3d: bool,
 }
@@ -1732,6 +1860,14 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
         true
     }
 
+    fn scanout_blit_iosurface(&mut self, resource_id: u32, width: u32, height: u32) -> Option<u32> {
+        self.lock()
+            .unwrap()
+            .scanout_blits
+            .push((resource_id, width, height));
+        Some(42)
+    }
+
     fn destroy_resource(&mut self, resource_id: u32) {
         self.lock().unwrap().destroyed_resources.push(resource_id);
     }
@@ -1746,7 +1882,13 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
         inner.reject_fence_ring != Some(ring_idx)
     }
 
-    fn poll_fences(&mut self) {}
+    fn poll_fences(&mut self) {
+        self.lock().unwrap().fence_polls += 1;
+    }
+
+    fn poll_fences_after_queue(&mut self) {
+        self.lock().unwrap().fence_after_queue_polls += 1;
+    }
 
     fn drain_completed_fences_into(&mut self, out: &mut Vec<CompletedFence>) {
         out.append(&mut self.lock().unwrap().completed);
@@ -1834,6 +1976,101 @@ mod tests {
 
         gpu.unref_resource(7);
         assert_eq!(backend.lock().unwrap().destroyed_resources, vec![7]);
+    }
+
+    #[test]
+    fn unmap_blob_rejects_classify_destroyed_and_unknown_resources() {
+        let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
+        let port = Arc::new(Mutex::new(MockMapPort::default()));
+        let layout = Layout::from_size_align(0x1_0000, HVF_PAGE_SIZE as usize).unwrap();
+        let ptr_a = unsafe { alloc_zeroed(layout) };
+        let ptr_b = unsafe { alloc_zeroed(layout) };
+        assert!(!ptr_a.is_null() && !ptr_b.is_null());
+        for (resource_id, ptr) in [(7u32, ptr_a), (8u32, ptr_b)] {
+            backend.lock().unwrap().mapped.insert(
+                resource_id,
+                MappedBlob {
+                    host_ptr: ptr,
+                    size: 0x1_0000,
+                    map_info: 0x13,
+                },
+            );
+        }
+
+        let mut gpu = VirtioGpu3d::with_backend(Box::new(backend.clone()));
+        gpu.set_shm_map_port(Box::new(port.clone()), 0x20_0000);
+
+        for (resource_id, offset) in [(7u32, 0x4000u64), (8, 0x1_8000)] {
+            let create = create_blob_req(resource_id, VIRTIO_GPU_BLOB_MEM_HOST3D, 0, 0x1_0000, 1);
+            let hdr = CtrlHdr3d::parse(&create).unwrap();
+            assert_eq!(
+                read_le_u32(&gpu.handle(&create, hdr).unwrap(), 0),
+                Some(VIRTIO_GPU_RESP_OK_NODATA)
+            );
+            let map = map_blob_req(resource_id, offset);
+            let hdr = CtrlHdr3d::parse(&map).unwrap();
+            assert_eq!(
+                read_le_u32(&gpu.handle(&map, hdr).unwrap(), 0),
+                Some(VIRTIO_GPU_RESP_OK_MAP_INFO)
+            );
+        }
+
+        // Blob 7 dies while mapped; blob 8 is unmapped first, then dies.
+        gpu.unref_resource(7);
+        let unmap = unmap_blob_req(8);
+        let hdr = CtrlHdr3d::parse(&unmap).unwrap();
+        assert_eq!(
+            read_le_u32(&gpu.handle(&unmap, hdr).unwrap(), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        gpu.unref_resource(8);
+
+        for (resource_id, expected) in [
+            (7u32, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER),
+            (8, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER),
+            (99, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER),
+        ] {
+            let unmap = unmap_blob_req(resource_id);
+            let hdr = CtrlHdr3d::parse(&unmap).unwrap();
+            assert_eq!(
+                read_le_u32(&gpu.handle(&unmap, hdr).unwrap(), 0),
+                Some(expected)
+            );
+        }
+        let counts = gpu.unmap_blob_reject_counts();
+        assert_eq!(counts.destroyed_while_mapped, 1);
+        assert_eq!(counts.destroyed_after_unmap, 1);
+        assert_eq!(counts.never_created, 1);
+        assert_eq!(counts.short_request, 0);
+        assert_eq!(counts.total(), 3);
+
+        // Recreating an id starts a new lifecycle: the stale destroyed
+        // classification must not survive into the reused id.
+        backend.lock().unwrap().mapped.insert(
+            7,
+            MappedBlob {
+                host_ptr: ptr_a,
+                size: 0x1_0000,
+                map_info: 0x13,
+            },
+        );
+        let create = create_blob_req(7, VIRTIO_GPU_BLOB_MEM_HOST3D, 0, 0x1_0000, 1);
+        let hdr = CtrlHdr3d::parse(&create).unwrap();
+        assert_eq!(
+            read_le_u32(&gpu.handle(&create, hdr).unwrap(), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+        gpu.unref_resource(7);
+        let unmap = unmap_blob_req(7);
+        let hdr = CtrlHdr3d::parse(&unmap).unwrap();
+        assert_eq!(
+            read_le_u32(&gpu.handle(&unmap, hdr).unwrap(), 0),
+            Some(VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER)
+        );
+        let counts = gpu.unmap_blob_reject_counts();
+        assert_eq!(counts.destroyed_while_mapped, 1);
+        assert_eq!(counts.destroyed_after_unmap, 2);
+        assert_eq!(counts.total(), 4);
     }
 
     #[test]
@@ -1938,6 +2175,12 @@ mod tests {
         assert_eq!(out, vec![sentinel, completed[0], completed[1]]);
         assert_eq!(gpu.stats(0).fences_completed, 2);
         assert!(backend.lock().unwrap().completed.is_empty());
+        assert_eq!(backend.lock().unwrap().fence_polls, 1);
+        assert_eq!(backend.lock().unwrap().fence_after_queue_polls, 0);
+
+        gpu.drain_completed_fences_after_queue_into(&mut out);
+        assert_eq!(backend.lock().unwrap().fence_polls, 1);
+        assert_eq!(backend.lock().unwrap().fence_after_queue_polls, 1);
 
         let wrapper_fence = CompletedFence {
             ctx_id: 7,

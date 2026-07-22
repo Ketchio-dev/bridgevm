@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "ppsspp-vulkan-arm64",
+  "api": "vulkan",
+  "architecture": "arm64",
+  "executable": "C:\\BridgeVM\\apps\\ppsspp\\PPSSPPWindowsARM64.exe",
+  "working_directory": "C:\\BridgeVM\\apps\\ppsspp",
+  "arguments": [],
+  "log": "bvgpu-real-title-gate.log",
+  "pass_marker": "BVGPU-REAL-TITLE-PASS",
+  "minimum_runtime_seconds": 30,
+  "required_modules": [
+    "vulkan_virtio.dll"
+  ],
+  "require_main_window": true,
+  "minimum_resource_flushes": 300
+}

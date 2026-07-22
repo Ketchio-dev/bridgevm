@@ -2,6 +2,63 @@ import XCTest
 @testable import BridgeVMControl
 
 final class HvfEngineConfigTests: XCTestCase {
+    func testReadinessSeparatesLaunchAndReleaseBlockers() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let wrapper = root.appendingPathComponent("scripts/run-hvf-windows-installed-boot.sh")
+        let runner = root.appendingPathComponent("target/release/examples/hvf_gic_boot_probe")
+        let disk = root.appendingPathComponent("windows.raw")
+        let vars = root.appendingPathComponent("vars.fd")
+        try FileManager.default.createDirectory(at: wrapper.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: runner.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "#!/bin/sh\n".write(to: wrapper, atomically: true, encoding: .utf8)
+        try "#!/bin/sh\n".write(to: runner, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: wrapper.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: runner.path)
+        try Data([1]).write(to: disk)
+        FileManager.default.createFile(atPath: vars.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: vars)
+        try handle.truncate(atOffset: 64 * 1024 * 1024)
+        try handle.close()
+        let config = HvfEngineConfig(
+            targetDiskPath: disk.path, uefiVarsPath: vars.path,
+            evidenceDir: root.appendingPathComponent("evidence").path,
+            watchdogMs: nil, ramMiB: 6144, smpCpus: 4, clipboardSync: true,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: true,
+            virtioGpu3d: true, nvmeBufferedIO: true,
+            ctlFilePath: root.appendingPathComponent("hvf.ctl").path
+        )
+
+        let report = config.readiness(repoRoot: root)
+
+        XCTAssertTrue(report.launchReady, "\(report.launchBlockers)")
+        XCTAssertFalse(report.releaseReady)
+        XCTAssertTrue(report.releaseBlockers.contains { $0.code == "secure-boot-live-receipt" })
+        XCTAssertFalse(report.releaseBlockers.contains { $0.code == "durable-suspend" })
+        XCTAssertTrue(report.releaseBlockers.contains { $0.code == "gpu-live-receipt" })
+        XCTAssertTrue(report.productLimitations.contains { $0.contains("suspend/resume") })
+    }
+
+    func testReadinessFailsClosedForMutableMediaAndRunner() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let config = HvfEngineConfig(
+            targetDiskPath: root.appendingPathComponent("missing.raw").path,
+            uefiVarsPath: root.appendingPathComponent("missing.fd").path,
+            evidenceDir: root.appendingPathComponent("evidence").path,
+            watchdogMs: nil, ramMiB: 6144, smpCpus: 4, clipboardSync: true,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: true,
+            virtioGpu3d: false, nvmeBufferedIO: true,
+            ctlFilePath: root.appendingPathComponent("hvf.ctl").path
+        )
+
+        let report = config.readiness(repoRoot: root)
+
+        XCTAssertFalse(report.launchReady)
+        XCTAssertTrue(report.launchBlockers.contains { $0.code == "target-disk-missing" })
+    }
+
     func testLibraryWindowsVMBuildsTurnkeyControlConfiguration() {
         let vm = VMConfig(
             id: "win11", name: "Windows 11", displayName: "Windows 11",
@@ -23,6 +80,10 @@ final class HvfEngineConfigTests: XCTestCase {
         XCTAssertEqual(config?.smpCpus, 8)
         XCTAssertEqual(config?.virtioNet, true)
         XCTAssertEqual(config?.virtioGpu3d, true)
+        XCTAssertEqual(config?.performanceRisk, .aggressive)
+        XCTAssertEqual(config?.vtpmStateDir, "/library/win11/bundle.vmbridge/metadata/vtpm")
+        XCTAssertEqual(config?.vtpmKeyID, "win11")
+        XCTAssertTrue(config?.wrapperArguments().contains("--swtpm-key-stdin") == true)
         XCTAssertNil(config?.watchdogMs)
     }
 
@@ -94,6 +155,7 @@ final class HvfEngineConfigTests: XCTestCase {
         XCTAssertTrue(args.contains("--virtio-gpu-3d"))
         XCTAssertEqual(value(after: "--virtio-gpu-device-id", in: args), "1050")
         XCTAssertEqual(value(after: "--gpu-trace-protocol", in: args), "virgl")
+        XCTAssertEqual(value(after: "--performance-risk", in: args), "aggressive")
         XCTAssertEqual(value(after: "--ram-mib", in: args), "8192")
         XCTAssertEqual(value(after: "--smp-cpus", in: args), "8")
         XCTAssertEqual(value(after: "--agent-share-host", in: args), "/Users/me/share")
@@ -143,6 +205,96 @@ final class HvfEngineConfigTests: XCTestCase {
     private func value(after flag: String, in args: [String]) -> String? {
         guard let index = args.firstIndex(of: flag), args.indices.contains(index + 1) else { return nil }
         return args[index + 1]
+    }
+}
+
+private struct TestVTPMKeyProvider: VTPMStateKeyProviding {
+    var key = Data((0..<32).map(UInt8.init))
+    func stateKey(for stableVMID: String, allowCreation: Bool) throws -> Data { key }
+}
+
+private final class RecordingVTPMKeyProvider: VTPMStateKeyProviding {
+    var allowCreation: Bool?
+    func stateKey(for stableVMID: String, allowCreation: Bool) throws -> Data {
+        self.allowCreation = allowCreation
+        return Data(repeating: 7, count: 32)
+    }
+}
+
+final class VTPMStateSecurityTests: XCTestCase {
+    func testKeyInputUsesOneShotBinaryPipe() throws {
+        let config = HvfEngineConfig(
+            targetDiskPath: "target", uefiVarsPath: "vars", evidenceDir: "evidence",
+            watchdogMs: nil, ramMiB: 4096, smpCpus: 4, clipboardSync: false,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: false,
+            virtioGpu3d: false, nvmeBufferedIO: false, ctlFilePath: "control",
+            vtpmStateDir: "state", swtpmBin: "swtpm", vtpmKeyID: "stable-vm"
+        )
+        let input = try XCTUnwrap(VTPMStateSecurity.processInput(
+            for: config,
+            provider: TestVTPMKeyProvider()
+        ))
+        let output = Pipe()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/cat")
+        process.standardOutput = output
+        input.attach(to: process)
+
+        try process.run()
+        try output.fileHandleForWriting.close()
+        try input.deliverAfterLaunch()
+        let received = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        XCTAssertEqual(process.terminationStatus, 0)
+        XCTAssertEqual(received, Data((0..<32).map(UInt8.init)))
+    }
+
+    func testWrongLengthKeyFailsBeforeProcessLaunch() {
+        let config = HvfEngineConfig(
+            targetDiskPath: "target", uefiVarsPath: "vars", evidenceDir: "evidence",
+            watchdogMs: nil, ramMiB: 4096, smpCpus: 4, clipboardSync: false,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: false,
+            virtioGpu3d: false, nvmeBufferedIO: false, ctlFilePath: "control",
+            vtpmStateDir: "state", swtpmBin: "swtpm", vtpmKeyID: "stable-vm"
+        )
+
+        XCTAssertThrowsError(try VTPMStateSecurity.processInput(
+            for: config,
+            provider: TestVTPMKeyProvider(key: Data(repeating: 1, count: 31))
+        )) { error in
+            XCTAssertEqual(error as? VTPMStateSecurityError, .invalidKeyLength(31))
+        }
+    }
+
+    func testExistingStateForbidsSilentReplacementKeyCreation() throws {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        try Data("persistent TPM state".utf8).write(to: temp.appendingPathComponent("tpm2-00.permall"))
+        let provider = RecordingVTPMKeyProvider()
+        let config = HvfEngineConfig(
+            targetDiskPath: "target", uefiVarsPath: "vars", evidenceDir: "evidence",
+            watchdogMs: nil, ramMiB: 4096, smpCpus: 4, clipboardSync: false,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: false,
+            virtioGpu3d: false, nvmeBufferedIO: false, ctlFilePath: "control",
+            vtpmStateDir: temp.path, swtpmBin: "swtpm", vtpmKeyID: "stable-vm"
+        )
+
+        _ = try VTPMStateSecurity.processInput(for: config, provider: provider)
+
+        XCTAssertEqual(provider.allowCreation, false)
+    }
+
+    func testSwtpmOverrideIsExplicitAndReadinessFailsClosedWhenMissing() {
+        XCTAssertEqual(
+            VTPMStateSecurity.defaultSwtpmCommand(environment: ["BRIDGEVM_SWTPM_BIN": "/custom/swtpm"]),
+            "/custom/swtpm"
+        )
+        XCTAssertFalse(VTPMStateSecurity.executableAvailable(
+            "missing-swtpm", environment: ["PATH": "/definitely/missing"]
+        ))
     }
 }
 
@@ -290,7 +442,7 @@ final class HvfEngineSessionPathTests: XCTestCase {
         XCTAssertEqual(session.connectionState, .stopped)
         XCTAssertTrue(session.events.contains { event in
             if case let .unknown(message) = event {
-                return message.hasPrefix("launch failed: unable to prepare HVF runtime files:")
+                return message.hasPrefix("launch readiness blocked [")
             }
             return false
         })

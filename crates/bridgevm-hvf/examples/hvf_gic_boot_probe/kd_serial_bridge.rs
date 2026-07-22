@@ -73,10 +73,7 @@ impl KdSerialBridge {
                 Some(bridge)
             }
             Err(error) => {
-                eprintln!(
-                    "kd-serial: failed to bind {}: {error}",
-                    path.display()
-                );
+                eprintln!("kd-serial: failed to bind {}: {error}", path.display());
                 None
             }
         }
@@ -230,7 +227,10 @@ mod tests {
                 Err(e) => panic!("read: {e}"),
             }
         }
-        assert_eq!(got, b"\x62\x62\x62\x62", "debugger bytes reached the bridge");
+        assert_eq!(
+            got, b"\x62\x62\x62\x62",
+            "debugger bytes reached the bridge"
+        );
 
         // Bridge writes guest TX back to the debugger.
         bridge

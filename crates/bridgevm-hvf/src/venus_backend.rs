@@ -7,7 +7,11 @@ use std::{
     ffi::CString,
     os::raw::{c_char, c_int, c_uint, c_void},
     ptr,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        mpsc::{self, Sender},
+        Arc, Mutex, OnceLock,
+    },
+    thread::{self, JoinHandle},
 };
 
 use crate::virtio_gpu_3d::{
@@ -168,6 +172,14 @@ unsafe extern "C" {
         iov: *mut iovec,
         iovec_cnt: c_int,
     ) -> c_int;
+    fn virgl_renderer_bridgevm_scanout_blit_iosurface(
+        res_handle: u32,
+        width: u32,
+        height: u32,
+        out_surface_id: *mut u32,
+    ) -> c_int;
+    fn virgl_renderer_bridgevm_scanout_iosurface_checksum(out_checksum: *mut u64) -> c_int;
+    fn virgl_renderer_bridgevm_scanout_iosurface_dump(path: *const c_char) -> c_int;
     fn virgl_renderer_context_create_fence(
         ctx_id: u32,
         flags: u32,
@@ -351,6 +363,268 @@ impl VenusBackend {
     }
 }
 
+type VenusWorkerJob = Box<dyn FnOnce(&mut VenusBackend) + Send + 'static>;
+
+enum VenusWorkerMessage {
+    Run(VenusWorkerJob),
+    Shutdown,
+}
+
+/// Owns virglrenderer on one host thread.
+///
+/// CGL's current context is thread-local, while virtio-gpu MMIO exits may be
+/// serviced by any vCPU thread. A mutex serializes those exits but does not
+/// preserve their host thread identity. Keep renderer initialization and every
+/// subsequent FFI call on this worker so multi-vCPU guests cannot migrate a
+/// Venus context between host threads.
+pub struct ThreadedVenusBackend {
+    protocol: VirtioGpuRendererProtocol,
+    sender: Sender<VenusWorkerMessage>,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl ThreadedVenusBackend {
+    pub fn new() -> Result<Self, String> {
+        Self::new_for_protocol(VirtioGpuRendererProtocol::from_env()?)
+    }
+
+    pub fn new_for_protocol(protocol: VirtioGpuRendererProtocol) -> Result<Self, String> {
+        let (sender, receiver) = mpsc::channel::<VenusWorkerMessage>();
+        let (init_sender, init_receiver) = mpsc::sync_channel(1);
+        let worker = thread::Builder::new()
+            .name("bridgevm-venus-renderer".to_string())
+            .spawn(move || {
+                let mut backend = match VenusBackend::new_for_protocol(protocol) {
+                    Ok(backend) => {
+                        let _ = init_sender.send(Ok(()));
+                        backend
+                    }
+                    Err(error) => {
+                        let _ = init_sender.send(Err(error));
+                        return;
+                    }
+                };
+                while let Ok(message) = receiver.recv() {
+                    match message {
+                        VenusWorkerMessage::Run(job) => {
+                            job(&mut backend);
+                        }
+                        VenusWorkerMessage::Shutdown => {
+                            backend.reset();
+                            break;
+                        }
+                    }
+                }
+            })
+            .map_err(|error| format!("failed to spawn Venus renderer thread: {error}"))?;
+
+        match init_receiver.recv() {
+            Ok(Ok(())) => Ok(Self {
+                protocol,
+                sender,
+                worker: Some(worker),
+            }),
+            Ok(Err(error)) => {
+                let _ = worker.join();
+                Err(error)
+            }
+            Err(error) => {
+                let _ = worker.join();
+                Err(format!(
+                    "Venus renderer thread exited during initialization: {error}"
+                ))
+            }
+        }
+    }
+
+    pub fn protocol(&self) -> VirtioGpuRendererProtocol {
+        self.protocol
+    }
+
+    fn call<R, F>(&self, operation: F) -> R
+    where
+        R: Send + 'static,
+        F: FnOnce(&mut VenusBackend) -> R + Send + 'static,
+    {
+        let (result_sender, result_receiver) = mpsc::sync_channel(1);
+        self.sender
+            .send(VenusWorkerMessage::Run(Box::new(move |backend| {
+                let _ = result_sender.send(operation(backend));
+            })))
+            .expect("Venus renderer thread stopped before request dispatch");
+        result_receiver
+            .recv()
+            .expect("Venus renderer thread stopped before request completion")
+    }
+}
+
+impl Drop for ThreadedVenusBackend {
+    fn drop(&mut self) {
+        let _ = self.sender.send(VenusWorkerMessage::Shutdown);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+impl VirtioGpu3dBackend for ThreadedVenusBackend {
+    fn capset_count(&self) -> u32 {
+        self.call(|backend| backend.capset_count())
+    }
+
+    fn capset_info(&mut self, capset_index: u32) -> Option<CapsetInfo> {
+        self.call(move |backend| backend.capset_info(capset_index))
+    }
+
+    fn capset(&mut self, capset_id: u32, version: u32) -> Option<Vec<u8>> {
+        self.call(move |backend| backend.capset(capset_id, version))
+    }
+
+    fn capset_into(&mut self, capset_id: u32, version: u32, out: &mut Vec<u8>) -> bool {
+        let Some(capset) = self.call(move |backend| backend.capset(capset_id, version)) else {
+            return false;
+        };
+        out.extend_from_slice(&capset);
+        true
+    }
+
+    fn ctx_create(&mut self, ctx_id: u32, context_init: u32, name: &[u8]) -> bool {
+        let name = name.to_vec();
+        self.call(move |backend| backend.ctx_create(ctx_id, context_init, &name))
+    }
+
+    fn ctx_destroy(&mut self, ctx_id: u32) {
+        self.call(move |backend| backend.ctx_destroy(ctx_id));
+    }
+
+    fn ctx_attach_resource(&mut self, ctx_id: u32, resource_id: u32) {
+        self.call(move |backend| backend.ctx_attach_resource(ctx_id, resource_id));
+    }
+
+    fn ctx_detach_resource(&mut self, ctx_id: u32, resource_id: u32) {
+        self.call(move |backend| backend.ctx_detach_resource(ctx_id, resource_id));
+    }
+
+    fn supports_legacy_3d_resources(&self) -> bool {
+        self.call(|backend| backend.supports_legacy_3d_resources())
+    }
+
+    fn create_3d(&mut self, args: Create3dArgs) -> bool {
+        self.call(move |backend| backend.create_3d(args))
+    }
+
+    fn attach_backing(
+        &mut self,
+        resource_id: u32,
+        host_iovecs: &[crate::virtio_gpu_3d::BlobHostIovec],
+    ) -> bool {
+        let host_iovecs = host_iovecs.to_vec();
+        self.call(move |backend| backend.attach_backing(resource_id, &host_iovecs))
+    }
+
+    fn detach_backing(&mut self, resource_id: u32) -> bool {
+        self.call(move |backend| backend.detach_backing(resource_id))
+    }
+
+    fn transfer_3d(&mut self, args: Transfer3dArgs, to_host: bool) -> bool {
+        self.call(move |backend| backend.transfer_3d(args, to_host))
+    }
+
+    fn submit_3d(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> bool {
+        let cmdbuf_address = cmdbuf.as_ptr() as usize;
+        let cmdbuf_len = cmdbuf.len();
+        self.call(move |backend| {
+            // The caller blocks in call(), so the immutable command buffer
+            // remains alive and cannot be mutated until submission returns.
+            let cmdbuf =
+                unsafe { std::slice::from_raw_parts(cmdbuf_address as *const u8, cmdbuf_len) };
+            backend.submit_3d(ctx_id, cmdbuf)
+        })
+    }
+
+    fn create_blob(&mut self, args: CreateBlobArgs<'_>) -> bool {
+        let ctx_id = args.ctx_id;
+        let resource_id = args.resource_id;
+        let blob_mem = args.blob_mem;
+        let blob_flags = args.blob_flags;
+        let blob_id = args.blob_id;
+        let size = args.size;
+        let iovecs = args.iovecs.to_vec();
+        self.call(move |backend| {
+            backend.create_blob(CreateBlobArgs {
+                ctx_id,
+                resource_id,
+                blob_mem,
+                blob_flags,
+                blob_id,
+                size,
+                iovecs: &iovecs,
+            })
+        })
+    }
+
+    fn map_blob(&mut self, resource_id: u32) -> Option<MappedBlob> {
+        self.call(move |backend| backend.map_blob(resource_id))
+    }
+
+    fn unmap_blob(&mut self, resource_id: u32) {
+        self.call(move |backend| backend.unmap_blob(resource_id));
+    }
+
+    fn scanout_map(&mut self, resource_id: u32) -> Option<ScanoutMappedBlob> {
+        self.call(move |backend| backend.scanout_map(resource_id))
+    }
+
+    fn scanout_unmap(&mut self, resource_id: u32) {
+        self.call(move |backend| backend.scanout_unmap(resource_id));
+    }
+
+    fn scanout_read(&mut self, resource_id: u32, width: u32, height: u32, out: &mut [u8]) -> bool {
+        let out_address = out.as_mut_ptr() as usize;
+        let out_len = out.len();
+        self.call(move |backend| {
+            // The caller blocks in call() until this job completes, so the
+            // borrowed output slice remains alive and exclusively borrowed.
+            let out = unsafe { std::slice::from_raw_parts_mut(out_address as *mut u8, out_len) };
+            backend.scanout_read(resource_id, width, height, out)
+        })
+    }
+
+    fn scanout_blit_iosurface(&mut self, resource_id: u32, width: u32, height: u32) -> Option<u32> {
+        self.call(move |backend| backend.scanout_blit_iosurface(resource_id, width, height))
+    }
+
+    fn scanout_iosurface_checksum(&mut self) -> Option<u64> {
+        self.call(|backend| backend.scanout_iosurface_checksum())
+    }
+
+    fn scanout_iosurface_dump(&mut self, path: &std::path::Path) -> bool {
+        let path = path.to_path_buf();
+        self.call(move |backend| backend.scanout_iosurface_dump(&path))
+    }
+
+    fn destroy_resource(&mut self, resource_id: u32) {
+        self.call(move |backend| backend.destroy_resource(resource_id));
+    }
+
+    fn create_fence(&mut self, ctx_id: u32, ring_idx: u8, fence_id: u64) -> bool {
+        self.call(move |backend| backend.create_fence(ctx_id, ring_idx, fence_id))
+    }
+
+    fn poll_fences(&mut self) {
+        self.call(|backend| backend.poll_fences());
+    }
+
+    fn drain_completed_fences_into(&mut self, out: &mut Vec<CompletedFence>) {
+        let completed = self.call(|backend| backend.drain_completed_fences());
+        out.extend(completed);
+    }
+
+    fn reset(&mut self) {
+        self.call(|backend| backend.reset());
+    }
+}
+
 /// `BRIDGEVM_TRACE_VENUS_START=1`: print an FFI capset probe only when its
 /// result changed since the last probe of that capset id. `capset_count()`
 /// runs on every guest config read, so the interesting signal is the value
@@ -387,6 +661,7 @@ fn venus_start_trace_ffi_reject(what: &str, capset_id: u32, version: u32, reason
 
 impl VirtioGpu3dBackend for VenusBackend {
     fn capset_count(&self) -> u32 {
+        host_gl::rebind_last_context();
         let capset_ids: &[u32] = match self.protocol {
             VirtioGpuRendererProtocol::Venus => &[
                 VIRTIO_GPU_CAPSET_VENUS,
@@ -418,6 +693,7 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn capset_info(&mut self, capset_index: u32) -> Option<CapsetInfo> {
+        host_gl::rebind_last_context();
         let capset_id = self.protocol.capset_id_for_index(capset_index)?;
         let mut max_version = 0u32;
         let mut max_size = 0u32;
@@ -443,6 +719,7 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn capset_into(&mut self, capset_id: u32, version: u32, out: &mut Vec<u8>) -> bool {
+        host_gl::rebind_last_context();
         if !self.protocol.supports_capset_id(capset_id) {
             venus_start_trace_ffi_reject(
                 "capset_into",
@@ -483,6 +760,7 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn ctx_create(&mut self, ctx_id: u32, context_init: u32, name: &[u8]) -> bool {
+        host_gl::rebind_last_context();
         let default_name = format!("bridgevm-{}", self.protocol.label());
         let name = CString::new(name).unwrap_or_else(|_| CString::new(default_name).unwrap());
         let requested = context_init & VIRGL_RENDERER_CONTEXT_FLAG_CAPSET_ID_MASK;
@@ -517,6 +795,7 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn ctx_destroy(&mut self, ctx_id: u32) {
+        host_gl::rebind_last_context();
         unsafe {
             virgl_renderer_context_destroy(ctx_id);
         }
@@ -525,12 +804,14 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn ctx_attach_resource(&mut self, ctx_id: u32, resource_id: u32) {
+        host_gl::rebind_last_context();
         unsafe {
             virgl_renderer_ctx_attach_resource(ctx_id as c_int, resource_id as c_int);
         }
     }
 
     fn ctx_detach_resource(&mut self, ctx_id: u32, resource_id: u32) {
+        host_gl::rebind_last_context();
         unsafe {
             virgl_renderer_ctx_detach_resource(ctx_id as c_int, resource_id as c_int);
         }
@@ -541,6 +822,7 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn create_3d(&mut self, args: Create3dArgs) -> bool {
+        host_gl::rebind_last_context();
         // Resource creation is not tied to a guest renderer context.  On CGL,
         // the current context is thread-local while a serialized virtio-gpu
         // notification may arrive on any vCPU thread, so make ctx0 current
@@ -586,6 +868,7 @@ impl VirtioGpu3dBackend for VenusBackend {
         resource_id: u32,
         host_iovecs: &[crate::virtio_gpu_3d::BlobHostIovec],
     ) -> bool {
+        host_gl::rebind_last_context();
         if !self.resources.contains(&resource_id)
             || self.resource_iovecs.contains_key(&resource_id)
             || host_iovecs.is_empty()
@@ -620,6 +903,7 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn detach_backing(&mut self, resource_id: u32) -> bool {
+        host_gl::rebind_last_context();
         if !self.resource_iovecs.contains_key(&resource_id) {
             return false;
         }
@@ -633,6 +917,7 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn transfer_3d(&mut self, args: Transfer3dArgs, to_host: bool) -> bool {
+        host_gl::rebind_last_context();
         let mut transfer_box = virgl_box {
             x: args.x,
             y: args.y,
@@ -688,6 +973,7 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn submit_3d(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> bool {
+        host_gl::rebind_last_context();
         let ndw = cmdbuf.len().div_ceil(4);
         let ret = if cmdbuf.is_empty() {
             unsafe { virgl_renderer_submit_cmd(ptr::null_mut(), ctx_id as c_int, 0) }
@@ -716,6 +1002,7 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn create_blob(&mut self, args: CreateBlobArgs<'_>) -> bool {
+        host_gl::rebind_last_context();
         let iovecs = args
             .iovecs
             .iter()
@@ -763,6 +1050,7 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn map_blob(&mut self, resource_id: u32) -> Option<MappedBlob> {
+        host_gl::rebind_last_context();
         let mapped = self.map_resource_ref(resource_id)?;
         Some(MappedBlob {
             host_ptr: mapped.host_ptr,
@@ -772,10 +1060,12 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn unmap_blob(&mut self, resource_id: u32) {
+        host_gl::rebind_last_context();
         self.unmap_resource_ref(resource_id);
     }
 
     fn scanout_map(&mut self, resource_id: u32) -> Option<ScanoutMappedBlob> {
+        host_gl::rebind_last_context();
         let mapped = self.map_resource_ref(resource_id)?;
         Some(ScanoutMappedBlob {
             host_ptr: mapped.host_ptr.cast_const(),
@@ -784,10 +1074,12 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn scanout_unmap(&mut self, resource_id: u32) {
+        host_gl::rebind_last_context();
         self.unmap_resource_ref(resource_id);
     }
 
     fn scanout_read(&mut self, resource_id: u32, width: u32, height: u32, out: &mut [u8]) -> bool {
+        host_gl::rebind_last_context();
         let Some(required) = (width as usize)
             .checked_mul(height as usize)
             .and_then(|pixels| pixels.checked_mul(4))
@@ -835,7 +1127,42 @@ impl VirtioGpu3dBackend for VenusBackend {
         ret == 0
     }
 
+    fn scanout_blit_iosurface(&mut self, resource_id: u32, width: u32, height: u32) -> Option<u32> {
+        host_gl::rebind_last_context();
+        // Same ctx0/CGL discipline as scanout_read: the blit runs in vrend's
+        // GL context on whichever vCPU thread services the flush.
+        unsafe { virgl_renderer_force_ctx_0() };
+        let mut surface_id: u32 = 0;
+        let ret = unsafe {
+            virgl_renderer_bridgevm_scanout_blit_iosurface(
+                resource_id,
+                width,
+                height,
+                &mut surface_id,
+            )
+        };
+        (ret == 0).then_some(surface_id)
+    }
+
+    fn scanout_iosurface_checksum(&mut self) -> Option<u64> {
+        host_gl::rebind_last_context();
+        unsafe { virgl_renderer_force_ctx_0() };
+        let mut checksum: u64 = 0;
+        let ret = unsafe { virgl_renderer_bridgevm_scanout_iosurface_checksum(&mut checksum) };
+        (ret == 0).then_some(checksum)
+    }
+
+    fn scanout_iosurface_dump(&mut self, path: &std::path::Path) -> bool {
+        host_gl::rebind_last_context();
+        let Ok(cpath) = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()) else {
+            return false;
+        };
+        unsafe { virgl_renderer_force_ctx_0() };
+        unsafe { virgl_renderer_bridgevm_scanout_iosurface_dump(cpath.as_ptr()) == 0 }
+    }
+
     fn destroy_resource(&mut self, resource_id: u32) {
+        host_gl::rebind_last_context();
         while self.mapped_resources.contains_key(&resource_id) {
             self.unmap_resource_ref(resource_id);
         }
@@ -852,6 +1179,7 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn create_fence(&mut self, ctx_id: u32, ring_idx: u8, fence_id: u64) -> bool {
+        host_gl::rebind_last_context();
         if ring_idx != 0 {
             eprintln!(
                 "{}: rejecting unbound fence ring ctx={ctx_id} ring={ring_idx} fence={fence_id}",
@@ -874,6 +1202,7 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn poll_fences(&mut self) {
+        host_gl::rebind_last_context();
         // Poll EVERY live context, not just those with outstanding virtqueue
         // fences: venus guests mostly synchronize via renderer-side fence
         // FEEDBACK slots (Mesa spins on a shmem slot the renderer writes at
@@ -899,6 +1228,7 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn reset(&mut self) {
+        host_gl::rebind_last_context();
         self.resource_ids_scratch.clear();
         self.resource_ids_scratch
             .extend(self.mapped_resources.keys().copied());
@@ -1064,6 +1394,7 @@ mod host_gl {
     const K_CGL_OGLP_VERSION_3_2_CORE: c_int = 0x3200;
 
     static FIRST_SHARED_CONTEXT: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
+    static LAST_CURRENT_CONTEXT: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
 
     unsafe extern "C" {
         fn CGLChoosePixelFormat(
@@ -1089,6 +1420,22 @@ mod host_gl {
             (4, minor) => minor <= 1,
             (3, minor) => minor >= 2,
             _ => false,
+        }
+    }
+
+    /// CGL's current context is thread-local. The virtio-gpu device is already
+    /// serialized by the platform lock, but consecutive MMIO exits can run on
+    /// different vCPU host threads. Rebind the renderer's last logical context
+    /// before entering virglrenderer so a same-context fast path cannot inherit
+    /// a null or stale thread-local CGL binding.
+    pub fn rebind_last_context() {
+        let context = LAST_CURRENT_CONTEXT.load(Ordering::Acquire);
+        if context.is_null() {
+            return;
+        }
+        let ret = unsafe { CGLSetCurrentContext(context) };
+        if ret != 0 {
+            eprintln!("virgl: rebind current cgl failed ret={ret} ctx={context:p}");
         }
     }
 
@@ -1169,6 +1516,12 @@ mod host_gl {
             Ordering::SeqCst,
             Ordering::SeqCst,
         );
+        let _ = LAST_CURRENT_CONTEXT.compare_exchange(
+            context,
+            ptr::null_mut(),
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
         unsafe {
             CGLSetCurrentContext(ptr::null_mut());
             CGLDestroyContext(context);
@@ -1183,6 +1536,8 @@ mod host_gl {
         let ret = unsafe { CGLSetCurrentContext(ctx.cast::<c_void>()) };
         if ret != 0 {
             eprintln!("virgl: make_current cgl failed ret={ret} ctx={ctx:p}");
+        } else {
+            LAST_CURRENT_CONTEXT.store(ctx.cast::<c_void>(), Ordering::Release);
         }
         ret
     }
@@ -1210,6 +1565,8 @@ mod host_gl {
     ) -> c_int {
         -1
     }
+
+    pub fn rebind_last_context() {}
 }
 
 fn set_env_defaults() {

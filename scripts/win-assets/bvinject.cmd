@@ -116,6 +116,7 @@ if exist %DRV%\..\bridgevm-diagnostics-only.txt (
   copy /y %DRV%\..\bvgpu-diagnostics-startup.cmd "%WIN%\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup\BridgeVMGpuDiagnostics.cmd" >nul
   del /f /q %WIN%\BridgeVM\bvgpu-diagnostics-latest.log 2>nul
   del /f /q %WIN%\BridgeVM\bvgpu-vulkan-probe.log 2>nul
+  del /f /q %WIN%\BridgeVM\bvgpu-vulkan-probe.log.console 2>nul
   del /f /q %WIN%\BridgeVM\bvgpu-diagnostics-complete.flag 2>nul
   del /f /q %WIN%\BridgeVM\bvgpu-service-entry.log 2>nul
   del /f /q %WIN%\BridgeVM\bvgpu-native-service-entry.log 2>nul
@@ -209,33 +210,107 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
     echo BVINJECT ERROR: firstboot native service missing
     goto :end
   )
+  if not exist %DRV%\..\bvgpu-clean-driver-state.ps1 (
+    echo BVINJECT ERROR: driver-state cleanup missing
+    goto :end
+  )
   if not exist %WIN%\BridgeVM\viogpu3d\ mkdir %WIN%\BridgeVM\viogpu3d
   rem Reinjection means a new package/activation attempt. Never let markers
   rem from an older package skip the trust or bind stages.
   del /f /q %WIN%\BridgeVM\stage1.flag 2>nul
   del /f /q %WIN%\BridgeVM\stage2.flag 2>nul
+  del /f /q %WIN%\BridgeVM\stage3.flag 2>nul
   del /f /q %WIN%\BridgeVM\stage1.boot 2>nul
   del /f /q %WIN%\BridgeVM\stage2.boot 2>nul
+  del /f /q %WIN%\BridgeVM\stage3.boot 2>nul
   del /f /q %WIN%\BridgeVM\gpu-rebooted.flag 2>nul
   del /f /q %WIN%\BridgeVM\viogpu3d-firstboot.log 2>nul
+  del /f /q %WIN%\BridgeVM\viogpu3d-cleanup.log 2>nul
+  del /f /q %WIN%\BridgeVM\bvgpu-real-title-gate.log 2>nul
   del /f /q %WIN%\BridgeVM\bvgpu-native-service-entry.log 2>nul
   del /f /q %WIN%\BridgeVM\bvgpu-runner-entry.log 2>nul
+  del /f /q %WIN%\BridgeVM\bvgpu-vulkan-draw.log 2>nul
   copy /y %DRV%\viogpu3d\* %WIN%\BridgeVM\viogpu3d\ >nul
+  rem The Khronos loader registry entry can keep pointing at an OLDER
+  rem DriverStore package dir after driver upgrades (entries accumulate,
+  rem stale dirs are never scavenged), so a poisoned ICD keeps loading
+  rem regardless of the bound driver version. Overwrite every stored
+  rem viogpu3d ICD copy with the known-good one being injected.
+  for /d %%D in (%WIN%\Windows\System32\DriverStore\FileRepository\viogpu3d.inf_arm64_*) do (
+    if exist "%%D\vulkan_virtio.dll" copy /y %DRV%\viogpu3d\vulkan_virtio.dll "%%D\vulkan_virtio.dll" >nul
+  )
   copy /y %DRV%\..\bvgpu-firstboot.cmd %WIN%\BridgeVM\bvgpu-firstboot.cmd >nul
+  copy /y %DRV%\..\bvgpu-clean-driver-state.ps1 %WIN%\BridgeVM\bvgpu-clean-driver-state.ps1 >nul
+  if exist %DRV%\..\bvgpu-real-title-gate.ps1 copy /y %DRV%\..\bvgpu-real-title-gate.ps1 %WIN%\BridgeVM\bvgpu-real-title-gate.ps1 >nul
+  if exist %DRV%\..\bvgpu-title-gate.ps1 copy /y %DRV%\..\bvgpu-title-gate.ps1 %WIN%\BridgeVM\bvgpu-title-gate.ps1 >nul
   copy /y %DRV%\..\bvgpu-diagnostics-run.cmd %WIN%\BridgeVM\bvgpu-diagnostics-run.cmd >nul
   copy /y %DRV%\..\bvgpu-diagnostics-service.exe %WIN%\BridgeVM\bvgpu-diagnostics-service.exe >nul
   echo pending > %WIN%\BridgeVM\viogpu3d-firstboot-pending.flag
   if exist %DRV%\..\bvgpu-diagnostics.ps1 copy /y %DRV%\..\bvgpu-diagnostics.ps1 %WIN%\BridgeVM\bvgpu-diagnostics.ps1 >nul
   if exist %DRV%\..\bvgpu-vulkan-probe.ps1 copy /y %DRV%\..\bvgpu-vulkan-probe.ps1 %WIN%\BridgeVM\bvgpu-vulkan-probe.ps1 >nul
+  if exist %DRV%\..\bvgpu-vulkan-draw-smoke.exe copy /y %DRV%\..\bvgpu-vulkan-draw-smoke.exe %WIN%\BridgeVM\bvgpu-vulkan-draw-smoke.exe >nul
+  if exist %DRV%\..\dxvk\d3d11.dll (
+    if not exist %WIN%\BridgeVM\dxvk\ mkdir %WIN%\BridgeVM\dxvk
+    copy /y %DRV%\..\dxvk\* %WIN%\BridgeVM\dxvk\ >nul
+  )
+  if exist %DRV%\..\dxvk-x64\d3d11.dll (
+    if not exist %WIN%\BridgeVM\dxvk-x64\ mkdir %WIN%\BridgeVM\dxvk-x64
+    copy /y %DRV%\..\dxvk-x64\* %WIN%\BridgeVM\dxvk-x64\ >nul
+  )
   reg load HKLM\BVGPUSW %WIN%\Windows\System32\config\SOFTWARE
+  rem Register the x64 venus ICD manifest: elevated processes ignore
+  rem VK_DRIVER_FILES (loader secure-env policy), so the x64 loader must
+  rem find the driver in the registry like the ARM64 one does.
+  if exist %DRV%\..\dxvk-x64\virtio_icd.x64.json reg add "HKLM\BVGPUSW\Khronos\Vulkan\Drivers" /v "C:\BridgeVM\dxvk-x64\virtio_icd.x64.json" /t REG_DWORD /d 0 /f
   rem RunOnce runs once at first interactive logon. The value uses the RUNTIME
   rem path (installed Windows is C: to itself), not the WinPE %WIN% letter. The
   rem "!" name prefix keeps the initial entry until stage 1 finishes creating
   rem the persistent delayed ONSTART continuation task.
   reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\RunOnce" /v !BridgeVMGpu3DStage1 /t REG_SZ /d "cmd /c C:\BridgeVM\bvgpu-firstboot.cmd" /f
-  rem Ensure the admin autologon gets an un-filtered token so certutil/pnputil in
-  rem the RunOnce run elevated (idempotent with the agent block below).
-  reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA /t REG_DWORD /d 0 /f
+  rem Visible present demo: runs at every interactive logon but only presents
+  rem once the firstboot continuation task has deleted itself (stage 3 done),
+  rem so the final generation shows the demo window on the Venus desktop.
+  if exist %DRV%\..\dxvk\bv-present-demo.cmd (
+    del /f /q %WIN%\BridgeVM\dxvk\present-demo.log 2>nul
+    reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMPresentDemo /t REG_SZ /d "cmd /c C:\BridgeVM\dxvk\bv-present-demo.cmd" /f
+  )
+  rem Clear any stale demo autostart from a previous injection so only the
+  rem currently staged demo runs (avoids two GPU apps sharing the shm window).
+  if not exist %DRV%\..\dxvk\bv-present-demo.cmd reg delete "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMPresentDemo /f 2>nul
+  rem Real-title demo: a full native ARM64 app forced onto Vulkan. Same
+  rem self-delete gate; launched at logon.
+  rem PPSSPP persists failed backends next to its portable config. A single
+  rem interrupted Vulkan launch otherwise poisons every later injection.
+  if exist "%WIN%\Users\bridge\Documents\PPSSPP\PSP\SYSTEM\ppsspp.ini" del /f /q "%WIN%\Users\bridge\Documents\PPSSPP\PSP\SYSTEM\ppsspp.ini"
+  if exist "%WIN%\Users\bridge\Documents\PPSSPP\PSP\SYSTEM\FailedGraphicsBackends.txt" del /f /q "%WIN%\Users\bridge\Documents\PPSSPP\PSP\SYSTEM\FailedGraphicsBackends.txt"
+  if exist %DRV%\..\apps\ppsspp\bv-ppsspp-demo.cmd (
+    if not exist %DRV%\..\bvgpu-real-title-gate.ps1 (
+      echo BVINJECT ERROR: PPSSPP real-title gate missing
+      goto :end
+    )
+    if not exist %DRV%\..\bvgpu-title-gate.ps1 (
+      echo BVINJECT ERROR: generic title gate missing
+      goto :end
+    )
+    if not exist %DRV%\..\apps\ppsspp\bv-ppsspp-title.json (
+      echo BVINJECT ERROR: PPSSPP title manifest missing
+      goto :end
+    )
+    if not exist %DRV%\..\apps\ppsspp\bv-ppsspp.ini (
+      echo BVINJECT ERROR: PPSSPP Vulkan config missing
+      goto :end
+    )
+    if not exist %WIN%\BridgeVM\apps\ppsspp\ mkdir %WIN%\BridgeVM\apps\ppsspp
+    xcopy /e /i /y /q %DRV%\..\apps\ppsspp %WIN%\BridgeVM\apps\ppsspp >nul
+    if not exist %WIN%\BridgeVM\apps\ppsspp\memstick\PSP\SYSTEM\ mkdir %WIN%\BridgeVM\apps\ppsspp\memstick\PSP\SYSTEM
+    del /f /q %WIN%\BridgeVM\apps\ppsspp\memstick\PSP\SYSTEM\FailedGraphicsBackends.txt 2>nul
+    copy /y %DRV%\..\apps\ppsspp\bv-ppsspp.ini %WIN%\BridgeVM\apps\ppsspp\memstick\PSP\SYSTEM\ppsspp.ini >nul
+    reg add "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMPPSSPPDemo /t REG_SZ /d "cmd /c C:\BridgeVM\apps\ppsspp\bv-ppsspp-demo.cmd" /f
+  ) else (
+    reg delete "HKLM\BVGPUSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMPPSSPPDemo /f 2>nul
+  )
+  rem GPU activation runs in the LocalSystem service registered below. Keep UAC
+  rem enabled; interactive PPSSPP does not require administrative elevation.
   reg unload HKLM\BVGPUSW
   rem The image used for bring-up does not reliably consume newly planted
   rem RunOnce values. Register the native one-shot service as the primary,
@@ -261,7 +336,7 @@ if exist %DRV%\viogpu3d\viogpu3d.inf if exist %DRV%\..\bvgpu-firstboot.cmd (
   reg add "HKLM\BVGPUSYS\ControlSet001\Services\BridgeVMGpuDiagnosticsProbe6" /v ObjectName /t REG_SZ /d "LocalSystem" /f
   rem Recovery path for a currently bound viogpu3d that crashes before this
   rem activation service can run. Disable only the existing driver service for
-  rem the next boot. Stage-2 pnputil processes the replacement INF's AddService
+  rem the next boot. Stage-3 pnputil processes the replacement INF's AddService
   rem section and restores VioGpu3D to SERVICE_DEMAND_START before rebooting.
   if exist %DRV%\..\bridgevm-quarantine-viogpu3d.txt (
     echo BVINJECT VIOGPU3D BOOT QUARANTINE
@@ -299,16 +374,20 @@ rem     desktop, so the agent opens the virtio-serial port shortly after boot.
 rem     The agent is a pure-PowerShell command loop (no compiled binary). ---
 if exist %DRV%\..\bvagent.ps1 (
   echo BVINJECT AGENT PLANT
+  if not exist %DRV%\..\bvagent-install-service.exe (
+    echo BVINJECT ERROR: guest-agent installer service missing
+    goto :end
+  )
+  if not exist %WIN%\BridgeVM\ mkdir %WIN%\BridgeVM
+  if exist %WIN%\bvagent.ps1 copy /y %WIN%\bvagent.ps1 %WIN%\BridgeVM\bvagent.previous.ps1 >nul
   copy /y %DRV%\..\bvagent.ps1 %WIN%\bvagent.ps1 >nul
+  copy /y %DRV%\..\bvagent-install-service.exe %WIN%\BridgeVM\bvagent-install-service.exe >nul
+  if exist %DRV%\..\bvagent-package.log copy /y %DRV%\..\bvagent-package.log %WIN%\BridgeVM\bvagent-package.log >nul
   reg load HKLM\BVSW %WIN%\Windows\System32\config\SOFTWARE
-  rem the Run value must use the RUNTIME path (installed Windows is C: to
-  rem itself), not the WinPE-assigned injection-time letter in %WIN%.
-  reg add "HKLM\BVSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMAgent /t REG_SZ /d "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\bvagent.ps1" /f
-  rem The first user is an Administrator but UAC filters its token, so a
-  rem Run-launched agent runs unelevated and CANNOT open the virtio-serial
-  rem port (access denied). Disable UAC (dev/build VM) so the agent gets the
-  rem full admin token and can open the port on first boot.
-  reg add "HKLM\BVSW\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA /t REG_DWORD /d 0 /f
+  rem Remove the legacy Run launcher. It required globally disabling UAC to
+  rem open vioser. The LocalSystem one-shot service below instead creates an
+  rem ONLOGON /RL HIGHEST task for the interactive bridge session.
+  reg delete "HKLM\BVSW\Microsoft\Windows\CurrentVersion\Run" /v BridgeVMAgent /f 2>nul
   rem Disable the guest power plan ONCE at first logon (RunOnce). The default
   rem plan sleeps the VM at desktop+5min, which freezes the guest agent and
   rem kills the host service channel (live-diagnosed as a hard t~360s wall in
@@ -317,11 +396,17 @@ if exist %DRV%\..\bvagent.ps1 (
   rem the RunOnce value literally and they chain at first-logon execution.
   reg add "HKLM\BVSW\Microsoft\Windows\CurrentVersion\RunOnce" /v BridgeVMPower /t REG_SZ /d "cmd.exe /c powercfg /change standby-timeout-ac 0 & powercfg /change standby-timeout-dc 0 & powercfg /change monitor-timeout-ac 0 & powercfg /change monitor-timeout-dc 0 & powercfg /h off" /f
   reg unload HKLM\BVSW
-  rem NOTE: exactly ONE autostart. We deliberately do NOT also drop a Startup
-  rem launcher: two autostarts race two agent instances, and the loser's
-  rem CreateFile/close churns vioser's single-open port (resetting
-  rem HostConnected) every few seconds. The HKLM Run key above is the single
-  rem source of truth; bvagent.ps1's mutex is only a belt-and-suspenders guard.
+  reg load HKLM\BVAGENTSYS %WIN%\Windows\System32\config\SYSTEM
+  reg delete "HKLM\BVAGENTSYS\ControlSet001\Services\BridgeVMAgentInstaller" /f 2>nul
+  reg add "HKLM\BVAGENTSYS\ControlSet001\Services\BridgeVMAgentInstaller" /v Type /t REG_DWORD /d 0x10 /f
+  reg add "HKLM\BVAGENTSYS\ControlSet001\Services\BridgeVMAgentInstaller" /v Start /t REG_DWORD /d 0x2 /f
+  reg add "HKLM\BVAGENTSYS\ControlSet001\Services\BridgeVMAgentInstaller" /v ErrorControl /t REG_DWORD /d 0x1 /f
+  reg add "HKLM\BVAGENTSYS\ControlSet001\Services\BridgeVMAgentInstaller" /v ImagePath /t REG_EXPAND_SZ /d "C:\BridgeVM\bvagent-install-service.exe" /f
+  reg add "HKLM\BVAGENTSYS\ControlSet001\Services\BridgeVMAgentInstaller" /v DisplayName /t REG_SZ /d "BridgeVM guest agent task installer" /f
+  reg add "HKLM\BVAGENTSYS\ControlSet001\Services\BridgeVMAgentInstaller" /v ObjectName /t REG_SZ /d "LocalSystem" /f
+  reg unload HKLM\BVAGENTSYS
+  rem NOTE: exactly ONE autostart: the highest-privilege scheduled task. The
+  rem PowerShell agent mutex remains a second line of defense against races.
   echo BVINJECT AGENT PLANT DONE
 )
 

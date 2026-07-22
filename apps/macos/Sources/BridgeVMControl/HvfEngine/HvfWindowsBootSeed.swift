@@ -25,6 +25,9 @@ enum HvfWindowsBootSeed {
         case espNotFound
         case varstoreUnreadable
         case varstoreFull
+        case secureBootManifestMissing
+        case secureBootManifestInvalid(String)
+        case secureBootConflict(String)
 
         var description: String {
             switch self {
@@ -32,6 +35,12 @@ enum HvfWindowsBootSeed {
             case .espNotFound: return "설치 디스크에서 EFI 시스템 파티션을 찾을 수 없습니다."
             case .varstoreUnreadable: return "UEFI vars 저장소 형식을 해석할 수 없습니다."
             case .varstoreFull: return "UEFI vars 저장소에 부팅 항목을 추가할 공간이 없습니다."
+            case .secureBootManifestMissing:
+                return "번들된 Secure Boot 정책을 찾을 수 없습니다."
+            case .secureBootManifestInvalid(let detail):
+                return "Secure Boot 정책 검증에 실패했습니다: \(detail)"
+            case .secureBootConflict(let detail):
+                return "기존 Secure Boot 키를 안전하게 보존하기 위해 프로비저닝을 중단했습니다: \(detail)"
             }
         }
     }
@@ -187,22 +196,37 @@ enum HvfWindowsBootSeed {
     /// power-on. Prefers the bundled proven seed varstore (copy + patch the
     /// ESP GUID); falls back to injecting a boot entry into the store already
     /// at `varsPath` when no bundled seed is available (unit tests).
-    static func seedFile(varsPath: String, diskPath: String) throws {
+    @discardableResult
+    static func seedFile(
+        varsPath: String,
+        diskPath: String,
+        provisionedAt: Date = Date()
+    ) throws -> HvfSecureBootProvisioningReceipt {
         let esp = try readESP(diskPath: diskPath)
+        let policy = try HvfSecureBootProvisioner.bundledPolicy()
+        let bootSeeded: Data
         if let seed = try? bundledSeed() {
             var patched = seed
             guard replaceAll(&patched, find: sentinelGUID, with: esp.partitionGUID) > 0 else {
                 throw SeedError.varstoreUnreadable
             }
-            try patched.write(to: URL(fileURLWithPath: varsPath), options: [.atomic])
-            return
+            bootSeeded = patched
+        } else {
+            guard let original = FileManager.default.contents(atPath: varsPath) else {
+                throw SeedError.varstoreUnreadable
+            }
+            let seeded = try seed(varStore: original, esp: esp)
+            guard seeded.count == original.count else { throw SeedError.varstoreFull }
+            bootSeeded = seeded
         }
-        guard let original = FileManager.default.contents(atPath: varsPath) else {
-            throw SeedError.varstoreUnreadable
-        }
-        let seeded = try seed(varStore: original, esp: esp)
-        guard seeded.count == original.count else { throw SeedError.varstoreFull }
-        try seeded.write(to: URL(fileURLWithPath: varsPath), options: [.atomic])
+        let provisioned = try HvfSecureBootProvisioner.provision(
+            varStore: bootSeeded,
+            policy: policy,
+            provisionedAt: provisionedAt)
+        guard provisioned.varStore.count == bootSeeded.count else { throw SeedError.varstoreFull }
+        try provisioned.varStore.write(
+            to: URL(fileURLWithPath: varsPath), options: [.atomic])
+        return provisioned.receipt
     }
 
     /// Locate and gunzip the bundled proven seed varstore.
@@ -282,7 +306,12 @@ enum HvfWindowsBootSeed {
     }
 
     /// Build one AUTHENTICATED_VARIABLE_HEADER record (4-byte aligned).
-    private static func authVariable(name: String, guid: Data, data: Data) -> Data {
+    static func authVariable(
+        name: String,
+        guid: Data,
+        data: Data,
+        attributes: UInt32 = attrNvBsRt
+    ) -> Data {
         var nameUTF16 = Data()
         for scalar in name.utf16 { nameUTF16.appendUInt16(scalar) }
         nameUTF16.appendUInt16(0)
@@ -291,7 +320,7 @@ enum HvfWindowsBootSeed {
         record.appendUInt16(0x55AA)          // StartId
         record.append(varAdded)              // State
         record.append(0x00)                  // Reserved
-        record.appendUInt32(attrNvBsRt)      // Attributes
+        record.appendUInt32(attributes)      // Attributes
         record.appendUInt64(0)               // MonotonicCount
         record.append(Data(count: 16))       // TimeStamp
         record.appendUInt32(0)               // PubKeyIndex

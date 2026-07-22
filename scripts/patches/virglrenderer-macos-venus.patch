@@ -1,5 +1,5 @@
 diff --git a/src/meson.build b/src/meson.build
-index 6207a74..dd535d1 100644
+index 6207a74..eafa448 100644
 --- a/src/meson.build
 +++ b/src/meson.build
 @@ -180,6 +180,10 @@ virgl_depends = [
@@ -7,7 +7,7 @@ index 6207a74..dd535d1 100644
  ]
  
 +if with_host_darwin
-+   virgl_depends += [dependency('appleframeworks', modules: ['OpenGL'], required: true)]
++   virgl_depends += [dependency('appleframeworks', modules: ['OpenGL', 'IOSurface', 'CoreFoundation'], required: true)]
 +endif
 +
  if with_tracing == 'perfetto'
@@ -39,6 +39,28 @@ index a29a4fc..d1a1200 100644
  }
  
  #endif /* VN_PROTOCOL_RENDERER_DISPATCHES_H */
+diff --git a/src/venus/vkr_context.c b/src/venus/vkr_context.c
+index 2ea5898..bf56607 100644
+--- a/src/venus/vkr_context.c
++++ b/src/venus/vkr_context.c
+@@ -372,6 +372,17 @@ vkr_context_create_resource(struct vkr_context *ctx,
+    if (!blob_id && blob_flags == VIRGL_RENDERER_BLOB_FLAG_USE_MAPPABLE)
+       return vkr_context_create_resource_from_shm(ctx, res_id, blob_size, out_blob);
+ 
++   /* BridgeVM: the Windows Venus winsys uses the guest-vram-style ordering
++    * where the mappable blob is created BEFORE vkAllocateMemory and the
++    * allocation then imports the resource via VkImportMemoryResourceInfoMESA.
++    * When the referenced memory object does not exist yet, service the create
++    * as a shm allocation exactly like blob_id == 0; the later import binds
++    * these pages to the VkDeviceMemory via VK_EXT_external_memory_host.
++    */
++   if ((blob_flags & VIRGL_RENDERER_BLOB_FLAG_USE_MAPPABLE) &&
++       !vkr_context_get_object(ctx, blob_id))
++      return vkr_context_create_resource_from_shm(ctx, res_id, blob_size, out_blob);
++
+    return vkr_context_create_resource_from_device_memory(ctx, res_id, blob_id, blob_size,
+                                                          blob_flags, out_blob);
+ }
 diff --git a/src/venus/vkr_device.c b/src/venus/vkr_device.c
 index 3e943bf..22439b2 100644
 --- a/src/venus/vkr_device.c
@@ -61,10 +83,93 @@ index 3e943bf..22439b2 100644
           exts[ext_count++] = "VK_EXT_metal_objects";
        if (physical_dev->KHR_portability_subset)
 diff --git a/src/venus/vkr_device_memory.c b/src/venus/vkr_device_memory.c
-index 57a108d..a375a14 100644
+index 57a108d..206602e 100644
 --- a/src/venus/vkr_device_memory.c
 +++ b/src/venus/vkr_device_memory.c
-@@ -281,6 +281,7 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+@@ -14,9 +14,12 @@
+ #include "vkr_physical_device.h"
+ 
+ static bool
+-vkr_get_fd_info_from_resource_info(struct vkr_context *ctx,
+-                                   const VkImportMemoryResourceInfoMESA *res_info,
+-                                   VkImportMemoryFdInfoKHR *out)
++vkr_get_import_info_from_resource_info(struct vkr_context *ctx,
++                                       const VkImportMemoryResourceInfoMESA *res_info,
++                                       VkImportMemoryFdInfoKHR *out_fd,
++                                       VkImportMemoryHostPointerInfoEXT *out_host_ptr,
++                                       const VkBaseInStructure **out_import,
++                                       VkDeviceSize *inout_alloc_size)
+ {
+    struct vkr_resource *res = vkr_context_get_resource(ctx, res_info->resourceId);
+    if (!res) {
+@@ -33,6 +36,24 @@ vkr_get_fd_info_from_resource_info(struct vkr_context *ctx,
+    case VIRGL_RESOURCE_FD_OPAQUE:
+       handle_type = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+       break;
++   case VIRGL_RESOURCE_FD_SHM:
++      /* BridgeVM: shm-backed mappable blob created ahead of the allocation
++       * (guest-vram-style ordering).  Import its pages as a host pointer;
++       * MoltenVK wraps them NoCopy so GPU writes land in the same shm the
++       * guest maps through the shared-memory BAR. */
++      if (!res->u.data)
++         return false;
++      *out_host_ptr = (VkImportMemoryHostPointerInfoEXT){
++         .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT,
++         .pNext = res_info->pNext,
++         .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT,
++         .pHostPointer = res->u.data,
++      };
++      /* Host-pointer imports must cover whole imported pages. */
++      if (*inout_alloc_size < res->size)
++         *inout_alloc_size = res->size;
++      *out_import = (const VkBaseInStructure *)out_host_ptr;
++      return true;
+    default:
+       return false;
+    }
+@@ -41,12 +62,13 @@ vkr_get_fd_info_from_resource_info(struct vkr_context *ctx,
+    if (fd < 0)
+       return false;
+ 
+-   *out = (VkImportMemoryFdInfoKHR){
++   *out_fd = (VkImportMemoryFdInfoKHR){
+       .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
+       .pNext = res_info->pNext,
+       .fd = fd,
+       .handleType = handle_type,
+    };
++   *out_import = (const VkBaseInStructure *)out_fd;
+    return true;
+ }
+ 
+@@ -260,19 +282,23 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+       return;
+    }
+ 
+-   /* translate VkImportMemoryResourceInfoMESA into VkImportMemoryFdInfoKHR in place */
++   /* translate VkImportMemoryResourceInfoMESA into an import chain in place */
+    VkImportMemoryFdInfoKHR local_import_info = { .fd = -1 };
++   VkImportMemoryHostPointerInfoEXT local_host_ptr_info;
+    VkImportMemoryResourceInfoMESA *res_info = NULL;
+    VkBaseInStructure *prev_of_res_info = vkr_find_prev_struct(
+       alloc_info, VK_STRUCTURE_TYPE_IMPORT_MEMORY_RESOURCE_INFO_MESA);
+    if (prev_of_res_info) {
++      const VkBaseInStructure *import_struct = NULL;
+       res_info = (VkImportMemoryResourceInfoMESA *)prev_of_res_info->pNext;
+-      if (!vkr_get_fd_info_from_resource_info(ctx, res_info, &local_import_info)) {
++      if (!vkr_get_import_info_from_resource_info(ctx, res_info, &local_import_info,
++                                                  &local_host_ptr_info, &import_struct,
++                                                  &alloc_info->allocationSize)) {
+          args->ret = VK_ERROR_INVALID_EXTERNAL_HANDLE;
+          return;
+       }
+ 
+-      prev_of_res_info->pNext = (const struct VkBaseInStructure *)&local_import_info;
++      prev_of_res_info->pNext = import_struct;
+    }
+ 
+    VkExportMemoryAllocateInfo *export_info =
+@@ -281,6 +307,7 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
     /* track if driver has requested export allocation */
     const bool might_export = export_info && export_info->handleTypes;
  
@@ -72,7 +177,7 @@ index 57a108d..a375a14 100644
     /* XXX Force dma_buf/opaque fd export or gbm bo import until a new extension that
      * supports direct export from host visible memory
      *
-@@ -299,7 +300,7 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+@@ -299,7 +326,7 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
     void *gbm_bo = NULL;
     struct vkr_mtl_shm *mtl_shm = NULL;
     VkExportMemoryAllocateInfo local_export_info;
@@ -81,7 +186,7 @@ index 57a108d..a375a14 100644
  
     if ((property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && !res_info) {
        /* An implementation can support dma_buf import along with opaque fd export/import.
-@@ -357,13 +358,18 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
+@@ -357,13 +384,18 @@ vkr_dispatch_vkAllocateMemory(struct vn_dispatch_context *dispatch,
              return;
           }
  
@@ -158,6 +263,128 @@ index 139b11a..6e0d08a 100644
     bool EXT_metal_objects;
  
     VkPhysicalDeviceMemoryProperties memory_properties;
+diff --git a/src/venus/vkr_queue.c b/src/venus/vkr_queue.c
+index 61b94be..68ed8ee 100644
+--- a/src/venus/vkr_queue.c
++++ b/src/venus/vkr_queue.c
+@@ -586,6 +586,33 @@ vkr_dispatch_vkImportSemaphoreResourceMESA(
+    /* resourceId 0 is for importing a signaled payload to sync_fd fence */
+    assert(!res_info->resourceId);
+ 
++   /* BridgeVM: MoltenVK has no sync-fd semaphore import.  Signal the binary
++    * semaphore with an empty queue submit instead; ring execution is
++    * sequential, so the signal lands before the guest's next submission
++    * waits on it (WSI acquire-semaphore flow).
++    */
++   if (!vk->ImportSemaphoreFdKHR) {
++      if (list_is_empty(&dev->queues)) {
++         vkr_log("no queue available to signal imported semaphore");
++         vkr_context_set_fatal(ctx);
++         return;
++      }
++      struct vkr_queue *queue =
++         list_first_entry(&dev->queues, struct vkr_queue, base.track_head);
++      const VkSubmitInfo submit = {
++         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
++         .signalSemaphoreCount = 1,
++         .pSignalSemaphores = &res_info->semaphore,
++      };
++      mtx_lock(&queue->vk_mutex);
++      VkResult result =
++         vk->QueueSubmit(queue->base.handle.queue, 1, &submit, VK_NULL_HANDLE);
++      mtx_unlock(&queue->vk_mutex);
++      if (result != VK_SUCCESS)
++         vkr_context_set_fatal(ctx);
++      return;
++   }
++
+    const VkImportSemaphoreFdInfoKHR import_info = {
+       .sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR,
+       .semaphore = res_info->semaphore,
+diff --git a/src/virglrenderer.c b/src/virglrenderer.c
+index fe36775..6d1ac82 100644
+--- a/src/virglrenderer.c
++++ b/src/virglrenderer.c
+@@ -1615,3 +1615,50 @@ int virgl_renderer_get_dev_fd(int ctx_id)
+ 
+    return ctx->get_device_fd(ctx);
+ }
++
++
++int
++virgl_renderer_bridgevm_scanout_blit_iosurface(uint32_t res_handle,
++                                               uint32_t width,
++                                               uint32_t height,
++                                               uint32_t *out_surface_id)
++{
++#ifdef __APPLE__
++   struct virgl_resource *res = virgl_resource_lookup(res_handle);
++   if (!res || !res->pipe_resource || !out_surface_id)
++      return EINVAL;
++   return vrend_bridgevm_scanout_blit_iosurface(res->pipe_resource, width,
++                                                height, out_surface_id);
++#else
++   (void)res_handle;
++   (void)width;
++   (void)height;
++   (void)out_surface_id;
++   return -1;
++#endif
++}
++
++int
++virgl_renderer_bridgevm_scanout_iosurface_checksum(uint64_t *out_checksum)
++{
++#ifdef __APPLE__
++   if (!out_checksum)
++      return EINVAL;
++   return vrend_bridgevm_scanout_iosurface_checksum(out_checksum);
++#else
++   (void)out_checksum;
++   return -1;
++#endif
++}
++
++
++int
++virgl_renderer_bridgevm_scanout_iosurface_dump(const char *path)
++{
++#ifdef __APPLE__
++   return vrend_bridgevm_scanout_iosurface_dump(path);
++#else
++   (void)path;
++   return -1;
++#endif
++}
+diff --git a/src/virglrenderer.h b/src/virglrenderer.h
+index 0bcafef..c75824b 100644
+--- a/src/virglrenderer.h
++++ b/src/virglrenderer.h
+@@ -517,4 +517,24 @@ VIRGL_EXPORT int virgl_renderer_get_dev_fd(int ctx_id);
+ 
+ #endif /* VIRGL_RENDERER_UNSTABLE_APIS */
+ 
++
++/* BridgeVM (macOS): GPU-blit the ctx0 scanout resource into a global
++ * IOSurface so the host window can composite without any CPU readback.
++ * Creates/resizes the cached surface on demand; returns 0 and the surface's
++ * global ID on success. The checksum helper locks the surface and hashes it
++ * (validation only; defeats zero-copy while called). Non-Apple builds
++ * return -1.
++ */
++VIRGL_EXPORT int
++virgl_renderer_bridgevm_scanout_blit_iosurface(uint32_t res_handle,
++                                               uint32_t width,
++                                               uint32_t height,
++                                               uint32_t *out_surface_id);
++
++VIRGL_EXPORT int
++virgl_renderer_bridgevm_scanout_iosurface_checksum(uint64_t *out_checksum);
++
++VIRGL_EXPORT int
++virgl_renderer_bridgevm_scanout_iosurface_dump(const char *path);
++
+ #endif
 diff --git a/src/vrend/vrend_blitter.c b/src/vrend/vrend_blitter.c
 index eed56e4..afbde6f 100644
 --- a/src/vrend/vrend_blitter.c
@@ -274,7 +501,7 @@ index 7774a25..1909b4f 100644
  
  static int vrend_decode_ctx_get_fencing_fd(UNUSED struct virgl_context *ctx)
 diff --git a/src/vrend/vrend_renderer.c b/src/vrend/vrend_renderer.c
-index 4bccc44..b3cc434 100644
+index 4bccc44..e42c23c 100644
 --- a/src/vrend/vrend_renderer.c
 +++ b/src/vrend/vrend_renderer.c
 @@ -409,13 +409,77 @@ struct sysval_uniform_block {
@@ -781,6 +1008,247 @@ index 4bccc44..b3cc434 100644
  
     if (ctx->ctx_id != 0 && ctx->in_error) {
        return false;
+@@ -13819,3 +14056,220 @@ vrend_renderer_pipe_resource_get_layout(UNUSED struct vrend_context *ctx,
+    return EINVAL;
+ }
+ #endif
++
++
++#ifdef __APPLE__
++#include <OpenGL/OpenGL.h>
++#include <OpenGL/CGLIOSurface.h>
++#include <IOSurface/IOSurface.h>
++#include <CoreFoundation/CoreFoundation.h>
++
++/* BridgeVM zero-copy scanout: one cached global IOSurface the display can
++ * composite directly (CALayer.contents), filled by a GPU blit from the
++ * vrend scanout texture. All calls arrive on the thread that owns the CGL
++ * context (the caller brackets with the same force_ctx_0 discipline as the
++ * CPU readback path).
++ */
++static struct {
++   IOSurfaceRef surface;
++   uint32_t surface_id;
++   uint32_t width;
++   uint32_t height;
++   GLuint tex;
++   GLuint dst_fbo;
++   GLuint src_fbo;
++} bv_scanout_iosurface;
++
++static void
++bv_scanout_iosurface_release(void)
++{
++   if (bv_scanout_iosurface.dst_fbo)
++      glDeleteFramebuffers(1, &bv_scanout_iosurface.dst_fbo);
++   if (bv_scanout_iosurface.src_fbo)
++      glDeleteFramebuffers(1, &bv_scanout_iosurface.src_fbo);
++   if (bv_scanout_iosurface.tex)
++      glDeleteTextures(1, &bv_scanout_iosurface.tex);
++   if (bv_scanout_iosurface.surface)
++      CFRelease(bv_scanout_iosurface.surface);
++   memset(&bv_scanout_iosurface, 0, sizeof(bv_scanout_iosurface));
++}
++
++static bool
++bv_scanout_iosurface_ensure(uint32_t width, uint32_t height)
++{
++   if (bv_scanout_iosurface.surface &&
++       bv_scanout_iosurface.width == width &&
++       bv_scanout_iosurface.height == height)
++      return true;
++
++   bv_scanout_iosurface_release();
++
++   const uint32_t bytes_per_element = 4;
++   const uint32_t pixel_format = 'BGRA';
++   const int32_t w = (int32_t)width;
++   const int32_t h = (int32_t)height;
++   CFNumberRef num_width =
++      CFNumberCreate(NULL, kCFNumberSInt32Type, &w);
++   CFNumberRef num_height =
++      CFNumberCreate(NULL, kCFNumberSInt32Type, &h);
++   CFNumberRef num_bpe =
++      CFNumberCreate(NULL, kCFNumberSInt32Type, (const int32_t *)&bytes_per_element);
++   CFNumberRef num_fmt =
++      CFNumberCreate(NULL, kCFNumberSInt32Type, (const int32_t *)&pixel_format);
++   const void *keys[] = {
++      kIOSurfaceWidth, kIOSurfaceHeight, kIOSurfaceBytesPerElement,
++      kIOSurfacePixelFormat, kIOSurfaceIsGlobal,
++   };
++   const void *values[] = {
++      num_width, num_height, num_bpe, num_fmt, kCFBooleanTrue,
++   };
++   CFDictionaryRef props = CFDictionaryCreate(
++      NULL, keys, values, 5, &kCFTypeDictionaryKeyCallBacks,
++      &kCFTypeDictionaryValueCallBacks);
++   CFRelease(num_width);
++   CFRelease(num_height);
++   CFRelease(num_bpe);
++   CFRelease(num_fmt);
++   if (!props)
++      return false;
++   bv_scanout_iosurface.surface = IOSurfaceCreate(props);
++   CFRelease(props);
++   if (!bv_scanout_iosurface.surface)
++      return false;
++   bv_scanout_iosurface.surface_id =
++      IOSurfaceGetID(bv_scanout_iosurface.surface);
++   bv_scanout_iosurface.width = width;
++   bv_scanout_iosurface.height = height;
++
++   CGLContextObj cgl_ctx = CGLGetCurrentContext();
++   if (!cgl_ctx) {
++      bv_scanout_iosurface_release();
++      return false;
++   }
++   glGenTextures(1, &bv_scanout_iosurface.tex);
++   glBindTexture(GL_TEXTURE_RECTANGLE, bv_scanout_iosurface.tex);
++   CGLError err = CGLTexImageIOSurface2D(
++      cgl_ctx, GL_TEXTURE_RECTANGLE, GL_RGBA, (GLsizei)width,
++      (GLsizei)height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
++      bv_scanout_iosurface.surface, 0);
++   glBindTexture(GL_TEXTURE_RECTANGLE, 0);
++   if (err != kCGLNoError) {
++      bv_scanout_iosurface_release();
++      return false;
++   }
++   glGenFramebuffers(1, &bv_scanout_iosurface.dst_fbo);
++   glGenFramebuffers(1, &bv_scanout_iosurface.src_fbo);
++   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bv_scanout_iosurface.dst_fbo);
++   glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
++                          GL_TEXTURE_RECTANGLE, bv_scanout_iosurface.tex, 0);
++   GLenum status = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
++   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
++   if (status != GL_FRAMEBUFFER_COMPLETE) {
++      bv_scanout_iosurface_release();
++      return false;
++   }
++   return true;
++}
++
++int
++vrend_bridgevm_scanout_blit_iosurface(struct pipe_resource *pres,
++                                      uint32_t width, uint32_t height,
++                                      uint32_t *out_surface_id)
++{
++   struct vrend_resource *res = (struct vrend_resource *)pres;
++   CGLContextObj cgl_ctx = CGLGetCurrentContext();
++   if (!cgl_ctx || CGLLockContext(cgl_ctx) != kCGLNoError)
++      return -1;
++
++   int ret = -1;
++   if (!res->gl_id ||
++       (res->target != GL_TEXTURE_2D && res->target != GL_TEXTURE_RECTANGLE))
++      goto out;
++   if (!bv_scanout_iosurface_ensure(width, height))
++      goto out;
++
++   GLint prev_read = 0, prev_draw = 0;
++   glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prev_read);
++   glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prev_draw);
++
++   glBindFramebuffer(GL_READ_FRAMEBUFFER, bv_scanout_iosurface.src_fbo);
++   glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
++                          res->target, res->gl_id, 0);
++   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bv_scanout_iosurface.dst_fbo);
++   if (glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) ==
++       GL_FRAMEBUFFER_COMPLETE) {
++      /* Row K of the source texture maps to row K of the IOSurface: the
++       * existing CPU readback path (glGetTexImage straight into the
++       * scanout) proves texel row 0 is the display's top row, and
++       * glBlitFramebuffer preserves row order.
++       */
++      glBlitFramebuffer(0, 0, (GLint)width, (GLint)height, 0, 0,
++                        (GLint)width, (GLint)height, GL_COLOR_BUFFER_BIT,
++                        GL_NEAREST);
++      glFlush();
++      *out_surface_id = bv_scanout_iosurface.surface_id;
++      ret = 0;
++   }
++   glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prev_read);
++   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)prev_draw);
++
++out:
++   CGLUnlockContext(cgl_ctx);
++   return ret;
++}
++
++int
++vrend_bridgevm_scanout_iosurface_checksum(uint64_t *out_checksum)
++{
++   IOSurfaceRef surface = bv_scanout_iosurface.surface;
++   if (!surface)
++      return -1;
++   /* Drain the pending blit before the CPU looks at the pixels. */
++   glFinish();
++   if (IOSurfaceLock(surface, kIOSurfaceLockReadOnly, NULL) != kIOReturnSuccess)
++      return -1;
++   const uint8_t *base = IOSurfaceGetBaseAddress(surface);
++   const size_t stride = IOSurfaceGetBytesPerRow(surface);
++   const uint32_t width = bv_scanout_iosurface.width;
++   const uint32_t height = bv_scanout_iosurface.height;
++   uint64_t checksum = 0xcbf29ce484222325ull; /* FNV-1a offset basis */
++   for (uint32_t y = 0; y < height; y++) {
++      const uint8_t *row = base + (size_t)y * stride;
++      for (uint32_t x = 0; x < width * 4; x++) {
++         checksum ^= row[x];
++         checksum *= 1099511628211ull;
++      }
++   }
++   IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, NULL);
++   *out_checksum = checksum;
++   return 0;
++}
++
++int
++vrend_bridgevm_scanout_iosurface_dump(const char *path)
++{
++   IOSurfaceRef surface = bv_scanout_iosurface.surface;
++   if (!surface || !path)
++      return -1;
++   glFinish();
++   if (IOSurfaceLock(surface, kIOSurfaceLockReadOnly, NULL) != kIOReturnSuccess)
++      return -1;
++   FILE *f = fopen(path, "wb");
++   int ret = -1;
++   if (f) {
++      const uint8_t *base = IOSurfaceGetBaseAddress(surface);
++      const size_t stride = IOSurfaceGetBytesPerRow(surface);
++      const uint32_t width = bv_scanout_iosurface.width;
++      const uint32_t height = bv_scanout_iosurface.height;
++      fwrite(&width, 4, 1, f);
++      fwrite(&height, 4, 1, f);
++      for (uint32_t y = 0; y < height; y++)
++         fwrite(base + (size_t)y * stride, 1, (size_t)width * 4, f);
++      fclose(f);
++      ret = 0;
++   }
++   IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, NULL);
++   return ret;
++}
++
++#endif /* __APPLE__ */
+diff --git a/src/vrend/vrend_renderer.h b/src/vrend/vrend_renderer.h
+index adb1213..6a8c9b4 100644
+--- a/src/vrend/vrend_renderer.h
++++ b/src/vrend/vrend_renderer.h
+@@ -407,6 +407,15 @@ int vrend_renderer_transfer_iov(struct vrend_context *ctx,
+                                 const struct vrend_transfer_info *info,
+                                 int transfer_mode);
+ 
++#ifdef __APPLE__
++/* BridgeVM: GPU-blit a scanout resource into a cached global IOSurface. */
++int vrend_bridgevm_scanout_blit_iosurface(struct pipe_resource *pres,
++                                          uint32_t width, uint32_t height,
++                                          uint32_t *out_surface_id);
++int vrend_bridgevm_scanout_iosurface_checksum(uint64_t *out_checksum);
++int vrend_bridgevm_scanout_iosurface_dump(const char *path);
++#endif
++
+ int vrend_renderer_transfer_pipe(struct pipe_resource *pres,
+                                  const struct vrend_transfer_info *info,
+                                  int transfer_mode);
 diff --git a/src/vrend/vrend_shader.c b/src/vrend/vrend_shader.c
 index 4fe673c..fd06705 100644
 --- a/src/vrend/vrend_shader.c

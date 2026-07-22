@@ -5,8 +5,9 @@ usage: scripts/run-hvf-windows-installed-boot.sh --target RAW --vars FD --eviden
 Required:
   --target RAW            Installed Windows raw disk to boot.
   --vars FD               Writable UEFI vars file preserved from install.
-  --firmware-code FD      64 MiB AArch64 EDK2 code image. Defaults to the
-                          bundled image, then a standard QEMU installation.
+  --firmware-code FD      AArch64 EDK2 code volume up to 64 MiB. Defaults to
+                          BridgeVM's pinned secure+TPM2 firmware, then legacy
+                          bundled or standard QEMU firmware.
   --evidence-dir DIR      Directory for preflight.txt, run.log, target-stat.txt, cleanup.txt, ramfb/.
 
 Options:
@@ -77,6 +78,22 @@ Options:
   --nvme-buffered-io      Force the byte-identical buffered NVMe data path for
                           an audited storage-integrity A/B diagnostic run.
                           The production default remains direct DMA.
+  --vtpm-state-dir DIR    Enable the TPM 2.0 TIS/PPI device and preserve its
+                          swtpm state in DIR. The launcher owns exactly one
+                          swtpm process and fails closed if its sockets do not
+                          become ready.
+  --swtpm-bin CMD         swtpm command or executable path. Requires
+                          --vtpm-state-dir; default: swtpm from PATH.
+  --swtpm-key-stdin       Read exactly one 32-byte state key from standard
+                          input and pass it to swtpm by inherited FD. Enables
+                          AES-256-CBC encrypt-then-MAC state protection; the
+                          key is never accepted as an argument or disk path.
+  --performance-risk MODE Select balanced or aggressive (default: balanced).
+                          Aggressive requires --virtio-gpu-3d and enables the
+                          direct renderer, deferred scanout, IOSurface GPU blit,
+                          and uncapped scanout readback. The mode is recorded in
+                          preflight evidence and is media-independent, so a
+                          failed run can return to balanced immediately.
   --virtio-gpu-3d         Attach the virtio-gpu PCI device with the selected
                           3D backend, expose the viogpu3d bind-id alias
                           DEV_10F7 by default, build hvf_gic_boot_probe with
@@ -106,6 +123,18 @@ Options:
                           Require a viogpu3d render candidate and a passing
                           readiness check before booting. Requires
                           --virtio-gpu-3d.
+  --require-real-title-gate
+                          Require a clean single-generation viogpu3d state,
+                          PPSSPP alive on vulkan_virtio.dll for 30 seconds,
+                          and at least 300 RESOURCE_FLUSH commands. Compatibility
+                          alias for the bundled PPSSPP --title-manifest plus
+                          --require-title-gates.
+  --title-manifest PATH   Repeatable version-1 JSON title contract describing
+                          the expected guest log, pass marker, runtime, loaded
+                          module, window, executable hash, and GPU flush floor.
+                          Requires --virtio-gpu-3d.
+  --require-title-gates   Fail the run unless every supplied title manifest
+                          passes with a fresh guest log and clean driver state.
   --daily                 Opt-in daily-driver preset. Changes defaults only
                           when not explicitly overridden: --ram-mib 6144 and
                           --watchdog-ms 86400000 unless --no-watchdog is set.

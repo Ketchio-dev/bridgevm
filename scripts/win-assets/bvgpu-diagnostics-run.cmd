@@ -41,9 +41,13 @@ echo [diagnostics-run] d3dkmt_probe_exit_code=%D3DKMT_RC% >> "%DIAG_LOG%"
 
 set VN_DEBUG=init,result
 set MESA_LOG_FILE=C:\BridgeVM\bvgpu-mesa-vulkan.log
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-vulkan-probe.ps1 > "%VULKAN_LOG%" 2>&1
+rem The probe already appends every beacon to %VULKAN_LOG% itself. Redirect
+rem its console stream to a separate file so the probe log has exactly one
+rem writer: cmd's open redirection handle raced the probe's per-line appends
+rem and could clobber completed beacon lines.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-vulkan-probe.ps1 > "%VULKAN_LOG%.console" 2>&1
 set VULKAN_RC=%ERRORLEVEL%
-echo [diagnostics-run] vulkan_exit_code=%VULKAN_RC% >> "%VULKAN_LOG%"
+echo [diagnostics-run] vulkan_exit_code=%VULKAN_RC% >> "%VULKAN_LOG%.console"
 echo [diagnostics-run] complete_utc=%DATE% %TIME% >> "%DIAG_LOG%"
 echo done > "%COMPLETE_FLAG%"
 rmdir "%RUNNING_DIR%" 2>nul

@@ -244,15 +244,25 @@ absolute_path_from() {
 
 absolutize_installed_boot_paths() {
   local invocation_dir="$1"
+  local index
   [[ -z "$TARGET" ]] || TARGET="$(absolute_path_from "$invocation_dir" "$TARGET")"
   [[ -z "$PLACEHOLDER_NSID1" ]] || PLACEHOLDER_NSID1="$(absolute_path_from "$invocation_dir" "$PLACEHOLDER_NSID1")"
   [[ -z "$VARS" ]] || VARS="$(absolute_path_from "$invocation_dir" "$VARS")"
   [[ -z "$FIRMWARE_CODE" ]] || FIRMWARE_CODE="$(absolute_path_from "$invocation_dir" "$FIRMWARE_CODE")"
   [[ -z "$EVIDENCE_DIR" ]] || EVIDENCE_DIR="$(absolute_path_from "$invocation_dir" "$EVIDENCE_DIR")"
+  [[ -z "$VTPM_STATE_DIR" ]] || VTPM_STATE_DIR="$(absolute_path_from "$invocation_dir" "$VTPM_STATE_DIR")"
+  if [[ "$SWTPM_BIN" == */* ]]; then
+    SWTPM_BIN="$(absolute_path_from "$invocation_dir" "$SWTPM_BIN")"
+  fi
   [[ -z "$VIRTIO_GPU_TRACE_JSONL" ]] || VIRTIO_GPU_TRACE_JSONL="$(absolute_path_from "$invocation_dir" "$VIRTIO_GPU_TRACE_JSONL")"
   [[ -z "$DISPLAY_EXPORT_PPM" ]] || DISPLAY_EXPORT_PPM="$(absolute_path_from "$invocation_dir" "$DISPLAY_EXPORT_PPM")"
   [[ -z "$INPUT_CONTROL" ]] || INPUT_CONTROL="$(absolute_path_from "$invocation_dir" "$INPUT_CONTROL")"
   [[ -z "$VIOGPU3D_DIR" ]] || VIOGPU3D_DIR="$(absolute_path_from "$invocation_dir" "$VIOGPU3D_DIR")"
+  if (( TITLE_MANIFEST_COUNT > 0 )); then
+    for index in "${!TITLE_MANIFESTS[@]}"; do
+      TITLE_MANIFESTS[$index]="$(absolute_path_from "$invocation_dir" "${TITLE_MANIFESTS[$index]}")"
+    done
+  fi
   [[ -z "$AGENT_SERVICE_CONTROL" ]] || AGENT_SERVICE_CONTROL="$(absolute_path_from "$invocation_dir" "$AGENT_SERVICE_CONTROL")"
   [[ -z "$AGENT_SHARE_HOST" ]] || AGENT_SHARE_HOST="$(absolute_path_from "$invocation_dir" "$AGENT_SHARE_HOST")"
 }
@@ -262,7 +272,9 @@ resolve_installed_boot_firmware() {
   local candidate
   local runtime_root="${ROOT:-}"
   for candidate in \
+    "${runtime_root:+$runtime_root/firmware/edk2-aarch64-secure-code.fd}" \
     "${runtime_root:+$runtime_root/firmware/edk2-aarch64-code.fd}" \
+    "${runtime_root:+$runtime_root/crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd}" \
     /opt/homebrew/share/qemu/edk2-aarch64-code.fd \
     /usr/local/share/qemu/edk2-aarch64-code.fd
   do
@@ -272,7 +284,7 @@ resolve_installed_boot_firmware() {
       return 0
     fi
   done
-  echo "FAIL: AArch64 UEFI firmware is unavailable; install QEMU or pass --firmware-code" >&2
+  echo "FAIL: AArch64 UEFI firmware is unavailable; package BridgeVM or pass --firmware-code" >&2
   exit 1
 }
 

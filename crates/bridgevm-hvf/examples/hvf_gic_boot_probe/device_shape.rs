@@ -120,6 +120,15 @@ fn device_shape_lines(
     } else {
         "qemu oracle parity: legacy virtio-mmio slot 31 omitted by disable switch"
     };
+    let tpm = if devices.tpm_tis_present {
+        format!(
+            "tpm2-tis: base={:#x} size={:#x} ACPI=TPM0/MSFT0101+TPM2-log backend=swtpm ppi=shared-memory+dsm-1.3",
+            machine::TPM_TIS.base,
+            machine::TPM_TIS.size
+        )
+    } else {
+        "tpm2-tis: disabled".to_string()
+    };
 
     vec![
         format!(
@@ -141,6 +150,7 @@ fn device_shape_lines(
         pci_virtio,
         virtio_net,
         virtio_gpu,
+        tpm,
         legacy_parity.to_string(),
     ]
 }
@@ -194,6 +204,7 @@ mod tests {
         );
         assert!(lines.iter().any(|line| line == "virtio-net-pci: disabled"));
         assert!(lines.iter().any(|line| line == "virtio-gpu-pci: disabled"));
+        assert!(lines.iter().any(|line| line == "tpm2-tis: disabled"));
         let net_lines = super::device_shape_lines(
             VirtPlatformDeviceConfig {
                 virtio_net_present: true,
@@ -248,6 +259,7 @@ mod tests {
                 virtio_net_backend: bridgevm_hvf::platform_virt::VirtioNetBackendKind::Nat,
                 legacy_virtio_mmio_present: false,
                 ramfb_present: false,
+                tpm_tis_present: false,
             },
             true,
             true,

@@ -2,7 +2,7 @@
 //!
 //! This is the keystone device for the BridgeVM HVF "QEMU virt contract" path
 //! (Path A in `docs/hvf-windows-engine-strategy.md`). Stock ArmVirtQemu firmware
-//! (`edk2-aarch64-code.fd`, the file the live HVF smokes already load) discovers
+//! (BridgeVM's pinned ArmVirtQemu secure+TPM2 code volume) discovers
 //! the guest ACPI tables, SMBIOS, boot order and the kernel/initrd through
 //! `fw_cfg`. Without it the firmware has no ACPI to hand to a Windows or Linux
 //! guest — the root cause catalogued in

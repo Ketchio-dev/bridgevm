@@ -241,6 +241,7 @@ pub struct VirtioGpu {
     response_scratch: Vec<u8>,
     parked_response_scratch: Vec<Vec<u8>>,
     blob_row_scratch: Vec<u8>,
+    scanout_readback_scratch: Vec<u8>,
     trace_fields_scratch: String,
     trace: VirtioGpuTraceRecorder,
     trace_queue_notify_count: u64,
@@ -260,6 +261,18 @@ pub struct VirtioGpu {
     scanout_readback_throttled_count: u64,
     scanout_readback_bytes: u64,
     scanout_readback_nanoseconds: u64,
+    scanout_3d_deferred: bool,
+    pending_3d_scanout: Option<(u32, Rect)>,
+    pending_3d_scanout_fresh: bool,
+    pending_3d_scanout_blitted: bool,
+    deferred_scanout_flush_count: u64,
+    deferred_scanout_serviced_count: u64,
+    scanout_iosurface: bool,
+    scanout_iosurface_verify: bool,
+    scanout_iosurface_id: Option<u32>,
+    scanout_iosurface_dumped: bool,
+    scanout_blit_count: u64,
+    scanout_blit_nanoseconds: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -336,6 +349,9 @@ pub struct VirtioGpuStats {
     pub scanout_readback_throttled: u64,
     pub scanout_readback_bytes: u64,
     pub scanout_readback_nanoseconds: u64,
+    pub deferred_scanout_flushes: u64,
+    pub deferred_scanout_serviced: u64,
+    pub scanout_blits: u64,
     pub three_d: VirtioGpu3dStats,
     pub queues: [VirtioGpuQueueStats; QUEUE_COUNT],
 }
@@ -408,6 +424,43 @@ struct CtrlHdr {
     padding: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScanoutReadbackOutcome {
+    Done,
+    NotDue,
+    Gone,
+}
+
+fn fnv1a64(data: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for &byte in data {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+fn union_rect(a: Rect, b: Rect) -> Rect {
+    if a.width == 0 || a.height == 0 {
+        return b;
+    }
+    if b.width == 0 || b.height == 0 {
+        return a;
+    }
+    let x = a.x.min(b.x);
+    let y = a.y.min(b.y);
+    let right = a.x.saturating_add(a.width).max(b.x.saturating_add(b.width));
+    let bottom =
+        a.y.saturating_add(a.height)
+            .max(b.y.saturating_add(b.height));
+    Rect {
+        x,
+        y,
+        width: right - x,
+        height: bottom - y,
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Rect {
     x: u32,
@@ -453,6 +506,7 @@ impl VirtioGpu {
             response_scratch: Vec::new(),
             parked_response_scratch: Vec::new(),
             blob_row_scratch: Vec::new(),
+            scanout_readback_scratch: Vec::new(),
             trace_fields_scratch: String::new(),
             trace: VirtioGpuTraceRecorder::from_env(),
             trace_queue_notify_count: 0,
@@ -470,6 +524,18 @@ impl VirtioGpu {
             scanout_readback_attempt_count: 0,
             scanout_readback_count: 0,
             scanout_readback_throttled_count: 0,
+            scanout_3d_deferred: false,
+            pending_3d_scanout: None,
+            pending_3d_scanout_fresh: false,
+            pending_3d_scanout_blitted: false,
+            deferred_scanout_flush_count: 0,
+            deferred_scanout_serviced_count: 0,
+            scanout_iosurface: false,
+            scanout_iosurface_verify: false,
+            scanout_iosurface_id: None,
+            scanout_iosurface_dumped: false,
+            scanout_blit_count: 0,
+            scanout_blit_nanoseconds: 0,
             scanout_readback_bytes: 0,
             scanout_readback_nanoseconds: 0,
         };
@@ -528,6 +594,273 @@ impl VirtioGpu {
         self.last_3d_scanout_readback = None;
     }
 
+    pub fn set_3d_scanout_deferred(&mut self, deferred: bool) {
+        self.scanout_3d_deferred = deferred;
+        if !deferred {
+            self.pending_3d_scanout = None;
+            self.pending_3d_scanout_fresh = false;
+        }
+    }
+
+    pub fn set_3d_scanout_iosurface(&mut self, enabled: bool, verify: bool) {
+        self.scanout_iosurface = enabled;
+        self.scanout_iosurface_verify = enabled && verify;
+    }
+
+    /// GPU-blit the scanout into the shared IOSurface (display path); the
+    /// CPU readback stays as the paced evidence/FbSink feed.
+    fn blit_3d_scanout_iosurface(&mut self, resource_id: u32) {
+        if !self.scanout_iosurface {
+            return;
+        }
+        let Some(info) = self.three_d.scanout_3d_info(resource_id) else {
+            return;
+        };
+        let width = info.width.min(self.width);
+        let height = info.height.min(self.height);
+        let started = Instant::now();
+        let Some(surface_id) = self
+            .three_d
+            .blit_3d_scanout_iosurface(resource_id, width, height)
+        else {
+            return;
+        };
+        let duration_ns = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+        self.scanout_blit_count = self.scanout_blit_count.saturating_add(1);
+        self.scanout_blit_nanoseconds = self.scanout_blit_nanoseconds.saturating_add(duration_ns);
+        if self.scanout_iosurface_id != Some(surface_id) {
+            self.scanout_iosurface_id = Some(surface_id);
+            eprintln!("virtio-gpu: scanout IOSurface global id={surface_id} ({width}x{height})");
+            // Publish the global ID beside the shared framebuffer so a
+            // windowed viewer can IOSurfaceLookup + bind layer.contents
+            // instead of consuming the CPU framebuffer file.
+            if let Ok(fb_path) = std::env::var("BRIDGEVM_DISPLAY_EXPORT_FB") {
+                let _ = std::fs::write(
+                    format!("{fb_path}.iosurface"),
+                    format!("{surface_id} {width} {height}\n"),
+                );
+            }
+        }
+        let count = self.scanout_blit_count;
+        self.record_trace_fields("scanout_blit", |fields| {
+            let _ = write!(
+                fields,
+                ",\"resource_id\":{resource_id},\"surface_id\":{surface_id},\"width\":{width},\"height\":{height},\"duration_ns\":{duration_ns},\"count\":{count}"
+            );
+        });
+    }
+
+    fn defer_3d_scanout(&mut self, resource_id: u32, rect: Rect) {
+        self.deferred_scanout_flush_count = self.deferred_scanout_flush_count.saturating_add(1);
+        let pending = match self.pending_3d_scanout.take() {
+            Some((pending_id, pending_rect)) if pending_id == resource_id => {
+                (resource_id, union_rect(pending_rect, rect))
+            }
+            // A different resource means the scanout switched; the stale
+            // pending frame is superseded, not unioned.
+            _ => (resource_id, rect),
+        };
+        self.pending_3d_scanout = Some(pending);
+        self.pending_3d_scanout_fresh = true;
+        self.pending_3d_scanout_blitted = false;
+        if self.deferred_scanout_flush_count <= 8 {
+            let count = self.deferred_scanout_flush_count;
+            self.record_trace_fields("scanout_readback_deferred", |fields| {
+                let _ = write!(fields, ",\"resource_id\":{resource_id},\"count\":{count}");
+            });
+        }
+    }
+
+    /// Service a flush-deferred 3D scanout readback from the per-exit drain.
+    /// The fresh flag skips the drain pass of the exit that armed the flush,
+    /// so the guest sees its RESOURCE_FLUSH response and the vCPU resumes
+    /// before this thread pays for the GL readback. A pacing-not-due pending
+    /// frame is kept (delayed), never dropped.
+    pub fn service_deferred_3d_scanout(&mut self) {
+        let Some((resource_id, rect)) = self.pending_3d_scanout else {
+            return;
+        };
+        if self.pending_3d_scanout_fresh {
+            self.pending_3d_scanout_fresh = false;
+            return;
+        }
+        if self.scanout_resource != Some(resource_id) || !self.three_d.is_3d_resource(resource_id) {
+            self.pending_3d_scanout = None;
+            return;
+        }
+        if !self.pending_3d_scanout_blitted || self.scanout_iosurface_verify {
+            // One blit per armed frame: retries of a pacing-held pending
+            // frame must not re-blit at vCPU-exit cadence. Verify mode
+            // re-blits so the checksum compares the same frame the CPU
+            // readback is about to capture (the guest animates between an
+            // armed frame's blit and a pacing-held readback).
+            self.blit_3d_scanout_iosurface(resource_id);
+            self.pending_3d_scanout_blitted = true;
+        }
+        match self.try_3d_scanout_readback(resource_id, rect, true) {
+            ScanoutReadbackOutcome::NotDue => {}
+            ScanoutReadbackOutcome::Gone => {
+                self.pending_3d_scanout = None;
+            }
+            ScanoutReadbackOutcome::Done => {
+                self.pending_3d_scanout = None;
+                self.deferred_scanout_serviced_count =
+                    self.deferred_scanout_serviced_count.saturating_add(1);
+                self.publish_scanout_fb();
+            }
+        }
+    }
+
+    fn try_3d_scanout_readback(
+        &mut self,
+        resource_id: u32,
+        rect: Rect,
+        deferred: bool,
+    ) -> ScanoutReadbackOutcome {
+        let now = Instant::now();
+        let readback_due = self.last_3d_scanout_readback.map_or(true, |last| {
+            now.saturating_duration_since(last) >= self.scanout_readback_interval
+        });
+        if !readback_due {
+            return ScanoutReadbackOutcome::NotDue;
+        }
+        self.scanout_readback_attempt_count = self.scanout_readback_attempt_count.saturating_add(1);
+        let started = Instant::now();
+        let Some(info) = self.three_d.scanout_3d_info(resource_id) else {
+            return ScanoutReadbackOutcome::Gone;
+        };
+        let readback_width = info.width.min(self.width);
+        let readback_height = info.height.min(self.height);
+        let readback_len = scanout_len(readback_width, readback_height);
+        self.scanout_readback_scratch.resize(readback_len, 0);
+        self.scanout_readback_scratch.fill(0);
+        let transfer_started = Instant::now();
+        let transfer_ok = self.three_d.read_3d_scanout(
+            resource_id,
+            readback_width,
+            readback_height,
+            &mut self.scanout_readback_scratch,
+        );
+        let transfer_ns = transfer_started
+            .elapsed()
+            .as_nanos()
+            .min(u128::from(u64::MAX)) as u64;
+        let composite_started = Instant::now();
+        let readback_ok = transfer_ok
+            && composite_host_3d_to_scanout(
+                &self.scanout_readback_scratch,
+                readback_width,
+                readback_height,
+                &mut self.scanout,
+                self.width,
+                self.height,
+                rect,
+            );
+        let composite_ns = composite_started
+            .elapsed()
+            .as_nanos()
+            .min(u128::from(u64::MAX)) as u64;
+        let elapsed = started.elapsed();
+        let duration_ns = elapsed.as_nanos().min(u128::from(u64::MAX)) as u64;
+        self.scanout_readback_nanoseconds = self
+            .scanout_readback_nanoseconds
+            .saturating_add(duration_ns);
+        if readback_ok && self.scanout_iosurface_verify {
+            // Hash four orientations of the CPU readback so a single run
+            // identifies the transform the GPU blit applied: identity,
+            // y-flip, R<->B swap, and both.
+            let scratch = &self.scanout_readback_scratch[..readback_len];
+            let row_bytes = readback_width as usize * 4;
+            let rows = readback_height as usize;
+            let cpu_checksum = fnv1a64(scratch);
+            let mut flip = 0xcbf2_9ce4_8422_2325u64;
+            let mut swap = 0xcbf2_9ce4_8422_2325u64;
+            let mut flip_swap = 0xcbf2_9ce4_8422_2325u64;
+            let fnv_byte = |hash: &mut u64, byte: u8| {
+                *hash ^= u64::from(byte);
+                *hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+            };
+            for y in 0..rows {
+                let row = &scratch[y * row_bytes..(y + 1) * row_bytes];
+                let flipped_row = &scratch[(rows - 1 - y) * row_bytes..(rows - y) * row_bytes];
+                for x in (0..row_bytes).step_by(4) {
+                    for (hash, src) in [(&mut swap, row), (&mut flip_swap, flipped_row)] {
+                        fnv_byte(hash, src[x + 2]);
+                        fnv_byte(hash, src[x + 1]);
+                        fnv_byte(hash, src[x]);
+                        fnv_byte(hash, src[x + 3]);
+                    }
+                }
+                for &byte in flipped_row {
+                    fnv_byte(&mut flip, byte);
+                }
+            }
+            if let Some(gpu_checksum) = self.three_d.scanout_iosurface_checksum() {
+                let matched = cpu_checksum == gpu_checksum;
+                let matched_flip = flip == gpu_checksum;
+                let matched_swap = swap == gpu_checksum;
+                let matched_flip_swap = flip_swap == gpu_checksum;
+                if !(matched || matched_flip || matched_swap || matched_flip_swap)
+                    && !self.scanout_iosurface_dumped
+                {
+                    // First unexplained mismatch: dump both buffers beside
+                    // the trace JSONL for offline inspection.
+                    self.scanout_iosurface_dumped = true;
+                    if let Some(dir) = std::env::var("BRIDGEVM_VIRTIO_GPU_TRACE_JSONL")
+                        .ok()
+                        .and_then(|p| std::path::Path::new(&p).parent().map(PathBuf::from))
+                    {
+                        let _ = self
+                            .three_d
+                            .scanout_iosurface_dump(&dir.join("iosurface-gpu.bin"));
+                        let mut cpu_dump = Vec::with_capacity(8 + scratch.len());
+                        cpu_dump.extend_from_slice(&readback_width.to_le_bytes());
+                        cpu_dump.extend_from_slice(&readback_height.to_le_bytes());
+                        cpu_dump.extend_from_slice(scratch);
+                        let _ = std::fs::write(dir.join("iosurface-cpu.bin"), &cpu_dump);
+                    }
+                }
+                self.record_trace_fields("scanout_iosurface_verify", |fields| {
+                    let _ = write!(
+                        fields,
+                        ",\"matched\":{matched},\"matched_flip\":{matched_flip},\"matched_swap\":{matched_swap},\"matched_flip_swap\":{matched_flip_swap},\"cpu\":{cpu_checksum},\"gpu\":{gpu_checksum}"
+                    );
+                });
+            }
+        }
+        if readback_ok {
+            self.last_3d_scanout_readback = Some(Instant::now());
+            self.scanout_readback_count = self.scanout_readback_count.saturating_add(1);
+            let bytes = u64::from(readback_width)
+                .saturating_mul(u64::from(readback_height))
+                .saturating_mul(4);
+            self.scanout_readback_bytes = self.scanout_readback_bytes.saturating_add(bytes);
+            let count = self.scanout_readback_count;
+            let width = readback_width;
+            let height = readback_height;
+            let deferred_flag = u8::from(deferred);
+            // duration_ns spans scratch prep + GL transfer + CPU composite;
+            // transfer_ns/composite_ns isolate the two phases.
+            self.record_trace_fields("scanout_readback", |fields| {
+                let _ = write!(
+                    fields,
+                    ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"bytes\":{bytes},\"duration_ns\":{duration_ns},\"transfer_ns\":{transfer_ns},\"composite_ns\":{composite_ns},\"deferred\":{deferred_flag},\"count\":{count}"
+                );
+            });
+        } else {
+            let flush_count = self.scanout_3d_flush_count;
+            if flush_count <= 8 {
+                self.record_trace_fields("scanout_readback_failed", |fields| {
+                    let _ = write!(
+                        fields,
+                        ",\"resource_id\":{resource_id},\"width\":{readback_width},\"height\":{readback_height},\"count\":{flush_count}"
+                    );
+                });
+            }
+        }
+        ScanoutReadbackOutcome::Done
+    }
+
     pub fn new_from_env() -> Self {
         let (width, height) = parse_resolution_env();
         Self::new(width, height)
@@ -548,6 +881,9 @@ impl VirtioGpu {
             scanout_readback_throttled: self.scanout_readback_throttled_count,
             scanout_readback_bytes: self.scanout_readback_bytes,
             scanout_readback_nanoseconds: self.scanout_readback_nanoseconds,
+            deferred_scanout_flushes: self.deferred_scanout_flush_count,
+            deferred_scanout_serviced: self.deferred_scanout_serviced_count,
+            scanout_blits: self.scanout_blit_count,
             three_d: self.three_d.stats(self.pending_fenced.len()),
             queues: [VirtioGpuQueueStats::default(); QUEUE_COUNT],
         };
@@ -603,6 +939,7 @@ impl VirtioGpu {
         self.response_scratch.clear();
         self.parked_response_scratch.clear();
         self.blob_row_scratch.clear();
+        self.scanout_readback_scratch.clear();
         self.trace_fields_scratch.clear();
         self.last_vblank = None;
         self.vblank_paced_count = 0;
@@ -1147,7 +1484,7 @@ impl VirtioGpu {
                 self.mark_queue_interrupt(queue_index);
             }
         }
-        self.drain_completed_fences(mem);
+        self.drain_completed_fences_after_queue(mem);
     }
 
     fn process_chain(
@@ -1167,11 +1504,16 @@ impl VirtioGpu {
         Self::gather_readable_into(mem, &descs, &mut request);
         let mut response = self.take_response_scratch();
         response.clear();
+        let handle_started = Instant::now();
         if control {
             self.handle_control_request_into(mem, &request, &mut response);
         } else {
             self.handle_cursor_request_into(&request, &mut response);
         }
+        let handle_ns = handle_started
+            .elapsed()
+            .as_nanos()
+            .min(u128::from(u64::MAX)) as u64;
         let Some(hdr) = CtrlHdr::parse(&request) else {
             let request_len = request.len();
             let response_len = response.len();
@@ -1186,7 +1528,16 @@ impl VirtioGpu {
             self.recycle_queue_scratch(descs, request, response);
             return ChainCompletion::Immediate(used_len);
         };
-        self.trace_command(queue_index, head, control, &request, hdr, &response);
+        self.trace_command(
+            queue_index,
+            head,
+            control,
+            &descs,
+            &request,
+            hdr,
+            &response,
+            handle_ns,
+        );
         // viogpu3d uses an empty context-0 SUBMIT_3D as its control-queue
         // synchronization NOP. Its used-ring completion drives the guest's
         // DXGK CRTC_VSYNC notification, so park that completion when host
@@ -1464,9 +1815,22 @@ impl VirtioGpu {
     }
 
     pub fn drain_completed_fences(&mut self, mem: &mut dyn GuestMemoryMut) {
+        self.drain_completed_fences_inner(mem, false);
+    }
+
+    fn drain_completed_fences_after_queue(&mut self, mem: &mut dyn GuestMemoryMut) {
+        self.drain_completed_fences_inner(mem, true);
+    }
+
+    fn drain_completed_fences_inner(&mut self, mem: &mut dyn GuestMemoryMut, after_queue: bool) {
         let mut completed = std::mem::take(&mut self.completed_fences_scratch);
         completed.clear();
-        self.three_d.drain_completed_fences_into(&mut completed);
+        if after_queue {
+            self.three_d
+                .drain_completed_fences_after_queue_into(&mut completed);
+        } else {
+            self.three_d.drain_completed_fences_into(&mut completed);
+        }
         if completed.is_empty() || self.pending_fenced.is_empty() {
             for fence in &completed {
                 self.trace_fence_complete(*fence);
@@ -1857,6 +2221,23 @@ impl VirtioGpu {
                 );
             } else if self.three_d.is_3d_resource(resource_id) {
                 self.scanout_3d_flush_count = self.scanout_3d_flush_count.saturating_add(1);
+                let flush_count = self.scanout_3d_flush_count;
+                if flush_count <= 8 {
+                    let info = self.three_d.scanout_3d_info(resource_id);
+                    let local_backing = self.three_d.local_3d_backing(resource_id).is_some();
+                    let display_width = self.width;
+                    let display_height = self.height;
+                    self.record_trace_fields("scanout_3d_flush", |fields| {
+                        let _ = write!(
+                            fields,
+                            ",\"resource_id\":{resource_id},\"resource_width\":{},\"resource_height\":{},\"display_width\":{},\"display_height\":{},\"local_backing\":{local_backing},\"count\":{flush_count}",
+                            info.map_or(0, |info| info.width),
+                            info.map_or(0, |info| info.height),
+                            display_width,
+                            display_height
+                        );
+                    });
+                }
                 let local_readback = self
                     .three_d
                     .scanout_3d_info(resource_id)
@@ -1902,55 +2283,30 @@ impl VirtioGpu {
                     response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
                     return;
                 }
-                let now = Instant::now();
-                let readback_due = self.last_3d_scanout_readback.map_or(true, |last| {
-                    now.saturating_duration_since(last) >= self.scanout_readback_interval
-                });
-                if readback_due {
-                    self.scanout_readback_attempt_count =
-                        self.scanout_readback_attempt_count.saturating_add(1);
-                    let started = Instant::now();
-                    let readback_ok = self.three_d.read_3d_scanout(
-                        resource_id,
-                        self.width,
-                        self.height,
-                        &mut self.scanout,
-                    );
-                    let elapsed = started.elapsed();
-                    let duration_ns = elapsed.as_nanos().min(u128::from(u64::MAX)) as u64;
-                    self.scanout_readback_nanoseconds = self
-                        .scanout_readback_nanoseconds
-                        .saturating_add(duration_ns);
-                    if readback_ok {
-                        self.last_3d_scanout_readback = Some(Instant::now());
-                        self.scanout_readback_count = self.scanout_readback_count.saturating_add(1);
-                        let bytes = u64::from(self.width)
-                            .saturating_mul(u64::from(self.height))
-                            .saturating_mul(4);
-                        self.scanout_readback_bytes =
-                            self.scanout_readback_bytes.saturating_add(bytes);
-                        let count = self.scanout_readback_count;
+                if self.scanout_3d_deferred {
+                    // Decouple the GL readback from the guest's flush: arm a
+                    // pending readback and respond OK now; the per-exit drain
+                    // services it after the vCPU has resumed at least once.
+                    self.defer_3d_scanout(resource_id, rect);
+                    response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
+                    return;
+                }
+                self.blit_3d_scanout_iosurface(resource_id);
+                match self.try_3d_scanout_readback(resource_id, rect, false) {
+                    ScanoutReadbackOutcome::Done | ScanoutReadbackOutcome::Gone => {}
+                    ScanoutReadbackOutcome::NotDue => {
+                        self.scanout_readback_throttled_count =
+                            self.scanout_readback_throttled_count.saturating_add(1);
+                        let throttled = self.scanout_readback_throttled_count;
                         let width = self.width;
                         let height = self.height;
-                        self.record_trace_fields("scanout_readback", |fields| {
+                        self.record_trace_fields("scanout_readback_throttled", |fields| {
                             let _ = write!(
                                 fields,
-                                ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"bytes\":{bytes},\"duration_ns\":{duration_ns},\"count\":{count}"
+                                ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"count\":{throttled}"
                             );
                         });
                     }
-                } else {
-                    self.scanout_readback_throttled_count =
-                        self.scanout_readback_throttled_count.saturating_add(1);
-                    let throttled = self.scanout_readback_throttled_count;
-                    let width = self.width;
-                    let height = self.height;
-                    self.record_trace_fields("scanout_readback_throttled", |fields| {
-                        let _ = write!(
-                            fields,
-                            ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"count\":{throttled}"
-                        );
-                    });
                 }
             }
         } else if self
@@ -2119,14 +2475,17 @@ impl VirtioGpu {
         self.trace_fields_scratch = fields;
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn trace_command(
         &mut self,
         queue_index: usize,
         head: u16,
         control: bool,
+        descs: &[Descriptor],
         request: &[u8],
         hdr: CtrlHdr,
         response: &[u8],
+        handle_ns: u64,
     ) {
         venus_start_trace_command(request, hdr, response);
         if !self.trace.enabled() {
@@ -2148,10 +2507,29 @@ impl VirtioGpu {
                 }
             }
         }
+        let readable_descriptor_count = descs
+            .iter()
+            .filter(|desc| desc.flags & DESC_F_WRITE == 0)
+            .count();
+        let writable_descriptor_count = descs.len().saturating_sub(readable_descriptor_count);
+        let readable_descriptor_bytes = descs
+            .iter()
+            .filter(|desc| desc.flags & DESC_F_WRITE == 0)
+            .fold(0u64, |total, desc| {
+                total.saturating_add(u64::from(desc.len))
+            });
+        let writable_descriptor_bytes = descs
+            .iter()
+            .filter(|desc| desc.flags & DESC_F_WRITE != 0)
+            .fold(0u64, |total, desc| {
+                total.saturating_add(u64::from(desc.len))
+            });
+        let response_planned_write_len = writable_descriptor_bytes.min(response.len() as u64);
+        let response_header = CtrlHdr::parse(response);
         self.record_trace_fields("command", |fields| {
             let _ = write!(
                 fields,
-                ",\"queue\":{},\"head\":{},\"control\":{},\"typ\":{},\"name\":",
+                ",\"queue\":{},\"head\":{},\"control\":{},\"typ\":{},\"duration_ns\":{handle_ns},\"name\":",
                 queue_index, head, control, hdr.typ
             );
             write_json_string(fields, command_name(hdr.typ));
@@ -2167,7 +2545,36 @@ impl VirtioGpu {
                 response_type
             );
             write_json_string(fields, response_name(response_type));
-            let _ = write!(fields, ",\"response_len\":{}", response.len());
+            let _ = write!(
+                fields,
+                ",\"response_len\":{},\"descriptor_count\":{},\"readable_descriptor_count\":{},\"readable_descriptor_bytes\":{},\"writable_descriptor_count\":{},\"writable_descriptor_bytes\":{},\"response_planned_write_len\":{},\"response_truncated\":{}",
+                response.len(),
+                descs.len(),
+                readable_descriptor_count,
+                readable_descriptor_bytes,
+                writable_descriptor_count,
+                writable_descriptor_bytes,
+                response_planned_write_len,
+                response.len() as u64 > writable_descriptor_bytes
+            );
+            fields.push_str(",\"readable_descriptor_lengths\":[");
+            write_descriptor_lengths(fields, descs, false);
+            fields.push_str("],\"writable_descriptor_lengths\":[");
+            write_descriptor_lengths(fields, descs, true);
+            fields.push(']');
+            if let Some(response_header) = response_header {
+                let _ = write!(
+                    fields,
+                    ",\"response_header_valid\":true,\"response_flags\":{},\"response_fenced\":{},\"response_fence_id\":{},\"response_ctx_id\":{},\"response_ring_idx\":{}",
+                    response_header.flags,
+                    response_header.flags & VIRTIO_GPU_FLAG_FENCE != 0,
+                    response_header.fence_id,
+                    response_header.ctx_id,
+                    response_header.ring_idx()
+                );
+            } else {
+                fields.push_str(",\"response_header_valid\":false");
+            }
             write_trace_command_details(fields, request, hdr);
             write_trace_command_response_details(fields, response_type, response);
         });
@@ -2380,6 +2787,18 @@ impl VirtioPciGpu {
 
     pub fn set_3d_scanout_readback_interval(&mut self, interval: Duration) {
         self.gpu.set_3d_scanout_readback_interval(interval);
+    }
+
+    pub fn set_3d_scanout_deferred(&mut self, deferred: bool) {
+        self.gpu.set_3d_scanout_deferred(deferred);
+    }
+
+    pub fn service_deferred_3d_scanout(&mut self) {
+        self.gpu.service_deferred_3d_scanout();
+    }
+
+    pub fn set_3d_scanout_iosurface(&mut self, enabled: bool, verify: bool) {
+        self.gpu.set_3d_scanout_iosurface(enabled, verify);
     }
 
     pub fn new_from_env() -> Self {
@@ -3336,6 +3755,20 @@ fn write_trace_command_response_details(out: &mut String, response_type: u32, re
     }
 }
 
+fn write_descriptor_lengths(out: &mut String, descs: &[Descriptor], writable: bool) {
+    let mut first = true;
+    for desc in descs {
+        if (desc.flags & DESC_F_WRITE != 0) != writable {
+            continue;
+        }
+        if !first {
+            out.push(',');
+        }
+        first = false;
+        let _ = write!(out, "{}", desc.len);
+    }
+}
+
 /// Bytes of SUBMIT_3D payload preserved in the JSONL trace. The 32-byte
 /// default identifies the leading command; raising it via
 /// BRIDGEVM_VIRTIO_GPU_TRACE_SUBMIT_PREFIX captures whole command streams for
@@ -3444,6 +3877,43 @@ fn composite_resource_to_scanout(
             scanout[dst..dst + 4].copy_from_slice(&to_xrgb8888(pixel, resource.format));
         }
     }
+}
+
+fn composite_host_3d_to_scanout(
+    pixels: &[u8],
+    resource_width: u32,
+    resource_height: u32,
+    scanout: &mut [u8],
+    scanout_width: u32,
+    scanout_height: u32,
+    rect: Rect,
+) -> bool {
+    if pixels.len() < scanout_len(resource_width, resource_height)
+        || scanout.len() < scanout_len(scanout_width, scanout_height)
+    {
+        return false;
+    }
+    let x_end = rect
+        .x
+        .saturating_add(rect.width)
+        .min(resource_width)
+        .min(scanout_width);
+    let y_end = rect
+        .y
+        .saturating_add(rect.height)
+        .min(resource_height)
+        .min(scanout_height);
+    if x_end <= rect.x || y_end <= rect.y {
+        return false;
+    }
+
+    let row_bytes = ((x_end - rect.x) as usize) * 4;
+    for y in rect.y..y_end {
+        let src = ((y as usize) * (resource_width as usize) + (rect.x as usize)) * 4;
+        let dst = ((y as usize) * (scanout_width as usize) + (rect.x as usize)) * 4;
+        scanout[dst..dst + row_bytes].copy_from_slice(&pixels[src..src + row_bytes]);
+    }
+    true
 }
 
 fn composite_local_3d_to_scanout(
@@ -4813,7 +5283,10 @@ mod tests {
             &ctrl_req(VIRTIO_GPU_CMD_GET_DISPLAY_INFO),
             408,
         );
-        let _ = submit_control(&mut dev, &mut mem, &ctrl_req(VIRTIO_GPU_CMD_GET_EDID), 1056);
+        let mut edid_request = ctrl_req(VIRTIO_GPU_CMD_GET_EDID);
+        edid_request.extend_from_slice(&0u32.to_le_bytes());
+        edid_request.extend_from_slice(&0u32.to_le_bytes());
+        let _ = submit_control(&mut dev, &mut mem, &edid_request, 1056);
         dev.gpu.write_driver_features(u64::MAX);
         dev.gpu.write_status(0xf);
         dev.gpu.write_status(0);
@@ -4826,6 +5299,18 @@ mod tests {
         assert!(contents.contains("\"response_scanout0_enabled\":1"));
         assert!(contents.contains("\"response_edid_size\":128"));
         assert!(contents.contains("\"response_edid_checksum_valid\":true"));
+        assert!(contents.contains(
+            "\"readable_descriptor_lengths\":[24],\"writable_descriptor_lengths\":[408]"
+        ));
+        assert!(contents.contains(
+            "\"readable_descriptor_lengths\":[32],\"writable_descriptor_lengths\":[1056]"
+        ));
+        assert!(contents.contains(
+            "\"writable_descriptor_bytes\":1056,\"response_planned_write_len\":1056,\"response_truncated\":false"
+        ));
+        assert!(contents.contains(
+            "\"response_header_valid\":true,\"response_flags\":0,\"response_fenced\":false,\"response_fence_id\":0,\"response_ctx_id\":0,\"response_ring_idx\":0"
+        ));
         assert!(contents.contains("\"raw\":0,\"raw_hex\":\"0x0\",\"previous\":15"));
         assert!(contents.contains("\"driver_features_word0_hex\":\"0x2\""));
         assert!(contents.contains("\"reset\":true"));
@@ -6005,6 +6490,65 @@ mod tests {
     }
 
     #[test]
+    fn smaller_legacy_3d_scanout_uses_resource_dimensions_and_display_stride() {
+        let (mut dev, backend) = dev_with_mock();
+        dev.gpu = VirtioGpu::with_3d_backend(6, 4, Box::new(backend.clone()));
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+
+        let mut create = ctrl_req_ctx(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0);
+        for field in [
+            31u32,
+            2,
+            FORMAT_B8G8R8A8_UNORM,
+            0x8a,
+            4,
+            3,
+            1,
+            1,
+            0,
+            1,
+            0,
+            0,
+        ] {
+            create.extend_from_slice(&field.to_le_bytes());
+        }
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &create, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let mut set_scanout = ctrl_req(VIRTIO_GPU_CMD_SET_SCANOUT);
+        for field in [0u32, 0, 4, 3, 0, 31] {
+            set_scanout.extend_from_slice(&field.to_le_bytes());
+        }
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &set_scanout, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        let mut flush = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_FLUSH);
+        for field in [0u32, 0, 4, 3, 31, 0] {
+            flush.extend_from_slice(&field.to_le_bytes());
+        }
+        assert_eq!(
+            read_le_u32(&submit_control(&mut dev, &mut mem, &flush, 24), 0),
+            Some(VIRTIO_GPU_RESP_OK_NODATA)
+        );
+
+        assert_eq!(backend.lock().unwrap().scanout_reads, vec![(31, 4, 3)]);
+        let scanout = dev.gpu.scanout().expect("3D scanout should be active");
+        assert_eq!(&scanout.bytes[..16], &(0u8..16).collect::<Vec<_>>());
+        assert_eq!(&scanout.bytes[16..24], &[0; 8]);
+        assert_eq!(&scanout.bytes[24..40], &(16u8..32).collect::<Vec<_>>());
+        assert_eq!(&scanout.bytes[40..48], &[0; 8]);
+        assert_eq!(&scanout.bytes[72..], &[0; 24]);
+        let stats = dev.stats();
+        assert_eq!(stats.scanout_readback_attempts, 1);
+        assert_eq!(stats.scanout_readbacks, 1);
+        assert_eq!(stats.scanout_readback_bytes, 4 * 3 * 4);
+    }
+
+    #[test]
     fn venus_wddm_primary_uses_guest_backing_with_dual_renderer_backend() {
         let (mut dev, backend) = dev_with_mock();
         let mut mem = TestMem::new(0x4000_0000, 0x50_0000);
@@ -6138,6 +6682,163 @@ mod tests {
         assert_eq!(stats.scanout_readbacks, 1);
         assert_eq!(stats.scanout_readback_throttled, 1);
         assert_eq!(stats.scanout_readback_bytes, 1280 * 800 * 4);
+    }
+
+    fn deferred_scanout_dev() -> (VirtioPciGpu, Arc<Mutex<MockBackend>>, TestMem) {
+        let (mut dev, backend) = dev_with_mock();
+        let mut mem = TestMem::new(0x4000_0000, 0x30000);
+        let mut create = ctrl_req_ctx(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0);
+        for field in [
+            31u32,
+            2,
+            FORMAT_B8G8R8A8_UNORM,
+            0x8a,
+            1280,
+            800,
+            1,
+            1,
+            0,
+            1,
+            0,
+            0,
+        ] {
+            create.extend_from_slice(&field.to_le_bytes());
+        }
+        submit_control(&mut dev, &mut mem, &create, 24);
+        let mut set_scanout = ctrl_req(VIRTIO_GPU_CMD_SET_SCANOUT);
+        for field in [0u32, 0, 1280, 800, 0, 31] {
+            set_scanout.extend_from_slice(&field.to_le_bytes());
+        }
+        submit_control(&mut dev, &mut mem, &set_scanout, 24);
+        dev.gpu.set_3d_scanout_deferred(true);
+        (dev, backend, mem)
+    }
+
+    fn flush_res_31() -> Vec<u8> {
+        let mut flush = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_FLUSH);
+        for field in [0u32, 0, 1280, 800, 31, 0] {
+            flush.extend_from_slice(&field.to_le_bytes());
+        }
+        flush
+    }
+
+    #[test]
+    fn deferred_scanout_moves_readback_off_the_flush_path() {
+        let (mut dev, backend, mut mem) = deferred_scanout_dev();
+
+        let resp = submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
+        // Flush responded OK without any backend readback.
+        assert!(backend.lock().unwrap().scanout_reads.is_empty());
+
+        // The drain pass of the arming exit skips (fresh guard)...
+        dev.gpu.service_deferred_3d_scanout();
+        assert!(backend.lock().unwrap().scanout_reads.is_empty());
+        // ...and the next drain pass services it.
+        dev.gpu.service_deferred_3d_scanout();
+        assert_eq!(backend.lock().unwrap().scanout_reads, vec![(31, 1280, 800)]);
+
+        let stats = dev.stats();
+        assert_eq!(stats.deferred_scanout_flushes, 1);
+        assert_eq!(stats.deferred_scanout_serviced, 1);
+        assert_eq!(stats.scanout_readbacks, 1);
+        assert_eq!(stats.scanout_readback_throttled, 0);
+    }
+
+    #[test]
+    fn deferred_scanout_coalesces_flushes_into_one_readback() {
+        let (mut dev, backend, mut mem) = deferred_scanout_dev();
+
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        assert_eq!(backend.lock().unwrap().scanout_reads.len(), 1);
+
+        let stats = dev.stats();
+        assert_eq!(stats.deferred_scanout_flushes, 3);
+        assert_eq!(stats.deferred_scanout_serviced, 1);
+    }
+
+    #[test]
+    fn iosurface_scanout_blits_on_every_service_while_readback_stays_paced() {
+        let (mut dev, backend, mut mem) = deferred_scanout_dev();
+        dev.gpu.set_3d_scanout_iosurface(true, false);
+
+        // First frame: blit + readback (readback always due first time).
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        {
+            let inner = backend.lock().unwrap();
+            assert_eq!(inner.scanout_blits, vec![(31, 1280, 800)]);
+            assert_eq!(inner.scanout_reads.len(), 1);
+        }
+
+        // With pacing far out, later frames still blit (fresh display) but
+        // the CPU readback is withheld.
+        dev.gpu
+            .set_3d_scanout_readback_interval(Duration::from_secs(60));
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        let inner = backend.lock().unwrap();
+        assert_eq!(inner.scanout_blits.len(), 3);
+        assert_eq!(inner.scanout_reads.len(), 2);
+        drop(inner);
+        assert_eq!(dev.stats().scanout_blits, 3);
+    }
+
+    #[test]
+    fn iosurface_scanout_blits_on_sync_flush_too() {
+        let (mut dev, backend, mut mem) = deferred_scanout_dev();
+        dev.gpu.set_3d_scanout_deferred(false);
+        dev.gpu.set_3d_scanout_iosurface(true, false);
+
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        let inner = backend.lock().unwrap();
+        assert_eq!(inner.scanout_blits.len(), 1);
+        assert_eq!(inner.scanout_reads.len(), 1);
+    }
+
+    #[test]
+    fn deferred_scanout_holds_pending_when_pacing_not_due_instead_of_dropping() {
+        let (mut dev, backend, mut mem) = deferred_scanout_dev();
+
+        // First flush services immediately (no prior readback).
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        assert_eq!(backend.lock().unwrap().scanout_reads.len(), 1);
+
+        // With a long pacing interval, the next flush stays pending —
+        // not dropped, and not counted as throttled.
+        dev.gpu
+            .set_3d_scanout_readback_interval(Duration::from_secs(60));
+        // Re-arm pacing state: interval setter clears last-readback, so
+        // perform one readback to start the pacing window.
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        assert_eq!(backend.lock().unwrap().scanout_reads.len(), 2);
+
+        submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        dev.gpu.service_deferred_3d_scanout();
+        assert_eq!(backend.lock().unwrap().scanout_reads.len(), 2);
+        assert_eq!(dev.stats().scanout_readback_throttled, 0);
+
+        // Dropping the pacing interval lets the held frame service.
+        dev.gpu.set_3d_scanout_readback_interval(Duration::ZERO);
+        dev.gpu.service_deferred_3d_scanout();
+        assert_eq!(backend.lock().unwrap().scanout_reads.len(), 3);
+        assert_eq!(dev.stats().deferred_scanout_serviced, 3);
     }
 
     #[test]

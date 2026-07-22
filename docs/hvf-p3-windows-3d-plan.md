@@ -77,19 +77,20 @@ and all seven original CI inputs, and refuses stale signed metadata. Merely
 editing the signed out-of-tree INF would invalidate its catalog, so the stage is
 deliberately unsigned and must be finalized as a new immutable package.
 
-The immediate wall is therefore executing the Windows WDK finalizer, then
-returning `package-finalized` to the Mac and requiring the repository's real
-render-candidate gate. The Mac-to-guest prerequisites are now closed: imported
+The remaining reproducibility wall is executing the Windows WDK finalizer for a
+fresh package, then returning `package-finalized` to the Mac and requiring the
+repository's real render-candidate gate. The Mac-to-guest prerequisites are now closed: imported
 disks grow to 64 GiB on first boot, the shared-folder ceiling is explicit
 (`--agent-share-max-kb`, with 65536 KiB used by the app), and service-mode
 commands retain strict wire alignment for long-running installers. The kit also
 contains a disposable-test wrapper that creates a Code Signing certificate,
 keeps its random PFX password out of the command line, trusts the public
 certificate, runs the audited finalizer, and deletes the private PFX. The
-following wall is live Windows evidence: certificate trust and
-testsigning, `pnputil` install, a present `DEV_1050`/`DEV_10F7` device with
-Status OK bound to the intended OEM INF, then a coherent capset/blob/context/
-submit/fence trace tied to that same boot and a rendered workload.
+following wall is a fresh live Windows receipt: certificate trust and
+testsigning, the four-stage removal/reboot/install/reboot state machine, exactly
+one present `DEV_1050`/`DEV_10F7` device with Status OK bound to the intended
+OEM INF, then a coherent capset/blob/context/submit/fence trace and generic title
+gate tied to that same boot and rendered workload.
 
 ## Reproducing or replacing the package
 
@@ -305,9 +306,11 @@ undebuggable in a black box. We are not a black box:
   `bridgevm-package-provenance.env`; the checker auto-loads it to recover the
   PR source commit, build id, signing note, protocol, and expected HWID before
   package validation. The injector stages `viogpu3d` under `\drivers\viogpu3d`
-  and plants a fail-closed firstboot state machine. Stage 1 enables testsigning
-  and trusts the certificate, stage 2 installs and rescans the driver, and stage
-  3 requires Status OK plus the intended bound OEM INF. The boot
+  and plants a fail-closed firstboot state machine. Stage 1 purges superseded
+  certificates, enables testsigning, and trusts the current certificate; stage
+  2 removes every prior DriverStore generation; stage 3 proves the store is
+  clean and installs exactly one package; stage 4 requires Status OK, the
+  intended OEM INF, and a single bound generation. The boot
   harness builds the probe with the `venus` feature,
   exposes `DEV_10F7` by default or the requested `--virtio-gpu-device-id`, writes
   the GPU JSONL trace, and stores
@@ -344,5 +347,5 @@ undebuggable in a black box. We are not a black box:
   are performance re-baselining (truthful tracing + flush cost), stress,
   production signing, and feature levels beyond 10_0.
 
-_Updated 2026-07-14. See [[bridgevm-hvf-engine-status]] and
+_Updated 2026-07-22. See [[bridgevm-hvf-engine-status]] and
 docs/hvf-3d-engine-plan.md._

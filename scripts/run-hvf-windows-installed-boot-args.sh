@@ -13,6 +13,11 @@ init_installed_boot_defaults() {
   HDA_AUDIO="0"
   HDA_COREAUDIO="0"
   NVME_BUFFERED_IO="0"
+  VTPM_STATE_DIR=""
+  SWTPM_BIN="swtpm"
+  SWTPM_BIN_EXPLICIT="0"
+  SWTPM_KEY_STDIN="0"
+  PERFORMANCE_RISK="balanced"
   VIRTIO_GPU_3D="0"
   VIRTIO_GPU_PCI_DEVICE_ID=""
   VIRTIO_GPU_TRACE_JSONL=""
@@ -27,6 +32,10 @@ init_installed_boot_defaults() {
   REQUIRE_GPU_TRACE_GATE="0"
   VIOGPU3D_DIR=""
   REQUIRE_VIOGPU3D_READINESS="0"
+  REQUIRE_REAL_TITLE_GATE="0"
+  TITLE_MANIFESTS=()
+  TITLE_MANIFEST_COUNT=0
+  REQUIRE_TITLE_GATES="0"
   SETUP_INPUT_ACTIONS=""
   SETUP_INPUT_MARKER=""
   SETUP_INPUT_FIRE_DELAY_MS=""
@@ -162,6 +171,25 @@ parse_installed_boot_args() {
       --hda) HDA_AUDIO="1"; shift ;;
       --hda-coreaudio) HDA_AUDIO="1"; HDA_COREAUDIO="1"; shift ;;
       --nvme-buffered-io) NVME_BUFFERED_IO="1"; shift ;;
+      --vtpm-state-dir)
+        [[ $# -ge 2 && -n "$2" ]] || { echo "FAIL: --vtpm-state-dir requires a non-empty path" >&2; exit 2; }
+        VTPM_STATE_DIR="$2"; shift 2
+        ;;
+      --swtpm-bin)
+        [[ $# -ge 2 && -n "$2" ]] || { echo "FAIL: --swtpm-bin requires a non-empty command or path" >&2; exit 2; }
+        SWTPM_BIN="$2"; SWTPM_BIN_EXPLICIT="1"; shift 2
+        ;;
+      --swtpm-key-stdin)
+        SWTPM_KEY_STDIN="1"; shift
+        ;;
+      --performance-risk)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        case "$2" in
+          balanced|aggressive) PERFORMANCE_RISK="$2" ;;
+          *) echo "FAIL: --performance-risk must be balanced or aggressive" >&2; exit 2 ;;
+        esac
+        shift 2
+        ;;
       --trace-irq) TRACE_IRQ="1"; shift ;;
       --virtio-gpu-3d) VIRTIO_GPU_3D="1"; shift ;;
       --virtio-gpu-device-id)
@@ -213,6 +241,12 @@ parse_installed_boot_args() {
         VIOGPU3D_DIR="$2"; shift 2
         ;;
       --require-viogpu3d-readiness) REQUIRE_VIOGPU3D_READINESS="1"; shift ;;
+      --require-real-title-gate) REQUIRE_REAL_TITLE_GATE="1"; shift ;;
+      --title-manifest)
+        [[ $# -ge 2 && -n "$2" ]] || { echo "FAIL: --title-manifest requires a non-empty path" >&2; exit 2; }
+        TITLE_MANIFESTS+=("$2"); TITLE_MANIFEST_COUNT=$((TITLE_MANIFEST_COUNT + 1)); shift 2
+        ;;
+      --require-title-gates) REQUIRE_TITLE_GATES="1"; shift ;;
       --setup-input-actions)
         [[ $# -ge 2 ]] || { usage; exit 2; }
         setup_input_actions_list "$2" || { echo "FAIL: --setup-input-actions requires 1-32 supported keyboard actions; see --help" >&2; exit 2; }
@@ -257,6 +291,24 @@ apply_installed_boot_daily_defaults() {
 }
 
 validate_installed_boot_option_combinations() {
+  # Keep the original PPSSPP flag as a compatibility alias for the generic
+  # manifest gate. This lets existing automation retain its evidence files
+  # while all new titles use the same evaluator.
+  if [[ "$REQUIRE_REAL_TITLE_GATE" == "1" ]]; then
+    local ppsspp_manifest="$ROOT/scripts/win-assets/bv-ppsspp-title.json"
+    local manifest
+    local found=0
+    if (( TITLE_MANIFEST_COUNT > 0 )); then
+      for manifest in "${TITLE_MANIFESTS[@]}"; do
+        [[ "$manifest" == "$ppsspp_manifest" ]] && found=1
+      done
+    fi
+    if [[ "$found" != "1" ]]; then
+      TITLE_MANIFESTS+=("$ppsspp_manifest")
+      TITLE_MANIFEST_COUNT=$((TITLE_MANIFEST_COUNT + 1))
+    fi
+    REQUIRE_TITLE_GATES="1"
+  fi
   if [[ "$WATCHDOG_DISABLED" == "1" && "$WATCHDOG_MS_EXPLICIT" == "1" ]]; then
     echo "FAIL: --no-watchdog cannot be combined with --watchdog-ms" >&2
     exit 2
@@ -303,6 +355,34 @@ validate_installed_boot_option_combinations() {
   fi
   if [[ "$REQUIRE_VIOGPU3D_READINESS" == "1" && "$VIRTIO_GPU_3D" != "1" ]]; then
     echo "FAIL: --require-viogpu3d-readiness requires --virtio-gpu-3d" >&2
+    exit 2
+  fi
+  if [[ "$REQUIRE_REAL_TITLE_GATE" == "1" && "$VIRTIO_GPU_3D" != "1" ]]; then
+    echo "FAIL: --require-real-title-gate requires --virtio-gpu-3d" >&2
+    exit 2
+  fi
+  if (( TITLE_MANIFEST_COUNT > 0 )) && [[ "$VIRTIO_GPU_3D" != "1" ]]; then
+    echo "FAIL: --title-manifest requires --virtio-gpu-3d" >&2
+    exit 2
+  fi
+  if [[ "$REQUIRE_TITLE_GATES" == "1" && "$VIRTIO_GPU_3D" != "1" ]]; then
+    echo "FAIL: --require-title-gates requires --virtio-gpu-3d" >&2
+    exit 2
+  fi
+  if [[ "$REQUIRE_TITLE_GATES" == "1" ]] && (( TITLE_MANIFEST_COUNT == 0 )); then
+    echo "FAIL: --require-title-gates requires at least one --title-manifest" >&2
+    exit 2
+  fi
+  if [[ "$PERFORMANCE_RISK" == "aggressive" && "$VIRTIO_GPU_3D" != "1" ]]; then
+    echo "FAIL: --performance-risk aggressive requires --virtio-gpu-3d" >&2
+    exit 2
+  fi
+  if [[ "$SWTPM_BIN_EXPLICIT" == "1" && -z "$VTPM_STATE_DIR" ]]; then
+    echo "FAIL: --swtpm-bin requires --vtpm-state-dir" >&2
+    exit 2
+  fi
+  if [[ "$SWTPM_KEY_STDIN" == "1" && -z "$VTPM_STATE_DIR" ]]; then
+    echo "FAIL: --swtpm-key-stdin requires --vtpm-state-dir" >&2
     exit 2
   fi
   if [[ "$BOOT_TIMER" == "1" && "${BRIDGEVM_SMP_TRACE+x}" == "x" ]] && truthy_env_value "$BRIDGEVM_SMP_TRACE"; then
@@ -381,15 +461,37 @@ validate_installed_boot_required_paths() {
   fi
   [[ -f "$VARS" ]] || { echo "FAIL: vars file not found: $VARS" >&2; exit 1; }
   [[ -f "$FIRMWARE_CODE" ]] || { echo "FAIL: AArch64 UEFI firmware not found: $FIRMWARE_CODE" >&2; exit 1; }
-  [[ "$(stat -f '%z' "$FIRMWARE_CODE" 2>/dev/null || true)" == "67108864" ]] || {
-    echo "FAIL: AArch64 UEFI firmware must be exactly 64 MiB: $FIRMWARE_CODE" >&2
+  local firmware_size
+  firmware_size="$(stat -f '%z' "$FIRMWARE_CODE" 2>/dev/null || true)"
+  [[ "$firmware_size" =~ ^[0-9]+$ ]] && (( firmware_size >= 4096 && firmware_size <= 67108864 )) || {
+    echo "FAIL: AArch64 UEFI firmware must fit the 64 MiB pflash bank: $FIRMWARE_CODE" >&2
     exit 1
   }
   if [[ -n "$VIOGPU3D_DIR" ]]; then
     [[ -d "$VIOGPU3D_DIR" ]] || { echo "FAIL: viogpu3d driver directory not found: $VIOGPU3D_DIR" >&2; exit 1; }
   fi
+  if (( TITLE_MANIFEST_COUNT > 0 )); then
+    local title_manifest
+    for title_manifest in "${TITLE_MANIFESTS[@]}"; do
+      [[ -f "$title_manifest" ]] || { echo "FAIL: title manifest not found: $title_manifest" >&2; exit 1; }
+    done
+  fi
   if [[ -n "$AGENT_SHARE_HOST" ]]; then
     [[ -d "$AGENT_SHARE_HOST" ]] || { echo "FAIL: agent share host directory not found: $AGENT_SHARE_HOST" >&2; exit 1; }
+  fi
+  if [[ -n "$VTPM_STATE_DIR" ]]; then
+    if [[ -e "$VTPM_STATE_DIR" && ! -d "$VTPM_STATE_DIR" ]]; then
+      echo "FAIL: vTPM state path is not a directory: $VTPM_STATE_DIR" >&2
+      exit 1
+    fi
+    if [[ "$SWTPM_BIN" == */* ]]; then
+      [[ -x "$SWTPM_BIN" ]] || { echo "FAIL: swtpm binary is not executable: $SWTPM_BIN" >&2; exit 1; }
+    else
+      local resolved_swtpm
+      resolved_swtpm="$(command -v "$SWTPM_BIN" 2>/dev/null || true)"
+      [[ -n "$resolved_swtpm" ]] || { echo "FAIL: swtpm command not found: $SWTPM_BIN" >&2; exit 1; }
+      SWTPM_BIN="$resolved_swtpm"
+    fi
   fi
   require_not_preserved_source_media target "$TARGET"
   require_not_preserved_source_media vars "$VARS"
@@ -414,6 +516,10 @@ print_installed_boot_policy() {
   local console_share_policy="<unset>"
   local console_share_ms_policy="<unset>"
   local console_share_max_kb_policy="<unset>"
+  local title_manifests_policy="<unset>"
+  if (( TITLE_MANIFEST_COUNT > 0 )); then
+    title_manifests_policy="${TITLE_MANIFESTS[*]}"
+  fi
   if [[ "$VIRTIO_GPU_3D" == "1" ]]; then
     gpu_enabled_policy="1"
     gpu_3d_protocol="$(virtio_gpu_3d_runtime_protocol)"
@@ -482,6 +588,13 @@ print_installed_boot_policy() {
     "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS=$console_share_ms_policy" \
     "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MAX_KB=$console_share_max_kb_policy" \
     "BRIDGEVM_NVME_BUFFERED_IO=${NVME_BUFFERED_IO/0/<unset>}" \
+    "BRIDGEVM_VTPM_STATE_DIR=${VTPM_STATE_DIR:-<unset>}" \
+    "BRIDGEVM_SWTPM_BIN=$([[ -n "$VTPM_STATE_DIR" ]] && printf '%s' "$SWTPM_BIN" || printf '<unset>')" \
+    "BRIDGEVM_SWTPM_STATE_ENCRYPTION=$([[ "$SWTPM_KEY_STDIN" == "1" ]] && printf 'aes-256-cbc-etm/key-fd' || printf 'disabled')" \
+    "BRIDGEVM_PERFORMANCE_RISK=$PERFORMANCE_RISK" \
+    "BRIDGEVM_VIRTIO_GPU_DIRECT_RENDERER=$([[ "$PERFORMANCE_RISK" == "aggressive" ]] && printf '1' || printf '%s' "${BRIDGEVM_VIRTIO_GPU_DIRECT_RENDERER:-0}")" \
+    "BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT=$([[ "$PERFORMANCE_RISK" == "aggressive" ]] && printf '1' || printf '%s' "${BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT:-0}")" \
+    "BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=$([[ "$PERFORMANCE_RISK" == "aggressive" ]] && printf '1' || printf '%s' "${BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT:-0}")" \
     "BRIDGEVM_VIRTIO_GPU=$gpu_enabled_policy" \
     "BRIDGEVM_VIRTIO_GPU_3D=$VIRTIO_GPU_3D" \
     "BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=$gpu_3d_protocol" \
@@ -492,6 +605,9 @@ print_installed_boot_policy() {
     "BRIDGEVM_REQUIRE_GPU_TRACE_GATE=$REQUIRE_GPU_TRACE_GATE" \
     "BRIDGEVM_VIOGPU3D_DIR=${VIOGPU3D_DIR:-<unset>}" \
     "BRIDGEVM_REQUIRE_VIOGPU3D_READINESS=$REQUIRE_VIOGPU3D_READINESS" \
+    "BRIDGEVM_REQUIRE_REAL_TITLE_GATE=$REQUIRE_REAL_TITLE_GATE" \
+    "BRIDGEVM_TITLE_MANIFESTS=$title_manifests_policy" \
+    "BRIDGEVM_REQUIRE_TITLE_GATES=$REQUIRE_TITLE_GATES" \
     "BRIDGEVM_RAMFB_SAMPLE_MS=$RAMFB_SAMPLES" \
     "BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS=${SETUP_INPUT_ACTIONS:-<unset>}" \
     "BRIDGEVM_XHCI_SETUP_INPUT_SERIAL_MARKER=${SETUP_INPUT_MARKER:-<probe-default>}" \

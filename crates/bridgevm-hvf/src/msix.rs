@@ -218,50 +218,49 @@ impl MsixTable {
         entry[12..16].copy_from_slice(&control.to_le_bytes());
     }
 
-pub fn snapshot_state(&self) -> Vec<u8> {
-    let mut out = crate::checkpoint::StateWriter::new();
-    out.write_u32(1);
-    out.write_u16(self.vector_count());
-    out.write_u16(0);
-    for entry in &self.entries {
-        out.write_blob(entry);
-    }
-    out.write_u32(self.pending_bits.len() as u32);
-    for word in &self.pending_bits {
-        out.write_u64(*word);
-    }
-    out.into_inner()
-}
-
-pub fn restore_state(&mut self, data: &[u8]) {
-    let mut input = crate::checkpoint::StateReader::new(data);
-    assert_eq!(input.read_u32(), 1, "unsupported MSI-X snapshot version");
-    let vectors = input.read_u16();
-    assert_eq!(input.read_u16(), 0, "invalid MSI-X snapshot");
-    assert_eq!(
-        vectors,
-        self.vector_count(),
-        "MSI-X vector-count mismatch on restore"
-    );
-
-    for entry in &mut self.entries {
-        let bytes = input.read_blob();
-        assert_eq!(bytes.len(), Self::ENTRY_BYTES as usize);
-        entry.copy_from_slice(&bytes);
+    pub fn snapshot_state(&self) -> Vec<u8> {
+        let mut out = crate::checkpoint::StateWriter::new();
+        out.write_u32(1);
+        out.write_u16(self.vector_count());
+        out.write_u16(0);
+        for entry in &self.entries {
+            out.write_blob(entry);
+        }
+        out.write_u32(self.pending_bits.len() as u32);
+        for word in &self.pending_bits {
+            out.write_u64(*word);
+        }
+        out.into_inner()
     }
 
-    let pending_words = input.read_u32() as usize;
-    assert_eq!(
-        pending_words,
-        self.pending_bits.len(),
-        "MSI-X PBA size mismatch on restore"
-    );
-    for word in &mut self.pending_bits {
-        *word = input.read_u64();
-    }
-    input.finish();
-}
+    pub fn restore_state(&mut self, data: &[u8]) {
+        let mut input = crate::checkpoint::StateReader::new(data);
+        assert_eq!(input.read_u32(), 1, "unsupported MSI-X snapshot version");
+        let vectors = input.read_u16();
+        assert_eq!(input.read_u16(), 0, "invalid MSI-X snapshot");
+        assert_eq!(
+            vectors,
+            self.vector_count(),
+            "MSI-X vector-count mismatch on restore"
+        );
 
+        for entry in &mut self.entries {
+            let bytes = input.read_blob();
+            assert_eq!(bytes.len(), Self::ENTRY_BYTES as usize);
+            entry.copy_from_slice(&bytes);
+        }
+
+        let pending_words = input.read_u32() as usize;
+        assert_eq!(
+            pending_words,
+            self.pending_bits.len(),
+            "MSI-X PBA size mismatch on restore"
+        );
+        for word in &mut self.pending_bits {
+            *word = input.read_u64();
+        }
+        input.finish();
+    }
 }
 
 fn mask_to_size(value: u64, size: u8) -> u64 {

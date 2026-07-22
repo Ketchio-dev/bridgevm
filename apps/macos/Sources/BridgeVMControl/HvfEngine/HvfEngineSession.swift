@@ -40,6 +40,7 @@ final class HvfEngineSession: ObservableObject {
     private var lastScreenshotFingerprint: HvfScreenshotFingerprint?
     private var injectionConfirmed = false
     private let processIsRunning: (String) -> Bool
+    private let vtpmKeyProvider: VTPMStateKeyProviding
 
     nonisolated static func defaultRepoRoot(
         currentDirectoryPath: String = FileManager.default.currentDirectoryPath,
@@ -86,11 +87,13 @@ final class HvfEngineSession: ObservableObject {
     init(
         config: HvfEngineConfig,
         repoRoot: URL = HvfEngineSession.defaultRepoRoot(),
-        processIsRunning: @escaping (String) -> Bool = { Shell.isProcessRunning(matching: $0) }
+        processIsRunning: @escaping (String) -> Bool = { Shell.isProcessRunning(matching: $0) },
+        vtpmKeyProvider: VTPMStateKeyProviding = KeychainVTPMStateKeyStore()
     ) {
         self.config = config
         self.repoRoot = repoRoot
         self.processIsRunning = processIsRunning
+        self.vtpmKeyProvider = vtpmKeyProvider
     }
 
     deinit {
@@ -106,6 +109,14 @@ final class HvfEngineSession: ObservableObject {
         }
         if attachToRunningVM() {
             append(.unknown("attached to the already running HVF engine; duplicate launch prevented"))
+            return
+        }
+        let readiness = config.readiness(repoRoot: repoRoot)
+        guard readiness.launchReady else {
+            for blocker in readiness.launchBlockers {
+                append(.unknown("launch readiness blocked [\(blocker.code)]: \(blocker.summary)"))
+            }
+            connectionState = .stopped
             return
         }
         timer?.invalidate()
@@ -143,13 +154,35 @@ final class HvfEngineSession: ObservableObject {
         proc.arguments = config.wrapperArguments()
         proc.currentDirectoryURL = repoRoot
         proc.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("BRIDGEVM_") }
+        let vtpmKeyInput: VTPMProcessKeyInput?
+        do {
+            vtpmKeyInput = try VTPMStateSecurity.processInput(
+                for: config,
+                provider: vtpmKeyProvider
+            )
+            vtpmKeyInput?.attach(to: proc)
+        } catch {
+            append(.unknown("launch failed: unable to unlock encrypted vTPM state: \(error.localizedDescription)"))
+            connectionState = .stopped
+            return
+        }
         process = proc
         attachedToExistingProcess = false
         connectionState = .booting
         do {
             try proc.run()
+            do {
+                try vtpmKeyInput?.deliverAfterLaunch()
+            } catch {
+                proc.terminate()
+                append(.unknown("launch failed: unable to deliver the vTPM state key: \(error.localizedDescription)"))
+                connectionState = .stopped
+                process = nil
+                return
+            }
             startPolling()
         } catch {
+            vtpmKeyInput?.discard()
             append(.unknown("launch failed: \(error.localizedDescription)"))
             connectionState = .stopped
             process = nil
@@ -331,7 +364,7 @@ final class HvfEngineSession: ObservableObject {
         // run.log is removed too: the wrapper recreates it, and a stale log
         // would otherwise replay old BVAGENT/BOOT_TIMER lines into this
         // session (false attach, false 3D-injection confirmation).
-        for name in ["display.ppm", "display.ppm.tmp", "input.ctl", "run.log"] {
+        for name in ["display.ppm", "display.ppm.tmp", "display.fb", "display.fb.tmp", "input.ctl", "run.log"] {
             let url = evidenceDirectory.appendingPathComponent(name)
             if fileManager.fileExists(atPath: url.path) {
                 try fileManager.removeItem(at: url)
