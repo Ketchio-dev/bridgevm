@@ -45,6 +45,19 @@ value_for() {
   fail "summary is missing $key"
 }
 
+optional_value_for() {
+  local line="$1"
+  local key="$2"
+  local default="$3"
+  local token
+  for token in $line; do
+    case "$token" in
+      "$key="*) printf '%s\n' "${token#*=}"; return 0 ;;
+    esac
+  done
+  printf '%s\n' "$default"
+}
+
 require_positive() {
   local line="$1"
   local key="$2"
@@ -76,6 +89,9 @@ errors="$(value_for "$command_summary" errors)"
   fail "TPM response counts do not add up to commands"
 
 classified=0
+clear="$(optional_value_for "$command_summary" clear 0)"
+[[ "$clear" =~ ^[0-9]+$ ]] || fail "clear is not an integer: $clear"
+classified=$(( classified + 10#$clear ))
 for key in startup self_test get_capability pcr_read pcr_extend start_auth_session create_primary read_public nv_read_public get_random other; do
   value="$(value_for "$command_summary" "$key")"
   [[ "$value" =~ ^[0-9]+$ ]] || fail "$key is not an integer: $value"

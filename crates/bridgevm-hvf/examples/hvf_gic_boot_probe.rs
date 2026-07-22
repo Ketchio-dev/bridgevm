@@ -4096,6 +4096,11 @@ fn main() -> ExitCode {
         // a WinDbg peer can attach to the guest's KDCOM stream. None otherwise,
         // leaving the serial to the boot scanner unchanged.
         let mut kd_serial_bridge = kd_serial_bridge::KdSerialBridge::from_env();
+        // Keep the file offset and pending queue across guest SYSTEM_RESET.
+        // Recreating the controller per boot generation replays every command
+        // already consumed from an append-only control file, which can repeat
+        // destructive guest actions such as a TPM-clear reboot request.
+        let mut live_input = LiveInputController::from_env();
 
         'reboot: loop {
             // Secondary vCPUs are intentionally scoped to one boot generation in
@@ -4250,7 +4255,6 @@ fn main() -> ExitCode {
             let mut drain_stats = RunLoopDrainStats::new(trace_run_loop);
             let mut ramfb_sample_loop = RamfbSampleLoop::from_env();
             let mut live_display_exporter = LiveDisplayExporter::from_env();
-            let mut live_input = LiveInputController::from_env();
             let mut setup_input_host_wake = SetupInputHostWake::new();
             let boot_started = Instant::now();
             let mut boot_timer = BootTimer::from_env();
@@ -5167,7 +5171,7 @@ fn main() -> ExitCode {
             print_hid_semantic_summary(platform);
             if let Some(stats) = platform.tpm_tis_stats() {
                 println!(
-                    "TPM2 TIS command summary: commands={} success={} errors={} backend_failures={} malformed_commands={} malformed_responses={} last_command={:#010x} startup={} self_test={} get_capability={} pcr_read={} pcr_extend={} start_auth_session={} create_primary={} read_public={} nv_read_public={} get_random={} other={}",
+                    "TPM2 TIS command summary: commands={} success={} errors={} backend_failures={} malformed_commands={} malformed_responses={} last_command={:#010x} clear={} startup={} self_test={} get_capability={} pcr_read={} pcr_extend={} start_auth_session={} create_primary={} read_public={} nv_read_public={} get_random={} other={}",
                     stats.commands,
                     stats.successful_responses,
                     stats.error_responses,
@@ -5175,6 +5179,7 @@ fn main() -> ExitCode {
                     stats.malformed_commands,
                     stats.malformed_responses,
                     stats.last_command_code.unwrap_or_default(),
+                    stats.clear_commands,
                     stats.startup_commands,
                     stats.self_test_commands,
                     stats.get_capability_commands,

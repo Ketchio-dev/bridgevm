@@ -17,6 +17,7 @@ docs/hvf-p3-windows-3d-plan.md	active-plan	windows-graphics	-
 docs/hvf-perf-optimization-plan.md	active-plan	windows-performance	-
 docs/hvf-graphics-integration-gap-plan.md	active-plan	windows-graphics	-
 docs/hvf-gpu-thread-design-20260721.md	active-plan	windows-performance	-
+docs/handoffs/claude-code-20260722.md	active-plan	development-handoff	-
 docs/hvf-windows-platform-contract-gap.md	reference	windows-platform	-
 docs/hvf-kd-serial-bringup.md	reference	windows-debugging	-
 docs/hvf-3d-current-wall-20260713.md	historical-evidence	windows-graphics	docs/hvf-p3-windows-3d-plan.md
