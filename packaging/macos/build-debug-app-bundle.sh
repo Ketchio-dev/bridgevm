@@ -33,7 +33,7 @@ ICON_FILE="${BRIDGEVM_MACOS_ICON_FILE:-}"
 SKIP_APPLE_VZ_RUNNER="${BRIDGEVM_MACOS_SKIP_APPLE_VZ_RUNNER:-0}"
 FIRMWARE_CODE="${BRIDGEVM_HVF_FIRMWARE_CODE:-$ROOT/crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd}"
 FIRMWARE_LICENSES="${BRIDGEVM_HVF_FIRMWARE_LICENSES:-$(dirname "$FIRMWARE_CODE")/edk2-licenses.txt}"
-SECURE_FIRMWARE_SHA256="f41c7eb7c1a9dabf8ed10c4e52642378e05df171eecd65ca15ed414d9fabdff9"
+SECURE_FIRMWARE_SHA256="b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b"
 if [[ -z "$ICON_FILE" && -f "$ROOT/packaging/macos/BridgeVM.icns" ]]; then
   ICON_FILE="$ROOT/packaging/macos/BridgeVM.icns"
 fi

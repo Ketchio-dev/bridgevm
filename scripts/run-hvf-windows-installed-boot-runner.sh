@@ -337,6 +337,14 @@ build_installed_boot_env_args() {
       return 1
     }
     ENV_ARGS+=("BRIDGEVM_SWTPM_DATA_SOCKET=$SWTPM_DATA_SOCKET")
+    # The control socket lets the probe issue swtpm CMD_INIT (a _TPM_Init power
+    # cycle) on guest reset, so volatile platform authorization does not persist
+    # across an in-process reboot and defeat firmware physical-presence actions.
+    [[ -S "${SWTPM_CONTROL_SOCKET:-}" ]] || {
+      echo "FAIL: vTPM control socket is not ready" >&2
+      return 1
+    }
+    ENV_ARGS+=("BRIDGEVM_SWTPM_CONTROL_SOCKET=$SWTPM_CONTROL_SOCKET")
   fi
   # Forward the opt-in Intel HDA audio device + host PCM sinks (media.rs gates on
   # BRIDGEVM_HDA; absent = no audio function, unchanged behavior).

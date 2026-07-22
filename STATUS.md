@@ -72,7 +72,7 @@ It does not weaken security-state handling. See the
 
 | Gate | State | Difficulty judgment | Completion evidence |
 | --- | --- | --- | --- |
-| `SEC-TPM-FRONTEND` | `IN_PROGRESS` | Bounded device-model work | Windows ACPI/TIS enumeration and command flow are live proven; a real PPI write/action receipt remains |
+| `SEC-TPM-FRONTEND` | `LIVE_PROVEN` | Bounded device-model work | Windows ACPI/TIS enumeration, live command flow, and a live PPI **clear** action (request → reboot → F12 → `TPM2_CC_Clear` → post-clear desktop → clean off) are all dated-receipt proven |
 | `SEC-TPM-LIFECYCLE` | `IN_PROGRESS` | Hard security/lifecycle work | Local path now bundles/signs the pinned runtime and implements same-ID move policy, encrypted export/restore, fresh-ID clone, archive-before-reset, and receipts; clean-second-Mac + BitLocker live proof remains |
 | `SEC-SB-MEASURED` | `IN_PROGRESS` | Hard cross-layer work | Pinned Secure Boot + TPM2 EDK2 and fail-closed Microsoft-only PK/KEK/db/dbx provisioning are locally proven; guest proof from `Confirm-SecureBootUEFI`, PCR 7, event log, and recovery/migration workflows remains |
 | `GPU-WDK-SIGN` | `EXTERNAL` | Externally gated | Fresh ARM64 WDK build, catalog, trusted signature, and clean bind |
@@ -83,8 +83,8 @@ The TPM register model and ACPI plumbing are comparatively straightforward.
 Correct identity, migration, BitLocker recovery, signing, and reproducible live
 evidence are not “easy last steps”; they are the release-quality work.
 
-Current `SEC-TPM-FRONTEND` evidence is E4 for the Windows TIS command path and
-E2/E4-observed-read/write for PPI: five TIS localities, command FIFO, the 1 KiB PPI
+Current `SEC-TPM-FRONTEND` evidence is E4 for both the Windows TIS command path
+and a live PPI **clear** action: five TIS localities, command FIFO, the 1 KiB PPI
 mailbox, PPI 1.3/reset-mitigation `_DSM`, fixed MMIO
 dispatch, optional ACPI `TPM0/MSFT0101`, and the revision-4 TPM2 table with a
 loader-relocated 64 KiB `etc/tpm/log` area are unit proven. BridgeVM now also
@@ -105,15 +105,23 @@ On 2026-07-22, a 120-second cloned Windows run reached the desktop and completed
 zero backend failures and zero malformed commands or responses. A later
 20-second diagnostic run with the patched firmware completed 483 TPM commands,
 20 PPI reads, and 276 PPI writes with no backend failure, malformed traffic, or
-firmware exception. An interactive run also showed `Clear-Tpm -UsePPI`
-returning `RestartPending=True`, but it exposed authorization material and then
-hit a live-input replay bug. That run is deliberately not release evidence.
-The replay defect is now regression-tested and fixed, F12 firmware approval is
-supported, and `TPM2_CC_Clear` is counted without payload logging. A fresh
-same-process Clear/reboot/F12/post-clear receipt is still required, so the
-PPI-action half remains open. The prior Windows command-path
-payload-free receipt and verifier are indexed in the
-[dated evidence](docs/windows-arm/evidence/vtpm-windows-command-path-20260722.md).
+firmware exception. On 2026-07-22 a fresh same-process PPI clear then completed
+end to end on a disposable clone: `Clear-Tpm -UsePPI` set `RestartPending=True`,
+an in-process reboot reached the firmware caution prompt, a live F12 delivered
+between the two resets approved it, the firmware executed one
+`TPM2_ClearControl` and one `TPM2_CC_Clear` (both `TPM_RC_SUCCESS`, `clear=1` in
+the summary, 266 PPI writes), Windows returned to the desktop with
+`RestartPending=False`, and the guest powered off cleanly with zero backend or
+malformed failures. Closing it required two fixes kept payload-free: the vTPM is
+now power-cycled (swtpm `CMD_INIT`) on guest reset so volatile platform
+authorization does not persist, and the pinned firmware now processes the PPI
+request before locking the platform hierarchy (rebuilt reproducibly to SHA-256
+`b1dc201b…`). The replay defect remains regression-tested and fixed and F12
+approval remains supported. The dated PPI-clear receipt and its `--ppi-action`
+verifier mode are indexed in the
+[PPI clear evidence](docs/windows-arm/evidence/vtpm-windows-ppi-clear-20260722.md);
+the prior command-path receipt is in the
+[command-path evidence](docs/windows-arm/evidence/vtpm-windows-command-path-20260722.md).
 The repository smoke proves exact 32-byte FD delivery, socket/process cleanup,
 and persistent state without putting the key in argv or a disk keyfile.
 The packaged app now carries pinned swtpm 0.10.1/libtpms 0.10.2 plus the entire

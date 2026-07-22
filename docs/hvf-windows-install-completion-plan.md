@@ -89,10 +89,16 @@ rejects partial or conflicting state without mutation. Packaging includes the
 policy, firmware build receipt, and license notices. A 2026-07-22 cloned live
 run reached the Windows desktop and completed 1,032 TIS commands with no
 backend or malformed-packet failures, including PCR, session, key-creation, and
-NV-public traffic. The PPI mailbox recorded 13 reads and zero writes; see the
+NV-public traffic; see the
 [dated command-path receipt](windows-arm/evidence/vtpm-windows-command-path-20260722.md).
-This still does **not** close the gates: validated firmware-populated
-measured-boot events, clean-second-Mac migration, a real Windows PPI-operation receipt,
+A later same-day run drove a full PPI **clear** to completion — `Clear-Tpm -UsePPI`,
+in-process reboot, F12 firmware approval, one successful `TPM2_CC_Clear`
+(`clear=1`, 266 PPI writes), post-clear desktop, and clean shutdown — after
+power-cycling the vTPM on reset and reordering the firmware to process PPI
+before locking the platform hierarchy; see the
+[dated PPI-clear receipt](windows-arm/evidence/vtpm-windows-ppi-clear-20260722.md).
+This still does **not** close the security gates: validated firmware-populated
+measured-boot events, clean-second-Mac migration,
 `Confirm-SecureBootUEFI`/PCR 7 proof, and BitLocker recovery remain.
 
 Windows HVF suspend/resume is explicitly not a v1 product capability; the

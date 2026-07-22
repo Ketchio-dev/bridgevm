@@ -42,5 +42,6 @@ docs/windows-arm/evidence/reboot-gic-reset-20260712.md	historical-evidence	windo
 docs/windows-arm/evidence/viogpu3d-virgl-live-20260712.md	historical-evidence	windows-graphics	-
 docs/windows-arm/evidence/wdk-sdk-buffered-storage-20260712.md	historical-evidence	windows-driver	-
 docs/windows-arm/evidence/vtpm-windows-command-path-20260722.md	historical-evidence	windows-security	-
+docs/windows-arm/evidence/vtpm-windows-ppi-clear-20260722.md	historical-evidence	windows-security	-
 docs/archive/README-before-20260722.md	historical-evidence	documentation-history	docs/README.md
 docs/archive/STATUS-before-20260722.md	historical-evidence	documentation-history	STATUS.md

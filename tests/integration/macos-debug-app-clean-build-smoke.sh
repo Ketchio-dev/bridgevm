@@ -60,7 +60,7 @@ HVF_SECURE_BOOT_POLICY="$HVF_LAB/Contents/Resources/BridgeVMApp_BridgeVMControl.
 [[ -d "$HVF_SWTPM_LICENSES" ]] || fail "bundled Windows HVF swtpm licenses missing"
 [[ -f "$HVF_FIRMWARE" && "$(stat -f '%z' "$HVF_FIRMWARE")" == "3145728" ]] \
   || fail "bundled Windows HVF firmware missing or wrong size"
-[[ "$(shasum -a 256 "$HVF_FIRMWARE" | awk '{ print $1 }')" == "f41c7eb7c1a9dabf8ed10c4e52642378e05df171eecd65ca15ed414d9fabdff9" ]] \
+[[ "$(shasum -a 256 "$HVF_FIRMWARE" | awk '{ print $1 }')" == "b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b" ]] \
   || fail "bundled Windows HVF firmware is not the pinned Secure Boot + TPM2 build"
 grep -Fqx "sha256=$(shasum -a 256 "$HVF_FIRMWARE" | awk '{ print $1 }')" "$HVF_FIRMWARE_MANIFEST" \
   || fail "bundled Windows HVF firmware manifest mismatch"
