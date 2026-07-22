@@ -84,7 +84,7 @@ Correct identity, migration, BitLocker recovery, signing, and reproducible live
 evidence are not “easy last steps”; they are the release-quality work.
 
 Current `SEC-TPM-FRONTEND` evidence is E4 for the Windows TIS command path and
-E2/E4-observed-read for PPI: five TIS localities, command FIFO, the 1 KiB PPI
+E2/E4-observed-read/write for PPI: five TIS localities, command FIFO, the 1 KiB PPI
 mailbox, PPI 1.3/reset-mitigation `_DSM`, fixed MMIO
 dispatch, optional ACPI `TPM0/MSFT0101`, and the revision-4 TPM2 table with a
 loader-relocated 64 KiB `etc/tpm/log` area are unit proven. BridgeVM now also
@@ -102,8 +102,16 @@ state directory with a missing key is never assigned a silent replacement key.
 On 2026-07-22, a 120-second cloned Windows run reached the desktop and completed
 1,032 TPM commands: 975 successful responses, 186 `StartAuthSession`, three
 `CreatePrimary`, 40 `NV_ReadPublic`, 146 `PCR_Read`, and 81 `PCR_Extend`, with
-zero backend failures and zero malformed commands or responses. The PPI page
-was read 13 times but never written, so the PPI-action half remains open. The
+zero backend failures and zero malformed commands or responses. A later
+20-second diagnostic run with the patched firmware completed 483 TPM commands,
+20 PPI reads, and 276 PPI writes with no backend failure, malformed traffic, or
+firmware exception. An interactive run also showed `Clear-Tpm -UsePPI`
+returning `RestartPending=True`, but it exposed authorization material and then
+hit a live-input replay bug. That run is deliberately not release evidence.
+The replay defect is now regression-tested and fixed, F12 firmware approval is
+supported, and `TPM2_CC_Clear` is counted without payload logging. A fresh
+same-process Clear/reboot/F12/post-clear receipt is still required, so the
+PPI-action half remains open. The prior Windows command-path
 payload-free receipt and verifier are indexed in the
 [dated evidence](docs/windows-arm/evidence/vtpm-windows-command-path-20260722.md).
 The repository smoke proves exact 32-byte FD delivery, socket/process cleanup,

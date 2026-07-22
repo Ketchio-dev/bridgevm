@@ -24,7 +24,9 @@ Options:
                           1000,5000,15000,30000,60000,90000,120000.
   --display-export-ppm P  Atomically replace P with the current display frame.
   --display-export-ms N   Live display export interval, 100-60000 ms (default 500).
-  --input-control P       Read live KEY/POINTER commands appended to P.
+  --input-control P       Read live KEY/POINTER/RESIZE/SNAPSHOT commands
+                          appended to P. `SNAPSHOT label` writes a bounded
+                          RAMFB/virtio-gpu checkpoint into the evidence dir.
   --boot-timer            Enable BOOT_TIMER milestone/ramfb/exits-per-sec logs
                           from hvf_gic_boot_probe.
   --boot-timer-ramfb-ms N Sample display checksums every N milliseconds for
@@ -145,7 +147,8 @@ Options:
   --setup-input-actions LIST
                           Optional comma-separated xHCI setup-input keys:
                           tab, enter, space, esc, backspace, delete,
-                          arrows, home/end, pageup/pagedown, ctrl+alt+delete,
+                          f1..f12, arrows, home/end, pageup/pagedown,
+                          ctrl+alt+delete,
                           win+r, lgui+r, text:<printable ASCII except comma>.
                           Requires --enable-xhci.
   --setup-input-marker TEXT

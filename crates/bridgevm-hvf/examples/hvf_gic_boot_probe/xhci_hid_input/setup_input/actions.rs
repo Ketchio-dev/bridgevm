@@ -115,6 +115,66 @@ fn parse_setup_input_token(
             modifier: 0,
             usage: 0x4c,
         },
+        "f1" => SetupInputAction::Key {
+            name: "f1",
+            modifier: 0,
+            usage: 0x3a,
+        },
+        "f2" => SetupInputAction::Key {
+            name: "f2",
+            modifier: 0,
+            usage: 0x3b,
+        },
+        "f3" => SetupInputAction::Key {
+            name: "f3",
+            modifier: 0,
+            usage: 0x3c,
+        },
+        "f4" => SetupInputAction::Key {
+            name: "f4",
+            modifier: 0,
+            usage: 0x3d,
+        },
+        "f5" => SetupInputAction::Key {
+            name: "f5",
+            modifier: 0,
+            usage: 0x3e,
+        },
+        "f6" => SetupInputAction::Key {
+            name: "f6",
+            modifier: 0,
+            usage: 0x3f,
+        },
+        "f7" => SetupInputAction::Key {
+            name: "f7",
+            modifier: 0,
+            usage: 0x40,
+        },
+        "f8" => SetupInputAction::Key {
+            name: "f8",
+            modifier: 0,
+            usage: 0x41,
+        },
+        "f9" => SetupInputAction::Key {
+            name: "f9",
+            modifier: 0,
+            usage: 0x42,
+        },
+        "f10" => SetupInputAction::Key {
+            name: "f10",
+            modifier: 0,
+            usage: 0x43,
+        },
+        "f11" => SetupInputAction::Key {
+            name: "f11",
+            modifier: 0,
+            usage: 0x44,
+        },
+        "f12" => SetupInputAction::Key {
+            name: "f12",
+            modifier: 0,
+            usage: 0x45,
+        },
         "right" => SetupInputAction::Key {
             name: "right",
             modifier: 0,
@@ -351,6 +411,17 @@ mod tests {
                 action,
                 SetupInputAction::Key { modifier: actual, .. } if *actual == modifier
             ));
+        }
+    }
+
+    #[test]
+    fn firmware_function_keys_map_to_boot_keyboard_usages() {
+        let actions = parse_setup_input_actions("f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12").unwrap();
+
+        assert_eq!(actions.len(), 12);
+        for (index, action) in actions.iter().enumerate() {
+            assert_eq!(action.name(), format!("f{}", index + 1));
+            assert_eq!(action.usage(), 0x3a + u8::try_from(index).unwrap());
         }
     }
 }

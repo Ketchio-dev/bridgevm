@@ -22,6 +22,7 @@ enum LiveInputCommand {
     Key(String),
     Pointer(String),
     Resize { width: u32, height: u32 },
+    Snapshot(String),
 }
 
 impl LiveInputCommand {
@@ -109,6 +110,11 @@ impl LiveInputController {
                         "live input rejected: kind=resize {width}x{height} (no-op/no-gpu/out-of-range)"
                     );
                 }
+                Ok(false)
+            }
+            LiveInputCommand::Snapshot(label) => {
+                crate::ramfb_dump::print_checkpoint_for_platform(label, platform, mem);
+                println!("live input accepted: snapshot={label:?}");
                 Ok(false)
             }
         };
@@ -216,6 +222,13 @@ impl LiveInputController {
                     return;
                 }
             }
+        } else if let Some(value) = line.strip_prefix("SNAPSHOT ") {
+            let label = value.trim();
+            if label.is_empty() {
+                eprintln!("live input rejected: kind=snapshot empty_label");
+                return;
+            }
+            LiveInputCommand::Snapshot(label.to_string())
         } else {
             eprintln!("live input rejected: unknown_command");
             return;
@@ -254,7 +267,8 @@ impl LiveInputController {
 mod tests {
     use super::{LiveInputCommand, LiveInputController, COMPACT_AFTER_BYTES};
     use std::collections::VecDeque;
-    use std::fs;
+    use std::fs::{self, OpenOptions};
+    use std::io::Write;
     use std::path::PathBuf;
     use std::time::Instant;
 
@@ -330,6 +344,28 @@ mod tests {
     }
 
     #[test]
+    fn live_input_accepts_a_bounded_snapshot_label_and_rejects_an_empty_one() {
+        let mut input = LiveInputController {
+            path: None,
+            offset: 0,
+            partial: String::new(),
+            pending: VecDeque::new(),
+            accepted_pointer_moves: 0,
+            next_poll: Instant::now(),
+        };
+
+        input.push_line("SNAPSHOT ppi-uac");
+        assert!(matches!(
+            input.pending.back(),
+            Some(LiveInputCommand::Snapshot(label)) if label == "ppi-uac"
+        ));
+
+        let before = input.pending.len();
+        input.push_line("SNAPSHOT ");
+        assert_eq!(input.pending.len(), before, "empty labels are dropped");
+    }
+
+    #[test]
     fn live_input_compacts_fully_consumed_large_control_file() {
         let path = std::env::temp_dir().join(format!(
             "bridgevm-live-input-{}-{}.ctl",
@@ -357,6 +393,43 @@ mod tests {
         assert_eq!(fs::metadata(&path).unwrap().len(), 0);
         assert_eq!(input.offset, 0);
         assert_eq!(input.pending.len(), 1);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn live_input_reuse_does_not_replay_commands_after_guest_reset() {
+        let path = std::env::temp_dir().join(format!(
+            "bridgevm-live-input-reset-{}-{}.ctl",
+            std::process::id(),
+            Instant::now().elapsed().as_nanos()
+        ));
+        fs::write(&path, b"KEY text:first\n").unwrap();
+        let mut input = LiveInputController {
+            path: Some(PathBuf::from(&path)),
+            offset: 0,
+            partial: String::new(),
+            pending: VecDeque::new(),
+            accepted_pointer_moves: 0,
+            next_poll: Instant::now(),
+        };
+
+        input.read_new_commands();
+        assert_eq!(input.pending.len(), 1);
+        input.pending.clear();
+
+        OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(b"KEY text:second\n")
+            .unwrap();
+        input.read_new_commands();
+
+        assert_eq!(input.pending.len(), 1);
+        assert!(matches!(
+            input.pending.front(),
+            Some(LiveInputCommand::Key(value)) if value == "text:second"
+        ));
         fs::remove_file(path).unwrap();
     }
 }

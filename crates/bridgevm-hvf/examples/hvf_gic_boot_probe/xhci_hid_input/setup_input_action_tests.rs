@@ -152,6 +152,12 @@ fn xhci_setup_input_accepts_navigation_and_secure_attention_keys() {
 }
 
 #[test]
+fn xhci_setup_input_accepts_firmware_confirmation_function_keys() {
+    let trigger = XhciSetupInputTrigger::from_env_value("setup-input", "f10,f12").unwrap();
+    assert_eq!(trigger.action_names(), "f10,f12");
+}
+
+#[test]
 fn xhci_setup_input_rejects_raw_usages() {
     assert_eq!(
         XhciSetupInputTrigger::from_env_value("setup-input", "0x04").unwrap_err(),

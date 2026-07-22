@@ -10,7 +10,7 @@ readonly SOURCE_DATE_EPOCH_PIN="1778208179"
 readonly OUTPUT_NAME="edk2-aarch64-secure-code.fd"
 readonly EXPECTED_GCC_VERSION="aarch64-elf-gcc (GCC) 16.1.0"
 readonly EXPECTED_IASL_VERSION="20260408"
-readonly EXPECTED_SHA256="f41c7eb7c1a9dabf8ed10c4e52642378e05df171eecd65ca15ed414d9fabdff9"
+readonly EXPECTED_SHA256="7658b515e644620a0d51a9bf1ce43541cef019b7fcccf8087cd0244840a9cb4d"
 
 usage() {
   echo "usage: $0 /path/to/edk2 [output-directory]" >&2
@@ -25,6 +25,7 @@ fi
 edk2_root="$(cd "$1" && pwd)"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 output_dir="${2:-${repo_root}/crates/bridgevm-hvf/firmware}"
+ppi_patch="$repo_root/crates/bridgevm-hvf/firmware/patches/0001-armvirt-process-tpm-ppi.patch"
 
 actual_commit="$(git -C "$edk2_root" rev-parse HEAD)"
 if [[ "$actual_commit" != "$EXPECTED_COMMIT" ]]; then
@@ -42,9 +43,50 @@ if git -C "$edk2_root" submodule status --recursive | grep -Eq '^[+-U]' ; then
   exit 66
 fi
 
+if [[ ! -f "$ppi_patch" ]]; then
+  echo "required ArmVirt TPM PPI patch is missing: ${ppi_patch}" >&2
+  exit 67
+fi
+
+if ! git -C "$edk2_root" apply --check --ignore-space-change "$ppi_patch"; then
+  echo "ArmVirt TPM PPI patch does not apply cleanly to the pinned source" >&2
+  exit 67
+fi
+
+patch_active=0
+cleanup_source_patch() {
+  if [[ "$patch_active" == "1" ]]; then
+    git -C "$edk2_root" apply --reverse --ignore-space-change "$ppi_patch" || {
+      echo "failed to restore the EDK2 source tree after the build" >&2
+      return 1
+    }
+    # The pinned EDK2 checkout stores these sources as CRLF. `git apply` can
+    # match them with --ignore-space-change but leaves reversed context lines
+    # as LF, so restore the known-clean patch targets byte-for-byte.
+    git -C "$edk2_root" restore --source=HEAD -- \
+      OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c \
+      OvmfPkg/Library/PlatformBootManagerLibLight/PlatformBm.c \
+      OvmfPkg/Library/PlatformBootManagerLibLight/PlatformBootManagerLib.inf
+    patch_active=0
+  fi
+}
+trap cleanup_source_patch EXIT
+git -C "$edk2_root" apply --ignore-space-change "$ppi_patch"
+patch_active=1
+
 readonly TPM_PPI_LIBRARY_BINDING='Tcg2PhysicalPresenceLib|OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.inf'
 if ! grep -Fq "$TPM_PPI_LIBRARY_BINDING" "$edk2_root/ArmVirtPkg/ArmVirtQemu.dsc"; then
   echo "firmware source does not bind ArmVirtQemu to the QEMU TPM PPI request processor" >&2
+  exit 67
+fi
+if ! grep -Fq 'Tcg2PhysicalPresenceLibProcessRequest (NULL);' \
+  "$edk2_root/OvmfPkg/Library/PlatformBootManagerLibLight/PlatformBm.c"; then
+  echo "firmware source does not process TPM PPI requests from ArmVirt's boot manager" >&2
+  exit 67
+fi
+if ! grep -Fq 'QemuTpmPpiRead32' \
+  "$edk2_root/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c"; then
+  echo "firmware source does not use AArch64-safe TPM PPI field accessors" >&2
   exit 67
 fi
 
@@ -103,6 +145,14 @@ if [[ "$built_sha256" != "$EXPECTED_SHA256" ]]; then
   exit 73
 fi
 
+ppi_patch_sha256="$(shasum -a 256 "$ppi_patch" | awk '{print $1}')"
+cleanup_source_patch
+trap - EXIT
+if ! git -C "$edk2_root" diff --quiet || ! git -C "$edk2_root" diff --cached --quiet; then
+  echo "EDK2 source tree was not restored after the patched build" >&2
+  exit 74
+fi
+
 mkdir -p "$output_dir"
 install -m 0644 "$firmware" "$output_dir/$OUTPUT_NAME"
 firmware_sha256="$(shasum -a 256 "$output_dir/$OUTPUT_NAME" | awk '{print $1}')"
@@ -125,7 +175,8 @@ printf '%s\n' \
   "  \"size\": ${firmware_size}," \
   "  \"sha256\": \"${firmware_sha256}\"," \
   '  "verifiedModules": ["SecurityStubDxe", "SecureBootConfigDxe", "EnrollDefaultKeys", "Tcg2Dxe"],' \
-  '  "verifiedLibraryInstances": ["Tcg2PhysicalPresenceLibQemu"]' \
+  '  "verifiedLibraryInstances": ["Tcg2PhysicalPresenceLibQemu"],' \
+  "  \"patches\": [{\"path\": \"crates/bridgevm-hvf/firmware/patches/0001-armvirt-process-tpm-ppi.patch\", \"sha256\": \"${ppi_patch_sha256}\"}]" \
   '}' > "$receipt"
 
 echo "installed $output_dir/$OUTPUT_NAME"

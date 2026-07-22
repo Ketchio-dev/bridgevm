@@ -53,6 +53,7 @@ const INTERFACE_ID_TPM2_FIFO: u32 = 0x0000_2100;
 const TPM2_HEADER_SIZE: usize = 10;
 const TPM2_RC_FAILURE: [u8; TPM2_HEADER_SIZE] =
     [0x80, 0x01, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x01, 0x01];
+const TPM2_CC_CLEAR: u32 = 0x0000_0126;
 const TPM2_CC_CREATE_PRIMARY: u32 = 0x0000_0131;
 const TPM2_CC_SELF_TEST: u32 = 0x0000_0143;
 const TPM2_CC_STARTUP: u32 = 0x0000_0144;
@@ -209,6 +210,7 @@ pub struct TpmTisStats {
     pub malformed_commands: u64,
     pub malformed_responses: u64,
     pub last_command_code: Option<u32>,
+    pub clear_commands: u64,
     pub startup_commands: u64,
     pub self_test_commands: u64,
     pub get_capability_commands: u64,
@@ -229,6 +231,7 @@ impl TpmTisStats {
         };
         self.last_command_code = Some(code);
         match code {
+            TPM2_CC_CLEAR => self.clear_commands += 1,
             TPM2_CC_STARTUP => self.startup_commands += 1,
             TPM2_CC_SELF_TEST => self.self_test_commands += 1,
             TPM2_CC_GET_CAPABILITY => self.get_capability_commands += 1,
@@ -608,6 +611,7 @@ mod tests {
     fn command_stats_classify_security_runtime_operations_without_payload_logging() {
         let mut stats = TpmTisStats::default();
         for code in [
+            TPM2_CC_CLEAR,
             TPM2_CC_STARTUP,
             TPM2_CC_SELF_TEST,
             TPM2_CC_GET_CAPABILITY,
@@ -625,6 +629,7 @@ mod tests {
             stats.record_command(&command);
         }
 
+        assert_eq!(stats.clear_commands, 1);
         assert_eq!(stats.startup_commands, 1);
         assert_eq!(stats.self_test_commands, 1);
         assert_eq!(stats.get_capability_commands, 1);

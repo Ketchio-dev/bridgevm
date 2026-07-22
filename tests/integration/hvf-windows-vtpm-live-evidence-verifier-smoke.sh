@@ -16,7 +16,7 @@ make_fixture() {
   printf '%s\n' \
     'TPM2 TIS backend: swtpm data socket /private/tmp/bridgevm/data.sock' \
     '  tpm2-tis: base=0xc000000 size=0x5000 ACPI=TPM0/MSFT0101+TPM2-log backend=swtpm ppi=shared-memory+dsm-1.3' \
-    'TPM2 TIS command summary: commands=1032 success=975 errors=57 backend_failures=0 malformed_commands=0 malformed_responses=0 last_command=0x00000155 startup=1 self_test=1 get_capability=185 pcr_read=146 pcr_extend=81 start_auth_session=186 create_primary=3 read_public=9 nv_read_public=40 get_random=5 other=375' \
+    'TPM2 TIS command summary: commands=1032 success=975 errors=57 backend_failures=0 malformed_commands=0 malformed_responses=0 last_command=0x00000155 clear=0 startup=1 self_test=1 get_capability=185 pcr_read=146 pcr_extend=81 start_auth_session=186 create_primary=3 read_public=9 nv_read_public=40 get_random=5 other=375' \
     'TPM PPI shared-memory summary: reads=13 writes=0 rejected_accesses=0 memory_overwrite_requested=false' >"$dir/run.log"
   printf '%s\n' 'cleanup_status=0' >"$dir/cleanup.txt"
   printf '%s\n' 'run_status=0' >"$dir/target-stat.txt"
