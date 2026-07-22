@@ -1,0 +1,10 @@
+# Structural-debt ratchet budgets. Each listed file's line count and unsafe-site
+# count must not exceed its recorded ceiling; check-refactor-budgets.sh enforces
+# this. Lower a ceiling only after an extraction actually reduces the file; never
+# raise one. Seeded 2026-07-22 at the pre-refactor baseline.
+#
+# path	max_loc	max_unsafe
+crates/bridgevm-hvf/src/lib.rs	34750	296
+crates/bridgevm-api/src/lib.rs	13868	3
+crates/bridgevm-daemon/src/main.rs	5969	4
+crates/bridgevm-storage/src/lib.rs	5321	0
