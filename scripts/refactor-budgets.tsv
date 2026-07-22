@@ -3,8 +3,17 @@
 # this. Lower a ceiling only after an extraction actually reduces the file; never
 # raise one. Seeded 2026-07-22 at the pre-refactor baseline.
 #
+# NOTE ON AGGREGATE HONESTY: extracting code from lib.rs into a sibling module
+# does NOT reduce total crate lines — module headers, imports, re-export shims,
+# and test-module wrappers add boilerplate. Every extracted module must be added
+# here at its real size, so a pure move can never look like a reduction. The win
+# of an extraction packet is ownership and review boundaries, not line count.
+# Likewise, unsafe sites moving from lib.rs into platform/* is not a reduction.
+#
 # path	max_loc	max_unsafe
-crates/bridgevm-hvf/src/lib.rs	34750	296
+crates/bridgevm-hvf/src/lib.rs	34516	296
+crates/bridgevm-hvf/src/support.rs	70	0
+crates/bridgevm-hvf/src/no_qemu_plan.rs	201	0
 crates/bridgevm-api/src/lib.rs	13868	3
 crates/bridgevm-daemon/src/main.rs	5969	4
 crates/bridgevm-storage/src/lib.rs	5321	0
