@@ -40,10 +40,13 @@ writes, 18 flushes, and final disk/vars writeback. See the
 The shipped macOS bundle now contains an isolated `BridgeVMControl.app`, the
 installed-Windows wrappers, and a release probe signed with
 `com.apple.security.hypervisor`; Settings exposes it as **Windows HVF Lab**.
-The current lab bundle does not yet carry a signed swtpm/libtpms runtime; the
-encrypted vTPM product configuration therefore requires a host-provided swtpm
-and fails launch closed when it is absent. Runtime bundling remains a release
-gate, not an implicit fallback to a TPM-less VM.
+The lab bundle now carries a signed, pinned swtpm 0.10.1/libtpms 0.10.2 runtime,
+its complete rewritten dylib closure, component license notices, and a
+SHA-256 manifest. The packaged helper has passed a real encrypted key-FD/socket
+startup check. The app also provides an authenticated recovery package,
+same-ID migration policy, fresh-TPM clone, and archive-before-reset receipts.
+Clean-second-Mac migration and BitLocker recovery are still live release gates;
+failure remains closed rather than falling back to a TPM-less VM.
 The lab imports an installed RAW disk and its matching writable UEFI vars by
 clone/copy, leaving the selected source files unchanged. Imported disks smaller
 than 64 GiB are extended sparsely, then C: is grown through the resident agent

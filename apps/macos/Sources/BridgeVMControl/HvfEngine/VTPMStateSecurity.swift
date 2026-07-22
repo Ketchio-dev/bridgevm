@@ -33,19 +33,22 @@ protocol VTPMStateKeyProviding {
     func stateKey(for stableVMID: String, allowCreation: Bool) throws -> Data
 }
 
+protocol VTPMStateKeyManaging: VTPMStateKeyProviding {
+    func replaceStateKey(_ key: Data, for stableVMID: String) throws
+    func deleteStateKey(for stableVMID: String) throws
+}
+
 /// Device-local vTPM key custody. `ThisDeviceOnly` deliberately prevents an
 /// encrypted TPM state directory from becoming silently usable after a bundle
-/// copy to another Mac. A future export flow must make that trust transition
-/// explicit instead of weakening this storage class.
-final class KeychainVTPMStateKeyStore: VTPMStateKeyProviding {
+/// copy to another Mac. The recovery flow makes that trust transition explicit
+/// with a separately keyed authenticated package instead of weakening this
+/// storage class.
+final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging {
     static let service = "com.bridgevm.vtpm-state-key.v1"
     static let keyLength = 32
 
     func stateKey(for stableVMID: String, allowCreation: Bool) throws -> Data {
-        let account = stableVMID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !account.isEmpty, account.utf8.count <= 255,
-              !account.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
-        else { throw VTPMStateSecurityError.invalidVMIdentifier }
+        let account = try validatedAccount(stableVMID)
 
         let existing = read(account: account)
         if existing.status == errSecSuccess, let key = existing.data {
@@ -94,6 +97,56 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyProviding {
             return key
         }
         throw VTPMStateSecurityError.keychainWrite(addStatus)
+    }
+
+    func replaceStateKey(_ key: Data, for stableVMID: String) throws {
+        guard key.count == Self.keyLength else {
+            throw VTPMStateSecurityError.invalidKeyLength(key.count)
+        }
+        let account = try validatedAccount(stableVMID)
+        let query = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: Self.service,
+            kSecAttrAccount: account,
+            kSecUseDataProtectionKeychain: true,
+        ] as CFDictionary
+        let updateStatus = SecItemUpdate(query, [kSecValueData: key] as CFDictionary)
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else {
+            throw VTPMStateSecurityError.keychainWrite(updateStatus)
+        }
+        let addStatus = SecItemAdd([
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: Self.service,
+            kSecAttrAccount: account,
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecUseDataProtectionKeychain: true,
+            kSecValueData: key,
+        ] as CFDictionary, nil)
+        guard addStatus == errSecSuccess else {
+            throw VTPMStateSecurityError.keychainWrite(addStatus)
+        }
+    }
+
+    func deleteStateKey(for stableVMID: String) throws {
+        let account = try validatedAccount(stableVMID)
+        let status = SecItemDelete([
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: Self.service,
+            kSecAttrAccount: account,
+            kSecUseDataProtectionKeychain: true,
+        ] as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw VTPMStateSecurityError.keychainWrite(status)
+        }
+    }
+
+    private func validatedAccount(_ stableVMID: String) throws -> String {
+        let account = stableVMID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !account.isEmpty, account.utf8.count <= 255,
+              !account.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
+        else { throw VTPMStateSecurityError.invalidVMIdentifier }
+        return account
     }
 
     private func read(account: String) -> (data: Data?, status: OSStatus) {
@@ -167,14 +220,17 @@ enum VTPMStateSecurity {
 
     static func defaultSwtpmCommand(
         fileManager: FileManager = .default,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundle: Bundle = .main
     ) -> String {
         if let override = environment["BRIDGEVM_SWTPM_BIN"], !override.isEmpty {
             return override
         }
-        if let bundled = Bundle.main.url(forAuxiliaryExecutable: "swtpm"),
-           fileManager.isExecutableFile(atPath: bundled.path) {
-            return bundled.path
+        let conventionalHelper = bundle.bundleURL
+            .appendingPathComponent("Contents/Helpers/swtpm", isDirectory: false)
+        for bundled in [bundle.url(forAuxiliaryExecutable: "swtpm"), conventionalHelper]
+            .compactMap({ $0 }) where fileManager.isExecutableFile(atPath: bundled.path) {
+                return bundled.path
         }
         for candidate in ["/opt/homebrew/bin/swtpm", "/usr/local/bin/swtpm", "/usr/bin/swtpm"]
         where fileManager.isExecutableFile(atPath: candidate) {

@@ -39,6 +39,9 @@ env \
 HVF_LAB="$APP/Contents/Applications/BridgeVMControl.app"
 HVF_PROBE="$HVF_LAB/Contents/Resources/target/release/examples/hvf_gic_boot_probe"
 HVF_FRAMEWORKS="$HVF_LAB/Contents/Frameworks"
+HVF_SWTPM="$HVF_LAB/Contents/Helpers/swtpm"
+HVF_SWTPM_MANIFEST="$HVF_LAB/Contents/Resources/swtpm/manifest.txt"
+HVF_SWTPM_LICENSES="$HVF_LAB/Contents/Resources/swtpm/licenses"
 HVF_FIRMWARE="$HVF_LAB/Contents/Resources/firmware/edk2-aarch64-secure-code.fd"
 HVF_FIRMWARE_MANIFEST="$HVF_LAB/Contents/Resources/firmware/manifest.txt"
 HVF_FIRMWARE_LICENSES="$HVF_LAB/Contents/Resources/firmware/licenses.txt"
@@ -50,6 +53,11 @@ HVF_SECURE_BOOT_POLICY="$HVF_LAB/Contents/Resources/BridgeVMApp_BridgeVMControl.
   || fail "bundled Windows HVF VirGL renderer missing"
 [[ -f "$HVF_FRAMEWORKS/libepoxy.0.dylib" ]] \
   || fail "bundled Windows HVF libepoxy dependency missing"
+[[ -x "$HVF_SWTPM" ]] || fail "bundled Windows HVF swtpm helper missing"
+[[ -f "$HVF_FRAMEWORKS/libtpms.0.dylib" ]] \
+  || fail "bundled Windows HVF libtpms dependency missing"
+[[ -s "$HVF_SWTPM_MANIFEST" ]] || fail "bundled Windows HVF swtpm manifest missing"
+[[ -d "$HVF_SWTPM_LICENSES" ]] || fail "bundled Windows HVF swtpm licenses missing"
 [[ -f "$HVF_FIRMWARE" && "$(stat -f '%z' "$HVF_FIRMWARE")" == "3145728" ]] \
   || fail "bundled Windows HVF firmware missing or wrong size"
 [[ "$(shasum -a 256 "$HVF_FIRMWARE" | awk '{ print $1 }')" == "f41c7eb7c1a9dabf8ed10c4e52642378e05df171eecd65ca15ed414d9fabdff9" ]] \
@@ -65,6 +73,8 @@ otool -L "$HVF_PROBE" "$HVF_FRAMEWORKS/libvirglrenderer.1.dylib" \
   --verify-only "$APP/Contents/Helpers/AppleVzRunner" >/dev/null
 "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" \
   --verify-only "$HVF_PROBE" >/dev/null
+"$ROOT/apps/macos/scripts/bundle-swtpm-runtime.sh" \
+  --verify-only "$HVF_LAB" >/dev/null
 "$BUILD_SCRIPT" --verify-only "$APP" >/dev/null
 
 echo "PASS: macOS debug app clean build smoke"

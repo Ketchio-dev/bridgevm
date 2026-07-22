@@ -216,6 +216,8 @@ verify_bundle() {
   done
   "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" \
     --verify-only "$hvf_probe" >/dev/null
+  "$ROOT/apps/macos/scripts/bundle-swtpm-runtime.sh" \
+    --verify-only "$hvf_lab" >/dev/null
   [[ -f "$hvf_firmware" && "$(stat -f '%z' "$hvf_firmware")" == "3145728" ]] || {
     echo "BridgeVM Windows HVF firmware is missing or not 3 MiB: $hvf_firmware" >&2
     exit 1
@@ -433,6 +435,9 @@ done
   --release \
   --output "$HVF_WINDOWS_PROBE" \
   --bundle-frameworks "$HVF_LAB_FRAMEWORKS" >/dev/null
+BRIDGEVM_CODESIGN_IDENTITY="$IDENTITY" \
+  "$ROOT/apps/macos/scripts/bundle-swtpm-runtime.sh" \
+  --app "$HVF_LAB_APP" >/dev/null
 if [[ -n "$ICON_FILE" ]]; then
   [[ -f "$ICON_FILE" ]] || {
     echo "BridgeVM icon file is missing: $ICON_FILE" >&2

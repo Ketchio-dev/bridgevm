@@ -1,6 +1,7 @@
 import SwiftUI
 #if canImport(AppKit)
 import AppKit
+import UniformTypeIdentifiers
 #endif
 
 struct HvfEngineView: View {
@@ -22,6 +23,13 @@ struct HvfEngineView: View {
     @State private var ctlFilePath = ""
     @State private var ctlInput = ""
     @State private var keyboardInput = ""
+    @State private var vtpmRecoveryCode = ""
+    @State private var vtpmRecoveryPackagePath = ""
+    @State private var vtpmRecoveryCodeInput = ""
+    @State private var vtpmLifecycleMessage: String?
+    @State private var vtpmLifecycleError: String?
+    @State private var confirmVTPMRestore = false
+    @State private var confirmVTPMReset = false
 
     init(config: HvfEngineConfig = HvfEngineView.defaultConfig()) {
         _session = StateObject(wrappedValue: HvfEngineSession(config: config))
@@ -32,6 +40,7 @@ struct HvfEngineView: View {
             VStack(alignment: .leading, spacing: 16) {
                 header
                 readinessCard
+                if session.config.vtpmStateDir != nil { vtpmLifecycleCard }
                 configCard
                 statusCard
                 screenshotCard
@@ -43,6 +52,37 @@ struct HvfEngineView: View {
         .onAppear {
             loadStateFromSession()
             session.attachToRunningVM()
+        }
+        .confirmationDialog(
+            "이 상태에 복구 키를 연결하시겠습니까?",
+            isPresented: $confirmVTPMRestore,
+            titleVisibility: .visible
+        ) {
+            Button("검증 후 복원") { restoreVTPMRecovery() }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("패키지의 VM ID와 현재 암호화 상태 지문이 정확히 일치할 때만 Keychain 키를 교체합니다.")
+        }
+        .confirmationDialog(
+            "TPM ID를 재설정하시겠습니까?",
+            isPresented: $confirmVTPMReset,
+            titleVisibility: .visible
+        ) {
+            Button("기존 상태를 보관하고 재설정", role: .destructive) { resetVTPMIdentity() }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("Windows의 BitLocker 및 PCR 봉인 비밀에는 복구 키가 필요할 수 있습니다. BridgeVM은 기존 암호화 상태와 장치 로컬 키를 보관한 뒤 새 TPM으로 시작합니다.")
+        }
+        .alert(
+            "vTPM 수명주기 작업 실패",
+            isPresented: Binding(
+                get: { vtpmLifecycleError != nil },
+                set: { if !$0 { vtpmLifecycleError = nil } }
+            )
+        ) {
+            Button("확인") { vtpmLifecycleError = nil }
+        } message: {
+            Text(vtpmLifecycleError ?? "알 수 없는 오류")
         }
     }
 
@@ -155,6 +195,56 @@ struct HvfEngineView: View {
             .padding(6)
         } label: {
             Label("Windows HVF Readiness", systemImage: "checklist")
+        }
+    }
+
+    private var vtpmLifecycleCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("같은 Mac에서 VM 번들을 옮길 때는 VM ID를 유지합니다. 다른 Mac으로 옮길 때는 암호화된 복구 패키지와 별도 복구 코드를 함께 사용합니다. 복제본은 원본 TPM을 공유하지 않고 재설정해야 합니다.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                HStack(spacing: 8) {
+                    Button("복구 패키지 내보내기", action: exportVTPMRecovery)
+                    Button("복구 패키지 선택", action: chooseVTPMRecoveryPackage)
+                    Button("검증 후 복원") { confirmVTPMRestore = true }
+                        .disabled(vtpmRecoveryPackagePath.isEmpty || vtpmRecoveryCodeInput.isEmpty)
+                    Spacer()
+                    Button("TPM ID 재설정", role: .destructive) { confirmVTPMReset = true }
+                }
+                .disabled(!vtpmLifecycleAvailable)
+                if !vtpmRecoveryPackagePath.isEmpty {
+                    Text(vtpmRecoveryPackagePath)
+                        .font(.caption2.monospaced())
+                        .textSelection(.enabled)
+                }
+                SecureField("복구 코드", text: $vtpmRecoveryCodeInput)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.body.monospaced())
+                if !vtpmRecoveryCode.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("복구 코드 — 패키지와 분리해 안전하게 보관하세요")
+                            .font(.caption.bold())
+                        Text(vtpmRecoveryCode)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                    }
+                }
+                if let vtpmLifecycleMessage {
+                    Text(vtpmLifecycleMessage)
+                        .font(.caption)
+                        .foregroundColor(.green)
+                        .textSelection(.enabled)
+                }
+                if !vtpmLifecycleAvailable {
+                    Text("vTPM 상태 작업 전 VM을 완전히 정지하세요.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+            }
+            .padding(6)
+        } label: {
+            Label("vTPM Identity & Recovery", systemImage: "key.horizontal")
         }
     }
 
@@ -287,6 +377,10 @@ struct HvfEngineView: View {
         currentConfig().readiness(repoRoot: session.repoRoot).launchReady
     }
 
+    private var vtpmLifecycleAvailable: Bool {
+        session.connectionState == .stopped || session.connectionState == .timedOut
+    }
+
     private func pathRow(_ label: String, text: Binding<String>, chooseDirectory: Bool) -> some View {
         HStack {
             Text(label).frame(width: 92, alignment: .leading)
@@ -374,6 +468,81 @@ struct HvfEngineView: View {
             text.wrappedValue = url.path
         }
         #endif
+    }
+
+    private func exportVTPMRecovery() {
+        #if canImport(AppKit)
+        guard vtpmLifecycleAvailable,
+              let keyID = session.config.vtpmKeyID,
+              let statePath = session.config.vtpmStateDir else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(keyID).bridgevm-vtpm-recovery.json"
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        do {
+            let lifecycle = VTPMIdentityLifecycle(keyStore: KeychainVTPMStateKeyStore())
+            let result = try lifecycle.exportRecovery(
+                stableVMID: keyID,
+                stateDirectory: URL(fileURLWithPath: statePath, isDirectory: true),
+                destination: destination
+            )
+            vtpmRecoveryCode = result.recoveryCode
+            vtpmLifecycleMessage = "복구 패키지를 저장했습니다. 상태 지문: \(result.stateFingerprint)"
+        } catch {
+            vtpmLifecycleError = error.localizedDescription
+        }
+        #endif
+    }
+
+    private func chooseVTPMRecoveryPackage() {
+        #if canImport(AppKit)
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.json]
+        if panel.runModal() == .OK, let url = panel.url {
+            vtpmRecoveryPackagePath = url.path
+            vtpmLifecycleMessage = nil
+        }
+        #endif
+    }
+
+    private func restoreVTPMRecovery() {
+        guard vtpmLifecycleAvailable,
+              let keyID = session.config.vtpmKeyID,
+              let statePath = session.config.vtpmStateDir else { return }
+        do {
+            let lifecycle = VTPMIdentityLifecycle(keyStore: KeychainVTPMStateKeyStore())
+            try lifecycle.restoreRecovery(
+                stableVMID: keyID,
+                stateDirectory: URL(fileURLWithPath: statePath, isDirectory: true),
+                packageURL: URL(fileURLWithPath: vtpmRecoveryPackagePath),
+                recoveryCode: vtpmRecoveryCodeInput
+            )
+            vtpmRecoveryCodeInput = ""
+            vtpmLifecycleMessage = "VM ID와 상태 지문을 검증하고 vTPM 키를 Keychain에 복원했습니다."
+        } catch {
+            vtpmLifecycleError = error.localizedDescription
+        }
+    }
+
+    private func resetVTPMIdentity() {
+        guard vtpmLifecycleAvailable,
+              let keyID = session.config.vtpmKeyID,
+              let statePath = session.config.vtpmStateDir else { return }
+        do {
+            let lifecycle = VTPMIdentityLifecycle(keyStore: KeychainVTPMStateKeyStore())
+            let result = try lifecycle.resetIdentity(
+                stableVMID: keyID,
+                stateDirectory: URL(fileURLWithPath: statePath, isDirectory: true)
+            )
+            vtpmLifecycleMessage = result.archivedStatePath.map {
+                "새 TPM ID로 전환했습니다. 이전 상태: \($0) · 영수증: \(result.receiptPath)"
+            } ?? "새 TPM ID로 전환했습니다. 영수증: \(result.receiptPath)"
+        } catch {
+            vtpmLifecycleError = error.localizedDescription
+        }
     }
 
     static func defaultConfig() -> HvfEngineConfig {

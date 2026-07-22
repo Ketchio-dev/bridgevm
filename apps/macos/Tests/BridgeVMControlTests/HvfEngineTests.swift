@@ -221,6 +221,26 @@ private final class RecordingVTPMKeyProvider: VTPMStateKeyProviding {
     }
 }
 
+private final class InMemoryVTPMKeyStore: VTPMStateKeyManaging {
+    var keys: [String: Data] = [:]
+
+    func stateKey(for stableVMID: String, allowCreation: Bool) throws -> Data {
+        if let key = keys[stableVMID] { return key }
+        guard allowCreation else { throw VTPMStateSecurityError.missingKeyForExistingState }
+        let key = Data(repeating: 0xa5, count: KeychainVTPMStateKeyStore.keyLength)
+        keys[stableVMID] = key
+        return key
+    }
+
+    func replaceStateKey(_ key: Data, for stableVMID: String) throws {
+        keys[stableVMID] = key
+    }
+
+    func deleteStateKey(for stableVMID: String) throws {
+        keys[stableVMID] = nil
+    }
+}
+
 final class VTPMStateSecurityTests: XCTestCase {
     func testKeyInputUsesOneShotBinaryPipe() throws {
         let config = HvfEngineConfig(
@@ -295,6 +315,95 @@ final class VTPMStateSecurityTests: XCTestCase {
         XCTAssertFalse(VTPMStateSecurity.executableAvailable(
             "missing-swtpm", environment: ["PATH": "/definitely/missing"]
         ))
+    }
+}
+
+final class VTPMIdentityLifecycleTests: XCTestCase {
+    func testEncryptedRecoveryRoundTripRequiresMatchingState() throws {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let state = temp.appendingPathComponent("vtpm", isDirectory: true)
+        let package = temp.appendingPathComponent("recovery.bridgevm-vtpm")
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try Data("encrypted-state".utf8).write(to: state.appendingPathComponent("tpm2-00.permall"))
+        let originalKey = Data((0..<32).map(UInt8.init))
+        let store = InMemoryVTPMKeyStore()
+        store.keys["win11"] = originalKey
+        let lifecycle = VTPMIdentityLifecycle(keyStore: store)
+
+        let exported = try lifecycle.exportRecovery(
+            stableVMID: "win11",
+            stateDirectory: state,
+            destination: package,
+            now: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        store.keys["win11"] = nil
+        try lifecycle.restoreRecovery(
+            stableVMID: "win11",
+            stateDirectory: state,
+            packageURL: package,
+            recoveryCode: exported.recoveryCode
+        )
+
+        XCTAssertEqual(store.keys["win11"], originalKey)
+        XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: package.path)[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+    }
+
+    func testRecoveryRejectsAStateFromAnotherSnapshot() throws {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let state = temp.appendingPathComponent("vtpm", isDirectory: true)
+        let package = temp.appendingPathComponent("recovery.bridgevm-vtpm")
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        let stateFile = state.appendingPathComponent("tpm2-00.permall")
+        try Data("first".utf8).write(to: stateFile)
+        let store = InMemoryVTPMKeyStore()
+        store.keys["win11"] = Data(repeating: 7, count: 32)
+        let lifecycle = VTPMIdentityLifecycle(keyStore: store)
+        let exported = try lifecycle.exportRecovery(
+            stableVMID: "win11", stateDirectory: state, destination: package
+        )
+        try Data("second".utf8).write(to: stateFile)
+
+        XCTAssertThrowsError(try lifecycle.restoreRecovery(
+            stableVMID: "win11",
+            stateDirectory: state,
+            packageURL: package,
+            recoveryCode: exported.recoveryCode
+        )) { error in
+            guard case VTPMIdentityLifecycleError.stateFingerprintMismatch = error else {
+                return XCTFail("unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testResetArchivesOldStateAndDeviceLocalKeyInsteadOfDiscardingThem() throws {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let state = temp.appendingPathComponent("vtpm", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try Data("old-state".utf8).write(to: state.appendingPathComponent("tpm2-00.permall"))
+        let oldKey = Data(repeating: 9, count: 32)
+        let store = InMemoryVTPMKeyStore()
+        store.keys["win11"] = oldKey
+        let lifecycle = VTPMIdentityLifecycle(keyStore: store)
+
+        let result = try lifecycle.resetIdentity(
+            stableVMID: "win11",
+            stateDirectory: state,
+            now: Date(timeIntervalSince1970: 1_700_000_000),
+            nonce: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        )
+
+        XCTAssertNil(store.keys["win11"])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: state.path), [])
+        let archive = try XCTUnwrap(result.archivedStatePath)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: archive + "/tpm2-00.permall"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: result.receiptPath))
+        XCTAssertTrue(store.keys.contains { $0.key.hasPrefix("win11.archive.") && $0.value == oldKey })
     }
 }
 

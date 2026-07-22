@@ -111,6 +111,10 @@ BRIDGEVM_CODESIGN_IDENTITY="$IDENTITY" \
   --output "$stage_app/Contents/Resources/target/release/examples/hvf_gic_boot_probe" \
   --bundle-frameworks "$stage_app/Contents/Frameworks" >/dev/null
 
+BRIDGEVM_CODESIGN_IDENTITY="$IDENTITY" \
+  "$MACOS_DIR/scripts/bundle-swtpm-runtime.sh" \
+  --app "$stage_app" >/dev/null
+
 sign_artifact() {
   if [[ "$IDENTITY" == "-" ]]; then
     codesign --force --sign - "$1" >/dev/null
@@ -122,6 +126,7 @@ sign_artifact "$stage_app/Contents/Resources/target/release/bridgevm"
 sign_artifact "$stage_app/Contents/MacOS/BridgeVMControl"
 sign_artifact "$stage_app"
 codesign --verify --deep --strict "$stage_app"
+"$MACOS_DIR/scripts/bundle-swtpm-runtime.sh" --verify-only "$stage_app" >/dev/null
 
 mv "$stage_app" "$OUTPUT"
 printf '%s\n' "$OUTPUT"

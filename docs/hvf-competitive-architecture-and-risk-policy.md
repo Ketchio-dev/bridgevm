@@ -65,21 +65,21 @@ The local implementation now has three connected layers:
 The failure contract is deliberately strict. New empty state may create a key.
 Non-empty state without its Keychain item fails before launch and is left
 untouched; BridgeVM does not silently create a replacement identity. Moving a
-bundle on the same Mac keeps its ID and key. Copying it to another Mac is not a
-supported migration because `ThisDeviceOnly` prevents accidental trust
-transfer. Cloning must allocate a new VM ID and start with a reset TPM; restoring
-must pair the original VM ID, encrypted state, and an explicit future key
-export. TPM reset must be a confirmed destructive operation because BitLocker
-and other PCR-sealed secrets may require recovery afterward. VM deletion does
-not yet purge orphaned Keychain items, favoring recoverability until the reset
-and backup UI exists.
+bundle on the same Mac keeps its ID and key. Cross-Mac migration uses an
+AES-GCM-authenticated recovery package whose separate 256-bit recovery code is
+never written into that package; restore requires the original VM ID and exact
+encrypted-state fingerprint. Cloning allocates a new VM ID and starts with a
+fresh TPM without copying the source key. Confirmed reset archives the old
+encrypted state and a device-local archive key and writes a lifecycle receipt
+before rotating the active identity. BitLocker and other PCR-sealed secrets may
+still require guest recovery. VM deletion continues to retain orphaned
+Keychain items, favoring recoverability.
 
 The remaining security work is therefore:
 
-1. bundle and sign a supported swtpm/libtpms runtime;
-2. provision Secure Boot PK/KEK/db/dbx in the per-VM variable store;
-3. implement confirmed clone/export/import/reset UI matching the contract above;
-4. prove `Get-Tpm`, PPI processing, `Confirm-SecureBootUEFI`, PCR 7, populated
+1. prove the bundled runtime and authenticated migration lifecycle on a clean
+   second Mac with BitLocker enabled;
+2. prove `Get-Tpm`, PPI processing, `Confirm-SecureBootUEFI`, PCR 7, populated
    measured-boot events, and recovery-key handling in a fresh same-boot receipt.
 
 No release blocker is cleared by ACPI enumeration alone.

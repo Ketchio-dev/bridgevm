@@ -332,6 +332,69 @@ extension VMLibrary {
         return cfg
     }
 
+    /// APFS-clone an installed Windows HVF bundle while deliberately starting
+    /// the copy with a distinct TPM identity. The copied encrypted TPM state is
+    /// retained inside the new bundle as a source-copy archive and receipted.
+    static func cloneWindowsHVF(
+        name: String,
+        template: VMConfig,
+        storageDir: URL? = nil,
+        libraryRoot: URL = root
+    ) -> VMConfig? {
+        let fm = FileManager.default
+        let sourceBundle = URL(fileURLWithPath: template.bundlePath, isDirectory: true)
+        let storageBase = storageDir ?? libraryRoot
+        guard template.engineKind == .hvfEngine,
+              template.installPending != true,
+              let name = normalizedVMName(name),
+              isReadableDirectory(template.bundlePath),
+              !isSameOrDescendant(storageBase, of: sourceBundle),
+              let reserved = reserveDestination(
+                  name,
+                  storageBase: storageBase,
+                  libraryRoot: libraryRoot
+              ) else { return nil }
+        let slug = reserved.slug
+        let destinationRoot = reserved.root
+        var succeeded = false
+        defer { if !succeeded { try? fm.removeItem(at: destinationRoot) } }
+        let bundle = destinationRoot.appendingPathComponent("bundle.vmbridge", isDirectory: true)
+        guard cloneOrCopyDirectory(from: template.bundlePath, to: bundle.path) else { return nil }
+
+        let lifecycle = VTPMIdentityLifecycle(keyStore: KeychainVTPMStateKeyStore())
+        let copiedState = bundle.appendingPathComponent("metadata/vtpm", isDirectory: true)
+        do {
+            _ = try lifecycle.prepareClonedIdentity(
+                newStableVMID: slug,
+                copiedStateDirectory: copiedState
+            )
+        } catch { return nil }
+
+        let copiedEvidence = bundle.appendingPathComponent("logs/hvf", isDirectory: true)
+        if fm.fileExists(atPath: copiedEvidence.path) {
+            let archive = bundle.appendingPathComponent(
+                "logs/hvf-source-copy-\(Int(Date().timeIntervalSince1970))",
+                isDirectory: true
+            )
+            do { try fm.moveItem(at: copiedEvidence, to: archive) } catch { return nil }
+        }
+        do {
+            try fm.createDirectory(at: copiedEvidence, withIntermediateDirectories: true)
+        } catch { return nil }
+
+        var cfg = template
+        cfg.id = slug
+        cfg.name = name
+        cfg.displayName = name
+        cfg.bundlePath = bundle.path
+        cfg.diskPath = bundle.appendingPathComponent("disks/hvf-target.raw").path
+        cfg.guestName = slug
+        cfg.installPending = false
+        guard save(cfg, rootURL: libraryRoot) else { return nil }
+        succeeded = true
+        return cfg
+    }
+
     /// Create a Windows 11 ARM VM (QEMU + HVF + swtpm + edk2). Blank qcow2 install
     /// target; the Win11 ISO boots its installer in a cocoa window.
     static func createWindows(name: String, isoPath: String, template: VMConfig,
