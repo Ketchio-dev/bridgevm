@@ -53,7 +53,8 @@ They are valuable evidence, but they are not current onboarding material:
 - `hvf-*-20260713.md` through `hvf-*-20260721.md` — dated 3D, fence, scanout,
   WDDM, DXVK, and real-title investigations.
 - [Windows Arm evidence](windows-arm/evidence/) — dated storage, reboot, guest-agent,
-  WDK, and driver-bind receipts.
+  WDK, driver-bind, and [live vTPM command-path](windows-arm/evidence/vtpm-windows-command-path-20260722.md)
+  receipts.
 - [KD serial bring-up](hvf-kd-serial-bringup.md) — kernel-debugging procedure and notes.
 - [Previous root README](archive/README-before-20260722.md) — exact 399-line
   onboarding/status document preserved before the 2026-07-22 information

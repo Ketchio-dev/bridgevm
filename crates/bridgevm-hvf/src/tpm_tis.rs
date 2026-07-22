@@ -53,6 +53,16 @@ const INTERFACE_ID_TPM2_FIFO: u32 = 0x0000_2100;
 const TPM2_HEADER_SIZE: usize = 10;
 const TPM2_RC_FAILURE: [u8; TPM2_HEADER_SIZE] =
     [0x80, 0x01, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x01, 0x01];
+const TPM2_CC_CREATE_PRIMARY: u32 = 0x0000_0131;
+const TPM2_CC_SELF_TEST: u32 = 0x0000_0143;
+const TPM2_CC_STARTUP: u32 = 0x0000_0144;
+const TPM2_CC_NV_READ_PUBLIC: u32 = 0x0000_0169;
+const TPM2_CC_READ_PUBLIC: u32 = 0x0000_0173;
+const TPM2_CC_START_AUTH_SESSION: u32 = 0x0000_0176;
+const TPM2_CC_GET_CAPABILITY: u32 = 0x0000_017a;
+const TPM2_CC_GET_RANDOM: u32 = 0x0000_017b;
+const TPM2_CC_PCR_READ: u32 = 0x0000_017e;
+const TPM2_CC_PCR_EXTEND: u32 = 0x0000_0182;
 
 #[derive(Debug)]
 pub enum TpmBackendError {
@@ -193,9 +203,53 @@ impl Default for Locality {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TpmTisStats {
     pub commands: u64,
+    pub successful_responses: u64,
+    pub error_responses: u64,
     pub backend_failures: u64,
     pub malformed_commands: u64,
     pub malformed_responses: u64,
+    pub last_command_code: Option<u32>,
+    pub startup_commands: u64,
+    pub self_test_commands: u64,
+    pub get_capability_commands: u64,
+    pub pcr_read_commands: u64,
+    pub pcr_extend_commands: u64,
+    pub start_auth_session_commands: u64,
+    pub create_primary_commands: u64,
+    pub read_public_commands: u64,
+    pub nv_read_public_commands: u64,
+    pub get_random_commands: u64,
+    pub other_commands: u64,
+}
+
+impl TpmTisStats {
+    fn record_command(&mut self, command: &[u8]) {
+        let Some(code) = packet_code(command) else {
+            return;
+        };
+        self.last_command_code = Some(code);
+        match code {
+            TPM2_CC_STARTUP => self.startup_commands += 1,
+            TPM2_CC_SELF_TEST => self.self_test_commands += 1,
+            TPM2_CC_GET_CAPABILITY => self.get_capability_commands += 1,
+            TPM2_CC_PCR_READ => self.pcr_read_commands += 1,
+            TPM2_CC_PCR_EXTEND => self.pcr_extend_commands += 1,
+            TPM2_CC_START_AUTH_SESSION => self.start_auth_session_commands += 1,
+            TPM2_CC_CREATE_PRIMARY => self.create_primary_commands += 1,
+            TPM2_CC_READ_PUBLIC => self.read_public_commands += 1,
+            TPM2_CC_NV_READ_PUBLIC => self.nv_read_public_commands += 1,
+            TPM2_CC_GET_RANDOM => self.get_random_commands += 1,
+            _ => self.other_commands += 1,
+        }
+    }
+
+    fn record_response(&mut self, response: &[u8]) {
+        match packet_code(response) {
+            Some(0) => self.successful_responses += 1,
+            Some(_) => self.error_responses += 1,
+            None => {}
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -426,6 +480,7 @@ impl TpmTis {
     fn execute_command(&mut self, locality: u8) {
         let index = locality as usize;
         self.stats.commands += 1;
+        self.stats.record_command(&self.buffer);
         let response = match validate_packet("command", &self.buffer) {
             Ok(()) => match self.backend.execute(locality, &self.buffer) {
                 Ok(response) => match validate_packet("response", &response) {
@@ -445,6 +500,7 @@ impl TpmTis {
                 TPM2_RC_FAILURE.to_vec()
             }
         };
+        self.stats.record_response(&response);
         self.buffer = response;
         self.rw_offset = 0;
         self.localities[index].state = TisState::Completion;
@@ -454,6 +510,10 @@ impl TpmTis {
 
 fn is_fifo(register_offset: u64) -> bool {
     register_offset == REG_DATA_FIFO || (0x080..=0x0ff).contains(&register_offset)
+}
+
+fn packet_code(packet: &[u8]) -> Option<u32> {
+    Some(u32::from_be_bytes(packet.get(6..10)?.try_into().ok()?))
 }
 
 #[cfg(test)]
@@ -509,7 +569,16 @@ mod tests {
         }
         assert_eq!(response, success_response());
         assert_eq!(&*calls.lock().unwrap(), &[(0, command.to_vec())]);
-        assert_eq!(tis.stats().commands, 1);
+        assert_eq!(
+            tis.stats(),
+            TpmTisStats {
+                commands: 1,
+                successful_responses: 1,
+                startup_commands: 1,
+                last_command_code: Some(0x144),
+                ..TpmTisStats::default()
+            }
+        );
     }
 
     #[test]
@@ -531,6 +600,43 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(response, TPM2_RC_FAILURE);
         assert_eq!(tis.stats().malformed_responses, 1);
+        assert_eq!(tis.stats().error_responses, 1);
+        assert_eq!(tis.stats().successful_responses, 0);
+    }
+
+    #[test]
+    fn command_stats_classify_security_runtime_operations_without_payload_logging() {
+        let mut stats = TpmTisStats::default();
+        for code in [
+            TPM2_CC_STARTUP,
+            TPM2_CC_SELF_TEST,
+            TPM2_CC_GET_CAPABILITY,
+            TPM2_CC_PCR_READ,
+            TPM2_CC_PCR_EXTEND,
+            TPM2_CC_START_AUTH_SESSION,
+            TPM2_CC_CREATE_PRIMARY,
+            TPM2_CC_READ_PUBLIC,
+            TPM2_CC_NV_READ_PUBLIC,
+            TPM2_CC_GET_RANDOM,
+            0x153,
+        ] {
+            let mut command = [0x80, 0x01, 0, 0, 0, 10, 0, 0, 0, 0];
+            command[6..10].copy_from_slice(&code.to_be_bytes());
+            stats.record_command(&command);
+        }
+
+        assert_eq!(stats.startup_commands, 1);
+        assert_eq!(stats.self_test_commands, 1);
+        assert_eq!(stats.get_capability_commands, 1);
+        assert_eq!(stats.pcr_read_commands, 1);
+        assert_eq!(stats.pcr_extend_commands, 1);
+        assert_eq!(stats.start_auth_session_commands, 1);
+        assert_eq!(stats.create_primary_commands, 1);
+        assert_eq!(stats.read_public_commands, 1);
+        assert_eq!(stats.nv_read_public_commands, 1);
+        assert_eq!(stats.get_random_commands, 1);
+        assert_eq!(stats.other_commands, 1);
+        assert_eq!(stats.last_command_code, Some(0x153));
     }
 
     #[test]
