@@ -156,6 +156,17 @@ Microsoft ESL payloads, and proves PK-last/idempotent/conflict-safe
 provisioning. It is E2 evidence only; the Windows guest and recovery gates stay
 open until their dated live receipts exist.
 
+During the structural-debt refactoring, run the ratchet budget guard:
+
+```sh
+scripts/check-refactor-budgets.sh
+```
+
+It fails if any file in `scripts/refactor-budgets.tsv` exceeds its recorded line
+or `unsafe`-site ceiling. The repository has no hosted CI, so this stands in for
+a CI non-increase gate: grow code into extracted modules rather than these
+files, and lower a ceiling only after an extraction actually reduces the file.
+
 ## 10. Documentation maintenance
 
 `docs/document-manifest.tsv` classifies every Markdown document. The checker

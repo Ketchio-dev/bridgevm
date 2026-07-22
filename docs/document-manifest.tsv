@@ -12,6 +12,7 @@ docs/hvf-competitive-architecture-and-risk-policy.md	decision	windows-architectu
 docs/hvf-windows-engine-strategy.md	decision	windows-architecture	-
 docs/hvf-windows-v1-suspend-decision.md	decision	windows-lifecycle	-
 docs/hvf-windows-install-completion-plan.md	active-plan	windows-release	-
+docs/hvf-lib-refactor-extraction-plan.md	active-plan	hvf-refactor	-
 docs/hvf-3d-engine-plan.md	active-plan	windows-graphics	-
 docs/hvf-p3-windows-3d-plan.md	active-plan	windows-graphics	-
 docs/hvf-perf-optimization-plan.md	active-plan	windows-performance	-
