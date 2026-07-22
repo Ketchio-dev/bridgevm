@@ -34,5 +34,8 @@ scripts/build-hvf-edk2-secure-firmware.sh /path/to/edk2
 
 The script pins `SOURCE_DATE_EPOCH`, GCC 16.1.0, iasl 20260408, and the final
 SHA-256. It rejects a dirty/different source revision or mismatched submodules,
-then checks that the resulting firmware contains the Secure Boot and TPM2 DXE
-modules before installing it.
+requires ArmVirtQemu to bind `Tcg2PhysicalPresenceLibQemu`, then checks that the
+resulting firmware contains the Secure Boot and TPM2 DXE modules before
+installing it. The build receipt records both the verified modules and that
+library instance; BridgeVM's matching `etc/tpm/config` record is what lets the
+library discover the PPI page at runtime.

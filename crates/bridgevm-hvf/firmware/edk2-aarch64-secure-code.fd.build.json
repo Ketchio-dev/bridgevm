@@ -13,5 +13,6 @@
   "iaslVersion": "20260408",
   "size": 3145728,
   "sha256": "f41c7eb7c1a9dabf8ed10c4e52642378e05df171eecd65ca15ed414d9fabdff9",
-  "verifiedModules": ["SecurityStubDxe", "SecureBootConfigDxe", "EnrollDefaultKeys", "Tcg2Dxe"]
+  "verifiedModules": ["SecurityStubDxe", "SecureBootConfigDxe", "EnrollDefaultKeys", "Tcg2Dxe"],
+  "verifiedLibraryInstances": ["Tcg2PhysicalPresenceLibQemu"]
 }

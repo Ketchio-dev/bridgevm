@@ -42,6 +42,12 @@ if git -C "$edk2_root" submodule status --recursive | grep -Eq '^[+-U]' ; then
   exit 66
 fi
 
+readonly TPM_PPI_LIBRARY_BINDING='Tcg2PhysicalPresenceLib|OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.inf'
+if ! grep -Fq "$TPM_PPI_LIBRARY_BINDING" "$edk2_root/ArmVirtPkg/ArmVirtQemu.dsc"; then
+  echo "firmware source does not bind ArmVirtQemu to the QEMU TPM PPI request processor" >&2
+  exit 67
+fi
+
 for tool in /opt/homebrew/bin/aarch64-elf-gcc /opt/homebrew/bin/iasl shasum; do
   if [[ ! -x "$tool" ]] && ! command -v "$tool" >/dev/null 2>&1; then
     echo "required tool missing: ${tool}" >&2
@@ -118,7 +124,8 @@ printf '%s\n' \
   "  \"iaslVersion\": \"${iasl_version}\"," \
   "  \"size\": ${firmware_size}," \
   "  \"sha256\": \"${firmware_sha256}\"," \
-  '  "verifiedModules": ["SecurityStubDxe", "SecureBootConfigDxe", "EnrollDefaultKeys", "Tcg2Dxe"]' \
+  '  "verifiedModules": ["SecurityStubDxe", "SecureBootConfigDxe", "EnrollDefaultKeys", "Tcg2Dxe"],' \
+  '  "verifiedLibraryInstances": ["Tcg2PhysicalPresenceLibQemu"]' \
   '}' > "$receipt"
 
 echo "installed $output_dir/$OUTPUT_NAME"

@@ -57,7 +57,13 @@ TPM 2.0 TIS/FIFO state machine, a bounded swtpm Unix data-socket backend, the
 QEMU `virt` platform-bus MMIO reservation at `0x0c000000`, a persistent 1 KiB
 PPI mailbox at `0x0c005000`, PPI 1.3 and reset-mitigation `_DSM` AML, optional
 ACPI `TPM0`/`MSFT0101`/`_CRS` emission, and platform/run-loop dispatch selected
-by `BRIDGEVM_SWTPM_DATA_SOCKET`. The installed-boot launcher can own exactly one
+by `BRIDGEVM_SWTPM_DATA_SOCKET`. When that concrete TPM path is present,
+BridgeVM also publishes QEMU's exact 6-byte `etc/tpm/config` record
+(`0x0c005000` little-endian, TPM 2, PPI 1.30). That record activates the pinned
+ArmVirtQemu EDK2 `Tcg2PhysicalPresenceLibQemu` implementation, which initializes
+the PPI policy and processes pending requests in PlatformBootManager; the file
+and its absence on a TPM-disabled machine are regression tested. The
+installed-boot launcher can own exactly one
 swtpm process with `--vtpm-state-dir`, records socket readiness, fails closed,
 and preserves the state directory after shutdown. The macOS product path now
 uses a stable VM ID to load or atomically create a 256-bit
@@ -81,7 +87,7 @@ validates every hash/ESL/provenance field, preserves exact existing state, and
 rejects partial or conflicting state without mutation. Packaging includes the
 policy, firmware build receipt, and license notices. This still does **not**
 close the gates: firmware-populated measured-boot events, clean-second-Mac
-migration, firmware processing of PPI requests,
+migration, a real Windows PPI-operation receipt,
 `Confirm-SecureBootUEFI`/PCR 7 proof, BitLocker recovery, and a live Windows
 receipt remain.
 

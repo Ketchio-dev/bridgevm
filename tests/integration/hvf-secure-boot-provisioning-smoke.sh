@@ -19,6 +19,8 @@ fail() {
   "f41c7eb7c1a9dabf8ed10c4e52642378e05df171eecd65ca15ed414d9fabdff9" ]] \
   || fail "pinned firmware digest mismatch"
 [[ -s "$BUILD_RECEIPT" ]] || fail "firmware build receipt missing"
+grep -Fq '"verifiedLibraryInstances": ["Tcg2PhysicalPresenceLibQemu"]' "$BUILD_RECEIPT" \
+  || fail "firmware build receipt does not verify the QEMU TPM PPI request processor"
 [[ -s "$POLICY" ]] || fail "Microsoft Secure Boot policy missing"
 
 sdkroot="${BRIDGEVM_SWIFT_SDKROOT:-}"

@@ -18,6 +18,7 @@ Primary references:
 
 - [QEMU TPM device documentation](https://qemu.readthedocs.io/en/master/specs/tpm.html)
 - [QEMU ARM ACPI TPM implementation](https://github.com/qemu/qemu/blob/master/hw/arm/virt-acpi-build.c)
+- [Pinned EDK2 QEMU PPI request processor](https://github.com/tianocore/edk2/blob/b03a21a63e3bd001f52c527e5a57feddb53a690b/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c)
 - [swtpm state-encryption and key-FD contract](https://github.com/stefanberger/swtpm/blob/master/man/man8/swtpm.pod)
 - [VMware Fusion Apple-silicon feature matrix](https://knowledge.broadcom.com/external/article/315609)
 - [VMware Fusion Apple-silicon 3D crash and fallback](https://knowledge.broadcom.com/external/article/426891)
@@ -53,8 +54,11 @@ fail-closed even in `aggressive` mode.
 
 The local implementation now has three connected layers:
 
-1. BridgeVM exposes TPM 2.0 TIS, PPI 1.3, ACPI `TPM0`, the TPM2 table, and a
-   relocated 64 KiB event-log allocation.
+1. BridgeVM exposes TPM 2.0 TIS, PPI 1.3, ACPI `TPM0`, the TPM2 table, a
+   relocated 64 KiB event-log allocation, and QEMU's packed 6-byte
+   `etc/tpm/config` discovery record. The record lets the pinned EDK2
+   `Tcg2PhysicalPresenceLibQemu` initialize policy and process pending PPI
+   requests; it is omitted with every other TPM surface when no backend exists.
 2. The launcher supervises one swtpm and passes
    `--key fd=0,format=binary,mode=aes-256-cbc`; the upstream contract integrity
    protects the encrypted state with encrypt-then-MAC.
