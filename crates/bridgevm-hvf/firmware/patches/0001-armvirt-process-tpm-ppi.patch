@@ -6,55 +6,90 @@ lightweight platform boot manager never calls the request processor. Windows
 can query PPI 1.3 through ACPI, yet every operation remains unsupported because
 the firmware never initializes QEMU's shared PPI page.
 
-Process requests after the console is ready, while user confirmation is
-possible. Keep ArmVirt's existing early platform-hierarchy configuration;
-moving that established call later causes a synchronous firmware exception.
+Process requests at the end of PlatformBootManagerBeforeConsole, after
+connecting the default consoles so user confirmation is possible, and crucially
+before ConfigureTpmPlatformHierarchy () locks the platform hierarchy. The QEMU
+PPI processor authorizes platform-hierarchy operations (for example Clear) with
+an empty authorization; once ConfigureTpmPlatformHierarchy () randomizes and
+discards platformAuth, that empty authorization is rejected with
+TPM_RC_BAD_AUTH and the requested operation can never complete. This mirrors
+OvmfPkg's full PlatformBootManagerLib, which processes the PPI request before
+the hierarchy is locked.
 
 The QEMU PPI parameter block is packed, so its 32-bit fields are intentionally
 unaligned. Access them as volatile bytes: AArch64 Device memory faults on an
 unaligned word access before the request can reach the virtual device.
 
 diff --git a/OvmfPkg/Library/PlatformBootManagerLibLight/PlatformBm.c b/OvmfPkg/Library/PlatformBootManagerLibLight/PlatformBm.c
-index 30a6f026af..18b98ecb1f 100644
+index 2c24c65..7698042 100644
 --- a/OvmfPkg/Library/PlatformBootManagerLibLight/PlatformBm.c
 +++ b/OvmfPkg/Library/PlatformBootManagerLibLight/PlatformBm.c
-@@ -18,5 +18,6 @@
+@@ -17,6 +17,7 @@
+ #include <Library/PlatformBmPrintScLib.h>
  #include <Library/QemuBootOrderLib.h>
  #include <Library/QemuFwCfgSimpleParserLib.h>
 +#include <Library/Tcg2PhysicalPresenceLib.h>
  #include <Library/TpmPlatformHierarchyLib.h>
  #include <Library/UefiBootManagerLib.h>
  #include <Protocol/DevicePath.h>
-@@ -985,6 +986,11 @@ PlatformBootManagerAfterConsole (
+@@ -784,11 +785,6 @@ PlatformBootManagerBeforeConsole (
    //
-   BootLogoEnableLogo ();
+   EfiEventGroupSignal (&gEfiEndOfDxeEventGroupGuid);
 
+-  //
+-  // Disable the TPM 2 platform hierarchy
+-  //
+-  ConfigureTpmPlatformHierarchy ();
+-
+   //
+   // Dispatch deferred images after EndOfDxe event.
+   //
+@@ -916,6 +912,24 @@ PlatformBootManagerBeforeConsole (
+   //
+   FilterAndProcess (&gVirtioDeviceProtocolGuid, IsVirtioSerial, SetupVirtioSerial);
+   FilterAndProcess (&gEfiPciIoProtocolGuid, IsVirtioPciSerial, SetupVirtioSerial);
++
 +  //
-+  // Process TPM PPI requests while trusted console input is available.
++  // Connect the default consoles, then process any pending TPM2 physical-
++  // presence request while the platform hierarchy is still open. A requested
++  // operation (for example Clear) authorizes against the platform hierarchy
++  // with an empty authorization, which is only valid before
++  // ConfigureTpmPlatformHierarchy () randomizes and discards platformAuth.
++  // This mirrors OvmfPkg's full PlatformBootManagerLib, which processes the
++  // PPI request before locking the hierarchy; the console must be connected
++  // first so the user can confirm the operation.
 +  //
++  EfiBootManagerConnectAllDefaultConsoles ();
 +  Tcg2PhysicalPresenceLibProcessRequest (NULL);
 +
-   //
-   // Work around shim's terminally broken use of the EFI memory attributes
-   // protocol, by uninstalling it if requested on the QEMU command line.
++  //
++  // Disable the TPM 2 platform hierarchy now that PPI processing is complete.
++  //
++  ConfigureTpmPlatformHierarchy ();
+ }
+
+ /**
 diff --git a/OvmfPkg/Library/PlatformBootManagerLibLight/PlatformBootManagerLib.inf b/OvmfPkg/Library/PlatformBootManagerLibLight/PlatformBootManagerLib.inf
-index 973115cfb9..1b38f6c573 100644
+index 9e89556..fac6a8d 100644
 --- a/OvmfPkg/Library/PlatformBootManagerLibLight/PlatformBootManagerLib.inf
 +++ b/OvmfPkg/Library/PlatformBootManagerLibLight/PlatformBootManagerLib.inf
-@@ -45,5 +45,6 @@
+@@ -49,6 +49,7 @@
+   QemuLoadImageLib
    ReportStatusCodeLib
    TpmPlatformHierarchyLib
 +  Tcg2PhysicalPresenceLib
    UefiBootManagerLib
    UefiBootServicesTableLib
-  UefiLib
+   UefiLib
 diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c b/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c
+index 4038020..de03060 100644
 --- a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c
 +++ b/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c
-@@ -43,7 +43,47 @@
+@@ -43,7 +43,47 @@ EFI_HII_HANDLE  mTcg2PpStringPackHandle;
  #define TPM_PPI_FLAGS  (QEMU_TPM_PPI_FUNC_ALLOWED_USR_REQ)
 
  STATIC volatile QEMU_TPM_PPI  *mPpi;
+-
 +
 +//
 +// QEMU_TPM_PPI is packed and its UINT32 fields start at intentionally
@@ -85,7 +120,7 @@ diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresence
 +  )
 +{
 +  volatile UINT8  *Field;
-
++
 +  Field    = (volatile UINT8 *)mPpi + Offset;
 +  Field[0] = (UINT8)Value;
 +  Field[1] = (UINT8)(Value >> 8);
@@ -99,7 +134,7 @@ diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresence
  /**
    Reads QEMU PPI config from fw_cfg.
 
-@@ -151,8 +191,8 @@
+@@ -151,8 +191,8 @@ QemuTpmInitPPI (
 
    if (mPpi->In == 0) {
      mPpi->In          = 1;
@@ -110,7 +145,7 @@ diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresence
      mPpi->NextStep    = TCG2_PHYSICAL_PRESENCE_NO_ACTION;
    }
 
-@@ -683,7 +723,7 @@
+@@ -683,7 +723,7 @@ Tcg2HaveValidTpmRequest  (
 
    *RequestConfirmed = FALSE;
 
@@ -119,7 +154,7 @@ diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresence
      //
      // Need TCG2 protocol.
      //
-@@ -693,7 +733,7 @@
+@@ -693,7 +733,7 @@ Tcg2HaveValidTpmRequest  (
      }
    }
 
@@ -128,7 +163,7 @@ diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresence
      case TCG2_PHYSICAL_PRESENCE_NO_ACTION:
      case TCG2_PHYSICAL_PRESENCE_LOG_ALL_DIGESTS:
        *RequestConfirmed = TRUE;
-@@ -735,7 +775,7 @@
+@@ -735,7 +775,7 @@ Tcg2ExecutePendingTpmRequest (
  {
    BOOLEAN  RequestConfirmed;
 
@@ -137,7 +172,7 @@ diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresence
      //
      // No operation request
      //
-@@ -746,15 +786,15 @@
+@@ -746,15 +786,15 @@ Tcg2ExecutePendingTpmRequest (
      //
      // Invalid operation request.
      //
@@ -159,7 +194,7 @@ diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresence
      return;
    }
 
-@@ -762,36 +802,39 @@
+@@ -762,36 +802,39 @@ Tcg2ExecutePendingTpmRequest (
      //
      // Print confirm text and wait for approval.
      //
@@ -211,7 +246,7 @@ diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresence
      case TCG2_PHYSICAL_PRESENCE_CLEAR:
      case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR:
      case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_2:
-@@ -806,7 +849,7 @@
+@@ -806,7 +849,7 @@ Tcg2ExecutePendingTpmRequest (
        break;
 
      default:
@@ -220,7 +255,7 @@ diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresence
          break;
        }
 
-@@ -853,7 +896,7 @@
+@@ -853,7 +896,7 @@ Tcg2PhysicalPresenceLibProcessRequest (
      return;
    }
 
@@ -229,7 +264,7 @@ diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresence
    Tcg2ExecutePendingTpmRequest (PlatformAuth);
  }
 
-@@ -885,8 +928,8 @@
+@@ -885,8 +928,8 @@ Tcg2PhysicalPresenceLibReturnOperationResponseToOsFunction (
      return TCG_PP_RETURN_TPM_OPERATION_RESPONSE_FAILURE;
    }
 
@@ -240,7 +275,7 @@ diff --git a/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresence
 
    return TCG_PP_RETURN_TPM_OPERATION_RESPONSE_SUCCESS;
  }
-@@ -921,8 +964,8 @@
+@@ -921,8 +964,8 @@ Tcg2PhysicalPresenceLibSubmitRequestToPreOSFunction (
      return TCG_PP_SUBMIT_REQUEST_TO_PREOS_GENERAL_FAILURE;
    }
 

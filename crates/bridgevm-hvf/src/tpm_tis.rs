@@ -96,26 +96,78 @@ pub trait Tpm2Backend: fmt::Debug + Send {
     }
 }
 
+/// swtpm control-channel command that performs a `_TPM_Init` power cycle.
+///
+/// Sent as a 4-byte big-endian command number followed by a 4-byte big-endian
+/// `init_flags`; the response is a 4-byte big-endian result code (`0` = success).
+/// This mirrors QEMU's `tpm_emulator` machine-reset path.
+#[cfg(unix)]
+const SWTPM_CMD_INIT: u32 = 0x0000_0002;
+
 /// Raw swtpm command-channel backend.
 ///
-/// Start swtpm with a dedicated `--server type=unixio,path=...` socket and
-/// `--flags not-need-init,startup-clear`; its separate control socket remains
-/// owned by the supervising launcher. The data channel carries complete TPM
-/// commands and responses without an extra frame header.
+/// Start swtpm with a dedicated `--server type=unixio,path=...` data socket and
+/// a `--ctrl type=unixio,path=...` control socket, plus
+/// `--flags not-need-init,startup-clear`. The data channel carries complete TPM
+/// commands and responses without an extra frame header; the optional control
+/// channel is used only to power-cycle the TPM on guest reset.
 #[cfg(unix)]
 #[derive(Debug)]
 pub struct SwtpmUnixBackend {
     stream: UnixStream,
+    control: Option<UnixStream>,
+}
+
+#[cfg(unix)]
+fn connect_swtpm_stream(path: &Path) -> Result<UnixStream, TpmBackendError> {
+    let stream = UnixStream::connect(path)?;
+    let timeout = Some(Duration::from_secs(30));
+    stream.set_read_timeout(timeout)?;
+    stream.set_write_timeout(timeout)?;
+    Ok(stream)
 }
 
 #[cfg(unix)]
 impl SwtpmUnixBackend {
     pub fn connect(path: impl AsRef<Path>) -> Result<Self, TpmBackendError> {
-        let stream = UnixStream::connect(path)?;
-        let timeout = Some(Duration::from_secs(30));
-        stream.set_read_timeout(timeout)?;
-        stream.set_write_timeout(timeout)?;
-        Ok(Self { stream })
+        Self::connect_with_control(path, None::<&Path>)
+    }
+
+    /// Connect the data channel and, when `control_path` is supplied, a
+    /// persistent control channel used to power-cycle the TPM on guest reset.
+    pub fn connect_with_control(
+        data_path: impl AsRef<Path>,
+        control_path: Option<impl AsRef<Path>>,
+    ) -> Result<Self, TpmBackendError> {
+        let stream = connect_swtpm_stream(data_path.as_ref())?;
+        let control = match control_path {
+            Some(path) => Some(connect_swtpm_stream(path.as_ref())?),
+            None => None,
+        };
+        Ok(Self { stream, control })
+    }
+
+    /// Issue swtpm's control-channel `CMD_INIT`, performing a `_TPM_Init` power
+    /// cycle. Volatile state (platform authorization, PCRs, transient objects,
+    /// sessions) is reset while persisted permanent state is reloaded — exactly
+    /// what a hardware TPM does on a system reset. Without this, the firmware's
+    /// randomized platform authorization from the prior boot generation
+    /// persists and rejects the firmware's empty-auth physical-presence
+    /// `TPM2_ClearControl` with `TPM_RC_BAD_AUTH`.
+    fn power_cycle(control: &mut UnixStream) -> Result<(), TpmBackendError> {
+        let mut request = [0u8; 8];
+        request[..4].copy_from_slice(&SWTPM_CMD_INIT.to_be_bytes());
+        // init_flags = 0: reset volatile state without resuming a saved-volatile blob.
+        control.write_all(&request)?;
+        let mut result = [0u8; 4];
+        control.read_exact(&mut result)?;
+        let code = u32::from_be_bytes(result);
+        if code != 0 {
+            return Err(TpmBackendError::Protocol(format!(
+                "swtpm CMD_INIT returned control result {code:#010x}"
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -143,6 +195,13 @@ impl Tpm2Backend for SwtpmUnixBackend {
         self.stream.read_exact(&mut response[TPM2_HEADER_SIZE..])?;
         validate_packet("response", &response)?;
         Ok(response)
+    }
+
+    fn reset(&mut self) -> Result<(), TpmBackendError> {
+        if let Some(control) = self.control.as_mut() {
+            Self::power_cycle(control)?;
+        }
+        Ok(())
     }
 }
 
@@ -671,5 +730,95 @@ mod tests {
         );
         tis.mmio_write(REG_ACCESS, 1, ACCESS_REQUEST_USE as u64);
         assert_ne!(tis.mmio_read(REG_STS, 4) as u32 & STS_TPM_FAMILY_2_0, 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn swtpm_backend_reset_power_cycles_via_control_socket_cmd_init() {
+        use std::io::{Read, Write};
+        use std::os::unix::net::UnixListener;
+        use std::thread;
+
+        let dir = std::env::temp_dir().join(format!(
+            "bridgevm-swtpm-ctrl-{}-{}",
+            std::process::id(),
+            std::time::Instant::now().elapsed().as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data_path = dir.join("data.sock");
+        let control_path = dir.join("control.sock");
+        let data_listener = UnixListener::bind(&data_path).unwrap();
+        let control_listener = UnixListener::bind(&control_path).unwrap();
+
+        // The data server just accepts and holds the connection; the backend
+        // does not send data-channel traffic during reset.
+        let data_thread = thread::spawn(move || {
+            let (_stream, _addr) = data_listener.accept().unwrap();
+            // Keep the connection open until the test drops the backend.
+            thread::sleep(Duration::from_millis(200));
+        });
+
+        // The control server captures the CMD_INIT request and replies success.
+        let control_thread = thread::spawn(move || {
+            let (mut stream, _addr) = control_listener.accept().unwrap();
+            let mut request = [0u8; 8];
+            stream.read_exact(&mut request).unwrap();
+            stream.write_all(&0u32.to_be_bytes()).unwrap();
+            request
+        });
+
+        let mut backend =
+            SwtpmUnixBackend::connect_with_control(&data_path, Some(&control_path)).unwrap();
+        backend.reset().expect("power cycle should succeed");
+
+        let request = control_thread.join().unwrap();
+        data_thread.join().unwrap();
+
+        // CMD_INIT (0x00000002) big-endian, then init_flags = 0.
+        assert_eq!(request, [0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn swtpm_backend_reset_fails_closed_when_control_reports_error() {
+        use std::io::{Read, Write};
+        use std::os::unix::net::UnixListener;
+        use std::thread;
+
+        let dir = std::env::temp_dir().join(format!(
+            "bridgevm-swtpm-ctrl-err-{}-{}",
+            std::process::id(),
+            std::time::Instant::now().elapsed().as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data_path = dir.join("data.sock");
+        let control_path = dir.join("control.sock");
+        let data_listener = UnixListener::bind(&data_path).unwrap();
+        let control_listener = UnixListener::bind(&control_path).unwrap();
+
+        let data_thread = thread::spawn(move || {
+            let (_stream, _addr) = data_listener.accept().unwrap();
+            thread::sleep(Duration::from_millis(200));
+        });
+        let control_thread = thread::spawn(move || {
+            let (mut stream, _addr) = control_listener.accept().unwrap();
+            let mut request = [0u8; 8];
+            stream.read_exact(&mut request).unwrap();
+            // Non-zero control result → swtpm rejected the power cycle.
+            stream.write_all(&1u32.to_be_bytes()).unwrap();
+        });
+
+        let mut backend =
+            SwtpmUnixBackend::connect_with_control(&data_path, Some(&control_path)).unwrap();
+        let err = backend
+            .reset()
+            .expect_err("non-zero control result must fail closed");
+        assert!(matches!(err, TpmBackendError::Protocol(_)));
+
+        control_thread.join().unwrap();
+        data_thread.join().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -6,8 +6,17 @@ fail() {
   exit 1
 }
 
-[[ $# -eq 1 ]] || fail "usage: $0 EVIDENCE_DIR"
+usage() {
+  fail "usage: $0 EVIDENCE_DIR [--ppi-action]"
+}
+
+[[ $# -ge 1 && $# -le 2 ]] || usage
 evidence_dir="$1"
+mode="command-path"
+if [[ $# -eq 2 ]]; then
+  [[ "$2" == "--ppi-action" ]] || usage
+  mode="ppi-action"
+fi
 [[ -d "$evidence_dir" ]] || fail "evidence directory not found: $evidence_dir"
 
 preflight="$evidence_dir/preflight.txt"
@@ -103,5 +112,46 @@ done
 require_positive "$ppi_summary" reads
 require_zero "$ppi_summary" rejected_accesses
 
-echo "PASS: live Windows vTPM enumeration and TIS command path verified"
-echo "NOTE: this receipt does not prove a PPI operation; require writes>0 plus a guest-visible result for that separate gate"
+if [[ "$mode" != "ppi-action" ]]; then
+  echo "PASS: live Windows vTPM enumeration and TIS command path verified"
+  echo "NOTE: this receipt does not prove a PPI operation; run with --ppi-action for that gate"
+  exit 0
+fi
+
+# --ppi-action: require a complete same-process Clear/reboot/F12/post-clear
+# receipt. The probe exits 0 even after a watchdog cancel, so a clean guest
+# SYSTEM_OFF stop line is required explicitly.
+(( 10#$clear > 0 )) || fail "ppi-action requires clear>0 in the TIS command summary"
+require_positive "$ppi_summary" writes
+
+grep -Eq '^stop: PSCI .*\(system off\)' "$run_log" ||
+  fail "ppi-action requires a clean guest PSCI SYSTEM_OFF stop"
+# A benign length/pacing rejection of an operator echo (parse_error=too_long,
+# Busy, queue_full) has no guest side effect and is tolerated. Replay-, malformed-,
+# or misdelivery-class rejections are fatal: they would mean stale/garbled control
+# reached the guest.
+! grep -Eq 'live input rejected:.*(unknown_command|queue_error|command_too_long)' "$run_log" ||
+  fail "ppi-action requires no replayed, malformed, or misdelivered live-input command"
+
+line_of() {
+  grep -nF -- "$1" "$run_log" | head -n1 | cut -d: -f1
+}
+
+first_reset="$(line_of 'PSCI SYSTEM_RESET: reboot 1/')"
+second_reset="$(line_of 'PSCI SYSTEM_RESET: reboot 2/')"
+f12_accepted="$(line_of 'live input accepted: command=Key("f12")')"
+[[ -n "$first_reset" ]] || fail "ppi-action requires a first PSCI SYSTEM_RESET (Windows restart)"
+[[ -n "$second_reset" ]] || fail "ppi-action requires a second PSCI SYSTEM_RESET (firmware post-clear reset)"
+[[ -n "$f12_accepted" ]] || fail "ppi-action requires an accepted live F12 firmware approval"
+(( f12_accepted > first_reset && f12_accepted < second_reset )) ||
+  fail "ppi-action requires F12 accepted between the two resets (live, not replayed)"
+# Capture the post-second-reset region into a variable before matching: a direct
+# `awk ... | grep -q` pipeline lets grep close the pipe on its first match, which
+# makes awk exit on SIGPIPE and (under `pipefail`) fails the whole check even
+# though a match was found.
+post_reset_log="$(awk -v start="$second_reset" 'NR > start' "$run_log")"
+grep -Eq 'ramfb checkpoint: label=.* state=captured' <<<"$post_reset_log" ||
+  fail "ppi-action requires a captured post-clear framebuffer checkpoint"
+
+echo "PASS: live Windows vTPM PPI clear action verified"
+echo "NOTE: TIS counters are cumulative across the in-process reboots; the PPI summary covers the final boot generation"

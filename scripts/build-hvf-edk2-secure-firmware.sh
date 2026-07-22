@@ -10,7 +10,7 @@ readonly SOURCE_DATE_EPOCH_PIN="1778208179"
 readonly OUTPUT_NAME="edk2-aarch64-secure-code.fd"
 readonly EXPECTED_GCC_VERSION="aarch64-elf-gcc (GCC) 16.1.0"
 readonly EXPECTED_IASL_VERSION="20260408"
-readonly EXPECTED_SHA256="7658b515e644620a0d51a9bf1ce43541cef019b7fcccf8087cd0244840a9cb4d"
+readonly EXPECTED_SHA256="b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b"
 
 usage() {
   echo "usage: $0 /path/to/edk2 [output-directory]" >&2

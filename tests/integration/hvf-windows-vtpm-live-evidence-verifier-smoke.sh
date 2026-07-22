@@ -22,11 +22,41 @@ make_fixture() {
   printf '%s\n' 'run_status=0' >"$dir/target-stat.txt"
 }
 
+make_ppi_action_fixture() {
+  local dir="$1"
+  install -d "$dir"
+  printf '%s\n' \
+    'vtpm_enabled=1' \
+    'firmware_code=/BridgeVM/edk2-aarch64-secure-code.fd' >"$dir/preflight.txt"
+  printf '%s\n' \
+    'TPM2 TIS backend: swtpm data socket /private/tmp/bridgevm/data.sock' \
+    '  tpm2-tis: base=0xc000000 size=0x5000 ACPI=TPM0/MSFT0101+TPM2-log backend=swtpm ppi=shared-memory+dsm-1.3' \
+    'live input accepted: command=Key("text:Clear-Tpm -UsePPI")' \
+    'PSCI SYSTEM_RESET: reboot 1/8' \
+    'live input accepted: command=Key("f12")' \
+    'PSCI SYSTEM_RESET: reboot 2/8' \
+    'ramfb checkpoint: label=ppi-post-clear-state state=captured checksum64=0x1 raw=/dev/null ppm=/dev/null' \
+    'stop: PSCI 0x84000008 (system off)' \
+    'TPM2 TIS command summary: commands=2000 success=1900 errors=100 backend_failures=0 malformed_commands=0 malformed_responses=0 last_command=0x00000155 clear=1 startup=2 self_test=2 get_capability=300 pcr_read=290 pcr_extend=160 start_auth_session=370 create_primary=6 read_public=18 nv_read_public=80 get_random=10 other=761' \
+    'TPM PPI shared-memory summary: reads=20 writes=276 rejected_accesses=0 memory_overwrite_requested=false' >"$dir/run.log"
+  printf '%s\n' 'cleanup_status=0' >"$dir/cleanup.txt"
+  printf '%s\n' 'run_status=0' >"$dir/target-stat.txt"
+}
+
 assert_rejected() {
   local dir="$1"
   local label="$2"
   if tests/integration/verify-hvf-windows-vtpm-live-evidence.sh "$dir" >/dev/null 2>&1; then
     echo "FAIL: verifier accepted $label" >&2
+    exit 1
+  fi
+}
+
+assert_ppi_action_rejected() {
+  local dir="$1"
+  local label="$2"
+  if tests/integration/verify-hvf-windows-vtpm-live-evidence.sh "$dir" --ppi-action >/dev/null 2>&1; then
+    echo "FAIL: ppi-action verifier accepted $label" >&2
     exit 1
   fi
 }
@@ -49,5 +79,53 @@ no_ppi_reads="$tmp/no-ppi-reads"
 cp -R "$good" "$no_ppi_reads"
 perl -0pi -e 's/reads=13/reads=0/' "$no_ppi_reads/run.log"
 assert_rejected "$no_ppi_reads" "an unobserved PPI mailbox"
+
+ppi_good="$tmp/ppi-good"
+make_ppi_action_fixture "$ppi_good"
+tests/integration/verify-hvf-windows-vtpm-live-evidence.sh "$ppi_good" >/dev/null
+tests/integration/verify-hvf-windows-vtpm-live-evidence.sh "$ppi_good" --ppi-action >/dev/null
+assert_ppi_action_rejected "$good" "a command-path-only receipt as a PPI action"
+
+ppi_no_clear="$tmp/ppi-no-clear"
+cp -R "$ppi_good" "$ppi_no_clear"
+perl -0pi -e 's/clear=1/clear=0/; s/other=761/other=762/' "$ppi_no_clear/run.log"
+assert_ppi_action_rejected "$ppi_no_clear" "a receipt without a TPM2_CC_Clear"
+
+ppi_no_writes="$tmp/ppi-no-writes"
+cp -R "$ppi_good" "$ppi_no_writes"
+perl -0pi -e 's/writes=276/writes=0/' "$ppi_no_writes/run.log"
+assert_ppi_action_rejected "$ppi_no_writes" "a receipt without PPI mailbox writes"
+
+ppi_watchdog="$tmp/ppi-watchdog"
+cp -R "$ppi_good" "$ppi_watchdog"
+perl -0pi -e 's/^stop: PSCI 0x84000008 \(system off\)$/stop: watchdog (CANCELED)/m' "$ppi_watchdog/run.log"
+assert_ppi_action_rejected "$ppi_watchdog" "a watchdog-canceled run"
+
+ppi_one_reset="$tmp/ppi-one-reset"
+cp -R "$ppi_good" "$ppi_one_reset"
+perl -0pi -e 's/^PSCI SYSTEM_RESET: reboot 2\/8\n//m' "$ppi_one_reset/run.log"
+assert_ppi_action_rejected "$ppi_one_reset" "a run without the firmware post-clear reset"
+
+ppi_replayed_f12="$tmp/ppi-replayed-f12"
+cp -R "$ppi_good" "$ppi_replayed_f12"
+perl -0pi -e 's/^live input accepted: command=Key\("f12"\)\n//m; s/^(live input accepted: command=Key\("text:Clear-Tpm -UsePPI"\)\n)/$1live input accepted: command=Key("f12")\n/m' "$ppi_replayed_f12/run.log"
+assert_ppi_action_rejected "$ppi_replayed_f12" "an F12 accepted before the reboot"
+
+ppi_unknown_input="$tmp/ppi-unknown-input"
+cp -R "$ppi_good" "$ppi_unknown_input"
+printf '%s\n' 'live input rejected: unknown_command' >>"$ppi_unknown_input/run.log"
+assert_ppi_action_rejected "$ppi_unknown_input" "a receipt containing an unknown-command rejection"
+
+# A benign length/pacing rejection of an operator echo is tolerated: it has no
+# guest side effect and must not invalidate the security receipt.
+ppi_benign_reject="$tmp/ppi-benign-reject"
+cp -R "$ppi_good" "$ppi_benign_reject"
+perl -0pi -e 's/^(live input accepted: command=Key\("text:Clear-Tpm -UsePPI"\)\n)/live input rejected: kind=key parse_error=too_long\n$1/m' "$ppi_benign_reject/run.log"
+tests/integration/verify-hvf-windows-vtpm-live-evidence.sh "$ppi_benign_reject" --ppi-action >/dev/null
+
+ppi_no_post_frame="$tmp/ppi-no-post-frame"
+cp -R "$ppi_good" "$ppi_no_post_frame"
+perl -0pi -e 's/^ramfb checkpoint: label=ppi-post-clear-state state=captured.*\n//m' "$ppi_no_post_frame/run.log"
+assert_ppi_action_rejected "$ppi_no_post_frame" "a receipt without a captured post-clear frame"
 
 echo "PASS: Windows vTPM live evidence verifier smoke"

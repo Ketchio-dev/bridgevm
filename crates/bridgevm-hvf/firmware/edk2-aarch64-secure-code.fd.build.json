@@ -12,8 +12,8 @@
   "gccVersion": "aarch64-elf-gcc (GCC) 16.1.0",
   "iaslVersion": "20260408",
   "size": 3145728,
-  "sha256": "7658b515e644620a0d51a9bf1ce43541cef019b7fcccf8087cd0244840a9cb4d",
+  "sha256": "b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b",
   "verifiedModules": ["SecurityStubDxe", "SecureBootConfigDxe", "EnrollDefaultKeys", "Tcg2Dxe"],
   "verifiedLibraryInstances": ["Tcg2PhysicalPresenceLibQemu"],
-  "patches": [{"path": "crates/bridgevm-hvf/firmware/patches/0001-armvirt-process-tpm-ppi.patch", "sha256": "aabdf8d073334f5592f5030ff0bfca314c713ac1901240f37b793464fd475048"}]
+  "patches": [{"path": "crates/bridgevm-hvf/firmware/patches/0001-armvirt-process-tpm-ppi.patch", "sha256": "400493912254bfe03336a8112b7fb56a42ca8bae9610d6c1bda92d250c046b14"}]
 }

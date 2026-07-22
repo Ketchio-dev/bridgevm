@@ -16,7 +16,7 @@ fail() {
 [[ -f "$FIRMWARE" && "$(stat -f '%z' "$FIRMWARE")" == "3145728" ]] \
   || fail "pinned Secure Boot + TPM2 firmware is missing or not 3 MiB"
 [[ "$(shasum -a 256 "$FIRMWARE" | awk '{ print $1 }')" == \
-  "f41c7eb7c1a9dabf8ed10c4e52642378e05df171eecd65ca15ed414d9fabdff9" ]] \
+  "b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b" ]] \
   || fail "pinned firmware digest mismatch"
 [[ -s "$BUILD_RECEIPT" ]] || fail "firmware build receipt missing"
 grep -Fq '"verifiedLibraryInstances": ["Tcg2PhysicalPresenceLibQemu"]' "$BUILD_RECEIPT" \

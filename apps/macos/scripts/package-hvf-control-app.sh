@@ -33,7 +33,7 @@ done
 [[ "$OUTPUT" == *.app ]] || { echo "output must end in .app: $OUTPUT" >&2; exit 2; }
 [[ ! -e "$OUTPUT" ]] || { echo "refusing to overwrite existing output: $OUTPUT" >&2; exit 1; }
 [[ -f "$FIRMWARE_CODE" ]] || { echo "firmware code image is missing: $FIRMWARE_CODE" >&2; exit 1; }
-readonly SECURE_FIRMWARE_SHA256="f41c7eb7c1a9dabf8ed10c4e52642378e05df171eecd65ca15ed414d9fabdff9"
+readonly SECURE_FIRMWARE_SHA256="b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b"
 [[ "$(stat -f '%z' "$FIRMWARE_CODE")" == "3145728" ]] || {
   echo "secure firmware code volume must be exactly 3 MiB: $FIRMWARE_CODE" >&2
   exit 1
