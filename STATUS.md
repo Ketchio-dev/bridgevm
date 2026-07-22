@@ -83,7 +83,13 @@ evidence are not “easy last steps”; they are the release-quality work.
 Current `SEC-TPM-FRONTEND` evidence is E2 only: five TIS localities, command
 FIFO, the 1 KiB PPI mailbox, PPI 1.3/reset-mitigation `_DSM`, fixed MMIO
 dispatch, optional ACPI `TPM0/MSFT0101`, and the revision-4 TPM2 table with a
-loader-relocated 64 KiB `etc/tpm/log` area are unit proven. The installed-boot
+loader-relocated 64 KiB `etc/tpm/log` area are unit proven. BridgeVM now also
+publishes QEMU's exact packed 6-byte `etc/tpm/config` discovery record only
+when a concrete TPM backend is present. The pinned ArmVirtQemu EDK2 firmware's
+`Tcg2PhysicalPresenceLibQemu` can therefore discover the PPI page, initialize
+its supported-operation policy, and process pending requests during the boot
+manager phase. Presence and exact record bytes, plus absence when TPM is
+disabled, are regression tested. The installed-boot
 launcher now owns a fail-closed swtpm process/socket lifecycle and preserves its
 per-VM state directory. The app product configuration supplies a per-VM
 256-bit `WhenUnlockedThisDeviceOnly` Keychain key through a one-shot inherited
@@ -98,8 +104,9 @@ archive-before-reset, and APFS clone with a fresh TPM identity; copied state,
 old state, orphan keys, and prior run evidence are retained with lifecycle
 receipts instead of silently discarded. The standalone package passed a real
 key-FD/socket swtpm startup check on 2026-07-22. Firmware-populated measured-
-boot events, real Windows enumeration, clean-second-Mac migration, and
-BitLocker recovery remain open, so the security gates stay `IN_PROGRESS`.
+boot events, real Windows enumeration and PPI-action receipts, clean-second-Mac
+migration, and BitLocker recovery remain open, so the security gates stay
+`IN_PROGRESS`.
 
 `SEC-SB-MEASURED` also has deterministic local evidence. The default firmware
 is a reproducible EDK2 build pinned to commit

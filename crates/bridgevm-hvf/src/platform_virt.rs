@@ -54,7 +54,7 @@ use crate::pl011::Pl011;
 use crate::pl031::Pl031;
 use crate::ramfb::{Ramfb, RamfbConfig, RAMFB_CONFIG_SIZE, RAMFB_FW_CFG_FILE};
 use crate::smbios::{build_smbios, SMBIOS_ANCHOR_FILE, SMBIOS_TABLE_FILE};
-use crate::tpm_ppi::{TpmPpi, TpmPpiStats};
+use crate::tpm_ppi::{build_qemu_fw_cfg_tpm_config, TpmPpi, TpmPpiStats, TPM_PPI_FW_CFG_FILE};
 use crate::tpm_tis::{Tpm2Backend, TpmTis, TpmTisStats};
 use crate::virtio_blk::{
     VirtioBlockRequestTrace, VirtioMmioBlock, VirtioMmioBlockResult, VirtioMmioBlockStats,
@@ -563,6 +563,16 @@ impl VirtPlatform {
         fw_cfg.add_file(ACPI_LOADER_FILE, acpi.loader);
         if let Some(tpm_log) = acpi.tpm_log {
             fw_cfg.add_file(ACPI_TPM_LOG_FILE, tpm_log);
+            // The pinned ArmVirtQemu EDK2 firmware uses this QEMU-compatible
+            // record to discover and initialize the PPI page before processing
+            // pending OS requests. Keep it under the same TPM-presence branch
+            // as ACPI, the event log, MMIO routing, and the concrete backend.
+            let ppi_address = u32::try_from(machine::TPM_PPI.base)
+                .expect("TPM PPI address must fit QEMU's 32-bit fw_cfg contract");
+            fw_cfg.add_file(
+                TPM_PPI_FW_CFG_FILE,
+                build_qemu_fw_cfg_tpm_config(ppi_address).to_vec(),
+            );
         }
         let smbios = build_smbios(config.fdt.cpu_count, config.fdt.ram_size);
         fw_cfg.add_file(SMBIOS_ANCHOR_FILE, smbios.anchor);
@@ -2306,6 +2316,14 @@ mod tests {
         assert!(acpi_tables.windows(8).any(|bytes| bytes == b"MSFT0101"));
         let (_, tpm_log_size) = fw_cfg_file_entry(&mut p, ACPI_TPM_LOG_FILE.as_bytes());
         assert_eq!(tpm_log_size, crate::acpi::TPM_LOG_AREA_MINIMUM_SIZE);
+        let (ppi_config_selector, ppi_config_size) =
+            fw_cfg_file_entry(&mut p, TPM_PPI_FW_CFG_FILE.as_bytes());
+        assert_eq!(ppi_config_size, crate::tpm_ppi::TPM_PPI_FW_CFG_CONFIG_SIZE);
+        p.fw_cfg.select(ppi_config_selector);
+        assert_eq!(
+            p.fw_cfg.read_data(ppi_config_size),
+            build_qemu_fw_cfg_tpm_config(machine::TPM_PPI.base as u32)
+        );
         assert_eq!(
             p.on_mmio(
                 machine::TPM_PPI.base + crate::tpm_ppi::PPRQ_OFFSET as u64,
@@ -2329,6 +2347,20 @@ mod tests {
                 writes: 1,
                 rejected_accesses: 0,
             })
+        );
+    }
+
+    #[test]
+    fn disabled_tpm_omits_all_tpm_fw_cfg_discovery_files() {
+        let mut p = platform();
+
+        assert_eq!(
+            find_fw_cfg_file_entry(&mut p, ACPI_TPM_LOG_FILE.as_bytes()),
+            None
+        );
+        assert_eq!(
+            find_fw_cfg_file_entry(&mut p, TPM_PPI_FW_CFG_FILE.as_bytes()),
+            None
         );
     }
 

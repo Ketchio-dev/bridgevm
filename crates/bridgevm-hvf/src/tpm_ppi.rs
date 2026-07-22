@@ -7,6 +7,14 @@
 
 pub const MMIO_SIZE: u64 = 0x400;
 
+/// QEMU fw_cfg discovery record consumed by EDK2's
+/// `Tcg2PhysicalPresenceLibQemu` implementation.
+pub const TPM_PPI_FW_CFG_FILE: &str = "etc/tpm/config";
+/// Packed `QEMU_FWCFG_TPM_CONFIG` size: address + TPM version + PPI version.
+pub const TPM_PPI_FW_CFG_CONFIG_SIZE: usize = 6;
+pub const QEMU_TPM_VERSION_2: u8 = 2;
+pub const QEMU_TPM_PPI_VERSION_1_30: u8 = 1;
+
 /// One policy byte for each PPI operation number (FUNC[0..=255]).
 pub const FUNC_OFFSET: usize = 0x000;
 pub const FUNC_COUNT: usize = 0x100;
@@ -26,6 +34,19 @@ pub const FUNC_BLOCKED: u8 = 2;
 pub const FUNC_ALLOWED_USER_REQUIRED: u8 = 3;
 pub const FUNC_ALLOWED_USER_NOT_REQUIRED: u8 = 4;
 pub const FUNC_MASK: u8 = 7;
+
+/// Build QEMU's packed, little-endian `QEMU_FWCFG_TPM_CONFIG` record.
+///
+/// Merely mapping the PPI page and publishing the ACPI `_DSM` is insufficient:
+/// EDK2 discovers the page through this record, initializes the supported
+/// operation policy, and processes pending requests during PlatformBootManager.
+pub fn build_qemu_fw_cfg_tpm_config(ppi_address: u32) -> [u8; TPM_PPI_FW_CFG_CONFIG_SIZE] {
+    let mut config = [0; TPM_PPI_FW_CFG_CONFIG_SIZE];
+    config[..4].copy_from_slice(&ppi_address.to_le_bytes());
+    config[4] = QEMU_TPM_VERSION_2;
+    config[5] = QEMU_TPM_PPI_VERSION_1_30;
+    config
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TpmPpiStats {
@@ -113,6 +134,14 @@ fn access_range(offset: u64, size: u8) -> Option<std::ops::Range<usize>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fw_cfg_config_matches_qemu_and_edk2_packed_contract() {
+        assert_eq!(
+            build_qemu_fw_cfg_tpm_config(0x0c00_5000),
+            [0x00, 0x50, 0x00, 0x0c, 2, 1]
+        );
+    }
 
     #[test]
     fn parameter_block_is_little_endian_shared_memory() {
