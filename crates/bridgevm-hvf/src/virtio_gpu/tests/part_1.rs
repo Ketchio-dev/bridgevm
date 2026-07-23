@@ -1,13 +1,12 @@
 //! Split test module.
 
 use super::super::*;
-use crate::{
-    msix::MsixMessage,
-    pcie::VIRTIO_GPU_MSIX_VECTOR_COUNT,
-    virtio_gpu_3d::{CompletedFence, VIRTIO_GPU_BLOB_MEM_HOST3D, VIRTIO_GPU_CMD_GET_CAPSET_INFO},
-};
-
 use super::helpers::*;
+use crate::msix::MsixMessage;
+use crate::pcie::VIRTIO_GPU_MSIX_VECTOR_COUNT;
+use crate::virtio_gpu_3d::CompletedFence;
+use crate::virtio_gpu_3d::VIRTIO_GPU_BLOB_MEM_HOST3D;
+use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_GET_CAPSET_INFO;
 
 #[test]
 fn edid_preferred_timing_is_120_hz_with_valid_ranges_and_checksum() {

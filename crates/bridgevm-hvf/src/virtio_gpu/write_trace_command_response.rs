@@ -1,19 +1,18 @@
 //! Split out of virtio_gpu.rs to keep files under 850 lines.
 
 use super::*;
-
+use crate::fwcfg::GuestMemoryMut;
+use crate::pcie::VIRTIO_GPU_MSIX_VECTOR_COUNT;
+use crate::virtio_gpu_3d;
+use crate::virtio_gpu_3d::BlobMemEntry;
+use crate::virtio_gpu_3d::Create3dArgs;
 use std::fmt::Write as _;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
+use std::fs::OpenOptions;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
-
-use crate::{
-    fwcfg::GuestMemoryMut,
-    pcie::VIRTIO_GPU_MSIX_VECTOR_COUNT,
-    virtio_gpu_3d::{self, BlobMemEntry, Create3dArgs},
-};
 
 pub(crate) fn write_trace_command_response_details(
     out: &mut String,
