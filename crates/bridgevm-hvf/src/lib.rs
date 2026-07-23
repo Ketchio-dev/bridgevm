@@ -92,5 +92,5 @@ pub use windows_arm_xhci_hid_boot_key_probe::{
 mod platform;
 
 #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-#[path = "platform/unsupported.rs"]
+#[path = "platform/unsupported/mod.rs"]
 mod platform;
