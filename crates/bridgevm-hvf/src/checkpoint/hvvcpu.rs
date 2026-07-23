@@ -1,13 +1,6 @@
-//! Versioned VM checkpoint serialization for the live HVF probe.
-//!
-//! A checkpoint contains five length-delimited sections:
-//! - META: guest RAM length and sparse-RAM chunk size
-//! - RAM0: non-zero 16 KiB RAM chunks
-//! - VCPU: architectural vCPU register bundles
-//! - GIC0: Apple's opaque, versioned hv_gic state
-//! - DEV0: platform/device state supplied by VirtPlatform
-//!
-//! All integers in the on-disk format are little-endian.
+//! Split out of checkpoint.rs to keep files under 850 lines.
+
+use super::*;
 
 use std::ffi::c_void;
 use std::fs::{self, File, OpenOptions};
@@ -21,24 +14,24 @@ pub const CHECKPOINT_MAGIC: [u8; 8] = *b"BVMCKP03";
 pub const CHECKPOINT_VERSION: u32 = 3;
 pub const SPARSE_RAM_CHUNK_SIZE: usize = 16 * 1024;
 
-const SECTION_META: [u8; 4] = *b"META";
-const SECTION_RAM: [u8; 4] = *b"RAM0";
-const SECTION_VCPU: [u8; 4] = *b"VCPU";
-const SECTION_GIC: [u8; 4] = *b"GIC0";
-const SECTION_DEVICE: [u8; 4] = *b"DEV0";
-const SECTION_COUNT: u32 = 5;
-const MAX_SECTION_BYTES: u64 = 128 * 1024 * 1024 * 1024;
-static CHECKPOINT_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+pub(crate) const SECTION_META: [u8; 4] = *b"META";
+pub(crate) const SECTION_RAM: [u8; 4] = *b"RAM0";
+pub(crate) const SECTION_VCPU: [u8; 4] = *b"VCPU";
+pub(crate) const SECTION_GIC: [u8; 4] = *b"GIC0";
+pub(crate) const SECTION_DEVICE: [u8; 4] = *b"DEV0";
+pub(crate) const SECTION_COUNT: u32 = 5;
+pub(crate) const MAX_SECTION_BYTES: u64 = 128 * 1024 * 1024 * 1024;
+pub(crate) static CHECKPOINT_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-const HV_SUCCESS: i32 = 0;
-const HV_REG_X0: u32 = 0;
-const HV_REG_PC: u32 = 31;
-const HV_REG_FPCR: u32 = 32;
-const HV_REG_FPSR: u32 = 33;
-const HV_REG_CPSR: u32 = 34;
-const HV_SIMD_FP_REG_Q0: u32 = 0;
+pub(crate) const HV_SUCCESS: i32 = 0;
+pub(crate) const HV_REG_X0: u32 = 0;
+pub(crate) const HV_REG_PC: u32 = 31;
+pub(crate) const HV_REG_FPCR: u32 = 32;
+pub(crate) const HV_REG_FPSR: u32 = 33;
+pub(crate) const HV_REG_CPSR: u32 = 34;
+pub(crate) const HV_SIMD_FP_REG_Q0: u32 = 0;
 
-const SYS_REGS: &[u16] = &[
+pub(crate) const SYS_REGS: &[u16] = &[
     0xc005, // MPIDR_EL1
     0xc080, // SCTLR_EL1
     0xc082, // CPACR_EL1
@@ -79,7 +72,7 @@ const SYS_REGS: &[u16] = &[
     0xe208, // SP_EL1
 ];
 
-const GIC_ICC_REGS: &[u16] = &[
+pub(crate) const GIC_ICC_REGS: &[u16] = &[
     0xc230, // ICC_PMR_EL1
     0xc643, // ICC_BPR0_EL1
     0xc644, // ICC_AP0R0_EL1
@@ -99,8 +92,8 @@ const GIC_ICC_REGS: &[u16] = &[
 /// inline-asm trampoline that places the value in `v0` per AAPCS64.
 #[repr(C, align(16))]
 #[derive(Clone, Copy)]
-struct HvSimdValue {
-    bytes: [u8; 16],
+pub(crate) struct HvSimdValue {
+    pub(crate) bytes: [u8; 16],
 }
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -108,8 +101,8 @@ struct HvSimdValue {
 extern "C" {
     fn hv_vcpus_exit(vcpus: *mut HvVcpu, vcpu_count: u32) -> i32;
 
-    fn hv_vcpu_get_reg(vcpu: HvVcpu, reg: u32, value: *mut u64) -> i32;
-    fn hv_vcpu_set_reg(vcpu: HvVcpu, reg: u32, value: u64) -> i32;
+    pub(super) fn hv_vcpu_get_reg(vcpu: HvVcpu, reg: u32, value: *mut u64) -> i32;
+    pub(super) fn hv_vcpu_set_reg(vcpu: HvVcpu, reg: u32, value: u64) -> i32;
     fn hv_vcpu_get_sys_reg(vcpu: HvVcpu, reg: u16, value: *mut u64) -> i32;
     fn hv_vcpu_set_sys_reg(vcpu: HvVcpu, reg: u16, value: u64) -> i32;
     fn hv_vcpu_get_simd_fp_reg(vcpu: HvVcpu, reg: u32, value: *mut HvSimdValue) -> i32;
@@ -137,7 +130,11 @@ extern "C" {
 /// Stable Rust cannot express that ABI in an extern decl, so load `q0`
 /// manually and branch to the symbol.
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-unsafe fn hv_vcpu_set_simd_fp_reg_by_value(vcpu: HvVcpu, reg: u32, value: &HvSimdValue) -> i32 {
+pub(crate) unsafe fn hv_vcpu_set_simd_fp_reg_by_value(
+    vcpu: HvVcpu,
+    reg: u32,
+    value: &HvSimdValue,
+) -> i32 {
     let ret: i32;
     std::arch::asm!(
         "ldr q0, [{ptr}]",
@@ -190,7 +187,7 @@ pub struct VmCheckpoint {
 
 #[derive(Debug, Default)]
 pub struct StateWriter {
-    bytes: Vec<u8>,
+    pub(crate) bytes: Vec<u8>,
 }
 
 impl StateWriter {
@@ -230,7 +227,7 @@ impl StateWriter {
 
 #[derive(Debug)]
 pub struct StateReader<'a> {
-    cursor: Cursor<'a>,
+    pub(crate) cursor: Cursor<'a>,
 }
 
 impl<'a> StateReader<'a> {
@@ -336,7 +333,7 @@ impl VmCheckpoint {
         result
     }
 
-    fn write_to(&self, file: &mut File) -> io::Result<()> {
+    pub(crate) fn write_to(&self, file: &mut File) -> io::Result<()> {
         file.write_all(&CHECKPOINT_MAGIC)?;
         file.write_all(&CHECKPOINT_VERSION.to_le_bytes())?;
         file.write_all(&SECTION_COUNT.to_le_bytes())?;
@@ -420,13 +417,16 @@ impl VmCheckpoint {
     }
 }
 
-fn nonempty_parent(path: &Path) -> &Path {
+pub(crate) fn nonempty_parent(path: &Path) -> &Path {
     path.parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."))
 }
 
-fn create_checkpoint_temp(parent: &Path, destination: &Path) -> io::Result<(PathBuf, File)> {
+pub(crate) fn create_checkpoint_temp(
+    parent: &Path,
+    destination: &Path,
+) -> io::Result<(PathBuf, File)> {
     let file_name = destination
         .file_name()
         .ok_or_else(|| invalid("checkpoint destination must name a file"))?
@@ -453,7 +453,7 @@ fn create_checkpoint_temp(parent: &Path, destination: &Path) -> io::Result<(Path
     ))
 }
 
-fn sync_directory(path: &Path) -> io::Result<()> {
+pub(crate) fn sync_directory(path: &Path) -> io::Result<()> {
     File::open(path)?.sync_all()
 }
 
@@ -606,7 +606,7 @@ pub fn request_vcpu_exit(_vcpus: &[HvVcpu]) -> io::Result<()> {
 }
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-fn capture_gic_state() -> io::Result<Vec<u8>> {
+pub(crate) fn capture_gic_state() -> io::Result<Vec<u8>> {
     struct GicState(*mut c_void);
 
     impl Drop for GicState {
@@ -637,12 +637,12 @@ fn capture_gic_state() -> io::Result<Vec<u8>> {
 }
 
 #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-fn capture_gic_state() -> io::Result<Vec<u8>> {
+pub(crate) fn capture_gic_state() -> io::Result<Vec<u8>> {
     Err(unsupported())
 }
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-fn restore_gic_state(data: &[u8]) -> io::Result<()> {
+pub(crate) fn restore_gic_state(data: &[u8]) -> io::Result<()> {
     if data.is_empty() {
         return Err(invalid("empty GIC state"));
     }
@@ -653,11 +653,11 @@ fn restore_gic_state(data: &[u8]) -> io::Result<()> {
 }
 
 #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-fn restore_gic_state(_data: &[u8]) -> io::Result<()> {
+pub(crate) fn restore_gic_state(_data: &[u8]) -> io::Result<()> {
     Err(unsupported())
 }
 
-fn sparse_ram_chunks(ram: &[u8]) -> Vec<SparseRamChunk> {
+pub(crate) fn sparse_ram_chunks(ram: &[u8]) -> Vec<SparseRamChunk> {
     ram.chunks(SPARSE_RAM_CHUNK_SIZE)
         .enumerate()
         .filter(|(_, chunk)| chunk.iter().any(|byte| *byte != 0))
@@ -668,7 +668,7 @@ fn sparse_ram_chunks(ram: &[u8]) -> Vec<SparseRamChunk> {
         .collect()
 }
 
-fn restore_sparse_ram(ram: &mut [u8], chunks: &[SparseRamChunk]) -> io::Result<()> {
+pub(crate) fn restore_sparse_ram(ram: &mut [u8], chunks: &[SparseRamChunk]) -> io::Result<()> {
     ram.fill(0);
     for chunk in chunks {
         let start = usize::try_from(chunk.offset)
@@ -684,7 +684,7 @@ fn restore_sparse_ram(ram: &mut [u8], chunks: &[SparseRamChunk]) -> io::Result<(
     Ok(())
 }
 
-fn encode_ram_chunks(chunks: &[SparseRamChunk]) -> Vec<u8> {
+pub(crate) fn encode_ram_chunks(chunks: &[SparseRamChunk]) -> Vec<u8> {
     let mut out = StateWriter::new();
     out.write_u32(chunks.len() as u32);
     out.write_u32(0);
@@ -695,7 +695,7 @@ fn encode_ram_chunks(chunks: &[SparseRamChunk]) -> Vec<u8> {
     out.into_inner()
 }
 
-fn decode_ram_chunks(data: &[u8], ram_len: u64) -> io::Result<Vec<SparseRamChunk>> {
+pub(crate) fn decode_ram_chunks(data: &[u8], ram_len: u64) -> io::Result<Vec<SparseRamChunk>> {
     let mut cursor = Cursor::new(data);
     let count = cursor.u32()? as usize;
     if cursor.u32()? != 0 {
@@ -727,7 +727,7 @@ fn decode_ram_chunks(data: &[u8], ram_len: u64) -> io::Result<Vec<SparseRamChunk
     Ok(chunks)
 }
 
-fn encode_vcpus(vcpus: &[VcpuRegisterBundle]) -> Vec<u8> {
+pub(crate) fn encode_vcpus(vcpus: &[VcpuRegisterBundle]) -> Vec<u8> {
     let mut out = StateWriter::new();
     out.write_u32(vcpus.len() as u32);
     for state in vcpus {
@@ -766,7 +766,7 @@ fn encode_vcpus(vcpus: &[VcpuRegisterBundle]) -> Vec<u8> {
     out.into_inner()
 }
 
-fn decode_vcpus(data: &[u8]) -> io::Result<Vec<VcpuRegisterBundle>> {
+pub(crate) fn decode_vcpus(data: &[u8]) -> io::Result<Vec<VcpuRegisterBundle>> {
     let mut cursor = Cursor::new(data);
     let count = cursor.u32()? as usize;
     let mut vcpus = Vec::with_capacity(count);
@@ -836,14 +836,14 @@ fn decode_vcpus(data: &[u8]) -> io::Result<Vec<VcpuRegisterBundle>> {
     Ok(vcpus)
 }
 
-fn write_section(file: &mut File, tag: [u8; 4], payload: &[u8]) -> io::Result<()> {
+pub(crate) fn write_section(file: &mut File, tag: [u8; 4], payload: &[u8]) -> io::Result<()> {
     file.write_all(&tag)?;
     file.write_all(&0u32.to_le_bytes())?;
     file.write_all(&(payload.len() as u64).to_le_bytes())?;
     file.write_all(payload)
 }
 
-fn read_section(file: &mut File) -> io::Result<([u8; 4], Vec<u8>)> {
+pub(crate) fn read_section(file: &mut File) -> io::Result<([u8; 4], Vec<u8>)> {
     let mut header = [0u8; 16];
     file.read_exact(&mut header)?;
     let tag = header[..4].try_into().unwrap();
@@ -859,17 +859,17 @@ fn read_section(file: &mut File) -> io::Result<([u8; 4], Vec<u8>)> {
 }
 
 #[derive(Debug)]
-struct Cursor<'a> {
-    bytes: &'a [u8],
-    pos: usize,
+pub(crate) struct Cursor<'a> {
+    pub(crate) bytes: &'a [u8],
+    pub(crate) pos: usize,
 }
 
 impl<'a> Cursor<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
+    pub(crate) fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, pos: 0 }
     }
 
-    fn take(&mut self, len: usize) -> io::Result<&'a [u8]> {
+    pub(crate) fn take(&mut self, len: usize) -> io::Result<&'a [u8]> {
         let end = self
             .pos
             .checked_add(len)
@@ -885,131 +885,29 @@ impl<'a> Cursor<'a> {
         Ok(out)
     }
 
-    fn u8(&mut self) -> io::Result<u8> {
+    pub(crate) fn u8(&mut self) -> io::Result<u8> {
         Ok(self.take(1)?[0])
     }
 
-    fn u16(&mut self) -> io::Result<u16> {
+    pub(crate) fn u16(&mut self) -> io::Result<u16> {
         Ok(u16::from_le_bytes(self.take(2)?.try_into().unwrap()))
     }
 
-    fn u32(&mut self) -> io::Result<u32> {
+    pub(crate) fn u32(&mut self) -> io::Result<u32> {
         Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
     }
 
-    fn u64(&mut self) -> io::Result<u64> {
+    pub(crate) fn u64(&mut self) -> io::Result<u64> {
         Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
     }
 
-    fn blob(&mut self) -> io::Result<Vec<u8>> {
+    pub(crate) fn blob(&mut self) -> io::Result<Vec<u8>> {
         let len =
             usize::try_from(self.u64()?).map_err(|_| invalid("blob length does not fit usize"))?;
         Ok(self.take(len)?.to_vec())
     }
 
-    fn is_finished(&self) -> bool {
+    pub(crate) fn is_finished(&self) -> bool {
         self.pos == self.bytes.len()
-    }
-}
-
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-fn get_reg(vcpu: HvVcpu, reg: u32, value: &mut u64) -> io::Result<()> {
-    hv(
-        unsafe { hv_vcpu_get_reg(vcpu, reg, value) },
-        "hv_vcpu_get_reg",
-    )
-}
-
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-fn set_reg(vcpu: HvVcpu, reg: u32, value: u64) -> io::Result<()> {
-    hv(
-        unsafe { hv_vcpu_set_reg(vcpu, reg, value) },
-        "hv_vcpu_set_reg",
-    )
-}
-
-fn hv(status: i32, operation: &str) -> io::Result<()> {
-    if status == HV_SUCCESS {
-        Ok(())
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("{operation} failed with HVF status {status:#x}"),
-        ))
-    }
-}
-
-fn invalid(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message.into())
-}
-
-#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-fn unsupported() -> io::Error {
-    io::Error::new(
-        io::ErrorKind::Unsupported,
-        "HVF checkpointing requires macOS on arm64",
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn test_checkpoint(device_state: Vec<u8>) -> VmCheckpoint {
-        VmCheckpoint {
-            ram_len: SPARSE_RAM_CHUNK_SIZE as u64,
-            ram_chunks: vec![SparseRamChunk {
-                offset: 0,
-                bytes: vec![1, 2, 3, 4],
-            }],
-            vcpus: vec![VcpuRegisterBundle {
-                x: [0; 31],
-                pc: 0x4000_1000,
-                fpcr: 0,
-                fpsr: 0,
-                cpsr: 0x3c5,
-                sys_regs: vec![(0xc080, 1)],
-                simd: [[0; 16]; 32],
-                gic_icc_regs: vec![(0xc230, 1)],
-                vtimer_offset: 7,
-                vtimer_masked: true,
-            }],
-            gic_state: vec![5, 6, 7],
-            device_state,
-        }
-    }
-
-    fn test_directory(label: &str) -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "bridgevm-checkpoint-{label}-{}-{unique}",
-            std::process::id()
-        ))
-    }
-
-    #[test]
-    fn durable_write_replaces_checkpoint_without_leaving_temporary_files() {
-        let directory = test_directory("atomic-replace");
-        fs::create_dir_all(&directory).unwrap();
-        let path = directory.join("suspend.bin");
-
-        test_checkpoint(vec![1]).write_to_path(&path).unwrap();
-        test_checkpoint(vec![9, 8, 7]).write_to_path(&path).unwrap();
-
-        let restored = VmCheckpoint::read_from_path(&path).unwrap();
-        assert_eq!(restored.device_state, vec![9, 8, 7]);
-        assert_eq!(restored.ram_len, SPARSE_RAM_CHUNK_SIZE as u64);
-        assert_eq!(restored.vcpus[0].pc, 0x4000_1000);
-        assert!(fs::read_dir(&directory).unwrap().all(|entry| !entry
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .ends_with(".tmp")));
-
-        fs::remove_dir_all(directory).unwrap();
     }
 }
