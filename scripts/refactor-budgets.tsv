@@ -12,7 +12,24 @@
 #
 # path	max_loc	max_unsafe
 crates/bridgevm-hvf/src/lib.rs	96	0
-crates/bridgevm-hvf/src/platform/apple.rs	12111	296
+crates/bridgevm-hvf/src/platform/apple/diagnostic_vector.rs	199	6
+crates/bridgevm-hvf/src/platform/apple/ffi.rs	227	0
+crates/bridgevm-hvf/src/platform/apple/firmware_irq.rs	210	5
+crates/bridgevm-hvf/src/platform/apple/firmware_run_loop.rs	2844	42
+crates/bridgevm-hvf/src/platform/apple/guest_entry.rs	684	27
+crates/bridgevm-hvf/src/platform/apple/guest_mem.rs	108	1
+crates/bridgevm-hvf/src/platform/apple/guest_phys.rs	274	2
+crates/bridgevm-hvf/src/platform/apple/host.rs	71	6
+crates/bridgevm-hvf/src/platform/apple/lifecycle.rs	1130	48
+crates/bridgevm-hvf/src/platform/apple/memory_map.rs	175	7
+crates/bridgevm-hvf/src/platform/apple/mmio_block.rs	1649	37
+crates/bridgevm-hvf/src/platform/apple/mmio_devices.rs	1160	37
+crates/bridgevm-hvf/src/platform/apple/mmio_emulation.rs	1216	45
+crates/bridgevm-hvf/src/platform/apple/mod.rs	40	0
+crates/bridgevm-hvf/src/platform/apple/pflash.rs	859	15
+crates/bridgevm-hvf/src/platform/apple/reset_vector.rs	484	15
+crates/bridgevm-hvf/src/platform/apple/stage1.rs	791	0
+crates/bridgevm-hvf/src/platform/apple/vcpu_run.rs	82	3
 crates/bridgevm-hvf/src/platform/unsupported.rs	1632	0
 crates/bridgevm-hvf/src/probes/host_capabilities.rs	810	0
 crates/bridgevm-hvf/src/probes/lifecycle.rs	1382	0
