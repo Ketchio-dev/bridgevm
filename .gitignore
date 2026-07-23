@@ -27,3 +27,7 @@
 !crates/bridgevm-hvf/firmware/
 !crates/bridgevm-hvf/firmware/*.fd
 build/
+
+# Python bytecode from scripts/refactor tooling
+__pycache__/
+*.pyc
