@@ -206,7 +206,16 @@ crates/bridgevm-hvf/src/virtio_blk.rs	1062	0
 crates/bridgevm-hvf/src/virtio_blk/tests.rs	949	0
 crates/bridgevm-hvf/src/virtio_blk/trace.rs	30	0
 crates/bridgevm-hvf/src/virtio_console.rs	3018	0
-crates/bridgevm-hvf/src/virtio_gpu.rs	7466	9
+crates/bridgevm-hvf/src/virtio_gpu/drop.rs	16	1
+crates/bridgevm-hvf/src/virtio_gpu/magic_value.rs	2781	2
+crates/bridgevm-hvf/src/virtio_gpu/mod.rs	12	0
+crates/bridgevm-hvf/src/virtio_gpu/tests/helpers.rs	428	0
+crates/bridgevm-hvf/src/virtio_gpu/tests/mod.rs	6	0
+crates/bridgevm-hvf/src/virtio_gpu/tests/part_1.rs	716	0
+crates/bridgevm-hvf/src/virtio_gpu/tests/part_2.rs	1036	0
+crates/bridgevm-hvf/src/virtio_gpu/tests/part_3.rs	750	0
+crates/bridgevm-hvf/src/virtio_gpu/virtiopcigpu.rs	1011	0
+crates/bridgevm-hvf/src/virtio_gpu/write_trace_command_response.rs	895	6
 crates/bridgevm-hvf/src/virtio_gpu_3d.rs	2710	7
 crates/bridgevm-hvf/src/virtio_gpu_3d_preflight.rs	655	2
 crates/bridgevm-hvf/src/virtio_gpu_trace.rs	228	0
