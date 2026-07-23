@@ -1,50 +1,93 @@
-//! Continuation of the `magic_value` impl block, split for the 1000-line rule.
+//! Virtqueue transport: queue state, descriptor walking, gather/scatter, used ring, scratch pooling.
 
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 use crate::virtio_gpu_3d::CompletedFence;
 use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_SUBMIT_3D;
 use crate::virtio_gpu_3d::VIRTIO_GPU_FLAG_FENCE;
-use crate::virtio_gpu_trace::venus_start_trace_enabled;
 use std::fmt::Write as _;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering;
 use std::time::Instant;
 
-impl VirtioGpu {
-    pub(crate) fn write_status(&mut self, value: u64) {
-        let raw = value as u32;
-        let previous = self.status;
-        let driver_features_word0 = self.driver_features[0];
-        let driver_features_word1 = self.driver_features[1];
-        let resources = self.resources.len();
-        let scanout_active = self.scanout_resource.is_some() || self.blob_scanout.is_some();
-        if venus_start_trace_enabled() {
-            println!("venus-start: device_status write {raw:#x}");
-        }
-        self.record_trace_fields("device_status", |fields| {
-            let _ = write!(
-                fields,
-                ",\"raw\":{},\"raw_hex\":\"{:#x}\",\"previous\":{},\"previous_hex\":\"{:#x}\",\"reset\":{},\"driver_features_word0\":{},\"driver_features_word0_hex\":\"{:#x}\",\"driver_features_word1\":{},\"driver_features_word1_hex\":\"{:#x}\",\"resources\":{},\"scanout_active\":{}",
-                raw,
-                raw,
-                previous,
-                previous,
-                raw == 0,
-                driver_features_word0,
-                driver_features_word0,
-                driver_features_word1,
-                driver_features_word1,
-                resources,
-                scanout_active
-            );
-        });
-        self.status = value as u32;
-        if value == 0 {
-            self.reset_runtime_state();
+pub(crate) const QUEUE_CONTROL: usize = 0;
+
+pub(crate) const QUEUE_CURSOR: usize = 1;
+
+pub(crate) const QUEUE_COUNT: usize = 2;
+
+pub(crate) const PARKED_RESPONSE_BUFFER_POOL_LIMIT: usize = 4;
+
+pub(crate) const QUEUE_MAX: u16 = 64;
+
+pub(crate) const DESC_SIZE: u64 = 16;
+
+pub(crate) const DESC_F_NEXT: u16 = 1;
+
+pub(crate) const DESC_F_WRITE: u16 = 2;
+
+pub(crate) const MAX_GPU_REQUEST_LEN: usize = 64 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct VirtioGpuQueue {
+    pub(crate) size: u16,
+    pub(crate) ready: bool,
+    pub(crate) desc: u64,
+    pub(crate) driver: u64,
+    pub(crate) device: u64,
+    pub(crate) msix_vector: u16,
+    pub(crate) notify_off: u16,
+    pub(crate) last_avail_idx: u16,
+    pub(crate) pending_msix: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ChainCompletion {
+    Immediate(u32),
+    Parked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Descriptor {
+    pub(crate) addr: u64,
+    pub(crate) len: u32,
+    pub(crate) flags: u16,
+    pub(crate) next: u16,
+}
+
+impl VirtioGpuQueue {
+    pub(crate) const fn new(notify_off: u16) -> Self {
+        Self {
+            size: 0,
+            ready: false,
+            desc: 0,
+            driver: 0,
+            device: 0,
+            msix_vector: VIRTIO_MSI_NO_VECTOR,
+            notify_off,
+            last_avail_idx: 0,
+            pending_msix: false,
         }
     }
 
+    pub(crate) fn reset(&mut self) {
+        let notify_off = self.notify_off;
+        *self = Self::new(notify_off);
+    }
+
+    /// Queue size the device must actually run at. The virtio driver may enable
+    /// a queue without ever writing COMMON_QUEUE_SIZE, in which case the queue
+    /// operates at the advertised maximum (`QUEUE_MAX`) rather than the reset
+    /// value of 0. Reads of COMMON_QUEUE_SIZE already report this effective
+    /// value, so descriptor processing must agree with it.
+    pub(crate) fn effective_size(&self) -> u16 {
+        if self.size == 0 {
+            QUEUE_MAX
+        } else {
+            self.size
+        }
+    }
+}
+
+impl VirtioGpu {
     pub(crate) fn selected_queue(&self) -> Option<VirtioGpuQueue> {
         self.queues.get(self.queue_sel as usize).copied()
     }
@@ -53,72 +96,6 @@ impl VirtioGpu {
         if let Some(queue) = self.queues.get_mut(self.queue_sel as usize) {
             write(queue);
         }
-    }
-
-    pub(crate) fn config_read(&self, offset: u64, size: u8) -> u64 {
-        // struct virtio_gpu_config: le32 events_read @0, le32 events_clear @4,
-        // le32 num_scanouts @8, le32 num_capsets @12. num_capsets was being
-        // written into the num_scanouts slot, so Linux saw "number of cap
-        // sets: 0" and never queried the venus capset (and a 2D-only device
-        // reported zero scanouts).
-        let mut config = [0u8; 16];
-        config[0..4].copy_from_slice(&self.events_read.to_le_bytes());
-        config[4..8].copy_from_slice(&self.events_clear.to_le_bytes());
-        config[8..12].copy_from_slice(&1u32.to_le_bytes());
-        let num_capsets = self.three_d.capset_count();
-        config[12..16].copy_from_slice(&num_capsets.to_le_bytes());
-        let value = read_le_from_bytes(&config, offset, size).unwrap_or(0);
-        if venus_start_trace_enabled() {
-            static COUNT: AtomicU64 = AtomicU64::new(0);
-            let n = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
-            if trace_sample(n) {
-                println!(
-                    "venus-start: config_read n={n} off={offset:#x} size={size} value={value:#x} num_capsets={num_capsets}"
-                );
-            }
-        }
-        value
-    }
-
-    pub(crate) fn config_write(&mut self, offset: u64, size: u8, value: u64) {
-        if common_access_touches(4, 4, offset, size) {
-            self.events_clear =
-                write_common_register(self.events_clear.into(), 4, 4, offset, size, value) as u32;
-            // The driver acks a display event by writing its bit to
-            // events_clear; clear the matching events_read bits so the next
-            // GET_DISPLAY_INFO does not re-report a stale change.
-            self.events_read &= !self.events_clear;
-        }
-    }
-
-    /// Host-driven scanout resize. Updates the reported resolution and raises a
-    /// virtio-gpu DISPLAY event + config-change interrupt so the guest WDDM
-    /// driver re-queries GET_DISPLAY_INFO/GET_EDID and switches modes. No-op
-    /// (returns false) when the size is unchanged or out of range; the caller
-    /// delivers the config interrupt via the device wrapper's drain path.
-    pub(crate) fn request_display_resolution(&mut self, width: u32, height: u32) -> bool {
-        if width == 0
-            || height == 0
-            || width > MAX_SCANOUT_DIMENSION
-            || height > MAX_SCANOUT_DIMENSION
-        {
-            return false;
-        }
-        if width == self.width && height == self.height {
-            return false;
-        }
-        self.width = width;
-        self.height = height;
-        // Grow the 2D scanout backing to the new geometry; the guest re-creates
-        // its scanout resource after the mode switch, so drop the stale binding.
-        self.scanout.clear();
-        self.scanout.resize(scanout_len(width, height), 0);
-        self.scanout_resource = None;
-        self.unbind_blob_scanout();
-        self.events_read |= VIRTIO_GPU_EVENT_DISPLAY;
-        self.pending_config_change = true;
-        self.interrupt_status |= 2;
-        true
     }
 
     pub(crate) fn notify_queue(&mut self, queue_index: u16, mem: &mut dyn GuestMemoryMut) {
@@ -323,5 +300,160 @@ impl VirtioGpu {
         } else {
             scratch
         }
+    }
+
+    pub(crate) fn recycle_parked_response_buffers(
+        &mut self,
+        mut descs: Vec<Descriptor>,
+        mut response: Vec<u8>,
+    ) {
+        descs.clear();
+        response.clear();
+        self.recycle_descriptor_scratch(descs);
+        self.recycle_response_scratch(response);
+    }
+
+    pub(crate) fn recycle_descriptor_scratch(&mut self, mut descs: Vec<Descriptor>) {
+        if descs.capacity() > self.descriptor_scratch.capacity() {
+            std::mem::swap(&mut self.descriptor_scratch, &mut descs);
+        }
+        self.recycle_extra_descriptor_scratch(descs);
+    }
+
+    pub(crate) fn recycle_response_scratch(&mut self, mut response: Vec<u8>) {
+        if response.capacity() > self.response_scratch.capacity() {
+            std::mem::swap(&mut self.response_scratch, &mut response);
+        }
+        self.recycle_extra_response_scratch(response);
+    }
+
+    pub(crate) fn recycle_extra_descriptor_scratch(&mut self, descs: Vec<Descriptor>) {
+        if descs.capacity() != 0
+            && self.parked_descriptor_scratch.len() < PARKED_RESPONSE_BUFFER_POOL_LIMIT
+        {
+            self.parked_descriptor_scratch.push(descs);
+        }
+    }
+
+    pub(crate) fn recycle_extra_response_scratch(&mut self, response: Vec<u8>) {
+        if response.capacity() != 0
+            && self.parked_response_scratch.len() < PARKED_RESPONSE_BUFFER_POOL_LIMIT
+        {
+            self.parked_response_scratch.push(response);
+        }
+    }
+
+    pub(crate) fn descriptor_chain_into(
+        mem: &dyn GuestMemoryMut,
+        queue: &VirtioGpuQueue,
+        head: u16,
+        out: &mut Vec<Descriptor>,
+    ) -> bool {
+        out.clear();
+        let queue_size = queue.effective_size();
+        if head >= queue_size {
+            return false;
+        }
+        let mut index = head;
+        for _ in 0..queue_size {
+            let Some(desc) = Descriptor::read(mem, queue.desc + u64::from(index) * DESC_SIZE)
+            else {
+                return false;
+            };
+            let has_next = desc.flags & DESC_F_NEXT != 0;
+            out.push(desc);
+            if !has_next {
+                return true;
+            }
+            index = desc.next;
+            if index >= queue_size {
+                return false;
+            }
+        }
+        false
+    }
+
+    pub(crate) fn gather_readable_into(
+        mem: &dyn GuestMemoryMut,
+        descs: &[Descriptor],
+        out: &mut Vec<u8>,
+    ) {
+        out.clear();
+        for desc in descs {
+            if desc.flags & DESC_F_WRITE != 0 {
+                continue;
+            }
+            let start = out.len();
+            let Some(end) = start.checked_add(desc.len as usize) else {
+                out.clear();
+                return;
+            };
+            if end > MAX_GPU_REQUEST_LEN {
+                out.clear();
+                return;
+            }
+            if let Some(bytes) = mem.read_bytes(desc.addr, desc.len as usize) {
+                out.extend_from_slice(&bytes);
+            }
+        }
+    }
+
+    pub(crate) fn scatter_write(
+        mem: &mut dyn GuestMemoryMut,
+        descs: &[Descriptor],
+        bytes: &[u8],
+    ) -> u32 {
+        let mut offset = 0usize;
+        for desc in descs {
+            if desc.flags & DESC_F_WRITE == 0 {
+                continue;
+            }
+            let writable = (desc.len as usize).min(bytes.len().saturating_sub(offset));
+            if writable == 0 {
+                continue;
+            }
+            if !mem.write_bytes(desc.addr, &bytes[offset..offset + writable]) {
+                break;
+            }
+            offset += writable;
+            if offset == bytes.len() {
+                break;
+            }
+        }
+        u32::try_from(offset).unwrap_or(u32::MAX)
+    }
+
+    pub(crate) fn write_used(
+        mem: &mut dyn GuestMemoryMut,
+        queue: &VirtioGpuQueue,
+        id: u16,
+        len: u32,
+    ) {
+        if queue.device == 0 {
+            return;
+        }
+        let queue_size = queue.effective_size();
+        let Some(used_idx) = read_u16(mem, queue.device + 2) else {
+            return;
+        };
+        let elem = queue.device + 4 + u64::from(used_idx % queue_size) * 8;
+        let _ = mem.write_bytes(elem, &u32::from(id).to_le_bytes());
+        let _ = mem.write_bytes(elem + 4, &len.to_le_bytes());
+        let _ = mem.write_bytes(queue.device + 2, &used_idx.wrapping_add(1).to_le_bytes());
+    }
+}
+
+impl Descriptor {
+    pub(crate) fn read(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<Self> {
+        let mut bytes = [0u8; DESC_SIZE as usize];
+        if !mem.read_into(gpa, &mut bytes) {
+            return None;
+        }
+        Some(Self {
+            addr: u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            len: u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
+            flags: u16::from_le_bytes(bytes[12..14].try_into().unwrap()),
+            next: u16::from_le_bytes(bytes[14..16].try_into().unwrap()),
+        })
     }
 }

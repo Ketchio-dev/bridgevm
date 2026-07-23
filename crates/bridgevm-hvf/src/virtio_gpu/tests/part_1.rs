@@ -1,5 +1,6 @@
 //! Split test module.
 
+use super::super::display::*;
 use super::super::*;
 use super::helpers::*;
 use crate::msix::MsixMessage;

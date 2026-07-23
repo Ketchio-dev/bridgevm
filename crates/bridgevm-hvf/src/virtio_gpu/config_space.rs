@@ -1,119 +1,16 @@
-//! Continuation of the `magic_value` impl block, split for the 1000-line rule.
+//! Common-config and device-config register plane: feature negotiation, status, queue registers, MMIO alias.
 
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
-use crate::ramfb::DRM_FORMAT_XRGB8888;
 use crate::virtio_gpu_3d::VIRTIO_GPU_F_CONTEXT_INIT;
 use crate::virtio_gpu_3d::VIRTIO_GPU_F_RESOURCE_BLOB;
 use crate::virtio_gpu_3d::VIRTIO_GPU_F_VIRGL;
 use crate::virtio_gpu_trace::venus_start_trace_enabled;
 use std::fmt::Write as _;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 
 impl VirtioGpu {
-    pub fn new_from_env() -> Self {
-        let (width, height) = parse_resolution_env();
-        Self::new(width, height)
-    }
-
-    pub fn stats(&self) -> VirtioGpuStats {
-        let mut stats = VirtioGpuStats {
-            status: self.status,
-            interrupt_status: self.interrupt_status,
-            driver_features: u64::from(self.driver_features[0])
-                | (u64::from(self.driver_features[1]) << 32),
-            resources: self.resources.len(),
-            scanout_active: self.scanout_resource.is_some() || self.blob_scanout.is_some(),
-            scanout_3d_flushes: self.scanout_3d_flush_count,
-            vblank_paced_count: self.vblank_paced_count,
-            scanout_readback_attempts: self.scanout_readback_attempt_count,
-            scanout_readbacks: self.scanout_readback_count,
-            scanout_readback_throttled: self.scanout_readback_throttled_count,
-            scanout_readback_bytes: self.scanout_readback_bytes,
-            scanout_readback_nanoseconds: self.scanout_readback_nanoseconds,
-            deferred_scanout_flushes: self.deferred_scanout_flush_count,
-            deferred_scanout_serviced: self.deferred_scanout_serviced_count,
-            scanout_blits: self.scanout_blit_count,
-            three_d: self.three_d.stats(self.pending_fenced.len()),
-            queues: [VirtioGpuQueueStats::default(); QUEUE_COUNT],
-        };
-        for (out, queue) in stats.queues.iter_mut().zip(self.queues) {
-            *out = VirtioGpuQueueStats {
-                size: queue.size,
-                ready: queue.ready,
-                desc: queue.desc,
-                driver: queue.driver,
-                device: queue.device,
-                msix_vector: queue.msix_vector,
-                notify_off: queue.notify_off,
-                last_avail_idx: queue.last_avail_idx,
-                pending_msix: queue.pending_msix,
-            };
-        }
-        stats
-    }
-
-    pub fn interrupt_line_level(&self) -> bool {
-        self.interrupt_status != 0
-    }
-
-    pub fn reset_runtime_state(&mut self) {
-        let width = self.width;
-        let height = self.height;
-        self.device_features_sel = 0;
-        self.driver_features_sel = 0;
-        self.driver_features = [0; 2];
-        self.config_msix_vector = VIRTIO_MSI_NO_VECTOR;
-        self.queue_sel = 0;
-        for queue in &mut self.queues {
-            queue.reset();
-        }
-        self.pending_msix_queue_bits = 0;
-        self.status = 0;
-        self.interrupt_status = 0;
-        self.events_read = 0;
-        self.events_clear = 0;
-        self.pending_config_change = false;
-        self.resources.clear();
-        self.scanout_resource = None;
-        self.unbind_blob_scanout();
-        self.scanout.clear();
-        self.scanout.resize(scanout_len(width, height), 0);
-        self.three_d.reset();
-        self.pending_fenced.clear();
-        self.pending_vblank.clear();
-        self.completed_fences_scratch.clear();
-        self.descriptor_scratch.clear();
-        self.parked_descriptor_scratch.clear();
-        self.request_scratch.clear();
-        self.response_scratch.clear();
-        self.parked_response_scratch.clear();
-        self.blob_row_scratch.clear();
-        self.scanout_readback_scratch.clear();
-        self.trace_fields_scratch.clear();
-        self.last_vblank = None;
-        self.vblank_paced_count = 0;
-        self.publish_vblank_wake();
-        self.last_3d_scanout_readback = None;
-        self.scanout_3d_flush_count = 0;
-        self.scanout_readback_attempt_count = 0;
-        self.scanout_readback_count = 0;
-        self.scanout_readback_throttled_count = 0;
-        self.scanout_readback_bytes = 0;
-        self.scanout_readback_nanoseconds = 0;
-    }
-
-    pub fn scanout(&self) -> Option<VirtioGpuScanout<'_>> {
-        (self.scanout_resource.is_some() || self.blob_scanout.is_some()).then_some(
-            VirtioGpuScanout {
-                bytes: &self.scanout,
-                width: self.width,
-                height: self.height,
-                stride: self.width * 4,
-                fourcc: DRM_FORMAT_XRGB8888,
-            },
-        )
-    }
-
     pub(crate) fn access_common(
         &mut self,
         offset: u64,
@@ -489,5 +386,74 @@ impl VirtioGpu {
             return true;
         }
         false
+    }
+
+    pub(crate) fn write_status(&mut self, value: u64) {
+        let raw = value as u32;
+        let previous = self.status;
+        let driver_features_word0 = self.driver_features[0];
+        let driver_features_word1 = self.driver_features[1];
+        let resources = self.resources.len();
+        let scanout_active = self.scanout_resource.is_some() || self.blob_scanout.is_some();
+        if venus_start_trace_enabled() {
+            println!("venus-start: device_status write {raw:#x}");
+        }
+        self.record_trace_fields("device_status", |fields| {
+            let _ = write!(
+                fields,
+                ",\"raw\":{},\"raw_hex\":\"{:#x}\",\"previous\":{},\"previous_hex\":\"{:#x}\",\"reset\":{},\"driver_features_word0\":{},\"driver_features_word0_hex\":\"{:#x}\",\"driver_features_word1\":{},\"driver_features_word1_hex\":\"{:#x}\",\"resources\":{},\"scanout_active\":{}",
+                raw,
+                raw,
+                previous,
+                previous,
+                raw == 0,
+                driver_features_word0,
+                driver_features_word0,
+                driver_features_word1,
+                driver_features_word1,
+                resources,
+                scanout_active
+            );
+        });
+        self.status = value as u32;
+        if value == 0 {
+            self.reset_runtime_state();
+        }
+    }
+
+    pub(crate) fn config_read(&self, offset: u64, size: u8) -> u64 {
+        // struct virtio_gpu_config: le32 events_read @0, le32 events_clear @4,
+        // le32 num_scanouts @8, le32 num_capsets @12. num_capsets was being
+        // written into the num_scanouts slot, so Linux saw "number of cap
+        // sets: 0" and never queried the venus capset (and a 2D-only device
+        // reported zero scanouts).
+        let mut config = [0u8; 16];
+        config[0..4].copy_from_slice(&self.events_read.to_le_bytes());
+        config[4..8].copy_from_slice(&self.events_clear.to_le_bytes());
+        config[8..12].copy_from_slice(&1u32.to_le_bytes());
+        let num_capsets = self.three_d.capset_count();
+        config[12..16].copy_from_slice(&num_capsets.to_le_bytes());
+        let value = read_le_from_bytes(&config, offset, size).unwrap_or(0);
+        if venus_start_trace_enabled() {
+            static COUNT: AtomicU64 = AtomicU64::new(0);
+            let n = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+            if trace_sample(n) {
+                println!(
+                    "venus-start: config_read n={n} off={offset:#x} size={size} value={value:#x} num_capsets={num_capsets}"
+                );
+            }
+        }
+        value
+    }
+
+    pub(crate) fn config_write(&mut self, offset: u64, size: u8, value: u64) {
+        if common_access_touches(4, 4, offset, size) {
+            self.events_clear =
+                write_common_register(self.events_clear.into(), 4, 4, offset, size, value) as u32;
+            // The driver acks a display event by writing its bit to
+            // events_clear; clear the matching events_read bits so the next
+            // GET_DISPLAY_INFO does not re-report a stale change.
+            self.events_read &= !self.events_clear;
+        }
     }
 }

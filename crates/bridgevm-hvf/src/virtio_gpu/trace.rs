@@ -1,14 +1,72 @@
-//! Continuation of the `magic_value` impl block, split for the 1000-line rule.
+//! Device-side JSONL trace emission and its sampling policy.
 
 use super::*;
-use crate::fwcfg::GuestMemoryMut;
+use crate::pcie::VIRTIO_GPU_MSIX_VECTOR_COUNT;
 use crate::virtio_gpu_3d::CompletedFence;
 use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_SUBMIT_3D;
 use crate::virtio_gpu_3d::VIRTIO_GPU_FLAG_FENCE;
 use crate::virtio_gpu_trace::write_json_string;
 use std::fmt::Write as _;
 
+pub(crate) fn trace_sample(count: u64) -> bool {
+    count <= 64 || count % 1024 == 0
+}
+
 impl VirtioGpu {
+    pub(crate) fn trace_device_init(&mut self, backend_3d: bool) {
+        let width = self.width;
+        let height = self.height;
+        self.record_trace_fields("device_init", |fields| {
+            let _ = write!(
+                fields,
+                ",\"width\":{},\"height\":{},\"device_id\":{},\"vendor_id\":{},\"queue_count\":{},\"queue_max\":{},\"msix_vectors\":{},\"backend_3d\":{},\"common_cfg_offset\":{},\"device_cfg_offset\":{},\"notify_cfg_offset\":{}",
+                width,
+                height,
+                DEVICE_ID_GPU,
+                VENDOR_ID_QEMU,
+                QUEUE_COUNT,
+                QUEUE_MAX,
+                VIRTIO_GPU_MSIX_VECTOR_COUNT,
+                backend_3d,
+                PCI_COMMON_CFG_OFFSET,
+                PCI_DEVICE_CFG_OFFSET,
+                PCI_NOTIFY_CFG_OFFSET
+            );
+        });
+    }
+
+    pub(crate) fn trace_common_read(&mut self, offset: u64, size: u8, value: u64) {
+        if !self.trace.enabled() {
+            return;
+        }
+        let field = match offset {
+            COMMON_DEVICE_FEATURE | REG_DEVICE_FEATURES => "device_features",
+            COMMON_DRIVER_FEATURE | REG_DRIVER_FEATURES => "driver_features",
+            COMMON_DEVICE_STATUS | REG_STATUS => "device_status",
+            COMMON_QUEUE_SIZE | REG_QUEUE_NUM => "queue_size",
+            COMMON_QUEUE_ENABLE | REG_QUEUE_READY => "queue_enable",
+            _ => return,
+        };
+        let device_features_sel = self.device_features_sel;
+        let driver_features_sel = self.driver_features_sel;
+        let queue_sel = self.queue_sel;
+        self.record_trace_fields("common_read", |fields| {
+            fields.push_str(",\"field\":");
+            write_json_string(fields, field);
+            let _ = write!(
+                fields,
+                ",\"offset\":{},\"size\":{},\"value\":{},\"value_hex\":\"{:#x}\",\"device_features_sel\":{},\"driver_features_sel\":{},\"queue_sel\":{}",
+                offset,
+                size,
+                value,
+                value,
+                device_features_sel,
+                driver_features_sel,
+                queue_sel
+            );
+        });
+    }
+
     pub(crate) fn trace_queue_notify(&mut self, queue_index: u16) {
         if !self.trace.enabled() {
             return;
@@ -207,114 +265,5 @@ impl VirtioGpu {
                 fence.ctx_id, fence.ring_idx, fence.fence_id, used_len
             );
         });
-    }
-
-    pub(crate) fn mark_queue_interrupt(&mut self, queue_index: usize) {
-        if let Some(queue) = self.queues.get_mut(queue_index) {
-            queue.pending_msix = true;
-            if let Some(bit) = queue_bit(queue_index) {
-                self.pending_msix_queue_bits |= bit;
-            }
-        }
-        self.interrupt_status |= 1;
-    }
-
-    pub(crate) fn descriptor_chain_into(
-        mem: &dyn GuestMemoryMut,
-        queue: &VirtioGpuQueue,
-        head: u16,
-        out: &mut Vec<Descriptor>,
-    ) -> bool {
-        out.clear();
-        let queue_size = queue.effective_size();
-        if head >= queue_size {
-            return false;
-        }
-        let mut index = head;
-        for _ in 0..queue_size {
-            let Some(desc) = Descriptor::read(mem, queue.desc + u64::from(index) * DESC_SIZE)
-            else {
-                return false;
-            };
-            let has_next = desc.flags & DESC_F_NEXT != 0;
-            out.push(desc);
-            if !has_next {
-                return true;
-            }
-            index = desc.next;
-            if index >= queue_size {
-                return false;
-            }
-        }
-        false
-    }
-
-    pub(crate) fn gather_readable_into(
-        mem: &dyn GuestMemoryMut,
-        descs: &[Descriptor],
-        out: &mut Vec<u8>,
-    ) {
-        out.clear();
-        for desc in descs {
-            if desc.flags & DESC_F_WRITE != 0 {
-                continue;
-            }
-            let start = out.len();
-            let Some(end) = start.checked_add(desc.len as usize) else {
-                out.clear();
-                return;
-            };
-            if end > MAX_GPU_REQUEST_LEN {
-                out.clear();
-                return;
-            }
-            if let Some(bytes) = mem.read_bytes(desc.addr, desc.len as usize) {
-                out.extend_from_slice(&bytes);
-            }
-        }
-    }
-
-    pub(crate) fn scatter_write(
-        mem: &mut dyn GuestMemoryMut,
-        descs: &[Descriptor],
-        bytes: &[u8],
-    ) -> u32 {
-        let mut offset = 0usize;
-        for desc in descs {
-            if desc.flags & DESC_F_WRITE == 0 {
-                continue;
-            }
-            let writable = (desc.len as usize).min(bytes.len().saturating_sub(offset));
-            if writable == 0 {
-                continue;
-            }
-            if !mem.write_bytes(desc.addr, &bytes[offset..offset + writable]) {
-                break;
-            }
-            offset += writable;
-            if offset == bytes.len() {
-                break;
-            }
-        }
-        u32::try_from(offset).unwrap_or(u32::MAX)
-    }
-
-    pub(crate) fn write_used(
-        mem: &mut dyn GuestMemoryMut,
-        queue: &VirtioGpuQueue,
-        id: u16,
-        len: u32,
-    ) {
-        if queue.device == 0 {
-            return;
-        }
-        let queue_size = queue.effective_size();
-        let Some(used_idx) = read_u16(mem, queue.device + 2) else {
-            return;
-        };
-        let elem = queue.device + 4 + u64::from(used_idx % queue_size) * 8;
-        let _ = mem.write_bytes(elem, &u32::from(id).to_le_bytes());
-        let _ = mem.write_bytes(elem + 4, &len.to_le_bytes());
-        let _ = mem.write_bytes(queue.device + 2, &used_idx.wrapping_add(1).to_le_bytes());
     }
 }
