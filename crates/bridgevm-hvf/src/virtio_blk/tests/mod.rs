@@ -1,3 +1,4 @@
+use super::legacy_transport::*;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 use std::fs;
