@@ -1,145 +1,71 @@
-//! Continuation of the `magic_value` impl block, split for the 1000-line rule.
+//! Scanout binding and flush: SET_SCANOUT, blob scanout, RESOURCE_FLUSH, framebuffer publish.
 
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
-use crate::pcie::VIRTIO_GPU_MSIX_VECTOR_COUNT;
 use crate::ramfb::DRM_FORMAT_XRGB8888;
-use crate::virtio_gpu_3d::BlobMemEntry;
 use crate::virtio_gpu_3d::VIRTIO_GPU_BLOB_MEM_GUEST;
 use crate::virtio_gpu_3d::VIRTIO_GPU_BLOB_MEM_HOST3D;
-use crate::virtio_gpu_trace::write_json_string;
 use std::fmt::Write as _;
 use std::time::Instant;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VirtioGpuScanout<'a> {
+    pub bytes: &'a [u8],
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub fourcc: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BlobScanout {
+    pub(crate) resource_id: u32,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) format: u32,
+    pub(crate) stride: u32,
+    pub(crate) offset: u32,
+    pub(crate) mapping: Option<BlobScanoutMapping>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BlobScanoutMapping {
+    pub(crate) ptr: *const u8,
+    pub(crate) len: usize,
+}
+
+unsafe impl Send for BlobScanoutMapping {}
+
+pub(crate) fn blob_surface_footprint(
+    width: u32,
+    height: u32,
+    stride: u32,
+    offset: u32,
+) -> Option<u64> {
+    u64::from(offset)
+        .checked_add(u64::from(height.saturating_sub(1)).checked_mul(u64::from(stride))?)?
+        .checked_add(u64::from(width).checked_mul(4)?)
+}
+
+pub(crate) fn scanout_len(width: u32, height: u32) -> usize {
+    u64::from(width)
+        .checked_mul(u64::from(height))
+        .and_then(|pixels| pixels.checked_mul(4))
+        .and_then(|bytes| usize::try_from(bytes).ok())
+        .expect("virtio-gpu scanout size overflow")
+}
+
 impl VirtioGpu {
-    pub(crate) fn resource_create_2d_into(
-        &mut self,
-        request: &[u8],
-        hdr: Option<CtrlHdr>,
-        out: &mut Vec<u8>,
-    ) {
-        let Some(resource_id) = read_le_u32(request, 24) else {
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
-            return;
-        };
-        let format = read_le_u32(request, 28).unwrap_or(0);
-        let width = read_le_u32(request, 32).unwrap_or(0);
-        let height = read_le_u32(request, 36).unwrap_or(0);
-        if resource_id == 0 || width == 0 || height == 0 || !format_supported(format) {
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
-            return;
-        }
-        let Some(len) = u64::from(width)
-            .checked_mul(u64::from(height))
-            .and_then(|pixels| pixels.checked_mul(4))
-            .and_then(|bytes| usize::try_from(bytes).ok())
-        else {
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
-            return;
-        };
-        self.resources.insert(
-            resource_id,
-            GpuResource {
-                format,
-                width,
-                height,
-                host_pixels: vec![0; len],
-                backing: Vec::new(),
+    pub fn scanout(&self) -> Option<VirtioGpuScanout<'_>> {
+        (self.scanout_resource.is_some() || self.blob_scanout.is_some()).then_some(
+            VirtioGpuScanout {
+                bytes: &self.scanout,
+                width: self.width,
+                height: self.height,
+                stride: self.width * 4,
+                fourcc: DRM_FORMAT_XRGB8888,
             },
-        );
-        self.three_d.register_2d_resource(resource_id);
-        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
-    }
-
-    pub(crate) fn resource_unref_into(
-        &mut self,
-        request: &[u8],
-        hdr: Option<CtrlHdr>,
-        out: &mut Vec<u8>,
-    ) {
-        if let Some(resource_id) = read_le_u32(request, 24) {
-            if self
-                .blob_scanout
-                .as_ref()
-                .map(|scanout| scanout.resource_id)
-                == Some(resource_id)
-            {
-                self.unbind_blob_scanout();
-            }
-            self.resources.remove(&resource_id);
-            self.three_d.unref_resource(resource_id);
-            if self.scanout_resource == Some(resource_id) {
-                self.scanout_resource = None;
-            }
-        }
-        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
-    }
-
-    pub(crate) fn attach_backing_into(
-        &mut self,
-        mem: &dyn GuestMemoryMut,
-        request: &[u8],
-        hdr: Option<CtrlHdr>,
-        out: &mut Vec<u8>,
-    ) {
-        let Some(resource_id) = read_le_u32(request, 24) else {
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
-            return;
-        };
-        let nr_entries = read_le_u32(request, 28).unwrap_or(0);
-        let Some(entries_len) = (nr_entries as usize).checked_mul(16) else {
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
-            return;
-        };
-        if request.len().saturating_sub(32) < entries_len {
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
-            return;
-        }
-        let mut backing = Vec::with_capacity(nr_entries as usize);
-        let mut offset = 32usize;
-        for _ in 0..nr_entries {
-            let addr = read_le_u64(request, offset).unwrap();
-            let len = read_le_u32(request, offset + 8).unwrap();
-            backing.push(BlobMemEntry { addr, len });
-            offset += 16;
-        }
-        if let Some(resource) = self.resources.get_mut(&resource_id) {
-            resource.backing.clear();
-            resource
-                .backing
-                .extend(backing.iter().map(|entry| BackingEntry {
-                    addr: entry.addr,
-                    len: entry.len,
-                }));
-        } else if self.three_d.is_3d_resource(resource_id) {
-            if !self.three_d.attach_3d_backing(mem, resource_id, &backing) {
-                response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
-                return;
-            }
-        } else {
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
-            return;
-        }
-        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
-    }
-
-    pub(crate) fn detach_backing_into(
-        &mut self,
-        request: &[u8],
-        hdr: Option<CtrlHdr>,
-        out: &mut Vec<u8>,
-    ) {
-        if let Some(resource_id) = read_le_u32(request, 24) {
-            if let Some(resource) = self.resources.get_mut(&resource_id) {
-                resource.backing.clear();
-            } else if self.three_d.is_3d_resource(resource_id)
-                && !self.three_d.detach_3d_backing(resource_id)
-            {
-                response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
-                return;
-            }
-        }
-        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
+        )
     }
 
     pub(crate) fn set_scanout_into(
@@ -279,29 +205,6 @@ impl VirtioGpu {
             offset,
             mapping,
         });
-        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
-    }
-
-    pub(crate) fn transfer_to_host_2d_into(
-        &mut self,
-        mem: &dyn GuestMemoryMut,
-        request: &[u8],
-        hdr: Option<CtrlHdr>,
-        out: &mut Vec<u8>,
-    ) {
-        let rect = read_rect(request, 24).unwrap_or(Rect {
-            x: 0,
-            y: 0,
-            width: 0,
-            height: 0,
-        });
-        let offset = read_le_u64(request, 40).unwrap_or(0);
-        let resource_id = read_le_u32(request, 48).unwrap_or(0);
-        let Some(resource) = self.resources.get_mut(&resource_id) else {
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
-            return;
-        };
-        copy_backing_to_resource(mem, resource, rect, offset);
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
     }
 
@@ -512,59 +415,5 @@ impl VirtioGpu {
                 self.three_d.scanout_unmap_blob(scanout.resource_id);
             }
         }
-    }
-
-    pub(crate) fn trace_device_init(&mut self, backend_3d: bool) {
-        let width = self.width;
-        let height = self.height;
-        self.record_trace_fields("device_init", |fields| {
-            let _ = write!(
-                fields,
-                ",\"width\":{},\"height\":{},\"device_id\":{},\"vendor_id\":{},\"queue_count\":{},\"queue_max\":{},\"msix_vectors\":{},\"backend_3d\":{},\"common_cfg_offset\":{},\"device_cfg_offset\":{},\"notify_cfg_offset\":{}",
-                width,
-                height,
-                DEVICE_ID_GPU,
-                VENDOR_ID_QEMU,
-                QUEUE_COUNT,
-                QUEUE_MAX,
-                VIRTIO_GPU_MSIX_VECTOR_COUNT,
-                backend_3d,
-                PCI_COMMON_CFG_OFFSET,
-                PCI_DEVICE_CFG_OFFSET,
-                PCI_NOTIFY_CFG_OFFSET
-            );
-        });
-    }
-
-    pub(crate) fn trace_common_read(&mut self, offset: u64, size: u8, value: u64) {
-        if !self.trace.enabled() {
-            return;
-        }
-        let field = match offset {
-            COMMON_DEVICE_FEATURE | REG_DEVICE_FEATURES => "device_features",
-            COMMON_DRIVER_FEATURE | REG_DRIVER_FEATURES => "driver_features",
-            COMMON_DEVICE_STATUS | REG_STATUS => "device_status",
-            COMMON_QUEUE_SIZE | REG_QUEUE_NUM => "queue_size",
-            COMMON_QUEUE_ENABLE | REG_QUEUE_READY => "queue_enable",
-            _ => return,
-        };
-        let device_features_sel = self.device_features_sel;
-        let driver_features_sel = self.driver_features_sel;
-        let queue_sel = self.queue_sel;
-        self.record_trace_fields("common_read", |fields| {
-            fields.push_str(",\"field\":");
-            write_json_string(fields, field);
-            let _ = write!(
-                fields,
-                ",\"offset\":{},\"size\":{},\"value\":{},\"value_hex\":\"{:#x}\",\"device_features_sel\":{},\"driver_features_sel\":{},\"queue_sel\":{}",
-                offset,
-                size,
-                value,
-                value,
-                device_features_sel,
-                driver_features_sel,
-                queue_sel
-            );
-        });
     }
 }
