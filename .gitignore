@@ -31,3 +31,7 @@ build/
 # Python bytecode from scripts/refactor tooling
 __pycache__/
 *.pyc
+
+# Local planning docs (untracked)
+GOAL.md
+PLAN.md
