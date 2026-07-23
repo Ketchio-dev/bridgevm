@@ -617,8 +617,7 @@ pub(crate) fn capture_gic_state() -> io::Result<Vec<u8>> {
 
     let state = GicState(unsafe { hv_gic_state_create() });
     if state.0.is_null() {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
+        return Err(io::Error::other(
             "hv_gic_state_create returned null; the VM must be fully stopped",
         ));
     }

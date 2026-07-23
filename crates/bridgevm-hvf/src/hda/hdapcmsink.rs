@@ -812,14 +812,12 @@ impl HdaController {
                 }
                 0
             }
-            0xa => (nid == CODEC_DAC)
-                .then_some(u32::from(self.codec.converter_format))
-                .unwrap_or(0),
-            0xb => (nid == CODEC_DAC)
-                .then_some(u32::from(
-                    self.codec.dac_amp_gain_mute[usize::from(payload16 & 0x2000 == 0)],
-                ))
-                .unwrap_or(0),
+            0xa if nid == CODEC_DAC => u32::from(self.codec.converter_format),
+            0xa => 0,
+            0xb if nid == CODEC_DAC => {
+                u32::from(self.codec.dac_amp_gain_mute[usize::from(payload16 & 0x2000 == 0)])
+            }
+            0xb => 0,
             _ => match verb12 {
                 0xf00 => codec_parameter(nid, payload8),
                 0xf01 if nid == CODEC_SPEAKER => u32::from(self.codec.connection_select),
@@ -829,9 +827,8 @@ impl HdaController {
                     }
                     0
                 }
-                0xf02 => (nid == CODEC_SPEAKER && payload8 == 0)
-                    .then_some(u32::from(CODEC_DAC))
-                    .unwrap_or(0),
+                0xf02 if nid == CODEC_SPEAKER && payload8 == 0 => u32::from(CODEC_DAC),
+                0xf02 => 0,
                 0xf05 if nid != CODEC_ROOT => {
                     power_state_response(self.codec.power_state[nid as usize])
                 }
@@ -901,7 +898,7 @@ impl HdaController {
 
     pub(crate) fn intsts(&self) -> u32 {
         let sources = self.interrupt_sources();
-        sources | (sources != 0).then_some(INTSTS_GIS).unwrap_or(0)
+        sources | if sources != 0 { INTSTS_GIS } else { 0 }
     }
 
     pub(crate) fn corb_pointer_mask(&self) -> u16 {

@@ -87,7 +87,7 @@ pub struct VirtPlatform {
     pub(crate) xhci_dci5_last_emission: Option<Instant>,
 }
 
-pub(crate) const _: fn() = || {
+const _: fn() = || {
     fn assert_send<T: Send>() {}
     assert_send::<crate::platform_virt::VirtPlatform>();
 };

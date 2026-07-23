@@ -21,10 +21,8 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
                     self.handle_tcp(packet, &tcp);
                 }
             }
-            IPV4_PROTOCOL_ICMP => {
-                if self.handle_icmp(packet).is_err() {
-                    self.pending_socket_errors = self.pending_socket_errors.saturating_add(1);
-                }
+            IPV4_PROTOCOL_ICMP if self.handle_icmp(packet).is_err() => {
+                self.pending_socket_errors = self.pending_socket_errors.saturating_add(1);
             }
             _ => {}
         }

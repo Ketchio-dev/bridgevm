@@ -7,7 +7,7 @@ pub(crate) fn attach_boot_media(
     ram_size: usize,
     vars_data: &[u8],
 ) {
-    platform.load_flash_vars(&vars_data);
+    platform.load_flash_vars(vars_data);
     if let Some(nvme) = media.nvme_disk.as_ref() {
         platform
             .attach_nvme_raw_file(&nvme.path, nvme.write_back)

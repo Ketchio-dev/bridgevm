@@ -1,7 +1,5 @@
 //! Shared fixtures for the crate's unit tests.
 
-#![cfg(test)]
-
 pub(crate) use crate::*;
 
 pub(crate) fn unique_store(prefix: &str) -> VmStore {

@@ -1,5 +1,7 @@
 # BridgeVM
 
+[![CI](https://github.com/Ketchio-dev/bridgevm/actions/workflows/ci.yml/badge.svg)](https://github.com/Ketchio-dev/bridgevm/actions/workflows/ci.yml)
+
 BridgeVM is an open-source, Mac-native virtualization project with three
 deliberately separate engines:
 
@@ -187,6 +189,44 @@ Before landing documentation changes, run:
 
 ```sh
 bash scripts/check-documentation-system.sh
+```
+
+## CI
+
+Every push to `main` and every pull request runs
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) with Rust 1.97.0:
+rustfmt, clippy with `-D warnings`, the locked workspace test suite on
+`macos-15` and `macos-26`, a fast Venus compile check, a native Venus gate, an
+MSRV 1.85.0 locked build, and the structural-debt budget gate. A weekly
+non-blocking advisory run checks the latest stable Rust toolchain.
+
+The native Venus gate builds BridgeVM's pinned and patched virglrenderer,
+verifies `libvirglrenderer.dylib` and the render server, links and runs the 740
+Venus library tests, and requires the host capset probe. The device smoke is
+reported as a hosted advisory because GitHub's macOS VM cannot create a CGL
+pixel format/context (`CGLChoosePixelFormat` returns `10002`); it passes on a
+real Apple-silicon host. The required gate therefore proves native build,
+ABI/link, tests, and host capset integration, but not a real guest boot or
+rendered frame. Hosted runners also lack nested virtualization, so real VM
+tests remain `#[ignore]`-d or gated behind `BRIDGEVM_LIVE_*`. End-to-end guest
+rendering requires a trusted, isolated
+self-hosted Apple-silicon runner and must never execute untrusted fork PR code.
+
+Reproduce the deterministic gates locally:
+
+```sh
+cargo +1.97.0 fmt --all --check
+cargo +1.97.0 clippy --workspace --all-targets --locked -- -D warnings
+RUSTFLAGS="-D warnings" cargo +1.97.0 test --workspace --locked
+cargo +1.85.0 check --workspace --locked
+scripts/check-refactor-budgets.sh
+
+# Requires the Homebrew dependencies checked by build-venus-host-deps.sh:
+scripts/build-venus-host-deps.sh
+scripts/verify-venus-native-artifacts.sh
+cargo +1.97.0 test -p bridgevm-hvf --lib --features venus --locked # 740 passed
+scripts/run-venus-host-probe.sh
+scripts/run-venus-device-smoke.sh
 ```
 
 Licensed under Apache-2.0.

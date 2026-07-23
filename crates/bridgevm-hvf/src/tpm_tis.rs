@@ -366,7 +366,7 @@ impl TpmTis {
         } else {
             (1u64 << (size as u32 * 8)) - 1
         };
-        ((value >> shift) & mask) as u64
+        (value >> shift) & mask
     }
 
     pub fn mmio_write(&mut self, offset: u64, size: u8, value: u64) {
@@ -583,9 +583,11 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
+    type RecordedCommands = Arc<Mutex<Vec<(u8, Vec<u8>)>>>;
+
     #[derive(Debug)]
     struct RecordingBackend {
-        commands: Arc<Mutex<Vec<(u8, Vec<u8>)>>>,
+        commands: RecordedCommands,
         response: Vec<u8>,
     }
 

@@ -622,6 +622,62 @@ pub(crate) fn vector_slot_instruction_is_populated(word: Option<u32>) -> bool {
     crate::windows_arm_vector_slot_instruction_is_populated(word)
 }
 
+pub(crate) fn stage1_descriptor_kind(descriptor: u64, level: u8) -> &'static str {
+    match (descriptor & 0x3, level) {
+        (0, _) => "invalid",
+        (1, 0..=2) => "block",
+        (1, _) => "reserved",
+        (3, 0..=2) => "table",
+        (3, _) => "page",
+        _ => "reserved",
+    }
+}
+
+pub(crate) fn stage1_descriptor_output_address(
+    descriptor: u64,
+    level: u8,
+    kind: &'static str,
+) -> Option<u64> {
+    let shift = match (kind, level) {
+        ("block", 0) => 39,
+        ("block", 1) => 30,
+        ("block", 2) => 21,
+        ("page", 3) => 12,
+        _ => return None,
+    };
+    let address_bits_mask = 0x0000_ffff_ffff_ffffu64;
+    Some(descriptor & address_bits_mask & !((1u64 << shift) - 1))
+}
+
+pub(crate) fn stage1_descriptor_span_bytes(level: u8, kind: &'static str) -> Option<u64> {
+    let shift = match (kind, level) {
+        ("block", 0) => 39,
+        ("block", 1) => 30,
+        ("block", 2) => 21,
+        ("page", 3) => 12,
+        _ => return None,
+    };
+    Some(1u64 << shift)
+}
+
+pub(crate) fn translate_stage1_leaf_virtual_address(
+    leaf: Stage1LeafDescriptor,
+    leaf_sample_virtual_address: u64,
+    virtual_address: u64,
+) -> Option<u64> {
+    let output_address = leaf.output_address?;
+    let span_bytes = stage1_descriptor_span_bytes(leaf.level, leaf.kind)?;
+    if span_bytes == 0 || !span_bytes.is_power_of_two() {
+        return None;
+    }
+    let leaf_base_virtual_address = leaf_sample_virtual_address & !(span_bytes - 1);
+    let leaf_end_virtual_address = leaf_base_virtual_address.checked_add(span_bytes)?;
+    if virtual_address < leaf_base_virtual_address || virtual_address >= leaf_end_virtual_address {
+        return None;
+    }
+    output_address.checked_add(virtual_address - leaf_base_virtual_address)
+}
+
 #[cfg(test)]
 mod stage1_vector_base_candidate_tests {
     use super::*;
@@ -732,60 +788,4 @@ mod stage1_vector_base_candidate_tests {
             "current-el-spx-populated-non-diagnostic"
         );
     }
-}
-
-pub(crate) fn stage1_descriptor_kind(descriptor: u64, level: u8) -> &'static str {
-    match (descriptor & 0x3, level) {
-        (0, _) => "invalid",
-        (1, 0..=2) => "block",
-        (1, _) => "reserved",
-        (3, 0..=2) => "table",
-        (3, _) => "page",
-        _ => "reserved",
-    }
-}
-
-pub(crate) fn stage1_descriptor_output_address(
-    descriptor: u64,
-    level: u8,
-    kind: &'static str,
-) -> Option<u64> {
-    let shift = match (kind, level) {
-        ("block", 0) => 39,
-        ("block", 1) => 30,
-        ("block", 2) => 21,
-        ("page", 3) => 12,
-        _ => return None,
-    };
-    let address_bits_mask = 0x0000_ffff_ffff_ffffu64;
-    Some(descriptor & address_bits_mask & !((1u64 << shift) - 1))
-}
-
-pub(crate) fn stage1_descriptor_span_bytes(level: u8, kind: &'static str) -> Option<u64> {
-    let shift = match (kind, level) {
-        ("block", 0) => 39,
-        ("block", 1) => 30,
-        ("block", 2) => 21,
-        ("page", 3) => 12,
-        _ => return None,
-    };
-    Some(1u64 << shift)
-}
-
-pub(crate) fn translate_stage1_leaf_virtual_address(
-    leaf: Stage1LeafDescriptor,
-    leaf_sample_virtual_address: u64,
-    virtual_address: u64,
-) -> Option<u64> {
-    let output_address = leaf.output_address?;
-    let span_bytes = stage1_descriptor_span_bytes(leaf.level, leaf.kind)?;
-    if span_bytes == 0 || !span_bytes.is_power_of_two() {
-        return None;
-    }
-    let leaf_base_virtual_address = leaf_sample_virtual_address & !(span_bytes - 1);
-    let leaf_end_virtual_address = leaf_base_virtual_address.checked_add(span_bytes)?;
-    if virtual_address < leaf_base_virtual_address || virtual_address >= leaf_end_virtual_address {
-        return None;
-    }
-    output_address.checked_add(virtual_address - leaf_base_virtual_address)
 }

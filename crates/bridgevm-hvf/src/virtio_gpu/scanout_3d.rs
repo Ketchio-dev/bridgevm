@@ -152,7 +152,7 @@ impl VirtioGpu {
         deferred: bool,
     ) -> ScanoutReadbackOutcome {
         let now = Instant::now();
-        let readback_due = self.last_3d_scanout_readback.map_or(true, |last| {
+        let readback_due = self.last_3d_scanout_readback.is_none_or(|last| {
             now.saturating_duration_since(last) >= self.scanout_readback_interval
         });
         if !readback_due {
@@ -234,9 +234,8 @@ impl VirtioGpu {
                 let matched_flip = flip == gpu_checksum;
                 let matched_swap = swap == gpu_checksum;
                 let matched_flip_swap = flip_swap == gpu_checksum;
-                if !(matched || matched_flip || matched_swap || matched_flip_swap)
-                    && !self.scanout_iosurface_dumped
-                {
+                let any_match = matched || matched_flip || matched_swap || matched_flip_swap;
+                if !(any_match || self.scanout_iosurface_dumped) {
                     // First unexplained mismatch: dump both buffers beside
                     // the trace JSONL for offline inspection.
                     self.scanout_iosurface_dumped = true;

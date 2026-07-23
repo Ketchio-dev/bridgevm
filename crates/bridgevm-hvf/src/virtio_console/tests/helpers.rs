@@ -220,18 +220,14 @@ impl GuestModel {
                 self.present.insert(control.id);
                 self.host_conn.entry(control.id).or_insert(false);
             }
-            VIRTIO_CONSOLE_PORT_NAME => {
+            VIRTIO_CONSOLE_PORT_NAME if self.present.contains(&control.id) => {
                 // VIOSerialPortCreateName only runs if the port resolves.
-                if self.present.contains(&control.id) {
-                    self.named.insert(control.id);
-                }
+                self.named.insert(control.id);
             }
-            VIRTIO_CONSOLE_PORT_OPEN => {
+            VIRTIO_CONSOLE_PORT_OPEN if self.present.contains(&control.id) => {
                 // VIOSerialHandleCtrlMsg PORT_OPEN: only latches when the
                 // port resolves; value drives HostConnected.
-                if self.present.contains(&control.id) {
-                    self.host_conn.insert(control.id, control.value != 0);
-                }
+                self.host_conn.insert(control.id, control.value != 0);
             }
             _ => {}
         }

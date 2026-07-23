@@ -159,7 +159,7 @@ impl NsPasteboardBackend {
 
     unsafe fn pasteboard(&mut self) -> ObjcId {
         if self.general.is_null() {
-            let class = objc_getClass(b"NSPasteboard\0".as_ptr().cast());
+            let class = objc_getClass(c"NSPasteboard".as_ptr().cast());
             if class.is_null() {
                 return std::ptr::null_mut();
             }
@@ -250,11 +250,11 @@ unsafe fn plain_text_type_string() -> ObjcId {
     // Build the pasteboard type NSString instead of linking the
     // NSPasteboardTypeString constant symbol; this keeps the FFI surface to
     // Objective-C runtime calls and avoids an extra AppKit extern symbol.
-    ns_string_from_utf8(b"public.utf8-plain-text\0".as_ptr().cast())
+    ns_string_from_utf8(c"public.utf8-plain-text".as_ptr().cast())
 }
 
 unsafe fn ns_string_from_utf8(bytes: *const c_char) -> ObjcId {
-    let class = objc_getClass(b"NSString\0".as_ptr().cast());
+    let class = objc_getClass(c"NSString".as_ptr().cast());
     if class.is_null() {
         return std::ptr::null_mut();
     }

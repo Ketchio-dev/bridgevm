@@ -28,17 +28,21 @@ export VK_ICD_FILENAMES="${VK_ICD_FILENAMES:-/opt/homebrew/share/vulkan/icd.d/Mo
 export DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/lib${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
 
 shim_path="tools/venus-host-probe/target/debug/libbridgevm_macos_shm_open_shim.dylib"
+cargo build -p bridgevm-hvf --features venus --example venus_device_smoke --locked
+
+insert_libraries="${DYLD_INSERT_LIBRARIES:-}"
 if [[ "$(uname -s)" == "Darwin" ]]; then
   mkdir -p "$(dirname "$shim_path")"
   cc -dynamiclib \
     -o "$shim_path" \
     tools/venus-host-probe/macos_shm_open_shim.c
-  export DYLD_INSERT_LIBRARIES="$PWD/$shim_path${DYLD_INSERT_LIBRARIES:+:$DYLD_INSERT_LIBRARIES}"
+  insert_libraries="$PWD/$shim_path${insert_libraries:+:$insert_libraries}"
 fi
 
 set +e
 output="$(
-  cargo run -p bridgevm-hvf --features venus --example venus_device_smoke 2>&1
+  DYLD_INSERT_LIBRARIES="$insert_libraries" \
+    target/debug/examples/venus_device_smoke 2>&1
 )"
 status=$?
 set -e

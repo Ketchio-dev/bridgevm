@@ -27,7 +27,7 @@ export RENDER_SERVER_EXEC_PATH="$server_path"
 export VK_ICD_FILENAMES="${VK_ICD_FILENAMES:-/opt/homebrew/share/vulkan/icd.d/MoltenVK_icd.json}"
 export DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/lib${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
 
-cargo build --manifest-path tools/venus-host-probe/Cargo.toml
+cargo build --manifest-path tools/venus-host-probe/Cargo.toml --locked
 
 shim_path="tools/venus-host-probe/target/debug/libbridgevm_macos_shm_open_shim.dylib"
 if [[ "$(uname -s)" == "Darwin" ]]; then

@@ -107,6 +107,10 @@ use ssh_runtime::*;
 use title_gate::*;
 use vm_cmds::*;
 
+fn main() -> anyhow::Result<()> {
+    entry::run()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,8 +130,4 @@ mod tests {
         assert!(!output.contains("qemu-system"));
         assert!(!output.contains('%'));
     }
-}
-
-fn main() -> anyhow::Result<()> {
-    entry::run()
 }

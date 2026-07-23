@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 8 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: 1.97.0
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: clippy (-D warnings)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: 1.97.0
+          components: clippy
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    # Hosted macOS runners lack nested virtualization, so tests that boot a
+    # real VM must be #[ignore]-d or env-gated (BRIDGEVM_LIVE_*).
+    timeout-minutes: 45
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: 1.97.0
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+      - run: cargo test --workspace --locked
+
+  check-venus:
+    name: check venus feature
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: 1.97.0
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+      - run: cargo check -p bridgevm-hvf --all-targets --features venus --locked
+
+  test-venus-native:
+    name: test venus native
+    runs-on: macos-15
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure Venus paths
+        run: |
+          echo "BRIDGEVM_3D_DIR=$RUNNER_TEMP/bridgevm-3d" >> "$GITHUB_ENV"
+          echo "BRIDGEVM_VENUS_PREFIX=$RUNNER_TEMP/bridgevm-3d/prefix" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: 1.97.0
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          key: venus-native
+      - name: Cache patched virglrenderer
+        id: virgl-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/bridgevm-3d
+          key: virgl-macos-15-arm64-2a173ee-${{ hashFiles('scripts/build-venus-host-deps.sh', 'scripts/patches/virglrenderer-macos-venus.patch') }}
+      - name: Install Venus build dependencies
+        run: |
+          brew install meson ninja pkgconf libepoxy molten-vk vulkan-loader vulkan-headers
+          python3 -m pip install --break-system-packages pyyaml
+      - name: Build patched virglrenderer
+        if: steps.virgl-cache.outputs.cache-hit != 'true'
+        run: scripts/build-venus-host-deps.sh
+      - name: Verify native Venus artifacts
+        run: scripts/verify-venus-native-artifacts.sh
+      - name: Link and test Venus support
+        run: cargo test -p bridgevm-hvf --lib --features venus --locked
+      - name: Run Venus host probe
+        run: scripts/run-venus-host-probe.sh
+      # GitHub-hosted macOS currently cannot create a CGL pixel format/context
+      # (CGLChoosePixelFormat returns 10002). Keep this probe visible, but do
+      # not weaken the required native build/link/740-test/host-probe gate.
+      - name: Run Venus device smoke (hosted advisory)
+        continue-on-error: true
+        run: scripts/run-venus-device-smoke.sh
+
+  msrv:
+    name: msrv (1.85)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: 1.85.0
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+      - run: cargo check --workspace --locked
+
+  budgets:
+    name: refactor budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: scripts/check-refactor-budgets.sh
+
+  stable-advisory:
+    name: latest stable advisory
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    continue-on-error: true
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+          components: clippy
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          key: stable-advisory
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings

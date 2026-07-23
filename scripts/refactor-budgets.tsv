@@ -288,7 +288,7 @@ crates/bridgevm-hvf/src/platform_virt/soc_devices.rs	51	0
 crates/bridgevm-hvf/src/platform_virt/storage_devices.rs	263	0
 crates/bridgevm-hvf/src/platform_virt/tests/helpers.rs	705	0
 crates/bridgevm-hvf/src/platform_virt/tests/mod.rs	7	0
-crates/bridgevm-hvf/src/platform_virt/tests/part_1.rs	578	0
+crates/bridgevm-hvf/src/platform_virt/tests/part_1.rs	580	0
 crates/bridgevm-hvf/src/platform_virt/tests/part_2.rs	594	0
 crates/bridgevm-hvf/src/platform_virt/tests/part_2_2.rs	544	0
 crates/bridgevm-hvf/src/platform_virt/tests/part_3.rs	454	0
@@ -348,7 +348,7 @@ crates/bridgevm-hvf/src/smbios.rs	403	0
 crates/bridgevm-hvf/src/stage1.rs	447	0
 crates/bridgevm-hvf/src/support.rs	70	0
 crates/bridgevm-hvf/src/tpm_ppi.rs	196	0
-crates/bridgevm-hvf/src/tpm_tis.rs	824	0
+crates/bridgevm-hvf/src/tpm_tis.rs	826	0
 crates/bridgevm-hvf/src/venus_backend/map_resource_ref.rs	347	14
 crates/bridgevm-hvf/src/venus_backend/mod.rs	10	0
 crates/bridgevm-hvf/src/venus_backend/tests/helpers.rs	1	0
@@ -387,7 +387,7 @@ crates/bridgevm-hvf/src/virtio_console/transport_regs.rs	357	0
 crates/bridgevm-hvf/src/virtio_console/virtqueue.rs	288	0
 crates/bridgevm-hvf/src/virtio_gpu/bytes.rs	32	0
 crates/bridgevm-hvf/src/virtio_gpu/command.rs	100	0
-crates/bridgevm-hvf/src/virtio_gpu/compositor.rs	245	0
+crates/bridgevm-hvf/src/virtio_gpu/compositor.rs	246	0
 crates/bridgevm-hvf/src/virtio_gpu/config_space.rs	459	0
 crates/bridgevm-hvf/src/virtio_gpu/device.rs	301	0
 crates/bridgevm-hvf/src/virtio_gpu/display.rs	200	0

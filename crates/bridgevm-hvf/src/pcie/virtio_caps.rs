@@ -193,10 +193,8 @@ fn capability_list_inner(
 }
 
 fn push_bytes(cap_bytes: &mut Vec<(u16, u8)>, offset: u8, bytes: &[u8]) {
-    let mut register = u16::from(offset);
-    for byte in bytes {
+    for (register, byte) in (u16::from(offset)..).zip(bytes) {
         cap_bytes.push((register, *byte));
-        register += 1;
     }
 }
 

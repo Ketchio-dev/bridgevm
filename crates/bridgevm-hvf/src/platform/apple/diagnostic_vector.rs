@@ -79,45 +79,6 @@ pub(crate) fn arm_diagnostic_eret_resume(
     status
 }
 
-#[cfg(test)]
-mod diagnostic_vector_resume_tests {
-    use super::*;
-
-    #[test]
-    fn original_context_resume_status_treats_unrequested_vbar_as_success() {
-        let status = DiagnosticVectorOriginalContextResumeStatus {
-            elr_status: HV_SUCCESS,
-            vbar_status: None,
-            spsr_status: HV_SUCCESS,
-            pc_status: HV_SUCCESS,
-        };
-
-        assert_eq!(status.vbar_effective_status(), HV_SUCCESS);
-        assert!(status.succeeded());
-    }
-
-    #[test]
-    fn original_context_resume_status_reports_elr_and_vbar_failures() {
-        let vbar_failed_status = DiagnosticVectorOriginalContextResumeStatus {
-            elr_status: HV_SUCCESS,
-            vbar_status: Some(0x2),
-            spsr_status: HV_SUCCESS,
-            pc_status: HV_SUCCESS,
-        };
-        let elr_failed_status = DiagnosticVectorOriginalContextResumeStatus {
-            elr_status: -1,
-            vbar_status: None,
-            spsr_status: -1,
-            pc_status: -1,
-        };
-
-        assert_eq!(vbar_failed_status.vbar_effective_status(), 0x2);
-        assert!(!vbar_failed_status.succeeded());
-        assert_eq!(elr_failed_status.vbar_effective_status(), -1);
-        assert!(!elr_failed_status.succeeded());
-    }
-}
-
 pub(crate) fn executable_diagnostic_vector_route() -> DiagnosticVectorRoute {
     DiagnosticVectorRoute {
         vbar_el1: WINDOWS_ARM_EXECUTABLE_DIAGNOSTIC_VECTOR_IPA,
@@ -196,4 +157,43 @@ pub(crate) fn low_vector_diagnostic_page_eret_landing_stop(
     exit: &WindowsArmUefiFirmwareRunLoopExit,
 ) -> bool {
     diagnostic_vector_eret_landing_stop(exit, low_vector_diagnostic_page_route())
+}
+
+#[cfg(test)]
+mod diagnostic_vector_resume_tests {
+    use super::*;
+
+    #[test]
+    fn original_context_resume_status_treats_unrequested_vbar_as_success() {
+        let status = DiagnosticVectorOriginalContextResumeStatus {
+            elr_status: HV_SUCCESS,
+            vbar_status: None,
+            spsr_status: HV_SUCCESS,
+            pc_status: HV_SUCCESS,
+        };
+
+        assert_eq!(status.vbar_effective_status(), HV_SUCCESS);
+        assert!(status.succeeded());
+    }
+
+    #[test]
+    fn original_context_resume_status_reports_elr_and_vbar_failures() {
+        let vbar_failed_status = DiagnosticVectorOriginalContextResumeStatus {
+            elr_status: HV_SUCCESS,
+            vbar_status: Some(0x2),
+            spsr_status: HV_SUCCESS,
+            pc_status: HV_SUCCESS,
+        };
+        let elr_failed_status = DiagnosticVectorOriginalContextResumeStatus {
+            elr_status: -1,
+            vbar_status: None,
+            spsr_status: -1,
+            pc_status: -1,
+        };
+
+        assert_eq!(vbar_failed_status.vbar_effective_status(), 0x2);
+        assert!(!vbar_failed_status.succeeded());
+        assert_eq!(elr_failed_status.vbar_effective_status(), -1);
+        assert!(!elr_failed_status.succeeded());
+    }
 }
