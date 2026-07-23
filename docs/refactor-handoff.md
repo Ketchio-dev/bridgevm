@@ -142,6 +142,9 @@ caught by compiling or by a round-trip check.
 each file, reassemble its items in the original order, and require an exact match
 with the original. All seven of the above were found that way.
 
+The tooling that did this work is in `scripts/refactor/` — see its README. It
+already handles all seven traps, and `roundtrip.py` is the check itself.
+
 Two more habits that paid off:
 
 - Refuse to write anything unless **every** parsed item and method has been
