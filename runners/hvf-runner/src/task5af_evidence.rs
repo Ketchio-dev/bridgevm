@@ -1,10 +1,14 @@
-use anyhow::{bail, Context, Result};
-use sha2::{Digest, Sha256};
-use std::{
-    fs::{self, OpenOptions},
-    io::{ErrorKind, Read, Write},
-    path::Path,
-};
+use anyhow::bail;
+use anyhow::Context;
+use anyhow::Result;
+use sha2::Digest;
+use sha2::Sha256;
+use std::fs;
+use std::fs::OpenOptions;
+use std::io::ErrorKind;
+use std::io::Read;
+use std::io::Write;
+use std::path::Path;
 
 pub(crate) fn reject_symlinked_evidence_component(
     evidence_dir: &Path,

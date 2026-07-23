@@ -1,13 +1,18 @@
-use crate::task5af_evidence::{reject_symlinked_evidence_component, sha256_file, write_new_file};
-use anyhow::{bail, Context, Result};
+use crate::task5af_evidence::reject_symlinked_evidence_component;
+use crate::task5af_evidence::sha256_file;
+use crate::task5af_evidence::write_new_file;
+use anyhow::bail;
+use anyhow::Context;
+use anyhow::Result;
 use serde::Serialize;
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 
 const SCHEMA: &str = "bridgevm.task5af.live_row.v1";
 const TASK: &str = "5af";

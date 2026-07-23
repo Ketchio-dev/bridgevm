@@ -1,0 +1,227 @@
+//! Continuation of the `qmp_supervisor_drain_limit` impl block, split for the 1000-line rule.
+
+use super::*;
+
+use anyhow::Context;
+use anyhow::Result;
+use bridgevm_api::add_fast_spawn_runner_required_blocker;
+use bridgevm_api::compatibility_launch_dependency_blockers;
+use bridgevm_api::compatibility_launch_readiness_metadata;
+use bridgevm_api::fast_spawn_runner_required_error;
+use bridgevm_api::handle_request;
+use bridgevm_api::BridgeVmRequest;
+use bridgevm_api::BridgeVmResponse;
+use bridgevm_api::CurrentRuntimeEngine;
+use bridgevm_qemu::assign_free_vnc_display;
+use bridgevm_qemu::build_compatibility_command;
+use bridgevm_qemu::qmp_socket_path;
+use bridgevm_storage::LaunchReadinessMetadata;
+use bridgevm_storage::RunnerMetadata;
+use bridgevm_storage::VmRuntimeState;
+use std::fs;
+use std::process::Command;
+use std::process::Stdio;
+
+impl DaemonState {
+    pub(crate) fn reconcile_children(&mut self) -> Result<()> {
+        let mut exited = Vec::new();
+        let mut terminal = Vec::new();
+        for (name, backend) in &mut self.children {
+            if backend
+                .child
+                .try_wait()
+                .with_context(|| format!("failed to poll backend '{name}'"))?
+                .is_some()
+            {
+                exited.push(name.clone());
+                continue;
+            }
+
+            let Ok((bundle, _)) = self.store.get_vm(name) else {
+                continue;
+            };
+
+            if let Err(error) = reconcile_guest_tools_session(&self.store, name, backend) {
+                eprintln!("bridgevmd guest-tools supervisor failed for '{name}': {error:#}");
+            }
+            if let Err(error) = drain_guest_tools_messages(&self.store, name, backend) {
+                eprintln!("bridgevmd guest-tools drain failed for '{name}': {error:#}");
+            }
+            if let Err(error) = refresh_proxy_window_crop_artifacts(&self.store, name, backend) {
+                eprintln!("bridgevmd proxy-window crop refresh failed for '{name}': {error}");
+            }
+
+            let socket_path = qmp_socket_path(&bundle);
+            if !socket_path.exists() {
+                continue;
+            }
+
+            if backend.qmp.is_none() {
+                backend.qmp = connect_supervisor_qmp(&socket_path).ok();
+            }
+
+            let qmp_report = qmp_supervisor_report(&mut backend.qmp, &socket_path);
+            if let Some(drain) = qmp_report.drain.as_ref() {
+                if let Err(error) = write_qmp_supervisor_metadata(&self.store, name, drain) {
+                    eprintln!("bridgevmd QMP supervisor metadata failed for '{name}': {error:#}");
+                }
+            }
+            if qmp_report.terminal {
+                terminal.push(name.clone());
+            }
+        }
+
+        for name in exited {
+            self.children.remove(&name);
+            let _ = self.store.transition_state(&name, VmRuntimeState::Stopped);
+            self.store
+                .clear_runner_metadata(&name)
+                .with_context(|| format!("failed to clear runner metadata for '{name}'"))?;
+        }
+        for name in terminal {
+            if self.children.contains_key(&name) {
+                self.cleanup_owned_backend(&name, false)
+                    .with_context(|| format!("failed to clean up terminal backend '{name}'"))?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn spawn_backend(&mut self, name: &str) -> Result<BridgeVmResponse> {
+        if self.children.contains_key(name) {
+            anyhow::bail!("backend is already running for '{name}'");
+        }
+
+        let (bundle, manifest, _) = self
+            .store
+            .get_vm_with_active_disk(name)
+            .context("failed to read VM")?;
+        let runtime_engine = CurrentRuntimeEngine::for_manifest(&manifest);
+        if runtime_engine == CurrentRuntimeEngine::AppleVz {
+            if let Some(config) = FastModeSpawnConfig::from_env()? {
+                return self.spawn_fast_backend(name, bundle, manifest, config);
+            }
+
+            let response = handle_request(
+                &self.store,
+                BridgeVmRequest::RunBackend {
+                    name: name.to_string(),
+                    spawn: false,
+                },
+            )
+            .into_result()
+            .map_err(anyhow::Error::msg)?;
+            let BridgeVmResponse::RunnerStatus {
+                metadata: Some(mut metadata),
+                ..
+            } = response
+            else {
+                anyhow::bail!("Fast Mode dry-run planning did not return runner metadata");
+            };
+            let readiness =
+                metadata
+                    .launch_readiness
+                    .get_or_insert_with(|| LaunchReadinessMetadata {
+                        ready: false,
+                        blockers: Vec::new(),
+                    });
+            add_fast_spawn_runner_required_blocker(readiness);
+            let spawn_error = fast_spawn_runner_required_error(readiness);
+            self.store
+                .write_runner_metadata(name, &metadata)
+                .context("failed to write Fast Mode runner metadata")?;
+            anyhow::bail!("{}", spawn_error);
+        }
+        let (disk, active_disk) = self
+            .store
+            .prepare_active_disk(name)
+            .context("failed to prepare active disk")?;
+        if !disk.exists {
+            if let Some(command) = &disk.create_command {
+                anyhow::bail!(
+                    "active disk is not ready: {}; create it with: {}",
+                    disk.path.display(),
+                    command.join(" ")
+                );
+            }
+            anyhow::bail!("active disk is not ready: {}", disk.path.display());
+        }
+
+        let mut command = build_compatibility_command(&manifest, &bundle)
+            .map_err(|error| anyhow::anyhow!("{}", compatibility_qemu_command_error(error)))?;
+        let readiness = compatibility_launch_readiness_metadata(
+            &disk,
+            compatibility_launch_dependency_blockers(&manifest, &bundle),
+        );
+        if !readiness.ready {
+            anyhow::bail!(
+                "Compatibility Mode launch readiness failed: {}",
+                launch_readiness_blocker_summary(&readiness)
+            );
+        }
+        // Pin this VM to a free VNC display so concurrent Compat VMs don't
+        // collide on TCP 5900. Avoid displays already handed to live children
+        // (their QEMU may not have bound the port yet, so a bare probe would
+        // hand the same :0 to two back-to-back launches).
+        let avoid = self.live_vnc_displays();
+        assign_free_vnc_display(&mut command, &avoid).map_err(|error| anyhow::anyhow!(error))?;
+        // Test-only escape hatch (mirrors BRIDGEVM_APPLE_VZ_RUNNER): append extra
+        // QEMU args without touching the product command builder. The
+        // application-consistent live opt-in smoke uses this to attach a NoCloud
+        // cidata seed ISO so a daemon-owned guest can boot the agent. Args are
+        // shell-word split; empty/unset means no change.
+        let extra_compat_args = compat_extra_qemu_args();
+        let log_path = bundle.join("logs").join("qemu.log");
+        let guest_tools = self
+            .store
+            .guest_tools_runner_metadata(name)
+            .context("failed to prepare guest tools runner metadata")?;
+        fs::create_dir_all(bundle.join("logs")).context("failed to create VM log directory")?;
+        let stdout = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .context("failed to open QEMU log file")?;
+        let stderr = stdout
+            .try_clone()
+            .context("failed to clone QEMU log file")?;
+        let child = Command::new(&command.program)
+            .args(&command.args)
+            .args(&extra_compat_args)
+            .stdout(Stdio::from(stdout))
+            .stderr(Stdio::from(stderr))
+            .spawn()
+            .with_context(|| format!("failed to spawn {}", command.program))?;
+
+        let metadata = RunnerMetadata {
+            engine: runtime_engine.runner_metadata_engine().to_string(),
+            pid: Some(child.id()),
+            command: command.render_shell_words(),
+            log_path,
+            started_at_unix: now_unix(),
+            dry_run: false,
+            launch_spec_path: None,
+            guest_tools: Some(guest_tools),
+            disk: Some(disk),
+            active_disk: Some(active_disk),
+            launch_readiness: None,
+            runtime_control: None,
+        };
+        self.store
+            .write_runner_metadata(name, &metadata)
+            .context("failed to write runner metadata")?;
+        self.store
+            .transition_state(name, VmRuntimeState::Running)
+            .context("failed to mark VM running")?;
+        self.children
+            .insert(name.to_string(), SupervisedBackend::new(child));
+
+        Ok(BridgeVmResponse::RunnerStatus {
+            metadata: Some(metadata),
+            qmp_supervisor: self
+                .store
+                .qmp_supervisor_metadata(name)
+                .context("failed to read QMP supervisor metadata")?,
+        })
+    }
+}
