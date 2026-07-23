@@ -1,8 +1,22 @@
-//! Split out of platform_virt.rs to keep files under 850 lines.
+//! Host-side flat guest-RAM view and the firmware/DTB/RAM address-space layout.
 
+use super::*;
 use crate::fwcfg::GuestMemoryMut;
-use std::time::Duration;
-use std::time::Instant;
+use crate::machine;
+use crate::machine::Region;
+
+/// Where the firmware, device tree and RAM live in the guest address space.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GuestMemoryLayout {
+    /// pflash bank 0 — firmware code (read-only).
+    pub flash_code: Region,
+    /// pflash bank 1 — UEFI variable store (writable).
+    pub flash_vars: Region,
+    /// System RAM.
+    pub ram: Region,
+    /// Address the flattened device tree is loaded at (inside RAM).
+    pub dtb_load: u64,
+}
 
 /// A flat span of guest RAM implementing [`GuestMemoryMut`]. In live use the run
 /// loop supplies a view over the HVF-mapped guest memory instead; this is the
@@ -13,6 +27,19 @@ pub struct FlatGuestRam {
     pub(crate) bytes: Vec<u8>,
 }
 
+impl VirtPlatform {
+    /// The guest memory layout. The DTB is placed at the base of RAM, where the
+    /// firmware looks for it; the kernel/initrd are loaded above it.
+    pub fn memory_layout(&self) -> GuestMemoryLayout {
+        GuestMemoryLayout {
+            flash_code: machine::FLASH_CODE,
+            flash_vars: machine::FLASH_VARS,
+            ram: Region::new(machine::RAM_BASE, self.cfg.ram_size),
+            dtb_load: machine::RAM_BASE,
+        }
+    }
+}
+
 impl FlatGuestRam {
     pub fn new(base: u64, len: usize) -> Self {
         Self {
@@ -20,6 +47,7 @@ impl FlatGuestRam {
             bytes: vec![0u8; len],
         }
     }
+
     pub(crate) fn offset(&self, gpa: u64) -> Option<usize> {
         gpa.checked_sub(self.base)
             .and_then(|value| usize::try_from(value).ok())
@@ -40,6 +68,7 @@ impl GuestMemoryMut for FlatGuestRam {
         self.bytes[start..end].copy_from_slice(data);
         true
     }
+
     fn read_bytes(&self, gpa: u64, len: usize) -> Option<Vec<u8>> {
         let start = self.offset(gpa)?;
         let end = start.checked_add(len)?;
@@ -70,23 +99,5 @@ impl GuestMemoryMut for FlatGuestRam {
             return None;
         }
         Some(self.bytes.as_ptr().wrapping_add(start) as *mut u8)
-    }
-}
-
-/// Report-pacing decision. A zero interval or a not-yet-emitted endpoint always
-/// permits the next report; otherwise the caller must wait until `interval` has
-/// elapsed since `last_emission`. Kept as a free function so the gate is unit
-/// tested deterministically with synthetic `Instant`s.
-pub(crate) fn report_pacing_allows_emission(
-    interval: Duration,
-    last_emission: Option<Instant>,
-    now: Instant,
-) -> bool {
-    if interval.is_zero() {
-        return true;
-    }
-    match last_emission {
-        None => true,
-        Some(last) => now.saturating_duration_since(last) >= interval,
     }
 }

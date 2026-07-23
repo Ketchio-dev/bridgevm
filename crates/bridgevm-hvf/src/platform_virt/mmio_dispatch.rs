@@ -1,21 +1,8 @@
-//! Continuation of the `default_nvme_disk_bytes` impl block, split for the 1000-line rule.
+//! Machine-map address decode and routing of every guest MMIO/PIO access to the owning device.
 
 use super::*;
-
-use crate::acpi::ACPI_LOADER_FILE;
-use crate::acpi::ACPI_RSDP_FILE;
-use crate::acpi::ACPI_TABLE_FILE;
 use crate::fwcfg::GuestMemoryMut;
-use crate::fwcfg::KEY_CMDLINE_DATA;
-use crate::fwcfg::KEY_CMDLINE_SIZE;
-use crate::fwcfg::KEY_INITRD_DATA;
-use crate::fwcfg::KEY_INITRD_SIZE;
-use crate::fwcfg::KEY_KERNEL_DATA;
-use crate::fwcfg::KEY_KERNEL_SIZE;
 use crate::machine;
-use crate::machine::Region;
-use crate::msix::MsixMessage;
-use crate::nvme::NvmeCommandTrace;
 use crate::nvme::REG_CC;
 use crate::nvme::REG_DOORBELL_BASE;
 use crate::pcie::CfgAddr;
@@ -28,57 +15,27 @@ use crate::pcie::VIRTIO_CONSOLE_BDF;
 use crate::pcie::VIRTIO_GPU_BDF;
 use crate::pcie::VIRTIO_NET_BDF;
 use crate::pcie::XHCI_BDF;
-use crate::smbios::SMBIOS_ANCHOR_FILE;
-use crate::smbios::SMBIOS_TABLE_FILE;
 use crate::virtio_blk::VirtioMmioBlockResult;
-use crate::virtio_blk::VirtioPciBlockOp;
 use crate::virtio_blk::INSTALLER_ISO_SLOT;
-use crate::virtio_gpu::VirtioGpuResult;
-use crate::virtio_gpu::VirtioPciGpuOp;
-use crate::virtio_net::VirtioNetResult;
-use crate::virtio_net::VirtioPciNetOp;
-use std::io;
+
+/// `BRIDGEVM_TRACE_VENUS_START=1`: log every MMIO access that decodes to any
+/// virtio-gpu BAR (MSI-X table BAR1, shm window BAR2, modern transport BAR4).
+/// The venus KMD dies before its first BAR4 common-config write, so the first
+/// BAR the KMD actually touches — and the last access before the reboot — is
+/// the divergence evidence. First 256 accesses, then sampled.
+pub(crate) fn venus_start_trace_gpu_bar_access(bar_index: usize, offset: u64, op: &MmioOp) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    if !crate::virtio_gpu_trace::venus_start_trace_enabled() {
+        return;
+    }
+    static COUNT: AtomicU64 = AtomicU64::new(0);
+    let n = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+    if n <= 256 || n % 1024 == 0 {
+        println!("venus-start: gpu bar{bar_index} off={offset:#x} {op:?} n={n}");
+    }
+}
 
 impl VirtPlatform {
-    /// Flush write-through NVMe media.
-    pub fn flush_nvme_disk(&mut self) -> io::Result<()> {
-        self.nvme.flush_disk()
-    }
-
-    pub fn flush_nvme_second_namespace_disk(&mut self) -> io::Result<()> {
-        self.nvme.flush_second_namespace_disk()
-    }
-
-    /// Current byte length of the NVMe namespace backing media.
-    pub fn nvme_disk_len(&self) -> u64 {
-        self.nvme.disk_len()
-    }
-
-    pub fn nvme_second_namespace_disk_len(&self) -> Option<u64> {
-        self.nvme.second_namespace_disk_len()
-    }
-
-    /// Recent NVMe commands processed by the controller, oldest first. Live
-    /// probes use this to diagnose Windows setup stalls without enabling a
-    /// firehose of per-command logging.
-    pub fn nvme_command_trace(&self) -> Vec<NvmeCommandTrace> {
-        self.nvme.recent_command_trace()
-    }
-
-    pub fn nvme_pcie_liveness(&self) -> NvmePcieLiveness {
-        let state = self.pcie.nvme_endpoint_state();
-        NvmePcieLiveness {
-            nvme_advertised: state.advertised,
-            nvme_ecam_touched: self.nvme_ecam_touched,
-            nvme_command_memory_enabled: state.command_memory_enabled,
-            nvme_command_bus_master_enabled: state.command_bus_master_enabled,
-            nvme_bar0_assigned: state.bar0_assigned,
-            nvme_mmio_reached: self.nvme_mmio_reached,
-            nvme_cc_enabled: self.nvme_cc_enabled,
-            nvme_admin_doorbell_rung: self.nvme_admin_doorbell_rung,
-        }
-    }
-
     /// Resolve a guest-physical PCIe MMIO address against the currently
     /// programmed endpoint BARs without dispatching the access.
     pub fn pcie_mmio_target(&self, gpa: u64) -> Option<PcieMmioTarget> {
@@ -90,102 +47,6 @@ impl VirtPlatform {
     pub fn pcie_pio_target(&self, gpa: u64) -> Option<PciePioTarget> {
         let port = gpa.checked_sub(machine::PCIE_PIO.base)?;
         self.pcie.pio_target(port)
-    }
-
-    /// Drain MSI-X messages raised by PCIe devices since the last call. The live
-    /// HVF run loop turns these into `hv_gic_send_msi` calls after configuring
-    /// Apple `hv_gic`'s MSI frame.
-    pub fn take_pending_msix(&mut self) -> Vec<MsixMessage> {
-        if self.pending_msix.is_empty() {
-            Vec::new()
-        } else {
-            self.pending_msix.drain(..).collect()
-        }
-    }
-
-    /// Drain pending MSI-X messages into caller-owned storage.
-    pub fn drain_pending_msix_into(&mut self, out: &mut Vec<MsixMessage>) {
-        out.append(&mut self.pending_msix);
-    }
-
-    /// Drain level changes for legacy SPI-backed devices such as virtio-mmio.
-    /// The live HVF loop turns these into `hv_gic_set_spi(intid, level)`.
-    pub fn take_pending_spi_levels(&mut self) -> Vec<(u32, bool)> {
-        if self.pending_spi_levels.is_empty() {
-            Vec::new()
-        } else {
-            self.pending_spi_levels.drain(..).collect()
-        }
-    }
-
-    /// Drain pending SPI level changes into caller-owned storage.
-    pub fn drain_pending_spi_levels_into(&mut self, out: &mut Vec<(u32, bool)>) {
-        out.append(&mut self.pending_spi_levels);
-    }
-
-    /// Register QEMU direct-Linux-boot payloads in the fixed fw_cfg slots that
-    /// ArmVirtQemu's `QemuKernelLoaderFsDxe` reads before BDS falls through to
-    /// normal boot options. `cmdline` must include the terminating NUL byte.
-    pub fn set_linux_boot_blobs(
-        &mut self,
-        kernel: Vec<u8>,
-        initrd: Option<Vec<u8>>,
-        cmdline: Vec<u8>,
-    ) {
-        assert!(
-            cmdline.last().copied() == Some(0),
-            "Linux fw_cfg cmdline blob must be NUL-terminated"
-        );
-        let initrd = initrd.unwrap_or_default();
-        // SAFE-EXPECT: fw_cfg direct-boot size registers are u32 by QEMU contract.
-        let kernel_len = u32::try_from(kernel.len()).expect("kernel blob >4 GiB");
-        // SAFE-EXPECT: fw_cfg direct-boot size registers are u32 by QEMU contract.
-        let initrd_len = u32::try_from(initrd.len()).expect("initrd blob >4 GiB");
-        // SAFE-EXPECT: fw_cfg direct-boot size registers are u32 by QEMU contract.
-        let cmdline_len = u32::try_from(cmdline.len()).expect("cmdline blob >4 GiB");
-        self.fw_cfg
-            .add_item(KEY_KERNEL_SIZE, kernel_len.to_le_bytes().to_vec());
-        self.fw_cfg.add_item(KEY_KERNEL_DATA, kernel);
-        self.fw_cfg
-            .add_item(KEY_INITRD_SIZE, initrd_len.to_le_bytes().to_vec());
-        self.fw_cfg.add_item(KEY_INITRD_DATA, initrd);
-        self.fw_cfg
-            .add_item(KEY_CMDLINE_SIZE, cmdline_len.to_le_bytes().to_vec());
-        self.fw_cfg.add_item(KEY_CMDLINE_DATA, cmdline);
-    }
-
-    /// Register the guest ACPI tables (`etc/acpi/rsdp`, `etc/acpi/tables`,
-    /// `etc/table-loader`) the firmware installs. On Path A these come from the
-    /// QEMU-style table generator; until that lands this lets callers attach
-    /// known-good bytes (e.g. captured from the QEMU oracle) so the rest of the
-    /// pipeline can be exercised end to end.
-    pub fn set_acpi_tables(&mut self, rsdp: Vec<u8>, tables: Vec<u8>, loader: Vec<u8>) {
-        self.fw_cfg.add_file(ACPI_RSDP_FILE, rsdp);
-        self.fw_cfg.add_file(ACPI_TABLE_FILE, tables);
-        self.fw_cfg.add_file(ACPI_LOADER_FILE, loader);
-    }
-
-    /// Register the SMBIOS entry point + tables (`etc/smbios/smbios-anchor`,
-    /// `etc/smbios/smbios-tables`).
-    pub fn set_smbios(&mut self, anchor: Vec<u8>, tables: Vec<u8>) {
-        self.fw_cfg.add_file(SMBIOS_ANCHOR_FILE, anchor);
-        self.fw_cfg.add_file(SMBIOS_TABLE_FILE, tables);
-    }
-
-    /// The generated device tree blob (DTB magic `0xd00dfeed`).
-    pub fn dtb(&self) -> &[u8] {
-        &self.dtb
-    }
-
-    /// The guest memory layout. The DTB is placed at the base of RAM, where the
-    /// firmware looks for it; the kernel/initrd are loaded above it.
-    pub fn memory_layout(&self) -> GuestMemoryLayout {
-        GuestMemoryLayout {
-            flash_code: machine::FLASH_CODE,
-            flash_vars: machine::FLASH_VARS,
-            ram: Region::new(machine::RAM_BASE, self.cfg.ram_size),
-            dtb_load: machine::RAM_BASE,
-        }
     }
 
     /// Dispatch a guest MMIO access and return only the guest-visible result.
@@ -416,134 +277,6 @@ impl VirtPlatform {
             (VIRTIO_CONSOLE_BDF, 1) => self.virtio_console_msix_access(target.offset, op),
             (VIRTIO_CONSOLE_BDF, 4) => self.virtio_console_access(target.offset, op, mem),
             _ => MmioOutcome::KnownUnimplemented(aperture),
-        }
-    }
-
-    pub(crate) fn pci_boot_media_msix_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {
-        let Some(dev) = self.pci_boot_media.as_mut() else {
-            return MmioOutcome::KnownUnimplemented("virtio-blk-pci");
-        };
-        let result = match op {
-            MmioOp::Read { size } => dev.msix_bar_access(offset, VirtioPciBlockOp::Read { size }),
-            MmioOp::Write { size, value } => {
-                dev.msix_bar_access(offset, VirtioPciBlockOp::Write { size, value })
-            }
-        };
-        match result {
-            VirtioMmioBlockResult::ReadValue(v) => MmioOutcome::ReadValue(v),
-            VirtioMmioBlockResult::WriteAck => MmioOutcome::WriteAck,
-        }
-    }
-
-    pub(crate) fn pci_boot_media_access(
-        &mut self,
-        offset: u64,
-        op: MmioOp,
-        mem: &mut dyn GuestMemoryMut,
-    ) -> MmioOutcome {
-        let Some(dev) = self.pci_boot_media.as_mut() else {
-            return MmioOutcome::KnownUnimplemented("virtio-blk-pci");
-        };
-        let old_irq = dev.interrupt_line_level();
-        let result = match op {
-            MmioOp::Read { size } => dev.access(offset, VirtioPciBlockOp::Read { size }, mem),
-            MmioOp::Write { size, value } => {
-                dev.access(offset, VirtioPciBlockOp::Write { size, value }, mem)
-            }
-        };
-        let new_irq = dev.interrupt_line_level();
-        if old_irq != new_irq {
-            self.pending_spi_levels
-                .push((machine::spi_to_intid(machine::SPI_PCIE_INTA), new_irq));
-        }
-        match result {
-            VirtioMmioBlockResult::ReadValue(v) => MmioOutcome::ReadValue(v),
-            VirtioMmioBlockResult::WriteAck => MmioOutcome::WriteAck,
-        }
-    }
-
-    pub(crate) fn virtio_net_msix_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {
-        let Some(dev) = self.virtio_net.as_mut() else {
-            return MmioOutcome::KnownUnimplemented("virtio-net-pci");
-        };
-        let is_write = matches!(op, MmioOp::Write { .. });
-        let result = match op {
-            MmioOp::Read { size } => dev.msix_bar_access(offset, VirtioPciNetOp::Read { size }),
-            MmioOp::Write { size, value } => {
-                dev.msix_bar_access(offset, VirtioPciNetOp::Write { size, value })
-            }
-        };
-        if is_write {
-            self.flush_virtio_net_pending_msix();
-        }
-        match result {
-            VirtioNetResult::ReadValue(v) => MmioOutcome::ReadValue(v),
-            VirtioNetResult::WriteAck => MmioOutcome::WriteAck,
-        }
-    }
-
-    pub(crate) fn virtio_net_access(
-        &mut self,
-        offset: u64,
-        op: MmioOp,
-        mem: &mut dyn GuestMemoryMut,
-    ) -> MmioOutcome {
-        let Some(dev) = self.virtio_net.as_mut() else {
-            return MmioOutcome::KnownUnimplemented("virtio-net-pci");
-        };
-        let result = match op {
-            MmioOp::Read { size } => dev.access(offset, VirtioPciNetOp::Read { size }, mem),
-            MmioOp::Write { size, value } => {
-                dev.access(offset, VirtioPciNetOp::Write { size, value }, mem)
-            }
-        };
-        self.flush_virtio_net_pending_msix();
-        match result {
-            VirtioNetResult::ReadValue(v) => MmioOutcome::ReadValue(v),
-            VirtioNetResult::WriteAck => MmioOutcome::WriteAck,
-        }
-    }
-
-    pub(crate) fn virtio_gpu_msix_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {
-        let Some(dev) = self.virtio_gpu.as_mut() else {
-            return MmioOutcome::KnownUnimplemented("virtio-gpu-pci");
-        };
-        let is_write = matches!(op, MmioOp::Write { .. });
-        let result = match op {
-            MmioOp::Read { size } => dev.msix_bar_access(offset, VirtioPciGpuOp::Read { size }),
-            MmioOp::Write { size, value } => {
-                dev.msix_bar_access(offset, VirtioPciGpuOp::Write { size, value })
-            }
-        };
-        if is_write {
-            self.flush_virtio_gpu_pending_msix();
-        }
-        match result {
-            VirtioGpuResult::ReadValue(v) => MmioOutcome::ReadValue(v),
-            VirtioGpuResult::WriteAck => MmioOutcome::WriteAck,
-        }
-    }
-
-    pub(crate) fn virtio_gpu_access(
-        &mut self,
-        offset: u64,
-        op: MmioOp,
-        mem: &mut dyn GuestMemoryMut,
-    ) -> MmioOutcome {
-        let Some(dev) = self.virtio_gpu.as_mut() else {
-            return MmioOutcome::KnownUnimplemented("virtio-gpu-pci");
-        };
-        let result = match op {
-            MmioOp::Read { size } => dev.access(offset, VirtioPciGpuOp::Read { size }, mem),
-            MmioOp::Write { size, value } => {
-                dev.access(offset, VirtioPciGpuOp::Write { size, value }, mem)
-            }
-        };
-        dev.drain_completed_fences(mem);
-        self.flush_virtio_gpu_pending_msix();
-        match result {
-            VirtioGpuResult::ReadValue(v) => MmioOutcome::ReadValue(v),
-            VirtioGpuResult::WriteAck => MmioOutcome::WriteAck,
         }
     }
 }
