@@ -1,6 +1,29 @@
-//! Continuation of the `cfg_space_size` impl block, split for the 1000-line rule.
+//! Capability-list traversal and MSI / MSI-X capability register semantics.
 
 use super::*;
+
+/// Function-level MSI-X control bits from the PCI capability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MsixFunctionControl {
+    pub enabled: bool,
+    pub function_masked: bool,
+}
+
+/// Guest-programmed standard MSI state for the Intel HDA endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct HdaMsiConfig {
+    pub enabled: bool,
+    pub address: u64,
+    pub data: u32,
+}
+
+// ---- MSI-X capability builder -----------------------------------------------
+
+/// The standard MSI capability id (PCI capability list entry type `0x05`).
+pub const CAP_ID_MSI: u8 = 0x05;
+
+/// The MSI-X capability id (PCI capability list entry type `0x11`).
+pub const CAP_ID_MSIX: u8 = 0x11;
 
 impl Function {
     /// Read a dword out of the sparse capability bytes (zero-filled).
@@ -13,25 +36,6 @@ impl Function {
             }
         }
         dword
-    }
-
-    /// 32-bit dword write of register `reg`.
-    pub(crate) fn write_dword(&mut self, reg: u16, value: u32) {
-        match reg {
-            REG_COMMAND_STATUS => {
-                // Command is the low 16 bits; status (high 16) is read-only /
-                // write-1-to-clear, which this model treats as ignored.
-                self.command = (value as u16) & CMD_WRITABLE_MASK;
-            }
-            _ if (REG_BAR0..REG_BAR0 + (NUM_BARS as u16) * 4).contains(&reg) => {
-                let idx = ((reg - REG_BAR0) / 4) as usize;
-                self.bars[idx].write(value);
-            }
-            _ if self.write_capability_dword(reg, value) => {}
-            // Identity, class and header registers are read-only; capability
-            // bytes are read-only in this model.
-            _ => {}
-        }
     }
 
     pub(crate) fn capability_byte(&self, off: u16) -> u8 {
