@@ -1,9 +1,56 @@
-mod is_false;
-mod validate_transition;
-
-pub use is_false::*;
-pub(crate) use validate_transition::*;
-
 #[cfg(test)]
 #[path = "tests_split/mod.rs"]
 mod tests;
+
+mod active_disk;
+pub(crate) mod application_consistent_snapshot;
+mod bundle_archive;
+mod bundle_copy;
+mod bundle_layout;
+mod bundle_metadata;
+mod clock;
+mod command_runner;
+mod disk_metadata;
+mod disk_operations;
+mod disk_preparation;
+mod error;
+mod guest_tools_metadata;
+mod guest_tools_store;
+mod live_evidence;
+mod metadata_json;
+mod metadata_lock;
+pub(crate) mod metadata_repair;
+mod path_resolution;
+mod runner_store;
+mod runtime_control_store;
+mod runtime_metadata;
+pub(crate) mod runtime_state;
+mod snapshot_catalog;
+mod snapshot_disk;
+mod snapshot_metadata;
+mod store;
+mod suspend_image;
+mod temp_paths;
+pub(crate) mod vm_clone;
+mod vm_registry;
+mod vm_transfer;
+
+pub(crate) use bundle_archive::*;
+pub(crate) use bundle_copy::*;
+pub(crate) use bundle_layout::*;
+pub use bundle_metadata::*;
+pub(crate) use clock::*;
+pub(crate) use command_runner::*;
+pub use disk_metadata::*;
+pub(crate) use disk_preparation::*;
+pub use error::*;
+pub use guest_tools_metadata::*;
+pub(crate) use guest_tools_store::*;
+pub(crate) use metadata_json::*;
+pub(crate) use metadata_lock::*;
+pub(crate) use path_resolution::*;
+pub use runtime_metadata::*;
+pub use snapshot_metadata::*;
+pub use store::*;
+pub(crate) use temp_paths::*;
+pub(crate) use vm_registry::*;
