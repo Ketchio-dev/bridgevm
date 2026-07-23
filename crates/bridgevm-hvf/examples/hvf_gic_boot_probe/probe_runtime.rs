@@ -20,6 +20,7 @@ pub(crate) fn run() -> ExitCode {
         ram_size,
         watchdog_ms,
         watchdog_enabled,
+        max_exits,
         trace_fwcfg,
         trace_msix,
         trace_spi,
@@ -132,6 +133,7 @@ pub(crate) fn run() -> ExitCode {
                     drain_trace,
                     pre_run_drain_gate: Arc::clone(&pre_run_drain_gate),
                     smp_trace: smp_trace.clone(),
+                    max_exits,
                 })
             });
             let boot_generation = begin_watchdog_generation(&watchdog_generation);
@@ -403,8 +405,8 @@ pub(crate) fn run() -> ExitCode {
                     hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                     vtimer_exits += 1;
                     hv_vcpu_set_vtimer_mask(vcpu, true);
-                    if exits >= MAX_EXITS {
-                        stop_reason = format!("exit cap {MAX_EXITS}");
+                    if exits >= max_exits {
+                        stop_reason = format!("exit cap {max_exits}");
                         break;
                     }
                     continue;
@@ -744,8 +746,8 @@ pub(crate) fn run() -> ExitCode {
                         }
                     }
                 }
-                if exits >= MAX_EXITS {
-                    stop_reason = format!("exit cap {MAX_EXITS}");
+                if exits >= max_exits {
+                    stop_reason = format!("exit cap {max_exits}");
                     break;
                 }
                 let ramfb_checkpoint_due =

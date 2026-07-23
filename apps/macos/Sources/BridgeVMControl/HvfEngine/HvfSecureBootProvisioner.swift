@@ -79,25 +79,26 @@ enum HvfSecureBootProvisioner {
         0xa3, 0xbc, 0xda, 0xd0, 0x0e, 0x67, 0x65, 0x6f,
     ])
 
-    private static let expectedPolicy = "microsoft-only-windows-11-2023"
+    private static let expectedPolicy = "microsoft-windows-transition-2011-2023"
     private static let expectedSourceTag = "v1.6.5"
+    private static let expectedSourceAsset = "edk2-aarch64-secureboot-binaries.zip"
     private static let expectedSourceCommit = "798cdc513e0c192fe90e99637105748ed3bb4ca5"
     private static let expectedAssetSha256 =
-        "bf5a51e79815698013b9a062d489235cd042d0b1f9370a0a7c27a05367c95ed3"
+        "8c87c63e8ba0385d17238e8feb3b87de25007bec8e43251246bccbf18007af20"
     private static let expectedFirmwareSha256 =
-        "f41c7eb7c1a9dabf8ed10c4e52642378e05df171eecd65ca15ed414d9fabdff9"
+        "b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b"
     private static let expectedEdk2Commit =
         "b03a21a63e3bd001f52c527e5a57feddb53a690b"
     private static let expectedPayloadHashes = [
         "dbx": "329f9ec34a8ae3c9e7eddaeba82a84f598c44853790394314dd88b563c667e1a",
-        "db": "d15365367f9838d4b65fa9bb128c4c7b393dc58b92882a499c34fd4a5cc6f45c",
-        "KEK": "5b85333c009d7ea55cbb6f11a5c2ff45ee1091a968504c929aed25c84674962f",
+        "db": "584ff437815864a48a2e4c1cc13af8bc19471b140c8085e9de7c738354a91fdc",
+        "KEK": "cc3a5dbc7b3aec3b60c0da33510bf93f402479bbf445dc360e6111afa70c6342",
         "PK": "485aca0cb5f875572c905e6f19ec0a249cf438b005a3e27257ac4bd3f56777bd",
     ]
 
     static func bundledPolicy() throws -> HvfSecureBootPolicy {
         guard let url = Bundle.module.url(
-            forResource: "secureboot-microsoft-only-aarch64-v1.6.5",
+            forResource: "secureboot-microsoft-windows-transition-aarch64-v1.6.5",
             withExtension: "json") else {
             throw HvfWindowsBootSeed.SeedError.secureBootManifestMissing
         }
@@ -193,6 +194,7 @@ enum HvfSecureBootProvisioner {
               policy.policy == expectedPolicy,
               policy.source.repository == "https://github.com/microsoft/secureboot_objects",
               policy.source.tag == expectedSourceTag,
+              policy.source.asset == expectedSourceAsset,
               policy.source.commit == expectedSourceCommit,
               policy.source.assetSha256 == expectedAssetSha256,
               policy.source.license == "BSD-2-Clause-Patent",
@@ -306,13 +308,14 @@ enum HvfSecureBootProvisioner {
         guard store.count > 0x80,
               store.subdata(in: 0x28..<0x2b) == Data("_FV".utf8) else { return nil }
         let base = Int(readUInt16(store, at: 0x30))
-        guard base + 24 <= store.count,
+        guard base + 28 <= store.count,
               store.subdata(in: base..<base + 16) == HvfWindowsBootSeed.authVarStoreGUID else {
             return nil
         }
         let declaredSize = Int(readUInt32(store, at: base + 16))
         let end = min(base + declaredSize, store.count)
-        var offset = base + 24
+        let variableStart = base + 28  // VARIABLE_STORE_HEADER is 28 bytes in EDK2.
+        var offset = variableStart
         while offset + 60 <= end, readUInt16(store, at: offset) == 0x55aa {
             let nameSize = Int(readUInt32(store, at: offset + 36))
             let dataSize = Int(readUInt32(store, at: offset + 40))
@@ -322,7 +325,7 @@ enum HvfSecureBootProvisioner {
             offset += total
         }
         return VarStoreLayout(
-            variableStart: base + 24,
+            variableStart: variableStart,
             firstFreeOffset: offset,
             endOffset: end)
     }

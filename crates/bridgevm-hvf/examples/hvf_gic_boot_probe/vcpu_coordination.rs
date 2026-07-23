@@ -235,6 +235,7 @@ pub(crate) struct SecondaryVcpuSpawnConfig {
     pub(crate) drain_trace: DrainTrace,
     pub(crate) pre_run_drain_gate: Arc<PreRunDrainGate>,
     pub(crate) smp_trace: Option<Arc<SmpTrace>>,
+    pub(crate) max_exits: u64,
 }
 
 pub(crate) struct SecondaryVcpuThreadContext {
@@ -248,6 +249,7 @@ pub(crate) struct SecondaryVcpuThreadContext {
     pub(crate) pre_run_drain_gate: Arc<PreRunDrainGate>,
     pub(crate) controls: Vec<Arc<VcpuControl>>,
     pub(crate) smp_trace: Option<Arc<SmpTrace>>,
+    pub(crate) max_exits: u64,
 }
 
 impl SecondaryVcpuSet {
@@ -261,6 +263,7 @@ impl SecondaryVcpuSet {
             drain_trace,
             pre_run_drain_gate,
             smp_trace,
+            max_exits,
         } = config;
         if cpu_count <= 1 {
             return Self {
@@ -302,6 +305,7 @@ impl SecondaryVcpuSet {
                                 pre_run_drain_gate,
                                 controls: controls_for_thread,
                                 smp_trace,
+                                max_exits,
                             },
                         )
                     })

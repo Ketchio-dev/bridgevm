@@ -17,6 +17,7 @@ pub(crate) fn secondary_vcpu_thread(
         pre_run_drain_gate,
         controls,
         smp_trace,
+        max_exits,
     } = context;
     let mut vcpu: HvVcpuT = 0;
     let mut exit: *mut HvVcpuExit = null_mut();
@@ -29,12 +30,17 @@ pub(crate) fn secondary_vcpu_thread(
     let mut drain_stats = RunLoopDrainStats::new(false);
     let mut exits = 0u64;
 
-    let mut state = lock_vcpu_state(
-        &control,
-        smp_trace.as_deref(),
-        control.index,
-        "secondary vCPU state mutex",
-    );
+    macro_rules! lock_secondary_state {
+        () => {
+            lock_vcpu_state(
+                &control,
+                smp_trace.as_deref(),
+                control.index,
+                "secondary vCPU state mutex",
+            )
+        };
+    }
+    let mut state = lock_secondary_state!();
     loop {
         while *state == PsciState::Off && !shutdown.load(Ordering::SeqCst) {
             if let Some(trace) = smp_trace.as_deref() {
@@ -71,12 +77,7 @@ pub(crate) fn secondary_vcpu_thread(
                 if let Some(trace) = smp_trace.as_deref() {
                     trace.state_transition(control.index, PsciState::OnPending, PsciState::On);
                 }
-                state = lock_vcpu_state(
-                    &control,
-                    smp_trace.as_deref(),
-                    control.index,
-                    "secondary vCPU state mutex",
-                );
+                state = lock_secondary_state!();
                 *state = PsciState::On;
                 drop(state);
                 let stop = run_secondary_until_parked(SecondaryRunLoopContext {
@@ -94,13 +95,9 @@ pub(crate) fn secondary_vcpu_thread(
                     exits: &mut exits,
                     pre_run_drain_gate: &pre_run_drain_gate,
                     smp_trace: smp_trace.as_deref(),
+                    max_exits,
                 });
-                state = lock_vcpu_state(
-                    &control,
-                    smp_trace.as_deref(),
-                    control.index,
-                    "secondary vCPU state mutex",
-                );
+                state = lock_secondary_state!();
                 if stop {
                     break;
                 }
@@ -122,13 +119,9 @@ pub(crate) fn secondary_vcpu_thread(
                     exits: &mut exits,
                     pre_run_drain_gate: &pre_run_drain_gate,
                     smp_trace: smp_trace.as_deref(),
+                    max_exits,
                 });
-                state = lock_vcpu_state(
-                    &control,
-                    smp_trace.as_deref(),
-                    control.index,
-                    "secondary vCPU state mutex",
-                );
+                state = lock_secondary_state!();
                 if stop {
                     break;
                 }
@@ -304,6 +297,7 @@ pub(crate) struct SecondaryRunLoopContext<'a> {
     pub(crate) exits: &'a mut u64,
     pub(crate) pre_run_drain_gate: &'a PreRunDrainGate,
     pub(crate) smp_trace: Option<&'a SmpTrace>,
+    pub(crate) max_exits: u64,
 }
 
 pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -> bool {
@@ -322,6 +316,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
         exits,
         pre_run_drain_gate,
         smp_trace,
+        max_exits,
     } = context;
     if let Some(trace) = smp_trace {
         trace.secondary_run_loop_entered(control.index, *exits);
@@ -614,8 +609,8 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                 return true;
             }
         }
-        if *exits >= MAX_EXITS {
-            println!("secondary vCPU{} exit cap {MAX_EXITS}", control.index);
+        if *exits >= max_exits {
+            println!("secondary vCPU{} exit cap {max_exits}", control.index);
             return true;
         }
     }

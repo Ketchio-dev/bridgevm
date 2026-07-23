@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FIRMWARE="$ROOT/crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd"
 BUILD_RECEIPT="$FIRMWARE.build.json"
-POLICY="$ROOT/apps/macos/Sources/BridgeVMControl/Resources/secureboot-microsoft-only-aarch64-v1.6.5.json"
+POLICY="$ROOT/apps/macos/Sources/BridgeVMControl/Resources/secureboot-microsoft-windows-transition-aarch64-v1.6.5.json"
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-secure-boot-smoke.XXXXXX")"
 trap 'rm -rf "$WORKDIR"' EXIT
 

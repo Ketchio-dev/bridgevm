@@ -133,14 +133,14 @@ final class HvfWindowsBootSeedTests: XCTestCase {
     func testBundledMicrosoftPolicyHasPinnedProvenanceAndPayloads() throws {
         let policy = try HvfSecureBootProvisioner.bundledPolicy()
         XCTAssertEqual(policy.schemaVersion, 1)
-        XCTAssertEqual(policy.policy, "microsoft-only-windows-11-2023")
+        XCTAssertEqual(policy.policy, "microsoft-windows-transition-2011-2023")
         XCTAssertEqual(policy.source.tag, "v1.6.5")
         XCTAssertEqual(
             policy.source.commit,
             "798cdc513e0c192fe90e99637105748ed3bb4ca5")
         XCTAssertEqual(
             policy.firmware.sha256,
-            "f41c7eb7c1a9dabf8ed10c4e52642378e05df171eecd65ca15ed414d9fabdff9")
+            "b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b")
         XCTAssertEqual(policy.variables.map(\.name), ["dbx", "db", "KEK", "PK"])
         XCTAssertEqual(try HvfSecureBootProvisioner.decodedVariables(policy).count, 4)
     }
@@ -154,6 +154,8 @@ final class HvfWindowsBootSeedTests: XCTestCase {
             provisionedAt: Date(timeIntervalSince1970: 1_700_000_000))
 
         XCTAssertEqual(result.varStore.count, store.count)
+        XCTAssertEqual(result.varStore.subdata(in: 0x5c..<0x64), store.subdata(in: 0x5c..<0x64),
+                       "VARIABLE_STORE_HEADER reserved bytes must be preserved")
         let records = try HvfSecureBootProvisioner.storedVariables(in: result.varStore)
             .filter { ["dbx", "db", "KEK", "PK"].contains($0.name) }
             .sorted { $0.offset < $1.offset }
@@ -184,7 +186,7 @@ final class HvfWindowsBootSeedTests: XCTestCase {
             guid: dbx.guid,
             data: dbx.payload,
             attributes: dbx.manifest.attributes)
-        partial.replaceSubrange(0x60..<0x60 + record.count, with: record)
+        partial.replaceSubrange(0x64..<0x64 + record.count, with: record)
         let before = partial
 
         XCTAssertThrowsError(try HvfSecureBootProvisioner.provision(

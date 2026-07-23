@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Security
 
@@ -73,14 +74,7 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging {
             throw VTPMStateSecurityError.randomGeneration(randomStatus)
         }
 
-        let addStatus = SecItemAdd([
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: Self.service,
-            kSecAttrAccount: account,
-            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            kSecUseDataProtectionKeychain: true,
-            kSecValueData: generated,
-        ] as CFDictionary, nil)
+        let addStatus = SecItemAdd(addAttributes(account: account, key: generated), nil)
         if addStatus == errSecSuccess { return generated }
 
         // Two app entry points may race on the first launch. The winner's key
@@ -104,25 +98,13 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging {
             throw VTPMStateSecurityError.invalidKeyLength(key.count)
         }
         let account = try validatedAccount(stableVMID)
-        let query = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: Self.service,
-            kSecAttrAccount: account,
-            kSecUseDataProtectionKeychain: true,
-        ] as CFDictionary
+        let query = queryAttributes(account: account)
         let updateStatus = SecItemUpdate(query, [kSecValueData: key] as CFDictionary)
         if updateStatus == errSecSuccess { return }
         guard updateStatus == errSecItemNotFound else {
             throw VTPMStateSecurityError.keychainWrite(updateStatus)
         }
-        let addStatus = SecItemAdd([
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: Self.service,
-            kSecAttrAccount: account,
-            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            kSecUseDataProtectionKeychain: true,
-            kSecValueData: key,
-        ] as CFDictionary, nil)
+        let addStatus = SecItemAdd(addAttributes(account: account, key: key), nil)
         guard addStatus == errSecSuccess else {
             throw VTPMStateSecurityError.keychainWrite(addStatus)
         }
@@ -130,12 +112,7 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging {
 
     func deleteStateKey(for stableVMID: String) throws {
         let account = try validatedAccount(stableVMID)
-        let status = SecItemDelete([
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: Self.service,
-            kSecAttrAccount: account,
-            kSecUseDataProtectionKeychain: true,
-        ] as CFDictionary)
+        let status = SecItemDelete(queryAttributes(account: account))
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw VTPMStateSecurityError.keychainWrite(status)
         }
@@ -149,16 +126,29 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging {
         return account
     }
 
-    private func read(account: String) -> (data: Data?, status: OSStatus) {
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching([
+    private func queryAttributes(account: String) -> CFDictionary {
+        var query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Self.service,
             kSecAttrAccount: account,
-            kSecUseDataProtectionKeychain: true,
-            kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne,
-        ] as CFDictionary, &item)
+        ]
+        query[kSecUseDataProtectionKeychain] = true
+        return query as CFDictionary
+    }
+
+    private func addAttributes(account: String, key: Data) -> CFDictionary {
+        var attributes = queryAttributes(account: account) as! [CFString: Any]
+        attributes[kSecValueData] = key
+        attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        return attributes as CFDictionary
+    }
+
+    private func read(account: String) -> (data: Data?, status: OSStatus) {
+        var query = queryAttributes(account: account) as! [CFString: Any]
+        query[kSecReturnData] = true
+        query[kSecMatchLimit] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess else { return (nil, status) }
         guard let data = item as? Data else { return (nil, errSecDecode) }
         return (data, errSecSuccess)
@@ -201,6 +191,54 @@ final class VTPMProcessKeyInput {
 }
 
 enum VTPMStateSecurity {
+    static func createPrivateFile(_ data: Data, at url: URL) throws {
+        let descriptor = url.path.withCString {
+            Darwin.open($0, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, mode_t(0o600))
+        }
+        guard descriptor >= 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        var succeeded = false
+        defer {
+            if !succeeded { _ = Darwin.ftruncate(descriptor, 0) }
+            Darwin.close(descriptor)
+        }
+        try data.withUnsafeBytes { rawBuffer in
+            guard var address = rawBuffer.baseAddress else { return }
+            var remaining = rawBuffer.count
+            while remaining > 0 {
+                let written = Darwin.write(descriptor, address, remaining)
+                if written < 0 {
+                    if errno == EINTR { continue }
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+                }
+                guard written > 0 else {
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(EIO))
+                }
+                remaining -= written
+                address = address.advanced(by: written)
+            }
+        }
+        guard Darwin.fsync(descriptor) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        succeeded = true
+    }
+
+    static func stateDirectoryContainsData(
+        at path: String,
+        fileManager: FileManager = .default
+    ) throws -> Bool {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory) else {
+            return false
+        }
+        guard isDirectory.boolValue else {
+            throw CocoaError(.fileReadUnknown)
+        }
+        return try fileManager.contentsOfDirectory(atPath: path).contains { !$0.isEmpty }
+    }
+
     static func processInput(
         for config: HvfEngineConfig,
         provider: VTPMStateKeyProviding,
@@ -210,8 +248,7 @@ enum VTPMStateSecurity {
         guard let keyID = config.vtpmKeyID else {
             throw VTPMStateSecurityError.invalidVMIdentifier
         }
-        let existingState = ((try? fileManager.contentsOfDirectory(atPath: stateDir)) ?? [])
-            .contains { !$0.isEmpty }
+        let existingState = try stateDirectoryContainsData(at: stateDir, fileManager: fileManager)
         return try VTPMProcessKeyInput(key: provider.stateKey(
             for: keyID,
             allowCreation: !existingState

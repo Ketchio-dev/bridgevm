@@ -92,6 +92,7 @@ assert_contains "$output" "BRIDGEVM_TITLE_MANIFESTS=$ROOT/scripts/win-assets/bv-
 assert_contains "$output" "BRIDGEVM_REQUIRE_TITLE_GATES=1" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_RAM_MIB=4096" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=900000" "installed boot policy"
+assert_contains "$output" "BRIDGEVM_BOOT_PROBE_MAX_EXITS=50000000" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED=<unset>" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_SMP_CPUS=<unset> (probe default 1)" "installed boot policy"
 assert_contains "$output" "BRIDGEVM_BOOT_TIMER=<unset>" "installed boot policy"
@@ -126,6 +127,30 @@ boot_timer_output="$(
 assert_contains "$boot_timer_output" "BRIDGEVM_BOOT_TIMER=1" "boot timer policy"
 assert_contains "$boot_timer_output" "BRIDGEVM_BOOT_TIMER_RAMFB_MS=250" "boot timer policy"
 assert_contains "$boot_timer_output" "BRIDGEVM_BOOT_TIMER_DESKTOP_CHECKSUM64=0x1234abcd" "boot timer policy"
+
+max_exits_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --max-exits 150000000 \
+    --print-policy 2>&1
+)" || fail "installed boot max-exits policy failed: $max_exits_output"
+assert_contains "$max_exits_output" "BRIDGEVM_BOOT_PROBE_MAX_EXITS=150000000" "max-exits policy"
+
+set +e
+invalid_max_exits_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --max-exits 0 \
+    --print-policy 2>&1
+)"
+invalid_max_exits_status="$?"
+set -e
+[[ "$invalid_max_exits_status" == "2" ]] || fail "zero max-exits did not fail with usage status"
+assert_contains "$invalid_max_exits_output" "--max-exits requires a positive integer" "invalid max-exits policy"
 
 agent_timer_output="$(
   scripts/run-hvf-windows-installed-boot.sh \

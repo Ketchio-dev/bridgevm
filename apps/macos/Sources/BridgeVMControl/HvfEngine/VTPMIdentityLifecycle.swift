@@ -111,8 +111,7 @@ struct VTPMIdentityLifecycle {
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try encoder.encode(package).write(to: destination, options: [.atomic])
-        try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
+        try VTPMStateSecurity.createPrivateFile(encoder.encode(package), at: destination)
         return VTPMRecoveryExport(
             recoveryCode: Self.recoveryCode(for: recoverySecret),
             stateFingerprint: fingerprint
@@ -179,8 +178,8 @@ struct VTPMIdentityLifecycle {
         now: Date = Date(),
         nonce: UUID = UUID()
     ) throws -> VTPMResetResult {
-        let entries = (try? fileManager.contentsOfDirectory(atPath: stateDirectory.path)) ?? []
-        let hasState = !entries.isEmpty
+        let hasState = try VTPMStateSecurity.stateDirectoryContainsData(
+            at: stateDirectory.path, fileManager: fileManager)
         let previousFingerprint = hasState ? try stateFingerprint(at: stateDirectory) : nil
         let suffix = "\(Int(now.timeIntervalSince1970))-\(nonce.uuidString.lowercased().prefix(8))"
         let archive = stateDirectory.deletingLastPathComponent()
@@ -270,8 +269,8 @@ struct VTPMIdentityLifecycle {
         now: Date = Date(),
         nonce: UUID = UUID()
     ) throws -> VTPMResetResult {
-        let entries = (try? fileManager.contentsOfDirectory(atPath: copiedStateDirectory.path)) ?? []
-        let hasCopiedState = !entries.isEmpty
+        let hasCopiedState = try VTPMStateSecurity.stateDirectoryContainsData(
+            at: copiedStateDirectory.path, fileManager: fileManager)
         let fingerprint = hasCopiedState ? try stateFingerprint(at: copiedStateDirectory) : nil
         let suffix = "\(Int(now.timeIntervalSince1970))-\(nonce.uuidString.lowercased().prefix(8))"
         let archive = copiedStateDirectory.deletingLastPathComponent()
@@ -341,8 +340,9 @@ struct VTPMIdentityLifecycle {
         now: Date = Date(),
         nonce: UUID = UUID()
     ) throws -> String {
-        let entries = (try? fileManager.contentsOfDirectory(atPath: stateDirectory.path)) ?? []
-        let fingerprint = entries.isEmpty ? nil : try stateFingerprint(at: stateDirectory)
+        let hasState = try VTPMStateSecurity.stateDirectoryContainsData(
+            at: stateDirectory.path, fileManager: fileManager)
+        let fingerprint = hasState ? try stateFingerprint(at: stateDirectory) : nil
         let suffix = "\(Int(now.timeIntervalSince1970))-\(nonce.uuidString.lowercased().prefix(8))"
         let receipts = stateDirectory.deletingLastPathComponent()
             .appendingPathComponent("vtpm-lifecycle", isDirectory: true)

@@ -287,6 +287,46 @@ final class VTPMStateSecurityTests: XCTestCase {
         }
     }
 
+    func testUnreadableStateDirectoryFailsClosedBeforeKeyLookup() throws {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: temp.path)
+            try? FileManager.default.removeItem(at: temp)
+        }
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        try Data("persistent TPM state".utf8).write(to: temp.appendingPathComponent("tpm2-00.permall"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: temp.path)
+        let provider = RecordingVTPMKeyProvider()
+        let config = HvfEngineConfig(
+            targetDiskPath: "target", uefiVarsPath: "vars", evidenceDir: "evidence",
+            watchdogMs: nil, ramMiB: 4096, smpCpus: 4, clipboardSync: false,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: false,
+            virtioGpu3d: false, nvmeBufferedIO: false, ctlFilePath: "control",
+            vtpmStateDir: temp.path, swtpmBin: "swtpm", vtpmKeyID: "stable-vm"
+        )
+
+        XCTAssertThrowsError(try VTPMStateSecurity.processInput(for: config, provider: provider))
+        XCTAssertNil(provider.allowCreation)
+    }
+
+    func testNonDirectoryStatePathFailsClosedBeforeKeyLookup() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        try Data("not a directory".utf8).write(to: temp)
+        let provider = RecordingVTPMKeyProvider()
+        let config = HvfEngineConfig(
+            targetDiskPath: "target", uefiVarsPath: "vars", evidenceDir: "evidence",
+            watchdogMs: nil, ramMiB: 4096, smpCpus: 4, clipboardSync: false,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: false,
+            virtioGpu3d: false, nvmeBufferedIO: false, ctlFilePath: "control",
+            vtpmStateDir: temp.path, swtpmBin: "swtpm", vtpmKeyID: "stable-vm"
+        )
+
+        XCTAssertThrowsError(try VTPMStateSecurity.processInput(for: config, provider: provider))
+        XCTAssertNil(provider.allowCreation)
+    }
+
     func testExistingStateForbidsSilentReplacementKeyCreation() throws {
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -319,6 +359,40 @@ final class VTPMStateSecurityTests: XCTestCase {
 }
 
 final class VTPMIdentityLifecycleTests: XCTestCase {
+    func testPrivateRecoveryFileCreationRejectsExistingFileAndSymlink() throws {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        let existing = temp.appendingPathComponent("existing")
+        try Data("original".utf8).write(to: existing)
+        XCTAssertThrowsError(try VTPMStateSecurity.createPrivateFile(Data("replacement".utf8), at: existing))
+        XCTAssertEqual(try Data(contentsOf: existing), Data("original".utf8))
+
+        let target = temp.appendingPathComponent("target")
+        let link = temp.appendingPathComponent("link")
+        try Data("target".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        XCTAssertThrowsError(try VTPMStateSecurity.createPrivateFile(Data("secret".utf8), at: link))
+        XCTAssertEqual(try Data(contentsOf: target), Data("target".utf8))
+    }
+
+    func testPrivateRecoveryFileIsMode600AtCreation() throws {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        let output = temp.appendingPathComponent("secret")
+
+        try VTPMStateSecurity.createPrivateFile(Data("secret".utf8), at: output)
+
+        XCTAssertEqual(try Data(contentsOf: output), Data("secret".utf8))
+        XCTAssertEqual(
+            (try FileManager.default.attributesOfItem(atPath: output.path)[.posixPermissions] as? NSNumber)?.intValue,
+            0o600
+        )
+    }
+
     func testEncryptedRecoveryRoundTripRequiresMatchingState() throws {
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

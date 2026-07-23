@@ -158,7 +158,7 @@ pub(crate) const WATCH_TARGET: u64 = 0x5ffd_f798;
 
 pub(crate) const DBGWCR_STORE_8B: u64 = 0x1ff7;
 
-pub(crate) const MAX_EXITS: u64 = 50_000_000;
+pub(crate) const DEFAULT_MAX_EXITS: u64 = 50_000_000;
 
 pub(crate) const WATCHDOG_MS: u64 = 8000;
 

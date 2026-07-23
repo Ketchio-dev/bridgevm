@@ -22,7 +22,7 @@ let package = Package(
             path: "Sources/BridgeVMControl",
             resources: [
                 .copy("Resources/windows-boot-seed-vars.fd.gz"),
-                .copy("Resources/secureboot-microsoft-only-aarch64-v1.6.5.json")
+                .copy("Resources/secureboot-microsoft-windows-transition-aarch64-v1.6.5.json")
             ]
         ),
         .target(

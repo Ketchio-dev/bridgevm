@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import Darwin
+#endif
 #if canImport(AppKit)
 import AppKit
 
@@ -14,6 +17,16 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
 #endif
 
 @main
+enum BridgeVMControlMain {
+    static func main() {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments.first == "--vtpm-lifecycle" {
+            exit(VTPMLifecycleCommand.run(arguments: Array(arguments.dropFirst())))
+        }
+        BridgeVMControlApp.main()
+    }
+}
+
 struct BridgeVMControlApp: App {
 #if canImport(AppKit)
     @NSApplicationDelegateAdaptor(ControlAppDelegate.self) private var appDelegate

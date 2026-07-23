@@ -73,10 +73,10 @@ It does not weaken security-state handling. See the
 | Gate | State | Difficulty judgment | Completion evidence |
 | --- | --- | --- | --- |
 | `SEC-TPM-FRONTEND` | `LIVE_PROVEN` | Bounded device-model work | Windows ACPI/TIS enumeration, live command flow, and a live PPI **clear** action (request → reboot → F12 → `TPM2_CC_Clear` → post-clear desktop → clean off) are all dated-receipt proven |
-| `SEC-TPM-LIFECYCLE` | `IN_PROGRESS` | Hard security/lifecycle work | Local path now bundles/signs the pinned runtime and implements same-ID move policy, encrypted export/restore, fresh-ID clone, archive-before-reset, and receipts; clean-second-Mac + BitLocker live proof remains |
-| `SEC-SB-MEASURED` | `IN_PROGRESS` | Hard cross-layer work | Pinned Secure Boot + TPM2 EDK2 and fail-closed Microsoft-only PK/KEK/db/dbx provisioning are locally proven; guest proof from `Confirm-SecureBootUEFI`, PCR 7, event log, and recovery/migration workflows remains |
-| `GPU-WDK-SIGN` | `EXTERNAL` | Externally gated | Fresh ARM64 WDK build, catalog, trusted signature, and clean bind |
-| `GPU-LIVE-RECEIPT` | `OPEN` | Live-machine gated | Same-boot bind/title/crash-free/performance evidence from the packaged app |
+| `SEC-TPM-LIFECYCLE` | `LIVE_PROVEN` | Hard security/lifecycle work | Authenticated encrypted export on Mac Studio [A] and packaged-app same-ID restore/desktop boot on MacBook Pro M5 [B] are dated-receipt proven with 239 `PCR_Read`, zero malformed/backend failures, and clean PSCI shutdown; BitLocker-only C3/C6 are blocked by Windows Home edition |
+| `SEC-SB-MEASURED` | `LIVE_PROVEN` | Hard cross-layer work | Windows reports Secure Boot enabled and TPM 2.0 ready; a 62,382-byte measured-boot log, 431 `PCR_Read`, 82 `PCR_Extend`, and zero malformed/backend failures are dated-receipt proven |
+| `GPU-WDK-SIGN` | `SUBMISSION_READY` | Production signature externally gated | ARM64 package/catalog/test signature/readiness, exact bind, Vulkan draw and host trace are proven; production EV/Partner Center signature remains external |
+| `GPU-LIVE-RECEIPT` | `LIVE_PROVEN` | Live-machine gated | Packaged-app 120.41 bind → native ARM64 PPSSPP 1.20.4 Vulkan UI for >10 min → 300-second `fb-rate.py` result (13.54 FPS average) → clean shutdown is dated-receipt proven |
 | `DIST-MACOS` | `EXTERNAL` | Externally gated | Developer ID, hardened runtime, notarization, clean-machine install and launch |
 
 The TPM register model and ACPI plumbing are comparatively straightforward.
@@ -129,11 +129,17 @@ rewritten non-system dylib closure, signatures, SHA-256 inventory, and license
 notices. The app exposes authenticated recovery-package export/restore,
 archive-before-reset, and APFS clone with a fresh TPM identity; copied state,
 old state, orphan keys, and prior run evidence are retained with lifecycle
-receipts instead of silently discarded. The standalone package passed a real
-key-FD/socket swtpm startup check on 2026-07-22. Firmware-populated measured-
-boot event validation, a real Windows PPI-action receipt, clean-second-Mac
-migration, and BitLocker recovery remain open, so the security gates stay
-`IN_PROGRESS`.
+receipts instead of silently discarded. On 2026-07-23 the final package again
+passed a real 32-byte binary key-FD, Unix data/control socket, encrypted-state,
+and process-cleanup smoke. The same day, Mac Studio [A] exported an authenticated
+recovery package and a quasi-clean MacBook Pro M5 [B] used only the transferred
+package/app/state/vars/disk to restore the same stable identity. Windows reached
+the desktop without a recovery screen, completed 239 `PCR_Read` and 82
+`PCR_Extend` operations with zero malformed/backend failures, then accepted an
+agent shutdown, reached PSCI system-off, wrote back NVMe, and cleaned up. See the
+[second-Mac migration receipt](docs/windows-arm/evidence/second-mac-migration-20260723.md).
+BitLocker enable/clone contrast remains explicitly `BLOCKED_BY_EDITION` because
+the guest is Windows 11 Home (`EditionID=Core`) and no Pro key was available.
 
 `SEC-SB-MEASURED` also has deterministic local evidence. The default firmware
 is a reproducible EDK2 build pinned to commit
@@ -143,8 +149,20 @@ Microsoft's ARM64 `secureboot_objects` v1.6.5 payloads and source provenance,
 then writes `dbx`, `db`, `KEK`, and `PK` in that order. Exact state is
 idempotent; partial, duplicate, or conflicting state fails without mutation.
 The packaged path includes the policy, build receipt, and license notices.
-This is E2—not a live assertion that Windows reports Secure Boot or that PCR 7,
-BitLocker recovery, and VM migration are correct.
+The 2026-07-23 live guest receipt now raises this to E4: Windows returned
+`Confirm-SecureBootUEFI=True`, `SetupMode=0`, `SecureBoot=1`, and a ready TPM
+2.0; the resident agent retrieved the complete 62,382-byte measured-boot log,
+and the host observed 431 `PCR_Read` plus 82 `PCR_Extend` operations with zero
+malformed commands/responses or backend failures. See the
+[Secure Boot measured-boot receipt](docs/windows-arm/evidence/sb-guest-proof-20260723.md).
+
+The graphics release boundary is likewise live: the ARM64 Venus package is
+submission-ready apart from production signing, and a packaged-app 120.41 run
+kept native ARM64 PPSSPP 1.20.4 rendered on Venus for more than ten minutes.
+The same boot produced 11,293 scanout readbacks, a passing P3 trace, and a
+300-second framebuffer result of 13.54 FPS average before clean PSCI shutdown.
+See the [GPU package receipt](docs/windows-arm/evidence/viogpu3d-venus-release-candidate-20260723.md)
+and [GPU live receipt](docs/windows-arm/evidence/gpu-live-receipt-20260723.md).
 
 Windows HVF durable suspend is intentionally outside v1. The experimental
 checkpoint path must not be advertised as suspend; see the

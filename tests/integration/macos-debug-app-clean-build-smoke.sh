@@ -45,7 +45,8 @@ HVF_SWTPM_LICENSES="$HVF_LAB/Contents/Resources/swtpm/licenses"
 HVF_FIRMWARE="$HVF_LAB/Contents/Resources/firmware/edk2-aarch64-secure-code.fd"
 HVF_FIRMWARE_MANIFEST="$HVF_LAB/Contents/Resources/firmware/manifest.txt"
 HVF_FIRMWARE_LICENSES="$HVF_LAB/Contents/Resources/firmware/licenses.txt"
-HVF_SECURE_BOOT_POLICY="$HVF_LAB/Contents/Resources/BridgeVMApp_BridgeVMControl.bundle/secureboot-microsoft-only-aarch64-v1.6.5.json"
+HVF_SECURE_BOOT_POLICY="$HVF_LAB/Contents/Resources/BridgeVMApp_BridgeVMControl.bundle/secureboot-microsoft-windows-transition-aarch64-v1.6.5.json"
+HVF_PPSSPP_TITLE_MANIFEST="$HVF_LAB/Contents/Resources/scripts/win-assets/bv-ppsspp-title.json"
 [[ -x "$HVF_LAB/Contents/MacOS/BridgeVMControl" ]] || fail "bundled Windows HVF Lab executable missing"
 [[ -x "$HVF_LAB/Contents/Resources/scripts/run-hvf-windows-installed-boot.sh" ]] \
   || fail "bundled Windows HVF wrapper missing"
@@ -66,6 +67,9 @@ grep -Fqx "sha256=$(shasum -a 256 "$HVF_FIRMWARE" | awk '{ print $1 }')" "$HVF_F
   || fail "bundled Windows HVF firmware manifest mismatch"
 [[ -s "$HVF_FIRMWARE_LICENSES" ]] || fail "bundled Windows HVF firmware license notices missing"
 [[ -f "$HVF_SECURE_BOOT_POLICY" ]] || fail "bundled Microsoft Secure Boot policy missing"
+[[ -f "$HVF_PPSSPP_TITLE_MANIFEST" ]] || fail "bundled PPSSPP title manifest missing"
+grep -Fq '"minimum_runtime_seconds": 600' "$HVF_PPSSPP_TITLE_MANIFEST" \
+  || fail "bundled PPSSPP title gate is not the 600-second release policy"
 otool -L "$HVF_PROBE" "$HVF_FRAMEWORKS/libvirglrenderer.1.dylib" \
   | grep -E '/Users/|/opt/homebrew/' >/dev/null \
   && fail "bundled Windows HVF runtime retains a development-host dylib path"

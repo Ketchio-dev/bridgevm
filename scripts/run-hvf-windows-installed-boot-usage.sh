@@ -17,6 +17,7 @@ Options:
                           is the normal app mode and cannot be combined with
                           --watchdog-ms. Agent overdue telemetry remains active.
   --max-reboots N         Maximum PSCI SYSTEM_RESET reboots. Default: 8.
+  --max-exits N           Per-vCPU HVF exit cap. Default: 50000000.
   --ram-mib N             Guest RAM in MiB. Default: 4096.
   --smp-cpus N            Guest vCPU count, 1..123. Default: unset, so the
                           probe uses its smp=1 fallback.

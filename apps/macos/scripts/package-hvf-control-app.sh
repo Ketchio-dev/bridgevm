@@ -62,7 +62,7 @@ cargo build --release -p bridgevm-cli
 
 install -d \
   "$stage_app/Contents/MacOS" \
-  "$stage_app/Contents/Resources/scripts" \
+  "$stage_app/Contents/Resources/scripts/win-assets" \
   "$stage_app/Contents/Resources/firmware" \
   "$stage_app/Contents/Resources/target/release/examples" \
   "$stage_app/Contents/Frameworks"
@@ -97,6 +97,9 @@ for script in \
 do
   install -m 755 "$ROOT/scripts/$script" "$stage_app/Contents/Resources/scripts/$script"
 done
+install -m 644 \
+  "$ROOT/scripts/win-assets/bv-ppsspp-title.json" \
+  "$stage_app/Contents/Resources/scripts/win-assets/bv-ppsspp-title.json"
 
 resource_bundle="$swift_bin_dir/BridgeVMApp_BridgeVMControl.bundle"
 [[ -d "$resource_bundle" ]] || {

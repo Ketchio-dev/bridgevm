@@ -6,6 +6,7 @@ init_installed_boot_defaults() {
   WATCHDOG_MS="900000"
   WATCHDOG_DISABLED="0"
   MAX_REBOOTS="8"
+  MAX_EXITS="50000000"
   RAM_MIB="4096"
   RAMFB_SAMPLES="1000,5000,15000,30000,60000,90000,120000"
   ENABLE_XHCI="0"
@@ -99,6 +100,11 @@ parse_installed_boot_args() {
         [[ $# -ge 2 ]] || { usage; exit 2; }
         nonnegative_integer "$2" || { echo "FAIL: --max-reboots requires a non-negative integer" >&2; exit 2; }
         MAX_REBOOTS="$2"; shift 2
+        ;;
+      --max-exits)
+        [[ $# -ge 2 ]] || { usage; exit 2; }
+        positive_integer "$2" || { echo "FAIL: --max-exits requires a positive integer" >&2; exit 2; }
+        MAX_EXITS="$2"; shift 2
         ;;
       --ram-mib)
         [[ $# -ge 2 ]] || { usage; exit 2; }
@@ -567,6 +573,7 @@ print_installed_boot_policy() {
     "DAILY_PRESET=$DAILY" \
     "BRIDGEVM_RAM_MIB=$RAM_MIB" \
     "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=$WATCHDOG_MS" \
+    "BRIDGEVM_BOOT_PROBE_MAX_EXITS=$MAX_EXITS" \
     "BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED=${WATCHDOG_DISABLED/0/<unset>}" \
     "BRIDGEVM_SMP_CPUS=${SMP_CPUS:-<unset> (probe default 1)}" \
     "BRIDGEVM_XHCI_REPORT_INTERVAL_MS=$([[ "$DAILY" == "1" ]] && printf '30' || printf '<probe-default 30>')" \

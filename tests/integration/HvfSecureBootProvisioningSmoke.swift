@@ -27,6 +27,7 @@ struct HvfSecureBootProvisioningSmoke {
         }
         store[base + 20] = 0x5a
         store[base + 21] = 0xfe
+        // Reserved (2B) and Reserved1 (4B) complete the 28-byte EDK2 header.
         return store
     }
 
@@ -43,6 +44,8 @@ struct HvfSecureBootProvisioningSmoke {
             policy: policy,
             provisionedAt: Date(timeIntervalSince1970: 1_700_000_000))
         require(first.varStore.count == original.count, "varstore size changed")
+        require(first.varStore.subdata(in: 0x5c..<0x64) == original.subdata(in: 0x5c..<0x64),
+                "VARIABLE_STORE_HEADER reserved bytes were overwritten")
         let keys = try HvfSecureBootProvisioner.storedVariables(in: first.varStore)
             .filter { ["dbx", "db", "KEK", "PK"].contains($0.name) }
             .sorted { $0.offset < $1.offset }
@@ -61,7 +64,7 @@ struct HvfSecureBootProvisioningSmoke {
             data: dbx.payload,
             attributes: dbx.manifest.attributes)
         var partial = original
-        partial.replaceSubrange(0x60..<0x60 + record.count, with: record)
+        partial.replaceSubrange(0x64..<0x64 + record.count, with: record)
         do {
             _ = try HvfSecureBootProvisioner.provision(varStore: partial, policy: policy)
             require(false, "partial policy was accepted")

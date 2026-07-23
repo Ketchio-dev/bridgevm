@@ -145,6 +145,7 @@ write_installed_boot_preflight() {
     printf 'daily_preset=%s\n' "$DAILY"
     printf 'ram_mib=%s\n' "$RAM_MIB"
     printf 'watchdog_ms=%s\n' "$WATCHDOG_MS"
+    printf 'max_exits=%s\n' "$MAX_EXITS"
     printf 'watchdog_disabled=%s\n' "$WATCHDOG_DISABLED"
     printf 'smp_cpus=%s\n' "${SMP_CPUS:-<unset>}"
     printf 'xhci_report_interval_ms=%s\n' "$([[ "$DAILY" == "1" ]] && printf '30' || printf '<probe-default 30>')"
@@ -296,6 +297,7 @@ build_installed_boot_env_args() {
     "BRIDGEVM_AARCH64_UEFI_CODE=$FIRMWARE_CODE"
     "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=$WATCHDOG_MS"
     "BRIDGEVM_BOOT_PROBE_MAX_REBOOTS=$MAX_REBOOTS"
+    "BRIDGEVM_BOOT_PROBE_MAX_EXITS=$MAX_EXITS"
     'BRIDGEVM_RECENT_NVME_COMMANDS=4096' 'BRIDGEVM_RECENT_PCIE_MMIO=2048'
     'BRIDGEVM_RECENT_PCIE_PIO=1024'
   )

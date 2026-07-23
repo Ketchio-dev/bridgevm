@@ -288,9 +288,9 @@ enum HvfWindowsBootSeed {
         guard vsBase + 28 < store.count,
               store.subdata(in: vsBase..<vsBase + 16) == authVarStoreGUID else { return nil }
         let vsSize = Int(store.readUInt32(at: vsBase + 16))
-        let dataStart = vsBase + 28  // 16 guid + 4 size + 1 fmt + 1 state + 2 rsvd + 4 pad
+        let dataStart = vsBase + 28  // VARIABLE_STORE_HEADER is 28 bytes in EDK2.
         let end = min(vsBase + vsSize, store.count)
-        var offset = vsBase + 24
+        var offset = dataStart
         // Walk existing (possibly zero) variables to the first free slot.
         while offset + 60 <= end {
             let startId = store.readUInt16(at: offset)
@@ -348,7 +348,7 @@ enum HvfWindowsBootSeed {
               store.subdata(in: vsBase..<vsBase + 16) == authVarStoreGUID else { return false }
         let vsSize = Int(store.readUInt32(at: vsBase + 16))
         let end = min(vsBase + vsSize, store.count)
-        var offset = vsBase + 24
+        var offset = vsBase + 28  // VARIABLE_STORE_HEADER is 28 bytes in EDK2.
         while offset + 60 <= end {
             let startId = store.readUInt16(at: offset)
             if startId != 0x55AA { break }

@@ -9,6 +9,7 @@ pub(crate) struct ProbeConfig {
     pub(crate) ram_size: usize,
     pub(crate) watchdog_ms: u64,
     pub(crate) watchdog_enabled: bool,
+    pub(crate) max_exits: u64,
     pub(crate) trace_fwcfg: bool,
     pub(crate) trace_msix: bool,
     pub(crate) trace_spi: bool,
@@ -48,6 +49,7 @@ impl ProbeConfig {
         println!("SMP CPUs advertised: {smp_cpus}");
         let watchdog_ms = env_u64("BRIDGEVM_BOOT_PROBE_WATCHDOG_MS", WATCHDOG_MS);
         let watchdog_enabled = !env_flag("BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED");
+        let max_exits = env_u64("BRIDGEVM_BOOT_PROBE_MAX_EXITS", DEFAULT_MAX_EXITS).max(1);
         if watchdog_enabled {
             println!("Boot watchdog: {watchdog_ms} ms per boot generation");
         } else {
@@ -69,6 +71,7 @@ impl ProbeConfig {
             ram_size,
             watchdog_ms,
             watchdog_enabled,
+            max_exits,
             trace_fwcfg,
             trace_msix,
             trace_spi,

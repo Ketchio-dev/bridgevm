@@ -4,7 +4,7 @@ This index separates current product guidance from active engineering plans and
 dated evidence. If a dated bring-up note conflicts with `README.md`,
 `STATUS.md`, or an active plan, the current documents win.
 
-Last reviewed: 2026-07-22.
+Last reviewed: 2026-07-23.
 
 ## Start here
 
@@ -53,7 +53,11 @@ They are valuable evidence, but they are not current onboarding material:
 - `hvf-*-20260713.md` through `hvf-*-20260721.md` — dated 3D, fence, scanout,
   WDDM, DXVK, and real-title investigations.
 - [Windows Arm evidence](windows-arm/evidence/) — dated storage, reboot, guest-agent,
-  WDK, driver-bind, and [live vTPM command-path](windows-arm/evidence/vtpm-windows-command-path-20260722.md)
+  WDK, driver-bind, [Secure Boot measured boot](windows-arm/evidence/sb-guest-proof-20260723.md),
+  [second-Mac encrypted vTPM migration](windows-arm/evidence/second-mac-migration-20260723.md),
+  [Venus release candidate](windows-arm/evidence/viogpu3d-venus-release-candidate-20260723.md),
+  [packaged-app GPU live receipt](windows-arm/evidence/gpu-live-receipt-20260723.md), and
+  [live vTPM command-path](windows-arm/evidence/vtpm-windows-command-path-20260722.md)
   receipts.
 - [KD serial bring-up](hvf-kd-serial-bringup.md) — kernel-debugging procedure and notes.
 - [Previous root README](archive/README-before-20260722.md) — exact 399-line

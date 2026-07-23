@@ -87,8 +87,9 @@ verify_no_host_paths() {
         ;;
     esac
   done < <(dependency_paths "$artifact")
-  if otool -L "$artifact" | grep -E '/Users/|/opt/homebrew/|/usr/local/' >/dev/null; then
-    echo "swtpm runtime retains a development-host path: $artifact" >&2
+  if dependency_paths "$artifact" \
+    | grep -E '/Users/|/opt/homebrew/|/usr/local/' >/dev/null; then
+    echo "swtpm runtime retains a development-host dependency path: $artifact" >&2
     exit 1
   fi
 }

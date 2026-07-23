@@ -8,7 +8,7 @@
   "arguments": [],
   "log": "bvgpu-real-title-gate.log",
   "pass_marker": "BVGPU-REAL-TITLE-PASS",
-  "minimum_runtime_seconds": 30,
+  "minimum_runtime_seconds": 600,
   "required_modules": [
     "vulkan_virtio.dll"
   ],
