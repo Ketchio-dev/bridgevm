@@ -1,13 +1,15 @@
 //! Split test module.
 
 use super::super::*;
-use crate::virtio_gpu_3d::{
-    self, CompletedFence, VIRTIO_GPU_CMD_CTX_DESTROY, VIRTIO_GPU_CMD_GET_CAPSET_INFO,
-    VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, VIRTIO_GPU_CMD_SUBMIT_3D,
-};
-use std::time::{Duration, Instant};
-
 use super::helpers::*;
+use crate::virtio_gpu_3d;
+use crate::virtio_gpu_3d::CompletedFence;
+use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_CTX_DESTROY;
+use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_GET_CAPSET_INFO;
+use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_RESOURCE_CREATE_3D;
+use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_SUBMIT_3D;
+use std::time::Duration;
+use std::time::Instant;
 
 #[test]
 fn deferred_scanout_moves_readback_off_the_flush_path() {

@@ -1,16 +1,17 @@
 //! Split test module.
 
 use super::super::*;
+use crate::fwcfg::GuestMemoryMut;
+use crate::pcie::VIRTIO_GPU_MSIX_TABLE_OFFSET;
+use crate::virtio_gpu_3d;
 use crate::virtio_gpu_3d::MockBackend;
-use crate::{
-    fwcfg::GuestMemoryMut,
-    pcie::VIRTIO_GPU_MSIX_TABLE_OFFSET,
-    virtio_gpu_3d::{
-        self, VIRTIO_GPU_CMD_CTX_CREATE, VIRTIO_GPU_CMD_RESOURCE_CREATE_3D,
-        VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB, VIRTIO_GPU_CMD_SUBMIT_3D, VIRTIO_GPU_FLAG_FENCE,
-    },
-};
-use std::sync::{Arc, Mutex};
+use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_CTX_CREATE;
+use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_RESOURCE_CREATE_3D;
+use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB;
+use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_SUBMIT_3D;
+use crate::virtio_gpu_3d::VIRTIO_GPU_FLAG_FENCE;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 #[derive(Debug)]
 pub(super) struct TestMem {
