@@ -202,11 +202,14 @@ non-blocking advisory run checks the latest stable Rust toolchain.
 
 The native Venus gate builds BridgeVM's pinned and patched virglrenderer,
 verifies `libvirglrenderer.dylib` and the render server, links and runs the 740
-Venus library tests, and runs the host/device smoke probes. This proves native
-build, ABI/link, capset, and device-model integration on a hosted macOS runner;
-it does not prove a real guest boot or rendered frame. Hosted runners lack
-nested virtualization, so real VM tests remain `#[ignore]`-d or gated behind
-`BRIDGEVM_LIVE_*`. End-to-end guest rendering requires a trusted, isolated
+Venus library tests, and requires the host capset probe. The device smoke is
+reported as a hosted advisory because GitHub's macOS VM cannot create a CGL
+pixel format/context (`CGLChoosePixelFormat` returns `10002`); it passes on a
+real Apple-silicon host. The required gate therefore proves native build,
+ABI/link, tests, and host capset integration, but not a real guest boot or
+rendered frame. Hosted runners also lack nested virtualization, so real VM
+tests remain `#[ignore]`-d or gated behind `BRIDGEVM_LIVE_*`. End-to-end guest
+rendering requires a trusted, isolated
 self-hosted Apple-silicon runner and must never execute untrusted fork PR code.
 
 Reproduce the deterministic gates locally:
