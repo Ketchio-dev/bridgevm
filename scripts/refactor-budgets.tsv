@@ -11,7 +11,11 @@
 # Likewise, unsafe sites moving from lib.rs into platform/* is not a reduction.
 #
 # path	max_loc	max_unsafe
-crates/bridgevm-agent-protocol/src/lib.rs	1213	0
+crates/bridgevm-agent-protocol/src/lib.rs	7	0
+crates/bridgevm-agent-protocol/src/protocol_version.rs	555	0
+crates/bridgevm-agent-protocol/src/tests_split/helpers.rs	32	0
+crates/bridgevm-agent-protocol/src/tests_split/mod.rs	4	0
+crates/bridgevm-agent-protocol/src/tests_split/part_1.rs	636	0
 crates/bridgevm-agentd/src/lib.rs	1185	0
 crates/bridgevm-api/src/boot_media.rs	491	0
 crates/bridgevm-api/src/boot_media_meta.rs	322	0
