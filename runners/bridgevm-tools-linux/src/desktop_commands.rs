@@ -117,7 +117,7 @@ impl GuestToolsState {
         if let Some(outcome) = self.desktop_controller.focus_window(id) {
             return outcome;
         }
-        if !self.windows.get(id).is_some_and(|window| !window.closed) {
+        if self.windows.get(id).is_none_or(|window| window.closed) {
             return CommandOutcome::error("window-not-found", format!("window {id} was not found"));
         }
 

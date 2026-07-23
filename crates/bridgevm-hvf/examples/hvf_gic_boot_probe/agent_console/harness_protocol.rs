@@ -129,7 +129,7 @@ impl AgentConsoleHarness {
         if matches!(self.state, AgentConsoleState::WaitingReady) {
             let due = self
                 .last_ping
-                .map_or(true, |t| now.duration_since(t) >= PING_INTERVAL);
+                .is_none_or(|t| now.duration_since(t) >= PING_INTERVAL);
             if due {
                 platform.virtio_console_agent_send(b"PING\n", mem);
                 self.last_ping = Some(now);

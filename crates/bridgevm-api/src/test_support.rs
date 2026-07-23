@@ -1,8 +1,6 @@
 //! Shared fixtures for the crate's unit tests, factored out when the single
 //! test module was split across the extracted modules.
 
-#![cfg(test)]
-
 pub(crate) use crate::*;
 pub(crate) use bridgevm_agent_protocol::{AgentAuth, PROTOCOL_VERSION};
 pub(crate) use bridgevm_storage::GuestToolsIpAddressMetadata;

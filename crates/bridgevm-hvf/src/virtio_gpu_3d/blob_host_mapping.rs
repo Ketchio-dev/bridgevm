@@ -91,14 +91,14 @@ impl VirtioGpu3d {
         if !aligned_u64(shm_offset, HVF_PAGE_SIZE)
             || shm_offset
                 .checked_add(rounded_size)
-                .map_or(true, |end| end > self.shm_window_size)
+                .is_none_or(|end| end > self.shm_window_size)
             || self.interval_overlaps(shm_offset, rounded_size)
         {
             let reason = if !aligned_u64(shm_offset, HVF_PAGE_SIZE) {
                 "shm_offset not 16KiB aligned"
             } else if shm_offset
                 .checked_add(rounded_size)
-                .map_or(true, |end| end > self.shm_window_size)
+                .is_none_or(|end| end > self.shm_window_size)
             {
                 "exceeds shm window"
             } else {

@@ -479,11 +479,10 @@ fn host_socket_udp_flow_echoes_reply_to_guest() {
         }
     };
     echo.send_to(b"world", peer).unwrap();
-    for _ in 0..64 {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while backend.pending_receive_len() == 0 && std::time::Instant::now() < deadline {
         backend.poll_host_sockets();
-        if backend.pending_receive_len() > 0 {
-            break;
-        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
 
     let reply = backend.poll_receive().unwrap();
@@ -524,11 +523,10 @@ fn host_socket_udp_multiple_replies_all_drain_from_receive_queue() {
     };
     echo.send_to(b"one", peer).unwrap();
     echo.send_to(b"two", peer).unwrap();
-    for _ in 0..64 {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while backend.pending_receive_len() < 2 && std::time::Instant::now() < deadline {
         backend.poll_host_sockets();
-        if backend.pending_receive_len() >= 2 {
-            break;
-        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
 
     let first = backend.poll_receive().unwrap();

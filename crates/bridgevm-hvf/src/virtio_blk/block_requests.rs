@@ -69,7 +69,7 @@ impl VirtioMmioBlock {
         let media_len = self.backend.capacity_sectors().saturating_mul(SECTOR_SIZE);
         if byte_offset
             .checked_add(data_len_u64)
-            .map_or(true, |end| end > media_len)
+            .is_none_or(|end| end > media_len)
         {
             self.stats.io_error_count = self.stats.io_error_count.saturating_add(1);
             self.stats.last_status = Some(VIRTIO_BLK_S_IOERR);

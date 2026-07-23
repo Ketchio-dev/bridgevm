@@ -442,7 +442,7 @@ fn host_resize_display_event_clears_when_guest_acks() {
     // events_read (config offset 0) advertises the DISPLAY event.
     assert_eq!(
         dev.access(
-            PCI_DEVICE_CFG_OFFSET + 0,
+            PCI_DEVICE_CFG_OFFSET,
             VirtioPciGpuOp::Read { size: 4 },
             &mut mem,
         ),
@@ -465,7 +465,7 @@ fn host_resize_display_event_clears_when_guest_acks() {
     // events_read no longer reports the acked event.
     assert_eq!(
         dev.access(
-            PCI_DEVICE_CFG_OFFSET + 0,
+            PCI_DEVICE_CFG_OFFSET,
             VirtioPciGpuOp::Read { size: 4 },
             &mut mem,
         ),

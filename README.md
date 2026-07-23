@@ -1,5 +1,7 @@
 # BridgeVM
 
+[![CI](https://github.com/Ketchio-dev/bridgevm/actions/workflows/ci.yml/badge.svg)](https://github.com/Ketchio-dev/bridgevm/actions/workflows/ci.yml)
+
 BridgeVM is an open-source, Mac-native virtualization project with three
 deliberately separate engines:
 
@@ -187,6 +189,26 @@ Before landing documentation changes, run:
 
 ```sh
 bash scripts/check-documentation-system.sh
+```
+
+## CI
+
+Every push to `main` and every pull request runs
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml): rustfmt, clippy with
+`-D warnings`, the workspace test suite on `macos-15` and `macos-26`, the
+`bridgevm-hvf` `venus`-feature tests, an MSRV (1.85) build check, and the
+structural-debt budget gate. Hosted macOS runners lack nested virtualization,
+so tests that boot a real VM are `#[ignore]`-d or gated behind `BRIDGEVM_LIVE_*`
+environment variables and do not run in CI.
+
+Reproduce the gates locally:
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+RUSTFLAGS="-D warnings" cargo test --workspace
+cargo test -p bridgevm-hvf --lib --features venus   # expect 740 passed
+scripts/check-refactor-budgets.sh
 ```
 
 Licensed under Apache-2.0.

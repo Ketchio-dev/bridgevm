@@ -70,6 +70,7 @@ pub(crate) fn composite_host_3d_to_scanout(
     true
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn composite_local_3d_to_scanout(
     mem: &dyn GuestMemoryMut,
     backing: &[BlobMemEntry],

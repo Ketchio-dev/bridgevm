@@ -92,7 +92,7 @@ impl Table {
     }
     /// Append `n` zero bytes (reserved fields).
     pub(crate) fn pad(&mut self, n: usize) {
-        self.bytes.extend(std::iter::repeat(0u8).take(n));
+        self.bytes.extend(std::iter::repeat_n(0u8, n));
     }
 
     /// A 12-byte ACPI Generic Address Structure (GAS) with an explicit ACPI

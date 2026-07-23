@@ -24,10 +24,9 @@ pub(crate) fn hv(status: i32, operation: &str) -> io::Result<()> {
     if status == HV_SUCCESS {
         Ok(())
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("{operation} failed with HVF status {status:#x}"),
-        ))
+        Err(io::Error::other(format!(
+            "{operation} failed with HVF status {status:#x}"
+        )))
     }
 }
 

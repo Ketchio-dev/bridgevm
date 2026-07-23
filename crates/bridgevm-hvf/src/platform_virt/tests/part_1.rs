@@ -20,8 +20,10 @@ use crate::virtio_blk::INSTALLER_ISO_SLOT;
 
 #[test]
 fn tpm_presence_wires_mmio_and_acpi_as_one_contract() {
-    let mut devices = VirtPlatformDeviceConfig::default();
-    devices.tpm_tis_present = true;
+    let devices = VirtPlatformDeviceConfig {
+        tpm_tis_present: true,
+        ..VirtPlatformDeviceConfig::default()
+    };
     let mut p = VirtPlatform::new_with_config_and_tpm_backend(
         VirtPlatformConfig {
             fdt: VirtFdtConfig::default(),
