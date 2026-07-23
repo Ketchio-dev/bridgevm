@@ -1,5 +1,6 @@
 //! Split test module.
 
+use super::super::resource_3d::*;
 use super::super::*;
 use crate::fwcfg::GuestMemoryMut;
 
