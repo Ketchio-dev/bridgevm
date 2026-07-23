@@ -557,7 +557,15 @@ crates/bridgevm-hvf/src/xhci/transfers/control_setup.rs	25	0
 crates/bridgevm-hvf/src/xhci/transfers/trb.rs	65	0
 crates/bridgevm-hvf/src/xhci/usb.rs	211	0
 crates/bridgevm-hvf/src/xhci/usb_descriptors.rs	112	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe.rs	1827	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe.rs	222	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/boot_media_setup.rs	112	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/final_report.rs	391	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_setup.rs	13	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_setup.rs	81	2
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_config.rs	81	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	998	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_setup.rs	90	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/watchpoint_setup.rs	15	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console.rs	51	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/clipboard.rs	67	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/config.rs	31	0
