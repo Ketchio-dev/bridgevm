@@ -60,7 +60,13 @@ crates/bridgevm-api/src/response_tests/part_5.rs	708	0
 crates/bridgevm-api/src/shares.rs	128	0
 crates/bridgevm-api/src/ssh_ports.rs	159	0
 crates/bridgevm-api/src/test_support.rs	259	0
-crates/bridgevm-apple-vz/src/lib.rs	2204	0
+crates/bridgevm-apple-vz/src/apple_vz_launch_timeout.rs	827	0
+crates/bridgevm-apple-vz/src/apple_vz_network_plan.rs	359	0
+crates/bridgevm-apple-vz/src/lib.rs	9	0
+crates/bridgevm-apple-vz/src/tests_split/helpers.rs	134	0
+crates/bridgevm-apple-vz/src/tests_split/mod.rs	5	0
+crates/bridgevm-apple-vz/src/tests_split/part_1.rs	535	0
+crates/bridgevm-apple-vz/src/tests_split/part_2.rs	393	0
 crates/bridgevm-cli/src/args/core.rs	290	0
 crates/bridgevm-cli/src/args/mod.rs	11	0
 crates/bridgevm-cli/src/args/probe_args.rs	124	0
