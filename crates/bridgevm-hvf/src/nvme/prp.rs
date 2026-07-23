@@ -1,8 +1,7 @@
-//! Split out of nvme.rs to keep files under 850 lines.
+//! PRP pointer/list decoding, LBA-to-byte transfer-range validation, and span coalescing.
 
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
-use std::sync::OnceLock;
 
 /// Decode a command's PRP data pointers into guest-physical spans covering
 /// `len` bytes. PRP1 may start at an offset within the first memory page; PRP2
@@ -109,73 +108,6 @@ pub(crate) fn prp_spans_into(
     true
 }
 
-// ---- small helpers --------------------------------------------------------
-
-/// Mask `value` to a 1/2/4/8-byte access width.
-pub(crate) fn mask_to_size(value: u64, size: u8) -> u64 {
-    match size {
-        1 => value & 0xff,
-        2 => value & 0xffff,
-        4 => value & 0xffff_ffff,
-        _ => value,
-    }
-}
-
-pub(crate) fn is_modelled_doorbell(offset: u64) -> bool {
-    (REG_DOORBELL_BASE..REG_DOORBELL_END).contains(&offset) && offset % 4 == 0
-}
-
-pub(crate) fn nvme_trace_enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        matches!(
-            std::env::var("BRIDGEVM_TRACE_NVME").ok().as_deref(),
-            Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
-        )
-    })
-}
-
-pub(crate) fn identify_cns_name(cns: u32) -> &'static str {
-    match cns {
-        IDENTIFY_CNS_NAMESPACE => "namespace",
-        IDENTIFY_CNS_CONTROLLER => "controller",
-        IDENTIFY_CNS_ACTIVE_NAMESPACE_LIST => "active-ns-list",
-        IDENTIFY_CNS_NAMESPACE_DESCRIPTOR_LIST => "ns-desc-list",
-        IDENTIFY_CNS_COMMAND_SET_CONTROLLER => "command-set-controller",
-        _ => "unknown",
-    }
-}
-
-pub(crate) fn feature_capabilities(fid: u8) -> Option<u32> {
-    match fid {
-        FEATURE_TEMPERATURE_THRESHOLD
-        | FEATURE_VOLATILE_WRITE_CACHE
-        | FEATURE_NUMBER_OF_QUEUES
-        | FEATURE_WRITE_ATOMICITY_NORMAL
-        | FEATURE_ASYNC_EVENT_CONFIGURATION => Some(FEATURE_CAP_CHANGEABLE),
-        FEATURE_ERROR_RECOVERY => Some(FEATURE_CAP_CHANGEABLE | FEATURE_CAP_NAMESPACE_SPECIFIC),
-        FEATURE_ARBITRATION
-        | FEATURE_POWER_MANAGEMENT
-        | FEATURE_INTERRUPT_COALESCING
-        | FEATURE_INTERRUPT_VECTOR_CONFIGURATION
-        | FEATURE_AUTONOMOUS_POWER_STATE_TRANSITION => Some(0),
-        _ => None,
-    }
-}
-
-pub(crate) fn hex_preview(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        use std::fmt::Write;
-        let _ = write!(&mut out, "{b:02x}");
-    }
-    out
-}
-
-pub(crate) fn rounded_disk_len(bytes: usize) -> usize {
-    bytes.div_ceil(LBA_SIZE) * LBA_SIZE
-}
-
 /// Decode (SLBA, NLB) into a byte range, validating it fits a `byte_len`-sized
 /// namespace. Returns `(start_byte, len_bytes)`.
 pub(crate) fn transfer_range(cmd: &SubmissionEntry, byte_len: u64) -> Option<(u64, usize)> {
@@ -221,56 +153,4 @@ pub(crate) fn coalesce_spans_into(spans: &[(u64, usize)], out: &mut Vec<(u64, us
         }
         out.push((gpa, len));
     }
-}
-
-/// Merge a partial write into a 64-bit register. `high` selects the upper
-/// 32-bit half (for split 32-bit accesses to a 64-bit register).
-pub(crate) fn merge_u64(current: u64, value: u64, size: u8, high: bool) -> u64 {
-    if size >= 8 {
-        return value;
-    }
-    if high {
-        (current & 0x0000_0000_ffff_ffff) | (u64::from(value as u32) << 32)
-    } else {
-        (current & 0xffff_ffff_0000_0000) | u64::from(value as u32)
-    }
-}
-
-/// Grow `slots` so index `idx` is addressable, filling new slots with `None`.
-pub(crate) fn ensure_slot<T>(slots: &mut Vec<Option<T>>, idx: usize) {
-    if idx >= slots.len() {
-        slots.resize_with(idx + 1, || None);
-    }
-}
-
-/// Copy `s` into `dst` as ASCII, space-padding the remainder (NVMe string
-/// fields are space- not NUL-padded).
-pub(crate) fn write_ascii(dst: &mut [u8], s: &str) {
-    for b in dst.iter_mut() {
-        *b = b' ';
-    }
-    let bytes = s.as_bytes();
-    let n = bytes.len().min(dst.len());
-    dst[..n].copy_from_slice(&bytes[..n]);
-}
-
-/// Copy `s` into `dst` as a C string, clearing the full destination first.
-pub(crate) fn write_cstr(dst: &mut [u8], s: &str) {
-    dst.fill(0);
-    if dst.is_empty() {
-        return;
-    }
-    let bytes = s.as_bytes();
-    let n = bytes.len().min(dst.len() - 1);
-    dst[..n].copy_from_slice(&bytes[..n]);
-}
-
-pub(crate) fn append_namespace_id_descriptor(dst: &mut [u8], off: &mut usize, nidt: u8, id: &[u8]) {
-    let end = *off + 4 + id.len();
-    assert!(end <= dst.len(), "namespace ID descriptor list overflow");
-    dst[*off] = nidt;
-    dst[*off + 1] = id.len() as u8;
-    // bytes 2..4 are reserved and remain zero.
-    dst[*off + 4..end].copy_from_slice(id);
-    *off = end;
 }

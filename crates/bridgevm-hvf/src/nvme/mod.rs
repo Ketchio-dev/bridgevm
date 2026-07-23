@@ -1,13 +1,33 @@
-//! nvme, split for the 1000-line rule.
-mod part;
-mod sq_entry_size;
-
-pub(crate) use part::*;
-pub use sq_entry_size::*;
-
+//! NVMe 1.4 controller model, decomposed by responsibility:
+//! wire protocol, BAR registers, queues, the admin command families,
+//! the I/O data path, namespaces and their backing store, and diagnostics.
 #[cfg(test)]
 mod tests;
 
-mod sq_entry_size_impl_2;
-mod sq_entry_size_impl_3;
-mod sq_entry_size_impl_4;
+mod admin;
+mod controller;
+mod disk;
+mod features;
+mod identify;
+mod interrupts;
+mod io;
+mod log_page;
+mod namespace;
+mod protocol;
+mod prp;
+mod queue;
+mod registers;
+mod snapshot;
+mod trace;
+
+pub use admin::*;
+pub use controller::*;
+pub(crate) use disk::*;
+pub(crate) use identify::*;
+pub use interrupts::*;
+pub use namespace::*;
+pub use protocol::*;
+pub(crate) use prp::*;
+pub use queue::*;
+pub use registers::*;
+pub use trace::*;
