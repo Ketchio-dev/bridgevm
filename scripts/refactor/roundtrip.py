@@ -4,7 +4,7 @@ Parse every file in a module directory, reassemble the items in their original
 order, and compare the non-blank lines with the original. Anything the parser
 cannot see would vanish in a regroup, so this must be exact before any move.
 
-usage: roundtrip.py <module-dir> [...]
+usage: roundtrip.py <module-dir-or-rust-file> [...]
 """
 import importlib.util, os, sys
 
@@ -21,11 +21,13 @@ exec(src, g)
 parse = g['parse']
 
 bad = 0
-for D in sys.argv[1:]:
-    for fn in sorted(os.listdir(D)):
-        if not fn.endswith('.rs') or fn == 'mod.rs':
-            continue
-        p = os.path.join(D, fn)
+for source in sys.argv[1:]:
+    if os.path.isfile(source):
+        paths = [source] if source.endswith('.rs') else []
+    else:
+        paths = [os.path.join(source, fn) for fn in sorted(os.listdir(source))
+                 if fn.endswith('.rs') and fn != 'mod.rs']
+    for p in paths:
         header, items = parse(p)
         out = list(header)
         for kind, name, body, methods, attrs in items:

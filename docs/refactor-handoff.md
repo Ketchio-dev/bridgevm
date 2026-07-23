@@ -47,12 +47,19 @@ move: which file an item lives in, and what that file is called.
 
 ## Remaining work — four files, two different kinds
 
-### A. Solvable by moving items (same approach as the merged PRs)
+### A. Mostly solvable by moving items (same approach as the merged PRs)
 
 ```
 5365  crates/bridgevm-hvf/examples/hvf_gic_boot_probe.rs
 3232  crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console.rs
 ```
+
+Parser inventory found a correction to the original classification: the example
+root's `main()` is itself 1,639 lines. Its supporting top-level items can be
+moved without changing function bodies, and `agent_console.rs` can be split by
+moving items and inherent methods, but the root cannot reach the 1,000-line
+standard until `main()` is decomposed in a separate behaviour-preserving change.
+Do not mix that decomposition with the pure item move.
 
 An example root is a **crate root**: `mod x;` inside `examples/foo.rs` resolves
 to `examples/x.rs`, not `examples/foo/x.rs`. That is why the existing
