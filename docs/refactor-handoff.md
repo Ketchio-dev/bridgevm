@@ -45,32 +45,24 @@ remains anywhere in the workspace.
 **No function body was changed in any of it.** Every one of those PRs is a pure
 move: which file an item lives in, and what that file is called.
 
-## Remaining work — four files, two different kinds
+## Remaining work — two files, each needs function decomposition
 
-### A. Mostly solvable by moving items (same approach as the merged PRs)
+### Completed after this handoff
 
-```
-5365  crates/bridgevm-hvf/examples/hvf_gic_boot_probe.rs
-3232  crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console.rs
-```
+The GIC probe work was kept in two separate changes as required:
 
-Parser inventory found a correction to the original classification: the example
-root's `main()` is itself 1,639 lines. Its supporting top-level items can be
-moved without changing function bodies, and `agent_console.rs` can be split by
-moving items and inherent methods, but the root cannot reach the 1,000-line
-standard until `main()` is decomposed in a separate behaviour-preserving change.
-Do not mix that decomposition with the pure item move.
+- `3c3e0bc` split `hvf_gic_boot_probe.rs` support items and
+  `agent_console.rs` by responsibility.
+- `12d194d` decomposed the root `main()` while preserving the timing-sensitive
+  CPU0 loop and HVF guard lifetime ordering.
 
-An example root is a **crate root**: `mod x;` inside `examples/foo.rs` resolves
-to `examples/x.rs`, not `examples/foo/x.rs`. That is why the existing
-hand-written modules carry `#[path = "hvf_gic_boot_probe/agent_console.rs"]`,
-and every generated part needs an explicit `#[path]` too.
+Current sizes are 222 lines for `hvf_gic_boot_probe.rs`, 51 lines for
+`agent_console.rs`, and at most 998 lines for every extracted module. The
+example crate-root modules continue to use explicit `#[path =
+"hvf_gic_boot_probe/..."]` declarations so they are not treated as independent
+example targets.
 
-Also: every `.rs` directly under `examples/` is its own example target, so the
-parts must **not** move up beside the root. They belong in
-`examples/hvf_gic_boot_probe/`.
-
-### B. Not solvable by moving items — needs real function decomposition
+### Still not solvable by moving items — needs real function decomposition
 
 ```
 2844  crates/bridgevm-hvf/src/platform/apple/firmware_run_loop.rs   (one ~2,450-line function)
