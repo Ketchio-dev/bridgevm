@@ -199,35 +199,20 @@ pub(crate) fn unique_test_root(label: &str) -> PathBuf {
 }
 
 pub(crate) fn spawn_detached_sleep() -> u32 {
-    let pid_file = unique_test_root("detached-sleep-pid");
-    // Shell double-fork: the outer `sh` exits immediately, the backgrounded
-    // subshell's `sleep` gets reparented to init, and we record its pid.
-    let script = format!(
-        "( sleep 300 </dev/null >/dev/null 2>&1 & printf '%d' \"$!\" > '{}' ) &",
-        pid_file.display()
-    );
-    let status = Command::new("sh")
+    // The shell backgrounds `sleep`, prints its pid synchronously, then exits;
+    // the child is reparented to init/launchd without racing a second shell.
+    let output = Command::new("sh")
         .arg("-c")
-        .arg(&script)
-        .status()
+        .arg("sleep 300 </dev/null >/dev/null 2>&1 & printf '%d' \"$!\"")
+        .output()
         .expect("failed to spawn detached sleep");
-    assert!(status.success());
-
-    // The pid file is written by the backgrounded subshell; poll for it.
-    let mut pid = None;
-    for _ in 0..200 {
-        if let Ok(contents) = std::fs::read_to_string(&pid_file) {
-            if let Ok(parsed) = contents.trim().parse::<u32>() {
-                if parsed != 0 {
-                    pid = Some(parsed);
-                    break;
-                }
-            }
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-    let _ = std::fs::remove_file(&pid_file);
-    let pid = pid.expect("detached sleep pid was not recorded");
+    assert!(output.status.success());
+    let pid = std::str::from_utf8(&output.stdout)
+        .expect("detached sleep pid was not UTF-8")
+        .trim()
+        .parse::<u32>()
+        .expect("detached sleep pid was not recorded");
+    assert_ne!(pid, 0);
     // Wait until the detached process is actually alive before returning.
     for _ in 0..200 {
         if process_is_alive(pid) {

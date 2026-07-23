@@ -38,7 +38,7 @@ fi
 
 set +e
 output="$(
-  cargo run -p bridgevm-hvf --features venus --example venus_device_smoke 2>&1
+  cargo run -p bridgevm-hvf --features venus --example venus_device_smoke --locked 2>&1
 )"
 status=$?
 set -e
