@@ -1,14 +1,7 @@
-//! Continuation of the `default_nvme_disk_bytes` impl block, split for the 1000-line rule.
+//! xHCI HID injection: boot-key and pointer action queueing, report draining, host-time pacing.
 
 use super::*;
-
 use crate::fwcfg::GuestMemoryMut;
-use crate::ramfb::RamfbConfig;
-use crate::virtio_blk::VirtioBlockRequestTrace;
-use crate::virtio_blk::VirtioMmioBlock;
-use crate::virtio_console::VirtioPciConsole;
-use crate::virtio_gpu::VirtioPciGpu;
-use crate::virtio_gpu_3d::GpuShmMapPort;
 use crate::xhci::PointerInputAction;
 use crate::xhci::SetupInputAction;
 use crate::xhci::XhciEventLifecycleStats;
@@ -17,100 +10,51 @@ use crate::xhci::XhciPointerInputQueueError;
 use crate::xhci::XhciPointerInputReportStats;
 use crate::xhci::XhciSetupInputQueueError;
 use crate::xhci::XhciSetupInputReportStats;
-use std::io;
-use std::path::Path;
+use std::time::Duration;
 use std::time::Instant;
 
+pub(crate) const HID_BOOT_KEYBOARD_USAGE_SPACE: u8 = 0x2c;
+
+pub(crate) const MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS: usize = 16;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct XhciHidBootKeyReportStats {
+    pub queued_space_reports: u64,
+    pub unsupported_usage_rejections: u64,
+    pub busy_rejections: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XhciHidBootKeyQueueError {
+    UnsupportedUsage { usage: u8 },
+    Busy,
+}
+
+/// Report-pacing decision. A zero interval or a not-yet-emitted endpoint always
+/// permits the next report; otherwise the caller must wait until `interval` has
+/// elapsed since `last_emission`. Kept as a free function so the gate is unit
+/// tested deterministically with synthetic `Instant`s.
+pub(crate) fn report_pacing_allows_emission(
+    interval: Duration,
+    last_emission: Option<Instant>,
+    now: Instant,
+) -> bool {
+    if interval.is_zero() {
+        return true;
+    }
+    match last_emission {
+        None => true,
+        Some(last) => now.saturating_duration_since(last) >= interval,
+    }
+}
+
 impl VirtPlatform {
-    /// Current virtio-gpu scanout geometry, if the device is present.
-    pub fn virtio_gpu_resolution(&self) -> Option<(u32, u32)> {
-        self.virtio_gpu
-            .as_ref()
-            .map(VirtioPciGpu::display_resolution)
-    }
-
-    pub fn set_virtio_gpu_shm_map_port(&mut self, port: Box<dyn GpuShmMapPort>) -> bool {
-        let Some(window_size) = self.pcie.virtio_gpu_host_visible_bar_size() else {
-            return false;
-        };
-        let Some(gpu) = self.virtio_gpu.as_mut() else {
-            return false;
-        };
-        gpu.set_shm_map_port(port, window_size);
-        true
-    }
-
-    pub fn virtio_gpu_host_visible_bar_base(&self) -> Option<u64> {
-        self.pcie.virtio_gpu_host_visible_bar_base()
-    }
-
-    pub fn pump_virtio_net_receive(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
-        self.poll_virtio_net(mem)
-    }
-
-    pub fn poll_virtio_net(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
-        let Some(dev) = self.virtio_net.as_mut() else {
-            return false;
-        };
-        dev.poll_host_sockets();
-        // Every poll may enqueue an unbounded batch of frames from drained
-        // host sockets, so delivering a single frame per poll lets the shared
-        // reply queue grow without bound under bulk host->guest traffic and
-        // starves newer connections behind it (live guest fetches collapsed
-        // below curl's 1000 B/s abort threshold). Drain a bounded burst; the
-        // loop also stops as soon as the guest has no free RX descriptor.
-        const RX_BURST_FRAMES: usize = 256;
-        let mut delivered = false;
-        for _ in 0..RX_BURST_FRAMES {
-            if !dev.pump_receive(mem) {
-                break;
-            }
-            delivered = true;
-        }
-        if delivered {
-            self.flush_virtio_net_pending_msix();
-        }
-        delivered
-    }
-
-    pub fn virtio_console_agent_send(&mut self, data: &[u8], mem: &mut dyn GuestMemoryMut) {
-        let Some(dev) = self.virtio_console.as_mut() else {
-            return;
-        };
-        dev.agent_send(data);
-        dev.poll(mem);
-        self.flush_virtio_console_pending_msix();
-    }
-
-    pub fn virtio_console_agent_take_inbound(&mut self) -> Vec<u8> {
-        self.virtio_console
-            .as_mut()
-            .map(VirtioPciConsole::take_inbound)
-            .unwrap_or_default()
-    }
-
-    pub fn virtio_console_agent_drain_inbound_into(&mut self, out: &mut Vec<u8>) {
-        let Some(dev) = self.virtio_console.as_mut() else {
-            return;
-        };
-        dev.drain_inbound_into(out);
-    }
-
-    pub fn poll_virtio_console(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
-        let Some(dev) = self.virtio_console.as_mut() else {
-            return false;
-        };
-        let progressed = dev.poll(mem);
-        if progressed {
-            self.flush_virtio_console_pending_msix();
-        }
-        progressed
-    }
-
-    pub fn virtio_iso_request_trace(&self) -> Option<Vec<VirtioBlockRequestTrace>> {
-        self.virtio_iso
-            .as_ref()
-            .map(VirtioMmioBlock::recent_request_trace)
+    /// Set the minimum host-time interval between consecutive HID interrupt-IN
+    /// report emissions on DCI3/DCI5. `Duration::ZERO` disables pacing (drain a
+    /// queued sequence as fast as the guest arms transfer descriptors). Live
+    /// runs set this to avoid bursting keystrokes the guest then drops.
+    pub fn set_xhci_report_interval(&mut self, interval: Duration) {
+        self.xhci_report_interval = interval;
     }
 
     pub fn queue_xhci_hid_boot_key_usage(
@@ -287,36 +231,5 @@ impl VirtPlatform {
 
     pub fn xhci_hid_semantic_stats(&self) -> XhciHidSemanticStats {
         self.xhci.hid_semantic_stats()
-    }
-
-    pub fn ramfb_config(&self) -> Option<RamfbConfig> {
-        if !self.devices.ramfb_present {
-            return None;
-        }
-        self.ramfb.config()
-    }
-
-    /// Snapshot the first NVMe disk image, including guest writes processed so
-    /// far. Live probes use this to persist an explicitly writable image.
-    pub fn nvme_disk(&self) -> &[u8] {
-        self.nvme.disk_image()
-    }
-
-    /// In-memory snapshot of the first NVMe disk, if the media is memory-backed.
-    pub fn nvme_disk_if_memory(&self) -> Option<&[u8]> {
-        self.nvme.disk_image_if_memory()
-    }
-
-    pub fn nvme_second_namespace_disk_if_memory(&self) -> Option<&[u8]> {
-        self.nvme.second_namespace_disk_image_if_memory()
-    }
-
-    /// Export current NVMe media to a raw file, applying sparse overlay writes.
-    pub fn export_nvme_disk(&mut self, path: impl AsRef<Path>) -> io::Result<u64> {
-        self.nvme.export_disk_image(path)
-    }
-
-    pub fn export_nvme_second_namespace_disk(&mut self, path: impl AsRef<Path>) -> io::Result<u64> {
-        self.nvme.export_second_namespace_disk_image(path)
     }
 }
