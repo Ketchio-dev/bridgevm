@@ -2974,7 +2974,7 @@ main() {
   fi
   output+="$line"$'\n'
 
-  line="$(status_line "PARTIAL" "Networking" "NAT and live guest package-install paths have opt-in evidence, but this report did not boot a guest or prove current internet reachability.")"
+  line="$(status_line "PASS" "Networking" "A dated live receipt boots the agent-planted Windows lineage under the packaged firmware and proves guest internet egress through the userspace NAT: DNS resolve, HTTP 200, and ICMP echo captured with exit=0, corroborated host-side by 96 answered DNS queries, ICMP echoes, a completed TCP flow, and a DHCP lease, then a clean PSCI shutdown (docs/windows-arm/evidence/net-live-receipt-20260724.md).")"
   output+="$line"$'\n'
 
   line="$(status_line "RESEARCH" "Windows no-QEMU fast path" "The BridgeVM-owned HVF VMM has preserved live evidence for an installed Windows 11 ARM64 desktop, four vCPUs, virtio-net connectivity, the resident service channel, a 9/9 valid smp=1/2/4 performance matrix, clean SYSTEM_OFF/write-back, a post-exit reopen chain, and a live Windows vTPM TIS command path without QEMU. A process-resident host pause/resume proof also survives a full-process stop and post-resume agent round trip, but it is not a disk-backed suspend image and durable suspend is outside v1. Product readiness remains blocked on secure packaging/UX, PPI/Secure Boot lifecycle receipts, and a distributable ARM64 Windows 3D driver.")"

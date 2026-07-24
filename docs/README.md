@@ -56,7 +56,9 @@ They are valuable evidence, but they are not current onboarding material:
   WDK, driver-bind, [Secure Boot measured boot](windows-arm/evidence/sb-guest-proof-20260723.md),
   [second-Mac encrypted vTPM migration](windows-arm/evidence/second-mac-migration-20260723.md),
   [Venus release candidate](windows-arm/evidence/viogpu3d-venus-release-candidate-20260723.md),
-  [packaged-app GPU live receipt](windows-arm/evidence/gpu-live-receipt-20260723.md), and
+  [packaged-app GPU live receipt](windows-arm/evidence/gpu-live-receipt-20260723.md),
+  [live guest networking receipt](windows-arm/evidence/net-live-receipt-20260724.md),
+  [DXVK/Venus DirectX-to-Metal feasibility](windows-arm/evidence/dxvk-venus-feasibility-20260724.md), and
   [live vTPM command-path](windows-arm/evidence/vtpm-windows-command-path-20260722.md)
   receipts.
 - [KD serial bring-up](hvf-kd-serial-bringup.md) — kernel-debugging procedure and notes.
