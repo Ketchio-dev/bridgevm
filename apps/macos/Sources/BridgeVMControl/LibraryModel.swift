@@ -184,4 +184,29 @@ final class LibraryModel: ObservableObject {
         selectedID = cfg.slug
         return true
     }
+
+    /// D2 first-run import: validate user-picked paths, materialize the HVF
+    /// bundle, persist the config, and select it. Returns an error string on
+    /// any validation or filesystem failure (fail-closed, nothing registered).
+    @discardableResult
+    func importExistingHvfVM(_ inputs: FirstRunImport.Inputs) -> String? {
+        if let error = FirstRunImport.validate(inputs) {
+            return error.description
+        }
+        let slug = VMConfig.slugify(inputs.displayName)
+        let config: VMConfig
+        do {
+            config = try FirstRunImport.register(
+                inputs, slug: slug, libraryRoot: libraryRoot)
+        } catch {
+            return "VM 번들을 만들지 못했습니다: \(error.localizedDescription)"
+        }
+        guard VMLibrary.save(config, rootURL: libraryRoot) else {
+            return "VM 등록 정보를 저장하지 못했습니다."
+        }
+        guard add(config) else {
+            return "등록된 VM을 라이브러리에서 찾지 못했습니다."
+        }
+        return nil
+    }
 }

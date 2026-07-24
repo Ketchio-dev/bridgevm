@@ -3251,7 +3251,7 @@ main() {
   line="$(status_line "BLOCKED_BY_HOST_CAPS" "Windows DirectX-to-Metal path" "A dated feasibility receipt cross-builds DXVK 3.0.2 for Windows ARM64 and audits the Venus ICD: every DXVK-required Vulkan feature is present except geometryShader, which host MoltenVK cannot provide because Metal has no geometry-shader stage, so no DXVK adapter can be created. The native Venus/Vulkan render path is already proven (gpu-live-receipt-20260723.md); DirectX-on-Metal specifically is walled by host capabilities and is not clearable without forking DXVK (docs/windows-arm/evidence/dxvk-venus-feasibility-20260724.md).")"
   output+="$line"$'\n'
 
-  line="$(status_line "BLOCKED" "Public release readiness boundary" "local app/readiness lanes exist, but public notarized release plus true Coherence/performance gates are not complete.")"
+  line="$(status_line "PARTIAL" "Public release readiness boundary" "A dated receipt builds a distributable DMG from the self-contained app (deep/strict codesign verified inside the mounted image, quickstart and Applications symlink present, hypervisor entitlement preserved) and adds a fail-closed first-run import wizard that registers an existing Windows HVF bundle and boots it through the proven HVF launch path. The remaining items are EXTERNAL: a paid Developer ID Application certificate and Apple notarization (spctl rejects the ad-hoc signature, notarize-submit reports EXTERNAL_NOTARIZATION_REQUIRED). True Coherence stays separately blocked (docs/release-readiness-20260724.md).")"
   output+="$line"$'\n'
 
   if has_forbidden_percent "$output"; then

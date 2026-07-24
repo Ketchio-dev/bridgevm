@@ -29,6 +29,8 @@ struct ContentView: View {
                     VMDetailPanel(model: model, library: library)
                         .id(model.config.slug)
                 }
+            } else if library.vms.isEmpty {
+                FirstRunView(library: library)
             } else {
                 emptyState
             }
