@@ -59,6 +59,7 @@ They are valuable evidence, but they are not current onboarding material:
   [packaged-app GPU live receipt](windows-arm/evidence/gpu-live-receipt-20260723.md),
   [live guest networking receipt](windows-arm/evidence/net-live-receipt-20260724.md),
   [DXVK/Venus DirectX-to-Metal feasibility](windows-arm/evidence/dxvk-venus-feasibility-20260724.md),
+  [asynchronous scanout present receipt](windows-arm/evidence/async-scanout-present-20260726.md),
   [release-readiness DMG + first-run](release-readiness-20260724.md), and
   [live vTPM command-path](windows-arm/evidence/vtpm-windows-command-path-20260722.md)
   receipts.
