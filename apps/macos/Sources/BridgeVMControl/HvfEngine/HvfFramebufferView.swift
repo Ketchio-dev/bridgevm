@@ -2,6 +2,7 @@
 import AppKit
 import SwiftUI
 import QuartzCore
+import IOSurface
 import Darwin
 
 struct HvfFramebufferView: NSViewRepresentable {
@@ -25,6 +26,8 @@ final class FBLayerView: NSView {
     private var mappedLength = 0
     private var guestSize: CGSize = .zero
     private var lastProcessedSeq: UInt64 = .max
+    private var activeIOSurfaceID: IOSurfaceID?
+    private var activeIOSurface: IOSurfaceRef?
     private var frameDisplayLink: CADisplayLink?
     private var pointerTrackingArea: NSTrackingArea?
 
@@ -72,6 +75,10 @@ final class FBLayerView: NSView {
     }
 
     @objc private func step(_ link: CADisplayLink) {
+        if presentIOSurfaceIfAvailable() {
+            return
+        }
+
         guard ensureMapping(), let mappedPointer else {
             return
         }
@@ -166,6 +173,8 @@ final class FBLayerView: NSView {
             return
         }
 
+        activeIOSurfaceID = nil
+        activeIOSurface = nil
         layer?.contents = image
         guestSize = CGSize(width: CGFloat(width), height: CGFloat(height))
     }
@@ -173,6 +182,8 @@ final class FBLayerView: NSView {
     func teardown() {
         stopDisplayLink()
         resetMapping()
+        activeIOSurfaceID = nil
+        activeIOSurface = nil
         guestSize = .zero
         layer?.contents = nil
     }
@@ -310,6 +321,10 @@ final class FBLayerView: NSView {
         session.map { $0.config.evidenceDir + "/display.fb" }
     }
 
+    private var iosurfaceSidecarURL: URL? {
+        framebufferPath.map { URL(fileURLWithPath: $0 + ".iosurface") }
+    }
+
     private var hasGuestSize: Bool {
         guestSize.width > 0 && guestSize.height > 0
     }
@@ -335,6 +350,37 @@ final class FBLayerView: NSView {
             frameDisplayLink?.invalidate()
             frameDisplayLink = nil
         }
+    }
+
+    private func presentIOSurfaceIfAvailable() -> Bool {
+        guard let iosurfaceSidecarURL,
+              let descriptor = HvfIOSurfaceDescriptor.load(from: iosurfaceSidecarURL)
+        else {
+            activeIOSurfaceID = nil
+            activeIOSurface = nil
+            return false
+        }
+
+        if descriptor.id == activeIOSurfaceID, let activeIOSurface {
+            // Re-assign on each display-link tick so Core Animation schedules a
+            // composite for pixels updated in place behind the stable surface ID.
+            layer?.contents = activeIOSurface
+            guestSize = CGSize(width: descriptor.width, height: descriptor.height)
+            return true
+        }
+
+        guard let scanout = HvfIOSurfaceScanout.lookup(descriptor) else {
+            activeIOSurfaceID = nil
+            activeIOSurface = nil
+            return false
+        }
+
+        activeIOSurfaceID = descriptor.id
+        activeIOSurface = scanout.surface
+        guestSize = CGSize(width: descriptor.width, height: descriptor.height)
+        layer?.contents = scanout.surface
+        resetMapping()
+        return true
     }
 
     private func ensureMapping() -> Bool {

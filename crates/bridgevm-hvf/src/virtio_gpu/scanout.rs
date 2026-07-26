@@ -329,8 +329,8 @@ impl VirtioGpu {
                     response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
                     return;
                 }
-                self.blit_3d_scanout_iosurface(resource_id);
-                match self.try_3d_scanout_readback(resource_id, rect, false) {
+                match self.try_3d_scanout_readback(resource_id, rect, false, self.scanout_iosurface)
+                {
                     ScanoutReadbackOutcome::Done | ScanoutReadbackOutcome::Gone => {}
                     ScanoutReadbackOutcome::NotDue => {
                         self.scanout_readback_throttled_count =

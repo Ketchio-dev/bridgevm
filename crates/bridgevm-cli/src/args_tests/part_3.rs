@@ -1,6 +1,7 @@
 //! Tests split so no file exceeds 1000 lines.
 
 use crate::test_support::*;
+include!("part_3_2.rs");
 
 #[test]
 fn hvf_virtio_gpu_3d_host_preflight_cli_accepts_command() {
@@ -51,8 +52,7 @@ fn virtio_gpu_trace_report_passes_p3_gate_on_complete_trace() {
     assert!(report.blob_create_ok);
     assert!(report.ctx_create_ok);
     assert!(report.venus_ctx_create_ok);
-    assert!(report.submit_3d_ok);
-    assert!(report.submit_3d_nonzero_ok);
+    assert!(report.submit_3d_ok && report.submit_3d_nonzero_ok);
     assert!(report.backend_fence_parked);
     assert!(report.fence_lifecycle_observed());
     assert!(report

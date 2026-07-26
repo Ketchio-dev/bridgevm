@@ -1,6 +1,8 @@
 //! SUBMIT_3D command-buffer validation and hand-off to the renderer.
 
 use super::*;
+include!("submit_diagnostic_state.rs");
+include!("submit_dispatch.rs");
 use crate::fwcfg::GuestMemoryMut;
 use crate::virtio_gpu_trace::venus_start_trace_enabled;
 
@@ -12,6 +14,7 @@ impl VirtioGpu3d {
         hdr: CtrlHdr3d,
         out: &mut Vec<u8>,
     ) {
+        self.clear_submit_diagnostic();
         if self.backend.is_none() {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
@@ -58,15 +61,6 @@ impl VirtioGpu3d {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }
-        let Some(backend) = self.backend.as_mut() else {
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
-            return;
-        };
-        if !backend.submit_3d(hdr.ctx_id, cmdbuf) {
-            response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr));
-            return;
-        }
-        self.submits = self.submits.saturating_add(1);
-        response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
+        self.dispatch_submit(cmdbuf, hdr, out);
     }
 }

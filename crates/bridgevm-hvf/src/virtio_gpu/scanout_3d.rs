@@ -41,47 +41,10 @@ impl VirtioGpu {
         self.scanout_iosurface_verify = enabled && verify;
     }
 
-    /// GPU-blit the scanout into the shared IOSurface (display path); the
-    /// CPU readback stays as the paced evidence/FbSink feed.
-    pub(crate) fn blit_3d_scanout_iosurface(&mut self, resource_id: u32) {
-        if !self.scanout_iosurface {
-            return;
-        }
-        let Some(info) = self.three_d.scanout_3d_info(resource_id) else {
-            return;
-        };
-        let width = info.width.min(self.width);
-        let height = info.height.min(self.height);
-        let started = Instant::now();
-        let Some(surface_id) = self
-            .three_d
-            .blit_3d_scanout_iosurface(resource_id, width, height)
-        else {
-            return;
-        };
-        let duration_ns = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
-        self.scanout_blit_count = self.scanout_blit_count.saturating_add(1);
-        self.scanout_blit_nanoseconds = self.scanout_blit_nanoseconds.saturating_add(duration_ns);
-        if self.scanout_iosurface_id != Some(surface_id) {
-            self.scanout_iosurface_id = Some(surface_id);
-            eprintln!("virtio-gpu: scanout IOSurface global id={surface_id} ({width}x{height})");
-            // Publish the global ID beside the shared framebuffer so a
-            // windowed viewer can IOSurfaceLookup + bind layer.contents
-            // instead of consuming the CPU framebuffer file.
-            if let Ok(fb_path) = std::env::var("BRIDGEVM_DISPLAY_EXPORT_FB") {
-                let _ = std::fs::write(
-                    format!("{fb_path}.iosurface"),
-                    format!("{surface_id} {width} {height}\n"),
-                );
-            }
-        }
-        let count = self.scanout_blit_count;
-        self.record_trace_fields("scanout_blit", |fields| {
-            let _ = write!(
-                fields,
-                ",\"resource_id\":{resource_id},\"surface_id\":{surface_id},\"width\":{width},\"height\":{height},\"duration_ns\":{duration_ns},\"count\":{count}"
-            );
-        });
+    fn scanout_readback_due(&self, now: Instant) -> bool {
+        self.last_3d_scanout_readback.is_none_or(|last| {
+            now.saturating_duration_since(last) >= self.scanout_readback_interval
+        })
     }
 
     pub(crate) fn defer_3d_scanout(&mut self, resource_id: u32, rect: Rect) {
@@ -122,16 +85,17 @@ impl VirtioGpu {
             self.pending_3d_scanout = None;
             return;
         }
-        if !self.pending_3d_scanout_blitted || self.scanout_iosurface_verify {
-            // One blit per armed frame: retries of a pacing-held pending
-            // frame must not re-blit at vCPU-exit cadence. Verify mode
-            // re-blits so the checksum compares the same frame the CPU
-            // readback is about to capture (the guest animates between an
-            // armed frame's blit and a pacing-held readback).
+        let readback_due = self.scanout_readback_due(Instant::now());
+        let blit_with_readback = readback_due
+            && self.scanout_iosurface
+            && (!self.pending_3d_scanout_blitted || self.scanout_iosurface_verify);
+        if !readback_due && (!self.pending_3d_scanout_blitted || self.scanout_iosurface_verify) {
+            // A pacing-held frame must still reach the interactive display.
+            // Only the later due readback is withheld.
             self.blit_3d_scanout_iosurface(resource_id);
             self.pending_3d_scanout_blitted = true;
         }
-        match self.try_3d_scanout_readback(resource_id, rect, true) {
+        match self.try_3d_scanout_readback(resource_id, rect, true, blit_with_readback) {
             ScanoutReadbackOutcome::NotDue => {}
             ScanoutReadbackOutcome::Gone => {
                 self.pending_3d_scanout = None;
@@ -150,12 +114,9 @@ impl VirtioGpu {
         resource_id: u32,
         rect: Rect,
         deferred: bool,
+        blit_iosurface: bool,
     ) -> ScanoutReadbackOutcome {
-        let now = Instant::now();
-        let readback_due = self.last_3d_scanout_readback.is_none_or(|last| {
-            now.saturating_duration_since(last) >= self.scanout_readback_interval
-        });
-        if !readback_due {
+        if !self.scanout_readback_due(Instant::now()) {
             return ScanoutReadbackOutcome::NotDue;
         }
         self.scanout_readback_attempt_count = self.scanout_readback_attempt_count.saturating_add(1);
@@ -167,18 +128,25 @@ impl VirtioGpu {
         let readback_height = info.height.min(self.height);
         let readback_len = scanout_len(readback_width, readback_height);
         self.scanout_readback_scratch.resize(readback_len, 0);
-        self.scanout_readback_scratch.fill(0);
-        let transfer_started = Instant::now();
-        let transfer_ok = self.three_d.read_3d_scanout(
+        let present = self.three_d.present_3d_scanout(
             resource_id,
             readback_width,
             readback_height,
-            &mut self.scanout_readback_scratch,
+            blit_iosurface,
+            Some(&mut self.scanout_readback_scratch),
         );
-        let transfer_ns = transfer_started
-            .elapsed()
-            .as_nanos()
-            .min(u128::from(u64::MAX)) as u64;
+        if let Some(surface_id) = present.surface_id {
+            self.record_3d_scanout_blit(
+                resource_id,
+                surface_id,
+                readback_width,
+                readback_height,
+                present.blit_duration_ns,
+            );
+            self.pending_3d_scanout_blitted = true;
+        }
+        let transfer_ok = present.readback_ok.unwrap_or(false);
+        let transfer_ns = present.readback_duration_ns;
         let composite_started = Instant::now();
         let readback_ok = transfer_ok
             && composite_host_3d_to_scanout(

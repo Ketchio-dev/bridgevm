@@ -14,7 +14,7 @@ use std::{
 
 use crate::virtio_gpu_3d::{
     CapsetInfo, CompletedFence, Create3dArgs, CreateBlobArgs, MappedBlob, ScanoutMappedBlob,
-    Transfer3dArgs, VirtioGpu3dBackend,
+    Submit3dResult, Transfer3dArgs, VirtioGpu3dBackend,
 };
 
 /// `BRIDGEVM_TRACE_VENUS_START=1`: print an FFI capset probe only when its
@@ -368,33 +368,8 @@ impl VirtioGpu3dBackend for VenusBackend {
         ret == 0
     }
 
-    fn submit_3d(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> bool {
-        host_gl::rebind_last_context();
-        let ndw = cmdbuf.len().div_ceil(4);
-        let ret = if cmdbuf.is_empty() {
-            unsafe { virgl_renderer_submit_cmd(ptr::null_mut(), ctx_id as c_int, 0) }
-        } else {
-            unsafe {
-                virgl_renderer_submit_cmd(
-                    cmdbuf.as_ptr() as *mut c_void,
-                    ctx_id as c_int,
-                    ndw as c_int,
-                )
-            }
-        };
-        if ret != 0 {
-            eprintln!(
-                "{}: submit_cmd ctx={ctx_id} bytes={} ret={ret}",
-                self.protocol.label(),
-                cmdbuf.len()
-            );
-        }
-        // QEMU's legacy virgl command path submits the buffer for renderer
-        // diagnostics but does not turn a vrend context error into a virtio
-        // command error. Windows relies on that tolerant wire contract while
-        // probing optional draw paths. Keep Venus strict; match QEMU for the
-        // legacy VirGL protocol and retain the host-side error above.
-        ret == 0 || self.protocol == VirtioGpuRendererProtocol::Virgl
+    fn submit_3d(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> Submit3dResult {
+        self.submit_renderer_command(ctx_id, cmdbuf)
     }
 
     fn create_blob(&mut self, args: CreateBlobArgs<'_>) -> bool {

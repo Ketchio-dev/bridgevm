@@ -46,6 +46,27 @@ impl VirtioGpu3d {
             .and_then(|backend| backend.scanout_blit_iosurface(resource_id, width, height))
     }
 
+    pub fn present_3d_scanout(
+        &mut self,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+        blit_iosurface: bool,
+        readback: Option<&mut [u8]>,
+    ) -> ScanoutPresentResult {
+        let Some(info) = self.scanout_3d_info(resource_id) else {
+            return ScanoutPresentResult::default();
+        };
+        if width > info.width || height > info.height {
+            return ScanoutPresentResult::default();
+        }
+        self.backend
+            .as_mut()
+            .map_or_else(ScanoutPresentResult::default, |backend| {
+                backend.scanout_present(resource_id, width, height, blit_iosurface, readback)
+            })
+    }
+
     pub fn scanout_iosurface_checksum(&mut self) -> Option<u64> {
         self.backend
             .as_mut()

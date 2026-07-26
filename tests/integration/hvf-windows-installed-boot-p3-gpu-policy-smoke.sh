@@ -377,6 +377,31 @@ no_watchdog_env_output="$(
 assert_contains "$no_watchdog_env_output" "BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED=1" "no-watchdog env"
 assert_contains "$no_watchdog_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=900000" "no-watchdog agent overdue env"
 
+scanout_export_env_output="$(
+  bash -c '
+    set -euo pipefail
+    source scripts/run-hvf-windows-installed-boot-validation.sh
+    source scripts/run-hvf-windows-installed-boot-args.sh
+    source scripts/run-hvf-windows-installed-boot-runner.sh
+    init_installed_boot_defaults
+    parse_installed_boot_args "$@"
+    build_installed_boot_env_args
+  ' _ \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --virtio-gpu-3d \
+    --performance-risk aggressive \
+    --display-export-ppm "$EVIDENCE/display.ppm" \
+    --display-export-ms 100 \
+    --display-export-fb "$EVIDENCE/display.fb"
+)" || fail "installed boot scanout export env failed: $scanout_export_env_output"
+assert_contains "$scanout_export_env_output" "BRIDGEVM_DISPLAY_EXPORT_FB=$EVIDENCE/display.fb" "scanout export env"
+assert_contains "$scanout_export_env_output" "BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1" "scanout export env"
+scanout_readback_last="$(printf '%s\n' "$scanout_export_env_output" | grep '^BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=' | tail -1)"
+[[ "$scanout_readback_last" == "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=100" ]] || \
+  fail "shared framebuffer export overrode paced evidence readback: $scanout_readback_last"
+
 daily_output="$(
   scripts/run-hvf-windows-installed-boot.sh \
     --target "$TARGET" \

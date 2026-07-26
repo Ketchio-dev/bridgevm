@@ -19,6 +19,7 @@ mod registers;
 mod resource;
 mod scanout;
 mod scanout_3d;
+mod scanout_blit;
 mod snapshot;
 mod trace;
 mod trace_fields;

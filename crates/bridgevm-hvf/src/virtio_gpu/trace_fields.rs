@@ -206,19 +206,7 @@ pub(crate) fn write_trace_command_details(out: &mut String, request: &[u8], hdr:
                 read_le_u32(request, 44).unwrap_or(0)
             );
         }
-        VIRTIO_GPU_CMD_SUBMIT_3D => {
-            let size = read_le_u32(request, 24).unwrap_or(0) as usize;
-            let payload_start = 32usize.min(request.len());
-            let payload_end = payload_start.saturating_add(size).min(request.len());
-            let payload = request.get(payload_start..payload_end).unwrap_or(&[]);
-            let _ = write!(
-                out,
-                ",\"submit_size\":{},\"submit_dwords\":{},\"submit_prefix_hex\":",
-                size,
-                size.div_ceil(4)
-            );
-            write_hex_prefix_json(out, payload, submit_trace_prefix_len());
-        }
+        VIRTIO_GPU_CMD_SUBMIT_3D => write_submit_request_details(out, request),
         VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB => {
             let _ = write!(
                 out,

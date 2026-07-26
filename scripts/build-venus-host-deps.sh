@@ -81,6 +81,21 @@ if [[ ! -e "$lib_path" ]]; then
   exit 1
 fi
 
+library_symbols="$(nm -U "$lib_path" | awk '{print $NF}')"
+required_symbols=(
+  virgl_renderer_init
+  virgl_renderer_bridgevm_scanout_blit_iosurface
+  virgl_renderer_bridgevm_scanout_iosurface_checksum
+  virgl_renderer_bridgevm_scanout_iosurface_dump
+  virgl_renderer_bridgevm_get_last_submit_diagnostic
+)
+for symbol in "${required_symbols[@]}"; do
+  grep -Fxq "_$symbol" <<<"$library_symbols" || {
+    printf 'Expected %s to export %s\n' "$lib_path" "$symbol" >&2
+    exit 1
+  }
+done
+
 server_path=""
 while IFS= read -r candidate; do
   server_path="$candidate"

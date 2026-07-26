@@ -1,22 +1,11 @@
 //! The host-renderer abstraction and the plain value types that cross it.
 
+include!("backend_types.rs");
+use super::ScanoutPresentResult;
+
 pub trait GpuShmMapPort: Send {
     fn map(&mut self, host_ptr: *mut u8, size: usize, shm_offset: u64) -> Result<(), i32>;
     fn unmap(&mut self, shm_offset: u64, size: usize) -> Result<(), i32>;
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CapsetInfo {
-    pub capset_id: u32,
-    pub max_version: u32,
-    pub max_size: u32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CompletedFence {
-    pub ctx_id: u32,
-    pub ring_idx: u8,
-    pub fence_id: u64,
 }
 
 pub trait VirtioGpu3dBackend: Send {
@@ -54,7 +43,7 @@ pub trait VirtioGpu3dBackend: Send {
     fn transfer_3d(&mut self, _args: Transfer3dArgs, _to_host: bool) -> bool {
         false
     }
-    fn submit_3d(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> bool;
+    fn submit_3d(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> Submit3dResult;
     fn create_blob(&mut self, args: CreateBlobArgs<'_>) -> bool;
     fn map_blob(&mut self, resource_id: u32) -> Option<MappedBlob>;
     fn unmap_blob(&mut self, resource_id: u32);
@@ -78,6 +67,43 @@ pub trait VirtioGpu3dBackend: Send {
         _height: u32,
     ) -> Option<u32> {
         None
+    }
+    /// Present one scanout generation. Backends with a confined renderer
+    /// thread can override this to keep the IOSurface blit and optional CPU
+    /// readback in one worker dispatch instead of paying two round trips.
+    fn scanout_present(
+        &mut self,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+        blit_iosurface: bool,
+        readback: Option<&mut [u8]>,
+    ) -> ScanoutPresentResult {
+        let blit_started = std::time::Instant::now();
+        let surface_id = blit_iosurface
+            .then(|| self.scanout_blit_iosurface(resource_id, width, height))
+            .flatten();
+        let blit_duration_ns = if blit_iosurface {
+            blit_started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64
+        } else {
+            0
+        };
+        let readback_started = std::time::Instant::now();
+        let readback_ok = readback.map(|out| self.scanout_read(resource_id, width, height, out));
+        let readback_duration_ns = if readback_ok.is_some() {
+            readback_started
+                .elapsed()
+                .as_nanos()
+                .min(u128::from(u64::MAX)) as u64
+        } else {
+            0
+        };
+        ScanoutPresentResult {
+            surface_id,
+            readback_ok,
+            blit_duration_ns,
+            readback_duration_ns,
+        }
     }
     /// Checksum the IOSurface contents (validation only — stalls the GPU).
     fn scanout_iosurface_checksum(&mut self) -> Option<u64> {

@@ -484,13 +484,12 @@ build_installed_boot_env_args() {
     )
   fi
   if [[ -n "${DISPLAY_EXPORT_FB:-}" ]]; then
-    # Device-inline shared-framebuffer export (no export thread; publish runs on
-    # the vCPU thread at RESOURCE_FLUSH). READBACK_MS=0 removes the artificial FPS
-    # cap so the display tracks the guest present rate (60-120fps, no limit).
-    ENV_ARGS+=(
-      "BRIDGEVM_DISPLAY_EXPORT_FB=$DISPLAY_EXPORT_FB"
-      "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=0"
-    )
+    # Shared-framebuffer export is an evidence/fallback feed. Do not force
+    # readback pacing to zero here: an IOSurface-backed live window does not
+    # consume these CPU copies, and --display-export-ms (when present) should
+    # remain the evidence cadence. A caller can still request uncapped readback
+    # explicitly with BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=0.
+    ENV_ARGS+=("BRIDGEVM_DISPLAY_EXPORT_FB=$DISPLAY_EXPORT_FB")
   fi
   if [[ -n "${BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS:-}" ]]; then
     # Caller-supplied readback pacing wins (A/B knob); the launcher strips

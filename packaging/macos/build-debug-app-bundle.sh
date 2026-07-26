@@ -177,6 +177,7 @@ verify_bundle() {
   local hvf_firmware_manifest="$hvf_lab_resources/firmware/manifest.txt"
   local hvf_firmware_licenses="$hvf_lab_resources/firmware/licenses.txt"
   local hvf_firmware_build_receipt="$hvf_lab_resources/firmware/edk2-aarch64-secure-code.fd.build.json"
+  local hvf_title_manifest="$hvf_lab_resources/scripts/win-assets/bv-ppsspp-title.json"
   local hvf_resource_bundle="$hvf_lab_resources/BridgeVMApp_BridgeVMControl.bundle"
   [[ -d "$hvf_lab" ]] || {
     echo "BridgeVM Windows HVF Lab bundle is missing: $hvf_lab" >&2
@@ -243,6 +244,14 @@ verify_bundle() {
   }
   [[ -s "$hvf_firmware_licenses" ]] || {
     echo "BridgeVM Windows HVF firmware license notices are missing" >&2
+    exit 1
+  }
+  [[ -f "$hvf_title_manifest" ]] || {
+    echo "BridgeVM Windows HVF PPSSPP title manifest is missing" >&2
+    exit 1
+  }
+  grep -Fq '"minimum_runtime_seconds": 600' "$hvf_title_manifest" || {
+    echo "BridgeVM Windows HVF PPSSPP title manifest is not the release policy" >&2
     exit 1
   }
   codesign --verify --strict "$hvf_lab" >/dev/null 2>&1 || {
@@ -430,6 +439,10 @@ for hvf_script in \
   run-hvf-windows-installed-boot-runner.sh; do
   install -m 755 "$ROOT/scripts/$hvf_script" "$HVF_LAB_RESOURCES/scripts/$hvf_script"
 done
+install -d "$HVF_LAB_RESOURCES/scripts/win-assets"
+install -m 644 \
+  "$ROOT/scripts/win-assets/bv-ppsspp-title.json" \
+  "$HVF_LAB_RESOURCES/scripts/win-assets/bv-ppsspp-title.json"
 
 "$ROOT/apps/macos/scripts/build-sign-hvf-windows-probe.sh" \
   --release \

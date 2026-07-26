@@ -17,9 +17,13 @@ use std::{
 
 use crate::virtio_gpu_3d::{
     CapsetInfo, CompletedFence, Create3dArgs, CreateBlobArgs, MappedBlob, ScanoutMappedBlob,
-    Transfer3dArgs, VirtioGpu3dBackend,
+    ScanoutPresentResult, Submit3dResult, Transfer3dArgs, VirtioGpu3dBackend,
 };
 
+include!("ffi_submit.rs");
+include!("submit_3d.rs");
+include!("submit_diagnostic.rs");
+include!("threaded_submit.rs");
 pub(crate) type virgl_renderer_gl_context = *mut c_void;
 
 #[repr(C)]
@@ -540,16 +544,8 @@ impl VirtioGpu3dBackend for ThreadedVenusBackend {
         self.call(move |backend| backend.transfer_3d(args, to_host))
     }
 
-    fn submit_3d(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> bool {
-        let cmdbuf_address = cmdbuf.as_ptr() as usize;
-        let cmdbuf_len = cmdbuf.len();
-        self.call(move |backend| {
-            // The caller blocks in call(), so the immutable command buffer
-            // remains alive and cannot be mutated until submission returns.
-            let cmdbuf =
-                unsafe { std::slice::from_raw_parts(cmdbuf_address as *const u8, cmdbuf_len) };
-            backend.submit_3d(ctx_id, cmdbuf)
-        })
+    fn submit_3d(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> Submit3dResult {
+        self.submit_renderer_command(ctx_id, cmdbuf)
     }
 
     fn create_blob(&mut self, args: CreateBlobArgs<'_>) -> bool {
@@ -590,18 +586,22 @@ impl VirtioGpu3dBackend for ThreadedVenusBackend {
     }
 
     fn scanout_read(&mut self, resource_id: u32, width: u32, height: u32, out: &mut [u8]) -> bool {
-        let out_address = out.as_mut_ptr() as usize;
-        let out_len = out.len();
-        self.call(move |backend| {
-            // The caller blocks in call() until this job completes, so the
-            // borrowed output slice remains alive and exclusively borrowed.
-            let out = unsafe { std::slice::from_raw_parts_mut(out_address as *mut u8, out_len) };
-            backend.scanout_read(resource_id, width, height, out)
-        })
+        self.read_scanout_on_worker(resource_id, width, height, out)
     }
 
     fn scanout_blit_iosurface(&mut self, resource_id: u32, width: u32, height: u32) -> Option<u32> {
         self.call(move |backend| backend.scanout_blit_iosurface(resource_id, width, height))
+    }
+
+    fn scanout_present(
+        &mut self,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+        blit_iosurface: bool,
+        readback: Option<&mut [u8]>,
+    ) -> ScanoutPresentResult {
+        self.present_scanout_on_worker(resource_id, width, height, blit_iosurface, readback)
     }
 
     fn scanout_iosurface_checksum(&mut self) -> Option<u64> {

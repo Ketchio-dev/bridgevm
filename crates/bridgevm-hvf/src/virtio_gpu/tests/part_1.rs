@@ -3,6 +3,7 @@
 use super::super::display::*;
 use super::super::*;
 use super::helpers::*;
+include!("part_1_2.rs");
 use crate::msix::MsixMessage;
 use crate::pcie::VIRTIO_GPU_MSIX_VECTOR_COUNT;
 use crate::virtio_gpu_3d::CompletedFence;
@@ -27,24 +28,6 @@ fn edid_preferred_timing_is_120_hz_with_valid_ranges_and_checksum() {
         edid.iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)),
         0
     );
-}
-
-#[test]
-fn trace_sampling_keeps_initial_evidence_and_sparse_long_run_checkpoints() {
-    assert!(trace_sample(1));
-    assert!(trace_sample(64));
-    assert!(!trace_sample(65));
-    assert!(!trace_sample(1023));
-    assert!(trace_sample(1024));
-    assert!(!trace_sample(1025));
-}
-
-#[test]
-fn hex_prefix_formats_bounded_payloads() {
-    assert_eq!(hex_prefix(&[], 32), "");
-    assert_eq!(hex_prefix(&[0x00, 0x0f, 0xa5], 32), "00 0f a5");
-    assert_eq!(hex_prefix(&[0x00, 0x01, 0x02, 0x03], 3), "00 01 02 ...");
-    assert_eq!(hex_prefix(&[0x7f], 0), " ...");
 }
 
 #[test]
@@ -178,6 +161,8 @@ fn trace_recorder_writes_command_details_for_p3_gpu_bringup() {
     assert!(contents.contains("\"blob_mem\":2"));
     assert!(contents.contains("\"blob_size\":4096"));
     assert!(contents.contains("\"name\":\"SUBMIT_3D\""));
+    assert!(contents.contains("\"submit_first_dword\":3721182122"));
+    assert!(contents.contains("\"submit_first_command_id\":170"));
     assert!(contents.contains("\"submit_prefix_hex\":\"aa bb cc dd\""));
 }
 
@@ -340,7 +325,6 @@ fn get_display_info_reports_configured_scanout() {
     assert_eq!(read_le_u32(&resp, 24 + 12), Some(900));
     assert_eq!(read_le_u32(&resp, 24 + 16), Some(1));
 }
-
 #[test]
 fn trace_records_display_edid_and_pre_reset_state() {
     let path = trace_test_path("display-edid-reset-details");

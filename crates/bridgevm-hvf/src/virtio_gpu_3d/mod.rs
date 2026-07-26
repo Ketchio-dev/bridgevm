@@ -14,6 +14,7 @@ mod local_resource_copy;
 mod protocol;
 pub(crate) mod resource_3d;
 mod scanout_present;
+mod scanout_types;
 mod submit_3d;
 pub(crate) mod trace;
 
@@ -23,6 +24,7 @@ pub use blob_resource::*;
 pub use device::*;
 pub(crate) use local_resource_copy::*;
 pub use protocol::*;
+pub use scanout_types::*;
 pub(crate) use trace::*;
 
 // The mocks are test-only; gating the module keeps the per-item

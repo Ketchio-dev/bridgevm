@@ -1,6 +1,7 @@
 //! The test-only mock renderer backend and mock shm map port.
 
 use super::backend::*;
+include!("test_mock_submit.rs");
 
 #[cfg(test)]
 #[derive(Debug, Default)]
@@ -17,6 +18,7 @@ pub struct MockBackend {
     pub backing_detached: Vec<u32>,
     pub transfers_3d: Vec<(Transfer3dArgs, bool)>,
     pub submits: Vec<(u32, Vec<u8>)>,
+    pub submit_result: Option<Submit3dResult>,
     pub blobs: Vec<(u32, u32, u64, u64)>,
     pub blob_iovecs: Vec<(u32, usize, usize)>,
     pub mapped: std::collections::BTreeMap<u32, MappedBlob>,
@@ -128,9 +130,8 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
         true
     }
 
-    fn submit_3d(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> bool {
-        self.lock().unwrap().submits.push((ctx_id, cmdbuf.to_vec()));
-        true
+    fn submit_3d(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> Submit3dResult {
+        mock_submit_3d(self, ctx_id, cmdbuf)
     }
 
     fn create_blob(&mut self, args: CreateBlobArgs<'_>) -> bool {

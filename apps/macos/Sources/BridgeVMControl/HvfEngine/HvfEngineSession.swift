@@ -364,7 +364,10 @@ final class HvfEngineSession: ObservableObject {
         // run.log is removed too: the wrapper recreates it, and a stale log
         // would otherwise replay old BVAGENT/BOOT_TIMER lines into this
         // session (false attach, false 3D-injection confirmation).
-        for name in ["display.ppm", "display.ppm.tmp", "display.fb", "display.fb.tmp", "input.ctl", "run.log"] {
+        for name in [
+            "display.ppm", "display.ppm.tmp", "display.fb", "display.fb.tmp",
+            "display.fb.iosurface", "input.ctl", "run.log"
+        ] {
             let url = evidenceDirectory.appendingPathComponent(name)
             if fileManager.fileExists(atPath: url.path) {
                 try fileManager.removeItem(at: url)

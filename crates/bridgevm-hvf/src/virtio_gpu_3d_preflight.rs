@@ -5,7 +5,7 @@ use std::{
 
 use crate::virtio_gpu_3d::{
     CapsetInfo, CompletedFence, CreateBlobArgs, CtrlHdr3d, GpuShmMapPort, MappedBlob,
-    ScanoutMappedBlob, VirtioGpu3d, VirtioGpu3dBackend, VIRTIO_GPU_BLOB_MEM_HOST3D,
+    ScanoutMappedBlob, Submit3dResult, VirtioGpu3d, VirtioGpu3dBackend, VIRTIO_GPU_BLOB_MEM_HOST3D,
     VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE, VIRTIO_GPU_CMD_CTX_CREATE, VIRTIO_GPU_CMD_GET_CAPSET,
     VIRTIO_GPU_CMD_GET_CAPSET_INFO, VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB,
     VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB, VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB, VIRTIO_GPU_CMD_SUBMIT_3D,
@@ -510,12 +510,12 @@ impl VirtioGpu3dBackend for Arc<Mutex<PreflightBackend>> {
 
     fn ctx_detach_resource(&mut self, _ctx_id: u32, _resource_id: u32) {}
 
-    fn submit_3d(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> bool {
+    fn submit_3d(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> Submit3dResult {
         if cmdbuf.is_empty() {
-            return false;
+            return Submit3dResult::rejected(22);
         }
         self.lock().unwrap().submits.push((ctx_id, cmdbuf.to_vec()));
-        true
+        Submit3dResult::accepted()
     }
 
     fn create_blob(&mut self, args: CreateBlobArgs<'_>) -> bool {
