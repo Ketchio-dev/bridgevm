@@ -1061,24 +1061,84 @@ run_installed_boot_probe() {
   extract_guest_bridgevm_logs
   write_title_gate_report
   write_real_title_gate_report
+  write_firstboot_stage_report
   write_installed_boot_target_stat
 }
 
-# Snapshot the guest title log before boot. A PASS marker is only evidence for
-# this run when the file changes during the run; otherwise an old successful
-# launch can make a later broken boot look green.
+# Boot-reliability evidence: did *this* run reach [stage4] done?
+#
+# The firstboot log persists on the guest disk, so its mere content proves
+# nothing about the current boot. Fail-closed like the title gate: the marker
+# counts only when the log also changed during this run. When no prior hash
+# could be read ("unavailable"), freshness is unknown and is reported as such
+# rather than assumed.
+write_firstboot_stage_report() {
+  [[ "${VIRTIO_GPU_3D:-0}" == "1" ]] || return 0
+
+  local report="$EVIDENCE_DIR/firstboot-stage.txt"
+  local log="$EVIDENCE_DIR/guest-logs/viogpu3d-firstboot.log"
+  local pre_sha="${PRE_RUN_FIRSTBOOT_SHA256:-missing}"
+  local current_sha="missing"
+  local marker_pass=0
+  local fresh=0
+  local stage4_pass=0
+  local last_stage="none"
+
+  if [[ -f "$log" ]]; then
+    current_sha="$(shasum -a 256 "$log" | awk '{print $1}')"
+    if grep -Fq '[stage4] done' "$log"; then
+      marker_pass=1
+    fi
+    last_stage="$(grep -oE '\[stage[0-9]+\]' "$log" | tail -1 | tr -d '[]')"
+    [[ -n "$last_stage" ]] || last_stage="none"
+  fi
+  if [[ "$pre_sha" != "unavailable" && "$current_sha" != "$pre_sha" ]]; then
+    fresh=1
+  fi
+  if [[ "$marker_pass" == "1" && "$fresh" == "1" ]]; then
+    stage4_pass=1
+  fi
+
+  {
+    date -u
+    printf 'firstboot_log=%s\n' "$log"
+    printf 'stage4_marker_present=%s\n' "$marker_pass"
+    printf 'firstboot_fresh=%s\n' "$fresh"
+    printf 'firstboot_pre_run_sha256=%s\n' "$pre_sha"
+    printf 'firstboot_current_sha256=%s\n' "$current_sha"
+    printf 'last_stage_observed=%s\n' "$last_stage"
+    printf 'stage4_pass=%s\n' "$stage4_pass"
+  } > "$report"
+  return 0
+}
+
+# Snapshot the guest title and firstboot logs before boot. A PASS marker is only
+# evidence for this run when the file changes during the run; otherwise an old
+# successful launch can make a later broken boot look green.
+#
+# The firstboot log matters as much as the title log: it lives on the guest disk
+# and is copied out verbatim, so three separate runs were observed reporting the
+# byte-identical "[stage4] done Sun 07/26/2026  6:56:23.26" line inherited from
+# the base image. Counting that as a per-run boot result would let a 10-boot
+# reliability gate pass without a single boot actually reaching stage4.
 capture_pre_run_real_title_gate_hash() {
   PRE_RUN_REAL_TITLE_SHA256="unavailable"
+  PRE_RUN_FIRSTBOOT_SHA256="unavailable"
   [[ "${VIRTIO_GPU_3D:-0}" == "1" ]] || return 0
-  local attach_out disk mount_point gate
+  local attach_out disk mount_point gate firstboot
   attach_out="$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -readonly "$TARGET" 2>/dev/null)" || return 0
   disk="$(printf '%s\n' "$attach_out" | awk 'NR==1 {print $1}')"
   PRE_RUN_REAL_TITLE_SHA256="missing"
+  PRE_RUN_FIRSTBOOT_SHA256="missing"
   while read -r mount_point; do
+    [[ -n "$mount_point" ]] || continue
     gate="$mount_point/BridgeVM/bvgpu-real-title-gate.log"
-    if [[ -n "$mount_point" && -f "$gate" ]]; then
+    if [[ "$PRE_RUN_REAL_TITLE_SHA256" == "missing" && -f "$gate" ]]; then
       PRE_RUN_REAL_TITLE_SHA256="$(shasum -a 256 "$gate" | awk '{print $1}')"
-      break
+    fi
+    firstboot="$mount_point/BridgeVM/viogpu3d-firstboot.log"
+    if [[ "$PRE_RUN_FIRSTBOOT_SHA256" == "missing" && -f "$firstboot" ]]; then
+      PRE_RUN_FIRSTBOOT_SHA256="$(shasum -a 256 "$firstboot" | awk '{print $1}')"
     fi
   done < <(printf '%s\n' "$attach_out" | awk 'match($0, /\/Volumes\/.*$/) {print substr($0, RSTART)}')
   [[ -n "$disk" ]] && hdiutil detach "$disk" >/dev/null 2>&1
