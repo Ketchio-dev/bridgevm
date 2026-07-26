@@ -17,7 +17,8 @@ use std::{
 
 use crate::virtio_gpu_3d::{
     CapsetInfo, CompletedFence, Create3dArgs, CreateBlobArgs, MappedBlob, ScanoutMappedBlob,
-    ScanoutPresentResult, Submit3dResult, Transfer3dArgs, VirtioGpu3dBackend,
+    ScanoutPresentPending, ScanoutPresentResult, Submit3dResult, Transfer3dArgs,
+    VirtioGpu3dBackend,
 };
 
 include!("ffi_submit.rs");
@@ -476,6 +477,26 @@ impl ThreadedVenusBackend {
             .recv()
             .expect("Venus renderer thread stopped before request completion")
     }
+
+    /// Dispatch without waiting, returning a receiver to poll for completion.
+    ///
+    /// Unlike `call`, this does not block, so the operation must not borrow
+    /// caller memory: `call` relies on blocking to keep a borrowed buffer
+    /// alive, and that guarantee is exactly what is given up here. Callers
+    /// pass owned buffers and get them back through the result.
+    pub(crate) fn dispatch<R, F>(&self, operation: F) -> mpsc::Receiver<R>
+    where
+        R: Send + 'static,
+        F: FnOnce(&mut VenusBackend) -> R + Send + 'static,
+    {
+        let (result_sender, result_receiver) = mpsc::sync_channel(1);
+        self.sender
+            .send(VenusWorkerMessage::Run(Box::new(move |backend| {
+                let _ = result_sender.send(operation(backend));
+            })))
+            .expect("Venus renderer thread stopped before request dispatch");
+        result_receiver
+    }
 }
 
 impl Drop for ThreadedVenusBackend {
@@ -608,6 +629,31 @@ impl VirtioGpu3dBackend for ThreadedVenusBackend {
         readback: Option<&mut [u8]>,
     ) -> ScanoutPresentResult {
         self.present_scanout_on_worker(resource_id, width, height, blit_iosurface, readback)
+    }
+
+    fn scanout_present_start(
+        &mut self,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+        blit_iosurface: bool,
+        readback: Option<Vec<u8>>,
+    ) -> Option<ScanoutPresentPending> {
+        Some(ScanoutPresentPending::new(self.start_present_on_worker(
+            resource_id,
+            width,
+            height,
+            blit_iosurface,
+            readback,
+        )))
+    }
+
+    fn scanout_present_poll(
+        &mut self,
+        pending: &mut ScanoutPresentPending,
+        block: bool,
+    ) -> Option<(ScanoutPresentResult, Option<Vec<u8>>)> {
+        pending.collect(block)
     }
 
     fn scanout_iosurface_checksum(&mut self) -> Option<u64> {

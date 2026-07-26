@@ -67,6 +67,35 @@ impl VirtioGpu3d {
             })
     }
 
+    /// Start a present the renderer executes off the caller's thread.
+    /// `None` means the backend has no asynchronous path.
+    pub fn scanout_present_start(
+        &mut self,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+        blit_iosurface: bool,
+        readback: Option<Vec<u8>>,
+    ) -> Option<ScanoutPresentPending> {
+        let info = self.scanout_3d_info(resource_id)?;
+        if width > info.width || height > info.height {
+            return None;
+        }
+        self.backend.as_mut().and_then(|backend| {
+            backend.scanout_present_start(resource_id, width, height, blit_iosurface, readback)
+        })
+    }
+
+    pub fn scanout_present_poll(
+        &mut self,
+        pending: &mut ScanoutPresentPending,
+        block: bool,
+    ) -> Option<(ScanoutPresentResult, Option<Vec<u8>>)> {
+        self.backend
+            .as_mut()
+            .and_then(|backend| backend.scanout_present_poll(pending, block))
+    }
+
     pub fn scanout_iosurface_checksum(&mut self) -> Option<u64> {
         self.backend
             .as_mut()

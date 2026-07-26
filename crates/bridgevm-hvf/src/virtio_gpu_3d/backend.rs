@@ -1,7 +1,7 @@
 //! The host-renderer abstraction and the plain value types that cross it.
 
 include!("backend_types.rs");
-use super::ScanoutPresentResult;
+use super::{ScanoutPresentPending, ScanoutPresentResult};
 
 pub trait GpuShmMapPort: Send {
     fn map(&mut self, host_ptr: *mut u8, size: usize, shm_offset: u64) -> Result<(), i32>;
@@ -104,6 +104,33 @@ pub trait VirtioGpu3dBackend: Send {
             blit_duration_ns,
             readback_duration_ns,
         }
+    }
+    /// Start a present without waiting for it, taking ownership of the
+    /// readback buffer. Returns `None` when the backend cannot present
+    /// asynchronously, and the caller must stay on the synchronous path.
+    ///
+    /// The buffer is moved rather than borrowed: the synchronous path can lend
+    /// a borrowed buffer because it blocks until the renderer is done, and
+    /// that is precisely the guarantee an asynchronous present gives up.
+    fn scanout_present_start(
+        &mut self,
+        _resource_id: u32,
+        _width: u32,
+        _height: u32,
+        _blit_iosurface: bool,
+        _readback: Option<Vec<u8>>,
+    ) -> Option<ScanoutPresentPending> {
+        None
+    }
+    /// Collect a started present if it has finished. `block` waits for it,
+    /// which is required before destroying the resource or the device: the
+    /// worker owns renderer state and buffers until it completes.
+    fn scanout_present_poll(
+        &mut self,
+        _pending: &mut ScanoutPresentPending,
+        _block: bool,
+    ) -> Option<(ScanoutPresentResult, Option<Vec<u8>>)> {
+        None
     }
     /// Checksum the IOSurface contents (validation only — stalls the GPU).
     fn scanout_iosurface_checksum(&mut self) -> Option<u64> {

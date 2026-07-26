@@ -3,6 +3,7 @@
 use super::*;
 use crate::virtio_gpu_3d::CompletedFence;
 use crate::virtio_gpu_3d::GpuShmMapPort;
+use crate::virtio_gpu_3d::ScanoutPresentPending;
 use crate::virtio_gpu_3d::VirtioGpu3d;
 use crate::virtio_gpu_3d::VirtioGpu3dBackend;
 use crate::virtio_gpu_3d::VirtioGpu3dStats;
@@ -64,6 +65,11 @@ pub struct VirtioGpu {
     pub(crate) scanout_readback_bytes: u64,
     pub(crate) scanout_readback_nanoseconds: u64,
     pub(crate) scanout_3d_deferred: bool,
+    /// Depth-1 latest-wins present mailbox. Enabled by opt-in; when off, the
+    /// present stays inline on the device thread exactly as before.
+    pub(crate) scanout_async_present: bool,
+    pub(crate) async_present: AsyncPresentMailbox,
+    pub(crate) async_present_pending: Option<(ScanoutPresentPending, PresentRequest, Rect)>,
     pub(crate) pending_3d_scanout: Option<(u32, Rect)>,
     pub(crate) pending_3d_scanout_fresh: bool,
     pub(crate) pending_3d_scanout_blitted: bool,
@@ -181,6 +187,9 @@ impl VirtioGpu {
             scanout_readback_count: 0,
             scanout_readback_throttled_count: 0,
             scanout_3d_deferred: false,
+            scanout_async_present: false,
+            async_present: AsyncPresentMailbox::new(),
+            async_present_pending: None,
             pending_3d_scanout: None,
             pending_3d_scanout_fresh: false,
             pending_3d_scanout_blitted: false,
@@ -254,6 +263,9 @@ impl VirtioGpu {
     }
 
     pub fn reset_runtime_state(&mut self) {
+        // The renderer worker owns the readback buffer until it answers, so an
+        // in-flight present must be collected before the device is torn down.
+        self.finish_async_present();
         let width = self.width;
         let height = self.height;
         self.device_features_sel = 0;

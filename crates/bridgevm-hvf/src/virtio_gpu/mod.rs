@@ -4,6 +4,7 @@
 #[cfg(test)]
 mod tests;
 
+mod async_present;
 mod bytes;
 mod command;
 mod compositor;
@@ -19,6 +20,7 @@ mod registers;
 mod resource;
 mod scanout;
 mod scanout_3d;
+mod scanout_async;
 mod scanout_blit;
 mod snapshot;
 mod trace;
@@ -27,6 +29,7 @@ mod vblank;
 mod venus_start_trace;
 mod virtqueue;
 
+pub(crate) use async_present::*;
 pub(crate) use bytes::*;
 pub(crate) use compositor::*;
 pub use device::*;

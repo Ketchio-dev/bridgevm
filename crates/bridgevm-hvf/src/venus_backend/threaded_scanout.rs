@@ -38,4 +38,30 @@ impl ThreadedVenusBackend {
             backend.scanout_present(resource_id, width, height, blit_iosurface, readback)
         })
     }
+
+    /// Start a present without waiting for it.
+    ///
+    /// The scratch buffer is MOVED to the worker and handed back with the
+    /// result. The blocking path can lend a borrowed buffer because it waits;
+    /// this one cannot, so ownership transfer is what keeps the buffer alive
+    /// for exactly as long as the renderer is writing into it.
+    pub(crate) fn start_present_on_worker(
+        &self,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+        blit_iosurface: bool,
+        mut readback: Option<Vec<u8>>,
+    ) -> std::sync::mpsc::Receiver<(ScanoutPresentResult, Option<Vec<u8>>)> {
+        self.dispatch(move |backend| {
+            let result = backend.scanout_present(
+                resource_id,
+                width,
+                height,
+                blit_iosurface,
+                readback.as_deref_mut(),
+            );
+            (result, readback)
+        })
+    }
 }

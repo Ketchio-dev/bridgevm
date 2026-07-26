@@ -11,6 +11,8 @@ use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_SUBMIT_3D;
 use std::time::Duration;
 use std::time::Instant;
 
+include!("part_3_2.rs");
+
 #[test]
 fn deferred_scanout_moves_readback_off_the_flush_path() {
     let (mut dev, backend, mut mem) = deferred_scanout_dev();

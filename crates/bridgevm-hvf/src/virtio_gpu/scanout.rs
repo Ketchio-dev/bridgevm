@@ -86,6 +86,9 @@ impl VirtioGpu {
             response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
             return;
         }
+        // The scanout binding is changing, so any present computed against the
+        // previous one must not be applied to the new one.
+        self.bump_present_epoch();
         if resource_id == 0 {
             self.scanout_resource = None;
             self.unbind_blob_scanout();

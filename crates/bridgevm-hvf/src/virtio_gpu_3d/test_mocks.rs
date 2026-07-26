@@ -1,6 +1,7 @@
 //! The test-only mock renderer backend and mock shm map port.
 
 use super::backend::*;
+use super::{ScanoutPresentPending, ScanoutPresentResult};
 include!("test_mock_submit.rs");
 
 #[cfg(test)]
@@ -32,6 +33,13 @@ pub struct MockBackend {
     pub fence_after_queue_polls: u64,
     pub reject_fence_ring: Option<u8>,
     pub reject_legacy_3d: bool,
+    /// Serve `scanout_present_start`, i.e. behave like a backend with a real
+    /// renderer worker. Off by default so existing tests keep the inline path.
+    pub async_present: bool,
+    /// Withhold async completions until cleared, modelling a worker that has
+    /// not finished yet.
+    pub async_present_stall: bool,
+    pub async_present_starts: Vec<(u32, u32, u32)>,
 }
 
 #[cfg(test)]
@@ -179,6 +187,51 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
             *byte = index as u8;
         }
         true
+    }
+
+    fn scanout_present_start(
+        &mut self,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+        blit_iosurface: bool,
+        readback: Option<Vec<u8>>,
+    ) -> Option<ScanoutPresentPending> {
+        if !self.lock().unwrap().async_present {
+            return None;
+        }
+        self.lock()
+            .unwrap()
+            .async_present_starts
+            .push((resource_id, width, height));
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        if !self.lock().unwrap().async_present_stall {
+            let mut readback = readback;
+            let readback_ok = readback
+                .as_mut()
+                .map(|out| self.scanout_read(resource_id, width, height, out.as_mut_slice()));
+            let surface_id = blit_iosurface
+                .then(|| self.scanout_blit_iosurface(resource_id, width, height))
+                .flatten();
+            let _ = sender.send((
+                ScanoutPresentResult {
+                    surface_id,
+                    readback_ok,
+                    blit_duration_ns: 0,
+                    readback_duration_ns: 0,
+                },
+                readback,
+            ));
+        }
+        Some(ScanoutPresentPending::new(receiver))
+    }
+
+    fn scanout_present_poll(
+        &mut self,
+        pending: &mut ScanoutPresentPending,
+        block: bool,
+    ) -> Option<(ScanoutPresentResult, Option<Vec<u8>>)> {
+        pending.collect(block)
     }
 
     fn scanout_blit_iosurface(&mut self, resource_id: u32, width: u32, height: u32) -> Option<u32> {

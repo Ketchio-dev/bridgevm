@@ -41,7 +41,7 @@ impl VirtioGpu {
         self.scanout_iosurface_verify = enabled && verify;
     }
 
-    fn scanout_readback_due(&self, now: Instant) -> bool {
+    pub(crate) fn scanout_readback_due(&self, now: Instant) -> bool {
         self.last_3d_scanout_readback.is_none_or(|last| {
             now.saturating_duration_since(last) >= self.scanout_readback_interval
         })
@@ -74,6 +74,9 @@ impl VirtioGpu {
     /// before this thread pays for the GL readback. A pacing-not-due pending
     /// frame is kept (delayed), never dropped.
     pub fn service_deferred_3d_scanout(&mut self) {
+        // A present started on an earlier drain may have finished; applying it
+        // is worthwhile even when no new frame is pending.
+        self.collect_async_present();
         let Some((resource_id, rect)) = self.pending_3d_scanout else {
             return;
         };
@@ -82,6 +85,10 @@ impl VirtioGpu {
             return;
         }
         if self.scanout_resource != Some(resource_id) || !self.three_d.is_3d_resource(resource_id) {
+            self.pending_3d_scanout = None;
+            return;
+        }
+        if self.service_async_present(resource_id, rect) {
             self.pending_3d_scanout = None;
             return;
         }
