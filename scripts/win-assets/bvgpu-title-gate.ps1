@@ -89,7 +89,9 @@ $requiredModules = @($requiredModulesValue | ForEach-Object {
     if ($_ -isnot [string] -or [string]::IsNullOrWhiteSpace($_)) { Fail-Manifest "required_modules entries must be non-empty strings" }
     ([IO.Path]::GetFileName([string]$_)).ToLowerInvariant()
 })
-$arguments = if ($null -eq $manifest.PSObject.Properties["arguments"]) { @() } else { @($manifest.arguments | ForEach-Object { [string]$_ }) }
+# The @(...) wrapper is required: an empty array returned from an if
+# expression otherwise collapses to $null, which has no .Count.
+$arguments = @(if ($null -eq $manifest.PSObject.Properties["arguments"]) { @() } else { $manifest.arguments | ForEach-Object { [string]$_ } })
 $workingDirectory = if ($null -eq $manifest.PSObject.Properties["working_directory"]) {
     Split-Path -Parent $executable
 } else {
@@ -132,7 +134,14 @@ try {
 
     $startedAt = [DateTime]::UtcNow
     Write-GateLog "status=START id=$id api=$api architecture=$architecture executable_sha256=$executableHash"
-    $process = Start-Process -FilePath $executable -ArgumentList $arguments -WorkingDirectory $workingDirectory -PassThru
+    # Start-Process rejects an empty -ArgumentList, so omit the parameter
+    # entirely when the manifest declares no arguments.
+    $process = if ($arguments.Count -eq 0) {
+        Start-Process -FilePath $executable -WorkingDirectory $workingDirectory -PassThru
+    }
+    else {
+        Start-Process -FilePath $executable -ArgumentList $arguments -WorkingDirectory $workingDirectory -PassThru
+    }
     Write-GateLog "process_started pid=$($process.Id)"
     $deadline = $startedAt.AddSeconds([double]$minimumSeconds)
     $observedModules = @{}
@@ -167,6 +176,12 @@ try {
     Write-GateLog "status=PASS pid=$($process.Id) elapsed_ms=$elapsedMs main_window_observed=$($mainWindowObserved.ToString().ToLowerInvariant()) executable_sha256=$executableHash"
     Write-GateLog $passMarker
     exit 0
+}
+catch {
+    # Never fail silently: an unhandled error here otherwise leaves the log
+    # ending at status=START, which is indistinguishable from a truncated run.
+    Write-GateLog "status=FAIL reason=gate-exception message=$($_.Exception.Message)"
+    exit 9
 }
 finally {
     if ($acquired) { try { $mutex.ReleaseMutex() } catch { } }

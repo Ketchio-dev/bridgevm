@@ -13,6 +13,10 @@ ASSETS="${ASSETS:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/win-assets}"
 # under \drivers\<name>. Default: just netkvm. Example for viogpudo:
 #   DRIVER_DIRS="viogpudo:$HOME/BridgeVM/drivers/viogpudo"
 DRIVER_DIRS="${DRIVER_DIRS:-netkvm:$HOME/BridgeVM/drivers/netkvm}"
+# The injector's GPT partition GUID is pinned, not random: the known-good inject
+# vars address it as HD(1,GPT,<this>,0x800,0x2FF000) in Boot0003. See the
+# normalisation step at the end of this script for why a random GUID is unsafe.
+INJECTOR_PARTITION_UUID="${INJECTOR_PARTITION_UUID:-a0a0c780-d438-47c2-8c96-1b56363c72dd}"
 # Set ENABLE_TESTSIGNING=1 when staging test-signed drivers such as viogpu3d.
 # This plants a marker file consumed by bvinject.cmd inside WinPE; existing
 # driver-injection runs leave Windows BCD untouched by default.
@@ -326,5 +330,59 @@ fi
 sync
 hdiutil detach "$DST_DEV" -quiet; DST_DEV=""
 hdiutil detach "$ISO_MNT" -quiet; ISO_MNT=""
+
+# `diskutil partitionDisk` mints a fresh random partition GUID on every build,
+# but the known-good inject vars pin Boot0003 to
+# HD(1,GPT,<PARTITION_UUID>,0x800,0x2FF000). A random GUID makes that boot entry
+# unresolvable, and UEFI then silently falls through to the installed Windows
+# partition: the run looks like it booted but injects nothing. Normalise the
+# GUID so the pinned boot entry always resolves.
+log "normalising GPT partition GUID to $INJECTOR_PARTITION_UUID"
+PARTITION_UUID="$INJECTOR_PARTITION_UUID" python3 - "$OUT" <<'PYGPT'
+import os, struct, sys, uuid, zlib
+
+path = sys.argv[1]
+want = uuid.UUID(os.environ["PARTITION_UUID"]).bytes_le
+
+with open(path, "r+b") as image:
+    def rewrite(header_lba):
+        image.seek(header_lba * 512)
+        header = bytearray(image.read(512))
+        if header[:8] != b"EFI PART":
+            raise SystemExit(f"FAIL: no GPT header at LBA {header_lba}")
+        header_size = struct.unpack_from("<I", header, 12)[0]
+        entries_lba = struct.unpack_from("<Q", header, 72)[0]
+        count, size = struct.unpack_from("<II", header, 80)
+        image.seek(entries_lba * 512)
+        entries = bytearray(image.read(count * size))
+        entries[16:32] = want          # partition 1 unique GUID
+        image.seek(entries_lba * 512)
+        image.write(entries)
+        struct.pack_into("<I", header, 88, zlib.crc32(bytes(entries)) & 0xFFFFFFFF)
+        struct.pack_into("<I", header, 16, 0)
+        struct.pack_into("<I", header, 16, zlib.crc32(bytes(header[:header_size])) & 0xFFFFFFFF)
+        image.seek(header_lba * 512)
+        image.write(header)
+
+    rewrite(1)                                     # primary
+    image.seek(512)
+    rewrite(struct.unpack_from("<Q", image.read(512), 32)[0])   # backup
+PYGPT
+
+actual_uuid="$(python3 - "$OUT" <<'PYCHECK'
+import struct, sys, uuid
+with open(sys.argv[1], "rb") as image:
+    image.seek(512)
+    header = image.read(512)
+    entries_lba = struct.unpack_from("<Q", header, 72)[0]
+    image.seek(entries_lba * 512)
+    print(uuid.UUID(bytes_le=image.read(128)[16:32]))
+PYCHECK
+)"
+[[ "$actual_uuid" == "$INJECTOR_PARTITION_UUID" ]] || {
+  echo "FAIL: GPT partition GUID is $actual_uuid, expected $INJECTOR_PARTITION_UUID" >&2
+  exit 1
+}
+
 log "DONE: driver injector at $OUT"
 log "run: run-hvf-windows-installed-boot.sh with NSID1=this injector, NSID2=desktop target"

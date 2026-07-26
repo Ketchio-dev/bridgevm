@@ -936,6 +936,38 @@ write_virtio_gpu_trace_report() {
   fi
 }
 
+# An injector run that silently boots the installed Windows partition instead of
+# the WinPE injector looks successful but changes nothing: the boot entry label
+# reads "Windows Boot Manager" either way. The tell is the partition GUID in the
+# booted device path -- it must be the injector's own. WinPE here has no serial
+# console, so the on-screen BVINJECT marker is not greppable from run.log and
+# cannot be used. Reported as evidence; only --placeholder-nsid1 runs inject.
+injector_boot_observed() {
+  if [[ -z "$PLACEHOLDER_NSID1" ]]; then
+    printf 'n/a-no-injector'
+    return 0
+  fi
+  local want booted
+  want="$(python3 - "$PLACEHOLDER_NSID1" 2>/dev/null <<'PYUUID'
+import struct, sys, uuid
+with open(sys.argv[1], "rb") as image:
+    image.seek(512)
+    entries_lba = struct.unpack_from("<Q", image.read(512), 72)[0]
+    image.seek(entries_lba * 512)
+    print(uuid.UUID(bytes_le=image.read(128)[16:32]).hex)
+PYUUID
+)"
+  [[ -n "$want" ]] || { printf 'unknown-no-gpt'; return 0; }
+  booted="$(grep -a -oE 'HD\(1,GPT,[0-9A-Fa-f-]+' "$EVIDENCE_DIR/run.log" 2>/dev/null |
+    head -1 | sed 's/.*,//' | tr -d - | tr 'A-Z' 'a-z')"
+  [[ -n "$booted" ]] || { printf 'unknown-no-boot-path'; return 0; }
+  if [[ "$booted" == "$want" ]]; then
+    printf 'true'
+  else
+    printf 'false-booted-%s' "$booted"
+  fi
+}
+
 write_installed_boot_target_stat() {
   {
     printf 'run_status=%s\n' "$RUN_STATUS"
@@ -966,6 +998,7 @@ write_installed_boot_target_stat() {
       printf 'host_pause_resume_observation=%s\n' "$(host_pause_resume_observation_path)"
     fi
     print_media_stat after_target_stat "$TARGET"
+    printf 'injector_boot_observed=%s\n' "$(injector_boot_observed)"
     printf 'after_vars_stat:\n'
     ls -lh "$VARS"
     printf 'ramfb_files:\n'
