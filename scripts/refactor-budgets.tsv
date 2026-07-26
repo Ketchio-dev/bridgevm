@@ -228,7 +228,8 @@ crates/bridgevm-hvf/src/pl031.rs	161	0
 crates/bridgevm-hvf/src/platform/apple/diagnostic_vector.rs	199	6
 crates/bridgevm-hvf/src/platform/apple/ffi.rs	227	0
 crates/bridgevm-hvf/src/platform/apple/firmware_irq.rs	210	5
-crates/bridgevm-hvf/src/platform/apple/firmware_run_loop.rs	2844	42
+crates/bridgevm-hvf/src/platform/apple/firmware_run_loop.rs	2782	33
+crates/bridgevm-hvf/src/platform/apple/firmware_vcpu_setup.rs	127	9
 crates/bridgevm-hvf/src/platform/apple/guest_entry.rs	684	27
 crates/bridgevm-hvf/src/platform/apple/guest_mem.rs	108	1
 crates/bridgevm-hvf/src/platform/apple/guest_phys.rs	274	2
@@ -253,7 +254,7 @@ crates/bridgevm-hvf/src/platform/apple/mmio_emulation/mod.rs	9	0
 crates/bridgevm-hvf/src/platform/apple/mmio_emulation/read_emulation.rs	447	16
 crates/bridgevm-hvf/src/platform/apple/mmio_emulation/read_exit.rs	300	12
 crates/bridgevm-hvf/src/platform/apple/mmio_emulation/write_emulation.rs	475	17
-crates/bridgevm-hvf/src/platform/apple/mod.rs	40	0
+crates/bridgevm-hvf/src/platform/apple/mod.rs	42	0
 crates/bridgevm-hvf/src/platform/apple/pflash.rs	859	15
 crates/bridgevm-hvf/src/platform/apple/reset_vector.rs	484	15
 crates/bridgevm-hvf/src/platform/apple/stage1.rs	791	0

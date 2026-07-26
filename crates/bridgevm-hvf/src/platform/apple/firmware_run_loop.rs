@@ -567,95 +567,33 @@ pub fn probe_windows_11_arm_uefi_firmware_run_loop(
     }
 
     if vcpu_created {
-        let status = unsafe { hv_vcpu_set_reg(vcpu, HV_REG_PC, WINDOWS_ARM_UEFI_CODE_IPA) };
-        pc_set_status = Some(status);
-        pc_set = status == HV_SUCCESS;
-        if !pc_set {
-            blockers.push(format!("hv_vcpu_set_reg(PC) failed: {status:#x}"));
-        }
-    }
-
-    if vcpu_created && platform_dtb_populated {
-        let status = unsafe { hv_vcpu_set_reg(vcpu, HV_REG_X0, WINDOWS_ARM_PLATFORM_DTB_IPA) };
-        x0_dtb_ipa_set_status = Some(status);
-        x0_dtb_ipa_set = status == HV_SUCCESS;
-        if !x0_dtb_ipa_set {
-            blockers.push(format!(
-                "hv_vcpu_set_reg(X0=platform DTB IPA) failed: {status:#x}"
-            ));
-        }
-    }
-
-    if vcpu_created {
-        let status = unsafe { hv_vcpu_set_reg(vcpu, HV_REG_CPSR, AARCH64_PSTATE_EL1H_DAIF_MASKED) };
-        cpsr_set_status = Some(status);
-        cpsr_set = status == HV_SUCCESS;
-        if !cpsr_set {
-            blockers.push(format!("hv_vcpu_set_reg(CPSR) failed: {status:#x}"));
-        }
-    }
-
-    if vcpu_created {
-        let status = unsafe { hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_SP_EL1, sp_el1_seed_ipa) };
-        sp_el1_set_status = Some(status);
-        sp_el1_set = status == HV_SUCCESS;
-        if !sp_el1_set {
-            blockers.push(format!("hv_vcpu_set_sys_reg(SP_EL1) failed: {status:#x}"));
-        }
-    }
-
-    if vcpu_created && diagnostic_vector_seed_requested && diagnostic_vector_populated {
-        let status =
-            unsafe { hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_VBAR_EL1, diagnostic_vector_ipa) };
-        diagnostic_vector_vbar_el1_set_status = Some(status);
-        diagnostic_vector_vbar_el1_set = status == HV_SUCCESS;
-        if !diagnostic_vector_vbar_el1_set {
-            blockers.push(format!(
-                "hv_vcpu_set_sys_reg(VBAR_EL1 diagnostic vector) failed: {status:#x}"
-            ));
-        }
-    }
-
-    if vcpu_created && wire_interrupt_timer {
-        let offset_status =
-            unsafe { hv_vcpu_set_vtimer_offset(vcpu, WINDOWS_ARM_VTIMER_OFFSET_VALUE) };
-        vtimer_offset_set_status = Some(offset_status);
-        if offset_status != HV_SUCCESS {
-            blockers.push(format!(
-                "hv_vcpu_set_vtimer_offset for firmware run-loop failed: {offset_status:#x}"
-            ));
-        }
-
-        let cval_status =
-            unsafe { hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_CNTV_CVAL_EL0, cntv_cval_value) };
-        cntv_cval_set_status = Some(cval_status);
-        if cval_status != HV_SUCCESS {
-            blockers.push(format!(
-                "hv_vcpu_set_sys_reg(CNTV_CVAL_EL0) for firmware run-loop failed: {cval_status:#x}"
-            ));
-        }
-
-        let ctl_status =
-            unsafe { hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_CNTV_CTL_EL0, cntv_ctl_value) };
-        cntv_ctl_set_status = Some(ctl_status);
-        if ctl_status != HV_SUCCESS {
-            blockers.push(format!(
-                "hv_vcpu_set_sys_reg(CNTV_CTL_EL0) for firmware run-loop failed: {ctl_status:#x}"
-            ));
-        }
-
-        let unmask_status = unsafe { hv_vcpu_set_vtimer_mask(vcpu, false) };
-        vtimer_initial_unmask_status = Some(unmask_status);
-        if unmask_status != HV_SUCCESS {
-            blockers.push(format!(
-                "hv_vcpu_set_vtimer_mask(false) for firmware run-loop failed: {unmask_status:#x}"
-            ));
-        }
-
-        interrupt_timer_initialized = offset_status == HV_SUCCESS
-            && cval_status == HV_SUCCESS
-            && ctl_status == HV_SUCCESS
-            && unmask_status == HV_SUCCESS;
+        let seed = seed_firmware_vcpu_registers(
+            vcpu,
+            platform_dtb_populated,
+            diagnostic_vector_seed_requested,
+            diagnostic_vector_populated,
+            diagnostic_vector_ipa,
+            wire_interrupt_timer,
+            sp_el1_seed_ipa,
+            cntv_cval_value,
+            cntv_ctl_value,
+            &mut blockers,
+        );
+        pc_set = seed.pc_set;
+        x0_dtb_ipa_set = seed.x0_dtb_ipa_set;
+        cpsr_set = seed.cpsr_set;
+        sp_el1_set = seed.sp_el1_set;
+        diagnostic_vector_vbar_el1_set = seed.diagnostic_vector_vbar_el1_set;
+        interrupt_timer_initialized = seed.interrupt_timer_initialized;
+        pc_set_status = seed.pc_set_status;
+        x0_dtb_ipa_set_status = seed.x0_dtb_ipa_set_status;
+        cpsr_set_status = seed.cpsr_set_status;
+        sp_el1_set_status = seed.sp_el1_set_status;
+        diagnostic_vector_vbar_el1_set_status = seed.diagnostic_vector_vbar_el1_set_status;
+        vtimer_offset_set_status = seed.vtimer_offset_set_status;
+        cntv_cval_set_status = seed.cntv_cval_set_status;
+        cntv_ctl_set_status = seed.cntv_ctl_set_status;
+        vtimer_initial_unmask_status = seed.vtimer_initial_unmask_status;
     }
 
     let diagnostic_vector_ready =
