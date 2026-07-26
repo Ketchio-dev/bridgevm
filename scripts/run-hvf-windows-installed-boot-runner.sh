@@ -497,20 +497,22 @@ build_installed_boot_env_args() {
     # display-export defaults so the caller value takes precedence.
     ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=$BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS")
   fi
-  if [[ "${BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT:-0}" == "1" ]]; then
-    # Defer the 3D scanout GL readback off the RESOURCE_FLUSH path (A/B knob).
-    ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT=1")
+  if [[ -n "${BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT:-}" ]]; then
+    # Deferred 3D scanout readback off the RESOURCE_FLUSH path. Default ON in
+    # the probe, so forward the value verbatim -- forwarding only "1" would
+    # make the 0 escape hatch unreachable.
+    ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT=$BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT")
   fi
   if [[ "${BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT:-0}" == "1" ]]; then
     # GPU-blit the scanout into a shared IOSurface (zero-copy display path).
     ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1")
   fi
-  if [[ "${BRIDGEVM_VIRTIO_GPU_ASYNC_PRESENT:-0}" == "1" ]]; then
-    # Depth-1 latest-wins present mailbox (A/B knob). Needs the deferred
-    # readback path, since the mailbox is serviced from the per-exit drain,
-    # and the threaded renderer, since the direct-rebind lane has no worker to
-    # hand the present to.
-    ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_ASYNC_PRESENT=1")
+  if [[ -n "${BRIDGEVM_VIRTIO_GPU_ASYNC_PRESENT:-}" ]]; then
+    # Depth-1 latest-wins present mailbox. Needs the deferred readback path,
+    # since the mailbox is serviced from the per-exit drain, and the threaded
+    # renderer, since the direct-rebind lane has no worker to hand the present
+    # to. Default ON in the probe; forwarded verbatim so 0 can disable it.
+    ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_ASYNC_PRESENT=$BRIDGEVM_VIRTIO_GPU_ASYNC_PRESENT")
   fi
   if [[ "${BRIDGEVM_VIRTIO_GPU_IOSURFACE_VERIFY:-0}" == "1" ]]; then
     ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_IOSURFACE_VERIFY=1")

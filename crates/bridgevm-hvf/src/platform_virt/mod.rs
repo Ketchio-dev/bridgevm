@@ -8,6 +8,8 @@ mod tests;
 mod audio_device;
 mod console_device;
 mod env_config;
+#[cfg(feature = "venus")]
+mod env_flag_default_on;
 mod firmware_tables;
 mod gpu_device;
 mod gpu_device_setup;
@@ -26,6 +28,8 @@ mod tpm_devices;
 mod xhci_input;
 
 pub(crate) use env_config::*;
+#[cfg(feature = "venus")]
+pub(crate) use env_flag_default_on::*;
 pub(crate) use gpu_device_setup::*;
 pub use guest_memory::*;
 pub use machine_assembly::*;
