@@ -95,8 +95,15 @@ if (Test-Path -LiteralPath $canonicalConfig -PathType Leaf) {
     Copy-Item -Force -LiteralPath $canonicalConfig -Destination (Join-Path $portableSystem "ppsspp.ini")
 }
 Write-GateLog "launch_state_clean portable_poison_removed=$(-not (Test-Path -LiteralPath $portablePoison))"
-$process = Start-Process -FilePath $Executable -WorkingDirectory $appDirectory -PassThru
-Write-GateLog "process_started pid=$($process.Id) executable_sha256=$executableHash"
+# Frame rate has to be measured here, in the guest. The host's RESOURCE_FLUSH
+# rate is not this program's frame rate: every flush in a reference run was
+# issued on ctx 0 by the desktop compositor while the title rendered on its own
+# context, so the host counts DWM's scanout and cannot see the app's frames.
+# PPSSPP emits "delta: <ms> fps: <n>" into its own log, so let it self-report.
+$frameLog = Join-Path $appDirectory "bv-frame.log"
+Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath $frameLog
+$process = Start-Process -FilePath $Executable -WorkingDirectory $appDirectory -PassThru -ArgumentList @("--log=$frameLog", "--loglevel=info")
+Write-GateLog "process_started pid=$($process.Id) executable_sha256=$executableHash frame_log=$frameLog"
 
 $deadline = $startedAt.AddSeconds($MinimumSeconds)
 $venusModulePath = $null
@@ -136,6 +143,28 @@ if ($null -eq $venusModulePath) {
 if (-not $mainWindowObserved) {
     Write-GateLog "status=FAIL reason=main-window-not-observed pid=$($process.Id)"
     Exit-Gate 6
+}
+
+# Report what the title itself measured. This is observation only: no FPS
+# threshold gates the result yet, because no baseline has been established on
+# this stack. Absence of samples is reported as samples=0 rather than as a
+# failure, so an unrelated logging change cannot silently fail the title gate.
+$fpsSamples = @()
+if (Test-Path -LiteralPath $frameLog -PathType Leaf) {
+    foreach ($line in [IO.File]::ReadAllLines($frameLog)) {
+        $m = [regex]::Match($line, 'fps:\s*([0-9]+(?:\.[0-9]+)?)')
+        if ($m.Success) { $fpsSamples += [double]$m.Groups[1].Value }
+    }
+}
+if ($fpsSamples.Count -gt 0) {
+    $sorted = $fpsSamples | Sort-Object
+    $p50 = $sorted[[int][Math]::Floor(($sorted.Count - 1) * 0.5)]
+    $p05 = $sorted[[int][Math]::Floor(($sorted.Count - 1) * 0.05)]
+    $mean = ($fpsSamples | Measure-Object -Average).Average
+    Write-GateLog ("guest_fps samples={0} p50={1:F2} p05={2:F2} mean={3:F2} min={4:F2} max={5:F2}" -f `
+        $fpsSamples.Count, $p50, $p05, $mean, $sorted[0], $sorted[$sorted.Count - 1])
+} else {
+    Write-GateLog "guest_fps samples=0 reason=no-fps-lines-in-frame-log"
 }
 
 $elapsedMs = [int]([DateTime]::UtcNow - $startedAt).TotalMilliseconds
