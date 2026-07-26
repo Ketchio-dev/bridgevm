@@ -505,6 +505,13 @@ build_installed_boot_env_args() {
     # GPU-blit the scanout into a shared IOSurface (zero-copy display path).
     ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1")
   fi
+  if [[ "${BRIDGEVM_VIRTIO_GPU_ASYNC_PRESENT:-0}" == "1" ]]; then
+    # Depth-1 latest-wins present mailbox (A/B knob). Needs the deferred
+    # readback path, since the mailbox is serviced from the per-exit drain,
+    # and the threaded renderer, since the direct-rebind lane has no worker to
+    # hand the present to.
+    ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_ASYNC_PRESENT=1")
+  fi
   if [[ "${BRIDGEVM_VIRTIO_GPU_IOSURFACE_VERIFY:-0}" == "1" ]]; then
     ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_IOSURFACE_VERIFY=1")
   fi
