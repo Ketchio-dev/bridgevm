@@ -311,6 +311,8 @@ pub struct VenusBackend {
     // reusable scratch vector.
     pub(crate) resource_iovecs: BTreeMap<u32, Vec<iovec>>,
     pub(crate) resource_ids_scratch: Vec<u32>,
+    pub(crate) poll_stall: PollStallDetector,
+    pub(crate) last_poll_at: Option<std::time::Instant>,
 }
 
 impl Clone for VenusBackend {
@@ -324,6 +326,8 @@ impl Clone for VenusBackend {
             resources: BTreeSet::new(),
             resource_iovecs: BTreeMap::new(),
             resource_ids_scratch: Vec::new(),
+            poll_stall: PollStallDetector::new(),
+            last_poll_at: None,
         }
     }
 }
@@ -369,6 +373,8 @@ impl VenusBackend {
             resources: BTreeSet::new(),
             resource_iovecs: BTreeMap::new(),
             resource_ids_scratch: Vec::new(),
+            poll_stall: PollStallDetector::new(),
+            last_poll_at: None,
         })
     }
 

@@ -574,6 +574,24 @@ impl VirtioGpu3dBackend for VenusBackend {
 
     fn poll_fences(&mut self) {
         host_gl::rebind_last_context();
+        // Passive stall accounting: observe the gap since the previous poll
+        // before doing any renderer work, so a long gap is attributed to the
+        // interval that actually elapsed. Never routed through trace_sample(),
+        // which would drop late records.
+        let now = std::time::Instant::now();
+        let since_last = self
+            .last_poll_at
+            .map(|last| now.saturating_duration_since(last));
+        self.last_poll_at = Some(now);
+        let outstanding = self.outstanding_fences.values().sum::<usize>();
+        if let Some(record) = self.poll_stall.observe_poll(
+            since_last,
+            DEFAULT_STALL_THRESHOLD,
+            self.contexts.len(),
+            outstanding,
+        ) {
+            eprintln!("{}", record.format(self.protocol.label()));
+        }
         // Poll EVERY live context, not just those with outstanding virtqueue
         // fences: venus guests mostly synchronize via renderer-side fence
         // FEEDBACK slots (Mesa spins on a shmem slot the renderer writes at

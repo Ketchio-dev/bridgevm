@@ -355,7 +355,8 @@ crates/bridgevm-hvf/src/tpm_ppi.rs	196	0
 crates/bridgevm-hvf/src/tpm_tis.rs	826	0
 crates/bridgevm-hvf/src/venus_backend/ffi_submit.rs	7	1
 crates/bridgevm-hvf/src/venus_backend/map_resource_ref.rs	347	14
-crates/bridgevm-hvf/src/venus_backend/mod.rs	11	0
+crates/bridgevm-hvf/src/venus_backend/poll_stall.rs	181	0
+crates/bridgevm-hvf/src/venus_backend/mod.rs	13	0
 crates/bridgevm-hvf/src/venus_backend/submit_3d.rs	40	2
 crates/bridgevm-hvf/src/venus_backend/submit_diagnostic.rs	43	1
 crates/bridgevm-hvf/src/venus_backend/threaded_scanout.rs	41	2
@@ -364,7 +365,7 @@ crates/bridgevm-hvf/src/venus_backend/tests/helpers.rs	1	0
 crates/bridgevm-hvf/src/venus_backend/tests/mod.rs	4	0
 crates/bridgevm-hvf/src/venus_backend/tests/part_1.rs	34	0
 crates/bridgevm-hvf/src/venus_backend/venus_start_trace_capset_cou.rs	658	30
-crates/bridgevm-hvf/src/venus_backend/virgl_renderer_gl_context_mod.rs	640	5
+crates/bridgevm-hvf/src/venus_backend/virgl_renderer_gl_context_mod.rs	642	5
 crates/bridgevm-hvf/src/virtio_blk/block_requests.rs	171	0
 crates/bridgevm-hvf/src/virtio_blk/device_state.rs	172	0
 crates/bridgevm-hvf/src/virtio_blk/legacy_transport.rs	92	0
