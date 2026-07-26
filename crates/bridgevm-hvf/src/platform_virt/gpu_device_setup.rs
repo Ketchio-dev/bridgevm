@@ -46,6 +46,16 @@ pub(crate) fn make_virtio_gpu() -> VirtioPciGpu {
                         gpu.set_3d_scanout_deferred(true);
                         eprintln!("virtio-gpu: 3D scanout readback deferred off the flush path");
                     }
+                    // Requires the deferred path: the mailbox is serviced from
+                    // the per-exit drain, not from the flush itself.
+                    if env_flag("BRIDGEVM_VIRTIO_GPU_ASYNC_PRESENT")
+                        && env_flag("BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT")
+                    {
+                        gpu.set_3d_scanout_async_present(true);
+                        eprintln!(
+                            "virtio-gpu: 3D scanout present dispatched asynchronously (depth-1, latest-wins)"
+                        );
+                    }
                     if env_flag("BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT") {
                         gpu.set_3d_scanout_iosurface(
                             true,

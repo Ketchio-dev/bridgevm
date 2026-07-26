@@ -101,6 +101,10 @@ impl VirtioPciGpu {
         self.gpu.set_3d_scanout_iosurface(enabled, verify);
     }
 
+    pub fn set_3d_scanout_async_present(&mut self, enabled: bool) {
+        self.gpu.set_3d_scanout_async_present(enabled);
+    }
+
     pub fn new_from_env() -> Self {
         let (width, height) = parse_resolution_env();
         Self::new(width, height)

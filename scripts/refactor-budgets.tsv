@@ -277,7 +277,7 @@ crates/bridgevm-hvf/src/platform_virt/console_device.rs	91	0
 crates/bridgevm-hvf/src/platform_virt/env_config.rs	59	0
 crates/bridgevm-hvf/src/platform_virt/firmware_tables.rs	118	0
 crates/bridgevm-hvf/src/platform_virt/gpu_device.rs	117	0
-crates/bridgevm-hvf/src/platform_virt/gpu_device_setup.rs	91	0
+crates/bridgevm-hvf/src/platform_virt/gpu_device_setup.rs	101	0
 crates/bridgevm-hvf/src/platform_virt/guest_memory.rs	103	0
 crates/bridgevm-hvf/src/platform_virt/interrupt_routing.rs	144	0
 crates/bridgevm-hvf/src/platform_virt/machine_assembly.rs	313	0
@@ -406,7 +406,7 @@ crates/bridgevm-hvf/src/virtio_gpu/fb_sink.rs	171	7
 crates/bridgevm-hvf/src/virtio_gpu/fence.rs	79	0
 crates/bridgevm-hvf/src/virtio_gpu/interrupt.rs	170	0
 crates/bridgevm-hvf/src/virtio_gpu/mod.rs	48	0
-crates/bridgevm-hvf/src/virtio_gpu/pci_device.rs	193	0
+crates/bridgevm-hvf/src/virtio_gpu/pci_device.rs	197	0
 crates/bridgevm-hvf/src/virtio_gpu/protocol.rs	244	0
 crates/bridgevm-hvf/src/virtio_gpu/registers.rs	216	0
 crates/bridgevm-hvf/src/virtio_gpu/resource.rs	244	0
