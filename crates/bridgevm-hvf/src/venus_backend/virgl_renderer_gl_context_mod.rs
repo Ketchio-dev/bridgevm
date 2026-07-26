@@ -314,6 +314,9 @@ pub struct VenusBackend {
     pub(crate) resource_ids_scratch: Vec<u32>,
     pub(crate) poll_stall: PollStallDetector,
     pub(crate) last_poll_at: Option<std::time::Instant>,
+    /// Timer-sampled companion to `poll_stall`, which can only judge a gap
+    /// when the *next* poll arrives and so cannot see polling stopping.
+    pub(crate) poll_watchdog: Arc<PollWatchdog>,
 }
 
 impl Clone for VenusBackend {
@@ -329,19 +332,10 @@ impl Clone for VenusBackend {
             resource_ids_scratch: Vec::new(),
             poll_stall: PollStallDetector::new(),
             last_poll_at: None,
+            poll_watchdog: Arc::new(PollWatchdog::new()),
         }
     }
 }
-
-#[derive(Clone, Copy)]
-pub(crate) struct VenusMappedResource {
-    pub(crate) host_ptr: *mut u8,
-    pub(crate) size: usize,
-    pub(crate) map_info: u32,
-    pub(crate) refs: usize,
-}
-
-unsafe impl Send for VenusMappedResource {}
 
 impl VenusBackend {
     pub fn new() -> Result<Self, String> {
@@ -376,6 +370,7 @@ impl VenusBackend {
             resource_ids_scratch: Vec::new(),
             poll_stall: PollStallDetector::new(),
             last_poll_at: None,
+            poll_watchdog: armed_poll_watchdog(protocol.label()),
         })
     }
 
@@ -431,6 +426,8 @@ impl ThreadedVenusBackend {
                             job(&mut backend);
                         }
                         VenusWorkerMessage::Shutdown => {
+                            // Shutdown quiet is not a stall.
+                            backend.poll_watchdog.disarm();
                             backend.reset();
                             break;
                         }

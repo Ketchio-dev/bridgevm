@@ -13,6 +13,21 @@ use std::{
 
 use crate::virtio_gpu_3d::{CompletedFence, VIRTIO_GPU_RESP_ERR_UNSPEC};
 
+/// Host mapping of a guest-visible Venus resource.
+///
+/// `host_ptr` is a raw renderer mapping; `Send` is asserted because the
+/// mapping is only ever dereferenced on the renderer worker thread, which
+/// owns the backend.
+#[derive(Clone, Copy)]
+pub(crate) struct VenusMappedResource {
+    pub(crate) host_ptr: *mut u8,
+    pub(crate) size: usize,
+    pub(crate) map_info: u32,
+    pub(crate) refs: usize,
+}
+
+unsafe impl Send for VenusMappedResource {}
+
 impl VenusBackend {
     pub(crate) fn map_resource_ref(&mut self, resource_id: u32) -> Option<VenusMappedResource> {
         if let Some(mapped) = self.mapped_resources.get_mut(&resource_id) {

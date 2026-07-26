@@ -592,6 +592,10 @@ impl VirtioGpu3dBackend for VenusBackend {
         ) {
             eprintln!("{}", record.format(self.protocol.label()));
         }
+        // Feed the timer-sampled watchdog too: it reports the case the
+        // passive detector structurally cannot -- polling stopping outright.
+        self.poll_watchdog
+            .observe_poll(self.contexts.len(), outstanding);
         // Poll EVERY live context, not just those with outstanding virtqueue
         // fences: venus guests mostly synchronize via renderer-side fence
         // FEEDBACK slots (Mesa spins on a shmem slot the renderer writes at
