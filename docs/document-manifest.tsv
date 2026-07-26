@@ -53,5 +53,6 @@ docs/windows-arm/evidence/viogpu3d-venus-release-candidate-20260723.md	historica
 docs/windows-arm/evidence/gpu-live-receipt-20260723.md	historical-evidence	windows-graphics	STATUS.md
 docs/windows-arm/evidence/net-live-receipt-20260724.md	historical-evidence	windows-networking	STATUS.md
 docs/windows-arm/evidence/dxvk-venus-feasibility-20260724.md	historical-evidence	windows-graphics	STATUS.md
+docs/windows-arm/evidence/dxvk-relax-blast-radius-20260726.md	historical-evidence	windows-graphics	STATUS.md
 docs/archive/README-before-20260722.md	historical-evidence	documentation-history	docs/README.md
 docs/archive/STATUS-before-20260722.md	historical-evidence	documentation-history	STATUS.md

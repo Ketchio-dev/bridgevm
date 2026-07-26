@@ -45,16 +45,53 @@ did not run comparable workloads.
   The 6.0 µs vs 1602.1 µs figure above is therefore against the *plain* lane and
   credits deferred + IOSurface + async together, not async alone.
 - **No guest-visible FPS claim.** No guest frame-time instrumentation exists;
-  `fb-rate.py` measures `display.fb` publication, not FPS.
+  `fb-rate.py` measures `display.fb` publication, not FPS. Note that the
+  host-side `RESOURCE_FLUSH` rate is an *upper bound* on guest frame rate, not a
+  measurement of it: it cannot distinguish "the guest rendered 30 frames" from
+  "the guest rendered 60 and the host published 30".
 
-## Open defect
+## Open defect — swapchain-recreation loop (corrected 2026-07-26)
 
 The synchronous deferred + IOSurface lane reproducibly fails to present a
 PPSSPP window (2/2), while the same lane with async present enabled succeeds
-(1/1). Both reach `[stage4] done` and composite the desktop, so the driver and
-renderer are healthy; only the title window is missing. This is a pre-existing
-defect in that lane, not a regression introduced by async present, but it is
-unexplained and blocks a normalised A/B.
+(1/1). It is a pre-existing defect in that lane, not a regression introduced by
+async present, and it blocks a normalised A/B.
+
+**Correction.** An earlier revision of this document said both runs "composite
+the desktop" and that only the title window was missing. That was wrong, and it
+misdirected the diagnosis. The trace shows the guest *is* rendering at PPSSPP's
+window size and failing to present, so it recreates its swapchain almost every
+frame:
+
+| run | `RESOURCE_CREATE_3D` | of which 1081×570 | `RESOURCE_FLUSH` | create/flush |
+|---|---|---|---|---|
+| `ab2-sync-1` (fail) | 2719 | **2174** | 2373 | **1.15** |
+| `ab2-sync-2` (fail) | 2698 | **2179** | 2377 | **1.14** |
+| `ab2-async-1` (pass) | 507 | 21 | 23959 | **0.02** |
+
+1081×570 is PPSSPP's window size. In the failing runs each frame is a full
+teardown/rebuild cycle, verified by dumping consecutive commands (seq
+19113–19151 of `ab2-sync-1`), which repeats exactly:
+
+```text
+RESOURCE_CREATE_3D 1081x570 -> CTX_ATTACH_RESOURCE -> RESOURCE_ATTACH_BACKING
+  -> SUBMIT_3D -> RESOURCE_DETACH_BACKING -> RESOURCE_UNMAP_BLOB(ERR)
+  -> CTX_DETACH_RESOURCE -> RESOURCE_UNREF -> SET_SCANOUT -> RESOURCE_FLUSH
+```
+
+That cycle runs at ~4 Hz (2373 flushes / 600 s), so the window never stabilises
+and `MainWindowHandle` stays 0 for the whole gate — hence
+`reason=main-window-not-observed`. The guest was never idling on the desktop.
+
+**Reusable health check.** The create-to-flush ratio separates the two states
+without needing a screenshot:
+
+- `create3d ≈ flush` (ratio ~1) → swapchain thrash, presentation is broken;
+- `create3d ≪ flush` (ratio ~0.02) → healthy steady-state rendering.
+
+Root cause of the present failure itself is still open; the swapchain rebuild is
+the guest *reacting* to it (the shape Vulkan drivers produce on a persistent
+`VK_ERROR_OUT_OF_DATE_KHR` / failed acquire), not the cause.
 
 ## Reproduce
 

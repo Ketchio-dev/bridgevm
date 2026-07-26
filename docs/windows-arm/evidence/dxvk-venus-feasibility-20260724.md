@@ -1,9 +1,32 @@
 # D0 feasibility receipt — DXVK-on-Venus DirectX→Metal path (2026-07-24)
 
-## Verdict
+> ## ⚠️ SUPERSEDED — the verdict below is wrong (corrected 2026-07-26)
+>
+> This document concluded `DX_METAL=BLOCKED_BY_HOST_CAPS` by auditing
+> **unpatched upstream DXVK** against MoltenVK. It did not account for this
+> repository's own relax patch, `scripts/patches/dxvk-macos-venus-relax.patch`,
+> which had already been committed **three days earlier** and which turns
+> `geometryShader` — the blocker named below — into a reduced-cap instead of a
+> hard requirement.
+>
+> DirectX 11 on Venus was already working when this was written:
+> commit `01405da` (2026-07-21) *"feat(3d): DXVK D3D11 reaches FL 11_0 device
+> creation on Venus"*, with a live windowed present receipt at
+> `~/BridgeVM/runs/venus-activate-120.40-demo3-20260721-060901/`
+> (`present-demo-visible-desktop.ppm`, 1280×800, 60,600 magenta pixels: a DXVK
+> D3D11 window composited by DWM on the Windows 11 desktop).
+>
+> **Authoritative status:** `docs/hvf-dxvk-d3d11-bringup-20260721.md`.
+> **Relaxation consequences:** `docs/windows-arm/evidence/dxvk-relax-blast-radius-20260726.md`.
+>
+> The analysis below is retained because it remains a correct description of
+> *unpatched* DXVK on MoltenVK, and it documents why the patch is necessary.
+> Only its verdict and its impact-on-D3 section are void.
+
+## Verdict (SUPERSEDED — see banner)
 
 ```
-DX_METAL=BLOCKED_BY_HOST_CAPS
+DX_METAL=BLOCKED_BY_HOST_CAPS   # WRONG: true only for unpatched DXVK
 ```
 
 DXVK (both the current 3.0.2 and the older 1.10.3) hard-requires the Vulkan
@@ -75,13 +98,14 @@ DXVK-required feature audit against the host physical device:
   `enabled.core.features.geometryShader = VK_TRUE` (unconditional), checked in
   `dxvk_adapter.cpp:121`.
 
-## Impact on D3
+## Impact on D3 (VOID — see banner)
 
-D3's DirectX→Metal render receipt is redefined to its `BLOCKED_BY_HOST_CAPS`
-branch: this dated negative-boundary document IS the D3 deliverable. The native
-Venus/Vulkan render path (PPSSPP Vulkan backend) already has a positive live
-receipt (C8, `gpu-live-receipt-20260723.md`); DirectX-on-Metal specifically is
-walled by MoltenVK's missing geometry-shader stage.
+~~D3's DirectX→Metal render receipt is redefined to its `BLOCKED_BY_HOST_CAPS`
+branch.~~ This conclusion is withdrawn. DirectX→Venus→Metal has a positive live
+receipt predating this document; D3 lands on its **positive** branch, not the
+negative boundary. What is genuinely walled is a *fully conformant* DXVK: the
+relaxed features carry real behavioural consequences, enumerated in
+`dxvk-relax-blast-radius-20260726.md`.
 
 ## Reproduce
 
