@@ -40,6 +40,7 @@ docs/hvf-scanout-readback-ab-20260721.md	historical-evidence	windows-performance
 docs/hvf-venus-fence-latency-resolution-20260721.md	historical-evidence	windows-performance	docs/hvf-perf-optimization-plan.md
 docs/windows-arm/evidence/agent-chunked-output-storage-20260712.md	historical-evidence	windows-agent	-
 docs/windows-arm/evidence/async-scanout-present-20260726.md	historical-evidence	windows-graphics	STATUS.md
+docs/windows-arm/evidence/stage4-vkcreateinstance-stall-20260727.md	historical-evidence	windows-graphics	STATUS.md
 docs/windows-arm/evidence/imported-disk-growth-20260712.md	historical-evidence	windows-storage	-
 docs/windows-arm/evidence/installed-app-service-20260712.md	historical-evidence	windows-app	-
 docs/windows-arm/evidence/reboot-gic-reset-20260712.md	historical-evidence	windows-lifecycle	-

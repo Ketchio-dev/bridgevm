@@ -1,5 +1,10 @@
 [CmdletBinding()]
-param()
+param(
+  # Generous: a healthy vkCreateInstance returns in well under a second, and
+  # the observed failure never returns at all, so this only decides how long a
+  # hung run wastes before it reports.
+  [int]$VulkanProbeCreateTimeoutMs = 120000
+)
 
 $ErrorActionPreference = 'Stop'
 $loader = Join-Path $env:windir 'System32\vulkan-1.dll'
@@ -8,6 +13,34 @@ $icdDll = 'C:\BridgeVM\viogpu3d\vulkan_virtio.dll'
 $probeLog = 'C:\BridgeVM\bvgpu-vulkan-probe.log'
 $mesaDebugLog = 'C:\BridgeVM\bvgpu-mesa-debug.log'
 $utf8NoBom = New-Object Text.UTF8Encoding($false)
+
+Add-Type -TypeDefinition @'
+using System;
+using System.Threading;
+namespace BridgeVM {
+  // Bounds a blocking native call the process cannot otherwise escape.
+  public static class ProbeGuard {
+    static Timer timer;
+    static string logPath;
+    static int timeoutMs;
+    public static void Arm(string path, int ms) {
+      logPath = path;
+      timeoutMs = ms;
+      timer = new Timer(_ => Fire(), null, ms, Timeout.Infinite);
+    }
+    public static void Disarm() {
+      if (timer != null) { timer.Dispose(); timer = null; }
+    }
+    static void Fire() {
+      try {
+        System.IO.File.AppendAllText(logPath,
+          "[vulkan-probe] create_instance_timeout_ms=" + timeoutMs + "\r\n");
+      } catch { }
+      Environment.Exit(13);
+    }
+  }
+}
+'@
 
 function Write-Probe {
   param([Parameter(Mandatory = $true)][string]$Message)
@@ -234,10 +267,21 @@ try {
       $create.pApplicationInfo = $appPtr
       $instance = [IntPtr]::Zero
       Write-Probe 'create_instance_begin'
+      # vkCreateInstance is a blocking P/Invoke into the guest ICD and has been
+      # observed never to return (see
+      # docs/windows-arm/evidence/stage4-vkcreateinstance-stall-20260727.md),
+      # hanging the whole firstboot chain until the host watchdog kills the run.
+      # Nothing managed can cancel a call already inside native code, so bound
+      # it from outside: the timer records the hang and ends the process,
+      # turning a silent stall into a reported stage4 failure. The callback must
+      # be pure .NET -- a PowerShell ScriptBlock on a timer thread dies with
+      # "no Runspace available to run scripts in this thread".
+      [BridgeVM.ProbeGuard]::Arm($probeLog, $VulkanProbeCreateTimeoutMs)
       $createTimer = [Diagnostics.Stopwatch]::StartNew()
       $createResult = [BridgeVM.VulkanNative]::vkCreateInstance([ref]$create,
         [IntPtr]::Zero, [ref]$instance)
       $createTimer.Stop()
+      [BridgeVM.ProbeGuard]::Disarm()
       Write-Probe ('create_instance_result=' + $createResult +
         ' instance_nonzero=' + ($instance -ne [IntPtr]::Zero) +
         ' elapsed_ms=' + $createTimer.ElapsedMilliseconds)

@@ -61,6 +61,7 @@ They are valuable evidence, but they are not current onboarding material:
   [DXVK/Venus DirectX-to-Metal feasibility (superseded)](windows-arm/evidence/dxvk-venus-feasibility-20260724.md),
   [DXVK relax-patch blast radius](windows-arm/evidence/dxvk-relax-blast-radius-20260726.md),
   [asynchronous scanout present receipt](windows-arm/evidence/async-scanout-present-20260726.md),
+  [stage4 vkCreateInstance stall](windows-arm/evidence/stage4-vkcreateinstance-stall-20260727.md),
   [release-readiness DMG + first-run](release-readiness-20260724.md), and
   [live vTPM command-path](windows-arm/evidence/vtpm-windows-command-path-20260722.md)
   receipts.
