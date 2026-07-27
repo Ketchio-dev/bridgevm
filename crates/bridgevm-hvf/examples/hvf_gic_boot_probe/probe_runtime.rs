@@ -74,7 +74,7 @@ pub(crate) fn run() -> ExitCode {
         };
         reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
         let (reboot_plan, watchdog_generation, boot_progress) =
-            setup_boot_supervision(watchdog_enabled);
+            setup_boot_supervision(watchdog_enabled, boot_progress_kill_for(vcpu));
         let mut reboot_count = 0u64;
         let mut resets_dumped = 0u64;
         reset_vcpu_for_boot(vcpu);

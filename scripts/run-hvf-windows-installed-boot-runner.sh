@@ -350,6 +350,9 @@ build_installed_boot_env_args() {
   fi
   # Forward the opt-in Intel HDA audio device + host PCM sinks (media.rs gates on
   # BRIDGEVM_HDA; absent = no audio function, unchanged behavior).
+  # Opt-in boot-progress kill mode: end a run once a stall is confirmed instead
+  # of waiting out the deadline. Gate scripts set it; interactive runs do not.
+  [[ -z "${BRIDGEVM_BOOT_PROGRESS_KILL:-}" ]] || ENV_ARGS+=("BRIDGEVM_BOOT_PROGRESS_KILL=$BRIDGEVM_BOOT_PROGRESS_KILL")
   [[ -z "${BRIDGEVM_HDA:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA=$BRIDGEVM_HDA")
   [[ -z "${BRIDGEVM_HDA_PCM_OUT:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_PCM_OUT=$BRIDGEVM_HDA_PCM_OUT")
   [[ -z "${BRIDGEVM_HDA_COREAUDIO:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_COREAUDIO=$BRIDGEVM_HDA_COREAUDIO")

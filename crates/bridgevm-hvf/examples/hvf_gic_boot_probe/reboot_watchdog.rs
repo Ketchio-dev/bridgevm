@@ -4,7 +4,10 @@ use crate::*;
 
 #[path = "reboot_watchdog/boot_progress.rs"]
 mod boot_progress;
+#[path = "reboot_watchdog/boot_progress_kill.rs"]
+mod boot_progress_kill;
 pub(crate) use boot_progress::*;
+pub(crate) use boot_progress_kill::*;
 
 impl RebootPlan {
     pub(crate) fn from_env() -> Self {
