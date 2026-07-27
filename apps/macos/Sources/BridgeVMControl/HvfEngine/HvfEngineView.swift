@@ -587,6 +587,22 @@ enum HvfHostKeyCommand: Equatable {
         case "\u{f72d}": return .key("pagedown")
         case "\t": return .key("tab")
         case "\r", "\n": return .key("enter")
+        // NSEvent reports F1..F12 as private-use scalars F704..F70F. The guest
+        // side already understands the "f1".."f12" tokens
+        // (xhci_hid_input/setup_input/actions.rs:118-174); only this mapping
+        // was missing, so the keys silently fell through to .ignored.
+        case "\u{f704}": return .key("f1")
+        case "\u{f705}": return .key("f2")
+        case "\u{f706}": return .key("f3")
+        case "\u{f707}": return .key("f4")
+        case "\u{f708}": return .key("f5")
+        case "\u{f709}": return .key("f6")
+        case "\u{f70a}": return .key("f7")
+        case "\u{f70b}": return .key("f8")
+        case "\u{f70c}": return .key("f9")
+        case "\u{f70d}": return .key("f10")
+        case "\u{f70e}": return .key("f11")
+        case "\u{f70f}": return .key("f12")
         default:
             guard !characters.isEmpty,
                   !modifiers.contains(.command),

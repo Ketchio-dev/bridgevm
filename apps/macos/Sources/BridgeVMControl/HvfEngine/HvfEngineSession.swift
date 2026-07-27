@@ -250,13 +250,19 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func sendText(_ value: String) {
-        let ascii = value.utf8.filter { (0x20...0x7e).contains($0) }
-        for chunkStart in stride(from: 0, to: ascii.count, by: 32) {
-            let chunkEnd = min(chunkStart + 32, ascii.count)
-            let encoded = ascii[chunkStart..<chunkEnd]
-                .map { String(format: "%02x", $0) }
-                .joined()
-            appendLiveInput("KEY text-hex:\(encoded)")
+        // A USB HID keyboard sends physical key usages, not characters, so
+        // there is no usage code for "한" and the HID path can only ever carry
+        // printable ASCII. Silently dropping the rest (which this did) makes
+        // non-ASCII input look broken with no explanation, so split the two
+        // cases and route non-ASCII through the guest clipboard, which is
+        // base64(UTF-8) end to end (bvagent.ps1:377).
+        let plan = HvfTextInputPlan.make(for: value)
+        for chunk in plan.hidChunks {
+            appendLiveInput("KEY text-hex:\(chunk)")
+        }
+        if let base64 = plan.clipboardBase64 {
+            guard sendCtl("CLIPSET \(base64)") else { return }
+            appendLiveInput("KEY ctrl+v")
         }
     }
 
