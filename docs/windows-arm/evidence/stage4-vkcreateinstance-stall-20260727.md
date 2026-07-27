@@ -133,3 +133,51 @@ and once in a freshly built one. Every stall above is the pre-fix code.
 `scripts/p1-boot-gate.sh` now refuses to start when any file in
 `scripts/win-assets` is newer than the injector, because nothing in the gate
 could previously catch this.
+
+
+## Where inside `vkCreateInstance` (2026-07-27)
+
+`bvgpu-mesa-debug.log` localises it further than the probe log can. All three
+stalled boots (1, 4, 5) end on the **same** line:
+
+```text
+MESA-VIRTIO: debug: blob map escape ok handle=1073744256 offset=147456 ...
+```
+
+The passing boot 2 continues from exactly that point:
+
+```text
+MESA-VIRTIO: debug: blob map escape ok handle=1073744256 offset=147456 ...
+MESA-VIRTIO: debug: renderer instance version 1.4.334      <- host reply
+MESA-VIRTIO: debug: supports multi-plane wsi format modifiers: no
+```
+
+`renderer instance version` is a reply from the host renderer. The stalled runs
+map the same two blobs and then never receive it.
+
+The blob counts say the same thing:
+
+| boot | outcome | CREATE_BLOB | MAP_BLOB |
+|---|---|---|---|
+| 2 | pass | 95 | 95 |
+| 1 | stall | 2 | 2 |
+| 4 | stall | 2 | 2 |
+| 5 | stall | 2 | 2 |
+
+Exactly two — the two in the log — then nothing.
+
+**The host is not stuck.** After the last `MAP_BLOB` the stalled runs still
+process ~5200 further commands (1158 `SUBMIT_3D`, 4 new `venus-win32`
+contexts), and the fence-poll watchdog reports
+`outstanding_fences=0 suspect=idle-no-outstanding-fence`. The GPU path keeps
+serving other clients; only the probe process is blocked, waiting on a reply
+that never comes.
+
+So the failure is in the Venus ICD's first host round-trip during instance
+creation, after the ring blobs are mapped. Nothing on the host side of the
+virtio-gpu protocol shows a pending request to answer, which points at the
+guest ICD or the ring handshake rather than the renderer.
+
+Not yet ruled out: boot 2 created 8 `virgl-shadow-win32` contexts against 1 in
+the stalled runs. That may be a cause or merely a consequence of getting
+further; it is not evidence either way yet.
