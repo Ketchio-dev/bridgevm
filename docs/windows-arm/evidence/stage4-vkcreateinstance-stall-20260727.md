@@ -104,8 +104,32 @@ firstboot log, and the 15 s RAMFB checkpoint shows the **Windows boot spinner**
 | `pw-000103` | 4 | 6.13M | stage4 | `vkCreateInstance` hang |
 | `pw2-013847` | 1 | 165K | none | early-boot stall |
 
-**Priority correction.** Early-boot stalls are 2 of the 3 failures; the stage4
-hang has been seen once and did not reproduce. The bounded probe is still worth
-keeping — it converts that hang from a 40-minute silent wait into a reported
-`errorlevel=13` — but the next investigation belongs in early boot, before
-firstboot runs at all, not in the Vulkan ICD.
+**Priority correction (superseded below).** Early-boot stalls are 2 of the 3
+failures; the stage4 hang has been seen once and did not reproduce.
+
+## Correction 2026-07-27: the hang is dominant, not intermittent
+
+A 5-boot slice of `p1gate-A1-20260727-064829` (gate aborted early, data kept):
+
+| boot | stage4_pass | last_stage | stalls | reboots |
+|---|---|---|---|---|
+| 1 | 0 | stage4 | 1 | 4 |
+| 2 | **1** | stage4 | 0 | 3 |
+| 3 | 0 | stage1 | 1 | 0 |
+| 4 | 0 | stage4 | 1 | 4 |
+| 5 | 0 | stage4 | 1 | 4 |
+
+1 pass in 5. Three of the four stalls end on the same line of
+`bvgpu-vulkan-probe.log` — `create_instance_begin`, with no result — so
+`vkCreateInstance` is the **leading** cause, not a one-off. The "intermittent"
+verdict came from a single non-reproducing run and was wrong.
+
+**But this gate proved nothing about the fix.** The timeout from `df34837`
+never ran: the injector was built 2026-07-26 01:57, the fix landed 07-27 01:38,
+and the injector is what carries the guest scripts. Byte-searching the images
+settles it — `create_instance_timeout_ms` appears 0 times in the old injector
+and once in a freshly built one. Every stall above is the pre-fix code.
+
+`scripts/p1-boot-gate.sh` now refuses to start when any file in
+`scripts/win-assets` is newer than the injector, because nothing in the gate
+could previously catch this.
