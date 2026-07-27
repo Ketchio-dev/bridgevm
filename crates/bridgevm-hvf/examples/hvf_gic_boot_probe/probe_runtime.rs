@@ -73,9 +73,8 @@ pub(crate) fn run() -> ExitCode {
             len: ram_size,
         };
         reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
-        let reboot_plan = RebootPlan::from_env();
-        println!("PSCI SYSTEM_RESET max reboots: {}", reboot_plan.max_reboots);
-        let watchdog_generation = Arc::new(AtomicU64::new(0));
+        let (reboot_plan, watchdog_generation, boot_progress) =
+            setup_boot_supervision(watchdog_enabled);
         let mut reboot_count = 0u64;
         let mut resets_dumped = 0u64;
         reset_vcpu_for_boot(vcpu);
@@ -351,7 +350,7 @@ pub(crate) fn run() -> ExitCode {
                         break;
                     }
                 };
-                exits += 1;
+                exits = boot_progress.count_exit(exits);
                 if let Some(trace) = smp_trace.as_deref() {
                     trace.cpu0_progress(exits);
                 }
@@ -916,6 +915,7 @@ pub(crate) fn run() -> ExitCode {
                         actions,
                     } => {
                         reboot_count = next_reboot_count;
+                        boot_progress.record_reboot();
                         println!(
                             "PSCI SYSTEM_RESET: reboot {reboot_count}/{}",
                             reboot_plan.max_reboots
@@ -955,6 +955,7 @@ pub(crate) fn run() -> ExitCode {
                         }
                     }
                     SystemResetDecision::Stop { reason } => {
+                        boot_progress.disarm();
                         stop_reason = reason;
                     }
                 }
@@ -995,6 +996,5 @@ pub(crate) fn run() -> ExitCode {
             break 'reboot;
         }
     }
-
     probe_exit_code(fatal_vcpu_run_error, fatal_reset_error)
 }
