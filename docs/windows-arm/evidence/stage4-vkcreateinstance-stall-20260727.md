@@ -77,9 +77,35 @@ Healthy is ~0.02; ~1.0 already means presentation is rebuilding the swapchain
 every frame. This run never got close, so the desktop screenshot showing a clean
 image does not mean the presentation path was well.
 
-## Next
+## Follow-up run: the hang is intermittent, and it is not the main problem
 
-The stall is inside `vkCreateInstance` in the guest ICD, before any host
-round-trip. Host-side GPU instrumentation cannot localise it further. Options:
-give the probe a bounded wait so stage4 reports instead of hanging, and get
-Mesa/Venus ICD logging out of the loading process itself.
+`~/BridgeVM/runs/pw2-013847`, same media and flags, with the bounded probe from
+`df34837` in place. `vkCreateInstance` **returned normally in 1126 ms**:
+
+```text
+[vulkan-probe] create_instance_result=0 instance_nonzero=True elapsed_ms=1126
+[vulkan-probe] enumerate_physical_devices_result=0 count=1
+[vulkan-probe] success
+```
+
+So the stage4 hang is intermittent, not deterministic, and the timeout did not
+need to fire. (The log is genuinely from this run — sha256 `8c0695e3…` vs
+`5ca51199…` for `pw-000103`. `firstboot_fresh=0` here because the image had
+already completed firstboot, so the probe ran from the diagnostics path.)
+
+That run then stalled somewhere else entirely: `reboots=1`, 165K exits, no
+firstboot log, and the 15 s RAMFB checkpoint shows the **Windows boot spinner**
+— the same early-boot shape as `p1-smoke2-103715`, not a stage4 failure.
+
+| run | reboots | exits | stage reached | outcome |
+|---|---|---|---|---|
+| `p1-smoke-100443` | 2 | 0.5M | — | healthy |
+| `p1-smoke2-103715` | 1 | 69K | none | early-boot stall |
+| `pw-000103` | 4 | 6.13M | stage4 | `vkCreateInstance` hang |
+| `pw2-013847` | 1 | 165K | none | early-boot stall |
+
+**Priority correction.** Early-boot stalls are 2 of the 3 failures; the stage4
+hang has been seen once and did not reproduce. The bounded probe is still worth
+keeping — it converts that hang from a 40-minute silent wait into a reported
+`errorlevel=13` — but the next investigation belongs in early boot, before
+firstboot runs at all, not in the Vulkan ICD.
