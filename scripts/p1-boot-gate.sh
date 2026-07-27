@@ -47,6 +47,22 @@ for required in "$BASE_IMAGE" "$BASE_VARS" "$INJECTOR"; do
   [[ -e "$required" ]] || { echo "FAIL: missing required input: $required" >&2; exit 1; }
 done
 
+# The injector carries the guest-side scripts, so an injector older than
+# scripts/win-assets means the gate silently measures stale code. That is not
+# hypothetical: a 10-boot gate once ran entirely against an injector built 23
+# hours before the vkCreateInstance timeout landed, and every stall it found
+# was a bug that had already been fixed in the repository.
+newest_asset=$(find scripts/win-assets -type f -newer "$INJECTOR" -print -quit 2>/dev/null)
+if [[ -n "$newest_asset" ]]; then
+  echo "FAIL: injector is older than scripts/win-assets" >&2
+  echo "  injector: $INJECTOR ($(stat -f '%Sm' "$INJECTOR"))" >&2
+  echo "  newer:    $newest_asset ($(stat -f '%Sm' "$newest_asset"))" >&2
+  echo "  rebuild:  VIOGPU3D_DIR=... OUT=$INJECTOR scripts/build-hvf-windows-viogpu3d-injector.sh" >&2
+  echo "  override: STALE_INJECTOR_OK=1 (only when the change cannot affect the guest)" >&2
+  [[ "${STALE_INJECTOR_OK:-0}" == "1" ]] || exit 1
+  echo "  continuing anyway: STALE_INJECTOR_OK=1" >&2
+fi
+
 # Explicit list of this invocation's run directories. Aggregation reads only
 # these, never a wildcard.
 MANIFEST="$OUT/run-directories.txt"
