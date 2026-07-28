@@ -410,3 +410,41 @@ every 1024th, so the counter resolves to ±1023. That is fine for "did
 interrupts keep flowing" but cannot answer "was *this specific* completion
 signalled". Answering that would need an unsampled trace keyed to the
 command's `fence_id`.
+
+
+## Retrying does not help — the outcome is fixed at boot (2026-07-28)
+
+`retry2-142816`, six boots with up to three probe attempts each
+(45 s timeout, only exit 13 retried):
+
+| boot | attempt results |
+|---|---|
+| 1 | 13, 13, 13 |
+| 2 | 13, 13, 255 |
+| 3 | 13, 13, 13 |
+| 4 | **0** |
+| 5 | 13, 13, 13 |
+| 6 | 13, 13, 13 |
+
+**Second and third attempts: 0 successes out of 10.** The one passing boot
+succeeded on its first attempt, so the retry contributed nothing to it either.
+
+Under the null hypothesis that a retry is an independent draw at the measured
+29% base rate, ten consecutive failures have probability 3.1%. That rejects
+independence at the 5% level: **once a boot is going to fail, it fails every
+time within that boot.** Whatever decides the outcome is fixed before the
+probe runs — an initialisation order or a race resolved at boot — not a
+transient the next attempt can dodge.
+
+The mechanism is unchanged across attempts: every failed attempt stops at
+`create_instance_begin`, the same place as before. (`boot 2`'s third attempt
+exited 255 rather than 13 — PowerShell died before the guard's timer fired —
+but its probe log ends at the same line.)
+
+Gate rate with retry: 1/6. Without: 5/17. No improvement; the difference is
+not significant at this sample size and should not be read as harm either.
+
+**Consequence:** retry is removed. It costs up to two extra 45 s stalls per
+failing boot and buys nothing, and leaving it in would misrepresent a
+deterministic failure as a flaky one. The bounded timeout stays — it is what
+turns a silent 40-minute hang into a reported `errorlevel=13`.
