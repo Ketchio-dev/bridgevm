@@ -117,9 +117,29 @@ if errorlevel 1 goto :fail
 echo [stage4] exercise Vulkan loader and Venus ICD >> "%LOG%"
 set VN_DEBUG=init,result
 set MESA_LOG_FILE=C:\BridgeVM\bvgpu-mesa-vulkan.log
-if exist C:\BridgeVM\bvgpu-vulkan-probe.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-vulkan-probe.ps1 >> "%LOG%" 2>&1
+rem The hang is inside the third-party ICD: the guest sends the Venus ring's
+rem first command, the host answers it correctly, and the ICD never proceeds.
+rem It is not reproducible on demand -- 5 of 17 boots pass -- and nothing on
+rem the host can fix it, so retry the process. The guard has to kill the
+rem process to escape a blocked native call, which makes retrying a new
+rem process the only option. Each attempt is logged so the retry's actual
+rem effect can be measured instead of assumed.
+set VULKAN_ATTEMPT=0
+:vulkan_attempt
+set /a VULKAN_ATTEMPT+=1
+echo [stage4] Vulkan probe attempt=%VULKAN_ATTEMPT% >> "%LOG%"
+if exist C:\BridgeVM\bvgpu-vulkan-probe.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-vulkan-probe.ps1 -VulkanProbeCreateTimeoutMs 45000 >> "%LOG%" 2>&1
 set VULKAN_STATUS=%ERRORLEVEL%
-echo [stage4] Vulkan probe errorlevel=%VULKAN_STATUS% >> "%LOG%"
+echo [stage4] Vulkan probe attempt=%VULKAN_ATTEMPT% errorlevel=%VULKAN_STATUS% >> "%LOG%"
+if "%VULKAN_STATUS%"=="0" goto :vulkan_ok
+rem 13 is the guard's timeout exit. Any other code is a real failure that a
+rem retry cannot help, so do not mask it.
+if not "%VULKAN_STATUS%"=="13" goto :vulkan_done
+if %VULKAN_ATTEMPT% GEQ 3 goto :vulkan_done
+echo [stage4] Vulkan probe timed out, retrying >> "%LOG%"
+goto :vulkan_attempt
+:vulkan_done
+echo [stage4] Vulkan probe errorlevel=%VULKAN_STATUS% attempts=%VULKAN_ATTEMPT% >> "%LOG%"
 if "%VULKAN_STATUS%"=="0" goto :vulkan_ok
 cmd /c exit /b %VULKAN_STATUS%
 goto :fail
