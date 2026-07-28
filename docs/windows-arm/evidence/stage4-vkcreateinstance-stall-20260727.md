@@ -340,3 +340,43 @@ well-formed request, writes a correct 24-byte response into the guest's
 writable descriptor, updates the used ring, and raises the interrupt — the
 same way in both outcomes. The divergence is entirely in what the guest does
 after that.
+
+
+## The guest stops notifying the queue (2026-07-28)
+
+`vn-repro-043918` reproduced the hang in **3 of 4 boots** (boot 2 stalled
+earlier, in stage1), each with `cmd251` issued exactly once — the same
+signature as the A1b failures.
+
+Counting `queue_notify` events after that first ring command:
+
+| run | outcome | `queue_notify` after first `cmd251` |
+|---|---|---|
+| A1b boot 2 | pass | 3 |
+| vn-repro boot 1 | stall | **0** |
+| vn-repro boot 3 | stall | **0** |
+| vn-repro boot 4 | stall | 1 |
+
+In the stalling runs the last control-queue notification lands *before* the
+ring's first command (index 12209 vs 12473 in boot 1) and the guest never
+rings the doorbell again.
+
+The host keeps working: 766 further commands are processed for other contexts
+(DWM's ctx 21, ctx 0, ctx 7) without any new notification, via the polling
+path. So the device is not wedged; the probe's thread simply never proceeds.
+
+This narrows the remaining question to one thing: **was the completion
+interrupt for that command actually raised?** The host code always raises it —
+there is no `VIRTQ_USED_F_NO_NOTIFY` suppression anywhere in
+`virtio_gpu/virtqueue.rs` or `interrupt.rs`, and the immediate path does
+`write_used` then `mark_queue_interrupt` unconditionally
+(`virtqueue.rs:146-147`) — but whether the MSI-X message was delivered is only
+visible with `BRIDGEVM_TRACE_VENUS_START=1`, now reachable from the gate via
+`--trace-venus-start`.
+
+### Failure rate with `VN_DEBUG` on: not yet a signal
+
+`vn-repro` failed 4/4 against A1b's 6/10. Tempting to read as "tracing changes
+the timing", but at a 60% base rate four consecutive failures happen 13% of the
+time. That is not evidence of anything and must not be treated as such without
+more runs.
