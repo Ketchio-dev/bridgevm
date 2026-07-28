@@ -25,9 +25,11 @@ BASE_IMAGE=${BASE_IMAGE:-$HOME/BridgeVM/work/wall-c8-clean-12041.raw}
 BASE_VARS=${BASE_VARS:-$HOME/BridgeVM/work/wall-c8-clean-inject-vars.fd}
 INJECTOR=${INJECTOR:-/tmp/inj-det-1.raw}
 VIOGPU_DIR=${VIOGPU_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
-# Pass 2 must outlast a full four-stage firstboot, which needs >= 2400 s. Kill
-# mode is what makes that ceiling cheap: a stalled boot ends in ~5 min instead
-# of burning the whole budget.
+# Pass 2 must outlast a full four-stage firstboot, which needs >= 2400 s.
+# Kill mode does not make that ceiling cheap, contrary to what this comment
+# used to claim: measured end to end, a stalled boot takes 57 min with kill
+# mode and 50 min without. The stall happens after all four stages and four
+# reboots, so there is little left to cut. Budget ~45-60 min per boot.
 PASS2_WATCHDOG_MS=${PASS2_WATCHDOG_MS:-2400000}
 EXTRA_ARGS=()
 
@@ -36,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     --boots) BOOTS="$2"; shift 2 ;;
     --out) OUT="$2"; shift 2 ;;
     --no-3d) EXTRA_ARGS+=("--no-3d"); shift ;;
+    --trace-venus-start) shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
