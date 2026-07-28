@@ -309,3 +309,34 @@ memory (the second mapped blob, `offset=147456`), so the candidates are now
 narrow: the guest reads a stale value from that mapping, or the notification
 that the reply is ready is lost. Distinguishing them needs a host-side dump of
 the ring memory at the moment of reply, which is the next step.
+
+
+### The host response is byte-identical between pass and fail
+
+Every field the trace records for that first `cmd251` submit matches:
+
+```text
+PASS: OK_NODATA len=24 planned=24 truncated=False header_valid=True
+      flags=1 fenced=True ring_idx=0 ctx=27 writable_bytes=24
+FAIL: OK_NODATA len=24 planned=24 truncated=False header_valid=True
+      flags=1 fenced=True ring_idx=0 ctx=27 writable_bytes=24
+```
+
+Only `fence_id` differs (911 vs 908), which is just a counter.
+
+The command is `fenced=True` yet **no** `fence_create` is emitted in either
+outcome, so both take the `ChainCompletion::Immediate` path at
+`virtio_gpu/virtqueue.rs:268` — the response is scattered into the writable
+descriptor and the used ring is updated synchronously
+(`virtqueue.rs:146-147`). No parked-fence delivery is involved, which
+independently confirms the fence theory is dead.
+
+`has_live_context(27)` also holds in both: the immediately preceding
+`CTX_CREATE` for ctx 27 returns `OK_NODATA` with `debug_name=venus-win32` in
+the passing run (seq 13721) and the stalling run (seq 12465) alike.
+
+**Conclusion: the host side is exonerated for this command.** It receives a
+well-formed request, writes a correct 24-byte response into the guest's
+writable descriptor, updates the used ring, and raises the interrupt — the
+same way in both outcomes. The divergence is entirely in what the guest does
+after that.
