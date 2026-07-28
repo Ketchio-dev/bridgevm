@@ -32,13 +32,18 @@ VIOGPU_DIR=${VIOGPU_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 # reboots, so there is little left to cut. Budget ~45-60 min per boot.
 PASS2_WATCHDOG_MS=${PASS2_WATCHDOG_MS:-2400000}
 EXTRA_ARGS=()
+# The stage4 hang ends with the guest never notifying the control queue again,
+# so proving whether the completion interrupt was raised needs the venus-start
+# MSI-X trace. Set from the option loop directly: --trace-venus-start is not
+# an EXTRA_ARGS entry, and reading it from that array silently never matched.
+trace_venus_start=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --boots) BOOTS="$2"; shift 2 ;;
     --out) OUT="$2"; shift 2 ;;
     --no-3d) EXTRA_ARGS+=("--no-3d"); shift ;;
-    --trace-venus-start) shift ;;
+    --trace-venus-start) trace_venus_start=1; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -76,10 +81,6 @@ PROGRESS="$OUT/progress.txt"
 use_3d=1
 for arg in ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}; do
   [[ "$arg" == "--no-3d" ]] && use_3d=0
-  # The stage4 hang ends with the guest never notifying the control queue
-  # again, so proving whether the completion interrupt was actually raised
-  # needs the venus-start MSI-X trace.
-  [[ "$arg" == "--trace-venus-start" ]] && trace_venus_start=1
 done
 
 # bash 3.2 (macOS system bash) has no mapfile, so build the array directly.
