@@ -181,3 +181,69 @@ guest ICD or the ring handshake rather than the renderer.
 Not yet ruled out: boot 2 created 8 `virgl-shadow-win32` contexts against 1 in
 the stalled runs. That may be a cause or merely a consequence of getting
 further; it is not evidence either way yet.
+
+
+## Root cause narrowed to the first Venus ring command (2026-07-27, n=10)
+
+Gate `p1gate-A1b-20260727-114738` (fresh injector, so the timeout fix was
+live): **4 pass / 10**. Six failures, of which **five are this hang** —
+boots 1, 4, 8, 9 report `create_instance_timeout_ms=120000` →
+`errorlevel=13`, boot 10 stalled in stage1, boot 3 never ran firstboot.
+One cause dominates the gate.
+
+`RESOURCE_MAP_BLOB` separates them perfectly (n=8):
+
+| boot | outcome | MAP_BLOB |
+|---|---|---|
+| 2, 6, 7 | pass | 83 |
+| 5 | pass | 18 |
+| 1, 4, 8, 9 | stall | **2** |
+
+The Venus ring command stream separates them even more sharply. Filtering
+`SUBMIT_3D` to the probe's own payload shape — `submit_first_command_id=251`,
+`submit_dwords=6`:
+
+| boot | outcome | cmd251 count | contexts |
+|---|---|---|---|
+| 2, 6 | pass | **1302** | 27 and 28 |
+| 1, 4, 8, 9 | stall | **1** | 27 only |
+
+The passing runs issue that command 1302 times across two contexts. The
+stalled runs issue it **exactly once** and never again:
+
+```text
+boot 2 PASS                        boot 1 FAIL
+seq 13730 SUBMIT_3D ctx27 cmd251   seq 13710 SUBMIT_3D ctx27 cmd251
+seq 13731 SUBMIT_3D ctx27 cmd251   seq 13711 RESOURCE_DETACH_BACKING ctx0
+seq 13732 SUBMIT_3D ctx27 cmd251   seq 13712 RESOURCE_DETACH_BACKING ctx0
+seq 13733 SUBMIT_3D ctx27 cmd190   ...  ctx27 never appears again
+```
+
+The host answered that single command normally: `OK_NODATA` in 14.9 µs,
+`response_header_valid: true`, `response_truncated: false`, fence 975 echoed
+back in the response header. Other contexts keep being served for thousands of
+commands afterwards.
+
+So the guest sends the first command of the Venus ring handshake, receives a
+well-formed reply, and then stops driving the ring. The failure is on the guest
+side of that handshake, after the reply is delivered.
+
+### Ruled out
+
+- **Fence delivery.** The obvious theory — the guest waits on `fence_id=975`
+  and the host never signals it — does not survive the passing runs, which
+  also leave thousands of fenced submits undelivered (2954 of 3141 in boot 2).
+  Undelivered fences are normal here, so this is not the discriminator.
+- **Host being stuck.** `outstanding_fences=0`, ~5200 further commands served
+  after the last probe command.
+- **A different context colliding.** `ctx_id` 27 is reused across runs but
+  carries different workloads (`cmd_id` 43/44, 1070–2869 dwords elsewhere), so
+  identify the probe by payload shape, not by context id.
+
+### Not yet known
+
+Why the guest stops after one command. Candidates: the ring's doorbell/reply
+slot is read once and then not re-armed, or the ICD blocks on a second
+resource the two mapped blobs do not cover. Both need guest-side
+instrumentation, not more host tracing — the host trace is now exhausted as an
+evidence source for this bug.
