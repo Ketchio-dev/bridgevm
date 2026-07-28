@@ -380,3 +380,33 @@ visible with `BRIDGEVM_TRACE_VENUS_START=1`, now reachable from the gate via
 the timing", but at a 60% base rate four consecutive failures happen 13% of the
 time. That is not evidence of anything and must not be treated as such without
 more runs.
+
+
+## MSI-X delivery is not the cause (2026-07-28)
+
+`msix3-101159` ran three boots with `--trace-venus-start`, giving a passing
+boot (3) and two stalling boots (1, 2) with the interrupt trace on.
+
+| boot | outcome | MSI-X raised after the probe's `CTX_CREATE` | final counter |
+|---|---|---|---|
+| 3 | pass | 1 | n=14336 |
+| 1 | stall | 0 | n=12288 |
+| 2 | stall | 1 | n=12288 |
+
+`msix ... held` — the suppressed-interrupt trace — is **0 in every run**,
+passing and stalling alike. The passing run's higher final counter (14336 vs
+12288) is a consequence of continuing to do work, not a cause.
+
+A stalling boot raises the same number of interrupts around the probe's
+context as a passing one, so **the interrupt path is exonerated**. Combined
+with the earlier finding that the response bytes are identical, the host has
+now been cleared on all three fronts: the response content, the used-ring
+update, and the interrupt.
+
+### Caveat on precision
+
+`trace_sample` (`virtio_gpu/trace.rs:13`) keeps the first 64 events and then
+every 1024th, so the counter resolves to ±1023. That is fine for "did
+interrupts keep flowing" but cannot answer "was *this specific* completion
+signalled". Answering that would need an unsampled trace keyed to the
+command's `fence_id`.
