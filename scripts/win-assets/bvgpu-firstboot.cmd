@@ -101,6 +101,11 @@ if errorlevel 1 goto :fail
 echo [stage3] reset persisted display config so the driver's preferred 120Hz mode is selected >> "%LOG%"
 reg delete "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Configuration" /f >> "%LOG%" 2>&1
 reg delete "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Connectivity" /f >> "%LOG%" 2>&1
+rem Both deletes are best-effort: the keys are absent on a clean image and
+rem reg.exe then exits 1. `call` does not reset ERRORLEVEL, so that stale 1
+rem was still set when the next `if errorlevel 1` ran and failed stage3
+rem even though the display reset had done its job.
+cmd /c exit /b 0
 call :write_boot_identity C:\BridgeVM\stage3.boot
 if errorlevel 1 goto :fail
 echo done > C:\BridgeVM\stage3.flag
