@@ -1,0 +1,9 @@
+# Guest-side assets are byte-for-byte artifacts: they get copied into a
+# Windows image, so git must never normalise their line endings.
+#
+# The .cmd files are deliberately mixed -- 3 are CRLF, 9 are LF, and both work
+# under cmd.exe. The risk is not the mix, it is silent conversion: a Python
+# rewrite of bvgpu-firstboot.cmd turned its CRLF into LF, which no editor and
+# no `git diff --stat` showed, and buried a 27-line change in a 269-line
+# whole-file rewrite. -text pins whatever each file already is.
+scripts/win-assets/** -text
