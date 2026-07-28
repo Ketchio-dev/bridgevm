@@ -247,3 +247,65 @@ slot is read once and then not re-armed, or the ICD blocks on a second
 resource the two mapped blobs do not cover. Both need guest-side
 instrumentation, not more host tracing — the host trace is now exhausted as an
 evidence source for this bug.
+
+
+## Exact instruction identified (2026-07-28, `VN_DEBUG` enabled)
+
+`VN_DEBUG=init,result,log_ctx_info,no_abort` was added to the probe and the
+injector rebuilt. Run `vn-repro-043918` boot 1 reproduced the stall with the
+new tracing on (`vn_env is as below: debug = 0x33`).
+
+The two runs are **identical for 12 lines** and diverge on the 13th:
+
+```text
+   stall (vn-repro boot 1)              pass (A1b boot 2)
+ 1 vn_env is as below                   (same)
+ 2 vn_renderer_create_virtgpu           (same)
+ 3 virtgpu_init                         (same)
+ 4 using virtio-win adapter             (same)
+ 5 connected to renderer                (same)
+ 6 wire format version 1                (same)
+ 7 vk xml version 1.4.343               (same)
+ 8 VK_EXT_command_serialization v1      (same)
+ 9 VK_MESA_venus_protocol v4            (same)
+10 blob map escape ok handle=...064     (same)
+11 D3DKMT submit context ready          (same)
+12 blob map escape ok handle=...256     (same)
+--                                      13 renderer instance version 1.4.334
+                                        14 supports multi-plane wsi ...: no
+                                        15 virtgpu_destroy
+```
+
+Line 13 comes from the ICD string `renderer instance version %d.%d.%d`, whose
+neighbours are `failed to enumerate renderer instance version` and
+`unsupported renderer instance version %d.%d`. It is the result of
+**`vkEnumerateInstanceVersion` forwarded over the Venus ring** — the first
+command the ring ever carries, and exactly the `cmd_id=251 / 6 dwords`
+`SUBMIT_3D` that host tracing showed happening once and never again.
+
+So the failing instruction is pinned: the guest issues the ring's first
+command, the host replies `OK_NODATA` in 14.4 µs with a valid header, and the
+guest never observes the reply. Everything before it — renderer connection,
+protocol negotiation, both ring blob mappings, D3DKMT submit context — is
+byte-for-byte identical between a passing and a stalling boot.
+
+### Also ruled out this round
+
+- **The ICD's own stall detectors.** `stuck in %s wait with iter at %d`,
+  `aborting on ring fatal error`, `aborting on expired ring alive status`
+  appear in the binary but in **none** of the stalled logs, so the hang is
+  upstream of that retry loop.
+- **`syncobj` creation**, which is the code path immediately after blob
+  mapping in the binary's string order: no `virtgpu_sync_create` or
+  `syncobj_*` message in either outcome.
+- **`virgl_render_server socket disconnected`.** Present in every run — pass
+  and fail — as the last line of `run.log`, i.e. normal teardown. It looked
+  like a lead and is not one.
+
+### Remaining question
+
+Why the reply is not observed. The response is written to the ring's shared
+memory (the second mapped blob, `offset=147456`), so the candidates are now
+narrow: the guest reads a stale value from that mapping, or the notification
+that the reply is ready is lost. Distinguishing them needs a host-side dump of
+the ring memory at the moment of reply, which is the next step.
