@@ -70,6 +70,16 @@ $env:MESA_LOG = 'windbg'
 $env:MESA_LOG_LEVEL = 'debug'
 Write-Probe ('mesa_log=' + $env:MESA_LOG + ' level=' + $env:MESA_LOG_LEVEL)
 
+# The ICD carries its own ring diagnostics -- "stuck in %s wait with iter at
+# %d", "aborting on ring fatal error", "aborting on expired ring alive status"
+# -- but none of them appeared in any stalled run, so the hang happens before
+# that detection loop is reached. init/result/log_ctx_info trace instance
+# creation and the ring setup that precedes it. no_abort keeps the ICD logging
+# instead of terminating, so a stall leaves evidence rather than a dead
+# process.
+$env:VN_DEBUG = 'init,result,log_ctx_info,no_abort'
+Write-Probe ('vn_debug=' + $env:VN_DEBUG)
+
 $source = @'
 using System;
 using System.IO;
