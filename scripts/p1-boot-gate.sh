@@ -73,6 +73,10 @@ PROGRESS="$OUT/progress.txt"
 use_3d=1
 for arg in ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}; do
   [[ "$arg" == "--no-3d" ]] && use_3d=0
+  # The stage4 hang ends with the guest never notifying the control queue
+  # again, so proving whether the completion interrupt was actually raised
+  # needs the venus-start MSI-X trace.
+  [[ "$arg" == "--trace-venus-start" ]] && trace_venus_start=1
 done
 
 # bash 3.2 (macOS system bash) has no mapfile, so build the array directly.
@@ -81,6 +85,9 @@ set_gpu_args() {
   [[ "$use_3d" == 1 ]] || return 0
   GPU_ARGS=(--virtio-gpu-3d --gpu-trace "$1/virtio-gpu.jsonl"
             --gpu-trace-protocol venus --viogpu3d-dir "$VIOGPU_DIR")
+  if [[ "${trace_venus_start:-0}" == 1 ]]; then
+    GPU_ARGS+=(--trace-venus-start)
+  fi
 }
 
 for i in $(seq 1 "$BOOTS"); do
