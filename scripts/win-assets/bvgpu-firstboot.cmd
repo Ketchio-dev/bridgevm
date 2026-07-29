@@ -199,12 +199,24 @@ schtasks /Delete /TN "%TASK_NAME%" /F >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
 :task_deleted
 echo [stage4] done %DATE% %TIME% >> "%LOG%"
+rem Power off: everything is finished. Without this the VM idles at the
+rem desktop until the host watchdog expires, which cost ~40 minutes of every
+rem measured boot while the guest work itself takes under 3.
+rem This must not live in :done -- stage1..stage3 reach :done too, and they
+rem need the reboot they just scheduled, not a power off.
+shutdown /s /t 5 /c "BridgeVM viogpu3d firstboot complete"
 goto :done
 
 :fail
 set FAIL_STATUS=%ERRORLEVEL%
 if "%FAIL_STATUS%"=="0" set FAIL_STATUS=1
 echo [failure] stage=%STAGE% errorlevel=%FAIL_STATUS% %DATE% %TIME% >> "%LOG%"
+rem Power off here too. The failure is already recorded in the log above,
+rem and the host reads that log by mounting the disk after the run ends, so
+rem idling until the watchdog expires adds no evidence -- it only added ~40
+rem minutes to every failing boot, and most boots currently fail.
+rem The delay gives the log write time to reach the virtual disk.
+shutdown /s /t 5 /c "BridgeVM viogpu3d firstboot failed"
 endlocal & exit /b %FAIL_STATUS%
 
 :done
