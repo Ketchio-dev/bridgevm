@@ -523,3 +523,35 @@ an ICD behaviour switch (0/8). Combined with the host being fully exonerated,
 the remaining options are to test the other switches
 (`no_fence_feedback`, `no_cmd_batching`, `no_async_queue_submit`) or to accept
 the stall as a known V1 limitation and spend the time on A2-A11 instead.
+
+
+## The stall does not break the guest (2026-07-29)
+
+Examining a `stage4 errorlevel=13` boot (`nomultiring-014717` boot 7) shows
+Windows fully up: desktop, taskbar, wallpaper, indistinguishable from a boot
+that passed.
+
+Its virtio-gpu trace for that same run:
+
+| event | count |
+|---|---|
+| command | 13546 |
+| scanout_3d_flush | 37 |
+| fence_create / complete / deliver | 65 / 65 / 65 |
+| scanout_readback | 688 |
+
+3D is live. Fences are created, completed and delivered in equal numbers.
+`create3d/flush = 0` sits at the healthy end of the documented signature
+(~0.02 healthy, ~1 presentation broken).
+
+**So the stall blocks the diagnostic probe, not the guest.** stage4 exists to
+assert that the Venus ICD can create an instance from a fresh boot; it is a
+gate, not a feature. A user booting this image gets a working accelerated
+desktop whether or not stage4 passed.
+
+That reframes A1. As written it counts `stage4_pass=1`, which measures the
+probe's success rate, and three separate mitigations have failed to move it.
+Whether V1 should be gated on the probe or on the guest actually being usable
+is an owner decision, and it is now the decision that matters most -- it is
+the difference between V1 being blocked and V1 being shippable with a
+documented limitation.
