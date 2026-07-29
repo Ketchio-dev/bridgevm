@@ -487,3 +487,39 @@ distinguishing evidence is the final framebuffer plus `fresh=0, reboots=1`.
 
 Seen 2/8 here and 0/6 on 120.45. Too few to attribute to the driver build.
 Tracked separately from the stage4 stall.
+
+
+## VN_DEBUG=no_multi_ring does not help either (2026-07-29)
+
+`nomultiring-014717`, eight boots on 120.45 with `no_multi_ring` appended to
+VN_DEBUG. Chosen first among the ICD's behaviour switches because the symptom
+is the guest going quiet after the ring's first command.
+
+The switch was verified to reach the ICD rather than assumed:
+`[stage4] vn_debug_extra=no_multi_ring` in firstboot's log and
+`vn_debug=init,result,log_ctx_info,no_abort,no_multi_ring` in the probe's.
+
+**0/8.** Against the 6/23 baseline that is Fisher p = 0.298 -- not enough to
+claim it makes things worse, but no improvement whatsoever.
+
+Failures also moved earlier: last_stage was stage1 once, stage2 once and
+stage3 twice, where the previous two gates ended at stage4 every time. That
+is consistent with the switch disturbing driver installation, but four events
+cannot carry that conclusion on their own.
+
+One boot ended with Windows up and a dialog box on screen, blocking stage4
+from ever starting -- a failure shape not seen before.
+
+**Reading the stage log needs care**: viogpu3d-firstboot.log accumulates
+across the guest's internal reboots, so a `[failure] stage=stage2` line can
+sit *above* later lines from a healthy stage2 in a subsequent generation.
+Position in the file is not chronology within a boot.
+
+### Where this leaves the stall
+
+Three mitigations have now been measured and none moved it: process retry
+(0/10 on second and third attempts), a different driver build (p = 1.00), and
+an ICD behaviour switch (0/8). Combined with the host being fully exonerated,
+the remaining options are to test the other switches
+(`no_fence_feedback`, `no_cmd_batching`, `no_async_queue_submit`) or to accept
+the stall as a known V1 limitation and spend the time on A2-A11 instead.
