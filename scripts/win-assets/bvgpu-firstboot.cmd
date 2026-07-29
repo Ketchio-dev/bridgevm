@@ -127,7 +127,12 @@ rem succeeded 0 times out of 10 (p=3.1% against independence), while the one
 rem passing boot succeeded on attempt 1. The outcome is fixed before the
 rem probe runs, so a retry only adds stall time. The bounded timeout stays:
 rem it turns a silent 40-minute hang into a reported errorlevel=13.
-if exist C:\BridgeVM\bvgpu-vulkan-probe.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-vulkan-probe.ps1 -VulkanProbeCreateTimeoutMs 45000 >> "%LOG%" 2>&1
+rem BVGPU_VN_DEBUG_EXTRA is planted by the injector when a run is testing an
+rem ICD behaviour switch against the ring stall. Absent on a normal run.
+set VN_EXTRA=
+if exist C:\BridgeVM\vn-debug-extra.txt set /p VN_EXTRA=<C:\BridgeVM\vn-debug-extra.txt
+echo [stage4] vn_debug_extra=%VN_EXTRA% >> "%LOG%"
+if exist C:\BridgeVM\bvgpu-vulkan-probe.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-vulkan-probe.ps1 -VulkanProbeCreateTimeoutMs 45000 -VnDebugExtra "%VN_EXTRA%" >> "%LOG%" 2>&1
 set VULKAN_STATUS=%ERRORLEVEL%
 echo [stage4] Vulkan probe errorlevel=%VULKAN_STATUS% >> "%LOG%"
 if "%VULKAN_STATUS%"=="0" goto :vulkan_ok

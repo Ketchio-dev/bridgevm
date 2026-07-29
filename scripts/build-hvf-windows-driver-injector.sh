@@ -221,6 +221,15 @@ if [[ -f "$ASSETS/bvgpu-vulkan-probe.ps1" ]]; then
   log "staging first-boot Vulkan probe \\bvgpu-vulkan-probe.ps1"
   cp "$ASSETS/bvgpu-vulkan-probe.ps1" "$DST_VOL/bvgpu-vulkan-probe.ps1"
 fi
+# VN_DEBUG_EXTRA lets a run flip an ICD behaviour switch (no_multi_ring,
+# no_fence_feedback, ...) to test it against the ring stall. It travels as a
+# file because the guest side is a .cmd with no other way to receive a
+# parameter. Absent by default, and firstboot logs whatever it reads, so a run
+# is always attributable to a setting.
+if [[ -n "${VN_DEBUG_EXTRA:-}" ]]; then
+  log "staging VN_DEBUG extra \\vn-debug-extra.txt = $VN_DEBUG_EXTRA"
+  printf '%s' "$VN_DEBUG_EXTRA" > "$DST_VOL/vn-debug-extra.txt"
+fi
 if [[ -f "$ASSETS/bvgpu-diagnostics-run.cmd" ]]; then
   log "staging one-shot GPU diagnostics runner \\bvgpu-diagnostics-run.cmd"
   cp "$ASSETS/bvgpu-diagnostics-run.cmd" "$DST_VOL/bvgpu-diagnostics-run.cmd"

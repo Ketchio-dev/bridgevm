@@ -3,7 +3,11 @@ param(
   # Generous: a healthy vkCreateInstance returns in well under a second, and
   # the observed failure never returns at all, so this only decides how long a
   # hung run wastes before it reports.
-  [int]$VulkanProbeCreateTimeoutMs = 120000
+  [int]$VulkanProbeCreateTimeoutMs = 120000,
+  # Extra VN_DEBUG values, comma separated, appended to the defaults below.
+  # Used to test whether an ICD behaviour switch avoids the ring stall; the
+  # resulting VN_DEBUG is logged so a run is always attributable.
+  [string]$VnDebugExtra = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -78,6 +82,7 @@ Write-Probe ('mesa_log=' + $env:MESA_LOG + ' level=' + $env:MESA_LOG_LEVEL)
 # instead of terminating, so a stall leaves evidence rather than a dead
 # process.
 $env:VN_DEBUG = 'init,result,log_ctx_info,no_abort'
+if ($VnDebugExtra) { $env:VN_DEBUG = $env:VN_DEBUG + ',' + $VnDebugExtra }
 Write-Probe ('vn_debug=' + $env:VN_DEBUG)
 
 $source = @'
