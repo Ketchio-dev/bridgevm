@@ -209,7 +209,9 @@ rem desktop until the host watchdog expires, which cost ~40 minutes of every
 rem measured boot while the guest work itself takes under 3.
 rem This must not live in :done -- stage1..stage3 reach :done too, and they
 rem need the reboot they just scheduled, not a power off.
-shutdown /s /t 5 /c "BridgeVM viogpu3d firstboot complete"
+rem Skipped when the host needs the guest to stay up past firstboot, e.g. to
+rem drive the agent for clipboard or folder-share checks.
+if not exist C:\BridgeVM\keep-running.txt shutdown /s /t 5 /c "BridgeVM viogpu3d firstboot complete"
 goto :done
 
 :fail
@@ -221,7 +223,7 @@ rem and the host reads that log by mounting the disk after the run ends, so
 rem idling until the watchdog expires adds no evidence -- it only added ~40
 rem minutes to every failing boot, and most boots currently fail.
 rem The delay gives the log write time to reach the virtual disk.
-shutdown /s /t 5 /c "BridgeVM viogpu3d firstboot failed"
+if not exist C:\BridgeVM\keep-running.txt shutdown /s /t 5 /c "BridgeVM viogpu3d firstboot failed"
 endlocal & exit /b %FAIL_STATUS%
 
 :done

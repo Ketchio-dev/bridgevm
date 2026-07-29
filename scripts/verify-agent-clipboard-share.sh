@@ -34,8 +34,21 @@ cp "$VARS" "$WORK/vars.fd"
 # talk to -- a first attempt against one sat waiting for a service that was
 # never going to start. Run the injector pass first, exactly as the boot gate
 # does.
-INJECTOR=${INJECTOR:-/tmp/inj-det-1.raw}
-[[ -f "$INJECTOR" ]] || fail_early "no injector at $INJECTOR (set INJECTOR=)"
+# The injector must carry KEEP_RUNNING, otherwise firstboot powers the guest
+# off the moment it finishes and the agent -- which only starts after logon --
+# never comes up. That is exactly how the first two attempts at this failed:
+# agent-service-gate.txt reported guest_system_off=true, service_started=false.
+INJECTOR=${INJECTOR:-/tmp/inj-keep-running.raw}
+if [[ ! -f "$INJECTOR" ]]; then
+  echo "building injector with KEEP_RUNNING=1 ..."
+  ISO=${ISO:-/Volumes/PortableSSD/BridgeVM-archive/recovery/Win11_25H2_English_Arm64_v2.iso} \
+  VIOGPU3D_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only} \
+  KEEP_RUNNING=1 OUT="$INJECTOR" scripts/build-hvf-windows-viogpu3d-injector.sh \
+    > "$OUT/injector-build.log" 2>&1 \
+    || fail_early "injector build failed, see $OUT/injector-build.log"
+fi
+LC_ALL=C grep -a -q 'keep-running' "$INJECTOR" \
+  || fail_early "$INJECTOR has no keep-running marker; firstboot would power the guest off"
 cp "$INJECTOR" "$WORK/inj.raw"
 echo "injector pass..."
 scripts/run-hvf-windows-installed-boot.sh \

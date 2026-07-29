@@ -226,6 +226,14 @@ fi
 # file because the guest side is a .cmd with no other way to receive a
 # parameter. Absent by default, and firstboot logs whatever it reads, so a run
 # is always attributable to a setting.
+# KEEP_RUNNING=1 stops firstboot from powering the guest off when it finishes,
+# for runs that need the guest alive afterwards -- driving the agent for the
+# clipboard and folder-share checks, for instance. Measurement gates leave it
+# unset and keep the fast power off.
+if [[ "${KEEP_RUNNING:-0}" == "1" ]]; then
+  log "staging keep-running marker \\keep-running.txt"
+  printf '1' > "$DST_VOL/keep-running.txt"
+fi
 if [[ -n "${VN_DEBUG_EXTRA:-}" ]]; then
   log "staging VN_DEBUG extra \\vn-debug-extra.txt = $VN_DEBUG_EXTRA"
   printf '%s' "$VN_DEBUG_EXTRA" > "$DST_VOL/vn-debug-extra.txt"
