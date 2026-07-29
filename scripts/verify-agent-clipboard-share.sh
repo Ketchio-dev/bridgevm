@@ -23,6 +23,16 @@ BOOT_TIMEOUT=${BOOT_TIMEOUT:-1500}
 STEP_TIMEOUT=${STEP_TIMEOUT:-90}
 
 fail_early() { echo "FAIL: $*" >&2; exit 1; }
+
+# --virtio-gpu-3d is what makes the runner build the probe with --features
+# venus, and virtio-console only exists in that build. Without it the probe
+# comes up with no console device at all, the agent env vars are set but
+# unused, and the run just times out. Confirmed by
+# BRIDGEVM_PROBE_PRINT_CAPABILITIES=1 reporting virtio_gpu_3d_compiled=false.
+VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
+gpu_args() { printf '%s\n' --virtio-gpu-3d --gpu-trace "$1/virtio-gpu.jsonl" \
+  --gpu-trace-protocol venus --viogpu3d-dir "$VIOGPU_DIR"; }
+
 WORK=$HOME/BridgeVM/work/agent-verify
 rm -rf "$WORK"; mkdir -p "$WORK" "$OUT"
 # cp -c: APFS clone, so the source lineage is never written to.
@@ -77,15 +87,6 @@ CLIP_B64=$(printf '%s' "$CLIP_TEXT" | base64)
 HOST_FILE=$HOST_SHARE/from-host.bin
 head -c 12345 /dev/urandom > "$HOST_FILE"
 HOST_SHA=$(shasum -a 256 "$HOST_FILE" | cut -d' ' -f1)
-
-# --virtio-gpu-3d is what makes the runner build the probe with --features
-# venus, and virtio-console only exists in that build. Without it the probe
-# comes up with no console device at all, the agent env vars are set but
-# unused, and the run just times out. Confirmed by
-# BRIDGEVM_PROBE_PRINT_CAPABILITIES=1 reporting virtio_gpu_3d_compiled=false.
-VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
-gpu_args() { printf '%s\n' --virtio-gpu-3d --gpu-trace "$1/virtio-gpu.jsonl" \
-  --gpu-trace-protocol venus --viogpu3d-dir "$VIOGPU_DIR"; }
 
 RUN_LOG=$OUT/run.log
 fail() { echo "FAIL: $*" >&2; exit 1; }
