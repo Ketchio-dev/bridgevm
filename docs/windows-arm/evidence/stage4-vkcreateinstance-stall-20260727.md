@@ -555,3 +555,36 @@ Whether V1 should be gated on the probe or on the guest actually being usable
 is an owner decision, and it is now the decision that matters most -- it is
 the difference between V1 being blocked and V1 being shippable with a
 documented limitation.
+
+
+## The UEFI "Not Found" boot failure is not disk corruption (2026-07-29)
+
+Seen 3 times in 23 boots (13%): Windows never starts, UEFI stays on the
+TianoCore screen, and the serial tail reads `BdsDxe: failed to load Boot0003
+"Windows Boot Manager" ... \\EFI\\Boot\\bootaa64.efi: Not Found`.
+
+The injector pass is not at fault -- its final frame shows
+`BVINJECT AGENT PLANT DONE` / `BVINJECT DONE`, i.e. it completed.
+
+Mounting the affected disk afterwards shows everything UEFI claimed was
+missing is present and well-formed:
+
+| check | result |
+|---|---|
+| partition layout | EFI / MSR / Basic Data, intact |
+| `\EFI\Boot\bootaa64.efi` | present, 3030944 bytes, starts `MZ` |
+| `\EFI\Microsoft\Boot\BCD` | present, 32768 bytes, starts `regf` |
+
+The NVRAM store does change during a run, but only by 5013 bytes out of 64
+MiB, and `Boot0003` / `BootOrder` occur the same number of times as in the
+pristine vars file. So this is not a wiped boot entry either.
+
+**Cause not yet identified.** Ruled out: missing or truncated bootloader,
+corrupt BCD, damaged partition table, failed injection, destroyed boot
+variables. `firstboot_fresh=0` catches it reliably, so it never contaminates
+a measurement -- which is how it was noticed at all, since the stale guest
+logs it leaves behind otherwise read as a normal run.
+
+Worth noting the same `BdsDxe: failed to load` line appears in the serial
+tail of boots that pass, so the line alone means nothing; the final
+framebuffer plus `fresh=0, reboots=1` is what identifies this.

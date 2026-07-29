@@ -22,11 +22,29 @@ OUT=${OUT:-$HOME/BridgeVM/runs/agent-verify-$(date +%Y%m%d-%H%M%S)}
 BOOT_TIMEOUT=${BOOT_TIMEOUT:-1500}
 STEP_TIMEOUT=${STEP_TIMEOUT:-90}
 
+fail_early() { echo "FAIL: $*" >&2; exit 1; }
 WORK=$HOME/BridgeVM/work/agent-verify
 rm -rf "$WORK"; mkdir -p "$WORK" "$OUT"
 # cp -c: APFS clone, so the source lineage is never written to.
 cp -c "$TARGET" "$WORK/disk.raw"
 cp "$VARS" "$WORK/vars.fd"
+
+# The agent is planted by the WinPE injector (PLANT_AGENT defaults to 1 in
+# build-hvf-windows-driver-injector.sh), so a bare base image has no agent to
+# talk to -- a first attempt against one sat waiting for a service that was
+# never going to start. Run the injector pass first, exactly as the boot gate
+# does.
+INJECTOR=${INJECTOR:-/tmp/inj-det-1.raw}
+[[ -f "$INJECTOR" ]] || fail_early "no injector at $INJECTOR (set INJECTOR=)"
+cp "$INJECTOR" "$WORK/inj.raw"
+echo "injector pass..."
+scripts/run-hvf-windows-installed-boot.sh \
+  --target "$WORK/disk.raw" --vars "$WORK/vars.fd" --placeholder-nsid1 "$WORK/inj.raw" \
+  --evidence-dir "$OUT/inject" --watchdog-ms 600000 --ram-mib 6144 --smp-cpus 4 \
+  > "$OUT/inject-launcher.out" 2>&1
+observed=$(grep -h '^injector_boot_observed=' "$OUT/inject/target-stat.txt" 2>/dev/null | cut -d= -f2)
+[[ "$observed" == true ]] || { echo "FAIL: injector pass did not run (observed=$observed)" >&2; exit 1; }
+echo "injector done at ${SECONDS}s"
 
 CTL=$OUT/agent.ctl
 : > "$CTL"
