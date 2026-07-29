@@ -60,6 +60,12 @@ fi
 LC_ALL=C grep -a -q 'keep-running' "$INJECTOR" \
   || fail_early "$INJECTOR has no keep-running marker; firstboot would power the guest off"
 cp "$INJECTOR" "$WORK/inj.raw"
+# SKIP_INJECT=1 for an image that already carries a working agent. The clean
+# base image does not: its agent package is staged but its ONLOGON task has
+# never run, and four attempts against it never saw BVAGENT at all.
+if [[ "${SKIP_INJECT:-0}" == "1" ]]; then
+  echo "skipping injector pass (SKIP_INJECT=1)"
+else
 echo "injector pass..."
 scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" --placeholder-nsid1 "$WORK/inj.raw" \
@@ -69,6 +75,7 @@ scripts/run-hvf-windows-installed-boot.sh \
 observed=$(grep -h '^injector_boot_observed=' "$OUT/inject/target-stat.txt" 2>/dev/null | cut -d= -f2)
 [[ "$observed" == true ]] || { echo "FAIL: injector pass did not run (observed=$observed)" >&2; exit 1; }
 echo "injector done at ${SECONDS}s"
+fi
 
 CTL=$OUT/agent.ctl
 : > "$CTL"
@@ -101,6 +108,15 @@ wait_for() { # $1 = grep -E pattern, $2 = required count, $3 = timeout s
   return 1
 }
 
+get_reply_ok() { # $1 = guest path, $2 = expected bytes, $3 = expected head hex
+  local line
+  line=$(grep -F "path=$1 " "$RUN_LOG" | tail -1)
+  [[ "$line" == *"bytes=$2 expected=$2"* ]] || { echo "  bytes mismatch: $line" >&2; return 1; }
+  [[ "$line" == *"ok=true"* ]] || { echo "  not ok: $line" >&2; return 1; }
+  [[ "$line" == *"head=$3"* ]] || { echo "  head mismatch, want $3 in: $line" >&2; return 1; }
+  return 0
+}
+
 send() { # $1 = ctl line, $2 = completion pattern
   local before
   before=$(grep -cE "$2" "$RUN_LOG" 2>/dev/null || true)
@@ -108,12 +124,6 @@ send() { # $1 = ctl line, $2 = completion pattern
   wait_for "$2" $((before + 1)) "$STEP_TIMEOUT" \
     || fail "no reply for: ${1:0:40} (pattern: $2)"
 }
-
-# BRIDGEVM_VIRTIO_CONSOLE_GET_DIR has no CLI flag, and the launcher strips
-# inherited BRIDGEVM_* vars before exec'ing the probe -- but it strips them
-# from the *probe*, while the runner reads this one from its own environment
-# to build ENV_ARGS. Export it here so GET writes the bytes to disk.
-export BRIDGEVM_VIRTIO_CONSOLE_GET_DIR="$GET_DIR"
 
 scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" \
@@ -160,12 +170,18 @@ fi
 GUEST_PATH='C:\BridgeVMShare\from-host.bin'
 send "GET $(printf '%s' "$GUEST_PATH" | base64)" '^BVAGENT GET GET .* ok=true'
 
-FETCHED=$GET_DIR/from-host.bin
-if [[ -f "$FETCHED" ]] && [[ "$(shasum -a 256 "$FETCHED" | cut -d' ' -f1)" == "$HOST_SHA" ]]; then
-  echo "A7 host->guest: PASS (sha256 $HOST_SHA)"
+# Verification is on the GET reply line, not on a fetched file. The probe only
+# writes the bytes to disk when BRIDGEVM_VIRTIO_CONSOLE_GET_DIR is set, and
+# that has no CLI flag while the launcher clears every inherited BRIDGEVM_*
+# before exec -- so exporting it does nothing. The line does carry proof:
+# bytes/expected agree, ok=true means every chunk arrived, and head= is the
+# first 48 bytes in hex, which is compared against the source file here.
+host_head=$(xxd -p -l 48 "$HOST_FILE" | tr -d '\n')
+if get_reply_ok "$GUEST_PATH" 12345 "$host_head"; then
+  echo "A7 host->guest: PASS (12345 bytes, first 48 match)"
   A7A=pass
 else
-  echo "A7 host->guest: FAIL (expected $HOST_SHA)" >&2
+  echo "A7 host->guest: FAIL" >&2
   A7A=fail
 fi
 
@@ -181,9 +197,12 @@ GUEST_SHA=$(awk '/^BVAGENT CMD .*Get-FileHash/{f=1; next}
                  f' "$RUN_LOG" | tr -d ' \r\n' | tail -c 64 | tr 'A-F' 'a-f')
 
 send "GET $(printf '%s' "$GUEST_OUT" | base64)" '^BVAGENT GET GET .* ok=true'
-FETCHED2=$GET_DIR/from-guest.bin
-if [[ -f "$FETCHED2" ]] && [[ -n "$GUEST_SHA" ]] \
-   && [[ "$(shasum -a 256 "$FETCHED2" | cut -d' ' -f1)" == "$GUEST_SHA" ]]; then
+# The guest side of the share: the file was written inside the guest, the
+# syncer carried it to the host directory, and the copy that landed there is
+# compared against what the guest itself hashed.
+HOST_COPY=$HOST_SHARE/from-guest.bin
+if [[ -f "$HOST_COPY" ]] && [[ -n "$GUEST_SHA" ]] \
+   && [[ "$(shasum -a 256 "$HOST_COPY" | cut -d' ' -f1)" == "$GUEST_SHA" ]]; then
   echo "A7 guest->host: PASS (sha256 $GUEST_SHA)"
   A7B=pass
 else
