@@ -54,6 +54,7 @@ echo "injector pass..."
 scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" --placeholder-nsid1 "$WORK/inj.raw" \
   --evidence-dir "$OUT/inject" --watchdog-ms 600000 --ram-mib 6144 --smp-cpus 4 \
+  $(gpu_args "$OUT/inject") \
   > "$OUT/inject-launcher.out" 2>&1
 observed=$(grep -h '^injector_boot_observed=' "$OUT/inject/target-stat.txt" 2>/dev/null | cut -d= -f2)
 [[ "$observed" == true ]] || { echo "FAIL: injector pass did not run (observed=$observed)" >&2; exit 1; }
@@ -76,6 +77,15 @@ CLIP_B64=$(printf '%s' "$CLIP_TEXT" | base64)
 HOST_FILE=$HOST_SHARE/from-host.bin
 head -c 12345 /dev/urandom > "$HOST_FILE"
 HOST_SHA=$(shasum -a 256 "$HOST_FILE" | cut -d' ' -f1)
+
+# --virtio-gpu-3d is what makes the runner build the probe with --features
+# venus, and virtio-console only exists in that build. Without it the probe
+# comes up with no console device at all, the agent env vars are set but
+# unused, and the run just times out. Confirmed by
+# BRIDGEVM_PROBE_PRINT_CAPABILITIES=1 reporting virtio_gpu_3d_compiled=false.
+VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
+gpu_args() { printf '%s\n' --virtio-gpu-3d --gpu-trace "$1/virtio-gpu.jsonl" \
+  --gpu-trace-protocol venus --viogpu3d-dir "$VIOGPU_DIR"; }
 
 RUN_LOG=$OUT/run.log
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -111,6 +121,7 @@ scripts/run-hvf-windows-installed-boot.sh \
   --agent-service-control "$CTL" \
   --agent-clipboard-sync \
   --agent-share-host "$HOST_SHARE" --agent-share-guest 'C:\BridgeVMShare' \
+  $(gpu_args "$OUT") \
   > "$OUT/launcher.out" 2>&1 &
 LAUNCHER=$!
 trap 'kill $LAUNCHER 2>/dev/null || true; pkill -f hvf_gic_boot_probe 2>/dev/null || true' EXIT
