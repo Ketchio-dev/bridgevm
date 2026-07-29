@@ -448,3 +448,42 @@ not significant at this sample size and should not be read as harm either.
 failing boot and buys nothing, and leaving it in would misrepresent a
 deterministic failure as a flaky one. The bounded timeout stays — it is what
 turns a silent 40-minute hang into a reported `errorlevel=13`.
+
+
+## Driver 120.43-fence-revert is no better than 120.45 (2026-07-28)
+
+`drv43fast-224248`, eight boots on `download-120.43-fence-revert`, chosen
+because its name points at fence behaviour and the stall lives in the ring.
+The injector was byte-verified to carry that ICD: the two builds first differ
+at offset 128, and the 120.43 signature appears once in the image while the
+120.45 signature appears zero times.
+
+| build | passes (fresh=1 only) | rate |
+|---|---|---|
+| 120.45-backing-only | 6/23 | 26% |
+| 120.43-fence-revert | 2/6 | 33% |
+
+Fisher exact p = 1.00. **No difference.** Failing boots stop at the same
+`create_instance_begin`. Swapping driver builds is not the fix.
+
+All six 120.4x builds share one mesa commit
+(`cb531c440ff34a9c6334859dda0848132be49ec3`), so the ICD differences between
+them are build-level, not source-level -- consistent with none of them moving
+the needle.
+
+### A second, distinct failure appeared
+
+Two boots (2 and 3) came back `fresh=0 reboots=1`, and the final framebuffer
+shows UEFI still at the TianoCore screen with `BdsDxe: failed to load Boot0003
+"Windows Boot Manager" ... bootaa64.efi: Not Found` -- Windows never started,
+so firstboot never ran and the guest logs are leftovers from the base image.
+`firstboot_fresh` is what caught this; the stale logs otherwise look like a
+clean pass, and one of them even contains a successful `create_instance` from
+five days earlier.
+
+Note that the same `BdsDxe: failed to load` line also appears in the serial
+tail of boots that pass -- it is not by itself a failure signal. The
+distinguishing evidence is the final framebuffer plus `fresh=0, reboots=1`.
+
+Seen 2/8 here and 0/6 on 120.45. Too few to attribute to the driver build.
+Tracked separately from the stage4 stall.
