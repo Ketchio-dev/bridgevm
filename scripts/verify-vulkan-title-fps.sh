@@ -43,6 +43,7 @@ cp "$GATE_SOURCE" "$HOST_SHARE/bvgpu-real-title-gate.ps1"
   cd "$(dirname "$PPSSPP_SOURCE")"
   ditto -c -k --keepParent "$(basename "$PPSSPP_SOURCE")" "$HOST_SHARE/ppsspp.zip"
 )
+ZIP_BYTES=$(stat -f %z "$HOST_SHARE/ppsspp.zip")
 
 wait_for() { # pattern, count, timeout seconds
   local deadline=$((SECONDS + $3)) n
@@ -89,21 +90,15 @@ wait_for '^BVAGENT SERVICE start' 1 "$BOOT_TIMEOUT" \
   || fail "agent never reached service state within ${BOOT_TIMEOUT}s"
 echo "agent up at ${SECONDS}s"
 
-# Wait for the host-share syncer and prove both the executable and current gate
-# are visible before spending the measurement interval.
-CHECK='powershell -NoProfile -Command "if ((Test-Path C:\BridgeVMShare\ppsspp.zip) -and (Test-Path C:\BridgeVMShare\bvgpu-real-title-gate.ps1)) { Write-Output assets=OK; exit 0 } else { Write-Output assets=MISSING; exit 2 }"'
-for _ in $(seq 1 120); do
-  before=$(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG" 2>/dev/null || true)
-  send "$CHECK" '^BVAGENT END ' 30
-  line=$(grep -E '^BVAGENT CMD .* exit=' "$RUN_LOG" | tail -1)
-  if [[ $(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG") -gt $before ]] \
-     && [[ "$line" == *" exit=0" ]] \
-     && grep -q '^assets=OK\r\{0,1\}$' "$RUN_LOG"; then
-    break
-  fi
-  sleep 1
-done
-grep -q '^assets=OK$' < <(tr -d '\r' < "$RUN_LOG") || fail "PPSSPP or synced gate missing"
+# Wait for the syncer's own completion lines rather than polling the guest.
+# The 18 MiB archive expands to roughly 24 MiB on the base64 console stream and
+# occupies that same port while transferring; a command sent during the fourth
+# live attempt could not be answered within 30 seconds and the verifier killed
+# an otherwise progressing transfer.
+wait_for "^BVAGENT SHARE host->guest ppsspp[.]zip bytes=$ZIP_BYTES " 1 600 \
+  || fail "PPSSPP archive ($ZIP_BYTES bytes) was not synchronized within 600s"
+wait_for '^BVAGENT SHARE host->guest bvgpu-real-title-gate[.]ps1 ' 1 60 \
+  || fail "title gate was not synchronized"
 echo "title archive ready at ${SECONDS}s"
 
 # Extract outside the mirrored share: the host-side syncer treats that tree as
