@@ -78,6 +78,7 @@ scripts/run-hvf-windows-installed-boot.sh \
   --ram-mib 6144 --smp-cpus 4 \
   --agent-service-control "$CTL" \
   --agent-share-host "$HOST_SHARE" --agent-share-guest 'C:\BridgeVMShare' \
+  --agent-share-max-kb 32768 \
   --virtio-gpu-3d --gpu-trace "$OUT/virtio-gpu.jsonl" \
   --gpu-trace-protocol venus --viogpu3d-dir "$VIOGPU_DIR" \
   > "$OUT/launcher.out" 2>&1 &
