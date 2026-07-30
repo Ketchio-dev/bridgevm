@@ -63,6 +63,8 @@ struct Shared {
     frames_rendered: AtomicU64,
     dropped_writes: AtomicU64,
     dropped_bytes: AtomicU64,
+    format_drops: AtomicU64,
+    ring_full_drops: AtomicU64,
     callback_errors: AtomicU64,
 }
 
@@ -73,6 +75,8 @@ impl Shared {
             frames_rendered: AtomicU64::new(0),
             dropped_writes: AtomicU64::new(0),
             dropped_bytes: AtomicU64::new(0),
+            format_drops: AtomicU64::new(0),
+            ring_full_drops: AtomicU64::new(0),
             callback_errors: AtomicU64::new(0),
         }
     }
@@ -81,6 +85,16 @@ impl Shared {
         self.dropped_writes.fetch_add(1, Ordering::Relaxed);
         self.dropped_bytes
             .fetch_add(bytes as u64, Ordering::Relaxed);
+    }
+
+    fn record_format_drop(&self, bytes: usize) {
+        self.format_drops.fetch_add(1, Ordering::Relaxed);
+        self.record_drop(bytes);
+    }
+
+    fn record_ring_full_drop(&self, bytes: usize) {
+        self.ring_full_drops.fetch_add(1, Ordering::Relaxed);
+        self.record_drop(bytes);
     }
 }
 
@@ -169,21 +183,23 @@ impl HdaPcmSink for CoreAudioPcmSink {
             return;
         }
         if rate != SAMPLE_RATE || channels != CHANNELS || bits != BITS_PER_CHANNEL {
-            self.shared.record_drop(samples.len());
+            self.shared.record_format_drop(samples.len());
             return;
         }
 
-        let mut ring = match self.shared.ring.try_lock() {
+        // The old producer-side try_lock discarded the entire DMA fragment
+        // whenever CoreAudio's callback happened to hold this same short-lived
+        // lock. A live run showed 54 such tiny drops totaling only 3,668 bytes.
+        // Blocking here preserves PCM; the callback remains try_lock-based so
+        // the real-time CoreAudio thread can always substitute silence instead
+        // of waiting on the vCPU.
+        let mut ring = match self.shared.ring.lock() {
             Ok(ring) => ring,
-            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
-            Err(TryLockError::WouldBlock) => {
-                self.shared.record_drop(samples.len());
-                return;
-            }
+            Err(poisoned) => poisoned.into_inner(),
         };
         if samples.len() > RING_CAPACITY_BYTES.saturating_sub(ring.len()) {
             drop(ring);
-            self.shared.record_drop(samples.len());
+            self.shared.record_ring_full_drop(samples.len());
             return;
         }
         ring.extend(samples.iter().copied());
@@ -209,10 +225,12 @@ impl Drop for CoreAudioPcmSink {
         // Always print the healthy case too. A conditional error-only line
         // cannot prove A5's required frames_rendered>0 AND drops==0.
         println!(
-            "hda CoreAudio stats: frames_rendered={} drops={} dropped_bytes={} callback_errors={}",
+            "hda CoreAudio stats: frames_rendered={} drops={} dropped_bytes={} format_drops={} ring_full_drops={} callback_errors={}",
             self.shared.frames_rendered.load(Ordering::Relaxed),
             dropped_writes,
             self.shared.dropped_bytes.load(Ordering::Relaxed),
+            self.shared.format_drops.load(Ordering::Relaxed),
+            self.shared.ring_full_drops.load(Ordering::Relaxed),
             callback_errors
         );
     }
