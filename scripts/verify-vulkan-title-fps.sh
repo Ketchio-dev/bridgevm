@@ -18,6 +18,7 @@ TITLE_SECONDS=${TITLE_SECONDS:-30}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 GATE_SOURCE=$REPO/scripts/win-assets/bvgpu-real-title-gate.ps1
 PPSSPP_SOURCE=${PPSSPP_SOURCE:-$HOME/BridgeVM/apps/ppsspp}
+PRESTAGED_TITLE=${PRESTAGED_TITLE:-0}
 
 [[ -f "$TARGET" ]] || fail "target image missing: $TARGET"
 [[ -f "$VARS" ]] || fail "vars missing: $VARS"
@@ -36,14 +37,15 @@ RUN_LOG=$OUT/run.log
 HOST_SHARE=$OUT/share-host
 mkdir -p "$HOST_SHARE"
 cp "$GATE_SOURCE" "$HOST_SHARE/bvgpu-real-title-gate.ps1"
-# Recursive sync works, but the title tree contains hundreds of tiny assets;
-# the first live attempt was still transferring them after 110 seconds and had
-# not reached the executable. One ZIP turns that into a single ~18 MiB file.
-(
-  cd "$(dirname "$PPSSPP_SOURCE")"
-  ditto -c -k --keepParent "$(basename "$PPSSPP_SOURCE")" "$HOST_SHARE/ppsspp.zip"
-)
-ZIP_BYTES=$(stat -f %z "$HOST_SHARE/ppsspp.zip")
+if [[ "$PRESTAGED_TITLE" != 1 ]]; then
+  # Recursive sync works, but the title tree contains hundreds of tiny assets;
+  # one ZIP turns that into a single ~18 MiB file.
+  (
+    cd "$(dirname "$PPSSPP_SOURCE")"
+    ditto -c -k --keepParent "$(basename "$PPSSPP_SOURCE")" "$HOST_SHARE/ppsspp.zip"
+  )
+  ZIP_BYTES=$(stat -f %z "$HOST_SHARE/ppsspp.zip")
+fi
 
 wait_for() { # pattern, count, timeout seconds
   local deadline=$((SECONDS + $3)) n
@@ -90,23 +92,27 @@ wait_for '^BVAGENT SERVICE start' 1 "$BOOT_TIMEOUT" \
   || fail "agent never reached service state within ${BOOT_TIMEOUT}s"
 echo "agent up at ${SECONDS}s"
 
-# Wait for the syncer's own completion lines rather than polling the guest.
-# The 18 MiB archive expands to roughly 24 MiB on the base64 console stream and
-# occupies that same port while transferring; a command sent during the fourth
-# live attempt could not be answered within 30 seconds and the verifier killed
-# an otherwise progressing transfer.
-wait_for "^BVAGENT SHARE host->guest ppsspp[.]zip bytes=$ZIP_BYTES " 1 600 \
-  || fail "PPSSPP archive ($ZIP_BYTES bytes) was not synchronized within 600s"
 wait_for '^BVAGENT SHARE host->guest bvgpu-real-title-gate[.]ps1 ' 1 60 \
   || fail "title gate was not synchronized"
-echo "title archive ready at ${SECONDS}s"
+if [[ "$PRESTAGED_TITLE" != 1 ]]; then
+  # Wait for the syncer's own completion line rather than contending for the
+  # same console with a polling command during the large transfer.
+  wait_for "^BVAGENT SHARE host->guest ppsspp[.]zip bytes=$ZIP_BYTES " 1 600 \
+    || fail "PPSSPP archive ($ZIP_BYTES bytes) was not synchronized within 600s"
+  echo "title archive ready at ${SECONDS}s"
 
-# Extract outside the mirrored share: the host-side syncer treats that tree as
-# authoritative and would otherwise delete guest-created output.
-EXPAND='powershell -NoProfile -Command "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue C:\BridgeVM\a2-title; Expand-Archive -Force C:\BridgeVMShare\ppsspp.zip C:\BridgeVM\a2-title; if (Test-Path C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe) { Write-Output expand=OK; exit 0 } else { exit 3 }"'
-run_guest "$EXPAND" 300
-grep -q '^expand=OK$' < <(tr -d '\r' < "$RUN_LOG") || fail "PPSSPP archive did not extract"
-echo "title assets extracted at ${SECONDS}s"
+  # Extract outside the mirrored share: the host-side syncer treats that tree
+  # as authoritative and would otherwise delete guest-created output.
+  EXPAND='powershell -NoProfile -Command "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue C:\BridgeVM\a2-title; Expand-Archive -Force C:\BridgeVMShare\ppsspp.zip C:\BridgeVM\a2-title; if (Test-Path C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe) { Write-Output expand=OK; exit 0 } else { exit 3 }"'
+  run_guest "$EXPAND" 300
+  grep -q '^expand=OK$' < <(tr -d '\r' < "$RUN_LOG") || fail "PPSSPP archive did not extract"
+  echo "title assets extracted at ${SECONDS}s"
+else
+  CHECK_STAGED='powershell -NoProfile -Command "if (Test-Path C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe) { Write-Output staged=OK; exit 0 } else { exit 4 }"'
+  run_guest "$CHECK_STAGED" 60
+  grep -q '^staged=OK$' < <(tr -d '\r' < "$RUN_LOG") || fail "pre-staged PPSSPP missing"
+  echo "pre-staged title ready at ${SECONDS}s"
+fi
 
 # The historical auto-launch wrapper set VK_DRIVER_FILES before starting the
 # title. Directly invoking the gate without it let PPSSPP open a window but
