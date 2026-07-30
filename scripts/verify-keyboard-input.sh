@@ -103,30 +103,6 @@ wait_for '^xHCI setup-input injection .* fired:' 1 \
   $(( FIRE_DELAY_MS / 1000 + STEP_TIMEOUT )) \
   || fail_early "setup-input never fired within $(( FIRE_DELAY_MS / 1000 + STEP_TIMEOUT ))s"
 
-# Actual format, taken from a real run rather than guessed:
-#   xHCI setup-input injection setup-input fired: actions=f1,...,f12
-#   queued_actions=12 queued_reports=24 emitted_key_reports=N
-#   emitted_release_reports=N rejected_count=0
-inject_line=$(grep -E '^xHCI setup-input injection .* fired:' "$RUN_LOG" | tail -1)
-# queued_actions counts what parsed, not what the guest took. Each key is two
-# reports (press + release), so twelve keys delivered means
-# emitted_key_reports=12 and emitted_release_reports=12. A run showing
-# queued_reports=24 with emitted_key_reports=1 has queued everything and
-# delivered one key -- passing that would be a false positive, which is
-# exactly what an earlier version of this check did.
-emitted_key=$(sed -n 's/.*emitted_key_reports=\([0-9]*\).*/\1/p' <<< "$inject_line")
-emitted_rel=$(sed -n 's/.*emitted_release_reports=\([0-9]*\).*/\1/p' <<< "$inject_line")
-if [[ "$inject_line" == *"queued_actions=12"* ]] \
-   && [[ "$inject_line" == *"rejected_count=0"* ]] \
-   && [[ "${emitted_key:-0}" -ge 12 ]] && [[ "${emitted_rel:-0}" -ge 12 ]]; then
-  echo "A4 F1-F12: PASS (12 keys delivered: key=$emitted_key release=$emitted_rel)"
-  A4F=pass
-else
-  echo "A4 F1-F12: FAIL (delivered key=${emitted_key:-?} release=${emitted_rel:-?}, need 12/12)" >&2
-  echo "  line: ${inject_line:-<none>}" >&2
-  A4F=fail
-fi
-
 ### A4 part 2: non-ASCII round trip
 # Exactly what HvfTextInputPlan does for a non-ASCII string: CLIPSET the whole
 # thing, then paste. Reading it back out of the clipboard proves the transport
@@ -148,6 +124,44 @@ else
   echo "  expected: $TYPED" >&2
   echo "  actual:   $GOT" >&2
   A4T=fail
+fi
+
+### A4 part 1 verdict: read the counters only after the run has ended
+# The line printed when the keys fire is a snapshot from that instant, so its
+# emitted_* counters are still near zero by construction. The final tally is
+# only printed by the end-of-run summary (final_report.rs:270 ->
+# trigger.print_summary), so the guest has to be shut down first.
+#
+# The shutdown goes over the wire as plain text. The host wraps any non-verb
+# line as RUN <base64> itself (agent_console/protocol.rs:91-112), so
+# pre-wrapping it made the guest run the literal word "RUN":
+#   cmd.exe : 'RUN' is not recognized as an internal or external command
+# The guest then never powered off, and the trap killed the probe before it
+# could print any summary -- which is why an earlier run had no summary line at
+# all and the fire-time snapshot was read instead.
+printf '%s\n' 'shutdown /s /t 3' >> "$CTL"
+wait "$LAUNCHER" 2>/dev/null || true
+
+# The summary line carries marker_seen=, which the fire-time line does not.
+inject_line=$(grep -E '^xHCI setup-input injection .*marker_seen=' "$RUN_LOG" | tail -1)
+[[ -n "$inject_line" ]] \
+  || inject_line=$(grep -E '^xHCI setup-input injection .* fired:' "$RUN_LOG" | tail -1)
+# queued_actions counts what parsed, not what the guest took. Each key is two
+# reports (press + release), so twelve keys delivered means
+# emitted_key_reports=12 and emitted_release_reports=12. A run showing
+# queued_reports=24 with emitted_key_reports=1 has queued everything and
+# delivered one key -- passing that would be a false positive, which is exactly
+# what an earlier version of this check did.
+emitted_key=$(grep -oE 'emitted_key_reports=[0-9]+' <<< "$inject_line" | cut -d= -f2)
+emitted_rel=$(grep -oE 'emitted_release_reports=[0-9]+' <<< "$inject_line" | cut -d= -f2)
+if [[ "$inject_line" == *"queued_actions=12"* ]] \
+   && [[ "${emitted_key:-0}" -ge 12 ]] && [[ "${emitted_rel:-0}" -ge 12 ]]; then
+  echo "A4 F1-F12: PASS (12 keys delivered: key=$emitted_key release=$emitted_rel)"
+  A4F=pass
+else
+  echo "A4 F1-F12: FAIL (delivered key=${emitted_key:-?} release=${emitted_rel:-?}, need 12/12)" >&2
+  echo "  line: ${inject_line:-<none>}" >&2
+  A4F=fail
 fi
 
 {

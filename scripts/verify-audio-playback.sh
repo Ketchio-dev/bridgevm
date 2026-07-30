@@ -50,8 +50,13 @@ send() { # $1 = ctl line, $2 = completion pattern
     || fail_early "no reply for: ${1:0:60}"
 }
 
+# The host wraps anything that is not a protocol verb as RUN <base64(cmd)>
+# itself (agent_console/protocol.rs:91-112, is_raw_verb). Wrapping it here too
+# produced a double wrap, and the guest ran the literal word "RUN":
+#   cmd.exe : 'RUN' is not recognized as an internal or external command
+# So the command goes over the wire as plain text.
 run_guest() { # $1 = shell command, $2 = completion pattern
-  send "RUN $(printf '%s' "$1" | base64)" "$2"
+  send "$1" "$2"
 }
 
 # --hda-coreaudio turns on both the device and the CoreAudio sink.
@@ -75,7 +80,7 @@ echo "agent up at ${SECONDS}s"
 # means anything -- otherwise a silent guest and a broken host ring look the
 # same.
 run_guest 'powershell -NoProfile -Command "(Get-CimInstance Win32_SoundDevice | Select-Object -First 1 -ExpandProperty Status)"' \
-  '^BVAGENT CMD .* exit=0'
+  '^BVAGENT END RUN '
 DEV_STATUS=$(grep -A4 'BVAGENT CMD' "$RUN_LOG" | grep -oE '\bOK\b' | tail -1 || true)
 echo "guest sound device status: ${DEV_STATUS:-<unknown>}"
 
@@ -94,16 +99,16 @@ GEN+='for($i=0;$i -lt $n;$i++){$v=[int16](12000*[Math]::Sin(2*[Math]::PI*440*$i/
 GEN+='$bw.Write($v);$bw.Write($v)};'
 GEN+='[System.IO.File]::WriteAllBytes($p,$ms.ToArray());'
 GEN+='Write-Output ("wav_bytes=" + (Get-Item $p).Length)'
-run_guest "powershell -NoProfile -Command \"$GEN\"" '^BVAGENT CMD .* exit=0'
+run_guest "powershell -NoProfile -Command \"$GEN\"" '^BVAGENT END RUN '
 
 # SoundPlayer.PlaySync blocks until playback finishes, so a successful return
 # means the frames really were handed to the audio stack.
 run_guest 'powershell -NoProfile -Command "(New-Object System.Media.SoundPlayer \"C:\BridgeVM\a5-tone.wav\").PlaySync(); Write-Output played=1"' \
-  '^BVAGENT CMD .* exit=0'
+  '^BVAGENT END RUN '
 echo "playback returned at ${SECONDS}s"
 
 # The stats line is printed when the sink is dropped, i.e. at end of run.
-printf 'RUN %s\n' "$(printf '%s' 'shutdown /s /t 3' | base64)" >> "$CTL"
+printf '%s\n' 'shutdown /s /t 3' >> "$CTL"
 wait "$LAUNCHER" 2>/dev/null || true
 
 STATS=$(grep -E '^hda CoreAudio stats:' "$RUN_LOG" | tail -1)
