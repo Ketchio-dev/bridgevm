@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Measures B4 host-click -> guest framebuffer response latency.
-# On the 800x600 Windows desktop, absolute HID coordinate 820x31650 targets the
-# Start button. The probe captures before/after and bounded delayed frames; the
-# first checksum change after injection is a measured upper bound.
+# The current 800x600 guest frame contains PPSSPP's deterministic Graphics
+# Error dialog. Absolute HID coordinate 22310x20800 targets its visible OK
+# button (pixel ~544,380). Dismissing a modal dialog guarantees a composited
+# frame change; clicking empty desktop, as the first attempt did, does not.
 set -euo pipefail
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); cd "$REPO"
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -17,7 +18,7 @@ CTL=$OUT/agent.ctl; : > "$CTL"
 scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" --evidence-dir "$OUT" \
   --watchdog-ms 600000 --ram-mib 6144 --smp-cpus 4 --enable-xhci \
-  --pointer-input-actions 'click:820x31650' \
+  --pointer-input-actions 'click:22310x20800' \
   --pointer-input-fire-delay-ms 150000 \
   --pointer-input-ramfb-delay-ms '5,15,30,60,120,250,500,1000' \
   --agent-service-control "$CTL" \
