@@ -108,7 +108,10 @@ run_guest "$EXPAND" 300
 grep -q '^expand=OK$' < <(tr -d '\r' < "$RUN_LOG") || fail "PPSSPP archive did not extract"
 echo "title assets extracted at ${SECONDS}s"
 
-GUEST_GATE='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMShare\bvgpu-real-title-gate.ps1 -Executable C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe -MinimumSeconds '"$TITLE_SECONDS"
+# The historical auto-launch wrapper set VK_DRIVER_FILES before starting the
+# title. Directly invoking the gate without it let PPSSPP open a window but
+# choose another backend, so vulkan_virtio.dll was never loaded.
+GUEST_GATE='set "VK_DRIVER_FILES=C:\BridgeVM\viogpu3d\virtio_icd.arm64.json" && set "VK_INSTANCE_LAYERS=" && powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMShare\bvgpu-real-title-gate.ps1 -Executable C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe -MinimumSeconds '"$TITLE_SECONDS"
 run_guest "$GUEST_GATE" $((TITLE_SECONDS + STEP_TIMEOUT))
 
 FPS_LINE=$(tr -d '\r' < "$RUN_LOG" | grep 'guest_fps samples=' | tail -1)
