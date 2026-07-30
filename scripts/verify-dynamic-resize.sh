@@ -38,7 +38,10 @@ send() {
 query_resolution() {
   local before line
   before=$(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG" 2>/dev/null || true)
-  send 'powershell -NoProfile -Command "$v=Get-CimInstance Win32_VideoController | Select-Object -First 1; Write-Output (\"guest_resolution={0}x{1}\" -f $v.CurrentHorizontalResolution,$v.CurrentVerticalResolution)"' '^BVAGENT END '
+  # Win32_VideoController reports null CurrentHorizontal/VerticalResolution for
+  # this WDDM driver (the first live run returned just "x"). Query the actual
+  # interactive desktop bounds instead; this is what applications observe.
+  send 'powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; Write-Output (\"guest_resolution={0}x{1}\" -f $b.Width,$b.Height)"' '^BVAGENT END '
   line=$(grep -E '^BVAGENT CMD .* exit=' "$RUN_LOG" | tail -1)
   [[ $(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG") -gt $before && "$line" == *' exit=0' ]] \
     || fail "guest resolution query failed"
