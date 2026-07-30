@@ -15,10 +15,12 @@ WORK=$HOME/BridgeVM/work/pointer-latency
 rm -rf "$WORK"; mkdir -p "$WORK" "$OUT"; cp -c "$TARGET" "$WORK/disk.raw"; cp "$VARS" "$WORK/vars.fd"
 CTL=$OUT/agent.ctl; : > "$CTL"
 
+# Windows may ignore a button transition that teleports an absolute pointer in
+# the same report. Move first, then press/release at the stable position.
 scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" --evidence-dir "$OUT" \
   --watchdog-ms 600000 --ram-mib 6144 --smp-cpus 4 --enable-xhci \
-  --pointer-input-actions 'click:22310x20800' \
+  --pointer-input-actions 'move:22310x20800,click:22310x20800' \
   --pointer-input-fire-delay-ms 150000 \
   --pointer-input-ramfb-delay-ms '5,15,30,60,120,250,500,1000' \
   --agent-service-control "$CTL" \
