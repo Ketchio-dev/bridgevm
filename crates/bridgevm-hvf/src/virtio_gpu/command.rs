@@ -1,5 +1,3 @@
-//! Routing of control and cursor requests to the per-command handlers.
-
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 use crate::virtio_gpu_3d;
@@ -72,9 +70,7 @@ impl VirtioGpu {
             | VIRTIO_GPU_CMD_RESOURCE_MAP_BLOB
             | VIRTIO_GPU_CMD_RESOURCE_UNMAP_BLOB => {
                 let hdr3d = CtrlHdr3d::parse(request).unwrap();
-                if hdr3d.typ == VIRTIO_GPU_CMD_RESOURCE_CREATE_3D {
-                    self.resource_create_3d_count = self.resource_create_3d_count.saturating_add(1);
-                }
+                self.record_3d_command(hdr3d.typ);
                 if hdr3d.typ == VIRTIO_GPU_CMD_CTX_DESTROY {
                     if let Some(resource_id) = self
                         .blob_scanout

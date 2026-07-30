@@ -403,6 +403,7 @@ crates/bridgevm-hvf/src/virtio_gpu/command.rs	100	0
 crates/bridgevm-hvf/src/virtio_gpu/compositor.rs	246	0
 crates/bridgevm-hvf/src/virtio_gpu/config_space.rs	459	0
 crates/bridgevm-hvf/src/virtio_gpu/device.rs	313	0
+crates/bridgevm-hvf/src/virtio_gpu/device_stats.rs	83	0
 crates/bridgevm-hvf/src/virtio_gpu/display.rs	200	0
 crates/bridgevm-hvf/src/virtio_gpu/fb_sink.rs	171	7
 crates/bridgevm-hvf/src/virtio_gpu/fence.rs	79	0
@@ -615,6 +616,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/exception_trace.rs	137	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_diagnostics.rs	263	3
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_memory.rs	223	8
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs	293	16
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_stats.rs	60	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard.rs	426	21
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_support.rs	44	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_abi.rs	235	2
@@ -634,6 +636,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pcie_ecam_trace/tests/trace_enri
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pcie_mmio_trace.rs	280	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pcie_mmio_trace/context.rs	261	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pcie_mmio_trace/registers.rs	225	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/present_health.rs	22	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pe_trace.rs	265	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_env.rs	100	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_dump.rs	459	0

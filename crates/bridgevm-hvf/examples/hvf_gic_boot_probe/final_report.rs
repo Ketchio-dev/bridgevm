@@ -1,3 +1,4 @@
+include!("present_health.rs");
 macro_rules! persist_and_report_stop {
     ($platform:ident, $media:ident, $vcpu:ident, $guest_ram:ident, $last_pc:ident, $last_pre_run_pc:ident, $last_watch_pc:ident, $last_watch_lr:ident, $stop_reason:ident, $stop_reason_code:ident, $exits:ident, $vtimer_exits:ident, $psci_calls:ident, $surplus_canceled_exits:ident, $boot_timer:ident, $boot_timer_elapsed:ident, $secondary_exit_counts:ident, $drain_stats:ident, $unimpl:ident, $mmio_traces:ident, $recent_pcie_ecam:ident, $recent_pcie_mmio:ident, $recent_pcie_pio:ident, $recent_xhci:ident, $uart_triggers:ident, $xhci_hid_boot_key_triggers:ident, $xhci_setup_input_triggers:ident, $xhci_pointer_input_triggers:ident, $redist_lo:ident, $redist_hi:ident $(,)?) => {{
         let mut platform_guard = $platform.lock().expect("platform mutex");
@@ -168,7 +169,6 @@ macro_rules! persist_and_report_stop {
             0x20,
             0x60,
         );
-        // Timer state: CTL bit0=ENABLE, bit1=IMASK, bit2=ISTATUS(fired).
         let mut tr = [0u64; 4];
         for (i, r) in [0xdf19u16, 0xdf1a, 0xdf11, 0xdf12].iter().enumerate() {
             hv_vcpu_get_sys_reg($vcpu, *r, &mut tr[i]);
@@ -256,21 +256,7 @@ macro_rules! persist_and_report_stop {
         }
         print_nvme_command_trace($platform);
         println!("UART RX remaining bytes: {}", $platform.uart_input_len());
-        if let Some(stats) = $platform.virtio_gpu_stats() {
-            let create3d = stats.resource_create_3d_count;
-            let flush = stats.scanout_3d_flushes;
-            if flush == 0 {
-                println!(
-                    "present health create3d={create3d} flush={flush} ratio=n/a healthy=false threshold=0.10"
-                );
-            } else {
-                let ratio = create3d as f64 / flush as f64;
-                println!(
-                    "present health create3d={create3d} flush={flush} ratio={ratio:.4} healthy={} threshold=0.10",
-                    ratio <= 0.10
-                );
-            }
-        }
+        final_report::print_present_health($platform);
         for trigger in &$uart_triggers {
             println!(
                 "UART RX injection {}: fired={} bytes={}",
@@ -340,10 +326,7 @@ macro_rules! persist_and_report_stop {
                 stats.host_inbound_len,
             );
             for (i, q) in stats.queues.iter().enumerate() {
-                // For an RX queue a healthy replenishment loop shows
-                // notify/last_avail_seen/used_produced all climbing together;
-                // a stall with last_avail_seen > last_avail_idx means the
-                // guest posted buffers we failed to consume.
+                // RX progress requires notify/avail/used counters to climb together.
                 println!(
                     "virtio-console queue[{i}] {name}: ready={ready} size={size} \
                      notify={notify} avail_seen={seen} last_consumed={consumed} \

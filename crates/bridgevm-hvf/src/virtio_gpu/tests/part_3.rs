@@ -488,10 +488,6 @@ fn controlq_drains_when_driver_never_writes_queue_size_with_3d_backend() {
 
 #[test]
 fn fenced_2d_bringup_command_completes_immediately_with_3d_backend() {
-    // Firmware sets VIRTIO_GPU_FLAG_FENCE on its 2D bring-up commands. With the
-    // 3D backend attached those must still complete on the used ring in the
-    // same notify (they are synchronous), rather than being parked behind a
-    // backend fence that no context would retire.
     let (mut dev, backend) = dev_with_mock();
     let mut mem = TestMem::new(0x4000_0000, 0x20000);
     let req = ctrl_req_fenced(VIRTIO_GPU_CMD_GET_DISPLAY_INFO, 0, 0, 7);
@@ -499,7 +495,6 @@ fn fenced_2d_bringup_command_completes_immediately_with_3d_backend() {
     assert_eq!(used_idx, 1);
     assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_DISPLAY_INFO));
     assert_eq!(dev.stats().three_d.fences_pending, 0);
-    // A 2D command must not have been handed to the backend as a fence.
     assert!(backend.lock().unwrap().fences.is_empty());
 }
 
@@ -507,18 +502,21 @@ fn fenced_2d_bringup_command_completes_immediately_with_3d_backend() {
 fn fenced_resource_create_3d_completes_without_context_zero_fence() {
     let (mut dev, backend) = dev_with_mock();
     let mut mem = TestMem::new(0x4000_0000, 0x20000);
-    assert_eq!(dev.stats().resource_create_3d_count, 0);
     let mut req = ctrl_req_fenced(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0, 0, 8);
     for field in [41u32, 2, 1, 0x402, 640, 480, 1, 1, 0, 0, 0, 0] {
         req.extend_from_slice(&field.to_le_bytes());
     }
-
     let (resp, used_idx) = submit_control_readable_descs(&mut dev, &mut mem, &[&req], 24);
 
     assert_eq!(used_idx, 1);
     assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
-    assert_eq!(dev.stats().three_d.fences_pending, 0);
-    assert_eq!(dev.stats().resource_create_3d_count, 1);
+    assert_eq!(
+        (
+            dev.stats().three_d.fences_pending,
+            dev.stats().resource_create_3d_count
+        ),
+        (0, 1)
+    );
     assert!(backend.lock().unwrap().fences.is_empty());
 }
 

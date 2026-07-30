@@ -5,13 +5,15 @@
 //! bytes; AudioQueue's private callback thread drains the ring into its own
 //! buffers and substitutes silence on underrun or lock contention.
 
-use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::ptr;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, TryLockError};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, TryLockError};
 
 use bridgevm_hvf::hda::HdaPcmSink;
+#[path = "hda_coreaudio_stats.rs"]
+mod hda_coreaudio_stats;
+use hda_coreaudio_stats::Shared;
 
 const SAMPLE_RATE: u32 = 48_000;
 const CHANNELS: u8 = 2;
@@ -55,49 +57,6 @@ struct AudioQueueBuffer {
     packet_description_count: u32,
 }
 
-struct Shared {
-    ring: Mutex<VecDeque<u8>>,
-    /// Guest PCM frames successfully copied into the host CoreAudio ring.
-    /// This distinguishes real audio flow from an idle device, for which every
-    /// error counter would also remain zero.
-    frames_rendered: AtomicU64,
-    dropped_writes: AtomicU64,
-    dropped_bytes: AtomicU64,
-    format_drops: AtomicU64,
-    ring_full_drops: AtomicU64,
-    callback_errors: AtomicU64,
-}
-
-impl Shared {
-    fn new() -> Self {
-        Self {
-            ring: Mutex::new(VecDeque::with_capacity(RING_CAPACITY_BYTES)),
-            frames_rendered: AtomicU64::new(0),
-            dropped_writes: AtomicU64::new(0),
-            dropped_bytes: AtomicU64::new(0),
-            format_drops: AtomicU64::new(0),
-            ring_full_drops: AtomicU64::new(0),
-            callback_errors: AtomicU64::new(0),
-        }
-    }
-
-    fn record_drop(&self, bytes: usize) {
-        self.dropped_writes.fetch_add(1, Ordering::Relaxed);
-        self.dropped_bytes
-            .fetch_add(bytes as u64, Ordering::Relaxed);
-    }
-
-    fn record_format_drop(&self, bytes: usize) {
-        self.format_drops.fetch_add(1, Ordering::Relaxed);
-        self.record_drop(bytes);
-    }
-
-    fn record_ring_full_drop(&self, bytes: usize) {
-        self.ring_full_drops.fetch_add(1, Ordering::Relaxed);
-        self.record_drop(bytes);
-    }
-}
-
 struct CallbackContext {
     shared: Arc<Shared>,
 }
@@ -126,7 +85,7 @@ impl CoreAudioPcmSink {
             bits_per_channel: u32::from(BITS_PER_CHANNEL),
             reserved: 0,
         };
-        let shared = Arc::new(Shared::new());
+        let shared = Arc::new(Shared::new(RING_CAPACITY_BYTES));
         let callback_context = Box::into_raw(Box::new(CallbackContext {
             shared: Arc::clone(&shared),
         }));
@@ -220,19 +179,9 @@ impl Drop for CoreAudioPcmSink {
             let _ = AudioQueueDispose(self.queue, 1);
             drop(Box::from_raw(self.callback_context));
         }
-        let dropped_writes = self.shared.dropped_writes.load(Ordering::Relaxed);
-        let callback_errors = self.shared.callback_errors.load(Ordering::Relaxed);
-        // Always print the healthy case too. A conditional error-only line
-        // cannot prove A5's required frames_rendered>0 AND drops==0.
-        println!(
-            "hda CoreAudio stats: frames_rendered={} drops={} dropped_bytes={} format_drops={} ring_full_drops={} callback_errors={}",
-            self.shared.frames_rendered.load(Ordering::Relaxed),
-            dropped_writes,
-            self.shared.dropped_bytes.load(Ordering::Relaxed),
-            self.shared.format_drops.load(Ordering::Relaxed),
-            self.shared.ring_full_drops.load(Ordering::Relaxed),
-            callback_errors
-        );
+        // Always print the healthy case too; error-only telemetry cannot prove
+        // A5's required frames_rendered>0 AND drops==0.
+        self.shared.print_stats();
     }
 }
 
