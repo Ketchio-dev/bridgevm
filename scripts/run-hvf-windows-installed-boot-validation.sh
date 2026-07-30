@@ -135,7 +135,10 @@ setup_input_actions_list() {
     [[ -n "$token" ]] || continue
     normalized="$(printf '%s' "$token" | tr '[:upper:]' '[:lower:]')"
     case "$normalized" in
-      tab|enter|space|win+r|lgui+r|ctrl+alt+delete|ctrl+alt+del|esc|escape|backspace|delete|del|left|right|up|down|home|end|pageup|pagedown)
+      # f1..f12 are accepted by the guest token parser
+      # (xhci_hid_input/setup_input/actions.rs) but were missing here, so the
+      # host rejected them before the guest ever saw them.
+      tab|enter|space|win+r|lgui+r|ctrl+alt+delete|ctrl+alt+del|esc|escape|backspace|delete|del|left|right|up|down|home|end|pageup|pagedown|f1|f2|f3|f4|f5|f6|f7|f8|f9|f10|f11|f12)
         count=$((count + 1))
         ;;
       text:*)
