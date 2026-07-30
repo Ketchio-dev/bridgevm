@@ -53,7 +53,7 @@ scripts/run-hvf-windows-installed-boot.sh \
   --evidence-dir "$OUT" --watchdog-ms $((BOOT_TIMEOUT * 1000)) \
   --ram-mib 6144 --smp-cpus 4 --enable-xhci --input-control "$INPUT" \
   --agent-service-control "$CTL" \
-  --virtio-gpu-3d --gpu-trace "$OUT/virtio-gpu.jsonl" \
+  --virtio-gpu-3d --gpu-trace "$OUT/virtio-gpu.jsonl" --trace-venus-start \
   --gpu-trace-protocol venus --viogpu3d-dir "$VIOGPU_DIR" \
   > "$OUT/launcher.out" 2>&1 &
 LAUNCHER=$!
@@ -61,6 +61,11 @@ trap 'kill $LAUNCHER 2>/dev/null || true; pkill -f hvf_gic_boot_probe 2>/dev/nul
 wait_for '^BVAGENT SERVICE start' 1 "$BOOT_TIMEOUT" || fail "agent service timeout"
 echo "agent up at ${SECONDS}s"
 
+driver_before=$(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG" 2>/dev/null || true)
+send 'powershell -NoProfile -Command "Get-CimInstance Win32_VideoController | Format-List Name,Status,ConfigManagerErrorCode,PNPDeviceID,DriverVersion,CurrentHorizontalResolution,CurrentVerticalResolution; Get-PnpDevice -Class Display | Format-List FriendlyName,Status,Problem,InstanceId"' '^BVAGENT END '
+driver_line=$(grep -E '^BVAGENT CMD .* exit=' "$RUN_LOG" | tail -1)
+[[ $(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG") -gt $driver_before && "$driver_line" == *' exit=0' ]] \
+  || fail "guest display-driver query failed"
 BEFORE=$(query_resolution)
 echo "guest before: $BEFORE"
 printf 'RESIZE %s\n' "$REQUEST" >> "$INPUT"
