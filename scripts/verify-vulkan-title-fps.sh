@@ -36,10 +36,13 @@ RUN_LOG=$OUT/run.log
 HOST_SHARE=$OUT/share-host
 mkdir -p "$HOST_SHARE"
 cp "$GATE_SOURCE" "$HOST_SHARE/bvgpu-real-title-gate.ps1"
-# The known agent image has no title payload. Stage the existing 40 MiB native
-# ARM64 PPSSPP tree through the already-proven recursive folder-share path,
-# avoiding a new disk injector pass solely for an application payload.
-cp -R "$PPSSPP_SOURCE" "$HOST_SHARE/ppsspp"
+# Recursive sync works, but the title tree contains hundreds of tiny assets;
+# the first live attempt was still transferring them after 110 seconds and had
+# not reached the executable. One ZIP turns that into a single ~18 MiB file.
+(
+  cd "$(dirname "$PPSSPP_SOURCE")"
+  ditto -c -k --keepParent "$(basename "$PPSSPP_SOURCE")" "$HOST_SHARE/ppsspp.zip"
+)
 
 wait_for() { # pattern, count, timeout seconds
   local deadline=$((SECONDS + $3)) n
@@ -87,8 +90,8 @@ echo "agent up at ${SECONDS}s"
 
 # Wait for the host-share syncer and prove both the executable and current gate
 # are visible before spending the measurement interval.
-CHECK='powershell -NoProfile -Command "if ((Test-Path C:\BridgeVMShare\ppsspp\PPSSPPWindowsARM64.exe) -and (Test-Path C:\BridgeVMShare\bvgpu-real-title-gate.ps1)) { Write-Output assets=OK; exit 0 } else { Write-Output assets=MISSING; exit 2 }"'
-for _ in $(seq 1 30); do
+CHECK='powershell -NoProfile -Command "if ((Test-Path C:\BridgeVMShare\ppsspp.zip) -and (Test-Path C:\BridgeVMShare\bvgpu-real-title-gate.ps1)) { Write-Output assets=OK; exit 0 } else { Write-Output assets=MISSING; exit 2 }"'
+for _ in $(seq 1 120); do
   before=$(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG" 2>/dev/null || true)
   send "$CHECK" '^BVAGENT END ' 30
   line=$(grep -E '^BVAGENT CMD .* exit=' "$RUN_LOG" | tail -1)
@@ -100,9 +103,16 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 grep -q '^assets=OK$' < <(tr -d '\r' < "$RUN_LOG") || fail "PPSSPP or synced gate missing"
-echo "title assets ready at ${SECONDS}s"
+echo "title archive ready at ${SECONDS}s"
 
-GUEST_GATE='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMShare\bvgpu-real-title-gate.ps1 -Executable C:\BridgeVMShare\ppsspp\PPSSPPWindowsARM64.exe -MinimumSeconds '"$TITLE_SECONDS"
+# Extract outside the mirrored share: the host-side syncer treats that tree as
+# authoritative and would otherwise delete guest-created output.
+EXPAND='powershell -NoProfile -Command "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue C:\BridgeVM\a2-title; Expand-Archive -Force C:\BridgeVMShare\ppsspp.zip C:\BridgeVM\a2-title; if (Test-Path C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe) { Write-Output expand=OK; exit 0 } else { exit 3 }"'
+run_guest "$EXPAND" 300
+grep -q '^expand=OK$' < <(tr -d '\r' < "$RUN_LOG") || fail "PPSSPP archive did not extract"
+echo "title assets extracted at ${SECONDS}s"
+
+GUEST_GATE='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMShare\bvgpu-real-title-gate.ps1 -Executable C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe -MinimumSeconds '"$TITLE_SECONDS"
 run_guest "$GUEST_GATE" $((TITLE_SECONDS + STEP_TIMEOUT))
 
 FPS_LINE=$(tr -d '\r' < "$RUN_LOG" | grep 'guest_fps samples=' | tail -1)
