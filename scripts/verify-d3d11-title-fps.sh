@@ -89,7 +89,10 @@ echo "D3D11 payload ready at ${SECONDS}s"
 # Keep the workload beside DXVK so normal DLL search loads the intended ARM64
 # d3d11.dll and dxgi.dll. The module path printed by the executable is checked
 # below, so a silent fallback to Microsoft's D3D11 cannot pass.
-CMD='set "BV_PRESENT_DEMO=1" && set "VK_DRIVER_FILES=C:\BridgeVM\viogpu3d\virtio_icd.arm64.json" && set "DXVK_LOG_LEVEL=info" && set "DXVK_LOG_PATH=C:\BridgeVMShare" && cd /d C:\BridgeVMShare && bridgevm-d3d11-present-fps.exe'
+# Do not set VK_DRIVER_FILES here. The Windows loader's secure-environment
+# policy can ignore it; this project's ARM64 ICD is registered system-wide and
+# the proven D3D11 smokes use that registry path.
+CMD='set "BV_PRESENT_DEMO=1" && set "DXVK_LOG_LEVEL=info" && set "DXVK_LOG_PATH=C:\BridgeVMShare" && cd /d C:\BridgeVMShare && bridgevm-d3d11-present-fps.exe'
 run_guest "$CMD" 600
 
 LOG=$(tr -d '\r' < "$RUN_LOG")
