@@ -94,13 +94,26 @@ echo "agent up at ${SECONDS}s"
 # What this cannot show is an application reacting to F7; that is the app's
 # behaviour, not the keyboard path's. It does show the twelve usages were
 # accepted by the guest-side token parser and queued to the HID endpoint.
-inject_line=$(grep -E '^xHCI HID boot-key injection setup-input:' "$RUN_LOG" | tail -1)
-if [[ "$inject_line" == *"fired=true"* ]] && [[ "$inject_line" == *"actions=12"* ]] \
-   && ! grep -q 'boot-key injection setup-input rejected' "$RUN_LOG"; then
-  echo "A4 F1-F12: PASS (fired=true, actions=12)"
+# Actual format, taken from a real run rather than guessed:
+#   xHCI setup-input injection setup-input fired: actions=f1,...,f12
+#   queued_actions=12 queued_reports=24 emitted_key_reports=N
+#   emitted_release_reports=N rejected_count=0
+inject_line=$(grep -E '^xHCI setup-input injection .* fired:' "$RUN_LOG" | tail -1)
+# queued_actions counts what parsed, not what the guest took. Each key is two
+# reports (press + release), so twelve keys delivered means
+# emitted_key_reports=12 and emitted_release_reports=12. A run showing
+# queued_reports=24 with emitted_key_reports=1 has queued everything and
+# delivered one key -- passing that would be a false positive, which is
+# exactly what an earlier version of this check did.
+emitted_key=$(sed -n 's/.*emitted_key_reports=\([0-9]*\).*/\1/p' <<< "$inject_line")
+emitted_rel=$(sed -n 's/.*emitted_release_reports=\([0-9]*\).*/\1/p' <<< "$inject_line")
+if [[ "$inject_line" == *"queued_actions=12"* ]] \
+   && [[ "$inject_line" == *"rejected_count=0"* ]] \
+   && [[ "${emitted_key:-0}" -ge 12 ]] && [[ "${emitted_rel:-0}" -ge 12 ]]; then
+  echo "A4 F1-F12: PASS (12 keys delivered: key=$emitted_key release=$emitted_rel)"
   A4F=pass
 else
-  echo "A4 F1-F12: FAIL" >&2
+  echo "A4 F1-F12: FAIL (delivered key=${emitted_key:-?} release=${emitted_rel:-?}, need 12/12)" >&2
   echo "  line: ${inject_line:-<none>}" >&2
   A4F=fail
 fi
