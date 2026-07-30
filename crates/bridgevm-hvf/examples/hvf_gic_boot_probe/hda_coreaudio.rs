@@ -57,6 +57,10 @@ struct AudioQueueBuffer {
 
 struct Shared {
     ring: Mutex<VecDeque<u8>>,
+    /// Guest PCM frames successfully copied into the host CoreAudio ring.
+    /// This distinguishes real audio flow from an idle device, for which every
+    /// error counter would also remain zero.
+    frames_rendered: AtomicU64,
     dropped_writes: AtomicU64,
     dropped_bytes: AtomicU64,
     callback_errors: AtomicU64,
@@ -66,6 +70,7 @@ impl Shared {
     fn new() -> Self {
         Self {
             ring: Mutex::new(VecDeque::with_capacity(RING_CAPACITY_BYTES)),
+            frames_rendered: AtomicU64::new(0),
             dropped_writes: AtomicU64::new(0),
             dropped_bytes: AtomicU64::new(0),
             callback_errors: AtomicU64::new(0),
@@ -182,6 +187,13 @@ impl HdaPcmSink for CoreAudioPcmSink {
             return;
         }
         ring.extend(samples.iter().copied());
+        // Every earlier return records a drop. Increment only after the bytes
+        // have actually reached the ring, and report audio frames rather than
+        // bytes (s16 stereo = four bytes per frame).
+        self.shared.frames_rendered.fetch_add(
+            samples.len() as u64 / u64::from(BYTES_PER_FRAME),
+            Ordering::Relaxed,
+        );
     }
 }
 
@@ -194,14 +206,15 @@ impl Drop for CoreAudioPcmSink {
         }
         let dropped_writes = self.shared.dropped_writes.load(Ordering::Relaxed);
         let callback_errors = self.shared.callback_errors.load(Ordering::Relaxed);
-        if dropped_writes != 0 || callback_errors != 0 {
-            eprintln!(
-                "hda CoreAudio: dropped_writes={} dropped_bytes={} callback_errors={}",
-                dropped_writes,
-                self.shared.dropped_bytes.load(Ordering::Relaxed),
-                callback_errors
-            );
-        }
+        // Always print the healthy case too. A conditional error-only line
+        // cannot prove A5's required frames_rendered>0 AND drops==0.
+        println!(
+            "hda CoreAudio stats: frames_rendered={} drops={} dropped_bytes={} callback_errors={}",
+            self.shared.frames_rendered.load(Ordering::Relaxed),
+            dropped_writes,
+            self.shared.dropped_bytes.load(Ordering::Relaxed),
+            callback_errors
+        );
     }
 }
 
