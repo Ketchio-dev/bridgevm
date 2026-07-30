@@ -9,18 +9,21 @@ REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-TARGET=${TARGET:-$HOME/BridgeVM/work/ppsspp3-12045/disk.raw}
-VARS=${VARS:-$HOME/BridgeVM/work/ppsspp3-12045/vars.fd}
+TARGET=${TARGET:-$HOME/BridgeVM/work/net-live-20260724.raw}
+VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}
 OUT=${OUT:-$HOME/BridgeVM/runs/vulkan-fps-$(date +%Y%m%d-%H%M%S)}
 BOOT_TIMEOUT=${BOOT_TIMEOUT:-1500}
 STEP_TIMEOUT=${STEP_TIMEOUT:-180}
 TITLE_SECONDS=${TITLE_SECONDS:-30}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 GATE_SOURCE=$REPO/scripts/win-assets/bvgpu-real-title-gate.ps1
+PPSSPP_SOURCE=${PPSSPP_SOURCE:-$HOME/BridgeVM/apps/ppsspp}
 
 [[ -f "$TARGET" ]] || fail "target image missing: $TARGET"
 [[ -f "$VARS" ]] || fail "vars missing: $VARS"
 [[ -f "$GATE_SOURCE" ]] || fail "title gate missing: $GATE_SOURCE"
+[[ -f "$PPSSPP_SOURCE/PPSSPPWindowsARM64.exe" ]] \
+  || fail "PPSSPP ARM64 payload missing: $PPSSPP_SOURCE"
 
 WORK=$HOME/BridgeVM/work/vulkan-fps-verify
 rm -rf "$WORK"; mkdir -p "$WORK" "$OUT"
@@ -33,6 +36,10 @@ RUN_LOG=$OUT/run.log
 HOST_SHARE=$OUT/share-host
 mkdir -p "$HOST_SHARE"
 cp "$GATE_SOURCE" "$HOST_SHARE/bvgpu-real-title-gate.ps1"
+# The known agent image has no title payload. Stage the existing 40 MiB native
+# ARM64 PPSSPP tree through the already-proven recursive folder-share path,
+# avoiding a new disk injector pass solely for an application payload.
+cp -R "$PPSSPP_SOURCE" "$HOST_SHARE/ppsspp"
 
 wait_for() { # pattern, count, timeout seconds
   local deadline=$((SECONDS + $3)) n
@@ -80,7 +87,7 @@ echo "agent up at ${SECONDS}s"
 
 # Wait for the host-share syncer and prove both the executable and current gate
 # are visible before spending the measurement interval.
-CHECK='powershell -NoProfile -Command "if ((Test-Path C:\BridgeVM\apps\ppsspp\PPSSPPWindowsARM64.exe) -and (Test-Path C:\BridgeVMShare\bvgpu-real-title-gate.ps1)) { Write-Output assets=OK; exit 0 } else { Write-Output assets=MISSING; exit 2 }"'
+CHECK='powershell -NoProfile -Command "if ((Test-Path C:\BridgeVMShare\ppsspp\PPSSPPWindowsARM64.exe) -and (Test-Path C:\BridgeVMShare\bvgpu-real-title-gate.ps1)) { Write-Output assets=OK; exit 0 } else { Write-Output assets=MISSING; exit 2 }"'
 for _ in $(seq 1 30); do
   before=$(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG" 2>/dev/null || true)
   send "$CHECK" '^BVAGENT END ' 30
@@ -95,7 +102,7 @@ done
 grep -q '^assets=OK$' < <(tr -d '\r' < "$RUN_LOG") || fail "PPSSPP or synced gate missing"
 echo "title assets ready at ${SECONDS}s"
 
-GUEST_GATE='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMShare\bvgpu-real-title-gate.ps1 -MinimumSeconds '"$TITLE_SECONDS"
+GUEST_GATE='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMShare\bvgpu-real-title-gate.ps1 -Executable C:\BridgeVMShare\ppsspp\PPSSPPWindowsARM64.exe -MinimumSeconds '"$TITLE_SECONDS"
 run_guest "$GUEST_GATE" $((TITLE_SECONDS + STEP_TIMEOUT))
 
 FPS_LINE=$(tr -d '\r' < "$RUN_LOG" | grep 'guest_fps samples=' | tail -1)
