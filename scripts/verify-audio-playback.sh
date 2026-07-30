@@ -112,7 +112,7 @@ GEN+='[System.IO.File]::WriteAllBytes($p,$ms.ToArray());'
 GEN+='Write-Output ("wav_bytes=" + (Get-Item $p).Length)'
 GEN_ENCODED=$(powershell_encoded "$GEN")
 run_guest "powershell -NoProfile -EncodedCommand $GEN_ENCODED" '^BVAGENT END '
-grep -q '^wav_bytes=384044$' "$RUN_LOG" \
+grep -q '^wav_bytes=384044$' < <(tr -d '\r' < "$RUN_LOG") \
   || fail_early "generated wav was not the expected 384044 bytes"
 
 # SoundPlayer.PlaySync blocks until playback finishes, so a successful return
@@ -120,7 +120,8 @@ grep -q '^wav_bytes=384044$' "$RUN_LOG" \
 PLAY='(New-Object System.Media.SoundPlayer "C:\BridgeVM\a5-tone.wav").PlaySync(); Write-Output "played=1"'
 PLAY_ENCODED=$(powershell_encoded "$PLAY")
 run_guest "powershell -NoProfile -EncodedCommand $PLAY_ENCODED" '^BVAGENT END '
-grep -q '^played=1$' "$RUN_LOG" || fail_early "SoundPlayer did not report completion"
+grep -q '^played=1$' < <(tr -d '\r' < "$RUN_LOG") \
+  || fail_early "SoundPlayer did not report completion"
 echo "playback returned at ${SECONDS}s"
 
 # The stats line is printed when the sink is dropped, i.e. at end of run.
