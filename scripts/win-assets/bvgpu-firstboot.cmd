@@ -32,10 +32,20 @@ set STAGE=dispatch
 
 echo [bvgpu-firstboot] invoked %DATE% %TIME% >> "%LOG%"
 
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\State" /v ImageState 2>nul | findstr /i "IMAGE_STATE_COMPLETE" >nul
+if errorlevel 1 goto :defer_until_setup_complete
+
 if not exist C:\BridgeVM\stage1.flag goto :stage1
 if not exist C:\BridgeVM\stage2.flag goto :stage2
 if not exist C:\BridgeVM\stage3.flag goto :stage3
 goto :stage4
+
+:defer_until_setup_complete
+set STAGE=setup-deferred
+echo [setup-deferred] Windows setup is incomplete; wait for the first OOBE logon >> "%LOG%"
+schtasks /Create /TN "%TASK_NAME%" /SC ONLOGON /DELAY 0000:30 /RU SYSTEM /RL HIGHEST /TR "%ComSpec% /d /c C:\BridgeVM\bvgpu-firstboot.cmd" /F >> "%LOG%" 2>&1
+if errorlevel 1 goto :fail
+goto :done
 
 :stage1
 set STAGE=stage1

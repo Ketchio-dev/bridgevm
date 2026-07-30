@@ -78,6 +78,31 @@ struct HvfWindowsInstallPlan: Equatable {
         ["/opt/homebrew/bin/wimlib-imagex", "/usr/local/bin/wimlib-imagex"]
     }
 
+    static let installResourcePaths = [
+        "scripts/build-hvf-windows-scripted-source.sh",
+        "scripts/run-hvf-windows-scripted-install.sh",
+        "target/release/examples/hvf_gic_boot_probe",
+        "scripts/win-assets/winpeshl.ini",
+        "scripts/win-assets/bvinstall.cmd",
+        "scripts/win-assets/bvdiskpart.txt",
+    ]
+
+    static let injectorResourcePaths = [
+        "scripts/build-hvf-windows-viogpu3d-injector.sh",
+        "scripts/build-hvf-windows-driver-injector.sh",
+        "scripts/check-hvf-windows-viogpu3d-package.sh",
+        "scripts/win-assets/winpeshl-inject.ini",
+        "scripts/win-assets/bvinject.cmd",
+        "scripts/win-assets/bvgpu-firstboot.cmd",
+        "scripts/win-assets/bvgpu-clean-driver-state.ps1",
+        "scripts/win-assets/bvgpu-diagnostics-run.cmd",
+        "scripts/win-assets/bvgpu-diagnostics-service.c",
+        "scripts/win-assets/bvagent.ps1",
+        "scripts/win-assets/bvagent-install-service.c",
+        "scripts/win-tests/bridgevm-vulkan-draw-smoke.c",
+        "scripts/win-tests/bridgevm-vulkan-draw-shaders.h",
+    ]
+
     // MARK: computed paths
 
     /// Cache key that survives renames of neither content nor intent: the ISO
@@ -153,6 +178,7 @@ struct HvfWindowsInstallPlan: Equatable {
             "--vars", tmpVarsPath,
             "--evidence-dir", tmpEvidenceDir,
             "--release",
+            "--skip-build",
             "--watchdog-ms", "1500000",
         ]
         if let template = varsTemplatePath {
@@ -191,6 +217,13 @@ struct HvfWindowsInstallPlan: Equatable {
         let fm = FileManager.default
         guard fm.isReadableFile(atPath: request.isoPath) else {
             return "Windows 11 ARM64 ISO 파일을 찾을 수 없습니다."
+        }
+        let requiredResources = Self.installResourcePaths
+            + (request.injectViogpu3d ? Self.injectorResourcePaths : [])
+        if let missing = requiredResources.first(where: {
+            !fm.isReadableFile(atPath: repoRoot.appendingPathComponent($0).path)
+        }) {
+            return "앱 설치 리소스가 없습니다: \(missing)"
         }
         guard request.diskGiB >= Self.minimumDiskGiB else {
             return "디스크 크기는 최소 \(Self.minimumDiskGiB) GiB여야 합니다."

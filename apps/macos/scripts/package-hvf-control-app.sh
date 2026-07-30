@@ -63,6 +63,7 @@ cargo build --release -p bridgevm-cli
 install -d \
   "$stage_app/Contents/MacOS" \
   "$stage_app/Contents/Resources/scripts/win-assets" \
+  "$stage_app/Contents/Resources/scripts/win-tests" \
   "$stage_app/Contents/Resources/firmware" \
   "$stage_app/Contents/Resources/target/release/examples" \
   "$stage_app/Contents/Frameworks"
@@ -93,13 +94,42 @@ for script in \
   run-hvf-windows-installed-boot-usage.sh \
   run-hvf-windows-installed-boot-validation.sh \
   run-hvf-windows-installed-boot-args.sh \
-  run-hvf-windows-installed-boot-runner.sh
+  run-hvf-windows-installed-boot-runner.sh \
+  build-hvf-windows-scripted-source.sh \
+  build-hvf-windows-viogpu3d-injector.sh \
+  build-hvf-windows-driver-injector.sh \
+  check-hvf-windows-viogpu3d-package.sh \
+  run-hvf-windows-scripted-install.sh
 do
   install -m 755 "$ROOT/scripts/$script" "$stage_app/Contents/Resources/scripts/$script"
 done
-install -m 644 \
-  "$ROOT/scripts/win-assets/bv-ppsspp-title.json" \
-  "$stage_app/Contents/Resources/scripts/win-assets/bv-ppsspp-title.json"
+for asset in \
+  bv-ppsspp-title.json \
+  winpeshl.ini \
+  bvinstall.cmd \
+  bvdiskpart.txt \
+  unattend.xml \
+  winpeshl-inject.ini \
+  bvinject.cmd \
+  bvgpu-firstboot.cmd \
+  bvgpu-clean-driver-state.ps1 \
+  bvgpu-diagnostics-run.cmd \
+  bvgpu-diagnostics-service.c \
+  bvgpu-real-title-gate.ps1 \
+  bvgpu-title-gate.ps1 \
+  bvgpu-diagnostics.ps1 \
+  bvgpu-vulkan-probe.ps1 \
+  bvgpu-diagnostics-startup.cmd \
+  bvagent.ps1 \
+  bvagent-install-service.c
+do
+  install -m 644 "$ROOT/scripts/win-assets/$asset" \
+    "$stage_app/Contents/Resources/scripts/win-assets/$asset"
+done
+for source in bridgevm-vulkan-draw-smoke.c bridgevm-vulkan-draw-shaders.h; do
+  install -m 644 "$ROOT/scripts/win-tests/$source" \
+    "$stage_app/Contents/Resources/scripts/win-tests/$source"
+done
 
 resource_bundle="$swift_bin_dir/BridgeVMApp_BridgeVMControl.bundle"
 [[ -d "$resource_bundle" ]] || {

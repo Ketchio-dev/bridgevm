@@ -57,6 +57,7 @@ final class HvfWindowsInstallTests: XCTestCase {
         let sizeIndex = try XCTUnwrap(command.firstIndex(of: "--fresh-target-size"))
         XCTAssertEqual(command[sizeIndex + 1], String(UInt64(128) * 1024 * 1024 * 1024))
         XCTAssertTrue(command.contains("--release"))
+        XCTAssertTrue(command.contains("--skip-build"))
         XCTAssertTrue(command.contains(plan.tmpTargetPath))
     }
 
@@ -76,6 +77,24 @@ final class HvfWindowsInstallTests: XCTestCase {
     }
 
     // MARK: validation
+
+    func testValidationFailsFastWhenPackagedInstallResourceIsMissing() throws {
+        let plan = try makePlan(slug: "missing-resource")
+        XCTAssertEqual(
+            plan.validationError(),
+            "앱 설치 리소스가 없습니다: scripts/build-hvf-windows-scripted-source.sh")
+    }
+
+    func testInjectionResourceClosureIncludesBuildersGuestPayloadAndSmokeSource() {
+        XCTAssertTrue(HvfWindowsInstallPlan.injectorResourcePaths.contains(
+            "scripts/build-hvf-windows-driver-injector.sh"))
+        XCTAssertTrue(HvfWindowsInstallPlan.injectorResourcePaths.contains(
+            "scripts/win-assets/bvagent.ps1"))
+        XCTAssertTrue(HvfWindowsInstallPlan.injectorResourcePaths.contains(
+            "scripts/win-tests/bridgevm-vulkan-draw-smoke.c"))
+        XCTAssertTrue(HvfWindowsInstallPlan.injectorResourcePaths.contains(
+            "scripts/win-tests/bridgevm-vulkan-draw-shaders.h"))
+    }
 
     func testValidationRejectsMissingIsoAndDriverPackage() throws {
         let missingISO = HvfWindowsInstallPlan(
