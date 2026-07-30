@@ -28,6 +28,12 @@ OUT=${OUT:-$HOME/BridgeVM/runs/kbd-verify-$(date +%Y%m%d-%H%M%S)}
 BOOT_TIMEOUT=${BOOT_TIMEOUT:-1500}
 STEP_TIMEOUT=${STEP_TIMEOUT:-90}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
+# Without a delay the keys fire in the first moments of the run, long before
+# Windows has an xHCI driver, so the reports sit queued and undelivered: a
+# first attempt showed queued_reports=24 with emitted_key_reports=1. The agent
+# reached READY around 78s on this image, so fire once the guest is actually
+# listening.
+FIRE_DELAY_MS=${FIRE_DELAY_MS:-150000}
 
 WORK=$HOME/BridgeVM/work/kbd-verify
 rm -rf "$WORK"; mkdir -p "$WORK" "$OUT"
@@ -72,6 +78,7 @@ scripts/run-hvf-windows-installed-boot.sh \
   --ram-mib 6144 --smp-cpus 4 \
   --enable-xhci \
   --setup-input-actions 'f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12' \
+  --setup-input-fire-delay-ms "$FIRE_DELAY_MS" \
   --agent-service-control "$CTL" \
   --agent-clipboard-sync \
   --virtio-gpu-3d --gpu-trace "$OUT/virtio-gpu.jsonl" \
@@ -85,15 +92,17 @@ wait_for '^BVAGENT SERVICE start' 1 "$BOOT_TIMEOUT" \
 echo "agent up at ${SECONDS}s"
 
 ### A4 part 1: F1-F12 accepted and delivered
-# The probe reports the batch, not individual keys:
-#   xHCI HID boot-key injection setup-input: fired=true actions=N ...
-# So the assertions are that it fired and that all twelve actions survived
-# parsing -- a rejected or dropped key name would lower the count. Also
-# require no rejection line, since a parse error reports separately.
+# The keys fire on the probe's own timer, so wait for the batch line to appear
+# rather than assuming it already has -- the agent can be READY well before
+# FIRE_DELAY_MS has elapsed.
 #
 # What this cannot show is an application reacting to F7; that is the app's
 # behaviour, not the keyboard path's. It does show the twelve usages were
-# accepted by the guest-side token parser and queued to the HID endpoint.
+# accepted and that the guest consumed the reports.
+wait_for '^xHCI setup-input injection .* fired:' 1 \
+  $(( FIRE_DELAY_MS / 1000 + STEP_TIMEOUT )) \
+  || fail_early "setup-input never fired within $(( FIRE_DELAY_MS / 1000 + STEP_TIMEOUT ))s"
+
 # Actual format, taken from a real run rather than guessed:
 #   xHCI setup-input injection setup-input fired: actions=f1,...,f12
 #   queued_actions=12 queued_reports=24 emitted_key_reports=N
