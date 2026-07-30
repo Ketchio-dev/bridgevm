@@ -36,6 +36,12 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   return DefWindowProcA(hwnd, msg, wp, lp);
 }
 
+static int compare_double(const void *left, const void *right) {
+  const double a = *(const double *)left;
+  const double b = *(const double *)right;
+  return (a > b) - (a < b);
+}
+
 int main(void) {
   static const char vs_source[] =
       "float4 main(float2 position : POSITION) : SV_POSITION {"
@@ -173,6 +179,13 @@ int main(void) {
   D3D11_VIEWPORT viewport = {0, 0, 320, 240, 0.0f, 1.0f};
   UINT stride = sizeof(vertices[0]), offset = 0;
   const int frames = demo ? 900 : 30;
+  enum { FPS_SAMPLE_FRAMES = 30, FPS_SAMPLE_CAPACITY = 30 };
+  double fps_samples[FPS_SAMPLE_CAPACITY] = {0};
+  int fps_sample_count = 0;
+  LARGE_INTEGER performance_frequency, sample_started;
+  if (!QueryPerformanceFrequency(&performance_frequency) ||
+      !QueryPerformanceCounter(&sample_started))
+    return fail_hr("performance-counter", HRESULT_FROM_WIN32(GetLastError()));
   uint32_t magenta = 0, bad = 0;
   for (int frame = 0; frame < frames; ++frame) {
     ID3D11DeviceContext_OMSetRenderTargets(context, 1, &view, NULL);
@@ -224,10 +237,33 @@ int main(void) {
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
       }
-      Sleep(15);
+      /* Present(1) already supplies refresh pacing. An additional Sleep(15)
+       * serialized a second delay after every vsync and artificially halved
+       * the measured guest rate toward 30 FPS. */
+    }
+    if ((frame + 1) % FPS_SAMPLE_FRAMES == 0 &&
+        fps_sample_count < FPS_SAMPLE_CAPACITY) {
+      LARGE_INTEGER now;
+      QueryPerformanceCounter(&now);
+      const double elapsed =
+          (double)(now.QuadPart - sample_started.QuadPart) /
+          (double)performance_frequency.QuadPart;
+      if (elapsed > 0.0)
+        fps_samples[fps_sample_count++] = FPS_SAMPLE_FRAMES / elapsed;
+      sample_started = now;
     }
   }
   printf("BV-D3D11-PRESENT-FRAMES presented=%d\n", frames);
+  if (fps_sample_count > 0) {
+    double sorted[FPS_SAMPLE_CAPACITY];
+    memcpy(sorted, fps_samples, sizeof(sorted));
+    qsort(sorted, (size_t)fps_sample_count, sizeof(sorted[0]), compare_double);
+    const double p50 = sorted[(fps_sample_count - 1) / 2];
+    printf("BV-D3D11-PRESENT-FPS samples=%d p50=%.2f min=%.2f max=%.2f\n",
+           fps_sample_count, p50, sorted[0], sorted[fps_sample_count - 1]);
+  } else {
+    puts("BV-D3D11-PRESENT-FPS samples=0");
+  }
 
   hr = ID3D11Device_GetDeviceRemovedReason(device);
   printf("BV-D3D11-PRESENT-RESULT removed_reason=0x%08lx\n",
