@@ -507,6 +507,7 @@ fn fenced_2d_bringup_command_completes_immediately_with_3d_backend() {
 fn fenced_resource_create_3d_completes_without_context_zero_fence() {
     let (mut dev, backend) = dev_with_mock();
     let mut mem = TestMem::new(0x4000_0000, 0x20000);
+    assert_eq!(dev.stats().resource_create_3d_count, 0);
     let mut req = ctrl_req_fenced(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0, 0, 8);
     for field in [41u32, 2, 1, 0x402, 640, 480, 1, 1, 0, 0, 0, 0] {
         req.extend_from_slice(&field.to_le_bytes());
@@ -517,6 +518,7 @@ fn fenced_resource_create_3d_completes_without_context_zero_fence() {
     assert_eq!(used_idx, 1);
     assert_eq!(read_le_u32(&resp, 0), Some(VIRTIO_GPU_RESP_OK_NODATA));
     assert_eq!(dev.stats().three_d.fences_pending, 0);
+    assert_eq!(dev.stats().resource_create_3d_count, 1);
     assert!(backend.lock().unwrap().fences.is_empty());
 }
 

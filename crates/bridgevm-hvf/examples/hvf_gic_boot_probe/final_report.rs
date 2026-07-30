@@ -256,6 +256,21 @@ macro_rules! persist_and_report_stop {
         }
         print_nvme_command_trace($platform);
         println!("UART RX remaining bytes: {}", $platform.uart_input_len());
+        if let Some(stats) = $platform.virtio_gpu_stats() {
+            let create3d = stats.resource_create_3d_count;
+            let flush = stats.scanout_3d_flushes;
+            if flush == 0 {
+                println!(
+                    "present health create3d={create3d} flush={flush} ratio=n/a healthy=false threshold=0.10"
+                );
+            } else {
+                let ratio = create3d as f64 / flush as f64;
+                println!(
+                    "present health create3d={create3d} flush={flush} ratio={ratio:.4} healthy={} threshold=0.10",
+                    ratio <= 0.10
+                );
+            }
+        }
         for trigger in &$uart_triggers {
             println!(
                 "UART RX injection {}: fired={} bytes={}",

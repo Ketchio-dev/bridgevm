@@ -59,6 +59,11 @@ pub struct VirtioGpu {
     pub(crate) scanout_readback_interval: Duration,
     pub(crate) last_3d_scanout_readback: Option<Instant>,
     pub(crate) scanout_3d_flush_count: u64,
+    /// Cumulative RESOURCE_CREATE_3D commands since the last device reset.
+    /// Active-resource count is insufficient for presentation health because
+    /// swapchain thrash repeatedly creates and destroys the same number of
+    /// live resources.
+    pub(crate) resource_create_3d_count: u64,
     pub(crate) scanout_readback_attempt_count: u64,
     pub(crate) scanout_readback_count: u64,
     pub(crate) scanout_readback_throttled_count: u64,
@@ -104,6 +109,7 @@ pub struct VirtioGpuStats {
     pub resources: usize,
     pub scanout_active: bool,
     pub scanout_3d_flushes: u64,
+    pub resource_create_3d_count: u64,
     pub vblank_paced_count: u64,
     pub scanout_readback_attempts: u64,
     pub scanout_readbacks: u64,
@@ -183,6 +189,7 @@ impl VirtioGpu {
             scanout_readback_interval: Duration::ZERO,
             last_3d_scanout_readback: None,
             scanout_3d_flush_count: 0,
+            resource_create_3d_count: 0,
             scanout_readback_attempt_count: 0,
             scanout_readback_count: 0,
             scanout_readback_throttled_count: 0,
@@ -234,6 +241,7 @@ impl VirtioGpu {
             resources: self.resources.len(),
             scanout_active: self.scanout_resource.is_some() || self.blob_scanout.is_some(),
             scanout_3d_flushes: self.scanout_3d_flush_count,
+            resource_create_3d_count: self.resource_create_3d_count,
             vblank_paced_count: self.vblank_paced_count,
             scanout_readback_attempts: self.scanout_readback_attempt_count,
             scanout_readbacks: self.scanout_readback_count,
@@ -304,6 +312,7 @@ impl VirtioGpu {
         self.publish_vblank_wake();
         self.last_3d_scanout_readback = None;
         self.scanout_3d_flush_count = 0;
+        self.resource_create_3d_count = 0;
         self.scanout_readback_attempt_count = 0;
         self.scanout_readback_count = 0;
         self.scanout_readback_throttled_count = 0;

@@ -89,6 +89,12 @@ without needing a screenshot:
 - `create3d ≈ flush` (ratio ~1) → swapchain thrash, presentation is broken;
 - `create3d ≪ flush` (ratio ~0.02) → healthy steady-state rendering.
 
+For the automated end-of-run line, BridgeVM uses a deliberately loose
+**healthy threshold of `create3d/flush <= 0.10`**. This leaves 5× headroom over
+the observed healthy ~0.02 while remaining an order of magnitude below the
+broken ~1 signature. `flush=0` reports `ratio=n/a healthy=false`: an idle run
+cannot prove a healthy presentation loop.
+
 Root cause of the present failure itself is still open; the swapchain rebuild is
 the guest *reacting* to it (the shape Vulkan drivers produce on a persistent
 `VK_ERROR_OUT_OF_DATE_KHR` / failed acquire), not the cause.
