@@ -131,8 +131,16 @@ matches exactly.
 
 ## Not yet done
 
-The D3D11 verifier did not reach its FPS markers. Its `wait_for` anchors
-patterns with `^`, but `run.log` carries CR line endings, so replies were never
-matched and the step timed out with the guest healthy. A3 remains incomplete
-until a third-party title reports `samples>0` and guest `p50>=30` on the intended
-DXVK/adapter path.
+The D3D11 verifier did not reach its FPS markers. The workload was dispatched
+and never returned: exactly one `BVAGENT CMD` was accepted, no matching
+`BVAGENT END` followed, and the agent reported `overdue ctl awaiting-reply=true`
+28 times before the watchdog stopped the run. The guest stayed healthy
+throughout — zero resets, 2023 virtio-gpu commands, 64/64/64 fences — so this is
+a hang inside the guest-side D3D11 path, not a transport or logging artifact.
+
+Whether that hang predates this fix is not yet established: the old driver
+always bugchecked before reaching this point, so there is no comparable
+old-driver observation.
+
+A3 remains incomplete until a third-party title reports `samples>0` and guest
+`p50>=30` on the intended DXVK/adapter path.
