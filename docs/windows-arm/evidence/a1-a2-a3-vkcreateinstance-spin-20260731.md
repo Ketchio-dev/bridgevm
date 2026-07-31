@@ -514,19 +514,41 @@ Open:
   or a stale mapping left by an earlier context) must select between the two
   outcomes.
 
-Next step: explain why GPAs inside a successful `hv_vm_map` still take MMIO
-exits. Candidates, in order of cheapness to test:
+The exits are dispatched under `aperture="pcie-mmio-64"`, i.e. the guest is
+faulting into BridgeVM's own PCIe high-MMIO handler for an address the VM has
+already `hv_vm_map`ed. `on_mmio_with_post_drain` only runs on a stage-2 fault,
+so the guest genuinely has no mapping for that GPA.
 
-1. The mapping is installed on the wrong `hv_vm_space` / after the vCPUs have
-   cached a stage-2 entry for that IPA, so the guest keeps faulting to the
-   old MMIO region.
-2. The BAR2 aperture stays registered as an MMIO region that shadows the
-   mapping; the exit handler wins because the region lookup precedes the
-   stage-2 walk.
-3. Windows maps the blob with a memory type that forces the fault.
+One structural detail is worth checking first. BAR2 is documented as a 64-bit
+*prefetchable* BAR that must come from the prefetchable half of the window
+(`machine.rs:111-115`), but it is first assigned `0x8000000000`:
 
-A single run that logs, at the moment of a `0x80` exit, whether the VM believes
-that GPA is mapped, will separate (1)/(2) from (3).
+```
+PCIE_MMIO_64      0x8000000000 .. 0x10000000000
+  non-prefetch    0x8000000000 .. 0xC000000000     <- first BAR2 base lands here
+  prefetch        0xC000000000 .. 0x10000000000    <- second base 0xFFE0000000
+```
+
+The correlation is consistent across runs, and the four accesses that always
+exit (offsets 0x0/0x10/0x20/0x40, immediately after the map) fit a guest that
+is writing through a mapping the hypervisor does not have.
+
+The 0x80 storm is not universal, which matters: a run where the second escape
+failed outright showed *zero* accesses to the status word and returned -1 in
+279 ms. So the storm is what a hang looks like, not what every failure looks
+like:
+
+| run | status-word accesses (sampled) | outcome |
+| --- | ---: | --- |
+| `a3-intent-20260731-153244` | 3900 | hang |
+| `a3-cmp1-20260731-151531` | 3886 | hang |
+| `a3-exit-20260731-151119` | 3881 | hang |
+| `a3-stamp-20260731-152711` | 0 | `-1` in 279 ms |
+
+Next step: determine whether the first BAR2 assignment is legal for a
+prefetchable BAR, and whether the shm window is being mapped against a base the
+guest has already stopped using. That is a question about BAR allocation, not
+about Venus.
 
 ## Method note
 
