@@ -390,6 +390,61 @@ The defect is therefore in the guest-visible mapping of a HOST3D blob — the
 `viogpu3d` "blob map escape" path and/or the guest physical address the VM
 publishes for the shm window — not in Venus ring logic on either side.
 
+### What the guest is actually doing: four million MMIO exits
+
+Tracing the BAR2 exits from the VM side closes the loop. During the stall the
+guest is not idle and not blocked; it is hammering one address:
+
+```
+off=0x80 Read   2401     (sampled trace)
+off=0x80 Write  1485
+BVDIAG shm_exit bar_off=0x80 op=Write { size: 1, value: 0 } n=3981312
+```
+
+Offset `0x80` is 128 — the ring **status** word. Roughly four million accesses
+to it take an MMIO exit, and the handler for the shm window is RAZ/WI:
+
+```rust
+// Host-visible shm window (BAR2). Real backing appears only via
+// hv_vm_map when a blob is mapped; a CPU access that exits here
+// hit a region with no mapped blob. RAZ/WI keeps the guest alive
+MmioOp::Read { .. } => MmioOutcome::ReadValue(0),
+MmioOp::Write { .. } => MmioOutcome::WriteAck,
+```
+
+(`platform_virt/mmio_dispatch.rs:266-275`.) So every status read returns 0 and
+every tail write is discarded. That single fact explains the entire symptom set:
+
+| observation | why |
+| ----------- | --- |
+| renderer never sees the tail | the guest's write was swallowed by RAZ/WI |
+| no `vkNotifyRingMESA` | status reads 0, so the idle bit is never observed |
+| forced fatal bit ignored | status reads 0, so the fatal bit is never observed |
+| silent full-core spin | it is a tight MMIO-exit loop, not a `vn_relax` wait |
+| renderer's own view is coherent | the worker and VM share real memory; only the guest is cut off |
+
+The exits are also confirmed to be the guest writing *through its own mapping*:
+the value stored in the first exits is exactly the user VA Mesa logged for the
+blob (`0x1D778430000` in `a3-stamp-20260731-152711`).
+
+Both `hv_vm_map` calls return 0 and stay mapped for the whole run, yet accesses
+to GPAs inside the mapped window still exit. That is the contradiction to chase
+next; the guest's stage-2 view of `0x8000000000..0x8000024000` does not match
+what the VM believes it installed.
+
+A BAR2 rebase was considered and rejected as the cause. The base does move
+(`0x8000000000` → `0xFFE0000000`, `base_changes=2`), which would strand the
+mapping at the old GPA — but the rebase happens at line 6681 of the run log,
+*after* the last `0x80` exit at line 6346, during shutdown. The stall is already
+over by then. Timing rules it out.
+
+One run in this series is worth recording separately: in
+`a3-stamp-20260731-152711` the *second* blob's escape failed outright
+(`blob map escape failed ... status=0xc00000bb`, `STATUS_NOT_SUPPORTED`), and
+`vkCreateInstance` then returned `-1` in 279 ms instead of hanging. Same defect,
+different failure mode — and further evidence that the guest-side mapping step
+is the unstable one.
+
 ## Ruled out
 
 Recorded so the work is not repeated. Each was tested, not merely doubted.
@@ -459,11 +514,19 @@ Open:
   or a stale mapping left by an earlier context) must select between the two
   outcomes.
 
-Next step: capture the guest-side mapping. Read back the ring page from inside
-the guest at the user VA Mesa logs (`blob map escape ok ... user_va=...`) and
-compare it against the host's stamped magic. That single comparison decides
-between "the escape returns the wrong VA" and "the VA is right but the guest
-physical mapping is not", and the two have different fixes.
+Next step: explain why GPAs inside a successful `hv_vm_map` still take MMIO
+exits. Candidates, in order of cheapness to test:
+
+1. The mapping is installed on the wrong `hv_vm_space` / after the vCPUs have
+   cached a stage-2 entry for that IPA, so the guest keeps faulting to the
+   old MMIO region.
+2. The BAR2 aperture stays registered as an MMIO region that shadows the
+   mapping; the exit handler wins because the region lookup precedes the
+   stage-2 walk.
+3. Windows maps the blob with a memory type that forces the fault.
+
+A single run that logs, at the moment of a `0x80` exit, whether the VM believes
+that GPA is mapped, will separate (1)/(2) from (3).
 
 ## Method note
 
