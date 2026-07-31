@@ -319,6 +319,36 @@ handshake, the likelier reading is a wait that never reaches
 `vn_ring_wait_seqno` at all, or one that spins in the ring-status polling that
 precedes it.
 
+## The decisive contrast: ring users hang, non-ring users do not
+
+While the probe's context 23 is frozen, context 21 keeps working perfectly in
+the same run — 229 commands flow during the probe's silence, 57 of them from
+ctx 21. Decoding what each context actually submits explains why:
+
+| context | first Venus command id per submit | meaning | outcome |
+| ------- | --------------------------------- | ------- | ------- |
+| 23 (probe) | 188, then 251 | `vkCreateRingMESA`, then `vkSubmitVirtqueueSeqnoMESA` | **frozen after 251** |
+| 21 (desktop) | 44 ×56, 43 ×8 | `vkGetEventStatus`, `vkDestroyEvent` | 64 submits, all fine |
+
+The working context never creates a ring. It drives the desktop through plain
+synchronous Venus calls. The probe creates a ring on its second submit
+(`vkCreateRingMESA`, ring `0x231c5f5f530`), immediately publishes roundtrip
+seqno 1 on it, and never returns.
+
+That is the sharpest statement of the defect so far:
+
+- Venus itself works on this host. Contexts that avoid the ring render the
+  Windows desktop for the entire run.
+- **The Venus ring path is what is broken.** Everything that needs
+  `vkCreateInstance` needs a ring, which is why A1, A2 and A3 all die here while
+  the desktop stays alive.
+
+It also matches the host code. `virgl_renderer_context_poll` is the only thing
+on macOS that retires renderer fences and writes the shmem slots Mesa polls
+(`venus_start_trace_capset_cou.rs:600-610`), and there is no
+`virgl_renderer_poll` anywhere in the tree. Whether that per-context poll also
+services a Venus *ring* seqno is the open question, and it is now a narrow one.
+
 ## Where this leaves the diagnosis
 
 Established:
@@ -336,12 +366,16 @@ Established (fixed driver, `a3-dec3-20260731-120335`):
   roundtrip seqno 1, and the host answers `OK_NODATA`.
 - Every virtio fence is created, completed, and delivered; none are dropped.
 - The guest then issues nothing further for 100 s while other contexts continue.
+- Contexts that never create a Venus ring keep working throughout the stall, so
+  the defect is specific to the ring path rather than to Venus as a whole.
 
 Not yet established:
 
 - Whether the host writes the acknowledged seqno back into the ring shmem where
   Mesa polls for it. The host accepts and fences the submit, but accepting a
-  submit is not the same as publishing the seqno.
+  submit is not the same as publishing the seqno. `virgl_renderer_context_poll`
+  is the only retirement path on macOS; whether it services ring seqnos as well
+  as fence FEEDBACK slots is the next thing to determine.
 - Where precisely the guest polls. It is not steady-state `vn_ring_wait_seqno`:
   that loop holds one `vn_relax_state` and would warn after ~3.5 s, and 100 s
   passed in silence.
