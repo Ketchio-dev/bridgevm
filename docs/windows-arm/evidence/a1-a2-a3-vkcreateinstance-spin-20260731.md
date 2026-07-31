@@ -385,6 +385,64 @@ the renderer's stderr belongs to a different process and is not captured in
 `run.log`. Capturing the render server's own output is the obvious next step,
 and it was never done.
 
+## It is intermittent, and the difference is `vkNotifyRingMESA`
+
+With the render server correctly identified, the probe was run six times on the
+same image with identical host flags. **One run succeeded:**
+
+```
+a3-rs-20260731-125330:   create_instance_result=0 instance_nonzero=True elapsed_ms=233
+a3-rs2-20260731-131443:  hung
+a3-rsN3 / N4 / N5:       hung
+(one further run lost to an unrelated boot stall: PSCI reboot 1/8,
+ stalled-between-boot-stages — the known A1 defect)
+```
+
+So `vkCreateInstance` is not deterministically broken. It completes in 233 ms
+when it works. That reframes the whole problem: this is a race, not a missing
+feature.
+
+Comparing the ring context's Venus submit sequence between a passing and a
+failing run makes the race concrete:
+
+| run | ring context submits (in order) |
+| --- | ------------------------------- |
+| pass | `188, 251, 190, 251, 190, 251, 190, 251, 190, 251, 190, 251, 251, ...` |
+| hang | `188, 251` |
+
+Where:
+
+- `188` = `vkCreateRingMESA`
+- `251` = `vkSubmitVirtqueueSeqnoMESA`
+- `190` = `vkNotifyRingMESA`
+
+Counted across the whole run:
+
+| command | pass | hang |
+| ------- | ---: | ---: |
+| `vkCreateRingMESA` (188) | 1 | 1 |
+| `vkSubmitVirtqueueSeqnoMESA` (251) | 14 | **1** |
+| `vkNotifyRingMESA` (190) | **7** | **0** |
+
+Both runs create the ring. Both publish the first roundtrip seqno. In the
+passing run the guest then issues `vkNotifyRingMESA` and the seqno/notify pair
+alternates normally. In every failing run **no notify is ever sent**, and the
+sequence dies at the first seqno.
+
+That matches the renderer's structure exactly. `vkr_ring_thread` parks on
+`cnd_wait(&ring->cond, &ring->mutex)` once the ring goes idle
+(`vkr_ring.c:283-291`), and only a notify sets `pending_notify` and signals that
+condition. A ring that is never notified has a servicing thread that never
+wakes, so the seqno the guest is waiting on is never written — which is exactly
+the observed silent, full-core spin with no `stuck in ...` warning.
+
+The open question is therefore why the guest skips the notify. Mesa elides it
+when it believes the ring is not idle, reading the status word the renderer
+maintains in ring shmem, so the leading hypothesis is a lost or mistimed
+`VK_RING_STATUS_IDLE_BIT_MESA` update between the renderer's idle transition and
+the guest's first submit — a classic startup race, consistent with it succeeding
+roughly one run in six.
+
 ## Where this leaves the diagnosis
 
 Established:
@@ -407,14 +465,19 @@ Established (fixed driver, `a3-dec3-20260731-120335`):
 
 Not yet established:
 
+- The failure is **intermittent**: 1 of 6 runs completed `vkCreateInstance` in
+  233 ms on the same image with identical flags.
+- The ring is created in both cases. The difference is `vkNotifyRingMESA`: 7
+  notifies in the passing run, **zero** in every failing one.
+
 Not yet established:
 
-- Whether `vkCreateRingMESA` succeeded at all. Venus runs in the separate
-  `virgl_render_server` process, so this must be answered from that process,
-  not from the VM process.
+- Why the guest skips the notify. The leading hypothesis is a startup race on
+  the ring's `VK_RING_STATUS_IDLE_BIT_MESA` status word, since the renderer's
+  ring thread only wakes from `cnd_wait` on a notify.
 - Why the render server's diagnostics never appear in the evidence. Its stderr
-  is not captured by `run.log`, which is why no `vkr_log` line has ever been
-  seen — not because no error occurred.
+  is a separate process's and is not captured by `run.log`, which is why no
+  `vkr_log` line has ever been seen — not because no error occurred.
 - Whether the host publishes the awaited seqno at all, or publishes a value the
   guest does not accept.
 
