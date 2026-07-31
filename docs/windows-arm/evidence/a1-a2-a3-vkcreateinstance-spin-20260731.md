@@ -249,6 +249,76 @@ Until a capture shows `stuck in <reason> wait`, the wait reason is **not**
 established. The earlier claim that this is straightforwardly "Mesa's vn_relax
 ring wait" is therefore downgraded to a hypothesis with a known inconsistency.
 
+## Fixed-driver capture: the last thing the guest ever sends
+
+`a3-dec3-20260731-120335` is the first capture that is simultaneously fresh,
+provenance-checked, and long enough to matter:
+
+```
+BV-ICD store=viogpu3d.inf_arm64_6435ce2e01767d8f          <- the fix, not 44e90b7a
+BV-ICD sha256=A9356F9F837F82F288B3A8DB6F3BA4784C241316CA77AA0EA261D0B53CCA3429
+BV-CLEAN mesa=False probe=False                           <- both logs deleted first
+[vulkan-probe] captured_utc=2026-07-31T16:04:18.9592151Z  <- this run
+BV-GO exit=13 elapsed_s=103.8                             <- spun for 100s
+```
+
+Mesa's fixed-driver log ends at exactly the same place as the old driver's, so
+the `AttachBacking` fix changed nothing here, as expected.
+
+The GPU trace names the last command the probe's context ever issues. Context 23
+is the probe; it maps its two ring blobs, sends two `SUBMIT_3D`, and then goes
+silent for the remaining 100 seconds while 291 further commands from other
+contexts flow past it:
+
+| idx | command | fence | response |
+| --- | ------- | ----- | -------- |
+| 1377 | `SUBMIT_3D` (172 B) | 673 | `OK_NODATA` |
+| 1378 | `RESOURCE_CREATE_BLOB` | 674 | `OK_NODATA` |
+| 1379 | `CTX_ATTACH_RESOURCE` | 675 | `OK_NODATA` |
+| 1381 | **`SUBMIT_3D` (56 B)** | 676 | `OK_NODATA` |
+| — | *(nothing further from ctx 23)* | | |
+
+Decoding that final 24-byte Venus payload:
+
+```
+fb 00 00 00  00 00 00 00  30 f5 f5 c5  31 02 00 00  01 00 00 00  00 00 00 00
+cmd   = 251 = VK_COMMAND_TYPE_vkSubmitVirtqueueSeqnoMESA_EXT
+ring  = 0x00000231c5f5f530
+seqno = 1
+```
+
+Command 251 is emitted from exactly one place in Mesa,
+`vn_ring_submit_roundtrip()` (`vn_ring.c:783`). The guest publishes roundtrip
+seqno **1** and then waits for the host to acknowledge it. That wait is the
+spin. Everything before it — renderer connection, protocol negotiation, submit
+context, both ring mappings, and the host's `OK_NODATA` for the submit itself —
+succeeds.
+
+So the guest is not stuck mid-render. It is stuck on the very first ring
+roundtrip handshake of the instance.
+
+## Fences are not the missing piece
+
+The obvious next suspect is a dropped fence, and it is innocent:
+
+```
+fence_create: 64   fence_complete: 64   fence_deliver: 64
+created but never completed: 0
+```
+
+Every fence in the run is created, completed, and delivered, including 676 for
+the seqno submit. The host also acknowledged the submit itself with `OK_NODATA`.
+What the guest is waiting for is therefore not the virtio fence but the seqno
+value the host is expected to write back into the ring shmem.
+
+This also explains the `vn_relax` contradiction. `vn_ring_wait_seqno()`
+(`vn_ring.c:204-219`) keeps one `vn_relax_state` across the whole wait, so its
+`iter` does climb and it *would* warn after ~3.5 s. A 100 s wait with no warning
+means the guest is not sitting in that loop. Combined with the seqno-1
+handshake, the likelier reading is a wait that never reaches
+`vn_ring_wait_seqno` at all, or one that spins in the ring-status polling that
+precedes it.
+
 ## Where this leaves the diagnosis
 
 Established:
@@ -260,12 +330,21 @@ Established:
 - The spin is a spin, not a deadlock, and not a host poll outage.
 - The host keeps polling and keeps retiring throughout.
 
+Established (fixed driver, `a3-dec3-20260731-120335`):
+
+- The last thing the guest ever sends is `vkSubmitVirtqueueSeqnoMESA` with
+  roundtrip seqno 1, and the host answers `OK_NODATA`.
+- Every virtio fence is created, completed, and delivered; none are dropped.
+- The guest then issues nothing further for 100 s while other contexts continue.
+
 Not yet established:
 
-- Whether the spinning thread is in `vn_relax` at all. The loop should warn
-  after ~3.5 s and should stop spinning after its yield phase; neither happened,
-  so either `iter` is being reset by a retrying caller or this is not `vn_relax`.
-- Which wait reason applies, if it is `vn_relax`.
+- Whether the host writes the acknowledged seqno back into the ring shmem where
+  Mesa polls for it. The host accepts and fences the submit, but accepting a
+  submit is not the same as publishing the seqno.
+- Where precisely the guest polls. It is not steady-state `vn_ring_wait_seqno`:
+  that loop holds one `vn_relax_state` and would warn after ~3.5 s, and 100 s
+  passed in silence.
 - Whether the host publishes the awaited seqno at all, or publishes a value the
   guest does not accept.
 
