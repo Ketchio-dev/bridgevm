@@ -1,7 +1,8 @@
-# A1/A2/A3 common wall: the vkCreateInstance spin, with a real stack
+# A1/A2/A3 common wall: the vkCreateInstance spin
 
 Status: investigation, open. This localizes the single point that now blocks
-A1, A2 and A3. No criterion changes.
+A1, A2 and A3, and identifies its mechanism: the guest and the host do not share
+the Venus ring page. No criterion changes.
 
 This document records current findings, not the order they were reached in.
 Hypotheses that were tested and failed are kept under *Ruled out* so the work is
@@ -250,7 +251,7 @@ on macOS that retires renderer fences and writes the shmem slots Mesa polls
 `virgl_renderer_poll` anywhere in the tree. Whether that per-context poll also
 services a Venus *ring* seqno is the open question, and it is now a narrow one.
 
-## It is intermittent, and the difference is `vkNotifyRingMESA`
+## It is intermittent, and the tell is `vkNotifyRingMESA`
 
 With the render server correctly identified, the probe was run six times on the
 same image with identical host flags. **One run succeeded:**
@@ -294,12 +295,100 @@ passing run the guest then issues `vkNotifyRingMESA` and the seqno/notify pair
 alternates normally. In every failing run **no notify is ever sent**, and the
 sequence dies at the first seqno.
 
-That matches the renderer's structure exactly. `vkr_ring_thread` parks on
-`cnd_wait(&ring->cond, &ring->mutex)` once the ring goes idle
-(`vkr_ring.c:283-291`), and only a notify sets `pending_notify` and signals that
-condition. A ring that is never notified has a servicing thread that never
-wakes, so the seqno the guest is waiting on is never written — which is exactly
-the observed silent, full-core spin with no `stuck in ...` warning.
+This was originally read as the guest failing to wake a sleeping renderer. The
+root-cause section below shows the opposite: Mesa never sends a notify because
+it never observes the idle bit, because it is not reading the host's status
+word at all.
+
+## Root cause: the guest cannot see the ring's shared page
+
+The renderer's own diagnostics had never been captured, because Venus does not
+run in the VM process. `virgl_render_server` forks and execs
+(`proxy/proxy_server.c:58-87`), and on macOS it then `posix_spawn`s a *worker*
+per context (`server/render_worker.c:454-497`), so the process tree is three
+deep:
+
+```
+34257  hvf_gic_boot_probe                                    <- VM
+34258  └─ virgl_render_server --socket-fd 8                   <- server
+34259     └─ virgl_render_server --worker-context-id 23 ...   <- Venus lives here
+```
+
+`vkr_log` reaches `render_log`, which is `vsyslog(LOG_DEBUG)` with `LOG_PERROR`
+(`server/render_common.c:16-32`), so it does go to stderr and does reach
+`run.log`. Instrumenting the ring thread produced the first renderer-internal
+evidence of this investigation.
+
+The ring is created and started normally, then the loop stops after one pass:
+
+```
+BVDIAG ring_start        ctx=23 ring=2132800336
+BVDIAG ring_thread_enter ctx=23 cur=0 tail=0 idle_timeout=1000000
+                         head_p=0x100534000 tail_p=0x100534040 status_p=0x100534080
+BVDIAG ring_alive        ctx=23 n=0 cur=0 tail=0 head=0 status=0x4 ...
+BVDIAG sleep_enter       ctx=23 cur=0 tail=0 status=0x5 pending_notify=0
+```
+
+Converting the renderer's `cnd_wait` to a one-second `cnd_timedwait` (semantics
+unchanged: it still only exits on `pending_notify` or `!started`) shows what the
+renderer sees for the whole stall — 151 consecutive samples, all identical:
+
+```
+BVDIAG sleeping ctx=23 cur=0 tail=0 status=0x5 pending_notify=0
+                raw[0]=0 raw[16]=0 raw[32]=5
+```
+
+`raw[16]` is the tail word at offset 64. **The guest never writes it.** The
+renderer is not sleeping through available work; there is no work.
+
+### The page is shared, and only one direction of it works
+
+Three independent checks, all in the same run:
+
+1. The layout is valid and accepted: `res_id=194 res_size=147456 offset=0
+   size=131268 headOff=0 tailOff=64 statusOff=128 bufOff=192 bufSize=131072`,
+   matching Mesa's `vn_ring_get_layout` (`vn_ring.c:271-297`) exactly.
+2. Ordering is correct: the GPU trace shows `RESOURCE_CREATE_BLOB` →
+   `CTX_ATTACH_RESOURCE` → `RESOURCE_MAP_BLOB` (`OK_MAP_INFO`) → `SUBMIT_3D`.
+   The mapping is established *before* the submit. `hv_vm_map` returns 0.
+3. Host-to-host sharing is real. Stamping `0xBEEF0000` into the head slot from
+   the **worker** process makes it visible in the **VM** process:
+
+```
+worker: raw[0]=3203334144            (= 0xbeef0000)
+VM:     head=0xbeef0000 tail=0 status=0x5
+```
+
+So the worker and the VM share the page. What never appears in it is anything
+written by the guest.
+
+### The decisive test: the guest ignores a fatal ring
+
+Mesa checks the status word on every submit and `abort()`s the process if the
+fatal bit is set (`vn_ring.c`, `vn_ring_submit_internal`: `"vn_ring_submit abort
+on fatal"`). Forcing that bit from the renderer after 20 seconds of silence:
+
+```
+BVDIAG forcing FATAL bit to test guest status reads
+VM view: head=0xbeef0000 tail=0 status=0x7      <- FATAL|IDLE|ALIVE, host side
+guest:   [vulkan-probe] create_instance_begin   <- still spinning, never aborts
+```
+
+The guest kept spinning. A guest that could read this page would have died
+instantly. It did not, so **the guest's mapping of the ring blob does not refer
+to the memory the host mapped.** The guest writes its tail, and the write lands
+somewhere the host cannot see; it reads status, and reads something that is not
+the host's status word.
+
+This inverts the previous reading. `vkNotifyRingMESA` is absent not because
+Mesa decided against sending it, but because Mesa is looking at a page that
+never shows the idle bit — and the seqno it waits on is published into memory
+the renderer never observes. It also explains the intermittency: whatever
+decides the guest-side mapping is not deterministic across boots.
+
+The defect is therefore in the guest-visible mapping of a HOST3D blob — the
+`viogpu3d` "blob map escape" path and/or the guest physical address the VM
+publishes for the shm window — not in Venus ring logic on either side.
 
 ## Ruled out
 
@@ -347,34 +436,34 @@ delete both logs and assert provenance by DriverStore hash and `captured_utc`.
 Established:
 
 - The stall is inside `vulkan_virtio.dll`, under `vkCreateInstance`, on the main
-  thread, with the intended modules loaded. It is a spin, not a deadlock, and
-  not a host poll outage: the host keeps polling and retiring throughout.
+  thread. It is a spin, not a deadlock, and not a host poll outage.
 - Renderer connection, protocol negotiation, submit context creation and both
-  ring blob mappings all succeed first.
-- The last thing the guest ever sends is `vkSubmitVirtqueueSeqnoMESA` with
-  roundtrip seqno 1, and the host answers `OK_NODATA`.
-- Every virtio fence is created, completed and delivered; none are dropped.
-- Contexts that never create a Venus ring keep working throughout the stall, so
-  the defect is specific to the ring path, not to Venus as a whole. This is why
+  ring blob mappings all succeed first, and the host answers every command.
+- The Venus ring is created and its thread started in the render-server worker.
+  The renderer's view of the ring is coherent with the VM's view.
+- **The guest's view is not.** The renderer never sees the guest's tail write,
+  and the guest never reacts to a forced fatal bit in the status word. The two
+  sides are not looking at the same memory.
+- Contexts that never create a Venus ring keep working throughout, which is why
   a usable 3D desktop and a hanging `vkCreateInstance` coexist.
-- The failure is **intermittent**: 1 of 6 runs completed `vkCreateInstance` in
+- The failure is intermittent: 1 of 6 runs completed `vkCreateInstance` in
   233 ms on the same image with identical flags.
 
 Open:
 
-- Why the first roundtrip completes in roughly one run of six. The leading
-  hypothesis (renderer-side idle/`cnd_wait` race) has been disproven; see
-  *Ruled out*.
-- Whether the absent `vkNotifyRingMESA` is cause or symptom.
-- Whether the host publishes the awaited seqno at all, or publishes a value the
-  guest does not accept.
+- Which side of the guest mapping is wrong: the `viogpu3d` blob-map escape that
+  hands Mesa a user VA, or the guest physical address the VM publishes for the
+  shm window (BAR2 base + `shm_offset`).
+- Why it is intermittent. A mapping that is simply mis-computed would fail
+  every time; something boot-dependent (BAR assignment, allocation alignment,
+  or a stale mapping left by an earlier context) must select between the two
+  outcomes.
 
-Next step: capture the render server's own diagnostics. `virgl_render_server`
-`fork`s and `execv`s (`proxy/proxy_server.c:58-87`), so Venus work runs in a
-grandchild process whose stderr reaches neither `run.log` nor `launcher.out`.
-No `vkr_log` line has ever been observed, and that is currently explained by
-nobody collecting them rather than by an absence of errors. Until those are in
-hand, further guesses about the ring are unfounded.
+Next step: capture the guest-side mapping. Read back the ring page from inside
+the guest at the user VA Mesa logs (`blob map escape ok ... user_va=...`) and
+compare it against the host's stamped magic. That single comparison decides
+between "the escape returns the wrong VA" and "the VA is right but the guest
+physical mapping is not", and the two have different fixes.
 
 ## Method note
 
