@@ -54,6 +54,7 @@ docs/windows-arm/evidence/viogpu3d-venus-release-candidate-20260723.md	historica
 docs/windows-arm/evidence/gpu-live-receipt-20260723.md	historical-evidence	windows-graphics	STATUS.md
 docs/windows-arm/evidence/app-install-to-3d-desktop-20260730.md	current	windows-app	GOAL.md
 docs/windows-arm/evidence/fresh-12041-a1-a2-a3-a8-rediagnosis-20260730.md	current	windows-graphics	GOAL.md
+docs/windows-arm/evidence/a3-attach-backing-0xd1-fix-20260731.md	current	windows-graphics	GOAL.md
 docs/windows-arm/snapshot-scope-v1.md	current	windows-snapshots	-
 docs/windows-arm/evidence/net-live-receipt-20260724.md	historical-evidence	windows-networking	STATUS.md
 docs/windows-arm/evidence/dxvk-venus-feasibility-20260724.md	historical-evidence	windows-graphics	STATUS.md
