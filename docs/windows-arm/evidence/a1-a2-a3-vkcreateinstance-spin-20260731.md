@@ -146,24 +146,93 @@ A signal that appears more strongly in the passing case cannot explain the
 failing one. It stays on the list as a real defect to fix later, but it is not
 this wall.
 
+## The last successful step, from Mesa's own log
+
+Running the project's `bvgpu-vulkan-probe.ps1` with `BRIDGEVM_TRACE_VENUS_START`
+and Mesa debug output (`a3-mesa-log-20260731-103707`) captures the DBWIN log
+Mesa writes from inside `vkCreateInstance`:
+
+```
+MESA-VIRTIO: debug: vn_renderer_create_virtgpu
+MESA-VIRTIO: debug: virtgpu_init
+MESA-VIRTIO: debug: using virtio-win adapter
+MESA-VIRTIO: debug: connected to renderer
+MESA-VIRTIO: debug: wire format version 1
+MESA-VIRTIO: debug: vk xml version 1.4.343
+MESA-VIRTIO: debug: VK_EXT_command_serialization spec version 1
+MESA-VIRTIO: debug: VK_MESA_venus_protocol spec version 4
+MESA-VIRTIO: debug: blob map escape ok handle=1073744064 offset=0 user_va=000001D1AAE10000 map_info=0x1
+MESA-VIRTIO: debug: D3DKMT submit context ready context=0x40000900 command=1048576 allocations=1024 patches=1024
+MESA-VIRTIO: debug: blob map escape ok handle=1073744256 offset=147456 user_va=000001D1ABF04000 map_info=0x1
+```
+
+Then nothing. Renderer connection, protocol negotiation, the submit context,
+and both blob mappings all succeed. The stall is immediately after the second
+ring shmem mapping.
+
+The stage4 probe on a **working 3D desktop**
+(`rethink-vioserial-activate-20260730-203138`) stops at the same call:
+
+```
+[vulkan-probe] enumerate_instance_version_result=0 api_version=0x0040312d
+[vulkan-probe] create_instance_begin
+[stage4] Vulkan probe errorlevel=13
+```
+
+`vkEnumerateInstanceVersion` returns successfully; only `vkCreateInstance`
+hangs. A usable Windows 3D desktop and a hanging `vkCreateInstance` coexist.
+
+## What the spin actually is
+
+The shipped `vulkan_virtio.dll` contains these strings:
+
+```
+stuck in %s wait with iter at %d
+aborting on ring fatal error at iter %d
+aborting on expired ring alive status at iter %d
+ring seqno / tls ring seqno / ring space
+vn_ring_wait_space
+vn_ring_submit abort on fatal
+```
+
+Those belong to `vn_relax()` in `src/virtio/vulkan/vn_common.c:248-290`, Mesa
+Venus's backoff loop. It matches the observed behaviour exactly: it spins with
+`thrd_yield()` for the first `1 << busy_wait_order` iterations, which is why one
+thread burns a full core while the process makes no progress. The three wait
+reasons it serves are `ring seqno`, `tls ring seqno`, and `ring space`.
+
+So the disassembled acquire-load against `[x21 + 0x418]` is Mesa comparing a
+ring seqno against the value the host renderer is expected to publish.
+
+Note that `vn_relax` is supposed to escalate: at `warn_order` it logs
+`stuck in ... wait with iter at N`, and at `abort_order` it aborts. Our capture
+shows neither, which means either the capture ended before the first warning
+threshold, or `VN_DEBUG(NO_ABORT)` — which the probe sets via
+`vn_debug=init,result,log_ctx_info,no_abort` — suppressed the abort path. The
+next capture must run long enough to cross `warn_order` and must not set
+`no_abort`, so the loop names its own reason instead of leaving it inferred.
+
 ## Where this leaves the diagnosis
 
 Established:
 
 - The stall is inside `vulkan_virtio.dll`, under `vkCreateInstance`, on the
   main thread, with the intended modules loaded.
-- The waiting construct is an acquire-load comparison against a shared slot at
-  `+0x418` of a context structure, i.e. a Venus FEEDBACK/seqno wait.
-- The host keeps polling and keeps retiring; it is not a host poll outage.
+- Renderer connection, protocol negotiation, submit context creation, and both
+  ring blob mappings all succeed first.
+- The spin is Mesa's `vn_relax` backoff loop waiting on a ring seqno or ring
+  space, not a deadlock and not a host poll outage.
+- The host keeps polling and keeps retiring throughout.
 
 Not yet established:
 
-- Whether the host writes that slot at all, or writes it with a value the guest
-  does not accept.
-- Which command's completion the guest is waiting for.
+- Which of the three `vn_relax` reasons applies.
+- Whether the host publishes the awaited seqno at all, or publishes a value the
+  guest does not accept.
 
-The next discriminating step is to correlate the guest's awaited value with what
-the host writes into the shmem FEEDBACK region, rather than to change poll
+The next discriminating step is to let the probe run past `warn_order` without
+`no_abort` so Mesa prints `stuck in <reason> wait`, then correlate that reason
+with what the host writes into the ring shmem — rather than changing poll
 cadence or fence handling speculatively.
 
 ## Method note
