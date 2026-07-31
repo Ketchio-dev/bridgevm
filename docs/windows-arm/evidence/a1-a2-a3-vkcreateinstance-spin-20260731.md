@@ -483,9 +483,42 @@ guest's first submit lands in that window. When the timing falls the other way
 the idle bit is already set, the notify goes out, and instance creation finishes
 in 233 ms. One run in six is consistent with a window this narrow.
 
-This is a hypothesis with strong support (the notify counts, the two code
-paths, and the intermittency all agree), but it has not yet been confirmed by
-observing the ring status word directly at the moment of the first submit.
+### Tested, and the fix did not work
+
+The hypothesis was testable, so it was tested. `vkr_ring.c` was patched to
+re-check the ring for pending work before sleeping, closing the window where a
+submit lands after the decision to wait but before `cnd_wait`:
+
+```c
+while (ring->started && !ring->pending_notify &&
+       ring->buffer.cur == vkr_ring_load_tail(ring)) {
+   ret = cnd_wait(&ring->cond, &ring->mutex);
+```
+
+Built and installed (`libvirglrenderer.1.dylib` and `virgl_render_server` both
+rebuilt at 13:36, both containing the patched code). Three runs:
+
+```
+fix run 1: HUNG    188=1 251=1 190=0
+fix run 2: HUNG    188=1 251=1 190=0
+fix run 3: HUNG    188=1 251=1 190=0
+```
+
+No change whatsoever, and critically **the notify count is still zero**. If the
+renderer had merely been sleeping through available work, this patch would have
+picked it up. It did not, so the guest genuinely never sends a notify, and the
+renderer's sleep is not what blocks it.
+
+That also weakens the causal reading of the notify counts. `vkNotifyRingMESA`
+and `vkSubmitVirtqueueSeqnoMESA` alternate 1:1 in the passing run, which is just
+as consistent with notifies being a *symptom* of a ring that is progressing as
+with their absence being the *cause* of one that is not.
+
+The narrowed, still-true statement is: **the guest stops after publishing
+roundtrip seqno 1, and in the rare passing run it proceeds to exchange
+seqno/notify pairs normally.** Why the first roundtrip completes sometimes and
+not others is not yet explained, and the renderer-side sleep is now ruled out as
+the mechanism.
 
 ## Where this leaves the diagnosis
 
@@ -516,13 +549,12 @@ Not yet established:
 
 Not yet established:
 
-- Direct confirmation of the race. Mesa notifies only when it sees
-  `VK_RING_STATUS_IDLE_BIT_MESA` already set (`vn_ring.c:505-513`), while the
-  renderer sets that bit only after `idle_timeout` elapses and then parks in
-  `cnd_wait` (`vkr_ring.c:270-292`). A first submit landing before the timeout
-  therefore sends no notify and the ring thread never wakes. The counts, the
-  code, and the intermittency all agree, but the status word has not yet been
-  observed directly at the moment of the first submit.
+- Why the first roundtrip completes in about one run in six. The renderer-side
+  idle/`cnd_wait` race was the leading hypothesis and has been **disproven** by
+  patching it: re-checking the ring before sleeping changed nothing and left the
+  notify count at zero.
+- Whether the absent `vkNotifyRingMESA` is cause or symptom. It alternates 1:1
+  with the seqno in passing runs, which fits either reading.
 - Why the render server's diagnostics never appear in the evidence. Its stderr
   is a separate process's and is not captured by `run.log`, which is why no
   `vkr_log` line has ever been seen — not because no error occurred.
