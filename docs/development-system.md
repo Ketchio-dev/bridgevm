@@ -163,9 +163,14 @@ scripts/check-refactor-budgets.sh
 ```
 
 It fails if any file in `scripts/refactor-budgets.tsv` exceeds its recorded line
-or `unsafe`-site ceiling. The repository has no hosted CI, so this stands in for
-a CI non-increase gate: grow code into extracted modules rather than these
+or `unsafe`-site ceiling: grow code into extracted modules rather than these
 files, and lower a ceiling only after an extraction actually reduces the file.
+
+Hosted CI runs in `.github/workflows/ci.yml` and is authoritative. Check it
+after pushing — `gh run list --limit 1` — and fix a red run before continuing.
+A failure in an area you did not touch is still yours to triage: reproduce it
+locally before dismissing it as flaky, because "unrelated" and "intermittent"
+look identical from a single failed run.
 
 ## 10. Documentation maintenance
 
@@ -176,3 +181,29 @@ duplicated, or a superseding document does not exist.
 Long logs belong in a dated evidence document. Root README and STATUS stay
 short. When their detail is still useful, archive the exact old version before
 condensing it—as done for the 2026-07-22 documentation rewrite.
+
+### Investigations: iterate in the working tree, commit conclusions
+
+A live investigation moves through hypotheses, and most of them are wrong.
+Retracting a published claim is correct and must never be discouraged. What is
+wrong is committing each swing separately: the 2026-07-31 `vkCreateInstance`
+investigation produced eight `docs(gpu)` commits on one file, adding 425 lines
+and deleting 94 to leave 343 — nearly half the churn was the history arguing
+with itself, and the useful result was one document.
+
+So, for evidence documents:
+
+- Keep revising the working copy while an investigation is live. Commit when a
+  question is settled, not at each turn of reasoning.
+- One commit per *conclusion*, not per experiment. "Ruled out X, narrowed to Y"
+  is a conclusion; "tried X" is not.
+- If a claim in an already-pushed document turns out to be wrong, correct it in
+  place and say so plainly in the next commit message. Do not rewrite pushed
+  history to hide the error.
+- The document itself should read as current findings, not as a diary. Record
+  disproven hypotheses because they stop others from repeating the work — but
+  as a short "ruled out" section, not as narrative layers.
+
+Status documents follow from this: when an investigation shows that a dated
+receipt no longer reproduces, say so in `STATUS.md` next to the claim rather
+than leaving the receipt to imply current health.

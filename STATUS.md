@@ -1,7 +1,15 @@
 # BridgeVM current status
 
 Document status: **Current**
-Last reviewed: **2026-07-22**
+Last reviewed: **2026-07-31**
+
+> **Graphics reproducibility caveat (2026-07-31).** The dated GPU receipts below
+> are real and unretracted, but they are *historical*. On the current 120.41
+> lineage, guest `vkCreateInstance` completes in only about one run in six; the
+> rest spin indefinitely after publishing the first Venus ring roundtrip seqno.
+> Treat every graphics claim in this document as "proven on the dated run",
+> **not** as "reproducible today". See
+> [the vkCreateInstance spin investigation](docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md).
 
 This is the short product boundary. The previous 974-line status log is
 preserved unchanged as
@@ -19,7 +27,8 @@ yet a public-production virtualization product.
   currently supported kernel plus raw-disk shape.
 - The custom Windows HVF Engine boots an installed Windows 11 Arm desktop
   without QEMU and has working persistent NVMe, SMP, display/input, networking,
-  audio, guest-agent control, restart/reset, and experimental accelerated 3D.
+  audio, guest-agent control, restart/reset, and experimental accelerated 3D
+  whose Vulkan path is currently intermittent (see the caveat above).
 - Windows HVF release readiness remains blocked by the vTPM/Secure Boot
   lifecycle, production driver signing, fresh same-boot guest receipts, and
   distribution signing/notarization.
@@ -43,7 +52,7 @@ The installed-Windows path has live evidence for:
 - guest-requested shutdown and first-boot disk-growth actions;
 - a bound experimental Windows ARM64 display stack;
 - host-visible Vulkan rendering and PPSSPP 1.20.4 running with its native
-  Vulkan backend;
+  Vulkan backend (dated 2026-07-23; not reproducible as of 2026-07-31);
 - deferred scanout/readback instrumentation that identifies synchronous
   GPU-to-CPU readback as a major remaining display cost.
 - a live Windows vTPM run with 1,032 TIS commands, including PCR, capability,
@@ -76,7 +85,7 @@ It does not weaken security-state handling. See the
 | `SEC-TPM-LIFECYCLE` | `LIVE_PROVEN` | Hard security/lifecycle work | Authenticated encrypted export on Mac Studio [A] and packaged-app same-ID restore/desktop boot on MacBook Pro M5 [B] are dated-receipt proven with 239 `PCR_Read`, zero malformed/backend failures, and clean PSCI shutdown; BitLocker-only C3/C6 are blocked by Windows Home edition |
 | `SEC-SB-MEASURED` | `LIVE_PROVEN` | Hard cross-layer work | Windows reports Secure Boot enabled and TPM 2.0 ready; a 62,382-byte measured-boot log, 431 `PCR_Read`, 82 `PCR_Extend`, and zero malformed/backend failures are dated-receipt proven |
 | `GPU-WDK-SIGN` | `SUBMISSION_READY` | Production signature externally gated | ARM64 package/catalog/test signature/readiness, exact bind, Vulkan draw and host trace are proven; production EV/Partner Center signature remains external |
-| `GPU-LIVE-RECEIPT` | `LIVE_PROVEN` | Live-machine gated | Packaged-app 120.41 bind → native ARM64 PPSSPP 1.20.4 Vulkan UI for >10 min → 300-second `fb-rate.py` result (13.54 FPS average) → clean shutdown is dated-receipt proven |
+| `GPU-LIVE-RECEIPT` | `LIVE_PROVEN_ONCE` | Live-machine gated; **not reproducible as of 2026-07-31** | Packaged-app 120.41 bind → native ARM64 PPSSPP 1.20.4 Vulkan UI for >10 min → 300-second `fb-rate.py` result (13.54 FPS average) → clean shutdown is dated-receipt proven. The same path now reaches a Vulkan instance in ~1 run of 6 |
 | `DIST-MACOS` | `EXTERNAL` | Externally gated | Developer ID, hardened runtime, notarization, clean-machine install and launch |
 
 The TPM register model and ACPI plumbing are comparatively straightforward.
@@ -156,13 +165,21 @@ and the host observed 431 `PCR_Read` plus 82 `PCR_Extend` operations with zero
 malformed commands/responses or backend failures. See the
 [Secure Boot measured-boot receipt](docs/windows-arm/evidence/sb-guest-proof-20260723.md).
 
-The graphics release boundary is likewise live: the ARM64 Venus package is
+The graphics release boundary was live on 2026-07-23: the ARM64 Venus package is
 submission-ready apart from production signing, and a packaged-app 120.41 run
 kept native ARM64 PPSSPP 1.20.4 rendered on Venus for more than ten minutes.
 The same boot produced 11,293 scanout readbacks, a passing P3 trace, and a
 300-second framebuffer result of 13.54 FPS average before clean PSCI shutdown.
 See the [GPU package receipt](docs/windows-arm/evidence/viogpu3d-venus-release-candidate-20260723.md)
 and [GPU live receipt](docs/windows-arm/evidence/gpu-live-receipt-20260723.md).
+
+That receipt has **not** been reproduced since. As of 2026-07-31 the same path
+starts a Vulkan instance in roughly one attempt out of six, so the graphics
+boundary is currently "proven once, not dependable". Two separate defects are
+known and neither is fixed: the ring-roundtrip spin above, and an intermittent
+boot stall (`PSCI SYSTEM_RESET: reboot 1/8`,
+`suspect=stalled-between-boot-stages`) that costs roughly one boot in three on
+this image.
 
 Windows HVF durable suspend is intentionally outside v1. The experimental
 checkpoint path must not be advertised as suspend; see the

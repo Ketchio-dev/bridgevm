@@ -1,7 +1,11 @@
 # A1/A2/A3 common wall: the vkCreateInstance spin, with a real stack
 
-Status: investigation. This localizes the single point that now blocks A1, A2,
-and A3. No criterion changes.
+Status: investigation, open. This localizes the single point that now blocks
+A1, A2 and A3. No criterion changes.
+
+This document records current findings, not the order they were reached in.
+Hypotheses that were tested and failed are kept under *Ruled out* so the work is
+not repeated.
 
 ## Why this is one problem, not three
 
@@ -110,58 +114,11 @@ The guest ring was set up immediately before the wait — `RESOURCE_CREATE_BLOB`
 followed by `RESOURCE_MAP_BLOB` appear right before the command stream goes
 quiet, which is the Venus ring being placed in host-visible shared memory.
 
-## Ruled out: the UNMAP_BLOB rejections
+## How far `vkCreateInstance` gets
 
-The command trace shows `RESOURCE_UNMAP_BLOB` failing overwhelmingly:
-
-```
-RESOURCE_UNMAP_BLOB -> ERR_INVALID_PARAMETER   332
-RESOURCE_UNMAP_BLOB -> OK_NODATA                 4
-RESOURCE_MAP_BLOB   -> OK_MAP_INFO               4
-```
-
-Running with `--trace-venus-start` classifies every one of them:
-
-```
-venus-start: unmap_blob REJECT resource=23 reason=never_created
-...
- 118 reason=never_created
-```
-
-So the guest asks the host to unmap resources it never created as blobs, and
-`blob_host_mapping.rs:20-24` calls exactly that class "a real mapping-lifecycle
-bug or resource-id confusion". Both A2 and A3 show it at the same scale (119 and
-118 rejections).
-
-It is nevertheless **not** the cause of the spin. A run that reaches a working 3D
-desktop shows the same rejections an order of magnitude more often:
-
-| run | outcome | `UNMAP_BLOB` rejects | total commands |
-| --- | ------- | -------------------- | -------------- |
-| `rethink-vioserial-activate-20260730-203138` | working 3D desktop | 1021 (+8 OK) | 14031 |
-| `attach-install3-20260731-074422` | driver install, healthy | 403 | 3461 |
-| `a3-spin-stack-20260731-094242` | spun at `vkCreateInstance` | 332 | ~4500 |
-
-A signal that appears more strongly in the passing case cannot explain the
-failing one. It stays on the list as a real defect to fix later, but it is not
-this wall.
-
-## The last successful step, from Mesa's own log
-
-> **Provenance warning.** The Mesa log quoted below came from
-> `a3-mesa-log-20260731-103707`, which read `C:\BridgeVM\bvgpu-mesa-debug.log`
-> **without deleting it first**. The file was stale: it carries
-> `captured_utc=2026-07-31T00:34:13Z` and
-> `viogpu3d.inf_arm64_44e90b7a44a1d335`, i.e. the previous day's run against the
-> **shipped 120.41 driver**. The fixed driver on that image is
-> `viogpu3d.inf_arm64_6435ce2e01767d8f`. So this sequence is a true record of
-> where `vkCreateInstance` stalls on the *old* driver, and it agrees with the
-> stack captured on the fixed driver, but it is not itself fixed-driver
-> evidence. A fixed-driver Mesa capture is still outstanding.
-
-Running the project's `bvgpu-vulkan-probe.ps1` with `BRIDGEVM_TRACE_VENUS_START`
-and Mesa debug output captures the DBWIN log Mesa writes from inside
-`vkCreateInstance`:
+Mesa's own DBWIN log, captured fresh on the fixed driver
+(`a3-dec3-20260731-120335`, provenance asserted below), shows the last thing it
+manages before stalling:
 
 ```
 MESA-VIRTIO: debug: vn_renderer_create_virtgpu
@@ -172,13 +129,13 @@ MESA-VIRTIO: debug: wire format version 1
 MESA-VIRTIO: debug: vk xml version 1.4.343
 MESA-VIRTIO: debug: VK_EXT_command_serialization spec version 1
 MESA-VIRTIO: debug: VK_MESA_venus_protocol spec version 4
-MESA-VIRTIO: debug: blob map escape ok handle=1073744064 offset=0 user_va=000001D1AAE10000 map_info=0x1
-MESA-VIRTIO: debug: D3DKMT submit context ready context=0x40000900 command=1048576 allocations=1024 patches=1024
-MESA-VIRTIO: debug: blob map escape ok handle=1073744256 offset=147456 user_va=000001D1ABF04000 map_info=0x1
+MESA-VIRTIO: debug: blob map escape ok handle=1073744064 offset=0 ...
+MESA-VIRTIO: debug: D3DKMT submit context ready context=0x40000900 ...
+MESA-VIRTIO: debug: blob map escape ok handle=1073744256 offset=147456 ...
 ```
 
-Then nothing. Renderer connection, protocol negotiation, the submit context,
-and both blob mappings all succeed. The stall is immediately after the second
+Then nothing. Renderer connection, protocol negotiation, the submit context and
+both ring blob mappings all succeed; the stall is immediately after the second
 ring shmem mapping.
 
 The stage4 probe on a **working 3D desktop**
@@ -190,64 +147,8 @@ The stage4 probe on a **working 3D desktop**
 [stage4] Vulkan probe errorlevel=13
 ```
 
-`vkEnumerateInstanceVersion` returns successfully; only `vkCreateInstance`
-hangs. A usable Windows 3D desktop and a hanging `vkCreateInstance` coexist.
-
-## What the spin actually is
-
-The shipped `vulkan_virtio.dll` contains these strings:
-
-```
-stuck in %s wait with iter at %d
-aborting on ring fatal error at iter %d
-aborting on expired ring alive status at iter %d
-ring seqno / tls ring seqno / ring space
-vn_ring_wait_space
-vn_ring_submit abort on fatal
-```
-
-Those belong to `vn_relax()` in `src/virtio/vulkan/vn_common.c:248-290`, Mesa
-Venus's backoff loop. It matches the observed behaviour exactly: it spins with
-`thrd_yield()` for the first `1 << busy_wait_order` iterations, which is why one
-thread burns a full core while the process makes no progress. The three wait
-reasons it serves are `ring seqno`, `tls ring seqno`, and `ring space`.
-
-So the disassembled acquire-load against `[x21 + 0x418]` is Mesa comparing a
-ring seqno against the value the host renderer is expected to publish.
-
-### The escalation that never fired — and why that matters
-
-`vn_relax` is supposed to announce itself. `vn_common.c:182-226` gives the
-profiles, and Mesa's own comments state the timings:
-
-| reason | `busy_wait_order` | first warning |
-| ------ | ----------------- | ------------- |
-| `ring seqno` | 8 (256 yields) | iter 4096, ~3.5 s |
-| `tls ring seqno`, `ring space`, `fence`, `semaphore`, `query` | 4 (16 yields) | iter 1024, ~3.5 s |
-
-Every profile warns after roughly **3.5 seconds**, and aborts after ~895 s. Yet
-probes that spun for 180 s and longer logged neither a warning nor an abort.
-
-That is a contradiction, and it undercuts the simple reading of this loop:
-
-- After `1 << busy_wait_order` iterations `vn_relax` stops spinning and calls
-  `os_time_sleep` (`vn_common.c:293-294`). A thread parked in `os_time_sleep`
-  does not burn a full core. But `a3-hang-diag-20260731-090047` measured thread
-  3320 `state=Running` accumulating 45.7 → 186.0 s of CPU. A steady-state
-  `vn_relax` cannot produce that.
-- So either the code never advances past the yield phase because `iter` is being
-  reset — i.e. an outer loop calls `vn_relax_init` repeatedly, so the counter
-  never reaches `warn_order` — or the spinning thread is not in `vn_relax` at
-  all and the ICD's `vn_relax` strings are a red herring.
-
-The repeated-`vn_relax_init` hypothesis fits every observation: full-core spin,
-no warning at any duration, and an acquire-load on a seqno slot. It also points
-somewhere different from a plain stuck ring — at a caller retrying an operation
-that keeps failing fast.
-
-Until a capture shows `stuck in <reason> wait`, the wait reason is **not**
-established. The earlier claim that this is straightforwardly "Mesa's vn_relax
-ring wait" is therefore downgraded to a hypothesis with a known inconsistency.
+`vkEnumerateInstanceVersion` succeeds; only `vkCreateInstance` hangs. A usable
+Windows 3D desktop and a hanging `vkCreateInstance` coexist.
 
 ## Fixed-driver capture: the last thing the guest ever sends
 
@@ -349,42 +250,6 @@ on macOS that retires renderer fences and writes the shmem slots Mesa polls
 `virgl_renderer_poll` anywhere in the tree. Whether that per-context poll also
 services a Venus *ring* seqno is the open question, and it is now a narrow one.
 
-## Retracted: the "ring thread is never created" measurement
-
-An earlier revision of this document claimed the ring thread is never created,
-based on sampling the host VM process before and during the spin and seeing 13
-threads both times.
-
-**That measurement was invalid.** Venus runs out of process. `init_flags()`
-(`virgl_renderer_gl_context_mod.rs:283-292`) sets `VIRGL_RENDERER_RENDER_SERVER`
-alongside `VIRGL_RENDERER_VENUS`, and `virglrenderer.c:932` only initialises the
-Venus proxy renderer when that flag is present. The same run's log confirms a
-separate process:
-
-```
-Jul 31 12:45:38  virgl_render_server[79666] <Debug>: socket disconnected
-```
-
-`vkr_ring_thread` lives in pid 79666, but the sample counted threads in pid
-79665, the VM process. The measurement therefore says nothing about whether the
-ring was created, and the conclusion drawn from it does not stand.
-
-The consequences are worth stating plainly, because two follow-on inferences
-were also wrong:
-
-- The claim that `vkCreateRingMESA` bailed out before `vkr_ring_start` is
-  unproven.
-- The reasoning about `vkr_dispatch_vkCreateRingMESA`'s silent
-  `VIRGL_RESOURCE_FD_SHM` guard rested on that claim and is likewise unproven.
-  It is also the wrong code path to have been reading: with the render server in
-  use, resources reach Venus through `proxy_context_get_blob`
-  (`proxy/proxy_context.c:341,560`), not through the in-process route.
-
-The absence of `vkr_log` output remains real but is now explained differently:
-the renderer's stderr belongs to a different process and is not captured in
-`run.log`. Capturing the render server's own output is the obvious next step,
-and it was never done.
-
 ## It is intermittent, and the difference is `vkNotifyRingMESA`
 
 With the render server correctly identified, the probe was run six times on the
@@ -436,149 +301,80 @@ condition. A ring that is never notified has a servicing thread that never
 wakes, so the seqno the guest is waiting on is never written — which is exactly
 the observed silent, full-core spin with no `stuck in ...` warning.
 
-### The race, in both codebases
+## Ruled out
 
-The guest side decides whether to notify in `vn_ring_submit_internal`
-(`vn_ring.c:505-513`):
+Recorded so the work is not repeated. Each was tested, not merely doubted.
 
-```c
-if (status & VK_RING_STATUS_IDLE_BIT_MESA) {
-   ...
-   return true;   /* only then is vkNotifyRingMESA sent */
-}
-return false;
-```
+**The renderer-side idle race.** Mesa notifies only when it already sees
+`VK_RING_STATUS_IDLE_BIT_MESA` (`vn_ring.c:505-513`); the renderer sets that bit
+only after `idle_timeout` and then parks in `cnd_wait`, which only a notify ends
+(`vkr_ring.c:270-292`). A first submit inside that window would go unnotified
+forever. Tested by patching `vkr_ring.c` to re-check the ring before sleeping,
+rebuilding and installing both `libvirglrenderer.1.dylib` and
+`virgl_render_server` and confirming the patched code in each. Three runs, all
+hung, `190=0` in every one. **Disproven**; patch reverted. This also weakens the
+causal reading of the notify counts: notify and seqno alternate 1:1 in the
+passing run, which fits notifies being a symptom of a progressing ring as well
+as their absence being the cause of a stuck one.
 
-Mesa sends a notify **only when it observes the idle bit already set**. If the
-ring does not look idle, it submits and assumes the renderer's thread is awake
-and will pick the work up.
+**The `RESOURCE_UNMAP_BLOB` rejections.** 332 rejections against 4 successes,
+every one classified `never_created` by `--trace-venus-start` — which this
+repository's own comment (`blob_host_mapping.rs:20-24`) calls a real
+mapping-lifecycle bug. But a run that reaches a working 3D desktop
+(`rethink-vioserial-activate-20260730-203138`) shows 1021 of the same
+rejections, three times as many. A signal stronger in the passing case cannot
+explain the failing one. Still a genuine defect; not this one.
 
-The renderer side sets that bit only after an idle timeout has elapsed
-(`vkr_ring.c:270-292`):
+**"The ring thread is never created."** Claimed from sampling 13 threads before
+and during the spin. The measurement was invalid: Venus runs out of process
+(`VIRGL_RENDERER_RENDER_SERVER`, `virglrenderer.c:932`), so `vkr_ring_thread`
+lives in `virgl_render_server` — pid 79666 in that run, while pid 79665 was
+sampled. Nothing followed from it.
 
-```c
-while (ring->started) {
-   bool wait = false;
-   if (vkr_ring_now() >= last_submit + ring->idle_timeout) {
-      ring->pending_notify = false;
-      vkr_ring_set_status_bits(ring, VK_RING_STATUS_IDLE_BIT_MESA);
-      wait = ring->buffer.cur == vkr_ring_load_tail(ring);
-      ...
-   }
-   if (wait) {
-      mtx_lock(&ring->mutex);
-      while (ring->started && !ring->pending_notify)
-         cnd_wait(&ring->cond, &ring->mutex);   /* sleeps until a notify */
-```
+**"The spin is steady-state `vn_relax`."** The ICD carries `vn_relax`'s strings,
+but every profile warns after ~3.5 s (`vn_common.c:182-226`) and probes spun for
+100 s with no warning at all. Whatever the thread is doing, it is not sitting in
+that loop with a climbing `iter`.
 
-That is the window. Between `vkCreateRingMESA` and the guest's first submit,
-the renderer's fresh ring thread has not yet reached its idle timeout, so the
-idle bit is still clear. The guest reads a not-idle ring, submits seqno 1, and
-correctly-by-its-own-rules sends no notify. The renderer thread then crosses the
-timeout, sets the idle bit, finds the buffer empty, and parks in `cnd_wait` —
-which only `pending_notify` can end.
-
-Both sides are individually reasonable; together they deadlock whenever the
-guest's first submit lands in that window. When the timing falls the other way
-the idle bit is already set, the notify goes out, and instance creation finishes
-in 233 ms. One run in six is consistent with a window this narrow.
-
-### Tested, and the fix did not work
-
-The hypothesis was testable, so it was tested. `vkr_ring.c` was patched to
-re-check the ring for pending work before sleeping, closing the window where a
-submit lands after the decision to wait but before `cnd_wait`:
-
-```c
-while (ring->started && !ring->pending_notify &&
-       ring->buffer.cur == vkr_ring_load_tail(ring)) {
-   ret = cnd_wait(&ring->cond, &ring->mutex);
-```
-
-Built and installed (`libvirglrenderer.1.dylib` and `virgl_render_server` both
-rebuilt at 13:36, both containing the patched code). Three runs:
-
-```
-fix run 1: HUNG    188=1 251=1 190=0
-fix run 2: HUNG    188=1 251=1 190=0
-fix run 3: HUNG    188=1 251=1 190=0
-```
-
-No change whatsoever, and critically **the notify count is still zero**. If the
-renderer had merely been sleeping through available work, this patch would have
-picked it up. It did not, so the guest genuinely never sends a notify, and the
-renderer's sleep is not what blocks it.
-
-That also weakens the causal reading of the notify counts. `vkNotifyRingMESA`
-and `vkSubmitVirtqueueSeqnoMESA` alternate 1:1 in the passing run, which is just
-as consistent with notifies being a *symptom* of a ring that is progressing as
-with their absence being the *cause* of one that is not.
-
-The narrowed, still-true statement is: **the guest stops after publishing
-roundtrip seqno 1, and in the rare passing run it proceeds to exchange
-seqno/notify pairs normally.** Why the first roundtrip completes sometimes and
-not others is not yet explained, and the renderer-side sleep is now ruled out as
-the mechanism.
+**A stale-log artefact worth knowing about.** Reading
+`C:\BridgeVM\bvgpu-mesa-debug.log` without deleting it first returns the
+previous run's content. Two captures were initially misread this way; the
+giveaway is an unchanged byte count and a `pid=` from the earlier run. Always
+delete both logs and assert provenance by DriverStore hash and `captured_utc`.
 
 ## Where this leaves the diagnosis
 
 Established:
 
-- The stall is inside `vulkan_virtio.dll`, under `vkCreateInstance`, on the
-  main thread, with the intended modules loaded.
-- Renderer connection, protocol negotiation, submit context creation, and both
+- The stall is inside `vulkan_virtio.dll`, under `vkCreateInstance`, on the main
+  thread, with the intended modules loaded. It is a spin, not a deadlock, and
+  not a host poll outage: the host keeps polling and retiring throughout.
+- Renderer connection, protocol negotiation, submit context creation and both
   ring blob mappings all succeed first.
-- The spin is a spin, not a deadlock, and not a host poll outage.
-- The host keeps polling and keeps retiring throughout.
-
-Established (fixed driver, `a3-dec3-20260731-120335`):
-
 - The last thing the guest ever sends is `vkSubmitVirtqueueSeqnoMESA` with
   roundtrip seqno 1, and the host answers `OK_NODATA`.
-- Every virtio fence is created, completed, and delivered; none are dropped.
-- The guest then issues nothing further for 100 s while other contexts continue.
+- Every virtio fence is created, completed and delivered; none are dropped.
 - Contexts that never create a Venus ring keep working throughout the stall, so
-  the defect is specific to the ring path rather than to Venus as a whole.
-
-Not yet established:
-
+  the defect is specific to the ring path, not to Venus as a whole. This is why
+  a usable 3D desktop and a hanging `vkCreateInstance` coexist.
 - The failure is **intermittent**: 1 of 6 runs completed `vkCreateInstance` in
   233 ms on the same image with identical flags.
-- The ring is created in both cases. The difference is `vkNotifyRingMESA`: 7
-  notifies in the passing run, **zero** in every failing one.
 
-Not yet established:
+Open:
 
-- Why the first roundtrip completes in about one run in six. The renderer-side
-  idle/`cnd_wait` race was the leading hypothesis and has been **disproven** by
-  patching it: re-checking the ring before sleeping changed nothing and left the
-  notify count at zero.
-- Whether the absent `vkNotifyRingMESA` is cause or symptom. It alternates 1:1
-  with the seqno in passing runs, which fits either reading.
-- Why the render server's diagnostics never appear in the evidence. Its stderr
-  is a separate process's and is not captured by `run.log`, which is why no
-  `vkr_log` line has ever been seen — not because no error occurred.
+- Why the first roundtrip completes in roughly one run of six. The leading
+  hypothesis (renderer-side idle/`cnd_wait` race) has been disproven; see
+  *Ruled out*.
+- Whether the absent `vkNotifyRingMESA` is cause or symptom.
 - Whether the host publishes the awaited seqno at all, or publishes a value the
   guest does not accept.
 
-The next discriminating step is to let the probe run past `warn_order` without
-`no_abort` so Mesa prints `stuck in <reason> wait`, then correlate that reason
-with what the host writes into the ring shmem — rather than changing poll
-cadence or fence handling speculatively.
-
-That capture was attempted and did not complete. Notes for the retry:
-
-- `bvgpu-vulkan-probe.ps1` hardcodes `C:\BridgeVM\viogpu3d\` for the ICD, which
-  does not exist on an image where the package was installed with `pnputil`.
-  Mirror the DriverStore copy there first, as `a3-relax2` does.
-- The probe's default `-VulkanProbeCreateTimeoutMs` kills the process before
-  `vn_relax` reaches `warn_order`. A 20 s timeout cuts the capture off while the
-  loader is still enumerating layers, well before Mesa logs anything.
-- Reading `bvgpu-mesa-debug.log` without deleting it first returns the previous
-  run's content. Two captures were initially misread this way — the giveaway is
-  a stale `pid=` and an unchanged byte count.
-- The whole sequence must fit inside one boot generation; the host watchdog
-  ended the 10-minute attempt before its collection step ran.
+Next step: capture the render server's own diagnostics. `virgl_render_server`
+`fork`s and `execv`s (`proxy/proxy_server.c:58-87`), so Venus work runs in a
+grandchild process whose stderr reaches neither `run.log` nor `launcher.out`.
+No `vkr_log` line has ever been observed, and that is currently explained by
+nobody collecting them rather than by an absence of errors. Until those are in
+hand, further guesses about the ring are unfounded.
 
 ## Method note
 
