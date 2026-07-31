@@ -110,6 +110,42 @@ The guest ring was set up immediately before the wait — `RESOURCE_CREATE_BLOB`
 followed by `RESOURCE_MAP_BLOB` appear right before the command stream goes
 quiet, which is the Venus ring being placed in host-visible shared memory.
 
+## Ruled out: the UNMAP_BLOB rejections
+
+The command trace shows `RESOURCE_UNMAP_BLOB` failing overwhelmingly:
+
+```
+RESOURCE_UNMAP_BLOB -> ERR_INVALID_PARAMETER   332
+RESOURCE_UNMAP_BLOB -> OK_NODATA                 4
+RESOURCE_MAP_BLOB   -> OK_MAP_INFO               4
+```
+
+Running with `--trace-venus-start` classifies every one of them:
+
+```
+venus-start: unmap_blob REJECT resource=23 reason=never_created
+...
+ 118 reason=never_created
+```
+
+So the guest asks the host to unmap resources it never created as blobs, and
+`blob_host_mapping.rs:20-24` calls exactly that class "a real mapping-lifecycle
+bug or resource-id confusion". Both A2 and A3 show it at the same scale (119 and
+118 rejections).
+
+It is nevertheless **not** the cause of the spin. A run that reaches a working 3D
+desktop shows the same rejections an order of magnitude more often:
+
+| run | outcome | `UNMAP_BLOB` rejects | total commands |
+| --- | ------- | -------------------- | -------------- |
+| `rethink-vioserial-activate-20260730-203138` | working 3D desktop | 1021 (+8 OK) | 14031 |
+| `attach-install3-20260731-074422` | driver install, healthy | 403 | 3461 |
+| `a3-spin-stack-20260731-094242` | spun at `vkCreateInstance` | 332 | ~4500 |
+
+A signal that appears more strongly in the passing case cannot explain the
+failing one. It stays on the list as a real defect to fix later, but it is not
+this wall.
+
 ## Where this leaves the diagnosis
 
 Established:
