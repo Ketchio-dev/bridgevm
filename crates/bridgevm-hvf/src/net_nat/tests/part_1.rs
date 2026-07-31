@@ -769,17 +769,15 @@ fn host_socket_idle_tcp_flow_is_not_refreshed_by_polling() {
     server.write_all(b"pong").unwrap();
     server.flush().unwrap();
     let mut saw_payload = false;
-    for _ in 0..64 {
+    // Deadline, not a fixed iteration count: delivery of the loopback write is
+    // the kernel's business, and a bare spin can finish before the data lands.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !saw_payload && std::time::Instant::now() < deadline {
         backend.poll_host_sockets();
         while let Some(frame) = backend.poll_receive() {
-            let (_, _, tcp) = parse_ipv4_tcp(&frame);
-            if !tcp.payload.is_empty() {
-                saw_payload = true;
-            }
+            saw_payload |= !parse_ipv4_tcp(&frame).2.payload.is_empty();
         }
-        if saw_payload {
-            break;
-        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
     assert!(saw_payload, "expected proxied host payload");
     let active_stamp = {
