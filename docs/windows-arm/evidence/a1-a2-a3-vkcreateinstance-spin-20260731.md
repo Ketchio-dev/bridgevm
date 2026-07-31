@@ -436,12 +436,56 @@ condition. A ring that is never notified has a servicing thread that never
 wakes, so the seqno the guest is waiting on is never written — which is exactly
 the observed silent, full-core spin with no `stuck in ...` warning.
 
-The open question is therefore why the guest skips the notify. Mesa elides it
-when it believes the ring is not idle, reading the status word the renderer
-maintains in ring shmem, so the leading hypothesis is a lost or mistimed
-`VK_RING_STATUS_IDLE_BIT_MESA` update between the renderer's idle transition and
-the guest's first submit — a classic startup race, consistent with it succeeding
-roughly one run in six.
+### The race, in both codebases
+
+The guest side decides whether to notify in `vn_ring_submit_internal`
+(`vn_ring.c:505-513`):
+
+```c
+if (status & VK_RING_STATUS_IDLE_BIT_MESA) {
+   ...
+   return true;   /* only then is vkNotifyRingMESA sent */
+}
+return false;
+```
+
+Mesa sends a notify **only when it observes the idle bit already set**. If the
+ring does not look idle, it submits and assumes the renderer's thread is awake
+and will pick the work up.
+
+The renderer side sets that bit only after an idle timeout has elapsed
+(`vkr_ring.c:270-292`):
+
+```c
+while (ring->started) {
+   bool wait = false;
+   if (vkr_ring_now() >= last_submit + ring->idle_timeout) {
+      ring->pending_notify = false;
+      vkr_ring_set_status_bits(ring, VK_RING_STATUS_IDLE_BIT_MESA);
+      wait = ring->buffer.cur == vkr_ring_load_tail(ring);
+      ...
+   }
+   if (wait) {
+      mtx_lock(&ring->mutex);
+      while (ring->started && !ring->pending_notify)
+         cnd_wait(&ring->cond, &ring->mutex);   /* sleeps until a notify */
+```
+
+That is the window. Between `vkCreateRingMESA` and the guest's first submit,
+the renderer's fresh ring thread has not yet reached its idle timeout, so the
+idle bit is still clear. The guest reads a not-idle ring, submits seqno 1, and
+correctly-by-its-own-rules sends no notify. The renderer thread then crosses the
+timeout, sets the idle bit, finds the buffer empty, and parks in `cnd_wait` —
+which only `pending_notify` can end.
+
+Both sides are individually reasonable; together they deadlock whenever the
+guest's first submit lands in that window. When the timing falls the other way
+the idle bit is already set, the notify goes out, and instance creation finishes
+in 233 ms. One run in six is consistent with a window this narrow.
+
+This is a hypothesis with strong support (the notify counts, the two code
+paths, and the intermittency all agree), but it has not yet been confirmed by
+observing the ring status word directly at the moment of the first submit.
 
 ## Where this leaves the diagnosis
 
@@ -472,9 +516,13 @@ Not yet established:
 
 Not yet established:
 
-- Why the guest skips the notify. The leading hypothesis is a startup race on
-  the ring's `VK_RING_STATUS_IDLE_BIT_MESA` status word, since the renderer's
-  ring thread only wakes from `cnd_wait` on a notify.
+- Direct confirmation of the race. Mesa notifies only when it sees
+  `VK_RING_STATUS_IDLE_BIT_MESA` already set (`vn_ring.c:505-513`), while the
+  renderer sets that bit only after `idle_timeout` elapses and then parks in
+  `cnd_wait` (`vkr_ring.c:270-292`). A first submit landing before the timeout
+  therefore sends no notify and the ring thread never wakes. The counts, the
+  code, and the intermittency all agree, but the status word has not yet been
+  observed directly at the moment of the first submit.
 - Why the render server's diagnostics never appear in the evidence. Its stderr
   is a separate process's and is not captured by `run.log`, which is why no
   `vkr_log` line has ever been seen — not because no error occurred.
