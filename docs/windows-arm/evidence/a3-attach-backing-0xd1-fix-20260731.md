@@ -131,16 +131,49 @@ matches exactly.
 
 ## Not yet done
 
-The D3D11 verifier did not reach its FPS markers. The workload was dispatched
-and never returned: exactly one `BVAGENT CMD` was accepted, no matching
-`BVAGENT END` followed, and the agent reported `overdue ctl awaiting-reply=true`
-28 times before the watchdog stopped the run. The guest stayed healthy
-throughout — zero resets, 2023 virtio-gpu commands, 64/64/64 fences — so this is
-a hang inside the guest-side D3D11 path, not a transport or logging artifact.
+The D3D11 workload does not reach its FPS markers. With the crash gone, the run
+gets far enough to expose the next wall, localized in
+`a3-hang-diag-20260731-090047` by launching the executable detached through
+`Win32_Process.Create` and sampling it four times.
 
-Whether that hang predates this fix is not yet established: the old driver
-always bugchecked before reaching this point, so there is no comparable
-old-driver observation.
+The intended modules are loaded — no silent fallback:
+
+```
+BV-MODULE d3d11.dll        -> C:\BVD3D11\d3d11.dll                (DXVK 3.0.2, aarch64)
+BV-MODULE dxgi.dll         -> C:\BVD3D11\dxgi.dll
+BV-MODULE vulkan-1.dll     -> C:\Windows\SYSTEM32\vulkan-1.dll
+BV-MODULE vulkan_virtio.dll-> C:\Windows\System32\DriverStore\FileRepository\viogpu3d.inf_arm64_6435ce2e01767d8f\vulkan_virtio.dll
+```
+
+DXVK's log stops mid-initialization and never advances:
+
+```
+info:  Enabled instance extensions:
+info:    VK_EXT_surface_maintenance1
+info:    VK_KHR_get_surface_capabilities2
+info:    VK_KHR_surface
+info:    VK_KHR_win32_surface
+```
+
+That is the last line DXVK writes before `vkCreateInstance`. Process sampling
+shows this is a spin, not a deadlock:
+
+| probe | process | CPU (s) | threads |
+| ----- | ------- | ------- | ------- |
+| 1 | alive | 45.7 | 6 |
+| 2 | alive | 92.5 | 4 |
+| 3 | alive | 139.3 | 2 |
+| 4 | alive | 186.0 | 2 |
+
+One thread (id 3320) stays `state=Running` and burns a full core throughout,
+while every other thread sits in `Wait wait=EventPairLow`. The worker threads
+are being reaped as the spin continues.
+
+This is the same wall as A2. A2's PPSSPP run also loads the registered
+DriverStore ICD, starts Venus bring-up, and then waits forever at
+`vkCreateInstance`; A1's stage4 probe times out at `vkCreateInstance` after 45 s
+with errorlevel 13. A1, A2, and A3 are now all blocked at one point inside
+`vulkan_virtio.dll`, not at three independent faults.
 
 A3 remains incomplete until a third-party title reports `samples>0` and guest
 `p50>=30` on the intended DXVK/adapter path.
