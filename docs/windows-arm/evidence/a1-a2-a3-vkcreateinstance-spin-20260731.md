@@ -349,48 +349,41 @@ on macOS that retires renderer fences and writes the shmem slots Mesa polls
 `virgl_renderer_poll` anywhere in the tree. Whether that per-context poll also
 services a Venus *ring* seqno is the open question, and it is now a narrow one.
 
-## The ring thread is never created
+## Retracted: the "ring thread is never created" measurement
 
-`vkr_ring_thread` names itself `vkr-ring-<ctx>` and is spawned by
-`vkr_ring_start()` (`vkr_ring.c:322-360`), which `vkCreateRingMESA` calls at
-`vkr_transport.c:263`. If the guest's ring had been accepted, our process would
-gain a thread for as long as the ring lives.
+An earlier revision of this document claimed the ring thread is never created,
+based on sampling the host VM process before and during the spin and seeing 13
+threads both times.
 
-Measured directly (`a3-ringthread2-20260731-124202`), sampling the host VM
-process before the probe and again while it was spinning:
+**That measurement was invalid.** Venus runs out of process. `init_flags()`
+(`virgl_renderer_gl_context_mod.rs:283-292`) sets `VIRGL_RENDERER_RENDER_SERVER`
+alongside `VIRGL_RENDERER_VENUS`, and `virglrenderer.c:932` only initialises the
+Venus proxy renderer when that flag is present. The same run's log confirms a
+separate process:
 
 ```
-baseline thread count before probe: 13
-thread count while probe spins:     13
+Jul 31 12:45:38  virgl_render_server[79666] <Debug>: socket disconnected
 ```
 
-No new thread. `vkr_ring_start()` never ran, so `vkCreateRingMESA` bailed out
-before it. That closes the loop with everything else: the guest publishes
-roundtrip seqno 1 onto a ring that has no servicing thread, and waits forever
-for a value nothing will ever write.
+`vkr_ring_thread` lives in pid 79666, but the sample counted threads in pid
+79665, the VM process. The measurement therefore says nothing about whether the
+ring was created, and the conclusion drawn from it does not stand.
 
-It also explains the missing `stuck in ... wait` diagnostics. Mesa's warning
-path calls `vn_ring_load_status()` and reacts to
-`VK_RING_STATUS_FATAL_BIT_MESA`, but the status word lives in the ring shmem
-that the renderer never began servicing, so the guest sees neither a fatal bit
-nor progress — only silence.
+The consequences are worth stating plainly, because two follow-on inferences
+were also wrong:
 
-`vkr_dispatch_vkCreateRingMESA` (`vkr_transport.c`) has four early exits. Three
-of them log through `vkr_log`; the run shows no `vkr` output at all. The single
-exit that fails **silently** is:
+- The claim that `vkCreateRingMESA` bailed out before `vkr_ring_start` is
+  unproven.
+- The reasoning about `vkr_dispatch_vkCreateRingMESA`'s silent
+  `VIRGL_RESOURCE_FD_SHM` guard rested on that claim and is likewise unproven.
+  It is also the wrong code path to have been reading: with the render server in
+  use, resources reach Venus through `proxy_context_get_blob`
+  (`proxy/proxy_context.c:341,560`), not through the in-process route.
 
-```c
-const struct vkr_resource *res = vkr_context_get_resource(ctx, info->resourceId);
-if (!res || res->fd_type != VIRGL_RESOURCE_FD_SHM) {
-   vkr_context_set_fatal(ctx);
-   return;
-}
-```
-
-So the ring resource is either not registered in the Venus context at all, or is
-registered with a `fd_type` other than `VIRGL_RESOURCE_FD_SHM`. That is the
-next thing to prove, and it is a single-branch question rather than an open
-search.
+The absence of `vkr_log` output remains real but is now explained differently:
+the renderer's stderr belongs to a different process and is not captured in
+`run.log`. Capturing the render server's own output is the obvious next step,
+and it was never done.
 
 ## Where this leaves the diagnosis
 
@@ -414,18 +407,14 @@ Established (fixed driver, `a3-dec3-20260731-120335`):
 
 Not yet established:
 
-- `vkCreateRingMESA` is rejected before `vkr_ring_start()`, so no ring thread
-  exists and the guest's roundtrip seqno can never be answered.
-
 Not yet established:
 
-- Which side of the silent guard fails: whether the ring resource is absent from
-  the Venus context, or present with a `fd_type` other than
-  `VIRGL_RESOURCE_FD_SHM`. Note that this virglrenderer tree routes Venus
-  resources through `vkr_renderer_import_resource` rather than a `get_blob`
-  callback, and our host binds neither -- it only calls
-  `virgl_renderer_resource_create_blob`. Whether that is sufficient to register
-  a Venus-visible SHM resource is the specific thing to check.
+- Whether `vkCreateRingMESA` succeeded at all. Venus runs in the separate
+  `virgl_render_server` process, so this must be answered from that process,
+  not from the VM process.
+- Why the render server's diagnostics never appear in the evidence. Its stderr
+  is not captured by `run.log`, which is why no `vkr_log` line has ever been
+  seen — not because no error occurred.
 - Whether the host publishes the awaited seqno at all, or publishes a value the
   guest does not accept.
 
