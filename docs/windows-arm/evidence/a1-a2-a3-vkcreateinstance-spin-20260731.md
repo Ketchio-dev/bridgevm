@@ -148,9 +148,20 @@ this wall.
 
 ## The last successful step, from Mesa's own log
 
+> **Provenance warning.** The Mesa log quoted below came from
+> `a3-mesa-log-20260731-103707`, which read `C:\BridgeVM\bvgpu-mesa-debug.log`
+> **without deleting it first**. The file was stale: it carries
+> `captured_utc=2026-07-31T00:34:13Z` and
+> `viogpu3d.inf_arm64_44e90b7a44a1d335`, i.e. the previous day's run against the
+> **shipped 120.41 driver**. The fixed driver on that image is
+> `viogpu3d.inf_arm64_6435ce2e01767d8f`. So this sequence is a true record of
+> where `vkCreateInstance` stalls on the *old* driver, and it agrees with the
+> stack captured on the fixed driver, but it is not itself fixed-driver
+> evidence. A fixed-driver Mesa capture is still outstanding.
+
 Running the project's `bvgpu-vulkan-probe.ps1` with `BRIDGEVM_TRACE_VENUS_START`
-and Mesa debug output (`a3-mesa-log-20260731-103707`) captures the DBWIN log
-Mesa writes from inside `vkCreateInstance`:
+and Mesa debug output captures the DBWIN log Mesa writes from inside
+`vkCreateInstance`:
 
 ```
 MESA-VIRTIO: debug: vn_renderer_create_virtgpu
@@ -204,13 +215,39 @@ reasons it serves are `ring seqno`, `tls ring seqno`, and `ring space`.
 So the disassembled acquire-load against `[x21 + 0x418]` is Mesa comparing a
 ring seqno against the value the host renderer is expected to publish.
 
-Note that `vn_relax` is supposed to escalate: at `warn_order` it logs
-`stuck in ... wait with iter at N`, and at `abort_order` it aborts. Our capture
-shows neither, which means either the capture ended before the first warning
-threshold, or `VN_DEBUG(NO_ABORT)` — which the probe sets via
-`vn_debug=init,result,log_ctx_info,no_abort` — suppressed the abort path. The
-next capture must run long enough to cross `warn_order` and must not set
-`no_abort`, so the loop names its own reason instead of leaving it inferred.
+### The escalation that never fired — and why that matters
+
+`vn_relax` is supposed to announce itself. `vn_common.c:182-226` gives the
+profiles, and Mesa's own comments state the timings:
+
+| reason | `busy_wait_order` | first warning |
+| ------ | ----------------- | ------------- |
+| `ring seqno` | 8 (256 yields) | iter 4096, ~3.5 s |
+| `tls ring seqno`, `ring space`, `fence`, `semaphore`, `query` | 4 (16 yields) | iter 1024, ~3.5 s |
+
+Every profile warns after roughly **3.5 seconds**, and aborts after ~895 s. Yet
+probes that spun for 180 s and longer logged neither a warning nor an abort.
+
+That is a contradiction, and it undercuts the simple reading of this loop:
+
+- After `1 << busy_wait_order` iterations `vn_relax` stops spinning and calls
+  `os_time_sleep` (`vn_common.c:293-294`). A thread parked in `os_time_sleep`
+  does not burn a full core. But `a3-hang-diag-20260731-090047` measured thread
+  3320 `state=Running` accumulating 45.7 → 186.0 s of CPU. A steady-state
+  `vn_relax` cannot produce that.
+- So either the code never advances past the yield phase because `iter` is being
+  reset — i.e. an outer loop calls `vn_relax_init` repeatedly, so the counter
+  never reaches `warn_order` — or the spinning thread is not in `vn_relax` at
+  all and the ICD's `vn_relax` strings are a red herring.
+
+The repeated-`vn_relax_init` hypothesis fits every observation: full-core spin,
+no warning at any duration, and an acquire-load on a seqno slot. It also points
+somewhere different from a plain stuck ring — at a caller retrying an operation
+that keeps failing fast.
+
+Until a capture shows `stuck in <reason> wait`, the wait reason is **not**
+established. The earlier claim that this is straightforwardly "Mesa's vn_relax
+ring wait" is therefore downgraded to a hypothesis with a known inconsistency.
 
 ## Where this leaves the diagnosis
 
@@ -220,13 +257,15 @@ Established:
   main thread, with the intended modules loaded.
 - Renderer connection, protocol negotiation, submit context creation, and both
   ring blob mappings all succeed first.
-- The spin is Mesa's `vn_relax` backoff loop waiting on a ring seqno or ring
-  space, not a deadlock and not a host poll outage.
+- The spin is a spin, not a deadlock, and not a host poll outage.
 - The host keeps polling and keeps retiring throughout.
 
 Not yet established:
 
-- Which of the three `vn_relax` reasons applies.
+- Whether the spinning thread is in `vn_relax` at all. The loop should warn
+  after ~3.5 s and should stop spinning after its yield phase; neither happened,
+  so either `iter` is being reset by a retrying caller or this is not `vn_relax`.
+- Which wait reason applies, if it is `vn_relax`.
 - Whether the host publishes the awaited seqno at all, or publishes a value the
   guest does not accept.
 
