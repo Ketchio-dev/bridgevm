@@ -235,6 +235,20 @@ The next discriminating step is to let the probe run past `warn_order` without
 with what the host writes into the ring shmem — rather than changing poll
 cadence or fence handling speculatively.
 
+That capture was attempted and did not complete. Notes for the retry:
+
+- `bvgpu-vulkan-probe.ps1` hardcodes `C:\BridgeVM\viogpu3d\` for the ICD, which
+  does not exist on an image where the package was installed with `pnputil`.
+  Mirror the DriverStore copy there first, as `a3-relax2` does.
+- The probe's default `-VulkanProbeCreateTimeoutMs` kills the process before
+  `vn_relax` reaches `warn_order`. A 20 s timeout cuts the capture off while the
+  loader is still enumerating layers, well before Mesa logs anything.
+- Reading `bvgpu-mesa-debug.log` without deleting it first returns the previous
+  run's content. Two captures were initially misread this way — the giveaway is
+  a stale `pid=` and an unchanged byte count.
+- The whole sequence must fit inside one boot generation; the host watchdog
+  ended the 10-minute attempt before its collection step ran.
+
 ## Method note
 
 Two guest-side techniques were needed and are worth keeping:
