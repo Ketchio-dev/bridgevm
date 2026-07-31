@@ -545,10 +545,26 @@ like:
 | `a3-exit-20260731-151119` | 3881 | hang |
 | `a3-stamp-20260731-152711` | 0 | `-1` in 279 ms |
 
-Next step: determine whether the first BAR2 assignment is legal for a
-prefetchable BAR, and whether the shm window is being mapped against a base the
-guest has already stopped using. That is a question about BAR allocation, not
-about Venus.
+A BAR2 rebase was tested as an explanation and rejected twice. The base does
+move from the non-prefetchable half to the prefetchable half
+(`0x8000000000` → `0xFFE0000000`), and `HvGpuShmMapPort` does not migrate an
+existing mapping when that happens — but in every hang the rebase is logged
+*after* the last faulting access (line 5705 vs 5362 in
+`a3-intent-20260731-153244`). The stall is over before the base moves. It is a
+real latent bug; it is not this one.
+
+What is established is narrower and harder to explain away: the faulting offsets
+`0x0`, `0x10`, `0x20`, `0x40`, `0x80`, `0xa640`, `0x1a640` all lie inside the
+first `hv_vm_map` (`0..0x24000`), that map returned 0, it is never unmapped
+before the stall ends, and the VM and the render-server worker can both read and
+write the same page through it. Only the guest faults.
+
+Next step: instrument the fault itself rather than the bookkeeping around it —
+record ESR/FAR at a `0x80` exit and confirm the IPA HVF reports, then check
+whether the guest's own page tables map that IPA as Device memory (which would
+make every access fault regardless of stage 2). The access width reported for
+every one of these exits is 1 byte, which does not match Mesa's 32-bit atomics
+on the ring and should be reconciled.
 
 ## Method note
 
