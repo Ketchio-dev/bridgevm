@@ -1,5 +1,7 @@
 //! Split test module.
 
+mod edid_modes;
+
 use super::super::display::*;
 use super::super::*;
 use super::helpers::*;
