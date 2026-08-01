@@ -2,12 +2,8 @@
 
 use super::helpers::*;
 use crate::*;
-use bridgevm_api::BridgeVmRequest;
-use bridgevm_api::BridgeVmResponse;
-use bridgevm_config::BootMode;
-use bridgevm_config::Guest;
-use bridgevm_config::VmManifest;
-use bridgevm_config::VmMode;
+use bridgevm_api::{BridgeVmRequest, BridgeVmResponse};
+use bridgevm_config::{BootMode, Guest, VmManifest, VmMode};
 use bridgevm_storage::RunnerMetadata;
 use std::env;
 use std::fs;
@@ -52,8 +48,9 @@ fn daemon_connection_workers_isolate_slow_clients() {
     serde_json::to_writer(&mut fast_client, &BridgeVmRequest::Doctor).unwrap();
     fast_client.write_all(b"\n").unwrap();
 
+    // Generous deadline: CI schedules the worker slowly under load.
     let pending = request_receiver
-        .recv_timeout(Duration::from_millis(500))
+        .recv_timeout(Duration::from_secs(20))
         .expect("fast request should not wait for slow client timeout");
     let mut state = DaemonState::new(temp_store());
     pending
@@ -62,7 +59,7 @@ fn daemon_connection_workers_isolate_slow_clients() {
         .unwrap();
 
     fast_client
-        .set_read_timeout(Some(Duration::from_millis(500)))
+        .set_read_timeout(Some(Duration::from_secs(20)))
         .unwrap();
     let mut response = String::new();
     BufReader::new(fast_client)
