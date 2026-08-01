@@ -10,8 +10,10 @@ Last reviewed: **2026-08-01**
 > the guest no longer used. Five consecutive runs now create an instance in
 > 196-255 ms, DXVK D3D11 reports the real adapter
 > (`Virtio-GPU Venus (Apple M4 Max)`) and passes its present smoke, and PPSSPP
-> runs with `vulkan_virtio.dll` loaded. What is still **not** proven is a
-> process-attributed frame rate for a real title; the A2/A3 gates remain open.
+> runs with `vulkan_virtio.dll` loaded. Dynamic resize also works now
+> (1600x900 / 1920x1080 / 1280x720 all applied live). What is still **not**
+> proven is a process-attributed frame rate for a real title; the A2/A3 gates
+> remain open.
 > See [the vkCreateInstance spin investigation](docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md).
 
 This is the short product boundary. The previous 974-line status log is
@@ -53,7 +55,8 @@ The installed-Windows path has live evidence for:
   in-kernel GIC reset;
 - resident BVAGENT command execution and bounded chunked output;
 - guest-requested shutdown and first-boot disk-growth actions;
-- a bound experimental Windows ARM64 display stack;
+- a bound experimental Windows ARM64 display stack, including host-driven
+  resolution changes applied by the guest;
 - host-visible Vulkan rendering and PPSSPP 1.20.4 running with its native
   Vulkan backend (dated 2026-07-23; reproducible again since the 2026-08-01
   BAR2 fix, though without a process-attributed frame rate);
