@@ -8,6 +8,53 @@ This document records current findings, not the order they were reached in.
 Hypotheses that were tested and failed are kept under *Ruled out* so the work is
 not repeated.
 
+## Fixed: a stale cached BAR2 base
+
+Root cause. `HvGpuShmMapPort::map` cannot ask the platform for the virtio-gpu
+BAR2 base — it runs with the GPU device's own lock held — so the base is cached
+and refreshed whenever config space is written. That refresh existed only in the
+**cpu0** data-abort path. Windows reprograms virtio-gpu BAR2 from a **secondary**
+CPU, and that write updated nothing, so the cache kept the firmware-era base.
+
+```
+guest programs BAR2   reg 0x18=0xe0000000 reg 0x1c=0xff  -> 0xFFE0000000
+hv_vm_map installs at                                       0x8000000000
+guest ring access     gpa=0xffe0000080 (status word) -> MMIO exit -> RAZ/WI
+```
+
+Both addresses are inside the PCIe high-MMIO window, so the guest's accesses did
+not fault to nothing: they dispatched into the BAR2 shm handler, which is RAZ/WI.
+Every status read returned 0 and every tail write was discarded.
+
+Fix: `gpu_shm_bar2::refresh_on_ecam_write`, called from both the primary and the
+secondary data-abort paths.
+
+Verified live on the fixed-driver image, five consecutive runs:
+
+| run | result | elapsed |
+| --- | --- | ---: |
+| `a3-fix-bar2-20260801-004837` | `create_instance_result=0` | 255 ms |
+| `a3-fixv1-20260801-005105` | `create_instance_result=0` | 196 ms |
+| `a3-fixv2-20260801-005327` | `create_instance_result=0` | 211 ms |
+| `a3-fixv3-20260801-005543` | `create_instance_result=0` | 247 ms |
+| `a3-final1-20260801-010503` | `create_instance_result=0` | 237 ms |
+
+with `hv shm map ... guest_pa=0xffe0000000` and **zero** accesses to the ring
+status word. Before the fix the same probe hung in five runs out of six.
+
+Downstream, on the same build:
+
+- **D3D11** (`a3-d3d11-20260801-011123`): DXVK reports
+  `Found device: Virtio-GPU Venus (Apple M4 Max) (venus 26.1.0)`,
+  `feature_level=0xb000`, `magenta_pixels=76800 bad_pixels=0`,
+  `presented=900`, `BV-D3D11-PRESENT-PASS`.
+- **Vulkan real title** (`a2-psp2-20260801-012717`): PPSSPP v1.20.4 runs with
+  `vulkan_modules=vulkan-1.dll,vulkan_virtio.dll` and survives repeated
+  sampling. Process-attributed FPS is still outstanding, so A2 and A3 remain
+  incomplete.
+
+The sections below record how the defect was located, and what was ruled out.
+
 ## Why this is one problem, not three
 
 With the `0xD1` crash fixed
