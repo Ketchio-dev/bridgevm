@@ -1,6 +1,7 @@
 use super::*;
 use crate::boot_media_setup::attach_boot_media;
 use crate::final_report::persist_and_report_stop;
+use crate::gpu_shm_bar2::refresh_on_ecam_write;
 use crate::gpu_shm_setup::install_gpu_shm_port;
 use crate::hvf_setup::{create_gic, create_vm};
 use crate::probe_config::ProbeConfig;
@@ -85,7 +86,7 @@ pub(crate) fn run() -> ExitCode {
             &mut platform,
         )
         .unwrap_or_else(|error| panic!("restore VM checkpoint: {error}"));
-        let hv_gpu_shm_state = install_gpu_shm_port(&mut platform);
+        install_gpu_shm_port(&mut platform);
         let platform = Arc::new(Mutex::new(platform));
         // Probe-lifetime instance, deliberately OUTSIDE the reboot loop: its
         // ticker thread keeps firing across guest reboots, and the SAME fired
@@ -476,21 +477,11 @@ pub(crate) fn run() -> ExitCode {
                                 platform.set_host_now(std::time::Instant::now());
                                 let (outcome, post_drain) =
                                     platform.on_mmio_with_post_drain(ipa, op, &mut guest_ram);
-                                if device == "pcie-ecam" && matches!(op, MmioOp::Write { .. }) {
-                                    let base = platform.virtio_gpu_host_visible_bar_base();
-                                    let mut state = hv_gpu_shm_state.lock().unwrap();
-                                    state.ecam_writes = state.ecam_writes.saturating_add(1);
-                                    if state.bar2_base != base {
-                                        state.base_changes = state.base_changes.saturating_add(1);
-                                        eprintln!(
-                                            "virtio-gpu hv shm BAR2 update: ipa={ipa:#x} old={:?} new={base:?} ecam_writes={} base_changes={}",
-                                            state.bar2_base,
-                                            state.ecam_writes,
-                                            state.base_changes
-                                        );
-                                    }
-                                    state.bar2_base = base;
-                                }
+                                refresh_on_ecam_write(
+                                    platform,
+                                    ipa,
+                                    matches!(op, MmioOp::Write { .. }),
+                                );
                                 recent_pcie_ecam.record_after_with_context(
                                     platform,
                                     &mut guest_ram,

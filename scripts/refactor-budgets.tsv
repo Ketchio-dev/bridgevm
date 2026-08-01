@@ -591,6 +591,7 @@ crates/bridgevm-hvf/src/xhci/usb_descriptors.rs	112	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe.rs	222	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/boot_media_setup.rs	112	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/final_report.rs	391	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_bar2.rs	41	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_setup.rs	13	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_setup.rs	81	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_config.rs	84	0

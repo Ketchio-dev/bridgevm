@@ -45,17 +45,15 @@
 //!   BRIDGEVM_SWTPM_DATA_SOCKET=/path/to/swtpm.sock ... # opt-in TPM2 TIS backend; supervisor owns swtpm lifecycle
 
 use std::alloc::{alloc_zeroed, Layout};
-use std::collections::BTreeMap;
-use std::os::raw::c_void;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
-use std::ptr::null_mut;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Condvar, Mutex, MutexGuard, OnceLock, TryLockError,
 };
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
+use std::{collections::BTreeMap, os::raw::c_void};
+use std::{process::ExitCode, ptr::null_mut};
 
 use bridgevm_hvf::dtb::VirtFdtConfig;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
@@ -146,6 +144,8 @@ use xhci_trace::XhciBringupTrace;
 mod boot_telemetry;
 #[path = "hvf_gic_boot_probe/exception_trace.rs"]
 mod exception_trace;
+#[path = "hvf_gic_boot_probe/gpu_shm_bar2.rs"]
+mod gpu_shm_bar2;
 #[path = "hvf_gic_boot_probe/gpu_shm_setup.rs"]
 mod gpu_shm_setup;
 #[path = "hvf_gic_boot_probe/guest_diagnostics.rs"]
