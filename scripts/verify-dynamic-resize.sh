@@ -20,6 +20,8 @@ cp -c "$TARGET" "$WORK/disk.raw"; cp "$VARS" "$WORK/vars.fd"
 CTL=$OUT/agent.ctl; : > "$CTL"
 INPUT=$OUT/input.ctl; : > "$INPUT"
 RUN_LOG=$OUT/run.log
+SHARE=$OUT/share-host; mkdir -p "$SHARE"
+cp "$(dirname "$0")/win-assets/bvgpu-apply-host-resolution.ps1" "$SHARE/"
 
 wait_for() {
   local deadline=$((SECONDS + $3)) n
@@ -39,9 +41,11 @@ query_resolution() {
   local before line
   before=$(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG" 2>/dev/null || true)
   # Win32_VideoController reports null CurrentHorizontal/VerticalResolution for
-  # this WDDM driver (the first live run returned just "x"). Query the actual
-  # interactive desktop bounds instead; this is what applications observe.
-  send 'powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; Write-Output (\"guest_resolution={0}x{1}\" -f $b.Width,$b.Height)"' '^BVAGENT END '
+  # this WDDM driver (the first live run returned just "x"), and
+  # PrimaryScreen.Bounds reports the Microsoft Basic Display Driver, which is
+  # \\.\DISPLAY1 on this image and stuck at a single 800x600 mode. Ask the
+  # virtio-gpu adapter itself.
+  send 'powershell -NoProfile -Command "$c=Get-CimInstance Win32_VideoController | Where-Object { $_.Name -match \"VirtIO\" } | Select-Object -First 1; Write-Output (\"guest_resolution={0}x{1}\" -f $c.CurrentHorizontalResolution,$c.CurrentVerticalResolution)"' '^BVAGENT END '
   line=$(grep -E '^BVAGENT CMD .* exit=' "$RUN_LOG" | tail -1)
   [[ $(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG") -gt $before && "$line" == *' exit=0' ]] \
     || fail "guest resolution query failed"
@@ -53,6 +57,7 @@ scripts/run-hvf-windows-installed-boot.sh \
   --evidence-dir "$OUT" --watchdog-ms $((BOOT_TIMEOUT * 1000)) \
   --ram-mib 6144 --smp-cpus 4 --enable-xhci --input-control "$INPUT" \
   --agent-service-control "$CTL" \
+  --agent-share-host "$SHARE" --agent-share-guest 'C:\BVRS' \
   --virtio-gpu-3d --gpu-trace "$OUT/virtio-gpu.jsonl" --trace-venus-start \
   --gpu-trace-protocol venus --viogpu3d-dir "$VIOGPU_DIR" \
   > "$OUT/launcher.out" 2>&1 &
@@ -72,6 +77,13 @@ printf 'RESIZE %s\n' "$REQUEST" >> "$INPUT"
 wait_for "^live input accepted: resize=$REQUEST$" 1 30 \
   || fail "host did not accept resize=$REQUEST"
 echo "host accepted resize=$REQUEST"
+
+# The miniport publishes the new geometry but never asks Windows to re-enumerate
+# or switch, because the component that would do that (upstream's viogpuap.exe)
+# is not part of the 3D driver package. Select the mode explicitly.
+wait_for '^BVAGENT SHARE host->guest bvgpu-apply-host-resolution\.ps1' 1 120 \
+  || fail "resolution applier was not shared into the guest"
+send "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BVRS\\bvgpu-apply-host-resolution.ps1 -Width ${REQUEST%x*} -Height ${REQUEST#*x}" '^BVAGENT END '
 
 AFTER=''
 for _ in $(seq 1 30); do
