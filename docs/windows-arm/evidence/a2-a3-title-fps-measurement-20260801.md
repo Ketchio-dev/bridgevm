@@ -1,57 +1,87 @@
-# A2/A3 title FPS — measurement built, workload missing (2026-08-01)
+# A2/A3 real-title FPS — where the measurement actually stands (2026-08-01)
 
-With the `vkCreateInstance` spin fixed, PPSSPP 1.20.4 now runs on the Venus path
-and the remaining gap for A2/A3 is a **process-attributed frame rate**. This
-records what was built, what it measures, and why the gates are still open.
+A2 and A3 remain **incomplete**. This records what was proven, and corrects an
+earlier conclusion in this document that turned out to be wrong.
 
-## The measurement
+## Correction to the earlier conclusion
 
-`scripts/win-assets/bvgpu-etw-title-fps.ps1`. Captures
-`Microsoft-Windows-DxgKrnl` with `logman`, decodes with `tracerpt`, and keeps
-only rows whose PID matches the title. Both tools ship with Windows.
+An earlier revision concluded that the instrument was sound and the only missing
+piece was game content. Content was then obtained and run. The frame band still
+did not appear, so that conclusion was **wrong**: content was necessary but not
+sufficient, and the measurement side had a real defect too.
 
-Verified working in-guest: the session starts, ~320k rows decode, the PID filter
-selects the title's rows (10k-17k of them), and a per-task rate breakdown prints.
-The keyword mask must be `0xFFFF`; the initial `0x1` produced about one event per
-second per task, which cannot be per-frame.
+## The title runs, with real third-party content, on the intended path
 
-It reports `samples=0` with a reason rather than inventing a number.
+`cube.iso` — a PSP homebrew 3D demo from `hrydgard/pspautotests` — was shipped to
+the guest and booted:
 
-## What it currently reports, and why
+- window title `PPSSPP v1.20.4 - UCJS10041 : Cube sample`
+- PPSSPP's own log (`--log=`, `--loglevel=3`): `Booted C:/BVPSP/cube.iso...`
+- `graphics_path=vulkan_virtio.dll`, so the Venus path is loaded
+- CPU is a steady ~10% of one core, sampled every 3 s over 24 s, with no drift
+- GPU trace shows 7844 `SUBMIT_3D`, of which **6086 are on ctx 28**, distinct
+  from DWM's ctx 7 (1542) — the title has its own busy 3D context
 
-The title loads the intended graphics path on every run:
+The application is genuinely rendering. That part is not in doubt.
 
-```
-BV-FPS| target_pid=... window=PPSSPP v1.20.4
-BV-FPS| graphics_path=vulkan_virtio.dll
-```
+## PresentMon works here, and reports zero frames for the title
 
-But no task in the title's own rows falls in a plausible frame band. Across five
-runs the shape is identical:
+`PresentMon 2.5.1` (x64, running under this ARM64 image's x64 emulation —
+`xtajit64.dll` is present in System32) records successfully:
 
-| task | rate | reading |
-| ---: | ---: | --- |
-| 68 (events 105/106, a start/stop pair) | 360-580/s | GPU packet submission, ~0.008 ms apart — not frames |
-| 147 | 0.5-1.3/s | |
-| 159, 1044, 11 | 0.3-0.6/s | |
+| application | rows in 20 s | p50 interval | p50 FPS |
+| --- | --- | --- | --- |
+| `dwm.exe` | 331 | 32.447 ms | **30.82** |
+| `PPSSPPWindowsARM64.exe` | **0** | — | — |
 
-A filter for anything between 20/s and 200/s returns **nothing**.
+Only one swapchain exists in the whole capture: `dwm.exe, 0x1FAD7B33EC0`. The
+title owns none.
 
-Two explanations were tested:
+This is the key result. The instrument is not blind — it produces a clean,
+plausible frame series for the compositor on the same capture — and it still
+attributes **no presents at all** to the title.
 
-1. *Windowed apps present through DWM.* Confirmed as true but not the whole
-   story: `dwm.exe` carries 125k rows with task 68 at 2302/s and task 105 at
-   95/s. Running PPSSPP with `--fullscreen` did not move any task into the frame
-   band for the title's own PID.
-2. *The title is idle.* This is the actual cause. There is no game content on the
-   image, so PPSSPP sits in its menu, and `--touchscreentest` did not change the
-   picture either.
+## What was ruled out
 
-## Conclusion
+- **Wrong ETW keyword.** `Microsoft-Windows-DxgKrnl` was captured with every
+  keyword enabled (`0xFFFFFFFFFFFFFFFF`, up from `0xFFFF`). The event mix for the
+  title's PID is unchanged: ids 105/106 at ~266/s each, then a gap to ~5/s.
+  Nothing in a 20–200/s frame band.
+- **Wrong provider.** `Microsoft-Windows-DXGI` records 3835 rows in 20 s and
+  **0** for the title's PID, which is consistent with a Vulkan application that
+  does not present through a DXGI swapchain.
+- **The window is not composited.** It is visible, not minimized, in the
+  foreground, and in session 1 alongside `dwm.exe`.
+- **Missing modules.** The process has `vulkan-1.dll`, `vulkan_virtio.dll`,
+  `dxgi.dll`, `dwmapi.dll` loaded (75 modules total).
+- **The title is idle.** Disproven by the CPU series and by ctx 28's submit
+  count; the earlier `--touchscreentest` and `--fullscreen` experiments are
+  superseded by this.
 
-The instrument is sound and the graphics path is proven loaded. What is missing
-is a **rendering workload**: a real title with real content to run.
+## What is not yet known
 
-A2 and A3 stay incomplete. They cannot be closed by measuring harder; they need
-content on the image, and the project-authored D3D11/Vulkan smokes do not
-qualify as third-party titles.
+Why the title's presents are invisible to both PresentMon and DxgKrnl while its
+3D submissions are plainly visible in the GPU trace. Two candidates, neither
+tested yet:
+
+1. The Venus swapchain reaches the screen by a path that does not raise the
+   DxgKrnl flip/present events PresentMon keys on.
+2. WDDM presentation statistics are simply not implemented by this miniport.
+   Supporting observation: `\GPU Engine(*)\Utilization Percentage` and
+   `\GPU Process Memory(*)\Local Usage` report **zero busy engines and zero
+   instances for every process**, so this driver publishes no WDDM performance
+   data at all.
+
+Candidate 2 would also explain the DWM number being ~31 FPS rather than 60.
+
+## Fixed along the way
+
+The run script waited for a **count** of shared files before invoking the guest
+launcher. The agent delivers files in arbitrary order, so the launcher could be
+invoked before it arrived, failing with `exit=-196608` and silently producing no
+title. It now waits for each file by name.
+
+## Status
+
+A2 and A3 stay open. The blocker is no longer "no content" — it is that no
+available instrument attributes a frame rate to this title on this stack.
