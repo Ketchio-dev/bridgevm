@@ -169,6 +169,37 @@ Note also that the smoke lands on a different present mode
 (`Composed: Copy with GPU GDI` vs the title's `Composed: Flip`), which is the
 next thing worth pulling on.
 
+### The title was pacing itself, and removing the cap is not enough
+
+The emulator was not struggling: sampled over 15 s it used **0.4% of one core**.
+20 FPS was therefore a deliberate pace, not a limit. Unthrottling it
+(`FrameRate = 0`, `FrameSkip = 0`, `AutoFrameSkip = False`) plus cutting render
+work (`InternalResolution = 1`, `SkipBufferEffects = True`) moved the rate up.
+
+Best observed: **28.38 FPS p50**, peaking at 60.72. But that did not reproduce —
+two further runs with the identical configuration gave 20.19 and 20.05. Treat
+28.38 as an outlier, not as the achievable rate.
+
+Shrinking the desktop to 1280x720 through the A8 resize path made it worse
+(24.28), and DWM's GPU cost per frame did not fall (115.5 ms vs 99.92 ms), so
+the compositor's cost is not proportional to desktop area.
+
+### DWM is the thing that is actually slow
+
+The breakdown for `dwm.exe` on the best run:
+
+| metric | p50 |
+| --- | --- |
+| `MsCPUBusy` | 126.76 ms |
+| `MsGPUBusy` | 99.92 ms |
+| `MsGPUWait` | 168.12 ms |
+| `MsInPresentAPI` | 0.45 ms |
+
+The compositor burns ~100 ms of GPU and ~127 ms of CPU per composed frame, while
+spending almost no time in Present. The title, composing through it, cannot beat
+that. This — not the title's own present call — is where A3's remaining deficit
+lives.
+
 ## Fixed along the way
 
 The run script waited for a **count** of shared files before invoking the guest
@@ -189,8 +220,11 @@ Both stay open, for now-different reasons.
   the window to a fifth of its pixels changes nothing.
 
   The stack is not the cap: the project's own D3D11 smoke reaches **54.3 FPS**
-  through the same path in the same VM, peaking at 60. So this is a
-  title-specific present cost, not a BridgeVM display ceiling. Two live leads:
-  the title is presented with `SyncInterval=1` despite loading `VSync = False`,
-  and it sits on `Composed: Flip` while the faster smoke uses
-  `Composed: Copy with GPU GDI`.
+  through the same path in the same VM, peaking at 60.
+
+  Unthrottling the emulator and cutting its render work reached 28.38 once, but
+  that did not reproduce (20.19, 20.05 on repeats), so the honest figure is
+  still ~20. The emulator uses 0.4% of one core, so it is not compute-bound.
+  The measured obstacle is **DWM**, which spends ~100 ms of GPU and ~127 ms of
+  CPU per composed frame while the title composes through it. Reducing desktop
+  area does not help.
