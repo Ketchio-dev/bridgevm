@@ -146,6 +146,29 @@ Inside the guest, the busiest thread sits in `Wait/Executive` continuously — a
 genuine kernel-object block, not a spin. So the title is blocked on something
 the guest kernel owns, while the host is idle and fast.
 
+### The stack itself can present far faster than the title achieves
+
+The project's own D3D11 smoke, built without DXVK and running on Microsoft's
+`d3d11.dll` over our `viogpu_d3d10.dll` UMD, was measured by the same PresentMon
+capture in the same VM:
+
+| process | PresentMon p50 | present mode |
+| --- | --- | --- |
+| `d3d11smoke.exe` (900 frames) | **54.3 FPS** | `Composed: Copy with GPU GDI` |
+| `PPSSPPWindowsARM64.exe` | 19.5–20.6 FPS | `Composed: Flip` |
+
+The smoke's own internal timing agrees: `samples=30 p50=26.73 min=18.70
+max=60.60`, so it reaches 60 FPS at its best.
+
+This is the important comparison. **The presentation stack is not capped at
+20 FPS** — a trivial D3D11 workload gets 54 FPS through it. Whatever costs the
+title ~48 ms per present is specific to how that title presents, not a ceiling
+imposed by BridgeVM's display path.
+
+Note also that the smoke lands on a different present mode
+(`Composed: Copy with GPU GDI` vs the title's `Composed: Flip`), which is the
+next thing worth pulling on.
+
 ## Fixed along the way
 
 The run script waited for a **count** of shared files before invoking the guest
@@ -162,7 +185,12 @@ Both stay open, for now-different reasons.
   instrument is needed, not a different workload.
 - **A3 (D3D11)** is measurable and reads **19.5–20.6 FPS p50** across five runs,
   against a gate of 30. The deficit is a ~48 ms stall inside Present, not
-  rendering cost: CPU and GPU busy time total 0.7 ms per frame. Two concrete
-  leads, both unresolved: the title is presented with `SyncInterval=1` despite
-  `VSync = False` in the config it actually loaded, and it runs on
-  `Composed: Flip` behind a DWM that is itself only managing 4.4–5.2 FPS.
+  rendering cost: CPU and GPU busy time total 0.7 ms per frame, and shrinking
+  the window to a fifth of its pixels changes nothing.
+
+  The stack is not the cap: the project's own D3D11 smoke reaches **54.3 FPS**
+  through the same path in the same VM, peaking at 60. So this is a
+  title-specific present cost, not a BridgeVM display ceiling. Two live leads:
+  the title is presented with `SyncInterval=1` despite loading `VSync = False`,
+  and it sits on `Composed: Flip` while the faster smoke uses
+  `Composed: Copy with GPU GDI`.
