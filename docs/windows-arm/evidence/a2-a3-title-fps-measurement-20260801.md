@@ -58,21 +58,52 @@ attributes **no presents at all** to the title.
   count; the earlier `--touchscreentest` and `--fullscreen` experiments are
   superseded by this.
 
-## What is not yet known
+## Resolved: it is the Vulkan presentation path, not the miniport
 
-Why the title's presents are invisible to both PresentMon and DxgKrnl while its
-3D submissions are plainly visible in the GPU trace. Two candidates, neither
-tested yet:
+The two candidates were tested by switching PPSSPP to its **D3D11** backend
+(`GraphicsBackend = 1`) and re-running the identical capture. PresentMon
+immediately attributes frames to the title:
 
-1. The Venus swapchain reaches the screen by a path that does not raise the
-   DxgKrnl flip/present events PresentMon keys on.
-2. WDDM presentation statistics are simply not implemented by this miniport.
-   Supporting observation: `\GPU Engine(*)\Utilization Percentage` and
-   `\GPU Process Memory(*)\Local Usage` report **zero busy engines and zero
-   instances for every process**, so this driver publishes no WDDM performance
-   data at all.
+| backend | title swapchain | title samples | title p50 FPS |
+| --- | --- | --- | --- |
+| Vulkan | none | 0 | — |
+| D3D11 | `0x265999C6C10` | 315 | 19.9 |
 
-Candidate 2 would also explain the DWM number being ~31 FPS rather than 60.
+So the instrument and the miniport are both fine. **A Vulkan swapchain on this
+stack does not raise the DxgKrnl present events** that PresentMon and every
+DxgKrnl-based tool key on. That is candidate 1, and it means A2 cannot be
+measured with a present-event-based instrument at all.
+
+## A3: measurable, and currently below the gate
+
+D3D11 is now measurable end to end, and it does not pass. Across three runs with
+a 40 s warm-up and a 30 s window, the title's p50 sits at **19.5–20.0 FPS**,
+against a gate of 30. Best-case intervals reach 40–54 FPS, so the ceiling is not
+the limit.
+
+PresentMon's own breakdown locates the cost, and it is not rendering:
+
+| metric | p50 |
+| --- | --- |
+| `MsCPUBusy` | 0.17 ms |
+| `MsGPUBusy` | 0.52 ms |
+| `MsCPUWait` | 48.39 ms |
+| `MsGPUWait` | 47.88 ms |
+| `MsInPresentAPI` | **48.39 ms** |
+| `MsRenderPresentLatency` | 229.44 ms |
+
+Real work is ~0.7 ms per frame. The frame spends ~48 ms **inside the Present
+call**. The host is not the one being slow: `SET_SCANOUT` is serviced in 0.004 ms
+p50 and `RESOURCE_FLUSH` in 0.001 ms, with 937 scanouts spread evenly across the
+run. Something in the present path is blocking, and 48 ms is suspiciously close
+to three 16.7 ms refresh intervals.
+
+`VSync = False` and `InflightFrames = 3` were tried and changed nothing
+(19.45 -> 19.88 -> 19.99), so this is not the emulator's own frame cap.
+
+Also note DWM measures 4.4-4.7 FPS p50 in these runs, far below the 30.8 it
+showed on the Vulkan run. Whatever blocks the title's presents appears to hold
+up the compositor as well.
 
 ## Fixed along the way
 
@@ -83,5 +114,10 @@ title. It now waits for each file by name.
 
 ## Status
 
-A2 and A3 stay open. The blocker is no longer "no content" — it is that no
-available instrument attributes a frame rate to this title on this stack.
+Both stay open, for now-different reasons.
+
+- **A2 (Vulkan)** cannot be measured by any present-event instrument on this
+  stack, because the Venus swapchain raises no such events. A different
+  instrument is needed, not a different workload.
+- **A3 (D3D11)** is measurable and reads **19.5–20.0 FPS p50** against a gate of
+  30. The deficit is a ~48 ms stall inside Present, not rendering cost.
