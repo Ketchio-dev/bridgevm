@@ -197,8 +197,42 @@ The breakdown for `dwm.exe` on the best run:
 
 The compositor burns ~100 ms of GPU and ~127 ms of CPU per composed frame, while
 spending almost no time in Present. The title, composing through it, cannot beat
-that. This — not the title's own present call — is where A3's remaining deficit
-lives.
+that.
+
+But DWM is **not inherently** that slow, and saying so without this next table
+would be misleading. Its rate depends on what is presenting to it:
+
+| workload presenting | DWM p50 | that workload's p50 |
+| --- | --- | --- |
+| `d3d11smoke.exe` | **20.52 FPS** | 54.3 |
+| PPSSPP (six runs) | 4.67–7.85 FPS | 20.05–28.38 |
+| idle desktop | no presents at all | — |
+
+The same compositor, in the same VM, on the same driver, is four times faster
+when a different client is presenting. So DWM is not an independent ceiling —
+**something about the title's presents makes composition expensive.**
+
+The dependency is rigid. Across all six title runs the title lands at a near
+constant multiple of DWM's rate:
+
+| run | title | DWM | ratio |
+| --- | --- | --- | --- |
+| `a3-mode2` | 20.31 | 4.82 | 4.21 |
+| `a3-fs2` | 20.55 | 5.17 | 3.97 |
+| `a3-small` | 20.10 | 5.18 | 3.88 |
+| `a3-unthrottle` | 25.62 | 6.71 | 3.82 |
+| `a3-lean` | 28.38 | 7.85 | 3.62 |
+| `a3-720` | 24.28 | 6.44 | 3.77 |
+| `a3-rep2` | 20.05 | 4.67 | 4.29 |
+
+Every configuration change moved both numbers together and left the ratio near
+4. That is the signature of one shared constraint, not two independent ones —
+including the 28.38 outlier, which came with a correspondingly high DWM.
+
+Note also that no client in any run ever reached `Hardware: Independent Flip`,
+the path that would let a full-screen title bypass composition entirely. The
+title gets `Composed: Flip`, the smoke `Composed: Copy with GPU GDI`, DWM itself
+`Hardware: Legacy Flip`. `--fullscreen` did not change that.
 
 ## Fixed along the way
 
@@ -225,6 +259,7 @@ Both stay open, for now-different reasons.
   Unthrottling the emulator and cutting its render work reached 28.38 once, but
   that did not reproduce (20.19, 20.05 on repeats), so the honest figure is
   still ~20. The emulator uses 0.4% of one core, so it is not compute-bound.
-  The measured obstacle is **DWM**, which spends ~100 ms of GPU and ~127 ms of
-  CPU per composed frame while the title composes through it. Reducing desktop
-  area does not help.
+  The title is pinned at ~4x DWM's rate in every run, and DWM is four times
+  faster when the smoke presents to it instead (20.52 vs 4.67-7.85). So the cost
+  is not DWM's own, and not the title's render work — it is what composition of
+  *this title's* presents costs. Reducing desktop area does not help.
