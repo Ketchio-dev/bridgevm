@@ -1,7 +1,7 @@
 # A1: why `firstboot_fresh` was stuck at 0, and what actually fixed it
 
-Status: measuring. The blocker is identified and removed; a 10-boot gate is
-running to produce the pass count A1 requires.
+Status: **A1 passes.** 9 of 10 cold boots satisfied
+`stage4_pass=1 AND firstboot_fresh=1`, against a threshold of 9.
 
 ## The claim that was wrong
 
@@ -65,18 +65,55 @@ That staleness guard fired here and was correct: the injector on disk predated
 the A8 work. Rebuilding it against the fixed driver package was the only action
 required.
 
-## Result so far
+## Result
 
-A two-boot trial with the rebuilt injector:
+`a1-gate10`, ten cold boots, each a fresh clone plus injector:
 
 ```
-boot 1   injected=true  stage4_pass=1   fresh=1   last_stage=stage4   stalls=00  reboots=3
-boot 2   injected=true  stage4_pass=1   fresh=1   last_stage=stage4   stalls=00  reboots=3
-pass=2  rule=stage4_pass==1 AND firstboot_fresh==1
+boots=10
+pass=9
+rule=stage4_pass==1 AND firstboot_fresh==1
 ```
 
-Both boots satisfy A1's rule unmodified. The full ten-boot gate is in progress;
-A1 stays open until it reports.
+**9 of 10, against a threshold of 9. A1 passes on the criterion as written**,
+with no relaxation.
+
+Verified per boot rather than trusting the summary. Reading each
+`firstboot-stage.txt` directly:
+
+| boot | stage4_pass | firstboot_fresh |
+| --- | --- | --- |
+| 1, 3, 4, 5, 6, 7, 8, 9, 10 | 1 | 1 |
+| **2** | **0** | 1 |
+
+All ten boots wrote a fresh log, so the freshness half is unanimous. The gate's
+own `progress.txt` recorded boot 2 correctly as
+`stage4_pass=0 fresh=1 last_stage=stage3 stalls=1`; an intermediate `tail` of
+the file during the run was misread as showing all ten passing, which the
+per-boot check corrected.
+
+Sampled passing boots reached the real end of the script:
+
+```
+[stage4] DXVK D3D11 present errorlevel=0
+[stage4] done Sun 08/02/2026 15:22:53.68     (boot-1)
+[stage4] done Sun 08/02/2026 16:19:55.45     (boot-5)
+[stage4] done Sun 08/02/2026 16:42:02.65     (boot-10)
+```
+
+### The one failure is the known boot stall, not a Vulkan failure
+
+boot-2 stopped after stage3's reboot, with `last_stage_observed=stage3`:
+
+```
+probe: boot-progress watchdog stalled_for_ms=120000 exits_in_window=0
+       total_exits=412803 reboots=3 suspect=guest-not-running
+```
+
+`exits_in_window=0` means the guest was not executing at all — this is the
+intermittent UEFI/boot stall already tracked separately, not a defect in the
+graphics path. Its stage4 probe never ran, so it is scored as a failure, which
+is the conservative reading.
 
 ## Note on the owner decision recorded in GOAL.md
 
