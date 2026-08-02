@@ -130,11 +130,21 @@ rate unchanged at **20.1 FPS p50** (from 20.55). Fill rate, blit size and
 readback volume are therefore not the constraint; each present pays a roughly
 fixed ~48 ms regardless of how much it carries.
 
-The host is not that fixed cost. With `BRIDGEVM_VBLANK_HZ` unset the device does
-no vblank pacing at all (`vblank_interval` is `Duration::ZERO`), presents are
-dispatched through a depth-1 latest-wins mailbox, and neither `RESOURCE_FLUSH`
-nor `SET_SCANOUT` is fenced — the guest is never made to wait for host
-completion. Host service times are 0.001–0.004 ms.
+The host is not that fixed cost, on four independent measurements:
+
+- With `BRIDGEVM_VBLANK_HZ` unset the device does **no vblank pacing at all**
+  (`vblank_interval` is `Duration::ZERO`).
+- Presents go through the depth-1 latest-wins mailbox, and neither
+  `RESOURCE_FLUSH` nor `SET_SCANOUT` is fenced, so the guest is never made to
+  wait for host completion. Host service times are 0.001–0.004 ms.
+- On the title's own context (ctx 28, 1362 submits) host service time is
+  **p50 0.040 ms, p99 0.10 ms, max 7.74 ms** — nowhere near 48 ms.
+- Fence retirement is not starved either. It runs on every vCPU exit, and the
+  run drained 144236 times in 120 s, i.e. **every 0.83 ms**.
+
+Inside the guest, the busiest thread sits in `Wait/Executive` continuously — a
+genuine kernel-object block, not a spin. So the title is blocked on something
+the guest kernel owns, while the host is idle and fast.
 
 ## Fixed along the way
 
