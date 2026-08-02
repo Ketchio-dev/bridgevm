@@ -98,12 +98,30 @@ p50 and `RESOURCE_FLUSH` in 0.001 ms, with 937 scanouts spread evenly across the
 run. Something in the present path is blocking, and 48 ms is suspiciously close
 to three 16.7 ms refresh intervals.
 
-`VSync = False` and `InflightFrames = 3` were tried and changed nothing
-(19.45 -> 19.88 -> 19.99), so this is not the emulator's own frame cap.
+### The title is still being v-synced against its wishes
 
-Also note DWM measures 4.4-4.7 FPS p50 in these runs, far below the 30.8 it
-showed on the Vulkan run. Whatever blocks the title's presents appears to hold
-up the compositor as well.
+`VSync = False` and `InflightFrames = 3` were set and **do reach the emulator** —
+read back from the guest's own `ppsspp.ini` after launch:
+
+```
+GraphicsBackend = 1 (DIRECT3D11)
+VSync = False
+InflightFrames = 3
+```
+
+Yet PresentMon reports `SyncInterval=1` on every one of the title's 280–306
+presents, in every run. The request to disable v-sync is not reaching the
+presentation path.
+
+`PresentMode` is `Composed: Flip` for the title and `Hardware: Legacy Flip` for
+DWM, so the title's frames go through the compositor. `--fullscreen` was tried
+and moved neither the present mode nor the sync interval.
+
+DWM itself measures 4.4–5.2 FPS p50 in these runs, against 30.8 on the Vulkan
+run. Since the title composes through DWM, that is its ceiling — and the title's
+~20 FPS is roughly four times DWM's rate, which is consistent with PresentMon
+counting the app's presents into a compositor that consumes them far more
+slowly.
 
 ## Fixed along the way
 
@@ -119,5 +137,9 @@ Both stay open, for now-different reasons.
 - **A2 (Vulkan)** cannot be measured by any present-event instrument on this
   stack, because the Venus swapchain raises no such events. A different
   instrument is needed, not a different workload.
-- **A3 (D3D11)** is measurable and reads **19.5–20.0 FPS p50** against a gate of
-  30. The deficit is a ~48 ms stall inside Present, not rendering cost.
+- **A3 (D3D11)** is measurable and reads **19.5–20.6 FPS p50** across five runs,
+  against a gate of 30. The deficit is a ~48 ms stall inside Present, not
+  rendering cost: CPU and GPU busy time total 0.7 ms per frame. Two concrete
+  leads, both unresolved: the title is presented with `SyncInterval=1` despite
+  `VSync = False` in the config it actually loaded, and it runs on
+  `Composed: Flip` behind a DWM that is itself only managing 4.4–5.2 FPS.
