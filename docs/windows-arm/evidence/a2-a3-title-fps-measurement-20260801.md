@@ -123,6 +123,19 @@ run. Since the title composes through DWM, that is its ceiling — and the title
 counting the app's presents into a compositor that consumes them far more
 slowly.
 
+### The cost is per-present, not per-pixel
+
+Shrinking the window from 800x480 to 320x240 — a fifth of the pixels — left the
+rate unchanged at **20.1 FPS p50** (from 20.55). Fill rate, blit size and
+readback volume are therefore not the constraint; each present pays a roughly
+fixed ~48 ms regardless of how much it carries.
+
+The host is not that fixed cost. With `BRIDGEVM_VBLANK_HZ` unset the device does
+no vblank pacing at all (`vblank_interval` is `Duration::ZERO`), presents are
+dispatched through a depth-1 latest-wins mailbox, and neither `RESOURCE_FLUSH`
+nor `SET_SCANOUT` is fenced — the guest is never made to wait for host
+completion. Host service times are 0.001–0.004 ms.
+
 ## Fixed along the way
 
 The run script waited for a **count** of shared files before invoking the guest
