@@ -86,6 +86,42 @@ next investigator does not spend a gate re-deriving it.
   submitted to the GPU. The venus fence-poll watchdog correctly reports
   `contexts=0 outstanding_fences=0 suspect=idle-no-outstanding-fence`.
 
+## Reproduced outside the gate
+
+`/tmp/reboot-stress.sh` reproduces it without any firstboot-stage analysis:
+injector pass, then boot installed Windows, repeated. Eight iterations gave
+**7 clean, 1 stall** — the same rate as the gates, with the same signature:
+
+```
+PSCI SYSTEM_RESET: reboot 4/8
+probe: boot-progress watchdog stalled_for_ms=120000 exits_in_window=0
+       total_exits=523484 reboots=4 suspect=guest-not-running
+```
+
+This gives a cheaper reproduction than a full ten-boot gate.
+
+### What that run rules out
+
+An earlier attempt at a stress harness ran twelve iterations of a plain boot and
+got 12/12 clean — but its logs show `reboots=0`. The image boots straight to the
+desktop, so the reset path was never exercised at all. A second attempt tried to
+force reboots through the guest agent and also got `reboots=0`, because
+`wall-c8-clean-12041.raw` has no agent installed (`agent_confirmed=false`).
+Neither result is evidence of anything; only the third harness, which reaches
+`reboots=3` normally, is a valid test.
+
+That is itself a useful negative: **the stall requires guest reboots to
+reproduce**, consistent with every observed failure following a reset.
+
+The failing iteration took **four** reboots where all seven passing ones took
+three, meaning the guest rebooted once more than the firstboot script asks for.
+Whether that extra reset is a cause or a symptom is not yet established.
+
+Comparing the log immediately after each reset shows the failing and passing
+runs are byte-identical through `hv_gic_reset`, the PMUVer fixup, the
+redistributor base and the first ramfb checkpoint. The divergence is after that
+point, not in the reset sequence itself.
+
 ## Next step
 
 The evidence points at the UEFI reset path rather than at Windows. Whether it
