@@ -115,6 +115,14 @@ for i in $(seq 1 "$BOOTS"); do
 
   injected=$(grep -h '^injector_boot_observed=' "$D-inject/target-stat.txt" 2>/dev/null | cut -d= -f2)
 
+  # The injector pass leaves BootOrder pointing at Boot0003, which addresses the
+  # injector's own GPT partition. That disk is absent in pass 2, so firmware
+  # tries it, fails to find \EFI\Boot\bootaa64.efi, and has to fall back.
+  # Most boots fall back cleanly; some stall in the handoff and the guest never
+  # starts, which is the intermittent failure this gate kept reporting.
+  # Dropping the dead entry removes the fallback altogether.
+  python3 scripts/drop-injector-boot-entry.py "$W/vars.fd" >> "$D-inject/launcher.out" 2>&1
+
   # Pass 2: boot installed Windows. firstboot runs stage1..stage4 across its own
   # internal reboots, which the probe follows within one invocation.
   set_gpu_args "$D"

@@ -122,8 +122,53 @@ runs are byte-identical through `hv_gic_reset`, the PMUVer fixup, the
 redistributor base and the first ramfb checkpoint. The divergence is after that
 point, not in the reset sequence itself.
 
-## Next step
+## Root cause: a dead boot entry left by the injector pass
 
-The evidence points at the UEFI reset path rather than at Windows. Whether it
-shares a root cause with the BAR2 stale-cache defect fixed in `e6758f4` is
-**unproven** and should not be assumed.
+Reading the failing framebuffer rather than guessing at it gave the answer
+directly (`a1-boot-stall-bdsdxe-not-found-20260803.png`):
+
+```
+BdsDxe: failed to load Boot0003 "Windows Boot Manager" from
+HD(1,GPT,A0A0C780-D438-47C2-8C96-1B56363C72DD,0x800,0x2FF000)
+  /EFI/Boot/bootaa64.efi: Not Found
+```
+
+That GUID is the **injector's** partition, pinned deliberately by
+`build-hvf-windows-driver-injector.sh:19` so the known-good vars can address it
+as `Boot0003`.
+
+The gate passes the *same* `vars.fd` to both passes (`p1-boot-gate.sh:105,112,123`).
+Parsing the vars image confirms the last valid `BootOrder` record is
+`[0x0, 0x3, 0x0]` — so on pass 2, with the injector disk gone, firmware tries
+`Boot0003`, cannot find `bootaa64.efi`, and has to fall back to `Boot0000`.
+
+**Most boots fall back cleanly. Some stall in the handoff and the guest never
+starts.** That is the intermittent failure, and it explains every property
+observed earlier: it always follows a reset (each reset re-runs BDS), it lands
+at different firstboot stages (any reset can hit it), and it leaves the
+TianoCore "Start boot option" frame.
+
+Two of the four failures also share a register fingerprint —
+`x1=0xc x2=0x2 x3=0xe01`, `lr` low bits `0x2b0`, and an identical
+`x28=0x478d4510` — differing only by ASLR, so they are the same code path.
+
+The error is not itself the bug: the passing run `r5` logs it **24 times** and
+boots anyway. The bug is that the fallback is occasionally fatal.
+
+## Fix
+
+`scripts/drop-injector-boot-entry.py` removes the dead `Boot0003` from
+`BootOrder` between the two passes, so pass 2 never attempts it and never needs
+the fallback. Wired into `p1-boot-gate.sh` before pass 2.
+
+Verified on a single boot with the patched vars:
+
+```
+BootOrder ['0x0', '0x3', '0x0'] -> ['0x0', '0x0', '0x0']
+checkpoints=7
+bds_errors=0
+stall=0
+```
+
+`bds_errors` drops from 24 to **0** and the guest boots normally. A ten-boot
+gate is running to measure the effect on the failure rate.
