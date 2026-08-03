@@ -1,7 +1,13 @@
 # A1: why `firstboot_fresh` was stuck at 0, and what actually fixed it
 
-Status: **A1 passes.** 9 of 10 cold boots satisfied
-`stage4_pass=1 AND firstboot_fresh=1`, against a threshold of 9.
+Status: **A1 does not pass.** Over twenty boots the rate is **17/20 = 85%**,
+below the 90% the criterion requires. A first gate returned 9/10 and was briefly
+recorded here as a pass; a second gate returned 8/10 and that claim is
+withdrawn.
+
+What this document still establishes is that `firstboot_fresh` now *measures*
+correctly — the instrumentation blocker described below was real and is fixed.
+The remaining obstacle is a different one: an intermittent boot stall.
 
 ## The claim that was wrong
 
@@ -65,18 +71,19 @@ That staleness guard fired here and was correct: the injector on disk predated
 the A8 work. Rebuilding it against the fixed driver package was the only action
 required.
 
-## Result
+## Result: 17/20, which is below the bar
 
-`a1-gate10`, ten cold boots, each a fresh clone plus injector:
+Two independent ten-boot gates, each boot a fresh clone plus injector:
 
-```
-boots=10
-pass=9
-rule=stage4_pass==1 AND firstboot_fresh==1
-```
+| gate | pass | note |
+| --- | --- | --- |
+| `a1-gate10` | 9/10 | meets the bar exactly |
+| `a1-gate10b` | 8/10 | below the bar |
+| **combined** | **17/20 = 85%** | **below the 90% required** |
 
-**9 of 10, against a threshold of 9. A1 passes on the criterion as written**,
-with no relaxation.
+A single 9/10 sits exactly on the threshold, so it is the weakest possible
+evidence of a pass — one more failure in either direction flips it. Running a
+second gate was the right call: it did flip.
 
 Verified per boot rather than trusting the summary. Reading each
 `firstboot-stage.txt` directly:
@@ -101,19 +108,42 @@ Sampled passing boots reached the real end of the script:
 [stage4] done Sun 08/02/2026 16:42:02.65     (boot-10)
 ```
 
-### The one failure is the known boot stall, not a Vulkan failure
+### Every failure is the same boot stall, at a different stage
 
-boot-2 stopped after stage3's reboot, with `last_stage_observed=stage3`:
+All three failures across the twenty boots share one signature — the guest is
+not executing at all:
+
+| run | last stage | signature |
+| --- | --- | --- |
+| `a1-gate10/boot-2` | stage3 | `exits_in_window=0 suspect=guest-not-running` |
+| `a1-gate10b/boot-1` | stage1 | same |
+| `a1-gate10b/boot-9` | none | same |
+
+They stall at three different points, so this is not a defect in any one stage.
+Taking `a1-gate10/boot-2` as the worked example, it stopped after stage3's
+reboot with `last_stage_observed=stage3`:
 
 ```
 probe: boot-progress watchdog stalled_for_ms=120000 exits_in_window=0
        total_exits=412803 reboots=3 suspect=guest-not-running
 ```
 
-`exits_in_window=0` means the guest was not executing at all — this is the
-intermittent UEFI/boot stall already tracked separately, not a defect in the
-graphics path. Its stage4 probe never ran, so it is scored as a failure, which
-is the conservative reading.
+`exits_in_window=0` means the guest was not executing at all — the intermittent
+boot stall tracked separately, not a defect in the graphics path. Its stage4
+probe never ran, so it is scored as a failure, which is the conservative
+reading.
+
+Its last captured frame is entirely black and it never reached the 5 s ramfb
+checkpoint, consistent with a guest that never started.
+
+**A hypothesis tested and rejected:** in the first gate the failing boot was the
+only one reporting `psci 8` where passing boots reported 27, and the BAR2
+`base_changes` counter stopped at 19 against 23 for every pass. That looked like
+a clean split. The second gate refuted it — `a1-gate10b/boot-9` failed with
+`psci 26` and `base_changes=7`. PSCI count is not the discriminator.
+
+**A1 therefore stays open, and it is now blocked on the boot stall rather than
+on measurement.**
 
 ## Note on the owner decision recorded in GOAL.md
 
