@@ -122,7 +122,7 @@ runs are byte-identical through `hv_gic_reset`, the PMUVer fixup, the
 redistributor base and the first ramfb checkpoint. The divergence is after that
 point, not in the reset sequence itself.
 
-## Root cause: a dead boot entry left by the injector pass
+## A dead boot entry left by the injector pass — real, but NOT the cause
 
 Reading the failing framebuffer rather than guessing at it gave the answer
 directly (`a1-boot-stall-bdsdxe-not-found-20260803.png`):
@@ -142,11 +142,10 @@ Parsing the vars image confirms the last valid `BootOrder` record is
 `[0x0, 0x3, 0x0]` — so on pass 2, with the injector disk gone, firmware tries
 `Boot0003`, cannot find `bootaa64.efi`, and has to fall back to `Boot0000`.
 
-**Most boots fall back cleanly. Some stall in the handoff and the guest never
-starts.** That is the intermittent failure, and it explains every property
-observed earlier: it always follows a reset (each reset re-runs BDS), it lands
-at different firstboot stages (any reset can hit it), and it leaves the
-TianoCore "Start boot option" frame.
+It was tempting to stop here: this explains every property observed earlier —
+it always follows a reset (each reset re-runs BDS), it lands at different
+firstboot stages (any reset can hit it), and it leaves the TianoCore "Start boot
+option" frame. **That reasoning was wrong**; see the measurement below.
 
 Two of the four failures also share a register fingerprint —
 `x1=0xc x2=0x2 x3=0xe01`, `lr` low bits `0x2b0`, and an identical
@@ -155,20 +154,31 @@ Two of the four failures also share a register fingerprint —
 The error is not itself the bug: the passing run `r5` logs it **24 times** and
 boots anyway. The bug is that the fallback is occasionally fatal.
 
-## Fix
+## The dead entry was removed, and the stall did not go away
 
-`scripts/drop-injector-boot-entry.py` removes the dead `Boot0003` from
-`BootOrder` between the two passes, so pass 2 never attempts it and never needs
-the fallback. Wired into `p1-boot-gate.sh` before pass 2.
+`scripts/drop-injector-boot-entry.py` removes `Boot0003` from `BootOrder`
+between the two passes. It works exactly as intended — on a verification boot,
+`BootOrder ['0x0','0x3','0x0'] -> ['0x0','0x0','0x0']` and `bds_errors` drops
+from 24 to **0**.
 
-Verified on a single boot with the patched vars:
+The failure rate did not move:
 
-```
-BootOrder ['0x0', '0x3', '0x0'] -> ['0x0', '0x0', '0x0']
-checkpoints=7
-bds_errors=0
-stall=0
-```
+| gate | pass | `bds_errors` |
+| --- | --- | --- |
+| `a1-gate10` | 9/10 | present |
+| `a1-gate10b` | 8/10 | present |
+| **`a1-gate-fixed`** | **8/10** | **0** |
 
-`bds_errors` drops from 24 to **0** and the guest boots normally. A ten-boot
-gate is running to measure the effect on the failure rate.
+Before: 17/20 = 85%. After: 8/10 = 80%. **No improvement.**
+
+The failing boot in the fixed gate, `boot-10`, confirms it directly: its log
+contains zero `Not Found` errors, and it still stalls with
+`exits_in_window=0 suspect=guest-not-running` after reboot 3, still ending on
+the "Start boot option" frame — this time with no error text above it at all.
+
+**Conclusion: the dead boot entry was a real defect and a genuine cleanup, but
+it is not the cause of the stall.** The stall is inside BDS's normal handoff,
+independent of which boot option is being tried.
+
+The fix is kept — it removes 24 spurious firmware errors per boot and is
+correct on its own terms — but it must not be described as fixing A1.
