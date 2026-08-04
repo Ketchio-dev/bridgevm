@@ -25,6 +25,11 @@ members = [
 resolver = "2"
 
 [workspace.package]
+# None of these crates are published to crates.io: this is an application
+# workspace, not a set of libraries. Saying so lets cargo-deny treat the
+# internal `{ path = ... }` dependencies as what they are rather than as
+# unpinned public dependencies.
+publish = false
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/Ketchio-dev/bridgevm"
