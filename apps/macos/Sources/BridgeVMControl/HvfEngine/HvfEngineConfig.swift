@@ -268,6 +268,17 @@ extension HvfEngineConfig {
             }
             if !VTPMStateSecurity.executableAvailable(swtpmBin, fileManager: fileManager) {
                 launch("swtpm-missing", "vTPM에 필요한 swtpm 실행 파일을 찾을 수 없습니다: \(swtpmBin)")
+            } else if let rejection = HelperCodeSignature.validate(
+                helperPath: swtpmBin,
+                appTeam: HelperCodeSignature.readTeamIdentifier(
+                    ofBinaryAt: Bundle.main.executableURL?.path ?? ""
+                ),
+                fileManager: fileManager
+            ) {
+                // A bundled path is not evidence: an app bundle is a directory
+                // the user can write to, so the helper can be replaced after
+                // install. The signature is what cannot be.
+                launch("swtpm-signature", rejection.message)
             }
             isDirectory = false
             if fileManager.fileExists(atPath: vtpmStateDir, isDirectory: &isDirectory),
