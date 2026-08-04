@@ -141,10 +141,7 @@ pub(crate) fn run() -> ExitCode {
             });
             let boot_generation = begin_watchdog_generation(&watchdog_generation);
             let watchdog_fired = Arc::new(AtomicBool::new(false));
-            // One generation-tagged cancellation ledger for this vCPU. Each
-            // waker publishes its reason before cancelling so an EXIT_CANCELED
-            // that claims nothing can be reported as genuinely surplus rather
-            // than attributed by guesswork.
+            // One cancellation ledger per vCPU generation; see wake_coordinator.
             let wake_coordinator = Arc::new(WakeCoordinator::new());
             wake_coordinator.begin_generation();
             if watchdog_enabled {
@@ -395,25 +392,13 @@ pub(crate) fn run() -> ExitCode {
                     || service_wake_canceled
                     || vblank_wake_canceled;
                 if reason == EXIT_CANCELED {
-                    // Record what this cancellation turned out to be. The
-                    // existing per-waker flags stay authoritative for control
-                    // flow; the coordinator supplies the attribution the final
-                    // report previously had to infer.
-                    for (fired, wake_reason) in [
+                    wake_cancel_claims.push(wake_coordinator.attribute_cancel(&[
                         (sample_tick_canceled, WakeReason::RamfbSample),
                         (setup_input_wake_canceled, WakeReason::SetupInput),
                         (service_wake_canceled, WakeReason::AgentConsole),
                         (vblank_wake_canceled, WakeReason::Vblank),
-                        (
-                            watchdog_fired.load(Ordering::SeqCst),
-                            WakeReason::RebootWatchdog,
-                        ),
-                    ] {
-                        if fired {
-                            wake_coordinator.request(wake_reason);
-                        }
-                    }
-                    wake_cancel_claims.push(wake_coordinator.claim());
+                        (watchdog_fired.load(Ordering::SeqCst), WakeReason::RebootWatchdog),
+                    ]));
                 }
                 if reason == EXIT_CANCELED {
                     // Any cancel (claimed or surplus) can swallow an in-flight

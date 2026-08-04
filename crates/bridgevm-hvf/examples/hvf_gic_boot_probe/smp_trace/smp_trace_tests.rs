@@ -1,4 +1,5 @@
 use super::*;
+use super::event_ring::lock_id;
 
 #[test]
 fn a_new_trace_has_recorded_nothing() {

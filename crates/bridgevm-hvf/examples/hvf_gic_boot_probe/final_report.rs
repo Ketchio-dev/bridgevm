@@ -173,25 +173,7 @@ macro_rules! persist_and_report_stop {
         let mut voff = 0u64;
         hv_vcpu_get_vtimer_offset($vcpu, &mut voff);
         crate::probe_runtime::vtimer_recovery::report_vtimer_mask($vcpu);
-        report_wake_attribution(&$wake_coordinator, &$wake_cancel_claims);
-        // Two captures from this (the owning) thread, so a vCPU that is still
-        // executing is not reported as parked. See gic_snapshot.
-        {
-            let before = gic_snapshot::capture($vcpu, 2, $wake_coordinator.generation());
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            let after = gic_snapshot::capture($vcpu, 2, $wake_coordinator.generation());
-            for line in gic_snapshot::render(&before, &after) {
-                println!("{line}");
-            }
-        }
-        if let Some(trace) = $smp_trace.as_deref() {
-            println!("SMP trace: overflow={}", trace.trace_overflow());
-        }
-        // Rendered only here, after every vCPU has stopped, so formatting
-        // never perturbs the timing the ring was recording.
-        if let Some(trace) = $smp_trace.as_deref() {
-            trace.dump();
-        }
+        report_stall_diagnostics($vcpu, &$wake_coordinator, &$wake_cancel_claims, $smp_trace.as_deref());
         let mut cntvoff = 0u64;
         hv_vcpu_get_sys_reg($vcpu, 0xe703, &mut cntvoff); // CNTVOFF_EL2
         let hcnt = host_cntvct();

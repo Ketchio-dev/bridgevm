@@ -66,27 +66,8 @@ pub(crate) fn run_connection_worker(
     mut stream: UnixStream,
     request_sender: mpsc::Sender<PendingDaemonRequest>,
 ) -> Result<()> {
-    // The listener is nonblocking so the supervisor can keep reconciling
-    // children and observe shutdown requests.  On macOS an accepted stream
-    // can inherit O_NONBLOCK from that listener; restore blocking I/O before
-    // applying finite timeouts so a client that has connected but has not yet
-    // written its frame is not rejected with EAGAIN.
-    stream
-        .set_nonblocking(false)
-        .context("failed to configure daemon client blocking mode")?;
-    stream
-        .set_read_timeout(Some(DAEMON_CLIENT_IO_TIMEOUT))
-        .context("failed to configure daemon client read timeout")?;
-    stream
-        .set_write_timeout(Some(DAEMON_CLIENT_IO_TIMEOUT))
-        .context("failed to configure daemon client write timeout")?;
-    // Ask the kernel who is on the other end before parsing anything they
-    // sent. Socket permissions are checked against the path at connect time
-    // and say nothing about an inherited or passed descriptor.
-    if let Err(rejection) = crate::peer_credentials::authorize_stream(&stream) {
-        eprintln!("bridgevmd {rejection}");
-        anyhow::bail!("{rejection}");
-    }
+    prepare_client_stream(&stream).context("failed to configure daemon client stream")?;
+    crate::peer_credentials::refuse_foreign_peer(&stream)?; // before decoding
     let request = read_daemon_request(&stream)?;
     let (response_sender, response_receiver) = mpsc::channel();
     request_sender
@@ -157,11 +138,20 @@ pub(crate) fn bind_new_daemon_listener(socket_path: &Path) -> Result<UnixListene
 
 #[cfg(test)]
 pub(crate) fn handle_connection(state: &mut DaemonState, mut stream: UnixStream) -> Result<()> {
-    stream.set_read_timeout(Some(DAEMON_CLIENT_IO_TIMEOUT))?;
-    stream.set_write_timeout(Some(DAEMON_CLIENT_IO_TIMEOUT))?;
+    prepare_client_stream(&stream)?;
     let request = read_daemon_request(&stream)?;
     let response = state.handle_request(request);
     write_daemon_response(&mut stream, &response)
+}
+
+/// Restore blocking I/O and bound both directions, so a stalled client cannot
+/// pin a worker thread. An accepted stream can inherit O_NONBLOCK from the
+/// nonblocking listener on macOS, and a client that has connected but not yet
+/// written its frame would then be rejected with EAGAIN.
+fn prepare_client_stream(stream: &UnixStream) -> std::io::Result<()> {
+    stream.set_nonblocking(false)?;
+    stream.set_read_timeout(Some(DAEMON_CLIENT_IO_TIMEOUT))?;
+    stream.set_write_timeout(Some(DAEMON_CLIENT_IO_TIMEOUT))
 }
 
 pub(crate) fn read_daemon_request(stream: &UnixStream) -> Result<BridgeVmRequest> {

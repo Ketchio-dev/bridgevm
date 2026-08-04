@@ -77,6 +77,17 @@ pub(crate) fn authorize(
     Ok(peer)
 }
 
+/// Refuse a connection whose peer is not this user, before the request is
+/// decoded. Socket permissions are checked against the path at connect time
+/// and say nothing about an inherited or passed descriptor.
+pub(crate) fn refuse_foreign_peer(stream: &UnixStream) -> anyhow::Result<()> {
+    if let Err(rejection) = authorize_stream(stream) {
+        eprintln!("bridgevmd {rejection}");
+        anyhow::bail!("{rejection}");
+    }
+    Ok(())
+}
+
 /// Authorize an accepted stream against the uid this daemon runs as.
 pub(crate) fn authorize_stream(stream: &UnixStream) -> Result<PeerCredentials, PeerRejection> {
     authorize(peer_credentials(stream), current_uid())

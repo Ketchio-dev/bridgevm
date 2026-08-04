@@ -110,6 +110,7 @@ probe_modules!(
     "hvf_gic_boot_probe/host_support.rs" => host_support,
     "hvf_gic_boot_probe/hvf_abi.rs" => hvf_abi,
     "hvf_gic_boot_probe/interrupt_delivery.rs" => interrupt_delivery,
+    "hvf_gic_boot_probe/nvme_persist.rs" => nvme_persist,
     "hvf_gic_boot_probe/probe_env.rs" => probe_env,
     "hvf_gic_boot_probe/psci_adapter.rs" => psci_adapter,
     "hvf_gic_boot_probe/reboot_watchdog.rs" => reboot_watchdog,
@@ -156,6 +157,7 @@ pub(crate) use guest_memory::*;
 pub(crate) use host_support::*;
 pub(crate) use hvf_abi::*;
 pub(crate) use interrupt_delivery::*;
+pub(crate) use nvme_persist::*;
 pub(crate) use probe_env::*;
 pub(crate) use psci_adapter::*;
 pub(crate) use reboot_watchdog::*;

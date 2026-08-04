@@ -7,7 +7,6 @@ mod tests;
 fn main() -> Result<()> {
     run()
 }
-
 mod backend_lifecycle;
 mod backend_spawn;
 mod cli;

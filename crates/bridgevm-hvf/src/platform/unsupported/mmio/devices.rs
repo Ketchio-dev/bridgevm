@@ -2,7 +2,6 @@
 
 use super::super::super::*;
 use super::*;
-use crate::*;
 
 pub fn probe_hvf_mmio_serial_device(
     allow_device: bool,

@@ -13,6 +13,35 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
+/// Lock identities, stored as a number so the ring holds no strings.
+const LOCK_PLATFORM: u64 = 0;
+const LOCK_VCPU_STATE: u64 = 1;
+const LOCK_OTHER: u64 = 2;
+
+pub(crate) fn lock_id(lock_name: &str) -> u64 {
+    match lock_name {
+        "platform mutex" => LOCK_PLATFORM,
+        "VcpuControl.state mutex" => LOCK_VCPU_STATE,
+        _ => LOCK_OTHER,
+    }
+}
+
+pub(crate) fn lock_name(id: u64) -> &'static str {
+    match id {
+        LOCK_PLATFORM => "platform mutex",
+        LOCK_VCPU_STATE => "VcpuControl.state mutex",
+        _ => "lock",
+    }
+}
+
+pub(crate) fn psci_state_code(state: crate::hvf_abi::PsciState) -> u64 {
+    match state {
+        crate::hvf_abi::PsciState::Off => 0,
+        crate::hvf_abi::PsciState::OnPending => 1,
+        crate::hvf_abi::PsciState::On => 2,
+    }
+}
+
 /// Events retained. Older events are overwritten and counted as overflow, so a
 /// long run cannot grow memory without bound.
 pub(crate) const RING_CAPACITY: usize = 4096;

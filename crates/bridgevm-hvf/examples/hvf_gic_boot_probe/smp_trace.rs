@@ -7,42 +7,16 @@
 
 #[path = "smp_trace/event_ring.rs"]
 pub(crate) mod event_ring;
+#[path = "smp_trace/lock_tracing.rs"]
+mod lock_tracing;
+pub(crate) use lock_tracing::*;
 
 use crate::*;
-use event_ring::{EventKind, EventRing, SmpEvent};
+use event_ring::{lock_name, EventKind, EventRing, SmpEvent};
 
 pub(crate) const SMP_TRACE_PROGRESS_INTERVAL: u64 = 10_000;
 
 pub(crate) const SMP_TRACE_LOCK_WARN_AFTER: Duration = Duration::from_millis(250);
-
-/// Lock identities, stored as a number so the ring holds no strings.
-const LOCK_PLATFORM: u64 = 0;
-const LOCK_VCPU_STATE: u64 = 1;
-const LOCK_OTHER: u64 = 2;
-
-fn lock_id(lock_name: &str) -> u64 {
-    match lock_name {
-        "platform mutex" => LOCK_PLATFORM,
-        "VcpuControl.state mutex" => LOCK_VCPU_STATE,
-        _ => LOCK_OTHER,
-    }
-}
-
-fn lock_name(id: u64) -> &'static str {
-    match id {
-        LOCK_PLATFORM => "platform mutex",
-        LOCK_VCPU_STATE => "VcpuControl.state mutex",
-        _ => "lock",
-    }
-}
-
-fn psci_state_code(state: PsciState) -> u64 {
-    match state {
-        PsciState::Off => 0,
-        PsciState::OnPending => 1,
-        PsciState::On => 2,
-    }
-}
 
 pub(crate) struct SmpTrace {
     pub(crate) cpu0_exits: AtomicU64,
@@ -78,8 +52,8 @@ impl SmpTrace {
         self.record(
             EventKind::StateTransition,
             cpu,
-            psci_state_code(from),
-            psci_state_code(to),
+            event_ring::psci_state_code(from),
+            event_ring::psci_state_code(to),
         );
     }
     pub(crate) fn secondary_vcpu_created(&self, cpu: u64, vcpu: HvVcpuT, exit: *mut HvVcpuExit) {
@@ -89,7 +63,7 @@ impl SmpTrace {
         self.record(EventKind::SecondaryWaitingOff, cpu, 0, 0);
     }
     pub(crate) fn secondary_woke(&self, cpu: u64, state: PsciState) {
-        self.record(EventKind::SecondaryWoke, cpu, psci_state_code(state), 0);
+        self.record(EventKind::SecondaryWoke, cpu, event_ring::psci_state_code(state), 0);
     }
     pub(crate) fn secondary_run_loop_entered(&self, cpu: u64, exits: u64) {
         self.record(EventKind::RunLoopEntered, cpu, exits, 0);
@@ -156,76 +130,6 @@ impl SmpTrace {
             );
         }
     }
-    pub(crate) fn lock_with_wait_trace<'a, T>(
-        &self,
-        cpu: u64,
-        lock_name: &'static str,
-        context: &'static str,
-        mutex: &'a Mutex<T>,
-    ) -> MutexGuard<'a, T> {
-        let id = lock_id(lock_name);
-        let started = Instant::now();
-        let mut last_report = Duration::ZERO;
-        loop {
-            match mutex.try_lock() {
-                Ok(guard) => {
-                    let elapsed = started.elapsed();
-                    if elapsed >= SMP_TRACE_LOCK_WARN_AFTER {
-                        self.record(EventKind::LockAcquired, cpu, elapsed.as_millis() as u64, id);
-                    }
-                    return guard;
-                }
-                Err(TryLockError::WouldBlock) => {
-                    let elapsed = started.elapsed();
-                    if elapsed >= SMP_TRACE_LOCK_WARN_AFTER
-                        && elapsed.saturating_sub(last_report) >= SMP_TRACE_LOCK_WARN_AFTER
-                    {
-                        self.record(EventKind::LockWait, cpu, elapsed.as_millis() as u64, id);
-                        last_report = elapsed;
-                    }
-                    thread::sleep(Duration::from_millis(1));
-                }
-                Err(TryLockError::Poisoned(_)) => panic!("{context}"),
-            }
-        }
-    }
-}
-
-pub(crate) fn lock_with_optional_trace<'a, T>(
-    mutex: &'a Mutex<T>,
-    smp_trace: Option<&SmpTrace>,
-    cpu: u64,
-    lock_name: &'static str,
-    context: &'static str,
-) -> MutexGuard<'a, T> {
-    match smp_trace {
-        Some(trace) => trace.lock_with_wait_trace(cpu, lock_name, context, mutex),
-        None => mutex.lock().expect(context),
-    }
-}
-
-pub(crate) fn lock_platform<'a>(
-    platform: &'a Arc<Mutex<VirtPlatform>>,
-    smp_trace: Option<&SmpTrace>,
-    cpu: u64,
-    context: &'static str,
-) -> MutexGuard<'a, VirtPlatform> {
-    lock_with_optional_trace(platform, smp_trace, cpu, "platform mutex", context)
-}
-
-pub(crate) fn lock_vcpu_state<'a>(
-    control: &'a VcpuControl,
-    smp_trace: Option<&SmpTrace>,
-    cpu: u64,
-    context: &'static str,
-) -> MutexGuard<'a, PsciState> {
-    lock_with_optional_trace(
-        &control.state,
-        smp_trace,
-        cpu,
-        "VcpuControl.state mutex",
-        context,
-    )
 }
 
 #[cfg(test)]
