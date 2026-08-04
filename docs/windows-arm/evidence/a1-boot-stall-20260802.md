@@ -238,9 +238,56 @@ either SGI delivery after the Nth `hv_gic_reset` drops, or one secondary vCPU
 is not actually running when the kernel targets it. Both live in our reset /
 secondary-respawn path, not in Windows.
 
+## SMP trace answers it: `CPU_ON` is never issued at all
+
+Reproduced with `BRIDGEVM_SMP_TRACE=1` (`a1-smp/boot-1`, stalled after
+reboot 3). The full timeline per reboot:
+
+Successful reboot (reboot 2 of the same run):
+
+```
+PSCI SYSTEM_RESET: reboot 2/8
+vCPU1 blocking while Off        (all three secondaries parked)
+...cpu0 progresses to ~70000 exits...
+vCPU1 Off -> OnPending          (kernel issues CPU_ON)
+vCPU1 created HVF vCPU 1 / OnPending -> On
+vCPU2, vCPU3 likewise
+```
+
+Failed reboot (reboot 3):
+
+```
+PSCI SYSTEM_RESET: reboot 3/8
+vCPU2/3/1 blocking while Off    (all three parked normally)
+progress cpu0_exits=10000..60000 secondary_exits=0
+probe: boot-progress watchdog stalled_for_ms=120000 exits_in_window=0
+vCPU2/1/3 woke with state Off   (threads alive, answering shutdown)
+```
+
+Three facts follow directly:
+
+1. **The secondaries are healthy.** All three park in `Off`, their threads
+   respond at shutdown, and the respawn machinery was never even asked to run.
+   The "secondary not running when targeted" hypothesis is dead.
+2. **`CPU_ON` is never issued.** Not lost, not answered `ALREADY_ON` — the
+   guest kernel never makes the call (`Off -> OnPending` count: zero).
+3. **cpu0 stops exiting at ~60000 exits**, right where the passing reboot is
+   ~10000 exits away from issuing its first `CPU_ON`, and its final PC is the
+   `KeIpiGenericCall` ack spin.
+
+So the guest kernel, still effectively single-CPU, enters a wait for other
+CPUs' IPI acknowledgements before ever starting those CPUs. The kernel only
+does that if something it read tells it other processors are already up — or
+if its own bring-up path wedged earlier than the `CPU_ON` call. Either way the
+input it acts on comes from us: GIC redistributor state after the Nth
+`hv_gic_reset`, or our PSCI `AFFINITY_INFO` answers.
+
+Caveat for reproduction cost: with the trace enabled all 6 boots of the gate
+failed (previous rate ~15%), so the tracing itself perturbs timing — an
+observer effect worth remembering, and also why this sample was cheap to get.
+
 ## Next step
 
-Reproduce with `BRIDGEVM_SMP_TRACE=1` so each secondary's PSCI state
-transitions are on record at the moment of the stall, then check whether the
-missing 27th PSCI call is a `CPU_ON` that was never issued, or one that was
-answered `ALREADY_ON` by a stale `PsciState` surviving the reset.
+Log cpu0's last few hundred exits before the quiet window (exit reason + IPA)
+in a trace-enabled run, to see what the kernel read immediately before
+entering the spin — a GICR read of a stale state is the prime suspect.
