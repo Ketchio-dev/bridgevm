@@ -1,0 +1,101 @@
+{
+  "$comment": "Source of truth for graphics compatibility claims. Rendered into graphics-compatibility.md by scripts/render-graphics-compatibility.py; never hand-edit the generated block.",
+  "schema_version": 1,
+  "updated": "2026-08-04",
+  "stack": {
+    "guest_api": "D3D11 via DXVK",
+    "translation": "DXVK (patched)",
+    "guest_driver": "viogpu3d Venus ARM64",
+    "host_backend": "virglrenderer Venus over Metal",
+    "driverstore_fixed": "viogpu3d.inf_arm64_6435ce2e01767d8f",
+    "driverstore_shipped_12041": "viogpu3d.inf_arm64_44e90b7a44a1d335"
+  },
+  "relaxed_features": [
+    {
+      "feature": "geometryShader",
+      "layer": "vulkan core",
+      "requested_by_dxvk": true,
+      "provided": false,
+      "evidence": "scripts/patches/dxvk-macos-venus-relax.patch",
+      "consequence": "A title that needs a geometry stage will fail to create its device or render incorrectly."
+    },
+    {
+      "feature": "shaderCullDistance",
+      "layer": "vulkan core",
+      "requested_by_dxvk": true,
+      "provided": false,
+      "evidence": "scripts/patches/dxvk-macos-venus-relax.patch",
+      "consequence": "Shaders using cull distance lose that output; geometry that should be culled may be drawn."
+    },
+    {
+      "feature": "depthClipEnable",
+      "layer": "VK_EXT_depth_clip_enable",
+      "requested_by_dxvk": true,
+      "provided": false,
+      "evidence": "scripts/patches/dxvk-macos-venus-relax.patch",
+      "consequence": "Depth clipping falls back to clamping semantics; geometry outside the depth range can be drawn where D3D11 would clip it."
+    },
+    {
+      "feature": "robustBufferAccess2",
+      "layer": "VK_EXT_robustness2",
+      "requested_by_dxvk": true,
+      "provided": false,
+      "evidence": "scripts/patches/dxvk-macos-venus-relax.patch",
+      "consequence": "Out-of-bounds buffer reads are not guaranteed to return zero, so a shader bug can read adjacent data instead of a defined value."
+    },
+    {
+      "feature": "nullDescriptor",
+      "layer": "VK_EXT_robustness2",
+      "requested_by_dxvk": true,
+      "provided": false,
+      "evidence": "scripts/patches/dxvk-macos-venus-relax.patch",
+      "consequence": "Binding a null descriptor is undefined rather than reading as zero; DXVK relies on this for unbound D3D11 resources."
+    }
+  ],
+  "titles": [
+    {
+      "title": "PPSSPP",
+      "api": "D3D11",
+      "renders": true,
+      "present_mode": "Composed: Flip",
+      "fps_p50": 20.0,
+      "fps_gate": 30.0,
+      "meets_gate": false,
+      "samples": 369,
+      "instrument": "PresentMon 2.5.1 (x64 under guest emulation)",
+      "evidence": "docs/windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md",
+      "notes": "Best unrepeatable outlier 28.38 FPS. No Hardware: Independent Flip observed; DWM composition is the leading explanation and is not yet confirmed."
+    },
+    {
+      "title": "bridgevm-d3d11-present-smoke (self-authored)",
+      "api": "D3D11",
+      "renders": true,
+      "present_mode": "Composed: Flip",
+      "fps_p50": 54.3,
+      "fps_gate": 30.0,
+      "meets_gate": true,
+      "samples": 311,
+      "instrument": "PresentMon 2.5.1 (x64 under guest emulation)",
+      "evidence": "docs/windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md",
+      "notes": "A smoke test, not a real title. It does not substitute for the A3 gate and is listed only to show the instrument works."
+    },
+    {
+      "title": "vkcube / Vulkan title",
+      "api": "Vulkan",
+      "renders": true,
+      "present_mode": "unknown",
+      "fps_p50": null,
+      "fps_gate": 30.0,
+      "meets_gate": false,
+      "samples": 0,
+      "instrument": "none",
+      "evidence": "docs/windows-arm/evidence/a1-a2-a3-vkcreateinstance-spin-20260731.md",
+      "notes": "Rendering is confirmed visually, but PresentMon observes no present events for this swapchain, so no frame rate has been measured. A guest Vulkan present instrument is still required."
+    }
+  ],
+  "conformance": {
+    "claim": "Experimental D3D11-compatible subset",
+    "full_fl11_0": false,
+    "rationale": "Five Vulkan features DXVK requests for feature level 11_0 are disabled. Advertising full FL11_0 conformance while those are relaxed would be false."
+  }
+}

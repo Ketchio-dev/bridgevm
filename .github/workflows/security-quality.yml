@@ -1,0 +1,94 @@
+name: Security and quality
+
+# Everything here runs on GitHub-hosted runners. Jobs that need bare-metal
+# Hypervisor.framework, private Windows media or a real GPU are not here and
+# never will be: this repository is public and has pull_request workflows, so
+# a fork must not be able to execute code on a personal machine. Those gates
+# go through the Studio local queue (scripts/live-gates/), which has no
+# inbound listener and no runner registration.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 5 * * 2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  supply-chain:
+    name: supply-chain policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: 1.97.0
+      # Offline checks first: they need no advisory database and fail fast on
+      # a policy that does not parse or a version pin that has drifted.
+      - run: scripts/check-supply-chain.sh
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check
+          # `sources` is covered by check-supply-chain.sh offline; this adds
+          # advisories, licences and bans against the live database.
+          arguments: --all-features
+
+  fuzz-smoke:
+    name: fuzz corpus smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: 1.97.0
+      # Runs the same target bodies libFuzzer would, over the checked-in
+      # corpus, on stable. A full campaign needs nightly cargo-fuzz and is not
+      # a per-push cost.
+      - run: scripts/check-fuzz-smoke.sh
+
+  loom:
+    name: loom interleaving models
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: 1.97.0
+      - run: scripts/check-loom.sh
+
+  live-gate-policy:
+    name: live gate policy
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Asserts the Studio queue has no listener, registers no runner and
+      # publishes no unredacted receipt. Checked on every push precisely
+      # because it is the boundary that keeps live gates off this runner.
+      - run: python3 scripts/live-gates/redact-receipt.py --self-test
+      - run: tests/integration/live-gate-policy-smoke.sh
+
+  graphics-claims:
+    name: graphics compatibility claims
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Refuses a full-FL11_0 claim while features are relaxed, and refuses a
+      # title that claims to meet a gate it has no samples for.
+      - run: python3 scripts/render-graphics-compatibility.py --self-test
+      - run: python3 scripts/render-graphics-compatibility.py --check
