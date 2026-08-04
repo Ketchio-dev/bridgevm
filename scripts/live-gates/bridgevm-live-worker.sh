@@ -121,6 +121,9 @@ run_job() {
     fi
 
     git -C "$REPO" worktree remove --force "$worktree" >>"$dir/run.log" 2>&1 || true
+    # The per-job target dir is build output, not evidence, and a few of them
+    # are tens of gigabytes. Keeping them is what tripped the free-space guard.
+    rm -rf "$WORK_ROOT/$job_id"
     return "$status"
 }
 

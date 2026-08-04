@@ -44,6 +44,10 @@ say "quota: $QUOTA bytes"
 # Work on clones so the canonical inputs are never the thing under test.
 WORK="$OUT/work"
 mkdir -p "$WORK"
+# On every exit, not just success: this holds two clones of a 64 GiB image, and
+# leaving them behind after a failure filled the disk until the free-space
+# guard refused the next run.
+trap 'rm -rf "$WORK"' EXIT INT TERM
 cp -c "$DISK" "$WORK/disk.raw" || fail "could not clone the disk"
 cp "$VARS" "$WORK/vars.fd" || fail "could not copy the vars"
 
@@ -99,5 +103,4 @@ say ""
 say "PASS: powered-off snapshot pair is byte-exact across create/restore"
 say "NOT PROVEN HERE: acceptance item 5 (a restored snapshot boots Windows and"
 say "  preserves a guest-created marker). A19 stays open until that runs."
-rm -rf "$WORK"
 echo "receipt: $RECEIPT"
