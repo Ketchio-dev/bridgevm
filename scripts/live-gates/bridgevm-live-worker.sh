@@ -5,6 +5,10 @@
 # Runs as a user LaunchAgent. No sudo, no inbound socket, no GitHub
 # registration; the queue is a directory this user owns.
 set -euo pipefail
+# Job control, so each tier runs in its own process group and a cancellation
+# can kill the whole tree. Without it `kill -TERM -$pid` fails and the gate's
+# children (cargo, the probe) survive the cancellation.
+set -m
 
 REPO="${BRIDGEVM_REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
 QUEUE_ROOT="${BRIDGEVM_LIVE_ROOT:-$HOME/BridgeVM/live-queue}"
@@ -77,7 +81,25 @@ run_job() {
         export CARGO_TARGET_DIR="$WORK_ROOT/$job_id/target"
         caffeinate -dimsu "$worktree/scripts/live-gates/run-tier.sh" \
             "$tier" --out "$dir" --job-id "$job_id"
-    ) >>"$dir/run.log" 2>&1 || status=$?
+    ) >>"$dir/run.log" 2>&1 &
+    local tier_pid=$!
+
+    # Poll for a cancellation while the tier runs. Recording the request
+    # without killing anything left the job in `running` forever, blocking
+    # every later submission behind a gate nobody wanted.
+    while kill -0 "$tier_pid" 2>/dev/null; do
+        if [ -f "$dir/cancel.requested" ]; then
+            log "job $job_id canceled; stopping its process group"
+            # Negative pid: the tier spawns children (cargo, the gate, the
+            # probe), and killing only the shell would orphan them.
+            kill -TERM -"$tier_pid" 2>/dev/null || kill -TERM "$tier_pid" 2>/dev/null
+            sleep 5
+            kill -KILL -"$tier_pid" 2>/dev/null || true
+            break
+        fi
+        sleep 2
+    done
+    wait "$tier_pid" 2>/dev/null || status=$?
 
     if [ -f "$dir/cancel.requested" ]; then
         log "job $job_id was canceled"
