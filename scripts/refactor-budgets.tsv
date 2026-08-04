@@ -166,6 +166,7 @@ crates/bridgevm-hvf/src/checkpoint/tests/helpers.rs	40	0
 crates/bridgevm-hvf/src/checkpoint/tests/mod.rs	4	0
 crates/bridgevm-hvf/src/checkpoint/tests/part_1.rs	28	0
 crates/bridgevm-hvf/src/dtb.rs	681	0
+crates/bridgevm-hvf/src/host_entropy.rs	114	1
 crates/bridgevm-hvf/src/fwcfg.rs	795	0
 crates/bridgevm-hvf/src/hda/codec_parameter.rs	99	0
 crates/bridgevm-hvf/src/hda/hdapcmsink.rs	977	0
@@ -351,6 +352,8 @@ crates/bridgevm-hvf/src/ramfb.rs	130	0
 crates/bridgevm-hvf/src/ramfb/snapshot.rs	224	0
 crates/bridgevm-hvf/src/ramfb/snapshot_tests.rs	271	0
 crates/bridgevm-hvf/src/smbios.rs	403	0
+crates/bridgevm-hvf/src/smccc_trng.rs	195	0
+crates/bridgevm-hvf/src/smccc_trng_tests.rs	226	0
 crates/bridgevm-hvf/src/stage1.rs	447	0
 crates/bridgevm-hvf/src/support.rs	70	0
 crates/bridgevm-hvf/src/tpm_ppi.rs	196	0
@@ -662,6 +665,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/storage_effect_matrix.rs	167	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/storage_effect_receipt.rs	162	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/storage_effect_receipt_tests.rs	235	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/storage_reporting.rs	182	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/trng_dispatch.rs	82	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vblank_wake.rs	84	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination.rs	348	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_debug.rs	96	4

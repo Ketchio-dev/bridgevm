@@ -172,6 +172,12 @@ pub(crate) fn psci_target_index(target_mpidr: u64, controls: &[Arc<VcpuControl>]
         .position(|control| normalized_mpidr(control.mpidr) == target)
 }
 
+/// `PSCI_FEATURES` answers for the PSCI namespace only.
+///
+/// It previously also answered for the TRNG function IDs. Those belong to a
+/// separate specification with its own status values, and a guest must query
+/// them through `TRNG_FEATURES`; conflating the two namespaces means a PSCI
+/// probe can report that a TRNG call exists.
 pub(crate) fn psci_features(func: u64) -> u64 {
     match func {
         PSCI_VERSION
@@ -182,12 +188,7 @@ pub(crate) fn psci_features(func: u64) -> u64 {
         | PSCI_AFFINITY_INFO_64
         | PSCI_SYSTEM_OFF
         | PSCI_SYSTEM_RESET
-        | PSCI_FEATURES
-        | TRNG_VERSION
-        | TRNG_FEATURES
-        | TRNG_GET_UUID
-        | TRNG_RND_32
-        | TRNG_RND_64 => PSCI_SUCCESS,
+        | PSCI_FEATURES => PSCI_SUCCESS,
         _ => PSCI_NOT_SUPPORTED,
     }
 }
@@ -555,29 +556,10 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                         }
                         return true;
                     }
-                    TRNG_VERSION => unsafe {
-                        hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0000);
+                    // SAFETY: this thread owns `vcpu` for the whole run loop.
+                    id if crate::trng_dispatch::is_trng_function(id) => unsafe {
+                        crate::trng_dispatch::handle_trng_hvc(vcpu, id);
                     },
-                    TRNG_FEATURES => unsafe {
-                        hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
-                    },
-                    TRNG_GET_UUID => unsafe {
-                        hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0b0a_0908);
-                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, 0x0f0e_0d0c);
-                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, 0x0302_0100);
-                        hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, 0x0706_0504);
-                    },
-                    TRNG_RND_32 | TRNG_RND_64 => {
-                        let r = exits
-                            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-                            .wrapping_add(0xD1B5_4A32);
-                        unsafe {
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0, PSCI_SUCCESS);
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, r);
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, r.rotate_left(17) ^ 0xA5A5_5A5A);
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, r.rotate_left(41) ^ 0x1234_5678);
-                        }
-                    }
                     _ => unsafe {
                         hv_vcpu_set_reg(vcpu, HV_REG_X0, PSCI_NOT_SUPPORTED);
                     },
@@ -783,16 +765,31 @@ mod vcpu_control_tests {
             PSCI_SYSTEM_OFF,
             PSCI_SYSTEM_RESET,
             PSCI_FEATURES,
-            TRNG_VERSION,
-            TRNG_FEATURES,
-            TRNG_GET_UUID,
-            TRNG_RND_32,
-            TRNG_RND_64,
         ] {
             assert_eq!(psci_features(func), PSCI_SUCCESS, "func {func:#x}");
         }
         assert_eq!(psci_features(0x8400_00ff), PSCI_NOT_SUPPORTED);
         assert_eq!(psci_features(SMCCC_VERSION), PSCI_NOT_SUPPORTED);
+    }
+
+    #[test]
+    fn psci_features_does_not_answer_for_the_trng_namespace() {
+        // TRNG has its own specification, its own status values and its own
+        // TRNG_FEATURES discovery call. Answering for it here told a guest
+        // that a TRNG function existed based on a PSCI query.
+        for func in [
+            bridgevm_hvf::smccc_trng::func::VERSION,
+            bridgevm_hvf::smccc_trng::func::FEATURES,
+            bridgevm_hvf::smccc_trng::func::GET_UUID,
+            bridgevm_hvf::smccc_trng::func::RND32,
+            bridgevm_hvf::smccc_trng::func::RND64,
+        ] {
+            assert_eq!(
+                psci_features(func),
+                PSCI_NOT_SUPPORTED,
+                "TRNG func {func:#x} must not be discoverable through PSCI_FEATURES"
+            );
+        }
     }
 }
 

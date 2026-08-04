@@ -44,10 +44,10 @@
       "id": "smccc-trng",
       "area": "firmware",
       "qemu_behavior": "SMCCC TRNG backed by the host entropy source when advertised.",
-      "bridgevm_behavior": "Currently a deterministic function of the vCPU exit counter while being advertised as supported.",
+      "bridgevm_behavior": "Arm DEN 0098 v1.0 served from the macOS CSPRNG through SecRandomCopyBytes, with no fallback: provider failure returns NO_ENTROPY and a platform without a provider returns NOT_SUPPORTED.",
       "guest_visible": true,
-      "impact": "Open release blocker A12. Guest-visible randomness must not be predictable; this deviation is a defect to remove, not a design choice.",
-      "evidence": "capabilities/windows-hvf.json"
+      "impact": "Resolved. The earlier implementation derived output from the vCPU exit counter, which a guest can approximate, while advertising the service as supported. Images created before the fix remain classified pre-secure-trng-development-only.",
+      "evidence": "docs/windows-arm/smccc-trng-psci-contract.md"
     },
     {
       "id": "psci-state-table",

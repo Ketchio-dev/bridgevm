@@ -628,36 +628,8 @@ pub(crate) fn run() -> ExitCode {
                                     };
                                     hv_vcpu_set_reg(vcpu, HV_REG_X0, result);
                                 }
-                                TRNG_VERSION => {
-                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x1_0000);
-                                } // TRNG_VERSION 1.0
-                                TRNG_FEATURES => {
-                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, 0);
-                                } // TRNG_FEATURES: present
-                                TRNG_GET_UUID => {
-                                    // TRNG_GET_UUID
-                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, 0x0b0a_0908);
-                                    hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, 0x0f0e_0d0c);
-                                    hv_vcpu_set_reg(vcpu, HV_REG_X0 + 2, 0x0302_0100);
-                                    hv_vcpu_set_reg(vcpu, HV_REG_X0 + 3, 0x0706_0504);
-                                }
-                                TRNG_RND_32 | TRNG_RND_64 => {
-                                    // TRNG_RND_32 / _64
-                                    let r = exits
-                                        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-                                        .wrapping_add(0xD1B5_4A32);
-                                    hv_vcpu_set_reg(vcpu, HV_REG_X0, PSCI_SUCCESS); // SUCCESS
-                                    hv_vcpu_set_reg(vcpu, HV_REG_X0 + 1, r);
-                                    hv_vcpu_set_reg(
-                                        vcpu,
-                                        HV_REG_X0 + 2,
-                                        r.rotate_left(17) ^ 0xA5A5_5A5A,
-                                    );
-                                    hv_vcpu_set_reg(
-                                        vcpu,
-                                        HV_REG_X0 + 3,
-                                        r.rotate_left(41) ^ 0x1234_5678,
-                                    );
+                                id if crate::trng_dispatch::is_trng_function(id) => {
+                                    crate::trng_dispatch::handle_trng_hvc(vcpu, id);
                                 }
                                 value
                                     if psci_terminal_action(value)

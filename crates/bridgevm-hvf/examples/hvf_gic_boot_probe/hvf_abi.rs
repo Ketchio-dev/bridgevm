@@ -192,15 +192,9 @@ pub(crate) const PSCI_FEATURES: u64 = 0x8400_000A;
 
 pub(crate) const SMCCC_VERSION: u64 = 0x8000_0000;
 
-pub(crate) const TRNG_VERSION: u64 = 0x8400_0050;
-
-pub(crate) const TRNG_FEATURES: u64 = 0x8400_0051;
-
-pub(crate) const TRNG_GET_UUID: u64 = 0x8400_0052;
-
-pub(crate) const TRNG_RND_32: u64 = 0x8400_0053;
-
-pub(crate) const TRNG_RND_64: u64 = 0xc400_0053;
+// TRNG function IDs live in `bridgevm_hvf::smccc_trng::func`, which also owns
+// the protocol. Keeping a second copy here is what let the primary and
+// secondary loops drift into separate handlers.
 
 pub(crate) const MPIDR_RES1_BIT: u64 = 0x8000_0000;
 

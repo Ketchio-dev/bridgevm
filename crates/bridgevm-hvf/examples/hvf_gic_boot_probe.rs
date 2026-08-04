@@ -7,8 +7,7 @@
 //!
 //! Build, ad-hoc sign, run (needs `com.apple.security.hypervisor`):
 //!   cargo build -p bridgevm-hvf --example hvf_gic_boot_probe
-//!   codesign --sign - --entitlements hv.entitlements --force target/debug/examples/hvf_gic_boot_probe
-//!   target/debug/examples/hvf_gic_boot_probe
+//!   codesign --sign - --entitlements hv.entitlements --force target/debug/examples/hvf_gic_boot_probe && target/debug/examples/hvf_gic_boot_probe
 //!
 //! Optional NVMe media:
 //!   BRIDGEVM_NVME_DISK=/path/to/raw.img target/debug/examples/hvf_gic_boot_probe
@@ -32,8 +31,7 @@
 //!   BRIDGEVM_HDA=1 BRIDGEVM_HDA_COREAUDIO=1 ...       # play guest HDA PCM on Mac speakers
 //!
 //! Optional QEMU-style Linux direct boot:
-//!   BRIDGEVM_LINUX_KERNEL=/path/to/Image ...
-//!   BRIDGEVM_LINUX_INITRD=/path/to/initrd.gz ...      # optional
+//!   BRIDGEVM_LINUX_KERNEL=/path/to/Image ...         # BRIDGEVM_LINUX_INITRD=/path/to/initrd.gz optional
 //!   BRIDGEVM_LINUX_CMDLINE='console=ttyAMA0 acpi=force' ...
 //!   BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX=0 ...           # keep running after early Linux logs
 //!   BRIDGEVM_RAM_MIB=4096 ...                         # Windows-scale RAM experiments
@@ -168,6 +166,8 @@ mod secondary_vcpu;
 mod smp_trace;
 #[path = "hvf_gic_boot_probe/storage_reporting.rs"]
 mod storage_reporting;
+#[path = "hvf_gic_boot_probe/trng_dispatch.rs"]
+mod trng_dispatch;
 #[path = "hvf_gic_boot_probe/vcpu_coordination.rs"]
 mod vcpu_coordination;
 #[path = "hvf_gic_boot_probe/vcpu_debug.rs"]

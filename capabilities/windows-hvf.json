@@ -137,12 +137,14 @@
     {
       "id": "A12",
       "title": "Secure SMCCC TRNG",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": true,
       "statement": "Guest TRNG_RND_32/64 are served only by the host OS CSPRNG; no exit-count, time, PID or constant-derived fallback exists, and provider failure returns NO_ENTROPY.",
-      "measured": "A deterministic generator derived from the vCPU exit counter is still implemented and advertised through TRNG_FEATURES.",
+      "measured": "The protocol lives in bridgevm_hvf::smccc_trng over SecRandomCopyBytes, with one dispatch shared by the primary and secondary loops. 17 tests cover the DEN 0098 register layout, bit masking, request limits, FEATURES discovery and the fail-closed paths; the exit-counter generator and the duplicated probe constants are deleted. Guest-visible behaviour is not yet re-measured on a live boot.",
       "evidence_paths": [
-        "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs"
+        "docs/windows-arm/smccc-trng-psci-contract.md",
+        "crates/bridgevm-hvf/src/smccc_trng.rs",
+        "crates/bridgevm-hvf/src/host_entropy.rs"
       ]
     },
     {
@@ -151,8 +153,9 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "CPU_ON and AFFINITY_INFO implement the specified state table, affinity levels and error codes with atomic state transitions.",
-      "measured": "CPU_ON returns ALREADY_ON for OnPending, and AFFINITY_INFO ignores the X2 affinity level while reporting OnPending and invalid targets as OFF.",
+      "measured": "CPU_ON returns ALREADY_ON for OnPending, and AFFINITY_INFO ignores the X2 affinity level while reporting OnPending and invalid targets as OFF. PSCI_FEATURES no longer answers for the TRNG namespace, but the state table itself is unchanged.",
       "evidence_paths": [
+        "docs/windows-arm/smccc-trng-psci-contract.md",
         "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs"
       ]
     },

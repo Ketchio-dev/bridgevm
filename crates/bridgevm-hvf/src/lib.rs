@@ -7,13 +7,13 @@ use std::{
 
 // Modules of the "QEMU virt contract" path (Path A). New platform code lands in
 // dedicated files like these rather than growing the legacy probe monolith
-// below. See docs/hvf-windows-engine-strategy.md and
-// docs/hvf-windows-platform-contract-gap.md.
+// below. See docs/hvf-windows-{engine-strategy,platform-contract-gap}.md.
 pub mod acpi;
 pub mod checkpoint;
 pub mod dtb;
 pub mod fwcfg;
 pub mod hda;
+pub mod host_entropy;
 pub mod machine;
 pub mod media;
 pub mod msix;
@@ -26,6 +26,7 @@ pub mod pl031;
 pub mod platform_virt;
 pub mod ramfb;
 pub mod smbios;
+pub mod smccc_trng;
 pub mod stage1;
 pub mod tpm_ppi;
 pub mod tpm_tis;
@@ -42,8 +43,7 @@ mod windows_arm_xhci_hid_boot_key_probe;
 pub mod xhci;
 
 // Extracted from the legacy probe monolith below (see
-// docs/hvf-lib-refactor-extraction-plan.md). These stay private and are
-// re-exported explicitly so the crate-root public surface is unchanged.
+// docs/hvf-lib-refactor-extraction-plan.md). Private, re-exported explicitly.
 mod machine_plan;
 mod no_qemu_plan;
 mod probe_mmio;
