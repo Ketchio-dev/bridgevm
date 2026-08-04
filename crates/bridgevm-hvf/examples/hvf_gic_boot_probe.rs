@@ -15,21 +15,18 @@
 //!   BRIDGEVM_NVME_DISK_WRITABLE=1 ...                # write back to input path
 //!
 //! Optional installer ISO media (PCI boot media by default):
-//!   BRIDGEVM_INSTALLER_ISO=/path/to/windows.iso ...
-//!   BRIDGEVM_INSTALLER_ISO_TRANSPORT=mmio ...          # legacy virtio-mmio slot 31 fallback
+//!   BRIDGEVM_INSTALLER_ISO=/path/to/windows.iso BRIDGEVM_INSTALLER_ISO_TRANSPORT=mmio ... # transport= legacy virtio-mmio slot 31 fallback
 //!   BRIDGEVM_UART_RX=' ' ...                          # preloaded serial input; _ON_CD_PROMPT injects after the cdboot prompt
 //!   BRIDGEVM_XHCI_BOOT_KEY_ON_CD_PROMPT=' ' ...        # queue xHCI HID Space after cdboot prompt
-//!   BRIDGEVM_XHCI_BOOT_KEY_ON_SERIAL_MARKER=' ' BRIDGEVM_XHCI_BOOT_KEY_SERIAL_MARKER='BdsDxe: starting Boot0001' ... # debug frontier xHCI Space trigger; CD prompt remains separate
 //!   BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS='win+r,text:notepad,enter' BRIDGEVM_XHCI_SETUP_INPUT2_ACTIONS='text:g021keys' BRIDGEVM_XHCI_SETUP_INPUT_SERIAL_MARKER='BdsDxe: starting Boot0003' ... # queue guarded setup input actions
 //!   BRIDGEVM_RAMFB_SAMPLE_MS=1000,5000,15000 ...       # symmetric elapsed RAMFB checkpoints for no-input/setup-input probes
 //!   BRIDGEVM_RAMFB_SAMPLE_UNTIL_COMPLETE=1 ...         # proof mode: observe UEFI shell but continue until RAMFB samples complete
-//!   BRIDGEVM_UART_RX_ON_SERIAL_MARKER=' ' BRIDGEVM_UART_RX_SERIAL_MARKER='BdsDxe: starting Boot0001' ...
+//!   BRIDGEVM_UART_RX_ON_SERIAL_MARKER=' ' BRIDGEVM_UART_RX_SERIAL_MARKER='BdsDxe: starting Boot0001' ...  # serial-marker-gated UART injection
 //!   BRIDGEVM_VIRTIO_CONSOLE=1 BRIDGEVM_VIRTIO_CONSOLE_TEST=1 BRIDGEVM_VIRTIO_CONSOLE_CMDS='whoami|ver' BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=180000 ... # drive bvagent.ps1 over virtio-console
 //!   BRIDGEVM_HDA=1 BRIDGEVM_HDA_COREAUDIO=1 ...       # play guest HDA PCM on Mac speakers
 //!
 //! Optional QEMU-style Linux direct boot:
-//!   BRIDGEVM_LINUX_KERNEL=/path/to/Image ...         # BRIDGEVM_LINUX_INITRD=/path/to/initrd.gz optional
-//!   BRIDGEVM_LINUX_CMDLINE='console=ttyAMA0 acpi=force' ...
+//!   BRIDGEVM_LINUX_KERNEL=/path/to/Image BRIDGEVM_LINUX_CMDLINE='console=ttyAMA0' ... # BRIDGEVM_LINUX_INITRD optional
 //!   BRIDGEVM_BOOT_PROBE_STOP_ON_LINUX=0 ...           # keep running after early Linux logs
 //!   BRIDGEVM_RAM_MIB=4096 ...                         # Windows-scale RAM experiments
 //!
@@ -171,6 +168,8 @@ mod trng_dispatch;
 mod vcpu_coordination;
 #[path = "hvf_gic_boot_probe/vcpu_debug.rs"]
 mod vcpu_debug;
+#[path = "hvf_gic_boot_probe/wake_coordinator.rs"]
+mod wake_coordinator;
 #[path = "hvf_gic_boot_probe/wfi_diagnostics.rs"]
 mod wfi_diagnostics;
 pub(crate) use boot_telemetry::*;
@@ -188,6 +187,7 @@ pub(crate) use smp_trace::*;
 pub(crate) use storage_reporting::*;
 pub(crate) use vcpu_coordination::*;
 pub(crate) use vcpu_debug::*;
+pub(crate) use wake_coordinator::*;
 pub(crate) use wfi_diagnostics::*;
 
 #[path = "hvf_gic_boot_probe/boot_media_setup.rs"]

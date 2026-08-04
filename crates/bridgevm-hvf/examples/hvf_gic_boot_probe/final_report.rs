@@ -1,6 +1,6 @@
 include!("present_health.rs");
 macro_rules! persist_and_report_stop {
-    ($platform:ident, $media:ident, $vcpu:ident, $guest_ram:ident, $last_pc:ident, $last_pre_run_pc:ident, $last_watch_pc:ident, $last_watch_lr:ident, $stop_reason:ident, $stop_reason_code:ident, $exits:ident, $vtimer_exits:ident, $psci_calls:ident, $surplus_canceled_exits:ident, $boot_timer:ident, $boot_timer_elapsed:ident, $secondary_exit_counts:ident, $drain_stats:ident, $unimpl:ident, $mmio_traces:ident, $recent_pcie_ecam:ident, $recent_pcie_mmio:ident, $recent_pcie_pio:ident, $recent_xhci:ident, $uart_triggers:ident, $xhci_hid_boot_key_triggers:ident, $xhci_setup_input_triggers:ident, $xhci_pointer_input_triggers:ident, $redist_lo:ident, $redist_hi:ident $(,)?) => {{
+    ($platform:ident, $media:ident, $vcpu:ident, $guest_ram:ident, $last_pc:ident, $last_pre_run_pc:ident, $last_watch_pc:ident, $last_watch_lr:ident, $stop_reason:ident, $stop_reason_code:ident, $exits:ident, $vtimer_exits:ident, $psci_calls:ident, $surplus_canceled_exits:ident, $wake_coordinator:ident, $wake_cancel_claims:ident, $boot_timer:ident, $boot_timer_elapsed:ident, $secondary_exit_counts:ident, $drain_stats:ident, $unimpl:ident, $mmio_traces:ident, $recent_pcie_ecam:ident, $recent_pcie_mmio:ident, $recent_pcie_pio:ident, $recent_xhci:ident, $uart_triggers:ident, $xhci_hid_boot_key_triggers:ident, $xhci_setup_input_triggers:ident, $xhci_pointer_input_triggers:ident, $redist_lo:ident, $redist_hi:ident, $smp_trace:ident $(,)?) => {{
         let mut platform_guard = $platform.lock().expect("platform mutex");
         let $platform = &mut *platform_guard;
         let serial = $platform.uart_output().to_vec();
@@ -9,14 +9,7 @@ macro_rules! persist_and_report_stop {
             .persist($platform.flash_vars_image())
             .unwrap_or_else(|e| panic!("persist UEFI vars: {e}"));
         print_media_writes("UEFI vars", &vars_writes);
-        if let Some(nvme) = $media.nvme_disk.as_ref() {
-            let writes = persist_nvme_media($platform, nvme, NvmePersistNamespace::Primary);
-            print_media_writes(NvmePersistNamespace::Primary.subject(), &writes);
-        }
-        if let Some(target) = $media.nvme_target.as_ref() {
-            let writes = persist_nvme_media($platform, target, NvmePersistNamespace::Target);
-            print_media_writes(NvmePersistNamespace::Target.subject(), &writes);
-        }
+        persist_both_nvme_namespaces($platform, &$media);
         storage_effect_receipt::maybe_write_probe_storage_effect_receipt(
             $media.nvme_disk.as_ref(),
             $platform,
@@ -180,6 +173,15 @@ macro_rules! persist_and_report_stop {
         let mut voff = 0u64;
         hv_vcpu_get_vtimer_offset($vcpu, &mut voff);
         crate::probe_runtime::vtimer_recovery::report_vtimer_mask($vcpu);
+        report_wake_attribution(&$wake_coordinator, &$wake_cancel_claims);
+        if let Some(trace) = $smp_trace.as_deref() {
+            println!("SMP trace: overflow={}", trace.trace_overflow());
+        }
+        // Rendered only here, after every vCPU has stopped, so formatting
+        // never perturbs the timing the ring was recording.
+        if let Some(trace) = $smp_trace.as_deref() {
+            trace.dump();
+        }
         let mut cntvoff = 0u64;
         hv_vcpu_get_sys_reg($vcpu, 0xe703, &mut cntvoff); // CNTVOFF_EL2
         let hcnt = host_cntvct();

@@ -141,6 +141,12 @@ pub(crate) fn run() -> ExitCode {
             });
             let boot_generation = begin_watchdog_generation(&watchdog_generation);
             let watchdog_fired = Arc::new(AtomicBool::new(false));
+            // One generation-tagged cancellation ledger for this vCPU. Each
+            // waker publishes its reason before cancelling so an EXIT_CANCELED
+            // that claims nothing can be reported as genuinely surplus rather
+            // than attributed by guesswork.
+            let wake_coordinator = Arc::new(WakeCoordinator::new());
+            wake_coordinator.begin_generation();
             if watchdog_enabled {
                 spawn_boot_watchdog(
                     vcpu,
@@ -260,6 +266,7 @@ pub(crate) fn run() -> ExitCode {
             let mut exits = 0u64;
             let mut vtimer_exits = 0u64;
             let mut surplus_canceled_exits = 0u64;
+            let mut wake_cancel_claims: Vec<CancelClaim> = Vec::new();
             let mut psci_calls = 0u64;
             let mut last_pc = 0u64;
             let mut last_pre_run_pc: u64;
@@ -387,6 +394,27 @@ pub(crate) fn run() -> ExitCode {
                     || setup_input_wake_canceled
                     || service_wake_canceled
                     || vblank_wake_canceled;
+                if reason == EXIT_CANCELED {
+                    // Record what this cancellation turned out to be. The
+                    // existing per-waker flags stay authoritative for control
+                    // flow; the coordinator supplies the attribution the final
+                    // report previously had to infer.
+                    for (fired, wake_reason) in [
+                        (sample_tick_canceled, WakeReason::RamfbSample),
+                        (setup_input_wake_canceled, WakeReason::SetupInput),
+                        (service_wake_canceled, WakeReason::AgentConsole),
+                        (vblank_wake_canceled, WakeReason::Vblank),
+                        (
+                            watchdog_fired.load(Ordering::SeqCst),
+                            WakeReason::RebootWatchdog,
+                        ),
+                    ] {
+                        if fired {
+                            wake_coordinator.request(wake_reason);
+                        }
+                    }
+                    wake_cancel_claims.push(wake_coordinator.claim());
+                }
                 if reason == EXIT_CANCELED {
                     // Any cancel (claimed or surplus) can swallow an in-flight
                     // vtimer fire; see vtimer_recovery. Boot-8 re-masked after
@@ -952,6 +980,8 @@ pub(crate) fn run() -> ExitCode {
                 vtimer_exits,
                 psci_calls,
                 surplus_canceled_exits,
+                wake_coordinator,
+                wake_cancel_claims,
                 boot_timer,
                 boot_timer_elapsed,
                 secondary_exit_counts,
@@ -968,6 +998,7 @@ pub(crate) fn run() -> ExitCode {
                 xhci_pointer_input_triggers,
                 redist_lo,
                 redist_hi,
+                smp_trace,
             );
             break 'reboot;
         }
