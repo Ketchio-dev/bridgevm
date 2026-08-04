@@ -80,6 +80,13 @@ pub(crate) fn run_connection_worker(
     stream
         .set_write_timeout(Some(DAEMON_CLIENT_IO_TIMEOUT))
         .context("failed to configure daemon client write timeout")?;
+    // Ask the kernel who is on the other end before parsing anything they
+    // sent. Socket permissions are checked against the path at connect time
+    // and say nothing about an inherited or passed descriptor.
+    if let Err(rejection) = crate::peer_credentials::authorize_stream(&stream) {
+        eprintln!("bridgevmd {rejection}");
+        anyhow::bail!("{rejection}");
+    }
     let request = read_daemon_request(&stream)?;
     let (response_sender, response_receiver) = mpsc::channel();
     request_sender

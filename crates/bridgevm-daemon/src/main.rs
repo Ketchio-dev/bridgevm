@@ -17,6 +17,7 @@ mod guest_tools_runtime_metadata;
 mod guest_tools_session;
 mod helper_preflight;
 mod ipc_listener;
+mod peer_credentials;
 pub(crate) mod performance_sample;
 mod proxy_window_crop_artifacts;
 mod proxy_window_crop_config;

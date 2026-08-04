@@ -135,8 +135,10 @@ crates/bridgevm-daemon/src/guest_tools_protocol.rs	193	0
 crates/bridgevm-daemon/src/guest_tools_runtime_metadata.rs	175	0
 crates/bridgevm-daemon/src/guest_tools_session.rs	312	1
 crates/bridgevm-daemon/src/helper_preflight.rs	209	0
-crates/bridgevm-daemon/src/ipc_listener.rs	190	0
-crates/bridgevm-daemon/src/main.rs	42	0
+crates/bridgevm-daemon/src/ipc_listener.rs	197	0
+crates/bridgevm-daemon/src/peer_credentials_tests.rs	128	0
+crates/bridgevm-daemon/src/peer_credentials.rs	97	2
+crates/bridgevm-daemon/src/main.rs	43	0
 crates/bridgevm-daemon/src/performance_sample.rs	205	0
 crates/bridgevm-daemon/src/proxy_window_crop_artifacts.rs	310	0
 crates/bridgevm-daemon/src/proxy_window_crop_config.rs	268	0
@@ -178,6 +180,8 @@ crates/bridgevm-hvf/src/lib.rs	96	0
 crates/bridgevm-hvf/src/machine.rs	367	0
 crates/bridgevm-hvf/src/machine_plan.rs	374	0
 crates/bridgevm-hvf/src/media.rs	654	0
+crates/bridgevm-hvf/src/media_lock_tests.rs	115	0
+crates/bridgevm-hvf/src/media_lock.rs	148	1
 crates/bridgevm-hvf/src/msix.rs	403	0
 crates/bridgevm-hvf/src/net_nat/handle_outbound_ipv4.rs	874	0
 crates/bridgevm-hvf/src/net_nat/icmp_reply_rejection_reason.rs	515	13
