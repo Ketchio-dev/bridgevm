@@ -798,3 +798,5 @@ crates/bridgevm-hvf/src/snapshot_pair_tests.rs	276	0
 crates/bridgevm-hvf/src/bounded_read.rs	55	0
 crates/bridgevm-hvf/src/snapshot_manifest_json.rs	68	0
 crates/bridgevm-hvf/src/snapshot_manifest_json_tests.rs	27	0
+crates/bridgevm-hvf/src/nvme/disk_export.rs	54	0
+crates/bridgevm-hvf/src/nvme/overlay_quota_tests.rs	134	0

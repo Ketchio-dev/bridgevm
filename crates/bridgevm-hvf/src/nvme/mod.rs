@@ -1,9 +1,6 @@
-//! NVMe 1.4 controller model, decomposed by responsibility:
-//! wire protocol, BAR registers, queues, the admin command families,
-//! the I/O data path, namespaces and their backing store, and diagnostics.
-#[cfg(test)]
-mod tests;
-
+//! NVMe 1.4 controller model, decomposed by responsibility: wire protocol,
+//! BAR registers, queues, admin command families, the I/O data path,
+//! namespaces and their backing store, and diagnostics.
 mod admin;
 mod controller;
 mod disk;
@@ -19,6 +16,9 @@ mod queue;
 mod registers;
 mod snapshot;
 mod trace;
+
+#[cfg(test)]
+mod tests;
 
 pub use admin::*;
 pub use controller::*;

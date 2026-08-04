@@ -1,14 +1,12 @@
 //! Host-side block backing store: in-memory and raw-file with COW overlay, range validation, flush, export.
 
+#[path = "disk_export.rs"]
+mod disk_export;
 use super::*;
+use disk_export::DEFAULT_OVERLAY_QUOTA_BYTES;
 use std::collections::BTreeMap;
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io;
-use std::io::Read;
-use std::io::Seek;
-use std::io::SeekFrom;
-use std::io::Write;
+use std::fs::{File, OpenOptions};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 pub(crate) fn rounded_disk_len(bytes: usize) -> usize {
@@ -30,6 +28,9 @@ pub(crate) struct RawFileDisk {
     pub(crate) file: File,
     pub(crate) len: u64,
     pub(crate) overlay: BTreeMap<u64, Vec<u8>>,
+    /// Ceiling on the overlay; see DEFAULT_OVERLAY_QUOTA_BYTES.
+    pub(crate) overlay_quota_bytes: u64,
+    pub(crate) overlay_bytes: u64,
     pub(crate) write_back: bool,
     #[cfg(test)]
     pub(crate) sync_failure: Option<io::ErrorKind>,
@@ -61,6 +62,8 @@ impl DiskBackend {
             file,
             len,
             overlay: BTreeMap::new(),
+            overlay_quota_bytes: DEFAULT_OVERLAY_QUOTA_BYTES,
+            overlay_bytes: 0,
             write_back,
             #[cfg(test)]
             sync_failure: None,
@@ -124,20 +127,6 @@ impl DiskBackend {
             Self::Memory(_) => Ok(()),
             Self::RawFile(disk) => disk.flush(),
         }
-    }
-
-    pub(crate) fn export_to_path(&mut self, path: impl AsRef<Path>) -> io::Result<u64> {
-        let mut out = File::create(path)?;
-        let len = self.byte_len();
-        let mut offset = 0u64;
-        while offset < len {
-            let chunk_len = (len - offset).min(EXPORT_CHUNK_SIZE as u64) as usize;
-            let chunk = self.read_at(offset, chunk_len)?;
-            out.write_all(&chunk)?;
-            offset += chunk_len as u64;
-        }
-        out.flush()?;
-        Ok(len)
     }
 
     pub(crate) fn validate_range(&self, offset: u64, len: usize) -> io::Result<()> {
@@ -223,10 +212,21 @@ impl RawFileDisk {
             let copy_len = (data.len() - copied).min(chunk_len - chunk_off);
 
             if !self.overlay.contains_key(&chunk_base) {
+                let projected = self.overlay_bytes + chunk_len as u64;
+                if projected > self.overlay_quota_bytes {
+                    return Err(io::Error::new(
+                        io::ErrorKind::OutOfMemory,
+                        format!(
+                            "copy-on-write overlay would reach {projected} bytes, over the {} byte quota",
+                            self.overlay_quota_bytes
+                        ),
+                    ));
+                }
                 let mut chunk = vec![0u8; chunk_len];
                 self.file.seek(SeekFrom::Start(chunk_base))?;
                 self.file.read_exact(&mut chunk)?;
                 self.overlay.insert(chunk_base, chunk);
+                self.overlay_bytes = projected;
             }
             let chunk = self.overlay.get_mut(&chunk_base).unwrap();
             chunk[chunk_off..chunk_off + copy_len]
