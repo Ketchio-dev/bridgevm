@@ -65,7 +65,8 @@ mkdir -p "$AGENTS" "$QUEUE_ROOT"/{queued,running,done} "$LOGDIR"
 # The queue can name private image paths in raw receipts; keep it to this user.
 chmod 700 "$QUEUE_ROOT"
 
-sed -e "s|__WORKER__|$WORKER|g" -e "s|__LOGDIR__|$LOGDIR|g" "$TEMPLATE" > "$PLIST"
+sed -e "s|__WORKER__|$WORKER|g" -e "s|__LOGDIR__|$LOGDIR|g" \
+    -e "s|__HOME__|$HOME|g" "$TEMPLATE" > "$PLIST"
 plutil -lint "$PLIST" >/dev/null || fail "generated plist is malformed"
 
 # Idempotent: unload an older revision before loading this one.
