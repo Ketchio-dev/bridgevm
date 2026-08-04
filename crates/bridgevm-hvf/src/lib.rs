@@ -24,6 +24,7 @@ pub mod pflash;
 pub mod pl011;
 pub mod pl031;
 pub mod platform_virt;
+pub mod psci;
 pub mod ramfb;
 pub mod smbios;
 pub mod smccc_trng;
@@ -50,13 +51,11 @@ mod probe_mmio;
 mod probes;
 mod support;
 
-// Glob re-export preserves each probe item's original visibility, keeping the
-// crate-root public surface identical.
-pub use probes::*;
 mod windows_arm;
 
-// Glob re-export preserves each moved item's original visibility, so the
-// public surface is byte-identical and crate-internal helpers stay internal.
+// Glob re-exports preserve each moved item's original visibility, so the
+// crate-root public surface is byte-identical and internal helpers stay so.
+pub use probes::*;
 pub use windows_arm::*;
 
 // Crate-internal synthetic MMIO harness. Glob import keeps the (formerly

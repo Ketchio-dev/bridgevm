@@ -17,17 +17,14 @@
 //! Optional installer ISO media (PCI boot media by default):
 //!   BRIDGEVM_INSTALLER_ISO=/path/to/windows.iso ...
 //!   BRIDGEVM_INSTALLER_ISO_TRANSPORT=mmio ...          # legacy virtio-mmio slot 31 fallback
-//!   BRIDGEVM_UART_RX=' ' ...                          # preloaded serial input bytes
-//!   BRIDGEVM_UART_RX_ON_CD_PROMPT=' ' ...             # inject after cdboot prompt is printed
+//!   BRIDGEVM_UART_RX=' ' ...                          # preloaded serial input; _ON_CD_PROMPT injects after the cdboot prompt
 //!   BRIDGEVM_XHCI_BOOT_KEY_ON_CD_PROMPT=' ' ...        # queue xHCI HID Space after cdboot prompt
 //!   BRIDGEVM_XHCI_BOOT_KEY_ON_SERIAL_MARKER=' ' BRIDGEVM_XHCI_BOOT_KEY_SERIAL_MARKER='BdsDxe: starting Boot0001' ... # debug frontier xHCI Space trigger; CD prompt remains separate
 //!   BRIDGEVM_XHCI_SETUP_INPUT_ACTIONS='win+r,text:notepad,enter' BRIDGEVM_XHCI_SETUP_INPUT2_ACTIONS='text:g021keys' BRIDGEVM_XHCI_SETUP_INPUT_SERIAL_MARKER='BdsDxe: starting Boot0003' ... # queue guarded setup input actions
 //!   BRIDGEVM_RAMFB_SAMPLE_MS=1000,5000,15000 ...       # symmetric elapsed RAMFB checkpoints for no-input/setup-input probes
 //!   BRIDGEVM_RAMFB_SAMPLE_UNTIL_COMPLETE=1 ...         # proof mode: observe UEFI shell but continue until RAMFB samples complete
 //!   BRIDGEVM_UART_RX_ON_SERIAL_MARKER=' ' BRIDGEVM_UART_RX_SERIAL_MARKER='BdsDxe: starting Boot0001' ...
-//!   BRIDGEVM_VIRTIO_CONSOLE=1 BRIDGEVM_VIRTIO_CONSOLE_TEST=1 ... # drive bvagent.ps1 over virtio-console
-//!   BRIDGEVM_VIRTIO_CONSOLE_CMDS='whoami|ver|ipconfig' ...
-//!   BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=180000 ...
+//!   BRIDGEVM_VIRTIO_CONSOLE=1 BRIDGEVM_VIRTIO_CONSOLE_TEST=1 BRIDGEVM_VIRTIO_CONSOLE_CMDS='whoami|ver' BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=180000 ... # drive bvagent.ps1 over virtio-console
 //!   BRIDGEVM_HDA=1 BRIDGEVM_HDA_COREAUDIO=1 ...       # play guest HDA PCM on Mac speakers
 //!
 //! Optional QEMU-style Linux direct boot:
@@ -158,6 +155,8 @@ mod hvf_abi;
 mod interrupt_delivery;
 #[path = "hvf_gic_boot_probe/probe_env.rs"]
 mod probe_env;
+#[path = "hvf_gic_boot_probe/psci_adapter.rs"]
+mod psci_adapter;
 #[path = "hvf_gic_boot_probe/reboot_watchdog.rs"]
 mod reboot_watchdog;
 #[path = "hvf_gic_boot_probe/secondary_vcpu.rs"]
@@ -182,6 +181,7 @@ pub(crate) use host_support::*;
 pub(crate) use hvf_abi::*;
 pub(crate) use interrupt_delivery::*;
 pub(crate) use probe_env::*;
+pub(crate) use psci_adapter::*;
 pub(crate) use reboot_watchdog::*;
 pub(crate) use secondary_vcpu::*;
 pub(crate) use smp_trace::*;

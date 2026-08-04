@@ -18,10 +18,12 @@ state is tracked in
   and a platform without a provider returns `NOT_SUPPORTED`. `TRNG_FEATURES`
   reports only implemented functions, and `PSCI_FEATURES` no longer answers for
   the TRNG namespace.
-- **A13 — PSCI state reporting. Open.** `CPU_ON` returns `ALREADY_ON` for a CPU
-  that is only `OnPending`, and `AFFINITY_INFO` ignores the requested affinity
-  level while reporting both `OnPending` and invalid targets as `OFF`. A
-  conforming guest can therefore read incorrect CPU state.
+- **A13 — PSCI state reporting. Fixed.** `CPU_ON` reported `ALREADY_ON` for a
+  CPU that was only `OnPending`, and `AFFINITY_INFO` ignored the requested
+  affinity level while collapsing both `OnPending` and unknown targets into
+  `OFF`, so a conforming guest could read incorrect CPU state. The state table,
+  affinity levels and error codes now follow DEN 0022, and the state check and
+  transition share one critical section.
 
 **Key provenance rule.** Any Windows, vTPM or BitLocker image produced before
 the TRNG fix is classified `pre-secure-trng-development-only`. Guest key

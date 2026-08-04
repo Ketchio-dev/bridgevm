@@ -76,10 +76,11 @@ Any Windows, vTPM or BitLocker image created before this fix is classified
 `pre-secure-trng-development-only`. Guest key ancestry is not observable from
 the host, so release media must be regenerated rather than audited.
 
-## PSCI — not yet implemented (A13)
+## PSCI — implemented (A13)
 
-The following is the target contract. It is **not** what the code does today;
-A13 remains an open release blocker.
+The state logic lives in `bridgevm_hvf::psci` as pure functions over the
+topology, and `psci_adapter.rs` supplies the probe's locking and tracing. Both
+vCPU run loops call the same adapter.
 
 ### `CPU_ON` state table
 
@@ -103,17 +104,22 @@ racing callers cannot both receive `SUCCESS`.
   `OnPending`; otherwise `OFF`.
 - A target matching no CPU is `INVALID_PARAMS`, not `OFF`.
 
-### Current deviations
+### The defects this replaced
 
-- `CPU_ON` returns `ALREADY_ON` for a CPU that is only `OnPending`.
-- `AFFINITY_INFO` ignores X2 entirely, reports `OnPending` as `OFF`, and
-  reports an unknown target as `OFF` instead of `INVALID_PARAMS`.
+- `CPU_ON` returned `ALREADY_ON` for a CPU that was only `OnPending`, so a
+  caller was told a CPU was executing before it had taken an instruction.
+- `AFFINITY_INFO` ignored X2 entirely, so a cluster-level query was answered as
+  if it named one CPU.
+- `AFFINITY_INFO` collapsed `OnPending` into `OFF`, making a starting CPU
+  indistinguishable from a powered-down one.
+- `AFFINITY_INFO` answered CPU0 as `ON` without consulting any state, and
+  reported an unknown target as `OFF` rather than `INVALID_PARAMS`.
+- `PSCI_FEATURES` also answered for the five TRNG function IDs.
 
-These are recorded in
-[`docs/machine-contract/qemu-virt-deviations.json`](../machine-contract/qemu-virt-deviations.json)
-and tracked as A13 in
-[`capabilities/windows-hvf.json`](../../capabilities/windows-hvf.json).
+### Relationship to the A1 boot stall
 
-Note on the boot stall: failing A1 boots never issue `CPU_ON` at all, so these
-PSCI defects are not yet demonstrated to be the stall's cause. They are fixed
-because they are wrong, not because a fix is predicted to close A1.
+Failing A1 boots never issue `CPU_ON` at all: the SMP trace recorded zero
+`Off -> OnPending` transitions in every failing reboot generation. These PSCI
+defects are therefore **not** demonstrated to cause the stall. They were fixed
+because they are wrong against the specification, not because a fix is
+predicted to close A1, and no A1 claim rests on them.

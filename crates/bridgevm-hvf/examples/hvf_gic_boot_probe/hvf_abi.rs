@@ -170,8 +170,6 @@ pub(crate) const PSCI_NOT_SUPPORTED: u64 = (-1i64) as u64;
 
 pub(crate) const PSCI_INVALID_PARAMS: u64 = (-2i64) as u64;
 
-pub(crate) const PSCI_ALREADY_ON: u64 = (-4i64) as u64;
-
 pub(crate) const PSCI_VERSION: u64 = 0x8400_0000;
 
 pub(crate) const PSCI_CPU_OFF: u64 = 0x8400_0002;

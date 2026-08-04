@@ -161,82 +161,6 @@ pub(crate) fn create_secondary_hvf_vcpu(
     (vcpu, exit, guard)
 }
 
-pub(crate) fn normalized_mpidr(value: u64) -> u64 {
-    value & !MPIDR_RES1_BIT
-}
-
-pub(crate) fn psci_target_index(target_mpidr: u64, controls: &[Arc<VcpuControl>]) -> Option<usize> {
-    let target = normalized_mpidr(target_mpidr);
-    controls
-        .iter()
-        .position(|control| normalized_mpidr(control.mpidr) == target)
-}
-
-/// `PSCI_FEATURES` answers for the PSCI namespace only.
-///
-/// It previously also answered for the TRNG function IDs. Those belong to a
-/// separate specification with its own status values, and a guest must query
-/// them through `TRNG_FEATURES`; conflating the two namespaces means a PSCI
-/// probe can report that a TRNG call exists.
-pub(crate) fn psci_features(func: u64) -> u64 {
-    match func {
-        PSCI_VERSION
-        | PSCI_CPU_OFF
-        | PSCI_CPU_ON_32
-        | PSCI_CPU_ON_64
-        | PSCI_AFFINITY_INFO_32
-        | PSCI_AFFINITY_INFO_64
-        | PSCI_SYSTEM_OFF
-        | PSCI_SYSTEM_RESET
-        | PSCI_FEATURES => PSCI_SUCCESS,
-        _ => PSCI_NOT_SUPPORTED,
-    }
-}
-
-pub(crate) fn psci_cpu_on(
-    controls: &[Arc<VcpuControl>],
-    target_mpidr: u64,
-    entry: u64,
-    context: u64,
-    smp_trace: Option<&SmpTrace>,
-) -> u64 {
-    let Some(target_index) = psci_target_index(target_mpidr, controls) else {
-        return PSCI_INVALID_PARAMS;
-    };
-    let control = &controls[target_index];
-    let mut state = lock_vcpu_state(control, smp_trace, 0, "target vCPU PSCI state mutex");
-    if matches!(*state, PsciState::On | PsciState::OnPending) {
-        return PSCI_ALREADY_ON;
-    }
-    control.entry.store(entry, Ordering::SeqCst);
-    control.context.store(context, Ordering::SeqCst);
-    if let Some(trace) = smp_trace {
-        trace.state_transition(control.index, PsciState::Off, PsciState::OnPending);
-    }
-    *state = PsciState::OnPending;
-    drop(state);
-    control.condvar.notify_one();
-    PSCI_SUCCESS
-}
-
-pub(crate) fn psci_affinity_info(controls: &[Arc<VcpuControl>], target_mpidr: u64) -> u64 {
-    if normalized_mpidr(target_mpidr) == machine::cpu_mpidr(0) {
-        return 0;
-    }
-    let Some(target_index) = psci_target_index(target_mpidr, controls) else {
-        return 1;
-    };
-    let state = controls[target_index]
-        .state
-        .lock()
-        .expect("target vCPU PSCI state mutex");
-    if *state == PsciState::On {
-        0
-    } else {
-        1
-    }
-}
-
 pub(crate) fn apply_secondary_cpu_on_reset(vcpu: HvVcpuT, mpidr: u64, entry: u64, context: u64) {
     unsafe {
         for reg in HV_REG_X0..=HV_REG_LR {
@@ -535,9 +459,12 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                     }
                     PSCI_AFFINITY_INFO_32 | PSCI_AFFINITY_INFO_64 => {
                         let mut target = 0u64;
+                        let mut level = 0u64;
                         unsafe {
                             hv_vcpu_get_reg(vcpu, HV_REG_X0 + 1, &mut target);
-                            hv_vcpu_set_reg(vcpu, HV_REG_X0, psci_affinity_info(controls, target));
+                            hv_vcpu_get_reg(vcpu, HV_REG_X0 + 2, &mut level);
+                            let result = psci_affinity_info(controls, target, level);
+                            hv_vcpu_set_reg(vcpu, HV_REG_X0, result);
                         }
                     }
                     value if psci_terminal_action(value).is_some() => {
@@ -629,68 +556,6 @@ mod vcpu_control_tests {
     }
 
     #[test]
-    fn psci_target_index_masks_mpidr_res1_bit() {
-        let controls: Vec<_> = (1..4)
-            .map(|index| Arc::new(VcpuControl::new(index)))
-            .collect();
-
-        assert_eq!(psci_target_index(machine::cpu_mpidr(1), &controls), Some(0));
-        assert_eq!(
-            psci_target_index(0x8000_0000 | machine::cpu_mpidr(2), &controls),
-            Some(1)
-        );
-        assert_eq!(psci_target_index(machine::cpu_mpidr(0), &controls), None);
-        assert_eq!(psci_target_index(machine::cpu_mpidr(4), &controls), None);
-    }
-
-    #[test]
-    fn psci_cpu_on_sets_pending_and_returns_codes() {
-        let controls: Vec<_> = (1..3)
-            .map(|index| Arc::new(VcpuControl::new(index)))
-            .collect();
-
-        assert_eq!(
-            psci_cpu_on(&controls, machine::cpu_mpidr(1), 0x1234, 0x5678, None),
-            PSCI_SUCCESS
-        );
-        assert_eq!(*controls[0].state.lock().unwrap(), PsciState::OnPending);
-        assert_eq!(controls[0].entry.load(Ordering::SeqCst), 0x1234);
-        assert_eq!(controls[0].context.load(Ordering::SeqCst), 0x5678);
-        assert_eq!(
-            psci_cpu_on(
-                &controls,
-                0x8000_0000 | machine::cpu_mpidr(1),
-                0x9,
-                0xa,
-                None
-            ),
-            PSCI_ALREADY_ON
-        );
-        assert_eq!(
-            psci_cpu_on(&controls, machine::cpu_mpidr(3), 0x9, 0xa, None),
-            PSCI_INVALID_PARAMS
-        );
-    }
-
-    #[test]
-    fn psci_cpu_on_defers_hvf_vcpu_creation_to_secondary_thread() {
-        let controls: Vec<_> = (1..2)
-            .map(|index| Arc::new(VcpuControl::new(index)))
-            .collect();
-
-        assert_eq!(
-            psci_cpu_on(&controls, machine::cpu_mpidr(1), 0x8000, 0xfeed, None),
-            PSCI_SUCCESS
-        );
-
-        let control = &controls[0];
-        assert_eq!(*control.state.lock().unwrap(), PsciState::OnPending);
-        assert_eq!(control.entry.load(Ordering::SeqCst), 0x8000);
-        assert_eq!(control.context.load(Ordering::SeqCst), 0xfeed);
-        assert_eq!(*control.vcpu.lock().unwrap(), None);
-    }
-
-    #[test]
     fn secondary_vcpu_handle_cannot_withdraw_during_shutdown_action() {
         let control = Arc::new(VcpuControl::new(1));
         let fake_handle = 0x1234;
@@ -751,45 +616,6 @@ mod vcpu_control_tests {
 
         assert!(signal.record(PSCI_SYSTEM_RESET));
         assert_eq!(signal.action(), Some(PsciTerminalAction::SystemReset));
-    }
-
-    #[test]
-    fn psci_features_only_reports_implemented_functions() {
-        for func in [
-            PSCI_VERSION,
-            PSCI_CPU_OFF,
-            PSCI_CPU_ON_32,
-            PSCI_CPU_ON_64,
-            PSCI_AFFINITY_INFO_32,
-            PSCI_AFFINITY_INFO_64,
-            PSCI_SYSTEM_OFF,
-            PSCI_SYSTEM_RESET,
-            PSCI_FEATURES,
-        ] {
-            assert_eq!(psci_features(func), PSCI_SUCCESS, "func {func:#x}");
-        }
-        assert_eq!(psci_features(0x8400_00ff), PSCI_NOT_SUPPORTED);
-        assert_eq!(psci_features(SMCCC_VERSION), PSCI_NOT_SUPPORTED);
-    }
-
-    #[test]
-    fn psci_features_does_not_answer_for_the_trng_namespace() {
-        // TRNG has its own specification, its own status values and its own
-        // TRNG_FEATURES discovery call. Answering for it here told a guest
-        // that a TRNG function existed based on a PSCI query.
-        for func in [
-            bridgevm_hvf::smccc_trng::func::VERSION,
-            bridgevm_hvf::smccc_trng::func::FEATURES,
-            bridgevm_hvf::smccc_trng::func::GET_UUID,
-            bridgevm_hvf::smccc_trng::func::RND32,
-            bridgevm_hvf::smccc_trng::func::RND64,
-        ] {
-            assert_eq!(
-                psci_features(func),
-                PSCI_NOT_SUPPORTED,
-                "TRNG func {func:#x} must not be discoverable through PSCI_FEATURES"
-            );
-        }
     }
 }
 

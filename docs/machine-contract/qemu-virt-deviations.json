@@ -53,10 +53,10 @@
       "id": "psci-state-table",
       "area": "firmware",
       "qemu_behavior": "PSCI 1.1 CPU_ON and AFFINITY_INFO state table and error codes.",
-      "bridgevm_behavior": "CPU_ON reports ALREADY_ON for OnPending, and AFFINITY_INFO ignores the X2 affinity level and reports OnPending and invalid targets as OFF.",
+      "bridgevm_behavior": "DEN 0022 CPU_ON state table with an atomic Off->OnPending transition, and AFFINITY_INFO that reads the X2 affinity level and searches the whole topology including CPU0.",
       "guest_visible": true,
-      "impact": "Open release blocker A13. A conforming guest can read incorrect CPU state; this deviation is a defect to remove.",
-      "evidence": "capabilities/windows-hvf.json"
+      "impact": "Resolved. CPU_ON previously reported ALREADY_ON for a merely pending CPU, and AFFINITY_INFO ignored X2 while collapsing OnPending and unknown targets into OFF, so a conforming guest could read incorrect CPU state.",
+      "evidence": "docs/windows-arm/smccc-trng-psci-contract.md"
     },
     {
       "id": "wddm-present",

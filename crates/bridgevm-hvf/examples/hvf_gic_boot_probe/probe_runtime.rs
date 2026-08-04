@@ -619,13 +619,17 @@ pub(crate) fn run() -> ExitCode {
                                 }
                                 PSCI_AFFINITY_INFO_32 | PSCI_AFFINITY_INFO_64 => {
                                     let mut target = 0u64;
+                                    let mut level = 0u64;
                                     hv_vcpu_get_reg(vcpu, HV_REG_X0 + 1, &mut target);
-                                    let result = match secondary_vcpus.as_ref() {
-                                        Some(secondary_vcpus) => {
-                                            psci_affinity_info(&secondary_vcpus.controls, target)
-                                        }
-                                        None => 1,
-                                    };
+                                    // X2 carries lowest_affinity_level; ignoring
+                                    // it answered cluster queries as if they
+                                    // named a single CPU.
+                                    hv_vcpu_get_reg(vcpu, HV_REG_X0 + 2, &mut level);
+                                    let controls = secondary_vcpus
+                                        .as_ref()
+                                        .map(|vcpus| vcpus.controls.as_slice())
+                                        .unwrap_or(&[]);
+                                    let result = psci_affinity_info(controls, target, level);
                                     hv_vcpu_set_reg(vcpu, HV_REG_X0, result);
                                 }
                                 id if crate::trng_dispatch::is_trng_function(id) => {

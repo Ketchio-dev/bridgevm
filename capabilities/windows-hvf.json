@@ -150,10 +150,10 @@
     {
       "id": "A13",
       "title": "PSCI 1.1 conformance",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": true,
       "statement": "CPU_ON and AFFINITY_INFO implement the specified state table, affinity levels and error codes with atomic state transitions.",
-      "measured": "CPU_ON returns ALREADY_ON for OnPending, and AFFINITY_INFO ignores the X2 affinity level while reporting OnPending and invalid targets as OFF. PSCI_FEATURES no longer answers for the TRNG namespace, but the state table itself is unchanged.",
+      "measured": "State logic lives in bridgevm_hvf::psci with 19 tests covering the CPU_ON table, affinity levels 0-3, cluster aggregation, CPU0, RES1 spellings and invalid targets/levels. CPU_ON reports ON_PENDING for a pending CPU, AFFINITY_INFO reads X2 and searches the whole topology, and the state check and Off->OnPending transition share one critical section. Live 1/2/4-vCPU topology validation is not yet run.",
       "evidence_paths": [
         "docs/windows-arm/smccc-trng-psci-contract.md",
         "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs"

@@ -351,6 +351,8 @@ crates/bridgevm-hvf/src/probes/virtio_block.rs	574	0
 crates/bridgevm-hvf/src/ramfb.rs	130	0
 crates/bridgevm-hvf/src/ramfb/snapshot.rs	224	0
 crates/bridgevm-hvf/src/ramfb/snapshot_tests.rs	271	0
+crates/bridgevm-hvf/src/psci.rs	132	0
+crates/bridgevm-hvf/src/psci_tests.rs	177	0
 crates/bridgevm-hvf/src/smbios.rs	403	0
 crates/bridgevm-hvf/src/smccc_trng.rs	195	0
 crates/bridgevm-hvf/src/smccc_trng_tests.rs	226	0
@@ -657,7 +659,8 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress.rs
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_kill.rs	74	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_tests.rs	116	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/plan_tests.rs	58	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs	808	32
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/psci_adapter.rs	267	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs	631	29
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/serial_input.rs	162	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync.rs	739	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace.rs	186	2
