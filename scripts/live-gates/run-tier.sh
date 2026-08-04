@@ -68,8 +68,17 @@ case "$TIER" in
             receipt refused-no-media false
             exit 1
         fi
-        echo "$TIER requires the boot gate; invoking p1-boot-gate.sh" >&2
-        if "$REPO/scripts/p1-boot-gate.sh" --out "$OUT"; then
+        # Boots per tier. T2 proves the prepared cache and the harness; only
+        # T5 produces shipping A1 evidence, and its count is the 10 the
+        # criterion names. A cheaper tier must never be read as a campaign.
+        case "$TIER" in
+            t2-pilot)     boots=2  ;;
+            t3-candidate) boots=3  ;;
+            t4-soak)      boots=5  ;;
+            t5-campaign)  boots=10 ;;
+        esac
+        echo "$TIER requires the boot gate; invoking p1-boot-gate.sh --boots $boots" >&2
+        if "$REPO/scripts/p1-boot-gate.sh" --out "$OUT" --boots "$boots"; then
             receipt completed true
         else
             receipt failed false
