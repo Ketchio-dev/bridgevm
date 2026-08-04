@@ -50,6 +50,7 @@ extern "C" {
     pub(crate) fn hv_vcpu_get_sys_reg(vcpu: HvVcpuT, reg: u16, value: *mut u64) -> HvReturn;
     pub(crate) fn hv_vcpu_set_vtimer_mask(vcpu: HvVcpuT, vtimer_is_masked: bool) -> HvReturn;
     pub(crate) fn hv_vcpu_get_vtimer_offset(vcpu: HvVcpuT, vtimer_offset: *mut u64) -> HvReturn;
+    pub(crate) fn hv_vcpu_get_vtimer_mask(vcpu: HvVcpuT, vtimer_is_masked: *mut bool) -> HvReturn;
     pub(crate) fn hv_vcpu_set_trap_debug_exceptions(vcpu: HvVcpuT, value: bool) -> HvReturn;
     pub(crate) fn hv_gic_get_redistributor_base(vcpu: HvVcpuT, base: *mut u64) -> HvReturn;
     // Apple in-kernel GICv3 (macOS 15+).

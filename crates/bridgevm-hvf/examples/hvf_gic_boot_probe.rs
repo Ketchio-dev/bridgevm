@@ -65,113 +65,90 @@ use bridgevm_hvf::tpm_tis::{SwtpmUnixBackend, Tpm2Backend};
 use bridgevm_hvf::virtio_blk::{VirtioBlockRequestTrace, VirtioMmioBlockStats, INSTALLER_ISO_SLOT};
 use bridgevm_hvf::virtio_gpu_3d::GpuShmMapPort;
 
-#[path = "hvf_gic_boot_probe/agent_console.rs"]
-mod agent_console;
+// Every module lives in the hvf_gic_boot_probe/ directory beside this
+// file. Cargo resolves example submodules relative to the examples/
+// root, so each needs an explicit #[path]; this macro writes that
+// attribute once instead of two lines per module.
+macro_rules! probe_modules {
+    ($($path:literal => $name:ident),+ $(,)?) => {
+        $(
+            #[path = $path]
+            mod $name;
+        )+
+    };
+}
+probe_modules!(
+    "hvf_gic_boot_probe/agent_console.rs" => agent_console,
+    "hvf_gic_boot_probe/arm64_trace.rs" => arm64_trace,
+    "hvf_gic_boot_probe/checkpoint_glue.rs" => checkpoint_glue,
+    "hvf_gic_boot_probe/device_shape.rs" => device_shape,
+    "hvf_gic_boot_probe/mmio_trace.rs" => mmio_trace,
+    "hvf_gic_boot_probe/nvme_trace.rs" => nvme_trace,
+    "hvf_gic_boot_probe/nvme_storage_effect.rs" => nvme_storage_effect,
+    "hvf_gic_boot_probe/pcie_mmio_trace.rs" => pcie_mmio_trace,
+    "hvf_gic_boot_probe/storage_effect_receipt.rs" => storage_effect_receipt,
+    "hvf_gic_boot_probe/pcie_ecam_trace.rs" => pcie_ecam_trace,
+    "hvf_gic_boot_probe/pe_trace.rs" => pe_trace,
+    "hvf_gic_boot_probe/ramfb_dump.rs" => ramfb_dump,
+    "hvf_gic_boot_probe/ramfb_sample_loop.rs" => ramfb_sample_loop,
+    "hvf_gic_boot_probe/live_display_export.rs" => live_display_export,
+    "hvf_gic_boot_probe/live_input.rs" => live_input,
+    "hvf_gic_boot_probe/hda_coreaudio.rs" => hda_coreaudio,
+    "hvf_gic_boot_probe/vblank_wake.rs" => vblank_wake,
+    "hvf_gic_boot_probe/kd_serial_bridge.rs" => kd_serial_bridge,
+    "hvf_gic_boot_probe/serial_input.rs" => serial_input,
+    "hvf_gic_boot_probe/xhci_hid_input.rs" => xhci_hid_input,
+    "hvf_gic_boot_probe/watchpoint_setup.rs" => watchpoint_setup,
+    "hvf_gic_boot_probe/xhci_trace.rs" => xhci_trace,
+    "hvf_gic_boot_probe/boot_telemetry.rs" => boot_telemetry,
+    "hvf_gic_boot_probe/exception_trace.rs" => exception_trace,
+    "hvf_gic_boot_probe/gic_snapshot.rs" => gic_snapshot,
+    "hvf_gic_boot_probe/gpu_shm_bar2.rs" => gpu_shm_bar2,
+    "hvf_gic_boot_probe/gpu_shm_setup.rs" => gpu_shm_setup,
+    "hvf_gic_boot_probe/guest_diagnostics.rs" => guest_diagnostics,
+    "hvf_gic_boot_probe/guest_memory.rs" => guest_memory,
+    "hvf_gic_boot_probe/host_support.rs" => host_support,
+    "hvf_gic_boot_probe/hvf_abi.rs" => hvf_abi,
+    "hvf_gic_boot_probe/interrupt_delivery.rs" => interrupt_delivery,
+    "hvf_gic_boot_probe/probe_env.rs" => probe_env,
+    "hvf_gic_boot_probe/psci_adapter.rs" => psci_adapter,
+    "hvf_gic_boot_probe/reboot_watchdog.rs" => reboot_watchdog,
+    "hvf_gic_boot_probe/secondary_vcpu.rs" => secondary_vcpu,
+    "hvf_gic_boot_probe/smp_trace.rs" => smp_trace,
+    "hvf_gic_boot_probe/storage_reporting.rs" => storage_reporting,
+    "hvf_gic_boot_probe/trng_dispatch.rs" => trng_dispatch,
+    "hvf_gic_boot_probe/vcpu_coordination.rs" => vcpu_coordination,
+    "hvf_gic_boot_probe/vcpu_debug.rs" => vcpu_debug,
+    "hvf_gic_boot_probe/wake_coordinator.rs" => wake_coordinator,
+    "hvf_gic_boot_probe/wfi_diagnostics.rs" => wfi_diagnostics,
+    "hvf_gic_boot_probe/boot_media_setup.rs" => boot_media_setup,
+    "hvf_gic_boot_probe/final_report.rs" => final_report,
+    "hvf_gic_boot_probe/hvf_setup.rs" => hvf_setup,
+    "hvf_gic_boot_probe/probe_config.rs" => probe_config,
+    "hvf_gic_boot_probe/probe_runtime.rs" => probe_runtime,
+    "hvf_gic_boot_probe/probe_setup.rs" => probe_setup,
+);
 use agent_console::AgentConsoleHarness;
-#[path = "hvf_gic_boot_probe/arm64_trace.rs"]
-mod arm64_trace;
-#[path = "hvf_gic_boot_probe/checkpoint_glue.rs"]
-mod checkpoint_glue;
 use arm64_trace::print_translated_instruction_words;
-#[path = "hvf_gic_boot_probe/device_shape.rs"]
-mod device_shape;
-#[path = "hvf_gic_boot_probe/mmio_trace.rs"]
-mod mmio_trace;
+use live_display_export::LiveDisplayExporter;
 use mmio_trace::{print_mmio_traces, record_mmio_trace, MmioTrace};
-#[path = "hvf_gic_boot_probe/nvme_trace.rs"]
-mod nvme_trace;
 use nvme_trace::print_nvme_command_trace;
-#[path = "hvf_gic_boot_probe/nvme_storage_effect.rs"]
-mod nvme_storage_effect;
-#[path = "hvf_gic_boot_probe/pcie_mmio_trace.rs"]
-mod pcie_mmio_trace;
-#[path = "hvf_gic_boot_probe/storage_effect_receipt.rs"]
-mod storage_effect_receipt;
+use pcie_ecam_trace::{PcieEcamAccess, RecentPcieEcam};
 use pcie_mmio_trace::{
     targetless_xhci_trace_context, PcieMmioEventInput, PcieTraceTarget, RecentMmio,
 };
-#[path = "hvf_gic_boot_probe/pcie_ecam_trace.rs"]
-mod pcie_ecam_trace;
-use pcie_ecam_trace::{PcieEcamAccess, RecentPcieEcam};
-#[path = "hvf_gic_boot_probe/pe_trace.rs"]
-mod pe_trace;
 use pe_trace::{print_frame_chain, print_pe_owner, print_translated_pe_owner, translated_ipa};
-#[path = "hvf_gic_boot_probe/ramfb_dump.rs"]
-mod ramfb_dump;
-#[path = "hvf_gic_boot_probe/ramfb_sample_loop.rs"]
-mod ramfb_sample_loop;
 use ramfb_sample_loop::{RamfbSampleLoop, RamfbSampleShellAction};
-#[path = "hvf_gic_boot_probe/live_display_export.rs"]
-mod live_display_export;
-use live_display_export::LiveDisplayExporter;
-#[path = "hvf_gic_boot_probe/live_input.rs"]
-mod live_input;
 
 #[cfg(target_os = "macos")]
-#[path = "hvf_gic_boot_probe/hda_coreaudio.rs"]
-mod hda_coreaudio;
-
-#[path = "hvf_gic_boot_probe/vblank_wake.rs"]
-mod vblank_wake;
-
-#[path = "hvf_gic_boot_probe/kd_serial_bridge.rs"]
-mod kd_serial_bridge;
 use live_input::LiveInputController;
-#[path = "hvf_gic_boot_probe/serial_input.rs"]
-mod serial_input;
 use serial_input::SerialTriggeredUartInput;
-#[path = "hvf_gic_boot_probe/xhci_hid_input.rs"]
-mod xhci_hid_input;
 use xhci_hid_input::{
     print_hid_semantic_summary, print_pointer_input_rejection, print_setup_input_rejection,
     SetupInputHostWake, XhciHidBootKeyTrigger, XhciPointerInputTrigger, XhciSetupInputTrigger,
 };
-#[path = "hvf_gic_boot_probe/watchpoint_setup.rs"]
-mod watchpoint_setup;
-#[path = "hvf_gic_boot_probe/xhci_trace.rs"]
-mod xhci_trace;
 use xhci_trace::XhciBringupTrace;
 
-#[path = "hvf_gic_boot_probe/boot_telemetry.rs"]
-mod boot_telemetry;
-#[path = "hvf_gic_boot_probe/exception_trace.rs"]
-mod exception_trace;
-#[path = "hvf_gic_boot_probe/gpu_shm_bar2.rs"]
-mod gpu_shm_bar2;
-#[path = "hvf_gic_boot_probe/gpu_shm_setup.rs"]
-mod gpu_shm_setup;
-#[path = "hvf_gic_boot_probe/guest_diagnostics.rs"]
-mod guest_diagnostics;
-#[path = "hvf_gic_boot_probe/guest_memory.rs"]
-mod guest_memory;
-#[path = "hvf_gic_boot_probe/host_support.rs"]
-mod host_support;
-#[path = "hvf_gic_boot_probe/hvf_abi.rs"]
-mod hvf_abi;
-#[path = "hvf_gic_boot_probe/interrupt_delivery.rs"]
-mod interrupt_delivery;
-#[path = "hvf_gic_boot_probe/probe_env.rs"]
-mod probe_env;
-#[path = "hvf_gic_boot_probe/psci_adapter.rs"]
-mod psci_adapter;
-#[path = "hvf_gic_boot_probe/reboot_watchdog.rs"]
-mod reboot_watchdog;
-#[path = "hvf_gic_boot_probe/secondary_vcpu.rs"]
-mod secondary_vcpu;
-#[path = "hvf_gic_boot_probe/smp_trace.rs"]
-mod smp_trace;
-#[path = "hvf_gic_boot_probe/storage_reporting.rs"]
-mod storage_reporting;
-#[path = "hvf_gic_boot_probe/trng_dispatch.rs"]
-mod trng_dispatch;
-#[path = "hvf_gic_boot_probe/vcpu_coordination.rs"]
-mod vcpu_coordination;
-#[path = "hvf_gic_boot_probe/vcpu_debug.rs"]
-mod vcpu_debug;
-#[path = "hvf_gic_boot_probe/wake_coordinator.rs"]
-mod wake_coordinator;
-#[path = "hvf_gic_boot_probe/wfi_diagnostics.rs"]
-mod wfi_diagnostics;
 pub(crate) use boot_telemetry::*;
 pub(crate) use exception_trace::*;
 pub(crate) use guest_diagnostics::*;
@@ -189,19 +166,6 @@ pub(crate) use vcpu_coordination::*;
 pub(crate) use vcpu_debug::*;
 pub(crate) use wake_coordinator::*;
 pub(crate) use wfi_diagnostics::*;
-
-#[path = "hvf_gic_boot_probe/boot_media_setup.rs"]
-mod boot_media_setup;
-#[path = "hvf_gic_boot_probe/final_report.rs"]
-mod final_report;
-#[path = "hvf_gic_boot_probe/hvf_setup.rs"]
-mod hvf_setup;
-#[path = "hvf_gic_boot_probe/probe_config.rs"]
-mod probe_config;
-#[path = "hvf_gic_boot_probe/probe_runtime.rs"]
-mod probe_runtime;
-#[path = "hvf_gic_boot_probe/probe_setup.rs"]
-mod probe_setup;
 
 fn probe_exit_code(fatal_vcpu_run_error: bool, fatal_reset_error: bool) -> ExitCode {
     if fatal_vcpu_run_error || fatal_reset_error {

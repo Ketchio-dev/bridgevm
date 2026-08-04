@@ -600,9 +600,9 @@ crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe.rs	522	10
 crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe/guest_code.rs	161	0
 crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe/options.rs	205	0
 crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe/receipt.rs	269	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe.rs	222	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe.rs	186	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/boot_media_setup.rs	112	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/final_report.rs	392	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/final_report.rs	402	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_bar2.rs	41	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_setup.rs	13	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_setup.rs	81	2
@@ -632,6 +632,8 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs	293	16
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_stats.rs	60	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard.rs	426	21
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_support.rs	44	2
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_snapshot.rs	197	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_snapshot_tests.rs	182	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_abi.rs	235	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/interrupt_delivery.rs	277	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/kd_serial_bridge.rs	257	0

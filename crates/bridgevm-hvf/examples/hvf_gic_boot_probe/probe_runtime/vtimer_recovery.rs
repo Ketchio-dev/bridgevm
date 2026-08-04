@@ -16,14 +16,9 @@
 
 use crate::host_support::host_cntvct;
 use crate::hvf_abi::{
-    hv_vcpu_get_sys_reg, hv_vcpu_get_vtimer_offset, hv_vcpu_set_sys_reg, hv_vcpu_set_vtimer_mask,
-    HvReturn, HvVcpuT, HV_SYS_REG_CNTV_CTL_EL0, HV_SYS_REG_CNTV_CVAL_EL0,
+    hv_vcpu_get_sys_reg, hv_vcpu_get_vtimer_mask, hv_vcpu_get_vtimer_offset, hv_vcpu_set_sys_reg,
+    hv_vcpu_set_vtimer_mask, HvVcpuT, HV_SYS_REG_CNTV_CTL_EL0, HV_SYS_REG_CNTV_CVAL_EL0,
 };
-
-#[link(name = "Hypervisor", kind = "framework")]
-extern "C" {
-    fn hv_vcpu_get_vtimer_mask(vcpu: HvVcpuT, vtimer_is_masked: *mut bool) -> HvReturn;
-}
 
 /// Call after a surplus (unclaimed) canceled exit. A spurious unmask when no
 /// fire was swallowed is harmless; the timer condition is level-evaluated.

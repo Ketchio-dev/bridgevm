@@ -11,8 +11,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 
 pub(super) static TEMP_SOCKET_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -86,14 +84,16 @@ fn qemu_netdev_maps_isolated_mode_from_network_plan() {
     );
 }
 
+/// A unique Unix socket path that stays well inside `SUN_LEN`.
+///
+/// `sun_path` is 104 bytes on macOS and `bind` fails with `InvalidInput` at
+/// exactly that length. The old name reached 102 under this machine's 49-byte
+/// `TMPDIR`; a longer `TMPDIR` pushes it over and surfaces as an
+/// unrelated-looking `QmpIo(InvalidInput)`. pid + counter is already unique.
 pub(super) fn temp_socket_path() -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
     let counter = TEMP_SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!(
-        "bridgevm-qmp-test-{}-{nanos}-{counter}.sock",
-        std::process::id()
-    ))
+    let path = std::env::temp_dir().join(format!("bv-qmp-{}-{counter}.sock", std::process::id()));
+    debug_assert!(path.as_os_str().len() < 104, "path exceeds SUN_LEN");
+    let _ = std::fs::remove_file(&path);
+    path
 }
