@@ -76,14 +76,18 @@ done
 assets_digest=$(cd scripts/win-assets && find . -type f -exec shasum -a 256 {} + \
   | LC_ALL=C sort -k2 | shasum -a 256 | cut -d' ' -f1)
 built_from=$(cat "$INJECTOR.assets-sha256" 2>/dev/null || true)
-{ echo "DIAG stat: $(stat -f '%z %Sp' "$INJECTOR.assets-sha256" 2>&1)"
-  echo "DIAG cat stderr: $(cat "$INJECTOR.assets-sha256" 2>&1 1>/dev/null)"
-  echo "DIAG cat stdout: [$(cat "$INJECTOR.assets-sha256" 2>/dev/null)]"
-  echo "DIAG id: $(id -un) euid=$(id -u)"; } >&2
 if [[ "$assets_digest" != "$built_from" ]]; then
   echo "FAIL: injector was not built from the current scripts/win-assets" >&2
   echo "  injector:    $INJECTOR" >&2
   echo "  built from:  ${built_from:-<unrecorded>}" >&2
+  # An empty read from an existing file is the TCC signature: macOS grants
+  # removable-volume access per responsible application, and a LaunchAgent is
+  # not the terminal that was granted it. `stat` succeeds, `read` does not.
+  if [[ -e "$INJECTOR.assets-sha256" && -z "$built_from" ]]; then
+    echo "  note: the sidecar exists but could not be read." >&2
+    echo "        Grant Full Disk Access to /bin/bash (or move the canonical" >&2
+    echo "        inputs onto an internal volume) for queued gates to run." >&2
+  fi
   echo "  assets now:  $assets_digest" >&2
   echo "  rebuild:  VIOGPU3D_DIR=... OUT=$INJECTOR scripts/build-hvf-windows-viogpu3d-injector.sh" >&2
   echo "  override: STALE_INJECTOR_OK=1 (only when the change cannot affect the guest)" >&2
