@@ -800,3 +800,4 @@ crates/bridgevm-hvf/src/snapshot_manifest_json.rs	68	0
 crates/bridgevm-hvf/src/snapshot_manifest_json_tests.rs	27	0
 crates/bridgevm-hvf/src/nvme/disk_export.rs	54	0
 crates/bridgevm-hvf/src/nvme/overlay_quota_tests.rs	134	0
+crates/bridgevm-hvf/examples/snapshot_pair_cli.rs	66	0

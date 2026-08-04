@@ -48,12 +48,17 @@ final class HvfEngineSession: ObservableObject {
         executablePath: String? = Bundle.main.executableURL?.path,
         resourcePath: String? = Bundle.main.resourceURL?.path
     ) -> URL {
+        // DEBUG only: this points the app at a checkout and makes it run that
+        // checkout's shell scripts. In a signed release build an environment
+        // variable must not be able to choose what code the app executes.
+        #if DEBUG
         if let override = environment["BRIDGEVM_REPO_ROOT"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !override.isEmpty {
             let expanded = (override as NSString).expandingTildeInPath
             let url = URL(fileURLWithPath: expanded, isDirectory: true)
             if containsBootWrapper(url) { return url.resolvingSymlinksInPath() }
         }
+        #endif
 
         var candidates = [URL(fileURLWithPath: currentDirectoryPath, isDirectory: true)]
         if let executablePath {

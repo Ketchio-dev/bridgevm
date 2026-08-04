@@ -260,20 +260,32 @@ enum VTPMStateSecurity {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bundle: Bundle = .main
     ) -> String {
+        // DEBUG only: swtpm holds the vTPM's sealed state, so choosing which
+        // binary plays that role by environment variable is a way to hand it
+        // to something else entirely.
+        #if DEBUG
         if let override = environment["BRIDGEVM_SWTPM_BIN"], !override.isEmpty {
             return override
         }
+        #endif
         let conventionalHelper = bundle.bundleURL
             .appendingPathComponent("Contents/Helpers/swtpm", isDirectory: false)
         for bundled in [bundle.url(forAuxiliaryExecutable: "swtpm"), conventionalHelper]
             .compactMap({ $0 }) where fileManager.isExecutableFile(atPath: bundled.path) {
                 return bundled.path
         }
+        // DEBUG only: a release build runs the helper it shipped and signed, or
+        // none. Falling back to whatever is on PATH means an attacker who can
+        // write to /usr/local/bin chooses the TPM.
+        #if DEBUG
         for candidate in ["/opt/homebrew/bin/swtpm", "/usr/local/bin/swtpm", "/usr/bin/swtpm"]
         where fileManager.isExecutableFile(atPath: candidate) {
             return candidate
         }
         return "swtpm"
+        #else
+        return ""
+        #endif
     }
 
     static func executableAvailable(
@@ -281,6 +293,9 @@ enum VTPMStateSecurity {
         fileManager: FileManager = .default,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Bool {
+        // An empty command is how a release build reports "no bundled helper".
+        // It must fail closed here rather than fall through to a PATH search.
+        if command.isEmpty { return false }
         if command.contains("/") { return fileManager.isExecutableFile(atPath: command) }
         return (environment["PATH"] ?? "")
             .split(separator: ":", omittingEmptySubsequences: true)

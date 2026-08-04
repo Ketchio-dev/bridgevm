@@ -74,6 +74,8 @@ else
   if command -v swift >/dev/null 2>&1; then
     step "swift build" swift build --package-path apps/macos
     step "swift tests" scripts/run-swift-tests.sh
+    # Compiled-artifact check: SKIPs unless a release build is also present.
+    step "release overrides" scripts/check-release-overrides.sh
   else
     printf '\nswift toolchain absent: skipping macOS app checks\n' >&2
   fi
