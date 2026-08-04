@@ -59,6 +59,17 @@ else
   step "tests (venus lib)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --lib --features venus --locked
   step "tests (probe example)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --features venus --example hvf_gic_boot_probe --locked
 
+  # The non-Apple platform stubs only compile on a non-Apple target, so a
+  # macOS-only gate cannot see them drift from the structs they fill in.
+  # Skipped rather than failed when the target is absent: CI has it.
+  if rustup target list --installed --toolchain "${TOOLCHAIN#+}" 2>/dev/null \
+      | grep -q '^aarch64-unknown-linux-gnu$'; then
+    step "cross-compile (linux stubs)" cargo "$TOOLCHAIN" check --workspace \
+      --target aarch64-unknown-linux-gnu --locked
+  else
+    printf 'cross-compile (linux stubs): SKIP (target not installed)\n'
+  fi
+
   # --- macOS app -------------------------------------------------------------
   if command -v swift >/dev/null 2>&1; then
     step "swift build" swift build --package-path apps/macos

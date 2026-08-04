@@ -37,7 +37,12 @@ confidence-threshold = 0.9
 
 [bans]
 multiple-versions = "warn"
+# Workspace-internal `{ path = ... }` dependencies carry no version and read
+# as wildcards. They are not a supply-chain risk: the source is this
+# repository. `allow-wildcard-paths` keeps the check meaningful for registry
+# crates, where an unpinned version really would be one.
 wildcards = "deny"
+allow-wildcard-paths = true
 # A build that can reach into a proc-macro at runtime, or that pulls a second
 # copy of a crypto crate, is worth a human look rather than a silent pass.
 highlight = "all"

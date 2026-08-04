@@ -10,6 +10,7 @@ pub fn probe_hvf_mmio_serial_device(
 ) -> HvfMmioSerialDeviceProbe {
     HvfMmioSerialDeviceProbe {
         allowed: allow_device,
+        device_model: PL011_UART_MODEL,
         attempted: false,
         vm_created: false,
         memory_allocated: false,

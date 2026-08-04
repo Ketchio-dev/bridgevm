@@ -271,8 +271,8 @@ crates/bridgevm-hvf/src/platform/apple/vcpu_run.rs	82	3
 crates/bridgevm-hvf/src/platform/unsupported/firmware.rs	397	0
 crates/bridgevm-hvf/src/platform/unsupported/host.rs	18	0
 crates/bridgevm-hvf/src/platform/unsupported/lifecycle.rs	169	0
-crates/bridgevm-hvf/src/platform/unsupported/mmio/devices.rs	584	0
-crates/bridgevm-hvf/src/platform/unsupported/mmio/emulation.rs	194	0
+crates/bridgevm-hvf/src/platform/unsupported/mmio/devices.rs	585	0
+crates/bridgevm-hvf/src/platform/unsupported/mmio/emulation.rs	193	0
 crates/bridgevm-hvf/src/platform/unsupported/mmio/guest.rs	109	0
 crates/bridgevm-hvf/src/platform/unsupported/mmio/memory_and_firmware.rs	162	0
 crates/bridgevm-hvf/src/platform/unsupported/mmio/mod.rs	11	0

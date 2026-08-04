@@ -26,7 +26,6 @@ pub fn probe_hvf_mmio_read_exit(
         vm_destroyed: false,
         memory_deallocated: false,
         host,
-        device_model: PL011_UART_MODEL,
         code_ipa_start: 0x4000_0000,
         mmio_ipa: 0x5000_0000,
         bytes: 16 * 1024,
