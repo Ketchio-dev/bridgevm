@@ -23,7 +23,9 @@ BOOTS=10
 OUT=""
 BASE_IMAGE=${BASE_IMAGE:-$HOME/BridgeVM/work/wall-c8-clean-12041.raw}
 BASE_VARS=${BASE_VARS:-$HOME/BridgeVM/work/wall-c8-clean-inject-vars.fd}
-INJECTOR=${INJECTOR:-/tmp/inj-det-1.raw}
+# Not /tmp: the injector is a gate input whose hash keys the prepared cache,
+# and /tmp is cleared on reboot. Canonical inputs live on the external volume.
+INJECTOR=${INJECTOR:-/Volumes/PortableSSD/BridgeVM/injectors/inj-a1-20260802.raw}
 VIOGPU_DIR=${VIOGPU_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 # Pass 2 must outlast a full four-stage firstboot, which needs >= 2400 s.
 # Kill mode does not make that ceiling cheap, contrary to what this comment
@@ -129,36 +131,18 @@ run_one_boot() {
   local i="$1"
   local W="$HOME/BridgeVM/work/p1gate-work-$i"
   local D="$OUT/boot-$i"
-  rm -rf "$W" "$D" "$D-inject"
-  mkdir -p "$W" "$D" "$D-inject"
+  rm -rf "$W" "$D"
+  mkdir -p "$W" "$D"
 
-  # cp -c: APFS clone when source and destination share an APFS volume, and a
-  # plain copy otherwise (external-SSD sources), so lineage is safe either way.
-  cp -c "$BASE_IMAGE" "$W/disk.raw"
-  cp "$BASE_VARS" "$W/vars.fd"
-  cp "$INJECTOR" "$W/inj.raw"
-
-  # Pass 1: the WinPE injector plants the four-stage script, clears
-  # stage1/2/3.flag, and re-arms RunOnce.
-  set_gpu_args "$D-inject"
-  scripts/run-hvf-windows-installed-boot.sh \
-    --target "$W/disk.raw" --vars "$W/vars.fd" --placeholder-nsid1 "$W/inj.raw" \
-    --evidence-dir "$D-inject" --watchdog-ms 600000 --ram-mib 6144 --smp-cpus 4 \
-    --skip-build \
-    "${GPU_ARGS[@]}" > "$D-inject/launcher.out" 2>&1
+  # Clone the prepared (already injected) pair. cp -c is an APFS clone when
+  # source and destination share a volume, so this costs no real bytes.
+  cp -c "$PREPARED_IMAGE" "$W/disk.raw"
+  cp "$PREPARED_VARS" "$W/vars.fd"
 
   local injected
-  injected=$(grep -h '^injector_boot_observed=' "$D-inject/target-stat.txt" 2>/dev/null | cut -d= -f2)
+  injected=$(cat "$PREPARED_DIR/injected.txt" 2>/dev/null)
 
-  # The injector pass leaves BootOrder pointing at Boot0003, which addresses the
-  # injector's own GPT partition. That disk is absent in pass 2, so firmware
-  # tries it, fails to find \EFI\Boot\bootaa64.efi, and has to fall back.
-  # Most boots fall back cleanly; some stall in the handoff and the guest never
-  # starts, which is the intermittent failure this gate kept reporting.
-  # Dropping the dead entry removes the fallback altogether.
-  python3 scripts/drop-injector-boot-entry.py "$W/vars.fd" >> "$D-inject/launcher.out" 2>&1
-
-  # Pass 2: boot installed Windows. firstboot runs stage1..stage4 across its own
+  # Boot installed Windows. firstboot runs stage1..stage4 across its own
   # internal reboots, which the probe follows within one invocation.
   set_gpu_args "$D"
   BRIDGEVM_SMP_TRACE="${BRIDGEVM_SMP_TRACE:-}" \
@@ -184,6 +168,64 @@ run_one_boot() {
 
   rm -rf "$W"
 }
+
+# One injector pass for the whole gate, keyed by the hashes of everything that
+# can change what it plants. Each boot then clones the prepared pair, so a
+# 10-boot gate runs 10 boots rather than 20. Correctness rests on the key: if
+# the base image, vars, injector or any guest asset changes, the key changes
+# and the pass is redone.
+prepared_key() {
+  {
+    stat -f '%d-%i-%m-%z' "$BASE_IMAGE" "$BASE_VARS" "$INJECTOR"
+    find scripts/win-assets -type f -exec stat -f '%N-%m-%z' {} + | sort
+  } | shasum -a 256 | cut -d' ' -f1
+}
+
+PREPARED_KEY="$(prepared_key)"
+PREPARED_DIR="$CACHE_DIR/prepared-$PREPARED_KEY"
+PREPARED_IMAGE="$PREPARED_DIR/disk.raw"
+PREPARED_VARS="$PREPARED_DIR/vars.fd"
+
+if [[ -e "$PREPARED_DIR/ready" ]]; then
+  echo "prepared cache hit: $PREPARED_DIR" | tee -a "$PROGRESS"
+else
+  echo "prepared cache miss: running one injector pass" | tee -a "$PROGRESS"
+  rm -rf "$PREPARED_DIR"
+  mkdir -p "$PREPARED_DIR"
+  cp -c "$BASE_IMAGE" "$PREPARED_IMAGE"
+  cp "$BASE_VARS" "$PREPARED_VARS"
+  cp "$INJECTOR" "$PREPARED_DIR/inj.raw"
+
+  # The WinPE injector plants the four-stage script, clears stage1/2/3.flag,
+  # and re-arms RunOnce.
+  set_gpu_args "$PREPARED_DIR"
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$PREPARED_IMAGE" --vars "$PREPARED_VARS" \
+    --placeholder-nsid1 "$PREPARED_DIR/inj.raw" \
+    --evidence-dir "$PREPARED_DIR" --watchdog-ms 600000 --ram-mib 6144 --smp-cpus 4 \
+    --skip-build \
+    "${GPU_ARGS[@]}" > "$PREPARED_DIR/launcher.out" 2>&1
+
+  grep -h '^injector_boot_observed=' "$PREPARED_DIR/target-stat.txt" 2>/dev/null \
+    | cut -d= -f2 > "$PREPARED_DIR/injected.txt"
+
+  # The injector pass leaves BootOrder pointing at Boot0003, which addresses
+  # the injector's own GPT partition. That disk is absent when booting the
+  # installed system, so firmware tries it, fails to find
+  # \EFI\Boot\bootaa64.efi, and has to fall back. Most boots fall back
+  # cleanly; some stall in the handoff and the guest never starts. Dropping the
+  # dead entry removes the fallback altogether.
+  python3 scripts/drop-injector-boot-entry.py "$PREPARED_VARS" \
+    >> "$PREPARED_DIR/launcher.out" 2>&1
+
+  if [[ "$(cat "$PREPARED_DIR/injected.txt" 2>/dev/null)" != "1" ]]; then
+    echo "FAIL: the injector pass did not report injector_boot_observed=1" >&2
+    echo "  see $PREPARED_DIR/launcher.out" >&2
+    exit 1
+  fi
+  rm -f "$PREPARED_DIR/inj.raw"
+  touch "$PREPARED_DIR/ready"
+fi
 
 # The boot dirs are still registered in gate order below; only execution is
 # concurrent. The manifest is written per-boot inside run_one_boot, so entries
