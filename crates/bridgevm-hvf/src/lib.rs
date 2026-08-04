@@ -28,6 +28,8 @@ pub mod platform_virt;
 pub mod psci;
 pub mod ramfb;
 pub mod smbios;
+pub mod snapshot_hash;
+pub mod snapshot_pair;
 pub mod smccc_trng;
 pub mod stage1;
 pub mod tpm_ppi;

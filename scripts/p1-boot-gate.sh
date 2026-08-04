@@ -62,11 +62,19 @@ done
 # hypothetical: a 10-boot gate once ran entirely against an injector built 23
 # hours before the vkCreateInstance timeout landed, and every stall it found
 # was a bug that had already been fixed in the repository.
-newest_asset=$(find scripts/win-assets -type f -newer "$INJECTOR" -print -quit 2>/dev/null)
-if [[ -n "$newest_asset" ]]; then
-  echo "FAIL: injector is older than scripts/win-assets" >&2
-  echo "  injector: $INJECTOR ($(stat -f '%Sm' "$INJECTOR"))" >&2
-  echo "  newer:    $newest_asset ($(stat -f '%Sm' "$newest_asset"))" >&2
+# Compared by content, not mtime: a fresh `git worktree` (which is how the
+# live queue builds a sealed checkout) stamps every file with the checkout
+# time, so an mtime test reports every asset as newer than any injector and
+# the gate can never run there. The injector records the asset digest it was
+# built from.
+assets_digest=$(find scripts/win-assets -type f -exec shasum -a 256 {} + \
+  | sort -k2 | shasum -a 256 | cut -d' ' -f1)
+built_from=$(cat "$INJECTOR.assets-sha256" 2>/dev/null || true)
+if [[ "$assets_digest" != "$built_from" ]]; then
+  echo "FAIL: injector was not built from the current scripts/win-assets" >&2
+  echo "  injector:    $INJECTOR" >&2
+  echo "  built from:  ${built_from:-<unrecorded>}" >&2
+  echo "  assets now:  $assets_digest" >&2
   echo "  rebuild:  VIOGPU3D_DIR=... OUT=$INJECTOR scripts/build-hvf-windows-viogpu3d-injector.sh" >&2
   echo "  override: STALE_INJECTOR_OK=1 (only when the change cannot affect the guest)" >&2
   [[ "${STALE_INJECTOR_OK:-0}" == "1" ]] || exit 1

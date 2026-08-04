@@ -85,3 +85,9 @@ log "driver protocol: $package_protocol"
 log "output: $OUT"
 log "driver dirs: $driver_dirs"
 ENABLE_TESTSIGNING=1 DRIVER_DIRS="$driver_dirs" OUT="$OUT" "$BUILD_INJECTOR"
+
+# Record which guest assets this injector carries, so the boot gate can tell a
+# stale injector from a fresh one by content rather than by mtime.
+find "$ROOT/scripts/win-assets" -type f -exec shasum -a 256 {} + \
+  | sort -k2 | shasum -a 256 | cut -d' ' -f1 > "$OUT.assets-sha256"
+log "assets digest: $(cat "$OUT.assets-sha256") -> $OUT.assets-sha256"
