@@ -399,6 +399,17 @@ pub(crate) fn run() -> ExitCode {
                         break;
                     }
                     surplus_canceled_exits += 1;
+                    // A cancel can win the race against an in-flight vtimer
+                    // fire. HVF auto-masks the vtimer when it fires, and if
+                    // the exit is then reported as CANCELED instead of
+                    // EXIT_VTIMER, the mask is set but our vtimer handler --
+                    // the only place that follows up -- never runs. Nothing
+                    // unmasks after that: the guest parks in WFI with
+                    // CNTV_CTL ISTATUS=1 and never wakes (measured 21/21
+                    // correlation between surplus cancels and the boot
+                    // stall). Unmask defensively; a spurious unmask when no
+                    // fire was swallowed is harmless.
+                    hv_vcpu_set_vtimer_mask(vcpu, false);
                     continue;
                 }
                 if !automation_tick_canceled && reason == EXIT_VTIMER {

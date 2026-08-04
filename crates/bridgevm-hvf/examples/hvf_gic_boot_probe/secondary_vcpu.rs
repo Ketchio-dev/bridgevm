@@ -395,6 +395,12 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             if shutdown.load(Ordering::SeqCst) {
                 return true;
             }
+            // Same race as the primary loop: a cancel can swallow an
+            // in-flight vtimer fire whose auto-mask has already been applied.
+            // Unmask defensively so the timer can wake this vCPU again.
+            unsafe {
+                hv_vcpu_set_vtimer_mask(vcpu, false);
+            }
             continue;
         }
         if reason == EXIT_VTIMER {

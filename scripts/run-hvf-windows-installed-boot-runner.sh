@@ -360,6 +360,10 @@ build_installed_boot_env_args() {
   # PL011 UART register + KD serial bridge byte-flow trace (pl011.rs /
   # kd_serial_bridge.rs gate on BRIDGEVM_TRACE_PL011; absent = no trace).
   [[ -z "${BRIDGEVM_TRACE_PL011:-}" ]] || ENV_ARGS+=("BRIDGEVM_TRACE_PL011=$BRIDGEVM_TRACE_PL011")
+  # Secondary-vCPU PSCI state-transition trace (smp_trace.rs). Needed to see
+  # whether a CPU_ON was never issued or answered ALREADY_ON during the
+  # KeIpiGenericCall reboot stall; absent = no trace.
+  [[ -z "${BRIDGEVM_SMP_TRACE:-}" ]] || ENV_ARGS+=("BRIDGEVM_SMP_TRACE=$BRIDGEVM_SMP_TRACE")
   # Crash-survivable reset snapshot channel (hvf_gic_boot_probe.rs): on a guest
   # PSCI SYSTEM_RESET, dump vCPU regs + full guest RAM to this dir BEFORE the
   # reboot wipes RAM, so a self-resetting Windows bugcheck (venus StartDevice)

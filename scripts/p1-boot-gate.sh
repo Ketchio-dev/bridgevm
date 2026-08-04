@@ -161,6 +161,7 @@ run_one_boot() {
   # Pass 2: boot installed Windows. firstboot runs stage1..stage4 across its own
   # internal reboots, which the probe follows within one invocation.
   set_gpu_args "$D"
+  BRIDGEVM_SMP_TRACE="${BRIDGEVM_SMP_TRACE:-}" \
   BRIDGEVM_BOOT_PROGRESS_KILL=1 \
   scripts/run-hvf-windows-installed-boot.sh \
     --target "$W/disk.raw" --vars "$W/vars.fd" \

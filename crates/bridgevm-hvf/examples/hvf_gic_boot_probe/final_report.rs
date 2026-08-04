@@ -179,6 +179,9 @@ macro_rules! persist_and_report_stop {
         );
         let mut voff = 0u64;
         hv_vcpu_get_vtimer_offset($vcpu, &mut voff);
+        let mut vtimer_masked = false;
+        let vtimer_mask_status = hv_vcpu_get_vtimer_mask($vcpu, &mut vtimer_masked);
+        println!("VTIMER MASK: masked={vtimer_masked} (status={vtimer_mask_status:#x})");
         let mut cntvoff = 0u64;
         hv_vcpu_get_sys_reg($vcpu, 0xe703, &mut cntvoff); // CNTVOFF_EL2
         let hcnt = host_cntvct();
