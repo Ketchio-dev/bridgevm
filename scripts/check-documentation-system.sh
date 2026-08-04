@@ -58,7 +58,9 @@ while IFS=$'\t' read -r path class topic superseded_by extra; do
     errors=$((errors + 1))
   fi
   seen_paths+=("$path")
-  if [[ "$superseded_by" != "-" && ! -f "$ROOT/$superseded_by" ]]; then
+  # GOAL.md is an operator ledger kept out of git on purpose, so it is a valid
+  # superseding target that a fresh CI checkout will not contain.
+  if [[ "$superseded_by" != "-" && "$superseded_by" != "GOAL.md" && ! -f "$ROOT/$superseded_by" ]]; then
     echo "superseding document does not exist: $path -> $superseded_by" >&2
     errors=$((errors + 1))
   fi
@@ -69,7 +71,7 @@ while IFS= read -r path; do
     echo "unclassified Markdown document: $path" >&2
     errors=$((errors + 1))
   fi
-done < <(cd "$ROOT" && rg --files docs -g '*.md' | LC_ALL=C sort)
+done < <(cd "$ROOT" && find docs -type f -name '*.md' | LC_ALL=C sort)
 
 if [[ $errors -ne 0 ]]; then
   echo "documentation system: FAIL ($errors error(s))" >&2
