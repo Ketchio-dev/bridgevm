@@ -192,15 +192,21 @@ def apply_block(path: Path, name: str, body: str, check: bool) -> bool:
 
 def check_forbidden() -> list[str]:
     """Scan claim surfaces for retracted wording."""
-    targets = [
-        ROOT / "README.md",
-        ROOT / "STATUS.md",
-        ROOT / "crates" / "bridgevm-core" / "src" / "lib.rs",
-        ROOT / "crates" / "bridgevm-hvf" / "src" / "machine.rs",
-        ROOT / "docs" / "hvf-windows-engine-strategy.md",
-        ROOT / "apps" / "macos" / "Sources" / "BridgeVMApp" / "Services"
-        / "VirtualMachineClient.swift",
-    ]
+    # Whole trees rather than a hand-kept file list: A18 covers CLI and app
+    # wording, and a list of six files silently stops covering anything that
+    # moves or is added. Docs are covered by the retraction rules that apply
+    # to prose the user reads, not to evidence records of what was once true.
+    targets = [ROOT / "README.md", ROOT / "STATUS.md"]
+    for tree, suffixes in (
+        (ROOT / "crates", (".rs",)),
+        (ROOT / "apps" / "macos" / "Sources", (".swift",)),
+    ):
+        targets.extend(
+            path
+            for path in sorted(tree.rglob("*"))
+            if path.suffix in suffixes and "/target/" not in str(path)
+        )
+    targets.append(ROOT / "docs" / "hvf-windows-engine-strategy.md")
     problems = []
     for target in targets:
         if not target.exists():
