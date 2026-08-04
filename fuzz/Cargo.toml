@@ -1,0 +1,50 @@
+# Parser fuzz targets.
+#
+# Not a workspace member: cargo-fuzz needs its own profile and a nightly
+# toolchain, and adding it to the workspace would make every ordinary
+# `cargo test` depend on that. `scripts/check-fuzz-smoke.sh` exercises the
+# same target bodies on the checked-in corpus with the pinned stable
+# toolchain, so the seeds stay meaningful even where cargo-fuzz is absent.
+# Standalone: not a workspace member, so an ordinary `cargo test` at the root
+# does not pull in libfuzzer-sys or require a nightly toolchain.
+[workspace]
+
+[package]
+name = "bridgevm-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+libfuzzer-sys = "0.4"
+bridgevm-hvf = { path = "../crates/bridgevm-hvf" }
+
+[[bin]]
+name = "nvme_prp"
+path = "fuzz_targets/nvme_prp.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "virtqueue_chain"
+path = "fuzz_targets/virtqueue_chain.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "xhci_trb"
+path = "fuzz_targets/xhci_trb.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "nat_packet"
+path = "fuzz_targets/nat_packet.rs"
+test = false
+doc = false

@@ -1,0 +1,48 @@
+# Dependency policy for BridgeVM, enforced by `cargo deny check`.
+#
+# The advisory/licence/source rules live here rather than in CI YAML so the
+# same policy applies locally and on hosted runners, and so a change to it
+# shows up in review as a change to the policy rather than to a workflow step.
+
+[graph]
+targets = [
+    { triple = "aarch64-apple-darwin" },
+    { triple = "x86_64-apple-darwin" },
+]
+all-features = false
+
+[advisories]
+# Fail on any known vulnerability. `unmaintained` is warn rather than deny:
+# an unmaintained crate is a real risk but not an exploitable one, and
+# denying it would block on someone else's release cadence.
+yanked = "deny"
+unmaintained = "workspace"
+
+[licenses]
+# Allowlist. A dependency whose licence is not named here fails the check
+# rather than being assumed compatible.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# A build that can reach into a proc-macro at runtime, or that pulls a second
+# copy of a crypto crate, is worth a human look rather than a silent pass.
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

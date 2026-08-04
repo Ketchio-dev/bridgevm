@@ -11,3 +11,15 @@ libc.workspace = true
 [features]
 default = []
 venus = []
+
+[dev-dependencies]
+# Exhaustive interleaving checks for the lock-free state machines. Only ever
+# used by tests/loom_*.rs, which are cfg-gated on `loom` so an ordinary
+# `cargo test` does not pay for them.
+loom = "0.7.2"
+
+[lints.rust]
+# `loom` is set by scripts/check-loom.sh, not by a feature. Declaring it here
+# keeps `unexpected_cfgs` able to catch a typo in the gate rather than
+# silently compiling the models to nothing.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }

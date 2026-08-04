@@ -789,3 +789,7 @@ crates/bridgevm-storage/src/tests_split/part_3_3.rs	565	0
 crates/bridgevm-storage/src/vm_clone.rs	270	0
 crates/bridgevm-storage/src/vm_registry.rs	93	0
 crates/bridgevm-storage/src/vm_transfer.rs	152	0
+fuzz/src/lib.rs	68	0
+fuzz/src/bin/smoke.rs	90	0
+crates/bridgevm-hvf/tests/loom_psci.rs	106	0
+crates/bridgevm-hvf/tests/loom_reset_generation.rs	146	0
