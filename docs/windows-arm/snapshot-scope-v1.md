@@ -49,6 +49,31 @@ A future V1 implementation is complete only when it proves all of:
 6. interrupted create/restore leaves either the old complete pair or the new
    complete pair, never one file from each.
 
+## Implementation status (2026-08-04)
+
+Items 1, 2, 3, 4 and 6 are implemented in
+`crates/bridgevm-hvf/src/snapshot_pair.rs` and covered by 35 tests, including
+the ones that would otherwise be assumed: a refused snapshot leaves no
+directory, a tampered snapshot does not restore and does not touch the live
+pair, and an interrupted create leaves the previous snapshot still verifying.
+
+Two adjacent defects were fixed at the same time, because they made an atomic
+pair impossible regardless of what this module did. `WritableMedia::persist`
+used a truncating `fs::write` for UEFI variables, and
+`DiskBackend::export_to_path` called `flush()` with no `fsync`, so its bytes
+were not on disk when it returned. Both now write to a temp file, fsync,
+rename, and fsync the parent.
+
+The byte quota named in the criterion is implemented as a ceiling on the
+copy-on-write overlay (`crates/bridgevm-hvf/src/nvme/disk_export.rs`), which
+was previously unbounded: a guest writing across a 64 GiB read-only image
+could consume 64 GiB of host RAM.
+
+**Item 5 is not proven.** No powered-off snapshot has been taken of a real
+Windows guest, restored, and booted to check a guest-created marker survives.
+A19 therefore stays open. The mechanism is tested; the end-to-end claim is not
+yet earned.
+
 ## Deferred to V2
 
 Live save/resume requires a quiesce protocol and atomic capture of RAM, every

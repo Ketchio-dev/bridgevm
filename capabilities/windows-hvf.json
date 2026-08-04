@@ -220,9 +220,11 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Powered-off snapshot export and restore keep a byte-exact atomic disk plus vars pair under an explicit byte quota.",
-      "measured": "Snapshot scope is approved for V1 but the atomic pair hash gate has not been re-run on the release runtime.",
+      "measured": "Corrected: this was recorded as a gate not yet re-run, but the atomic pair did not exist. Vars were persisted with a truncating fs::write, disk export called flush() without fsync, and the copy-on-write overlay had no ceiling. All three are now implemented with 41 tests (snapshot_pair 35, overlay quota 6) and the quota is falsified by disabling it. Still open: no powered-off snapshot has been taken of a real Windows guest and booted from.",
       "evidence_paths": [
-        "docs/windows-arm/snapshot-scope-v1.md"
+        "docs/windows-arm/snapshot-scope-v1.md",
+        "crates/bridgevm-hvf/src/snapshot_pair.rs",
+        "crates/bridgevm-hvf/src/nvme/disk_export.rs"
       ]
     },
     {
