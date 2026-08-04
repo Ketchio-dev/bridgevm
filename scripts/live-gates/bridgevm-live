@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+# Studio-local live gate queue.
+#
+# Live gates need bare-metal Hypervisor.framework, private Windows media and a
+# real GPU, so they cannot run on GitHub-hosted runners. The tempting fix --
+# registering this Mac as a self-hosted runner -- is not available: this is a
+# public repository with pull_request workflows, so a fork could execute code
+# on a personal machine.
+#
+# What was actually missing was asynchrony, not a runner. `submit` records a
+# job and returns immediately; a user LaunchAgent drains the queue. There is no
+# inbound listener, no GitHub registration and no credential storage: the only
+# way in is this CLI, run by this user, on this machine.
+#
+# Usage:
+#   bridgevm-live submit <tier> [--sha <sha>] [--arg k=v]...
+#   bridgevm-live status [job-id]
+#   bridgevm-live logs <job-id>
+#   bridgevm-live receipt <job-id>
+#   bridgevm-live cancel <job-id>
+#   bridgevm-live next            # worker: claim the oldest queued job
+set -euo pipefail
+
+QUEUE_ROOT="${BRIDGEVM_LIVE_ROOT:-$HOME/BridgeVM/live-queue}"
+QUEUED="$QUEUE_ROOT/queued"
+RUNNING="$QUEUE_ROOT/running"
+DONE="$QUEUE_ROOT/done"
+
+usage() {
+    sed -n '2,26p' "$0" | sed 's|^# \{0,1\}||'
+}
+
+ensure_dirs() {
+    mkdir -p "$QUEUED" "$RUNNING" "$DONE"
+}
+
+# Job states are directories and a job moves between them with `mv`, which is
+# atomic within one filesystem. Two workers cannot both claim a job: exactly
+# one `mv` succeeds.
+job_dir() {
+    local id="$1" state
+    for state in "$QUEUED" "$RUNNING" "$DONE"; do
+        if [ -d "$state/$id" ]; then
+            printf '%s\n' "$state/$id"
+            return 0
+        fi
+    done
+    return 1
+}
+
+cmd_submit() {
+    local tier="${1:-}"
+    shift || true
+    [ -n "$tier" ] || { echo "submit needs a tier" >&2; usage >&2; exit 2; }
+
+    local sha="" args=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --sha) sha="$2"; shift 2 ;;
+            --arg) args+=("$2"); shift 2 ;;
+            *) echo "unknown submit option $1" >&2; exit 2 ;;
+        esac
+    done
+
+    # Seal the exact commit at submit time. The working tree keeps moving; a
+    # result must stay attributable to what actually ran.
+    if [ -z "$sha" ]; then
+        sha="$(git -C "$(dirname "$0")/../.." rev-parse HEAD)"
+    fi
+
+    ensure_dirs
+    local id="$(date +%Y%m%d-%H%M%S)-$$-$RANDOM"
+    local staging="$QUEUE_ROOT/.staging-$id"
+    mkdir -p "$staging"
+    {
+        printf 'job_id=%s\n' "$id"
+        printf 'tier=%s\n' "$tier"
+        printf 'commit=%s\n' "$sha"
+        printf 'submitted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        local arg
+        for arg in ${args+"${args[@]}"}; do
+            printf 'arg=%s\n' "$arg"
+        done
+    } > "$staging/job.env"
+    # Build the job outside the queue, then move it in, so a worker never sees
+    # a half-written job.
+    mv "$staging" "$QUEUED/$id"
+    printf '%s\n' "$id"
+}
+
+cmd_next() {
+    ensure_dirs
+    local candidate id
+    # Oldest first. The `mv` is the claim.
+    for candidate in $(ls -1 "$QUEUED" 2>/dev/null | sort); do
+        id="$candidate"
+        if mv "$QUEUED/$id" "$RUNNING/$id" 2>/dev/null; then
+            printf '%s\n' "$RUNNING/$id"
+            return 0
+        fi
+    done
+    return 1
+}
+
+cmd_status() {
+    ensure_dirs
+    if [ $# -ge 1 ]; then
+        local dir
+        dir="$(job_dir "$1")" || { echo "no such job: $1" >&2; exit 1; }
+        printf 'state=%s\n' "$(basename "$(dirname "$dir")")"
+        cat "$dir/job.env"
+        return 0
+    fi
+    local state name
+    for state in queued running done; do
+        for name in $(ls -1 "$QUEUE_ROOT/$state" 2>/dev/null | sort); do
+            printf '%-8s %s\n' "$state" "$name"
+        done
+    done
+}
+
+cmd_logs() {
+    local dir
+    dir="$(job_dir "${1:?logs needs a job id}")" || { echo "no such job: $1" >&2; exit 1; }
+    if [ -f "$dir/run.log" ]; then
+        cat "$dir/run.log"
+    else
+        echo "no log yet for $1" >&2
+        exit 1
+    fi
+}
+
+cmd_receipt() {
+    local dir
+    dir="$(job_dir "${1:?receipt needs a job id}")" || { echo "no such job: $1" >&2; exit 1; }
+    # Only ever hand back the redacted copy. The raw receipt can name private
+    # image and vars paths.
+    if [ -f "$dir/receipt.public.json" ]; then
+        cat "$dir/receipt.public.json"
+    else
+        echo "no published receipt for $1" >&2
+        exit 1
+    fi
+}
+
+cmd_cancel() {
+    local id="${1:?cancel needs a job id}" dir
+    dir="$(job_dir "$id")" || { echo "no such job: $id" >&2; exit 1; }
+    if [ -d "$QUEUED/$id" ]; then
+        printf 'canceled=queued\n' > "$QUEUED/$id/result.env"
+        mv "$QUEUED/$id" "$DONE/$id"
+        echo "canceled $id"
+        return 0
+    fi
+    if [ -d "$RUNNING/$id" ]; then
+        # Ask the worker to stop; it checks for this between stages. Killing a
+        # live gate mid-boot would leave guest media half-written.
+        : > "$RUNNING/$id/cancel.requested"
+        echo "cancellation requested for running job $id"
+        return 0
+    fi
+    echo "$id already finished" >&2
+    exit 1
+}
+
+case "${1:-}" in
+    submit) shift; cmd_submit "$@" ;;
+    next) shift; cmd_next "$@" ;;
+    status) shift; cmd_status "$@" ;;
+    logs) shift; cmd_logs "$@" ;;
+    receipt) shift; cmd_receipt "$@" ;;
+    cancel) shift; cmd_cancel "$@" ;;
+    -h|--help|"") usage ;;
+    *) echo "unknown command $1" >&2; usage >&2; exit 2 ;;
+esac

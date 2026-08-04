@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Dispatch one live-gate tier and leave a receipt in --out.
+#
+# Tiers (PLAN.md): T1 is the seconds-long vtimer microprobe, T2 a single
+# prepared-cache pilot boot, T3 a 3-boot candidate gate, T4 a nightly reset
+# soak, T5 the full A1 10-boot campaign. Only T5 produces shipping evidence;
+# no lower tier may be used to lower an A1 threshold.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
+TIER="${1:?run-tier.sh needs a tier}"
+shift || true
+
+OUT=""
+JOB_ID="local-$(date +%Y%m%d-%H%M%S)"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out) OUT="$2"; shift 2 ;;
+        --job-id) JOB_ID="$2"; shift 2 ;;
+        --lanes) LANES="$2"; shift 2 ;;
+        *) echo "unknown run-tier option $1" >&2; exit 2 ;;
+    esac
+done
+[ -n "$OUT" ] || { echo "run-tier.sh needs --out" >&2; exit 2; }
+mkdir -p "$OUT"
+
+receipt() {
+    # Fields here must be on the redact-receipt allowlist or they are dropped.
+    cat > "$OUT/receipt.json" <<EOF
+{
+  "tier": "$TIER",
+  "job_id": "$JOB_ID",
+  "commit": "$(git -C "$REPO" rev-parse HEAD)",
+  "host_model": "$(sysctl -n hw.model)",
+  "macos_version": "$(sw_vers -productVersion)",
+  "finished_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "outcome": "$1",
+  "pass": $2
+}
+EOF
+}
+
+case "$TIER" in
+    t1-vtimer)
+        # Seconds, not minutes: the bare-metal cancellation/vtimer probe.
+        if "$REPO/scripts/run-hvf-vtimer-cancel-gate.sh" --out "$OUT"; then
+            receipt completed true
+        else
+            receipt failed false
+            exit 1
+        fi
+        ;;
+    t0-check)
+        # The deterministic project check, useful as a queue smoke test.
+        if "$REPO/scripts/check-project.sh" > "$OUT/check.log" 2>&1; then
+            receipt completed true
+        else
+            receipt failed false
+            exit 1
+        fi
+        ;;
+    t2-pilot|t3-candidate|t4-soak|t5-campaign)
+        # These need private Windows media and 20+ minutes per boot. They are
+        # declared so the queue and its policy tests are exercised, but they
+        # refuse to invent evidence when the media is absent.
+        if [ ! -d "${BRIDGEVM_CANONICAL_ROOT:-/Volumes/PortableSSD/BridgeVM/canonical}" ]; then
+            echo "canonical Windows media is not mounted; refusing to run $TIER" >&2
+            receipt refused-no-media false
+            exit 1
+        fi
+        echo "$TIER requires the boot gate; invoking p1-boot-gate.sh" >&2
+        if "$REPO/scripts/p1-boot-gate.sh" --out "$OUT"; then
+            receipt completed true
+        else
+            receipt failed false
+            exit 1
+        fi
+        ;;
+    *)
+        echo "unknown tier $TIER" >&2
+        exit 2
+        ;;
+esac

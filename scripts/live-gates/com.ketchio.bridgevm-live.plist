@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ketchio.bridgevm-live</string>
+
+  <!-- A user agent, not a daemon: no root, and it can reach the user's
+       Hypervisor.framework entitlement and GPU session. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__WORKER__</string>
+  </array>
+
+  <!-- Poll the queue directory. There is deliberately no socket and no
+       inbound listener: the only way to enqueue work is the local CLI. -->
+  <key>StartInterval</key>
+  <integer>60</integer>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <!-- Never two live gates at once; they contend for the GPU and the same
+       guest media. The worker also takes its own lock. -->
+  <key>AbandonProcessGroup</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__LOGDIR__/worker.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOGDIR__/worker.err.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <!-- ProcessType Background keeps it off the interactive scheduler's
+       critical path so it cannot make the desktop stutter mid-gate. -->
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
