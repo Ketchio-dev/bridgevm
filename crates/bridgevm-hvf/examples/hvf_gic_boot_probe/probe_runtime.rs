@@ -404,12 +404,32 @@ pub(crate) fn run() -> ExitCode {
                     // the exit is then reported as CANCELED instead of
                     // EXIT_VTIMER, the mask is set but our vtimer handler --
                     // the only place that follows up -- never runs. Nothing
-                    // unmasks after that: the guest parks in WFI with
-                    // CNTV_CTL ISTATUS=1 and never wakes (measured 21/21
+                    // unmasks after that: the guest parks in WFI with the
+                    // deadline in the past and never wakes (measured 21/21
                     // correlation between surplus cancels and the boot
                     // stall). Unmask defensively; a spurious unmask when no
                     // fire was swallowed is harmless.
                     hv_vcpu_set_vtimer_mask(vcpu, false);
+                    // Unmasking alone is not enough: the swallowed fire is
+                    // edge-latched inside HVF (measured post-fix stalls with
+                    // ENABLE=1, IMASK=0, ISTATUS=0 and CVAL in the past), so
+                    // no new EXIT_VTIMER will ever come for the old deadline.
+                    // If the guest's deadline has already passed, rewrite
+                    // CVAL to "now": the deadline is unchanged in guest
+                    // semantics (it was already due) and HVF sees a fresh
+                    // expiry to deliver through its own PPI path.
+                    let mut cntv_ctl = 0u64;
+                    let mut cntv_cval = 0u64;
+                    hv_vcpu_get_sys_reg(vcpu, 0xdf19, &mut cntv_ctl);
+                    hv_vcpu_get_sys_reg(vcpu, 0xdf1a, &mut cntv_cval);
+                    if cntv_ctl & 0b11 == 0b01 {
+                        let mut voff = 0u64;
+                        hv_vcpu_get_vtimer_offset(vcpu, &mut voff);
+                        let guest_now = host_cntvct().wrapping_sub(voff);
+                        if cntv_cval <= guest_now {
+                            hv_vcpu_set_sys_reg(vcpu, 0xdf1a, guest_now);
+                        }
+                    }
                     continue;
                 }
                 if !automation_tick_canceled && reason == EXIT_VTIMER {
