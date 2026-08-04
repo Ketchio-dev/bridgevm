@@ -94,13 +94,46 @@ set_gpu_args() {
   fi
 }
 
-for i in $(seq 1 "$BOOTS"); do
-  W="$HOME/BridgeVM/work/p1gate-work-$i"
-  D="$OUT/boot-$i"
+LANES="${LANES:-1}"
+
+# When BASE_IMAGE lives on another volume (external SSD), cp -c cannot clone
+# across volumes and would do a full copy per boot. Stage one internal cache
+# copy up front; each boot then clones from the cache for free.
+CACHE_DIR="$HOME/BridgeVM/work/p1gate-cache"
+stage_base_cache() {
+  local src="$1" dst="$2"
+  if [[ "$(stat -f '%d' "$src")" == "$(stat -f '%d' "$HOME/BridgeVM/work")" ]]; then
+    printf '%s' "$src"
+    return 0
+  fi
+  mkdir -p "$CACHE_DIR"
+  local want have
+  want="$(stat -f '%m-%z' "$src")"
+  have="$(cat "$dst.stamp" 2>/dev/null || true)"
+  if [[ "$want" != "$have" || ! -e "$dst" ]]; then
+    dd if="$src" of="$dst" bs=1m conv=sparse 2>/dev/null
+    printf '%s' "$want" > "$dst.stamp"
+  fi
+  printf '%s' "$dst"
+}
+BASE_IMAGE="$(stage_base_cache "$BASE_IMAGE" "$CACHE_DIR/base-image.raw")"
+INJECTOR="$(stage_base_cache "$INJECTOR" "$CACHE_DIR/injector.raw")"
+
+# One build+sign for the whole gate. Lanes must not race cargo/codesign on the
+# shared probe binary, so they all run with --skip-build.
+cargo build -p bridgevm-hvf --features venus --example hvf_gic_boot_probe
+codesign --sign - --entitlements apps/macos/HvfRunner.entitlements --force \
+  target/debug/examples/hvf_gic_boot_probe
+
+run_one_boot() {
+  local i="$1"
+  local W="$HOME/BridgeVM/work/p1gate-work-$i"
+  local D="$OUT/boot-$i"
   rm -rf "$W" "$D" "$D-inject"
   mkdir -p "$W" "$D" "$D-inject"
 
-  # cp -c: APFS clone, so the source lineage is never written to.
+  # cp -c: APFS clone when source and destination share an APFS volume, and a
+  # plain copy otherwise (external-SSD sources), so lineage is safe either way.
   cp -c "$BASE_IMAGE" "$W/disk.raw"
   cp "$BASE_VARS" "$W/vars.fd"
   cp "$INJECTOR" "$W/inj.raw"
@@ -111,8 +144,10 @@ for i in $(seq 1 "$BOOTS"); do
   scripts/run-hvf-windows-installed-boot.sh \
     --target "$W/disk.raw" --vars "$W/vars.fd" --placeholder-nsid1 "$W/inj.raw" \
     --evidence-dir "$D-inject" --watchdog-ms 600000 --ram-mib 6144 --smp-cpus 4 \
+    --skip-build \
     "${GPU_ARGS[@]}" > "$D-inject/launcher.out" 2>&1
 
+  local injected
   injected=$(grep -h '^injector_boot_observed=' "$D-inject/target-stat.txt" 2>/dev/null | cut -d= -f2)
 
   # The injector pass leaves BootOrder pointing at Boot0003, which addresses the
@@ -130,10 +165,12 @@ for i in $(seq 1 "$BOOTS"); do
   scripts/run-hvf-windows-installed-boot.sh \
     --target "$W/disk.raw" --vars "$W/vars.fd" \
     --evidence-dir "$D" --watchdog-ms "$PASS2_WATCHDOG_MS" --ram-mib 6144 --smp-cpus 4 \
+    --skip-build \
     "${GPU_ARGS[@]}" > "$D/launcher.out" 2>&1
 
   echo "$D" >> "$MANIFEST"
 
+  local stage4 fresh last stall reboots
   stage4=$(grep -h '^stage4_pass=' "$D/firstboot-stage.txt" 2>/dev/null | cut -d= -f2)
   fresh=$(grep -h '^firstboot_fresh=' "$D/firstboot-stage.txt" 2>/dev/null | cut -d= -f2)
   last=$(grep -h '^last_stage_observed=' "$D/firstboot-stage.txt" 2>/dev/null | cut -d= -f2)
@@ -145,6 +182,21 @@ for i in $(seq 1 "$BOOTS"); do
     | tee -a "$PROGRESS"
 
   rm -rf "$W"
+}
+
+# The boot dirs are still registered in gate order below; only execution is
+# concurrent. The manifest is written per-boot inside run_one_boot, so entries
+# can interleave -- aggregation reads every line regardless of order.
+# Batched rather than pipelined: macOS bash 3.2 has no `wait -n`.
+i=1
+while [[ "$i" -le "$BOOTS" ]]; do
+  batch_end=$((i + LANES - 1))
+  [[ "$batch_end" -gt "$BOOTS" ]] && batch_end="$BOOTS"
+  for j in $(seq "$i" "$batch_end"); do
+    run_one_boot "$j" &
+  done
+  wait
+  i=$((batch_end + 1))
 done
 
 # A boot counts only when the marker is present AND the log changed this run.
