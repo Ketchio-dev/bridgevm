@@ -59,6 +59,17 @@ case "$TIER" in
             exit 1
         fi
         ;;
+    t1-snapshot)
+        # Needs only the internal-volume canonical pair, so it runs even where
+        # TCC blocks the external volume.
+        echo "running the powered-off snapshot pair gate" >&2
+        if OUT="$OUT" "$REPO/scripts/verify-powered-off-snapshot.sh"; then
+            receipt completed true
+        else
+            receipt failed false
+            exit 1
+        fi
+        ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)
         # These need private Windows media and 20+ minutes per boot. They are
         # declared so the queue and its policy tests are exercised, but they
