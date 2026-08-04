@@ -64,6 +64,14 @@ if [ ! -x "$BIN" ]; then
     exit 1
 fi
 
+# A later `cargo build` of any target rewrites this binary and drops the
+# signature, so --skip-build cannot assume the entitlement survived. Without it
+# hv_vm_create fails with -85377017 and the probe panics before doing anything.
+if ! codesign -d --entitlements - "$BIN" 2>&1 | grep -q 'com.apple.security.hypervisor'; then
+    echo "$BIN is not signed with com.apple.security.hypervisor; re-signing" >&2
+    codesign --sign - --entitlements apps/macos/HvfRunner.entitlements --force "$BIN"
+fi
+
 ARGS=(
     --iterations "$ITERATIONS"
     --cancel-interval-us "$CANCEL_INTERVAL_US"
