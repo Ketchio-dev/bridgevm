@@ -21,8 +21,11 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
+#[path = "snapshot_free_space.rs"]
+mod free_space;
 #[path = "snapshot_manifest_json.rs"]
 mod manifest_json;
+use free_space::available_bytes;
 #[path = "snapshot_hash.rs"]
 mod snapshot_hash;
 use manifest_json::{escape_json, json_str, json_u64};
@@ -43,6 +46,11 @@ pub enum SnapshotError {
     QuotaExceeded {
         bytes: u64,
         quota: u64,
+    },
+    /// The volume cannot hold the copy a restore has to stage.
+    InsufficientSpace {
+        needed: u64,
+        available: u64,
     },
     /// A file's content does not match the manifest.
     HashMismatch {
@@ -71,6 +79,10 @@ impl std::fmt::Display for SnapshotError {
                     "snapshot would write {bytes} bytes, over the {quota} byte quota"
                 )
             }
+            SnapshotError::InsufficientSpace { needed, available } => write!(
+                f,
+                "restore needs {needed} bytes free to stage a copy, {available} available"
+            ),
             SnapshotError::HashMismatch { file } => {
                 write!(f, "{file} does not match the hash recorded in the manifest")
             }
@@ -279,10 +291,32 @@ pub fn restore_snapshot(
     // Stage both beside their destinations before publishing either. A rename
     // within a directory cannot fail for lack of space, so once both temps
     // exist the pair swap is as close to atomic as the filesystem allows.
+    //
+    // The cost is real: for the length of a restore the volume holds the live
+    // pair, the snapshot, and a full second copy. Refuse up front when that
+    // does not fit, rather than discovering it partway through and leaving a
+    // half-written temp file behind that makes the next attempt worse.
     let disk_tmp = temp_beside(disk);
     let vars_tmp = temp_beside(vars);
-    copy_and_sync(&dir.join(DISK_NAME), &disk_tmp)?;
-    copy_and_sync(&dir.join(VARS_NAME), &vars_tmp)?;
+    let needed = manifest.disk_bytes + manifest.vars_bytes;
+    if let Some(available) = available_bytes(disk.parent().unwrap_or(Path::new("."))) {
+        if available < needed {
+            return Err(SnapshotError::InsufficientSpace { needed, available });
+        }
+    }
+
+    // Clean up on any failure: a stale multi-gigabyte temp file is how one
+    // failed restore turns into a volume with no room for the next.
+    let staged = (|| -> io::Result<()> {
+        copy_and_sync(&dir.join(DISK_NAME), &disk_tmp)?;
+        copy_and_sync(&dir.join(VARS_NAME), &vars_tmp)?;
+        Ok(())
+    })();
+    if let Err(e) = staged {
+        let _ = fs::remove_file(&disk_tmp);
+        let _ = fs::remove_file(&vars_tmp);
+        return Err(SnapshotError::Io(e));
+    }
 
     fs::rename(&disk_tmp, disk)?;
     fs::rename(&vars_tmp, vars)?;

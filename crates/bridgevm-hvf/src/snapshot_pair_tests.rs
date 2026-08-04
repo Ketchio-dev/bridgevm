@@ -1,19 +1,19 @@
 use super::*;
 
 /// A scratch directory that removes itself.
-struct Scratch(PathBuf);
+pub(super) struct Scratch(pub(super) PathBuf);
 
 impl Scratch {
-    fn new(tag: &str) -> Self {
+    pub(super) fn new(tag: &str) -> Self {
         let dir = std::env::temp_dir().join(format!("bv-snap-{}-{}", tag, std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("scratch dir");
         Self(dir)
     }
-    fn path(&self, name: &str) -> PathBuf {
+    pub(super) fn path(&self, name: &str) -> PathBuf {
         self.0.join(name)
     }
-    fn write(&self, name: &str, bytes: &[u8]) -> PathBuf {
+    pub(super) fn write(&self, name: &str, bytes: &[u8]) -> PathBuf {
         let p = self.path(name);
         fs::write(&p, bytes).expect("write");
         p
@@ -251,6 +251,9 @@ fn a_large_file_hashes_the_same_as_its_bytes() {
     assert_eq!(fs::read(s.path("snap").join(DISK_NAME)).unwrap(), bytes);
     verify_snapshot(&s.path("snap")).expect("a multi-chunk copy must verify");
 }
+
+#[path = "snapshot_restore_space_tests.rs"]
+mod restore_space_tests;
 
 #[path = "snapshot_manifest_json_tests.rs"]
 mod manifest_json_tests;
