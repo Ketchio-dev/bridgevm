@@ -52,14 +52,17 @@ fn a_running_vm_is_refused_before_anything_is_written() {
     let err = create_snapshot(&disk, &vars, &dest, "vm", true, QUOTA).unwrap_err();
 
     assert!(matches!(err, SnapshotError::VmRunning));
-    assert!(!dest.exists(), "a refused snapshot must not leave a directory");
+    assert!(
+        !dest.exists(),
+        "a refused snapshot must not leave a directory"
+    );
 }
 
 #[test]
 fn a_pair_over_the_quota_is_refused_before_any_bytes_are_copied() {
     let s = Scratch::new("quota");
-    let disk = s.write("disk-src", &vec![0u8; 900]);
-    let vars = s.write("vars-src", &vec![0u8; 200]);
+    let disk = s.write("disk-src", &[0u8; 900]);
+    let vars = s.write("vars-src", &[0u8; 200]);
     let dest = s.path("snap");
     let err = create_snapshot(&disk, &vars, &dest, "vm", false, 1000).unwrap_err();
 
@@ -76,8 +79,8 @@ fn a_pair_over_the_quota_is_refused_before_any_bytes_are_copied() {
 #[test]
 fn a_snapshot_exactly_at_the_quota_is_allowed() {
     let s = Scratch::new("quota-edge");
-    let disk = s.write("disk-src", &vec![7u8; 600]);
-    let vars = s.write("vars-src", &vec![8u8; 400]);
+    let disk = s.write("disk-src", &[7u8; 600]);
+    let vars = s.write("vars-src", &[8u8; 400]);
     create_snapshot(&disk, &vars, &s.path("snap"), "vm", false, 1000).expect("at quota");
 }
 
@@ -221,32 +224,6 @@ fn a_manifest_from_a_future_format_is_refused_rather_than_guessed_at() {
 }
 
 #[test]
-fn a_manifest_round_trips_through_json() {
-    let m = SnapshotManifest {
-        format_version: SNAPSHOT_FORMAT_VERSION,
-        vm_id: "windows-11".into(),
-        disk_bytes: 68_719_476_736,
-        disk_sha256: "a".repeat(64),
-        vars_bytes: 67_108_864,
-        vars_sha256: "b".repeat(64),
-    };
-    assert_eq!(SnapshotManifest::from_json(&m.to_json()).unwrap(), m);
-}
-
-#[test]
-fn a_vm_id_with_quotes_does_not_break_the_manifest() {
-    let m = SnapshotManifest {
-        format_version: SNAPSHOT_FORMAT_VERSION,
-        vm_id: r#"vm "quoted" \ backslash"#.into(),
-        disk_bytes: 1,
-        disk_sha256: "c".repeat(64),
-        vars_bytes: 2,
-        vars_sha256: "d".repeat(64),
-    };
-    assert_eq!(SnapshotManifest::from_json(&m.to_json()).unwrap(), m);
-}
-
-#[test]
 fn an_atomic_write_replaces_the_old_content_completely() {
     let s = Scratch::new("atomic");
     let p = s.write("f", b"old content that is longer");
@@ -274,3 +251,6 @@ fn a_large_file_hashes_the_same_as_its_bytes() {
     assert_eq!(fs::read(s.path("snap").join(DISK_NAME)).unwrap(), bytes);
     verify_snapshot(&s.path("snap")).expect("a multi-chunk copy must verify");
 }
+
+#[path = "snapshot_manifest_json_tests.rs"]
+mod manifest_json_tests;

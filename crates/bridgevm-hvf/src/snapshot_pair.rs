@@ -21,7 +21,12 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
-use crate::snapshot_hash::sha256_file;
+#[path = "snapshot_manifest_json.rs"]
+mod manifest_json;
+#[path = "snapshot_hash.rs"]
+mod snapshot_hash;
+use manifest_json::{escape_json, json_str, json_u64};
+use snapshot_hash::sha256_file;
 
 /// Bytes copied per read/write when streaming a large disk image.
 const COPY_CHUNK: usize = 4 * 1024 * 1024;
@@ -35,9 +40,14 @@ pub enum SnapshotError {
     /// The VM still owns the media. Copying it now would capture a torn disk.
     VmRunning,
     /// The pair is larger than the caller allowed.
-    QuotaExceeded { bytes: u64, quota: u64 },
+    QuotaExceeded {
+        bytes: u64,
+        quota: u64,
+    },
     /// A file's content does not match the manifest.
-    HashMismatch { file: String },
+    HashMismatch {
+        file: String,
+    },
     /// The manifest is missing, malformed, or a version this build cannot read.
     BadManifest(String),
     Io(io::Error),
@@ -56,7 +66,10 @@ impl std::fmt::Display for SnapshotError {
                 write!(f, "refusing to snapshot a running VM: power it off first")
             }
             SnapshotError::QuotaExceeded { bytes, quota } => {
-                write!(f, "snapshot would write {bytes} bytes, over the {quota} byte quota")
+                write!(
+                    f,
+                    "snapshot would write {bytes} bytes, over the {quota} byte quota"
+                )
             }
             SnapshotError::HashMismatch { file } => {
                 write!(f, "{file} does not match the hash recorded in the manifest")
@@ -116,67 +129,6 @@ impl SnapshotManifest {
             vars_sha256: json_str(text, "vars_sha256")?,
         })
     }
-}
-
-fn escape_json(s: &str) -> String {
-    s.chars()
-        .flat_map(|c| match c {
-            '"' => vec!['\\', '"'],
-            '\\' => vec!['\\', '\\'],
-            c if (c as u32) < 0x20 => format!("\\u{:04x}", c as u32).chars().collect(),
-            c => vec![c],
-        })
-        .collect()
-}
-
-fn json_field<'a>(text: &'a str, key: &str) -> Result<&'a str, SnapshotError> {
-    let needle = format!("\"{key}\"");
-    let start = text
-        .find(&needle)
-        .ok_or_else(|| SnapshotError::BadManifest(format!("missing field {key}")))?;
-    let after = &text[start + needle.len()..];
-    let colon = after
-        .find(':')
-        .ok_or_else(|| SnapshotError::BadManifest(format!("field {key} has no value")))?;
-    Ok(after[colon + 1..].trim_start())
-}
-
-fn json_u64(text: &str, key: &str) -> Result<u64, SnapshotError> {
-    let rest = json_field(text, key)?;
-    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-    digits
-        .parse()
-        .map_err(|_| SnapshotError::BadManifest(format!("field {key} is not a number")))
-}
-
-fn json_str(text: &str, key: &str) -> Result<String, SnapshotError> {
-    let rest = json_field(text, key)?;
-    let rest = rest
-        .strip_prefix('"')
-        .ok_or_else(|| SnapshotError::BadManifest(format!("field {key} is not a string")))?;
-    // Walk rather than `find`, so an escaped quote inside the value does not
-    // look like the end of it. escape_json emits \" and \\, so those are the
-    // two sequences that can appear.
-    let mut out = String::new();
-    let mut chars = rest.chars();
-    loop {
-        match chars.next() {
-            Some('"') => return Ok(out),
-            Some('\\') => match chars.next() {
-                Some(c @ ('"' | '\\')) => out.push(c),
-                Some(c) => {
-                    out.push('\\');
-                    out.push(c);
-                }
-                None => break,
-            },
-            Some(c) => out.push(c),
-            None => break,
-        }
-    }
-    Err(SnapshotError::BadManifest(format!(
-        "field {key} is unterminated"
-    )))
 }
 
 /// Names inside a snapshot directory.

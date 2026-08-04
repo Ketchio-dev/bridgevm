@@ -67,7 +67,10 @@ done
 # time, so an mtime test reports every asset as newer than any injector and
 # the gate can never run there. The injector records the asset digest it was
 # built from.
-assets_digest=$(find scripts/win-assets -type f -exec shasum -a 256 {} + \
+# Hashes the repo-relative name and the content of each file, never the
+# absolute path: a sealed worktree lives at a different path and must produce
+# the same digest as the checkout the injector was built from.
+assets_digest=$(cd scripts/win-assets && find . -type f -exec shasum -a 256 {} + \
   | sort -k2 | shasum -a 256 | cut -d' ' -f1)
 built_from=$(cat "$INJECTOR.assets-sha256" 2>/dev/null || true)
 if [[ "$assets_digest" != "$built_from" ]]; then
