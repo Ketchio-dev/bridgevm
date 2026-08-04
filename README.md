@@ -16,6 +16,20 @@ beyond a firmware or installer scaffold, but production vTPM/Secure Boot,
 distributable Windows driver signing, and fresh release evidence are still open
 gates. See [Current status](STATUS.md) for the short, evidence-backed boundary.
 
+<!-- BEGIN GENERATED: capability-summary -->
+**Product state: Engineering Preview.** Boots an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with storage, display/input, network, audio, guest agent and experimental 3D. Not release-ready.
+
+Release-blocking criteria proven: **7 / 19**. Open: A1, A2, A3, A11, A12, A13, A14, A15, A16, A17, A18, A19.
+
+- Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
+- Guest platform: QEMU virt-compatible guest contract with documented deviations.
+
+State reviewed 2026-08-04 at commit `dd273c5`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+<!-- END GENERATED: capability-summary -->
+
+The per-criterion detail lives in the
+[capability matrix](docs/windows-arm/capability-matrix.md).
+
 ## What BridgeVM is—and is not
 
 BridgeVM aims for a focused, fast experience on Apple silicon without giving up
@@ -32,7 +46,7 @@ public release.
 Requirements:
 
 - macOS 14 or newer for the native app and Apple virtualization paths;
-- Rust 1.76 or newer;
+- Rust 1.85 or newer (workspace MSRV; CI builds with 1.97.0);
 - Xcode/Swift 5.9 or newer for the macOS app;
 - QEMU for Compatibility Engine live runs;
 - Homebrew `swtpm` 0.10.1 / `libtpms` 0.10.2 when producing a Windows HVF app

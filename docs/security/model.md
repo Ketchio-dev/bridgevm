@@ -2,6 +2,31 @@
 
 BridgeVM treats every guest as untrusted.
 
+## Open guest-facing defects (release blockers)
+
+Two firmware-surface defects in the Windows HVF path are known, confirmed in
+current code, and tracked as release blockers in
+[`capabilities/windows-hvf.json`](../../capabilities/windows-hvf.json). They are
+recorded here rather than quietly fixed later because the guest currently
+receives a security guarantee that is not being met.
+
+- **A12 — the SMCCC TRNG is not random.** `TRNG_RND_32`/`TRNG_RND_64` are served
+  by a deterministic function of the vCPU exit counter, while `TRNG_FEATURES`
+  advertises the calls as supported. A guest that seeds a CSPRNG from this
+  interface gets predictable output. The fix is to serve the calls only from the
+  host OS CSPRNG and to return `NO_ENTROPY` on provider failure rather than any
+  fallback value.
+- **A13 — PSCI state reporting is nonconformant.** `CPU_ON` returns
+  `ALREADY_ON` for a CPU that is only `OnPending`, and `AFFINITY_INFO` ignores
+  the requested affinity level while reporting both `OnPending` and invalid
+  targets as `OFF`. A conforming guest can therefore read incorrect CPU state.
+
+**Key provenance rule.** Any Windows, vTPM or BitLocker image produced before
+the TRNG fix is classified `pre-secure-trng-development-only`. Guest key
+ancestry is not observable from the host, so an audit that only sees timestamps
+cannot promote such an image. Development images are not deleted, but release
+media and its protectors must be regenerated after the fix.
+
 Default rules:
 
 - Clipboard sync is allowed but should support direction controls and expiry.

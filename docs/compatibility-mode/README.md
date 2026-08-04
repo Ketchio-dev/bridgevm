@@ -11,7 +11,7 @@ It may be slower than Fast Mode, but its product promise is that more things are
 
 For Windows 11 Arm, this path is a compatibility bridge, not the final
 Parallels-like performance architecture. QEMU/HVF can validate installer
-reachability and a controlled Windows beta profile, but it shares the same broad
+reachability and a controlled Windows profile, but it shares the same broad
 ceiling as other QEMU/HVF frontends. The no-QEMU Windows fast path belongs in a
 separate Apple Hypervisor.framework VMM/device/display/driver effort.
 The separate HVF `machine-plan` gate tracks that future custom VMM path; it is

@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "contract": "qemu-virt-compatible",
+  "reference": "QEMU 11.0.1 virt (GICv3), docs/reference/qemu-virt-aarch64-gicv3.dts",
+  "summary": "BridgeVM presents a QEMU virt-compatible guest contract so stock ArmVirtQemu firmware and stock Windows 11 ARM media work unmodified. It is not bit-identical. Every known deviation is listed here.",
+  "deviations": [
+    {
+      "id": "gic-in-kernel",
+      "area": "interrupt-controller",
+      "qemu_behavior": "Userspace-modelled GICv3 with fully observable distributor, redistributor and CPU interface state, and observable timer interrupt delivery.",
+      "bridgevm_behavior": "Apple Hypervisor.framework in-kernel GIC. Redistributor and CPU interface state is only reachable from the owning vCPU thread, and virtual timer interrupts are delivered by the framework without producing a guest exit.",
+      "guest_visible": false,
+      "impact": "Timer delivery cannot be observed through exit counters, so vtimer_exits is 0 on both passing and stalling boots. Cancellation can interact with the framework's timer masking; this is the mechanism behind the open A1 stall.",
+      "evidence": "docs/windows-arm/evidence/a1-boot-stall-20260802.md"
+    },
+    {
+      "id": "gic-msi-frame",
+      "area": "interrupt-controller",
+      "qemu_behavior": "GICv3 with ITS available for MSI translation.",
+      "bridgevm_behavior": "MSI support follows what the Apple GIC exposes; the ITS is not modelled identically to QEMU's.",
+      "guest_visible": true,
+      "impact": "Devices must use the MSI path BridgeVM advertises. Guests that assume a QEMU-identical ITS layout are unsupported.",
+      "evidence": "crates/bridgevm-hvf/src/machine.rs"
+    },
+    {
+      "id": "virtio-gpu-3d",
+      "area": "graphics",
+      "qemu_behavior": "virtio-gpu with virglrenderer over a host OpenGL/Vulkan stack.",
+      "bridgevm_behavior": "virtio-gpu with a Venus path onto MoltenVK/Metal, plus BridgeVM's own scanout and present handling.",
+      "guest_visible": true,
+      "impact": "The guest sees an experimental Vulkan path and an experimental D3D11-compatible subset through DXVK. Five DXVK features are relaxed rather than implemented, so full D3D11 conformance is not claimed.",
+      "evidence": "docs/windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md"
+    },
+    {
+      "id": "vtpm-backend",
+      "area": "security",
+      "qemu_behavior": "TPM backend over the host swtpm socket, configured by the operator.",
+      "bridgevm_behavior": "Bundled signed swtpm with BridgeVM-owned identity, export and recovery lifecycle keyed to the Keychain.",
+      "guest_visible": false,
+      "impact": "Windows sees a working TPM 2.0, but VM portability follows BridgeVM's lifecycle rules rather than a portable QEMU TPM state directory.",
+      "evidence": "docs/security/model.md"
+    },
+    {
+      "id": "smccc-trng",
+      "area": "firmware",
+      "qemu_behavior": "SMCCC TRNG backed by the host entropy source when advertised.",
+      "bridgevm_behavior": "Currently a deterministic function of the vCPU exit counter while being advertised as supported.",
+      "guest_visible": true,
+      "impact": "Open release blocker A12. Guest-visible randomness must not be predictable; this deviation is a defect to remove, not a design choice.",
+      "evidence": "capabilities/windows-hvf.json"
+    },
+    {
+      "id": "psci-state-table",
+      "area": "firmware",
+      "qemu_behavior": "PSCI 1.1 CPU_ON and AFFINITY_INFO state table and error codes.",
+      "bridgevm_behavior": "CPU_ON reports ALREADY_ON for OnPending, and AFFINITY_INFO ignores the X2 affinity level and reports OnPending and invalid targets as OFF.",
+      "guest_visible": true,
+      "impact": "Open release blocker A13. A conforming guest can read incorrect CPU state; this deviation is a defect to remove.",
+      "evidence": "capabilities/windows-hvf.json"
+    },
+    {
+      "id": "wddm-present",
+      "area": "graphics",
+      "qemu_behavior": "Not applicable; QEMU does not define Windows composition behaviour.",
+      "bridgevm_behavior": "Windows composes titles through DWM as Composed: Flip. No client has reached Hardware: Independent Flip on this driver.",
+      "guest_visible": true,
+      "impact": "Real-title D3D11 frame rate is approximately 20 FPS against a 30 FPS gate, keeping A3 open.",
+      "evidence": "docs/windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md"
+    }
+  ]
+}

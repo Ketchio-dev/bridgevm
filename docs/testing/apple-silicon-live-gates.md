@@ -1,0 +1,96 @@
+# Apple silicon live gates
+
+Document status: **Current**
+Last reviewed: **2026-08-04**
+
+Live gates are the only evidence that can promote a Windows HVF capability.
+They need bare-metal Hypervisor.framework, WindowServer/CGL, private Windows
+media and a real GPU, so they cannot run on hosted CI. This page defines where
+they run, how they are scheduled, and what may leave the machine.
+
+## Where work runs
+
+| Work | Where | Why |
+| --- | --- | --- |
+| fmt, clippy, unit/integration tests, MSRV, budgets, docs and capability drift, dependency policy, fuzz smoke, host Venus build | GitHub-hosted Actions in the public repository | Deterministic, no private media, no virtualization |
+| Bare-metal HVF boots, guest install, GPU/title measurement, reset soaks | The development Mac Studio, through a local job queue | Requires Hypervisor.framework, a real GPU and private Windows media |
+
+Hosted CI stays authoritative for everything it can run. Moving an ordinary
+check to the local queue to hide a hosted failure is forbidden.
+
+## Why there is no self-hosted GitHub runner
+
+The public repository has `pull_request` workflows, and GitHub's own guidance is
+not to attach self-hosted runners to public repositories: a workflow reachable
+from a fork could execute untrusted code with the runner account's privileges,
+next to the VM images, Keychain and SSH keys on a personal machine.
+
+The agent already executes commands directly on the Studio, so a runner would
+add that risk without making a single test faster. What was actually missing is
+**asynchrony**, not a runner. The local queue provides it.
+
+A dedicated secondary node (for example a second Apple silicon Mac used only for
+overnight runs) is a possible later addition. It is out of scope here, and no
+criterion in the capability registry depends on a second host.
+
+## The local queue
+
+```sh
+JOB_ID="$(scripts/live-gates/bridgevm-live submit candidate --boots 3)"
+scripts/live-gates/bridgevm-live status "$JOB_ID"
+scripts/live-gates/bridgevm-live logs "$JOB_ID"
+scripts/live-gates/bridgevm-live receipt "$JOB_ID"
+scripts/live-gates/bridgevm-live cancel "$JOB_ID"
+```
+
+Properties the queue must hold:
+
+- `submit` returns a job id in under 10 seconds and never blocks on the run.
+- The job runs from a detached worktree pinned to an exact commit, with its own
+  `CARGO_TARGET_DIR`, so later edits to the development checkout cannot change
+  what a submitted job measured.
+- The commit, binary, image, vars and driver hashes are sealed into the job
+  manifest at submit time and repeated in the receipt.
+- A resource lock serialises jobs that need the GPU or the canonical images.
+- The worker outlives the agent session; results are read later by job id.
+- There is no inbound listener and no network service.
+
+## Test tiers
+
+| Tier | Scope | Purpose |
+| --- | --- | --- |
+| T0 | Deterministic project check | Rejects broken changes in minutes |
+| T1 | 60-second bare-metal vtimer/PSCI microprobe | Tests the timer/cancellation contract without booting Windows |
+| T2 | One prepared-cache pilot boot | Confirms the image and injector pipeline |
+| T3 | 3-boot candidate gate | Filters functional changes before a full campaign |
+| T4 | Nightly 100-reset soak | Reset lifecycle evidence |
+| T5 | Weekly/release 10-boot A1 gate | Shipping evidence |
+
+T0–T4 filter candidates. Only T5 produces A1 shipping evidence, and no faster
+tier may be used to lower a threshold.
+
+## Foreground wait policy
+
+An interactive turn must not wait on a long gate. Commands expected to exceed
+120 seconds are submitted to the queue, and the turn continues or ends with the
+job id recorded. `sleep 6000`, long `while ps; sleep` loops and multi-hour
+synchronous tool calls are prohibited.
+
+Hosted CI is polled for at most 180 seconds; after that the run id is recorded
+and read on a later turn.
+
+## Retention and what may be published
+
+Runs are kept under `~/BridgeVM/runs/`. Guest disks, UEFI vars, vTPM state,
+recovery keys and third-party title content are local-only and never leave the
+machine.
+
+A receipt is publishable only after redaction to the allowlisted fields in
+`schemas/bridgevm-capability-v1.json` (`gate_receipt`): gate id, criterion,
+tested commit, host OS/hardware, input hashes, sample counts, pass/fail counts,
+evidence paths and known confounders. Hashes and counts may be published;
+paths into private media and any guest secret may not.
+
+A free-space guard stops a nightly rather than deleting canonical inputs.
+Canonical images stay on external storage; the internal disk holds only the
+prepared cache, worktrees and logs.

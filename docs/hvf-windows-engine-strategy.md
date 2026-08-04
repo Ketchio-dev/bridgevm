@@ -29,7 +29,11 @@ Implement `fw_cfg`, PCIe ECAM, GICv3 (Apple `hv_gic` or modelled), and the QEMU
 - The firmware/QEMU-style table flow generates **ACPI for free** — little or no
   hand-written ACPI in Rust.
 - The **same Windows 11 ARM media that installs under QEMU installs under
-  BridgeVM**, because the guest sees a bit-identical platform.
+  BridgeVM**, because the guest sees a `virt`-compatible platform. The contract
+  is compatibility with documented deviations, not bit-identity: Apple's
+  in-kernel GIC, the virtio-gpu 3D path, the vTPM and WDDM behaviour all differ,
+  and each deviation is enumerated in
+  [`docs/machine-contract/qemu-virt-deviations.json`](machine-contract/qemu-virt-deviations.json).
 - The existing QEMU Compatibility engine becomes a true differential oracle: any
   divergence is a bug in our device models, diffable against a known-good stack.
 

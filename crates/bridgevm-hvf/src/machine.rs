@@ -4,12 +4,12 @@
 //!
 //! Every address and interrupt number here is transcribed from the authoritative
 //! QEMU 11.0.1 `virt` (GICv3) device tree dumped in
-//! `docs/reference/qemu-virt-aarch64-gicv3.dts`. The point of reproducing the
-//! exact QEMU layout is so the stock ArmVirtQemu firmware boots unmodified and
-//! the guest sees a platform bit-identical to the QEMU stack that already
-//! installs Windows 11 ARM. The legacy probe harness in `lib.rs` uses a different,
-//! colliding map (`docs/hvf-windows-platform-contract-gap.md`); new platform code
-//! must build on this module instead.
+//! `docs/reference/qemu-virt-aarch64-gicv3.dts`, so stock ArmVirtQemu firmware
+//! boots unmodified and the same Windows 11 ARM media installs. The contract is
+//! compatibility with documented deviations, enumerated in
+//! `docs/machine-contract/qemu-virt-deviations.json`.
+//! The legacy probe harness in `lib.rs` uses a different, colliding map
+//! (`docs/hvf-windows-platform-contract-gap.md`); build new platform code here.
 //!
 //! Pure data + logic — no Hypervisor.framework calls, so it builds and tests on
 //! any host.

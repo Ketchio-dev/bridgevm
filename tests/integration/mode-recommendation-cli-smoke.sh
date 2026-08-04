@@ -62,7 +62,7 @@ assert_contains "$windows_output" "Current engine QEMU usage: required" "Windows
 assert_contains "$windows_output" "Target product engine: BridgeVM HVF Engine (bridge-hvf)" "Windows 11 Arm recommendation"
 assert_contains "$windows_output" "Target engine substrate: Apple Hypervisor.framework plus BridgeVM VMM/device stack" "Windows 11 Arm recommendation"
 assert_contains "$windows_output" "Target engine QEMU usage: not used" "Windows 11 Arm recommendation"
-assert_contains "$windows_output" "Windows is not bootable yet" "Windows 11 Arm recommendation"
+assert_contains "$windows_output" "boots an installed Windows 11 Arm desktop" "Windows 11 Arm recommendation"
 assert_contains "$windows_output" "restricted QEMU/HVF backend today" "Windows 11 Arm recommendation"
 assert_contains "$windows_output" "Apple VZ Fast Mode is Linux/macOS Arm only" "Windows 11 Arm recommendation"
 assert_contains "$windows_output" "must not claim Microsoft-authorized or Parallels-class Windows support" "Windows 11 Arm recommendation"

@@ -67,3 +67,6 @@ docs/windows-arm/evidence/dxvk-venus-feasibility-20260724.md	historical-evidence
 docs/windows-arm/evidence/dxvk-relax-blast-radius-20260726.md	historical-evidence	windows-graphics	STATUS.md
 docs/archive/README-before-20260722.md	historical-evidence	documentation-history	docs/README.md
 docs/archive/STATUS-before-20260722.md	historical-evidence	documentation-history	STATUS.md
+docs/windows-arm/capability-matrix.md	current	windows-hvf-engine	-
+docs/machine-contract/qemu-virt.md	current	windows-architecture	-
+docs/testing/apple-silicon-live-gates.md	current	development-process	-

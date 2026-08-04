@@ -12,15 +12,40 @@ being mistaken for a production claim.
 
 When documents disagree, use this order:
 
-1. `STATUS.md` — current product gate state;
-2. the active workstream plan named by that gate;
-3. current engine/security guides;
-4. dated live evidence;
-5. `PLAN.md` and historical bring-up notes.
+1. `capabilities/windows-hvf.json` — machine-readable capability state,
+   release blockers and the exact user-facing wording;
+2. `STATUS.md` — current product gate state in prose;
+3. the active workstream plan named by that gate;
+4. current engine/security guides;
+5. dated live evidence;
+6. `PLAN.md` and historical bring-up notes.
+
+The registry is first because prose drifts. README, STATUS and the capability
+matrix carry generated blocks rendered from it by
+`scripts/render-capability-status.py`, which also fails when a retracted claim
+reappears in the code or docs it watches. Change the registry, then regenerate;
+never hand-edit a generated block.
 
 History is preserved. Superseding a document means adding a pointer to the new
 source of truth or reclassifying it in `docs/document-manifest.tsv`; it does not
 mean deleting useful observations.
+
+## 1a. Working rules and the deterministic check
+
+[`AGENTS.md`](../AGENTS.md) holds the binding working rules: the evidence
+hierarchy, the ban on relaxing a criterion to pass it, claim discipline,
+fail-closed security, canonical-image safety, structural budgets, commit and CI
+discipline, and the 120-second foreground wait limit for long gates.
+
+One command is the gate for all of it:
+
+```sh
+scripts/check-project.sh          # full deterministic check
+scripts/check-project.sh --fast   # truth/format subset, also used by the harness
+```
+
+Live gate scheduling, tiers and retention are described in
+[Apple silicon live gates](testing/apple-silicon-live-gates.md).
 
 ## 2. Unit of work: a gate packet
 

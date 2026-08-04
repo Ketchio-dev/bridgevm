@@ -1,6 +1,13 @@
 # The intermittent boot stall that blocks A1
 
-Status: characterised, not fixed. This is the sole remaining obstacle to A1.
+Status: **substantially reduced, not closed.** A1 remains open.
+
+The stall is a lost virtual-timer wake around host-initiated vCPU cancellation.
+Recovering the timer on every canceled exit (`dd273c5`) moved the diagnostic
+gate from 17/20 to 11/12, but one boot still stalled with an expired, *unmasked*
+timer, so the mechanism is not yet a complete root-cause proof. The reasoning
+below is kept in the order it was discovered, including the hypotheses that were
+wrong.
 
 ## Rate
 
@@ -14,6 +21,9 @@ Twenty cold boots across two ten-boot gates on the same build and image:
 
 A1 requires 90%, so the stall alone decides the criterion. At 15% it is far too
 frequent to dismiss.
+
+After the vtimer recovery work the same gate shape reached **11/12**; see the
+three fix attempts near the end of this document.
 
 ## Signature
 
@@ -286,8 +296,57 @@ Caveat for reproduction cost: with the trace enabled all 6 boots of the gate
 failed (previous rate ~15%), so the tracing itself perturbs timing — an
 observer effect worth remembering, and also why this sample was cheap to get.
 
+## The two stall modes share one symptom: a lost virtual-timer wake
+
+The GICR-read hypothesis above was not what the state showed. Reading the timer
+state at the moment of the stall unified both failure shapes:
+
+| stall site | `CNTV_CTL` | `ISTATUS` | CVAL |
+| --- | --- | --- | --- |
+| kernel idle | `0x1` | 0 | already in the past |
+| UEFI WFI | `0x5` | 1 | expired, no wake |
+
+In both cases the guest is waiting for a virtual timer that will never fire
+again. `vtimer_exits=0` in passing *and* failing boots, because Apple's
+in-kernel GIC delivers the timer directly without a guest exit — so exit
+counters could never have seen this.
+
+Adding `hv_vcpu_get_vtimer_mask` telemetry showed stalled boots ending with
+`masked=true`: the host had left the vtimer masked, so the expiry was swallowed.
+At that stage the archived correlation was perfect — 10/10 sampled stalled boots
+had `surplus-canceled=1`, and 11/11 sampled passing boots had
+`surplus-canceled=0`.
+
+## Three fix attempts, and what each one disproved
+
+| commit | change | gate | what it proved |
+| --- | --- | --- | --- |
+| `8c24cca` | unmask on surplus-canceled exits | `a1-fix` 10/12 | Fixed its narrow condition: failures changed to `masked=false`. Did not re-arm an already-expired timer. |
+| `5aac956` | also rewrite an expired CVAL to guest-now | `a1-fix2` 10/12 | Disproved the assumption that only *surplus* cancels swallow a timer; a later claimed cancel does it too. |
+| `dd273c5` | recover on **every** `EXIT_CANCELED` | `a1-fix3` **11/12** | Materially improved the gate, but did not close it. |
+
+The first two commits also exceeded four structural budgets; the shared logic
+now lives in
+`crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/vtimer_recovery.rs`
+and every original ceiling was restored.
+
+## Why A1 is still open
+
+`a1-fix3/boot-7` failed after one reboot with `CNTV_CTL=0x1`,
+`masked=false`, `surplus-canceled=1`, and the same `KeIpiGenericCall+0x9c` final
+PC. The timer was neither masked nor pending: the recovery ran and the guest
+still did not wake.
+
+So the canceled-vtimer race is a **strongly measured cause, not a completed
+root-cause proof**. Apple's auto-mask and edge-latch behaviour around
+`hv_vcpus_exit` is not documented well enough to treat the hypothesis as
+finished, and 11/12 is below the 9/10-with-two-independent-campaigns bar this
+project requires before promoting A1.
+
 ## Next step
 
-Log cpu0's last few hundred exits before the quiet window (exit reason + IPA)
-in a trace-enabled run, to see what the kernel read immediately before
-entering the spin — a GICR read of a stale state is the prime suspect.
+Build a bare-metal vtimer/cancellation microprobe that races
+`hv_vcpus_exit` against timer expiry for 10,000 iterations without booting
+Windows. If same-CVAL re-evaluation cannot recover every iteration, the
+correctness boundary moves to removing the competing wake sources or recreating
+the VM process on reset, rather than repairing the timer after the fact.

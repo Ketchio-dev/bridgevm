@@ -6760,7 +6760,7 @@ actor MockVirtualMachineClient: VirtualMachineClient, VirtualMachineClientSource
         mode: .compatibility,
         performance: "Medium; restricted QEMU/HVF path today",
         batteryImpact: "Higher than Apple VZ Fast Mode",
-        integration: "Windows beta; not Apple VZ Fast Mode",
+        integration: "Windows HVF Engineering Preview; not Apple VZ Fast Mode",
         message:
           "Windows 11 Arm uses Compatibility Mode with a restricted QEMU/HVF backend today. Apple VZ Fast Mode is Linux/macOS Arm only; BridgeVM must not claim Microsoft-authorized or Parallels-class Windows support.",
         fastModeAvailable: false,

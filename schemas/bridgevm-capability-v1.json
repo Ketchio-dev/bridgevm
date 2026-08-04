@@ -1,0 +1,144 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Ketchio-dev/bridgevm/schemas/bridgevm-capability-v1.json",
+  "title": "BridgeVM capability registry v1",
+  "description": "Single machine-readable source of truth for BridgeVM capability state, release blockers and user-facing wording. Every human-readable claim about the Windows HVF engine must be derived from, or checked against, a document that validates against this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "capability_id",
+    "reviewed",
+    "tested_commit",
+    "product_state",
+    "wording",
+    "criteria"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "capability_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reviewed": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "tested_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$",
+      "description": "Commit the current state was last evaluated against."
+    },
+    "product_state": {
+      "enum": [
+        "ENGINEERING_PREVIEW",
+        "BETA",
+        "RELEASE_CANDIDATE",
+        "RELEASED"
+      ],
+      "description": "BETA or later requires every release-blocking criterion to be PROVEN."
+    },
+    "wording": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "product_state_label",
+        "engine_summary",
+        "graphics_vulkan",
+        "graphics_d3d11",
+        "machine_contract"
+      ],
+      "description": "Exact user-facing strings. README, STATUS, core descriptors, CLI and app must not invent alternative phrasing.",
+      "properties": {
+        "product_state_label": { "type": "string", "minLength": 1 },
+        "engine_summary": { "type": "string", "minLength": 1 },
+        "graphics_vulkan": { "type": "string", "minLength": 1 },
+        "graphics_d3d11": { "type": "string", "minLength": 1 },
+        "machine_contract": { "type": "string", "minLength": 1 }
+      }
+    },
+    "criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/criterion" }
+    }
+  },
+  "definitions": {
+    "criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "state",
+        "release_blocking",
+        "statement",
+        "evidence_paths"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[AB][0-9]{1,2}$"
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "state": {
+          "enum": ["PROVEN", "OPEN", "EXTERNAL"],
+          "description": "PROVEN requires dated live evidence at the stated threshold. OPEN means measured but below threshold, or unmeasured. EXTERNAL means blocked by a third party."
+        },
+        "release_blocking": { "type": "boolean" },
+        "statement": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The pass threshold in verifiable terms."
+        },
+        "measured": {
+          "type": ["string", "null"],
+          "description": "Latest honest measurement. Required whenever state is OPEN and a measurement exists."
+        },
+        "evidence_paths": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "gate_receipt": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "gate_id",
+        "criterion",
+        "tested_commit",
+        "host_os",
+        "host_hardware",
+        "sample_count",
+        "passes",
+        "failures",
+        "evidence_paths"
+      ],
+      "description": "Shape every live gate must emit. Referenced by scripts/live-gates tooling.",
+      "properties": {
+        "gate_id": { "type": "string", "minLength": 1 },
+        "criterion": { "type": "string", "pattern": "^[AB][0-9]{1,2}$" },
+        "tested_commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+        "host_os": { "type": "string", "minLength": 1 },
+        "host_hardware": { "type": "string", "minLength": 1 },
+        "guest_image_sha256": { "type": ["string", "null"] },
+        "vars_sha256": { "type": ["string", "null"] },
+        "driver_store_hash": { "type": ["string", "null"] },
+        "sample_count": { "type": "integer", "minimum": 0 },
+        "passes": { "type": "integer", "minimum": 0 },
+        "failures": { "type": "integer", "minimum": 0 },
+        "evidence_paths": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "known_confounders": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}
