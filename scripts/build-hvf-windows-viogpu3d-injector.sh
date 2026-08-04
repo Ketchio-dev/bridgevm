@@ -88,6 +88,7 @@ ENABLE_TESTSIGNING=1 DRIVER_DIRS="$driver_dirs" OUT="$OUT" "$BUILD_INJECTOR"
 
 # Record which guest assets this injector carries, so the boot gate can tell a
 # stale injector from a fresh one by content rather than by mtime.
+# LC_ALL=C so the digest does not depend on the builder's locale.
 (cd "$ROOT/scripts/win-assets" && find . -type f -exec shasum -a 256 {} + \
-  | sort -k2 | shasum -a 256 | cut -d' ' -f1) > "$OUT.assets-sha256"
+  | LC_ALL=C sort -k2 | shasum -a 256 | cut -d' ' -f1) > "$OUT.assets-sha256"
 log "assets digest: $(cat "$OUT.assets-sha256") -> $OUT.assets-sha256"

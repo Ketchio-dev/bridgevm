@@ -70,8 +70,11 @@ done
 # Hashes the repo-relative name and the content of each file, never the
 # absolute path: a sealed worktree lives at a different path and must produce
 # the same digest as the checkout the injector was built from.
+# LC_ALL=C: sort order is locale-dependent, and the LaunchAgent that runs
+# queued gates has no locale while an interactive shell may have any. Without
+# this the same tree hashes differently depending on who ran the gate.
 assets_digest=$(cd scripts/win-assets && find . -type f -exec shasum -a 256 {} + \
-  | sort -k2 | shasum -a 256 | cut -d' ' -f1)
+  | LC_ALL=C sort -k2 | shasum -a 256 | cut -d' ' -f1)
 built_from=$(cat "$INJECTOR.assets-sha256" 2>/dev/null || true)
 if [[ "$assets_digest" != "$built_from" ]]; then
   echo "FAIL: injector was not built from the current scripts/win-assets" >&2
