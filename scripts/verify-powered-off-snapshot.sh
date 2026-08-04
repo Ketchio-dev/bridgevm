@@ -23,6 +23,11 @@ QUOTA=${QUOTA:-$((80 * 1024 * 1024 * 1024))}
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+# openssl rather than shasum: shasum is a Perl script and runs about five
+# times slower, which on a 64 GiB image hashed six times is the difference
+# between minutes and most of an hour.
+sha256() { openssl dgst -sha256 -r "$1" | cut -d' ' -f1; }
+
 for required in "$DISK" "$VARS"; do
   [[ -e "$required" ]] || fail "missing required input: $required"
 done
@@ -42,14 +47,16 @@ mkdir -p "$WORK"
 cp -c "$DISK" "$WORK/disk.raw" || fail "could not clone the disk"
 cp "$VARS" "$WORK/vars.fd" || fail "could not copy the vars"
 
-before_disk=$(shasum -a 256 "$WORK/disk.raw" | cut -d' ' -f1)
-before_vars=$(shasum -a 256 "$WORK/vars.fd" | cut -d' ' -f1)
+before_disk=$(sha256 "$WORK/disk.raw")
+before_vars=$(sha256 "$WORK/vars.fd")
 say "before disk sha256: $before_disk"
 say "before vars sha256: $before_vars"
 
-cargo build -p bridgevm-hvf --locked --example snapshot_pair_cli 2>>"$OUT/build.log" \
+# Release: a debug build hashes 64 GiB roughly an order of magnitude slower,
+# and this gate hashes it several times.
+cargo build --release -p bridgevm-hvf --locked --example snapshot_pair_cli 2>>"$OUT/build.log" \
   || fail "could not build snapshot_pair_cli; see $OUT/build.log"
-CLI=target/debug/examples/snapshot_pair_cli
+CLI=target/release/examples/snapshot_pair_cli
 
 say "--- create ---"
 "$CLI" create "$WORK/disk.raw" "$WORK/vars.fd" "$WORK/snap" a19-gate "$QUOTA" \
@@ -61,7 +68,7 @@ say "--- verify ---"
 # Change both live files, so a restore that silently does nothing cannot pass.
 printf 'clobbered' | dd of="$WORK/disk.raw" bs=1 seek=512 conv=notrunc 2>/dev/null
 printf 'clobbered' | dd of="$WORK/vars.fd" bs=1 seek=512 conv=notrunc 2>/dev/null
-clobbered_disk=$(shasum -a 256 "$WORK/disk.raw" | cut -d' ' -f1)
+clobbered_disk=$(sha256 "$WORK/disk.raw")
 [[ "$clobbered_disk" != "$before_disk" ]] || fail "the clobber did not change the disk"
 say "clobbered disk sha256: $clobbered_disk"
 
@@ -69,8 +76,8 @@ say "--- restore ---"
 "$CLI" restore "$WORK/snap" "$WORK/disk.raw" "$WORK/vars.fd" | tee -a "$RECEIPT" \
   || fail "restore failed"
 
-after_disk=$(shasum -a 256 "$WORK/disk.raw" | cut -d' ' -f1)
-after_vars=$(shasum -a 256 "$WORK/vars.fd" | cut -d' ' -f1)
+after_disk=$(sha256 "$WORK/disk.raw")
+after_vars=$(sha256 "$WORK/vars.fd")
 say "after disk sha256: $after_disk"
 say "after vars sha256: $after_vars"
 
@@ -84,7 +91,7 @@ if "$CLI" restore "$WORK/snap" "$WORK/disk.raw" "$WORK/vars.fd" >>"$RECEIPT" 2>&
   fail "a tampered snapshot was restored"
 fi
 say "tampered snapshot refused"
-[[ "$(shasum -a 256 "$WORK/disk.raw" | cut -d' ' -f1)" == "$before_disk" ]] \
+[[ "$(sha256 "$WORK/disk.raw")" == "$before_disk" ]] \
   || fail "a refused restore modified the live disk"
 say "live pair untouched by the refusal"
 
