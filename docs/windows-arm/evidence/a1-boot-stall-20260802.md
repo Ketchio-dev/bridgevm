@@ -182,3 +182,65 @@ independent of which boot option is being tried.
 
 The fix is kept — it removes 24 spurious firmware errors per boot and is
 correct on its own terms — but it must not be described as fixing A1.
+
+## The stall is inside the NT kernel: `KeIpiGenericCall` waiting for IPI acks
+
+Symbolised offline with the guest's own binaries. `ntoskrnl.exe` was extracted
+from the canonical image; its RSDS record names `ntkrnlmp.pdb`
+`{00D46CC0-E2A1-3E48-6AC6-C224799CFC23}` age 6, fetched from the Microsoft
+symbol server and matched.
+
+Every kernel-mode stall sample has the same PC low bits. Candidate RVAs whose
+low 20 bits are `0x761dc` were read back from the PE and exactly one carries
+the observed instruction pair `word_before=0xb9008268 word_at=0xb9427f68`:
+
+```
+rva=0x2761dc word_at=0xb9427f68 word_before=0xb9008268 <== MATCH
+```
+
+`llvm-symbolizer` places `0x2761dc` in **`KeIpiGenericCall`** (public RVA
+`0x276140`, so the stall PC is `+0x9c` and the sampled LR `+0x170` is inside
+the same function). The loop decodes to:
+
+```
++0x9c: ldr  w8, [x27, #0x27c]   ; read target-CPU acknowledgement mask
++0xa0: ands wzr, w9, w8
++0xa4: b.eq +0xd0               ; done when every target acked
++0xac: yield
++0xb0: ldr  w8, [x19]           ; inner wait, loops back
+```
+
+That is the textbook "wait for all other CPUs to acknowledge the IPI" spin.
+It also explains the watchdog's `exits_in_window=0`: a YIELD loop performs no
+MMIO and takes no traps, so the host sees a guest that is "not running" while
+CPU0 is in fact spinning at full speed waiting for CPUs that never answer.
+
+Three independent stalls confirm byte-identical registers modulo KASLR:
+`pc` low `0x761dc`, `lr` low `0x762b0`, stuck word `0xb9427f68`, and
+`x27 - pc == 0xb91e24` in every sample (`a1-gate10b/boot-9`,
+`a1-gate-fixed/boot-10`, `a1-par-test/boot-5`).
+
+Two corrections this forces:
+
+- **The "Start boot option" frame was misread.** ramfb only shows firmware
+  output; once Windows takes over the display via the GPU miniport the ramfb
+  frame goes stale. The kernel-mode stalls end on that frame *because nothing
+  updates ramfb after handoff*, not because the guest is still in BDS. The
+  two pre-fix failures with UEFI-space PCs (`psci 8`) remain genuine firmware
+  hangs — there are two distinct modes.
+- **The psci-count retraction needs partial un-retracting.** For the
+  kernel-mode stalls the count is a clean discriminator after all: every one
+  reports `psci 26` where every passing boot reports `psci 27`. The earlier
+  "refutation" compared a kernel-mode failure against the UEFI-mode pattern.
+
+Why an IPI would be lost is the open question, and it is a host-side one:
+either SGI delivery after the Nth `hv_gic_reset` drops, or one secondary vCPU
+is not actually running when the kernel targets it. Both live in our reset /
+secondary-respawn path, not in Windows.
+
+## Next step
+
+Reproduce with `BRIDGEVM_SMP_TRACE=1` so each secondary's PSCI state
+transitions are on record at the moment of the stall, then check whether the
+missing 27th PSCI call is a `CPU_ON` that was never issued, or one that was
+answered `ALREADY_ON` by a stale `PsciState` surviving the reset.
