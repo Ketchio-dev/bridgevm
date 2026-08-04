@@ -350,3 +350,20 @@ Build a bare-metal vtimer/cancellation microprobe that races
 Windows. If same-CVAL re-evaluation cannot recover every iteration, the
 correctness boundary moves to removing the competing wake sources or recreating
 the VM process on reset, rather than repairing the timer after the fact.
+
+### Outcome of that step
+
+Built and run: see
+[`t1-vtimer-cancel-microprobe-20260804.md`](t1-vtimer-cancel-microprobe-20260804.md).
+
+It establishes that the mechanism is real and reachable. A single vCPU parked
+in `WFI` can be left with `CNTV_CTL=0x5` -- the timer condition met and the
+interrupt pending -- while the vtimer stays masked, and the wake is then never
+delivered even across a 500ms window with all cancellation stopped. The shipped
+recovery clears that state across 10,000 iterations and ~3.6M cancels.
+
+It does **not** close A1. The probe shows the mechanism exists; it does not
+show it is what `a1-fix3/boot-7` hit, and that boot recorded `masked=false`
+with the recovery already run. A1 stays open at 11/12, and the residual failure
+still needs a Windows-side explanation -- SMP, the real guest's redistributor
+programming, or `KeIpiGenericCall` itself.
