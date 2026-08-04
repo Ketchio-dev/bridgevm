@@ -76,7 +76,10 @@ done
 assets_digest=$(cd scripts/win-assets && find . -type f -exec shasum -a 256 {} + \
   | LC_ALL=C sort -k2 | shasum -a 256 | cut -d' ' -f1)
 built_from=$(cat "$INJECTOR.assets-sha256" 2>/dev/null || true)
-echo "DIAG: sidecar=$INJECTOR.assets-sha256 exists=$([ -e "$INJECTOR.assets-sha256" ] && echo y || echo n) read=[$built_from] pwd=$(pwd)" >&2
+{ echo "DIAG stat: $(stat -f '%z %Sp' "$INJECTOR.assets-sha256" 2>&1)"
+  echo "DIAG cat stderr: $(cat "$INJECTOR.assets-sha256" 2>&1 1>/dev/null)"
+  echo "DIAG cat stdout: [$(cat "$INJECTOR.assets-sha256" 2>/dev/null)]"
+  echo "DIAG id: $(id -un) euid=$(id -u)"; } >&2
 if [[ "$assets_digest" != "$built_from" ]]; then
   echo "FAIL: injector was not built from the current scripts/win-assets" >&2
   echo "  injector:    $INJECTOR" >&2
