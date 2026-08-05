@@ -408,3 +408,27 @@ Three lines later the same log shows the true PC as `0x1bf33ba04`.
 The code now checks a read's status first and says it cannot report rather than
 reporting zeros. Recording this because the fabricated version was live, and
 anyone reading that log would have drawn a confident and wrong conclusion.
+
+### The duplicate BootOrder entries are load-bearing
+
+`drop-injector-boot-entry.py` pads BootOrder after removing the injector's
+Boot0003, turning `[0x0, 0x3, 0x0]` into `[0x0, 0x0, 0x0]`. That looked wrong:
+the padding is justified by a comment claiming firmware treats a repeated entry
+as already tried, which was never tested, and the source image lists Boot0000
+twice regardless.
+
+Trimming it to a single `[0x0]` was measured against the same soak:
+
+| BootOrder | result | failure shape |
+|---|---|---|
+| `[0x0, 0x0, 0x0]` | 2 of 5 pass | stall at `reboots=1` |
+| `[0x0]` | 0 of 2 pass | no reboot at all, `reboots=0` |
+
+With one entry the guest stops rebooting entirely and sits at a UEFI PC until
+the 40-minute deadline. So the duplicates are doing something real, and the
+change was reverted.
+
+What that something is remains unknown. A plausible reading is that firmware
+needs more than one attempt at Boot0000 -- the first failing and a retry
+succeeding -- which would make the "already tried" comment exactly backwards.
+That is a hypothesis, not a finding.
