@@ -75,3 +75,4 @@ docs/testing/apple-silicon-live-gates.md	current	development-process	-
 docs/windows-arm/smccc-trng-psci-contract.md	current	windows-hvf-engine	-
 docs/windows-arm/evidence/a19-snapshot-pair-20260804.md	current	windows-graphics	GOAL.md
 docs/windows-arm/evidence/a1-queued-boot-t2-20260804.md	current	windows-graphics	GOAL.md
+docs/windows-arm/evidence/a11-xctest-shim-20260805.md	current	windows-graphics	GOAL.md
