@@ -184,12 +184,14 @@
     {
       "id": "A16",
       "title": "Release security and storage hardening",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": true,
       "statement": "Release builds launch only bundled signed helpers, verify socket peer UID, hold an exclusive disk/vars lease and use positional atomic disk I/O.",
       "measured": "Overrides: scripts/check-release-overrides.sh inspects compiled objects and reports 4 overrides debug-only, PASS. Bundled signed helper: HelperCodeSignature.swift requires the swtpm helper to share the app team ID, with 10 swift-testing tests. Peer UID: crates/bridgevm-daemon/src/peer_credentials.rs with tests. Exclusive lease: crates/bridgevm-hvf/src/media_lock.rs. Positional atomic disk I/O: every seek+read on a data path is now read_exact_at/write_all_at -- nvme/disk.rs (read, write-back write, and the copy-on-write chunk fault), probe_mmio/virtio_backend.rs, virtio_blk/media_backend.rs and windows_arm/uefi_io.rs, whose write_all_at/read_exact_at were named for positional I/O while seeking. Three tests park the shared file offset at 4096, perform a read, a write-back write and an overlay fault, and require it to still be 4096; falsified by restoring seek+read, which reports the offset moved to 1536. The one remaining seek is in media_lock.rs, rewriting the lock file's holder line, which is not a data path.",
       "evidence_paths": [
-        "docs/security/model.md"
+        "docs/security/model.md",
+        "scripts/check-release-overrides.sh",
+        "crates/bridgevm-hvf/src/nvme/positional_io_tests.rs"
       ]
     },
     {
