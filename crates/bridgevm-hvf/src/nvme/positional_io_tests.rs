@@ -13,6 +13,8 @@ use std::io::{Seek, SeekFrom, Write};
 
 fn image(tag: &str) -> std::path::PathBuf {
     let path = std::env::temp_dir().join(format!("bv-posio-{}-{}", tag, std::process::id()));
+    // A leftover from an earlier run of this pid would be opened as-is.
+    let _ = std::fs::remove_file(&path);
     let mut bytes = vec![0u8; 8192];
     for (i, b) in bytes.iter_mut().enumerate() {
         *b = (i % 251) as u8;
