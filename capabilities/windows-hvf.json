@@ -197,10 +197,10 @@
     {
       "id": "A17",
       "title": "Nonblocking provenance-sealed live queue",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": true,
       "statement": "Long gates run asynchronously on the Studio local queue with sealed commit/image/vars hashes and no foreground wait beyond 120 seconds.",
-      "measured": "Gates are currently launched synchronously from the interactive session.",
+      "measured": "The Studio local queue (com.ketchio.bridgevm-live LaunchAgent, StartInterval 60s, no inbound listener and no runner registration) has run 29 jobs across tiers t0-t5 plus t1-snapshot and t1-restore-boot. Submission returns a job id immediately and never waits, so no foreground wait exists at all, let alone one over 120 seconds; the longest job this session ran about 100 minutes unattended. Receipts seal the commit and, for tiers that read one, the image and vars: job 20260805-115614-86173-14911 records image_sha256 6fef8f980adbc6af1ed41a1934d1ebafd93b8a1b4d2ab9a3f8bd07ae950d9b54 and vars_sha256 d329b5b03cc5673435d3949f1b5b5b2bfe3f4dfe1f6f0b56ca5894f3bce87d3f against the real 64 GiB pair, while t1-vtimer correctly records 'absent'. Nine defects were found by running the queue rather than by reasoning about it, including a cancel that recorded the request and then waited for the job it had cancelled. Evidence: docs/testing/apple-silicon-live-gates.md.",
       "evidence_paths": [
         "docs/testing/apple-silicon-live-gates.md"
       ]
