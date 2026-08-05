@@ -153,6 +153,18 @@ pub const MANIFEST_NAME: &str = "manifest.json";
 /// Streamed rather than read wholesale: a disk image is tens of gigabytes and
 /// must not be brought into memory to be copied.
 fn copy_and_sync(src: &Path, dst: &Path) -> io::Result<u64> {
+    // Clone first where the filesystem allows it. On APFS this is a
+    // copy-on-write reference: the 64 GiB image clones in 2ms and adds no used
+    // bytes, where copying it needs minutes and room for a second full copy.
+    // That difference is the whole reason a restore could not run on a volume
+    // with 59 GiB free.
+    if free_space::clone_file(src, dst).is_some() {
+        let cloned = File::open(dst)?;
+        // Still fsync: the clone is metadata, and the manifest is about to
+        // claim these bytes are durable.
+        cloned.sync_all()?;
+        return Ok(cloned.metadata()?.len());
+    }
     let mut input = File::open(src)?;
     let mut output = File::create(dst)?;
     let mut buf = vec![0u8; COPY_CHUNK];
