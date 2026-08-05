@@ -804,7 +804,7 @@ crates/bridgevm-hvf/examples/snapshot_pair_cli.rs	66	0
 crates/bridgevm-hvf/src/snapshot_free_space.rs	50	2
 crates/bridgevm-hvf/src/snapshot_restore_space_tests.rs	81	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_kill_tests.rs	46	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator/cancel_stop.rs	68	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator/cancel_stop.rs	84	2
 apps/macos/XCTestShim/Runner.swift	42	0
 apps/macos/XCTestShim/SelfTest.swift	75	0
 apps/macos/XCTestShim/XCTest.swift	239	0

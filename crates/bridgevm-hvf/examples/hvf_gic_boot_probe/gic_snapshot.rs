@@ -171,12 +171,10 @@ mod tests;
 ///
 /// # Safety
 /// `vcpu` must be a live vCPU owned by the calling thread.
+/// Read a vCPU's state. Only from the thread that owns `vcpu`: HVF refuses
+/// other threads and these calls drop their status, so a bad read looks real.
 pub(crate) unsafe fn capture(vcpu: HvVcpuT, psci_state: u64, generation: u64) -> GicSnapshot {
-    let mut mpidr = 0u64;
-    let mut pc = 0u64;
-    let mut cntv_ctl = 0u64;
-    let mut cntv_cval = 0u64;
-    let mut vtimer_offset = 0u64;
+    let (mut mpidr, mut pc, mut cntv_ctl, mut cntv_cval, mut vtimer_offset) = (0u64, 0, 0, 0, 0);
     let mut vtimer_masked = false;
     hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_MPIDR_EL1, &mut mpidr);
     hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut pc);

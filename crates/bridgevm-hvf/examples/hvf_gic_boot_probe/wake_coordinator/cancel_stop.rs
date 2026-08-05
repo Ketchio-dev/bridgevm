@@ -57,8 +57,24 @@ mod tests {
 /// executing; one that does not, with the vtimer masked, says it is waiting for
 /// an interrupt that will not arrive.
 pub(crate) fn stall_gic_report(vcpu: crate::HvVcpuT, reboots: u64) -> Vec<String> {
-    // SAFETY: Category 8 - FFI boundary. `vcpu` is a live HVF vCPU handle owned
-    // by the probe for the whole run, and capture only reads registers.
+    // HVF only lets the owning thread read a vCPU's registers. This runs on the
+    // watchdog thread, so every read fails and capture() -- which ignores the
+    // return codes -- reports zeros. The first version of this printed
+    // "PC 0x0 -> 0x0, CNTV_CTL=0x0, verdict=parked" for a guest whose real PC
+    // was 0x1bf33ba04, which is worse than printing nothing: it looks like
+    // evidence.
+    let mut probe = 0u64;
+    // SAFETY: Category 8 - FFI boundary. `vcpu` is a live HVF handle owned by
+    // the probe for the whole run; this reads one register and checks the
+    // status rather than trusting the out-parameter.
+    let status = unsafe { crate::hv_vcpu_get_reg(vcpu, crate::HV_REG_PC, &mut probe) };
+    if status != 0 {
+        return vec![format!(
+            "GIC SNAPSHOT: unavailable off the vCPU thread (hv_vcpu_get_reg={status:#x}); \
+             see the REGS line in the final report"
+        )];
+    }
+    // SAFETY: as above; the status check proves this thread may read.
     let (before, after) = unsafe {
         let before = crate::gic_snapshot::capture(vcpu, 0, reboots);
         std::thread::sleep(std::time::Duration::from_millis(50));
