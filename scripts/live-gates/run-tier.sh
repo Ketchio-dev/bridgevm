@@ -70,6 +70,18 @@ case "$TIER" in
             exit 1
         fi
         ;;
+    t1-restore-boot)
+        # A19 acceptance item 5: boots the guest three times around a
+        # snapshot/restore, so it is far slower than t1-snapshot and kept
+        # separate rather than folded into it.
+        echo "running the snapshot restore-and-boot gate" >&2
+        if OUT="$OUT" "$REPO/scripts/verify-snapshot-restore-boots.sh"; then
+            receipt completed true
+        else
+            receipt failed false
+            exit 1
+        fi
+        ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)
         # These need private Windows media and 20+ minutes per boot. They are
         # declared so the queue and its policy tests are exercised, but they
