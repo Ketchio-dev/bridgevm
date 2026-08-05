@@ -216,8 +216,9 @@ prepared_key() {
     cat "$INJECTOR.assets-sha256" 2>/dev/null || echo no-assets-digest
     (cd scripts/win-assets && find . -type f -exec shasum -a 256 {} + | LC_ALL=C sort)
     # The prepared vars are produced by this script, so a change to it must
-    # invalidate the cache. Leaving it out meant a fix to BootOrder handling
-    # had no effect until the cache was cleared by hand.
+    # invalidate the cache. Without this a change to BootOrder handling has no
+    # effect until someone clears the cache by hand -- which is how a
+    # regression from one nearly went unmeasured.
     shasum -a 256 scripts/drop-injector-boot-entry.py
   } | shasum -a 256 | cut -d' ' -f1
 }
