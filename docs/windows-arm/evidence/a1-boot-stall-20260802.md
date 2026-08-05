@@ -469,3 +469,33 @@ boot 1's transition happens at exit 108304 with the PC in the Windows kernel.
 The kernel enabling MSI-X is downstream of booting successfully, so this is the
 consequence, not the cause. Recording it because it is an easy trap: a
 difference that is real, reproducible, and still backwards.
+
+### Retraction: the failures are not all one shape
+
+An earlier note in this file, and the commit message that went with it, said
+all three failures of soak `20260805-011523` carried "the identical
+fingerprint". They shared a watchdog line -- `exits_in_window=0` at
+`reboots=1` -- and I treated that as identity without checking the PCs.
+
+They do not:
+
+| boot | final PC | wfiish | word before PC |
+|---|---|---|---|
+| 2 | `0x1bf33ba04` (UEFI) | true | `0xd503207f` = WFI |
+| 3 | `0xfffff8039b8761e8` (kernel) | false | `0x54000680` = B.cond |
+| 5 | `0xfffff8016f8761e8` (kernel) | false | `0x54000680` = B.cond |
+
+Boot 2 is firmware parked on a `WFI`. Boots 3 and 5 are the Windows kernel
+spinning on a conditional branch -- the same instruction at two different
+kernel load addresses, so the same code site under ASLR. Those are two
+different bugs, and "the failure is in the reboot firstboot triggers" is only
+established for the firmware one.
+
+What all three share is `MSI-X drained=0`: no interrupt was delivered to any of
+them. A kernel spinning at a fixed code site with no interrupts arriving is
+consistent with waiting on an I/O completion that never comes, which is the
+same *consequence* as the firmware case without being the same *cause*.
+
+The correction matters because "one fingerprint" makes a single root cause
+sound likely and points all effort at one place. Three boots, two shapes, and
+the sample is too small to say the split is 1:2.
