@@ -169,7 +169,7 @@ pub(crate) use vcpu_debug::*;
 pub(crate) use wake_coordinator::*;
 #[path = "hvf_gic_boot_probe/wake_coordinator/cancel_stop.rs"]
 mod cancel_stop;
-pub(crate) use cancel_stop::cancel_stop_reason;
+pub(crate) use cancel_stop::{cancel_stop_reason, stall_gic_report};
 pub(crate) use wfi_diagnostics::*;
 
 fn probe_exit_code(fatal_vcpu_run_error: bool, fatal_reset_error: bool) -> ExitCode {
