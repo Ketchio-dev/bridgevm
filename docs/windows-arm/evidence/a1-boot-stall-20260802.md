@@ -367,3 +367,44 @@ show it is what `a1-fix3/boot-7` hit, and that boot recorded `masked=false`
 with the recovery already run. A1 stays open at 11/12, and the residual failure
 still needs a Windows-side explanation -- SMP, the real guest's redistributor
 programming, or `KeIpiGenericCall` itself.
+
+
+## 2026-08-05: the failing boot never leaves UEFI
+
+Five-boot soaks from the queue put a sharper edge on this. Comparing the
+final `REGS` line of a passing boot against a failing one:
+
+```
+pass:  pc=0xfffff802d7a999fc  lr=0xfffff802d7a833b4   (Windows kernel range)
+fail:  pc=0x1bf33ba04         lr=0x478e2a14           (UEFI range)
+```
+
+The failing boot is not a Windows kernel that stalls. It is a guest that never
+reaches the kernel at all: after the reboot firstboot triggers to activate
+testsigning, control stays in firmware. `0x1bf33ba04` is the same UEFI PC
+recorded in the original fingerprint for this criterion, so the two are the
+same failure, and it is a firmware-handoff problem rather than a
+`KeIpiGenericCall` problem.
+
+Timings agree. A passing boot takes 17-19 minutes through three reboots. A
+failing one is confirmed stalled 4-6 minutes in, with `exits_in_window=0` and
+`reboots=1`.
+
+### A retraction
+
+The first version of the stall-time GIC snapshot printed:
+
+```
+GIC SNAPSHOT: PC 0x0 -> 0x0 psci_state=0 vtimer_masked=false
+GIC SNAPSHOT: CNTV_CTL=0x0 ... verdict=parked
+```
+
+None of that was real. HVF only permits register reads from the thread that
+owns the vCPU, the snapshot ran on the watchdog thread, and `capture()`
+discards every status code -- so it reported zeros, and "PC did not move" plus
+"verdict=parked" are precisely the conclusions the snapshot exists to support.
+Three lines later the same log shows the true PC as `0x1bf33ba04`.
+
+The code now checks a read's status first and says it cannot report rather than
+reporting zeros. Recording this because the fabricated version was live, and
+anyone reading that log would have drawn a confident and wrong conclusion.
