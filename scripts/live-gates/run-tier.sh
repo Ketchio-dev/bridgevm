@@ -24,6 +24,18 @@ done
 [ -n "$OUT" ] || { echo "run-tier.sh needs --out" >&2; exit 2; }
 mkdir -p "$OUT"
 
+# Hash of an input the tier will read, or "absent". Sealing these is the
+# difference between "this ran at commit X" and "this ran at commit X against
+# exactly these bytes" -- a receipt without them cannot be reproduced, because
+# the images are outside the repository and mutable in principle.
+#
+# openssl rather than shasum: shasum is a Perl script and about five times
+# slower, which on a 64 GiB image is minutes.
+seal() {
+    [[ -r "$1" ]] || { printf 'absent'; return; }
+    openssl dgst -sha256 -r "$1" 2>/dev/null | cut -d' ' -f1 | tr -d '\n'
+}
+
 receipt() {
     # Fields here must be on the redact-receipt allowlist or they are dropped.
     cat > "$OUT/receipt.json" <<EOF
@@ -31,6 +43,8 @@ receipt() {
   "tier": "$TIER",
   "job_id": "$JOB_ID",
   "commit": "$(git -C "$REPO" rev-parse HEAD)",
+  "image_sha256": "$(seal "${SEALED_IMAGE:-}")",
+  "vars_sha256": "$(seal "${SEALED_VARS:-}")",
   "host_model": "$(sysctl -n hw.model)",
   "macos_version": "$(sw_vers -productVersion)",
   "finished_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -62,6 +76,8 @@ case "$TIER" in
     t1-snapshot)
         # Needs only the internal-volume canonical pair, so it runs even where
         # TCC blocks the external volume.
+        SEALED_IMAGE=$HOME/BridgeVM/work/canonical-fresh-12041-agent-20260730.raw
+        SEALED_VARS=$HOME/BridgeVM/work/canonical-fresh-12041-agent-20260730-vars.fd
         echo "running the powered-off snapshot pair gate" >&2
         if OUT="$OUT" "$REPO/scripts/verify-powered-off-snapshot.sh"; then
             receipt completed true
@@ -74,6 +90,8 @@ case "$TIER" in
         # A19 acceptance item 5: boots the guest three times around a
         # snapshot/restore, so it is far slower than t1-snapshot and kept
         # separate rather than folded into it.
+        SEALED_IMAGE=$HOME/BridgeVM/work/rethink-fresh-12041-agent-vioserial.raw
+        SEALED_VARS=$HOME/BridgeVM/work/rethink-fresh-12041-agent-vioserial-vars.fd
         echo "running the snapshot restore-and-boot gate" >&2
         if OUT="$OUT" "$REPO/scripts/verify-snapshot-restore-boots.sh"; then
             receipt completed true
@@ -91,6 +109,8 @@ case "$TIER" in
         # under it are readable -- TCC denies a LaunchAgent reads under
         # /Volumes/* while stat() still succeeds, so the old check passed and
         # the gate then failed minutes later blaming the injector.
+        SEALED_IMAGE=${BASE_IMAGE:-$HOME/BridgeVM/work/wall-c8-clean-12041.raw}
+        SEALED_VARS=${BASE_VARS:-$HOME/BridgeVM/work/wall-c8-clean-inject-vars.fd}
         missing=""
         for input in \
             "${BASE_IMAGE:-$HOME/BridgeVM/work/wall-c8-clean-12041.raw}" \

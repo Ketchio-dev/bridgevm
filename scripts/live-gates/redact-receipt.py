@@ -29,6 +29,8 @@ ALLOWED_FIELDS = frozenset(
         "tier",
         "job_id",
         "commit",
+        "image_sha256",
+        "vars_sha256",
         "started_at",
         "finished_at",
         "elapsed_ms",
