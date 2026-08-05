@@ -809,3 +809,4 @@ apps/macos/XCTestShim/Runner.swift	42	0
 apps/macos/XCTestShim/SelfTest.swift	75	0
 apps/macos/XCTestShim/XCTest.swift	239	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_sampler.rs	52	0
+crates/bridgevm-hvf/src/nvme/positional_io_tests.rs	107	0

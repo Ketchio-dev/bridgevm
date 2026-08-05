@@ -6,7 +6,10 @@ use super::*;
 use disk_export::DEFAULT_OVERLAY_QUOTA_BYTES;
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io;
+// Positional I/O: seek mutates the description's shared offset, so two paths
+// on the same File race even when each is correct. *_at carry it per call.
+use std::os::unix::fs::FileExt;
 use std::path::Path;
 
 pub(crate) fn rounded_disk_len(bytes: usize) -> usize {
@@ -175,8 +178,7 @@ impl RawFileDisk {
             return Ok(());
         }
         let end = offset + dst.len() as u64;
-        self.file.seek(SeekFrom::Start(offset))?;
-        self.file.read_exact(dst)?;
+        self.file.read_exact_at(dst, offset)?;
         let overlay_start = offset.saturating_sub(FILE_OVERLAY_CHUNK_SIZE - 1);
         for (&chunk_base, chunk) in self.overlay.range(overlay_start..end) {
             let chunk_end = chunk_base + chunk.len() as u64;
@@ -198,8 +200,7 @@ impl RawFileDisk {
             return Ok(());
         }
         if self.write_back {
-            self.file.seek(SeekFrom::Start(offset))?;
-            self.file.write_all(data)?;
+            self.file.write_all_at(data, offset)?;
             return Ok(());
         }
 
@@ -223,8 +224,7 @@ impl RawFileDisk {
                     ));
                 }
                 let mut chunk = vec![0u8; chunk_len];
-                self.file.seek(SeekFrom::Start(chunk_base))?;
-                self.file.read_exact(&mut chunk)?;
+                self.file.read_exact_at(&mut chunk, chunk_base)?;
                 self.overlay.insert(chunk_base, chunk);
                 self.overlay_bytes = projected;
             }

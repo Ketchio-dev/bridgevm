@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::*;
+use std::os::unix::fs::FileExt;
 
 pub(crate) fn verify_uefi_firmware_file(
     path: &PathBuf,
@@ -234,17 +235,12 @@ pub(crate) fn fnv1a64(mut hash: u64, bytes: &[u8]) -> u64 {
 }
 
 pub(crate) fn write_all_at(file: &mut File, offset: u64, bytes: &[u8]) -> Result<(), String> {
-    file.seek(SeekFrom::Start(offset))
-        .map_err(|error| error.to_string())?;
-    file.write_all(bytes).map_err(|error| error.to_string())
+    FileExt::write_all_at(file, bytes, offset).map_err(|error| error.to_string())
 }
 
 pub(crate) fn read_exact_at(file: &mut File, offset: u64, len: usize) -> Result<Vec<u8>, String> {
-    file.seek(SeekFrom::Start(offset))
-        .map_err(|error| error.to_string())?;
     let mut bytes = vec![0_u8; len];
-    file.read_exact(&mut bytes)
-        .map_err(|error| error.to_string())?;
+    FileExt::read_exact_at(file, &mut bytes, offset).map_err(|error| error.to_string())?;
     Ok(bytes)
 }
 

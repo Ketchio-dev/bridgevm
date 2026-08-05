@@ -1,18 +1,15 @@
 //! Exporting a disk, and the ceiling on how much of one may be held in RAM.
-//!
-//! Split from disk.rs: both are about what leaves or is retained by the
-//! backend, rather than how a request is decoded.
+//! Split from disk.rs: what leaves or is retained by the backend, rather
+//! than how a request is decoded.
 
 use super::{DiskBackend, EXPORT_CHUNK_SIZE};
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
 
-/// Default copy-on-write overlay ceiling: 2 GiB.
-///
-/// Chosen to be larger than any read-only boot writes in practice (the
-/// injector and firstboot passes write tens of megabytes) while staying far
-/// below the host RAM a run is given, so hitting it means something is wrong
+/// Default copy-on-write overlay ceiling: 2 GiB. Larger than any read-only
+/// boot writes in practice (injector and firstboot write tens of megabytes)
+/// and far below a run's host RAM, so hitting it means something is wrong
 /// rather than merely busy.
 pub(crate) const DEFAULT_OVERLAY_QUOTA_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
@@ -52,3 +49,6 @@ impl DiskBackend {
 #[cfg(test)]
 #[path = "overlay_quota_tests.rs"]
 mod overlay_quota_tests;
+#[cfg(test)]
+#[path = "positional_io_tests.rs"]
+mod positional_io_tests;

@@ -3,9 +3,7 @@
 use super::*;
 use std::fs::File;
 use std::io;
-use std::io::Read;
-use std::io::Seek;
-use std::io::SeekFrom;
+use std::os::unix::fs::FileExt;
 use std::path::Path;
 
 #[derive(Debug)]
@@ -40,8 +38,7 @@ impl RawFileBackend {
             return Ok(());
         }
         let readable = (self.len - byte_offset).min(dst.len() as u64) as usize;
-        self.file.seek(SeekFrom::Start(byte_offset))?;
-        self.file.read_exact(&mut dst[..readable])?;
+        self.file.read_exact_at(&mut dst[..readable], byte_offset)?;
         if readable < dst.len() {
             dst[readable..].fill(0);
         }

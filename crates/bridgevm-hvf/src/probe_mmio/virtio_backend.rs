@@ -2,6 +2,9 @@
 
 use super::*;
 use crate::*;
+// Positional I/O: a seek mutates the shared file offset, so two callers on the
+// same File race even when each is internally correct.
+use std::os::unix::fs::FileExt;
 
 pub(crate) trait VirtioBlockStorageBackend {
     fn kind(&self) -> &'static str;
@@ -108,14 +111,7 @@ impl VirtioBlockStorageBackend for FileBlockStorageBackend {
             });
         }
         self.file
-            .seek(SeekFrom::Start(byte_offset))
-            .map_err(|error| VirtioBlockRequestError::StorageReadFailed {
-                offset: byte_offset,
-                len,
-                error: error.to_string(),
-            })?;
-        self.file
-            .read_exact(buffer)
+            .read_exact_at(buffer, byte_offset)
             .map_err(|error| VirtioBlockRequestError::StorageReadFailed {
                 offset: byte_offset,
                 len,
@@ -185,14 +181,7 @@ impl VirtioBlockStorageBackend for WritableHostFileBlockStorageBackend {
         let len = buffer.len();
         self.checked_range(byte_offset, len)?;
         self.file
-            .seek(SeekFrom::Start(byte_offset))
-            .map_err(|error| VirtioBlockRequestError::StorageReadFailed {
-                offset: byte_offset,
-                len,
-                error: error.to_string(),
-            })?;
-        self.file
-            .read_exact(buffer)
+            .read_exact_at(buffer, byte_offset)
             .map_err(|error| VirtioBlockRequestError::StorageReadFailed {
                 offset: byte_offset,
                 len,
@@ -208,14 +197,7 @@ impl VirtioBlockStorageBackend for WritableHostFileBlockStorageBackend {
         let len = buffer.len();
         self.checked_range(byte_offset, len)?;
         self.file
-            .seek(SeekFrom::Start(byte_offset))
-            .map_err(|error| VirtioBlockRequestError::StorageWriteFailed {
-                offset: byte_offset,
-                len,
-                error: error.to_string(),
-            })?;
-        self.file
-            .write_all(buffer)
+            .write_all_at(buffer, byte_offset)
             .map_err(|error| VirtioBlockRequestError::StorageWriteFailed {
                 offset: byte_offset,
                 len,
