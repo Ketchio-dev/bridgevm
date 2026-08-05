@@ -201,10 +201,20 @@ run_one_boot() {
 # 10-boot gate runs 10 boots rather than 20. Correctness rests on the key: if
 # the base image, vars, injector or any guest asset changes, the key changes
 # and the pass is redone.
+# Content, not timestamps or inodes. A git worktree restamps every file and
+# gives it a new inode, so a key built from stat() changed on every commit and
+# the cache missed every single time -- paying for a ten-minute injector pass
+# per run to populate a directory nothing would ever read again.
+#
+# The images are hashed by size alone: they are tens of gigabytes, hashing them
+# would cost more than the injection this cache exists to avoid, and the
+# injector's own content is already pinned by its assets digest. The guest
+# assets are hashed properly, since those are what an injection bakes in.
 prepared_key() {
   {
-    stat -f '%d-%i-%m-%z' "$BASE_IMAGE" "$BASE_VARS" "$INJECTOR"
-    find scripts/win-assets -type f -exec stat -f '%N-%m-%z' {} + | sort
+    stat -f '%z' "$BASE_IMAGE" "$BASE_VARS" "$INJECTOR"
+    cat "$INJECTOR.assets-sha256" 2>/dev/null || echo no-assets-digest
+    (cd scripts/win-assets && find . -type f -exec shasum -a 256 {} + | LC_ALL=C sort)
   } | shasum -a 256 | cut -d' ' -f1
 }
 
