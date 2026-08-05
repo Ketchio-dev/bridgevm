@@ -28,17 +28,31 @@ def main(path, drop=3):
     off, namesize, datasize = last
     start = off + namesize - 2
     order = list(struct.unpack_from('<%dH' % (datasize // 2), d, start))
-    kept = [x for x in order if x != drop]
-    if len(kept) == len(order):
+    # Also de-duplicate. The source image lists Boot0000 twice, so dropping
+    # Boot0003 still left [0x0, 0x0]; firmware retrying the same option is what
+    # this script exists to prevent.
+    kept = []
+    for x in order:
+        if x != drop and x not in kept:
+            kept.append(x)
+    if kept == order:
         print('BootOrder already clean:', [hex(x) for x in order])
         return
-    # Keep the record length identical: pad by repeating the final entry, which
-    # firmware treats as an already-tried option rather than a new one.
-    while len(kept) < len(order):
-        kept.append(kept[-1])
+    # Shorten the record rather than padding it. The previous version repeated
+    # the final entry to keep the length, on the assumption that firmware would
+    # treat a duplicate as already tried. That assumption was never tested and
+    # produced BootOrder [0x0, 0x3, 0x0] -> [0x0, 0x0, 0x0]: Boot0000 listed
+    # three times. datasize lives in the header 24 bytes before the name, so
+    # the length can simply be corrected.
     struct.pack_into('<%dH' % len(kept), d, start, *kept)
+    new_datasize = len(kept) * 2
+    struct.pack_into('<I', d, off - 20, new_datasize)
+    # Zero the tail so the dropped entry does not linger in the image.
+    for i in range(start + new_datasize, start + datasize):
+        d[i] = 0
     open(path, 'wb').write(d)
-    print('BootOrder', [hex(x) for x in order], '->', [hex(x) for x in kept])
+    print('BootOrder', [hex(x) for x in order], '->', [hex(x) for x in kept],
+          '(datasize %d -> %d)' % (datasize, new_datasize))
 
 if __name__ == '__main__':
     main(sys.argv[1])
