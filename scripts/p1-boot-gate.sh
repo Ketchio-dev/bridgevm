@@ -245,9 +245,15 @@ else
   python3 scripts/drop-injector-boot-entry.py "$PREPARED_VARS" \
     >> "$PREPARED_DIR/launcher.out" 2>&1
 
-  if [[ "$(cat "$PREPARED_DIR/injected.txt" 2>/dev/null)" != "1" ]]; then
-    echo "FAIL: the injector pass did not report injector_boot_observed=1" >&2
-    echo "  see $PREPARED_DIR/launcher.out" >&2
+  # The runner writes `true`/`false`, not 1/0. Comparing against "1" rejected
+  # every successful injection, including one whose guest logs showed the
+  # agent installed and the D3DKMT probe passing.
+  if [[ "$(cat "$PREPARED_DIR/injected.txt" 2>/dev/null)" != "true" ]]; then
+    # Print what it actually said. The runner's other values are diagnoses --
+    # false-booted-<guid>, unknown-no-gpt, n/a-no-injector -- and each points
+    # somewhere different.
+    echo "FAIL: injector_boot_observed=$(cat "$PREPARED_DIR/injected.txt" 2>/dev/null || echo '<empty>')" >&2
+    echo "  expected 'true'; see $PREPARED_DIR/launcher.out" >&2
     exit 1
   fi
   rm -f "$PREPARED_DIR/inj.raw"
