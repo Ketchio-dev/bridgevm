@@ -432,3 +432,40 @@ What that something is remains unknown. A plausible reading is that firmware
 needs more than one attempt at Boot0000 -- the first failing and a retry
 succeeding -- which would make the "already tried" comment exactly backwards.
 That is a hypothesis, not a finding.
+
+### Where the failing boot actually is: firmware PCI enumeration, no interrupts at all
+
+Comparing the two boots of soak `20260805-021827` past the first reboot:
+
+| | pass (boot 1) | fail (boot 2) |
+|---|---|---|
+| final PC | `0xfffff802d7a999fc` (kernel) | `0x1bf33ba04` (UEFI) |
+| `final_pc_wfiish` | false | **true** |
+| word before PC | `0x52800040` | **`0xd503207f` = WFI** |
+| MSI-X delivered | **19388** | **0** |
+| SPI delivered | 0 | 0 |
+| vtimer exits | 0 | 0 |
+| PSCI SYSTEM_RESET | 4 | 2 |
+
+The failing guest is parked on a `WFI` and **not one interrupt of any kind was
+ever delivered to it** -- not MSI-X, not SPI, not vtimer. `last_nonzero_irq_drain`
+is `<none>` for the whole run.
+
+Its last guest activity is a run of PCI config accesses to `bdf=00:01.0
+reg=command/status+0x4`, alternating read and write. That is firmware
+enumerating the NVMe function, not Windows driving it. So the stall is inside
+UEFI's PCI scan after the reboot, before any OS loader runs.
+
+#### Two hypotheses ruled out along the way
+
+*vtimer mask left set across reset.* `reset_vcpu_for_boot` writes `CNTV_CTL`
+to 0 but HVF's vtimer mask is a separate API, so this looked promising --
+except `vcpu_debug.rs:76` already calls `hv_vcpu_set_vtimer_mask(vcpu, false)`
+on that path, and the stall reports `masked=false`. Not it.
+
+*Guest never enabled MSI-X.* boot 1 reaches `msix_ctrl=0x8008` (MSI-X Enable)
+twice and boot 2 never does, which looks like a cause until you check *when*:
+boot 1's transition happens at exit 108304 with the PC in the Windows kernel.
+The kernel enabling MSI-X is downstream of booting successfully, so this is the
+consequence, not the cause. Recording it because it is an easy trap: a
+difference that is real, reproducible, and still backwards.
