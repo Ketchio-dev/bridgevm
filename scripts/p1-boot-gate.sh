@@ -25,7 +25,12 @@ BASE_IMAGE=${BASE_IMAGE:-$HOME/BridgeVM/work/wall-c8-clean-12041.raw}
 BASE_VARS=${BASE_VARS:-$HOME/BridgeVM/work/wall-c8-clean-inject-vars.fd}
 # Not /tmp: the injector is a gate input whose hash keys the prepared cache,
 # and /tmp is cleared on reboot. Canonical inputs live on the external volume.
-INJECTOR=${INJECTOR:-/Volumes/PortableSSD/BridgeVM/injectors/inj-a1-20260802.raw}
+# Internal volume by default. macOS TCC denies a LaunchAgent read access to
+# /Volumes/* even when stat() succeeds, so a queued gate reading the injector
+# from the external SSD failed with "Operation not permitted" while the same
+# command by hand worked. The injector is 1.5 GiB; keeping it internal costs
+# little and removes a whole class of failure.
+INJECTOR=${INJECTOR:-$HOME/BridgeVM/injectors/inj-a1-20260802.raw}
 VIOGPU_DIR=${VIOGPU_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 # Pass 2 must outlast a full four-stage firstboot, which needs >= 2400 s.
 # Kill mode does not make that ceiling cheap, contrary to what this comment

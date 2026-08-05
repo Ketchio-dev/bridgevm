@@ -74,8 +74,24 @@ case "$TIER" in
         # These need private Windows media and 20+ minutes per boot. They are
         # declared so the queue and its policy tests are exercised, but they
         # refuse to invent evidence when the media is absent.
-        if [ ! -d "${BRIDGEVM_CANONICAL_ROOT:-/Volumes/PortableSSD/BridgeVM/canonical}" ]; then
-            echo "canonical Windows media is not mounted; refusing to run $TIER" >&2
+        # Check the four inputs the gate actually reads, not a directory that
+        # happens to exist. A mounted volume is not evidence that the files
+        # under it are readable -- TCC denies a LaunchAgent reads under
+        # /Volumes/* while stat() still succeeds, so the old check passed and
+        # the gate then failed minutes later blaming the injector.
+        missing=""
+        for input in \
+            "${BASE_IMAGE:-$HOME/BridgeVM/work/wall-c8-clean-12041.raw}" \
+            "${BASE_VARS:-$HOME/BridgeVM/work/wall-c8-clean-inject-vars.fd}" \
+            "${INJECTOR:-$HOME/BridgeVM/injectors/inj-a1-20260802.raw}"
+        do
+            # head -c1 rather than -r: readable-by-policy is what matters here.
+            head -c1 "$input" >/dev/null 2>&1 || missing="$missing $input"
+        done
+        if [ -n "$missing" ]; then
+            echo "cannot read required Windows media:$missing" >&2
+            echo "if these are on an external volume, macOS TCC is the likely" >&2
+            echo "cause; keep them on the internal volume instead" >&2
             receipt refused-no-media false
             exit 1
         fi

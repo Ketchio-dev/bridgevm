@@ -111,11 +111,24 @@ check "the canceled job is done" '"$CLI" status | grep -q "done .*$second"'
 
 # --- tiers refuse to invent evidence -------------------------------------
 check "an unknown tier is rejected" '! "$TIER" nonsense --out "$WORK/x" 2>/dev/null'
-t5_output="$(BRIDGEVM_CANONICAL_ROOT="$WORK/absent" "$TIER" t5-campaign --out "$WORK/t5" 2>&1 || true)"
-check "boot tiers refuse without canonical media" \
-    'printf "%s" "$t5_output" | grep -q "refusing"'
+t5_output="$(BASE_IMAGE="$WORK/absent.raw" BASE_VARS="$WORK/absent.fd" \
+    INJECTOR="$WORK/absent-inj.raw" \
+    "$TIER" t5-campaign --out "$WORK/t5" 2>&1 || true)"
+check "boot tiers refuse when the media cannot be read" \
+    'printf "%s" "$t5_output" | grep -q "cannot read required Windows media"'
+check "the refusal names which input is missing" \
+    'printf "%s" "$t5_output" | grep -q "absent-inj.raw"'
 check "the refusal is recorded in the receipt" \
     'grep -q "refused-no-media" "$WORK/t5/receipt.json"'
+
+# An unreadable file, not just an absent one: this is the TCC failure mode,
+# where the path exists and stat() succeeds but the bytes cannot be read.
+: > "$WORK/unreadable.raw"; chmod 000 "$WORK/unreadable.raw"
+unreadable_output="$(BASE_IMAGE="$WORK/unreadable.raw" \
+    "$TIER" t5-campaign --out "$WORK/t5b" 2>&1 || true)"
+chmod 644 "$WORK/unreadable.raw"
+check "a present but unreadable input is refused too" \
+    'printf "%s" "$unreadable_output" | grep -q "unreadable.raw"'
 
 # --- the installer is safe to inspect ------------------------------------
 check "the installer supports a dry run" '"$INSTALL" --dry-run >/dev/null 2>&1 || true'
