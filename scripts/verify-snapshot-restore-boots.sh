@@ -19,8 +19,13 @@ set -uo pipefail
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO"
 
-DISK=${DISK:-$HOME/BridgeVM/work/canonical-fresh-12041-agent-20260730.raw}
-VARS=${VARS:-$HOME/BridgeVM/work/canonical-fresh-12041-agent-20260730-vars.fd}
+# The pair gate uses canonical-fresh-12041-agent, which despite its name has
+# no ARM64 virtio-serial driver -- the agent channel does not exist there, so
+# the guest boots to a working desktop and never answers. Measured: a full
+# Windows desktop in ramfb and zero BVAGENT lines. This pair has vioser
+# injected, which is what a marker test needs.
+DISK=${DISK:-$HOME/BridgeVM/work/rethink-fresh-12041-agent-vioserial.raw}
+VARS=${VARS:-$HOME/BridgeVM/work/rethink-fresh-12041-agent-vioserial-vars.fd}
 OUT=${OUT:-$HOME/BridgeVM/runs/snapshot-restore-boot-$(date +%Y%m%d-%H%M%S)}
 QUOTA=${QUOTA:-$((80 * 1024 * 1024 * 1024))}
 BOOT_TIMEOUT=${BOOT_TIMEOUT:-1500}
@@ -77,6 +82,13 @@ boot_and_mark() { # $1 = new marker text, $2 = phase name
     sleep 1
   done
   if ! grep -qE '^BVAGENT SERVICE start' "$log" 2>/dev/null; then
+    # Distinguish "the guest did not boot" from "the guest booted but has no
+    # agent". They look identical from the control file and need different
+    # fixes; the second one is an image problem, not a VMM problem.
+    if grep -qE 'ramfb checkpoint' "$log" 2>/dev/null; then
+      echo "  the guest produced framebuffer output but no BVAGENT line:" >&2
+      echo "  this image most likely has no virtio-serial driver or no agent" >&2
+    fi
     kill $launcher 2>/dev/null || true
     pkill -f hvf_gic_boot_probe 2>/dev/null || true
     wait $launcher 2>/dev/null || true
