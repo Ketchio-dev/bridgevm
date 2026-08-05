@@ -217,10 +217,10 @@
     {
       "id": "A19",
       "title": "Disk safety",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": true,
       "statement": "Powered-off snapshot export and restore keep a byte-exact atomic disk plus vars pair under an explicit byte quota.",
-      "measured": "Corrected: this was recorded as a gate not yet re-run, but the atomic pair did not exist. Vars used a truncating fs::write, disk export called flush() without fsync, and the copy-on-write overlay was unbounded. All three are fixed, with 39 unit tests and a live gate against the real 64 GiB image (canonical-fresh-12041-agent-20260730.raw). The gate destroyed the live disk and restored it byte-for-byte -- create, verify, restore and the post-restore read all report disk 6fef8f98... and vars d329b5b0... -- then refused a tampered snapshot without touching the live pair. Acceptance items 1, 2, 3, 4 and 6 are proven at full scale. Item 5 (a restored snapshot boots Windows and keeps a guest marker) has not been attempted, so A19 stays open.",
+      "measured": "All six acceptance items in docs/windows-arm/snapshot-scope-v1.md are proven against the real 64 GiB image. Items 1-4 and 6 by the pair gate (scripts/verify-powered-off-snapshot.sh, tier t1-snapshot): create, verify, clobber and restore reproduce both files byte for byte, and a tampered snapshot is refused before either live file is touched. Item 5 by the restore-boot gate (scripts/verify-snapshot-restore-boots.sh, tier t1-restore-boot, job 20260805-091656-10876-16297, result=pass): a marker written on C: before the snapshot came back after a restore, and a different marker written after the snapshot was gone -- so a restore that did nothing could not have passed. disk_sha256 56b1361282933f2cf3e409604cdc2da81f8c6ad8536de2bdcc472818e204280d and vars_sha256 8cc43bf0a11d8d1d68253069fed42667950a701c2f508a38c69e35b72fca3563 are identical across create, verify and restore. Evidence: docs/windows-arm/evidence/a19-snapshot-pair-20260804.md and docs/windows-arm/evidence/a19-restore-boots-20260805.md.",
       "evidence_paths": [
         "docs/windows-arm/snapshot-scope-v1.md",
         "crates/bridgevm-hvf/src/snapshot_pair.rs",
