@@ -499,3 +499,26 @@ same *consequence* as the firmware case without being the same *cause*.
 The correction matters because "one fingerprint" makes a single root cause
 sound likely and points all effort at one place. Three boots, two shapes, and
 the sample is too small to say the split is 1:2.
+
+### What `msix_ctrl=0x0008` actually means, and why the MSI-X trail went cold
+
+The failing boots all sit at `msix_ctrl=0x0008` and never reach `0x8008`. That
+reads like a smoking gun until the field layout is checked: in the MSI-X
+Message Control register, bit 15 is Enable and bit 14 is Function Mask; the low
+11 bits are Table Size minus one. `0x0008` is therefore *no flags set, table
+size 9* -- the reset default, not a device someone disabled.
+
+So "the failing boots never enable MSI-X" is true and uninformative: enabling
+MSI-X is something the Windows kernel does once it is running. Every failing
+boot is stopped before or at that point, so of course the bit is clear.
+
+The delivery path was also checked and is correct. `Msix::raise` drops a vector
+outright when the function is disabled and sets a PBA bit when it is merely
+masked, which is what the spec requires, and the behaviour is documented on the
+function. `queue_nvme_completion_msix` passes the live control word.
+
+That leaves the honest statement: **every failing boot received zero interrupts,
+and no defect has been found in the code that would deliver them.** The
+interesting question is what the guest is waiting on before it ever programs an
+interrupt controller -- which the host-side counters cannot answer, because they
+only count things the guest asked for.
