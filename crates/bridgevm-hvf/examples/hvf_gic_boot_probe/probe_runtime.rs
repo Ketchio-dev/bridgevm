@@ -77,8 +77,11 @@ pub(crate) fn run() -> ExitCode {
             len: ram_size,
         };
         reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
+        // Read in the run loop: waking the vCPU is not the same as stopping it.
+        let boot_progress_kill = boot_progress_kill_for(vcpu);
+        let stall_kill_fired = boot_progress_kill.as_ref().map(|k| Arc::clone(&k.fired));
         let (reboot_plan, watchdog_generation, boot_progress) =
-            setup_boot_supervision(watchdog_enabled, boot_progress_kill_for(vcpu));
+            setup_boot_supervision(watchdog_enabled, boot_progress_kill);
         let mut reboot_count = 0u64;
         let mut resets_dumped = 0u64;
         reset_vcpu_for_boot(vcpu);
@@ -415,9 +418,11 @@ pub(crate) fn run() -> ExitCode {
                     // cancels to the watchdog killed live boots (b2 86s,
                     // b5 258s). Only the watchdog's own flag identifies a real
                     // watchdog stop; an unclaimed cancel without it is benign.
-                    if watchdog_fired.load(Ordering::SeqCst) {
+                    if let Some(reason) =
+                        cancel_stop_reason(&watchdog_fired, stall_kill_fired.as_ref())
+                    {
                         hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
-                        stop_reason = "watchdog (CANCELED)".into();
+                        stop_reason = reason.into();
                         break;
                     }
                     surplus_canceled_exits += 1;
