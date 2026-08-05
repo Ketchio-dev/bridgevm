@@ -127,9 +127,10 @@ echo "original marker: $ORIGINAL"
 
 echo "=== phase 2: snapshot the powered-off pair ==="
 SNAP=$OUT/snapshot
-"$CLI" create --disk "$WORK/disk.raw" --vars "$WORK/vars.fd" \
-  --out "$SNAP" --quota "$QUOTA" > "$OUT/create.txt" 2>&1 \
-  || fail "snapshot create failed; see $OUT/create.txt"
+"$CLI" create "$WORK/disk.raw" "$WORK/vars.fd" "$SNAP" a19-restore-boot "$QUOTA" \
+  > "$OUT/create.txt" 2>&1 || fail "snapshot create failed; see $OUT/create.txt"
+"$CLI" verify "$SNAP" > "$OUT/verify.txt" 2>&1 \
+  || fail "snapshot verify failed; see $OUT/verify.txt"
 
 echo "=== phase 3: overwrite it, so a no-op restore cannot pass ==="
 CLOBBER="BV-CLOBBERED-$(date +%s)"
@@ -140,7 +141,7 @@ grep -q "$ORIGINAL" "$OUT/phase3-clobber/marker-before.txt" 2>/dev/null \
 echo "clobber marker: $CLOBBER"
 
 echo "=== phase 4: restore ==="
-"$CLI" restore --snapshot "$SNAP" --disk "$WORK/disk.raw" --vars "$WORK/vars.fd" \
+"$CLI" restore "$SNAP" "$WORK/disk.raw" "$WORK/vars.fd" \
   > "$OUT/restore.txt" 2>&1 || fail "restore failed; see $OUT/restore.txt"
 
 echo "=== phase 5: boot the restored pair and read the marker ==="
