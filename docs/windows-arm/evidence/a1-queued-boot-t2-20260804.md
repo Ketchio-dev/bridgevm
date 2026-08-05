@@ -88,13 +88,50 @@ passed, took 18).
 So the 0/2 above was not the guest behaving differently under launchd. It was a
 cache that never hit and a watchdog that never stopped anything.
 
+## t4-soak: 2 of 5, and a single failure shape
+
+Five boots on `84a1463`, the first measurement of the guest rather than the
+harness:
+
+```
+boot 1  stage4_pass=1  fresh=1  last_stage=stage4  stalls=0  reboots=3   19 min
+boot 2  stage4_pass=0  fresh=0  last_stage=none    stalls=1  reboots=1    4 min
+boot 3  stage4_pass=0  fresh=0  last_stage=none    stalls=1  reboots=1    4 min
+boot 4  stage4_pass=1  fresh=1  last_stage=stage4  stalls=0  reboots=3   17 min
+boot 5  stage4_pass=0  fresh=1  last_stage=stage1  stalls=1  reboots=1    6 min
+pass=2
+```
+
+The split is clean. A boot either reaches stage4 through three reboots in
+17-19 minutes, or it stalls after its **first** reboot and is killed in 4-6.
+Nothing lands in between.
+
+All three failures carry the identical fingerprint:
+
+```
+boot-progress watchdog stalled_for_ms=120000 exits_in_window=0
+    total_exits=~170000 reboots=1 suspect=guest-not-running
+```
+
+Two full minutes with zero vCPU exits, immediately after the first reboot.
+Whatever happens, happens in the reboot the firstboot script triggers to
+activate testsigning -- the guest goes away and does not come back.
+
+Kill mode is what makes this cheap to observe: these three cost 14 minutes
+between them instead of 120.
+
 ## What is not known
 
-1 of 2 is not 9 of 10. The stage1 stall in boot 2 is the same shape as the one
-this criterion has been stuck on: firstboot reboots to activate testsigning and
-does not come back. Whether the queued rate differs from the interactive 11/12
-needs more boots than a pilot runs -- that is what t4-soak and t5-campaign are
-for, and they are now unblocked.
+2 of 5 against a 9-of-10 gate, and against 11/12 measured interactively on the
+same image. Either the two environments differ in a way not yet found, or the
+interactive figure was luckier than it looked; 12 boots is a small sample for a
+rate this far from 1.
+
+What is now pinned down is *where* it goes wrong: not during install, not at
+stage4, but in the first reboot. `exits_in_window=0` says the vCPU is not
+executing, which is stronger than "the guest is quiet". The next step is to
+capture GIC state across that reboot rather than guessing between the
+candidates -- the two-snapshot method built for exactly this question.
 
 ## What did work
 
