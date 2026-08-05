@@ -41,25 +41,44 @@ verify  -> disk_sha256 6fef8f98...  vars_sha256 d329b5b0...
 
 Create and verify reproduce the source bytes exactly at full scale.
 
-## What it did not prove, and why that matters
+## Restore, proven on the second attempt
 
-The first live attempt failed at restore with `No space left on device`, after
-create and verify had both passed. That is not a flaw in staging a copy --
-staging is what makes the swap atomic, since a `rename` cannot fail for lack of
-space. It is a requirement nobody had written down: a restore needs the volume
-to hold the live pair, the snapshot, and a full second copy at the same time.
+The first run could not reach restore. Staging its copy needed 66GiB against
+59GiB free, and the gate skipped rather than reporting a pass it had not
+earned. The fix was not more disk: `copy_and_sync` now clones with APFS
+`clonefile` where the filesystem allows it. Measured on this image, cloning
+takes 2ms and adds no used bytes, against minutes and a full second copy.
 
-Restore now checks free space first and cleans up its staging files on failure.
-On the machine as it stands that check reports:
+With that in place the whole chain ran against the real image:
 
 ```
-free: 59GiB, restore needs about 66GiB to stage
-SKIP: not enough free space to stage a restore of this pair
+before disk sha256: 6fef8f98...      vars: d329b5b0...
+create    -> 6fef8f98...             d329b5b0...
+verify    -> 6fef8f98...             d329b5b0...
+clobbered -> fc4913c0...             (live disk deliberately destroyed)
+free: 119GiB, restore needs about 66GiB to stage
+restore   -> 6fef8f98...             d329b5b0...
+after     -> 6fef8f98...             d329b5b0...
+tampered snapshot refused: vars.fd does not match the manifest
+live pair untouched by the refusal
 ```
 
-So restore at full scale is **unproven**, and acceptance item 5 (a restored
-snapshot boots Windows and preserves a guest-created marker) has not been
-attempted at all. A19 stays open.
+A 64 GiB disk was destroyed and restored byte-for-byte, and a tampered
+snapshot was refused without touching the live pair. Acceptance items 1, 2, 3,
+4 and 6 are proven at full scale.
+
+Note on why cloning is safe here and not merely fast: a clone stops sharing
+storage the moment either side is written, so restoring a snapshot and then
+booting the VM cannot write back into the snapshot. Two unit tests state that
+directly, and `clonefile` refuses an existing destination rather than
+overwriting one.
+
+## What it still did not prove
+
+Acceptance item 5 -- a restored snapshot boots Windows and preserves a
+guest-created marker -- has not been attempted. Byte-exactness is necessary for
+that and not sufficient: it says nothing about whether the firmware still finds
+its boot entry, or whether the guest comes up. **A19 stays open.**
 
 ## Note on method
 

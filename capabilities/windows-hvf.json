@@ -220,7 +220,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "Powered-off snapshot export and restore keep a byte-exact atomic disk plus vars pair under an explicit byte quota.",
-      "measured": "Corrected: this was recorded as a gate not yet re-run, but the atomic pair did not exist. Vars used a truncating fs::write, disk export called flush() without fsync, and the copy-on-write overlay was unbounded. All three are fixed, with 43 unit tests and a live gate against the real 64 GiB image: create and verify reproduce the source hashes exactly (disk 6fef8f98..., vars d329b5b0...). Restore is unproven -- staging its copy needs 66GiB and the volume had 59GiB, so the gate skipped rather than claiming it. Item 5 (a restored snapshot boots Windows and keeps a guest marker) has not been attempted.",
+      "measured": "Corrected: this was recorded as a gate not yet re-run, but the atomic pair did not exist. Vars used a truncating fs::write, disk export called flush() without fsync, and the copy-on-write overlay was unbounded. All three are fixed, with 39 unit tests and a live gate against the real 64 GiB image (canonical-fresh-12041-agent-20260730.raw). The gate destroyed the live disk and restored it byte-for-byte -- create, verify, restore and the post-restore read all report disk 6fef8f98... and vars d329b5b0... -- then refused a tampered snapshot without touching the live pair. Acceptance items 1, 2, 3, 4 and 6 are proven at full scale. Item 5 (a restored snapshot boots Windows and keeps a guest marker) has not been attempted, so A19 stays open.",
       "evidence_paths": [
         "docs/windows-arm/snapshot-scope-v1.md",
         "crates/bridgevm-hvf/src/snapshot_pair.rs",
