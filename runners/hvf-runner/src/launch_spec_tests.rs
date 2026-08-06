@@ -6,12 +6,31 @@ fn write_manifest(tag: &str, body: &str) -> String {
     path.to_string_lossy().into_owned()
 }
 
+/// A disk/vars pair unique to one test: run_launch_spec now takes writer
+/// leases, so two tests sharing /tmp/v.fd would race each other's flocks.
+fn scratch_images(tag: &str) -> (String, String) {
+    let dir = std::env::temp_dir();
+    let pid = std::process::id();
+    let disk = dir.join(format!("bv-spec-{tag}-{pid}.raw"));
+    let vars = dir.join(format!("bv-spec-{tag}-{pid}.fd"));
+    for path in [&disk, &vars] {
+        std::fs::write(path, b"image").expect("scratch image");
+    }
+    (
+        disk.to_string_lossy().into_owned(),
+        vars.to_string_lossy().into_owned(),
+    )
+}
+
 #[test]
 fn a_valid_manifest_file_is_accepted() {
+    let (disk, vars) = scratch_images("ok");
     let path = write_manifest(
         "ok",
-        r#"{"version": 1, "disk": "/tmp/w.raw", "uefi_vars": "/tmp/v.fd",
-            "ram_mib": 4096, "vcpus": 4}"#,
+        &format!(
+            r#"{{"version": 1, "disk": "{disk}", "uefi_vars": "{vars}",
+            "ram_mib": 4096, "vcpus": 4}}"#
+        ),
     );
     run_launch_spec(&path).expect("valid manifest");
 }
@@ -43,13 +62,20 @@ fn tests_run_under_the_debug_policy_which_permits_repo_paths() {
     // covered by manifest_tests in bridgevm-hvf-runtime, where the flag is
     // a parameter rather than cfg!().
     const { assert!(!PRODUCT_POLICY) };
-    let repo_disk = concat!(env!("CARGO_MANIFEST_DIR"), "/w.raw");
+    let (_, vars) = scratch_images("repo");
+    let repo_disk = concat!(env!("CARGO_MANIFEST_DIR"), "/target-test-w.raw");
+    std::fs::write(repo_disk, b"image").expect("repo scratch image");
     let path = write_manifest(
         "repo",
         &format!(
-            r#"{{"version": 1, "disk": "{repo_disk}", "uefi_vars": "/tmp/v.fd",
+            r#"{{"version": 1, "disk": "{repo_disk}", "uefi_vars": "{vars}",
                 "ram_mib": 4096, "vcpus": 4}}"#
         ),
     );
     run_launch_spec(&path).expect("debug build accepts repo paths");
+    let _ = std::fs::remove_file(repo_disk);
+    let _ = std::fs::remove_file(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/target-test-w.raw.bridgevm-writer.lock"
+    ));
 }
