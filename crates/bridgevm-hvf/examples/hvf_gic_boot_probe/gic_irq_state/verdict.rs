@@ -19,6 +19,18 @@ impl GicIrqState {
         // PMR of 0 masks every priority; the reset value before the guest
         // programs it. Anything nonzero admits at least priority 0.
         let pmr_open = self.pmr? != 0;
+        // A running priority below idle (0xff) with nothing active is a
+        // stale in-service state: the CPU interface believes an interrupt
+        // is still being handled and gates everything at or below it.
+        // Checked before the deliverable verdict so a priority wedge is
+        // named rather than folded into "the block is not the GIC".
+        let active = self.isactiver0? != 0;
+        let rpr_busy = self.rpr? != 0xff;
+        if enabled && pending && group_on && pmr_open && rpr_busy && !active {
+            return Some(
+                "vtimer PPI pending but ICC_RPR holds a stale running priority (nothing active)",
+            );
+        }
         Some(match (enabled, pending, group_on, pmr_open) {
             (false, _, _, _) => "vtimer PPI disabled at GICR_ISENABLER0",
             (true, false, _, _) => "vtimer PPI enabled but not pending at the GICR",

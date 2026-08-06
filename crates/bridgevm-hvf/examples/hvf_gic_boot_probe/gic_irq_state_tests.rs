@@ -10,6 +10,9 @@ fn all_open() -> GicIrqState {
         igrpen0: Some(0),
         igrpen1: Some(1),
         ctlr: Some(0),
+        rpr: Some(0xff),
+        ap0r0: Some(0),
+        ap1r0: Some(0),
     }
 }
 
@@ -115,3 +118,38 @@ fn render_is_bounded_and_prints_hex_for_real_values() {
     assert!(lines[0].contains("ISPENDR0=0x8000000"));
     assert!(lines[1].contains("PMR=0xf0"));
 }
+
+#[test]
+fn a_stale_running_priority_is_named_not_called_deliverable() {
+    let state = GicIrqState {
+        // Pending, enabled, group on, PMR open -- but RPR says an interrupt
+        // is still in service while nothing is active.
+        rpr: Some(0xa0),
+        ..all_open()
+    };
+    assert_eq!(
+        state.vtimer_verdict(),
+        Some("vtimer PPI pending but ICC_RPR holds a stale running priority (nothing active)")
+    );
+}
+
+#[test]
+fn a_busy_rpr_with_a_real_active_interrupt_is_not_a_wedge() {
+    let state = GicIrqState {
+        rpr: Some(0xa0),
+        isactiver0: Some(u64::from(VTIMER_PPI_BIT)),
+        ..all_open()
+    };
+    // In-service vtimer PPI: the guest is handling it; the GIC is fine.
+    assert_eq!(
+        state.vtimer_verdict(),
+        Some("vtimer PPI pending and deliverable; the block is not the GIC")
+    );
+}
+
+#[test]
+fn a_failed_rpr_read_fails_the_verdict_rather_than_guessing() {
+    let state = GicIrqState { rpr: None, ..all_open() };
+    assert_eq!(state.vtimer_verdict(), None);
+}
+

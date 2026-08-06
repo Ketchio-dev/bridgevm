@@ -25,6 +25,13 @@ pub(crate) const ICC_PMR_EL1: u16 = 0xc230;
 pub(crate) const ICC_IGRPEN0_EL1: u16 = 0xc666;
 pub(crate) const ICC_IGRPEN1_EL1: u16 = 0xc667;
 pub(crate) const ICC_CTLR_EL1: u16 = 0xc664;
+/// Running priority: 0xff (idle) unless the CPU interface believes an
+/// interrupt is currently being handled. A non-idle value at a stall with
+/// ISACTIVER0=0 means a stale active priority is gating delivery -- the one
+/// state the first capture set left unread.
+pub(crate) const ICC_RPR_EL1: u16 = 0xc65b;
+pub(crate) const ICC_AP0R0_EL1: u16 = 0xc644;
+pub(crate) const ICC_AP1R0_EL1: u16 = 0xc648;
 
 /// One capture. `None` means the read failed, and is rendered as `?`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +44,9 @@ pub(crate) struct GicIrqState {
     pub(crate) igrpen0: Option<u64>,
     pub(crate) igrpen1: Option<u64>,
     pub(crate) ctlr: Option<u64>,
+    pub(crate) rpr: Option<u64>,
+    pub(crate) ap0r0: Option<u64>,
+    pub(crate) ap1r0: Option<u64>,
 }
 
 
@@ -77,6 +87,9 @@ pub(crate) unsafe fn capture(vcpu: HvVcpuT) -> GicIrqState {
         igrpen0: read_c(ICC_IGRPEN0_EL1),
         igrpen1: read_c(ICC_IGRPEN1_EL1),
         ctlr: read_c(ICC_CTLR_EL1),
+        rpr: read_c(ICC_RPR_EL1),
+        ap0r0: read_c(ICC_AP0R0_EL1),
+        ap1r0: read_c(ICC_AP1R0_EL1),
     }
 }
 
@@ -91,11 +104,14 @@ pub(crate) fn render(state: &GicIrqState) -> Vec<String> {
             fmt(state.isactiver0)
         ),
         format!(
-            "GIC IRQ STATE: ICC PMR={} IGRPEN0={} IGRPEN1={} CTLR={} vtimer_verdict={}",
+            "GIC IRQ STATE: ICC PMR={} IGRPEN0={} IGRPEN1={} CTLR={} RPR={} AP0R0={} AP1R0={} vtimer_verdict={}",
             fmt(state.pmr),
             fmt(state.igrpen0),
             fmt(state.igrpen1),
             fmt(state.ctlr),
+            fmt(state.rpr),
+            fmt(state.ap0r0),
+            fmt(state.ap1r0),
             state.vtimer_verdict().unwrap_or("unavailable (a read failed)")
         ),
     ]
