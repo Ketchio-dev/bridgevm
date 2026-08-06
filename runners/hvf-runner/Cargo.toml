@@ -10,6 +10,7 @@ default-run = "hvf-runner"
 [dependencies]
 anyhow.workspace = true
 bridgevm-hvf = { path = "../../crates/bridgevm-hvf" }
+bridgevm-hvf-runtime = { path = "../../crates/bridgevm-hvf-runtime" }
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

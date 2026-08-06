@@ -261,10 +261,19 @@ pub(crate) struct Args {
     pub(crate) wire_interrupt_timer: bool,
     #[arg(long)]
     pub(crate) launch: bool,
+    /// Path to a versioned typed launch manifest, or `-` for stdin. Validated
+    /// by bridgevm-hvf-runtime before anything runs; in a release build the
+    /// manifest may not point into a source repository.
+    #[arg(long, value_name = "PATH|-")]
+    pub(crate) launch_spec: Option<String>,
 }
 
 pub(crate) fn run() -> Result<()> {
     let args = Args::parse();
+
+    if let Some(spec) = &args.launch_spec {
+        return crate::launch_spec::run_launch_spec(spec);
+    }
 
     if args.launch {
         return launch_installed_windows(&args);

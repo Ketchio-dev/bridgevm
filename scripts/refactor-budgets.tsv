@@ -819,3 +819,5 @@ crates/bridgevm-hvf-runtime/src/manifest.rs	174	0
 crates/bridgevm-hvf-runtime/src/manifest_tests.rs	105	0
 crates/bridgevm-hvf-runtime/src/reset_generation.rs	48	0
 crates/bridgevm-hvf-runtime/src/reset_generation_tests.rs	59	0
+runners/hvf-runner/src/launch_spec.rs	47	0
+runners/hvf-runner/src/launch_spec_tests.rs	55	0
