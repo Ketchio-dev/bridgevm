@@ -638,7 +638,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard.rs	426	21
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_support.rs	44	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_snapshot.rs	197	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_snapshot_tests.rs	182	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_abi.rs	240	2
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_abi.rs	243	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/interrupt_delivery.rs	277	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/kd_serial_bridge.rs	257	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_display_export.rs	149	0

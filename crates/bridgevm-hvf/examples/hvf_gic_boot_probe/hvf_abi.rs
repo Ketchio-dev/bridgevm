@@ -83,6 +83,9 @@ extern "C" {
     // thread on macOS 15+ -- the "EL2 probe" the A1 doc asked for, no nested
     // virt required.
     pub(crate) fn hv_gic_get_ich_reg(vcpu: HvVcpuT, reg: u16, value: *mut u64) -> HvReturn;
+    // Owning-thread write of an ICC register: clears the stale
+    // running-priority wedge (active priority with nothing active).
+    pub(crate) fn hv_gic_set_icc_reg(vcpu: HvVcpuT, reg: u16, value: u64) -> HvReturn;
 }
 
 pub(crate) const HV_REG_X0: u32 = 0;
