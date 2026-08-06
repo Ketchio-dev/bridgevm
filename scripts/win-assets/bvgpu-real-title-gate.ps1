@@ -3,7 +3,11 @@ param(
     [string]$Executable = "C:\BridgeVM\apps\ppsspp\PPSSPPWindowsARM64.exe",
     [ValidateRange(10, 600)]
     [int]$MinimumSeconds = 30,
-    [string]$LogPath = "C:\BridgeVM\bvgpu-real-title-gate.log"
+    [string]$LogPath = "C:\BridgeVM\bvgpu-real-title-gate.log",
+    # Game content to boot. Without content PPSSPP sits at its menu and
+    # emits no "fps:" lines, so guest_fps reads samples=0 (measured
+    # 2026-08-06); the frame counter runs only while a title renders.
+    [string]$ContentPath = ""
 )
 
 Set-StrictMode -Version Latest
@@ -102,7 +106,15 @@ Write-GateLog "launch_state_clean portable_poison_removed=$(-not (Test-Path -Lit
 # PPSSPP emits "delta: <ms> fps: <n>" into its own log, so let it self-report.
 $frameLog = Join-Path $appDirectory "bv-frame.log"
 Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath $frameLog
-$process = Start-Process -FilePath $Executable -WorkingDirectory $appDirectory -PassThru -ArgumentList @("--log=$frameLog", "--loglevel=info")
+$launchArgs = @("--log=$frameLog", "--loglevel=info")
+if ($ContentPath -ne "") {
+    if (-not (Test-Path -LiteralPath $ContentPath -PathType Leaf)) {
+        Write-GateLog "status=FAIL reason=content-missing path=$ContentPath"
+        Exit-Gate 7
+    }
+    $launchArgs += $ContentPath
+}
+$process = Start-Process -FilePath $Executable -WorkingDirectory $appDirectory -PassThru -ArgumentList $launchArgs
 Write-GateLog "process_started pid=$($process.Id) executable_sha256=$executableHash frame_log=$frameLog"
 
 $deadline = $startedAt.AddSeconds($MinimumSeconds)

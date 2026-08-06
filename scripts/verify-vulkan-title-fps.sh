@@ -18,6 +18,10 @@ TITLE_SECONDS=${TITLE_SECONDS:-30}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 GATE_SOURCE=$REPO/scripts/win-assets/bvgpu-real-title-gate.ps1
 PPSSPP_SOURCE=${PPSSPP_SOURCE:-$HOME/BridgeVM/apps/ppsspp}
+# Real third-party 3D content; without it PPSSPP idles at the menu and emits
+# no fps lines (samples=0). cube.iso is the pspautotests homebrew demo used
+# by the 2026-08-01 measurement runs.
+TITLE_ISO=${TITLE_ISO:-$HOME/BridgeVM/apps/cube.iso}
 PRESTAGED_TITLE=${PRESTAGED_TITLE:-0}
 
 [[ -f "$TARGET" ]] || fail "target image missing: $TARGET"
@@ -25,6 +29,7 @@ PRESTAGED_TITLE=${PRESTAGED_TITLE:-0}
 [[ -f "$GATE_SOURCE" ]] || fail "title gate missing: $GATE_SOURCE"
 [[ -f "$PPSSPP_SOURCE/PPSSPPWindowsARM64.exe" ]] \
   || fail "PPSSPP ARM64 payload missing: $PPSSPP_SOURCE"
+[[ -f "$TITLE_ISO" ]] || fail "title content missing: $TITLE_ISO"
 
 WORK=$HOME/BridgeVM/work/vulkan-fps-verify
 rm -rf "$WORK"; mkdir -p "$WORK" "$OUT"
@@ -37,6 +42,8 @@ RUN_LOG=$OUT/run.log
 HOST_SHARE=$OUT/share-host
 mkdir -p "$HOST_SHARE"
 cp "$GATE_SOURCE" "$HOST_SHARE/bvgpu-real-title-gate.ps1"
+cp "$TITLE_ISO" "$HOST_SHARE/cube.iso"
+ISO_BYTES=$(stat -f %z "$HOST_SHARE/cube.iso")
 if [[ "$PRESTAGED_TITLE" != 1 ]]; then
   # Recursive sync works, but the title tree contains hundreds of tiny assets;
   # one ZIP turns that into a single ~18 MiB file.
@@ -94,6 +101,8 @@ echo "agent up at ${SECONDS}s"
 
 wait_for '^BVAGENT SHARE host->guest bvgpu-real-title-gate[.]ps1 ' 1 60 \
   || fail "title gate was not synchronized"
+wait_for "^BVAGENT SHARE host->guest cube[.]iso bytes=$ISO_BYTES " 1 120 \
+  || fail "title content was not synchronized"
 if [[ "$PRESTAGED_TITLE" != 1 ]]; then
   # Wait for the syncer's own completion line rather than contending for the
   # same console with a polling command during the large transfer.
@@ -117,7 +126,7 @@ fi
 # The historical auto-launch wrapper set VK_DRIVER_FILES before starting the
 # title. Directly invoking the gate without it let PPSSPP open a window but
 # choose another backend, so vulkan_virtio.dll was never loaded.
-GUEST_GATE='set "VK_DRIVER_FILES=C:\BridgeVM\viogpu3d\virtio_icd.arm64.json" && set "VK_INSTANCE_LAYERS=" && powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMShare\bvgpu-real-title-gate.ps1 -Executable C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe -MinimumSeconds '"$TITLE_SECONDS"
+GUEST_GATE='set "VK_DRIVER_FILES=C:\BridgeVM\viogpu3d\virtio_icd.arm64.json" && set "VK_INSTANCE_LAYERS=" && powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMShare\bvgpu-real-title-gate.ps1 -Executable C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe -ContentPath C:\BridgeVMShare\cube.iso -MinimumSeconds '"$TITLE_SECONDS"
 run_guest "$GUEST_GATE" $((TITLE_SECONDS + STEP_TIMEOUT))
 
 FPS_LINE=$(tr -d '\r' < "$RUN_LOG" | grep 'guest_fps samples=' | tail -1)
