@@ -14,6 +14,7 @@
 
 mod error;
 mod manifest;
+mod reset_cycles;
 mod reset_generation;
 mod reset_receipt;
 mod supervisor;
@@ -22,6 +23,7 @@ mod vm_event;
 
 pub use error::RuntimeError;
 pub use manifest::{LaunchManifest, MANIFEST_VERSION};
+pub use reset_cycles::{supervise_reset_cycles, HelperExit, ResetCycle};
 pub use reset_generation::{GenerationTag, ResetGeneration};
 pub use reset_receipt::{flush_and_write_receipt, receipt_proves_flush};
 pub use supervisor::{decide_restart, RestartDecision};

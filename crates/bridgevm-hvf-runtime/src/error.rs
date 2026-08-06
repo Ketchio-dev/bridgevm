@@ -36,6 +36,9 @@ pub enum RuntimeError {
         context: &'static str,
         source: std::io::Error,
     },
+    /// The supervisor refused to start another helper. Carries the same
+    /// operator-facing reason `decide_restart` produced.
+    RestartRefused { reason: &'static str },
 }
 
 impl fmt::Display for RuntimeError {
@@ -61,6 +64,9 @@ impl fmt::Display for RuntimeError {
                 write!(f, "{path} is already open for writing by {holder}")
             }
             Self::Io { context, source } => write!(f, "{context}: {source}"),
+            Self::RestartRefused { reason } => {
+                write!(f, "supervisor refused restart: {reason}")
+            }
         }
     }
 }
