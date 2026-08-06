@@ -227,3 +227,29 @@ bookkeeping is corrected to match the empty active set it itself
 reports. Also learned: hv_gic_get_ich_reg fails on this config (EL2
 view not exposed without nested virt); renders as `?`.
 
+## Seventh and eighth soaks: the priority clear works; delivery still does not follow
+
+`0a8c1f0` (clear after pulse, job `20260806-142939`, 3/5) and `eb87816`
+(clear BEFORE pulse, job `20260806-171557`, 1/5). In both, every capture of
+the clear shows it doing exactly what it claims: `rpr=0x10 -> 0xff`,
+AP1R0 zeroed, terminal reads idle. The ordering hypothesis from the seventh
+soak -- pulse's edge was spent into the closed gate -- is falsified by the
+eighth: with the gate cleared first and the pulse after, the terminal state
+is STILL "ISPENDR0 pending, CPU interface fully idle, PPI never taken".
+
+Conclusion the eight soaks force: with a pending PPI at the redistributor,
+an idle open CPU interface, unmasked PSTATE, and a parked WFI, **HVF's
+distributor-to-CPU-interface forwarding simply does not re-evaluate**. No
+combination of CVAL rewrites, HVF mask pulses, or ICC state correction
+makes it look again. The stale-RPR discovery explains how SOME stalls
+arise (swallowed EOI) but clearing it post-hoc does not resurrect
+delivery, and the kernel shape (fire never forms) was never touched by any
+lever.
+
+Aggregate across eight instrumented soaks: 14/40. The clear stays in (it
+removes a real architectural contradiction and is provably harmless), the
+diagnostics stay in, and the investigation's host-side phase is DONE. The
+Apple Feedback draft now carries the complete mechanism: cancel races
+swallow both vtimer fires and trapped EOI writes, and no public API
+re-arms delivery afterward.
+

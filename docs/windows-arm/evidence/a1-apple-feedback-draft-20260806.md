@@ -52,6 +52,19 @@ surplus canceled exits and this stall class).
 - Full register captures: `docs/windows-arm/evidence/a1-gic-irq-state-20260806.md`;
   job IDs `20260806-014404`, `-043632`, `-071633`, `-085841`, `-111404`.
 
+## Additional mechanism found after filing draft (2026-08-06, soaks 6-8)
+
+The ICC running-priority read exposed a second lost-write class: stalls
+with `RPR=0x10`, `AP1R0=0x4` while `ISACTIVER0=0` -- a running priority
+with no interrupt in service, which is architecturally impossible. The
+guest's trapped EOI/priority-drop write was lost to the same cancellation
+race. Correcting it via `hv_gic_set_icc_reg(AP0R0/AP1R0, 0)` verifiably
+clears the state (next read: idle) but delivery of the still-pending PPI
+does not resume: with the latch pending, the interface idle and open, and
+the vCPU re-entered thousands of times, the PPI is never taken. So both
+directions of the vtimer path lose trapped writes under `hv_vcpus_exit`
+pressure, and no public API re-arms forwarding afterward.
+
 ## What we ask
 
 Either (a) a fix for the lost vtimer fire under `hv_vcpus_exit`
