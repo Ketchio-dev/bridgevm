@@ -99,9 +99,12 @@ wait_for '^BVAGENT SERVICE start' 1 "$BOOT_TIMEOUT" \
   || fail "agent never reached service state within ${BOOT_TIMEOUT}s"
 echo "agent up at ${SECONDS}s"
 
-wait_for '^BVAGENT SHARE host->guest bvgpu-real-title-gate[.]ps1 ' 1 60 \
+# The agent syncs share files in arbitrary order, one per scan: if the
+# 19 MiB zip goes first, the small files arrive minutes later. Generous
+# per-file timeouts; each file is still awaited by name and size.
+wait_for '^BVAGENT SHARE host->guest bvgpu-real-title-gate[.]ps1 ' 1 600 \
   || fail "title gate was not synchronized"
-wait_for "^BVAGENT SHARE host->guest cube[.]iso bytes=$ISO_BYTES " 1 120 \
+wait_for "^BVAGENT SHARE host->guest cube[.]iso bytes=$ISO_BYTES " 1 600 \
   || fail "title content was not synchronized"
 if [[ "$PRESTAGED_TITLE" != 1 ]]; then
   # Wait for the syncer's own completion line rather than contending for the
