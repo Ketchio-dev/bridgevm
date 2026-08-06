@@ -385,6 +385,13 @@ final class HvfEngineSession: ObservableObject {
             }
         }
         try Data().write(to: evidenceDirectory.appendingPathComponent("input.ctl"))
+        // The versioned manifest this launch means, written where the run's
+        // evidence lives. The wrapper does not read it yet; materializing it
+        // per launch makes every session auditable against the runtime
+        // contract (`hvf-runner --launch-spec launch-manifest.json` must
+        // accept it) before the runtime owns the launch itself.
+        try Data(config.launchManifestJSON().utf8)
+            .write(to: evidenceDirectory.appendingPathComponent("launch-manifest.json"))
 
         let controlURL = URL(fileURLWithPath: config.ctlFilePath)
         try fileManager.createDirectory(

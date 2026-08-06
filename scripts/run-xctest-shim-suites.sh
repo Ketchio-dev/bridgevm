@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs all 651 XCTest functions under the shim, per suite.
+# Runs every XCTest function under the shim, per suite.
 #
 # Three per-suite runners rather than one merged binary: merging app and test
 # sources into one module produced 58 redeclaration errors (fileprivate
@@ -67,4 +67,4 @@ suite BridgeVMControl apps/macos/Sources/BridgeVMControl apps/macos/Tests/Bridge
 suite AppleVzRunnerCore apps/macos/Sources/AppleVzRunnerCore apps/macos/Tests/AppleVzRunnerTests \
     -framework Virtualization
 
-echo "PASS: all three shim suites (651 test functions)"
+echo "PASS: all three shim suites"

@@ -656,6 +656,50 @@ final class HvfEngineSessionPathTests: XCTestCase {
     }
 
     @MainActor
+    func testStartMaterializesTheLaunchManifestBesideTheEvidence() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        // Readiness gates launch before prepareRuntimeFiles (the step under
+        // test), so the fixture must look launchable: non-empty disk, vars of
+        // exactly 64 MiB, an executable wrapper that exits immediately, and
+        // the release probe path.
+        try Data("disk".utf8).write(to: temp.appendingPathComponent("windows.raw"))
+        try Data(count: 64 * 1024 * 1024).write(to: temp.appendingPathComponent("vars.fd"))
+        for relative in ["scripts/run-hvf-windows-installed-boot.sh",
+                         "target/release/examples/hvf_gic_boot_probe"] {
+            let url = temp.appendingPathComponent(relative)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("#!/bin/sh\nexit 0\n".utf8).write(to: url)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        }
+        let config = HvfEngineConfig(
+            targetDiskPath: temp.appendingPathComponent("windows.raw").path,
+            uefiVarsPath: temp.appendingPathComponent("vars.fd").path,
+            evidenceDir: temp.path,
+            watchdogMs: nil,
+            ramMiB: 6144,
+            smpCpus: 4,
+            clipboardSync: false,
+            shareHostDir: nil,
+            shareGuestDir: nil,
+            virtioNet: false,
+            virtioGpu3d: false,
+            nvmeBufferedIO: false,
+            ctlFilePath: temp.appendingPathComponent("hvf.ctl").path
+        )
+        let session = HvfEngineSession(config: config, repoRoot: temp) { _ in false }
+        // No wrapper exists under this repoRoot, so the launch stops after
+        // preparing runtime files -- which is exactly the step under test.
+        session.start()
+        let manifestURL = temp.appendingPathComponent("launch-manifest.json")
+        let json = try String(contentsOf: manifestURL, encoding: .utf8)
+        XCTAssertEqual(json, config.launchManifestJSON())
+        XCTAssertTrue(json.contains("\"version\": 1"), json)
+    }
+
+    @MainActor
     func testTextInputPreservesPrintableASCIIAndChunksLongCommands() throws {
         let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: temp) }
