@@ -92,6 +92,27 @@ struct HvfEngineConfig: Equatable {
         return (markerPath, injectorPath)
     }
 
+    /// The versioned launch manifest this configuration means, as consumed by
+    /// bridgevm-hvf-runtime (`hvf-runner --launch-spec`). Field names and the
+    /// version constant are that crate's contract; drift fails its parser.
+    /// Encoded alongside wrapperArguments() until the runtime owns the full
+    /// lifecycle -- the manifest is the product path, the wrapper the
+    /// evidence-harness path (PLAN.md R1).
+    func launchManifestJSON() -> String {
+        func quoted(_ value: String) -> String {
+            // The runtime parser refuses escapes by design; refuse here too
+            // rather than emit a manifest it will reject.
+            precondition(!value.contains("\\") && !value.contains("\""),
+                         "manifest paths may not contain quotes or backslashes")
+            return "\"\(value)\""
+        }
+        return """
+        {"version": 1, "disk": \(quoted(targetDiskPath)), \
+        "uefi_vars": \(quoted(uefiVarsPath)), \
+        "ram_mib": \(ramMiB), "vcpus": \(smpCpus)}
+        """
+    }
+
     func wrapperArguments() -> [String] {
         var args = [
             "scripts/run-hvf-windows-installed-boot.sh",

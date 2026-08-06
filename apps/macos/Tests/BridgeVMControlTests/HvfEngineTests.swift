@@ -97,6 +97,30 @@ final class HvfEngineConfigTests: XCTestCase {
         XCTAssertNil(HvfEngineConfig.libraryVM(vm))
     }
 
+    func testLaunchManifestMatchesTheRuntimeContract() {
+        let cfg = HvfEngineConfig(targetDiskPath: "/vm/win.raw",
+                                  uefiVarsPath: "/vm/vars.fd",
+                                  evidenceDir: "/tmp/evidence",
+                                  watchdogMs: nil,
+                                  ramMiB: 8192,
+                                  smpCpus: 6,
+                                  clipboardSync: false,
+                                  shareHostDir: nil,
+                                  shareGuestDir: nil,
+                                  virtioNet: false,
+                                  virtioGpu3d: false,
+                                  nvmeBufferedIO: false,
+                                  ctlFilePath: "/tmp/evidence/ctl")
+        let json = cfg.launchManifestJSON()
+        // Field names and version are bridgevm-hvf-runtime's parse contract;
+        // its manifest_tests parse exactly this shape.
+        XCTAssertTrue(json.contains("\"version\": 1"), json)
+        XCTAssertTrue(json.contains("\"disk\": \"/vm/win.raw\""), json)
+        XCTAssertTrue(json.contains("\"uefi_vars\": \"/vm/vars.fd\""), json)
+        XCTAssertTrue(json.contains("\"ram_mib\": 8192"), json)
+        XCTAssertTrue(json.contains("\"vcpus\": 6"), json)
+    }
+
     func testBaseArgumentsUseExplicitServiceCLI() {
         let cfg = HvfEngineConfig(targetDiskPath: "/vm/win.raw",
                                   uefiVarsPath: "/vm/vars.fd",
