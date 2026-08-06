@@ -87,3 +87,36 @@ the redistributor; there is nothing left to re-arm. The next lever is a
 delivery-edge experiment at the CPU interface (HVF vtimer mask toggle
 when ISTATUS=1 and the PPI sits pending undelivered).
 
+## Retraction and second follow-up (`61a1f06` mask pulse, job `20260806-071633-6963-32186`)
+
+**Retracted:** the previous section's observation that the kernel shape "did
+not appear once" under the future-CVAL re-arm. It was 5-boot noise. This
+soak (future-CVAL *and* the ISTATUS=1 mask pulse active) went 2/5 with the
+kernel shape back in two of three failures:
+
+| boot | outcome | CNTV_CTL | shape |
+|---|---|---|---|
+| 2 | stall | `0x5` | UEFI (pending, undelivered, mask pulse ran) |
+| 3 | stall (fresh=0 reboot-loop) | `0x1` | kernel (ISTATUS=0, CVAL past) |
+| 5 | stall | `0x1` | kernel |
+
+Score across the three instrumented soaks: 5/15. Every host-side vtimer
+lever has now been pulled at the stall and measured not to recover it:
+unconditional unmask, CVAL rewrite to now, CVAL rewrite to now+10us, HVF
+vtimer mask pulse on ISTATUS=1. The UEFI-shape PPI stays pending and
+undelivered through all of them; the kernel-shape ISTATUS contradiction
+persists through CVAL rewrites.
+
+One host-writable register class remains between these registers and the
+vCPU: the redistributor latches themselves (`hv_gic_set_redistributor_reg`
+is public API). Next experiment, both edges from the owning thread:
+- kernel shape (timer due, ISPENDR0 bit 27 clear): SET the pending latch --
+  hand-deliver the interrupt HVF's timer logic dropped.
+- UEFI shape (ISPENDR0 bit 27 stuck): ICPENDR0-clear then ISPENDR0-set
+  pulse -- force the CPU interface to re-latch a level it stopped seeing.
+
+If forced pending latches do not deliver either, the block is inside the
+CPU interface / hv_vcpu_run boundary with no host-visible lever, and A1's
+remaining option is architectural (different wake source for the guest, or
+Apple feedback) rather than another patch on this path.
+
