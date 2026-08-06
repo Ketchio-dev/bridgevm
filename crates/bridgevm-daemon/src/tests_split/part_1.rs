@@ -45,6 +45,12 @@ fn daemon_connection_workers_isolate_slow_clients() {
     );
     slow_client.write_all(b"{").unwrap();
     spawn_connection_worker(fast_server, request_sender, Arc::clone(&active_clients));
+    // Set the timeout while the peer is guaranteed open: once the worker has
+    // written its response and closed its end, macOS setsockopt(SO_RCVTIMEO)
+    // on the disconnected socket fails with EINVAL (CI run at ffce775).
+    fast_client
+        .set_read_timeout(Some(Duration::from_secs(20)))
+        .unwrap();
     serde_json::to_writer(&mut fast_client, &BridgeVmRequest::Doctor).unwrap();
     fast_client.write_all(b"\n").unwrap();
 
@@ -58,9 +64,6 @@ fn daemon_connection_workers_isolate_slow_clients() {
         .send(state.handle_request(pending.request))
         .unwrap();
 
-    fast_client
-        .set_read_timeout(Some(Duration::from_secs(20)))
-        .unwrap();
     let mut response = String::new();
     BufReader::new(fast_client)
         .read_line(&mut response)
