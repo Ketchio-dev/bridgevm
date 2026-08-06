@@ -78,6 +78,11 @@ extern "C" {
         value: *mut u64,
     ) -> HvReturn;
     pub(crate) fn hv_gic_get_icc_reg(vcpu: HvVcpuT, reg: u16, value: *mut u64) -> HvReturn;
+    // The virtualization-control view (ICH_*): the list registers HVF itself
+    // uses to inject interrupts into the vCPU. Readable from the owning
+    // thread on macOS 15+ -- the "EL2 probe" the A1 doc asked for, no nested
+    // virt required.
+    pub(crate) fn hv_gic_get_ich_reg(vcpu: HvVcpuT, reg: u16, value: *mut u64) -> HvReturn;
 }
 
 pub(crate) const HV_REG_X0: u32 = 0;

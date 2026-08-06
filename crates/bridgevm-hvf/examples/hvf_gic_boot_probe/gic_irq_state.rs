@@ -11,7 +11,7 @@
 //! reported zeros from a thread HVF refuses, and the zeros looked exactly
 //! like evidence; a failed read here renders as `?`, never as a number.
 
-use crate::{hv_gic_get_icc_reg, hv_gic_get_redistributor_reg, HvVcpuT};
+use crate::{hv_gic_get_icc_reg, hv_gic_get_ich_reg, hv_gic_get_redistributor_reg, HvVcpuT};
 
 /// The vtimer's PPI INTID on the virt platform: bit 27 of the GICR banked
 /// enable/pending/active words covers it.
@@ -32,9 +32,18 @@ pub(crate) const ICC_CTLR_EL1: u16 = 0xc664;
 pub(crate) const ICC_RPR_EL1: u16 = 0xc65b;
 pub(crate) const ICC_AP0R0_EL1: u16 = 0xc644;
 pub(crate) const ICC_AP1R0_EL1: u16 = 0xc648;
+/// ICH_* virtualization-control registers (hv_gic_ich_reg_t): HVF's own
+/// injection interface. LR0..LR15 hold the interrupts staged for the vCPU;
+/// HCR/VMCR/MISR/ELRSR summarize the virtual CPU interface state.
+pub(crate) const ICH_HCR_EL2: u16 = 0xe658;
+pub(crate) const ICH_MISR_EL2: u16 = 0xe65a;
+pub(crate) const ICH_ELRSR_EL2: u16 = 0xe65d;
+pub(crate) const ICH_VMCR_EL2: u16 = 0xe65f;
+pub(crate) const ICH_LR0_EL2: u16 = 0xe660;
+pub(crate) const ICH_LR_COUNT: u16 = 16;
 
 /// One capture. `None` means the read failed, and is rendered as `?`.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct GicIrqState {
     pub(crate) igroupr0: Option<u64>,
     pub(crate) isenabler0: Option<u64>,
@@ -47,6 +56,13 @@ pub(crate) struct GicIrqState {
     pub(crate) rpr: Option<u64>,
     pub(crate) ap0r0: Option<u64>,
     pub(crate) ap1r0: Option<u64>,
+    pub(crate) ich_hcr: Option<u64>,
+    pub(crate) ich_misr: Option<u64>,
+    pub(crate) ich_elrsr: Option<u64>,
+    pub(crate) ich_vmcr: Option<u64>,
+    /// Non-empty list registers only, as (index, raw value). An empty vec
+    /// with `ich_elrsr` readable means every LR is free.
+    pub(crate) ich_lrs: Vec<(u16, u64)>,
 }
 
 
@@ -78,6 +94,18 @@ pub(crate) unsafe fn capture(vcpu: HvVcpuT) -> GicIrqState {
         let mut v = 0u64;
         reg(hv_gic_get_icc_reg(vcpu, sysreg, &mut v), v)
     };
+    let read_h = |sysreg: u16| {
+        let mut v = 0u64;
+        reg(hv_gic_get_ich_reg(vcpu, sysreg, &mut v), v)
+    };
+    let mut ich_lrs = Vec::new();
+    for index in 0..ICH_LR_COUNT {
+        if let Some(value) = read_h(ICH_LR0_EL2 + index) {
+            if value != 0 {
+                ich_lrs.push((index, value));
+            }
+        }
+    }
     GicIrqState {
         igroupr0,
         isenabler0,
@@ -90,6 +118,11 @@ pub(crate) unsafe fn capture(vcpu: HvVcpuT) -> GicIrqState {
         rpr: read_c(ICC_RPR_EL1),
         ap0r0: read_c(ICC_AP0R0_EL1),
         ap1r0: read_c(ICC_AP1R0_EL1),
+        ich_hcr: read_h(ICH_HCR_EL2),
+        ich_misr: read_h(ICH_MISR_EL2),
+        ich_elrsr: read_h(ICH_ELRSR_EL2),
+        ich_vmcr: read_h(ICH_VMCR_EL2),
+        ich_lrs,
     }
 }
 
@@ -114,6 +147,26 @@ pub(crate) fn render(state: &GicIrqState) -> Vec<String> {
             fmt(state.ap1r0),
             state.vtimer_verdict().unwrap_or("unavailable (a read failed)")
         ),
+        {
+            let lrs = if state.ich_lrs.is_empty() {
+                "none".to_string()
+            } else {
+                state
+                    .ich_lrs
+                    .iter()
+                    .map(|(i, v)| format!("LR{i}={v:#x}"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            };
+            format!(
+                "GIC IRQ STATE: ICH HCR={} MISR={} ELRSR={} VMCR={} lrs=[{}]",
+                fmt(state.ich_hcr),
+                fmt(state.ich_misr),
+                fmt(state.ich_elrsr),
+                fmt(state.ich_vmcr),
+                lrs
+            )
+        },
     ]
 }
 

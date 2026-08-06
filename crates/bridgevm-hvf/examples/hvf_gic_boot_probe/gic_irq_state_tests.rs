@@ -13,6 +13,11 @@ fn all_open() -> GicIrqState {
         rpr: Some(0xff),
         ap0r0: Some(0),
         ap1r0: Some(0),
+        ich_hcr: Some(1),
+        ich_misr: Some(0),
+        ich_elrsr: Some(0xffff),
+        ich_vmcr: Some(0),
+        ich_lrs: Vec::new(),
     }
 }
 
@@ -114,9 +119,20 @@ fn a_failed_read_yields_no_verdict_rather_than_a_fabricated_one() {
 #[test]
 fn render_is_bounded_and_prints_hex_for_real_values() {
     let lines = render(&all_open());
-    assert_eq!(lines.len(), 2);
+    assert_eq!(lines.len(), 3);
     assert!(lines[0].contains("ISPENDR0=0x8000000"));
     assert!(lines[1].contains("PMR=0xf0"));
+    assert!(lines[2].contains("ELRSR=0xffff"));
+    assert!(lines[2].contains("lrs=[none]"));
+}
+
+#[test]
+fn occupied_list_registers_render_with_their_index() {
+    let state = GicIrqState {
+        ich_lrs: vec![(2, 0xa000_0000_0000_001b)],
+        ..all_open()
+    };
+    assert!(render(&state)[2].contains("lrs=[LR2=0xa00000000000001b]"));
 }
 
 #[test]
