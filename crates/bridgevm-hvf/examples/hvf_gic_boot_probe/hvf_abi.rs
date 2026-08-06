@@ -78,9 +78,6 @@ extern "C" {
         value: *mut u64,
     ) -> HvReturn;
     pub(crate) fn hv_gic_get_icc_reg(vcpu: HvVcpuT, reg: u16, value: *mut u64) -> HvReturn;
-    // Owning-thread-only write of a redistributor latch: the A1 experiment
-    // of hand-setting ISPENDR0 when HVF's own timer logic dropped the fire.
-    pub(crate) fn hv_gic_set_redistributor_reg(vcpu: HvVcpuT, reg: u32, value: u64) -> HvReturn;
 }
 
 pub(crate) const HV_REG_X0: u32 = 0;

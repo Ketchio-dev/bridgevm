@@ -120,3 +120,49 @@ CPU interface / hv_vcpu_run boundary with no host-visible lever, and A1's
 remaining option is architectural (different wake source for the guest, or
 Apple feedback) rather than another patch on this path.
 
+## Third follow-up: forced pending latches DELIVER -- and the boot dies anyway (`b53a7d1`, job `20260806-085841-35818-16321`)
+
+1/5, the worst of the four instrumented soaks. But the capture bought the
+decisive fact of the series:
+
+| boot | CNTV_CTL | ISPENDR0 | ISACTIVER0 | CPSR I | meaning |
+|---|---|---|---|---|---|
+| 2 | `0x1` | clear | **bit 27 ACTIVE** | **1** | interrupt was TAKEN; guest is inside/past the handler, IRQs masked, still spinning |
+| 3 | `0x5` | pending | clear | 0 | UEFI shape unchanged through pulse |
+| 4 | `0x1` | **pending (hand-set)** | clear | 1 | forged PPI latched, not yet taken, guest masked |
+| 5 | `0x1` | clear | clear | 0 | kernel shape unchanged |
+
+Boot-2 is the first ISACTIVER0!=0 ever captured: the hand-set latch was
+**delivered into the guest**. The boot still died -- parked at EL1 with
+PSTATE.I=1 after handling (or while handling) a timer interrupt whose own
+CNTV_CTL said ISTATUS=0. That is the experiment answering with a fact worth
+more than a pass: **delivery is not the cure. A spurious timer PPI hands the
+Windows ISR an interrupt its timer state says did not happen**, and the
+kernel's subsequent behavior (IRQs masked, no progress) is consistent with
+an ISR that found no work, returned, and the real wake it was substituting
+for still never arrived.
+
+**Reverted** the forced-latch writes (both shapes) in the same commit as
+this note. What stays: the diagnostics, the mask pulse (baseline-neutral,
+mechanism-justified), the future-CVAL re-arm (2/5, 2/5 vs 2/5 baseline --
+neutral, harmless, keeps the swallowed-cancel fix honest).
+
+## Where A1 stands after four instrumented soaks
+
+Passes: 2/5, 2/5, 2/5, 1/5 (7/20 vs 9/10 required). The instrumentation
+did its job: every readable layer is now measured at the stall, and every
+host-side lever below the CPU interface has been tried and measured:
+
+1. unmask on cancel -- helps the swallowed-fire case, does not close the gate
+2. CVAL to now / now+10us -- no effect on either shape
+3. HVF mask pulse on ISTATUS=1 -- no effect
+4. forced redistributor latches -- DELIVERS, guest dies anyway (this soak)
+
+The contradiction is now two-sided: HVF sometimes fails to form/deliver the
+timer's fire (ISTATUS=0 with CVAL past; PPI pending and never taken), and a
+forged delivery does not substitute for the real one. Both point inside
+Apple's in-kernel GICv3/vtimer emulation, below every host-visible register.
+Remaining options are architectural: a different guest wake source (e.g.
+relocating Windows' timer onto a device interrupt we own), an EL2-mode
+probe, or an Apple Feedback with this evidence chain attached.
+

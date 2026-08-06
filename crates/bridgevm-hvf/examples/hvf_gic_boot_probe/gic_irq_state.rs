@@ -20,7 +20,6 @@ pub(crate) const VTIMER_PPI_BIT: u32 = 1 << 27;
 pub(crate) const GICR_IGROUPR0: u32 = 0x10080;
 pub(crate) const GICR_ISENABLER0: u32 = 0x10100;
 pub(crate) const GICR_ISPENDR0: u32 = 0x10200;
-pub(crate) const GICR_ICPENDR0: u32 = 0x10280;
 pub(crate) const GICR_ISACTIVER0: u32 = 0x10300;
 pub(crate) const ICC_PMR_EL1: u16 = 0xc230;
 pub(crate) const ICC_IGRPEN0_EL1: u16 = 0xc666;
