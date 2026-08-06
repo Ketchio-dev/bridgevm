@@ -7,7 +7,7 @@
 //! refuse manifests that point into a source repository.
 
 use anyhow::{bail, Context, Result};
-use bridgevm_hvf_runtime::LaunchManifest;
+use bridgevm_hvf_runtime::{prepare, LaunchManifest};
 use std::io::Read;
 
 /// Release builds enforce product policy; debug builds are evidence
@@ -28,9 +28,6 @@ pub(crate) fn run_launch_spec(spec: &str) -> Result<()> {
         Ok(manifest) => manifest,
         Err(error) => bail!("launch manifest rejected: {error}"),
     };
-    // Lifecycle wiring (VmBuilder/VmRuntime) follows in the next R1 slice;
-    // until then this validates and reports, so the manifest contract can be
-    // exercised end to end from the CLI without a VM.
     println!(
         "launch manifest accepted: disk={} uefi_vars={} ram_mib={} vcpus={}",
         manifest.disk(),
@@ -38,6 +35,17 @@ pub(crate) fn run_launch_spec(spec: &str) -> Result<()> {
         manifest.ram_mib(),
         manifest.vcpus()
     );
+    // Take the exclusive writer leases now, before any VM could exist: a
+    // second writer must fail here, not corrupt the guest at a later flush.
+    let prepared = match prepare(manifest, "hvf-runner --launch-spec") {
+        Ok(prepared) => prepared,
+        Err(error) => bail!("launch refused: {error}"),
+    };
+    println!(
+        "vm prepared: images leased, generation {}",
+        prepared.generation().stamp().value()
+    );
+    // Boot wiring (VmRuntime::run) follows in the next R1 slice.
     Ok(())
 }
 
