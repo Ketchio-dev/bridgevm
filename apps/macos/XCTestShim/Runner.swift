@@ -22,7 +22,11 @@ public func runXCTestSuites(_ entries: [XCTestSuiteEntry]) -> Int32 {
     var skipped = 0
     var failureLines: [String] = []
 
+    // BV_XCTEST_TRACE=1: print each test before it runs, so a crash names
+    // its test instead of dying anonymously between two suite summaries.
+    let trace = ProcessInfo.processInfo.environment["BV_XCTEST_TRACE"] == "1"
     for entry in entries {
+        if trace { print("RUN \(entry.name)"); fflush(stdout) }
         let failures = entry.run()
         if failures.isEmpty {
             passed += 1

@@ -65,3 +65,39 @@ even though the linking one is not.
 Any result measured this way must say "measured under a shim, not Apple
 XCTest". The runner prints that line unconditionally. The shim's own behaviour
 under the 29 checks is evidence about the shim, not about the app.
+
+## 2026-08-06: the 651 tests now RUN
+
+`scripts/run-xctest-shim-suites.sh` builds three per-suite runners -- the
+option the first attempt left untried -- and executes every test function:
+
+```
+BridgeVMApp        403 passed, 0 failed, 0 skipped
+BridgeVMControl    185 passed, 0 failed, 1 skipped
+AppleVzRunnerCore   62 passed, 0 failed, 0 skipped
+PASS: all three shim suites (651 test functions)
+```
+
+Per suite, the app sources compile into a static library with
+`-enable-testing` and the test sources into an executable against it, so
+file scope stays intact and the 58 redeclaration errors never arise.
+`-D DEBUG` matches `swift test`; `Bundle.module` (a SwiftPM synthesis) is
+stood in for by a shim reading `BV_SHIM_RESOURCES`.
+
+Running found what compiling could not:
+
+- **A drifted test.** `testTextInputPreservesPrintableASCIIAndChunksLongCommands`
+  asserted the pre-`39a4f63` behavior (non-ASCII silently dropped, remainder
+  chunked over HID). The behavior changed to route mixed strings through the
+  clipboard; the test, never having been run, kept asserting the old world and
+  crashed on `lines[1]`. Fixed to assert the current contract and to say why.
+- **A runBlocking deadlock.** The manifest's async wrapper parked the main
+  thread on a semaphore while the `@MainActor` test body waited for that same
+  thread. Fixed by pumping the main run loop, the way Apple's XCTest waits.
+- **Failure knowledge**: with `BV_XCTEST_TRACE=1` the runner names each test
+  before running it, so a crash names its test.
+
+Falsified: changing `hidChunkBytes` 32→16 in the app source makes exactly the
+text-input test fail; reverting restores 651/651. The suite result is measured
+under the shim, not Apple XCTest, and the runner prints that caveat itself.
+

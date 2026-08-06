@@ -655,7 +655,13 @@ final class HvfEngineSessionPathTests: XCTestCase {
         )
         let session = HvfEngineSession(config: config, repoRoot: temp) { _ in false }
 
-        session.sendText("Ab c!@?," + String(repeating: "x", count: 32) + "끝")
+        // Printable ASCII goes over HID, split at the guest's 32-byte token
+        // cap. (A mixed string routes entirely through the clipboard instead
+        // -- covered by HvfTextInputPlanTests. This test predated that change
+        // and, never having been run, kept asserting the old split-and-drop
+        // behavior; running it under the shim found the drift as an index
+        // crash at lines[1].)
+        session.sendText("Ab c!@?," + String(repeating: "x", count: 32))
 
         let lines = try String(contentsOf: input, encoding: .utf8)
             .split(separator: "\n").map(String.init)
