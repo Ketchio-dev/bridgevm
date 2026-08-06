@@ -151,9 +151,19 @@ if (-not $mainWindowObserved) {
 # failure, so an unrelated logging change cannot silently fail the title gate.
 $fpsSamples = @()
 if (Test-Path -LiteralPath $frameLog -PathType Leaf) {
-    foreach ($line in [IO.File]::ReadAllLines($frameLog)) {
-        $m = [regex]::Match($line, 'fps:\s*([0-9]+(?:\.[0-9]+)?)')
-        if ($m.Success) { $fpsSamples += [double]$m.Groups[1].Value }
+    # The title still holds its log open for writing; ReadAllLines opens with
+    # no write sharing and dies with a sharing violation (seen live
+    # 2026-08-06). Open ReadWrite-shared instead.
+    $stream = [IO.File]::Open($frameLog, [IO.FileMode]::Open,
+        [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    try {
+        $reader = New-Object IO.StreamReader($stream)
+        while ($null -ne ($line = $reader.ReadLine())) {
+            $m = [regex]::Match($line, 'fps:\s*([0-9]+(?:\.[0-9]+)?)')
+            if ($m.Success) { $fpsSamples += [double]$m.Groups[1].Value }
+        }
+    } finally {
+        $stream.Dispose()
     }
 }
 if ($fpsSamples.Count -gt 0) {
