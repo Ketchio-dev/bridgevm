@@ -35,11 +35,24 @@ pub(crate) fn recover_swallowed_vtimer_fire(vcpu: HvVcpuT) {
             hv_vcpu_get_vtimer_offset(vcpu, &mut voff);
             let guest_now = host_cntvct().wrapping_sub(voff);
             if cntv_cval <= guest_now {
-                hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_CNTV_CVAL_EL0, guest_now);
+                // Slightly in the FUTURE, not exactly now. The 2026-08-06
+                // soak captured stalls persisting through these recoveries
+                // with ENABLE=1, ISTATUS=0 and CVAL in the past -- the
+                // architectural contradiction ISTATUS cannot show if the
+                // comparator were level-evaluating. A CVAL written as "now"
+                // is already past by the time HVF programs its host timer;
+                // a small future deadline forces a fresh arm-and-expire
+                // edge. 240 ticks is 10us at 24MHz: unmeasurable to the
+                // guest against a deadline that was already 8.2M ticks
+                // overdue, but unambiguous to the emulation.
+                hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_CNTV_CVAL_EL0, guest_now + REARM_FUTURE_TICKS);
             }
         }
     }
 }
+
+/// 10us at the 24MHz architectural counter.
+const REARM_FUTURE_TICKS: u64 = 240;
 
 /// Final-report line: the mask state that diagnosed the swallowed-fire stall.
 pub(crate) fn report_vtimer_mask(vcpu: HvVcpuT) {
