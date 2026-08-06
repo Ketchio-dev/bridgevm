@@ -191,3 +191,39 @@ probe (nested virt) to observe the ICH_* list registers HVF manages.
 
 This document is the evidence chain for option 1.
 
+## Sixth soak: the UEFI shape has a mechanism -- a stale running priority (`05e8797`, job `20260806-141247`)
+
+The RPR/APR read paid off on its first capture. Every UEFI-shape stall in
+this soak reads:
+
+```
+GICR ISENABLER0=0x6c000000 ISPENDR0=0x8000000 ISACTIVER0=0x0
+ICC  PMR=0xf8 IGRPEN1=0x1 RPR=0x10 AP0R0=0x0 AP1R0=0x4
+verdict: vtimer PPI pending but ICC_RPR holds a stale running priority (nothing active)
+```
+
+RPR=0x10 with AP1R0 bit set while **ISACTIVER0=0** is architecturally
+impossible: a running priority exists only while an interrupt is in
+service. The consistent story across every capture this session:
+
+1. the vtimer PPI (priority 0x10, group 1) was delivered and ACTIVATED
+   (IAR read by the guest);
+2. the guest's EOI / priority-drop write was lost -- the same
+   hv_vcpus_exit cancel race that swallows vtimer fires can swallow a
+   trapped EOI;
+3. the CPU interface, left with running priority 0x10, architecturally
+   gates every interrupt at or below 0x10 -- including the next vtimer
+   PPI, which then sits "pending and deliverable" forever.
+
+The "fifth soak: RPR reads idle" conclusion is hereby **narrowed, not
+retracted**: kernel-shape stalls do read RPR=0xff (their block is the
+unformed fire); UEFI-shape stalls read the wedge. The fifth soak's
+failures happened to be kernel-shape only.
+
+Fix under test (`0a8c1f0`, queued): on canceled exits, if RPR!=idle and
+ISACTIVER0==0, zero AP0R0/AP1R0 via hv_gic_set_icc_reg. Unlike the
+reverted latch forge, nothing guest-visible is invented -- HVF's
+bookkeeping is corrected to match the empty active set it itself
+reports. Also learned: hv_gic_get_ich_reg fails on this config (EL2
+view not exposed without nested virt); renders as `?`.
+
