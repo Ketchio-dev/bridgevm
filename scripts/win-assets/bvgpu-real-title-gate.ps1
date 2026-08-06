@@ -106,7 +106,7 @@ Write-GateLog "launch_state_clean portable_poison_removed=$(-not (Test-Path -Lit
 # PPSSPP emits "delta: <ms> fps: <n>" into its own log, so let it self-report.
 $frameLog = Join-Path $appDirectory "bv-frame.log"
 Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath $frameLog
-$launchArgs = @("--log=$frameLog", "--loglevel=info")
+$launchArgs = @("--log=$frameLog", "--loglevel=3")
 if ($ContentPath -ne "") {
     if (-not (Test-Path -LiteralPath $ContentPath -PathType Leaf)) {
         Write-GateLog "status=FAIL reason=content-missing path=$ContentPath"
