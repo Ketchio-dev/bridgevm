@@ -29,6 +29,19 @@ pub(crate) fn recover_swallowed_vtimer_fire(vcpu: HvVcpuT) {
         let mut cntv_cval = 0u64;
         hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_CNTV_CTL_EL0, &mut cntv_ctl);
         hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_CNTV_CVAL_EL0, &mut cntv_cval);
+        // ENABLE=1, IMASK=0, ISTATUS=1: the UEFI-shape stall. The timer
+        // fired, the PPI sits pending at the redistributor (2026-08-06 soak:
+        // ISPENDR0 bit 27 set, group on, PMR open, HVF mask false), and the
+        // CPU interface never signals it into hv_vcpu_run -- re-entering
+        // guest mode 69k times did not deliver it, so re-entry alone does
+        // not re-evaluate. Pulse the HVF vtimer mask: the mask edge is the
+        // one lever that forces HVF's own fire path to re-assert, and a
+        // pulse on an already-pending level is harmless by the same
+        // level-evaluation argument as the unmask above.
+        if cntv_ctl & 0b111 == 0b101 {
+            hv_vcpu_set_vtimer_mask(vcpu, true);
+            hv_vcpu_set_vtimer_mask(vcpu, false);
+        }
         // ENABLE=1 and IMASK=0: the guest is waiting on this timer.
         if cntv_ctl & 0b11 == 0b01 {
             let mut voff = 0u64;

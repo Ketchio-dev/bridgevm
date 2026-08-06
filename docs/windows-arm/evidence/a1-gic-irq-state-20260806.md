@@ -70,3 +70,20 @@ open, which these captures do show.
    the next experiment.
 3. This gate run was 1/5; the sample adds to 2/5 and 11/12 history. No
    promotion claim changes.
+
+## Follow-up soak at the future-CVAL re-arm (`953e78b`, job `20260806-043632-93324-6822`)
+
+5 boots, 2 pass. Every one of the three failures is the **UEFI shape**
+(`CNTV_CTL=0x5`, ISPENDR0 bit 27 pending, IGROUPR0 confirms group 1,
+verdict "pending and deliverable"). The kernel shape -- `ENABLE=1,
+ISTATUS=0, CVAL past` -- **did not appear once**, versus 2 of 3 failures
+in the previous soak.
+
+Five boots cannot prove the future-CVAL re-arm killed the kernel shape,
+but the prediction it was built on ("if the shape persists, the wedge is
+below CVAL writes") was not falsified, and the surviving failure mode is
+now exclusively the one CVAL cannot touch: the PPI is already pending at
+the redistributor; there is nothing left to re-arm. The next lever is a
+delivery-edge experiment at the CPU interface (HVF vtimer mask toggle
+when ISTATUS=1 and the PPI sits pending undelivered).
+
