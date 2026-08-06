@@ -26,6 +26,10 @@ pub enum RuntimeError {
     /// lease would catch this at open; refusing at validation names it
     /// before a VM exists.
     DuplicateDiskWriter { path: String },
+    /// Another process holds the writer lease for an image this manifest
+    /// opens writable. Carries what the holder recorded about itself so the
+    /// refusal can name it.
+    MediaHeld { path: String, holder: String },
     /// Host I/O failed. Wrapped rather than propagated raw so the product
     /// path reports which file, not just which errno.
     Io {
@@ -52,6 +56,9 @@ impl fmt::Display for RuntimeError {
             ),
             Self::DuplicateDiskWriter { path } => {
                 write!(f, "two writable disks name the same file: {path}")
+            }
+            Self::MediaHeld { path, holder } => {
+                write!(f, "{path} is already open for writing by {holder}")
             }
             Self::Io { context, source } => write!(f, "{context}: {source}"),
         }

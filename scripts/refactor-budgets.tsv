@@ -813,8 +813,8 @@ crates/bridgevm-hvf/src/nvme/positional_io_tests.rs	107	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state.rs	109	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state_tests.rs	117	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator/stall_report.rs	39	1
-crates/bridgevm-hvf-runtime/src/error.rs	68	0
-crates/bridgevm-hvf-runtime/src/lib.rs	25	0
+crates/bridgevm-hvf-runtime/src/error.rs	75	0
+crates/bridgevm-hvf-runtime/src/lib.rs	27	0
 crates/bridgevm-hvf-runtime/src/manifest.rs	174	0
 crates/bridgevm-hvf-runtime/src/manifest_tests.rs	105	0
 crates/bridgevm-hvf-runtime/src/reset_generation.rs	56	0
@@ -827,3 +827,5 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state/verdict.rs	31	0
 scripts/run-xctest-shim-suites.sh	70	0
 crates/bridgevm-hvf-runtime/src/vm_event.rs	90	0
 crates/bridgevm-hvf-runtime/src/vm_event_tests.rs	60	0
+crates/bridgevm-hvf-runtime/src/vm_builder.rs	77	0
+crates/bridgevm-hvf-runtime/src/vm_builder_tests.rs	61	0

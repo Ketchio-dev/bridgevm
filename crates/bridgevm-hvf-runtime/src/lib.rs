@@ -16,10 +16,12 @@ mod error;
 mod manifest;
 mod reset_generation;
 mod reset_receipt;
+mod vm_builder;
 mod vm_event;
 
 pub use error::RuntimeError;
 pub use manifest::{LaunchManifest, MANIFEST_VERSION};
 pub use reset_generation::{GenerationTag, ResetGeneration};
 pub use reset_receipt::{flush_and_write_receipt, receipt_proves_flush};
+pub use vm_builder::{prepare, PreparedVm};
 pub use vm_event::{DrainedEvents, StampedEvent, VmEvent, VmEventQueue};
