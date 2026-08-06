@@ -165,7 +165,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "The product app and hvf-runner drive a typed runtime API from a versioned launch manifest instead of executing an example binary through shell.",
-      "measured": "The product path still runs the hvf_gic_boot_probe example.",
+      "measured": "Seven R1 slices landed (f545fd0..ffce775): bridgevm-hvf-runtime crate (LaunchManifest version-1 validation refusing repo paths in product mode, ResetGeneration + non-forgeable GenerationTag, flush-then-receipt reset_receipt, generation-stamped VmEventQueue that discards and counts stale events, VmBuilder prepare() taking exclusive writer flocks before any VM exists); hvf-runner --launch-spec validates, leases and reports (second-writer refusal proven live from the CLI with a competing flock: exit 1 naming the holder); the app encodes the same manifest (Swift-emitted JSON accepted by the Rust parser) and materializes it beside each run's evidence. OPEN: the boot path itself (VmRuntime::run) still executes the probe example via the wrapper script; the supervisor/process-recreate does not exist yet.",
       "evidence_paths": [
         "docs/hvf-windows-engine-strategy.md"
       ]
