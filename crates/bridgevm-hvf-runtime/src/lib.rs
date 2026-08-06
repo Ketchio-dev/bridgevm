@@ -15,7 +15,9 @@
 mod error;
 mod manifest;
 mod reset_generation;
+mod reset_receipt;
 
 pub use error::RuntimeError;
 pub use manifest::{LaunchManifest, MANIFEST_VERSION};
-pub use reset_generation::ResetGeneration;
+pub use reset_generation::{GenerationTag, ResetGeneration};
+pub use reset_receipt::{flush_and_write_receipt, receipt_proves_flush};

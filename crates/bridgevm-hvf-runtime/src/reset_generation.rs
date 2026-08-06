@@ -21,6 +21,14 @@ pub struct ResetGeneration {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GenerationTag(u64);
 
+impl GenerationTag {
+    /// The raw counter, for receipts and logs. Constructing a tag from a
+    /// number is deliberately impossible: tags come from `stamp`/`advance`.
+    pub fn value(self) -> u64 {
+        self.0
+    }
+}
+
 impl ResetGeneration {
     pub fn new() -> Self {
         Self::default()
