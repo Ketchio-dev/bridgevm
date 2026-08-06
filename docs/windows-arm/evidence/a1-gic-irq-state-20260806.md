@@ -166,3 +166,28 @@ Remaining options are architectural: a different guest wake source (e.g.
 relocating Windows' timer onto a device interrupt we own), an EL2-mode
 probe, or an Apple Feedback with this evidence chain attached.
 
+## Fifth soak: RPR reads idle -- the register-level investigation is closed (`f26b271`, job `20260806-111404-23612-12781`)
+
+3/5 (best of the series; still noise-range). Both failures kernel-shape.
+Every terminal capture: **RPR=0xff (idle), AP0R0=0, AP1R0=0**. No stale
+running priority exists. The last readable CPU-interface state is clean.
+
+Five instrumented soaks, 10/25 aggregate. Final state of the investigation:
+
+- Every register HVF exposes for the GICv3 (redistributor latches, groups,
+  enables, PMR, RPR, active-priority bitmaps, CTLR) has been read at
+  terminal stalls and is either consistent with delivery or contradicts the
+  architecture in HVF's own timer (ISTATUS=0, CVAL past).
+- Every host-side write lever has been tried and measured: unmask, CVAL
+  rewrites (now, now+10us), mask pulse, forced pending latches (delivered,
+  guest died anyway -- falsifying delivery-as-cure).
+
+The A1 defect is inside Apple's in-kernel GICv3/vtimer emulation, below
+every host-visible surface. Remaining paths are architectural, in order of
+cost: (1) Apple Feedback with this evidence chain; (2) relocate the guest's
+boot-critical wake source onto a device interrupt this VMM owns (SPI/MSI,
+requires understanding which Windows boot phase arms the wake); (3) an EL2
+probe (nested virt) to observe the ICH_* list registers HVF manages.
+
+This document is the evidence chain for option 1.
+
