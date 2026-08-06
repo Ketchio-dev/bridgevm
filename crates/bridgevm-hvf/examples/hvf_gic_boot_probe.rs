@@ -103,6 +103,7 @@ probe_modules!(
     "hvf_gic_boot_probe/boot_telemetry.rs" => boot_telemetry,
     "hvf_gic_boot_probe/exception_trace.rs" => exception_trace,
     "hvf_gic_boot_probe/gic_snapshot.rs" => gic_snapshot,
+    "hvf_gic_boot_probe/gic_irq_state.rs" => gic_irq_state,
     "hvf_gic_boot_probe/gpu_shm_bar2.rs" => gpu_shm_bar2,
     "hvf_gic_boot_probe/gpu_shm_setup.rs" => gpu_shm_setup,
     "hvf_gic_boot_probe/guest_diagnostics.rs" => guest_diagnostics,
@@ -170,6 +171,9 @@ pub(crate) use wake_coordinator::*;
 #[path = "hvf_gic_boot_probe/wake_coordinator/cancel_stop.rs"]
 mod cancel_stop;
 pub(crate) use cancel_stop::{cancel_stop_reason, stall_gic_report};
+#[path = "hvf_gic_boot_probe/wake_coordinator/stall_report.rs"]
+mod stall_report;
+pub(crate) use stall_report::report_stall_diagnostics;
 pub(crate) use wfi_diagnostics::*;
 
 fn probe_exit_code(fatal_vcpu_run_error: bool, fatal_reset_error: bool) -> ExitCode {

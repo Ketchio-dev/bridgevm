@@ -683,7 +683,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/storage_effect_receipt_tests.rs	
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/storage_reporting.rs	182	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/trng_dispatch.rs	82	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vblank_wake.rs	84	1
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator.rs	242	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator.rs	214	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator_tests.rs	146	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination.rs	348	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_debug.rs	96	4
@@ -810,3 +810,6 @@ apps/macos/XCTestShim/SelfTest.swift	75	0
 apps/macos/XCTestShim/XCTest.swift	239	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_sampler.rs	52	0
 crates/bridgevm-hvf/src/nvme/positional_io_tests.rs	107	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state.rs	117	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state_tests.rs	88	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator/stall_report.rs	39	1

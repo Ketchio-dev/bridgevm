@@ -15,7 +15,6 @@
 //! requested for the previous generation must never be counted as an answer
 //! for the new one.
 
-use crate::{HvVcpuT, SmpTrace};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Why a wake was requested. One bit each, so a single atomic carries the set
@@ -213,30 +212,3 @@ pub(crate) fn report_wake_attribution(coordinator: &WakeCoordinator, claims: &[C
     }
 }
 
-/// Everything the stop path reports about wakes, timer state and the trace.
-///
-/// Called once from the owning thread after the run has stopped: the GIC
-/// snapshot is only valid there, and the SMP trace must not be formatted while
-/// vCPUs are still running.
-///
-/// # Safety
-/// `vcpu` must be live and owned by the calling thread.
-pub(crate) unsafe fn report_stall_diagnostics(
-    vcpu: HvVcpuT,
-    coordinator: &WakeCoordinator,
-    claims: &[CancelClaim],
-    smp_trace: Option<&SmpTrace>,
-) {
-    report_wake_attribution(coordinator, claims);
-    // Two captures, so a vCPU that is still executing is not called parked.
-    let before = crate::gic_snapshot::capture(vcpu, 2, coordinator.generation());
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    let after = crate::gic_snapshot::capture(vcpu, 2, coordinator.generation());
-    for line in crate::gic_snapshot::render(&before, &after) {
-        println!("{line}");
-    }
-    if let Some(trace) = smp_trace {
-        println!("SMP trace: overflow={}", trace.trace_overflow());
-        trace.dump();
-    }
-}

@@ -71,6 +71,13 @@ extern "C" {
         intid_base: *mut u32,
         intid_count: *mut u32,
     ) -> HvReturn;
+    // Owning-thread-only reads of the GIC's own state, for stall diagnosis.
+    pub(crate) fn hv_gic_get_redistributor_reg(
+        vcpu: HvVcpuT,
+        reg: u32,
+        value: *mut u64,
+    ) -> HvReturn;
+    pub(crate) fn hv_gic_get_icc_reg(vcpu: HvVcpuT, reg: u16, value: *mut u64) -> HvReturn;
 }
 
 pub(crate) const HV_REG_X0: u32 = 0;
