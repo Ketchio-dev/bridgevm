@@ -50,11 +50,17 @@ pub(crate) fn recover_swallowed_vtimer_fire(vcpu: HvVcpuT) {
         // spurious timer PPIs (ISTATUS=0) hand a Windows ISR an interrupt
         // its timer says did not happen. Keep the mask pulse (measured
         // baseline-neutral, mechanism-justified); do not forge interrupts.
+        // Order is load-bearing: clear the stale priority BEFORE pulsing.
+        // Soak 20260806-142939 boot-4 ran these the other way around: the
+        // pulse's fresh fire edge arrived while RPR=0x10 still gated the
+        // PPI, the clear then opened the gate with no edge left to take,
+        // and the terminal capture read "pending and deliverable" on a
+        // fully idle CPU interface -- open gate, no edge, dead boot.
+        clear_stale_running_priority(vcpu);
         if cntv_ctl & 0b111 == 0b101 {
             hv_vcpu_set_vtimer_mask(vcpu, true);
             hv_vcpu_set_vtimer_mask(vcpu, false);
         }
-        clear_stale_running_priority(vcpu);
         // ENABLE=1 and IMASK=0: the guest is waiting on this timer.
         if cntv_ctl & 0b11 == 0b01 {
             let mut voff = 0u64;
