@@ -1,0 +1,14 @@
+# Product runtime over bridgevm-hvf: typed VM lifecycle, versioned launch
+# manifest, reset generations. No shell, no process-launch dependency -- the
+# point of this crate is that the product stops executing an example binary
+# through a script (PLAN.md R1, criterion A14).
+[package]
+name = "bridgevm-hvf-runtime"
+publish.workspace = true
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bridgevm-hvf = { path = "../bridgevm-hvf" }

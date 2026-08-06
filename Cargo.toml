@@ -10,6 +10,7 @@ members = [
   "crates/bridgevm-daemon",
   "crates/bridgevm-fullvm",
   "crates/bridgevm-hvf",
+  "crates/bridgevm-hvf-runtime",
   "crates/bridgevm-lightvm",
   "crates/bridgevm-network",
   "crates/bridgevm-qemu",

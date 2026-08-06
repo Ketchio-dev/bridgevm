@@ -198,6 +198,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "bridgevm-hvf-runtime"
+version = "0.1.0"
+dependencies = [
+ "bridgevm-hvf",
+]
+
+[[package]]
 name = "bridgevm-lightvm"
 version = "0.1.0"
 dependencies = [
