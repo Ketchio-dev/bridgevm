@@ -810,8 +810,8 @@ apps/macos/XCTestShim/SelfTest.swift	75	0
 apps/macos/XCTestShim/XCTest.swift	239	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_sampler.rs	52	0
 crates/bridgevm-hvf/src/nvme/positional_io_tests.rs	107	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state.rs	117	1
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state_tests.rs	88	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state.rs	109	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state_tests.rs	117	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator/stall_report.rs	39	1
 crates/bridgevm-hvf-runtime/src/error.rs	68	0
 crates/bridgevm-hvf-runtime/src/lib.rs	23	0
@@ -823,3 +823,4 @@ runners/hvf-runner/src/launch_spec.rs	47	0
 runners/hvf-runner/src/launch_spec_tests.rs	55	0
 crates/bridgevm-hvf-runtime/src/reset_receipt.rs	77	0
 crates/bridgevm-hvf-runtime/src/reset_receipt_tests.rs	74	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state/verdict.rs	31	0

@@ -2,10 +2,12 @@ use super::*;
 
 fn all_open() -> GicIrqState {
     GicIrqState {
+        igroupr0: Some(u64::from(VTIMER_PPI_BIT)),
         isenabler0: Some(u64::from(VTIMER_PPI_BIT)),
         ispendr0: Some(u64::from(VTIMER_PPI_BIT)),
         isactiver0: Some(0),
         pmr: Some(0xf0),
+        igrpen0: Some(0),
         igrpen1: Some(1),
         ctlr: Some(0),
     }
@@ -63,6 +65,33 @@ fn group_off_and_masked_pmr_each_get_their_own_verdict() {
     assert_eq!(
         pmr_closed.vtimer_verdict(),
         Some("vtimer PPI pending but ICC_PMR masks all priorities")
+    );
+}
+
+#[test]
+fn a_group0_ppi_is_gated_by_igrpen0_not_igrpen1() {
+    // The first live capture showed the PPI configured in group 1 with
+    // IGRPEN1 on; had it been in group 0, IGRPEN1's value would have been
+    // irrelevant. The verdict must read the group bit, not assume group 1.
+    let group0 = GicIrqState {
+        igroupr0: Some(0),
+        igrpen0: Some(0),
+        igrpen1: Some(1),
+        ..all_open()
+    };
+    assert_eq!(
+        group0.vtimer_verdict(),
+        Some("vtimer PPI pending in group 0 but ICC group 0 is off")
+    );
+    let group0_on = GicIrqState {
+        igroupr0: Some(0),
+        igrpen0: Some(1),
+        igrpen1: Some(0),
+        ..all_open()
+    };
+    assert_eq!(
+        group0_on.vtimer_verdict(),
+        Some("vtimer PPI pending and deliverable; the block is not the GIC")
     );
 }
 

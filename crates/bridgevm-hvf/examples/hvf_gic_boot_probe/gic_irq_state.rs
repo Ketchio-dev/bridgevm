@@ -17,44 +17,28 @@ use crate::{hv_gic_get_icc_reg, hv_gic_get_redistributor_reg, HvVcpuT};
 /// enable/pending/active words covers it.
 pub(crate) const VTIMER_PPI_BIT: u32 = 1 << 27;
 
+pub(crate) const GICR_IGROUPR0: u32 = 0x10080;
 pub(crate) const GICR_ISENABLER0: u32 = 0x10100;
 pub(crate) const GICR_ISPENDR0: u32 = 0x10200;
 pub(crate) const GICR_ISACTIVER0: u32 = 0x10300;
 pub(crate) const ICC_PMR_EL1: u16 = 0xc230;
+pub(crate) const ICC_IGRPEN0_EL1: u16 = 0xc666;
 pub(crate) const ICC_IGRPEN1_EL1: u16 = 0xc667;
 pub(crate) const ICC_CTLR_EL1: u16 = 0xc664;
 
 /// One capture. `None` means the read failed, and is rendered as `?`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct GicIrqState {
+    pub(crate) igroupr0: Option<u64>,
     pub(crate) isenabler0: Option<u64>,
     pub(crate) ispendr0: Option<u64>,
     pub(crate) isactiver0: Option<u64>,
     pub(crate) pmr: Option<u64>,
+    pub(crate) igrpen0: Option<u64>,
     pub(crate) igrpen1: Option<u64>,
     pub(crate) ctlr: Option<u64>,
 }
 
-impl GicIrqState {
-    /// Why the vtimer PPI is not being taken, judged from the GIC alone.
-    /// `None` when a needed register could not be read: no verdict beats a
-    /// fabricated one.
-    pub(crate) fn vtimer_verdict(&self) -> Option<&'static str> {
-        let enabled = self.isenabler0? & u64::from(VTIMER_PPI_BIT) != 0;
-        let pending = self.ispendr0? & u64::from(VTIMER_PPI_BIT) != 0;
-        let group_on = self.igrpen1? & 1 != 0;
-        // PMR of 0 masks every priority; the reset value before the guest
-        // programs it. Anything nonzero admits at least priority 0.
-        let pmr_open = self.pmr? != 0;
-        Some(match (enabled, pending, group_on, pmr_open) {
-            (false, _, _, _) => "vtimer PPI disabled at GICR_ISENABLER0",
-            (true, false, _, _) => "vtimer PPI enabled but not pending at the GICR",
-            (true, true, false, _) => "vtimer PPI pending but ICC group 1 is off",
-            (true, true, true, false) => "vtimer PPI pending but ICC_PMR masks all priorities",
-            (true, true, true, true) => "vtimer PPI pending and deliverable; the block is not the GIC",
-        })
-    }
-}
 
 fn reg(status: i32, value: u64) -> Option<u64> {
     (status == 0).then_some(value)
@@ -74,7 +58,8 @@ pub(crate) unsafe fn capture(vcpu: HvVcpuT) -> GicIrqState {
         let mut v = 0u64;
         reg(hv_gic_get_redistributor_reg(vcpu, offset, &mut v), v)
     };
-    let (isenabler0, ispendr0, isactiver0) = (
+    let (igroupr0, isenabler0, ispendr0, isactiver0) = (
+        read_r(GICR_IGROUPR0),
         read_r(GICR_ISENABLER0),
         read_r(GICR_ISPENDR0),
         read_r(GICR_ISACTIVER0),
@@ -84,10 +69,12 @@ pub(crate) unsafe fn capture(vcpu: HvVcpuT) -> GicIrqState {
         reg(hv_gic_get_icc_reg(vcpu, sysreg, &mut v), v)
     };
     GicIrqState {
+        igroupr0,
         isenabler0,
         ispendr0,
         isactiver0,
         pmr: read_c(ICC_PMR_EL1),
+        igrpen0: read_c(ICC_IGRPEN0_EL1),
         igrpen1: read_c(ICC_IGRPEN1_EL1),
         ctlr: read_c(ICC_CTLR_EL1),
     }
@@ -97,20 +84,25 @@ pub(crate) unsafe fn capture(vcpu: HvVcpuT) -> GicIrqState {
 pub(crate) fn render(state: &GicIrqState) -> Vec<String> {
     vec![
         format!(
-            "GIC IRQ STATE: GICR ISENABLER0={} ISPENDR0={} ISACTIVER0={}",
+            "GIC IRQ STATE: GICR IGROUPR0={} ISENABLER0={} ISPENDR0={} ISACTIVER0={}",
+            fmt(state.igroupr0),
             fmt(state.isenabler0),
             fmt(state.ispendr0),
             fmt(state.isactiver0)
         ),
         format!(
-            "GIC IRQ STATE: ICC PMR={} IGRPEN1={} CTLR={} vtimer_verdict={}",
+            "GIC IRQ STATE: ICC PMR={} IGRPEN0={} IGRPEN1={} CTLR={} vtimer_verdict={}",
             fmt(state.pmr),
+            fmt(state.igrpen0),
             fmt(state.igrpen1),
             fmt(state.ctlr),
             state.vtimer_verdict().unwrap_or("unavailable (a read failed)")
         ),
     ]
 }
+
+#[path = "gic_irq_state/verdict.rs"]
+mod verdict;
 
 #[cfg(test)]
 #[path = "gic_irq_state_tests.rs"]
