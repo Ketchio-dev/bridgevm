@@ -814,7 +814,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state.rs	125	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state_tests.rs	155	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator/stall_report.rs	39	1
 crates/bridgevm-hvf-runtime/src/error.rs	75	0
-crates/bridgevm-hvf-runtime/src/lib.rs	27	0
+crates/bridgevm-hvf-runtime/src/lib.rs	29	0
 crates/bridgevm-hvf-runtime/src/manifest.rs	174	0
 crates/bridgevm-hvf-runtime/src/manifest_tests.rs	105	0
 crates/bridgevm-hvf-runtime/src/reset_generation.rs	56	0
@@ -829,3 +829,5 @@ crates/bridgevm-hvf-runtime/src/vm_event.rs	90	0
 crates/bridgevm-hvf-runtime/src/vm_event_tests.rs	60	0
 crates/bridgevm-hvf-runtime/src/vm_builder.rs	77	0
 crates/bridgevm-hvf-runtime/src/vm_builder_tests.rs	61	0
+crates/bridgevm-hvf-runtime/src/supervisor.rs	56	0
+crates/bridgevm-hvf-runtime/src/supervisor_tests.rs	64	0
