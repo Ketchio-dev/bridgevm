@@ -7,7 +7,7 @@
 //! refuse manifests that point into a source repository.
 
 use anyhow::{bail, Context, Result};
-use bridgevm_hvf_runtime::{prepare, run_vm, HelperLaunch, LaunchManifest};
+use bridgevm_hvf_runtime::{prepare, run_vm, DeviceSurfaces, HelperLaunch, LaunchManifest};
 use std::io::Read;
 use std::path::Path;
 
@@ -47,7 +47,17 @@ pub(crate) fn run_launch_spec(spec: &str, args: &crate::Args) -> Result<()> {
                 .unwrap_or_else(default_firmware_code),
             watchdog_ms: args.watchdog_ms.unwrap_or(900_000),
             agent_control: args.helper_agent_control.clone(),
+            surfaces: args.helper_evidence_dir.as_ref().map(|dir| DeviceSurfaces {
+                evidence_dir: dir.clone(),
+                display_export_ms: 100,
+                input_control: Some(dir.join("input.ctl")),
+                virtio_gpu_3d: args.virtio_gpu_3d,
+            }),
         };
+        if let Some(surfaces) = &launch.surfaces {
+            std::fs::create_dir_all(surfaces.evidence_dir.join("ramfb"))
+                .context("create evidence dir")?;
+        }
         let receipt = args
             .supervise_receipt
             .clone()

@@ -23,6 +23,26 @@ pub struct HelperLaunch {
     /// reads guest commands appended to this file. This is how a supervisor
     /// asks the guest for a reset without any shell in between.
     pub agent_control: Option<PathBuf>,
+    /// The app-facing device surfaces; None boots headless (soak mode).
+    pub surfaces: Option<DeviceSurfaces>,
+}
+
+/// What the product app wires beyond bare boot: display out, input in,
+/// and (when the guest image carries the driver) the venus 3D GPU.
+///
+/// These mirror the wrapper script's flags exactly -- same env contract,
+/// same defaults -- so a boot through the typed path presents the same
+/// device shape the evidence gates validated.
+pub struct DeviceSurfaces {
+    /// Directory for ramfb dumps, display exports, and the GPU trace.
+    pub evidence_dir: PathBuf,
+    /// Milliseconds between display exports (the app's screen poll rate).
+    pub display_export_ms: u64,
+    /// xHCI keyboard/pointer plus the live-input control file.
+    pub input_control: Option<PathBuf>,
+    /// virtio-gpu 3D with the venus protocol (MoltenVK path + BAR2 sizing
+    /// use the same defaults the wrapper ships).
+    pub virtio_gpu_3d: bool,
 }
 
 /// The helper's complete environment. Nothing else reaches the child.
@@ -47,6 +67,46 @@ pub fn helper_env(manifest: &LaunchManifest, launch: &HelperLaunch) -> Vec<(&'st
         ),
         ("BRIDGEVM_EXIT_ON_RESET", "1".to_string()),
     ];
+    if let Some(surfaces) = &launch.surfaces {
+        let evidence = |name: &str| surfaces.evidence_dir.join(name).display().to_string();
+        env.push(("BRIDGEVM_RAMFB", "1".to_string()));
+        env.push(("BRIDGEVM_RAMFB_DUMP_DIR", evidence("ramfb")));
+        env.push(("BRIDGEVM_DISPLAY_EXPORT_PPM", evidence("display.ppm")));
+        env.push(("BRIDGEVM_DISPLAY_EXPORT_FB", evidence("display.fb")));
+        env.push((
+            "BRIDGEVM_DISPLAY_EXPORT_MS",
+            surfaces.display_export_ms.to_string(),
+        ));
+        env.push((
+            "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS",
+            surfaces.display_export_ms.to_string(),
+        ));
+        match &surfaces.input_control {
+            Some(control) => {
+                env.push(("BRIDGEVM_INPUT_CONTROL", control.display().to_string()));
+            }
+            None => {
+                env.push(("BRIDGEVM_DISABLE_XHCI", "1".to_string()));
+            }
+        }
+        if surfaces.virtio_gpu_3d {
+            env.push(("BRIDGEVM_VIRTIO_GPU", "1".to_string()));
+            env.push(("BRIDGEVM_VIRTIO_GPU_3D", "1".to_string()));
+            env.push(("BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL", "venus".to_string()));
+            env.push((
+                "BRIDGEVM_VULKAN_LIB",
+                "/opt/homebrew/lib/libMoltenVK.dylib".to_string(),
+            ));
+            env.push(("BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB", "512".to_string()));
+            env.push(("BRIDGEVM_VIRTIO_GPU_3D_BIND_ID", "1".to_string()));
+            env.push((
+                "BRIDGEVM_VIRTIO_GPU_TRACE_JSONL",
+                evidence("virtio-gpu.jsonl"),
+            ));
+        }
+    } else {
+        env.push(("BRIDGEVM_DISABLE_XHCI", "1".to_string()));
+    }
     if let Some(control) = &launch.agent_control {
         env.push(("BRIDGEVM_VIRTIO_CONSOLE", "1".to_string()));
         env.push(("BRIDGEVM_VIRTIO_CONSOLE_TEST", "1".to_string()));

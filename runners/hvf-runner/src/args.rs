@@ -279,6 +279,11 @@ pub(crate) struct Args {
     /// here (this is how a guest reset is requested through the typed path).
     #[arg(long, value_name = "PATH", requires = "helper")]
     pub(crate) helper_agent_control: Option<PathBuf>,
+    /// Evidence directory for --launch-spec --helper: enables the app-facing
+    /// device surfaces (ramfb, display export, xHCI input, GPU trace) with
+    /// the same env contract as the wrapper script.
+    #[arg(long, value_name = "DIR", requires = "helper")]
+    pub(crate) helper_evidence_dir: Option<PathBuf>,
     /// Run CMD (argv, no shell) under the reset-cycle supervisor: exit 42
     /// means the guest requested SYSTEM_RESET and a fresh process follows
     /// after the flush receipt; any other success ends the loop.
