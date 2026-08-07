@@ -263,3 +263,36 @@ Both stay open, for now-different reasons.
   faster when the smoke presents to it instead (20.52 vs 4.67-7.85). So the cost
   is not DWM's own, and not the title's render work — it is what composition of
   *this title's* presents costs. Reducing desktop area does not help.
+
+## 2026-08-06: the A2 instrument is repaired end to end; the remaining blocker is run stability
+
+Four defects between the verify script and the numbers, found by running it
+repeatedly on the `canonical-attach-resident-20260731` image (the
+`net-live-20260724` image is unusable for A2: its viogpu3d reports
+`CM_PROB_UNSIGNED_DRIVER`, so the venus ICD never loads):
+
+1. **Sharing violation reading the frame log** (fixed `bd31835`): the title
+   still holds `bv-frame.log` open; `ReadAllLines` opens unshared and threw.
+   Now opened `FileShare::ReadWrite` and streamed.
+2. **No content, no frames** (fixed with `-ContentPath`): PPSSPP at its menu
+   emits no `fps:` lines; `guest_fps samples=0` was measured with the gate
+   PASSing. cube.iso now ships through the share, fail-closed if missing.
+3. **fps lines are debug-level**: `--loglevel=info` never emits them; the
+   2026-08-01 runs used `--loglevel=3`. Fixed.
+4. **Share sync order**: the 19 MiB zip can win the first scan, pushing the
+   ps1/iso minutes out; 60s per-file waits failed runs that were healthy.
+   600s per-file waits, still by name and size.
+
+With 1+2 fixed the gate reached `BVGPU-REAL-TITLE-PASS` with
+`venus_icd_loaded` (DriverStore path) and a foreground window -- the furthest
+an A2 verify run has ever gotten. The loglevel fix could not be measured:
+two consecutive runs then wedged before the gate command ran, with
+`BVAGENT SERVICE overdue ctl awaiting-reply=true` repeating -- the guest
+agent stopped answering the control-file read after the zip sync, one run
+also logging a 120s boot-progress stall. That is the A1 interrupt-loss
+class surfacing in the agent channel, not an instrument defect.
+
+A2's dependency order is now explicit: **the instrument is ready; the
+measurement waits on A1-grade run stability** (or on enough retries to
+land a stall-free session).
+
