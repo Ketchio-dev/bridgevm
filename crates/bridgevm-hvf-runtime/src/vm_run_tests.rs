@@ -59,6 +59,7 @@ fn launch(f: &Fixture) -> HelperLaunch {
         watchdog_ms: 1000,
         agent_control: None,
         surfaces: None,
+        swtpm_sockets: None,
     }
 }
 

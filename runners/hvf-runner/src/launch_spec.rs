@@ -68,6 +68,7 @@ pub(crate) fn run_launch_spec(spec: &str, args: &crate::Args) -> Result<()> {
                 virtio_net: args.virtio_net,
                 hda_audio: false,
             }),
+            swtpm_sockets: None,
         };
         if let Some(surfaces) = &launch.surfaces {
             std::fs::create_dir_all(surfaces.evidence_dir.join("ramfb"))

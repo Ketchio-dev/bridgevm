@@ -33,6 +33,7 @@ fn the_environment_is_the_manifest_and_only_the_manifest() {
         watchdog_ms: 600_000,
         agent_control: None,
         surfaces: None,
+        swtpm_sockets: None,
     };
     let env = helper_env(&manifest, &launch);
     // Every value traces to the manifest or the launch facts.
@@ -84,6 +85,7 @@ fn spawn_gets_a_cleared_environment_and_the_generation() {
         watchdog_ms: 1000,
         agent_control: None,
         surfaces: None,
+        swtpm_sockets: None,
     };
     let mut child = spawn_helper(&manifest, &launch, 7).expect("spawn");
     assert!(child.wait().expect("wait").success());
@@ -112,6 +114,7 @@ fn the_agent_console_surface_appears_only_when_asked_for() {
         watchdog_ms: 700_000,
         agent_control: Some("/run/agent.ctl".into()),
         surfaces: None,
+        swtpm_sockets: None,
     };
     let env = helper_env(&manifest, &launch);
     let get = |k: &str| {
@@ -154,6 +157,7 @@ fn the_app_surfaces_reproduce_the_wrapper_device_shape() {
             virtio_net: true,
             hda_audio: true,
         }),
+        swtpm_sockets: None,
     };
     let env = helper_env(&manifest, &launch);
     let get = |k: &str| {
@@ -215,6 +219,7 @@ fn surfaced_spawns_append_to_the_run_log_across_generations() {
             virtio_net: false,
             hda_audio: false,
         }),
+        swtpm_sockets: None,
     };
     // Each generation echoes its number; both lines must survive in order
     // (append, not truncate) because the app tails this file across resets.

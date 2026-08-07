@@ -25,6 +25,9 @@ pub struct HelperLaunch {
     pub agent_control: Option<PathBuf>,
     /// The app-facing device surfaces; None boots headless (soak mode).
     pub surfaces: Option<DeviceSurfaces>,
+    /// swtpm sockets when the supervisor runs a vTPM (crate::start_swtpm);
+    /// the probe attaches its TPM2 TIS device iff the data socket is set.
+    pub swtpm_sockets: Option<(PathBuf, PathBuf)>,
 }
 
 /// What the product app wires beyond bare boot: display out, input in,
@@ -149,6 +152,13 @@ pub fn helper_env(manifest: &LaunchManifest, launch: &HelperLaunch) -> Vec<(&'st
         }
     } else {
         env.push(("BRIDGEVM_DISABLE_XHCI", "1".to_string()));
+    }
+    if let Some((data, control)) = &launch.swtpm_sockets {
+        env.push(("BRIDGEVM_SWTPM_DATA_SOCKET", data.display().to_string()));
+        env.push((
+            "BRIDGEVM_SWTPM_CONTROL_SOCKET",
+            control.display().to_string(),
+        ));
     }
     if let Some(control) = &launch.agent_control {
         env.push(("BRIDGEVM_VIRTIO_CONSOLE", "1".to_string()));
