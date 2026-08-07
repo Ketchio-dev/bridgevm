@@ -13,6 +13,9 @@ Required:
 Options:
   --placeholder-nsid1 RAW Blank NSID-1 disk; when set, target boots as NSID-2.
   --watchdog-ms N         Probe watchdog in milliseconds. Default: 900000.
+  --exit-on-reset         Product reset mode: a guest SYSTEM_RESET exits the
+                          probe with code 42 for the supervisor instead of
+                          rebooting in process (PLAN.md R1).
   --no-watchdog           Keep the VM running until guest/user shutdown. This
                           is the normal app mode and cannot be combined with
                           --watchdog-ms. Agent overdue telemetry remains active.

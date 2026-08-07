@@ -176,7 +176,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "100 consecutive guest SYSTEM_RESETs each produce a new helper PID, an increasing reset generation, a fresh guest boot marker and 4 online CPUs.",
-      "measured": "Reset is still in-process; the soak has not been run.",
+      "measured": "Process-recreate reset runs LIVE: scripts/verify-reset-recreate.sh drove 3/3 cycles on a real Windows guest (evidence a15-reset-recreate-3cycle-20260806.md) -- each cycle a fresh helper PID (46365/46798/47221, uniqueness asserted), increasing generation, that boot's own BVAGENT READY, and 4 online CPUs answered by the guest; reset triggered in-guest via PSCI, helper exit asserted 42 exactly (--exit-on-reset product mode, e2e8c30). OPEN: the gate is 100 consecutive cycles; the A1 stall class interrupts long chains until fixed, and the harness receipt is script-side pending the typed hvf-runner --supervise wiring.",
       "evidence_paths": [
         "docs/windows-arm/evidence/a1-boot-stall-20260802.md"
       ]
