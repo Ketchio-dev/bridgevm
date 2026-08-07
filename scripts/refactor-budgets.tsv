@@ -611,7 +611,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_bar2.rs	41	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_setup.rs	13	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_setup.rs	81	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_config.rs	84	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	1005	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	1015	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_setup.rs	90	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/watchpoint_setup.rs	15	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console.rs	51	0

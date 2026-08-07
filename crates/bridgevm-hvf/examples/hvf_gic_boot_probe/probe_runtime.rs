@@ -304,7 +304,17 @@ pub(crate) fn run() -> ExitCode {
                     agent_console
                         .as_ref()
                         .is_some_and(|harness| harness.service_wake_needed())
-                        .then_some(Duration::from_millis(250))
+                        // Every ServiceWake tick is an hv_vcpus_exit cancel,
+                        // and each cancel rolls the A1 swallow race (measured
+                        // 3516/3517 wakes were agent-console in a wedged A2
+                        // run). The default stays 250ms; a longer interval
+                        // trades reply latency for an 8x lower cancel rate
+                        // during measurement windows (A2's fps gate).
+                        .then(|| {
+                            Duration::from_millis(
+                                env_u64("BRIDGEVM_AGENT_WAKE_MS", 250).clamp(50, 10_000),
+                            )
+                        })
                 })
                 // A guest halted at a KD breakpoint generates no vCPU exits, so
                 // the pre-run drain (and the KD serial pump with it) would stall
