@@ -14,6 +14,7 @@ fn a_missing_swtpm_binary_names_the_spawn_context() {
     let error = match start_swtpm(&VtpmConfig {
         state_dir: scratch_state("missing"),
         swtpm_bin: "/nonexistent/swtpm".into(),
+        state_key: None,
     }) {
         Err(error) => error,
         Ok(_) => panic!("no binary must not start"),
@@ -29,6 +30,7 @@ fn a_binary_that_exits_early_is_reported_not_waited_out() {
     let error = match start_swtpm(&VtpmConfig {
         state_dir: scratch_state("early"),
         swtpm_bin: "/usr/bin/false".into(),
+        state_key: None,
     }) {
         Err(error) => error,
         Ok(_) => panic!("false must not serve sockets"),
@@ -54,6 +56,7 @@ fn a_real_swtpm_serves_sockets_and_dies_with_the_handle() {
     let process = start_swtpm(&VtpmConfig {
         state_dir: state.clone(),
         swtpm_bin: swtpm,
+        state_key: None,
     })
     .expect("swtpm starts");
     assert!(process.data_socket().exists());
@@ -64,5 +67,44 @@ fn a_real_swtpm_serves_sockets_and_dies_with_the_handle() {
         !runtime_dir.exists(),
         "drop must remove the socket directory"
     );
+    let _ = std::fs::remove_dir_all(&state);
+}
+
+#[test]
+fn an_encrypted_state_dir_refuses_the_wrong_key() {
+    let swtpm = PathBuf::from("/opt/homebrew/bin/swtpm");
+    if !swtpm.exists() {
+        eprintln!("skipping: no swtpm on this host");
+        return;
+    }
+    let state = scratch_state("keyed");
+    let key = vec![0x42u8; 32];
+    // First run creates state under the key.
+    let first = start_swtpm(&VtpmConfig {
+        state_dir: state.clone(),
+        swtpm_bin: swtpm.clone(),
+        state_key: Some(key.clone()),
+    })
+    .expect("keyed swtpm starts");
+    drop(first);
+    assert!(
+        state.join("tpm2-00.permall").exists(),
+        "keyed state must persist"
+    );
+    // Same key: opens.
+    let same = start_swtpm(&VtpmConfig {
+        state_dir: state.clone(),
+        swtpm_bin: swtpm.clone(),
+        state_key: Some(key),
+    });
+    assert!(same.is_ok(), "the right key must open the state");
+    drop(same);
+    // Wrong key: swtpm must fail, not serve sockets over unreadable state.
+    let wrong = start_swtpm(&VtpmConfig {
+        state_dir: state.clone(),
+        swtpm_bin: swtpm,
+        state_key: Some(vec![0x24u8; 32]),
+    });
+    assert!(wrong.is_err(), "the wrong key must be refused");
     let _ = std::fs::remove_dir_all(&state);
 }

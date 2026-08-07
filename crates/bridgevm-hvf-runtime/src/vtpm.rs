@@ -18,6 +18,10 @@ use crate::RuntimeError;
 pub struct VtpmConfig {
     pub state_dir: PathBuf,
     pub swtpm_bin: PathBuf,
+    /// The raw AES-256 state key for the product's encrypted vTPM state.
+    /// Delivered over swtpm's fd 0 -- never argv, never env, never a file
+    /// -- exactly like the wrapper's --swtpm-key-stdin path.
+    pub state_key: Option<Vec<u8>>,
 }
 
 /// A running swtpm bound to two Unix sockets. Dropping it terminates the
@@ -66,7 +70,8 @@ pub fn start_swtpm(config: &VtpmConfig) -> Result<SwtpmProcess, RuntimeError> {
     std::fs::create_dir_all(&runtime_dir).map_err(io("create swtpm runtime dir"))?;
     let data_socket = runtime_dir.join("data.sock");
     let control_socket = runtime_dir.join("control.sock");
-    let child = Command::new(&config.swtpm_bin)
+    let mut command = Command::new(&config.swtpm_bin);
+    command
         .arg("socket")
         .arg("--tpm2")
         .arg("--tpmstate")
@@ -83,11 +88,30 @@ pub fn start_swtpm(config: &VtpmConfig) -> Result<SwtpmProcess, RuntimeError> {
         ))
         .arg("--flags")
         .arg("not-need-init,startup-clear")
-        .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(io("spawn swtpm"))?;
+        .stderr(Stdio::null());
+    if config.state_key.is_some() {
+        command
+            .arg("--key")
+            .arg("fd=0,format=binary,mode=aes-256-cbc")
+            .stdin(Stdio::piped());
+    } else {
+        command.stdin(Stdio::null());
+    }
+    let mut child = command.spawn().map_err(io("spawn swtpm"))?;
+    if let Some(key) = &config.state_key {
+        // Write the key and close the pipe: swtpm reads fd 0 to EOF. The
+        // handle drops at the end of this block, so the key exists only in
+        // swtpm's memory afterwards.
+        use std::io::Write;
+        let mut stdin = child.stdin.take().ok_or_else(|| RuntimeError::Io {
+            context: "open swtpm key pipe",
+            source: std::io::Error::other("stdin not piped"),
+        })?;
+        stdin
+            .write_all(key)
+            .map_err(io("deliver swtpm state key"))?;
+    }
     let mut process = SwtpmProcess {
         child,
         runtime_dir,
