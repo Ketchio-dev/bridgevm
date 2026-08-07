@@ -47,9 +47,9 @@ pub struct DeviceSurfaces {
     pub display_export_ms: u64,
     /// xHCI keyboard/pointer plus the live-input control file.
     pub input_control: Option<PathBuf>,
-    /// virtio-gpu 3D with the venus protocol (MoltenVK path + BAR2 sizing
-    /// use the same defaults the wrapper ships).
-    pub virtio_gpu_3d: bool,
+    /// virtio-gpu 3D. The protocol and PCI identity follow the app's
+    /// shipping choice; venus additionally wires MoltenVK + BAR2 sizing.
+    pub virtio_gpu_3d: Option<GpuSurface>,
     /// The app's shipping renderer lane (wrapper --performance-risk
     /// aggressive): direct renderer, async scanout, IOSurface scanout, no
     /// synchronous readback. Launch policy only -- media is untouched.
@@ -64,6 +64,15 @@ pub struct DeviceSurfaces {
     pub virtio_net: bool,
     /// Intel HDA audio played through CoreAudio.
     pub hda_audio: bool,
+}
+
+/// The 3D GPU's protocol and PCI identity.
+pub struct GpuSurface {
+    /// virgl (the app's shipping protocol, device 1050) or venus.
+    pub virgl: bool,
+    /// Explicit PCI device id (hex, no 0x -- "1050"/"10F7"); None binds the
+    /// probe's default 3D identity.
+    pub device_id: Option<String>,
 }
 
 /// One shared folder, with the app's shipping cadence and size cap.
@@ -146,22 +155,34 @@ pub fn helper_env(manifest: &LaunchManifest, launch: &HelperLaunch) -> Vec<(&'st
         if surfaces.nvme_buffered_io {
             env.push(("BRIDGEVM_NVME_BUFFERED_IO", "1".to_string()));
         }
-        if surfaces.virtio_gpu_3d {
+        if let Some(gpu) = &surfaces.virtio_gpu_3d {
             env.push(("BRIDGEVM_VIRTIO_GPU", "1".to_string()));
             env.push(("BRIDGEVM_VIRTIO_GPU_3D", "1".to_string()));
-            env.push(("BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL", "venus".to_string()));
+            env.push((
+                "BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL",
+                if gpu.virgl { "virgl" } else { "venus" }.to_string(),
+            ));
             if surfaces.aggressive_performance {
                 env.push(("BRIDGEVM_VIRTIO_GPU_DIRECT_RENDERER", "1".to_string()));
                 env.push(("BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT", "1".to_string()));
                 env.push(("BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT", "1".to_string()));
                 env.push(("BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS", "0".to_string()));
             }
-            env.push((
-                "BRIDGEVM_VULKAN_LIB",
-                "/opt/homebrew/lib/libMoltenVK.dylib".to_string(),
-            ));
-            env.push(("BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB", "512".to_string()));
-            env.push(("BRIDGEVM_VIRTIO_GPU_3D_BIND_ID", "1".to_string()));
+            if !gpu.virgl {
+                // venus needs MoltenVK in process and a BAR2 EDK2 can assign.
+                env.push((
+                    "BRIDGEVM_VULKAN_LIB",
+                    "/opt/homebrew/lib/libMoltenVK.dylib".to_string(),
+                ));
+                env.push(("BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB", "512".to_string()));
+            }
+            match &gpu.device_id {
+                Some(device_id) => env.push((
+                    "BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID",
+                    format!("0x{device_id}"),
+                )),
+                None => env.push(("BRIDGEVM_VIRTIO_GPU_3D_BIND_ID", "1".to_string())),
+            }
             env.push((
                 "BRIDGEVM_VIRTIO_GPU_TRACE_JSONL",
                 evidence("virtio-gpu.jsonl"),

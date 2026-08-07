@@ -293,6 +293,9 @@ pub(crate) struct Args {
     /// else -- matching the wrapper's --swtpm-key-stdin contract.
     #[arg(long, requires = "helper_vtpm_state")]
     pub(crate) helper_vtpm_key_stdin: bool,
+    /// Intel HDA audio through CoreAudio for --launch-spec --helper.
+    #[arg(long, requires = "helper")]
+    pub(crate) helper_hda: bool,
     /// Run CMD (argv, no shell) under the reset-cycle supervisor: exit 42
     /// means the guest requested SYSTEM_RESET and a fresh process follows
     /// after the flush receipt; any other success ends the loop.

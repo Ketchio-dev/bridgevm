@@ -146,7 +146,10 @@ fn the_app_surfaces_reproduce_the_wrapper_device_shape() {
             evidence_dir: "/ev".into(),
             display_export_ms: 100,
             input_control: Some("/ev/input.ctl".into()),
-            virtio_gpu_3d: true,
+            virtio_gpu_3d: Some(GpuSurface {
+                virgl: false,
+                device_id: None,
+            }),
             aggressive_performance: true,
             nvme_buffered_io: true,
             clipboard_sync: true,
@@ -232,7 +235,7 @@ fn surfaced_spawns_append_to_the_run_log_across_generations() {
             evidence_dir: dir.clone(),
             display_export_ms: 100,
             input_control: None,
-            virtio_gpu_3d: false,
+            virtio_gpu_3d: None,
             aggressive_performance: false,
             nvme_buffered_io: false,
             clipboard_sync: false,
@@ -282,6 +285,54 @@ fn no_watchdog_is_the_app_mode_and_disables_rather_than_zeroes() {
     );
     // The agent service still gets a real budget (the wrapper's day).
     assert_eq!(get("BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS"), "86400000");
+    let _ = std::fs::remove_file(&disk);
+    let _ = std::fs::remove_file(&vars);
+}
+
+#[test]
+fn the_app_ships_virgl_1050_and_the_env_says_so() {
+    let (disk, vars) = scratch("virgl");
+    let manifest = manifest_for(&disk, &vars);
+    let launch = HelperLaunch {
+        helper: "/bin/true".into(),
+        firmware_code: "/fw/code.fd".into(),
+        watchdog_ms: None,
+        agent_control: None,
+        surfaces: Some(DeviceSurfaces {
+            evidence_dir: "/ev".into(),
+            display_export_ms: 100,
+            input_control: None,
+            virtio_gpu_3d: Some(GpuSurface {
+                virgl: true,
+                device_id: Some("1050".to_string()),
+            }),
+            aggressive_performance: true,
+            nvme_buffered_io: true,
+            clipboard_sync: false,
+            share: None,
+            virtio_net: false,
+            hda_audio: false,
+        }),
+        swtpm_sockets: None,
+    };
+    let env = helper_env(&manifest, &launch);
+    let get = |k: &str| {
+        env.iter()
+            .find(|(name, _)| *name == k)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_else(|| panic!("{k} missing"))
+    };
+    assert_eq!(get("BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL"), "virgl");
+    assert_eq!(get("BRIDGEVM_VIRTIO_GPU_PCI_DEVICE_ID"), "0x1050");
+    // virgl must NOT get the venus-only extras: MoltenVK in-process and the
+    // oversized BAR2 exist for Vulkan passthrough, not the GL path.
+    assert!(!env.iter().any(|(k, _)| *k == "BRIDGEVM_VULKAN_LIB"));
+    assert!(!env
+        .iter()
+        .any(|(k, _)| *k == "BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB"));
+    assert!(!env
+        .iter()
+        .any(|(k, _)| *k == "BRIDGEVM_VIRTIO_GPU_3D_BIND_ID"));
     let _ = std::fs::remove_file(&disk);
     let _ = std::fs::remove_file(&vars);
 }

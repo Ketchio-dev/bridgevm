@@ -8,8 +8,8 @@
 
 use anyhow::{bail, Context, Result};
 use bridgevm_hvf_runtime::{
-    prepare, run_vm, start_swtpm, DeviceSurfaces, HelperLaunch, LaunchManifest, ShareSurface,
-    VtpmConfig,
+    prepare, run_vm, start_swtpm, DeviceSurfaces, GpuSurface, HelperLaunch, LaunchManifest,
+    ShareSurface, VtpmConfig,
 };
 use std::io::Read;
 use std::path::Path;
@@ -48,13 +48,16 @@ pub(crate) fn run_launch_spec(spec: &str, args: &crate::Args) -> Result<()> {
                 .helper_firmware
                 .clone()
                 .unwrap_or_else(default_firmware_code),
-            watchdog_ms: Some(args.watchdog_ms.unwrap_or(900_000)),
+            watchdog_ms: args.watchdog_ms,
             agent_control: args.helper_agent_control.clone(),
             surfaces: args.helper_evidence_dir.as_ref().map(|dir| DeviceSurfaces {
                 evidence_dir: dir.clone(),
                 display_export_ms: 100,
                 input_control: Some(dir.join("input.ctl")),
-                virtio_gpu_3d: args.virtio_gpu_3d,
+                virtio_gpu_3d: args.virtio_gpu_3d.then(|| GpuSurface {
+                    virgl: args.gpu_trace_protocol.as_deref() == Some("virgl"),
+                    device_id: args.virtio_gpu_device_id.clone(),
+                }),
                 aggressive_performance: args.virtio_gpu_3d,
                 nvme_buffered_io: args.nvme_buffered_io,
                 clipboard_sync: args.agent_clipboard_sync,
@@ -69,7 +72,7 @@ pub(crate) fn run_launch_spec(spec: &str, args: &crate::Args) -> Result<()> {
                         max_kb: args.agent_share_max_kb.unwrap_or(65536),
                     }),
                 virtio_net: args.virtio_net,
-                hda_audio: false,
+                hda_audio: args.helper_hda,
             }),
             swtpm_sockets: None,
         };

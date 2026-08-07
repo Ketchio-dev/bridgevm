@@ -32,6 +32,8 @@ pub use reset_receipt::{flush_and_write_receipt, receipt_proves_flush};
 pub use supervisor::{decide_restart, RestartDecision};
 pub use vm_builder::{prepare, PreparedVm};
 pub use vm_event::{DrainedEvents, StampedEvent, VmEvent, VmEventQueue};
-pub use vm_process::{helper_env, spawn_helper, DeviceSurfaces, HelperLaunch, ShareSurface};
+pub use vm_process::{
+    helper_env, spawn_helper, DeviceSurfaces, GpuSurface, HelperLaunch, ShareSurface,
+};
 pub use vm_run::{run_vm, RESET_EXIT_CODE};
 pub use vtpm::{start_swtpm, SwtpmProcess, VtpmConfig};
