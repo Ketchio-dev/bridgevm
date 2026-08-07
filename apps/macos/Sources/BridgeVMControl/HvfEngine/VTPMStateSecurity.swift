@@ -127,12 +127,18 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging {
     }
 
     private func queryAttributes(account: String) -> CFDictionary {
+        queryAttributes(account: account, dataProtection: dataProtectionAvailable)
+    }
+
+    private func queryAttributes(account: String, dataProtection: Bool) -> CFDictionary {
         var query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Self.service,
             kSecAttrAccount: account,
         ]
-        query[kSecUseDataProtectionKeychain] = true
+        if dataProtection {
+            query[kSecUseDataProtectionKeychain] = true
+        }
         return query as CFDictionary
     }
 
@@ -142,6 +148,30 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging {
         attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         return attributes as CFDictionary
     }
+
+    /// The data-protection keychain requires a keychain-access-groups (or
+    /// application-identifier) entitlement; an ad-hoc signed development
+    /// build has neither, and WRITES fail with errSecMissingEntitlement
+    /// (-34018) -- live-observed as "unable to unlock encrypted vTPM state"
+    /// on the first GUI launch of the packaged app. Reads do NOT reproduce
+    /// it on this macOS (SecItemCopyMatching returned item-not-found for the
+    /// unentitled build, measured 2026-08-07), so the probe must be a real
+    /// add: write a throwaway probe item and delete it. Signed release
+    /// builds keep the data-protection keychain; the login-keychain fallback
+    /// is still per-user, ThisDeviceOnly, and never syncs.
+    private lazy var dataProtectionAvailable: Bool = {
+        let account = "bridgevm-entitlement-probe"
+        var attributes = queryAttributes(account: account, dataProtection: true)
+            as! [CFString: Any]
+        attributes[kSecValueData] = Data(count: 1)
+        attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        let addStatus = SecItemAdd(attributes as CFDictionary, nil)
+        if addStatus == errSecSuccess || addStatus == errSecDuplicateItem {
+            SecItemDelete(queryAttributes(account: account, dataProtection: true))
+            return true
+        }
+        return false
+    }()
 
     private func read(account: String) -> (data: Data?, status: OSStatus) {
         var query = queryAttributes(account: account) as! [CFString: Any]
