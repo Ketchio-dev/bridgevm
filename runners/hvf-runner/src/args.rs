@@ -266,6 +266,14 @@ pub(crate) struct Args {
     /// manifest may not point into a source repository.
     #[arg(long, value_name = "PATH|-")]
     pub(crate) launch_spec: Option<String>,
+    /// Helper binary for --launch-spec. When present the manifest is not
+    /// just validated and leased but RUN: helper generations under the
+    /// reset-cycle supervisor, env_clear allowlist, no shell.
+    #[arg(long, value_name = "PATH", requires = "launch_spec")]
+    pub(crate) helper: Option<PathBuf>,
+    /// Firmware code image for --launch-spec --helper.
+    #[arg(long, value_name = "PATH", requires = "helper")]
+    pub(crate) helper_firmware: Option<PathBuf>,
     /// Run CMD (argv, no shell) under the reset-cycle supervisor: exit 42
     /// means the guest requested SYSTEM_RESET and a fresh process follows
     /// after the flush receipt; any other success ends the loop.
@@ -283,7 +291,7 @@ pub(crate) fn run() -> Result<()> {
     let args = Args::parse();
 
     if let Some(spec) = &args.launch_spec {
-        return crate::launch_spec::run_launch_spec(spec);
+        return crate::launch_spec::run_launch_spec(spec, &args);
     }
 
     if let Some(argv) = &args.supervise {

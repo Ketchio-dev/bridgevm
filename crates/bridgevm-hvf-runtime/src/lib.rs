@@ -21,6 +21,7 @@ mod supervisor;
 mod vm_builder;
 mod vm_event;
 mod vm_process;
+mod vm_run;
 
 pub use error::RuntimeError;
 pub use manifest::{LaunchManifest, MANIFEST_VERSION};
@@ -31,3 +32,4 @@ pub use supervisor::{decide_restart, RestartDecision};
 pub use vm_builder::{prepare, PreparedVm};
 pub use vm_event::{DrainedEvents, StampedEvent, VmEvent, VmEventQueue};
 pub use vm_process::{helper_env, spawn_helper, HelperLaunch};
+pub use vm_run::{run_vm, RESET_EXIT_CODE};

@@ -7,14 +7,15 @@
 //! refuse manifests that point into a source repository.
 
 use anyhow::{bail, Context, Result};
-use bridgevm_hvf_runtime::{prepare, LaunchManifest};
+use bridgevm_hvf_runtime::{prepare, run_vm, HelperLaunch, LaunchManifest};
 use std::io::Read;
+use std::path::Path;
 
 /// Release builds enforce product policy; debug builds are evidence
 /// harnesses and may run from a repository checkout.
 const PRODUCT_POLICY: bool = !cfg!(debug_assertions);
 
-pub(crate) fn run_launch_spec(spec: &str) -> Result<()> {
+pub(crate) fn run_launch_spec(spec: &str, args: &crate::Args) -> Result<()> {
     let text = if spec == "-" {
         let mut text = String::new();
         std::io::stdin()
@@ -35,8 +36,41 @@ pub(crate) fn run_launch_spec(spec: &str) -> Result<()> {
         manifest.ram_mib(),
         manifest.vcpus()
     );
-    // Take the exclusive writer leases now, before any VM could exist: a
-    // second writer must fail here, not corrupt the guest at a later flush.
+    if let Some(helper) = &args.helper {
+        // The full composed lifecycle: leases, helper generations under the
+        // reset-cycle supervisor, flush + receipt between generations.
+        let launch = HelperLaunch {
+            helper: helper.clone(),
+            firmware_code: args
+                .helper_firmware
+                .clone()
+                .unwrap_or_else(default_firmware_code),
+            watchdog_ms: args.watchdog_ms.unwrap_or(900_000),
+        };
+        let receipt = args
+            .supervise_receipt
+            .clone()
+            .unwrap_or_else(default_receipt_path);
+        let cycles = run_vm(
+            manifest,
+            &launch,
+            Path::new(&receipt),
+            args.supervise_max_cycles,
+            "hvf-runner --launch-spec",
+        )
+        .map_err(|error| anyhow::anyhow!("vm run failed: {error}"))?;
+        for cycle in &cycles {
+            println!(
+                "vm cycle: generation={} helper_pid={}",
+                cycle.generation, cycle.pid
+            );
+        }
+        println!("vm run complete: {} generation(s)", cycles.len());
+        return Ok(());
+    }
+    // Validation-only mode: take the exclusive writer leases now, before any
+    // VM could exist: a second writer must fail here, not corrupt the guest
+    // at a later flush.
     let prepared = match prepare(manifest, "hvf-runner --launch-spec") {
         Ok(prepared) => prepared,
         Err(error) => bail!("launch refused: {error}"),
@@ -45,8 +79,20 @@ pub(crate) fn run_launch_spec(spec: &str) -> Result<()> {
         "vm prepared: images leased, generation {}",
         prepared.generation().stamp().value()
     );
-    // Boot wiring (VmRuntime::run) follows in the next R1 slice.
     Ok(())
+}
+
+fn default_receipt_path() -> String {
+    std::env::temp_dir()
+        .join("bridgevm-reset.receipt")
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// The repo firmware in a checkout; the app bundle passes --helper-firmware.
+fn default_firmware_code() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd")
 }
 
 #[cfg(test)]

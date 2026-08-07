@@ -814,13 +814,13 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state.rs	178	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state_tests.rs	171	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator/stall_report.rs	39	1
 crates/bridgevm-hvf-runtime/src/error.rs	81	0
-crates/bridgevm-hvf-runtime/src/lib.rs	33	0
+crates/bridgevm-hvf-runtime/src/lib.rs	35	0
 crates/bridgevm-hvf-runtime/src/manifest.rs	174	0
 crates/bridgevm-hvf-runtime/src/manifest_tests.rs	105	0
 crates/bridgevm-hvf-runtime/src/reset_generation.rs	56	0
 crates/bridgevm-hvf-runtime/src/reset_generation_tests.rs	59	0
-runners/hvf-runner/src/launch_spec.rs	54	0
-runners/hvf-runner/src/launch_spec_tests.rs	81	0
+runners/hvf-runner/src/launch_spec.rs	100	0
+runners/hvf-runner/src/launch_spec_tests.rs	120	0
 crates/bridgevm-hvf-runtime/src/reset_receipt.rs	77	0
 crates/bridgevm-hvf-runtime/src/reset_receipt_tests.rs	74	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state/verdict.rs	43	0
@@ -838,3 +838,5 @@ runners/hvf-runner/src/supervise_cli_tests.rs	42	0
 scripts/verify-reset-recreate.sh	105	0
 crates/bridgevm-hvf-runtime/src/vm_process.rs	69	0
 crates/bridgevm-hvf-runtime/src/vm_process_tests.rs	99	0
+crates/bridgevm-hvf-runtime/src/vm_run.rs	69	0
+crates/bridgevm-hvf-runtime/src/vm_run_tests.rs	107	0
