@@ -87,3 +87,22 @@ reset requests traveled host → agent control file → guest console →
 `shutdown /r` → PSCI → exit 42: no shell, no wrapper script, every hop
 typed or audited. This is the same A15 per-cycle evidence as the harness
 run, now produced by the product path.
+
+## 2026-08-07: CYCLES=100 attempt — 8 full cycles, 13 helper generations, then A1
+
+Best chain yet, run to the full-gate parameters:
+
+- **Cycles 0–7 all passed** every per-cycle assertion (fresh PID, increasing
+  generation, own `BVAGENT READY`, guest-answered 4 CPUs, asserted exit 42).
+- 13 helper generations total (cycles 0/8 took intermediate resets — normal
+  Windows boot behavior, each correctly recreating the process).
+- Cycle 8's third generation (gen 12) parked in the A1 UEFI shape and never
+  reached READY: 900s timeout ended the chain. Generations 10 and 11 exited
+  42 normally; the stall is the known boot-time defect, not a reset-path
+  fault.
+
+Score to date: 8/100 consecutive at best, bounded by A1's per-boot failure
+probability (~30–60% per boot measured across soaks), which makes long
+chains geometrically unlikely until A1 is fixed. The reset machinery itself
+has now survived 13 process recreations without a single reset-path fault.
+
