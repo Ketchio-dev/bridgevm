@@ -296,6 +296,10 @@ pub(crate) struct Args {
     /// Intel HDA audio through CoreAudio for --launch-spec --helper.
     #[arg(long, requires = "helper")]
     pub(crate) helper_hda: bool,
+    /// swtpm binary for --helper-vtpm-state (the app passes its
+    /// signature-validated choice; default is the homebrew install).
+    #[arg(long, value_name = "PATH", requires = "helper_vtpm_state")]
+    pub(crate) helper_swtpm_bin: Option<PathBuf>,
     /// Run CMD (argv, no shell) under the reset-cycle supervisor: exit 42
     /// means the guest requested SYSTEM_RESET and a fresh process follows
     /// after the flush receipt; any other success ends the loop.

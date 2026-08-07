@@ -113,6 +113,53 @@ struct HvfEngineConfig: Equatable {
         """
     }
 
+    /// The typed-runtime invocation of the same launch: hvf-runner
+    /// --launch-spec consuming launchManifestJSON() plus per-surface flags.
+    /// This is the R1 product path; wrapperArguments() remains the
+    /// evidence-harness path until every session runs through this and the
+    /// wrapper is retired. Argument names are hvf-runner's clap contract;
+    /// drift fails its parser, and HvfEngineTests pins the exact vector.
+    func runnerArguments(manifestPath: String, runnerPath: String, firmwareCodePath: String, probePath: String) -> [String] {
+        var args = [
+            runnerPath,
+            "--launch-spec", manifestPath,
+            "--helper", probePath,
+            "--helper-firmware", firmwareCodePath,
+            "--helper-agent-control", ctlFilePath,
+            "--helper-evidence-dir", evidenceDir
+        ]
+        if let watchdogMs {
+            args.append(contentsOf: ["--watchdog-ms", String(watchdogMs)])
+        }
+        if virtioGpu3d {
+            args.append(contentsOf: [
+                "--virtio-gpu-3d",
+                "--virtio-gpu-device-id", "1050",
+                "--gpu-trace-protocol", "virgl"
+            ])
+        }
+        if nvmeBufferedIO { args.append("--nvme-buffered-io") }
+        if virtioNet { args.append("--virtio-net") }
+        if audioEnabled { args.append("--helper-hda") }
+        if clipboardSync { args.append("--agent-clipboard-sync") }
+        if let host = shareHostDir, let guest = shareGuestDir, !host.isEmpty, !guest.isEmpty {
+            args.append(contentsOf: [
+                "--agent-share-host", host,
+                "--agent-share-guest", guest,
+                "--agent-share-ms", "2000",
+                "--agent-share-max-kb", "65536"
+            ])
+        }
+        if let vtpmStateDir {
+            args.append(contentsOf: [
+                "--helper-vtpm-state", vtpmStateDir,
+                "--helper-swtpm-bin", swtpmBin,
+                "--helper-vtpm-key-stdin"
+            ])
+        }
+        return args
+    }
+
     func wrapperArguments() -> [String] {
         var args = [
             "scripts/run-hvf-windows-installed-boot.sh",

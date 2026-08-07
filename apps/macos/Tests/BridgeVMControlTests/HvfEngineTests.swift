@@ -656,6 +656,57 @@ final class HvfEngineSessionPathTests: XCTestCase {
     }
 
     @MainActor
+    func testRunnerArgumentsCarryTheFullShippingConfiguration() {
+        var cfg = HvfEngineConfig(targetDiskPath: "/vm/win.raw",
+                                  uefiVarsPath: "/vm/vars.fd",
+                                  evidenceDir: "/tmp/evidence",
+                                  watchdogMs: nil,
+                                  ramMiB: 6144,
+                                  smpCpus: 4,
+                                  clipboardSync: true,
+                                  shareHostDir: "/host/share",
+                                  shareGuestDir: "C:/BVShare",
+                                  virtioNet: true,
+                                  virtioGpu3d: true,
+                                  nvmeBufferedIO: true,
+                                  ctlFilePath: "/tmp/evidence/ctl")
+        cfg.vtpmStateDir = "/vm/vtpm"
+        cfg.swtpmBin = "/opt/homebrew/bin/swtpm"
+        cfg.vtpmKeyID = "vm-slug"
+        let args = cfg.runnerArguments(
+            manifestPath: "/tmp/evidence/launch-manifest.json",
+            runnerPath: "/bundle/hvf-runner",
+            firmwareCodePath: "/bundle/firmware/code.fd",
+            probePath: "/bundle/target/release/examples/hvf_gic_boot_probe")
+        XCTAssertEqual(args, [
+            "/bundle/hvf-runner",
+            "--launch-spec", "/tmp/evidence/launch-manifest.json",
+            "--helper", "/bundle/target/release/examples/hvf_gic_boot_probe",
+            "--helper-firmware", "/bundle/firmware/code.fd",
+            "--helper-agent-control", "/tmp/evidence/ctl",
+            "--helper-evidence-dir", "/tmp/evidence",
+            "--virtio-gpu-3d",
+            "--virtio-gpu-device-id", "1050",
+            "--gpu-trace-protocol", "virgl",
+            "--nvme-buffered-io",
+            "--virtio-net",
+            "--helper-hda",
+            "--agent-clipboard-sync",
+            "--agent-share-host", "/host/share",
+            "--agent-share-guest", "C:/BVShare",
+            "--agent-share-ms", "2000",
+            "--agent-share-max-kb", "65536",
+            "--helper-vtpm-state", "/vm/vtpm",
+            "--helper-swtpm-bin", "/opt/homebrew/bin/swtpm",
+            "--helper-vtpm-key-stdin"
+        ])
+        // App mode: no watchdog flag at all -- hvf-runner treats absence as
+        // the no-watchdog product session, so a stray default here would
+        // silently re-arm a 900s kill.
+        XCTAssertFalse(args.contains("--watchdog-ms"))
+    }
+
+    @MainActor
     func testStartMaterializesTheLaunchManifestBesideTheEvidence() throws {
         let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: temp) }

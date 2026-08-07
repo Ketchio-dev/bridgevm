@@ -95,7 +95,10 @@ pub(crate) fn run_launch_spec(spec: &str, args: &crate::Args) -> Result<()> {
                 };
                 let process = start_swtpm(&VtpmConfig {
                     state_dir: state_dir.clone(),
-                    swtpm_bin: "/opt/homebrew/bin/swtpm".into(),
+                    swtpm_bin: args
+                        .helper_swtpm_bin
+                        .clone()
+                        .unwrap_or_else(|| "/opt/homebrew/bin/swtpm".into()),
                     state_key,
                 })
                 .map_err(|error| anyhow::anyhow!("vTPM start failed: {error}"))?;
