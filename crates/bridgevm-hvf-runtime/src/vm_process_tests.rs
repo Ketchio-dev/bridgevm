@@ -147,6 +147,8 @@ fn the_app_surfaces_reproduce_the_wrapper_device_shape() {
             display_export_ms: 100,
             input_control: Some("/ev/input.ctl".into()),
             virtio_gpu_3d: true,
+            aggressive_performance: true,
+            nvme_buffered_io: true,
             clipboard_sync: true,
             share: Some(ShareSurface {
                 host_dir: "/host/share".into(),
@@ -193,6 +195,23 @@ fn the_app_surfaces_reproduce_the_wrapper_device_shape() {
     assert_eq!(get("BRIDGEVM_VIRTIO_CONSOLE_SHARE_MAX_KB"), "65536");
     assert_eq!(get("BRIDGEVM_VIRTIO_NET_BACKEND"), "nat");
     assert_eq!(get("BRIDGEVM_HDA_COREAUDIO"), "1");
+    assert_eq!(get("BRIDGEVM_NVME_BUFFERED_IO"), "1");
+    // The aggressive lane: exactly the wrapper's four knobs. The scanout
+    // readback override runs AFTER the display-export default, so the last
+    // value wins in the child env -- assert the ordering holds.
+    assert_eq!(get("BRIDGEVM_VIRTIO_GPU_DIRECT_RENDERER"), "1");
+    assert_eq!(get("BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT"), "1");
+    assert_eq!(get("BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT"), "1");
+    let readbacks: Vec<&str> = env
+        .iter()
+        .filter(|(k, _)| *k == "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS")
+        .map(|(_, v)| v.as_str())
+        .collect();
+    assert_eq!(
+        readbacks.last(),
+        Some(&"0"),
+        "aggressive readback=0 must win over the display-export default"
+    );
     let _ = std::fs::remove_file(&disk);
     let _ = std::fs::remove_file(&vars);
 }
@@ -214,6 +233,8 @@ fn surfaced_spawns_append_to_the_run_log_across_generations() {
             display_export_ms: 100,
             input_control: None,
             virtio_gpu_3d: false,
+            aggressive_performance: false,
+            nvme_buffered_io: false,
             clipboard_sync: false,
             share: None,
             virtio_net: false,

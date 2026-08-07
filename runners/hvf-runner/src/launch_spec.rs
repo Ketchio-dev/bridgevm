@@ -55,6 +55,8 @@ pub(crate) fn run_launch_spec(spec: &str, args: &crate::Args) -> Result<()> {
                 display_export_ms: 100,
                 input_control: Some(dir.join("input.ctl")),
                 virtio_gpu_3d: args.virtio_gpu_3d,
+                aggressive_performance: args.virtio_gpu_3d,
+                nvme_buffered_io: args.nvme_buffered_io,
                 clipboard_sync: args.agent_clipboard_sync,
                 share: args
                     .agent_share_host

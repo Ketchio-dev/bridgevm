@@ -50,6 +50,12 @@ pub struct DeviceSurfaces {
     /// virtio-gpu 3D with the venus protocol (MoltenVK path + BAR2 sizing
     /// use the same defaults the wrapper ships).
     pub virtio_gpu_3d: bool,
+    /// The app's shipping renderer lane (wrapper --performance-risk
+    /// aggressive): direct renderer, async scanout, IOSurface scanout, no
+    /// synchronous readback. Launch policy only -- media is untouched.
+    pub aggressive_performance: bool,
+    /// Buffered NVMe I/O (the app ships it on).
+    pub nvme_buffered_io: bool,
     /// Host<->guest clipboard sync over the agent console.
     pub clipboard_sync: bool,
     /// Folder share over the agent console (host dir -> guest dir).
@@ -137,10 +143,19 @@ pub fn helper_env(manifest: &LaunchManifest, launch: &HelperLaunch) -> Vec<(&'st
             env.push(("BRIDGEVM_HDA", "1".to_string()));
             env.push(("BRIDGEVM_HDA_COREAUDIO", "1".to_string()));
         }
+        if surfaces.nvme_buffered_io {
+            env.push(("BRIDGEVM_NVME_BUFFERED_IO", "1".to_string()));
+        }
         if surfaces.virtio_gpu_3d {
             env.push(("BRIDGEVM_VIRTIO_GPU", "1".to_string()));
             env.push(("BRIDGEVM_VIRTIO_GPU_3D", "1".to_string()));
             env.push(("BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL", "venus".to_string()));
+            if surfaces.aggressive_performance {
+                env.push(("BRIDGEVM_VIRTIO_GPU_DIRECT_RENDERER", "1".to_string()));
+                env.push(("BRIDGEVM_VIRTIO_GPU_ASYNC_SCANOUT", "1".to_string()));
+                env.push(("BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT", "1".to_string()));
+                env.push(("BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS", "0".to_string()));
+            }
             env.push((
                 "BRIDGEVM_VULKAN_LIB",
                 "/opt/homebrew/lib/libMoltenVK.dylib".to_string(),
