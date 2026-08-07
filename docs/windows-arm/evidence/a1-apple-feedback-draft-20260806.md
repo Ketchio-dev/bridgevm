@@ -65,6 +65,26 @@ the vCPU re-entered thousands of times, the PPI is never taken. So both
 directions of the vtimer path lose trapped writes under `hv_vcpus_exit`
 pressure, and no public API re-arms forwarding afterward.
 
+## Avenues we measured and closed (2026-08-07)
+
+- **EL2**: creating the VM with `hv_vm_config_set_el2_enabled(true)` and
+  booting at EL2h is strictly worse -- the same firmware parks before its
+  first serial byte with zero exits per window (vs EL1 reaching Windows most
+  boots). The EL2 timer surface has no EXIT_VTIMER-equivalent lever.
+- **Wake relocation onto an owned SPI**: closed by two prior measurements.
+  Waking the CPU is not the gap (stalls persist through 69k guest re-entries;
+  every host cancel already wakes the vCPU), and even *delivered* timer
+  interrupts did not save the boot (hand-set pending latch: PPI taken,
+  ISACTIVER0 bit 27 observed, guest died anyway). Time advances in the timer
+  ISR; an unrelated SPI wake leaves the tick counter frozen.
+- **Cancel-rate reduction**: an 8x lower host-wake cadence during the failure
+  window changed nothing (3/3 identical parks) -- the loss is armed within
+  seconds by guest activity, not accumulated by host cancel volume.
+- **Stale-RPR values are load-dependent**: with the virgl GPU active the lost
+  EOI leaves `RPR=0x60` (11 captures) vs `0x10` on the venus/headless path
+  (6 captures) -- different interrupt in service when the write is lost, same
+  mechanism.
+
 ## What we ask
 
 Either (a) a fix for the lost vtimer fire under `hv_vcpus_exit`
