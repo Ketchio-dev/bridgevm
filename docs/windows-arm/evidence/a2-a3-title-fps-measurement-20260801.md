@@ -296,3 +296,10 @@ A2's dependency order is now explicit: **the instrument is ready; the
 measurement waits on A1-grade run stability** (or on enough retries to
 land a stall-free session).
 
+Addendum, same day: five further attempts on the repaired instrument. Every
+one wedged in the A1 class before fps lines could exist -- three never got
+the agent up (boot-progress stall at 120s, one SYSTEM_RESET loop), two got
+the agent up and then lost the control channel after the zip sync
+(`SERVICE overdue ctl awaiting-reply=true`). The instrument was never the
+failing step again. A2 measurement is now formally queued behind A1.
+
