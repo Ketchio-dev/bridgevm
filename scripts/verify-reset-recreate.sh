@@ -28,33 +28,57 @@ cp -c "$TARGET" "$WORK/disk.raw"
 cp "$VARS" "$WORK/vars.fd"
 
 declare -a PIDS=()
-for ((cycle = 0; cycle < CYCLES; cycle++)); do
-  CTL="$OUT/cycle-$cycle.ctl"; : > "$CTL"
-  LOG="$OUT/cycle-$cycle.log"
-  echo "=== cycle $cycle (generation $cycle) ==="
+GENERATION=0
+# One helper process lifetime: launch, then wait for either READY or exit.
+# Windows boot legitimately issues intermediate SYSTEM_RESETs (a passing
+# boot shows reboots=3), and in product mode EVERY reset recreates the
+# process. An exit-42 before READY is therefore a normal intermediate
+# reset: count the generation and relaunch. Only a non-42 exit is a crash.
+launch_helper() { # cycle
+  CTL="$OUT/cycle-$1.gen-$GENERATION.ctl"; : > "$CTL"
+  RUN_DIR="$OUT/cycle-$1-gen-$GENERATION"
   scripts/run-hvf-windows-installed-boot.sh --exit-on-reset \
     --target "$WORK/disk.raw" --vars "$WORK/vars.fd" \
-    --evidence-dir "$OUT/cycle-$cycle" --watchdog-ms $((BOOT_TIMEOUT * 1000)) \
+    --evidence-dir "$RUN_DIR" --watchdog-ms $((BOOT_TIMEOUT * 1000)) \
     --ram-mib 6144 --smp-cpus 4 --release \
     --agent-service-control "$CTL" \
-    > "$LOG" 2>&1 &
+    > "$OUT/cycle-$1.gen-$GENERATION.log" 2>&1 &
   LAUNCHER=$!
-  RUN_LOG="$OUT/cycle-$cycle/run.log"
+  RUN_LOG="$RUN_DIR/run.log"
+}
 
-  # Fresh guest boot marker: this cycle's own agent READY.
+record_helper_pid() { # cycle
+  HELPER_PID=$(pgrep -f 'hvf_gic_boot_probe' | head -1)
+  [[ -n "$HELPER_PID" ]] || fail "cycle $1: no helper process found"
+  for seen in "${PIDS[@]:-}"; do
+    [[ "$seen" != "$HELPER_PID" ]] || fail "cycle $1: helper PID $HELPER_PID reused"
+  done
+  PIDS+=("$HELPER_PID")
+}
+
+for ((cycle = 0; cycle < CYCLES; cycle++)); do
+  echo "=== cycle $cycle ==="
+  launch_helper "$cycle"
+
+  # Fresh guest boot marker: this generation's own agent READY. Intermediate
+  # resets recreate the process (fresh PID, next generation) and the wait
+  # continues against the new generation's log.
   deadline=$((SECONDS + BOOT_TIMEOUT))
   until grep -aq '^BVAGENT READY' "$RUN_LOG" 2>/dev/null; do
     (( SECONDS < deadline )) || fail "cycle $cycle: no agent READY in ${BOOT_TIMEOUT}s"
-    kill -0 "$LAUNCHER" 2>/dev/null || fail "cycle $cycle: helper died before READY"
+    if ! kill -0 "$LAUNCHER" 2>/dev/null; then
+      wait "$LAUNCHER" && RC=0 || RC=$?
+      [[ "$RC" -eq 42 ]] || fail "cycle $cycle: helper died before READY (exit $RC)"
+      GENERATION=$((GENERATION + 1))
+      echo "cycle $cycle: intermediate reset -> generation $GENERATION (new helper)"
+      sync
+      printf 'generation: %s\n' "$GENERATION" > "$OUT/reset.receipt"
+      launch_helper "$cycle"
+    fi
     sleep 2
   done
-  HELPER_PID=$(pgrep -f 'hvf_gic_boot_probe' | head -1)
-  [[ -n "$HELPER_PID" ]] || fail "cycle $cycle: no helper process found"
-  for seen in "${PIDS[@]:-}"; do
-    [[ "$seen" != "$HELPER_PID" ]] || fail "cycle $cycle: helper PID $HELPER_PID reused"
-  done
-  PIDS+=("$HELPER_PID")
-  echo "cycle $cycle: helper_pid=$HELPER_PID agent READY"
+  record_helper_pid "$cycle"
+  echo "cycle $cycle: helper_pid=$HELPER_PID generation=$GENERATION agent READY"
 
   # 4 online CPUs, asked of the guest itself.
   printf 'powershell -NoProfile -Command "(Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors"\n' >> "$CTL"
@@ -72,9 +96,10 @@ for ((cycle = 0; cycle < CYCLES; cycle++)); do
   echo "cycle $cycle: helper exited 42 (guest reset)"
 
   # Supervisor order: flush, then the generation-tagged receipt.
+  GENERATION=$((GENERATION + 1))
   sync
   printf 'generation: %s\nflushed: %s\nflushed: %s\n' \
-    "$cycle" "$WORK/disk.raw" "$WORK/vars.fd" > "$OUT/reset.receipt"
+    "$GENERATION" "$WORK/disk.raw" "$WORK/vars.fd" > "$OUT/reset.receipt"
 done
 
 echo "PASS: $CYCLES reset cycles, each with a fresh helper PID, increasing generation, fresh agent READY, 4 CPUs"
