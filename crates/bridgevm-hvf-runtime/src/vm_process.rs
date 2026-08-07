@@ -13,16 +13,21 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
 /// Host facts a launch needs beyond the manifest: which helper binary,
-/// which firmware code image, and how long a boot may stall.
+/// which firmware code image, how long a boot may stall, and (optionally)
+/// the agent console control file through which the host drives the guest.
 pub struct HelperLaunch {
     pub helper: PathBuf,
     pub firmware_code: PathBuf,
     pub watchdog_ms: u64,
+    /// When set, the helper runs the resident agent console service and
+    /// reads guest commands appended to this file. This is how a supervisor
+    /// asks the guest for a reset without any shell in between.
+    pub agent_control: Option<PathBuf>,
 }
 
 /// The helper's complete environment. Nothing else reaches the child.
 pub fn helper_env(manifest: &LaunchManifest, launch: &HelperLaunch) -> Vec<(&'static str, String)> {
-    vec![
+    let mut env = vec![
         ("BRIDGEVM_NVME_DISK", manifest.disk().to_string()),
         ("BRIDGEVM_NVME_DISK_WRITABLE", "1".to_string()),
         (
@@ -41,7 +46,20 @@ pub fn helper_env(manifest: &LaunchManifest, launch: &HelperLaunch) -> Vec<(&'st
             launch.watchdog_ms.to_string(),
         ),
         ("BRIDGEVM_EXIT_ON_RESET", "1".to_string()),
-    ]
+    ];
+    if let Some(control) = &launch.agent_control {
+        env.push(("BRIDGEVM_VIRTIO_CONSOLE", "1".to_string()));
+        env.push(("BRIDGEVM_VIRTIO_CONSOLE_TEST", "1".to_string()));
+        env.push(("BRIDGEVM_VIRTIO_CONSOLE_TEST_PERIODIC", "1".to_string()));
+        env.push(("BRIDGEVM_VIRTIO_CONSOLE_CMDS", "whoami".to_string()));
+        env.push((
+            "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS",
+            launch.watchdog_ms.to_string(),
+        ));
+        env.push(("BRIDGEVM_VIRTIO_CONSOLE_SERVICE", "1".to_string()));
+        env.push(("BRIDGEVM_VIRTIO_CONSOLE_CTL", control.display().to_string()));
+    }
+    env
 }
 
 /// Spawn one helper generation: argv only, cleared environment, stdio

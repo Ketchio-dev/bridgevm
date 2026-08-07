@@ -57,6 +57,7 @@ fn launch(f: &Fixture) -> HelperLaunch {
         helper: f.script.clone(),
         firmware_code: "/fw/code.fd".into(),
         watchdog_ms: 1000,
+        agent_control: None,
     }
 }
 

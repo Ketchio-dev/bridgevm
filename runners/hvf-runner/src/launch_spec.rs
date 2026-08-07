@@ -46,6 +46,7 @@ pub(crate) fn run_launch_spec(spec: &str, args: &crate::Args) -> Result<()> {
                 .clone()
                 .unwrap_or_else(default_firmware_code),
             watchdog_ms: args.watchdog_ms.unwrap_or(900_000),
+            agent_control: args.helper_agent_control.clone(),
         };
         let receipt = args
             .supervise_receipt

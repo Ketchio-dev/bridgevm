@@ -31,6 +31,7 @@ fn the_environment_is_the_manifest_and_only_the_manifest() {
         helper: "/bin/true".into(),
         firmware_code: "/fw/code.fd".into(),
         watchdog_ms: 600_000,
+        agent_control: None,
     };
     let env = helper_env(&manifest, &launch);
     // Every value traces to the manifest or the launch facts.
@@ -80,6 +81,7 @@ fn spawn_gets_a_cleared_environment_and_the_generation() {
         helper: script.clone(),
         firmware_code: "/fw/code.fd".into(),
         watchdog_ms: 1000,
+        agent_control: None,
     };
     let mut child = spawn_helper(&manifest, &launch, 7).expect("spawn");
     assert!(child.wait().expect("wait").success());
@@ -94,6 +96,33 @@ fn spawn_gets_a_cleared_environment_and_the_generation() {
     );
     let _ = std::fs::remove_file(&script);
     let _ = std::fs::remove_file(&out_path);
+    let _ = std::fs::remove_file(&disk);
+    let _ = std::fs::remove_file(&vars);
+}
+
+#[test]
+fn the_agent_console_surface_appears_only_when_asked_for() {
+    let (disk, vars) = scratch("agent");
+    let manifest = manifest_for(&disk, &vars);
+    let launch = HelperLaunch {
+        helper: "/bin/true".into(),
+        firmware_code: "/fw/code.fd".into(),
+        watchdog_ms: 700_000,
+        agent_control: Some("/run/agent.ctl".into()),
+    };
+    let env = helper_env(&manifest, &launch);
+    let get = |k: &str| {
+        env.iter()
+            .find(|(name, _)| *name == k)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_else(|| panic!("{k} missing"))
+    };
+    assert_eq!(get("BRIDGEVM_VIRTIO_CONSOLE_CTL"), "/run/agent.ctl");
+    assert_eq!(get("BRIDGEVM_VIRTIO_CONSOLE_SERVICE"), "1");
+    // The service timeout follows the watchdog: the agent outliving the
+    // boot deadline would keep a dead boot looking alive.
+    assert_eq!(get("BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS"), "700000");
+    assert_eq!(env.len(), 16);
     let _ = std::fs::remove_file(&disk);
     let _ = std::fs::remove_file(&vars);
 }

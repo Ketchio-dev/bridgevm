@@ -62,3 +62,28 @@ Score: machinery complete (including the intermediate-reset semantics the
 first version missed); endurance is A1-bound. The 100-cycle gate stays
 blocked on A1, not on any reset-path defect.
 
+
+## 2026-08-07: the TYPED path runs the same live proof — wrapper script not involved
+
+`hvf-runner --launch-spec manifest.json --helper <probe> --helper-agent-control <ctl>`
+now drives the whole lifecycle through `run_vm()`: manifest validation,
+writer leases, `env_clear` allowlist spawn (argv, no shell), exit-42
+recreation, flush + receipt between generations. Same canonical image,
+live:
+
+```
+vm cycle: generation=0 helper_pid=60209   (READY -> in-guest shutdown /r)
+vm cycle: generation=1 helper_pid=64284   (READY -> in-guest shutdown /r)
+vm cycle: generation=2 helper_pid=64789   (READY -> intermediate/requested reset)
+vm cycle: generation=3 helper_pid=65194   (900s watchdog, clean exit)
+vm run complete: 4 generation(s)          RUNNER-EXIT: 0
+receipt: generation: 2 + both images flushed
+```
+
+Three `BVAGENT READY` boots, three exit-42 recreations with fresh PIDs,
+receipt proving the last reset's flush, and the final generation ending
+on the watchdog **without** a receipt — a stall is not a reset. The
+reset requests traveled host → agent control file → guest console →
+`shutdown /r` → PSCI → exit 42: no shell, no wrapper script, every hop
+typed or audited. This is the same A15 per-cycle evidence as the harness
+run, now produced by the product path.
