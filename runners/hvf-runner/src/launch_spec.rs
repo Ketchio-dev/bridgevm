@@ -75,10 +75,25 @@ pub(crate) fn run_launch_spec(spec: &str, args: &crate::Args) -> Result<()> {
         };
         let _swtpm = match &args.helper_vtpm_state {
             Some(state_dir) => {
+                let state_key = if args.helper_vtpm_key_stdin {
+                    let mut key = Vec::new();
+                    std::io::stdin()
+                        .read_to_end(&mut key)
+                        .context("read vTPM state key from stdin")?;
+                    if key.len() != 32 {
+                        bail!(
+                            "vTPM state key must be exactly 32 bytes (got {})",
+                            key.len()
+                        );
+                    }
+                    Some(key)
+                } else {
+                    None
+                };
                 let process = start_swtpm(&VtpmConfig {
                     state_dir: state_dir.clone(),
                     swtpm_bin: "/opt/homebrew/bin/swtpm".into(),
-                    state_key: None,
+                    state_key,
                 })
                 .map_err(|error| anyhow::anyhow!("vTPM start failed: {error}"))?;
                 launch.swtpm_sockets = Some((
