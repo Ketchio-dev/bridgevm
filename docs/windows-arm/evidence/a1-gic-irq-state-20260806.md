@@ -288,3 +288,29 @@ default off. With this, every architectural option on this host is
 measured: the remaining paths are Apple's (Feedback draft ready) or a
 guest-side change to what arms the wake, which is not ours to make.
 
+## 2026-08-07: wake-relocation (owned SPI) assessed and closed by inference
+
+The one remaining host-side idea was relocating the guest's boot-critical
+wake onto an interrupt we own: assert a spare SPI to pop the parked WFI,
+letting the guest re-check its timer state. Two prior measurements close it
+without another soak:
+
+1. **Waking the CPU is not the missing piece.** UEFI-shape stalls persisted
+   through tens of thousands of re-entries into guest mode (69k measured);
+   the CPU leaves WFI constantly (every host cancel does it) and re-parks.
+   An SPI wake adds nothing a cancel-driven wake does not already do.
+2. **Even DELIVERING the timer interrupt does not save the boot.** The
+   forced-latch experiment (soak 20260806-085841 boot-2) got the vtimer PPI
+   taken -- first ISACTIVER0 capture ever -- and the guest died anyway.
+   Firmware and Windows timekeeping advance in the timer ISR; an unrelated
+   SPI wake leaves the tick counter frozen exactly as WFI re-entry does.
+   Time never advances, timeouts never fire, the boot stays parked.
+
+An owned-SPI wake could only help if the stall were "CPU asleep, work
+ready" -- and every capture shows the opposite: the CPU wakes fine; the
+timer stream itself is dead inside HVF's forwarding. Closed.
+
+**Final state of A1 options: every host-side avenue measured or closed by
+measurement-backed inference. The defect requires Apple (Feedback draft
+ready) or a different in-kernel GIC.**
+
