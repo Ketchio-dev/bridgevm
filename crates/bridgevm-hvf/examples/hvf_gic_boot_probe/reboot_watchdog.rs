@@ -11,15 +11,18 @@ pub(crate) use boot_progress_kill::*;
 
 impl RebootPlan {
     pub(crate) fn from_env() -> Self {
-        Self::from_env_value(
+        let mut plan = Self::from_env_value(
             std::env::var("BRIDGEVM_BOOT_PROBE_MAX_REBOOTS")
                 .ok()
                 .as_deref(),
-        )
+        );
+        plan.exit_on_reset = env_flag("BRIDGEVM_EXIT_ON_RESET");
+        plan
     }
     pub(crate) fn from_env_value(value: Option<&str>) -> Self {
         Self {
             max_reboots: value.and_then(parse_u64).unwrap_or(DEFAULT_MAX_REBOOTS),
+            exit_on_reset: false,
         }
     }
 }
@@ -52,9 +55,19 @@ pub(crate) enum SystemResetDecision {
     Stop {
         reason: String,
     },
+    /// Exit the process with `RESET_EXIT_CODE`; the supervisor flushes,
+    /// writes the receipt, and starts a fresh helper (PLAN.md R1 order).
+    ExitForRecreate,
 }
 
+/// The exit code by which this process tells its supervisor that the guest
+/// requested SYSTEM_RESET. Contract shared with hvf-runner --supervise.
+pub(crate) const RESET_EXIT_CODE: u8 = 42;
+
 pub(crate) fn decide_system_reset(reboot_count: u64, plan: RebootPlan) -> SystemResetDecision {
+    if plan.exit_on_reset {
+        return SystemResetDecision::ExitForRecreate;
+    }
     if reboot_count < plan.max_reboots {
         return SystemResetDecision::Reboot {
             next_reboot_count: reboot_count + 1,

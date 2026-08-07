@@ -176,9 +176,17 @@ mod stall_report;
 pub(crate) use stall_report::report_stall_diagnostics;
 pub(crate) use wfi_diagnostics::*;
 
-fn probe_exit_code(fatal_vcpu_run_error: bool, fatal_reset_error: bool) -> ExitCode {
+fn probe_exit_code(
+    fatal_vcpu_run_error: bool,
+    fatal_reset_error: bool,
+    exit_for_recreate: bool,
+) -> ExitCode {
     if fatal_vcpu_run_error || fatal_reset_error {
         ExitCode::FAILURE
+    } else if exit_for_recreate {
+        // The supervisor contract: 42 = the guest requested SYSTEM_RESET
+        // and this process ended cleanly for recreation, storage synced.
+        ExitCode::from(RESET_EXIT_CODE)
     } else {
         ExitCode::SUCCESS
     }

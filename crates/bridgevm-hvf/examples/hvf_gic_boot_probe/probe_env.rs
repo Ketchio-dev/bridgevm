@@ -63,6 +63,11 @@ pub(crate) fn trace_msix_enabled() -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RebootPlan {
     pub(crate) max_reboots: u64,
+    /// PLAN.md R1: the product reset is process recreation. When set
+    /// (BRIDGEVM_EXIT_ON_RESET), a guest SYSTEM_RESET ends this process
+    /// with exit code 42 for the supervisor instead of resetting in
+    /// process; the in-process reboot path remains the diagnostic mode.
+    pub(crate) exit_on_reset: bool,
 }
 
 pub(crate) const XHCI_REPORT_INTERVAL_ENV: &str = "BRIDGEVM_XHCI_REPORT_INTERVAL_MS";

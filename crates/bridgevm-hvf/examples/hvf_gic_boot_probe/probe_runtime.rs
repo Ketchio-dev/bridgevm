@@ -14,6 +14,7 @@ use crate::watchpoint_setup::watchpoint_config;
 pub(crate) fn run() -> ExitCode {
     let mut fatal_vcpu_run_error = false;
     let mut fatal_reset_error = false;
+    let mut exit_for_recreate = false;
     let config = ProbeConfig::from_env();
     let ProbeConfig {
         media,
@@ -952,6 +953,13 @@ pub(crate) fn run() -> ExitCode {
                         boot_progress.disarm();
                         stop_reason = reason;
                     }
+                    SystemResetDecision::ExitForRecreate => {
+                        boot_progress.disarm();
+                        exit_for_recreate = true;
+                        stop_reason = format!(
+                            "PSCI {PSCI_SYSTEM_RESET:#x} exiting for process recreation (exit {RESET_EXIT_CODE})"
+                        );
+                    }
                 }
             }
 
@@ -993,5 +1001,5 @@ pub(crate) fn run() -> ExitCode {
             break 'reboot;
         }
     }
-    probe_exit_code(fatal_vcpu_run_error, fatal_reset_error)
+    probe_exit_code(fatal_vcpu_run_error, fatal_reset_error, exit_for_recreate)
 }

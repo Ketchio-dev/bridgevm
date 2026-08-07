@@ -611,7 +611,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_bar2.rs	41	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_setup.rs	13	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_setup.rs	81	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_config.rs	84	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	1000	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	1005	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_setup.rs	90	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/watchpoint_setup.rs	15	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console.rs	51	0
@@ -657,7 +657,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pcie_mmio_trace/context.rs	261	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pcie_mmio_trace/registers.rs	225	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/present_health.rs	22	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pe_trace.rs	265	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_env.rs	100	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_env.rs	105	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_dump.rs	459	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_dump_tests.rs	79	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/ramfb_dump_tests/checkpoints.rs	222	0
@@ -668,7 +668,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog.rs	172	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress.rs	240	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_kill.rs	74	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_tests.rs	116	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/plan_tests.rs	58	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/plan_tests.rs	76	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/psci_adapter.rs	267	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs	631	29
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/serial_input.rs	162	0
