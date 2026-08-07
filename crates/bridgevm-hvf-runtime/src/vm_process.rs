@@ -35,6 +35,8 @@ pub struct HelperLaunch {
 /// device shape the evidence gates validated.
 pub struct DeviceSurfaces {
     /// Directory for ramfb dumps, display exports, and the GPU trace.
+    /// The helper's stdout/stderr also land here as `run.log`, appended
+    /// across generations, which is the transcript the app tails.
     pub evidence_dir: PathBuf,
     /// Milliseconds between display exports (the app's screen poll rate).
     pub display_export_ms: u64,
@@ -43,6 +45,22 @@ pub struct DeviceSurfaces {
     /// virtio-gpu 3D with the venus protocol (MoltenVK path + BAR2 sizing
     /// use the same defaults the wrapper ships).
     pub virtio_gpu_3d: bool,
+    /// Host<->guest clipboard sync over the agent console.
+    pub clipboard_sync: bool,
+    /// Folder share over the agent console (host dir -> guest dir).
+    pub share: Option<ShareSurface>,
+    /// virtio-net with the NAT backend.
+    pub virtio_net: bool,
+    /// Intel HDA audio played through CoreAudio.
+    pub hda_audio: bool,
+}
+
+/// One shared folder, with the app's shipping cadence and size cap.
+pub struct ShareSurface {
+    pub host_dir: PathBuf,
+    pub guest_dir: String,
+    pub interval_ms: u64,
+    pub max_kb: u64,
 }
 
 /// The helper's complete environment. Nothing else reaches the child.
@@ -89,6 +107,31 @@ pub fn helper_env(manifest: &LaunchManifest, launch: &HelperLaunch) -> Vec<(&'st
                 env.push(("BRIDGEVM_DISABLE_XHCI", "1".to_string()));
             }
         }
+        if surfaces.clipboard_sync {
+            env.push(("BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC", "1".to_string()));
+        }
+        if let Some(share) = &surfaces.share {
+            env.push((
+                "BRIDGEVM_VIRTIO_CONSOLE_SHARE",
+                format!("{}::{}", share.host_dir.display(), share.guest_dir),
+            ));
+            env.push((
+                "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS",
+                share.interval_ms.to_string(),
+            ));
+            env.push((
+                "BRIDGEVM_VIRTIO_CONSOLE_SHARE_MAX_KB",
+                share.max_kb.to_string(),
+            ));
+        }
+        if surfaces.virtio_net {
+            env.push(("BRIDGEVM_VIRTIO_NET", "1".to_string()));
+            env.push(("BRIDGEVM_VIRTIO_NET_BACKEND", "nat".to_string()));
+        }
+        if surfaces.hda_audio {
+            env.push(("BRIDGEVM_HDA", "1".to_string()));
+            env.push(("BRIDGEVM_HDA_COREAUDIO", "1".to_string()));
+        }
         if surfaces.virtio_gpu_3d {
             env.push(("BRIDGEVM_VIRTIO_GPU", "1".to_string()));
             env.push(("BRIDGEVM_VIRTIO_GPU_3D", "1".to_string()));
@@ -122,8 +165,10 @@ pub fn helper_env(manifest: &LaunchManifest, launch: &HelperLaunch) -> Vec<(&'st
     env
 }
 
-/// Spawn one helper generation: argv only, cleared environment, stdio
-/// inherited so boot evidence lands in the supervisor's own transcript.
+/// Spawn one helper generation: argv only, cleared environment. With
+/// surfaces, stdout/stderr append to `<evidence_dir>/run.log` -- the file
+/// the app tails -- so the transcript survives generations; headless runs
+/// inherit stdio so boot evidence lands in the supervisor's own transcript.
 pub fn spawn_helper(
     manifest: &LaunchManifest,
     launch: &HelperLaunch,
@@ -139,6 +184,14 @@ pub fn spawn_helper(
         )
         .env("BRIDGEVM_RESET_GENERATION", generation.to_string())
         .stdin(Stdio::null());
+    if let Some(surfaces) = &launch.surfaces {
+        let log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(surfaces.evidence_dir.join("run.log"))?;
+        let log_err = log.try_clone()?;
+        command.stdout(log).stderr(log_err);
+    }
     command.spawn()
 }
 

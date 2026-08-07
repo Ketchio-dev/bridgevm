@@ -7,7 +7,9 @@
 //! refuse manifests that point into a source repository.
 
 use anyhow::{bail, Context, Result};
-use bridgevm_hvf_runtime::{prepare, run_vm, DeviceSurfaces, HelperLaunch, LaunchManifest};
+use bridgevm_hvf_runtime::{
+    prepare, run_vm, DeviceSurfaces, HelperLaunch, LaunchManifest, ShareSurface,
+};
 use std::io::Read;
 use std::path::Path;
 
@@ -52,6 +54,19 @@ pub(crate) fn run_launch_spec(spec: &str, args: &crate::Args) -> Result<()> {
                 display_export_ms: 100,
                 input_control: Some(dir.join("input.ctl")),
                 virtio_gpu_3d: args.virtio_gpu_3d,
+                clipboard_sync: args.agent_clipboard_sync,
+                share: args
+                    .agent_share_host
+                    .as_ref()
+                    .zip(args.agent_share_guest.as_ref())
+                    .map(|(host, guest)| ShareSurface {
+                        host_dir: host.clone(),
+                        guest_dir: guest.clone(),
+                        interval_ms: args.agent_share_ms.unwrap_or(2000),
+                        max_kb: args.agent_share_max_kb.unwrap_or(65536),
+                    }),
+                virtio_net: args.virtio_net,
+                hda_audio: false,
             }),
         };
         if let Some(surfaces) = &launch.surfaces {

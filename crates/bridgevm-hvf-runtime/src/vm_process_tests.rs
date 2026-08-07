@@ -144,6 +144,15 @@ fn the_app_surfaces_reproduce_the_wrapper_device_shape() {
             display_export_ms: 100,
             input_control: Some("/ev/input.ctl".into()),
             virtio_gpu_3d: true,
+            clipboard_sync: true,
+            share: Some(ShareSurface {
+                host_dir: "/host/share".into(),
+                guest_dir: "C:\\BVShare".to_string(),
+                interval_ms: 2000,
+                max_kb: 65536,
+            }),
+            virtio_net: true,
+            hda_audio: true,
         }),
     };
     let env = helper_env(&manifest, &launch);
@@ -170,6 +179,52 @@ fn the_app_surfaces_reproduce_the_wrapper_device_shape() {
         get("BRIDGEVM_VIRTIO_GPU_TRACE_JSONL"),
         "/ev/virtio-gpu.jsonl"
     );
+    // Clipboard, share, net, audio: the wrapper's exact contract.
+    assert_eq!(get("BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC"), "1");
+    assert_eq!(
+        get("BRIDGEVM_VIRTIO_CONSOLE_SHARE"),
+        "/host/share::C:\\BVShare"
+    );
+    assert_eq!(get("BRIDGEVM_VIRTIO_CONSOLE_SHARE_MS"), "2000");
+    assert_eq!(get("BRIDGEVM_VIRTIO_CONSOLE_SHARE_MAX_KB"), "65536");
+    assert_eq!(get("BRIDGEVM_VIRTIO_NET_BACKEND"), "nat");
+    assert_eq!(get("BRIDGEVM_HDA_COREAUDIO"), "1");
+    let _ = std::fs::remove_file(&disk);
+    let _ = std::fs::remove_file(&vars);
+}
+
+#[test]
+fn surfaced_spawns_append_to_the_run_log_across_generations() {
+    let (disk, vars) = scratch("runlog");
+    let manifest = manifest_for(&disk, &vars);
+    let dir = std::env::temp_dir().join(format!("bv-vmproc-ev-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let launch = HelperLaunch {
+        helper: "/bin/echo".into(),
+        firmware_code: "/fw/code.fd".into(),
+        watchdog_ms: 1000,
+        agent_control: None,
+        surfaces: Some(DeviceSurfaces {
+            evidence_dir: dir.clone(),
+            display_export_ms: 100,
+            input_control: None,
+            virtio_gpu_3d: false,
+            clipboard_sync: false,
+            share: None,
+            virtio_net: false,
+            hda_audio: false,
+        }),
+    };
+    // Each generation echoes its number; both lines must survive in order
+    // (append, not truncate) because the app tails this file across resets.
+    for generation in 0..2 {
+        let mut child = spawn_helper(&manifest, &launch, generation).unwrap();
+        assert!(child.wait().unwrap().success());
+    }
+    let log = std::fs::read_to_string(dir.join("run.log")).expect("the app's tail target");
+    assert_eq!(log, "\n\n", "two echo generations, appended not truncated");
+    let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_file(&disk);
     let _ = std::fs::remove_file(&vars);
 }
