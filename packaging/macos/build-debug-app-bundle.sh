@@ -238,7 +238,7 @@ verify_bundle() {
     echo "BridgeVM Windows HVF firmware build receipt is missing" >&2
     exit 1
   }
-  [[ -f "$hvf_resource_bundle/secureboot-microsoft-only-aarch64-v1.6.5.json" ]] || {
+  [[ -f "$hvf_resource_bundle/secureboot-microsoft-windows-transition-aarch64-v1.6.5.json" ]] || {
     echo "BridgeVM Windows HVF Secure Boot policy resource is missing" >&2
     exit 1
   }
