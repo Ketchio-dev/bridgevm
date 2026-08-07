@@ -30,7 +30,7 @@ fn the_environment_is_the_manifest_and_only_the_manifest() {
     let launch = HelperLaunch {
         helper: "/bin/true".into(),
         firmware_code: "/fw/code.fd".into(),
-        watchdog_ms: 600_000,
+        watchdog_ms: Some(600_000),
         agent_control: None,
         surfaces: None,
         swtpm_sockets: None,
@@ -82,7 +82,7 @@ fn spawn_gets_a_cleared_environment_and_the_generation() {
     let launch = HelperLaunch {
         helper: script.clone(),
         firmware_code: "/fw/code.fd".into(),
-        watchdog_ms: 1000,
+        watchdog_ms: Some(1000),
         agent_control: None,
         surfaces: None,
         swtpm_sockets: None,
@@ -111,7 +111,7 @@ fn the_agent_console_surface_appears_only_when_asked_for() {
     let launch = HelperLaunch {
         helper: "/bin/true".into(),
         firmware_code: "/fw/code.fd".into(),
-        watchdog_ms: 700_000,
+        watchdog_ms: Some(700_000),
         agent_control: Some("/run/agent.ctl".into()),
         surfaces: None,
         swtpm_sockets: None,
@@ -140,7 +140,7 @@ fn the_app_surfaces_reproduce_the_wrapper_device_shape() {
     let launch = HelperLaunch {
         helper: "/bin/true".into(),
         firmware_code: "/fw/code.fd".into(),
-        watchdog_ms: 600_000,
+        watchdog_ms: Some(600_000),
         agent_control: None,
         surfaces: Some(DeviceSurfaces {
             evidence_dir: "/ev".into(),
@@ -207,7 +207,7 @@ fn surfaced_spawns_append_to_the_run_log_across_generations() {
     let launch = HelperLaunch {
         helper: "/bin/echo".into(),
         firmware_code: "/fw/code.fd".into(),
-        watchdog_ms: 1000,
+        watchdog_ms: Some(1000),
         agent_control: None,
         surfaces: Some(DeviceSurfaces {
             evidence_dir: dir.clone(),
@@ -230,6 +230,37 @@ fn surfaced_spawns_append_to_the_run_log_across_generations() {
     let log = std::fs::read_to_string(dir.join("run.log")).expect("the app's tail target");
     assert_eq!(log, "\n\n", "two echo generations, appended not truncated");
     let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_file(&disk);
+    let _ = std::fs::remove_file(&vars);
+}
+
+#[test]
+fn no_watchdog_is_the_app_mode_and_disables_rather_than_zeroes() {
+    let (disk, vars) = scratch("nowd");
+    let manifest = manifest_for(&disk, &vars);
+    let launch = HelperLaunch {
+        helper: "/bin/true".into(),
+        firmware_code: "/fw/code.fd".into(),
+        watchdog_ms: None,
+        agent_control: Some("/run/agent.ctl".into()),
+        surfaces: None,
+        swtpm_sockets: None,
+    };
+    let env = helper_env(&manifest, &launch);
+    let get = |k: &str| {
+        env.iter()
+            .find(|(name, _)| *name == k)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_else(|| panic!("{k} missing"))
+    };
+    assert_eq!(get("BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED"), "1");
+    assert!(
+        !env.iter()
+            .any(|(k, _)| *k == "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS"),
+        "disabled means absent, not zero -- zero would be a 0ms watchdog"
+    );
+    // The agent service still gets a real budget (the wrapper's day).
+    assert_eq!(get("BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS"), "86400000");
     let _ = std::fs::remove_file(&disk);
     let _ = std::fs::remove_file(&vars);
 }

@@ -18,7 +18,9 @@ use std::process::{Child, Command, Stdio};
 pub struct HelperLaunch {
     pub helper: PathBuf,
     pub firmware_code: PathBuf,
-    pub watchdog_ms: u64,
+    /// Per-boot diagnostic watchdog. None is the app's normal mode: the VM
+    /// stays up until the guest or the user asks otherwise.
+    pub watchdog_ms: Option<u64>,
     /// When set, the helper runs the resident agent console service and
     /// reads guest commands appended to this file. This is how a supervisor
     /// asks the guest for a reset without any shell in between.
@@ -82,12 +84,12 @@ pub fn helper_env(manifest: &LaunchManifest, launch: &HelperLaunch) -> Vec<(&'st
         ),
         ("BRIDGEVM_RAM_MIB", manifest.ram_mib().to_string()),
         ("BRIDGEVM_SMP_CPUS", manifest.vcpus().to_string()),
-        (
-            "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS",
-            launch.watchdog_ms.to_string(),
-        ),
         ("BRIDGEVM_EXIT_ON_RESET", "1".to_string()),
     ];
+    match launch.watchdog_ms {
+        Some(watchdog_ms) => env.push(("BRIDGEVM_BOOT_PROBE_WATCHDOG_MS", watchdog_ms.to_string())),
+        None => env.push(("BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED", "1".to_string())),
+    }
     if let Some(surfaces) = &launch.surfaces {
         let evidence = |name: &str| surfaces.evidence_dir.join(name).display().to_string();
         env.push(("BRIDGEVM_RAMFB", "1".to_string()));
@@ -167,7 +169,9 @@ pub fn helper_env(manifest: &LaunchManifest, launch: &HelperLaunch) -> Vec<(&'st
         env.push(("BRIDGEVM_VIRTIO_CONSOLE_CMDS", "whoami".to_string()));
         env.push((
             "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS",
-            launch.watchdog_ms.to_string(),
+            // The agent service follows the watchdog; unwatched runs get
+            // the wrapper's no-watchdog service budget of a day.
+            launch.watchdog_ms.unwrap_or(86_400_000).to_string(),
         ));
         env.push(("BRIDGEVM_VIRTIO_CONSOLE_SERVICE", "1".to_string()));
         env.push(("BRIDGEVM_VIRTIO_CONSOLE_CTL", control.display().to_string()));
