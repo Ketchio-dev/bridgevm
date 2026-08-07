@@ -71,7 +71,7 @@ pub(crate) fn reset_vcpu_for_boot(vcpu: HvVcpuT) {
         let rdr = hv_gic_get_redistributor_base(vcpu, &mut rdbase);
         println!("hv_gic_get_redistributor_base(vcpu0) = {rdr:#x} -> {rdbase:#x}");
         hv_vcpu_set_reg(vcpu, HV_REG_PC, 0x0);
-        hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5);
+        hv_vcpu_set_reg(vcpu, HV_REG_CPSR, boot_cpsr());
         hv_vcpu_set_reg(vcpu, HV_REG_X0, machine::RAM_BASE);
         hv_vcpu_set_vtimer_mask(vcpu, false);
     }
@@ -94,3 +94,17 @@ pub(crate) fn arm_watchpoint_for_boot(vcpu: HvVcpuT, watch_addr: Option<u64>) {
     }
     println!("watchpoint armed on {addr:#x} (store)");
 }
+
+/// EL1h with DAIF masked -- or EL2h when the VM was created with EL2
+/// enabled. ArmVirtQemu checks CurrentEL at entry and supports both; a vCPU
+/// left at EL1 inside an EL2-enabled VM hangs before the first serial byte
+/// (measured 2026-08-07: 1506 exits, no PL011 output, ramfb never active),
+/// because the EL1 boot path takes EL2-trapped accesses with no handler.
+pub(crate) fn boot_cpsr() -> u64 {
+    if crate::env_flag("BRIDGEVM_ENABLE_EL2") {
+        0x3c9
+    } else {
+        0x3c5
+    }
+}
+

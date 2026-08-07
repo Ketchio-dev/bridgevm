@@ -686,7 +686,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vblank_wake.rs	84	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator.rs	214	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator_tests.rs	146	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination.rs	348	1
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_debug.rs	96	4
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_debug.rs	110	4
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wfi_diagnostics.rs	232	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input.rs	53	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/boot_key.rs	148	0

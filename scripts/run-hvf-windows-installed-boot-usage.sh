@@ -13,6 +13,9 @@ Required:
 Options:
   --placeholder-nsid1 RAW Blank NSID-1 disk; when set, target boots as NSID-2.
   --watchdog-ms N         Probe watchdog in milliseconds. Default: 900000.
+  --enable-el2            A1 experiment: create the VM with EL2 enabled so
+                          guest interrupt virtualization runs through HVF's
+                          vEL2 path instead of the EL1-only GICv3 emulation.
   --exit-on-reset         Product reset mode: a guest SYSTEM_RESET exits the
                           probe with code 42 for the supervisor instead of
                           rebooting in process (PLAN.md R1).

@@ -6,6 +6,7 @@ init_installed_boot_defaults() {
   WATCHDOG_MS="900000"
   WATCHDOG_DISABLED="0"
   EXIT_ON_RESET="0"
+  ENABLE_EL2="0"
   MAX_REBOOTS="8"
   MAX_EXITS="50000000"
   RAM_MIB="4096"
@@ -98,6 +99,7 @@ parse_installed_boot_args() {
         ;;
       --no-watchdog) WATCHDOG_DISABLED="1"; shift ;;
       --exit-on-reset) EXIT_ON_RESET="1"; shift ;;
+      --enable-el2) ENABLE_EL2="1"; shift ;;
       --max-reboots)
         [[ $# -ge 2 ]] || { usage; exit 2; }
         nonnegative_integer "$2" || { echo "FAIL: --max-reboots requires a non-negative integer" >&2; exit 2; }

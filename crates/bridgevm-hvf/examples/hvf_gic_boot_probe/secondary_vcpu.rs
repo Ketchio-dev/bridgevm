@@ -194,7 +194,7 @@ pub(crate) fn apply_secondary_cpu_on_reset(vcpu: HvVcpuT, mpidr: u64, entry: u64
         }
         hv_vcpu_set_reg(vcpu, HV_REG_PC, entry);
         hv_vcpu_set_reg(vcpu, HV_REG_X0, context);
-        hv_vcpu_set_reg(vcpu, HV_REG_CPSR, 0x3c5);
+        hv_vcpu_set_reg(vcpu, HV_REG_CPSR, crate::boot_cpsr());
         hv_vcpu_set_vtimer_mask(vcpu, false);
     }
 }

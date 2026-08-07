@@ -253,3 +253,38 @@ Apple Feedback draft now carries the complete mechanism: cancel races
 swallow both vtimer fires and trapped EOI writes, and no public API
 re-arms delivery afterward.
 
+## 2026-08-07: the EL2 avenue, measured and closed
+
+The last architectural option short of Apple was booting the VM with EL2
+enabled (`hv_vm_config_set_el2_enabled`), on the theory that the EL2 path
+through HVF's interrupt/timer virtualization might not carry the EL1-path
+defect. Wired as `--enable-el2` on the installed-boot wrapper
+(`BRIDGEVM_ENABLE_EL2`), with the boot CPSR switched to EL2h (`0x3c9`) --
+a vCPU left at EL1h inside an EL2-enabled VM makes no progress at all
+(first attempt: 1506 exits, not one PL011 byte, ramfb never activated).
+
+Result at EL2h, same canonical image, three boots:
+
+```
+EL2 config: requested=true supported=true ... enabled_after=true
+probe: boot-progress watchdog stalled_for_ms=120000 exits_in_window=0
+       total_exits=1130 reboots=0 suspect=guest-not-running
+REGS: pc=0x1bf33a2b0 lr=0x1bf33a2b4 fp=0x1bf33fc70 sp_el0=0x1bf33fc70
+```
+
+The firmware genuinely executes at EL2 (PC/LR/FP walking real code in the
+same firmware region as the known EL1 WFI park at `0x1bf33ba04`), then
+parks with **zero exits per window before the first serial byte** -- an
+earlier, harder stall than EL1's. WFI parks in-kernel without userspace
+exits, so `exits_in_window=0` with a firmware PC is the same parked-in-WFI
+signature; at EL2 the wake never arrives even once (EL1 boots at least
+reach Windows most of the time). Whatever HVF does for the EL2 timer
+surface (CNTHP/CNTP), it serves this firmware worse than the EL1 vtimer
+path, and there is no EXIT_VTIMER-equivalent lever for it.
+
+Verdict: **EL2 is strictly worse and is closed as an A1 avenue.** The flag
+stays available for future diagnosis (`--enable-el2`, preflight-recorded),
+default off. With this, every architectural option on this host is
+measured: the remaining paths are Apple's (Feedback draft ready) or a
+guest-side change to what arms the wake, which is not ours to make.
+
