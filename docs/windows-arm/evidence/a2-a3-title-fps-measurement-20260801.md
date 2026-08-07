@@ -321,3 +321,21 @@ frame-log reads all worked. The A2 blocker is the guest parking in the A1
 stall class under Vulkan-startup load. Score across the repaired-instrument
 era: 11 attempts, 0 fps samples, all A1-class. Queued behind A1 stands.
 
+## 2026-08-07 (2): BRIDGEVM_AGENT_WAKE_MS=2000 falsified as an A2 mitigation
+
+Hypothesis: the agent-console ServiceWake cancel stream (250ms cadence,
+3516/3517 wake attributions in a wedged run) rolls the A1 swallow race per
+cancel, so an 8x lower cadence during the title window should lower the park
+probability. Three runs at `BRIDGEVM_AGENT_WAKE_MS=2000`:
+
+- 3/3 reached READY and full staging (the boot phase again survives),
+- 3/3 parked during the title gate — identical failure point, identical
+  boot-progress signature (4 exits/window, one with an intermediate reset).
+
+Falsified: the cancel *rate* is not the dominant term during the Vulkan
+startup window. Whatever arms the park there (the vkCreateInstance spin's
+poll loop, per the A3 stack) does so within seconds regardless of an 8x
+cadence change. The knob stays (harmless, useful for latency/rate trades),
+but it is not the A2 unlock. Score: 14 repaired-instrument attempts, 0 fps
+samples.
+
