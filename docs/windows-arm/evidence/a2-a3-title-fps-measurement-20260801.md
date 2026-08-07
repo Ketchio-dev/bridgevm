@@ -303,3 +303,21 @@ the agent up and then lost the control channel after the zip sync
 (`SERVICE overdue ctl awaiting-reply=true`). The instrument was never the
 failing step again. A2 measurement is now formally queued behind A1.
 
+## 2026-08-07: six more attempts on the canonical image — same verdict, more precisely located
+
+Six consecutive `verify-vulkan-title-fps.sh` runs against
+`canonical-attach-resident-20260731`:
+
+- 2/6 never reached agent service (A1 boot-time park).
+- **4/6 reached READY, staged PPSSPP + gate + content completely, and then
+  the title-gate command itself got no reply**: the guest parked (probe
+  boot-progress watchdog: 4 exits/window) while the gate script ran — i.e.
+  at or immediately after PPSSPP's Vulkan startup, the same place the A3
+  vkCreateInstance spin lives. In attempt 4 the park came with `reboots=1`,
+  an intermediate SYSTEM_RESET mid-session.
+
+The instrument is not the limit anywhere: share sync, content, loglevel and
+frame-log reads all worked. The A2 blocker is the guest parking in the A1
+stall class under Vulkan-startup load. Score across the repaired-instrument
+era: 11 attempts, 0 fps samples, all A1-class. Queued behind A1 stands.
+
