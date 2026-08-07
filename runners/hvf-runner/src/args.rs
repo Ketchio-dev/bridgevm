@@ -284,6 +284,10 @@ pub(crate) struct Args {
     /// the same env contract as the wrapper script.
     #[arg(long, value_name = "DIR", requires = "helper")]
     pub(crate) helper_evidence_dir: Option<PathBuf>,
+    /// vTPM state directory for --launch-spec --helper: the supervisor runs
+    /// one swtpm across every helper generation (state survives resets).
+    #[arg(long, value_name = "DIR", requires = "helper")]
+    pub(crate) helper_vtpm_state: Option<PathBuf>,
     /// Run CMD (argv, no shell) under the reset-cycle supervisor: exit 42
     /// means the guest requested SYSTEM_RESET and a fresh process follows
     /// after the flush receipt; any other success ends the loop.

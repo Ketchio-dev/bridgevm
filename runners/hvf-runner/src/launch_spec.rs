@@ -8,7 +8,8 @@
 
 use anyhow::{bail, Context, Result};
 use bridgevm_hvf_runtime::{
-    prepare, run_vm, DeviceSurfaces, HelperLaunch, LaunchManifest, ShareSurface,
+    prepare, run_vm, start_swtpm, DeviceSurfaces, HelperLaunch, LaunchManifest, ShareSurface,
+    VtpmConfig,
 };
 use std::io::Read;
 use std::path::Path;
@@ -41,7 +42,7 @@ pub(crate) fn run_launch_spec(spec: &str, args: &crate::Args) -> Result<()> {
     if let Some(helper) = &args.helper {
         // The full composed lifecycle: leases, helper generations under the
         // reset-cycle supervisor, flush + receipt between generations.
-        let launch = HelperLaunch {
+        let mut launch = HelperLaunch {
             helper: helper.clone(),
             firmware_code: args
                 .helper_firmware
@@ -69,6 +70,22 @@ pub(crate) fn run_launch_spec(spec: &str, args: &crate::Args) -> Result<()> {
                 hda_audio: false,
             }),
             swtpm_sockets: None,
+        };
+        let _swtpm = match &args.helper_vtpm_state {
+            Some(state_dir) => {
+                let process = start_swtpm(&VtpmConfig {
+                    state_dir: state_dir.clone(),
+                    swtpm_bin: "/opt/homebrew/bin/swtpm".into(),
+                })
+                .map_err(|error| anyhow::anyhow!("vTPM start failed: {error}"))?;
+                launch.swtpm_sockets = Some((
+                    process.data_socket().to_path_buf(),
+                    process.control_socket().to_path_buf(),
+                ));
+                println!("vtpm: swtpm serving {}", process.data_socket().display());
+                Some(process)
+            }
+            None => None,
         };
         if let Some(surfaces) = &launch.surfaces {
             std::fs::create_dir_all(surfaces.evidence_dir.join("ramfb"))
