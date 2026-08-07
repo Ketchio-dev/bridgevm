@@ -135,11 +135,19 @@ final class HvfEngineSession: ObservableObject {
             connectionState = .stopped
             return
         }
+        // R1 product path: the typed runtime (hvf-runner --launch-spec)
+        // whenever the packaged runner exists. The wrapper remains the
+        // evidence-harness fallback so a source checkout without a release
+        // runner build keeps working.
+        let runner = repoRoot.appendingPathComponent("target/release/hvf-runner")
+        let useTypedRuntime = FileManager.default.isExecutableFile(atPath: runner.path)
         let wrapper = repoRoot.appendingPathComponent("scripts/run-hvf-windows-installed-boot.sh")
-        guard FileManager.default.isExecutableFile(atPath: wrapper.path) else {
-            append(.unknown("launch failed: installed-boot wrapper not found at \(wrapper.path)"))
-            connectionState = .stopped
-            return
+        if !useTypedRuntime {
+            guard FileManager.default.isExecutableFile(atPath: wrapper.path) else {
+                append(.unknown("launch failed: installed-boot wrapper not found at \(wrapper.path)"))
+                connectionState = .stopped
+                return
+            }
         }
         tailReader = TailOffsetReader()
         lastHeartbeatDate = nil
@@ -156,7 +164,20 @@ final class HvfEngineSession: ObservableObject {
         #endif
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        proc.arguments = config.wrapperArguments()
+        if useTypedRuntime {
+            let firmware = repoRoot.appendingPathComponent("firmware/edk2-aarch64-secure-code.fd")
+            let fallbackFirmware = repoRoot.appendingPathComponent("crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd")
+            let firmwarePath = FileManager.default.fileExists(atPath: firmware.path)
+                ? firmware.path : fallbackFirmware.path
+            proc.arguments = config.runnerArguments(
+                manifestPath: config.evidenceDir + "/launch-manifest.json",
+                runnerPath: runner.path,
+                firmwareCodePath: firmwarePath,
+                probePath: repoRoot.appendingPathComponent("target/release/examples/hvf_gic_boot_probe").path)
+            append(.unknown("launching through the typed runtime (hvf-runner --launch-spec)"))
+        } else {
+            proc.arguments = config.wrapperArguments()
+        }
         proc.currentDirectoryURL = repoRoot
         proc.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("BRIDGEVM_") }
         let vtpmKeyInput: VTPMProcessKeyInput?

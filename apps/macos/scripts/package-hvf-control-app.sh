@@ -59,6 +59,7 @@ swift_bin_dir="$(
     --configuration release --show-bin-path
 )"
 cargo build --release -p bridgevm-cli
+cargo build --release -p hvf-runner
 
 install -d \
   "$stage_app/Contents/MacOS" \
@@ -70,6 +71,7 @@ install -d \
 install -m 644 "$MACOS_DIR/BridgeVMControl-Info.plist" "$stage_app/Contents/Info.plist"
 install -m 755 "$swift_bin_dir/BridgeVMControl" "$stage_app/Contents/MacOS/BridgeVMControl"
 install -m 755 "$ROOT/target/release/bridgevm" "$stage_app/Contents/Resources/target/release/bridgevm"
+install -m 755 "$ROOT/target/release/hvf-runner" "$stage_app/Contents/Resources/target/release/hvf-runner"
 install -m 644 "$FIRMWARE_CODE" "$stage_app/Contents/Resources/firmware/edk2-aarch64-secure-code.fd"
 install -m 644 \
   "$ROOT/crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd.build.json" \
