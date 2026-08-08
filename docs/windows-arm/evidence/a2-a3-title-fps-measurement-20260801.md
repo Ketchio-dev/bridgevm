@@ -321,21 +321,17 @@ frame-log reads all worked. The A2 blocker is the guest parking in the A1
 stall class under Vulkan-startup load. Score across the repaired-instrument
 era: 11 attempts, 0 fps samples, all A1-class. Queued behind A1 stands.
 
-## 2026-08-07 (2): BRIDGEVM_AGENT_WAKE_MS=2000 falsified as an A2 mitigation
+## 2026-08-07 (2): the "AGENT_WAKE_MS=2000 falsified" claim is RETRACTED
 
-Hypothesis: the agent-console ServiceWake cancel stream (250ms cadence,
-3516/3517 wake attributions in a wedged run) rolls the A1 swallow race per
-cancel, so an 8x lower cadence during the title window should lower the park
-probability. Three runs at `BRIDGEVM_AGENT_WAKE_MS=2000`:
-
-- 3/3 reached READY and full staging (the boot phase again survives),
-- 3/3 parked during the title gate — identical failure point, identical
-  boot-progress signature (4 exits/window, one with an intermediate reset).
-
-Falsified: the cancel *rate* is not the dominant term during the Vulkan
-startup window. Whatever arms the park there (the vkCreateInstance spin's
-poll loop, per the A3 stack) does so within seconds regardless of an 8x
-cadence change. The knob stays (harmless, useful for latency/rate trades),
-but it is not the A2 unlock. Score: 14 repaired-instrument attempts, 0 fps
-samples.
+Three runs were reported as falsifying the slow-wake hypothesis (3/3 parks at
+the same point). **That experiment was invalid**: the wrapper scrubs every
+inherited `BRIDGEVM_*` variable (`run_probe_process`), `BRIDGEVM_AGENT_WAKE_MS`
+was not on the explicit forward list, and the preflight confirms it never
+reached the probe — all three runs executed at the default 250ms. This is the
+same trap that bit `BRIDGEVM_EXIT_ON_RESET` (fixed then with `--exit-on-reset`).
+The runner now forwards `BRIDGEVM_AGENT_WAKE_MS` explicitly, next to
+`BRIDGEVM_VBLANK_HZ`. What the three runs DO show: three more READY boots that
+parked during the title gate at 250ms — consistent with, not informative
+beyond, the existing series. Score: 14 attempts, 0 fps samples; the slow-wake
+hypothesis is UNTESTED, being re-run with verified forwarding.
 

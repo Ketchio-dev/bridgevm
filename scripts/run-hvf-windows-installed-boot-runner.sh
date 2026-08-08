@@ -329,6 +329,10 @@ build_installed_boot_env_args() {
   # Forward host-vblank pacing config from the caller's environment (env-gated
   # feature in virtio_gpu.rs; absent/0 = legacy immediate completion).
   [[ -z "${BRIDGEVM_VBLANK_HZ:-}" ]] || ENV_ARGS+=("BRIDGEVM_VBLANK_HZ=$BRIDGEVM_VBLANK_HZ")
+  # Forward the agent-console ServiceWake interval (probe_runtime.rs, default
+  # 250ms, clamp 50..10000). Each wake is an hv_vcpus_exit cancel; measurement
+  # windows may trade ctl-reply latency for a lower cancel rate.
+  [[ -z "${BRIDGEVM_AGENT_WAKE_MS:-}" ]] || ENV_ARGS+=("BRIDGEVM_AGENT_WAKE_MS=$BRIDGEVM_AGENT_WAKE_MS")
   [[ -z "${BRIDGEVM_CHECKPOINT_STATE:-}" ]] || ENV_ARGS+=("BRIDGEVM_CHECKPOINT_STATE=$BRIDGEVM_CHECKPOINT_STATE")
   [[ -z "${BRIDGEVM_RESTORE_STATE:-}" ]] || ENV_ARGS+=("BRIDGEVM_RESTORE_STATE=$BRIDGEVM_RESTORE_STATE")
   # Forward the KD serial bridge socket (kd_serial_bridge.rs; the bridge owns
