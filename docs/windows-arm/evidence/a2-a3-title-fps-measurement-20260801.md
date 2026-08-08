@@ -335,3 +335,43 @@ parked during the title gate at 250ms — consistent with, not informative
 beyond, the existing series. Score: 14 attempts, 0 fps samples; the slow-wake
 hypothesis is UNTESTED, being re-run with verified forwarding.
 
+## 2026-08-08: A2 PASSES — the missing fps lines were the instrument's last defect
+
+The "wedge at Vulkan startup" conclusion was wrong in one load-bearing way:
+the gate ITSELF completed on many of those runs (BVGPU-REAL-TITLE-PASS with
+`venus_icd_loaded`), and the park hit later, during the follow-up traffic —
+i.e. the title RENDERS fine; the run just often dies around it. What never
+worked was the fps evidence: this PPSSPP binary (v1.20.4 ARM64) never writes
+the `delta: ms fps:` line at ANY loglevel — measured live at 3, 5 and 6 with
+7.9 MB of D-level frame log and zero fps lines, although the format string is
+present in the .exe.
+
+Instrument fix (in `bvgpu-real-title-gate.ps1`): keep `--loglevel=5` and
+derive per-frame samples from the title's own `sceDisplaySetFrameBuf` DEBUG
+lines — each interval between consecutive display flips is one frame time
+(`source=setframebuf-intervals` marks derived runs). A diag run recovered the
+7.9 MB frame log through the share and validated the series: 2909 intervals,
+p50 50 FPS.
+
+Full `verify-vulkan-title-fps.sh` PASS (canonical-a2-staged image, title
+pre-staged, `BRIDGEVM_AGENT_WAKE_MS=2000`, 45 s window):
+
+    guest_fps samples=2511 p50=58.82 p05=55.56 mean=62.72 source=setframebuf-intervals
+    A2 Vulkan FPS: PASS (samples=2511 p50=58.82)
+
+with `venus_icd_loaded` from the DriverStore and a foreground window. The
+Vulkan path was never slow: ~59 FPS p50 through venus. The A3 D3D11 ~20 FPS
+figure stands unchanged (different backend, different present path).
+
+Reproduced immediately: three PASSes in four sessions —
+
+| run | samples | p50 | verdict |
+| --- | --- | --- | --- |
+| vulkan-fps-final1-001451 | 2511 | 58.82 | PASS |
+| vulkan-fps-rep1-002008 | — | — | A1 park before gate reply |
+| vulkan-fps-rep2-002540 | 2528 | 58.82 | PASS |
+| vulkan-fps-rep3-002841 | 2531 | 58.82 | PASS |
+
+Run-stability caveat stays: sessions still park A1-class around the gate
+(3 of 4 completed here; earlier in the day the park cost 9 sessions). A2's
+statement is met and reproducible; A1 remains A1.

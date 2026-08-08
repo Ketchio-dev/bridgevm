@@ -106,7 +106,12 @@ Write-GateLog "launch_state_clean portable_poison_removed=$(-not (Test-Path -Lit
 # PPSSPP emits "delta: <ms> fps: <n>" into its own log, so let it self-report.
 $frameLog = Join-Path $appDirectory "bv-frame.log"
 Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath $frameLog
-$launchArgs = @("--log=$frameLog", "--loglevel=3")
+# PPSSPP's LogLevel enum is 1=NOTICE..6=VERBOSE. This binary never emits the
+# "delta: ms fps:" line at any level (measured live at 3, 5 and 6: 7.9 MB of
+# D-level log, zero fps lines, though the format string exists in the .exe).
+# DEBUG is still required: the per-frame sceDisplaySetFrameBuf lines the fps
+# fallback below derives samples from are D[SCEDISP].
+$launchArgs = @("--log=$frameLog", "--loglevel=5")
 if ($ContentPath -ne "") {
     if (-not (Test-Path -LiteralPath $ContentPath -PathType Leaf)) {
         Write-GateLog "status=FAIL reason=content-missing path=$ContentPath"
@@ -162,6 +167,8 @@ if (-not $mainWindowObserved) {
 # this stack. Absence of samples is reported as samples=0 rather than as a
 # failure, so an unrelated logging change cannot silently fail the title gate.
 $fpsSamples = @()
+$fpsSource = "fps-lines"
+$flipStamps = @()
 if (Test-Path -LiteralPath $frameLog -PathType Leaf) {
     # The title still holds its log open for writing; ReadAllLines opens with
     # no write sharing and dies with a sharing violation (seen live
@@ -173,9 +180,31 @@ if (Test-Path -LiteralPath $frameLog -PathType Leaf) {
         while ($null -ne ($line = $reader.ReadLine())) {
             $m = [regex]::Match($line, 'fps:\s*([0-9]+(?:\.[0-9]+)?)')
             if ($m.Success) { $fpsSamples += [double]$m.Groups[1].Value }
+            # Per-frame display flip the title logs at DEBUG: the emu core
+            # presents a new framebuffer to its virtual display. Timestamp
+            # prefix is M:SS:mmm (minutes without hour component).
+            elseif ($line.Contains("=sceDisplaySetFrameBuf(")) {
+                $ts = [regex]::Match($line, '^([0-9]+):([0-9]{2}):([0-9]{3})\s')
+                if ($ts.Success) {
+                    $flipStamps += ([double]$ts.Groups[1].Value * 60.0 +
+                        [double]$ts.Groups[2].Value +
+                        [double]$ts.Groups[3].Value / 1000.0)
+                }
+            }
         }
     } finally {
         $stream.Dispose()
+    }
+}
+if ($fpsSamples.Count -eq 0 -and $flipStamps.Count -gt 1) {
+    # This PPSSPP build never writes "fps:" lines (measured at loglevel 3/5/6).
+    # Derive per-frame samples from the title's own sceDisplaySetFrameBuf log:
+    # each interval between consecutive flips is one frame time. Hour wrap in
+    # the M:SS:mmm stamps shows up as a large negative delta; skip those.
+    $fpsSource = "setframebuf-intervals"
+    for ($i = 1; $i -lt $flipStamps.Count; $i++) {
+        $dt = $flipStamps[$i] - $flipStamps[$i - 1]
+        if ($dt -gt 0.0 -and $dt -lt 5.0) { $fpsSamples += 1.0 / $dt }
     }
 }
 if ($fpsSamples.Count -gt 0) {
@@ -183,8 +212,8 @@ if ($fpsSamples.Count -gt 0) {
     $p50 = $sorted[[int][Math]::Floor(($sorted.Count - 1) * 0.5)]
     $p05 = $sorted[[int][Math]::Floor(($sorted.Count - 1) * 0.05)]
     $mean = ($fpsSamples | Measure-Object -Average).Average
-    Write-GateLog ("guest_fps samples={0} p50={1:F2} p05={2:F2} mean={3:F2} min={4:F2} max={5:F2}" -f `
-        $fpsSamples.Count, $p50, $p05, $mean, $sorted[0], $sorted[$sorted.Count - 1])
+    Write-GateLog ("guest_fps samples={0} p50={1:F2} p05={2:F2} mean={3:F2} min={4:F2} max={5:F2} source={6}" -f `
+        $fpsSamples.Count, $p50, $p05, $mean, $sorted[0], $sorted[$sorted.Count - 1], $fpsSource)
 } else {
     Write-GateLog "guest_fps samples=0 reason=no-fps-lines-in-frame-log"
 }
