@@ -51,6 +51,7 @@ mod no_qemu_plan;
 mod probe_mmio;
 mod probes;
 mod support;
+pub mod userspace_gic;
 
 mod windows_arm;
 

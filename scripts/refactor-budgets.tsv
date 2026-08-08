@@ -176,7 +176,7 @@ crates/bridgevm-hvf/src/hda/mod.rs	9	0
 crates/bridgevm-hvf/src/hda/tests/helpers.rs	115	0
 crates/bridgevm-hvf/src/hda/tests/mod.rs	4	0
 crates/bridgevm-hvf/src/hda/tests/part_1.rs	401	0
-crates/bridgevm-hvf/src/lib.rs	96	0
+crates/bridgevm-hvf/src/lib.rs	97	0
 crates/bridgevm-hvf/src/machine.rs	367	0
 crates/bridgevm-hvf/src/machine_plan.rs	374	0
 crates/bridgevm-hvf/src/media.rs	654	0
@@ -842,3 +842,6 @@ crates/bridgevm-hvf-runtime/src/vm_run.rs	69	0
 crates/bridgevm-hvf-runtime/src/vm_run_tests.rs	110	0
 crates/bridgevm-hvf-runtime/src/vtpm.rs	148	0
 crates/bridgevm-hvf-runtime/src/vtpm_tests.rs	110	0
+crates/bridgevm-hvf/src/userspace_gic/mod.rs	705	0
+crates/bridgevm-hvf/src/userspace_gic/mmio_regs.rs	352	0
+crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	385	0
