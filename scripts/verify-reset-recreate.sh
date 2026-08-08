@@ -55,7 +55,8 @@ record_helper_pid() { # cycle
   # against EVERY historical PID is stricter than the criterion and fails
   # spuriously at scale: macOS recycles PIDs, and a 100-cycle run spawns
   # enough processes to wrap (first seen at usgic cycle 17).
-  local prev="${PIDS[${#PIDS[@]}-1]:-}"
+  local prev=""
+  if ((${#PIDS[@]:-0} > 0)); then prev="${PIDS[${#PIDS[@]}-1]}"; fi
   if [[ -n "$prev" ]]; then
     [[ "$prev" != "$HELPER_PID" ]] || fail "cycle $1: helper PID $HELPER_PID reused from previous generation"
     ! kill -0 "$prev" 2>/dev/null || fail "cycle $1: previous helper $prev still alive"
