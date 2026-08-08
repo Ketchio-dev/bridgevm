@@ -337,6 +337,7 @@ build_installed_boot_env_args() {
   # (usgic_bridge.rs). QEMU-hvf boots this host 10/10 in this configuration.
   [[ -z "${BRIDGEVM_USERSPACE_GIC:-}" ]] || ENV_ARGS+=("BRIDGEVM_USERSPACE_GIC=$BRIDGEVM_USERSPACE_GIC")
   [[ -z "${BRIDGEVM_USGIC_TRACE:-}" ]] || ENV_ARGS+=("BRIDGEVM_USGIC_TRACE=$BRIDGEVM_USGIC_TRACE")
+  [[ -z "${BRIDGEVM_USGIC_RING:-}" ]] || ENV_ARGS+=("BRIDGEVM_USGIC_RING=$BRIDGEVM_USGIC_RING")
   [[ -z "${BRIDGEVM_CHECKPOINT_STATE:-}" ]] || ENV_ARGS+=("BRIDGEVM_CHECKPOINT_STATE=$BRIDGEVM_CHECKPOINT_STATE")
   [[ -z "${BRIDGEVM_RESTORE_STATE:-}" ]] || ENV_ARGS+=("BRIDGEVM_RESTORE_STATE=$BRIDGEVM_RESTORE_STATE")
   # Forward the KD serial bridge socket (kd_serial_bridge.rs; the bridge owns

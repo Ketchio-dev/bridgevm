@@ -44,7 +44,19 @@ EOI is handled in our own code and pending state cannot be lost.
 ## Scope
 
 - 2D/agent/NVMe/xHCI/serial path proven end to end (this soak).
-- 3D (venus MSI-X under load), A15 reset cycles, and the A1 criterion's
-  fresh-firstboot gate run next — tracked in the registry.
-- In-kernel-GIC remains the default until those complete; the swap is one
-  env flag away and involves zero Apple-side dependencies.
+- **A15 followed the same day**: 100/100 reset cycles PROVEN on this
+  configuration (a15-reset-recreate-100-20260808.md).
+- **venus 3D on usgic is NOT healthy yet** (2026-08-08 evening): the A2/A3
+  title gates first bugchecked the guest (D1, EXECUTE fault on pageable
+  viogpu3d PAGE-section code at DISPATCH_LEVEL — a real driver bug that
+  hv_gic timing masks; DisablePagingExecutive=1 stops the crash), and with
+  DPE set the venus UMD wedges at vkCreateInstance: CTX_CREATE lands,
+  16 CTX_ATTACH_RESOURCE follow, then no SUBMIT_3D ever arrives
+  (a2-wedge run; on hv_gic the same image runs SUBMIT_3D within
+  milliseconds of CTX_CREATE and A2 re-passes at p50 58.82). PPSSPP sits
+  alive at ~0 CPU with no main window. MSI-X intid 132 IS delivered and
+  EOId in the ring dump — the divergence is later in the venus
+  fence/event chain. Under investigation.
+- In-kernel-GIC remains the default; the swap is one env flag away and
+  involves zero Apple-side dependencies. usgic is already the better
+  configuration for everything except venus 3D.

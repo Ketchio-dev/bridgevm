@@ -39,6 +39,11 @@ pub(crate) struct UsGicBridge {
     registered: [AtomicBool; MAX_VCPUS],
     vtimer_masked: [AtomicBool; MAX_VCPUS],
     trace_budget: AtomicU64,
+    /// Ring of the most recent GIC ops (BRIDGEVM_USGIC_RING=1); dumped on
+    /// SYSTEM_RESET and in stall reports. A fixed println budget always
+    /// ran out before the interesting event.
+    ring: Mutex<std::collections::VecDeque<String>>,
+    ring_enabled: bool,
 }
 
 macro_rules! usgic_trace {
@@ -106,6 +111,7 @@ pub(crate) fn vtimer_exit_mask(cpu: usize, vcpu: HvVcpuT) {
     if let Some(bridge) = usgic() {
         bridge.vtimer_masked[cpu].store(true, Ordering::SeqCst);
         let kicks = bridge.gic.lock().unwrap().set_vtimer_ppi(cpu, true);
+        bridge.ring_push(format!("c{cpu} vtimer-fire k={kicks:#x}"));
         bridge.kick(kicks, cpu);
     }
 }
@@ -164,6 +170,7 @@ pub(crate) fn wfx_trap(cpu: usize, vcpu: HvVcpuT, esr: u64, pc: u64) -> bool {
 pub(crate) fn deliver_spi(intid: u32, level: bool) -> Option<HvReturn> {
     let bridge = usgic()?;
     let kicks = bridge.gic.lock().unwrap().set_spi(intid, level);
+    bridge.ring_push(format!("spi {intid} lvl={} k={kicks:#x}", u8::from(level)));
     bridge.kick(kicks, usize::MAX);
     Some(0)
 }
@@ -172,6 +179,7 @@ pub(crate) fn deliver_spi(intid: u32, level: bool) -> Option<HvReturn> {
 pub(crate) fn deliver_msi(address: u64, data: u32) -> Option<HvReturn> {
     let bridge = usgic()?;
     let kicks = bridge.gic.lock().unwrap().send_msi(address, data);
+    bridge.ring_push(format!("msi {address:#x} intid={data} k={kicks:#x}"));
     bridge.kick(kicks, usize::MAX);
     Some(0)
 }
@@ -186,6 +194,7 @@ pub(crate) fn stall_report(vcpu0: HvVcpuT) {
         println!("USGIC stall cpu{cpu}: {}", gic.debug_line(cpu));
     }
     drop(gic);
+    bridge.ring_dump("stall");
     unsafe {
         let mut ctl = 0u64;
         let mut cval = 0u64;
@@ -223,6 +232,7 @@ pub(crate) fn reset() -> bool {
     let Some(bridge) = usgic() else {
         return false;
     };
+    bridge.ring_dump("SYSTEM_RESET");
     *bridge.gic.lock().unwrap() = UserspaceGic::new(bridge.num_cpus);
     for masked in &bridge.vtimer_masked {
         masked.store(false, Ordering::SeqCst);
@@ -239,6 +249,30 @@ impl UsGicBridge {
             registered: [const { AtomicBool::new(false) }; MAX_VCPUS],
             vtimer_masked: [const { AtomicBool::new(false) }; MAX_VCPUS],
             trace_budget: AtomicU64::new(env_u64("BRIDGEVM_USGIC_TRACE", 0)),
+            ring: Mutex::new(std::collections::VecDeque::with_capacity(256)),
+            ring_enabled: env_flag("BRIDGEVM_USGIC_RING"),
+        }
+    }
+
+    fn ring_push(&self, line: String) {
+        if !self.ring_enabled {
+            return;
+        }
+        let mut ring = self.ring.lock().unwrap();
+        if ring.len() >= 256 {
+            ring.pop_front();
+        }
+        ring.push_back(line);
+    }
+
+    pub(crate) fn ring_dump(&self, reason: &str) {
+        if !self.ring_enabled {
+            return;
+        }
+        let ring = self.ring.lock().unwrap();
+        println!("USGIC ring dump ({reason}): {} entries", ring.len());
+        for line in ring.iter() {
+            println!("USGIC-R {line}");
         }
     }
 
@@ -294,6 +328,16 @@ impl UsGicBridge {
             if trap.is_read { "read " } else { "write " },
             result.is_some()
         );
+        if self.ring_enabled {
+            if let Some(r) = result {
+                self.ring_push(format!(
+                    "c{cpu} {}{encoding:#x} w={write_value:#x} -> {:#x} k={:#x} pc={pc:#x}",
+                    if trap.is_read { "r" } else { "W" },
+                    r.value,
+                    r.kick_mask
+                ));
+            }
+        }
         let Some(result) = result else {
             return false;
         };
@@ -329,6 +373,12 @@ impl UsGicBridge {
             MmioOp::Write { size, value } => (size, Some(value)),
         };
         let result = self.gic.lock().unwrap().mmio(ipa, width, write);
+        if self.ring_enabled {
+            self.ring_push(format!(
+                "c{cpu} mmio {ipa:#x} w{width} wr={write:?} -> {:#x} k={:#x}",
+                result.value, result.kick_mask
+            ));
+        }
         usgic_trace!(
             self,
             "USGIC cpu{cpu} mmio ipa={ipa:#x} w={width} write={write:?} -> {:#x} pc={pc:#x}",
