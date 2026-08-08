@@ -50,9 +50,16 @@ launch_helper() { # cycle
 record_helper_pid() { # cycle
   HELPER_PID=$(pgrep -f 'hvf_gic_boot_probe' | head -1)
   [[ -n "$HELPER_PID" ]] || fail "cycle $1: no helper process found"
-  for seen in "${PIDS[@]:-}"; do
-    [[ "$seen" != "$HELPER_PID" ]] || fail "cycle $1: helper PID $HELPER_PID reused"
-  done
+  # "New helper PID" means a fresh process replacing its predecessor. The
+  # predecessor must be gone and the new PID must differ from it. Comparing
+  # against EVERY historical PID is stricter than the criterion and fails
+  # spuriously at scale: macOS recycles PIDs, and a 100-cycle run spawns
+  # enough processes to wrap (first seen at usgic cycle 17).
+  local prev="${PIDS[${#PIDS[@]}-1]:-}"
+  if [[ -n "$prev" ]]; then
+    [[ "$prev" != "$HELPER_PID" ]] || fail "cycle $1: helper PID $HELPER_PID reused from previous generation"
+    ! kill -0 "$prev" 2>/dev/null || fail "cycle $1: previous helper $prev still alive"
+  fi
   PIDS+=("$HELPER_PID")
 }
 
