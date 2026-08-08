@@ -96,11 +96,7 @@ fn spi_level_stays_pending_while_high_after_eoi() {
 fn msi_latches_edge_pending_and_targets_router() {
     let mut gic = UserspaceGic::new(4);
     wake_cpu(&mut gic, 2);
-    enable_spi(
-        &mut gic,
-        u32::from(machine::GIC_MSI_INTID_BASE) + 32,
-        2 << 8 | 2,
-    );
+    enable_spi(&mut gic, machine::GIC_MSI_INTID_BASE + 32, 2 << 8 | 2);
     // Fix the route to cpu2's mpidr (aff1=0,aff0=2).
     let intid = u64::from(machine::GIC_MSI_INTID_BASE) + 32;
     gic.mmio(
@@ -126,7 +122,7 @@ fn msi_latches_edge_pending_and_targets_router() {
 fn msi_frame_mmio_write_latches_like_send_msi() {
     let mut gic = UserspaceGic::new(1);
     wake_cpu(&mut gic, 0);
-    let intid = u32::from(machine::GIC_MSI_INTID_BASE);
+    let intid = machine::GIC_MSI_INTID_BASE;
     enable_spi(&mut gic, intid, 0);
 
     let result = gic.mmio(

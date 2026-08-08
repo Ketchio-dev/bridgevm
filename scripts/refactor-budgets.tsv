@@ -843,6 +843,6 @@ crates/bridgevm-hvf-runtime/src/vm_run_tests.rs	110	0
 crates/bridgevm-hvf-runtime/src/vtpm.rs	148	0
 crates/bridgevm-hvf-runtime/src/vtpm_tests.rs	110	0
 crates/bridgevm-hvf/src/userspace_gic/mod.rs	742	0
-crates/bridgevm-hvf/src/userspace_gic/mmio_regs.rs	352	0
-crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	392	0
+crates/bridgevm-hvf/src/userspace_gic/mmio_regs.rs	350	0
+crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	388	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	348	12

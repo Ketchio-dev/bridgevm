@@ -124,11 +124,9 @@ impl UserspaceGic {
             (GICD_STATUSR, None) | (GICD_STATUSR, Some(_)) => 0,
             (GICD_PIDR2, None) => PIDR2_GICV3,
             _ => {
-                if let Some(result) = self.dist_banked_mmio(offset, width, write, &mut kick_mask) {
-                    result
-                } else {
-                    0 // RAZ/WI for everything unmodeled.
-                }
+                // RAZ/WI for everything unmodeled.
+                self.dist_banked_mmio(offset, width, write, &mut kick_mask)
+                    .unwrap_or_default()
             }
         };
         UsGicMmioResult { value, kick_mask }

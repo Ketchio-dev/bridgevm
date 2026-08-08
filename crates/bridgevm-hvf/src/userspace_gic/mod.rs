@@ -285,7 +285,7 @@ pub struct UserspaceGic {
 
 impl UserspaceGic {
     pub fn new(num_cpus: usize) -> Self {
-        assert!(num_cpus >= 1 && num_cpus <= 16, "cpu count {num_cpus}");
+        assert!((1..=16).contains(&num_cpus), "cpu count {num_cpus}");
         Self {
             num_cpus,
             dist: Distributor::new(),
