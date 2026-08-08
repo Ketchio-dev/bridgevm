@@ -70,6 +70,8 @@ const GICR_WAKER_PROCESSOR_SLEEP: u32 = 1 << 1;
 const GICR_WAKER_CHILDREN_ASLEEP: u32 = 1 << 2;
 const GICD_CTLR_ENABLE_G1NS: u32 = 1 << 1;
 const GICD_CTLR_ARE_NS: u32 = 1 << 4;
+/// Disable Security: single security state (matches QEMU virt secure=off).
+const GICD_CTLR_DS: u32 = 1 << 6;
 /// GICv3 identification: ArchRev 3 in PIDR2[7:4].
 const PIDR2_GICV3: u64 = 0x30;
 const IIDR: u64 = 0x4252_564d; // "BRVM"
@@ -81,7 +83,7 @@ const GICM_SET_SPI_NSR: u64 = 0x040;
 const GICM_PIDR2: u64 = 0xfe8;
 
 // ICC system registers, encoded as ((op0<<14)|(op1<<11)|(crn<<7)|(crm<<3)|op2).
-pub const ICC_PMR_EL1: u16 = 0x4230; // 3,0,4,6,0
+pub const ICC_PMR_EL1: u16 = 0xc230; // 3,0,4,6,0
 pub const ICC_IAR0_EL1: u16 = 0xc640;
 pub const ICC_EOIR0_EL1: u16 = 0xc641;
 pub const ICC_HPPIR0_EL1: u16 = 0xc642;
@@ -199,10 +201,16 @@ struct Redistributor {
 impl Redistributor {
     fn new() -> Self {
         Self {
-            waker: GICR_WAKER_PROCESSOR_SLEEP | GICR_WAKER_CHILDREN_ASLEEP,
+            // QEMU parity: WAKER is storage-only. EDK2 never touches it (the
+            // firmware stalled at BdsDxe when the reset value gated PPIs).
+            waker: 0,
             propbaser: 0,
             pendbaser: 0,
-            group0: 0,
+            // Single security state (GICD_CTLR.DS=1): everything resets to
+            // Group 1 NS. EDK2/Windows never program IGROUPR and only enable
+            // ICC_IGRPEN1; a zero reset classified every interrupt as Group 0
+            // and nothing ever delivered (usgic-boot2 trace, 2026-08-08).
+            group0: 0xffff_ffff,
             grpmod0: 0,
             enabled0: 0,
             pending0: 0,
@@ -238,7 +246,8 @@ impl Distributor {
     fn new() -> Self {
         Self {
             ctlr: 0,
-            group: [0; GIC_INTID_COUNT / 32],
+            // Group 1 NS at reset -- same DS=1 contract as the redistributor.
+            group: [0xffff_ffff; GIC_INTID_COUNT / 32],
             grpmod: [0; GIC_INTID_COUNT / 32],
             enabled: [0; GIC_INTID_COUNT / 32],
             pending: [0; GIC_INTID_COUNT / 32],
@@ -293,14 +302,12 @@ impl UserspaceGic {
         (1u64 << self.num_cpus) - 1
     }
 
-    /// Which CPU a routed SPI targets. IRM (1-of-N) delivers to the first
-    /// awake CPU; explicit affinity must match a CPU's linear MPIDR.
+    /// Which CPU a routed SPI targets. IRM (1-of-N) delivers to CPU0 (QEMU
+    /// parity); explicit affinity must match a CPU's linear MPIDR.
     fn route_target(&self, intid: usize) -> Option<usize> {
         let route = self.dist.route[intid];
         if route & IROUTER_IRM != 0 {
-            return (0..self.num_cpus)
-                .find(|&c| self.redists[c].waker & GICR_WAKER_PROCESSOR_SLEEP == 0)
-                .or(Some(0));
+            return Some(0);
         }
         let affinity = ((route >> 8) & 0xff) << 8 | (route & 0xff);
         (0..self.num_cpus).find(|&c| machine::cpu_mpidr(c as u64) == affinity)
@@ -334,9 +341,9 @@ impl UserspaceGic {
 
     fn local_candidate_for_cpu(&self, cpu: usize, threshold: u8) -> Option<PendingCandidate> {
         let redist = &self.redists[cpu];
-        if redist.waker & GICR_WAKER_PROCESSOR_SLEEP != 0 {
-            return None;
-        }
+        // WAKER.ProcessorSleep deliberately does NOT gate delivery (QEMU
+        // parity): firmware and Windows rely on interrupts flowing without
+        // ever programming WAKER.
         (0..32u32)
             .filter_map(|intid| {
                 let bit = 1u32 << intid;
@@ -662,6 +669,32 @@ impl UserspaceGic {
             _ => return None,
         };
         Some(UsGicSysregResult { value, kick_mask })
+    }
+
+    /// One-line diagnostic snapshot for a CPU (stall reports).
+    pub fn debug_line(&self, cpu: usize) -> String {
+        let iface = &self.ifaces[cpu];
+        let redist = &self.redists[cpu];
+        let dist_pend: Vec<usize> = (SPI_BASE..GIC_INTID_COUNT)
+            .filter(|&i| {
+                let (reg, bit) = Distributor::bit(i);
+                self.dist.effective_pending(reg) & bit != 0
+            })
+            .collect();
+        format!(
+            "grp1={} pmr={:#x} rpr={:#x} active={:?} redist(en={:#x} pend={:#x} lvl={:#x} act={:#x}) dist(ctlr={:#x} pend={:?}) line={}",
+            iface.group1_enabled,
+            iface.priority_mask,
+            iface.running_priority(),
+            iface.active.iter().map(|a| a.intid).collect::<Vec<_>>(),
+            redist.enabled0,
+            redist.pending0,
+            redist.level0,
+            redist.active0,
+            self.dist.ctlr,
+            dist_pend,
+            self.line_asserted(cpu),
+        )
     }
 
     /// Does this IPA belong to the userspace GIC (GICD/GICR/MSI frame)?

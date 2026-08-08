@@ -21,6 +21,7 @@ pub(crate) unsafe fn report_stall_diagnostics(
     smp_trace: Option<&SmpTrace>,
 ) {
     report_wake_attribution(coordinator, claims);
+    crate::usgic_bridge::stall_report(vcpu);
     // Two captures, so a vCPU that is still executing is not called parked.
     let before = crate::gic_snapshot::capture(vcpu, 2, coordinator.generation());
     std::thread::sleep(std::time::Duration::from_millis(50));

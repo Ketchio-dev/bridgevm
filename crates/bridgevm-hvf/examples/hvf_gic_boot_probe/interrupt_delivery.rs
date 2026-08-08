@@ -244,7 +244,8 @@ pub(crate) fn deliver_pending_msix(messages: &[MsixMessage], trace: bool) -> Del
     let mut counts = DeliveryCounts::default();
     let trace = trace || trace_msix_enabled();
     for message in messages {
-        let status = unsafe { hv_gic_send_msi(message.address, message.data) };
+        let status = crate::usgic_bridge::deliver_msi(message.address, message.data)
+            .unwrap_or_else(|| unsafe { hv_gic_send_msi(message.address, message.data) });
         counts.record_status(status);
         if trace {
             println!(
@@ -266,7 +267,8 @@ pub(crate) fn deliver_pending_spis(
     scratch.clear();
     platform.drain_pending_spi_levels_into(scratch);
     for &(intid, level) in scratch.iter() {
-        let status = unsafe { hv_gic_set_spi(intid, level) };
+        let status = crate::usgic_bridge::deliver_spi(intid, level)
+            .unwrap_or_else(|| unsafe { hv_gic_set_spi(intid, level) });
         counts.record_status(status);
         if trace || (status != 0 && trace_msix) {
             println!("SPI intid {intid} level={level} status {status:#x}");

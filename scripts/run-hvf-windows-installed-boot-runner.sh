@@ -333,6 +333,9 @@ build_installed_boot_env_args() {
   # 250ms, clamp 50..10000). Each wake is an hv_vcpus_exit cancel; measurement
   # windows may trade ctl-reply latency for a lower cancel rate.
   [[ -z "${BRIDGEVM_AGENT_WAKE_MS:-}" ]] || ENV_ARGS+=("BRIDGEVM_AGENT_WAKE_MS=$BRIDGEVM_AGENT_WAKE_MS")
+  # A1 exit: swap Apple's in-kernel GICv3 for the userspace device model
+  # (usgic_bridge.rs). QEMU-hvf boots this host 10/10 in this configuration.
+  [[ -z "${BRIDGEVM_USERSPACE_GIC:-}" ]] || ENV_ARGS+=("BRIDGEVM_USERSPACE_GIC=$BRIDGEVM_USERSPACE_GIC")
   [[ -z "${BRIDGEVM_CHECKPOINT_STATE:-}" ]] || ENV_ARGS+=("BRIDGEVM_CHECKPOINT_STATE=$BRIDGEVM_CHECKPOINT_STATE")
   [[ -z "${BRIDGEVM_RESTORE_STATE:-}" ]] || ENV_ARGS+=("BRIDGEVM_RESTORE_STATE=$BRIDGEVM_RESTORE_STATE")
   # Forward the KD serial bridge socket (kd_serial_bridge.rs; the bridge owns

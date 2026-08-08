@@ -38,7 +38,7 @@ pub(crate) fn run() -> ExitCode {
     unsafe {
         create_vm();
         let _vm_guard = HvVmGuard;
-        create_gic();
+        create_gic(smp_cpus as usize);
 
         let (mut platform, vars_data, boot_dtb) = prepare_platform(
             &media,
@@ -69,6 +69,7 @@ pub(crate) fn run() -> ExitCode {
             "hv_vcpu_create"
         );
         let _vcpu_guard = HvVcpuGuard { vcpu };
+        crate::usgic_bridge::register_vcpu(0, vcpu);
 
         let (watch_addr, watch_target) = watchpoint_config();
         attach_boot_media(&mut platform, &media, platform_cfg, ram_size, &vars_data);
@@ -340,6 +341,7 @@ pub(crate) fn run() -> ExitCode {
                 let mut drain_pc = 0u64;
                 hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut drain_pc);
                 last_pre_run_pc = drain_pc;
+                crate::usgic_bridge::pre_run(0, vcpu);
                 let pending = {
                     let mut platform_guard = lock_platform(
                         &platform,
@@ -442,7 +444,7 @@ pub(crate) fn run() -> ExitCode {
                 if !automation_tick_canceled && reason == EXIT_VTIMER {
                     hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                     vtimer_exits += 1;
-                    hv_vcpu_set_vtimer_mask(vcpu, true);
+                    crate::usgic_bridge::vtimer_exit_mask(0, vcpu);
                     if exits >= max_exits {
                         stop_reason = format!("exit cap {max_exits}");
                         break;
@@ -479,6 +481,11 @@ pub(crate) fn run() -> ExitCode {
                             } else {
                                 MmioOp::Read { size }
                             };
+                            if crate::usgic_bridge::try_data_abort(
+                                0, vcpu, ipa, &op, srt, last_pc,
+                            ) {
+                                continue;
+                            }
                             let trace_this_fwcfg = trace_fwcfg
                                 && machine::FW_CFG.contains(ipa)
                                 && fwcfg_trace_count < 512;
@@ -695,7 +702,9 @@ pub(crate) fn run() -> ExitCode {
                         }
                         EC_SYS_REG_TRAP => {
                             let trap = SysRegTrap::decode(esr);
-                            if emulate_debug_os_lock_sysreg(vcpu, trap) {
+                            if crate::usgic_bridge::try_sysreg(0, vcpu, esr, last_pc) {
+                                // Trapped ICC_* consumed by the userspace GIC.
+                            } else if emulate_debug_os_lock_sysreg(vcpu, trap) {
                                 hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
                             } else {
                                 stop_reason = format!(
@@ -704,6 +713,9 @@ pub(crate) fn run() -> ExitCode {
                         );
                                 break;
                             }
+                        }
+                        EC_WFX if crate::usgic_bridge::usgic().is_some() => {
+                            crate::usgic_bridge::wfx_trap(0, vcpu, esr, last_pc);
                         }
                         EC_WATCHPOINT_LOWER | EC_WATCHPOINT_SAME => {
                             watch_hits += 1;
@@ -925,7 +937,12 @@ pub(crate) fn run() -> ExitCode {
                             "PSCI SYSTEM_RESET: reboot {reboot_count}/{}",
                             reboot_plan.max_reboots
                         );
-                        let gic_reset_status = if actions.reset_gic {
+                        let gic_reset_status = if actions.reset_gic
+                            && crate::usgic_bridge::reset()
+                        {
+                            println!("userspace GIC reset");
+                            0
+                        } else if actions.reset_gic {
                             // All secondary vCPUs have stopped and joined above, and CPU0
                             // is outside hv_vcpu_run. Apple documents hv_gic_reset as the
                             // VM-reset operation for the distributor, redistributors, and

@@ -49,6 +49,11 @@ extern "C" {
     pub(crate) fn hv_vcpu_set_sys_reg(vcpu: HvVcpuT, reg: u16, value: u64) -> HvReturn;
     pub(crate) fn hv_vcpu_get_sys_reg(vcpu: HvVcpuT, reg: u16, value: *mut u64) -> HvReturn;
     pub(crate) fn hv_vcpu_set_vtimer_mask(vcpu: HvVcpuT, vtimer_is_masked: bool) -> HvReturn;
+    pub(crate) fn hv_vcpu_set_pending_interrupt(
+        vcpu: HvVcpuT,
+        interrupt_type: u32,
+        pending: bool,
+    ) -> HvReturn;
     pub(crate) fn hv_vcpu_get_vtimer_offset(vcpu: HvVcpuT, vtimer_offset: *mut u64) -> HvReturn;
     pub(crate) fn hv_vcpu_get_vtimer_mask(vcpu: HvVcpuT, vtimer_is_masked: *mut bool) -> HvReturn;
     pub(crate) fn hv_vcpu_set_trap_debug_exceptions(vcpu: HvVcpuT, value: bool) -> HvReturn;
@@ -109,8 +114,12 @@ pub(crate) const EXIT_CANCELED: u32 = 0;
 pub(crate) const EXIT_EXCEPTION: u32 = 1;
 
 pub(crate) const EXIT_VTIMER: u32 = 2;
+/// `hv_interrupt_type_t`: IRQ line.
+pub(crate) const HV_INTERRUPT_TYPE_IRQ: u32 = 0;
 
 pub(crate) const EC_DATA_ABORT: u64 = 0x24;
+
+pub(crate) const EC_WFX: u64 = 0x01;
 
 pub(crate) const EC_HVC: u64 = 0x16;
 
@@ -133,6 +142,7 @@ pub(crate) const HV_SYS_REG_MDSCR_EL1: u16 = 0x8012;
 pub(crate) const HV_SYS_REG_MPIDR_EL1: u16 = 0xc005;
 
 pub(crate) const HV_SYS_REG_ID_AA64DFR0_EL1: u16 = 0xc028;
+pub(crate) const HV_SYS_REG_ID_AA64PFR0_EL1: u16 = 0xc020;
 
 pub(crate) const HV_SYS_REG_SCTLR_EL1: u16 = 0xc080;
 

@@ -112,7 +112,7 @@ impl UserspaceGic {
     ) -> UsGicMmioResult {
         let mut kick_mask = 0u64;
         let value = match (offset, write) {
-            (GICD_CTLR, None) => u64::from(self.dist.ctlr | GICD_CTLR_ARE_NS),
+            (GICD_CTLR, None) => u64::from(self.dist.ctlr | GICD_CTLR_ARE_NS | GICD_CTLR_DS),
             (GICD_CTLR, Some(value)) => {
                 self.dist.ctlr = (value as u32) & 0x3;
                 kick_mask = self.all_cpus_mask();

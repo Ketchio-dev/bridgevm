@@ -132,6 +132,35 @@ pub(crate) unsafe fn emulate_debug_os_lock_sysreg(vcpu: HvVcpuT, trap: SysRegTra
             }
             true
         }
+        // PMCCNTR_EL0: winload measures CPU frequency with cycle-counter
+        // deltas and __fastfail()s (BRK #0xf004) when the delta is zero
+        // (usgic-diag2 stall: MRS x9,S3_3_C9_C13_0; MUL; CBNZ; BRK). A
+        // counter that actually advances is required -- scale the 24 MHz
+        // host timebase up to a plausible CPU clock.
+        (3, 3, 9, 13, 0, true) => {
+            if trap.rt != 31 {
+                let cycles = crate::usgic_bridge::host_time_ticks().wrapping_mul(100);
+                hv_vcpu_set_reg(vcpu, HV_REG_X0 + trap.rt, cycles);
+            }
+            true
+        }
+        // Remaining PMU group (PMCR/PMSELR/PMXEVCNTR/...): the
+        // userspace-GIC configuration traps these (Windows reads them
+        // during kernel bringup; first seen at usgic-boot3). RAZ/WI
+        // matches a PMU that counts nothing.
+        (3, 3, 9, 12..=14, _, is_read) | (3, 0, 9, 14, _, is_read) => {
+            if is_read && trap.rt != 31 {
+                hv_vcpu_set_reg(vcpu, HV_REG_X0 + trap.rt, 0);
+            }
+            true
+        }
+        (3, 3, 14, 15, 7, is_read) => {
+            // PMCCFILTR_EL0.
+            if is_read && trap.rt != 31 {
+                hv_vcpu_set_reg(vcpu, HV_REG_X0 + trap.rt, 0);
+            }
+            true
+        }
         _ => false,
     }
 }

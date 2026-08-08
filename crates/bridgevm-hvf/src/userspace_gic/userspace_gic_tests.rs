@@ -298,22 +298,29 @@ fn redistributor_typer_marks_last_and_affinity() {
 }
 
 #[test]
-fn waker_gates_ppi_delivery_until_awake() {
+fn waker_is_storage_only_and_never_gates_delivery() {
+    // QEMU parity: EDK2 never programs WAKER; delivery must flow with the
+    // register untouched, and writes only round-trip the sleep bit.
     let mut gic = UserspaceGic::new(1);
-    // CPU interface on, but redistributor still asleep.
     gic.sysreg(0, ICC_PMR_EL1, false, 0xff);
     gic.sysreg(0, ICC_IGRPEN1_EL1, false, 1);
     enable_vtimer_ppi(&mut gic, 0);
     gic.set_vtimer_ppi(0, true);
-    assert!(!gic.line_asserted(0), "asleep redistributor gates delivery");
+    assert!(gic.line_asserted(0), "delivery must not wait for WAKER");
 
     let base = machine::GIC_REDIST.base;
-    assert_eq!(
-        gic.mmio(base + GICR_WAKER, 4, None).value & u64::from(GICR_WAKER_CHILDREN_ASLEEP),
-        u64::from(GICR_WAKER_CHILDREN_ASLEEP)
-    );
-    gic.mmio(base + GICR_WAKER, 4, Some(0));
     assert_eq!(gic.mmio(base + GICR_WAKER, 4, None).value, 0);
+    gic.mmio(
+        base + GICR_WAKER,
+        4,
+        Some(u64::from(GICR_WAKER_PROCESSOR_SLEEP)),
+    );
+    assert_eq!(
+        gic.mmio(base + GICR_WAKER, 4, None).value,
+        u64::from(GICR_WAKER_PROCESSOR_SLEEP | GICR_WAKER_CHILDREN_ASLEEP)
+    );
+    assert!(gic.line_asserted(0), "sleep bit is storage, not a gate");
+    gic.mmio(base + GICR_WAKER, 4, Some(0));
     assert!(gic.line_asserted(0));
 }
 
@@ -359,9 +366,9 @@ fn owns_covers_dist_redist_msi_frame_only() {
 }
 
 #[test]
-fn unrouted_spi_falls_back_nowhere_and_irm_picks_awake_cpu() {
+fn unrouted_spi_falls_back_nowhere_and_irm_picks_cpu0() {
     let mut gic = UserspaceGic::new(4);
-    wake_cpu(&mut gic, 3);
+    wake_cpu(&mut gic, 0);
     enable_spi(&mut gic, 70, 0);
     // Route to a nonexistent affinity: no kicks, no delivery.
     gic.mmio(
@@ -370,16 +377,16 @@ fn unrouted_spi_falls_back_nowhere_and_irm_picks_awake_cpu() {
         Some(0xff),
     );
     assert_eq!(gic.set_spi(70, true), 0);
-    assert!(!gic.line_asserted(3));
+    assert!(!gic.line_asserted(0));
 
-    // IRM (1-of-N): lands on the first awake CPU (cpu3 here).
+    // IRM (1-of-N): QEMU parity routes to CPU0.
     gic.mmio(
         machine::GIC_DIST.base + GICD_IROUTER + 70 * 8,
         8,
         Some(IROUTER_IRM),
     );
     // Lowering under IRM kicks too: the line must be re-evaluated down.
-    assert_eq!(gic.set_spi(70, false), 1 << 3);
-    assert_eq!(gic.set_spi(70, true), 1 << 3);
-    assert!(gic.line_asserted(3));
+    assert_eq!(gic.set_spi(70, false), 1);
+    assert_eq!(gic.set_spi(70, true), 1);
+    assert!(gic.line_asserted(0));
 }

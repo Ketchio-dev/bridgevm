@@ -158,6 +158,7 @@ pub(crate) fn create_secondary_hvf_vcpu(
             "set secondary MPIDR_EL1"
         );
     }
+    crate::usgic_bridge::register_vcpu(control.index as usize, vcpu);
     (vcpu, exit, guard)
 }
 
@@ -297,6 +298,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             drain_stats.record_pre_run_skip();
         }
         let run_index = *exits + 1;
+        crate::usgic_bridge::pre_run(control.index as usize, vcpu);
         let run_status = unsafe { hv_vcpu_run(vcpu) };
         if let Some(trace) = smp_trace {
             trace.secondary_run_result(control.index, run_index, run_status, exit);
@@ -324,9 +326,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             continue;
         }
         if reason == EXIT_VTIMER {
-            unsafe {
-                hv_vcpu_set_vtimer_mask(vcpu, true);
-            }
+            crate::usgic_bridge::vtimer_exit_mask(control.index as usize, vcpu);
             continue;
         }
         if reason != EXIT_EXCEPTION {

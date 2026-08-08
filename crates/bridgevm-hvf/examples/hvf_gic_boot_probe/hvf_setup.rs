@@ -28,7 +28,15 @@ pub(crate) unsafe fn create_vm() {
     assert_eq!(vc, 0, "hv_vm_create");
 }
 
-pub(crate) unsafe fn create_gic() {
+pub(crate) unsafe fn create_gic(num_cpus: usize) {
+    // A1: the in-kernel GICv3 loses trapped EOIs / swallows vtimer fires
+    // (14/40 boots), while the identical host+image boots 10/10 with a
+    // userspace GIC under QEMU-hvf. BRIDGEVM_USERSPACE_GIC=1 selects the
+    // userspace model; the kernel GIC is then never created.
+    if crate::usgic_bridge::init_if_enabled(num_cpus) {
+        println!("userspace GICv3 active: {num_cpus} CPUs, hv_gic_create skipped");
+        return;
+    }
     // In-kernel GICv3 must be created after the VM and before any vCPU.
     let gic = hv_gic_config_create();
     assert_eq!(
