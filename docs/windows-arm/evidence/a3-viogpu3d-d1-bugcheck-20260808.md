@@ -38,9 +38,16 @@ Disassembly at the site:
 
 The crash is an indirect call whose target resolves to the PADDING between
 two functions in the pageable PAGE section, executed at DISPATCH_LEVEL.
-This is a guest-driver defect (bad function-pointer slot at +0x250 of some
-dispatch table in the venus-WIP viogpu3d), not a VMM defect: the same
-driver ran the same path to the same instruction on both boots.
+
+**Correction (same day):** "not a VMM defect" was too strong. The SAME
+gate completed on the in-kernel GIC (A2 p50 58.82 x3; A3 p50 28.57
+measured 2026-08-08 morning), and under the userspace GIC the A2 Vulkan
+gate ALSO dies in a guest reset right after launch. Executing padding
+through a dispatch slot is still a driver robustness bug, but the trigger
+correlates with interrupt-delivery differences between hv_gic and the
+userspace GIC (MSI-X latching, level-SPI re-fire after EOI, or IAR/EOI
+ordering under load). Investigation continues with GIC-op tracing around
+the crash.
 
 ## Impact on A3
 
@@ -49,11 +56,14 @@ driver ran the same path to the same instruction on both boots.
   guest within ~18 s of the gate command.
 - The previous "A1-class park during the title gate" classification is
   retracted for A3: with boots stabilized, the failure is a reproducible
-  guest bugcheck. A2 (Vulkan path) PASSED on this same driver -- the defect
-  is specific to a D3D10/11-path dispatch table.
-- Fix path: locate the +0x250 slot in the viogpu3d dispatch object
-  (builder repo patch stack), correct the table, rebuild via the GHA
-  builder, restage. Tracked as the single remaining A3 blocker.
+  guest bugcheck.
+- Under the userspace GIC the A2 Vulkan gate also triggers a guest reset
+  (a2-usgic2-170112: READY, staging OK, gate command sent, SYSTEM_RESET
+  within ~20 s) -- so the trigger is not D3D11-specific under usgic.
+- Fix path: trace the GIC operation stream at the crash (BRIDGEVM_USGIC_TRACE),
+  compare MSI/INTx semantics against hv_gic, and fix the delivery term in
+  the userspace GIC; the driver-side padding call remains a robustness bug
+  worth a patch in the builder stack regardless.
 
 ## Artifacts
 
