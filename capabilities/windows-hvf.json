@@ -175,12 +175,13 @@
     {
       "id": "A15",
       "title": "Process-recreate reset",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": true,
       "statement": "100 consecutive guest SYSTEM_RESETs each produce a new helper PID, an increasing reset generation, a fresh guest boot marker and 4 online CPUs.",
-      "measured": "Process-recreate reset proven LIVE on BOTH paths. Harness (scripts/verify-reset-recreate.sh): 3/3 cycles -- fresh helper PID, increasing generation, that boot's own BVAGENT READY, 4 online CPUs answered by the guest, in-guest PSCI reset, exit 42 asserted; 10-cycle run added intermediate-reset semantics then ended in the A1 stall at cycle 3. Typed path (hvf-runner --launch-spec --helper --helper-agent-control): 4 generations live, 3 READY boots, 3 exit-42 recreations, generation-tagged receipts, stall correctly receipt-less (2a586c7 evidence addendum). OPEN: the gate is 100 consecutive cycles and the A1 stall class interrupts long chains until fixed -- endurance is A1-bound, not reset-path-bound.",
+      "measured": "2026-08-08 PROVEN on the userspace GICv3 (BRIDGEVM_USERSPACE_GIC=1): CYCLES=100 verify-reset-recreate.sh PASS -- 100 consecutive guest SYSTEM_RESETs, each producing a fresh helper PID (predecessor gone), increasing generation 1..100, fresh agent READY and online_cpus=4; reset.receipt generation 100 with disk+vars flushed. Zero A1 parks in 100 consecutive full boots (~4.7h). Prior in-kernel-GIC best: 8 cycles/13 generations before a UEFI park. Run: reset-recreate-usgic3-151732. Evidence: a15-reset-recreate-100-20260808.md.",
       "evidence_paths": [
-        "docs/windows-arm/evidence/a1-boot-stall-20260802.md"
+        "docs/windows-arm/evidence/a1-boot-stall-20260802.md",
+        "docs/windows-arm/evidence/a15-reset-recreate-100-20260808.md"
       ]
     },
     {
