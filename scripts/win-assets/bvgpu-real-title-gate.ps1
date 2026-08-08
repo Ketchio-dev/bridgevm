@@ -7,7 +7,10 @@ param(
     # Game content to boot. Without content PPSSPP sits at its menu and
     # emits no "fps:" lines, so guest_fps reads samples=0 (measured
     # 2026-08-06); the frame counter runs only while a title renders.
-    [string]$ContentPath = ""
+    [string]$ContentPath = "",
+    # The loaded module that proves the render path under test. Vulkan runs
+    # require the venus ICD; D3D11 runs require the viogpu UMD instead.
+    [string]$RequiredModule = "vulkan_virtio.dll"
 )
 
 Set-StrictMode -Version Latest
@@ -134,9 +137,9 @@ while ([DateTime]::UtcNow -lt $deadline) {
         Exit-Gate 3
     }
     if ($null -eq $venusModulePath) {
-        $venusModulePath = Get-LoadedModulePath -Process $process -ModuleName "vulkan_virtio.dll"
+        $venusModulePath = Get-LoadedModulePath -Process $process -ModuleName $RequiredModule
         if ($null -ne $venusModulePath) {
-            Write-GateLog "venus_icd_loaded path=$venusModulePath"
+            Write-GateLog "required_module_loaded module=$RequiredModule path=$venusModulePath"
         }
     }
     if (-not $mainWindowObserved -and $process.MainWindowHandle -ne [IntPtr]::Zero) {
@@ -154,7 +157,7 @@ if ($process.HasExited) {
     Exit-Gate 4
 }
 if ($null -eq $venusModulePath) {
-    Write-GateLog "status=FAIL reason=venus-icd-not-loaded pid=$($process.Id)"
+    Write-GateLog "status=FAIL reason=required-module-not-loaded module=$RequiredModule pid=$($process.Id)"
     Exit-Gate 5
 }
 if (-not $mainWindowObserved) {
