@@ -43,9 +43,10 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "A real D3D11 title reports guest-side samples>0 AND p50>=30 FPS.",
-      "measured": "Instrumentation works with samples=311-369, but p50 is approximately 20 FPS. A self-authored D3D11 smoke reaches 54.3 FPS on the same path, so the stack is not capped at 20; the title stays on Composed: Flip and never reaches Hardware: Independent Flip.",
+      "measured": "Instrumentation works with samples=311-369, but p50 is approximately 20 FPS. A self-authored D3D11 smoke reaches 54.3 FPS on the same path, so the stack is not capped at 20; the title stays on Composed: Flip and never reaches Hardware: Independent Flip. 2026-08-08 BLOCKER RELOCATED on the userspace GIC: boots stable, gate now reaches the title and the guest bugchecks DETERMINISTICALLY -- DRIVER_IRQL_NOT_LESS_OR_EQUAL (0xD1), EXECUTE fault at viogpu3d.sys+0x1400c (inter-function padding in the pageable PAGE section) at DISPATCH_LEVEL, twice at the identical RVA via an indirect call (ldr x16,[x16,#0x250]; blr x16). Guest-driver defect in the venus-WIP D3D10/11 dispatch path (Vulkan path on the same driver PASSES A2). Minidump pulled and decoded. Fix: correct the dispatch slot in the viogpu3d patch stack, rebuild via GHA. Evidence: a3-viogpu3d-d1-bugcheck-20260808.md.",
       "evidence_paths": [
-        "docs/windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md"
+        "docs/windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md",
+        "docs/windows-arm/evidence/a3-viogpu3d-d1-bugcheck-20260808.md"
       ]
     },
     {
