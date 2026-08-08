@@ -363,6 +363,16 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                 } else {
                     MmioOp::Read { size }
                 };
+                if crate::usgic_bridge::try_data_abort(
+                    control.index as usize,
+                    vcpu,
+                    ipa,
+                    &op,
+                    srt,
+                    pc,
+                ) {
+                    continue;
+                }
                 let (outcome, pending) = {
                     let mut platform_guard = lock_platform(
                         platform,
@@ -497,7 +507,9 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             }
             EC_SYS_REG_TRAP => {
                 let trap = SysRegTrap::decode(esr);
-                if unsafe { emulate_debug_os_lock_sysreg(vcpu, trap) } {
+                if crate::usgic_bridge::try_sysreg(control.index as usize, vcpu, esr, pc) {
+                    // Trapped ICC_* consumed by the userspace GIC.
+                } else if unsafe { emulate_debug_os_lock_sysreg(vcpu, trap) } {
                     unsafe {
                         hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4);
                     }
@@ -509,6 +521,9 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                     );
                     return true;
                 }
+            }
+            EC_WFX if crate::usgic_bridge::usgic().is_some() => {
+                crate::usgic_bridge::wfx_trap(control.index as usize, vcpu, esr, pc);
             }
             _ => {
                 println!(

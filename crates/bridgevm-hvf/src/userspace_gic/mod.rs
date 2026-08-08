@@ -431,21 +431,25 @@ impl UserspaceGic {
         }
     }
 
-    /// vtimer PPI level for one vCPU (from vtimer exits / ISTATUS sync).
-    pub fn set_vtimer_ppi(&mut self, cpu: usize, level: bool) -> u64 {
+    /// vtimer PPI for one vCPU. A fire (EXIT_VTIMER) LATCHES pending --
+    /// edge semantics -- so the ack still finds it even if the guest's ISR
+    /// masks CNTV_CTL.IMASK before reading IAR (Windows does; modelling the
+    /// PPI as level tied to CNTV_CTL raced that window and the read
+    /// returned spurious, leaving the timer masked forever: usgic-diag3).
+    pub fn set_vtimer_ppi(&mut self, cpu: usize, fired: bool) -> u64 {
         let bit = 1u32 << VTIMER_INTID;
         let redist = &mut self.redists[cpu];
-        let was = redist.level0 & bit != 0;
-        if level {
-            redist.level0 |= bit;
+        if fired {
+            let was = redist.pending0 & bit != 0;
+            redist.pending0 |= bit;
+            if !was {
+                return self.kick_mask_for([cpu]);
+            }
         } else {
+            redist.pending0 &= !bit;
             redist.level0 &= !bit;
         }
-        if was != level && level {
-            self.kick_mask_for([cpu])
-        } else {
-            0
-        }
+        0
     }
 
     /// Is the vtimer PPI currently in service (acknowledged, not yet EOI'd)?

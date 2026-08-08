@@ -31,9 +31,6 @@ pub(crate) fn host_time_ticks() -> u64 {
 }
 
 const MAX_VCPUS: usize = 16;
-const CNTV_CTL_ENABLE: u64 = 1 << 0;
-const CNTV_CTL_IMASK: u64 = 1 << 1;
-const CNTV_CTL_ISTATUS: u64 = 1 << 2;
 
 pub(crate) struct UsGicBridge {
     gic: Mutex<UserspaceGic>,
@@ -264,20 +261,10 @@ impl UsGicBridge {
     }
 
     unsafe fn pre_run(&self, cpu: usize, vcpu: HvVcpuT) {
-        if self.vtimer_masked[cpu].load(Ordering::SeqCst) {
-            let mut ctl = 0u64;
-            hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_CNTV_CTL_EL0, &mut ctl);
-            let firing = ctl & CNTV_CTL_ENABLE != 0
-                && ctl & CNTV_CTL_ISTATUS != 0
-                && ctl & CNTV_CTL_IMASK == 0;
-            if !firing {
-                // Guest reprogrammed or disabled the timer: drop the PPI
-                // level and let the vtimer generate the next fire exit.
-                self.gic.lock().unwrap().set_vtimer_ppi(cpu, false);
-                hv_vcpu_set_vtimer_mask(vcpu, false);
-                self.vtimer_masked[cpu].store(false, Ordering::SeqCst);
-            }
-        }
+        // The vtimer PPI is edge-latched at EXIT_VTIMER and consumed by the
+        // guest's IAR read; the host vtimer stays masked until the guest
+        // EOIs INTID 27 (see sysreg_trap). Nothing to sync here beyond the
+        // IRQ line itself.
         let line = self.gic.lock().unwrap().line_asserted(cpu);
         hv_vcpu_set_pending_interrupt(vcpu, HV_INTERRUPT_TYPE_IRQ, line);
     }
@@ -312,6 +299,16 @@ impl UsGicBridge {
         };
         if trap.is_read && trap.rt != 31 {
             hv_vcpu_set_reg(vcpu, HV_REG_X0 + trap.rt, result.value);
+        }
+        // Guest completed the vtimer interrupt: re-enable host fire exits.
+        // (EOIR1 in EOImode=0, or DIR in EOImode=1, naming INTID 27.)
+        if !trap.is_read
+            && (encoding == bridgevm_hvf::userspace_gic::ICC_EOIR1_EL1
+                || encoding == bridgevm_hvf::userspace_gic::ICC_DIR_EL1)
+            && write_value & 0xff_ffff == u64::from(bridgevm_hvf::userspace_gic::VTIMER_INTID)
+            && self.vtimer_masked[cpu].swap(false, Ordering::SeqCst)
+        {
+            hv_vcpu_set_vtimer_mask(vcpu, false);
         }
         self.kick(result.kick_mask, cpu);
         hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4);
