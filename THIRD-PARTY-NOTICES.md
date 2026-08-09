@@ -1,0 +1,59 @@
+# Third-Party Notices
+
+BridgeVM ships with, loads, or installs the third-party components below.
+BridgeVM's own code is proprietary; every third-party component is either
+under a permissive license (attribution only) or, where copyleft, is kept a
+separately-replaceable dynamic library / guest-side artifact so that no
+copyleft obligation attaches to BridgeVM's own code.
+
+## Host-side (macOS app / VMM)
+
+| Component | License | Linkage | Obligation |
+|---|---|---|---|
+| virglrenderer (freedesktop.org, with BridgeVM patches) | MIT | dynamic library (`libvirglrenderer.dylib`), loaded by the VMM process | ship license text, keep copyright notices |
+| MoltenVK (KhronosGroup) | Apache-2.0 | dynamic library loaded at runtime (`BRIDGEVM_VULKAN_LIB`, default `/opt/homebrew/lib/libMoltenVK.dylib`); not distributed in-app by default | if bundled: ship LICENSE + NOTICE |
+| Vulkan-Headers / venus protocol headers | Apache-2.0 / MIT | build-time headers | none beyond notice |
+| swtpm + libtpms (vTPM) | BSD-3-Clause | bundled helper binary + dylibs | ship license text |
+| GLib / GObject / GIO / GModule, json-glib | LGPL-2.1+ | bundled **dynamic** libraries (swtpm dependencies), replaceable by path | ship license text + LGPL text; keep dynamic linkage |
+| gettext runtime (libintl) | LGPL-2.1+ | bundled dynamic library | same as GLib |
+| OpenSSL (libcrypto) | Apache-2.0 | bundled dynamic library | ship license + notice |
+| PCRE2 | BSD-3-Clause | bundled dynamic library | ship license text |
+| libepoxy | MIT | bundled dynamic library | ship license text |
+| TianoCore EDK2 secure firmware volume | BSD-2-Clause-Patent | bundled firmware image (`Resources/firmware`) | ship license text |
+
+macOS system frameworks (Hypervisor, AppKit, Security, AudioToolbox, OpenGL,
+libSystem, libiconv, libobjc) are Apple system libraries used under the macOS
+SDK terms; they are not redistributed.
+
+## Guest-side (Windows driver / tools payload)
+
+| Component | License | Form | Obligation |
+|---|---|---|---|
+| viogpu3d KMD (virtio-win / kvm-guest-drivers-windows; venus/neptune branches by osy, anonymix007, arehnman) | BSD-3-Clause | signed `.sys` + INF installed into the guest | ship license text, keep copyright notices |
+| Mesa (venus Vulkan ICD `vulkan_virtio.dll`, Neptune UMD `neptune_umd*.dll`) | MIT (Mesa) | guest DLLs installed by the driver package | ship license text |
+| NetKVM (virtio-win) | BSD-3-Clause | guest network driver | ship license text |
+| PPSSPP (validation payload only) | GPL-2.0-or-later | standalone guest **application**, not linked with BridgeVM; used only in internal validation gates, **not shipped** in the product image | none if not distributed; if ever distributed, ship complete corresponding source |
+| TianoCore EDK2 firmware (AAVMF/OVMF build) | BSD-2-Clause-Patent | guest UEFI firmware image | ship license text |
+
+## Explicitly excluded
+
+- **Apple D3DMetal / Game Porting Toolkit**: license prohibits redistribution
+  and non-evaluation use — NOT used, NOT shipped.
+- **QEMU**: not used by the product (BridgeVM has its own
+  Hypervisor.framework VMM). QEMU exists in the repo only as a development
+  control experiment and is not part of any shipped artifact.
+- **DXMT (LGPL-2.1+)**: not currently shipped. If a future release bundles it
+  for the D3D11-on-Metal host renderer, it must remain a separate dynamic
+  library with its source (including modifications) published, per LGPL.
+
+All LGPL components above are shipped ONLY as separate `.dylib` files under
+`Contents/Frameworks/`; BridgeVM binaries link them dynamically (verify with
+`otool -L`), so relinking/replacement by the user is possible as LGPL
+requires. No LGPL code is statically linked into BridgeVM binaries.
+
+## Verification
+
+- Host linkage is auditable with `otool -L` against the shipped binaries:
+  the only non-system library is `libvirglrenderer` (MIT).
+- Guest payload contents are pinned by `scripts/win-assets/` and the driver
+  package manifests (`viogpu3d-package-manifest.txt` in run evidence).

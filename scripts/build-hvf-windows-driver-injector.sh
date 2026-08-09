@@ -17,6 +17,8 @@ DRIVER_DIRS="${DRIVER_DIRS:-netkvm:$HOME/BridgeVM/drivers/netkvm}"
 # vars address it as HD(1,GPT,<this>,0x800,0x2FF000) in Boot0003. See the
 # normalisation step at the end of this script for why a random GUID is unsafe.
 INJECTOR_PARTITION_UUID="${INJECTOR_PARTITION_UUID:-a0a0c780-d438-47c2-8c96-1b56363c72dd}"
+# Set REMOVE_DRIVER_OEMNAMES="oem1.inf oem4.inf" to have bvinject.cmd
+# dism /Remove-Driver those offline packages before staging the new tree.
 # Set ENABLE_TESTSIGNING=1 when staging test-signed drivers such as viogpu3d.
 # This plants a marker file consumed by bvinject.cmd inside WinPE; existing
 # driver-injection runs leave Windows BCD untouched by default.
@@ -292,6 +294,10 @@ if [[ "$NEEDS_GPU_FIRSTBOOT" == "1" ]]; then
     echo "FAIL: viogpu3d driver-state cleanup missing" >&2; exit 1; }
 fi
 
+if [[ -n "${REMOVE_DRIVER_OEMNAMES:-}" ]]; then
+  log "staging offline driver-removal list \\bridgevm-remove-driver-oemnames.txt"
+  printf '%s\n' $REMOVE_DRIVER_OEMNAMES > "$DST_VOL/bridgevm-remove-driver-oemnames.txt"
+fi
 if [[ "$ENABLE_TESTSIGNING" == "1" ]]; then
   log "staging testsigning marker \\bridgevm-enable-testsigning.txt"
   printf 'BridgeVM WinPE injector: enable offline Windows test-signing\n' \

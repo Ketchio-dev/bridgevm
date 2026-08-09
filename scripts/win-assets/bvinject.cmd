@@ -166,6 +166,19 @@ if exist %DRV%\..\bridgevm-diagnostics-only.txt (
   goto :end
 )
 
+rem --- optional: remove offline driver packages listed (one oemNN.inf per
+rem     line) in bridgevm-remove-driver-oemnames.txt. Used to supersede an
+rem     older viogpu3d before staging a WHQL replacement: offline removal
+rem     cannot race the running display stack. ---
+if exist %DRV%\..\bridgevm-remove-driver-oemnames.txt (
+  echo BVINJECT DISM REMOVE-DRIVERS
+  for /f "usebackq delims=" %%N in ("%DRV%\..\bridgevm-remove-driver-oemnames.txt") do (
+    echo BVINJECT REMOVE %%N
+    dism /Image:%WIN%\ /Remove-Driver /Driver:%%N
+    if errorlevel 1 echo BVINJECT WARN: remove %%N failed, continuing
+  )
+)
+
 rem --- inject every driver under \drivers into the offline image.  A deliberate
 rem     reinjection marker bypasses DISM when an installed display package is
 rem     being superseded: live firstboot pnputil below performs the authoritative
