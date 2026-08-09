@@ -95,6 +95,9 @@ pub struct AgentConsoleHarness {
     /// report anchor. None means the wire is idle and the next queued request
     /// may be sent. An overdue request remains here to preserve wire alignment.
     pub(super) in_flight: Option<(ServiceReq, Instant)>,
+    /// Consecutive overdue reports for the current in-flight request; at 3
+    /// the request is dropped from the wire and re-queued (retransmit).
+    pub(super) overdue_beats: u32,
     /// Last clipboard text synced in EITHER direction, stored normalized (LF).
     /// Guards the CRLF/LF ping-pong: a value we just pushed one way must not be
     /// re-adopted when it comes back the other way.

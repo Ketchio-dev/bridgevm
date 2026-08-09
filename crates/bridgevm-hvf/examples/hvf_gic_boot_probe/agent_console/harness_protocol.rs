@@ -78,6 +78,7 @@ impl AgentConsoleHarness {
                 as usize,
             queue: VecDeque::new(),
             in_flight: None,
+            overdue_beats: 0,
             last_synced: None,
             pasteboard,
             ctl_path,

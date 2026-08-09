@@ -110,10 +110,39 @@ impl AgentConsoleHarness {
                 "BVAGENT SERVICE overdue {kind} awaiting-reply=true t={}",
                 now.duration_since(self.start).as_millis()
             );
+            // Lockstep with no retransmit wedged every long session: one
+            // lost console line (agent restart, guest hiccup) held
+            // in_flight forever and starved ctl/share/ping behind it.
+            // After 3 overdue beats the reply is not coming; drop the wire
+            // slot and re-queue the request at the front. LS/GET/PUT are
+            // idempotent snapshots and ping/clip polls are reads. A Cmd is
+            // EXCLUDED: the single-threaded guest agent goes silent for the
+            // whole runtime of a long command (gates run for minutes), so an
+            // overdue Cmd usually IS still running and a resend would run it
+            // twice.
+            let cmd_in_flight = matches!(
+                self.in_flight.as_ref(),
+                Some((ServiceReq::Ctl(_), _))
+            );
+            if !cmd_in_flight {
+                self.overdue_beats += 1;
+                if self.overdue_beats >= 3 {
+                    if let Some((req, _)) = self.in_flight.take() {
+                        println!(
+                            "BVAGENT SERVICE retransmit {} t={}",
+                            req_kind(&req),
+                            now.duration_since(self.start).as_millis()
+                        );
+                        self.queue.push_front(req);
+                    }
+                    self.overdue_beats = 0;
+                }
+            }
         }
         if self.in_flight.is_some() {
             return;
         }
+        self.overdue_beats = 0;
         let Some(req) = self.queue.pop_front() else {
             return;
         };

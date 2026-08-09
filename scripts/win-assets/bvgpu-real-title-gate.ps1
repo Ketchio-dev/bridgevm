@@ -10,7 +10,9 @@ param(
     [string]$ContentPath = "",
     # The loaded module that proves the render path under test. Vulkan runs
     # require the venus ICD; D3D11 runs require the viogpu UMD instead.
-    [string]$RequiredModule = "vulkan_virtio.dll"
+    [string]$RequiredModule = "vulkan_virtio.dll",
+    # Extra command-line arguments for the title (e.g. --fullscreen).
+    [string]$ExtraArgs = ""
 )
 
 Set-StrictMode -Version Latest
@@ -115,6 +117,9 @@ Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath $frameLog
 # DEBUG is still required: the per-frame sceDisplaySetFrameBuf lines the fps
 # fallback below derives samples from are D[SCEDISP].
 $launchArgs = @("--log=$frameLog", "--loglevel=5")
+if ($ExtraArgs -ne "") {
+    $launchArgs += ($ExtraArgs -split ' ')
+}
 if ($ContentPath -ne "") {
     if (-not (Test-Path -LiteralPath $ContentPath -PathType Leaf)) {
         Write-GateLog "status=FAIL reason=content-missing path=$ContentPath"
