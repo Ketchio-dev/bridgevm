@@ -161,17 +161,21 @@ pub(crate) fn wfx_trap(cpu: usize, vcpu: HvVcpuT, esr: u64, pc: u64) -> bool {
     if !is_wfe {
         let line = { bridge.gic.lock().unwrap().line_asserted(cpu) };
         if !line {
-            // Park on the condvar so any kick (SGI, SPI, MSI, vtimer,
-            // priority change) wakes this vCPU immediately. The timeout
-            // bounds the wait when a wake races the registration.
-            let bit = 1u64 << cpu;
-            let mut lot = bridge.wfi_lot.lock().unwrap();
-            *lot |= bit;
-            let (mut lot2, _) = bridge
-                .wfi_cv
-                .wait_timeout_while(lot, Duration::from_millis(1), |lot| *lot & bit != 0)
-                .unwrap();
-            *lot2 &= !bit;
+            if std::env::var_os("BRIDGEVM_USGIC_WFI_NAP").is_some() {
+                std::thread::sleep(Duration::from_micros(500));
+            } else {
+                // Park on the condvar so any kick (SGI, SPI, MSI, vtimer,
+                // priority change) wakes this vCPU immediately. The timeout
+                // bounds the wait when a wake races the registration.
+                let bit = 1u64 << cpu;
+                let mut lot = bridge.wfi_lot.lock().unwrap();
+                *lot |= bit;
+                let (mut lot2, _) = bridge
+                    .wfi_cv
+                    .wait_timeout_while(lot, Duration::from_millis(1), |lot| *lot & bit != 0)
+                    .unwrap();
+                *lot2 &= !bit;
+            }
         }
     }
     unsafe {

@@ -27,14 +27,13 @@ use crate::hvf_abi::{
 /// Call after a surplus (unclaimed) canceled exit. A spurious unmask when no
 /// fire was swallowed is harmless; the timer condition is level-evaluated.
 pub(crate) fn recover_swallowed_vtimer_fire(vcpu: HvVcpuT) {
-    // The swallowed-fire race lives inside Apple's in-kernel GIC. On the
-    // userspace GIC this unmask/pulse would fight the bridge's contract
-    // (mask on EXIT_VTIMER, unmask on guest EOI of INTID 27): unmasking
-    // here while the PPI is latched re-fires EXIT_VTIMER in a storm and
-    // can drop the edge the guest is about to ack.
-    if crate::usgic_bridge::usgic().is_some() {
-        return;
-    }
+    // Runs in BOTH GIC modes. The 2026-08-08 night proved it the hard way:
+    // the usgic soak that went 10/10 still had this recovery active, and
+    // the build that disabled it under usgic parked 3/9 boots in the
+    // winload spinner -- the EXIT_CANCELED/vtimer-fire race lives in HVF's
+    // kernel fire path, which the userspace GIC still depends on. The mask
+    // pulse is idempotent against the bridge's mask-on-fire contract: a
+    // re-fired EXIT_VTIMER just re-latches an already-pending PPI.
     unsafe {
         hv_vcpu_set_vtimer_mask(vcpu, false);
         let mut cntv_ctl = 0u64;
