@@ -458,10 +458,10 @@ crates/bridgevm-hvf/src/virtio_gpu_3d/fences.rs	49	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/local_resource_copy.rs	271	1
 crates/bridgevm-hvf/src/virtio_gpu_3d/mod.rs	35	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/protocol.rs	149	0
-crates/bridgevm-hvf/src/virtio_gpu_3d/resource_3d.rs	242	0
+crates/bridgevm-hvf/src/virtio_gpu_3d/resource_3d.rs	254	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/scanout_present.rs	110	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/scanout_types.rs	45	0
-crates/bridgevm-hvf/src/virtio_gpu_3d/submit_3d.rs	66	0
+crates/bridgevm-hvf/src/virtio_gpu_3d/submit_3d.rs	75	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/submit_diagnostic_state.rs	15	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/submit_dispatch.rs	18	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/submit_types.rs	37	0
@@ -842,7 +842,7 @@ crates/bridgevm-hvf-runtime/src/vm_run.rs	69	0
 crates/bridgevm-hvf-runtime/src/vm_run_tests.rs	110	0
 crates/bridgevm-hvf-runtime/src/vtpm.rs	148	0
 crates/bridgevm-hvf-runtime/src/vtpm_tests.rs	110	0
-crates/bridgevm-hvf/src/userspace_gic/mod.rs	742	0
-crates/bridgevm-hvf/src/userspace_gic/mmio_regs.rs	350	0
+crates/bridgevm-hvf/src/userspace_gic/mod.rs	765	0
+crates/bridgevm-hvf/src/userspace_gic/mmio_regs.rs	358	0
 crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	388	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	438	13
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	489	13

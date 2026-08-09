@@ -172,6 +172,18 @@ impl VirtioGpu3d {
         }
         self.resource_3d_ids.insert(args.resource_id);
         self.resource_3d_info.insert(args.resource_id, args);
+        if crate::virtio_gpu_trace::venus_start_trace_enabled() {
+            println!(
+                "venus-start: create_3d res={} target={} format={} bind={:#x} {}x{} local={}",
+                args.resource_id,
+                args.target,
+                args.format,
+                args.bind,
+                args.width,
+                args.height,
+                local_scanout
+            );
+        }
         if local_scanout {
             self.local_3d_backing.insert(args.resource_id, Vec::new());
             if venus_start_trace_enabled() {

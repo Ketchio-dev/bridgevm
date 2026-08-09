@@ -380,12 +380,31 @@ impl UserspaceGic {
         cpus.into_iter().fold(0u64, |m, c| m | (1u64 << c))
     }
 
+    /// Kick only CPUs whose line level CHANGED. Every `hv_vcpus_exit`
+    /// clears the target's exclusive monitor; a kick storm (one per MSI/SGI
+    /// while the line was ALREADY asserted) kept guest STXR loops failing
+    /// forever -- three vCPUs spinning on one spinlock PC, the fourth
+    /// waiting for their IPI acks (r3d-1-074640). An already-asserted line
+    /// needs no kick: the pending IRQ is injected at that vCPU's next
+    /// entry, which the earlier kick already forced. A falling edge still
+    /// kicks so the vCPU re-evaluates the pin down (level SPI deassert).
+    fn kick_if_line_changed(&self, cpu: usize, was_asserted: bool) -> u64 {
+        if was_asserted != self.line_asserted(cpu) {
+            self.kick_mask_for([cpu])
+        } else {
+            0
+        }
+    }
+
     /// Device SPI level (virtio INTx and friends). `intid` is absolute.
     pub fn set_spi(&mut self, intid: u32, level: bool) -> u64 {
         let intid = intid as usize;
         if !(SPI_BASE..GIC_INTID_COUNT).contains(&intid) {
             return 0;
         }
+        // Line state BEFORE mutation: the kick decision needs the edge.
+        let target = self.route_target(intid);
+        let was_line = target.map(|cpu| self.line_asserted(cpu));
         let (reg, bit) = Distributor::bit(intid);
         // Edge-configured SPIs latch into pending on a rising edge; level
         // SPIs track the input. ICFGR bit (2*intid%32+1): 1 = edge.
@@ -407,9 +426,9 @@ impl UserspaceGic {
                 return 0;
             }
         }
-        match self.route_target(intid) {
-            Some(cpu) => self.kick_mask_for([cpu]),
-            None => 0,
+        match (target, was_line) {
+            (Some(cpu), Some(was)) => self.kick_if_line_changed(cpu, was),
+            _ => 0,
         }
     }
 
@@ -422,12 +441,14 @@ impl UserspaceGic {
         if !(SPI_BASE..GIC_INTID_COUNT).contains(&intid) {
             return 0;
         }
+        let target = self.route_target(intid);
+        let was = target.map(|cpu| self.line_asserted(cpu));
         // MSIs are always edge: latch pending directly.
         let (reg, bit) = Distributor::bit(intid);
         self.dist.pending[reg] |= bit;
-        match self.route_target(intid) {
-            Some(cpu) => self.kick_mask_for([cpu]),
-            None => 0,
+        match (target, was) {
+            (Some(cpu), Some(was)) => self.kick_if_line_changed(cpu, was),
+            _ => 0,
         }
     }
 
@@ -438,12 +459,13 @@ impl UserspaceGic {
     /// returned spurious, leaving the timer masked forever: usgic-diag3).
     pub fn set_vtimer_ppi(&mut self, cpu: usize, fired: bool) -> u64 {
         let bit = 1u32 << VTIMER_INTID;
+        let was_line = self.line_asserted(cpu);
         let redist = &mut self.redists[cpu];
         if fired {
             let was = redist.pending0 & bit != 0;
             redist.pending0 |= bit;
             if !was {
-                return self.kick_mask_for([cpu]);
+                return self.kick_if_line_changed(cpu, was_line);
             }
         } else {
             redist.pending0 &= !bit;
@@ -624,8 +646,9 @@ impl UserspaceGic {
                     if irm && target == cpu {
                         continue;
                     }
+                    let was = self.line_asserted(target);
                     self.redists[target].pending0 |= bit;
-                    kick_mask |= 1u64 << target;
+                    kick_mask |= self.kick_if_line_changed(target, was);
                 }
                 0
             }

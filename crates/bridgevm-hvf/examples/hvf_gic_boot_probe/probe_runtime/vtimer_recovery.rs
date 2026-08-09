@@ -27,13 +27,15 @@ use crate::hvf_abi::{
 /// Call after a surplus (unclaimed) canceled exit. A spurious unmask when no
 /// fire was swallowed is harmless; the timer condition is level-evaluated.
 pub(crate) fn recover_swallowed_vtimer_fire(vcpu: HvVcpuT) {
-    // Runs in BOTH GIC modes. The 2026-08-08 night proved it the hard way:
-    // the usgic soak that went 10/10 still had this recovery active, and
-    // the build that disabled it under usgic parked 3/9 boots in the
-    // winload spinner -- the EXIT_CANCELED/vtimer-fire race lives in HVF's
-    // kernel fire path, which the userspace GIC still depends on. The mask
-    // pulse is idempotent against the bridge's mask-on-fire contract: a
-    // re-fired EXIT_VTIMER just re-latches an already-pending PPI.
+    // In-kernel GIC only. Under the userspace GIC the bridge synthesizes
+    // expired fires in pre_run from the guest's own CNTV state, and this
+    // recovery's re-arm (CVAL = now+240 ticks, 31k times in one parked
+    // boot) kept pushing the deadline into the future faster than the
+    // synthesizer could observe it expired -- the cure blocked the cure.
+    // With synthesis in place the recovery has nothing to add there.
+    if crate::usgic_bridge::usgic().is_some() {
+        return;
+    }
     unsafe {
         hv_vcpu_set_vtimer_mask(vcpu, false);
         let mut cntv_ctl = 0u64;
@@ -64,9 +66,11 @@ pub(crate) fn recover_swallowed_vtimer_fire(vcpu: HvVcpuT) {
         // and the terminal capture read "pending and deliverable" on a
         // fully idle CPU interface -- open gate, no edge, dead boot.
         clear_stale_running_priority(vcpu);
+        RECOVERY_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if cntv_ctl & 0b111 == 0b101 {
             hv_vcpu_set_vtimer_mask(vcpu, true);
             hv_vcpu_set_vtimer_mask(vcpu, false);
+            RECOVERY_PULSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         // ENABLE=1 and IMASK=0: the guest is waiting on this timer.
         if cntv_ctl & 0b11 == 0b01 {
@@ -85,6 +89,7 @@ pub(crate) fn recover_swallowed_vtimer_fire(vcpu: HvVcpuT) {
                 // guest against a deadline that was already 8.2M ticks
                 // overdue, but unambiguous to the emulation.
                 hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_CNTV_CVAL_EL0, guest_now + REARM_FUTURE_TICKS);
+                RECOVERY_REARMS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
         }
     }
@@ -92,6 +97,13 @@ pub(crate) fn recover_swallowed_vtimer_fire(vcpu: HvVcpuT) {
 
 /// 10us at the 24MHz architectural counter.
 const REARM_FUTURE_TICKS: u64 = 240;
+
+/// Diagnostics: how often the recovery ran / pulsed / re-armed. Read by the
+/// usgic stall report to tell "re-arm loop starves the fire" from "fire died
+/// with no recovery in sight".
+pub(crate) static RECOVERY_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static RECOVERY_PULSES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static RECOVERY_REARMS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// Clear a running priority that has no active interrupt behind it.
 ///

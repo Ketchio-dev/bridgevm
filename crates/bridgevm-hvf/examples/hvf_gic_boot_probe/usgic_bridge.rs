@@ -51,6 +51,11 @@ pub(crate) struct UsGicBridge {
     /// and starved DXGK worker handoffs (usgic venus wedge suspect).
     wfi_lot: Mutex<u64>,
     wfi_cv: Condvar,
+    /// Last CPSR+PC seen at any exit, per vCPU. HVF registers are only
+    /// readable from the owning thread, so the stall report (vCPU0 thread)
+    /// cannot ask vCPU1-3 directly; each records its own state here.
+    last_cpsr: [AtomicU64; MAX_VCPUS],
+    last_pc: [AtomicU64; MAX_VCPUS],
 }
 
 macro_rules! usgic_trace {
@@ -209,7 +214,12 @@ pub(crate) fn stall_report(vcpu0: HvVcpuT) {
     };
     let gic = bridge.gic.lock().unwrap();
     for cpu in 0..bridge.num_cpus {
-        println!("USGIC stall cpu{cpu}: {}", gic.debug_line(cpu));
+        println!(
+            "USGIC stall cpu{cpu}: {} cpsr={:#x} pc={:#x}",
+            gic.debug_line(cpu),
+            bridge.last_cpsr[cpu].load(Ordering::Relaxed),
+            bridge.last_pc[cpu].load(Ordering::Relaxed)
+        );
     }
     drop(gic);
     bridge.ring_dump("stall");
@@ -219,9 +229,12 @@ pub(crate) fn stall_report(vcpu0: HvVcpuT) {
         hv_vcpu_get_sys_reg(vcpu0, HV_SYS_REG_CNTV_CTL_EL0, &mut ctl);
         hv_vcpu_get_sys_reg(vcpu0, HV_SYS_REG_CNTV_CVAL_EL0, &mut cval);
         println!(
-            "USGIC stall cpu0 vtimer: ctl={ctl:#x} cval={cval:#x} now={:#x} host_masked={}",
+            "USGIC stall cpu0 vtimer: ctl={ctl:#x} cval={cval:#x} now={:#x} host_masked={} recov(calls={} pulses={} rearms={})",
             mach_absolute_time(),
-            bridge.vtimer_masked[0].load(Ordering::SeqCst)
+            bridge.vtimer_masked[0].load(Ordering::SeqCst),
+            crate::probe_runtime::vtimer_recovery::RECOVERY_CALLS.load(Ordering::Relaxed),
+            crate::probe_runtime::vtimer_recovery::RECOVERY_PULSES.load(Ordering::Relaxed),
+            crate::probe_runtime::vtimer_recovery::RECOVERY_REARMS.load(Ordering::Relaxed)
         );
         // The guest-visible exception state: if the guest parked in its own
         // vector (b .), ESR_EL1/ELR_EL1/FAR_EL1 name the exception that put
@@ -282,6 +295,8 @@ impl UsGicBridge {
             ring_enabled: env_flag("BRIDGEVM_USGIC_RING"),
             wfi_lot: Mutex::new(0),
             wfi_cv: Condvar::new(),
+            last_cpsr: std::array::from_fn(|_| AtomicU64::new(0)),
+            last_pc: std::array::from_fn(|_| AtomicU64::new(0)),
         }
     }
 
@@ -335,10 +350,46 @@ impl UsGicBridge {
     }
 
     unsafe fn pre_run(&self, cpu: usize, vcpu: HvVcpuT) {
-        // The vtimer PPI is edge-latched at EXIT_VTIMER and consumed by the
-        // guest's IAR read; the host vtimer stays masked until the guest
-        // EOIs INTID 27 (see sysreg_trap). Nothing to sync here beyond the
-        // IRQ line itself.
+        // Synthesize the vtimer fire that Apple's kernel loses under load.
+        // The r3d-1-072906 park: CVAL 0x29eafc5416d3 < now, ENABLE=1,
+        // IMASK=0, host unmasked -- and 258k recovery calls (25k mask
+        // pulses, 33k re-arms) never coaxed EXIT_VTIMER out of HVF. The
+        // fire GENERATION path still lives in Apple's kernel even with the
+        // userspace GIC, so stop depending on it: on every entry, if the
+        // guest's own CNTV state says "expired and unmasked", latch the
+        // PPI ourselves and mask the host timer exactly as EXIT_VTIMER
+        // would have.
+        {
+            let mut cpsr = 0u64;
+            let mut pc = 0u64;
+            hv_vcpu_get_reg(vcpu, HV_REG_CPSR, &mut cpsr);
+            hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut pc);
+            self.last_cpsr[cpu].store(cpsr, Ordering::Relaxed);
+            self.last_pc[cpu].store(pc, Ordering::Relaxed);
+        }
+        if !self.vtimer_masked[cpu].load(Ordering::SeqCst) {
+            let mut ctl = 0u64;
+            hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_CNTV_CTL_EL0, &mut ctl);
+            // ENABLE=1, IMASK=0: ISTATUS (bit2) may lag, so compare CVAL.
+            if ctl & 0b11 == 0b01 {
+                let expired = if ctl & 0b100 != 0 {
+                    true
+                } else {
+                    let mut cval = 0u64;
+                    hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_CNTV_CVAL_EL0, &mut cval);
+                    let mut voff = 0u64;
+                    hv_vcpu_get_vtimer_offset(vcpu, &mut voff);
+                    cval <= host_cntvct().wrapping_sub(voff)
+                };
+                if expired {
+                    hv_vcpu_set_vtimer_mask(vcpu, true);
+                    self.vtimer_masked[cpu].store(true, Ordering::SeqCst);
+                    let kicks = self.gic.lock().unwrap().set_vtimer_ppi(cpu, true);
+                    self.ring_push(format!("c{cpu} vtimer-synth k={kicks:#x}"));
+                    self.kick(kicks, cpu);
+                }
+            }
+        }
         let line = self.gic.lock().unwrap().line_asserted(cpu);
         hv_vcpu_set_pending_interrupt(vcpu, HV_INTERRUPT_TYPE_IRQ, line);
     }

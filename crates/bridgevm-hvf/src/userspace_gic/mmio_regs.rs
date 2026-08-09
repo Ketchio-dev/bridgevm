@@ -273,6 +273,14 @@ impl UserspaceGic {
             (GICR_PIDR2, None) => PIDR2_GICV3,
             (GICR_IGROUPR0, None) => u64::from(self.redists[cpu].group0),
             (GICR_IGROUPR0, Some(value)) => {
+                if value as u32 != u32::MAX {
+                    // A guest moving SGIs/PPIs to Group 0 (FIQ) would silently
+                    // lose them: this model only delivers Group 1. Shout so a
+                    // boot park can be attributed instead of guessed at.
+                    println!(
+                        "USGIC cpu{cpu} IGROUPR0 write {value:#x}: Group0 requested, UNSUPPORTED"
+                    );
+                }
                 self.redists[cpu].group0 = value as u32;
                 kick_mask = 1u64 << cpu;
                 0

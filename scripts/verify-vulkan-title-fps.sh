@@ -85,7 +85,7 @@ run_guest() { # command, timeout
 scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" \
   --evidence-dir "$OUT" --watchdog-ms $((BOOT_TIMEOUT * 1000)) \
-  --ram-mib 6144 --smp-cpus 4 \
+  --ram-mib 6144 --smp-cpus 4 --release \
   --agent-service-control "$CTL" \
   --agent-share-host "$HOST_SHARE" --agent-share-guest 'C:\BridgeVMShare' \
   --agent-share-max-kb 32768 \
