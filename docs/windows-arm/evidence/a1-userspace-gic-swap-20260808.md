@@ -57,6 +57,11 @@ EOI is handled in our own code and pending state cannot be lost.
   alive at ~0 CPU with no main window. MSI-X intid 132 IS delivered and
   EOId in the ring dump — the divergence is later in the venus
   fence/event chain. Under investigation.
+- With DPE=1 the D3D11 gate runs to a clean verdict on usgic (no crash,
+  no park) but FAILs required-module-not-loaded: the D3D runtime falls
+  back to BasicRender instead of the viogpu adapter — the same
+  device-bringup wedge as the Vulkan path, seen from D3D's side
+  (a3-gate-200945).
 - In-kernel-GIC remains the default; the swap is one env flag away and
   involves zero Apple-side dependencies. usgic is already the better
   configuration for everything except venus 3D.
