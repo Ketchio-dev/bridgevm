@@ -56,6 +56,8 @@ pub(crate) struct UsGicBridge {
     /// cannot ask vCPU1-3 directly; each records its own state here.
     last_cpsr: [AtomicU64; MAX_VCPUS],
     last_pc: [AtomicU64; MAX_VCPUS],
+    last_voff: [AtomicU64; MAX_VCPUS],
+    synth_fires: [AtomicU64; MAX_VCPUS],
 }
 
 macro_rules! usgic_trace {
@@ -229,9 +231,11 @@ pub(crate) fn stall_report(vcpu0: HvVcpuT) {
         hv_vcpu_get_sys_reg(vcpu0, HV_SYS_REG_CNTV_CTL_EL0, &mut ctl);
         hv_vcpu_get_sys_reg(vcpu0, HV_SYS_REG_CNTV_CVAL_EL0, &mut cval);
         println!(
-            "USGIC stall cpu0 vtimer: ctl={ctl:#x} cval={cval:#x} now={:#x} host_masked={} recov(calls={} pulses={} rearms={})",
-            mach_absolute_time(),
+            "USGIC stall cpu0 vtimer: ctl={ctl:#x} cval={cval:#x} guest_now={:#x} host_masked={} synth={} recov(calls={} pulses={} rearms={})",
+            crate::host_support::host_cntvct()
+                .wrapping_sub(bridge.last_voff[0].load(Ordering::Relaxed)),
             bridge.vtimer_masked[0].load(Ordering::SeqCst),
+            bridge.synth_fires[0].load(Ordering::Relaxed),
             crate::probe_runtime::vtimer_recovery::RECOVERY_CALLS.load(Ordering::Relaxed),
             crate::probe_runtime::vtimer_recovery::RECOVERY_PULSES.load(Ordering::Relaxed),
             crate::probe_runtime::vtimer_recovery::RECOVERY_REARMS.load(Ordering::Relaxed)
@@ -297,6 +301,8 @@ impl UsGicBridge {
             wfi_cv: Condvar::new(),
             last_cpsr: std::array::from_fn(|_| AtomicU64::new(0)),
             last_pc: std::array::from_fn(|_| AtomicU64::new(0)),
+            last_voff: std::array::from_fn(|_| AtomicU64::new(0)),
+            synth_fires: std::array::from_fn(|_| AtomicU64::new(0)),
         }
     }
 
@@ -379,11 +385,13 @@ impl UsGicBridge {
                     hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_CNTV_CVAL_EL0, &mut cval);
                     let mut voff = 0u64;
                     hv_vcpu_get_vtimer_offset(vcpu, &mut voff);
+                    self.last_voff[cpu].store(voff, Ordering::Relaxed);
                     cval <= host_cntvct().wrapping_sub(voff)
                 };
                 if expired {
                     hv_vcpu_set_vtimer_mask(vcpu, true);
                     self.vtimer_masked[cpu].store(true, Ordering::SeqCst);
+                    self.synth_fires[cpu].fetch_add(1, Ordering::Relaxed);
                     let kicks = self.gic.lock().unwrap().set_vtimer_ppi(cpu, true);
                     self.ring_push(format!("c{cpu} vtimer-synth k={kicks:#x}"));
                     self.kick(kicks, cpu);
