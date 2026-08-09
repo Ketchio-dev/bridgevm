@@ -16,6 +16,14 @@ pub(crate) struct PendingFencedResponse {
 
 impl VirtioGpu {
     pub fn drain_completed_fences(&mut self, mem: &mut dyn GuestMemoryMut) {
+        // Per-exit poll runs ~10k/s. With no fence awaiting a guest response
+        // there is nothing to retire, and each poll is TWO blocking calls
+        // into the renderer thread (poll + drain): a busy or wedged renderer
+        // then stalls the vCPU0 exit path itself (park-sample-boot1: exit
+        // loop parked in mpmc recv under drain_completed_fences_inner).
+        if self.pending_fenced.is_empty() {
+            return;
+        }
         self.drain_completed_fences_inner(mem, false);
     }
 

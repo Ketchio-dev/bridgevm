@@ -417,7 +417,7 @@ crates/bridgevm-hvf/src/virtio_gpu/device_stats.rs	83	0
 crates/bridgevm-hvf/src/virtio_gpu/display.rs	200	0
 crates/bridgevm-hvf/src/virtio_gpu/display/edid.rs	180	0
 crates/bridgevm-hvf/src/virtio_gpu/fb_sink.rs	171	7
-crates/bridgevm-hvf/src/virtio_gpu/fence.rs	79	0
+crates/bridgevm-hvf/src/virtio_gpu/fence.rs	87	0
 crates/bridgevm-hvf/src/virtio_gpu/interrupt.rs	170	0
 crates/bridgevm-hvf/src/virtio_gpu/mod.rs	48	0
 crates/bridgevm-hvf/src/virtio_gpu/pci_device.rs	197	0
