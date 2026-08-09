@@ -234,8 +234,19 @@ pub(crate) fn reset() -> bool {
     };
     bridge.ring_dump("SYSTEM_RESET");
     *bridge.gic.lock().unwrap() = UserspaceGic::new(bridge.num_cpus);
-    for masked in &bridge.vtimer_masked {
-        masked.store(false, Ordering::SeqCst);
+    // The HOST vtimer mask survives guest resets: a reboot that lands while
+    // the PPI is latched (mask=true, EOI never came) would leave the next
+    // generation without a single EXIT_VTIMER -- BdsDxe then spins on a
+    // timer that never fires (p1gate-20260808 boot-1, TianoCore spinner
+    // frozen 18 min). Unmask every registered vCPU at reset.
+    for cpu in 0..bridge.num_cpus.min(MAX_VCPUS) {
+        bridge.vtimer_masked[cpu].store(false, Ordering::SeqCst);
+        if bridge.registered[cpu].load(Ordering::SeqCst) {
+            let handle = bridge.handles[cpu].load(Ordering::SeqCst);
+            unsafe {
+                hv_vcpu_set_vtimer_mask(handle, false);
+            }
+        }
     }
     true
 }
