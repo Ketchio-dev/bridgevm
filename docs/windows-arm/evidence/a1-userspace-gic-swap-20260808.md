@@ -62,6 +62,15 @@ EOI is handled in our own code and pending state cannot be lost.
   back to BasicRender instead of the viogpu adapter — the same
   device-bringup wedge as the Vulkan path, seen from D3D's side
   (a3-gate-200945).
+- WFI latency ruled out: replacing the 500 µs WFI nap with a
+  condvar-parked wait woken by every GIC kick (so guest IPIs reach
+  WFI-parked vCPUs immediately) did not move the wedge — PPSSPP still
+  hangs synchronously inside startup (a Start-Process of the title from
+  PowerShell never returns; the agent stays alive). The wedge is a
+  kernel-side wait in the viogpu/DXGK path, not host scheduling latency.
+- Follow-ups for the next session: per-vector MSI ring annotations,
+  a paired gpu-trace/USGIC-ring timeline around CTX_CREATE, and a
+  DXGK ETW capture in the guest.
 - In-kernel-GIC remains the default; the swap is one env flag away and
   involves zero Apple-side dependencies. usgic is already the better
   configuration for everything except venus 3D.

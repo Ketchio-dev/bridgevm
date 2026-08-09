@@ -18,7 +18,7 @@
 use crate::*;
 use bridgevm_hvf::userspace_gic::UserspaceGic;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::Duration;
 
 extern "C" {
@@ -44,6 +44,13 @@ pub(crate) struct UsGicBridge {
     /// ran out before the interesting event.
     ring: Mutex<std::collections::VecDeque<String>>,
     ring_enabled: bool,
+    /// WFI parking lot: vCPUs waiting for an interrupt sleep here and any
+    /// GIC state change that kicks them notifies. A plain thread::sleep
+    /// could not be woken by `hv_vcpus_exit` (sleep is outside
+    /// `hv_vcpu_run`), which stretched guest IPI latency to the nap length
+    /// and starved DXGK worker handoffs (usgic venus wedge suspect).
+    wfi_lot: Mutex<u64>,
+    wfi_cv: Condvar,
 }
 
 macro_rules! usgic_trace {
@@ -152,12 +159,19 @@ pub(crate) fn wfx_trap(cpu: usize, vcpu: HvVcpuT, esr: u64, pc: u64) -> bool {
     };
     let is_wfe = esr & 1 != 0;
     if !is_wfe {
-        let line = {
-            let gic = bridge.gic.lock().unwrap();
-            gic.line_asserted(cpu)
-        };
+        let line = { bridge.gic.lock().unwrap().line_asserted(cpu) };
         if !line {
-            std::thread::sleep(Duration::from_micros(500));
+            // Park on the condvar so any kick (SGI, SPI, MSI, vtimer,
+            // priority change) wakes this vCPU immediately. The timeout
+            // bounds the wait when a wake races the registration.
+            let bit = 1u64 << cpu;
+            let mut lot = bridge.wfi_lot.lock().unwrap();
+            *lot |= bit;
+            let (mut lot2, _) = bridge
+                .wfi_cv
+                .wait_timeout_while(lot, Duration::from_millis(1), |lot| *lot & bit != 0)
+                .unwrap();
+            *lot2 &= !bit;
         }
     }
     unsafe {
@@ -262,6 +276,8 @@ impl UsGicBridge {
             trace_budget: AtomicU64::new(env_u64("BRIDGEVM_USGIC_TRACE", 0)),
             ring: Mutex::new(std::collections::VecDeque::with_capacity(256)),
             ring_enabled: env_flag("BRIDGEVM_USGIC_RING"),
+            wfi_lot: Mutex::new(0),
+            wfi_cv: Condvar::new(),
         }
     }
 
@@ -290,6 +306,15 @@ impl UsGicBridge {
     fn kick(&self, mask: u64, self_cpu: usize) {
         if mask == 0 {
             return;
+        }
+        // Wake any WFI-parked target first: they are not inside
+        // hv_vcpu_run, so hv_vcpus_exit alone cannot reach them.
+        {
+            let mut lot = self.wfi_lot.lock().unwrap();
+            if *lot & mask != 0 {
+                *lot &= !mask;
+                self.wfi_cv.notify_all();
+            }
         }
         for cpu in 0..self.num_cpus.min(MAX_VCPUS) {
             if cpu == self_cpu || mask & (1u64 << cpu) == 0 {
