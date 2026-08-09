@@ -56,6 +56,28 @@ Progress tonight (commits 26a762c, d9446c4):
   dead); canonical-a2-staged UNTOUCHED (its 120.45 INF matches BOTH 10f7
   and 1050 — fresh 1050 boots bind 120.45 until oems deleted).
 
+**LATE-SESSION RESULT — VENUS PROVED on the new stack (b2-fresh-123408):**
+PPSSPP --backend=VULKAN produced `ctx 7449 capset 4 venus-win32`:
+CREATE -> 2x RESOURCE_CREATE_BLOB -> MAP_BLOB -> 2x SUBMIT_3D (both
+OK_NODATA) -> UNMAP -> DETACH -> clean CTX_DESTROY, through the UTM
+virglrenderer proxy (vgpusrv=Running; System32 dll copy workaround for
+ICD error 87). This already passes the point where the old stack's
+2nd-instance wedge lived. PPSSPP itself exited early (likely surface/
+swapchain step -> D3D fallback) — next: find why, then bvgpu-real-title
+gate on this stack. Image with v0.2.1 swapped saved as
+work/canonical-utm021-20260809.raw (+vars; possibly dirty NTFS from
+final kill — chkdsk on first boot).
+
+Agent-ops rules learned tonight (CRITICAL for future sessions):
+- ctl_offset starts at the file's CURRENT END per boot generation
+  (harness_protocol.rs:51) — commands appended BEFORE the probe process
+  starts are never seen. Append only after `BVAGENT SERVICE alive`.
+- A `cmd /c type <utf-16 file>` or GUI-blocking command wedges the
+  agent's single lockstep worker (in_flight never times out).
+- Session scripts `: > CTL` truncate resets nothing guest-side; safe
+  because offset re-anchors at end-of-file on next generation, but any
+  pre-truncate append is lost.
+
 Next steps (in order):
 1. venus proof on v0.2.1: fresh clone + swap + reboot; run PPSSPP
    --backend=VULKAN via Start-Process (non-blocking); watch for
