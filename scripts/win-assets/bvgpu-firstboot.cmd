@@ -276,10 +276,12 @@ call :read_boot_identity
 if errorlevel 1 exit /b 1
 if /i "%CURRENT_BOOT_ID%"=="%PREVIOUS_BOOT_ID%" (
   rem An ONSTART task created during boot can run immediately, before the
-  rem stage's already-scheduled reboot. This is a benign duplicate invocation:
-  rem return 2 so the caller waits instead of entering :fail and racing the
-  rem pending reboot with a second shutdown request.
-  echo [boot-gate] reboot pending; duplicate same-boot invocation ignored: boot_identity=%CURRENT_BOOT_ID% >> "%LOG%"
+  rem stage's already-scheduled reboot. A live failure proved that shutdown's
+  rem five-second timer can then expire without resetting the VM. Re-issue the
+  rem same intended reboot immediately; do not race it with a poweroff.
+  echo [boot-gate] reboot pending; duplicate same-boot invocation forces retry: boot_identity=%CURRENT_BOOT_ID% >> "%LOG%"
+  shutdown /r /t 0 /f /c "BridgeVM viogpu3d staged reboot retry"
+  if errorlevel 1 exit /b 1
   exit /b 2
 )
 echo [boot-gate] previous=%PREVIOUS_BOOT_ID% current=%CURRENT_BOOT_ID% >> "%LOG%"
