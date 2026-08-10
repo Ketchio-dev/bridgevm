@@ -74,6 +74,7 @@ goto :done
 :stage2
 set STAGE=stage2
 call :require_new_boot C:\BridgeVM\stage1.boot
+if errorlevel 2 goto :done
 if errorlevel 1 goto :fail
 echo [stage2] remove every superseded viogpu3d DriverStore package >> "%LOG%"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-clean-driver-state.ps1 -Phase DriverStore -PackageDirectory "%PKG%" >> "%LOG%" 2>&1
@@ -90,6 +91,7 @@ goto :done
 :stage3
 set STAGE=stage3
 call :require_new_boot C:\BridgeVM\stage2.boot
+if errorlevel 2 goto :done
 if errorlevel 1 goto :fail
 echo [stage3] verify clean DriverStore before installing current package >> "%LOG%"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVM\bvgpu-clean-driver-state.ps1 -Phase VerifyClean -PackageDirectory "%PKG%" >> "%LOG%" 2>&1
@@ -128,6 +130,7 @@ goto :done
 :stage4
 set STAGE=stage4
 call :require_new_boot C:\BridgeVM\stage3.boot
+if errorlevel 2 goto :done
 if errorlevel 1 goto :fail
 echo [stage4] exercise Vulkan loader and Venus ICD >> "%LOG%"
 set VN_DEBUG=init,result
@@ -272,8 +275,12 @@ if not defined PREVIOUS_BOOT_ID (
 call :read_boot_identity
 if errorlevel 1 exit /b 1
 if /i "%CURRENT_BOOT_ID%"=="%PREVIOUS_BOOT_ID%" (
-  echo [boot-gate] stage transition requires a completed reboot: boot_identity=%CURRENT_BOOT_ID% >> "%LOG%"
-  exit /b 1
+  rem An ONSTART task created during boot can run immediately, before the
+  rem stage's already-scheduled reboot. This is a benign duplicate invocation:
+  rem return 2 so the caller waits instead of entering :fail and racing the
+  rem pending reboot with a second shutdown request.
+  echo [boot-gate] reboot pending; duplicate same-boot invocation ignored: boot_identity=%CURRENT_BOOT_ID% >> "%LOG%"
+  exit /b 2
 )
 echo [boot-gate] previous=%PREVIOUS_BOOT_ID% current=%CURRENT_BOOT_ID% >> "%LOG%"
 exit /b 0
