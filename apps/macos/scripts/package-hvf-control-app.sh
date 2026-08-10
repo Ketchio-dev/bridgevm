@@ -66,8 +66,19 @@ install -d \
   "$stage_app/Contents/Resources/scripts/win-assets" \
   "$stage_app/Contents/Resources/scripts/win-tests" \
   "$stage_app/Contents/Resources/firmware" \
+  "$stage_app/Contents/Resources/licenses" \
   "$stage_app/Contents/Resources/target/release/examples" \
   "$stage_app/Contents/Frameworks"
+install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" \
+  "$stage_app/Contents/Resources/THIRD-PARTY-NOTICES.md"
+install -m 644 "$ROOT/docs/licenses/virglrenderer-MIT.txt" \
+  "$stage_app/Contents/Resources/licenses/virglrenderer-MIT.txt"
+install -m 644 "$ROOT/docs/licenses/libepoxy-MIT.txt" \
+  "$stage_app/Contents/Resources/licenses/libepoxy-MIT.txt"
+python3 "$ROOT/scripts/generate-rust-dependency-inventory.py" \
+  --output "$stage_app/Contents/Resources/licenses/rust-dependencies.tsv" >/dev/null
+python3 "$ROOT/scripts/generate-rust-license-bundle.py" \
+  --output "$stage_app/Contents/Resources/licenses/rust-license-texts.txt" >/dev/null
 install -m 644 "$MACOS_DIR/BridgeVMControl-Info.plist" "$stage_app/Contents/Info.plist"
 install -m 755 "$swift_bin_dir/BridgeVMControl" "$stage_app/Contents/MacOS/BridgeVMControl"
 install -m 755 "$ROOT/target/release/bridgevm" "$stage_app/Contents/Resources/target/release/bridgevm"
@@ -162,6 +173,8 @@ sign_artifact "$stage_app/Contents/MacOS/BridgeVMControl"
 sign_artifact "$stage_app"
 codesign --verify --deep --strict "$stage_app"
 "$MACOS_DIR/scripts/bundle-swtpm-runtime.sh" --verify-only "$stage_app" >/dev/null
+
+"$ROOT/scripts/verify-app-third-party-notices.sh" "$stage_app" >/dev/null
 
 mv "$stage_app" "$OUTPUT"
 printf '%s\n' "$OUTPUT"

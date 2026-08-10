@@ -13,6 +13,7 @@ copyleft obligation attaches to BridgeVM's own code.
 | virglrenderer (freedesktop.org, with BridgeVM patches) | MIT | dynamic library (`libvirglrenderer.dylib`), loaded by the VMM process | ship license text, keep copyright notices |
 | MoltenVK (KhronosGroup) | Apache-2.0 | dynamic library loaded at runtime (`BRIDGEVM_VULKAN_LIB`, default `/opt/homebrew/lib/libMoltenVK.dylib`); not distributed in-app by default | if bundled: ship LICENSE + NOTICE |
 | Vulkan-Headers / venus protocol headers | Apache-2.0 / MIT | build-time headers | none beyond notice |
+| Locked Rust crate dependencies | licenses recorded per package (permissive allowlist enforced by `deny.toml`) | statically linked into BridgeVM executables as permitted by each package license | ship the generated `rust-dependencies.tsv` inventory and applicable attribution |
 | swtpm + libtpms (vTPM) | BSD-3-Clause | bundled helper binary + dylibs | ship license text |
 | GLib / GObject / GIO / GModule, json-glib | LGPL-2.1+ | bundled **dynamic** libraries (swtpm dependencies), replaceable by path | ship license text + LGPL text; keep dynamic linkage |
 | gettext runtime (libintl) | LGPL-2.1+ | bundled dynamic library | same as GLib |
@@ -53,7 +54,11 @@ requires. No LGPL code is statically linked into BridgeVM binaries.
 
 ## Verification
 
-- Host linkage is auditable with `otool -L` against the shipped binaries:
-  the only non-system library is `libvirglrenderer` (MIT).
+- Host linkage is audited with `scripts/verify-app-third-party-notices.sh`:
+  every LGPL library must be a separate `.dylib` and have a dynamic consumer
+  visible in `otool -L`; static archives are rejected.
+- Locked Rust package names, versions, license expressions and registry sources
+  are generated into `Contents/Resources/licenses/rust-dependencies.tsv`; their
+  source license/notice files are bundled in `rust-license-texts.txt`.
 - Guest payload contents are pinned by `scripts/win-assets/` and the driver
   package manifests (`viogpu3d-package-manifest.txt` in run evidence).
