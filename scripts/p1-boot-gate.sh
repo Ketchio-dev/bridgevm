@@ -177,7 +177,7 @@ run_one_boot() {
   scripts/run-hvf-windows-installed-boot.sh \
     --target "$W/disk.raw" --vars "$W/vars.fd" \
     --evidence-dir "$D" --watchdog-ms "$PASS2_WATCHDOG_MS" --ram-mib 6144 --smp-cpus 4 \
-    --skip-build \
+    --skip-build --release \
     "${GPU_ARGS[@]}" > "$D/launcher.out" 2>&1
 
   echo "$D" >> "$MANIFEST"
@@ -245,7 +245,7 @@ else
     --target "$PREPARED_IMAGE" --vars "$PREPARED_VARS" \
     --placeholder-nsid1 "$PREPARED_DIR/inj.raw" \
     --evidence-dir "$PREPARED_DIR" --watchdog-ms 600000 --ram-mib 6144 --smp-cpus 4 \
-    --skip-build \
+    --skip-build --release \
     "${GPU_ARGS[@]}" > "$PREPARED_DIR/launcher.out" 2>&1
 
   grep -h '^injector_boot_observed=' "$PREPARED_DIR/target-stat.txt" 2>/dev/null \

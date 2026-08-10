@@ -397,6 +397,14 @@ pub struct ThreadedVenusBackend {
     pub(crate) protocol: VirtioGpuRendererProtocol,
     pub(crate) sender: Sender<VenusWorkerMessage>,
     pub(crate) worker: Option<JoinHandle<()>>,
+    /// Completed fences streamed back from the worker. The vCPU exit path
+    /// consumes this with try_recv only -- it must never block on the
+    /// renderer thread (a wedged renderer parked the whole exit loop:
+    /// park-sample-boot1, p1gate boot-4/7 kick storms).
+    pub(crate) fence_rx: std::sync::mpsc::Receiver<CompletedFence>,
+    pub(crate) fence_tx: std::sync::mpsc::Sender<CompletedFence>,
+    /// One async fence poll on the wire at a time.
+    pub(crate) poll_in_flight: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl ThreadedVenusBackend {
@@ -437,11 +445,17 @@ impl ThreadedVenusBackend {
             .map_err(|error| format!("failed to spawn Venus renderer thread: {error}"))?;
 
         match init_receiver.recv() {
-            Ok(Ok(())) => Ok(Self {
-                protocol,
-                sender,
-                worker: Some(worker),
-            }),
+            Ok(Ok(())) => {
+                let (fence_tx, fence_rx) = mpsc::channel();
+                Ok(Self {
+                    protocol,
+                    sender,
+                    worker: Some(worker),
+                    fence_rx,
+                    fence_tx,
+                    poll_in_flight: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                })
+            }
             Ok(Err(error)) => {
                 let _ = worker.join();
                 Err(error)
@@ -671,12 +685,30 @@ impl VirtioGpu3dBackend for ThreadedVenusBackend {
     }
 
     fn poll_fences(&mut self) {
-        self.call(|backend| backend.poll_fences());
+        // Fire-and-forget: ask the worker to poll and stream results into
+        // fence_tx. Never wait for it (see fence_rx docs). Collapse to one
+        // outstanding poll so a slow renderer is asked once, not 10k/s.
+        use std::sync::atomic::Ordering;
+        if self.poll_in_flight.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let tx = self.fence_tx.clone();
+        let flag = self.poll_in_flight.clone();
+        let _ = self
+            .sender
+            .send(VenusWorkerMessage::Run(Box::new(move |backend| {
+                backend.poll_fences();
+                for fence in backend.drain_completed_fences() {
+                    let _ = tx.send(fence);
+                }
+                flag.store(false, Ordering::Release);
+            })));
     }
 
     fn drain_completed_fences_into(&mut self, out: &mut Vec<CompletedFence>) {
-        let completed = self.call(|backend| backend.drain_completed_fences());
-        out.extend(completed);
+        while let Ok(fence) = self.fence_rx.try_recv() {
+            out.push(fence);
+        }
     }
 
     fn reset(&mut self) {
