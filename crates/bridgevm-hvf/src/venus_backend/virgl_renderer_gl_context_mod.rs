@@ -705,22 +705,6 @@ impl VirtioGpu3dBackend for ThreadedVenusBackend {
             })));
     }
 
-    fn poll_fences_after_queue(&mut self) {
-        // Batch boundary keeps the ORIGINAL synchronous contract: venus
-        // retires fences inline during the poll, and the parked fenced
-        // responses for this very batch must complete before the guest is
-        // notified. Only the per-exit idle poll (poll_fences above) is
-        // decoupled; making this one async regressed firstboot stage1 to a
-        // create3d=281/flush=0 wedge (p1gate-20260809-213953 boot-1).
-        let tx = self.fence_tx.clone();
-        self.call(move |backend| {
-            backend.poll_fences();
-            for fence in backend.drain_completed_fences() {
-                let _ = tx.send(fence);
-            }
-        });
-    }
-
     fn drain_completed_fences_into(&mut self, out: &mut Vec<CompletedFence>) {
         while let Ok(fence) = self.fence_rx.try_recv() {
             out.push(fence);
