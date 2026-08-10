@@ -403,8 +403,6 @@ pub struct ThreadedVenusBackend {
     /// park-sample-boot1, p1gate boot-4/7 kick storms).
     pub(crate) fence_rx: std::sync::mpsc::Receiver<CompletedFence>,
     pub(crate) fence_tx: std::sync::mpsc::Sender<CompletedFence>,
-    /// One async fence poll on the wire at a time.
-    pub(crate) poll_in_flight: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl ThreadedVenusBackend {
@@ -453,7 +451,6 @@ impl ThreadedVenusBackend {
                     worker: Some(worker),
                     fence_rx,
                     fence_tx,
-                    poll_in_flight: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 })
             }
             Ok(Err(error)) => {
@@ -685,33 +682,15 @@ impl VirtioGpu3dBackend for ThreadedVenusBackend {
     }
 
     fn poll_fences(&mut self) {
-        // Fire-and-forget: ask the worker to poll and stream results into
-        // fence_tx. Never wait for it (see fence_rx docs). Collapse to one
-        // outstanding poll so a slow renderer is asked once, not 10k/s.
-        use std::sync::atomic::Ordering;
-        if self.poll_in_flight.swap(true, Ordering::AcqRel) {
-            return;
-        }
-        let tx = self.fence_tx.clone();
-        let flag = self.poll_in_flight.clone();
-        let _ = self
-            .sender
-            .send(VenusWorkerMessage::Run(Box::new(move |backend| {
-                backend.poll_fences();
-                for fence in backend.drain_completed_fences() {
-                    let _ = tx.send(fence);
-                }
-                flag.store(false, Ordering::Release);
-            })));
-    }
-
-    fn poll_fences_after_queue(&mut self) {
-        // Batch boundary keeps the ORIGINAL synchronous contract: venus
-        // retires fences inline during the poll, and the parked fenced
-        // responses for this very batch must complete before the guest is
-        // notified. Only the per-exit idle poll (poll_fences above) is
-        // decoupled; making this one async regressed firstboot stage1 to a
-        // create3d=281/flush=0 wedge (p1gate-20260809-213953 boot-1).
+        // SYNCHRONOUS by design. Fences are only polled while a fenced
+        // response is parked (see the pending_fenced gate in
+        // virtio_gpu/fence.rs): during that window the guest KMD may be in
+        // WFI awaiting the fence MSI, so an async poll whose completion
+        // lands after this exit never gets consumed -- no further exits --
+        // and firstboot stage1 wedges at create3d/flush=0
+        // (p1gate-20260809-213953 and -230715, boot-1). The idle-time
+        // renderer decoupling is the gate itself: with no parked fence this
+        // function is not called at all (20/20 boot soak).
         let tx = self.fence_tx.clone();
         self.call(move |backend| {
             backend.poll_fences();
