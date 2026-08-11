@@ -23,6 +23,7 @@ extern "C" {
 
 const LOCK_EX: i32 = 2;
 const LOCK_NB: i32 = 4;
+const LOCK_UN: i32 = 8;
 
 /// Why a lease could not be taken.
 #[derive(Debug)]
@@ -86,9 +87,7 @@ impl MediaLease {
                 source,
             })?;
 
-        // SAFETY: `file` owns a valid descriptor for the duration of the call.
-        let locked = unsafe { flock(file.as_raw_fd(), LOCK_EX | LOCK_NB) } == 0;
-        if !locked {
+        if !Self::flock(&file, LOCK_EX | LOCK_NB) {
             let mut existing = String::new();
             let _ = file.read_to_string(&mut existing);
             let holder = existing.trim();
@@ -115,6 +114,10 @@ impl MediaLease {
         })
     }
 
+    /// SAFETY: `file` owns a valid descriptor for the duration of the call.
+    fn flock(file: &File, op: i32) -> bool {
+        (unsafe { flock(file.as_raw_fd(), op) }) == 0
+    }
     pub fn image_path(&self) -> &Path {
         &self.image_path
     }
@@ -123,15 +126,12 @@ impl MediaLease {
         &self.lock_path
     }
 }
-
 impl Drop for MediaLease {
     fn drop(&mut self) {
-        // Truncate so a later reader does not attribute the image to a holder
-        // that has already exited. The kernel drops the flock with the fd.
-        let _ = self.file.set_len(0);
+        let _ = self.file.set_len(0); // Clear stale holder attribution.
+        let _ = Self::flock(&self.file, LOCK_UN); // Do not leak through fork.
     }
 }
-
 /// Sidecar path for an image. Kept beside the image so a lease travels with
 /// the volume rather than living in a temp dir that a reboot clears.
 pub fn lock_path_for(image_path: &Path) -> PathBuf {
