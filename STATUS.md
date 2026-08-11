@@ -6,12 +6,12 @@ Last reviewed: **2026-08-04**
 <!-- BEGIN GENERATED: capability-summary -->
 **Product state: Engineering Preview.** Boots an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with storage, display/input, network, audio, guest agent and experimental 3D. Not release-ready.
 
-Release-blocking criteria proven: **16 / 19**. Open: A1, A3, A11.
+Release-blocking criteria proven: **17 / 19**. Open: A3, A11.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-08-04 at commit `dd273c5`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-08-11 at commit `0f025793b2bf45bffe405af1622f664b6f8ca73a`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 Per-criterion state, thresholds and latest measurements are in the
@@ -200,25 +200,27 @@ secondary-CPU BAR reprogram left `hv_vm_map` installing the Venus ring at a
 stale address and every guest ring access was swallowed by the RAZ/WI shm
 handler. Vulkan instance creation now succeeds in five runs out of five.
 
-Two limits remain. No real title has yet produced a process-attributed frame
-rate, so the A2/A3 FPS gates are still open. And an intermittent boot stall
-still costs boots on this image; it is unrelated to the graphics defect and is
-not fixed.
+At that point two limits remained: no real title had produced a
+process-attributed frame rate, so A2/A3 were open, and an intermittent boot
+stall still cost boots on the image. Subsequent title instrumentation proved
+A2; A3 remains the graphics blocker.
 
-The stall has since been narrowed to a swallowed virtual-timer fire around
-host-initiated vCPU cancellation. Recovering the timer on every canceled exit
-moved the diagnostic gate to 11/12, but one boot still stalled in
-`KeIpiGenericCall` with an expired, unmasked timer, so the mechanism is a
-strongly measured cause rather than a completed root-cause proof and **A1
-remains open**. See
-[the boot stall investigation](docs/windows-arm/evidence/a1-boot-stall-20260802.md).
+The stall investigation narrowed one historical failure shape to a swallowed
+virtual-timer fire around host-initiated vCPU cancellation. Recovering the
+timer moved that diagnostic gate to 11/12, with the residual failure recorded
+rather than rewritten. A later fresh-firstboot P1 campaign at `0f02579` passed
+**10/10** on the product-default in-kernel GIC, with three resets and clean
+SYSTEM_OFF in every independent clone, so A1 is now PROVEN. See
+[the historical boot stall investigation](docs/windows-arm/evidence/a1-boot-stall-20260802.md)
+and the
+[closing 10/10 receipt](docs/windows-arm/evidence/a1-p1-boot-gate-10of10-20260810.md).
 
-Two security contract defects are also open release blockers, both found by
-static review of the probe's SMCCC dispatch and confirmed in current code. The
-guest-visible TRNG is a deterministic function of the vCPU exit counter while
-being advertised as a true random number generator, and the PSCI `CPU_ON` and
-`AFFINITY_INFO` implementations do not follow the specified state table. Both
-must be fixed before any release wording changes.
+The same review also found two security contract defects: a deterministic
+exit-counter TRNG and incorrect PSCI `CPU_ON`/`AFFINITY_INFO` state handling.
+They have since been replaced by the host CSPRNG with fail-closed error mapping
+and a shared PSCI 1.1 state machine; A12 and A13 are PROVEN in the capability
+registry. Product wording remains Engineering Preview while A3 and final-head
+A11 are open.
 
 Windows HVF durable suspend is intentionally outside v1. The experimental
 checkpoint path must not be advertised as suspend; see the
