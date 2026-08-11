@@ -1087,6 +1087,7 @@ run_installed_boot_probe() {
   fi
   start_owned_swtpm
   write_probe_command_env
+  harvest_guest_windows_postmortem pre-run
   capture_pre_run_real_title_gate_hash
   capture_pre_run_title_gate_state
   run_probe_process
@@ -1095,6 +1096,7 @@ run_installed_boot_probe() {
   write_host_pause_resume_gate
   write_virtio_gpu_trace_report
   extract_guest_bridgevm_logs
+  harvest_guest_windows_postmortem post-run
   write_title_gate_report
   write_real_title_gate_report
   write_firstboot_stage_report
@@ -1227,6 +1229,35 @@ capture_pre_run_title_gate_state() {
     done
     printf '\n}\n'
   } > "$state"
+  [[ -n "$disk" ]] && hdiutil detach "$disk" >/dev/null 2>&1
+  return 0
+}
+
+# Preserve a fixed Windows diagnostic allowlist without writing to the guest.
+# Attach/detach stays here; the helper only receives a mounted, machine-verified
+# read-only volume and emits bounded metadata/copies under the evidence dir.
+harvest_guest_windows_postmortem() {
+  [[ "${VIRTIO_GPU_3D:-0}" == "1" ]] || return 0
+  local phase="$1" helper attach_out disk mount_point status_file found=0
+  helper="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/harvest-hvf-windows-postmortem.sh"
+  status_file="$EVIDENCE_DIR/windows-postmortem-$phase-status.txt"
+  if ! attach_out="$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -readonly "$TARGET" 2>/dev/null)"; then
+    printf 'phase=%s\nstatus=attach-failed\n' "$phase" > "$status_file"
+    return 0
+  fi
+  disk="$(printf '%s\n' "$attach_out" | awk 'NR==1 {print $1}')"
+  while read -r mount_point; do
+    if [[ -n "$mount_point" && -d "$mount_point/Windows/System32" ]]; then
+      found=1
+      if "$helper" --volume "$mount_point" --evidence-dir "$EVIDENCE_DIR" --phase "$phase"; then
+        printf 'phase=%s\nstatus=harvested\n' "$phase" > "$status_file"
+      else
+        printf 'phase=%s\nstatus=refused\n' "$phase" > "$status_file"
+      fi
+      break
+    fi
+  done < <(printf '%s\n' "$attach_out" | awk 'match($0, /\/Volumes\/.*$/) {print substr($0, RSTART)}')
+  [[ "$found" == "1" ]] || printf 'phase=%s\nstatus=windows-volume-not-found\n' "$phase" > "$status_file"
   [[ -n "$disk" ]] && hdiutil detach "$disk" >/dev/null 2>&1
   return 0
 }
