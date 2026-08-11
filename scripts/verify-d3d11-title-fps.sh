@@ -102,7 +102,7 @@ BRIDGEVM_BOOT_PROGRESS_KILL=1 scripts/run-hvf-windows-installed-boot.sh \
   --agent-service-control "$CTL" \
   --agent-share-host "$HOST_SHARE" --agent-share-guest 'C:\BridgeVMShare' \
   --agent-share-max-kb 32768 \
-  --performance-risk balanced --virtio-gpu-3d \
+  --performance-risk aggressive --virtio-gpu-3d \
   --gpu-trace "$OUT/virtio-gpu.jsonl" --gpu-trace-protocol venus \
   --viogpu3d-dir "$VIOGPU_DIR" > "$OUT/launcher.out" 2>&1 &
 LAUNCHER=$!
