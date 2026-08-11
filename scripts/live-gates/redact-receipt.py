@@ -57,6 +57,7 @@ ALLOWED_FIELDS = frozenset(
         "failures",
         "sample_count",
         "run_count",
+        "required_run_count",
         "threshold_fps",
         "module_identity_verified",
         "iterations",

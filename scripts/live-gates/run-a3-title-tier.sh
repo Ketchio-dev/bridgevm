@@ -111,7 +111,7 @@ for run in 1 2 3; do
         D3D11_DLL="$d3d11" DXGI_DLL="$(manifest_path dxgi)" \
         VIOGPU3D_DIR="$viogpu_dir" PRESTAGED_TITLE=1 SKIP_BUILD=1 \
         BRIDGEVM_PREBUILT_PROBE="$SEALED_BINARY" \
-        "$REPO/scripts/verify-d3d11-title-fps.sh" || true
+        "$REPO/scripts/verify-d3d11-title-fps.sh" || break
 done
 
 python3 "$REPO/scripts/live-gates/write-a3-title-receipt.py" \

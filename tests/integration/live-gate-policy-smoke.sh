@@ -75,6 +75,8 @@ no_match "nothing in the queue path uses sudo" \
     '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$A3_TIER" "$A3_RECEIPT"
 check "the A3 receipt requires all three runs" \
     'python3 "$A3_RECEIPT" --self-test | grep -q "PASS"'
+check "the A3 campaign stops once three of three is impossible" \
+    'grep -Fq '\''verify-d3d11-title-fps.sh" || break'\'' "$A3_TIER"'
 check "the A3 verifier kills a parked boot after diagnostics" \
     'grep -q "BRIDGEVM_BOOT_PROGRESS_KILL=1" "$A3_VERIFY"'
 check "the A3 verifier notices an exited launcher while waiting" \
