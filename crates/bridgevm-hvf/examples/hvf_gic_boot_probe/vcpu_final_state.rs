@@ -72,19 +72,16 @@ pub(crate) struct SecondaryVcpuStopResult {
 }
 
 impl VcpuControl {
-    pub(crate) fn publish_final_state(
-        &self,
-        state: VcpuFinalState,
-    ) -> Result<(), VcpuFinalState> {
+    pub(crate) fn publish_final_state(&self, state: VcpuFinalState) -> bool {
         let mut published = self
             .final_state
             .lock()
             .expect("secondary vCPU final-state mutex");
         if published.is_some() {
-            return Err(state);
+            return false;
         }
         *published = Some(state);
-        Ok(())
+        true
     }
 
     pub(crate) fn take_final_state(&self) -> Option<VcpuFinalState> {

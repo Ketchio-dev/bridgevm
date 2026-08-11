@@ -77,8 +77,8 @@ fn final_state_publication_is_one_shot_and_take_is_destructive() {
     let control = VcpuControl::new(2);
     let state = VcpuFinalState::test_state(2);
 
-    control.publish_final_state(state.clone()).unwrap();
-    assert_eq!(control.publish_final_state(state.clone()), Err(state.clone()));
+    assert!(control.publish_final_state(state.clone()));
+    assert!(!control.publish_final_state(state.clone()));
     assert_eq!(control.take_final_state(), Some(state));
     assert!(control.take_final_state().is_none());
 }

@@ -142,7 +142,7 @@ pub(crate) fn secondary_vcpu_thread(
             exits,
             vcpu,
         );
-        if control.publish_final_state(final_state).is_err() {
+        if !control.publish_final_state(final_state) {
             println!(
                 "secondary vCPU{} final-state publication rejected: already published",
                 control.index
