@@ -365,6 +365,7 @@ build_installed_boot_env_args() {
   # Opt-in boot-progress kill mode: end a run once a stall is confirmed instead
   # of waiting out the deadline. Gate scripts set it; interactive runs do not.
   [[ -z "${BRIDGEVM_BOOT_PROGRESS_KILL:-}" ]] || ENV_ARGS+=("BRIDGEVM_BOOT_PROGRESS_KILL=$BRIDGEVM_BOOT_PROGRESS_KILL")
+  [[ -z "${BRIDGEVM_HOST_DIAGNOSTIC_STOP_REQUEST:-}" ]] || ENV_ARGS+=("BRIDGEVM_HOST_DIAGNOSTIC_STOP_REQUEST=$BRIDGEVM_HOST_DIAGNOSTIC_STOP_REQUEST")
   [[ -z "${BRIDGEVM_HDA:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA=$BRIDGEVM_HDA")
   [[ -z "${BRIDGEVM_HDA_PCM_OUT:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_PCM_OUT=$BRIDGEVM_HDA_PCM_OUT")
   [[ -z "${BRIDGEVM_HDA_COREAUDIO:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_COREAUDIO=$BRIDGEVM_HDA_COREAUDIO")

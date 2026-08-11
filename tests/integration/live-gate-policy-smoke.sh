@@ -151,6 +151,12 @@ check "the A3 outer wait leaves post-mortem diagnostic grace" \
     'grep -q '\''BOOT_TIMEOUT + DIAGNOSTIC_GRACE'\'' "$A3_VERIFY"'
 check "the A3 verifier notices an exited launcher while waiting" \
     'grep -q '\''kill -0 "$LAUNCHER"'\'' "$A3_VERIFY"'
+check "the A3 verifier requests final diagnostics only from failure cleanup" \
+    'grep -q '\''(( status == 0 )) || diagnostic_stop'\'' "$A3_VERIFY" && grep -q '\''mv "$tmp" "$DIAGNOSTIC_STOP_REQUEST"'\'' "$A3_VERIFY"'
+check "the A3 diagnostic stop remains bounded by its existing grace" \
+    'grep -q '\''deadline=$((SECONDS + DIAGNOSTIC_GRACE))'\'' "$A3_VERIFY"'
+check "the installed boot runner explicitly forwards the diagnostic request" \
+    'grep -q '\''BRIDGEVM_HOST_DIAGNOSTIC_STOP_REQUEST='\'' "$BOOT_RUNNER"'
 
 # --- submit returns immediately -----------------------------------------
 start=$(date +%s)

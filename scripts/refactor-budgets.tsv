@@ -813,6 +813,9 @@ apps/macos/XCTestShim/Runner.swift	46	0
 apps/macos/XCTestShim/SelfTest.swift	75	0
 apps/macos/XCTestShim/XCTest.swift	239	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_sampler.rs	52	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/host_diagnostic_stop.rs	76	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/host_diagnostic_stop_tests.rs	37	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator/cancel_stop_tests.rs	25	0
 crates/bridgevm-hvf/src/nvme/positional_io_tests.rs	107	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state.rs	178	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state_tests.rs	171	0

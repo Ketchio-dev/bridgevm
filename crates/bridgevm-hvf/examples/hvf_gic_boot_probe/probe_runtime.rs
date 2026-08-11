@@ -81,9 +81,11 @@ pub(crate) fn run() -> ExitCode {
         reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
         // Read in the run loop: waking the vCPU is not the same as stopping it.
         let boot_progress_kill = boot_progress_kill_for(vcpu);
-        let stall_kill_fired = boot_progress_kill.as_ref().map(|k| Arc::clone(&k.fired));
+        let stall_kill_fired = boot_progress_kill.as_ref().map(|kill| Arc::clone(&kill.fired));
         let (reboot_plan, watchdog_generation, boot_progress) =
             setup_boot_supervision(watchdog_enabled, boot_progress_kill);
+        let diagnostic_stop_fired =
+            start_host_diagnostic_stop_watcher(vcpu, Arc::clone(&boot_progress));
         let mut reboot_count = 0u64;
         let mut resets_dumped = 0u64;
         reset_vcpu_for_boot(vcpu);
@@ -418,29 +420,24 @@ pub(crate) fn run() -> ExitCode {
                     ]));
                 }
                 if reason == EXIT_CANCELED {
-                    // Any cancel (claimed or surplus) can swallow an in-flight
-                    // vtimer fire; see vtimer_recovery. Boot-8 re-masked after
-                    // a CLAIMED cancel, so surplus-only recovery is not enough.
+                    // Any cancel can swallow an in-flight vtimer fire. Check
+                    // terminal flags even when an automation wake merged into
+                    // the same exit; the host diagnostic request must not be
+                    // consumed as an ordinary service tick.
                     vtimer_recovery::recover_swallowed_vtimer_fire(vcpu);
-                }
-                if reason == EXIT_CANCELED && !automation_tick_canceled {
-                    // Two automation wakes can merge into ONE canceled exit
-                    // (both hv_vcpus_exit calls land while the vCPU is still
-                    // in guest mode); that single exit consumes BOTH fired
-                    // flags above, and the second, sticky cancel then arrives
-                    // with no flag left to claim it. Attributing such surplus
-                    // cancels to the watchdog killed live boots (b2 86s,
-                    // b5 258s). Only the watchdog's own flag identifies a real
-                    // watchdog stop; an unclaimed cancel without it is benign.
-                    if let Some(reason) =
-                        cancel_stop_reason(&watchdog_fired, stall_kill_fired.as_ref())
-                    {
+                    if let Some(reason) = cancel_stop_reason(
+                        &watchdog_fired,
+                        stall_kill_fired.as_ref(),
+                        diagnostic_stop_fired.as_ref(),
+                    ) {
                         hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                         stop_reason = reason.into();
                         break;
                     }
-                    surplus_canceled_exits += 1;
-                    continue;
+                    if !automation_tick_canceled {
+                        surplus_canceled_exits += 1;
+                        continue;
+                    }
                 }
                 if !automation_tick_canceled && reason == EXIT_VTIMER {
                     hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
@@ -991,6 +988,9 @@ pub(crate) fn run() -> ExitCode {
                 }
             }
 
+            // SYSTEM_RESET may continue above; only a genuinely terminal run
+            // disarms probe-lifetime host supervision.
+            boot_progress.disarm();
             persist_and_report_stop!(
                 platform,
                 media,

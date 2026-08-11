@@ -5,13 +5,13 @@ use std::sync::Arc;
 
 /// Why a canceled exit should end the run, or None to keep going.
 ///
-/// Two flags, not one: the deadline watchdog is rebuilt per reboot generation,
-/// while the boot-progress stall kill lives for the whole run. A canceled exit
-/// with neither set is an automation wake and is benign -- which is correct,
-/// and was also why a confirmed stall did not stop anything.
+/// The deadline watchdog is rebuilt per reboot generation; the other two
+/// signals live for the whole run. A canceled exit with no signal is a benign
+/// automation wake, never a guessed terminal event.
 pub(crate) fn cancel_stop_reason(
     watchdog_fired: &AtomicBool,
     stall_kill_fired: Option<&Arc<AtomicBool>>,
+    host_diagnostic_stop_fired: Option<&Arc<AtomicBool>>,
 ) -> Option<&'static str> {
     if watchdog_fired.load(Ordering::SeqCst) {
         return Some("watchdog (CANCELED)");
@@ -19,36 +19,14 @@ pub(crate) fn cancel_stop_reason(
     if stall_kill_fired.is_some_and(|fired| fired.load(Ordering::SeqCst)) {
         return Some("boot-progress stall (kill mode)");
     }
-    None
+    host_diagnostic_stop_fired
+        .is_some_and(|fired| fired.load(Ordering::SeqCst))
+        .then_some("host diagnostic stop requested")
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_cancel_with_no_flag_set_is_benign() {
-        assert_eq!(cancel_stop_reason(&AtomicBool::new(false), None), None);
-        let quiet = Arc::new(AtomicBool::new(false));
-        assert_eq!(
-            cancel_stop_reason(&AtomicBool::new(false), Some(&quiet)),
-            None
-        );
-    }
-
-    #[test]
-    fn each_flag_names_itself() {
-        assert_eq!(
-            cancel_stop_reason(&AtomicBool::new(true), None),
-            Some("watchdog (CANCELED)")
-        );
-        let fired = Arc::new(AtomicBool::new(true));
-        assert_eq!(
-            cancel_stop_reason(&AtomicBool::new(false), Some(&fired)),
-            Some("boot-progress stall (kill mode)")
-        );
-    }
-}
+#[path = "cancel_stop_tests.rs"]
+mod tests;
 
 /// Two GIC snapshots 50ms apart, rendered, for a stall that was just confirmed.
 ///

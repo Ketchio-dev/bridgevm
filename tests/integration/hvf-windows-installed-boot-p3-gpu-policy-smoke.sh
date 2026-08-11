@@ -377,6 +377,21 @@ no_watchdog_env_output="$(
 assert_contains "$no_watchdog_env_output" "BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED=1" "no-watchdog env"
 assert_contains "$no_watchdog_env_output" "BRIDGEVM_VIRTIO_CONSOLE_TEST_TIMEOUT_MS=900000" "no-watchdog agent overdue env"
 
+diagnostic_request=$EVIDENCE/host-diagnostic-stop.request
+diagnostic_stop_env_output="$(
+  BRIDGEVM_HOST_DIAGNOSTIC_STOP_REQUEST="$diagnostic_request" bash -c '
+    set -euo pipefail
+    source scripts/run-hvf-windows-installed-boot-validation.sh
+    source scripts/run-hvf-windows-installed-boot-args.sh
+    source scripts/run-hvf-windows-installed-boot-runner.sh
+    init_installed_boot_defaults
+    parse_installed_boot_args "$@"
+    build_installed_boot_env_args
+  ' _ --target "$TARGET" --vars "$VARS" --evidence-dir "$EVIDENCE"
+)" || fail "installed boot diagnostic stop env failed: $diagnostic_stop_env_output"
+assert_contains "$diagnostic_stop_env_output" \
+  "BRIDGEVM_HOST_DIAGNOSTIC_STOP_REQUEST=$diagnostic_request" "diagnostic stop env"
+
 scanout_export_env_output="$(
   bash -c '
     set -euo pipefail

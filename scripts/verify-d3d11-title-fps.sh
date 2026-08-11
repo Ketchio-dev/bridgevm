@@ -48,6 +48,8 @@ cp "$VARS" "$WORK/vars.fd"
 
 CTL=$OUT/agent.ctl
 : > "$CTL"
+DIAGNOSTIC_STOP_REQUEST=$(cd "$OUT" && pwd)/host-diagnostic-stop.request
+rm -f "$DIAGNOSTIC_STOP_REQUEST"
 RUN_LOG=$OUT/run.log
 HOST_SHARE=$OUT/share-host
 mkdir -p "$HOST_SHARE"
@@ -95,7 +97,9 @@ run_guest() { # command, timeout
 
 BUILD_ARGS=()
 [[ "$SKIP_BUILD" == 1 ]] && BUILD_ARGS+=(--skip-build)
-BRIDGEVM_BOOT_PROGRESS_KILL=1 scripts/run-hvf-windows-installed-boot.sh \
+BRIDGEVM_BOOT_PROGRESS_KILL=1 \
+BRIDGEVM_HOST_DIAGNOSTIC_STOP_REQUEST="$DIAGNOSTIC_STOP_REQUEST" \
+scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" \
   --evidence-dir "$OUT" --watchdog-ms $((BOOT_TIMEOUT * 1000)) \
   --ram-mib 6144 --smp-cpus 4 --release "${BUILD_ARGS[@]}" \
@@ -106,11 +110,25 @@ BRIDGEVM_BOOT_PROGRESS_KILL=1 scripts/run-hvf-windows-installed-boot.sh \
   --gpu-trace "$OUT/virtio-gpu.jsonl" --gpu-trace-protocol venus \
   --viogpu3d-dir "$VIOGPU_DIR" > "$OUT/launcher.out" 2>&1 &
 LAUNCHER=$!
+diagnostic_stop() {
+  [[ -n "${LAUNCHER:-}" ]] && kill -0 "$LAUNCHER" 2>/dev/null || return 0
+  local deadline=$((SECONDS + DIAGNOSTIC_GRACE)) tmp=$DIAGNOSTIC_STOP_REQUEST.tmp
+  printf 'host gate failed\n' > "$tmp"
+  mv "$tmp" "$DIAGNOSTIC_STOP_REQUEST"
+  while kill -0 "$LAUNCHER" 2>/dev/null && (( SECONDS < deadline )); do
+    sleep 0.2
+  done
+  grep -q '^VCPU-FINAL-STATUS: ' "$RUN_LOG" 2>/dev/null || \
+    echo "diagnostic stop did not produce VCPU-FINAL-STATUS within ${DIAGNOSTIC_GRACE}s" >&2
+}
 cleanup() {
+  local status=$?
+  (( status == 0 )) || diagnostic_stop
   kill "$LAUNCHER" 2>/dev/null || true
   pkill -f hvf_gic_boot_probe 2>/dev/null || true
   wait "$LAUNCHER" 2>/dev/null || true
   rm -rf "$WORK"
+  return "$status"
 }
 trap cleanup EXIT
 
