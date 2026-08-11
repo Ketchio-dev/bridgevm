@@ -11,6 +11,8 @@ TARGET=${TARGET:-$HOME/BridgeVM/work/canonical-a3-staged-20260808.raw}
 VARS=${VARS:-$HOME/BridgeVM/work/canonical-a3-staged-20260808-vars.fd}
 OUT=${OUT:-$HOME/BridgeVM/runs/d3d11-title-fps-$(date +%Y%m%d-%H%M%S)}
 BOOT_TIMEOUT=${BOOT_TIMEOUT:-1500}
+HOST_PREFLIGHT_TIMEOUT=${HOST_PREFLIGHT_TIMEOUT:-600}
+DIAGNOSTIC_GRACE=${DIAGNOSTIC_GRACE:-60}
 STEP_TIMEOUT=${STEP_TIMEOUT:-300}
 TITLE_SECONDS=${TITLE_SECONDS:-45}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
@@ -100,7 +102,7 @@ BRIDGEVM_BOOT_PROGRESS_KILL=1 scripts/run-hvf-windows-installed-boot.sh \
   --agent-service-control "$CTL" \
   --agent-share-host "$HOST_SHARE" --agent-share-guest 'C:\BridgeVMShare' \
   --agent-share-max-kb 32768 \
-  --performance-risk aggressive --virtio-gpu-3d \
+  --performance-risk balanced --virtio-gpu-3d \
   --gpu-trace "$OUT/virtio-gpu.jsonl" --gpu-trace-protocol venus \
   --viogpu3d-dir "$VIOGPU_DIR" > "$OUT/launcher.out" 2>&1 &
 LAUNCHER=$!
@@ -112,7 +114,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-wait_for '^BVAGENT SERVICE start' 1 "$BOOT_TIMEOUT" || fail "agent service timeout"
+wait_for '^Boot watchdog:' 1 "$HOST_PREFLIGHT_TIMEOUT" \
+  || fail "launcher preflight timeout"
+wait_for '^BVAGENT SERVICE start' 1 "$((BOOT_TIMEOUT + DIAGNOSTIC_GRACE))" \
+  || fail "agent service timeout"
 echo "agent up at ${SECONDS}s"
 for file in bvgpu-real-title-gate.ps1 bvgpu-d3d11-identity.ps1 bv-ppsspp-d3d11.ini cube.iso d3d11.dll dxgi.dll; do
   bytes=$(stat -f %z "$HOST_SHARE/$file")

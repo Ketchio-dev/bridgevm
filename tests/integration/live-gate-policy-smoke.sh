@@ -79,6 +79,12 @@ check "the A3 campaign stops once three of three is impossible" \
     'grep -Fq '\''verify-d3d11-title-fps.sh" || break'\'' "$A3_TIER"'
 check "the A3 verifier kills a parked boot after diagnostics" \
     'grep -q "BRIDGEVM_BOOT_PROGRESS_KILL=1" "$A3_VERIFY"'
+check "the A3 verifier measures the product-default renderer path" \
+    'grep -q -- "--performance-risk balanced --virtio-gpu-3d" "$A3_VERIFY"'
+check "the A3 outer wait starts after bounded host preflight" \
+    'grep -q "wait_for .*Boot watchdog:.*HOST_PREFLIGHT_TIMEOUT" "$A3_VERIFY"'
+check "the A3 outer wait leaves post-mortem diagnostic grace" \
+    'grep -q '\''BOOT_TIMEOUT + DIAGNOSTIC_GRACE'\'' "$A3_VERIFY"'
 check "the A3 verifier notices an exited launcher while waiting" \
     'grep -q '\''kill -0 "$LAUNCHER"'\'' "$A3_VERIFY"'
 
