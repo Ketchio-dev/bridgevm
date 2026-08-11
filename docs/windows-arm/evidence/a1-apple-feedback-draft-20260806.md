@@ -54,16 +54,21 @@ surplus canceled exits and this stall class).
 
 ## Additional mechanism found after filing draft (2026-08-06, soaks 6-8)
 
-The ICC running-priority read exposed a second lost-write class: stalls
-with `RPR=0x10`, `AP1R0=0x4` while `ISACTIVER0=0` -- a running priority
-with no interrupt in service, which is architecturally impossible. The
-guest's trapped EOI/priority-drop write was lost to the same cancellation
-race. Correcting it via `hv_gic_set_icc_reg(AP0R0/AP1R0, 0)` verifiably
-clears the state (next read: idle) but delivery of the still-pending PPI
-does not resume: with the latch pending, the interface idle and open, and
-the vCPU re-entered thousands of times, the PPI is never taken. So both
-directions of the vtimer path lose trapped writes under `hv_vcpus_exit`
-pressure, and no public API re-arms forwarding afterward.
+The ICC running-priority read exposed `RPR=0x10`, `AP1R0=0x4` while
+`GICR_ISACTIVER0=0`. This draft originally called that a running priority with
+no interrupt in service and attributed it to a lost EOI. **Correction
+(2026-08-11): the predicate was incomplete.** `GICR_ISACTIVER0` covers only
+banked SGIs/PPIs, not distributor shared SPI/MSI active state. Zeroing
+AP0R0/AP1R0 did verifiably change the readback to idle and did not resume the
+pending PPI, but it was not proven safe. In exact run
+`20260811-140847-85685-23616`, after such a clear, Hypervisor.framework
+intentionally raised SIGTRAP because guest `EOIR1 0x80` did not name its
+highest-priority active interrupt (`report_fixme_and_trap` →
+`EmulatedVgic::write_end_of_interrupt_register`). The APR mutation is removed;
+the historical observation remains, but the lost-EOI mechanism claim is
+retracted. The still-supported conclusion is that the in-kernel GIC/vtimer path
+has measured forwarding failures under cancellation and no demonstrated public
+re-arm mechanism.
 
 ## Avenues we measured and closed (2026-08-07)
 

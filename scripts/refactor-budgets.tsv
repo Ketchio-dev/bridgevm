@@ -612,6 +612,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_setup.rs	13	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_setup.rs	89	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_config.rs	84	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	1032	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/vtimer_recovery.rs	107	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_setup.rs	90	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/watchpoint_setup.rs	15	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console.rs	51	0
@@ -638,7 +639,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard.rs	426	21
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_support.rs	44	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_snapshot.rs	197	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_snapshot_tests.rs	182	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_abi.rs	253	2
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_abi.rs	250	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/interrupt_delivery.rs	279	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/kd_serial_bridge.rs	257	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_display_export.rs	149	0

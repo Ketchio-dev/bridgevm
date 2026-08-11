@@ -202,9 +202,12 @@ ICC  PMR=0xf8 IGRPEN1=0x1 RPR=0x10 AP0R0=0x0 AP1R0=0x4
 verdict: vtimer PPI pending but ICC_RPR holds a stale running priority (nothing active)
 ```
 
-RPR=0x10 with AP1R0 bit set while **ISACTIVER0=0** is architecturally
-impossible: a running priority exists only while an interrupt is in
-service. The consistent story across every capture this session:
+RPR=0x10 with AP1R0 bit set while **ISACTIVER0=0** was originally called
+architecturally impossible. **Correction (2026-08-11): that conclusion was
+wrong.** Banked `GICR_ISACTIVER0` covers only SGIs/PPIs (INTIDs 0–31); it says
+nothing about active shared SPI/MSI INTIDs represented by distributor
+`GICD_ISACTIVER*`. The capture did not prove that no interrupt was in service.
+The original hypothesis was:
 
 1. the vtimer PPI (priority 0x10, group 1) was delivered and ACTIVATED
    (IAR read by the guest);
@@ -221,11 +224,19 @@ unformed fire); UEFI-shape stalls read the wedge. The fifth soak's
 failures happened to be kernel-shape only.
 
 Fix under test (`0a8c1f0`, queued): on canceled exits, if RPR!=idle and
-ISACTIVER0==0, zero AP0R0/AP1R0 via hv_gic_set_icc_reg. Unlike the
-reverted latch forge, nothing guest-visible is invented -- HVF's
-bookkeeping is corrected to match the empty active set it itself
-reports. Also learned: hv_gic_get_ich_reg fails on this config (EL2
-view not exposed without nested virt); renders as `?`.
+ISACTIVER0==0, zero AP0R0/AP1R0 via hv_gic_set_icc_reg. The 2026-08-11
+correction invalidates its safety argument: the observed set was not known to
+be empty because shared active state was never read. Exact run
+`20260811-140847-85685-23616` later cleared `RPR=0x60` and Hypervisor.framework
+then deliberately trapped when the guest wrote `EOIR1 0x80`; crash report
+`hvf_gic_boot_probe-2026-08-11-141303.ips` resolves the stack to
+`Base::report_fixme_and_trap` →
+`EmulatedVgic::write_end_of_interrupt_register`. INTID `0x80` is the configured
+MSI-range base. This does not by itself prove which active INTID the clear
+invalidated, but it proves that mutating the entire APR from the incomplete
+banked predicate is unsafe. The mutation was removed; read-only captures remain.
+Also learned: hv_gic_get_ich_reg fails on this config (EL2 view not exposed
+without nested virt); renders as `?`.
 
 ## Seventh and eighth soaks: the priority clear works; delivery still does not follow
 
@@ -236,6 +247,10 @@ AP1R0 zeroed, terminal reads idle. The ordering hypothesis from the seventh
 soak -- pulse's edge was spent into the closed gate -- is falsified by the
 eighth: with the gate cleared first and the pulse after, the terminal state
 is STILL "ISPENDR0 pending, CPU interface fully idle, PPI never taken".
+
+The later removal does not rewrite these historical run results: the writes did
+change RPR/AP1R0 and did not revive delivery. It retracts only the claim that
+those writes were a safe correction or established the mechanism.
 
 Conclusion the eight soaks force: with a pending PPI at the redistributor,
 an idle open CPU interface, unmasked PSTATE, and a parked WFI, **HVF's

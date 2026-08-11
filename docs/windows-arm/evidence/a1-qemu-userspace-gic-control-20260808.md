@@ -39,9 +39,10 @@ RPR gating all delivery / fire never forming).
   **exonerated**: 4 vCPUs, EL1, same Windows, same firmware family boot
   10/10 when the GIC lives in userspace.
 - A1 is therefore a defect (or an unusable-for-us contract) **specific to
-  the in-kernel GICv3** — consistent with every register capture
-  (architecturally impossible RPR=0x10/0x60-with-empty-active-set states
-  inside `hv_gic`).
+  the in-kernel GICv3** — consistent with the failed in-kernel campaigns and
+  their GIC/vtimer captures. Correction 2026-08-11: the historical
+  RPR=0x10/0x60 plus `GICR_ISACTIVER0=0` captures did not prove an empty active
+  set, because shared SPI/MSI state is outside that banked register.
 - This gives A1 a host-side exit that does not wait on Apple: **emulate the
   GICv3 in userspace and drive vCPU IRQ lines with
   `hv_vcpu_set_pending_interrupt`**, exactly like QEMU. The codebase

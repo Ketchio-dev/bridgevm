@@ -1124,4 +1124,9 @@ virgl_output="$(
 assert_contains "$virgl_output" "BRIDGEVM_VIRTIO_GPU_3D_PROTOCOL=virgl" "virgl policy"
 assert_contains "$virgl_output" "BRIDGEVM_GPU_TRACE_PROTOCOL=virgl" "virgl policy"
 
+VTIMER_RECOVERY="crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/vtimer_recovery.rs"
+if grep -Eq 'hv_gic_set_icc_reg|clear_stale_running_priority' "$VTIMER_RECOVERY"; then
+  fail "cancellation recovery must not rewrite Apple GIC active-priority state"
+fi
+
 echo "PASS: installed Windows P3 GPU policy smoke ($STORE)"

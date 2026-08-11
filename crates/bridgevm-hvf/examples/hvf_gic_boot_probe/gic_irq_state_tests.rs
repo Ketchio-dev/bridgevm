@@ -136,21 +136,21 @@ fn occupied_list_registers_render_with_their_index() {
 }
 
 #[test]
-fn a_stale_running_priority_is_named_not_called_deliverable() {
+fn a_busy_rpr_without_a_banked_active_interrupt_stays_ambiguous() {
     let state = GicIrqState {
-        // Pending, enabled, group on, PMR open -- but RPR says an interrupt
-        // is still in service while nothing is active.
+        // Pending, enabled, group on, PMR open. A zero GICR_ISACTIVER0
+        // excludes SGIs/PPIs only; a shared SPI/MSI may still be active.
         rpr: Some(0xa0),
         ..all_open()
     };
     assert_eq!(
         state.vtimer_verdict(),
-        Some("vtimer PPI pending but ICC_RPR holds a stale running priority (nothing active)")
+        Some("vtimer PPI pending; ICC_RPR busy and shared active state unavailable")
     );
 }
 
 #[test]
-fn a_busy_rpr_with_a_real_active_interrupt_is_not_a_wedge() {
+fn a_busy_rpr_with_a_real_banked_active_interrupt_is_not_a_wedge() {
     let state = GicIrqState {
         rpr: Some(0xa0),
         isactiver0: Some(u64::from(VTIMER_PPI_BIT)),

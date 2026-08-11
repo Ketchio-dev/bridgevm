@@ -3,8 +3,8 @@
 //! A1 evidence (a1-qemu-userspace-gic-control-20260808.md): the same host and
 //! guest image boot 10/10 under QEMU-hvf, which emulates the entire GICv3 in
 //! userspace and never creates Apple's in-kernel GIC. Our in-kernel-GIC stack
-//! measures 14/40 with stalls exhibiting architecturally impossible register
-//! states inside `hv_gic`. This module is the swap: a self-contained GICv3
+//! measures 14/40 with GIC/vtimer stalls absent from the userspace control.
+//! This module is the swap: a self-contained GICv3
 //! (distributor + per-CPU redistributors + per-CPU CPU interfaces + GICv2m MSI
 //! frame) sized for the full machine (256 INTIDs, SMP affinity routing, SGIs).
 //!

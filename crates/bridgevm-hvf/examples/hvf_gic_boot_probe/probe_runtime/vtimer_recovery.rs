@@ -14,14 +14,11 @@
 //! "now": the deadline is unchanged in guest semantics (it was already due)
 //! and HVF sees a fresh expiry to deliver through its own PPI path.
 
-use crate::gic_irq_state::{
-    GICR_ISACTIVER0, ICC_AP0R0_EL1, ICC_AP1R0_EL1, ICC_RPR_EL1,
-};
 use crate::host_support::host_cntvct;
 use crate::hvf_abi::{
-    hv_gic_get_icc_reg, hv_gic_get_redistributor_reg, hv_gic_set_icc_reg, hv_vcpu_get_sys_reg,
-    hv_vcpu_get_vtimer_mask, hv_vcpu_get_vtimer_offset, hv_vcpu_set_sys_reg,
-    hv_vcpu_set_vtimer_mask, HvVcpuT, HV_SYS_REG_CNTV_CTL_EL0, HV_SYS_REG_CNTV_CVAL_EL0,
+    hv_vcpu_get_sys_reg, hv_vcpu_get_vtimer_mask, hv_vcpu_get_vtimer_offset,
+    hv_vcpu_set_sys_reg, hv_vcpu_set_vtimer_mask, HvVcpuT, HV_SYS_REG_CNTV_CTL_EL0,
+    HV_SYS_REG_CNTV_CVAL_EL0,
 };
 
 /// Call after a surplus (unclaimed) canceled exit. A spurious unmask when no
@@ -59,13 +56,10 @@ pub(crate) fn recover_swallowed_vtimer_fire(vcpu: HvVcpuT) {
         // spurious timer PPIs (ISTATUS=0) hand a Windows ISR an interrupt
         // its timer says did not happen. Keep the mask pulse (measured
         // baseline-neutral, mechanism-justified); do not forge interrupts.
-        // Order is load-bearing: clear the stale priority BEFORE pulsing.
-        // Soak 20260806-142939 boot-4 ran these the other way around: the
-        // pulse's fresh fire edge arrived while RPR=0x10 still gated the
-        // PPI, the clear then opened the gate with no edge left to take,
-        // and the terminal capture read "pending and deliverable" on a
-        // fully idle CPU interface -- open gate, no edge, dead boot.
-        clear_stale_running_priority(vcpu);
+        // Do not rewrite AP0R0/AP1R0 here. The old predicate checked only
+        // banked GICR_ISACTIVER0 (SGI/PPI), so it could erase a valid active
+        // SPI/MSI priority. macOS 26.5.2 then deliberately trapped when the
+        // guest EOId that still-active INTID (20260811-140847).
         RECOVERY_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if cntv_ctl & 0b111 == 0b101 {
             hv_vcpu_set_vtimer_mask(vcpu, true);
@@ -104,41 +98,6 @@ const REARM_FUTURE_TICKS: u64 = 240;
 pub(crate) static RECOVERY_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub(crate) static RECOVERY_PULSES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub(crate) static RECOVERY_REARMS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// Clear a running priority that has no active interrupt behind it.
-///
-/// First seen live 2026-08-06 (job 20260806-141247 boot-1, UEFI shape):
-/// RPR=0x10 and AP1R0=0x4 while ISACTIVER0=0. An active priority with no
-/// active interrupt cannot arise architecturally -- it means an activation
-/// was recorded whose EOI/priority-drop never landed (the same cancel race
-/// that swallows vtimer fires can swallow the trapped EOI write). While it
-/// stands, the CPU interface gates every interrupt at or below that
-/// priority, including the pending vtimer PPI: the UEFI-shape stall.
-///
-/// Unlike the reverted pending-latch forge, nothing guest-visible is
-/// invented here: no interrupt is injected; HVF's own bookkeeping is
-/// corrected to match the (empty) active set it itself reports.
-///
-/// # Safety
-/// `vcpu` must be live and owned by the calling thread.
-unsafe fn clear_stale_running_priority(vcpu: HvVcpuT) {
-    let mut rpr = 0u64;
-    let mut active = 0u64;
-    if hv_gic_get_icc_reg(vcpu, ICC_RPR_EL1, &mut rpr) != 0
-        || hv_gic_get_redistributor_reg(vcpu, GICR_ISACTIVER0, &mut active) != 0
-    {
-        return; // refuse to act on unread state
-    }
-    if rpr == 0xff || active != 0 {
-        return; // idle, or genuinely in service: nothing stale
-    }
-    let ap0 = hv_gic_set_icc_reg(vcpu, ICC_AP0R0_EL1, 0);
-    let ap1 = hv_gic_set_icc_reg(vcpu, ICC_AP1R0_EL1, 0);
-    println!(
-        "VTIMER RECOVERY: cleared stale running priority rpr={rpr:#x} \
-         (ISACTIVER0=0) ap0_status={ap0:#x} ap1_status={ap1:#x}"
-    );
-}
 
 /// Final-report line: the mask state that diagnosed the swallowed-fire stall.
 pub(crate) fn report_vtimer_mask(vcpu: HvVcpuT) {
