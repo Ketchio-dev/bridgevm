@@ -152,7 +152,7 @@ install_a3_payload_guest "$PAYLOAD_SHA" "$EXPECTED_PPSSPP_SHA"
 
 # Put DXVK beside the title (normal Windows DLL search) and replace PPSSPP's
 # canonical Vulkan config with a D3D11 config before the gate launches it.
-PREP='powershell -NoProfile -Command "$d=''C:\BridgeVM\a2-title\ppsspp''; if (-not (Test-Path $d\PPSSPPWindowsARM64.exe)) { exit 4 }; Copy-Item -Force C:\BridgeVMShare\d3d11.dll,C:\BridgeVMShare\dxgi.dll -Destination $d; Copy-Item -Force C:\BridgeVMShare\bv-ppsspp-d3d11.ini -Destination $d\bv-ppsspp.ini; Write-Output prep=D3D11OK"'
+PREP='powershell -NoProfile -Command "if (-not (Test-Path -LiteralPath C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe -PathType Leaf)) { exit 4 }; Copy-Item -Force C:\BridgeVMShare\d3d11.dll,C:\BridgeVMShare\dxgi.dll -Destination C:\BridgeVM\a2-title\ppsspp; Copy-Item -Force C:\BridgeVMShare\bv-ppsspp-d3d11.ini -Destination C:\BridgeVM\a2-title\ppsspp\bv-ppsspp.ini; Write-Output prep=D3D11OK"'
 run_guest "$PREP" 120
 tr -d '\r' < "$RUN_LOG" | grep -q '^prep=D3D11OK$' || fail "D3D11 title preparation failed"
 
