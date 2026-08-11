@@ -37,6 +37,108 @@ function Write-GateLog {
     [IO.File]::AppendAllText($LogPath, $line + [Environment]::NewLine)
 }
 
+function Convert-ToGateField {
+    param(
+        [AllowNull()][object]$Value,
+        [ValidateRange(1, 1024)][int]$Limit = 512
+    )
+
+    if ($null -eq $Value) { return "" }
+    $text = ([string]$Value) -replace '[\r\n\t]+', ' '
+    if ($text.Length -gt $Limit) { return $text.Substring(0, $Limit) }
+    return $text
+}
+
+function Write-ProcessExitDiagnostics {
+    param(
+        [Parameter(Mandatory = $true)][Diagnostics.Process]$Process,
+        [Parameter(Mandatory = $true)][string]$ExecutablePath,
+        [Parameter(Mandatory = $true)][DateTime]$Since,
+        [Parameter(Mandatory = $true)][string]$FrameLogPath
+    )
+
+    $unsignedExit = [BitConverter]::ToUInt32(
+        [BitConverter]::GetBytes([int]$Process.ExitCode), 0)
+    Write-GateLog ("process_exit_ntstatus=0x{0:x8}" -f $unsignedExit)
+
+    # Application Error event 1000 is written after the process is gone. Poll
+    # only after failure, for at most five seconds, and emit fixed fields from
+    # EventData rather than a locale-dependent unbounded message.
+    $applicationName = Split-Path -Leaf $ExecutablePath
+    $faultEvent = $null
+    for ($attempt = 0; $attempt -lt 10 -and $null -eq $faultEvent; $attempt++) {
+        try {
+            $events = @(Get-WinEvent -FilterHashtable @{
+                LogName = 'Application'
+                StartTime = $Since.AddSeconds(-2)
+            } -MaxEvents 64 -ErrorAction Stop)
+            $faultEvent = @($events | Where-Object {
+                ($_.Id -eq 1000 -or $_.ProviderName -eq 'Application Error') -and
+                    $_.Message -like "*$applicationName*"
+            } | Select-Object -First 1)
+            if ($faultEvent.Count -eq 1) { $faultEvent = $faultEvent[0] }
+            else { $faultEvent = $null }
+        }
+        catch { $faultEvent = $null }
+        if ($null -eq $faultEvent) { Start-Sleep -Milliseconds 500 }
+    }
+    if ($null -ne $faultEvent) {
+        try {
+            [xml]$eventXml = $faultEvent.ToXml()
+            $eventData = @{}
+            foreach ($node in $eventXml.SelectNodes(
+                "//*[local-name()='EventData']/*[local-name()='Data']")) {
+                $name = $node.GetAttribute('Name')
+                if ($name -ne '') { $eventData[$name] = $node.InnerText }
+            }
+            $fields = @()
+            foreach ($name in @('AppName', 'ModuleName', 'ExceptionCode',
+                    'FaultingOffset', 'AppPath', 'ModulePath')) {
+                $fields += ($name.ToLowerInvariant() + '=' +
+                    (Convert-ToGateField $eventData[$name] 512))
+            }
+            Write-GateLog ("process_exit_event provider={0} event_id={1} record_id={2} {3}" -f
+                (Convert-ToGateField $faultEvent.ProviderName 64), $faultEvent.Id,
+                $faultEvent.RecordId, ($fields -join ' '))
+        }
+        catch {
+            Write-GateLog "process_exit_event status=parse-failed"
+        }
+    }
+    else {
+        Write-GateLog "process_exit_event status=not-observed-within-5s"
+    }
+
+    # Preserve only a bounded 64-KiB suffix of PPSSPP's own log in the command
+    # transcript. Individual lines are capped so a corrupt log cannot inflate
+    # the live receipt or violate the shared-file convention.
+    if (Test-Path -LiteralPath $FrameLogPath -PathType Leaf) {
+        try {
+            $stream = [IO.File]::Open($FrameLogPath, [IO.FileMode]::Open,
+                [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+            try {
+                $tailBudget = [Math]::Min([int64]65536, $stream.Length)
+                [void]$stream.Seek(-$tailBudget, [IO.SeekOrigin]::End)
+                $reader = [IO.StreamReader]::new($stream)
+                $tailLines = @($reader.ReadToEnd() -split "`r?`n" |
+                    Select-Object -Last 16)
+                Write-GateLog "frame_tail bytes=$tailBudget lines=$($tailLines.Count)"
+                foreach ($line in $tailLines) {
+                    if ($line -ne '') {
+                        Write-GateLog ("frame_tail_line text={0}" -f
+                            (Convert-ToGateField $line 512))
+                    }
+                }
+            }
+            finally { $stream.Dispose() }
+        }
+        catch { Write-GateLog "frame_tail status=read-failed" }
+    }
+    else {
+        Write-GateLog "frame_tail status=absent"
+    }
+}
+
 function Get-LoadedModulePath {
     param(
         [Parameter(Mandatory = $true)][Diagnostics.Process]$Process,
@@ -139,6 +241,8 @@ while ([DateTime]::UtcNow -lt $deadline) {
     if ($process.HasExited) {
         $elapsedMs = [int]([DateTime]::UtcNow - $startedAt).TotalMilliseconds
         Write-GateLog "status=FAIL reason=process-exited pid=$($process.Id) exit_code=$($process.ExitCode) elapsed_ms=$elapsedMs"
+        Write-ProcessExitDiagnostics -Process $process -ExecutablePath $Executable `
+            -Since $startedAt -FrameLogPath $frameLog
         Exit-Gate 3
     }
     if ($null -eq $venusModulePath) {
@@ -159,6 +263,8 @@ while ([DateTime]::UtcNow -lt $deadline) {
 $process.Refresh()
 if ($process.HasExited) {
     Write-GateLog "status=FAIL reason=process-exited-at-deadline pid=$($process.Id) exit_code=$($process.ExitCode)"
+    Write-ProcessExitDiagnostics -Process $process -ExecutablePath $Executable `
+        -Since $startedAt -FrameLogPath $frameLog
     Exit-Gate 4
 }
 if ($null -eq $venusModulePath) {
