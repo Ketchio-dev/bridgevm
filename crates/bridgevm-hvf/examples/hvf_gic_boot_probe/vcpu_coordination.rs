@@ -11,6 +11,10 @@ pub(crate) struct VcpuControl {
     /// the handle-lifetime barrier: shutdown holds it while requesting an
     /// exit, and the owner clears it before dropping `HvVcpuGuard`.
     pub(crate) vcpu: Mutex<Option<HvVcpuT>>,
+    pub(crate) created: AtomicBool,
+    /// One owner-thread snapshot, published before the live handle is
+    /// withdrawn. Guest RAM is not interpreted until all threads are joined.
+    pub(crate) final_state: Mutex<Option<VcpuFinalState>>,
     pub(crate) exits: AtomicU64,
     pub(crate) run_error: AtomicBool,
     pub(crate) mpidr: u64,
@@ -25,6 +29,8 @@ impl VcpuControl {
             entry: AtomicU64::new(0),
             context: AtomicU64::new(0),
             vcpu: Mutex::new(None),
+            created: AtomicBool::new(false),
+            final_state: Mutex::new(None),
             exits: AtomicU64::new(0),
             run_error: AtomicBool::new(false),
             mpidr: 0x8000_0000 | machine::cpu_mpidr(index),
@@ -36,6 +42,7 @@ impl VcpuControl {
     }
     pub(crate) fn publish_vcpu(&self, vcpu: HvVcpuT) {
         let mut published = self.vcpu.lock().expect("secondary vCPU handle mutex");
+        self.created.store(true, Ordering::Release);
         assert!(
             published.replace(vcpu).is_none(),
             "secondary vCPU{} handle published twice",
@@ -236,6 +243,7 @@ pub(crate) struct SecondaryVcpuSpawnConfig {
     pub(crate) pre_run_drain_gate: Arc<PreRunDrainGate>,
     pub(crate) smp_trace: Option<Arc<SmpTrace>>,
     pub(crate) max_exits: u64,
+    pub(crate) generation: u64,
 }
 
 pub(crate) struct SecondaryVcpuThreadContext {
@@ -250,6 +258,7 @@ pub(crate) struct SecondaryVcpuThreadContext {
     pub(crate) controls: Vec<Arc<VcpuControl>>,
     pub(crate) smp_trace: Option<Arc<SmpTrace>>,
     pub(crate) max_exits: u64,
+    pub(crate) generation: u64,
 }
 
 impl SecondaryVcpuSet {
@@ -264,6 +273,7 @@ impl SecondaryVcpuSet {
             pre_run_drain_gate,
             smp_trace,
             max_exits,
+            generation,
         } = config;
         if cpu_count <= 1 {
             return Self {
@@ -306,6 +316,7 @@ impl SecondaryVcpuSet {
                                 controls: controls_for_thread,
                                 smp_trace,
                                 max_exits,
+                                generation,
                             },
                         )
                     })
@@ -323,26 +334,8 @@ impl SecondaryVcpuSet {
     pub(crate) fn terminal_action(&self) -> Option<PsciTerminalAction> {
         self.terminal.action()
     }
-    pub(crate) fn shutdown_and_join(self) -> (Vec<(u64, u64)>, bool) {
-        self.shutdown.store(true, Ordering::SeqCst);
-        for control in &self.controls {
-            control.notify_shutdown();
-        }
-        for control in &self.controls {
-            control.request_exit_if_published();
-        }
-        for handle in self.handles {
-            handle.join().expect("join secondary vCPU thread");
-        }
-        let run_error = self
-            .controls
-            .iter()
-            .any(|control| control.run_error.load(Ordering::SeqCst));
-        let exit_counts = self
-            .controls
-            .iter()
-            .map(|control| (control.index, control.exits.load(Ordering::SeqCst)))
-            .collect();
-        (exit_counts, run_error)
-    }
 }
+
+#[cfg(test)]
+#[path = "vcpu_coordination_tests.rs"]
+mod tests;

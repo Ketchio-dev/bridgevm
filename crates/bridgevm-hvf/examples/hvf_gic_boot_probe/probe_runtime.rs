@@ -131,6 +131,7 @@ pub(crate) fn run() -> ExitCode {
             };
             let smp_trace = (smp_cpus > 1 && smp_trace_enabled).then(|| Arc::new(SmpTrace::new()));
             let pre_run_drain_gate = Arc::new(PreRunDrainGate::from_env());
+            let diagnostic_generation = reboot_count.wrapping_add(1);
             let secondary_vcpus = (smp_cpus > 1).then(|| {
                 SecondaryVcpuSet::spawn(SecondaryVcpuSpawnConfig {
                     cpu_count: smp_cpus,
@@ -141,7 +142,7 @@ pub(crate) fn run() -> ExitCode {
                     drain_trace,
                     pre_run_drain_gate: Arc::clone(&pre_run_drain_gate),
                     smp_trace: smp_trace.clone(),
-                    max_exits,
+                    max_exits, generation: diagnostic_generation,
                 })
             });
             let boot_generation = begin_watchdog_generation(&watchdog_generation);
@@ -908,10 +909,10 @@ pub(crate) fn run() -> ExitCode {
             // guest boot time.
             let boot_timer_elapsed = boot_timer.elapsed();
             invalidate_watchdog_generation(&watchdog_generation);
-            let (secondary_exit_counts, secondary_vcpu_run_error) = secondary_vcpus
+            let secondary_stop = secondary_vcpus
                 .map(SecondaryVcpuSet::shutdown_and_join)
                 .unwrap_or_default();
-            fatal_vcpu_run_error |= secondary_vcpu_run_error;
+            fatal_vcpu_run_error |= secondary_stop.run_error;
             if requested_system_reset {
                 // Crash-survivable snapshot: capture regs + full RAM BEFORE the
                 // reboot arm below wipes guest RAM / resets the vCPU. Gated on
@@ -1008,8 +1009,7 @@ pub(crate) fn run() -> ExitCode {
                 wake_coordinator,
                 wake_cancel_claims,
                 boot_timer,
-                boot_timer_elapsed,
-                secondary_exit_counts,
+                boot_timer_elapsed, diagnostic_generation, secondary_stop,
                 drain_stats,
                 unimpl,
                 mmio_traces,

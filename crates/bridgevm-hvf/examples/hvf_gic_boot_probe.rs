@@ -121,6 +121,8 @@ probe_modules!(
     "hvf_gic_boot_probe/trng_dispatch.rs" => trng_dispatch,
     "hvf_gic_boot_probe/vcpu_coordination.rs" => vcpu_coordination,
     "hvf_gic_boot_probe/vcpu_debug.rs" => vcpu_debug,
+    "hvf_gic_boot_probe/vcpu_final_state.rs" => vcpu_final_state,
+    "hvf_gic_boot_probe/vcpu_final_state/viogpu.rs" => viogpu_final_state,
     "hvf_gic_boot_probe/wake_coordinator.rs" => wake_coordinator,
     "hvf_gic_boot_probe/wfi_diagnostics.rs" => wfi_diagnostics,
     "hvf_gic_boot_probe/boot_media_setup.rs" => boot_media_setup,
@@ -168,6 +170,7 @@ pub(crate) use smp_trace::*;
 pub(crate) use storage_reporting::*;
 pub(crate) use vcpu_coordination::*;
 pub(crate) use vcpu_debug::*;
+pub(crate) use vcpu_final_state::*;
 pub(crate) use wake_coordinator::*;
 #[path = "hvf_gic_boot_probe/wake_coordinator/cancel_stop.rs"]
 mod cancel_stop;

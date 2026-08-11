@@ -18,6 +18,7 @@ pub(crate) fn secondary_vcpu_thread(
         controls,
         smp_trace,
         max_exits,
+        generation,
     } = context;
     let mut vcpu: HvVcpuT = 0;
     let mut exit: *mut HvVcpuExit = null_mut();
@@ -128,8 +129,25 @@ pub(crate) fn secondary_vcpu_thread(
             }
         }
     }
+    let final_psci_state = *state;
     drop(state);
     if vcpu != 0 {
+        // This thread owns `vcpu`. Capture after the terminal stop and before
+        // withdrawal/destruction; the primary reads only the published value.
+        let final_state = VcpuFinalState::capture_on_owner_thread(
+            control.index,
+            generation,
+            final_psci_state,
+            control.mpidr,
+            exits,
+            vcpu,
+        );
+        if control.publish_final_state(final_state).is_err() {
+            println!(
+                "secondary vCPU{} final-state publication rejected: already published",
+                control.index
+            );
+        }
         // Withdraw under the same mutex used by shutdown before the guard can
         // destroy the HVF object. This closes both the stale-value and
         // load-versus-destroy races on early secondary-thread exits.
@@ -537,100 +555,6 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             println!("secondary vCPU{} exit cap {max_exits}", control.index);
             return true;
         }
-    }
-}
-
-#[cfg(test)]
-mod vcpu_control_tests {
-    use super::*;
-
-    #[test]
-    fn vcpu_control_starts_off_with_linear_mpidr() {
-        let control = VcpuControl::new(17);
-
-        assert_eq!(*control.state.lock().unwrap(), PsciState::Off);
-        assert_eq!(control.entry.load(Ordering::SeqCst), 0);
-        assert_eq!(control.context.load(Ordering::SeqCst), 0);
-        assert_eq!(*control.vcpu.lock().unwrap(), None);
-        assert_eq!(control.index, 17);
-        assert_eq!(control.mpidr, 0x8000_0000 | machine::cpu_mpidr(17));
-    }
-
-    #[test]
-    fn psci_state_has_parked_secondary_transitions_reserved() {
-        let control = VcpuControl::new(1);
-        {
-            let mut state = control.state.lock().unwrap();
-            *state = PsciState::OnPending;
-            assert_eq!(*state, PsciState::OnPending);
-            *state = PsciState::On;
-            assert_eq!(*state, PsciState::On);
-            *state = PsciState::Off;
-        }
-        assert_eq!(*control.state.lock().unwrap(), PsciState::Off);
-    }
-
-    #[test]
-    fn secondary_vcpu_handle_cannot_withdraw_during_shutdown_action() {
-        let control = Arc::new(VcpuControl::new(1));
-        let fake_handle = 0x1234;
-        let (action_entered_tx, action_entered_rx) = std::sync::mpsc::channel();
-        let (release_action_tx, release_action_rx) = std::sync::mpsc::channel();
-        let (withdraw_started_tx, withdraw_started_rx) = std::sync::mpsc::channel();
-        let (withdraw_done_tx, withdraw_done_rx) = std::sync::mpsc::channel();
-
-        control.publish_vcpu(fake_handle);
-        let action_control = Arc::clone(&control);
-        let action_thread = thread::spawn(move || {
-            let _ = action_control.with_published_vcpu(|vcpu| {
-                assert_eq!(vcpu, fake_handle);
-                action_entered_tx.send(()).unwrap();
-                release_action_rx.recv().unwrap();
-            });
-        });
-        action_entered_rx.recv().unwrap();
-
-        let withdraw_control = Arc::clone(&control);
-        let withdraw_thread = thread::spawn(move || {
-            withdraw_started_tx.send(()).unwrap();
-            withdraw_control.withdraw_vcpu(fake_handle);
-            withdraw_done_tx.send(()).unwrap();
-        });
-        withdraw_started_rx.recv().unwrap();
-        let withdrawal_while_locked = withdraw_done_rx.recv_timeout(Duration::from_millis(25));
-
-        release_action_tx.send(()).unwrap();
-        action_thread.join().unwrap();
-        if withdrawal_while_locked.is_err() {
-            withdraw_done_rx.recv().unwrap();
-        }
-        withdraw_thread.join().unwrap();
-        assert!(
-            matches!(
-                withdrawal_while_locked,
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-            ),
-            "withdrawal completed while a shutdown action held the handle"
-        );
-        assert_eq!(*control.vcpu.lock().unwrap(), None);
-    }
-
-    #[test]
-    fn secondary_terminal_signal_preserves_the_first_system_request() {
-        let signal = SecondaryTerminalSignal::new();
-
-        assert_eq!(signal.action(), None);
-        assert!(signal.record(PSCI_SYSTEM_OFF));
-        assert!(!signal.record(PSCI_SYSTEM_RESET));
-        assert_eq!(signal.action(), Some(PsciTerminalAction::SystemOff));
-    }
-
-    #[test]
-    fn secondary_terminal_signal_accepts_a_system_reset_request() {
-        let signal = SecondaryTerminalSignal::new();
-
-        assert!(signal.record(PSCI_SYSTEM_RESET));
-        assert_eq!(signal.action(), Some(PsciTerminalAction::SystemReset));
     }
 }
 

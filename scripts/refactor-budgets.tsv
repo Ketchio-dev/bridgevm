@@ -604,9 +604,9 @@ crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe.rs	522	10
 crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe/guest_code.rs	161	0
 crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe/options.rs	205	0
 crates/bridgevm-hvf/examples/hvf_vtimer_cancel_probe/receipt.rs	269	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe.rs	222	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe.rs	207	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/boot_media_setup.rs	112	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/final_report.rs	391	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/final_report.rs	385	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_bar2.rs	41	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_setup.rs	13	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_setup.rs	89	2
@@ -670,7 +670,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_ki
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/boot_progress_tests.rs	116	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/reboot_watchdog/plan_tests.rs	76	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/psci_adapter.rs	267	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs	646	29
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs	570	28
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/serial_input.rs	162	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync.rs	739	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/smp_trace.rs	186	2
@@ -685,8 +685,12 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/trng_dispatch.rs	82	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vblank_wake.rs	84	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator.rs	214	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wake_coordinator_tests.rs	146	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination.rs	348	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination.rs	341	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_coordination_tests.rs	119	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_debug.rs	110	4
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state.rs	352	2
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state/viogpu.rs	342	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/vcpu_final_state_tests.rs	247	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/wfi_diagnostics.rs	232	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input.rs	53	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/boot_key.rs	148	0

@@ -1,6 +1,6 @@
 include!("present_health.rs");
 macro_rules! persist_and_report_stop {
-    ($platform:ident, $media:ident, $vcpu:ident, $guest_ram:ident, $last_pc:ident, $last_pre_run_pc:ident, $last_watch_pc:ident, $last_watch_lr:ident, $stop_reason:ident, $stop_reason_code:ident, $exits:ident, $vtimer_exits:ident, $psci_calls:ident, $surplus_canceled_exits:ident, $wake_coordinator:ident, $wake_cancel_claims:ident, $boot_timer:ident, $boot_timer_elapsed:ident, $secondary_exit_counts:ident, $drain_stats:ident, $unimpl:ident, $mmio_traces:ident, $recent_pcie_ecam:ident, $recent_pcie_mmio:ident, $recent_pcie_pio:ident, $recent_xhci:ident, $uart_triggers:ident, $xhci_hid_boot_key_triggers:ident, $xhci_setup_input_triggers:ident, $xhci_pointer_input_triggers:ident, $redist_lo:ident, $redist_hi:ident, $smp_trace:ident $(,)?) => {{
+    ($platform:ident, $media:ident, $vcpu:ident, $guest_ram:ident, $last_pc:ident, $last_pre_run_pc:ident, $last_watch_pc:ident, $last_watch_lr:ident, $stop_reason:ident, $stop_reason_code:ident, $exits:ident, $vtimer_exits:ident, $psci_calls:ident, $surplus_canceled_exits:ident, $wake_coordinator:ident, $wake_cancel_claims:ident, $boot_timer:ident, $boot_timer_elapsed:ident, $diagnostic_generation:ident, $secondary_stop:ident, $drain_stats:ident, $unimpl:ident, $mmio_traces:ident, $recent_pcie_ecam:ident, $recent_pcie_mmio:ident, $recent_pcie_pio:ident, $recent_xhci:ident, $uart_triggers:ident, $xhci_hid_boot_key_triggers:ident, $xhci_setup_input_triggers:ident, $xhci_pointer_input_triggers:ident, $redist_lo:ident, $redist_hi:ident, $smp_trace:ident $(,)?) => {{
         let mut platform_guard = $platform.lock().expect("platform mutex");
         let $platform = &mut *platform_guard;
         let serial = $platform.uart_output().to_vec();
@@ -44,6 +44,7 @@ macro_rules! persist_and_report_stop {
         println!(
             "REGS: pc={:#x} lr={lr:#x} fp={fp:#x} sp_el0={sp_el0:#x} sp_el1={sp_el1:#x}", $last_pc
         );
+        $secondary_stop.report_with_primary(&$guest_ram, $vcpu, $exits, $diagnostic_generation);
         print_gpr_context($vcpu);
         println!(
             "STAGE1: SCTLR={:#x} MMU={} TCR={:#x} TTBR0={:#x} TTBR1={:#x} MAIR={:#x}",
@@ -190,7 +191,7 @@ macro_rules! persist_and_report_stop {
         println!(
             "exits: {} (vtimer {}, psci {}, surplus-canceled {}), last PC: {:#x}", $exits, $vtimer_exits, $psci_calls, $surplus_canceled_exits, $last_pc
         );
-        $boot_timer.print_summary($boot_timer_elapsed, $exits, &$secondary_exit_counts);
+        $boot_timer.print_summary($boot_timer_elapsed, $exits, &$secondary_stop.exit_counts);
         $drain_stats.print_summary();
         let last_prerun_pc_ipa = translated_ipa(&$guest_ram, &stage1_ctx, $last_pre_run_pc).ok();
         let last_nonzero_irq_drain_pc_ipa = $drain_stats
