@@ -65,6 +65,10 @@ wait_for() { # pattern, count, timeout seconds
   while (( SECONDS < deadline )); do
     n=$(grep -cE "$1" "$RUN_LOG" 2>/dev/null || true)
     (( n >= $2 )) && return 0
+    if [[ -n "${LAUNCHER:-}" ]] && ! kill -0 "$LAUNCHER" 2>/dev/null; then
+      wait "$LAUNCHER" 2>/dev/null || true
+      return 1
+    fi
     sleep 0.3
   done
   return 1
@@ -89,7 +93,7 @@ run_guest() { # command, timeout
 
 BUILD_ARGS=()
 [[ "$SKIP_BUILD" == 1 ]] && BUILD_ARGS+=(--skip-build)
-scripts/run-hvf-windows-installed-boot.sh \
+BRIDGEVM_BOOT_PROGRESS_KILL=1 scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" \
   --evidence-dir "$OUT" --watchdog-ms $((BOOT_TIMEOUT * 1000)) \
   --ram-mib 6144 --smp-cpus 4 --release "${BUILD_ARGS[@]}" \

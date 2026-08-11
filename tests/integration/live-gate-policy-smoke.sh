@@ -15,6 +15,7 @@ REDACT="$REPO/scripts/live-gates/redact-receipt.py"
 TIER="$REPO/scripts/live-gates/run-tier.sh"
 A3_TIER="$REPO/scripts/live-gates/run-a3-title-tier.sh"
 A3_RECEIPT="$REPO/scripts/live-gates/write-a3-title-receipt.py"
+A3_VERIFY="$REPO/scripts/verify-d3d11-title-fps.sh"
 BOOT_RUNNER="$REPO/scripts/run-hvf-windows-installed-boot-runner.sh"
 
 WORK="$(mktemp -d)"
@@ -74,6 +75,10 @@ no_match "nothing in the queue path uses sudo" \
     '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$A3_TIER" "$A3_RECEIPT"
 check "the A3 receipt requires all three runs" \
     'python3 "$A3_RECEIPT" --self-test | grep -q "PASS"'
+check "the A3 verifier kills a parked boot after diagnostics" \
+    'grep -q "BRIDGEVM_BOOT_PROGRESS_KILL=1" "$A3_VERIFY"'
+check "the A3 verifier notices an exited launcher while waiting" \
+    'grep -q '\''kill -0 "$LAUNCHER"'\'' "$A3_VERIFY"'
 
 # --- submit returns immediately -----------------------------------------
 start=$(date +%s)
