@@ -860,7 +860,12 @@ crates/bridgevm-hvf/src/userspace_gic/mod.rs	765	0
 crates/bridgevm-hvf/src/userspace_gic/mmio_regs.rs	358	0
 crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	388	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	497	13
-scripts/live-gates/run-a3-title-tier.sh	122	0
+scripts/live-gates/run-a3-title-tier.sh	90	0
+scripts/live-gates/a3-title-manifest.sh	47	0
+scripts/live-gates/a3-title-input-copy.sh	19	0
+scripts/live-gates/a3-title-payload.sh	22	0
+scripts/live-gates/a3-title-payload.py	128	0
+scripts/live-gates/a3-title-payload-stage.sh	52	0
 scripts/live-gates/write-a3-title-receipt.py	179	0
 scripts/win-assets/bvgpu-d3d11-identity.ps1	24	0
 scripts/harvest-hvf-windows-postmortem.sh	118	0

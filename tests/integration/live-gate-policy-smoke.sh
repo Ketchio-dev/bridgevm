@@ -16,6 +16,9 @@ TIER="$REPO/scripts/live-gates/run-tier.sh"
 A3_TIER="$REPO/scripts/live-gates/run-a3-title-tier.sh"
 A3_RECEIPT="$REPO/scripts/live-gates/write-a3-title-receipt.py"
 A3_VERIFY="$REPO/scripts/verify-d3d11-title-fps.sh"
+A3_PAYLOAD="$REPO/scripts/live-gates/a3-title-payload.sh"
+A3_PAYLOAD_VALIDATOR="$REPO/scripts/live-gates/a3-title-payload.py"
+A3_STAGE="$REPO/scripts/live-gates/a3-title-payload-stage.sh"
 BOOT_RUNNER="$REPO/scripts/run-hvf-windows-installed-boot-runner.sh"
 POSTMORTEM_HARVEST="$REPO/scripts/harvest-hvf-windows-postmortem.sh"
 
@@ -62,6 +65,8 @@ check "the redactor is executable" '[ -x "$REDACT" ]'
 check "the tier dispatcher is executable" '[ -x "$TIER" ]'
 check "the A3 tier helper is executable" '[ -x "$A3_TIER" ]'
 check "the A3 receipt writer is executable" '[ -x "$A3_RECEIPT" ]'
+check "the A3 payload validator is executable" '[ -x "$A3_PAYLOAD" ] && [ -x "$A3_PAYLOAD_VALIDATOR" ]'
+check "the A3 payload staging policy is executable" '[ -x "$A3_STAGE" ]'
 check "the plist is well formed" 'plutil -lint "$PLIST" >/dev/null'
 check "the Windows post-mortem harvester is executable" '[ -x "$POSTMORTEM_HARVEST" ]'
 check "the installed-boot runner attaches post-mortem media read-only" \
@@ -128,23 +133,33 @@ check "read-only post-mortem harvest leaves the guest image byte-identical" \
 check "the plist declares no socket" '! grep -q "<key>Sockets</key>" "$PLIST"'
 check "the plist is not a root daemon" '! grep -qi "UserName.*root" "$PLIST"'
 no_match "no component opens a listening socket" \
-    'nc +-l|socat|LISTEN|bind\(' "$CLI" "$WORKER" "$TIER" "$A3_TIER" "$A3_RECEIPT"
+    'nc +-l|socat|LISTEN|bind\(' "$CLI" "$WORKER" "$TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 # The installer names actions-runner only to refuse installing beside one, so
 # this looks for the act of registering rather than the word.
 no_match "nothing registers a GitHub runner" \
-    'config\.sh +--url|RUNNER_TOKEN|--runnergroup' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$A3_TIER" "$A3_RECEIPT"
+    'config\.sh +--url|RUNNER_TOKEN|--runnergroup' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 check "the installer refuses to sit beside a runner" \
     'grep -q "actions-runner" "$INSTALL"'
 no_match "nothing in the queue path uses sudo" \
-    '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$A3_TIER" "$A3_RECEIPT"
+    '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 check "the A3 receipt requires all three runs" \
     'python3 "$A3_RECEIPT" --self-test | grep -q "PASS"'
+check "the A3 payload archive is fail-closed" \
+    '"$A3_PAYLOAD" --self-test | grep -q "PASS"'
+check "the A3 payload uses bounded share chunks" \
+    '"$A3_STAGE" --self-test | grep -q "PASS"'
+check "the A3 payload is reconstructed and hashed in the guest" \
+    'grep -q "ExpectedPayloadSha256" "$REPO/scripts/win-assets/bvgpu-stage-ppsspp.ps1" && grep -q "ExpectedExecutableSha256" "$REPO/scripts/win-assets/bvgpu-stage-ppsspp.ps1"'
+check "the A3 verifier installs the sealed payload every run" \
+    'grep -q '\''install_a3_payload_guest "$PAYLOAD_SHA" "$EXPECTED_PPSSPP_SHA"'\'' "$A3_VERIFY"'
 check "the A3 campaign stops once three of three is impossible" \
     'grep -Fq '\''verify-d3d11-title-fps.sh" || break'\'' "$A3_TIER"'
 check "the A3 verifier kills a parked boot after diagnostics" \
     'grep -q "BRIDGEVM_BOOT_PROGRESS_KILL=1" "$A3_VERIFY"'
 check "the A3 verifier measures the product shipping renderer path" \
     'grep -q -- "--performance-risk aggressive --virtio-gpu-3d" "$A3_VERIFY"'
+check "the A3 share cap remains eight MiB with seven MiB payload parts" \
+    'grep -q '\''A3_PAYLOAD_CHUNK_BYTES=$((7 \* 1024 \* 1024))'\'' "$A3_STAGE" && grep -q -- '\''--agent-share-max-kb 8192'\'' "$A3_VERIFY"'
 check "the A3 outer wait starts after bounded host preflight" \
     'grep -q "wait_for .*Boot watchdog:.*HOST_PREFLIGHT_TIMEOUT" "$A3_VERIFY"'
 check "the A3 outer wait leaves post-mortem diagnostic grace" \
@@ -198,6 +213,29 @@ required = {"gate_id", "criterion", "tested_commit", "host_os", "host_hardware",
 assert required <= r.keys()
 assert r["criterion"] == "A3" and r["pass"] is False
 PY'
+
+# A syntactically complete and correctly hashed manifest must still fail closed
+# when its PPSSPP ZIP is unsafe. This reaches the extracted manifest verifier
+# and payload validator without invoking codesign or a VM.
+sealed="$WORK/sealed-a3"; mkdir -p "$sealed/viogpu"
+for key in image vars title d3d11 dxgi virglrenderer moltenvk; do printf '%s' "$key" > "$sealed/$key"; done
+printf driver > "$sealed/viogpu/file"
+python3 - "$sealed/ppsspp" <<'PY'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "w") as payload:
+    payload.writestr("../escape", b"bad")
+    payload.writestr("ppsspp/PPSSPPWindowsARM64.exe", b"arm64")
+PY
+complete_manifest="$sealed/manifest.tsv"
+for key in image vars title ppsspp d3d11 dxgi virglrenderer moltenvk; do
+    printf '%s\t%s\t%s\n' "$key" "$sealed/$key" "$(shasum -a 256 "$sealed/$key" | cut -d' ' -f1)" >> "$complete_manifest"
+done
+viogpu_hash="$(cd "$sealed/viogpu" && find . -type f -exec shasum -a 256 {} + | LC_ALL=C sort -k2 | shasum -a 256 | cut -d' ' -f1)"
+printf 'viogpu_dir\t%s\t%s\n' "$sealed/viogpu" "$viogpu_hash" >> "$complete_manifest"
+printf 'binary\t%s\t%s\n' "$WORK/probe" "$(shasum -a 256 "$WORK/probe" | cut -d' ' -f1)" >> "$complete_manifest"
+unsafe_out="$WORK/unsafe-a3"
+check "the A3 tier refuses an unsafe sealed payload after manifest verification" \
+    '! "$A3_TIER" --out "$unsafe_out" --input-manifest "$complete_manifest" --sealed-binary "$WORK/probe" --job-id unsafe-policy >/dev/null 2>&1 && grep -q "refused-ppsspp-payload" "$unsafe_out/receipt.json"'
 check "the installed-boot runner honors a sealed prebuilt binary" \
     'grep -Fq '"'"'BRIDGEVM_PREBUILT_PROBE requires an absolute regular release binary with --skip-build'"'"' "$BOOT_RUNNER"'
 rm -rf "$BRIDGEVM_LIVE_ROOT/queued/$a3_job"

@@ -83,7 +83,9 @@ def final_receipt(args: argparse.Namespace) -> int:
             "vars_sha256": verified["vars"],
             "driver_store_hash": verified["viogpu_dir"],
             "title_sha256": verified["title"],
-            "ppsspp_sha256": verified["ppsspp"],
+            "ppsspp_sha256": args.ppsspp_executable_hash,
+            "ppsspp_payload_sha256": verified["ppsspp"],
+            "ppsspp_executable_sha256": args.ppsspp_executable_hash,
             "dxvk_d3d11_sha256": verified["d3d11"],
             "dxvk_dxgi_sha256": verified["dxgi"],
             "virglrenderer_sha256": verified["virglrenderer"],
@@ -127,10 +129,12 @@ def self_test() -> int:
                 f"a3_d3d11_fps={state}\nsamples=400\np50=58.82\n")
         args = argparse.Namespace(out=out, job_id="self-test", commit="0" * 40,
             started_at="2026-01-01T00:00:00Z", binary_hash="cd" * 32,
-            gate_asset_hash="ef" * 32, input_manifest_hash="12" * 32)
+            ppsspp_executable_hash="34" * 32, gate_asset_hash="ef" * 32,
+            input_manifest_hash="12" * 32)
         assert final_receipt(args) == 1
         receipt = json.loads((out / "receipt.json").read_text())
         assert receipt["passes"] == 2 and receipt["pass"] is False
+        assert receipt["ppsspp_sha256"] == receipt["ppsspp_executable_sha256"] == "34" * 32
         assert receipt["run_count"] == receipt["required_run_count"] == 3
         (out / "run-3" / "summary.txt").write_text(
             "a3_d3d11_fps=pass\nsamples=400\np50=58.82\n"
@@ -158,12 +162,13 @@ def main() -> int:
     parser.add_argument("--started-at")
     parser.add_argument("--binary-hash")
     parser.add_argument("--gate-asset-hash")
+    parser.add_argument("--ppsspp-executable-hash")
     parser.add_argument("--input-manifest-hash")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     if args.reason:
         return refusal(args.out, args.job_id, args.commit, args.reason)
-    required = "started_at binary_hash gate_asset_hash input_manifest_hash"
+    required = "started_at binary_hash ppsspp_executable_hash gate_asset_hash input_manifest_hash"
     for name in required.split():
         if not getattr(args, name):
             parser.error(f"--{name.replace('_', '-')} is required for a final receipt")

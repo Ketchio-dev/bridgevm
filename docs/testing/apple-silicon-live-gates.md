@@ -81,9 +81,18 @@ builds or boots anything. The TSV has exactly three fields (key, absolute path,
 SHA-256) and exactly these keys: `image`, `vars`, `title`, `ppsspp`, `d3d11`,
 `dxgi`, `viogpu_dir`, `virglrenderer`, `moltenvk`, and `binary`. `viogpu_dir`
 uses the stable digest of its sorted relative file names and content hashes;
-every other row hashes the named file bytes. Submit copies the signed release
-`binary` into the job directory, and the worker runs those exact sealed bytes
-rather than rebuilding after submission.
+every other row hashes the named file bytes. The `ppsspp` row is a sealed ZIP
+payload whose only executable identity is
+`ppsspp/PPSSPPWindowsARM64.exe`; validation rejects absolute/traversal paths,
+symlinks, Windows path aliases/reserved names, duplicate case-insensitive
+entries, unsupported/encrypted compression, more than 4,096 entries, and more
+than 256 MiB compressed or expanded content. Each run stages that exact archive in files no larger
+than 7 MiB, reconstructs it in the guest, verifies both archive and executable
+SHA-256, and atomically replaces the guest staging directory. It never trusts a
+previously staged title tree. Submit copies the signed release `binary` into the
+job directory, and the worker runs those exact sealed bytes rather than
+rebuilding after submission. Receipts preserve separate PPSSPP payload and
+embedded-executable hashes.
 
 ## Foreground wait policy
 

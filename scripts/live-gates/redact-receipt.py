@@ -38,6 +38,8 @@ ALLOWED_FIELDS = frozenset(
         "driver_store_hash",
         "title_sha256",
         "ppsspp_sha256",
+        "ppsspp_payload_sha256",
+        "ppsspp_executable_sha256",
         "dxvk_d3d11_sha256",
         "dxvk_dxgi_sha256",
         "virglrenderer_sha256",
@@ -148,6 +150,9 @@ def _self_test() -> int:
     check(out["probe"] == "hvf_vtimer_cancel", "an allowed string field is kept")
     check(out["iterations"] == 10000, "an allowed numeric field is kept")
     check(out["pass"] is True, "an allowed boolean field is kept")
+    hashes = redact({"ppsspp_payload_sha256": "ab" * 32,
+                     "ppsspp_executable_sha256": "cd" * 32})
+    check(len(hashes) == 2, "PPSSPP payload and executable identities are kept")
 
     # Unknown fields are dropped rather than published.
     out = redact({"probe": "x", "disk_path": "/Users/me/win.qcow2"})

@@ -17,26 +17,33 @@ STEP_TIMEOUT=${STEP_TIMEOUT:-300}
 TITLE_SECONDS=${TITLE_SECONDS:-45}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 DXVK_ARM64=${DXVK_ARM64:-$HOME/BridgeVM/dxvk/build.arm64/src}
-PPSSPP_SOURCE=${PPSSPP_SOURCE:-$HOME/BridgeVM/apps/ppsspp}
+PPSSPP_PAYLOAD=${PPSSPP_PAYLOAD:-$HOME/BridgeVM/apps/ppsspp-a3-payload.zip}
 D3D11_DLL=${D3D11_DLL:-$DXVK_ARM64/d3d11/d3d11.dll}
 DXGI_DLL=${DXGI_DLL:-$DXVK_ARM64/dxgi/dxgi.dll}
-PPSSPP_EXECUTABLE=${PPSSPP_EXECUTABLE:-$PPSSPP_SOURCE/PPSSPPWindowsARM64.exe}
 TITLE_ISO=${TITLE_ISO:-$HOME/BridgeVM/apps/cube.iso}
-PRESTAGED_TITLE=${PRESTAGED_TITLE:-1}
 GATE_SOURCE=$REPO/scripts/win-assets/bvgpu-real-title-gate.ps1
 IDENTITY_SOURCE=$REPO/scripts/win-assets/bvgpu-d3d11-identity.ps1
 D3D11_CONFIG=$REPO/scripts/win-assets/bv-ppsspp-d3d11.ini
+PAYLOAD_GATE_SOURCE=$REPO/scripts/win-assets/bvgpu-stage-ppsspp.ps1
+source "$REPO/scripts/live-gates/a3-title-payload.sh"
+source "$REPO/scripts/live-gates/a3-title-payload-stage.sh"
 SKIP_BUILD=${SKIP_BUILD:-0}
 
 sha256() { openssl dgst -sha256 -r "$1" | cut -d' ' -f1; }
 [[ -f "$TARGET" && -f "$VARS" ]] || fail "target/vars missing"
 [[ -f "$TITLE_ISO" ]] || fail "real title content missing: $TITLE_ISO"
-[[ -f "$GATE_SOURCE" && -f "$IDENTITY_SOURCE" && -f "$D3D11_CONFIG" ]] || fail "gate assets missing"
+[[ -f "$GATE_SOURCE" && -f "$IDENTITY_SOURCE" && -f "$D3D11_CONFIG" \
+  && -f "$PAYLOAD_GATE_SOURCE" ]] || fail "gate assets missing"
 [[ -f "$D3D11_DLL" ]] || fail "ARM64 DXVK d3d11.dll missing"
 [[ -f "$DXGI_DLL" ]] || fail "ARM64 DXVK dxgi.dll missing"
-[[ -f "$PPSSPP_EXECUTABLE" ]] || fail "PPSSPP ARM64 payload missing"
+[[ -f "$PPSSPP_PAYLOAD" ]] || fail "sealed PPSSPP payload missing"
 EXPECTED_TITLE_SHA=$(sha256 "$TITLE_ISO")
-EXPECTED_PPSSPP_SHA=$(sha256 "$PPSSPP_EXECUTABLE")
+PAYLOAD_SHA=$(sha256 "$PPSSPP_PAYLOAD")
+PAYLOAD_EXECUTABLE_SHA=$(a3_validate_ppsspp_payload "$PPSSPP_PAYLOAD") \
+  || fail "sealed PPSSPP payload is unsafe or incomplete"
+EXPECTED_PPSSPP_SHA=${EXPECTED_PPSSPP_SHA:-$PAYLOAD_EXECUTABLE_SHA}
+[[ "$PAYLOAD_EXECUTABLE_SHA" == "$EXPECTED_PPSSPP_SHA" ]] \
+  || fail "sealed PPSSPP executable identity mismatch"
 EXPECTED_D3D11_SHA=$(sha256 "$D3D11_DLL")
 EXPECTED_DXGI_SHA=$(sha256 "$DXGI_DLL")
 EXPECTED_VENUS_SHA=$(sha256 "$VIOGPU_DIR/vulkan_virtio.dll")
@@ -56,13 +63,12 @@ mkdir -p "$HOST_SHARE"
 cp "$GATE_SOURCE" "$HOST_SHARE/bvgpu-real-title-gate.ps1"
 cp "$IDENTITY_SOURCE" "$HOST_SHARE/bvgpu-d3d11-identity.ps1"
 cp "$D3D11_CONFIG" "$HOST_SHARE/bv-ppsspp-d3d11.ini"
+cp "$PAYLOAD_GATE_SOURCE" "$HOST_SHARE/bvgpu-stage-ppsspp.ps1"
 cp "$TITLE_ISO" "$HOST_SHARE/cube.iso"
 cp "$D3D11_DLL" "$HOST_SHARE/d3d11.dll"
 cp "$DXGI_DLL" "$HOST_SHARE/dxgi.dll"
-if [[ "$PRESTAGED_TITLE" != 1 ]]; then
-  (cd "$(dirname "$PPSSPP_SOURCE")" && ditto -c -k --keepParent \
-    "$(basename "$PPSSPP_SOURCE")" "$HOST_SHARE/ppsspp.zip")
-fi
+prepare_a3_payload_share "$PPSSPP_PAYLOAD" "$HOST_SHARE" "$PAYLOAD_SHA" \
+  || fail "could not create bounded PPSSPP payload chunks"
 
 wait_for() { # pattern, count, timeout seconds
   local deadline=$((SECONDS + $3)) n
@@ -105,7 +111,7 @@ scripts/run-hvf-windows-installed-boot.sh \
   --ram-mib 6144 --smp-cpus 4 --release "${BUILD_ARGS[@]}" \
   --agent-service-control "$CTL" \
   --agent-share-host "$HOST_SHARE" --agent-share-guest 'C:\BridgeVMShare' \
-  --agent-share-max-kb 32768 \
+  --agent-share-max-kb 8192 \
   --performance-risk aggressive --virtio-gpu-3d \
   --gpu-trace "$OUT/virtio-gpu.jsonl" --gpu-trace-protocol venus \
   --viogpu3d-dir "$VIOGPU_DIR" > "$OUT/launcher.out" 2>&1 &
@@ -137,16 +143,12 @@ wait_for '^Boot watchdog:' 1 "$HOST_PREFLIGHT_TIMEOUT" \
 wait_for '^BVAGENT SERVICE start' 1 "$((BOOT_TIMEOUT + DIAGNOSTIC_GRACE))" \
   || fail "agent service timeout"
 echo "agent up at ${SECONDS}s"
-for file in bvgpu-real-title-gate.ps1 bvgpu-d3d11-identity.ps1 bv-ppsspp-d3d11.ini cube.iso d3d11.dll dxgi.dll; do
+for file in bvgpu-real-title-gate.ps1 bvgpu-d3d11-identity.ps1 bv-ppsspp-d3d11.ini bvgpu-stage-ppsspp.ps1 cube.iso d3d11.dll dxgi.dll; do
   bytes=$(stat -f %z "$HOST_SHARE/$file")
   wait_for "^BVAGENT SHARE host->guest $file bytes=$bytes " 1 600 || fail "$file sync timeout"
 done
-if [[ "$PRESTAGED_TITLE" != 1 ]]; then
-  bytes=$(stat -f %z "$HOST_SHARE/ppsspp.zip")
-  wait_for "^BVAGENT SHARE host->guest ppsspp[.]zip bytes=$bytes " 1 600 || fail "PPSSPP sync timeout"
-  EXPAND='powershell -NoProfile -Command "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue C:\BridgeVM\a2-title; Expand-Archive -Force C:\BridgeVMShare\ppsspp.zip C:\BridgeVM\a2-title"'
-  run_guest "$EXPAND" 300
-fi
+wait_for_a3_payload_share "$HOST_SHARE"
+install_a3_payload_guest "$PAYLOAD_SHA" "$EXPECTED_PPSSPP_SHA"
 
 # Put DXVK beside the title (normal Windows DLL search) and replace PPSSPP's
 # canonical Vulkan config with a D3D11 config before the gate launches it.
@@ -210,6 +212,7 @@ wait "$LAUNCHER" 2>/dev/null || true
   echo "venus_line=${VENUS_LINE:-}"
   echo "process_line=${PROCESS_LINE:-}"
   echo "content_line=${CONTENT_LINE:-}"
+  echo "ppsspp_payload_sha256=$PAYLOAD_SHA"
   echo "expected_ppsspp_sha256=$EXPECTED_PPSSPP_SHA"
   echo "expected_title_sha256=$EXPECTED_TITLE_SHA"
   echo "expected_d3d11_sha256=$EXPECTED_D3D11_SHA"
