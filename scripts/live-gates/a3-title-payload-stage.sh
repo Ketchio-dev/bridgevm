@@ -33,8 +33,8 @@ wait_for_a3_payload_share() {
 install_a3_payload_guest() {
     local payload_sha="$1" executable_sha="$2" command
     command='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMShare\bvgpu-stage-ppsspp.ps1'
-    command+=" -ArchivePrefix '$A3_PAYLOAD_PREFIX' -ChunkCount $A3_PAYLOAD_PART_COUNT"
-    command+=" -ExpectedPayloadSha256 '$payload_sha' -ExpectedExecutableSha256 '$executable_sha'"
+    command+=" -ArchivePrefix $A3_PAYLOAD_PREFIX -ChunkCount $A3_PAYLOAD_PART_COUNT"
+    command+=" -ExpectedPayloadSha256 $payload_sha -ExpectedExecutableSha256 $executable_sha"
     run_guest "$command" 300
     tr -d '\r' < "$RUN_LOG" | grep -q '^prep=PPSSPPPAYLOADOK$' \
         || fail "sealed PPSSPP payload installation failed"

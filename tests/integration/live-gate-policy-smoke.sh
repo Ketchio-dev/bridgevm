@@ -148,6 +148,8 @@ check "the A3 payload archive is fail-closed" \
     '"$A3_PAYLOAD" --self-test | grep -q "PASS"'
 check "the A3 payload uses bounded share chunks" \
     '"$A3_STAGE" --self-test | grep -q "PASS"'
+check "the A3 payload command survives cmd.exe without literal single quotes" \
+    '! grep -Fq -- "-ArchivePrefix '\''" "$A3_STAGE" && ! grep -Fq -- "-ExpectedPayloadSha256 '\''" "$A3_STAGE"'
 check "the A3 payload is reconstructed and hashed in the guest" \
     'grep -q "ExpectedPayloadSha256" "$REPO/scripts/win-assets/bvgpu-stage-ppsspp.ps1" && grep -q "ExpectedExecutableSha256" "$REPO/scripts/win-assets/bvgpu-stage-ppsspp.ps1"'
 check "the A3 verifier installs the sealed payload every run" \

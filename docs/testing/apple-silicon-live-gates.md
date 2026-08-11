@@ -87,9 +87,12 @@ payload whose only executable identity is
 symlinks, Windows path aliases/reserved names, duplicate case-insensitive
 entries, unsupported/encrypted compression, more than 4,096 entries, and more
 than 256 MiB compressed or expanded content. Each run stages that exact archive in files no larger
-than 7 MiB, reconstructs it in the guest, verifies both archive and executable
-SHA-256, and atomically replaces the guest staging directory. It never trusts a
-previously staged title tree. Submit copies the signed release `binary` into the
+than 7 MiB, reconstructs it in a separate guest staging directory, verifies
+both archive and executable SHA-256, and only then removes the previous title
+tree and moves the verified staging tree into place. This replacement is not
+claimed crash-atomic; a failed replacement fails before title launch, and the
+next run reconstructs from sealed bytes rather than trusting the partial or
+previous tree. Submit copies the signed release `binary` into the
 job directory, and the worker runs those exact sealed bytes rather than
 rebuilding after submission. Receipts preserve separate PPSSPP payload and
 embedded-executable hashes.
