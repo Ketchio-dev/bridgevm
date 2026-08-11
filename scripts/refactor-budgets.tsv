@@ -853,3 +853,6 @@ crates/bridgevm-hvf/src/userspace_gic/mod.rs	765	0
 crates/bridgevm-hvf/src/userspace_gic/mmio_regs.rs	358	0
 crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	388	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	497	13
+scripts/live-gates/run-a3-title-tier.sh	122	0
+scripts/live-gates/write-a3-title-receipt.py	179	0
+scripts/win-assets/bvgpu-d3d11-identity.ps1	24	0

@@ -13,7 +13,7 @@
 # way in is this CLI, run by this user, on this machine.
 #
 # Usage:
-#   bridgevm-live submit <tier> [--sha <sha>] [--arg k=v]...
+#   bridgevm-live submit <tier> [--sha <sha>] [--input-manifest PATH]
 #   bridgevm-live status [job-id]
 #   bridgevm-live logs <job-id>
 #   bridgevm-live receipt <job-id>
@@ -55,18 +55,27 @@ cmd_submit() {
     # Reject an unknown tier here rather than at claim time. A typo (or a
     # `--help` mistaken for a tier) must not sit in the queue looking like work.
     case "$tier" in
-        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign) ;;
+        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title) ;;
         *) echo "unknown tier $tier" >&2; usage >&2; exit 2 ;;
     esac
 
-    local sha="" args=()
+    local sha="" input_manifest=""
     while [ $# -gt 0 ]; do
         case "$1" in
             --sha) sha="$2"; shift 2 ;;
-            --arg) args+=("$2"); shift 2 ;;
+            --input-manifest) input_manifest="$2"; shift 2 ;;
             *) echo "unknown submit option $1" >&2; exit 2 ;;
         esac
     done
+    if [ "$tier" = t6-a3-title ]; then
+        [ -f "$input_manifest" ] || {
+            echo "t6-a3-title needs --input-manifest PATH" >&2
+            exit 2
+        }
+    elif [ -n "$input_manifest" ]; then
+        echo "--input-manifest is only valid for t6-a3-title" >&2
+        exit 2
+    fi
 
     # Seal the exact commit at submit time. The working tree keeps moving; a
     # result must stay attributable to what actually ran.
@@ -78,15 +87,31 @@ cmd_submit() {
     local id="$(date +%Y%m%d-%H%M%S)-$$-$RANDOM"
     local staging="$QUEUE_ROOT/.staging-$id"
     mkdir -p "$staging"
+    local manifest_sha="" binary_sha=""
+    if [ -n "$input_manifest" ]; then
+        cp "$input_manifest" "$staging/input-manifest.tsv"
+        chmod 600 "$staging/input-manifest.tsv"
+        manifest_sha="$(shasum -a 256 "$staging/input-manifest.tsv" | cut -d' ' -f1)"
+        local binary_path expected_binary_sha
+        binary_path="$(awk -F '\t' '$1=="binary"{print $2}' "$staging/input-manifest.tsv")"
+        expected_binary_sha="$(awk -F '\t' '$1=="binary"{print $3}' "$staging/input-manifest.tsv")"
+        [ -f "$binary_path" ] || { rm -rf "$staging"; echo "A3 binary is missing" >&2; exit 2; }
+        cp "$binary_path" "$staging/hvf_gic_boot_probe"
+        chmod 500 "$staging/hvf_gic_boot_probe"
+        binary_sha="$(shasum -a 256 "$staging/hvf_gic_boot_probe" | cut -d' ' -f1)"
+        if [ "$binary_sha" != "$expected_binary_sha" ]; then
+            rm -rf "$staging"
+            echo "A3 binary hash does not match the input manifest" >&2
+            exit 2
+        fi
+    fi
     {
         printf 'job_id=%s\n' "$id"
         printf 'tier=%s\n' "$tier"
         printf 'commit=%s\n' "$sha"
         printf 'submitted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        local arg
-        for arg in ${args+"${args[@]}"}; do
-            printf 'arg=%s\n' "$arg"
-        done
+        [ -z "$manifest_sha" ] || printf 'input_manifest_sha256=%s\n' "$manifest_sha"
+        [ -z "$binary_sha" ] || printf 'sealed_binary_sha256=%s\n' "$binary_sha"
     } > "$staging/job.env"
     # Build the job outside the queue, then move it in, so a worker never sees
     # a half-written job.

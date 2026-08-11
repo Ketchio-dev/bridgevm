@@ -3,8 +3,9 @@
 #
 # Tiers (PLAN.md): T1 is the seconds-long vtimer microprobe, T2 a single
 # prepared-cache pilot boot, T3 a 3-boot candidate gate, T4 a nightly reset
-# soak, T5 the full A1 10-boot campaign. Only T5 produces shipping evidence;
-# no lower tier may be used to lower an A1 threshold.
+# soak, T5 the full A1 10-boot campaign, T6 the three-run A3 real-title
+# campaign. Only T5 produces A1 shipping evidence; no lower tier may be used
+# to lower an A1 threshold. T6 requires every independent title run to pass.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -12,11 +13,15 @@ TIER="${1:?run-tier.sh needs a tier}"
 shift || true
 
 OUT=""
+INPUT_MANIFEST=""
+SEALED_BINARY=""
 JOB_ID="local-$(date +%Y%m%d-%H%M%S)"
 while [ $# -gt 0 ]; do
     case "$1" in
         --out) OUT="$2"; shift 2 ;;
         --job-id) JOB_ID="$2"; shift 2 ;;
+        --input-manifest) INPUT_MANIFEST="$2"; shift 2 ;;
+        --sealed-binary) SEALED_BINARY="$2"; shift 2 ;;
         --lanes) LANES="$2"; shift 2 ;;
         *) echo "unknown run-tier option $1" >&2; exit 2 ;;
     esac
@@ -99,6 +104,11 @@ case "$TIER" in
             receipt failed false
             exit 1
         fi
+        ;;
+    t6-a3-title)
+        "$REPO/scripts/live-gates/run-a3-title-tier.sh" \
+            --out "$OUT" --input-manifest "$INPUT_MANIFEST" \
+            --sealed-binary "$SEALED_BINARY" --job-id "$JOB_ID"
         ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)
         # These need private Windows media and 20+ minutes per boot. They are

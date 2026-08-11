@@ -1052,10 +1052,27 @@ run_installed_boot_probe() {
   SWTPM_RUNTIME_DIR=""
   SWTPM_DATA_SOCKET=""
   SWTPM_CONTROL_SOCKET=""
-  if [[ "$BUILD_PROFILE" == "release" ]]; then
-    BIN="target/release/examples/hvf_gic_boot_probe"
+  local cargo_target_dir="${CARGO_TARGET_DIR:-}"
+  if [[ -n "${BRIDGEVM_PREBUILT_PROBE:-}" ]]; then
+    if [[ "$BUILD_PROFILE" != release || "$SKIP_BUILD" != 1 \
+      || "$BRIDGEVM_PREBUILT_PROBE" != /* || ! -f "$BRIDGEVM_PREBUILT_PROBE" \
+      || -L "$BRIDGEVM_PREBUILT_PROBE" ]]; then
+      echo "FAIL: BRIDGEVM_PREBUILT_PROBE requires an absolute regular release binary with --skip-build" >&2
+      RUN_STATUS=1
+      return 0
+    fi
+    BIN="$BRIDGEVM_PREBUILT_PROBE"
   else
-    BIN="target/debug/examples/hvf_gic_boot_probe"
+    if [[ -n "$cargo_target_dir" && "$cargo_target_dir" != /* ]]; then
+      cargo_target_dir="$ROOT/$cargo_target_dir"
+    fi
+    if [[ "$BUILD_PROFILE" == release ]]; then
+      BIN="${cargo_target_dir:+$cargo_target_dir/}release/examples/hvf_gic_boot_probe"
+      [[ -n "$cargo_target_dir" ]] || BIN="target/release/examples/hvf_gic_boot_probe"
+    else
+      BIN="${cargo_target_dir:+$cargo_target_dir/}debug/examples/hvf_gic_boot_probe"
+      [[ -n "$cargo_target_dir" ]] || BIN="target/debug/examples/hvf_gic_boot_probe"
+    fi
   fi
   trap cleanup EXIT
   write_installed_boot_preflight

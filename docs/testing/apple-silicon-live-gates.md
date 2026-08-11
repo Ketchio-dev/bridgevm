@@ -1,7 +1,7 @@
 # Apple silicon live gates
 
 Document status: **Current**
-Last reviewed: **2026-08-04**
+Last reviewed: **2026-08-11**
 
 Live gates are the only evidence that can promote a Windows HVF capability.
 They need bare-metal Hypervisor.framework, WindowServer/CGL, private Windows
@@ -36,11 +36,16 @@ criterion in the capability registry depends on a second host.
 ## The local queue
 
 ```sh
-JOB_ID="$(scripts/live-gates/bridgevm-live submit candidate --boots 3)"
+JOB_ID="$(scripts/live-gates/bridgevm-live submit t3-candidate)"
 scripts/live-gates/bridgevm-live status "$JOB_ID"
 scripts/live-gates/bridgevm-live logs "$JOB_ID"
 scripts/live-gates/bridgevm-live receipt "$JOB_ID"
 scripts/live-gates/bridgevm-live cancel "$JOB_ID"
+
+# A3 uses an operator-created local TSV whose rows are key, absolute path,
+# SHA-256. The submit command copies it into the atomic job directory.
+scripts/live-gates/bridgevm-live submit t6-a3-title \
+  --input-manifest ~/BridgeVM/a3-inputs.tsv
 ```
 
 Properties the queue must hold:
@@ -64,10 +69,21 @@ Properties the queue must hold:
 | T2 | One prepared-cache pilot boot | Confirms the image and injector pipeline |
 | T3 | 3-boot candidate gate | Filters functional changes before a full campaign |
 | T4 | Nightly 100-reset soak | Reset lifecycle evidence |
-| T5 | Weekly/release 10-boot A1 gate | Shipping evidence |
+| T5 | Weekly/release 10-boot A1 gate | A1 shipping evidence |
+| T6 | Three independent PPSSPP + DXVK real-title runs | A3 shipping evidence |
 
 T0–T4 filter candidates. Only T5 produces A1 shipping evidence, and no faster
-tier may be used to lower a threshold.
+tier may be used to lower a threshold. T6 requires all three runs to report
+guest samples, p50 at or above 30 FPS, and exact title-local DXVK module hashes.
+Its submit command copies and hashes a local input manifest; the worker verifies
+every listed image, vars, title, binary, driver tree and renderer hash before it
+builds or boots anything. The TSV has exactly three fields (key, absolute path,
+SHA-256) and exactly these keys: `image`, `vars`, `title`, `ppsspp`, `d3d11`,
+`dxgi`, `viogpu_dir`, `virglrenderer`, `moltenvk`, and `binary`. `viogpu_dir`
+uses the stable digest of its sorted relative file names and content hashes;
+every other row hashes the named file bytes. Submit copies the signed release
+`binary` into the job directory, and the worker runs those exact sealed bytes
+rather than rebuilding after submission.
 
 ## Foreground wait policy
 
