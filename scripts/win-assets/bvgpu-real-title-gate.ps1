@@ -272,10 +272,12 @@ if ($process.HasExited) {
 }
 if ($null -eq $venusModulePath) {
     Write-GateLog "status=FAIL reason=required-module-not-loaded module=$RequiredModule pid=$($process.Id)"
+    Write-FrameLogTail -FrameLogPath $frameLog
     Exit-Gate 5
 }
 if (-not $mainWindowObserved) {
     Write-GateLog "status=FAIL reason=main-window-not-observed pid=$($process.Id)"
+    Write-FrameLogTail -FrameLogPath $frameLog
     Exit-Gate 6
 }
 
