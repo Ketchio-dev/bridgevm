@@ -178,8 +178,10 @@ LOG=$(tr -d '\r' < "$RUN_LOG")
 FPS_LINE=$(grep 'guest_fps samples=' <<< "$LOG" | tail -1 || true)
 SAMPLES=$(grep -oE 'samples=[0-9]+' <<< "$FPS_LINE" | cut -d= -f2 || true)
 P50=$(grep -oE 'p50=[0-9]+([.][0-9]+)?' <<< "$FPS_LINE" | cut -d= -f2 || true)
-MODULE_LINE=$(grep '^identity module=d3d11.dll ' <<< "$LOG" | tail -1 || true)
-MODULE2_LINE=$(grep '^identity module=dxgi.dll ' <<< "$LOG" | tail -1 || true)
+# The probe reports every module sharing a base name, so select the sealed
+# title-local one; the path and hash assertions below still gate the result.
+MODULE_LINE=$(grep '^identity module=d3d11.dll .*a2-title' <<< "$LOG" | tail -1 || true)
+MODULE2_LINE=$(grep '^identity module=dxgi.dll .*a2-title' <<< "$LOG" | tail -1 || true)
 VENUS_LINE=$(grep '^identity module=vulkan_virtio.dll ' <<< "$LOG" | tail -1 || true)
 PROCESS_LINE=$(grep '^identity process_path=' <<< "$LOG" | tail -1 || true)
 CONTENT_LINE=$(grep '^identity content_path=' <<< "$LOG" | tail -1 || true)

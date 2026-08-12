@@ -17,8 +17,8 @@ Write-Output ("identity content_path={0} content_sha256={1}" -f $ContentPath, (G
 $live[0].Refresh()
 $named = @($live[0].Modules | Where-Object { $_ -and $_.PSObject.Properties.Match('ModuleName').Count })
 foreach ($name in @("d3d11.dll", "dxgi.dll", "vulkan_virtio.dll")) {
-    $module = @($named | Where-Object { $_.ModuleName -ieq $name } | Select-Object -First 1)
-    if ($module.Count -ne 1) { exit 3 }
-    Write-Output ("identity module={0} path={1} sha256={2}" -f $name, $module[0].FileName, (Get-Sha $module[0].FileName))
+    # Report every module with this base name; a process can map two.
+    $all = @($named | Where-Object { $_.ModuleName -ieq $name }); if (!$all.Count) { exit 3 }
+    $all | ForEach-Object { Write-Output ("identity module={0} path={1} sha256={2}" -f $name, $_.FileName, (Get-Sha $_.FileName)) }
 }
 Write-Output "identity status=PASS"
