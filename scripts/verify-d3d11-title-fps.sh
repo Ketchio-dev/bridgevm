@@ -162,9 +162,8 @@ run_guest "$PREP" 120
 tr -d '\r' < "$RUN_LOG" | grep -q '^prep=D3D11OK$' || fail "D3D11 title preparation failed"
 
 GUEST_GATE='set "VK_DRIVER_FILES=C:\BridgeVM\viogpu3d\virtio_icd.arm64.json" && set "VK_INSTANCE_LAYERS=" && set "DXVK_LOG_LEVEL=info" && set "DXVK_LOG_PATH=C:\BridgeVMShare" && powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMShare\bvgpu-real-title-gate.ps1 -Executable C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe -ContentPath C:\BridgeVMShare\cube.iso -MinimumSeconds '"$TITLE_SECONDS"' -RequiredModule d3d11.dll -ExtraArgs "--backend=DIRECT3D11"'
+# The gate runs the identity probe itself, while the title is still alive.
 run_guest "$GUEST_GATE" $((TITLE_SECONDS + STEP_TIMEOUT))
-IDENTITY='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMShare\bvgpu-d3d11-identity.ps1 -ContentPath C:\BridgeVMShare\cube.iso'
-run_guest "$IDENTITY" 120
 
 LOG=$(tr -d '\r' < "$RUN_LOG")
 FPS_LINE=$(grep 'guest_fps samples=' <<< "$LOG" | tail -1 || true)

@@ -352,7 +352,29 @@ if ($fpsSamples.Count -gt 0) {
 }
 # Report where the title stopped for too-few samples as well as none.
 Write-FrameLogTail -FrameLogPath $frameLog
+if ($fpsSamples.Count -lt 2) {
+    # Too few frames to measure. Record fixed, bounded facts about the live
+    # process so a freeze is attributable: CPU time separates a spin from a
+    # block, and the dominant thread wait state names what it blocks on.
+    $process.Refresh()
+    $waits = @($process.Threads | ForEach-Object {
+        if ($_.ThreadState -eq "Wait") { [string]$_.WaitReason } else { [string]$_.ThreadState }
+    } | Group-Object | Sort-Object Count -Descending | Select-Object -First 4)
+    Write-GateLog ("guest_frozen_process cpu_s={0:F2} threads={1} handles={2} responding={3}" -f
+        $process.TotalProcessorTime.TotalSeconds, $process.Threads.Count,
+        $process.HandleCount, $process.Responding)
+    foreach ($wait in $waits) {
+        Write-GateLog ("guest_frozen_threads state={0} count={1}" -f
+            (Convert-ToGateField $wait.Name 32), $wait.Count)
+    }
+}
 
+# Capture exact module identity while the title is still running: the
+# post-run probe repeatedly found no live process to inspect (exit 2).
+$identityScript = Join-Path (Split-Path -Parent $PSCommandPath) "bvgpu-d3d11-identity.ps1"
+if (Test-Path -LiteralPath $identityScript -PathType Leaf) {
+    & $identityScript -ContentPath $ContentPath
+}
 $elapsedMs = [int]([DateTime]::UtcNow - $startedAt).TotalMilliseconds
 Write-GateLog "status=PASS pid=$($process.Id) elapsed_ms=$elapsedMs venus_icd=$venusModulePath main_window_observed=true"
 Write-GateLog "BVGPU-REAL-TITLE-PASS"
