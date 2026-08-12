@@ -327,7 +327,9 @@ if ($fpsSamples.Count -eq 0 -and $flipStamps.Count -gt 1) {
     }
 }
 if ($fpsSamples.Count -gt 0) {
-    $sorted = $fpsSamples | Sort-Object
+    # Sort-Object unwraps a single sample to a scalar, whose .Count throws
+    # under StrictMode; keep it an array so a 1-sample run still reports.
+    $sorted = @($fpsSamples | Sort-Object)
     $p50 = $sorted[[int][Math]::Floor(($sorted.Count - 1) * 0.5)]
     $p05 = $sorted[[int][Math]::Floor(($sorted.Count - 1) * 0.05)]
     $mean = ($fpsSamples | Measure-Object -Average).Average
@@ -347,8 +349,9 @@ if ($fpsSamples.Count -gt 0) {
     }
     Write-GateLog ("guest_fps_absent frame_log_bytes={0} flip_lines={1} fps_lines=0" -f
         $frameLogBytes, $flipStamps.Count)
-    Write-FrameLogTail -FrameLogPath $frameLog
 }
+# Report where the title stopped for too-few samples as well as none.
+Write-FrameLogTail -FrameLogPath $frameLog
 
 $elapsedMs = [int]([DateTime]::UtcNow - $startedAt).TotalMilliseconds
 Write-GateLog "status=PASS pid=$($process.Id) elapsed_ms=$elapsedMs venus_icd=$venusModulePath main_window_observed=true"
