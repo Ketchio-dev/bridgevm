@@ -48,8 +48,8 @@ ppsspp_executable_hash="$(a3_validate_ppsspp_payload "$ppsspp")" \
 viogpu_dir="$(a3_manifest_path viogpu_dir)"
 virglrenderer="$(a3_manifest_path virglrenderer)"
 moltenvk="$(a3_manifest_path moltenvk)"
-export BRIDGEVM_VENUS_PREFIX="$(dirname "$(dirname "$virglrenderer")")"
-export BRIDGEVM_VULKAN_LIB="$moltenvk"
+export BRIDGEVM_VENUS_PREFIX="$(dirname "$(dirname "$virglrenderer")")" \
+    BRIDGEVM_VULKAN_LIB="$moltenvk" MVK_CONFIG_LOG_LEVEL="${MVK_CONFIG_LOG_LEVEL:-3}"
 cd "$REPO"
 binary_hash="$(seal "$SEALED_BINARY")"
 if ! codesign --verify --strict "$SEALED_BINARY" \
