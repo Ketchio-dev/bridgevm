@@ -367,22 +367,25 @@ if ($fpsSamples.Count -lt 2) {
         Write-GateLog ("guest_frozen_threads state={0} count={1}" -f
             (Convert-ToGateField $wait.Name 32), $wait.Count)
     }
-    # Application Error writes event 1000 when the fault happens, not when
-    # the process exits, so a held process still has a record to report.
+    # Report recent Application records without filtering by id: a crash is
+    # 1000/1001 but a hung, message-starved title is 1002, and an empty log
+    # makes Get-WinEvent throw rather than return nothing.
     try {
         $faults = @(Get-WinEvent -FilterHashtable @{
             LogName = "Application"; StartTime = $startedAt.AddSeconds(-2)
-        } -MaxEvents 64 -ErrorAction Stop | Where-Object {
-            $_.Id -eq 1000 -or $_.Id -eq 1001
-        } | Select-Object -First 2)
+        } -MaxEvents 16 -ErrorAction Stop | Select-Object -First 3)
         foreach ($fault in $faults) {
             Write-GateLog ("guest_frozen_fault provider={0} event_id={1} text={2}" -f
                 (Convert-ToGateField $fault.ProviderName 64), $fault.Id,
-                (Convert-ToGateField $fault.Message 512))
+                (Convert-ToGateField $fault.Message 384))
         }
         if ($faults.Count -eq 0) { Write-GateLog "guest_frozen_fault status=none" }
     }
-    catch { Write-GateLog "guest_frozen_fault status=query-failed" }
+    catch { Write-GateLog "guest_frozen_fault status=no-application-records" }
+    # Name whatever is holding the title suspended, if it is a WER helper.
+    $helpers = @(Get-Process -Name "WerFault", "wermgr" -ErrorAction SilentlyContinue)
+    Write-GateLog ("guest_frozen_helpers count={0} names={1}" -f $helpers.Count,
+        (Convert-ToGateField (($helpers | ForEach-Object { $_.ProcessName }) -join ","), 64))
 }
 
 # Capture exact module identity while the title is still running: the
