@@ -150,9 +150,14 @@ done
 wait_for_a3_payload_share "$HOST_SHARE"
 install_a3_payload_guest "$PAYLOAD_SHA" "$EXPECTED_PPSSPP_SHA"
 
-# Put DXVK beside the title (normal Windows DLL search) and replace PPSSPP's
-# canonical Vulkan config with a D3D11 config before the gate launches it.
-PREP='powershell -NoProfile -Command "if (-not (Test-Path -LiteralPath C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe -PathType Leaf)) { exit 4 }; Copy-Item -Force C:\BridgeVMShare\d3d11.dll,C:\BridgeVMShare\dxgi.dll -Destination C:\BridgeVM\a2-title\ppsspp; Copy-Item -Force C:\BridgeVMShare\bv-ppsspp-d3d11.ini -Destination C:\BridgeVM\a2-title\ppsspp\bv-ppsspp.ini; Write-Output prep=D3D11OK"'
+# Put DXVK beside the title and force the loader to resolve d3d11/dxgi from
+# that directory. Copying alone is not enough: PPSSPP statically imports
+# dwmapi.dll, which loads the system DXGI before any application code runs, so
+# DXVK's D3D11 ends up paired with system DXGI and cannot create a swap chain
+# (measured 2026-08-12: identity reported C:\Windows\system32\dxgi.dll). The
+# per-application .local directory makes side-by-side redirection apply to
+# every load of those names in this process, including indirect ones.
+PREP='powershell -NoProfile -Command "if (-not (Test-Path -LiteralPath C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe -PathType Leaf)) { exit 4 }; Copy-Item -Force C:\BridgeVMShare\d3d11.dll,C:\BridgeVMShare\dxgi.dll -Destination C:\BridgeVM\a2-title\ppsspp; New-Item -ItemType Directory -Force -Path C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe.local | Out-Null; Copy-Item -Force C:\BridgeVMShare\d3d11.dll,C:\BridgeVMShare\dxgi.dll -Destination C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe.local; Copy-Item -Force C:\BridgeVMShare\bv-ppsspp-d3d11.ini -Destination C:\BridgeVM\a2-title\ppsspp\bv-ppsspp.ini; Write-Output prep=D3D11OK"'
 run_guest "$PREP" 120
 tr -d '\r' < "$RUN_LOG" | grep -q '^prep=D3D11OK$' || fail "D3D11 title preparation failed"
 
