@@ -46,7 +46,6 @@ EXPECTED_PPSSPP_SHA=${EXPECTED_PPSSPP_SHA:-$PAYLOAD_EXECUTABLE_SHA}
   || fail "sealed PPSSPP executable identity mismatch"
 EXPECTED_D3D11_SHA=$(sha256 "$D3D11_DLL")
 EXPECTED_DXGI_SHA=$(sha256 "$DXGI_DLL")
-EXPECTED_VENUS_SHA=$(sha256 "$VIOGPU_DIR/vulkan_virtio.dll")
 
 WORK=$HOME/BridgeVM/work/d3d11-title-fps-verify
 rm -rf "$WORK"; mkdir -p "$WORK" "$OUT"
@@ -173,6 +172,12 @@ tr -d '\r' < "$RUN_LOG" | grep -q '^prep=WEROK$' || fail "WER configuration fail
 
 # The gate runs the identity probe itself, while the title is still alive.
 run_guest "$GUEST_GATE" $((TITLE_SECONDS + STEP_TIMEOUT))
+
+# The guest exports the driver files it actually installed into the share.
+# The loose host package is a build input, not what the sealed image runs, so
+# the ICD identity must be pinned to the exported copy.
+EXPECTED_VENUS_SHA=$(sha256 "$HOST_SHARE/vulkan_virtio.dll")
+[[ -n "$EXPECTED_VENUS_SHA" ]] || fail "guest did not export vulkan_virtio.dll"
 
 LOG=$(tr -d '\r' < "$RUN_LOG")
 FPS_LINE=$(grep 'guest_fps samples=' <<< "$LOG" | tail -1 || true)
