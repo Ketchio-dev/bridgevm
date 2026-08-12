@@ -367,6 +367,22 @@ if ($fpsSamples.Count -lt 2) {
         Write-GateLog ("guest_frozen_threads state={0} count={1}" -f
             (Convert-ToGateField $wait.Name 32), $wait.Count)
     }
+    # Application Error writes event 1000 when the fault happens, not when
+    # the process exits, so a held process still has a record to report.
+    try {
+        $faults = @(Get-WinEvent -FilterHashtable @{
+            LogName = "Application"; StartTime = $startedAt.AddSeconds(-2)
+        } -MaxEvents 64 -ErrorAction Stop | Where-Object {
+            $_.Id -eq 1000 -or $_.Id -eq 1001
+        } | Select-Object -First 2)
+        foreach ($fault in $faults) {
+            Write-GateLog ("guest_frozen_fault provider={0} event_id={1} text={2}" -f
+                (Convert-ToGateField $fault.ProviderName 64), $fault.Id,
+                (Convert-ToGateField $fault.Message 512))
+        }
+        if ($faults.Count -eq 0) { Write-GateLog "guest_frozen_fault status=none" }
+    }
+    catch { Write-GateLog "guest_frozen_fault status=query-failed" }
 }
 
 # Capture exact module identity while the title is still running: the
