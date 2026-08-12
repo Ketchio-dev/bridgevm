@@ -49,6 +49,36 @@ function Convert-ToGateField {
     return $text
 }
 
+function Write-FrameLogTail {
+    param([Parameter(Mandatory = $true)][string]$FrameLogPath)
+
+    # Preserve only a bounded 64-KiB suffix of PPSSPP's own log. Individual
+    # lines are capped so a corrupt log cannot inflate the live receipt.
+    if (Test-Path -LiteralPath $FrameLogPath -PathType Leaf) {
+        try {
+            $stream = [IO.File]::Open($FrameLogPath, [IO.FileMode]::Open,
+                [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+            try {
+                $tailBudget = [Math]::Min([int64]65536, $stream.Length)
+                [void]$stream.Seek(-$tailBudget, [IO.SeekOrigin]::End)
+                $reader = [IO.StreamReader]::new($stream)
+                $tailLines = @($reader.ReadToEnd() -split "`r?`n" |
+                    Select-Object -Last 16)
+                Write-GateLog "frame_tail bytes=$tailBudget lines=$($tailLines.Count)"
+                foreach ($line in $tailLines) {
+                    if ($line -ne '') {
+                        Write-GateLog ("frame_tail_line text={0}" -f
+                            (Convert-ToGateField $line 512))
+                    }
+                }
+            }
+            finally { $stream.Dispose() }
+        }
+        catch { Write-GateLog "frame_tail status=read-failed" }
+    }
+    else { Write-GateLog "frame_tail status=absent" }
+}
+
 function Write-ProcessExitDiagnostics {
     param(
         [Parameter(Mandatory = $true)][Diagnostics.Process]$Process,
@@ -109,34 +139,7 @@ function Write-ProcessExitDiagnostics {
         Write-GateLog "process_exit_event status=not-observed-within-5s"
     }
 
-    # Preserve only a bounded 64-KiB suffix of PPSSPP's own log in the command
-    # transcript. Individual lines are capped so a corrupt log cannot inflate
-    # the live receipt or violate the shared-file convention.
-    if (Test-Path -LiteralPath $FrameLogPath -PathType Leaf) {
-        try {
-            $stream = [IO.File]::Open($FrameLogPath, [IO.FileMode]::Open,
-                [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
-            try {
-                $tailBudget = [Math]::Min([int64]65536, $stream.Length)
-                [void]$stream.Seek(-$tailBudget, [IO.SeekOrigin]::End)
-                $reader = [IO.StreamReader]::new($stream)
-                $tailLines = @($reader.ReadToEnd() -split "`r?`n" |
-                    Select-Object -Last 16)
-                Write-GateLog "frame_tail bytes=$tailBudget lines=$($tailLines.Count)"
-                foreach ($line in $tailLines) {
-                    if ($line -ne '') {
-                        Write-GateLog ("frame_tail_line text={0}" -f
-                            (Convert-ToGateField $line 512))
-                    }
-                }
-            }
-            finally { $stream.Dispose() }
-        }
-        catch { Write-GateLog "frame_tail status=read-failed" }
-    }
-    else {
-        Write-GateLog "frame_tail status=absent"
-    }
+    Write-FrameLogTail -FrameLogPath $FrameLogPath
 }
 
 function Get-LoadedModulePath {
@@ -342,6 +345,7 @@ if ($fpsSamples.Count -gt 0) {
     }
     Write-GateLog ("guest_fps_absent frame_log_bytes={0} flip_lines={1} fps_lines=0" -f
         $frameLogBytes, $flipStamps.Count)
+    Write-FrameLogTail -FrameLogPath $frameLog
 }
 
 $elapsedMs = [int]([DateTime]::UtcNow - $startedAt).TotalMilliseconds
