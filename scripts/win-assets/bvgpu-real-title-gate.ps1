@@ -330,6 +330,18 @@ if ($fpsSamples.Count -gt 0) {
         $fpsSamples.Count, $p50, $p05, $mean, $sorted[0], $sorted[$sorted.Count - 1], $fpsSource)
 } else {
     Write-GateLog "guest_fps samples=0 reason=no-fps-lines-in-frame-log"
+    # Absent samples mean the sampler found neither "fps:" lines nor the
+    # per-frame sceDisplaySetFrameBuf DEBUG lines it derives them from. Report
+    # bounded, fixed facts about the frame log so the cause is attributable
+    # without guessing: whether it exists, its size, and how many lines of each
+    # kind were seen. This is observation only and cannot turn a failure into a
+    # pass.
+    $frameLogBytes = -1
+    if (Test-Path -LiteralPath $frameLog -PathType Leaf) {
+        $frameLogBytes = (Get-Item -LiteralPath $frameLog).Length
+    }
+    Write-GateLog ("guest_fps_absent frame_log_bytes={0} flip_lines={1} fps_lines=0" -f
+        $frameLogBytes, $flipStamps.Count)
 }
 
 $elapsedMs = [int]([DateTime]::UtcNow - $startedAt).TotalMilliseconds
