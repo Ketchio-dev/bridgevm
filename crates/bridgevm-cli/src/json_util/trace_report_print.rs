@@ -94,10 +94,7 @@ pub(crate) fn print_virtio_gpu_trace_report(
         );
         for (failure, count) in &report.submit_3d_failures {
             let command_id = option_label(failure.command_id);
-            let command_name = failure
-                .command_id
-                .map(virgl_command_name)
-                .unwrap_or("UNKNOWN");
+            let command_name = submit_command_name(failure.command_id, report.venus_ctx_create_ok);
             println!(
                 "- count={count} response={} renderer_status={} command={command_id}({command_name}) resource={} found={} backed={}",
                 failure.response,
