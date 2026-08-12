@@ -162,6 +162,15 @@ run_guest "$PREP" 120
 tr -d '\r' < "$RUN_LOG" | grep -q '^prep=D3D11OK$' || fail "D3D11 title preparation failed"
 
 GUEST_GATE='set "VK_DRIVER_FILES=C:\BridgeVM\viogpu3d\virtio_icd.arm64.json" && set "VK_INSTANCE_LAYERS=" && set "DXVK_LOG_LEVEL=info" && set "DXVK_LOG_PATH=C:\BridgeVMShare" && powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMShare\bvgpu-real-title-gate.ps1 -Executable C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe -ContentPath C:\BridgeVMShare\cube.iso -MinimumSeconds '"$TITLE_SECONDS"' -RequiredModule d3d11.dll -ExtraArgs "--backend=DIRECT3D11"'
+# Windows Error Reporting suspends every thread of a faulting process and holds
+# it, which made a post-present crash look like a hung title that survived the
+# window (measured 2026-08-12: 31 Suspended threads, one in LpcReply). Turn the
+# hold off so the process actually exits and the gate's existing fault
+# diagnostics report the faulting module and offset.
+WER='reg add "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting" /v Disabled /t REG_DWORD /d 1 /f && reg add "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting" /v DontShowUI /t REG_DWORD /d 1 /f && echo prep=WEROK'
+run_guest "$WER" 120
+tr -d '\r' < "$RUN_LOG" | grep -q '^prep=WEROK$' || fail "WER configuration failed"
+
 # The gate runs the identity probe itself, while the title is still alive.
 run_guest "$GUEST_GATE" $((TITLE_SECONDS + STEP_TIMEOUT))
 
