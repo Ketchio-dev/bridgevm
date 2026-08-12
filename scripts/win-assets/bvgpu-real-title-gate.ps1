@@ -3,6 +3,10 @@ param(
     [string]$Executable = "C:\BridgeVM\apps\ppsspp\PPSSPPWindowsARM64.exe",
     [ValidateRange(10, 600)]
     [int]$MinimumSeconds = 30,
+    # Extra time allowed for the title to reach its first flip before the
+    # measurement window starts. Bounded so a title that never renders fails.
+    [ValidateRange(0, 300)]
+    [int]$StartupGraceSeconds = 60,
     [string]$LogPath = "C:\BridgeVM\bvgpu-real-title-gate.log",
     # Game content to boot. Without content PPSSPP sits at its menu and
     # emits no "fps:" lines, so guest_fps reads samples=0 (measured
@@ -47,6 +51,26 @@ function Convert-ToGateField {
     $text = ([string]$Value) -replace '[\r\n\t]+', ' '
     if ($text.Length -gt $Limit) { return $text.Substring(0, $Limit) }
     return $text
+}
+
+# True once the title has presented at least one frame. Reads a bounded tail of
+# the log the title still holds open, so it cannot block or grow unbounded.
+function Test-FrameLogHasFlip {
+    param([Parameter(Mandatory = $true)][string]$FrameLogPath)
+
+    if (-not (Test-Path -LiteralPath $FrameLogPath -PathType Leaf)) { return $false }
+    try {
+        $stream = [IO.File]::Open($FrameLogPath, [IO.FileMode]::Open,
+            [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        try {
+            $budget = [Math]::Min([int64]65536, $stream.Length)
+            [void]$stream.Seek(-$budget, [IO.SeekOrigin]::End)
+            $reader = [IO.StreamReader]::new($stream)
+            return $reader.ReadToEnd().Contains("=sceDisplaySetFrameBuf(")
+        }
+        finally { $stream.Dispose() }
+    }
+    catch { return $false }
 }
 
 function Write-FrameLogTail {
@@ -235,10 +259,28 @@ if ($ContentPath -ne "") {
 $process = Start-Process -FilePath $Executable -WorkingDirectory $appDirectory -PassThru -ArgumentList $launchArgs
 Write-GateLog "process_started pid=$($process.Id) executable_sha256=$executableHash frame_log=$frameLog"
 
+# Measure a running title, not a booting one. Startup latency varies, and a
+# slow boot otherwise consumes the window and yields zero frames. The deadline
+# is pushed out while the title has not flipped yet, capped so a title that
+# never renders still fails instead of running forever.
 $deadline = $startedAt.AddSeconds($MinimumSeconds)
+$startupCap = $startedAt.AddSeconds($MinimumSeconds + $StartupGraceSeconds)
+$firstFlipSeen = $false
 $venusModulePath = $null
 $mainWindowObserved = $false
 while ([DateTime]::UtcNow -lt $deadline) {
+    if (-not $firstFlipSeen) {
+        if (Test-FrameLogHasFlip -FrameLogPath $frameLog) {
+            $firstFlipSeen = $true
+            $flipAt = [DateTime]::UtcNow
+            $deadline = $flipAt.AddSeconds($MinimumSeconds)
+            Write-GateLog ("first_flip_observed after_ms={0} window_restarted=true" -f
+                [int]($flipAt - $startedAt).TotalMilliseconds)
+        }
+        elseif ([DateTime]::UtcNow -lt $startupCap) {
+            $deadline = [DateTime]::UtcNow.AddSeconds(1)
+        }
+    }
     Start-Sleep -Milliseconds 250
     $process.Refresh()
     if ($process.HasExited) {
