@@ -19,7 +19,7 @@ gates. See [Current status](STATUS.md) for the short, evidence-backed boundary.
 <!-- BEGIN GENERATED: capability-summary -->
 **Product state: Engineering Preview.** Boots an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with storage, display/input, network, audio, guest agent and experimental 3D. Not release-ready.
 
-Release-blocking criteria proven: **18 / 19**. Open: A11.
+Release-blocking criteria proven: **19 / 19**. Open: none.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
