@@ -394,6 +394,13 @@ $identityScript = Join-Path (Split-Path -Parent $PSCommandPath) "bvgpu-d3d11-ide
 if (Test-Path -LiteralPath $identityScript -PathType Leaf) {
     & $identityScript -ContentPath $ContentPath
 }
+# Release the title so it stops holding its DXVK logs open; the host copies
+# them from the share after this step and otherwise gets a sharing violation.
+$process.Refresh()
+if (-not $process.HasExited) {
+    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 1500
+}
 $elapsedMs = [int]([DateTime]::UtcNow - $startedAt).TotalMilliseconds
 Write-GateLog "status=PASS pid=$($process.Id) elapsed_ms=$elapsedMs venus_icd=$venusModulePath main_window_observed=true"
 Write-GateLog "BVGPU-REAL-TITLE-PASS"
