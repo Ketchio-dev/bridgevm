@@ -161,7 +161,10 @@ PREP='powershell -NoProfile -Command "if (-not (Test-Path -LiteralPath C:\Bridge
 run_guest "$PREP" 120
 tr -d '\r' < "$RUN_LOG" | grep -q '^prep=D3D11OK$' || fail "D3D11 title preparation failed"
 
-GUEST_GATE='set "VK_DRIVER_FILES=C:\BridgeVM\viogpu3d\virtio_icd.arm64.json" && set "VK_INSTANCE_LAYERS=" && set "DXVK_LOG_LEVEL=info" && set "DXVK_LOG_PATH=C:\BridgeVMShare" && powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMShare\bvgpu-real-title-gate.ps1 -Executable C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe -ContentPath C:\BridgeVMShare\cube.iso -MinimumSeconds '"$TITLE_SECONDS"' -RequiredModule d3d11.dll -ExtraArgs "--backend=DIRECT3D11"'
+# Serialise DXVK pipeline creation. The renderer goes fatal on a bind of a
+# pipeline it never registered (vkCmdBindPipeline, object of type 19), and
+# DXVK creates pipelines on background worker threads by default.
+GUEST_GATE='set "VK_DRIVER_FILES=C:\BridgeVM\viogpu3d\virtio_icd.arm64.json" && set "VK_INSTANCE_LAYERS=" && set "DXVK_CONFIG=dxvk.numCompilerThreads=1" && set "DXVK_LOG_LEVEL=info" && set "DXVK_LOG_PATH=C:\BridgeVMShare" && powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMShare\bvgpu-real-title-gate.ps1 -Executable C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe -ContentPath C:\BridgeVMShare\cube.iso -MinimumSeconds '"$TITLE_SECONDS"' -RequiredModule d3d11.dll -ExtraArgs "--backend=DIRECT3D11"'
 # Windows Error Reporting suspends every thread of a faulting process and holds
 # it, which made a post-present crash look like a hung title that survived the
 # window (measured 2026-08-12: 31 Suspended threads, one in LpcReply). Turn the
