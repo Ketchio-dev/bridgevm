@@ -1,6 +1,6 @@
 # BridgeVM Windows HVF 3D architecture
 
-Document status: **Reference**
+Document status: **Active plan**
 
 Last revised: 2026-08-13
 
@@ -8,7 +8,7 @@ This document describes the architecture and engineering boundaries of
 BridgeVM's accelerated graphics path. Current capability state and live
 measurements belong in the
 [Windows capability matrix](windows-arm/capability-matrix.md), not in this
-reference document.
+active plan.
 
 ## Goal
 
