@@ -553,10 +553,7 @@ fn handler_executes_planned_boot_media_download_and_reports_status() {
         .unwrap();
 
     let body = b"downloaded installer";
-    let expected_sha256 = Sha256::digest(body)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect::<String>();
+    let expected_sha256 = hex::encode(Sha256::digest(body));
     let (url, server) = serve_one_http_response(body);
 
     let response = handle_request(

@@ -16,6 +16,7 @@ bridgevm-network = { path = "../bridgevm-network" }
 bridgevm-qemu = { path = "../bridgevm-qemu" }
 bridgevm-resource-manager = { path = "../bridgevm-resource-manager" }
 bridgevm-storage = { path = "../bridgevm-storage" }
+hex.workspace = true
 libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
