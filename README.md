@@ -98,14 +98,30 @@ packaging/macos/build-debug-app-bundle.sh
 open target/macos/BridgeVMApp.app
 ```
 
-To build a local DMG:
+For a redistributable **Engineering Preview DMG** without Developer ID or
+notarization:
 
 ```sh
-packaging/macos/build-debug-dmg.sh
+./packaging/macos/build-preview-dmg.sh
 ```
 
-The debug packaging path uses ad-hoc signing by default. It does **not** require a
-paid Apple Developer account, Developer ID certificate, or notarization.
+The preview builder produces:
+
+```text
+target/preview/BridgeVM.app
+target/preview/BridgeVM.dmg
+target/preview/BridgeVM.dmg.sha256
+```
+
+The preview artifact is built in release configuration, ad-hoc signed, and
+includes the Apache-2.0 project license, third-party notices, Rust dependency
+license inventory, the nested Windows HVF app notices, and a SHA-256 checksum for
+the DMG. It does **not** require a paid Apple Developer account, Developer ID
+certificate, or notarization.
+
+The older `build-debug-app-bundle.sh` and `build-debug-dmg.sh` paths remain useful
+for local developer diagnostics; use `build-preview-dmg.sh` for an artifact you
+intend to hand to another technical tester.
 
 If a downloaded preview build is blocked by macOS, use the supported
 **System Settings → Privacy & Security → Open Anyway** flow. Advanced users who
@@ -117,7 +133,8 @@ xattr -dr com.apple.quarantine /Applications/BridgeVM.app
 ```
 
 Removing quarantine bypasses a macOS safety check; it does not authenticate the
-build. Verify where an artifact came from before doing this.
+build. Compare the downloaded DMG against the published `.sha256` before doing
+this.
 
 ## Windows media and drivers
 
@@ -126,8 +143,15 @@ and use it under the terms of your Microsoft license.
 
 The Windows HVF installer path can inject the guest-side drivers needed by the
 VM. Development graphics packages may require Windows test-signing mode; do not
-assume every experimental driver package is production-signed. The exact driver
-packaging rules live in [`scripts/win-assets/DRIVERS-README.md`](scripts/win-assets/DRIVERS-README.md).
+assume every experimental driver package is production-signed. The current
+first-boot flow can stage the package, enable test-signing, trust the package
+certificate, clean superseded DriverStore generations, bind the driver, reboot,
+and verify the resulting device/package identity.
+
+Windows may refuse the test-signing BCD change when Secure Boot policy blocks it.
+BridgeVM treats that as an explicit preview-driver setup failure rather than
+silently weakening the guest's security state. The exact driver lifecycle is in
+[`scripts/win-assets/DRIVERS-README.md`](scripts/win-assets/DRIVERS-README.md).
 
 A test-signing requirement is a property of the guest driver, not of the Windows
 ISO. Supplying your own ISO avoids redistributing Windows itself, but Windows
@@ -178,7 +202,9 @@ include:
 
 Those statements are intentionally narrower than "all Windows apps work" or
 "production-ready." Dated receipts show what was measured on a specific build;
-they are not universal compatibility promises.
+they are not universal compatibility promises. The generated snapshot above was
+sealed on the commit it names; a later preview head still needs its own final
+no-regression run before being treated as an equally sealed build.
 
 ## What still makes this an Engineering Preview
 
