@@ -25,28 +25,41 @@ final class HvfWindowsInstallTests: XCTestCase {
         XCTAssertTrue(plan.tmpEvidenceDir.hasPrefix("/tmp/bridgevm-appinstall-win-a"))
     }
 
-    func testPlanSourceCacheKeyTracksIsoNameAndSize() throws {
+    func testPlanSourceCacheKeyTracksIsoFileIdentity() throws {
         let temp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: temp) }
         let iso = temp.appendingPathComponent("Win11 Test.iso")
+        let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
         try Data(count: 4096).write(to: iso)
-        var request = HvfWindowsInstallRequest(
+        try FileManager.default.setAttributes([.modificationDate: fixedDate], ofItemAtPath: iso.path)
+        let request = HvfWindowsInstallRequest(
             isoPath: iso.path, diskGiB: 64, injectViogpu3d: false, driverPackageDir: nil)
         var plan = HvfWindowsInstallPlan(
             repoRoot: URL(fileURLWithPath: "/repo"), bundlePath: "/bundle",
             slug: "vm", request: request)
         plan.homeDirectory = "/Users/example"
-        XCTAssertEqual(plan.sourceImagePath, "/Users/example/BridgeVM/bridgevm-app-src/win11-test-4096.raw")
-        XCTAssertTrue(HvfWindowsInstallPlan.whitespaceFree(plan.sourceImagePath))
+        let originalPath = plan.sourceImagePath
+        XCTAssertTrue(originalPath.hasPrefix(
+            "/Users/example/BridgeVM/bridgevm-app-src/win11-test-4096-"))
+        XCTAssertTrue(HvfWindowsInstallPlan.whitespaceFree(originalPath))
 
-        // A different ISO size must produce a different cached source image.
+        // Replace the ISO atomically with different bytes but preserve name,
+        // size, and mtime. The file number must still invalidate the cache.
+        try Data(repeating: 0xa5, count: 4096).write(to: iso, options: [.atomic])
+        try FileManager.default.setAttributes([.modificationDate: fixedDate], ofItemAtPath: iso.path)
+        var replacement = HvfWindowsInstallPlan(
+            repoRoot: URL(fileURLWithPath: "/repo"), bundlePath: "/bundle",
+            slug: "vm", request: request)
+        replacement.homeDirectory = "/Users/example"
+        XCTAssertNotEqual(replacement.sourceImagePath, originalPath)
+
+        // An in-place metadata/content change must also move to a new key.
         try Data(count: 8192).write(to: iso)
-        request.isoPath = iso.path
         var regrown = HvfWindowsInstallPlan(
             repoRoot: URL(fileURLWithPath: "/repo"), bundlePath: "/bundle",
             slug: "vm", request: request)
         regrown.homeDirectory = "/Users/example"
-        XCTAssertEqual(regrown.sourceImagePath, "/Users/example/BridgeVM/bridgevm-app-src/win11-test-8192.raw")
+        XCTAssertNotEqual(regrown.sourceImagePath, replacement.sourceImagePath)
     }
 
     func testInstallCommandCarriesFreshTargetSizeAndRelease() throws {

@@ -105,12 +105,12 @@ struct HvfWindowsInstallPlan: Equatable {
 
     // MARK: computed paths
 
-    /// Cache key that survives renames of neither content nor intent: the ISO
-    /// file name plus its byte size. A rebuilt/replaced ISO gets a new source.
+    /// Cache identity changes on a same-name/same-size file replacement too:
+    /// the file number catches replacement while mtime catches in-place edits.
     var sourceCacheKey: String {
         let name = URL(fileURLWithPath: request.isoPath).deletingPathExtension().lastPathComponent
-        let bytes = (try? FileManager.default.attributesOfItem(atPath: request.isoPath)[.size] as? NSNumber)?.uint64Value ?? 0
-        return "\(VMConfig.slugify(name))-\(bytes)"
+        let attributes = (try? FileManager.default.attributesOfItem(atPath: request.isoPath)) ?? [:]
+        return "\(VMConfig.slugify(name))-\((attributes[.size] as? NSNumber)?.uint64Value ?? 0)-\((attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0)-\(((attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0).bitPattern)"
     }
 
     var sourceImagePath: String { "\(homeDirectory)/BridgeVM/bridgevm-app-src/\(sourceCacheKey).raw" }

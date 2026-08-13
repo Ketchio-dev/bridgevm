@@ -1,133 +1,196 @@
-# BridgeVM HVF vs Parallels — Graphics/Integration Gap & Roadmap
+# Windows HVF graphics and integration roadmap
 
-> Historical strategy snapshot. Its guest-feature and Windows ARM64 driver
-> availability claims are superseded by `STATUS.md` and
-> `docs/hvf-p3-windows-3d-plan.md`; as of 2026-07-10 test-signed injection-ready
-> ARM64 viogpu3d packages exist, but none is a render candidate. The five-DLL
-> VirGL package omits `UserModeDriverName`, `OpenGLDriverName`, `OpenGLVersion`,
-> `OpenGLFlags`, and `InstalledDisplayDrivers` INF registration. Regenerated
-> package/catalog/signing, then live bind/trace/render proof, remain open.
+Document status: **Active plan**
 
-Honest, engineering-grounded analysis of the distance between our from-scratch
-HVF VMM and Parallels Desktop's engine, and a phased plan to close what is
-realistically closable. Grounded in a research pass on Parallels' architecture,
-the Windows-ARM64 guest-driver landscape, and Apple-Silicon VM GPU options.
+Last revised: 2026-08-13
 
-## Where we are (ground truth)
-A QEMU-independent VMM on Apple Hypervisor.framework that boots Windows 11 ARM64
-to a networked, multi-core desktop. Devices: NVMe, xHCI (HID kbd + absolute
-pointer), virtio-blk, virtio-net + userspace NAT, and **ramfb — a fixed-geometry
-(800x600), CPU-drawn, UNACCELERATED framebuffer** (Windows Basic Display Adapter
-software-renders into it). No GPU accel, audio, clipboard, shared folders,
-dynamic resolution, USB passthrough, guest agent, or snapshots.
+This document describes the remaining product work around display, graphics,
+and host/guest integration for BridgeVM's Windows HVF engine. Historical product
+comparisons have been removed; current capability claims come from the
+[capability matrix](windows-arm/capability-matrix.md).
 
-On a Retina Mac (e.g. 3024x1964 @2x) a fixed 800x600 software framebuffer is the
-single worst part of the experience — this is the real "not smooth" problem, more
-than raw 3D.
+## Current product surface
 
-## What Parallels actually does (the moat)
-- **Paravirtual GPU, fully custom.** The guest sees "Parallels Display Adapter
-  (WDDM)" (PCI 1AB8:4005) — a full WDDM driver (kernel + user-mode D3D DDI)
-  shipped by **Parallels Tools**. Without Tools you get only a basic framebuffer
-  (i.e. our level). The host translates guest **DirectX → Apple Metal**.
-- **Capability: DirectX 11.1 (feature level 11_1) + OpenGL 3.3/4.1. NO DirectX 12,
-  no guest Vulkan.** (DX12 is a years-old unfulfilled request; UTM/QEMU can't do
-  Windows-ARM 3D at all.)
-- **Integration rides "Toolgate"** (PCI 1AB8:4000): one proprietary host↔guest
-  channel carrying clipboard (text/images/files), shared folders, drag-drop,
-  dynamic resolution/HiDPI, absolute mouse, time sync, guest shutdown. Plus
-  custom paravirtual audio (prl_sound) and a memory balloon (1AB8:4006).
-- **Key truth:** every piece of the Windows 3D path is closed, Windows-guest-
-  specific, and needs a signed WDDM driver Parallels spent years building. There
-  is **no open component to reuse for Windows guest 3D.**
+The Windows HVF path already has live evidence for:
 
-## The three honest tiers of the gap
+- Windows 11 Arm desktop boot;
+- virtio-gpu display with dynamic resolution;
+- keyboard and absolute-pointer input;
+- networking;
+- host audio;
+- clipboard and folder transfer through the guest agent;
+- experimental Vulkan and D3D11-compatible 3D;
+- restart/reset lifecycle and powered-off snapshots.
 
-### Tier 0 — already at parity (boot/IO)
-NVMe (inbox stornvme), xHCI (inbox USB), networking (our virtio-net is *more*
-standard than Parallels' branded NIC). We're essentially even here.
+The next work is therefore not a basic "make the desktop usable" bring-up. It is
+compatibility, frame pacing, distribution, recovery, and integration polish.
 
-### Tier A — CLOSABLE and high-impact: 2D display done right
-**virtio-gpu (2D scanout).** The guest-driver problem is ALREADY SOLVED for
-Windows ARM64: the **signed `viogpudo` WDDM Display-Only Driver ships in the
-official virtio-win ISO (`viogpudo\w11\ARM64`)** — we inject it exactly like we
-inject netkvm today. It gives:
-- **Dynamic resolution via EDID** → run at native Retina resolution / any window
-  size, not fixed 800x600.
-- **Hardware cursor** (separate cursor plane — no full-frame redraw to move the
-  mouse).
-- **Dirty-rectangle flushes** (TRANSFER_TO_HOST_2D + RESOURCE_FLUSH of only the
-  changed region) instead of blitting the whole framebuffer.
-- A **real WDDM display adapter** instead of the EFI/ramfb framebuffer, so
-  monitor detection, multi-scanout, and mode-setting all work.
+## Display roadmap
 
-Rendering still runs on Windows' CPU Basic Render Driver — **but that is true
-under QEMU/UTM too**, so this reaches the ceiling of what any Windows-ARM guest
-display can do anywhere short of a proprietary WDDM 3D driver. It is the single
-biggest smoothness/usability upgrade available to us and it is achievable
-(~1–2 weeks: two virtqueues, a resource table, EDID + config-interrupt resize,
-dirty-rect blits — reusing our existing PCIe/virtqueue infra and the ramfb blit
-path). **Design it so VIRGL/Venus capsets + blob resources can be bolted on later
-without reworking the 2D path.**
+### Dynamic display behavior
 
-### Tier B — CLOSABLE integration: the Toolgate pattern
-Copy the *pattern*, not the device: add ONE simple host↔guest channel
-(virtio-vsock or virtio-serial) + a small guest agent, and layer our own opcode
-protocol on it. That single device unlocks **shared clipboard, shared folders /
-drag-drop, dynamic-resolution coordination, absolute-mouse polish, time sync,
-graceful shutdown**. Needs a guest agent we write (Windows service) — moderate
-effort, but one device model buys many features. Prior art to reuse:
-`crates/bridgevm-agentd`, `bridgevm-agent-protocol`.
+Keep resolution and presentation state owned by an explicit guest/host contract.
+A resize should have a bounded sequence:
 
-### Tier C — the real 3D: Linux proven, Windows still experimental
-- **Windows-ARM64 guest 3D now has kernel artifacts, not a render-ready driver.**
-  Test-signed ARM64 Venus/VirGL kernel packages exist, and one VirGL package
-  carries five ARM64 Mesa DLLs. Its fallback INF copies but never registers
-  those DLLs, so it remains injection-ready rather than render-ready. Rebuild
-  the package from the source ARM64 INX, regenerate its catalog/signature, then
-  prove PnP bind and a real render trace. This is narrower than “nothing to
-  integrate,” but it remains an experimental WDDM path, not a product claim.
-- **Linux guest 3D is genuinely reachable** from a from-scratch HVF VMM: a
-  virtio-gpu device with the VIRGL/Venus capsets, host-side **libvirglrenderer**
-  (builds on macOS) rendering to **MoltenVK** or Mesa's newer **KosmicKrisp**
-  (Vulkan-on-Metal). **libkrun proves this exact architecture on Apple Silicon.**
-  So "real GPU acceleration via a hand-rolled engine" is feasible — with a Linux
-  guest, not Windows.
+```text
+host window change
+    -> requested guest mode
+    -> guest acknowledges/applies mode
+    -> virtio-gpu scanout changes
+    -> host presents the new surface
+```
 
-### Also missing (medium): audio, balloon, USB passthrough, snapshots/save-state
-- **Audio**: easiest on Windows via an in-box-driver device (ICH6/HDA) so no
-  driver injection is needed; virtio-sound needs an injected driver.
-- **Memory balloon**: dynamic RAM reclaim (virtio-balloon; Windows needs the
-  virtio-win balloon driver).
-- **USB passthrough / snapshots / save-state**: real but lower priority than
-  display + integration.
+Future work should cover:
 
-## Roadmap (impact × achievability, highest first)
-1. **virtio-gpu 2D + viogpudo injection (Tier A).** Native-resolution resizable
-   HiDPI desktop, hardware cursor, dirty-rect flushes. THE biggest win; achievable
-   now; ceiling for Windows-ARM display. Start here.
-2. **Guest-agent channel + clipboard/shared-folders/resolution (Tier B).**
-   virtio-vsock/serial + a small Windows agent; reuse bridgevm-agent-protocol.
-3. **Audio (in-box HDA).** Round out the "feels like a real PC" experience.
-4. **Linux-guest 3D via virtio-gpu VIRGL/Venus + libvirglrenderer→MoltenVK/
-   KosmicKrisp (Tier C).** The genuine GPU-acceleration story — Linux first.
-5. **Continue the viogpu3d Windows-ARM bring-up** from an UMD-registered,
-   re-signed package through live bind/trace/render proof. Balloon, USB
-   passthrough, snapshots as follow-ons.
+- rapid repeated resizes;
+- Retina/HiDPI scaling policy;
+- full-screen transitions;
+- multiple display modes and refresh rates;
+- pointer mapping across dynamic geometry;
+- clean fallback when the accelerated driver is not available.
 
-## Honest verdict
-- We will **not** match Parallels' Windows DirectX-over-Metal near-term — its
-  polished stack is a years-long proprietary WDDM effort. The open ARM64
-  viogpu3d artifacts are now concrete, but the current package still lacks UMD
-  registration and any live render proof. Treat it as bring-up research, not a
-  schedulable product feature.
-- We **can** reach the best-available Windows-ARM *display* (virtio-gpu 2D:
-  native Retina resolution, HW cursor, dirty-rect) and real *integration*
-  (clipboard/folders/resolution via a guest agent) — that closes most of the
-  daily-use gap and directly fixes "not smooth."
-- We **can** deliver real *3D GPU acceleration for Linux guests* (venus→Metal),
-  where a from-scratch, QEMU-independent, Apple-Silicon-native engine can actually
-  differentiate.
+### Presentation efficiency
 
-_Research pass 2026-07-05 (Parallels GPU/device/integration architecture,
-Windows-ARM64 guest-driver landscape, Apple-Silicon VM GPU options)._
+The steady-state accelerated path should avoid full-frame synchronous CPU
+readback. Readback remains useful for evidence and diagnostics, but normal
+presentation should prefer shared/host-visible resources and asynchronous
+scanout.
+
+Measure:
+
+- frame-time p50/p95/p99;
+- time blocked in readback;
+- dirty/damage region size;
+- compositor overhead;
+- host CPU usage while the guest is visually idle;
+- resize and full-screen transition stalls.
+
+## Graphics compatibility roadmap
+
+The current experimental 3D path has passed narrow live gates. Broader preview
+quality needs a compatibility matrix rather than a single demonstration title.
+
+Suggested workload buckets:
+
+1. native Windows Arm Vulkan applications;
+2. x64 applications running through Windows translation;
+3. D3D11 applications with different presentation models;
+4. Chromium/Electron GPU acceleration;
+5. media playback while audio and networking are active;
+6. long-running 3D workloads with repeated window state changes.
+
+For each workload, record:
+
+- executable and driver identity;
+- renderer path;
+- startup success/failure;
+- visible corruption;
+- frame-time statistics;
+- guest crash/driver reset events;
+- clean shutdown and subsequent reboot.
+
+A compatibility result belongs to the tested workload and build. It is not a
+blanket claim for the API family.
+
+## Guest integration roadmap
+
+BridgeVM's guest-agent channel is the common control surface for features that
+should not require a dedicated virtual hardware device each.
+
+### Clipboard
+
+Keep clipboard synchronization bounded by explicit message size, encoding, and
+loop-prevention rules. Continue testing non-ASCII text and host/guest round trips.
+
+### Folder transfer
+
+The current transfer path should evolve toward predictable failure behavior:
+
+- explicit maximum file/message sizes;
+- atomic destination replacement where appropriate;
+- clear partial-transfer cleanup;
+- path traversal rejection;
+- stable error reporting to the UI;
+- throughput measurements on larger trees.
+
+### Lifecycle
+
+Guest-agent lifecycle commands should remain optional conveniences over a VM
+that can still fail closed without the agent. Shutdown/restart requests need
+bounded timeouts and a clear forced-stop path in the host UI.
+
+### Time and desktop integration
+
+Potential follow-on integration features include:
+
+- time synchronization policy;
+- richer host/guest file exchange;
+- guest capability/version reporting;
+- install/update state for BridgeVM guest components;
+- diagnostics export from the guest agent.
+
+Each new feature should extend the existing versioned protocol instead of
+creating an unrelated host/guest side channel.
+
+## Audio roadmap
+
+The existing audio path should be hardened around:
+
+- format changes;
+- underrun/overrun accounting;
+- host-device changes;
+- VM pause/stop/restart;
+- simultaneous audio + graphics load;
+- long-run buffer growth and callback errors.
+
+The audio gate is not just "a device enumerates"; actual guest PCM must reach the
+host output path without silent loss.
+
+## Recovery and reset
+
+Graphics and integration features must survive the same process-generation
+boundaries as the core VM.
+
+On reset or process recreation:
+
+- old virtio queues cannot signal the new generation;
+- graphics mappings and renderer contexts are torn down;
+- agent commands from the previous generation are not replayed accidentally;
+- clipboard/share state re-anchors cleanly;
+- audio resources close before the helper exits;
+- durable disk/vars/vTPM state is flushed according to the runtime contract.
+
+## Distribution
+
+The Engineering Preview has two distinct signing questions:
+
+### macOS app distribution
+
+The preview can be ad-hoc signed and distributed without Developer ID or
+notarization. That is acceptable for a developer-focused preview as long as the
+README explains the macOS trust override clearly and the distributed artifact
+contains the project and third-party license notices.
+
+### Windows guest drivers
+
+A user-provided Windows ISO does not change the Windows kernel driver trust
+model. Experimental test-signed graphics packages may require the automated
+test-signing activation path. A production-signed driver remains a later
+usability/distribution milestone, not a prerequisite for technical testers.
+
+## Definition of a better preview
+
+The next preview milestone should optimize for the following user experience:
+
+1. download/build one BridgeVM DMG;
+2. explicitly trust/open the ad-hoc-signed app on macOS;
+3. select a user-provided Windows 11 Arm ISO;
+4. create and install the VM from the app;
+5. have required preview driver setup happen through the installer flow;
+6. reach a resizable desktop with network, audio, clipboard, sharing, and the
+   experimental 3D path;
+7. recover cleanly when a driver or renderer path is unavailable;
+8. export diagnostics that are useful without access to the source checkout.
+
+That flow is more valuable at this stage than adding another graphics API claim
+without improving installability or failure recovery.

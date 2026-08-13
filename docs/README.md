@@ -1,105 +1,146 @@
 # BridgeVM documentation
 
-This index separates current product guidance from active engineering plans and
-dated evidence. If a dated bring-up note conflicts with `README.md`,
-`STATUS.md`, or an active plan, the current documents win.
+Document status: **Current**
 
-Last reviewed: 2026-07-23.
+Last reviewed: 2026-08-13
+
+This index separates current product documentation, active engineering plans,
+and dated evidence. If a historical note conflicts with the root `README.md`,
+`STATUS.md`, or the machine-readable capability registry, the current documents
+win.
 
 ## Start here
 
-- [Project overview](../README.md) — engine choice, quick start, and release gates.
-- [Current status](../STATUS.md) — concise proven boundary and remaining walls.
+- [Project overview](../README.md) — what BridgeVM is, current capability state,
+  quick start, preview distribution, and repository map.
+- [Current status](../STATUS.md) — concise evidence-backed product boundary.
+- [Windows capability matrix](windows-arm/capability-matrix.md) — fixed criteria,
+  thresholds, measurements, and evidence paths.
+- [Windows 11 Arm guide](windows-arm/README.md) — Windows HVF engine guide and
+  evidence entry point.
+- [Security model](security/model.md) — trust boundaries and fail-closed rules.
 - [Contributing](contributing/README.md) — development and verification workflow.
-- [Development system](development-system.md) — gate IDs, evidence ladder, work
-  packets, risk lanes, and definition of done.
-- [Security model](security/model.md) — trust boundaries and security expectations.
+- [Development system](development-system.md) — evidence levels, work packets,
+  live gates, and definition of done.
 
 ## Engine guides
 
-- [Compatibility Engine](compatibility-mode/README.md) — QEMU-backed planning and launch.
-- [Apple VZ Engine](fast-mode/README.md) — supported Linux/macOS Arm fast path.
-- [Windows 11 Arm](windows-arm/README.md) — custom HVF direction and live evidence index.
-- [Guest Tools protocol](guest-tools/protocol.md) — host/guest transport contract.
+### Windows HVF
 
-Some engine guides still contain detailed implementation histories. Their first
-sections describe the current contract; dated claims deeper in those files
-should be read as engineering context until they are split into the history
-set.
+- [Windows 11 Arm guide](windows-arm/README.md)
+- [Machine contract](machine-contract/qemu-virt.md)
+- [Machine-contract deviations](machine-contract/qemu-virt-deviations.json)
+- [Windows architecture and risk policy](hvf-competitive-architecture-and-risk-policy.md)
+- [Windows engine strategy](hvf-windows-engine-strategy.md)
+- [Snapshot scope](windows-arm/snapshot-scope-v1.md)
+- [SMCCC TRNG / PSCI contract](windows-arm/smccc-trng-psci-contract.md)
+- [v1 suspend decision](hvf-windows-v1-suspend-decision.md)
 
-## Active Windows HVF plans and decisions
+### Apple VZ
 
-- [Windows completion plan](hvf-windows-install-completion-plan.md) — authoritative
-  remaining release work and acceptance gates.
-- [Competitive architecture and risk policy](hvf-competitive-architecture-and-risk-policy.md)
-  — QEMU, VMware, and Parallels findings; balanced/aggressive performance policy;
-  vTPM/Secure Boot lifecycle constraints.
-- [Windows engine strategy](hvf-windows-engine-strategy.md) — no-QEMU product boundary.
-- [Windows platform contract gap](hvf-windows-platform-contract-gap.md) — firmware and
-  device-contract comparison.
-- [Windows v1 suspend decision](hvf-windows-v1-suspend-decision.md) — durable suspend is
-  explicitly outside v1 until its state contract is proven.
-- [Windows 3D plan](hvf-p3-windows-3d-plan.md) and
-  [3D engine plan](hvf-3d-engine-plan.md) — graphics ladder.
-- [Performance optimization plan](hvf-perf-optimization-plan.md),
-  [GPU thread design](hvf-gpu-thread-design-20260721.md), and
-  [graphics integration gap plan](hvf-graphics-integration-gap-plan.md).
+- [Apple VZ engine guide](fast-mode/README.md)
 
-## Historical evidence and wall resolutions
+### Compatibility Engine
 
-These are immutable or near-immutable snapshots of what a specific run proved.
-They are valuable evidence, but they are not current onboarding material:
+- [QEMU compatibility guide](compatibility-mode/README.md)
 
-- `hvf-*-20260713.md` through `hvf-*-20260721.md` — dated 3D, fence, scanout,
-  WDDM, DXVK, and real-title investigations.
-- [Windows Arm evidence](windows-arm/evidence/) — dated storage, reboot, guest-agent,
-  WDK, driver-bind, [Secure Boot measured boot](windows-arm/evidence/sb-guest-proof-20260723.md),
-  [second-Mac encrypted vTPM migration](windows-arm/evidence/second-mac-migration-20260723.md),
-  [Venus release candidate](windows-arm/evidence/viogpu3d-venus-release-candidate-20260723.md),
-  [packaged-app GPU live receipt](windows-arm/evidence/gpu-live-receipt-20260723.md),
-  [live guest networking receipt](windows-arm/evidence/net-live-receipt-20260724.md),
-  [DXVK/Venus DirectX-to-Metal feasibility (superseded)](windows-arm/evidence/dxvk-venus-feasibility-20260724.md),
-  [DXVK relax-patch blast radius](windows-arm/evidence/dxvk-relax-blast-radius-20260726.md),
-  [asynchronous scanout present receipt](windows-arm/evidence/async-scanout-present-20260726.md),
-  [stage4 vkCreateInstance stall](windows-arm/evidence/stage4-vkcreateinstance-stall-20260727.md),
-  [release-readiness DMG + first-run](release-readiness-20260724.md), and
-  [live vTPM command-path](windows-arm/evidence/vtpm-windows-command-path-20260722.md)
-  receipts.
-- [KD serial bring-up](hvf-kd-serial-bringup.md) — kernel-debugging procedure and notes.
-- [Previous root README](archive/README-before-20260722.md) — exact 399-line
-  onboarding/status document preserved before the 2026-07-22 information
-  architecture rewrite.
-- [Previous root STATUS](archive/STATUS-before-20260722.md) — exact 974-line
-  accumulated status log preserved before it was replaced by the concise gate
-  report.
+### Guest integration
 
-The date in a filename identifies the observation date, not a promise that the
-claim still describes the latest code.
+- [Guest tools protocol](guest-tools/protocol.md)
 
-## Reference
+## Active engineering plans
 
-- [Phase 0 architecture](architecture/phase-0.md) — original scaffold design; historical
-  architecture reference, not current project status.
-- [QEMU virt AArch64 GICv3 DTS](reference/qemu-virt-aarch64-gicv3.dts) — platform
-  contract reference.
-- [Root long-form plan](../PLAN.md) — product thesis and accumulated roadmap context.
+These files describe engineering direction, not current product promises:
+
+- [Windows completion plan](hvf-windows-install-completion-plan.md)
+- [Windows 3D plan](hvf-p3-windows-3d-plan.md)
+- [3D architecture](hvf-3d-engine-plan.md)
+- [Graphics and integration roadmap](hvf-graphics-integration-gap-plan.md)
+- [Performance optimization plan](hvf-perf-optimization-plan.md)
+- [GPU thread design](hvf-gpu-thread-design-20260721.md)
+- [HVF refactor extraction plan](hvf-lib-refactor-extraction-plan.md)
+
+Plans can contain experiments that were later falsified or superseded. Use the
+capability registry and dated receipts to decide what is proven.
+
+## Live testing
+
+- [Apple-silicon live gates](testing/apple-silicon-live-gates.md) — trusted-host
+  queue, sealed inputs, receipts, and the boundary between hosted CI and real
+  virtualization evidence.
+
+Hosted CI proves deterministic properties. It does not prove a real Windows
+boot, Hypervisor.framework behavior on a physical Apple-silicon host, or a
+rendered guest frame.
+
+## Current Windows evidence
+
+The capability matrix links the exact evidence used for each current criterion.
+The most useful entry points include:
+
+- [in-app install through 3D desktop](windows-arm/evidence/app-install-to-3d-desktop-20260730.md)
+- [Vulkan/D3D title measurement](windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md)
+- [D3D11 3/3 title receipt](windows-arm/evidence/a3-d3d11-title-fps-3of3-20260812.md)
+- [cold-boot 10/10 receipt](windows-arm/evidence/a1-p1-boot-gate-10of10-20260810.md)
+- [TPM PPI clear](windows-arm/evidence/vtpm-windows-ppi-clear-20260722.md)
+- [Secure Boot / measured boot](windows-arm/evidence/sb-guest-proof-20260723.md)
+- [second-Mac vTPM migration](windows-arm/evidence/second-mac-migration-20260723.md)
+- [snapshot pair](windows-arm/evidence/a19-snapshot-pair-20260804.md)
+- [snapshot restore boot](windows-arm/evidence/a19-restore-boots-20260805.md)
+
+A dated receipt says what one exact build and fixture proved. It does not become
+a permanent compatibility claim for every later build.
+
+## Historical evidence
+
+Bring-up logs are intentionally retained because failed experiments and old
+measurements are useful engineering records. They are **not** onboarding
+material and they do not override current product state.
+
+Examples include:
+
+- dated `hvf-*-202607*.md` graphics, fence, scanout, WDDM, and title
+  investigations;
+- older Windows evidence under `windows-arm/evidence/`;
+- [previous root README](archive/README-before-20260722.md);
+- [previous root STATUS](archive/STATUS-before-20260722.md).
+
+Historical files may name tools, upstream components, or products that were
+part of an investigation at that time. Current architecture and licensing are
+defined by the present source tree, the current docs above, `LICENSE`, and
+`THIRD-PARTY-NOTICES.md`.
+
+## Reference material
+
+- [Phase 0 architecture](architecture/phase-0.md) — early architecture history.
+- [QEMU virt AArch64 GICv3 DTS](reference/qemu-virt-aarch64-gicv3.dts) — machine
+  contract reference data.
+- [Windows platform contract gap](hvf-windows-platform-contract-gap.md) — earlier
+  platform bring-up reference.
+- [KD serial bring-up](hvf-kd-serial-bringup.md) — kernel-debugging procedure.
+
+Reference data exists to make interfaces and experiments reproducible. It is not
+a statement that BridgeVM source code was copied from the referenced project.
+Third-party source actually redistributed by BridgeVM remains governed by its
+own license and attribution requirements.
 
 ## Document status convention
 
-New or substantially revised documents should declare one of these states near
-the title:
+New or substantially revised Markdown documents should be classified in
+[`document-manifest.tsv`](document-manifest.tsv) as one of:
 
-- **Current** — describes the presently supported or proven product boundary.
-- **Active plan** — accepted work not yet fully implemented or evidenced.
-- **Decision** — an adopted architectural or product constraint.
-- **Historical evidence** — a dated result that must not silently become a promise.
-- **Reference** — stable background material.
+- **Current** — presently supported or proven product boundary;
+- **Active plan** — accepted work not yet fully implemented/evidenced;
+- **Decision** — adopted architectural or product constraint;
+- **Historical evidence** — dated observation that must not silently become a
+  current promise;
+- **Reference** — stable background or reproducibility material.
 
-Use absolute dates for live evidence, distinguish deterministic tests from live
-guest proof, and link a superseding current document from obsolete plans rather
-than deleting useful history.
+Use absolute dates for live evidence and distinguish deterministic tests from
+live guest proof.
 
-The machine-readable classification is
-[`document-manifest.tsv`](document-manifest.tsv). Validate it with
-`bash scripts/check-documentation-system.sh`; the check fails when a Markdown
-document is missing from the manifest.
+Validate the documentation system with:
+
+```sh
+bash scripts/check-documentation-system.sh
+```

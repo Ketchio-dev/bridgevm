@@ -1,28 +1,102 @@
-# Guest virtio driver injection notes (HVF Windows 11 ARM64)
+# Windows guest driver notes
 
-The WinPE injector (`bvinject.cmd`) dism-installs every driver subdir found under
-the source image's `\drivers` tree. Source packages live in `~/BridgeVM/drivers/`.
+This directory contains the guest-side assets used by BridgeVM's Windows 11 Arm
+installation and driver-injection flows.
 
-## Networking (Parallels-parity internet)
-- The HVF engine's virtio-net + userspace NAT is OFF by default; enable it with the
-  `--virtio-net` flag on `run-hvf-windows-installed-boot.sh` (or in the app's launch).
-- Guest driver = `~/BridgeVM/drivers/netkvm/` (Red Hat production-signed ARM64,
-  DEV_1000/DEV_1041). **The package REQUIRES `netkvmp.exe` + `netkvmco.exe`** in
-  addition to `netkvm.{inf,sys,cat}` — staging only inf/sys/cat makes pnputil/dism
-  fail with "The system cannot find the file specified" (this was the long-standing
-  WinPE-dism netkvm failure). Verified live: DHCP 10.0.2.15, HTTPS 200.
+The WinPE injector (`bvinject.cmd`) installs the driver packages staged under its
+`\drivers` tree into the offline Windows image. Product packaging must keep each
+package complete: INF, SYS, CAT, companion binaries, certificates where required,
+and any user-mode components referenced by the INF belong to one package
+identity.
 
-## viogpu3d (3D display)
-- Install a package whose `.sys` and `.cat` MATCH (never raw-swap just the `.sys`:
-  a 0.3 sys under a 0.2 cat => CM_PROB_UNSIGNED_DRIVER). Needs BCD `testsigning on`;
-  `bcdboot` regeneration resets testsigning OFF, so re-enable + reboot before install.
-- The CI driver-only INF lacks WDDM UMD registration -> Code 43
-  (CM_PROB_FAILED_POST_START, dxgkrnl AddAdapter STATUS_OBJECT_NAME_NOT_FOUND).
-  Run `viogpu3d-umd-regfix.ps1` as SYSTEM after install (or use the full package
-  whose INF now carries the UserModeDriverName/OpenGLDriverName/InstalledDisplayDrivers
-  AddReg keys — see the CI `bridgevm/vblank-120` branch fix).
+## General rules
 
-## Recovering a wedged boot
-- Firmware "Start boot option" exit-storm (never launches Windows) after editing the
-  BCD => the BCD is mangled. Fix: WinPE `bcdboot W:\Windows /s S: /f UEFI` regenerates
-  clean boot files. Do NOT `bcdedit /set bootstatuspolicy` a fresh BCD repeatedly.
+- Never replace only a `.sys` underneath a catalog from a different build.
+- Treat INF/SYS/CAT and referenced user-mode DLLs as one versioned package.
+- Verify the bound device and package identity after installation.
+- Do not report a driver as working because DISM or `pnputil` returned success;
+  the device must start successfully in the live guest.
+- Keep third-party license notices with any redistributed package.
+- Windows media is user-supplied; BridgeVM does not redistribute Windows.
+
+## Networking
+
+The Windows HVF engine exposes virtio networking when the VM launch enables it.
+The guest package must contain the complete ARM64 NetKVM payload expected by its
+INF, including companion executables when the selected package references them.
+
+Staging only `netkvm.inf`, `netkvm.sys`, and `netkvm.cat` is not sufficient for
+packages whose INF also references `netkvmp.exe` or `netkvmco.exe`; DISM/PnP can
+otherwise fail with a missing-file error.
+
+## Experimental 3D display driver
+
+BridgeVM supports an experimental virtio-gpu 3D driver lifecycle. Two signing
+shapes are possible:
+
+1. a package already trusted by Windows under its normal production signing
+   policy; or
+2. a development/test-signed package used by Engineering Preview testers.
+
+For the second case, the current injector/first-boot flow automates activation.
+`bvinject.cmd` stages the package and plants the first-boot handoff;
+`bvgpu-firstboot.cmd` then performs the required live-Windows sequence.
+
+The four-stage activation is intentional:
+
+1. clean superseded test certificates, enable BCD test-signing, trust the current
+   package certificate, and reboot;
+2. remove superseded DriverStore generations and reboot;
+3. prove the store is clean, install exactly one package, and reboot;
+4. verify the live binding and package identity.
+
+The sequence separates enabling test mode from the actual bind because trying to
+install/start the test-signed display driver in the same boot can leave Windows
+with a persistent failed-start state.
+
+### Important Secure Boot note
+
+Windows may refuse a request to enable test-signing while Secure Boot policy is
+active. Treat that as an explicit compatibility error; do not silently weaken
+Secure Boot or claim the driver is active. Preview builds that use a test-signed
+GPU package must make their security/signing requirements clear to the user.
+
+A production-signed guest driver avoids this development-mode requirement, but it
+is a distribution/usability milestone rather than a requirement for the custom
+HVF VMM itself.
+
+## User-mode graphics components
+
+A kernel display driver can start while user-mode graphics registration is still
+incomplete. A render-capable package must include and register the exact user-mode
+components it needs.
+
+After installation, verify both:
+
+- the PnP/display device state; and
+- the user-mode renderer/ICD identity actually loaded by the workload.
+
+A successful device bind without a real graphics submission is not a 3D pass.
+
+## Recovering a damaged Windows boot configuration
+
+If BCD edits leave the guest unable to enter Windows, repair the boot files from
+WinPE with the appropriate `bcdboot` command for the target EFI System Partition,
+then let BridgeVM's staged first-boot flow reapply only the settings it owns.
+
+Avoid repeatedly applying unrelated BCD mutations while diagnosing a driver
+problem. Preserve the failed logs and package identity so the failure remains
+reproducible.
+
+## Logs
+
+The activation scripts write guest-side logs under `C:\BridgeVM`. When a driver
+install fails, keep at least:
+
+- the first-boot activation log;
+- `pnputil`/PnP device state;
+- package/DriverStore identity;
+- the BridgeVM host run evidence;
+- the exact guest image/vars hashes used by the run.
+
+Those artifacts are more useful than a screenshot of Device Manager alone.
