@@ -121,7 +121,7 @@ pub(crate) fn sha256_path(path: &Path) -> Result<String> {
         }
         hasher.update(&buffer[..read]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>())
 }
 
 pub(crate) fn log_u64_field(contents: &str, field: &str) -> Option<u64> {
