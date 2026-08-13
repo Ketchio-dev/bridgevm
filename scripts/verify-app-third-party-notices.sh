@@ -4,14 +4,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="${1:-}"
-[[ -n "$APP" && -d "$APP/Contents" ]] || {
-  echo "usage: scripts/verify-app-third-party-notices.sh APP" >&2
-  exit 2
-}
+[[ -n "$APP" && -d "$APP/Contents" ]] || { echo "usage: scripts/verify-app-third-party-notices.sh APP" >&2; exit 2; }
 
 resources="$APP/Contents/Resources"
 frameworks="$APP/Contents/Frameworks"
+project_license="$resources/LICENSE"
 notice="$resources/THIRD-PARTY-NOTICES.md"
+[[ -s "$project_license" ]] || { echo "BridgeVM license is missing from the app" >&2; exit 1; }
+cmp -s "$ROOT/LICENSE" "$project_license" || { echo "bundled BridgeVM license differs from the repository source" >&2; exit 1; }
 [[ -s "$notice" ]] || { echo "third-party notice is missing from the app" >&2; exit 1; }
 cmp -s "$ROOT/THIRD-PARTY-NOTICES.md" "$notice" || {
   echo "bundled third-party notice differs from the repository source" >&2
