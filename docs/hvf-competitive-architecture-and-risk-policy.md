@@ -1,89 +1,176 @@
-# Windows-on-Apple-Silicon architecture and risk policy
+# Windows HVF architecture and risk policy
 
-Status: adopted 2026-07-22
+Document status: **Decision**
 
-This note turns the public product behavior of QEMU, VMware Fusion, and
-Parallels Desktop into BridgeVM design constraints. It is not a claim that the
-closed products use any particular private implementation.
+Adopted: 2026-07-22  
+Last revised: 2026-08-13
 
-## What the comparison changes
+This document defines the product constraints for BridgeVM's Windows 11 Arm
+engine. It describes BridgeVM's own runtime, guest-visible contract, security
+lifecycle, and reversible performance policies. It is not a competitive-product
+analysis and should not be used as one.
 
-| Product surface | Publicly observable contract | BridgeVM consequence |
-| --- | --- | --- |
-| QEMU ARM `virt` | `tpm-tis-device` is a sysbus device. Current ARM ACPI exposes `TPM0` as `MSFT0101`; Windows 11 ARM also needs the TPM Physical Presence Interface (PPI). | Follow the Windows-visible ACPI/TIS/PPI contract, but do not copy QEMU's process topology when a tighter in-process or supervised backend is faster. |
-| VMware Fusion | Windows 11 ARM uses UEFI, vTPM 2.0, and VM encryption. Fusion 13.5+ exposes DirectX 11 on Apple silicon; an earlier 3D translation crash had an explicit “disable 3D acceleration” recovery path. | Bind TPM state cryptographically to the VM identity. Treat 3D as a replaceable launch policy, never as irreversible guest-media state. |
-| Parallels Desktop | Adding vTPM automatically enables Secure Boot. TPM state is an encrypted per-VM file whose password is held in macOS Keychain. New Windows 11 VMs receive vTPM automatically. DirectX 11 is translated through Metal. | Ship vTPM + Secure Boot as one lifecycle. Store the TPM state key in Keychain, keep encrypted state in the VM bundle, and make import/move semantics explicit. Keep the Metal-native scanout path in the performance lane. |
+## Product boundary
 
-Primary references:
+The Windows HVF engine is a BridgeVM-owned VMM built directly on Apple's
+Hypervisor.framework. Its guest-visible platform is a **QEMU `virt`-compatible
+contract with documented deviations** so standard AArch64 firmware and guest
+software have a stable machine shape.
 
-- [QEMU TPM device documentation](https://qemu.readthedocs.io/en/master/specs/tpm.html)
-- [QEMU ARM ACPI TPM implementation](https://github.com/qemu/qemu/blob/master/hw/arm/virt-acpi-build.c)
-- [Pinned EDK2 QEMU PPI request processor](https://github.com/tianocore/edk2/blob/b03a21a63e3bd001f52c527e5a57feddb53a690b/OvmfPkg/Library/Tcg2PhysicalPresenceLibQemu/DxeTcg2PhysicalPresenceLib.c)
-- [swtpm state-encryption and key-FD contract](https://github.com/stefanberger/swtpm/blob/master/man/man8/swtpm.pod)
-- [VMware Fusion Apple-silicon feature matrix](https://knowledge.broadcom.com/external/article/315609)
-- [VMware Fusion Apple-silicon 3D crash and fallback](https://knowledge.broadcom.com/external/article/426891)
-- [Parallels virtual TPM lifecycle](https://kb.parallels.com/en/122702)
-- [Parallels DirectX 11/Metal support](https://kb.parallels.com/en/124137)
+Compatibility is a protocol and machine-contract choice. BridgeVM owns the host
+runtime, device models, lifecycle, evidence surfaces, and product behavior.
+Guest-visible deviations are recorded in
+[`machine-contract/qemu-virt-deviations.json`](machine-contract/qemu-virt-deviations.json)
+instead of being hidden behind informal compatibility claims.
 
-## Adopted performance policy
+The Windows engine currently includes:
 
-BridgeVM has two media-independent launch policies:
+- UEFI firmware and persistent variable storage;
+- PCIe/ECAM, NVMe, xHCI, virtio networking, audio, and virtio-gpu devices;
+- guest-agent transport for lifecycle and integration features;
+- TPM 2.0, Secure Boot, measured-boot, and recovery state;
+- typed process-recreate runtime supervision;
+- experimental Vulkan and D3D11-compatible 3D paths.
 
-- `balanced`: threaded renderer and audited readback behavior; this remains the
-  CLI default and the immediate recovery lane.
-- `aggressive`: direct renderer, asynchronous scanout, IOSurface GPU blit, zero
-  artificial readback interval, and the existing direct-DMA NVMe default. The
-  macOS app selects this lane for 3D VMs.
+The machine contract is intentionally narrower than a promise that arbitrary PC
+hardware or arbitrary Windows software is supported.
 
-`--performance-risk aggressive` requires `--virtio-gpu-3d`. Every run records
-the selected lane and resolved knobs in `preflight.txt`. Switching back to
-`balanced` changes no disk, UEFI vars, driver, or TPM state.
+## Design rules
 
-We accept correctness risk when all four conditions hold:
+### 1. Guest-visible contracts are explicit
 
-1. the risky path has a one-switch rollback;
-2. stateful media is not rewritten merely by selecting it;
-3. the run emits enough evidence to identify the exact lane;
-4. release gates still require a crash-free real-title receipt.
+A guest-visible behavior belongs in one of three places:
 
-We do not trade away VM identity or recovery-key correctness. TPM state,
-Secure Boot variables, and BitLocker-sealed PCR state therefore remain
-fail-closed even in `aggressive` mode.
+1. a stable protocol or platform contract;
+2. a documented BridgeVM deviation;
+3. an experimental capability guarded by an explicit product state.
 
-## Security implementation boundary
+Do not rely on undocumented behavior merely because one guest image happens to
+accept it.
 
-The local implementation now has three connected layers:
+### 2. Stateful security changes fail closed
 
-1. BridgeVM exposes TPM 2.0 TIS, PPI 1.3, ACPI `TPM0`, the TPM2 table, a
-   relocated 64 KiB event-log allocation, and QEMU's packed 6-byte
-   `etc/tpm/config` discovery record. The record lets the pinned EDK2
-   `Tcg2PhysicalPresenceLibQemu` initialize policy and process pending PPI
-   requests; it is omitted with every other TPM surface when no backend exists.
-2. The launcher supervises one swtpm and passes
-   `--key fd=0,format=binary,mode=aes-256-cbc`; the upstream contract integrity
-   protects the encrypted state with encrypt-then-MAC.
-3. The app holds one 256-bit key per stable VM ID in a
-   `WhenUnlockedThisDeviceOnly` Keychain generic-password item and supplies it
-   through a one-shot pipe. It never writes a keyfile or puts a key in argv.
+The engine never silently replaces or resets identity-bearing state when its
+provenance is missing.
 
-The failure contract is deliberately strict. New empty state may create a key.
-Non-empty state without its Keychain item fails before launch and is left
-untouched; BridgeVM does not silently create a replacement identity. Moving a
-bundle on the same Mac keeps its ID and key. Cross-Mac migration uses an
-AES-GCM-authenticated recovery package whose separate 256-bit recovery code is
-never written into that package; restore requires the original VM ID and exact
-encrypted-state fingerprint. Cloning allocates a new VM ID and starts with a
-fresh TPM without copying the source key. Confirmed reset archives the old
-encrypted state and a device-local archive key and writes a lifecycle receipt
-before rotating the active identity. BitLocker and other PCR-sealed secrets may
-still require guest recovery. VM deletion continues to retain orphaned
-Keychain items, favoring recoverability.
+This applies to:
 
-The remaining security work is therefore:
+- vTPM state and its encryption key;
+- Secure Boot variables;
+- BitLocker-sensitive identity and PCR state;
+- UEFI variables;
+- disk/vars snapshot pairs;
+- migration and recovery packages.
 
-1. prove the bundled runtime and authenticated migration lifecycle on a clean
-   second Mac with BitLocker enabled;
-2. prove `Get-Tpm`, PPI processing, `Confirm-SecureBootUEFI`, PCR 7, populated
-   measured-boot events, and recovery-key handling in a fresh same-boot receipt.
+If BridgeVM cannot establish that state is the expected state for the VM, launch
+or mutation fails with a diagnostic instead of inventing a replacement.
 
-No release blocker is cleared by ACPI enumeration alone.
+### 3. Performance switches do not rewrite VM identity
+
+BridgeVM exposes two media-independent launch policies:
+
+- `balanced`: conservative renderer/presentation behavior and the recovery lane;
+- `aggressive`: the product 3D lane, enabling the direct renderer,
+  asynchronous scanout, IOSurface-backed presentation, and the current
+  high-performance I/O choices.
+
+`--performance-risk aggressive` requires the 3D path. Every run records the
+resolved policy in evidence. Moving from `aggressive` back to `balanced` must not
+rewrite the guest disk, UEFI variables, driver package, vTPM state, or recovery
+identity.
+
+A performance optimization is acceptable only when all of the following hold:
+
+1. it has a bounded rollback path;
+2. enabling it does not silently mutate durable security state;
+3. a run records enough information to identify the active policy;
+4. the relevant correctness and live-workload gates still apply.
+
+### 4. Evidence outranks architectural intent
+
+A design note can explain why a mechanism exists, but it does not prove the
+mechanism works in a real guest. Capability promotion follows the evidence
+hierarchy in [`AGENTS.md`](../AGENTS.md): live receipts, live single runs,
+automated tests, then static reasoning.
+
+No threshold is lowered to make a feature pass.
+
+## vTPM and Secure Boot lifecycle
+
+The product vTPM path has three layers:
+
+1. the VMM exposes the Windows-visible TPM 2.0 TIS/PPI/ACPI surfaces and a
+   measured-boot event-log region;
+2. the runtime supervises a per-VM `swtpm` process and supplies the state key over
+   an inherited file descriptor rather than argv or a key file;
+3. the app stores a device-local 256-bit key per stable VM identity in macOS
+   Keychain and manages recovery/clone/reset semantics explicitly.
+
+The active-state rules are:
+
+- a brand-new empty vTPM state may create a key;
+- existing non-empty state with no matching key is refused;
+- moving a VM on the same Mac preserves its stable identity;
+- recovery restore requires authenticated package metadata and the expected VM
+  identity;
+- cloning creates a fresh VM identity and fresh TPM state;
+- confirmed reset archives prior state before rotating the active identity.
+
+The security implementation must never make a VM appear healthy by discarding
+state that could be required for guest recovery.
+
+## Storage and snapshot boundary
+
+The supported v1 persistence model is powered-off snapshot/restore of the disk
+and UEFI-vars pair. Running-state suspend is intentionally outside the v1
+contract until CPU, interrupt-controller, device, renderer, and security state
+can be serialized and restored as one coherent operation.
+
+Snapshot and restore operations therefore require:
+
+- an explicit powered-off state;
+- writer exclusion for the live disk and vars pair;
+- bounded space checks;
+- content digests and an atomic pair manifest;
+- refusal before live-file mutation when verification fails.
+
+See [`windows-arm/snapshot-scope-v1.md`](windows-arm/snapshot-scope-v1.md).
+
+## Graphics risk boundary
+
+3D is an experimental capability, not a reason to weaken VM security or storage
+correctness.
+
+The graphics path may select more aggressive scheduling, presentation, or
+readback behavior, but it must preserve:
+
+- deterministic teardown;
+- bounded resource ownership;
+- device/reset lifecycle correctness;
+- guest-driver identity checks in release evidence;
+- a 2D/recovery lane when the accelerated path is unsuitable.
+
+A synthetic draw proves plumbing. A real title receipt proves only the measured
+workload on the stated build. Neither is a universal compatibility claim.
+
+## Distribution boundary
+
+BridgeVM's Engineering Preview can be built and distributed with ad-hoc macOS
+signing. Developer ID signing/notarization is a distribution convenience and
+trust improvement, not a prerequisite for the core VMM to run on a developer
+Mac.
+
+Windows media remains user-supplied. Experimental Windows driver packages may
+require test-signing mode; production driver signing is a separate distribution
+milestone and is not conflated with ownership of the Windows ISO.
+
+## Third-party components
+
+BridgeVM uses third-party firmware, runtime libraries, and guest components only
+under their respective licenses. Attribution and redistribution obligations are
+tracked in [`../THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md).
+
+Architecture documents should describe component roles and interfaces, not make
+claims that BridgeVM source code was copied from another product. Required
+license notices and upstream provenance must remain intact even when historical
+competitive-research prose is removed.
