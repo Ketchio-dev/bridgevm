@@ -1,10 +1,9 @@
 # Third-Party Notices
 
-BridgeVM ships with, loads, or installs the third-party components below.
-BridgeVM's own code is proprietary; every third-party component is either
-under a permissive license (attribution only) or, where copyleft, is kept a
-separately-replaceable dynamic library / guest-side artifact so that no
-copyleft obligation attaches to BridgeVM's own code.
+BridgeVM's own source code is licensed under the Apache License, Version 2.0;
+see [`LICENSE`](LICENSE). The components below retain their respective
+third-party licenses and notices. Copyleft components are distributed only in
+the separately replaceable or standalone forms described below.
 
 ## Host-side (macOS app / VMM)
 
