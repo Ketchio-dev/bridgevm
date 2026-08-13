@@ -7,9 +7,13 @@ OUT_DIR="${BRIDGEVM_MACOS_RELEASE_DIR:-$ROOT/target/macos-release}"
 APP_NAME="${BRIDGEVM_MACOS_APP_NAME:-BridgeVM}"
 bridgevm_validate_macos_app_name "$APP_NAME" BRIDGEVM_MACOS_APP_NAME || exit 2
 APP="$OUT_DIR/$APP_NAME.app"
+APP_RESOURCES="$APP/Contents/Resources"
+APP_LICENSES="$APP_RESOURCES/licenses"
 APPLE_VZ_RUNNER="$APP/Contents/Helpers/AppleVzRunner"
 HVF_LAB="$APP/Contents/Applications/BridgeVMControl.app"
-HVF_WINDOWS_PROBE="$HVF_LAB/Contents/Resources/target/release/examples/hvf_gic_boot_probe"
+HVF_LAB_RESOURCES="$HVF_LAB/Contents/Resources"
+HVF_LAB_LICENSES="$HVF_LAB_RESOURCES/licenses"
+HVF_WINDOWS_PROBE="$HVF_LAB_RESOURCES/target/release/examples/hvf_gic_boot_probe"
 DMG="${BRIDGEVM_MACOS_DMG:-$OUT_DIR/BridgeVM.dmg}"
 MANIFEST="${BRIDGEVM_MACOS_ARTIFACT_MANIFEST:-$OUT_DIR/BridgeVM-artifacts.txt}"
 APP_NOTARY_ZIP="${BRIDGEVM_MACOS_APP_NOTARY_ZIP:-$OUT_DIR/$APP_NAME-notary.zip}"
@@ -253,6 +257,32 @@ run env \
   "BRIDGEVM_BUNDLE_COPYRIGHT=${BRIDGEVM_BUNDLE_COPYRIGHT:-}" \
   "$ROOT/packaging/macos/build-debug-app-bundle.sh"
 
+run install -d "$APP_LICENSES" "$HVF_LAB_LICENSES"
+run install -m 644 "$ROOT/LICENSE" "$APP_RESOURCES/LICENSE"
+run install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" "$APP_RESOURCES/THIRD-PARTY-NOTICES.md"
+run python3 "$ROOT/scripts/generate-rust-dependency-inventory.py" \
+  --output "$APP_LICENSES/rust-dependencies.tsv"
+run python3 "$ROOT/scripts/generate-rust-license-bundle.py" \
+  --output "$APP_LICENSES/rust-license-texts.txt"
+run "$ROOT/scripts/verify-rust-dependency-inventory.sh" \
+  "$APP_LICENSES/rust-dependencies.tsv"
+run "$ROOT/scripts/verify-rust-license-bundle.sh" \
+  "$APP_LICENSES/rust-dependencies.tsv" \
+  "$APP_LICENSES/rust-license-texts.txt"
+
+run install -m 644 "$ROOT/LICENSE" "$HVF_LAB_RESOURCES/LICENSE"
+run install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" \
+  "$HVF_LAB_RESOURCES/THIRD-PARTY-NOTICES.md"
+run install -m 644 "$ROOT/docs/licenses/virglrenderer-MIT.txt" \
+  "$HVF_LAB_LICENSES/virglrenderer-MIT.txt"
+run install -m 644 "$ROOT/docs/licenses/libepoxy-MIT.txt" \
+  "$HVF_LAB_LICENSES/libepoxy-MIT.txt"
+run python3 "$ROOT/scripts/generate-rust-dependency-inventory.py" \
+  --output "$HVF_LAB_LICENSES/rust-dependencies.tsv"
+run python3 "$ROOT/scripts/generate-rust-license-bundle.py" \
+  --output "$HVF_LAB_LICENSES/rust-license-texts.txt"
+run "$ROOT/scripts/verify-app-third-party-notices.sh" "$HVF_LAB"
+
 run env \
   "BRIDGEVM_CODESIGN_IDENTITY=$IDENTITY" \
   "BRIDGEVM_APPLE_VZ_ENTITLEMENTS=${BRIDGEVM_APPLE_VZ_ENTITLEMENTS:-$ROOT/apps/macos/AppleVzRunner.release.entitlements}" \
@@ -286,6 +316,7 @@ cleanup_stage() {
 trap cleanup_stage EXIT
 
 run ditto "$APP" "$STAGE/$APP_NAME.app"
+run install -m 644 "$ROOT/LICENSE" "$STAGE/LICENSE"
 run ln -s /Applications "$STAGE/Applications"
 run hdiutil create -volname "$VOLUME_NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 run hdiutil verify "$DMG"
