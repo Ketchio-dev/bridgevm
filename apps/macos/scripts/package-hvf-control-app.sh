@@ -69,6 +69,8 @@ install -d \
   "$stage_app/Contents/Resources/licenses" \
   "$stage_app/Contents/Resources/target/release/examples" \
   "$stage_app/Contents/Frameworks"
+install -m 644 "$ROOT/LICENSE" \
+  "$stage_app/Contents/Resources/LICENSE"
 install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" \
   "$stage_app/Contents/Resources/THIRD-PARTY-NOTICES.md"
 install -m 644 "$ROOT/docs/licenses/virglrenderer-MIT.txt" \
