@@ -11,7 +11,13 @@ APP="${1:-}"
 
 resources="$APP/Contents/Resources"
 frameworks="$APP/Contents/Frameworks"
+project_license="$resources/LICENSE"
 notice="$resources/THIRD-PARTY-NOTICES.md"
+[[ -s "$project_license" ]] || { echo "BridgeVM license is missing from the app" >&2; exit 1; }
+cmp -s "$ROOT/LICENSE" "$project_license" || {
+  echo "bundled BridgeVM license differs from the repository source" >&2
+  exit 1
+}
 [[ -s "$notice" ]] || { echo "third-party notice is missing from the app" >&2; exit 1; }
 cmp -s "$ROOT/THIRD-PARTY-NOTICES.md" "$notice" || {
   echo "bundled third-party notice differs from the repository source" >&2
@@ -58,6 +64,7 @@ do
   }
   printf 'lgpl_dynamic_link=%s consumer=%s\n' "$lgpl_lib" "$consumer"
 done
+printf 'project_license_sha256=%s\n' "$(shasum -a 256 "$project_license" | awk '{ print $1 }')"
 printf 'notice_sha256=%s\n' "$(shasum -a 256 "$notice" | awk '{ print $1 }')"
 printf 'framework_count=%s\n' "$(find "$frameworks" -maxdepth 1 -type f -name '*.dylib' | wc -l | tr -d ' ')"
 echo 'third_party_notice_gate=pass'
