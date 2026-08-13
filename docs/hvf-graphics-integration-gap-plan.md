@@ -1,6 +1,6 @@
 # Windows HVF graphics and integration roadmap
 
-Document status: **Reference**
+Document status: **Active plan**
 
 Last revised: 2026-08-13
 
