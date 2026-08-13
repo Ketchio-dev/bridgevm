@@ -7,11 +7,11 @@
 **A Mac-native virtualization project for Apple silicon, with a custom Windows 11 Arm VMM built directly on Hypervisor.framework.**
 
 <p align="center">
-  <img src="docs/media/windows-hvf-boot.gif" alt="Windows 11 Arm desktop interaction on BridgeVM's Hypervisor.framework VMM" width="800">
+  <img src="docs/media/windows-hvf-boot.gif" alt="Windows 11 Arm booting to the desktop on BridgeVM's Hypervisor.framework VMM" width="800">
 </p>
 <p align="center">
-  <em>A live Windows 11 Arm guest on BridgeVM's QEMU-free VMM: pointer input, Win+R,
-  keyboard entry, and Notepad launch — captured directly from the VM display pipeline.</em>
+  <em>Windows 11 Arm booting from UEFI firmware to the installed desktop on BridgeVM's own
+  QEMU-free VMM — captured directly from the VM's display pipeline.</em>
 </p>
 
 BridgeVM has three deliberately separate engines: a broad QEMU compatibility
