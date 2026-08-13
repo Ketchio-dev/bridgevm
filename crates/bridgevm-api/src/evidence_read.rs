@@ -335,7 +335,7 @@ pub(crate) fn sha256_file_with_bytes(path: &Path, label: &str) -> Result<(String
             .checked_add(read as u64)
             .ok_or_else(|| format!("{label} {} size overflow", path.display()))?;
     }
-    Ok((format!("{:x}", hasher.finalize()), bytes))
+    Ok((hex::encode(hasher.finalize()), bytes))
 }
 
 pub(crate) fn read_evidence_json(root: &Path, name: &str) -> Result<serde_json::Value, String> {
@@ -379,7 +379,7 @@ mod tests {
 
         let (actual, bytes) = sha256_file_with_bytes(&path, "test artifact").unwrap();
         assert_eq!(bytes, content.len() as u64);
-        assert_eq!(actual, format!("{:x}", Sha256::digest(&content)));
+        assert_eq!(actual, hex::encode(Sha256::digest(&content)));
 
         let _ = fs::remove_file(path);
     }
