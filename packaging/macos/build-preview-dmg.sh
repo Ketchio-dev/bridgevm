@@ -45,8 +45,39 @@ esac
   exit 2
 }
 
+install_rust_license_bundle() {
+  local resources="$1"
+  local licenses="$resources/licenses"
+  install -d "$licenses"
+  python3 "$ROOT/scripts/generate-rust-dependency-inventory.py" \
+    --output "$licenses/rust-dependencies.tsv" >/dev/null
+  python3 "$ROOT/scripts/generate-rust-license-bundle.py" \
+    --output "$licenses/rust-license-texts.txt" >/dev/null
+  "$ROOT/scripts/verify-rust-dependency-inventory.sh" \
+    "$licenses/rust-dependencies.tsv" >/dev/null
+  "$ROOT/scripts/verify-rust-license-bundle.sh" \
+    "$licenses/rust-dependencies.tsv" \
+    "$licenses/rust-license-texts.txt" >/dev/null
+}
+
+install_project_notices() {
+  local resources="$1"
+  install -m 644 "$ROOT/LICENSE" "$resources/LICENSE"
+  install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" \
+    "$resources/THIRD-PARTY-NOTICES.md"
+  cmp -s "$ROOT/LICENSE" "$resources/LICENSE" || {
+    echo "bundled project license differs from repository LICENSE: $resources" >&2
+    exit 1
+  }
+  cmp -s "$ROOT/THIRD-PARTY-NOTICES.md" \
+    "$resources/THIRD-PARTY-NOTICES.md" || {
+    echo "bundled third-party notice differs from repository source: $resources" >&2
+    exit 1
+  }
+}
+
 rm -rf "$APP"
-rm -f "$DMG"
+rm -f "$DMG" "$DMG.sha256"
 mkdir -p "$OUT_DIR" "$(dirname "$DMG")"
 
 env \
@@ -63,31 +94,28 @@ env \
   "$ROOT/packaging/macos/build-debug-app-bundle.sh" >/dev/null
 
 RESOURCES="$APP/Contents/Resources"
-LICENSES="$RESOURCES/licenses"
-install -d "$LICENSES"
-install -m 644 "$ROOT/LICENSE" "$RESOURCES/LICENSE"
-install -m 644 "$ROOT/THIRD-PARTY-NOTICES.md" "$RESOURCES/THIRD-PARTY-NOTICES.md"
-python3 "$ROOT/scripts/generate-rust-dependency-inventory.py" \
-  --output "$LICENSES/rust-dependencies.tsv" >/dev/null
-python3 "$ROOT/scripts/generate-rust-license-bundle.py" \
-  --output "$LICENSES/rust-license-texts.txt" >/dev/null
-"$ROOT/scripts/verify-rust-dependency-inventory.sh" \
-  "$LICENSES/rust-dependencies.tsv" >/dev/null
-"$ROOT/scripts/verify-rust-license-bundle.sh" \
-  "$LICENSES/rust-dependencies.tsv" \
-  "$LICENSES/rust-license-texts.txt" >/dev/null
+HVF_LAB="$APP/Contents/Applications/BridgeVMControl.app"
+HVF_RESOURCES="$HVF_LAB/Contents/Resources"
+HVF_LICENSES="$HVF_RESOURCES/licenses"
 
-cmp -s "$ROOT/LICENSE" "$RESOURCES/LICENSE" || {
-  echo "preview app project license differs from repository LICENSE" >&2
-  exit 1
-}
-cmp -s "$ROOT/THIRD-PARTY-NOTICES.md" "$RESOURCES/THIRD-PARTY-NOTICES.md" || {
-  echo "preview app third-party notice differs from repository source" >&2
-  exit 1
-}
+# The outer application contains BridgeVM executables and is independently
+# distributable, so carry the project license and locked Rust dependency notices.
+install_project_notices "$RESOURCES"
+install_rust_license_bundle "$RESOURCES"
 
-# Adding Resources changes the bundle seal, so re-sign the outer app only.
-# Nested helpers/apps retain the signatures produced by the debug packager.
+# The nested Windows HVF application carries its own renderer/swtpm runtime.
+# Make that bundle independently notice-complete before sealing the parent app.
+install_project_notices "$HVF_RESOURCES"
+install_rust_license_bundle "$HVF_RESOURCES"
+install -m 644 "$ROOT/docs/licenses/virglrenderer-MIT.txt" \
+  "$HVF_LICENSES/virglrenderer-MIT.txt"
+install -m 644 "$ROOT/docs/licenses/libepoxy-MIT.txt" \
+  "$HVF_LICENSES/libepoxy-MIT.txt"
+
+# Adding resources invalidates the affected bundle seals. Sign inside-out, then
+# run the same third-party gate used by the dedicated HVF packager.
+codesign --force --sign - "$HVF_LAB" >/dev/null
+"$ROOT/scripts/verify-app-third-party-notices.sh" "$HVF_LAB" >/dev/null
 codesign --force --sign - "$APP" >/dev/null
 "$ROOT/packaging/macos/build-debug-app-bundle.sh" --verify-only "$APP" >/dev/null
 
