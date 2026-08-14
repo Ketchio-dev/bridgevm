@@ -144,6 +144,13 @@ Removing quarantine bypasses a macOS safety check; it does not authenticate the
 build. Compare the downloaded DMG against the published `.sha256` before doing
 this.
 
+## Licensing
+
+BridgeVM's own code is Apache-2.0; see [`LICENSE`](LICENSE). Third-party
+components, what is deliberately not shipped, and the checks that keep those
+statements true are in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) and
+[`docs/licensing-and-attribution.md`](docs/licensing-and-attribution.md).
+
 ## Windows media and drivers
 
 BridgeVM does **not** redistribute Windows. Bring your own Windows 11 Arm media

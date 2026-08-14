@@ -94,6 +94,9 @@ requires. No LGPL code is statically linked into BridgeVM binaries.
 
 ## Verification
 
+The position behind this document, and the checks that keep it true, are
+explained in [`docs/licensing-and-attribution.md`](docs/licensing-and-attribution.md).
+
 - Host linkage is audited with `scripts/verify-app-third-party-notices.sh`:
   every LGPL library must be a separate `.dylib` and have a dynamic consumer
   visible in `otool -L`; static archives are rejected.
