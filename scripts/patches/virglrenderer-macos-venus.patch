@@ -622,7 +622,7 @@ index 7774a25..418c661 100644
 
  static int vrend_decode_ctx_get_fencing_fd(UNUSED struct virgl_context *ctx)
 diff --git a/src/vrend/vrend_renderer.c b/src/vrend/vrend_renderer.c
-index 4bccc44..e42c23c 100644
+index 4bccc44..822630e 100644
 --- a/src/vrend/vrend_renderer.c
 +++ b/src/vrend/vrend_renderer.c
 @@ -409,13 +409,77 @@ struct sysval_uniform_block {
@@ -726,7 +726,55 @@ index 4bccc44..e42c23c 100644
     }
 
     if (ent->is_pipeline)
-@@ -5075,7 +5145,8 @@ static GLenum get_xfb_mode(GLenum mode)
+@@ -4266,10 +4336,43 @@ static inline void vrend_fill_shader_key(struct vrend_sub_context *sub_ctx,
+       /* Only use integer info when drawing to avoid stale info.
+        * Since we can get here from link_shaders before actually drawing anything,
+        * we may have no vertex element array */
+-      if (vrend_state.use_integer && sub_ctx->drawing && sub_ctx->ve &&
+-          type == PIPE_SHADER_VERTEX) {
+-         key->vs.attrib_signed_int_bitmask = sub_ctx->ve->signed_int_bitmask;
+-         key->vs.attrib_unsigned_int_bitmask = sub_ctx->ve->unsigned_int_bitmask;
++      if (sub_ctx->drawing && sub_ctx->ve && type == PIPE_SHADER_VERTEX) {
++         uint32_t signed_formats = sub_ctx->ve->signed_int_bitmask;
++         uint32_t unsigned_formats = sub_ctx->ve->unsigned_int_bitmask;
++         if (!vrend_state.use_integer) {
++            signed_formats = 0;
++            unsigned_formats = 0;
++            for (uint32_t i = 0; i < sub_ctx->ve->count; i++) {
++               enum pipe_format format = sub_ctx->ve->elements[i].base.src_format;
++               if (!util_format_is_pure_integer(format))
++                  continue;
++               if (util_format_is_pure_uint(format))
++                  unsigned_formats |= 1u << i;
++               else
++                  signed_formats |= 1u << i;
++            }
++         }
++         if (vrend_state.use_integer) {
++            key->vs.attrib_signed_int_bitmask = signed_formats;
++            key->vs.attrib_unsigned_int_bitmask = unsigned_formats;
++         } else {
++            /* Apple's GL binds pure-integer vertex formats through
++             * glVertexAttribIPointer, so such an attribute must also be
++             * declared as a GLSL integer input. Declaring it as float makes
++             * the driver reinterpret the raw integer bits as a float value.
++             *
++             * Do this for a shader only once it proves it treats at least one
++             * pure-integer attribute as an integer (address register or an
++             * explicit integer-to-float convert). Shaders that merely carry a
++             * float-valued attribute keep the legacy float declaration. */
++            bool integer_consumer = sel->sinfo.uarl_input_mask ||
++                                    sel->sinfo.i2f_input_mask ||
++                                    sel->sinfo.u2f_input_mask;
++            if (integer_consumer) {
++               key->vs.attrib_signed_int_bitmask = signed_formats;
++               key->vs.attrib_unsigned_int_bitmask = unsigned_formats;
++            }
++         }
+       }
+       if (type == PIPE_SHADER_FRAGMENT) {
+          for (uint32_t i = 0; i < sub_ctx->nr_cbufs; i++) {
+@@ -5075,7 +5178,8 @@ static GLenum get_xfb_mode(GLenum mode)
  }
 
  static void vrend_draw_bind_vertex_legacy(struct vrend_context *ctx,
@@ -736,7 +784,7 @@ index 4bccc44..e42c23c 100644
  {
     uint32_t enable_bitmask;
     uint32_t disable_bitmask;
-@@ -5149,12 +5220,20 @@ static void vrend_draw_bind_vertex_legacy(struct vrend_context *ctx,
+@@ -5149,12 +5253,20 @@ static void vrend_draw_bind_vertex_legacy(struct vrend_context *ctx,
           disable_bitmask |= (1 << loc);
        } else {
           GLint size = !vrend_state.use_gles && (va->zyxw_bitmask & (1 << i)) ? GL_BGRA : ve->nr_chan;
@@ -759,7 +807,7 @@ index 4bccc44..e42c23c 100644
           }
           glVertexAttribDivisorARB(loc, ve->base.instance_divisor);
        }
-@@ -5556,11 +5635,26 @@ vrend_fill_sysval_uniform_block (struct vrend_sub_context *sub_ctx)
+@@ -5556,11 +5668,26 @@ vrend_fill_sysval_uniform_block (struct vrend_sub_context *sub_ctx)
     if (sub_ctx->prog->virgl_block_bind == GL_INVALID_INDEX)
        return;
 
@@ -786,7 +834,7 @@ index 4bccc44..e42c23c 100644
        sub_ctx->prog->sysvalue_data_cookie = sub_ctx->sysvalue_data_cookie;
     }
  }
-@@ -5895,6 +5989,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+@@ -5895,6 +6022,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
     struct vrend_resource *indirect_res = NULL;
     struct vrend_resource *indirect_params_res = NULL;
     struct vrend_sub_context *sub_ctx = ctx->sub;
@@ -794,7 +842,7 @@ index 4bccc44..e42c23c 100644
 
     if (ctx->in_error)
        return ENOTRECOVERABLE;
-@@ -5902,9 +5997,6 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+@@ -5902,9 +6030,6 @@ int vrend_draw_vbo(struct vrend_context *ctx,
     if (info->instance_count && !has_feature(feat_draw_instance))
        return EINVAL;
 
@@ -804,7 +852,7 @@ index 4bccc44..e42c23c 100644
     if (info->indirect.draw_count > 1 && !has_feature(feat_multi_draw_indirect))
        return EINVAL;
 
-@@ -6000,11 +6092,11 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+@@ -6000,11 +6125,11 @@ int vrend_draw_vbo(struct vrend_context *ctx,
        }
     } else {
        if (sub_ctx->ve) {
@@ -818,7 +866,7 @@ index 4bccc44..e42c23c 100644
        }
     }
 
-@@ -6103,7 +6195,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+@@ -6103,7 +6228,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
           else
              glDrawArraysIndirect(mode, (GLvoid const *)(uintptr_t)info->indirect.offset);
        } else if (info->instance_count > 0) {
@@ -827,7 +875,7 @@ index 4bccc44..e42c23c 100644
              glDrawArraysInstancedBaseInstance(mode, start, count, info->instance_count, info->start_instance);
           else
              glDrawArraysInstancedARB(mode, start, count, info->instance_count);
-@@ -6135,7 +6227,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+@@ -6135,7 +6260,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
              glDrawElementsIndirect(mode, elsz, (GLvoid const *)(uintptr_t)info->indirect.offset);
        } else if (info->index_bias) {
           if (info->instance_count > 0) {
@@ -836,7 +884,7 @@ index 4bccc44..e42c23c 100644
                 glDrawElementsInstancedBaseVertexBaseInstance(mode, info->count, elsz, (void *)(uintptr_t)sub_ctx->ib.offset,
                                                               info->instance_count, info->index_bias, info->start_instance);
              else
-@@ -6147,7 +6239,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
+@@ -6147,7 +6272,7 @@ int vrend_draw_vbo(struct vrend_context *ctx,
           else
              glDrawElementsBaseVertex(mode, info->count, elsz, (void *)(uintptr_t)sub_ctx->ib.offset, info->index_bias);
        } else if (info->instance_count > 0) {
@@ -845,7 +893,7 @@ index 4bccc44..e42c23c 100644
              glDrawElementsInstancedBaseInstance(mode, info->count, elsz, (void *)(uintptr_t)sub_ctx->ib.offset, info->instance_count, info->start_instance);
           } else
              glDrawElementsInstancedARB(mode, info->count, elsz, (void *)(uintptr_t)sub_ctx->ib.offset, info->instance_count);
-@@ -6835,10 +6927,11 @@ static void vrend_hw_emit_rs(struct vrend_context *ctx)
+@@ -6835,10 +6960,11 @@ static void vrend_hw_emit_rs(struct vrend_context *ctx)
             * already handled via Gallium */
            GLenum depthrule = state->clip_halfz ? GL_ZERO_TO_ONE : GL_NEGATIVE_ONE_TO_ONE;
            glClipControl(GL_LOWER_LEFT, depthrule);
@@ -859,7 +907,7 @@ index 4bccc44..e42c23c 100644
     }
     if (state->flatshade_first != ctx->sub->hw_rs_state.flatshade_first) {
        ctx->sub->hw_rs_state.flatshade_first = state->flatshade_first;
-@@ -7732,6 +7825,13 @@ int vrend_renderer_init(const struct vrend_if_cbs *cbs, uint32_t flags)
+@@ -7732,6 +7858,13 @@ int vrend_renderer_init(const struct vrend_if_cbs *cbs, uint32_t flags)
        goto fail;
     }
 
@@ -873,7 +921,7 @@ index 4bccc44..e42c23c 100644
     vrend_state.eventfd = -1;
     if (flags & VREND_USE_THREAD_SYNC) {
        if (flags & VREND_USE_ASYNC_FENCE_CB)
-@@ -7795,6 +7895,14 @@ vrend_renderer_fini(void)
+@@ -7795,6 +7928,14 @@ vrend_renderer_fini(void)
     vrend_video_fini();
  #endif
 
@@ -888,7 +936,7 @@ index 4bccc44..e42c23c 100644
     vrend_destroy_context(vrend_state.ctx0);
 
     vrend_state.current_ctx = NULL;
-@@ -8031,6 +8139,7 @@ struct vrend_context *vrend_create_context(int id, uint32_t nlen, const char *de
+@@ -8031,6 +8172,7 @@ struct vrend_context *vrend_create_context(int id, uint32_t nlen, const char *de
     grctx->shader_cfg.has_texture_shadow_lod = has_feature(feat_texture_shadow_lod);
     grctx->shader_cfg.has_vs_layer = has_feature(feat_vs_layer_viewport);
     grctx->shader_cfg.has_vs_viewport_index = has_feature(feat_vs_viewport_index);
@@ -896,7 +944,7 @@ index 4bccc44..e42c23c 100644
 
     vrend_renderer_create_sub_ctx(grctx, 0);
     vrend_renderer_set_sub_ctx(grctx, 0);
-@@ -8290,6 +8399,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8290,6 +8432,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
  {
 
     GLbitfield buffer_storage_flags = 0;
@@ -908,7 +956,7 @@ index 4bccc44..e42c23c 100644
     if (flags & VIRGL_RESOURCE_FLAG_MAP_PERSISTENT) {
        buffer_storage_flags |= GL_MAP_PERSISTENT_BIT;
        /* Gallium's storage_flags_to_buffer_flags seems to drop some information, but we have to
-@@ -8343,7 +8457,7 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8343,7 +8490,7 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
  #endif
        else {
           virgl_error("Missing buffer storage and interop extensions\n");
@@ -917,7 +965,7 @@ index 4bccc44..e42c23c 100644
        }
 
        gr->storage_bits |= VREND_STORAGE_GL_IMMUTABLE;
-@@ -8352,7 +8466,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
+@@ -8352,7 +8499,11 @@ static void vrend_create_buffer(struct vrend_resource *gr, uint32_t width, uint3
     } else
        glBufferData(gr->target, width, NULL, GL_STREAM_DRAW);
 
@@ -929,7 +977,7 @@ index 4bccc44..e42c23c 100644
  }
 
  static int
-@@ -8943,6 +9061,7 @@ void vrend_renderer_resource_destroy(struct vrend_resource *res)
+@@ -8943,6 +9094,7 @@ void vrend_renderer_resource_destroy(struct vrend_resource *res)
     free(res);
  }
 
@@ -937,7 +985,7 @@ index 4bccc44..e42c23c 100644
  struct virgl_sub_upload_data {
     GLenum target;
     struct pipe_box *box;
-@@ -8953,6 +9072,7 @@ static void iov_buffer_upload(void *cookie, uint32_t doff, void *src, int len)
+@@ -8953,6 +9105,7 @@ static void iov_buffer_upload(void *cookie, uint32_t doff, void *src, int len)
     struct virgl_sub_upload_data *d = cookie;
     glBufferSubData(d->target, d->box->x + doff, len, src);
  }
@@ -945,7 +993,7 @@ index 4bccc44..e42c23c 100644
 
  static void vrend_scale_depth(void *ptr, int size, float scale_val)
  {
-@@ -9301,6 +9421,49 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
+@@ -9301,6 +9454,49 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
     }
 
     if (has_bit(res->storage_bits, VREND_STORAGE_GL_BUFFER)) {
@@ -995,7 +1043,7 @@ index 4bccc44..e42c23c 100644
        GLuint map_flags = GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_WRITE_BIT;
        struct virgl_sub_upload_data d;
        d.box = info->box;
-@@ -9319,6 +9482,7 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
+@@ -9319,6 +9515,7 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
           glUnmapBuffer(res->target);
        }
        glBindBufferARB(res->target, 0);
@@ -1003,7 +1051,7 @@ index 4bccc44..e42c23c 100644
     } else {
        GLenum glformat;
        GLenum gltype;
-@@ -9970,6 +10134,34 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
+@@ -9970,6 +10167,34 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
     }
 
     if (has_bit(res->storage_bits, VREND_STORAGE_GL_BUFFER)) {
@@ -1038,7 +1086,7 @@ index 4bccc44..e42c23c 100644
        glBindBufferARB(res->target, res->gl_id);
        void *data = glMapBufferRange(res->target, info->box->x, info->box->width, GL_MAP_READ_BIT);
        if (!data)
-@@ -9978,11 +10170,19 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
+@@ -9978,11 +10203,19 @@ static int vrend_renderer_transfer_send_iov(struct vrend_context *ctx,
           vrend_write_to_iovec(iov, num_iovs, info->offset, data, info->box->width);
        glUnmapBuffer(res->target);
        glBindBufferARB(res->target, 0);
@@ -1058,7 +1106,7 @@ index 4bccc44..e42c23c 100644
 
        if (can_readpixels)
           ret = vrend_transfer_send_readpixels(ctx, res, iov, num_iovs, info);
-@@ -10421,12 +10621,43 @@ static void vrend_resource_buffer_copy(UNUSED struct vrend_context *ctx,
+@@ -10421,12 +10654,43 @@ static void vrend_resource_buffer_copy(UNUSED struct vrend_context *ctx,
                                         uint32_t dstx, uint32_t srcx,
                                         uint32_t width)
  {
@@ -1102,7 +1150,7 @@ index 4bccc44..e42c23c 100644
  }
 
  static void vrend_resource_copy_fallback(struct vrend_resource *src_res,
-@@ -11201,8 +11432,8 @@ static void vrend_renderer_blit_int(struct vrend_context *ctx,
+@@ -11201,8 +11465,8 @@ static void vrend_renderer_blit_int(struct vrend_context *ctx,
        VREND_DEBUG(dbg_blit, ctx, "BLIT_INT: use FBO blit\n");
        vrend_renderer_blit_fbo(ctx, src_res, dst_res, &blit_info);
     } else {
@@ -1113,7 +1161,7 @@ index 4bccc44..e42c23c 100644
 
        VREND_DEBUG(dbg_blit, ctx, "BLIT_INT: use GL fallback\n");
        vrend_renderer_blit_gl(ctx, src_res, dst_res, &blit_info);
-@@ -11626,8 +11857,14 @@ bool vrend_hw_switch_context(struct vrend_context *ctx, bool now)
+@@ -11626,8 +11890,14 @@ bool vrend_hw_switch_context(struct vrend_context *ctx, bool now)
     if (!ctx)
        return false;
 
@@ -1129,7 +1177,7 @@ index 4bccc44..e42c23c 100644
 
     if (ctx->ctx_id != 0 && ctx->in_error) {
        return false;
-@@ -13819,3 +14056,220 @@ vrend_renderer_pipe_resource_get_layout(UNUSED struct vrend_context *ctx,
+@@ -13819,3 +14089,220 @@ vrend_renderer_pipe_resource_get_layout(UNUSED struct vrend_context *ctx,
     return EINVAL;
  }
  #endif
@@ -1396,7 +1444,7 @@ index adb1213..b86009e 100644
                                   const struct vrend_transfer_info *info,
                                   int transfer_mode);
 diff --git a/src/vrend/vrend_shader.c b/src/vrend/vrend_shader.c
-index 4fe673c..fd06705 100644
+index 4fe673c..787b325 100644
 --- a/src/vrend/vrend_shader.c
 +++ b/src/vrend/vrend_shader.c
 @@ -92,6 +92,7 @@
@@ -1407,7 +1455,15 @@ index 4fe673c..fd06705 100644
     UNIFORM_CLIP_PLANE,
     UNIFORM_ALPHA_REF_VAL,
     UNIFORM_PSTIPPLE_SAMPLER,
-@@ -1988,7 +1989,14 @@ iter_declaration(struct tgsi_iterate_context *iter,
+@@ -291,6 +292,7 @@ struct dump_ctx {
+    int gs_num_invocations;
+
+    const struct vrend_shader_key *key;
++   struct vrend_shader_info *sinfo;
+    int num_in_clip_dist;
+    int num_out_clip_dist;
+    int fs_uses_clipdist_input;
+@@ -1988,7 +1990,14 @@ iter_declaration(struct tgsi_iterate_context *iter,
              virgl_error("Unsupported system value %d\n", decl->Semantic.Name);
              return false;
           }
@@ -1423,7 +1479,7 @@ index 4fe673c..fd06705 100644
           ctx->system_values[i].override_no_wm = svmap->override_no_wm;
           snprintf(ctx->system_values[i].glsl_name, 64, "%s", name_prefix);
           if (decl->Semantic.Name == TGSI_SEMANTIC_DRAWID)
-@@ -2271,7 +2279,10 @@ static void emit_color_select(const struct dump_ctx *ctx,
+@@ -2271,7 +2280,10 @@ static void emit_color_select(const struct dump_ctx *ctx,
  static void emit_prescale(struct vrend_glsl_strbufs *glsl_strbufs)
  {
     emit_buf(glsl_strbufs, "gl_Position.y = gl_Position.y * winsys_adjust_y;\n");
@@ -1435,7 +1491,7 @@ index 4fe673c..fd06705 100644
  }
 
  // TODO Consider exposing non-const ctx-> members as args to make *ctx const
-@@ -2550,6 +2561,20 @@ static void handle_vertex_proc_exit(const struct dump_ctx *ctx,
+@@ -2550,6 +2562,20 @@ static void handle_vertex_proc_exit(const struct dump_ctx *ctx,
         emit_fog_fixup_write(ctx, glsl_strbufs);
  }
 
@@ -1456,7 +1512,7 @@ index 4fe673c..fd06705 100644
  static void emit_fragment_logicop(const struct dump_ctx *ctx,
                                    struct vrend_glsl_strbufs *glsl_strbufs)
  {
-@@ -5956,13 +5981,9 @@ iter_instruction(struct tgsi_iterate_context *iter,
+@@ -5956,13 +5982,9 @@ iter_instruction(struct tgsi_iterate_context *iter,
           handle_vertex_proc_exit(ctx, &ctx->glsl_strbufs, &ctx->has_clipvertex_so);
        } else if (iter->processor.Processor == TGSI_PROCESSOR_TESS_CTRL && ctx->cfg->has_cull_distance) {
           emit_clip_dist_movs(ctx, &ctx->glsl_strbufs);
@@ -1473,7 +1529,7 @@ index 4fe673c..fd06705 100644
        } else if (iter->processor.Processor == TGSI_PROCESSOR_FRAGMENT) {
           handle_fragment_proc_exit(ctx, &ctx->glsl_strbufs);
        }
-@@ -5971,6 +5992,9 @@ iter_instruction(struct tgsi_iterate_context *iter,
+@@ -5971,6 +5993,9 @@ iter_instruction(struct tgsi_iterate_context *iter,
     case TGSI_OPCODE_RET:
        if (iter->processor.Processor == TGSI_PROCESSOR_VERTEX) {
           handle_vertex_proc_exit(ctx, &ctx->glsl_strbufs, &ctx->has_clipvertex_so);
@@ -1483,25 +1539,26 @@ index 4fe673c..fd06705 100644
        } else if (iter->processor.Processor == TGSI_PROCESSOR_FRAGMENT) {
           handle_fragment_proc_exit(ctx, &ctx->glsl_strbufs);
        }
-@@ -5980,7 +6004,16 @@ iter_instruction(struct tgsi_iterate_context *iter,
+@@ -5980,7 +6005,17 @@ iter_instruction(struct tgsi_iterate_context *iter,
        emit_buff(&ctx->glsl_strbufs, "%s = int(floor(%s)%s);\n", dsts[0], srcs[0], writemask);
        break;
     case TGSI_OPCODE_UARL:
 -      emit_buff(&ctx->glsl_strbufs, "%s = int(%s);\n", dsts[0], srcs[0]);
 +      /* BridgeVM/viogpu3d: the Windows D3D->virgl UMD emits UARL where the address
-+       * source is a FLOAT-typed vertex-attribute VALUE (e.g. a palette index like
-+       * 10.0), not an integer bit-pattern. The stock `int(floatBitsToInt(src))`
-+       * bit-reinterprets 10.0 -> 1092616192, blowing every indirect UBO/const index
-+       * out of bounds -> undefined color (0). This silently wiped Windows 11 Quick
-+       * Settings tile icons (D2D palette-indexed vector fills). Converting the value
-+       * (int(intBitsToFloat(floatBitsToInt(src))) == int(src_as_float)) yields the
-+       * intended index. Verified: all QS icons render, and desktop/taskbar/Edge
-+       * (chrome + HTML/CSS/SVG/text) are unaffected. */
-+      emit_buff(&ctx->glsl_strbufs, "%s = int(intBitsToFloat(%s));\n", dsts[0], srcs[0]);
++       * source is sometimes a FLOAT-typed vertex-attribute value and sometimes an
++       * integer attribute carried through a float temporary as its bit pattern.
++       * The former needs intBitsToFloat after TGSI's signed-source reinterpretation;
++       * the latter has already been restored by floatBitsToInt and must be consumed
++       * directly. */
++      if (ctx->prog_type == TGSI_PROCESSOR_VERTEX &&
++          (ctx->sinfo->uarl_input_mask & ctx->key->vs.attrib_signed_int_bitmask))
++         emit_buff(&ctx->glsl_strbufs, "%s = int(%s);\n", dsts[0], srcs[0]);
++      else
++         emit_buff(&ctx->glsl_strbufs, "%s = int(intBitsToFloat(%s));\n", dsts[0], srcs[0]);
        break;
     case TGSI_OPCODE_XPD:
        emit_buff(&ctx->glsl_strbufs, "%s = %s(cross(vec3(%s), vec3(%s)));\n", dsts[0], get_string(dinfo.dstconv), srcs[0], srcs[1]);
-@@ -6347,7 +6380,11 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
+@@ -6347,7 +6382,11 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
        if (ctx->prog_type == TGSI_PROCESSOR_FRAGMENT && fs_emit_layout(ctx))
           emit_ext(glsl_strbufs, "ARB_fragment_coord_conventions", "require");
 
@@ -1514,7 +1571,7 @@ index 4fe673c..fd06705 100644
           emit_ext(glsl_strbufs, "ARB_uniform_buffer_object", "require");
 
        if (ctx->num_cull_dist_prop || ctx->key->num_in_cull || ctx->key->num_out_cull)
-@@ -6361,10 +6398,19 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
+@@ -6361,10 +6400,19 @@ static void emit_header(const struct dump_ctx *ctx, struct vrend_glsl_strbufs *g
        }
 
        for (uint32_t i = 0; i < ARRAY_SIZE(shader_req_table); i++) {
@@ -1536,7 +1593,7 @@ index 4fe673c..fd06705 100644
              emit_ext(glsl_strbufs, shader_req_table[i].string, "require");
           }
        }
-@@ -8010,6 +8056,7 @@ static void emit_required_sysval_uniforms(struct vrend_strbuf *block, uint32_t m
+@@ -8010,6 +8058,7 @@ static void emit_required_sysval_uniforms(struct vrend_strbuf *block, uint32_t m
     strbuf_append(block, "\tvec4 clipp[8];\n");
     strbuf_appendf(block, "\tuint stipple_pattern[%d];\n", VREND_POLYGON_STIPPLE_SIZE);
     strbuf_append(block, "\tfloat winsys_adjust_y;\n");
@@ -1544,16 +1601,127 @@ index 4fe673c..fd06705 100644
     strbuf_append(block, "\tfloat alpha_ref_val;\n");
     strbuf_append(block, "\tbool clip_plane_enabled;\n");
     strbuf_append(block, "\tint drawid_base;\n");
-@@ -8583,4 +8630,3 @@ bool vrend_shader_needs_alpha_func(const struct vrend_shader_key *key) {
+@@ -8124,6 +8173,89 @@ bool vrend_shader_query_separable_program(const struct tgsi_token *tokens,
+    return ctx.separable_program && supports_separable;
+ }
+
++struct integer_input_scan_ctx {
++   struct tgsi_iterate_context iter;
++   uint32_t *temp_taint;
++   uint32_t temp_count;
++   uint32_t all_inputs;
++   uint32_t sink_opcode;
++   uint32_t input_mask;
++};
++
++static uint32_t
++integer_input_source_taint(const struct integer_input_scan_ctx *ctx,
++                           const struct tgsi_full_src_register *src)
++{
++   if (src->Register.File == TGSI_FILE_INPUT)
++      return src->Register.Indirect || src->Register.Index < 0 ||
++             src->Register.Index >= 32 ? ctx->all_inputs :
++                                        1u << src->Register.Index;
++
++   if (src->Register.File != TGSI_FILE_TEMPORARY || !ctx->temp_taint)
++      return 0;
++   if (src->Register.Indirect) {
++      uint32_t taint = 0;
++      for (uint32_t i = 0; i < ctx->temp_count * 4; i++)
++         taint |= ctx->temp_taint[i];
++      return taint;
++   }
++   if (src->Register.Index < 0 || (uint32_t)src->Register.Index >= ctx->temp_count)
++      return 0;
++
++   const uint32_t *taint = &ctx->temp_taint[src->Register.Index * 4];
++   return taint[src->Register.SwizzleX] | taint[src->Register.SwizzleY] |
++          taint[src->Register.SwizzleZ] | taint[src->Register.SwizzleW];
++}
++
++static bool
++scan_integer_input_instruction(struct tgsi_iterate_context *iter,
++                               struct tgsi_full_instruction *inst)
++{
++   struct integer_input_scan_ctx *ctx = (struct integer_input_scan_ctx *)iter;
++   uint32_t source_taint = 0;
++   for (uint32_t i = 0; i < inst->Instruction.NumSrcRegs; i++)
++      source_taint |= integer_input_source_taint(ctx, &inst->Src[i]);
++
++   if (inst->Instruction.Opcode == ctx->sink_opcode)
++      ctx->input_mask |= source_taint;
++
++   for (uint32_t i = 0; i < inst->Instruction.NumDstRegs; i++) {
++      const struct tgsi_full_dst_register *dst = &inst->Dst[i];
++      if (dst->Register.File != TGSI_FILE_TEMPORARY || dst->Register.Indirect ||
++          dst->Register.Index < 0 || (uint32_t)dst->Register.Index >= ctx->temp_count)
++         continue;
++      uint32_t *taint = &ctx->temp_taint[dst->Register.Index * 4];
++      for (uint32_t component = 0; component < 4; component++) {
++         if (dst->Register.WriteMask & (1u << component))
++            taint[component] = source_taint;
++      }
++   }
++   return true;
++}
++
++static uint32_t
++vrend_shader_integer_input_mask(const struct tgsi_token *tokens, uint32_t sink_opcode)
++{
++   struct tgsi_shader_info info;
++   if (!tgsi_scan_shader(tokens, &info) || info.processor != TGSI_PROCESSOR_VERTEX)
++      return 0;
++
++   struct integer_input_scan_ctx ctx = {0};
++   ctx.sink_opcode = sink_opcode;
++   ctx.all_inputs = info.file_mask[TGSI_FILE_INPUT];
++   if (info.file_max[TGSI_FILE_TEMPORARY] >= 0) {
++      ctx.temp_count = (uint32_t)info.file_max[TGSI_FILE_TEMPORARY] + 1;
++      ctx.temp_taint = calloc((size_t)ctx.temp_count * 4, sizeof(*ctx.temp_taint));
++      if (!ctx.temp_taint)
++         return 0;
++   }
++   ctx.iter.iterate_instruction = scan_integer_input_instruction;
++   if (!tgsi_iterate_shader(tokens, &ctx.iter))
++      ctx.input_mask = 0;
++   free(ctx.temp_taint);
++   return ctx.input_mask;
++}
++
+ bool vrend_convert_shader(const struct vrend_context *rctx,
+                           const struct vrend_shader_cfg *cfg,
+                           const struct tgsi_token *tokens,
+@@ -8138,6 +8270,10 @@ bool vrend_convert_shader(const struct vrend_context *rctx,
+
+    memset(&ctx, 0, sizeof(struct dump_ctx));
+    ctx.cfg = cfg;
++   ctx.sinfo = sinfo;
++   sinfo->uarl_input_mask = vrend_shader_integer_input_mask(tokens, TGSI_OPCODE_UARL);
++   sinfo->i2f_input_mask = vrend_shader_integer_input_mask(tokens, TGSI_OPCODE_I2F);
++   sinfo->u2f_input_mask = vrend_shader_integer_input_mask(tokens, TGSI_OPCODE_U2F);
+
+    /* First pass to deal with edge cases. */
+    ctx.iter.iterate_declaration = iter_decls;
+@@ -8583,4 +8719,3 @@ bool vrend_shader_needs_alpha_func(const struct vrend_shader_key *key) {
        return true;
     }
  }
 -
 diff --git a/src/vrend/vrend_shader.h b/src/vrend/vrend_shader.h
-index 7f5897b..25cbed3 100644
+index 7f5897b..4a20362 100644
 --- a/src/vrend/vrend_shader.h
 +++ b/src/vrend/vrend_shader.h
-@@ -259,6 +259,7 @@ struct vrend_shader_cfg {
+@@ -143,6 +143,9 @@ struct vrend_shader_info {
+    int32_t ssbo_last_binding;
+    uint32_t shadow_samp_mask;
+    uint32_t attrib_input_mask;
++   uint32_t uarl_input_mask;
++   uint32_t i2f_input_mask;
++   uint32_t u2f_input_mask;
+    uint32_t fs_blend_equation_advanced;
+    uint32_t fog_input_mask;
+    uint32_t fog_output_mask;
+@@ -259,6 +262,7 @@ struct vrend_shader_cfg {
     uint32_t has_texture_shadow_lod : 1;
     uint32_t has_vs_layer : 1;
     uint32_t has_vs_viewport_index : 1;
