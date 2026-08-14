@@ -5,6 +5,36 @@ see [`LICENSE`](LICENSE). The components below retain their respective
 third-party licenses and notices. Copyleft components are distributed only in
 the separately replaceable or standalone forms described below.
 
+## Provenance of BridgeVM's own code
+
+BridgeVM's virtual machine monitor is written in Rust and implemented directly
+against Apple's Hypervisor.framework. That includes the vCPU execution loop, the
+guest memory map, the firmware and device tables, and the virtio, NVMe, xHCI,
+GPU, TPM and network device models. It is not a port, translation or
+rewrite-in-Rust of another virtual machine monitor, and no source was taken from
+one.
+
+Where BridgeVM implements a published interface — the virtio specification, the
+NVMe and xHCI register interfaces, the QEMU `virt` guest platform contract that
+Windows on Arm firmware expects, or Apple's own framework APIs — it implements
+the specified behaviour. Interoperating with a specification is not derivation
+from any particular implementation of it, and documents in this repository
+should describe the interface being implemented rather than crediting an
+unrelated product for it.
+
+The third-party components listed below are the parts BridgeVM genuinely does
+not write: they are used as published binaries or libraries under their own
+licenses, and their obligations are tracked here.
+
+One component is modified rather than merely used. BridgeVM carries local
+patches to virglrenderer in
+[`scripts/patches/virglrenderer-macos-venus.patch`](scripts/patches/virglrenderer-macos-venus.patch),
+applied to the pinned upstream commit named in
+[`scripts/build-venus-host-deps.sh`](scripts/build-venus-host-deps.sh).
+virglrenderer is MIT-licensed, its copyright notices are retained, and the patch
+is kept in the repository so the modification is visible rather than folded into
+an opaque binary.
+
 ## Host-side (macOS app / VMM)
 
 | Component | License | Linkage | Obligation |
