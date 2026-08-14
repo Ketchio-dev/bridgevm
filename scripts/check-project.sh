@@ -46,6 +46,7 @@ step "capability schema json" json_valid schemas/bridgevm-capability-v1.json
 step "documentation system" bash scripts/check-documentation-system.sh
 step "structural budgets" scripts/check-refactor-budgets.sh
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
+step "attribution honesty" scripts/check-attribution-honesty.sh
 
 # --- formatting --------------------------------------------------------------
 step "rustfmt" cargo "$TOOLCHAIN" fmt --all --check
