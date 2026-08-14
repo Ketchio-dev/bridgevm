@@ -140,19 +140,40 @@ and the row ends with a run of 256 pixels of solid `ffffffff`:
 row0: 0 31 61 87 110  31 61 87 110 130  61 87 110 130 147  ...  255 x16
 ```
 
-That is a blending lookup table, not glyph coverage. Sampling it and writing
-the result as the final colour produces white text on the white window
-chrome, which is exactly what is on screen.
+Both textures are glyph coverage, just laid out differently: the failing one
+stores the same byte in all four channels, and the working one stores per
+channel subpixel coverage. Neither is a wrong resource, so this is not a
+sampler binding problem.
 
-So the remaining defect is a sampler binding or resource identity problem: the
-failing draws sample the ClearType LUT where they should sample the glyph
-atlas. The next step is to determine whether the guest binds a different
-sampler view for these draws than virgl resolves, by comparing the guest's
-`SET_SAMPLER_VIEWS` payload for a failing context against the resource virgl
-has bound at slot 1.
+## The blend state differs, and that is where the colour is lost
 
-Raw dumps for all six contexts are kept in
-`work/glyph-atlas-evidence/`.
+Reading the real GL state at draw time separates the two groups exactly:
+
+| | src factor | dst factor | blend colour | colour mask |
+| --- | --- | --- | --- | --- |
+| Failing (title, tab, menu) | `GL_ONE` | `GL_ONE_MINUS_SRC_ALPHA` | `(1,1,1,1)` | `0xf` |
+| Working (body) | `GL_CONSTANT_COLOR` | `GL_ONE_MINUS_SRC_COLOR` | `(0,0,0,1)` | `0x7` |
+
+The failing pass uses premultiplied alpha. Its shader writes the sampled
+coverage value straight into all four channels, so a fully covered pixel
+emits `(255,255,255,255)`, which under `GL_ONE, GL_ONE_MINUS_SRC_ALPHA`
+replaces the destination with white. On white window chrome that is invisible,
+and it is consistent with every measurement above: fragments arrive, the
+target is written, and the written value equals what was already there.
+
+A correction attempt that rewrote dual-source blend factors was built and
+tested live, and it is recorded here only because it must not be tried again.
+It was based on misreading the logged factor `0x303` as
+`GL_ONE_MINUS_SRC1_COLOR`. `0x303` is `GL_ONE_MINUS_SRC_ALPHA`;
+`GL_ONE_MINUS_SRC1_COLOR` is `0x88fa` and never appears in these traces. There
+is no dual-source blending in this path, the fragment shaders correctly declare
+a single output, and the change has been fully reverted. A cruder version of
+the same experiment, which forced the substitution unconditionally, did make
+desktop icon labels and the build watermark render, but it also removed the
+taskbar and the Run dialog, so it regressed DWM and is not a viable direction.
+
+Raw dumps for all six contexts, the blend-state log and the `GL_INVERT` proof
+are kept in `work/glyph-atlas-evidence/`.
 
 ## Reproduction
 
