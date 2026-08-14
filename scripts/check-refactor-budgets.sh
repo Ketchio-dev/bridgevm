@@ -17,6 +17,20 @@ count_unsafe() {
   { grep -oE 'unsafe (fn|impl|\{|extern)' "$1" || true; } | wc -l | tr -d ' '
 }
 
+# Inner doc comments are the crate's own explanation of itself, not structural
+# debt. Counting them would make the ratchet penalise documenting a crate, so
+# they are excluded. Ordinary comments still count, because an oversized file
+# padded with commentary is exactly what the ratchet exists to catch.
+count_loc() {
+  awk '
+    header && /^[[:space:]]*\/\/!/ { next }
+    header && /^[[:space:]]*$/ { header = 0; next }
+    { header = 0 }
+    { count++ }
+    END { print count + 0 }
+  ' header=1 "$1"
+}
+
 status=0
 printf '%-44s %8s %8s %8s %8s\n' "file" "loc" "loc_max" "unsafe" "uns_max"
 while IFS=$'\t' read -r path max_loc max_unsafe; do
@@ -27,7 +41,7 @@ while IFS=$'\t' read -r path max_loc max_unsafe; do
     status=1
     continue
   fi
-  loc="$(wc -l < "$file" | tr -d ' ')"
+  loc="$(count_loc "$file")"
   unsafe="$(count_unsafe "$file")"
   flag=""
   if (( loc > max_loc )); then flag+=" LOC>ceiling"; status=1; fi

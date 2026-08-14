@@ -1,3 +1,9 @@
+//! Planning for the Compatibility Engine.
+//!
+//! Builds the QEMU command line and bundle paths for a VM manifest. BridgeVM does
+//! not embed QEMU; this crate plans an invocation of an external binary and keeps
+//! that boundary explicit.
+
 #[cfg(test)]
 #[path = "tests_split/mod.rs"]
 mod tests;

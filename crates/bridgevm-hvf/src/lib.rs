@@ -1,3 +1,11 @@
+//! BridgeVM's own Hypervisor.framework VMM for Windows on Arm.
+//!
+//! Implements the virtual machine directly against Apple's Hypervisor.framework:
+//! vCPU execution, the guest memory map, firmware and device tables, and the
+//! virtio, NVMe, xHCI, GPU, TPM and network devices a Windows guest expects. This
+//! is a from-scratch Rust implementation rather than a wrapper around an existing
+//! VMM, which is why the device models and boot contract live here in full.
+
 use std::{
     any::Any,
     fs::{File, OpenOptions},

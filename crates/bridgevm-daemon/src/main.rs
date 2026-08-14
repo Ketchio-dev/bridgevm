@@ -1,3 +1,9 @@
+//! The long-running host service.
+//!
+//! Owns VM state that must outlive a single CLI invocation, serves the local
+//! control socket, and supervises engine processes. Request handling is delegated
+//! to `bridgevm-api` so the daemon and the CLI cannot drift apart.
+
 use anyhow::Result;
 
 #[cfg(test)]

@@ -1,3 +1,9 @@
+//! The product surface that front-ends call.
+//!
+//! Sits between the user-facing CLI, daemon and macOS app and the engine crates,
+//! exposing VM lifecycle, boot media, storage, networking and diagnostics as one
+//! contract so a front-end does not reach into an engine directly.
+
 use bridgevm_agent_protocol::{AgentCapability, AgentEnvelope, AgentMessage};
 use bridgevm_agentd::{accept_guest_hello, AgentPolicy};
 use bridgevm_apple_vz::{

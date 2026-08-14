@@ -1,3 +1,8 @@
+//! Engine descriptor for the lightweight-VM lane.
+//!
+//! A thin marker type that lets the engine model name this lane; the behaviour it
+//! stands for lives in the engine crates themselves.
+
 use bridgevm_core::{VmEngine, VmState};
 
 #[derive(Debug, Default)]

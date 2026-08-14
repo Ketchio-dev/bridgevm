@@ -1,3 +1,9 @@
+//! Guest networking plans and capabilities.
+//!
+//! Describes the networking mode, backend and port-forward rules a VM asks for,
+//! and what a given engine can actually provide, so an unsupported request fails
+//! at planning time rather than at launch.
+
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fmt, str::FromStr};
 

@@ -1,3 +1,9 @@
+//! The `bridgevm` command-line front-end.
+//!
+//! Parses commands and renders results. All behaviour lives behind
+//! `bridgevm-api`, so the CLI stays a presentation layer over the same contract
+//! the daemon and macOS app use.
+
 use anyhow::{bail, Context, Result};
 use bridgevm_agent_protocol::{AgentEnvelope, AgentMessage, WindowInputEvent};
 use bridgevm_api::{

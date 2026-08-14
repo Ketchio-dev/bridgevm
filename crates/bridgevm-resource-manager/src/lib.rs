@@ -1,3 +1,9 @@
+//! CPU and memory sizing decisions.
+//!
+//! Turns a resource profile plus host conditions into a concrete CPU/RAM decision
+//! for a launch, keeping the sizing policy in one place instead of spread across
+//! the engines that consume it.
+
 use serde::{Deserialize, Serialize};
 
 const MAX_PMSET_OUTPUT_BYTES: usize = 64 * 1024;

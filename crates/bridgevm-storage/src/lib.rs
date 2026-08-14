@@ -1,3 +1,9 @@
+//! Disk images, bundle layout and snapshot metadata.
+//!
+//! Owns how a VM's files are laid out on disk, how disk images are created and
+//! described, and how snapshot lineage is recorded, so engines can share one
+//! storage model instead of each inventing its own.
+
 #[cfg(test)]
 #[path = "tests_split/mod.rs"]
 mod tests;

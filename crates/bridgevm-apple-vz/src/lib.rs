@@ -1,3 +1,9 @@
+//! Planning and launch support for the Apple Virtualization framework engine.
+//!
+//! Turns a VM manifest into a launch specification for the out-of-process
+//! `AppleVzRunner` helper and handles the handoff. The framework itself is driven
+//! from Swift, because Virtualization.framework has no Rust binding.
+
 #[cfg(test)]
 #[path = "tests_split/mod.rs"]
 mod tests;

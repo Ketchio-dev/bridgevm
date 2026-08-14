@@ -1,3 +1,9 @@
+//! Engine model and guest-to-engine recommendation.
+//!
+//! Describes the available engines, the product state of each lane, and which one
+//! suits a given guest choice. It is deliberately free of IO so the CLI, daemon
+//! and macOS app can all state the same thing about what BridgeVM supports.
+
 use bridgevm_config::{Boot, BootMode, PrimaryDisk, VmMode};
 use serde::{Deserialize, Serialize};
 
