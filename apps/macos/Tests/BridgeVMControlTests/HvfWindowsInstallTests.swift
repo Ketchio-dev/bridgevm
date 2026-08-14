@@ -51,7 +51,12 @@ final class HvfWindowsInstallTests: XCTestCase {
             repoRoot: URL(fileURLWithPath: "/repo"), bundlePath: "/bundle",
             slug: "vm", request: request)
         replacement.homeDirectory = "/Users/example"
-        XCTAssertNotEqual(replacement.sourceImagePath, originalPath)
+        // sourceImagePath re-reads the ISO every time it is read, so the value
+        // has to be captured while the file is still in this state. Comparing
+        // the property itself after a later write would compare two reads of
+        // the same bytes and pass no matter what the key is made of.
+        let replacementPath = replacement.sourceImagePath
+        XCTAssertNotEqual(replacementPath, originalPath)
 
         // An in-place metadata/content change must also move to a new key.
         try Data(count: 8192).write(to: iso)
@@ -59,7 +64,7 @@ final class HvfWindowsInstallTests: XCTestCase {
             repoRoot: URL(fileURLWithPath: "/repo"), bundlePath: "/bundle",
             slug: "vm", request: request)
         regrown.homeDirectory = "/Users/example"
-        XCTAssertNotEqual(regrown.sourceImagePath, replacement.sourceImagePath)
+        XCTAssertNotEqual(regrown.sourceImagePath, replacementPath)
     }
 
     func testInstallCommandCarriesFreshTargetSizeAndRelease() throws {
