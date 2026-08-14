@@ -69,9 +69,12 @@ SDK terms; they are not redistributed.
 
 - **Apple D3DMetal / Game Porting Toolkit**: license prohibits redistribution
   and non-evaluation use — NOT used, NOT shipped.
-- **QEMU**: not used by the product (BridgeVM has its own
-  Hypervisor.framework VMM). QEMU exists in the repo only as a development
-  control experiment and is not part of any shipped artifact.
+- **QEMU**: not redistributed. BridgeVM's own Windows path uses its
+  Hypervisor.framework VMM and does not involve QEMU. The Compatibility Engine
+  does drive QEMU, but only by planning and launching a `qemu-system-*` binary
+  the user installs themselves; no QEMU code is linked, embedded, or shipped in
+  any BridgeVM artifact, so no QEMU licence obligation attaches to the
+  distribution.
 - **DXMT (LGPL-2.1+)**: not currently shipped. If a future release bundles it
   for the D3D11-on-Metal host renderer, it must remain a separate dynamic
   library with its source (including modifications) published, per LGPL.
