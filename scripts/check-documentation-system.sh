@@ -99,11 +99,28 @@ for root in roots:
             if name.endswith('.md')
         )
 files.extend(name for name in extra if os.path.exists(name))
+files.extend(name for name in ('PLAN.md',) if os.path.exists(name))
+
+# A script named in backticks must either exist or be marked as planned, so a
+# reader can never mistake an unwritten script for one they can run.
+SCRIPT = re.compile(r'`((?:scripts|tools)/[A-Za-z0-9._/-]+\.(?:sh|py))`')
 
 broken = 0
 for path in sorted(files):
     with open(path, encoding='utf-8', errors='replace') as handle:
         for number, line in enumerate(handle, 1):
+            for match in SCRIPT.finditer(line):
+                script = match.group(1)
+                if os.path.exists(script):
+                    continue
+                if '(new)' in line or 'planned' in line.lower():
+                    continue
+                print(
+                    f'script reference does not exist and is not marked planned: '
+                    f'{path}:{number} -> {script}',
+                    file=sys.stderr,
+                )
+                broken += 1
             line = CODE.sub(lambda m: ' ' * len(m.group(0)), line)
             for match in LINK.finditer(line):
                 target = match.group(1).split('#')[0].strip()
