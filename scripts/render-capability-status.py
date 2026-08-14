@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -145,7 +146,8 @@ def render_summary(registry: dict) -> str:
     return "\n".join(lines)
 
 
-def render_matrix(registry: dict) -> str:
+def render_matrix(registry: dict, target: Path) -> str:
+    registry_link = os.path.relpath(REGISTRY, target.parent)
     lines = [
         "| ID | Capability | State | Threshold | Latest measurement |",
         "| --- | --- | --- | --- | --- |",
@@ -161,7 +163,7 @@ def render_matrix(registry: dict) -> str:
     lines.append("")
     lines.append(
         "Generated from [`capabilities/windows-hvf.json`]"
-        "(../capabilities/windows-hvf.json) by "
+        f"({registry_link}) by "
         "`scripts/render-capability-status.py`."
     )
     return "\n".join(lines)
@@ -231,13 +233,14 @@ def main() -> int:
     registry = load_registry()
     validate(registry)
 
+    matrix_target = ROOT / "docs" / "windows-arm" / "capability-matrix.md"
     blocks = [
         (ROOT / "README.md", "capability-summary", render_summary(registry)),
         (ROOT / "STATUS.md", "capability-summary", render_summary(registry)),
         (
-            ROOT / "docs" / "windows-arm" / "capability-matrix.md",
+            matrix_target,
             "capability-matrix",
-            render_matrix(registry),
+            render_matrix(registry, matrix_target),
         ),
     ]
 

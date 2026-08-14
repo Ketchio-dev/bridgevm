@@ -230,6 +230,13 @@ polish**, rather than proving that the core Windows VMM can reach a desktop:
 - continued hardening of recovery, migration, diagnostics, and failure UX;
 - stable compatibility guarantees for the first non-preview release.
 
+There is also one known rendering defect in the accelerated Windows path. Body
+text renders correctly at the native guest resolution, but window titles, tab
+labels and menu bars can render as blank. It is investigated in
+[`docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md`](docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md),
+which records the live measurements, the fix that shipped for body text, and the
+correction directions that were tried and rejected.
+
 Durable running-state suspend is intentionally outside the current v1 scope; the
 powered-off snapshot path is the supported persistence boundary for now.
 

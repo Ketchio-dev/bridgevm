@@ -5,7 +5,7 @@ _Last updated: 2026-06-21._
 > **Status note:** this document records the original contract gap that motivated
 > Path A. The active Path A source of truth is now
 > [`crates/bridgevm-hvf/src/machine.rs`](../crates/bridgevm-hvf/src/machine.rs) plus
-> [`crates/bridgevm-hvf/src/platform_virt.rs`](../crates/bridgevm-hvf/src/platform_virt.rs).
+> [`crates/bridgevm-hvf/src/platform_virt/`](../crates/bridgevm-hvf/src/platform_virt).
 > That implementation now boots stock ArmVirtQemu firmware to the UEFI shell and
 > QEMU direct Linux boot blobs through Debian installer userspace startup. The legacy
 > `src/lib.rs` probe map below is retained as historical context, not as the

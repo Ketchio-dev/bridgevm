@@ -69,9 +69,9 @@ public enum AppleVzConfigurationBuilder {
 
     switch spec.boot.mode {
     case "iso-efi":
-      // Boot an arbitrary Linux installer ISO via EFI (the UTM/VZ approach for
-      // running any distro). An EFI variable store (created on first run)
-      // persists firmware/boot entries onto the disk the user installs to.
+      // Boot an arbitrary Linux installer ISO through the Virtualization
+      // framework's EFI bootloader. An EFI variable store (created on first
+      // run) persists firmware/boot entries onto the disk the user installs to.
       guard #available(macOS 13.0, *) else {
         throw AppleVzRunnerError.unsupportedBootMode("iso-efi requires macOS 13+")
       }
@@ -230,12 +230,12 @@ public enum AppleVzConfigurationBuilder {
     configuration.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
 
     // Seamless host<->guest clipboard via the SPICE agent protocol over a
-    // Virtio console port. The guest shares the macOS pasteboard once it runs
-    // `spice-vdagent` (it autostarts under XFCE/GNOME). This is the same
-    // mechanism UTM uses for Apple VZ Linux clipboard and is OS-level (copy in
-    // either direction), unlike the guest-tools agent button path. macOS 13+,
-    // and this is the windowed-display path, so the headless save/restore
-    // configuration is unaffected.
+    // Virtio console port, using the Virtualization framework's own
+    // VZSpiceAgentPortAttachment. The guest shares the macOS pasteboard once it
+    // runs `spice-vdagent` (it autostarts under XFCE/GNOME). This is OS-level
+    // (copy in either direction), unlike the guest-tools agent button path.
+    // macOS 13+, and this is the windowed-display path, so the headless
+    // save/restore configuration is unaffected.
     let spiceConsole = VZVirtioConsoleDeviceConfiguration()
     let spicePort = VZVirtioConsolePortConfiguration()
     spicePort.name = VZSpiceAgentPortAttachment.spiceAgentPortName

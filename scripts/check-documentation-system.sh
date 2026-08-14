@@ -73,9 +73,56 @@ while IFS= read -r path; do
   fi
 done < <(cd "$ROOT" && find docs -type f -name '*.md' | LC_ALL=C sort)
 
+# Relative links must resolve, so a moved or renamed file cannot leave a
+# document pointing at nothing. docs/archive holds point-in-time snapshots whose
+# links describe the tree as it was, so rewriting them would falsify the record.
+link_errors=$(cd "$ROOT" && python3 - <<'PY'
+import os
+import re
+import sys
+
+LINK = re.compile(r'\[[^\]]*\]\(([^)]+)\)')
+# Inline code can contain bracket-paren sequences that are not links, such as a
+# PowerShell cast like `![bool](Get-Tpm).OwnerAuth`.
+CODE = re.compile(r'`[^`]*`')
+roots = ['docs']
+extra = ['README.md', 'STATUS.md', 'AGENTS.md', 'THIRD-PARTY-NOTICES.md']
+
+files = []
+for root in roots:
+    for dirpath, _dirnames, filenames in os.walk(root):
+        if 'archive' in dirpath.split(os.sep):
+            continue
+        files.extend(
+            os.path.join(dirpath, name)
+            for name in filenames
+            if name.endswith('.md')
+        )
+files.extend(name for name in extra if os.path.exists(name))
+
+broken = 0
+for path in sorted(files):
+    with open(path, encoding='utf-8', errors='replace') as handle:
+        for number, line in enumerate(handle, 1):
+            line = CODE.sub(lambda m: ' ' * len(m.group(0)), line)
+            for match in LINK.finditer(line):
+                target = match.group(1).split('#')[0].strip()
+                if not target or target.startswith(('http://', 'https://', 'mailto:', '#')):
+                    continue
+                if target.startswith('<') and target.endswith('>'):
+                    target = target[1:-1]
+                resolved = os.path.normpath(os.path.join(os.path.dirname(path), target))
+                if not os.path.exists(resolved):
+                    print(f'broken link: {path}:{number} -> {target}', file=sys.stderr)
+                    broken += 1
+print(broken)
+PY
+)
+errors=$((errors + link_errors))
+
 if [[ $errors -ne 0 ]]; then
   echo "documentation system: FAIL ($errors error(s))" >&2
   exit 1
 fi
 
-printf 'documentation system: PASS (%d classified Markdown documents)\n' "$(( ${#seen_paths[@]} - 1 ))"
+printf 'documentation system: PASS (%d classified Markdown documents, %d link targets resolved)\n' "$(( ${#seen_paths[@]} - 1 ))" "$(cd "$ROOT" && grep -ro '](\([^)]*\))' --include='*.md' docs README.md STATUS.md 2>/dev/null | wc -l | tr -d ' ')"

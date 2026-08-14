@@ -47,7 +47,7 @@ Rules that make the matrix trustworthy:
 | B4 | Pointer latency measured (non-blocking) | `proven` | Record a host-click to guest-reaction latency measurement. | HID delivery confirmed 1/1/1, but framebuffer checksums stayed at baseline through 1000ms, so visible reaction is >1000ms or absent. Recorded honestly rather than as a performance pass. |
 | B5 | Snapshot scope approved (non-blocking) | `proven` | Document the V1 snapshot scope with owner approval. | V1 is powered-off cold snapshot as an atomic disk plus UEFI vars pair; running-state save is V2. |
 
-Generated from [`capabilities/windows-hvf.json`](../capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+Generated from [`capabilities/windows-hvf.json`](../../capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-matrix -->
 
 ## How to change this page
