@@ -45,6 +45,7 @@ docs/windows-arm/evidence/imported-disk-growth-20260712.md	historical-evidence	w
 docs/windows-arm/evidence/installed-app-service-20260712.md	historical-evidence	windows-app	-
 docs/windows-arm/evidence/reboot-gic-reset-20260712.md	historical-evidence	windows-lifecycle	-
 docs/windows-arm/evidence/viogpu3d-virgl-live-20260712.md	historical-evidence	windows-graphics	-
+docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md	historical-evidence	windows-graphics	-
 docs/windows-arm/evidence/wdk-sdk-buffered-storage-20260712.md	historical-evidence	windows-driver	-
 docs/windows-arm/evidence/vtpm-windows-command-path-20260722.md	historical-evidence	windows-security	-
 docs/windows-arm/evidence/vtpm-windows-ppi-clear-20260722.md	historical-evidence	windows-security	-
