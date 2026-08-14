@@ -172,8 +172,38 @@ the same experiment, which forced the substitution unconditionally, did make
 desktop icon labels and the build watermark render, but it also removed the
 taskbar and the Run dialog, so it regressed DWM and is not a viable direction.
 
-Raw dumps for all six contexts, the blend-state log and the `GL_INVERT` proof
-are kept in `work/glyph-atlas-evidence/`.
+### Everything else about the two passes is identical
+
+One further live run compared the render target and sampler state of a failing
+context against the working one. Every field matches:
+
+```
+ctx=11 atlas_w=256  surf_fmt=B8G8R8A8_UNORM res_fmt=B8G8R8A8_UNORM
+                    swizzle=0x0 srgb=0x0 a8mask=0x0 fs_key_swz=0x0
+                    atlas_view_fmt=B8G8R8A8_UNORM atlas_res_fmt=B8G8R8A8_UNORM
+ctx=27 atlas_w=1024 surf_fmt=B8G8R8A8_UNORM res_fmt=B8G8R8A8_UNORM
+                    swizzle=0x0 srgb=0x0 a8mask=0x0 fs_key_swz=0x0
+                    atlas_view_fmt=B8G8R8A8_UNORM atlas_res_fmt=B8G8R8A8_UNORM
+```
+
+The two fragment shaders also end with byte-identical output statements,
+`fsout_c0 = vec4((vec4(temp1)))` after the same `texelFetch` from `fssamp1`.
+
+So the render target format, the resource format, the red/blue swizzle, the
+sRGB encode mask, the A8 emulation mask, the shader-key swizzle and the sampled
+texture format are all the same, and the only differences left between a pass
+that renders and a pass that does not are ones the guest itself chose: the
+blend factors, the blend colour, the colour mask, and the coverage layout in
+the atlas.
+
+That is the current boundary of this investigation. Nothing measured so far
+shows virgl mistranslating the guest's request for the failing passes, so the
+next step is to establish what the guest expects `GL_ONE,
+GL_ONE_MINUS_SRC_ALPHA` with an all-channels-equal coverage value to produce,
+rather than to change renderer state.
+
+Raw dumps for all six contexts, the blend-state log, the target-state log and
+the `GL_INVERT` proof are kept in `work/glyph-atlas-evidence/`.
 
 ## Reproduction
 
