@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "capability_id": "windows-hvf",
-  "reviewed": "2026-08-11",
-  "tested_commit": "0f025793b2bf45bffe405af1622f664b6f8ca73a",
+  "reviewed": "2026-08-14",
+  "tested_commit": "ffbbf538b8f33534cfd23e8ba1cdde0ea8b0eb15",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -134,7 +134,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-12 at final evidence head 0683663d8c0efd8843146ca22706e47f797469b0. scripts/run-xctest-shim-suites.sh: 403 + 188 (1 skip) + 62 = 653 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' at that exact head (log SHA-256 4979e6f9bb67a38a95614578bbf2ae4ad411cf95622a13d7ffa4101e93cc14ab). Hosted CI 31647404559 and Security and quality 31647404524 both completed success on the same head. The shipped app was rebuilt from that head and passed codesign --verify --deep --strict, and verify-app-third-party-notices.sh reported third_party_notice_gate=pass with notice_sha256=354bb9a552c20ecc7e391383db905f2b25d476aad168430a10731a778938bcc9 across 12 bundled frameworks. Measured under the shim, not Apple XCTest, as the suite itself states.",
+      "measured": "PROVEN 2026-08-14 at final head ffbbf538b8f33534cfd23e8ba1cdde0ea8b0eb15. scripts/run-xctest-shim-suites.sh: 403 + 188 (1 skip) + 62 = 653 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' at that exact head (log SHA-256 b8a07639ac0a1553207875b20f1a431ef6db4ebf09cd54a34f909144cb2661a1). Hosted CI 31806681654 and Security and quality 31806681656 both completed success on the same head. The shipped app was rebuilt from that head and passed codesign --verify --deep --strict, and verify-app-third-party-notices.sh reported third_party_notice_gate=pass with notice_sha256=c714afd9d0998e0c91647d59e0f2717892b9ad1b8f477abd14c191846ba18985 across 12 bundled frameworks. Measured under the shim, not Apple XCTest, as the suite itself states. The previous claim at head 0683663 was true when recorded, but the shim suites were not run by check-project.sh, so a defect introduced later in 69f7565 went unnoticed until this re-verification; the suites are now gated.",
       "evidence_paths": [
         "STATUS.md"
       ]
