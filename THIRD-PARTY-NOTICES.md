@@ -65,6 +65,14 @@ SDK terms; they are not redistributed.
 | PPSSPP (validation payload only) | GPL-2.0-or-later | standalone guest **application**, not linked with BridgeVM; used only in internal validation gates, **not shipped** in the product image | none if not distributed; if ever distributed, ship complete corresponding source |
 | TianoCore EDK2 firmware (AAVMF/OVMF build) | BSD-2-Clause-Patent | guest UEFI firmware image | ship license text |
 
+## Guest operating systems
+
+BridgeVM does not redistribute any guest operating system. Windows media is
+supplied by the user and runs under the user's own Microsoft licence; BridgeVM
+ships no Windows installation media, no Windows components, and no Microsoft
+product keys. The repository contains no operating-system image: the `ISO/`
+path is a developer convenience that is excluded by `.gitignore`.
+
 ## Explicitly excluded
 
 - **Apple D3DMetal / Game Porting Toolkit**: license prohibits redistribution

@@ -93,7 +93,7 @@ GOAL.md 기준 프로덕션 클로즈 (레지스트리 24/24 + 패키징 + NOTIC
 ## 2. Decisions & why
 
 - **V1은 구 스택(120.45 KMD + mesa venus + 우리 vendored virglrenderer)으로 닫는다.** UTM/Neptune/Triton 스택은 검증됐지만(아래) 구 UMD와 프로토콜 비호환 → V2 트랙. `~/BridgeVM/3d/prefix`는 구 스택으로 복원됨 (UTM 빌드는 `prefix-utm`, `prefix-utm-copy-20260809`에 보존).
-- **상용화 라이선스 전략**: QEMU(GPL) 미사용(자체 VMM) + DXMT는 미배포(향후 dylib 분리 배포 가능) + D3DMetal 금지(Apple 약관) + 나머지 MIT/BSD/Zlib + swtpm 계열 LGPL은 dylib 동적링크. → 클로즈드소스 유료 앱 가능.
+- **상용화 라이선스 전략**: QEMU(GPL) 미배포(자체 VMM이 기본 경로이며, Compatibility Engine은 사용자가 설치한 qemu-system 바이너리를 실행할 뿐 링크·번들하지 않음) + DXMT는 미배포(향후 dylib 분리 배포 가능) + D3DMetal 금지(Apple 약관) + 나머지 MIT/BSD/Zlib + swtpm 계열 LGPL은 dylib 동적링크. → 클로즈드소스 유료 앱 가능.
 - **fence 폴링은 동기 유지 + pending-비면-스킵 게이트만** (a0a4424가 최종). 근거: 폴은 pending_fenced 있을 때만 도는데, 그 창에서 게스트 KMD가 fence MSI 대기 WFI → async 완료는 소비할 exit가 없어 영원 지연 (boot-1 create3d=281/flush=0 wedge 2회 재현). idle 결합 제거는 게이트만으로 충분 (20/20 소크).
 - **usgic kick은 line-edge에서만** (kick_if_line_changed, 26a762c): 이미 선 line에 재kick하면 hv_vcpus_exit가 게스트 STXR/exclusive monitor를 계속 깨서 livelock.
 - **vtimer synth** (pre_run에서 CNTV 만기 감지 시 PPI 합성, 26a762c): Apple 커널이 부하에서 EXIT_VTIMER를 잃음 (258k recovery 호출에도 미도착 실측). vtimer_recovery는 IK 전용으로 격리 (usgic에서 rearm이 synth와 경합).
