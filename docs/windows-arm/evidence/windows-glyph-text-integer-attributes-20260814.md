@@ -101,10 +101,58 @@ being drawn in a colour that blends away.
 
 What remains is the sampled data itself. Dumping each distinct atlas shows the
 256x80 atlases carry only about 2008 non-zero bytes out of 81920, and one
-carries 992, so they are nearly empty. The next step is to establish whether
-those atlases are ever populated with glyph coverage, by tracing the transfers
-and blits that write the texture backing `fssamp1` for a failing context, and
-comparing them against the 1024x20 atlas the body pass uses.
+carries 992, so they are nearly empty.
+
+## The fragments do reach the framebuffer
+
+The "writes no pixels" reading above is wrong, and the measurement that
+disproves it is decisive. Forcing `GL_INVERT` as a colour logic op around every
+glyph draw makes all of the missing text appear at once: the window title, the
+tab label, the File/Edit/View menu bar, the tooltip body, the status bar and
+the taskbar search field. `GL_INVERT` ignores the fragment colour completely,
+so the fragments were always landing on exactly the right pixels.
+
+So the pass is not being discarded anywhere in the pipeline. The defect is the
+colour the fragment shader computes.
+
+Consistent with that, forcing blending off and diffing the colour target across
+each draw reports `changed_px=0` for the failing passes. The shader is writing
+the destination colour back unchanged, which is invisible whether or not
+blending is enabled, and which is why every earlier framebuffer-difference
+measurement read as "nothing happened".
+
+## What the failing pass samples
+
+The glyph fragment shader ends with `fsout_c0 = texelFetch(fssamp1, ...)`, so
+whatever is bound as `fssamp1` becomes the output colour directly. Dumping that
+texture for every context in one session separates the two groups cleanly.
+
+The passes that render bind a 1024x20 texture whose row 0 holds per-channel
+subpixel coverage, for example `00002500`, `00254a25`, `004a724a`. Channels
+differ within a pixel, which is what ClearType coverage looks like.
+
+Every failing pass binds a 256x80 texture with an entirely different character.
+Only rows 0 and 1 contain data, all four channels of a pixel always hold the
+same byte, there are only 17 distinct values, they repeat in groups of five,
+and the row ends with a run of 256 pixels of solid `ffffffff`:
+
+```
+row0: 0 31 61 87 110  31 61 87 110 130  61 87 110 130 147  ...  255 x16
+```
+
+That is a blending lookup table, not glyph coverage. Sampling it and writing
+the result as the final colour produces white text on the white window
+chrome, which is exactly what is on screen.
+
+So the remaining defect is a sampler binding or resource identity problem: the
+failing draws sample the ClearType LUT where they should sample the glyph
+atlas. The next step is to determine whether the guest binds a different
+sampler view for these draws than virgl resolves, by comparing the guest's
+`SET_SAMPLER_VIEWS` payload for a failing context against the resource virgl
+has bound at slot 1.
+
+Raw dumps for all six contexts are kept in
+`work/glyph-atlas-evidence/`.
 
 ## Reproduction
 
