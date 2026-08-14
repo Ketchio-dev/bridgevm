@@ -61,12 +61,50 @@ This rules out the following as the cause of the remaining defect:
 - the vertex element layout, which is byte-identical to the body pass.
 
 The remaining defect is therefore that these draws execute and write no pixels.
-The next investigation should look at what the draw resolves to rather than how
-it is typed: the glyph atlas contents bound as `fssamp0`/`fssamp1`, the
-instance buffer values, and blend/scissor state. Note that the title pass uses
-an older DirectWrite fragment shader than the body pass, keyed on an 8-pixel
-address expression rather than the body pass's 1023-mask expression, so the two
-consume the atlas differently even though they share a vertex layout.
+Note that the title pass uses an older DirectWrite fragment shader than the
+body pass, keyed on an 8-pixel address expression rather than the body pass's
+1023-mask expression, so the two consume the atlas differently even though they
+share a vertex layout.
+
+### Follow-up measurements
+
+The readback above only covered the bottom-left 512x64 corner in GL
+coordinates, which cannot see a title bar. Three further live sessions were run
+to close that gap.
+
+Hashing the *entire* colour attachment before and after each draw confirms the
+split rather than removing it. Only the body pass changes its target:
+
+| Context | Target | Atlas bound as `fssamp1` | Full-target hash across draw |
+| --- | --- | --- | --- |
+| 11 | 960x768 | 256x80 | unchanged |
+| 21 | 640x512 | 256x80 | unchanged |
+| 25 | 640x672, 960x640 | 256x80 | unchanged |
+| 27 | 948x598 | 1024x20 | **changed** |
+
+Viewport, scissor, colour mask, depth and stencil state were equivalent across
+all of them, so none of those explain the split. The one structural difference
+is the glyph atlas: the passes that render bind a 1024x20 atlas, and every pass
+that renders nothing binds a 256x80 atlas.
+
+An occlusion query around every glyph draw, rather than only the first per
+target, shows fragments *are* rasterised by a failing pass: `ctx=11` at 960x768
+passed 6131 samples across six draws while its target hash stayed identical.
+So the failing draws are not rejected by scissor, depth or stencil; they shade
+fragments whose result does not become visible.
+
+Blending is not the reason. Forcing `glDisable(GL_BLEND)` around every glyph
+draw makes the body text render as solid black boxes, proving the override took
+effect, while the title, tab and menu text stays completely absent. That rules
+out the blend state, and rules out the possibility that the missing text is
+being drawn in a colour that blends away.
+
+What remains is the sampled data itself. Dumping each distinct atlas shows the
+256x80 atlases carry only about 2008 non-zero bytes out of 81920, and one
+carries 992, so they are nearly empty. The next step is to establish whether
+those atlases are ever populated with glyph coverage, by tracing the transfers
+and blits that write the texture backing `fssamp1` for a failing context, and
+comparing them against the 1024x20 atlas the body pass uses.
 
 ## Reproduction
 
@@ -81,3 +119,7 @@ and note two things that cost several boots to discover:
 
 Do not read `vrend_shader::glsl_strings` or call `glGetBufferSubData` on a
 vertex buffer from that hook. Both segfaulted the probe.
+
+When reading back a colour attachment, read the whole attachment. `glReadPixels`
+origin is bottom-left, so a partial read from the origin covers the bottom of
+the window and silently excludes the title bar.
