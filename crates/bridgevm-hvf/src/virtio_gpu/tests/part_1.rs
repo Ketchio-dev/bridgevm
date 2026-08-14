@@ -1,6 +1,7 @@
 //! Split test module.
 
 mod edid_modes;
+mod resize;
 
 use super::super::display::*;
 use super::super::*;

@@ -27,17 +27,15 @@ impl VirtioGpu {
         {
             return false;
         }
-        if width == self.width && height == self.height {
+        if width == self.requested_width && height == self.requested_height {
             return false;
         }
-        self.width = width;
-        self.height = height;
-        // Grow the 2D scanout backing to the new geometry; the guest re-creates
-        // its scanout resource after the mode switch, so drop the stale binding.
-        self.scanout.clear();
-        self.scanout.resize(scanout_len(width, height), 0);
-        self.scanout_resource = None;
-        self.unbind_blob_scanout();
+        // Report the requested mode immediately, but keep presenting the active
+        // framebuffer until the guest binds a scanout at that exact geometry.
+        // Clearing or reallocating here exposes a black, partially padded frame
+        // while the guest is still rendering the previous mode.
+        self.requested_width = width;
+        self.requested_height = height;
         self.events_read |= VIRTIO_GPU_EVENT_DISPLAY;
         self.pending_config_change = true;
         self.interrupt_status |= 2;
@@ -53,8 +51,8 @@ impl VirtioGpu {
                     Rect {
                         x: 0,
                         y: 0,
-                        width: self.width,
-                        height: self.height,
+                        width: self.requested_width,
+                        height: self.requested_height,
                     },
                 );
                 out.extend_from_slice(&1u32.to_le_bytes());
@@ -69,7 +67,7 @@ impl VirtioGpu {
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_EDID, hdr);
         out.extend_from_slice(&128u32.to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
-        let edid = build_edid(self.width, self.height);
+        let edid = build_edid(self.requested_width, self.requested_height);
         out.extend_from_slice(&edid);
         out.resize(out.len() + (1024 - 128), 0);
     }

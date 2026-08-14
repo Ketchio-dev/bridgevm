@@ -2,13 +2,15 @@
 
 use super::*;
 
+mod geometry;
+use geometry::*;
+
 impl VirtioPciGpu {
     pub fn snapshot_state(&self) -> Vec<u8> {
         let gpu = &self.gpu;
         let mut out = crate::checkpoint::StateWriter::new();
-        out.write_u32(1);
-        out.write_u32(gpu.width);
-        out.write_u32(gpu.height);
+        out.write_u32(2);
+        write_geometry(&mut out, gpu);
         out.write_u32(gpu.device_features_sel);
         out.write_u32(gpu.driver_features_sel);
         out.write_u32(gpu.driver_features[0]);
@@ -62,19 +64,13 @@ impl VirtioPciGpu {
 
     pub fn restore_state(&mut self, data: &[u8]) {
         let mut input = crate::checkpoint::StateReader::new(data);
-        assert_eq!(
-            input.read_u32(),
-            1,
+        let version = input.read_u32();
+        assert!(
+            version == 1 || version == 2,
             "unsupported virtio-gpu snapshot version"
         );
 
-        let width = input.read_u32();
-        let height = input.read_u32();
-        assert_eq!(
-            (width, height),
-            (self.gpu.width, self.gpu.height),
-            "virtio-gpu resolution mismatch on restore"
-        );
+        restore_geometry(&mut input, &mut self.gpu, version);
 
         self.gpu.device_features_sel = input.read_u32();
         self.gpu.driver_features_sel = input.read_u32();

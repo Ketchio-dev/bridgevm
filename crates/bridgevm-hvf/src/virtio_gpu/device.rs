@@ -16,8 +16,13 @@ include!("device_stats.rs");
 
 #[derive(Debug)]
 pub struct VirtioGpu {
+    /// Geometry of the framebuffer currently presented by the guest.
     pub(crate) width: u32,
     pub(crate) height: u32,
+    /// Host-requested geometry reported through GET_DISPLAY_INFO and EDID.
+    /// This may lead the active geometry while the guest changes modes.
+    pub(crate) requested_width: u32,
+    pub(crate) requested_height: u32,
     pub(crate) device_features_sel: u32,
     pub(crate) driver_features_sel: u32,
     pub(crate) driver_features: [u32; 2],
@@ -113,6 +118,8 @@ impl VirtioGpu {
         let mut gpu = Self {
             width,
             height,
+            requested_width: width,
+            requested_height: height,
             device_features_sel: 0,
             driver_features_sel: 0,
             driver_features: [0; 2],
@@ -202,6 +209,10 @@ impl VirtioGpu {
         // The renderer worker owns the readback buffer until it answers, so an
         // in-flight present must be collected before the device is torn down.
         self.finish_async_present();
+        // A device reset removes the active scanout, so it is safe to adopt a
+        // host-requested mode that was still pending when the reset began.
+        self.width = self.requested_width;
+        self.height = self.requested_height;
         let width = self.width;
         let height = self.height;
         self.device_features_sel = 0;

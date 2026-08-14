@@ -72,9 +72,9 @@ impl VirtioPciGpu {
         self.gpu.request_display_resolution(width, height)
     }
 
-    /// Current reported scanout geometry.
+    /// Current host-requested geometry reported to the guest.
     pub fn display_resolution(&self) -> (u32, u32) {
-        (self.gpu.width, self.gpu.height)
+        (self.gpu.requested_width, self.gpu.requested_height)
     }
 
     pub fn set_vblank_wake(&mut self, wake: Arc<VblankWakeState>) {

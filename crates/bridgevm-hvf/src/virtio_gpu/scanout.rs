@@ -8,6 +8,8 @@ use crate::virtio_gpu_3d::VIRTIO_GPU_BLOB_MEM_HOST3D;
 use std::fmt::Write as _;
 use std::time::Instant;
 
+mod resize;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VirtioGpuScanout<'a> {
     pub bytes: &'a [u8],
@@ -99,10 +101,7 @@ impl VirtioGpu {
                     .scanout_3d_info(resource_id)
                     .is_some_and(|info| {
                         format_supported(info.format)
-                            && rect.width > 0
-                            && rect.height > 0
-                            && rect.width <= self.width
-                            && rect.height <= self.height
+                            && self.scanout_geometry_in_range(rect.width, rect.height)
                             && rect
                                 .x
                                 .checked_add(rect.width)
@@ -117,6 +116,7 @@ impl VirtioGpu {
                 return;
             }
             self.unbind_blob_scanout();
+            self.adopt_requested_display_resolution(rect.width, rect.height);
             self.scanout_resource = Some(resource_id);
         }
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
@@ -150,10 +150,7 @@ impl VirtioGpu {
         let format = read_le_u32(request, 56).unwrap_or(0);
         let stride = read_le_u32(request, 64).unwrap_or(0);
         let offset = read_le_u32(request, 80).unwrap_or(0);
-        if width == 0
-            || height == 0
-            || width > self.width
-            || height > self.height
+        if !self.scanout_geometry_in_range(width, height)
             || !format_supported(format)
             || stride < width.saturating_mul(4)
         {
@@ -180,6 +177,7 @@ impl VirtioGpu {
             return;
         }
 
+        self.bump_present_epoch();
         self.unbind_blob_scanout();
         let mapping = if blob_mem == VIRTIO_GPU_BLOB_MEM_HOST3D {
             let Some(mapped) = self.three_d.scanout_map_blob(resource_id) else {
@@ -198,6 +196,7 @@ impl VirtioGpu {
         } else {
             None
         };
+        self.adopt_requested_display_resolution(width, height);
         self.scanout_resource = None;
         self.blob_scanout = Some(BlobScanout {
             resource_id,
