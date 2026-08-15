@@ -1031,6 +1031,40 @@ final class PpmDecoderTests: XCTestCase {
             255, 255, 255, 255
         ])
     }
+
+    /// P6 headers may carry comments and arbitrary whitespace between tokens,
+    /// and exactly one whitespace byte after the maxval belongs to the header
+    /// rather than the pixels.
+    func testDecodesHeaderWithCommentsAndExtraWhitespace() throws {
+        var data = Data("P6\n# written by the capture path\n  1   2  \n255\n".utf8)
+        data.append(contentsOf: [10, 20, 30, 40, 50, 60])
+        let decoded = try PpmDecoder.decode(data: data)
+        XCTAssertEqual(decoded.width, 1)
+        XCTAssertEqual(decoded.height, 2)
+        XCTAssertEqual(Array(decoded.rgba), [10, 20, 30, 255, 40, 50, 60, 255])
+    }
+
+    /// A capture read while it is still being written is short, and a zero
+    /// dimension would otherwise allocate nothing and read out of bounds.
+    func testRejectsTruncatedPixelsAndDegenerateDimensions() {
+        var short = Data("P6\n2 2\n255\n".utf8)
+        short.append(contentsOf: [255, 0, 0, 0, 255, 0])
+        XCTAssertThrowsError(try PpmDecoder.decode(data: short))
+
+        XCTAssertThrowsError(try PpmDecoder.decode(data: Data("P6\n0 0\n255\n".utf8)))
+        XCTAssertThrowsError(try PpmDecoder.decode(data: Data("P5\n2 2\n255\n".utf8)))
+        XCTAssertThrowsError(try PpmDecoder.decode(data: Data("P6\n2 2\n65535\n".utf8)))
+        XCTAssertThrowsError(try PpmDecoder.decode(data: Data()))
+    }
+
+    /// Pixel bytes must be read verbatim, including bytes that would be
+    /// whitespace or a comment marker in the header.
+    func testPixelBytesThatLookLikeHeaderSyntaxAreNotSkipped() throws {
+        var data = Data("P6\n2 1\n255\n".utf8)
+        data.append(contentsOf: [35, 10, 32, 9, 13, 35])
+        let decoded = try PpmDecoder.decode(data: data)
+        XCTAssertEqual(Array(decoded.rgba), [35, 10, 32, 255, 9, 13, 35, 255])
+    }
 }
 
 final class HvfIOSurfaceDescriptorTests: XCTestCase {
