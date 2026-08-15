@@ -601,6 +601,53 @@ final class HvfEngineSessionPathTests: XCTestCase {
         XCTAssertTrue(session.events.contains(.unknown("graceful guest shutdown requested")))
     }
 
+    /// An attached session has no Process handle, so liveness costs a pgrep
+    /// fork/exec. Measured on this machine that is ~100 ms, the same as the
+    /// poll interval, so it must not run on every poll.
+    func testAttachedLivenessIsThrottledWellBelowThePollInterval() {
+        let pollInterval: TimeInterval = 0.1
+        XCTAssertGreaterThanOrEqual(HvfAttachedLivenessSchedule.interval, pollInterval * 5)
+
+        let now = Date()
+        let next = HvfAttachedLivenessSchedule.next(after: now)
+        XCTAssertFalse(HvfAttachedLivenessSchedule.isDue(now: now, next: next))
+        XCTAssertFalse(HvfAttachedLivenessSchedule.isDue(now: now.addingTimeInterval(pollInterval), next: next))
+        XCTAssertTrue(HvfAttachedLivenessSchedule.isDue(now: next, next: next))
+        XCTAssertTrue(HvfAttachedLivenessSchedule.isDue(now: next.addingTimeInterval(0.001), next: next))
+    }
+
+    /// Attaching already probes the process, and the first poll follows within
+    /// milliseconds, so it must not probe again.
+    @MainActor
+    func testAttachDoesNotProbeTheProcessTwiceInARow() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let evidence = temp.appendingPathComponent("evidence", isDirectory: true)
+        try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
+        let config = HvfEngineConfig(
+            targetDiskPath: temp.appendingPathComponent("windows.raw").path,
+            uefiVarsPath: temp.appendingPathComponent("vars.fd").path,
+            evidenceDir: evidence.path,
+            watchdogMs: nil, ramMiB: 6144, smpCpus: 4, clipboardSync: true,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: true, virtioGpu3d: true,
+            nvmeBufferedIO: true, ctlFilePath: temp.appendingPathComponent("hvf.ctl").path
+        )
+        var probes = 0
+        let session = HvfEngineSession(config: config, repoRoot: temp) { _ in
+            probes += 1
+            return true
+        }
+
+        // attachToRunningVM probes once, then startPolling runs poll() inline.
+        // That inline poll must reuse the answer rather than fork pgrep again.
+        XCTAssertTrue(session.attachToRunningVM())
+        XCTAssertEqual(probes, 1)
+
+        // stop() asks again deliberately, so the count moves by exactly one.
+        session.stop()
+        XCTAssertEqual(probes, 2)
+    }
+
     @MainActor
     func testStartAttachesInsteadOfLaunchingDuplicateVM() throws {
         let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)

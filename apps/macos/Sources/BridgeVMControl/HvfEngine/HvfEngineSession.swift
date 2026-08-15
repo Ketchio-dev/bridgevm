@@ -7,6 +7,22 @@ import Darwin
 import AppKit
 #endif
 
+/// How often an attached session may ask the operating system whether the VM
+/// it attached to is still alive.
+///
+/// A session that launched the VM holds a `Process` and can check for free. A
+/// session that attached to an already-running VM has no handle, so the only
+/// answer comes from `pgrep`, and a fork/exec costs about 100 ms on this
+/// machine (even `/usr/bin/true` costs 77 ms). Running that on every 100 ms
+/// poll left the main actor with no time for anything else.
+enum HvfAttachedLivenessSchedule {
+    static let interval: TimeInterval = 1
+
+    static func isDue(now: Date, next: Date) -> Bool { now >= next }
+
+    static func next(after now: Date) -> Date { now.addingTimeInterval(interval) }
+}
+
 enum HvfConnectionState: Equatable {
     case stopped
     case booting
@@ -30,6 +46,7 @@ final class HvfEngineSession: ObservableObject {
     private var stopCommandSent = false
     private var stopDeadline: Date?
     private var attachedToExistingProcess = false
+    private var nextAttachedLivenessCheck = Date.distantPast
     private var liveInputHandle: FileHandle?
     private var liveInputPath: URL?
     private var liveInputWriteFailureReported = false
@@ -228,6 +245,8 @@ final class HvfEngineSession: ObservableObject {
         process = nil
         closeLiveInput()
         attachedToExistingProcess = true
+        // The guard above just paid for a pgrep; don't repeat it on the first poll.
+        nextAttachedLivenessCheck = HvfAttachedLivenessSchedule.next(after: Date())
         resetObservedRuntimeState(clearEvents: true)
         connectionState = .booting
         startPolling()
@@ -440,9 +459,13 @@ final class HvfEngineSession: ObservableObject {
             markStopped()
             return
         }
-        if attachedToExistingProcess && !processIsRunning(config.targetDiskPath) {
-            markStopped()
-            return
+        if attachedToExistingProcess,
+           HvfAttachedLivenessSchedule.isDue(now: Date(), next: nextAttachedLivenessCheck) {
+            nextAttachedLivenessCheck = HvfAttachedLivenessSchedule.next(after: Date())
+            if !processIsRunning(config.targetDiskPath) {
+                markStopped()
+                return
+            }
         }
         if case .stopping = connectionState {
             sendGracefulStopIfReady()
