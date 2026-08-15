@@ -138,6 +138,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: scripts/check-refactor-budgets.sh
 
+  swift:
+    # The macOS app's suites are the largest body of tests in the repository and
+    # were verified only by running check-project.sh by hand, so a regression in
+    # them could reach main. They need Swift, hence a macOS runner.
+    name: macOS app suites
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: swift build --package-path apps/macos
+      - run: bash scripts/run-swift-tests.sh
+      - run: bash scripts/run-xctest-shim-suites.sh
+
   truth:
     # Keeps the capability registry, the generated claim blocks and the
     # documentation manifest from drifting apart. Deterministic and free of
@@ -156,6 +169,10 @@ jobs:
           python3 -m json.tool capabilities/windows-hvf.json >/dev/null
       - name: every Markdown document is classified
         run: bash scripts/check-documentation-system.sh
+      - name: attribution and known-defect disclosure are intact
+        run: bash scripts/check-attribution-honesty.sh
+      - name: the virgl integer-attribute rule stays provenance-scoped
+        run: bash scripts/check-virgl-integer-attributes.sh
 
   stable-advisory:
     name: latest stable advisory
