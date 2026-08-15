@@ -217,6 +217,15 @@ fn wmctrl_window_backend_lists_focuses_and_closes_real_tool_output() {
 }
 
 #[test]
+fn unique_temp_dir_names_cannot_collide_within_a_process() {
+    // pid plus micros collided 177,401 times in 200,000 draws; colliding tests
+    // overwrote each other's stub executables, failing the test below.
+    let names: std::collections::HashSet<_> =
+        (0..200_000).map(|_| unique_temp_dir("collide")).collect();
+    assert_eq!(names.len(), 200_000, "temp dir names collided");
+}
+
+#[test]
 fn real_window_input_uses_wmctrl_focus_and_xdotool() {
     let root = unique_temp_dir("bridgevm-tools-window-input");
     fs::create_dir_all(&root).unwrap();
@@ -487,64 +496,5 @@ fn shared_folder_commands_require_capability() {
     assert!(state.shared_folders.is_empty());
 }
 
-#[test]
-fn file_drop_commands_track_alpha_transfer_state() {
-    let mut state = GuestToolsState::new(&default_capabilities());
-    let start = AgentEnvelope::with_request_id(
-        AgentMessage::FileDropStart {
-            transfer_id: "drop-1".to_string(),
-            file_name: "notes.txt".to_string(),
-            size_bytes: 11,
-        },
-        "drop-start-1",
-    );
-    let chunk = AgentEnvelope::with_request_id(
-        AgentMessage::FileDropChunk {
-            transfer_id: "drop-1".to_string(),
-            chunk_index: 0,
-            data_base64: "aGVsbG8gd29ybGQ=".to_string(),
-        },
-        "drop-chunk-1",
-    );
-    let complete = AgentEnvelope::with_request_id(
-        AgentMessage::FileDropComplete {
-            transfer_id: "drop-1".to_string(),
-        },
-        "drop-complete-1",
-    );
-
-    assert_eq!(
-        state.handle_command(&start).unwrap().message,
-        AgentMessage::CommandResult {
-            request_id: "drop-start-1".to_string(),
-            ok: true,
-            error_code: None,
-            message: Some("started file drop drop-1".to_string()),
-            result: None,
-            metadata: None,
-        }
-    );
-    assert_eq!(
-        state.handle_command(&chunk).unwrap().message,
-        AgentMessage::CommandResult {
-            request_id: "drop-chunk-1".to_string(),
-            ok: true,
-            error_code: None,
-            message: Some("accepted file drop drop-1 chunk 0".to_string()),
-            result: None,
-            metadata: None,
-        }
-    );
-    assert_eq!(
-        state.handle_command(&complete).unwrap().message,
-        AgentMessage::CommandResult {
-            request_id: "drop-complete-1".to_string(),
-            ok: true,
-            error_code: None,
-            message: Some("completed file drop notes.txt (11 bytes across 1 chunks)".to_string()),
-            result: None,
-            metadata: None,
-        }
-    );
-    assert!(state.file_drops.is_empty());
-}
+#[path = "part_2_3.rs"]
+mod part_2_3;

@@ -148,12 +148,13 @@ crates/bridgevm-daemon/src/qmp_supervisor.rs	90	0
 crates/bridgevm-daemon/src/snapshot_orchestration.rs	164	0
 crates/bridgevm-daemon/src/spawn_config.rs	172	0
 crates/bridgevm-daemon/src/supervisor_loop.rs	188	1
-crates/bridgevm-daemon/src/tests_split/helpers.rs	205	0
+crates/bridgevm-daemon/src/tests_split/helpers.rs	203	0
+crates/bridgevm-daemon/src/tests_split/wait.rs	16	0
 crates/bridgevm-daemon/src/tests_split/mod.rs	8	0
 crates/bridgevm-daemon/src/tests_split/part_1.rs	201	0
 crates/bridgevm-daemon/src/tests_split/part_1_proxy_windows.rs	305	0
 crates/bridgevm-daemon/src/tests_split/part_2.rs	538	0
-crates/bridgevm-daemon/src/tests_split/part_3.rs	699	0
+crates/bridgevm-daemon/src/tests_split/part_3.rs	693	0
 crates/bridgevm-daemon/src/tests_split/part_4.rs	573	2
 crates/bridgevm-daemon/src/tests_split/part_4_2.rs	645	0
 crates/bridgevm-daemon/src/unix_time.rs	20	0
@@ -927,8 +928,9 @@ runners/bridgevm-tools-linux/src/telemetry.rs	225	0
 runners/bridgevm-tools-linux/src/tests_split/helpers.rs	246	0
 runners/bridgevm-tools-linux/src/tests_split/mod.rs	5	0
 runners/bridgevm-tools-linux/src/tests_split/part_1.rs	556	0
-runners/bridgevm-tools-linux/src/tests_split/part_2.rs	548	0
+runners/bridgevm-tools-linux/src/tests_split/part_2.rs	498	0
 runners/bridgevm-tools-linux/src/tests_split/part_2_2.rs	741	0
+runners/bridgevm-tools-linux/src/tests_split/part_2_3.rs	65	0
 runners/bridgevm-tools-linux/src/tests_split/part_3.rs	730	0
 runners/displayd/src/input_events.rs	81	0
 runners/displayd/src/main.rs	13	0

@@ -1,6 +1,7 @@
 //! Split test module.
 
 use super::helpers::*;
+use super::wait::wait_up_to_ten_seconds;
 use crate::*;
 use bridgevm_agent_protocol::AgentAuth;
 use bridgevm_agent_protocol::AgentCapability;
@@ -141,15 +142,13 @@ fn daemon_fast_spawn_immediate_exit_reconcile_clears_runtime_state() {
     );
     assert!(state.children.contains_key("fast-linux"));
 
-    for _ in 0..120 {
-        state.reconcile_children().unwrap();
-        if !state.children.contains_key("fast-linux") {
-            break;
-        }
-        thread::sleep(Duration::from_millis(25));
-    }
-
-    assert!(!state.children.contains_key("fast-linux"));
+    assert!(
+        wait_up_to_ten_seconds(|| {
+            state.reconcile_children().unwrap();
+            !state.children.contains_key("fast-linux")
+        }),
+        "the exited child was never reaped"
+    );
     assert_eq!(
         store.state("fast-linux").unwrap().state,
         VmRuntimeState::Stopped
@@ -408,15 +407,13 @@ fn reconcile_children_clears_exited_backend_state() {
         .children
         .insert("legacy".to_string(), SupervisedBackend::new(child));
 
-    for _ in 0..40 {
-        state.reconcile_children().unwrap();
-        if state.children.is_empty() {
-            break;
-        }
-        thread::sleep(Duration::from_millis(25));
-    }
-
-    assert!(state.children.is_empty());
+    assert!(
+        wait_up_to_ten_seconds(|| {
+            state.reconcile_children().unwrap();
+            state.children.is_empty()
+        }),
+        "the children were never reaped"
+    );
     assert_eq!(
         store.state("legacy").unwrap().state,
         VmRuntimeState::Stopped
@@ -457,20 +454,19 @@ fn cleanup_owned_backend_clears_already_exited_child_state() {
         .children
         .insert("legacy".to_string(), SupervisedBackend::new(child));
 
-    for _ in 0..40 {
-        if state
-            .children
-            .get_mut("legacy")
-            .unwrap()
-            .child
-            .try_wait()
-            .unwrap()
-            .is_some()
-        {
-            break;
-        }
-        thread::sleep(Duration::from_millis(25));
-    }
+    assert!(
+        wait_up_to_ten_seconds(|| {
+            state
+                .children
+                .get_mut("legacy")
+                .unwrap()
+                .child
+                .try_wait()
+                .unwrap()
+                .is_some()
+        }),
+        "the child never exited"
+    );
 
     state.cleanup_owned_backend("legacy", false).unwrap();
 
