@@ -46,6 +46,7 @@ step "capability schema json" json_valid schemas/bridgevm-capability-v1.json
 step "documentation system" bash scripts/check-documentation-system.sh
 step "structural budgets" scripts/check-refactor-budgets.sh
 step "shell scripts" bash scripts/check-shell-scripts.sh
+step "daemon DTO decoders" python3 scripts/check-daemon-dto-decoders.py
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 

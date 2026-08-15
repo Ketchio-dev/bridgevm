@@ -124,6 +124,57 @@ final class DaemonDTOTests: XCTestCase {
     XCTAssertNil(empty.diskGB)
   }
 
+  func testBootMediaKindAcceptsEverySpellingTheDaemonSends() throws {
+    func decode(_ kind: String) throws -> DaemonBootMediaStatusEntryDTO {
+      let json = "{\"kind\":\"\(kind)\",\"path\":\"/tmp/x\",\"exists\":true}"
+      return try JSONDecoder().decode(
+        DaemonBootMediaStatusEntryDTO.self, from: Data(json.utf8))
+    }
+
+    // BootMediaKind is #[serde(rename_all = "kebab-case")] in records.rs, so
+    // these four are the exact strings the daemon puts on the wire. An unmapped
+    // one decodes to .unknown with no error, which is why each is pinned.
+    XCTAssertEqual(try decode("installer-image").kind, .installerImage)
+    XCTAssertEqual(try decode("kernel").kind, .kernel)
+    XCTAssertEqual(try decode("initrd").kind, .initrd)
+    XCTAssertEqual(try decode("macos-restore-image").kind, .macosRestoreImage)
+    XCTAssertEqual(try decode("something-else").kind, .unknown)
+  }
+
+  func testBootMediaSizeFallsBackToTheDaemonBytesKey() throws {
+    func decode(_ json: String) throws -> DaemonBootMediaStatusEntryDTO {
+      try JSONDecoder().decode(DaemonBootMediaStatusEntryDTO.self, from: Data(json.utf8))
+    }
+
+    // The Rust record's field is `bytes`; `size_bytes` is the preferred alias.
+    let alias = try decode("{\"kind\":\"kernel\",\"path\":\"/k\",\"exists\":true,\"size_bytes\":10}")
+    XCTAssertEqual(alias.sizeBytes, 10)
+    let wire = try decode("{\"kind\":\"kernel\",\"path\":\"/k\",\"exists\":true,\"bytes\":20}")
+    XCTAssertEqual(wire.sizeBytes, 20)
+    let both = try decode(
+      "{\"kind\":\"kernel\",\"path\":\"/k\",\"exists\":true,\"size_bytes\":10,\"bytes\":20}")
+    XCTAssertEqual(both.sizeBytes, 10)
+    let neither = try decode("{\"kind\":\"kernel\",\"path\":\"/k\",\"exists\":true}")
+    XCTAssertNil(neither.sizeBytes)
+  }
+
+  func testLiveEvidenceProofFlagsDefaultToUnproven() throws {
+    // Each of these is #[serde(default)] on the Rust side, so an older daemon
+    // omits them. Defaulting them to true would claim evidence that does not
+    // exist, so the direction of the default is the thing worth pinning.
+    let json = """
+      {"path":"/p","backend":"hvf","vm_name":"win","boot_mode":"uefi",
+       "disk_format":"raw","network":"nat","serial_sentinel_required":true,
+       "serial_sentinel_proven":true,"summary":"ok"}
+      """
+    let dto = try JSONDecoder().decode(DaemonLiveEvidenceDTO.self, from: Data(json.utf8))
+    XCTAssertTrue(dto.serialSentinelProven)
+    XCTAssertFalse(dto.graphicalBootProgressProven)
+    XCTAssertFalse(dto.viewerEvidenceProven)
+    XCTAssertFalse(dto.qmpEvidenceProven)
+    XCTAssertFalse(dto.guestToolsEffectsProven)
+  }
+
   func testNDJSONAccumulatorRejectsResponseBeyondLimit() throws {
     var accumulator = NDJSONLineAccumulator(maximumByteCount: 5)
     XCTAssertNil(try accumulator.append(Data("abc".utf8)))

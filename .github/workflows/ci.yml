@@ -175,6 +175,8 @@ jobs:
         run: bash scripts/check-virgl-integer-attributes.sh
       - name: the gate scripts themselves are free of the enforced defect classes
         run: bash scripts/check-shell-scripts.sh
+      - name: every declared daemon DTO coding key is actually decoded
+        run: python3 scripts/check-daemon-dto-decoders.py
 
   stable-advisory:
     name: latest stable advisory
