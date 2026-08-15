@@ -549,3 +549,5 @@ fn prepares_primary_disk_metadata_for_qcow2_and_raw() {
     assert_eq!(raw.size_bytes, Some(1024 * 1024));
     assert_eq!(fs::metadata(raw.path).unwrap().len(), 1024 * 1024);
 }
+#[path = "concurrency.rs"]
+mod concurrency;

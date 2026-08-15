@@ -16,9 +16,14 @@ impl VmStore {
     pub fn create_vm(&self, manifest: &VmManifest) -> Result<PathBuf, StorageError> {
         self.ensure()?;
         let bundle = self.bundle_path(&manifest.name);
-        if bundle.exists() {
-            return Err(StorageError::AlreadyExists(manifest.name.clone()));
-        }
+        // Reserve the bundle atomically: an `exists()` check let two concurrent
+        // creates both pass, and the loser overwrote the winner's manifest and
+        // guest-tools token, in 40 of 40 racing rounds. `create_dir` is not
+        // recursive and fails when the path is taken, so one caller wins.
+        fs::create_dir(&bundle).map_err(|error| match error.kind() {
+            std::io::ErrorKind::AlreadyExists => StorageError::AlreadyExists(manifest.name.clone()),
+            _ => error.into(),
+        })?;
         fs::create_dir_all(bundle.join("disks"))?;
         fs::create_dir_all(bundle.join("logs"))?;
         fs::create_dir_all(bundle.join("metadata"))?;
@@ -63,31 +68,5 @@ impl VmStore {
         manifest.storage.primary.path = active_disk.path.display().to_string();
         manifest.storage.primary.format = active_disk.format.clone();
         Ok((bundle, manifest, active_disk))
-    }
-
-    pub fn delete_vm(&self, name: &str) -> Result<PathBuf, StorageError> {
-        let (bundle, _) = self.get_vm(name)?;
-        fs::remove_dir_all(&bundle)?;
-        Ok(bundle)
-    }
-
-    pub fn delete_vm_metadata_only(&self, name: &str) -> Result<VmDeletionMetadata, StorageError> {
-        let (bundle, manifest) = self.get_vm(name)?;
-        let metadata_dir = bundle.join("metadata");
-        fs::create_dir_all(&metadata_dir)?;
-        let manifest_path = bundle.join("manifest.yaml");
-        let manifest_backup = metadata_dir.join("deleted-manifest.yaml");
-        fs::copy(&manifest_path, &manifest_backup)?;
-        let metadata_path = deletion_metadata_path(&bundle);
-        let metadata = VmDeletionMetadata {
-            vm: manifest.name,
-            bundle,
-            manifest_backup,
-            metadata_path: metadata_path.clone(),
-            deleted_at_unix: now_unix(),
-            metadata_only: true,
-        };
-        write_json_pretty_atomic(&metadata_path, &metadata)?;
-        Ok(metadata)
     }
 }

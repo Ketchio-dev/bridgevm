@@ -38,6 +38,7 @@ mod store;
 mod suspend_image;
 mod temp_paths;
 pub(crate) mod vm_clone;
+mod vm_delete;
 mod vm_registry;
 mod vm_transfer;
 

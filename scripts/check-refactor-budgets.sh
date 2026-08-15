@@ -13,7 +13,7 @@ BUDGETS="$ROOT/scripts/refactor-budgets.tsv"
 
 # One awk pass over the TSV and every budgeted file: per-row awk/grep/wc/tr was
 # 5,256 processes for 1,314 rows and 5.9 s of this gate's 10.4 s. Inner doc
-# comments and bare mod/use declarations are excluded, so the ratchet penalises
+# comments and bare mod/use/#[path] declarations are excluded, so it penalises
 # neither documenting a crate nor splitting a file; ordinary comments count.
 # unsafe sites are unsafe fn/impl/block/extern everywhere.
 set +e
@@ -34,7 +34,7 @@ report=$(awk -v root="$ROOT" '
       if (header && line ~ /^[[:space:]]*\/\/!/) continue
       if (header && line ~ /^[[:space:]]*$/) { header = 0; continue }
       header = 0
-      if (line ~ /^[[:space:]]*(pub[[:space:]]+)?(mod|use)[[:space:]][^;{]*;[[:space:]]*$/) continue
+      if (line ~ /^[[:space:]]*((pub[[:space:]]+)?(mod|use)[[:space:]][^;{]*;|#\[path[[:space:]]*=[^]]*\])[[:space:]]*$/) continue
       loc++
       rest = line
       while (match(rest, /unsafe (fn|impl|\{|extern)/)) {
