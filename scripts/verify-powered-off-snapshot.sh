@@ -12,7 +12,7 @@
 set -uo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-cd "$REPO"
+cd "$REPO" || exit 1
 
 DISK=${DISK:-$HOME/BridgeVM/work/canonical-fresh-12041-agent-20260730.raw}
 VARS=${VARS:-$HOME/BridgeVM/work/canonical-fresh-12041-agent-20260730-vars.fd}

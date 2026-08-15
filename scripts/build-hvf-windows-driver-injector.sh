@@ -296,7 +296,12 @@ fi
 
 if [[ -n "${REMOVE_DRIVER_OEMNAMES:-}" ]]; then
   log "staging offline driver-removal list \\bridgevm-remove-driver-oemnames.txt"
+  # The variable is a space-separated list and must word-split, but it must not
+  # glob: an entry like oem*.inf would otherwise expand against the host's cwd.
+  set -f
+  # shellcheck disable=SC2086 # deliberate word-splitting; globbing disabled above
   printf '%s\n' $REMOVE_DRIVER_OEMNAMES > "$DST_VOL/bridgevm-remove-driver-oemnames.txt"
+  set +f
 fi
 if [[ "$ENABLE_TESTSIGNING" == "1" ]]; then
   log "staging testsigning marker \\bridgevm-enable-testsigning.txt"

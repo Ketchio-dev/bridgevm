@@ -10,7 +10,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
+cd "$ROOT" || exit 1
 
 TOOLCHAIN="${BRIDGEVM_CHECK_TOOLCHAIN:-+1.97.0}"
 FAST=0
@@ -45,6 +45,7 @@ step "machine contract json" json_valid docs/machine-contract/qemu-virt-deviatio
 step "capability schema json" json_valid schemas/bridgevm-capability-v1.json
 step "documentation system" bash scripts/check-documentation-system.sh
 step "structural budgets" scripts/check-refactor-budgets.sh
+step "shell scripts" bash scripts/check-shell-scripts.sh
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 

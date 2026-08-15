@@ -55,6 +55,14 @@ run_job() {
     tier="$(awk -F= '$1=="tier"{print $2}' "$dir/job.env")"
     commit="$(awk -F= '$1=="commit"{print $2}' "$dir/job.env")"
 
+    # awk exits 0 when the key is simply absent, so an empty job_id survives
+    # set -e and later reaches `rm -rf "$WORK_ROOT/$job_id"`, which would
+    # delete the entire work root rather than this job's directory.
+    if [[ -z "$job_id" ]]; then
+        log "refusing job in $dir: job.env has no job_id"
+        return 1
+    fi
+
     log "job $job_id tier=$tier commit=$commit"
     printf 'started_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$dir/job.env"
 
@@ -147,7 +155,7 @@ run_job() {
     git -C "$REPO" worktree remove --force "$worktree" >>"$dir/run.log" 2>&1 || true
     # The per-job target dir is build output, not evidence, and a few of them
     # are tens of gigabytes. Keeping them is what tripped the free-space guard.
-    rm -rf "$WORK_ROOT/$job_id"
+    rm -rf "${WORK_ROOT:?}/${job_id:?}"
     return "$status"
 }
 

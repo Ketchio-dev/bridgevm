@@ -17,7 +17,7 @@
 set -uo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-cd "$REPO"
+cd "$REPO" || exit 1
 
 # The pair gate uses canonical-fresh-12041-agent, which despite its name has
 # no ARM64 virtio-serial driver -- the agent channel does not exist there, so
