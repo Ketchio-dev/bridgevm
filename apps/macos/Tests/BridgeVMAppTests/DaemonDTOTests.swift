@@ -89,6 +89,41 @@ private func performanceBaselineFieldsJSON(createdAtUnix: UInt64) -> String {
 }
 
 final class DaemonDTOTests: XCTestCase {
+  func testResourcesDecodePreferCanonicalKeysAndConvertUnits() throws {
+    func decode(_ json: String) throws -> DaemonVirtualMachineResourcesDTO {
+      try JSONDecoder().decode(
+        DaemonVirtualMachineResourcesDTO.self, from: Data(json.utf8))
+    }
+
+    let camel = try decode(#"{"cpuCount":8,"memoryGB":16,"diskGB":100}"#)
+    XCTAssertEqual(camel.cpuCount, 8)
+    XCTAssertEqual(camel.memoryGB, 16)
+    XCTAssertEqual(camel.diskGB, 100)
+
+    let snake = try decode(#"{"cpu_count":4,"memory_gb":8,"disk_gb":50}"#)
+    XCTAssertEqual(snake.cpuCount, 4)
+    XCTAssertEqual(snake.memoryGB, 8)
+    XCTAssertEqual(snake.diskGB, 50)
+
+    let vcpus = try decode(#"{"vcpus":2}"#)
+    XCTAssertEqual(vcpus.cpuCount, 2)
+
+    // Byte and mebibyte forms are converted, and a canonical key still wins
+    // over them when both are present.
+    let derived = try decode(#"{"memory_mib":4096,"disk_bytes":107374182400}"#)
+    XCTAssertEqual(derived.memoryGB, 4)
+    XCTAssertEqual(derived.diskGB, 100)
+    let bytes = try decode(#"{"memory_bytes":8589934592}"#)
+    XCTAssertEqual(bytes.memoryGB, 8)
+    let preferred = try decode(#"{"memory_gb":16,"memory_mib":1024}"#)
+    XCTAssertEqual(preferred.memoryGB, 16)
+
+    let empty = try decode("{}")
+    XCTAssertNil(empty.cpuCount)
+    XCTAssertNil(empty.memoryGB)
+    XCTAssertNil(empty.diskGB)
+  }
+
   func testNDJSONAccumulatorRejectsResponseBeyondLimit() throws {
     var accumulator = NDJSONLineAccumulator(maximumByteCount: 5)
     XCTAssertNil(try accumulator.append(Data("abc".utf8)))

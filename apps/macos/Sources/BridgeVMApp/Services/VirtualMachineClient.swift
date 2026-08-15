@@ -5194,19 +5194,35 @@ struct DaemonVirtualMachineResourcesDTO: Decodable {
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    cpuCount =
-      try container.decodeIfPresent(Int.self, forKey: .cpuCount)
-      ?? container.decodeIfPresent(Int.self, forKey: .cpuCountSnake)
-      ?? container.decodeIfPresent(Int.self, forKey: .vcpus)
-    memoryGB =
-      try container.decodeIfPresent(Int.self, forKey: .memoryGB)
-      ?? container.decodeIfPresent(Int.self, forKey: .memoryGBSnake)
-      ?? container.decodeIfPresent(Int.self, forKey: .memoryMiB).map { $0 / 1024 }
-      ?? container.decodeIfPresent(Int.self, forKey: .memoryBytes).map { $0 / 1_073_741_824 }
-    diskGB =
-      try container.decodeIfPresent(Int.self, forKey: .diskGB)
-      ?? container.decodeIfPresent(Int.self, forKey: .diskGBSnake)
-      ?? container.decodeIfPresent(Int.self, forKey: .diskBytes).map { $0 / 1_073_741_824 }
+    // Each field is resolved with an explicit first-match loop rather than a
+    // chain of ?? over decodeIfPresent. The chain is one expression per field
+    // and the older type checker on macos-15 gives up on it.
+    func firstInt(_ keys: [CodingKeys]) throws -> Int? {
+      for key in keys {
+        if let value = try container.decodeIfPresent(Int.self, forKey: key) {
+          return value
+        }
+      }
+      return nil
+    }
+
+    cpuCount = try firstInt([.cpuCount, .cpuCountSnake, .vcpus])
+    if let gigabytes = try firstInt([.memoryGB, .memoryGBSnake]) {
+      memoryGB = gigabytes
+    } else if let mebibytes = try firstInt([.memoryMiB]) {
+      memoryGB = mebibytes / 1024
+    } else if let bytes = try firstInt([.memoryBytes]) {
+      memoryGB = bytes / 1_073_741_824
+    } else {
+      memoryGB = nil
+    }
+    if let gigabytes = try firstInt([.diskGB, .diskGBSnake]) {
+      diskGB = gigabytes
+    } else if let bytes = try firstInt([.diskBytes]) {
+      diskGB = bytes / 1_073_741_824
+    } else {
+      diskGB = nil
+    }
   }
 
   var resources: VirtualMachine.Resources {
