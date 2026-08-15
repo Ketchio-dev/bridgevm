@@ -231,7 +231,7 @@ fn display_fast_backend_spawns_detached_runner_that_survives_return() {
         return;
     }
 
-    let _guard = APPLE_VZ_RUNNER_ENV_LOCK.lock().unwrap();
+    let _guard = lock_apple_vz_runner_env();
     let (store, name) = fast_test_store("display-spawn-detached");
     let bundle = stage_ready_fast_linux_kernel_vm(&store, &name);
     let helper_dir = store.root().join("helpers");
@@ -266,12 +266,10 @@ exec sleep 60
     let pid = metadata
         .pid
         .expect("display spawn records the detached runner pid");
-    for _ in 0..200 {
-        if args_file.exists() && process_is_alive(pid) {
-            break;
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
+    assert!(
+        wait_up_to_ten_seconds(|| args_file.exists() && process_is_alive(pid)),
+        "the fake runner never wrote its arguments"
+    );
 
     assert!(
         process_is_alive(pid),
@@ -323,7 +321,7 @@ exec sleep 60
 
 #[test]
 fn apple_vz_runner_configured_reflects_env() {
-    let _guard = APPLE_VZ_RUNNER_ENV_LOCK.lock().unwrap();
+    let _guard = lock_apple_vz_runner_env();
     let _env = EnvVarGuard::capture("BRIDGEVM_APPLE_VZ_RUNNER");
 
     std::env::remove_var("BRIDGEVM_APPLE_VZ_RUNNER");
@@ -430,12 +428,10 @@ fn terminate_recorded_process_is_noop_for_dead_pid() {
     let pid = spawn_detached_sleep();
     signal_process(pid, "KILL").unwrap();
     // Wait for the detached process to fully exit (init reaps it).
-    for _ in 0..200 {
-        if !process_is_alive(pid) {
-            break;
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
+    assert!(
+        wait_up_to_ten_seconds(|| !process_is_alive(pid)),
+        "the process never exited"
+    );
     let outcome = terminate_recorded_process(
         pid,
         now_unix(),

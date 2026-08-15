@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn fast_spawn_without_runner_env_returns_runner_required_error() {
-        let _guard = APPLE_VZ_RUNNER_ENV_LOCK.lock().unwrap();
+        let _guard = lock_apple_vz_runner_env();
         let _env = EnvVarGuard::capture("BRIDGEVM_APPLE_VZ_RUNNER");
         std::env::remove_var("BRIDGEVM_APPLE_VZ_RUNNER");
 

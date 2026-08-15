@@ -9,6 +9,10 @@ pub(crate) use std::thread::JoinHandle;
 
 // Serialize tests that mutate the process-global BRIDGEVM_APPLE_VZ_RUNNER
 // env var so parallel test execution does not race on the gate.
+#[path = "test_support_wait.rs"]
+mod wait;
+pub(crate) use wait::*;
+
 pub(crate) static APPLE_VZ_RUNNER_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub(crate) struct EnvVarGuard {
@@ -214,12 +218,10 @@ pub(crate) fn spawn_detached_sleep() -> u32 {
         .expect("detached sleep pid was not recorded");
     assert_ne!(pid, 0);
     // Wait until the detached process is actually alive before returning.
-    for _ in 0..200 {
-        if process_is_alive(pid) {
-            break;
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
+    assert!(
+        wait_up_to_ten_seconds(|| process_is_alive(pid)),
+        "the detached process never became visible"
+    );
     pid
 }
 

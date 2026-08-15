@@ -47,7 +47,7 @@ crates/bridgevm-api/src/process/fast_backend.rs	141	0
 crates/bridgevm-api/src/process/lifecycle.rs	381	2
 crates/bridgevm-api/src/process/mod.rs	13	0
 crates/bridgevm-api/src/process_tests/mod.rs	3	0
-crates/bridgevm-api/src/process_tests/part_1.rs	594	0
+crates/bridgevm-api/src/process_tests/part_1.rs	588	0
 crates/bridgevm-api/src/readiness.rs	379	0
 crates/bridgevm-api/src/records.rs	544	0
 crates/bridgevm-api/src/records_tests/mod.rs	3	0
@@ -65,7 +65,8 @@ crates/bridgevm-api/src/response_tests/part_4.rs	821	0
 crates/bridgevm-api/src/response_tests/part_5.rs	708	0
 crates/bridgevm-api/src/shares.rs	128	0
 crates/bridgevm-api/src/ssh_ports.rs	159	0
-crates/bridgevm-api/src/test_support.rs	259	0
+crates/bridgevm-api/src/test_support.rs	241	0
+crates/bridgevm-api/src/test_support_wait.rs	54	0
 crates/bridgevm-apple-vz/src/boot_spec.rs	173	0
 crates/bridgevm-apple-vz/src/bundle_paths.rs	13	0
 crates/bridgevm-apple-vz/src/command_launcher.rs	185	0

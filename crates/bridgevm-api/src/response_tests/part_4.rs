@@ -634,7 +634,7 @@ fn handler_plans_fast_lifecycle_as_metadata_only_blocked() {
 
 #[test]
 fn handler_fast_lifecycle_plan_requires_existing_runner_for_valid_transition() {
-    let _guard = APPLE_VZ_RUNNER_ENV_LOCK.lock().unwrap();
+    let _guard = lock_apple_vz_runner_env();
     let _env = EnvVarGuard::capture("BRIDGEVM_APPLE_VZ_RUNNER");
     std::env::remove_var("BRIDGEVM_APPLE_VZ_RUNNER");
 
