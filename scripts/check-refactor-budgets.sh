@@ -51,16 +51,16 @@ while IFS=$'\t' read -r path max_loc max_unsafe; do
 done < "$BUDGETS"
 
 # A file the TSV never lists is unbounded, which quietly defeats the ratchet:
-# a new 3000-line module used to pass this gate untouched. Every tracked .rs
-# must therefore carry a ceiling.
+# a new 3000-line module used to pass this gate untouched. Every tracked source
+# file must therefore carry a ceiling.
 unlisted=0
 while IFS= read -r tracked; do
   if ! grep -qF "$(printf '%s\t' "$tracked")" "$BUDGETS"; then
-    echo "FAIL: tracked Rust file has no structural budget: $tracked" >&2
+    echo "FAIL: tracked source file has no structural budget: $tracked" >&2
     unlisted=$((unlisted + 1))
     status=1
   fi
-done < <(git -C "$ROOT" ls-files '*.rs')
+done < <(git -C "$ROOT" ls-files '*.rs' '*.swift' '*.sh' '*.py')
 if (( unlisted != 0 )); then
   echo "FAIL: $unlisted file(s) missing from $BUDGETS; add each with its current size." >&2
 fi
