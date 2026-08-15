@@ -179,7 +179,10 @@ struct HvfEngineConfig: Equatable {
             "--skip-build",
             "--agent-service-control", ctlFilePath,
             "--agent-service-command", "whoami",
-            "--display-export-ppm", "\(evidenceDir)/display.ppm",
+            // Only the framebuffer export is consumed, by the IOSurface display
+            // window. Asking for the PPM export as well made the probe checksum
+            // every byte of every frame on its interval and re-encode the whole
+            // screen whenever it changed, for a file the app never read.
             "--display-export-ms", "100",
             "--display-export-fb", "\(evidenceDir)/display.fb",
             "--enable-xhci",

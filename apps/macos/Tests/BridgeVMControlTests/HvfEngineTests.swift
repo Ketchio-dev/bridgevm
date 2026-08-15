@@ -147,13 +147,16 @@ final class HvfEngineConfigTests: XCTestCase {
             "--skip-build",
             "--agent-service-control", "/tmp/evidence/ctl",
             "--agent-service-command", "whoami",
-            "--display-export-ppm", "/tmp/evidence/display.ppm",
             "--display-export-ms", "100",
             "--display-export-fb", "/tmp/evidence/display.fb",
             "--enable-xhci",
             "--input-control", "/tmp/evidence/input.ctl",
             "--hda-coreaudio"
         ])
+        // The display window presents the shared framebuffer through
+        // IOSurface. Nothing reads the PPM feed, and asking for it makes the
+        // probe checksum and re-encode every frame for a file no one opens.
+        XCTAssertFalse(cfg.wrapperArguments().contains("--display-export-ppm"))
     }
 
     func testArgumentsWithAllToggles() {
@@ -1012,60 +1015,6 @@ final class BvAgentEventTests: XCTestCase {
     }
 }
 
-final class PpmDecoderTests: XCTestCase {
-    func testDecodesTwoByTwoP6Fixture() throws {
-        var data = Data("P6\n2 2\n255\n".utf8)
-        data.append(contentsOf: [
-            255, 0, 0,
-            0, 255, 0,
-            0, 0, 255,
-            255, 255, 255
-        ])
-        let decoded = try PpmDecoder.decode(data: data)
-        XCTAssertEqual(decoded.width, 2)
-        XCTAssertEqual(decoded.height, 2)
-        XCTAssertEqual(Array(decoded.rgba), [
-            255, 0, 0, 255,
-            0, 255, 0, 255,
-            0, 0, 255, 255,
-            255, 255, 255, 255
-        ])
-    }
-
-    /// P6 headers may carry comments and arbitrary whitespace between tokens,
-    /// and exactly one whitespace byte after the maxval belongs to the header
-    /// rather than the pixels.
-    func testDecodesHeaderWithCommentsAndExtraWhitespace() throws {
-        var data = Data("P6\n# written by the capture path\n  1   2  \n255\n".utf8)
-        data.append(contentsOf: [10, 20, 30, 40, 50, 60])
-        let decoded = try PpmDecoder.decode(data: data)
-        XCTAssertEqual(decoded.width, 1)
-        XCTAssertEqual(decoded.height, 2)
-        XCTAssertEqual(Array(decoded.rgba), [10, 20, 30, 255, 40, 50, 60, 255])
-    }
-
-    /// A capture read while it is still being written is short, and a zero
-    /// dimension would otherwise allocate nothing and read out of bounds.
-    func testRejectsTruncatedPixelsAndDegenerateDimensions() {
-        var short = Data("P6\n2 2\n255\n".utf8)
-        short.append(contentsOf: [255, 0, 0, 0, 255, 0])
-        XCTAssertThrowsError(try PpmDecoder.decode(data: short))
-
-        XCTAssertThrowsError(try PpmDecoder.decode(data: Data("P6\n0 0\n255\n".utf8)))
-        XCTAssertThrowsError(try PpmDecoder.decode(data: Data("P5\n2 2\n255\n".utf8)))
-        XCTAssertThrowsError(try PpmDecoder.decode(data: Data("P6\n2 2\n65535\n".utf8)))
-        XCTAssertThrowsError(try PpmDecoder.decode(data: Data()))
-    }
-
-    /// Pixel bytes must be read verbatim, including bytes that would be
-    /// whitespace or a comment marker in the header.
-    func testPixelBytesThatLookLikeHeaderSyntaxAreNotSkipped() throws {
-        var data = Data("P6\n2 1\n255\n".utf8)
-        data.append(contentsOf: [35, 10, 32, 9, 13, 35])
-        let decoded = try PpmDecoder.decode(data: data)
-        XCTAssertEqual(Array(decoded.rgba), [35, 10, 32, 255, 9, 13, 35, 255])
-    }
-}
 
 final class HvfIOSurfaceDescriptorTests: XCTestCase {
     func testParsesValidSidecar() throws {
@@ -1098,48 +1047,6 @@ final class HvfIOSurfaceDescriptorTests: XCTestCase {
     }
 }
 
-final class HvfScreenshotSourceTests: XCTestCase {
-    private func temporaryDirectory() throws -> URL {
-        let url = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
-    func testFingerprintIsStableUntilFileIsReplaced() throws {
-        let dir = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let file = dir.appendingPathComponent("display.ppm")
-        try Data("first".utf8).write(to: file)
-        let first = try XCTUnwrap(HvfScreenshotSource.fingerprint(of: file))
-
-        XCTAssertEqual(HvfScreenshotSource.fingerprint(of: file), first)
-        try Data("other".utf8).write(to: file, options: .atomic)
-
-        XCTAssertNotEqual(HvfScreenshotSource.fingerprint(of: file), first)
-    }
-
-    func testLiveDisplayTakesPriorityAndRamfbFallsBackToNewestFrame() throws {
-        let dir = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let ramfb = dir.appendingPathComponent("ramfb", isDirectory: true)
-        try FileManager.default.createDirectory(at: ramfb, withIntermediateDirectories: true)
-        let old = ramfb.appendingPathComponent("old.ppm")
-        let newest = ramfb.appendingPathComponent("new.ppm")
-        try Data("old".utf8).write(to: old)
-        try Data("new".utf8).write(to: newest)
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date(timeIntervalSinceNow: -10)],
-            ofItemAtPath: old.path
-        )
-
-        XCTAssertEqual(HvfScreenshotSource.resolve(in: dir)?.0.lastPathComponent, newest.lastPathComponent)
-
-        let live = dir.appendingPathComponent("display.ppm")
-        try Data("live".utf8).write(to: live)
-        XCTAssertEqual(HvfScreenshotSource.resolve(in: dir)?.0.lastPathComponent, live.lastPathComponent)
-    }
-}
 
 final class TailOffsetReaderTests: XCTestCase {
     func testReadsAppendsAndResetsAfterTruncation() throws {

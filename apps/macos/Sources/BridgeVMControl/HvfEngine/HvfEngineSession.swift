@@ -21,10 +21,6 @@ final class HvfEngineSession: ObservableObject {
     @Published var connectionState: HvfConnectionState = .stopped
     @Published var lastHeartbeatAge: TimeInterval?
     @Published var events: [BvAgentEvent] = []
-    #if canImport(AppKit)
-    @Published var latestScreenshot: NSImage?
-    #endif
-
     var repoRoot: URL
     private var process: Process?
     private var timer: Timer?
@@ -37,7 +33,6 @@ final class HvfEngineSession: ObservableObject {
     private var liveInputHandle: FileHandle?
     private var liveInputPath: URL?
     private var liveInputWriteFailureReported = false
-    private var lastScreenshotFingerprint: HvfScreenshotFingerprint?
     private var injectionConfirmed = false
     private let processIsRunning: (String) -> Bool
     private let vtpmKeyProvider: VTPMStateKeyProviding
@@ -158,10 +153,6 @@ final class HvfEngineSession: ObservableObject {
         events = []
         injectionConfirmed = false
         liveInputWriteFailureReported = false
-        #if canImport(AppKit)
-        latestScreenshot = nil
-        lastScreenshotFingerprint = nil
-        #endif
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         if useTypedRuntime {
@@ -445,7 +436,6 @@ final class HvfEngineSession: ObservableObject {
         if let lastHeartbeatDate {
             lastHeartbeatAge = Date().timeIntervalSince(lastHeartbeatDate)
         }
-        refreshScreenshot()
         if let process, !process.isRunning {
             markStopped()
             return
@@ -549,10 +539,6 @@ final class HvfEngineSession: ObservableObject {
         stopDeadline = nil
         liveInputWriteFailureReported = false
         if clearEvents { events = [] }
-        #if canImport(AppKit)
-        latestScreenshot = nil
-        lastScreenshotFingerprint = nil
-        #endif
     }
 
     private func append(_ event: BvAgentEvent) {
@@ -562,17 +548,6 @@ final class HvfEngineSession: ObservableObject {
         }
     }
 
-    private func refreshScreenshot() {
-        #if canImport(AppKit)
-        let evidenceDirectory = URL(fileURLWithPath: config.evidenceDir, isDirectory: true)
-        guard let (url, fingerprint) = HvfScreenshotSource.resolve(in: evidenceDirectory),
-              fingerprint != lastScreenshotFingerprint else { return }
-        if let image = PpmDecoder.decodeImage(at: url) {
-            latestScreenshot = image
-            lastScreenshotFingerprint = fingerprint
-        }
-        #endif
-    }
 }
 
 #if canImport(AppKit)

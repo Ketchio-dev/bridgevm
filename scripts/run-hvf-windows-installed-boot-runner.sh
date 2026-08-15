@@ -497,8 +497,14 @@ build_installed_boot_env_args() {
     fi
   fi
   if [[ -n "${DISPLAY_EXPORT_PPM:-}" ]]; then
+    ENV_ARGS+=("BRIDGEVM_DISPLAY_EXPORT_PPM=$DISPLAY_EXPORT_PPM")
+  fi
+  # The export cadence belongs to --display-export-ms, not to the PPM feed.
+  # Attaching it to the PPM path meant a caller that exports only the shared
+  # framebuffer silently fell back to the 16 ms readback default, six times
+  # more scanout readback than it asked for.
+  if [[ -n "${DISPLAY_EXPORT_PPM:-}${DISPLAY_EXPORT_FB:-}" ]]; then
     ENV_ARGS+=(
-      "BRIDGEVM_DISPLAY_EXPORT_PPM=$DISPLAY_EXPORT_PPM"
       "BRIDGEVM_DISPLAY_EXPORT_MS=$DISPLAY_EXPORT_MS"
       "BRIDGEVM_VIRTIO_GPU_SCANOUT_READBACK_MS=$DISPLAY_EXPORT_MS"
     )
