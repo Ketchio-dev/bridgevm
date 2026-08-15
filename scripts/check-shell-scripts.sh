@@ -8,17 +8,9 @@
 # directory the caller happened to be in, and it still exited 0 -- a gate that
 # reports PASS against the wrong tree.
 #
-# Only genuine-defect classes are enforced. Style noise is not, because a gate
-# that fires on harmless findings gets disabled rather than fixed:
-#
-#   SC2164  unchecked cd (the defect above)
-#   SC2115  "rm -rf ${x}/" with a possibly-empty variable
-#   SC2068  unquoted $@ (word splitting on paths with spaces)
-#   SC2086  unquoted expansion in a test or command word
-#   SC2181  checking $? indirectly instead of the command
-#   SC2154  referencing a variable that is never assigned
-#
-# Everything else shellcheck reports is advisory and deliberately not gated.
+# Only genuine-defect classes are enforced -- unchecked cd, "rm -rf ${x}/" with
+# an empty variable, unquoted expansions, indirect $?, unassigned variables --
+# because a gate that fires on style noise gets disabled rather than fixed.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -49,10 +41,14 @@ if [[ ${#scripts[@]} -eq 0 ]]; then
   exit 1
 fi
 
-# Sourced libraries have no shebang by design, so tell shellcheck the dialect
-# rather than requiring a shebang they must not have.
-output=$(shellcheck --shell=bash --external-sources \
-  --severity=style --include="$CHECKS" --format=gcc "${scripts[@]}" 2>/dev/null)
+# shellcheck costs ~61 ms per file across 291 files, so one invocation took
+# 17.7 s -- over half of `check-project.sh --fast`. Splitting across cores gives
+# 4.6 s; measured -P 4/8/16 at 6.0/4.6/4.5 s, so eight saturates it. Sourced
+# libraries have no shebang by design, hence --shell=bash. xargs returns 123
+# when a child does, which here means findings, so the findings decide.
+output=$(printf '%s\n' "${scripts[@]}" | xargs -P 8 -n 30 \
+  shellcheck --shell=bash --external-sources \
+  --severity=style --include="$CHECKS" --format=gcc 2>/dev/null)
 
 if [[ -n "$output" ]]; then
   printf '%s\n' "$output" >&2
