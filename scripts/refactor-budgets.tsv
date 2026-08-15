@@ -841,7 +841,8 @@ runners/hvf-runner/src/launch_spec_tests.rs	120	0
 crates/bridgevm-hvf-runtime/src/reset_receipt.rs	77	0
 crates/bridgevm-hvf-runtime/src/reset_receipt_tests.rs	74	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gic_irq_state/verdict.rs	43	0
-scripts/run-xctest-shim-suites.sh	70	0
+scripts/run-xctest-shim-suites.sh	62	0
+scripts/run-xctest-shim-suite.sh	30	0
 crates/bridgevm-hvf-runtime/src/vm_event.rs	90	0
 crates/bridgevm-hvf-runtime/src/vm_event_tests.rs	60	0
 crates/bridgevm-hvf-runtime/src/vm_builder.rs	77	0
