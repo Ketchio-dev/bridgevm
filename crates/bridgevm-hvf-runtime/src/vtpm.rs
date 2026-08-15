@@ -8,7 +8,12 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+#[path = "vtpm_wait.rs"]
+mod vtpm_wait;
 use std::time::{Duration, Instant};
+use vtpm_wait::wait_for_sockets;
 
 use crate::RuntimeError;
 
@@ -50,6 +55,26 @@ impl Drop for SwtpmProcess {
     }
 }
 
+/// A runtime-directory name no other instance in this process can produce.
+///
+/// This was pid plus `subsec_nanos`, which only distinguishes within one second
+/// and collided 177,519 times in 200,000 draws. Two swtpm instances that landed
+/// on the same name shared a directory, so dropping either deleted the other's
+/// live sockets. A counter makes the name unique by construction instead.
+///
+/// It also has to stay short. The sockets live inside this directory and a Unix
+/// socket path is capped at 104 bytes; on a macOS temp dir a nanosecond
+/// timestamp already reached 103, so a two-digit counter would have broken
+/// swtpm outright. pid plus counter is both unique and small.
+pub(crate) fn unique_runtime_dir_name() -> String {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    format!(
+        "bridgevm-vtpm-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
 /// Start swtpm for one run and wait until both sockets exist.
 ///
 /// The socket directory is fresh and private (0700 via tempdir semantics);
@@ -59,14 +84,7 @@ pub fn start_swtpm(config: &VtpmConfig) -> Result<SwtpmProcess, RuntimeError> {
     let io =
         |context: &'static str| move |source: std::io::Error| RuntimeError::Io { context, source };
     std::fs::create_dir_all(&config.state_dir).map_err(io("create vTPM state dir"))?;
-    let runtime_dir = std::env::temp_dir().join(format!(
-        "bridgevm-vtpm-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.subsec_nanos())
-            .unwrap_or(0)
-    ));
+    let runtime_dir = std::env::temp_dir().join(unique_runtime_dir_name());
     std::fs::create_dir_all(&runtime_dir).map_err(io("create swtpm runtime dir"))?;
     let data_socket = runtime_dir.join("data.sock");
     let control_socket = runtime_dir.join("control.sock");
@@ -112,35 +130,13 @@ pub fn start_swtpm(config: &VtpmConfig) -> Result<SwtpmProcess, RuntimeError> {
             .write_all(key)
             .map_err(io("deliver swtpm state key"))?;
     }
-    let mut process = SwtpmProcess {
+    let process = SwtpmProcess {
         child,
         runtime_dir,
         data_socket,
         control_socket,
     };
-    // The wrapper polls 100 * 50ms; same budget here.
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        if process.data_socket.exists() && process.control_socket.exists() {
-            return Ok(process);
-        }
-        if let Ok(Some(status)) = process.child.try_wait() {
-            return Err(RuntimeError::Io {
-                context: "swtpm exited before creating its sockets",
-                source: std::io::Error::other(format!("exit status {status}")),
-            });
-        }
-        if Instant::now() >= deadline {
-            return Err(RuntimeError::Io {
-                context: "swtpm socket wait",
-                source: std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
-                    "sockets not created within 5s",
-                ),
-            });
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
+    wait_for_sockets(process)
 }
 
 #[cfg(test)]

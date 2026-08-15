@@ -3,6 +3,23 @@
 
 use super::*;
 
+/// `start_swtpm` waits for the sockets, which is all the product needs, but
+/// swtpm writes its state file separately and slightly later. Dropping the
+/// handle SIGKILLs the process, so a state file it has not written by then is
+/// never written at all -- wait while it is still alive, not after. Asserting
+/// immediately passed on an idle machine 10 times out of 10 and failed under an
+/// eight-way parallel test load.
+fn wait_for_state_file(path: &Path) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        if path.exists() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    false
+}
+
 fn scratch_state(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("bv-vtpm-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -45,66 +62,5 @@ fn a_binary_that_exits_early_is_reported_not_waited_out() {
     );
 }
 
-#[test]
-fn a_real_swtpm_serves_sockets_and_dies_with_the_handle() {
-    let swtpm = PathBuf::from("/opt/homebrew/bin/swtpm");
-    if !swtpm.exists() {
-        eprintln!("skipping: no swtpm on this host");
-        return;
-    }
-    let state = scratch_state("real");
-    let process = start_swtpm(&VtpmConfig {
-        state_dir: state.clone(),
-        swtpm_bin: swtpm,
-        state_key: None,
-    })
-    .expect("swtpm starts");
-    assert!(process.data_socket().exists());
-    assert!(process.control_socket().exists());
-    let runtime_dir = process.data_socket().parent().unwrap().to_path_buf();
-    drop(process);
-    assert!(
-        !runtime_dir.exists(),
-        "drop must remove the socket directory"
-    );
-    let _ = std::fs::remove_dir_all(&state);
-}
-
-#[test]
-fn an_encrypted_state_dir_refuses_the_wrong_key() {
-    let swtpm = PathBuf::from("/opt/homebrew/bin/swtpm");
-    if !swtpm.exists() {
-        eprintln!("skipping: no swtpm on this host");
-        return;
-    }
-    let state = scratch_state("keyed");
-    let key = vec![0x42u8; 32];
-    // First run creates state under the key.
-    let first = start_swtpm(&VtpmConfig {
-        state_dir: state.clone(),
-        swtpm_bin: swtpm.clone(),
-        state_key: Some(key.clone()),
-    })
-    .expect("keyed swtpm starts");
-    drop(first);
-    assert!(
-        state.join("tpm2-00.permall").exists(),
-        "keyed state must persist"
-    );
-    // Same key: opens.
-    let same = start_swtpm(&VtpmConfig {
-        state_dir: state.clone(),
-        swtpm_bin: swtpm.clone(),
-        state_key: Some(key),
-    });
-    assert!(same.is_ok(), "the right key must open the state");
-    drop(same);
-    // Wrong key: swtpm must fail, not serve sockets over unreadable state.
-    let wrong = start_swtpm(&VtpmConfig {
-        state_dir: state.clone(),
-        swtpm_bin: swtpm,
-        state_key: Some(vec![0x24u8; 32]),
-    });
-    assert!(wrong.is_err(), "the wrong key must be refused");
-    let _ = std::fs::remove_dir_all(&state);
-}
+#[path = "vtpm_tests_real.rs"]
+mod real;

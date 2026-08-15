@@ -867,8 +867,10 @@ crates/bridgevm-hvf-runtime/src/vm_process.rs	250	0
 crates/bridgevm-hvf-runtime/src/vm_process_tests.rs	338	0
 crates/bridgevm-hvf-runtime/src/vm_run.rs	69	0
 crates/bridgevm-hvf-runtime/src/vm_run_tests.rs	110	0
-crates/bridgevm-hvf-runtime/src/vtpm.rs	148	0
-crates/bridgevm-hvf-runtime/src/vtpm_tests.rs	110	0
+crates/bridgevm-hvf-runtime/src/vtpm.rs	136	0
+crates/bridgevm-hvf-runtime/src/vtpm_wait.rs	50	0
+crates/bridgevm-hvf-runtime/src/vtpm_tests.rs	63	0
+crates/bridgevm-hvf-runtime/src/vtpm_tests_real.rs	147	0
 crates/bridgevm-hvf/src/userspace_gic/mod.rs	765	0
 crates/bridgevm-hvf/src/userspace_gic/mmio_regs.rs	358	0
 crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	388	0
