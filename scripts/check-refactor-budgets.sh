@@ -11,11 +11,11 @@ BUDGETS="$ROOT/scripts/refactor-budgets.tsv"
 
 [[ -f "$BUDGETS" ]] || { echo "FAIL: missing budgets file: $BUDGETS" >&2; exit 1; }
 
-# One awk pass over the TSV and every budgeted file. Spawning awk/grep/wc/tr per
-# row meant 5,256 processes for 1,314 rows and cost 5.9 s of this gate's 10.4 s.
-# Inner doc comments are excluded so the ratchet does not penalise documenting a
-# crate; ordinary comments count, since padding a file with commentary is what
-# it exists to catch. unsafe sites are unsafe fn/impl/block/extern everywhere.
+# One awk pass over the TSV and every budgeted file: per-row awk/grep/wc/tr was
+# 5,256 processes for 1,314 rows and 5.9 s of this gate's 10.4 s. Inner doc
+# comments and bare mod/use declarations are excluded, so the ratchet penalises
+# neither documenting a crate nor splitting a file; ordinary comments count.
+# unsafe sites are unsafe fn/impl/block/extern everywhere.
 set +e
 report=$(awk -v root="$ROOT" '
   BEGIN { FS = "\t"; printf "%-44s %8s %8s %8s %8s\n", "file", "loc", "loc_max", "unsafe", "uns_max" }
@@ -34,6 +34,7 @@ report=$(awk -v root="$ROOT" '
       if (header && line ~ /^[[:space:]]*\/\/!/) continue
       if (header && line ~ /^[[:space:]]*$/) { header = 0; continue }
       header = 0
+      if (line ~ /^[[:space:]]*(pub[[:space:]]+)?(mod|use)[[:space:]][^;{]*;[[:space:]]*$/) continue
       loc++
       rest = line
       while (match(rest, /unsafe (fn|impl|\{|extern)/)) {
@@ -53,9 +54,8 @@ status=$?
 set -e
 printf '%s\n' "$report"
 
-# An unlisted file is unbounded, which defeats the ratchet: a new 3000-line
-# module used to pass untouched. comm over sorted lists, not a grep per file
-# (3.5 s alone).
+# An unlisted file is unbounded: a new 3000-line module used to pass untouched.
+# comm over sorted lists, not a grep per file (3.5 s alone).
 unlisted="$(comm -23 \
   <(git -C "$ROOT" ls-files '*.rs' '*.swift' '*.sh' '*.py' | sort) \
   <(grep -v '^#' "$BUDGETS" | cut -f1 | sort))"
