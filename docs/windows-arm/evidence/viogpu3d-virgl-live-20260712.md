@@ -88,6 +88,11 @@ and buffered NVMe enabled by default. The runtime atomically replaces one
 bounded `display.ppm` artifact every 500 ms, and the app's Live Display view
 decodes that file before falling back to diagnostic RAMFB checkpoints.
 
+> Superseded mechanism. The display window later moved to an IOSurface fed by
+> the shared framebuffer export, and the app stopped requesting the PPM feed
+> altogether. The evidence below still stands for the date it was taken; the
+> PPM decode it describes is no longer part of the app's display path.
+
 During the live Windows run the 3,072,016-byte 1280x800 artifact changed both
 modification time and SHA-256 across consecutive observations. The final frame
 captured the Windows shutdown spinner after the app-equivalent control command,
