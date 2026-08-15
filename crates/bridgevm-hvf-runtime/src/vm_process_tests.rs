@@ -172,7 +172,9 @@ fn the_app_surfaces_reproduce_the_wrapper_device_shape() {
             .unwrap_or_else(|| panic!("{k} missing"))
     };
     assert_eq!(get("BRIDGEVM_RAMFB_DUMP_DIR"), "/ev/ramfb");
-    assert_eq!(get("BRIDGEVM_DISPLAY_EXPORT_PPM"), "/ev/display.ppm");
+    assert_eq!(get("BRIDGEVM_DISPLAY_EXPORT_FB"), "/ev/display.fb");
+    // PPM stays off: it checksums and rewrites a frame per interval, unread.
+    assert!(!env.iter().any(|(k, _)| *k == "BRIDGEVM_DISPLAY_EXPORT_PPM"));
     assert_eq!(get("BRIDGEVM_DISPLAY_EXPORT_MS"), "100");
     // Input present means xHCI stays ON: no BRIDGEVM_DISABLE_XHCI.
     assert_eq!(get("BRIDGEVM_INPUT_CONTROL"), "/ev/input.ctl");

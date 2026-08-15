@@ -109,7 +109,8 @@ pub fn helper_env(manifest: &LaunchManifest, launch: &HelperLaunch) -> Vec<(&'st
         let evidence = |name: &str| surfaces.evidence_dir.join(name).display().to_string();
         env.push(("BRIDGEVM_RAMFB", "1".to_string()));
         env.push(("BRIDGEVM_RAMFB_DUMP_DIR", evidence("ramfb")));
-        env.push(("BRIDGEVM_DISPLAY_EXPORT_PPM", evidence("display.ppm")));
+        // No PPM feed: the app reads display.fb, and the PPM path costs a full
+        // frame checksum and file rewrite per interval for a file nobody opens.
         env.push(("BRIDGEVM_DISPLAY_EXPORT_FB", evidence("display.fb")));
         env.push((
             "BRIDGEVM_DISPLAY_EXPORT_MS",
