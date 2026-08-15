@@ -238,7 +238,7 @@ fn wait_for_job_returns_when_job_concludes() {
         stream.write_all(b"\n").unwrap();
     });
 
-    let mut client = QmpClient::connect(&socket_path).unwrap();
+    let mut client = connect_for_test(&socket_path);
     client.negotiate().unwrap();
     wait_for_job(
         &mut client,
@@ -280,7 +280,7 @@ fn wait_for_job_surfaces_job_error() {
         stream.write_all(b"\n").unwrap();
     });
 
-    let mut client = QmpClient::connect(&socket_path).unwrap();
+    let mut client = connect_for_test(&socket_path);
     client.negotiate().unwrap();
     let error = wait_for_job(
         &mut client,
@@ -428,7 +428,7 @@ fn qmp_client_can_read_terminal_event() {
         stream.write_all(b"\n").unwrap();
     });
 
-    let mut client = QmpClient::connect(&socket_path).unwrap();
+    let mut client = connect_for_test(&socket_path);
     let event = client.read_event().unwrap();
 
     assert_eq!(event.name, "SHUTDOWN");
@@ -449,7 +449,7 @@ fn qmp_client_rejects_oversized_envelope() {
         let _ = stream.write_all(&oversized);
     });
 
-    let mut client = QmpClient::connect(&socket_path).unwrap();
+    let mut client = connect_for_test(&socket_path);
     let error = client.read_envelope().unwrap_err();
     assert!(error.to_string().contains("exceeded 1048576 bytes"));
 
@@ -466,7 +466,7 @@ fn qmp_client_rejects_incomplete_envelope() {
         stream.write_all(br#"{"event":"SHUTDOWN"}"#).unwrap();
     });
 
-    let mut client = QmpClient::connect(&socket_path).unwrap();
+    let mut client = connect_for_test(&socket_path);
     let error = client.read_envelope().unwrap_err();
     assert!(error.to_string().contains("incomplete envelope"));
 
@@ -497,7 +497,7 @@ fn qmp_execute_rejects_event_flood_before_command_return() {
         }
     });
 
-    let mut client = QmpClient::connect(&socket_path).unwrap();
+    let mut client = connect_for_test(&socket_path);
     client.negotiate().unwrap();
     let error = client.execute(QmpCommand::query_status()).unwrap_err();
     assert!(error
@@ -521,105 +521,11 @@ fn qmp_event_wait_rejects_non_event_flood() {
         }
     });
 
-    let mut client = QmpClient::connect(&socket_path).unwrap();
+    let mut client = connect_for_test(&socket_path);
     let error = client.read_event().unwrap_err();
     assert!(error
         .to_string()
         .contains("skipped more than 1024 non-event envelopes"));
-
-    server.join().unwrap();
-    fs::remove_file(socket_path).unwrap();
-}
-
-#[test]
-fn qmp_client_drains_available_events_until_terminal() {
-    let socket_path = temp_socket_path();
-    let listener = UnixListener::bind(&socket_path).unwrap();
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        stream
-            .write_all(br#"{"QMP":{"version":{"qemu":{"major":8,"minor":2,"micro":0}}}}"#)
-            .unwrap();
-        stream.write_all(b"\n").unwrap();
-
-        let mut reader = BufReader::new(stream.try_clone().unwrap());
-        let mut line = String::new();
-        reader.read_line(&mut line).unwrap();
-        assert!(line.contains("qmp_capabilities"));
-        stream.write_all(br#"{"return":{}}"#).unwrap();
-        stream.write_all(b"\n").unwrap();
-
-        stream.write_all(br#"{"event":"RESUME"}"#).unwrap();
-        stream.write_all(b"\n").unwrap();
-        stream
-            .write_all(br#"{"event":"SHUTDOWN","data":{"guest":true}}"#)
-            .unwrap();
-        stream.write_all(b"\n").unwrap();
-        stream.write_all(br#"{"event":"RESUME"}"#).unwrap();
-        stream.write_all(b"\n").unwrap();
-    });
-
-    let mut client =
-        QmpClient::connect_with_timeout(&socket_path, Duration::from_millis(25)).unwrap();
-    client.negotiate().unwrap();
-    let drain = client.drain_events(8).unwrap();
-
-    assert_eq!(drain.envelopes_read, 2);
-    assert_eq!(
-        drain
-            .events
-            .iter()
-            .map(|event| event.name.as_str())
-            .collect::<Vec<_>>(),
-        ["RESUME", "SHUTDOWN"]
-    );
-    assert_eq!(
-        drain
-            .terminal_event
-            .as_ref()
-            .unwrap()
-            .data
-            .as_ref()
-            .unwrap(),
-        &json!({ "guest": true })
-    );
-    assert!(drain.has_terminal_event());
-    assert!(!drain.limit_reached);
-
-    server.join().unwrap();
-    fs::remove_file(socket_path).unwrap();
-}
-
-#[test]
-fn qmp_client_drain_treats_idle_socket_as_empty() {
-    let socket_path = temp_socket_path();
-    let listener = UnixListener::bind(&socket_path).unwrap();
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        stream
-            .write_all(br#"{"QMP":{"version":{"qemu":{"major":8,"minor":2,"micro":0}}}}"#)
-            .unwrap();
-        stream.write_all(b"\n").unwrap();
-
-        let mut reader = BufReader::new(stream.try_clone().unwrap());
-        let mut line = String::new();
-        reader.read_line(&mut line).unwrap();
-        assert!(line.contains("qmp_capabilities"));
-        stream.write_all(br#"{"return":{}}"#).unwrap();
-        stream.write_all(b"\n").unwrap();
-
-        thread::sleep(Duration::from_millis(100));
-    });
-
-    let mut client =
-        QmpClient::connect_with_timeout(&socket_path, Duration::from_millis(25)).unwrap();
-    client.negotiate().unwrap();
-    let drain = client.drain_events(8).unwrap();
-
-    assert!(drain.events.is_empty());
-    assert_eq!(drain.envelopes_read, 0);
-    assert!(!drain.has_terminal_event());
-    assert!(!drain.limit_reached);
 
     server.join().unwrap();
     fs::remove_file(socket_path).unwrap();

@@ -11,6 +11,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 pub(super) static TEMP_SOCKET_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -96,4 +97,16 @@ pub(super) fn temp_socket_path() -> PathBuf {
     debug_assert!(path.as_os_str().len() < 104, "path exceeds SUN_LEN");
     let _ = std::fs::remove_file(&path);
     path
+}
+
+/// The client's one-second read timeout is a production budget, not a property
+/// these tests assert. Under a full workspace run a server thread occasionally
+/// exceeded it, turning an expected protocol error into a timeout with a
+/// different message. A bare `.unwrap()` on connect also reported only
+/// `Os { code: .. }` with no path, leaving one rare failure unexplained.
+pub(super) const TEST_READ_TIMEOUT: Duration = Duration::from_secs(30);
+
+pub(super) fn connect_for_test(socket_path: &Path) -> QmpClient {
+    QmpClient::connect_with_timeout(socket_path, TEST_READ_TIMEOUT)
+        .unwrap_or_else(|error| panic!("connect to {} failed: {error}", socket_path.display()))
 }
