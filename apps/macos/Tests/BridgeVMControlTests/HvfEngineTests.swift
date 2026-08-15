@@ -1133,6 +1133,58 @@ final class TailOffsetReaderTests: XCTestCase {
         try "reset\n".write(to: file, atomically: true, encoding: .utf8)
         XCTAssertEqual(reader.readNewLines(from: file), ["reset"])
     }
+
+    /// Draining consumes only through the last newline, so a trailing partial
+    /// line has to survive in the buffer while everything before it is
+    /// returned exactly once, CRLF stripped and blank lines preserved.
+    func testDrainsManyLinesAtOnceAndKeepsTrailingPartial() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("run.log")
+
+        var blob = ""
+        for index in 0..<500 { blob += "line-\(index)\r\n" }
+        blob += "\n"
+        blob += "tail-without-newline"
+        try blob.write(to: file, atomically: true, encoding: .utf8)
+
+        let reader = TailOffsetReader()
+        let lines = reader.readNewLines(from: file)
+        XCTAssertEqual(lines.count, 501)
+        XCTAssertEqual(lines.first, "line-0")
+        XCTAssertEqual(lines[499], "line-499")
+        XCTAssertEqual(lines[500], "")
+        XCTAssertEqual(reader.readNewLines(from: file), [])
+
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("-finished\n".utf8))
+        try handle.close()
+        XCTAssertEqual(reader.readNewLines(from: file), ["tail-without-newline-finished"])
+    }
+
+    /// A run.log can carry a byte sequence that is not valid UTF-8. Lossy
+    /// decoding keeps the surrounding lines readable; returning nothing for
+    /// the line would drop guest output the operator is watching for.
+    func testInvalidUTF8DoesNotDropSurroundingLines() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("run.log")
+
+        var data = Data("before\n".utf8)
+        data.append(contentsOf: [0x62, 0xFF, 0xFE, 0x64, 0x0A])
+        data.append(contentsOf: Data("after\n".utf8))
+        try data.write(to: file)
+
+        let lines = TailOffsetReader().readNewLines(from: file)
+        XCTAssertEqual(lines.count, 3)
+        XCTAssertEqual(lines[0], "before")
+        XCTAssertEqual(lines[2], "after")
+        XCTAssertTrue(lines[1].hasPrefix("b"))
+        XCTAssertTrue(lines[1].hasSuffix("d"))
+    }
 }
 
 final class HvfWindowsBackendTests: XCTestCase {

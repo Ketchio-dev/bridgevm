@@ -375,3 +375,28 @@ final class HvfWindowsInstallTests: XCTestCase {
         return url
     }
 }
+
+final class LineAccumulatorTests: XCTestCase {
+    /// Pipe callbacks deliver arbitrary chunks, so a line split across two
+    /// deliveries must emit exactly once, when its newline arrives.
+    func testSplitsAcrossChunkBoundariesAndHoldsPartialLines() {
+        let accumulator = LineAccumulator()
+        XCTAssertEqual(accumulator.append(Data("alpha\nbra".utf8)), ["alpha"])
+        XCTAssertEqual(accumulator.append(Data("vo\ncharlie".utf8)), ["bravo"])
+        XCTAssertEqual(accumulator.append(Data()), [])
+        XCTAssertEqual(accumulator.append(Data("\n".utf8)), ["charlie"])
+    }
+
+    /// A burst delivery must return every line in order, and blank lines stay
+    /// dropped as the installer log view expects.
+    func testDrainsBurstInOrderAndDropsEmptyLines() {
+        let accumulator = LineAccumulator()
+        var blob = ""
+        for index in 0..<2_000 { blob += "line-\(index)\n\n" }
+        let lines = accumulator.append(Data(blob.utf8))
+        XCTAssertEqual(lines.count, 2_000)
+        XCTAssertEqual(lines.first, "line-0")
+        XCTAssertEqual(lines.last, "line-1999")
+        XCTAssertEqual(accumulator.append(Data()), [])
+    }
+}
