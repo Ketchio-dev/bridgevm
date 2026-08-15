@@ -78,6 +78,20 @@ for copyleft in GPL-2.0 GPL-3.0 LGPL-2.1 LGPL-3.0 AGPL-3.0 MPL-2.0; do
   fi
 done
 
+# A known defect that is still unfixed has to stay disclosed where a reader
+# meets the product, not only in a dated evidence file they would have to go
+# looking for. Deleting the README paragraph is otherwise invisible to every
+# other gate, which makes the product look better than it is.
+# The evidence file's own Status line is the source of truth: while it still
+# says the title/tab/menu glyphs do not appear, the README must link it. When
+# that defect is actually fixed, that line changes and this check retires with
+# it.
+glyph_evidence="docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md"
+if [[ -f "$glyph_evidence" ]] && grep -qF 'glyphs still do not' "$glyph_evidence"; then
+  grep -qF "$glyph_evidence" README.md ||
+    fail "README.md no longer discloses the open glyph rendering defect: $glyph_evidence"
+fi
+
 if [[ $errors -ne 0 ]]; then
   echo "attribution honesty: FAIL ($errors error(s))" >&2
   exit 1
