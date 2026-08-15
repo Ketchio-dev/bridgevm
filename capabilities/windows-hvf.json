@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-15",
-  "tested_commit": "14c440804b0f96a608db67997b5e16f3701d9b21",
+  "tested_commit": "95725f40ab946c6f3b49d5d52d552d98755d6ec8",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -134,7 +134,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-15 at final head 14c440804b0f96a608db67997b5e16f3701d9b21. scripts/run-xctest-shim-suites.sh: 403 + 193 (1 skip) + 62 = 658 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' at that exact head across 19 steps (log SHA-256 bdaaa557201e7c9e73fef30786fab3687af8ac2e3562efbb18e9a1b9b29b1375). Hosted CI 31895264421 and 31895264398 both success on that head. A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass with notice_sha256=c714afd9d0998e0c91647d59e0f2717892b9ad1b8f477abd14c191846ba18985 across 12 frameworks. Re-proven because the previous claim was scoped to ffbbf53 and six later commits changed shipping code: the app's log tailing, install log accumulator, PPM decode and header handling, the display-export request, attached-VM liveness probing and Shell.run's process wait, plus the runner's display-export cadence. The suite count rose from 653 to 658 with the five tests added for those changes.",
+      "measured": "PROVEN 2026-08-15 at final head 95725f40ab946c6f3b49d5d52d552d98755d6ec8. scripts/run-xctest-shim-suites.sh: 404 + 193 (1 skip) + 62 = 659 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' (log SHA-256 2b8a156d614b1575b3cfa26b353e935f6472e6362c9c7d400354344947493f9b). Hosted CI 31897998216 and 31897998218 both success on that head. A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass with notice_sha256=c714afd9d0998e0c91647d59e0f2717892b9ad1b8f477abd14c191846ba18985 across 12 frameworks. Re-proven because further commits changed shipping code: hvf-runner stopped requesting the unread PPM display feed, and DaemonVirtualMachineResourcesDTO's decoder was rewritten after CI proved it could not be type-checked on macos-15. Hosted coverage is no longer partial: the three shim suites, run-swift-tests.sh, the attribution/known-defect gate and the virgl integer-attribute policy now run on every push, so this criterion is verified by CI rather than only by a local run.",
       "evidence_paths": [
         "STATUS.md"
       ]
