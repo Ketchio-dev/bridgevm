@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-15",
-  "tested_commit": "95725f40ab946c6f3b49d5d52d552d98755d6ec8",
+  "tested_commit": "d17167534cfdfa9ada469b8282ce9543ad5fd77f",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -134,7 +134,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-15 at final head 95725f40ab946c6f3b49d5d52d552d98755d6ec8. scripts/run-xctest-shim-suites.sh: 404 + 193 (1 skip) + 62 = 659 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' (log SHA-256 2b8a156d614b1575b3cfa26b353e935f6472e6362c9c7d400354344947493f9b). Hosted CI 31897998216 and 31897998218 both success on that head. A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass with notice_sha256=c714afd9d0998e0c91647d59e0f2717892b9ad1b8f477abd14c191846ba18985 across 12 frameworks. Re-proven because further commits changed shipping code: hvf-runner stopped requesting the unread PPM display feed, and DaemonVirtualMachineResourcesDTO's decoder was rewritten after CI proved it could not be type-checked on macos-15. Hosted coverage is no longer partial: the three shim suites, run-swift-tests.sh, the attribution/known-defect gate and the virgl integer-attribute policy now run on every push, so this criterion is verified by CI rather than only by a local run.",
+      "measured": "PROVEN 2026-08-15 at final head d17167534cfdfa9ada469b8282ce9543ad5fd77f. scripts/run-xctest-shim-suites.sh: 404 + 193 (1 skip) + 62 = 659 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' (log SHA-256 7142d9f424447706aa02584d49a873c6746a308b06cac772cec4cc4f7a8b5a29). Hosted CI green on that head, including the macOS app suites job. A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Re-proven because the daemon's proxy-window crop path changed: the guest framebuffer is now read once per frame instead of once per window, and the summary writer and its tests were split into their own modules. bridgevm-daemon's own suite is 58 tests, up one for the read-hoist regression.",
       "evidence_paths": [
         "STATUS.md"
       ]
