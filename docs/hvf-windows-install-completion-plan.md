@@ -119,13 +119,13 @@ Assistant memory with the full history: `bridgevm-hvf-engine-status.md`.
     bounded boot generation after vCPU join plus GIC/platform/RAM/vCPU reset.
   - Device attach from media (~L1410): `attach_nvme_raw_file`,
     `attach_nvme_second_namespace_raw_file`, `attach_pci_boot_media`, `attach_virtio_iso`.
-- Platform (device container): `crates/bridgevm-hvf/src/platform_virt.rs`
+- Platform (device container): `crates/bridgevm-hvf/src/platform_virt/mod.rs`
   - `struct VirtPlatform` (~L124): `fw_cfg, uart, rtc, pcie, nvme, xhci, virtio_iso,
     pci_boot_media, ramfb, flash_vars`, plus nvme liveness flags + `dtb`.
   - `new_with_ramfb_state` (~L161); `on_mmio` dispatch (~L498).
-- NVMe model: `crates/bridgevm-hvf/src/nvme.rs` (single controller, NSID 1 + optional NSID 2).
+- NVMe model: `crates/bridgevm-hvf/src/nvme/mod.rs` (single controller, NSID 1 + optional NSID 2).
 - xHCI model: `crates/bridgevm-hvf/src/xhci/` (DCI3 HID keyboard; built for key delivery).
-- PCIe ECAM: `crates/bridgevm-hvf/src/pcie.rs` (NVMe 00:01.0, xHCI 00:02.0, virtio-blk 00:03.0).
+- PCIe ECAM: `crates/bridgevm-hvf/src/pcie/mod.rs` (NVMe 00:01.0, xHCI 00:02.0, virtio-blk 00:03.0).
 - Machine map: `crates/bridgevm-hvf/src/machine.rs` — `FLASH_CODE(0x0,64MiB)`,
   `FLASH_VARS(0x0400_0000,64MiB)`, `RAM_BASE=0x4000_0000`, `PCIE_MMIO_32/64`.
 - Media/env config: `crates/bridgevm-hvf/src/media.rs`.

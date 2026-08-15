@@ -45,7 +45,7 @@ while IFS=$'\t' read -r path class topic superseded_by extra; do
       errors=$((errors + 1))
       ;;
   esac
-  [[ "$path" == docs/*.md || "$path" == STATUS.md ]] || {
+  [[ "$path" == docs/*.md || "$path" == STATUS.md || "$path" == HANDOFF.md ]] || {
     echo "manifest line $line_number has invalid path: $path" >&2
     errors=$((errors + 1))
   }
@@ -66,12 +66,16 @@ while IFS=$'\t' read -r path class topic superseded_by extra; do
   fi
 done < "$MANIFEST"
 
+# Tracked root documents are classified too. HANDOFF.md is a dated operator
+# record, so leaving it unclassified let its point-in-time numbers read as
+# current. GOAL.md and PLAN.md are deliberately untracked and so cannot be
+# required to appear here.
 while IFS= read -r path; do
   if ! is_seen "$path"; then
     echo "unclassified Markdown document: $path" >&2
     errors=$((errors + 1))
   fi
-done < <(cd "$ROOT" && find docs -type f -name '*.md' | LC_ALL=C sort)
+done < <(cd "$ROOT" && { find docs -type f -name '*.md'; git ls-files 'HANDOFF.md'; } | LC_ALL=C sort)
 
 # Relative links must resolve, so a moved or renamed file cannot leave a
 # document pointing at nothing. docs/archive holds point-in-time snapshots whose
@@ -105,10 +109,29 @@ files.extend(name for name in ('PLAN.md',) if os.path.exists(name))
 # reader can never mistake an unwritten script for one they can run.
 SCRIPT = re.compile(r'`((?:scripts|tools)/[A-Za-z0-9._/-]+\.(?:sh|py))`')
 
+# Source files are cited the same way and go stale the same way, most often when
+# a module is split from foo.rs into foo/mod.rs. The split path is not accepted as
+# a match: a reader following the citation needs the path that actually exists.
+# Only repo-rooted directories are checked, so citations of an external tree's own
+# layout are left alone.
+SOURCE = re.compile(r'`((?:crates|apps)/[A-Za-z0-9._/-]+\.(?:rs|swift))`')
+
 broken = 0
 for path in sorted(files):
     with open(path, encoding='utf-8', errors='replace') as handle:
         for number, line in enumerate(handle, 1):
+            for match in SOURCE.finditer(line):
+                reference = match.group(1)
+                if os.path.exists(reference):
+                    continue
+                if '(new)' in line or 'planned' in line.lower():
+                    continue
+                print(
+                    f'source reference does not exist and is not marked planned: '
+                    f'{path}:{number} -> {reference}',
+                    file=sys.stderr,
+                )
+                broken += 1
             for match in SCRIPT.finditer(line):
                 script = match.group(1)
                 if os.path.exists(script):

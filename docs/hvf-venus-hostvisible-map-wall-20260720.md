@@ -129,7 +129,7 @@ create-blob), with the WinPE asset-refresh injects in the sibling
 
 ## Host device-model instrumentation added
 
-`crates/bridgevm-hvf/src/virtio_gpu_3d.rs` now classifies
+`crates/bridgevm-hvf/src/virtio_gpu_3d/mod.rs` now classifies
 `RESOURCE_UNMAP_BLOB` invalid-parameter responses
 (`already_destroyed_was_mapped` / `already_destroyed_was_unmapped` /
 `never_created`, plus `short_request`) with venus-start trace lines, id-reuse

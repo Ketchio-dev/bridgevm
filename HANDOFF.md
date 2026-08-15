@@ -1,5 +1,10 @@
 # HANDOFF — 2026-08-09/11 프로덕션 클로즈
 
+> **역사 기록.** 이 문서는 2026-08-09/11 시점의 인수인계 기록이며 그 시점의
+> 상태를 보존한다. 당시 OPEN이던 A3/A11은 이후 PROVEN으로 닫혔고, 여기 적힌
+> 653 같은 테스트 개수는 그 시점의 값이다. 현재 상태는 `STATUS.md`와 능력
+> 레지스트리(`capabilities/windows-hvf.json`)를 보라.
+
 ## 2026-08-11 all-vCPU holder diagnostic implementation (committed; follow-up planned)
 
 - A3/A11은 여전히 OPEN이다. 아래 변경은 stop 후 read-only diagnostics뿐이며 guest/device/interrupt/watchdog/renderer/A3 3/3 정책을 바꾸지 않는다.
