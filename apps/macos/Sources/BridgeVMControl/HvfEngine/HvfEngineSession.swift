@@ -12,9 +12,9 @@ import AppKit
 ///
 /// A session that launched the VM holds a `Process` and can check for free. A
 /// session that attached to an already-running VM has no handle, so the only
-/// answer comes from `pgrep`, and a fork/exec costs about 100 ms on this
-/// machine (even `/usr/bin/true` costs 77 ms). Running that on every 100 ms
-/// poll left the main actor with no time for anything else.
+/// answer comes from `pgrep`, which measures about 24 ms here. Running that on
+/// every 100 ms poll would spend roughly a quarter of a core on it; once per
+/// second is about 2 percent.
 enum HvfAttachedLivenessSchedule {
     static let interval: TimeInterval = 1
 
