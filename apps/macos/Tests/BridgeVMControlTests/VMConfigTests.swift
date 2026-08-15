@@ -426,6 +426,31 @@ final class ShellCommandSafetyTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(started), 1.5)
     }
 
+    /// A command that finishes normally, but not instantly, must be waited for
+    /// rather than killed. Nothing else covers this: the timeout test proves we
+    /// kill when we should, and the fast commands elsewhere finish before any
+    /// plausible wait expires, so a broken wait stays invisible there.
+    func testShellRunWaitsForASlowCommandInsteadOfKillingIt() {
+        let started = Date()
+        let result = Shell.run("/bin/sh", ["-c", "/bin/sleep 0.6; /usr/bin/printf finished"], timeout: 20)
+
+        XCTAssertEqual(result.output, "finished")
+        XCTAssertEqual(result.code, 0, "a command inside its timeout must not be terminated")
+        XCTAssertGreaterThan(Date().timeIntervalSince(started), 0.5)
+    }
+
+    /// The wait must also not add latency of its own: a command that exits
+    /// immediately should return in well under the old 50 ms sampling period.
+    func testShellRunReturnsPromptlyForAnImmediateCommand() {
+        _ = Shell.run("/usr/bin/true", [])          // warm any first-call cost
+
+        let started = Date()
+        _ = Shell.run("/usr/bin/true", [])
+        let elapsed = Date().timeIntervalSince(started)
+
+        XCTAssertLessThan(elapsed, 0.05, "immediate command took \(elapsed)s; the wait is sampling, not blocking")
+    }
+
     func testShellRunTimeoutTerminatesChildProcesses() throws {
         let pidFile = FileManager.default.temporaryDirectory
             .appendingPathComponent("bridgevm-child-\(UUID().uuidString).pid")
