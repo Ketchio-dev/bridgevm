@@ -46,7 +46,7 @@ Baseline (seeded in `scripts/refactor-budgets.tsv`, enforced by
 | `crates/bridgevm-daemon/src/main.rs` | 5,969 | 4 |
 | `crates/bridgevm-storage/src/lib.rs` | 5,321 | 0 |
 
-The repository has no hosted CI, so the ratchet script is the non-increase
+The `budgets` CI job runs the ratchet script on every push; it is the non-increase
 gate. As a file shrinks, add its new sibling modules to the budgets file and
 lower the shrunk file's ceiling — but **only for a genuine aggregate reduction**,
 never for a pure move (see §5).

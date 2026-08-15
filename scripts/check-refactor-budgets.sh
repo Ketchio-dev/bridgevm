@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Enforce the structural-debt ratchet budgets in scripts/refactor-budgets.tsv:
-# no listed file may exceed its recorded line-count or unsafe-site ceiling. This
-# stands in for a CI budget gate (the repository has no hosted CI). As extraction
-# reduces a file, lower its ceiling in the TSV; the check then locks in the gain.
+# no listed file may exceed its recorded line-count or unsafe-site ceiling, and
+# no tracked Rust file may be absent from the TSV. As extraction reduces a file,
+# lower its ceiling; the check then locks in the gain. The `budgets` job in
+# .github/workflows/ci.yml runs this on every push.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -48,6 +49,21 @@ while IFS=$'\t' read -r path max_loc max_unsafe; do
   if (( unsafe > max_unsafe )); then flag+=" UNSAFE>ceiling"; status=1; fi
   printf '%-44s %8s %8s %8s %8s%s\n' "$path" "$loc" "$max_loc" "$unsafe" "$max_unsafe" "$flag"
 done < "$BUDGETS"
+
+# A file the TSV never lists is unbounded, which quietly defeats the ratchet:
+# a new 3000-line module used to pass this gate untouched. Every tracked .rs
+# must therefore carry a ceiling.
+unlisted=0
+while IFS= read -r tracked; do
+  if ! grep -qF "$(printf '%s\t' "$tracked")" "$BUDGETS"; then
+    echo "FAIL: tracked Rust file has no structural budget: $tracked" >&2
+    unlisted=$((unlisted + 1))
+    status=1
+  fi
+done < <(git -C "$ROOT" ls-files '*.rs')
+if (( unlisted != 0 )); then
+  echo "FAIL: $unlisted file(s) missing from $BUDGETS; add each with its current size." >&2
+fi
 
 if (( status != 0 )); then
   echo "FAIL: a file exceeded its structural-debt budget; extract into modules rather than growing these files, or lower a ceiling only after a real reduction." >&2
