@@ -5,6 +5,7 @@ mod admin;
 mod controller;
 mod disk;
 mod features;
+mod features_get;
 mod identify;
 mod interrupts;
 mod io;

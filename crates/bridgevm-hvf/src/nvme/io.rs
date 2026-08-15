@@ -22,18 +22,24 @@ impl NvmeController {
     /// NVM FLUSH (0x00). QEMU accepts both NSID 1 and broadcast NSID for a
     /// single-NVM-namespace controller. Memory-backed media is already coherent;
     /// write-through host-file media issues a durable data sync.
+    /// Flush every namespace, returning the status the guest sees. Broadcast
+    /// FLUSH and disabling the write cache both promise durability, so both
+    /// must cover every namespace and surface a failure instead of success.
+    pub(crate) fn flush_all_namespaces(&mut self) -> u16 {
+        let mut ok = self.disk.flush().is_ok();
+        if let Some(disk2) = self.disk2.as_mut() {
+            ok &= disk2.flush().is_ok();
+        }
+        if ok {
+            SC_SUCCESS
+        } else {
+            SC_INTERNAL_DEVICE_ERROR
+        }
+    }
+
     pub(crate) fn io_flush(&mut self, cmd: &SubmissionEntry) -> u16 {
-        // Broadcast NSID flushes every active namespace.
         if cmd.nsid == u32::MAX {
-            let mut ok = self.disk.flush().is_ok();
-            if let Some(disk2) = self.disk2.as_mut() {
-                ok &= disk2.flush().is_ok();
-            }
-            return if ok {
-                SC_SUCCESS
-            } else {
-                SC_INTERNAL_DEVICE_ERROR
-            };
+            return self.flush_all_namespaces();
         }
         let Some(backend) = self.backend_for_nsid_mut(cmd.nsid) else {
             return SC_INVALID_FIELD;
