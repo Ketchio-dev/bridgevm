@@ -1,161 +1,9 @@
 import Foundation
 
-private enum GuestWindowProxyFrameLimits {
-  static let maximumPixelCount = 32 * 1024 * 1024
-
-  static func supports(width: Int, height: Int) -> Bool {
-    width > 0 && height > 0 && width <= maximumPixelCount / height
-  }
-}
-
 #if canImport(AppKit)
 import AppKit
 import SwiftUI
 #endif
-
-struct GuestWindowProxyPlan: Equatable {
-  struct HostSize: Equatable {
-    var width: Int
-    var height: Int
-  }
-
-  struct FramebufferSize: Equatable {
-    var width: Int
-    var height: Int
-  }
-
-  struct HostPoint: Equatable {
-    var x: Double
-    var y: Double
-  }
-
-  struct HostFrame: Equatable {
-    var x: Double
-    var y: Double
-    var width: Double
-    var height: Double
-  }
-
-  struct GuestPoint: Equatable {
-    var x: Int
-    var y: Int
-  }
-
-  var vmName: String
-  var windowID: String
-  var title: String
-  var guestBounds: GuestToolsWindowBounds
-  var hostSize: HostSize
-  var scale: Double
-  var pid: Int?
-  var desktop: Int?
-  var cropFrameSummaryPath: String?
-
-  var inputScaleX: Double {
-    Double(guestBounds.width) / Double(hostSize.width)
-  }
-
-  var inputScaleY: Double {
-    Double(guestBounds.height) / Double(hostSize.height)
-  }
-
-  var minimumFramebufferSize: FramebufferSize {
-    let right = guestBounds.x.addingReportingOverflow(guestBounds.width)
-    let bottom = guestBounds.y.addingReportingOverflow(guestBounds.height)
-    return FramebufferSize(
-      width: max(1, max(guestBounds.width, right.overflow ? guestBounds.width : right.partialValue)),
-      height: max(1, max(guestBounds.height, bottom.overflow ? guestBounds.height : bottom.partialValue))
-    )
-  }
-
-  var summary: String {
-    let pidText = pid.map { "pid \($0), " } ?? ""
-    return
-      "\(title) (\(windowID), \(pidText)guest \(guestBounds.displayText), host \(hostSize.width)x\(hostSize.height))"
-  }
-
-  func displaydWindowRegionArguments(
-    framebufferSize requestedFramebufferSize: FramebufferSize? = nil,
-    backingScale requestedBackingScale: Int = 1
-  ) -> [String] {
-    let framebufferSize = requestedFramebufferSize ?? minimumFramebufferSize
-    let backingScale = max(1, requestedBackingScale)
-    var arguments = [
-      "--framebuffer-width",
-      "\(max(1, framebufferSize.width))",
-      "--framebuffer-height",
-      "\(max(1, framebufferSize.height))",
-      "--scale",
-      "\(backingScale)",
-      "--window-id",
-      windowID,
-    ]
-    if !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      arguments.append(contentsOf: ["--window-title", title])
-    }
-    arguments.append(contentsOf: [
-      "--window-x",
-      "\(guestBounds.x)",
-      "--window-y",
-      "\(guestBounds.y)",
-      "--window-width",
-      "\(guestBounds.width)",
-      "--window-height",
-      "\(guestBounds.height)",
-      "--window-host-width",
-      "\(hostSize.width)",
-      "--window-host-height",
-      "\(hostSize.height)",
-    ])
-    return arguments
-  }
-
-  func displaydWindowCropArguments(
-    framebufferSize requestedFramebufferSize: FramebufferSize? = nil,
-    backingScale requestedBackingScale: Int = 1,
-    framebufferRGBAFile: String,
-    windowCropRGBAFile: String
-  ) -> [String] {
-    displaydWindowRegionArguments(
-      framebufferSize: requestedFramebufferSize,
-      backingScale: requestedBackingScale
-    ) + [
-      "--framebuffer-rgba-file",
-      framebufferRGBAFile,
-      "--window-crop-rgba-file",
-      windowCropRGBAFile,
-    ]
-  }
-
-  func guestPoint(forHostPoint hostPoint: HostPoint) -> GuestPoint {
-    let guestXOffset = Int((hostPoint.x * inputScaleX).rounded())
-    let guestYOffset = Int((hostPoint.y * inputScaleY).rounded())
-    let maxGuestX = guestBounds.x + max(0, guestBounds.width - 1)
-    let maxGuestY = guestBounds.y + max(0, guestBounds.height - 1)
-    return GuestPoint(
-      x: clamp(guestBounds.x + guestXOffset, lower: guestBounds.x, upper: maxGuestX),
-      y: clamp(guestBounds.y + guestYOffset, lower: guestBounds.y, upper: maxGuestY)
-    )
-  }
-
-  func guestBounds(
-    forHostContentFrame hostFrame: HostFrame,
-    relativeTo baselineHostFrame: HostFrame
-  ) -> GuestToolsWindowBounds {
-    let deltaX = hostFrame.x - baselineHostFrame.x
-    let deltaY = hostFrame.y - baselineHostFrame.y
-    return GuestToolsWindowBounds(
-      x: guestBounds.x + Int((deltaX * inputScaleX).rounded()),
-      y: guestBounds.y - Int((deltaY * inputScaleY).rounded()),
-      width: max(1, Int((hostFrame.width * inputScaleX).rounded())),
-      height: max(1, Int((hostFrame.height * inputScaleY).rounded()))
-    )
-  }
-
-  private func clamp(_ value: Int, lower: Int, upper: Int) -> Int {
-    min(max(value, lower), upper)
-  }
-}
 
 enum GuestWindowProxyPointerAction: String, Equatable {
   case move
@@ -505,7 +353,7 @@ enum GuestWindowProxyLauncher {
         inputSender: inputSender
       )
     )
-    window.center()
+    plan.placeKeepingGuestPosition(window)
     let syncController = GuestWindowProxyWindowSyncController(
       plan: plan,
       baselineHostFrame: hostContentFrame(for: window),

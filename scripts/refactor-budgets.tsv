@@ -981,7 +981,8 @@ apps/macos/Sources/BridgeVMApp/Models/VirtualMachine.swift	2186	0
 apps/macos/Sources/BridgeVMApp/Services/BundledDaemonSupervisor.swift	478	0
 apps/macos/Sources/BridgeVMApp/Services/EmbeddedDisplayLauncher.swift	307	0
 apps/macos/Sources/BridgeVMApp/Services/EmbeddedDisplayLaunchError.swift	22	0
-apps/macos/Sources/BridgeVMApp/Services/GuestWindowProxyLauncher.swift	988	0
+apps/macos/Sources/BridgeVMApp/Services/GuestWindowProxyLauncher.swift	836
+apps/macos/Sources/BridgeVMApp/Services/GuestWindowProxyPlan.swift	196	0
 apps/macos/Sources/BridgeVMApp/Services/VirtualMachineClient.swift	8375	0
 apps/macos/Sources/BridgeVMApp/Services/NWConnectionAsync.swift	102	0
 apps/macos/Sources/BridgeVMApp/Services/WindowsHVFLabLauncher.swift	58	0
@@ -1035,7 +1036,8 @@ apps/macos/Tests/BridgeVMAppTests/EmbeddedDisplayLauncherTests.swift	358	0
 apps/macos/Tests/BridgeVMAppTests/EmbeddedDisplaySpawnWindowTests.swift	22	0
 apps/macos/Tests/BridgeVMAppTests/GuestToolsCommandResultTests.swift	353	0
 apps/macos/Tests/BridgeVMAppTests/GuestWindowProxyFrameTests.swift	311	0
-apps/macos/Tests/BridgeVMAppTests/GuestWindowProxyPlannerTests.swift	342	0
+apps/macos/Tests/BridgeVMAppTests/GuestWindowProxyPlannerTests.swift	342
+apps/macos/Tests/BridgeVMAppTests/GuestWindowProxyOriginTests.swift	73	0
 apps/macos/Tests/BridgeVMAppTests/HostPasteboardTests.swift	43	0
 apps/macos/Tests/BridgeVMAppTests/VMLiveEvidenceTests.swift	83	0
 apps/macos/Tests/BridgeVMAppTests/VMReadinessSummaryTests.swift	313	0
