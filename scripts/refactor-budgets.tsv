@@ -762,8 +762,7 @@ crates/bridgevm-qemu/src/qmp_commands.rs	85	0
 crates/bridgevm-qemu/src/qmp_messages.rs	72	0
 crates/bridgevm-qemu/src/qmp_operations.rs	38	0
 crates/bridgevm-qemu/src/snapshot_jobs.rs	84	0
-# helpers.rs is the one ceiling raised in this session: a shared connect helper
-# is 12 lines, and its callers shed 94, so the crate is 82 lines smaller.
+# A shared connect helper cost 12 lines here and saved 94 in its callers.
 crates/bridgevm-qemu/src/tests_split/helpers.rs	98	0
 crates/bridgevm-qemu/src/tests_split/mod.rs	0	0
 crates/bridgevm-qemu/src/tests_split/part_1.rs	556	0
@@ -1355,8 +1354,8 @@ scripts/refactor/flatten_use.py	56	0
 scripts/refactor/regroup.py	397	1
 scripts/refactor/roundtrip.py	58	0
 scripts/refactor/split_hvf_gic_boot_probe.py	296	0
-# Raised once, from 281, for the check that tested_commit is not stale: A11 went
-# stale four times in one session and each was caught by hand.
+# Grew by 11 lines for the check that tested_commit is not stale, after A11 went
+# stale four times in one session with each caught by hand.
 scripts/render-capability-status.py	292	0
 scripts/render-graphics-compatibility.py	245	0
 tests/fixtures/fake-swtpm.py	77	0
