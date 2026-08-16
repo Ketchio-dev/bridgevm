@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-15",
-  "tested_commit": "923fad46ca8bbc1810b5c5fef314582250ebd485",
+  "tested_commit": "f5e71ace60f10832dcbf4e6a34fd4101693b5bde",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -134,7 +134,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-16 at final head 923fad46ca8bbc1810b5c5fef314582250ebd485. scripts/run-xctest-shim-suites.sh: 409 + 193 (1 skip) + 62 = 664 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' across 25 steps (log SHA-256 4fe3edd9194168fb72f94f82cf94c2881be99733ec2ec70ee022dfd9ed58478e), and passed three consecutive times after a flaky test added earlier in the session was removed. A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Every one of the 25 steps also runs in hosted CI; five ran nowhere but a developer's machine when this session began.",
+      "measured": "PROVEN 2026-08-16 at final head f5e71ace60f10832dcbf4e6a34fd4101693b5bde. scripts/run-xctest-shim-suites.sh: 409 + 193 (1 skip) + 62 = 664 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' across 25 steps (log SHA-256 2aecfc12696460edfb9e62b619551b5fa7e6bd80a146c137c1e8963c34f177e9). A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Every one of the 25 steps also runs in hosted CI; five ran nowhere but a developer's machine when this session began. Across the session no ceiling in scripts/refactor-budgets.tsv was raised on a file that already had one, and 817 came down by 6,660 lines in total.",
       "evidence_paths": [
         "STATUS.md"
       ]
