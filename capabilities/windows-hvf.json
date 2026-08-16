@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-15",
-  "tested_commit": "9d8e4b55a0c88513e9d9e9bb201f5fd7bc870902",
+  "tested_commit": "ea5d2a2b97d2504b86f5931edc671db77e50be23",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -134,7 +134,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-16 at final head 9d8e4b55a0c88513e9d9e9bb201f5fd7bc870902. scripts/run-xctest-shim-suites.sh: 409 + 193 (1 skip) + 62 = 664 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' across 25 steps (log SHA-256 dd1725a42bfa83af30dac33e620133574dbd7b6a3752c9122ea93bcd36f3f2aa). A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Staleness is checked rather than remembered: the registry check fails when crates/, runners/, apps/, scripts/ or tests/ differ between tested_commit and HEAD.",
+      "measured": "PROVEN 2026-08-16 at final head ea5d2a2b97d2504b86f5931edc671db77e50be23. scripts/run-xctest-shim-suites.sh: 409 + 193 (1 skip) + 62 = 664 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' across 25 steps (log SHA-256 edc704f8a3a609ac878604981597db72537b74176a2b98509c6a0f06cc07143d). A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Two staleness classes are now checked rather than remembered: code moving after tested_commit, and a measured entry citing a different head than the one it is recorded against.",
       "evidence_paths": [
         "STATUS.md"
       ]
