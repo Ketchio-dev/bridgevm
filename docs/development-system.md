@@ -243,7 +243,13 @@ describes was observed, not anticipated.
 | `scripts/check-shell-scripts.sh` | Five gate scripts ran `cd "$ROOT"` unchecked with no `set -e`, so a failed `cd` left them checking the wrong tree and still exiting 0. |
 | `scripts/check-tests-are-reachable.py` | A test file that no `mod`, `#[path]` or `include!` reaches never compiles, and nothing reports it: a test that does not exist cannot fail. |
 | `scripts/check-daemon-dto-decoders.py` | A `CodingKeys` case that no `forKey:` decodes makes the field silently absent; decoding still succeeds and the UI shows a default. |
-| `scripts/check-swift-force-casts.py` | `try!` and `as!` crash the app instead of surfacing an error. |
+| `scripts/check-swift-force-casts.py` | `try!` and `as!` crash the app instead of surfacing an error, and a hardcoded home path picks a file the user never chose. |
+| `scripts/check-python-scripts.py` | A syntax error in a Python gate surfaces only when something runs it, which for a gate can be days later. |
+| `scripts/check-workflow-yaml.py` | A workflow that does not parse does not run, and a deleted job leaves no trace in a green result. |
+| `scripts/check-capability-evidence.py` | A criterion's cited evidence did not contain the figures it was cited for. |
+| `scripts/check-supply-chain.sh` | A git or path dependency would put code outside the locked registry into a release. |
+| `scripts/check-fuzz-smoke.sh` | Without it the parser corpus only runs where `cargo fuzz` is installed, making the seeds decoration. |
+| `scripts/check-loom.sh` | A `--cfg loom` typo compiles every interleaving model to nothing and passes. |
 | The README disclosure in `scripts/check-attribution-honesty.sh` | Deleting the known-defect paragraph passed every other gate. |
 
 When adding one, mutate it in both directions before trusting it: inject the
