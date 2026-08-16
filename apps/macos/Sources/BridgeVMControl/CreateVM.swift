@@ -913,11 +913,11 @@ struct CreateVMSheet: View {
 
     private func autofillWin11() {
         guard isoPath.isEmpty else { return }
-        let candidates = [
-            "\(NSHomeDirectory())/Downloads/Win11_25H2_English_Arm64_v2.iso",
-            "/Users/user/Desktop/Projects/Working/Virtual Computer/ISO/Win11_25H2_English_Arm64_v2.iso",
-        ]
-        for p in candidates where FileManager.default.fileExists(atPath: p) { isoPath = p; return }
+        // Downloads only: a second entry named one developer's folder under
+        // /Users/user, which on another machine is either meaningless or a file
+        // the user never chose.
+        let candidate = "\(NSHomeDirectory())/Downloads/Win11_25H2_English_Arm64_v2.iso"
+        if FileManager.default.fileExists(atPath: candidate) { isoPath = candidate }
     }
 
     private func create() {
