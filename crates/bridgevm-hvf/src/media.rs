@@ -29,8 +29,8 @@ pub const DEFAULT_QEMU_AARCH64_CODE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/firmware/edk2-aarch64-secure-code.fd"
 );
-pub const DEFAULT_QEMU_AARCH64_VARS: &str =
-    "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-arm-vars.fd";
+/// Linked share dir: a Cellar path pins a version and had stopped resolving.
+pub const DEFAULT_QEMU_AARCH64_VARS: &str = "/opt/homebrew/share/qemu/edk2-arm-vars.fd";
 pub const DEFAULT_LINUX_CMDLINE: &str = "console=ttyAMA0 earlycon=pl011,0x09000000 acpi=force";
 pub const DEFAULT_RAM_MIB: u64 = 512;
 pub const MIB: u64 = 1024 * 1024;

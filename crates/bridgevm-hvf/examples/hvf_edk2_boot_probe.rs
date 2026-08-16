@@ -83,11 +83,11 @@ fn map_file(path: &str, ipa: u64, region_bytes: usize, flags: u64) {
 }
 
 fn main() {
-    let code = std::env::var("BRIDGEVM_AARCH64_UEFI_CODE").unwrap_or_else(|_| {
-        "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-aarch64-code.fd".into()
-    });
+    // Linked share dir, not Cellar: the latter pins a formula version.
+    let code = std::env::var("BRIDGEVM_AARCH64_UEFI_CODE")
+        .unwrap_or_else(|_| "/opt/homebrew/share/qemu/edk2-aarch64-code.fd".into());
     let vars = std::env::var("BRIDGEVM_AARCH64_UEFI_VARS")
-        .unwrap_or_else(|_| "/opt/homebrew/Cellar/qemu/11.0.1/share/qemu/edk2-arm-vars.fd".into());
+        .unwrap_or_else(|_| "/opt/homebrew/share/qemu/edk2-arm-vars.fd".into());
 
     unsafe {
         assert_eq!(hv_vm_create(null_mut()), 0, "hv_vm_create");

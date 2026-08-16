@@ -1,16 +1,10 @@
 #!/usr/bin/env bash
 # Static analysis for the shell scripts that implement this project's gates.
 #
-# The gates themselves are shell, so a defect here silently weakens every claim
-# they make. This guard exists because of one such defect: check-project.sh and
-# four verification scripts ran `cd "$ROOT"` without checking it, and none of
-# them set -e. A failed cd therefore left the script running in whatever
-# directory the caller happened to be in, and it still exited 0 -- a gate that
-# reports PASS against the wrong tree.
-#
-# Only genuine-defect classes are enforced -- unchecked cd, "rm -rf ${x}/" with
-# an empty variable, unquoted expansions, indirect $?, unassigned variables --
-# because a gate that fires on style noise gets disabled rather than fixed.
+# The gates are shell, so a defect here weakens every claim they make. Five
+# scripts ran `cd "$ROOT"` unchecked with no set -e, so a failed cd left them
+# checking the wrong tree and still exiting 0. Only genuine-defect classes are
+# enforced -- a gate that fires on style noise gets disabled rather than fixed.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -56,6 +50,12 @@ if [[ -n "$output" ]]; then
     "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" \
     "$(printf '%s\n' "$output" | cut -d: -f1 | sort -u | wc -l | tr -d ' ')" >&2
   exit 1
+fi
+
+# A Cellar path pins a formula version: one named qemu 11.0.1 on a machine
+# already running 11.0.2.
+if git grep -nE '"[^"]*/Cellar/[^"]+/[0-9]+\.[0-9]+' -- '*.rs' '*.swift'; then
+  printf 'shell scripts: FAIL (version-pinned Cellar path)\n' >&2; exit 1
 fi
 
 printf 'shell scripts: PASS (%d scripts, %s)\n' "${#scripts[@]}" "$CHECKS"
