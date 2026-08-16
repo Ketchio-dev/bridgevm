@@ -274,9 +274,9 @@
       "state": "PROVEN",
       "release_blocking": false,
       "statement": "Record a host-click to guest-reaction latency measurement.",
-      "measured": "HID delivery confirmed 1/1/1, but framebuffer checksums stayed at baseline through 1000ms, so visible reaction is >1000ms or absent. Recorded honestly rather than as a performance pass.",
+      "measured": "Re-measured 2026-08-16 over two runs of scripts/measure-pointer-latency.sh. The guest does react: in pointer-latency-long-043700 the framebuffer checksum holds 0x9299932141fd81cc through 250ms and changes by 1000ms, and the captured frames show the clicked dialog dismissed, then PPSSPP exited to the desktop by 3000ms. So first visible reaction lands in (250ms, 1000ms], which is slow for a pointer event and still a real defect. The earlier '>1000ms or absent' generalised from one run that ignored the click entirely while holding 0x0531df34fe803143 to 1000ms; that run kept compositing afterwards and reported identical HID counters, so one of two runs losing a delivered click is unexplained and is the open question.",
       "evidence_paths": [
-        "docs/windows-arm/evidence/app-install-to-3d-desktop-20260730.md"
+        "docs/windows-arm/evidence/b4-pointer-latency-20260816.md"
       ]
     },
     {

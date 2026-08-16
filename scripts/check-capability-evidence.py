@@ -28,10 +28,10 @@ REGISTRY = ROOT / "capabilities/windows-hvf.json"
 TOKEN = re.compile(r"\b[0-9]{4,}(?![0-9a-f])|\b[0-9a-f]{8,}\b")
 
 # Criteria already uncited when this check was written (2026-08-16). Removing an
-# entry is how a gap gets proven closed rather than assumed. B4 joined when the
-# pattern started seeing units: its "through 1000ms" is in no cited document and
-# re-measuring needs a live guest (scripts/measure-pointer-latency.sh).
-ACCEPTED = {"A5", "A6", "A7", "A17", "A19", "B4"}
+# entry is how a gap gets proven closed rather than assumed: B4 was here until
+# its latency was re-measured on a live guest and written down, and the check
+# demanded its removal on the next run.
+ACCEPTED = {"A5", "A6", "A7", "A17", "A19"}
 
 
 def main() -> int:
