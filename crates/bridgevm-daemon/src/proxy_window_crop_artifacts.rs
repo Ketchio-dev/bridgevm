@@ -136,8 +136,8 @@ pub(crate) fn materialize_proxy_window_crop_target(
 ///
 /// Every proxy window crops from the same frame, so this is hoisted out of the
 /// per-window path: reading it once per window meant six windows re-read the
-/// same 8 MiB six times, measured at 5.04 ms against 0.97 ms for one read plus
-/// six crops.
+/// same 8 MiB six times. Measured at 5.04 ms against 0.97 ms, later at 2.38
+/// against 0.53: the absolute cost tracks page-cache warmth, the ratio does not.
 pub(crate) fn read_proxy_framebuffer(config: &ProxyWindowCropConfig) -> Result<Vec<u8>, String> {
     let expected = rgba_byte_len(config.framebuffer_width, config.framebuffer_height)?;
     if expected > MAX_PROXY_FRAMEBUFFER_BYTES {
