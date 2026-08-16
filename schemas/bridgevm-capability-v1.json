@@ -29,7 +29,7 @@
     "tested_commit": {
       "type": "string",
       "pattern": "^[0-9a-f]{7,40}$",
-      "description": "Commit the current state was last evaluated against."
+      "description": "Commit whose code the current state was evaluated against. A later commit that touches only this registry and the blocks generated from it does not invalidate it: re-proving would change the file again and never converge. What must hold is that no code changed since -- git diff <tested_commit>..HEAD -- crates/ runners/ apps/ scripts/ tests/ is empty."
     },
     "product_state": {
       "enum": [
@@ -52,17 +52,34 @@
       ],
       "description": "Exact user-facing strings. README, STATUS, core descriptors, CLI and app must not invent alternative phrasing.",
       "properties": {
-        "product_state_label": { "type": "string", "minLength": 1 },
-        "engine_summary": { "type": "string", "minLength": 1 },
-        "graphics_vulkan": { "type": "string", "minLength": 1 },
-        "graphics_d3d11": { "type": "string", "minLength": 1 },
-        "machine_contract": { "type": "string", "minLength": 1 }
+        "product_state_label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "engine_summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "graphics_vulkan": {
+          "type": "string",
+          "minLength": 1
+        },
+        "graphics_d3d11": {
+          "type": "string",
+          "minLength": 1
+        },
+        "machine_contract": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "criteria": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/definitions/criterion" }
+      "items": {
+        "$ref": "#/definitions/criterion"
+      }
     }
   },
   "definitions": {
@@ -82,24 +99,39 @@
           "type": "string",
           "pattern": "^[AB][0-9]{1,2}$"
         },
-        "title": { "type": "string", "minLength": 1 },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
         "state": {
-          "enum": ["PROVEN", "OPEN", "EXTERNAL"],
+          "enum": [
+            "PROVEN",
+            "OPEN",
+            "EXTERNAL"
+          ],
           "description": "PROVEN requires dated live evidence at the stated threshold. OPEN means measured but below threshold, or unmeasured. EXTERNAL means blocked by a third party."
         },
-        "release_blocking": { "type": "boolean" },
+        "release_blocking": {
+          "type": "boolean"
+        },
         "statement": {
           "type": "string",
           "minLength": 1,
           "description": "The pass threshold in verifiable terms."
         },
         "measured": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Latest honest measurement. Required whenever state is OPEN and a measurement exists."
         },
         "evidence_paths": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
@@ -119,24 +151,67 @@
       ],
       "description": "Shape every live gate must emit. Referenced by scripts/live-gates tooling.",
       "properties": {
-        "gate_id": { "type": "string", "minLength": 1 },
-        "criterion": { "type": "string", "pattern": "^[AB][0-9]{1,2}$" },
-        "tested_commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
-        "host_os": { "type": "string", "minLength": 1 },
-        "host_hardware": { "type": "string", "minLength": 1 },
-        "guest_image_sha256": { "type": ["string", "null"] },
-        "vars_sha256": { "type": ["string", "null"] },
-        "driver_store_hash": { "type": ["string", "null"] },
-        "sample_count": { "type": "integer", "minimum": 0 },
-        "passes": { "type": "integer", "minimum": 0 },
-        "failures": { "type": "integer", "minimum": 0 },
+        "gate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "criterion": {
+          "type": "string",
+          "pattern": "^[AB][0-9]{1,2}$"
+        },
+        "tested_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$"
+        },
+        "host_os": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_hardware": {
+          "type": "string",
+          "minLength": 1
+        },
+        "guest_image_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "vars_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "driver_store_hash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sample_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "passes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failures": {
+          "type": "integer",
+          "minimum": 0
+        },
         "evidence_paths": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "known_confounders": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       }
     }

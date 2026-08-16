@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -75,6 +76,16 @@ def validate(registry: dict) -> None:
 
     if not re.fullmatch(r"[0-9a-f]{7,40}", registry["tested_commit"]):
         fail("tested_commit must be a hex commit id")
+
+    # The claim is about code: re-prove when code moves, not when this file does.
+    # A non-zero status means a shallow or unrelated checkout, not a violation.
+    changed = subprocess.run(
+        ["git", "diff", "--name-only", f"{registry['tested_commit']}..HEAD", "--",
+         "crates/", "runners/", "apps/", "scripts/", "tests/"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    if changed.returncode == 0 and changed.stdout.strip():
+        fail(f"code changed since tested_commit ({changed.stdout.split()[0]}); re-prove A11")
 
     product_states = schema["properties"]["product_state"]["enum"]
     if registry["product_state"] not in product_states:
