@@ -1336,6 +1336,7 @@ tests/integration/windows-arm-qemu-args-cli-smoke.sh	198	0
 tests/sleep-wake/metadata-baseline-smoke.sh	119	0
 scripts/check-daemon-dto-decoders.py	91	0
 scripts/check-swift-force-casts.py	54	0
+scripts/check-tests-are-reachable.py	100	0
 scripts/drop-injector-boot-entry.py	44	0
 scripts/fb-rate.py	113	0
 scripts/generate-xctest-manifest.py	107	0

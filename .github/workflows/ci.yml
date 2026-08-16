@@ -63,6 +63,8 @@ jobs:
           toolchain: 1.97.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.1
       - run: cargo test --workspace --locked
+      - name: every file containing a test contributes one to a binary
+        run: python3 scripts/check-tests-are-reachable.py
 
   check-venus:
     name: check venus feature

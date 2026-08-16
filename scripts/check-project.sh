@@ -48,6 +48,7 @@ step "structural budgets" scripts/check-refactor-budgets.sh
 step "shell scripts" bash scripts/check-shell-scripts.sh
 step "daemon DTO decoders" python3 scripts/check-daemon-dto-decoders.py
 step "swift force casts" python3 scripts/check-swift-force-casts.py
+step "tests are reachable" python3 scripts/check-tests-are-reachable.py
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 
@@ -82,7 +83,6 @@ else
     # run-swift-tests.sh only covers apps/macos/Tests/*SwiftTests; the shim
     # suites are a separate, much larger body that once went ungated.
     step "xctest shim suites" scripts/run-xctest-shim-suites.sh
-    # Compiled-artifact check: SKIPs unless a release build is also present.
     step "release overrides" scripts/check-release-overrides.sh
   else
     printf '\nswift toolchain absent: skipping macOS app checks\n' >&2
