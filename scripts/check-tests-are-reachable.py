@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
 """Fail when a file containing #[test] contributes no test to the binary.
 
-A test file has to be reachable from the crate root to run at all, and nothing
-reports a file that is not: a test that does not exist cannot fail. Splitting a
-suite is exactly when the declaration gets forgotten, and this repository splits
-suites constantly to stay inside its structural budgets.
+A test file must be reachable from the crate root to run, and nothing reports
+one that is not: a test that does not exist cannot fail. Splitting a suite is
+when the declaration gets forgotten, and this repository splits constantly.
 
-Textual analysis is not enough. Files reach the build in three different ways
-here -- `mod`, `#[path]`, and `include!` -- and the probe example generates its
-`mod` lines from a macro. This asks the compiler what it actually built, via
-`cargo test -- --list`, and requires every file's test functions to appear
-somewhere in it.
+Textual analysis is not enough: files arrive via `mod`, `#[path]` and
+`include!`, and the probe example generates its `mod` lines from a macro. This
+asks the compiler what it built, via `cargo test -- --list`.
 
     python3 scripts/check-tests-are-reachable.py
 """
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import subprocess
@@ -27,17 +25,18 @@ TOOLCHAIN = "+1.97.0"
 TEST_FN = re.compile(r"#\[test\]\s*\n\s*(?:async\s+)?fn\s+(\w+)", re.M)
 
 # Each entry is the cargo invocation that should contain the tests in a subtree.
+# (cargo arguments, required). The venus suites link against a virglrenderer
+# built outside this repository, so they are optional.
 SUITES = [
-    (["test", "--workspace", "--locked"], ["crates", "runners", "tools"]),
+    (["test", "--workspace", "--locked"], True),
+    (["test", "-p", "bridgevm-hvf", "--example", "hvf_gic_boot_probe", "--locked"], True),
+    (["test", "-p", "bridgevm-hvf", "--example", "hvf_vtimer_cancel_probe", "--locked"], True),
+    (["test", "-p", "bridgevm-hvf", "--features", "venus", "--lib", "--locked"], False),
     (
         ["test", "-p", "bridgevm-hvf", "--features", "venus", "--example",
          "hvf_gic_boot_probe", "--locked"],
-        ["crates/bridgevm-hvf/examples"],
+        False,
     ),
-    # venus- and loom-gated tests exist only with their feature enabled; the
-    # venus and loom gates run them separately.
-    (["test", "-p", "bridgevm-hvf", "--features", "venus", "--lib", "--locked"], []),
-    (["test", "-p", "bridgevm-hvf", "--example", "hvf_vtimer_cancel_probe", "--locked"], []),
 ]
 
 # The loom models need RUSTFLAGS="--cfg loom" and a release build, which would
@@ -47,6 +46,15 @@ EXEMPT = {
     "crates/bridgevm-hvf/tests/loom_psci.rs",
     "crates/bridgevm-hvf/tests/loom_reset_generation.rs",
 }
+
+
+def venus_links() -> bool:
+    """Whether the venus feature can link here: build.rs wants
+    -lvirglrenderer from BRIDGEVM_VENUS_PREFIX or ~/BridgeVM/3d/prefix, and CI
+    only `cargo check`s that feature, so the library is absent there."""
+    prefix = os.environ.get("BRIDGEVM_VENUS_PREFIX")
+    root = pathlib.Path(prefix) if prefix else pathlib.Path.home() / "BridgeVM/3d/prefix"
+    return (root / "lib/libvirglrenderer.dylib").exists()
 
 
 def listed_tests(args: list[str]) -> set[str]:
@@ -65,9 +73,11 @@ def listed_tests(args: list[str]) -> set[str]:
 
 
 def main() -> int:
+    with_venus = venus_links()
     known: set[str] = set()
-    for args, _ in SUITES:
-        known |= listed_tests(args)
+    for args, required in SUITES:
+        if required or with_venus:
+            known |= listed_tests(args)
 
     tracked = subprocess.run(
         ["git", "ls-files", "*.rs"], cwd=ROOT, capture_output=True, text=True
@@ -85,6 +95,13 @@ def main() -> int:
         checked += 1
         if not names & known:
             unreachable.append((relative, len(names)))
+
+    if not with_venus:
+        # Only venus-gated files may go unverified; an absent virglrenderer must
+        # not excuse an orphan elsewhere, which a first draft of this allowed.
+        for relative, count in [x for x in unreachable if "venus" in x[0]]:
+            print(f"note: {relative}: {count} unverified (needs venus)")
+        unreachable = [x for x in unreachable if "venus" not in x[0]]
 
     if unreachable:
         for relative, count in unreachable:
