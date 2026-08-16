@@ -4731,7 +4731,7 @@ struct DaemonVirtualMachineManifestDTO: Encodable {
     for scalar in value.unicodeScalars {
       if CharacterSet.alphanumerics.contains(scalar), scalar.isASCII {
         let codepoint = scalar.value + ((65...90).contains(scalar.value) ? 32 : 0)
-        result.unicodeScalars.append(UnicodeScalar(codepoint)!)
+        result.unicodeScalars.append(UnicodeScalar(codepoint) ?? scalar)
         previousWasSeparator = false
       } else if !previousWasSeparator, !result.isEmpty {
         result.append("-")
