@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Deterministic project check.
 #
-# This is the gate referenced by AGENTS.md and by CI. It must pass before any
-# work is called done. It deliberately contains no live virtualization: every
-# step here runs without Hypervisor.framework, private Windows media or a GPU.
+# The gate referenced by AGENTS.md and by CI; it must pass before work is called
+# done. No live virtualization: no Hypervisor.framework, Windows media or GPU.
 #
 #   scripts/check-project.sh          # full check
 #   scripts/check-project.sh --fast   # truth/format subset used by the harness
@@ -47,6 +46,7 @@ step "documentation system" bash scripts/check-documentation-system.sh
 step "structural budgets" scripts/check-refactor-budgets.sh
 step "shell scripts" bash scripts/check-shell-scripts.sh
 step "python scripts" python3 scripts/check-python-scripts.py
+step "workflow yaml" python3 scripts/check-workflow-yaml.py
 step "daemon DTO decoders" python3 scripts/check-daemon-dto-decoders.py
 step "swift force casts" python3 scripts/check-swift-force-casts.py
 step "tests are reachable" python3 scripts/check-tests-are-reachable.py
