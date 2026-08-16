@@ -136,7 +136,12 @@ BridgeVM should still be described as an Engineering Preview because:
   document they cite, so those particular numbers cannot be checked by following
   the citation. The behaviour they describe was observed on a live run; what is
   missing is a receipt that records it. `scripts/check-capability-evidence.py`
-  holds the list and fails on any new claim of that shape.
+  holds the list and fails on any new claim of that shape;
+- the legacy `.qemuCompat` engine runs `/opt/homebrew/bin/swtpm` and
+  `qemu-system-aarch64` from fixed Homebrew paths, so on that path anything a
+  user places there decides what the app runs. The signed HVF and Apple VZ paths
+  do not. `scripts/check-release-overrides.sh` records it as a known violation
+  and fails if it is fixed without the record being removed.
 
 ## Current priorities
 
