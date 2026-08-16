@@ -13,6 +13,11 @@ docs/archive and docs/handoffs are point-in-time records: their references
 described the tree on the day they were written and are not expected to hold
 now. Commit ids from other projects are accepted when the surrounding lines say
 whose they are, because this repository cannot resolve them either way.
+
+Commit checking needs full history and so is skipped on a shallow clone, where
+every older id looks missing. Build outputs are skipped too: they exist on a
+machine that has built and nowhere else, so requiring them would fail a clean
+checkout for being clean.
 """
 
 from __future__ import annotations
@@ -43,6 +48,8 @@ EXTERNAL_FLAGS = {
     "touchscreentest", "vulkan-available-check",
 }
 FLAG = re.compile(r"--([a-z][a-z0-9-]{3,})")
+# Produced by a build, never committed.
+GENERATED = ("apps/macos/.build", "target/", ".build/")
 REPO_PATH = re.compile(
     r"`((?:scripts|crates|apps|docs|capabilities|schemas|tests|runners|\.github)"
     r"/[A-Za-z0-9_./-]+)`"
@@ -57,8 +64,17 @@ def tracked(pattern: str) -> list[str]:
     return out.stdout.split()
 
 
+def shallow() -> bool:
+    out = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    return out.stdout.strip() == "true"
+
+
 def main() -> int:
     docs = [d for d in tracked("*.md") if not d.startswith(HISTORICAL)]
+    check_commits = not shallow()
     sources = subprocess.run(
         ["bash", "-c", "git ls-files '*.rs' '*.sh' '*.py' '*.swift' '*.ps1' | xargs cat"],
         cwd=ROOT, capture_output=True, text=True,
@@ -82,9 +98,13 @@ def main() -> int:
                 target = match.group(1).rstrip(".")
                 if target.endswith("/"):
                     continue
+                if target.startswith(GENERATED):
+                    continue
                 if not os.path.exists(os.path.join(ROOT, target)):
                     failures.append(f"{doc}:{number}: path does not exist: {target}")
 
+            if not check_commits:
+                continue
             for match in SHA.finditer(line):
                 commit = match.group(1)
                 exists = subprocess.run(
@@ -110,7 +130,8 @@ def main() -> int:
         )
         return 1
 
-    print(f"documentation references: PASS ({len(docs)} current documents)")
+    scope = "flags, paths and commits" if check_commits else "flags and paths"
+    print(f"documentation references: PASS ({len(docs)} current documents, {scope})")
     return 0
 
 

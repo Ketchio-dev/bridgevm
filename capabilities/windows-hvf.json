@@ -134,7 +134,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-16 at final head ea5d2a2b97d2504b86f5931edc671db77e50be23. scripts/run-xctest-shim-suites.sh: 409 + 193 (1 skip) + 62 = 664 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) runs 26 steps and completed 'project check: PASS'. A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Two staleness conditions are checked rather than remembered: the registry fails when crates/, runners/, apps/, scripts/ or tests/ differ between tested_commit and HEAD, and it fails when a measured entry cites a head other than tested_commit, which is how a stale log hash used to survive a re-proof.",
+      "measured": "PROVEN 2026-08-16 at final head ea5d2a2b97d2504b86f5931edc671db77e50be23. scripts/run-xctest-shim-suites.sh: 409 + 193 (1 skip) + 62 = 664 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) runs 27 steps and completed 'project check: PASS'. A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Two staleness conditions are checked rather than remembered: the registry fails when crates/, runners/, apps/, scripts/ or tests/ differ between tested_commit and HEAD, and it fails when a measured entry cites a head other than tested_commit, which is how a stale log hash used to survive a re-proof.",
       "evidence_paths": [
         "STATUS.md"
       ]
