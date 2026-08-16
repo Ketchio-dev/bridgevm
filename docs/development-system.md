@@ -158,6 +158,30 @@ fail-closed.
 Any aggressive path must retain a balanced recovery lane until the release
 receipt shows it is no longer needed.
 
+### Measuring before changing
+
+A performance change needs a number from the code that ships, taken before and
+after. Four ways that has gone wrong here, each of which produced a wrong
+conclusion until it was caught:
+
+- **Benchmarking a paraphrase.** A `String`-based reimplementation of a
+  `Data`-based accumulator reported 869 ms for something that costs 9.8 ms.
+  Exercise the shipped type.
+- **Reading a cold first call.** `drainLines` measured 3.11 ms once and 0.90 ms
+  warm, and the warm figure is what the product pays. Take a distribution.
+- **Quoting an absolute where only a ratio holds.** The framebuffer-read
+  comparison gave 5.04 ms against 0.97 ms once and 2.38 against 0.53 later; the
+  optimisation did not change, the page cache did. Say which part is stable.
+- **Fixing a hot path nobody consumes.** A 145x PPM decode improvement was
+  real and worthless, because the feed it fed was unread. The change that
+  mattered was deleting the feed.
+
+An idea that measures negligible is a result, not a failure: record the number
+and move on. Several candidates were rejected that way -- a per-window image
+reload at 0.037 ms, a forced redraw at 0.79 percent of a core, a store lookup at
+0.03 ms, and workspace test parallelism that saved 3.9 s while failing one run
+in ten.
+
 ## 9. Verification commands
 
 ```sh
