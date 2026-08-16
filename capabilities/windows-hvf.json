@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-15",
-  "tested_commit": "546b2d9a236521177c1a6cdae3f829245e975ff8",
+  "tested_commit": "1e1818cea28446b8ddcc169819e227e7ec5243bf",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -134,7 +134,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-16 at final head 546b2d9a236521177c1a6cdae3f829245e975ff8. scripts/run-xctest-shim-suites.sh: 409 + 193 (1 skip) + 62 = 664 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) runs 27 steps and completed 'project check: PASS'. A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Three staleness conditions are checked rather than remembered: the registry fails when crates/, runners/, apps/, scripts/ or tests/ differ between tested_commit and HEAD, when a measured entry cites a head other than tested_commit, and when a claimed test or step count differs from the tests and steps that actually exist.",
+      "measured": "PROVEN 2026-08-16 at final head 1e1818cea28446b8ddcc169819e227e7ec5243bf. scripts/run-xctest-shim-suites.sh: 409 + 193 (1 skip) + 62 = 664 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) runs 27 steps and completed 'project check: PASS'. A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Three staleness conditions are checked rather than remembered: the registry fails when crates/, runners/, apps/, scripts/ or tests/ differ between tested_commit and HEAD, when a measured entry cites a head other than tested_commit, and when a claimed test or step count differs from the tests and steps that actually exist.",
       "evidence_paths": [
         "STATUS.md"
       ]
