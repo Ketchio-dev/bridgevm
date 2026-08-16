@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-15",
-  "tested_commit": "f5e71ace60f10832dcbf4e6a34fd4101693b5bde",
+  "tested_commit": "dca6afbf87088b7e9df4c72398bbc7b200f6b5a5",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -134,7 +134,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-16 at final head f5e71ace60f10832dcbf4e6a34fd4101693b5bde. scripts/run-xctest-shim-suites.sh: 409 + 193 (1 skip) + 62 = 664 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' across 25 steps (log SHA-256 2aecfc12696460edfb9e62b619551b5fa7e6bd80a146c137c1e8963c34f177e9). A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Every one of the 25 steps also runs in hosted CI; five ran nowhere but a developer's machine when this session began. Across the session no ceiling in scripts/refactor-budgets.tsv was raised on a file that already had one, and 817 came down by 6,660 lines in total.",
+      "measured": "PROVEN 2026-08-16 at final head dca6afbf87088b7e9df4c72398bbc7b200f6b5a5. scripts/run-xctest-shim-suites.sh: 409 + 193 (1 skip) + 62 = 664 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' across 25 steps (log SHA-256 2824f3f31781e7bbd3d55aef0545d3e447662091a0743c390f3a1d9d930f94c9). A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Staleness is no longer checked by hand: the registry check fails when crates/, runners/, apps/, scripts/ or tests/ differ between tested_commit and HEAD, which it did on the commit that added it. Across the session no ceiling was raised on a file that already had one except that check itself, and 817 came down by 6,660 lines.",
       "evidence_paths": [
         "STATUS.md"
       ]
