@@ -2,6 +2,25 @@
 
 BridgeVM treats every guest as untrusted.
 
+## What the environment may decide
+
+A release build must run only what the signed bundle contains. Four environment
+overrides would otherwise let something outside it choose the executable or the
+repository the app reads from, so they exist in debug builds only:
+
+| Override | What it would let an outside party choose |
+|---|---|
+| `BRIDGEVM_REPO_ROOT` | Which checkout the app reads scripts and assets from. |
+| `BRIDGEVM_SWTPM_BIN` | Which binary backs the guest's vTPM. |
+| `/opt/homebrew/bin/swtpm`, `/usr/local/bin/swtpm` | The same, via a PATH-shaped fallback. |
+
+This is enforced by absence rather than by a runtime check: a string that is not
+in the release object cannot be read by any code path there.
+[`scripts/check-release-overrides.sh`](../../scripts/check-release-overrides.sh)
+proves it, and refuses to pass when a name is missing from the debug build too,
+since that would make the comparison vacuous. It runs in the `swift` CI job
+against a real release build.
+
 ## Guest-facing firmware contracts
 
 Two firmware-surface defects in the Windows HVF path were found by external
