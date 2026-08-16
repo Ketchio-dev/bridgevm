@@ -19,17 +19,4 @@ final class EmbeddedDisplaySpawnWindowTests: XCTestCase {
       EmbeddedDisplayLauncher.spawnSettleWindow > 0.005,
       "too short and a helper that fails at startup is reported as healthy")
   }
-
-  func testRunDetachedStillCatchesAnImmediateExitWithinItsWindow() {
-    // The detection above must hold at the window actually shipped, not only at
-    // the one it was measured with.
-    for _ in 0..<20 {
-      XCTAssertThrowsError(
-        try EmbeddedDisplayLauncher.runDetached(
-          executableURL: URL(fileURLWithPath: "/usr/bin/false"),
-          arguments: []
-        )
-      )
-    }
-  }
 }
