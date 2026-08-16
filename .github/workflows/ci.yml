@@ -169,6 +169,12 @@ jobs:
       - run: swift build --package-path apps/macos
       - run: bash scripts/run-swift-tests.sh
       - run: bash scripts/run-xctest-shim-suites.sh
+      # A release build is what ships, and it is the only thing that can prove
+      # the development overrides are absent from it. check-project.sh skips
+      # this check unless a release build already exists, which on a runner it
+      # never does.
+      - run: swift build --package-path apps/macos -c release
+      - run: bash scripts/check-release-overrides.sh
 
   truth:
     # Keeps the capability registry, the generated claim blocks and the
