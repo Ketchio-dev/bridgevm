@@ -301,7 +301,7 @@ fn build_smbios30_anchor(tables_len: usize) -> Vec<u8> {
             .to_le_bytes(),
     );
     a.extend_from_slice(&0u64.to_le_bytes()); // structure table address
-    debug_assert_eq!(a.len(), 24);
+    assert_eq!(a.len(), 24);
     a
 }
 

@@ -74,7 +74,7 @@ impl Table {
         bytes.extend_from_slice(&OEM_REVISION.to_le_bytes());
         bytes.extend_from_slice(CREATOR_ID);
         bytes.extend_from_slice(&CREATOR_REVISION.to_le_bytes());
-        debug_assert_eq!(bytes.len(), ACPI_HEADER_LEN);
+        assert_eq!(bytes.len(), ACPI_HEADER_LEN);
         Self { bytes }
     }
 
@@ -195,7 +195,7 @@ pub fn build_acpi_with_devices(cpu_count: u64, devices: AcpiDeviceConfig) -> Acp
     let off_tpm2 = tpm2.as_ref().map(|_| off_dbg2 + dbg2.len() as u64);
 
     let fadt = build_fadt(TABLES_BASE + off_dsdt);
-    debug_assert_eq!(fadt.len() as u64, fadt_len());
+    assert_eq!(fadt.len() as u64, fadt_len());
 
     let mut xsdt_entries = vec![
         TABLES_BASE + off_fadt,
@@ -210,7 +210,7 @@ pub fn build_acpi_with_devices(cpu_count: u64, devices: AcpiDeviceConfig) -> Acp
         xsdt_entries.push(TABLES_BASE + offset);
     }
     let xsdt = build_xsdt(&xsdt_entries);
-    debug_assert_eq!(xsdt.len() as u64, xsdt_len);
+    assert_eq!(xsdt.len() as u64, xsdt_len);
 
     let mut table_spans = vec![
         TableSpan::new(off_xsdt, xsdt.len() as u64),
@@ -386,7 +386,7 @@ pub(crate) fn build_table_loader(
         36,
     ));
 
-    debug_assert_eq!(loader.len() % LOADER_ENTRY_LEN, 0);
+    assert_eq!(loader.len() % LOADER_ENTRY_LEN, 0);
     loader
 }
 
@@ -474,7 +474,7 @@ pub(crate) fn build_rsdp(xsdt_address: u64) -> Vec<u8> {
     r.extend_from_slice(&xsdt_address.to_le_bytes()); // XsdtAddress (64-bit)
     r.push(0); // extended checksum (patched below)
     r.extend_from_slice(&[0u8; 3]); // reserved
-    debug_assert_eq!(r.len(), 36);
+    assert_eq!(r.len(), 36);
 
     // v1 checksum covers the first 20 bytes (signature .. RsdtAddress).
     r[8] = 0;

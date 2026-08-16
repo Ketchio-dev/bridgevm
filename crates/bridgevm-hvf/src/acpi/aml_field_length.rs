@@ -465,7 +465,7 @@ pub(crate) fn build_tpm2() -> Vec<u8> {
     t.u32(TPM_LOG_AREA_MINIMUM_SIZE as u32); // LAML
     t.u64(0); // LASA, relocated by the fw_cfg table loader
     let table = t.finish();
-    debug_assert_eq!(table.len(), 76);
+    assert_eq!(table.len(), 76);
     table
 }
 

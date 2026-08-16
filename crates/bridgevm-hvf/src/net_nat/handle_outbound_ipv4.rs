@@ -607,7 +607,7 @@ pub(crate) fn build_dhcp_reply_frame(
     push_dhcp_option(&mut frame, DHCP_OPT_ROUTER, &GATEWAY_IP);
     push_dhcp_option(&mut frame, DHCP_OPT_DNS, &DNS_IP);
     frame.push(DHCP_OPT_END);
-    debug_assert_eq!(frame.len(), 14 + ipv4_len);
+    assert_eq!(frame.len(), 14 + ipv4_len, "DHCP frame vs IPv4 header");
 
     let checksum = match udp_checksum(DHCP_SERVER_IP, dst_ip, &frame[ipv4_payload_start..]) {
         0 => 0xffff,
