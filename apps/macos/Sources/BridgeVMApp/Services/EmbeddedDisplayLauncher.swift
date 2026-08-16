@@ -38,22 +38,6 @@ enum EmbeddedDisplayLauncher {
     }
   }
 
-  enum LaunchError: Error, LocalizedError, Equatable {
-    case helperMissing(String)
-    case invalidDisplaySize(DisplaySize)
-    case spawnFailed(String)
-
-    var errorDescription: String? {
-      switch self {
-      case .helperMissing(let name):
-        return "The bundled helper '\(name)' is missing from the app bundle."
-      case .invalidDisplaySize(let size):
-        return "Display size \(size.width)x\(size.height) is too large (maximum 32 megapixels)."
-      case .spawnFailed(let message):
-        return "Could not open the display window: \(message)"
-      }
-    }
-  }
 
   /// Arguments passed to `lightvm-runner` to boot `vmName` with an embedded
   /// display. Pure + testable: builds the VM-name launch form and includes
@@ -243,6 +227,17 @@ enum EmbeddedDisplayLauncher {
     }
   }
 
+  /// How long `runDetached` waits before deciding the helper survived.
+  ///
+  /// This blocks the caller, and the caller is the main actor, so opening a
+  /// display costs the UI this window. A process that fails at startup becomes
+  /// observable in under 2 ms measured here, but a live process cannot be told
+  /// from one about to die, so the healthy case pays it in full. 100 ms was
+  /// chosen without a measurement; 20 ms is ten times the observed detection
+  /// cost and a fifth of the stall. A helper that dies later is reported
+  /// through the runtime-control socket, not here.
+  static let spawnSettleWindow: TimeInterval = 0.02
+
   static func runDetached(executableURL: URL, arguments: [String]) throws -> Process {
     let process = Process()
     process.executableURL = executableURL
@@ -251,7 +246,7 @@ enum EmbeddedDisplayLauncher {
     environment["BRIDGEVM_APPLE_VZ_ALLOW_REAL_START"] = "1"
     process.environment = environment
     try process.run()
-    Thread.sleep(forTimeInterval: 0.1)
+    Thread.sleep(forTimeInterval: spawnSettleWindow)
     guard process.isRunning else {
       process.waitUntilExit()
       let reason = process.terminationReason == .uncaughtSignal
