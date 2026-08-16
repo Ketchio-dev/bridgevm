@@ -176,6 +176,19 @@ conclusion until it was caught:
   real and worthless, because the feed it fed was unread. The change that
   mattered was deleting the feed.
 
+### Checking that a default still resolves
+
+An absolute path written into a default is a claim about the machine, and it
+expires silently. Two were already wrong when this was first checked: a UEFI
+vars path pinned to `Cellar/qemu/11.0.1` on a machine running 11.0.2, and a
+Vulkan ICD under `share/vulkan`, which is a symlink into the headers formula and
+contains no ICD. Neither failed loudly; they simply resolved to nothing.
+
+Ask of every absolute default whether the file is there right now. It takes one
+loop over the tree and it found both. `scripts/check-shell-scripts.sh` rejects
+version-pinned Cellar paths, which is the half of this that can be automated;
+the rest needs the question asked.
+
 An idea that measures negligible is a result, not a failure: record the number
 and move on. Several candidates were rejected that way -- a per-window image
 reload at 0.037 ms, a forced redraw at 0.79 percent of a core, a store lookup at
