@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-15",
-  "tested_commit": "535085d348fe45313a551ef49c33fe5c4cad2ae4",
+  "tested_commit": "6649dba5982d05f0ced4775d634d0d246fd08432",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -134,7 +134,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-15 at final head 535085d348fe45313a551ef49c33fe5c4cad2ae4. scripts/run-xctest-shim-suites.sh: 408 + 193 (1 skip) + 62 = 663 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' (log SHA-256 2996000b93951e53b059e4f50ef605230379b7056924645e4ece8200ad8b2706). A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Re-proven after a session that changed shipping code in five crates: NVMe now flushes every namespace and reports sync failure when the guest disables write caching; the vTPM runtime no longer trusts swtpm the instant its sockets appear, and its runtime directories cannot collide; the storage layer reserves a VM bundle atomically instead of checking first; the app fails a missing daemon socket immediately rather than after the request timeout; and five gate scripts no longer continue in the wrong directory after a failed cd. The gates themselves grew shell-script and DTO-decoder checks, and the structural ratchet now covers every tracked source file rather than only those already listed.",
+      "measured": "PROVEN 2026-08-16 at final head 6649dba5982d05f0ced4775d634d0d246fd08432. scripts/run-xctest-shim-suites.sh: 408 + 193 (1 skip) + 62 = 663 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' (log SHA-256 2d8274c5bf6e25ba8be86dc5b082e9f5b60278db7388dd5a65ad30f553caee65). A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Re-proven after further shipping changes: the ACPI and SMBIOS table-size invariants are now checked in release builds too, where a mutation that shifts every table was caught 22 times instead of 5; the keychain helper no longer force-casts; and the slug builder no longer force-unwraps. Three gates were added since the last re-proof -- Swift force casts, and whether every file containing a test contributes one to a binary (280 files, 2,017 tests).",
       "evidence_paths": [
         "STATUS.md"
       ]
