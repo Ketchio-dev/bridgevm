@@ -131,7 +131,12 @@ BridgeVM should still be described as an Engineering Preview because:
 - running-state suspend is intentionally outside the current v1 persistence
   scope;
 - some historical tools and evidence paths are still more lab-oriented than
-  product-oriented.
+  product-oriented;
+- five proven criteria (A5, A6, A7, A17, A19) state figures that appear in no
+  document they cite, so those particular numbers cannot be checked by following
+  the citation. The behaviour they describe was observed on a live run; what is
+  missing is a receipt that records it. `scripts/check-capability-evidence.py`
+  holds the list and fails on any new claim of that shape.
 
 ## Current priorities
 
