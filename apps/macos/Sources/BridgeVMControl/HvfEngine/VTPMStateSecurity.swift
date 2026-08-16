@@ -98,7 +98,7 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging {
             throw VTPMStateSecurityError.invalidKeyLength(key.count)
         }
         let account = try validatedAccount(stableVMID)
-        let query = queryAttributes(account: account)
+        let query = queryAttributes(account: account) as CFDictionary
         let updateStatus = SecItemUpdate(query, [kSecValueData: key] as CFDictionary)
         if updateStatus == errSecSuccess { return }
         guard updateStatus == errSecItemNotFound else {
@@ -112,7 +112,7 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging {
 
     func deleteStateKey(for stableVMID: String) throws {
         let account = try validatedAccount(stableVMID)
-        let status = SecItemDelete(queryAttributes(account: account))
+        let status = SecItemDelete(queryAttributes(account: account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw VTPMStateSecurityError.keychainWrite(status)
         }
@@ -126,11 +126,11 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging {
         return account
     }
 
-    private func queryAttributes(account: String) -> CFDictionary {
+    private func queryAttributes(account: String) -> [CFString: Any] {
         queryAttributes(account: account, dataProtection: dataProtectionAvailable)
     }
 
-    private func queryAttributes(account: String, dataProtection: Bool) -> CFDictionary {
+    private func queryAttributes(account: String, dataProtection: Bool) -> [CFString: Any] {
         var query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Self.service,
@@ -139,11 +139,11 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging {
         if dataProtection {
             query[kSecUseDataProtectionKeychain] = true
         }
-        return query as CFDictionary
+        return query
     }
 
     private func addAttributes(account: String, key: Data) -> CFDictionary {
-        var attributes = queryAttributes(account: account) as! [CFString: Any]
+        var attributes = queryAttributes(account: account)
         attributes[kSecValueData] = key
         attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         return attributes as CFDictionary
@@ -162,19 +162,18 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging {
     private lazy var dataProtectionAvailable: Bool = {
         let account = "bridgevm-entitlement-probe"
         var attributes = queryAttributes(account: account, dataProtection: true)
-            as! [CFString: Any]
         attributes[kSecValueData] = Data(count: 1)
         attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         let addStatus = SecItemAdd(attributes as CFDictionary, nil)
         if addStatus == errSecSuccess || addStatus == errSecDuplicateItem {
-            SecItemDelete(queryAttributes(account: account, dataProtection: true))
+            SecItemDelete(queryAttributes(account: account, dataProtection: true) as CFDictionary)
             return true
         }
         return false
     }()
 
     private func read(account: String) -> (data: Data?, status: OSStatus) {
-        var query = queryAttributes(account: account) as! [CFString: Any]
+        var query = queryAttributes(account: account)
         query[kSecReturnData] = true
         query[kSecMatchLimit] = kSecMatchLimitOne
         var item: CFTypeRef?

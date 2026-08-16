@@ -47,6 +47,7 @@ step "documentation system" bash scripts/check-documentation-system.sh
 step "structural budgets" scripts/check-refactor-budgets.sh
 step "shell scripts" bash scripts/check-shell-scripts.sh
 step "daemon DTO decoders" python3 scripts/check-daemon-dto-decoders.py
+step "swift force casts" python3 scripts/check-swift-force-casts.py
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 
@@ -78,9 +79,8 @@ else
   if command -v swift >/dev/null 2>&1; then
     step "swift build" swift build --package-path apps/macos
     step "swift tests" scripts/run-swift-tests.sh
-    # run-swift-tests.sh only covers apps/macos/Tests/*SwiftTests. The XCTest
-    # shim suites are a separate and much larger body of tests, and leaving
-    # them ungated let a real assertion defect survive in main.
+    # run-swift-tests.sh only covers apps/macos/Tests/*SwiftTests; the shim
+    # suites are a separate, much larger body that once went ungated.
     step "xctest shim suites" scripts/run-xctest-shim-suites.sh
     # Compiled-artifact check: SKIPs unless a release build is also present.
     step "release overrides" scripts/check-release-overrides.sh

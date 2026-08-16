@@ -1019,7 +1019,7 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallView.swift	141	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/TailOffsetReader.swift	47	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMIdentityLifecycle.swift	451	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMLifecycleCommand.swift	368	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMStateSecurity.swift	338	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMStateSecurity.swift	337	0
 apps/macos/Sources/BridgeVMControl/LibraryModel.swift	212	0
 apps/macos/Sources/BridgeVMControl/VMLibrary.swift	252	0
 apps/macos/Tests/AppleVzRunnerTests/AppleVzDisplayRuntimeControlServerTests.swift	538	0
@@ -1335,6 +1335,7 @@ tests/integration/windows-arm-hvf-xhci-hid-boot-key-cli-smoke.sh	100	0
 tests/integration/windows-arm-qemu-args-cli-smoke.sh	198	0
 tests/sleep-wake/metadata-baseline-smoke.sh	119	0
 scripts/check-daemon-dto-decoders.py	91	0
+scripts/check-swift-force-casts.py	54	0
 scripts/drop-injector-boot-entry.py	44	0
 scripts/fb-rate.py	113	0
 scripts/generate-xctest-manifest.py	107	0

@@ -177,6 +177,8 @@ jobs:
         run: bash scripts/check-shell-scripts.sh
       - name: every declared daemon DTO coding key is actually decoded
         run: python3 scripts/check-daemon-dto-decoders.py
+      - name: the app sources contain no force casts
+        run: python3 scripts/check-swift-force-casts.py
 
   stable-advisory:
     name: latest stable advisory
