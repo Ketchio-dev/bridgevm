@@ -192,6 +192,8 @@ jobs:
           python3 -m json.tool docs/machine-contract/qemu-virt-deviations.json >/dev/null
           python3 -m json.tool schemas/bridgevm-capability-v1.json >/dev/null
           python3 -m json.tool capabilities/windows-hvf.json >/dev/null
+      - name: cited capability evidence contains the figures it is cited for
+        run: python3 scripts/check-capability-evidence.py
       - name: every Markdown document is classified
         run: bash scripts/check-documentation-system.sh
       - name: attribution and known-defect disclosure are intact

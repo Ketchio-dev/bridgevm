@@ -4,8 +4,7 @@
 # The gate referenced by AGENTS.md and by CI; it must pass before work is called
 # done. No live virtualization: no Hypervisor.framework, Windows media or GPU.
 #
-#   scripts/check-project.sh          # full check
-#   scripts/check-project.sh --fast   # truth/format subset used by the harness
+#   scripts/check-project.sh [--fast]   # --fast is the truth/format subset
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -42,6 +41,7 @@ json_valid() {
 step "capability registry" python3 scripts/render-capability-status.py --check
 step "machine contract json" json_valid docs/machine-contract/qemu-virt-deviations.json
 step "capability schema json" json_valid schemas/bridgevm-capability-v1.json
+step "capability evidence" python3 scripts/check-capability-evidence.py
 step "documentation system" bash scripts/check-documentation-system.sh
 step "structural budgets" scripts/check-refactor-budgets.sh
 step "shell scripts" bash scripts/check-shell-scripts.sh
