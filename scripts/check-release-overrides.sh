@@ -2,9 +2,8 @@
 # A16: prove a release build cannot be redirected by environment or PATH.
 #
 # The compiled artifact is checked, not the source. `#if DEBUG` is easy to
-# write and easy to get wrong: a stray `#else` or a helper the guard misses looks
-# correct in a diff. A string absent from the release object cannot be read
-# there. Debug is checked as a control -- missing from both proves nothing.
+# write and easy to get wrong. A string absent from the release object cannot be
+# read there. Debug is a control: missing from both would prove nothing.
 set -uo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -22,10 +21,11 @@ FORBIDDEN_IN_RELEASE=(
   "/usr/local/bin/swtpm"
 )
 
-# Known violation, recorded not hidden: QemuCompatBackend hardcodes
-# /opt/homebrew/bin/swtpm, reachable via .qemuCompat. Two named objects hid it.
+# Known violation, recorded not hidden: QemuCompatBackend hardcodes all three
+# and is reachable via .qemuCompat. Scanning two named objects hid them.
 KNOWN_UNFIXED=(
-  "/opt/homebrew/bin/swtpm"
+  "/opt/homebrew/bin/swtpm" "/opt/homebrew/bin/qemu-system-aarch64"
+  "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
 )
 
 status=0

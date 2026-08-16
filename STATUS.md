@@ -137,11 +137,13 @@ BridgeVM should still be described as an Engineering Preview because:
   the citation. The behaviour they describe was observed on a live run; what is
   missing is a receipt that records it. `scripts/check-capability-evidence.py`
   holds the list and fails on any new claim of that shape;
-- the legacy `.qemuCompat` engine runs `/opt/homebrew/bin/swtpm` and
-  `qemu-system-aarch64` from fixed Homebrew paths, so on that path anything a
-  user places there decides what the app runs. The signed HVF and Apple VZ paths
-  do not. `scripts/check-release-overrides.sh` records it as a known violation
-  and fails if it is fixed without the record being removed.
+- the legacy `.qemuCompat` engine runs swtpm, qemu-system-aarch64 and the edk2
+  firmware from fixed Homebrew paths, so on that path anything a user places
+  there decides what the app runs and what the guest boots. That is how the
+  backend is meant to work -- it refuses to start when those files are absent --
+  but it is still outside the signed bundle, which the HVF and Apple VZ paths
+  are not. `scripts/check-release-overrides.sh` records all three as known
+  violations and fails if any is fixed without the record being removed.
 
 ## Current priorities
 
