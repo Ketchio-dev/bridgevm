@@ -20,6 +20,9 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from venus_feature import venus_gated_paths, venus_links  # noqa: E402
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TOOLCHAIN = "+1.97.0"
 TEST_FN = re.compile(r"#\[test\]\s*\n\s*(?:async\s+)?fn\s+(\w+)", re.M)
@@ -46,15 +49,6 @@ EXEMPT = {
     "crates/bridgevm-hvf/tests/loom_psci.rs",
     "crates/bridgevm-hvf/tests/loom_reset_generation.rs",
 }
-
-
-def venus_links() -> bool:
-    """Whether the venus feature can link here: build.rs wants
-    -lvirglrenderer from BRIDGEVM_VENUS_PREFIX or ~/BridgeVM/3d/prefix, and CI
-    only `cargo check`s that feature, so the library is absent there."""
-    prefix = os.environ.get("BRIDGEVM_VENUS_PREFIX")
-    root = pathlib.Path(prefix) if prefix else pathlib.Path.home() / "BridgeVM/3d/prefix"
-    return (root / "lib/libvirglrenderer.dylib").exists()
 
 
 def listed_tests(args: list[str]) -> set[str]:
@@ -99,9 +93,12 @@ def main() -> int:
     if not with_venus:
         # Only venus-gated files may go unverified; an absent virglrenderer must
         # not excuse an orphan elsewhere, which a first draft of this allowed.
-        for relative, count in [x for x in unreachable if "venus" in x[0]]:
+        # A path substring is not enough: env_flag_default_on.rs is declared
+        # under #[cfg(feature = "venus")] and its name says nothing about that.
+        gated = venus_gated_paths()
+        for relative, count in [x for x in unreachable if x[0] in gated]:
             print(f"note: {relative}: {count} unverified (needs venus)")
-        unreachable = [x for x in unreachable if "venus" not in x[0]]
+        unreachable = [x for x in unreachable if x[0] not in gated]
 
     if unreachable:
         for relative, count in unreachable:
