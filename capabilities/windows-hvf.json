@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-15",
-  "tested_commit": "8f7f3408106d8c2f1e5b83700b0786e48fcdb01a",
+  "tested_commit": "b0741c74a8f09777f360c64bbdf25b2e0fb70b86",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -134,7 +134,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-16 at final head 8f7f3408106d8c2f1e5b83700b0786e48fcdb01a. scripts/run-xctest-shim-suites.sh: 410 + 193 (1 skip) + 62 = 665 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' (log SHA-256 8b3019732df182799ff481b4cc0012814bd596058a8cc17c4109166ca9d51078). A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Re-proven after opening a display stopped stalling the main actor for 100 ms, and after four further gates were added: Python scripts must compile, workflows must parse and keep their required jobs, every file containing a test must contribute one to a binary, and the app sources must contain no force casts. The check now runs 24 steps, all of which also run in hosted CI.",
+      "measured": "PROVEN 2026-08-16 at final head b0741c74a8f09777f360c64bbdf25b2e0fb70b86. scripts/run-xctest-shim-suites.sh: 410 + 193 (1 skip) + 62 = 665 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' across 25 steps (log SHA-256 8ae225fb86bfa83e7cd294355c025e2caada5c76e5d4daab38b3b1b6d76e813a). A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Every one of the 25 steps also runs in hosted CI; five ran nowhere but a developer's machine when this session began. Two claim-surface scans were widened after each was shown to miss a real case: the retracted-claim scan now covers runners/ and tools/, and the release-override scan every object rather than two named ones, which surfaced a hardcoded Homebrew swtpm path in the legacy QEMU backend that is now recorded and disclosed.",
       "evidence_paths": [
         "STATUS.md"
       ]
