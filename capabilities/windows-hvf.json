@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-15",
-  "tested_commit": "b0741c74a8f09777f360c64bbdf25b2e0fb70b86",
+  "tested_commit": "923fad46ca8bbc1810b5c5fef314582250ebd485",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -134,7 +134,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-16 at final head b0741c74a8f09777f360c64bbdf25b2e0fb70b86. scripts/run-xctest-shim-suites.sh: 410 + 193 (1 skip) + 62 = 665 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' across 25 steps (log SHA-256 8ae225fb86bfa83e7cd294355c025e2caada5c76e5d4daab38b3b1b6d76e813a). A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Every one of the 25 steps also runs in hosted CI; five ran nowhere but a developer's machine when this session began. Two claim-surface scans were widened after each was shown to miss a real case: the retracted-claim scan now covers runners/ and tools/, and the release-override scan every object rather than two named ones, which surfaced a hardcoded Homebrew swtpm path in the legacy QEMU backend that is now recorded and disclosed.",
+      "measured": "PROVEN 2026-08-16 at final head 923fad46ca8bbc1810b5c5fef314582250ebd485. scripts/run-xctest-shim-suites.sh: 409 + 193 (1 skip) + 62 = 664 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' across 25 steps (log SHA-256 4fe3edd9194168fb72f94f82cf94c2881be99733ec2ec70ee022dfd9ed58478e), and passed three consecutive times after a flaky test added earlier in the session was removed. A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Every one of the 25 steps also runs in hosted CI; five ran nowhere but a developer's machine when this session began.",
       "evidence_paths": [
         "STATUS.md"
       ]
