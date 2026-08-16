@@ -85,28 +85,28 @@ fn qemu_netdev_maps_isolated_mode_from_network_plan() {
     );
 }
 
-/// A unique Unix socket path that stays well inside `SUN_LEN`.
-///
-/// `sun_path` is 104 bytes on macOS and `bind` fails with `InvalidInput` at
-/// exactly that length. The old name reached 102 under this machine's 49-byte
-/// `TMPDIR`; a longer `TMPDIR` pushes it over and surfaces as an
-/// unrelated-looking `QmpIo(InvalidInput)`. pid + counter is already unique.
+/// A unique Unix socket path inside `SUN_LEN`. macOS caps `sun_path` at 104
+/// bytes and a longer `TMPDIR` surfaces as an unrelated `QmpIo(InvalidInput)`,
+/// so the length is asserted rather than assumed.
 pub(super) fn temp_socket_path() -> PathBuf {
     let counter = TEMP_SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!("bv-qmp-{}-{counter}.sock", std::process::id()));
-    debug_assert!(path.as_os_str().len() < 104, "path exceeds SUN_LEN");
+    assert!(
+        path.as_os_str().len() < 104,
+        "path exceeds SUN_LEN: {path:?}"
+    );
     let _ = std::fs::remove_file(&path);
     path
 }
 
 /// The client's one-second read timeout is a production budget, not a property
-/// these tests assert. Under a full workspace run a server thread occasionally
-/// exceeded it, turning an expected protocol error into a timeout with a
-/// different message. A bare `.unwrap()` on connect also reported only
-/// `Os { code: .. }` with no path, leaving one rare failure unexplained.
+/// these tests assert: a slow server thread turned an expected protocol error
+/// into a timeout with a different message.
 pub(super) const TEST_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(super) fn connect_for_test(socket_path: &Path) -> QmpClient {
+    // A rare EINVAL here (~3 runs in 60, predating this helper) is not the path
+    // length, asserted above and 68 bytes in every observed failure.
     QmpClient::connect_with_timeout(socket_path, TEST_READ_TIMEOUT)
         .unwrap_or_else(|error| panic!("connect to {} failed: {error}", socket_path.display()))
 }
