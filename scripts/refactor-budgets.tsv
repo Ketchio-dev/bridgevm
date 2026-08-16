@@ -203,7 +203,7 @@ crates/bridgevm-hvf/src/nvme/features.rs	51	0
 crates/bridgevm-hvf/src/nvme/features_get.rs	56	0
 crates/bridgevm-hvf/src/nvme/identify.rs	202	0
 crates/bridgevm-hvf/src/nvme/interrupts.rs	48	0
-crates/bridgevm-hvf/src/nvme/io.rs	281	2
+crates/bridgevm-hvf/src/nvme/io.rs	279	2
 crates/bridgevm-hvf/src/nvme/log_page.rs	81	0
 crates/bridgevm-hvf/src/nvme/mod.rs	6	0
 crates/bridgevm-hvf/src/nvme/namespace.rs	155	0

@@ -19,9 +19,6 @@ impl NvmeController {
         CommandResult::complete(status)
     }
 
-    /// NVM FLUSH (0x00). QEMU accepts both NSID 1 and broadcast NSID for a
-    /// single-NVM-namespace controller. Memory-backed media is already coherent;
-    /// write-through host-file media issues a durable data sync.
     /// Flush every namespace, returning the status the guest sees. Broadcast
     /// FLUSH and disabling the write cache both promise durability, so both
     /// must cover every namespace and surface a failure instead of success.
@@ -37,6 +34,7 @@ impl NvmeController {
         }
     }
 
+    /// NVM FLUSH (0x00). QEMU accepts NSID 1 and broadcast alike.
     pub(crate) fn io_flush(&mut self, cmd: &SubmissionEntry) -> u16 {
         if cmd.nsid == u32::MAX {
             return self.flush_all_namespaces();
