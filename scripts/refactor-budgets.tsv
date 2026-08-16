@@ -1037,7 +1037,7 @@ apps/macos/Tests/BridgeVMAppTests/EmbeddedDisplaySpawnWindowTests.swift	22	0
 apps/macos/Tests/BridgeVMAppTests/GuestToolsCommandResultTests.swift	353	0
 apps/macos/Tests/BridgeVMAppTests/GuestWindowProxyFrameTests.swift	311	0
 apps/macos/Tests/BridgeVMAppTests/GuestWindowProxyPlannerTests.swift	342
-apps/macos/Tests/BridgeVMAppTests/GuestWindowProxyOriginTests.swift	73	0
+apps/macos/Tests/BridgeVMAppTests/GuestWindowProxyOriginTests.swift	105	0
 apps/macos/Tests/BridgeVMAppTests/HostPasteboardTests.swift	43	0
 apps/macos/Tests/BridgeVMAppTests/VMLiveEvidenceTests.swift	83	0
 apps/macos/Tests/BridgeVMAppTests/VMReadinessSummaryTests.swift	313	0

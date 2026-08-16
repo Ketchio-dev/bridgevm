@@ -70,4 +70,36 @@ final class GuestWindowProxyOriginTests: XCTestCase {
     XCTAssertEqual(origin.x, 0, accuracy: 0.001)
     XCTAssertEqual(origin.y, 80 + 950 - 600, accuracy: 0.001)
   }
+
+  /// Moving a proxy window sends new bounds to the guest, which reports them
+  /// back, which rebuilds the plan. The rebuilt window has to land where the
+  /// user just put it rather than jumping somewhere else.
+  func testMovingAProxyWindowRoundTripsBackToTheSamePlace() throws {
+    let window = GuestToolsWindowAction(
+      id: "window-1",
+      title: "Editor",
+      bounds: GuestToolsWindowBounds(x: 200, y: 150, width: 800, height: 600)
+    )
+    let plan = try GuestWindowProxyPlanner.plan(vmName: "Dev VM", window: window)
+    let screen = GuestWindowProxyPlan.HostFrame(x: 0, y: 0, width: 1920, height: 1080)
+    let start = plan.hostOrigin(inVisibleFrame: screen)
+
+    // The user drags it 100 points right and 50 points up.
+    let moved = GuestWindowProxyPlan.HostFrame(
+      x: start.x + 100, y: start.y + 50, width: 800, height: 600
+    )
+    let baseline = GuestWindowProxyPlan.HostFrame(
+      x: start.x, y: start.y, width: 800, height: 600
+    )
+    let reported = plan.guestBounds(forHostContentFrame: moved, relativeTo: baseline)
+
+    let rebuilt = try GuestWindowProxyPlanner.plan(
+      vmName: "Dev VM",
+      window: GuestToolsWindowAction(id: "window-1", title: "Editor", bounds: reported)
+    )
+    let settled = rebuilt.hostOrigin(inVisibleFrame: screen)
+
+    XCTAssertEqual(settled.x, moved.x, accuracy: 0.001)
+    XCTAssertEqual(settled.y, moved.y, accuracy: 0.001)
+  }
 }
