@@ -205,6 +205,67 @@ rather than to change renderer state.
 Raw dumps for all six contexts, the blend-state log, the target-state log and
 the `GL_INVERT` proof are kept in `work/glyph-atlas-evidence/`.
 
+## Correction (2026-08-16): the failing set was not one thing
+
+Re-reading the retained dumps, without booting anything, contradicts two things
+above. Both corrections come from files still in
+`work/glyph-atlas-evidence/` and `/tmp/bv-glyph-{vs,fs}.glsl`.
+
+**The glyph pass does not know the text colour.** The captured vertex shader
+emits exactly two varyings, `vso_g1` (coordinates) and `vso_g2` (indices).
+There is no colour varying, and the fragment shader ends with
+`fsout_c0 = texelFetch(fssamp1, ...)`, so the pass writes the atlas value
+itself. Whatever chooses the text colour is not in this draw.
+
+**Most of the "failing" draws render to a 16x16 target.** `bv-g7-samplers.txt`
+records the target for each captured context in that session:
+
+| Context | Target | Atlas | Atlas pixel form |
+| --- | --- | --- | --- |
+| 11, 19, 21, 25 | **16x16** | 256x80 | `1f1f1f1f` - all four channels equal |
+| 5 | 960x768 | 256x80 | `000000ff` - RGB zero, alpha only |
+| 27 | 948x598 | 1024x20 | mostly per-channel, e.g. `00002500` |
+
+A 16x16 render target is not window chrome. Those draws build an intermediate
+glyph mask, and a mask that never reaches the screen is not a defect. Counting
+them as failures inflated the problem.
+
+The two atlas forms also mean different things. `(c,c,c,c)` is white text
+premultiplied by coverage. `(0,0,0,a)` is black text premultiplied by coverage,
+which is what window chrome should use.
+
+The split is not absolute. In row 0 of the working 1024x20 atlas, 880 non-empty
+pixels differ across channels and 143 do not, so "per-channel" describes most of
+it rather than all of it.
+
+**So `ctx=5` is the real anomaly, and the arithmetic says it should be
+visible.** It draws to a 960x768 window target with a black-text atlas. Under
+the recorded `GL_ONE, GL_ONE_MINUS_SRC_ALPHA` onto a white destination:
+
+| atlas alpha | `0*1 + 1*(1-a)` |
+| --- | --- |
+| 0x3c | 0.765 |
+| 0x58 | 0.655 |
+| 0x76 | 0.537 |
+| 0x96 | 0.412 |
+| 0xff | 0.000 |
+
+That is ordinary anti-aliased black text, not an invisible write. The earlier
+section's conclusion -- that the shader writes the destination colour back
+unchanged -- holds for the `(c,c,c,c)` atlases on a white destination, where
+every one of the 16 distinct coverage values gives exactly 1.0. It does not
+hold for `ctx=5`.
+
+What is still unmeasured is `ctx=5` itself: its fragment shader was never
+dumped, and neither was the destination it drew onto. Its atlas has 992
+non-zero pixels against 2008 for the `(c,c,c,c)` group, so it is not the same
+pass with a different atlas.
+
+One hypothesis raised and killed in the same pass: that the working atlas is
+distinguished by carrying zero alpha. Counting the retained dumps, the working
+1024x20 atlas has only 15 fully transparent pixels out of 1023 non-empty ones,
+so alpha presence does not separate the groups.
+
 ## Reproduction
 
 The instrumentation is deliberately not in the tree. To repeat the measurement,
