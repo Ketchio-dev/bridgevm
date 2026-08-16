@@ -10,7 +10,8 @@
 Where the next session should start, and what it must not re-discover.
 
 **CI now runs all 25 `check-project.sh` steps.** Five ran nowhere but a
-developer's machine when this session began, including 664 shim tests. New
+developer's machine when this session began, including the 659 shim tests of the
+time. New
 gates: shell-script defect classes, Python compilation, workflow parsing plus
 required jobs, test reachability, Swift source hygiene, and whether cited
 capability evidence contains its figures.

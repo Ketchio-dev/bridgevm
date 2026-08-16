@@ -1338,7 +1338,9 @@ tests/integration/windows-arm-hvf-runner-cli-smoke.sh	81	0
 tests/integration/windows-arm-hvf-xhci-hid-boot-key-cli-smoke.sh	100	0
 tests/integration/windows-arm-qemu-args-cli-smoke.sh	198	0
 tests/sleep-wake/metadata-baseline-smoke.sh	119	0
+scripts/check-doc-references.py	118	0
 scripts/check-daemon-dto-decoders.py	91	0
+scripts/capability_freshness.py	42	0
 scripts/check-swift-force-casts.py	54	0
 scripts/check-tests-are-reachable.py	114	0
 scripts/venus_feature.py	41	0

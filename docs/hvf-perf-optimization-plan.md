@@ -60,8 +60,10 @@ bridgevm-hvf` must stay green at every stage boundary.
   `Cargo.toml` `[profile.release]`
   has opt-level=3, lto="thin", **codegen-units=1**, **overflow-checks=true**,
   debug=1, and panic stays unwind. Windows/Linux boot wrappers accept
-  `--release` while defaulting to debug; P3 GPU mode implies release unless
-  `--debug-build`. The 2026-07-11 release/daily matrix at 6144 MiB used the
+  `--release` while defaulting to debug
+  (`scripts/run-hvf-windows-installed-boot-args.sh:58,280`); `--daily` implies
+  release unless `--skip-build` is also given (same file, `:298-300`). The
+  2026-07-11 release/daily matrix at 6144 MiB used the
   agent oracle, periodic shutdown command, round-robin order, fresh APFS clones,
   and produced 9/9 valid READY+SYSTEM_OFF runs:
 

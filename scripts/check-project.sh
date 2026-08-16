@@ -18,8 +18,7 @@ failures=0
 declare -a failed_steps=()
 
 step() {
-  local name="$1"
-  shift
+  local name="$1"; shift
   printf '\n=== %s ===\n' "$name"
   if "$@"; then
     printf '%s: PASS\n' "$name"
@@ -43,6 +42,7 @@ step "machine contract json" json_valid docs/machine-contract/qemu-virt-deviatio
 step "capability schema json" json_valid schemas/bridgevm-capability-v1.json
 step "capability evidence" python3 scripts/check-capability-evidence.py
 step "documentation system" bash scripts/check-documentation-system.sh
+step "documentation references" python3 scripts/check-doc-references.py
 step "structural budgets" scripts/check-refactor-budgets.sh
 step "shell scripts" bash scripts/check-shell-scripts.sh
 step "python scripts" python3 scripts/check-python-scripts.py

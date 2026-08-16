@@ -196,6 +196,8 @@ jobs:
         run: python3 scripts/check-capability-evidence.py
       - name: every Markdown document is classified
         run: bash scripts/check-documentation-system.sh
+      - name: current documents cite flags, paths and commits that exist
+        run: python3 scripts/check-doc-references.py
       - name: attribution and known-defect disclosure are intact
         run: bash scripts/check-attribution-honesty.sh
       - name: the virgl integer-attribute rule stays provenance-scoped
