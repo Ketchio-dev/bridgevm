@@ -46,6 +46,7 @@ step "capability schema json" json_valid schemas/bridgevm-capability-v1.json
 step "documentation system" bash scripts/check-documentation-system.sh
 step "structural budgets" scripts/check-refactor-budgets.sh
 step "shell scripts" bash scripts/check-shell-scripts.sh
+step "python scripts" python3 scripts/check-python-scripts.py
 step "daemon DTO decoders" python3 scripts/check-daemon-dto-decoders.py
 step "swift force casts" python3 scripts/check-swift-force-casts.py
 step "tests are reachable" python3 scripts/check-tests-are-reachable.py
@@ -66,8 +67,7 @@ else
   step "tests (probe example)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --features venus --example hvf_gic_boot_probe --locked
 
   # The non-Apple platform stubs only compile on a non-Apple target, so a
-  # macOS-only gate cannot see them drift from the structs they fill in.
-  # Skipped rather than failed when the target is absent: CI has it.
+  # macOS-only gate cannot see them drift. Skipped here, required in CI.
   if rustup target list --installed --toolchain "${TOOLCHAIN#+}" 2>/dev/null \
       | grep -q '^aarch64-unknown-linux-gnu$'; then
     step "cross-compile (linux stubs)" cargo "$TOOLCHAIN" check --workspace \

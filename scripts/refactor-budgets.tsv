@@ -1087,6 +1087,7 @@ scripts/check-project.sh	98	0
 scripts/check-refactor-budgets.sh	72	1
 scripts/check-release-overrides.sh	74	0
 scripts/check-shell-scripts.sh	61	0
+scripts/check-python-scripts.py	52	0
 scripts/check-supply-chain.sh	52	0
 scripts/check-virgl-integer-attributes.sh	72	0
 scripts/find-hvf-windows-viogpu3d-packages.sh	210	0

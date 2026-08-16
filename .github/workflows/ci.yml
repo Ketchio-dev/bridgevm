@@ -200,6 +200,8 @@ jobs:
         run: bash scripts/check-virgl-integer-attributes.sh
       - name: the gate scripts themselves are free of the enforced defect classes
         run: bash scripts/check-shell-scripts.sh
+      - name: every tracked Python script compiles
+        run: python3 scripts/check-python-scripts.py
       - name: every declared daemon DTO coding key is actually decoded
         run: python3 scripts/check-daemon-dto-decoders.py
       - name: the app sources contain no force casts
