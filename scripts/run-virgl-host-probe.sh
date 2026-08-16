@@ -5,7 +5,7 @@ BRIDGEVM_3D_DIR="${BRIDGEVM_3D_DIR:-"$HOME/BridgeVM/3d"}"
 BRIDGEVM_VENUS_PREFIX="${BRIDGEVM_VENUS_PREFIX:-"$BRIDGEVM_3D_DIR/prefix"}"
 export BRIDGEVM_VENUS_PREFIX
 
-export VK_ICD_FILENAMES="${VK_ICD_FILENAMES:-/opt/homebrew/share/vulkan/icd.d/MoltenVK_icd.json}"
+export VK_ICD_FILENAMES="${VK_ICD_FILENAMES:-/opt/homebrew/etc/vulkan/icd.d/MoltenVK_icd.json}"
 export DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/lib${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
 
 cargo build --manifest-path tools/venus-host-probe/Cargo.toml

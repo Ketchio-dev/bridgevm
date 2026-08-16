@@ -340,7 +340,7 @@ pub(crate) fn set_env_defaults() {
     if env::var_os("VK_ICD_FILENAMES").is_none() {
         env::set_var(
             "VK_ICD_FILENAMES",
-            "/opt/homebrew/share/vulkan/icd.d/MoltenVK_icd.json",
+            "/opt/homebrew/etc/vulkan/icd.d/MoltenVK_icd.json",
         );
     }
     append_env_default_path("DYLD_FALLBACK_LIBRARY_PATH", "/opt/homebrew/lib");
