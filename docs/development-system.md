@@ -250,6 +250,15 @@ When adding one, mutate it in both directions before trusting it: inject the
 defect and watch it fail, then remove the defect and watch it pass. A gate whose
 failing direction was never exercised has not been shown to work.
 
+Two checks are deliberately outside both `scripts/check-project.sh` and CI,
+because each needs hardware neither has:
+[`scripts/check-hvf-windows-p3-gpu-readiness.sh`](../scripts/check-hvf-windows-p3-gpu-readiness.sh)
+and
+[`scripts/check-hvf-windows-viogpu3d-package.sh`](../scripts/check-hvf-windows-viogpu3d-package.sh)
+inspect a real Windows guest and its driver package. Everything else that starts
+with `check-` runs in one or the other; a new gate that runs in neither is
+enforced only by memory.
+
 Hosted CI runs in `.github/workflows/ci.yml` and is authoritative. Check it
 after pushing — `gh run list --limit 1` — and fix a red run before continuing.
 A failure in an area you did not touch is still yours to triage: reproduce it
