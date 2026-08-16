@@ -16,7 +16,7 @@ Release-blocking criteria proven: **19 / 19**. Open: none.
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-08-15 at commit `ea5d2a2b97d2504b86f5931edc671db77e50be23`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-08-15 at commit `546b2d9a236521177c1a6cdae3f829245e975ff8`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 ## How to read the generated status
