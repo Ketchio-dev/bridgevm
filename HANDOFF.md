@@ -5,6 +5,28 @@
 > 653 같은 테스트 개수는 그 시점의 값이다. 현재 상태는 `STATUS.md`와 능력
 > 레지스트리(`capabilities/windows-hvf.json`)를 보라.
 
+## 2026-08-16 gate coverage and dead defaults (committed)
+
+Where the next session should start, and what it must not re-discover.
+
+**CI now runs all 25 `check-project.sh` steps.** Five ran nowhere but a
+developer's machine when this session began, including 664 shim tests. New
+gates: shell-script defect classes, Python compilation, workflow parsing plus
+required jobs, test reachability, Swift source hygiene, and whether cited
+capability evidence contains its figures.
+
+**Two disclosures are open and deliberately not closed.** Five criteria (A5,
+A6, A7, A17, A19) state figures no cited document contains, and the legacy
+`.qemuCompat` engine resolves swtpm, qemu and edk2 from fixed Homebrew paths.
+Both are recorded in the gates that found them and in STATUS; removing either
+record requires producing what is missing.
+
+**The method that found most of this** is in `docs/development-system.md`:
+mutate a gate in both directions before trusting it, measure the shipped code
+before changing it, and ask of every absolute default whether the file is there
+right now. That last question found two paths that had already stopped
+resolving.
+
 ## 2026-08-11 all-vCPU holder diagnostic implementation (committed; follow-up planned)
 
 - A3/A11은 여전히 OPEN이다. 아래 변경은 stop 후 read-only diagnostics뿐이며 guest/device/interrupt/watchdog/renderer/A3 3/3 정책을 바꾸지 않는다.
