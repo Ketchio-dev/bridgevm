@@ -194,6 +194,8 @@ jobs:
           python3 -m json.tool capabilities/windows-hvf.json >/dev/null
       - name: cited capability evidence contains the figures it is cited for
         run: python3 scripts/check-capability-evidence.py
+      - name: capability test-count claims match the tests that exist
+        run: python3 scripts/check-capability-test-counts.py
       - name: every Markdown document is classified
         run: bash scripts/check-documentation-system.sh
       - name: current documents cite flags, paths and commits that exist

@@ -145,7 +145,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Guest TRNG_RND_32/64 are served only by the host OS CSPRNG; no exit-count, time, PID or constant-derived fallback exists, and provider failure returns NO_ENTROPY.",
-      "measured": "The protocol lives in bridgevm_hvf::smccc_trng over SecRandomCopyBytes, with one dispatch shared by the primary and secondary loops. 17 tests cover the DEN 0098 register layout, bit masking, request limits, FEATURES discovery and the fail-closed paths; the exit-counter generator and the duplicated probe constants are deleted. Guest-visible behaviour is not yet re-measured on a live boot.",
+      "measured": "The protocol lives in bridgevm_hvf::smccc_trng over SecRandomCopyBytes, with one dispatch shared by the primary and secondary loops. 14 tests cover the DEN 0098 register layout, bit masking, request limits, FEATURES discovery and the fail-closed paths; the exit-counter generator and the duplicated probe constants are deleted. Guest-visible behaviour is not yet re-measured on a live boot.",
       "evidence_paths": [
         "docs/windows-arm/smccc-trng-psci-contract.md",
         "crates/bridgevm-hvf/src/smccc_trng.rs",
@@ -158,7 +158,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "CPU_ON and AFFINITY_INFO implement the specified state table, affinity levels and error codes with atomic state transitions.",
-      "measured": "State logic lives in bridgevm_hvf::psci with 19 tests covering the CPU_ON table, affinity levels 0-3, cluster aggregation, CPU0, RES1 spellings and invalid targets/levels. CPU_ON reports ON_PENDING for a pending CPU, AFFINITY_INFO reads X2 and searches the whole topology, and the state check and Off->OnPending transition share one critical section. Live 1/2/4-vCPU topology validation is not yet run.",
+      "measured": "State logic lives in bridgevm_hvf::psci with 13 tests covering the CPU_ON table, affinity levels 0-3, cluster aggregation, CPU0, RES1 spellings and invalid targets/levels. CPU_ON reports ON_PENDING for a pending CPU, AFFINITY_INFO reads X2 and searches the whole topology, and the state check and Off->OnPending transition share one critical section. Live 1/2/4-vCPU topology validation is not yet run.",
       "evidence_paths": [
         "docs/windows-arm/smccc-trng-psci-contract.md",
         "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/secondary_vcpu.rs"

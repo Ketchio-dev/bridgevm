@@ -2,17 +2,14 @@
 """Require a criterion's cited evidence to actually contain its numbers.
 
 `measured` carries specific figures -- frame counts, hashes, run ids -- and
-`evidence_paths` says where to check them. Nothing verified that the two agree,
-and for five criteria they do not: the numbers appear in no cited file, so a
-reader following the citation finds a document that never mentions them.
+`evidence_paths` says where to check them. Nothing verified the two agree, and
+for several criteria they do not, so a reader following the citation finds a
+document that never mentions the number.
 
-The generated capability matrix is excluded deliberately. It is rendered from
-this registry, so finding a figure there proves only that the registry says it.
-
-Existing gaps are listed in ACCEPTED below with the date they were recorded, so
-this fails on a new unbacked claim without pretending the old ones are fixed.
-
-    python3 scripts/check-capability-evidence.py
+The generated capability matrix is excluded: it is rendered from this registry,
+so finding a figure there proves only that the registry says it. Known gaps sit
+in ACCEPTED, so a new unbacked claim fails without pretending the old ones are
+fixed.
 """
 
 from __future__ import annotations
@@ -25,13 +22,16 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 REGISTRY = ROOT / "capabilities/windows-hvf.json"
 
-# Distinctive enough to be worth checking: long numbers and hash-like ids.
-TOKEN = re.compile(r"\b[0-9]{4,}\b|\b[0-9a-f]{8,}\b")
+# Long numbers and hash-like ids. A trailing \b would drop every figure carrying
+# a unit, so "1000ms" and "1280x1024" went unchecked; the lookahead keeps a hex
+# id whole while allowing a unit after a decimal figure.
+TOKEN = re.compile(r"\b[0-9]{4,}(?![0-9a-f])|\b[0-9a-f]{8,}\b")
 
-# Criteria whose figures were already uncited when this check was written
-# (2026-08-16). Each needs an evidence document that states them; removing an
-# entry here is how that gets proven rather than assumed.
-ACCEPTED = {"A5", "A6", "A7", "A17", "A19"}
+# Criteria already uncited when this check was written (2026-08-16). Removing an
+# entry is how a gap gets proven closed rather than assumed. B4 joined when the
+# pattern started seeing units: its "through 1000ms" is in no cited document and
+# re-measuring needs a live guest (scripts/measure-pointer-latency.sh).
+ACCEPTED = {"A5", "A6", "A7", "A17", "A19", "B4"}
 
 
 def main() -> int:
