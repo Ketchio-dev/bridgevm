@@ -194,13 +194,13 @@ def apply_block(path: Path, name: str, body: str, check: bool) -> bool:
 
 def check_forbidden() -> list[str]:
     """Scan claim surfaces for retracted wording."""
-    # Whole trees rather than a hand-kept file list: A18 covers CLI and app
-    # wording, and a list of six files silently stops covering anything that
-    # moves or is added. Docs are covered by the retraction rules that apply
-    # to prose the user reads, not to evidence records of what was once true.
+    # Whole trees, not a file list: runners/ and tools/ were missed here, which
+    # is exactly how a list stops covering what moves. Docs: prose rules only.
     targets = [ROOT / "README.md", ROOT / "STATUS.md"]
     for tree, suffixes in (
         (ROOT / "crates", (".rs",)),
+        (ROOT / "runners", (".rs",)),
+        (ROOT / "tools", (".rs",)),
         (ROOT / "apps" / "macos" / "Sources", (".swift",)),
     ):
         targets.extend(
