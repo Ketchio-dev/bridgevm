@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-15",
-  "tested_commit": "6649dba5982d05f0ced4775d634d0d246fd08432",
+  "tested_commit": "8f7f3408106d8c2f1e5b83700b0786e48fcdb01a",
   "product_state": "ENGINEERING_PREVIEW",
   "wording": {
     "product_state_label": "Engineering Preview",
@@ -134,7 +134,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-16 at final head 6649dba5982d05f0ced4775d634d0d246fd08432. scripts/run-xctest-shim-suites.sh: 408 + 193 (1 skip) + 62 = 663 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' (log SHA-256 2d8274c5bf6e25ba8be86dc5b082e9f5b60278db7388dd5a65ad30f553caee65). A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Re-proven after further shipping changes: the ACPI and SMBIOS table-size invariants are now checked in release builds too, where a mutation that shifts every table was caught 22 times instead of 5; the keychain helper no longer force-casts; and the slug builder no longer force-unwraps. Three gates were added since the last re-proof -- Swift force casts, and whether every file containing a test contributes one to a binary (280 files, 2,017 tests).",
+      "measured": "PROVEN 2026-08-16 at final head 8f7f3408106d8c2f1e5b83700b0786e48fcdb01a. scripts/run-xctest-shim-suites.sh: 410 + 193 (1 skip) + 62 = 665 passed, 0 failed, 'PASS: all three shim suites'. Full scripts/check-project.sh (non-fast) completed 'project check: PASS' (log SHA-256 8b3019732df182799ff481b4cc0012814bd596058a8cc17c4109166ca9d51078). A rebuilt app passes codesign --verify --deep --strict and third_party_notice_gate=pass across 12 frameworks. Re-proven after opening a display stopped stalling the main actor for 100 ms, and after four further gates were added: Python scripts must compile, workflows must parse and keep their required jobs, every file containing a test must contribute one to a binary, and the app sources must contain no force casts. The check now runs 24 steps, all of which also run in hosted CI.",
       "evidence_paths": [
         "STATUS.md"
       ]
