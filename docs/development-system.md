@@ -188,8 +188,30 @@ scripts/check-refactor-budgets.sh
 ```
 
 It fails if any file in `scripts/refactor-budgets.tsv` exceeds its recorded line
-or `unsafe`-site ceiling: grow code into extracted modules rather than these
-files, and lower a ceiling only after an extraction actually reduces the file.
+or `unsafe`-site ceiling, or if a tracked source file is absent from the TSV at
+all: an unlisted file used to be unbounded, so a new 3,000-line module passed
+untouched. Grow code into extracted modules rather than these files, and lower a
+ceiling only after an extraction actually reduces the file. Bare `mod`, `use`
+and `#[path]` lines are not counted, because charging a parent for a split
+penalises the one action the ratchet exists to encourage.
+
+### Gates that defend the gates
+
+Several checks exist because a gate that cannot fail is worse than no gate: it
+converts an unexamined area into a claim. Each was added after the defect it
+describes was observed, not anticipated.
+
+| Check | What went wrong without it |
+|---|---|
+| `scripts/check-shell-scripts.sh` | Five gate scripts ran `cd "$ROOT"` unchecked with no `set -e`, so a failed `cd` left them checking the wrong tree and still exiting 0. |
+| `scripts/check-tests-are-reachable.py` | A test file that no `mod`, `#[path]` or `include!` reaches never compiles, and nothing reports it: a test that does not exist cannot fail. |
+| `scripts/check-daemon-dto-decoders.py` | A `CodingKeys` case that no `forKey:` decodes makes the field silently absent; decoding still succeeds and the UI shows a default. |
+| `scripts/check-swift-force-casts.py` | `try!` and `as!` crash the app instead of surfacing an error. |
+| The README disclosure in `scripts/check-attribution-honesty.sh` | Deleting the known-defect paragraph passed every other gate. |
+
+When adding one, mutate it in both directions before trusting it: inject the
+defect and watch it fail, then remove the defect and watch it pass. A gate whose
+failing direction was never exercised has not been shown to work.
 
 Hosted CI runs in `.github/workflows/ci.yml` and is authoritative. Check it
 after pushing — `gh run list --limit 1` — and fix a red run before continuing.
