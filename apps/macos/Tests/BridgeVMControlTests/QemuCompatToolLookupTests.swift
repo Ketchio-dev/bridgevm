@@ -6,9 +6,9 @@ import XCTest
 /// Homebrew installs on Apple Silicon and nowhere on Intel.
 final class QemuCompatToolLookupTests: XCTestCase {
   func testIntelHomebrewPrefixIsAlsoSearched() {
-    let candidates = QemuCompatBackend.toolCandidates("/bin/swtpm", override: nil)
+    let candidates = QemuCompatBackend.toolCandidates("/bin/qemu-system-aarch64", override: nil)
 
-    XCTAssertEqual(candidates, ["/opt/homebrew/bin/swtpm", "/usr/local/bin/swtpm"])
+    XCTAssertEqual(candidates, ["/opt/homebrew/bin/qemu-system-aarch64", "/usr/local/bin/qemu-system-aarch64"])
   }
 
   func testAnOverrideIsPreferredOverBothPrefixes() {
@@ -22,24 +22,23 @@ final class QemuCompatToolLookupTests: XCTestCase {
   }
 
   func testAnEmptyOverrideIsIgnoredRatherThanSearchedFor() {
-    let candidates = QemuCompatBackend.toolCandidates("/bin/swtpm", override: "")
+    let candidates = QemuCompatBackend.toolCandidates("/bin/qemu-system-aarch64", override: "")
 
-    XCTAssertEqual(candidates, ["/opt/homebrew/bin/swtpm", "/usr/local/bin/swtpm"])
+    XCTAssertEqual(candidates, ["/opt/homebrew/bin/qemu-system-aarch64", "/usr/local/bin/qemu-system-aarch64"])
   }
 
   func testATildeOverrideIsExpanded() {
-    let candidates = QemuCompatBackend.toolCandidates("/bin/swtpm", override: "~/bin/swtpm")
+    let candidates = QemuCompatBackend.toolCandidates("/bin/qemu-system-aarch64", override: "~/bin/qemu")
 
     XCTAssertFalse(candidates[0].hasPrefix("~"))
-    XCTAssertTrue(candidates[0].hasSuffix("/bin/swtpm"))
+    XCTAssertTrue(candidates[0].hasSuffix("/bin/qemu"))
   }
 
-  /// Every tool the engine needs has to be searched the same way; a fixed path
-  /// left in any one of them still breaks the engine on Intel.
-  func testAllThreeToolSuffixesResolveUnderBothPrefixes() {
-    for suffix in [
-      "/bin/qemu-system-aarch64", "/share/qemu/edk2-aarch64-code.fd", "/bin/swtpm",
-    ] {
+  /// qemu and its firmware are searched; swtpm deliberately is not, because it
+  /// holds the vTPM's sealed state and goes through the bundle-first path in
+  /// VTPMStateSecurity instead.
+  func testSearchedToolSuffixesResolveUnderBothPrefixes() {
+    for suffix in ["/bin/qemu-system-aarch64", "/share/qemu/edk2-aarch64-code.fd"] {
       let candidates = QemuCompatBackend.toolCandidates(suffix, override: nil)
       XCTAssertEqual(candidates, ["/opt/homebrew" + suffix, "/usr/local" + suffix], suffix)
     }

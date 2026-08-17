@@ -51,9 +51,10 @@ final class QemuCompatBackend: VMBackend {
         Self.resolve(
             "/share/qemu/edk2-aarch64-code.fd", "BRIDGEVM_QEMU_EDK2_CODE", isExecutable: false)
     }
-    private var swtpm: String {
-        Self.resolve("/bin/swtpm", "BRIDGEVM_SWTPM_BINARY", isExecutable: true)
-    }
+    // swtpm holds the vTPM's sealed state, so it is resolved through the same
+    // bundle-first path the HVF engine uses rather than by searching prefixes:
+    // anyone who can write to a searched directory would otherwise choose the TPM.
+    private var swtpm: String { VTPMStateSecurity.defaultSwtpmCommand() }
     private var diskPath: String { config.diskPath ?? (config.bundlePath + "/disks/win.qcow2") }
     private var swtpmSock: String { config.bundlePath + "/metadata/swtpm.sock" }
     private var swtpmState: String { config.bundlePath + "/metadata/swtpm-state" }
