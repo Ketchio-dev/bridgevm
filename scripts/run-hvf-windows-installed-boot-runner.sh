@@ -1112,7 +1112,6 @@ run_installed_boot_probe() {
 }
 
 # Boot-reliability evidence: did *this* run reach [stage4] done?
-#
 # The firstboot log persists on the guest disk, so its mere content proves
 # nothing about the current boot. Fail-closed like the title gate: the marker
 # counts only when the log also changed during this run. When no prior hash
