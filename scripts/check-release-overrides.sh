@@ -21,12 +21,12 @@ FORBIDDEN_IN_RELEASE=(
   "/usr/local/bin/swtpm"
 )
 
-# Known violation, recorded not hidden: QemuCompatBackend hardcodes all three
-# and is reachable via .qemuCompat. Scanning two named objects hid them.
-KNOWN_UNFIXED=(
-  "/opt/homebrew/bin/swtpm" "/opt/homebrew/bin/qemu-system-aarch64"
-  "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
-)
+# QemuCompatBackend used to hardcode all three of these, which made the legacy
+# engine unusable on Intel Macs, where Homebrew installs under /usr/local. It
+# now searches both prefixes, so none of them survives as a literal. Anything
+# listed here is a violation this gate has agreed to tolerate; the loop below
+# fails when one gets fixed, so the list cannot quietly outlive its reason.
+KNOWN_UNFIXED=()
 
 status=0
 missing_build=0
@@ -38,7 +38,7 @@ count_in() {
   xargs strings <<< "$objects" 2>/dev/null | grep -c -- "$2" || true
 }
 
-for needle in "${KNOWN_UNFIXED[@]}"; do
+for needle in ${KNOWN_UNFIXED[@]+"${KNOWN_UNFIXED[@]}"}; do
   [[ "$(count_in release "$needle")" != 0 ]] ||
     { echo "FAIL: $needle is fixed; remove it from KNOWN_UNFIXED" >&2; status=1; }
 done
