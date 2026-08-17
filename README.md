@@ -57,12 +57,12 @@ come from the machine-readable registry rather than being maintained by hand.
 <!-- BEGIN GENERATED: capability-summary -->
 **Product state: Engineering Preview.** Boots an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with storage, display/input, network, audio, guest agent and experimental 3D. Not release-ready.
 
-Release-blocking criteria proven: **19 / 19**. Open: none.
+Release-blocking criteria proven: **16 / 19**. Open: A5, A6, A7.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-08-15 at commit `a72aee86f8cd6ec9908d6ddb2f82a880f0fb01ff`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-08-15 at commit `f058c99053d020cd7376b89aa42855addb342ad5`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 For the exact thresholds and receipts, see the
