@@ -65,34 +65,34 @@
     {
       "id": "A5",
       "title": "Audio playback",
-      "state": "PROVEN",
+      "state": "OPEN",
       "release_blocking": true,
       "statement": "Guest PCM reaches the host CoreAudio ring with frames_rendered>0 AND drops==0.",
-      "measured": "frames_rendered=252513, drops=0, dropped_bytes=0, format_drops=0, ring_full_drops=0. callback_errors=3 tracked separately as a quality issue.",
+      "measured": "The emitter is crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_stats.rs:51, which prints frames_rendered, drops, dropped_bytes, format_drops, ring_full_drops and callback_errors from a live boot. The figures previously recorded here (frames_rendered=252513, drops=0, callback_errors=3) came from a run whose log is no longer retained, and the document this criterion cited covers A9 rather than audio. The counters are the proof; the specific run is not reproducible from anything in the repository.",
       "evidence_paths": [
-        "docs/windows-arm/evidence/app-install-to-3d-desktop-20260730.md"
+        "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_stats.rs"
       ]
     },
     {
       "id": "A6",
       "title": "Clipboard",
-      "state": "PROVEN",
+      "state": "OPEN",
       "release_blocking": true,
       "statement": "Host and guest clipboard round-trips in both directions including Korean text with matching SHA-256.",
-      "measured": "CLIPSET to CLIPGET round-trip with identical expected/actual SHA-256 0edb7fed.",
+      "measured": "The CLIPSET/CLIPGET verbs are implemented at crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs:95-112. The round-trip SHA-256 previously recorded here (0edb7fed) came from a run whose log is no longer retained, and the document this criterion cited covers A9 rather than clipboard.",
       "evidence_paths": [
-        "docs/windows-arm/evidence/app-install-to-3d-desktop-20260730.md"
+        "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs"
       ]
     },
     {
       "id": "A7",
       "title": "Folder sharing",
-      "state": "PROVEN",
+      "state": "OPEN",
       "release_blocking": true,
       "statement": "One file each direction transfers with matching SHA-256.",
-      "measured": "Host to guest 12345 bytes ok=true; guest to host 9001 bytes SHA-256 5d28425e matching guest Get-FileHash.",
+      "measured": "The GET/PUT verbs are implemented at crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs:109-112. The byte counts and SHA-256 previously recorded here (12345 bytes, 9001 bytes, 5d28425e) came from a run whose log is no longer retained, and the document this criterion cited covers A9 rather than folder sharing.",
       "evidence_paths": [
-        "docs/windows-arm/evidence/app-install-to-3d-desktop-20260730.md"
+        "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs"
       ]
     },
     {
@@ -206,8 +206,9 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Long gates run asynchronously on the Studio local queue with sealed commit/image/vars hashes and no foreground wait beyond 120 seconds.",
-      "measured": "The Studio local queue (com.ketchio.bridgevm-live LaunchAgent, StartInterval 60s, no inbound listener and no runner registration) has run 29 jobs across tiers t0-t5 plus t1-snapshot and t1-restore-boot. Submission returns a job id immediately and never waits, so no foreground wait exists at all, let alone one over 120 seconds; the longest job this session ran about 100 minutes unattended. Receipts seal the commit and, for tiers that read one, the image and vars: job 20260805-115614-86173-14911 records image_sha256 6fef8f980adbc6af1ed41a1934d1ebafd93b8a1b4d2ab9a3f8bd07ae950d9b54 and vars_sha256 d329b5b03cc5673435d3949f1b5b5b2bfe3f4dfe1f6f0b56ca5894f3bce87d3f against the real 64 GiB pair, while t1-vtimer correctly records 'absent'. Nine defects were found by running the queue rather than by reasoning about it, including a cancel that recorded the request and then waited for the job it had cancelled. Evidence: docs/testing/apple-silicon-live-gates.md.",
+      "measured": "The Studio local queue (com.ketchio.bridgevm-live LaunchAgent, StartInterval 60s, no inbound listener and no runner registration) has run 121 completed jobs across tiers t0-t5 plus t1-snapshot and t1-restore-boot, counted from ~/BridgeVM/live-queue/done. Submission returns a job id immediately and never waits. Receipts seal the commit and, for tiers that read one, the image and vars: job 20260805-115614-86173-14911 records disk_sha256 6fef8f980adbc6af1ed41a1934d1ebafd93b8a1b4d2ab9a3f8bd07ae950d9b54 and vars_sha256 d329b5b03cc5673435d3949f1b5b5b2bfe3f4dfe1f6f0b56ca5894f3bce87d3f against the real 64 GiB pair, re-read from the job directory 2026-08-16. The field is disk_sha256; this criterion previously called it image_sha256. Nine defects were found by running the queue rather than by reasoning about it.",
       "evidence_paths": [
+        "docs/windows-arm/evidence/a17-live-queue-receipts-20260805.md",
         "docs/testing/apple-silicon-live-gates.md"
       ]
     },
@@ -228,8 +229,9 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Powered-off snapshot export and restore keep a byte-exact atomic disk plus vars pair under an explicit byte quota.",
-      "measured": "All six acceptance items in docs/windows-arm/snapshot-scope-v1.md are proven against the real 64 GiB image. Items 1-4 and 6 by the pair gate (scripts/verify-powered-off-snapshot.sh, tier t1-snapshot): create, verify, clobber and restore reproduce both files byte for byte, and a tampered snapshot is refused before either live file is touched. Item 5 by the restore-boot gate (scripts/verify-snapshot-restore-boots.sh, tier t1-restore-boot, job 20260805-091656-10876-16297, result=pass): a marker written on C: before the snapshot came back after a restore, and a different marker written after the snapshot was gone -- so a restore that did nothing could not have passed. disk_sha256 56b1361282933f2cf3e409604cdc2da81f8c6ad8536de2bdcc472818e204280d and vars_sha256 8cc43bf0a11d8d1d68253069fed42667950a701c2f508a38c69e35b72fca3563 are identical across create, verify and restore. Evidence: docs/windows-arm/evidence/a19-snapshot-pair-20260804.md and docs/windows-arm/evidence/a19-restore-boots-20260805.md.",
+      "measured": "Restore-boot proven by live-queue job 20260805-091656-10876-16297 (tier t1-restore-boot, outcome completed, pass true, commit e8eb8b9e3ac7, Mac16,9 / macOS 26.5.2) against the real 64 GiB image: create.txt records disk_bytes 68719476736 and disk_sha256 56b1361282933f2cf3e409604cdc2da81f8c6ad8536de2bdcc472818e204280d. The guest-observed marker goes BV-NO-MARKER before the write, BV-ORIGINAL-1785935910 after the disk is clobbered, and the identical BV-ORIGINAL-1785935910 after restore, so the restore returns state a guest process can read rather than a file that merely hashes correctly. The remaining acceptance items are covered by tier t1-snapshot through scripts/verify-powered-off-snapshot.sh, a different job.",
       "evidence_paths": [
+        "docs/windows-arm/evidence/a19-snapshot-restore-20260805.md",
         "docs/windows-arm/snapshot-scope-v1.md",
         "crates/bridgevm-hvf/src/snapshot_pair.rs",
         "crates/bridgevm-hvf/src/nvme/disk_export.rs"

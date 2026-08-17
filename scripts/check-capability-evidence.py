@@ -28,10 +28,10 @@ REGISTRY = ROOT / "capabilities/windows-hvf.json"
 TOKEN = re.compile(r"\b[0-9]{4,}(?![0-9a-f])|\b[0-9a-f]{8,}\b")
 
 # Criteria already uncited when this check was written (2026-08-16). Removing an
-# entry is how a gap gets proven closed rather than assumed: B4 was here until
-# its latency was re-measured on a live guest and written down, and the check
-# demanded its removal on the next run.
-ACCEPTED = {"A5", "A6", "A7", "A17", "A19"}
+# entry proves a gap closed: B4, A17 and A19 left once their evidence was found,
+# each removal demanded by this check. A5-A7 remain -- they cited an A9 document
+# that never held their figures, and those runs are no longer on disk.
+ACCEPTED = {"A5", "A6", "A7"}
 
 
 def main() -> int:
