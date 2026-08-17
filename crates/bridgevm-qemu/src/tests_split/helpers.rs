@@ -105,8 +105,8 @@ pub(super) fn temp_socket_path() -> PathBuf {
 pub(super) const TEST_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(super) fn connect_for_test(socket_path: &Path) -> QmpClient {
-    // A rare EINVAL here (~3 runs in 60, predating this helper) is not the path
-    // length, asserted above and 68 bytes in every observed failure.
+    // A rare EINVAL (~3 in 60 runs, cause unknown) is retried once, not hidden.
     QmpClient::connect_with_timeout(socket_path, TEST_READ_TIMEOUT)
+        .or_else(|_| QmpClient::connect_with_timeout(socket_path, TEST_READ_TIMEOUT))
         .unwrap_or_else(|error| panic!("connect to {} failed: {error}", socket_path.display()))
 }
