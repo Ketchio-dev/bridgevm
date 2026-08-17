@@ -35,7 +35,7 @@ app=$(find "$work" -maxdepth 1 -name '*.app' | head -1)
 name=$(basename "$app")
 if [[ -e "$DEST/$name" ]]; then
   echo "Replacing existing $DEST/$name"
-  rm -rf "$DEST/$name"
+  rm -rf "${DEST:?}/${name:?}"
 fi
 mv "$app" "$DEST/"
 
