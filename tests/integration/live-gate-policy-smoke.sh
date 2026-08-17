@@ -94,7 +94,7 @@ hdiutil create -quiet -size 64m -fs HFS+ -srcfolder "$postmortem_src" \
     -format UDRW "$postmortem_image"
 postmortem_image_before="$(shasum -a 256 "$postmortem_image" | awk '{print $1}')"
 POSTMORTEM_MOUNT="$WORK/postmortem-mount"
-hdiutil attach -readonly -nobrowse -mountpoint "$POSTMORTEM_MOUNT" "$postmortem_image" >/dev/null
+hdiutil attach -readonly -nobrowse -mountpoint "$POSTMORTEM_MOUNT" "$postmortem_image" >/dev/null || { echo "FAIL: hdiutil attach" >&2; exit 1; }
 
 "$POSTMORTEM_HARVEST" --volume "$POSTMORTEM_MOUNT" \
     --evidence-dir "$postmortem_evidence" --phase pre-run
