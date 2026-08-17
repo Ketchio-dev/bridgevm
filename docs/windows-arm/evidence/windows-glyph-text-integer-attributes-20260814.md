@@ -283,3 +283,50 @@ vertex buffer from that hook. Both segfaulted the probe.
 When reading back a colour attachment, read the whole attachment. `glReadPixels`
 origin is bottom-left, so a partial read from the origin covers the bottom of
 the window and silently excludes the title bar.
+
+## Live instrumentation round two (2026-08-17): the declaration was never the problem
+
+A fix candidate was built on the theory that the glyph vertex shader consumes
+integer attributes through plain integer ALU ops that the provenance scanner
+does not recognise. Live measurement killed it, and most of the earlier frame
+with it. Everything below is from draw-level captures on a live boot
+(`~/BridgeVM/work/glyph-atlas-evidence/bvab-sync-20260817.log`).
+
+- The 5-element glyph vertex shader already reports `i2f=0x7`, so the shipped
+  rule already fires: the failing draws run the **integer-declared** shader
+  variant (program ids checked against their attached source at link time).
+  A float-declared variant also exists, but no failing draw used it.
+- Bit preservation through the `float(intBitsToFloat(x))` + flat varying chain
+  was tested on the host GL directly (M4 Max, CGL core profile): denormal bit
+  pattern 640 survives to the fragment shader intact. Apple GL does not flush
+  it. The varying-corruption theory is dead.
+- The full-target before/after diff shows the failing draws change **zero
+  pixels**, which under `GL_ONE, GL_ONE_MINUS_SRC_ALPHA` means the shader
+  output is exactly `(0,0,0,0)`: the coverage `texelFetch` returns zero.
+- Flooding the atlas with `0xFF` immediately before a failing draw changes
+  nothing, so the second fetch's coordinates never land inside the atlas —
+  consistent with the first (buffer) fetch returning 0 and collapsing the
+  coordinate chain.
+- The vertex data is fine: decoded `R16G16_SINT` rectangles are small positive
+  quads and the `R32_SINT` buffer base (1680) is identical across failing and
+  succeeding draws.
+- The TBO view is `R8_UINT` (177) sampled through a float `samplerBuffer` in
+  every glyph pass, succeeding ones included, so the sampler-type mismatch does
+  not separate them either.
+- What does separate them: **the coverage buffer's contents at draw time.** In
+  failing draws the fetch window at offset 1680 reads back all zero, and in two
+  captures the same buffer read back non-zero later in the same boot. In one
+  capture the CPU readback was already fresh while the draw still rasterised
+  nothing — the same CPU-fresh/GPU-stale signature as the 2026-07-14 first-draw
+  wall that `glFlush()` after buffer uploads was added to fix.
+- A candidate that upgrades that `glFlush` to `glFinish` for TBO-backed buffers
+  reduced zero-change draws from six to five in one boot: not decisive, not
+  adopted.
+
+One honest caveat bounds all of this: every captured failing draw targets the
+960x768 login-era surface. Whether these boot-time draws are the same defect as
+the missing 1280x1024 Notepad chrome is **not established** — reproducing that
+exact screen needs the viogpu3d injection flow plus a scanout-level capture,
+which ramfb checkpoints do not show (they see the UEFI GOP 800x600 surface).
+The next attempt should reproduce the visible defect first and only then
+instrument, in that order.

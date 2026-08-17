@@ -329,6 +329,7 @@ build_installed_boot_env_args() {
   # Forward host-vblank pacing config from the caller's environment (env-gated
   # feature in virtio_gpu.rs; absent/0 = legacy immediate completion).
   [[ -z "${BRIDGEVM_VBLANK_HZ:-}" ]] || ENV_ARGS+=("BRIDGEVM_VBLANK_HZ=$BRIDGEVM_VBLANK_HZ")
+  [[ -z "${BRIDGEVM_VIRTIO_GPU_RES:-}" ]] || ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_RES=$BRIDGEVM_VIRTIO_GPU_RES")
   # Forward the agent-console ServiceWake interval (probe_runtime.rs, default
   # 250ms, clamp 50..10000). Each wake is an hv_vcpus_exit cancel; measurement
   # windows may trade ctl-reply latency for a lower cancel rate.
