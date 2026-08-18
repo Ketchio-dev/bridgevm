@@ -276,8 +276,9 @@
       "state": "PROVEN",
       "release_blocking": false,
       "statement": "Record a host-click to guest-reaction latency measurement.",
-      "measured": "Re-measured 2026-08-16 over two runs of scripts/measure-pointer-latency.sh. The guest does react: in pointer-latency-long-043700 the framebuffer checksum holds 0x9299932141fd81cc through 250ms and changes by 1000ms, and the captured frames show the clicked dialog dismissed, then PPSSPP exited to the desktop by 3000ms. So first visible reaction lands in (250ms, 1000ms], which is slow for a pointer event and still a real defect. The earlier '>1000ms or absent' generalised from one run that ignored the click entirely while holding 0x0531df34fe803143 to 1000ms; that run kept compositing afterwards and reported identical HID counters, so one of two runs losing a delivered click is unexplained and is the open question.",
+      "measured": "Batched 2026-08-17: ten fresh boots, HID fired 10/10, guest reacted 1/10 (run 7 at first_changed_ms=1000); every failing run had the dialog on screen and a byte-identical 1000ms capture. Pacing raised 30->300ms scored 0/3, killing the plan's prime suspect. Per-interface protocol is correct (pointer=report, 6-byte absolute), and every host-visible counter -- doorbells, rings, interrupts -- is identical between a landed and a lost click, so the loss is strictly guest-side beyond host instrumentation. Open as a product defect; next steps need guest-side tooling (ETW/transfer-ring completion).",
       "evidence_paths": [
+        "docs/windows-arm/evidence/b4-pointer-batch-20260817.md",
         "docs/windows-arm/evidence/b4-pointer-latency-20260816.md"
       ]
     },

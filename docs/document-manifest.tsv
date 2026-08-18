@@ -64,6 +64,7 @@ docs/windows-arm/evidence/a1-firstboot-fresh-20260802.md	current	windows-graphic
 docs/windows-arm/evidence/a1-stage4-after-bar2-fix-20260801.md	current	windows-graphics	GOAL.md
 docs/windows-arm/evidence/a8-resize-guest-blocker-20260801.md	current	windows-graphics	GOAL.md
 docs/windows-arm/evidence/b4-pointer-latency-20260816.md	current	windows-graphics	-
+docs/windows-arm/evidence/b4-pointer-batch-20260817.md	current	windows-graphics	-
 docs/windows-arm/evidence/a19-snapshot-restore-20260805.md	current	windows-storage	-
 docs/windows-arm/evidence/a17-live-queue-receipts-20260805.md	current	testing	-
 docs/install.md	current	user-installation	-

@@ -326,10 +326,10 @@ build_installed_boot_env_args() {
   # shell; without it the probe treats the shell banner as a terminal result
   # before the queued input can fire.
   [[ -z "${BRIDGEVM_RAMFB_SAMPLE_UNTIL_COMPLETE:-}" ]] || ENV_ARGS+=("BRIDGEVM_RAMFB_SAMPLE_UNTIL_COMPLETE=$BRIDGEVM_RAMFB_SAMPLE_UNTIL_COMPLETE")
-  # Forward host-vblank pacing config from the caller's environment (env-gated
-  # feature in virtio_gpu.rs; absent/0 = legacy immediate completion).
+  # Forward host-vblank pacing (env-gated in virtio_gpu.rs; absent/0 = legacy).
   [[ -z "${BRIDGEVM_VBLANK_HZ:-}" ]] || ENV_ARGS+=("BRIDGEVM_VBLANK_HZ=$BRIDGEVM_VBLANK_HZ")
   [[ -z "${BRIDGEVM_VIRTIO_GPU_RES:-}" ]] || ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_RES=$BRIDGEVM_VIRTIO_GPU_RES")
+  [[ -z "${BRIDGEVM_XHCI_REPORT_INTERVAL_MS:-}" ]] || ENV_ARGS+=("BRIDGEVM_XHCI_REPORT_INTERVAL_MS=$BRIDGEVM_XHCI_REPORT_INTERVAL_MS")
   # Forward the agent-console ServiceWake interval (probe_runtime.rs, default
   # 250ms, clamp 50..10000). Each wake is an hv_vcpus_exit cancel; measurement
   # windows may trade ctl-reply latency for a lower cancel rate.
