@@ -101,9 +101,10 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "After a window resize the guest-reported resolution equals the request.",
-      "measured": "1600x900, 1920x1080 and 1280x720 all PASS with a matching final SET_SCANOUT.",
+      "measured": "1600x900, 1920x1080 and 1280x720 all PASS with a matching final SET_SCANOUT. Re-run 2026-08-17 on net-live-20260724: the viogpu3d adapter is present but refused with CM_PROB_UNSIGNED_DRIVER (code 52), and bcdedit /set testsigning on is blocked by Secure Boot policy inside the guest, so no display exists that can adopt a resize on this image. The 1.0 install flow must provision SB-off or pre-enable testsigning; the host-side plumbing needs no change (a8-resize-secure-boot-wall-20260817.md).",
       "evidence_paths": [
-        "docs/windows-arm/evidence/a8-resize-guest-blocker-20260801.md"
+        "docs/windows-arm/evidence/a8-resize-guest-blocker-20260801.md",
+        "docs/windows-arm/evidence/a8-resize-secure-boot-wall-20260817.md"
       ]
     },
     {
