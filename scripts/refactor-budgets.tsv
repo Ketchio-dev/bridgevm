@@ -983,6 +983,8 @@ apps/macos/Sources/BridgeVMApp/Services/EmbeddedDisplayLauncher.swift	307	0
 apps/macos/Sources/BridgeVMApp/Services/EmbeddedDisplayLaunchError.swift	22	0
 apps/macos/Sources/BridgeVMApp/Services/GuestWindowProxyLauncher.swift	836
 apps/macos/Sources/BridgeVMApp/Services/GuestWindowProxyPlan.swift	196	0
+apps/macos/Tests/BridgeVMAppTests/HvfGuestWindowProtocolTests.swift	71
+apps/macos/Sources/BridgeVMApp/Services/HvfGuestWindowProtocol.swift	59
 apps/macos/Sources/BridgeVMApp/Services/VirtualMachineClient.swift	8375	0
 apps/macos/Sources/BridgeVMApp/Services/NWConnectionAsync.swift	102	0
 apps/macos/Sources/BridgeVMApp/Services/WindowsHVFLabLauncher.swift	58	0
@@ -1365,6 +1367,7 @@ scripts/refactor/split_hvf_gic_boot_probe.py	296	0
 # stale four times in one session with each caught by hand.
 scripts/render-capability-status.py	292	0
 scripts/package-tarball.sh	51
+scripts/check-hvf-windows-coherence-protocol.sh	45
 scripts/package-dmg.sh	45
 install.sh	55
 scripts/render-graphics-compatibility.py	245	0

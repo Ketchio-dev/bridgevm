@@ -204,6 +204,8 @@ jobs:
         run: bash scripts/check-attribution-honesty.sh
       - name: the virgl integer-attribute rule stays provenance-scoped
         run: bash scripts/check-virgl-integer-attributes.sh
+      - name: HVF Windows Coherence protocol
+        run: bash scripts/check-hvf-windows-coherence-protocol.sh
       - name: the gate scripts themselves are free of the enforced defect classes
         run: bash scripts/check-shell-scripts.sh
       - name: every tracked Python script compiles
