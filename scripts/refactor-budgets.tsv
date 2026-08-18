@@ -1367,6 +1367,7 @@ scripts/refactor/split_hvf_gic_boot_probe.py	296	0
 # stale four times in one session with each caught by hand.
 scripts/render-capability-status.py	292	0
 scripts/package-tarball.sh	51
+scripts/measure-pointer-latency-batch.sh	36
 scripts/check-hvf-windows-coherence-protocol.sh	45
 scripts/package-dmg.sh	45
 install.sh	55
