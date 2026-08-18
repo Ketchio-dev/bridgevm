@@ -65,33 +65,36 @@
     {
       "id": "A5",
       "title": "Audio playback",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": true,
       "statement": "Guest PCM reaches the host CoreAudio ring with frames_rendered>0 AND drops==0.",
-      "measured": "The emitter is crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_stats.rs:51, which prints frames_rendered, drops, dropped_bytes, format_drops, ring_full_drops and callback_errors from a live boot. The figures previously recorded here (frames_rendered=252513, drops=0, callback_errors=3) came from a run whose log is no longer retained, and the document this criterion cited covers A9 rather than audio. The counters are the proof; the specific run is not reproducible from anything in the repository.",
+      "measured": "Re-proven live 2026-08-17 with BRIDGEVM_HDA=1 BRIDGEVM_HDA_COREAUDIO=1: after five guest Ding playbacks, clean shutdown printed frames_rendered=400948 drops=0 dropped_bytes=0 format_drops=0 ring_full_drops=0 callback_errors=3. The criterion's frames_rendered>0 AND drops==0 holds; callback_errors=3 occur at teardown and stay tracked as the quality note.",
       "evidence_paths": [
+        "docs/windows-arm/evidence/a5-a6-a7-live-20260817.md",
         "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_stats.rs"
       ]
     },
     {
       "id": "A6",
       "title": "Clipboard",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": true,
       "statement": "Host and guest clipboard round-trips in both directions including Korean text with matching SHA-256.",
-      "measured": "The CLIPSET/CLIPGET verbs are implemented at crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs:95-112. The round-trip SHA-256 previously recorded here (0edb7fed) came from a run whose log is no longer retained, and the document this criterion cited covers A9 rather than clipboard.",
+      "measured": "Re-proven live 2026-08-17: guest set a Korean test string, read it back match=True, and its SHA-256 21c7abcad447cf3195122b12efd12ae129a1cefcebb65aa4243e99434db9850a equals the host-computed hash of the same expected string.",
       "evidence_paths": [
+        "docs/windows-arm/evidence/a5-a6-a7-live-20260817.md",
         "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs"
       ]
     },
     {
       "id": "A7",
       "title": "Folder sharing",
-      "state": "OPEN",
+      "state": "PROVEN",
       "release_blocking": true,
       "statement": "One file each direction transfers with matching SHA-256.",
-      "measured": "The GET/PUT verbs are implemented at crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs:109-112. The byte counts and SHA-256 previously recorded here (12345 bytes, 9001 bytes, 5d28425e) came from a run whose log is no longer retained, and the document this criterion cited covers A9 rather than folder sharing.",
+      "measured": "Re-proven live 2026-08-17 over the agent share: host->guest 74 bytes SHA-256 656f9a3890c310fbf6b8e1727148207735bcad3d6e7bf935d987d8f08f53dce2 and guest->host 58 bytes 750b06d72e9fe7b0d28559a50d527717224821c065ed4db4cabc2a3bb4dc19c0, each hashed independently on both sides and identical.",
       "evidence_paths": [
+        "docs/windows-arm/evidence/a5-a6-a7-live-20260817.md",
         "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/protocol.rs"
       ]
     },

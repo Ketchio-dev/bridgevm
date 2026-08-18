@@ -11,7 +11,7 @@ receipts under `docs/windows-arm/evidence/`.
 <!-- BEGIN GENERATED: capability-summary -->
 **Product state: Engineering Preview.** Boots an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with storage, display/input, network, audio, guest agent and experimental 3D. Not release-ready.
 
-Release-blocking criteria proven: **16 / 19**. Open: A5, A6, A7.
+Release-blocking criteria proven: **19 / 19**. Open: none.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.

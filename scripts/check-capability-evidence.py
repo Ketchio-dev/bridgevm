@@ -27,11 +27,10 @@ REGISTRY = ROOT / "capabilities/windows-hvf.json"
 # id whole while allowing a unit after a decimal figure.
 TOKEN = re.compile(r"\b[0-9]{4,}(?![0-9a-f])|\b[0-9a-f]{8,}\b")
 
-# Criteria already uncited when this check was written (2026-08-16). Removing an
-# entry proves a gap closed: B4, A17 and A19 left once their evidence was found,
-# each removal demanded by this check. A5-A7 remain -- they cited an A9 document
-# that never held their figures, and those runs are no longer on disk.
-ACCEPTED = {"A5", "A6", "A7"}
+# All six originally-uncited criteria have left this set: B4/A17/A19 once
+# their evidence was located, A5-A7 once fresh live runs replaced the lost
+# figures (2026-08-17). Each removal was demanded by this check itself.
+ACCEPTED: set = set()
 
 
 def main() -> int:
