@@ -55,7 +55,7 @@ cmd_submit() {
     # Reject an unknown tier here rather than at claim time. A typo (or a
     # `--help` mistaken for a tier) must not sit in the queue looking like work.
     case "$tier" in
-        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title) ;;
+        t0-check|t1-vtimer|t1-snapshot|t1-restore-boot|t2-pilot|t3-candidate|t4-soak|t5-campaign|t6-a3-title|t7-windows-closure) ;;
         *) echo "unknown tier $tier" >&2; usage >&2; exit 2 ;;
     esac
 
@@ -67,13 +67,13 @@ cmd_submit() {
             *) echo "unknown submit option $1" >&2; exit 2 ;;
         esac
     done
-    if [ "$tier" = t6-a3-title ]; then
+    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ]; then
         [ -f "$input_manifest" ] || {
-            echo "t6-a3-title needs --input-manifest PATH" >&2
+            echo "$tier needs --input-manifest PATH" >&2
             exit 2
         }
     elif [ -n "$input_manifest" ]; then
-        echo "--input-manifest is only valid for t6-a3-title" >&2
+        echo "--input-manifest is only valid for sealed-input tiers" >&2
         exit 2
     fi
 
@@ -95,13 +95,13 @@ cmd_submit() {
         local binary_path expected_binary_sha
         binary_path="$(awk -F '\t' '$1=="binary"{print $2}' "$staging/input-manifest.tsv")"
         expected_binary_sha="$(awk -F '\t' '$1=="binary"{print $3}' "$staging/input-manifest.tsv")"
-        [ -f "$binary_path" ] || { rm -rf "$staging"; echo "A3 binary is missing" >&2; exit 2; }
+        [ -f "$binary_path" ] || { rm -rf "$staging"; echo "sealed binary is missing" >&2; exit 2; }
         cp "$binary_path" "$staging/hvf_gic_boot_probe"
         chmod 500 "$staging/hvf_gic_boot_probe"
         binary_sha="$(shasum -a 256 "$staging/hvf_gic_boot_probe" | cut -d' ' -f1)"
         if [ "$binary_sha" != "$expected_binary_sha" ]; then
             rm -rf "$staging"
-            echo "A3 binary hash does not match the input manifest" >&2
+            echo "sealed binary hash does not match the input manifest" >&2
             exit 2
         fi
     fi

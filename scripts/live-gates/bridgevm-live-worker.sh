@@ -76,7 +76,7 @@ run_job() {
     fi
 
     local tier_args=()
-    if [ "$tier" = t6-a3-title ]; then
+    if [ "$tier" = t6-a3-title ] || [ "$tier" = t7-windows-closure ]; then
         local manifest="$dir/input-manifest.tsv" sealed_binary="$dir/hvf_gic_boot_probe"
         local expected_manifest actual_manifest expected_binary actual_binary
         expected_manifest="$(awk -F= '$1=="input_manifest_sha256"{print $2}' "$dir/job.env")"
@@ -135,12 +135,8 @@ run_job() {
             "$([ "$status" -eq 0 ] && echo pass || echo fail)" "$status" > "$dir/result.env"
     fi
     printf 'finished_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$dir/job.env"
-    if [ "$tier" = t6-a3-title ] && [ ! -f "$dir/receipt.json" ]; then
-        local reason=failed-before-receipt
-        [ -f "$dir/cancel.requested" ] && reason=canceled
-        python3 "$worktree/scripts/live-gates/write-a3-title-receipt.py" \
-            --out "$dir" --job-id "$job_id" --commit "$commit" --reason "$reason"
-    fi
+    "$worktree/scripts/live-gates/write-missing-receipt.sh" \
+        "$tier" "$dir" "$worktree" "$job_id" "$commit"
 
     # Publish only the redacted receipt. If redaction refuses, publish nothing
     # and say why: a receipt that names private media must not leak because a

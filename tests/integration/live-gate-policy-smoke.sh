@@ -142,8 +142,8 @@ check "the installer refuses to sit beside a runner" \
     'grep -q "actions-runner" "$INSTALL"'
 no_match "nothing in the queue path uses sudo" \
     '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$INSTALL" "$TIER" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
-check "the A3 receipt requires all three runs" \
-    'python3 "$A3_RECEIPT" --self-test | grep -q "PASS"'
+check "live tier receipt and clone policies pass" \
+    'python3 "$A3_RECEIPT" --self-test | grep -q "PASS" && "$REPO/tests/integration/windows-closure-live-tier-smoke.sh" | grep -q "PASS"'
 check "the A3 payload archive is fail-closed" \
     '"$A3_PAYLOAD" --self-test | grep -q "PASS"'
 check "the A3 payload uses bounded share chunks" \

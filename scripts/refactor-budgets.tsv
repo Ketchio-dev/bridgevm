@@ -885,12 +885,19 @@ crates/bridgevm-hvf/src/userspace_gic/mmio_regs.rs	352	0
 crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	387	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	477	13
 scripts/live-gates/run-a3-title-tier.sh	90	0
+scripts/live-gates/run-windows-closure-tier.sh	116	0
 scripts/live-gates/a3-title-manifest.sh	47	0
+scripts/live-gates/verify-windows-closure-binary.sh	7	0
+scripts/live-gates/windows-closure-manifest.sh	63	0
 scripts/live-gates/a3-title-input-copy.sh	19	0
 scripts/live-gates/a3-title-payload.sh	22	0
 scripts/live-gates/a3-title-payload.py	128	0
 scripts/live-gates/a3-title-payload-stage.sh	52	0
 scripts/live-gates/write-a3-title-receipt.py	179	0
+scripts/live-gates/write-missing-receipt.sh	19	0
+scripts/live-gates/write-windows-closure-receipt.py	165	0
+scripts/win-assets/bv-windows-closure-proof.ps1	148	0
+scripts/windows-1.0-closure-interact.sh	185	0
 scripts/win-assets/bvgpu-d3d11-identity.ps1	24	0
 scripts/harvest-hvf-windows-postmortem.sh	118	0
 
@@ -1100,7 +1107,7 @@ scripts/check-capability-evidence.py	73	0
 scripts/check-supply-chain.sh	52	0
 scripts/check-virgl-integer-attributes.sh	72	0
 scripts/find-hvf-windows-viogpu3d-packages.sh	210	0
-scripts/live-gates/bridgevm-live-worker.sh	177	0
+scripts/live-gates/bridgevm-live-worker.sh	173	0
 scripts/live-gates/install-studio-queue.sh	84	0
 scripts/live-gates/run-tier.sh	161	0
 scripts/measure-pointer-latency.sh	60	0
@@ -1262,6 +1269,7 @@ tests/integration/lifecycle-plan-cli-smoke.sh	141	0
 tests/integration/lifecycle-restart-cli-smoke.sh	134	0
 tests/integration/lifecycle-suspend-resume-cli-smoke.sh	157	0
 tests/integration/live-gate-policy-smoke.sh	308	0
+tests/integration/windows-closure-live-tier-smoke.sh	65	0
 tests/integration/local-release-readiness-suite.sh	298	0
 tests/integration/log-viewer-cli-smoke.sh	170	0
 tests/integration/macos-app-name-validation-smoke.sh	81	0

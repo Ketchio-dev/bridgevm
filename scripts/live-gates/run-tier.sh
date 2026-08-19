@@ -105,9 +105,9 @@ case "$TIER" in
             exit 1
         fi
         ;;
-    t6-a3-title)
-        "$REPO/scripts/live-gates/run-a3-title-tier.sh" \
-            --out "$OUT" --input-manifest "$INPUT_MANIFEST" \
+    t6-a3-title|t7-windows-closure)
+        helper=run-a3-title-tier.sh; [[ "$TIER" == t6-a3-title ]] || helper=run-windows-closure-tier.sh
+        "$REPO/scripts/live-gates/$helper" --out "$OUT" --input-manifest "$INPUT_MANIFEST" \
             --sealed-binary "$SEALED_BINARY" --job-id "$JOB_ID"
         ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)
