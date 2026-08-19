@@ -71,6 +71,10 @@ For the exact thresholds and receipts, see the
 
 ## Quick start
 
+For a packaged build, follow the
+[macOS installation guide](docs/install.md), including the documented
+Gatekeeper steps for the ad-hoc-signed distribution.
+
 ### Requirements
 
 For development from source:

@@ -29,13 +29,13 @@ jobs:
       - name: Record checksums
         run: |
           cd "$RUNNER_TEMP/dist"
-          shasum -a 256 ./* > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+          shasum -a 256 ./* > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Attach to the release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ runner.temp }}/dist/*
-          body_path: ${{ runner.temp }}/dist/SHA256SUMS.txt
+          body_path: ${{ runner.temp }}/dist/SHA256SUMS
           draft: true
