@@ -21,29 +21,29 @@ python3 "$RECEIPT" --self-test | grep -q PASS
 
 # Manifest parser accepts only one exact entry for every required key and uses
 # the copied sealed binary, never a caller-owned binary path, for verification.
-rg -q 'image vars injector injector_assets agent viogpu_dir virglrenderer moltenvk binary' "$MANIFEST_HELPER"
-rg -q 'actual="\$\(seal "\$SEALED_BINARY"\)"' "$MANIFEST_HELPER"
-rg -q 't7-windows-closure' "$CLI" "$WORKER" "$DISPATCH" "$MISSING" && rg -q 'verify-windows-closure-binary.sh' "$TIER"
+grep -Eq 'image vars injector injector_assets agent viogpu_dir virglrenderer moltenvk binary' "$MANIFEST_HELPER"
+grep -Eq 'actual="\$\(seal "\$SEALED_BINARY"\)"' "$MANIFEST_HELPER"
+grep -Eq 't7-windows-closure' "$CLI" "$WORKER" "$DISPATCH" "$MISSING" && grep -Eq 'verify-windows-closure-binary.sh' "$TIER"
 
 # Safety invariants that must fail if somebody regresses to booting originals
 # or sharing a writable vars file between injection and proof.
-rg -q 'cp -c "\$IMAGE" "\$STAGE/disk.raw"' "$TIER"
-rg -q 'cp "\$VARS" "\$STAGE/vars.fd"' "$TIER"
-rg -q 'cp -c "\$RETAINED/disk.raw" "\$PROOF_WORK/disk.raw"' "$TIER"
-rg -q 'cp "\$RETAINED/vars.fd" "\$PROOF_WORK/vars.fd"' "$TIER"
-rg -q 'SOURCE_IMAGE_HASH.*SOURCE_VARS_HASH' "$TIER"
-rg -q 'prepared pair changed during proof' "$TIER"
-rg -q 'injector_boot_observed' "$TIER"
-rg -q 'chmod 400.*disk.raw.*vars.fd' "$TIER"
+grep -Eq 'cp -c "\$IMAGE" "\$STAGE/disk.raw"' "$TIER"
+grep -Eq 'cp "\$VARS" "\$STAGE/vars.fd"' "$TIER"
+grep -Eq 'cp -c "\$RETAINED/disk.raw" "\$PROOF_WORK/disk.raw"' "$TIER"
+grep -Eq 'cp "\$RETAINED/vars.fd" "\$PROOF_WORK/vars.fd"' "$TIER"
+grep -Eq 'SOURCE_IMAGE_HASH.*SOURCE_VARS_HASH' "$TIER"
+grep -Eq 'prepared pair changed during proof' "$TIER"
+grep -Eq 'injector_boot_observed' "$TIER"
+grep -Eq 'chmod 400.*disk.raw.*vars.fd' "$TIER"
 
 # F1-F4 are checked from live outputs; a capture must be explicitly identified
 # as the virtio-gpu checkpoint and the shipped verbs must traverse the channel.
-rg -q 'BVF1MODE.*has_1600x900' "$INTERACT"
-rg -q 'RESIZE 1600x900.*SET_SCANOUT.*rect_w.*1600.*rect_h.*900' <(tr '\n' ' ' < "$INTERACT")
-for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE; do rg -q "$verb" "$INTERACT"; done
-rg -q 'virtio-gpu-checkpoint-' "$INTERACT"
-rg -q 'tesseract' "$INTERACT"
-rg -q "ValidateSet\('F1', 'Display', 'Window', 'Notepad'\)" "$PROOF"
+grep -Eq 'BVF1MODE.*has_1600x900' "$INTERACT"
+grep -Eq 'RESIZE 1600x900.*SET_SCANOUT.*rect_w.*1600.*rect_h.*900' <(tr '\n' ' ' < "$INTERACT")
+for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE; do grep -Eq "$verb" "$INTERACT"; done
+grep -Eq 'virtio-gpu-checkpoint-' "$INTERACT"
+grep -Eq 'tesseract' "$INTERACT"
+grep -Eq "ValidateSet\('F1', 'Display', 'Window', 'Notepad'\)" "$PROOF"
 
 # Submission smoke: T7 requires a manifest, copies it, and seals its binary.
 export BRIDGEVM_LIVE_ROOT="$TMP/queue"
