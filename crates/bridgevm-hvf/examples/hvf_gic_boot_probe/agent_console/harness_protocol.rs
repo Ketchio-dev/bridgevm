@@ -222,12 +222,12 @@ impl AgentConsoleHarness {
     /// mode has always produced. Shared by scripted WaitingOut replies and by
     /// service-mode Ctl replies so both render identically.
     ///
-    /// Chunked GET and command-output replies span several lines and stay
-    /// Incomplete until GETEND/OUTEND. A command's terminal reply is one of:
+    /// Chunked GET/output replies stay incomplete until GETEND/OUTEND.
+    /// A command's terminal reply is one of:
     /// OUT <exit> <b64> or OUTBEG/OUTCHUNK*/OUTEND (RUN/PS), LSOK <b64> (LS),
     /// PUTOK <b64(path)> <bytes> (PUT), CLIP <b64> (CLIPGET), or OK <...> /
-    /// ERR <...> (CLIPSET & other verbs). Anything else is stray.
     pub(super) fn handle_reply_line(&mut self, line: &str, command: &str) -> ReplyProgress {
+        if let Some(progress) = handle_window_reply(line, command) { return progress }
         if let Some(rest) = line.strip_prefix("OUTBEG ") {
             self.begin_out(rest);
             return ReplyProgress::Incomplete;

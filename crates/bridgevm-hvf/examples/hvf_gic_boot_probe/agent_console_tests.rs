@@ -156,7 +156,7 @@ mod tests {
     fn is_raw_verb_covers_protocol_verbs_only() {
         for v in [
             "CLIPGET", "CLIPSET", "LS", "LSR", "GET", "PUT", "PUTBEG", "PUTCHUNK", "PUTEND", "DEL",
-            "PING",
+            "PING", "WINLIST", "WINBOUNDS", "WINFOCUS", "WINCLOSE",
         ] {
             assert!(is_raw_verb(v), "{v} should be raw");
         }

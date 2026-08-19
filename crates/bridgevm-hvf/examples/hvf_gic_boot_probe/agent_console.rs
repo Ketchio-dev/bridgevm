@@ -41,6 +41,8 @@ mod service_wake;
 mod share;
 #[path = "agent_console/state.rs"]
 mod state;
+#[path = "agent_console/window_protocol.rs"]
+mod window_protocol;
 use clipboard::*;
 use config::*;
 use control_file::*;
@@ -49,3 +51,4 @@ pub use service_wake::ServiceWake;
 use share::*;
 pub use state::AgentConsoleHarness;
 use state::*;
+use window_protocol::*;

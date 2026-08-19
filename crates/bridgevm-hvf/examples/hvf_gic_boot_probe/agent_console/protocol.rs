@@ -101,7 +101,7 @@ pub(super) fn is_raw_verb(token: &str) -> bool {
             | "PUTCHUNK"
             | "PUTEND"
             | "DEL"
-            | "PING"
+            | "PING" | "WINLIST" | "WINBOUNDS" | "WINFOCUS" | "WINCLOSE"
     )
 }
 
