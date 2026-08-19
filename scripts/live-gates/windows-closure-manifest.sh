@@ -16,7 +16,7 @@ verify_closure_manifest() {
   [[ -f "$INPUT_MANIFEST" && ! -L "$INPUT_MANIFEST" ]] || return 1
   awk -F '\t' '
     BEGIN {
-      split("image vars injector injector_assets agent viogpu_dir virglrenderer moltenvk binary", required, " ")
+      split("image vars injector_vars injector injector_assets agent viogpu_dir virglrenderer moltenvk binary", required, " ")
     }
     NF != 3 || substr($2, 1, 1) != "/" || length($3) != 64 || $3 !~ /^[0-9a-f]+$/ { bad = 1 }
     { seen[$1]++ }

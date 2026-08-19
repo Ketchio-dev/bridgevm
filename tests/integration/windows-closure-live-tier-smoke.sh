@@ -21,16 +21,16 @@ python3 "$RECEIPT" --self-test | grep -q PASS
 
 # Manifest parser accepts only one exact entry for every required key and uses
 # the copied sealed binary, never a caller-owned binary path, for verification.
-grep -Eq 'image vars injector injector_assets agent viogpu_dir virglrenderer moltenvk binary' "$MANIFEST_HELPER"
+grep -Eq 'image vars injector_vars injector injector_assets agent viogpu_dir virglrenderer moltenvk binary' "$MANIFEST_HELPER"
 grep -Eq 'actual="\$\(seal "\$SEALED_BINARY"\)"' "$MANIFEST_HELPER"
 grep -Eq 't7-windows-closure' "$CLI" "$WORKER" "$DISPATCH" "$MISSING" && grep -Eq 'verify-windows-closure-binary.sh' "$TIER"
 
 # Safety invariants that must fail if somebody regresses to booting originals
 # or sharing a writable vars file between injection and proof.
 grep -Eq 'cp -c "\$IMAGE" "\$STAGE/disk.raw"' "$TIER"
-grep -Eq 'cp "\$VARS" "\$STAGE/vars.fd"' "$TIER"
+grep -Eq 'cp "\$INJECTOR_VARS" "\$STAGE/vars.fd"' "$TIER"
 grep -Eq 'cp -c "\$RETAINED/disk.raw" "\$PROOF_WORK/disk.raw"' "$TIER"
-grep -Eq 'cp "\$RETAINED/vars.fd" "\$PROOF_WORK/vars.fd"' "$TIER"
+grep -Eq 'cp "\$RETAINED/vars.fd" "\$PROOF_WORK/vars.fd"' "$TIER" && grep -Eq 'prepared vars differ from the sealed target vars' "$TIER"
 grep -Eq 'SOURCE_IMAGE_HASH.*SOURCE_VARS_HASH' "$TIER"
 grep -Eq 'prepared pair changed during proof' "$TIER"
 grep -Eq 'injector_boot_observed' "$TIER"
@@ -49,7 +49,7 @@ grep -Eq "ValidateSet\('F1', 'Display', 'Window', 'Notepad'\)" "$PROOF"
 export BRIDGEVM_LIVE_ROOT="$TMP/queue"
 probe="$TMP/probe"; printf '#!/bin/sh\nexit 0\n' > "$probe"; chmod +x "$probe"
 manifest="$TMP/manifest.tsv"
-for key in image vars injector injector_assets agent virglrenderer moltenvk; do
+for key in image vars injector_vars injector injector_assets agent virglrenderer moltenvk; do
   printf '%s' "$key" > "$TMP/$key"
   printf '%s\t%s\t%s\n' "$key" "$TMP/$key" "$(shasum -a 256 "$TMP/$key" | cut -d' ' -f1)" >> "$manifest"
 done

@@ -38,12 +38,12 @@ verify_closure_manifest || refuse 'invalid or changed Windows closure input mani
   "$(closure_manifest_path virglrenderer)" || refuse 'sealed probe policy failed' refused-binary
 
 IMAGE="$(closure_manifest_path image)"
-VARS="$(closure_manifest_path vars)"
+VARS="$(closure_manifest_path vars)"; INJECTOR_VARS="$(closure_manifest_path injector_vars)"
 INJECTOR="$(closure_manifest_path injector)"
 VIOGPU_DIR="$(closure_manifest_path viogpu_dir)"
 MOLTENVK="$(closure_manifest_path moltenvk)"
 SOURCE_IMAGE_HASH="$(seal "$IMAGE")"; SOURCE_VARS_HASH="$(seal "$VARS")"
-SOURCE_INJECTOR_HASH="$(seal "$INJECTOR")"
+SOURCE_INJECTOR_VARS_HASH="$(seal "$INJECTOR_VARS")"; SOURCE_INJECTOR_HASH="$(seal "$INJECTOR")"
 
 WORK="$HOME/BridgeVM/work/windows-closure-$JOB_ID"
 PREPARED_ROOT="$HOME/BridgeVM/prepared/windows-1.0"
@@ -53,8 +53,8 @@ cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 rm -rf "$WORK"; mkdir -p "$STAGE" "$PROOF_WORK" "$OUT/injection" "$OUT/prepared"
 
-cp -c "$IMAGE" "$STAGE/disk.raw"; cp "$VARS" "$STAGE/vars.fd"; cp -c "$INJECTOR" "$STAGE/injector.raw"
-[[ "$(seal "$STAGE/disk.raw")" == "$SOURCE_IMAGE_HASH" && "$(seal "$STAGE/vars.fd")" == "$SOURCE_VARS_HASH" \
+cp -c "$IMAGE" "$STAGE/disk.raw"; cp "$INJECTOR_VARS" "$STAGE/vars.fd"; cp -c "$INJECTOR" "$STAGE/injector.raw"
+[[ "$(seal "$STAGE/disk.raw")" == "$SOURCE_IMAGE_HASH" && "$(seal "$STAGE/vars.fd")" == "$SOURCE_INJECTOR_VARS_HASH" \
   && "$(seal "$STAGE/injector.raw")" == "$SOURCE_INJECTOR_HASH" ]] || refuse 'initial clones differ from sealed inputs' clone-hash-mismatch
 BRIDGEVM_PREBUILT_PROBE="$SEALED_BINARY" BRIDGEVM_VULKAN_LIB="$MOLTENVK" \
 BRIDGEVM_BOOT_PROGRESS_KILL=1 \
@@ -70,17 +70,17 @@ BRIDGEVM_BOOT_PROGRESS_KILL=1 \
   || refuse 'injector did not boot from the sealed clone' injection-not-observed
 [[ "$(awk -F= '$1 == "agent_sha256" { print $2 }' "$OUT/injection/guest-logs/bvagent-package.log")" == "$(awk -F '\t' '$1 == "agent" { print $3 }' "$INPUT_MANIFEST")" ]] || refuse 'injected agent identity does not match the sealed source' injection-agent-mismatch
 [[ "$(seal "$IMAGE")" == "$SOURCE_IMAGE_HASH" && "$(seal "$VARS")" == "$SOURCE_VARS_HASH" \
-  && "$(seal "$INJECTOR")" == "$SOURCE_INJECTOR_HASH" ]] \
+  && "$(seal "$INJECTOR_VARS")" == "$SOURCE_INJECTOR_VARS_HASH" && "$(seal "$INJECTOR")" == "$SOURCE_INJECTOR_HASH" ]] \
   || refuse 'source media changed during injection' source-media-changed
 
-python3 "$REPO/scripts/drop-injector-boot-entry.py" "$STAGE/vars.fd" \
-  >> "$OUT/injection/launcher.out" 2>&1
-PREPARED_IMAGE_HASH="$(seal "$STAGE/disk.raw")"
+# The prepared pair keeps the injected disk but restores the target's own vars:
+# injector vars address the injector's pinned ESP GUID, so booting the installed
+# system with them chases a disk that is no longer attached.
+cp "$VARS" "$STAGE/vars.fd"; PREPARED_IMAGE_HASH="$(seal "$STAGE/disk.raw")"
 PREPARED_VARS_HASH="$(seal "$STAGE/vars.fd")"
+[[ "$PREPARED_VARS_HASH" == "$SOURCE_VARS_HASH" ]] || refuse 'prepared vars differ from the sealed target vars' prepared-vars-mismatch
 RETAINED="$PREPARED_ROOT/$PREPARED_IMAGE_HASH-$PREPARED_VARS_HASH"
-if [[ -e "$RETAINED" ]]; then
-  refuse 'prepared identity already exists; refusing overwrite' prepared-identity-exists
-fi
+[[ ! -e "$RETAINED" ]] || refuse 'prepared identity already exists; refusing overwrite' prepared-identity-exists
 mkdir -p "$PREPARED_ROOT"
 mv "$STAGE" "$RETAINED.staging-$JOB_ID"
 rm -f "$RETAINED.staging-$JOB_ID/injector.raw"
@@ -90,7 +90,7 @@ mv "$RETAINED.staging-$JOB_ID" "$RETAINED"
   echo "image_sha256=$PREPARED_IMAGE_HASH"
   echo "vars_sha256=$PREPARED_VARS_HASH"
   echo "source_image_sha256=$SOURCE_IMAGE_HASH"
-  echo "source_vars_sha256=$SOURCE_VARS_HASH"
+  echo "source_vars_sha256=$SOURCE_VARS_HASH"; echo "source_injector_vars_sha256=$SOURCE_INJECTOR_VARS_HASH"
   echo "source_injector_sha256=$SOURCE_INJECTOR_HASH"
 } > "$OUT/prepared/retained.env"
 cp "$OUT/prepared/retained.env" "$RETAINED/retained.env"
@@ -105,7 +105,7 @@ set +e
   --binary "$SEALED_BINARY" --viogpu-dir "$VIOGPU_DIR" --moltenvk "$MOLTENVK"
 PROOF_STATUS=$?; set -e
 [[ "$(seal "$IMAGE")" == "$SOURCE_IMAGE_HASH" && "$(seal "$VARS")" == "$SOURCE_VARS_HASH" \
-  && "$(seal "$INJECTOR")" == "$SOURCE_INJECTOR_HASH" ]] || refuse 'source media changed during proof' source-media-changed
+  && "$(seal "$INJECTOR_VARS")" == "$SOURCE_INJECTOR_VARS_HASH" && "$(seal "$INJECTOR")" == "$SOURCE_INJECTOR_HASH" ]] || refuse 'source media changed during proof' source-media-changed
 [[ "$(seal "$RETAINED/disk.raw")" == "$PREPARED_IMAGE_HASH" \
   && "$(seal "$RETAINED/vars.fd")" == "$PREPARED_VARS_HASH" ]] \
   || refuse 'immutable prepared pair changed during proof' prepared-media-changed
