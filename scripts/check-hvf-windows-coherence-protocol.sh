@@ -18,6 +18,9 @@ fail() { echo "FAIL: $1" >&2; status=1; }
 for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE; do
   grep -q "'$verb'" "$AGENT" || fail "$verb missing from the agent ($AGENT)"
 done
+grep -q '\$W = \[BridgeVM.BvWindow\]' "$AGENT" && grep -q '\$W::EnumWindows' "$AGENT" || fail "WINLIST window P/Invoke type is not isolated from the channel type"
+python3 -c 'import pathlib,sys; p=pathlib.Path(sys.argv[1]).read_bytes(); sys.exit(0 if p.count(b"\n") == p.count(b"\r\n") and b"\n" in p else 1)' "$AGENT" || fail "agent asset must use CRLF line endings"
+core_end=$(grep -n '^\$K = Add-Type -MemberDefinition' "$AGENT" | cut -d: -f1 || true); window_decl=$(grep -n 'public delegate bool EnumWindowsProc' "$AGENT" | cut -d: -f1 || true); [[ -n "$core_end" && -n "$window_decl" && "$window_decl" -gt "$core_end" ]] || fail "window declarations leaked back into the live-proven channel P/Invoke type"
 for verb in WINBOUNDS WINFOCUS WINCLOSE; do
   grep -q "\"$verb " "$HOST" || fail "$verb missing from the host emitter ($HOST)"
 done

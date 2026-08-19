@@ -62,31 +62,43 @@ public static extern int CM_Get_Device_Interface_List_Size(out uint size, ref Sy
 public static extern int CM_Get_Device_Interface_List(ref System.Guid guid, IntPtr deviceID, byte[] buffer, uint bufferLen, uint flags);
 [DllImport("user32.dll")]
 public static extern uint GetClipboardSequenceNumber();
-public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-[DllImport("user32.dll")]
-public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lParam);
-[DllImport("user32.dll")]
-public static extern bool IsWindowVisible(IntPtr hWnd);
-[DllImport("user32.dll", CharSet=CharSet.Unicode)]
-public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int max);
-[DllImport("user32.dll")]
-public static extern int GetWindowTextLength(IntPtr hWnd);
-[DllImport("user32.dll")]
-public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
-[DllImport("dwmapi.dll")]
-public static extern int DwmGetWindowAttribute(IntPtr hWnd, int attr, out BvRect rect, int size);
-[DllImport("user32.dll")]
-public static extern bool GetWindowRect(IntPtr hWnd, out BvRect rect);
-[DllImport("user32.dll")]
-public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int w, int h, uint flags);
-[DllImport("user32.dll")]
-public static extern bool SetForegroundWindow(IntPtr hWnd);
-[DllImport("user32.dll")]
-public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
-[StructLayout(LayoutKind.Sequential)]
-public struct BvRect { public int Left, Top, Right, Bottom; }
 '@
 $K = Add-Type -MemberDefinition $sig -Name 'BvKernel32' -Namespace 'BridgeVM' -PassThru
+
+# Keep the already-live-proven channel interop above isolated from the optional
+# window API. After the nested delegate/struct declarations were added to
+# -MemberDefinition, the live agent produced no return value from its native
+# calls and even the CreateFile(ntdll.dll) sanity probe failed before it could
+# open the virtio-serial port. Keep a complete window type definition outside
+# that measured failure boundary without changing the channel type's shape.
+$windowSig = @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+namespace BridgeVM {
+    public static class BvWindow {
+        public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+        [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lParam);
+        [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+        [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int max);
+        [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
+        [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+        [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hWnd, int attr, out BvRect rect, int size);
+        [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out BvRect rect);
+        [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int w, int h, uint flags);
+        [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+        [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+        [StructLayout(LayoutKind.Sequential)] public struct BvRect { public int Left, Top, Right, Bottom; }
+    }
+}
+'@
+$W = $null
+try {
+    Add-Type -TypeDefinition $windowSig -ErrorAction Stop
+    $W = [BridgeVM.BvWindow]
+} catch {
+    Log ("WINDOW API init FAILED: " + $_.Exception.Message)
+}
 
 function Gle { return [System.Runtime.InteropServices.Marshal]::GetLastWin32Error() }
 
@@ -376,28 +388,29 @@ while ($true) {
                     # WINEND terminates. Titleless windows are skipped - chrome
                     # like the taskbar reports no text and is not a user window.
                     $out = New-Object System.Collections.Generic.List[string]
-                    $cb = [BridgeVM.BvKernel32+EnumWindowsProc]{
+                    if ($null -eq $W) { Write-Line $h 'ERR WINLIST unavailable' 'ERR'; break }
+                    $cb = [BridgeVM.BvWindow+EnumWindowsProc]{
                         param($w, $l)
-                        if (-not $K::IsWindowVisible($w)) { return $true }
-                        $n = $K::GetWindowTextLength($w)
+                        if (-not $W::IsWindowVisible($w)) { return $true }
+                        $n = $W::GetWindowTextLength($w)
                         if ($n -le 0) { return $true }
                         $sb = New-Object System.Text.StringBuilder ($n + 1)
-                        [void]$K::GetWindowText($w, $sb, $n + 1)
+                        [void]$W::GetWindowText($w, $sb, $n + 1)
                         $title = $sb.ToString()
                         if ([string]::IsNullOrWhiteSpace($title)) { return $true }
-                        $r = New-Object BridgeVM.BvKernel32+BvRect
+                        $r = New-Object BridgeVM.BvWindow+BvRect
                         # DWMWA_EXTENDED_FRAME_BOUNDS=9 excludes the invisible
                         # resize border GetWindowRect includes.
-                        if ($K::DwmGetWindowAttribute($w, 9, [ref]$r, 16) -ne 0) {
-                            if (-not $K::GetWindowRect($w, [ref]$r)) { return $true }
+                        if ($W::DwmGetWindowAttribute($w, 9, [ref]$r, 16) -ne 0) {
+                            if (-not $W::GetWindowRect($w, [ref]$r)) { return $true }
                         }
                         $wpid = [uint32]0
-                        [void]$K::GetWindowThreadProcessId($w, [ref]$wpid)
+                        [void]$W::GetWindowThreadProcessId($w, [ref]$wpid)
                         $b64 = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($title))
                         $out.Add("WIN $w $wpid $($r.Left) $($r.Top) $($r.Right - $r.Left) $($r.Bottom - $r.Top) $b64")
                         return $true
                     }
-                    [void]$K::EnumWindows($cb, [IntPtr]::Zero)
+                    [void]$W::EnumWindows($cb, [IntPtr]::Zero)
                     foreach ($ln in $out) { Write-Line $h $ln 'WIN' }
                     Write-Line $h 'WINEND' 'WINEND'
                 }
@@ -407,20 +420,20 @@ while ($true) {
                     if ($p.Count -eq 5) {
                         $hw = [IntPtr][long]$p[0]
                         # SWP_NOZORDER(0x4) | SWP_NOACTIVATE(0x10)
-                        if ($K::SetWindowPos($hw, [IntPtr]::Zero, [int]$p[1], [int]$p[2], [int]$p[3], [int]$p[4], 0x14)) {
+                        if ($null -ne $W -and $W::SetWindowPos($hw, [IntPtr]::Zero, [int]$p[1], [int]$p[2], [int]$p[3], [int]$p[4], 0x14)) {
                             Write-Line $h 'OK WINBOUNDS' 'OK'
                         } else { Write-Line $h 'ERR WINBOUNDS' 'ERR' }
                     } else { Write-Line $h 'ERR WINBOUNDS args' 'ERR' }
                 }
                 'WINFOCUS' {
                     $hw = [IntPtr][long]$arg
-                    if ($K::SetForegroundWindow($hw)) { Write-Line $h 'OK WINFOCUS' 'OK' }
+                    if ($null -ne $W -and $W::SetForegroundWindow($hw)) { Write-Line $h 'OK WINFOCUS' 'OK' }
                     else { Write-Line $h 'ERR WINFOCUS' 'ERR' }
                 }
                 'WINCLOSE' {
                     # WM_CLOSE=0x10 posted, not sent: a hung window must not hang the agent.
                     $hw = [IntPtr][long]$arg
-                    if ($K::PostMessage($hw, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)) { Write-Line $h 'OK WINCLOSE' 'OK' }
+                    if ($null -ne $W -and $W::PostMessage($hw, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)) { Write-Line $h 'OK WINCLOSE' 'OK' }
                     else { Write-Line $h 'ERR WINCLOSE' 'ERR' }
                 }
                 'RUN'  { $r = Invoke-B64 $arg $false; Write-CommandResult $h $r }
