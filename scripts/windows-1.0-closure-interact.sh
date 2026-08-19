@@ -9,8 +9,9 @@ VARS=""
 BINARY=""
 VIOGPU_DIR=""
 MOLTENVK=""
-WATCHDOG_MS=900000
+WATCHDOG_MS=3000000
 STEP_TIMEOUT=120
+AGENT_TIMEOUT=2700
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --out) OUT="$2"; shift 2 ;;
@@ -24,8 +25,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 for required in OUT TARGET VARS BINARY VIOGPU_DIR MOLTENVK; do
-  [[ -n "${!required}" ]] || { echo "missing --${required,,}" >&2; exit 2; }
-done
+  [[ -n "${!required}" ]] || { echo "missing --${required,,}" >&2; exit 2; }; done
 mkdir -p "$OUT/share" "$OUT/captures"
 CTL="$OUT/agent.ctl"; : > "$CTL"
 INPUT="$OUT/input.ctl"; : > "$INPUT"
@@ -65,24 +65,24 @@ send_ok() {
 
 capture_active_scanout() {
   local label="$1" before line ppm
-  before=$(grep -c "ramfb checkpoint: label=$label " "$RUN_LOG" 2>/dev/null || true)
-  printf 'SNAPSHOT %s\n' "$label" >> "$INPUT"
+  before=$(grep -c "ramfb checkpoint: label=$label " "$RUN_LOG" 2>/dev/null || true); printf 'SNAPSHOT %s\n' "$label" >> "$INPUT"
   wait_for "ramfb checkpoint: label=$label state=captured " $((before + 1)) 30 || return 1
-  line=$(grep "ramfb checkpoint: label=$label state=captured " "$RUN_LOG" | tail -1)
-  ppm=$(sed -E 's/^.* ppm=//' <<<"$line")
+  line=$(grep "ramfb checkpoint: label=$label state=captured " "$RUN_LOG" | tail -1); ppm=$(sed -E 's/^.* ppm=//' <<<"$line")
   [[ "$(basename "$ppm")" == virtio-gpu-checkpoint-* && -s "$ppm" ]] || return 1
-  cp "$ppm" "$OUT/captures/$label.ppm"
-  shasum -a 256 "$OUT/captures/$label.ppm" > "$OUT/captures/$label.ppm.sha256"
+  cp "$ppm" "$OUT/captures/$label.ppm"; shasum -a 256 "$OUT/captures/$label.ppm" > "$OUT/captures/$label.ppm.sha256"
 }
 
+# A killed launcher writes no target-stat/firstboot/post-mortem evidence, which
+# is exactly what a failing run needs: ask the guest to shut down, then let the
+# launcher finish writing before resorting to a signal.
 cleanup() {
   local status=$?
   if [[ -n "${LAUNCHER:-}" ]] && kill -0 "$LAUNCHER" 2>/dev/null; then
     printf 'shutdown /s /t 0\n' >> "$CTL" 2>/dev/null || true
-    for _ in $(seq 1 80); do kill -0 "$LAUNCHER" 2>/dev/null || break; sleep 0.25; done
+    for _ in $(seq 1 480); do kill -0 "$LAUNCHER" 2>/dev/null || break; sleep 0.5; done
     kill "$LAUNCHER" 2>/dev/null || true
-    wait "$LAUNCHER" 2>/dev/null || true
   fi
+  wait "$LAUNCHER" 2>/dev/null || true
   return "$status"
 }
 trap cleanup EXIT
@@ -101,23 +101,23 @@ BRIDGEVM_BOOT_PROGRESS_KILL=1 \
   --display-export-ms 100 > "$OUT/launcher.out" 2>&1 &
 LAUNCHER=$!
 
-wait_for '^BVAGENT SERVICE start' 1 600 || { echo 'FAIL: agent service timeout' >&2; exit 1; }
+# The boot after injection runs the four-stage viogpu3d firstboot and its own
+# reboots before the agent can open the channel; p1 budgets 45-60 minutes for
+# that sequence, so a ten-minute wait measured nothing.
+wait_for '^BVAGENT SERVICE start' 1 "$AGENT_TIMEOUT" || { echo 'FAIL: agent service timeout' >&2; exit 1; }
 for file in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1; do
   bytes=$(stat -f %z "$OUT/share/$file")
-  wait_for "^BVAGENT SHARE host->guest $file bytes=$bytes " 1 180 || {
-    echo "FAIL: $file share timeout" >&2; exit 1;
-  }
+  wait_for "^BVAGENT SHARE host->guest $file bytes=$bytes " 1 180 \
+    || { echo "FAIL: $file share timeout" >&2; exit 1; }
 done
 
-f1=fail; f2=fail; f3=fail; f4=blocked
-F1_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-windows-closure-proof.ps1 -Action F1'
+f1=fail; f2=fail; f3=fail; f4=blocked; F1_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-windows-closure-proof.ps1 -Action F1'
 if send_ok "$F1_CMD" && grep -Eq '^BVF1 testsigning=True viogpu_status=OK viogpu_problem=0 vioserial_status=OK vioserial_problem=0 agent_sha256=[0-9a-f]{64}$' "$RUN_LOG" \
   && grep -Eq '^BVF1MODE .* modes=([2-9]|[1-9][0-9]+) has_1600x900=True ' "$RUN_LOG"; then
   f1=pass
 fi
 
-printf 'RESIZE 1600x900\n' >> "$INPUT"
-wait_for '^live input accepted: resize=1600x900$' 1 30 || true
+printf 'RESIZE 1600x900\n' >> "$INPUT"; wait_for '^live input accepted: resize=1600x900$' 1 30 || true
 APPLY_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bvgpu-apply-host-resolution.ps1 -Width 1600 -Height 900'
 send_ok "$APPLY_CMD" || true
 DISPLAY_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-windows-closure-proof.ps1 -Action Display'
