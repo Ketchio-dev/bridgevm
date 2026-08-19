@@ -67,7 +67,7 @@ if errorlevel 1 goto :fail
 echo done > C:\BridgeVM\stage1.flag
 if errorlevel 1 goto :fail
 echo [stage1] rebooting to activate testsigning >> "%LOG%"
-shutdown /r /t 5 /c "BridgeVM viogpu3d stage1"
+call :staged_reboot "BridgeVM viogpu3d stage1"
 if errorlevel 1 goto :fail
 goto :done
 
@@ -84,7 +84,7 @@ if errorlevel 1 goto :fail
 echo done > C:\BridgeVM\stage2.flag
 if errorlevel 1 goto :fail
 echo [stage2] rebooting to finish DriverStore cleanup >> "%LOG%"
-shutdown /r /t 5 /c "BridgeVM viogpu3d stage2 cleanup"
+call :staged_reboot "BridgeVM viogpu3d stage2 cleanup"
 if errorlevel 1 goto :fail
 goto :done
 
@@ -123,7 +123,7 @@ if errorlevel 1 goto :fail
 echo done > C:\BridgeVM\stage3.flag
 if errorlevel 1 goto :fail
 echo [stage3] rebooting to start the sole freshly-installed driver >> "%LOG%"
-shutdown /r /t 5 /c "BridgeVM viogpu3d stage3 install"
+call :staged_reboot "BridgeVM viogpu3d stage3 install"
 if errorlevel 1 goto :fail
 goto :done
 
@@ -242,6 +242,27 @@ endlocal & exit /b %FAIL_STATUS%
 :done
 endlocal
 exit /b 0
+
+:staged_reboot
+rem Request the stage's reboot, tolerating one that is already pending.
+rem
+rem Firstboot has two entry points on the same boot: the HKLM RunOnce that the
+rem interactive logon consumes, and the LocalSystem native service / ONSTART
+rem task. A live run proved they can both reach stage 1, and the loser's
+rem shutdown then returns 1115 (ERROR_SHUTDOWN_IN_PROGRESS). Treating that as
+rem fatal aborted the whole four-stage sequence with testsigning still off:
+rem job 20260819-094148-14128-18440 logged
+rem "[failure] stage=stage1 errorlevel=1115" and never rebooted, so the guest
+rem agent never started. A pending restart is the outcome this stage asked for,
+rem so accept it; any other failure still fails the stage.
+shutdown /r /t 5 /c %1
+if not errorlevel 1 exit /b 0
+if errorlevel 1116 exit /b 1
+if errorlevel 1115 (
+  echo [staged-reboot] a restart is already pending; accepting it for %1 >> "%LOG%"
+  exit /b 0
+)
+exit /b 1
 
 :write_boot_identity
 call :read_boot_identity

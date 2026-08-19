@@ -28,26 +28,19 @@ fail() {
 }
 
 assert_file_contains() {
-  local path="$1"
-  local needle="$2"
-  local label="$3"
+  local path="$1" needle="$2" label="$3"
   [[ -f "$path" ]] || fail "$label file missing: $path"
   grep -Fq -- "$needle" "$path" || fail "$label missing '$needle' in $path"
 }
 
 assert_file_not_contains() {
-  local path="$1"
-  local needle="$2"
-  local label="$3"
-  if grep -Fq -- "$needle" "$path"; then
-    fail "$label unexpectedly contains '$needle' in $path"
-  fi
+  local path="$1" needle="$2" label="$3"
+  grep -Fq -- "$needle" "$path" && fail "$label unexpectedly contains '$needle' in $path"
+  return 0
 }
 
 block_between_labels() {
-  local path="$1"
-  local start_label="$2"
-  local end_label="$3"
+  local path="$1" start_label="$2" end_label="$3"
   awk -v start="$start_label" -v end="$end_label" '
     { sub(/\r$/, "") }
     $0 == start { emit = 1 }
@@ -57,9 +50,7 @@ block_between_labels() {
 }
 
 assert_block_contains() {
-  local block="$1"
-  local needle="$2"
-  local label="$3"
+  local block="$1" needle="$2" label="$3"
   case "$block" in
     *"$needle"*) ;;
     *) fail "$label missing '$needle'; got: $block" ;;
@@ -67,19 +58,14 @@ assert_block_contains() {
 }
 
 assert_block_not_contains() {
-  local block="$1"
-  local needle="$2"
-  local label="$3"
+  local block="$1" needle="$2" label="$3"
   case "$block" in
     *"$needle"*) fail "$label unexpectedly contains '$needle'; got: $block" ;;
   esac
 }
 
 assert_block_before() {
-  local block="$1"
-  local first="$2"
-  local second="$3"
-  local label="$4"
+  local block="$1" first="$2" second="$3" label="$4"
   local first_line second_line
   first_line="$(grep -nF -- "$first" <<<"$block" | head -n 1 | cut -d: -f1)"
   second_line="$(grep -nF -- "$second" <<<"$block" | head -n 1 | cut -d: -f1)"
@@ -243,7 +229,7 @@ assert_block_contains "$stage1" "echo done > C:\BridgeVM\stage1.flag" "stage1"
 assert_block_before "$stage1" "schtasks /Create" "call :write_boot_identity C:\BridgeVM\stage1.boot" "stage1 task handoff"
 assert_block_before "$stage1" "call :write_boot_identity C:\BridgeVM\stage1.boot" "echo done > C:\BridgeVM\stage1.flag" "stage1 boot receipt"
 assert_block_contains "$stage1" "if errorlevel 1 goto :fail" "stage1 failure gate"
-assert_block_contains "$stage1" "shutdown /r /t 5 /c \"BridgeVM viogpu3d stage1\"" "stage1"
+assert_block_contains "$stage1" "call :staged_reboot \"BridgeVM viogpu3d stage1\"" "stage1"
 assert_block_not_contains "$stage1" "pnputil /add-driver" "stage1"
 assert_block_not_contains "$stage1" "reg add \"%RO%\"" "stage1 RunOnce mutation"
 
@@ -257,7 +243,7 @@ assert_block_contains "$stage2" "call :write_boot_identity C:\BridgeVM\stage2.bo
 assert_block_contains "$stage2" "echo done > C:\BridgeVM\stage2.flag" "stage2"
 assert_block_before "$stage2" "call :write_boot_identity C:\BridgeVM\stage2.boot" "echo done > C:\BridgeVM\stage2.flag" "stage2 boot receipt"
 assert_block_contains "$stage2" "if errorlevel 1 goto :fail" "stage2 failure gate"
-assert_block_contains "$stage2" "shutdown /r /t 5 /c \"BridgeVM viogpu3d stage2 cleanup\"" "stage2"
+assert_block_contains "$stage2" "call :staged_reboot \"BridgeVM viogpu3d stage2 cleanup\"" "stage2"
 assert_block_not_contains "$stage2" "bcdedit /set {current} testsigning on" "stage2"
 assert_block_not_contains "$stage2" "reg add \"%RO%\"" "stage2 RunOnce mutation"
 
@@ -271,7 +257,7 @@ assert_block_contains "$stage3" "sc.exe config VioGpu3D start= demand" "stage3 q
 assert_block_contains "$stage3" "pnputil /scan-devices" "stage3 scan"
 assert_block_contains "$stage3" "call :write_boot_identity C:\BridgeVM\stage3.boot" "stage3 boot receipt"
 assert_block_contains "$stage3" "echo done > C:\BridgeVM\stage3.flag" "stage3 flag"
-assert_block_contains "$stage3" "shutdown /r /t 5 /c \"BridgeVM viogpu3d stage3 install\"" "stage3 reboot"
+assert_block_contains "$stage3" "call :staged_reboot \"BridgeVM viogpu3d stage3 install\"" "stage3 reboot"
 assert_block_before "$stage3" "-Phase VerifyClean" "pnputil /add-driver" "stage3 clean before install"
 assert_block_before "$stage3" "sc.exe config VioGpu3D start= demand" "pnputil /scan-devices" "stage3 release quarantine before scan"
 assert_block_contains "$stage3" "if errorlevel 1 goto :fail" "stage3 failure gate"
@@ -303,8 +289,18 @@ assert_block_before "$stage4" "bvgpu-diagnostics.ps1" "Get-PnpDevice -PresentOnl
 assert_block_contains "$stage4" "echo [stage4] done" "stage4"
 assert_block_not_contains "$stage4" "shutdown /r" "stage4"
 
-shutdown_count="$(grep -Fc 'shutdown /r /t 5 /c "BridgeVM viogpu3d stage' "$FIRSTBOOT")"
+shutdown_count="$(grep -Fc 'call :staged_reboot "BridgeVM viogpu3d stage' "$FIRSTBOOT")"
 [[ "$shutdown_count" == "3" ]] || fail "expected exactly three staged reboots, got $shutdown_count"
+
+# A pending restart is the outcome a stage asked for. Live job
+# 20260819-094148-14128-18440 aborted at "[failure] stage=stage1 errorlevel=1115"
+# because both firstboot entry points reached stage 1 and the loser's shutdown
+# returned ERROR_SHUTDOWN_IN_PROGRESS, leaving testsigning off.
+staged_reboot="$(block_between_labels "$FIRSTBOOT" ":staged_reboot" ":write_boot_identity")"
+assert_block_contains "$staged_reboot" 'shutdown /r /t 5 /c %1' "staged reboot request"
+assert_block_contains "$staged_reboot" "if errorlevel 1116 exit /b 1" "staged reboot upper bound"
+assert_block_before "$staged_reboot" "if errorlevel 1116 exit /b 1" "if errorlevel 1115 (" "staged reboot bounds ordered"
+[[ "$(grep -Fc 'shutdown /r /t 5' "$FIRSTBOOT")" == "1" ]] || fail "expected one staged reboot implementation"
 
 task_create_count="$(grep -Fc 'schtasks /Create /TN "%TASK_NAME%" /SC ONSTART' "$FIRSTBOOT")"
 [[ "$task_create_count" == "1" ]] || fail "expected exactly one persistent ONSTART task creation, got $task_create_count"
