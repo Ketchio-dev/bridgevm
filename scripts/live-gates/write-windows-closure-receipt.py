@@ -16,9 +16,9 @@ def values(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
     return dict(
-        line.split("=", 1)
+        (line.split("\t", 1) if "\t" in line else line.split("=", 1))
         for line in path.read_text(errors="replace").splitlines()
-        if "=" in line
+        if "\t" in line or "=" in line
     )
 
 
@@ -110,7 +110,7 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as directory:
         out = Path(directory)
         (out / "verified-inputs.tsv").write_text(
-            "".join(f"{key}={'ab' * 32}\n" for key in (
+            "".join(f"{key}\t{'ab' * 32}\n" for key in (
                 "image", "vars", "injector", "agent", "viogpu_dir",
                 "virglrenderer", "moltenvk", "binary"))
         )
@@ -138,7 +138,7 @@ def self_test() -> int:
         )
         assert write_receipt(args) == 1
         receipt = json.loads((out / "receipt.json").read_text())
-        assert not receipt["pass"] and receipt["passes"] == 3
+        assert not receipt["pass"] and receipt["passes"] == 3 and receipt["binary_hash"] == "ab" * 32
         (out / "proof" / "summary.txt").write_text(
             "f1_driver_load=pass\nf2_resize=pass\nf3_window_verbs=pass\n"
             "f4_glyph_observation=measured-visible-text\nactive_scanout_capture=present\n"
