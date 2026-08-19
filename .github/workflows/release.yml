@@ -71,7 +71,7 @@ jobs:
 
       - name: Attach to the release
         if: github.event_name == 'push'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: |
             ${{ runner.temp }}/dist/*

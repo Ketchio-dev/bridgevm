@@ -27,9 +27,9 @@ WORKFLOWS = ROOT / ".github/workflows"
 # was added because something it checks had none.
 REQUIRED_JOBS = {
     "ci.yml": {"fmt", "clippy", "test", "budgets", "swift", "truth", "linux-stubs"},
+    "release.yml": {"artifacts"},
     "security-quality.yml": {"supply-chain", "fuzz-smoke", "loom"},
 }
-
 
 def main() -> int:
     try:
