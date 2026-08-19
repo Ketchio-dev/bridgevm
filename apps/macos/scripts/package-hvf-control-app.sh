@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 MACOS_DIR="$ROOT/apps/macos"
 IDENTITY="${BRIDGEVM_CODESIGN_IDENTITY:--}"
-
+SHORT_VERSION="${BRIDGEVM_BUNDLE_SHORT_VERSION:-0.1.0}"
 usage() {
   cat >&2 <<'EOF'
 usage: apps/macos/scripts/package-hvf-control-app.sh --output APP [--firmware-code FD]
@@ -15,9 +15,9 @@ code volume and never downloads firmware. Existing output is never overwritten.
 
 Environment:
   BRIDGEVM_CODESIGN_IDENTITY  signing identity, defaults to ad-hoc '-'
+  BRIDGEVM_BUNDLE_SHORT_VERSION  CFBundleShortVersionString, defaults to 0.1.0
 EOF
 }
-
 OUTPUT=""
 FIRMWARE_CODE="$ROOT/crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd"
 while [[ $# -gt 0 ]]; do
@@ -28,10 +28,10 @@ while [[ $# -gt 0 ]]; do
     *) usage; exit 2 ;;
   esac
 done
-
 [[ -n "$OUTPUT" ]] || { usage; exit 2; }
 [[ "$OUTPUT" == *.app ]] || { echo "output must end in .app: $OUTPUT" >&2; exit 2; }
 [[ ! -e "$OUTPUT" ]] || { echo "refusing to overwrite existing output: $OUTPUT" >&2; exit 1; }
+[[ "$SHORT_VERSION" =~ ^[0-9]+(\.[0-9]+){2}([.-][0-9A-Za-z]+)*$ ]] || { echo "invalid bundle short version: $SHORT_VERSION" >&2; exit 2; }
 [[ -f "$FIRMWARE_CODE" ]] || { echo "firmware code image is missing: $FIRMWARE_CODE" >&2; exit 1; }
 readonly SECURE_FIRMWARE_SHA256="b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35bffd54bb9b228b750b"
 [[ "$(stat -f '%z' "$FIRMWARE_CODE")" == "3145728" ]] || {
@@ -42,7 +42,6 @@ readonly SECURE_FIRMWARE_SHA256="b1dc201b1382476ca8c8dcbf8c09abc7ae7429c8437e35b
   echo "secure firmware digest does not match the product trust policy: $FIRMWARE_CODE" >&2
   exit 1
 }
-
 output_parent="$(cd "$(dirname "$OUTPUT")" && pwd)"
 stage_root="$(mktemp -d "$output_parent/.bridgevm-package.XXXXXX")"
 stage_app="$stage_root/$(basename "$OUTPUT")"
@@ -58,8 +57,8 @@ swift_bin_dir="$(
     swift build --disable-sandbox --package-path "$MACOS_DIR" --scratch-path "$swift_scratch" \
     --configuration release --show-bin-path
 )"
-cargo build --release -p bridgevm-cli
-cargo build --release -p hvf-runner
+cargo build --locked --release -p bridgevm-cli
+cargo build --locked --release -p hvf-runner
 
 install -d \
   "$stage_app/Contents/MacOS" \
@@ -82,6 +81,8 @@ python3 "$ROOT/scripts/generate-rust-dependency-inventory.py" \
 python3 "$ROOT/scripts/generate-rust-license-bundle.py" \
   --output "$stage_app/Contents/Resources/licenses/rust-license-texts.txt" >/dev/null
 install -m 644 "$MACOS_DIR/BridgeVMControl-Info.plist" "$stage_app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $SHORT_VERSION" "$stage_app/Contents/Info.plist"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$stage_app/Contents/Info.plist")" == "$SHORT_VERSION" ]] || { echo "bundle short version did not persist" >&2; exit 1; }
 install -m 755 "$swift_bin_dir/BridgeVMControl" "$stage_app/Contents/MacOS/BridgeVMControl"
 install -m 755 "$ROOT/target/release/bridgevm" "$stage_app/Contents/Resources/target/release/bridgevm"
 install -m 755 "$ROOT/target/release/hvf-runner" "$stage_app/Contents/Resources/target/release/hvf-runner"
@@ -175,8 +176,6 @@ sign_artifact "$stage_app/Contents/MacOS/BridgeVMControl"
 sign_artifact "$stage_app"
 codesign --verify --deep --strict "$stage_app"
 "$MACOS_DIR/scripts/bundle-swtpm-runtime.sh" --verify-only "$stage_app" >/dev/null
-
 "$ROOT/scripts/verify-app-third-party-notices.sh" "$stage_app" >/dev/null
-
 mv "$stage_app" "$OUTPUT"
 printf '%s\n' "$OUTPUT"

@@ -170,7 +170,7 @@ fi
   exit 1
 }
 
-cargo_args=(build --quiet -p bridgevm-hvf --example hvf_gic_boot_probe --features venus)
+cargo_args=(build --locked --quiet -p bridgevm-hvf --example hvf_gic_boot_probe --features venus)
 profile_dir="debug"
 if [[ "$RELEASE" == "1" ]]; then
   cargo_args+=(--release)
