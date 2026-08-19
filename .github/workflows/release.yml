@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version to build without publishing
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -21,6 +27,19 @@ jobs:
           echo "BRIDGEVM_3D_DIR=$RUNNER_TEMP/bridgevm-3d" >> "$GITHUB_ENV"
           echo "BRIDGEVM_VENUS_PREFIX=$RUNNER_TEMP/bridgevm-3d/prefix" >> "$GITHUB_ENV"
 
+      - name: Configure release version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          version="${INPUT_VERSION:-$GITHUB_REF_NAME}"
+          version="${version#v}"
+          if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+){2}([.-][0-9A-Za-z]+)*$ ]]; then
+            echo "invalid release version: $version" >&2
+            exit 2
+          fi
+          echo "BRIDGEVM_RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          echo "BRIDGEVM_RELEASE_TAG=v$version" >> "$GITHUB_ENV"
+
       - name: Install packaging dependencies
         run: |
           brew install meson ninja pkgconf libepoxy molten-vk vulkan-loader vulkan-headers swtpm
@@ -31,7 +50,7 @@ jobs:
 
       - name: Build and package the app
         run: |
-          BRIDGEVM_BUNDLE_SHORT_VERSION="${GITHUB_REF_NAME#v}" \
+          BRIDGEVM_BUNDLE_SHORT_VERSION="$BRIDGEVM_RELEASE_VERSION" \
             bash apps/macos/scripts/package-hvf-control-app.sh --output "$RUNNER_TEMP/BridgeVM.app"
 
       - name: Verify third-party notices
@@ -40,9 +59,9 @@ jobs:
       - name: Produce tarball and dmg
         run: |
           bash scripts/package-tarball.sh --app "$RUNNER_TEMP/BridgeVM.app" \
-            --output "$RUNNER_TEMP/dist/BridgeVM-${GITHUB_REF_NAME}.tar.gz"
+            --output "$RUNNER_TEMP/dist/BridgeVM-${BRIDGEVM_RELEASE_TAG}.tar.gz"
           bash scripts/package-dmg.sh --app "$RUNNER_TEMP/BridgeVM.app" \
-            --output "$RUNNER_TEMP/dist/BridgeVM-${GITHUB_REF_NAME}.dmg"
+            --output "$RUNNER_TEMP/dist/BridgeVM-${BRIDGEVM_RELEASE_TAG}.dmg"
 
       - name: Record checksums
         run: |
@@ -51,9 +70,18 @@ jobs:
           cat SHA256SUMS
 
       - name: Attach to the release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ runner.temp }}/dist/*
           body_path: ${{ runner.temp }}/dist/SHA256SUMS
           draft: true
+
+      - name: Retain dry-run artifacts
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: BridgeVM-release-dry-run
+          path: ${{ runner.temp }}/dist/*
+          if-no-files-found: error
