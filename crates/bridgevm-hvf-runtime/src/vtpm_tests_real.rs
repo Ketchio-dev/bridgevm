@@ -35,9 +35,9 @@ fn a_real_swtpm_serves_sockets_and_dies_with_the_handle() {
 fn a_binary_that_dies_just_after_binding_its_sockets_is_not_trusted() {
     // swtpm binds its sockets before it decrypts the state directory, so a
     // wrong key produces a process that briefly looks healthy and then exits.
-    // Returning as soon as the sockets appear handed back a live-looking handle
-    // to a dead process; under parallel load that accepted a wrong key in 5 of
-    // 12 runs. This reproduces the sequence deterministically.
+    // Socket existence alone handed back a live-looking handle to a process
+    // that could not answer swtpm's readiness protocol. This reproduces that
+    // sequence without relying on a scheduler-sensitive grace period.
     let dir = std::env::temp_dir().join(format!("bv-vtpm-flashbin-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
