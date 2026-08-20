@@ -95,11 +95,8 @@ fn engine_product_state_matches_the_capability_registry() {
     // cross-checked against capabilities/windows-hvf.json by
     // scripts/render-capability-status.py.
     let windows = windows_11_arm_no_qemu_engine_descriptor();
-    assert_eq!(
-        windows.product_state,
-        EngineProductState::EngineeringPreview
-    );
-    assert_eq!(windows.product_state.as_str(), "ENGINEERING_PREVIEW");
+    assert_eq!(windows.product_state, EngineProductState::Proven);
+    assert_eq!(windows.product_state.as_str(), "PROVEN");
     assert!(windows
         .product_state_detail
         .contains("boots an installed Windows 11 Arm desktop"));

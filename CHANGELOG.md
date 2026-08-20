@@ -2,11 +2,13 @@
 
 All notable changes to BridgeVM are documented in this file.
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-08-20
 
-BridgeVM remains an Engineering Preview until the 1.0 release-closure gates in
-`GOAL.md` are proven. This entry records the release candidate's implemented
-scope; it does not claim that the release has already shipped.
+Every release-blocking criterion in `capabilities/windows-hvf.json` is proven
+by live evidence, including the final Windows closure gate
+(driver-loadable image, host-driven resolution adoption, and the shipped
+window-Coherence verbs answered live; receipt
+`fefad903a56fa2f1c63e6067079208928d1dae1f415ff966611629ea37727a97`).
 
 ### Added
 

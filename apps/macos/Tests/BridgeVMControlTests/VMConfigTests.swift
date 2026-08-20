@@ -38,7 +38,7 @@ final class BackendKindTests: XCTestCase {
         XCTAssertEqual(BackendKind.fastVZ.shortLabel, "Fast VZ")
         XCTAssertEqual(BackendKind.qemuCompat.shortLabel, "QEMU")
         XCTAssertEqual(BackendKind.fastVZ.detailLabel, "Fast (Apple VZ)")
-        XCTAssertEqual(BackendKind.hvfEngine.detailLabel, "Native (HVF · Preview)")
+        XCTAssertEqual(BackendKind.hvfEngine.detailLabel, "Native (HVF)")
         XCTAssertTrue(BackendKind.fastVZ.available)
         XCTAssertTrue(BackendKind.hvfEngine.available)
     }

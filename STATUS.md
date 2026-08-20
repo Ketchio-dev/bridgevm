@@ -2,14 +2,14 @@
 
 Document status: **Current**
 
-Last revised: 2026-08-13
+Last revised: 2026-08-20
 
 This file is the concise evidence boundary for BridgeVM. Detailed measurements
 live in the [capability matrix](docs/windows-arm/capability-matrix.md) and dated
 receipts under `docs/windows-arm/evidence/`.
 
 <!-- BEGIN GENERATED: capability-summary -->
-**Product state: Engineering Preview.** Boots an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with storage, display/input, network, audio, guest agent and experimental 3D. Not release-ready.
+**Product state: 1.0.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Every release-blocking criterion is proven by live evidence.
 
 Release-blocking criteria proven: **19 / 19**. Open: none.
 
@@ -96,13 +96,13 @@ criteria.
 These are intentionally **experimental graphics capabilities**. A passing title
 or smoke does not imply universal game/API compatibility.
 
-## Engineering Preview distribution
+## Distribution
 
-BridgeVM does not need Developer ID signing or Apple notarization to remain usable
-as a technical preview. The repository has an ad-hoc-signing development path,
-and the preview packaging path can produce a DMG without paid Apple credentials.
+BridgeVM does not need Developer ID signing or Apple notarization to remain
+usable. The repository has an ad-hoc-signing development path, and the packaging
+path produces a DMG without paid Apple credentials.
 
-Technical testers may need to explicitly trust/open the downloaded app in macOS.
+Users may need to explicitly trust/open the downloaded app in macOS.
 This is a distribution/trust UX limitation, not a VMM execution requirement.
 
 BridgeVM does not redistribute Windows. Users supply their own Windows 11 Arm
@@ -119,9 +119,9 @@ milestone for users who should not need test mode. It is not made unnecessary by
 using a user-provided ISO, because ISO ownership and kernel-driver trust are
 separate concerns.
 
-## Current limitations
+## Known limitations in 1.0
 
-BridgeVM should still be described as an Engineering Preview because:
+The 1.0 boundary is the proven evidence set, not universal compatibility:
 
 - GPU compatibility is much narrower than "all Vulkan/D3D11 software";
 - driver setup and recovery remain developer-oriented;
@@ -149,10 +149,9 @@ BridgeVM should still be described as an Engineering Preview because:
 
 The highest-value work from this point is:
 
-1. make the ad-hoc Engineering Preview DMG deterministic, license-complete, and
-   easy to verify;
+1. keep the ad-hoc DMG deterministic, license-complete, and easy to verify;
 2. keep README/status/documentation consistent with the capability registry;
-3. simplify user-supplied Windows ISO installation and preview driver setup;
+3. simplify user-supplied Windows ISO installation and driver setup;
 4. make test-signing/Secure Boot conflicts explicit in the UI and diagnostics;
 5. broaden real application compatibility and collect frame-time rather than
    average-FPS-only data;

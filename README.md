@@ -22,10 +22,10 @@ networking, audio, guest integration, TPM/Secure Boot support, snapshots, and
 experimental accelerated 3D.
 
 > [!IMPORTANT]
-> BridgeVM is an **Engineering Preview**. It is intended for developers and
-> technical testers today, not as a drop-in replacement for a polished commercial
-> VM product. Media formats, driver packaging, and some guest-facing contracts may
-> still change before a stable release.
+> BridgeVM 1.0 is a developer-oriented release. Every release-blocking criterion
+> is proven by live evidence on real hardware, and the exact boundaries — what is
+> proven, what is experimental, and what is out of scope — are recorded in the
+> generated capability summary below rather than promised in prose.
 
 ## At a glance
 
@@ -55,7 +55,7 @@ model tests**, and **behavior observed in a real guest**. Capability claims belo
 come from the machine-readable registry rather than being maintained by hand.
 
 <!-- BEGIN GENERATED: capability-summary -->
-**Product state: Engineering Preview.** Boots an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with storage, display/input, network, audio, guest agent and experimental 3D. Not release-ready.
+**Product state: 1.0.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Every release-blocking criterion is proven by live evidence.
 
 Release-blocking criteria proven: **19 / 19**. Open: none.
 
@@ -110,14 +110,14 @@ packaging/macos/build-debug-app-bundle.sh
 open target/macos/BridgeVMApp.app
 ```
 
-For a redistributable **Engineering Preview DMG** without Developer ID or
+For a redistributable **ad-hoc-signed DMG** without Developer ID or
 notarization:
 
 ```sh
 ./packaging/macos/build-preview-dmg.sh
 ```
 
-The preview builder produces:
+The DMG builder produces:
 
 ```text
 target/preview/BridgeVM.app
@@ -125,7 +125,7 @@ target/preview/BridgeVM.dmg
 target/preview/BridgeVM.dmg.sha256
 ```
 
-The preview artifact is built in release configuration, ad-hoc signed, and
+The artifact is built in release configuration, ad-hoc signed, and
 includes the Apache-2.0 project license, third-party notices, Rust dependency
 license inventory, the nested Windows HVF app notices, and a SHA-256 checksum for
 the DMG. It does **not** require a paid Apple Developer account, Developer ID
@@ -135,7 +135,7 @@ The older `build-debug-app-bundle.sh` and `build-debug-dmg.sh` paths remain usef
 for local developer diagnostics; use `build-preview-dmg.sh` for an artifact you
 intend to hand to another technical tester.
 
-If a downloaded preview build is blocked by macOS, use the supported
+If a downloaded build is blocked by macOS, use the supported
 **System Settings → Privacy & Security → Open Anyway** flow. Advanced users who
 understand the trust implications can also remove the quarantine attribute from
 a build they obtained from a source they trust:
@@ -222,10 +222,10 @@ include:
 Those statements are intentionally narrower than "all Windows apps work" or
 "production-ready." Dated receipts show what was measured on a specific build;
 they are not universal compatibility promises. The generated snapshot above was
-sealed on the commit it names; a later preview head still needs its own final
+sealed on the commit it names; a later head still needs its own final
 no-regression run before being treated as an equally sealed build.
 
-## What still makes this an Engineering Preview
+## Known limitations in 1.0
 
 The remaining work is mostly **distribution breadth, compatibility, and product
 polish**, rather than proving that the core Windows VMM can reach a desktop:
@@ -239,7 +239,7 @@ polish**, rather than proving that the core Windows VMM can reach a desktop:
 - optional Developer ID/notarized distribution for users who should not have to
   override Gatekeeper;
 - continued hardening of recovery, migration, diagnostics, and failure UX;
-- stable compatibility guarantees for the first non-preview release.
+- broader compatibility guarantees beyond the measured evidence set.
 
 There is also one known rendering defect in the accelerated Windows path. Body
 text renders correctly at the native guest resolution, but window titles, tab

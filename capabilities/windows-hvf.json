@@ -3,10 +3,10 @@
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-20",
   "tested_commit": "439dcb0a1b99bea968b2979433d396ed22b2e997",
-  "product_state": "ENGINEERING_PREVIEW",
+  "product_state": "RELEASED",
   "wording": {
-    "product_state_label": "Engineering Preview",
-    "engine_summary": "Boots an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with storage, display/input, network, audio, guest agent and experimental 3D. Not release-ready.",
+    "product_state_label": "1.0",
+    "engine_summary": "Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Every release-blocking criterion is proven by live evidence.",
     "graphics_vulkan": "Experimental Vulkan path",
     "graphics_d3d11": "Experimental D3D11-compatible subset",
     "machine_contract": "QEMU virt-compatible guest contract with documented deviations"

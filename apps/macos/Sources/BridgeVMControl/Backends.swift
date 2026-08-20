@@ -83,7 +83,7 @@ enum BackendKind: String {
         switch self {
         case .fastVZ: return "Fast (Apple VZ)"
         case .qemuCompat: return "Compatibility (QEMU)"
-        case .hvfEngine: return "Native (HVF · Preview)"
+        case .hvfEngine: return "Native (HVF)"
         }
     }
     /// Whether this engine is actually selectable/usable today.
