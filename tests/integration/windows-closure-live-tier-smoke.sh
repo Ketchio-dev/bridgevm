@@ -39,11 +39,11 @@ grep -Eq 'chmod 400.*disk.raw.*vars.fd' "$TIER"
 # F1-F4 are checked from live outputs; a capture must be explicitly identified
 # as the virtio-gpu checkpoint and the shipped verbs must traverse the channel.
 grep -Eq 'BVF1MODE.*has_1600x900' "$INTERACT"
+grep -Eq 'BridgeVM-VioGpu3DFirstBoot.*stage3.flag' "$INTERACT"; ready_line=$(grep -n 'wait_firstboot ||' "$INTERACT" | cut -d: -f1); f1_line=$(grep -n 'F1_CMD=' "$INTERACT" | cut -d: -f1); (( ready_line < f1_line ))
 grep -Eq 'RESIZE 1600x900.*SET_SCANOUT.*rect_w.*1600.*rect_h.*900' <(tr '\n' ' ' < "$INTERACT")
 for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE; do grep -Eq "$verb" "$INTERACT"; done
 grep -Eq 'virtio-gpu-checkpoint-' "$INTERACT"
-grep -Eq 'tesseract' "$INTERACT"
-grep -Eq "ValidateSet\('F1', 'Display', 'Window', 'Notepad'\)" "$PROOF"
+grep -Eq 'tesseract' "$INTERACT" && grep -Eq "ValidateSet\('F1', 'Display', 'Window', 'Notepad'\)" "$PROOF"
 
 # Submission smoke: T7 requires a manifest, copies it, and seals its binary.
 export BRIDGEVM_LIVE_ROOT="$TMP/queue"

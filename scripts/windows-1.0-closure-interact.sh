@@ -3,15 +3,8 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT=""
-TARGET=""
-VARS=""
-BINARY=""
-VIOGPU_DIR=""
-MOLTENVK=""
-WATCHDOG_MS=3000000
-STEP_TIMEOUT=120
-AGENT_TIMEOUT=2700
+OUT=""; TARGET=""; VARS=""; BINARY=""; VIOGPU_DIR=""; MOLTENVK=""
+WATCHDOG_MS=3000000; STEP_TIMEOUT=120; AGENT_TIMEOUT=2700
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --out) OUT="$2"; shift 2 ;;
@@ -63,6 +56,14 @@ send_ok() {
   [[ $(grep -cE '^BVAGENT CMD .* exit=' "$RUN_LOG") -gt $before && "$line" == *' exit=0' ]]
 }
 
+wait_firstboot() {
+  local deadline=$((SECONDS + AGENT_TIMEOUT)) command='powershell -NoProfile -Command "& schtasks.exe /Query /TN BridgeVM-VioGpu3DFirstBoot *> $null; $task=($LASTEXITCODE -eq 0); $ready=(Test-Path C:\BridgeVM\stage3.flag) -and (-not $task); if($ready){Write-Output BVFIRSTBOOT_READY; exit 0}; Write-Output BVFIRSTBOOT_PENDING; exit 3"'
+  while (( SECONDS < deadline )); do
+    send_ok "$command" && grep -q '^BVFIRSTBOOT_READY$' "$RUN_LOG" && return 0
+    sleep 5
+  done
+  return 1
+}
 capture_active_scanout() {
   local label="$1" before line ppm
   before=$(grep -c "ramfb checkpoint: label=$label " "$RUN_LOG" 2>/dev/null || true); printf 'SNAPSHOT %s\n' "$label" >> "$INPUT"
@@ -101,15 +102,14 @@ BRIDGEVM_BOOT_PROGRESS_KILL=1 \
   --display-export-ms 100 > "$OUT/launcher.out" 2>&1 &
 LAUNCHER=$!
 
-# The boot after injection runs the four-stage viogpu3d firstboot and its own
-# reboots before the agent can open the channel; p1 budgets 45-60 minutes for
-# that sequence, so a ten-minute wait measured nothing.
+# Agent READY precedes stage4; its successful completion deletes the scheduled task.
 wait_for '^BVAGENT SERVICE start' 1 "$AGENT_TIMEOUT" || { echo 'FAIL: agent service timeout' >&2; exit 1; }
 for file in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1; do
   bytes=$(stat -f %z "$OUT/share/$file")
   wait_for "^BVAGENT SHARE host->guest $file bytes=$bytes " 1 180 \
     || { echo "FAIL: $file share timeout" >&2; exit 1; }
 done
+wait_firstboot || { echo 'FAIL: firstboot stage4 readiness timeout' >&2; exit 1; }
 
 f1=fail; f2=fail; f3=fail; f4=blocked; F1_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-windows-closure-proof.ps1 -Action F1'
 if send_ok "$F1_CMD" && grep -Eq '^BVF1 testsigning=True viogpu_status=OK viogpu_problem=0 vioserial_status=OK vioserial_problem=0 agent_sha256=[0-9a-f]{64}$' "$RUN_LOG" \
