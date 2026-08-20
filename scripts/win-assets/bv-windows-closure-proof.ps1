@@ -3,7 +3,6 @@ param(
     [string]$Action = 'F1',
     [long]$Hwnd = 0
 )
-
 $ErrorActionPreference = 'Stop'
 
 function Get-ProblemCode($Device) {
@@ -124,13 +123,14 @@ function Write-WindowProof {
     $exists = [BvClosureWindow]::IsWindow($window)
     $rect = New-Object BvClosureRect
     $rectOk = $exists -and [BvClosureWindow]::GetWindowRect($window, [ref]$rect)
-    $pid = [uint32]0
-    if ($exists) { [void][BvClosureWindow]::GetWindowThreadProcessId($window, [ref]$pid) }
+    # $owner: assigning the read-only automatic $pid throws under Stop preference.
+    $owner = [uint32]0
+    if ($exists) { [void][BvClosureWindow]::GetWindowThreadProcessId($window, [ref]$owner) }
     $foreground = [BvClosureWindow]::GetForegroundWindow().ToInt64()
     $geometry = if ($rectOk) {
         "$($rect.Left),$($rect.Top),$($rect.Right - $rect.Left),$($rect.Bottom - $rect.Top)"
     } else { 'unavailable' }
-    Write-Output "BVWINDOW hwnd=$Hwnd exists=$exists pid=$pid rect=$geometry foreground=$foreground"
+    Write-Output "BVWINDOW hwnd=$Hwnd exists=$exists pid=$owner rect=$geometry foreground=$foreground"
     if (-not $exists -or -not $rectOk) { exit 12 }
 }
 

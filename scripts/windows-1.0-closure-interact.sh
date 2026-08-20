@@ -121,7 +121,7 @@ printf 'RESIZE 1600x900\n' >> "$INPUT"; wait_for '^live input accepted: resize=1
 APPLY_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bvgpu-apply-host-resolution.ps1 -Width 1600 -Height 900'
 send_ok "$APPLY_CMD" || true
 DISPLAY_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-windows-closure-proof.ps1 -Action Display'
-if send_ok "$DISPLAY_CMD" && grep -Eq '^BVF2 .* current=1600x900 .* modes=([2-9]|[1-9][0-9]+) has_1600x900=True\r?$' "$RUN_LOG" \
+if send_ok "$DISPLAY_CMD" && grep -Eq '^BVF2 .* current=1600x900 modes=([2-9]|[1-9][0-9]+) has_1600x900=True\r?$' "$RUN_LOG" \
   && grep '"name":"SET_SCANOUT"' "$OUT/virtio-gpu.jsonl" | grep '"response_name":"OK_NODATA"' | grep -q '"rect_w":1600,"rect_h":900'; then
   f2=pass
 fi
