@@ -388,21 +388,30 @@ while ($true) {
                     # WIN <hwnd> <pid> <x> <y> <w> <h> <base64(title)> per
                     # line, WINEND terminates. Titleless windows are skipped.
                     if ($null -eq $W) { Write-Line $h 'ERR WINLIST unavailable' 'ERR'; break }
-                    foreach ($proc in (Get-Process | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero })) {
-                        $w = $proc.MainWindowHandle
-                        $wpid = $proc.Id
-                        $title = [string]$proc.MainWindowTitle
-                        if ([string]::IsNullOrWhiteSpace($title)) { continue }
-                        $r = New-Object BridgeVM.BvWindow+BvRect
-                        # DWMWA_EXTENDED_FRAME_BOUNDS=9 excludes the invisible
-                        # resize border GetWindowRect includes.
-                        if ($W::DwmGetWindowAttribute($w, 9, [ref]$r, 16) -ne 0) {
-                            if (-not $W::GetWindowRect($w, [ref]$r)) { continue }
+                    # $hw, never $w: PowerShell variables are case-insensitive,
+                    # so $w would clobber the $W window-API type itself
+                    # (live-caught: 'IntPtr does not contain DwmGetWindowAttribute'
+                    # and the swallowed throw meant WINEND never went out).
+                    # The try/finally guarantees the terminator: a reply without
+                    # WINEND leaves the host in-flight forever.
+                    try {
+                        foreach ($proc in (Get-Process | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero })) {
+                            $hw = $proc.MainWindowHandle
+                            $wpid = $proc.Id
+                            $title = [string]$proc.MainWindowTitle
+                            if ([string]::IsNullOrWhiteSpace($title)) { continue }
+                            $r = New-Object BridgeVM.BvWindow+BvRect
+                            # DWMWA_EXTENDED_FRAME_BOUNDS=9 excludes the invisible
+                            # resize border GetWindowRect includes.
+                            if ($W::DwmGetWindowAttribute($hw, 9, [ref]$r, 16) -ne 0) {
+                                if (-not $W::GetWindowRect($hw, [ref]$r)) { continue }
+                            }
+                            $b64 = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($title))
+                            Write-Line $h "WIN $hw $wpid $($r.Left) $($r.Top) $($r.Right - $r.Left) $($r.Bottom - $r.Top) $b64" 'WIN'
                         }
-                        $b64 = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($title))
-                        Write-Line $h "WIN $w $wpid $($r.Left) $($r.Top) $($r.Right - $r.Left) $($r.Bottom - $r.Top) $b64" 'WIN'
+                    } finally {
+                        Write-Line $h 'WINEND' 'WINEND'
                     }
-                    Write-Line $h 'WINEND' 'WINEND'
                 }
                 'WINBOUNDS' {
                     # WINBOUNDS <hwnd> <x> <y> <w> <h> -> SetWindowPos, no z change.

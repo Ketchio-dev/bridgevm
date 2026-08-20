@@ -10,7 +10,6 @@ HOST=apps/macos/Sources/BridgeVMApp/Services/HvfGuestWindowProtocol.swift
 CHANNEL=crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console
 TESTS=apps/macos/Tests/BridgeVMAppTests/HvfGuestWindowProtocolTests.swift
 status=0
-
 fail() { echo "FAIL: $1" >&2; status=1; }
 
 # Every verb must exist on both sides.
@@ -28,9 +27,10 @@ done
 for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE; do
   grep -q "\"$verb\"" "$CHANNEL/protocol.rs" || fail "$verb is not raw on the agent channel"
 done
-
 # The list grammar: WIN lines then a WINEND terminator; tests pin field order.
-grep -q 'WIN \$w \$wpid' "$AGENT" || fail "agent WIN line lost its hwnd/pid field order"
+grep -q 'WIN \$hw \$wpid' "$AGENT" || fail "agent WIN line lost its hwnd/pid field order"
+# Lowercase $w aliases the case-insensitive $W window-API type variable.
+grep -Eq '\$w = ' "$AGENT" && fail "a bare \$w assignment clobbers the \$W window-API type"
 grep -q "Write-Line \$h 'WINEND' 'WINEND'" "$AGENT" || fail "agent no longer terminates with WINEND"
 grep -q '"WINEND"' "$HOST" || fail "host parser no longer stops at WINEND"
 grep -q 'maxSplits: 7' "$HOST" || fail "host parser field split no longer matches the 8-field WIN line"
