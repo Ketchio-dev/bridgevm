@@ -23,15 +23,16 @@ VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 DELAYS='5,15,30,60,120,250,500,1000'
 
-# --- run.log parser, self-testable without a guest --------------------------
+# --- parser, self-testable without a guest -----------------------------------
+# args: run.log, probe log (BVPTR lines synced back over the share).
 # prints: hid_fired press release stuck first_changed_ms
 parse_run_log() {
-  local log="$1" base sum first='' fired=false press=0 release=0 stuck=1
+  local log="$1" ptr="${2:-/dev/null}" base sum first='' fired=false press=0 release=0 stuck=1
   grep -q '^xHCI pointer-input injection .* fired:' "$log" 2>/dev/null && fired=true
-  press=$(tr -d '\r' < "$log" | grep -c '^BVPTR press ' || true)
-  release=$(tr -d '\r' < "$log" | grep -c '^BVPTR release ' || true)
+  press=$(tr -d '\r' < "$ptr" | grep -c '^BVPTR press ' || true)
+  release=$(tr -d '\r' < "$ptr" | grep -c '^BVPTR release ' || true)
   local summary
-  summary=$(tr -d '\r' < "$log" | grep '^BVPTR summary ' | tail -1 || true)
+  summary=$(tr -d '\r' < "$ptr" | grep '^BVPTR summary ' | tail -1 || true)
   [[ "$summary" == *' stuck=0' ]] && stuck=0
   base=$(tr -d '\r' < "$log" | sed -n 's/.*label=pointer-input-before .*checksum64=\([^ ]*\).*/\1/p' | tail -1)
   if [[ -n "$base" ]]; then
@@ -45,14 +46,16 @@ parse_run_log() {
 }
 
 if [[ "${1:-}" == "--selftest" ]]; then
-  t=$(mktemp)
-  printf 'xHCI pointer-input injection 1 fired: ok\nBVPTR press t_ms=3 x=1 y=2 fg=9\r\nBVPTR release t_ms=40 x=1 y=2 fg=9\r\nBVPTR summary presses=1 releases=1 first_press_ms=3 first_release_ms=40 stuck=0\r\nramfb checkpoint: label=pointer-input-before state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-5ms state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-250ms state=captured checksum64=0xbb\n' > "$t"
-  r=$(parse_run_log "$t")
+  t=$(mktemp); p=$(mktemp)
+  printf 'xHCI pointer-input injection 1 fired: ok\nramfb checkpoint: label=pointer-input-before state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-5ms state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-250ms state=captured checksum64=0xbb\n' > "$t"
+  printf 'BVPTR press t_ms=3 x=1 y=2 fg=9\r\nBVPTR release t_ms=40 x=1 y=2 fg=9\r\nBVPTR summary presses=1 releases=1 first_press_ms=3 first_release_ms=40 stuck=0\r\n' > "$p"
+  r=$(parse_run_log "$t" "$p")
   [[ "$r" == "true 1 1 0 250" ]] || fail "selftest good-run parse: got '$r'"
-  printf 'xHCI pointer-input injection 1 fired: ok\nBVPTR summary presses=0 releases=0 first_press_ms=-1 first_release_ms=-1 stuck=0\r\nramfb checkpoint: label=pointer-input-before state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-1000ms state=captured checksum64=0xaa\n' > "$t"
-  r=$(parse_run_log "$t")
+  printf 'xHCI pointer-input injection 1 fired: ok\nramfb checkpoint: label=pointer-input-before state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-1000ms state=captured checksum64=0xaa\n' > "$t"
+  printf 'BVPTR summary presses=0 releases=0 first_press_ms=-1 first_release_ms=-1 stuck=0\r\n' > "$p"
+  r=$(parse_run_log "$t" "$p")
   [[ "$r" == "true 0 0 0 none" ]] || fail "selftest lost-click parse: got '$r'"
-  rm -f "$t"; echo "pointer reliability parser: PASS (selftest)"; exit 0
+  rm -f "$t" "$p"; echo "pointer reliability parser: PASS (selftest)"; exit 0
 fi
 
 mkdir -p "$OUT"
@@ -76,19 +79,22 @@ for i in $(seq 1 "$N"); do
     --gpu-trace-protocol venus --viogpu3d-dir "$VIOGPU_DIR" \
     > "$run/launcher.out" 2>&1 &
   pid=$!
-  # Arm the guest probe as soon as the agent is alive; its 240s window covers
-  # the 150s fire delay with margin on both sides.
+  # Arm the guest probe once the agent is alive. Per AGENTS.md the agent
+  # channel must not block on a long workload: the probe is detached through
+  # Win32_Process Create with output to the share, and the wait is by
+  # filename on the synced-back log. Its 240s window covers the 150s fire
+  # delay with margin on both sides.
   for _ in $(seq 1 480); do
     grep -q 'BVAGENT SERVICE alive' "$run/run.log" 2>/dev/null && break; sleep 1
   done
-  printf '%s\n' 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-capture.ps1 -DurationMs 240000' >> "$CTL"
+  printf '%s\n' 'powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '\''cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-capture.ps1 -DurationMs 240000 > C:\BridgeVMPtr\bvptr.log 2>&1'\'' } | Out-Null; Write-Output BVPTR_LAUNCHED"' >> "$CTL"
   for _ in $(seq 1 480); do
-    grep -q 'BVPTR summary' "$run/run.log" 2>/dev/null && break
+    grep -q 'BVPTR summary' "$run/share/bvptr.log" 2>/dev/null && break
     kill -0 "$pid" 2>/dev/null || break; sleep 1
   done
   printf '%s\n' 'shutdown /s /t 3' >> "$CTL"
   wait "$pid" 2>/dev/null || true
-  read -r fired press release stuck first <<<"$(parse_run_log "$run/run.log")"
+  read -r fired press release stuck first <<<"$(parse_run_log "$run/run.log" "$run/share/bvptr.log")"
   ok=false
   [[ "$fired" == true && "$press" -ge 1 && "$release" -ge 1 && "$stuck" == 0 && "$first" != none ]] && { ok=true; landed=$((landed+1)); firsts+=("$first"); }
   echo "run $i: fired=$fired press=$press release=$release stuck=$stuck first_changed_ms=$first landed=$ok" | tee -a "$OUT/summary.txt"

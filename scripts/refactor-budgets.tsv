@@ -866,7 +866,7 @@ runners/hvf-runner/src/supervise_cli.rs	51	0
 runners/hvf-runner/src/supervise_cli_tests.rs	41	0
 scripts/verify-reset-recreate.sh	113	0
 scripts/verify-app-third-party-notices.sh	63	0
-scripts/verify-pointer-click-reliability.sh	104	0
+scripts/verify-pointer-click-reliability.sh	110	0
 scripts/win-assets/bv-ppsspp-d3d11.ini	14	0
 scripts/verify-rust-dependency-inventory.sh	23	0
 scripts/verify-rust-license-bundle.sh	11	0
