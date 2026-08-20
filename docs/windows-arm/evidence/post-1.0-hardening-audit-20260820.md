@@ -116,9 +116,15 @@ Four classes, each now mechanically checked or corrected:
 - `verify-pointer-click-reliability.sh --selftest`: parser classifies the
   landed and the 2026-08-17 lost-click fixtures correctly.
 - `redact-receipt.py --self-test`: 17 checks after allowlist extension.
-- Live queue submissions at `c72f638`: t8-pointer-reliability job
-  `20260820-130646-12155-2950`, t0-check job `20260820-130646-12161-5676`.
-  Their receipts, not this document, are the evidence of what they measure.
+- Live queue submissions: the initial pair at `c72f638` was cancelled after
+  the probe launch was reworked to a detached Win32_Process Create (blocking
+  RUN would have starved the agent channel for the whole 240s window). The
+  jobs of record are: t0-check `20260820-134138-21199-15834` at `13e83a5`
+  (28 sections, sole failure the intentionally stale registry; check log
+  SHA-256 `bedd2636…`; it also caught a real 1/419 store-doctor test race at
+  `7dfffd1`, fixed in `13e83a5`) and t8-pointer-reliability
+  `20260820-134138-21205-18560` at `13e83a5`, running at audit close. Their
+  receipts, not this document, are the evidence of what they measure.
 
 ## Sealing rule for this branch
 
