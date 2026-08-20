@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-20",
-  "tested_commit": "d44c2f276df1c3eb3681bdee2a7c3c7aa53bcf76",
+  "tested_commit": "13e83a5db9f26312549b03d76e79d151db1f4ba9",
   "product_state": "RELEASED",
   "wording": {
     "product_state_label": "1.0",
@@ -138,7 +138,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-20 at final head d44c2f276df1c3eb3681bdee2a7c3c7aa53bcf76. Exact-SHA Studio T0 job 20260820-083932-3031-9543 ran all 28 scripts/check-project.sh steps on Mac16,9 / macOS 26.5.2: every code, test, formatting, structural, documentation and release-override step passed; its sole failure was the intentionally stale A11 registry that this docs-only update refreshes. The workspace, Venus lib and probe suites passed; scripts/run-xctest-shim-suites.sh reported 419 + 198 (1 skip) + 62 = 679 passed, 0 failed and 'PASS: all three shim suites'. The complete check log has SHA-256 61d598242ce26177bf1a6af93a7ed77c4be95b1c78f0b3ad389957e16bd575d4. A post-update exact-SHA T0 must complete 'project check: PASS' before release. Three staleness conditions are checked rather than remembered: the registry fails when crates/, runners/, apps/, scripts/ or tests/ differ between tested_commit and HEAD, when a measured entry cites a head other than tested_commit, and when a claimed test or step count differs from the tests and steps that actually exist.",
+      "measured": "PROVEN 2026-08-20 at tested head 13e83a5db9f26312549b03d76e79d151db1f4ba9 (branch agent/bridgevm-1.0-hardening). Exact-SHA Studio T0 job 20260820-134138-21199-15834 ran all 28 check-project sections on Mac16,9 / macOS 26.5.2: every code, test, formatting, structural, documentation, installer and release-override step passed, including the new fail-closed installer gate (install verify: PASS, 16 checks); the sole failure was the intentionally stale A11 registry that this docs-only update refreshes. scripts/run-xctest-shim-suites.sh reported 419 + 198 (1 skip) + 62 = 679 passed, 0 failed. The complete check log has SHA-256 bedd26366e287b690045afd49dccc6b779b835df8c099d3fe9ebe21003468b61. One defect was found and fixed by this very gate: the first T0 at 7dfffd1 (job 20260820-131040-14022-23560) failed the store-doctor test 1/419 because the test raced a fixed 200ms sleep against an unstructured Task; the test now polls to a deadline (13e83a5) and the re-run passed 419/419. Hosted CI (CI + Security and quality) is green for the same head on PR #55. Three staleness conditions are checked rather than remembered: the registry fails when crates/, runners/, apps/, scripts/ or tests/ differ between tested_commit and HEAD, when a measured entry cites a head other than tested_commit, and when a claimed test or step count differs from the tests and steps that actually exist.",
       "evidence_paths": [
         "STATUS.md"
       ]
