@@ -19,6 +19,7 @@ import re
 import sys
 from pathlib import Path
 
+from capability_forbidden import check_forbidden
 from capability_freshness import code_changed_since, measured_head_mismatch
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -27,14 +28,6 @@ SCHEMA = ROOT / "schemas" / "bridgevm-capability-v1.json"
 
 BEGIN = "<!-- BEGIN GENERATED: {name} -->"
 END = "<!-- END GENERATED: {name} -->"
-
-# Claims that must never reappear once the registry owns the wording.
-FORBIDDEN_CLAIMS = (
-    ("Windows is not bootable yet", "contradicts the proven installed-desktop boot"),
-    ("Windows beta", "product state is Engineering Preview, not beta"),
-    ("bit-identical", "the guest contract has documented deviations"),
-    ("Rust 1.76", "workspace MSRV is 1.85"),
-)
 
 STATE_MARK = {"PROVEN": "proven", "OPEN": "open", "EXTERNAL": "external"}
 
@@ -113,6 +106,11 @@ def validate(registry: dict) -> None:
             fail(f"criterion {cid} has invalid state {criterion['state']}")
         if criterion["state"] == "OPEN" and not criterion.get("measured"):
             fail(f"criterion {cid} is OPEN and must record its latest measurement")
+        if criterion["state"] == "PROVEN" and criterion.get("known_defect"):
+            fail(
+                f"criterion {cid} is PROVEN but carries known_defect; "
+                "a criterion with a live user-visible defect stays OPEN"
+            )
         for path in criterion["evidence_paths"]:
             if not (ROOT / path).exists():
                 fail(f"criterion {cid} references a missing evidence path: {path}")
@@ -138,6 +136,11 @@ def render_summary(registry: dict) -> str:
     proven = [c for c in blocking if c["state"] == "PROVEN"]
     open_ids = [c["id"] for c in blocking if c["state"] != "PROVEN"]
 
+    defects = [
+        (c["id"], c["known_defect"])
+        for c in criteria
+        if c["state"] != "PROVEN" and c.get("known_defect")
+    ]
     lines = [
         f"**Product state: {wording['product_state_label']}.** "
         f"{wording['engine_summary']}",
@@ -145,6 +148,12 @@ def render_summary(registry: dict) -> str:
         f"Release-blocking criteria proven: **{len(proven)} / {len(blocking)}**. "
         f"Open: {', '.join(open_ids) if open_ids else 'none'}.",
         "",
+    ]
+    if defects:
+        lines.append("Known open defects:")
+        lines.extend(f"- **{cid}**: {text}" for cid, text in defects)
+        lines.append("")
+    lines += [
         f"- Graphics: {wording['graphics_vulkan']} and "
         f"{wording['graphics_d3d11']}.",
         f"- Guest platform: {wording['machine_contract']}.",
@@ -203,35 +212,6 @@ def apply_block(path: Path, name: str, body: str, check: bool) -> bool:
     return True
 
 
-def check_forbidden() -> list[str]:
-    """Scan claim surfaces for retracted wording."""
-    # Whole trees, not a file list: runners/ and tools/ were missed here, which
-    # is exactly how a list stops covering what moves. Docs: prose rules only.
-    targets = [ROOT / "README.md", ROOT / "STATUS.md"]
-    for tree, suffixes in (
-        (ROOT / "crates", (".rs",)),
-        (ROOT / "runners", (".rs",)),
-        (ROOT / "tools", (".rs",)),
-        (ROOT / "apps" / "macos" / "Sources", (".swift",)),
-    ):
-        targets.extend(
-            path
-            for path in sorted(tree.rglob("*"))
-            if path.suffix in suffixes and "/target/" not in str(path)
-        )
-    targets.append(ROOT / "docs" / "hvf-windows-engine-strategy.md")
-    problems = []
-    for target in targets:
-        if not target.exists():
-            continue
-        text = target.read_text()
-        for claim, reason in FORBIDDEN_CLAIMS:
-            if claim in text:
-                rel = target.relative_to(ROOT)
-                problems.append(f"{rel}: retracted claim {claim!r} ({reason})")
-    return problems
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -261,7 +241,7 @@ def main() -> int:
         if not apply_block(path, name, body, args.check)
     ]
 
-    problems = check_forbidden()
+    problems = check_forbidden(registry, ROOT)
 
     if stale:
         for path in stale:

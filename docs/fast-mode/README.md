@@ -25,8 +25,9 @@ Initial supported guests:
 Windows is deliberately not listed in the Apple VZ engine: the current Apple Virtualization.framework
 Fast Mode path targets Linux/macOS Arm guests. Windows 11 Arm uses the restricted
 custom Windows HVF engine or the QEMU Compatibility Engine, depending on the
-workflow. The custom engine is an active engineering preview, not a released
-Apple VZ capability.
+workflow. The custom engine is a released BridgeVM capability with its own
+evidence boundary (see `capabilities/windows-hvf.json`), not an Apple VZ
+capability.
 
 That distinction is a product boundary, not branding. QEMU/HVF is useful for
 Windows installer reachability and compatibility evidence, but keeping Windows

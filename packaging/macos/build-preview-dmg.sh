@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a redistributable Engineering Preview DMG without Developer ID or notarization.
+# Build an ad-hoc-signed DMG; "preview" is a path contract, not product state.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -16,7 +16,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: packaging/macos/build-preview-dmg.sh
 
-Builds an ad-hoc-signed BridgeVM Engineering Preview app and DMG. This path
+Builds an ad-hoc-signed BridgeVM app and DMG for local testing. This path
 deliberately does not require Developer ID credentials or Apple notarization.
 
 Environment:
