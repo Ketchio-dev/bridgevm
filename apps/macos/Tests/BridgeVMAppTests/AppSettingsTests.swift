@@ -710,8 +710,8 @@ final class AppSettingsTests: XCTestCase {
         let model = BridgeVMAppModel(settings: settings)
 
         model.checkStoreDoctor()
-        try await Task.sleep(nanoseconds: 200_000_000)
-
+        // Poll to a 5s deadline: a fixed sleep raced the doctor Task under load (t0 job 20260820-131040, 1/419).
+        for _ in 0..<250 where model.storeDoctorState == .checking { try await Task.sleep(nanoseconds: 20_000_000) }
         guard case let .ready(report) = model.storeDoctorState else {
             XCTFail("expected ready store doctor state")
             return
