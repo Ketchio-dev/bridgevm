@@ -175,6 +175,9 @@ jobs:
       # never does.
       - run: swift build --package-path apps/macos -c release
       - run: bash scripts/check-release-overrides.sh
+      # The installer's malicious-input and rollback gate needs codesign, so it
+      # runs here rather than in the Linux truth job.
+      - run: bash tests/integration/install-verify-smoke.sh
 
   truth:
     # Keeps the capability registry, the generated claim blocks and the
@@ -218,6 +221,8 @@ jobs:
         run: python3 scripts/check-daemon-dto-decoders.py
       - name: the app sources contain no force casts
         run: python3 scripts/check-swift-force-casts.py
+      - name: the install bootstrap pins the installer it ships
+        run: bash scripts/check-install-bootstrap.sh
 
   stable-advisory:
     name: latest stable advisory

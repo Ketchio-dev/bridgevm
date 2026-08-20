@@ -884,6 +884,7 @@ crates/bridgevm-hvf/src/userspace_gic/mod.rs	740	0
 crates/bridgevm-hvf/src/userspace_gic/mmio_regs.rs	352	0
 crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	387	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	477	13
+scripts/install-bridgevm.sh	209	0
 scripts/live-gates/run-a3-title-tier.sh	90	0
 scripts/live-gates/run-windows-closure-tier.sh	116	0
 scripts/live-gates/a3-title-manifest.sh	47	0
@@ -1096,6 +1097,7 @@ scripts/check-documentation-system.sh	168	0
 scripts/check-fuzz-smoke.sh	11	0
 scripts/check-hvf-windows-p3-gpu-readiness.sh	335	0
 scripts/check-hvf-windows-viogpu3d-package.sh	1464	0
+scripts/check-install-bootstrap.sh	21	0
 scripts/check-loom.sh	30	0
 scripts/check-project.sh	98	0
 scripts/check-refactor-budgets.sh	72	1
@@ -1268,6 +1270,7 @@ tests/integration/hvf-windows-vtpm-live-evidence-verifier-smoke.sh	131	0
 tests/integration/lifecycle-plan-cli-smoke.sh	141	0
 tests/integration/lifecycle-restart-cli-smoke.sh	134	0
 tests/integration/lifecycle-suspend-resume-cli-smoke.sh	157	0
+tests/integration/install-verify-smoke.sh	181	0
 tests/integration/live-gate-policy-smoke.sh	308	0
 tests/integration/windows-closure-live-tier-smoke.sh	65	0
 tests/integration/local-release-readiness-suite.sh	298	0
@@ -1381,6 +1384,6 @@ scripts/package-tarball.sh	51
 scripts/measure-pointer-latency-batch.sh	36
 scripts/check-hvf-windows-coherence-protocol.sh	45
 scripts/package-dmg.sh	45
-install.sh	55
+install.sh	44	0
 scripts/render-graphics-compatibility.py	245	0
 tests/fixtures/fake-swtpm.py	77	0

@@ -1,45 +1,44 @@
 #!/usr/bin/env bash
-# BridgeVM installer: fetch the release tarball and place the app in
-# /Applications. curl+tar attaches no quarantine attribute, so the app opens
-# without the Gatekeeper block that a browser-downloaded dmg triggers.
+# BridgeVM installer bootstrap.
+#
+# This thin script fetches the full fail-closed installer at a pinned SHA-256
+# and refuses to run anything that does not match. The full installer verifies
+# the release checksum, archive safety and code signature before it replaces
+# anything, keeps the previous app as a rollback backup, and never touches VM
+# data. scripts/check-install-bootstrap.sh keeps the pin in sync.
 #
 #   curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash
+#   ... | bash -s -- --version v1.0.0 --dry-run   # options are forwarded
 set -euo pipefail
 
 REPO="Ketchio-dev/bridgevm"
-DEST="/Applications"
+INSTALLER_SHA256="637c4bdeb3aadb0bc67f51d562b24e6d169e1d911e0509a2160a9431b5edb2f0"
+INSTALLER_URL="https://raw.githubusercontent.com/$REPO/main/scripts/install-bridgevm.sh"
+
+fail() { echo "FAIL: $*" >&2; exit 1; }
 
 if [[ "$(uname -s)/$(uname -m)" != "Darwin/arm64" ]]; then
-  echo "BridgeVM 1.0 runs Windows 11 ARM on Apple Silicon Macs only." >&2
-  exit 1
+  fail "BridgeVM runs Windows 11 ARM on Apple Silicon Macs only"
 fi
-
-echo "Resolving the latest BridgeVM release..."
-url=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" |
-  /usr/bin/python3 -c 'import json,sys
-assets = json.load(sys.stdin).get("assets", [])
-for a in assets:
-    if a["name"].endswith(".tar.gz"):
-        print(a["browser_download_url"]); break')
-[[ -n "$url" ]] || { echo "FAIL: no .tar.gz asset on the latest release" >&2; exit 1; }
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-echo "Downloading $url"
-curl -fL --progress-bar "$url" -o "$work/bridgevm.tar.gz"
-tar -xzf "$work/bridgevm.tar.gz" -C "$work"
 
-app=$(find "$work" -maxdepth 1 -name '*.app' | head -1)
-[[ -n "$app" ]] || { echo "FAIL: tarball did not contain an .app bundle" >&2; exit 1; }
-
-name=$(basename "$app")
-if [[ -e "$DEST/$name" ]]; then
-  echo "Replacing existing $DEST/$name"
-  rm -rf "${DEST:?}/${name:?}"
+# A repository checkout runs its own copy; a curl|bash run fetches the pinned
+# one. Both paths end at the same hash check, so neither can drift quietly.
+local_installer="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)/scripts/install-bridgevm.sh"
+if [[ -f "$local_installer" ]]; then
+  cp "$local_installer" "$work/install-bridgevm.sh"
+else
+  curl -fsSL "$INSTALLER_URL" -o "$work/install-bridgevm.sh" ||
+    fail "could not download the installer"
 fi
-mv "$app" "$DEST/"
 
-echo
-echo "Installed $DEST/$name"
-echo "First run: open it from Launchpad or:  open '$DEST/$name'"
-echo "Windows 11 ARM setup is guided inside the app (docs/install.md has details)."
+actual=$(shasum -a 256 "$work/install-bridgevm.sh" | awk '{print $1}')
+if [[ "$actual" != "$INSTALLER_SHA256" ]]; then
+  fail "installer hash mismatch (expected $INSTALLER_SHA256, got $actual); \
+refusing to run an unverified installer. If a new release just shipped, \
+re-fetch install.sh itself: the pin updates with the installer."
+fi
+
+exec bash "$work/install-bridgevm.sh" "$@"

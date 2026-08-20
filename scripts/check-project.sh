@@ -36,8 +36,7 @@ json_valid() {
 
 # --- truth and documentation -------------------------------------------------
 step "capability registry" python3 scripts/render-capability-status.py --check
-step "machine contract json" json_valid docs/machine-contract/qemu-virt-deviations.json
-step "capability schema json" json_valid schemas/bridgevm-capability-v1.json
+step "contract and schema json" json_valid docs/machine-contract/qemu-virt-deviations.json schemas/bridgevm-capability-v1.json
 step "capability evidence" python3 scripts/check-capability-evidence.py
 step "capability test counts" python3 scripts/check-capability-test-counts.py
 step "documentation system" bash scripts/check-documentation-system.sh
@@ -52,6 +51,7 @@ step "tests are reachable" python3 scripts/check-tests-are-reachable.py
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
+step "install verify" bash tests/integration/install-verify-smoke.sh
 
 # --- formatting --------------------------------------------------------------
 step "rustfmt" cargo "$TOOLCHAIN" fmt --all --check
