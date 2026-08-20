@@ -59,7 +59,7 @@ send_ok() {
 wait_firstboot() {
   local deadline=$((SECONDS + AGENT_TIMEOUT)) command='powershell -NoProfile -Command "& schtasks.exe /Query /TN BridgeVM-VioGpu3DFirstBoot *> $null; $task=($LASTEXITCODE -eq 0); $ready=(Test-Path C:\BridgeVM\stage3.flag) -and (-not $task); if($ready){Write-Output BVFIRSTBOOT_READY; exit 0}; Write-Output BVFIRSTBOOT_PENDING; exit 3"'
   while (( SECONDS < deadline )); do
-    send_ok "$command" && grep -q '^BVFIRSTBOOT_READY$' "$RUN_LOG" && return 0
+    send_ok "$command" && grep -Eq '^BVFIRSTBOOT_READY\r?$' "$RUN_LOG" && return 0
     sleep 5
   done
   return 1
@@ -112,7 +112,7 @@ done
 wait_firstboot || { echo 'FAIL: firstboot stage4 readiness timeout' >&2; exit 1; }
 
 f1=fail; f2=fail; f3=fail; f4=blocked; F1_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-windows-closure-proof.ps1 -Action F1'
-if send_ok "$F1_CMD" && grep -Eq '^BVF1 testsigning=True viogpu_status=OK viogpu_problem=0 vioserial_status=OK vioserial_problem=0 agent_sha256=[0-9a-f]{64}$' "$RUN_LOG" \
+if send_ok "$F1_CMD" && grep -Eq '^BVF1 testsigning=True viogpu_status=OK viogpu_problem=0 vioserial_status=OK vioserial_problem=0 agent_sha256=[0-9a-f]{64}\r?$' "$RUN_LOG" \
   && grep -Eq '^BVF1MODE .* modes=([2-9]|[1-9][0-9]+) has_1600x900=True ' "$RUN_LOG"; then
   f1=pass
 fi
@@ -121,7 +121,7 @@ printf 'RESIZE 1600x900\n' >> "$INPUT"; wait_for '^live input accepted: resize=1
 APPLY_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bvgpu-apply-host-resolution.ps1 -Width 1600 -Height 900'
 send_ok "$APPLY_CMD" || true
 DISPLAY_CMD='powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMClosure\bv-windows-closure-proof.ps1 -Action Display'
-if send_ok "$DISPLAY_CMD" && grep -Eq '^BVF2 .* current=1600x900 .* modes=([2-9]|[1-9][0-9]+) has_1600x900=True$' "$RUN_LOG" \
+if send_ok "$DISPLAY_CMD" && grep -Eq '^BVF2 .* current=1600x900 .* modes=([2-9]|[1-9][0-9]+) has_1600x900=True\r?$' "$RUN_LOG" \
   && grep '"name":"SET_SCANOUT"' "$OUT/virtio-gpu.jsonl" | grep '"response_name":"OK_NODATA"' | grep -q '"rect_w":1600,"rect_h":900'; then
   f2=pass
 fi
@@ -129,7 +129,7 @@ LAUNCH_CMD='powershell -NoProfile -Command "Start-Process notepad.exe; Start-Sle
 send_ok "$LAUNCH_CMD" || true
 send 'WINLIST' '^BVAGENT WINLIST WINEND$' || true
 win_line=$(grep '^BVAGENT WINLIST WIN ' "$RUN_LOG" | while IFS= read -r line; do
-  title_b64=$(awk '{print $11}' <<<"$line")
+  title_b64=$(awk '{print $10}' <<<"$line")
   title=$(printf '%s' "$title_b64" | base64 -D 2>/dev/null || true)
   [[ "$title" == *Notepad* ]] && { printf '%s\n' "$line"; break; }
 done)
@@ -139,7 +139,7 @@ if [[ "$hwnd" =~ ^[0-9]+$ ]]; then
   send "WINFOCUS $hwnd" "^BVAGENT WINFOCUS $hwnd -> OK WINFOCUS$" || true
   WINDOW_CMD="powershell -NoProfile -ExecutionPolicy Bypass -File C:\\BridgeVMClosure\\bv-windows-closure-proof.ps1 -Action Window -Hwnd $hwnd"
   send_ok "$WINDOW_CMD" || true
-  if grep -Eq "^BVWINDOW hwnd=$hwnd exists=True pid=[0-9]+ rect=50,60,700,500 foreground=$hwnd$" "$RUN_LOG"; then
+  if grep -Eq "^BVWINDOW hwnd=$hwnd exists=True pid=[0-9]+ rect=50,60,700,500 foreground=$hwnd\r?$" "$RUN_LOG"; then
     f3=partial
     printf 'KEY text-hex:427269646765564d20476c7970682050726f6265204142434445464748494a4b\n' >> "$INPUT"
     printf 'KEY text-hex:4c4d4e4f505152535455565758595a206162636465666768696a6b6c6d6e6f70\n' >> "$INPUT"
