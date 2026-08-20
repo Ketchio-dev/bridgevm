@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# The Windows Coherence protocol lives in two languages that cannot import each
-# other: the PowerShell agent answers WINLIST/WINBOUNDS/WINFOCUS/WINCLOSE and
-# the Swift host parses and emits the same grammar. Nothing but this check
-# notices when one side drifts.
+# The Windows Coherence protocol lives in two languages that cannot import
+# each other: the PowerShell agent answers WINLIST/WINBOUNDS/WINFOCUS/WINCLOSE
+# and the Swift host parses the same grammar; this check notices drift.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
@@ -18,9 +17,11 @@ fail() { echo "FAIL: $1" >&2; status=1; }
 for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE; do
   grep -q "'$verb'" "$AGENT" || fail "$verb missing from the agent ($AGENT)"
 done
-grep -q '\$W = \[BridgeVM.BvWindow\]' "$AGENT" && grep -q '\$W::EnumWindows' "$AGENT" || fail "WINLIST window P/Invoke type is not isolated from the channel type"
+grep -q '\$W = \[BridgeVM.BvWindow\]' "$AGENT" || fail "WINLIST window P/Invoke type is not isolated from the channel type"
+# Native enumeration callbacks hang the PS 5.1/ARM64 agent (live job 20260820-043633: WINLIST never replied).
+! grep -q 'EnumWindows' "$AGENT" && grep -q 'Get-Process | Where-Object { \$_.MainWindowHandle' "$AGENT" || fail "WINLIST must enumerate via the process main-window walk, never a native callback"
 python3 -c 'import pathlib,sys; p=pathlib.Path(sys.argv[1]).read_bytes(); sys.exit(0 if p.count(b"\n") == p.count(b"\r\n") and b"\n" in p else 1)' "$AGENT" || fail "agent asset must use CRLF line endings"
-core_end=$(grep -n '^\$K = Add-Type -MemberDefinition' "$AGENT" | cut -d: -f1 || true); window_decl=$(grep -n 'public delegate bool EnumWindowsProc' "$AGENT" | cut -d: -f1 || true); [[ -n "$core_end" && -n "$window_decl" && "$window_decl" -gt "$core_end" ]] || fail "window declarations leaked back into the live-proven channel P/Invoke type"
+core_end=$(grep -n '^\$K = Add-Type -MemberDefinition' "$AGENT" | cut -d: -f1 || true); window_decl=$(grep -n 'public static class BvWindow' "$AGENT" | cut -d: -f1 || true); [[ -n "$core_end" && -n "$window_decl" && "$window_decl" -gt "$core_end" ]] || fail "window declarations leaked back into the live-proven channel P/Invoke type"
 for verb in WINBOUNDS WINFOCUS WINCLOSE; do
   grep -q "\"$verb " "$HOST" || fail "$verb missing from the host emitter ($HOST)"
 done
@@ -28,8 +29,7 @@ for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE; do
   grep -q "\"$verb\"" "$CHANNEL/protocol.rs" || fail "$verb is not raw on the agent channel"
 done
 
-# The list grammar: agent emits WIN lines and a WINEND terminator; the host
-# parses exactly that shape and the tests pin the field order.
+# The list grammar: WIN lines then a WINEND terminator; tests pin field order.
 grep -q 'WIN \$w \$wpid' "$AGENT" || fail "agent WIN line lost its hwnd/pid field order"
 grep -q "Write-Line \$h 'WINEND' 'WINEND'" "$AGENT" || fail "agent no longer terminates with WINEND"
 grep -q '"WINEND"' "$HOST" || fail "host parser no longer stops at WINEND"

@@ -77,12 +77,6 @@ using System.Runtime.InteropServices;
 using System.Text;
 namespace BridgeVM {
     public static class BvWindow {
-        public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-        [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lParam);
-        [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
-        [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int max);
-        [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
-        [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
         [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hWnd, int attr, out BvRect rect, int size);
         [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out BvRect rect);
         [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int w, int h, uint flags);
@@ -383,35 +377,31 @@ while ($true) {
             switch ($tok) {
                 'PING' { Write-Line $h 'PONG' 'PONG' }
                 'WINLIST' {
-                    # Top-level visible windows with DWM extended-frame bounds:
-                    # WIN <hwnd> <pid> <x> <y> <w> <h> <base64(title)> per line,
-                    # WINEND terminates. Titleless windows are skipped - chrome
-                    # like the taskbar reports no text and is not a user window.
-                    $out = New-Object System.Collections.Generic.List[string]
+                    # Main app windows via the .NET process walk. The previous
+                    # native-callback window walk hung the whole agent on
+                    # PS 5.1/ARM64 (live job 20260820-043633: WINLIST got no
+                    # reply and the channel was silent from that line on) - the
+                    # same marshaling boundary that once broke the channel
+                    # type. Get-Process main-window enumeration was live-proven
+                    # on this guest (coherence-windows-live-20260817) and
+                    # involves no native callback. Emits
+                    # WIN <hwnd> <pid> <x> <y> <w> <h> <base64(title)> per
+                    # line, WINEND terminates. Titleless windows are skipped.
                     if ($null -eq $W) { Write-Line $h 'ERR WINLIST unavailable' 'ERR'; break }
-                    $cb = [BridgeVM.BvWindow+EnumWindowsProc]{
-                        param($w, $l)
-                        if (-not $W::IsWindowVisible($w)) { return $true }
-                        $n = $W::GetWindowTextLength($w)
-                        if ($n -le 0) { return $true }
-                        $sb = New-Object System.Text.StringBuilder ($n + 1)
-                        [void]$W::GetWindowText($w, $sb, $n + 1)
-                        $title = $sb.ToString()
-                        if ([string]::IsNullOrWhiteSpace($title)) { return $true }
+                    foreach ($proc in (Get-Process | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero })) {
+                        $w = $proc.MainWindowHandle
+                        $wpid = $proc.Id
+                        $title = [string]$proc.MainWindowTitle
+                        if ([string]::IsNullOrWhiteSpace($title)) { continue }
                         $r = New-Object BridgeVM.BvWindow+BvRect
                         # DWMWA_EXTENDED_FRAME_BOUNDS=9 excludes the invisible
                         # resize border GetWindowRect includes.
                         if ($W::DwmGetWindowAttribute($w, 9, [ref]$r, 16) -ne 0) {
-                            if (-not $W::GetWindowRect($w, [ref]$r)) { return $true }
+                            if (-not $W::GetWindowRect($w, [ref]$r)) { continue }
                         }
-                        $wpid = [uint32]0
-                        [void]$W::GetWindowThreadProcessId($w, [ref]$wpid)
                         $b64 = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($title))
-                        $out.Add("WIN $w $wpid $($r.Left) $($r.Top) $($r.Right - $r.Left) $($r.Bottom - $r.Top) $b64")
-                        return $true
+                        Write-Line $h "WIN $w $wpid $($r.Left) $($r.Top) $($r.Right - $r.Left) $($r.Bottom - $r.Top) $b64" 'WIN'
                     }
-                    [void]$W::EnumWindows($cb, [IntPtr]::Zero)
-                    foreach ($ln in $out) { Write-Line $h $ln 'WIN' }
                     Write-Line $h 'WINEND' 'WINEND'
                 }
                 'WINBOUNDS' {

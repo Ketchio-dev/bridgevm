@@ -132,7 +132,7 @@ win_line=$(grep '^BVAGENT WINLIST WIN ' "$RUN_LOG" | while IFS= read -r line; do
   title_b64=$(awk '{print $10}' <<<"$line")
   title=$(printf '%s' "$title_b64" | base64 -D 2>/dev/null || true)
   [[ "$title" == *Notepad* ]] && { printf '%s\n' "$line"; break; }
-done)
+done || true)
 hwnd=$(awk '{print $4}' <<<"${win_line:-}")
 if [[ "$hwnd" =~ ^[0-9]+$ ]]; then
   send "WINBOUNDS $hwnd 50 60 700 500" "^BVAGENT WINBOUNDS $hwnd 50 60 700 500 -> OK WINBOUNDS$" || true
