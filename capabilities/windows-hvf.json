@@ -284,7 +284,8 @@
       "measured": "Batched 2026-08-17: ten fresh boots, HID fired 10/10, guest reacted 1/10 (run 7 at first_changed_ms=1000); every failing run had the dialog on screen and a byte-identical 1000ms capture. Pacing raised 30->300ms scored 0/3, killing the plan's prime suspect. Per-interface protocol is correct (pointer=report, 6-byte absolute), and every host-visible counter -- doorbells, rings, interrupts -- is identical between a landed and a lost click, so the loss is strictly guest-side beyond host instrumentation. Open as a product defect; the 20/20 acceptance gate above was fixed 2026-08-20 before any fix attempt, and next steps need guest-side tooling (ETW/transfer-ring completion). Historical note: this criterion was previously titled 'Pointer latency measured' with a record-a-measurement statement, and was marked PROVEN on the strength of having recorded the 1/10 batch; that classification let user-facing wording read as working pointer input and was retracted -- the criterion is OPEN until the reliability gate passes.",
       "evidence_paths": [
         "docs/windows-arm/evidence/b4-pointer-batch-20260817.md",
-        "docs/windows-arm/evidence/b4-pointer-latency-20260816.md"
+        "docs/windows-arm/evidence/b4-pointer-latency-20260816.md",
+        "docs/windows-arm/evidence/b4-pointer-reliability-gate-20260820.md"
       ]
     },
     {
