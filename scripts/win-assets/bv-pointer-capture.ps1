@@ -44,8 +44,14 @@ $down = $false
 $presses = 0
 $releases = 0
 $edges = 0
+$moves = 0
 $firstPressMs = -1
 $firstReleaseMs = -1
+$firstMoveMs = -1
+$cursor = New-Object BvPtrPoint
+[void][BvPointerProbe]::GetCursorPos([ref]$cursor)
+$lastX = $cursor.X
+$lastY = $cursor.Y
 # Prime the per-thread "pressed since last call" latch (bit 0x0001) so the
 # first poll reports only presses inside the window. The 20260820 batch proved
 # sampling bit 0x8000 alone cannot see a press+release pair shorter than one
@@ -63,11 +69,20 @@ if ($inputDesktopOpen) { [void][BvPointerProbe]::CloseDesktop($inputDesktop) }
 Write-Output ('BVPTR begin duration_ms=' + $DurationMs + ' poll_ms=' + $PollMs +
     ' session=' + $session + ' input_desktop_open=' + ([int]$inputDesktopOpen) +
     ' foreground=' + [BvPointerProbe]::GetForegroundWindow() +
+    ' cursor_x=' + $lastX + ' cursor_y=' + $lastY +
     ' utc=' + [DateTime]::UtcNow.ToString('o'))
 
 while ($sw.ElapsedMilliseconds -lt $DurationMs) {
     $state = [BvPointerProbe]::GetAsyncKeyState(0x01)
     $now = ($state -band 0x8000) -ne 0
+    $pt = New-Object BvPtrPoint
+    if ([BvPointerProbe]::GetCursorPos([ref]$pt) -and (($pt.X -ne $lastX) -or ($pt.Y -ne $lastY))) {
+        $moves++
+        if ($firstMoveMs -lt 0) { $firstMoveMs = $sw.ElapsedMilliseconds }
+        Write-Output ('BVPTR move t_ms=' + $sw.ElapsedMilliseconds + ' x=' + $pt.X + ' y=' + $pt.Y)
+        $lastX = $pt.X
+        $lastY = $pt.Y
+    }
     if ((-not $now) -and (-not $down) -and (($state -band 0x0001) -ne 0)) {
         $edges++
         Write-Output ('BVPTR edge t_ms=' + $sw.ElapsedMilliseconds)
@@ -92,7 +107,7 @@ while ($sw.ElapsedMilliseconds -lt $DurationMs) {
 }
 
 Write-Output ('BVPTR summary presses=' + $presses + ' releases=' + $releases +
-    ' edges=' + $edges +
+    ' edges=' + $edges + ' moves=' + $moves + ' first_move_ms=' + $firstMoveMs +
     ' first_press_ms=' + $firstPressMs + ' first_release_ms=' + $firstReleaseMs +
     ' stuck=' + (@{ $true = '1'; $false = '0' }[[bool]$down]))
 exit 0

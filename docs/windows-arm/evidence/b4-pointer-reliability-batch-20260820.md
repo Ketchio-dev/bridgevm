@@ -125,5 +125,14 @@ interactive-logon task, but the `Win32_Process.Create` child had never proven
 that it retained the active input desktop; `GetAsyncKeyState` may return zero
 outside that desktop. The probe now records nonzero session ID, successful
 `OpenInputDesktop`, and foreground HWND, and the parser fails closed unless
-all three prove an interactive desktop. B4 remains OPEN until a fresh fixed
-20-run t8 receipt passes 20/20 with p95 <=250 ms.
+all three prove an interactive desktop. Diagnostic t8 job
+`20260821-064039-29474-29147` at `1d62a904413596775e04fabd2bdff042cc83dd79`
+then proved exactly that in its first run (`session=1`,
+`input_desktop_open=1`, foreground HWND `197210`) while the click still had
+zero transitions; the run log SHA-256 is
+`a3046b05be4182fdc7f09723e292ab37f22d4a6a1d4f5276861544c4f2b07ac1`.
+The job was cancelled after this separator and is diagnostic, not closure
+evidence. The next probe records cursor-coordinate transitions on that same
+active desktop, separating loss of all DCI5 reports from button-only semantic
+loss. B4 remains OPEN until a fresh fixed 20-run t8 receipt passes 20/20 with
+p95 <=250 ms.
