@@ -184,10 +184,8 @@ impl PointerInputReportQueue {
             return Err(XhciPointerInputQueueError::Busy);
         }
         let mut buttons = self.current_buttons;
-        for (index, action) in actions.iter().enumerate() {
+        for action in actions {
             match *action {
-                PointerInputAction::Move(position) if matches!(actions.get(index + 1), Some(PointerInputAction::Click(next)) if *next == position) =>
-                    {}
                 PointerInputAction::Move(position) => {
                     self.push_back(PointerInputReport {
                         position,
@@ -329,18 +327,6 @@ mod tests {
         queue.record_emitted_position(report);
         queue.pop_front();
         report
-    }
-
-    #[test]
-    fn same_position_move_click_coalesces_to_button_and_release() {
-        let mut queue = PointerInputReportQueue::default();
-        let p = PointerPosition::new(100, 200).unwrap();
-        assert_eq!(
-            queue.queue_actions(&[PointerInputAction::Move(p), PointerInputAction::Click(p)]),
-            Ok(2)
-        );
-        assert_eq!(emit_front(&mut queue).bytes(), [1, 100, 0, 200, 0, 0]);
-        assert_eq!(emit_front(&mut queue).bytes(), [0, 100, 0, 200, 0, 0]);
     }
 
     #[test]

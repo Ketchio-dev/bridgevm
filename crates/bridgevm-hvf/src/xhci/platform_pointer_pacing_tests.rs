@@ -100,8 +100,8 @@ fn erdp_mmio_does_not_bypass_pointer_report_pacing() {
             &mut mem,
         )
         .unwrap();
-    assert_eq!(emitted(&platform), (0, 1, 0));
-    // A guest DCI5 doorbell cannot bypass the platform conjunction either.
+    assert_eq!(emitted(&platform), (1, 0, 0));
+    // Neither a guest doorbell nor time alone bypasses the conjunction.
     platform.on_mmio(
         XHCI_BAR0 + 0x2004,
         MmioOp::Write {
@@ -110,11 +110,9 @@ fn erdp_mmio_does_not_bypass_pointer_report_pacing() {
         },
         &mut mem,
     );
-    assert_eq!(emitted(&platform), (0, 1, 0));
-    // Time alone is insufficient until the guest consumes button's event.
     platform.set_host_now(base + Duration::from_millis(30));
     platform.drain_xhci_pointer_input_reports(&mut mem);
-    assert_eq!(emitted(&platform), (0, 1, 0));
+    assert_eq!(emitted(&platform), (1, 0, 0));
     platform.on_mmio(
         XHCI_BAR0 + 0x1038,
         MmioOp::Write {
@@ -123,5 +121,17 @@ fn erdp_mmio_does_not_bypass_pointer_report_pacing() {
         },
         &mut mem,
     );
-    assert_eq!(emitted(&platform), (0, 1, 1));
+    assert_eq!(emitted(&platform), (1, 1, 0));
+    platform.set_host_now(base + Duration::from_millis(60));
+    platform.drain_xhci_pointer_input_reports(&mut mem);
+    assert_eq!(emitted(&platform), (1, 1, 0));
+    platform.on_mmio(
+        XHCI_BAR0 + 0x1038,
+        MmioOp::Write {
+            size: 8,
+            value: (EVENT_RING + TRB_SIZE * 3) | 8,
+        },
+        &mut mem,
+    );
+    assert_eq!(emitted(&platform), (1, 1, 1));
 }

@@ -259,11 +259,17 @@ reported `first_changed_ms=none` because the gate parsed boot ramfb, a surface
 this document already classifies as non-evidentiary after virtio-gpu takes
 scanout ownership. The run is diagnostic, not closure evidence.
 
-Two latency corrections follow without changing the fixed criterion. First,
-adjacent `Move(p), Click(p)` is coalesced to tablet-equivalent button+release at
-`p`, avoiding a multi-second wait for a redundant move completion before the
-press; non-adjacent moves remain unchanged. Second, visible reaction is parsed
-only from existing `virtio-gpu-checkpoint-*` active-scanout artifacts. The gate
-enables the existing 100 ms display exporter/readback feed and still samples
-at the fixed 5..1000 ms delays. A ramfb-named artifact fails closed and cannot
-land a run. B4 remains OPEN pending the corrected normal 20/20 receipt.
+Two latency/evidence corrections follow without changing the fixed criterion.
+The coalesced button report moved the cursor but Windows again discarded its
+button bit, so that experiment was retracted. Instead, each run prepositions
+the pointer through the normal live-input path before the latency window, and
+the fixed trigger injects click-only at the already-settled target. The guest
+probe fails closed unless its initial cursor is `(544,380)`, proving the
+precondition rather than assuming it. The measured click remains normal
+button+release with a 200 ms hold.
+
+Visible reaction is parsed only from existing `virtio-gpu-checkpoint-*`
+active-scanout artifacts. The gate enables both the proven display framebuffer
+sink and 100 ms PPM exporter/readback feed, still sampling at the fixed
+5..1000 ms delays. A ramfb-named artifact fails closed and cannot land a run.
+B4 remains OPEN pending the corrected normal 20/20 receipt.
