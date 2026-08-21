@@ -68,11 +68,11 @@ for i in $(seq 1 "$N"); do
   cp -c "$TARGET" "$work/disk.raw"; cp "$VARS" "$work/vars.fd"
   cp "$REPO/scripts/win-assets/bv-pointer-capture.ps1" "$run/share/"
   CTL="$run/agent.ctl"; : > "$CTL"
-  BRIDGEVM_TRACE_DCI5_EMISSION=1 \
+  BRIDGEVM_TRACE_DCI5_EMISSION=1 BRIDGEVM_XHCI_REPORT_INTERVAL_MS=200 \
   scripts/run-hvf-windows-installed-boot.sh \
     --target "$work/disk.raw" --vars "$work/vars.fd" --evidence-dir "$run" \
     --watchdog-ms 600000 --ram-mib 6144 --smp-cpus 4 --enable-xhci \
-    --pointer-input-actions 'move:22310x20800,press:22310x20800' \
+    --pointer-input-actions 'move:22310x20800,click:22310x20800' \
     --pointer-input-fire-delay-ms 150000 \
     --pointer-input-ramfb-delay-ms "$DELAYS" \
     --agent-service-control "$CTL" \

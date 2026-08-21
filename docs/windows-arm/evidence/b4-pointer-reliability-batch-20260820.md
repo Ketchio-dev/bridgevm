@@ -193,8 +193,17 @@ same DMA buffer. Run 1 still delivered only move (run log SHA-256
 `7b0ca99616bd00abddf56ce78fb19339102606dc455966f96147d4d21ae9a8af`), and the
 job was cancelled.
 
-The next diagnostic sends move+press with no release. It must fail the fixed
-click gate (stuck button and no release), so it is never closure evidence; its
-only separator is whether an indefinitely held button reaches the active
-input desktop. B4 remains OPEN until the normal move+click workload produces
-a fresh 20/20 t8 receipt with p95 <=250 ms.
+The next diagnostic sent move+press with no release. As required, job
+`20260821-111848-37586-7823` at `b43f1bc770f76c9fdc663e4adb923b8c8f41a2b8`
+failed the gate (`press=1`, `release=0`, `stuck=1`), but its first run proved
+the button path: on the active desktop, cursor move arrived at 31,847 ms and
+button high-bit press at 31,871 ms, 24 ms later (run log SHA-256
+`f9d992b81cd05716308152fcdf54182fae064297dd3abbde462bab4e02d0ea75`).
+The job was cancelled after that separator. Descriptor, payload, DMA buffer,
+completion, MSI and user32 press delivery are all exonerated; the loss occurs
+only when release follows before the guest/probe observes the transition.
+
+The normal move+click workload is restored with a 200 ms report interval, the
+largest button hold below the fixed p95 <=250 ms limit. This does not relax the
+criterion. B4 remains OPEN until that normal workload produces a fresh 20/20
+t8 receipt.
