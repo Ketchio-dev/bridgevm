@@ -6,6 +6,8 @@ use super::interrupt_trb::InterruptTransferTrb;
 use super::pointer_input_report::PointerInputReport;
 use super::trace_dci5_emission_format::{format, Dci5EmissionTrace};
 use super::XhciController;
+use std::sync::OnceLock;
+use std::time::Instant;
 
 pub(crate) fn enabled() -> bool {
     super::trace::bringup_enabled()
@@ -73,6 +75,8 @@ impl XhciController {
         trace.iman_ie = iman_ie;
         trace.event_handler_busy = event_handler_busy;
         trace.erdp = erdp;
-        println!("{}", format(trace));
+        static START: OnceLock<Instant> = OnceLock::new();
+        let elapsed_ms = START.get_or_init(Instant::now).elapsed().as_millis();
+        println!("{} host_elapsed_ms={elapsed_ms}", format(trace));
     }
 }

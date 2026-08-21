@@ -211,7 +211,15 @@ job `20260821-115318-49986-28036` at
 The job was cancelled. Even a near-limit hold is not sufficient after the
 leading move report.
 
-The next diagnostic sends click-only (button+release at the target), isolating
-whether the leading move report causes Windows to discard the following
-button transition. This diagnostic cannot close B4 even if it works: the fixed
-move+click 20-run workload must still pass. B4 remains OPEN.
+The next diagnostic sent click-only at
+`c086581f40101ceb90283a7c70ff57476730c913` in job
+`20260821-122823-62528-13973`. It still delivered only cursor move (from the
+button report's absolute coordinates), with no button transition (run log SHA-256
+`829f03af282d6f08bf9d40b16a2c34e2be0fb66ac7e7d2368838d0735ad1ce9d`); the
+job was cancelled. A leading move
+report is not the cause; release following press is the separator.
+
+The next diagnostic uses a deliberately over-limit 1000 ms hold and records
+host monotonic time on every DCI5 emission. It cannot close B4 because 1000 ms
+exceeds the fixed 250 ms limit; it only tests whether a definitely long press
+is visible and proves the actual button-to-release interval. B4 remains OPEN.
