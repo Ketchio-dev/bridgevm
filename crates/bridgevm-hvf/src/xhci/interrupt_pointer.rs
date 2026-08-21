@@ -18,6 +18,7 @@ const TRANSFER_EVENT_ED: u32 = 1 << 2;
 const COMPLETION_CODE_SHORT_PACKET: u32 = 13;
 const DCI5_DRAIN_POLICY_AFTER_DOORBELL: &str = "after_doorbell";
 const DCI5_DRAIN_POLICY_QUEUED_POINTER: &str = "queued_pointer_drain";
+
 impl XhciController {
     pub(super) fn process_dci5_interrupt_in_transfer_after_doorbell(
         &mut self,
@@ -38,9 +39,6 @@ impl XhciController {
         mem: &mut dyn GuestMemoryMut,
         policy: &'static str,
     ) -> bool {
-        if !self.dci5_previous_event_consumed() {
-            return false;
-        }
         for _ in 0..MAX_LINK_TRBS_PER_DOORBELL {
             let transfer_ring = self.slot1_dci5_dequeue;
             if transfer_ring == 0 {
@@ -94,8 +92,10 @@ impl XhciController {
                         return false;
                     };
                     let Some(queued_report) = self.pointer_input_report_queue.peek() else {
-                        // NAK idle polls like the keyboard: completing one
-                        // livelocks the interrupter. Leave the TD pending.
+                        // NAK idle polls like the boot keyboard: completing one
+                        // synthesizes a report the guest immediately acks and
+                        // re-polls, livelocking the interrupter. Leave the TD
+                        // pending until real pointer input is queued.
                         self.trace_dci5_drain_blocked(
                             "no_queued_input_report",
                             policy,
@@ -165,7 +165,6 @@ impl XhciController {
                         if can_emit_queued_report {
                             #[rustfmt::skip]
                             self.trace_dci5_report_emitted(queued_report, interrupt_transfer.gpa, transfer_length, written_length, completion_code);
-                            self.record_dci5_event_for_consumption();
                             self.record_pointer_input_report_emitted(queued_report);
                             self.pointer_input_report_queue.pop_front();
                         }
@@ -193,6 +192,7 @@ impl XhciController {
         self.trace_dci5_drain_blocked("link_trb_limit", policy, None);
         false
     }
+
     fn trace_dci5_drain_blocked(
         &mut self,
         reason: &'static str,

@@ -12,7 +12,7 @@ use crate::fwcfg::GuestMemoryMut;
 const DCI5_OUTPUT_CONTEXT_OFFSET: u64 = 0xa0;
 
 #[test]
-fn queued_pointer_drain_runs_while_setup_input_queue_has_reports() {
+fn controller_mmio_leaves_pointer_pending_for_platform_pacing() {
     // Given: keyboard and pointer reports are both queued while both interrupt
     // endpoints have ready transfer TRBs.
     let mut xhci = XhciController::new();
@@ -25,24 +25,17 @@ fn queued_pointer_drain_runs_while_setup_input_queue_has_reports() {
     xhci.queue_pointer_input_actions(&[PointerInputAction::Move(position)])
         .unwrap();
 
-    // When: an unrelated MMIO write kicks queued host-side input delivery.
+    // Controller MMIO may late-drain DCI3, but DCI5 must cross VirtPlatform's
+    // host-time gate instead of bypassing it here.
     assert!(xhci.mmio_write_with_mem(0x14, 4, 0, &mut mem));
-
-    // Then: DCI5 is not starved behind the still-nonempty DCI3 setup queue.
     assert_eq!(
         mem.read_bytes(DCI3_BUFFER, 8).unwrap(),
         [0, 0, 0x2c, 0, 0, 0, 0, 0]
     );
-    assert_eq!(
-        mem.read_bytes(DCI5_BUFFER, 6).unwrap(),
-        [0, 0, 0x30, 0, 0x50, 0]
-    );
-    assert_short_packet_dci5_transfer_event(&mem, EVENT_RING + (TRB_SIZE * 2), DCI5_RING);
-    let setup_stats = xhci.setup_input_report_stats();
-    assert_eq!(setup_stats.emitted_key_reports, 1);
-    assert_eq!(setup_stats.emitted_release_reports, 0);
-    let pointer_stats = xhci.pointer_input_report_stats();
-    assert_eq!(pointer_stats.emitted_move_reports, 1);
+    assert_eq!(mem.read_bytes(DCI5_BUFFER, 6).unwrap(), [0xaa; 6]);
+    assert_eq!(mem.read_u64(EVENT_RING + (TRB_SIZE * 2)), 0);
+    assert_eq!(xhci.setup_input_report_stats().emitted_key_reports, 1);
+    assert_eq!(xhci.pointer_input_report_stats().emitted_move_reports, 0);
 }
 
 #[test]
@@ -73,7 +66,7 @@ fn slot1_dci5_doorbell_emits_absolute_pointer_move_report() {
 }
 
 #[test]
-fn slot1_dci5_click_waits_for_each_previous_event_consumption() {
+fn slot1_dci5_click_action_emits_button_down_then_release() {
     // Given: pointer DCI5 has two buffers and a queued click action.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0x9000);
@@ -85,20 +78,25 @@ fn slot1_dci5_click_waits_for_each_previous_event_consumption() {
     xhci.queue_pointer_input_actions(&[PointerInputAction::Click(position)])
         .unwrap();
 
-    // The first poll emits button-down; another poll before ERDP advances is held.
+    // When: the guest polls DCI5 twice.
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI5), &mut mem));
-    assert!(!xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI5), &mut mem));
-    assert_eq!(xhci.pointer_input_report_stats().emitted_release_reports, 0);
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI5), &mut mem));
 
-    // Consuming button-down lets the existing MMIO late-drain emit release.
-    assert!(xhci.mmio_write_with_mem(0x1038, 8, (EVENT_RING + TRB_SIZE * 2) | 8, &mut mem));
-    assert_eq!(mem.read_bytes(DCI5_BUFFER, 6).unwrap(), [1, 0, 4, 0, 8, 0]);
+    // Then: the first report presses button 1 and the second releases it at the same position.
+    assert_eq!(
+        mem.read_bytes(DCI5_BUFFER, 6).unwrap(),
+        [1, 0, 0x04, 0, 0x08, 0]
+    );
     assert_eq!(
         mem.read_bytes(DCI5_BUFFER + 0x20, 6).unwrap(),
-        [0, 0, 4, 0, 8, 0]
+        [0, 0, 0x04, 0, 0x08, 0]
     );
     assert_short_packet_dci5_transfer_event(&mem, EVENT_RING + TRB_SIZE, DCI5_RING);
-    assert_short_packet_dci5_transfer_event(&mem, EVENT_RING + TRB_SIZE * 2, DCI5_RING + TRB_SIZE);
+    assert_short_packet_dci5_transfer_event(
+        &mem,
+        EVENT_RING + (TRB_SIZE * 2),
+        DCI5_RING + TRB_SIZE,
+    );
     let stats = xhci.pointer_input_report_stats();
     assert_eq!(stats.emitted_button_reports, 1);
     assert_eq!(stats.emitted_release_reports, 1);

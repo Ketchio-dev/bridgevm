@@ -6,7 +6,6 @@ mod commands;
 mod dci3_endpoint_state;
 mod dci3_rearm;
 mod dci5_endpoint_state;
-mod dci5_event_pacing;
 mod device_context;
 mod device_context_mem;
 mod event;
@@ -49,9 +48,11 @@ pub use setup_input_report::{
 };
 
 pub const XHCI_CAP_LENGTH: u8 = 0x40;
+
 const USB_CMD_RS: u32 = 1 << 0;
 const USB_CMD_HCRST: u32 = 1 << 1;
 const USB_STS_HCH: u32 = 1 << 0;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct XhciEventLifecycleStats {
     pub event_post_attempts: u64,
@@ -99,7 +100,6 @@ pub struct XhciController {
     slot1_dci5_dequeue: u64,
     slot1_dci5_ring_base: u64,
     slot1_dci5_dcs: bool,
-    slot1_dci5_last_event: Option<(usize, u64)>,
     slot1_dci5_last_drain_blocked: Option<trace::Dci5DrainBlockedTrace<'static>>,
     boot_keyboard_report_queue: setup_input_report::BootKeyboardReportQueue,
     setup_input_report_stats: XhciSetupInputReportStats,
@@ -198,9 +198,6 @@ impl XhciController {
         if self.has_queued_setup_input_report() {
             interrupt |= self.process_dci3_interrupt_in_transfer(mem);
         }
-        if self.has_queued_pointer_input_report() {
-            interrupt |= self.process_queued_dci5_pointer_input(mem);
-        }
         interrupt
     }
 }
@@ -234,8 +231,6 @@ mod configure_endpoint_tests;
 #[cfg(test)]
 mod dci3_rearm_tests;
 #[cfg(test)]
-mod dci5_event_pacing_tests;
-#[cfg(test)]
 mod disable_slot_tests;
 #[cfg(test)]
 mod ep0_clear_feature_tests;
@@ -263,6 +258,8 @@ mod hid_unsupported_semantic_stats_tests;
 mod interrupter_msix_autoclear_tests;
 #[cfg(test)]
 mod msix_tests;
+#[cfg(test)]
+mod platform_pointer_pacing_tests;
 #[cfg(test)]
 mod platform_setup_input_cycle_drain_tests;
 #[cfg(test)]

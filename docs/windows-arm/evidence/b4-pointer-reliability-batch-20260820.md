@@ -143,11 +143,23 @@ The job was cancelled after this diagnostic result. Move reaches user32;
 button/release specifically do not.
 
 In the same run, move/button/release events occupied consecutive Event Ring
-slots while ERDP stayed at the move event. Host-time spacing alone therefore
-allowed the next DCI5 report to outrun guest event consumption. The fix is
-DCI5-specific event-consumption pacing: record the previous pointer event's
-interrupter and ERDP-at-post, and hold the next pointer report until the guest
-advances that ERDP. Existing MMIO late-drain retries the held report on the
-ERDP write. The generic EHB re-notification experiment was removed because
-live runs proved it was not the cause. B4 remains OPEN until a fresh fixed
-20-run t8 receipt passes 20/20 with p95 <=250 ms.
+slots while ERDP stayed at the move event. DCI5 event-consumption pacing was
+then tried at `2eadc8619516fc2a6630435f0a1edbb74004d9b2` (job
+`20260821-075716-55962-11868`). Run 1 proved the gate worked — each next report
+posted only after ERDP advanced — but move alone still reached user32 and the
+button was lost (run log SHA-256
+`f00c67b873ea34bd31026719543dcd4963a29a3a14aa14b85e70347c1f2e9644`).
+The job was cancelled and the non-causal pacing was removed.
+
+The surviving code-level separator is below that experiment: guest ERDP MMIO
+called `XhciController::mmio_write_with_mem`, which directly late-drained the
+next pointer report and bypassed `VirtPlatform`'s host-time report pacing. The
+2026-08-17 300 ms pacing experiment therefore never guaranteed a button hold:
+button and release could still be emitted back-to-back through successive
+ERDP writes. The fix removes controller-internal pointer late-drain and routes
+post-MMIO pointer delivery through the platform pacing gate. A platform BAR
+regression requires ERDP MMIO at unchanged host time to leave button pending,
+then release button and release reports only at consecutive 30 ms host-time
+steps. The generic EHB experiment and event-consumption pacing are absent.
+B4 remains OPEN until a fresh fixed 20-run t8 receipt passes 20/20 with p95
+<=250 ms.

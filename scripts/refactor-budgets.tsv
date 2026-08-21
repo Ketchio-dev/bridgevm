@@ -551,8 +551,6 @@ crates/bridgevm-hvf/src/xhci/dci3_endpoint_state.rs	132	0
 crates/bridgevm-hvf/src/xhci/dci3_rearm.rs	203	0
 crates/bridgevm-hvf/src/xhci/dci3_rearm_tests.rs	36	0
 crates/bridgevm-hvf/src/xhci/dci5_endpoint_state.rs	151	0
-crates/bridgevm-hvf/src/xhci/dci5_event_pacing.rs	21	0
-crates/bridgevm-hvf/src/xhci/dci5_event_pacing_tests.rs	59	0
 crates/bridgevm-hvf/src/xhci/device_context.rs	237	0
 crates/bridgevm-hvf/src/xhci/device_context_drop_context.rs	56	0
 crates/bridgevm-hvf/src/xhci/device_context_mem.rs	62	0
@@ -581,6 +579,7 @@ crates/bridgevm-hvf/src/xhci/msix_tests.rs	197	0
 crates/bridgevm-hvf/src/xhci/platform_setup_input_cycle_drain_tests.rs	227	0
 crates/bridgevm-hvf/src/xhci/platform_setup_input_late_drain_tests.rs	259	0
 crates/bridgevm-hvf/src/xhci/platform_setup_input_post_fire_kick_tests.rs	111	0
+crates/bridgevm-hvf/src/xhci/platform_pointer_pacing_tests.rs	137	0
 crates/bridgevm-hvf/src/xhci/platform_setup_input_support.rs	112	0
 crates/bridgevm-hvf/src/xhci/platform_setup_input_tests.rs	262	0
 crates/bridgevm-hvf/src/xhci/platform_test_support.rs	272	0

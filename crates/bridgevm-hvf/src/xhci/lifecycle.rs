@@ -1,10 +1,11 @@
+use crate::msix::MsixTable;
+use crate::pcie::XHCI_MSIX_VECTOR_COUNT;
+
 use super::event::{Interrupter, XHCI_INTERRUPTER_COUNT};
 use super::{
     pointer_input_report, ports::initial_ports, setup_input_report, XhciController,
     XhciHidSemanticStats, XhciPointerInputReportStats, XhciSetupInputReportStats,
 };
-use crate::msix::MsixTable;
-use crate::pcie::XHCI_MSIX_VECTOR_COUNT;
 
 impl Default for XhciController {
     fn default() -> Self {
@@ -42,7 +43,6 @@ impl XhciController {
             slot1_dci5_dequeue: 0,
             slot1_dci5_ring_base: 0,
             slot1_dci5_dcs: false,
-            slot1_dci5_last_event: None,
             slot1_dci5_last_drain_blocked: None,
             boot_keyboard_report_queue: setup_input_report::BootKeyboardReportQueue::default(),
             setup_input_report_stats: XhciSetupInputReportStats::default(),

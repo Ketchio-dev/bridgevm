@@ -116,9 +116,8 @@ impl VirtPlatform {
                 }
             }
             "tpm-ppi" => MmioOutcome::Unmapped,
+            // Modelled in the map but no device behaviour; keep it visible in traces.
             "flash-vars" => self.flash_vars.access(gpa, op),
-            // Modelled in the machine map but no device behaviour yet — surfaced
-            // precisely so bring-up traces show the next thing to implement.
             other => MmioOutcome::KnownUnimplemented(other),
         };
         if retry_setup_input_after_mmio {
@@ -127,7 +126,6 @@ impl VirtPlatform {
         }
         (outcome, MmioPostDrain::NONE)
     }
-
     /// Empty virtio-mmio transport slot. Advertise a valid legacy register block with
     /// DeviceID 0 so the firmware sees "valid transport, no device" and skips it
     /// silently — matching QEMU's empty slots. Returning 0 (no magic) instead made
@@ -254,6 +252,8 @@ impl VirtPlatform {
                     if posted_completion {
                         self.queue_xhci_completion_msix();
                     }
+                    // Never bypass pointer host-time pacing after controller MMIO.
+                    self.drain_xhci_pointer_input_reports(mem);
                     self.flush_xhci_pending_msix();
                     MmioOutcome::WriteAck
                 }
