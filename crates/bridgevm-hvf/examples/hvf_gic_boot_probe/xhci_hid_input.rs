@@ -10,7 +10,6 @@ mod pointer_input;
 mod report_text;
 #[path = "xhci_hid_input/setup_input.rs"]
 mod setup_input;
-
 #[cfg(test)]
 #[path = "xhci_hid_input/boot_key_tests.rs"]
 mod boot_key_tests;
@@ -20,6 +19,9 @@ mod marker_tests;
 #[cfg(test)]
 #[path = "xhci_hid_input/pointer_input_tests.rs"]
 mod pointer_input_tests;
+#[cfg(test)]
+#[path = "xhci_hid_input/pointer_trigger_clock_tests.rs"]
+mod pointer_trigger_clock_tests;
 #[cfg(test)]
 #[path = "xhci_hid_input/setup_input_action_tests.rs"]
 mod setup_input_action_tests;

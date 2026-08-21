@@ -219,7 +219,20 @@ button report's absolute coordinates), with no button transition (run log SHA-25
 job was cancelled. A leading move
 report is not the cause; release following press is the separator.
 
-The next diagnostic uses a deliberately over-limit 1000 ms hold and records
-host monotonic time on every DCI5 emission. It cannot close B4 because 1000 ms
-exceeds the fixed 250 ms limit; it only tests whether a definitely long press
-is visible and proves the actual button-to-release interval. B4 remains OPEN.
+The next diagnostic used a deliberately over-limit 1000 ms hold at
+`50b9dc25f6b745dcbd879340419b76ad5ae25c96` in job
+`20260821-130407-75761-3874`. It still delivered only move, but monotonic trace
+proved the supposedly 1000 ms path emitted move→button after only 622 ms and
+button→release after 4,745 ms (run log SHA-256
+`b5b820e8286100e262474539d3ddc34ef4874f96a616de353da270370fc23918`).
+The job was cancelled.
+
+The cause is a stale clock sample: `queue_xhci_pointer_input_actions_with_mem`
+stored cached `platform.host_now` as the first emission time, but pointer fire
+already receives a newer `now`. Every prior interval experiment therefore
+measured from an old pre-run sample rather than actual first DMA. Pointer fire
+now writes its actual `now` into the platform immediately before queue/drain.
+A synthetic-clock regression seeds a 900 ms stale sample and requires release
+to remain blocked until 1000 ms after the actual trigger, not 100 ms after it.
+The normal move+click workload uses a 200 ms interval, below the fixed 250 ms
+limit. B4 remains OPEN pending the normal 20/20 receipt.

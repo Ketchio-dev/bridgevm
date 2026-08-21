@@ -191,6 +191,5 @@ fn xhci_pointer_input_ramfb_emits_before_after_and_delays_when_trigger_fires() {
             "pointer-input-delay-5ms".to_string(),
             "pointer-input-delay-15ms".to_string()
         ]
-    );
-    println!("pointer delay checkpoint labels: {}", checkpoints.join(","));
+    ); println!("pointer delay checkpoint labels: {}", checkpoints.join(","));
 }

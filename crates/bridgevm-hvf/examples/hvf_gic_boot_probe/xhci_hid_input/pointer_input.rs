@@ -1,5 +1,4 @@
 use std::time::{Duration, Instant};
-
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::platform_virt::VirtPlatform;
 use bridgevm_hvf::xhci::{
@@ -191,6 +190,7 @@ impl XhciPointerInputTrigger {
             return false;
         }
         self.mark_attempted_at_controller_generation(platform);
+        platform.set_host_now(now); // First emission uses trigger-now, not stale pre-run time.
         let before_stats = platform.xhci_pointer_input_report_stats();
         match platform.queue_xhci_pointer_input_actions_with_mem(&self.actions, mem) {
             Ok(()) => {
