@@ -19,8 +19,7 @@ VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 DELAYS='5,15,30,60,120,250,500,1000'
 
-# Parser: prints "fired press release stuck first_ms"; edge = press+release.
-parse_run_log() {
+parse_run_log() { # fired press release stuck first_ms; edge = press+release
   local log="$1" ptr="${2:-/dev/null}" base sum first='' fired=false press=0 release=0 edges=0 stuck=1
   grep -q '^BVPTR begin .* session=[1-9][0-9]* input_desktop_open=1 foreground=[1-9][0-9]* ' "$ptr" 2>/dev/null || { echo 'false 0 0 1 invalid-desktop'; return; }
   grep -q '^xHCI pointer-input injection .* fired:' "$log" 2>/dev/null && fired=true
@@ -31,11 +30,11 @@ parse_run_log() {
   local summary
   summary=$(tr -d '\r' < "$ptr" | grep '^BVPTR summary ' | tail -1 || true)
   [[ "$summary" == *' stuck=0' ]] && stuck=0
-  base=$(tr -d '\r' < "$log" | sed -n 's/.*label=pointer-input-before .*checksum64=\([^ ]*\).*/\1/p' | tail -1)
+  base=$(tr -d '\r' < "$log" | sed -n 's|.*label=pointer-input-before state=captured checksum64=\([^ ]*\) raw=.*/virtio-gpu-checkpoint-pointer-input-before-[^ ]* .*|\1|p' | tail -1)
   if [[ -n "$base" ]]; then
     local ms
     for ms in ${DELAYS//,/ }; do
-      sum=$(tr -d '\r' < "$log" | sed -n "s/.*label=pointer-input-delay-${ms}ms .*checksum64=\([^ ]*\).*/\1/p" | tail -1)
+      sum=$(tr -d '\r' < "$log" | sed -n "s|.*label=pointer-input-delay-${ms}ms state=captured checksum64=\([^ ]*\) raw=.*/virtio-gpu-checkpoint-pointer-input-delay-${ms}ms-[^ ]* .*|\1|p" | tail -1)
       [[ -n "$sum" && "$sum" != "$base" && -z "$first" ]] && first=$ms
     done
   fi
@@ -44,14 +43,14 @@ parse_run_log() {
 
 if [[ "${1:-}" == "--selftest" ]]; then
   t=$(mktemp); p=$(mktemp)
-  printf 'xHCI pointer-input injection 1 fired: ok\nramfb checkpoint: label=pointer-input-before state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-5ms state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-250ms state=captured checksum64=0xbb\n' > "$t"
+  printf 'xHCI pointer-input injection 1 fired: ok\nramfb checkpoint: label=pointer-input-before state=captured checksum64=aa raw=/x/virtio-gpu-checkpoint-pointer-input-before-0000.xrgb8888 ppm=x\nramfb checkpoint: label=pointer-input-delay-5ms state=captured checksum64=aa raw=/x/virtio-gpu-checkpoint-pointer-input-delay-5ms-0000.xrgb8888 ppm=x\nramfb checkpoint: label=pointer-input-delay-250ms state=captured checksum64=bb raw=/x/virtio-gpu-checkpoint-pointer-input-delay-250ms-0000.xrgb8888 ppm=x\n' > "$t"
   printf 'BVPTR begin duration_ms=20 poll_ms=4 session=1 input_desktop_open=1 foreground=9 utc=x\r\nBVPTR press t_ms=3 x=1 y=2 fg=9\r\nBVPTR release t_ms=40 x=1 y=2 fg=9\r\nBVPTR summary presses=1 releases=1 edges=0 first_press_ms=3 first_release_ms=40 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p")
   [[ "$r" == "true 1 1 0 250" ]] || fail "selftest good-run parse: got '$r'"
   printf 'BVPTR begin duration_ms=20 poll_ms=4 session=1 input_desktop_open=1 foreground=9 utc=x\r\nBVPTR edge t_ms=12\r\nBVPTR summary presses=0 releases=0 edges=1 first_press_ms=-1 first_release_ms=-1 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p")
   [[ "$r" == "true 1 1 0 250" ]] || fail "selftest edge-run parse: got '$r'"
-  printf 'xHCI pointer-input injection 1 fired: ok\nramfb checkpoint: label=pointer-input-before state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-1000ms state=captured checksum64=0xaa\n' > "$t"
+  printf 'xHCI pointer-input injection 1 fired: ok\nramfb checkpoint: label=pointer-input-before state=captured checksum64=aa raw=/x/virtio-gpu-checkpoint-pointer-input-before-0000.xrgb8888 ppm=x\nramfb checkpoint: label=pointer-input-delay-1000ms state=captured checksum64=aa raw=/x/virtio-gpu-checkpoint-pointer-input-delay-1000ms-0000.xrgb8888 ppm=x\n' > "$t"
   printf 'BVPTR begin duration_ms=20 poll_ms=4 session=1 input_desktop_open=1 foreground=9 utc=x\r\nBVPTR summary presses=0 releases=0 edges=0 first_press_ms=-1 first_release_ms=-1 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p")
   [[ "$r" == "true 0 0 0 none" ]] || fail "selftest lost-click parse: got '$r'"
@@ -75,6 +74,7 @@ for i in $(seq 1 "$N"); do
     --pointer-input-actions 'move:22310x20800,click:22310x20800' \
     --pointer-input-fire-delay-ms 150000 \
     --pointer-input-ramfb-delay-ms "$DELAYS" \
+    --display-export-ppm "$run/active-scanout.ppm" --display-export-ms 100 \
     --agent-service-control "$CTL" \
     --agent-share-host "$run/share" --agent-share-guest 'C:\BridgeVMPtr' \
     --agent-share-ms 500 \

@@ -251,3 +251,19 @@ configured host-time interval has elapsed from actual DMA, and the previous
 pointer event's interrupter ERDP has advanced. A BAR/platform regression checks
 both halves independently for move→button→release. B4 remains OPEN pending the
 normal 20/20 receipt.
+
+The first doorbell-gated run (`20260821-151222-27082-29574`, run 1) finally
+reached the active desktop with `press=1 release=1 stuck=0`; host trace showed
+ERDP advancing before each later report and a 202 ms button hold. It still
+reported `first_changed_ms=none` because the gate parsed boot ramfb, a surface
+this document already classifies as non-evidentiary after virtio-gpu takes
+scanout ownership. The run is diagnostic, not closure evidence.
+
+Two latency corrections follow without changing the fixed criterion. First,
+adjacent `Move(p), Click(p)` is coalesced to tablet-equivalent button+release at
+`p`, avoiding a multi-second wait for a redundant move completion before the
+press; non-adjacent moves remain unchanged. Second, visible reaction is parsed
+only from existing `virtio-gpu-checkpoint-*` active-scanout artifacts. The gate
+enables the existing 100 ms display exporter/readback feed and still samples
+at the fixed 5..1000 ms delays. A ramfb-named artifact fails closed and cannot
+land a run. B4 remains OPEN pending the corrected normal 20/20 receipt.
