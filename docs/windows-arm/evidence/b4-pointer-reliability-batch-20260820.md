@@ -115,5 +115,15 @@ The corrected model therefore preserves per-event MSI and adds only the
 measured missing transition: ERDP/EHB acknowledgement re-notifies event-ring
 entries still beyond the guest dequeue pointer through the platform MSI-X
 queue. Unit tests cover the controller-local sequence and full BAR-to-platform
-MSI-X path. B4 remains OPEN until a fresh fixed 20-run t8 receipt passes 20/20
-with p95 <=250 ms.
+MSI-X path. Corrected-head t8 job `20260821-060243-17261-16687` restored full
+pointer enumeration and injection but its first run still failed with the same
+ERDP-at-move shape and no probe transition, so it too was cancelled. This
+proves re-notification alone is not the B4 fix.
+
+The next separator is guest-probe validity. The agent is installed as an
+interactive-logon task, but the `Win32_Process.Create` child had never proven
+that it retained the active input desktop; `GetAsyncKeyState` may return zero
+outside that desktop. The probe now records nonzero session ID, successful
+`OpenInputDesktop`, and foreground HWND, and the parser fails closed unless
+all three prove an interactive desktop. B4 remains OPEN until a fresh fixed
+20-run t8 receipt passes 20/20 with p95 <=250 ms.

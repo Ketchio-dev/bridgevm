@@ -19,10 +19,10 @@ VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 DELAYS='5,15,30,60,120,250,500,1000'
 
-# Parser (self-testable): args run.log + synced-back probe log; prints "fired
-# press release stuck first_ms". A BVPTR edge counts as press AND release.
+# Parser: prints "fired press release stuck first_ms"; edge = press+release.
 parse_run_log() {
   local log="$1" ptr="${2:-/dev/null}" base sum first='' fired=false press=0 release=0 edges=0 stuck=1
+  grep -q '^BVPTR begin .* session=[1-9][0-9]* input_desktop_open=1 foreground=[1-9][0-9]* ' "$ptr" 2>/dev/null || { echo 'false 0 0 1 invalid-desktop'; return; }
   grep -q '^xHCI pointer-input injection .* fired:' "$log" 2>/dev/null && fired=true
   press=$(tr -d '\r' < "$ptr" | grep -c '^BVPTR press ' || true)
   release=$(tr -d '\r' < "$ptr" | grep -c '^BVPTR release ' || true)
@@ -45,14 +45,14 @@ parse_run_log() {
 if [[ "${1:-}" == "--selftest" ]]; then
   t=$(mktemp); p=$(mktemp)
   printf 'xHCI pointer-input injection 1 fired: ok\nramfb checkpoint: label=pointer-input-before state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-5ms state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-250ms state=captured checksum64=0xbb\n' > "$t"
-  printf 'BVPTR press t_ms=3 x=1 y=2 fg=9\r\nBVPTR release t_ms=40 x=1 y=2 fg=9\r\nBVPTR summary presses=1 releases=1 edges=0 first_press_ms=3 first_release_ms=40 stuck=0\r\n' > "$p"
+  printf 'BVPTR begin duration_ms=20 poll_ms=4 session=1 input_desktop_open=1 foreground=9 utc=x\r\nBVPTR press t_ms=3 x=1 y=2 fg=9\r\nBVPTR release t_ms=40 x=1 y=2 fg=9\r\nBVPTR summary presses=1 releases=1 edges=0 first_press_ms=3 first_release_ms=40 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p")
   [[ "$r" == "true 1 1 0 250" ]] || fail "selftest good-run parse: got '$r'"
-  printf 'BVPTR edge t_ms=12\r\nBVPTR summary presses=0 releases=0 edges=1 first_press_ms=-1 first_release_ms=-1 stuck=0\r\n' > "$p"
+  printf 'BVPTR begin duration_ms=20 poll_ms=4 session=1 input_desktop_open=1 foreground=9 utc=x\r\nBVPTR edge t_ms=12\r\nBVPTR summary presses=0 releases=0 edges=1 first_press_ms=-1 first_release_ms=-1 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p")
   [[ "$r" == "true 1 1 0 250" ]] || fail "selftest edge-run parse: got '$r'"
   printf 'xHCI pointer-input injection 1 fired: ok\nramfb checkpoint: label=pointer-input-before state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-1000ms state=captured checksum64=0xaa\n' > "$t"
-  printf 'BVPTR summary presses=0 releases=0 edges=0 first_press_ms=-1 first_release_ms=-1 stuck=0\r\n' > "$p"
+  printf 'BVPTR begin duration_ms=20 poll_ms=4 session=1 input_desktop_open=1 foreground=9 utc=x\r\nBVPTR summary presses=0 releases=0 edges=0 first_press_ms=-1 first_release_ms=-1 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p")
   [[ "$r" == "true 0 0 0 none" ]] || fail "selftest lost-click parse: got '$r'"
   rm -f "$t" "$p"; echo "pointer reliability parser: PASS (selftest)"; exit 0

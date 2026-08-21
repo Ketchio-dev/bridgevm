@@ -32,6 +32,10 @@ public static class BvPointerProbe {
   [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
   [DllImport("user32.dll")] public static extern bool GetCursorPos(out BvPtrPoint point);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("kernel32.dll")] public static extern uint GetCurrentProcessId();
+  [DllImport("kernel32.dll")] public static extern bool ProcessIdToSessionId(uint pid, out uint session);
+  [DllImport("user32.dll")] public static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
+  [DllImport("user32.dll")] public static extern bool CloseDesktop(IntPtr desktop);
 }
 '@
 
@@ -48,7 +52,17 @@ $firstReleaseMs = -1
 # poll iteration (PS 5.1 loop cost >> the 4-8ms endpoint interval); the latch
 # bit is the callback-free way to catch a sub-interval click.
 [void][BvPointerProbe]::GetAsyncKeyState(0x01)
+$session = [uint32]0
+[void][BvPointerProbe]::ProcessIdToSessionId([BvPointerProbe]::GetCurrentProcessId(), [ref]$session)
+# DESKTOP_READOBJECTS(1) is sufficient to prove this process can open the
+# active input desktop; GetAsyncKeyState returns zero when the active desktop
+# does not belong to this thread/session. Close the handle immediately.
+$inputDesktop = [BvPointerProbe]::OpenInputDesktop(0, $false, 1)
+$inputDesktopOpen = $inputDesktop -ne [IntPtr]::Zero
+if ($inputDesktopOpen) { [void][BvPointerProbe]::CloseDesktop($inputDesktop) }
 Write-Output ('BVPTR begin duration_ms=' + $DurationMs + ' poll_ms=' + $PollMs +
+    ' session=' + $session + ' input_desktop_open=' + ([int]$inputDesktopOpen) +
+    ' foreground=' + [BvPointerProbe]::GetForegroundWindow() +
     ' utc=' + [DateTime]::UtcNow.ToString('o'))
 
 while ($sw.ElapsedMilliseconds -lt $DurationMs) {
