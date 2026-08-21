@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
-# B4 pointer click reliability gate.
-#
-# Threshold (fixed 2026-08-20, before any fix attempt): across N=20 independent
-# APFS clones, one host-injected click on the same real UI target must land
-# 20/20 -- press AND release consumed by the guest input stack (BVPTR lines
-# from bv-pointer-capture.ps1), no stuck button, and a visible framebuffer
-# reaction with first-change p95 <= 250 ms. Host 'fired' alone never counts.
-#
-# The guest probe separates the two loss classes the 2026-08-17 batch could
-# not: input-stack consumption (BVPTR press/release) versus application
-# reaction (framebuffer change). A run with BVPTR but no reaction indicts
-# foreground routing; a run with neither indicts the HID/xHCI boundary.
+# B4 pointer click reliability gate. Threshold (fixed 2026-08-20, before any
+# fix attempt): across N=20 independent APFS clones, one host-injected click
+# must land 20/20 -- press AND release consumed by the guest input stack
+# (BVPTR lines from bv-pointer-capture.ps1), no stuck button, and a visible
+# framebuffer reaction with first-change p95 <= 250 ms. Host 'fired' alone
+# never counts. The probe separates input-stack consumption (BVPTR) from
+# application reaction (framebuffer change): BVPTR without reaction indicts
+# foreground routing; neither indicts the HID/xHCI boundary.
 set -euo pipefail
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); cd "$REPO"
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -23,14 +19,16 @@ VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 DELAYS='5,15,30,60,120,250,500,1000'
 
-# --- parser, self-testable without a guest -----------------------------------
-# args: run.log, probe log (BVPTR lines synced back over the share).
-# prints: hid_fired press release stuck first_changed_ms
+# Parser (self-testable): args run.log + synced-back probe log; prints
+# "hid_fired press release stuck first_changed_ms". A BVPTR edge line is the
+# latch bit catching press+release within one poll, so it counts as both.
 parse_run_log() {
-  local log="$1" ptr="${2:-/dev/null}" base sum first='' fired=false press=0 release=0 stuck=1
+  local log="$1" ptr="${2:-/dev/null}" base sum first='' fired=false press=0 release=0 edges=0 stuck=1
   grep -q '^xHCI pointer-input injection .* fired:' "$log" 2>/dev/null && fired=true
   press=$(tr -d '\r' < "$ptr" | grep -c '^BVPTR press ' || true)
   release=$(tr -d '\r' < "$ptr" | grep -c '^BVPTR release ' || true)
+  edges=$(tr -d '\r' < "$ptr" | grep -c '^BVPTR edge ' || true)
+  press=$((press + edges)); release=$((release + edges))
   local summary
   summary=$(tr -d '\r' < "$ptr" | grep '^BVPTR summary ' | tail -1 || true)
   [[ "$summary" == *' stuck=0' ]] && stuck=0
@@ -48,17 +46,22 @@ parse_run_log() {
 if [[ "${1:-}" == "--selftest" ]]; then
   t=$(mktemp); p=$(mktemp)
   printf 'xHCI pointer-input injection 1 fired: ok\nramfb checkpoint: label=pointer-input-before state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-5ms state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-250ms state=captured checksum64=0xbb\n' > "$t"
-  printf 'BVPTR press t_ms=3 x=1 y=2 fg=9\r\nBVPTR release t_ms=40 x=1 y=2 fg=9\r\nBVPTR summary presses=1 releases=1 first_press_ms=3 first_release_ms=40 stuck=0\r\n' > "$p"
+  printf 'BVPTR press t_ms=3 x=1 y=2 fg=9\r\nBVPTR release t_ms=40 x=1 y=2 fg=9\r\nBVPTR summary presses=1 releases=1 edges=0 first_press_ms=3 first_release_ms=40 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p")
   [[ "$r" == "true 1 1 0 250" ]] || fail "selftest good-run parse: got '$r'"
+  printf 'BVPTR edge t_ms=12\r\nBVPTR summary presses=0 releases=0 edges=1 first_press_ms=-1 first_release_ms=-1 stuck=0\r\n' > "$p"
+  r=$(parse_run_log "$t" "$p")
+  [[ "$r" == "true 1 1 0 250" ]] || fail "selftest edge-run parse: got '$r'"
   printf 'xHCI pointer-input injection 1 fired: ok\nramfb checkpoint: label=pointer-input-before state=captured checksum64=0xaa\nramfb checkpoint: label=pointer-input-delay-1000ms state=captured checksum64=0xaa\n' > "$t"
-  printf 'BVPTR summary presses=0 releases=0 first_press_ms=-1 first_release_ms=-1 stuck=0\r\n' > "$p"
+  printf 'BVPTR summary presses=0 releases=0 edges=0 first_press_ms=-1 first_release_ms=-1 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p")
   [[ "$r" == "true 0 0 0 none" ]] || fail "selftest lost-click parse: got '$r'"
   rm -f "$t" "$p"; echo "pointer reliability parser: PASS (selftest)"; exit 0
 fi
 
 mkdir -p "$OUT"
+# A ~48GiB clone left by a cancelled batch trips the queue's free-space guard.
+trap 'rm -rf "$OUT"/work*' EXIT
 landed=0; declare -a firsts=()
 for i in $(seq 1 "$N"); do
   run="$OUT/run$i"; work="$OUT/work$i"
@@ -79,11 +82,8 @@ for i in $(seq 1 "$N"); do
     --gpu-trace-protocol venus --viogpu3d-dir "$VIOGPU_DIR" \
     > "$run/launcher.out" 2>&1 &
   pid=$!
-  # Arm the guest probe once the agent is alive. Per AGENTS.md the agent
-  # channel must not block on a long workload: the probe is detached through
-  # Win32_Process Create with output to the share, and the wait is by
-  # filename on the synced-back log. Its 240s window covers the 150s fire
-  # delay with margin on both sides.
+  # Arm the probe once the agent is alive: detached via Win32_Process Create
+  # (a blocking RUN starves the channel), wait by filename on the synced log.
   for _ in $(seq 1 480); do
     grep -q 'BVAGENT SERVICE alive' "$run/run.log" 2>/dev/null && break; sleep 1
   done
