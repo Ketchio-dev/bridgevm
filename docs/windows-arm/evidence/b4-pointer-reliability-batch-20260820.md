@@ -67,3 +67,29 @@ completion code, event TRB GPA/status/control, IMAN.IP/IE, EHB, ERDP) under
 run. The next batch therefore records, for each of move/button/release,
 whether the completion semantics or interrupter state differ at the moment
 the guest stops seeing them.
+
+### 2026-08-21 correlated batch
+
+Exact-SHA Studio job `20260821-003915-18894-18703` at
+`56e9297b6f932de0350379ef636692af51837f82` again failed the fixed gate:
+**0/20 landed**, p95 `none` (gate log SHA-256
+`3f6ab581d1b9a49ed8c3e95431dab74e7ee8478a5496cfdeb8d5897f5c094892`;
+summary SHA-256
+`1b28844faeae291b7a56650db8cfd712f7fedab3dcc2eaf3101637699ca57ee5`).
+All 60 move/button/release records were written 6/6 bytes with completion
+code 1 (Success), IMAN.IP/IE set and EHB set. Each run used one guest-selected
+interrupter (distribution: vector 1: two runs, 2: three, 3: five, 4: ten), so
+the failure is not specific to vector 4. In every run ERDP remained at the
+move event while the button and release events occupied the next two event
+TRBs. Run 20's 4 ms `GetAsyncKeyState` latch caught one edge 10,648 ms after
+probe start (press=1/release=1 by parser), proving the report can occasionally
+reach user32 between polls; it still did not produce a measured visible
+change and therefore did not land. The earlier categorical statement that no
+button transition ever reached user32 is retracted for this batch.
+
+This receipt falsifies malformed transfer length/completion and a single bad
+interrupter vector. It does not yet distinguish an MSI-X message that was
+never generated from one rejected by the host GIC. The next batch therefore
+also enables the existing `--trace-irq` path, whose per-message line records
+MSI-X vector, address, INTID and final delivery status. This is print-only
+measurement, not a device-model behavior change.
