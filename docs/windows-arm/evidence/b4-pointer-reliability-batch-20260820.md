@@ -88,8 +88,28 @@ change and therefore did not land. The earlier categorical statement that no
 button transition ever reached user32 is retracted for this batch.
 
 This receipt falsifies malformed transfer length/completion and a single bad
-interrupter vector. It does not yet distinguish an MSI-X message that was
-never generated from one rejected by the host GIC. The next batch therefore
-also enables the existing `--trace-irq` path, whose per-message line records
-MSI-X vector, address, INTID and final delivery status. This is print-only
-measurement, not a device-model behavior change.
+interrupter vector. It did not yet distinguish an MSI-X message that was never
+generated from one rejected by the host GIC.
+
+A follow-up diagnostic job, `20260821-040346-74328-24747` at
+`a2381bce92a2f0f4b7cdb378cbc70f8e12f1bbcd`, enabled the existing
+`--trace-irq` path. It was intentionally cancelled after three failed runs
+because the first run already supplied the requested separator; this
+cancelled job is diagnostic measurement, not criterion evidence. In run 1,
+the guest-programmed DCI5 vector 4/INTID 135 was delivered with host GIC
+`status=0` for move/button/release (run log SHA-256
+`ac4235e146eac18a86711c744ff9953ae602614135c22fa162ac04946061c6cf`).
+The failure is therefore not a missing MSI-X message or host-GIC rejection.
+
+The event sequence instead exposed the device-model defect. BridgeVM posted
+button and release while Event Handler Busy remained set, sent a new MSI for
+each, then cleared IP when software acknowledged the first event; it did not
+re-notify the two events still beyond ERDP. The reference xHCI sequence
+suppresses repeat notifications while EHB is set and, when software clears
+EHB, raises another notification if producer and ERDP still differ. The model
+now follows that sequence in `xhci/interrupter_state.rs`: event posting while
+busy records the event and IP but defers the message; ERDP/EHB acknowledgement
+re-notifies unconsumed event-ring entries through the platform MSI-X queue.
+Unit tests cover both controller-local suppression/re-notification and the
+full BAR-to-platform-MSI-X path. B4 remains OPEN until a fresh fixed 20-run
+t8 receipt passes 20/20 with p95 <=250 ms.

@@ -138,14 +138,14 @@ fn two_events_each_raise_exactly_one_message() {
     program_vector0(&mut xhci);
     unmask_vector0(&mut xhci);
 
-    // When: two events are posted back-to-back, each followed by a flush.
+    // When: two events post before software clears handler-busy.
     assert!(xhci.post_event(&mut mem, 0x4444, 0, TRANSFER_EVENT_CONTROL));
-    let first = xhci.raise_pending_interrupter_msix(true, false);
+    #[rustfmt::skip]
+    assert_eq!(xhci.raise_pending_interrupter_msix(true, false), vec![expected_message()]);
     assert!(xhci.post_event(&mut mem, 0x5555, 0, TRANSFER_EVENT_CONTROL));
-    let second = xhci.raise_pending_interrupter_msix(true, false);
-
-    // Then: exactly one message per event and no re-raise storm.
-    assert_eq!(first, vec![expected_message()]);
-    assert_eq!(second, vec![expected_message()]);
+    // Then: EHB suppresses a duplicate; consuming event one re-notifies event two.
     assert_eq!(xhci.raise_pending_interrupter_msix(true, false), Vec::new());
+    xhci.mmio_write(IMAN_INTERRUPTER0 + 0x18, 8, 0x3018);
+    #[rustfmt::skip]
+    assert_eq!(xhci.raise_pending_interrupter_msix(true, false), vec![expected_message()]);
 }

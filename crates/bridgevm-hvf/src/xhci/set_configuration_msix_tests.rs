@@ -1,7 +1,6 @@
 use super::platform_test_support::*;
 use crate::machine;
 use crate::msix::MsixMessage;
-
 #[test]
 fn xhci_ep0_set_configuration_queues_msix_message_when_vector_unmasked() {
     // Given: slot 1 EP0 has a no-data SET_CONFIGURATION transfer and MSI-X is unmasked.
@@ -80,7 +79,8 @@ fn xhci_ep0_set_configuration_queues_msix_message_when_vector_unmasked() {
         },
     );
     assert_eq!(platform.take_pending_msix().len(), 1);
-
+    #[rustfmt::skip]
+    write_xhci_bar0(&mut platform, &mut mem, BarWrite { offset: 0x1038, size: 8, value: (EVENT_RING + 0x10) | 8 });
     // When: software rings slot 1 endpoint 0 at doorbell[1].
     write_xhci_bar0(
         &mut platform,

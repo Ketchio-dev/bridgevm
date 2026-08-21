@@ -71,7 +71,7 @@ for i in $(seq 1 "$N"); do
   BRIDGEVM_TRACE_DCI5_EMISSION=1 \
   scripts/run-hvf-windows-installed-boot.sh \
     --target "$work/disk.raw" --vars "$work/vars.fd" --evidence-dir "$run" \
-    --watchdog-ms 600000 --ram-mib 6144 --smp-cpus 4 --enable-xhci --trace-irq \
+    --watchdog-ms 600000 --ram-mib 6144 --smp-cpus 4 --enable-xhci \
     --pointer-input-actions 'move:22310x20800,click:22310x20800' \
     --pointer-input-fire-delay-ms 150000 \
     --pointer-input-ramfb-delay-ms "$DELAYS" \
