@@ -39,14 +39,25 @@ $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $down = $false
 $presses = 0
 $releases = 0
+$edges = 0
 $firstPressMs = -1
 $firstReleaseMs = -1
+# Prime the per-thread "pressed since last call" latch (bit 0x0001) so the
+# first poll reports only presses inside the window. The 20260820 batch proved
+# sampling bit 0x8000 alone cannot see a press+release pair shorter than one
+# poll iteration (PS 5.1 loop cost >> the 4-8ms endpoint interval); the latch
+# bit is the callback-free way to catch a sub-interval click.
+[void][BvPointerProbe]::GetAsyncKeyState(0x01)
 Write-Output ('BVPTR begin duration_ms=' + $DurationMs + ' poll_ms=' + $PollMs +
     ' utc=' + [DateTime]::UtcNow.ToString('o'))
 
 while ($sw.ElapsedMilliseconds -lt $DurationMs) {
     $state = [BvPointerProbe]::GetAsyncKeyState(0x01)
     $now = ($state -band 0x8000) -ne 0
+    if ((-not $now) -and (-not $down) -and (($state -band 0x0001) -ne 0)) {
+        $edges++
+        Write-Output ('BVPTR edge t_ms=' + $sw.ElapsedMilliseconds)
+    }
     if ($now -ne $down) {
         $pt = New-Object BvPtrPoint
         [void][BvPointerProbe]::GetCursorPos([ref]$pt)
@@ -67,6 +78,7 @@ while ($sw.ElapsedMilliseconds -lt $DurationMs) {
 }
 
 Write-Output ('BVPTR summary presses=' + $presses + ' releases=' + $releases +
+    ' edges=' + $edges +
     ' first_press_ms=' + $firstPressMs + ' first_release_ms=' + $firstReleaseMs +
     ' stuck=' + (@{ $true = '1'; $false = '0' }[[bool]$down]))
 exit 0
