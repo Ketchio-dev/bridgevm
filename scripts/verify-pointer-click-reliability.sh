@@ -19,9 +19,8 @@ VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 DELAYS='5,15,30,60,120,250,500,1000'
 
-# Parser (self-testable): args run.log + synced-back probe log; prints
-# "hid_fired press release stuck first_changed_ms". A BVPTR edge line is the
-# latch bit catching press+release within one poll, so it counts as both.
+# Parser (self-testable): args run.log + synced-back probe log; prints "fired
+# press release stuck first_ms". A BVPTR edge counts as press AND release.
 parse_run_log() {
   local log="$1" ptr="${2:-/dev/null}" base sum first='' fired=false press=0 release=0 edges=0 stuck=1
   grep -q '^xHCI pointer-input injection .* fired:' "$log" 2>/dev/null && fired=true
@@ -69,6 +68,7 @@ for i in $(seq 1 "$N"); do
   cp -c "$TARGET" "$work/disk.raw"; cp "$VARS" "$work/vars.fd"
   cp "$REPO/scripts/win-assets/bv-pointer-capture.ps1" "$run/share/"
   CTL="$run/agent.ctl"; : > "$CTL"
+  BRIDGEVM_TRACE_DCI5_EMISSION=1 \
   scripts/run-hvf-windows-installed-boot.sh \
     --target "$work/disk.raw" --vars "$work/vars.fd" --evidence-dir "$run" \
     --watchdog-ms 600000 --ram-mib 6144 --smp-cpus 4 --enable-xhci \

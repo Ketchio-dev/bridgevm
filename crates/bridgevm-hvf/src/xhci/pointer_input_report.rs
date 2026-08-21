@@ -24,7 +24,6 @@ impl PointerPosition {
     pub const fn x(self) -> u16 {
         self.x
     }
-
     pub const fn y(self) -> u16 {
         self.y
     }
@@ -105,6 +104,9 @@ impl PointerInputReport {
 
     pub(super) const fn bytes(self) -> [u8; 6] {
         self.position.report(self.buttons, self.wheel)
+    }
+    pub(super) const fn kind(self) -> PointerInputReportKind {
+        self.kind
     }
 }
 
@@ -280,32 +282,14 @@ impl XhciController {
     }
 
     pub(super) fn record_pointer_input_report_emitted(&mut self, report: PointerInputReport) {
-        match report.kind {
-            PointerInputReportKind::Move => {
-                self.pointer_input_report_stats.emitted_move_reports = self
-                    .pointer_input_report_stats
-                    .emitted_move_reports
-                    .saturating_add(1);
-            }
-            PointerInputReportKind::Button => {
-                self.pointer_input_report_stats.emitted_button_reports = self
-                    .pointer_input_report_stats
-                    .emitted_button_reports
-                    .saturating_add(1);
-            }
-            PointerInputReportKind::Release => {
-                self.pointer_input_report_stats.emitted_release_reports = self
-                    .pointer_input_report_stats
-                    .emitted_release_reports
-                    .saturating_add(1);
-            }
-            PointerInputReportKind::Wheel => {
-                self.pointer_input_report_stats.emitted_wheel_reports = self
-                    .pointer_input_report_stats
-                    .emitted_wheel_reports
-                    .saturating_add(1);
-            }
-        }
+        let stats = &mut self.pointer_input_report_stats;
+        let counter = match report.kind {
+            PointerInputReportKind::Move => &mut stats.emitted_move_reports,
+            PointerInputReportKind::Button => &mut stats.emitted_button_reports,
+            PointerInputReportKind::Release => &mut stats.emitted_release_reports,
+            PointerInputReportKind::Wheel => &mut stats.emitted_wheel_reports,
+        };
+        *counter = counter.saturating_add(1);
         self.pointer_input_report_queue
             .record_emitted_position(report);
     }

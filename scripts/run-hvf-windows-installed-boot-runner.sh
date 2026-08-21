@@ -330,9 +330,9 @@ build_installed_boot_env_args() {
   [[ -z "${BRIDGEVM_VBLANK_HZ:-}" ]] || ENV_ARGS+=("BRIDGEVM_VBLANK_HZ=$BRIDGEVM_VBLANK_HZ")
   [[ -z "${BRIDGEVM_VIRTIO_GPU_RES:-}" ]] || ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_RES=$BRIDGEVM_VIRTIO_GPU_RES")
   [[ -z "${BRIDGEVM_XHCI_REPORT_INTERVAL_MS:-}" ]] || ENV_ARGS+=("BRIDGEVM_XHCI_REPORT_INTERVAL_MS=$BRIDGEVM_XHCI_REPORT_INTERVAL_MS")
+  [[ -z "${BRIDGEVM_TRACE_DCI5_EMISSION:-}" ]] || ENV_ARGS+=("BRIDGEVM_TRACE_DCI5_EMISSION=$BRIDGEVM_TRACE_DCI5_EMISSION")
   # Forward the agent-console ServiceWake interval (probe_runtime.rs, default
-  # 250ms, clamp 50..10000). Each wake is an hv_vcpus_exit cancel; measurement
-  # windows may trade ctl-reply latency for a lower cancel rate.
+  # 250ms, clamp 50..10000): each wake is an hv_vcpus_exit cancel.
   [[ -z "${BRIDGEVM_AGENT_WAKE_MS:-}" ]] || ENV_ARGS+=("BRIDGEVM_AGENT_WAKE_MS=$BRIDGEVM_AGENT_WAKE_MS")
   # A1 exit: swap Apple's in-kernel GICv3 for the userspace device model
   # (usgic_bridge.rs). QEMU-hvf boots this host 10/10 in this configuration.

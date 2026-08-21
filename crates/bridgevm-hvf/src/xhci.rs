@@ -25,6 +25,7 @@ pub(crate) mod trace;
 mod trace_dci3_drain;
 mod trace_dci3_input_capture;
 mod trace_dci5_drain;
+mod trace_dci5_emission;
 mod trace_dci5_input_capture;
 mod trace_host_controller_reset;
 mod trace_mmio;
