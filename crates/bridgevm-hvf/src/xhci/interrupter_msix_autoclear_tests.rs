@@ -131,20 +131,20 @@ fn pending_event_becomes_deliverable_when_iman_is_enabled_later() {
 
 #[test]
 fn two_events_each_raise_exactly_one_message() {
-    // Given: an unmasked, enabled interrupter.
+    // Unmasked, enabled interrupter.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0x5000);
     setup_event_ring(&mut xhci, &mut mem);
     program_vector0(&mut xhci);
     unmask_vector0(&mut xhci);
-
-    // When: two events post before software clears handler-busy.
+    // Two events post while software leaves handler-busy set.
     assert!(xhci.post_event(&mut mem, 0x4444, 0, TRANSFER_EVENT_CONTROL));
     #[rustfmt::skip]
     assert_eq!(xhci.raise_pending_interrupter_msix(true, false), vec![expected_message()]);
     assert!(xhci.post_event(&mut mem, 0x5555, 0, TRANSFER_EVENT_CONTROL));
-    // Then: EHB suppresses a duplicate; consuming event one re-notifies event two.
-    assert_eq!(xhci.raise_pending_interrupter_msix(true, false), Vec::new());
+    // Then: each event raises normally, and partial consumption re-notifies event two.
+    #[rustfmt::skip]
+    assert_eq!(xhci.raise_pending_interrupter_msix(true, false), vec![expected_message()]);
     xhci.mmio_write(IMAN_INTERRUPTER0 + 0x18, 8, 0x3018);
     #[rustfmt::skip]
     assert_eq!(xhci.raise_pending_interrupter_msix(true, false), vec![expected_message()]);

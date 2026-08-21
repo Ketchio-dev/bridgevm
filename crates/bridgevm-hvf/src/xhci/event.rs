@@ -37,7 +37,6 @@ pub(super) struct Interrupter {
     pub(super) event_handler_busy: bool,
     pub(super) event_enqueue: u32,
     pub(super) event_cycle: bool,
-    pub(super) notification_pending: bool,
     pub(super) event_segment_base: u64,
     pub(super) event_segment_trbs: u32,
 }
@@ -53,7 +52,6 @@ impl Interrupter {
             event_handler_busy: false,
             event_enqueue: 0,
             event_cycle: true,
-            notification_pending: false,
             event_segment_base: 0,
             event_segment_trbs: 0,
         }
@@ -74,9 +72,6 @@ impl XhciController {
             old_iman & IMAN_INTERRUPT_PENDING
         };
         self.interrupters[index].iman = pending | (value & IMAN_INTERRUPT_ENABLE);
-        if value & IMAN_INTERRUPT_PENDING != 0 {
-            self.interrupters[index].notification_pending = false;
-        }
         self.refresh_interrupter_pending_bits(index);
     }
 
@@ -106,7 +101,6 @@ impl XhciController {
         interrupter.event_enqueue = 0;
         interrupter.event_handler_busy = false;
         interrupter.event_cycle = true;
-        interrupter.notification_pending = false;
         interrupter.event_segment_base = 0;
         interrupter.event_segment_trbs = 0;
     }
@@ -239,7 +233,6 @@ impl XhciController {
             return false;
         }
         let interrupter = &mut self.interrupters[index];
-        let handler_was_busy = interrupter.event_handler_busy;
         interrupter.event_segment_base = segment_base;
         interrupter.event_segment_trbs = segment_trbs;
         interrupter.event_enqueue += 1;
@@ -248,7 +241,7 @@ impl XhciController {
             interrupter.event_cycle = !interrupter.event_cycle;
         }
         interrupter.event_handler_busy = true;
-        self.set_interrupter_pending(index, !handler_was_busy);
+        self.set_interrupter_pending(index);
         self.record_event_post_success(trace);
         trace::event_post_success(
             trace,

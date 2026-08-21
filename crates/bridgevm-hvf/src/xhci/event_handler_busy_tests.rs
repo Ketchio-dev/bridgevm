@@ -21,7 +21,7 @@ fn setup_msix(xhci: &mut XhciController) {
 }
 
 #[test]
-fn busy_interrupter_defers_repeat_msi_until_software_clears_ehb() {
+fn busy_interrupter_renotifies_events_remaining_after_erdp_ack() {
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0x5000);
     setup_event_ring(&mut xhci, &mut mem);
@@ -32,11 +32,10 @@ fn busy_interrupter_defers_repeat_msi_until_software_clears_ehb() {
     assert_eq!(xhci.mmio_read(0x1020, 4), 0x2);
     assert_eq!(xhci.mmio_read(0x1038, 4) & 8, 8);
 
-    // A second event is visible and IP is set, but EHB suppresses a duplicate
-    // message while software is handling the first notification.
+    // A second event gets its normal per-event MSI even while EHB remains set.
     assert!(xhci.post_event(&mut mem, 0x2222, 0, EVENT_CONTROL));
     assert_eq!(xhci.mmio_read(0x1020, 4), 0x3);
-    assert!(xhci.raise_pending_interrupter_msix(true, false).is_empty());
+    assert_eq!(xhci.raise_pending_interrupter_msix(true, false).len(), 1);
 
     // Consuming only the first event and clearing EHB re-notifies the second.
     xhci.mmio_write(0x1038, 8, (EVENT_RING + TRB_SIZE) | 8);
@@ -88,7 +87,7 @@ fn erdp_ehb_renotification_reaches_the_platform_msix_queue() {
     assert_eq!(platform.take_pending_msix().len(), 1);
     assert!(platform.xhci.post_event(&mut mem, 0x2222, 0, EVENT_CONTROL));
     platform.queue_xhci_completion_msix();
-    assert!(platform.take_pending_msix().is_empty());
+    assert_eq!(platform.take_pending_msix().len(), 1);
 
     let outcome = platform.on_mmio(
         XHCI_BAR0 + 0x1038,

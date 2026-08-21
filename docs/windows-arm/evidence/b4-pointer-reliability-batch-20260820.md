@@ -101,15 +101,19 @@ the guest-programmed DCI5 vector 4/INTID 135 was delivered with host GIC
 `ac4235e146eac18a86711c744ff9953ae602614135c22fa162ac04946061c6cf`).
 The failure is therefore not a missing MSI-X message or host-GIC rejection.
 
-The event sequence instead exposed the device-model defect. BridgeVM posted
-button and release while Event Handler Busy remained set, sent a new MSI for
-each, then cleared IP when software acknowledged the first event; it did not
-re-notify the two events still beyond ERDP. The reference xHCI sequence
-suppresses repeat notifications while EHB is set and, when software clears
-EHB, raises another notification if producer and ERDP still differ. The model
-now follows that sequence in `xhci/interrupter_state.rs`: event posting while
-busy records the event and IP but defers the message; ERDP/EHB acknowledgement
-re-notifies unconsumed event-ring entries through the platform MSI-X queue.
-Unit tests cover both controller-local suppression/re-notification and the
-full BAR-to-platform-MSI-X path. B4 remains OPEN until a fresh fixed 20-run
-t8 receipt passes 20/20 with p95 <=250 ms.
+The event sequence instead exposed a missing device-model transition:
+BridgeVM sent each normal per-event MSI, then cleared IP when software
+acknowledged the first event, but did not re-notify the two events still beyond
+ERDP. Initial code reasoning also suppressed repeat MSI while EHB was set;
+that conclusion was wrong and is retracted. Fixed-head t8 job
+`20260821-052328-2196-32526` immediately falsified it: run 1 reached the agent
+but Windows never enumerated the pointer interface (`hid_report_descriptor_gets=0`,
+DCI5 configure/doorbell=0), so the job was cancelled and is not evidence.
+Windows requires the existing per-event delivery during enumeration.
+
+The corrected model therefore preserves per-event MSI and adds only the
+measured missing transition: ERDP/EHB acknowledgement re-notifies event-ring
+entries still beyond the guest dequeue pointer through the platform MSI-X
+queue. Unit tests cover the controller-local sequence and full BAR-to-platform
+MSI-X path. B4 remains OPEN until a fresh fixed 20-run t8 receipt passes 20/20
+with p95 <=250 ms.
