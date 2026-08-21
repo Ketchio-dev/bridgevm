@@ -160,6 +160,12 @@ ERDP writes. The fix removes controller-internal pointer late-drain and routes
 post-MMIO pointer delivery through the platform pacing gate. A platform BAR
 regression requires ERDP MMIO at unchanged host time to leave button pending,
 then release button and release reports only at consecutive 30 ms host-time
-steps. The generic EHB experiment and event-consumption pacing are absent.
-B4 remains OPEN until a fresh fixed 20-run t8 receipt passes 20/20 with p95
-<=250 ms.
+steps. The generic EHB experiment and event-consumption pacing are absent. First-run
+job `20260821-084346-79164-23719` at
+`cc77de82e24280f261a969e9765a96eb39012080` proved the bypass was removed but
+still lost the button at the default 30 ms interval (run log SHA-256
+`545670861e4aaecde1059c3265cb2b192d321bf05dad81dbb6cee2704480980e`), so it
+was cancelled. The next diagnostic uses a 100 ms button hold through the now
+pacing-enforced path; 100 ms remains below the fixed 250 ms acceptance limit
+and does not relax any criterion. B4 remains OPEN until a fresh fixed 20-run
+t8 receipt passes 20/20 with p95 <=250 ms.
