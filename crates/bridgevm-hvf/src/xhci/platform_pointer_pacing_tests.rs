@@ -7,6 +7,14 @@ use std::time::{Duration, Instant};
 const DCI5: u32 = 5;
 const DCI5_RING: u64 = crate::machine::RAM_BASE + 0xa000;
 const DCI5_BUFFER: u64 = crate::machine::RAM_BASE + 0xb000;
+fn emitted(platform: &crate::platform_virt::VirtPlatform) -> (u64, u64, u64) {
+    let s = platform.xhci_pointer_input_report_stats();
+    (
+        s.emitted_move_reports,
+        s.emitted_button_reports,
+        s.emitted_release_reports,
+    )
+}
 
 fn write_u32(mem: &mut crate::platform_virt::FlatGuestRam, gpa: u64, value: u32) {
     assert!(mem.write_bytes(gpa, &value.to_le_bytes()));
@@ -93,14 +101,11 @@ fn erdp_mmio_does_not_bypass_pointer_report_pacing() {
             &mut mem,
         )
         .unwrap();
-    assert_eq!(
-        platform
-            .xhci_pointer_input_report_stats()
-            .emitted_move_reports,
-        1
-    );
-
-    // ERDP MMIO used to drain button immediately inside XhciController.
+    assert_eq!(emitted(&platform), (1, 0, 0));
+    // Time alone is insufficient until the guest consumes move's event.
+    platform.set_host_now(base + Duration::from_millis(30));
+    platform.drain_xhci_pointer_input_reports(&mut mem);
+    assert_eq!(emitted(&platform), (1, 0, 0));
     platform.on_mmio(
         XHCI_BAR0 + 0x1038,
         MmioOp::Write {
@@ -109,32 +114,18 @@ fn erdp_mmio_does_not_bypass_pointer_report_pacing() {
         },
         &mut mem,
     );
-    assert_eq!(
-        platform
-            .xhci_pointer_input_report_stats()
-            .emitted_button_reports,
-        0
-    );
-    platform.set_host_now(base + Duration::from_millis(30));
-    platform.drain_xhci_pointer_input_reports(&mut mem);
-    assert_eq!(
-        platform
-            .xhci_pointer_input_report_stats()
-            .emitted_button_reports,
-        1
-    );
-    assert_eq!(
-        platform
-            .xhci_pointer_input_report_stats()
-            .emitted_release_reports,
-        0
-    );
+    assert_eq!(emitted(&platform), (1, 1, 0));
+    // Time alone also holds release until button's event is consumed.
     platform.set_host_now(base + Duration::from_millis(60));
     platform.drain_xhci_pointer_input_reports(&mut mem);
-    assert_eq!(
-        platform
-            .xhci_pointer_input_report_stats()
-            .emitted_release_reports,
-        1
+    assert_eq!(emitted(&platform), (1, 1, 0));
+    platform.on_mmio(
+        XHCI_BAR0 + 0x1038,
+        MmioOp::Write {
+            size: 8,
+            value: (EVENT_RING + TRB_SIZE * 3) | 8,
+        },
+        &mut mem,
     );
+    assert_eq!(emitted(&platform), (1, 1, 1));
 }

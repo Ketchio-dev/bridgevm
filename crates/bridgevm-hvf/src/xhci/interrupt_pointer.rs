@@ -163,9 +163,9 @@ impl XhciController {
                         self.slot1_dci5_last_drain_blocked = None;
                         if can_emit_queued_report {
                             #[rustfmt::skip]
-                            #[rustfmt::skip]
                             let trace = super::trace_dci5_emission::trace_context(queued_report, &interrupt_transfer, last_td_trb_gpa, transfer_length, written_length, completion_code);
                             self.trace_dci5_report_emitted(trace);
+                            self.record_dci5_event_for_consumption();
                             self.record_pointer_input_report_emitted(queued_report);
                             self.pointer_input_report_queue.pop_front();
                         }

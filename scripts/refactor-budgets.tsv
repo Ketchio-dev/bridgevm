@@ -551,6 +551,7 @@ crates/bridgevm-hvf/src/xhci/dci3_endpoint_state.rs	132	0
 crates/bridgevm-hvf/src/xhci/dci3_rearm.rs	203	0
 crates/bridgevm-hvf/src/xhci/dci3_rearm_tests.rs	36	0
 crates/bridgevm-hvf/src/xhci/dci5_endpoint_state.rs	151	0
+crates/bridgevm-hvf/src/xhci/dci5_event_consumption.rs	21	0
 crates/bridgevm-hvf/src/xhci/device_context.rs	237	0
 crates/bridgevm-hvf/src/xhci/device_context_drop_context.rs	56	0
 crates/bridgevm-hvf/src/xhci/device_context_mem.rs	62	0

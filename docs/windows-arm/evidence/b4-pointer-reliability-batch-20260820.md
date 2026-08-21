@@ -235,4 +235,19 @@ now writes its actual `now` into the platform immediately before queue/drain.
 A synthetic-clock regression seeds a 900 ms stale sample and requires release
 to remain blocked until 1000 ms after the actual trigger, not 100 ms after it.
 The normal move+click workload uses a 200 ms interval, below the fixed 250 ms
-limit. B4 remains OPEN pending the normal 20/20 receipt.
+limit. Actual-time pacing alone was then measured at
+`ec73d63e917e0daeaf2b47fbeb20dad2df1daabc` in job
+`20260821-134702-91382-12896`: move→button was 578 ms and button→release
+4,462 ms, but all three events still posted before ERDP moved and only cursor
+move reached user32 (run log SHA-256
+`1335743a0ca79ebc936593ccd8dd3c5a49779ae5e9997d6e263f4887c8f21ae7`).
+The job was cancelled.
+
+The two measured necessary conditions had only been tried separately:
+event-consumption pacing advanced ERDP but did not enforce a real hold;
+actual-time pacing enforced a real hold but still batched events ahead of
+ERDP. The final candidate requires both before every later DCI5 report: the
+configured host-time interval has elapsed from actual DMA, and the previous
+pointer event's interrupter ERDP has advanced. A BAR/platform regression checks
+both halves independently for move→button→release. B4 remains OPEN pending the
+normal 20/20 receipt.
