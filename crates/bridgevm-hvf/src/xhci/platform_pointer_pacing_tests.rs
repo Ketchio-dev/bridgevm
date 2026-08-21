@@ -3,7 +3,6 @@ use crate::fwcfg::GuestMemoryMut;
 use crate::platform_virt::MmioOp;
 use crate::xhci::{PointerInputAction, PointerPosition};
 use std::time::{Duration, Instant};
-
 const DCI5: u32 = 5;
 const DCI5_RING: u64 = crate::machine::RAM_BASE + 0xa000;
 const DCI5_BUFFER: u64 = crate::machine::RAM_BASE + 0xb000;
@@ -101,6 +100,16 @@ fn erdp_mmio_does_not_bypass_pointer_report_pacing() {
             &mut mem,
         )
         .unwrap();
+    assert_eq!(emitted(&platform), (1, 0, 0));
+    // A guest DCI5 doorbell cannot bypass the platform conjunction either.
+    platform.on_mmio(
+        XHCI_BAR0 + 0x2004,
+        MmioOp::Write {
+            size: 4,
+            value: u64::from(DCI5),
+        },
+        &mut mem,
+    );
     assert_eq!(emitted(&platform), (1, 0, 0));
     // Time alone is insufficient until the guest consumes move's event.
     platform.set_host_now(base + Duration::from_millis(30));

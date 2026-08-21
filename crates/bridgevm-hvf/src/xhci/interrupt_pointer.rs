@@ -1,5 +1,3 @@
-use crate::fwcfg::GuestMemoryMut;
-
 use super::{
     interrupt_trb::{
         read_chained_event_data, read_transfer_trb, transfer_event_control, trb_interrupter_target,
@@ -10,7 +8,7 @@ use super::{
     pointer_input_report::HID_ABSOLUTE_POINTER_REPORT_LEN,
     XhciController,
 };
-
+use crate::fwcfg::GuestMemoryMut;
 const SLOT_ID: u32 = 1;
 const ENDPOINT_ID_DCI5: u32 = 5;
 const MAX_LINK_TRBS_PER_DOORBELL: usize = 8;
@@ -23,16 +21,18 @@ impl XhciController {
         &mut self,
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
+        // Host reports leave only through VirtPlatform's pacing path.
+        if self.has_queued_pointer_input_report() {
+            return false;
+        }
         self.process_dci5_interrupt_in_transfer(mem, DCI5_DRAIN_POLICY_AFTER_DOORBELL)
     }
-
     pub(crate) fn process_queued_dci5_pointer_input(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
         self.process_dci5_interrupt_in_transfer(mem, DCI5_DRAIN_POLICY_QUEUED_POINTER)
     }
-
     fn process_dci5_interrupt_in_transfer(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
