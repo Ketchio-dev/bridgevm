@@ -203,7 +203,15 @@ The job was cancelled after that separator. Descriptor, payload, DMA buffer,
 completion, MSI and user32 press delivery are all exonerated; the loss occurs
 only when release follows before the guest/probe observes the transition.
 
-The normal move+click workload is restored with a 200 ms report interval, the
-largest button hold below the fixed p95 <=250 ms limit. This does not relax the
-criterion. B4 remains OPEN until that normal workload produces a fresh 20/20
-t8 receipt.
+The normal move+click workload was restored with a 200 ms report interval in
+job `20260821-115318-49986-28036` at
+`7658ba6b00b060bc76ff7941f8e2d285c4dc09e6`; run 1 still delivered only move
+(run log SHA-256
+`b5ab849349adff862115fc17846e895573ac9a251f57ebf243ddf60805d3156a`).
+The job was cancelled. Even a near-limit hold is not sufficient after the
+leading move report.
+
+The next diagnostic sends click-only (button+release at the target), isolating
+whether the leading move report causes Windows to discard the following
+button transition. This diagnostic cannot close B4 even if it works: the fixed
+move+click 20-run workload must still pass. B4 remains OPEN.
