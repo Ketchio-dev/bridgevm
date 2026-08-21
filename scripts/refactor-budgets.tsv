@@ -587,7 +587,6 @@ crates/bridgevm-hvf/src/xhci/platform_tests.rs	137	0
 crates/bridgevm-hvf/src/xhci/pointer_input_report.rs	406	0
 crates/bridgevm-hvf/src/xhci/port_link_state_tests.rs	62	0
 crates/bridgevm-hvf/src/xhci/port_reset_change_tests.rs	193	0
-crates/bridgevm-hvf/src/xhci/qemu_tablet_descriptor_tests.rs	12	0
 crates/bridgevm-hvf/src/xhci/ports.rs	138	0
 crates/bridgevm-hvf/src/xhci/registers.rs	138	0
 crates/bridgevm-hvf/src/xhci/reset.rs	29	0
@@ -604,6 +603,7 @@ crates/bridgevm-hvf/src/xhci/trace_dci3_drain.rs	83	0
 crates/bridgevm-hvf/src/xhci/trace_dci3_input_capture.rs	93	0
 crates/bridgevm-hvf/src/xhci/trace_dci5_drain.rs	108	0
 crates/bridgevm-hvf/src/xhci/trace_dci5_emission.rs	158	0
+crates/bridgevm-hvf/src/xhci/trace_dci5_emission_format.rs	99	0
 crates/bridgevm-hvf/src/xhci/trace_dci5_input_capture.rs	93	0
 crates/bridgevm-hvf/src/xhci/trace_host_controller_reset.rs	22	0
 crates/bridgevm-hvf/src/xhci/trace_mmio.rs	118	0

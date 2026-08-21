@@ -177,8 +177,15 @@ The remaining guest HID semantic difference was the descriptor itself. The
 6-byte payload already matched QEMU USB tablet, but BridgeVM advertised a
 63-byte local variant (3 buttons, different constant padding, no physical
 axis/wheel declarations) instead of QEMU's Windows-proven 74-byte tablet
-descriptor. The pointer interface now advertises and returns the exact QEMU
-bytes while preserving the same payload format; an exact-byte regression locks
-that contract. This removes a QEMU-contract deviation rather than introducing
-one. B4 remains OPEN until a fresh fixed 20-run t8 receipt passes 20/20 with
-p95 <=250 ms.
+descriptor. That descriptor was tested at `4f8f18a4f7cfa005b801968b5c8c907590f676dd`
+in job `20260821-095849-7083-26220`; run 1 enumerated the 74-byte descriptor
+but again delivered only cursor move (run log SHA-256
+`d5d32658dd63c9ab7eca01ac6e1d5702ac1f7b5dc10ca65e16db3af43579e31d`).
+The job was cancelled. Descriptor shape is not the separator, so that change
+was removed rather than retained as an unrelated compatibility change.
+
+The next trace adds Normal TRB report-buffer GPA, TD-end GPA, and Event Data
+parameter. This directly tests whether Windows reuses one report buffer and
+BridgeVM overwrites button with release before the upper stack reads it, or
+uses independent buffers. It is print-only measurement. B4 remains OPEN until
+a fresh fixed 20-run t8 receipt passes 20/20 with p95 <=250 ms.

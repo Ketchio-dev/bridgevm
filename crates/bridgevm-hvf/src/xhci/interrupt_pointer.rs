@@ -18,7 +18,6 @@ const TRANSFER_EVENT_ED: u32 = 1 << 2;
 const COMPLETION_CODE_SHORT_PACKET: u32 = 13;
 const DCI5_DRAIN_POLICY_AFTER_DOORBELL: &str = "after_doorbell";
 const DCI5_DRAIN_POLICY_QUEUED_POINTER: &str = "queued_pointer_drain";
-
 impl XhciController {
     pub(super) fn process_dci5_interrupt_in_transfer_after_doorbell(
         &mut self,
@@ -164,7 +163,9 @@ impl XhciController {
                         self.slot1_dci5_last_drain_blocked = None;
                         if can_emit_queued_report {
                             #[rustfmt::skip]
-                            self.trace_dci5_report_emitted(queued_report, interrupt_transfer.gpa, transfer_length, written_length, completion_code);
+                            #[rustfmt::skip]
+                            let trace = super::trace_dci5_emission::trace_context(queued_report, &interrupt_transfer, last_td_trb_gpa, transfer_length, written_length, completion_code);
+                            self.trace_dci5_report_emitted(trace);
                             self.record_pointer_input_report_emitted(queued_report);
                             self.pointer_input_report_queue.pop_front();
                         }
@@ -192,7 +193,6 @@ impl XhciController {
         self.trace_dci5_drain_blocked("link_trb_limit", policy, None);
         false
     }
-
     fn trace_dci5_drain_blocked(
         &mut self,
         reason: &'static str,

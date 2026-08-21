@@ -8,7 +8,7 @@ use crate::fwcfg::GuestMemoryMut;
 pub(super) const DATA_STAGE_BUFFER: u64 = 0x7000;
 pub(super) const EP0_RING: u64 = 0x6000;
 pub(super) const HID_CLASS_DESCRIPTOR_LENGTH: u16 = 9;
-pub(super) const HID_POINTER_REPORT_DESCRIPTOR_LENGTH: u16 = 74;
+pub(super) const HID_POINTER_REPORT_DESCRIPTOR_LENGTH: u16 = 51;
 pub(super) const HID_REPORT_DESCRIPTOR_LENGTH: u16 = 63;
 
 const INPUT_CONTEXT: u64 = 0x5000;

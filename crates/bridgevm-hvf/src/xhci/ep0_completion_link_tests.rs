@@ -15,7 +15,7 @@ const TRB_TYPE_DATA_STAGE: u32 = 3;
 const TRB_TYPE_STATUS_STAGE: u32 = 4;
 const TRB_TYPE_LINK: u32 = 6;
 const TRB_DATA_STAGE_DIRECTION_IN: u32 = 1 << 16;
-const HID_POINTER_REPORT_DESCRIPTOR_LENGTH: u16 = 74;
+const HID_POINTER_REPORT_DESCRIPTOR_LENGTH: u16 = 51;
 
 #[test]
 fn ep0_hid_pointer_report_descriptor_follows_link_trb_before_status_stage() {
