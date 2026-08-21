@@ -60,6 +60,8 @@ if [[ "${1:-}" == "--selftest" ]]; then
 fi
 
 mkdir -p "$OUT"
+# A ~48GiB clone left by a cancelled batch trips the queue's free-space guard.
+trap 'rm -rf "$OUT"/work*' EXIT
 landed=0; declare -a firsts=()
 for i in $(seq 1 "$N"); do
   run="$OUT/run$i"; work="$OUT/work$i"
@@ -81,8 +83,7 @@ for i in $(seq 1 "$N"); do
     > "$run/launcher.out" 2>&1 &
   pid=$!
   # Arm the probe once the agent is alive: detached via Win32_Process Create
-  # (a blocking RUN starves the agent channel per AGENTS.md), wait by filename
-  # on the synced-back log. The 240s window covers the 150s fire delay.
+  # (a blocking RUN starves the channel), wait by filename on the synced log.
   for _ in $(seq 1 480); do
     grep -q 'BVAGENT SERVICE alive' "$run/run.log" 2>/dev/null && break; sleep 1
   done
