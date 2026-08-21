@@ -165,7 +165,20 @@ job `20260821-084346-79164-23719` at
 `cc77de82e24280f261a969e9765a96eb39012080` proved the bypass was removed but
 still lost the button at the default 30 ms interval (run log SHA-256
 `545670861e4aaecde1059c3265cb2b192d321bf05dad81dbb6cee2704480980e`), so it
-was cancelled. The next diagnostic uses a 100 ms button hold through the now
-pacing-enforced path; 100 ms remains below the fixed 250 ms acceptance limit
-and does not relax any criterion. B4 remains OPEN until a fresh fixed 20-run
-t8 receipt passes 20/20 with p95 <=250 ms.
+was cancelled. A normalized 100 ms hold was then measured at
+`0a11c25a224693637ed7529172aa3098138d554c` in job
+`20260821-091826-91520-28485`; runtime confirmed the 100 ms interval, but run 1
+again delivered only move (run log SHA-256
+`a7f268bf002a4b4e187bbd4e2f0e099155281e1facae621819acd2dfae52391c`).
+The job was cancelled. Duration is not the separator, and the override was
+removed.
+
+The remaining guest HID semantic difference was the descriptor itself. The
+6-byte payload already matched QEMU USB tablet, but BridgeVM advertised a
+63-byte local variant (3 buttons, different constant padding, no physical
+axis/wheel declarations) instead of QEMU's Windows-proven 74-byte tablet
+descriptor. The pointer interface now advertises and returns the exact QEMU
+bytes while preserving the same payload format; an exact-byte regression locks
+that contract. This removes a QEMU-contract deviation rather than introducing
+one. B4 remains OPEN until a fresh fixed 20-run t8 receipt passes 20/20 with
+p95 <=250 ms.

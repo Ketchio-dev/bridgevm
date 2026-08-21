@@ -39,7 +39,7 @@ fn interface_one_gets_pointer_hid_report_descriptor() {
         panic!("interface 1 HID report descriptor was not returned");
     };
 
-    // Then: it is an absolute mouse/pointer descriptor with 16-bit X/Y absolute axes.
+    // Then: it is an absolute pointer with 16-bit X/Y and relative wheel.
     assert!(descriptor.windows(2).any(|window| window == [0x09, 0x02]));
     assert!(descriptor.windows(2).any(|window| window == [0x09, 0x30]));
     assert!(descriptor.windows(2).any(|window| window == [0x09, 0x31]));

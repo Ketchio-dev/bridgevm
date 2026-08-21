@@ -279,6 +279,8 @@ mod port_link_state_tests;
 #[cfg(test)]
 mod port_reset_change_tests;
 #[cfg(test)]
+mod qemu_tablet_descriptor_tests;
+#[cfg(test)]
 mod set_configuration_msix_tests;
 #[cfg(test)]
 mod set_configuration_tests;
