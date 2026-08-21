@@ -6,6 +6,7 @@ mod commands;
 mod dci3_endpoint_state;
 mod dci3_rearm;
 mod dci5_endpoint_state;
+mod dci5_event_pacing;
 mod device_context;
 mod device_context_mem;
 mod event;
@@ -13,7 +14,6 @@ mod hid_semantics;
 mod interrupt_in;
 mod interrupt_pointer;
 mod interrupt_trb;
-mod interrupter_state;
 mod interrupts;
 mod lifecycle;
 mod mmio;
@@ -52,7 +52,6 @@ pub const XHCI_CAP_LENGTH: u8 = 0x40;
 const USB_CMD_RS: u32 = 1 << 0;
 const USB_CMD_HCRST: u32 = 1 << 1;
 const USB_STS_HCH: u32 = 1 << 0;
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct XhciEventLifecycleStats {
     pub event_post_attempts: u64,
@@ -100,6 +99,7 @@ pub struct XhciController {
     slot1_dci5_dequeue: u64,
     slot1_dci5_ring_base: u64,
     slot1_dci5_dcs: bool,
+    slot1_dci5_last_event: Option<(usize, u64)>,
     slot1_dci5_last_drain_blocked: Option<trace::Dci5DrainBlockedTrace<'static>>,
     boot_keyboard_report_queue: setup_input_report::BootKeyboardReportQueue,
     setup_input_report_stats: XhciSetupInputReportStats,
@@ -178,15 +178,15 @@ impl XhciController {
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
         let event_ring_programming_write = event::is_event_ring_programming_write(offset, size);
-        let pending_before = self.pending_enabled_interrupter_bits();
         let port_status_change_generated = self.mmio_write(offset, size, value);
         if port_status_change_generated {
             self.mark_port_status_change_pending();
         }
-        let mut interrupt = self.pending_enabled_interrupter_bits() & !pending_before != 0;
-        if event_ring_programming_write || port_status_change_generated {
-            interrupt |= self.post_pending_port_status_change_event(mem);
-        }
+        let mut interrupt = if event_ring_programming_write || port_status_change_generated {
+            self.post_pending_port_status_change_event(mem)
+        } else {
+            false
+        };
         if commands::is_command_doorbell(offset, size) {
             interrupt |= self.process_command_doorbell(mem);
             return interrupt;
@@ -234,6 +234,8 @@ mod configure_endpoint_tests;
 #[cfg(test)]
 mod dci3_rearm_tests;
 #[cfg(test)]
+mod dci5_event_pacing_tests;
+#[cfg(test)]
 mod disable_slot_tests;
 #[cfg(test)]
 mod ep0_clear_feature_tests;
@@ -245,8 +247,6 @@ mod ep0_enumeration_tests;
 mod ep0_link_tests;
 #[cfg(test)]
 mod ep0_overflow_tests;
-#[cfg(test)]
-mod event_handler_busy_tests;
 #[cfg(test)]
 mod event_tests;
 #[cfg(test)]

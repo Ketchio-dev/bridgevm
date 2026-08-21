@@ -131,21 +131,21 @@ fn pending_event_becomes_deliverable_when_iman_is_enabled_later() {
 
 #[test]
 fn two_events_each_raise_exactly_one_message() {
-    // Unmasked, enabled interrupter.
+    // Given: an unmasked, enabled interrupter.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0x5000);
     setup_event_ring(&mut xhci, &mut mem);
     program_vector0(&mut xhci);
     unmask_vector0(&mut xhci);
-    // Two events post while software leaves handler-busy set.
+
+    // When: two events are posted back-to-back, each followed by a flush.
     assert!(xhci.post_event(&mut mem, 0x4444, 0, TRANSFER_EVENT_CONTROL));
-    #[rustfmt::skip]
-    assert_eq!(xhci.raise_pending_interrupter_msix(true, false), vec![expected_message()]);
+    let first = xhci.raise_pending_interrupter_msix(true, false);
     assert!(xhci.post_event(&mut mem, 0x5555, 0, TRANSFER_EVENT_CONTROL));
-    // Then: each event raises normally, and partial consumption re-notifies event two.
-    #[rustfmt::skip]
-    assert_eq!(xhci.raise_pending_interrupter_msix(true, false), vec![expected_message()]);
-    xhci.mmio_write(IMAN_INTERRUPTER0 + 0x18, 8, 0x3018);
-    #[rustfmt::skip]
-    assert_eq!(xhci.raise_pending_interrupter_msix(true, false), vec![expected_message()]);
+    let second = xhci.raise_pending_interrupter_msix(true, false);
+
+    // Then: exactly one message per event and no re-raise storm.
+    assert_eq!(first, vec![expected_message()]);
+    assert_eq!(second, vec![expected_message()]);
+    assert_eq!(xhci.raise_pending_interrupter_msix(true, false), Vec::new());
 }

@@ -165,7 +165,7 @@ fn port_reset_after_hcrst_posts_second_port_status_change_event() {
     assert_eq!(xhci.mmio_read(0x44, 4) & USB_STS_EINT, USB_STS_EINT);
 
     // When: Windows consumes the first event, clears CSC, then writes PORTSC.PR.
-    xhci.mmio_write_with_mem(0x1038, 8, (EVENT_RING + TRB_SIZE) | 0x8, &mut mem);
+    xhci.mmio_write_with_mem(0x1038, 8, EVENT_RING | 0x8, &mut mem);
     assert_eq!(xhci.mmio_read(0x1020, 4) & IMAN_INTERRUPT_PENDING, 0);
     assert_eq!(xhci.mmio_read(0x44, 4) & USB_STS_EINT, 0);
     assert!(!xhci.mmio_write_with_mem(PORT_REG_BASE, 4, u64::from(PORTSC_CSC), &mut mem));

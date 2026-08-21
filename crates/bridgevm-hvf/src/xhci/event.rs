@@ -13,6 +13,7 @@ pub(super) const IMAN_INTERRUPT_PENDING: u32 = 1 << 0;
 /// stay on interrupter 0.
 pub(super) const XHCI_INTERRUPTER_COUNT: usize = 16;
 
+const ERDP_EHB: u32 = 1 << 3;
 pub(super) const IMAN_INTERRUPT_ENABLE: u32 = 1 << 1;
 const PORT_STATUS_CHANGE_EVENT_PORT_ID: u64 = 1 << 24;
 const TRB_TYPE_PORT_STATUS_CHANGE_EVENT: u32 = 34;
@@ -37,8 +38,6 @@ pub(super) struct Interrupter {
     pub(super) event_handler_busy: bool,
     pub(super) event_enqueue: u32,
     pub(super) event_cycle: bool,
-    pub(super) event_segment_base: u64,
-    pub(super) event_segment_trbs: u32,
 }
 
 impl Interrupter {
@@ -52,8 +51,6 @@ impl Interrupter {
             event_handler_busy: false,
             event_enqueue: 0,
             event_cycle: true,
-            event_segment_base: 0,
-            event_segment_trbs: 0,
         }
     }
 }
@@ -96,13 +93,46 @@ impl XhciController {
         self.pending_enabled_interrupter_bits
     }
 
+    pub(super) fn set_interrupter_pending(&mut self, index: usize) {
+        if index >= XHCI_INTERRUPTER_COUNT {
+            return;
+        }
+        self.interrupters[index].iman |= IMAN_INTERRUPT_PENDING;
+        self.refresh_interrupter_pending_bits(index);
+    }
+
+    pub(super) fn clear_interrupter_pending(&mut self, index: usize) {
+        if index >= XHCI_INTERRUPTER_COUNT {
+            return;
+        }
+        self.interrupters[index].iman &= !IMAN_INTERRUPT_PENDING;
+        self.refresh_interrupter_pending_bits(index);
+    }
+
+    fn refresh_interrupter_pending_bits(&mut self, index: usize) {
+        let Some(bit) = interrupter_bit(index) else {
+            return;
+        };
+        let iman = self.interrupters[index].iman;
+        if iman & IMAN_INTERRUPT_PENDING != 0 {
+            self.pending_interrupter_bits |= bit;
+        } else {
+            self.pending_interrupter_bits &= !bit;
+        }
+        if iman & (IMAN_INTERRUPT_PENDING | IMAN_INTERRUPT_ENABLE)
+            == (IMAN_INTERRUPT_PENDING | IMAN_INTERRUPT_ENABLE)
+        {
+            self.pending_enabled_interrupter_bits |= bit;
+        } else {
+            self.pending_enabled_interrupter_bits &= !bit;
+        }
+    }
+
     pub(super) fn reset_event_ring(&mut self, index: usize) {
         let interrupter = &mut self.interrupters[index];
         interrupter.event_enqueue = 0;
         interrupter.event_handler_busy = false;
         interrupter.event_cycle = true;
-        interrupter.event_segment_base = 0;
-        interrupter.event_segment_trbs = 0;
     }
 
     pub(super) fn mark_port_status_change_pending(&mut self) {
@@ -126,6 +156,47 @@ impl XhciController {
             self.port_status_change_pending = false;
         }
         posted
+    }
+
+    pub(super) fn erdp_low(&self, index: usize) -> u32 {
+        let interrupter = &self.interrupters[index];
+        let busy = if interrupter.event_handler_busy {
+            ERDP_EHB
+        } else {
+            0
+        };
+        ((interrupter.erdp as u32) & !ERDP_EHB) | busy
+    }
+
+    pub(super) fn write_erdp_low(&mut self, index: usize, value: u32) {
+        let next_erdp =
+            (self.interrupters[index].erdp & !0xffff_ffff) | u64::from(value & !ERDP_EHB);
+        self.record_erdp_update(next_erdp);
+        if value & ERDP_EHB != 0 {
+            self.event_lifecycle_stats.erdp_ehb_consumed = self
+                .event_lifecycle_stats
+                .erdp_ehb_consumed
+                .saturating_add(1);
+            self.interrupters[index].event_handler_busy = false;
+            self.clear_interrupter_pending(index);
+            trace::erdp_ehb_consumed(
+                next_erdp,
+                index,
+                EventPostStateTrace {
+                    event_handler_busy: self.interrupters[index].event_handler_busy,
+                    iman_interrupt_pending: self.interrupters[index].iman & IMAN_INTERRUPT_PENDING
+                        != 0,
+                    usb_sts_eint: self.usb_status() & USB_STS_EINT != 0,
+                },
+            );
+        }
+        self.interrupters[index].erdp = next_erdp;
+    }
+
+    pub(super) fn write_erdp_high(&mut self, index: usize, value: u32) {
+        let next_erdp = (self.interrupters[index].erdp & 0xffff_ffff) | (u64::from(value) << 32);
+        self.record_erdp_update(next_erdp);
+        self.interrupters[index].erdp = next_erdp;
     }
 
     pub(super) fn post_event(
@@ -233,8 +304,6 @@ impl XhciController {
             return false;
         }
         let interrupter = &mut self.interrupters[index];
-        interrupter.event_segment_base = segment_base;
-        interrupter.event_segment_trbs = segment_trbs;
         interrupter.event_enqueue += 1;
         if interrupter.event_enqueue == segment_trbs {
             interrupter.event_enqueue = 0;
@@ -258,7 +327,7 @@ impl XhciController {
         self.event_lifecycle_stats
     }
 
-    pub(super) fn record_erdp_update(&mut self, erdp: u64) {
+    fn record_erdp_update(&mut self, erdp: u64) {
         self.event_lifecycle_stats.erdp_updates =
             self.event_lifecycle_stats.erdp_updates.saturating_add(1);
         self.event_lifecycle_stats.last_erdp = erdp;
@@ -314,6 +383,10 @@ impl XhciController {
 
 fn event_type(control: u32) -> u32 {
     (control >> TRB_TYPE_SHIFT) & TRB_TYPE_MASK
+}
+
+fn interrupter_bit(index: usize) -> Option<u32> {
+    (index < u32::BITS as usize).then(|| 1u32 << index)
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {

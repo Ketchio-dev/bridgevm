@@ -551,6 +551,8 @@ crates/bridgevm-hvf/src/xhci/dci3_endpoint_state.rs	132	0
 crates/bridgevm-hvf/src/xhci/dci3_rearm.rs	203	0
 crates/bridgevm-hvf/src/xhci/dci3_rearm_tests.rs	36	0
 crates/bridgevm-hvf/src/xhci/dci5_endpoint_state.rs	151	0
+crates/bridgevm-hvf/src/xhci/dci5_event_pacing.rs	21	0
+crates/bridgevm-hvf/src/xhci/dci5_event_pacing_tests.rs	59	0
 crates/bridgevm-hvf/src/xhci/device_context.rs	237	0
 crates/bridgevm-hvf/src/xhci/device_context_drop_context.rs	56	0
 crates/bridgevm-hvf/src/xhci/device_context_mem.rs	62	0
@@ -561,7 +563,6 @@ crates/bridgevm-hvf/src/xhci/ep0_enumeration_tests.rs	289	0
 crates/bridgevm-hvf/src/xhci/ep0_link_tests.rs	158	0
 crates/bridgevm-hvf/src/xhci/ep0_overflow_tests.rs	54	0
 crates/bridgevm-hvf/src/xhci/event.rs	401	0
-crates/bridgevm-hvf/src/xhci/event_handler_busy_tests.rs	106	0
 crates/bridgevm-hvf/src/xhci/event_tests.rs	121	0
 crates/bridgevm-hvf/src/xhci/hid_pointer_descriptor_tests.rs	94	0
 crates/bridgevm-hvf/src/xhci/hid_report_descriptor_tests.rs	267	0
@@ -573,7 +574,6 @@ crates/bridgevm-hvf/src/xhci/interrupt_in.rs	259	0
 crates/bridgevm-hvf/src/xhci/interrupt_pointer.rs	267	0
 crates/bridgevm-hvf/src/xhci/interrupt_trb.rs	94	0
 crates/bridgevm-hvf/src/xhci/interrupter_msix_autoclear_tests.rs	144	0
-crates/bridgevm-hvf/src/xhci/interrupter_state.rs	105	0
 crates/bridgevm-hvf/src/xhci/interrupts.rs	70	0
 crates/bridgevm-hvf/src/xhci/lifecycle.rs	54	0
 crates/bridgevm-hvf/src/xhci/mmio.rs	28	0

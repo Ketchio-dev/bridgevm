@@ -134,5 +134,20 @@ zero transitions; the run log SHA-256 is
 The job was cancelled after this separator and is diagnostic, not closure
 evidence. The next probe records cursor-coordinate transitions on that same
 active desktop, separating loss of all DCI5 reports from button-only semantic
-loss. B4 remains OPEN until a fresh fixed 20-run t8 receipt passes 20/20 with
-p95 <=250 ms.
+loss. Diagnostic job `20260821-071532-41007-26374` at
+`9f7d57a2b6dcaaefb98332fabbab59c932b6dce1` supplied that separator in run 1:
+the active-desktop cursor moved from `(400,300)` to `(544,380)` at 18,023 ms,
+while press/release/edge remained zero (run log SHA-256
+`77ccd1051e9f85d8a7177058e3bd41adca3e9bbc20f30638c19a81e84182eb2a`).
+The job was cancelled after this diagnostic result. Move reaches user32;
+button/release specifically do not.
+
+In the same run, move/button/release events occupied consecutive Event Ring
+slots while ERDP stayed at the move event. Host-time spacing alone therefore
+allowed the next DCI5 report to outrun guest event consumption. The fix is
+DCI5-specific event-consumption pacing: record the previous pointer event's
+interrupter and ERDP-at-post, and hold the next pointer report until the guest
+advances that ERDP. Existing MMIO late-drain retries the held report on the
+ERDP write. The generic EHB re-notification experiment was removed because
+live runs proved it was not the cause. B4 remains OPEN until a fresh fixed
+20-run t8 receipt passes 20/20 with p95 <=250 ms.

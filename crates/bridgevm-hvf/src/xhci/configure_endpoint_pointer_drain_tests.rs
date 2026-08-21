@@ -73,7 +73,7 @@ fn slot1_dci5_doorbell_emits_absolute_pointer_move_report() {
 }
 
 #[test]
-fn slot1_dci5_click_action_emits_button_down_then_release() {
+fn slot1_dci5_click_waits_for_each_previous_event_consumption() {
     // Given: pointer DCI5 has two buffers and a queued click action.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0x9000);
@@ -85,25 +85,20 @@ fn slot1_dci5_click_action_emits_button_down_then_release() {
     xhci.queue_pointer_input_actions(&[PointerInputAction::Click(position)])
         .unwrap();
 
-    // When: the guest polls DCI5 twice.
+    // The first poll emits button-down; another poll before ERDP advances is held.
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI5), &mut mem));
-    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI5), &mut mem));
+    assert!(!xhci.mmio_write_with_mem(DOORBELL_BASE + 4, 4, u64::from(DCI5), &mut mem));
+    assert_eq!(xhci.pointer_input_report_stats().emitted_release_reports, 0);
 
-    // Then: the first report presses button 1 and the second releases it at the same position.
-    assert_eq!(
-        mem.read_bytes(DCI5_BUFFER, 6).unwrap(),
-        [1, 0, 0x04, 0, 0x08, 0]
-    );
+    // Consuming button-down lets the existing MMIO late-drain emit release.
+    assert!(xhci.mmio_write_with_mem(0x1038, 8, (EVENT_RING + TRB_SIZE * 2) | 8, &mut mem));
+    assert_eq!(mem.read_bytes(DCI5_BUFFER, 6).unwrap(), [1, 0, 4, 0, 8, 0]);
     assert_eq!(
         mem.read_bytes(DCI5_BUFFER + 0x20, 6).unwrap(),
-        [0, 0, 0x04, 0, 0x08, 0]
+        [0, 0, 4, 0, 8, 0]
     );
     assert_short_packet_dci5_transfer_event(&mem, EVENT_RING + TRB_SIZE, DCI5_RING);
-    assert_short_packet_dci5_transfer_event(
-        &mem,
-        EVENT_RING + (TRB_SIZE * 2),
-        DCI5_RING + TRB_SIZE,
-    );
+    assert_short_packet_dci5_transfer_event(&mem, EVENT_RING + TRB_SIZE * 2, DCI5_RING + TRB_SIZE);
     let stats = xhci.pointer_input_report_stats();
     assert_eq!(stats.emitted_button_reports, 1);
     assert_eq!(stats.emitted_release_reports, 1);
