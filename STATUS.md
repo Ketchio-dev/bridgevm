@@ -9,14 +9,17 @@ live in the [capability matrix](docs/windows-arm/capability-matrix.md) and dated
 receipts under `docs/windows-arm/evidence/`.
 
 <!-- BEGIN GENERATED: capability-summary -->
-**Product state: 1.0.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Every release-blocking criterion is proven by live evidence.
+**Product state: 1.0.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Every release-blocking criterion is proven by live evidence; known open defects are disclosed below.
 
 Release-blocking criteria proven: **19 / 19**. Open: none.
+
+Known open defects:
+- **B4**: Pointer clicks are unreliable: in the latest 10-boot live batch the host delivered every click but Windows acted on only 1 of 10. Keyboard input is unaffected. Tracked as criterion B4.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-08-20 at commit `d44c2f276df1c3eb3681bdee2a7c3c7aa53bcf76`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-08-20 at commit `13e83a5db9f26312549b03d76e79d151db1f4ba9`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 ## How to read the generated status
@@ -65,7 +68,8 @@ criteria.
 ### Display, input, and integration
 
 - virtio-gpu display;
-- keyboard and absolute-pointer input;
+- keyboard input (absolute-pointer *delivery* is proven, but click reliability
+  is an open defect — see criterion B4 and the known limitations below);
 - non-ASCII text path;
 - dynamic resize;
 - network connectivity;
@@ -132,11 +136,11 @@ The 1.0 boundary is the proven evidence set, not universal compatibility:
   scope;
 - some historical tools and evidence paths are still more lab-oriented than
   product-oriented;
-- five proven criteria (A5, A6, A7, A17, A19) state figures that appear in no
-  document they cite, so those particular numbers cannot be checked by following
-  the citation. The behaviour they describe was observed on a live run; what is
-  missing is a receipt that records it. `scripts/check-capability-evidence.py`
-  holds the list and fails on any new claim of that shape;
+- **pointer clicks are unreliable** (criterion B4, open): in the latest live
+  batch the host delivered every click but the guest acted on 1 of 10
+  (`docs/windows-arm/evidence/b4-pointer-batch-20260817.md`). Every
+  host-visible counter is identical between a landed and a lost click, so the
+  next step is guest-side instrumentation. Keyboard input is unaffected;
 - the legacy `.qemuCompat` engine runs swtpm, qemu-system-aarch64 and the edk2
   firmware from fixed Homebrew paths, so on that path anything a user places
   there decides what the app runs and what the guest boots. That is how the

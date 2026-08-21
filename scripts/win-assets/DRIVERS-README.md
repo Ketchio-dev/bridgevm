@@ -36,7 +36,8 @@ shapes are possible:
 
 1. a package already trusted by Windows under its normal production signing
    policy; or
-2. a development/test-signed package used by Engineering Preview testers.
+2. a development/test-signed package used by testers of the experimental
+   graphics path.
 
 For the second case, the current injector/first-boot flow automates activation.
 `bvinject.cmd` stages the package and plants the first-boot handoff;

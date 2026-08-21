@@ -155,8 +155,7 @@ workload on the stated build. Neither is a universal compatibility claim.
 
 ## Distribution boundary
 
-BridgeVM's Engineering Preview can be built and distributed with ad-hoc macOS
-signing. Developer ID signing/notarization is a distribution convenience and
+BridgeVM can be built and distributed with ad-hoc macOS signing. Developer ID signing/notarization is a distribution convenience and
 trust improvement, not a prerequisite for the core VMM to run on a developer
 Mac.
 

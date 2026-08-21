@@ -39,7 +39,9 @@ experimental accelerated 3D.
 
 - QEMU-free Windows 11 Arm execution on BridgeVM's own VMM;
 - persistent NVMe storage and UEFI variable state;
-- SMP, PCIe, xHCI keyboard/pointer input, virtio networking, and host audio;
+- SMP, PCIe, xHCI keyboard input, virtio networking, and host audio (absolute
+  pointer delivery works, but click reliability is an open defect — see the
+  known limitations below);
 - dynamic display resizing, clipboard integration, and folder transfer through
   the guest-agent path;
 - TPM 2.0, Secure Boot, measured-boot evidence, encrypted vTPM lifecycle, and
@@ -55,14 +57,17 @@ model tests**, and **behavior observed in a real guest**. Capability claims belo
 come from the machine-readable registry rather than being maintained by hand.
 
 <!-- BEGIN GENERATED: capability-summary -->
-**Product state: 1.0.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Every release-blocking criterion is proven by live evidence.
+**Product state: 1.0.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Every release-blocking criterion is proven by live evidence; known open defects are disclosed below.
 
 Release-blocking criteria proven: **19 / 19**. Open: none.
+
+Known open defects:
+- **B4**: Pointer clicks are unreliable: in the latest 10-boot live batch the host delivered every click but Windows acted on only 1 of 10. Keyboard input is unaffected. Tracked as criterion B4.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-08-20 at commit `d44c2f276df1c3eb3681bdee2a7c3c7aa53bcf76`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-08-20 at commit `13e83a5db9f26312549b03d76e79d151db1f4ba9`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 For the exact thresholds and receipts, see the
@@ -241,12 +246,20 @@ polish**, rather than proving that the core Windows VMM can reach a desktop:
 - continued hardening of recovery, migration, diagnostics, and failure UX;
 - broader compatibility guarantees beyond the measured evidence set.
 
-There is also one known rendering defect in the accelerated Windows path. Body
-text renders correctly at the native guest resolution, but window titles, tab
-labels and menu bars can render as blank. It is investigated in
-[`docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md`](docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md),
-which records the live measurements, the fix that shipped for body text, and the
-correction directions that were tried and rejected.
+There are two known defects in 1.0, both disclosed in the generated capability
+summary above and tracked as open criteria:
+
+- **Pointer clicks are unreliable** (criterion B4). In the latest ten-boot live
+  batch the host delivered every click but Windows acted on only one
+  ([`docs/windows-arm/evidence/b4-pointer-batch-20260817.md`](docs/windows-arm/evidence/b4-pointer-batch-20260817.md)).
+  Keyboard input is unaffected. The criterion stays open until a 20/20
+  reliability gate passes.
+- **Accelerated-path glyph rendering.** Body text renders correctly at the
+  native guest resolution, but window titles, tab labels and menu bars can
+  render as blank. It is investigated in
+  [`docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md`](docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md),
+  which records the live measurements, the fix that shipped for body text, and
+  the correction directions that were tried and rejected.
 
 Durable running-state suspend is intentionally outside the current v1 scope; the
 powered-off snapshot path is the supported persistence boundary for now.

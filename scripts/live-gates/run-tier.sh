@@ -29,12 +29,9 @@ done
 [ -n "$OUT" ] || { echo "run-tier.sh needs --out" >&2; exit 2; }
 mkdir -p "$OUT"
 
-# Hash of an input the tier will read, or "absent". Sealing these is the
-# difference between "this ran at commit X" and "this ran at commit X against
-# exactly these bytes" -- a receipt without them cannot be reproduced, because
-# the images are outside the repository and mutable in principle.
-#
-# openssl rather than shasum: shasum is a Perl script and about five times
+# Hash of an input the tier will read, or "absent". Sealing these is what
+# makes a receipt reproducible: the images live outside the repository and
+# are mutable in principle. openssl, not shasum: shasum is Perl and ~5x
 # slower, which on a 64 GiB image is minutes.
 seal() {
     [[ -r "$1" ]] || { printf 'absent'; return; }
@@ -110,6 +107,9 @@ case "$TIER" in
         "$REPO/scripts/live-gates/$helper" --out "$OUT" --input-manifest "$INPUT_MANIFEST" \
             --sealed-binary "$SEALED_BINARY" --job-id "$JOB_ID"
         ;;
+    t8-pointer-reliability)
+        # B4's 20-clone click gate; the helper writes its criterion receipt.
+        "$REPO/scripts/live-gates/run-pointer-reliability-tier.sh" --out "$OUT" --job-id "$JOB_ID" ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)
         # These need private Windows media and 20+ minutes per boot. They are
         # declared so the queue and its policy tests are exercised, but they

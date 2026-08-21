@@ -866,6 +866,7 @@ runners/hvf-runner/src/supervise_cli.rs	51	0
 runners/hvf-runner/src/supervise_cli_tests.rs	41	0
 scripts/verify-reset-recreate.sh	113	0
 scripts/verify-app-third-party-notices.sh	63	0
+scripts/verify-pointer-click-reliability.sh	110	0
 scripts/win-assets/bv-ppsspp-d3d11.ini	14	0
 scripts/verify-rust-dependency-inventory.sh	23	0
 scripts/verify-rust-license-bundle.sh	11	0
@@ -884,6 +885,7 @@ crates/bridgevm-hvf/src/userspace_gic/mod.rs	740	0
 crates/bridgevm-hvf/src/userspace_gic/mmio_regs.rs	352	0
 crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	387	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	477	13
+scripts/install-bridgevm.sh	209	0
 scripts/live-gates/run-a3-title-tier.sh	90	0
 scripts/live-gates/run-windows-closure-tier.sh	116	0
 scripts/live-gates/a3-title-manifest.sh	47	0
@@ -1096,6 +1098,7 @@ scripts/check-documentation-system.sh	168	0
 scripts/check-fuzz-smoke.sh	11	0
 scripts/check-hvf-windows-p3-gpu-readiness.sh	335	0
 scripts/check-hvf-windows-viogpu3d-package.sh	1464	0
+scripts/check-install-bootstrap.sh	21	0
 scripts/check-loom.sh	30	0
 scripts/check-project.sh	98	0
 scripts/check-refactor-budgets.sh	72	1
@@ -1109,6 +1112,7 @@ scripts/check-virgl-integer-attributes.sh	72	0
 scripts/find-hvf-windows-viogpu3d-packages.sh	210	0
 scripts/live-gates/bridgevm-live-worker.sh	173	0
 scripts/live-gates/install-studio-queue.sh	84	0
+scripts/live-gates/run-pointer-reliability-tier.sh	59	0
 scripts/live-gates/run-tier.sh	161	0
 scripts/measure-pointer-latency.sh	60	0
 scripts/notarize-submit.sh	51	0
@@ -1268,6 +1272,7 @@ tests/integration/hvf-windows-vtpm-live-evidence-verifier-smoke.sh	131	0
 tests/integration/lifecycle-plan-cli-smoke.sh	141	0
 tests/integration/lifecycle-restart-cli-smoke.sh	134	0
 tests/integration/lifecycle-suspend-resume-cli-smoke.sh	157	0
+tests/integration/install-verify-smoke.sh	181	0
 tests/integration/live-gate-policy-smoke.sh	308	0
 tests/integration/windows-closure-live-tier-smoke.sh	65	0
 tests/integration/local-release-readiness-suite.sh	298	0
@@ -1357,6 +1362,7 @@ tests/sleep-wake/metadata-baseline-smoke.sh	119	0
 scripts/check-capability-test-counts.py	81	0
 scripts/check-doc-references.py	139	0
 scripts/check-daemon-dto-decoders.py	91	0
+scripts/capability_forbidden.py	83	0
 scripts/capability_freshness.py	42	0
 scripts/check-swift-force-casts.py	54	0
 scripts/check-tests-are-reachable.py	114	0
@@ -1375,11 +1381,11 @@ scripts/refactor/roundtrip.py	58	0
 scripts/refactor/split_hvf_gic_boot_probe.py	296	0
 # Grew by 11 lines for the check that tested_commit is not stale, after A11 went
 # stale four times in one session with each caught by hand.
-scripts/render-capability-status.py	292	0
+scripts/render-capability-status.py	272	0
 scripts/package-tarball.sh	51
 scripts/measure-pointer-latency-batch.sh	36
 scripts/check-hvf-windows-coherence-protocol.sh	45
 scripts/package-dmg.sh	45
-install.sh	55
+install.sh	44	0
 scripts/render-graphics-compatibility.py	245	0
 tests/fixtures/fake-swtpm.py	77	0

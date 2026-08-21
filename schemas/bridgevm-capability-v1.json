@@ -126,6 +126,13 @@
           ],
           "description": "Latest honest measurement. Required whenever state is OPEN and a measurement exists."
         },
+        "known_defect": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "User-facing one-paragraph disclosure of an open defect. When present on a non-PROVEN criterion, generated capability summaries must surface it; it is the only sanctioned source for known-defect wording outside evidence docs."
+        },
         "evidence_paths": {
           "type": "array",
           "items": {

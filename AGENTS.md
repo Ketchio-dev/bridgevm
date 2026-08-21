@@ -32,9 +32,12 @@ workload is the same violation.
 - Never rewrite a failed experiment into a success.
 - User-facing capability wording comes from `capabilities/windows-hvf.json`.
   Do not invent alternative phrasing in README, STATUS, the CLI or the app.
-- The product is **Engineering Preview** until every release-blocking criterion
-  is proven. Graphics are an *experimental Vulkan path* and an *experimental
-  D3D11-compatible subset*.
+- The product state lives in `capabilities/windows-hvf.json` (`product_state`)
+  and may never be promoted while a release-blocking criterion is unproven.
+  Graphics are an *experimental Vulkan path* and an *experimental
+  D3D11-compatible subset*. A non-blocking criterion with a live user-visible
+  defect stays OPEN and its `known_defect` wording is surfaced by generation —
+  never hidden by reclassifying the criterion as satisfied-by-recording.
 - The guest platform is a *QEMU `virt`-compatible contract with documented
   deviations*, not a bit-for-bit copy. New guest-visible differences require an
   entry in `docs/machine-contract/qemu-virt-deviations.json`.

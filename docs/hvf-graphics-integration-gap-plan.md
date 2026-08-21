@@ -162,7 +162,7 @@ On reset or process recreation:
 
 ## Distribution
 
-The Engineering Preview has two distinct signing questions:
+The ad-hoc-signed distribution has two distinct signing questions:
 
 ### macOS app distribution
 
