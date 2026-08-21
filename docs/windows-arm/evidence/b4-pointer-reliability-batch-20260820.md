@@ -184,8 +184,17 @@ but again delivered only cursor move (run log SHA-256
 The job was cancelled. Descriptor shape is not the separator, so that change
 was removed rather than retained as an unrelated compatibility change.
 
-The next trace adds Normal TRB report-buffer GPA, TD-end GPA, and Event Data
-parameter. This directly tests whether Windows reuses one report buffer and
-BridgeVM overwrites button with release before the upper stack reads it, or
-uses independent buffers. It is print-only measurement. B4 remains OPEN until
-a fresh fixed 20-run t8 receipt passes 20/20 with p95 <=250 ms.
+The next trace added Normal TRB report-buffer GPA, TD-end GPA, and Event Data
+parameter. Diagnostic job `20260821-104402-25279-6208` at
+`33c8600ebaffb6371ed35660ed865c69464130b4` showed distinct move/button buffers
+(`…8800`, `…8a00`) and distinct Event Data cookies; release reused move's
+buffer, not button's. Button cannot have been overwritten by release in the
+same DMA buffer. Run 1 still delivered only move (run log SHA-256
+`7b0ca99616bd00abddf56ce78fb19339102606dc455966f96147d4d21ae9a8af`), and the
+job was cancelled.
+
+The next diagnostic sends move+press with no release. It must fail the fixed
+click gate (stuck button and no release), so it is never closure evidence; its
+only separator is whether an indefinitely held button reaches the active
+input desktop. B4 remains OPEN until the normal move+click workload produces
+a fresh 20/20 t8 receipt with p95 <=250 ms.
