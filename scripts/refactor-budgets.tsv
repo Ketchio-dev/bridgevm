@@ -601,6 +601,7 @@ crates/bridgevm-hvf/src/xhci/trace.rs	248	0
 crates/bridgevm-hvf/src/xhci/trace_dci3_drain.rs	83	0
 crates/bridgevm-hvf/src/xhci/trace_dci3_input_capture.rs	93	0
 crates/bridgevm-hvf/src/xhci/trace_dci5_drain.rs	108	0
+crates/bridgevm-hvf/src/xhci/trace_dci5_emission.rs	158	0
 crates/bridgevm-hvf/src/xhci/trace_dci5_input_capture.rs	93	0
 crates/bridgevm-hvf/src/xhci/trace_host_controller_reset.rs	22	0
 crates/bridgevm-hvf/src/xhci/trace_mmio.rs	118	0

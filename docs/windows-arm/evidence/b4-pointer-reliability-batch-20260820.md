@@ -59,4 +59,11 @@ B4 stays **OPEN**. The gate did its job by failing: the loss is at or below
 the HID class driver boundary, and the next instrument (per the fixed gate
 doc) is the correlation of the exact button-report TRB with its completion
 code, transfer length and interrupter delivery on a run where the probe's
-latch bit is armed.
+latch bit is armed. That instrument now exists:
+`crates/bridgevm-hvf/src/xhci/trace_dci5_emission.rs` prints one line per
+emitted DCI5 report (kind, raw 6 bytes, TRB GPA, transfer/written length,
+completion code, event TRB GPA/status/control, IMAN.IP/IE, EHB, ERDP) under
+`BRIDGEVM_TRACE_DCI5_EMISSION=1`, which the gate script sets for every batch
+run. The next batch therefore records, for each of move/button/release,
+whether the completion semantics or interrupter state differ at the moment
+the guest stops seeing them.

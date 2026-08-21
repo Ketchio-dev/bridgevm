@@ -92,12 +92,10 @@ impl XhciController {
                         return false;
                     };
                     let Some(queued_report) = self.pointer_input_report_queue.peek() else {
-                        // NAK idle pointer polls for the same reason as the boot
-                        // keyboard: completing them synthesizes a report the
-                        // guest immediately acks and re-polls, livelocking the
-                        // interrupter. Leave the Normal TD pending (no report, no
-                        // event, no dequeue advance) until real pointer input is
-                        // queued and drained.
+                        // NAK idle polls like the boot keyboard: completing one
+                        // synthesizes a report the guest immediately acks and
+                        // re-polls, livelocking the interrupter. Leave the TD
+                        // pending until real pointer input is queued.
                         self.trace_dci5_drain_blocked(
                             "no_queued_input_report",
                             policy,
@@ -165,6 +163,8 @@ impl XhciController {
                     if posted {
                         self.slot1_dci5_last_drain_blocked = None;
                         if can_emit_queued_report {
+                            #[rustfmt::skip]
+                            self.trace_dci5_report_emitted(queued_report, interrupt_transfer.gpa, transfer_length, written_length, completion_code);
                             self.record_pointer_input_report_emitted(queued_report);
                             self.pointer_input_report_queue.pop_front();
                         }
