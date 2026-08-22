@@ -48,19 +48,16 @@ for asset in bv-pointer-capture.ps1 bv-pointer-target.ps1 bvgpu-apply-host-resol
 done
 printf '%s\n' 'RESIZE 1600x900' >> "$INPUT"
 wait_for '^live input accepted: resize=1600x900$' 1 30 || fail 'host resize not accepted'
-send_ok 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bvgpu-apply-host-resolution.ps1 -Width 1600 -Height 900' || fail 'guest resize failed'
+send_ok 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bvgpu-apply-host-resolution.ps1 -Width 1600 -Height 900 -LaunchPointerTarget' || fail 'guest resize failed'
 for _ in $(seq 1 120); do
   grep '"name":"SET_SCANOUT"' "$RUN/virtio-gpu.jsonl" 2>/dev/null | grep '"response_name":"OK_NODATA"' | grep -q '"rect_w":1600,"rect_h":900' && break
   sleep 1
 done
 grep '"name":"SET_SCANOUT"' "$RUN/virtio-gpu.jsonl" | grep '"response_name":"OK_NODATA"' | grep -q '"rect_w":1600,"rect_h":900' || fail 'active 1600x900 scanout absent'
-send_ok 'powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '\''cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-target.ps1 -Width 1600 -Height 900 > C:\BridgeVMPtr\bv-pointer-target.out 2>&1'\'' } | Out-Null; Write-Output BVTARGET_LAUNCHED"' || fail 'target launch failed'
+printf '%s\n' 'POINTER move:16384x16384' >> "$INPUT"
 for _ in $(seq 1 120); do grep -q '^BVTARGET ready width=1600 height=900 center_x=800 center_y=450' "$RUN/share/bv-pointer-target-ready.log" 2>/dev/null && break; sleep 1; done
 grep -q '^BVTARGET ready width=1600 height=900 center_x=800 center_y=450 hwnd=[1-9][0-9]*' "$RUN/share/bv-pointer-target-ready.log" || fail 'target not ready'
-hwnd=$(tr -d '\r' < "$RUN/share/bv-pointer-target-ready.log" | sed -n 's/.* hwnd=\([0-9]*\)$/\1/p')
-printf '%s\n' "WINFOCUS $hwnd" >> "$CTL"; wait_for "^BVAGENT WINFOCUS $hwnd -> OK WINFOCUS$" 1 30 || fail 'target focus failed'
 echo 'B4 pointer target ready: width=1600 height=900 center_x=800 center_y=450' >> "$RUN/run.log"
-printf '%s\n' 'POINTER move:16384x16384' >> "$INPUT"; sleep 5
 send_ok 'powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '\''cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-capture.ps1 -DurationMs 360000 > C:\BridgeVMPtr\bvptr.log 2>&1'\'' } | Out-Null; Write-Output BVPTR_LAUNCHED"' || fail 'probe launch failed'
 for _ in $(seq 1 600); do
   grep -q 'BVPTR summary' "$RUN/share/bvptr.log" 2>/dev/null && break
