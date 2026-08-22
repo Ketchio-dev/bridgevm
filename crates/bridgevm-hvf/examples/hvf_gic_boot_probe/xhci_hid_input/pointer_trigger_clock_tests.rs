@@ -26,12 +26,12 @@ fn pointer_trigger_uses_its_actual_now_for_first_emission_pacing() {
     emit_uart(&mut platform, b"READY");
     let fired_at = base + Duration::from_millis(900);
     assert!(trigger.maybe_fire_with_mem_at(&mut platform, &mut mem, fired_at));
-    assert_eq!(platform.xhci_pointer_input_report_stats().emitted_button_reports, 1);
+    assert_eq!(trigger.pending_host_wake_deadline_at(&platform, fired_at), Some(fired_at + Duration::from_millis(1000)));
     acknowledge_event_ring_dequeue(&mut platform, &mut mem, event_index + 1);
     platform.set_host_now(base + Duration::from_millis(1000)); // stale-base boundary
     platform.drain_xhci_pointer_input_reports(&mut mem);
     assert_eq!(platform.xhci_pointer_input_report_stats().emitted_release_reports, 0);
     platform.set_host_now(fired_at + Duration::from_millis(1000));
-    platform.drain_xhci_pointer_input_reports(&mut mem);
+    assert!(platform.drain_xhci_pointer_input_reports(&mut mem));
     assert_eq!(platform.xhci_pointer_input_report_stats().emitted_release_reports, 1);
 }

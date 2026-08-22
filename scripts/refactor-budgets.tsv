@@ -313,6 +313,7 @@ crates/bridgevm-hvf/src/platform_virt/tests/part_2_2.rs	535	0
 crates/bridgevm-hvf/src/platform_virt/tests/part_3.rs	435	0
 crates/bridgevm-hvf/src/platform_virt/tpm_devices.rs	16	0
 crates/bridgevm-hvf/src/platform_virt/xhci_input.rs	221	0
+crates/bridgevm-hvf/src/platform_virt/xhci_pointer_wake.rs	13	0
 crates/bridgevm-hvf/src/probe_mmio/bus.rs	141	0
 crates/bridgevm-hvf/src/probe_mmio/bus_impl.rs	78	0
 crates/bridgevm-hvf/src/probe_mmio/bus_tests/gic_cpu_interface.rs	858	0

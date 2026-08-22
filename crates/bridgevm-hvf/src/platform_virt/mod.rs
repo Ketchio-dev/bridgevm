@@ -26,6 +26,7 @@ mod soc_devices;
 mod storage_devices;
 mod tpm_devices;
 mod xhci_input;
+mod xhci_pointer_wake;
 
 pub(crate) use env_config::*;
 #[cfg(feature = "venus")]

@@ -35,7 +35,7 @@ scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" --evidence-dir "$RUN" \
   --watchdog-ms 720000 --ram-mib 6144 --smp-cpus 4 --enable-xhci \
   --input-control "$INPUT" --pointer-input-actions 'click:16384x16384' \
-  --pointer-input-fire-delay-ms 300000 --pointer-input-ramfb-delay-ms "$DELAYS" \
+  --pointer-input-fire-delay-ms 480000 --pointer-input-ramfb-delay-ms "$DELAYS" \
   --display-export-ppm "$RUN/active-scanout.ppm" --display-export-fb "$RUN/active-scanout.fb" \
   --display-export-ms 100 --agent-service-control "$CTL" \
   --agent-share-host "$RUN/share" --agent-share-guest 'C:\BridgeVMPtr' --agent-share-ms 500 \
@@ -54,7 +54,7 @@ for _ in $(seq 1 120); do
   sleep 1
 done
 grep '"name":"SET_SCANOUT"' "$RUN/virtio-gpu.jsonl" | grep '"response_name":"OK_NODATA"' | grep -q '"rect_w":1600,"rect_h":900' || fail 'active 1600x900 scanout absent'
-send_ok 'powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '\''powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-target.ps1 -Width 1600 -Height 900'\'' } | Out-Null; Write-Output BVTARGET_LAUNCHED"' || fail 'target launch failed'
+send_ok 'cmd /c start "" powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-target.ps1 -Width 1600 -Height 900' || fail 'target launch failed'
 for _ in $(seq 1 120); do grep -q '^BVTARGET ready width=1600 height=900 center_x=800 center_y=450' "$RUN/share/bv-pointer-target-ready.log" 2>/dev/null && break; sleep 1; done
 grep -q '^BVTARGET ready width=1600 height=900 center_x=800 center_y=450 hwnd=[1-9][0-9]*' "$RUN/share/bv-pointer-target-ready.log" || fail 'target not ready'
 hwnd=$(tr -d '\r' < "$RUN/share/bv-pointer-target-ready.log" | sed -n 's/.* hwnd=\([0-9]*\)$/\1/p')

@@ -242,12 +242,11 @@ impl XhciPointerInputTrigger {
         now: Instant,
     ) -> Option<Instant> {
         self.complete_pending_fire_if_report_emitted_at(platform, now);
-        if self.fired
-            || self.attempted_in_current_controller_generation(platform)
-            || !self
-                .marker_scan
-                .contains_new(platform.uart_output(), self.marker.as_bytes())
-        {
+        if let Some(deadline) = platform.xhci_pointer_report_deadline() {
+            return (deadline > now).then_some(deadline);
+        }
+        if self.fired || self.attempted_in_current_controller_generation(platform)
+            || !self.marker_scan.contains_new(platform.uart_output(), self.marker.as_bytes()) {
             return None;
         }
         let marker_seen_at = *self.marker_seen_at.get_or_insert(now);
