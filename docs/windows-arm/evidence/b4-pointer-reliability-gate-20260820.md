@@ -68,6 +68,12 @@ both correctly or the script refuses to run a batch.
 
 ## Status
 
-B4 stays **OPEN**. No live batch has been run against this gate yet; the
-registry's measured state remains the 2026-08-17 1/10 batch. Nothing in this
-document is evidence of guest behaviour.
+B4 stays **OPEN**. Two complete batches have run against this fixed gate and
+both failed 0/20: job `20260820-134138-21205-18560` first localized the loss
+below the posted host event, and correlated job
+`20260821-003915-18894-18703` proved 60/60 DCI5 reports were 6/6 Success while
+ERDP remained at the first event in every run. Diagnostic job
+`20260821-040346-74328-24747` then proved the DCI5 MSI-X messages reached the
+host GIC successfully. The resulting EHB repeat-notification model defect is
+fixed and unit-tested, but none of those failed or cancelled jobs is closure
+evidence. Only a fresh exact-SHA 20/20 receipt with p95 <=250 ms closes B4.

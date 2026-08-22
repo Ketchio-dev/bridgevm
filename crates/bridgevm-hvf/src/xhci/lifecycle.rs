@@ -1,11 +1,10 @@
-use crate::msix::MsixTable;
-use crate::pcie::XHCI_MSIX_VECTOR_COUNT;
-
 use super::event::{Interrupter, XHCI_INTERRUPTER_COUNT};
 use super::{
     pointer_input_report, ports::initial_ports, setup_input_report, XhciController,
     XhciHidSemanticStats, XhciPointerInputReportStats, XhciSetupInputReportStats,
 };
+use crate::msix::MsixTable;
+use crate::pcie::XHCI_MSIX_VECTOR_COUNT;
 
 impl Default for XhciController {
     fn default() -> Self {

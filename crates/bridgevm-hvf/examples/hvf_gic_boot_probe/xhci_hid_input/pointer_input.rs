@@ -1,5 +1,4 @@
 use std::time::{Duration, Instant};
-
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::platform_virt::VirtPlatform;
 use bridgevm_hvf::xhci::{
@@ -191,6 +190,7 @@ impl XhciPointerInputTrigger {
             return false;
         }
         self.mark_attempted_at_controller_generation(platform);
+        platform.set_host_now(now); // First emission uses trigger-now, not stale pre-run time.
         let before_stats = platform.xhci_pointer_input_report_stats();
         match platform.queue_xhci_pointer_input_actions_with_mem(&self.actions, mem) {
             Ok(()) => {
@@ -224,12 +224,7 @@ impl XhciPointerInputTrigger {
             emit_checkpoint(platform, "pointer-input-before", mem);
         }
         let fired = self.maybe_fire_with_mem_at(platform, mem, now);
-        if fired {
-            self.fired_at = Some(now);
-            if can_checkpoint {
-                emit_checkpoint(platform, "pointer-input-after", mem);
-            }
-        }
+        if fired { self.fired_at = Some(now); } // after-frame I/O stretches the hold
         self.emit_due_ramfb_delay_checkpoints(now, &mut |label| {
             emit_checkpoint(platform, label, mem)
         });
@@ -242,12 +237,11 @@ impl XhciPointerInputTrigger {
         now: Instant,
     ) -> Option<Instant> {
         self.complete_pending_fire_if_report_emitted_at(platform, now);
-        if self.fired
-            || self.attempted_in_current_controller_generation(platform)
-            || !self
-                .marker_scan
-                .contains_new(platform.uart_output(), self.marker.as_bytes())
-        {
+        for deadline in [platform.xhci_pointer_report_deadline(), self.next_checkpoint_deadline()].into_iter().flatten() {
+            if deadline > now { return Some(deadline); }
+        }
+        if self.fired || self.attempted_in_current_controller_generation(platform)
+            || !self.marker_scan.contains_new(platform.uart_output(), self.marker.as_bytes()) {
             return None;
         }
         let marker_seen_at = *self.marker_seen_at.get_or_insert(now);
@@ -369,6 +363,12 @@ impl XhciPointerInputTrigger {
         }
         let stats = platform.xhci_pointer_input_report_stats();
         stats.queued_reports == emitted_reports(stats)
+    }
+
+    fn next_checkpoint_deadline(&self) -> Option<Instant> {
+        let fired_at = self.fired_at?;
+        self.ramfb_delay_checkpoints.iter().find(|c| !c.emitted)
+            .and_then(|c| fired_at.checked_add(c.delay))
     }
 
     fn emit_due_ramfb_delay_checkpoints<F>(&mut self, now: Instant, emit_checkpoint: &mut F)

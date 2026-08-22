@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [int]$DurationMs = 20000,
-    [int]$PollMs = 4
+    [int]$PollMs = 4,
+    [string]$ReadyPath = "",
+    [switch]$StopAfterClick
 )
 
 # B4 guest-side pointer instrument.
@@ -32,6 +34,10 @@ public static class BvPointerProbe {
   [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
   [DllImport("user32.dll")] public static extern bool GetCursorPos(out BvPtrPoint point);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("kernel32.dll")] public static extern uint GetCurrentProcessId();
+  [DllImport("kernel32.dll")] public static extern bool ProcessIdToSessionId(uint pid, out uint session);
+  [DllImport("user32.dll")] public static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
+  [DllImport("user32.dll")] public static extern bool CloseDesktop(IntPtr desktop);
 }
 '@
 
@@ -40,20 +46,46 @@ $down = $false
 $presses = 0
 $releases = 0
 $edges = 0
+$moves = 0
 $firstPressMs = -1
 $firstReleaseMs = -1
+$firstMoveMs = -1
+$cursor = New-Object BvPtrPoint
+[void][BvPointerProbe]::GetCursorPos([ref]$cursor)
+$lastX = $cursor.X
+$lastY = $cursor.Y
 # Prime the per-thread "pressed since last call" latch (bit 0x0001) so the
 # first poll reports only presses inside the window. The 20260820 batch proved
 # sampling bit 0x8000 alone cannot see a press+release pair shorter than one
 # poll iteration (PS 5.1 loop cost >> the 4-8ms endpoint interval); the latch
 # bit is the callback-free way to catch a sub-interval click.
 [void][BvPointerProbe]::GetAsyncKeyState(0x01)
+$session = [uint32]0
+[void][BvPointerProbe]::ProcessIdToSessionId([BvPointerProbe]::GetCurrentProcessId(), [ref]$session)
+# DESKTOP_READOBJECTS(1) is sufficient to prove this process can open the
+# active input desktop; GetAsyncKeyState returns zero when the active desktop
+# does not belong to this thread/session. Close the handle immediately.
+$inputDesktop = [BvPointerProbe]::OpenInputDesktop(0, $false, 1)
+$inputDesktopOpen = $inputDesktop -ne [IntPtr]::Zero
+if ($inputDesktopOpen) { [void][BvPointerProbe]::CloseDesktop($inputDesktop) }
 Write-Output ('BVPTR begin duration_ms=' + $DurationMs + ' poll_ms=' + $PollMs +
+    ' session=' + $session + ' input_desktop_open=' + ([int]$inputDesktopOpen) +
+    ' foreground=' + [BvPointerProbe]::GetForegroundWindow() +
+    ' cursor_x=' + $lastX + ' cursor_y=' + $lastY +
     ' utc=' + [DateTime]::UtcNow.ToString('o'))
+if ($ReadyPath) { [IO.File]::WriteAllText($ReadyPath, ('BVPTR_READY cursor_x=' + $lastX + ' cursor_y=' + $lastY + "`r`n")) }
 
 while ($sw.ElapsedMilliseconds -lt $DurationMs) {
     $state = [BvPointerProbe]::GetAsyncKeyState(0x01)
     $now = ($state -band 0x8000) -ne 0
+    $pt = New-Object BvPtrPoint
+    if ([BvPointerProbe]::GetCursorPos([ref]$pt) -and (($pt.X -ne $lastX) -or ($pt.Y -ne $lastY))) {
+        $moves++
+        if ($firstMoveMs -lt 0) { $firstMoveMs = $sw.ElapsedMilliseconds }
+        Write-Output ('BVPTR move t_ms=' + $sw.ElapsedMilliseconds + ' x=' + $pt.X + ' y=' + $pt.Y)
+        $lastX = $pt.X
+        $lastY = $pt.Y
+    }
     if ((-not $now) -and (-not $down) -and (($state -band 0x0001) -ne 0)) {
         $edges++
         Write-Output ('BVPTR edge t_ms=' + $sw.ElapsedMilliseconds)
@@ -74,11 +106,12 @@ while ($sw.ElapsedMilliseconds -lt $DurationMs) {
         }
         $down = $now
     }
+    if ($StopAfterClick -and (($releases -gt 0) -or ($edges -gt 0))) { break }
     Start-Sleep -Milliseconds $PollMs
 }
 
 Write-Output ('BVPTR summary presses=' + $presses + ' releases=' + $releases +
-    ' edges=' + $edges +
+    ' edges=' + $edges + ' moves=' + $moves + ' first_move_ms=' + $firstMoveMs +
     ' first_press_ms=' + $firstPressMs + ' first_release_ms=' + $firstReleaseMs +
     ' stuck=' + (@{ $true = '1'; $false = '0' }[[bool]$down]))
 exit 0

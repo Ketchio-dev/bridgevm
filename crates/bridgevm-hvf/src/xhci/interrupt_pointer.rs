@@ -1,5 +1,3 @@
-use crate::fwcfg::GuestMemoryMut;
-
 use super::{
     interrupt_trb::{
         read_chained_event_data, read_transfer_trb, transfer_event_control, trb_interrupter_target,
@@ -10,7 +8,7 @@ use super::{
     pointer_input_report::HID_ABSOLUTE_POINTER_REPORT_LEN,
     XhciController,
 };
-
+use crate::fwcfg::GuestMemoryMut;
 const SLOT_ID: u32 = 1;
 const ENDPOINT_ID_DCI5: u32 = 5;
 const MAX_LINK_TRBS_PER_DOORBELL: usize = 8;
@@ -18,22 +16,23 @@ const TRANSFER_EVENT_ED: u32 = 1 << 2;
 const COMPLETION_CODE_SHORT_PACKET: u32 = 13;
 const DCI5_DRAIN_POLICY_AFTER_DOORBELL: &str = "after_doorbell";
 const DCI5_DRAIN_POLICY_QUEUED_POINTER: &str = "queued_pointer_drain";
-
 impl XhciController {
     pub(super) fn process_dci5_interrupt_in_transfer_after_doorbell(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
+        // Host reports leave only through VirtPlatform's pacing path.
+        if self.has_queued_pointer_input_report() {
+            return false;
+        }
         self.process_dci5_interrupt_in_transfer(mem, DCI5_DRAIN_POLICY_AFTER_DOORBELL)
     }
-
     pub(crate) fn process_queued_dci5_pointer_input(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
         self.process_dci5_interrupt_in_transfer(mem, DCI5_DRAIN_POLICY_QUEUED_POINTER)
     }
-
     fn process_dci5_interrupt_in_transfer(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
@@ -164,7 +163,8 @@ impl XhciController {
                         self.slot1_dci5_last_drain_blocked = None;
                         if can_emit_queued_report {
                             #[rustfmt::skip]
-                            self.trace_dci5_report_emitted(queued_report, interrupt_transfer.gpa, transfer_length, written_length, completion_code);
+                            let trace = super::trace_dci5_emission::trace_context(queued_report, &interrupt_transfer, last_td_trb_gpa, transfer_length, written_length, completion_code);
+                            self.trace_dci5_report_emitted(trace);
                             self.record_pointer_input_report_emitted(queued_report);
                             self.pointer_input_report_queue.pop_front();
                         }
@@ -192,7 +192,6 @@ impl XhciController {
         self.trace_dci5_drain_blocked("link_trb_limit", policy, None);
         false
     }
-
     fn trace_dci5_drain_blocked(
         &mut self,
         reason: &'static str,

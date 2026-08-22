@@ -302,8 +302,8 @@ pub(crate) fn run() -> ExitCode {
             // deliberately do not force the automation block's platform mutex
             // on every CPU0 exit. ensure_started is idempotent, so re-entering
             // here after a guest reboot is fine.
-            let service_wake_interval = boot_timer
-                .service_wake_interval()
+            let service_wake_interval = live_input.wake_interval()
+                .or_else(|| boot_timer.service_wake_interval())
                 .or_else(|| {
                     agent_console
                         .as_ref()

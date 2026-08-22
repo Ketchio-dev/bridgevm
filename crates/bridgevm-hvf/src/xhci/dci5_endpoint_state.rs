@@ -15,7 +15,6 @@ const DCI5_OUTPUT_CONTEXT_OFFSET: u64 = 0xa0;
 const EP_CONTEXT_BYTES: usize = 32;
 const EP_TR_DEQUEUE_OFFSET: u64 = 0x08;
 const EP_TR_DEQUEUE_MASK: u64 = !0xf;
-
 impl XhciController {
     pub(super) fn invalidate_slot1_dci5_endpoint_state(&mut self) {
         self.slot1_dci5_dequeue = 0;
@@ -23,7 +22,6 @@ impl XhciController {
         self.slot1_dci5_dcs = false;
         self.slot1_dci5_last_drain_blocked = None;
     }
-
     pub(super) fn capture_slot1_dci5_input_context(
         &mut self,
         mem: &mut dyn GuestMemoryMut,

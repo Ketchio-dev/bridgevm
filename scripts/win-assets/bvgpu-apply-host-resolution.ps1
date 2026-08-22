@@ -9,7 +9,7 @@
 # Basic Display Driver on this image and reports a single 800x600 mode, while the
 # virtio-gpu adapter is a later DISPLAY number.
 
-param([int]$Width = 0, [int]$Height = 0, [int]$TimeoutSeconds = 30)
+param([int]$Width = 0, [int]$Height = 0, [int]$TimeoutSeconds = 30, [switch]$LaunchPointerTarget)
 
 Add-Type -TypeDefinition @'
 using System;
@@ -89,8 +89,11 @@ $before = Get-Current $target
 Write-Output ("BV-APPLY| before=" + $before.dmPelsWidth + "x" + $before.dmPelsHeight + " requested=${Width}x${Height}")
 if ($before.dmPelsWidth -eq $Width -and $before.dmPelsHeight -eq $Height) {
   Write-Output ("BV-APPLY| after=${Width}x${Height}")
-  Write-Output 'BV-APPLY-DONE'
-  exit 0
+  if ($LaunchPointerTarget) {
+    Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-target.ps1 -Width 1600 -Height 900 > C:\BridgeVMPtr\bv-pointer-target.out 2>&1' } | Out-Null
+    Write-Output 'BVTARGET_LAUNCHED'
+  }
+  Write-Output 'BV-APPLY-DONE'; exit 0
 }
 
 $dm = $before
@@ -107,5 +110,10 @@ do {
 } while ((Get-Date) -lt $deadline -and ($after.dmPelsWidth -ne $Width -or $after.dmPelsHeight -ne $Height))
 
 Write-Output ("BV-APPLY| after=" + $after.dmPelsWidth + "x" + $after.dmPelsHeight)
-Write-Output 'BV-APPLY-DONE'
-if ($after.dmPelsWidth -eq $Width -and $after.dmPelsHeight -eq $Height) { exit 0 } else { exit 1 }
+if ($after.dmPelsWidth -eq $Width -and $after.dmPelsHeight -eq $Height) {
+  if ($LaunchPointerTarget) {
+    Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-target.ps1 -Width 1600 -Height 900 > C:\BridgeVMPtr\bv-pointer-target.out 2>&1' } | Out-Null
+    Write-Output 'BVTARGET_LAUNCHED'
+  }
+  Write-Output 'BV-APPLY-DONE'; exit 0
+} else { Write-Output 'BV-APPLY-DONE'; exit 1 }

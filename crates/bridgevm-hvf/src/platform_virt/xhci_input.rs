@@ -12,9 +12,7 @@ use crate::xhci::XhciSetupInputQueueError;
 use crate::xhci::XhciSetupInputReportStats;
 use std::time::Duration;
 use std::time::Instant;
-
 pub(crate) const HID_BOOT_KEYBOARD_USAGE_SPACE: u8 = 0x2c;
-
 pub(crate) const MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS: usize = 16;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -205,6 +203,8 @@ impl VirtPlatform {
             .saturating_add(stats.emitted_wheel_reports);
         let pending_reports = stats.queued_reports.saturating_sub(emitted_reports);
         for _ in 0..pending_reports.min(MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS as u64) {
+            // Match QEMU's TD-driven HID schedule: ERDP protects event-ring
+            // capacity, but does not hold a later report after its TD is ready.
             if !self.report_pacing_allows_emission(self.xhci_dci5_last_emission) {
                 break;
             }
