@@ -4,10 +4,10 @@ set -euo pipefail
 : "${RUN:?}" "${WORK:?}" "${TARGET:?}" "${VARS:?}" "${VIOGPU_DIR:?}"
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); cd "$REPO"
 fail() { echo "FAIL: $*" >&2; exit 1; }
-rm -rf "$WORK"; mkdir -p "$WORK" "$RUN/share"
+CASE="$RUN"; rm -rf "$WORK"; mkdir -p "$WORK" "$CASE/share"
 cp -c "$TARGET" "$WORK/disk.raw"; cp "$VARS" "$WORK/vars.fd"; chmod 600 "$WORK/disk.raw" "$WORK/vars.fd"
-for asset in bv-pointer-capture.ps1 bv-pointer-target.ps1 bvgpu-apply-host-resolution.ps1; do cp "scripts/win-assets/$asset" "$RUN/share/"; done
-CTL="$RUN/agent.ctl"; INPUT="$RUN/input.ctl"; : > "$CTL"; : > "$INPUT"
+for asset in bv-pointer-capture.ps1 bv-pointer-target.ps1 bvgpu-apply-host-resolution.ps1; do cp "scripts/win-assets/$asset" "$CASE/share/"; done
+CTL="$CASE/agent.ctl"; INPUT="$CASE/input.ctl"; : > "$CTL"; : > "$INPUT"
 wait_for() {
   local pattern="$1" count="$2" timeout="$3"
   local deadline=$((SECONDS + timeout)) observed previous=''
@@ -25,22 +25,9 @@ send_ok() {
   wait_for '^BVAGENT END ' $((before + 1)) 300 || return 1
   [[ $(grep -E '^BVAGENT CMD .* exit=' "$RUN/run.log" | tail -1) == *' exit=0' ]]
 }
-cleanup() {
-  if kill -0 "$pid" 2>/dev/null; then printf '%s\n' 'shutdown /s /t 3' >> "$CTL"; fi
-  for _ in $(seq 1 60); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
-  kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
-}
-BRIDGEVM_TRACE_DCI5_EMISSION=1 BRIDGEVM_XHCI_REPORT_INTERVAL_MS=200 BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1 \
-scripts/run-hvf-windows-installed-boot.sh \
-  --target "$WORK/disk.raw" --vars "$WORK/vars.fd" --evidence-dir "$RUN" \
-  --watchdog-ms 720000 --ram-mib 6144 --smp-cpus 4 --release --enable-xhci \
-  --input-control "$INPUT" --display-export-fb "$RUN/active-scanout.fb" \
-  --display-export-ms 100 --agent-service-control "$CTL" \
-  --agent-share-host "$RUN/share" --agent-share-guest 'C:\BridgeVMPtr' --agent-share-ms 500 \
-  --virtio-gpu-3d --gpu-trace "$RUN/virtio-gpu.jsonl" --gpu-trace-protocol venus \
-  --viogpu3d-dir "$VIOGPU_DIR" > "$RUN/launcher.out" 2>&1 &
-pid=$!; trap cleanup EXIT
-wait_for '^BVAGENT SERVICE alive' 1 1200 || fail 'agent service timeout'
+source scripts/pointer-reliability-vm.sh
+trap pointer_vm_cleanup EXIT
+pointer_vm_start_until_agent
 for asset in bv-pointer-capture.ps1 bv-pointer-target.ps1 bvgpu-apply-host-resolution.ps1; do
   wait_for "^BVAGENT SHARE host->guest $asset " 1 120 || fail "share timeout: $asset"
 done
@@ -52,16 +39,16 @@ for _ in $(seq 1 120); do
   sleep 1
 done
 grep '"name":"SET_SCANOUT"' "$RUN/virtio-gpu.jsonl" | grep '"response_name":"OK_NODATA"' | grep -q '"rect_w":1600,"rect_h":900' || fail 'active 1600x900 scanout absent'
-for _ in $(seq 1 120); do grep -q '^BVTARGET ready width=1600 height=900 ' "$RUN/share/bv-pointer-target-ready.log" 2>/dev/null && break; sleep 1; done
-ready=$(tr -d '\r' < "$RUN/share/bv-pointer-target-ready.log"); [[ "$ready" =~ ^BVTARGET.ready.width=1600.height=900.screen_x=([-0-9]+).screen_y=([-0-9]+).center_x=([-0-9]+).center_y=([-0-9]+).virtual_x=([-0-9]+).virtual_y=([-0-9]+).virtual_w=([0-9]+).virtual_h=([0-9]+).hwnd=([1-9][0-9]*)$ ]] || fail 'target not ready'
+for _ in $(seq 1 120); do grep -q '^BVTARGET ready width=1600 height=900 ' "$CASE/share/bv-pointer-target-ready.log" 2>/dev/null && break; sleep 1; done
+ready=$(tr -d '\r' < "$CASE/share/bv-pointer-target-ready.log"); [[ "$ready" =~ ^BVTARGET.ready.width=1600.height=900.screen_x=([-0-9]+).screen_y=([-0-9]+).center_x=([-0-9]+).center_y=([-0-9]+).virtual_x=([-0-9]+).virtual_y=([-0-9]+).virtual_w=([0-9]+).virtual_h=([0-9]+).hwnd=([1-9][0-9]*)$ ]] || fail 'target not ready'
 sx=${BASH_REMATCH[1]}; sy=${BASH_REMATCH[2]}; cx=${BASH_REMATCH[3]}; cy=${BASH_REMATCH[4]}
 hid_x=$(( (cx - sx) * 32767 / 1599 )); hid_y=$(( (cy - sy) * 32767 / 899 ))
 printf 'POINTER move:%sx%s\n' "$hid_x" "$hid_y" >> "$INPUT"
 for _ in $(seq 1 120); do [[ -s "$RUN/active-scanout.fb.iosurface" ]] && break; sleep 1; done
 [[ -s "$RUN/active-scanout.fb.iosurface" ]] || fail 'active CGL IOSurface absent'; sleep 2
 send_ok 'powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '\''cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-capture.ps1 -DurationMs 20000 -ReadyPath C:\BridgeVMPtr\bvptr-ready.log > C:\BridgeVMPtr\bvptr.log 2>&1'\'' } | Out-Null; Write-Output BVPTR_LAUNCHED"' || fail 'probe launch failed'
-for _ in $(seq 1 120); do grep -q '^BVPTR_READY cursor_x=800 cursor_y=450' "$RUN/share/bvptr-ready.log" 2>/dev/null && break; sleep 1; done
-grep -q '^BVPTR_READY cursor_x=800 cursor_y=450' "$RUN/share/bvptr-ready.log" || fail 'probe not ready at target'
+for _ in $(seq 1 120); do grep -q "^BVPTR_READY cursor_x=$cx cursor_y=$cy" "$CASE/share/bvptr-ready.log" 2>/dev/null && break; sleep 1; done
+grep -q "^BVPTR_READY cursor_x=$cx cursor_y=$cy" "$CASE/share/bvptr-ready.log" || fail 'probe not ready at target'
 python3 scripts/watch-pointer-visible-reaction.py --iosurface "$RUN/active-scanout.fb.iosurface" --input-control "$INPUT" --out "$RUN/visible" --hid-x "$hid_x" --hid-y "$hid_y" || true
-for _ in $(seq 1 60); do grep -q 'BVPTR summary' "$RUN/share/bvptr.log" 2>/dev/null && break; sleep 1; done
-grep -q 'BVPTR summary' "$RUN/share/bvptr.log" || fail 'probe summary absent'
+for _ in $(seq 1 60); do grep -q 'BVPTR summary' "$CASE/share/bvptr.log" 2>/dev/null && break; sleep 1; done
+grep -q 'BVPTR summary' "$CASE/share/bvptr.log" || fail 'probe summary absent'
