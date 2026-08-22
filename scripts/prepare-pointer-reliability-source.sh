@@ -38,7 +38,7 @@ cleanup() {
 }
 trap cleanup EXIT
 wait_for() {
-  local pattern="$1" need="$2" limit="$3" deadline=$((SECONDS + limit)) observed
+  local pattern="$1" need="$2" limit="$3" observed; local deadline=$((SECONDS + limit))
   while (( SECONDS < deadline )); do
     observed=$(grep -acE "$pattern" "$LOG" 2>/dev/null || true)
     [[ "$observed" =~ ^[0-9]+$ ]] && (( observed >= need )) && return 0
