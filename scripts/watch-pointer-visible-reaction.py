@@ -5,8 +5,7 @@ from pathlib import Path
 parser = argparse.ArgumentParser()
 for option in ("iosurface", "input-control", "out"):
     parser.add_argument(f"--{option}", required=True, type=Path)
-parser.add_argument("--timeout-ms", type=int, default=1000)
-parser.add_argument("--hold-ms", type=int, default=200)
+parser.add_argument("--timeout-ms", type=int, default=1000); parser.add_argument("--hold-ms", type=int, default=200)
 parser.add_argument("--hid-x", required=True, type=int); parser.add_argument("--hid-y", required=True, type=int)
 args = parser.parse_args(); args.out.mkdir(parents=True, exist_ok=True)
 lib = ctypes.CDLL("/System/Library/Frameworks/IOSurface.framework/IOSurface")
@@ -17,13 +16,11 @@ for name in ("IOSurfaceGetBaseAddress",):
     getattr(lib, name).argtypes = [ctypes.c_void_p]; getattr(lib, name).restype = ctypes.c_void_p
 for name in ("IOSurfaceGetBytesPerRow", "IOSurfaceGetWidth", "IOSurfaceGetHeight"):
     getattr(lib, name).argtypes = [ctypes.c_void_p]; getattr(lib, name).restype = ctypes.c_size_t
-
 def surface():
     ident, width, height = map(int, args.iosurface.read_text().split())
     ref = lib.IOSurfaceLookup(ident)
     if not ref or (width, height) != (1600, 900): raise RuntimeError("invalid active IOSurface")
     return ref, ident
-
 def frame(ref, full=False):
     seed = ctypes.c_uint32()
     if lib.IOSurfaceLock(ref, 1, ctypes.byref(seed)): raise RuntimeError("IOSurface lock failed")
@@ -37,8 +34,14 @@ def frame(ref, full=False):
         return region, pixels, seed.value
     finally: lib.IOSurfaceUnlock(ref, 1, ctypes.byref(seed))
 
-ref, ident = surface(); before, before_frame, _ = frame(ref, True)
-baseline = hashlib.sha256(before).hexdigest()
+ref, ident = surface(); baseline = ""; deadline = time.monotonic_ns() + 5_000_000_000
+while time.monotonic_ns() <= deadline:
+    before, _, _ = frame(ref); candidate = hashlib.sha256(before).hexdigest()
+    fill = sum(before[i:i + 4] == b"\xe5\xe5\xe5\xff" for i in range(0, len(before), 4))
+    if fill >= 10_000 and candidate == baseline: break
+    baseline = candidate; time.sleep(0.025)
+else: raise RuntimeError("active target baseline not presented")
+before, before_frame, _ = frame(ref, True); baseline = hashlib.sha256(before).hexdigest()
 (args.out / "iosurface-before.xrgb8888").write_bytes(before_frame)
 started = time.monotonic_ns()
 with args.input_control.open("a", buffering=1) as ctl: ctl.write(f"POINTER press:{args.hid_x}x{args.hid_y}\n")
