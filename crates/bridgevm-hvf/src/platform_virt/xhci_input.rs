@@ -203,9 +203,9 @@ impl VirtPlatform {
             .saturating_add(stats.emitted_wheel_reports);
         let pending_reports = stats.queued_reports.saturating_sub(emitted_reports);
         for _ in 0..pending_reports.min(MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS as u64) {
-            let ready = self.xhci.dci5_previous_event_consumed()
-                && self.report_pacing_allows_emission(self.xhci_dci5_last_emission);
-            if !ready {
+            // Match QEMU's TD-driven HID schedule: ERDP protects event-ring
+            // capacity, but does not hold a later report after its TD is ready.
+            if !self.report_pacing_allows_emission(self.xhci_dci5_last_emission) {
                 break;
             }
             if !self.xhci.process_queued_dci5_pointer_input(mem) {

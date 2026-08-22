@@ -6,7 +6,6 @@ mod commands;
 mod dci3_endpoint_state;
 mod dci3_rearm;
 mod dci5_endpoint_state;
-mod dci5_event_consumption;
 mod device_context;
 mod device_context_mem;
 mod event;
@@ -102,7 +101,6 @@ pub struct XhciController {
     slot1_dci5_dequeue: u64,
     slot1_dci5_ring_base: u64,
     slot1_dci5_dcs: bool,
-    slot1_dci5_last_event: Option<(usize, u64)>,
     slot1_dci5_last_drain_blocked: Option<trace::Dci5DrainBlockedTrace<'static>>,
     boot_keyboard_report_queue: setup_input_report::BootKeyboardReportQueue,
     setup_input_report_stats: XhciSetupInputReportStats,

@@ -20,7 +20,6 @@ impl XhciController {
         self.slot1_dci5_dequeue = 0;
         self.slot1_dci5_ring_base = 0;
         self.slot1_dci5_dcs = false;
-        self.clear_dci5_event_consumption();
         self.slot1_dci5_last_drain_blocked = None;
     }
     pub(super) fn capture_slot1_dci5_input_context(
@@ -90,7 +89,6 @@ impl XhciController {
         self.slot1_dci5_dequeue = dci5_dequeue;
         self.slot1_dci5_ring_base = dci5_dequeue;
         self.slot1_dci5_dcs = raw_dequeue & 1 != 0;
-        self.clear_dci5_event_consumption();
         self.slot1_dci5_last_drain_blocked = None;
         capture_trace.published = true;
 
