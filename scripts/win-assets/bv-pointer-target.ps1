@@ -8,10 +8,6 @@ param([int]$Width = 1600, [int]$Height = 900)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-Add-Type -TypeDefinition @'
-using System.Runtime.InteropServices;
-public static class BvDwm { [DllImport("dwmapi.dll")] public static extern int DwmFlush(); }
-'@
 $root = 'C:\BridgeVMPtr'
 $ready = Join-Path $root 'bv-pointer-target-ready.log'
 $clicks = Join-Path $root 'bv-pointer-target-click.log'
@@ -41,6 +37,9 @@ $count = 0
 $animate = New-Object System.Windows.Forms.Timer
 $animate.Interval = 16
 $animateTicks = 0
+$warmup = New-Object System.Windows.Forms.Timer
+$warmup.Interval = 16
+$warmupTicks = 0
 $animate.Add_Tick({
     $script:animateTicks++
     $form.BackColor = if ($script:animateTicks % 2) { [System.Drawing.Color]::FromArgb(32, 208, 64) } else { [System.Drawing.Color]::FromArgb(48, 192, 80) }
@@ -51,8 +50,7 @@ $button.Add_MouseDown({
     $form.BackColor = [System.Drawing.Color]::FromArgb(32, 208, 64)
     $button.BackColor = [System.Drawing.Color]::FromArgb(255, 224, 32)
     $button.Text = 'PRESS RECEIVED'; $form.Refresh()
-    $dwm = [BvDwm]::DwmFlush()
-    [IO.File]::AppendAllText($clicks, ('BVTARGET down dwm=' + $dwm + ' utc=' + [DateTime]::UtcNow.ToString('o') + "`r`n"))
+    [IO.File]::AppendAllText($clicks, ('BVTARGET down utc=' + [DateTime]::UtcNow.ToString('o') + "`r`n"))
     $script:animateTicks = 0; $animate.Start()
 })
 $button.Add_Click({
@@ -61,13 +59,15 @@ $button.Add_Click({
     [IO.File]::AppendAllText($clicks, ('BVTARGET click count=' + $script:count +
         ' utc=' + [DateTime]::UtcNow.ToString('o') + "`r`n"))
 })
-$form.Add_Shown({
-    $form.Activate()
-    $button.Focus()
+$warmup.Add_Tick({
+    $script:warmupTicks++; $form.Invalidate()
+    if ($script:warmupTicks -lt 120) { return }
+    $warmup.Stop()
     [IO.File]::WriteAllText($ready, ('BVTARGET ready width=' + $form.ClientSize.Width +
         ' height=' + $form.ClientSize.Height + ' screen_x=' + $screen.Bounds.X + ' screen_y=' + $screen.Bounds.Y +
         ' center_x=' + ($form.Left + ($form.Width / 2)) + ' center_y=' + ($form.Top + ($form.Height / 2)) + ' virtual_x=' + $virtual.X +
         ' virtual_y=' + $virtual.Y + ' virtual_w=' + $virtual.Width + ' virtual_h=' + $virtual.Height +
         ' hwnd=' + $form.Handle + "`r`n"))
 })
+$form.Add_Shown({ $form.Activate(); $button.Focus(); $warmup.Start() })
 [void]$form.ShowDialog()
