@@ -2,7 +2,7 @@
 # Product-mode VM process recreation for one B4 lane. Sourced by the case gate.
 pointer_vm_launch() {
   RUN="$CASE/generation-$generation"; mkdir -p "$RUN"
-  BRIDGEVM_TRACE_DCI5_EMISSION=1 BRIDGEVM_XHCI_REPORT_INTERVAL_MS=200 BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1 \
+  BRIDGEVM_TRACE_DCI5_EMISSION=1 BRIDGEVM_XHCI_REPORT_INTERVAL_MS=200 BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1 BRIDGEVM_VIRTIO_GPU_ASYNC_PRESENT=0 \
   scripts/run-hvf-windows-installed-boot.sh --exit-on-reset \
     --target "$WORK/disk.raw" --vars "$WORK/vars.fd" --evidence-dir "$RUN" \
     --watchdog-ms 720000 --ram-mib 6144 --smp-cpus 4 --release --enable-xhci \
