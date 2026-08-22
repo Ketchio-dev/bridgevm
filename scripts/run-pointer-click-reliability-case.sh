@@ -10,10 +10,10 @@ for asset in bv-pointer-capture.ps1 bv-pointer-target.ps1 bvgpu-apply-host-resol
 CTL="$RUN/agent.ctl"; INPUT="$RUN/input.ctl"; : > "$CTL"; : > "$INPUT"
 wait_for() {
   local pattern="$1" count="$2" timeout="$3"
-  local deadline=$((SECONDS + timeout))
-  local observed
+  local deadline=$((SECONDS + timeout)) observed previous=''
   while (( SECONDS < deadline )); do
     observed=$(grep -acE "$pattern" "$RUN/run.log" 2>/dev/null || true)
+    [[ "$observed" == "$previous" ]] || { printf 'B4 wait pattern=%q observed=%q need=%q seconds=%q deadline=%q\n' "$pattern" "$observed" "$count" "$SECONDS" "$deadline" >&2; previous="$observed"; }
     [[ "$observed" =~ ^[0-9]+$ ]] && (( observed >= count )) && return 0
     kill -0 "$pid" 2>/dev/null || return 1; sleep 1
   done
