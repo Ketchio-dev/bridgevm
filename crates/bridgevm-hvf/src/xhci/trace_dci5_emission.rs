@@ -7,7 +7,7 @@ use super::pointer_input_report::PointerInputReport;
 use super::trace_dci5_emission_format::{format, Dci5EmissionTrace};
 use super::XhciController;
 use std::sync::OnceLock;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 pub(crate) fn enabled() -> bool {
     super::trace::bringup_enabled()
@@ -77,6 +77,12 @@ impl XhciController {
         trace.erdp = erdp;
         static START: OnceLock<Instant> = OnceLock::new();
         let elapsed_ms = START.get_or_init(Instant::now).elapsed().as_millis();
-        println!("{} host_elapsed_ms={elapsed_ms}", format(trace));
+        let unix_ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        println!(
+            "{} host_elapsed_ms={elapsed_ms} host_unix_ns={unix_ns}",
+            format(trace)
+        );
     }
 }
