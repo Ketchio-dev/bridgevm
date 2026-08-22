@@ -12,19 +12,15 @@ while [ $# -gt 0 ]; do
     *) echo "unknown pointer-tier option $1" >&2; exit 2 ;;
   esac
 done
-[ -n "$OUT" ] || { echo "run-pointer-reliability-tier.sh needs --out" >&2; exit 2; }
-mkdir -p "$OUT"
-
-TARGET=${TARGET:-$HOME/BridgeVM/work/net-live-20260724.raw}
-VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}
+[ -n "$OUT" ] || { echo "run-pointer-reliability-tier.sh needs --out" >&2; exit 2; }; mkdir -p "$OUT"
+PREPARED=${PREPARED:-$HOME/BridgeVM/prepared/windows-1.0/d7a95823e889db5f4a24948be50653aaec92fb789adc8ff763c27c83be080b16-c61e2136c23b5e0a681f5d33810f617ae6ffc3ea7df0a950248c311767714265}
+TARGET=${TARGET:-$PREPARED/disk.raw}; VARS=${VARS:-$PREPARED/vars.fd}
 for input in "$TARGET" "$VARS"; do
-  head -c1 "$input" >/dev/null 2>&1 || {
-    echo "cannot read required Windows media: $input" >&2
-    exit 1
-  }
+  head -c1 "$input" >/dev/null 2>&1 || { echo "cannot read required Windows media: $input" >&2; exit 1; }
 done
-
 seal() { openssl dgst -sha256 -r "$1" 2>/dev/null | cut -d' ' -f1 | tr -d '\n'; }
+IMAGE_HASH="$(seal "$TARGET")"; VARS_HASH="$(seal "$VARS")"
+[[ "$TARGET:$VARS" != "$PREPARED/disk.raw:$PREPARED/vars.fd" || "$(basename "$PREPARED")" == "$IMAGE_HASH-$VARS_HASH" ]] || { echo 'prepared Windows media identity mismatch' >&2; exit 1; }
 
 status=0
 N="${N:-20}" OUT="$OUT/batch" TARGET="$TARGET" VARS="$VARS" \
@@ -44,8 +40,8 @@ cat > "$OUT/receipt.json" <<EOF
   "criterion": "B4",
   "job_id": "$JOB_ID",
   "commit": "$(git -C "$REPO" rev-parse HEAD)",
-  "image_sha256": "$(seal "$TARGET")",
-  "vars_sha256": "$(seal "$VARS")",
+  "image_sha256": "$IMAGE_HASH",
+  "vars_sha256": "$VARS_HASH",
   "host_model": "$(sysctl -n hw.model)",
   "macos_version": "$(sw_vers -productVersion)",
   "sample_count": ${N:-20},
