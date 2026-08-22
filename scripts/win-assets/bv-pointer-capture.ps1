@@ -2,7 +2,8 @@
 param(
     [int]$DurationMs = 20000,
     [int]$PollMs = 4,
-    [string]$ReadyPath = ""
+    [string]$ReadyPath = "",
+    [switch]$StopAfterClick
 )
 
 # B4 guest-side pointer instrument.
@@ -105,6 +106,7 @@ while ($sw.ElapsedMilliseconds -lt $DurationMs) {
         }
         $down = $now
     }
+    if ($StopAfterClick -and (($releases -gt 0) -or ($edges -gt 0))) { break }
     Start-Sleep -Milliseconds $PollMs
 }
 

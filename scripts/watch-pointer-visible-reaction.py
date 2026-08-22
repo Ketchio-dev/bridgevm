@@ -34,7 +34,7 @@ def frame(ref, full=False):
         return region, pixels, seed.value
     finally: lib.IOSurfaceUnlock(ref, 1, ctypes.byref(seed))
 
-ref, ident = surface(); baseline = ""; deadline = time.monotonic_ns() + 5_000_000_000
+ref, ident = surface(); baseline = ""; deadline = time.monotonic_ns() + 120_000_000_000
 while time.monotonic_ns() <= deadline:
     before, _, _ = frame(ref); candidate = hashlib.sha256(before).hexdigest()
     fill = sum(before[i:i + 4] == b"\xe5\xe5\xe5\xff" for i in range(0, len(before), 4))

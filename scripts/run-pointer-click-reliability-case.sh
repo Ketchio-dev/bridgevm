@@ -46,7 +46,7 @@ hid_x=$(( (cx - sx) * 32767 / 1599 )); hid_y=$(( (cy - sy) * 32767 / 899 ))
 printf 'POINTER move:%sx%s\n' "$hid_x" "$hid_y" >> "$INPUT"
 for _ in $(seq 1 120); do [[ -s "$RUN/active-scanout.fb.iosurface" ]] && break; sleep 1; done
 [[ -s "$RUN/active-scanout.fb.iosurface" ]] || fail 'active CGL IOSurface absent'; sleep 2
-send_ok 'powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '\''cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-capture.ps1 -DurationMs 20000 -ReadyPath C:\BridgeVMPtr\bvptr-ready.log > C:\BridgeVMPtr\bvptr.log 2>&1'\'' } | Out-Null; Write-Output BVPTR_LAUNCHED"' || fail 'probe launch failed'
+send_ok 'powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '\''cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-capture.ps1 -DurationMs 20000 -ReadyPath C:\BridgeVMPtr\bvptr-ready.log -StopAfterClick > C:\BridgeVMPtr\bvptr.log 2>&1'\'' } | Out-Null; Write-Output BVPTR_LAUNCHED"' || fail 'probe launch failed'
 for _ in $(seq 1 120); do grep -q "^BVPTR_READY cursor_x=$cx cursor_y=$cy" "$CASE/share/bvptr-ready.log" 2>/dev/null && break; sleep 1; done
 grep -q "^BVPTR_READY cursor_x=$cx cursor_y=$cy" "$CASE/share/bvptr-ready.log" || fail 'probe not ready at target'
 python3 scripts/watch-pointer-visible-reaction.py --iosurface "$RUN/active-scanout.fb.iosurface" --input-control "$INPUT" --out "$RUN/visible" --hid-x "$hid_x" --hid-y "$hid_y" || true
