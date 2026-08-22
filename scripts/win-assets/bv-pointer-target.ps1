@@ -60,9 +60,10 @@ $button.Add_Click({
         ' utc=' + [DateTime]::UtcNow.ToString('o') + "`r`n"))
 })
 $warmup.Add_Tick({
-    $script:warmupTicks++; $form.Invalidate()
-    if ($script:warmupTicks -lt 120) { return }
-    $warmup.Stop()
+    $script:warmupTicks++
+    $form.BackColor = if ($script:warmupTicks % 2) { [System.Drawing.Color]::FromArgb(16, 48, 160) } else { [System.Drawing.Color]::FromArgb(16, 48, 144) }
+    $form.Invalidate()
+    if ($script:warmupTicks -ne 120) { return }
     [IO.File]::WriteAllText($ready, ('BVTARGET ready width=' + $form.ClientSize.Width +
         ' height=' + $form.ClientSize.Height + ' screen_x=' + $screen.Bounds.X + ' screen_y=' + $screen.Bounds.Y +
         ' center_x=' + ($form.Left + ($form.Width / 2)) + ' center_y=' + ($form.Top + ($form.Height / 2)) + ' virtual_x=' + $virtual.X +
