@@ -62,8 +62,7 @@ landed=0; declare -a firsts=()
 for i in $(seq 1 "$N"); do
   run="$OUT/run$i"; work="$OUT/work$i"
   rm -rf "$work"; mkdir -p "$work" "$run/share"
-  cp -c "$TARGET" "$work/disk.raw"; cp "$VARS" "$work/vars.fd"
-  chmod 600 "$work/disk.raw" "$work/vars.fd" # immutable sources stay read-only
+  cp -c "$TARGET" "$work/disk.raw"; cp "$VARS" "$work/vars.fd"; chmod 600 "$work/disk.raw" "$work/vars.fd"
   cp "$REPO/scripts/win-assets/bv-pointer-capture.ps1" "$run/share/"
   CTL="$run/agent.ctl"; INPUT="$run/input.ctl"; : > "$CTL"; : > "$INPUT"
   BRIDGEVM_TRACE_DCI5_EMISSION=1 BRIDGEVM_XHCI_REPORT_INTERVAL_MS=200 \
