@@ -27,9 +27,10 @@ send_ok() {
 }
 cleanup() {
   if kill -0 "$pid" 2>/dev/null; then printf '%s\n' 'shutdown /s /t 3' >> "$CTL"; fi
-  wait "$pid" 2>/dev/null || true
+  for _ in $(seq 1 60); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+  kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
 }
-BRIDGEVM_TRACE_DCI5_EMISSION=1 BRIDGEVM_XHCI_REPORT_INTERVAL_MS=200 BRIDGEVM_VIRTIO_GPU_RES=1600x1024 \
+BRIDGEVM_TRACE_DCI5_EMISSION=1 BRIDGEVM_XHCI_REPORT_INTERVAL_MS=200 \
 scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" --evidence-dir "$RUN" \
   --watchdog-ms 720000 --ram-mib 6144 --smp-cpus 4 --enable-xhci \
