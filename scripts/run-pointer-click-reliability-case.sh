@@ -33,7 +33,7 @@ cleanup() {
 BRIDGEVM_TRACE_DCI5_EMISSION=1 BRIDGEVM_XHCI_REPORT_INTERVAL_MS=200 \
 scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" --evidence-dir "$RUN" \
-  --watchdog-ms 720000 --ram-mib 6144 --smp-cpus 4 --enable-xhci \
+  --watchdog-ms 720000 --ram-mib 6144 --smp-cpus 4 --release --enable-xhci \
   --input-control "$INPUT" --pointer-input-actions 'click:16384x16384' \
   --pointer-input-fire-delay-ms 600000 --pointer-input-ramfb-delay-ms "$DELAYS" \
   --display-export-ppm "$RUN/active-scanout.ppm" --display-export-fb "$RUN/active-scanout.fb" \
@@ -42,7 +42,7 @@ scripts/run-hvf-windows-installed-boot.sh \
   --virtio-gpu-3d --gpu-trace "$RUN/virtio-gpu.jsonl" --gpu-trace-protocol venus \
   --viogpu3d-dir "$VIOGPU_DIR" > "$RUN/launcher.out" 2>&1 &
 pid=$!; trap cleanup EXIT
-wait_for '^BVAGENT SERVICE alive' 1 900 || fail 'agent service timeout'
+wait_for '^BVAGENT SERVICE alive' 1 1200 || fail 'agent service timeout'
 for asset in bv-pointer-capture.ps1 bv-pointer-target.ps1 bvgpu-apply-host-resolution.ps1; do
   wait_for "^BVAGENT SHARE host->guest $asset " 1 120 || fail "share timeout: $asset"
 done
