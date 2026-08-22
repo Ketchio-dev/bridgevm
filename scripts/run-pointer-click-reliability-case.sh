@@ -42,7 +42,7 @@ scripts/run-hvf-windows-installed-boot.sh \
   --virtio-gpu-3d --gpu-trace "$RUN/virtio-gpu.jsonl" --gpu-trace-protocol venus \
   --viogpu3d-dir "$VIOGPU_DIR" > "$RUN/launcher.out" 2>&1 &
 pid=$!; trap cleanup EXIT
-wait_for '^BVAGENT SERVICE alive' 1 480 || fail 'agent service timeout'
+wait_for '^BVAGENT SERVICE alive' 1 900 || fail 'agent service timeout'
 for asset in bv-pointer-capture.ps1 bv-pointer-target.ps1 bvgpu-apply-host-resolution.ps1; do
   wait_for "^BVAGENT SHARE host->guest $asset " 1 120 || fail "share timeout: $asset"
 done
