@@ -140,7 +140,7 @@ fn xhci_pointer_input_trigger_records_fire_after_delayed_dci5_emit() {
 }
 
 #[test]
-fn xhci_pointer_input_ramfb_emits_before_after_and_delays_when_trigger_fires() {
+fn xhci_pointer_input_ramfb_emits_before_and_delays_without_blocking_after_frame() {
     // Given: pointer-input has two configured delayed RAMFB checkpoints.
     let (mut platform, mut mem) = new_platform_and_ram();
     program_xhci_bar0(&mut platform, &mut mem);
@@ -182,14 +182,8 @@ fn xhci_pointer_input_ramfb_emits_before_after_and_delays_when_trigger_fires() {
         },
     );
 
-    // Then: immediate labels are unchanged and each delayed label appears exactly once.
-    assert_eq!(
-        checkpoints,
-        [
-            "pointer-input-before".to_string(),
-            "pointer-input-after".to_string(),
-            "pointer-input-delay-5ms".to_string(),
-            "pointer-input-delay-15ms".to_string()
-        ]
-    ); println!("pointer delay checkpoint labels: {}", checkpoints.join(","));
+    // Then: no synchronous after-frame delays release; delayed labels appear once.
+    assert_eq!(checkpoints, ["pointer-input-before".to_string(),
+        "pointer-input-delay-5ms".to_string(), "pointer-input-delay-15ms".to_string()]);
+    println!("pointer delay checkpoint labels: {}", checkpoints.join(","));
 }
