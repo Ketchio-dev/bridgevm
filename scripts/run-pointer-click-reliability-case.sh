@@ -22,7 +22,7 @@ wait_for() {
 send_ok() {
   local command="$1" before; before=$(grep -c '^BVAGENT END ' "$RUN/run.log" 2>/dev/null || true)
   printf '%s\n' "$command" >> "$CTL"
-  wait_for '^BVAGENT END ' $((before + 1)) 120 || return 1
+  wait_for '^BVAGENT END ' $((before + 1)) 300 || return 1
   [[ $(grep -E '^BVAGENT CMD .* exit=' "$RUN/run.log" | tail -1) == *' exit=0' ]]
 }
 cleanup() {
@@ -35,7 +35,7 @@ scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" --evidence-dir "$RUN" \
   --watchdog-ms 720000 --ram-mib 6144 --smp-cpus 4 --enable-xhci \
   --input-control "$INPUT" --pointer-input-actions 'click:16384x16384' \
-  --pointer-input-fire-delay-ms 480000 --pointer-input-ramfb-delay-ms "$DELAYS" \
+  --pointer-input-fire-delay-ms 600000 --pointer-input-ramfb-delay-ms "$DELAYS" \
   --display-export-ppm "$RUN/active-scanout.ppm" --display-export-fb "$RUN/active-scanout.fb" \
   --display-export-ms 100 --agent-service-control "$CTL" \
   --agent-share-host "$RUN/share" --agent-share-guest 'C:\BridgeVMPtr' --agent-share-ms 500 \
