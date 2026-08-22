@@ -1396,3 +1396,4 @@ scripts/render-graphics-compatibility.py	245	0
 tests/fixtures/fake-swtpm.py	77	0
 scripts/run-pointer-click-reliability-case.sh	70	0
 scripts/watch-pointer-visible-reaction.py	63	0
+scripts/prepare-pointer-reliability-source.sh	82	0
