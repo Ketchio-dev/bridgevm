@@ -8,6 +8,10 @@ param([int]$Width = 1600, [int]$Height = 900)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+public static class BvDwm { [DllImport("dwmapi.dll")] public static extern int DwmFlush(); }
+'@
 $root = 'C:\BridgeVMPtr'
 $ready = Join-Path $root 'bv-pointer-target-ready.log'
 $clicks = Join-Path $root 'bv-pointer-target-click.log'
@@ -38,6 +42,8 @@ $button.Add_MouseDown({
     $form.BackColor = [System.Drawing.Color]::FromArgb(32, 208, 64)
     $button.BackColor = [System.Drawing.Color]::FromArgb(255, 224, 32)
     $button.Text = 'PRESS RECEIVED'; $form.Refresh()
+    $dwm = [BvDwm]::DwmFlush()
+    [IO.File]::AppendAllText($clicks, ('BVTARGET down dwm=' + $dwm + ' utc=' + [DateTime]::UtcNow.ToString('o') + "`r`n"))
 })
 $button.Add_Click({
     $script:count++
