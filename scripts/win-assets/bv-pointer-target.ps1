@@ -49,8 +49,8 @@ $form.Add_Shown({
     $form.Activate()
     $button.Focus()
     [IO.File]::WriteAllText($ready, ('BVTARGET ready width=' + $form.ClientSize.Width +
-        ' height=' + $form.ClientSize.Height + ' center_x=' + ($form.Left + ($form.Width / 2)) +
-        ' center_y=' + ($form.Top + ($form.Height / 2)) + ' virtual_x=' + $virtual.X +
+        ' height=' + $form.ClientSize.Height + ' screen_x=' + $screen.Bounds.X + ' screen_y=' + $screen.Bounds.Y +
+        ' center_x=' + ($form.Left + ($form.Width / 2)) + ' center_y=' + ($form.Top + ($form.Height / 2)) + ' virtual_x=' + $virtual.X +
         ' virtual_y=' + $virtual.Y + ' virtual_w=' + $virtual.Width + ' virtual_h=' + $virtual.Height +
         ' hwnd=' + $form.Handle + "`r`n"))
 })
