@@ -13,8 +13,8 @@ wait_for() {
   local deadline=$((SECONDS + timeout))
   local observed
   while (( SECONDS < deadline )); do
-    observed=$(grep -cE "$pattern" "$RUN/run.log" 2>/dev/null || true)
-    (( observed >= count )) && return 0
+    observed=$(grep -acE "$pattern" "$RUN/run.log" 2>/dev/null || true)
+    [[ "$observed" =~ ^[0-9]+$ ]] && (( observed >= count )) && return 0
     kill -0 "$pid" 2>/dev/null || return 1; sleep 1
   done
   return 1
