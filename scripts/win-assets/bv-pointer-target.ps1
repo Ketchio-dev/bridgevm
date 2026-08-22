@@ -38,12 +38,22 @@ $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $form.Controls.Add($button)
 
 $count = 0
+$animate = New-Object System.Windows.Forms.Timer
+$animate.Interval = 16
+$animateTicks = 0
+$animate.Add_Tick({
+    $script:animateTicks++
+    $form.BackColor = if ($script:animateTicks % 2) { [System.Drawing.Color]::FromArgb(32, 208, 64) } else { [System.Drawing.Color]::FromArgb(48, 192, 80) }
+    $form.Invalidate()
+    if ($script:animateTicks -ge 63) { $animate.Stop() }
+})
 $button.Add_MouseDown({
     $form.BackColor = [System.Drawing.Color]::FromArgb(32, 208, 64)
     $button.BackColor = [System.Drawing.Color]::FromArgb(255, 224, 32)
     $button.Text = 'PRESS RECEIVED'; $form.Refresh()
     $dwm = [BvDwm]::DwmFlush()
     [IO.File]::AppendAllText($clicks, ('BVTARGET down dwm=' + $dwm + ' utc=' + [DateTime]::UtcNow.ToString('o') + "`r`n"))
+    $script:animateTicks = 0; $animate.Start()
 })
 $button.Add_Click({
     $script:count++
