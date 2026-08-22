@@ -273,3 +273,35 @@ active-scanout artifacts. The gate enables both the proven display framebuffer
 sink and 100 ms PPM exporter/readback feed, still sampling at the fixed
 5..1000 ms delays. A ramfb-named artifact fails closed and cannot land a run.
 B4 remains OPEN pending the corrected normal 20/20 receipt.
+
+### 2026-08-22 prepared-media diagnostics
+
+The first attempt to move t8 from the non-display `net-live` source to the
+immutable t7-proven driver-ready pair, job `20260822-045326-10470-19681` at
+`1cc1feaf6797c19ecab5c08e6a1c091577e64fbc`, was cancelled before guest boot.
+The source is correctly mode 400 and APFS `cp -c` preserved that mode on the
+private clone, so NVMe open failed with `Permission denied`. The correction
+changes only each run's disk and vars copies to mode 600; source hashes and
+mode 400 permissions remained unchanged. This is host-staging diagnosis, not
+B4 evidence.
+
+The corrected staging run, cancelled job `20260822-050458-14669-13015` at
+`78c777860ca532241f007edd3c298eae3ad013f6`, proved the prepared guest is
+GPU-driver active (9,366 virtio-gpu trace records), but also falsified the
+claim that changing the image alone supplied the fixed visible target. The
+guest repeatedly requested 1280x1024 while the host advertised its default
+1280x800: 929 `SET_SCANOUT` commands returned `ERR_UNSPEC`. The preposition
+report moved the cursor to `(871,650)`, not required `(544,380)`, so the parser
+correctly returned `invalid-desktop`. All pointer checkpoints consequently
+fell back to `ramfb-checkpoint-*`, which the active-scanout parser rejects.
+
+That run also emitted 6/6 Success move, button and release reports with event
+ERDP advancing before each report, but button-to-release took 12,543 ms
+(`host_elapsed_ms=64851` to `77394`) while waiting for the prior event to be
+consumed. It observed no user32 transition. The job was stopped after this
+separator and is not closure evidence. Active host/guest geometry and a real,
+stable click target must now be prepared outside the measured latency window;
+the fixed N=20 and p95 <=250 ms criteria remain unchanged. The briefly raised
+hypothesis that Event Data status `0x01000006` reports an invalid six-byte
+residual was also wrong and is retracted: with ED=1 the low field is EDTLA, so
+six is the correct actual transferred length.
