@@ -16,8 +16,11 @@ Remove-Item $ready,$clicks -Force -ErrorAction SilentlyContinue
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'BridgeVM B4 Pointer Target'
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+$screen = [System.Windows.Forms.Screen]::AllScreens | Where-Object { $_.Bounds.Width -eq $Width -and $_.Bounds.Height -eq $Height } | Select-Object -First 1
+if (-not $screen) { throw 'B4 target screen not found' }
+$virtual = [System.Windows.Forms.SystemInformation]::VirtualScreen
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
-$form.Bounds = New-Object System.Drawing.Rectangle(0, 0, $Width, $Height)
+$form.Bounds = $screen.Bounds
 $form.BackColor = [System.Drawing.Color]::FromArgb(16, 48, 160)
 $form.TopMost = $true
 
@@ -47,6 +50,8 @@ $form.Add_Shown({
     $button.Focus()
     [IO.File]::WriteAllText($ready, ('BVTARGET ready width=' + $form.ClientSize.Width +
         ' height=' + $form.ClientSize.Height + ' center_x=' + ($form.Left + ($form.Width / 2)) +
-        ' center_y=' + ($form.Top + ($form.Height / 2)) + ' hwnd=' + $form.Handle + "`r`n"))
+        ' center_y=' + ($form.Top + ($form.Height / 2)) + ' virtual_x=' + $virtual.X +
+        ' virtual_y=' + $virtual.Y + ' virtual_w=' + $virtual.Width + ' virtual_h=' + $virtual.Height +
+        ' hwnd=' + $form.Handle + "`r`n"))
 })
 [void]$form.ShowDialog()

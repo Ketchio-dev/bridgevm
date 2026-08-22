@@ -18,12 +18,15 @@ VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 
 parse_run_log() { # fired press release stuck first_ms; edge = press+release
-  local log="$1" ptr="${2:-/dev/null}" click="${3:-/dev/null}" first='' fired=false press=0 release=0 edges=0 stuck=1
-  grep -q '^BVTARGET ready width=1600 height=900 center_x=800 center_y=450 hwnd=[1-9][0-9]*' "$(dirname "$log")/share/bv-pointer-target-ready.log" 2>/dev/null || { echo 'false 0 0 1 invalid-target'; return; }
-  grep -q '^BVPTR begin .* session=[1-9][0-9]* input_desktop_open=1 foreground=[1-9][0-9]* cursor_x=800 cursor_y=450 ' "$ptr" 2>/dev/null || { echo 'false 0 0 1 invalid-desktop'; return; }
+  local log="$1" ptr="${2:-/dev/null}" click="${3:-/dev/null}" first='' fired=false press=0 release=0 edges=0 stuck=1 ready cx cy hid_x hid_y env
+  ready=$(tr -d '\r' < "$(dirname "$log")/share/bv-pointer-target-ready.log" 2>/dev/null || true)
+  [[ "$ready" =~ ^BVTARGET.ready.width=1600.height=900.center_x=([-0-9]+).center_y=([-0-9]+).virtual_x=([-0-9]+).virtual_y=([-0-9]+).virtual_w=([0-9]+).virtual_h=([0-9]+).hwnd=([1-9][0-9]*)$ ]] || { echo 'false 0 0 1 invalid-target'; return; }
+  cx=${BASH_REMATCH[1]}; cy=${BASH_REMATCH[2]}; env="$(dirname "$log")/visible/visible.env"
+  hid_x=$(awk -F= '$1=="hid_x"{print $2}' "$env" 2>/dev/null); hid_y=$(awk -F= '$1=="hid_y"{print $2}' "$env" 2>/dev/null)
+  grep -q "^BVPTR begin .* session=[1-9][0-9]* input_desktop_open=1 foreground=[1-9][0-9]* cursor_x=$cx cursor_y=$cy " "$ptr" 2>/dev/null || { echo 'false 0 0 1 invalid-desktop'; return; }
   [[ $(tr -d '\r' < "$click" 2>/dev/null | grep -c '^BVTARGET click ' || true) -eq 1 ]] || { echo 'false 0 0 1 invalid-click-count'; return; }
-  [[ $(grep -c '^live input accepted: command=Pointer("press:16384x16384")$' "$log" 2>/dev/null || true) -eq 1 \
-    && $(grep -c '^live input accepted: command=Pointer("release:16384x16384")$' "$log" 2>/dev/null || true) -eq 1 ]] && fired=true
+  [[ -n "$hid_x" && -n "$hid_y" && $(grep -Fxc "live input accepted: command=Pointer(\"press:${hid_x}x${hid_y}\")" "$log" 2>/dev/null || true) -eq 1 \
+    && $(grep -Fxc "live input accepted: command=Pointer(\"release:${hid_x}x${hid_y}\")" "$log" 2>/dev/null || true) -eq 1 ]] && fired=true
   press=$(tr -d '\r' < "$ptr" | grep -c '^BVPTR press ' || true)
   release=$(tr -d '\r' < "$ptr" | grep -c '^BVPTR release ' || true)
   edges=$(tr -d '\r' < "$ptr" | grep -c '^BVPTR edge ' || true)
@@ -31,15 +34,15 @@ parse_run_log() { # fired press release stuck first_ms; edge = press+release
   local summary
   summary=$(tr -d '\r' < "$ptr" | grep '^BVPTR summary ' | tail -1 || true)
   [[ "$summary" == *' moves=0 '* && "$summary" == *' stuck=0' ]] && stuck=0
-  tr -d '\r' < "$ptr" | grep -E '^BVPTR (press|release) ' | grep -qv ' x=800 y=450 ' && { echo 'false 0 0 1 invalid-coordinate'; return; }
-  first=$(awk -F= '$1=="source"{s=$2} $1=="first_changed_ms"{m=$2} END{if(s=="active-cgl-iosurface")print m}' "$(dirname "$log")/visible/visible.env" 2>/dev/null)
+  tr -d '\r' < "$ptr" | grep -E '^BVPTR (press|release) ' | grep -qv " x=$cx y=$cy " && { echo 'false 0 0 1 invalid-coordinate'; return; }
+  first=$(awk -F= '$1=="source"{s=$2} $1=="first_changed_ms"{m=$2} END{if(s=="active-cgl-iosurface")print m}' "$env" 2>/dev/null)
   echo "$fired $press $release $stuck ${first:-none}"
 }
 
 if [[ "${1:-}" == "--selftest" ]]; then
   d=$(mktemp -d); t="$d/run.log"; p="$d/bvptr.log"; c="$d/click.log"; mkdir "$d/visible" "$d/share"; printf 'BVTARGET click count=1\r\n' > "$c"
-  printf 'BVTARGET ready width=1600 height=900 center_x=800 center_y=450 hwnd=9\r\n' > "$d/share/bv-pointer-target-ready.log"
-  printf 'source=active-cgl-iosurface\nfirst_changed_ms=250\n' > "$d/visible/visible.env"
+  printf 'BVTARGET ready width=1600 height=900 center_x=800 center_y=450 virtual_x=0 virtual_y=0 virtual_w=1600 virtual_h=900 hwnd=9\r\n' > "$d/share/bv-pointer-target-ready.log"
+  printf 'source=active-cgl-iosurface\nhid_x=16384\nhid_y=16384\nfirst_changed_ms=250\n' > "$d/visible/visible.env"
   printf 'live input accepted: command=Pointer("press:16384x16384")\nlive input accepted: command=Pointer("release:16384x16384")\n' > "$t"
   printf 'BVPTR begin duration_ms=20 poll_ms=4 session=1 input_desktop_open=1 foreground=9 cursor_x=800 cursor_y=450 utc=x\r\nBVPTR press t_ms=3 x=800 y=450 fg=9\r\nBVPTR release t_ms=40 x=800 y=450 fg=9\r\nBVPTR summary presses=1 releases=1 edges=0 moves=0 first_press_ms=3 first_release_ms=40 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p" "$c")
@@ -50,7 +53,7 @@ if [[ "${1:-}" == "--selftest" ]]; then
   printf 'BVPTR begin duration_ms=20 poll_ms=4 session=1 input_desktop_open=1 foreground=9 cursor_x=800 cursor_y=450 utc=x\r\nBVPTR edge t_ms=12\r\nBVPTR summary presses=0 releases=0 edges=1 moves=0 first_press_ms=-1 first_release_ms=-1 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p" "$c")
   [[ "$r" == "true 1 1 0 250" ]] || fail "selftest edge-run parse: got '$r'"
-  printf 'source=active-cgl-iosurface\nfirst_changed_ms=none\n' > "$d/visible/visible.env"
+  printf 'source=active-cgl-iosurface\nhid_x=16384\nhid_y=16384\nfirst_changed_ms=none\n' > "$d/visible/visible.env"
   printf 'live input accepted: command=Pointer("press:16384x16384")\nlive input accepted: command=Pointer("release:16384x16384")\n' > "$t"
   printf 'BVPTR begin duration_ms=20 poll_ms=4 session=1 input_desktop_open=1 foreground=9 cursor_x=800 cursor_y=450 utc=x\r\nBVPTR summary presses=0 releases=0 edges=0 moves=0 first_press_ms=-1 first_release_ms=-1 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p" "$c")

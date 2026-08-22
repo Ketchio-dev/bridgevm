@@ -7,6 +7,7 @@ for option in ("iosurface", "input-control", "out"):
     parser.add_argument(f"--{option}", required=True, type=Path)
 parser.add_argument("--timeout-ms", type=int, default=1000)
 parser.add_argument("--hold-ms", type=int, default=200)
+parser.add_argument("--hid-x", required=True, type=int); parser.add_argument("--hid-y", required=True, type=int)
 args = parser.parse_args(); args.out.mkdir(parents=True, exist_ok=True)
 lib = ctypes.CDLL("/System/Library/Frameworks/IOSurface.framework/IOSurface")
 lib.IOSurfaceLookup.argtypes = [ctypes.c_uint32]; lib.IOSurfaceLookup.restype = ctypes.c_void_p
@@ -40,11 +41,11 @@ ref, ident = surface(); before, before_frame, _ = frame(ref, True)
 baseline = hashlib.sha256(before).hexdigest()
 (args.out / "iosurface-before.xrgb8888").write_bytes(before_frame)
 started = time.monotonic_ns()
-with args.input_control.open("ab", buffering=0) as ctl: ctl.write(b"POINTER press:16384x16384\n")
+with args.input_control.open("a", buffering=1) as ctl: ctl.write(f"POINTER press:{args.hid_x}x{args.hid_y}\n")
 def release():
     remaining = started + args.hold_ms * 1_000_000 - time.monotonic_ns()
     if remaining > 0: time.sleep(remaining / 1_000_000_000)
-    with args.input_control.open("ab", buffering=0) as ctl: ctl.write(b"POINTER release:16384x16384\n")
+    with args.input_control.open("a", buffering=1) as ctl: ctl.write(f"POINTER release:{args.hid_x}x{args.hid_y}\n")
 thread = threading.Thread(target=release); thread.start()
 changed = "none"; first = "none"; changed_frame = b""; deadline = started + args.timeout_ms * 1_000_000
 while time.monotonic_ns() <= deadline:
@@ -55,5 +56,5 @@ while time.monotonic_ns() <= deadline:
     time.sleep(0.005)
 thread.join()
 if changed_frame: (args.out / "iosurface-changed.xrgb8888").write_bytes(changed_frame)
-(args.out / "visible.env").write_text(f"source=active-cgl-iosurface\niosurface_id={ident}\nwidth=1600\nheight=900\nbaseline_region_sha256={baseline}\nchanged_region_sha256={changed}\nfirst_changed_ms={first}\n", encoding="ascii")
+(args.out / "visible.env").write_text(f"source=active-cgl-iosurface\niosurface_id={ident}\nwidth=1600\nheight=900\nhid_x={args.hid_x}\nhid_y={args.hid_y}\nbaseline_region_sha256={baseline}\nchanged_region_sha256={changed}\nfirst_changed_ms={first}\n", encoding="ascii")
 raise SystemExit(0 if first != "none" else 1)
