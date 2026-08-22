@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [int]$DurationMs = 20000,
-    [int]$PollMs = 4
+    [int]$PollMs = 4,
+    [string]$ReadyPath = ""
 )
 
 # B4 guest-side pointer instrument.
@@ -71,6 +72,7 @@ Write-Output ('BVPTR begin duration_ms=' + $DurationMs + ' poll_ms=' + $PollMs +
     ' foreground=' + [BvPointerProbe]::GetForegroundWindow() +
     ' cursor_x=' + $lastX + ' cursor_y=' + $lastY +
     ' utc=' + [DateTime]::UtcNow.ToString('o'))
+if ($ReadyPath) { [IO.File]::WriteAllText($ReadyPath, ('BVPTR_READY cursor_x=' + $lastX + ' cursor_y=' + $lastY + "`r`n")) }
 
 while ($sw.ElapsedMilliseconds -lt $DurationMs) {
     $state = [BvPointerProbe]::GetAsyncKeyState(0x01)

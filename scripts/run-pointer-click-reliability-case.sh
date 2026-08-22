@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prepare and run one independent B4 click case. Required paths arrive via env.
 set -euo pipefail
-: "${RUN:?}" "${WORK:?}" "${TARGET:?}" "${VARS:?}" "${VIOGPU_DIR:?}" "${DELAYS:?}"
+: "${RUN:?}" "${WORK:?}" "${TARGET:?}" "${VARS:?}" "${VIOGPU_DIR:?}"
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); cd "$REPO"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 rm -rf "$WORK"; mkdir -p "$WORK" "$RUN/share"
@@ -34,8 +34,7 @@ BRIDGEVM_TRACE_DCI5_EMISSION=1 BRIDGEVM_XHCI_REPORT_INTERVAL_MS=200 \
 scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" --evidence-dir "$RUN" \
   --watchdog-ms 720000 --ram-mib 6144 --smp-cpus 4 --release --enable-xhci \
-  --input-control "$INPUT" --pointer-input-actions 'click:16384x16384' \
-  --pointer-input-fire-delay-ms 600000 --pointer-input-ramfb-delay-ms "$DELAYS" \
+  --input-control "$INPUT" \
   --display-export-ppm "$RUN/active-scanout.ppm" --display-export-fb "$RUN/active-scanout.fb" \
   --display-export-ms 100 --agent-service-control "$CTL" \
   --agent-share-host "$RUN/share" --agent-share-guest 'C:\BridgeVMPtr' --agent-share-ms 500 \
@@ -57,11 +56,10 @@ grep '"name":"SET_SCANOUT"' "$RUN/virtio-gpu.jsonl" | grep '"response_name":"OK_
 printf '%s\n' 'POINTER move:16384x16384' >> "$INPUT"
 for _ in $(seq 1 120); do grep -q '^BVTARGET ready width=1600 height=900 center_x=800 center_y=450' "$RUN/share/bv-pointer-target-ready.log" 2>/dev/null && break; sleep 1; done
 grep -q '^BVTARGET ready width=1600 height=900 center_x=800 center_y=450 hwnd=[1-9][0-9]*' "$RUN/share/bv-pointer-target-ready.log" || fail 'target not ready'
-echo 'B4 pointer target ready: width=1600 height=900 center_x=800 center_y=450' >> "$RUN/run.log"
-send_ok 'powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '\''cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-capture.ps1 -DurationMs 360000 > C:\BridgeVMPtr\bvptr.log 2>&1'\'' } | Out-Null; Write-Output BVPTR_LAUNCHED"' || fail 'probe launch failed'
-for _ in $(seq 1 600); do
-  grep -q 'BVPTR summary' "$RUN/share/bvptr.log" 2>/dev/null && break
-  kill -0 "$pid" 2>/dev/null || break; sleep 1
-done
+sleep 2; echo 'B4 pointer target ready: width=1600 height=900 center_x=800 center_y=450' >> "$RUN/run.log"
+send_ok 'powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '\''cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-capture.ps1 -DurationMs 20000 -ReadyPath C:\BridgeVMPtr\bvptr-ready.log > C:\BridgeVMPtr\bvptr.log 2>&1'\'' } | Out-Null; Write-Output BVPTR_LAUNCHED"' || fail 'probe launch failed'
+for _ in $(seq 1 120); do grep -q '^BVPTR_READY cursor_x=800 cursor_y=450' "$RUN/share/bvptr-ready.log" 2>/dev/null && break; sleep 1; done
+grep -q '^BVPTR_READY cursor_x=800 cursor_y=450' "$RUN/share/bvptr-ready.log" || fail 'probe not ready at target'
+python3 scripts/watch-pointer-visible-reaction.py --ppm "$RUN/active-scanout.ppm" --input-control "$INPUT" --out "$RUN/visible" || true
+for _ in $(seq 1 60); do grep -q 'BVPTR summary' "$RUN/share/bvptr.log" 2>/dev/null && break; sleep 1; done
 grep -q 'BVPTR summary' "$RUN/share/bvptr.log" || fail 'probe summary absent'
-for _ in $(seq 1 30); do [[ -s "$RUN/share/bv-pointer-target-click.log" ]] && break; sleep 1; done

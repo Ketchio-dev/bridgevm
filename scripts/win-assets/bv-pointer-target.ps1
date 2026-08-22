@@ -31,12 +31,14 @@ $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $form.Controls.Add($button)
 
 $count = 0
-$button.Add_Click({
-    $script:count++
+$button.Add_MouseDown({
     $form.BackColor = [System.Drawing.Color]::FromArgb(32, 208, 64)
     $button.BackColor = [System.Drawing.Color]::FromArgb(255, 224, 32)
-    $button.Text = 'CLICK RECEIVED'
-    $form.Refresh()
+    $button.Text = 'PRESS RECEIVED'; $form.Refresh()
+})
+$button.Add_Click({
+    $script:count++
+    $button.Text = 'CLICK RECEIVED'; $form.Refresh()
     [IO.File]::AppendAllText($clicks, ('BVTARGET click count=' + $script:count +
         ' utc=' + [DateTime]::UtcNow.ToString('o') + "`r`n"))
 })
