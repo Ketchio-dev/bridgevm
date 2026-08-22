@@ -30,7 +30,7 @@ cleanup() {
   for _ in $(seq 1 60); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
   kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
 }
-BRIDGEVM_TRACE_DCI5_EMISSION=1 BRIDGEVM_XHCI_REPORT_INTERVAL_MS=200 \
+BRIDGEVM_TRACE_DCI5_EMISSION=1 BRIDGEVM_XHCI_REPORT_INTERVAL_MS=200 BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT=1 \
 scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" --evidence-dir "$RUN" \
   --watchdog-ms 720000 --ram-mib 6144 --smp-cpus 4 --release --enable-xhci \
@@ -55,10 +55,11 @@ grep '"name":"SET_SCANOUT"' "$RUN/virtio-gpu.jsonl" | grep '"response_name":"OK_
 printf '%s\n' 'POINTER move:16384x16384' >> "$INPUT"
 for _ in $(seq 1 120); do grep -q '^BVTARGET ready width=1600 height=900 center_x=800 center_y=450' "$RUN/share/bv-pointer-target-ready.log" 2>/dev/null && break; sleep 1; done
 grep -q '^BVTARGET ready width=1600 height=900 center_x=800 center_y=450 hwnd=[1-9][0-9]*' "$RUN/share/bv-pointer-target-ready.log" || fail 'target not ready'
-sleep 2
+for _ in $(seq 1 120); do [[ -s "$RUN/active-scanout.fb.iosurface" ]] && break; sleep 1; done
+[[ -s "$RUN/active-scanout.fb.iosurface" ]] || fail 'active CGL IOSurface absent'; sleep 2
 send_ok 'powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '\''cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-capture.ps1 -DurationMs 20000 -ReadyPath C:\BridgeVMPtr\bvptr-ready.log > C:\BridgeVMPtr\bvptr.log 2>&1'\'' } | Out-Null; Write-Output BVPTR_LAUNCHED"' || fail 'probe launch failed'
 for _ in $(seq 1 120); do grep -q '^BVPTR_READY cursor_x=800 cursor_y=450' "$RUN/share/bvptr-ready.log" 2>/dev/null && break; sleep 1; done
 grep -q '^BVPTR_READY cursor_x=800 cursor_y=450' "$RUN/share/bvptr-ready.log" || fail 'probe not ready at target'
-python3 scripts/watch-pointer-visible-reaction.py --fb "$RUN/active-scanout.fb" --input-control "$INPUT" --out "$RUN/visible" || true
+python3 scripts/watch-pointer-visible-reaction.py --iosurface "$RUN/active-scanout.fb.iosurface" --input-control "$INPUT" --out "$RUN/visible" || true
 for _ in $(seq 1 60); do grep -q 'BVPTR summary' "$RUN/share/bvptr.log" 2>/dev/null && break; sleep 1; done
 grep -q 'BVPTR summary' "$RUN/share/bvptr.log" || fail 'probe summary absent'
