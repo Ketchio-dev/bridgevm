@@ -54,7 +54,7 @@ for _ in $(seq 1 120); do
   sleep 1
 done
 grep '"name":"SET_SCANOUT"' "$RUN/virtio-gpu.jsonl" | grep '"response_name":"OK_NODATA"' | grep -q '"rect_w":1600,"rect_h":900' || fail 'active 1600x900 scanout absent'
-send_ok 'cmd /c start "" powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-target.ps1 -Width 1600 -Height 900' || fail 'target launch failed'
+send_ok 'powershell -NoProfile -Command "Start-Process powershell.exe -ArgumentList '\''-NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-target.ps1 -Width 1600 -Height 900'\'' -RedirectStandardOutput C:\BridgeVMPtr\bv-pointer-target.out -RedirectStandardError C:\BridgeVMPtr\bv-pointer-target.err; Write-Output BVTARGET_LAUNCHED"' || fail 'target launch failed'
 for _ in $(seq 1 120); do grep -q '^BVTARGET ready width=1600 height=900 center_x=800 center_y=450' "$RUN/share/bv-pointer-target-ready.log" 2>/dev/null && break; sleep 1; done
 grep -q '^BVTARGET ready width=1600 height=900 center_x=800 center_y=450 hwnd=[1-9][0-9]*' "$RUN/share/bv-pointer-target-ready.log" || fail 'target not ready'
 hwnd=$(tr -d '\r' < "$RUN/share/bv-pointer-target-ready.log" | sed -n 's/.* hwnd=\([0-9]*\)$/\1/p')
