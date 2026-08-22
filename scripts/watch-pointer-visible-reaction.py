@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Inject B4 press/release and timestamp the real CGL IOSurface change."""
-import argparse, ctypes, hashlib, struct, threading, time
+import argparse, ctypes, hashlib, os, struct, time
 from pathlib import Path
 parser = argparse.ArgumentParser()
 for option in ("iosurface", "input-control", "out"):
@@ -44,12 +44,12 @@ else: raise RuntimeError("active target baseline not presented")
 before, before_frame, _ = frame(ref, True); baseline = hashlib.sha256(before).hexdigest(); (args.out / "iosurface-before.xrgb8888").write_bytes(before_frame)
 started = time.monotonic_ns(); start_unix = time.time_ns()
 with args.input_control.open("a", buffering=1) as ctl: ctl.write(f"POINTER press:{args.hid_x}x{args.hid_y}\n"); press_unix = time.time_ns()
-def release():
+release_stamp = args.out / "release-unix-ns"
+pid = os.fork()
+if pid == 0:
     remaining = started + args.hold_ms * 1_000_000 - time.monotonic_ns()
     if remaining > 0: time.sleep(remaining / 1_000_000_000)
-    with args.input_control.open("a", buffering=1) as ctl: ctl.write(f"POINTER release:{args.hid_x}x{args.hid_y}\n")
-    timing["release_unix_ns"] = time.time_ns()
-timing = {}; thread = threading.Thread(target=release); thread.start()
+    fd = os.open(args.input_control, os.O_WRONLY | os.O_APPEND); os.write(fd, f"POINTER release:{args.hid_x}x{args.hid_y}\n".encode()); os.close(fd); release_stamp.write_text(str(time.time_ns()), encoding="ascii"); os._exit(0)
 changed = "none"; first = "none"; changed_frame = b""; change_unix = 0; deadline = started + args.timeout_ms * 1_000_000
 while time.monotonic_ns() <= deadline:
     region, _, _ = frame(ref); candidate = hashlib.sha256(region).hexdigest()
@@ -57,7 +57,7 @@ while time.monotonic_ns() <= deadline:
         first = str((time.monotonic_ns() - started + 999_999) // 1_000_000); change_unix = time.time_ns()
         changed = candidate; _, changed_frame, _ = frame(ref, True); break
     time.sleep(0.005)
-thread.join()
+_, status = os.waitpid(pid, 0); release_unix = int(release_stamp.read_text()) if status == 0 else 0
 if changed_frame: (args.out / "iosurface-changed.xrgb8888").write_bytes(changed_frame)
-(args.out / "visible.env").write_text(f"source=active-cgl-iosurface\niosurface_id={ident}\nwidth=1600\nheight=900\nhid_x={args.hid_x}\nhid_y={args.hid_y}\nstart_unix_ns={start_unix}\npress_unix_ns={press_unix}\nrelease_unix_ns={timing.get('release_unix_ns', 0)}\nchange_unix_ns={change_unix}\nbaseline_region_sha256={baseline}\nchanged_region_sha256={changed}\nfirst_changed_ms={first}\n", encoding="ascii")
+(args.out / "visible.env").write_text(f"source=active-cgl-iosurface\niosurface_id={ident}\nwidth=1600\nheight=900\nhid_x={args.hid_x}\nhid_y={args.hid_y}\nstart_unix_ns={start_unix}\npress_unix_ns={press_unix}\nrelease_unix_ns={release_unix}\nchange_unix_ns={change_unix}\nbaseline_region_sha256={baseline}\nchanged_region_sha256={changed}\nfirst_changed_ms={first}\n", encoding="ascii")
 raise SystemExit(0 if first != "none" else 1)
