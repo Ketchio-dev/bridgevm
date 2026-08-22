@@ -25,6 +25,7 @@ send_ok() {
   wait_for '^BVAGENT END ' $((before + 1)) 300 || return 1
   [[ $(grep -E '^BVAGENT CMD .* exit=' "$RUN/run.log" | tail -1) == *' exit=0' ]]
 }
+scanout_ready() { awk 'index($0,"\"name\":\"SET_SCANOUT\"") && index($0,"\"response_name\":\"OK_NODATA\"") && index($0,"\"rect_w\":1600,\"rect_h\":900") { found=1 } END { exit !found }' "$RUN/virtio-gpu.jsonl" 2>/dev/null; }
 source scripts/pointer-reliability-vm.sh
 trap pointer_vm_cleanup EXIT
 pointer_vm_start_until_agent
@@ -34,11 +35,8 @@ done
 printf '%s\n' 'RESIZE 1600x900' >> "$INPUT"
 wait_for '^live input accepted: resize=1600x900$' 1 30 || fail 'host resize not accepted'
 send_ok 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bvgpu-apply-host-resolution.ps1 -Width 1600 -Height 900 -LaunchPointerTarget' || fail 'guest resize failed'
-for _ in $(seq 1 120); do
-  grep '"name":"SET_SCANOUT"' "$RUN/virtio-gpu.jsonl" 2>/dev/null | grep '"response_name":"OK_NODATA"' | grep -q '"rect_w":1600,"rect_h":900' && break
-  sleep 1
-done
-grep '"name":"SET_SCANOUT"' "$RUN/virtio-gpu.jsonl" | grep '"response_name":"OK_NODATA"' | grep -q '"rect_w":1600,"rect_h":900' || fail 'active 1600x900 scanout absent'
+for _ in $(seq 1 120); do scanout_ready && break; sleep 1; done
+scanout_ready || fail 'active 1600x900 scanout absent'
 for _ in $(seq 1 120); do grep -q '^BVTARGET ready width=1600 height=900 ' "$CASE/share/bv-pointer-target-ready.log" 2>/dev/null && break; sleep 1; done
 ready=$(tr -d '\r' < "$CASE/share/bv-pointer-target-ready.log"); [[ "$ready" =~ ^BVTARGET.ready.width=1600.height=900.screen_x=([-0-9]+).screen_y=([-0-9]+).center_x=([-0-9]+).center_y=([-0-9]+).virtual_x=([-0-9]+).virtual_y=([-0-9]+).virtual_w=([0-9]+).virtual_h=([0-9]+).hwnd=([1-9][0-9]*)$ ]] || fail 'target not ready'
 sx=${BASH_REMATCH[1]}; sy=${BASH_REMATCH[2]}; cx=${BASH_REMATCH[3]}; cy=${BASH_REMATCH[4]}
