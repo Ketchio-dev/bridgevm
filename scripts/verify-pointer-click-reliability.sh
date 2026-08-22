@@ -19,7 +19,7 @@ VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 
 parse_run_log() { # fired press release stuck first_ms; edge = press+release
   local log="$1" ptr="${2:-/dev/null}" click="${3:-/dev/null}" first='' fired=false press=0 release=0 edges=0 stuck=1
-  grep -q '^B4 pointer target ready: width=1600 height=900 center_x=800 center_y=450$' "$log" 2>/dev/null || { echo 'false 0 0 1 invalid-target'; return; }
+  grep -q '^BVTARGET ready width=1600 height=900 center_x=800 center_y=450 hwnd=[1-9][0-9]*' "$(dirname "$log")/share/bv-pointer-target-ready.log" 2>/dev/null || { echo 'false 0 0 1 invalid-target'; return; }
   grep -q '^BVPTR begin .* session=[1-9][0-9]* input_desktop_open=1 foreground=[1-9][0-9]* cursor_x=800 cursor_y=450 ' "$ptr" 2>/dev/null || { echo 'false 0 0 1 invalid-desktop'; return; }
   [[ $(tr -d '\r' < "$click" 2>/dev/null | grep -c '^BVTARGET click ' || true) -eq 1 ]] || { echo 'false 0 0 1 invalid-click-count'; return; }
   [[ $(grep -c '^live input accepted: command=Pointer("press:16384x16384")$' "$log" 2>/dev/null || true) -eq 1 \
@@ -37,9 +37,10 @@ parse_run_log() { # fired press release stuck first_ms; edge = press+release
 }
 
 if [[ "${1:-}" == "--selftest" ]]; then
-  d=$(mktemp -d); t="$d/run.log"; p="$d/bvptr.log"; c="$d/click.log"; mkdir "$d/visible"; printf 'BVTARGET click count=1\r\n' > "$c"
+  d=$(mktemp -d); t="$d/run.log"; p="$d/bvptr.log"; c="$d/click.log"; mkdir "$d/visible" "$d/share"; printf 'BVTARGET click count=1\r\n' > "$c"
+  printf 'BVTARGET ready width=1600 height=900 center_x=800 center_y=450 hwnd=9\r\n' > "$d/share/bv-pointer-target-ready.log"
   printf 'source=active-virtio-gpu-scanout\nfirst_changed_ms=250\n' > "$d/visible/visible.env"
-  printf 'B4 pointer target ready: width=1600 height=900 center_x=800 center_y=450\nlive input accepted: command=Pointer("press:16384x16384")\nlive input accepted: command=Pointer("release:16384x16384")\n' > "$t"
+  printf 'live input accepted: command=Pointer("press:16384x16384")\nlive input accepted: command=Pointer("release:16384x16384")\n' > "$t"
   printf 'BVPTR begin duration_ms=20 poll_ms=4 session=1 input_desktop_open=1 foreground=9 cursor_x=800 cursor_y=450 utc=x\r\nBVPTR press t_ms=3 x=800 y=450 fg=9\r\nBVPTR release t_ms=40 x=800 y=450 fg=9\r\nBVPTR summary presses=1 releases=1 edges=0 moves=0 first_press_ms=3 first_release_ms=40 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p" "$c")
   [[ "$r" == "true 1 1 0 250" ]] || fail "selftest good-run parse: got '$r'"
@@ -50,7 +51,7 @@ if [[ "${1:-}" == "--selftest" ]]; then
   r=$(parse_run_log "$t" "$p" "$c")
   [[ "$r" == "true 1 1 0 250" ]] || fail "selftest edge-run parse: got '$r'"
   printf 'source=active-virtio-gpu-scanout\nfirst_changed_ms=none\n' > "$d/visible/visible.env"
-  printf 'B4 pointer target ready: width=1600 height=900 center_x=800 center_y=450\nlive input accepted: command=Pointer("press:16384x16384")\nlive input accepted: command=Pointer("release:16384x16384")\n' > "$t"
+  printf 'live input accepted: command=Pointer("press:16384x16384")\nlive input accepted: command=Pointer("release:16384x16384")\n' > "$t"
   printf 'BVPTR begin duration_ms=20 poll_ms=4 session=1 input_desktop_open=1 foreground=9 cursor_x=800 cursor_y=450 utc=x\r\nBVPTR summary presses=0 releases=0 edges=0 moves=0 first_press_ms=-1 first_release_ms=-1 stuck=0\r\n' > "$p"
   r=$(parse_run_log "$t" "$p" "$c")
   [[ "$r" == "true 0 0 0 none" ]] || fail "selftest lost-click parse: got '$r'"

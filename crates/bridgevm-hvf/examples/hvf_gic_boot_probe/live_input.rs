@@ -60,9 +60,8 @@ impl LiveInputController {
         }
     }
 
-    pub fn poll_due(&self, now: Instant) -> bool {
-        self.path.is_some() && now >= self.next_poll
-    }
+    pub fn poll_due(&self, now: Instant) -> bool { self.path.is_some() && now >= self.next_poll }
+    pub fn wake_interval(&self) -> Option<Duration> { self.path.as_ref().map(|_| POLL_INTERVAL) }
 
     pub fn tick(
         &mut self,
@@ -286,7 +285,8 @@ mod tests {
     #[test]
     fn live_input_accepts_only_bounded_typed_commands() {
         let mut input = controller();
-        input.push_line("KEY text:abc123");
+        input.path = Some(PathBuf::from("input.ctl")); input.push_line("KEY text:abc123");
+        assert_eq!(input.wake_interval().unwrap().as_millis(), 16);
         input.push_line("POINTER click:100x200");
         input.push_line("UNKNOWN anything");
         assert_eq!(input.pending.len(), 2);
