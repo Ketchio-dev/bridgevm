@@ -41,23 +41,23 @@ while time.monotonic_ns() <= deadline:
     if fill >= 10_000 and candidate == baseline: break
     baseline = candidate; time.sleep(0.025)
 else: raise RuntimeError("active target baseline not presented")
-before, before_frame, _ = frame(ref, True); baseline = hashlib.sha256(before).hexdigest()
-(args.out / "iosurface-before.xrgb8888").write_bytes(before_frame)
-started = time.monotonic_ns()
-with args.input_control.open("a", buffering=1) as ctl: ctl.write(f"POINTER press:{args.hid_x}x{args.hid_y}\n")
+before, before_frame, _ = frame(ref, True); baseline = hashlib.sha256(before).hexdigest(); (args.out / "iosurface-before.xrgb8888").write_bytes(before_frame)
+started = time.monotonic_ns(); start_unix = time.time_ns()
+with args.input_control.open("a", buffering=1) as ctl: ctl.write(f"POINTER press:{args.hid_x}x{args.hid_y}\n"); press_unix = time.time_ns()
 def release():
     remaining = started + args.hold_ms * 1_000_000 - time.monotonic_ns()
     if remaining > 0: time.sleep(remaining / 1_000_000_000)
     with args.input_control.open("a", buffering=1) as ctl: ctl.write(f"POINTER release:{args.hid_x}x{args.hid_y}\n")
-thread = threading.Thread(target=release); thread.start()
-changed = "none"; first = "none"; changed_frame = b""; deadline = started + args.timeout_ms * 1_000_000
+    timing["release_unix_ns"] = time.time_ns()
+timing = {}; thread = threading.Thread(target=release); thread.start()
+changed = "none"; first = "none"; changed_frame = b""; change_unix = 0; deadline = started + args.timeout_ms * 1_000_000
 while time.monotonic_ns() <= deadline:
     region, _, _ = frame(ref); candidate = hashlib.sha256(region).hexdigest()
     if candidate != baseline:
-        first = str((time.monotonic_ns() - started + 999_999) // 1_000_000)
+        first = str((time.monotonic_ns() - started + 999_999) // 1_000_000); change_unix = time.time_ns()
         changed = candidate; _, changed_frame, _ = frame(ref, True); break
     time.sleep(0.005)
 thread.join()
 if changed_frame: (args.out / "iosurface-changed.xrgb8888").write_bytes(changed_frame)
-(args.out / "visible.env").write_text(f"source=active-cgl-iosurface\niosurface_id={ident}\nwidth=1600\nheight=900\nhid_x={args.hid_x}\nhid_y={args.hid_y}\nbaseline_region_sha256={baseline}\nchanged_region_sha256={changed}\nfirst_changed_ms={first}\n", encoding="ascii")
+(args.out / "visible.env").write_text(f"source=active-cgl-iosurface\niosurface_id={ident}\nwidth=1600\nheight=900\nhid_x={args.hid_x}\nhid_y={args.hid_y}\nstart_unix_ns={start_unix}\npress_unix_ns={press_unix}\nrelease_unix_ns={timing.get('release_unix_ns', 0)}\nchange_unix_ns={change_unix}\nbaseline_region_sha256={baseline}\nchanged_region_sha256={changed}\nfirst_changed_ms={first}\n", encoding="ascii")
 raise SystemExit(0 if first != "none" else 1)
