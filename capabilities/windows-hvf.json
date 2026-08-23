@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-20",
-  "tested_commit": "78c777860ca532241f007edd3c298eae3ad013f6",
+  "tested_commit": "fd9c870d6e5dfef32169495a1066f554f1f84b4c",
   "product_state": "RELEASED",
   "wording": {
     "product_state_label": "1.0",
@@ -138,7 +138,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-22 at tested head 78c777860ca532241f007edd3c298eae3ad013f6 (branch agent/b4-msix-delivery-correlation). Exact-SHA Studio T0 job 20260822-054144-25638-2412 ran all 28 check-project sections on Mac16,9 / macOS 26.5.2: every code, test, formatting, structural, documentation, installer and release-override step passed; the sole failure was the intentionally stale A11 registry that this docs-only update refreshes. scripts/run-xctest-shim-suites.sh reported 419 + 198 (1 skip) + 62 = 679 passed, 0 failed. The complete check log has SHA-256 d9c826fdbe904715b4d2a7833e101219f463c8e5f4adde12dd13922ad797c19e. The tested head stages each B4 run from the immutable t7-proven driver-ready prepared pair, verifies that pair against its hash-named identity, and makes only the per-run disk and vars copies writable. B4 remains OPEN: the first prepared-media diagnostics were cancelled after measuring a host-geometry mismatch and invalid target precondition, and are not closure evidence. Four staleness conditions are checked rather than remembered: the registry fails when crates/, runners/, apps/, scripts/ or tests/ differ between tested_commit and HEAD, when a measured entry cites a head other than tested_commit, when tested_commit names no known commit in a full clone, and when a claimed test or step count differs from the tests and steps that actually exist.",
+      "measured": "PROVEN 2026-08-23 at tested head fd9c870d6e5dfef32169495a1066f554f1f84b4c (branch agent/b4-msix-delivery-correlation). Exact-SHA Studio T0 job 20260823-014554-39047-5840 ran all 28 check-project sections on Mac16,9 / macOS 26.5.2: every code, test, formatting, structural, documentation, installer and release-override step passed; the sole failure was the intentionally stale A11 registry that this docs-only update refreshes. scripts/run-xctest-shim-suites.sh reported 419 + 198 (1 skip) + 62 = 679 passed, 0 failed. The complete check log has SHA-256 d2a193dac6a7b8b45c64d7c2ad71ca332f0ffb6f9b8a97fed266453089fa1c3b. The tested head removes ERDP consumption from HID report pacing, timestamps a live pointer click from the command instant, and arms an exact host wake for the next queued DCI5 report deadline instead of relying on a periodic wake burst. B4 remains OPEN: cancelled diagnostics are not closure evidence, and no valid N=20 receipt exists. Four staleness conditions are checked rather than remembered: the registry fails when crates/, runners/, apps/, scripts/ or tests/ differ between tested_commit and HEAD, when a measured entry cites a head other than tested_commit, when tested_commit names no known commit in a full clone, and when a claimed test or step count differs from the tests and steps that actually exist.",
       "evidence_paths": [
         "STATUS.md"
       ]
