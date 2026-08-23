@@ -90,7 +90,7 @@ Write-Output ("BV-APPLY| before=" + $before.dmPelsWidth + "x" + $before.dmPelsHe
 if ($before.dmPelsWidth -eq $Width -and $before.dmPelsHeight -eq $Height) {
   Write-Output ("BV-APPLY| after=${Width}x${Height}")
   if ($LaunchPointerTarget) {
-    Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-target.ps1 -Width 1600 -Height 900 > C:\BridgeVMPtr\bv-pointer-target.out 2>&1' } | Out-Null
+    Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-target.ps1 -Width 1600 -Height 900 > C:\BridgeVM\bv-pointer-target.out 2>&1' } | Out-Null
     Write-Output 'BVTARGET_LAUNCHED'
   }
   Write-Output 'BV-APPLY-DONE'; exit 0
@@ -112,7 +112,7 @@ do {
 Write-Output ("BV-APPLY| after=" + $after.dmPelsWidth + "x" + $after.dmPelsHeight)
 if ($after.dmPelsWidth -eq $Width -and $after.dmPelsHeight -eq $Height) {
   if ($LaunchPointerTarget) {
-    Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-target.ps1 -Width 1600 -Height 900 > C:\BridgeVMPtr\bv-pointer-target.out 2>&1' } | Out-Null
+    Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-target.ps1 -Width 1600 -Height 900 > C:\BridgeVM\bv-pointer-target.out 2>&1' } | Out-Null
     Write-Output 'BVTARGET_LAUNCHED'
   }
   Write-Output 'BV-APPLY-DONE'; exit 0

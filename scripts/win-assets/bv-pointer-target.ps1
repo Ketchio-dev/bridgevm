@@ -34,24 +34,10 @@ $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $form.Controls.Add($button)
 
 $count = 0
-$animate = New-Object System.Windows.Forms.Timer
-$animate.Interval = 16
-$animateTicks = 0
-$warmup = New-Object System.Windows.Forms.Timer
-$warmup.Interval = 16
-$warmupTicks = 0
-$animate.Add_Tick({
-    $script:animateTicks++
-    $form.BackColor = if ($script:animateTicks % 2) { [System.Drawing.Color]::FromArgb(32, 208, 64) } else { [System.Drawing.Color]::FromArgb(48, 192, 80) }
-    $form.Invalidate()
-    if ($script:animateTicks -ge 63) { $animate.Stop() }
-})
 $button.Add_MouseDown({
     $form.BackColor = [System.Drawing.Color]::FromArgb(32, 208, 64)
     $button.BackColor = [System.Drawing.Color]::FromArgb(255, 224, 32)
     $button.Text = 'PRESS RECEIVED'; $form.Refresh()
-    [IO.File]::AppendAllText($clicks, ('BVTARGET down utc=' + [DateTime]::UtcNow.ToString('o') + "`r`n"))
-    $script:animateTicks = 0; $animate.Start()
 })
 $button.Add_Click({
     $script:count++
@@ -59,16 +45,13 @@ $button.Add_Click({
     [IO.File]::AppendAllText($clicks, ('BVTARGET click count=' + $script:count +
         ' utc=' + [DateTime]::UtcNow.ToString('o') + "`r`n"))
 })
-$warmup.Add_Tick({
-    $script:warmupTicks++
-    $form.BackColor = if ($script:warmupTicks % 2) { [System.Drawing.Color]::FromArgb(16, 48, 160) } else { [System.Drawing.Color]::FromArgb(16, 48, 144) }
-    $form.Invalidate()
-    if ($script:warmupTicks -ne 120) { return }
+$form.Add_Shown({
+    $form.Activate()
+    $button.Focus()
     [IO.File]::WriteAllText($ready, ('BVTARGET ready width=' + $form.ClientSize.Width +
         ' height=' + $form.ClientSize.Height + ' screen_x=' + $screen.Bounds.X + ' screen_y=' + $screen.Bounds.Y +
         ' center_x=' + ($form.Left + ($form.Width / 2)) + ' center_y=' + ($form.Top + ($form.Height / 2)) + ' virtual_x=' + $virtual.X +
         ' virtual_y=' + $virtual.Y + ' virtual_w=' + $virtual.Width + ' virtual_h=' + $virtual.Height +
         ' hwnd=' + $form.Handle + "`r`n"))
 })
-$form.Add_Shown({ $form.Activate(); $button.Focus(); $warmup.Start() })
 [void]$form.ShowDialog()
