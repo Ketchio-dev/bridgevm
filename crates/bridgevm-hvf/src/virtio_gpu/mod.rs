@@ -9,6 +9,7 @@ mod bytes;
 mod command;
 mod compositor;
 mod config_space;
+mod deferred_scanout;
 mod device;
 pub(crate) mod display;
 mod fb_sink;
