@@ -22,13 +22,16 @@ impl InputControlWake {
         let fired = Arc::clone(&self.fired);
         std::thread::spawn(move || {
             let mut length = file_length(&path).unwrap_or(0);
+            let mut schedule = None;
             loop {
-                if !fired.load(Ordering::SeqCst) {
-                    let observed = file_length(&path);
-                    if input_length_changed(&mut length, observed) {
-                        fired.store(true, Ordering::SeqCst);
-                        unsafe { hv_vcpus_exit(&vcpu, 1) };
-                    }
+                let now = std::time::Instant::now();
+                if input_length_changed(&mut length, file_length(&path)) {
+                    schedule = Some((now, now + super::input_control_schedule::BURST));
+                }
+                if super::input_control_schedule::wake_due(fired.load(Ordering::SeqCst), now, schedule) {
+                    fired.store(true, Ordering::SeqCst);
+                    schedule = schedule.map(|(_, until)| (now + super::input_control_schedule::CADENCE, until));
+                    unsafe { hv_vcpus_exit(&vcpu, 1) };
                 }
                 std::thread::sleep(POLL);
             }
@@ -49,15 +52,12 @@ fn input_length_changed(previous: &mut u64, observed: Option<u64>) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::input_length_changed;
-    #[test]
-    fn only_a_real_control_file_length_change_requests_a_wake() {
-        let mut length = 0;
-        assert!(!input_length_changed(&mut length, None));
-        assert!(!input_length_changed(&mut length, Some(0)));
-        assert!(input_length_changed(&mut length, Some(31)));
-        assert!(!input_length_changed(&mut length, Some(31)));
-        assert!(input_length_changed(&mut length, Some(63)));
-    }
+#[test]
+fn only_real_control_file_length_changes_start_a_burst() {
+    let mut length = 0;
+    assert!(!input_length_changed(&mut length, None));
+    assert!(!input_length_changed(&mut length, Some(0)));
+    assert!(input_length_changed(&mut length, Some(31)));
+    assert!(!input_length_changed(&mut length, Some(31)));
+    assert!(input_length_changed(&mut length, Some(63)));
 }

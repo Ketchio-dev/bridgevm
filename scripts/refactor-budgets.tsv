@@ -436,8 +436,6 @@ crates/bridgevm-hvf/src/virtio_gpu/resource.rs	239	0
 crates/bridgevm-hvf/src/virtio_gpu/scanout.rs	411	2
 crates/bridgevm-hvf/src/virtio_gpu/scanout/resize.rs	23	0
 crates/bridgevm-hvf/src/virtio_gpu/scanout_3d.rs	264	0
-crates/bridgevm-hvf/src/virtio_gpu/deferred_scanout.rs	15	0
-crates/bridgevm-hvf/src/virtio_gpu/tests/deferred_scanout_starvation.rs	16	0
 crates/bridgevm-hvf/src/virtio_gpu/scanout_async.rs	195	0
 crates/bridgevm-hvf/src/virtio_gpu/scanout_blit.rs	53	0
 crates/bridgevm-hvf/src/virtio_gpu/snapshot.rs	164	0
@@ -668,6 +666,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/kd_serial_bridge.rs	234	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_display_export.rs	148	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input.rs	426	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_wake.rs	60	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_schedule.rs	21	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/mmio_trace.rs	76	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/nvme_storage_effect.rs	165	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/nvme_storage_effect_tests.rs	266	0

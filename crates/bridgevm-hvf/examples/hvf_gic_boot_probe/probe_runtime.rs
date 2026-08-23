@@ -1,5 +1,7 @@
 #[path = "probe_runtime/vtimer_recovery.rs"]
 pub(crate) mod vtimer_recovery;
+#[path = "../hvf_gic_boot_probe/input_control_schedule.rs"]
+mod input_control_schedule;
 #[path = "../hvf_gic_boot_probe/input_control_wake.rs"]
 mod input_control_wake;
 
