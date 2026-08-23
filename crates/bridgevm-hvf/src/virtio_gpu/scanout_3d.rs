@@ -49,16 +49,14 @@ impl VirtioGpu {
 
     pub(crate) fn defer_3d_scanout(&mut self, resource_id: u32, rect: Rect) {
         self.deferred_scanout_flush_count = self.deferred_scanout_flush_count.saturating_add(1);
-        let pending = match self.pending_3d_scanout.take() {
-            Some((pending_id, pending_rect)) if pending_id == resource_id => {
-                (resource_id, union_rect(pending_rect, rect))
-            }
-            // A different resource means the scanout switched; the stale
-            // pending frame is superseded, not unioned.
-            _ => (resource_id, rect),
-        };
+        let (pending, fresh) = super::deferred_scanout::merge_pending(
+            self.pending_3d_scanout.take(),
+            resource_id,
+            rect,
+            self.pending_3d_scanout_fresh,
+        );
         self.pending_3d_scanout = Some(pending);
-        self.pending_3d_scanout_fresh = true;
+        self.pending_3d_scanout_fresh = fresh;
         self.pending_3d_scanout_blitted = false;
         if self.deferred_scanout_flush_count <= 8 {
             let count = self.deferred_scanout_flush_count;
