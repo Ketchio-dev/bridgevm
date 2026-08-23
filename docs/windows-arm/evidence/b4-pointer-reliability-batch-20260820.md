@@ -442,3 +442,46 @@ so the same guest behaviour can score 186 ms or 531 ms; a click is a press and
 a release, and the gate should say which transition it is timing. Second, the
 remaining hold overshoot is a real host-side defect and is not explained by the
 periodic-wake bug already fixed. B4 stays **OPEN**.
+
+### 2026-08-23 second complete batch: the hold overshoot is a missed host wake
+
+Job `20260823-113151-99719-9275` at `main` `8e1f38791008da6b3fa20c437ca0a42065a076c5`
+(gate log SHA-256 `b28ec56e47110987db51527c41b757f1b20ea85d6fb4247b841e701d11169a94`,
+summary SHA-256 `93b3098947db40c175528d03c176327ddfc2819285bac2d7df615bee7adc7d8e`)
+also completed and also **failed**: `landed 13/20`, p95 660 ms. It carried the
+print-only deadline observation, and that instrument answers the question the
+previous decomposition could not.
+
+In every run where a DCI5 report was still queued when the arming pass ran, the
+printed lateness equals the hold overshoot measured independently from emission
+timestamps:
+
+| run | hold overshoot | printed `late_us` | delta |
+| --- | --- | --- | --- |
+| 1 | 94.8 ms | 95.0 ms | 0.2 ms |
+| 14 | 169.5 ms | 169.0 ms | 0.5 ms |
+| 17 | 43.4 ms | 43.6 ms | 0.2 ms |
+
+The report was eligible and waiting, and the drain that should have emitted it
+ran late. That is a **missed host wake**, not a guest TD that was not ready:
+an unready TD would leave the report ineligible, and the emission would not be
+overdue at all. The competing explanation is therefore falsified for these
+runs, without changing any behaviour to test it.
+
+Ten further runs overshot (0.3 to 150.3 ms) without printing anything. That is
+the instrument's own blind spot rather than a contradiction: it only prints
+from the automation pass that arms the next deadline, so an overshoot resolved
+before that pass runs is invisible to it. Closing that hole is a measurement
+task, not a fix.
+
+The target-presentation failure is also reproducible and got worse: 6 runs
+refused with `invalid-click-count` and 1 with `invalid-target`, against 2 and 1
+in the previous batch. In all six the probe reported a valid interactive
+desktop and its cursor at the button centre (`session=1 input_desktop_open=1
+cursor_x=800 cursor_y=450`) while `presses=0 releases=0 moves=0`, i.e. the
+white target never converged and the gate refused before injecting, exactly as
+designed.
+
+Two batches now agree: input delivery works when the target is up, the residual
+latency is presentation, and within that the hold overshoot has a measured
+cause. B4 stays **OPEN**.
