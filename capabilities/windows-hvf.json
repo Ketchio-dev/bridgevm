@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-20",
-  "tested_commit": "56e9297b6f932de0350379ef636692af51837f82",
+  "tested_commit": "b4826ba755c505d457115536028371f8441456ec",
   "product_state": "RELEASED",
   "wording": {
     "product_state_label": "1.0",
@@ -138,7 +138,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-21 at tested head 56e9297b6f932de0350379ef636692af51837f82 (branch agent/b4-trb-correlation). Exact-SHA Studio T0 job 20260821-003915-18888-15977 ran all 28 check-project sections on Mac16,9 / macOS 26.5.2: every code, test, formatting, structural, documentation, installer and release-override step passed; the sole failure was the intentionally stale A11 registry that this docs-only update refreshes. scripts/run-xctest-shim-suites.sh reported 419 + 198 (1 skip) + 62 = 679 passed, 0 failed. The complete check log has SHA-256 04167c8d7ed74ed933181cc28b79a8eaffaa8e8ffdb1f7ecc52fc060d68c32cb. The head under test adds the print-only B4 TRB-correlation instrument (xhci/trace_dci5_emission.rs) with the 197-test xhci suite unchanged. Four staleness conditions are checked rather than remembered: the registry fails when crates/, runners/, apps/, scripts/ or tests/ differ between tested_commit and HEAD, when a measured entry cites a head other than tested_commit, when tested_commit names no known commit in a full clone, and when a claimed test or step count differs from the tests and steps that actually exist.",
+      "measured": "PROVEN 2026-08-23 at tested head b4826ba755c505d457115536028371f8441456ec (branch agent/b4-input-recovery). Exact-SHA Studio T0 job 20260823-040141-80308-6128 ran all 28 check-project sections on Mac16,9 / macOS 26.5.2: every code, test, formatting, structural, documentation, installer and release-override step passed; the sole failure was the intentionally stale A11 registry that this docs-only update refreshes. scripts/run-xctest-shim-suites.sh reported 419 + 198 (1 skip) + 62 = 679 passed, 0 failed. The complete check log has SHA-256 d755fa94aaf14b1cce8985538d6919754aceb669ac3bfae3fd52fe39886d3c92. The head under test paces DCI5 pointer reports by guest TD readiness and host time instead of previous-event ERDP consumption, closes the doorbell and controller-MMIO paths that bypassed that pacing, and times a live click from its own command instant with an exact one-shot host wake at the next report deadline. B4 remains OPEN: no N=20 receipt exists and this head makes no visible-reaction claim. Four staleness conditions are checked rather than remembered: the registry fails when crates/, runners/, apps/, scripts/ or tests/ differ between tested_commit and HEAD, when a measured entry cites a head other than tested_commit, when tested_commit names no known commit in a full clone, and when a claimed test or step count differs from the tests and steps that actually exist.",
       "evidence_paths": [
         "STATUS.md"
       ]
