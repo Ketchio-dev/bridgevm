@@ -45,10 +45,11 @@ function Get-Current([string]$dev) {
   return $null
 }
 
-function Start-PointerTarget {
+function Require-PointerTarget {
+  if (-not $LaunchPointerTarget) { return }
   $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bv-pointer-target.ps1 -Width 1600 -Height 900 > C:\BridgeVM\bv-pointer-target.out 2>&1' }
   Write-Output ('BVTARGET_LAUNCHED return=' + $result.ReturnValue + ' pid=' + $result.ProcessId)
-  return ($result.ReturnValue -eq 0 -and $result.ProcessId -gt 0)
+  if ($null -eq $result -or $result.ReturnValue -ne 0 -or $result.ProcessId -le 0) { exit 4 }
 }
 
 # The virtio-gpu display is the one with a real mode list; the basic display
@@ -95,7 +96,7 @@ $before = Get-Current $target
 Write-Output ("BV-APPLY| before=" + $before.dmPelsWidth + "x" + $before.dmPelsHeight + " requested=${Width}x${Height}")
 if ($before.dmPelsWidth -eq $Width -and $before.dmPelsHeight -eq $Height) {
   Write-Output ("BV-APPLY| after=${Width}x${Height}")
-  if ($LaunchPointerTarget -and (-not (Start-PointerTarget))) { exit 4 }
+  Require-PointerTarget
   Write-Output 'BV-APPLY-DONE'; exit 0
 }
 
@@ -114,6 +115,6 @@ do {
 
 Write-Output ("BV-APPLY| after=" + $after.dmPelsWidth + "x" + $after.dmPelsHeight)
 if ($after.dmPelsWidth -eq $Width -and $after.dmPelsHeight -eq $Height) {
-  if ($LaunchPointerTarget -and (-not (Start-PointerTarget))) { exit 4 }
+  Require-PointerTarget
   Write-Output 'BV-APPLY-DONE'; exit 0
 } else { Write-Output 'BV-APPLY-DONE'; exit 1 }
