@@ -16,6 +16,7 @@ for name in ("IOSurfaceGetBaseAddress",):
     getattr(lib, name).argtypes = [ctypes.c_void_p]; getattr(lib, name).restype = ctypes.c_void_p
 for name in ("IOSurfaceGetBytesPerRow", "IOSurfaceGetWidth", "IOSurfaceGetHeight"):
     getattr(lib, name).argtypes = [ctypes.c_void_p]; getattr(lib, name).restype = ctypes.c_size_t
+lib.IOSurfaceGetSeed.argtypes = [ctypes.c_void_p]; lib.IOSurfaceGetSeed.restype = ctypes.c_uint32
 def surface():
     ident, width, height = map(int, args.iosurface.read_text().split())
     ref = lib.IOSurfaceLookup(ident)
@@ -41,17 +42,19 @@ while time.monotonic_ns() <= deadline:
     if fill >= 10_000 and candidate == baseline: break
     baseline = candidate; time.sleep(0.025)
 else: raise RuntimeError("active target baseline not presented")
-before, before_frame, _ = frame(ref, True); baseline = hashlib.sha256(before).hexdigest(); (args.out / "iosurface-before.xrgb8888").write_bytes(before_frame)
+before, before_frame, seed = frame(ref, True); baseline = hashlib.sha256(before).hexdigest(); (args.out / "iosurface-before.xrgb8888").write_bytes(before_frame)
 started = time.monotonic_ns(); start_unix = time.time_ns()
 with args.input_control.open("a", buffering=1) as ctl: ctl.write(f"POINTER click:{args.hid_x}x{args.hid_y}\n")
 press_unix = time.time_ns()
 changed = "none"; first = "none"; changed_frame = b""; change_unix = 0; deadline = started + args.timeout_ms * 1_000_000
 while time.monotonic_ns() <= deadline:
-    region, _, _ = frame(ref); candidate = hashlib.sha256(region).hexdigest()
-    if candidate != baseline:
-        first = str((time.monotonic_ns() - started + 999_999) // 1_000_000); change_unix = time.time_ns()
-        changed = candidate; _, changed_frame, _ = frame(ref, True); break
-    time.sleep(0.005)
+    observed_seed = lib.IOSurfaceGetSeed(ref)
+    if observed_seed != seed:
+        region, _, seed = frame(ref); candidate = hashlib.sha256(region).hexdigest()
+        if candidate != baseline:
+            first = str((time.monotonic_ns() - started + 999_999) // 1_000_000); change_unix = time.time_ns()
+            changed = candidate; _, changed_frame, _ = frame(ref, True); break
+    time.sleep(0.001)
 if changed_frame: (args.out / "iosurface-changed.xrgb8888").write_bytes(changed_frame)
 (args.out / "visible.env").write_text(f"source=active-cgl-iosurface\niosurface_id={ident}\nwidth=1600\nheight=900\nhid_x={args.hid_x}\nhid_y={args.hid_y}\nstart_unix_ns={start_unix}\npress_unix_ns={press_unix}\nchange_unix_ns={change_unix}\nbaseline_region_sha256={baseline}\nchanged_region_sha256={changed}\nfirst_changed_ms={first}\n", encoding="ascii")
 raise SystemExit(0 if first != "none" else 1)
