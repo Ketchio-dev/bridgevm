@@ -32,8 +32,11 @@ $button.Text = 'CLICK BRIDGEVM TARGET'
 $button.Font = New-Object System.Drawing.Font('Segoe UI', 28, [System.Drawing.FontStyle]::Bold)
 $button.Size = [System.Drawing.Size]::new(600, 300)
 $button.Location = [System.Drawing.Point]::new([int](($Width - 600) / 2), [int](($Height - 300) / 2))
+$button.UseVisualStyleBackColor = $false
 $button.BackColor = [System.Drawing.Color]::White
 $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$button.FlatAppearance.BorderSize = 0
+$button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::White
 $form.Controls.Add($button)
 
 $count = 0

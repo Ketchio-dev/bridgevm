@@ -37,7 +37,7 @@ def frame(ref, full=False):
 ref, ident = surface(); baseline = ""; deadline = time.monotonic_ns() + 120_000_000_000
 while time.monotonic_ns() <= deadline:
     before, _, _ = frame(ref); candidate = hashlib.sha256(before).hexdigest()
-    fill = sum(before[i:i + 4] == b"\xe5\xe5\xe5\xff" for i in range(0, len(before), 4))
+    fill = sum(before[i:i + 4] == b"\xff\xff\xff\xff" for i in range(0, len(before), 4))
     if fill >= 10_000 and candidate == baseline: break
     baseline = candidate; time.sleep(0.025)
 else: raise RuntimeError("active target baseline not presented")
