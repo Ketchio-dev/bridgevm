@@ -42,7 +42,7 @@ mod setup_input_memory_drain_tests;
 mod setup_input_ramfb_tests;
 #[cfg(test)]
 #[path = "xhci_hid_input/test_support.rs"]
-mod test_support;
+pub mod test_support;
 
 pub(crate) use boot_key::XhciHidBootKeyTrigger;
 pub(crate) use hid_semantic_summary::print_hid_semantic_summary;

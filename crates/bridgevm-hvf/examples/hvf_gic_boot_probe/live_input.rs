@@ -88,8 +88,8 @@ impl LiveInputController {
                 }
             },
             LiveInputCommand::Pointer(value) => match parse_pointer_input_actions(value) {
-                Ok(actions) => platform
-                    .queue_xhci_pointer_input_actions_with_mem(&actions, mem)
+                Ok(actions) => { platform.set_host_now(now);
+                    platform.queue_xhci_pointer_input_actions_with_mem(&actions, mem) }
                     .map(|()| true)
                     .map_err(|error| matches!(error, XhciPointerInputQueueError::Busy)),
                 Err(error) => {
@@ -261,6 +261,9 @@ impl LiveInputController {
     }
 }
 
+#[cfg(test)]
+#[path = "live_input_clock_tests.rs"]
+mod clock_tests;
 #[cfg(test)]
 mod tests {
     use super::{LiveInputCommand, LiveInputController, COMPACT_AFTER_BYTES};
