@@ -630,7 +630,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_bar2.rs	37	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/gpu_shm_setup.rs	12	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hvf_setup.rs	88	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_config.rs	83	0
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	1023	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime.rs	1016	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_runtime/vtimer_recovery.rs	90	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/probe_setup.rs	89	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/watchpoint_setup.rs	14	0
@@ -664,6 +664,8 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/interrupt_delivery.rs	276	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/kd_serial_bridge.rs	234	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_display_export.rs	148	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input.rs	426	2
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input_clock_tests.rs	34	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_wake.rs	84	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/mmio_trace.rs	76	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/nvme_storage_effect.rs	165	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/nvme_storage_effect_tests.rs	266	0
@@ -721,6 +723,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/marker.rs	148	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/marker_tests.rs	72	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/pointer_input.rs	774	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/pointer_input_tests.rs	195	0
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/pointer_trigger_clock_tests.rs	36	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/report_text.rs	54	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/setup_input.rs	15	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/xhci_hid_input/setup_input/actions.rs	424	0

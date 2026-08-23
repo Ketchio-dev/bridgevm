@@ -10,7 +10,6 @@ mod pointer_input;
 mod report_text;
 #[path = "xhci_hid_input/setup_input.rs"]
 mod setup_input;
-
 #[cfg(test)]
 #[path = "xhci_hid_input/boot_key_tests.rs"]
 mod boot_key_tests;
@@ -20,6 +19,9 @@ mod marker_tests;
 #[cfg(test)]
 #[path = "xhci_hid_input/pointer_input_tests.rs"]
 mod pointer_input_tests;
+#[cfg(test)]
+#[path = "xhci_hid_input/pointer_trigger_clock_tests.rs"]
+mod pointer_trigger_clock_tests;
 #[cfg(test)]
 #[path = "xhci_hid_input/setup_input_action_tests.rs"]
 mod setup_input_action_tests;
@@ -40,7 +42,7 @@ mod setup_input_memory_drain_tests;
 mod setup_input_ramfb_tests;
 #[cfg(test)]
 #[path = "xhci_hid_input/test_support.rs"]
-mod test_support;
+pub mod test_support;
 
 pub(crate) use boot_key::XhciHidBootKeyTrigger;
 pub(crate) use hid_semantic_summary::print_hid_semantic_summary;

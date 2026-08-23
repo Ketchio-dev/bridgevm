@@ -60,9 +60,7 @@ impl LiveInputController {
         }
     }
 
-    pub fn poll_due(&self, now: Instant) -> bool {
-        self.path.is_some() && now >= self.next_poll
-    }
+    pub fn poll_due(&self, now: Instant) -> bool { self.path.is_some() && now >= self.next_poll }
 
     pub fn tick(
         &mut self,
@@ -90,8 +88,8 @@ impl LiveInputController {
                 }
             },
             LiveInputCommand::Pointer(value) => match parse_pointer_input_actions(value) {
-                Ok(actions) => platform
-                    .queue_xhci_pointer_input_actions_with_mem(&actions, mem)
+                Ok(actions) => { platform.set_host_now(now);
+                    platform.queue_xhci_pointer_input_actions_with_mem(&actions, mem) }
                     .map(|()| true)
                     .map_err(|error| matches!(error, XhciPointerInputQueueError::Busy)),
                 Err(error) => {
@@ -264,6 +262,9 @@ impl LiveInputController {
 }
 
 #[cfg(test)]
+#[path = "live_input_clock_tests.rs"]
+mod clock_tests;
+#[cfg(test)]
 mod tests {
     use super::{LiveInputCommand, LiveInputController, COMPACT_AFTER_BYTES};
     use std::collections::VecDeque;
@@ -286,7 +287,7 @@ mod tests {
     #[test]
     fn live_input_accepts_only_bounded_typed_commands() {
         let mut input = controller();
-        input.push_line("KEY text:abc123");
+        input.path = Some(PathBuf::from("input.ctl")); input.push_line("KEY text:abc123");
         input.push_line("POINTER click:100x200");
         input.push_line("UNKNOWN anything");
         assert_eq!(input.pending.len(), 2);
