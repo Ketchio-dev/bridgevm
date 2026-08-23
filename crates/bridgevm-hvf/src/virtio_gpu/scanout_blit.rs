@@ -47,11 +47,11 @@ impl VirtioGpu {
                 );
             }
         }
-        let count = self.scanout_blit_count;
+        let (count, host_unix_ns) = (self.scanout_blit_count, super::trace_clock::unix_ns());
         self.record_trace_fields("scanout_blit", |fields| {
             let _ = write!(
                 fields,
-                ",\"resource_id\":{resource_id},\"surface_id\":{surface_id},\"width\":{width},\"height\":{height},\"duration_ns\":{duration_ns},\"count\":{count}"
+                ",\"resource_id\":{resource_id},\"surface_id\":{surface_id},\"width\":{width},\"height\":{height},\"duration_ns\":{duration_ns},\"host_unix_ns\":{host_unix_ns},\"count\":{count}"
             );
         });
     }
