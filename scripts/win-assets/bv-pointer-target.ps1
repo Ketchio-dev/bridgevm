@@ -6,6 +6,9 @@ param([int]$Width = 1600, [int]$Height = 900)
 # the input probe. Each click is appended through a separately opened handle
 # so the agent can sync the count while the UI process remains alive.
 $ErrorActionPreference = 'Stop'
+$errorLog = 'C:\BridgeVMPtr\bv-pointer-target-error.log'
+Remove-Item $errorLog -Force -ErrorAction SilentlyContinue
+trap { [IO.File]::WriteAllText($errorLog, ($_ | Out-String)); exit 1 }
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 $root = 'C:\BridgeVMPtr'

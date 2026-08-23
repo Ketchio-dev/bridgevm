@@ -38,7 +38,8 @@ send_ok 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMPtr\bvgp
 for _ in $(seq 1 120); do scanout_ready && break; sleep 1; done
 scanout_ready || fail 'active 1600x900 scanout absent'
 for _ in $(seq 1 120); do grep -q '^BVTARGET ready width=1600 height=900 ' "$CASE/share/bv-pointer-target-ready.log" 2>/dev/null && break; sleep 1; done
-ready=$(tr -d '\r' < "$CASE/share/bv-pointer-target-ready.log"); [[ "$ready" =~ ^BVTARGET.ready.width=1600.height=900.screen_x=([-0-9]+).screen_y=([-0-9]+).center_x=([-0-9]+).center_y=([-0-9]+).virtual_x=([-0-9]+).virtual_y=([-0-9]+).virtual_w=([0-9]+).virtual_h=([0-9]+).hwnd=([1-9][0-9]*)$ ]] || fail 'target not ready'
+ready=$(tr -d '\r' < "$CASE/share/bv-pointer-target-ready.log" 2>/dev/null || true)
+[[ "$ready" =~ ^BVTARGET.ready.width=1600.height=900.screen_x=([-0-9]+).screen_y=([-0-9]+).center_x=([-0-9]+).center_y=([-0-9]+).virtual_x=([-0-9]+).virtual_y=([-0-9]+).virtual_w=([0-9]+).virtual_h=([0-9]+).hwnd=([1-9][0-9]*)$ ]] || { tr -d '\r' < "$CASE/share/bv-pointer-target-error.log" 2>/dev/null >&2 || true; fail 'target not ready'; }
 sx=${BASH_REMATCH[1]}; sy=${BASH_REMATCH[2]}; cx=${BASH_REMATCH[3]}; cy=${BASH_REMATCH[4]}
 hid_x=$(( (cx - sx) * 32767 / 1599 )); hid_y=$(( (cy - sy) * 32767 / 899 ))
 printf 'POINTER move:%sx%s\n' "$hid_x" "$hid_y" >> "$INPUT"
