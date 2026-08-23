@@ -1,18 +1,17 @@
-use std::time::{Duration, Instant};
+use crate::xhci_hid_input::SetupInputHostWake;
+use crate::{watchdog_generation_matches, HvVcpuT};
+use bridgevm_hvf::platform_virt::VirtPlatform;
+use std::sync::{atomic::AtomicU64, Arc};
 
-pub(super) const CADENCE: Duration = Duration::from_millis(16);
-pub(super) const BURST: Duration = Duration::from_millis(500);
-
-pub(super) fn wake_due(fired: bool, now: Instant, schedule: Option<(Instant, Instant)>) -> bool {
-    !fired && schedule.is_some_and(|(next, until)| now >= next && now <= until)
-}
-
-#[test]
-fn wake_burst_is_bounded_and_non_overlapping() {
-    let now = Instant::now();
-    assert!(!wake_due(false, now, None));
-    assert!(wake_due(false, now, Some((now, now + BURST))));
-    assert!(!wake_due(true, now, Some((now, now + BURST))));
-    assert!(!wake_due(false, now + BURST + Duration::from_millis(2),
-        Some((now, now + BURST))));
+pub(super) fn arm_pointer_deadline(
+    platform: &VirtPlatform, wake: &mut SetupInputHostWake, vcpu: HvVcpuT,
+    generation: &Arc<AtomicU64>, boot_generation: u64,
+) {
+    let Some(deadline) = platform.xhci_pointer_report_deadline() else { return; };
+    let generation = Arc::clone(generation);
+    wake.arm(deadline, move || {
+        if watchdog_generation_matches(&generation, boot_generation) {
+            super::input_control_wake::exit_vcpu(vcpu);
+        }
+    });
 }

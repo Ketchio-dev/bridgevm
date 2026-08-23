@@ -869,6 +869,7 @@ pub(crate) fn run() -> ExitCode {
                                 }
                             }
                         }
+                        input_control_schedule::arm_pointer_deadline(platform, &mut setup_input_host_wake, vcpu, &watchdog_generation, boot_generation);
                         ramfb_sample_loop.emit_due(vcpu, |label| {
                             ramfb_dump::print_checkpoint_for_platform(label, platform, &guest_ram);
                         });

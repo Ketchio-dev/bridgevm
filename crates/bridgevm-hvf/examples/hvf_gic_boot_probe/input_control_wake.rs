@@ -22,16 +22,12 @@ impl InputControlWake {
         let fired = Arc::clone(&self.fired);
         std::thread::spawn(move || {
             let mut length = file_length(&path).unwrap_or(0);
-            let mut schedule = None;
             loop {
-                let now = std::time::Instant::now();
-                if input_length_changed(&mut length, file_length(&path)) {
-                    schedule = Some((now, now + super::input_control_schedule::BURST));
-                }
-                if super::input_control_schedule::wake_due(fired.load(Ordering::SeqCst), now, schedule) {
+                if !fired.load(Ordering::SeqCst)
+                    && input_length_changed(&mut length, file_length(&path))
+                {
                     fired.store(true, Ordering::SeqCst);
-                    schedule = schedule.map(|(_, until)| (now + super::input_control_schedule::CADENCE, until));
-                    unsafe { hv_vcpus_exit(&vcpu, 1) };
+                    exit_vcpu(vcpu);
                 }
                 std::thread::sleep(POLL);
             }
@@ -44,6 +40,7 @@ impl InputControlWake {
     }
 }
 
+pub(super) fn exit_vcpu(vcpu: HvVcpuT) { unsafe { hv_vcpus_exit(&vcpu, 1) }; }
 fn file_length(path: &PathBuf) -> Option<u64> { std::fs::metadata(path).ok().map(|m| m.len()) }
 fn input_length_changed(previous: &mut u64, observed: Option<u64>) -> bool {
     let Some(observed) = observed else { return false; };
@@ -53,7 +50,7 @@ fn input_length_changed(previous: &mut u64, observed: Option<u64>) -> bool {
 
 #[cfg(test)]
 #[test]
-fn only_real_control_file_length_changes_start_a_burst() {
+fn only_real_control_file_length_changes_request_a_wake() {
     let mut length = 0;
     assert!(!input_length_changed(&mut length, None));
     assert!(!input_length_changed(&mut length, Some(0)));

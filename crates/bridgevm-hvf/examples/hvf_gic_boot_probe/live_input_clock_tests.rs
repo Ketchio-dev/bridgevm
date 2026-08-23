@@ -25,7 +25,7 @@ fn live_pointer_uses_command_now_instead_of_stale_cached_time() {
         partial: String::new(), pending: VecDeque::new(), accepted_pointer_moves: 0,
         next_poll: command_now - POLL_INTERVAL };
     input.tick(&mut platform, &mut mem, command_now);
-    assert_eq!(platform.xhci_pointer_input_report_stats().emitted_button_reports, 1);
+    assert_eq!(platform.xhci_pointer_input_report_stats().emitted_button_reports, 1); assert_eq!(platform.xhci_pointer_report_deadline(), Some(command_now + Duration::from_secs(1)));
     platform.set_host_now(base + Duration::from_secs(1));
     platform.drain_xhci_pointer_input_reports(&mut mem);
     assert_eq!(platform.xhci_pointer_input_report_stats().emitted_release_reports, 0);
