@@ -389,3 +389,56 @@ measured rather than assumed: the guest-side target must present and hold
 deterministically, and the post-click presentation path must stop costing
 roughly twice the budget in half the runs. Neither is fixed by this batch, and
 no part of this receipt closes the criterion.
+
+### 2026-08-23 latency decomposition: the 500 ms runs are not slow blits
+
+The 17 landed runs of job `20260823-054152-13053-2622` carry enough host-clock
+detail to split `first_changed_ms` without running anything new: the DCI5
+emission trace stamps each of move/button/release with `host_unix_ns`,
+`scanout_blit` now carries the same clock, and `visible.env` records the
+control-write and pixel-change times on it too. Four segments, averaged over
+the seven runs at or under the limit versus the ten above it:
+
+| segment | fast (<=250 ms, n=7) | slow (>250 ms, n=10) |
+| --- | --- | --- |
+| control write -> button report emitted | 31 ms | 55 ms |
+| button -> release emitted (configured 200 ms hold) | 237 ms | 279 ms |
+| release -> first scanout blit | -58 ms | +100 ms |
+| blit -> observed pixel change | ~0 ms | ~0 ms |
+
+Three things follow, and none of them is "the blit is slow".
+
+**The blit is not the cost.** Individual blits take 1.0-2.5 ms, and the gap
+between a blit and the pixel change the watcher hashes is about zero in both
+groups. Presentation, once started, is immediate.
+
+**The dominant term is when Windows decides to repaint, not how long it
+paints.** Charging the GPU trace against the window between the button report
+and the next blit, the fast runs are fully explained by guest GPU work (188 ms
+of command duration inside a 179 ms window), while the slow runs leave 221 ms
+that no command accounts for. The slow runs also issue *fewer* commands and
+less command time (158 ms) than the fast ones, so the guest is not doing more
+work — it is doing nothing and waiting.
+
+**What separates the groups is whether the repaint waits for release.** In 5 of
+7 fast runs the pixel change happens *before* the release report is even
+emitted: `MouseDown` repaints the button and the frame is already on screen. In
+10 of 10 slow runs the change happens *after* release, i.e. the frame that the
+watcher sees is the `Click` handler's, not `MouseDown`'s. That is the whole
+bimodality: two different repaints are being timed.
+
+The measured hold explains why the second repaint can be so late. The
+configured interval is 200 ms, but the button-to-release times measured on the
+host clock are 200, 202, 204, 205, 207, 216, 224, 224, 234, 249, 263, 274, 315,
+315, 332, 392 and 394 ms — a tail reaching nearly double the setting.
+`corr(hold, first_changed_ms) = 0.45`, and runs with a hold over 250 ms average
+380 ms to first change against 314 ms for the rest. So the exact one-shot wake
+fixed the systematic drift but not this tail, and any run whose visible
+reaction is the post-click repaint inherits the overshoot directly.
+
+Two consequences for B4, both requiring more measurement before any change.
+First, the criterion currently times whichever repaint happens to be observed,
+so the same guest behaviour can score 186 ms or 531 ms; a click is a press and
+a release, and the gate should say which transition it is timing. Second, the
+remaining hold overshoot is a real host-side defect and is not explained by the
+periodic-wake bug already fixed. B4 stays **OPEN**.
