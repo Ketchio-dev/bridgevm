@@ -1,5 +1,3 @@
-use crate::fwcfg::GuestMemoryMut;
-
 use super::{
     interrupt_trb::{
         read_chained_event_data, read_transfer_trb, transfer_event_control, trb_interrupter_target,
@@ -10,6 +8,7 @@ use super::{
     pointer_input_report::HID_ABSOLUTE_POINTER_REPORT_LEN,
     XhciController,
 };
+use crate::fwcfg::GuestMemoryMut;
 
 const SLOT_ID: u32 = 1;
 const ENDPOINT_ID_DCI5: u32 = 5;
@@ -164,7 +163,8 @@ impl XhciController {
                         self.slot1_dci5_last_drain_blocked = None;
                         if can_emit_queued_report {
                             #[rustfmt::skip]
-                            self.trace_dci5_report_emitted(queued_report, interrupt_transfer.gpa, transfer_length, written_length, completion_code);
+                            let trace = super::trace_dci5_emission::trace_context(queued_report, &interrupt_transfer, last_td_trb_gpa, transfer_length, written_length, completion_code);
+                            self.trace_dci5_report_emitted(trace);
                             self.record_pointer_input_report_emitted(queued_report);
                             self.pointer_input_report_queue.pop_front();
                         }
