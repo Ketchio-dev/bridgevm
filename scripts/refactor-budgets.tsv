@@ -438,6 +438,7 @@ crates/bridgevm-hvf/src/virtio_gpu/scanout/resize.rs	23	0
 crates/bridgevm-hvf/src/virtio_gpu/scanout_3d.rs	264	0
 crates/bridgevm-hvf/src/virtio_gpu/scanout_async.rs	195	0
 crates/bridgevm-hvf/src/virtio_gpu/scanout_blit.rs	53	0
+crates/bridgevm-hvf/src/virtio_gpu/trace_clock.rs	5	0
 crates/bridgevm-hvf/src/virtio_gpu/snapshot.rs	164	0
 crates/bridgevm-hvf/src/virtio_gpu/snapshot/geometry.rs	27	0
 crates/bridgevm-hvf/src/virtio_gpu/tests/helpers.rs	415	0
@@ -874,6 +875,10 @@ runners/hvf-runner/src/supervise_cli_tests.rs	41	0
 scripts/verify-reset-recreate.sh	113	0
 scripts/verify-app-third-party-notices.sh	63	0
 scripts/verify-pointer-click-reliability.sh	110	0
+scripts/run-pointer-click-reliability-case.sh	53	0
+scripts/watch-pointer-visible-reaction.py	60	0
+scripts/prepare-pointer-reliability-source.sh	82	0
+scripts/pointer-reliability-vm.sh	36	0
 scripts/win-assets/bv-ppsspp-d3d11.ini	14	0
 scripts/verify-rust-dependency-inventory.sh	23	0
 scripts/verify-rust-license-bundle.sh	11	0
