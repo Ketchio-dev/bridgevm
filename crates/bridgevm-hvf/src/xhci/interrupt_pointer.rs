@@ -17,22 +17,23 @@ const TRANSFER_EVENT_ED: u32 = 1 << 2;
 const COMPLETION_CODE_SHORT_PACKET: u32 = 13;
 const DCI5_DRAIN_POLICY_AFTER_DOORBELL: &str = "after_doorbell";
 const DCI5_DRAIN_POLICY_QUEUED_POINTER: &str = "queued_pointer_drain";
-
 impl XhciController {
     pub(super) fn process_dci5_interrupt_in_transfer_after_doorbell(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
+        // Host reports leave only through VirtPlatform's pacing path.
+        if self.has_queued_pointer_input_report() {
+            return false;
+        }
         self.process_dci5_interrupt_in_transfer(mem, DCI5_DRAIN_POLICY_AFTER_DOORBELL)
     }
-
     pub(crate) fn process_queued_dci5_pointer_input(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
     ) -> bool {
         self.process_dci5_interrupt_in_transfer(mem, DCI5_DRAIN_POLICY_QUEUED_POINTER)
     }
-
     fn process_dci5_interrupt_in_transfer(
         &mut self,
         mem: &mut dyn GuestMemoryMut,
@@ -192,7 +193,6 @@ impl XhciController {
         self.trace_dci5_drain_blocked("link_trb_limit", policy, None);
         false
     }
-
     fn trace_dci5_drain_blocked(
         &mut self,
         reason: &'static str,
