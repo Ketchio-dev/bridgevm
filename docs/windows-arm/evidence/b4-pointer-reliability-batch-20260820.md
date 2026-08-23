@@ -341,3 +341,51 @@ B4 therefore remains **OPEN** with no N=20 receipt. The fixed criterion is
 unchanged: 20 independent clones, guest-observed press and release in every
 run, `stuck=0`, exactly one target click at the expected coordinates, a real
 active CGL IOSurface reaction 20/20, and first-change p95 <=250 ms.
+
+### 2026-08-23 first complete N=20 batch: 17/20, p95 531 ms — FAIL
+
+Studio tier `t8-pointer-reliability`, job `20260823-054152-13053-2622` at
+`main` commit `31df3c313bfa925d215883394d407950e25ae1d2`, gate log SHA-256
+`3c9f7d72e26f7e0f0d526a696728c2a54ef14409734057f46eae09f5cb16c5d5`, summary
+SHA-256 `4192f7b059d34b368de60b9e29b0acaf9828efda2ececedfc30b132c8f633e8e`,
+Mac16,9 / macOS 26.5.2. This is the first batch since the gate was fixed that
+ran all 20 runs to completion instead of being cancelled. It **failed** on both
+halves of the criterion: `landed 17/20`, `p95_first_changed_ms=531` against the
+250 ms limit.
+
+The 17 landed runs were unanimous on the input half: `fired=true press=1
+release=1 stuck=0`, exactly one target click at the expected coordinates, and a
+real active CGL IOSurface reaction. So the delivery work holds — a host click
+now reaches the Windows input stack and produces a visible frame.
+
+The failure is elsewhere, and the distribution says where. First-change times
+for the landed runs were 169, 186, 208, 219, 221, 229, 248, 314, 315, 374, 432,
+440, 442, 467, 481, 529, 531 ms: a bimodal split, with seven runs at or under
+the limit and ten roughly twice that. A press that Windows has already consumed
+cannot explain a 500 ms frame, so the remaining cost is in presentation, not in
+input delivery. This matches the ~442 ms first post-button blit recorded on
+2026-08-23 above.
+
+The three non-landing runs are three different refusals, and none of them is a
+lost click:
+
+- run 10 produced no `bv-pointer-target-ready.log` at all, so the parser
+  returned `invalid-target` — the target window never reported itself;
+- runs 9 and 19 reached a valid ready line, an interactive desktop and
+  `BVPTR_READY` at the button centre, but the watcher then refused with
+  `active target baseline not presented`: the white button never held still on
+  the active IOSurface for the 120 s convergence window. The gate therefore
+  never injected the click (their `input.ctl` ends at `POINTER move`, and
+  `dci5_emission` count is zero), and `BVPTR summary presses=0 releases=0`
+  records an absent click rather than a discarded one.
+
+That is the fail-closed design working: a run whose target was never stably on
+screen produces a refusal, not a latency. It also means 3/20 of the campaign
+was spent on target-presentation flakiness that has nothing to do with B4's
+question.
+
+B4 stays **OPEN** with the criterion unchanged. Two separate problems are now
+measured rather than assumed: the guest-side target must present and hold
+deterministically, and the post-click presentation path must stop costing
+roughly twice the budget in half the runs. Neither is fixed by this batch, and
+no part of this receipt closes the criterion.
