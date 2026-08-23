@@ -2,7 +2,7 @@
   "schema_version": 1,
   "capability_id": "windows-hvf",
   "reviewed": "2026-08-20",
-  "tested_commit": "ab8c9788148179094a021757d308ad252cf9c478",
+  "tested_commit": "49f7e0ad69662422640c70c1beda8523198fe937",
   "product_state": "RELEASED",
   "wording": {
     "product_state_label": "1.0",
@@ -138,7 +138,7 @@
       "state": "PROVEN",
       "release_blocking": true,
       "statement": "Workspace, Venus lib, probe example and Swift suites plus fmt, clippy, budgets and docs gates all pass at the final release head.",
-      "measured": "PROVEN 2026-08-23 at tested head ab8c9788148179094a021757d308ad252cf9c478 (branch agent/b4-gate-recovery). Exact-SHA Studio T0 job 20260823-050836-2825-19741 ran all 28 check-project sections on Mac16,9 / macOS 26.5.2: every code, test, formatting, structural, documentation, installer and release-override step passed; the sole failure was the intentionally stale A11 registry that this docs-only update refreshes. scripts/run-xctest-shim-suites.sh reported 419 + 198 (1 skip) + 62 = 679 passed, 0 failed. The complete check log has SHA-256 3d7f1c2fa17999eb3585bcbed8e90a0049c9e77c3938c2184a1728dacf6da4e7. The head under test stamps scanout blits with the host wall clock and makes the B4 tier refuse, with a named message, any run whose prepared media, active 1600x900 scanout, detached target window, verified cursor, single click or active CGL IOSurface evidence is not proven. An earlier attempt at this same SHA, job 20260823-044002-94865-29880, additionally failed one bridgevm-qemu QMP socket test with ECONNREFUSED while 1,065 zombie processes from an unrelated host application were present; that job is recorded rather than hidden, and the rerun above passed after the zombies were reaped. B4 remains OPEN: no N=20 receipt exists. Four staleness conditions are checked rather than remembered: the registry fails when crates/, runners/, apps/, scripts/ or tests/ differ between tested_commit and HEAD, when a measured entry cites a head other than tested_commit, when tested_commit names no known commit in a full clone, and when a claimed test or step count differs from the tests and steps that actually exist.",
+      "measured": "PROVEN 2026-08-23 at tested head 49f7e0ad69662422640c70c1beda8523198fe937 (branch agent/b4-press-latency). Exact-SHA Studio T0 job 20260823-110930-92040-7432 ran all 28 check-project sections on Mac16,9 / macOS 26.5.2: every code, test, formatting, structural, documentation, installer and release-override step passed; the sole failure was the intentionally stale A11 registry that this docs-only update refreshes. scripts/run-xctest-shim-suites.sh reported 419 + 198 (1 skip) + 62 = 679 passed, 0 failed. The complete check log has SHA-256 d889ec1f0dfc6c324bbea536e0eeb4d4852e81a17a7fb5f95b488037c8d29516. The head under test adds one print-only probe line reporting a DCI5 pointer report still queued past its own deadline, so a live run can separate a missed host wake from an unready guest TD; it is gated by BRIDGEVM_TRACE_DCI5_EMISSION and changes no behaviour. B4 remains OPEN: the last complete batch landed 17/20 with p95 531 ms. Four staleness conditions are checked rather than remembered: the registry fails when crates/, runners/, apps/, scripts/ or tests/ differ between tested_commit and HEAD, when a measured entry cites a head other than tested_commit, when tested_commit names no known commit in a full clone, and when a claimed test or step count differs from the tests and steps that actually exist.",
       "evidence_paths": [
         "STATUS.md"
       ]

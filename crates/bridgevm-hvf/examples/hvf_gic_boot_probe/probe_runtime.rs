@@ -2,6 +2,8 @@
 pub(crate) mod vtimer_recovery;
 #[path = "../hvf_gic_boot_probe/input_control_wake.rs"]
 mod input_control_wake;
+#[path = "../hvf_gic_boot_probe/pointer_deadline_trace.rs"]
+mod pointer_deadline_trace;
 
 use super::*;
 use crate::boot_media_setup::attach_boot_media;

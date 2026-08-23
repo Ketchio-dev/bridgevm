@@ -52,12 +52,12 @@ pub struct PointerDeadlineWake {
 }
 
 impl PointerDeadlineWake {
-    pub fn new(vcpu: HvVcpuT, generation: (&Arc<AtomicU64>, u64)) -> Self {
-        Self { vcpu, generation: Arc::clone(generation.0), boot_generation: generation.1 }
-    }
+    #[rustfmt::skip]
+    pub fn new(vcpu: HvVcpuT, generation: (&Arc<AtomicU64>, u64)) -> Self { Self { vcpu, generation: Arc::clone(generation.0), boot_generation: generation.1 } }
 
     pub fn arm(&self, platform: &VirtPlatform, wake: &mut SetupInputHostWake) {
         let Some(deadline) = platform.xhci_pointer_report_deadline() else { return; };
+        super::pointer_deadline_trace::report_overdue(deadline);
         self.arm_at(deadline, wake);
     }
 

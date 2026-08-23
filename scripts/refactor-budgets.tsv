@@ -667,6 +667,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_display_export.rs	148	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input.rs	426	2
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/live_input_clock_tests.rs	34	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/input_control_wake.rs	84	1
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/pointer_deadline_trace.rs	21	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/mmio_trace.rs	76	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/nvme_storage_effect.rs	165	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/nvme_storage_effect_tests.rs	266	0
