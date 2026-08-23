@@ -459,6 +459,7 @@ crates/bridgevm-hvf/src/virtio_gpu/tests/part_3_2.rs	123	0
 crates/bridgevm-hvf/src/virtio_gpu/trace.rs	219	0
 crates/bridgevm-hvf/src/virtio_gpu/trace_fence.rs	53	0
 crates/bridgevm-hvf/src/virtio_gpu/trace_fields.rs	309	0
+crates/bridgevm-hvf/src/virtio_gpu/trace_clock.rs	5	0
 crates/bridgevm-hvf/src/virtio_gpu/trace_submit.rs	38	0
 crates/bridgevm-hvf/src/virtio_gpu/vblank.rs	157	0
 crates/bridgevm-hvf/src/virtio_gpu/venus_start_trace.rs	127	0

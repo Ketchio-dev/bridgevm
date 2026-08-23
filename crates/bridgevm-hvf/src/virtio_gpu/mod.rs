@@ -25,6 +25,7 @@ mod scanout_async;
 mod scanout_blit;
 mod snapshot;
 mod trace;
+mod trace_clock;
 mod trace_fields;
 mod vblank;
 mod venus_start_trace;
