@@ -1,5 +1,7 @@
 #[path = "probe_runtime/vtimer_recovery.rs"]
 pub(crate) mod vtimer_recovery;
+#[path = "../hvf_gic_boot_probe/input_control_wake.rs"]
+mod input_control_wake;
 
 use super::*;
 use crate::boot_media_setup::attach_boot_media;
@@ -105,6 +107,7 @@ pub(crate) fn run() -> ExitCode {
         // the previous generation's ticker into a bogus "watchdog (CANCELED)"
         // stop — live-observed as the reboot loop dying at reboot 1/8.)
         let mut agent_service_wake = agent_console::ServiceWake::new();
+        let mut input_control_wake = input_control_wake::InputControlWake::new();
         // Same probe-lifetime rule as ServiceWake above; the wake-state Arc is
         // shared with the virtio-gpu device and survives platform resets.
         let mut gpu_vblank_wake = vblank_wake::VblankWake::new();
@@ -148,6 +151,10 @@ pub(crate) fn run() -> ExitCode {
                 })
             });
             let boot_generation = begin_watchdog_generation(&watchdog_generation);
+            let pointer_deadline_wake = input_control_wake::PointerDeadlineWake::new(
+                vcpu,
+                (&watchdog_generation, boot_generation),
+            );
             let watchdog_fired = Arc::new(AtomicBool::new(false));
             // One cancellation ledger per vCPU generation; see wake_coordinator.
             let wake_coordinator = Arc::new(WakeCoordinator::new());
@@ -332,6 +339,7 @@ pub(crate) fn run() -> ExitCode {
             if let Some(interval) = service_wake_interval {
                 agent_service_wake.ensure_started(vcpu, interval);
             }
+            input_control_wake.ensure_started(vcpu);
             if let Some(state) = gpu_vblank_wake_state.as_ref() {
                 gpu_vblank_wake.ensure_started(vcpu, Arc::clone(state));
             }
@@ -404,6 +412,8 @@ pub(crate) fn run() -> ExitCode {
                     setup_input_host_wake.canceled_by_host_wake(reason, &watchdog_fired);
                 let service_wake_canceled =
                     agent_service_wake.canceled_by_service_wake(reason, &watchdog_fired);
+                let setup_input_wake_canceled = setup_input_wake_canceled
+                    || input_control_wake.canceled(reason, &watchdog_fired);
                 let vblank_wake_canceled =
                     gpu_vblank_wake.canceled_by_vblank_wake(reason, &watchdog_fired);
                 let automation_tick_canceled = sample_tick_canceled
@@ -819,17 +829,9 @@ pub(crate) fn run() -> ExitCode {
                             if let Some(deadline) =
                                 trigger.pending_host_wake_deadline_at(platform, now)
                             {
-                                let v = vcpu;
-                                let wake_generation = Arc::clone(&watchdog_generation);
-                                let wake_boot_generation = boot_generation;
-                                if setup_input_host_wake.arm(deadline, move || {
-                                    if watchdog_generation_matches(
-                                        &wake_generation,
-                                        wake_boot_generation,
-                                    ) {
-                                        hv_vcpus_exit(&v, 1);
-                                    }
-                                }) {
+                                if pointer_deadline_wake
+                                    .arm_at(deadline, &mut setup_input_host_wake)
+                                {
                                     println!(
                                         "xHCI setup-input host wake armed for delayed trigger"
                                     );
@@ -849,23 +851,16 @@ pub(crate) fn run() -> ExitCode {
                             if let Some(deadline) =
                                 trigger.pending_host_wake_deadline_at(platform, now)
                             {
-                                let v = vcpu;
-                                let wake_generation = Arc::clone(&watchdog_generation);
-                                let wake_boot_generation = boot_generation;
-                                if setup_input_host_wake.arm(deadline, move || {
-                                    if watchdog_generation_matches(
-                                        &wake_generation,
-                                        wake_boot_generation,
-                                    ) {
-                                        hv_vcpus_exit(&v, 1);
-                                    }
-                                }) {
+                                if pointer_deadline_wake
+                                    .arm_at(deadline, &mut setup_input_host_wake)
+                                {
                                     println!(
                                         "xHCI pointer-input host wake armed for delayed trigger"
                                     );
                                 }
                             }
                         }
+                        pointer_deadline_wake.arm(platform, &mut setup_input_host_wake);
                         ramfb_sample_loop.emit_due(vcpu, |label| {
                             ramfb_dump::print_checkpoint_for_platform(label, platform, &guest_ram);
                         });

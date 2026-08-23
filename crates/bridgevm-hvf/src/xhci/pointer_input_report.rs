@@ -277,7 +277,7 @@ impl XhciController {
         self.pointer_input_report_stats
     }
 
-    pub(super) fn has_queued_pointer_input_report(&self) -> bool {
+    pub(crate) fn has_queued_pointer_input_report(&self) -> bool {
         !self.pointer_input_report_queue.is_empty()
     }
 

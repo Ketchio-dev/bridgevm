@@ -26,6 +26,7 @@ mod trace_dci3_drain;
 mod trace_dci3_input_capture;
 mod trace_dci5_drain;
 mod trace_dci5_emission;
+mod trace_dci5_emission_format;
 mod trace_dci5_input_capture;
 mod trace_host_controller_reset;
 mod trace_mmio;
@@ -198,9 +199,6 @@ impl XhciController {
         if self.has_queued_setup_input_report() {
             interrupt |= self.process_dci3_interrupt_in_transfer(mem);
         }
-        if self.has_queued_pointer_input_report() {
-            interrupt |= self.process_queued_dci5_pointer_input(mem);
-        }
         interrupt
     }
 }
@@ -261,6 +259,8 @@ mod hid_unsupported_semantic_stats_tests;
 mod interrupter_msix_autoclear_tests;
 #[cfg(test)]
 mod msix_tests;
+#[cfg(test)]
+mod platform_pointer_pacing_tests;
 #[cfg(test)]
 mod platform_setup_input_cycle_drain_tests;
 #[cfg(test)]

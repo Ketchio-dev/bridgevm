@@ -117,8 +117,7 @@ impl VirtPlatform {
             }
             "tpm-ppi" => MmioOutcome::Unmapped,
             "flash-vars" => self.flash_vars.access(gpa, op),
-            // Modelled in the machine map but no device behaviour yet — surfaced
-            // precisely so bring-up traces show the next thing to implement.
+            // Modelled in the map, no device behaviour: visible in bring-up traces.
             other => MmioOutcome::KnownUnimplemented(other),
         };
         if retry_setup_input_after_mmio {
@@ -127,7 +126,6 @@ impl VirtPlatform {
         }
         (outcome, MmioPostDrain::NONE)
     }
-
     /// Empty virtio-mmio transport slot. Advertise a valid legacy register block with
     /// DeviceID 0 so the firmware sees "valid transport, no device" and skips it
     /// silently — matching QEMU's empty slots. Returning 0 (no magic) instead made
@@ -180,7 +178,7 @@ impl VirtPlatform {
     }
 
     /// PCIe ECAM config-space access: a real host bridge at 00:00.0, all-ones
-    /// (no device) elsewhere. Replaces the earlier blanket all-ones stub.
+    /// (no device) elsewhere.
     pub(crate) fn pcie_access(&mut self, ecam_offset: u64, op: MmioOp) -> MmioOutcome {
         if CfgAddr::from_ecam_offset(ecam_offset).bdf() == NVME_BDF {
             self.nvme_ecam_touched = true;
@@ -254,6 +252,8 @@ impl VirtPlatform {
                     if posted_completion {
                         self.queue_xhci_completion_msix();
                     }
+                    // Controller MMIO must not bypass pointer host-time pacing.
+                    self.drain_xhci_pointer_input_reports(mem);
                     self.flush_xhci_pending_msix();
                     MmioOutcome::WriteAck
                 }
