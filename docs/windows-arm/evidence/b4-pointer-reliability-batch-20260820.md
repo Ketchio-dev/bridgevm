@@ -485,3 +485,61 @@ designed.
 Two batches now agree: input delivery works when the target is up, the residual
 latency is presentation, and within that the hold overshoot has a measured
 cause. B4 stays **OPEN**.
+
+### 2026-08-24 third complete batch: stable black begins in renderer command submission
+
+Job `20260824-003132-73288-13833` at `main`
+`697477f93b14b1b1317319784d6490ae19954924` completed and **failed**:
+`landed 15/20`, p95 709 ms (gate log SHA-256
+`bdea989a58b7db5eb30586a700744ab88115ad79e586a300d5e01cbfb29d89a3`,
+summary SHA-256
+`191137cc0e0644c2580859cf849170ecbcf6e5bb0de42c5c8b3905828d74efd6`).
+The unchanged limit is 250 ms, so neither 15/20 nor the 709 ms p95 is partial
+credit.
+
+The target-baseline evidence closes its coarse ambiguity. Runs 5, 6, 8 and 20
+all wrote a valid `BVTARGET ready` record at 1600x900, but the active IOSurface
+remained stable and completely black for the full 120-second convergence
+window: `peak_white_px=0`, `final_white_px=0`, and 567 to 580 settled samples.
+This is not target-window flicker and not a briefly visible target. Run 12 is a
+different refusal: it never wrote a target-ready record (`invalid-target`).
+
+The black frame is not a missing CGL publication or failed IOSurface copy.
+Run 5 completed 179 `scanout_blit` events and 94 paced CPU readbacks, while its
+90-second and 120-second 1600x900 CPU checkpoints both contain 1,440,000 black
+pixels, zero nonzero pixels and one unique colour. The renderer scanout source
+itself was black.
+
+Existing JSONL then locates the first divergence before the 1600x900 target
+transition. All four stable-black lanes enter a persistent ctx-7 renderer
+failure:
+
+| run | ctx-7 failed submits | first command | status | resource | backing before failure |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 5 | 322 | `VIRGL_CCMD_TRANSFER3D` (43) | 22 | 140 | none |
+| 6 | 301 | `VIRGL_CCMD_TRANSFER3D` (43) | 22 | 137 | none |
+| 8 | 203 | `VIRGL_CCMD_TRANSFER3D` (43) | 22 | 308 | none |
+| 20 | 277 | `VIRGL_CCMD_TRANSFER3D` (43) | 22 | 143 | none |
+
+Each resource exists and was attached to ctx 7, but no successful
+`RESOURCE_ATTACH_BACKING` precedes the first transfer. virglrenderer reports
+`Illegal resource` and `Illegal command buffer`; the ctx-7 errors then cascade.
+The first failure occurs at JSONL sequence 1,535 to 3,250, before the first
+successful 1600x900 `SET_SCANOUT`/IOSurface blit in each run, so launching the
+pointer target does not trigger the poison.
+
+This separator is persistence- and context-specific, not “any renderer error”.
+Fourteen of the fifteen landed lanes have zero failed submits. Landed run 10
+has seven transient failures on ctx 5, interleaved with later successful
+submits, and still presents normally. The earlier unqualified statement that
+successful runs had zero failed submits was wrong and is retracted.
+
+One boundary remained unobserved by this batch. BridgeVM consumed a malformed
+virtqueue descriptor chain at used length zero and advanced `last_avail_idx`
+without recording the rejection. Therefore the absent backing attach could
+mean either that the guest never posted it, or that BridgeVM consumed its
+malformed descriptor chain. PR #69 adds a sampled, structure-only
+`descriptor_chain_rejected` event to decide that question without changing
+queue-consumption behaviour; it logs no guest address or payload. The event is
+bounded to the existing first-64/each-1024 trace policy and descriptor-table GPA
+overflow now refuses instead of panicking. B4 remains **OPEN**.
