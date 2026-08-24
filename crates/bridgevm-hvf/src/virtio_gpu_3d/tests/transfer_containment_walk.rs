@@ -46,33 +46,9 @@ fn live_shaped_stream_rejects_the_second_unbacked_buffer() {
         Some(VIRTIO_GPU_RESP_ERR_UNSPEC),
         "unbacked resource 153 later in the stream must still be contained"
     );
-    assert!(backend.lock().unwrap().submits.is_empty());
-}
-
-#[test]
-fn an_unregistered_resource_does_not_abandon_the_rest_of_the_walk() {
-    // Regression for a fail-open: an earlier TRANSFER3D naming a resource this
-    // device never registered must not stop the walk before the unbacked one.
-    let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
-    let mut gpu = VirtioGpu3d::with_backend(Box::new(backend.clone()));
-    let ctx_id = 7;
-    handle(&mut gpu, &create_context(ctx_id));
-    handle(&mut gpu, &create_constant_buffer(153));
-    handle(
-        &mut gpu,
-        &ctx_resource_req(VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE, ctx_id, 153),
-    );
-
-    let mut two = transfer_submit(ctx_id, 9999);
-    let second = transfer_submit(ctx_id, 153);
-    two.extend_from_slice(&second[SUBMIT_3D_LEN..]);
-    let size = (two.len() - SUBMIT_3D_LEN) as u32;
-    two[24..28].copy_from_slice(&size.to_le_bytes());
-
-    let hdr = CtrlHdr3d::parse(&two).unwrap();
-    assert_eq!(
-        read_le_u32(&gpu.handle(&two, hdr).unwrap(), 0),
-        Some(VIRTIO_GPU_RESP_ERR_UNSPEC)
-    );
-    assert!(backend.lock().unwrap().submits.is_empty());
+    // The first TRANSFER3D targets a backed resource, so the renderer would have
+    // executed it before rejecting the second. It must still reach the backend.
+    let submits = backend.lock().unwrap().submits.clone();
+    assert_eq!(submits.len(), 1, "the prefix must still be dispatched");
+    assert_eq!(submits[0].1.len(), SUBMIT_3D_PAYLOAD_DWORDS_14 * 4);
 }

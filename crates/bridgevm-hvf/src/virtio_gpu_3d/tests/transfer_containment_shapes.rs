@@ -1,8 +1,7 @@
 // Plain-buffer RESOURCE_CREATE_3D shapes used by the containment tests.
-
 use super::super::*;
 use super::helpers::*;
-
+pub(super) const SUBMIT_3D_PAYLOAD_DWORDS_14: usize = 14;
 pub(super) fn create_constant_buffer(resource_id: u32) -> Vec<u8> {
     create_plain_buffer(resource_id, 64)
 }
