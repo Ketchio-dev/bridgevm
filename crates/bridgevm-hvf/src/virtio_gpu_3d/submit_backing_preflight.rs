@@ -14,16 +14,6 @@ impl VirtioGpu3d {
     /// for a plain buffer whose RESOURCE_ATTACH_BACKING never arrived;
     /// virglrenderer answers EINVAL and every later submit on that context
     /// fails too. Never guess backing and never accept the command.
-    pub(crate) fn submit_rejected_before_renderer(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> bool {
-        match self.preflight_unbacked_buffer_transfer(ctx_id, cmdbuf) {
-            Some(diagnostic) => {
-                self.set_submit_diagnostic(Some(diagnostic));
-                true
-            }
-            None => false,
-        }
-    }
-
     /// Any `PIPE_BUFFER`, whatever its binding: batch 5 also failed on vertex
     /// and index buffers, `check_transfer_iovec` only asks for `res->iov`, and
     /// the `VREND_STORAGE_EGL_IMAGE` exception is texture-only.
