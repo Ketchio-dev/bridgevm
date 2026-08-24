@@ -543,3 +543,62 @@ malformed descriptor chain. PR #69 adds a sampled, structure-only
 queue-consumption behaviour; it logs no guest address or payload. The event is
 bounded to the existing first-64/each-1024 trace policy and descriptor-table GPA
 overflow now refuses instead of panicking. B4 remains **OPEN**.
+
+## Batch 5 — 2026-08-24, first batch with renderer containment
+
+t8 job `20260824-115428-72165-14984` at main `fcb95a59c5c63527564c0e54f479c3d05950ef0e`,
+the first batch to run with the unbacked-`TRANSFER3D` preflight merged.
+Honest **FAIL**: `landed 12/20 p95_first_changed_ms=688 (limit 250)`.
+
+Failure classes: six `invalid-click-count`, two `invalid-target`. All six
+stable-black lanes (runs 1, 3, 5, 7, 10, 17) refused with
+`result=baseline-not-presented`, `peak_white_px=0` and `final_white_px=0`
+(settled samples 195–548) — the target was never painted, not painted-then-lost.
+
+The ctx-7 poison still separates black from landed perfectly and exclusively:
+181–240 failed ctx-7 `SUBMIT_3D` in each black lane, **zero** in all fourteen
+non-black lanes. `SET_SCANOUT` errors were tested as a candidate separator and
+rejected — they occur in all twenty lanes (224–269 each), including every
+landed run, so they are background noise.
+
+### What the containment did and did not do
+
+It works where it applies, and that is not enough to fix this.
+
+In run 3 the offending buffer is resource 153: `RESOURCE_CREATE_3D target=0
+bind=64` at seq 1576, `CTX_ATTACH_RESOURCE` to ctx 7 at seq 1577, and **no**
+`RESOURCE_ATTACH_BACKING` ever. The preflight refused it at seq 1641 and the
+next ctx-7 submit (seq 1647) returned `OK_NODATA` — the context was not poisoned
+at that point. The same single-rejection-then-continue shape appears in runs 5,
+10 and 17.
+
+The lanes still went black because a *second, different* failure follows:
+in run 3, seq 2198 fails `renderer_command_id=8` (`VIRGL_CCMD_DRAW_VBO`) with
+`renderer_status=104` (`ENOTRECOVERABLE`), after which 238 more submits fail.
+Two of the six black lanes (runs 1 and 7) never trip the preflight at all; their
+first failure is `renderer_command_id=45` (`VIRGL_CCMD_COPY_TRANSFER3D`), which
+the deliberately narrow rule does not cover.
+
+Per-lane split of preflight rejections versus renderer rejections:
+
+| run | preflight (first seq) | renderer (first seq) |
+| --- | --- | --- |
+| 3 | 1 (1641) | 239 (2198) |
+| 5 | 1 (2990) | 180 (3023) |
+| 10 | 1 (3016) | 198 (3030) |
+| 17 | 1 (2916) | 199 (2936) |
+| 1 | 0 | 186 (3195) |
+| 7 | 0 | 185 (2987) |
+
+Conclusion, stated plainly: containing `TRANSFER3D` removes one poison source
+but is **not sufficient** for stable-black, and B4 must not be reported as
+improved by it. The guest is issuing draws and copies against buffers it never
+backed; the host can bound the damage but cannot supply the missing backing.
+Next measurement is `COPY_TRANSFER3D` (command 45) and the `DRAW_VBO`
+`ENOTRECOVERABLE` path, not another pointer-timing change.
+
+A fail-open in the preflight itself was found while reading this trace and
+fixed separately: an earlier transfer naming a resource the device never
+registered aborted the entire command walk, hiding later unbacked transfers.
+
+B4 remains **OPEN**.
