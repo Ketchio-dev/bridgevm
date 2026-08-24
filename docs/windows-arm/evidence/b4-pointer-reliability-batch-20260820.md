@@ -652,3 +652,55 @@ posts backing for that resource's immediate id-neighbours in the same burst and
 does so successfully in fourteen other lanes of the same image. Nothing measured
 so far indicts the host. The next step is guest-side, not another host-side
 counter, and B4 remains **OPEN**.
+
+## Batch 6 — 2026-08-24, widened containment: still FAIL, and it exposed the real gap
+
+t8 job `20260824-154650-73552-15846` at main `c3aa70244968377eb9d4116311bb86cde482ea30`,
+the first batch with containment widened from constant buffers to any
+`PIPE_BUFFER`. Honest **FAIL**: `landed 11/20 p95_first_changed_ms=540
+(limit 250)`. Gate log SHA-256 `4c96a7ee…`, summary SHA-256 `8652c8a1…`.
+Six lanes stable black (runs 4, 5, 8, 16, 17, 20), three `invalid-target`,
+six `invalid-click-count`.
+
+The widening did what it was written to do — the preflight now fires in every
+black lane (exactly one rejection each, against resources 305, 155, 308, 318,
+296, and one lane with none) where the previous rule matched only two of four.
+**It did not reduce the black-lane count**, which stayed at 6/20. B4 is not
+improved.
+
+### The measurement that matters: the poison predates the preflight
+
+In four of the six black lanes the first renderer-side failure is
+`VIRGL_CCMD_DRAW_VBO` with `renderer_status=104`. That is `ENOTRECOVERABLE`,
+and `vrend_draw_vbo` returns it from a single place — `if (ctx->in_error)` at
+`vrend_renderer.c:6027` — *before* validating anything. It means the context was
+already erroneous when the draw arrived.
+
+Run 4 settles where that error came from. Between the preflight rejection at
+seq 3087 and the `ENOTRECOVERABLE` at seq 3107 there are **zero** ctx-7 submits,
+and the preflight never calls the renderer. Across the whole lane, ctx 7's first
+non-OK submit *is* seq 3087. So `ctx->in_error` was set by a command inside an
+**earlier submit that BridgeVM recorded as `OK_NODATA`**.
+
+That is possible because `virgl_submit_cmd` reports success for the buffer as a
+whole; `vrend_report_context_error` sets `ctx->in_error` from 85 call sites
+(77 in `vrend_renderer.c`, 8 in `vrend_decode.c`) without failing the submit.
+`dispatch_submit` (`submit_dispatch.rs:9-16`) therefore stores a diagnostic only
+when `accepted` is false, and the true first fault is invisible.
+
+**Consequence for the containment story:** the unbacked `TRANSFER3D` is not the
+originating fault in these lanes — it is an early *visible* symptom of a context
+that was already poisoned. Widening the rule could never have fixed the black
+lanes, and the earlier framing of this work as "one poison source removed" was
+too generous to it. What it does buy is a fail-closed refusal that no longer
+depends on the binding, and a sharper question.
+
+Run 20 is the one lane where the renderer failure genuinely precedes the
+preflight (`COPY_TRANSFER3D`, seq 2218, 886 seqs earlier), so command 45 remains
+uncontained by a rule that only walks command 43.
+
+### Next measurement
+
+Surface the first context error, not the first failed submit: the host needs to
+know when `in_error` is set inside an accepted buffer. Until then any further
+containment rule is guesswork about a fault we cannot see. B4 remains **OPEN**.
