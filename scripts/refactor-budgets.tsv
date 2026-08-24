@@ -421,6 +421,7 @@ crates/bridgevm-hvf/src/virtio_gpu/bytes.rs	29	0
 crates/bridgevm-hvf/src/virtio_gpu/command.rs	82	0
 crates/bridgevm-hvf/src/virtio_gpu/compositor.rs	239	0
 crates/bridgevm-hvf/src/virtio_gpu/config_space.rs	448	0
+crates/bridgevm-hvf/src/virtio_gpu/descriptor_chain_trace.rs	85	0
 crates/bridgevm-hvf/src/virtio_gpu/device.rs	248	0
 crates/bridgevm-hvf/src/virtio_gpu/device_stats.rs	82	0
 crates/bridgevm-hvf/src/virtio_gpu/display.rs	71	0
@@ -441,6 +442,7 @@ crates/bridgevm-hvf/src/virtio_gpu/scanout_blit.rs	53	0
 crates/bridgevm-hvf/src/virtio_gpu/trace_clock.rs	5	0
 crates/bridgevm-hvf/src/virtio_gpu/snapshot.rs	164	0
 crates/bridgevm-hvf/src/virtio_gpu/snapshot/geometry.rs	27	0
+crates/bridgevm-hvf/src/virtio_gpu/tests/descriptor_chain_trace.rs	49	0
 crates/bridgevm-hvf/src/virtio_gpu/tests/helpers.rs	415	0
 crates/bridgevm-hvf/src/virtio_gpu/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/virtio_gpu/tests/part_1/edid_modes.rs	31	0
@@ -461,7 +463,7 @@ crates/bridgevm-hvf/src/virtio_gpu/trace_fields.rs	309	0
 crates/bridgevm-hvf/src/virtio_gpu/trace_submit.rs	38	0
 crates/bridgevm-hvf/src/virtio_gpu/vblank.rs	157	0
 crates/bridgevm-hvf/src/virtio_gpu/venus_start_trace.rs	127	0
-crates/bridgevm-hvf/src/virtio_gpu/virtqueue.rs	450	0
+crates/bridgevm-hvf/src/virtio_gpu/virtqueue.rs	406	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/backend.rs	224	3
 crates/bridgevm-hvf/src/virtio_gpu_3d/backend_types.rs	17	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/blob_host_mapping.rs	278	0
