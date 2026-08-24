@@ -602,3 +602,53 @@ fixed separately: an earlier transfer naming a resource the device never
 registered aborted the entire command walk, hiding later unbacked transfers.
 
 B4 remains **OPEN**.
+
+### Batch 5 follow-up — four structural hypotheses tested and falsified
+
+Re-derived from the retained `virtio-gpu.jsonl` of job
+`20260824-115428-72165-14984`. Recorded because each was a plausible cause of
+the ctx poison and each is now excluded by measurement.
+
+**1. "The guest never posts `RESOURCE_ATTACH_BACKING`."** False as a general
+claim. Backing attaches are plentiful and all succeed: run 3 has 525 and run 1
+has 543, every one `OK_NODATA`. Only *specific* resources are skipped.
+
+**2. "Black lanes accumulate more unbacked context resources."** False, and this
+was my own first reading of the data. Measuring the peak count of
+context-attached-but-unbacked resources over the whole run does separate the
+classes (black 237–250, landed 86–124), but that peak is reached *after* the
+poison. Measured strictly **before** each lane's first failed submit, the peak
+is 112–116 in black lanes against 86–124 in landed lanes — overlapping ranges,
+so it is a consequence, not a cause.
+
+**3. "Black lanes have more never-backed constant buffers."** False, and in fact
+inverted. Counting resources created as `target=0 bind=64`, context-attached and
+never backed: black lanes 21–23, landed lanes 16–32. Landed run 13 carries 32
+and presents normally. The guest routinely keeps unbacked constant buffers
+alive; that alone is harmless.
+
+**4. "The backing burst skips an id, and skipping is the defect."** False. The
+guest does post backing in contiguous id bursts and does skip ids inside them
+(the run-3 failure is exactly this shape: 154–159 backed at seq 1635–1640 while
+153 is skipped, then seq 1641 submits against 153). But skipped ids inside
+bursts are ubiquitous — 127 to 749 per lane — and landed run 19 has 740.
+
+**Host-side counters are clean.** `descriptor_chain_rejected` is **0** in every
+lane, so BridgeVM is not silently consuming the missing attach. Queue notifies
+(69–70), device status reads, and driver feature negotiation are identical
+across classes.
+
+**One exact host-side asymmetry exists and is also a consequence.**
+`fence_create` is **65** in all six black lanes and **64** in all fourteen
+landed lanes — perfectly and exclusively separating. It is not a cause: the
+65th fence lands at seq 5393–5759, always *after* that lane's first failed
+submit (1641–3195), on a context created after the poison (run 3: ctx 37
+created at seq 5228, fence 2718 at seq 5463, `outcome=parked`). It is the
+guest's recovery attempt, and it is useful only as a post-hoc marker.
+
+What remains unexplained is narrow and specific: why the guest submits a draw
+or copy naming one particular resource whose backing it never posted, when it
+posts backing for that resource's immediate id-neighbours in the same burst and
+does so successfully in fourteen other lanes of the same image. Nothing measured
+so far indicts the host. The next step is guest-side, not another host-side
+counter, and B4 remains **OPEN**.
