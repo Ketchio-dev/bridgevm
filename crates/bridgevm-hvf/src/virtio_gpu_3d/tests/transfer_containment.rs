@@ -3,6 +3,7 @@
 use super::super::submit_backing_preflight::VIRGL_CCMD_TRANSFER3D;
 use super::super::*;
 use super::helpers::*;
+use super::transfer_containment_shapes::*;
 use std::sync::{Arc, Mutex};
 
 pub(super) fn handle(gpu: &mut VirtioGpu3d, request: &[u8]) -> Vec<u8> {
@@ -17,14 +18,6 @@ pub(super) fn create_context(ctx_id: u32) -> Vec<u8> {
     let mut name = [0u8; 64];
     name[..4].copy_from_slice(b"test");
     request.extend_from_slice(&name);
-    request
-}
-
-pub(super) fn create_constant_buffer(resource_id: u32) -> Vec<u8> {
-    let mut request = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0);
-    for field in [resource_id, 0, 177, 64, 64, 1, 1, 1, 0, 0, 0, 0] {
-        request.extend_from_slice(&field.to_le_bytes());
-    }
     request
 }
 

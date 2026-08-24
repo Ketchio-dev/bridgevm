@@ -3,6 +3,7 @@
 mod tests;
 
 mod backend;
+mod backend_backing_state;
 mod blob_host_mapping;
 mod blob_resource;
 mod capset;
