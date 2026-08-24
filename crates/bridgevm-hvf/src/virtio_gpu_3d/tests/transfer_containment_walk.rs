@@ -3,6 +3,7 @@
 use super::super::*;
 use super::helpers::*;
 use super::transfer_containment::*;
+use super::transfer_containment_shapes::*;
 use std::sync::{Arc, Mutex};
 
 #[test]
