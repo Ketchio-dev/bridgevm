@@ -13,9 +13,11 @@ mod fences;
 mod local_resource_copy;
 mod protocol;
 pub(crate) mod resource_3d;
+mod resource_create_3d;
 mod scanout_present;
 mod scanout_types;
 mod submit_3d;
+mod submit_backing_preflight;
 pub(crate) mod trace;
 
 pub use backend::*;
