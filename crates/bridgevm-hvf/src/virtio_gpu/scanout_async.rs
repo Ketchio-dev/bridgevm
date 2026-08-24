@@ -154,7 +154,9 @@ impl VirtioGpu {
         if self.scanout_readback_scratch.len() < len {
             return;
         }
-        let composited = composite_host_3d_to_scanout(
+        #[rustfmt::skip]
+        let content = self.trace.enabled().then(|| super::scanout_content_trace::scanout_content(&self.scanout_readback_scratch, request.width, request.height));
+        if !composite_host_3d_to_scanout(
             &self.scanout_readback_scratch,
             request.width,
             request.height,
@@ -162,26 +164,10 @@ impl VirtioGpu {
             self.width,
             self.height,
             rect,
-        );
-        if !composited {
+        ) {
             return;
         }
-        self.last_3d_scanout_readback = Some(Instant::now());
-        self.scanout_readback_count = self.scanout_readback_count.saturating_add(1);
-        let bytes = u64::from(request.width)
-            .saturating_mul(u64::from(request.height))
-            .saturating_mul(4);
-        self.scanout_readback_bytes = self.scanout_readback_bytes.saturating_add(bytes);
-        let count = self.scanout_readback_count;
-        let (width, height) = (request.width, request.height);
-        let resource_id = request.resource_id;
-        let transfer_ns = result.readback_duration_ns;
-        self.record_trace_fields("scanout_readback", |fields| {
-            let _ = write!(
-                fields,
-                ",\"resource_id\":{resource_id},\"width\":{width},\"height\":{height},\"bytes\":{bytes},\"duration_ns\":{transfer_ns},\"transfer_ns\":{transfer_ns},\"composite_ns\":0,\"deferred\":1,\"count\":{count}"
-            );
-        });
+        self.record_async_readback(request, result, content);
         self.publish_scanout_fb();
     }
 

@@ -22,6 +22,7 @@ mod scanout;
 mod scanout_3d;
 mod scanout_async;
 mod scanout_blit;
+mod scanout_content_trace;
 mod snapshot;
 mod trace;
 mod trace_clock;
