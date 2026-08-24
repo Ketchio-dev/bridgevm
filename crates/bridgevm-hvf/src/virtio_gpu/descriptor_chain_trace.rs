@@ -7,6 +7,7 @@ use std::fmt::Write as _;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DescriptorChainError {
     HeadOutOfRange,
+    DescriptorAddressOverflow { index: u16 },
     DescriptorUnreadable { index: u16 },
     NextOutOfRange { index: u16, next: u16 },
     CycleOrTooLong { index: u16 },
@@ -26,8 +27,10 @@ impl VirtioGpu {
         }
         let mut index = head;
         for _ in 0..queue_size {
-            let Some(desc) = Descriptor::read(mem, queue.desc + u64::from(index) * DESC_SIZE)
-            else {
+            let Some(gpa) = queue.desc.checked_add(u64::from(index) * DESC_SIZE) else {
+                return Err(DescriptorChainError::DescriptorAddressOverflow { index });
+            };
+            let Some(desc) = Descriptor::read(mem, gpa) else {
                 return Err(DescriptorChainError::DescriptorUnreadable { index });
             };
             let has_next = desc.flags & DESC_F_NEXT != 0;
@@ -51,11 +54,19 @@ impl VirtioGpu {
         partial: &[Descriptor],
         error: DescriptorChainError,
     ) {
+        self.trace_descriptor_chain_reject_count =
+            self.trace_descriptor_chain_reject_count.saturating_add(1);
+        if !trace_sample(self.trace_descriptor_chain_reject_count) {
+            return;
+        }
         let queue_size = self.queues[queue_index].effective_size();
         let last_avail_idx = self.queues[queue_index].last_avail_idx;
         let partial_count = partial.len();
         let (reason, index, next) = match error {
             DescriptorChainError::HeadOutOfRange => ("head_out_of_range", None, None),
+            DescriptorChainError::DescriptorAddressOverflow { index } => {
+                ("descriptor_address_overflow", Some(index), None)
+            }
             DescriptorChainError::DescriptorUnreadable { index } => {
                 ("descriptor_unreadable", Some(index), None)
             }

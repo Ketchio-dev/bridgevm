@@ -55,6 +55,7 @@ pub struct VirtioGpu {
     pub(crate) trace: VirtioGpuTraceRecorder,
     pub(crate) trace_queue_notify_count: u64,
     pub(crate) trace_submit_success_count: u64,
+    pub(crate) trace_descriptor_chain_reject_count: u64,
     pub(crate) trace_fence_create_count: u64,
     pub(crate) trace_fence_complete_count: u64,
     pub(crate) trace_fence_deliver_count: u64,
@@ -65,10 +66,7 @@ pub struct VirtioGpu {
     pub(crate) scanout_readback_interval: Duration,
     pub(crate) last_3d_scanout_readback: Option<Instant>,
     pub(crate) scanout_3d_flush_count: u64,
-    /// Cumulative RESOURCE_CREATE_3D commands since the last device reset.
-    /// Active-resource count is insufficient for presentation health because
-    /// swapchain thrash repeatedly creates and destroys the same number of
-    /// live resources.
+    /// Cumulative creates: active count hides swapchain create/destroy thrash.
     pub(crate) resource_create_3d_count: u64,
     pub(crate) scanout_readback_attempt_count: u64,
     pub(crate) scanout_readback_count: u64,
@@ -152,6 +150,7 @@ impl VirtioGpu {
             trace: VirtioGpuTraceRecorder::from_env(),
             trace_queue_notify_count: 0,
             trace_submit_success_count: 0,
+            trace_descriptor_chain_reject_count: 0,
             trace_fence_create_count: 0,
             trace_fence_complete_count: 0,
             trace_fence_deliver_count: 0,

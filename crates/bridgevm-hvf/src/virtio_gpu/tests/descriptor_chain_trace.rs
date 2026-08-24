@@ -17,6 +17,34 @@ fn descriptor_walk_reports_the_index_and_out_of_range_next() {
         Err(DescriptorChainError::NextOutOfRange { index: 0, next: 16 })
     );
     assert_eq!(partial.len(), 1);
+
+    queue.desc = u64::MAX;
+    partial.clear();
+    assert_eq!(
+        VirtioGpu::descriptor_chain_into(&mem, &queue, 1, &mut partial),
+        Err(DescriptorChainError::DescriptorAddressOverflow { index: 1 })
+    );
+}
+
+#[test]
+fn rejection_trace_is_sampled_after_the_initial_evidence() {
+    let path = trace_test_path("descriptor-chain-sampling");
+    let mut dev = VirtioPciGpu::new(1280, 800);
+    dev.gpu.trace = crate::virtio_gpu_trace::VirtioGpuTraceRecorder::test_file(&path);
+    dev.gpu.trace_descriptor_chain_reject_count = 64;
+    let error = DescriptorChainError::HeadOutOfRange;
+    dev.gpu.record_descriptor_chain_rejected(0, 64, &[], error);
+    dev.gpu.trace_descriptor_chain_reject_count = 1023;
+    dev.gpu.record_descriptor_chain_rejected(0, 64, &[], error);
+    drop(dev);
+    let contents = std::fs::read_to_string(&path).unwrap();
+    let _ = std::fs::remove_file(path);
+    assert_eq!(
+        contents
+            .matches(r#""event":"descriptor_chain_rejected""#)
+            .count(),
+        1
+    );
 }
 
 #[test]
