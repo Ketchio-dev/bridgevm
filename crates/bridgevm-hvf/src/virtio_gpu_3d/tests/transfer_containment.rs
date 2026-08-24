@@ -5,12 +5,12 @@ use super::super::*;
 use super::helpers::*;
 use std::sync::{Arc, Mutex};
 
-fn handle(gpu: &mut VirtioGpu3d, request: &[u8]) -> Vec<u8> {
+pub(super) fn handle(gpu: &mut VirtioGpu3d, request: &[u8]) -> Vec<u8> {
     let hdr = CtrlHdr3d::parse(request).unwrap();
     gpu.handle(request, hdr).unwrap()
 }
 
-fn create_context(ctx_id: u32) -> Vec<u8> {
+pub(super) fn create_context(ctx_id: u32) -> Vec<u8> {
     let mut request = ctrl_req(VIRTIO_GPU_CMD_CTX_CREATE, ctx_id);
     request.extend_from_slice(&4u32.to_le_bytes());
     request.extend_from_slice(&0u32.to_le_bytes());
@@ -20,7 +20,7 @@ fn create_context(ctx_id: u32) -> Vec<u8> {
     request
 }
 
-fn create_constant_buffer(resource_id: u32) -> Vec<u8> {
+pub(super) fn create_constant_buffer(resource_id: u32) -> Vec<u8> {
     let mut request = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D, 0);
     for field in [resource_id, 0, 177, 64, 64, 1, 1, 1, 0, 0, 0, 0] {
         request.extend_from_slice(&field.to_le_bytes());
@@ -28,7 +28,7 @@ fn create_constant_buffer(resource_id: u32) -> Vec<u8> {
     request
 }
 
-fn transfer_submit(ctx_id: u32, resource_id: u32) -> Vec<u8> {
+pub(super) fn transfer_submit(ctx_id: u32, resource_id: u32) -> Vec<u8> {
     let mut command = Vec::new();
     for dword in [
         VIRGL_CCMD_TRANSFER3D | (13u32 << 16),
