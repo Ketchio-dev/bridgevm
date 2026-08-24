@@ -18,6 +18,7 @@ mod scanout_present;
 mod scanout_types;
 mod submit_3d;
 mod submit_backing_preflight;
+mod submit_backing_walk;
 pub(crate) mod trace;
 
 pub use backend::*;
