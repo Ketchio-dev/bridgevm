@@ -430,3 +430,12 @@ evidence-driven — expect a new wall at each rung.
 boots on this Mac with the signed probe. Keep the philosophy: **implement first, refactor
 only where a feature demands it (B's re-entrant `main`, E1's SMP), optimize only after
 measuring.**
+
+### Userspace NAT protocol boundary (2026-08-25)
+
+The custom Windows HVF userspace NAT supports Ethernet ARP and IPv4
+DHCP/DNS/ICMP/TCP/UDP only. It does **not** implement IPv4 fragment reassembly
+or IPv6. IPv4 fragments, Ethernet payloads over the declared 1500-byte MTU and
+IPv6 frames fail closed with distinct counters; they are not forwarded to host
+sockets. The checked-in fuzz corpus enters the real `NatBackend::transmit`
+dispatch before individual parser probes.
