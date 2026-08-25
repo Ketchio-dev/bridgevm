@@ -160,9 +160,9 @@ pub(crate) fn print_net_nat_stats(stats: NatStats) {
         stats.udp_datagrams_out,
     );
     println!(
-        "virtio-net NAT drops/again: malformed={} no_guest_mac={} udp_recv_again={} tcp_connect_again={} tcp_read_again={} tcp_write_again={} socket_errors={}",
-        stats.dropped_malformed_frames,
-        stats.dropped_no_guest_mac,
+        "virtio-net NAT drops/again: malformed={} oversize={} ipv4_fragments={} unsupported_ipv6={} no_guest_mac={} udp_recv_again={} tcp_connect_again={} tcp_read_again={} tcp_write_again={} socket_errors={}",
+        stats.dropped_malformed_frames, stats.dropped_oversize_frames,
+        stats.dropped_ipv4_fragments, stats.dropped_unsupported_ipv6, stats.dropped_no_guest_mac,
         stats.udp_recv_again,
         stats.tcp_connect_again,
         stats.tcp_read_again,
