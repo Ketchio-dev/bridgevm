@@ -88,7 +88,7 @@ final class HvfWindowsInstallTests: XCTestCase {
 
     func testPlanValidationBlocksInjectionBeforeFilesystemLookups() throws {
         let error = try XCTUnwrap(makePlan(slug: "blocked", inject: true).validationError())
-        XCTAssertTrue(error.contains(HvfWindowsDriverPreflight.provenanceBlocker))
+        XCTAssertTrue(error.contains("provenance-snapshot-invalid"))
     }
 
     // MARK: validation

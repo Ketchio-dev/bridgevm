@@ -179,7 +179,7 @@ final class HvfWindowsKernelPolicyVerifierTests: XCTestCase {
                        now: try date("2026-08-25T12:00:00Z"))
     }
 
-    private func assertSuccess(
+    func assertSuccess(
         _ result: Result<HvfWindowsKernelPolicyVerifier.VerifiedPackage,
             HvfWindowsKernelPolicyVerifier.Failure>,
         file: StaticString = #filePath, line: UInt = #line

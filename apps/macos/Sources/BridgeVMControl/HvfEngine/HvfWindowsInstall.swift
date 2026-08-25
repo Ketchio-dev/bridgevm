@@ -11,6 +11,7 @@ struct HvfWindowsInstallRequest: Codable, Equatable {
     var diskGiB: Int
     var injectViogpu3d: Bool
     var driverPackageDir: String?
+    var importedMedia: Bool? = nil
 
     static let fileName = "metadata/hvf-install.json"
     static let doneFileName = "metadata/hvf-install-done.json"
@@ -162,7 +163,7 @@ struct HvfWindowsInstallPlan: Equatable {
     }
 
     func validationError() -> String? {
-        if let blocker = VMLibrary.windowsHVFInjectionError(requested: request.injectViogpu3d) {
+        if let blocker = injectionValidationError() {
             return blocker
         }
         let fm = FileManager.default
@@ -170,6 +171,7 @@ struct HvfWindowsInstallPlan: Equatable {
             return "Windows 11 ARM64 ISO 파일을 찾을 수 없습니다."
         }
         let requiredResources = Self.installResourcePaths
+            + (request.injectViogpu3d ? Self.injectionResourcePaths : [])
         if let missing = requiredResources.first(where: {
             !fm.isReadableFile(atPath: repoRoot.appendingPathComponent($0).path)
         }) {
@@ -181,10 +183,10 @@ struct HvfWindowsInstallPlan: Equatable {
         guard Self.wimlibCandidates.contains(where: { fm.isExecutableFile(atPath: $0) }) else {
             return "wimlib-imagex가 필요합니다: brew install wimlib"
         }
-        guard varsTemplatePath != nil else {
+        guard importsExistingMedia || varsTemplatePath != nil else {
             return "UEFI vars 템플릿(edk2-arm-vars.fd)을 찾을 수 없습니다: brew install qemu"
         }
-        guard Self.whitespaceFree(sourceImagePath) else {
+        guard importsExistingMedia || Self.whitespaceFree(sourceImagePath) else {
             return "홈 디렉터리 경로에 공백이 있으면 설치 소스를 만들 수 없습니다."
         }
         return nil
@@ -196,7 +198,10 @@ struct HvfWindowsInstallPlan: Equatable {
 enum HvfWindowsInstallStage: Equatable {
     case idle
     case preparingSource
+    case preparingImportedMedia
+    case buildingInjector
     case installing
+    case injecting
     case finalizing
     case done
     case failed(String)
@@ -205,7 +210,10 @@ enum HvfWindowsInstallStage: Equatable {
         switch self {
         case .idle: return "대기"
         case .preparingSource: return "설치 소스 준비 (WIM 분할)"
+        case .preparingImportedMedia: return "가져온 미디어 안전 복제"
+        case .buildingInjector: return "검증된 3D 인젝터 준비"
         case .installing: return "Windows 무인 설치"
+        case .injecting: return "kernel-policy 드라이버 오프라인 주입"
         case .finalizing: return "VM에 반영"
         case .done: return "완료"
         case .failed: return "실패"
@@ -215,7 +223,7 @@ enum HvfWindowsInstallStage: Equatable {
 
 @MainActor
 final class HvfWindowsInstallSession: ObservableObject {
-    @Published private(set) var stage: HvfWindowsInstallStage = .idle
+    @Published var stage: HvfWindowsInstallStage = .idle
     @Published private(set) var logLines: [String] = []
     @Published private(set) var startedAt: Date?
 
@@ -227,7 +235,7 @@ final class HvfWindowsInstallSession: ObservableObject {
     private var currentProcess: Process?
     private var logTimer: Timer?
     private var evidenceTail = TailOffsetReader()
-    private var cancelled = false
+    var cancelled = false
 
     init(plan: HvfWindowsInstallPlan) {
         self.plan = plan
@@ -235,7 +243,8 @@ final class HvfWindowsInstallSession: ObservableObject {
 
     var isRunning: Bool {
         switch stage {
-        case .preparingSource, .installing, .finalizing: return true
+        case .preparingSource, .preparingImportedMedia, .buildingInjector,
+             .installing, .injecting, .finalizing: return true
         default: return false
         }
     }
@@ -259,122 +268,9 @@ final class HvfWindowsInstallSession: ObservableObject {
         appendLog("사용자가 설치를 취소했습니다.")
     }
 
-    private func run() async {
-        if !plan.sourceImageIsCached {
-            stage = .preparingSource
-            let build = plan.sourceBuildCommand()
-            guard await runProcess(arguments: build.arguments, extraEnvironment: build.environment,
-                                   progressLog: nil) else {
-                try? FileManager.default.removeItem(atPath: plan.sourceImagePath)
-                failUnlessCancelled("설치 소스 생성이 실패했습니다.")
-                return
-            }
-        } else {
-            appendLog("설치 소스 캐시 재사용: \(plan.sourceImagePath)")
-        }
-
-        stage = .installing
-        try? FileManager.default.createDirectory(
-            atPath: plan.tmpEvidenceDir, withIntermediateDirectories: true)
-        let installLog = URL(fileURLWithPath: plan.tmpEvidenceDir).appendingPathComponent("run.log")
-        guard await runProcess(arguments: plan.installCommand(), extraEnvironment: [:],
-                               progressLog: installLog) else {
-            failUnlessCancelled("Windows 무인 설치가 실패했습니다. 로그: \(plan.tmpEvidenceDir)/run.log")
-            return
-        }
-
-        stage = .finalizing
-        do {
-            try finalizeMedia()
-        } catch {
-            stage = .failed("설치 결과 반영 실패: \(error.localizedDescription)")
-            return
-        }
-        stage = .done
-        appendLog("Windows 설치가 완료되었습니다.")
-        onCompleted?()
-    }
-
-    private func failUnlessCancelled(_ message: String) {
-        if cancelled {
-            cleanupTemporaryMedia()
-            stage = .failed("설치가 취소되었습니다.")
-        } else {
-            stage = .failed(message)
-        }
-    }
-
-    private func cleanupTemporaryMedia() {
-        let fm = FileManager.default
-        for path in [plan.tmpTargetPath, plan.tmpVarsPath] {
-            try? fm.removeItem(atPath: path)
-        }
-    }
-
-    private func finalizeMedia() throws {
-        let fm = FileManager.default
-        for sub in ["disks", "metadata", "logs/hvf"] {
-            try fm.createDirectory(
-                at: URL(fileURLWithPath: plan.bundlePath).appendingPathComponent(sub),
-                withIntermediateDirectories: true)
-        }
-        try replaceItem(at: plan.bundleDiskPath, withItemAt: plan.tmpTargetPath)
-        try replaceItem(at: plan.bundleVarsPath, withItemAt: plan.tmpVarsPath)
-        // Seed both the Windows Boot Manager entry and the pinned Microsoft
-        // Secure Boot policy. This is deliberately fail-closed: an install is
-        // not reported complete with a partially provisioned trust store.
-        let secureBootReceipt = try HvfWindowsBootSeed.seedFile(
-            varsPath: plan.bundleVarsPath, diskPath: plan.bundleDiskPath)
-        let receiptEncoder = JSONEncoder()
-        receiptEncoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try receiptEncoder.encode(secureBootReceipt).write(
-            to: URL(fileURLWithPath: plan.bundlePath)
-                .appendingPathComponent("metadata/secure-boot-provisioning.json"),
-            options: [.atomic])
-        appendLog("UEFI 부팅 항목과 Microsoft-only Secure Boot 키를 검증·시드했습니다.")
-        let installRunLog = URL(fileURLWithPath: plan.tmpEvidenceDir).appendingPathComponent("run.log")
-        if fm.fileExists(atPath: installRunLog.path) {
-            try? fm.removeItem(atPath: plan.bundleInstallLogPath)
-            try? fm.copyItem(atPath: installRunLog.path, toPath: plan.bundleInstallLogPath)
-        }
-        let controlPath = "\(plan.bundlePath)/metadata/hvf.ctl"
-        if !fm.fileExists(atPath: controlPath) {
-            fm.createFile(atPath: controlPath, contents: nil)
-        }
-        // Keep the request as a completed record rather than a pending one.
-        let pending = URL(fileURLWithPath: plan.bundlePath)
-            .appendingPathComponent(HvfWindowsInstallRequest.fileName)
-        let done = URL(fileURLWithPath: plan.bundlePath)
-            .appendingPathComponent(HvfWindowsInstallRequest.doneFileName)
-        try? fm.removeItem(at: done)
-        try? fm.moveItem(at: pending, to: done)
-    }
-
-    /// Stage into a bundle-local temporary name first, then rename into place,
-    /// so a crash mid-copy never leaves a half-written disk under the final
-    /// name. APFS clone keeps the 64 GiB sparse image instant when possible.
-    private func replaceItem(at destination: String, withItemAt source: String) throws {
-        let fm = FileManager.default
-        let staging = destination + ".staging-\(UUID().uuidString)"
-        defer { try? fm.removeItem(atPath: staging) }
-        do {
-            try fm.moveItem(atPath: source, toPath: staging)
-        } catch {
-            let clone = Shell.run("/bin/cp", ["-c", source, staging])
-            if clone.code != 0 {
-                try fm.copyItem(atPath: source, toPath: staging)
-            }
-            try? fm.removeItem(atPath: source)
-        }
-        if fm.fileExists(atPath: destination) {
-            try fm.removeItem(atPath: destination)
-        }
-        try fm.moveItem(atPath: staging, toPath: destination)
-    }
-
     /// Runs one pipeline Process off the main actor, streaming its stdout and
     /// optionally tailing a separate evidence log for boot progress lines.
-    private func runProcess(
+    func runProcess(
         arguments: [String],
         extraEnvironment: [String: String],
         progressLog: URL?
@@ -454,39 +350,10 @@ final class HvfWindowsInstallSession: ObservableObject {
             || line.contains("stop: PSCI")
     }
 
-    private func appendLog(_ line: String) {
+    func appendLog(_ line: String) {
         logLines.append(line)
         if logLines.count > 400 {
             logLines.removeFirst(logLines.count - 400)
         }
-    }
-}
-
-/// Thread-safe newline splitter for Process pipe callbacks.
-final class LineAccumulator: @unchecked Sendable {
-    private var buffer = Data()
-    private let lock = NSLock()
-
-    /// Split on newlines in one pass, dropping the consumed prefix once.
-    ///
-    /// Rebuilding the buffer per line copied every remaining byte each time,
-    /// so a single large pipe delivery cost time quadratic in its size: 40,000
-    /// lines took 497 ms that way against 7 ms here. Installer output arrives
-    /// in exactly those bursts.
-    func append(_ data: Data) -> [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        buffer.append(data)
-        var lines: [String] = []
-        var start = buffer.startIndex
-        while let newline = buffer[start...].firstIndex(of: 0x0a) {
-            let lineData = buffer[start..<newline]
-            if let line = String(data: lineData, encoding: .utf8), !line.isEmpty {
-                lines.append(line)
-            }
-            start = buffer.index(after: newline)
-        }
-        buffer.removeSubrange(..<start)
-        return lines
     }
 }

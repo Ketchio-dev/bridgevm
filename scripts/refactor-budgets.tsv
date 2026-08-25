@@ -1058,7 +1058,8 @@ apps/macos/Sources/BridgeVMControl/BridgeVMControlApp.swift	44	0
 apps/macos/Sources/BridgeVMControl/CommandPalette.swift	64	0
 apps/macos/Sources/BridgeVMControl/ContentView.swift	551	0
 apps/macos/Sources/BridgeVMControl/ControlModel.swift	314	0
-apps/macos/Sources/BridgeVMControl/CreateVM.swift	910	0
+apps/macos/Sources/BridgeVMControl/CreateVM.swift	626	0
+apps/macos/Sources/BridgeVMControl/VMCreationFilesystem.swift	138	0
 apps/macos/Sources/BridgeVMControl/FirstRunImport.swift	176	0
 apps/macos/Sources/BridgeVMControl/FirstRunView.swift	94	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift	170	0
@@ -1076,12 +1077,20 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPointerEventSurface.swift	119	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift	380	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	50	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift	407	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	492	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	359	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallSessionRun.swift	132	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsAtomicMediaPublisher.swift	35	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsMediaPublicationTransaction.swift	42	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInjectionWorkspace.swift	80	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsPreparedPackageSnapshot.swift	86	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsProductInjectionPlan.swift	77	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsVMCreation.swift	168	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsDriverPreflight.swift	38	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsKernelPolicyVerifier.swift	361	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfPrivateSnapshotPath.swift	35	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsVerifiedPackageSnapshot.swift	54	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallView.swift	141	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/LineAccumulator.swift	26	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/TailOffsetReader.swift	47	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMIdentityLifecycle.swift	451	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMLifecycleCommand.swift	368	0
@@ -1117,7 +1126,10 @@ apps/macos/Tests/BridgeVMControlTests/HvfEngineTests.swift	1612	0
 apps/macos/Tests/BridgeVMControlTests/QemuCompatToolLookupTests.swift	55
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsBootSeedTests.swift	270	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsImportTests.swift	224	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsAtomicMediaPublisherTests.swift	39	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsMediaPublicationTransactionTests.swift	27	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsProductInjectionPreflightTests.swift	19	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsProductInjectionFlowTests.swift	88	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsStaleInjectionMarkerTests.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallTests.swift	333	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsDriverPreflightTests.swift	57	0
@@ -1145,6 +1157,7 @@ scripts/build-guest-agent-linux.sh	56	0
 scripts/build-hvf-edk2-secure-firmware.sh	184	0
 scripts/build-hvf-windows-d3d10-smoke.sh	39	0
 scripts/build-hvf-windows-driver-injector.sh	415	0
+scripts/build-hvf-windows-kernel-policy-injector.sh	44	0
 scripts/build-hvf-windows-scripted-source.sh	91	0
 scripts/build-hvf-windows-viogpu3d-injector.sh	94	0
 scripts/build-linux-tools.sh	27	0
@@ -1322,7 +1335,8 @@ tests/integration/hvf-windows-installed-boot-p3-gpu-trace-report-smoke.sh	142	0
 tests/integration/hvf-windows-installed-boot-p3-readiness-smoke.sh	173	0
 tests/integration/hvf-windows-installed-boot-vtpm-lifecycle-smoke.sh	56	0
 tests/integration/hvf-windows-p3-gpu-readiness-smoke.sh	229	0
-tests/integration/hvf-windows-product-injection-deny-smoke.sh	17	0
+tests/integration/hvf-windows-product-injection-deny-smoke.sh	15	0
+tests/integration/hvf-windows-kernel-policy-injection-smoke.sh	18	0
 tests/integration/hvf-windows-viogpu3d-build-kit-smoke.sh	162	0
 tests/integration/hvf-windows-viogpu3d-firstboot-asset-smoke.sh	319	0
 tests/integration/hvf-windows-viogpu3d-injector-wrapper-smoke.sh	143	0

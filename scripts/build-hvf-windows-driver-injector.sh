@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
-# Build a minimal bootable WinPE "driver injector" disk: boots WinPE from NVMe
-# (NSID 1) and runs bvinject.cmd, which DISM /Add-Drivers the netkvm ARM64
-# driver into the installed Windows image on the NSID-2 target, then shuts down.
-# Much smaller than the full installer source (no install.wim).
+# Build a minimal WinPE disk that runs bvinject.cmd against the NSID-2 target.
 #
 # Host-side only. Requires hdiutil, wimlib-imagex, rsync. Output persists.
 set -euo pipefail
 
 ISO="${ISO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/ISO/Win11_25H2_English_Arm64_v2.iso}"
 ASSETS="${ASSETS:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/win-assets}"
+WIMLIB_IMAGEX="${WIMLIB_IMAGEX:-wimlib-imagex}"
 # DRIVER_DIRS = space-separated list of "name:path" driver source dirs to stage
 # under \drivers\<name>. Default: just netkvm. Example for viogpudo:
 #   DRIVER_DIRS="viogpudo:$HOME/BridgeVM/drivers/viogpudo"
@@ -19,10 +17,10 @@ DRIVER_DIRS="${DRIVER_DIRS:-netkvm:$HOME/BridgeVM/drivers/netkvm}"
 INJECTOR_PARTITION_UUID="${INJECTOR_PARTITION_UUID:-a0a0c780-d438-47c2-8c96-1b56363c72dd}"
 # Set REMOVE_DRIVER_OEMNAMES="oem1.inf oem4.inf" to have bvinject.cmd
 # dism /Remove-Driver those offline packages before staging the new tree.
-# Set ENABLE_TESTSIGNING=1 when staging test-signed drivers such as viogpu3d.
-# This plants a marker file consumed by bvinject.cmd inside WinPE; existing
-# driver-injection runs leave Windows BCD untouched by default.
+# Test packages opt into their guest mutation marker. Kernel-policy packages
+# are offline-DISM-only and must explicitly disable every developer payload.
 ENABLE_TESTSIGNING="${ENABLE_TESTSIGNING:-0}"
+KERNEL_POLICY_PACKAGE="${KERNEL_POLICY_PACKAGE:-0}"
 # Set SKIP_OFFLINE_DISM=1 only when re-injecting an already-installed Windows
 # image.  WinPE then plants the live pnputil activation payload without first
 # running offline DISM, which can stall while superseding an active display
@@ -51,6 +49,8 @@ log() { printf '[build-injector] %s\n' "$*"; }
   echo "FAIL: DIAGNOSTICS_ONLY must be 0 or 1" >&2
   exit 1
 }
+[[ "$KERNEL_POLICY_PACKAGE" == "0" || "$KERNEL_POLICY_PACKAGE" == "1" ]] || { echo "FAIL: KERNEL_POLICY_PACKAGE must be 0 or 1" >&2; exit 1; }
+[[ "$KERNEL_POLICY_PACKAGE" != 1 || ( "$ENABLE_TESTSIGNING$SKIP_OFFLINE_DISM$QUARANTINE_VIOGPU3D$DIAGNOSTICS_ONLY${PLANT_AGENT:-1}" == 00000 && -z "$PPSSPP_DIR" && "$DRIVER_DIRS" == viogpu3d:* && "$DRIVER_DIRS" != *" "* ) ]] || { echo "FAIL: kernel-policy package requires one offline-only viogpu3d payload" >&2; exit 1; }
 [[ "$SKIP_OFFLINE_DISM" == "0" || "$SKIP_OFFLINE_DISM" == "1" ]] || {
   echo "FAIL: SKIP_OFFLINE_DISM must be 0 or 1" >&2
   exit 1
@@ -63,7 +63,7 @@ for spec in $DRIVER_DIRS; do
   name="${spec%%:*}"
   src="${spec#*:}"
   ls "$src"/*.inf >/dev/null 2>&1 || { echo "FAIL: no .inf in driver dir $src" >&2; exit 1; }
-  if [[ "$name" == "viogpu3d" ]]; then
+  if [[ "$name" == "viogpu3d" && "$KERNEL_POLICY_PACKAGE" != "1" ]]; then
     NEEDS_GPU_FIRSTBOOT=1
   fi
 done
@@ -331,13 +331,13 @@ if [[ "$DIAGNOSTICS_ONLY" == "1" ]]; then
 fi
 
 log "injecting bvinject payload into boot.wim image 2"
-wimlib-imagex update "$DST_VOL/sources/boot.wim" 2 <<UPDATE
+"$WIMLIB_IMAGEX" update "$DST_VOL/sources/boot.wim" 2 <<UPDATE
 add "$ASSETS/winpeshl-inject.ini" /Windows/System32/winpeshl.ini
 add "$ASSETS/bvinject.cmd" /Windows/System32/bvinject.cmd
 UPDATE
 
 log "verifying"
-wimlib-imagex dir "$DST_VOL/sources/boot.wim" 2 | grep -E 'bvinject.cmd|winpeshl.ini' || {
+"$WIMLIB_IMAGEX" dir "$DST_VOL/sources/boot.wim" 2 | grep -E 'bvinject.cmd|winpeshl.ini' || {
   echo "FAIL: payload not in boot.wim" >&2; exit 1; }
 [[ -f "$DST_VOL/efi/boot/bootaa64.efi" ]] || { echo "FAIL: bootaa64.efi missing" >&2; exit 1; }
 ls "$DST_VOL"/drivers/*/*.inf >/dev/null 2>&1 || { echo "FAIL: no staged drivers" >&2; exit 1; }
