@@ -34,7 +34,6 @@ impl VirtioGpu3d {
             destroy_backend_resource = false;
         }
         self.resource_3d_info.remove(&resource_id);
-        self.set_backend_backing(resource_id, false);
         if let Some(resource) = self.blob_resources.get(&resource_id) {
             if resource.mapped.is_some() {
                 self.destroyed_blob_mapped_ids.insert(resource_id);
@@ -112,7 +111,6 @@ impl VirtioGpu3d {
             .as_mut()
             .is_some_and(|backend| backend.attach_backing(resource_id, &self.host_iovecs_scratch));
         self.host_iovecs_scratch.clear();
-        self.set_backend_backing(resource_id, attached);
         attached
     }
 
@@ -126,9 +124,6 @@ impl VirtioGpu3d {
                 .backend
                 .as_mut()
                 .is_some_and(|backend| backend.detach_backing(resource_id));
-        if detached {
-            self.set_backend_backing(resource_id, false);
-        }
         detached
     }
     pub(crate) fn transfer_3d_into(

@@ -465,7 +465,6 @@ crates/bridgevm-hvf/src/virtio_gpu/vblank.rs	157	0
 crates/bridgevm-hvf/src/virtio_gpu/venus_start_trace.rs	127	0
 crates/bridgevm-hvf/src/virtio_gpu/virtqueue.rs	406	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/backend.rs	224	3
-crates/bridgevm-hvf/src/virtio_gpu_3d/backend_backing_state.rs	10	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/backend_types.rs	17	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/blob_host_mapping.rs	278	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/blob_resource.rs	175	0
@@ -484,9 +483,6 @@ crates/bridgevm-hvf/src/virtio_gpu_3d/resource_create_3d.rs	72	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/scanout_present.rs	107	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/scanout_types.rs	43	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/submit_3d.rs	48	0
-crates/bridgevm-hvf/src/virtio_gpu_3d/submit_backing_preflight.rs	24	0
-crates/bridgevm-hvf/src/virtio_gpu_3d/submit_backing_refusal.rs	29	0
-crates/bridgevm-hvf/src/virtio_gpu_3d/submit_backing_walk.rs	39	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/submit_diagnostic_state.rs	15	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/submit_dispatch.rs	18	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/submit_local_copy_dispatch.rs	40	0
@@ -496,11 +492,6 @@ crates/bridgevm-hvf/src/virtio_gpu_3d/test_mocks.rs	287	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/tests/helpers.rs	179	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/tests/mod.rs	0	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/tests/part_1.rs	599	3
-crates/bridgevm-hvf/src/virtio_gpu_3d/tests/transfer_containment.rs	120	0
-crates/bridgevm-hvf/src/virtio_gpu_3d/tests/transfer_containment_binds.rs	33	0
-crates/bridgevm-hvf/src/virtio_gpu_3d/tests/transfer_containment_prefix.rs	89	0
-crates/bridgevm-hvf/src/virtio_gpu_3d/tests/transfer_containment_shapes.rs	13	0
-crates/bridgevm-hvf/src/virtio_gpu_3d/tests/transfer_containment_walk.rs	50	0
 crates/bridgevm-hvf/src/virtio_gpu_3d/trace.rs	29	0
 crates/bridgevm-hvf/src/virtio_gpu_3d_preflight.rs	654	2
 crates/bridgevm-hvf/src/virtio_gpu_trace.rs	227	0

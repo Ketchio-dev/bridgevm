@@ -3,7 +3,6 @@
 mod tests;
 
 mod backend;
-mod backend_backing_state;
 mod blob_host_mapping;
 mod blob_resource;
 mod capset;
@@ -18,9 +17,6 @@ mod resource_create_3d;
 mod scanout_present;
 mod scanout_types;
 mod submit_3d;
-mod submit_backing_preflight;
-mod submit_backing_refusal;
-mod submit_backing_walk;
 pub(crate) mod trace;
 
 pub use backend::*;

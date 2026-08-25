@@ -704,3 +704,46 @@ uncontained by a rule that only walks command 43.
 Surface the first context error, not the first failed submit: the host needs to
 know when `in_error` is set inside an accepted buffer. Until then any further
 containment rule is guesswork about a fault we cannot see. B4 remains **OPEN**.
+
+## Batch 7 — 2026-08-24: the containment feature is measured harmful and reverted
+
+t8 job `20260824-182810-45208-23584` at main `3293e5d`, the first batch with the
+prefix-preservation fix. **`landed 6/20 p95_first_changed_ms=778 (limit 250)`** —
+the worst result of the campaign. Gate log SHA-256 `69c10b01…`, summary
+`66168eaf…`. Ten lanes stable black.
+
+### The trend the batch completes
+
+| batch | containment | landed | black lanes | ctx errors |
+|---|---|---|---|---|
+| `20260823-113151` | none | 13/20 | 0 | 10 |
+| `20260824-003132` | none | 15/20 | 4 | 10 |
+| `20260824-115428` | constant buffers | 12/20 | 6 | 10 |
+| `20260824-154650` | any `PIPE_BUFFER` | 11/20 | 6 | 23 |
+| `20260824-182810` | + prefix preserved | **6/20** | **10** | 19 |
+
+Landed counts fall monotonically as the feature is introduced and extended, and
+in batch 7 the correlation is total: **every one of the 10 lanes with a preflight
+rejection went black, and every one of the 10 lanes without a rejection landed.**
+
+### Verdict
+
+The prefix fix was correct in itself — refusing a whole buffer *did* destroy
+object state, and that is now proven — but it did not recover the lanes, so the
+premise underneath it is wrong. Refusing the transfer at all is worse than
+letting virglrenderer refuse it, and no variant of the refusal has ever improved
+a batch. Three measured attempts (narrow, wide, wide+prefix) all made it worse.
+
+The whole containment feature is therefore **reverted**: the preflight, the walk,
+the refusal, the backing-state bookkeeping and their tests are removed, restoring
+the renderer as the sole judge of an unbacked transfer. This is a revert of my
+own work on measured evidence, not a rollback of someone else's regression.
+
+What survives is the knowledge the attempt bought: the originating fault is
+`vrend_set_single_sampler_view` reporting `Illegal handle`, visible in each black
+lane's `run.log` immediately before the `DRAW_VBO`/`ENOTRECOVERABLE` cascade, and
+present in black lanes *before* any containment existed (batch `20260824-003132`,
+2 context errors in each black lane, 0 in every landed lane). That is the real
+B4 defect and it is untouched by anything in this feature.
+
+B4 remains **OPEN**.

@@ -49,7 +49,6 @@ impl VirtioGpu3d {
             return;
         }
         self.resource_3d_ids.insert(args.resource_id);
-        self.set_backend_backing(args.resource_id, false);
         self.resource_3d_info.insert(args.resource_id, args);
         if crate::virtio_gpu_trace::venus_start_trace_enabled() {
             println!(
