@@ -166,3 +166,28 @@ glyph correctness, audio live quality, signed-provenance clean-machine flow,
 clean-machine breadth, compatibility breadth and the complete 60-round QMP
 acceptance remain open pending their declared retained receipts.
 
+## 2026-08-25: finite-evidence and stress-fixture reseal
+
+Studio T0 job `20260825-125649-30621-23662` checked exact final code commit
+`102823652c054f26efd6c077067f38d285780930` on Mac16,9 / macOS 26.5.2.
+All 33 `scripts/check-project.sh` sections ran. Workspace tests reported 881
+passed and one ignored; the probe example reported 337 passed; the shim suites
+reported 419 + 199 (one skip) + 62 = 680 passed and zero failed. Windows product
+injection deny passed. Formatting, both clippy sections, structural budgets,
+documentation, installer, active-IOSurface, UMD-trace policy,
+compatibility/clean-machine contracts and release-override checks passed. The
+sole failed step was the intentionally stale A11 registry refreshed by this
+docs-only commit. The complete `check.log` SHA-256 is
+`57b1d21c2405eaaf8a9235de05f141dcbb864428e4fa272f2977843c0d9c1e42`.
+The T0 receipt remains `pass=false`; it is not rewritten as passing.
+
+This code head rejects non-finite raw compatibility frame times and repairs the
+three daemon fixtures that actually failed retained t10 round 4. The exact
+failed tests each passed under the same 24-process load shape; daemon was 59/59
+and one full workspace run passed before the T0. No production timeout or QMP
+client changed. At this exact head PR #98 had 16 successful hosted checks, one
+declared advisory skip, zero pending and zero failures. The prior t10 receipt
+remains failed after 3/60 and the canceled audio lane remains incomplete. B4,
+glyph correctness, audio 10/10, signed-provenance clean-machine flow, M1-M4
+clean-machine breadth, 20-workload live measurements and QMP 60/60 remain open.
+
