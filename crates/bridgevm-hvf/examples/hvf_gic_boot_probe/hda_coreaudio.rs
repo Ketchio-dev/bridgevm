@@ -11,6 +11,8 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, TryLockError};
 
 use bridgevm_hvf::hda::HdaPcmSink;
+#[path = "hda_coreaudio_outcomes.rs"]
+mod hda_coreaudio_outcomes;
 #[path = "hda_coreaudio_stats.rs"]
 mod hda_coreaudio_stats;
 use hda_coreaudio_stats::Shared;
@@ -175,8 +177,9 @@ impl HdaPcmSink for CoreAudioPcmSink {
 impl Drop for CoreAudioPcmSink {
     fn drop(&mut self) {
         unsafe {
-            let _ = AudioQueueStop(self.queue, 1);
-            let _ = AudioQueueDispose(self.queue, 1);
+            self.shared.outcomes.begin_stopping();
+            self.shared.outcomes.record_stop(AudioQueueStop(self.queue, 1));
+            self.shared.outcomes.record_dispose(AudioQueueDispose(self.queue, 1));
             drop(Box::from_raw(self.callback_context));
         }
         // Always print the healthy case too; error-only telemetry cannot prove
@@ -196,12 +199,7 @@ unsafe extern "C" fn output_callback(
     let context = &*(user_data.cast::<CallbackContext>());
     fill_from_ring(buffer, &context.shared);
     let status = AudioQueueEnqueueBuffer(queue, buffer, 0, ptr::null());
-    if status != 0 {
-        context
-            .shared
-            .callback_errors
-            .fetch_add(1, Ordering::Relaxed);
-    }
+    context.shared.outcomes.record_reenqueue(status);
 }
 
 unsafe fn fill_from_ring(buffer: AudioQueueBufferRef, shared: &Shared) {

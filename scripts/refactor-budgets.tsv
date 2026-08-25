@@ -659,7 +659,8 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/device_shape.rs	278	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/exception_trace.rs	173	1
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_diagnostics.rs	259	3
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/guest_memory.rs	219	8
-crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs	259	16
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio.rs	255	16
+crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_outcomes.rs	46	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/hda_coreaudio_stats.rs	56	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_pasteboard.rs	424	21
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/host_support.rs	41	2
@@ -906,6 +907,7 @@ crates/bridgevm-hvf/src/userspace_gic/userspace_gic_tests.rs	387	0
 crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	477	13
 scripts/install-bridgevm.sh	209	0
 scripts/live-gates/run-a3-title-tier.sh	90	0
+scripts/live-gates/run-audio-teardown-tier.sh	45	0
 scripts/live-gates/run-windows-closure-tier.sh	116	0
 scripts/live-gates/a3-title-manifest.sh	47	0
 scripts/live-gates/verify-windows-closure-binary.sh	7	0
@@ -1162,7 +1164,7 @@ scripts/stage-vz-linux-demo-vm.sh	189	0
 scripts/stage-vz-ubuntu-desktop-vm.sh	176	0
 scripts/venus-render-server-molten.sh	6	0
 scripts/verify-agent-clipboard-share.sh	225	0
-scripts/verify-audio-playback.sh	155	0
+scripts/verify-audio-playback.sh	154	0
 scripts/verify-d3d11-title-fps.sh	243	0
 scripts/verify-dynamic-resize.sh	112	0
 scripts/verify-keyboard-input.sh	176	0

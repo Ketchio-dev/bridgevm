@@ -128,14 +128,16 @@ echo "playback returned at ${SECONDS}s"
 printf '%s\n' 'shutdown /s /t 3' >> "$CTL"
 wait "$LAUNCHER" 2>/dev/null || true
 
-STATS=$(grep -E '^hda CoreAudio stats:' "$RUN_LOG" | tail -1)
-FRAMES=$(grep -oE 'frames_rendered=[0-9]+' <<< "$STATS" | cut -d= -f2)
-# Anchored on a leading space so it cannot match dropped_bytes; a greedy sed
-# expression swallowed the rest of the line and got this wrong.
+STATS=$(grep -E '^hda CoreAudio stats:' "$RUN_LOG" | tail -1); FRAMES=$(grep -oE 'frames_rendered=[0-9]+' <<< "$STATS" | cut -d= -f2)
+# Leading-space anchor prevents matching dropped_bytes.
 DROPS=$(grep -oE '(^| )drops=[0-9]+' <<< "$STATS" | tr -d ' ' | cut -d= -f2)
+UNEXPECTED=$(grep -oE 'unexpected_callback_errors=[0-9]+' <<< "$STATS" | cut -d= -f2)
+TEARDOWN=$(grep -oE 'teardown_reenqueue_refusals=[0-9]+' <<< "$STATS" | cut -d= -f2)
+STOP_ERRORS=$(grep -oE 'stop_errors=[0-9]+' <<< "$STATS" | cut -d= -f2)
+DISPOSE_ERRORS=$(grep -oE 'dispose_errors=[0-9]+' <<< "$STATS" | cut -d= -f2)
 
-if [[ "${FRAMES:-0}" -gt 0 ]] && [[ "${DROPS:-1}" -eq 0 ]]; then
-  echo "A5 audio: PASS (frames_rendered=$FRAMES drops=$DROPS)"
+if [[ "${FRAMES:-0}" -gt 0 && "${DROPS:-1}" -eq 0 && "${UNEXPECTED:-1}" -eq 0 && "${STOP_ERRORS:-1}" -eq 0 && "${DISPOSE_ERRORS:-1}" -eq 0 ]]; then
+  echo "A5 audio: PASS (frames_rendered=$FRAMES drops=$DROPS unexpected=$UNEXPECTED teardown_refusals=${TEARDOWN:-?})"
   A5=pass
 else
   echo "A5 audio: FAIL (frames_rendered=${FRAMES:-?} drops=${DROPS:-?})" >&2
@@ -143,13 +145,10 @@ else
   A5=fail
 fi
 
-{
-  echo "out_dir=$OUT"
-  echo "a5_audio=$A5"
-  echo "frames_rendered=${FRAMES:-}"
-  echo "drops=${DROPS:-}"
-  echo "guest_sound_device_status=${DEV_STATUS:-}"
-} > "$OUT/summary.txt"
+printf '%s\n' "out_dir=$OUT" "a5_audio=$A5" "frames_rendered=${FRAMES:-}" "drops=${DROPS:-}" \
+  "unexpected_callback_errors=${UNEXPECTED:-}" "teardown_reenqueue_refusals=${TEARDOWN:-}" \
+  "stop_errors=${STOP_ERRORS:-}" "dispose_errors=${DISPOSE_ERRORS:-}" \
+  "guest_sound_device_status=${DEV_STATUS:-}" > "$OUT/summary.txt"
 cat "$OUT/summary.txt"
 
 [[ "$A5" == pass ]]

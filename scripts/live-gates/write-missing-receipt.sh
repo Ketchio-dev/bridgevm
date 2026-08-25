@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Write the tier-specific fail-closed receipt when a runner died before doing so.
 set -euo pipefail
 TIER="$1"; DIR="$2"; WORKTREE="$3"; JOB_ID="$4"; COMMIT="$5"
 [[ -f "$DIR/receipt.json" ]] && exit 0
@@ -16,4 +15,5 @@ case "$TIER" in
       --out "$DIR" --job-id "$JOB_ID" --commit "$COMMIT" \
       --input-manifest-hash "$manifest_hash" --reason "$reason" || true
     ;;
+  t9-audio-teardown) printf '{"tier":"t9-audio-teardown","gate_id":"a5-audio-teardown-quality","criterion":"A5-quality","job_id":"%s","commit":"%s","image_sha256":"absent","vars_sha256":"absent","sample_count":10,"outcome":"%s","pass":false}\n' "$JOB_ID" "$COMMIT" "$reason" >"$DIR/receipt.json" ;;
 esac
