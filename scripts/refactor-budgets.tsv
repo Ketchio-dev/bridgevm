@@ -1311,6 +1311,7 @@ tests/integration/install-verify-smoke.sh	181	0
 tests/integration/live-gate-policy-smoke.sh	308	0
 tests/integration/qmp-stress-live-tier-smoke.sh	23	0
 tests/integration/windows-closure-live-tier-smoke.sh	65	0
+tests/integration/viogpu3d-submit-trace-policy-smoke.sh	12	0
 tests/integration/local-release-readiness-suite.sh	298	0
 tests/integration/log-viewer-cli-smoke.sh	170	0
 tests/integration/macos-app-name-validation-smoke.sh	81	0

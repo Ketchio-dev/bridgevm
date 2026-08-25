@@ -49,17 +49,16 @@ step "swift force casts" python3 scripts/check-swift-force-casts.py
 step "tests are reachable" python3 scripts/check-tests-are-reachable.py
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
 step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py
+step "viogpu3d submit trace policy" tests/integration/viogpu3d-submit-trace-policy-smoke.sh
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 step "install verify" bash tests/integration/install-verify-smoke.sh
 
-# --- formatting --------------------------------------------------------------
 step "rustfmt" cargo "$TOOLCHAIN" fmt --all --check
 
 if [[ $FAST -eq 1 ]]; then
   printf '\n--- fast subset complete ---\n'
 else
-  # --- correctness -----------------------------------------------------------
   step "clippy (workspace)" cargo "$TOOLCHAIN" clippy --workspace --all-targets --locked -- -D warnings
   step "clippy (venus)" cargo "$TOOLCHAIN" clippy -p bridgevm-hvf --all-targets --features venus --locked -- -D warnings
   step "tests (workspace)" cargo "$TOOLCHAIN" test --workspace --locked
