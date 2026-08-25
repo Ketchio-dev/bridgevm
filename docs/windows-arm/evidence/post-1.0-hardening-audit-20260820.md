@@ -95,6 +95,7 @@ Four classes, each now mechanically checked or corrected:
 | Network breadth | NAT + throughput only | malformed-frame/fragmentation/MTU/DNS-failure/reset suite against the userspace NAT | parser fuzz corpus reaching the real dispatch paths; IPv6 explicitly unsupported if unimplemented |
 | Compatibility matrix | 2 real titles (Vulkan/D3D11) | 20-workload matrix per the master plan | frame-time p50/p95/p99 + result class per workload |
 | Running-state suspend | powered-off snapshot only (B5 scope) | design doc first | not exposed in UI until invariants verified |
+| QMP test-socket flake (hosted CI red at `1e5cc38`) | `connect_for_test` panics with `ECONNREFUSED` in `bridgevm-qemu`; reproduced locally at ~10% with the CI command under CPU load, and the retry masks a first `EINVAL`. One candidate fix (per-run nonce in the socket name) was implemented, mutation-checked and then **discarded**: measured 1 failure / 30 rounds against an unmodified baseline of 1 / 30, i.e. no improvement | a fix that measurably lowers the rate against a matched baseline, not a plausible-looking change | 60 consecutive `cargo test --workspace --locked` rounds under load with zero failures, versus a same-session baseline measured the same way |
 
 ### Supply-chain and release-workflow risks (open)
 
