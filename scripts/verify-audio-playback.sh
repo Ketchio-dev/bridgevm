@@ -24,9 +24,8 @@ STEP_TIMEOUT=${STEP_TIMEOUT:-180}
 VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 
 WORK=$HOME/BridgeVM/work/audio-verify
-rm -rf "$WORK"; mkdir -p "$WORK" "$OUT"
-cp -c "$TARGET" "$WORK/disk.raw"
-cp "$VARS" "$WORK/vars.fd"
+mkdir -p "$OUT"
+bash scripts/live-gates/prepare-audio-lane-media.sh "$TARGET" "$VARS" "$WORK"
 
 CTL=$OUT/agent.ctl
 : > "$CTL"

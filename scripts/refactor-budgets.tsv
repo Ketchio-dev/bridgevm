@@ -919,6 +919,7 @@ crates/bridgevm-hvf/examples/hvf_gic_boot_probe/usgic_bridge.rs	477	13
 scripts/install-bridgevm.sh	209	0
 scripts/live-gates/run-a3-title-tier.sh	90	0
 scripts/live-gates/run-audio-teardown-tier.sh	28	0
+scripts/live-gates/prepare-audio-lane-media.sh	23	0
 scripts/live-gates/seal-immutable-audio-sources.py	67	0
 scripts/live-gates/run-glyph-scene-pilot-tier.sh	19	0
 scripts/live-gates/run-windows-closure-tier.sh	116	0
@@ -1186,7 +1187,7 @@ scripts/stage-vz-linux-demo-vm.sh	189	0
 scripts/stage-vz-ubuntu-desktop-vm.sh	176	0
 scripts/venus-render-server-molten.sh	6	0
 scripts/verify-agent-clipboard-share.sh	225	0
-scripts/verify-audio-playback.sh	154	0
+scripts/verify-audio-playback.sh	153	0
 scripts/verify-d3d11-title-fps.sh	243	0
 scripts/verify-dynamic-resize.sh	112	0
 scripts/verify-keyboard-input.sh	176	0
