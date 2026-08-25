@@ -1,5 +1,5 @@
-# Supervise one running tier and hand its evidence to the fail-closed finalizer.
-# Sourced by bridgevm-live-worker.sh; uses its job locals and log().
+# Supervise a tier using run_job's locals, then invoke the fail-closed finalizer.
+# shellcheck disable=SC2154
 supervise_and_finalize() {
     while kill -0 "$tier_pid" 2>/dev/null; do
         if [[ -f "$dir/cancel.requested" ]]; then
