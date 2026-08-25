@@ -922,7 +922,9 @@ scripts/live-gates/a3-title-payload.sh	22	0
 scripts/live-gates/a3-title-payload.py	128	0
 scripts/live-gates/a3-title-payload-stage.sh	52	0
 scripts/live-gates/write-a3-title-receipt.py	179	0
-scripts/live-gates/write-audio-teardown-receipt.py	33	0
+scripts/live-gates/write-audio-teardown-receipt.py	24	0
+scripts/live-gates/audio_teardown_summary.py	12	0
+scripts/live-gates/audio_teardown_receipt_self_test.py	18	0
 scripts/live-gates/write-missing-receipt.sh	19	0
 scripts/live-gates/write-windows-closure-receipt.py	165	0
 scripts/win-assets/bv-windows-closure-proof.ps1	148	0
