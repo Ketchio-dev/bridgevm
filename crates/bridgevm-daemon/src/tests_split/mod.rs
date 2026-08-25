@@ -10,5 +10,6 @@ mod part_4;
 mod part_4_2;
 mod part_4_3;
 mod qmp_nonterminal;
+mod qmp_terminal;
 mod temp_store;
 mod wait;
