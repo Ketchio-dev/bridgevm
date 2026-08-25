@@ -8,7 +8,7 @@ grep -Fq 'glyph correctness remains unmeasured' "$TIER"
 grep -Fq 'glyph_correctness=unmeasured' "$CASE"
 grep -Fq 'active-scanout.fb.iosurface' "$CASE"
 grep -Fq 'rect=50,60,700,500' "$CASE"
-grep -Fq -- '--ready "$CASE/glyph-capture.ready"' "$CASE"
+grep -Fq -- '--ready "$CASE/glyph-capture.ready"' "$CASE"; grep -Fq 'timeout="$3" deadline n log; deadline=$((SECONDS+timeout))' "$CASE"; ! grep -Fq 'timeout="$3" deadline=$((' "$CASE"; fn=$(grep '^wait_for(){' "$CASE"); d=$(mktemp -d); printf 'MATCH\n' >"$d/run.log"; RUN=$d; pid=$$; eval "$fn"; wait_for '^MATCH$' 1 1; rm -rf "$d"
 ! grep -Eq 'glyph_correctness=(pass|true)|ocr.*pass|components.*(pass|threshold)|nc +-l|socat|TcpListener|sudo|actions-runner' "$TIER" "$CASE"
 "$ROOT/tests/integration/glyph-region-observation-smoke.py" | grep -q PASS
 echo 'PASS: glyph scene pilot stays diagnostic-only and active-CGL'

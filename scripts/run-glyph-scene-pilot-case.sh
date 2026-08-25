@@ -4,7 +4,7 @@ set -euo pipefail
 CASE="$RUN"; rm -rf "$WORK"; mkdir -p "$WORK" "$CASE/share"; cp -c "$TARGET" "$WORK/disk.raw"; cp "$VARS" "$WORK/vars.fd"; chmod 600 "$WORK/disk.raw" "$WORK/vars.fd"
 for asset in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1; do cp "scripts/win-assets/$asset" "$CASE/share/"; done
 CTL="$CASE/agent.ctl"; INPUT="$CASE/input.ctl"; : >"$CTL"; : >"$INPUT"; fail(){ echo "FAIL: $*" >&2; exit 1; }
-wait_for(){ local pattern="$1" count="$2" timeout="$3" deadline=$((SECONDS+timeout)) n log; while ((SECONDS<deadline)); do log="${RUN:-$CASE}/run.log"; n=$(grep -acE "$pattern" "$log" 2>/dev/null||true); ((n>=count))&&return; kill -0 "$pid" 2>/dev/null||return 1; sleep 1; done; return 1; }
+wait_for(){ local pattern="$1" count="$2" timeout="$3" deadline n log; deadline=$((SECONDS+timeout)); while ((SECONDS<deadline)); do log="${RUN:-$CASE}/run.log"; n=$(grep -acE "$pattern" "$log" 2>/dev/null||true); ((n>=count))&&return; kill -0 "$pid" 2>/dev/null||return 1; sleep 1; done; return 1; }
 send_ok(){ local cmd="$1" before; before=$(grep -c '^BVAGENT END ' "$CASE/run.log" 2>/dev/null||true); printf '%s\n' "$cmd" >>"$CTL"; wait_for '^BVAGENT END ' $((before+1)) 300 && [[ $(grep '^BVAGENT CMD .* exit=' "$CASE/run.log"|tail -1) == *' exit=0' ]]; }
 source scripts/pointer-reliability-vm.sh; trap pointer_vm_cleanup EXIT; pointer_vm_start_until_agent
 for asset in bvgpu-apply-host-resolution.ps1 bv-windows-closure-proof.ps1; do wait_for "^BVAGENT SHARE host->guest $asset " 1 120||fail "share timeout $asset"; done
