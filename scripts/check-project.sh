@@ -34,7 +34,6 @@ json_valid() {
   for path in "$@"; do python3 -m json.tool "$path" >/dev/null || return 1; done
 }
 
-# --- truth and documentation -------------------------------------------------
 step "capability registry" python3 scripts/render-capability-status.py --check
 step "contract and schema json" json_valid docs/machine-contract/qemu-virt-deviations.json schemas/bridgevm-capability-v1.json
 step "capability evidence" python3 scripts/check-capability-evidence.py
@@ -49,6 +48,7 @@ step "daemon DTO decoders" python3 scripts/check-daemon-dto-decoders.py
 step "swift force casts" python3 scripts/check-swift-force-casts.py
 step "tests are reachable" python3 scripts/check-tests-are-reachable.py
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
+step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 step "install verify" bash tests/integration/install-verify-smoke.sh
