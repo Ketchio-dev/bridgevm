@@ -101,3 +101,21 @@ Falsified: changing `hidChunkBytes` 32→16 in the app source makes exactly the
 text-input test fail; reverting restores 651/651. The suite result is measured
 under the shim, not Apple XCTest, and the runner prints that caveat itself.
 
+## 2026-08-25: integrated exact-SHA reseal before product-state correction
+
+Studio T0 job `20260825-091807-834-10407` checked exact code commit
+`9458ecd6dc9d518b40bc278c302be5d2690d9b35` on Mac16,9 / macOS 26.5.2.
+All 32 `scripts/check-project.sh` sections ran. Workspace tests reported 881
+passed and one ignored; the probe example reported 337 passed; the shim suites
+reported 419 + 200 (one skip) + 62 = 681 passed and zero failed. Formatting,
+clippy, structural budgets, documentation, installer, active-IOSurface,
+UMD-trace policy, compatibility/clean-machine contracts and release-override
+checks passed. The only failed step was the intentionally stale capability
+registry. The complete `check.log` SHA-256 is
+`151f3ab81f2d5c469af52f187a9e845b151a49c5c6c6f8b29b94e4fbe8ce968d`.
+The T0 receipt itself remains `pass=false`; it is not rewritten as a passing
+receipt. Its reseal exposed the inconsistent RELEASED state while A9 was OPEN,
+so the following code commit retracts product wording to Engineering Preview
+and requires its own fresh T0. The canceled t8, t9, t10 and t11 jobs at this SHA
+are not claimed as live criterion evidence.
+

@@ -1,9 +1,9 @@
 # Installing BridgeVM
 
-BridgeVM 1.0 runs Windows 11 ARM on Apple Silicon Macs (M1 or later). It is
-distributed without an Apple Developer ID, which changes nothing about what the
-app can do and one thing about how you first open it. Both supported install
-paths are below, with the honest trade-off of each.
+BridgeVM Engineering Preview runs Windows 11 ARM on Apple Silicon Macs (M1 or
+later). It is distributed without an Apple Developer ID, which changes nothing
+about what the app can do and one thing about how you first open it. Both
+supported install paths are below, with the honest trade-off of each.
 
 ## Path 1 — terminal installer (recommended)
 

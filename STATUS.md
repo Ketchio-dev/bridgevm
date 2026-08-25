@@ -9,17 +9,18 @@ live in the [capability matrix](docs/windows-arm/capability-matrix.md) and dated
 receipts under `docs/windows-arm/evidence/`.
 
 <!-- BEGIN GENERATED: capability-summary -->
-**Product state: 1.0.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Every release-blocking criterion is proven by live evidence; known open defects are disclosed below.
+**Product state: Engineering Preview.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, dynamic resolution, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots, window Coherence verbs and experimental 3D. Release-blocking evidence remains open; known defects are disclosed below.
 
-Release-blocking criteria proven: **19 / 19**. Open: none.
+Release-blocking criteria proven: **18 / 19**. Open: A9.
 
 Known open defects:
+- **A9**: Guided 3D driver injection is fail-closed: test-signed packages conflict with the Microsoft Secure Boot policy, and kernel-policy claims lack a signed provenance verifier. Disable 3D injection to install Windows.
 - **B4**: Pointer clicks are unreliable: in the latest 10-boot live batch the host delivered every click but Windows acted on only 1 of 10. Keyboard input is unaffected. Tracked as criterion B4.
 
 - Graphics: Experimental Vulkan path and Experimental D3D11-compatible subset.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-08-20 at commit `edd757acad540156956ef7189ed8be2b2151801d`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-08-25 at commit `9458ecd6dc9d518b40bc278c302be5d2690d9b35`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 ## How to read the generated status

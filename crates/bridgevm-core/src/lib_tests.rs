@@ -89,21 +89,16 @@ fn engine_descriptors_keep_windows_no_qemu_target_separate() {
 
 #[test]
 fn engine_product_state_matches_the_capability_registry() {
-    // A stale claim that Windows could not boot survived here for a long time
-    // because no test asserted these two fields. They are the descriptor's only
-    // user-facing claim about product maturity, so they are pinned here and
-    // cross-checked against capabilities/windows-hvf.json by
-    // scripts/render-capability-status.py.
     let windows = windows_11_arm_no_qemu_engine_descriptor();
-    assert_eq!(windows.product_state, EngineProductState::Proven);
-    assert_eq!(windows.product_state.as_str(), "PROVEN");
-    assert!(windows
-        .product_state_detail
-        .contains("boots an installed Windows 11 Arm desktop"));
-    assert!(
-        !windows.product_state_detail.contains("not bootable"),
-        "retracted claim must not return"
+    assert_eq!(
+        windows.product_state,
+        EngineProductState::EngineeringPreview
     );
+    assert_eq!(windows.product_state.as_str(), "ENGINEERING_PREVIEW");
+    let detail = windows.product_state_detail;
+    assert!(detail.contains("Runs an installed Windows 11 Arm desktop"));
+    assert!(detail.contains("Release-blocking evidence remains open"));
+    assert!(!detail.contains("every release-blocking criterion"));
 
     assert_eq!(
         engine_descriptor(EngineLane::AppleVz).product_state,
