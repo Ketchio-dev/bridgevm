@@ -26,7 +26,7 @@ IMAGE_HASH="$(seal "$TARGET")"; VARS_HASH="$(seal "$VARS")"
 [[ -n "$TARGET" && -n "$VARS" && "$(basename "$(dirname "$TARGET")")" == "$IMAGE_HASH-$VARS_HASH" ]] || { echo 'B4 prepared source identity mismatch' >&2; exit 1; }
 
 status=0
-N="${N:-20}" OUT="$OUT/batch" TARGET="$TARGET" VARS="$VARS" \
+N=20 OUT="$OUT/batch" TARGET="$TARGET" VARS="$VARS" \
   bash "$REPO/scripts/verify-pointer-click-reliability.sh" \
   > "$OUT/gate.log" 2>&1 || status=$?
 
@@ -47,7 +47,7 @@ cat > "$OUT/receipt.json" <<EOF
   "vars_sha256": "$VARS_HASH",
   "host_model": "$(sysctl -n hw.model)",
   "macos_version": "$(sw_vers -productVersion)",
-  "sample_count": ${N:-20},
+  "sample_count": 20,
   "landed": "${landed:-unknown}",
   "p95_first_changed_ms": "${p95:-unknown}",
   "finished_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
