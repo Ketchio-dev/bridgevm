@@ -1,4 +1,4 @@
-//! Split out of lib.rs by responsibility.
+//! Diagnostics and bounded log views.
 
 use crate::*;
 
@@ -7,66 +7,37 @@ pub fn create_diagnostic_bundle(
     name: &str,
     output: PathBuf,
 ) -> Result<DiagnosticBundleMetadata, String> {
-    let (source, _) = store.get_vm(name).map_err(|error| error.to_string())?;
+    let (source, manifest) = store.get_vm(name).map_err(|error| error.to_string())?;
     let created_at_unix = now_unix();
-    let bundle_name = format!("bridgevm-diagnostics-{name}-{created_at_unix}");
-    let destination = output.join(bundle_name);
+    let destination = output.join(format!("bridgevm-diagnostics-{created_at_unix}"));
     if destination.exists() {
         return Err(format!(
             "diagnostic bundle output already exists: {}",
             destination.display()
         ));
     }
-    fs::create_dir_all(&destination)
-        .map_err(|error| format!("failed to create diagnostic bundle: {error}"))?;
-
-    let token = store
-        .guest_tools_token(name)
-        .map(|metadata| metadata.token)
-        .ok();
-    let mut files = Vec::new();
-    copy_diagnostic_file(
-        &source.join("manifest.yaml"),
-        &destination.join("manifest.yaml"),
-        &destination,
-        token.as_deref(),
-        &mut files,
-    )?;
-    copy_diagnostic_dir(
-        &source.join("metadata"),
-        &destination.join("metadata"),
-        &destination,
-        token.as_deref(),
-        &mut files,
-    )?;
-    copy_diagnostic_dir(
-        &source.join("logs"),
-        &destination.join("logs"),
-        &destination,
-        token.as_deref(),
-        &mut files,
-    )?;
-
-    let mut metadata = DiagnosticBundleMetadata {
-        vm: name.to_string(),
+    fs::create_dir_all(&output).map_err(|error| error.to_string())?;
+    let staging = output.join(format!(
+        ".bridgevm-diagnostics-staging-{}-{created_at_unix}",
+        std::process::id()
+    ));
+    fs::create_dir(&staging)
+        .map_err(|error| format!("failed to create diagnostic bundle staging: {error}"))?;
+    let mut metadata = diagnostic_allowlist::build_bundle(
+        name,
         source,
-        output: destination.clone(),
-        files,
+        manifest,
+        staging.clone(),
         created_at_unix,
-    };
-    let metadata_path = destination.join("diagnostic-bundle.json");
-    fs::write(
-        &metadata_path,
-        serde_json::to_string_pretty(&metadata).map_err(|error| error.to_string())?,
     )
-    .map_err(|error| format!("failed to write diagnostic bundle metadata: {error}"))?;
-    metadata.files.push(PathBuf::from("diagnostic-bundle.json"));
-    fs::write(
-        &metadata_path,
-        serde_json::to_string_pretty(&metadata).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| format!("failed to write diagnostic bundle metadata: {error}"))?;
-
+    .map_err(|error| diagnostic_allowlist::cleanup_error(&staging, error))?;
+    fs::rename(&staging, &destination).map_err(|error| {
+        diagnostic_allowlist::cleanup_error(
+            &staging,
+            format!("failed to publish diagnostic bundle: {error}"),
+        )
+    })?;
+    metadata.output = destination;
     Ok(metadata)
 }
 

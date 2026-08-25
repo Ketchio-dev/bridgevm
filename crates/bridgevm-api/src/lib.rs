@@ -82,6 +82,8 @@ mod boot_media_meta;
 mod test_support;
 
 mod contract;
+mod diagnostic_allowlist;
+mod diagnostic_record_reader;
 mod diagnostics;
 mod dispatch;
 mod evidence_read;

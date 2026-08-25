@@ -335,15 +335,16 @@ the Windows target disk, TPM/Secure Boot, guest tools, and display/input
 integration validated end to end; the Parallels-like path additionally requires
 replacing this QEMU device stack with BridgeVM-owned HVF VMM devices.
 
-`bridgevm diagnostics bundle legacy-linux --output <dir>` packages the
-Compatibility Mode state that is useful for support without copying large or
-live backend artifacts. It collects `manifest.yaml`, `logs/`, and `metadata/`,
-writes `diagnostic-bundle.json`, and excludes disks, installer or restore media,
-sockets, and lock files. JSON copied into the bundle is redacted, including the
-guest-tools token, sensitive JSON keys, and URL query strings. The bundle
-metadata reports only relative copied-file paths.
-Daemon QMP supervisor snapshots in `metadata/qmp-supervisor.json` are included
-automatically through the copied metadata directory.
+`bridgevm diagnostics bundle legacy-linux --output <dir>` creates a fail-closed
+support bundle without recursively copying the VM. It writes a categorical
+`vm-summary.json`, a filename-free log count/byte summary, and only a fixed set
+of structural JSON records projected onto allowlisted keys and enum values.
+Record output names are generic (`record-01.json`, etc.); unknown fields and
+values are dropped or redacted. The bundle never copies raw manifests, logs,
+disks, UEFI vars, vTPM state, keys, clipboard data, sockets, locks, installer
+media, source filenames, or absolute source/output paths. A symlink,
+non-regular, invalid, or oversized allowlisted record aborts the export and its
+staging directory is removed before anything is published.
 
 The macOS dashboard can use the same daemon diagnostics response as a
 support/export metadata surface for Compatibility Mode VMs. It may show the
