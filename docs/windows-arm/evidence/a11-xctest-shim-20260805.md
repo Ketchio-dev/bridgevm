@@ -216,3 +216,40 @@ separately and can never pass B4: only an unchanged 20/20 t8 receipt with the
 declared latency and input invariants can do that. B4, glyph correctness, audio
 10/10, signed-provenance clean-machine flow, M1-M4 clean-machine breadth,
 20-workload live measurements and QMP 60/60 remain open.
+
+## 2026-08-25: partial firstboot reset-report reseal
+
+Studio T0 job `20260825-162328-73370-10228` checked exact final code commit
+`cf53f46dba941e5d4d00f0f3fc17f10645e28392` on Mac16,9 / macOS 26.5.2.
+All 33 `scripts/check-project.sh` sections ran. The workspace and Venus test
+sections passed; the Venus-enabled suite reported 881 passed and one ignored.
+The probe example reported 337 passed. The shim suites reported 419 + 203 (one
+skip) + 62 = 684 passed and zero failed. Windows product injection deny,
+formatting, both clippy sections, the Linux-stub cross-compile, structural
+budgets, documentation, installer, active-IOSurface, UMD-trace policy,
+compatibility/clean-machine contracts and release-override checks passed. The
+sole failed step was the intentionally stale A11 registry refreshed by this
+docs-only commit. The complete `check.log` SHA-256 is
+`a08e59deb987fb3faf6275fbd27216205279a85b6a68b140a2909875d975b693`.
+The T0 receipt remains `pass=false`; it is not rewritten as passing. The
+private and public receipt JSON differ only in key order and have the same
+canonical SHA-256
+`a5b63a75cf6eefcdd51a4b9f914b11f4b3aab6b68cbbba9463ec2fd1c16fe2ae`.
+
+The first diagnostic attempt, t12 job `20260825-160407-62222-5116`, remains an
+honest `infrastructure-failed`, sample-count-zero result. Its partial guest log
+proves stage 1 requested the expected reset, but an optional missing
+`BVGPU_PREFLIGHT` lookup ran under strict shell mode and aborted postprocessing
+before its documented `missing` fallback. No diagnostic install, reboot,
+measurement or correlation ran, so this receipt supplies no B4 evidence. Its
+receipt SHA-256 is
+`52abdabd35085bdf45740f4ad8d116ab0136ffa72f6eb56c49a33964dfb4b51b` and
+its `gate.log` SHA-256 is
+`0f415e2276a60426611fb79b995e4cce93f17be3fbe5348994b72a5a10c920d5`.
+This code head makes both optional stage-report lookups tolerate absence and
+adds a strict-shell partial-stage regression; it changes no rendering or
+pointer behavior. Before this reseal, PR #98 at the exact code head had 16
+successful hosted checks, one declared advisory skip, zero pending and zero
+failures. B4, glyph correctness, audio 10/10, signed-provenance clean-machine
+flow, M1-M4 clean-machine breadth, 20-workload live measurements and QMP 60/60
+remain open pending their declared retained receipts.
