@@ -879,3 +879,57 @@ driver omits `RESOURCE_ATTACH_BACKING` for one resource in a burst it otherwise
 backs completely. Nothing on the host can supply that backing — the reverted
 containment proved that refusing the transfer only makes matters worse.
 B4 remains **OPEN**.
+
+### Batch 8, third pass — the latency half of B4 fails independently of the black lanes
+
+The black-lane work above concerns only `landed`. Reading the latency column of
+the same batch shows B4 has a **second, independent** failure that fixing the
+ctx-7 poison would not touch.
+
+Of the 12 lanes that landed a valid click, only **5** meet the 250 ms limit:
+
+| run | 1 | 2 | 12 | 4 | 13 | 9 | 14 | 7 | 11 | 6 | 15 | 8 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `first_changed_ms` | 189 | 190 | 220 | 238 | 247 | 312 | 341 | 347 | 425 | 594 | 660 | 778 |
+
+The split is bimodal with a 65 ms gap (fast 189–247, slow 312–778) and **no
+black lane is among them** — every one of these runs presented normally. The same
+ratio holds in the two earlier batches: 7 of 14 under 250 ms in
+`20260823-113151-99719-9275`, 6 of 16 in `20260824-003132-73288-13833`. So even a
+perfect fix for stable-black leaves B4 failing on p95.
+
+**The guest-observed hold is the strongest single driver, and it is stronger than
+previously recorded.** Reading `share/bvptr.log` per lane (guest-side
+`first_press_ms`/`first_release_ms`, so no host clock is involved) against a
+configured 200 ms interval:
+
+| run | latency ms | guest hold ms | overshoot |
+|---|---|---|---|
+| 1 | 189 | 205 | +5 |
+| 2 | 190 | 204 | +4 |
+| 12 | 220 | 223 | +23 |
+| 4 | 238 | 192 | −8 |
+| 13 | 247 | 221 | +21 |
+| 9 | 312 | 221 | +21 |
+| 14 | 341 | 234 | +34 |
+| 7 | 347 | 292 | +92 |
+| 11 | 425 | 275 | +75 |
+| 6 | 594 | 399 | +199 |
+| 15 | 660 | 255 | +55 |
+| 8 | 778 | 333 | +133 |
+
+`corr(hold, first_changed_ms) = 0.77` — materially higher than the **0.45**
+recorded during the 2026-08-23 decomposition, so the overshoot has become the
+dominant term rather than a contributing one. Every fast lane holds ≤223 ms; the
+worst lane holds 399 ms for a 200 ms setting.
+
+**But the hold does not account for all of it, and this is the part worth being
+careful about.** Subtracting each lane's overshoot from its latency — i.e.
+modelling a perfectly exact 200 ms hold — still leaves **7 of 12 lanes over the
+limit** (291, 307, 255, 350, 395, 605, 645 ms). Fixing the hold overshoot alone
+would move p95 down but would **not** make B4 pass. Anyone who repairs the wake
+scheduling should expect roughly 5/12 → 5/12 on this batch, not a green gate.
+
+Recorded so the next change is not made on the assumption that the hold is the
+whole story. B4 remains **OPEN** on both halves: reliability (12/20) and latency
+(p95 778 ms).
