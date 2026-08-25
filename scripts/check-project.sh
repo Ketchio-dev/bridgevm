@@ -49,11 +49,11 @@ step "daemon DTO decoders" python3 scripts/check-daemon-dto-decoders.py
 step "swift force casts" python3 scripts/check-swift-force-casts.py
 step "tests are reachable" python3 scripts/check-tests-are-reachable.py
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
+step "viogpu3d submit trace policy" tests/integration/viogpu3d-submit-trace-policy-smoke.sh
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 step "install verify" bash tests/integration/install-verify-smoke.sh
 
-# --- formatting --------------------------------------------------------------
 step "rustfmt" cargo "$TOOLCHAIN" fmt --all --check
 
 if [[ $FAST -eq 1 ]]; then
