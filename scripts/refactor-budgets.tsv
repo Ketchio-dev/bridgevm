@@ -1071,7 +1071,8 @@ apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift	380	
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift	50	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift	407	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift	492	0
-apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsDriverPreflight.swift	45	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsDriverPreflight.swift	38	0
+apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsKernelPolicyVerifier.swift	413	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallView.swift	141	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/TailOffsetReader.swift	47	0
 apps/macos/Sources/BridgeVMControl/HvfEngine/VTPMIdentityLifecycle.swift	451	0
@@ -1112,6 +1113,7 @@ apps/macos/Tests/BridgeVMControlTests/HvfWindowsProductInjectionPreflightTests.s
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsStaleInjectionMarkerTests.swift	22	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsInstallTests.swift	333	0
 apps/macos/Tests/BridgeVMControlTests/HvfWindowsDriverPreflightTests.swift	57	0
+apps/macos/Tests/BridgeVMControlTests/HvfWindowsKernelPolicyVerifierTests.swift	219	0
 apps/macos/Tests/BridgeVMControlTests/LibraryModelPersistenceTests.swift	112	0
 apps/macos/Tests/BridgeVMControlTests/VMConfigTests.swift	555	0
 apps/macos/Tests/BridgeVMControlTests/VMCreationSafetyTests.swift	190	0
@@ -1185,6 +1187,7 @@ scripts/run-vz-display-demo.sh	615	0
 scripts/run-xctest-shim-selftest.sh	20	0
 scripts/setup-macstudio-dev.sh	83	0
 scripts/stage-hvf-windows-viogpu3d-render-package.sh	372	0
+scripts/sign-hvf-windows-kernel-policy-package.py	330	0
 scripts/stage-vz-linux-demo-vm.sh	189	0
 scripts/stage-vz-ubuntu-desktop-vm.sh	176	0
 scripts/venus-render-server-molten.sh	6	0

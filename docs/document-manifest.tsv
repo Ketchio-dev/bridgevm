@@ -7,6 +7,7 @@ docs/contributing/README.md	current	contributing	-
 docs/fast-mode/README.md	current	apple-vz-engine	-
 docs/guest-tools/protocol.md	current	guest-tools	-
 docs/security/model.md	current	security	-
+docs/security/kernel-policy-provenance.md	current	windows-security	-
 docs/licensing-and-attribution.md	current	licensing	-
 docs/windows-arm/README.md	current	windows-hvf-engine	-
 docs/hvf-competitive-architecture-and-risk-policy.md	decision	windows-architecture	-

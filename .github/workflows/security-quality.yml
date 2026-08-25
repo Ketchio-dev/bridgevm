@@ -38,6 +38,7 @@ jobs:
       # Offline checks first: they need no advisory database and fail fast on
       # a policy that does not parse or a version pin that has drifted.
       - run: scripts/check-supply-chain.sh
+      - run: tests/integration/hvf-windows-product-injection-deny-smoke.sh
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check

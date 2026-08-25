@@ -19,6 +19,8 @@ win.
 - [Windows 11 Arm guide](windows-arm/README.md) — Windows HVF engine guide and
   evidence entry point.
 - [Security model](security/model.md) — trust boundaries and fail-closed rules.
+- [Kernel-policy provenance](security/kernel-policy-provenance.md) — signed
+  Windows driver package trust, rotation, revocation, and snapshot boundary.
 - [Contributing](contributing/README.md) — development and verification workflow.
 - [Development system](development-system.md) — evidence levels, work packets,
   live gates, and definition of done.

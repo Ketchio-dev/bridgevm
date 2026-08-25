@@ -654,7 +654,7 @@ struct CreateVMSheet: View {
                     Text(hvfVarsPath.isEmpty ? "선택된 vars 없음" : (hvfVarsPath as NSString).lastPathComponent)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
-                Text("3D 드라이버 주입은 서명 provenance 검증기가 없어 사용할 수 없습니다. 3D 주입 없이 가져옵니다.")
+                Text("3D 드라이버 주입은 검증된 패키지 스냅샷이 제품 경로에 아직 연결되지 않아 사용할 수 없습니다. 3D 주입 없이 가져옵니다.")
                     .font(.caption).foregroundColor(.secondary)
             } else if mode == .windowsHVFInstall {
                 Text("Windows 11 ARM64 ISO에서 자체 HVF 엔진으로 무인 설치합니다. WinPE 스크립트 설치(디스크 파티션 + WIM 적용 + 무인 OOBE)가 자동으로 진행됩니다.")
@@ -664,7 +664,7 @@ struct CreateVMSheet: View {
                     Text(isoPath.isEmpty ? "선택된 ISO 없음" : (isoPath as NSString).lastPathComponent)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
-                Text("3D 드라이버 주입은 서명 provenance 검증기가 없어 사용할 수 없습니다. Windows는 3D 주입 없이 설치합니다.")
+                Text("3D 드라이버 주입은 검증된 패키지 스냅샷이 제품 경로에 아직 연결되지 않아 사용할 수 없습니다. Windows는 3D 주입 없이 설치합니다.")
                     .font(.caption).foregroundColor(.secondary)
             } else {
                 Text(mode == .windows

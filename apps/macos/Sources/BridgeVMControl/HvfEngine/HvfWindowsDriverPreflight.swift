@@ -5,40 +5,33 @@ struct HvfWindowsDriverPreflight: Equatable {
     let signingMode: String
     let testSigningRequired: Bool?
 
-    static func inspect(packageDirectory: String) -> HvfWindowsDriverPreflight {
-        let report = URL(fileURLWithPath: packageDirectory)
-            .appendingPathComponent("bridgevm-finalization-report.txt")
-        guard let text = try? String(contentsOf: report, encoding: .ascii) else {
-            return .init(blocker: "signing-report-missing", signingMode: "unknown",
-                         testSigningRequired: nil)
+    static func inspect(
+        packageDirectory: String,
+        now: Date = Date(),
+        trustAnchors: [HvfWindowsKernelPolicyVerifier.TrustAnchor] =
+            HvfWindowsKernelPolicyVerifier.productionTrustAnchors
+    ) -> HvfWindowsDriverPreflight {
+        let directory = URL(fileURLWithPath: packageDirectory, isDirectory: true)
+        let report = HvfWindowsKernelPolicyVerifier.inspectReport(packageDirectory: directory)
+        if report.blocker != nil {
+            return .init(blocker: report.blocker, signingMode: report.signingMode,
+                         testSigningRequired: report.testSigningRequired)
         }
-        func value(_ key: String) -> String? {
-            text.split(whereSeparator: \.isNewline).first { $0.hasPrefix("\(key)=") }
-                .map { String($0.dropFirst(key.count + 1)) }
+        let verification = HvfWindowsKernelPolicyVerifier.verify(
+            packageDirectory: directory, now: now, trustAnchors: trustAnchors)
+        switch verification {
+        case .success:
+            return .init(blocker: nil, signingMode: report.signingMode,
+                         testSigningRequired: report.testSigningRequired)
+        case .failure(let failure):
+            return .init(blocker: failure.rawValue, signingMode: report.signingMode,
+                         testSigningRequired: report.testSigningRequired)
         }
-        guard value("finalization_complete") == "true",
-              let mode = value("signing_mode"),
-              let requiredText = value("test_signing_required"),
-              let required = Bool(requiredText) else {
-            return .init(blocker: "signing-report-invalid", signingMode: "unknown",
-                         testSigningRequired: nil)
-        }
-        if required || mode == "test" {
-            return .init(blocker: "test-signing-blocked-by-secure-boot", signingMode: mode,
-                         testSigningRequired: required)
-        }
-        guard mode == "kernel-policy",
-              value("sys_kernel_policy_verified") == "true",
-              value("cat_kernel_policy_verified") == "true" else {
-            return .init(blocker: "kernel-policy-unverifiable", signingMode: mode,
-                         testSigningRequired: required)
-        }
-        return .init(blocker: provenanceBlocker, signingMode: mode, testSigningRequired: required)
     }
 
     static func message(for blocker: String) -> String {
-        "3D 드라이버 사전 점검 차단 [\(blocker)]: Windows-HVF 3D 주입에는 검증된 서명 " +
-        "provenance가 필요합니다. 검증기는 아직 구현되지 않았습니다. 3D 주입을 끄고 다시 생성하세요."
+        "3D 드라이버 사전 점검 차단 [\(blocker)]: Windows-HVF 3D 주입에는 BridgeVM이 " +
+        "검증한 서명 provenance와 kernel-policy 패키지가 필요합니다. 3D 주입을 끄고 다시 생성하세요."
     }
 
     var userMessage: String? { blocker.map(Self.message) }
