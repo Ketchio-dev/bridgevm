@@ -15,14 +15,15 @@ final class ControlModelLifecycleTests: XCTestCase {
     }
 
     func testStopDuringStartupWaitsForProcessThenStopsIt() async {
-        let backend = LifecycleBackend(startVisibilityDelay: 0.2)
+        let backend = LifecycleBackend(startVisibilityDelay: nil)
         let model = ControlModel(config: makeConfig(), backend: backend, startsAutomatically: false)
         model.start()
         await waitForLifecycle(model)
         XCTAssertTrue(model.running)
-        XCTAssertFalse(backend.isRunning())
+        let checksBeforeStop = backend.livenessChecks
 
         model.stop()
+        await waitUntil { backend.livenessChecks > checksBeforeStop }; backend.setRunning(true)
         await waitForLifecycle(model, timeout: 4)
 
         XCTAssertEqual(backend.stopCalls, 1)
@@ -94,15 +95,13 @@ private final class LifecycleBackend: VMBackend {
     let supportsResourceChanges = false
 
     private let lock = NSLock()
-    private let startVisibilityDelay: TimeInterval
+    private let startVisibilityDelay: TimeInterval?
     private var processRunning = false
     private var _startCalls = 0
     private var _stopCalls = 0
     private var _livenessChecks = 0
 
-    init(startVisibilityDelay: TimeInterval) {
-        self.startVisibilityDelay = startVisibilityDelay
-    }
+    init(startVisibilityDelay: TimeInterval?) { self.startVisibilityDelay = startVisibilityDelay }
 
     var startCalls: Int { lock.withLock { _startCalls } }
     var stopCalls: Int { lock.withLock { _stopCalls } }
@@ -112,6 +111,7 @@ private final class LifecycleBackend: VMBackend {
     func currentIP() -> String? { nil }
     func start() -> Bool {
         lock.withLock { _startCalls += 1 }
+        guard let startVisibilityDelay else { return true }
         DispatchQueue.global().asyncAfter(deadline: .now() + startVisibilityDelay) { [weak self] in
             self?.lock.withLock { self?.processRunning = true }
         }
