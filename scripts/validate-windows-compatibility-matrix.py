@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Validate the sealed 20-real-workload input/result/frame-time contract."""
-import argparse,csv,hashlib,io,os,re,stat,tempfile
+import argparse,csv,hashlib,io,math,os,re,stat,tempfile,unittest
 from pathlib import Path
 
 HEX=re.compile(r"[0-9a-f]{64}"); ID=re.compile(r"[a-z0-9][a-z0-9.-]{2,63}")
@@ -25,7 +25,7 @@ def rows(path,fields):
 def quantile(values,q): return values[int((len(values)-1)*q)]
 def series(root,ident):
     raw=bounded(root/f"{ident}.frametimes-ms",8_000_000); values=[float(x) for x in raw.splitlines()]
-    if not values or any(x<=0 or x>60_000 for x in values): raise ValueError("invalid frame-time sample")
+    if not values or any(not math.isfinite(x) or x<=0 or x>60_000 for x in values): raise ValueError("invalid frame-time sample")
     return raw,sorted(values)
 def validate(inputs,results,evidence):
     info=os.lstat(evidence)
@@ -70,7 +70,7 @@ def self_test():
             except (ValueError,FileNotFoundError): pass
             else: raise AssertionError("matrix mutation survived")
             path.write_text(saved)
-        target=ev/"real-title-19.frametimes-ms"; saved=target.read_bytes(); target.unlink(); target.symlink_to(ev/"real-title-18.frametimes-ms")
+        target=ev/"real-title-19.frametimes-ms"; saved=target.read_bytes(); [(target.write_text(bad),unittest.TestCase().assertRaises(ValueError,series,ev,"real-title-19")) for bad in ("nan\n","inf\n","-inf\n")]; target.write_bytes(saved); target.unlink(); target.symlink_to(ev/"real-title-18.frametimes-ms")
         try: validate(a,b,ev)
         except OSError: pass
         else: raise AssertionError("symlink series survived")
@@ -79,7 +79,7 @@ def self_test():
 
 def main():
     p=argparse.ArgumentParser(); p.add_argument("--inputs",type=Path); p.add_argument("--results",type=Path); p.add_argument("--evidence",type=Path); p.add_argument("--self-test",action="store_true"); a=p.parse_args()
-    if a.self_test: self_test(); return
+    if a.self_test: return self_test()
     if not all((a.inputs,a.results,a.evidence)): p.error("inputs, results and evidence are required")
     print(f"PASS: compatibility matrix rows={validate(a.inputs,a.results,a.evidence)}")
 if __name__=="__main__": main()
