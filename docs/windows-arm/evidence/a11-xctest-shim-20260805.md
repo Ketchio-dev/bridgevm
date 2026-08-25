@@ -140,3 +140,29 @@ The T0 receipt remains `pass=false`; it is not rewritten as passing. The t8,
 t9, t10 and t11 jobs queued after this T0 are independent live criteria and are
 not claimed by A11.
 
+## 2026-08-25: final infrastructure-corrected reseal
+
+Studio T0 job `20260825-115604-93667-25465` checked exact final code commit
+`1fdff7b3fa91c27fd58898210dc3f570e8ba2b3b` on Mac16,9 / macOS 26.5.2.
+All 33 `scripts/check-project.sh` sections ran. Workspace and Venus test
+sections passed; the probe example reported 337 passed; the shim suites
+reported 419 + 199 (one skip) + 62 = 680 passed and zero failed. The Windows
+product injection deny policy passed. Formatting, both clippy sections,
+structural budgets, documentation, installer, active-IOSurface, UMD-trace
+policy, compatibility/clean-machine contracts and release-override checks
+passed. The sole failed step was the intentionally stale A11 capability
+registry that this docs-only reseal refreshes. The complete `check.log`
+SHA-256 is
+`52b44797944331eba007b64a27a420138276a9486cf4c39a02f2dd3b73cd0288`.
+The T0 receipt remains `pass=false`; it is not rewritten as passing.
+
+This reseal includes the prospective fixes for the two unrelated QMP stress
+fixture failures (parked child lifetime and atomic temp-store reservation),
+fixed-shell dispatch/executable policy, nounset-safe glyph timeout setup, and
+private writable audio lane clones from immutable canonical sources. It does
+not promote any live criterion. At this exact head PR #98 had 16 successful
+hosted checks, one declared advisory skip, zero pending and zero failures. B4,
+glyph correctness, audio live quality, signed-provenance clean-machine flow,
+clean-machine breadth, compatibility breadth and the complete 60-round QMP
+acceptance remain open pending their declared retained receipts.
+
