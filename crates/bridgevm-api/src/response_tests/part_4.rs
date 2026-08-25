@@ -41,9 +41,8 @@ fn handler_rejects_ssh_plan_without_target() {
 }
 
 #[test]
-fn handler_creates_redacted_diagnostic_bundle() {
-    let mut root = std::env::temp_dir();
-    root.push(format!(
+fn handler_exports_only_fixed_structural_diagnostics() {
+    let root = std::env::temp_dir().join(format!(
         "bridgevm-api-diagnostics-test-{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -52,141 +51,100 @@ fn handler_creates_redacted_diagnostic_bundle() {
     ));
     let store = VmStore::new(root);
     let manifest = VmManifest::new(
-        "legacy",
+        "private-vm-name",
         VmMode::Compatibility,
         Guest {
-            os: "ubuntu".to_string(),
+            os: "ubuntu".into(),
             version: None,
-            arch: "x86_64".to_string(),
+            arch: "x86_64".into(),
         },
         "64GiB",
     );
     handle_request(&store, BridgeVmRequest::create_vm(manifest))
         .into_result()
         .unwrap();
-    let token = store.guest_tools_token("legacy").unwrap().token;
-    let bundle = store.bundle_path("legacy");
+    let bundle = store.bundle_path("private-vm-name");
+    let secret = "forbidden-private-payload";
     fs::write(
-        bundle.join("logs").join("qemu.log"),
-        format!("booted with token {token}\n"),
+        bundle.join("logs/qemu.log"),
+        format!("clipboard={secret} /Users/private/file.txt"),
     )
     .unwrap();
-    fs::write(
-        bundle.join("metadata").join("secrets.json"),
-        r#"{"password":"open-sesame","nested":{"authorization":"Bearer abc"}}"#,
-    )
-    .unwrap();
-    fs::create_dir_all(bundle.join("metadata").join("boot-media")).unwrap();
-    fs::write(
-        bundle.join("metadata").join("boot-media").join("download-plan.json"),
-        r#"{"url":"https://example.invalid/ubuntu.iso?sig=secret#section","command":["curl","https://example.invalid/ubuntu.iso?sig=secret"]}"#,
-    )
-    .unwrap();
-    fs::write(
-        bundle.join("metadata").join("qmp-supervisor.json"),
-        r#"{"events":[{"event":"RESUME"}],"terminal_event":null,"envelopes_read":1,"limit_reached":false,"updated_at_unix":1}"#,
-    )
-    .unwrap();
-    let oversized_log = bundle.join("logs").join("oversized.log");
-    let mut oversized = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(&oversized_log)
-        .unwrap();
-    oversized.write_all(token.as_bytes()).unwrap();
-    oversized.set_len(MAX_DIAGNOSTIC_FILE_BYTES + 1).unwrap();
-    fs::write(bundle.join("metadata").join("diagnostics.lock"), "locked").unwrap();
+    for name in [
+        "secrets.json",
+        "edk2-vars.fd",
+        "recovery-key.txt",
+        "clipboard.json",
+    ] {
+        fs::write(bundle.join("metadata").join(name), secret).unwrap();
+    }
+    fs::create_dir_all(bundle.join("metadata/vtpm")).unwrap();
+    fs::write(bundle.join("metadata/vtpm/state.bin"), secret).unwrap();
     fs::create_dir_all(bundle.join("disks")).unwrap();
-    fs::write(bundle.join("disks").join("root.qcow2"), "not copied").unwrap();
+    fs::write(bundle.join("disks/root.qcow2"), secret).unwrap();
+    fs::write(bundle.join("metadata/qmp-supervisor.json"),
+        format!(r#"{{"status":"running","path":"/Users/private/file.txt","message":"{secret}","command":["cat","private.txt"],"limit_reached":false}}"#)).unwrap();
 
     let output = store.root().join("diagnostics-output");
     let response = handle_request(
         &store,
         BridgeVmRequest::CreateDiagnosticBundle {
-            name: "legacy".to_string(),
+            name: "private-vm-name".to_string(),
             output,
         },
     )
     .into_result()
     .unwrap();
     let BridgeVmResponse::DiagnosticBundle { bundle } = response else {
-        panic!("expected diagnostic bundle response");
+        panic!("expected bundle")
     };
-
     assert!(bundle.output.exists());
-    assert!(bundle.files.contains(&PathBuf::from("manifest.yaml")));
-    assert!(bundle
-        .files
-        .contains(&PathBuf::from("metadata/guest-tools-token.json")));
-    assert!(bundle.files.contains(&PathBuf::from("logs/qemu.log")));
-    assert!(bundle.files.contains(&PathBuf::from("logs/oversized.log")));
-    assert!(bundle
-        .files
-        .contains(&PathBuf::from("metadata/qmp-supervisor.json")));
-    assert!(bundle
-        .files
-        .contains(&PathBuf::from("diagnostic-bundle.json")));
+    assert_eq!(
+        bundle.files,
+        [
+            "vm-summary.json",
+            "record-01.json",
+            "record-05.json",
+            "log-summary.json",
+            "diagnostic-bundle.json"
+        ]
+        .map(PathBuf::from)
+    );
     assert!(!bundle
-        .files
-        .contains(&PathBuf::from("metadata/diagnostics.lock")));
-    assert!(!bundle.files.contains(&PathBuf::from("disks/root.qcow2")));
-    for file in &bundle.files {
-        assert!(
-            file.is_relative(),
-            "diagnostic metadata should only report relative paths: {}",
-            file.display()
-        );
-        assert!(
-            !file
-                .components()
-                .any(|component| matches!(component, std::path::Component::ParentDir)),
-            "diagnostic metadata should not report parent-directory paths: {}",
-            file.display()
-        );
-        let file_name = file
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default();
-        assert!(
-            !file_name.ends_with(".sock") && !file_name.ends_with(".lock"),
-            "diagnostic metadata should not report socket or lock files: {}",
-            file.display()
-        );
-    }
-
+        .output
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .contains("private-vm-name"));
     for file in &bundle.files {
         let content = fs::read_to_string(bundle.output.join(file)).unwrap();
-        assert!(
-            !content.contains(&token),
-            "diagnostic file leaked guest tools token: {}",
-            file.display()
-        );
+        for forbidden in [
+            secret,
+            "private-vm-name",
+            "/Users/private",
+            "file.txt",
+            "qemu.log",
+            "root.qcow2",
+            "edk2-vars.fd",
+            "recovery-key.txt",
+            "clipboard.json",
+            "state.bin",
+        ] {
+            assert!(
+                !content.contains(forbidden),
+                "{} leaked {forbidden}",
+                file.display()
+            );
+        }
     }
-    let token_metadata =
-        fs::read_to_string(bundle.output.join("metadata/guest-tools-token.json")).unwrap();
-    assert!(token_metadata.contains("<redacted>"));
-    let log = fs::read_to_string(bundle.output.join("logs/qemu.log")).unwrap();
-    assert!(log.contains("<redacted>"));
-    let oversized_log = fs::read_to_string(bundle.output.join("logs/oversized.log")).unwrap();
-    assert!(oversized_log.contains("diagnostic file omitted"));
-    assert!(oversized_log.contains("16777216-byte safety limit"));
-    assert!(!oversized_log.contains(&token));
-    let secrets = fs::read_to_string(bundle.output.join("metadata/secrets.json")).unwrap();
-    assert!(!secrets.contains("open-sesame"));
-    assert!(!secrets.contains("Bearer abc"));
-    assert!(secrets.contains("<redacted>"));
-    let download_plan = fs::read_to_string(
-        bundle
-            .output
-            .join("metadata")
-            .join("boot-media")
-            .join("download-plan.json"),
-    )
-    .unwrap();
-    assert!(!download_plan.contains("sig=secret"));
-    assert!(download_plan.contains("https://example.invalid/ubuntu.iso?<redacted>#section"));
-    assert!(download_plan.contains("https://example.invalid/ubuntu.iso?<redacted>"));
+    let record = fs::read_to_string(bundle.output.join("record-01.json")).unwrap();
+    assert!(record.contains("running"));
+    assert!(record.contains("limit_reached"));
+    assert!(!record.contains("path"));
+    assert!(!record.contains("message"));
+    assert!(!record.contains("command"));
+    let on_disk = fs::read_to_string(bundle.output.join("diagnostic-bundle.json")).unwrap();
+    assert_eq!(on_disk.matches("<redacted>").count(), 3);
 }
 
 #[test]
