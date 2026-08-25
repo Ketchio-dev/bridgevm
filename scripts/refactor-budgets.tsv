@@ -888,6 +888,7 @@ scripts/verify-app-third-party-notices.sh	63	0
 scripts/verify-pointer-click-reliability.sh	110	0
 scripts/run-pointer-click-reliability-case.sh	53	0
 scripts/pointer_iosurface.py	43	0
+scripts/iosurface_capture.py	53	0
 scripts/watch-pointer-visible-reaction.py	41	0
 scripts/prepare-pointer-reliability-source.sh	82	0
 scripts/pointer-reliability-vm.sh	36	0
@@ -1184,6 +1185,7 @@ tests/integration/apple-vz-live-opt-in-skip-smoke.sh	65	0
 tests/integration/apple-vz-suspend-resume-opt-in-smoke.sh	88	0
 tests/integration/application-consistent-freeze-thaw-cli-smoke.sh	306	0
 tests/integration/application-consistent-fsfreeze-backend-smoke.sh	253	0
+tests/integration/active-iosurface-capture-smoke.py	25	0
 tests/integration/application-consistent-snapshot-cli-smoke.sh	174	0
 tests/integration/application-consistent-snapshot-live-opt-in-smoke.sh	355	0
 tests/integration/boot-media-download-cli-smoke.sh	215	0
@@ -1389,6 +1391,7 @@ scripts/check-capability-test-counts.py	81	0
 scripts/check-doc-references.py	139	0
 scripts/check-daemon-dto-decoders.py	91	0
 scripts/capability_forbidden.py	83	0
+scripts/capture-active-iosurface.py	17	0
 scripts/capability_freshness.py	42	0
 scripts/check-swift-force-casts.py	54	0
 scripts/check-tests-are-reachable.py	114	0
