@@ -18,6 +18,7 @@ use std::io::BufReader;
 use std::io::Write;
 use std::os::unix::net::UnixListener;
 use std::process::Command;
+use std::process::Stdio;
 use std::thread;
 use std::time::Duration;
 
@@ -207,18 +208,18 @@ fn reconcile_children_bootstraps_guest_tools_session() {
         thread::sleep(Duration::from_millis(250));
     });
 
-    let child = Command::new("sh").arg("-c").arg("sleep 5").spawn().unwrap();
+    let child = Command::new("cat").stdin(Stdio::piped()).spawn().unwrap();
     let mut state = DaemonState::new(store.clone());
     state
         .children
         .insert("legacy".to_string(), SupervisedBackend::new(child));
-
-    // One reconcile assumed the server thread had already written its hello.
-    // It usually had, but a full check run failed outright on it once.
     assert!(
         wait_up_to_ten_seconds(|| {
             state.reconcile_children().unwrap();
-            state.children["legacy"].guest_tools.is_some()
+            state
+                .children
+                .get("legacy")
+                .is_some_and(|backend| backend.guest_tools.is_some())
         }),
         "the guest tools session never bootstrapped"
     );
