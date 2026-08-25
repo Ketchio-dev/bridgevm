@@ -933,3 +933,39 @@ scheduling should expect roughly 5/12 → 5/12 on this batch, not a green gate.
 Recorded so the next change is not made on the assumption that the hold is the
 whole story. B4 remains **OPEN** on both halves: reliability (12/20) and latency
 (p95 778 ms).
+
+### Batch 8, fourth pass — the two repaints, shown in pixels rather than inferred
+
+The 2026-08-23 decomposition argued from timing that the gate sometimes measures
+`MouseDown` and sometimes the later `Click`. The retained IOSurface dumps prove
+it directly. `visible/visible.env` records `changed_region_sha256`, and across
+the 12 landed lanes it takes exactly **two** values:
+
+| digest | lanes | `first_changed_ms` |
+|---|---|---|
+| `a3582df66581…` | 9 | 189, 190, 220, 238, 247, 312, 341, 347, 425 |
+| `4437c7461f61…` | 3 | 594, 660, 778 |
+
+Decoding `visible/iosurface-changed.xrgb8888` for one lane of each class shows
+what the two digests are. The baseline is a white panel reading **CLICK BRIDGEVM
+TARGET** on a blue field. The 9-lane class captured a **khaki** panel reading
+**PRESS RECEIVED** on green — the `MouseDown` repaint. The 3-lane class captured
+a **white** panel reading **CLICK RECEIVED** on green — the post-release `Click`
+repaint. The slow lanes did not merely repaint late; they **missed the
+`MouseDown` frame entirely** and the watcher settled on the next distinct state.
+
+That is a measurement defect in the gate, not only a guest slowness: the same
+guest behaviour is scored against two different events, and the three lanes that
+miss the press frame are precisely the three worst latencies.
+
+**It does not, however, explain the failure.** Restricting to the 9 lanes that
+were timed at `MouseDown`, only **5** are within 250 ms — the other four are
+312, 341, 347 and 425 ms. So making the watcher time the press transition
+unambiguously would remove the 594/660/778 ms outliers but would still leave B4
+failing p95 by a wide margin.
+
+Combined with the hold analysis above, three distinct contributions to the
+latency half are now separated and none of them alone accounts for it:
+the gate's press/click ambiguity (3 lanes), the guest hold overshoot
+(`corr = 0.77`), and a residual presentation delay that survives both
+corrections (4 lanes at 312–425 ms with holds of 221–275 ms). B4 stays **OPEN**.
