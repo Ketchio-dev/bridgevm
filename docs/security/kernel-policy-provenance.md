@@ -69,8 +69,12 @@ a new attestation, a newly verified package snapshot, and new release evidence.
 Verification of a user-writable source path cannot authorize later mutation.
 The product snapshot operation first verifies the source, copies only the signed
 inventory to a private temporary sibling, verifies the copied bytes again, and
-then atomically renames that directory into place. A source replacement or
-copy-time mutation therefore produces no accepted snapshot.
+then atomically renames that directory into place. Publication requires an
+absolute current-user-owned mode-0700 parent whose ancestor chain contains no
+symlink (apart from macOS's fixed root-owned `/var -> private/var` system alias),
+and refuses existing or broken-symlink destinations. A source replacement,
+copy-time mutation, direct symlink parent, or symlink ancestor therefore
+produces no accepted snapshot in the deterministic boundary tests.
 
 The verifier and snapshot primitive are deterministic security prerequisites,
 not A9 completion evidence. Product injection remains unavailable until install

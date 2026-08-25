@@ -6,6 +6,8 @@ final class HvfWindowsKernelPolicyVerifierTests: XCTestCase {
     private let issuedAt = "2026-08-25T00:00:00Z"
     private let expiresAt = "2026-08-26T00:00:00Z"
 
+    func testSnapshotRefusesUnsafeDestinationPaths() throws { try assertUnsafeSnapshotPathsRefused() }
+
     func testValidSignatureAuthorizesPreflightAndAtomicSnapshot() throws {
         let fixture = try makeFixture()
         assertSuccess(HvfWindowsKernelPolicyVerifier.verify(
@@ -25,13 +27,10 @@ final class HvfWindowsKernelPolicyVerifierTests: XCTestCase {
 
         let poisoned = fixture.root.appendingPathComponent("poisoned")
         let copy: (URL, URL) throws -> Void = { source, destination in
-            try FileManager.default.copyItem(at: source, to: destination)
-            if destination.lastPathComponent == "viogpu3d.sys" {
-                let handle = try FileHandle(forWritingTo: destination)
-                try handle.seekToEnd()
-                try handle.write(contentsOf: Data("replacement".utf8))
-                try handle.close()
+            if source.lastPathComponent == "viogpu3d.sys" {
+                try Data("replacement".utf8).append(to: source)
             }
+            try FileManager.default.copyItem(at: source, to: destination)
         }
         assertFailure(HvfWindowsKernelPolicyVerifier.stageVerifiedSnapshot(
             from: fixture.package, to: poisoned, now: fixture.now,
@@ -113,14 +112,14 @@ final class HvfWindowsKernelPolicyVerifierTests: XCTestCase {
             trustAnchors: [duplicateFixture.anchor]), .reportPolicyInvalid)
     }
 
-    private struct Fixture {
+    struct Fixture {
         let root: URL
         let package: URL
         let anchor: HvfWindowsKernelPolicyVerifier.TrustAnchor
         let now: Date
     }
 
-    private func makeFixture(
+    func makeFixture(
         validReportPolicy: Bool = true,
         duplicateReportField: Bool = false
     ) throws -> Fixture {
@@ -128,6 +127,7 @@ final class HvfWindowsKernelPolicyVerifierTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let package = root.appendingPathComponent("package", isDirectory: true)
         try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let payloads = [
             "viogpu3d.cat": Data("catalog".utf8),
@@ -189,7 +189,7 @@ final class HvfWindowsKernelPolicyVerifierTests: XCTestCase {
         }
     }
 
-    private func assertFailure(
+    func assertFailure(
         _ result: Result<HvfWindowsKernelPolicyVerifier.VerifiedPackage,
             HvfWindowsKernelPolicyVerifier.Failure>,
         _ expected: HvfWindowsKernelPolicyVerifier.Failure,

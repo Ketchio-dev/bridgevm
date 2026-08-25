@@ -120,58 +120,6 @@ enum HvfWindowsKernelPolicyVerifier {
         return .init(blocker: nil, signingMode: mode, testSigningRequired: required)
     }
 
-    static func stageVerifiedSnapshot(
-        from source: URL,
-        to destination: URL,
-        now: Date = Date(),
-        trustAnchors: [TrustAnchor] = productionTrustAnchors,
-        copyFile: ((URL, URL) throws -> Void)? = nil
-    ) -> Result<VerifiedPackage, Failure> {
-        let initial: VerifiedPackage
-        switch verify(packageDirectory: source, now: now, trustAnchors: trustAnchors) {
-        case .success(let package): initial = package
-        case .failure(let failure): return .failure(failure)
-        }
-        let fm = FileManager.default
-        let parent = destination.deletingLastPathComponent()
-        let temporary = parent.appendingPathComponent(
-            ".\(destination.lastPathComponent).verifying.\(UUID().uuidString)", isDirectory: true)
-        guard !fm.fileExists(atPath: destination.path),
-              !fm.fileExists(atPath: temporary.path) else { return .failure(.snapshotInvalid) }
-        do {
-            try fm.createDirectory(
-                at: temporary, withIntermediateDirectories: false,
-                attributes: [.posixPermissions: 0o700])
-            let names = initial.attestation.artifacts.map(\.fileName)
-                + [attestationName, signatureName]
-            for name in names {
-                let sourceFile = source.appendingPathComponent(name)
-                let destinationFile = temporary.appendingPathComponent(name)
-                if let copyFile {
-                    try copyFile(sourceFile, destinationFile)
-                } else {
-                    try fm.copyItem(at: sourceFile, to: destinationFile)
-                }
-            }
-            let copied: VerifiedPackage
-            switch verify(packageDirectory: temporary, now: now, trustAnchors: trustAnchors) {
-            case .success(let package): copied = package
-            case .failure: throw Failure.snapshotInvalid
-            }
-            guard copied == initial, !fm.fileExists(atPath: destination.path) else {
-                throw Failure.snapshotInvalid
-            }
-            try fm.moveItem(at: temporary, to: destination)
-            return .success(copied)
-        } catch let failure as Failure {
-            try? fm.removeItem(at: temporary)
-            return .failure(failure)
-        } catch {
-            try? fm.removeItem(at: temporary)
-            return .failure(.snapshotInvalid)
-        }
-    }
-
     private static func verifiedPackage(
         at directory: URL,
         now: Date,
