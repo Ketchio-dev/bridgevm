@@ -3,8 +3,7 @@
 set -euo pipefail
 TIER="$1"; DIR="$2"; WORKTREE="$3"; JOB_ID="$4"; COMMIT="$5"
 [[ -f "$DIR/receipt.json" ]] && exit 0
-reason=failed-before-receipt
-[[ -f "$DIR/cancel.requested" ]] && reason=canceled
+reason=failed-before-receipt; [[ -f "$DIR/cancel.requested" ]] && reason=canceled
 case "$TIER" in
   t6-a3-title)
     python3 "$WORKTREE/scripts/live-gates/write-a3-title-receipt.py" \
@@ -16,4 +15,5 @@ case "$TIER" in
       --out "$DIR" --job-id "$JOB_ID" --commit "$COMMIT" \
       --input-manifest-hash "$manifest_hash" --reason "$reason" || true
     ;;
+  t11-glyph-scene-pilot) printf '{"tier":"t11-glyph-scene-pilot","criterion":"glyph-diagnostic-only","job_id":"%s","commit":"%s","sample_count":0,"outcome":"%s","pass":false}\n' "$JOB_ID" "$COMMIT" "$reason" >"$DIR/receipt.json" ;;
 esac

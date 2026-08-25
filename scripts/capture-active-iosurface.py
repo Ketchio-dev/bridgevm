@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Capture one newly presented, nonblack full CGL IOSurface frame."""
-import argparse, sys, time
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+import argparse, sys
+from pathlib import Path; sys.path.insert(0, str(Path(__file__).resolve().parent))
 from iosurface_capture import lookup, ppm_from_bgra, seed, sha256, snapshot, validate_presented
+from iosurface_settle import wait
 
-p=argparse.ArgumentParser(); p.add_argument("--iosurface",required=True,type=Path)
-p.add_argument("--out",required=True,type=Path); p.add_argument("--timeout-ms",type=int,default=5000)
-a=p.parse_args(); ref,ident,width,height=lookup(a.iosurface); initial=seed(ref)
-deadline=time.monotonic_ns()+a.timeout_ms*1_000_000
-while seed(ref)==initial and time.monotonic_ns()<=deadline: time.sleep(0.001)
-frame, locked_seed=snapshot(ref,width,height)
+p=argparse.ArgumentParser(); p.add_argument("--iosurface",required=True,type=Path); p.add_argument("--out",required=True,type=Path)
+p.add_argument("--timeout-ms",type=int,default=5000); p.add_argument("--settle-ms",type=int,default=250); p.add_argument("--ready",type=Path)
+a=p.parse_args(); ref,ident,width,height=lookup(a.iosurface); initial=seed(ref); a.ready and a.ready.write_text(f"initial_seed={initial}\n",encoding="ascii")
+def sample():
+    frame,observed=snapshot(ref,width,height); return observed,sha256(frame),frame
+locked_seed,_,frame=wait(sample,initial,a.timeout_ms,a.settle_ms)
 nonblack=validate_presented(initial,locked_seed,frame)
 a.out.mkdir(parents=True,exist_ok=True); ppm=ppm_from_bgra(frame,width,height)
 (a.out/"presented.bgra").write_bytes(frame); (a.out/"presented.ppm").write_bytes(ppm)

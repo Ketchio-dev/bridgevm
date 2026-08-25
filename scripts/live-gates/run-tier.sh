@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 # Dispatch one live-gate tier and leave a receipt in --out.
 #
-# Tiers (PLAN.md): T1 is the seconds-long vtimer microprobe, T2 a single
-# prepared-cache pilot boot, T3 a 3-boot candidate gate, T4 a nightly reset
-# soak, T5 the full A1 10-boot campaign, T6 the three-run A3 real-title
-# campaign. Only T5 produces A1 shipping evidence; no lower tier may be used
-# to lower an A1 threshold. T6 requires every independent title run to pass.
+# Tiers are declared in PLAN.md. Only T5 produces A1 shipping evidence; no
+# lower tier may weaken A1. T6 requires every independent title run to pass.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -107,9 +104,10 @@ case "$TIER" in
         "$REPO/scripts/live-gates/$helper" --out "$OUT" --input-manifest "$INPUT_MANIFEST" \
             --sealed-binary "$SEALED_BINARY" --job-id "$JOB_ID"
         ;;
-    t8-pointer-reliability)
-        # B4's 20-clone click gate; the helper writes its criterion receipt.
-        "$REPO/scripts/live-gates/run-pointer-reliability-tier.sh" --out "$OUT" --job-id "$JOB_ID" ;;
+    t8-pointer-reliability|t11-glyph-scene-pilot)
+        helper=run-pointer-reliability-tier.sh
+        [[ "$TIER" == t8-pointer-reliability ]] || helper=run-glyph-scene-pilot-tier.sh
+        "$REPO/scripts/live-gates/$helper" --out "$OUT" --job-id "$JOB_ID" ;;
     t2-pilot|t3-candidate|t4-soak|t5-campaign)
         # These need private Windows media and 20+ minutes per boot. They are
         # declared so the queue and its policy tests are exercised, but they
