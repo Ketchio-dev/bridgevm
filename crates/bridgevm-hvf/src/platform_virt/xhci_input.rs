@@ -191,6 +191,7 @@ impl VirtPlatform {
     }
 
     pub fn drain_xhci_pointer_input_reports(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
+        super::xhci_pointer_overdue_trace::observe(self.xhci_pointer_report_deadline());
         if !self.devices.xhci_present {
             return false;
         }
@@ -203,8 +204,7 @@ impl VirtPlatform {
             .saturating_add(stats.emitted_wheel_reports);
         let pending_reports = stats.queued_reports.saturating_sub(emitted_reports);
         for _ in 0..pending_reports.min(MAX_XHCI_SETUP_INPUT_DRAIN_ATTEMPTS as u64) {
-            // QEMU's TD-driven HID schedule: ERDP is event-ring capacity, not
-            // report pacing, so a ready TD plus elapsed hold is sufficient.
+            // QEMU: ERDP is capacity, not pacing; a ready TD plus elapsed hold suffices.
             if !self.report_pacing_allows_emission(self.xhci_dci5_last_emission) {
                 break;
             }
