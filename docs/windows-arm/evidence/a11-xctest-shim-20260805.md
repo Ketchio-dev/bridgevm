@@ -191,3 +191,28 @@ remains failed after 3/60 and the canceled audio lane remains incomplete. B4,
 glyph correctness, audio 10/10, signed-provenance clean-machine flow, M1-M4
 clean-machine breadth, 20-workload live measurements and QMP 60/60 remain open.
 
+## 2026-08-25: exact B4 diagnostic-lane reseal
+
+Studio T0 job `20260825-155547-57035-26531` checked exact final code commit
+`cf59a8940d11324196f5b1c389b2c6702c25b2cc` on Mac16,9 / macOS 26.5.2.
+All 33 `scripts/check-project.sh` sections ran. The workspace and Venus test
+sections passed; the Venus-enabled suite reported 881 passed and one ignored.
+The probe example reported 337 passed. The shim suites reported 419 + 203 (one
+skip) + 62 = 684 passed and zero failed. Windows product injection deny,
+formatting, both clippy sections, structural budgets, documentation, installer,
+active-IOSurface, UMD-trace policy, compatibility/clean-machine contracts and
+release-override checks passed. The sole failed step was the intentionally
+stale A11 registry refreshed by this docs-only commit. The complete `check.log`
+SHA-256 is
+`907fdd442b1ace4ea692f23a524481458080af5b54613b2a9364af6f21ffd7a0`.
+The T0 receipt remains `pass=false`; it is not rewritten as passing.
+
+This code head adds a diagnostic-only B4 UMD correlation lane and no rendering
+or pointer behavior change. Builder run `32892122060` succeeded at exact
+builder commit `bb723b9e200ce765c7b262f5f9d6baeb2f481942`; its downloaded fixed
+eight-file package passed provenance, version, catalog, certificate, ARM64 and
+bounded-marker audits. Studio t12 job `20260825-160407-62222-5116` is retained
+separately and can never pass B4: only an unchanged 20/20 t8 receipt with the
+declared latency and input invariants can do that. B4, glyph correctness, audio
+10/10, signed-provenance clean-machine flow, M1-M4 clean-machine breadth,
+20-workload live measurements and QMP 60/60 remain open.
