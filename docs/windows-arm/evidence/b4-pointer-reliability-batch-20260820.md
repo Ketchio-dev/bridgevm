@@ -1056,3 +1056,35 @@ source has a direct controller-MMIO path that calls
 drain can consume the due report and erase its deadline. The next instrument is
 to observe lateness at the actual drain boundary, still print-only. No wake or
 pacing change is justified by this batch.
+
+## Guest UMD lineage closes the global-reference omission theory — 2026-08-25
+
+The pinned Mesa source contains another superficially matching omission path:
+`virgl_gdi_res_is_ref` used global `res->num_cs_references`, so a reference from
+another command buffer could incorrectly suppress adding the same resource to
+the current command buffer's WDDM allocation list. The public Windows x64
+builder already carries a patch that replaces that shortcut with a bounded
+search of the current `cbuf->res_bo[]` list.
+
+This is not merely source archaeology. The exact B4 package at
+`~/BridgeVM/work/download-120.45-backing-only` records:
+
+```
+VIOGPU3D_SOURCE_REF=... mesa@cb531c440ff34a9c6334859dda0848132be49ec3
+VIOGPU3D_BUILD_ID=30169476359-66 .../actions/runs/30169476359
+```
+
+GitHub run `30169476359` is a successful Windows-hosted build at exact builder
+commit `b192a42b0e5abb1f92d2dbbaf7bf476a009c7b7a`. That commit introduced
+`mesa-virgl-gdi-submit-backing-lifecycle.patch`, and its workflow applies it
+before building `viogpu_d3d10.dll`. The retained package DLL SHA-256 is
+`7b88f039601c165ddef8002656eab8205b536ee2b89806f185e03a1e4761b846`.
+Therefore the global-reference/current-cbuf confusion is already fixed in the
+exact UMD used by the B4 batches and cannot be adopted as their cause.
+
+The still-unmeasured candidate is narrower: `virgl_gdi_cmd_buf_add_res` can
+silently return if growing its own resource list fails, while leaving encoded
+commands intact. The bounded `BV-VIRGL-ALLOC-LIST-GROW-FAIL` development trace
+is intended to test only that candidate. No behavior change is justified until
+a diagnostic lane correlates the first poisoned resource id with that exact
+line.
