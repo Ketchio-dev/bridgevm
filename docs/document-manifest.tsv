@@ -72,6 +72,7 @@ docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md	current	windows-p
 docs/windows-arm/evidence/a8-resize-secure-boot-wall-20260817.md	current	windows-graphics	-
 docs/windows-arm/evidence/coherence-windows-live-20260817.md	current	windows-graphics	-
 docs/windows-arm/evidence/a5-a6-a7-live-20260817.md	current	windows-guest-integration	-
+docs/windows-arm/evidence/a5-audio-teardown-quality-20260825.md	current	windows-guest-integration	-
 docs/windows-arm/evidence/a19-snapshot-restore-20260805.md	current	windows-storage	-
 docs/windows-arm/evidence/a17-live-queue-receipts-20260805.md	current	testing	-
 docs/install.md	current	user-installation	-
