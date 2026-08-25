@@ -159,7 +159,7 @@ crates/bridgevm-daemon/src/tests_split/mod.rs	0	0
 crates/bridgevm-daemon/src/tests_split/part_1.rs	183	0
 crates/bridgevm-daemon/src/tests_split/part_1_proxy_windows.rs	294	0
 crates/bridgevm-daemon/src/tests_split/part_2.rs	525	0
-crates/bridgevm-daemon/src/tests_split/part_3.rs	511	0
+crates/bridgevm-daemon/src/tests_split/part_3.rs	509	0
 crates/bridgevm-daemon/src/tests_split/part_4.rs	505	0
 crates/bridgevm-daemon/src/tests_split/part_4_2.rs	618	0
 crates/bridgevm-daemon/src/tests_split/parked_backend.rs	17	0
