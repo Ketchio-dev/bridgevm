@@ -44,9 +44,6 @@ impl VirtioGpu3d {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }
-        if self.submit_rejected_before_renderer(hdr.ctx_id, cmdbuf, hdr, out) {
-            return;
-        }
         self.dispatch_submit(cmdbuf, hdr, out);
     }
 }

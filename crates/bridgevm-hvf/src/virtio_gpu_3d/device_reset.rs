@@ -10,7 +10,6 @@ impl VirtioGpu3d {
         self.resource_2d_ids.clear();
         self.resource_3d_ids.clear();
         self.resource_3d_info.clear();
-        self.backend_backed_resource_ids.clear();
         self.local_3d_backing.clear();
         self.unmap_all_blobs();
         self.blob_resources.clear();

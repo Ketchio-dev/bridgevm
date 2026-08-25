@@ -24,7 +24,6 @@ pub struct VirtioGpu3d {
     pub(crate) resource_2d_ids: BTreeSet<u32>,
     pub(crate) resource_3d_ids: BTreeSet<u32>,
     pub(crate) resource_3d_info: BTreeMap<u32, Create3dArgs>,
-    pub(crate) backend_backed_resource_ids: BTreeSet<u32>,
     pub(crate) local_3d_backing: BTreeMap<u32, Vec<BlobMemEntry>>,
     pub(crate) blob_resources: BTreeMap<u32, BlobResource>,
     pub(crate) mapped_intervals: BTreeMap<u64, (u64, u32)>,
