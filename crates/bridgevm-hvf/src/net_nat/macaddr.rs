@@ -34,6 +34,9 @@ pub(crate) struct EthernetIpv4Endpoint {
 
 pub const ETHERTYPE_IPV4: u16 = 0x0800;
 pub const ETHERTYPE_ARP: u16 = 0x0806;
+pub const ETHERTYPE_IPV6: u16 = 0x86dd;
+pub const ETHERNET_PAYLOAD_MTU: usize = 1500;
+const IPV4_FRAGMENT_MASK: u16 = 0x3fff;
 
 pub const IPV4_PROTOCOL_ICMP: u8 = 1;
 pub const IPV4_PROTOCOL_TCP: u8 = 6;
@@ -134,39 +137,6 @@ pub struct NatBackend<H = QueuedOutboundIpv4Handler> {
     pub(crate) stats: NatStats,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct NatStats {
-    pub guest_frames: u64,
-    pub arp_requests: u64,
-    pub dhcp_discover: u64,
-    pub dhcp_request: u64,
-    pub dns_queries: u64,
-    pub icmp_echo: u64,
-    pub tcp_segments: u64,
-    pub udp_datagrams: u64,
-    pub other: u64,
-    pub arp_replies: u64,
-    pub dhcp_offers: u64,
-    pub dhcp_acks: u64,
-    pub dns_replies: u64,
-    pub icmp_replies: u64,
-    pub icmp_forwarded: u64,
-    pub icmp_external_replies: u64,
-    pub tcp_segments_out: u64,
-    pub udp_datagrams_out: u64,
-    pub dhcp_lease_ip: Ipv4Addr,
-    pub tcp_flow_count: usize,
-    pub udp_flow_count: usize,
-    pub pending_replies: usize,
-    pub dropped_malformed_frames: u64,
-    pub dropped_no_guest_mac: u64,
-    pub udp_recv_again: u64,
-    pub tcp_connect_again: u64,
-    pub tcp_read_again: u64,
-    pub tcp_write_again: u64,
-    pub socket_errors: u64,
-}
-
 impl Default for NatBackend<QueuedOutboundIpv4Handler> {
     fn default() -> Self {
         Self::new()
@@ -235,6 +205,11 @@ impl<H: OutboundIpv4Handler + Send> NetBackend for NatBackend<H> {
                 self.stats.dropped_malformed_frames.saturating_add(1);
             return;
         };
+        if eth.payload.len() > ETHERNET_PAYLOAD_MTU {
+            self.stats.dropped_oversize_frames =
+                self.stats.dropped_oversize_frames.saturating_add(1);
+            return;
+        }
         if self.guest_mac.is_none() {
             self.guest_mac = Some(eth.src);
         }
@@ -242,6 +217,10 @@ impl<H: OutboundIpv4Handler + Send> NetBackend for NatBackend<H> {
         match eth.ethertype {
             ETHERTYPE_ARP => self.handle_arp(&eth),
             ETHERTYPE_IPV4 => self.handle_ipv4(&eth),
+            ETHERTYPE_IPV6 => {
+                self.stats.dropped_unsupported_ipv6 =
+                    self.stats.dropped_unsupported_ipv6.saturating_add(1);
+            }
             _ => {
                 self.stats.other = self.stats.other.saturating_add(1);
             }
@@ -307,6 +286,10 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
                 self.stats.dropped_malformed_frames.saturating_add(1);
             return;
         };
+        if packet.flags_fragment & IPV4_FRAGMENT_MASK != 0 {
+            self.stats.dropped_ipv4_fragments = self.stats.dropped_ipv4_fragments.saturating_add(1);
+            return;
+        }
 
         if packet.protocol == IPV4_PROTOCOL_UDP {
             let Some(udp) = UdpDatagram::parse(packet.payload) else {
