@@ -769,3 +769,57 @@ The revert was argued from a trend; this batch tests it prospectively and the
 prediction holds. It does not make B4 pass — 12/20 against a 20/20 gate, p95 778
 against 250 — but it removes a regression I introduced and returns the tree to
 the honest pre-containment baseline.
+
+### Batch 8 root-cause analysis — the separator is the *context*, not the resource
+
+Analysing the post-revert batch (`20260824-204245-4732-52`, gate log SHA-256
+`7a7a5876…`, summary `1e0a78b5…`) against `run.log`, which carries the renderer
+context errors the JSONL cannot show.
+
+**Exact 20/20 separator: a lane is black if and only if it has failed submits on
+context 7.**
+
+| | lanes | failed submits |
+|---|---|---|
+| black | 7 | 183–309, **all on ctx 7** |
+| landed, no failures | 11 | 0 |
+| landed, failures elsewhere | 2 | run 14: 49 on ctx 23; run 15: 3 on ctx 33 |
+
+Runs 14 and 15 are the control that makes this conclusive: they failed submits —
+49 of them in run 14 — and still landed, because the failures were not on ctx 7.
+Context 7 is the busiest context in every lane (~500 submits, created at seq 99
+in all 20) and is the one the desktop composites through.
+
+**The originating fault, from `run.log`:** every black lane's first context error
+is `vrend_renderer_transfer_iov: Illegal resource N` on ctx 7. That is the
+`VIRGL_CCMD_TRANSFER3D` path inside a submit (`vrend_decode.c:1528`), and the
+`Illegal resource` comes from the `check_transfer_iovec` branch
+(`vrend_renderer.c:10305-10310`) — the resource exists but has no `iov`.
+
+**The shape is uniform across all seven black lanes:**
+
+```
+RESOURCE_CREATE_3D (target=0)  ->  CTX_ATTACH_RESOURCE (ctx 7)  ->  44-62 seqs  ->  TRANSFER3D fails
+```
+
+with **no `RESOURCE_ATTACH_BACKING` in between**. Five of the seven resources are
+never backed at all; two are backed only later, after the failure.
+
+**What this rules out.** Never-backed `PIPE_BUFFER`s are not by themselves the
+defect: landed lanes create them in the same proportion (black 22, landed 21 of
+~105 constant buffers per lane), and the count attached to ctx 7 does not
+separate the classes either (landed run 19 has nine; several black lanes have
+one). Host integrity is clean and identical in both classes:
+`descriptor_chain_rejected=0`, zero failed `RESOURCE_ATTACH_BACKING`, and
+create/backing ratios overlapping at 0.83–0.88.
+
+So the defect is the guest submitting a transfer against a resource it has not
+yet backed, and it only becomes visible when it lands on ctx 7. This is the same
+guest-side omission recorded earlier, now localised to the context that matters
+and separated from the many harmless occurrences elsewhere.
+
+**Why this does not justify another host-side refusal.** The reverted containment
+targeted exactly this shape and made every batch worse (see above). The failing
+transfer is a symptom of guest state the host cannot reconstruct; refusing it
+does not give the guest its backing. B4 remains **OPEN** and the next step is
+guest-side.
